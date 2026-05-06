@@ -1,0 +1,5 @@
+# Core (minimal scaffold — add pandas/numpy when simulation lands)
+pydantic>=2.0
+
+# Dev / test (optional)
+pytest>=7.0
