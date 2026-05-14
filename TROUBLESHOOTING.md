@@ -11,6 +11,8 @@
 4. [`Drop.txt` 头部形态（283KB 样本）](#4-droptxt-头部形态283kb-样本)
 5. [把表拷进 `data/raw/`（git 外）](#5-把表拷进-data-rawgit-外)
 6. [调试速查](#6-调试速查)
+7. [`Tables/*.txt` 解码结论：Base64 → UTF-8 TSV](#7-tablestxt-解码结论base64--utf-8-tsv)
+8. [PowerShell 里中文显示乱码 ≠ 数据坏了](#8-powershell-里中文显示乱码--数据坏了)
 
 ---
 
@@ -109,6 +111,65 @@ ODAxCQnkuKrkurrmqKHmi5/mtYvor5UJMglbWzgsODAwMSwxLDEsMTBdLFs4LDgwMDIsMSwxLDEwXSxb
 | 找不到游戏目录 | 设 `$env:BIDKING_GAME_ROOT`，或检查 Steam 库是否非默认盘 |
 | 表文件解码失败 | 先确认 `data/raw/tables/Drop.txt` 是否最新复制；再单步试 Base64/ zlib |
 | 不要上传 GitHub | 确认未 `git add -f data/raw`；仅提交代码与 `TROUBLESHOOTING.md` |
+
+---
+
+## 7. `Tables/*.txt` 解码结论：Base64 → UTF-8 TSV
+
+**症状**：之前怀疑文件加密 / 压缩 / 二进制。
+
+**实测**（`scripts/probe_tables.py` + `scripts/decode_all_tables.py`）：
+
+- 整个 `*.txt` 文件就是一段 **Base64 字符串**（首字符例如 `ODAxCQnk...`）；
+- Base64 解出来直接是 **UTF-8 编码的 TSV**（行=`\n`，列=`\t`）；
+- **没有**额外的 gzip/zlib/protobuf 包装；
+- 每张表所有行的列数一致（uniform），见下表：
+
+| 表名 | 行数 | 列数 |
+|------|------|------|
+| BattleItem | 64 | 6 |
+| BidMap | 105 | 21 |
+| Cabinet | 12 | 14 |
+| Condition | 206 | 13 |
+| Constant | 83 | 4 |
+| **Drop** | 608 | 5 |
+| Hero | 20 | 21 |
+| **Item** | 1132 | 38 |
+| Item_Type | 29 | 8 |
+| ItemRestock | 487 | 10 |
+| LevelUp | 256 | 8 |
+
+**修法**：用 `bidking_lab.extract.tables`：
+
+```python
+from pathlib import Path
+from bidking_lab.extract import load_table_rows
+
+rows = load_table_rows(Path("data/raw/tables/Drop.txt"))
+print(len(rows), len(rows[0]))   # 608 5
+```
+
+**教训**：解码前总是先做"无压缩 / Base64 → UTF-8 → 看 hex / ascii 头"这套三步探针，不要先入为主猜加密。脚本 `scripts/probe_tables.py` 留作以后版本更新时的复检工具。
+
+---
+
+## 8. PowerShell 里中文显示乱码 ≠ 数据坏了
+
+**症状**：跑 `python scripts/decode_table_preview.py Drop`，输出里的中文显示成 `δΈͺδΊΊζ¨‘ζ‹Ÿ` 之类。
+
+**原因**：Windows PowerShell / cmd 默认控制台代码页是 GBK，但我们打印的是 UTF-8 字节。**字节本身没错**，只是控制台把它按错的编码渲染。
+
+**修法**：脚本里强制把 stdout 包成 UTF-8：
+
+```python
+import io, sys
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+```
+
+或者在终端执行 `chcp 65001`，但前者更可靠（脚本自带、不依赖会话状态）。
+单元测试里中文往返已经通过（`tests/test_tables.py::test_decode_table_text_handles_utf8`），所以**底层是干净的**。
 
 ---
 

@@ -20,6 +20,10 @@ data/raw/**
 data/processed/**
 !data/processed/.gitkeep
 
+# Local-only upstream reference clones (not vendored)
+external_references/**
+!external_references/.gitkeep
+
 # Jupyter
 .ipynb_checkpoints/
 
