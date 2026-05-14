@@ -14,11 +14,20 @@ build/
 .env
 .env.*
 
-# Local game dumps (large / copyrighted — keep out of git)
+# Local game dumps (byte-for-byte game files — keep out of git for copyright)
 data/raw/**
 !data/raw/.gitkeep
+
+# Most of data/processed/ stays out (TSV dumps are equivalent to raw),
+# but the derived JSON datasets ARE committed so users without the game
+# can still run the simulator. See scripts/build_processed_data.py.
 data/processed/**
 !data/processed/.gitkeep
+!data/processed/items.json
+!data/processed/items_droppable.json
+!data/processed/battle_items.json
+!data/processed/heroes.json
+!data/processed/maps.json
 
 # Local-only upstream reference clones (not vendored)
 external_references/**

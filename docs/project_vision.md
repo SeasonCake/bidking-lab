@@ -108,9 +108,10 @@
 - [x] `Drop.txt` schema + `parse_drop_table()`（608 池全通过）
 - [x] `Item.txt` 列名 profiler + 初版 schema 文档（`docs/item_table_schema.md`）
 - [x] **Item.txt 交叉验证**：col[8]=quality（0=无 / 1–6=白绿蓝紫金红）、col[9]=value 已确认；category 1–110/9999 含义已确认
-- [ ] **下一步**：写 `parse_item_table()` v1（只锁高置信列）+ `data/processed/items.json`
-- [ ] `BidMap.txt` schema
-- [ ] `Cabinet.txt` / `Hero.txt` schema
+- [x] `parse_item_table()` v1 + `parse_battle_item_table()` + `parse_hero_table()` + `parse_bid_map_table()`（summary only）
+- [x] **派生 JSON 进 Git**：`items.json` / `items_droppable.json` / `battle_items.json` / `heroes.json` / `maps.json`（无需游戏即可用）
+- [ ] **下一步（B）**：完整 `BidMap.txt` schema（解 col[8] 子池权重 / col[12] 入场费 等），然后第一版 MC `simulate_map(map_id, hero_id, n=100_000)`
+- [ ] `Cabinet.txt` schema
 - [ ] 第一版 MC：`simulate_map(map_id, hero_id, n=100_000)` 返回 `{mean, q50, q90, std}`
 - [ ] notebook：地图价值分布
 

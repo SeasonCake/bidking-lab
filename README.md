@@ -25,12 +25,38 @@ This repo is **not** affiliated with the game or Steam. Game assets belong to th
 | `notebooks/` | Exploration (StreamingAssets, probabilities) |
 | `tests/` | Smoke tests |
 
+### Data sources
+
+This repo ships **derived data** so users without the game can still run the
+simulator:
+
+| File (in repo) | What it is | How big |
+|---|---|---|
+| `data/processed/items.json` | All 1132 items: id, name, description, quality (0–6), `quality_color`, value, tags, allowed shelves, icon, model | ~520 KB |
+| `data/processed/items_droppable.json` | Subset of 883 items actually referenced by some Drop pool (the real loot universe) | ~425 KB |
+| `data/processed/battle_items.json` | All 64 battle items with `quality_color` and `effect_type_label` | ~18 KB |
+| `data/processed/heroes.json` | All 20 heroes with skill description | ~4 KB |
+| `data/processed/maps.json` | All 105 maps (summary form: id + name + description) | ~25 KB |
+
+These files are **transformations** of the game's `Tables/*.txt` (column names
+chosen by us, fields filtered, schema-validated). They are **not** byte-for-byte
+copies of game data.
+
+What is **not** in the repo (gitignored — copyright-sensitive):
+
+- `data/raw/tables/*.txt` — byte-identical to the game's installed files
+- `data/processed/tables/*.tsv` — full decoded TSV dumps
+
+If you own the game and want to re-derive the JSONs yourself, see below.
+
 ### Sync game tables into `data/raw` (local only)
 
 After installing the game, run from repo root:
 
 ```powershell
-.\scripts\copy_game_tables.ps1
+.\scripts\copy_game_tables.ps1                # copy Tables/*.txt to data/raw/
+python scripts\build_processed_data.py        # regenerate data/processed/*.json
+python scripts\dump_processed_tables.py       # optional: also dump full TSVs
 ```
 
 See **TROUBLESHOOTING.md** for path pitfalls and why `Tables/*.txt` may look encoded.
