@@ -105,8 +105,9 @@
 - [x] 复制游戏 `Tables/*.txt` 到 `data/raw/tables/`（脚本化）
 - [x] 解码器（Base64 → UTF-8 TSV）+ 单元测试
 - [x] 全表 shape 报告（10 张表都 uniform）
-- [ ] `Drop.txt` schema + `parse_drop_table()`
-- [ ] `Item.txt` 列名 profiler（值域统计辅助猜列）
+- [x] `Drop.txt` schema + `parse_drop_table()`（608 池全通过）
+- [x] `Item.txt` 列名 profiler + 初版 schema 文档（`docs/item_table_schema.md`）
+- [ ] **下一步**：用 Drop.txt 的 item_id 反查 Item.txt，把"较可能"→"确定"，然后写 `parse_item_table()` v1（只锁高置信列）
 - [ ] `BidMap.txt` schema
 - [ ] `Cabinet.txt` / `Hero.txt` schema
 - [ ] 第一版 MC：`simulate_map(map_id, hero_id, n=100_000)` 返回 `{mean, q50, q90, std}`
