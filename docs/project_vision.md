@@ -110,9 +110,12 @@
 - [x] **Item.txt 交叉验证**：col[8]=quality（0=无 / 1–6=白绿蓝紫金红）、col[9]=value 已确认；category 1–110/9999 含义已确认
 - [x] `parse_item_table()` v1 + `parse_battle_item_table()` + `parse_hero_table()` + `parse_bid_map_table()`（summary only）
 - [x] **派生 JSON 进 Git**：`items.json` / `items_droppable.json` / `battle_items.json` / `heroes.json` / `maps.json`（无需游戏即可用）
-- [ ] **下一步（B）**：完整 `BidMap.txt` schema（解 col[8] 子池权重 / col[12] 入场费 等），然后第一版 MC `simulate_map(map_id, hero_id, n=100_000)`
-- [ ] `Cabinet.txt` schema
-- [ ] 第一版 MC：`simulate_map(map_id, hero_id, n=100_000)` 返回 `{mean, q50, q90, std}`
-- [ ] notebook：地图价值分布
+- [x] **`BidMap.txt` 完整 schema**（21 列，含 sub-pool 路由 / 入场费 / 起始预算 / 物品数范围 / drop pool 引用）
+- [x] **Drop pool 多层嵌套机制破解**：`cat=9999` 表示池子引用，叶子条目用真实 category（参见 `simulation.basic_mc.flatten_pool`）
+- [x] **第一版 MC**：`simulate_map(map_id, n=100_000)` → mean / std / q05 / q50 / q95；已通过 `scripts/demo_simulate_maps.py` 在 13 张图上跑过，结果符合"高难度 = 高期望+高方差"的设计直觉
+- [ ] **下一步（C）**：英雄技能的边际价值（Q4）—— 给每个英雄一个 "skill effect" 模型，对比 MC
+- [ ] `Cabinet.txt` schema（Q3 需要：物品形状 + 柜子尺寸 → 装箱可行性）
+- [ ] 第一个 notebook：地图价值分布小提琴图
+- [ ] Sampling-without-replacement 修正（目前 with-replacement 高估了方差）
 
 > 这个清单**就是路线图**，每完成一项就来这里勾一下。

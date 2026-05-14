@@ -66,7 +66,17 @@ def test_bid_map_basic() -> None:
     row[0] = "2101"
     row[1] = "未知快递"
     row[2] = "包裹形状规整不一"
+    row[7] = "101"
+    row[8] = "[[]]"
+    row[9] = "ui_value_low"
+    row[10] = "10"
+    row[11] = "[1,1,0]"
+    row[14] = "[[]]"
+    row[16] = "[9999,2101,16,32]"
     m = parse_bid_map_row(row)
     assert m.map_id == 2101
     assert m.name == "未知快递"
     assert m.description == "包裹形状规整不一"
+    assert m.drop_pool_id == 2101
+    assert m.items_per_session_min == 16
+    assert m.items_per_session_max == 32

@@ -1,0 +1,158 @@
+"""Tests for the first-pass Monte Carlo simulator."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from bidking_lab.extract.bid_map_table import BidMap
+from bidking_lab.extract.drop_table import DropEntry, DropPool
+from bidking_lab.extract.item_table import Item
+from bidking_lab.simulation.basic_mc import flatten_pool, simulate_map
+
+
+def _make_item(item_id: int, value: int, quality: int = 3) -> Item:
+    return Item(
+        item_id=item_id,
+        name=f"item_{item_id}",
+        description="",
+        name_key=f"k_{item_id}",
+        desc_key=f"d_{item_id}",
+        quality=quality,
+        quality_color="blue",
+        value=value,
+        tags=[],
+        allowed_shelves=[],
+        icon_name="",
+        model_name="",
+        raw_row=["0"] * 38,
+    )
+
+
+def _make_pool(pool_id: int, entries: list[tuple[int, int, int, int, int]]) -> DropPool:
+    return DropPool(
+        pool_id=pool_id,
+        name="test",
+        description="",
+        pool_type=2,
+        entries=[
+            DropEntry(category=c, item_id=i, n_min=mn, n_max=mx, weight=w)
+            for c, i, mn, mx, w in entries
+        ],
+    )
+
+
+def _make_map(
+    map_id: int,
+    drop_pool_id: int,
+    min_items: int,
+    max_items: int,
+    sub_weights: list[tuple[int, int]] | None = None,
+) -> BidMap:
+    return BidMap(
+        map_id=map_id,
+        name=f"map_{map_id}",
+        description="",
+        category=101,
+        sub_pool_weights=sub_weights or [],
+        rounds_total=10,
+        entry_fee_silver=0,
+        starting_budget_silver=0,
+        drop_pool_id=drop_pool_id,
+        items_per_session_min=min_items,
+        items_per_session_max=max_items,
+        value_tier_ui="ui_value_low",
+        raw_row=["0"] * 21,
+    )
+
+
+def test_flatten_leaf_pool_basic() -> None:
+    items = {1: _make_item(1, value=100), 2: _make_item(2, value=200)}
+    pool = _make_pool(900, [(101, 1, 1, 1, 1), (101, 2, 1, 1, 3)])
+    fp = flatten_pool(900, {900: pool}, items)
+    assert fp.item_ids == [1, 2]
+    assert fp.probabilities[0] == pytest.approx(0.25)
+    assert fp.probabilities[1] == pytest.approx(0.75)
+    assert fp.values == [100, 200]
+
+
+def test_flatten_resolves_pool_references() -> None:
+    """Two-level: outer pool has cat=9999 → inner pool with cat=101 leaves."""
+    items = {10: _make_item(10, value=500), 20: _make_item(20, value=1000)}
+    inner = _make_pool(50, [(101, 10, 1, 1, 1), (101, 20, 1, 1, 1)])
+    outer = _make_pool(900, [(9999, 50, 1, 1, 1)])
+    fp = flatten_pool(900, {50: inner, 900: outer}, items)
+    assert set(fp.item_ids) == {10, 20}
+    assert fp.probabilities[0] == pytest.approx(0.5)
+    assert fp.probabilities[1] == pytest.approx(0.5)
+
+
+def test_flatten_handles_same_item_via_multiple_paths() -> None:
+    items = {7: _make_item(7, value=100)}
+    p_left = _make_pool(10, [(101, 7, 1, 2, 1)])
+    p_right = _make_pool(20, [(101, 7, 3, 5, 1)])
+    outer = _make_pool(900, [(9999, 10, 1, 1, 1), (9999, 20, 1, 1, 3)])
+    fp = flatten_pool(900, {10: p_left, 20: p_right, 900: outer}, items)
+    assert fp.item_ids == [7]
+    assert fp.probabilities == [pytest.approx(1.0)]
+    # union of count ranges
+    assert fp.n_min == [1]
+    assert fp.n_max == [5]
+
+
+def test_simulate_leaf_map_expected_value() -> None:
+    items = {1: _make_item(1, value=100), 2: _make_item(2, value=200)}
+    pool = _make_pool(900, [(101, 1, 1, 1, 1), (101, 2, 1, 1, 1)])
+    bm = _make_map(900, 900, min_items=2, max_items=2)
+    res = simulate_map(
+        900,
+        maps={900: bm},
+        drops={900: pool},
+        items=items,
+        n_trials=5000,
+        rng=np.random.default_rng(seed=42),
+    )
+    # E[item value] = (100 + 200) / 2 = 150; k=2 with replacement → E[total] = 300.
+    assert abs(res.mean - 300) < 20
+    assert res.pool_size_after_flatten == 2
+
+
+def test_simulate_handles_anthology_routing() -> None:
+    items = {1: _make_item(1, value=10), 2: _make_item(2, value=10_000)}
+    pool_cheap = _make_pool(100, [(101, 1, 1, 1, 1)])
+    pool_rich = _make_pool(200, [(101, 2, 1, 1, 1)])
+    leaf_cheap = _make_map(100, 100, 1, 1)
+    leaf_rich = _make_map(200, 200, 1, 1)
+    anthology = _make_map(999, 0, 1, 1, sub_weights=[(100, 1), (200, 1)])
+    res = simulate_map(
+        999,
+        maps={100: leaf_cheap, 200: leaf_rich, 999: anthology},
+        drops={100: pool_cheap, 200: pool_rich},
+        items=items,
+        n_trials=4000,
+        rng=np.random.default_rng(seed=0),
+    )
+    assert 3000 < res.mean < 7000
+    assert res.min == 10
+    assert res.max == 10_000
+
+
+def test_simulate_empty_pool_returns_zero() -> None:
+    items = {1: _make_item(1, value=100)}
+    pool = _make_pool(7, [])
+    bm = _make_map(7, 7, 1, 1)
+    res = simulate_map(
+        7,
+        maps={7: bm},
+        drops={7: pool},
+        items=items,
+        n_trials=100,
+        rng=np.random.default_rng(seed=1),
+    )
+    assert res.mean == 0
+    assert res.pool_size_after_flatten == 0
+
+
+def test_simulate_unknown_map_raises() -> None:
+    with pytest.raises(KeyError):
+        simulate_map(404, maps={}, drops={}, items={}, n_trials=1)

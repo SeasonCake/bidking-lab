@@ -39,3 +39,6 @@ external_references/**
 # IDE
 .idea/
 .vscode/
+
+# Temp commit-message scratchpad
+.git-commit-msg.tmp
