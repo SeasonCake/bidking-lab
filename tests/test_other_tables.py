@@ -73,6 +73,8 @@ def test_bid_map_basic() -> None:
     row[11] = "[1,1,0]"
     row[14] = "[[]]"
     row[16] = "[9999,2101,16,32]"
+    row[17] = "4"
+    row[18] = "[2000,1600,1300,1100,0]"
     m = parse_bid_map_row(row)
     assert m.map_id == 2101
     assert m.name == "未知快递"

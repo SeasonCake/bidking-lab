@@ -6,5 +6,18 @@ from bidking_lab.simulation.basic_mc import (
     flatten_pool,
     simulate_map,
 )
+from bidking_lab.simulation.bidding import (
+    BidPolicy,
+    SessionSummary,
+    simulate_session,
+)
 
-__all__ = ("FlattenedPool", "SimulationResult", "flatten_pool", "simulate_map")
+__all__ = (
+    "BidPolicy",
+    "FlattenedPool",
+    "SessionSummary",
+    "SimulationResult",
+    "flatten_pool",
+    "simulate_map",
+    "simulate_session",
+)

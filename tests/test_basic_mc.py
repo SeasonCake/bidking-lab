@@ -48,20 +48,26 @@ def _make_map(
     min_items: int,
     max_items: int,
     sub_weights: list[tuple[int, int]] | None = None,
+    *,
+    budget: int = 100_000,
+    entry_fee: int = 0,
 ) -> BidMap:
     return BidMap(
         map_id=map_id,
         name=f"map_{map_id}",
         description="",
         category=101,
+        auction_mode="open",
         sub_pool_weights=sub_weights or [],
         rounds_total=10,
-        entry_fee_silver=0,
-        starting_budget_silver=0,
+        entry_fee_silver=entry_fee,
+        starting_budget_silver=budget,
         drop_pool_id=drop_pool_id,
         items_per_session_min=min_items,
         items_per_session_max=max_items,
         value_tier_ui="ui_value_low",
+        mode_flag=4,
+        bid_price_ladder=[],
         raw_row=["0"] * 21,
     )
 

@@ -23,6 +23,8 @@ def _make_row(**overrides: str) -> list[str]:
     row[11] = "[1,1,2000]"
     row[14] = "[[1,1,10000]]"
     row[16] = "[9999,2101,16,32]"
+    row[17] = "4"
+    row[18] = "[2000,1600,1300,1100,0]"
     for k, v in overrides.items():
         idx = int(k[3:])
         row[idx] = v
@@ -33,6 +35,7 @@ def test_parses_anthology_map() -> None:
     bm = parse_bid_map_row(_make_row())
     assert bm.map_id == 2101
     assert bm.name == "未知快递"
+    assert bm.auction_mode == "open"
     assert bm.sub_pool_weights == [(2101, 100), (2102, 20)]
     assert bm.drop_pool_id == 2101
     assert bm.items_per_session_min == 16
@@ -41,6 +44,8 @@ def test_parses_anthology_map() -> None:
     assert bm.starting_budget_silver == 10000
     assert bm.value_tier_ui == "ui_value_low"
     assert bm.rounds_total == 10
+    assert bm.mode_flag == 4
+    assert bm.bid_price_ladder == [2000, 1600, 1300, 1100, 0]
 
 
 def test_parses_leaf_map() -> None:
@@ -48,6 +53,17 @@ def test_parses_leaf_map() -> None:
     assert bm.sub_pool_weights == []
     assert bm.entry_fee_silver == 0
     assert bm.starting_budget_silver == 0
+
+
+def test_sealed_mode_for_tier4() -> None:
+    bm = parse_bid_map_row(_make_row(**{"col0": "4401", "col17": "4"}))
+    assert bm.auction_mode == "sealed"
+
+
+def test_training_mode_for_tier3() -> None:
+    bm = parse_bid_map_row(_make_row(**{"col0": "3401", "col17": "1", "col18": "[0,0,0,0,0]"}))
+    assert bm.auction_mode == "training"
+    assert bm.bid_price_ladder == [0, 0, 0, 0, 0]
 
 
 def test_rejects_bad_drop_ref() -> None:
