@@ -1,0 +1,268 @@
+<p align="right">🌐 <a href="./README.md">English</a> · <strong>中文</strong></p>
+
+# bidking-lab
+
+> **一个把游戏《竞拍之王》当成概率推断 / 蒙特卡洛模拟实验室的本地工具链——把英雄技能、道具读数、地图先验全部量化成可执行的出价建议。**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Tests](https://img.shields.io/badge/tests-219_passing-2ea043)](./tests)
+[![Status](https://img.shields.io/badge/status-92%25_complete-blueviolet)](./PROGRESS.md)
+
+---
+
+## 演示 · Demo
+
+https://github.com/user-attachments/assets/ef39bb80-f6fd-40b3-8e60-6564ceda4af8
+
+> 30 秒走查：选地图 → 把游戏里看到的读数填进对应 bucket → 拿到价值分布、秒仓/放仓建议、各品质后验估计。
+
+### 截图
+
+<table>
+<tr>
+<td width="50%" align="center"><strong>1. 读数输入 + 实时候选枚举</strong><br/><img src="./docs/assets/01-inputs.png" alt="读数输入" /></td>
+<td width="50%" align="center"><strong>2. 条件价值分布 + 出价建议</strong><br/><img src="./docs/assets/02-bidding.png" alt="出价建议" /></td>
+</tr>
+</table>
+
+> **左**：引擎实时监听用户填的每个字段，把通过所有约束（仓库总格、截断 `均格` 读数、总价、巨物档……）的 top-K `(total_cells, count)` 候选枚举出来。
+> **右**：1000+ 真值样本经多重 filter 后画直方图，标 P25/P50/P75/P90 四条分位线，玩家按自己的风险偏好挑出价档。
+
+---
+
+## 这个项目是什么 · TL;DR
+
+游戏《竞拍之王》的核心玩法是**信息不完美下的密封式拍卖**：玩家用银币买道具揭示部分藏品信息（"紫品总格 35"、"金品均价 9400/格"），再据此决定每场仓库出多少钱。
+
+**bidking-lab 把这个决策过程数学化**：
+
+- **数据层**：解码游戏的 `Tables/*.txt`（base64 + TSV）→ 1132 件藏品 / 64 件道具 / 105 张地图 / 20 个英雄 全部入 schema
+- **推断层**：玩家输入观测 → 联合后验推断每个品质 bucket 的 `(总格数, 件数)` top-3 候选；条件 MC 输出出价分布 P25/P50/P75/P90 + 秒仓 / 放仓推荐
+- **价值评估层**：Leave-one-out 量化每件道具的"每银币挽回价值"，给出指定地图 / 英雄下的道具性价比榜
+- **交付层**：Streamlit 中文 UI + 5 册 Jupyter notebook + 端到端 CLI 脚本
+
+非官方爱好项目，**不附带任何游戏资源**——只解码玩家本地安装的数据，并产出*推导后的 JSON*。
+
+---
+
+## 为什么做这个 · Why
+
+| 玩家原始痛点 | 数学化形态 | bidking-lab 给出的答案 |
+|---|---|---|
+| 道具读数到底有没有用？带哪几件最划算？ | Tool value attribution under partial observation | LOO ROI engine（道具 ROI 排行 + 价格/英雄/噪声敏感性） |
+| 看到"紫品均格 2.90"，我能推回紫品到底几格几件？ | Decimal-precision leakage from truncated UI display | `display.py` 截断显示规则 + 候选枚举，能区分 2.9（精确）vs 2.90（尾零→约的） |
+| 这个仓应该出多少？秒还是放？ | Conditional Monte Carlo on observed warehouse cells | 秒仓 / 放仓 dual gate + 三阶 fallback（含低置信兜底） |
+| 不同地图、不同英雄，最优配置一样吗？ | Hero × Map × Tool-kit contrast experiments | 4 册分析 notebook + Streamlit 自由组合界面 |
+
+---
+
+## 30 秒上手 · Quick start
+
+```powershell
+cd bidking-lab
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -e .
+
+# 1) 跑测试（219 个单测）
+pytest -q
+
+# 2) 启动 Streamlit 主界面
+streamlit run app/streamlit_app.py
+
+# 3) 终端跑三场景端到端 demo（看不到图，看数）
+python scripts/demo_scenarios.py
+
+# 4) 浏览端到端案例 notebook（含分布直方图）
+jupyter notebook notebooks/05_end_to_end_case.ipynb
+```
+
+> Windows / PowerShell + Python 3.13 验证过；macOS / Linux 应该也行（路径要相应改）。
+
+设置游戏根目录（可选，仅 re-extract 游戏表时需要）：
+
+```powershell
+$env:BIDKING_GAME_ROOT = "C:\path\to\steamapps\common\BidKing"
+.\scripts\copy_game_tables.ps1               # 拷 Tables/*.txt 到 data/raw/
+python scripts\build_processed_data.py       # 重新生成 data/processed/*.json
+```
+
+---
+
+## 架构 · Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ Layer 3 · Surface                                                   │
+│   app/streamlit_app.py           — 4-tab UI（中文）                 │
+│   notebooks/01..05_*.ipynb       — 探索 + 端到端 case               │
+│   scripts/demo_*.py              — CLI 端到端校验                   │
+└──────────────────────────────────┬──────────────────────────────────┘
+                                   │
+┌──────────────────────────────────▼──────────────────────────────────┐
+│ Layer 2 · Compute                                                   │
+│   inference/                                                        │
+│     ├── display.py             — 游戏 2-dp 截断显示规则 + 候选枚举  │
+│     ├── observation.py         — SessionObs / QualityBucketObs DSL  │
+│     ├── joint.py               — DFS 联合后验 + 仓库剪枝            │
+│     ├── posterior.py           — 自适应 per-bucket MC filter +      │
+│     │                            后验分位（2026-05-16）             │
+│     ├── synth_readings.py      — 11 件道具 → 读数 DSL               │
+│     ├── snipe.py               — 秒仓/放仓 gate + 三阶 fallback     │
+│     ├── roi.py                 — LOO 道具 ROI + 眼估噪声模型        │
+│     └── ground_truth.py        — 地图采样器（drop pool 加权）        │
+│   simulation/                                                       │
+│     ├── basic_mc.py            — 全图 MC                            │
+│     ├── hero_value.py          — Timing-aware 英雄技能价值          │
+│     ├── bidding.py             — 出价经济模型                       │
+│     └── robust_value.py        — 长尾稀有红物降权                   │
+└──────────────────────────────────┬──────────────────────────────────┘
+                                   │
+┌──────────────────────────────────▼──────────────────────────────────┐
+│ Layer 1 · Data                                                      │
+│   extract/                                                          │
+│     ├── bid_map_table.py       — 105 张地图 schema (21 列)          │
+│     ├── drop_table.py          — 掉落池 (item_id × weight)          │
+│     ├── item_table.py          — 1132 件藏品                        │
+│     └── battle_item.py         — 64 件道具（已 verify 中文命名）    │
+│   data/raw/tables/*.txt         — 玩家本地游戏文件（gitignored）    │
+│   data/processed/*.json         — 我们生成的 schema 化 JSON         │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 关键技术亮点 · Engineering Highlights
+
+### 1. 把"游戏 UI 显示精度"做成信息源
+玩家看到「紫品均格 2.90」时，**尾零携带信息**——意味着真实值被截断在 `[2.90, 2.91)` 区间，分母（件数）大概率不整除 10。`inference/display.py` 实现了游戏的 floor-at-2dp 显示规则反推，能用 `parse_reading("2.90")` 区分精确值 vs 截断近似。在场景 A 实测中，这一条约束把 q=4 候选从 ~20 个收紧到 1 个。
+
+### 2. Leave-one-out 道具 ROI + 玩家眼估噪声模型
+原始 ROI 实现把"不带总仓储工具"翻译成"capacity = 159 fallback"，结果一件 55K silver 的工具 ROI 显示为 0。引入 `player_warehouse_noise_std` 后：
+
+| σ (cells) | 总仓储 ROI | 解读 |
+|---|---|---|
+| 0  | 0.000 | 玩家完美眼力 → 工具确实无价值 |
+| 10 | **0.446** | 默认现实玩家 → 回收 24.5K 价值 ÷ 55K 售价 |
+| 15 | 0.924 | 新手 → 几乎回本 |
+
+ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
+
+### 3. Per-bucket MC filter（2026-05-16 修复）
+2026-05-16 一次实操发现出价 hint 的 MC 滤波**只看仓库总格**，用户填的其他字段（每品质 cells / count / value / 巨物档）全部被静默忽略，导致信息充分场景下 2× 过估。新增的 `inference/posterior.py`（260 行）做自适应多约束滤波：
+
+- 5 类观测（`cells / count / value_sum / value_range / huge_band`）全部成为 MC filter
+- 三阶 tolerance（±2 → ±4 → ±8 cells），样本不足 30 时自动放宽并标 `low_confidence`
+- **`total_cells = 0` / `count = 0` 视为精确断言**——任何 widen 档都不放宽，保证"确认无红"是硬约束
+- 新增"各 bucket 后验估计"面板：每个品质的 cells / count / value 的 P10/P50/P90 + 该 bucket 空概率
+
+地图 T2 2405（仓库 72 cells）实测：
+- 修复前：median = 369K silver（vs 实测 ~150K 高估 2.5×）
+- 修复后：median = 146K silver，n=16/2500（低置信），P(红空) = 100%
+
+### 4. 工程化的 schema-first 数据层
+所有游戏表先 decode 成 TSV → pydantic schema 校验 → typed JSON。命名跟原始数据源对齐（C-25 修过一次重大命名错位：游戏的"优品=紫、极品=金、珍品=红"，跟我代码里早期的"精品/珍品"完全错位；统一重命名后 202 单测继续绿）。
+
+### 5. 22 条 TROUBLESHOOTING.md，四段式踩坑归档
+所有非显然的踩坑（Base64 表 / GBK 编码 / `pyarrow` × `numpy 2.x` / `st.number_input` 吃尾零 / matplotlib 中文字体回退 / ROI baseline 漏洞 / Python surrogate-pair emoji 编码 / ……）都按 **症状 / 原因 / 修法 / 教训** 四段式归档，便于复盘和给协作者交接。
+
+---
+
+## 量化产出 · Findings
+
+完整结论看 [`PROGRESS.md`](PROGRESS.md) 和 [`OBSERVATIONS.md`](OBSERVATIONS.md)，简表：
+
+| 维度 | 数字 |
+|---|---|
+| 解析的游戏表 | 6 张（BidMap / Drop / Item / BattleItem / Hero / Item_Type） |
+| schema 化的实体 | 1132 件藏品 · 64 件道具 · 105 张地图 · 20 个英雄 |
+| 单测数 | **219**，全绿 |
+| Streamlit UI tabs | 4（读数输入 / 出价推荐 / 道具 ROI / 联合推断·实验性） |
+| Notebook | 5 册（map 价值分布 / 英雄排名 / 推断 demo / ROI snipe / 端到端 case） |
+| 项目完成度 | ~92% |
+| Commit 历史 | C-1 ~ C-27，每条都有展开版设计决策记录 |
+
+---
+
+## 目录 · Layout
+
+| 路径 | 用途 |
+|---|---|
+| `src/bidking_lab/extract/` | 6 张游戏表的解码 + schema |
+| `src/bidking_lab/inference/` | 推断引擎：display / observation / joint / posterior / snipe / roi |
+| `src/bidking_lab/simulation/` | MC 模型：basic_mc / hero_value / bidding / robust_value |
+| `app/streamlit_app.py` | Streamlit 中文主界面 |
+| `notebooks/` | 5 册分析 + 端到端 case notebook |
+| `scripts/` | 数据生成 / 端到端 demo / 一次性 probe |
+| `tests/` | 219 单测 |
+| `data/raw/` | 玩家本地游戏文件（gitignored） |
+| `data/processed/` | 我们生成的 schema 化 JSON（入 git，便于无游戏的人也能跑） |
+| `docs/project_vision.md` | 原始三层架构设计 |
+| **`PROGRESS.md`** | **新协作者起点**：项目全貌 + 当前状态 + 路线图 |
+| **`OBSERVATIONS.md`** | **技术发现日志**：每个 checkpoint 的关键发现 |
+| **`TROUBLESHOOTING.md`** | **22 条踩坑**：四段式（症状/原因/修法/教训） |
+
+### 我们 ship 的数据 vs 我们不 ship 的
+
+`data/processed/*.json` 是我们**生成的**派生数据（字段名我们选、过滤过、schema 校验过），不是游戏原文件的字节副本——所以无游戏的人也能跑模拟器。`data/raw/tables/*.txt` 跟游戏内文件字节一致，**不入 git**。
+
+| File (in repo) | What | Size |
+|---|---|---|
+| `data/processed/items.json` | 1132 items: id, name, quality (0–6), value, shape, tags … | ~520 KB |
+| `data/processed/items_droppable.json` | 883 actually drop-able items（去掉系统物品） | ~425 KB |
+| `data/processed/battle_items.json` | 64 battle items with quality_color + effect | ~18 KB |
+| `data/processed/heroes.json` | 20 heroes with skill descriptions | ~4 KB |
+| `data/processed/maps.json` | 105 maps (summary form) | ~25 KB |
+
+---
+
+## 技术栈 · Tech Stack
+
+- **Python 3.13** · pydantic（schema 校验）· numpy / scipy（MC + 后验）· matplotlib（分布图）
+- **Streamlit**（UI）· Jupyter（分析交付物）
+- **pytest**（219 单测，覆盖解码 / 推断 / ROI / snipe / hero_value）
+- **PowerShell**（数据同步脚本；macOS/Linux 等价 bash 已留接口）
+
+---
+
+## 法律 · Attribution & License
+
+非官方爱好项目，**未授权也不附属**于游戏或 Steam。游戏资源版权归原作者所有，**不分发**任何 ripped binary。
+
+仓库**源码** MIT License（见 [`LICENSE`](LICENSE)）。LICENSE 不授予游戏资源、商标、或本地拷贝在 `data/raw/` 下的游戏数据文件任何权利。
+
+灵感与前期工作：
+- [Jrinky908/bidking](https://github.com/Jrinky908/bidking)（Monte Carlo 摘要、OCR notebook）
+- [nql1314/bidking-booooot](https://github.com/nql1314/bidking-booooot)（Apache-2.0；架构 / 日志解析 / 网格视图参考）— 详见 [`docs/upstream_references.md`](docs/upstream_references.md)
+
+---
+
+## 路线图 · Roadmap
+
+完整路线图在 [`PROGRESS.md`](PROGRESS.md)。短版：
+
+**已完成**（C-1 ~ C-27）
+- ✅ 6 张游戏表解码 + schema
+- ✅ 推断引擎 v2（joint posterior + 仓库剪枝 + 截断显示规则 + 巨物分级）
+- ✅ Streamlit 中文 UI（4 tab + 地图静态信息面板）
+- ✅ Per-bucket 自适应 MC filter（2026-05-16 修复，杀掉 2× 过估 bug）
+- ✅ LOO 道具 ROI + 玩家眼估噪声模型
+- ✅ 秒仓 / 放仓 dual gate + 三阶 fallback
+- ✅ 5 册分析 notebook + 端到端 case
+- ✅ 219 单测全绿 · 22 条 TROUBLESHOOTING
+- ✅ 双语 README（本文件）+ 演示视频 + 截图
+
+**可能的后续**
+- ⏳ Progressive UI：先出 warehouse-only 快结果，后台再 refine
+- ⏳ BidMap 23-列兼容（2026-05-15 活动图 patch；不影响 runtime）
+
+**明确 skip**（用户拍板）
+- per-item observation 接口（抽检 N / 宝光 N 鉴）
+- 抽检 ROI 建模
+
+---
+
+<sub>Made with too much coffee · 2026-05-16</sub>

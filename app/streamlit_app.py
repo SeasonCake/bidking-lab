@@ -319,16 +319,35 @@ def _maybe_red_bucket(state) -> QualityBucketObs | None:
     Treats lo/hi == 0 as "not given" (since 0 is the streamlit number_input
     default) and skips creating a value_range with zero bounds — passing
     (0, 0) to ``value_consistency_score`` triggers a ZeroDivisionError.
+
+    The 2026-05-16 redesign adds two new gates:
+
+    * ``red_confirmed_none``: when True, the player asserts "I have
+      accounted for every cell in the warehouse and there is no red
+      item" → returns a bucket with ``total_cells=0``, ``count=0``,
+      ``huge_band="none"``. This is the dominant fix for the
+      over-estimation bug.
+    * ``red_cells_total``: explicit reading (typically from 珍品扫描
+      or a map hint). 0 means "not provided" unless
+      ``red_confirmed_none`` is True.
     """
+    confirmed_none = bool(state.get("red_confirmed_none"))
+    if confirmed_none:
+        return QualityBucketObs(
+            quality=6, total_cells=0, count=0, huge_band="none",
+        )
     lo = int(state.get("red_value_lo") or 0)
     hi = int(state.get("red_value_hi") or 0)
     huge = state.get("red_huge_band", "none")
+    cells = int(state.get("red_cells_total") or 0)
     has_value = lo > 0 and hi > 0 and hi >= lo
     has_huge = huge != "none"
-    if not (has_value or has_huge):
+    has_cells = cells > 0
+    if not (has_value or has_huge or has_cells):
         return None
     return QualityBucketObs(
         quality=6,
+        total_cells=cells if has_cells else None,
         value_range=(lo, hi) if has_value else None,
         huge_band=huge,
     )
@@ -877,20 +896,41 @@ with tab_obs:
         "\u7ea2\u54c1\u51e0\u4e4e\u4e0d\u4f1a\u88ab\u4f30\u4ef7\u9053\u5177\u51c6\u786e\u8bfb\u51fa "
         "\u2014 \u63a8\u8350\u586b\u4e2a\u4ef7\u503c\u533a\u95f4\uff08\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\uff09\u3002\u4e0a\u4e0b\u9650\u90fd\u4e3a 0 \u8868\u793a\u672a\u63d0\u4f9b\u3002"
     )
+
+    state["red_confirmed_none"] = st.checkbox(
+        "\u2705 \u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\uff08\u767d+\u7eff+\u84dd+\u7d2b+\u91d1 = \u4ed3\u5e93\u603b\u683c\u6570\uff09",
+        value=False,
+        help="\u52fe\u9009\u540e\uff0c\u5f15\u64ce\u4f1a\u5728 MC \u8fc7\u6ee4\u91cc\u5f3a\u5236 q=6 cells=0\u3001"
+             "\u4e0d\u518d\u91c7\u7eb3\u7ea2\u54c1\u5de8\u7269\u6837\u672c\u3002\u9002\u7528\u4e8e\u4f60\u5df2\u7ecf\u5b8c\u5168\u770b\u5b8c\u5176\u4ed6 4 \u54c1\u8d28 cells "
+             "\u4e14\u52a0\u8d77\u6765 = \u4ed3\u5e93\u603b\u683c\u6570\u7684\u573a\u666f\u3002",
+    )
+    red_locked = state["red_confirmed_none"]
+
+    state["red_cells_total"] = st.number_input(
+        "\u7ea2\u54c1\u603b\u683c\u6570\uff08\u73cd\u54c1\u626b\u63cf / \u5730\u56fe hint\uff1b0 = \u672a\u63d0\u4f9b\uff09",
+        min_value=0, max_value=200, value=0, step=1,
+        disabled=red_locked,
+        help="\u4f0a\u68ee \u73cd\u54c1\u626b\u63cf \u9053\u5177\u8bfb\u51fa\u7684\u7ea2\u54c1\u603b\u683c\u6570\u3002\u586b\u5165\u540e MC \u4f1a\u989d\u5916\u8fc7\u6ee4 "
+             "|truth.q6\u683c - \u4f60\u586b\u7684\u503c| \u2264 \u5bb9\u5dee\u3002\u82e5\u4f60\u52fe\u9009\u4e86\u4e0a\u9762\u300c\u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\uff0c"
+             "\u8fd9\u91cc\u4f1a\u88ab\u9501\u5b9a\u4e3a 0\u3002",
+    )
+
     c1, c2 = st.columns(2)
     state["red_value_lo"] = c1.number_input(
         "\u7ea2\u54c1\u4ef7\u503c\u4e0b\u9650\uff08silver\uff09",
         min_value=0, max_value=10_000_000, value=0, step=10000,
+        disabled=red_locked,
     )
     state["red_value_hi"] = c2.number_input(
         "\u7ea2\u54c1\u4ef7\u503c\u4e0a\u9650\uff08silver\uff09",
         min_value=0, max_value=10_000_000, value=0, step=10000,
+        disabled=red_locked,
     )
     state["red_huge_band"] = st.selectbox(
         "\u7ea2\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u7ea2\u8272\uff09",
         options=HUGE_BANDS, index=0,
         format_func=lambda b: HUGE_BAND_LABELS[b],
-        disabled=(hero == "aisha"),
+        disabled=(hero == "aisha") or red_locked,
         help="\u827e\u838e\u770b\u4e0d\u5230\u7ea2\u54c1\u5de8\u7269\u8f6e\u5ed3\u3002\u4f0a\u68ee "
              "\u53ef\u4ee5\u901a\u8fc7\u73cd\u54c1\u626b\u63cf\uff08\u7ea2\u54c1\u603b\u683c\u6570\uff09 / R5 \u5168\u91cf\u8f6e\u5ed3"
              "\u3001\u6216\u6839\u636e 4\u00d74 \u5de8\u7269\u6392\u9664\u77f3\u72ee\u5b50\u540e\u786e\u8ba4\u3002",
@@ -945,10 +985,11 @@ with tab_hint:
         "\u4fdd\u7559\u4ed3\u5e93\u5bb9\u91cf\u00b1\u5bb9\u5dee\u4e14\u4f4e\u54c1 cells \u5339\u914d\u7684\u6837\u672c\uff0c"
         "\u5148\u770b\u4ef7\u503c\u53ef\u80fd\u533a\u95f4\uff0c\u518d\u770b\u662f\u5426\u53ef\u79d2\u4ed3 / \u8be5\u653e\u4ed3\u3002"
     )
-    st.warning(
-        "\u26a0\ufe0f \u51fa\u4ef7\u533a\u95f4\u5f53\u524d\u53ea\u6309 **\u4ed3\u5e93\u603b\u683c\u6570** \u53ca\u63d0\u4f9b\u540e\u7684 **\u7d2b\u54c1\u603b\u683c\u6570** \u8fc7\u6ee4\u3002"
-        "\u5de8\u7269\u6570\u91cf / \u603b\u4f30\u503c / \u5747\u683c \u6682\u4e0d\u53c2\u4e0e MC \u8fc7\u6ee4\uff08\u8fdb\u4e00\u6b65\u6536\u7a84\u4f1a\u8ba9\u5339\u914d\u6837\u672c\u8fc7\u5c11\uff09\u3002"
-        "\u8fd9\u4e9b\u8f93\u5165\u4ec5\u5728\u300c\u5b9e\u9a8c\u6027\u8054\u5408\u63a8\u65ad\u300d tab \u91cc\u751f\u6548\u3002"
+    st.caption(
+        "\U0001F4A1 \u51fa\u4ef7\u533a\u95f4\u4f1a\u540c\u65f6\u6309\u4ed3\u5e93\u603b\u683c\u6570 + \u4f60\u586b\u7684\u6bcf\u4e2a bucket "
+        "(cells / count / value / huge / value_range) \u591a\u91cd\u8fc7\u6ee4\u3002\u8054\u5408\u8fc7\u6ee4\u540e\u6837\u672c\u4e0d\u8db3 30 \u65f6 "
+        "\u4f1a\u81ea\u52a8\u9010\u6863\u653e\u5bbd\u5bb9\u5dee\uff08\u00b12 \u2192 \u00b14 \u2192 \u00b18\uff09\u5e76\u6807 \u26a0\ufe0f \u4f4e\u7f6e\u4fe1\u3002"
+        "\u300c\u7ea2 bucket \u300d\u52fe\u9009\u300c\u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\u540e\uff0cMC \u4f1a\u5728\u8fc7\u6ee4\u91cc\u5f3a\u5236 q=6 cells=0\u3002"
     )
     if st.button("\u8fd0\u884c\u51fa\u4ef7 hint", key="run_hints", type="primary"):
         session = _build_session(state, maps)
@@ -959,10 +1000,17 @@ with tab_hint:
                 state["map_id"], n_trials=n_trials, seed=seed,
             )
             all_values = [t.total_value() for t in truths]
-            conditional_values = [
-                t.total_value() for t in truths
-                if abs(t.warehouse_total_cells - state["warehouse_cells"]) <= warehouse_tol
-            ]
+
+            from bidking_lab.inference.posterior import (
+                adaptive_filter,
+                bucket_posterior_stats,
+            )
+            filter_result = adaptive_filter(
+                truths, session, min_samples=30,
+                warehouse_tol_levels=(warehouse_tol, warehouse_tol, max(warehouse_tol, 12)),
+            )
+            conditional_truths = filter_result.truths
+            conditional_values = [t.total_value() for t in conditional_truths]
 
             snipe = compute_snipe_recommendation(
                 session, maps=maps, drops=drops, items=items,
@@ -979,11 +1027,34 @@ with tab_hint:
         st.markdown(
             "### \U0001F4CA \u4ed3\u5e93\u4ef7\u503c\u53ef\u80fd\u533a\u95f4"
         )
-        if not conditional_values:
+
+        constraint_summary = "\u00b7".join(filter_result.constraints_applied)
+        tol_summary = (
+            f"cells \u00b1{filter_result.cells_tol}\u30001count \u00b1{filter_result.count_tol}"
+            f"\u3001value \u00b1{int(filter_result.value_rel_tol*100)}%"
+            f"\u3001warehouse \u00b1{filter_result.warehouse_tol}"
+        )
+        if filter_result.low_confidence and filter_result.n_final > 0:
             st.warning(
-                f"\u5728 {n_trials} \u6b21\u91c7\u6837\u4e2d\u6ca1\u6709\u5339\u914d\u7684\u4ed3\u5e93\uff08\u5bb9\u5dee\u00b1{warehouse_tol}\uff09\uff0c"
-                f"\u8bf7\u589e\u5927\u5bb9\u5dee\u6216\u8c03\u6574\u4ed3\u5e93\u683c\u6570\u3002"
+                f"\u26a0\ufe0f \u4f4e\u7f6e\u4fe1\uff1a\u4e25\u683c\u5bb9\u5dee\u4e0b\u5339\u914d\u6837\u672c\u4e0d\u8db3 30\uff0c\u5df2\u81ea\u52a8\u653e\u5bbd\u5230 "
+                f"**\u7b49\u7ea7 {filter_result.tol_level} ({tol_summary})**\u3002"
+                f"\u6700\u7ec8 n={filter_result.n_final} / {filter_result.n_total} \u6837\u672c\u3002"
+                f"\n\n\u6fc0\u6d3b\u7ea6\u675f\uff1a{constraint_summary}"
             )
+        elif filter_result.n_final == 0:
+            st.error(
+                f"\u26d4 \u8fc7\u6ee4\u540e\u96f6\u5339\u914d\uff08\u5373\u4f7f\u5728\u6700\u5bbd\u5bb9\u5dee\u4e0b\uff09\u3002\u8bf7\u68c0\u67e5\uff1a"
+                f"\u4f60\u586b\u7684\u67d0\u4e2a bucket cells / count / value \u662f\u5426\u8d85\u51fa\u672c\u56fe\u53ef\u80fd\u8303\u56f4\uff1f"
+                f"\n\n\u6fc0\u6d3b\u7ea6\u675f\uff1a{constraint_summary}"
+            )
+        else:
+            st.info(
+                f"\u2705 \u4e25\u683c\u5bb9\u5dee\u5339\u914d {filter_result.n_final} / {filter_result.n_total} \u6837\u672c"
+                f"\uff08{tol_summary}\uff09\u3002\u7ea6\u675f\uff1a{constraint_summary}"
+            )
+
+        if not conditional_values:
+            pass  # already shown error above
         else:
             p25, p50, p75, p90 = np.percentile(
                 conditional_values, [25, 50, 75, 90]
@@ -1017,11 +1088,16 @@ with tab_hint:
                 np.clip(all_values, 0, x_max), bins=bins, alpha=0.30,
                 color="#888", label=f"All samples (n={len(all_values)})",
             )
+            n_constraints = len(filter_result.constraints_applied)
+            cond_legend = (
+                f"All constraints (n={len(conditional_values)})"
+                if n_constraints > 1
+                else f"Warehouse {state['warehouse_cells']}\u00b1{filter_result.warehouse_tol} "
+                     f"cells (n={len(conditional_values)})"
+            )
             ax.hist(
                 np.clip(conditional_values, 0, x_max), bins=bins, alpha=0.65,
-                color="#3a7ca5",
-                label=f"Warehouse {state['warehouse_cells']}\u00b1{warehouse_tol} "
-                      f"cells (n={len(conditional_values)})",
+                color="#3a7ca5", label=cond_legend,
             )
             ax.axvline(p25, color="#2f7a3f", linestyle=":", linewidth=2,
                        label=f"Pessimistic P25 = {int(p25):,}")
@@ -1043,6 +1119,51 @@ with tab_hint:
             ax.yaxis.label.set_size(8)
             plt.tight_layout()
             st.pyplot(fig, clear_figure=True, use_container_width=False)
+
+        # ---- Per-bucket posterior cards ----
+        if conditional_truths:
+            st.divider()
+            st.markdown("### \U0001F50D \u5404 bucket \u540e\u9a8c\u4f30\u8ba1\uff08\u8fc7\u6ee4\u540e\u6837\u672c\u4e0a\u7684\u5206\u4f4d\uff09")
+            st.caption(
+                "P50 = \u4e2d\u4f4d\u540e\u9a8c\u3002\u300c\u7a7a bucket %\u300d = \u5728\u8fc7\u6ee4\u540e\u6837\u672c\u4e2d\u6b64\u54c1\u8d28\u6ca1\u6709\u4efb\u4f55\u7269\u54c1\u7684\u6bd4\u4f8b\u3002"
+                "\u7ea2\u54c1\u884c\u9ed8\u8ba4\u9ad8\u4eae\u2014\u2014\u73a9\u5bb6\u770b\u4e0d\u5230\u7ea2\u54c1\u8f6e\u5ed3 (Aisha) / \u9700\u8981\u9053\u5177\u624d\u80fd\u8bfb (Ethan)\uff0c"
+                "\u662f\u63a8\u65ad\u5f15\u64ce\u7684\u4e3b\u8981\u4ef7\u503c\u8d21\u732e\u70b9\u3002"
+            )
+            QUALITY_LABELS = {
+                1: "\u767d/\u7eff (q=1,2)", 3: "\u84dd (q=3)", 4: "\u7d2b (q=4)",
+                5: "\u91d1 (q=5)", 6: "\U0001F534 \u7ea2 (q=6)",
+            }
+            posterior_rows = []
+            for q in (1, 3, 4, 5, 6):
+                stats = bucket_posterior_stats(conditional_truths, q)
+                posterior_rows.append({
+                    "\u54c1\u8d28": QUALITY_LABELS[q],
+                    "n": stats.n,
+                    "cells P10": stats.cells_p10,
+                    "cells P50": stats.cells_p50,
+                    "cells P90": stats.cells_p90,
+                    "\u4ef6\u6570 P50": stats.count_p50,
+                    "\u4ef7\u503c P50": f"{stats.value_p50:,}",
+                    "\u4ef7\u503c P90": f"{stats.value_p90:,}",
+                    "\u5de8\u7269 P50": stats.huge_p50,
+                    "\u7a7a bucket %": f"{stats.p_empty*100:.1f}%",
+                })
+            st.dataframe(posterior_rows, hide_index=True, use_container_width=True)
+
+            red_stats = bucket_posterior_stats(conditional_truths, 6)
+            if red_stats.cells_p50 > 0 or red_stats.value_p50 > 0:
+                st.info(
+                    f"\U0001F534 **\u7ea2\u54c1\u540e\u9a8c\u91cd\u70b9**\uff1a\u6a21\u578b\u8ba4\u4e3a\u7ea2\u54c1 \u7ea6 "
+                    f"**{red_stats.cells_p50} cells** (P10={red_stats.cells_p10}, P90={red_stats.cells_p90})\u3001"
+                    f"\u4ef7\u503c\u4e2d\u4f4d **{red_stats.value_p50:,} silver**\uff08P90={red_stats.value_p90:,}\uff09\u3002"
+                    f"\u7a7a bucket \u6982\u7387 {red_stats.p_empty*100:.1f}%\u3002"
+                    f"\u82e5\u4f60\u786e\u8ba4\u8fd9\u4ed3\u65e0\u7ea2\u54c1\uff0c\u8bf7\u5728\u300c\u7ea2\u54c1\u300d\u533a\u5757\u52fe\u9009\u300c\u2705 \u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\u540e\u91cd\u8dd1\u3002"
+                )
+            else:
+                st.success(
+                    f"\u2705 \u8fc7\u6ee4\u540e\u6a21\u578b\u8ba4\u4e3a\u672c\u4ed3\u51e0\u4e4e\u4e0d\u542b\u7ea2\u54c1"
+                    f"\uff08cells P50={red_stats.cells_p50}\u3001\u7a7a bucket={red_stats.p_empty*100:.1f}%\uff09\u3002"
+                )
 
         # ---- Snipe / Pass recommendations (bottom) ----
         st.divider()
