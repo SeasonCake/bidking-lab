@@ -22,6 +22,7 @@ This repo is **not** affiliated with the game or Steam. Game assets belong to th
 | `external_references/` | Local-only clones of upstream projects (**gitignored**) |
 | `scripts/copy_game_tables.ps1` | Copy key `StreamingAssets/Tables` files into `data/raw/tables` |
 | `TROUBLESHOOTING.md` | Problems & fixes during setup / data extraction |
+| `docs/observations.md` | Project log: key findings, design decisions, techniques per checkpoint |
 | `notebooks/` | Exploration (StreamingAssets, probabilities) |
 | `tests/` | Smoke tests |
 
