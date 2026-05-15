@@ -57,8 +57,7 @@ def main() -> None:
                 quality=4,
                 avg_cells=parse_reading("2.5"),
                 value_sum=86_490,
-                huge_count=0,
-                huge_cells=0,
+                huge_band="none",   # no purple 巨物 reported
             ),
             # The screenshot doesn't show gold/red info; leave empty.
         },

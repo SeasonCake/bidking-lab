@@ -1,0 +1,199 @@
+"""Tests for the inference observation dataclasses + brute-force engine."""
+
+from __future__ import annotations
+
+import pytest
+
+from bidking_lab.inference.display import parse_reading
+from bidking_lab.inference.observation import (
+    AISHA_DEFAULT_LOADOUT,
+    ETHAN_DEFAULT_LOADOUT,
+    HUGE_BAND_RANGE,
+    HUGE_CELLS_PER_QUALITY,
+    QualityBucketObs,
+    SessionObs,
+    aisha_can_observe_huge,
+    candidates_for_bucket,
+    top_k_for_session,
+)
+
+
+# --- Huge band metadata ---
+
+def test_huge_band_ranges() -> None:
+    assert HUGE_BAND_RANGE["none"] == (0, 0)
+    assert HUGE_BAND_RANGE["1"] == (1, 1)
+    assert HUGE_BAND_RANGE["2-3"] == (2, 3)
+    assert HUGE_BAND_RANGE["4+"][0] == 4
+    assert HUGE_BAND_RANGE["4+"][1] >= 4
+
+
+def test_huge_cells_per_quality() -> None:
+    """Gold huge = 6×3 = 18; purple/red huge = 4×4 = 16."""
+    assert HUGE_CELLS_PER_QUALITY[4] == 16   # 紫
+    assert HUGE_CELLS_PER_QUALITY[5] == 18   # 金 (6x3 单人郊游快艇 only)
+    assert HUGE_CELLS_PER_QUALITY[6] == 16   # 红
+
+
+def test_aisha_visibility_rule() -> None:
+    """Aisha only sees purple huge items; Ethan sees all."""
+    assert aisha_can_observe_huge(4) is True
+    assert aisha_can_observe_huge(5) is False
+    assert aisha_can_observe_huge(6) is False
+
+
+def test_standard_loadouts_distinct() -> None:
+    """Sanity: the two loadouts differ (different hero needs)."""
+    assert set(ETHAN_DEFAULT_LOADOUT) != set(AISHA_DEFAULT_LOADOUT)
+    assert "优品均格" in ETHAN_DEFAULT_LOADOUT
+    assert "总仓储空间" in AISHA_DEFAULT_LOADOUT
+
+
+# --- QualityBucketObs helpers ---
+
+def test_bucket_huge_methods_defaults() -> None:
+    b = QualityBucketObs(quality=4)
+    assert b.huge_count_range() == (0, 0)
+    assert b.huge_cells_per_item() == 16
+    assert b.min_huge_cells() == 0
+    assert b.max_huge_cells() == 0
+
+
+def test_bucket_huge_band_purple_2_to_3() -> None:
+    b = QualityBucketObs(quality=4, huge_band="2-3")
+    assert b.huge_count_range() == (2, 3)
+    assert b.min_huge_cells() == 32   # 2 × 16
+    assert b.max_huge_cells() == 48   # 3 × 16
+
+
+def test_bucket_huge_band_gold_one() -> None:
+    """Gold huge is 6×3 = 18, not 16."""
+    b = QualityBucketObs(quality=5, huge_band="1")
+    assert b.huge_cells_per_item() == 18
+    assert b.min_huge_cells() == 18
+
+
+def test_bucket_huge_cells_override() -> None:
+    """Override beats the per-quality default."""
+    b = QualityBucketObs(quality=4, huge_band="1", huge_cells_override=20)
+    assert b.huge_cells_per_item() == 20
+    assert b.min_huge_cells() == 20
+
+
+# --- Engine: candidate enumeration ---
+
+def test_shipwreck_r4_purple_inference() -> None:
+    """Reproduce the demo: avg=2.5 + value=86490 → top-1 is (35, 14)."""
+    bucket = QualityBucketObs(
+        quality=4,
+        avg_cells=parse_reading("2.5"),
+        value_sum=86_490,
+    )
+    cands = candidates_for_bucket(bucket, warehouse_capacity=159)
+    assert cands, "expected at least one candidate"
+    assert (cands[0].total_cells, cands[0].count) == (35, 14)
+
+
+def test_huge_band_filters_candidates() -> None:
+    """A '1 huge' band should pin total_cells >= 16 (purple) and count >= 1."""
+    bucket = QualityBucketObs(
+        quality=4,
+        avg_cells=parse_reading("4.5"),    # 9/2, 18/4, 27/6, ...
+        huge_band="1",
+    )
+    cands = candidates_for_bucket(bucket, warehouse_capacity=120)
+    assert cands
+    for c in cands:
+        assert c.total_cells >= 16
+        assert c.count >= 1
+
+
+def test_huge_band_4plus_rejects_small_candidates() -> None:
+    """4+ huge red means total_cells >= 64; small candidates excluded."""
+    bucket = QualityBucketObs(
+        quality=6,
+        avg_cells=parse_reading("4"),
+        huge_band="4+",
+        value_range=(2_000_000, 5_000_000),
+    )
+    cands = candidates_for_bucket(bucket, warehouse_capacity=159)
+    for c in cands:
+        assert c.total_cells >= 64
+        assert c.count >= 4
+
+
+def test_huge_band_none_allows_zero_huge() -> None:
+    bucket = QualityBucketObs(
+        quality=4,
+        avg_cells=parse_reading("2.5"),
+        value_sum=86_490,
+        huge_band="none",
+    )
+    cands = candidates_for_bucket(bucket, warehouse_capacity=159)
+    # Top candidate stays (35, 14) — same as before band system.
+    assert (cands[0].total_cells, cands[0].count) == (35, 14)
+
+
+def test_warehouse_capacity_prunes_oversized() -> None:
+    bucket = QualityBucketObs(quality=4, avg_cells=parse_reading("2.5"))
+    cands = candidates_for_bucket(bucket, warehouse_capacity=20)
+    for c in cands:
+        assert c.total_cells <= 20
+
+
+def test_capacity_minus_known_cells() -> None:
+    """other_known_cells reduces the effective capacity for this bucket."""
+    bucket = QualityBucketObs(quality=4, avg_cells=parse_reading("2.5"))
+    cands = candidates_for_bucket(
+        bucket, warehouse_capacity=159, other_known_cells=130,
+    )
+    # 159 - 130 = 29 cells available for purple
+    for c in cands:
+        assert c.total_cells <= 29
+
+
+# --- Top-K per session ---
+
+def test_top_k_returns_per_quality_dict() -> None:
+    session = SessionObs(
+        map_id=2510,
+        hero="ethan",
+        warehouse_total_cells=159,
+        buckets={
+            4: QualityBucketObs(
+                quality=4,
+                avg_cells=parse_reading("2.5"),
+                value_sum=86_490,
+            ),
+            3: QualityBucketObs(quality=3, total_cells=18),
+            1: QualityBucketObs(quality=1, total_cells=15),
+        },
+    )
+    out = top_k_for_session(session, k=3)
+    assert set(out.keys()) == {1, 3, 4}
+    assert out[4][0].total_cells == 35
+    assert out[4][0].count == 14
+    # Top-K each bucket should not exceed 3 entries
+    for q, cands in out.items():
+        assert len(cands) <= 3
+
+
+def test_top_k_subtracts_higher_quality_cells_from_budget() -> None:
+    """Solving q=4 first should reduce the q=1 budget downstream."""
+    session = SessionObs(
+        map_id=2510,
+        hero="ethan",
+        warehouse_total_cells=100,
+        buckets={
+            4: QualityBucketObs(
+                quality=4,
+                avg_cells=parse_reading("2.5"),
+                value_sum=86_490,   # → 35 cells
+            ),
+            1: QualityBucketObs(quality=1),   # no total_cells given
+        },
+    )
+    out = top_k_for_session(session, k=3)
+    # After purple takes 35 cells, white bucket capped at 100-35 = 65.
+    for c in out[1]:
+        assert c.total_cells <= 65

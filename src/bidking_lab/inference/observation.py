@@ -7,20 +7,27 @@ can bind to fields directly.
 
 Field tiers (from the 2026-05-15 design session):
 
-* **Required** in all modes: ``warehouse_total_cells``, per-quality
-  ``huge_count`` (the player can count huge cells off the cabinet),
-  ``red`` ``value_range`` (red variance is too high to skip).
+* **Required** in all modes: ``warehouse_total_cells``, ``red``
+  ``value_range`` (red variance is too high to skip).
 * **Required for Ethan** but optional for Aisha: blue/white-green
   ``total_cells`` (Ethan scans quickly; Aisha makes you count outlines
-  by hand).
+  by hand). Ethan also sees huge items in every quality; Aisha can
+  only see *purple* huge items (the rest she has to guess).
 * **Always optional**: ``count``, ``avg_cells``, ``value_sum`` — these
   come from tool readings the player may or may not have used.
+
+Huge-count input is a **band**, not a single integer: the player picks
+``"1"``, ``"2-3"``, or ``"4+"`` from a dropdown. The engine enumerates
+within the band. Each quality has a canonical huge-item area:
+
+* ``4`` (紫): 4×4 = 16 cells (eg 翡翠屏风, 防弹衣, 雷达, 毯子, 单兵外骨骼)
+* ``5`` (金): 6×3 = 18 cells (only 单人郊游快艇)
+* ``6`` (红): 4×4 = 16 cells (翡翠屏风, 红木屏风, 碳纤维车壳, 黑曜石屏风, ...)
 
 The brute-force candidate enumeration walks ``(total_cells, count)``
 integer pairs and filters by every constraint the player provided.
 Output is ranked top-K by a composite score combining the cells-side
-display-rule match and the value-side prior fit (see
-:func:`rank_candidates`).
+display-rule match and the value-side prior fit.
 """
 
 from __future__ import annotations
@@ -45,6 +52,65 @@ from bidking_lab.inference.quality_priors import (
 HeroMode = Literal["aisha", "ethan"]
 """Which hero the player has equipped; controls which fields are required."""
 
+HugeBand = Literal["none", "1", "2-3", "4+"]
+"""Discrete buckets the UI offers for huge-item count input.
+
+The wide ``"4+"`` bucket is bounded at 7 in the enumerator (no real
+map has more than ~10 large items across all qualities combined).
+"""
+
+HUGE_BAND_RANGE: dict[str, tuple[int, int]] = {
+    "none": (0, 0),
+    "1":    (1, 1),
+    "2-3":  (2, 3),
+    "4+":   (4, 7),
+}
+
+HUGE_CELLS_PER_QUALITY: dict[int, int] = {
+    4: 16,   # 紫色巨物: 4×4 (e.g., 翡翠屏风, 防弹衣, 雷达, 单兵外骨骼)
+    5: 18,   # 金色巨物: 6×3 only (单人郊游快艇)
+    6: 16,   # 红色巨物: 4×4 (e.g., 翡翠屏风, 红木屏风, 碳纤维车壳)
+}
+
+
+def aisha_can_observe_huge(quality: int) -> bool:
+    """Aisha sees outlines only for the purple bucket; for gold/red she guesses.
+
+    This is the central asymmetry between the two heroes' observation
+    forms: the UI should grey-out non-purple huge inputs in Aisha mode.
+    """
+    return quality == 4
+
+
+# --- Standard tool loadouts (Phase 2 will refine; here for UI defaults) ---
+
+# 伊森 standard kit (5 slots, mostly white-green + 1 gold):
+#   普品扫描   (cheap)   → white-green total cells
+#   良品扫描   (cheap)   → blue total cells
+#   优品均格   (cheap)   → purple avg cells
+#   优品估价   (cheap)   → purple value sum
+#   珍品估价 OR 珍品扫描 (gold) → red value sum / red total cells
+ETHAN_DEFAULT_LOADOUT: tuple[str, ...] = (
+    "普品扫描",
+    "良品扫描",
+    "优品均格",
+    "优品估价",
+    "珍品估价",   # gold-tier; swap to 珍品扫描 for cells-side bias
+)
+
+# 艾莎 standard kit (4 slots; she prefers value tools because outline
+# already gives her cells-side intuition):
+#   珍品估价     (gold)  → red value sum (high impact, cheaper than scan)
+#   抽检一/抽检二 (low)   → exact reveals of 1-2 items
+#   宝光四鉴      (mid)  → 4 random qualities
+#   总仓储空间    (gold) → total cells (or 全库透视 for full layout)
+AISHA_DEFAULT_LOADOUT: tuple[str, ...] = (
+    "珍品估价",
+    "抽检二",
+    "宝光四鉴",
+    "总仓储空间",
+)
+
 
 @dataclass
 class QualityBucketObs:
@@ -53,27 +119,38 @@ class QualityBucketObs:
     All fields are optional at the dataclass level; the inference engine
     will raise if a required field (per the hero mode) is missing.
 
-    ``huge_count`` and ``huge_cells`` are paired: if the player counts
-    1 four-by-four 屏风 in the red bucket, they set ``huge_count=1`` and
-    ``huge_cells=16``. If they aren't sure of the exact area they can
-    leave ``huge_cells=0`` and the engine assumes 16 cells per huge red.
+    Huge-item input is a **band** (``"none"`` / ``"1"`` / ``"2-3"`` /
+    ``"4+"``). The engine enumerates within the band and assumes the
+    canonical huge-item area for the quality (16 cells for purple/red,
+    18 cells for gold) unless the player overrides via
+    ``huge_cells_override``.
     """
 
     quality: int   # 1=白 … 6=红
     avg_cells: Reading | None = None
     total_cells: int | None = None        # exact, from scan tool or map
-    total_cells_approx: int | None = None # player estimate, used only as soft prior
+    total_cells_approx: int | None = None # player estimate, soft prior only
     count: int | None = None              # X品存量
     value_sum: int | None = None          # X品估价 silver
     value_range: tuple[int, int] | None = None
-    huge_count: int = 0
-    huge_cells: int = 0                   # 0 → engine assumes 16 per huge item
+    huge_band: HugeBand = "none"
+    huge_cells_override: int = 0          # if set, beats the per-quality default
 
-    def assumed_huge_cells(self) -> int:
-        """Cells attributed to huge items (uses 16 as fallback per-huge area)."""
-        if self.huge_cells:
-            return self.huge_cells
-        return 16 * self.huge_count
+    def huge_count_range(self) -> tuple[int, int]:
+        """Min and max huge-item count from the band."""
+        return HUGE_BAND_RANGE[self.huge_band]
+
+    def huge_cells_per_item(self) -> int:
+        """Cells consumed by one huge item in this quality (UI-side spec)."""
+        if self.huge_cells_override:
+            return self.huge_cells_override
+        return HUGE_CELLS_PER_QUALITY.get(self.quality, 16)
+
+    def min_huge_cells(self) -> int:
+        return self.huge_count_range()[0] * self.huge_cells_per_item()
+
+    def max_huge_cells(self) -> int:
+        return self.huge_count_range()[1] * self.huge_cells_per_item()
 
 
 @dataclass
@@ -125,6 +202,17 @@ def _check_required_fields(session: SessionObs) -> list[str]:
             b = session.buckets.get(q)
             if b is not None and b.total_cells is None:
                 issues.append(f"quality {q} total_cells: required in Ethan mode")
+    # Aisha cannot observe huge items in gold/red — if the player set a
+    # non-"none" band for those qualities in Aisha mode they likely
+    # confused herself with Ethan; warn rather than error.
+    if session.hero == "aisha":
+        for q in (5, 6):
+            b = session.buckets.get(q)
+            if b is not None and b.huge_band != "none":
+                issues.append(
+                    f"quality {q} huge_band: Aisha cannot observe huge "
+                    f"items for non-purple quality; treat as guess"
+                )
     return issues
 
 
@@ -150,8 +238,8 @@ def candidates_for_bucket(
     are what the UI shows to the user.
     """
     capacity = max(0, warehouse_capacity - other_known_cells)
-    huge_cells = bucket.assumed_huge_cells()
-    huge_count = bucket.huge_count
+    huge_min, huge_max = bucket.huge_count_range()
+    huge_per_item = bucket.huge_cells_per_item()
 
     base: list[tuple[int, int]]
     if bucket.avg_cells is not None:
@@ -162,24 +250,36 @@ def candidates_for_bucket(
             max_total_cells=min(capacity, 252),
         )
     else:
-        # No avg reading → enumerate everything within budget.
+        # No avg reading → enumerate everything within budget. Floor the
+        # count at max(1, huge_min); floor the cells at huge_min cells.
+        min_cells_floor = huge_min * huge_per_item
         base = [
             (tc, c)
-            for c in range(max(1, huge_count), max_count + 1)
-            for tc in range(huge_cells, capacity + 1)
+            for c in range(max(1, huge_min), max_count + 1)
+            for tc in range(min_cells_floor, capacity + 1)
         ]
 
-    # Apply explicit constraints
     out: list[BucketCandidate] = []
     for total_cells, count in base:
-        if total_cells < huge_cells or count < huge_count:
-            continue
         if bucket.total_cells is not None and total_cells != bucket.total_cells:
             continue
         if bucket.count is not None and count != bucket.count:
             continue
         if total_cells > capacity:
             continue
+
+        # Huge-band constraint: there must exist an integer ``h`` in
+        # [huge_min, huge_max] such that ``h <= count`` and
+        # ``h * huge_per_item <= total_cells``. Otherwise the candidate
+        # is incompatible with the player-reported huge band.
+        h_lo = huge_min
+        h_hi = min(huge_max, count, total_cells // max(1, huge_per_item))
+        if h_hi < h_lo:
+            continue
+        # Pick the value of h that minimizes value-side error (the
+        # engine doesn't need to commit to a specific h here; the band
+        # is just a hard filter and a soft prior on huge cells).
+        huge_cells = h_lo * huge_per_item
 
         avg_match = (
             bucket.avg_cells is None
@@ -193,9 +293,6 @@ def candidates_for_bucket(
             huge_cells=huge_cells,
         )
 
-        # cells_score: relative gap between candidate cells and
-        # value-implied cells. If no value_sum is given this collapses to
-        # 0 and ranking is by tie-breakers below.
         if bucket.value_sum is not None:
             implied_cells = estimate_total_cells(
                 bucket.quality,
@@ -206,9 +303,9 @@ def candidates_for_bucket(
         else:
             cells_score = 0.0
 
-        # Composite: 70% value-side fit + 30% cells-side fit, then add a
-        # small penalty for very large counts (Occam: fewer items is more
-        # plausible at the same per-cell average).
+        # Composite: 70% value-side fit + 30% cells-side fit, then a
+        # small Occam penalty on count (fewer items more plausible at
+        # equal per-cell value).
         composite = 0.7 * value_score + 0.3 * cells_score + 0.001 * count
 
         out.append(
@@ -270,6 +367,12 @@ def top_k_for_session(
 
 __all__ = (
     "HeroMode",
+    "HugeBand",
+    "HUGE_BAND_RANGE",
+    "HUGE_CELLS_PER_QUALITY",
+    "ETHAN_DEFAULT_LOADOUT",
+    "AISHA_DEFAULT_LOADOUT",
+    "aisha_can_observe_huge",
     "QualityBucketObs",
     "SessionObs",
     "BucketCandidate",
