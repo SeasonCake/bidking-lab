@@ -1,18 +1,26 @@
-"""R2 snipe-bid recommendation for Ethan players.
+"""Snipe-bid recommendation for Ethan (R2) and Aisha (R3) sessions.
 
-When an Ethan player has scanned the low-tier shelves (white+green and
-blue) and either sees or estimates the cabinet's total cell count, the
-mid-rounds (R2 in particular) offer a tactical window to "snipe" the
-cabinet — submit one aggressive bid before opponents start padding.
-This module computes a UI-surfaceable recommendation for that scenario.
+When the player has fully observed the low-tier cell counts and either
+sees or estimates the cabinet's total cell count, a mid-rounds tactical
+window opens to "snipe" the cabinet — submit one aggressive bid before
+opponents start padding. This module computes a UI-surfaceable
+recommendation for that scenario, branching on hero:
+
+* **Ethan @ R2** — has spent silver on 普品扫描 + 良品扫描 to reveal
+  ``q=1`` (white+green combined) and ``q=3`` (blue) cell totals. The R2
+  decision happens before R3 opponents pad their bids.
+* **Aisha @ R3** — her R1\u2013R3 outline reveal automatically exposes
+  q=1, q=2, q=3 shapes; the player manually counts cells from the
+  outlines. *No scan silver spent.* The R3 timing is later than Ethan's
+  R2 window, but the information was free.
 
 Hard gating (returns ``None`` if any fail):
 
-* ``session.hero == "ethan"`` — only Ethan can fully observe low-tier cells
+* ``session.hero`` in ``{"ethan", "aisha"}``
 * ``warehouse_total_cells >= 120`` — only big warehouses justify the snipe
   premium (small warehouses have too little upside to overpay)
-* ``q=1`` (white+green combined via 普品扫描) total_cells is known
-* ``q=3`` (blue via 良品扫描) total_cells is known
+* **Ethan**: ``q=1`` and ``q=3`` total_cells both known
+* **Aisha**: ``q=1`` *and* ``q=2`` *and* ``q=3`` total_cells all known
 
 Model:
 
@@ -52,12 +60,14 @@ from bidking_lab.inference.observation import SessionObs
 
 @dataclass(frozen=True)
 class SnipeRecommendation:
-    """R2 snipe-bid suggestion bundle."""
+    """Snipe-bid suggestion bundle (Ethan R2 or Aisha R3)."""
 
     map_id: int
     map_name: str
+    hero: str                         # "ethan" | "aisha"
+    round_window: str                 # "R2" for Ethan, "R3" for Aisha
     warehouse_total_cells: int
-    low_tier_cells_observed: int
+    low_tier_cells_observed: int      # sum of all observed low-tier (q\u22643) cells
 
     n_matching_samples: int           # how many MC sessions matched the warehouse filter
     expected_value: int               # median total session value (conditional MC)
@@ -72,7 +82,8 @@ class SnipeRecommendation:
     def as_ui_tooltip(self) -> str:
         """One-line summary suitable for a UI badge."""
         return (
-            f"\u9ad8\u98ce\u9669\u64cd\u4f5c: \u53ef\u79d2\u4ed3, "
+            f"\u9ad8\u98ce\u9669\u64cd\u4f5c ({self.round_window}): "
+            f"\u53ef\u79d2\u4ed3, "
             f"\u63a8\u8350\u4ef7\u683c {self.snipe_max_bid:,} \u4ee5\u5185 "
             f"(\u9884\u671f\u4ed3\u4ef7 \u4e2d\u4f4d\u6570 {self.expected_value:,})"
         )
@@ -99,19 +110,25 @@ def compute_snipe_recommendation(
     MC samples match the observed warehouse size (in which case the
     recommendation would be too noisy to surface).
     """
-    if session.hero != "ethan":
+    if session.hero == "ethan":
+        round_window = "R2"
+        required_qs: tuple[int, ...] = (1, 3)        # 普品扫描 (q=1 wg combined) + 良品扫描 (q=3)
+    elif session.hero == "aisha":
+        round_window = "R3"
+        required_qs = (1, 2, 3)                      # R1\u2013R3 outline-revealed white/green/blue
+    else:
         return None
     wh = session.warehouse_total_cells
     if wh is None or wh < min_warehouse_cells:
         return None
 
-    wg = session.buckets.get(1)
-    blue = session.buckets.get(3)
-    if wg is None or wg.total_cells is None:
-        return None
-    if blue is None or blue.total_cells is None:
-        return None
-    low_cells = wg.total_cells + blue.total_cells
+    observed_cells: list[tuple[int, int]] = []
+    for q in required_qs:
+        bucket = session.buckets.get(q)
+        if bucket is None or bucket.total_cells is None:
+            return None
+        observed_cells.append((q, bucket.total_cells))
+    low_cells = sum(c for _, c in observed_cells)
     if session.map_id not in maps:
         return None
 
@@ -137,14 +154,34 @@ def compute_snipe_recommendation(
     safe_floor = int(p50 * safe_floor_ratio)
     snipe_max = int(p75 * snipe_premium)
 
+    if session.hero == "ethan":
+        info_breakdown = (
+            f"\u767d\u7eff(\u666e\u54c1\u626b\u63cf) {observed_cells[0][1]} + "
+            f"\u84dd(\u826f\u54c1\u626b\u63cf) {observed_cells[1][1]}"
+        )
+        timing_note = (
+            "R2 \u662f\u79d2\u4ed3\u9ec4\u91d1\u7a97\u53e3"
+            "\uff08\u5bf9\u624b\u8fd8\u672a\u9501\u4ef7\uff09"
+        )
+    else:   # aisha
+        info_breakdown = (
+            f"\u767d(\u8f6e\u5ed3 R1) {observed_cells[0][1]} + "
+            f"\u7eff(\u8f6e\u5ed3 R2) {observed_cells[1][1]} + "
+            f"\u84dd(\u8f6e\u5ed3 R3) {observed_cells[2][1]}"
+        )
+        timing_note = (
+            "R3 \u8f6e\u5ed3\u53e0\u52a0\u540e\u4f4e\u54c1\u4fe1\u606f\u5168\u9f50"
+            "\uff080 \u94f6\u5e01\u626b\u63cf\u6210\u672c\uff09\uff0c"
+            "\u5bf9\u624b\u53ef\u80fd\u5df2\u5f00\u59cb\u62ac\u4ef7\u4f46\u4f60\u4ee5\u96f6\u6210\u672c\u62ff\u5230\u540c\u7b49\u4fe1\u606f"
+        )
+
     rationale = (
-        f"\u4ed3\u5e93 {wh} \u683c\uff0c\u4f4e\u54c1 {low_cells} \u683c\u5df2\u626b "
-        f"(\u767d\u7eff {wg.total_cells} + \u84dd {blue.total_cells})\u3002\n"
+        f"\u4ed3\u5e93 {wh} \u683c\uff0c\u4f4e\u54c1 {low_cells} \u683c "
+        f"({info_breakdown})\u3002\n"
         f"\u5728 {len(values)} \u4e2a\u540c\u4f53\u91cf\u4ed3\u5e93\u7684 MC \u91c7\u6837\u4e2d\uff0c"
         f"\u603b\u4ed3\u4ef7 \u4e2d\u4f4d\u6570 = {p50:,}\u3001"
         f"P75 = {p75:,}\u3001P90 = {p90:,} \u94f6\u5e01\u3002\n"
-        f"R2 \u662f\u79d2\u4ed3\u9ec4\u91d1\u7a97\u53e3\uff08\u5bf9\u624b\u8fd8\u672a\u9501\u4ef7\uff09\uff0c"
-        f"\u63a8\u8350\u51fa\u4ef7\u533a\u95f4\uff1a"
+        f"{timing_note}\uff0c\u63a8\u8350\u51fa\u4ef7\u533a\u95f4\uff1a"
         f"\u8d77\u7801 {safe_floor:,} \u2192 \u79d2\u4ed3\u9876 {snipe_max:,} \u94f6\u5e01\u3002\n"
         f"\u9876\u4ef7\u91c7\u7528 P75 \u00d7 {snipe_premium:.2f} \u7684\u9ad8\u98ce\u9669\u6e22\u4ef7\uff1a"
         f"\u4f4e\u4e8e P75 \u662f\u591a\u6570\u5bf9\u624b\u7684\u51fa\u4ef7\u9ed8\u8ba4\u533a\uff0c\u8d85\u8fc7 = \u62d3\u5bbd\u80dc\u9762\u3002"
@@ -153,6 +190,8 @@ def compute_snipe_recommendation(
     return SnipeRecommendation(
         map_id=session.map_id,
         map_name=maps[session.map_id].name,
+        hero=session.hero,
+        round_window=round_window,
         warehouse_total_cells=wh,
         low_tier_cells_observed=low_cells,
         n_matching_samples=len(values),
