@@ -340,5 +340,101 @@
 
 ---
 
+## Checkpoint #9 — 截图校准：艾莎=OUTLINE+QUALITY，伊森=5 分类（2026-05-15）
+
+### 关键发现（5 张截图溯源）
+
+1. **艾莎技能名 "遗珍慧眼"，每轮揭示 OUTLINE+QUALITY 双信息**。  
+   截图 1（沉船 R4 round panel）显示 4 个 `艾莎-遗珍慧眼` 条目同时存在，文本一致地写："**显示所有 X 色品质道具的轮廓和品质**"。这跟我们之前把艾莎建模为纯 OUTLINE（0.3 分）严重偏差——她实际上同时给形状和品质，应该归到 0.85 这档（OUTLINE+QUALITY 复合）。
+
+2. **艾莎是 4 级技能、白→绿→蓝→紫**。  
+   截图 4（别墅 R3）只 fire 3 个艾莎条目（白+绿+蓝）；截图 1（R4）fire 4 个（多了紫）；截图 3（网吧 R2）只 fire 2 个（白+绿）。**完美佐证 R1=白, R2=绿, R3=蓝, R4=紫 的进度链**。`Hero.txt` col[2] 描述的"R1=蓝, R2=绿, R3=白"应是基础等级（level 1），实际游戏内升满级到 4 后扩展为 4 级递进——和 col[10] = `[1001031, 1001032, 1001033, 1001034]` 的 4 个升级 effect_id 完全对应。
+
+3. **伊森技能名 "空间觉知"，R1=5 种分类，R2=条件触发**。  
+   截图 5（沉船 R2 round panel）显示两条伊森条目：
+   - `伊森-空间觉知: 随机显示 5 种类型藏品各自的轮廓` (R1 fired)
+   - `伊森-空间觉知: 显示所有已知品质的藏品各自的轮廓` (R2 fired, 条件触发)
+
+   "**5 种类型**"是 category 不是 item。在 10 个分类里随机选 5 个，把那 5 个分类的全部物品轮廓暴露——平均覆盖 ~50% 的物品（地图分类分布越集中覆盖越高）。这比"5 件随机物"强得多。R2-R4 的 "已知品质" 条件触发我们暂不建模，留为 v2 的保守低估。R5 仍然是揭示全部。
+
+4. **伊森 outline UI 不显示分类提示**（用户实测确认）。  
+   就算 R1 暴露了 5 个分类，玩家也**无法 hover 看到分类名**。只能用地图爆率先验（flatten_pool 的分类分布）猜每个轮廓所属 category。这意味着 `OutlineObs(quality_hint=None)` 是正确建模。
+
+5. **地图自带信息 DSL 比 `round_category_hints` 丰富得多**。  
+   5 张截图里抓到至少 4 种新的地图信息类型：
+
+   | 截图来源 | 地图 | 轮次 | 提示内容 |
+   |---|---|---|---|
+   | 截图 2 | 集装箱 末日庇护所 | R1 | "本场拍卖共有金色品质道具 **3** 件" → `gold count = 3` |
+   | 截图 3 | 网吧 极客改造屋 | R1 | "金色品质总占用的格子数量为 **14** 格" → `gold total_cells = 14` |
+   | 截图 4 | 别墅 未知别墅 | R1 | "本场拍卖共有金色品质道具 **4** 件" → `gold count = 4` |
+   | 截图 4 | 别墅 未知别墅 | R3 | "紫色品质道具平均占用的格子数量约为 **2.54** 格" → `purple avg_cells = 2.54` |
+   | 截图 5 | 沉船 未知残骸 | R2 | "随机显示 **6** 件藏品" → `random_reveal = 6` |
+
+   **结构化形式**：
+   ```
+   MapInfo[round][quality] = QuantityRecord
+     QuantityRecord.kind ∈ {COUNT, TOTAL_CELLS, AVG_CELLS, CATEGORY, RANDOM_REVEAL}
+   ```
+
+   `round_category_hints` 是其中 CATEGORY 一种。其它的还住在 BidMap.txt 未解析列里（待 probe）。
+
+6. **用户口述："第一轮信息确实是地图会给，但是第三轮一般只有别墅有"**。  
+   即 R1 给信息密度最高（每张图都给），R3 仅别墅给，其它图 R2/R3 缺。与 col[19] round_category_hints 的密度模式一致（快递 5/仓库 5 / 集装箱 3 / 别墅 2 / 沉船 1）。
+
+### 模型修正（已落地）
+
+`src/bidking_lab/simulation/hero_skills.py`：
+
+- 新增 `InfoType.OUTLINE_QUALITY = 0.85`（介于 QUALITY 0.7 和 FULL 1.0 之间）
+- 新增 `SkillEffect.random_categories: int = 0`（取代 max_items=5 的硬编码，per-trial 真正随机选 N 个分类）
+- 艾莎 (103) 改为 4 个 OUTLINE_QUALITY effects，R1→R4 依次 quality=1/2/3/4
+- 伊森 (208) R1 改为 `random_categories=5`（替代 max_items=5），保留 R5 全揭示
+- `compute_info_score(rng=...)` 新增可选 RNG 参数；hero_value MC 每 trial 用 numpy rng 派生 python `random.Random` 传入 → 每场局真随机抽 5 个分类
+
+### v2 ranking 新结果（5000 trials）
+
+**别墅 2407 私人金库** (rounds=25, items=20-40)：
+
+| Rank | Hero | 改前 % | 改后 % | 变化 |
+|---|---|---|---|---|
+| 1 | 加布里埃拉 104 | +20.2% | **+24.3%** | ↑ |
+| 2 | 玛丽亚 108 | +23.6% | +22.7% | ≈ |
+| 3 | **伊森 208** | **+13.7%** | **+20.5%** | **↑ A→S** |
+| 4 | 索菲 107 | +21.6% | +21.3% | ≈ |
+| 5 | 艾莎 103 | +22.4% | +20.3% | ↓ slightly |
+
+**沉船 2510 现代货轮娱乐库** (rounds=30, items=22-44)：
+
+| Rank | Hero | % |
+|---|---|---|
+| 1 | 索菲 107 | +16.9% |
+| 2 | **伊森 208** | **+15.3%** |
+| 3 | 玛丽亚 108 | +15.3% |
+| 4 | 艾莎 103 | +15.5% |
+| 5 | 加布里埃拉 104 | +15.0% |
+
+**解读**：
+- **伊森从 A 飙到 S**：5 categories ≈ 50% items 覆盖 >> 旧模型的 5 items（约 12-25% 覆盖）。富图 + 多分类（沉船）尤其受益。
+- **艾莎略下移**：表面违反直觉，但解释合理——OUTLINE_QUALITY 0.85 比 OUTLINE 0.3 强，但
+  - R1 从蓝(高价值)改为白(最低价值)→ R1 timing=1.0 但白品对决策贡献小
+  - R4 紫(高价值)虽强但 timing=0.3 衰减重
+  - 综合下来略低于旧建模的"R1 蓝品出现就揭示形状"
+  - 这其实**更贴近实战**：玩家普遍反映艾莎 R1 看到一堆白色形状没什么决策价值
+
+### 使用技术
+
+- **Python `random.Random` + numpy `Generator` 桥接**：hero_value 用 numpy（向量化抽样），hero_skills 想保持 numpy 无依赖。MC 循环里 `py_rng = random.Random(int(np_rng.integers(0, 2**31)))` 每 trial 生一个 Python rng 传给 `compute_info_score(rng=py_rng)`——既保证 reproducibility（numpy 种子链下来），又不污染 hero_skills 的导入树
+- **deterministic-fallback**：`compute_info_score` 在没拿到 rng 时退回 `present[: N]`，便于单测固定输出
+- **`InfoType.OUTLINE_QUALITY = 0.85`** 的取值：在我们的 non-linear 三段 blend (`>=0.5 → 80% true`, `>=0.2 → 40%`) 里恰好落到强档（0.85 > 0.5），让"形状+品质"被识别为"接近真值"——比单 quality 略强、比 value 略弱，符合实战体感
+
+### 待做（已记 TODO）
+
+- **probe BidMap.txt 找新 map info 列**：4 种新提示一定存在结构化字段，需要逐列试解析。预期会在 col[20] 或 col[13] 附近
+- **伊森 R2-R4 条件触发建模**：当其他来源（如宝光四鉴）揭示了某物品品质时，伊森才会在下轮揭示该物品轮廓。Phase 2 道具组合优化时合并考虑
+- **OutlineObs docstring 更新**：现在已经支持 quality_hint，注释里说明艾莎的 outline 自带品质信息（实际上代码层面没变化，只是文档对齐）
+
+---
+
 > **项目全局进度与路线图已迁移至 [`PROGRESS.md`](PROGRESS.md)**。  
 > 本文件专注于每个 checkpoint 的技术细节。

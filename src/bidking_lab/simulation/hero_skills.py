@@ -28,6 +28,7 @@ the info score.
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Sequence
@@ -40,6 +41,7 @@ class InfoType(Enum):
     COUNT_HINT = 0.1
     OUTLINE = 0.3
     QUALITY = 0.7
+    OUTLINE_QUALITY = 0.85  # shape + quality combo (Aisha's 遗珍慧眼 style)
     VALUE = 1.0
     FULL = 1.0
 
@@ -75,6 +77,7 @@ class SkillEffect:
     per_round: int = 0
     rounds: int = 1
     available_at_round: int = 1
+    random_categories: int = 0  # if > 0, restrict to a random subset of N categories per trial
 
 
 # Timing discount: fraction of "decision value" remaining at each phase.
@@ -112,8 +115,11 @@ class HeroSkillProfile:
 def _e(info: InfoType, cats: frozenset[int] = frozenset(),
        quals: frozenset[int] = frozenset(), max_items: int = 0,
        per_round: int = 0, rounds: int = 1,
-       at_round: int = 1) -> SkillEffect:
-    return SkillEffect(info, cats, quals, max_items, per_round, rounds, at_round)
+       at_round: int = 1, random_categories: int = 0) -> SkillEffect:
+    return SkillEffect(
+        info, cats, quals, max_items, per_round, rounds, at_round,
+        random_categories=random_categories,
+    )
 
 
 # All 20 heroes. Skill breakdown from docs/hero_skill_schema.md.
@@ -127,10 +133,19 @@ HERO_SKILLS: dict[int, HeroSkillProfile] = {
     102: HeroSkillProfile(102, "陈美", 1, (
         _e(InfoType.OUTLINE, frozenset({CAT_JEWELRY, CAT_FASHION}), at_round=1),
     )),
-    103: HeroSkillProfile(103, "艾莎", 1, (
-        _e(InfoType.OUTLINE, quals=frozenset({3}), at_round=1),
-        _e(InfoType.OUTLINE, quals=frozenset({2}), at_round=2),
-        _e(InfoType.OUTLINE, quals=frozenset({1}), at_round=3),
+    103: HeroSkillProfile(103, "艾莎", 4, (
+        # 2026-05-15 screenshot confirms: at level 4, Aisha (遗珍慧眼)
+        # reveals outline+quality for one bucket per round, white-up:
+        # R1=白, R2=绿, R3=蓝, R4=紫. Game text in Hero.txt col[2] only
+        # describes the level-1 (3-round, blue-down) version; the
+        # 4-effect col[10] = [1001031,1001032,1001033,1001034] is the
+        # 4 level upgrades. Each reveal is OUTLINE + QUALITY (the panel
+        # says "显示所有X色品质道具的轮廓和品质") so we use the combined
+        # InfoType.OUTLINE_QUALITY.
+        _e(InfoType.OUTLINE_QUALITY, quals=frozenset({1}), at_round=1),
+        _e(InfoType.OUTLINE_QUALITY, quals=frozenset({2}), at_round=2),
+        _e(InfoType.OUTLINE_QUALITY, quals=frozenset({3}), at_round=3),
+        _e(InfoType.OUTLINE_QUALITY, quals=frozenset({4}), at_round=4),
     )),
     104: HeroSkillProfile(104, "加布里埃拉", 1, (
         _e(InfoType.QUALITY, max_items=2, per_round=2, rounds=10, at_round=1),
@@ -194,9 +209,15 @@ HERO_SKILLS: dict[int, HeroSkillProfile] = {
         _e(InfoType.FULL, frozenset({CAT_ANTIQUE}), max_items=0, at_round=4),
     )),
     208: HeroSkillProfile(208, "伊森", 2, (
-        _e(InfoType.OUTLINE, max_items=5, at_round=1),
-        _e(InfoType.OUTLINE, max_items=2, per_round=2, rounds=4, at_round=2),
-        _e(InfoType.OUTLINE, at_round=5),  # R5: ALL outlines (very late)
+        # 2026-05-15 screenshot confirms: Ethan (空间觉知) R1 reveals
+        # outlines for ALL items in 5 random categories (out of 10), not
+        # 5 random items. R2-R4 fire only on items whose quality is
+        # already known (via other tools); we don't model that
+        # conditional and skip those rounds in the baseline contrast. R5
+        # reveals all outlines. The panel never shows category names on
+        # hover, so quality_hint stays None for Ethan outlines.
+        _e(InfoType.OUTLINE, at_round=1, random_categories=5),
+        _e(InfoType.OUTLINE, at_round=5),
     )),
     209: HeroSkillProfile(209, "维克托", 2, (
         _e(InfoType.COUNT_HINT, quals=frozenset({4, 5}), at_round=1),
@@ -212,6 +233,7 @@ def compute_info_score(
     session_items: Sequence[Item],
     *,
     use_timing: bool = True,
+    rng: random.Random | None = None,
 ) -> list[float]:
     """Compute per-item info score [0, 1] for a hero + session.
 
@@ -233,9 +255,26 @@ def compute_info_score(
 
     scores = [0.0] * len(session_items)
     for effect in profile.effects:
+        # When random_categories > 0, restrict the filter to a random
+        # subset of N categories present in this session. Ethan's R1
+        # (5 of 10 categories) uses this; we sample per-trial via the
+        # provided RNG. Without an RNG we fall back to a deterministic
+        # first-N pick (still useful for tests).
+        allowed_categories = effect.filter_categories
+        if effect.random_categories > 0:
+            present = sorted({_item_category(it) for it in session_items})
+            if effect.random_categories < len(present):
+                if rng is not None:
+                    picked = rng.sample(present, effect.random_categories)
+                else:
+                    picked = present[: effect.random_categories]
+                allowed_categories = frozenset(picked)
+            else:
+                allowed_categories = frozenset(present)
+
         matching_indices = []
         for i, item in enumerate(session_items):
-            if effect.filter_categories and _item_category(item) not in effect.filter_categories:
+            if allowed_categories and _item_category(item) not in allowed_categories:
                 continue
             if effect.filter_qualities and item.quality not in effect.filter_qualities:
                 continue

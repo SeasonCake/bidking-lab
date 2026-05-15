@@ -126,8 +126,12 @@ def simulate_hero_value(
         random_idx = rng.choice(len(session_items), size=n_biddable, replace=False)
         baseline_totals[t] = values[random_idx].sum()
 
+        # Bridge numpy rng -> python random.Random so compute_info_score
+        # can sample N random categories per trial (Ethan R1).
+        import random as _py_random
+        py_rng = _py_random.Random(int(rng.integers(0, 2**31)))
         info_scores = np.array(compute_info_score(
-            hero_id, session_items, use_timing=use_timing,
+            hero_id, session_items, use_timing=use_timing, rng=py_rng,
         ))
         mean_val = float(values.mean()) if len(values) > 0 else 0.0
         # Non-linear estimation: thresholds determine how well the
