@@ -422,6 +422,89 @@ def test_pass_aisha_branch_uses_R3_window() -> None:
     assert "\u8f6e\u5ed3" in rec.rationale       # outlines mentioned
 
 
+def test_snipe_purple_conditioned_when_purple_cells_given() -> None:
+    """When q=4.total_cells is provided AND enough samples match, MC tightens."""
+    maps, drops, items = _build_big_warehouse_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=130,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=14),
+            3: QualityBucketObs(quality=3, total_cells=10),
+            4: QualityBucketObs(quality=4, total_cells=12),
+        },
+    )
+    rec = compute_snipe_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=800, warehouse_tolerance=50, purple_tolerance=20,
+        min_matching_samples=20, rng=np.random.default_rng(11),
+    )
+    assert rec is not None
+    assert rec.purple_conditioned is True
+    assert "\u7d2b\u54c1\u683c\u6570" in rec.rationale   # 紫品格数 mentioned
+
+
+def test_snipe_falls_back_when_purple_tolerance_too_tight() -> None:
+    """Tight purple tolerance pointing at an unreachable cell count → fallback."""
+    maps, drops, items = _build_big_warehouse_world()
+    # Pool produces purple cells in multiples of 4 (2x2=4 or 4x4=16);
+    # claim 13 cells with zero tolerance → impossible match → fallback.
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=130,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=14),
+            3: QualityBucketObs(quality=3, total_cells=10),
+            4: QualityBucketObs(quality=4, total_cells=13),
+        },
+    )
+    rec = compute_snipe_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=400, warehouse_tolerance=50, purple_tolerance=0,
+        min_matching_samples=20, rng=np.random.default_rng(2027),
+    )
+    assert rec is not None
+    assert rec.purple_conditioned is False
+    assert "fallback" in rec.rationale
+
+
+def test_snipe_purple_conditioned_field_defaults_false_when_no_purple_obs() -> None:
+    """When q=4 isn't in obs.buckets, no purple conditioning attempted."""
+    maps, drops, items = _build_big_warehouse_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=130,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=14),
+            3: QualityBucketObs(quality=3, total_cells=10),
+        },
+    )
+    rec = compute_snipe_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=400, warehouse_tolerance=40, min_matching_samples=20,
+        rng=np.random.default_rng(11),
+    )
+    assert rec is not None
+    assert rec.purple_conditioned is False
+
+
+def test_pass_purple_conditioned_when_purple_cells_given() -> None:
+    maps, drops, items = _build_small_junky_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=60,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=22),
+            3: QualityBucketObs(quality=3, total_cells=8),
+            4: QualityBucketObs(quality=4, total_cells=4),
+        },
+    )
+    rec = compute_pass_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=600, warehouse_tolerance=25, purple_tolerance=20,
+        min_matching_samples=30, rng=np.random.default_rng(2030),
+    )
+    assert rec is not None
+    assert rec.purple_conditioned is True
+    assert "\u7d2b\u54c1\u683c\u6570" in rec.rationale
+
+
 def test_pass_reproducible_with_seed() -> None:
     maps, drops, items = _build_small_junky_world()
     session = SessionObs(

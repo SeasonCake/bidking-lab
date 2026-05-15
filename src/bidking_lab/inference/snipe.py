@@ -74,6 +74,7 @@ class SnipeRecommendation:
     round_window: str                 # "R2" for Ethan, "R3" for Aisha
     warehouse_total_cells: int
     low_tier_cells_observed: int      # sum of all observed low-tier (q\u22643) cells
+    purple_conditioned: bool          # True when MC also filtered on purple cells
 
     n_matching_samples: int           # how many MC sessions matched the warehouse filter
     expected_value: int               # median total session value (conditional MC)
@@ -103,6 +104,7 @@ def compute_snipe_recommendation(
     items: Mapping[int, Item],
     n_trials: int = 2000,
     warehouse_tolerance: int = 8,
+    purple_tolerance: int = 4,
     min_matching_samples: int = 30,
     safe_floor_ratio: float = 0.70,
     snipe_premium: float = 1.15,
@@ -138,14 +140,33 @@ def compute_snipe_recommendation(
     if session.map_id not in maps:
         return None
 
+    purple_obs = session.buckets.get(4)
+    purple_cells_obs = purple_obs.total_cells if purple_obs is not None else None
+
     rng = rng or np.random.default_rng()
-    values: list[int] = []
+    values_warehouse: list[int] = []
+    values_purple: list[int] = []         # subset that also matches purple cells
     for _ in range(n_trials):
         truth = sample_session_truth(
             session.map_id, maps=maps, drops=drops, items=items, rng=rng,
         )
-        if abs(truth.warehouse_total_cells - wh) <= warehouse_tolerance:
-            values.append(truth.total_value())
+        if abs(truth.warehouse_total_cells - wh) > warehouse_tolerance:
+            continue
+        v = truth.total_value()
+        values_warehouse.append(v)
+        if purple_cells_obs is not None:
+            tp = truth.buckets.get(4)
+            tp_cells = tp.total_cells if tp is not None else 0
+            if abs(tp_cells - purple_cells_obs) <= purple_tolerance:
+                values_purple.append(v)
+
+    # Pick the tighter conditional set if it has enough samples; else fall back.
+    if purple_cells_obs is not None and len(values_purple) >= min_matching_samples:
+        values = values_purple
+        purple_conditioned = True
+    else:
+        values = values_warehouse
+        purple_conditioned = False
 
     if len(values) < min_matching_samples:
         # Too noisy — bail rather than mislead the UI.
@@ -181,10 +202,22 @@ def compute_snipe_recommendation(
             "\u5bf9\u624b\u53ef\u80fd\u5df2\u5f00\u59cb\u62ac\u4ef7\u4f46\u4f60\u4ee5\u96f6\u6210\u672c\u62ff\u5230\u540c\u7b49\u4fe1\u606f"
         )
 
+    if purple_conditioned:
+        conditioning_note = (
+            f"MC \u540c\u65f6\u8fc7\u6ee4\u4ed3\u5e93\u5927\u5c0f \u00b1{warehouse_tolerance} "
+            f"+ \u7d2b\u54c1\u683c\u6570 {purple_cells_obs} \u00b1{purple_tolerance}"
+        )
+    else:
+        conditioning_note = (
+            f"MC \u8fc7\u6ee4\u4ed3\u5e93\u5927\u5c0f \u00b1{warehouse_tolerance} \u683c"
+        )
+        if purple_cells_obs is not None:
+            conditioning_note += "\uff08\u7d2b\u54c1\u683c\u6570\u6837\u672c\u4e0d\u8db3\uff0cfallback\uff09"
+
     rationale = (
         f"\u4ed3\u5e93 {wh} \u683c\uff0c\u4f4e\u54c1 {low_cells} \u683c "
         f"({info_breakdown})\u3002\n"
-        f"\u5728 {len(values)} \u4e2a\u540c\u4f53\u91cf\u4ed3\u5e93\u7684 MC \u91c7\u6837\u4e2d\uff0c"
+        f"{conditioning_note}\uff0c\u547d\u4e2d {len(values)} \u4e2a\u6837\u672c\uff1a"
         f"\u603b\u4ed3\u4ef7 \u4e2d\u4f4d\u6570 = {p50:,}\u3001"
         f"P75 = {p75:,}\u3001P90 = {p90:,} \u94f6\u5e01\u3002\n"
         f"{timing_note}\uff0c\u63a8\u8350\u51fa\u4ef7\u533a\u95f4\uff1a"
@@ -200,6 +233,7 @@ def compute_snipe_recommendation(
         round_window=round_window,
         warehouse_total_cells=wh,
         low_tier_cells_observed=low_cells,
+        purple_conditioned=purple_conditioned,
         n_matching_samples=len(values),
         expected_value=p50,
         p25_value=p25,
@@ -232,6 +266,7 @@ class PassRecommendation:
     warehouse_total_cells: int
     low_tier_cells_observed: int
     low_tier_fraction: float          # low_cells / warehouse_cells
+    purple_conditioned: bool          # True when MC also filtered on purple cells
 
     n_matching_samples: int
     expected_value: int               # conditional P50
@@ -262,6 +297,7 @@ def compute_pass_recommendation(
     items: Mapping[int, Item],
     n_trials: int = 2000,
     warehouse_tolerance: int = 6,
+    purple_tolerance: int = 4,
     min_matching_samples: int = 30,
     max_warehouse_cells: int = 80,
     min_low_tier_fraction: float = 0.40,
@@ -306,16 +342,34 @@ def compute_pass_recommendation(
     if session.map_id not in maps:
         return None
 
+    purple_obs = session.buckets.get(4)
+    purple_cells_obs = purple_obs.total_cells if purple_obs is not None else None
+
     rng = rng or np.random.default_rng()
     all_values: list[int] = []
-    conditional_values: list[int] = []
+    cond_warehouse: list[int] = []
+    cond_purple: list[int] = []                   # subset that also matches purple cells
     for _ in range(n_trials):
         truth = sample_session_truth(
             session.map_id, maps=maps, drops=drops, items=items, rng=rng,
         )
-        all_values.append(truth.total_value())
-        if abs(truth.warehouse_total_cells - wh) <= warehouse_tolerance:
-            conditional_values.append(truth.total_value())
+        v = truth.total_value()
+        all_values.append(v)
+        if abs(truth.warehouse_total_cells - wh) > warehouse_tolerance:
+            continue
+        cond_warehouse.append(v)
+        if purple_cells_obs is not None:
+            tp = truth.buckets.get(4)
+            tp_cells = tp.total_cells if tp is not None else 0
+            if abs(tp_cells - purple_cells_obs) <= purple_tolerance:
+                cond_purple.append(v)
+
+    if purple_cells_obs is not None and len(cond_purple) >= min_matching_samples:
+        conditional_values = cond_purple
+        purple_conditioned = True
+    else:
+        conditional_values = cond_warehouse
+        purple_conditioned = False
 
     if len(conditional_values) < min_matching_samples:
         return None
@@ -345,11 +399,23 @@ def compute_pass_recommendation(
         )
         timing_note = "R3 \u8f6e\u5ed3\u53e0\u52a0\u540e\u53d1\u73b0\u5c0f\u4ed3 + \u4f4e\u54c1\u5360\u6bd4\u9ad8"
 
+    if purple_conditioned:
+        conditioning_note = (
+            f"MC \u540c\u65f6\u8fc7\u6ee4 \u4ed3\u5e93\u00b1{warehouse_tolerance} "
+            f"+ \u7d2b\u54c1\u683c\u6570 {purple_cells_obs}\u00b1{purple_tolerance}"
+        )
+    else:
+        conditioning_note = (
+            f"MC \u8fc7\u6ee4 \u4ed3\u5e93\u00b1{warehouse_tolerance} \u683c"
+        )
+        if purple_cells_obs is not None:
+            conditioning_note += "\uff08\u7d2b\u54c1\u6837\u672c\u4e0d\u8db3\uff0cfallback\uff09"
+
     rationale = (
         f"{timing_note}\uff1a\u4ed3\u5e93\u4ec5 {wh} \u683c\uff0c"
         f"\u4f4e\u54c1\u5df2\u5360 {low_cells} \u683c "
         f"({low_fraction:.0%}, {info_breakdown})\u3002\n"
-        f"\u5728 {len(conditional_values)} \u4e2a\u540c\u4f53\u91cf\u4ed3\u5e93\u7684 MC \u91c7\u6837\u4e2d\uff0c"
+        f"{conditioning_note}\uff0c\u547d\u4e2d {len(conditional_values)} \u4e2a\u6837\u672c\uff1a"
         f"\u603b\u4ed3\u4ef7 \u4e2d\u4f4d\u6570 = {p50:,}\u3001P25 = {p25:,} \u94f6\u5e01\uff0c"
         f"\u53ea\u662f\u672c\u56fe\u5168\u56fe\u5747\u503c {unc_p50:,} \u7684 {ratio:.0%}\u3002\n"
         f"\u8d85\u8fc7 {pass_max:,} \u5c31\u653e\u4ed3\uff1b\u82e5\u4e0d\u5f97\u5df2\u8981\u51fa\u4ef7\uff0c"
@@ -364,6 +430,7 @@ def compute_pass_recommendation(
         warehouse_total_cells=wh,
         low_tier_cells_observed=low_cells,
         low_tier_fraction=low_fraction,
+        purple_conditioned=purple_conditioned,
         n_matching_samples=len(conditional_values),
         expected_value=p50,
         p25_value=p25,
