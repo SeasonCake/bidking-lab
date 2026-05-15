@@ -62,6 +62,10 @@ class SkillEffect:
     rather than all at once. Combined with ``rounds`` to get total.
 
     ``rounds``: how many rounds this effect fires over.
+
+    ``available_at_round``: the round (1-indexed) when this info first
+    becomes available. 1 = start of auction (most valuable).
+    bid_price_ladder decays per round, so late info is worth less.
     """
 
     info_type: InfoType
@@ -70,6 +74,15 @@ class SkillEffect:
     max_items: int = 0
     per_round: int = 0
     rounds: int = 1
+    available_at_round: int = 1
+
+
+# Timing discount: fraction of "decision value" remaining at each phase.
+# Derived from bid_price_ladder [2000, 1600, 1300, 1100, 0].
+# Phase 1 info is usable for all 5 phases; phase 5 info only for the
+# last (cheapest) phase. Phase 5 gets 0.05 (not 0) because even the
+# last round's info can prevent one bad bid.
+TIMING_WEIGHTS = {1: 1.0, 2: 0.75, 3: 0.50, 4: 0.30, 5: 0.05}
 
 
 # Category IDs from Item.txt col[5] (tags field). These are approximate
@@ -98,96 +111,98 @@ class HeroSkillProfile:
 
 def _e(info: InfoType, cats: frozenset[int] = frozenset(),
        quals: frozenset[int] = frozenset(), max_items: int = 0,
-       per_round: int = 0, rounds: int = 1) -> SkillEffect:
-    return SkillEffect(info, cats, quals, max_items, per_round, rounds)
+       per_round: int = 0, rounds: int = 1,
+       at_round: int = 1) -> SkillEffect:
+    return SkillEffect(info, cats, quals, max_items, per_round, rounds, at_round)
 
 
 # All 20 heroes. Skill breakdown from docs/hero_skill_schema.md.
+# ``at_round`` reflects when info first arrives (1=start, 5=last phase).
 HERO_SKILLS: dict[int, HeroSkillProfile] = {
     101: HeroSkillProfile(101, "法蒂玛", 1, (
-        _e(InfoType.QUALITY, frozenset({CAT_ANTIQUE}), max_items=1),  # top-value antique
-        _e(InfoType.OUTLINE, frozenset({CAT_ANTIQUE}), max_items=12, per_round=3, rounds=4),
-        _e(InfoType.QUALITY, frozenset({CAT_ANTIQUE}), max_items=6, per_round=3, rounds=2),
+        _e(InfoType.QUALITY, frozenset({CAT_ANTIQUE}), max_items=1, at_round=1),
+        _e(InfoType.OUTLINE, frozenset({CAT_ANTIQUE}), max_items=12, per_round=3, rounds=4, at_round=2),
+        _e(InfoType.QUALITY, frozenset({CAT_ANTIQUE}), max_items=6, per_round=3, rounds=2, at_round=3),
     )),
     102: HeroSkillProfile(102, "陈美", 1, (
-        _e(InfoType.OUTLINE, frozenset({CAT_JEWELRY, CAT_FASHION})),
+        _e(InfoType.OUTLINE, frozenset({CAT_JEWELRY, CAT_FASHION}), at_round=1),
     )),
     103: HeroSkillProfile(103, "艾莎", 1, (
-        _e(InfoType.OUTLINE, quals=frozenset({3})),   # blue outline
-        _e(InfoType.OUTLINE, quals=frozenset({2})),   # green outline
-        _e(InfoType.OUTLINE, quals=frozenset({1})),   # white outline
+        _e(InfoType.OUTLINE, quals=frozenset({3}), at_round=1),
+        _e(InfoType.OUTLINE, quals=frozenset({2}), at_round=2),
+        _e(InfoType.OUTLINE, quals=frozenset({1}), at_round=3),
     )),
     104: HeroSkillProfile(104, "加布里埃拉", 1, (
-        _e(InfoType.QUALITY, max_items=2, per_round=2, rounds=10),
+        _e(InfoType.QUALITY, max_items=2, per_round=2, rounds=10, at_round=1),
     )),
     105: HeroSkillProfile(105, "塔蒂安娜", 1, (
-        _e(InfoType.QUALITY, frozenset({CAT_FASHION})),
-        _e(InfoType.OUTLINE, frozenset({CAT_FASHION})),
+        _e(InfoType.QUALITY, frozenset({CAT_FASHION}), at_round=1),
+        _e(InfoType.OUTLINE, frozenset({CAT_FASHION}), at_round=1),
     )),
     106: HeroSkillProfile(106, "娜奥米", 1, (
-        _e(InfoType.OUTLINE, frozenset({CAT_FASHION, CAT_DIGITAL})),
-        _e(InfoType.COUNT_HINT, quals=frozenset({5, 6})),  # gold+red count
+        _e(InfoType.OUTLINE, frozenset({CAT_FASHION, CAT_DIGITAL}), at_round=1),
+        _e(InfoType.COUNT_HINT, quals=frozenset({5, 6}), at_round=1),
     )),
     107: HeroSkillProfile(107, "索菲", 1, (
-        _e(InfoType.QUALITY, max_items=5),
-        _e(InfoType.QUALITY, max_items=2, per_round=2, rounds=9),
+        _e(InfoType.QUALITY, max_items=5, at_round=1),
+        _e(InfoType.QUALITY, max_items=2, per_round=2, rounds=9, at_round=2),
     )),
     108: HeroSkillProfile(108, "玛丽亚", 1, (
-        _e(InfoType.VALUE, quals=frozenset({1})),   # white total value
-        _e(InfoType.VALUE, quals=frozenset({2})),   # green total value
-        _e(InfoType.VALUE, quals=frozenset({3})),   # blue total value
-        _e(InfoType.QUALITY, quals=frozenset({1, 2, 3})),  # quality shown
+        _e(InfoType.VALUE, quals=frozenset({1}), at_round=1),
+        _e(InfoType.VALUE, quals=frozenset({2}), at_round=1),
+        _e(InfoType.VALUE, quals=frozenset({3}), at_round=1),
+        _e(InfoType.QUALITY, quals=frozenset({1, 2, 3}), at_round=1),
     )),
     109: HeroSkillProfile(109, "海琳娜", 1, (
-        _e(InfoType.QUALITY, frozenset({CAT_MEDICAL})),
-        _e(InfoType.OUTLINE, frozenset({CAT_MEDICAL}), max_items=2, per_round=2, rounds=10),
+        _e(InfoType.QUALITY, frozenset({CAT_MEDICAL}), at_round=1),
+        _e(InfoType.OUTLINE, frozenset({CAT_MEDICAL}), max_items=2, per_round=2, rounds=10, at_round=1),
     )),
     110: HeroSkillProfile(110, "伊莎贝拉", 1, (
-        _e(InfoType.OUTLINE, max_items=1),  # top-1 quality item
-        _e(InfoType.OUTLINE, frozenset({CAT_JEWELRY}), max_items=4),
+        _e(InfoType.OUTLINE, max_items=1, at_round=1),
+        _e(InfoType.OUTLINE, frozenset({CAT_JEWELRY}), max_items=4, at_round=1),
     )),
     201: HeroSkillProfile(201, "乔治", 2, (
-        _e(InfoType.QUALITY, frozenset({CAT_WEAPON})),
-        _e(InfoType.OUTLINE, frozenset({CAT_WEAPON})),
+        _e(InfoType.QUALITY, frozenset({CAT_WEAPON}), at_round=1),
+        _e(InfoType.OUTLINE, frozenset({CAT_WEAPON}), at_round=1),
     )),
     202: HeroSkillProfile(202, "卡洛斯", 2, (
-        _e(InfoType.OUTLINE, frozenset({CAT_HOUSEHOLD, CAT_DIGITAL})),
-        _e(InfoType.QUALITY, frozenset({CAT_HOUSEHOLD, CAT_DIGITAL}), max_items=2, per_round=2, rounds=10),
+        _e(InfoType.OUTLINE, frozenset({CAT_HOUSEHOLD, CAT_DIGITAL}), at_round=1),
+        _e(InfoType.QUALITY, frozenset({CAT_HOUSEHOLD, CAT_DIGITAL}), max_items=2, per_round=2, rounds=10, at_round=2),
     )),
     203: HeroSkillProfile(203, "莱昂纳德", 2, (
-        _e(InfoType.QUALITY, frozenset({CAT_FOOD})),
-        _e(InfoType.QUALITY, frozenset({CAT_ANTIQUE}), max_items=2),
+        _e(InfoType.QUALITY, frozenset({CAT_FOOD}), at_round=1),
+        _e(InfoType.QUALITY, frozenset({CAT_ANTIQUE}), max_items=2, at_round=1),
     )),
     204: HeroSkillProfile(204, "艾哈迈德", 2, (
-        _e(InfoType.COUNT_HINT),  # total count
-        _e(InfoType.COUNT_HINT, quals=frozenset({5})),  # gold avg cells
-        _e(InfoType.COUNT_HINT, quals=frozenset({4})),  # purple avg cells
-        _e(InfoType.COUNT_HINT, quals=frozenset({3})),  # blue avg cells
-        _e(InfoType.COUNT_HINT, quals=frozenset({1, 2})),  # green+white total count
+        _e(InfoType.COUNT_HINT, at_round=1),
+        _e(InfoType.COUNT_HINT, quals=frozenset({5}), at_round=2),
+        _e(InfoType.COUNT_HINT, quals=frozenset({4}), at_round=3),
+        _e(InfoType.COUNT_HINT, quals=frozenset({3}), at_round=4),
+        _e(InfoType.COUNT_HINT, quals=frozenset({1, 2}), at_round=5),
     )),
     205: HeroSkillProfile(205, "伊万", 2, (
-        _e(InfoType.OUTLINE, frozenset({CAT_WEAPON, CAT_ENERGY})),
+        _e(InfoType.OUTLINE, frozenset({CAT_WEAPON, CAT_ENERGY}), at_round=1),
     )),
     206: HeroSkillProfile(206, "武田宏志", 2, (
-        _e(InfoType.OUTLINE, frozenset({CAT_BOOK})),
-        _e(InfoType.QUALITY, frozenset({CAT_BOOK}), max_items=2, per_round=2, rounds=10),
+        _e(InfoType.OUTLINE, frozenset({CAT_BOOK}), at_round=1),
+        _e(InfoType.QUALITY, frozenset({CAT_BOOK}), max_items=2, per_round=2, rounds=10, at_round=2),
     )),
     207: HeroSkillProfile(207, "吴起灵", 2, (
-        _e(InfoType.COUNT_HINT, frozenset({CAT_ANTIQUE})),
-        _e(InfoType.OUTLINE, frozenset({CAT_ANTIQUE})),
-        _e(InfoType.QUALITY, frozenset({CAT_ANTIQUE})),
-        _e(InfoType.FULL, frozenset({CAT_ANTIQUE}), max_items=0),  # ~1/3 get full info
+        _e(InfoType.COUNT_HINT, frozenset({CAT_ANTIQUE}), at_round=1),
+        _e(InfoType.OUTLINE, frozenset({CAT_ANTIQUE}), at_round=2),
+        _e(InfoType.QUALITY, frozenset({CAT_ANTIQUE}), at_round=3),
+        _e(InfoType.FULL, frozenset({CAT_ANTIQUE}), max_items=0, at_round=4),
     )),
     208: HeroSkillProfile(208, "伊森", 2, (
-        _e(InfoType.OUTLINE, max_items=5),  # 5 random type outlines
-        _e(InfoType.OUTLINE, max_items=2, per_round=2, rounds=4),  # known-quality → outline
-        _e(InfoType.OUTLINE),  # R5: ALL outlines
+        _e(InfoType.OUTLINE, max_items=5, at_round=1),
+        _e(InfoType.OUTLINE, max_items=2, per_round=2, rounds=4, at_round=2),
+        _e(InfoType.OUTLINE, at_round=5),  # R5: ALL outlines (very late)
     )),
     209: HeroSkillProfile(209, "维克托", 2, (
-        _e(InfoType.COUNT_HINT, quals=frozenset({4, 5})),  # purple+gold count
+        _e(InfoType.COUNT_HINT, quals=frozenset({4, 5}), at_round=1),
     )),
     301: HeroSkillProfile(301, "拉文", 0, (
-        _e(InfoType.QUALITY),  # R5: all quality (very late)
+        _e(InfoType.QUALITY, at_round=5),  # R5 only: all quality (very late!)
     )),
 }
 
@@ -195,6 +210,8 @@ HERO_SKILLS: dict[int, HeroSkillProfile] = {
 def compute_info_score(
     hero_id: int,
     session_items: Sequence[Item],
+    *,
+    use_timing: bool = True,
 ) -> list[float]:
     """Compute per-item info score [0, 1] for a hero + session.
 
@@ -202,10 +219,13 @@ def compute_info_score(
     how well the player can estimate each item's value given the hero's
     skill revelations.
 
-    Simplified: we take the max info score across all skill effects that
-    match each item. In reality some effects are progressive (per-round),
-    but for v1 we assume the player eventually gets all the info the
-    hero can provide.
+    When ``use_timing=True`` (default), scores are discounted by when
+    the information arrives. R1 info keeps full value; R5 info is nearly
+    worthless because bidding costs are lowest and most good items are
+    already gone. See ``TIMING_WEIGHTS``.
+
+    When ``use_timing=False``, behaves like the v1 model (all info
+    treated equally regardless of round).
     """
     profile = HERO_SKILLS.get(hero_id)
     if profile is None:
@@ -228,8 +248,15 @@ def compute_info_score(
             )
             matching_indices = matching_indices[:effective_count]
 
+        raw_score = effect.info_type.value
+        if use_timing:
+            tw = TIMING_WEIGHTS.get(effect.available_at_round, 0.05)
+            effective_score = raw_score * tw
+        else:
+            effective_score = raw_score
+
         for i in matching_indices:
-            scores[i] = max(scores[i], effect.info_type.value)
+            scores[i] = max(scores[i], effective_score)
 
     return scores
 
@@ -252,5 +279,6 @@ __all__ = (
     "HeroSkillProfile",
     "InfoType",
     "SkillEffect",
+    "TIMING_WEIGHTS",
     "compute_info_score",
 )

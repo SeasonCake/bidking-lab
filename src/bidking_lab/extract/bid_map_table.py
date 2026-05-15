@@ -16,6 +16,17 @@ v1 schema fields confirmed by cross-checking with Drop.txt + user:
 - col[9]   value_tier_ui: ``ui_value_{low,lower,medium,higher,high}``
 - col[17]  mode_flag: 4=normal auction, 1=training, 2=tutorial
 - col[18]  bid_price_ladder: per-round starting price tiers
+- col[19]  round_category_hints: 5-element list, one per auction round.
+           Each element is an Item category code (102/103/104/105) the
+           game previews to the player for that round, or ``0`` if no
+           hint is given. Confirmed by ``scripts/probe_round_categories.py``:
+           * R1 always carries a hint (55/55 leaf maps)
+           * R3 carries a hint in ~67% of maps
+           * R5 / R2 / R4 progressively rarer
+           * Hint density correlates with difficulty: 快递/仓库 = 5 hints,
+             集装箱 = 3, 别墅 = 2, 沉船 = 1.
+           Only categories 102/103/104/105 ever appear as hints; the
+           game never previews 101/106-110.
 
 Auction mode derived from map_id prefix + col[17]:
   2xxx + col17∈{2,4} → "open"   (明拍: bids visible)
@@ -111,6 +122,11 @@ class BidMap(BaseModel):
     value_tier_ui: str
     mode_flag: int = Field(ge=0)
     bid_price_ladder: list[int] = Field(default_factory=list)
+    round_category_hints: list[int] = Field(default_factory=list)
+    """Per-round category preview shown to the player (5 entries).
+
+    ``0`` means the game gives no hint for that round; non-zero values
+    are Item category codes (only 102/103/104/105 ever observed)."""
     raw_row: list[str]
 
 
@@ -128,6 +144,9 @@ def parse_bid_map_row(row: Sequence[str]) -> BidMap:
     map_id = int(row[0])
     mode_flag = int(row[17])
     ladder_raw = json.loads(row[18]) if row[18] not in ("", "[]") else []
+    hints_raw_text = row[19] if len(row) > 19 else ""
+    hints_parsed = json.loads(hints_raw_text) if hints_raw_text not in ("", "[]") else []
+    hints_raw = hints_parsed if isinstance(hints_parsed, list) else []
     return BidMap(
         map_id=map_id,
         name=row[1],
@@ -144,6 +163,7 @@ def parse_bid_map_row(row: Sequence[str]) -> BidMap:
         value_tier_ui=row[9],
         mode_flag=mode_flag,
         bid_price_ladder=ladder_raw,
+        round_category_hints=[int(x) for x in hints_raw],
         raw_row=list(row),
     )
 

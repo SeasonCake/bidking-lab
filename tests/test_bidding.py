@@ -15,7 +15,8 @@ def _item(item_id: int, value: int) -> Item:
     return Item(
         item_id=item_id, name=f"i{item_id}", description="",
         name_key="", desc_key="", quality=3, quality_color="blue",
-        value=value, tags=[], allowed_shelves=[], icon_name="",
+        value=value, shape_w=1, shape_h=1,
+        tags=[], allowed_shelves=[], icon_name="",
         model_name="", raw_row=["0"] * 38,
     )
 

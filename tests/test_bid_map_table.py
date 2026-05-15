@@ -25,6 +25,7 @@ def _make_row(**overrides: str) -> list[str]:
     row[16] = "[9999,2101,16,32]"
     row[17] = "4"
     row[18] = "[2000,1600,1300,1100,0]"
+    row[19] = "[102,103,103,104,105]"
     for k, v in overrides.items():
         idx = int(k[3:])
         row[idx] = v
@@ -46,6 +47,18 @@ def test_parses_anthology_map() -> None:
     assert bm.rounds_total == 10
     assert bm.mode_flag == 4
     assert bm.bid_price_ladder == [2000, 1600, 1300, 1100, 0]
+    assert bm.round_category_hints == [102, 103, 103, 104, 105]
+
+
+def test_round_category_hints_with_zeros() -> None:
+    """Mansion-style maps only hint R1 and R3 (zeros for other rounds)."""
+    bm = parse_bid_map_row(_make_row(**{"col19": "[103,0,103,0,0]"}))
+    assert bm.round_category_hints == [103, 0, 103, 0, 0]
+
+
+def test_round_category_hints_missing() -> None:
+    bm = parse_bid_map_row(_make_row(**{"col19": ""}))
+    assert bm.round_category_hints == []
 
 
 def test_parses_leaf_map() -> None:

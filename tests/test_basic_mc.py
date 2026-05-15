@@ -21,6 +21,7 @@ def _make_item(item_id: int, value: int, quality: int = 3) -> Item:
         quality=quality,
         quality_color="blue",
         value=value,
+        shape_w=1, shape_h=1,
         tags=[],
         allowed_shelves=[],
         icon_name="",

@@ -28,6 +28,7 @@ _COL_TAGS = 6
 _COL_QUALITY = 8
 _COL_VALUE = 9
 _COL_ALLOWED_SHELVES = 19
+_COL_SHAPE_WH = 7
 _COL_ICON_NAME = 24
 _COL_MODEL_NAME = 33
 
@@ -60,6 +61,8 @@ class Item(BaseModel):
     quality: int = Field(ge=0, le=6)
     quality_color: str
     value: int = Field(ge=0)
+    shape_w: int = Field(ge=0, le=6)
+    shape_h: int = Field(ge=0, le=7)
     tags: list[int]
     allowed_shelves: list[int]
     icon_name: str
@@ -73,6 +76,7 @@ def parse_item_row(row: Sequence[str]) -> Item:
             f"item row must have {ITEM_TABLE_COLUMN_COUNT} columns, got {len(row)}"
         )
     q_raw = int(row[_COL_QUALITY])
+    wh = int(row[_COL_SHAPE_WH])
     return Item(
         item_id=int(row[_COL_ITEM_ID]),
         name=row[_COL_NAME],
@@ -82,6 +86,8 @@ def parse_item_row(row: Sequence[str]) -> Item:
         quality=q_raw,
         quality_color=color_name(q_raw),
         value=int(row[_COL_VALUE]),
+        shape_w=wh // 10,
+        shape_h=wh % 10,
         tags=_parse_int_list(row[_COL_TAGS]),
         allowed_shelves=_parse_int_list(row[_COL_ALLOWED_SHELVES]),
         icon_name=row[_COL_ICON_NAME],
