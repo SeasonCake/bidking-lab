@@ -49,12 +49,22 @@ PER_CELL_VALUE_DEFAULT: dict[int, int] = {
     6: 50000,   # 红 default (non-huge bucket, drop-p50 in 3-6 cells)
 }
 
-# Huge-item subset for red bucket: items with area >= 7 cells (3×3 doesn't
-# qualify; 3×4, 4×4, 3×5, 5×3, 4×5 etc. do). Per-cell value drops sharply
-# because the screen-shrinking giants (屏风, 车壳, 雷达, 防弹衣) cost a
-# lot in total but average ~30k/cell.
+# Huge-item subset for the rare quality buckets. Per-cell value differs
+# from the default for two reasons: huge items occupy a fixed cells-count
+# (4×4 or 6×3) and their absolute prices cluster, so dividing by the cell
+# area yields a distinct mode.
+#
+# Purple (4): 4×4 翡翠屏风 ~40k, 防弹衣 ~38k, 雷达 ~42k → ~2500/cell
+#             (almost identical to the non-huge default; included so that
+#             ``estimate_total_cells`` correctly subtracts the huge value
+#             before applying the default prior to the remaining cells).
+# Gold (5):   6×3 单人郊游快艇 ~108k → ~6000/cell  (well below default 9400).
+# Red (6):    4×4 翡翠屏风 84万 → 52.5k/cell; 红木 36万 → 22.5k/cell.
+#             Drop-weighted average ~30k/cell.
 PER_CELL_VALUE_HUGE: dict[int, int] = {
-    5: 18000,   # 金 巨物 (e.g., 6×3 单人郊游快艇 107k / 18 = 5944, lower than default 9400)
+    4: 2500,    # 紫 巨物 ~ default purple (2500); subtracting it cleanly
+                # removes the double-count bug in estimate_total_cells.
+    5: 6000,    # 金 巨物 (only 单人郊游快艇: 108k / 18 ≈ 6000)
     6: 30000,   # 红 巨物 (4×4 翡翠屏风 84万 / 16 = 5.25万; 红木 36万 / 16 = 2.25万)
 }
 

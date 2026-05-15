@@ -7,9 +7,11 @@ import pytest
 from bidking_lab.inference.display import parse_reading
 from bidking_lab.inference.observation import (
     AISHA_DEFAULT_LOADOUT,
+    ETHAN_ALT_LOADOUT,
     ETHAN_DEFAULT_LOADOUT,
     HUGE_BAND_RANGE,
     HUGE_CELLS_PER_QUALITY,
+    STANDARD_LOADOUTS,
     QualityBucketObs,
     SessionObs,
     aisha_can_observe_huge,
@@ -45,8 +47,44 @@ def test_aisha_visibility_rule() -> None:
 def test_standard_loadouts_distinct() -> None:
     """Sanity: the two loadouts differ (different hero needs)."""
     assert set(ETHAN_DEFAULT_LOADOUT) != set(AISHA_DEFAULT_LOADOUT)
-    assert "优品均格" in ETHAN_DEFAULT_LOADOUT
+    assert "精品均格" in ETHAN_DEFAULT_LOADOUT
     assert "总仓储空间" in AISHA_DEFAULT_LOADOUT
+    assert "随机抽检(2)" in AISHA_DEFAULT_LOADOUT
+    assert len(ETHAN_DEFAULT_LOADOUT) == 5
+    assert len(AISHA_DEFAULT_LOADOUT) == 5
+
+
+def test_ethan_alt_loadout_swaps_purple_value_for_random_reveal() -> None:
+    """ETHAN_ALT replaces 精品估价 with 随机抽检(1) for category info."""
+    assert "精品估价" not in ETHAN_ALT_LOADOUT
+    assert "随机抽检(1)" in ETHAN_ALT_LOADOUT
+    # The cheap-side three scan/avg tools stay shared between default and alt
+    assert "普品扫描" in ETHAN_ALT_LOADOUT
+    assert "良品扫描" in ETHAN_ALT_LOADOUT
+    assert "精品均格" in ETHAN_ALT_LOADOUT
+
+
+def test_standard_loadouts_dict_indexed_by_hero_mode() -> None:
+    assert STANDARD_LOADOUTS["ethan"] == ETHAN_DEFAULT_LOADOUT
+    assert STANDARD_LOADOUTS["aisha"] == AISHA_DEFAULT_LOADOUT
+
+
+def test_tool_price_by_rarity_monotonic_increasing() -> None:
+    """User-reported tool prices: 1200 < 2500 < 20000 < 35000 ≤ 50000."""
+    from bidking_lab.inference.observation import TOOL_PRICE_BY_RARITY
+
+    prices = [
+        TOOL_PRICE_BY_RARITY["white"],
+        TOOL_PRICE_BY_RARITY["green"],
+        TOOL_PRICE_BY_RARITY["blue"],
+        TOOL_PRICE_BY_RARITY["purple"],
+        TOOL_PRICE_BY_RARITY["gold"],
+    ]
+    assert prices == sorted(prices)
+    assert TOOL_PRICE_BY_RARITY["white"] == 1_200
+    assert TOOL_PRICE_BY_RARITY["green"] == 2_500
+    assert TOOL_PRICE_BY_RARITY["blue"] == 20_000
+    assert TOOL_PRICE_BY_RARITY["purple"] == 35_000
 
 
 # --- QualityBucketObs helpers ---

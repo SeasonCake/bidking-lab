@@ -82,34 +82,69 @@ def aisha_can_observe_huge(quality: int) -> bool:
     return quality == 4
 
 
-# --- Standard tool loadouts (Phase 2 will refine; here for UI defaults) ---
+# --- Standard tool loadouts (refined 2026-05-15 per user playtesting) ---
 
-# 伊森 standard kit (5 slots, mostly white-green + 1 gold):
+# 伊森 default kit (5 slots, 4 cheap + 1 gold):
 #   普品扫描   (cheap)   → white-green total cells
 #   良品扫描   (cheap)   → blue total cells
-#   优品均格   (cheap)   → purple avg cells
-#   优品估价   (cheap)   → purple value sum
-#   珍品估价 OR 珍品扫描 (gold) → red value sum / red total cells
+#   精品估价   (cheap)   → purple value sum (复合估价道具)
+#   精品均格   (cheap)   → purple avg cells
+#   珍品估价   (gold)    → gold value sum  (swap 珍品扫描 if cells-bias preferred)
 ETHAN_DEFAULT_LOADOUT: tuple[str, ...] = (
     "普品扫描",
     "良品扫描",
-    "优品均格",
-    "优品估价",
-    "珍品估价",   # gold-tier; swap to 珍品扫描 for cells-side bias
+    "精品估价",
+    "精品均格",
+    "珍品估价",
 )
 
-# 艾莎 standard kit (4 slots; she prefers value tools because outline
-# already gives her cells-side intuition):
-#   珍品估价     (gold)  → red value sum (high impact, cheaper than scan)
-#   抽检一/抽检二 (low)   → exact reveals of 1-2 items
-#   宝光四鉴      (mid)  → 4 random qualities
-#   总仓储空间    (gold) → total cells (or 全库透视 for full layout)
-AISHA_DEFAULT_LOADOUT: tuple[str, ...] = (
+# 伊森 alt kit: trade purple-value for category info via 随机抽检.
+# Useful when the player wants category breakdown (lets us pre-filter
+# the value brute force by category before per-cell computation).
+ETHAN_ALT_LOADOUT: tuple[str, ...] = (
+    "普品扫描",
+    "良品扫描",
+    "随机抽检(1)",     # reveals 1 full item (incl. category)
+    "精品均格",
     "珍品估价",
-    "抽检二",
+)
+
+# 艾莎 default kit (5 slots; her hero skill already pins outline+quality
+# for q=1..4, so she leans on per-item reveals + warehouse-size + gold
+# value/cells to pick off the remaining unknowns):
+#   随机抽检(2) (low)    → 2 full items revealed
+#   随机抽检(1) (low)    → 1 full item revealed
+#   宝光四鉴   (mid)     → quality of 4 random items
+#   珍品估价 OR 珍品扫描 (gold) → gold value sum or total cells
+#   总仓储空间 (gold)    → warehouse total cells
+AISHA_DEFAULT_LOADOUT: tuple[str, ...] = (
+    "随机抽检(2)",
+    "随机抽检(1)",
     "宝光四鉴",
+    "珍品估价",
     "总仓储空间",
 )
+
+# Catalogue keyed by hero mode for UI defaults / Phase 2 contrast MC.
+STANDARD_LOADOUTS: dict[HeroMode, tuple[str, ...]] = {
+    "ethan": ETHAN_DEFAULT_LOADOUT,
+    "aisha": AISHA_DEFAULT_LOADOUT,
+}
+
+# --- Battle-item silver prices by rarity, used by Phase 2 tool-ROI math ---
+#
+# User-reported live-game medians (2026-05-15). The actual price fluctuates
+# session-to-session: "有的时候是更贵有的时候是更便宜". These are point
+# estimates; ROI tables should report sensitivity to a ±30% band.
+# 总仓储空间 and similar gold-tier tools sit slightly above 35k (no clean
+# number from the user yet — treat 50k as a placeholder until probed).
+TOOL_PRICE_BY_RARITY: dict[str, int] = {
+    "white":  1_200,
+    "green":  2_500,
+    "blue":   20_000,
+    "purple": 35_000,
+    "gold":   50_000,    # placeholder for 珍品估价/珍品扫描/总仓储空间
+}
 
 
 @dataclass
@@ -371,7 +406,10 @@ __all__ = (
     "HUGE_BAND_RANGE",
     "HUGE_CELLS_PER_QUALITY",
     "ETHAN_DEFAULT_LOADOUT",
+    "ETHAN_ALT_LOADOUT",
     "AISHA_DEFAULT_LOADOUT",
+    "STANDARD_LOADOUTS",
+    "TOOL_PRICE_BY_RARITY",
     "aisha_can_observe_huge",
     "QualityBucketObs",
     "SessionObs",
