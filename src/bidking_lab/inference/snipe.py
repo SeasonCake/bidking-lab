@@ -60,7 +60,7 @@ import numpy as np
 from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropPool
 from bidking_lab.extract.item_table import Item
-from bidking_lab.inference.ground_truth import sample_session_truth
+from bidking_lab.inference.ground_truth import SessionTruth, sample_session_truth
 from bidking_lab.inference.observation import SessionObs
 
 
@@ -75,6 +75,7 @@ class SnipeRecommendation:
     warehouse_total_cells: int
     low_tier_cells_observed: int      # sum of all observed low-tier (q\u22643) cells
     purple_conditioned: bool          # True when MC also filtered on purple cells
+    low_confidence: bool              # True when only the relaxed-threshold fallback fired
 
     n_matching_samples: int           # how many MC sessions matched the warehouse filter
     expected_value: int               # median total session value (conditional MC)
@@ -106,17 +107,22 @@ def compute_snipe_recommendation(
     warehouse_tolerance: int = 8,
     purple_tolerance: int = 4,
     min_matching_samples: int = 30,
+    min_matching_samples_relaxed: int = 10,
     safe_floor_ratio: float = 0.70,
     snipe_premium: float = 1.15,
     min_warehouse_cells: int = 120,
     rng: np.random.Generator | None = None,
+    truths: list[SessionTruth] | None = None,
 ) -> SnipeRecommendation | None:
     """Conditional Monte Carlo over the map's drop pool, gated on R2-Ethan
     information state. See module docstring for the model.
 
-    Returns ``None`` if any of the hard preconditions fail or if too few
-    MC samples match the observed warehouse size (in which case the
-    recommendation would be too noisy to surface).
+    Returns ``None`` only if the hard preconditions fail or the relaxed
+    fallback also fails. When the strict ``min_matching_samples``
+    threshold is missed but at least ``min_matching_samples_relaxed``
+    samples are available, returns a recommendation with
+    ``low_confidence=True`` and a warning baked into ``rationale`` so
+    the UI can surface it with caveats instead of silently dropping it.
     """
     if session.hero == "ethan":
         round_window = "R2"
@@ -144,12 +150,16 @@ def compute_snipe_recommendation(
     purple_cells_obs = purple_obs.total_cells if purple_obs is not None else None
 
     rng = rng or np.random.default_rng()
+    if truths is None:
+        truths = [
+            sample_session_truth(
+                session.map_id, maps=maps, drops=drops, items=items, rng=rng,
+            )
+            for _ in range(n_trials)
+        ]
     values_warehouse: list[int] = []
     values_purple: list[int] = []         # subset that also matches purple cells
-    for _ in range(n_trials):
-        truth = sample_session_truth(
-            session.map_id, maps=maps, drops=drops, items=items, rng=rng,
-        )
+    for truth in truths:
         if abs(truth.warehouse_total_cells - wh) > warehouse_tolerance:
             continue
         v = truth.total_value()
@@ -160,16 +170,24 @@ def compute_snipe_recommendation(
             if abs(tp_cells - purple_cells_obs) <= purple_tolerance:
                 values_purple.append(v)
 
-    # Pick the tighter conditional set if it has enough samples; else fall back.
+    # Pick the tighter conditional set if it has enough samples; else fall back
+    # through three tiers of confidence:
+    #   1. purple + warehouse, ≥ min_matching_samples         (best)
+    #   2. warehouse only,     ≥ min_matching_samples         (normal)
+    #   3. warehouse only,     ≥ min_matching_samples_relaxed (low confidence)
+    low_confidence = False
     if purple_cells_obs is not None and len(values_purple) >= min_matching_samples:
         values = values_purple
         purple_conditioned = True
-    else:
+    elif len(values_warehouse) >= min_matching_samples:
         values = values_warehouse
         purple_conditioned = False
-
-    if len(values) < min_matching_samples:
-        # Too noisy — bail rather than mislead the UI.
+    elif len(values_warehouse) >= min_matching_samples_relaxed:
+        values = values_warehouse
+        purple_conditioned = False
+        low_confidence = True
+    else:
+        # Truly noisy — bail rather than mislead the UI.
         return None
 
     arr = np.asarray(values, dtype=np.int64)
@@ -214,12 +232,20 @@ def compute_snipe_recommendation(
         if purple_cells_obs is not None:
             conditioning_note += "\uff08\u7d2b\u54c1\u683c\u6570\u6837\u672c\u4e0d\u8db3\uff0cfallback\uff09"
 
+    low_conf_warning = (
+        f"\u26A0\ufe0f \u6837\u672c\u4ec5 {len(values)} \u4e2a "
+        f"(\u4f4e\u4e8e\u63a8\u8350\u9608\u503c {min_matching_samples})\uff0c"
+        f"\u4ef7\u683c\u533a\u95f4\u566a\u58f0\u8f83\u5927\u3001\u4ec5\u4f9b\u53c2\u8003\u3002"
+        f"\u53ef\u63d0\u9ad8 n_trials \u6216\u653e\u5bbd warehouse_tolerance \u83b7\u5f97\u66f4\u7a33\u5b9a\u7ed3\u679c\u3002\n"
+        if low_confidence else ""
+    )
     rationale = (
         f"\u4ed3\u5e93 {wh} \u683c\uff0c\u4f4e\u54c1 {low_cells} \u683c "
         f"({info_breakdown})\u3002\n"
         f"{conditioning_note}\uff0c\u547d\u4e2d {len(values)} \u4e2a\u6837\u672c\uff1a"
         f"\u603b\u4ed3\u4ef7 \u4e2d\u4f4d\u6570 = {p50:,}\u3001"
         f"P75 = {p75:,}\u3001P90 = {p90:,} \u94f6\u5e01\u3002\n"
+        f"{low_conf_warning}"
         f"{timing_note}\uff0c\u63a8\u8350\u51fa\u4ef7\u533a\u95f4\uff1a"
         f"\u8d77\u7801 {safe_floor:,} \u2192 \u79d2\u4ed3\u9876 {snipe_max:,} \u94f6\u5e01\u3002\n"
         f"\u9876\u4ef7\u91c7\u7528 P75 \u00d7 {snipe_premium:.2f} \u7684\u9ad8\u98ce\u9669\u6e22\u4ef7\uff1a"
@@ -234,6 +260,7 @@ def compute_snipe_recommendation(
         warehouse_total_cells=wh,
         low_tier_cells_observed=low_cells,
         purple_conditioned=purple_conditioned,
+        low_confidence=low_confidence,
         n_matching_samples=len(values),
         expected_value=p50,
         p25_value=p25,
@@ -267,6 +294,7 @@ class PassRecommendation:
     low_tier_cells_observed: int
     low_tier_fraction: float          # low_cells / warehouse_cells
     purple_conditioned: bool          # True when MC also filtered on purple cells
+    low_confidence: bool              # True when only the relaxed-threshold fallback fired
 
     n_matching_samples: int
     expected_value: int               # conditional P50
@@ -299,10 +327,12 @@ def compute_pass_recommendation(
     warehouse_tolerance: int = 6,
     purple_tolerance: int = 4,
     min_matching_samples: int = 30,
+    min_matching_samples_relaxed: int = 10,
     max_warehouse_cells: int = 80,
     min_low_tier_fraction: float = 0.40,
     safe_entry_ratio: float = 1.0,    # bid up to P25 × this for a margin of safety
     rng: np.random.Generator | None = None,
+    truths: list[SessionTruth] | None = None,
 ) -> PassRecommendation | None:
     """Conditional MC for the *small junk-heavy* scenario; returns ``None``
     if any precondition fails.
@@ -346,13 +376,17 @@ def compute_pass_recommendation(
     purple_cells_obs = purple_obs.total_cells if purple_obs is not None else None
 
     rng = rng or np.random.default_rng()
+    if truths is None:
+        truths = [
+            sample_session_truth(
+                session.map_id, maps=maps, drops=drops, items=items, rng=rng,
+            )
+            for _ in range(n_trials)
+        ]
     all_values: list[int] = []
     cond_warehouse: list[int] = []
     cond_purple: list[int] = []                   # subset that also matches purple cells
-    for _ in range(n_trials):
-        truth = sample_session_truth(
-            session.map_id, maps=maps, drops=drops, items=items, rng=rng,
-        )
+    for truth in truths:
         v = truth.total_value()
         all_values.append(v)
         if abs(truth.warehouse_total_cells - wh) > warehouse_tolerance:
@@ -364,14 +398,18 @@ def compute_pass_recommendation(
             if abs(tp_cells - purple_cells_obs) <= purple_tolerance:
                 cond_purple.append(v)
 
+    low_confidence = False
     if purple_cells_obs is not None and len(cond_purple) >= min_matching_samples:
         conditional_values = cond_purple
         purple_conditioned = True
-    else:
+    elif len(cond_warehouse) >= min_matching_samples:
         conditional_values = cond_warehouse
         purple_conditioned = False
-
-    if len(conditional_values) < min_matching_samples:
+    elif len(cond_warehouse) >= min_matching_samples_relaxed:
+        conditional_values = cond_warehouse
+        purple_conditioned = False
+        low_confidence = True
+    else:
         return None
 
     cond = np.asarray(conditional_values, dtype=np.int64)
@@ -411,6 +449,12 @@ def compute_pass_recommendation(
         if purple_cells_obs is not None:
             conditioning_note += "\uff08\u7d2b\u54c1\u6837\u672c\u4e0d\u8db3\uff0cfallback\uff09"
 
+    low_conf_warning = (
+        f"\u26A0\ufe0f \u6837\u672c\u4ec5 {len(conditional_values)} \u4e2a "
+        f"(\u4f4e\u4e8e\u63a8\u8350\u9608\u503c {min_matching_samples})\uff0c"
+        f"\u4ec5\u4f9b\u53c2\u8003\u3002\u53ef\u63d0\u9ad8 n_trials \u83b7\u5f97\u66f4\u7a33\u5b9a\u7ed3\u679c\u3002\n"
+        if low_confidence else ""
+    )
     rationale = (
         f"{timing_note}\uff1a\u4ed3\u5e93\u4ec5 {wh} \u683c\uff0c"
         f"\u4f4e\u54c1\u5df2\u5360 {low_cells} \u683c "
@@ -418,6 +462,7 @@ def compute_pass_recommendation(
         f"{conditioning_note}\uff0c\u547d\u4e2d {len(conditional_values)} \u4e2a\u6837\u672c\uff1a"
         f"\u603b\u4ed3\u4ef7 \u4e2d\u4f4d\u6570 = {p50:,}\u3001P25 = {p25:,} \u94f6\u5e01\uff0c"
         f"\u53ea\u662f\u672c\u56fe\u5168\u56fe\u5747\u503c {unc_p50:,} \u7684 {ratio:.0%}\u3002\n"
+        f"{low_conf_warning}"
         f"\u8d85\u8fc7 {pass_max:,} \u5c31\u653e\u4ed3\uff1b\u82e5\u4e0d\u5f97\u5df2\u8981\u51fa\u4ef7\uff0c"
         f"\u5efa\u8bae\u4e0d\u9ad8\u4e8e P25 = {safe_entry:,} \u94f6\u5e01\uff08\u9001\u8d77\u624b\u4f59\u88d5\uff09\u3002"
     )
@@ -431,6 +476,7 @@ def compute_pass_recommendation(
         low_tier_cells_observed=low_cells,
         low_tier_fraction=low_fraction,
         purple_conditioned=purple_conditioned,
+        low_confidence=low_confidence,
         n_matching_samples=len(conditional_values),
         expected_value=p50,
         p25_value=p25,

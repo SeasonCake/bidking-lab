@@ -7,9 +7,9 @@ pasting into PROGRESS.md or the resume notebook.
 
 Modeled tools (have a TOOL_SPECS entry):
 
-* \u666e\u54c1\u626b\u63cf, \u826f\u54c1\u626b\u63cf, \u7cbe\u54c1\u626b\u63cf,
-  \u7cbe\u54c1\u4f30\u4ef7, \u7cbe\u54c1\u5747\u683c,
-  \u73cd\u54c1\u626b\u63cf, \u73cd\u54c1\u4f30\u4ef7,
+* \u666e\u54c1\u626b\u63cf, \u826f\u54c1\u626b\u63cf, \u4f18\u54c1\u626b\u63cf,
+  \u4f18\u54c1\u4f30\u4ef7, \u4f18\u54c1\u5747\u683c,
+  \u6781\u54c1\u626b\u63cf, \u6781\u54c1\u4f30\u4ef7,
   \u603b\u4ed3\u50a8\u7a7a\u95f4
 
 Not yet modeled (excluded from the kits below):
@@ -48,16 +48,16 @@ from bidking_lab.inference.roi import compute_tool_roi
 KITS: dict[str, tuple[HeroMode, tuple[str, ...], bool]] = {
     "Ethan default":  ("ethan", (
         "\u666e\u54c1\u626b\u63cf", "\u826f\u54c1\u626b\u63cf",
-        "\u7cbe\u54c1\u4f30\u4ef7", "\u7cbe\u54c1\u5747\u683c",
-        "\u73cd\u54c1\u4f30\u4ef7",
+        "\u4f18\u54c1\u4f30\u4ef7", "\u4f18\u54c1\u5747\u683c",
+        "\u6781\u54c1\u4f30\u4ef7",
     ), False),
     "Ethan +warehouse": ("ethan", (
         "\u666e\u54c1\u626b\u63cf", "\u826f\u54c1\u626b\u63cf",
-        "\u7cbe\u54c1\u4f30\u4ef7", "\u7cbe\u54c1\u5747\u683c",
-        "\u73cd\u54c1\u4f30\u4ef7", "\u603b\u4ed3\u50a8\u7a7a\u95f4",
+        "\u4f18\u54c1\u4f30\u4ef7", "\u4f18\u54c1\u5747\u683c",
+        "\u6781\u54c1\u4f30\u4ef7", "\u603b\u4ed3\u50a8\u7a7a\u95f4",
     ), False),
     "Aisha minimal":  ("aisha", (
-        "\u7cbe\u54c1\u4f30\u4ef7", "\u73cd\u54c1\u4f30\u4ef7",
+        "\u4f18\u54c1\u4f30\u4ef7", "\u6781\u54c1\u4f30\u4ef7",
         "\u603b\u4ed3\u50a8\u7a7a\u95f4",
     ), True),  # outline pin ON
 }

@@ -66,14 +66,14 @@ def test_compute_tool_roi_returns_one_entry_per_tool() -> None:
     maps, drops, items = _build_mini_world()
     rois = compute_tool_roi(
         2407,
-        tool_kit=("\u666e\u54c1\u626b\u63cf", "\u7cbe\u54c1\u4f30\u4ef7"),
+        tool_kit=("\u666e\u54c1\u626b\u63cf", "\u4f18\u54c1\u4f30\u4ef7"),
         maps=maps, drops=drops, items=items,
         hero="ethan", n_trials=10, rng=np.random.default_rng(0),
         per_bucket_top=4,
     )
     assert len(rois) == 2
     names = {r.tool_name for r in rois}
-    assert names == {"\u666e\u54c1\u626b\u63cf", "\u7cbe\u54c1\u4f30\u4ef7"}
+    assert names == {"\u666e\u54c1\u626b\u63cf", "\u4f18\u54c1\u4f30\u4ef7"}
     for r in rois:
         assert isinstance(r, ToolROI)
         assert r.n_trials == 10
@@ -93,12 +93,12 @@ def test_compute_tool_roi_returns_finite_numbers() -> None:
     maps, drops, items = _build_mini_world()
     rois = compute_tool_roi(
         2407,
-        tool_kit=("\u7cbe\u54c1\u4f30\u4ef7", "\u73cd\u54c1\u4f30\u4ef7"),
+        tool_kit=("\u4f18\u54c1\u4f30\u4ef7", "\u6781\u54c1\u4f30\u4ef7"),
         maps=maps, drops=drops, items=items,
         hero="ethan", n_trials=10, rng=np.random.default_rng(42),
         per_bucket_top=4,
     )
-    purple = next(r for r in rois if r.tool_name == "\u7cbe\u54c1\u4f30\u4ef7")
+    purple = next(r for r in rois if r.tool_name == "\u4f18\u54c1\u4f30\u4ef7")
     assert purple.silver_cost == 20_000
     assert np.isfinite(purple.info_gain_value_mean)
     assert purple.info_gain_value_std >= 0
@@ -106,22 +106,40 @@ def test_compute_tool_roi_returns_finite_numbers() -> None:
 
 
 def test_compute_tool_roi_warehouse_tool_helps_cells_side() -> None:
-    """总仓储空间 directly pins warehouse_total_cells → measurable cells-error
-    reduction (the value-side may or may not move when value tools already
-    pin those buckets exactly).
+    """总仓储空间 pins warehouse_total_cells exactly. When the player's
+    eyeball estimate is noisy (default σ=10), the LOO run uses
+    ``warehouse_total_cells_approx`` and the joint engine can pick a
+    different top-1 hypothesis → measurable, non-negative cells-side
+    info gain. With σ=0 (player can read cells perfectly) the tool
+    should contribute ~0 (it tells you nothing you didn't already know).
     """
     maps, drops, items = _build_mini_world()
-    kit = ("\u7cbe\u54c1\u4f30\u4ef7", "\u73cd\u54c1\u4f30\u4ef7",
+    kit = ("\u4f18\u54c1\u4f30\u4ef7", "\u6781\u54c1\u4f30\u4ef7",
            "\u603b\u4ed3\u50a8\u7a7a\u95f4")
-    rois = compute_tool_roi(
+    # With realistic noise: tool should at least not hurt on average.
+    rois_noisy = compute_tool_roi(
+        2407, tool_kit=kit, maps=maps, drops=drops, items=items,
+        hero="ethan", n_trials=30, rng=np.random.default_rng(2026),
+        per_bucket_top=5, player_warehouse_noise_std=15.0,
+    )
+    wh_noisy = next(
+        r for r in rois_noisy
+        if r.tool_name == "\u603b\u4ed3\u50a8\u7a7a\u95f4"
+    )
+    assert wh_noisy.info_gain_cells_mean >= 0
+
+    # With zero noise: the LOO run also "knows" the truth → tool ROI
+    # collapses to zero. This is the documented bug fix's behavior.
+    rois_clean = compute_tool_roi(
         2407, tool_kit=kit, maps=maps, drops=drops, items=items,
         hero="ethan", n_trials=15, rng=np.random.default_rng(2026),
-        per_bucket_top=5,
+        per_bucket_top=5, player_warehouse_noise_std=0.0,
     )
-    wh = next(r for r in rois if r.tool_name == "\u603b\u4ed3\u50a8\u7a7a\u95f4")
-    # Cells-side info gain should be strictly positive — without the tool,
-    # the engine uses the 159-cell shipwreck fallback as capacity.
-    assert wh.info_gain_cells_mean > 0
+    wh_clean = next(
+        r for r in rois_clean
+        if r.tool_name == "\u603b\u4ed3\u50a8\u7a7a\u95f4"
+    )
+    assert wh_clean.info_gain_cells_mean == 0.0
 
 
 def test_compute_tool_roi_handles_empty_kit() -> None:
@@ -139,7 +157,7 @@ def test_compute_tool_roi_handles_empty_kit() -> None:
 def test_compute_tool_roi_deterministic_with_seed() -> None:
     """Same rng seed → same ROI numbers."""
     maps, drops, items = _build_mini_world()
-    kit = ("\u7cbe\u54c1\u4f30\u4ef7", "\u603b\u4ed3\u50a8\u7a7a\u95f4")
+    kit = ("\u4f18\u54c1\u4f30\u4ef7", "\u603b\u4ed3\u50a8\u7a7a\u95f4")
     r1 = compute_tool_roi(
         2407, tool_kit=kit, maps=maps, drops=drops, items=items,
         hero="aisha", n_trials=10, rng=np.random.default_rng(7),

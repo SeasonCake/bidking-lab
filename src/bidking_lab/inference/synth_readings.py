@@ -43,17 +43,26 @@ class ToolSpec:
     field_name: str      # which QualityBucketObs field the tool fills
 
 
-# Core five Ethan-default tools + a Gold-tier red value sibling + the
-# warehouse total. Phase 2 will extend as needed; we keep the table
-# explicit rather than algorithmic so it stays auditable.
+# Tool naming follows BattleItem.txt (verified 2026-05-15):
+#   普品 → white+green (q=1+2)
+#   良品 → blue        (q=3)
+#   优品 → purple      (q=4)
+#   极品 → gold        (q=5)
+#   珍品 → red         (q=6)
+# Tool's `rarity` field is the silver-cost tier (NOT the target quality):
+# e.g. 优品估价 reads purple items but is a "blue"-tier 20K-silver tool.
 TOOL_SPECS: dict[str, ToolSpec] = {
-    "\u666e\u54c1\u626b\u63cf":   ToolSpec("\u666e\u54c1\u626b\u63cf",   "white",  (1, 2), "total_cells"),  # white+green combined
-    "\u826f\u54c1\u626b\u63cf":   ToolSpec("\u826f\u54c1\u626b\u63cf",   "green",  (3,),   "total_cells"),
-    "\u7cbe\u54c1\u626b\u63cf":   ToolSpec("\u7cbe\u54c1\u626b\u63cf",   "blue",   (4,),   "total_cells"),
-    "\u7cbe\u54c1\u4f30\u4ef7":   ToolSpec("\u7cbe\u54c1\u4f30\u4ef7",   "blue",   (4,),   "value_sum"),
-    "\u7cbe\u54c1\u5747\u683c":   ToolSpec("\u7cbe\u54c1\u5747\u683c",   "blue",   (4,),   "avg_cells"),
-    "\u73cd\u54c1\u626b\u63cf":   ToolSpec("\u73cd\u54c1\u626b\u63cf",   "purple", (5,),   "total_cells"),
-    "\u73cd\u54c1\u4f30\u4ef7":   ToolSpec("\u73cd\u54c1\u4f30\u4ef7",   "purple", (5,),   "value_sum"),
+    "\u666e\u54c1\u626b\u63cf":   ToolSpec("\u666e\u54c1\u626b\u63cf",   "white",  (1, 2), "total_cells"),  # 普品扫描   white+green combined
+    "\u826f\u54c1\u626b\u63cf":   ToolSpec("\u826f\u54c1\u626b\u63cf",   "green",  (3,),   "total_cells"),  # 良品扫描   blue
+    "\u4f18\u54c1\u626b\u63cf":   ToolSpec("\u4f18\u54c1\u626b\u63cf",   "blue",   (4,),   "total_cells"),  # 优品扫描   purple
+    "\u4f18\u54c1\u4f30\u4ef7":   ToolSpec("\u4f18\u54c1\u4f30\u4ef7",   "blue",   (4,),   "value_sum"),    # 优品估价   purple
+    "\u4f18\u54c1\u5747\u683c":   ToolSpec("\u4f18\u54c1\u5747\u683c",   "blue",   (4,),   "avg_cells"),    # 优品均格   purple
+    "\u6781\u54c1\u626b\u63cf":   ToolSpec("\u6781\u54c1\u626b\u63cf",   "purple", (5,),   "total_cells"),  # 极品扫描   gold
+    "\u6781\u54c1\u4f30\u4ef7":   ToolSpec("\u6781\u54c1\u4f30\u4ef7",   "purple", (5,),   "value_sum"),    # 极品估价   gold
+    "\u6781\u54c1\u5747\u683c":   ToolSpec("\u6781\u54c1\u5747\u683c",   "purple", (5,),   "avg_cells"),    # 极品均格   gold
+    "\u73cd\u54c1\u626b\u63cf":   ToolSpec("\u73cd\u54c1\u626b\u63cf",   "gold",   (6,),   "total_cells"),  # 珍品扫描   red
+    "\u73cd\u54c1\u4f30\u4ef7":   ToolSpec("\u73cd\u54c1\u4f30\u4ef7",   "gold",   (6,),   "value_sum"),    # 珍品估价   red
+    "\u73cd\u54c1\u5747\u683c":   ToolSpec("\u73cd\u54c1\u5747\u683c",   "gold",   (6,),   "avg_cells"),    # 珍品均格   red
 }
 
 

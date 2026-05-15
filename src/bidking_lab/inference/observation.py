@@ -83,19 +83,23 @@ def aisha_can_observe_huge(quality: int) -> bool:
 
 
 # --- Standard tool loadouts (refined 2026-05-15 per user playtesting) ---
+#
+# Tool-name → target-quality mapping (per BattleItem.txt, verified 2026-05-15):
+#   普品 → white+green (q=1+2)   良品 → blue (q=3)
+#   优品 → purple (q=4)          极品 → gold (q=5)   珍品 → red (q=6)
 
 # 伊森 default kit (5 slots, 4 cheap + 1 gold):
 #   普品扫描   (cheap)   → white-green total cells
 #   良品扫描   (cheap)   → blue total cells
-#   精品估价   (cheap)   → purple value sum (复合估价道具)
-#   精品均格   (cheap)   → purple avg cells
-#   珍品估价   (gold)    → gold value sum  (swap 珍品扫描 if cells-bias preferred)
+#   优品估价   (cheap)   → purple value sum
+#   优品均格   (cheap)   → purple avg cells (decimal-truncation leak)
+#   极品估价   (gold)    → gold value sum   (swap 极品扫描 if cells-bias preferred)
 ETHAN_DEFAULT_LOADOUT: tuple[str, ...] = (
     "普品扫描",
     "良品扫描",
-    "精品估价",
-    "精品均格",
-    "珍品估价",
+    "优品估价",
+    "优品均格",
+    "极品估价",
 )
 
 # 伊森 alt kit: trade purple-value for category info via 随机抽检.
@@ -105,8 +109,8 @@ ETHAN_ALT_LOADOUT: tuple[str, ...] = (
     "普品扫描",
     "良品扫描",
     "随机抽检(1)",     # reveals 1 full item (incl. category)
-    "精品均格",
-    "珍品估价",
+    "优品均格",
+    "极品估价",
 )
 
 # 艾莎 default kit (5 slots; her hero skill already pins outline+quality
@@ -115,13 +119,13 @@ ETHAN_ALT_LOADOUT: tuple[str, ...] = (
 #   随机抽检(2) (low)    → 2 full items revealed
 #   随机抽检(1) (low)    → 1 full item revealed
 #   宝光四鉴   (mid)     → quality of 4 random items
-#   珍品估价 OR 珍品扫描 (gold) → gold value sum or total cells
+#   极品估价 OR 极品扫描 (gold) → gold value sum or total cells
 #   总仓储空间 (gold)    → warehouse total cells
 AISHA_DEFAULT_LOADOUT: tuple[str, ...] = (
     "随机抽检(2)",
     "随机抽检(1)",
     "宝光四鉴",
-    "珍品估价",
+    "极品估价",
     "总仓储空间",
 )
 
@@ -139,9 +143,9 @@ STANDARD_LOADOUTS: dict[HeroMode, tuple[str, ...]] = {
 TOOL_PRICE_BY_RARITY: dict[str, int] = {
     "white":  1_200,    # 普品扫描 类
     "green":  2_500,    # 良品扫描 类
-    "blue":   20_000,   # 精品估价 / 精品均格 类
-    "purple": 35_000,   # 珍品估价 类
-    "gold":   50_000,   # 珍品扫描 类 (default gold-tier fallback)
+    "blue":   20_000,   # 优品扫描 / 估价 / 均格 类 (q=4 purple reads)
+    "purple": 35_000,   # 极品估价 类 (q=5 gold reads)
+    "gold":   50_000,   # 珍品扫描 / 估价 / 均格 类 (q=6 red reads); placeholder
 }
 
 # Tool-name-specific overrides (use when the tool's price diverges from
@@ -212,6 +216,12 @@ class SessionObs:
     hero: HeroMode
     warehouse_total_cells: int | None = None
     warehouse_total_cells_approx: int | None = None
+    total_item_count: int | None = None
+    """Total number of items in the warehouse, when revealed by a map hint
+    (some 别墅 maps surface ``X 件藏品`` as a R1/R3 hint) or by a tool such
+    as Aisha's R4 ``全量轮廓`` / ``总藏品数量`` reveal. Used by the joint
+    inference engine as a cross-bucket constraint: ``sum(count_q) == total``.
+    None means the player did not provide this hint."""
     buckets: dict[int, QualityBucketObs] = field(default_factory=dict)
 
     def warehouse_capacity(self) -> int:

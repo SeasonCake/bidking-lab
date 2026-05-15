@@ -80,6 +80,7 @@ def joint_top_k_for_session(
     """
     capacity = session.warehouse_capacity()
     cap_max = capacity + warehouse_slack
+    total_item_cap = session.total_item_count   # None = unconstrained
 
     per_bucket_cands: dict[int, list[BucketCandidate]] = {}
     for q in (6, 5, 4, 3, 2, 1):
@@ -103,12 +104,26 @@ def joint_top_k_for_session(
     results: list[JointHypothesis] = []
     picks: list[BucketCandidate] = []
 
-    def dfs(idx: int, running_cells: int, running_bucket_score: float) -> None:
+    def dfs(idx: int, running_cells: int, running_count: int,
+            running_bucket_score: float) -> None:
         if running_cells > cap_max:
+            return
+        # Hard prune: if total_item_count is given, any hypothesis whose
+        # observed buckets already overshoot it is impossible. We allow
+        # equality (sum == total) and also undershoot (≤ total) since the
+        # player may not have observed every bucket.
+        if total_item_cap is not None and running_count > total_item_cap:
             return
         if idx == len(qualities):
             over = max(0, running_cells - capacity)
             penalty = warehouse_over_weight * over
+            # Soft penalty if total_item_count given and our sum
+            # significantly undershoots (we expect every bucket to have
+            # ≥1 item, so undershoot is normal). Mild penalty per missing
+            # item to slightly prefer hypotheses that account for more.
+            if total_item_cap is not None:
+                missing = max(0, total_item_cap - running_count)
+                penalty += 0.02 * missing
             results.append(
                 JointHypothesis(
                     per_bucket={qualities[i]: picks[i] for i in range(len(picks))},
@@ -124,11 +139,12 @@ def joint_top_k_for_session(
             dfs(
                 idx + 1,
                 running_cells + cand.total_cells,
+                running_count + cand.count,
                 running_bucket_score + cand.composite,
             )
             picks.pop()
 
-    dfs(0, 0, 0.0)
+    dfs(0, 0, 0, 0.0)
     results.sort(key=lambda h: h.composite)
     return results[:k]
 

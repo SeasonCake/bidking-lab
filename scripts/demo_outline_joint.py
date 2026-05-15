@@ -2,7 +2,7 @@
 
 Scenario: Aisha is playing Mansion 2407 (109-cell warehouse). By the end
 of R3 she has seen *all* white, green, and blue outlines. On R4 she
-runs three readings: 珍品估价 (gold value sum), 精品估价 (purple value
+runs three readings: 极品估价 (gold value sum), 优品估价 (purple value
 sum), and the warehouse-total-cells tool. She also reports the huge
 band she expects for purple (1) and red (1).
 

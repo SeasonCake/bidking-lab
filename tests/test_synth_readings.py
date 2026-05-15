@@ -88,18 +88,18 @@ def test_apply_purple_value_sum() -> None:
     truth = _truth_from_buckets({
         4: _bucket(4, count=14, total_cells=35, value_sum=86_490, huge_count=0),
     })
-    eff = apply_tool(truth, "\u7cbe\u54c1\u4f30\u4ef7")
+    eff = apply_tool(truth, "\u4f18\u54c1\u4f30\u4ef7")
     assert eff.rarity == "blue"
     assert eff.silver_cost == 20_000
     assert eff.bucket_patches == {4: {"value_sum": 86_490}}
 
 
 def test_apply_purple_avg_cells_uses_truncation_rule() -> None:
-    """\u7cbe\u54c1\u5747\u683c reveals avg_cells as a parsed Reading (truncated at 2dp)."""
+    """\u4f18\u54c1\u5747\u683c reveals avg_cells as a parsed Reading (truncated at 2dp)."""
     truth = _truth_from_buckets({
         4: _bucket(4, count=14, total_cells=35, value_sum=86_490),  # 35/14 = 2.5
     })
-    eff = apply_tool(truth, "\u7cbe\u54c1\u5747\u683c")
+    eff = apply_tool(truth, "\u4f18\u54c1\u5747\u683c")
     assert 4 in eff.bucket_patches
     reading = eff.bucket_patches[4]["avg_cells"]
     assert reading.raw == "2.5"
@@ -107,7 +107,7 @@ def test_apply_purple_avg_cells_uses_truncation_rule() -> None:
 
 def test_apply_gold_value_sum() -> None:
     truth = _truth_from_buckets({5: _bucket(5, count=2, total_cells=20, value_sum=180_000)})
-    eff = apply_tool(truth, "\u73cd\u54c1\u4f30\u4ef7")
+    eff = apply_tool(truth, "\u6781\u54c1\u4f30\u4ef7")
     assert eff.rarity == "purple"
     assert eff.silver_cost == 35_000
     assert eff.bucket_patches == {5: {"value_sum": 180_000}}
@@ -128,7 +128,7 @@ def test_apply_warehouse_total() -> None:
 def test_apply_avg_cells_handles_empty_bucket_gracefully() -> None:
     """No items in target bucket → no patch (rather than divide-by-zero)."""
     truth = _truth_from_buckets({})
-    eff = apply_tool(truth, "\u7cbe\u54c1\u5747\u683c")
+    eff = apply_tool(truth, "\u4f18\u54c1\u5747\u683c")
     assert eff.bucket_patches == {}
 
 
@@ -148,8 +148,8 @@ def test_build_session_obs_for_ethan_default_kit() -> None:
         truth,
         hero="ethan",
         tools=("\u666e\u54c1\u626b\u63cf", "\u826f\u54c1\u626b\u63cf",
-               "\u7cbe\u54c1\u4f30\u4ef7", "\u7cbe\u54c1\u5747\u683c",
-               "\u73cd\u54c1\u4f30\u4ef7"),
+               "\u4f18\u54c1\u4f30\u4ef7", "\u4f18\u54c1\u5747\u683c",
+               "\u6781\u54c1\u4f30\u4ef7"),
     )
     # Silver cost = 1200 + 2500 + 20000 + 20000 + 35000 = 78700
     assert silver == 1_200 + 2_500 + 20_000 + 20_000 + 35_000
@@ -197,7 +197,7 @@ def test_build_session_obs_huge_band_for_ethan_visible_all() -> None:
         6: _bucket(6, count=3, total_cells=50, value_sum=2_200_000, huge_count=3),
     })
     obs, _ = build_session_obs(
-        truth, hero="ethan", tools=("\u7cbe\u54c1\u4f30\u4ef7",),
+        truth, hero="ethan", tools=("\u4f18\u54c1\u4f30\u4ef7",),
     )
     assert obs.buckets[4].huge_band == "1"      # 1 huge purple
     assert obs.buckets[5].huge_band == "none"   # 0 huge gold
@@ -207,7 +207,7 @@ def test_build_session_obs_huge_band_for_ethan_visible_all() -> None:
 def test_build_session_obs_huge_band_for_aisha_only_purple() -> None:
     """Aisha sees only the purple huge band; gold/red default to 'none' even when truth says huge_count>0.
 
-    To make q=5 appear in the observation we use 珍品估价 (writes into
+    To make q=5 appear in the observation we use 极品估价 (writes into
     q=5); that bucket then exists but its huge_band stays 'none' because
     Aisha cannot eyeball gold huge items.
     """
@@ -219,7 +219,7 @@ def test_build_session_obs_huge_band_for_aisha_only_purple() -> None:
     obs, _ = build_session_obs(
         truth,
         hero="aisha",
-        tools=("\u7cbe\u54c1\u4f30\u4ef7", "\u73cd\u54c1\u4f30\u4ef7"),
+        tools=("\u4f18\u54c1\u4f30\u4ef7", "\u6781\u54c1\u4f30\u4ef7"),
     )
     assert obs.buckets[4].huge_band == "1"      # purple visible
     assert obs.buckets[5].huge_band == "none"   # gold present but huge invisible
@@ -234,7 +234,7 @@ def test_build_session_obs_aisha_skips_red_when_no_tool_targets_it() -> None:
         6: _bucket(6, count=2, total_cells=20, value_sum=1_000_000, huge_count=1),
     })
     obs, _ = build_session_obs(
-        truth, hero="aisha", tools=("\u7cbe\u54c1\u4f30\u4ef7",),
+        truth, hero="aisha", tools=("\u4f18\u54c1\u4f30\u4ef7",),
     )
     assert 4 in obs.buckets
     assert 6 not in obs.buckets

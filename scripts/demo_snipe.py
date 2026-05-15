@@ -86,9 +86,23 @@ def main() -> int:
     )
 
     if snipe is None and pass_rec is None:
-        print("Both snipe and pass gates returned None.")
-        print("  - snipe gate needs: warehouse \u2265 120, low-tier cells observed")
-        print("  - pass  gate needs: warehouse \u2264 80, low-tier \u2265 40% of cells")
+        wh = args.warehouse_cells
+        print("Both snipe and pass gates returned None. Reasons:\n")
+        if wh < 80:
+            print(f"  [snipe] warehouse {wh} < 120 \u2014 structurally fails")
+            print(f"  [pass ] warehouse {wh} \u2264 80 \u2014 gate passes, but MC")
+            print(f"          probably didn't get enough matching samples; try")
+            print(f"          larger --trials or larger --tol.")
+        elif wh > 120:
+            print(f"  [snipe] warehouse {wh} \u2265 120 \u2014 gate passes, but MC")
+            print(f"          probably didn't get enough matching samples; this is")
+            print(f"          common on small mansion maps where {wh} cells is rare.")
+            print(f"          Try --map-id 2510 (shipwreck, distribution goes to 164).")
+            print(f"  [pass ] warehouse {wh} > 80 \u2014 structurally fails")
+        else:
+            print(f"  [snipe] warehouse {wh} < 120 \u2014 structurally fails")
+            print(f"  [pass ] warehouse {wh} > 80 \u2014 structurally fails")
+            print(f"          (the 80-120 range is intentionally a no-hint zone)")
         return 0
 
     if snipe is not None:

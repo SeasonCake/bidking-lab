@@ -549,3 +549,74 @@ def test_snipe_recommendation_is_reproducible_with_seed() -> None:
     assert rec1.expected_value == rec2.expected_value
     assert rec1.snipe_max_bid == rec2.snipe_max_bid
     assert rec1.n_matching_samples == rec2.n_matching_samples
+
+
+def test_snipe_low_confidence_fallback_returns_with_warning() -> None:
+    """When the strict min_matching_samples threshold misses but the relaxed
+    one (default 10) passes, we should still get a recommendation back —
+    flagged with low_confidence=True and a warning baked into rationale.
+    """
+    maps, drops, items = _build_big_warehouse_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=130,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=14),
+            3: QualityBucketObs(quality=3, total_cells=10),
+        },
+    )
+    rec = compute_snipe_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=80, warehouse_tolerance=2,
+        min_matching_samples=200,     # impossible at this trial count
+        min_matching_samples_relaxed=5,
+        rng=np.random.default_rng(31),
+    )
+    assert rec is not None
+    assert rec.low_confidence is True
+    assert "\u6837\u672c\u4ec5" in rec.rationale       # "样本仅 N 个"
+    assert rec.n_matching_samples < 200
+    assert rec.n_matching_samples >= 5
+
+
+def test_snipe_returns_none_when_even_relaxed_threshold_fails() -> None:
+    """Below the relaxed threshold → still None (truly insufficient data)."""
+    maps, drops, items = _build_big_warehouse_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=130,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=14),
+            3: QualityBucketObs(quality=3, total_cells=10),
+        },
+    )
+    rec = compute_snipe_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=20, warehouse_tolerance=0,   # tight + few samples
+        min_matching_samples=200,
+        min_matching_samples_relaxed=200,
+        rng=np.random.default_rng(31),
+    )
+    assert rec is None
+
+
+def test_pass_low_confidence_fallback_returns_with_warning() -> None:
+    """Symmetric to snipe: pass-rec also surfaces a low-confidence fallback."""
+    maps, drops, items = _build_small_junky_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=60,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=22),
+            3: QualityBucketObs(quality=3, total_cells=8),
+        },
+    )
+    rec = compute_pass_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=80, warehouse_tolerance=50,   # wide enough to catch the 32-48 cell pool
+        min_matching_samples=200,              # impossible at n_trials=80
+        min_matching_samples_relaxed=5,
+        rng=np.random.default_rng(41),
+    )
+    assert rec is not None
+    assert rec.low_confidence is True
+    assert "\u6837\u672c\u4ec5" in rec.rationale
+    assert rec.n_matching_samples < 200
+    assert rec.n_matching_samples >= 5

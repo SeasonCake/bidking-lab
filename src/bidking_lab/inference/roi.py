@@ -110,6 +110,13 @@ def _inferred_total_cells(top1: JointHypothesis) -> int:
     return sum(cand.total_cells for cand in top1.per_bucket.values())
 
 
+# Tool that pins exact warehouse cells. When this tool is NOT in the kit,
+# the player only has a noisy eyeball estimate (±~10 cells), so the LOO
+# run must reflect that — otherwise the engine silently "knows" the truth
+# via the 159-cell fallback and 总仓储 looks like it has zero ROI.
+_WAREHOUSE_TOOL = "\u603b\u4ed3\u50a8\u7a7a\u95f4"  # 总仓储空间
+
+
 def _run_inference(
     truth: SessionTruth,
     *,
@@ -117,15 +124,24 @@ def _run_inference(
     tools: Sequence[str],
     include_aisha_outline: bool,
     per_bucket_top: int,
+    approx_capacity: int | None = None,
 ) -> tuple[int, int] | None:
     """Run the joint posterior for ``tools`` and return ``(inferred_value, inferred_cells)``.
 
     Returns None if the engine yields no hypothesis (over-constrained
     inputs); the caller falls back to a defined no-info baseline.
+
+    When ``_WAREHOUSE_TOOL`` is absent from ``tools`` and ``approx_capacity``
+    is provided, the obs is annotated with ``warehouse_total_cells_approx``
+    so the engine's capacity constraint uses the player's noisy estimate
+    instead of the 159-cell fallback. This is what makes 总仓储's ROI
+    measurable.
     """
     obs, _ = build_session_obs(
         truth, hero=hero, tools=tools, include_aisha_outline=include_aisha_outline,
     )
+    if _WAREHOUSE_TOOL not in tools and approx_capacity is not None:
+        obs.warehouse_total_cells_approx = approx_capacity
     top_k = joint_top_k_for_session(obs, k=1, per_bucket_top=per_bucket_top)
     if not top_k:
         return None
@@ -156,11 +172,20 @@ def compute_tool_roi(
     rng: np.random.Generator | None = None,
     include_aisha_outline: bool = False,
     per_bucket_top: int = 8,
+    player_warehouse_noise_std: float = 10.0,
 ) -> list[ToolROI]:
     """Leave-one-out ROI for each tool in ``tool_kit``.
 
     Each tool's ROI is the mean value-error reduction it contributes
     over ``n_trials`` sampled sessions, divided by its silver price.
+
+    ``player_warehouse_noise_std`` models the player's eyeball estimate
+    of warehouse cells when the kit does not include 总仓储空间. A real
+    player can read total cells to within ±5\u201315 by counting visible
+    slots; we draw a Gaussian noise with this std per trial. Setting
+    this to ``0.0`` mimics the legacy behaviour (engine uses fixed 159
+    fallback → 总仓储 looks like a 0-ROI tool because the LOO already
+    "knows" the cells via the fallback).
 
     ``per_bucket_top`` controls the joint search width (passed through
     to :func:`joint_top_k_for_session`). Lower values trade some
@@ -180,10 +205,22 @@ def compute_tool_roi(
         truth_value = truth.total_value()
         truth_cells = truth.warehouse_total_cells
 
+        # Per-trial player eyeball estimate of warehouse cells (used by
+        # every _run_inference call within this trial where 总仓储 is
+        # absent from the kit). Single sample per trial keeps the LOO
+        # comparison fair. std=0.0 → player has perfect eyeball estimate
+        # → 总仓储 should be priced as 0 ROI (it tells you nothing new).
+        if player_warehouse_noise_std > 0:
+            noise = rng.normal(0.0, player_warehouse_noise_std)
+            approx_capacity = max(40, int(round(truth_cells + noise)))
+        else:
+            approx_capacity = int(truth_cells)
+
         full_run = _run_inference(
             truth, hero=hero, tools=tool_kit,
             include_aisha_outline=include_aisha_outline,
             per_bucket_top=per_bucket_top,
+            approx_capacity=approx_capacity,
         )
         if full_run is None:
             full_value_err = abs(truth_value - _no_info_baseline_value(truth))
@@ -199,6 +236,7 @@ def compute_tool_roi(
                 truth, hero=hero, tools=loo_tools,
                 include_aisha_outline=include_aisha_outline,
                 per_bucket_top=per_bucket_top,
+                approx_capacity=approx_capacity,
             )
             if loo_run is None:
                 loo_value_err = abs(truth_value - _no_info_baseline_value(truth))

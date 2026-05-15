@@ -47,7 +47,7 @@ def test_aisha_visibility_rule() -> None:
 def test_standard_loadouts_distinct() -> None:
     """Sanity: the two loadouts differ (different hero needs)."""
     assert set(ETHAN_DEFAULT_LOADOUT) != set(AISHA_DEFAULT_LOADOUT)
-    assert "精品均格" in ETHAN_DEFAULT_LOADOUT
+    assert "优品均格" in ETHAN_DEFAULT_LOADOUT
     assert "总仓储空间" in AISHA_DEFAULT_LOADOUT
     assert "随机抽检(2)" in AISHA_DEFAULT_LOADOUT
     assert len(ETHAN_DEFAULT_LOADOUT) == 5
@@ -55,13 +55,13 @@ def test_standard_loadouts_distinct() -> None:
 
 
 def test_ethan_alt_loadout_swaps_purple_value_for_random_reveal() -> None:
-    """ETHAN_ALT replaces 精品估价 with 随机抽检(1) for category info."""
-    assert "精品估价" not in ETHAN_ALT_LOADOUT
+    """ETHAN_ALT replaces 优品估价 with 随机抽检(1) for category info."""
+    assert "优品估价" not in ETHAN_ALT_LOADOUT
     assert "随机抽检(1)" in ETHAN_ALT_LOADOUT
     # The cheap-side three scan/avg tools stay shared between default and alt
     assert "普品扫描" in ETHAN_ALT_LOADOUT
     assert "良品扫描" in ETHAN_ALT_LOADOUT
-    assert "精品均格" in ETHAN_ALT_LOADOUT
+    assert "优品均格" in ETHAN_ALT_LOADOUT
 
 
 def test_standard_loadouts_dict_indexed_by_hero_mode() -> None:
@@ -98,7 +98,7 @@ def test_tool_price_override_for_warehouse_total() -> None:
     assert TOOL_PRICE_OVERRIDES["总仓储空间"] == 55_000
     assert tool_price("总仓储空间") == 55_000
     # Unknown tool falls back to the rarity tier (default gold = 50k).
-    assert tool_price("珍品估价") == TOOL_PRICE_BY_RARITY["gold"]
+    assert tool_price("极品估价") == TOOL_PRICE_BY_RARITY["gold"]
     assert tool_price("普品扫描", rarity="white") == 1_200
 
 
