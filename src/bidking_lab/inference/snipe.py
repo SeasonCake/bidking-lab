@@ -1,10 +1,16 @@
-"""Snipe-bid recommendation for Ethan (R2) and Aisha (R3) sessions.
+"""Bidding-hint recommendations for Ethan (R2) and Aisha (R3) sessions.
 
-When the player has fully observed the low-tier cell counts and either
-sees or estimates the cabinet's total cell count, a mid-rounds tactical
-window opens to "snipe" the cabinet — submit one aggressive bid before
-opponents start padding. This module computes a UI-surfaceable
-recommendation for that scenario, branching on hero:
+Two symmetric hints share the conditional-MC infrastructure:
+
+* :func:`compute_snipe_recommendation` — *upside* hint for **big**
+  warehouses (\u2265 120 cells) when the low-tier scan is in. Surfaces
+  an aggressive bid ceiling above the typical opponent bid region.
+* :func:`compute_pass_recommendation` — *downside* hint for **small,
+  junk-heavy** warehouses (\u2264 80 cells with \u2265 40% low-tier
+  cells). Surfaces a "let it go above X" anchor when the conditional
+  expected value is materially below the map's overall median.
+
+Both gates branch on hero:
 
 * **Ethan @ R2** — has spent silver on 普品扫描 + 良品扫描 to reveal
   ``q=1`` (white+green combined) and ``q=3`` (blue) cell totals. The R2
@@ -205,7 +211,174 @@ def compute_snipe_recommendation(
     )
 
 
+@dataclass(frozen=True)
+class PassRecommendation:
+    """\u653e\u4ed3 bid-ceiling suggestion for small junk-heavy cabinets.
+
+    Symmetric to :class:`SnipeRecommendation` but for the *downside*: when
+    the warehouse is small (\u2264 ``max_warehouse_cells``) and the
+    observed low-tier cells make up a large fraction (\u2265
+    ``min_low_tier_fraction``) of the cabinet, the conditional value
+    distribution sits *below* the map's overall median. The UI surfaces
+    a "pass above X" hint so the player doesn't get baited into bidding
+    above the conditional expected value just because the map's general
+    reputation is decent.
+    """
+
+    map_id: int
+    map_name: str
+    hero: str
+    round_window: str
+    warehouse_total_cells: int
+    low_tier_cells_observed: int
+    low_tier_fraction: float          # low_cells / warehouse_cells
+
+    n_matching_samples: int
+    expected_value: int               # conditional P50
+    p25_value: int                    # conditional P25 (safe-entry reference)
+    p75_value: int                    # conditional P75 (rarely worth chasing)
+
+    unconditional_p50: int            # overall map median (no warehouse filter)
+    value_ratio: float                # expected / unconditional_p50 — how depressed this cabinet is
+
+    pass_max_bid: int                 # let opponents have it above this (= conditional P50)
+    safe_entry_bid: int               # bid up to this for a margin of safety (= P25)
+    rationale: str
+
+    def as_ui_tooltip(self) -> str:
+        return (
+            f"\u4f4e\u4ef7\u4ed3 ({self.round_window}): \u8d85\u8fc7 "
+            f"{self.pass_max_bid:,} \u5c31\u653e, "
+            f"\u9884\u671f\u4ed3\u4ef7\u4ec5\u662f\u5168\u56fe\u5747\u503c\u7684 "
+            f"{self.value_ratio:.0%}"
+        )
+
+
+def compute_pass_recommendation(
+    session: SessionObs,
+    *,
+    maps: Mapping[int, BidMap],
+    drops: Mapping[int, DropPool],
+    items: Mapping[int, Item],
+    n_trials: int = 2000,
+    warehouse_tolerance: int = 6,
+    min_matching_samples: int = 30,
+    max_warehouse_cells: int = 80,
+    min_low_tier_fraction: float = 0.40,
+    safe_entry_ratio: float = 1.0,    # bid up to P25 × this for a margin of safety
+    rng: np.random.Generator | None = None,
+) -> PassRecommendation | None:
+    """Conditional MC for the *small junk-heavy* scenario; returns ``None``
+    if any precondition fails.
+
+    Hard gating mirrors :func:`compute_snipe_recommendation` but inverts
+    the warehouse-size bound and adds a low-tier fraction requirement:
+
+    * ``session.hero`` in ``{"ethan", "aisha"}``
+    * ``warehouse_total_cells <= max_warehouse_cells`` (default 80)
+    * Low-tier buckets fully observed (Ethan: q=1+q=3; Aisha: q=1+q=2+q=3)
+    * ``low_cells / warehouse_cells >= min_low_tier_fraction`` (default 0.40)
+    """
+    if session.hero == "ethan":
+        round_window = "R2"
+        required_qs: tuple[int, ...] = (1, 3)
+    elif session.hero == "aisha":
+        round_window = "R3"
+        required_qs = (1, 2, 3)
+    else:
+        return None
+
+    wh = session.warehouse_total_cells
+    if wh is None or wh <= 0 or wh > max_warehouse_cells:
+        return None
+
+    observed_cells: list[tuple[int, int]] = []
+    for q in required_qs:
+        bucket = session.buckets.get(q)
+        if bucket is None or bucket.total_cells is None:
+            return None
+        observed_cells.append((q, bucket.total_cells))
+    low_cells = sum(c for _, c in observed_cells)
+    low_fraction = low_cells / wh
+    if low_fraction < min_low_tier_fraction:
+        return None
+
+    if session.map_id not in maps:
+        return None
+
+    rng = rng or np.random.default_rng()
+    all_values: list[int] = []
+    conditional_values: list[int] = []
+    for _ in range(n_trials):
+        truth = sample_session_truth(
+            session.map_id, maps=maps, drops=drops, items=items, rng=rng,
+        )
+        all_values.append(truth.total_value())
+        if abs(truth.warehouse_total_cells - wh) <= warehouse_tolerance:
+            conditional_values.append(truth.total_value())
+
+    if len(conditional_values) < min_matching_samples:
+        return None
+
+    cond = np.asarray(conditional_values, dtype=np.int64)
+    uncond = np.asarray(all_values, dtype=np.int64)
+    p25 = int(np.percentile(cond, 25))
+    p50 = int(np.percentile(cond, 50))
+    p75 = int(np.percentile(cond, 75))
+    unc_p50 = int(np.percentile(uncond, 50))
+    ratio = (p50 / unc_p50) if unc_p50 > 0 else 0.0
+
+    pass_max = p50
+    safe_entry = int(p25 * safe_entry_ratio)
+
+    if session.hero == "ethan":
+        info_breakdown = (
+            f"\u767d\u7eff(\u666e\u54c1\u626b\u63cf) {observed_cells[0][1]} + "
+            f"\u84dd(\u826f\u54c1\u626b\u63cf) {observed_cells[1][1]}"
+        )
+        timing_note = "R2 \u626b\u63cf\u540e\u53d1\u73b0\u5c0f\u4ed3 + \u4f4e\u54c1\u5360\u6bd4\u9ad8"
+    else:
+        info_breakdown = (
+            f"\u767d(\u8f6e\u5ed3 R1) {observed_cells[0][1]} + "
+            f"\u7eff(\u8f6e\u5ed3 R2) {observed_cells[1][1]} + "
+            f"\u84dd(\u8f6e\u5ed3 R3) {observed_cells[2][1]}"
+        )
+        timing_note = "R3 \u8f6e\u5ed3\u53e0\u52a0\u540e\u53d1\u73b0\u5c0f\u4ed3 + \u4f4e\u54c1\u5360\u6bd4\u9ad8"
+
+    rationale = (
+        f"{timing_note}\uff1a\u4ed3\u5e93\u4ec5 {wh} \u683c\uff0c"
+        f"\u4f4e\u54c1\u5df2\u5360 {low_cells} \u683c "
+        f"({low_fraction:.0%}, {info_breakdown})\u3002\n"
+        f"\u5728 {len(conditional_values)} \u4e2a\u540c\u4f53\u91cf\u4ed3\u5e93\u7684 MC \u91c7\u6837\u4e2d\uff0c"
+        f"\u603b\u4ed3\u4ef7 \u4e2d\u4f4d\u6570 = {p50:,}\u3001P25 = {p25:,} \u94f6\u5e01\uff0c"
+        f"\u53ea\u662f\u672c\u56fe\u5168\u56fe\u5747\u503c {unc_p50:,} \u7684 {ratio:.0%}\u3002\n"
+        f"\u8d85\u8fc7 {pass_max:,} \u5c31\u653e\u4ed3\uff1b\u82e5\u4e0d\u5f97\u5df2\u8981\u51fa\u4ef7\uff0c"
+        f"\u5efa\u8bae\u4e0d\u9ad8\u4e8e P25 = {safe_entry:,} \u94f6\u5e01\uff08\u9001\u8d77\u624b\u4f59\u88d5\uff09\u3002"
+    )
+
+    return PassRecommendation(
+        map_id=session.map_id,
+        map_name=maps[session.map_id].name,
+        hero=session.hero,
+        round_window=round_window,
+        warehouse_total_cells=wh,
+        low_tier_cells_observed=low_cells,
+        low_tier_fraction=low_fraction,
+        n_matching_samples=len(conditional_values),
+        expected_value=p50,
+        p25_value=p25,
+        p75_value=p75,
+        unconditional_p50=unc_p50,
+        value_ratio=ratio,
+        pass_max_bid=pass_max,
+        safe_entry_bid=safe_entry,
+        rationale=rationale,
+    )
+
+
 __all__ = (
     "SnipeRecommendation",
     "compute_snipe_recommendation",
+    "PassRecommendation",
+    "compute_pass_recommendation",
 )

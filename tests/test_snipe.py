@@ -12,7 +12,9 @@ from bidking_lab.inference.observation import (
     SessionObs,
 )
 from bidking_lab.inference.snipe import (
+    PassRecommendation,
     SnipeRecommendation,
+    compute_pass_recommendation,
     compute_snipe_recommendation,
 )
 
@@ -49,6 +51,30 @@ def _make_map(map_id, drop_pool_id, *, min_items=15, max_items=20) -> BidMap:
         value_tier_ui="ui_value_low", mode_flag=4,
         bid_price_ladder=[], raw_row=["0"] * 21,
     )
+
+
+def _build_small_junky_world():
+    """A pool that produces small (\u224860-cell) cabinets dominated by low-tier
+    junk. Designed for testing the pass-recommendation gate.
+    """
+    items = {
+        # White/green/blue dominate the count
+        101: _make_item(101, value=130, quality=1, shape=(2, 2)),
+        102: _make_item(102, value=150, quality=1, shape=(3, 2)),
+        201: _make_item(201, value=320, quality=2, shape=(2, 2)),
+        301: _make_item(301, value=1_100, quality=3, shape=(2, 2)),
+        # Rare purple anchor
+        401: _make_item(401, value=8_000, quality=4, shape=(2, 2)),
+    }
+    pool = _make_pool(900, [
+        (101, 101, 2, 4, 8),
+        (101, 102, 1, 3, 6),
+        (101, 201, 2, 4, 5),
+        (101, 301, 1, 2, 3),
+        (101, 401, 0, 1, 1),
+    ])
+    bid_map = _make_map(2407, 900, min_items=8, max_items=12)
+    return {2407: bid_map}, {900: pool}, items
 
 
 def _build_big_warehouse_world():
@@ -286,6 +312,135 @@ def test_snipe_ethan_rationale_mentions_R2_and_scan_tools() -> None:
     assert "\u666e\u54c1\u626b\u63cf" in rec.rationale   # 普品扫描
     assert "\u826f\u54c1\u626b\u63cf" in rec.rationale   # 良品扫描
     assert "(R2)" in rec.as_ui_tooltip()
+
+
+# --- compute_pass_recommendation ---
+
+def test_pass_returns_none_when_warehouse_too_big() -> None:
+    """Pass gate is the inverse of snipe: warehouse must be <= max_warehouse_cells."""
+    maps, drops, items = _build_small_junky_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=120,    # too big
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=20),
+            3: QualityBucketObs(quality=3, total_cells=8),
+        },
+    )
+    rec = compute_pass_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=200, rng=np.random.default_rng(0),
+    )
+    assert rec is None
+
+
+def test_pass_returns_none_when_low_tier_fraction_too_low() -> None:
+    """Low-tier占比 must be >= min_low_tier_fraction (default 0.40)."""
+    maps, drops, items = _build_small_junky_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=60,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=8),
+            3: QualityBucketObs(quality=3, total_cells=4),
+        },
+    )
+    # 12 / 60 = 0.20 — below the 0.40 threshold.
+    rec = compute_pass_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=200, min_low_tier_fraction=0.40,
+        rng=np.random.default_rng(0),
+    )
+    assert rec is None
+
+
+def test_pass_returns_none_when_low_tier_missing() -> None:
+    maps, drops, items = _build_small_junky_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=60,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=20),
+            # missing q=3
+        },
+    )
+    rec = compute_pass_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=200, rng=np.random.default_rng(0),
+    )
+    assert rec is None
+
+
+def test_pass_produces_recommendation_for_junky_small_cabinet() -> None:
+    maps, drops, items = _build_small_junky_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=60,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=22),
+            3: QualityBucketObs(quality=3, total_cells=8),
+        },
+    )
+    # 30 / 60 = 50%, > 40% — gate passes.
+    rec = compute_pass_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=600, warehouse_tolerance=25,
+        min_matching_samples=30,
+        rng=np.random.default_rng(123),
+    )
+    assert isinstance(rec, PassRecommendation)
+    assert rec.warehouse_total_cells == 60
+    assert rec.low_tier_cells_observed == 30
+    assert abs(rec.low_tier_fraction - 0.50) < 1e-9
+    # Conditional P25 <= P50 <= P75
+    assert rec.p25_value <= rec.expected_value <= rec.p75_value
+    # pass_max_bid is the conditional P50; safe_entry is P25
+    assert rec.pass_max_bid == rec.expected_value
+    assert rec.safe_entry_bid == rec.p25_value
+    # The tooltip mentions percentage and pass threshold
+    tip = rec.as_ui_tooltip()
+    assert "\u4f4e\u4ef7\u4ed3" in tip
+    assert str(rec.pass_max_bid).split(",")[0] in tip.replace(",", "")
+
+
+def test_pass_aisha_branch_uses_R3_window() -> None:
+    maps, drops, items = _build_small_junky_world()
+    session = SessionObs(
+        map_id=2407, hero="aisha", warehouse_total_cells=60,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=14),
+            2: QualityBucketObs(quality=2, total_cells=8),
+            3: QualityBucketObs(quality=3, total_cells=8),
+        },
+    )
+    # 30 / 60 = 50% — gate passes.
+    rec = compute_pass_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=600, warehouse_tolerance=25,
+        min_matching_samples=30,
+        rng=np.random.default_rng(2026),
+    )
+    assert rec is not None
+    assert rec.hero == "aisha"
+    assert rec.round_window == "R3"
+    assert "\u8f6e\u5ed3" in rec.rationale       # outlines mentioned
+
+
+def test_pass_reproducible_with_seed() -> None:
+    maps, drops, items = _build_small_junky_world()
+    session = SessionObs(
+        map_id=2407, hero="ethan", warehouse_total_cells=60,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=22),
+            3: QualityBucketObs(quality=3, total_cells=8),
+        },
+    )
+    kwargs = dict(
+        maps=maps, drops=drops, items=items,
+        n_trials=400, warehouse_tolerance=25, min_matching_samples=20,
+    )
+    r1 = compute_pass_recommendation(session, rng=np.random.default_rng(7), **kwargs)
+    r2 = compute_pass_recommendation(session, rng=np.random.default_rng(7), **kwargs)
+    assert r1 is not None and r2 is not None
+    assert r1.pass_max_bid == r2.pass_max_bid
+    assert r1.safe_entry_bid == r2.safe_entry_bid
+    assert r1.unconditional_p50 == r2.unconditional_p50
 
 
 def test_snipe_recommendation_is_reproducible_with_seed() -> None:

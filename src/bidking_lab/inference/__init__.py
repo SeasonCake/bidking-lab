@@ -42,7 +42,9 @@ from bidking_lab.inference.roi import (
     compute_tool_roi,
 )
 from bidking_lab.inference.snipe import (
+    PassRecommendation,
     SnipeRecommendation,
+    compute_pass_recommendation,
     compute_snipe_recommendation,
 )
 from bidking_lab.inference.synth_readings import (
@@ -80,4 +82,6 @@ __all__ = (
     "compute_tool_roi",
     "SnipeRecommendation",
     "compute_snipe_recommendation",
+    "PassRecommendation",
+    "compute_pass_recommendation",
 )

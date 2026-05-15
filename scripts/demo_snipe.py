@@ -1,8 +1,9 @@
-"""Demo: R2 snipe-bid recommendation for an Ethan session.
+"""Demo: bidding-hint recommendations (snipe + pass) for an Ethan session.
 
-Loads real game tables and runs ``compute_snipe_recommendation`` on a
-hand-crafted scenario for \u522b\u5885 2407 (private vault, mid-tier
-mansion). Prints the full rationale and the one-line UI tooltip.
+Loads real game tables and runs both ``compute_snipe_recommendation``
+(big warehouse upside) and ``compute_pass_recommendation`` (small
+junk-heavy downside) on hand-crafted scenarios. Prints rationales and
+tooltips for each.
 """
 
 from __future__ import annotations
@@ -25,7 +26,10 @@ from bidking_lab.inference.observation import (
     QualityBucketObs,
     SessionObs,
 )
-from bidking_lab.inference.snipe import compute_snipe_recommendation
+from bidking_lab.inference.snipe import (
+    compute_pass_recommendation,
+    compute_snipe_recommendation,
+)
 
 
 def main() -> int:
@@ -70,30 +74,44 @@ def main() -> int:
           f"low_total={args.wg_cells + args.blue_cells}")
     print(f"  MC: n_trials={args.trials}, tolerance=\u00b1{args.tol} cells\n")
 
-    rec = compute_snipe_recommendation(
-        session,
-        maps=maps, drops=drops, items=items,
-        n_trials=args.trials, warehouse_tolerance=args.tol,
-        rng=np.random.default_rng(args.seed),
+    rng = np.random.default_rng(args.seed)
+    snipe = compute_snipe_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=args.trials, warehouse_tolerance=args.tol, rng=rng,
     )
-    if rec is None:
-        print("Snipe gating failed; no recommendation surfaced.")
-        print("  (Most likely: warehouse < 120 cells, missing low-tier scan,"
-              " or too few MC samples in the warehouse tolerance window.)")
+    pass_rec = compute_pass_recommendation(
+        session, maps=maps, drops=drops, items=items,
+        n_trials=args.trials, warehouse_tolerance=args.tol,
+        rng=np.random.default_rng(args.seed + 1),
+    )
+
+    if snipe is None and pass_rec is None:
+        print("Both snipe and pass gates returned None.")
+        print("  - snipe gate needs: warehouse \u2265 120, low-tier cells observed")
+        print("  - pass  gate needs: warehouse \u2264 80, low-tier \u2265 40% of cells")
         return 0
 
-    print(f"--- MC distribution (n_matching = {rec.n_matching_samples}) ---")
-    print(f"  P25  total value : {rec.p25_value:>12,} silver")
-    print(f"  P50  (expected)  : {rec.expected_value:>12,} silver")
-    print(f"  P75              : {rec.p75_value:>12,} silver")
-    print(f"  P90              : {rec.p90_value:>12,} silver\n")
-    print(f"--- Recommendation ---")
-    print(f"  safe_floor_bid   : {rec.safe_floor_bid:>12,} silver  (P50 \u00d7 0.70)")
-    print(f"  snipe_max_bid    : {rec.snipe_max_bid:>12,} silver  (P75 \u00d7 1.15)\n")
-    print(f"UI tooltip:  {rec.as_ui_tooltip()}\n")
-    print("Rationale (multiline):")
-    for line in rec.rationale.splitlines():
-        print(f"  {line}")
+    if snipe is not None:
+        print(f"--- SNIPE (big warehouse upside) ---")
+        print(f"  matching samples : {snipe.n_matching_samples}")
+        print(f"  P25 / P50 / P75 / P90 : "
+              f"{snipe.p25_value:,} / {snipe.expected_value:,} / "
+              f"{snipe.p75_value:,} / {snipe.p90_value:,} silver")
+        print(f"  safe_floor_bid   : {snipe.safe_floor_bid:>12,} silver  (P50 \u00d7 0.70)")
+        print(f"  snipe_max_bid    : {snipe.snipe_max_bid:>12,} silver  (P75 \u00d7 1.15)")
+        print(f"  tooltip          : {snipe.as_ui_tooltip()}\n")
+
+    if pass_rec is not None:
+        print(f"--- PASS (small junk-heavy downside) ---")
+        print(f"  matching samples : {pass_rec.n_matching_samples}")
+        print(f"  conditional P25/P50/P75 : "
+              f"{pass_rec.p25_value:,} / {pass_rec.expected_value:,} / "
+              f"{pass_rec.p75_value:,} silver")
+        print(f"  unconditional P50: {pass_rec.unconditional_p50:>12,} silver  "
+              f"(this cabinet = {pass_rec.value_ratio:.0%} of overall)")
+        print(f"  safe_entry_bid   : {pass_rec.safe_entry_bid:>12,} silver  (= P25)")
+        print(f"  pass_max_bid     : {pass_rec.pass_max_bid:>12,} silver  (= P50)")
+        print(f"  tooltip          : {pass_rec.as_ui_tooltip()}\n")
     return 0
 
 

@@ -7835,7 +7835,7 @@ a.anchor-link {
 <span class="kn">from</span><span class="w"> </span><span class="nn">bidking_lab.inference.ground_truth</span><span class="w"> </span><span class="kn">import</span> <span class="n">sample_session_truth</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bidking_lab.inference.observation</span><span class="w"> </span><span class="kn">import</span> <span class="n">QualityBucketObs</span><span class="p">,</span> <span class="n">SessionObs</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">bidking_lab.inference.roi</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_tool_roi</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">bidking_lab.inference.snipe</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_snipe_recommendation</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bidking_lab.inference.snipe</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_pass_recommendation</span><span class="p">,</span> <span class="n">compute_snipe_recommendation</span>
 
 <span class="n">plt</span><span class="o">.</span><span class="n">rcParams</span><span class="p">[</span><span class="s1">'font.sans-serif'</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'Microsoft YaHei'</span><span class="p">,</span> <span class="s1">'SimHei'</span><span class="p">,</span> <span class="s1">'DejaVu Sans'</span><span class="p">]</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">rcParams</span><span class="p">[</span><span class="s1">'axes.unicode_minus'</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
@@ -8161,6 +8161,106 @@ Aisha tooltip :  高风险操作 (R3): 可秒仓, 推荐价格 1,647,265 以内 
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="3.-Symmetric-Hint:-%E6%94%BE%E4%BB%93-(Pass-on-Small-Junk-Heavy-Cabinets)">3. Symmetric Hint: 放仓 (Pass on Small Junk-Heavy Cabinets)<a class="anchor-link" href="#3.-Symmetric-Hint:-%E6%94%BE%E4%BB%93-(Pass-on-Small-Junk-Heavy-Cabinets)">¶</a></h2><p>The snipe hint surfaces upside on <strong>big</strong> warehouses. Its symmetric counterpart <code>compute_pass_recommendation</code> surfaces <em>downside</em> on <strong>small + junk-heavy</strong> cabinets — warehouses ≤ 80 cells whose observed low-tier cells make up ≥ 40% of the total. The conditional MC distribution sits below the map's overall median, so the UI should <strong>anchor opponents' bids</strong>: let them have it above the conditional P50.</p>
+<table>
+<thead>
+<tr>
+<th>Hint</th>
+<th>Trigger</th>
+<th>Recommendation</th>
+<th>Framing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Snipe</strong></td>
+<td>warehouse ≥ 120, low-tier scanned</td>
+<td>snipe_max = P75 × 1.15</td>
+<td><em>upside bait</em> — bid above to beat opponents</td>
+</tr>
+<tr>
+<td><strong>Pass</strong></td>
+<td>warehouse ≤ 80, low-tier ≥ 40%</td>
+<td>pass_max = conditional P50</td>
+<td><em>downside warning</em> — let it go above to save budget</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=4c91d280">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [6]:</div>
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># Pass scenario on 别墅 2407 (median ~74-cell warehouse, junk-heavy distribution)</span>
+<span class="n">PASS_WAREHOUSE</span> <span class="o">=</span> <span class="mi">60</span>
+<span class="n">PASS_TRIALS</span> <span class="o">=</span> <span class="mi">3000</span>
+<span class="n">PASS_TOL</span> <span class="o">=</span> <span class="mi">8</span>
+
+<span class="n">ethan_pass</span> <span class="o">=</span> <span class="n">SessionObs</span><span class="p">(</span>
+    <span class="n">map_id</span><span class="o">=</span><span class="mi">2407</span><span class="p">,</span> <span class="n">hero</span><span class="o">=</span><span class="s1">'ethan'</span><span class="p">,</span> <span class="n">warehouse_total_cells</span><span class="o">=</span><span class="n">PASS_WAREHOUSE</span><span class="p">,</span>
+    <span class="n">buckets</span><span class="o">=</span><span class="p">{</span>
+        <span class="mi">1</span><span class="p">:</span> <span class="n">QualityBucketObs</span><span class="p">(</span><span class="n">quality</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">total_cells</span><span class="o">=</span><span class="mi">22</span><span class="p">),</span>
+        <span class="mi">3</span><span class="p">:</span> <span class="n">QualityBucketObs</span><span class="p">(</span><span class="n">quality</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">total_cells</span><span class="o">=</span><span class="mi">8</span><span class="p">),</span>
+    <span class="p">},</span>
+<span class="p">)</span>
+<span class="n">rec_pass</span> <span class="o">=</span> <span class="n">compute_pass_recommendation</span><span class="p">(</span>
+    <span class="n">ethan_pass</span><span class="p">,</span> <span class="n">maps</span><span class="o">=</span><span class="n">maps</span><span class="p">,</span> <span class="n">drops</span><span class="o">=</span><span class="n">drops</span><span class="p">,</span> <span class="n">items</span><span class="o">=</span><span class="n">items</span><span class="p">,</span>
+    <span class="n">n_trials</span><span class="o">=</span><span class="n">PASS_TRIALS</span><span class="p">,</span> <span class="n">warehouse_tolerance</span><span class="o">=</span><span class="n">PASS_TOL</span><span class="p">,</span>
+    <span class="n">rng</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">2029</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="k">if</span> <span class="n">rec_pass</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'Pass gate returned None (probably too few matching samples).'</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Map 2407 (</span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">map_name</span><span class="si">}</span><span class="s1">), </span><span class="si">{</span><span class="n">PASS_WAREHOUSE</span><span class="si">}</span><span class="s1">-cell warehouse, '</span>
+          <span class="sa">f</span><span class="s1">'low-tier </span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">low_tier_cells_observed</span><span class="si">}</span><span class="s1"> cells (</span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">low_tier_fraction</span><span class="si">:</span><span class="s1">.0%</span><span class="si">}</span><span class="s1">):'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  matching samples       : </span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">n_matching_samples</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  conditional P25 / P50 / P75 : '</span>
+          <span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">p25_value</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> / </span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">expected_value</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> / </span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">p75_value</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> silver'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  unconditional P50      : </span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">unconditional_p50</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> silver'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  this cabinet vs overall: </span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">value_ratio</span><span class="si">:</span><span class="s1">.0%</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  safe_entry_bid (= P25) : </span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">safe_entry_bid</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> silver'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  pass_max_bid   (= P50) : </span><span class="si">{</span><span class="n">rec_pass</span><span class="o">.</span><span class="n">pass_max_bid</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> silver'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">'UI tooltip   :  '</span> <span class="o">+</span> <span class="n">rec_pass</span><span class="o">.</span><span class="n">as_ui_tooltip</span><span class="p">())</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>Map 2407 (私人金库), 60-cell warehouse, low-tier 30 cells (50%):
+  matching samples       : 844
+  conditional P25 / P50 / P75 : 184,018 / 287,535 / 441,055 silver
+  unconditional P50      : 350,394 silver
+  this cabinet vs overall: 82%
+  safe_entry_bid (= P25) : 184,018 silver
+  pass_max_bid   (= P50) : 287,535 silver
+
+UI tooltip   :  低价仓 (R2): 超过 287,535 就放, 预期仓价仅是全图均值的 82%
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=3402d4d3">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <p><strong>Takeaways</strong></p>
 <ul>
 <li>For a fixed map + warehouse size the MC value distribution is <strong>hero-independent</strong>, so Ethan@R2 and Aisha@R3 get the same <code>snipe_max</code>. The difference is <strong>cost basis</strong> (3,700 vs 0 silver in scans) and <strong>timing</strong> (R2 ≫ R3 win-rate).</li>
@@ -8168,12 +8268,13 @@ Aisha tooltip :  高风险操作 (R3): 可秒仓, 推荐价格 1,647,265 以内 
 <li>The <code>snipe_max ≈ 1.4M silver</code> is priced above the typical opponent bid region (around P50). Going below means losing the snipe; going above means overpaying.</li>
 <li>The recommendation is <strong>strictly gated</strong>: warehouse &lt; 120 cells, missing low-tier observations, or too-noisy MC matching all return <code>None</code> so the UI hint stays silent rather than misleading.</li>
 </ul>
-<h2 id="Summary">Summary<a class="anchor-link" href="#Summary">¶</a></h2><p>Phase 2 closes the loop with two actionable surfaces:</p>
+<h2 id="Summary">Summary<a class="anchor-link" href="#Summary">¶</a></h2><p>Phase 2 closes the loop with three actionable surfaces:</p>
 <ol>
 <li><strong>What should I carry?</strong> → <code>compute_tool_roi</code> ranks tools by per-silver value-error reduction.</li>
-<li><strong>What should I bid in the snipe window?</strong> → <code>compute_snipe_recommendation</code> gives a (safe_floor, expected, snipe_max) triple plus a hero-specific rationale string ready to drop into a UI tooltip.</li>
+<li><strong>When should I snipe?</strong> → <code>compute_snipe_recommendation</code> gives a (safe_floor, expected, snipe_max) triple plus a hero-specific rationale string ready to drop into a UI tooltip.</li>
+<li><strong>When should I pass?</strong> → <code>compute_pass_recommendation</code> is the symmetric downside hint for small junk-heavy cabinets, anchoring opponents' bids below the conditional median.</li>
 </ol>
-<p>Together they cover the <em>buy</em> and <em>bid</em> halves of the auction loop. The next milestone is a Streamlit scaffold that wires both into a single form.</p>
+<p>Together they cover the <em>buy</em>, <em>bid</em>, and <em>fold</em> decisions of the auction loop. The next milestone is a Streamlit scaffold that wires the three surfaces into a single form.</p>
 </div>
 </div>
 </div>
