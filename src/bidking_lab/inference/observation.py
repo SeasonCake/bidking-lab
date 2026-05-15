@@ -131,20 +131,36 @@ STANDARD_LOADOUTS: dict[HeroMode, tuple[str, ...]] = {
     "aisha": AISHA_DEFAULT_LOADOUT,
 }
 
-# --- Battle-item silver prices by rarity, used by Phase 2 tool-ROI math ---
+# --- Battle-item silver prices, used by Phase 2 tool-ROI math ---
 #
 # User-reported live-game medians (2026-05-15). The actual price fluctuates
-# session-to-session: "有的时候是更贵有的时候是更便宜". These are point
-# estimates; ROI tables should report sensitivity to a ±30% band.
-# 总仓储空间 and similar gold-tier tools sit slightly above 35k (no clean
-# number from the user yet — treat 50k as a placeholder until probed).
+# session-to-session ("有的时候是更贵有的时候是更便宜"); ROI tables should
+# report sensitivity to a ±30% band on top of these point estimates.
 TOOL_PRICE_BY_RARITY: dict[str, int] = {
-    "white":  1_200,
-    "green":  2_500,
-    "blue":   20_000,
-    "purple": 35_000,
-    "gold":   50_000,    # placeholder for 珍品估价/珍品扫描/总仓储空间
+    "white":  1_200,    # 普品扫描 类
+    "green":  2_500,    # 良品扫描 类
+    "blue":   20_000,   # 精品估价 / 精品均格 类
+    "purple": 35_000,   # 珍品估价 类
+    "gold":   50_000,   # 珍品扫描 类 (default gold-tier fallback)
 }
+
+# Tool-name-specific overrides (use when the tool's price diverges from
+# its quality-rarity tier). Phase 2 ROI code should call ``tool_price()``
+# below rather than indexing TOOL_PRICE_BY_RARITY directly.
+TOOL_PRICE_OVERRIDES: dict[str, int] = {
+    "总仓储空间": 55_000,        # user-confirmed 2026-05-15
+}
+
+
+def tool_price(tool_name: str, rarity: str = "gold") -> int:
+    """Resolve the silver price for ``tool_name``.
+
+    Falls back to ``TOOL_PRICE_BY_RARITY[rarity]`` if no override is set
+    for this specific tool.
+    """
+    if tool_name in TOOL_PRICE_OVERRIDES:
+        return TOOL_PRICE_OVERRIDES[tool_name]
+    return TOOL_PRICE_BY_RARITY[rarity]
 
 
 @dataclass
@@ -410,6 +426,8 @@ __all__ = (
     "AISHA_DEFAULT_LOADOUT",
     "STANDARD_LOADOUTS",
     "TOOL_PRICE_BY_RARITY",
+    "TOOL_PRICE_OVERRIDES",
+    "tool_price",
     "aisha_can_observe_huge",
     "QualityBucketObs",
     "SessionObs",

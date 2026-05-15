@@ -87,6 +87,21 @@ def test_tool_price_by_rarity_monotonic_increasing() -> None:
     assert TOOL_PRICE_BY_RARITY["purple"] == 35_000
 
 
+def test_tool_price_override_for_warehouse_total() -> None:
+    """总仓储空间 has a tool-specific 55k price (user-confirmed 2026-05-15)."""
+    from bidking_lab.inference.observation import (
+        TOOL_PRICE_BY_RARITY,
+        TOOL_PRICE_OVERRIDES,
+        tool_price,
+    )
+
+    assert TOOL_PRICE_OVERRIDES["总仓储空间"] == 55_000
+    assert tool_price("总仓储空间") == 55_000
+    # Unknown tool falls back to the rarity tier (default gold = 50k).
+    assert tool_price("珍品估价") == TOOL_PRICE_BY_RARITY["gold"]
+    assert tool_price("普品扫描", rarity="white") == 1_200
+
+
 # --- QualityBucketObs helpers ---
 
 def test_bucket_huge_methods_defaults() -> None:
