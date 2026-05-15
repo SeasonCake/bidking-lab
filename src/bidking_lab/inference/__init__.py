@@ -41,6 +41,10 @@ from bidking_lab.inference.roi import (
     ToolROI,
     compute_tool_roi,
 )
+from bidking_lab.inference.snipe import (
+    SnipeRecommendation,
+    compute_snipe_recommendation,
+)
 from bidking_lab.inference.synth_readings import (
     SESSION_TOOL_SPECS,
     TOOL_SPECS,
@@ -74,4 +78,6 @@ __all__ = (
     "build_session_obs",
     "ToolROI",
     "compute_tool_roi",
+    "SnipeRecommendation",
+    "compute_snipe_recommendation",
 )

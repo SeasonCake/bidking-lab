@@ -3,6 +3,8 @@
 Metric: **mean value-error reduction per LOO trial, in silver.**
 ROI = info_gain_value_mean / silver_cost. Positive = the tool sharpens inference; negative = the engine was relying on a fortuitous prior in that bucket.
 
+> ⚠️ Caveat on 精品均格 (ROI ≈ 0): the value-error metric does **not** capture this tool's main use case. When the displayed avg is an integer (e.g., `3`) or a clean half (e.g., `2.5`), the truncation-display rule (`format_value`, 2-decimal cap) leaks enough info to pin the exact `(total_cells, count)` pair for purple — which then collapses the joint posterior even though the value-side numbers don't move. The metric should be read as "given everything else in the Ethan default kit, 精品均格 doesn't add **value** precision" — its **cells** precision contribution remains real but is not the ROI denominator here. Future Phase 2.1 can add a complementary "cells-error ROI" column.
+
 ## Map 2407  (私人金库)
 
 ### Ethan default
