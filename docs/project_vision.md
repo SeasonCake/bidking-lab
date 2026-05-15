@@ -114,7 +114,7 @@
 - [x] **Drop pool 多层嵌套机制破解**：`cat=9999` 表示池子引用，叶子条目用真实 category（参见 `simulation.basic_mc.flatten_pool`）
 - [x] **第一版 MC**：`simulate_map(map_id, n=100_000)` → mean / std / q05 / q50 / q95；已通过 `scripts/demo_simulate_maps.py` 在 13 张图上跑过，结果符合"高难度 = 高期望+高方差"的设计直觉
 - [x] **Bidding 模型 + 明暗拍区分**：`simulation.bidding.simulate_session()`，含 BidPolicy / SessionSummary / ROI 分析
-- [x] **关键简化决策**：明暗拍 drop pool 完全一样、预算约束在绝大多数场景不生效 → 后续核心模型不区分明暗拍，budget 模块保留但不进核心路径（详见 `docs/observations.md` Checkpoint #4）
+- [x] **关键简化决策**：明暗拍 drop pool 完全一样、预算约束在绝大多数场景不生效 → 后续核心模型不区分明暗拍，budget 模块保留但不进核心路径（详见 `OBSERVATIONS.md` Checkpoint #4）
 - [ ] **下一步（C-1）**：英雄技能的边际价值（Q4）—— Hero.txt 深层 schema → 技能效果建模 → 对照 MC
 - [ ] `Cabinet.txt` schema（Q3 需要：物品形状 + 柜子尺寸 → 装箱可行性）
 - [ ] 第一个 notebook：地图价值分布小提琴图

@@ -1,7 +1,7 @@
 # bidking-lab · 项目观察日志
 
 > 记录关键发现、设计决策、技术要点和阶段性成果。  
-> TROUBLESHOOTING.md 记"踩坑"，这里记"收获"。  
+> `TROUBLESHOOTING.md` 记"踩坑"，这里记"收获"。两个文件都放在仓库根目录，方便 GitHub 首页直接看到。  
 > 按时间线从早到晚排列，每个 checkpoint 对应一次 git push。
 
 ---
