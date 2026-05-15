@@ -16,6 +16,12 @@ Top-level surfaces:
   across buckets, or when warehouse_total_cells is known exactly.
 """
 
+from bidking_lab.inference.ground_truth import (
+    BucketTruth,
+    SessionTruth,
+    is_huge_item,
+    sample_session_truth,
+)
 from bidking_lab.inference.joint import (
     JointHypothesis,
     joint_top_k_for_session,
@@ -31,9 +37,20 @@ from bidking_lab.inference.observation import (
     candidates_for_bucket,
     top_k_for_session,
 )
+from bidking_lab.inference.roi import (
+    ToolROI,
+    compute_tool_roi,
+)
+from bidking_lab.inference.synth_readings import (
+    SESSION_TOOL_SPECS,
+    TOOL_SPECS,
+    ToolEffect,
+    ToolSpec,
+    apply_tool,
+    build_session_obs,
+)
 
 __all__ = (
-    # observation
     "BucketCandidate",
     "QualityBucketObs",
     "SessionObs",
@@ -43,7 +60,18 @@ __all__ = (
     "ETHAN_DEFAULT_LOADOUT",
     "ETHAN_ALT_LOADOUT",
     "STANDARD_LOADOUTS",
-    # joint
     "JointHypothesis",
     "joint_top_k_for_session",
+    "BucketTruth",
+    "SessionTruth",
+    "is_huge_item",
+    "sample_session_truth",
+    "ToolSpec",
+    "ToolEffect",
+    "TOOL_SPECS",
+    "SESSION_TOOL_SPECS",
+    "apply_tool",
+    "build_session_obs",
+    "ToolROI",
+    "compute_tool_roi",
 )
