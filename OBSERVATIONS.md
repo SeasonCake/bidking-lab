@@ -436,5 +436,62 @@
 
 ---
 
+## Checkpoint #10 — 游戏补丁检测 + map-info 动态生成假说（2026-05-15）
+
+### 关键发现
+
+1. **游戏 2026-05-15 patch 改了表结构**。`scripts/probe_table_column_drift.py` 实测：
+
+   | 表 | 旧 | 新 | 变化 |
+   |---|---|---|---|
+   | BidMap.txt | 105 行 × 21 列 | **125 行 × 23 列** | +20 张地图 + 2 列 + 列序重排 |
+   | Item.txt | 1132 × 38 | **1134 × 38** | +2 件物品 |
+   | Drop.txt | 608 × 5 | **629 × 5** | +21 个池 |
+   | Hero / BattleItem / Cabinet | — | — | 不变 |
+
+   **列序漂移**：旧 col[10] 在新表里去到 col[11]，整体右移 1；新 col[8] 是新加的 flag；新 col[16] 是空占位（旧 col[16] drop_ref 跑到新 col[17]）；新 col[22] 是新加的尾部 flag。
+
+2. **截图里的"动态信息"不是 BidMap 静态字段**。  
+   我以为 `gold count = 3`、`purple avg cells = 2.54`、`gold total cells = 14`、`random reveal = 6` 是地图 schema 里某列直接编码，但 probe 之后发现：**这 4 个具体数值在 BidMap.txt 任意列里都查不到**。最合理解释——**它们是 session-level 动态生成**，游戏开局抽完那场物品后立刻算出对应统计量（紫品当前总价 / 总格数 / 平均格数等）作为提示推给玩家。
+
+3. **`round_category_hints` (新 col[20]) 大概率是"提示槽位调度器"，不是类别名**。  
+   旧 probe 把它命名为 round_category_hints 是因为值域恰好是 `{0, 102, 103, 104, 105}` 像极了 category id。但截图证据下：
+   - 未知别墅 (2401) col[20] = `[103, 0, 103, 0, 0]`，实际玩家 R1 看到 "金品 count = 4"，R3 看到 "紫品均格 2.54"——**都是品质提示**，不是分类提示  
+   - 末日庇护所 (2409) col[20] = `[103, 0, 103, 0, 0]`，R1 看到 "金品 count = 3"——也是品质提示
+
+   即"103" 这个数字本身可能含义是**"用一个数量类提示"**，具体提示哪个品质/哪种统计量由地图主题决定（事件别墅永远紫品均格 R3、集装箱永远金品 count R1 等）。值 102/104/105 各对应不同提示模式。Phase 2 道具组合优化前需要 probe 一下不同主题的 col[20] 值是否对应不同提示风格。
+
+4. **截图里 4 张地图都是 2026-05-15 patch 新加的事件图**：
+
+   | 截图 | 地图 ID | 类型 |
+   |---|---|---|
+   | gold count 3 | 2409 末日庇护所 | 别墅事件 (col[7]=104) |
+   | gold total cells 14 | 2410 极客改造屋 | 别墅事件 (col[7]=104) |
+   | purple avg 2.54 + gold count 4 | 2401 未知别墅 | 别墅事件 anthology 主图 |
+   | random reveal 6 | 2501 未知残骸 | 沉船事件 anthology 主图 |
+
+   注意 2401 和 2501 都是 **anthology 主图**（col[9] 有 sub_pool_weights 列表，把 2402-2410 各以权重 20 包进 2401，2502-2520 各以权重 20 包进 2501）。这是事件玩法的"随机主题"模式——选 2401 进去玩，系统随机把你扔进 2401-2410 中的某张。
+
+### 设计决策
+
+- **不立刻重写 BidMap parser**。当前提交的 `data/processed/maps.json` 仍是 patch 前的 21-col 抽取，simulation / bidding / hero ranking / inference 模块全部依赖它，**项目仍能正常跑（132 tests 全绿）**。重抽取需要等 BidMap 23-col parser 写好——这事比想象的工作量大，因为 7 个列含义都得重新校准，留作下次开工的第一件事
+- **parser 显式拒绝 23-col 输入**：`parse_bid_map_row` 收到不是 21 列就报错并提示是 patch 后的新 schema，避免误判
+- **截图里的"动态信息"先走 ManualObservation 路径**：玩家自己把"金品 count = 4"输进 UI 即可（QualityBucketObs 已经支持 count / total_cells / avg_cells / value_sum 四种字段）。不需要等 BidMap parser 写好
+
+### 使用技术
+
+- **`scripts/probe_table_column_drift.py`**：一键检测 6 张主表的实际列数 vs 预期，输出 drift 提示
+- **`scripts/probe_bidmap_new_layout.py`**：对照新旧 schema 逐列 dump，找哪些列移位了
+- **`scripts/probe_map_info_columns.py`**：按截图里的 4 张地图名字快速定位 BidMap 记录
+
+### 下一开工节奏
+
+1. 重写 BidMap parser 兼容 23 列（半天工程量）
+2. 重抽取 maps.json + 全 11 张表 → 更新 processed JSONs
+3. 重跑 hero v2 ranking（看新加 20 张事件图的英雄表现）
+4. probe col[20] 在不同主题下的提示风格 → 接入 inference engine 作为 "round map hint" prior
+
+---
+
 > **项目全局进度与路线图已迁移至 [`PROGRESS.md`](PROGRESS.md)**。  
 > 本文件专注于每个 checkpoint 的技术细节。

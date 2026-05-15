@@ -137,8 +137,18 @@ BidMapSummary = BidMap
 
 def parse_bid_map_row(row: Sequence[str]) -> BidMap:
     if len(row) != BID_MAP_TABLE_COLUMN_COUNT:
+        # 2026-05-15 game patch shifted BidMap to 23 columns (added 2
+        # new fields and reshuffled positions: old col[X] → new col[X+1]
+        # for X >= 10, plus a new flag at col[8]). The processed
+        # maps.json committed to the repo is still the pre-patch 21-col
+        # extract, which is what the rest of the codebase (simulation,
+        # bidding, hero ranking) reads. Re-extraction under the new
+        # game data is a TODO; until then, fail loudly if anyone tries
+        # to parse the live tables directly.
         raise ValueError(
-            f"bid map row must have {BID_MAP_TABLE_COLUMN_COUNT} columns, got {len(row)}"
+            f"bid map row must have {BID_MAP_TABLE_COLUMN_COUNT} columns, got {len(row)}; "
+            f"if you're seeing 23, the live game is post-2026-05-15 patch and the "
+            f"parser needs updating to the new schema before re-extraction"
         )
     drop_pool_id, items_min, items_max = _parse_drop_ref(row[16])
     map_id = int(row[0])
