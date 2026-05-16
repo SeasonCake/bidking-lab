@@ -248,6 +248,11 @@ class BucketCandidate:
     value_score: float     # value_consistency_score (lower = better)
     cells_score: float     # |total_cells - estimate_from_value| / total_cells
     composite: float       # weighted sum used for ranking (lower = better)
+    is_db_matched: bool = False
+    """True iff this candidate's (count==1, total_cells) matches a real
+    Item.txt entry at the bucket's quality with value within ±2% of
+    ``bucket.value_sum``. Used by UI to upgrade blue 💡 to green ✅.
+    """
 
 
 def _check_required_fields(session: SessionObs) -> list[str]:
@@ -281,6 +286,146 @@ def _check_required_fields(session: SessionObs) -> list[str]:
     return issues
 
 
+# --- Item-DB single-item lookup (lazy, cached) ---
+# Used to boost candidates when count=1 + value_sum given: e.g. value=24435
+# at q=5 maps to 手稿驾驶证页 (1×2 = 2 cells) — the prior-only ranking would
+# guess 3 cells (≈ 24435 / pcv_default[5]=9400), which is wrong for this
+# specific item. By looking up Item.txt we can pin the right cell count.
+#
+# Also exposes the per-quality maximum cells/item so the enumerator can
+# reject physically-impossible singletons like "(35, 1) purple": no
+# purple item has 35 cells (max purple = 12 cells = 折叠防护盾).
+_ITEM_DB_BY_QUALITY: dict[int, list[tuple[int, int]]] | None = None
+_MAX_CELLS_PER_ITEM_BY_QUALITY: dict[int, int] | None = None
+# Conservative fallback (used when Item.txt cannot be located): allow up
+# to 24 cells/item across the board, slightly above the highest known
+# huge item (red/gold huge = 18 cells, blue 墙面涂鸦墙 = 20 cells).
+_MAX_CELLS_PER_ITEM_FALLBACK = 24
+
+
+def _load_item_db_by_quality() -> dict[int, list[tuple[int, int]]]:
+    """Lazy-load Item.txt and group `(value, cells)` per quality.
+
+    Returns ``{}`` (and never raises) if Item.txt cannot be located — the
+    caller must treat the empty result as "no DB boost available".
+    Also populates ``_MAX_CELLS_PER_ITEM_BY_QUALITY`` as a side-effect.
+    """
+    global _ITEM_DB_BY_QUALITY, _MAX_CELLS_PER_ITEM_BY_QUALITY
+    if _ITEM_DB_BY_QUALITY is not None:
+        return _ITEM_DB_BY_QUALITY
+    try:
+        from pathlib import Path
+
+        from bidking_lab.extract.item_table import load_item_table
+
+        here = Path(__file__).resolve()
+        candidates = [
+            Path("data/raw/tables/Item.txt"),
+            here.parent.parent.parent.parent / "data" / "raw" / "tables" / "Item.txt",
+        ]
+        path = next((p for p in candidates if p.exists()), None)
+        if path is None:
+            _ITEM_DB_BY_QUALITY = {}
+            _MAX_CELLS_PER_ITEM_BY_QUALITY = {}
+            return _ITEM_DB_BY_QUALITY
+        items = load_item_table(path)
+        db: dict[int, list[tuple[int, int]]] = {}
+        max_cells: dict[int, int] = {}
+        for it in items.values():
+            cells = it.shape_w * it.shape_h
+            if cells <= 0:
+                continue
+            if it.value > 0:
+                db.setdefault(it.quality, []).append((it.value, cells))
+            if cells > max_cells.get(it.quality, 0):
+                max_cells[it.quality] = cells
+        _ITEM_DB_BY_QUALITY = db
+        _MAX_CELLS_PER_ITEM_BY_QUALITY = max_cells
+    except Exception:                                          # noqa: BLE001
+        _ITEM_DB_BY_QUALITY = {}
+        _MAX_CELLS_PER_ITEM_BY_QUALITY = {}
+    return _ITEM_DB_BY_QUALITY
+
+
+def _single_item_match_cells(
+    quality: int, value: int, *, tol_pct: float = 0.02
+) -> set[int]:
+    """Cell counts of single items at ``quality`` with value within ±tol_pct.
+
+    Returns an empty set when no match (or DB unavailable).
+    """
+    db = _load_item_db_by_quality()
+    items = db.get(quality, [])
+    if not items or value <= 0:
+        return set()
+    lo = value * (1.0 - tol_pct)
+    hi = value * (1.0 + tol_pct)
+    return {cells for v, cells in items if lo <= v <= hi}
+
+
+def _single_item_match_names(
+    quality: int,
+    value: int,
+    *,
+    cells: int | None = None,
+    tol_pct: float = 0.02,
+) -> list[tuple[str, int, int]]:
+    """Return ``[(name, cells, value), ...]`` for items at ``quality``
+    whose value is within ±tol_pct of ``value``. If ``cells`` is given,
+    additionally filter by that cell count.
+
+    Returns ``[]`` when no match (or DB unavailable). Used by the UI to
+    surface item names in green ✅ confirmations like
+    "已锁定 2 格 / 1 件 — 可能为 手稿驾驶证页".
+    """
+    try:
+        from pathlib import Path
+
+        from bidking_lab.extract.item_table import load_item_table
+
+        here = Path(__file__).resolve()
+        candidates = [
+            Path("data/raw/tables/Item.txt"),
+            here.parent.parent.parent.parent / "data" / "raw" / "tables" / "Item.txt",
+        ]
+        path = next((p for p in candidates if p.exists()), None)
+        if path is None or value <= 0:
+            return []
+        items = load_item_table(path)
+    except Exception:                                          # noqa: BLE001
+        return []
+    lo = value * (1.0 - tol_pct)
+    hi = value * (1.0 + tol_pct)
+    out: list[tuple[str, int, int]] = []
+    for it in items.values():
+        if it.quality != quality or it.value <= 0:
+            continue
+        c = it.shape_w * it.shape_h
+        if c <= 0:
+            continue
+        if not (lo <= it.value <= hi):
+            continue
+        if cells is not None and c != cells:
+            continue
+        out.append((it.name, c, it.value))
+    return out
+
+
+def _max_cells_per_single_item(quality: int) -> int:
+    """Largest possible cells/item at ``quality`` from Item.txt.
+
+    Used to reject physically-impossible candidates such as ``(35, 1)``
+    purple — no purple item has 35 cells. Returns
+    ``_MAX_CELLS_PER_ITEM_FALLBACK`` if the DB is unavailable.
+    """
+    _load_item_db_by_quality()       # populate cache as side-effect
+    if _MAX_CELLS_PER_ITEM_BY_QUALITY is None:
+        return _MAX_CELLS_PER_ITEM_FALLBACK
+    return _MAX_CELLS_PER_ITEM_BY_QUALITY.get(
+        quality, _MAX_CELLS_PER_ITEM_FALLBACK
+    )
+
+
 def candidates_for_bucket(
     bucket: QualityBucketObs,
     *,
@@ -305,6 +450,22 @@ def candidates_for_bucket(
     capacity = max(0, warehouse_capacity - other_known_cells)
     huge_min, huge_max = bucket.huge_count_range()
     huge_per_item = bucket.huge_cells_per_item()
+
+    # Item-DB single-item boost: when value_sum is given, look up which
+    # (cells) values correspond to a real item at this quality with value
+    # ≈ value_sum. The boost is applied only to candidates with ``count==1``,
+    # so explicit count!=1 inputs are unaffected. When ``count`` is not
+    # specified, the matched single-item solution is lifted ahead of the
+    # multi-item priors so the player sees "value=24435 → 2格/1件
+    # (手稿驾驶证页)" without having to also type count=1.
+    db_boost_cells: set[int] = set()
+    if bucket.value_sum is not None and bucket.value_sum > 0:
+        db_boost_cells = _single_item_match_cells(bucket.quality, bucket.value_sum)
+
+    # Physical max cells/item per quality (from Item.txt). Used to reject
+    # impossibly-large singletons like "(35, 1) purple" — the largest
+    # purple item is 12 cells.
+    max_cpi = _max_cells_per_single_item(bucket.quality)
 
     base: list[tuple[int, int]]
     if bucket.avg_cells is not None:
@@ -334,6 +495,10 @@ def candidates_for_bucket(
         if bucket.count is not None and count != bucket.count:
             continue
         if total_cells > capacity:
+            continue
+        # Physical filter: cells/item cannot exceed the largest item of
+        # this quality. Integer-safe form of (total_cells / count > max_cpi).
+        if count > 0 and total_cells > max_cpi * count:
             continue
         # avg_value (per-item average price) hard filter — the game's
         # R3 hint surfaces this directly. We test it against either the
@@ -403,6 +568,16 @@ def candidates_for_bucket(
         composite = (0.7 * value_score + 0.3 * cells_score
                      + 0.15 * avg_prior_penalty + 0.001 * count)
 
+        # Apply item-DB boost: count=1 candidates whose total_cells matches
+        # a real Item.txt entry at this quality+value get composite ×0.01
+        # (factor of 100). The factor must be aggressive enough to overtake
+        # multi-item priors that perfectly hit the value (eg 8 cells ×
+        # 2500/格 = 20000 ≈ purple value_sum=20082; 12/1 防护盾 must still
+        # win). Relative ordering among DB-matched candidates is preserved.
+        is_db_match = count == 1 and total_cells in db_boost_cells
+        if is_db_match:
+            composite *= 0.01
+
         out.append(
             BucketCandidate(
                 quality=bucket.quality,
@@ -412,6 +587,7 @@ def candidates_for_bucket(
                 value_score=value_score,
                 cells_score=cells_score,
                 composite=composite,
+                is_db_matched=is_db_match,
             )
         )
 

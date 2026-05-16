@@ -235,6 +235,87 @@ def test_avg_value_without_value_sum_uses_loose_pcv_filter() -> None:
     assert cands  # at least some candidates survive
 
 
+def test_item_db_boost_singleitem_pins_correct_cells() -> None:
+    """count=1 + value_sum matching a real Item.txt entry → DB cells rank #1.
+
+    q=5 value=24435 corresponds uniquely to 手稿驾驶证页 (1×2 = 2 cells).
+    Without the DB boost, prior-only ranking puts 3/1 first
+    (estimate_total_cells ≈ 24435/9400 ≈ 3). The boost pushes 2/1 to top.
+    """
+    bucket = QualityBucketObs(quality=5, count=1, value_sum=24_435)
+    cands = candidates_for_bucket(bucket, warehouse_capacity=80)
+    assert cands
+    assert (cands[0].total_cells, cands[0].count) == (2, 1)
+
+
+def test_item_db_boost_only_active_for_count1() -> None:
+    """count >= 2 must NOT get DB boost (combinatorial blow-up)."""
+    bucket = QualityBucketObs(quality=5, count=3, value_sum=24_435)
+    cands = candidates_for_bucket(bucket, warehouse_capacity=80)
+    # With count=3 + value_sum, prior-derived cells dominate.
+    # Just assert sanity: top candidate exists and respects count constraint.
+    assert cands
+    assert all(c.count == 3 for c in cands)
+
+
+def test_item_db_boost_fires_when_count_unset() -> None:
+    """value_sum alone (count unset) should still surface DB single-item match.
+
+    Purple value=20082 maps to 防护盾 (4×4 = 16 cells)... actually the data
+    shows the matching cells set is {12} (12-cell purple item near 20082).
+    The boost should put 12/1 at top even when count is not provided.
+    """
+    bucket = QualityBucketObs(quality=4, value_sum=20_082)
+    cands = candidates_for_bucket(bucket, warehouse_capacity=80)
+    assert cands
+    assert (cands[0].total_cells, cands[0].count) == (12, 1)
+
+
+def test_item_db_boost_count_unset_gold() -> None:
+    """value_sum=24435 (gold) → top must be 2/1 (手稿驾驶证页)."""
+    bucket = QualityBucketObs(quality=5, value_sum=24_435)
+    cands = candidates_for_bucket(bucket, warehouse_capacity=80)
+    assert cands
+    assert (cands[0].total_cells, cands[0].count) == (2, 1)
+
+
+def test_item_db_boost_no_effect_when_value_outside_db() -> None:
+    """count=1 + value_sum that no real item matches → fallback to priors.
+
+    The physical max-cells-per-item filter caps a single q=5 item at 18
+    cells (单人郊游快艇), so the engine shouldn't suggest something silly
+    like 50+ cells in one item. Verify cells/item ≤ q=5 physical max.
+    """
+    bucket = QualityBucketObs(quality=5, count=1, value_sum=1_234_567)
+    cands = candidates_for_bucket(bucket, warehouse_capacity=80)
+    assert cands
+    # No 50-cell items exist; engine must respect physical max.
+    assert cands[0].total_cells <= 18
+
+
+def test_max_cells_per_item_filter_blocks_impossible_singleton() -> None:
+    """Purple total=35, avg_value=86490 → 0 candidates (no 35-cell purple)."""
+    bucket = QualityBucketObs(quality=4, total_cells=35, avg_value=86_490)
+    cands = candidates_for_bucket(bucket, warehouse_capacity=80)
+    # Max purple cells/item = 12 (折叠防护盾). 35 > 12 for any count<=2.
+    # avg_value filter rejects count >= 3 anyway. Result: empty.
+    assert cands == []
+
+
+def test_db_matched_flag_set_on_boosted_candidates() -> None:
+    """is_db_matched flag should be True only for boosted (count=1, cells in DB-set)."""
+    bucket = QualityBucketObs(quality=5, count=1, value_sum=24_435)
+    cands = candidates_for_bucket(bucket, warehouse_capacity=80)
+    assert cands
+    assert cands[0].is_db_matched is True
+    assert (cands[0].total_cells, cands[0].count) == (2, 1)
+    # Some non-DB candidate should be present too without the flag.
+    non_db = [c for c in cands if not c.is_db_matched]
+    assert non_db
+    # 3/1 is prior-derived (24435/9400 ≈ 3), not DB-matched.
+    assert any(c.total_cells == 3 and c.count == 1 for c in non_db)
+
+
 def test_capacity_minus_known_cells() -> None:
     """other_known_cells reduces the effective capacity for this bucket."""
     bucket = QualityBucketObs(quality=4, avg_cells=parse_reading("2.5"))

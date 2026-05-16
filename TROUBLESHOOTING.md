@@ -33,6 +33,7 @@
 26. [`_build_session` 红品残差不用枚举，只填 count 的 bucket 被吞](#26-_build_session-红品残差不用枚举只填-count-的-bucket-被吞)
 27. [`HUGE_CELLS_PER_QUALITY` 阈值与 UI 文案不一致](#27-huge_cells_per_quality-阈值与-ui-文案不一致)
 28. [`huge_cells_override` 已实现但 UI 从未暴露 → 玩家无法精确锁定具体巨物](#28-huge_cells_override-已实现但-ui-从未暴露--玩家无法精确锁定具体巨物)
+29. [放仓推荐忽略红/金 bucket 约束 → 给红有大件的高价仓也建议放](#29-放仓推荐忽略红金-bucket-约束--给红有大件的高价仓也建议放)
 
 ---
 
@@ -1024,6 +1025,56 @@ bucket 构造端调用 `_resolve_huge_selection` 解析为 `(huge_band="1", huge
 1. **后端能力先行 + 前端追赶**经常导致功能"半成品"——`huge_cells_override` 字段写了一年没人能填，等于没写。
 2. 数据驱动的 UI 选项（从 `BIG_ITEMS_BY_SHAPE` 自动派生）比硬编码下拉菜单可维护得多。
 3. 给可选项加视觉前缀（`★ 物品名`）能立刻让玩家区分"通用档"和"精确识别档"，不需要额外说明文档。
+
+---
+
+## 29. 放仓推荐忽略红/金 bucket 约束 → 给红有大件的高价仓也建议放
+
+### 症状
+
+输入 `仓库=80, 白绿=20, 蓝=15, 紫=24, 金 count=1+v=24435, 红 huge=1`，引擎仍然显示「🛑 放仓推荐 — 超过 405,960 就放，仅是全图均值的 98%」。但红 huge=1 明显暗示有大件红品（≥12 格），仓库期望价值远高于全图均值，"放仓"是误导。
+
+同 case 不给红 huge 跑一遍 → 阈值降到 ~370K，与异常 case 几乎相同，证明红信息根本没进 MC 过滤。
+
+### 原因
+
+`compute_pass_recommendation` / `compute_snipe_recommendation` 的 MC 过滤只走两层：
+
+```python
+if abs(truth.warehouse_total_cells - wh) > warehouse_tolerance: continue
+if purple_cells_obs is not None and abs(tp_cells - purple_cells_obs) > purple_tolerance: continue
+```
+
+红 / 金 bucket 的 `huge_band` / `value_range` 完全没出现在过滤条件里。结果中位仓价是"warehouse=80 + purple=24 的所有可能仓库的均值"——绝大多数没红 huge，把均值压到 ~360K。
+
+量化（H29 audit, map_id=2403, n=1000）：
+
+| 过滤层级 | n | p50 |
+|---|---|---|
+| 当前：warehouse + purple | 104 | **358K** |
+| 应该：+ red_huge≥1 | 12 | **616K** |
+
+### 修法
+
+两步：
+
+1. **新增 cond_red tier**：在原 cond_warehouse / cond_purple 之上加一层 cond_red，同时过滤红 `huge_band` 和 `value_range`。tier 选择优先 cond_red（n≥30）→ cond_red 宽松（n≥10，标 `low_confidence`）→ cond_purple → cond_warehouse → 宽松 cond_warehouse。红约束样本天生稀，所以放宽阈值到 `min_matching_samples_relaxed`。
+
+2. **新增 `suppress_above_ratio` 参数**（默认 1.0）：当条件中位价 / 全图中位价 > 1.0 时，整个 `compute_pass_recommendation` 返回 None。语义：玩家已经把仓库锁定为"高于平均"了，"超过 X 就放"的提示是反向的。
+
+`compute_snipe_recommendation` 做同样的 cond_red 接入（秒仓本身是"高仓位才推"，不需要 ratio 守卫）。
+
+### 教训
+
+1. **MC 过滤要对称地消费 obs**：观察值进了 SessionObs，过滤逻辑就该全用上，否则等于免费信息被丢弃。
+2. 对"建议性"输出（推荐值），始终留一个**反向 sanity check**——这次是 `ratio > 1.0` 直接 suppress。否则数据正向时能给合理建议，数据反向时只会"建议得很有信心、也很错"。
+3. 红约束样本稀（n=10-20）是常态，min_matching_samples 不能跟主路径一样硬卡 30；用 relaxed 阈值 + low_confidence 标记是更稳的折中。
+
+### 已知遗留（未在本 checkpoint 修）
+
+- 同输入两次跑结果不同：tier 切换的硬阈值在边界附近会跨档，导致放仓有时返回有时 None。改进方向：连续置信度权重 / bootstrap CI。
+- 小红仓漏报：79 格 / 红 1-2 cells / 总仓 22w 不触发，因为 `low_fraction ≥ 0.4` 是必要条件而当前红少时低品占比可能不到 40%。
+- ratio 守卫粗糙：`> 1.0` 一刀切。改进方向：`0.85 < ratio < 1.05` 区段标"中等仓位、自由发挥"。
 
 ---
 

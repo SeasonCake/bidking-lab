@@ -149,6 +149,12 @@ def compute_snipe_recommendation(
     purple_obs = session.buckets.get(4)
     purple_cells_obs = purple_obs.total_cells if purple_obs is not None else None
 
+    # Red constraints — same rationale as in compute_pass_recommendation.
+    red_obs = session.buckets.get(6)
+    red_huge_active = red_obs is not None and red_obs.huge_band != "none"
+    red_value_active = red_obs is not None and red_obs.value_range is not None
+    red_active = red_huge_active or red_value_active
+
     rng = rng or np.random.default_rng()
     if truths is None:
         truths = [
@@ -158,25 +164,46 @@ def compute_snipe_recommendation(
             for _ in range(n_trials)
         ]
     values_warehouse: list[int] = []
-    values_purple: list[int] = []         # subset that also matches purple cells
+    values_purple: list[int] = []      # subset that also matches purple cells
+    values_red: list[int] = []         # subset that also matches red constraints
+    huge_lo, huge_hi = red_obs.huge_count_range() if red_huge_active else (0, 99)
+    val_lo, val_hi = red_obs.value_range if red_value_active else (0, 10**12)
     for truth in truths:
         if abs(truth.warehouse_total_cells - wh) > warehouse_tolerance:
             continue
         v = truth.total_value()
         values_warehouse.append(v)
+        purple_ok = True
         if purple_cells_obs is not None:
             tp = truth.buckets.get(4)
             tp_cells = tp.total_cells if tp is not None else 0
             if abs(tp_cells - purple_cells_obs) <= purple_tolerance:
                 values_purple.append(v)
+            else:
+                purple_ok = False
+        if red_active and purple_ok:
+            tr = truth.buckets.get(6)
+            tr_huge = tr.huge_count if tr is not None else 0
+            tr_value = tr.value_sum if tr is not None else 0
+            if huge_lo <= tr_huge <= huge_hi and val_lo <= tr_value <= val_hi:
+                values_red.append(v)
 
     # Pick the tighter conditional set if it has enough samples; else fall back
-    # through three tiers of confidence:
-    #   1. purple + warehouse, ≥ min_matching_samples         (best)
-    #   2. warehouse only,     ≥ min_matching_samples         (normal)
-    #   3. warehouse only,     ≥ min_matching_samples_relaxed (low confidence)
+    # through tiers of confidence:
+    #   1. red + purple + warehouse, ≥ min_matching_samples           (tightest)
+    #   2. red + purple + warehouse, ≥ min_matching_samples_relaxed   (low conf)
+    #   3. purple + warehouse,       ≥ min_matching_samples           (normal)
+    #   4. warehouse only,           ≥ min_matching_samples
+    #   5. warehouse only,           ≥ min_matching_samples_relaxed   (low conf)
     low_confidence = False
-    if purple_cells_obs is not None and len(values_purple) >= min_matching_samples:
+    if red_active and len(values_red) >= min_matching_samples:
+        values = values_red
+        purple_conditioned = True
+    elif red_active and len(values_red) >= min_matching_samples_relaxed:
+        values = values_red
+        purple_conditioned = True
+        low_confidence = True
+    elif purple_cells_obs is not None and len(values_purple) >= min_matching_samples:
         values = values_purple
         purple_conditioned = True
     elif len(values_warehouse) >= min_matching_samples:
@@ -331,6 +358,7 @@ def compute_pass_recommendation(
     max_warehouse_cells: int = 80,
     min_low_tier_fraction: float = 0.40,
     safe_entry_ratio: float = 1.0,    # bid up to P25 × this for a margin of safety
+    suppress_above_ratio: float = 1.0,
     rng: np.random.Generator | None = None,
     truths: list[SessionTruth] | None = None,
 ) -> PassRecommendation | None:
@@ -375,6 +403,15 @@ def compute_pass_recommendation(
     purple_obs = session.buckets.get(4)
     purple_cells_obs = purple_obs.total_cells if purple_obs is not None else None
 
+    # Red constraints — when player gives red huge_band or value_range, the
+    # MC filter should honor them. Otherwise the threshold is computed on
+    # average warehouses (no red huge), which understates value for high-red
+    # warehouses and falsely fires the pass recommendation.
+    red_obs = session.buckets.get(6)
+    red_huge_active = red_obs is not None and red_obs.huge_band != "none"
+    red_value_active = red_obs is not None and red_obs.value_range is not None
+    red_active = red_huge_active or red_value_active
+
     rng = rng or np.random.default_rng()
     if truths is None:
         truths = [
@@ -385,21 +422,43 @@ def compute_pass_recommendation(
         ]
     all_values: list[int] = []
     cond_warehouse: list[int] = []
-    cond_purple: list[int] = []                   # subset that also matches purple cells
+    cond_purple: list[int] = []        # subset that also matches purple cells
+    cond_red: list[int] = []           # subset that also matches red constraints
+    huge_lo, huge_hi = red_obs.huge_count_range() if red_huge_active else (0, 99)
+    val_lo, val_hi = red_obs.value_range if red_value_active else (0, 10**12)
     for truth in truths:
         v = truth.total_value()
         all_values.append(v)
         if abs(truth.warehouse_total_cells - wh) > warehouse_tolerance:
             continue
         cond_warehouse.append(v)
+        purple_ok = True
         if purple_cells_obs is not None:
             tp = truth.buckets.get(4)
             tp_cells = tp.total_cells if tp is not None else 0
             if abs(tp_cells - purple_cells_obs) <= purple_tolerance:
                 cond_purple.append(v)
+            else:
+                purple_ok = False
+        if red_active and purple_ok:
+            tr = truth.buckets.get(6)
+            tr_huge = tr.huge_count if tr is not None else 0
+            tr_value = tr.value_sum if tr is not None else 0
+            if huge_lo <= tr_huge <= huge_hi and val_lo <= tr_value <= val_hi:
+                cond_red.append(v)
 
     low_confidence = False
-    if purple_cells_obs is not None and len(cond_purple) >= min_matching_samples:
+    # Tier preference: cond_red (tightest) → cond_purple → cond_warehouse → relaxed.
+    # Red-conditioned samples can be sparse on small maps; accept down to the
+    # relaxed threshold and surface low_confidence so the UI warns the player.
+    if red_active and len(cond_red) >= min_matching_samples:
+        conditional_values = cond_red
+        purple_conditioned = True
+    elif red_active and len(cond_red) >= min_matching_samples_relaxed:
+        conditional_values = cond_red
+        purple_conditioned = True
+        low_confidence = True
+    elif purple_cells_obs is not None and len(cond_purple) >= min_matching_samples:
         conditional_values = cond_purple
         purple_conditioned = True
     elif len(cond_warehouse) >= min_matching_samples:
@@ -419,6 +478,14 @@ def compute_pass_recommendation(
     p75 = int(np.percentile(cond, 75))
     unc_p50 = int(np.percentile(uncond, 50))
     ratio = (p50 / unc_p50) if unc_p50 > 0 else 0.0
+
+    # When the player's input narrows down to an *above-average* warehouse
+    # (e.g. red huge=1 → conditional median way above the map's overall
+    # median), the "drop above X" hint is misleading: it'd suggest dropping
+    # at a threshold that's actually below typical opponent bid floor.
+    # Suppress the recommendation entirely in that case.
+    if ratio > suppress_above_ratio:
+        return None
 
     pass_max = p50
     safe_entry = int(p25 * safe_entry_ratio)

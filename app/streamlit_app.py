@@ -42,29 +42,61 @@ from bidking_lab.inference.observation import (
     HUGE_CELLS_PER_QUALITY,
     QualityBucketObs,
     SessionObs,
+    _single_item_match_names,
 )
+
+
+def _format_db_match_suffix(quality: int, value: int | None,
+                            cells: int | None) -> str:
+    """Build a "可能为 [name1, name2]" suffix using Item.txt lookup.
+
+    Returns empty string if no value, no DB match, or quality has no items
+    near the given value.
+    """
+    if value is None or value <= 0:
+        return ""
+    matches = _single_item_match_names(quality, value, cells=cells)
+    if not matches:
+        return ""
+    names = [n for n, _, _ in matches[:3]]
+    suffix = "\u3001".join(names)
+    if len(matches) > 3:
+        suffix += f"\u7b49 {len(matches)} \u4ef6"
+    return f" \u2014 \u53ef\u80fd\u4e3a **{suffix}**"
 
 
 def _render_candidate_preview(bucket: QualityBucketObs | None,
                                 warehouse_capacity: int,
                                 quality_label: str) -> None:
-    """Show top-2 (total_cells, count) candidates for a bucket.
+    """Show enumeration candidates or a confirmation for a bucket.
 
-    Triggered when the user gave at least one constraint but not enough to
-    uniquely pin (cells, count). Helps reveal "你填的均格 2.81 在仓深 140
-    下可能是 31/11 或 90/32 这两种" cases.
+    Three render modes:
+      1. **Fully pinned** (cells + count both given): green ✅ confirmation,
+         optionally with DB-matched item name when count==1.
+      2. **DB-confirmed top** (cands[0].is_db_matched): green ✅ "DB 命中"
+         even if more candidates exist.
+      3. **Multiple candidates**: blue 💡 with top-3 enumeration.
+      4. **Single candidate**: green ✅ "已唯一锁定".
     """
     if bucket is None:
         return
-    # Skip preview if already fully determined.
-    fully_pinned = (
-        bucket.total_cells is not None and bucket.count is not None
-    )
-    if fully_pinned:
+    # Mode 1: fully pinned by user input — show confirmation directly.
+    if bucket.total_cells is not None and bucket.count is not None:
+        suffix = ""
+        if bucket.count == 1 and bucket.value_sum:
+            suffix = _format_db_match_suffix(
+                bucket.quality, bucket.value_sum, cells=bucket.total_cells
+            )
+        st.success(
+            f"\u2705 **{quality_label} \u5df2\u5b8c\u6574\u9501\u5b9a**\uff1a"
+            f"`{bucket.total_cells}` \u683c / `{bucket.count}` \u4ef6"
+            + suffix
+        )
         return
     # Only meaningful when some reading constraint exists.
     if (bucket.avg_cells is None and bucket.value_sum is None
-            and bucket.total_cells is None and bucket.count is None):
+            and bucket.total_cells is None and bucket.count is None
+            and bucket.avg_value is None):
         return
     try:
         cands = candidates_for_bucket(bucket, warehouse_capacity=warehouse_capacity)
@@ -85,6 +117,20 @@ def _render_candidate_preview(bucket: QualityBucketObs | None,
         for c in top
     ]
     msg = "  \u00b7  ".join(lines)
+    # Mode 2: DB-matched top candidate → green ✅ even if more candidates exist.
+    if cands[0].is_db_matched and bucket.value_sum:
+        suffix = _format_db_match_suffix(
+            bucket.quality, bucket.value_sum, cells=cands[0].total_cells
+        )
+        st.success(
+            f"\u2705 **{quality_label} DB \u5355\u4ef6\u547d\u4e2d**\uff1a"
+            f"{lines[0]}"
+            + suffix
+            + (f"\u3002\u540e\u7eed\u5907\u9009\uff1a {'  \u00b7  '.join(lines[1:])}"
+               if len(lines) > 1 else "")
+        )
+        return
+    # Mode 3 / 4: original info / success based on len(cands).
     if len(cands) > 1:
         st.info(
             f"\U0001F4A1 **{quality_label} \u5f15\u64ce\u679a\u4e3e\u51fa "
@@ -779,11 +825,11 @@ with st.sidebar:
     st.divider()
     with st.expander("\u9ad8\u7ea7\uff1a MC \u91c7\u6837\u53c2\u6570"):
         n_trials = st.slider(
-            "MC \u6837\u672c\u6570\uff08samples\uff09", 500, 5000, 1000, step=200,
+            "MC \u6837\u672c\u6570\uff08samples\uff09", 500, 5000, 2000, step=250,
             help="\u9009\u6863\u8bf4\u660e\uff1a"
                  "**500** = \u5feb\u901f\u4f30\u7b97\uff0c\u7cbe\u5ea6\u504f\u4f4e\uff08\u5c3e\u90e8\u5206\u5e03\u7684\u4ed3\u5e93\u7ec4\u5408\u53ef\u80fd\u5339\u914d\u4e0d\u8db3\uff09\uff1b"
-                 "**1000** = \u9ed8\u8ba4\uff0c\u5e73\u8861\u70b9\uff1b"
-                 "**2000** = \u9ad8\u7cbe\u5ea6\uff0c\u5b89\u9759\u5012\u53ef\u63a5\u53d7\uff08\u63a8\u8350\u5927\u4ed3 + \u5f3a\u7ea6\u675f\u573a\u666f\uff09\uff1b"
+                 "**1000** = \u8f7b\u91cf\u573a\u666f\uff0c\u5feb\u901f\u70b9\u770b\uff1b"
+                 "**2000** = \u9ed8\u8ba4 / \u63a8\u8350\u9009\u9879\uff0c\u51c6\u5ea6\u4e0e\u901f\u5ea6\u5e73\u8861\uff08\u5341\u4f59\u79d2\uff09\uff1b"
                  "**3000-5000** = \u51b7\u95e8\u5927\u4ed3 / \u4e25\u91cd\u5c3e\u90e8\u573a\u666f\u5907\u9009\uff0c\u63a8\u65ad\u660e\u663e\u53d8\u6162\u3002"
                  "\u7f13\u5b58\u5bbd\u5bb9\uff1a(map\\_id, n\\_trials, seed) \u540c\u4e00\u7ec4\u53c2\u6570\u4e0d\u4f1a\u91cd\u7b97\u3002",
         )
@@ -985,22 +1031,32 @@ with tab_obs:
         "\u8bf7\u4e25\u683c\u6309\u6e38\u620f\u539f\u6837\u586b\u5165\uff0c\u5c3e\u96f6\u4f1a\u88ab\u5f15\u64ce\u7528\u6765\u9501\u4f4f (cells, count) \u5019\u9009\u3002",
         icon="\u2139\ufe0f",
     )
-    c1, c1b, c2, c3, c3b, c4 = st.columns([1, 1, 1.1, 1.1, 1.1, 1.1])
-    state["purple_cells"] = c1.number_input(
+    st.caption(
+        "\U0001F4A1 \u5355\u4ef6\u7269\u54c1\u52a0\u901f\uff08\u9002\u7528\u4e8e\u7d2b/\u91d1\uff09\uff1a"
+        "\u5f53 **\u4ef6\u6570 = 1** \u4e14\u586b\u4e86 **\u603b\u4f30\u503c** \u65f6\uff0c"
+        "\u5f15\u64ce\u4f1a\u67e5 Item.txt\uff0c\u5982\u679c\u8be5\u54c1\u8d28\u4e0b\u6709\u4ef7\u503c \u00b12% \u7684\u7269\u54c1\uff0c"
+        "\u4f1a\u4f18\u5148\u9501\u5b9a\u5176\u683c\u6570\uff08\u4f8b\uff1a\u91d1\u54c1 value=24435 \u2192 \u624b\u7a3f\u9a7e\u9a76\u8bc1\u9875 2 \u683c\uff09\u3002"
+        "\u591a\u4ef6 (count\u22652) \u8d70\u5e73\u5747\u4ef7\u683c\u5148\u9a8c\uff0c\u4e0d\u53d7\u5f71\u54cd\u3002"
+    )
+    # Row 1: cells / count / huge_band (基础格件 + 巨物)
+    pr1c1, pr1c2, pr1c3 = st.columns([1, 1, 1.6])
+    # Row 2: avg_cells / value_sum / avg_value (读数 / 估价 / 均价)
+    pr2c1, pr2c2, pr2c3 = st.columns([1.2, 1.2, 1.2])
+    state["purple_cells"] = pr1c1.number_input(
         "\u7d2b\u54c1\u603b\u683c\u6570",
         min_value=0, max_value=80, value=None, step=1,
         placeholder="\u53ef\u9009",
         help="\u4f18\u54c1\u626b\u63cf \u6216 \u7d2b\u54c1\u8f6e\u5ed3\u6570\u51fa\u3002"
              "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
     )
-    state["purple_count"] = c1b.number_input(
+    state["purple_count"] = pr1c2.number_input(
         "\u7d2b\u54c1\u4ef6\u6570",
         min_value=0, max_value=30, value=None, step=1,
         placeholder="\u53ef\u9009",
         help="\u827e\u838e R4 \u8f6e\u5ed3\u53ef\u6570\u51fa\uff1b\u4f0a\u68ee\u5728\u7d2b\u54c1\u626b\u63cf\u540e\u4e5f\u80fd\u6570\u3002"
              "\u586b\u4e86\u540e\u8054\u5408\u63a8\u65ad\u7684\u7d2b\u54c1 bucket \u4f1a\u88ab\u552f\u4e00\u9501\u5b9a\u3002",
     )
-    state["purple_avg_raw"] = c2.text_input(
+    state["purple_avg_raw"] = pr2c1.text_input(
         "\u7d2b\u54c1\u5747\u683c\uff08\u4f18\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
         value="", placeholder="\u4f8b 2.90 \u6216 3.43",
         help="\u300c2.9\u300d\u548c\u300c2.90\u300d\u4e0d\u540c\uff01\u300c2.9\u300d=\u6e38\u620f\u51fa\u7684\u662f\u6070\u597d 2.9 \u7684\u7cbe\u786e\u503c\uff1b"
@@ -1008,13 +1064,13 @@ with tab_obs:
              "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
         key="purple_avg_raw_widget",
     )
-    state["purple_value"] = c3.number_input(
+    state["purple_value"] = pr2c2.number_input(
         "\u7d2b\u54c1\u603b\u4f30\u503c\uff08\u4f18\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
         min_value=0, max_value=2_000_000, value=None, step=1000,
         placeholder="\u53ef\u9009",
         help="\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
     )
-    state["purple_avg_value"] = c3b.number_input(
+    state["purple_avg_value"] = pr2c3.number_input(
         "\u7d2b\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
         min_value=0, max_value=200_000, value=None, step=100,
         placeholder="\u53ef\u9009",
@@ -1023,7 +1079,7 @@ with tab_obs:
              "\u80fd\u8fdb\u4e00\u6b65\u9501\u5b9a\u5019\u9009\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
     )
     _purple_opts, _purple_lbls = _huge_options_for_quality(4)
-    state["purple_huge_band"] = c4.selectbox(
+    state["purple_huge_band"] = pr1c3.selectbox(
         "\u7d2b\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u7d2b\u8272\uff09",
         options=_purple_opts, index=0,
         format_func=lambda b: _purple_lbls[b],
@@ -1069,27 +1125,30 @@ with tab_obs:
         "\u91d1\u54c1\u603b\u683c\u6570\u4ee5\u67d0\u4e9b\u5730\u56fe\u4f1a\u76f4\u63a5\u63d0\u4f9b\u3002"
         "\u603b\u683c\u6570 \u4e0e \u603b\u4ef7 \u90fd\u53ef\u586b\uff0c\u63a8\u65ad\u5f15\u64ce\u4f1a\u53d6\u4e24\u8005\u4e2d\u80fd\u7528\u7684\u4fe1\u606f\u3002"
     )
-    c1, c1b, c2, c3, c3b, c4 = st.columns([1, 1, 1.1, 1.1, 1.1, 1.1])
-    state["gold_cells"] = c1.number_input(
+    # Row 1: cells / count / huge_band
+    gr1c1, gr1c2, gr1c3 = st.columns([1, 1, 1.6])
+    # Row 2: avg_cells / value_sum / avg_value
+    gr2c1, gr2c2, gr2c3 = st.columns([1.2, 1.2, 1.2])
+    state["gold_cells"] = gr1c1.number_input(
         "\u91d1\u54c1\u603b\u683c\u6570",
         min_value=0, max_value=80, value=None, step=1,
         placeholder="\u53ef\u9009",
         help="\u5730\u56fe\u63d0\u4f9b\u300c\u91d1\u8272\u85cf\u54c1\u603b\u683c\u6570\u300d\u63d0\u793a\u65f6\u586b\u5165\u3002"
              "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002",
     )
-    state["gold_count"] = c1b.number_input(
+    state["gold_count"] = gr1c2.number_input(
         "\u91d1\u54c1\u4ef6\u6570",
         min_value=0, max_value=15, value=None, step=1,
         placeholder="\u53ef\u9009",
         help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\u91d1\u8272\u85cf\u54c1\u4ef6\u6570 hint\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
     )
-    state["gold_avg_raw"] = c2.text_input(
+    state["gold_avg_raw"] = gr2c1.text_input(
         "\u91d1\u54c1\u5747\u683c\uff08\u6781\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
         value="", placeholder="\u4f8b 3.5 \u6216 4.25",
         help="\u540c\u7d2b\u54c1\u5747\u683c\u89c4\u5219\uff1a\u300c3.5\u300d\u662f\u7cbe\u786e\u503c\u3001\u300c3.50\u300d\u662f\u88ab\u622a\u65ad\u8fc7\u7684\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
         key="gold_avg_raw_widget",
     )
-    state["gold_value"] = c3.number_input(
+    state["gold_value"] = gr2c2.number_input(
         "\u91d1\u54c1\u603b\u4f30\u503c\uff08\u6781\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
         min_value=0, max_value=5_000_000, value=None, step=5000,
         placeholder="\u53ef\u9009",
@@ -1097,7 +1156,7 @@ with tab_obs:
              "\u8bf7\u4f18\u5148\u586b\u8be5\u503c\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b"
              "\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002",
     )
-    state["gold_avg_value"] = c3b.number_input(
+    state["gold_avg_value"] = gr2c3.number_input(
         "\u91d1\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
         min_value=0, max_value=2_000_000, value=None, step=500,
         placeholder="\u53ef\u9009",
@@ -1106,7 +1165,7 @@ with tab_obs:
              "\u80fd\u8fdb\u4e00\u6b65\u9501\u5b9a\u5019\u9009\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
     )
     _gold_opts, _gold_lbls = _huge_options_for_quality(5)
-    state["gold_huge_band"] = c4.selectbox(
+    state["gold_huge_band"] = gr1c3.selectbox(
         "\u91d1\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u91d1\u8272\uff09",
         options=_gold_opts, index=0,
         format_func=lambda b: _gold_lbls[b],
