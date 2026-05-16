@@ -31,8 +31,8 @@ def test_huge_band_ranges() -> None:
 
 
 def test_huge_cells_per_quality() -> None:
-    """All huge thresholds = 12 (minimum 巨物 size = 3×4)."""
-    assert HUGE_CELLS_PER_QUALITY[4] == 12   # 紫 (可折叠高韧性防护盾 3×4)
+    """Purple uses a relaxed ≥10 threshold; gold/red ≥12."""
+    assert HUGE_CELLS_PER_QUALITY[4] == 10   # 紫 (5×2 加特林重机枪 / 3×4 防护盾)
     assert HUGE_CELLS_PER_QUALITY[5] == 12   # 金 (重型全生态作战防弹衣 3×4)
     assert HUGE_CELLS_PER_QUALITY[6] == 12   # 红 (单兵外骨骼 3×4)
 
@@ -107,7 +107,7 @@ def test_tool_price_override_for_warehouse_total() -> None:
 def test_bucket_huge_methods_defaults() -> None:
     b = QualityBucketObs(quality=4)
     assert b.huge_count_range() == (0, 0)
-    assert b.huge_cells_per_item() == 12
+    assert b.huge_cells_per_item() == 10
     assert b.min_huge_cells() == 0
     assert b.max_huge_cells() == 0
 
@@ -115,8 +115,8 @@ def test_bucket_huge_methods_defaults() -> None:
 def test_bucket_huge_band_purple_2_to_3() -> None:
     b = QualityBucketObs(quality=4, huge_band="2-3")
     assert b.huge_count_range() == (2, 3)
-    assert b.min_huge_cells() == 24   # 2 × 12
-    assert b.max_huge_cells() == 36   # 3 × 12
+    assert b.min_huge_cells() == 20   # 2 × 10
+    assert b.max_huge_cells() == 30   # 3 × 10
 
 
 def test_bucket_huge_band_gold_one() -> None:
@@ -192,6 +192,47 @@ def test_warehouse_capacity_prunes_oversized() -> None:
     cands = candidates_for_bucket(bucket, warehouse_capacity=20)
     for c in cands:
         assert c.total_cells <= 20
+
+
+def test_avg_value_filter_with_value_sum_pins_count() -> None:
+    """avg_value × count ≈ value_sum should reject mismatching counts."""
+    bucket = QualityBucketObs(
+        quality=4,
+        avg_cells=parse_reading("2.5"),
+        value_sum=86_490,
+        avg_value=6178,   # 86490 / 14 ≈ 6178; (35, 14) survives
+    )
+    cands = candidates_for_bucket(bucket, warehouse_capacity=159)
+    assert cands
+    assert (cands[0].total_cells, cands[0].count) == (35, 14)
+    for c in cands:
+        implied = bucket.value_sum / max(1, c.count)
+        assert abs(implied - bucket.avg_value) / bucket.avg_value <= 0.10
+
+
+def test_avg_value_filter_rejects_off_target() -> None:
+    """If avg_value ≠ value_sum/count within ±10%, candidate is dropped."""
+    bucket = QualityBucketObs(
+        quality=4,
+        avg_cells=parse_reading("2.5"),
+        value_sum=86_490,
+        avg_value=20_000,   # implies count ≈ 4, very far from cells/2.5
+    )
+    cands = candidates_for_bucket(bucket, warehouse_capacity=159)
+    for c in cands:
+        implied = bucket.value_sum / max(1, c.count)
+        assert abs(implied - bucket.avg_value) / bucket.avg_value <= 0.10
+
+
+def test_avg_value_without_value_sum_uses_loose_pcv_filter() -> None:
+    """No value_sum → fall back to per-cell prior estimate, ±25% tol."""
+    bucket = QualityBucketObs(
+        quality=4,
+        avg_cells=parse_reading("2.5"),
+        avg_value=6500,
+    )
+    cands = candidates_for_bucket(bucket, warehouse_capacity=159)
+    assert cands  # at least some candidates survive
 
 
 def test_capacity_minus_known_cells() -> None:

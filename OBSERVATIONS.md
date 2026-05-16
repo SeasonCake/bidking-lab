@@ -586,5 +586,125 @@ UI 上的"未确认品质巨物（按形状）"区块，玩家可以填"看到 X
 
 ---
 
+## Checkpoint #12 — 紫品/金品均价输入 + 紫色 huge 阈值放宽（2026-05-16）
+
+### 关键发现
+
+实战回归后玩家又反馈了三个使用层面的精度 / 易用性差距，都是"基础设施已经在 + 但 UI 不曝露"的典型半成品。
+
+#### 1. 均价（`avg_value`）是独立信息源
+
+游戏里 R3 提示有时直接给「紫品均价 6,000 silver」「金品均价 9,400 silver」。之前 UI 只接受 `avg_cells`（均格 = total_cells/count）和 `value_sum`（总价），没有"每件均价"通道。但 `avg_value` 跟另两者**信息独立**：
+
+- 同时填 `avg_value` + `value_sum` → 引擎反推 `count`（硬约束，tol ±10%）
+- 同时填 `avg_value` + `count` → 反推 `value_sum`
+- 仅填 `avg_value` → 用 per-cell prior 估总价后再除 `count`，软约束（tol ±25%）
+
+实测：`value_sum=86,490 + avg_value=6,178` 让紫品候选直接锁到 `(total_cells=35, count=14)`，跟之前需要 `avg_cells=2.5` 才能锁的效果接近——但 `avg_value` 是 R3 提示能直接读到的，比"凑均格 2.50 的小数尾"更接地气。
+
+数据架构：
+
+```python
+# observation.py
+@dataclass
+class QualityBucketObs:
+    ...
+    value_sum: int | None = None
+    avg_value: int | None = None    # NEW: per-item average price
+    ...
+
+# candidates_for_bucket inner loop
+if bucket.avg_value:
+    if bucket.value_sum:
+        implied = value_sum / count       # tight: tol = 10%
+    else:
+        implied = pcv * total_cells / count  # loose: tol = 25%
+    if abs(implied - avg_value) / avg_value > tol:
+        skip candidate
+```
+
+UI 端紫品 / 金品 section 改成 6 列：cells / count / avg_cells / value_sum / **avg_value** / huge_band。下游全链路（`_build_session` 红品残差 / `compute_analytical_estimate` 二次枚举 / 候选预览面板）通过 `candidates_for_bucket` 自动消费，零额外接线——这是 C-28 那次"暴力枚举器贯穿全链路"重构的直接红利。
+
+#### 2. 紫品 huge 阈值的数据真相
+
+实战中玩家问「紫色巨物为什么只有 1 个，能否补充」。直接 query `Item.txt` 全表得到事实：
+
+| 品质 | ≥12 格物品 | 名单 |
+|---|---|---|
+| 紫品 (q=4) | **1 件** | 可折叠高韧性防护盾 (3×4=12, 20,082) |
+| 金品 (q=5) | 7 件 | 防弹衣 / 波斯毯 / 生化分析仪 / 无人作战车 / 服务器机柜 / 锂电池 / 单人郊游快艇 |
+| 红品 (q=6) | 12 件 | 屏风 / 雷达 / 金枪鱼 / 跑车等 |
+
+**紫品 ≥12 格游戏里就这一件**——不是漏收录。但 query 8-11 格紫品发现：5×2=10 的 `加特林重机枪` (31,688) 是紫品独占该形状（同 5×2 还有金品 q=5 巴雷特，但玩家可凭颜色区分）。
+
+设计决策：放宽紫品 huge 阈值到 ≥10 格，纳入加特林；金 / 红保持 ≥12。
+
+```python
+HUGE_CELLS_PER_QUALITY: dict[int, int] = {
+    4: 10,   # 紫品大件: 5×2 加特林 / 3×4 防护盾
+    5: 12,   # 金品: 3×4 防弹衣等
+    6: 12,   # 红品: 3×4 单兵外骨骼等
+}
+```
+
+UI 端「什么算 巨物 / 大件」expander 拆分按品质说明阈值差异：
+
+> - **紫品：≥ 10 格** 算大件。游戏里紫品 ≥ 12 格只有 1 件（防护盾），但 5×2=10 格的加特林重机枪玩家容易识别，所以阈值放宽到 10。
+> - **金品 / 红品：≥ 12 格** (3×4)。
+
+#### 3. `_items_for_quality(q)` 的 per-quality 过滤
+
+当 `BIG_ITEMS_BY_SHAPE` 里存在跨品质同形状物品（5×2 同时有紫加特林 + 金巴雷特），原 `_items_for_quality(5)` 不看 cells 阈值会把巴雷特列入"金品大件"下拉——但金品阈值 12，5×2=10 不到。
+
+修法：
+
+```python
+def _items_for_quality(q: int) -> list[dict]:
+    threshold = HUGE_CELLS_PER_QUALITY.get(q, 12)
+    out = []
+    for shape, cands in BIG_ITEMS_BY_SHAPE.items():
+        cells = _shape_to_cells(shape)
+        if cells < threshold:           # NEW: per-quality cell gate
+            continue
+        for c in cands:
+            if c["q"] == q:
+                out.append(...)
+    return out
+```
+
+带来一个有用的副作用：未来加任何新形状到 `BIG_ITEMS_BY_SHAPE`，每个品质的下拉自动按各自阈值过滤，不需要在 dict 里手动维护"哪些是 huge / 哪些不是"。
+
+#### 4. MC 滑块三档说明
+
+之前 `(500, 5000, 1000, step=250)`，help 只写了"大仓采样不足时调高"。实际玩家场景是：
+
+- 快速试错 → 500 够用（接受 ±10% 浮动）
+- 实战决策 → 1000 平衡
+- 大仓 + 强约束（紫 cells + huge + value_sum 全填）→ 2000 推荐
+- 冷门大仓 / 严重尾部 → 3000-5000
+
+step 改 200 让常用区间 (500/700/900/1100/...) 选档更细；help 列出三档说明。
+
+### v2 ranking / hero models 不受影响
+
+本 checkpoint 全在 `inference` 层，没动 simulation / hero_value / robust_value。所有英雄排名 / map MC / ROI 数字保持稳定。
+
+### 待做（已记 TODO）
+
+- 「未确认品质巨物」按形状枚举品质组合接入推断（C-28 已标记为 v2 后续）
+- 多个 `huge_cells_override` 同时确认（玩家同时识别"游艇 + 防弹衣"两件）需要双字段 API
+
+### 测试
+
+`tests/test_observation.py` 新增 3 条：
+
+- `test_avg_value_filter_with_value_sum_pins_count`：value_sum + avg_value 联立锁 (35,14)
+- `test_avg_value_filter_rejects_off_target`：avg_value=20K 跟 value_sum/count 不符 → 候选被砍
+- `test_avg_value_without_value_sum_uses_loose_pcv_filter`：仅 avg_value 用 ±25% 软约束
+
+阈值改动同步更新 3 条既有测试（`test_huge_cells_per_quality` / `test_bucket_huge_methods_defaults` / `test_bucket_huge_band_purple_2_to_3`）。总测试数 219 → 222 全绿。
+
+---
+
 > **项目全局进度与路线图已迁移至 [`PROGRESS.md`](PROGRESS.md)**。  
 > 本文件专注于每个 checkpoint 的技术细节。

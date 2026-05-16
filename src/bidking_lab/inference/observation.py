@@ -67,10 +67,13 @@ HUGE_BAND_RANGE: dict[str, tuple[int, int]] = {
 }
 
 HUGE_CELLS_PER_QUALITY: dict[int, int] = {
-    4: 12,   # 紫色巨物最小: 3×4 可折叠高韧性防护盾 (20082)
-    5: 12,   # 金色巨物最小: 3×4 重型全生态作战防弹衣 (74745) / 波斯毯 / 分析仪 / 无人作战车
-    6: 12,   # 红色巨物最小: 3×4 单兵外骨骼 (305920) / 重型巡航摩托车 / 相控阵雷达
+    4: 10,   # 紫品大件: 5×2 加特林重机枪 (31688) / 3×4 可折叠高韧性防护盾 (20082)
+    5: 12,   # 金品巨物最小: 3×4 重型全生态作战防弹衣 (74745) / 波斯毯 / 分析仪 / 无人作战车
+    6: 12,   # 红品巨物最小: 3×4 单兵外骨骼 (305920) / 重型巡航摩托车 / 相控阵雷达
 }
+# Purple uses a relaxed ≥10-cell threshold because the game data has
+# only 1 item ≥ 12 cells but a few 5×2=10 / 2×5=10 items the player
+# can plausibly identify as "large" (notably 加特林重机枪).
 
 
 def aisha_can_observe_huge(quality: int) -> bool:
@@ -187,6 +190,7 @@ class QualityBucketObs:
     total_cells_approx: int | None = None # player estimate, soft prior only
     count: int | None = None              # X品存量
     value_sum: int | None = None          # X品估价 silver
+    avg_value: int | None = None          # X品均价（每件均价 silver；某些地图 R3 hint）
     value_range: tuple[int, int] | None = None
     huge_band: HugeBand = "none"
     huge_cells_override: int = 0          # if set, beats the per-quality default
@@ -331,6 +335,25 @@ def candidates_for_bucket(
             continue
         if total_cells > capacity:
             continue
+        # avg_value (per-item average price) hard filter — the game's
+        # R3 hint surfaces this directly. We test it against either the
+        # user-given value_sum (tight) or the per-cell prior estimate
+        # (loose). Tolerance widens correspondingly.
+        if bucket.avg_value is not None and bucket.avg_value > 0:
+            if bucket.value_sum is not None and bucket.value_sum > 0:
+                implied_avg = bucket.value_sum / max(1, count)
+                tol = 0.10
+            else:
+                pcv = PER_CELL_VALUE_DEFAULT.get(bucket.quality, 0)
+                if pcv <= 0:
+                    implied_avg = 0
+                else:
+                    implied_avg = (pcv * total_cells) / max(1, count)
+                tol = 0.25
+            if implied_avg <= 0:
+                continue
+            if abs(implied_avg - bucket.avg_value) / bucket.avg_value > tol:
+                continue
 
         # Huge-band constraint: there must exist an integer ``h`` in
         # [huge_min, huge_max] such that ``h <= count`` and

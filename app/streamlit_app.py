@@ -39,6 +39,7 @@ from bidking_lab.inference.ground_truth import sample_session_truth
 from bidking_lab.inference.display import Reading, parse_reading
 from bidking_lab.inference.joint import candidates_for_bucket
 from bidking_lab.inference.observation import (
+    HUGE_CELLS_PER_QUALITY,
     QualityBucketObs,
     SessionObs,
 )
@@ -154,10 +155,17 @@ def _shape_to_cells(shape: str) -> int:
 
 
 def _items_for_quality(q: int) -> list[dict]:
+    """Items eligible as a "huge / big" item for this quality.
+
+    Filters by per-quality cell threshold: purple ≥10, gold/red ≥12.
+    A 5×2=10 gold item (e.g. 巴雷特狙击枪) does not count as gold huge —
+    only purple consumes the relaxed 10-cell row.
+    """
+    threshold = HUGE_CELLS_PER_QUALITY.get(q, 12)
     out: list[dict] = []
     for shape, cands in BIG_ITEMS_BY_SHAPE.items():
         cells = _shape_to_cells(shape)
-        if cells <= 0:
+        if cells < threshold:
             continue
         for c in cands:
             if c["q"] == q:
@@ -217,6 +225,12 @@ QUALITY_NAME: dict[int, str] = {
 }
 
 BIG_ITEMS_BY_SHAPE: dict[str, list[dict]] = {
+    "5\u00d72 = 10 \u683c": [
+        # Purple uses relaxed ≥10 threshold; gold/red still ≥12 so the
+        # gold 巴雷特 here will NOT appear in gold's huge dropdown.
+        {"q": 4, "name": "\u52a0\u7279\u6797\u91cd\u673a\u67aa", "value": 31_688, "unique": False},
+        {"q": 5, "name": "\u5df4\u96f7\u7279\u53cd\u5668\u6750\u72d9\u51fb\u6b65\u67aa", "value": 67_600, "unique": False},
+    ],
     "3\u00d74 = 12 \u683c": [
         {"q": 2, "name": "\u7535\u52a8\u4e09\u8f6e\u8f66", "value": 5129, "unique": True},
         {"q": 4, "name": "\u53ef\u6298\u53e0\u9ad8\u97e7\u6027\u9632\u62a4\u76fe", "value": 20082, "unique": True},
@@ -425,8 +439,10 @@ def _maybe_gold_bucket(state, *, allow_huge: bool) -> QualityBucketObs | None:
     value = int(state.get("gold_value") or 0)
     cells_raw = state.get("gold_cells")  # None = not provided, 0 = confirmed zero
     count_raw = state.get("gold_count")
+    avg_value_raw = state.get("gold_avg_value")
     cells = int(cells_raw) if cells_raw is not None else None
     count = int(count_raw) if count_raw is not None else None
+    avg_value = int(avg_value_raw) if avg_value_raw is not None and avg_value_raw > 0 else None
     avg = _try_parse_reading(state.get("gold_avg_raw"))
     huge_raw = state.get("gold_huge_band", "none") if allow_huge else "none"
     huge_band, huge_override = _resolve_huge_selection(huge_raw, 5)
@@ -435,6 +451,7 @@ def _maybe_gold_bucket(state, *, allow_huge: bool) -> QualityBucketObs | None:
         or cells is not None
         or count is not None
         or avg is not None
+        or avg_value is not None
         or huge_band != "none"
     )
     if not has_any:
@@ -445,6 +462,7 @@ def _maybe_gold_bucket(state, *, allow_huge: bool) -> QualityBucketObs | None:
         count=count if count is not None and count > 0 else None,
         avg_cells=avg,
         value_sum=value if value > 0 else None,
+        avg_value=avg_value,
         huge_band=huge_band,
         huge_cells_override=huge_override,
     )
@@ -462,8 +480,14 @@ def _build_buckets_for_ethan(state) -> dict[int, QualityBucketObs]:
         )
     purple_cells_raw = state.get("purple_cells")
     purple_count_raw = state.get("purple_count")
+    purple_avg_value_raw = state.get("purple_avg_value")
     purple_cells_in = int(purple_cells_raw) if purple_cells_raw is not None else None
     purple_count_in = int(purple_count_raw) if purple_count_raw is not None else None
+    purple_avg_value = (
+        int(purple_avg_value_raw)
+        if purple_avg_value_raw is not None and purple_avg_value_raw > 0
+        else None
+    )
     purple_avg = _try_parse_reading(state.get("purple_avg_raw"))
     purple_value = state.get("purple_value") or 0
     purple_huge_raw = state.get("purple_huge_band", "none")
@@ -473,6 +497,7 @@ def _build_buckets_for_ethan(state) -> dict[int, QualityBucketObs]:
         or (purple_count_in is not None and purple_count_in > 0)
         or purple_avg is not None
         or purple_value > 0
+        or purple_avg_value is not None
         or purple_huge != "none"
     )
     if has_purple:
@@ -482,6 +507,7 @@ def _build_buckets_for_ethan(state) -> dict[int, QualityBucketObs]:
             count=purple_count_in if purple_count_in is not None and purple_count_in > 0 else None,
             avg_cells=purple_avg,
             value_sum=purple_value if purple_value > 0 else None,
+            avg_value=purple_avg_value,
             huge_band=purple_huge,
             huge_cells_override=purple_huge_override,
         )
@@ -535,8 +561,14 @@ def _build_buckets_for_aisha(state) -> dict[int, QualityBucketObs]:
 
     purple_cells_raw = state.get("purple_cells")
     purple_count_raw = state.get("purple_count")
+    purple_avg_value_raw = state.get("purple_avg_value")
     purple_cells_in = int(purple_cells_raw) if purple_cells_raw is not None else None
     purple_count_in = int(purple_count_raw) if purple_count_raw is not None else None
+    purple_avg_value = (
+        int(purple_avg_value_raw)
+        if purple_avg_value_raw is not None and purple_avg_value_raw > 0
+        else None
+    )
     purple_avg = _try_parse_reading(state.get("purple_avg_raw"))
     purple_value = state.get("purple_value") or 0
     purple_huge_raw = state.get("purple_huge_band", "none")
@@ -546,6 +578,7 @@ def _build_buckets_for_aisha(state) -> dict[int, QualityBucketObs]:
         or (purple_count_in is not None and purple_count_in > 0)
         or purple_avg is not None
         or purple_value > 0
+        or purple_avg_value is not None
         or purple_huge != "none"
     )
     if has_purple:
@@ -555,6 +588,7 @@ def _build_buckets_for_aisha(state) -> dict[int, QualityBucketObs]:
             count=purple_count_in if purple_count_in is not None and purple_count_in > 0 else None,
             avg_cells=purple_avg,
             value_sum=purple_value if purple_value > 0 else None,
+            avg_value=purple_avg_value,
             huge_band=purple_huge,
             huge_cells_override=purple_huge_override,
         )
@@ -745,9 +779,13 @@ with st.sidebar:
     st.divider()
     with st.expander("\u9ad8\u7ea7\uff1a MC \u91c7\u6837\u53c2\u6570"):
         n_trials = st.slider(
-            "MC \u6837\u672c\u6570\uff08samples\uff09", 500, 5000, 1000, step=250,
-            help="\u9ed8\u8ba4 1000 \u6837\u672c\u3002\u5927\u4ed3\u533a\u5339\u914d\u7387\u4f4e\u65f6\u53ef\u8c03\u9ad8\u5230 2000-3000\u3002"
-                 "\u5f53\u524d\uff08map_id, n_trials, seed\uff09\u4f1a\u88ab\u7f13\u5b58\uff0c\u540c\u5730\u56fe\u91cd\u590d\u70b9\u51fb\u662f\u77ac\u53d1\u3002",
+            "MC \u6837\u672c\u6570\uff08samples\uff09", 500, 5000, 1000, step=200,
+            help="\u9009\u6863\u8bf4\u660e\uff1a"
+                 "**500** = \u5feb\u901f\u4f30\u7b97\uff0c\u7cbe\u5ea6\u504f\u4f4e\uff08\u5c3e\u90e8\u5206\u5e03\u7684\u4ed3\u5e93\u7ec4\u5408\u53ef\u80fd\u5339\u914d\u4e0d\u8db3\uff09\uff1b"
+                 "**1000** = \u9ed8\u8ba4\uff0c\u5e73\u8861\u70b9\uff1b"
+                 "**2000** = \u9ad8\u7cbe\u5ea6\uff0c\u5b89\u9759\u5012\u53ef\u63a5\u53d7\uff08\u63a8\u8350\u5927\u4ed3 + \u5f3a\u7ea6\u675f\u573a\u666f\uff09\uff1b"
+                 "**3000-5000** = \u51b7\u95e8\u5927\u4ed3 / \u4e25\u91cd\u5c3e\u90e8\u573a\u666f\u5907\u9009\uff0c\u63a8\u65ad\u660e\u663e\u53d8\u6162\u3002"
+                 "\u7f13\u5b58\u5bbd\u5bb9\uff1a(map\\_id, n\\_trials, seed) \u540c\u4e00\u7ec4\u53c2\u6570\u4e0d\u4f1a\u91cd\u7b97\u3002",
         )
         show_experimental = st.checkbox(
             "\u663e\u793a\u5b9e\u9a8c\u6027 tab\uff08\u8054\u5408\u63a8\u65ad\uff09",
@@ -792,8 +830,10 @@ if _prev_map is not None and _prev_map != int(map_id):
     READING_KEYS = (
         "wg_cells", "white_cells", "white_count", "green_cells", "green_count",
         "blue_cells", "blue_count",
-        "purple_cells", "purple_count", "purple_value", "purple_huge_band",
-        "gold_cells", "gold_count", "gold_value", "gold_huge_band",
+        "purple_cells", "purple_count", "purple_value", "purple_avg_value",
+        "purple_huge_band",
+        "gold_cells", "gold_count", "gold_value", "gold_avg_value",
+        "gold_huge_band",
         "red_value_lo", "red_value_hi", "red_huge_band",
     )
     for k in READING_KEYS:
@@ -923,14 +963,14 @@ with tab_obs:
                 )
 
     st.divider()
-    with st.expander("\u2139\ufe0f \u4ec0\u4e48\u7b97\u300c\u5de8\u7269\u300d\uff1f", expanded=False):
+    with st.expander("\u2139\ufe0f \u4ec0\u4e48\u7b97\u300c\u5de8\u7269 / \u5927\u4ef6\u300d\uff1f", expanded=False):
         st.markdown(
-            "\u5de8\u7269 = \u5360\u5730\u4f4d **\u2265 12 \u683c** (3\u00d74) \u7684\u85cf\u54c1\uff0c\u5c4f\u98ce / "
-            "\u6d82\u9e26\u5899 / \u6e38\u8247 / \u62a4\u7532 / \u77f3\u72ee\u5b50 / \u9632\u5f39\u8863 \u90fd\u662f\u3002\n\n"
-            "\u5f15\u64ce\u4f7f\u7528\u6bcf\u4e2a\u54c1\u8d28\u5de8\u7269\u7684**\u6700\u5c0f\u5360\u5730 12 \u683c**\u4f5c\u4e3a\u4e0b\u9650\u4f30\u7b97\u3002"
-            "\u5b9e\u9645\u5360\u5730\u53ef\u80fd\u4e3a 12/15/16/18/20 \u683c\uff0c\u5177\u4f53\u53d6\u51b3\u4e8e\u7269\u54c1\u3002\n\n"
-            "**\u53ef\u89c1\u6027**\uff1aEthan \u80fd\u770b\u5230\u7d2b/\u91d1/\u7ea2 \u4e09\u8272\u5de8\u7269\u8f6e\u5ed3\uff1b"
-            "Aisha \u53ea\u80fd\u770b\u5230\u7d2b\u5de8\u7269\uff08\u91d1/\u7ea2 \u9700\u731c\uff0c\u91d1/\u7ea2 \u7684 selectbox \u88ab\u9501\uff09\u3002"
+            "\u54c1\u8d28\u9608\u503c\u4e0d\u4e00\u6837\uff0c\u56e0\u4e3a\u6e38\u620f\u6570\u636e\u91cc\u4e0d\u540c\u54c1\u8d28\u7684\u5927\u4ef6\u5206\u5e03\u4e0d\u540c\uff1a\n\n"
+            "- **\u7d2b\u54c1\uff1a\u2265 10 \u683c** \u7b97\u5927\u4ef6\u3002\u6e38\u620f\u91cc\u7d2b\u54c1 \u2265 12 \u683c\u53ea\u6709 1 \u4ef6\uff08\u53ef\u6298\u53e0\u9ad8\u97e7\u6027\u9632\u62a4\u76fe 3\u00d74\uff09\uff0c\u4f46 5\u00d72=10 \u683c\u7684\u52a0\u7279\u6797\u91cd\u673a\u67aa\u73a9\u5bb6\u5bb9\u6613\u8bc6\u522b\uff0c\u6240\u4ee5\u9608\u503c\u653e\u5bbd\u5230 10\u3002\n"
+            "- **\u91d1\u54c1\uff1a\u2265 12 \u683c** (3\u00d74)\u3002\u9632\u5f39\u8863 / \u6ce2\u65af\u6bef / \u751f\u5316\u5206\u6790\u4eea / \u670d\u52a1\u5668\u673a\u67dc / \u9502\u7535\u6c60 / \u5feb\u8247\u90fd\u662f\u3002\n"
+            "- **\u7ea2\u54c1\uff1a\u2265 12 \u683c** (3\u00d74)\u3002\u5c4f\u98ce / \u96f7\u8fbe / \u91d1\u67aa\u9c7c / \u8dd1\u8f66 / \u98de\u884c\u5668\u90fd\u662f\u3002\n\n"
+            "\u5f15\u64ce\u9ed8\u8ba4\u7528\u8be5\u54c1\u8d28\u7684\u6700\u5c0f\u5de8\u7269\u5360\u5730\u4f5c\u4e3a\u4e0b\u9650\uff1b\u5728\u4e0b\u62c9\u6846\u9009 \u300c\u2605 \u5177\u4f53\u7269\u54c1\u300d \u540e\u4f1a\u7528\u8be5\u7269\u54c1\u7684\u51c6\u786e\u683c\u6570\u3002\n\n"
+            "**\u53ef\u89c1\u6027**\uff1aEthan \u80fd\u770b\u5230\u7d2b/\u91d1/\u7ea2 \u4e09\u8272\u8f6e\u5ed3\uff1bAisha \u53ea\u80fd\u770b\u5230\u7d2b \u5927\u4ef6\uff08\u91d1/\u7ea2 \u9700\u731c\uff0c\u91d1/\u7ea2 selectbox \u88ab\u9501\uff09\u3002"
         )
     st.subheader("\u7d2b\u54c1\uff08q=4\uff0c\u53ef\u9009\uff09")
     st.caption(
@@ -945,7 +985,7 @@ with tab_obs:
         "\u8bf7\u4e25\u683c\u6309\u6e38\u620f\u539f\u6837\u586b\u5165\uff0c\u5c3e\u96f6\u4f1a\u88ab\u5f15\u64ce\u7528\u6765\u9501\u4f4f (cells, count) \u5019\u9009\u3002",
         icon="\u2139\ufe0f",
     )
-    c1, c1b, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2, 1.2])
+    c1, c1b, c2, c3, c3b, c4 = st.columns([1, 1, 1.1, 1.1, 1.1, 1.1])
     state["purple_cells"] = c1.number_input(
         "\u7d2b\u54c1\u603b\u683c\u6570",
         min_value=0, max_value=80, value=None, step=1,
@@ -974,6 +1014,14 @@ with tab_obs:
         placeholder="\u53ef\u9009",
         help="\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
     )
+    state["purple_avg_value"] = c3b.number_input(
+        "\u7d2b\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
+        min_value=0, max_value=200_000, value=None, step=100,
+        placeholder="\u53ef\u9009",
+        help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u7d2b\u54c1\u5747\u4ef7 X silver\u300d\u3002"
+             "\u586b\u5165\u540e\u4f1a\u4e0e\u4ef6\u6570 / \u603b\u4f30\u4ef7\u8054\u5408\u63a8\u7d2f\uff0c"
+             "\u80fd\u8fdb\u4e00\u6b65\u9501\u5b9a\u5019\u9009\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+    )
     _purple_opts, _purple_lbls = _huge_options_for_quality(4)
     state["purple_huge_band"] = c4.selectbox(
         "\u7d2b\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u7d2b\u8272\uff09",
@@ -987,6 +1035,7 @@ with tab_obs:
     # ---- 紫品候选预览 ----
     _pc = state.get("purple_cells")
     _pk = state.get("purple_count")
+    _pav = state.get("purple_avg_value")
     _prev_huge_raw = state.get("purple_huge_band", "none")
     _prev_huge_band, _prev_huge_override = _resolve_huge_selection(_prev_huge_raw, 4)
     _purple_preview_bucket = QualityBucketObs(
@@ -995,6 +1044,7 @@ with tab_obs:
         count=int(_pk) if _pk is not None and int(_pk) > 0 else None,
         avg_cells=_try_parse_reading(state.get("purple_avg_raw")),
         value_sum=(state.get("purple_value") or 0) or None,
+        avg_value=int(_pav) if _pav is not None and _pav > 0 else None,
         huge_band=_prev_huge_band,
         huge_cells_override=_prev_huge_override,
     )
@@ -1003,6 +1053,7 @@ with tab_obs:
         or _purple_preview_bucket.count is not None
         or _purple_preview_bucket.avg_cells is not None
         or _purple_preview_bucket.value_sum is not None
+        or _purple_preview_bucket.avg_value is not None
         or _purple_preview_bucket.huge_band != "none"
     )
     if _has_any:
@@ -1018,7 +1069,7 @@ with tab_obs:
         "\u91d1\u54c1\u603b\u683c\u6570\u4ee5\u67d0\u4e9b\u5730\u56fe\u4f1a\u76f4\u63a5\u63d0\u4f9b\u3002"
         "\u603b\u683c\u6570 \u4e0e \u603b\u4ef7 \u90fd\u53ef\u586b\uff0c\u63a8\u65ad\u5f15\u64ce\u4f1a\u53d6\u4e24\u8005\u4e2d\u80fd\u7528\u7684\u4fe1\u606f\u3002"
     )
-    c1, c1b, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2, 1.2])
+    c1, c1b, c2, c3, c3b, c4 = st.columns([1, 1, 1.1, 1.1, 1.1, 1.1])
     state["gold_cells"] = c1.number_input(
         "\u91d1\u54c1\u603b\u683c\u6570",
         min_value=0, max_value=80, value=None, step=1,
@@ -1045,6 +1096,14 @@ with tab_obs:
         help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u76f4\u63a5\u7ed9\u51fa\u91d1\u54c1\u603b\u4ef7\uff0c"
              "\u8bf7\u4f18\u5148\u586b\u8be5\u503c\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b"
              "\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002",
+    )
+    state["gold_avg_value"] = c3b.number_input(
+        "\u91d1\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
+        min_value=0, max_value=2_000_000, value=None, step=500,
+        placeholder="\u53ef\u9009",
+        help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u91d1\u54c1\u5747\u4ef7 X silver\u300d\u3002"
+             "\u586b\u5165\u540e\u4f1a\u4e0e\u4ef6\u6570 / \u603b\u4f30\u4ef7\u8054\u5408\u63a8\u7d2f\uff0c"
+             "\u80fd\u8fdb\u4e00\u6b65\u9501\u5b9a\u5019\u9009\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
     )
     _gold_opts, _gold_lbls = _huge_options_for_quality(5)
     state["gold_huge_band"] = c4.selectbox(
