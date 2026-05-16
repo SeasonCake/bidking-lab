@@ -493,5 +493,98 @@
 
 ---
 
+## Checkpoint #11 — 出价 hint 鲁棒化 + 已识别具体巨物（2026-05-16）
+
+### 关键发现
+
+**实战回归测试暴露了一连串"上游字段没被消费"的 bug 链**——5 个独立但互相加强的问题，全部集中在「玩家填了字段但分析估算/MC 把它当装饰」上。修完这一轮整个出价 hint 模块的实战准确度有质变。
+
+#### 1. 红品自动推断的双重路径漂移
+
+`compute_analytical_estimate` 和 `_build_session` 都做"红品 = 仓库 - 其它"自动推断，但前者**没有**"非红 bucket 全填才推断"的 gate。结果：玩家没填金品 → 系统把残差全推给红品（×50,000/格）→ 估值飙升 5-10×。
+
+修法：两条路径用同一个 `all_non_red_filled` 检查；未填全时把残差按"全金到全红"区间显示，明确告知玩家"金品未填，区间宽，填了能收紧"。
+
+#### 2. `value=0` 默认值的语义模糊
+
+7 个可选数值字段（gold_cells / gold_count / purple_cells / purple_count / red_cells_total / red_value_lo/hi / wg_cells / blue_cells / purple_value / gold_value）默认值 `0` 让"未提供"和"确认为零"无法区分。Streamlit 的 `value=None` + `placeholder="可选"` 是标准做法，配合 `if x is not None` 后端判断。本来一直没改是因为"看起来能用"，实战才暴露——金品=0 这种合法场景在游戏里真实存在（玩家通过技能确认），UI 必须支持"显式断言无金品"。
+
+#### 3. 分析估算没用枚举
+
+`compute_analytical_estimate` 早就有 `min_huge_cells()` 这种简化推断，但 `candidates_for_bucket`（暴力枚举器，综合 value_sum / count / avg_cells / huge_band / 仓库容量）从未被它调用。结果紫品 `value_sum=86,490 + huge_band=1` 被估成 12 格（仅 huge floor），而枚举能算出 35 格。
+
+修法：在 `compute_analytical_estimate` 里加二次 pass，对 `total_cells is None` 但有任意其它字段的 bucket 调 `candidates_for_bucket` 取 top-1。明细文本标注「（用户估价）」「（由枚举推算→N件）」，让数据来源可追溯。
+
+#### 4. `_build_session` 红品残差的同样问题
+
+`_build_session` 算红品残差时只看 `total_cells` 和 `huge_band`，**漏掉了"只填件数"或"只填估价"的 bucket**。金品填 count=5 → 它对 known_sum 贡献 0 → 红品被错计为 32 格 → 后续 `compute_analytical_estimate` 二次枚举时容量被红品挤光，金品在最终明细里彻底消失。
+
+修法：`_build_session` 也调 `candidates_for_bucket` 估格数，再算红品残差。和 #3 形成对称，从源头修。
+
+#### 5. `HUGE_CELLS_PER_QUALITY` 阈值跟 UI 文案漂移
+
+UI 写"≥ 12 格算巨物"，常量 `HUGE_CELLS_PER_QUALITY = {4:16, 5:18, 6:16}`。结果 12 格的紫色防护盾、12-15 格的金品（防弹衣/波斯毯）按代码不算巨物。修成 `{4:12, 5:12, 6:12}` 跟 `BIG_ITEMS_BY_SHAPE` 里最小巨物形状对齐，金品 huge per-cell value 同步从 6,000 上调到 7,000/格。
+
+### 新功能：已识别具体巨物（精确锁定）
+
+`QualityBucketObs.huge_cells_override` 字段早就在数据模型里，但 UI 上「巨物数量」选项只有 `无 / 1个 / 2-3个 / 4+个`——能填模糊数量段，不能告诉引擎"这个 1 个具体是 18 格的游艇"。
+
+新做法：UI 端的 huge_band 选择器从 `BIG_ITEMS_BY_SHAPE` 自动派生具体物品选项：
+
+```
+紫品下拉框：[无 / 1个 / 2-3个 / 4+个 / ★ 防护盾 (12格·20,082) / ★ 雷达 (...)]
+金品下拉框：[... / ★ 单人郊游快艇 (18格·106,500) / ★ 重型防弹衣 (12格·74,745) / ...]
+红品下拉框：[... / ★ 翡翠屏风 (16格·844,000) / ★ 蓝鳍金枪鱼 (15格·1,552,500) / ...]
+```
+
+内部 helper：
+
+```python
+def _resolve_huge_selection(raw, quality):
+    if raw.startswith("item:"):
+        item = lookup(raw[5:], quality)
+        return ("1", item.cells)  # → huge_band, huge_cells_override
+    return (raw, 0)  # 通用档原样返回
+```
+
+设计要点：
+
+- **零额外推断接线**——`huge_cells_override` 已被 `huge_cells_per_item()` 消费，下游 `min_huge_cells()` → `candidates_for_bucket` → `_build_session.derived_sum` → `compute_analytical_estimate` 全自动用上，不需要碰任何推断模块
+- **数据驱动选项**——选项列表从 `BIG_ITEMS_BY_SHAPE` 自动派生，未来加新物品零工程量
+- **视觉前缀 `★`**——一眼区分"通用档"和"精确档"
+
+### 「未确认品质巨物」明确标记为测试功能
+
+UI 上的"未确认品质巨物（按形状）"区块，玩家可以填"看到 X 个 12 格物体不知道什么品质"。但这区的输入**从来没被任何推断模块消费**——实现起来要在 MC 每个 trial 里枚举品质组合（12 格物体可能是紫紫/紫金/紫红 ...），复杂度过高。本次明确改成 `st.warning` 横幅：
+
+> 🧪 **测试功能，暂未接入推断接口**。本区仅记录你看到的形状数量，不会被推断引擎使用。若能确认品质，请在上方对应 bucket 的「巨物数量」下拉框选择「★ 具体物品」。
+
+### 实战收益（修复前 vs 修复后）
+
+| 场景 | 修复前 | 修复后 |
+|---|---|---|
+| 仓库 80，未填金品 | 红品=19 格、估值 ~100 万 | 「未分配 9 格（金未填）」估值 350K-1M 区间，明确提示 |
+| 紫品 value_sum=86,490, huge=1 | 紫=12 格×2,500 = 30K | 紫=35 格×2,471 = 86K（用户估价直接用） |
+| 金品仅填件数=5 | 金=0 格、红=32 格 | 金=22 格、红=10 格（枚举估出 5 件 ≈ 4.4 格/件）|
+| 紫品识别为防护盾 | 紫=12 格 generic | 紫至少 12 格，引擎知道是具体物品（精确数据） |
+
+### 使用技术
+
+- **数据驱动的 UI 选项派生**：`_huge_options_for_quality(q)` 把 `BIG_ITEMS_BY_SHAPE` 按品质过滤、生成 `(option_key, label)` 对；新增物品自动出现在下拉框
+- **Streamlit `value=None` + `placeholder` 模式**：替换全部 `value=0`，配合后端 `if x is not None` 判断
+- **二次枚举 pass**：`compute_analytical_estimate` 和 `_build_session` 共用 `candidates_for_bucket`，消费 `value_sum / count / avg_cells / huge_band / 仓库容量` 联合约束
+- **明细文本数据来源标注**：「（用户估价）」「（由枚举推算→N件）」让玩家能追溯每个数字的来源
+
+### TROUBLESHOOTING.md 新增条目
+
+`#23 ~ #28` 共 6 条新踩坑，全部按"症状 / 原因 / 修法 / 教训"四段式归档。
+
+### 下一开工节奏
+
+- 进一步优化「混合形状巨物组合」（玩家同时识别游艇 + 防弹衣）— 当前 `huge_cells_override` 单值只能取平均，未来可升级到 `confirmed_huge_cells/value` 双字段精确表达
+- "未确认品质巨物" 接入推断引擎（按形状枚举品质组合 → 联合后验）— 复杂度大，留作 v2
+
+---
+
 > **项目全局进度与路线图已迁移至 [`PROGRESS.md`](PROGRESS.md)**。  
 > 本文件专注于每个 checkpoint 的技术细节。

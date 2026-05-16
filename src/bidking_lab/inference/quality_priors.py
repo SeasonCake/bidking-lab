@@ -50,22 +50,22 @@ PER_CELL_VALUE_DEFAULT: dict[int, int] = {
 }
 
 # Huge-item subset for the rare quality buckets. Per-cell value differs
-# from the default for two reasons: huge items occupy a fixed cells-count
-# (4×4 or 6×3) and their absolute prices cluster, so dividing by the cell
-# area yields a distinct mode.
+# from the default because huge items have different price/cell modes.
+# Definition: "巨物 = 占 >= 12 格 的藏品"
 #
-# Purple (4): 4×4 翡翠屏风 ~40k, 防弹衣 ~38k, 雷达 ~42k → ~2500/cell
-#             (almost identical to the non-huge default; included so that
-#             ``estimate_total_cells`` correctly subtracts the huge value
-#             before applying the default prior to the remaining cells).
-# Gold (5):   6×3 单人郊游快艇 ~108k → ~6000/cell  (well below default 9400).
-# Red (6):    4×4 翡翠屏风 84万 → 52.5k/cell; 红木 36万 → 22.5k/cell.
-#             Drop-weighted average ~30k/cell.
+# Purple (4): 可折叠高韧性防护盾 20082/12=1674/cell (only one purple huge).
+#             Kept at 2500 (default) since it's the sole item.
+# Gold (5):   3×4: 防弹衣 74745, 波斯毯 85800, 分析仪 86130, 无人作战车 93753
+#             3×5: 服务器机柜 97382; 4×4: 锂电池 199900; 3×6: 游艇 106500
+#             Drop-weighted median ~7000/cell across all gold huge.
+# Red (6):    3×4: 单兵外骨骼 305920, 巡航摩托 357040, 相控阵雷达 1003000
+#             3×5: 轿跑 293k, 金枪鱼 294k, GPU柜 375k, 飞行器 453k, 蓝鳍 1553k
+#             4×4: 红木屏风 361k, 碳纤维车壳 444k, 翡翠屏风 844k
+#             Drop-weighted median ~30k/cell.
 PER_CELL_VALUE_HUGE: dict[int, int] = {
-    4: 2500,    # 紫 巨物 ~ default purple (2500); subtracting it cleanly
-                # removes the double-count bug in estimate_total_cells.
-    5: 6000,    # 金 巨物 (only 单人郊游快艇: 108k / 18 ≈ 6000)
-    6: 30000,   # 红 巨物 (4×4 翡翠屏风 84万 / 16 = 5.25万; 红木 36万 / 16 = 2.25万)
+    4: 2500,    # 紫 巨物 (仅一件：防护盾; 沿用 default)
+    5: 7000,    # 金 巨物 (12-18格全范围，加权中位 ~7000/cell)
+    6: 30000,   # 红 巨物 (12-16格全范围，加权中位 ~30000/cell)
 }
 
 # Lower / upper safety bounds. The inference engine uses these to cap

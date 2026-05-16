@@ -169,8 +169,11 @@ Real-data measurement on map T2 2405 (warehouse 72 cells):
 ### 4. Schema-first data layer
 Every game table is decoded into TSV → pydantic schema → typed JSON. Naming aligned with the raw data source: a 2026-05-15 audit caught a quality-tier mis-mapping (game's *优品=purple, 极品=gold, 珍品=red* vs my early code's *精品/珍品*) — system-wide rename and 202 tests still green.
 
-### 5. 22-entry TROUBLESHOOTING.md with four-section bug postmortems
-Every non-trivial gotcha (base64 tables / GBK encoding / `pyarrow` × `numpy 2.x` / `st.number_input` losing trailing zeros / matplotlib CJK font fallback / ROI baseline gap / Python surrogate-pair emoji encoding / …) is documented as **symptom / root cause / fix / lesson**.
+### 5. 28-entry TROUBLESHOOTING.md with four-section bug postmortems
+Every non-trivial gotcha (base64 tables / GBK encoding / `pyarrow` × `numpy 2.x` / `st.number_input` losing trailing zeros / matplotlib CJK font fallback / ROI baseline gap / `value=0` ambiguity vs explicit-zero / analytical estimator bypassing the brute-force enumerator / cascade bugs from `_build_session` not consuming `count`-only buckets / …) is documented as **symptom / root cause / fix / lesson**.
+
+### 6. Concretely-identified huge items as first-class observations
+`BIG_ITEMS_BY_SHAPE` (~20 unique-shape huge items spanning purple / gold / red qualities) feeds the per-quality "huge band" selector directly: instead of just `1 / 2-3 / 4+`, the player can pick `★ 单人郊游快艇 (18格·106,500)` to exactly lock the cell count. The selector resolves into `huge_cells_override`, which propagates through the entire inference chain (`min_huge_cells()` → `candidates_for_bucket` → `_build_session` residual → `compute_analytical_estimate`) without any extra wiring.
 
 ---
 
@@ -185,8 +188,8 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 | Unit tests | **219**, all green |
 | Streamlit UI tabs | 4 (input / bidding hint / tool ROI / joint inference *experimental*) |
 | Notebooks | 5 (map value · hero ranking · inference demo · ROI snipe · end-to-end case) |
-| Project completion | ~92% |
-| Commit history | C-1 ~ C-27, every entry with expanded design notes |
+| Project completion | ~93% |
+| Commit history | C-1 ~ C-28, every entry with expanded design notes |
 
 ---
 
@@ -206,7 +209,7 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 | `docs/project_vision.md` | Original three-layer architecture vision |
 | **`PROGRESS.md`** | **Project handoff doc**: status, hero analysis, roadmap |
 | **`OBSERVATIONS.md`** | **Technical findings log**: per-checkpoint discoveries |
-| **`TROUBLESHOOTING.md`** | **22 bug postmortems**: four-section (symptom / cause / fix / lesson) |
+| **`TROUBLESHOOTING.md`** | **28 bug postmortems**: four-section (symptom / cause / fix / lesson) |
 
 ### What we ship vs. what we don't
 
@@ -247,15 +250,16 @@ Inspiration & prior art:
 
 Full roadmap in [`PROGRESS.md`](PROGRESS.md). Short version:
 
-**Done** (C-1 ~ C-27)
+**Done** (C-1 ~ C-28)
 - ✅ 6 game tables decoded + schema
 - ✅ Inference engine v2 (joint posterior + warehouse pruning + truncated-display rule + huge-item band)
 - ✅ Streamlit Chinese UI (4 tabs + map static info panel)
 - ✅ Per-bucket adaptive MC filter (2026-05-16 fix) — kills 2× over-estimation bug
+- ✅ Analytical-estimate hardening (C-28, 2026-05-16) — `value_sum` / `count`-only buckets now feed brute-force enumeration; `value=None` placeholder pattern across all optional inputs; concretely-identified huge items (game-data-driven dropdown options)
 - ✅ LOO tool ROI + player-eyeball noise model
 - ✅ Snipe / walk-away dual gate + three-tier fallback
 - ✅ 5 analysis notebooks + end-to-end case
-- ✅ 219 unit tests · 22-entry TROUBLESHOOTING
+- ✅ 219 unit tests · 28-entry TROUBLESHOOTING
 - ✅ Bilingual README (this file) + demo video + screenshots
 
 **Possible follow-ups**

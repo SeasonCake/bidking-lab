@@ -30,11 +30,11 @@ from bidking_lab.simulation.basic_mc import flatten_pool
 
 
 def is_huge_item(item: Item) -> bool:
-    """True iff ``item`` matches the canonical huge-band cell area for its quality.
+    """True iff ``item`` occupies >= the huge threshold for its quality.
 
-    Only purple (q=4, 16 cells), gold (q=5, 18 cells), and red (q=6,
-    16 cells) have huge-band semantics; other qualities always return
-    False (no in-game "huge" concept for white/green/blue).
+    Definition: "巨物 = 占 >= 12 格 的藏品". Only purple (q=4), gold
+    (q=5), and red (q=6) have huge-band semantics; other qualities
+    always return False (no in-game "huge" concept for white/green/blue).
     """
     threshold = HUGE_CELLS_PER_QUALITY.get(item.quality)
     if threshold is None:

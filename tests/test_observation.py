@@ -31,10 +31,10 @@ def test_huge_band_ranges() -> None:
 
 
 def test_huge_cells_per_quality() -> None:
-    """Gold huge = 6×3 = 18; purple/red huge = 4×4 = 16."""
-    assert HUGE_CELLS_PER_QUALITY[4] == 16   # 紫
-    assert HUGE_CELLS_PER_QUALITY[5] == 18   # 金 (6x3 单人郊游快艇 only)
-    assert HUGE_CELLS_PER_QUALITY[6] == 16   # 红
+    """All huge thresholds = 12 (minimum 巨物 size = 3×4)."""
+    assert HUGE_CELLS_PER_QUALITY[4] == 12   # 紫 (可折叠高韧性防护盾 3×4)
+    assert HUGE_CELLS_PER_QUALITY[5] == 12   # 金 (重型全生态作战防弹衣 3×4)
+    assert HUGE_CELLS_PER_QUALITY[6] == 12   # 红 (单兵外骨骼 3×4)
 
 
 def test_aisha_visibility_rule() -> None:
@@ -107,7 +107,7 @@ def test_tool_price_override_for_warehouse_total() -> None:
 def test_bucket_huge_methods_defaults() -> None:
     b = QualityBucketObs(quality=4)
     assert b.huge_count_range() == (0, 0)
-    assert b.huge_cells_per_item() == 16
+    assert b.huge_cells_per_item() == 12
     assert b.min_huge_cells() == 0
     assert b.max_huge_cells() == 0
 
@@ -115,15 +115,15 @@ def test_bucket_huge_methods_defaults() -> None:
 def test_bucket_huge_band_purple_2_to_3() -> None:
     b = QualityBucketObs(quality=4, huge_band="2-3")
     assert b.huge_count_range() == (2, 3)
-    assert b.min_huge_cells() == 32   # 2 × 16
-    assert b.max_huge_cells() == 48   # 3 × 16
+    assert b.min_huge_cells() == 24   # 2 × 12
+    assert b.max_huge_cells() == 36   # 3 × 12
 
 
 def test_bucket_huge_band_gold_one() -> None:
-    """Gold huge is 6×3 = 18, not 16."""
+    """Gold huge min = 3×4 = 12 cells."""
     b = QualityBucketObs(quality=5, huge_band="1")
-    assert b.huge_cells_per_item() == 18
-    assert b.min_huge_cells() == 18
+    assert b.huge_cells_per_item() == 12
+    assert b.min_huge_cells() == 12
 
 
 def test_bucket_huge_cells_override() -> None:
@@ -162,7 +162,7 @@ def test_huge_band_filters_candidates() -> None:
 
 
 def test_huge_band_4plus_rejects_small_candidates() -> None:
-    """4+ huge red means total_cells >= 64; small candidates excluded."""
+    """4+ huge red means total_cells >= 48 (4 × 12 cells min); small excluded."""
     bucket = QualityBucketObs(
         quality=6,
         avg_cells=parse_reading("4"),
@@ -171,7 +171,7 @@ def test_huge_band_4plus_rejects_small_candidates() -> None:
     )
     cands = candidates_for_bucket(bucket, warehouse_capacity=159)
     for c in cands:
-        assert c.total_cells >= 64
+        assert c.total_cells >= 48   # 4 huge × 12 cells minimum
         assert c.count >= 4
 
 

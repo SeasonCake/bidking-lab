@@ -166,8 +166,11 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 ### 4. 工程化的 schema-first 数据层
 所有游戏表先 decode 成 TSV → pydantic schema 校验 → typed JSON。命名跟原始数据源对齐（C-25 修过一次重大命名错位：游戏的"优品=紫、极品=金、珍品=红"，跟我代码里早期的"精品/珍品"完全错位；统一重命名后 202 单测继续绿）。
 
-### 5. 22 条 TROUBLESHOOTING.md，四段式踩坑归档
-所有非显然的踩坑（Base64 表 / GBK 编码 / `pyarrow` × `numpy 2.x` / `st.number_input` 吃尾零 / matplotlib 中文字体回退 / ROI baseline 漏洞 / Python surrogate-pair emoji 编码 / ……）都按 **症状 / 原因 / 修法 / 教训** 四段式归档，便于复盘和给协作者交接。
+### 5. 28 条 TROUBLESHOOTING.md，四段式踩坑归档
+所有非显然的踩坑（Base64 表 / GBK 编码 / `pyarrow` × `numpy 2.x` / `st.number_input` 吃尾零 / matplotlib 中文字体回退 / ROI baseline 漏洞 / `value=0` 跟"确认为零"语义模糊 / 分析估算绕过暴力枚举器 / `_build_session` 没消费"只填件数"bucket 引发的连环 bug / ……）都按 **症状 / 原因 / 修法 / 教训** 四段式归档，便于复盘和给协作者交接。
+
+### 6. 把已识别具体巨物变成一等 observation
+`BIG_ITEMS_BY_SHAPE`（紫/金/红 ~20 件唯一形状巨物）直接喂进每个品质的"巨物数量"下拉框：玩家不再只能选 `1个 / 2-3个 / 4+个` 这种数量段，而是能选 `★ 单人郊游快艇 (18格·106,500)` 这样精确锁定。下拉框选项解析为 `huge_cells_override`，自动透传到整条推断链（`min_huge_cells()` → `candidates_for_bucket` → `_build_session` 残差计算 → `compute_analytical_estimate`），零额外接线。
 
 ---
 
@@ -182,8 +185,8 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | 单测数 | **219**，全绿 |
 | Streamlit UI tabs | 4（读数输入 / 出价推荐 / 道具 ROI / 联合推断·实验性） |
 | Notebook | 5 册（map 价值分布 / 英雄排名 / 推断 demo / ROI snipe / 端到端 case） |
-| 项目完成度 | ~92% |
-| Commit 历史 | C-1 ~ C-27，每条都有展开版设计决策记录 |
+| 项目完成度 | ~93% |
+| Commit 历史 | C-1 ~ C-28，每条都有展开版设计决策记录 |
 
 ---
 
@@ -203,7 +206,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | `docs/project_vision.md` | 原始三层架构设计 |
 | **`PROGRESS.md`** | **新协作者起点**：项目全貌 + 当前状态 + 路线图 |
 | **`OBSERVATIONS.md`** | **技术发现日志**：每个 checkpoint 的关键发现 |
-| **`TROUBLESHOOTING.md`** | **22 条踩坑**：四段式（症状/原因/修法/教训） |
+| **`TROUBLESHOOTING.md`** | **28 条踩坑**：四段式（症状/原因/修法/教训） |
 
 ### 我们 ship 的数据 vs 我们不 ship 的
 
@@ -244,15 +247,16 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 
 完整路线图在 [`PROGRESS.md`](PROGRESS.md)。短版：
 
-**已完成**（C-1 ~ C-27）
+**已完成**（C-1 ~ C-28）
 - ✅ 6 张游戏表解码 + schema
 - ✅ 推断引擎 v2（joint posterior + 仓库剪枝 + 截断显示规则 + 巨物分级）
 - ✅ Streamlit 中文 UI（4 tab + 地图静态信息面板）
 - ✅ Per-bucket 自适应 MC filter（2026-05-16 修复，杀掉 2× 过估 bug）
+- ✅ 分析估算鲁棒化（C-28，2026-05-16）—— `value_sum` / 仅填件数的 bucket 现在都走暴力枚举；所有可选数值字段统一 `value=None` + placeholder；已识别具体巨物作为下拉选项（数据驱动，从 `BIG_ITEMS_BY_SHAPE` 派生）
 - ✅ LOO 道具 ROI + 玩家眼估噪声模型
 - ✅ 秒仓 / 放仓 dual gate + 三阶 fallback
 - ✅ 5 册分析 notebook + 端到端 case
-- ✅ 219 单测全绿 · 22 条 TROUBLESHOOTING
+- ✅ 219 单测全绿 · 28 条 TROUBLESHOOTING
 - ✅ 双语 README（本文件）+ 演示视频 + 截图
 
 **可能的后续**

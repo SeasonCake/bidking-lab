@@ -99,10 +99,10 @@ def test_is_huge_item_gold_6x3_yes() -> None:
     assert is_huge_item(item) is True
 
 
-def test_is_huge_item_gold_4x4_no() -> None:
-    """Gold huge is only the 6x3 快艇 (area 18); 4x4 (area 16) doesn't qualify."""
+def test_is_huge_item_gold_4x4_yes() -> None:
+    """Gold items >= 12 cells are huge (threshold=12). 4x4=16 qualifies."""
     item = _make_item(1, value=50_000, quality=5, shape=(4, 4))
-    assert is_huge_item(item) is False
+    assert is_huge_item(item) is True
 
 
 def test_is_huge_item_white_never() -> None:

@@ -29,12 +29,9 @@ def test_huge_red_per_cell_lower_than_default() -> None:
 def test_per_cell_value_huge_flag() -> None:
     assert per_cell_value(6, huge=False) == 50000
     assert per_cell_value(6, huge=True) == 30000
-    # Purple huge per-cell coincidentally matches default purple ~ 2500.
-    # The override is still important: it makes ``estimate_total_cells``
-    # subtract huge value cleanly rather than double-counting the huge cells.
     assert per_cell_value(4, huge=True) == 2500
-    # Gold huge (only 6×3 单人郊游快艇) is much lower than default 9400.
-    assert per_cell_value(5, huge=True) == 6000
+    # Gold huge (12-18 cells range, weighted median ~7000/cell).
+    assert per_cell_value(5, huge=True) == 7000
 
 
 def test_estimate_total_cells_purple_with_huge_avoids_double_count() -> None:

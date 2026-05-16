@@ -67,9 +67,9 @@ HUGE_BAND_RANGE: dict[str, tuple[int, int]] = {
 }
 
 HUGE_CELLS_PER_QUALITY: dict[int, int] = {
-    4: 16,   # 紫色巨物: 4×4 (e.g., 翡翠屏风, 防弹衣, 雷达, 单兵外骨骼)
-    5: 18,   # 金色巨物: 6×3 only (单人郊游快艇)
-    6: 16,   # 红色巨物: 4×4 (e.g., 翡翠屏风, 红木屏风, 碳纤维车壳)
+    4: 12,   # 紫色巨物最小: 3×4 可折叠高韧性防护盾 (20082)
+    5: 12,   # 金色巨物最小: 3×4 重型全生态作战防弹衣 (74745) / 波斯毯 / 分析仪 / 无人作战车
+    6: 12,   # 红色巨物最小: 3×4 单兵外骨骼 (305920) / 重型巡航摩托车 / 相控阵雷达
 }
 
 
@@ -314,9 +314,12 @@ def candidates_for_bucket(
         # No avg reading → enumerate everything within budget. Floor the
         # count at max(1, huge_min); floor the cells at huge_min cells.
         min_cells_floor = huge_min * huge_per_item
+        # Cap count: can't have more items than cells (each item ≥ 1 cell).
+        effective_max_cells = bucket.total_cells if bucket.total_cells is not None else capacity
+        effective_max_count = min(max_count, max(1, effective_max_cells))
         base = [
             (tc, c)
-            for c in range(max(1, huge_min), max_count + 1)
+            for c in range(max(1, huge_min), effective_max_count + 1)
             for tc in range(min_cells_floor, capacity + 1)
         ]
 
@@ -364,10 +367,18 @@ def candidates_for_bucket(
         else:
             cells_score = 0.0
 
+        # Prior on average cells/item: drop-weighted averages from game data.
+        _EXPECTED_AVG_CELLS: dict[int, float] = {
+            1: 2.0, 2: 2.5, 3: 3.5, 4: 3.5, 5: 4.5, 6: 5.0,
+        }
+        expected_avg = _EXPECTED_AVG_CELLS.get(bucket.quality, 3.0)
+        candidate_avg = total_cells / max(1, count)
+        avg_prior_penalty = abs(candidate_avg - expected_avg) / expected_avg
+
         # Composite: 70% value-side fit + 30% cells-side fit, then a
-        # small Occam penalty on count (fewer items more plausible at
-        # equal per-cell value).
-        composite = 0.7 * value_score + 0.3 * cells_score + 0.001 * count
+        # prior-based penalty on avg cells/item and a small Occam penalty.
+        composite = (0.7 * value_score + 0.3 * cells_score
+                     + 0.15 * avg_prior_penalty + 0.001 * count)
 
         out.append(
             BucketCandidate(

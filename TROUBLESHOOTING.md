@@ -27,6 +27,12 @@
 20. [ROI 引擎"总仓储空间"= 0 不是 bug 也不是 feature，是缺少噪声模型](#20-roi-引擎总仓储空间-0-不是-bug-也不是-feature是缺少噪声模型)
 21. [Snipe gate 在小样本场景静默返回 None](#21-snipe-gate-在小样本场景静默返回-none)
 22. [BidMap 静态字段 ≠ session 动态 hint](#22-bidmap-静态字段--session-动态-hint)
+23. [分析估算红品自动推断在 bucket 未填全时仍把残差归红品](#23-分析估算红品自动推断在-bucket-未填全时仍把残差归红品)
+24. [`value=0` 默认值导致"未提供"和"确认为零"无法区分](#24-value0-默认值导致未提供和确认为零无法区分)
+25. [`compute_analytical_estimate` 没用枚举，用户填的 `value_sum` 被忽略](#25-compute_analytical_estimate-没用枚举用户填的-value_sum-被忽略)
+26. [`_build_session` 红品残差不用枚举，只填 count 的 bucket 被吞](#26-_build_session-红品残差不用枚举只填-count-的-bucket-被吞)
+27. [`HUGE_CELLS_PER_QUALITY` 阈值与 UI 文案不一致](#27-huge_cells_per_quality-阈值与-ui-文案不一致)
+28. [`huge_cells_override` 已实现但 UI 从未暴露 → 玩家无法精确锁定具体巨物](#28-huge_cells_override-已实现但-ui-从未暴露--玩家无法精确锁定具体巨物)
 
 ---
 
@@ -758,6 +764,266 @@ decode `BidMap.txt` 105 行全表 + dump 别墅 2407 / 沉船 2510 / 集装箱 2
 1. **先 probe 后建模**。30 秒解码 + 一个 dump 脚本就能知道"有什么字段、字段长啥样、动态 vs 静态"。
 2. parser 抓了的字段不等于 UI 暴露的字段——这两个面之间要有意识地审计，否则 schema 里躺着的信息永远不会到用户面前。
 3. 把"为什么动态 hint 必须手输"写在 caption 里能预防一遍又一遍的用户疑问。
+
+---
+
+## 23. 分析估算红品自动推断在 bucket 未填全时仍把残差归红品
+
+### 症状
+
+仓库 80 格、白绿 15、蓝 30、紫 16（含 1 巨物），金品**未填写**。系统直接把剩余 19 格全部归为红品，估值飙到 ~100 万 silver——但玩家本地实测大致 10-20 万。
+
+### 原因
+
+`compute_analytical_estimate` 里的红品自动推断只检查"红品 bucket 是否已存在"，没检查"其它非红 bucket 是否都填全了"。如果金品没填，系统把"未知格数"全部当成"必然是红品"——红品先验是 50,000 silver/格，把 19 格×50,000 = 95 万塞进估值，误差爆炸。
+
+`_build_session` 里的同名"自动推断红品"逻辑虽然有 `all_buckets_filled` 检查，但下游 `compute_analytical_estimate` 走的是独立路径，**没继承同样的检查**。
+
+### 修法
+
+`compute_analytical_estimate`：
+
+```python
+required_non_red = {1, 3, 4, 5}
+provided_qs = set(obs.buckets.keys())
+all_non_red_filled = required_non_red.issubset(provided_qs)
+red_auto = (6 not in known_cells and red_cells > 0 and all_non_red_filled)
+```
+
+未填全时，把残差以**「全金到全红」的范围**显示给玩家，而不是直接当红品。例如 9 格未分配 → `9×9400 ≈ 8.5万 ~ 9×50000 = 45 万`，区间宽但不再误导。
+
+UI 配套加 warning：「⚠️ 剩余 X 格未分配（金品未填写），无法判断红品占比。估值区间已按"全金"到"全红"范围显示。」
+
+### 教训
+
+1. **不同代码路径里相似的"自动推断"逻辑必须同步**——`_build_session` 和 `compute_analytical_estimate` 都做红品推断，写第二份的时候很容易漏掉前一份的安全检查。
+2. **未填的 bucket 不等于零格 bucket**。"没数据"和"数据为零"在 UI 层和后端都要明确区分——零是断言，未填是不知道。
+3. 高单价品质（红=50,000/格）容易把估值算飞，相关推断必须有"是否所有约束都到位"的 gate。
+
+---
+
+## 24. `value=0` 默认值导致"未提供"和"确认为零"无法区分
+
+### 症状
+
+UI 上「金品总格数」、「金品件数」、「紫品估价」、「红品价值上下限」等字段默认显示 `0`。玩家可能：
+
+1. 真的看到了"金色 0 件"（地图直接告诉过），希望系统当成确认；
+2. 没填任何东西，想让引擎自己推断。
+
+但 `value=0` 让两种意图视觉上完全一样，后端也只能按"未提供"处理（因为按"确认为零"处理会把残差全推给红品，看 #23）。
+
+### 原因
+
+`st.number_input(..., value=0)` 的 0 是合法值，无法表达"留空"。所有 `state.get("gold_cells") or 0` 之类的写法把 0 也当 falsy 处理，进一步丢失信息。
+
+### 修法
+
+把所有"可选"数值字段改成：
+
+```python
+state["gold_cells"] = st.number_input(
+    "金品总格数",
+    min_value=0, max_value=80,
+    value=None, step=1,
+    placeholder="可选",
+    help="留空 = 未提供；填 0 = 确认无金品。",
+)
+```
+
+后端按 `None` vs `0` 分别处理：
+
+```python
+cells_raw = state.get("gold_cells")
+cells = int(cells_raw) if cells_raw is not None else None
+# bucket.total_cells = cells (允许传 0 进去当作"确认零格")
+```
+
+涉及的字段（一次性全改）：`wg_cells / blue_cells / purple_cells / purple_count / purple_value / gold_cells / gold_count / gold_value / red_cells_total / red_value_lo / red_value_hi`。
+
+### 教训
+
+1. **可选数值字段必须用 `value=None` + `placeholder`**，永远不要拿 0 当默认值。
+2. 后端读取时 `state.get(k) or 0` 是反模式（吞掉合法 0 输入），必须显式 `is None` 判断。
+3. 用户的 mental model 里"没填"和"填 0"是两件事——UI 必须支持这个区分。
+
+---
+
+## 25. `compute_analytical_estimate` 没用枚举，用户填的 `value_sum` 被忽略
+
+### 症状
+
+紫品填了 `value_sum = 86,490` + `huge_band = "1"`（确认 1 个紫色巨物），但分析估算的明细显示 **「紫 12格×2500/格」**——只用了"1 个巨物的最小占用 12 格"，把估价信息当装饰。86,490 / 2,500 ≈ 34.6 格，差距巨大。
+
+### 原因
+
+老的 `known_cells` 构造逻辑：
+
+```python
+if b.total_cells is not None:
+    known_cells[q] = b.total_cells
+elif b.huge_band != "none":
+    known_cells[q] = b.min_huge_cells()  # 12 for purple
+# value_sum、count、avg_cells 完全没看
+```
+
+但项目里早就有 `candidates_for_bucket` 暴力枚举器（`observation.py`），它综合考虑 `value_sum / count / avg_cells / huge_band / 仓库容量上限 / 均格先验`，能给出非常精确的 top-1 候选。**只是分析估算路径完全没调用它**。
+
+### 修法
+
+在 `compute_analytical_estimate` 里增加二次枚举 pass：
+
+```python
+for q, b in obs.buckets.items():
+    if b.total_cells is not None or q in (1, 2):
+        continue
+    has_info = (
+        (b.value_sum is not None and b.value_sum > 0)
+        or b.huge_band != "none"
+        or b.avg_cells is not None
+        or b.count is not None
+    )
+    if not has_info:
+        continue
+    cands = candidates_for_bucket(
+        b, warehouse_capacity=warehouse,
+        other_known_cells=explicitly_known,
+    )
+    if cands:
+        known_cells[q] = cands[0].total_cells
+        inferred_count[q] = cands[0].count
+```
+
+明细输出里标注数据来源：「紫 35格×2471/格 → 51,894~129,735（用户估价）（由枚举推算→10件）」。
+
+### 教训
+
+1. **同一个语义有两条计算路径时，要么共享逻辑，要么明确写"为什么这条路径要简化"**——这里两条路径（候选预览面板 vs 分析估算）都该用同样的枚举器，差异只是展示形式。
+2. 用户填的所有字段都该被消费；如果有字段被丢弃，UI 要么不显示该字段、要么明确说"这个不参与本次推断"。
+3. 暴力枚举在我们的规模（紫品候选 ~50 个）几乎无成本，没理由用更弱的近似。
+
+---
+
+## 26. `_build_session` 红品残差不用枚举，只填 count 的 bucket 被吞
+
+### 症状
+
+仓库 135、白绿 40、蓝 26、紫 37（含巨物）、**金品只填件数=5**。系统跑出来红品=32 格、金品 0 格。但 5 件金品按平均 4.4 格/件应该 ~22 格，红品才 ~10 格。
+
+### 原因
+
+`_build_session` 里的红品残差计算：
+
+```python
+# 老逻辑：只看 total_cells 和 huge_band
+known_sum = sum(b.total_cells for b if b.total_cells > 0)
+              + sum(b.min_huge_cells() for b if b.huge_band != "none")
+red_residual = warehouse - known_sum  # 132 - (40+26+37) = 32
+buckets[6] = QualityBucketObs(total_cells=red_residual)
+```
+
+`count=5` 没有 `total_cells`、没有 `huge_band` → `known_sum` 把它当成 **0 格**贡献。然后红品被错算为 32 格塞进 buckets。
+
+后续 `compute_analytical_estimate` 跑二次枚举（修复 #25）时，`other_known_cells = 40+26+37+32 = 135 = warehouse`，**金品的可用容量被红品挤光**，枚举返回空，金品在最终明细里彻底消失。
+
+### 修法
+
+`_build_session` 用枚举先估格数，再算残差：
+
+```python
+explicit_sum = sum(b.total_cells for b if b.total_cells > 0)
+derived_sum = 0
+for q, b in buckets.items():
+    if b.total_cells is not None or q in (1, 2):
+        continue
+    if has_info(b):  # value_sum / huge_band / avg_cells / count
+        cands = candidates_for_bucket(
+            b, warehouse_capacity=warehouse,
+            other_known_cells=explicit_sum + derived_sum,
+        )
+        if cands:
+            derived_sum += cands[0].total_cells
+known_sum = explicit_sum + derived_sum
+red_residual = warehouse - known_sum  # 现在金品贡献 22 格 → 红品 10 格
+```
+
+### 教训
+
+1. **bug 链条**：上游错把可推断字段忽略 → 下游再补救已经太晚（容量被错误占用）。修要修源头。
+2. 当一段计算逻辑被两个模块共享语义但各自写了一份时，**先抽公共 helper 再各自调用**，否则迟早会漂移。
+3. **测试用例要包含"只填部分字段"的组合**——本 bug 在"全填" or "全空"两种极端情况下都不会暴露。
+
+---
+
+## 27. `HUGE_CELLS_PER_QUALITY` 阈值与 UI 文案不一致
+
+### 症状
+
+UI 文案说"≥ 12 格 算巨物"，但 `HUGE_CELLS_PER_QUALITY = {4: 16, 5: 18, 6: 16}` —— 紫色 16 格才算、金色 18 格才算。结果：
+
+- 玩家选「紫品巨物=1个」，引擎估出 16 格紫品，但实际游戏里 12 格的可折叠盾就是巨物
+- 12-15 格的金品（防弹衣、波斯毯、机柜等）按代码"不算巨物"，但 UI 上玩家看到一个不规则大轮廓 100% 当巨物报上来
+
+### 原因
+
+`HUGE_CELLS_PER_QUALITY` 是早期估值的硬编码，按"游戏里最常见的巨物形状"取值（16=4×4 屏风类，18=3×6 游艇）。但实际数据 `BIG_ITEMS_BY_SHAPE` 里 12 格、15 格、16 格、18 格、20 格都有巨物，UI 文案后来改了但常量没跟上。
+
+### 修法
+
+`observation.py`：
+
+```python
+HUGE_CELLS_PER_QUALITY: dict[int, int] = {4: 12, 5: 12, 6: 12}
+```
+
+`quality_priors.py`：金色巨物 `PER_CELL_VALUE_HUGE[5]` 从 6,000 调到 7,000/格（按 12-18 格金品的加权中位数重新算）。同步更新相关测试和 UI help 文本。
+
+### 教训
+
+1. **常量和文案必须用同一个数据源**，否则迟早会 drift。这里 `HUGE_CELLS_PER_QUALITY` 应该从 `BIG_ITEMS_BY_SHAPE` 派生（取最小巨物形状的 cells），而不是硬编码。
+2. 数值常量改动要扫所有用例 + 测试 + UI 文本，可以用 grep 把所有出现的 `12 \| 16 \| 18` 列出来再人工审计。
+3. 玩家口述跟代码常量对不上是常态，**优先信玩家**——他们看到的是游戏，代码是我们脑补的模型。
+
+---
+
+## 28. `huge_cells_override` 已实现但 UI 从未暴露 → 玩家无法精确锁定具体巨物
+
+### 症状
+
+`QualityBucketObs.huge_cells_override` 在 `observation.py` 里早就支持，`huge_cells_per_item()` 也优先用 override。但 UI 上「巨物数量」永远只能选 `无 / 1个 / 2-3个 / 4+个`——只能给数量段，不能告诉引擎"这个 1 个具体是 18 格的游艇"。
+
+实际游戏里，单人郊游快艇（6×3=18 格）是金品里**唯一**的 18 格物品，玩家看到这个轮廓 100% 能识别。同理紫色防护盾（12 格唯一）。但这些信息没有任何 UI 通道可以告诉引擎。
+
+### 原因
+
+UI 设计时只考虑了模糊场景（"我看到 1 个大紫物，但不确定是哪件"），**漏掉了"我能精确识别"的高信息场景**。导致后端有能力但前端不暴露。
+
+### 修法
+
+在 huge_band 选项后追加 `BIG_ITEMS_BY_SHAPE` 中该品质的所有具体物品作为新选项：
+
+```python
+def _huge_options_for_quality(q):
+    options = list(HUGE_BANDS)  # ["none", "1", "2-3", "4+"]
+    labels = dict(HUGE_BAND_LABELS)
+    for item in _items_for_quality(q):  # 紫:1 / 金:7 / 红:12
+        key = f"item:{item['name']}"
+        options.append(key)
+        labels[key] = f"★ {item['name']} ({item['cells']}格·{item['value']:,})"
+    return options, labels
+
+def _resolve_huge_selection(raw, quality):
+    # "item:xxx" → ("1", item.cells)；其它原样返回
+    ...
+```
+
+bucket 构造端调用 `_resolve_huge_selection` 解析为 `(huge_band="1", huge_cells_override=cells)`。这样下游所有现有逻辑（`min_huge_cells()` → `candidates_for_bucket` → `_build_session derived_sum` → `compute_analytical_estimate`）**自动消费**新信息，零额外接线。
+
+### 教训
+
+1. **后端能力先行 + 前端追赶**经常导致功能"半成品"——`huge_cells_override` 字段写了一年没人能填，等于没写。
+2. 数据驱动的 UI 选项（从 `BIG_ITEMS_BY_SHAPE` 自动派生）比硬编码下拉菜单可维护得多。
+3. 给可选项加视觉前缀（`★ 物品名`）能立刻让玩家区分"通用档"和"精确识别档"，不需要额外说明文档。
 
 ---
 
