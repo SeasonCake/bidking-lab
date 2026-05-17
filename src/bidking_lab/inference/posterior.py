@@ -191,6 +191,31 @@ def _describe_constraints(obs: SessionObs) -> list[str]:
     return parts
 
 
+def _fallback_hard_buckets(obs: SessionObs) -> dict[int, QualityBucketObs]:
+    """Per-bucket constraints kept when warehouse-only fallback drops soft filters."""
+    hard_buckets: dict[int, QualityBucketObs] = {}
+    for q, b in obs.buckets.items():
+        if b.total_cells is not None and b.total_cells == 0:
+            hard_buckets[q] = b
+        elif q == 6 and b.total_cells is not None:
+            hard_buckets[q] = b
+        elif b.value_sum is not None and b.value_sum > 0:
+            hard_buckets[q] = QualityBucketObs(
+                quality=q,
+                value_sum=b.value_sum,
+                value_range=b.value_range,
+                huge_band=b.huge_band,
+                huge_cells_override=b.huge_cells_override,
+            )
+        elif b.huge_band != "none":
+            hard_buckets[q] = QualityBucketObs(
+                quality=q,
+                huge_band=b.huge_band,
+                huge_cells_override=b.huge_cells_override,
+            )
+    return hard_buckets
+
+
 def adaptive_filter(
     truths: Sequence[SessionTruth],
     obs: SessionObs,
@@ -254,22 +279,7 @@ def adaptive_filter(
     # progressively wider tolerance to get SOME conditioning.
     # PRESERVE hard assertions: red=0 (total_cells==0 buckets) and total_item_count.
     if len(last_result) < min_samples and obs.buckets:
-        hard_buckets: dict[int, "QualityBucketObs"] = {}
-        for q, b in obs.buckets.items():
-            if b.total_cells is not None and b.total_cells == 0:
-                hard_buckets[q] = b
-            elif q == 6 and b.total_cells is not None:
-                hard_buckets[q] = b
-            elif b.value_sum is not None and b.value_sum > 0:
-                hard_buckets[q] = QualityBucketObs(
-                    quality=q, value_sum=b.value_sum,
-                    value_range=b.value_range,
-                    huge_band=b.huge_band,
-                )
-            elif b.huge_band != "none":
-                hard_buckets[q] = QualityBucketObs(
-                    quality=q, huge_band=b.huge_band,
-                )
+        hard_buckets = _fallback_hard_buckets(obs)
         fallback_obs = SessionObs(
             map_id=obs.map_id, hero=obs.hero,
             warehouse_total_cells=obs.warehouse_total_cells,

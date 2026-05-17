@@ -7,6 +7,7 @@ import numpy as np
 from bidking_lab.inference.ground_truth import BucketTruth, SessionTruth
 from bidking_lab.inference.observation import QualityBucketObs, SessionObs
 from bidking_lab.inference.posterior import (
+    _fallback_hard_buckets,
     adaptive_filter,
     bucket_posterior_stats,
     filter_truths_by_obs,
@@ -143,6 +144,15 @@ class TestFilterByObs:
 
 
 # -------------------- adaptive_filter --------------------
+
+class TestFallbackHardBuckets:
+    def test_preserves_huge_cells_override(self):
+        gold = QualityBucketObs(quality=5, huge_band="1", huge_cells_override=18)
+        obs = _obs(72, g=gold)
+        hard = _fallback_hard_buckets(obs)
+        assert hard[5].huge_cells_override == 18
+        assert hard[5].huge_cells_per_item() == 18
+
 
 class TestAdaptiveFilter:
     def test_strict_when_enough_samples(self):
