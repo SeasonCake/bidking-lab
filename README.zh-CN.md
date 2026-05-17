@@ -166,8 +166,8 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 ### 4. 工程化的 schema-first 数据层
 所有游戏表先 decode 成 TSV → pydantic schema 校验 → typed JSON。命名跟原始数据源对齐（C-25 修过一次重大命名错位：游戏的"优品=紫、极品=金、珍品=红"，跟我代码里早期的"精品/珍品"完全错位；统一重命名后 202 单测继续绿）。
 
-### 5. 28 条 TROUBLESHOOTING.md，四段式踩坑归档
-所有非显然的踩坑（Base64 表 / GBK 编码 / `pyarrow` × `numpy 2.x` / `st.number_input` 吃尾零 / matplotlib 中文字体回退 / ROI baseline 漏洞 / `value=0` 跟"确认为零"语义模糊 / 分析估算绕过暴力枚举器 / `_build_session` 没消费"只填件数"bucket 引发的连环 bug / ……）都按 **症状 / 原因 / 修法 / 教训** 四段式归档，便于复盘和给协作者交接。
+### 5. 33 条 TROUBLESHOOTING.md，四段式踩坑归档
+所有非显然的踩坑都按 **症状 / 原因 / 修法 / 教训** 四段式归档。若「填了一项 MC 分位或候选突然变了」，先查 [**#33 — MC 与枚举影响矩阵**](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期)。
 
 ### 6. 把已识别具体巨物变成一等 observation
 `BIG_ITEMS_BY_SHAPE`（紫/金/红 ~20 件唯一形状巨物）直接喂进每个品质的"巨物数量"下拉框：玩家能选 `★ 单人郊游快艇 (18格·106,500)` 精确锁定格数。`huge_cells_override` 主要服务**枚举 + 分析估算**（`min_huge_cells()` → `candidates_for_bucket` → `compute_analytical_estimate`）。MC 仍只按 **巨物件数 band** 过滤（设计分层，见 TROUBLESHOOTING #31）。
@@ -178,6 +178,21 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 - **≥4 项联合读数**：仅枚举路径放宽 `avg_value` 容差（C-31b）。
 - **P0-B（C-32）**：MC fallback 时 `_fallback_hard_buckets` 保留 `huge_cells_override`（罕见路径一致性，见 OBS #32）。
 - **暂缓**：秒/放仓 UI（P0-A）、均价/★格数进 MC（P2/P3）。
+
+### 8. 哪些输入会动 MC？哪些只动枚举？（[TROUBLESHOOTING #33](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期)）
+
+| 输入 / 改动 | MC 仓库 P25–P90 | 候选预览 / 分析估算 |
+|---|---|---|
+| 紫/金/红 `cells`、`value_sum`、巨物 **件数 band** | ✅ 会 | ✅ 会 |
+| 红 `total_cells=0` / 勾选「已确认无红」 | ✅ **硬约束**，P50 明显下降（正常） | ✅ 会 |
+| 红 `huge_band` | ✅ 会（仅件数） | ✅ 会 |
+| 均格、均价 | ❌ 不会 | ✅ 仅枚举/分析 |
+| ★ 具体巨物（`huge_cells_override`） | ❌ 不会（MC 只看件数） | ✅ 会 — 精确格数（如游艇 18） |
+| 只选「1个」不选 ★ | MC 只过滤件数 | 占格下限：紫 **10**、金/红 **12**；游艇须选 ★ |
+| Item-DB 单品加速（总价+件数=1 命中） | ❌ 不会 | ✅ 只重排候选 |
+| C-32 fallback 保留 override | 仅罕见 fallback | 完整 session 不变 |
+
+**巨物默认（设计拍板）**：占格用该品质**最小标准巨物**；估值用 `PER_CELL_VALUE_HUGE`（金≈7000/格、红≈30000/格），与占格分开。完整表见 [TROUBLESHOOTING #33](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期)。
 
 ---
 
@@ -193,7 +208,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | Streamlit UI tabs | 4（读数输入 / 出价推荐 / 道具 ROI / 联合推断·实验性） |
 | Notebook | 5 册（map 价值分布 / 英雄排名 / 推断 demo / ROI snipe / 端到端 case） |
 | Phase 1A 推断 | **稳定** — 低风险项已落地；秒/放仓 UI 关闭 |
-| Commit 历史 | C-1 ~ C-33，详见 PROGRESS 提交历史 |
+| Commit 历史 | C-1 ~ C-34，详见 PROGRESS 提交历史 |
 
 ---
 
@@ -213,7 +228,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | `docs/project_vision.md` | 原始三层架构设计 |
 | **`PROGRESS.md`** | **新协作者起点**：项目全貌 + 当前状态 + 路线图 |
 | **`OBSERVATIONS.md`** | **技术发现日志**：每个 checkpoint 的关键发现 |
-| **`TROUBLESHOOTING.md`** | **32 条踩坑**：四段式（症状/原因/修法/教训） |
+| **`TROUBLESHOOTING.md`** | **33 条** — 踩坑归档 + [#33 影响矩阵](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期) |
 
 ### 我们 ship 的数据 vs 我们不 ship 的
 
@@ -254,12 +269,12 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 
 完整路线图在 [`PROGRESS.md`](PROGRESS.md)。短版：
 
-**已完成**（C-1 ~ C-33）
+**已完成**（C-1 ~ C-34）
 - ✅ 6 张游戏表解码 + schema · 推断引擎 v2 · Streamlit 中文 UI（MC 默认 **1500**）
 - ✅ Per-bucket MC filter（2026-05-16）· 分析估算 + ★ 具体巨物（C-28~29）· 紫品均价输入
 - ✅ 放仓红约束后端（C-30）· 秒/放仓 **UI 隐藏**（C-31）· 字段作用范围文案 + 联合约束枚举放宽（C-31b）
 - ✅ P0-B：fallback 保留 `huge_cells_override`（C-32）
-- ✅ LOO 道具 ROI + 眼估噪声 · 5 册 notebook · **234** 单测 · **32** 条 TROUBLESHOOTING
+- ✅ LOO 道具 ROI + 眼估噪声 · 5 册 notebook · **234** 单测 · **33** 条 TROUBLESHOOTING（含 #33 影响矩阵）
 - ✅ 双语 README + 演示视频 + 截图
 
 **暂缓 / 可选**

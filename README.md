@@ -169,8 +169,8 @@ Real-data measurement on map T2 2405 (warehouse 72 cells):
 ### 4. Schema-first data layer
 Every game table is decoded into TSV → pydantic schema → typed JSON. Naming aligned with the raw data source: a 2026-05-15 audit caught a quality-tier mis-mapping (game's *优品=purple, 极品=gold, 珍品=red* vs my early code's *精品/珍品*) — system-wide rename and 202 tests still green.
 
-### 5. 28-entry TROUBLESHOOTING.md with four-section bug postmortems
-Every non-trivial gotcha (base64 tables / GBK encoding / `pyarrow` × `numpy 2.x` / `st.number_input` losing trailing zeros / matplotlib CJK font fallback / ROI baseline gap / `value=0` ambiguity vs explicit-zero / analytical estimator bypassing the brute-force enumerator / cascade bugs from `_build_session` not consuming `count`-only buckets / …) is documented as **symptom / root cause / fix / lesson**.
+### 5. 33-entry TROUBLESHOOTING.md with four-section bug postmortems
+Every non-trivial gotcha (base64 tables / GBK encoding / `pyarrow` × `numpy 2.x` / `st.number_input` losing trailing zeros / matplotlib CJK font fallback / ROI baseline gap / `value=0` ambiguity vs explicit-zero / analytical estimator bypassing the brute-force enumerator / cascade bugs from `_build_session` not consuming `count`-only buckets / …) is documented as **symptom / root cause / fix / lesson**. See [**#33 — MC vs enumeration impact matrix**](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期) when a field change moves the bid histogram or candidate list.
 
 ### 6. Concretely-identified huge items as first-class observations
 `BIG_ITEMS_BY_SHAPE` (~20 unique-shape huge items spanning purple / gold / red qualities) feeds the per-quality "huge band" selector directly: instead of just `1 / 2-3 / 4+`, the player can pick `★ 单人郊游快艇 (18格·106,500)` to exactly lock the cell count. The selector resolves into `huge_cells_override`, which propagates through enumeration and analytical estimate (`min_huge_cells()` → `candidates_for_bucket` → `_build_session` residual → `compute_analytical_estimate`). MC filtering still uses **huge count bands only** — by design (see TROUBLESHOOTING #31).
@@ -181,6 +181,21 @@ Every non-trivial gotcha (base64 tables / GBK encoding / `pyarrow` × `numpy 2.x
 - **Joint constraints**: when ≥4 reading fields are active, `avg_value` tolerance widens slightly for enumeration only (C-31b).
 - **P0-B (C-32)**: `adaptive_filter` warehouse fallback now preserves `huge_cells_override` in `_fallback_hard_buckets` — consistency fix on the rare fallback path; see OBS #32.
 - **Deferred**: snipe / walk-away UI (P0-A), avg_value in MC, per-item huge cells in MC (P2/P3).
+
+### 8. Which inputs move MC vs enumeration? ([TROUBLESHOOTING #33](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期))
+
+| Input / change | MC warehouse P25–P90 | Candidate preview / analytical estimate |
+|---|---|---|
+| Purple/gold/red `cells`, `value_sum`, huge **count band** | ✅ Yes | ✅ Yes |
+| Red `total_cells = 0` / “confirmed no red” | ✅ **Hard** filter — P50 drops sharply (expected) | ✅ Yes |
+| Red `huge_band` | ✅ Yes (count only) | ✅ Yes |
+| `avg_cells`, `avg_value` | ❌ No | ✅ Yes only |
+| `★` concrete huge item (`huge_cells_override`) | ❌ No (count band only) | ✅ Yes — exact cells (e.g. yacht = 18) |
+| Generic huge “1” **without** `★` | Count only in MC | Floor = min footprint (purple **10**, gold/red **12**); pick `★` for yacht |
+| Item-DB boost (`value_sum` + count=1 hits one item) | ❌ No | ✅ Re-ranks candidates only |
+| C-32 fallback preserves override | Rare fallback path only | Full session unchanged |
+
+**Huge defaults (by design):** cell floor = minimum standard huge per quality; value side uses `PER_CELL_VALUE_HUGE` (~7k/cell gold, ~30k/cell red) — not the cell mean. Full table + rationale: [TROUBLESHOOTING #33](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期).
 
 ---
 
@@ -196,7 +211,7 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 | Streamlit UI tabs | 4 (input / bidding hint / tool ROI / joint inference *experimental*) |
 | Notebooks | 5 (map value · hero ranking · inference demo · ROI snipe · end-to-end case) |
 | Phase 1A inference | **stable** — low-risk backlog closed; snipe/pass UI off |
-| Commit history | C-1 ~ C-33, every entry with expanded design notes in PROGRESS |
+| Commit history | C-1 ~ C-34, every entry with expanded design notes in PROGRESS |
 
 ---
 
@@ -216,7 +231,7 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 | `docs/project_vision.md` | Original three-layer architecture vision |
 | **`PROGRESS.md`** | **Project handoff doc**: status, hero analysis, roadmap |
 | **`OBSERVATIONS.md`** | **Technical findings log**: per-checkpoint discoveries |
-| **`TROUBLESHOOTING.md`** | **32 bug postmortems**: four-section (symptom / cause / fix / lesson) |
+| **`TROUBLESHOOTING.md`** | **33 entries** — postmortems + [#33 MC vs enum matrix](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期) |
 
 ### What we ship vs. what we don't
 
@@ -257,7 +272,7 @@ Inspiration & prior art:
 
 Full roadmap in [`PROGRESS.md`](PROGRESS.md). Short version:
 
-**Done** (C-1 ~ C-33)
+**Done** (C-1 ~ C-34)
 - ✅ 6 game tables decoded + schema
 - ✅ Inference engine v2 (joint posterior + warehouse pruning + truncated-display rule + huge-item band)
 - ✅ Streamlit Chinese UI (4 tabs + map static info panel); MC default **1500** samples
@@ -267,7 +282,7 @@ Full roadmap in [`PROGRESS.md`](PROGRESS.md). Short version:
 - ✅ Field-scope UI copy + joint-constraint enumeration relax (C-31b)
 - ✅ P0-B: fallback preserves `huge_cells_override` (C-32)
 - ✅ LOO tool ROI + player-eyeball noise model
-- ✅ 5 analysis notebooks + end-to-end case · **234** unit tests · **32** TROUBLESHOOTING entries
+- ✅ 5 analysis notebooks + end-to-end case · **234** unit tests · **33** TROUBLESHOOTING entries (#33 impact matrix)
 - ✅ Bilingual README + demo video + screenshots
 
 **Deferred / optional**
