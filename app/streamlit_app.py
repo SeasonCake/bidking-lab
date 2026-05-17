@@ -825,12 +825,12 @@ with st.sidebar:
     st.divider()
     with st.expander("\u9ad8\u7ea7\uff1a MC \u91c7\u6837\u53c2\u6570"):
         n_trials = st.slider(
-            "MC \u6837\u672c\u6570\uff08samples\uff09", 500, 5000, 2000, step=250,
+            "MC \u6837\u672c\u6570\uff08samples\uff09", 500, 5000, 1500, step=250,
             help="\u9009\u6863\u8bf4\u660e\uff1a"
                  "**500** = \u5feb\u901f\u4f30\u7b97\uff0c\u7cbe\u5ea6\u504f\u4f4e\uff08\u5c3e\u90e8\u5206\u5e03\u7684\u4ed3\u5e93\u7ec4\u5408\u53ef\u80fd\u5339\u914d\u4e0d\u8db3\uff09\uff1b"
                  "**1000** = \u8f7b\u91cf\u573a\u666f\uff0c\u5feb\u901f\u70b9\u770b\uff1b"
-                 "**2000** = \u9ed8\u8ba4 / \u63a8\u8350\u9009\u9879\uff0c\u51c6\u5ea6\u4e0e\u901f\u5ea6\u5e73\u8861\uff08\u5341\u4f59\u79d2\uff09\uff1b"
-                 "**3000-5000** = \u51b7\u95e8\u5927\u4ed3 / \u4e25\u91cd\u5c3e\u90e8\u573a\u666f\u5907\u9009\uff0c\u63a8\u65ad\u660e\u663e\u53d8\u6162\u3002"
+                 "**1500** = \u9ed8\u8ba4 / \u63a8\u8350\uff0c\u5b9e\u6218\u901f\u5ea6\u4e0e\u7cbe\u5ea6\u5e73\u8861\uff1b"
+                 "**2000-5000** = \u5927\u4ed3\u6216\u5f3a\u7ea6\u675f\u573a\u666f\u5907\u9009\u3002"
                  "\u7f13\u5b58\u5bbd\u5bb9\uff1a(map\\_id, n\\_trials, seed) \u540c\u4e00\u7ec4\u53c2\u6570\u4e0d\u4f1a\u91cd\u7b97\u3002",
         )
         show_experimental = st.checkbox(
@@ -1505,7 +1505,7 @@ with tab_hint:
             ax.xaxis.label.set_size(8)
             ax.yaxis.label.set_size(8)
             plt.tight_layout()
-            st.pyplot(fig, clear_figure=True, use_container_width=False)
+            st.pyplot(fig, clear_figure=True, width="content")
 
         # ---- Per-bucket posterior cards ----
         if conditional_truths:
@@ -1564,7 +1564,7 @@ with tab_hint:
                     "\u5de8\u7269 P50": stats.huge_p50,
                     "\u7a7a bucket %": f"{stats.p_empty*100:.1f}%",
                 })
-            st.dataframe(posterior_rows, hide_index=True, use_container_width=True)
+            st.dataframe(posterior_rows, hide_index=True, width="stretch")
 
             red_stats = bucket_posterior_stats(conditional_truths, 6)
             if red_stats.cells_p50 > 0 or red_stats.value_p50 > 0:
@@ -1848,7 +1848,7 @@ with tab_roi:
             fontsize=9,
         )
         plt.tight_layout()
-        st.pyplot(fig, clear_figure=True, use_container_width=False)
+        st.pyplot(fig, clear_figure=True, width="content")
         st.caption(
             "\u6b63\u503c = \u8be5\u9053\u5177\u8d21\u732e\u4e3a\u6b63\uff08\u4ef7\u503c\u63a8\u65ad\u66f4\u51c6\uff09\uff1b"
             "\u8d1f\u503c = \u5728\u73b0\u6709 kit \u4e2d\u88ab\u5176\u5b83\u9053\u5177\u8986\u76d6\uff0c"
