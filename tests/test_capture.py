@@ -1,6 +1,11 @@
 """Tests for capture text parser (no OCR)."""
 
-from bidking_lab.capture.apply import apply_capture_result
+from bidking_lab.capture.apply import (
+    apply_capture_result,
+    hydrate_reading_widgets_from_obs,
+    reading_widget_key,
+    sync_obs_from_reading_widgets,
+)
 from bidking_lab.capture.parser import parse_panel_text
 
 MAP_NAMES = {
@@ -47,10 +52,18 @@ def test_map_purple_avg_value():
 
 
 def test_map_name_ocr_typos_doomsday():
-    names = {2409: "末日庇护所", 2510: "现代货轮娱乐库"}
+    import json
+    from pathlib import Path
+
+    raw = json.loads(
+        (Path(__file__).resolve().parents[1] / "data/processed/maps.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+    names = {int(m["map_id"]): str(m["name"]) for m in raw}
     text = "末日底护所：完拍信息\n"
     r = parse_panel_text(text, map_names=names)
-    assert r.map_id == 2409
+    assert r.map_name == "末日庇护所"
 
 
 def test_map_name_longest_match():
@@ -89,6 +102,36 @@ def test_total_item_count_hint():
     text = "本场共有35件藏品"
     r = parse_panel_text(text, map_names=MAP_NAMES)
     assert r.suggestion_map()["total_item_count"] == 35
+
+
+def test_purple_count_not_total_on_quality_item_line() -> None:
+    text = "本场拍卖共有紫色品质道具10件\n"
+    r = parse_panel_text(text, map_names=MAP_NAMES)
+    m = r.suggestion_map()
+    assert m.get("purple_count") == 10
+    assert "total_item_count" not in m
+
+
+def test_total_item_count_bencang_and_yipin_typo():
+    for text in ("本仓共有35件藏品", "仓库共有 42 件意品"):
+        r = parse_panel_text(text, map_names=MAP_NAMES)
+        assert r.suggestion_map()["total_item_count"] in (35, 42)
+
+
+def test_gold_value_total_phrases():
+    for text, val in (
+        ("所有金色品质藏品的总价值为24435", 24435),
+        ("显示金色品质藏品总价值为 12000", 12000),
+        ("金色品质藏品总价值为9000", 9000),
+    ):
+        r = parse_panel_text(text, map_names=MAP_NAMES)
+        assert r.suggestion_map()["gold_value"] == val
+
+
+def test_purple_value_ocr_spacing():
+    text = "所有紫色品质藏品总价值为 86,490"
+    r = parse_panel_text(text, map_names=MAP_NAMES)
+    assert r.suggestion_map()["purple_value"] == 86490
 
 
 def test_warehouse_cells_from_panel_line():
@@ -196,3 +239,21 @@ def test_apply_switches_map_category():
     rev = int(ui.get("obs_map_select_rev", 0))
     assert ui[f"obs_map_select__r{rev}"] == 2510
     assert obs["map_id"] == 2510
+
+
+def test_apply_purple_count_hydrates_versioned_widget_key() -> None:
+    text = "本场拍卖共有紫色品质道具10件\n"
+    parsed = parse_panel_text(text, map_names=MAP_NAMES)
+    assert parsed.suggestion_map()["purple_count"] == 10
+    obs: dict = {}
+    ui: dict = {"obs_readings_rev": 0}
+    apply_capture_result(parsed, obs, ui, map_names=MAP_NAMES)
+    assert obs["purple_count"] == 10
+    wkey = reading_widget_key("obs_reading_purple_count", ui)
+    assert ui[wkey] == 10
+    ui[wkey] = None
+    obs["purple_count"] = 10
+    hydrate_reading_widgets_from_obs(obs, ui)
+    assert ui[wkey] == 10
+    sync_obs_from_reading_widgets(obs, ui)
+    assert obs["purple_count"] == 10

@@ -19,34 +19,93 @@ _warm_status: Literal["idle", "loading", "ready", "error"] = "idle"
 _warm_error: str | None = None
 
 _PANEL_CROP = INFO_PANEL_CROP_FRAC
+# OCR path calibrated on 1920×1080 game captures (notebook 06).
+REFERENCE_WIDTH = 1920
+REFERENCE_HEIGHT = 1080
+
+
+def create_ocr_engine() -> Any:
+    """Construct a new RapidOCR instance (expensive — cache in Streamlit)."""
+    from rapidocr_onnxruntime import RapidOCR
+
+    return RapidOCR()
 
 
 def _get_engine() -> Any:
     global _ENGINE  # noqa: PLW0603
     if _ENGINE is None:
-        from rapidocr_onnxruntime import RapidOCR
-
-        _ENGINE = RapidOCR()
+        _ENGINE = create_ocr_engine()
     return _ENGINE
+
+
+def _warmup_payload_bytes() -> bytes:
+    from bidking_lab.capture.screen import OCR_WARMUP_SAMPLE
+
+    if OCR_WARMUP_SAMPLE.is_file():
+        return OCR_WARMUP_SAMPLE.read_bytes()
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise RuntimeError("需要 Pillow：pip install pillow") from exc
+    buf = io.BytesIO()
+    Image.new("RGB", (1920, 1080), color=(32, 34, 38)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def warmup_engine(engine: Any) -> None:
+    """Two inference passes (loads ONNX weights; 2nd pass mirrors first real OCR)."""
+    payload = _warmup_payload_bytes()
+    data = crop_info_panel(payload)
+    data = fit_reference_frame(data)
+    for pass_idx in (1, 2):
+        result, _ = engine(data)
+        if not result and pass_idx == 1:
+            LOG.warning("OCR warm-up: empty result on sample image")
+
+
+def warmup_engine_screen_primary(engine: Any) -> bool:
+    """Extra warm-up on live primary-monitor panel crop (matches grab-screen path)."""
+    try:
+        from bidking_lab.capture.screen import (
+            ScreenCaptureConfig,
+            capture_monitor_panel,
+            list_monitors,
+            resolve_monitor,
+        )
+    except ImportError:
+        return False
+
+    try:
+        monitors = list_monitors()
+        mon = resolve_monitor(monitors)
+        cap = capture_monitor_panel(ScreenCaptureConfig(monitor_index=mon.index))
+        data = fit_reference_frame(cap.panel_png)
+        for _ in range(2):
+            engine(data)
+        LOG.info(
+            "OCR screen warm-up ok: monitor #%s %sx%s",
+            mon.index,
+            mon.width,
+            mon.height,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("OCR screen warm-up skipped: %s", exc)
+        return False
 
 
 def warm_ocr_engine() -> None:
     """Load RapidOCR via the same crop/resize path as real screenshots."""
-    from bidking_lab.capture.screen import OCR_WARMUP_SAMPLE
+    global _ENGINE  # noqa: PLW0603
+    eng = create_ocr_engine()
+    warmup_engine(eng)
+    _ENGINE = eng
 
-    if OCR_WARMUP_SAMPLE.is_file():
-        payload = OCR_WARMUP_SAMPLE.read_bytes()
-    else:
-        try:
-            from PIL import Image
-        except ImportError as exc:
-            raise RuntimeError("需要 Pillow：pip install pillow") from exc
-        buf = io.BytesIO()
-        Image.new("RGB", (1920, 1080), color=(32, 34, 38)).save(buf, format="PNG")
-        payload = buf.getvalue()
-    _text, err = image_bytes_to_text(payload)
-    if err and "未安装" in err:
-        raise RuntimeError(err)
+
+def bind_ocr_engine(engine: Any) -> None:
+    """Pin the process-global engine (used when Streamlit caches the instance)."""
+    global _ENGINE  # noqa: PLW0603
+    _ENGINE = engine
 
 
 def start_ocr_warmup_background() -> None:
@@ -99,8 +158,13 @@ def crop_info_panel(
     return out.getvalue()
 
 
-def _maybe_downscale(data: bytes, max_side: int = 1280) -> bytes:
-    """Shrink large screenshots so OCR is faster (full-screen PNGs are slow)."""
+def fit_reference_frame(
+    data: bytes,
+    *,
+    ref_width: int = REFERENCE_WIDTH,
+    ref_height: int = REFERENCE_HEIGHT,
+) -> bytes:
+    """Downscale only when larger than the reference frame (faster OCR, stable ROI)."""
     try:
         from PIL import Image
     except ImportError:
@@ -108,10 +172,12 @@ def _maybe_downscale(data: bytes, max_side: int = 1280) -> bytes:
 
     img = Image.open(io.BytesIO(data))
     w, h = img.size
-    if max(w, h) <= max_side:
+    if w <= ref_width and h <= ref_height:
         return data
-    scale = max_side / max(w, h)
-    img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.BILINEAR)
+    scale = min(ref_width / w, ref_height / h)
+    new_w = max(1, int(w * scale))
+    new_h = max(1, int(h * scale))
+    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
     out = io.BytesIO()
     img.save(out, format="PNG", optimize=True)
     return out.getvalue()
@@ -120,8 +186,8 @@ def _maybe_downscale(data: bytes, max_side: int = 1280) -> bytes:
 def image_bytes_to_text(
     data: bytes,
     *,
-    max_side: int = 1280,
     crop_panel: bool = True,
+    engine: Any | None = None,
 ) -> tuple[str, str | None]:
     """Run OCR if ``rapidocr_onnxruntime`` is installed.
 
@@ -140,9 +206,9 @@ def image_bytes_to_text(
     try:
         if crop_panel:
             data = crop_info_panel(data)
-        data = _maybe_downscale(data, max_side=max_side)
-        engine = _get_engine()
-        result, _ = engine(data)
+        data = fit_reference_frame(data)
+        ocr_engine = engine or _get_engine()
+        result, _ = ocr_engine(data)
     except Exception as exc:  # noqa: BLE001
         return "", f"OCR 失败: {exc}"
 

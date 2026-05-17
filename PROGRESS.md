@@ -415,9 +415,13 @@ C:\Python313\python.exe -m streamlit run app\streamlit_app.py
 | ✅ | 换图/清空地图：读数 rev + 仓库清空 + **截图 rev**（无单独上传 ×） | 2026-05-17 |
 | ✅ | 换图 widget rev 同步修复（toast 闪烁/锁图） | TROUBLESHOOTING #35 |
 | ✅ | 侧栏紧凑布局；`number_input` 空值；OCR 后台暖机 | 2026-05-17 |
-| ⬜ | Streamlit 视觉 polish（间距/卡片/暗色） | 用户暂缓 |
-| ⬜ | 根据后续截图扩充 `patterns.py` | 总件数句式、艾莎等 |
-| ⬜ | **C-36 UI**：侧栏「抓取当前屏幕」按钮接 `capture_monitor_png_bytes` | 接口已建，见下 |
+| ✅ | Streamlit 视觉 polish | `app/ui_theme.py` 分区色条、Tab/标题样式、侧栏紧凑布局（2026-05-18） |
+| ✅ | 根据截图扩充 `patterns.py` | 紫品件数「品质道具 N 件」；总件数不再误吃紫品行 |
+| ✅ | **C-36 UI**：侧栏「抓取当前屏幕」→ `capture_monitor_png_bytes` | `crop_panel=False` 避免双裁 |
+| ⬜ | **C-36 深化**：多显示器选择、非 1920×1080 DPI 下 ROI 微调 | 见下 |
+| ✅ | `map_fragment_fixes.json` 检索表扩充 | `build_map_fragment_fixes.py` 手 curated + 短语 typo；`--check` 校验 |
+| ✅ | **Capture diag**：`capture/diag.py` JSONL（`BIDKING_CAPTURE_DIAG=1`） | 区分「无地图行」vs「有行未匹配」 |
+| ✅ | `scripts/propose_map_fixes_from_diag.py` | 读 diag JSONL 汇总 `line_unmatched` 片段；需实战日志 |
 
 #### C-36 · 视觉动态抓屏（接口已建，UI 待接）
 
@@ -428,11 +432,46 @@ C:\Python313\python.exe -m streamlit run app\streamlit_app.py
 | **参考分辨率** | 标定用 `1920×1080`；暖机/OCR 同尺寸 |
 | **主屏** | `list_monitors()` 默认 `is_primary`；抓屏 bbox 以该屏 `width×height` 为准 |
 | **副屏** | `ScreenCaptureConfig.monitor_index` 指定；裁剪比例仍相对**该屏**宽高（非虚拟桌面整体） |
-| **ROI 比例** | `INFO_PANEL_CROP_FRAC = (0.17, 0.07, 0.52, 0.72)` → 横向约 17%–52%、纵向约 7%–72%（左中信息区，避开底部出价条） |
+| **ROI 比例** | `INFO_PANEL_CROP_FRAC = (0.30, 0.07, 0.59, 0.72)` → 横向约 30%–59%、纵向约 7%–72%（左中信息区） |
+| **地图名纠偏** | `map_resolve.py` + `map_fragment_fixes.json`（内置 + JSON 短语/单字 typo）；`build_map_fragment_fixes.py` / `propose_map_fixes_from_diag.py` |
+| **读数填入** | `apply.hydrate_reading_widgets_from_obs` + `sync_obs_from_reading_widgets`（避免 `number_input` 返回值冲掉 OCR） |
+| **patterns** | `total_item_count`（本仓共有/意品 OCR）；紫/金总价更多「总价值为」变体；收紧「显示…品质…藏品」忽略规则（不再误杀总价行） |
+| **OCR 回归图** | 6 张（Desktop + 5 张微信）；`scripts/ocr_regression_snapshots.py` |
 | **依赖** | `pip install -e ".[capture]"` 含 `mss`；抓屏后仍走 `ocr.crop_info_panel` / `parse_panel_text` / `apply_capture_result` |
 | **流程** | 抓屏 → OCR → 自动填读数 tab → **玩家手填仓库格数** → 可选后台 MC |
 
-**当前阶段**：上传/剪贴板 OCR 已验收；下一步在 Streamlit 接按钮并做多分辨率/DPI 实测微调 ROI。
+**当前阶段**：上传/剪贴板/主屏抓屏按钮已通；**下一步**多分辨率/DPI ROI 实测与可选显示器选择。
+
+**Capture diag（地图 OCR 问题记录）**：
+
+```powershell
+set BIDKING_CAPTURE_DIAG=1
+streamlit run app/streamlit_app.py
+# 使用后查看 data/logs/capture_diag.jsonl
+C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
+```
+
+| `map.status` | 含义 |
+|--------------|------|
+| `no_map_line` | 裁切/OCR 文本里没有「X：竞拍信息」行（非 bug） |
+| `line_unmatched` | **有地图标题行但 fuzzy 未命中** → 优先补 fix |
+| `resolved` | 已识别并写入 `map_id` |
+| `ambiguous_lines` | 多行命中不同地图名 |
+
+---
+
+### 待办（C-37 · OCR 应用状态机 & Release）
+
+> **2026-05-18**：用户验收 UI/OCR 主路径可用；下列为**边界与分发**，留待下一轮。
+
+| 状态 | 项 | 说明 |
+|------|-----|------|
+| ⬜ | **OCR 与手填数据的清空边界** | 现状：每次 OCR 前 `clear_readings_for_map_change`，**同地图、未换图**也会清空已填读数。应区分：仅 OCR 补全 vs 换图重置。 |
+| ⬜ | **仓库格数 `warehouse_cells` 保留** | OCR 面板常无总格数；用户先填格数 → OCR 识别地图（尤其**自动切图**）时不应清空格数，否则无法推理。与「手动换图清空仓库」需明确规则表。 |
+| ⬜ | **`auto_infer_after_capture` 触发条件** | 避免：先填数据再 OCR 被清空后仍触发/误触发后台 MC；或清空后带着陈旧 fingerprint 推理。 |
+| ⬜ | **状态机文档 + 单测** | 矩阵：{无 OCR / OCR 同图 / OCR 换图 / 手选换图} × {已填仓库 / 已填读数} → 保留/清空/是否 rerun MC。 |
+| ⬜ | **演示视频重做** | 随 Streamlit 布局、抓屏说明、紫品件数填入等更新后重录（非阻塞）。 |
+| ⬜ | **一站式整合包 + GitHub Release** | 计划：`pip install` 可复现、`[ui,capture]` extra、打 tag 发布 zip/说明；可选便携运行脚本；**不含**游戏资产。 |
 
 ---
 
@@ -496,6 +535,12 @@ C:\Python313\python.exe -m streamlit run app\streamlit_app.py
 
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
+
+### C-36 收口：抓屏 UI、地图纠偏、读数填入与主题 (2026-05-18)
+
+- **Capture**：`map_resolve.py` + `map_fragment_fixes.json`（28 条）；紫品件数 pattern；`apply` hydrate/sync widget；`diag` JSONL；回归脚本与单测。
+- **Streamlit**：多显示器抓屏、抓屏隐私说明、侧栏紧凑 + `ui_theme.py`；GitHub 置顶与 Star 提示；读数 tab 紫品件数可填。
+- **待办**：C-37 OCR/换图状态机边界、演示视频、GitHub Release 整合包（见上表）。
 
 ### C-35: 信息面板 capture + 换图状态机 + screen ROI 接口 (2026-05-17)
 

@@ -252,10 +252,8 @@ class BucketCandidate:
     cells_score: float     # |total_cells - estimate_from_value| / total_cells
     composite: float       # weighted sum used for ranking (lower = better)
     is_db_matched: bool = False
-    """True iff this candidate's (count==1, total_cells) matches a real
-    Item.txt entry at the bucket's quality with value within ±2% of
-    ``bucket.value_sum``. Used by UI to upgrade blue 💡 to green ✅.
-    """
+    """True iff this candidate's (count==1, total_cells) matches a unique
+    Item.txt price hit (exact ±0.5% then ±2%). Used by UI for green ✅."""
 
 
 def _check_required_fields(session: SessionObs) -> list[str]:
@@ -300,10 +298,25 @@ def _check_required_fields(session: SessionObs) -> list[str]:
 # purple item has 35 cells (max purple = 12 cells = 折叠防护盾).
 _ITEM_DB_BY_QUALITY: dict[int, list[tuple[int, int]]] | None = None
 _MAX_CELLS_PER_ITEM_BY_QUALITY: dict[int, int] | None = None
+_MAX_VALUE_PER_ITEM_BY_QUALITY: dict[int, int] | None = None
 # Conservative fallback (used when Item.txt cannot be located): allow up
 # to 24 cells/item across the board, slightly above the highest known
 # huge item (red/gold huge = 18 cells, blue 墙面涂鸦墙 = 20 cells).
 _MAX_CELLS_PER_ITEM_FALLBACK = 24
+_MAX_VALUE_PER_ITEM_FALLBACK = 10**9
+# Item-DB value match tiers (enumeration boost only — MC filter unchanged).
+EXACT_VALUE_TOL_PCT = 0.005
+FALLBACK_VALUE_TOL_PCT = 0.02
+
+
+@dataclass(frozen=True, slots=True)
+class SingleItemValueLookup:
+    """Result of Item.txt price lookup for one quality bucket."""
+
+    boost_cells: frozenset[int]
+    ambiguous: bool
+    over_max: bool
+    tier: Literal["none", "exact", "tolerance"]
 
 
 def _load_item_db_by_quality() -> dict[int, list[tuple[int, int]]]:
@@ -314,6 +327,7 @@ def _load_item_db_by_quality() -> dict[int, list[tuple[int, int]]]:
     Also populates ``_MAX_CELLS_PER_ITEM_BY_QUALITY`` as a side-effect.
     """
     global _ITEM_DB_BY_QUALITY, _MAX_CELLS_PER_ITEM_BY_QUALITY
+    global _MAX_VALUE_PER_ITEM_BY_QUALITY
     if _ITEM_DB_BY_QUALITY is not None:
         return _ITEM_DB_BY_QUALITY
     try:
@@ -330,40 +344,139 @@ def _load_item_db_by_quality() -> dict[int, list[tuple[int, int]]]:
         if path is None:
             _ITEM_DB_BY_QUALITY = {}
             _MAX_CELLS_PER_ITEM_BY_QUALITY = {}
+            _MAX_VALUE_PER_ITEM_BY_QUALITY = {}
             return _ITEM_DB_BY_QUALITY
         items = load_item_table(path)
         db: dict[int, list[tuple[int, int]]] = {}
         max_cells: dict[int, int] = {}
+        max_value: dict[int, int] = {}
         for it in items.values():
             cells = it.shape_w * it.shape_h
             if cells <= 0:
                 continue
             if it.value > 0:
                 db.setdefault(it.quality, []).append((it.value, cells))
+                if it.value > max_value.get(it.quality, 0):
+                    max_value[it.quality] = it.value
             if cells > max_cells.get(it.quality, 0):
                 max_cells[it.quality] = cells
         _ITEM_DB_BY_QUALITY = db
         _MAX_CELLS_PER_ITEM_BY_QUALITY = max_cells
+        _MAX_VALUE_PER_ITEM_BY_QUALITY = max_value
     except Exception:                                          # noqa: BLE001
         _ITEM_DB_BY_QUALITY = {}
         _MAX_CELLS_PER_ITEM_BY_QUALITY = {}
+        _MAX_VALUE_PER_ITEM_BY_QUALITY = {}
     return _ITEM_DB_BY_QUALITY
+
+
+def _max_value_per_single_item(quality: int) -> int:
+    """Largest ``Item.value`` at ``quality`` (single-item price ceiling)."""
+    _load_item_db_by_quality()
+    if _MAX_VALUE_PER_ITEM_BY_QUALITY is None:
+        return _MAX_VALUE_PER_ITEM_FALLBACK
+    return _MAX_VALUE_PER_ITEM_BY_QUALITY.get(
+        quality, _MAX_VALUE_PER_ITEM_FALLBACK,
+    )
+
+
+def _value_in_band(target: int, item_value: int, tol_pct: float) -> bool:
+    lo = target * (1.0 - tol_pct)
+    hi = target * (1.0 + tol_pct)
+    return lo <= item_value <= hi
+
+
+def _cells_with_exact_item_value(quality: int, value: int) -> set[int]:
+    """Footprints whose ``Item.value`` equals ``value`` exactly (no tolerance)."""
+    db = _load_item_db_by_quality()
+    return {cells for item_value, cells in db.get(quality, []) if item_value == value}
+
+
+def _distinct_cells_for_value(
+    quality: int,
+    value: int,
+    *,
+    tol_pct: float,
+) -> set[int]:
+    db = _load_item_db_by_quality()
+    items = db.get(quality, [])
+    if not items or value <= 0:
+        return set()
+    return {
+        cells
+        for item_value, cells in items
+        if _value_in_band(value, item_value, tol_pct)
+    }
+
+
+def lookup_single_item_value(quality: int, value: int) -> SingleItemValueLookup:
+    """Match ``value_sum`` to Item.txt for enumeration boost (not MC).
+
+    * ``value`` above the per-quality max item price → no boost (combo hint).
+    * Exact tier (±0.5%) then fallback (±2%).
+    * Boost only when exactly one distinct ``cells`` matches; multiple
+      cell footprints at the same tier → ``ambiguous`` (no boost).
+    """
+    if value <= 0:
+        return SingleItemValueLookup(
+            frozenset(), ambiguous=False, over_max=False, tier="none",
+        )
+    if value > _max_value_per_single_item(quality):
+        return SingleItemValueLookup(
+            frozenset(), ambiguous=False, over_max=True, tier="none",
+        )
+    exact_cells = _cells_with_exact_item_value(quality, value)
+    if len(exact_cells) == 1:
+        return SingleItemValueLookup(
+            frozenset(exact_cells),
+            ambiguous=False,
+            over_max=False,
+            tier="exact",
+        )
+    if len(exact_cells) > 1:
+        return SingleItemValueLookup(
+            frozenset(),
+            ambiguous=True,
+            over_max=False,
+            tier="exact",
+        )
+    for tier, tol in (
+        ("exact", EXACT_VALUE_TOL_PCT),
+        ("tolerance", FALLBACK_VALUE_TOL_PCT),
+    ):
+        cells_set = _distinct_cells_for_value(quality, value, tol_pct=tol)
+        if len(cells_set) == 1:
+            return SingleItemValueLookup(
+                frozenset(cells_set),
+                ambiguous=False,
+                over_max=False,
+                tier=tier,  # type: ignore[arg-type]
+            )
+        if len(cells_set) > 1:
+            return SingleItemValueLookup(
+                frozenset(),
+                ambiguous=True,
+                over_max=False,
+                tier=tier,  # type: ignore[arg-type]
+            )
+    return SingleItemValueLookup(
+        frozenset(), ambiguous=False, over_max=False, tier="none",
+    )
 
 
 def _single_item_match_cells(
     quality: int, value: int, *, tol_pct: float = 0.02
 ) -> set[int]:
-    """Cell counts of single items at ``quality`` with value within ±tol_pct.
-
-    Returns an empty set when no match (or DB unavailable).
-    """
-    db = _load_item_db_by_quality()
-    items = db.get(quality, [])
-    if not items or value <= 0:
-        return set()
-    lo = value * (1.0 - tol_pct)
-    hi = value * (1.0 + tol_pct)
-    return {cells for v, cells in items if lo <= v <= hi}
+    """Cell counts eligible for DB boost (see :func:`lookup_single_item_value`)."""
+    if tol_pct != FALLBACK_VALUE_TOL_PCT:
+        lo = value * (1.0 - tol_pct)
+        hi = value * (1.0 + tol_pct)
+        db = _load_item_db_by_quality()
+        items = db.get(quality, [])
+        if not items or value <= 0:
+            return set()
+        return {cells for v, cells in items if lo <= v <= hi}
+    return set(lookup_single_item_value(quality, value).boost_cells)
 
 
 def _single_item_match_names(
@@ -397,8 +510,6 @@ def _single_item_match_names(
         items = load_item_table(path)
     except Exception:                                          # noqa: BLE001
         return []
-    lo = value * (1.0 - tol_pct)
-    hi = value * (1.0 + tol_pct)
     out: list[tuple[str, int, int]] = []
     for it in items.values():
         if it.quality != quality or it.value <= 0:
@@ -406,7 +517,7 @@ def _single_item_match_names(
         c = it.shape_w * it.shape_h
         if c <= 0:
             continue
-        if not (lo <= it.value <= hi):
+        if not _value_in_band(value, it.value, tol_pct):
             continue
         if cells is not None and c != cells:
             continue
@@ -490,7 +601,9 @@ def candidates_for_bucket(
     # (手稿驾驶证页)" without having to also type count=1.
     db_boost_cells: set[int] = set()
     if bucket.value_sum is not None and bucket.value_sum > 0:
-        db_boost_cells = _single_item_match_cells(bucket.quality, bucket.value_sum)
+        db_boost_cells = set(
+            lookup_single_item_value(bucket.quality, bucket.value_sum).boost_cells,
+        )
 
     # Physical max cells/item per quality (from Item.txt). Used to reject
     # impossibly-large singletons like "(35, 1) purple" — the largest
@@ -607,14 +720,11 @@ def candidates_for_bucket(
                      + 0.15 * avg_prior_penalty + 0.001 * count)
 
         # Apply item-DB boost: count=1 candidates whose total_cells matches
-        # a real Item.txt entry at this quality+value get composite ×0.01
-        # (factor of 100). The factor must be aggressive enough to overtake
-        # multi-item priors that perfectly hit the value (eg 8 cells ×
-        # 2500/格 = 20000 ≈ purple value_sum=20082; 12/1 防护盾 must still
-        # win). Relative ordering among DB-matched candidates is preserved.
+        # a unique Item.txt price hit get composite ×0.001 so they beat
+        # tight multi-item fits (e.g. 9/2 vs 8/1 at value_sum=88473).
         is_db_match = count == 1 and total_cells in db_boost_cells
         if is_db_match:
-            composite *= 0.01
+            composite *= 0.001
 
         out.append(
             BucketCandidate(
@@ -690,6 +800,10 @@ __all__ = (
     "QualityBucketObs",
     "SessionObs",
     "BucketCandidate",
+    "SingleItemValueLookup",
+    "EXACT_VALUE_TOL_PCT",
+    "FALLBACK_VALUE_TOL_PCT",
+    "lookup_single_item_value",
     "candidates_for_bucket",
     "top_k_for_session",
 )

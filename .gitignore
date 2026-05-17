@@ -28,6 +28,7 @@ data/processed/**
 !data/processed/battle_items.json
 !data/processed/heroes.json
 !data/processed/maps.json
+!data/processed/map_fragment_fixes.json
 
 # Local-only upstream reference clones (not vendored)
 external_references/**
@@ -47,3 +48,4 @@ data/samples/_roi_tune.png
 data/samples/Desktop_Screenshot*.png
 data/samples/微信图片*.jpg
 data/samples/desktop_screenshot_roi_preview.png
+data/logs/

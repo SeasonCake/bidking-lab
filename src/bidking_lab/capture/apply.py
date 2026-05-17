@@ -60,6 +60,47 @@ def reading_widget_key(base: str, ui_state: Any) -> str:
     return f"{base}__r{rev}"
 
 
+def hydrate_reading_widgets_from_obs(
+    obs: dict[str, Any],
+    ui_state: Any,
+) -> None:
+    """Pre-fill versioned widget keys from ``obs`` before ``number_input`` renders."""
+    for obs_key, base_wkey in READING_WIDGET_KEYS.items():
+        val = obs.get(obs_key)
+        if val is None:
+            continue
+        wkey = reading_widget_key(base_wkey, ui_state)
+        if wkey not in ui_state or ui_state[wkey] is None:
+            ui_state[wkey] = _coerce_widget_value(obs_key, val)
+    for obs_key, base_wkey in AVG_RAW_WIDGET_KEYS.items():
+        val = obs.get(obs_key)
+        if not val:
+            continue
+        wkey = reading_widget_key(base_wkey, ui_state)
+        if wkey not in ui_state or not ui_state[wkey]:
+            ui_state[wkey] = str(val)
+
+
+def sync_obs_from_reading_widgets(
+    obs: dict[str, Any],
+    ui_state: Any,
+) -> None:
+    """Merge widget keys into ``obs``; do not use ``number_input`` return values."""
+    for obs_key, base_wkey in READING_WIDGET_KEYS.items():
+        wkey = reading_widget_key(base_wkey, ui_state)
+        if wkey in ui_state and ui_state[wkey] is not None:
+            obs[obs_key] = ui_state[wkey]
+        else:
+            obs.pop(obs_key, None)
+    for obs_key, base_wkey in AVG_RAW_WIDGET_KEYS.items():
+        wkey = reading_widget_key(base_wkey, ui_state)
+        raw = ui_state.get(wkey)
+        if raw:
+            obs[obs_key] = str(raw)
+        else:
+            obs.pop(obs_key, None)
+
+
 def _coerce_widget_value(key: str, val: Any) -> Any:
     if key.endswith("_avg_raw"):
         return str(val)

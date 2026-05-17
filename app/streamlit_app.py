@@ -45,14 +45,20 @@ from bidking_lab.inference.ground_truth import sample_session_truth
 from bidking_lab.inference.display import Reading, parse_reading
 from bidking_lab.inference.joint import candidates_for_bucket
 from bidking_lab.inference.observation import (
+    EXACT_VALUE_TOL_PCT,
+    FALLBACK_VALUE_TOL_PCT,
     HUGE_CELLS_PER_QUALITY,
     JOINT_CONSTRAINT_RELAX_THRESHOLD,
     QualityBucketObs,
     SessionObs,
     _single_item_match_names,
     active_reading_constraint_count,
+    lookup_single_item_value,
 )
-from bidking_lab.capture.ocr import ocr_warmup_status, start_ocr_warmup_background
+from chart_style import apply_bidking_chart_style, style_roi_barh, style_value_hist
+from ui_loading import loading_slot, render_status_banner
+
+apply_bidking_chart_style()
 
 
 def _format_db_match_suffix(quality: int, value: int | None,
@@ -64,13 +70,29 @@ def _format_db_match_suffix(quality: int, value: int | None,
     """
     if value is None or value <= 0:
         return ""
-    matches = _single_item_match_names(quality, value, cells=cells)
+    lookup = lookup_single_item_value(quality, value)
+    if lookup.over_max:
+        return ""
+    tol = (
+        EXACT_VALUE_TOL_PCT
+        if lookup.tier == "exact"
+        else FALLBACK_VALUE_TOL_PCT
+    )
+    matches = _single_item_match_names(
+        quality, value, cells=cells, tol_pct=tol,
+    )
+    if not matches and lookup.tier == "none":
+        matches = _single_item_match_names(
+            quality, value, cells=cells, tol_pct=FALLBACK_VALUE_TOL_PCT,
+        )
     if not matches:
         return ""
     names = [n for n, _, _ in matches[:3]]
     suffix = "\u3001".join(names)
     if len(matches) > 3:
         suffix += f"\u7b49 {len(matches)} \u4ef6"
+    if lookup.ambiguous:
+        return f" \u2014 \u53ef\u80fd\u4e3a\u4ee5\u4e0b\u4e4b\u4e00\uff1a**{suffix}**"
     return f" \u2014 \u53ef\u80fd\u4e3a **{suffix}**"
 
 
@@ -134,6 +156,17 @@ def _render_candidate_preview(bucket: QualityBucketObs | None,
     ]
     msg = "  \u00b7  ".join(lines)
     # Mode 2: DB-matched top candidate → green ✅ even if more candidates exist.
+    if bucket.value_sum:
+        _lu = lookup_single_item_value(bucket.quality, bucket.value_sum)
+        if _lu.ambiguous:
+            suffix = _format_db_match_suffix(
+                bucket.quality, bucket.value_sum, cells=None,
+            )
+            st.info(
+                f"\u2139\ufe0f **{quality_label} \u4ef7\u683c\u547d\u4e2d\u591a\u4ef6\u540c\u4ef7\u7269**\uff0c"
+                f"\u672a\u81ea\u52a8\u9501\u5b9a\u683c\u6570\uff1b\u8bf7\u7ed3\u5408\u626b\u63cf/\u5747\u683c\u3002"
+                + (suffix or "")
+            )
     if cands[0].is_db_matched and bucket.value_sum:
         suffix = _format_db_match_suffix(
             bucket.quality, bucket.value_sum, cells=cands[0].total_cells
@@ -814,79 +847,92 @@ st.set_page_config(
     layout="wide",
 )
 
-_SIDEBAR_COMPACT_CSS = """
-<style>
-[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
-  padding-top: 0.75rem;
-}
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div {
-  gap: 0.3rem;
-}
-[data-testid="stSidebar"] hr {
-  margin: 0.35rem 0;
-}
-[data-testid="stSidebar"] h1 {
-  font-size: 1.05rem;
-  margin: 0 0 0.15rem;
-  padding: 0;
-}
-[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
-  font-size: 0.88rem;
-  margin-bottom: 0.1rem;
-}
-[data-testid="stSidebar"] .stCaption {
-  margin-top: -0.15rem;
-  margin-bottom: 0.1rem;
-  line-height: 1.35;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] section {
-  padding-top: 0;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] small {
-  display: none;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
-  min-height: 7.25rem;
-  padding: 0.35rem 0.65rem 1rem;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] section {
-  padding-top: 0.35rem !important;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] [data-testid="stFileUploaderFiles"] {
-  margin-top: 0.9rem !important;
-  padding-top: 0.15rem !important;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] {
-  margin-top: 0.75rem !important;
-}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] [data-testid="stFileUploaderFileName"] {
-  font-size: 0.82rem;
-}
-[data-testid="stSidebar"] div[data-testid="stAlert"] p {
-  margin: 0.1rem 0 !important;
-  line-height: 1.38 !important;
-}
-[data-testid="stSidebar"] div[data-testid="stAlert"] {
-  padding: 0.5rem 0.65rem !important;
-  margin-bottom: 0.2rem !important;
-}
-[data-testid="stSidebar"] div[data-testid="stAlert"]:last-of-type {
-  margin-bottom: 0 !important;
-}
-</style>
-"""
+from ui_theme import inject_app_theme, muted_caption, sidebar_divider, sidebar_section, tab_lead
 
-st.title("\u7ade\u62cd\u4e4b\u738b\u63a8\u65ad\u5b9e\u9a8c\u53f0 \u00b7 BidKing Inference UI")
-st.caption(
+inject_app_theme()
+
+_hdr_title, _hdr_link = st.columns([5, 1], vertical_alignment="top")
+with _hdr_title:
+    st.title("\u7ade\u62cd\u4e4b\u738b\u63a8\u65ad\u5b9e\u9a8c\u53f0 \u00b7 BidKing Inference UI")
+with _hdr_link:
+    st.link_button(
+        "GitHub",
+        "https://github.com/SeasonCake/bidking-lab",
+        width="stretch",
+        help=(
+            "bidking-lab \u6e90\u4ee3\u7801\u4e0e\u6587\u6863\u3002"
+            "\u89c9\u5f97\u505a\u5f97\u8fd8\u4e0d\u9519\uff1f\u6b22\u8fce\u7ed9\u4f5c\u8005\u4e00\u4e2a\u514d\u8d39\u7684 \u2b50 Star\uff01"
+        ),
+    )
+muted_caption(
+    "\u4ec5\u7528\u4e8e\u672a\u516c\u5f00\u7684\u4e2a\u4eba\u5b9e\u9a8c\u6027\u5206\u6790\uff0c\u4e0d\u9644\u9001\u4efb\u4f55\u6e38\u620f\u8d44\u4ea7\u3002"
+)
+muted_caption(
     "\u8f93\u5165\u82f1\u96c4 / \u5730\u56fe / \u89c2\u6d4b\u5230\u7684 cells \u4e0e\u4f30\u4ef7\uff0c"
     "\u5e73\u53f0\u4f1a\u8de8 4 \u4e2a tab \u7ed9\u51fa\u8054\u5408\u63a8\u65ad\u7684\u4ed3\u5e93\u7ec4\u6210"
-    "\u3001\u79d2\u4ed3 / \u653e\u4ed3\u51fa\u4ef7\u5efa\u8bae\u3001\u4ee5\u53ca\u9053\u5177\u6027\u4ef7\u6bd4 ROI \u3002"
+    "\u3001\u79d2\u4ed3 / \u653e\u4ed3\u51fa\u4ef7\u5efa\u8bae\u3001\u4ee5\u53ca\u9053\u5177\u6027\u4ef7\u6bd4 ROI\u3002"
     "\u8be6\u7ec6\u65b9\u6cd5\u8bba\u89c1 PROGRESS.md\u3002"
 )
 
-# Sidebar - hero, map (2-step), capture, warehouse, MC settings ---------------
-start_ocr_warmup_background()
+@st.cache_resource(show_spinner=False)
+def _cached_ocr_engine():
+    """One RapidOCR instance per Streamlit server process (survives reruns)."""
+    from bidking_lab.capture.ocr import (
+        bind_ocr_engine,
+        create_ocr_engine,
+        warmup_engine,
+        warmup_engine_screen_primary,
+    )
 
+    eng = create_ocr_engine()
+    warmup_engine(eng)
+    warmup_engine_screen_primary(eng)
+    bind_ocr_engine(eng)
+    return eng
+
+
+def _sidebar_ocr_status_and_engine():
+    """Warm OCR once per session; banner stays visible after map/input changes."""
+    st.session_state.setdefault("ocr_ui_status", "pending")
+    status = st.session_state["ocr_ui_status"]
+    if status == "ready":
+        render_status_banner(
+            kind="ready",
+            message="OCR 已就绪",
+            detail="",
+        )
+        return _cached_ocr_engine()
+    if status == "error":
+        render_status_banner(
+            kind="error",
+            message="OCR 引擎未就绪",
+            detail=str(st.session_state.get("ocr_ui_error", ""))[:200],
+        )
+        return None
+    render_status_banner(
+        kind="loading",
+        message="OCR 引擎加载中",
+        detail="首次启动较慢，完成后可抓取/上传；切换地图不会取消加载",
+    )
+    try:
+        if status == "pending":
+            with st.spinner(
+                "正在加载 OCR（样例图 + 主屏抓屏暖机，约 20–50 秒）…",
+            ):
+                eng = _cached_ocr_engine()
+        else:
+            eng = _cached_ocr_engine()
+    except Exception as exc:  # noqa: BLE001
+        st.session_state["ocr_ui_status"] = "error"
+        st.session_state["ocr_ui_error"] = str(exc)
+        return None
+    st.session_state["ocr_ui_status"] = "ready"
+    if status == "pending":
+        st.rerun()
+    return eng
+
+
+# Sidebar - hero, map (2-step), capture, warehouse, MC settings ---------------
 maps, drops, items = _load_tables()
 _map_names: dict[int, str] = {m.map_id: m.name for m in maps.values()}
 
@@ -914,26 +960,137 @@ def _session_int(key: str) -> int:
 def _warehouse_capacity() -> int:
     return _session_int("obs_warehouse_cells")
 
-def _queue_capture_from_bytes(data: bytes, *, map_names: dict[int, str]) -> str | None:
+def _queue_capture_from_bytes(
+    data: bytes,
+    *,
+    map_names: dict[int, str],
+    crop_panel: bool = True,
+    source: str = "upload",
+    capture_debug: dict | None = None,
+) -> str | None:
     """OCR image → parse; store pending result. Returns error message or None."""
     from bidking_lab.capture.log_util import LOG, configure_capture_logging
-    from bidking_lab.capture.ocr import image_bytes_to_text
+    from bidking_lab.capture.ocr import crop_info_panel, image_bytes_to_text
     from bidking_lab.capture.parser import parse_panel_text
+    from bidking_lab.capture.screen import INFO_PANEL_CROP_FRAC
 
     configure_capture_logging()
-    ocr_text, ocr_err = image_bytes_to_text(data)
+    import time as _time
+
+    panel_for_ocr = (
+        crop_info_panel(data) if crop_panel else data
+    )
+    _t0 = _time.perf_counter()
+    ocr_text, ocr_err = image_bytes_to_text(
+        data,
+        crop_panel=crop_panel,
+        engine=_cached_ocr_engine(),
+    )
+    _ocr_ms = int((_time.perf_counter() - _t0) * 1000)
+    if source.startswith("screen"):
+        st.session_state["_ocr_first_capture_tip"] = True
+    debug: dict = {
+        "source": source,
+        "crop_panel": crop_panel,
+        "crop_frac": INFO_PANEL_CROP_FRAC if crop_panel else None,
+        "panel_png": panel_for_ocr,
+        "ocr_text": "",
+        "ocr_error": ocr_err,
+        "parse_keys": [],
+        "map_id": None,
+        "map_name": None,
+        "map_diag_status": None,
+        "ocr_ms": 0,
+    }
+    if capture_debug:
+        debug.update(capture_debug)
+    debug["ocr_ms"] = _ocr_ms
     if ocr_err:
+        st.session_state["_capture_debug"] = debug
         return ocr_err
     if not ocr_text:
+        debug["ocr_text"] = ""
+        st.session_state["_capture_debug"] = debug
         return "OCR 未识别到文字，请检查截图区域。"
     parsed = parse_panel_text(ocr_text, map_names=map_names)
     st.session_state["_pending_capture"] = parsed
+    st.session_state["_last_capture_source"] = source
+    st.session_state["_last_capture_crop"] = crop_panel
+    debug["ocr_text"] = ocr_text
+    debug["parse_keys"] = list(parsed.suggestion_map().keys())
+    debug["map_id"] = parsed.map_id
+    debug["map_name"] = parsed.map_name
+    if parsed.map_diag is not None:
+        debug["map_diag_status"] = parsed.map_diag.status
+    st.session_state["_capture_debug"] = debug
     if LOG.isEnabledFor(logging.INFO):
         st.session_state["_capture_pipeline_log"] = [
+            f"来源 {source} · crop_panel={crop_panel}",
             f"OCR {len(ocr_text.splitlines())} 行",
-            f"解析字段 {list(parsed.suggestion_map().keys())}",
+            f"解析字段 {debug['parse_keys']}",
         ]
     return None
+
+
+def _render_capture_debug_panel() -> None:
+    """Show last capture monitor ROI + OCR text (diagnostic)."""
+    dbg = st.session_state.get("_capture_debug")
+    if not dbg:
+        return
+    expanded = st.session_state.pop("_capture_debug_expand", False)
+    with st.expander("抓屏 / OCR 诊断（上次）", expanded=expanded):
+        st.caption(
+            "红框 = 该显示器上的 OCR 区域（比例 ROI）。"
+            "游戏在哪个屏就开哪个屏；Streamlit 在副屏不影响，关键是下拉选对显示器。"
+        )
+        if dbg.get("monitor_label"):
+            st.markdown(f"**显示器** {dbg['monitor_label']}")
+        if dbg.get("crop_box"):
+            l, t, r, b = dbg["crop_box"]
+            st.caption(
+                f"ROI 比例 {dbg.get('crop_frac')} → 像素 ({l},{t})–({r},{b}) · "
+                f"crop_panel={dbg.get('crop_panel')}",
+            )
+        prev = dbg.get("monitor_preview_png")
+        panel = dbg.get("panel_png")
+        if prev and panel:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.image(
+                    prev,
+                    caption="整屏预览（红框=OCR 区域）",
+                    width="stretch",
+                )
+            with c2:
+                st.image(
+                    panel,
+                    caption="送入 OCR 的裁切图",
+                    width="stretch",
+                )
+        elif panel:
+            st.image(panel, caption="送入 OCR 的裁切图", width="stretch")
+        if dbg.get("ocr_error"):
+            st.warning(str(dbg["ocr_error"]))
+        if dbg.get("grab_ms"):
+            st.caption(f"上次抓屏约 **{dbg['grab_ms']}** ms")
+        if dbg.get("ocr_ms"):
+            st.caption(f"上次 OCR 约 **{dbg['ocr_ms']}** ms")
+        keys = dbg.get("parse_keys") or []
+        st.markdown(
+            f"**解析字段** {keys if keys else '（无）'} · "
+            f"地图 {dbg.get('map_name') or '—'} "
+            f"(`{dbg.get('map_diag_status') or '—'}`)",
+        )
+        ocr_text = dbg.get("ocr_text") or ""
+        if ocr_text:
+            st.text_area(
+                "OCR 原文",
+                value=ocr_text,
+                height=min(280, 80 + len(ocr_text.splitlines()) * 18),
+                disabled=True,
+            )
+        else:
+            st.caption("OCR 未产出文字（常见原因：选错显示器或 ROI 未盖住信息面板）。")
 
 
 def _snapshot_sidebar_ui() -> dict:
@@ -980,6 +1137,7 @@ def _apply_pending_capture(
     from bidking_lab.capture.apply import (
         apply_capture_result,
         clear_readings_for_map_change,
+        hydrate_reading_widgets_from_obs,
     )
 
     snap = st.session_state.pop("_pre_ocr_ui_snapshot", {})
@@ -989,6 +1147,7 @@ def _apply_pending_capture(
     _apply_log = apply_capture_result(
         _cap_result, obs_state, st.session_state, map_names=map_names,
     )
+    hydrate_reading_widgets_from_obs(obs_state, st.session_state)
     _pipe = st.session_state.pop("_capture_pipeline_log", None)
     if _pipe:
         st.session_state["_capture_apply_log"] = list(_pipe) + _apply_log
@@ -1027,6 +1186,32 @@ def _apply_pending_capture(
         st.session_state["_capture_map_miss"] = True
     else:
         st.session_state.pop("_capture_map_miss", None)
+    try:
+        from bidking_lab.capture.diag import MapResolutionDiag, record_capture_session
+
+        _diag = _cap_result.map_diag or MapResolutionDiag(status="no_map_line")
+        _map_after = obs_state.get("map_id")
+        _auto_sw = (
+            _cap_result.map_id is not None
+            and (
+                _map_before_ocr is None
+                or int(_cap_result.map_id) != int(_map_before_ocr)
+            )
+        )
+        record_capture_session(
+            source=str(st.session_state.pop("_last_capture_source", "unknown")),
+            crop_panel=bool(st.session_state.pop("_last_capture_crop", True)),
+            map_diag=_diag,
+            suggestion_keys=list(_cap_result.suggestion_map().keys()),
+            apply_map_id_before=int(_map_before_ocr) if _map_before_ocr is not None else None,
+            apply_map_id_after=int(_map_after) if _map_after is not None else None,
+            map_auto_switched=_auto_sw if _cap_result.map_id is not None else False,
+            user_map_preserved=_cap_result.map_id is None and _map_after is not None,
+        )
+    except Exception as _diag_exc:
+        logging.getLogger("bidking_lab.capture").warning(
+            "capture diag log failed: %s", _diag_exc,
+        )
     if st.session_state.get("auto_infer_after_capture", True):
         st.session_state["_request_bg_hint"] = True
     st.session_state.pop("_hint_bundle", None)
@@ -1105,10 +1290,10 @@ def _on_obs_map_select_changed() -> None:
 
 
 with st.sidebar:
-    st.markdown(_SIDEBAR_COMPACT_CSS, unsafe_allow_html=True)
     _apply_pending_capture(state, map_names=_map_names)
+    _ocr_engine = _sidebar_ocr_status_and_engine()
 
-    st.markdown("##### \u4f1a\u8bdd")
+    sidebar_section("\u4f1a\u8bdd", variant="session", icon="\U0001f3ae")
 
     hero = st.radio(
         "\u82f1\u96c4",
@@ -1212,7 +1397,8 @@ with st.sidebar:
                     "\u8bf7\u5230\u300c\u8bfb\u6570\u8f93\u5165\u300d tab \u624b\u52a8\u586b\u3002"
                 )
 
-    st.markdown("##### \u4ed3\u5e93\u4e0e\u4ef6\u6570")
+    sidebar_divider()
+    sidebar_section("\u4ed3\u5e93\u4e0e\u4ef6\u6570", variant="warehouse", icon="\U0001f4e6")
     warehouse_cells = st.number_input(
         "\u4ed3\u5e93\u603b\u683c\u6570 *",
         min_value=0, max_value=200, step=1,
@@ -1238,30 +1424,92 @@ with st.sidebar:
         help="\u5730\u56fe R1 hint \u6216\u91d1\u54c1\u9053\u5177\u53ef\u63d0\u4f9b\uff1b\u7559\u7a7a\u8868\u793a\u672a\u63d0\u4f9b\u3002",
     )
 
-    st.markdown("##### \U0001F4F7 \u9762\u677f\u5bfc\u5165")
-    st.caption(
-        "\u622a\u56fe/\u526a\u8d34\u677f \u2192 \u88c1\u5207\u5de6\u4fa7\u9762\u677f OCR\uff0c\u4e00\u6b65\u5199\u5165\u3002"
+    sidebar_divider()
+    sidebar_section("\u9762\u677f\u5bfc\u5165", variant="capture", icon="\U0001f4f7")
+    with st.expander("\u5bfc\u5165\u8bf4\u660e\u4e0e\u6293\u5c4f\u9690\u79c1", expanded=False):
+        st.markdown(
+            "**\u81ea\u52a8\u5199\u5165\u8bfb\u6570 tab**\uff1a\u5730\u56fe\uff08\u9700\u300c\u5730\u56fe\u540d:\u7ade\u62cd\u4fe1\u606f\u300d\uff09\u3001"
+            "\u4ed3\u5e93\u603b\u683c\u3001\u626b\u63cf\u683c\u6570\u3001\u7d2b/\u91d1\u5747\u683c\u00b7\u5747\u4ef7\u00b7\u603b\u4ef7\u3001\u603b\u4ef6\u6570\u3002\n\n"
+            "**\u987b\u624b\u9009/\u624b\u586b**\uff1a\u82f1\u96c4\uff1b\u8bfb\u6570 tab \u91cc\u7d2b/\u91d1/\u7ea2\u5de8\u7269\u4e0e\u2605\u5177\u4f53\u7269\u3001"
+            "\u7ea2\u54c1\u603b\u683c/\u4ef7\u503c\u533a\u95f4\u3002\n\n"
+            "**\u6293\u53d6\u5f53\u524d\u5c4f\u5e55**\uff1a\u4ec5\u672c\u673a\u622a\u53d6\u6240\u9009\u663e\u793a\u5668\u5de6\u4fa7\u6e38\u620f\u4fe1\u606f\u533a\uff08ROI\uff09"
+            "\u505a OCR \u4e0e\u5f15\u64ce\u6696\u673a\uff1b\u4e0d\u4e0a\u4f20\u3001\u4e0d\u5b58\u6863\u3002\u8bf7\u907f\u5f00\u542b\u94f6\u884c\u5361\u3001\u804a\u5929\u7b49\u654f\u611f\u754c\u9762\u3002"
+            "\u9996\u6b21\u6293\u5c4f\u53ef\u80fd\u6bd4\u4e4b\u540e\u6162\u51e0\u79d2\uff08\u5b9e\u51b5\u56fe OCR\uff09\u3002"
+        )
+    try:
+        from bidking_lab.capture.screen import (
+            ScreenCaptureConfig,
+            capture_monitor_panel,
+            list_monitors,
+            monitor_label,
+        )
+
+        _mons = list_monitors()
+    except RuntimeError as _mon_exc:
+        _mons = []
+        st.caption(f"\u26a0\ufe0f {_mon_exc}")
+    if _mons:
+        _mon_labels = {m.index: monitor_label(m) for m in _mons}
+        _default_mon = next(
+            (m.index for m in _mons if m.is_primary),
+            _mons[0].index,
+        )
+        if "obs_capture_monitor_index" not in st.session_state:
+            st.session_state["obs_capture_monitor_index"] = _default_mon
+        st.selectbox(
+            "\u6293\u54ea\u4e2a\u663e\u793a\u5668",
+            options=list(_mon_labels.keys()),
+            format_func=lambda i: _mon_labels[int(i)],
+            key="obs_capture_monitor_index",
+            help="\u9009\u6e38\u620f\u7a97\u53e3\u6240\u5728\u7684\u90a3\u4e2a\u5c4f\uff08\u4e0e Streamlit \u5728\u54ea\u4e2a\u5c4f\u65e0\u5173\uff09",
+        )
+    _screen_clicked = st.button(
+        "\u6293\u53d6\u5f53\u524d\u5c4f\u5e55",
+        key="capture_run_screen",
+        width="stretch",
+        help=(
+            "\u672c\u673a ROI \u6293\u5c4f + OCR\uff08\u542b\u5f15\u64ce\u6696\u673a\uff09\uff1b"
+            "\u4e0d\u4e0a\u4f20\u3001\u4e0d\u5b58\u6863\u3002\u8bf7\u907f\u5f00\u542b\u654f\u611f\u4fe1\u606f\u7684\u754c\u9762\u3002"
+        ),
+        disabled=not _mons or _ocr_engine is None,
     )
-    st.info(
-        "**\u81ea\u52a8\u5199\u5165\u8bfb\u6570 tab**\uff1a\u5730\u56fe\uff08\u9700\u300c\u5730\u56fe\u540d:\u7ade\u62cd\u4fe1\u606f\u300d\uff09\u3001"
-        "\u4ed3\u5e93\u603b\u5360\u683c\u3001\u626b\u63cf\u683c\u6570\u3001"
-        "\u7d2b/\u91d1 \u5747\u683c\u00b7\u5747\u4ef7\u00b7\u603b\u4ef7\u3001\u603b\u4ef6\u6570\u3002",
-        icon="\u2139\ufe0f",
-    )
-    st.info(
-        "**\u987b\u624b\u9009/\u624b\u586b**\uff08\u9762\u677f\u4e0a\u6ca1\u5199\u6216 OCR \u8bef\u8bfb\uff09\uff1a"
-        "**\u82f1\u96c4**\uff08\u4fa7\u680f\u9876\u90e8\uff09\uff1b"
-        "**\u8bfb\u6570 tab** \u91cc\u7d2b/\u91d1/\u7ea2\u7684 **\u5de8\u7269\u4ef6\u6570**"
-        "\uff081\u4e2a\u00b72-3\u4e2a\u00b74+\uff09\u3001**\u2605 \u5177\u4f53\u7269**"
-        "\uff08\u5982\u6e38\u8239/\u94f6\u94f6\u7b49\uff0c\u5f71\u54cd\u679a\u4e3e\u5360\u683c\uff09\uff1b"
-        "**\u7ea2\u54c1** \u603b\u5360\u683c\u3001\u4ef7\u503c\u533a\u95f4\u3001\u7ea2\u5de8\u7269\u3002",
-        icon="\u2139\ufe0f",
-    )
-    _ocr_st, _ocr_err = ocr_warmup_status()
-    if _ocr_st == "loading":
-        st.caption("\u23f3 OCR \u5f15\u64ce\u540e\u53f0\u52a0\u8f7d\u4e2d\u2026\u9996\u6b21\u70b9\u51fb\u53ef\u80fd\u4ecd\u9700\u51e0\u79d2\u3002")
-    elif _ocr_st == "error" and _ocr_err:
-        st.caption(f"\u26a0\ufe0f OCR \u5f15\u64ce\u672a\u5c31\u7eea\uff1a{_ocr_err[:80]}")
+    if _screen_clicked and _mons and _ocr_engine is not None:
+        st.session_state["_pre_ocr_ui_snapshot"] = _snapshot_sidebar_ui()
+        try:
+            import time as _time
+
+            _mon_idx = int(st.session_state.get("obs_capture_monitor_index", _mons[0].index))
+            _t_cap = _time.perf_counter()
+            _cap = capture_monitor_panel(
+                ScreenCaptureConfig(monitor_index=_mon_idx),
+            )
+            _grab_ms = int((_time.perf_counter() - _t_cap) * 1000)
+        except RuntimeError as exc:
+            st.warning(str(exc))
+        else:
+            _qerr = _queue_capture_from_bytes(
+                _cap.panel_png,
+                map_names=_map_names,
+                crop_panel=False,
+                source=(
+                    f"screen #{_cap.monitor.index} "
+                    f"{_cap.monitor.width}x{_cap.monitor.height}"
+                ),
+                capture_debug={
+                    "monitor_index": _cap.monitor.index,
+                    "monitor_label": monitor_label(_cap.monitor),
+                    "crop_frac": _cap.crop_frac,
+                    "crop_box": _cap.crop_box,
+                    "monitor_preview_png": _cap.monitor_preview_png,
+                    "grab_ms": _grab_ms,
+                },
+            )
+            st.session_state["_capture_debug_expand"] = True
+            if _qerr:
+                st.warning(_qerr)
+                st.rerun()
+            else:
+                st.rerun()
     _upload_rev = int(st.session_state.get("capture_upload_rev", 0))
     _cap_upload = st.file_uploader(
         "\u4e0a\u4f20\u622a\u56fe",
@@ -1274,8 +1522,9 @@ with st.sidebar:
         _clip_clicked = st.button(
             "\u526a\u8d34\u677f OCR",
             key="capture_run_clipboard",
-            use_container_width=True,
+            width="stretch",
             help="Win+Shift+S \u6216\u6e38\u620f\u622a\u56fe\u540e\u5148\u590d\u5236\u5230\u526a\u8d34\u677f",
+            disabled=_ocr_engine is None,
         )
     with _btn_ocr:
         if _cap_upload is not None:
@@ -1283,14 +1532,15 @@ with st.sidebar:
                 "\u622a\u56fe OCR",
                 key="capture_run_ocr",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
+                disabled=_ocr_engine is None,
             )
         else:
             st.button(
                 "\u622a\u56fe OCR",
                 key="capture_run_ocr_idle",
                 disabled=True,
-                use_container_width=True,
+                width="stretch",
             )
             _ocr_clicked = False
     if _clip_clicked:
@@ -1301,18 +1551,27 @@ with st.sidebar:
         if _clip_err:
             st.warning(_clip_err)
         else:
-            _qerr = _queue_capture_from_bytes(_clip_data, map_names=_map_names)
+            _qerr = _queue_capture_from_bytes(
+                _clip_data, map_names=_map_names, source="clipboard",
+            )
+            st.session_state["_capture_debug_expand"] = True
             if _qerr:
                 st.warning(_qerr)
+                st.rerun()
             else:
                 st.rerun()
     if _ocr_clicked:
         st.session_state["_pre_ocr_ui_snapshot"] = _snapshot_sidebar_ui()
-        _qerr = _queue_capture_from_bytes(_cap_upload.getvalue(), map_names=_map_names)
+        _qerr = _queue_capture_from_bytes(
+            _cap_upload.getvalue(), map_names=_map_names, source="upload",
+        )
+        st.session_state["_capture_debug_expand"] = True
         if _qerr:
             st.warning(_qerr)
+            st.rerun()
         else:
             st.rerun()
+    _render_capture_debug_panel()
     st.checkbox(
         "OCR \u540e\u540e\u53f0\u63a8\u65ad",
         value=True,
@@ -1347,6 +1606,8 @@ with st.sidebar:
             icon="\U0001F501",
         )
 
+    sidebar_divider()
+    sidebar_section("MC \u4e0e\u9ad8\u7ea7", variant="advanced", icon="\u2699\ufe0f")
     with st.expander("\u9ad8\u7ea7\uff1a MC \u91c7\u6837\u53c2\u6570", expanded=False):
         n_trials = st.slider(
             "MC \u6837\u672c\u6570\uff08samples\uff09", 500, 5000, 1500, step=250,
@@ -1406,12 +1667,21 @@ if _resolved_mid is not None:
     state["map_id"] = _resolved_mid
 else:
     state.pop("map_id", None)
-state["total_item_count"] = int(total_item_count) if total_item_count and total_item_count > 0 else 0
+_tic_sync = _session_int("obs_total_item_count")
+state["total_item_count"] = _tic_sync if _tic_sync > 0 else 0
 warehouse_ready = _wh_sync > 0
 map_ready = state.get("map_id") is not None
 inference_ready = warehouse_ready and map_ready
 if st.session_state.pop("_capture_just_applied", False):
-    st.toast("\u5df2\u8bc6\u522b\u5e76\u586b\u5165\u8bfb\u6570\uff08\u8bf7\u6838\u5bf9\u4ed3\u5e93\u683c\u6570\uff09", icon="\u2705")
+    _cap_lines = st.session_state.get("_capture_apply_log") or []
+    _has_purple_cnt = any(
+        "\u7d2b\u54c1\u4ef6\u6570" in ln or "purple_count" in ln
+        for ln in _cap_lines
+    )
+    _toast = "\u5df2\u8bc6\u522b\u5e76\u586b\u5165\u8bfb\u6570\uff08\u8bf7\u6838\u5bf9\u4ed3\u5e93\u683c\u6570\uff09"
+    if _has_purple_cnt:
+        _toast += "\uff1b\u7d2b\u54c1\u4ef6\u6570\u5728\u300c\u8bfb\u6570\u8f93\u5165\u300d\u9875"
+    st.toast(_toast, icon="\u2705")
 
 
 def _mc_sidebar_params() -> dict:
@@ -1433,11 +1703,7 @@ def _mc_fingerprint_params(*, seed_locked: bool) -> dict:
 
 def _sync_obs_from_widgets(obs_state: dict) -> None:
     """Merge sidebar widget session_state into obs before MC / fingerprint."""
-    from bidking_lab.capture.apply import (
-        AVG_RAW_WIDGET_KEYS,
-        READING_WIDGET_KEYS,
-        reading_widget_key,
-    )
+    from bidking_lab.capture.apply import sync_obs_from_reading_widgets
 
     wh = int(st.session_state.get("obs_warehouse_cells") or 0)
     if wh > 0:
@@ -1448,14 +1714,7 @@ def _sync_obs_from_widgets(obs_state: dict) -> None:
     mid = _resolved_map_select(_maps_for_category(maps, cat))
     if mid is not None:
         obs_state["map_id"] = mid
-    for obs_key, base_wkey in READING_WIDGET_KEYS.items():
-        wkey = reading_widget_key(base_wkey, st.session_state)
-        if wkey in st.session_state and st.session_state[wkey] is not None:
-            obs_state[obs_key] = st.session_state[wkey]
-    for obs_key, base_wkey in AVG_RAW_WIDGET_KEYS.items():
-        wkey = reading_widget_key(base_wkey, st.session_state)
-        if wkey in st.session_state and st.session_state[wkey]:
-            obs_state[obs_key] = str(st.session_state[wkey])
+    sync_obs_from_reading_widgets(obs_state, st.session_state)
 
 
 def _compute_hint_bundle_ui(obs_state: dict):
@@ -1533,9 +1792,15 @@ else:
 
 # ===== Tab 1: \u8bfb\u6570\u8f93\u5165 =====
 with tab_obs:
-    from bidking_lab.capture.apply import reading_widget_key as _rwk
+    from bidking_lab.capture.apply import (
+        hydrate_reading_widgets_from_obs,
+        reading_widget_key as _rwk,
+        sync_obs_from_reading_widgets,
+    )
 
-    st.caption(
+    hydrate_reading_widgets_from_obs(state, st.session_state)
+
+    tab_lead(
         "\u9762\u677f\u5bfc\u5165\u4e0d\u542b\u5de8\u7269\u4fe1\u606f\uff1a\u8bf7\u624b\u52a8\u586b\u7d2b/\u91d1/\u7ea2 "
         "\u300c\u5de8\u7269\u6570\u91cf\u300d\u3001\u2605 \u5177\u4f53\u7269\u3001\u7ea2\u54c1\u4ef7\u503c\u533a\u95f4\u3002"
     )
@@ -1937,6 +2202,8 @@ with tab_obs:
                 )
             st.markdown("\n".join(lines))
 
+    sync_obs_from_reading_widgets(state, st.session_state)
+
 
 _bg_infer_status = _tick_background_hint()
 st.session_state["_bg_infer_status"] = _bg_infer_status
@@ -2013,11 +2280,16 @@ with tab_hint:
             "\u8bf7\u5728\u5de6\u4fa7\u680f\u9009\u62e9 **\u5177\u4f53\u5730\u56fe**"
             "\uff08\u5148\u9009\u522b\u5885/\u6c89\u8239\uff0c\u518d\u70b9\u5177\u4f53\u5730\u56fe\u4e0b\u62c9\u6846\uff09\u3002"
         )
+    _hint_mc_slot = loading_slot()
     if _bg_infer_status == "running":
-        st.info(
-            "\u23f3 \u540e\u53f0 MC \u63a8\u65ad\u8fdb\u884c\u4e2d\u2026\u53ef\u7ee7\u7eed\u586b\u8868\u3002"
-            "\u4fee\u6539\u8bfb\u6570\u6216\u5730\u56fe\u4f1a\u53d6\u6d88\u672c\u6b21\u63a8\u65ad\u3002"
-        )
+        with _hint_mc_slot.container():
+            render_status_banner(
+                kind="loading",
+                message="后台 MC 推断进行中",
+                detail="可继续填表；修改读数或地图会取消本次推断",
+            )
+    else:
+        _hint_mc_slot.empty()
     _cached_bundle = st.session_state.get("_hint_bundle")
     _bundle_stale = False
     if _cached_bundle is not None:
@@ -2052,10 +2324,17 @@ with tab_hint:
             if _box and _box.get("cancel") is not None:
                 _box["cancel"].set()
             st.session_state.pop("_bg_infer_box", None)
-            with st.spinner(
-                f"MC \u91c7\u6837\u4e2d\uff08{n_trials} \u6837\u672c\uff09\u2026"
-            ):
+            _hint_load = loading_slot()
+            with _hint_load.container():
+                render_status_banner(
+                    kind="loading",
+                    message=f"MC 采样中（{n_trials} 样本）",
+                    detail="请稍候…",
+                )
+            try:
                 bundle = _compute_hint_bundle_ui(state)
+            finally:
+                _hint_load.empty()
             if bundle is None:
                 st.error(
                     "\u63a8\u65ad\u672a\u542f\u52a8\uff1a\u8bf7\u786e\u8ba4\u4fa7\u8fb9\u680f\u4ed3\u5e93\u683c\u6570\u4e0e\u5730\u56fe\u5747\u5df2\u586b\u3002"
@@ -2210,11 +2489,12 @@ with tab_hint:
             )
 
             x_max = int(np.percentile(all_values, 98))
-            fig, ax = plt.subplots(figsize=(7, 2.6))
-            bins = np.linspace(0, x_max, 50)
+            fig, ax = plt.subplots(figsize=(7.5, 2.8))
+            bins = np.linspace(0, x_max, 48)
             ax.hist(
-                np.clip(all_values, 0, x_max), bins=bins, alpha=0.30,
-                color="#888", label=f"All samples (n={len(all_values)})",
+                np.clip(all_values, 0, x_max), bins=bins, alpha=0.28,
+                color="#94a3b8", edgecolor="white", linewidth=0.4,
+                label=f"All samples (n={len(all_values)})",
             )
             n_constraints = len(filter_result.constraints_applied)
             cond_legend = (
@@ -2224,20 +2504,21 @@ with tab_hint:
                      f"cells (n={len(conditional_values)})"
             )
             ax.hist(
-                np.clip(conditional_values, 0, x_max), bins=bins, alpha=0.65,
-                color="#3a7ca5", label=cond_legend,
+                np.clip(conditional_values, 0, x_max), bins=bins, alpha=0.72,
+                color="#3b82f6", edgecolor="white", linewidth=0.4,
+                label=cond_legend,
             )
-            ax.axvline(p25, color="#2f7a3f", linestyle=":", linewidth=2,
+            ax.axvline(p25, color="#16a34a", linestyle=":", linewidth=2,
                        label=f"Pessimistic P25 = {int(p25):,}")
-            ax.axvline(p50, color="black", linewidth=1.5,
+            ax.axvline(p50, color="#0f172a", linewidth=1.6,
                        label=f"Median P50 = {int(p50):,}")
-            ax.axvline(p75, color="#c8482b", linestyle="--", linewidth=2,
+            ax.axvline(p75, color="#ea580c", linestyle="--", linewidth=2,
                        label=f"Optimistic P75 = {int(p75):,}")
-            ax.axvline(p90, color="#9b59b6", linestyle="--", linewidth=1,
-                       alpha=0.6, label=f"Upside P90 = {int(p90):,}")
+            ax.axvline(p90, color="#9333ea", linestyle="--", linewidth=1.2,
+                       alpha=0.75, label=f"Upside P90 = {int(p90):,}")
             ax.set_xlabel("Total session value (silver)")
             ax.set_ylabel("Number of MC sessions")
-            ax.set_xlim(0, x_max)
+            style_value_hist(ax, x_max=x_max)
             ax.xaxis.set_major_formatter(
                 plt.FuncFormatter(lambda x, _: f"{x/1e6:.1f}M")
             )
@@ -2580,19 +2861,22 @@ with tab_roi:
             "##### \U0001F4CA \u6bcf\u94f6\u5e01\u4ef7\u503c\u632b\u4f4e\u91cf "
             "(ROI = mean info-gain / silver price)"
         )
-        fig, ax = plt.subplots(figsize=(7, 2.8))
+        fig, ax = plt.subplots(figsize=(7.5, max(2.8, 0.38 * len(sorted_rois))))
         chart_rois = list(reversed(sorted_rois))
         names_en = [TOOL_EN_LABEL.get(r.tool_name, r.tool_name) for r in chart_rois]
         roi_vals = [r.roi_value for r in chart_rois]
-        colors = ["#3a7ca5" if v > 0 else "#c8482b" for v in roi_vals]
-        bars = ax.barh(names_en, roi_vals, color=colors)
+        colors = ["#2563eb" if v > 0 else "#dc2626" for v in roi_vals]
+        bars = ax.barh(
+            names_en, roi_vals, color=colors, height=0.62,
+            edgecolor="white", linewidth=0.5,
+        )
         for bar, val in zip(bars, roi_vals):
             ax.text(
                 val, bar.get_y() + bar.get_height() / 2,
                 f" {val:+.3f}", va="center",
                 fontsize=8, color="#333",
             )
-        ax.axvline(0, color="black", linewidth=0.5)
+        style_roi_barh(ax)
         ax.set_xlabel("ROI (silver-value recovered per silver spent)",
                        fontsize=8)
         ax.tick_params(labelsize=8)
@@ -2658,9 +2942,3 @@ def _poll_background_hint() -> None:
 
 
 _poll_background_hint()
-
-st.divider()
-st.caption(
-    "bidking-lab \u00b7 [GitHub](https://github.com/SeasonCake/bidking-lab) \u00b7 "
-    "\u4ec5\u7528\u4e8e\u672a\u516c\u5f00\u7684\u4e2a\u4eba\u5b9e\u9a8c\u6027\u5206\u6790\uff0c\u4e0d\u9644\u9001\u4efb\u4f55\u6e38\u620f\u8d44\u4ea7\u3002"
-)

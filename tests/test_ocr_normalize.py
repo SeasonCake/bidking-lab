@@ -14,3 +14,14 @@ def test_round4_typo_bundle() -> None:
 
 def test_scan_typos() -> None:
     assert "扫描" in normalize_ocr_text("极品扫罐：代优品扫装")
+
+
+def test_duplicate_youpin_junge_line() -> None:
+    out = normalize_ocr_text("优品优品均格：优品均格均格")
+    assert "优品优品" not in out
+    assert "均格均格" not in out
+    assert out.startswith("优品均格")
+
+
+def test_ethan_skill_colon_inserted() -> None:
+    assert normalize_ocr_text("伊森空间觉知") == "伊森：空间觉知"

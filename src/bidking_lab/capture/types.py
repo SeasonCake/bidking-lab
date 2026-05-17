@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from bidking_lab.capture.diag import MapResolutionDiag
 
 CaptureSource = Literal[
     "tool_scan",       # 普品/良品/优品/极品/珍品扫描
@@ -46,6 +49,7 @@ class CaptureParseResult:
     hero: str | None = None
     map_id: int | None = None
     map_name: str | None = None
+    map_diag: MapResolutionDiag | None = None
 
     def suggestion_map(self) -> dict[str, Any]:
         return {s.key: s.value for s in self.suggestions}

@@ -1,0 +1,52 @@
+[
+  {
+    "id": "desktop_purple_avg_line",
+    "source": "Desktop Screenshot 2026.05.15",
+    "raw": "优品优品均格：优品均格均格",
+    "expect_contains": ["优品均格"],
+    "expect_not_contains": ["优品优品", "均格均格"]
+  },
+  {
+    "id": "panel_r4_gold_missing_cang",
+    "source": "panel_round4",
+    "raw": "所有金色品质品总占位数为28格",
+    "expect_contains": ["金色品质藏品总占"],
+    "expect_not_contains": ["品质品总"]
+  },
+  {
+    "id": "panel_r4_outline_typos",
+    "source": "panel_round4",
+    "raw": "显示所有已知品质的藏品各自的轮属",
+    "expect_contains": ["轮廓"],
+    "expect_not_contains": ["轮属"]
+  },
+  {
+    "id": "ethan_skill_missing_colon",
+    "raw": "伊森空间觉知",
+    "expect_contains": ["伊森：空间觉知"]
+  },
+  {
+    "id": "r4_typo_bundle",
+    "raw": "所有蓝色品质置品总占位数为35格\n所有自色和绿色品质震品总占位数为12格",
+    "expect_contains": ["藏品", "白色"],
+    "expect_not_contains": ["置品", "自色", "震品"]
+  },
+  {
+    "id": "scan_typos",
+    "raw": "极品扫罐：代优品扫装",
+    "expect_contains": ["扫描"],
+    "expect_not_contains": ["扫罐", "扫装"]
+  },
+  {
+    "id": "pu_scan_mislabel",
+    "raw": "普品扫描：良品扫描",
+    "expect_contains": ["普品扫描：普品"],
+    "expect_not_contains": ["良品扫描"]
+  },
+  {
+    "id": "random_check_halfwidth_paren",
+    "raw": "随机抽检（2)：随机抽检（2)",
+    "expect_contains": ["（2）"],
+    "expect_not_contains": ["（2)"]
+  }
+]

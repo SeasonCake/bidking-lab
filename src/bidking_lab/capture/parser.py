@@ -5,7 +5,13 @@ from __future__ import annotations
 import re
 from typing import Mapping
 
+from bidking_lab.capture.diag import collect_map_resolution_diag
 from bidking_lab.capture.log_util import LOG, configure_capture_logging
+from bidking_lab.capture.map_resolve import (
+    best_map_in_panel_text,
+    fuzzy_match_map_name,
+    normalize_map_fragment,
+)
 from bidking_lab.capture.ocr_normalize import normalize_ocr_text
 
 configure_capture_logging()
@@ -70,36 +76,25 @@ def _match_rules(
     return None
 
 
-def _best_map_name_in_text(text: str, map_names: Mapping[int, str]) -> tuple[int | None, str | None]:
-    """Pick the longest map name contained in *text* (avoids short false positives)."""
-    best_len = 0
-    best_mid: int | None = None
-    best_name: str | None = None
-    for mid, name in map_names.items():
-        if not name or name not in text:
-            continue
-        if len(name) > best_len:
-            best_len = len(name)
-            best_mid = mid
-            best_name = name
-    return best_mid, best_name
-
-
 def resolve_map_id(line: str, map_names: Mapping[int, str]) -> tuple[int | None, str | None]:
     m = MAP_NAME_PATTERN.search(line)
     if m:
-        fragment = m.group(1).strip()
+        fragment = normalize_map_fragment(m.group(1).strip())
         exact: list[tuple[int, str]] = []
         for mid, name in map_names.items():
-            if name == fragment:
-                exact.append((mid, name))
+            clean = name.replace("\u200b", "").strip()
+            if clean == fragment:
+                exact.append((mid, clean))
         if len(exact) == 1:
             return exact[0]
         if exact:
             exact.sort(key=lambda x: len(x[1]), reverse=True)
             return exact[0]
-        return _best_map_name_in_text(line, map_names)
-    return _best_map_name_in_text(line, map_names)
+        fuzzy = fuzzy_match_map_name(fragment, map_names)
+        if fuzzy is not None:
+            return fuzzy
+        return best_map_in_panel_text(line, map_names)
+    return best_map_in_panel_text(line, map_names)
 
 
 def parse_panel_text(
@@ -115,7 +110,7 @@ def parse_panel_text(
 
     if map_names:
         blob = text.replace("\r\n", "\n")
-        mid, name = _best_map_name_in_text(blob, map_names)
+        mid, name = best_map_in_panel_text(blob, map_names)
         if mid is not None:
             result.map_id = mid
             result.map_name = name
@@ -133,7 +128,13 @@ def parse_panel_text(
             result.lines.append(ParsedLine(line, "map_hint", mname or ""))
             continue
 
-        if "空间觉知" in line or "遗珍慧眼" in line:
+        if any(
+            tok in line
+            for tok in (
+                "空间觉知", "遗珍慧眼", "启迪之光",
+                "加布里埃拉", "加布里埃", "艾莎",
+            )
+        ):
             result.lines.append(ParsedLine(line, "hero_skill", "技能说明"))
             if "显示" in line and "轮廓" in line:
                 result.ignored.append(line)
@@ -163,6 +164,19 @@ def parse_panel_text(
         result.suggestions.append(sug)
         result.lines.append(
             ParsedLine(line, "tool_scan" if "扫描" in line else "map_metric", sug.label),
+        )
+
+    if map_names:
+        result.map_diag = collect_map_resolution_diag(
+            text,
+            map_names,
+            resolved_map_id=result.map_id,
+            resolved_map_name=result.map_name,
+        )
+        LOG.info(
+            "parse map_diag: status=%s title_lines=%d",
+            result.map_diag.status,
+            len(result.map_diag.title_lines),
         )
 
     keys = [s.key for s in result.suggestions]
