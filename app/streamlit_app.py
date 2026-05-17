@@ -40,9 +40,11 @@ from bidking_lab.inference.display import Reading, parse_reading
 from bidking_lab.inference.joint import candidates_for_bucket
 from bidking_lab.inference.observation import (
     HUGE_CELLS_PER_QUALITY,
+    JOINT_CONSTRAINT_RELAX_THRESHOLD,
     QualityBucketObs,
     SessionObs,
     _single_item_match_names,
+    active_reading_constraint_count,
 )
 
 
@@ -98,6 +100,13 @@ def _render_candidate_preview(bucket: QualityBucketObs | None,
             and bucket.total_cells is None and bucket.count is None
             and bucket.avg_value is None):
         return
+    n_constraints = active_reading_constraint_count(bucket)
+    if n_constraints >= JOINT_CONSTRAINT_RELAX_THRESHOLD:
+        st.caption(
+            f"\u2139\ufe0f \u5df2\u586b\u5199 {n_constraints} \u9879\u7ea6\u675f\uff1b"
+            "\u5747\u4ef7\u5bb9\u5dee\u5df2\u81ea\u52a8\u653e\u5bbd\uff08\u4ec5\u5f71\u54cd\u4e0b\u65b9\u5019\u9009\u9884\u89c8\uff0c"
+            "**\u4e0d\u6539\u53d8** \u4e0a\u65b9 MC \u4ed3\u5e93\u4ef7\u503c\u533a\u95f4 / bucket \u540e\u9a8c\uff09\u3002"
+        )
     try:
         cands = candidates_for_bucket(bucket, warehouse_capacity=warehouse_capacity)
     except Exception as exc:                                # noqa: BLE001
@@ -166,6 +175,11 @@ from bidking_lab.inference.snipe import (
 
 
 # ---------- Constants ----------
+
+# Snipe / pass recommendation cards: backend in ``inference/snipe.py`` is kept
+# for future work but UI is off until tier logic is stable (see OBSERVATIONS
+# Checkpoint #31, TROUBLESHOOTING #30). Same policy as unknown-quality huge.
+_ENABLE_SNIPE_PASS_HINTS = False
 
 # Map categories by ID prefix.
 # 24xx/34xx/44xx = mansion (\u522b\u5885), 25xx/35xx/45xx = shipwreck (\u6c89\u8239).
@@ -1019,10 +1033,14 @@ with tab_obs:
             "**\u53ef\u89c1\u6027**\uff1aEthan \u80fd\u770b\u5230\u7d2b/\u91d1/\u7ea2 \u4e09\u8272\u8f6e\u5ed3\uff1bAisha \u53ea\u80fd\u770b\u5230\u7d2b \u5927\u4ef6\uff08\u91d1/\u7ea2 \u9700\u731c\uff0c\u91d1/\u7ea2 selectbox \u88ab\u9501\uff09\u3002"
         )
     st.subheader("\u7d2b\u54c1\uff08q=4\uff0c\u53ef\u9009\uff09")
-    st.caption(
-        "\u63d0\u4f9b\u7d2b\u54c1\u603b\u683c\u6570\u540e\uff0c\u79d2\u4ed3 / \u653e\u4ed3 "
-        "MC \u4f1a\u989d\u5916\u52a0\u4e00\u5c42\u6309\u7d2b\u54c1 cells \u8fc7\u6ee4\uff0c"
-        "\u51fa\u4ef7\u533a\u95f4\u4f1a\u66f4\u7d27\u3002"
+    st.info(
+        "**\u5b57\u6bb5\u4f5c\u7528\u8303\u56f4**\uff1a\u4e0a\u65b9\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u91cc\u7684 **\u4ed3\u5e93\u4ef7\u503c\u533a\u95f4 / bucket \u540e\u9a8c** "
+        "\u6765\u81ea MC\uff08\u683c\u6570\u3001\u4ef6\u6570\u3001\u603b\u4f30\u4ef7\u3001\u5de8\u7269 **\u4ef6\u6570 band**\uff09\u3002"
+        "**\u5747\u683c / \u5747\u4ef7** \u53ea\u7528\u4e8e\u672c\u533a\u4e0b\u65b9\u300c\u5f15\u64ce\u679a\u4e3e\u300d\u9884\u89c8\u4e0e\u5206\u6790\u63a8\u683c\uff0c"
+        "**\u4e0d\u4f1a** \u6539\u53d8 MC \u5206\u4f4d\u6570\u3002"
+        "\u300c\u2605 \u5177\u4f53\u5de8\u7269\u300d\u4e3b\u8981\u9501\u5b9a\u6bcf\u4ef6\u5360\u683c\uff08\u679a\u4e3e\u7528\uff09\uff1b"
+        "\u300c1 \u4e2a / 2\u20133 \u4e2a\u300d\u7c7b\u5de8\u7269\u6570\u4f1a\u8fdb\u5165 MC \u8fc7\u6ee4\u3002",
+        icon="\u2139\ufe0f",
     )
     st.info(
         "\u5747\u683c\u586b\u5199\u63d0\u793a\uff1a\u300c**2.9**\u300d \u4e0e \u300c**2.90**\u300d \u4e0d\u540c\u3002"
@@ -1075,8 +1093,9 @@ with tab_obs:
         min_value=0, max_value=200_000, value=None, step=100,
         placeholder="\u53ef\u9009",
         help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u7d2b\u54c1\u5747\u4ef7 X silver\u300d\u3002"
-             "\u586b\u5165\u540e\u4f1a\u4e0e\u4ef6\u6570 / \u603b\u4f30\u4ef7\u8054\u5408\u63a8\u7d2f\uff0c"
-             "\u80fd\u8fdb\u4e00\u6b65\u9501\u5b9a\u5019\u9009\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+             "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
+             "\u4e0e\u603b\u4f30\u4ef7\u8054\u5408\u65f6\u5bb9\u5dee \u00b110%\uff08\u540c\u65f6\u586b \u22654 \u9879\u65f6\u81ea\u52a8\u653e\u5bbd\u81f3 \u00b118%\uff09\u3002"
+             "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
     )
     _purple_opts, _purple_lbls = _huge_options_for_quality(4)
     state["purple_huge_band"] = pr1c3.selectbox(
@@ -1122,8 +1141,8 @@ with tab_obs:
     st.divider()
     st.subheader("\u91d1\u54c1\uff08q=5\uff0c\u53ef\u9009\uff09")
     st.caption(
-        "\u91d1\u54c1\u603b\u683c\u6570\u4ee5\u67d0\u4e9b\u5730\u56fe\u4f1a\u76f4\u63a5\u63d0\u4f9b\u3002"
-        "\u603b\u683c\u6570 \u4e0e \u603b\u4ef7 \u90fd\u53ef\u586b\uff0c\u63a8\u65ad\u5f15\u64ce\u4f1a\u53d6\u4e24\u8005\u4e2d\u80fd\u7528\u7684\u4fe1\u606f\u3002"
+        "\u91d1\u54c1\u603b\u683c\u6570 / \u603b\u4ef7 / \u5de8\u7269\u4ef6\u6570 \u4f1a\u8fdb\u5165 MC \u8fc7\u6ee4\u3002"
+        "\u5747\u683c\u3001\u5747\u4ef7\u3001\u2605 \u5177\u4f53\u5de8\u7269 \u540c\u7d2b\u54c1\u8bf4\u660e\uff08\u5747\u4ef7\u53ea\u6536\u7d27\u4e0b\u65b9\u679a\u4e3e\uff09\u3002"
     )
     # Row 1: cells / count / huge_band
     gr1c1, gr1c2, gr1c3 = st.columns([1, 1, 1.6])
@@ -1161,8 +1180,9 @@ with tab_obs:
         min_value=0, max_value=2_000_000, value=None, step=500,
         placeholder="\u53ef\u9009",
         help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u91d1\u54c1\u5747\u4ef7 X silver\u300d\u3002"
-             "\u586b\u5165\u540e\u4f1a\u4e0e\u4ef6\u6570 / \u603b\u4f30\u4ef7\u8054\u5408\u63a8\u7d2f\uff0c"
-             "\u80fd\u8fdb\u4e00\u6b65\u9501\u5b9a\u5019\u9009\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+             "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
+             "\u8054\u5408\u603b\u4f30\u4ef7\u65f6 \u00b110%\uff08\u22654 \u9879\u540c\u586b \u2192 \u00b118%\uff09\u3002"
+             "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
     )
     _gold_opts, _gold_lbls = _huge_options_for_quality(5)
     state["gold_huge_band"] = gr1c3.selectbox(
@@ -1188,7 +1208,9 @@ with tab_obs:
     st.subheader("\u7ea2\u54c1\uff08q=6\uff0c\u53ef\u9009\uff09")
     st.caption(
         "\u7ea2\u54c1\u51e0\u4e4e\u4e0d\u4f1a\u88ab\u4f30\u4ef7\u9053\u5177\u51c6\u786e\u8bfb\u51fa "
-        "\u2014 \u63a8\u8350\u586b\u4e2a\u4ef7\u503c\u533a\u95f4\uff08\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\uff09\u3002\u4e0a\u4e0b\u9650\u90fd\u4e3a 0 \u8868\u793a\u672a\u63d0\u4f9b\u3002"
+        "\u2014 \u63a8\u8350\u586b\u4e2a\u4ef7\u503c\u533a\u95f4\uff08\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\uff09\u3002"
+        "\u7ea2\u54c1\u5de8\u7269 **\u4ef6\u6570 band** \u4f1a\u8fdb\u5165 MC \u8fc7\u6ee4\uff08\u4e0e\u683c\u6570\u3001\u4ef7\u503c\u533a\u95f4\u8054\u5408\uff09\u3002"
+        "\u2605 \u5177\u4f53\u7ea2\u8272\u5de8\u7269\u540c\u7d2b/\u91d1\uff1a\u4e3b\u8981\u5f71\u54cd\u679a\u4e3e\u63a8\u683c\u3002"
     )
 
     c_chk1, c_chk2 = st.columns(2)
@@ -1293,18 +1315,18 @@ with tab_hint:
     st.caption(
         "\u57fa\u4e8e\u6761\u4ef6 Monte-Carlo\uff1a\u91c7\u6837 N \u6b21\u672c\u56fe\u4ed3\u5e93\uff0c"
         "\u4fdd\u7559\u4ed3\u5e93\u5bb9\u91cf\u00b1\u5bb9\u5dee\u4e14\u4f4e\u54c1 cells \u5339\u914d\u7684\u6837\u672c\uff0c"
-        "\u5148\u770b\u4ef7\u503c\u53ef\u80fd\u533a\u95f4\uff0c\u518d\u770b\u662f\u5426\u53ef\u79d2\u4ed3 / \u8be5\u653e\u4ed3\u3002"
+        "\u5148\u770b\u4ef7\u503c\u53ef\u80fd\u533a\u95f4\uuff08\u540e\u9a8c bucket \u5206\u4f4d\u6570\uff09\u3002"
     )
     st.caption(
         "\U0001F4A1 \u51fa\u4ef7\u533a\u95f4\u4f1a\u540c\u65f6\u6309\u4ed3\u5e93\u603b\u683c\u6570 + \u4f60\u586b\u7684\u6bcf\u4e2a bucket "
-        "(cells / count / value / huge / value_range) \u591a\u91cd\u8fc7\u6ee4\u3002\u8054\u5408\u8fc7\u6ee4\u540e\u6837\u672c\u4e0d\u8db3 30 \u65f6 "
-        "\u4f1a\u81ea\u52a8\u9010\u6863\u653e\u5bbd\u5bb9\u5dee\uff08\u00b12 \u2192 \u00b14 \u2192 \u00b18\uff09\u5e76\u6807 \u26a0\ufe0f \u4f4e\u7f6e\u4fe1\u3002"
-        "\u300c\u7ea2 bucket \u300d\u52fe\u9009\u300c\u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\u540e\uff0cMC \u4f1a\u5728\u8fc7\u6ee4\u91cc\u5f3a\u5236 q=6 cells=0\u3002"
+        "(cells / count / value_sum / huge\u4ef6\u6570 / \u7ea2\u4ef7\u503c\u533a\u95f4) \u8fc7\u6ee4 MC\u3002"
+        "**\u5747\u683c\u3001\u5747\u4ef7\u4e0d\u8fdb MC**\uff0c\u53ea\u6536\u7d27\u8bfb\u6570\u533a\u7684\u5019\u9009\u679a\u4e3e\u3002"
+        "\u6837\u672c\u4e0d\u8db3 30 \u65f6\u4f1a\u81ea\u52a8\u653e\u5bbd\u5bb9\u5dee\u5e76\u6807 \u26a0\ufe0f \u4f4e\u7f6e\u4fe1\u3002"
+        "\u300c\u7ea2 bucket \u300d\u52fe\u9009\u300c\u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\u540e\uff0cMC \u4f1a\u5f3a\u5236 q=6 cells=0\u3002"
     )
     if st.button("\u8fd0\u884c\u51fa\u4ef7 hint", key="run_hints", type="primary"):
         session = _build_session(state, maps)
-        with st.spinner(f"MC \u91c7\u6837\u4e2d\uff08{n_trials} \u6837\u672c\uff0c"
-                        "\u540c\u4e00\u7ec4\u6837\u672c\u7ed9\u5206\u5e03/\u79d2\u4ed3/\u653e\u4ed3\u4e09\u5904\u590d\u7528\uff09..."):
+        with st.spinner(f"MC \u91c7\u6837\u4e2d\uff08{n_trials} \u6837\u672c\uff09..."):
             rng_truths = np.random.default_rng(seed)
             truths = _sample_truths_cached(
                 state["map_id"], n_trials=n_trials, seed=seed,
@@ -1325,16 +1347,19 @@ with tab_hint:
 
             analytical = compute_analytical_estimate(session)
 
-            snipe = compute_snipe_recommendation(
-                session, maps=maps, drops=drops, items=items,
-                n_trials=n_trials, warehouse_tolerance=warehouse_tol,
-                purple_tolerance=purple_tol, truths=truths,
-            )
-            pass_rec = compute_pass_recommendation(
-                session, maps=maps, drops=drops, items=items,
-                n_trials=n_trials, warehouse_tolerance=warehouse_tol,
-                purple_tolerance=purple_tol, truths=truths,
-            )
+            snipe = None
+            pass_rec = None
+            if _ENABLE_SNIPE_PASS_HINTS:
+                snipe = compute_snipe_recommendation(
+                    session, maps=maps, drops=drops, items=items,
+                    n_trials=n_trials, warehouse_tolerance=warehouse_tol,
+                    purple_tolerance=purple_tol, truths=truths,
+                )
+                pass_rec = compute_pass_recommendation(
+                    session, maps=maps, drops=drops, items=items,
+                    n_trials=n_trials, warehouse_tolerance=warehouse_tol,
+                    purple_tolerance=purple_tol, truths=truths,
+                )
 
         # ---- Value range + distribution chart (top) ----
         st.markdown(
@@ -1583,78 +1608,85 @@ with tab_hint:
 
         # ---- Snipe / Pass recommendations (bottom) ----
         st.divider()
-        st.markdown(
-            "### \U0001F3AF \u79d2\u4ed3 / \u653e\u4ed3 \u63a8\u8350"
-        )
-        col_snipe, col_pass = st.columns(2)
-        with col_snipe:
-            st.markdown("### \U0001F680 \u79d2\u4ed3\u63a8\u8350")
-            if snipe is None:
-                st.warning(
-                    "\u672a\u89e6\u53d1\u3002\u9700\u8981\u540c\u65f6\u6ee1\u8db3\uff1a"
-                    "\u4ed3\u5e93 \u2265 120 \u683c\u3001\u4f4e\u54c1\u683c\u6570\u5df2\u7ed9\u51fa\u3001"
-                    "MC \u5339\u914d\u6837\u672c\u8db3\u591f\uff08\u9ed8\u8ba4 \u2265 30\uff09\u3002"
-                )
-            else:
-                cond_label = (
-                    "\u542b\u7d2b\u54c1\u683c\u6570\u6761\u4ef6"
-                    if snipe.purple_conditioned else "\u4ec5\u4ed3\u5e93\u683c\u6570\u6761\u4ef6"
-                )
-                if snipe.low_confidence:
+        st.markdown("### \U0001F3AF \u79d2\u4ed3 / \u653e\u4ed3 \u63a8\u8350")
+        if not _ENABLE_SNIPE_PASS_HINTS:
+            st.warning(
+                "\U0001F9EA **\u5b9e\u9a8c\u6027\u529f\u80fd\uff0c\u6682\u672a\u63a5\u5165\u63a8\u65ad\u63a5\u53e3**\u3002"
+                "\u540e\u7aef\u903b\u8f91\u5df2\u5b9e\u73b0\u4e8e inference/snipe.py\uff08\u5355\u6d4b\u4ecd\u53ef\u8dd1\uff09\uff0c"
+                "\u4f46 UI \u6682\u505c\u5c55\u793a\uff1a\u5b9e\u6218\u4e2d\u5bb9\u6613\u8bef\u89e6\u53d1 / \u540c\u8f93\u5165\u7ed3\u679c\u4e0d\u7a33\u5b9a\u3002"
+                "\u5f53\u524d\u8bf7\u4ee5\u300c\u4ed3\u5e93\u4ef7\u503c\u53ef\u80fd\u533a\u95f4\u300d\u4e0e bucket \u540e\u9a8c\u4e3a\u51b3\u7b56\u4e3b\u4f53\u3002"
+                "\u5f00\u53d1\u8005\u53ef\u5728 streamlit_app.py \u5c06 _ENABLE_SNIPE_PASS_HINTS \u6539\u4e3a True \u6062\u590d\u5361\u7247\u3002"
+            )
+        else:
+            col_snipe, col_pass = st.columns(2)
+            with col_snipe:
+                st.markdown("### \U0001F680 \u79d2\u4ed3\u63a8\u8350")
+                if snipe is None:
                     st.warning(
-                        f"\u26A0\ufe0f \u4f4e\u7f6e\u4fe1\u533a\u63a8\u8350\uff1a\u6837\u672c\u4ec5 "
-                        f"{snipe.n_matching_samples} \u4e2a\uff0c\u4ec5\u4f9b\u53c2\u8003\u3002"
-                        f"\u53ef\u63d0\u9ad8 MC \u91c7\u6837\u6570\u83b7\u5f97\u66f4\u7a33\u5b9a\u7ed3\u679c\u3002"
+                        "\u672a\u89e6\u53d1\u3002\u9700\u8981\u540c\u65f6\u6ee1\u8db3\uff1a"
+                        "\u4ed3\u5e93 \u2265 120 \u683c\u3001\u4f4e\u54c1\u683c\u6570\u5df2\u7ed9\u51fa\u3001"
+                        "MC \u5339\u914d\u6837\u672c\u8db3\u591f\uff08\u9ed8\u8ba4 \u2265 30\uff09\u3002"
                     )
                 else:
-                    st.success(snipe.as_ui_tooltip())
-                st.metric(
-                    "\u63a8\u8350\u79d2\u4ed3\u9876\u4ef7\uff08silver\uff09",
-                    f"{snipe.snipe_max_bid:,}",
-                    delta=f"\u9884\u671f\u4ef7\u503c\u4e2d\u4f4d\u6570 P50 = {snipe.expected_value:,}",
-                )
-                st.caption(
-                    f"\u4fdd\u5e95\u4ef7\uff08safe_floor\uff09= {snipe.safe_floor_bid:,}  \u00b7  "
-                    f"\u504f\u4e50\u89c2 P75 = {snipe.p75_value:,}  \u00b7  "
-                    f"\u4e50\u89c2\u4e0a\u9650 P90 = {snipe.p90_value:,}  \u00b7  "
-                    f"\u5339\u914d\u6837\u672c = {snipe.n_matching_samples} \u00b7 {cond_label}"
-                )
-                with st.expander("\u8be6\u7ec6\u8bf4\u660e"):
-                    st.write(snipe.rationale)
-        with col_pass:
-            st.markdown("### \U0001F6D1 \u653e\u4ed3\u63a8\u8350")
-            if pass_rec is None:
-                st.warning(
-                    "\u672a\u89e6\u53d1\u3002\u9700\u8981\u540c\u65f6\u6ee1\u8db3\uff1a"
-                    "\u4ed3\u5e93 \u2264 80 \u683c\u3001\u4f4e\u54c1\u683c\u6570\u5360\u6bd4 \u2265 40%\u3001"
-                    "MC \u5339\u914d\u6837\u672c\u8db3\u591f\uff08\u9ed8\u8ba4 \u2265 30\uff09\u3002"
-                )
-            else:
-                cond_label = (
-                    "\u542b\u7d2b\u54c1\u683c\u6570\u6761\u4ef6"
-                    if pass_rec.purple_conditioned else "\u4ec5\u4ed3\u5e93\u683c\u6570\u6761\u4ef6"
-                )
-                if pass_rec.low_confidence:
+                    cond_label = (
+                        "\u542b\u7d2b\u54c1\u683c\u6570\u6761\u4ef6"
+                        if snipe.purple_conditioned else "\u4ec5\u4ed3\u5e93\u683c\u6570\u6761\u4ef6"
+                    )
+                    if snipe.low_confidence:
+                        st.warning(
+                            f"\u26A0\ufe0f \u4f4e\u7f6e\u4fe1\u533a\u63a8\u8350\uff1a\u6837\u672c\u4ec5 "
+                            f"{snipe.n_matching_samples} \u4e2a\uff0c\u4ec5\u4f9b\u53c2\u8003\u3002"
+                            f"\u53ef\u63d0\u9ad8 MC \u91c7\u6837\u6570\u83b7\u5f97\u66f4\u7a33\u5b9a\u7ed3\u679c\u3002"
+                        )
+                    else:
+                        st.success(snipe.as_ui_tooltip())
+                    st.metric(
+                        "\u63a8\u8350\u79d2\u4ed3\u9876\u4ef7\uff08silver\uff09",
+                        f"{snipe.snipe_max_bid:,}",
+                        delta=f"\u9884\u671f\u4ef7\u503c\u4e2d\u4f4d\u6570 P50 = {snipe.expected_value:,}",
+                    )
+                    st.caption(
+                        f"\u4fdd\u5e95\u4ef7\uff08safe_floor\uff09= {snipe.safe_floor_bid:,}  \u00b7  "
+                        f"\u504f\u4e50\u89c2 P75 = {snipe.p75_value:,}  \u00b7  "
+                        f"\u4e50\u89c2\u4e0a\u9650 P90 = {snipe.p90_value:,}  \u00b7  "
+                        f"\u5339\u914d\u6837\u672c = {snipe.n_matching_samples} \u00b7 {cond_label}"
+                    )
+                    with st.expander("\u8be6\u7ec6\u8bf4\u660e"):
+                        st.write(snipe.rationale)
+            with col_pass:
+                st.markdown("### \U0001F6D1 \u653e\u4ed3\u63a8\u8350")
+                if pass_rec is None:
                     st.warning(
-                        f"\u26A0\ufe0f \u4f4e\u7f6e\u4fe1\u533a\u63a8\u8350\uff1a\u6837\u672c\u4ec5 "
-                        f"{pass_rec.n_matching_samples} \u4e2a\uff0c\u4ec5\u4f9b\u53c2\u8003\u3002"
+                        "\u672a\u89e6\u53d1\u3002\u9700\u8981\u540c\u65f6\u6ee1\u8db3\uff1a"
+                        "\u4ed3\u5e93 \u2264 80 \u683c\u3001\u4f4e\u54c1\u683c\u6570\u5360\u6bd4 \u2265 40%\u3001"
+                        "MC \u5339\u914d\u6837\u672c\u8db3\u591f\uff08\u9ed8\u8ba4 \u2265 30\uff09\u3002"
                     )
                 else:
-                    st.error(pass_rec.as_ui_tooltip())
-                st.metric(
-                    "\u653e\u4ed3\u9608\u503c\uff08silver\uff09",
-                    f"{pass_rec.pass_max_bid:,}",
-                    delta=f"\u4ec5\u662f\u5168\u56fe\u5747\u503c\u7684 "
-                          f"{pass_rec.value_ratio:.0%}",
-                    delta_color="inverse",
-                )
-                st.caption(
-                    f"\u8fdb\u4ed3\u4ef7\uff08safe_entry\uff09= {pass_rec.safe_entry_bid:,}  \u00b7  "
-                    f"\u5168\u56fe\u4e2d\u4f4d\u4f30\u503c P50 = {pass_rec.unconditional_p50:,}  \u00b7  "
-                    f"\u5339\u914d\u6837\u672c = {pass_rec.n_matching_samples} \u00b7 {cond_label}"
-                )
-                with st.expander("\u8be6\u7ec6\u8bf4\u660e"):
-                    st.write(pass_rec.rationale)
+                    cond_label = (
+                        "\u542b\u7d2b\u54c1\u683c\u6570\u6761\u4ef6"
+                        if pass_rec.purple_conditioned else "\u4ec5\u4ed3\u5e93\u683c\u6570\u6761\u4ef6"
+                    )
+                    if pass_rec.low_confidence:
+                        st.warning(
+                            f"\u26A0\ufe0f \u4f4e\u7f6e\u4fe1\u533a\u63a8\u8350\uff1a\u6837\u672c\u4ec5 "
+                            f"{pass_rec.n_matching_samples} \u4e2a\uff0c\u4ec5\u4f9b\u53c2\u8003\u3002"
+                        )
+                    else:
+                        st.error(pass_rec.as_ui_tooltip())
+                    st.metric(
+                        "\u653e\u4ed3\u9608\u503c\uff08silver\uff09",
+                        f"{pass_rec.pass_max_bid:,}",
+                        delta=f"\u4ec5\u662f\u5168\u56fe\u5747\u503c\u7684 "
+                              f"{pass_rec.value_ratio:.0%}",
+                        delta_color="inverse",
+                    )
+                    st.caption(
+                        f"\u8fdb\u4ed3\u4ef7\uff08safe_entry\uff09= {pass_rec.safe_entry_bid:,}  \u00b7  "
+                        f"\u5168\u56fe\u4e2d\u4f4d\u4f30\u503c P50 = {pass_rec.unconditional_p50:,}  \u00b7  "
+                        f"\u5339\u914d\u6837\u672c = {pass_rec.n_matching_samples} \u00b7 {cond_label}"
+                    )
+                    with st.expander("\u8be6\u7ec6\u8bf4\u660e"):
+                        st.write(pass_rec.rationale)
     else:
         st.info("\u8bbe\u7f6e\u597d\u8bfb\u6570\u540e\u70b9\u51fb\u4e0a\u9762\u6309\u94ae\u3002")
 

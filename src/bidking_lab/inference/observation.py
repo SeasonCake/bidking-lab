@@ -411,6 +411,33 @@ def _single_item_match_names(
     return out
 
 
+# When the player fills this many reading fields on one bucket, ``avg_value``
+# tolerance widens in ``candidates_for_bucket`` only (MC path unchanged).
+JOINT_CONSTRAINT_RELAX_THRESHOLD = 4
+
+
+def active_reading_constraint_count(bucket: QualityBucketObs) -> int:
+    """Count filled fields that prune enumeration (not used by MC filter)."""
+    n = 0
+    if bucket.total_cells is not None:
+        n += 1
+    if bucket.count is not None:
+        n += 1
+    if bucket.avg_cells is not None:
+        n += 1
+    if bucket.value_sum is not None and bucket.value_sum > 0:
+        n += 1
+    if bucket.avg_value is not None and bucket.avg_value > 0:
+        n += 1
+    if bucket.huge_band != "none":
+        n += 1
+    if bucket.value_range is not None:
+        lo, hi = bucket.value_range
+        if lo > 0 or hi > 0:
+            n += 1
+    return n
+
+
 def _max_cells_per_single_item(quality: int) -> int:
     """Largest possible cells/item at ``quality`` from Item.txt.
 
@@ -515,6 +542,14 @@ def candidates_for_bucket(
                 else:
                     implied_avg = (pcv * total_cells) / max(1, count)
                 tol = 0.25
+            # Joint-field softening: many simultaneous readings AND away
+            # can zero-out enumeration; widen avg_value tol only (MC untouched).
+            if active_reading_constraint_count(bucket) >= JOINT_CONSTRAINT_RELAX_THRESHOLD:
+                tol = (
+                    0.18
+                    if bucket.value_sum is not None and bucket.value_sum > 0
+                    else 0.35
+                )
             if implied_avg <= 0:
                 continue
             if abs(implied_avg - bucket.avg_value) / bucket.avg_value > tol:

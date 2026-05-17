@@ -11,9 +11,11 @@ from bidking_lab.inference.observation import (
     ETHAN_DEFAULT_LOADOUT,
     HUGE_BAND_RANGE,
     HUGE_CELLS_PER_QUALITY,
+    JOINT_CONSTRAINT_RELAX_THRESHOLD,
     STANDARD_LOADOUTS,
     QualityBucketObs,
     SessionObs,
+    active_reading_constraint_count,
     aisha_can_observe_huge,
     candidates_for_bucket,
     top_k_for_session,
@@ -222,6 +224,44 @@ def test_avg_value_filter_rejects_off_target() -> None:
     for c in cands:
         implied = bucket.value_sum / max(1, c.count)
         assert abs(implied - bucket.avg_value) / bucket.avg_value <= 0.10
+
+
+def test_active_reading_constraint_count() -> None:
+    b = QualityBucketObs(
+        quality=4,
+        total_cells=24,
+        count=7,
+        value_sum=50_000,
+        avg_value=7000,
+        huge_band="1",
+    )
+    assert active_reading_constraint_count(b) == 5
+    assert JOINT_CONSTRAINT_RELAX_THRESHOLD == 4
+
+
+def test_joint_relax_widens_avg_value_when_many_fields() -> None:
+    """With >=4 fields, avg_value tol widens so borderline counts survive."""
+    strict = QualityBucketObs(
+        quality=4,
+        total_cells=32,
+        value_sum=86_490,
+        avg_value=6178,
+        huge_band="none",
+    )
+    relaxed = QualityBucketObs(
+        quality=4,
+        total_cells=32,
+        value_sum=86_490,
+        avg_value=6178,
+        huge_band="1",
+    )
+    assert active_reading_constraint_count(strict) == 3
+    assert active_reading_constraint_count(relaxed) >= JOINT_CONSTRAINT_RELAX_THRESHOLD
+    c_strict = candidates_for_bucket(strict, warehouse_capacity=159)
+    c_relaxed = candidates_for_bucket(relaxed, warehouse_capacity=159)
+    # 86490/12 = 7208 vs avg 6178 → ~16.7% off: fails ±10%, passes ±18%
+    assert not any(c.total_cells == 32 and c.count == 12 for c in c_strict)
+    assert any(c.total_cells == 32 and c.count == 12 for c in c_relaxed)
 
 
 def test_avg_value_without_value_sum_uses_loose_pcv_filter() -> None:

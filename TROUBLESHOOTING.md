@@ -34,6 +34,8 @@
 27. [`HUGE_CELLS_PER_QUALITY` 阈值与 UI 文案不一致](#27-huge_cells_per_quality-阈值与-ui-文案不一致)
 28. [`huge_cells_override` 已实现但 UI 从未暴露 → 玩家无法精确锁定具体巨物](#28-huge_cells_override-已实现但-ui-从未暴露--玩家无法精确锁定具体巨物)
 29. [放仓推荐忽略红/金 bucket 约束 → 给红有大件的高价仓也建议放](#29-放仓推荐忽略红金-bucket-约束--给红有大件的高价仓也建议放)
+30. [秒仓/放仓 UI 下线（实验功能）](#30-秒仓放仓-ui-下线实验功能)
+31. [均价/均格只收紧枚举、不进 MC — 设计如此](#31-均价均格只收紧枚举不进-mc--设计如此)
 
 ---
 
@@ -1075,6 +1077,58 @@ if purple_cells_obs is not None and abs(tp_cells - purple_cells_obs) > purple_to
 - 同输入两次跑结果不同：tier 切换的硬阈值在边界附近会跨档，导致放仓有时返回有时 None。改进方向：连续置信度权重 / bootstrap CI。
 - 小红仓漏报：79 格 / 红 1-2 cells / 总仓 22w 不触发，因为 `low_fraction ≥ 0.4` 是必要条件而当前红少时低品占比可能不到 40%。
 - ratio 守卫粗糙：`> 1.0` 一刀切。改进方向：`0.85 < ratio < 1.05` 区段标"中等仓位、自由发挥"。
+
+---
+
+## 30. 秒仓/放仓 UI 下线（实验功能）
+
+### 症状
+
+实战反馈：同输入多次运行秒/放仓卡片有时出现、有时消失；红 huge=1 的高价仓仍可能建议放仓（C-30 已部分修）；79 格 / 红 1–2 格 / 总仓 ~22w 该放却未触发。用户易被误导。
+
+### 原因
+
+`compute_snipe_recommendation` / `compute_pass_recommendation` 依赖稀疏 MC 子样本 + 硬阈值 tier（30 / 10）+ 粗粒度 `low_fraction` 门控；与主路径「仓库价值区间 + bucket 后验」不同步。
+
+### 修法（2026-05-17）
+
+- `app/streamlit_app.py`：`_ENABLE_SNIPE_PASS_HINTS = False`，UI 显示与未知巨物相同的 **🧪 实验功能，暂未接入推断接口** 说明。
+- **不删** `src/bidking_lab/inference/snipe.py` 与 `tests/test_snipe.py`。
+- 恢复：改 flag 为 `True` 并重启 Streamlit。
+
+### 待修 backlog（见 PROGRESS C-31）
+
+tier 平滑、小红仓门控、ratio 守卫细化、紫/金 huge 进 cond 链等。
+
+---
+
+## 31. 均价/均格只收紧枚举、不进 MC — 设计如此
+
+### 症状
+
+用户同时填 `value_sum` + `avg_value` + `huge_band` + `avg_cells` 后，候选列表骤减甚至 0 条；但 MC 分位图似乎「没用到」均价/均格。
+
+### 原因
+
+**分层设计**：
+
+- **MC 后验**（`filter_truths_by_obs`）：cells / count / value_sum / value_range / huge **件数 band**。
+- **枚举**（`candidates_for_bucket`）：在上述之上加 avg_cells、avg_value、物理格数上限、Item-DB boost；用于预览锁 (cells,count) 与分析估算推格数。
+
+`avg_value` 来自地图动态 hint，与 Drop 池抽样分布未必一致；若硬塞进 MC 会大量「过滤后零匹配」。
+
+### 是否 bug？
+
+**不是 bug，是 MVP 取舍。** 若产品要求「填了均价 MC 也要跟」，需新增 `avg_value` 软约束或后验加权（Phase 2）。
+
+### 联合填写过狠时
+
+- 枚举路径：多字段 **AND** 硬过滤 → 正常但激进。
+- **已缓解（C-31b）**：`active_reading_constraint_count >= 4` 时仅把 `avg_value` 容差从 ±10% 放宽到 ±18%（有 `value_sum`）或 ±25%→±35%（无总价）；**MC 与采样次数不变**。
+
+### P2「均价进 MC」要不要做？
+
+**建议不做，也不必加 UI 勾选项。** 均价来自地图 session hint，与 Drop 池 MC 样本分布常不一致；硬塞进 `filter_truths_by_obs` 会复现「过滤后零匹配」。当前分层（MC 用 cells/count/value/huge 件数；均价只收紧枚举）是刻意设计。
 
 ---
 
