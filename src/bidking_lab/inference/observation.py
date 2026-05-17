@@ -18,11 +18,13 @@ Field tiers (from the 2026-05-15 design session):
 
 Huge-count input is a **band**, not a single integer: the player picks
 ``"1"``, ``"2-3"``, or ``"4+"`` from a dropdown. The engine enumerates
-within the band. Each quality has a canonical huge-item area:
-
-* ``4`` (紫): 4×4 = 16 cells (eg 翡翠屏风, 防弹衣, 雷达, 毯子, 单兵外骨骼)
-* ``5`` (金): 6×3 = 18 cells (only 单人郊游快艇)
-* ``6`` (红): 4×4 = 16 cells (翡翠屏风, 红木屏风, 碳纤维车壳, 黑曜石屏风, ...)
+within the band. When the player does **not** pick a ``★`` concrete item,
+``huge_cells_per_item()`` uses the per-quality **minimum** huge footprint
+(see ``HUGE_CELLS_PER_QUALITY``: purple 10, gold/red 12). Picking
+``★ 具体物品`` sets ``huge_cells_override`` to that item's exact cells
+(e.g. gold yacht = 18). Value-side priors use ``PER_CELL_VALUE_HUGE``
+(drop-weighted ~7000/cell gold, ~30000/cell red), separate from the
+cell floor.
 
 The brute-force candidate enumeration walks ``(total_cells, count)``
 integer pairs and filters by every constraint the player provided.
@@ -178,10 +180,11 @@ class QualityBucketObs:
     will raise if a required field (per the hero mode) is missing.
 
     Huge-item input is a **band** (``"none"`` / ``"1"`` / ``"2-3"`` /
-    ``"4+"``). The engine enumerates within the band and assumes the
-    canonical huge-item area for the quality (16 cells for purple/red,
-    18 cells for gold) unless the player overrides via
-    ``huge_cells_override``.
+    ``"4+"``). Without ``huge_cells_override``, enumeration uses the
+    quality's **minimum** huge footprint (10 purple / 12 gold / 12 red).
+    ``★`` UI selections set ``huge_cells_override`` to the item's exact
+    cell count. MC filtering uses **huge count band only**, not per-item
+    cells (by design).
     """
 
     quality: int   # 1=白 … 6=红
@@ -203,7 +206,7 @@ class QualityBucketObs:
         """Cells consumed by one huge item in this quality (UI-side spec)."""
         if self.huge_cells_override:
             return self.huge_cells_override
-        return HUGE_CELLS_PER_QUALITY.get(self.quality, 16)
+        return HUGE_CELLS_PER_QUALITY.get(self.quality, 12)
 
     def min_huge_cells(self) -> int:
         return self.huge_count_range()[0] * self.huge_cells_per_item()
