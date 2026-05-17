@@ -7,8 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-222_passing-2ea043)](./tests)
-[![Status](https://img.shields.io/badge/status-93%25_complete-blueviolet)](./PROGRESS.md)
+[![Tests](https://img.shields.io/badge/tests-234_passing-2ea043)](./tests)
+[![Status](https://img.shields.io/badge/status-Phase_1A_推断稳定-blueviolet)](./PROGRESS.md)
 
 ---
 
@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/ef39bb80-f6fd-40b3-8e60-6564ceda4af8
 </table>
 
 > **左**：引擎实时监听用户填的每个字段，把通过所有约束（仓库总格、截断 `均格` 读数、总价、巨物档……）的 top-K `(total_cells, count)` 候选枚举出来。
-> **右**：1000+ 真值样本经多重 filter 后画直方图，标 P25/P50/P75/P90 四条分位线，玩家按自己的风险偏好挑出价档。
+> **右**：默认 **1500** 次 MC 抽样（滑块 500–5000），经多重 filter 后画直方图，标 P25/P50/P75/P90。秒仓/放仓卡片为**实验功能且默认隐藏**（`_ENABLE_SNIPE_PASS_HINTS=False`），后端模块保留待 P0-A 恢复。
 
 ---
 
@@ -67,7 +67,7 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 
-# 1) 跑测试（219 个单测）
+# 1) 跑测试（234 个单测）
 pytest -q
 
 # 2) 启动 Streamlit 主界面
@@ -170,7 +170,14 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 所有非显然的踩坑（Base64 表 / GBK 编码 / `pyarrow` × `numpy 2.x` / `st.number_input` 吃尾零 / matplotlib 中文字体回退 / ROI baseline 漏洞 / `value=0` 跟"确认为零"语义模糊 / 分析估算绕过暴力枚举器 / `_build_session` 没消费"只填件数"bucket 引发的连环 bug / ……）都按 **症状 / 原因 / 修法 / 教训** 四段式归档，便于复盘和给协作者交接。
 
 ### 6. 把已识别具体巨物变成一等 observation
-`BIG_ITEMS_BY_SHAPE`（紫/金/红 ~20 件唯一形状巨物）直接喂进每个品质的"巨物数量"下拉框：玩家不再只能选 `1个 / 2-3个 / 4+个` 这种数量段，而是能选 `★ 单人郊游快艇 (18格·106,500)` 这样精确锁定。下拉框选项解析为 `huge_cells_override`，自动透传到整条推断链（`min_huge_cells()` → `candidates_for_bucket` → `_build_session` 残差计算 → `compute_analytical_estimate`），零额外接线。
+`BIG_ITEMS_BY_SHAPE`（紫/金/红 ~20 件唯一形状巨物）直接喂进每个品质的"巨物数量"下拉框：玩家能选 `★ 单人郊游快艇 (18格·106,500)` 精确锁定格数。`huge_cells_override` 主要服务**枚举 + 分析估算**（`min_huge_cells()` → `candidates_for_bucket` → `compute_analytical_estimate`）。MC 仍只按 **巨物件数 band** 过滤（设计分层，见 TROUBLESHOOTING #31）。
+
+### 7. 推断字段分层 + 低风险 backlog 收口（2026-05-17）
+- **MC**：cells / count / value_sum / value_range / huge_band。
+- **枚举**：另加 avg_cells、avg_value、★ override、Item-DB boost、物理格数上限。
+- **≥4 项联合读数**：仅枚举路径放宽 `avg_value` 容差（C-31b）。
+- **P0-B（C-32）**：MC fallback 时 `_fallback_hard_buckets` 保留 `huge_cells_override`（罕见路径一致性，见 OBS #32）。
+- **暂缓**：秒/放仓 UI（P0-A）、均价/★格数进 MC（P2/P3）。
 
 ---
 
@@ -182,11 +189,11 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 |---|---|
 | 解析的游戏表 | 6 张（BidMap / Drop / Item / BattleItem / Hero / Item_Type） |
 | schema 化的实体 | 1132 件藏品 · 64 件道具 · 105 张地图 · 20 个英雄 |
-| 单测数 | **219**，全绿 |
+| 单测数 | **234**，全绿 |
 | Streamlit UI tabs | 4（读数输入 / 出价推荐 / 道具 ROI / 联合推断·实验性） |
 | Notebook | 5 册（map 价值分布 / 英雄排名 / 推断 demo / ROI snipe / 端到端 case） |
-| 项目完成度 | ~93% |
-| Commit 历史 | C-1 ~ C-28，每条都有展开版设计决策记录 |
+| Phase 1A 推断 | **稳定** — 低风险项已落地；秒/放仓 UI 关闭 |
+| Commit 历史 | C-1 ~ C-33，详见 PROGRESS 提交历史 |
 
 ---
 
@@ -200,13 +207,13 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | `app/streamlit_app.py` | Streamlit 中文主界面 |
 | `notebooks/` | 5 册分析 + 端到端 case notebook |
 | `scripts/` | 数据生成 / 端到端 demo / 一次性 probe |
-| `tests/` | 219 单测 |
+| `tests/` | 234 单测 |
 | `data/raw/` | 玩家本地游戏文件（gitignored） |
 | `data/processed/` | 我们生成的 schema 化 JSON（入 git，便于无游戏的人也能跑） |
 | `docs/project_vision.md` | 原始三层架构设计 |
 | **`PROGRESS.md`** | **新协作者起点**：项目全貌 + 当前状态 + 路线图 |
 | **`OBSERVATIONS.md`** | **技术发现日志**：每个 checkpoint 的关键发现 |
-| **`TROUBLESHOOTING.md`** | **28 条踩坑**：四段式（症状/原因/修法/教训） |
+| **`TROUBLESHOOTING.md`** | **32 条踩坑**：四段式（症状/原因/修法/教训） |
 
 ### 我们 ship 的数据 vs 我们不 ship 的
 
@@ -226,7 +233,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 
 - **Python 3.13** · pydantic（schema 校验）· numpy / scipy（MC + 后验）· matplotlib（分布图）
 - **Streamlit**（UI）· Jupyter（分析交付物）
-- **pytest**（219 单测，覆盖解码 / 推断 / ROI / snipe / hero_value）
+- **pytest**（234 单测，覆盖解码 / 推断 / ROI / snipe / hero_value）
 - **PowerShell**（数据同步脚本；macOS/Linux 等价 bash 已留接口）
 
 ---
@@ -247,26 +254,22 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 
 完整路线图在 [`PROGRESS.md`](PROGRESS.md)。短版：
 
-**已完成**（C-1 ~ C-28）
-- ✅ 6 张游戏表解码 + schema
-- ✅ 推断引擎 v2（joint posterior + 仓库剪枝 + 截断显示规则 + 巨物分级）
-- ✅ Streamlit 中文 UI（4 tab + 地图静态信息面板）
-- ✅ Per-bucket 自适应 MC filter（2026-05-16 修复，杀掉 2× 过估 bug）
-- ✅ 分析估算鲁棒化（C-28，2026-05-16）—— `value_sum` / 仅填件数的 bucket 现在都走暴力枚举；所有可选数值字段统一 `value=None` + placeholder；已识别具体巨物作为下拉选项（数据驱动，从 `BIG_ITEMS_BY_SHAPE` 派生）
-- ✅ LOO 道具 ROI + 玩家眼估噪声模型
-- ✅ 秒仓 / 放仓 dual gate + 三阶 fallback
-- ✅ 5 册分析 notebook + 端到端 case
-- ✅ 219 单测全绿 · 28 条 TROUBLESHOOTING
-- ✅ 双语 README（本文件）+ 演示视频 + 截图
+**已完成**（C-1 ~ C-33）
+- ✅ 6 张游戏表解码 + schema · 推断引擎 v2 · Streamlit 中文 UI（MC 默认 **1500**）
+- ✅ Per-bucket MC filter（2026-05-16）· 分析估算 + ★ 具体巨物（C-28~29）· 紫品均价输入
+- ✅ 放仓红约束后端（C-30）· 秒/放仓 **UI 隐藏**（C-31）· 字段作用范围文案 + 联合约束枚举放宽（C-31b）
+- ✅ P0-B：fallback 保留 `huge_cells_override`（C-32）
+- ✅ LOO 道具 ROI + 眼估噪声 · 5 册 notebook · **234** 单测 · **32** 条 TROUBLESHOOTING
+- ✅ 双语 README + 演示视频 + 截图
 
-**可能的后续**
-- ⏳ Progressive UI：先出 warehouse-only 快结果，后台再 refine
-- ⏳ BidMap 23-列兼容（2026-05-15 活动图 patch；不影响 runtime）
+**暂缓 / 可选**
+- ⏸ 秒/放仓 UI 与 tier 调参（P0-A）
+- ⏸ 均价 / ★ 格数进 MC（P2，见 #31）
+- ⏳ Progressive UI · BidMap 23 列
 
-**明确 skip**（用户拍板）
-- per-item observation 接口（抽检 N / 宝光 N 鉴）
-- 抽检 ROI 建模
+**明确不做**
+- per-item observation · 抽检 ROI 建模
 
 ---
 
-<sub>Made with too much coffee · 2026-05-16</sub>
+<sub>Made with too much coffee · 2026-05-17</sub>

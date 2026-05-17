@@ -7,8 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-222_passing-2ea043)](./tests)
-[![Status](https://img.shields.io/badge/status-93%25_complete-blueviolet)](./PROGRESS.md)
+[![Tests](https://img.shields.io/badge/tests-234_passing-2ea043)](./tests)
+[![Status](https://img.shields.io/badge/status-Phase_1A_stable-blueviolet)](./PROGRESS.md)
 
 ---
 
@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/ef39bb80-f6fd-40b3-8e60-6564ceda4af8
 </table>
 
 > **Left**: the engine watches every field the player types and shows the top-K `(total_cells, count)` candidates that survive every constraint (warehouse size, decimal-truncated `avg_cells` reading, value sum, huge-band, etc.).
-> **Right**: filtered Monte-Carlo of 1,000+ truth samples, displayed as a histogram with P25/P50/P75/P90 reference lines so the player can pick a bid level matched to their risk appetite.
+> **Right**: filtered Monte-Carlo (default **1,500** samples, slider 500–5,000), displayed as a histogram with P25/P50/P75/P90 reference lines so the player can pick a bid level matched to their risk appetite. Snipe / walk-away cards are **experimental and hidden** in the UI (`_ENABLE_SNIPE_PASS_HINTS=False`); the backend module remains for future work.
 
 ---
 
@@ -67,7 +67,7 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 
-# 1) Run the test suite (219 tests)
+# 1) Run the test suite (234 tests)
 pytest -q
 
 # 2) Launch the Streamlit dashboard
@@ -173,7 +173,14 @@ Every game table is decoded into TSV → pydantic schema → typed JSON. Naming 
 Every non-trivial gotcha (base64 tables / GBK encoding / `pyarrow` × `numpy 2.x` / `st.number_input` losing trailing zeros / matplotlib CJK font fallback / ROI baseline gap / `value=0` ambiguity vs explicit-zero / analytical estimator bypassing the brute-force enumerator / cascade bugs from `_build_session` not consuming `count`-only buckets / …) is documented as **symptom / root cause / fix / lesson**.
 
 ### 6. Concretely-identified huge items as first-class observations
-`BIG_ITEMS_BY_SHAPE` (~20 unique-shape huge items spanning purple / gold / red qualities) feeds the per-quality "huge band" selector directly: instead of just `1 / 2-3 / 4+`, the player can pick `★ 单人郊游快艇 (18格·106,500)` to exactly lock the cell count. The selector resolves into `huge_cells_override`, which propagates through the entire inference chain (`min_huge_cells()` → `candidates_for_bucket` → `_build_session` residual → `compute_analytical_estimate`) without any extra wiring.
+`BIG_ITEMS_BY_SHAPE` (~20 unique-shape huge items spanning purple / gold / red qualities) feeds the per-quality "huge band" selector directly: instead of just `1 / 2-3 / 4+`, the player can pick `★ 单人郊游快艇 (18格·106,500)` to exactly lock the cell count. The selector resolves into `huge_cells_override`, which propagates through enumeration and analytical estimate (`min_huge_cells()` → `candidates_for_bucket` → `_build_session` residual → `compute_analytical_estimate`). MC filtering still uses **huge count bands only** — by design (see TROUBLESHOOTING #31).
+
+### 7. Inference field layering + low-risk backlog closed (2026-05-17)
+- **MC path**: `cells / count / value_sum / value_range / huge_band` (count of huge items per bucket).
+- **Enumeration path**: adds `avg_cells`, `avg_value`, `huge_cells_override`, Item-DB boost, physical max-cells cap.
+- **Joint constraints**: when ≥4 reading fields are active, `avg_value` tolerance widens slightly for enumeration only (C-31b).
+- **P0-B (C-32)**: `adaptive_filter` warehouse fallback now preserves `huge_cells_override` in `_fallback_hard_buckets` — consistency fix on the rare fallback path; see OBS #32.
+- **Deferred**: snipe / walk-away UI (P0-A), avg_value in MC, per-item huge cells in MC (P2/P3).
 
 ---
 
@@ -185,11 +192,11 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 |---|---|
 | Game tables parsed | 6 (BidMap / Drop / Item / BattleItem / Hero / Item_Type) |
 | Schema-typed entities | 1,132 items · 64 tools · 105 maps · 20 heroes |
-| Unit tests | **219**, all green |
+| Unit tests | **234**, all green |
 | Streamlit UI tabs | 4 (input / bidding hint / tool ROI / joint inference *experimental*) |
 | Notebooks | 5 (map value · hero ranking · inference demo · ROI snipe · end-to-end case) |
-| Project completion | ~93% |
-| Commit history | C-1 ~ C-28, every entry with expanded design notes |
+| Phase 1A inference | **stable** — low-risk backlog closed; snipe/pass UI off |
+| Commit history | C-1 ~ C-33, every entry with expanded design notes in PROGRESS |
 
 ---
 
@@ -203,13 +210,13 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 | `app/streamlit_app.py` | Streamlit Chinese-localized main UI |
 | `notebooks/` | 5 analysis + end-to-end case notebook |
 | `scripts/` | Data generation / end-to-end demo / one-off probes |
-| `tests/` | 219 unit tests |
+| `tests/` | 234 unit tests |
 | `data/raw/` | Player's local game files (gitignored) |
 | `data/processed/` | Generated schema-validated JSON (committed — works without the game installed) |
 | `docs/project_vision.md` | Original three-layer architecture vision |
 | **`PROGRESS.md`** | **Project handoff doc**: status, hero analysis, roadmap |
 | **`OBSERVATIONS.md`** | **Technical findings log**: per-checkpoint discoveries |
-| **`TROUBLESHOOTING.md`** | **28 bug postmortems**: four-section (symptom / cause / fix / lesson) |
+| **`TROUBLESHOOTING.md`** | **32 bug postmortems**: four-section (symptom / cause / fix / lesson) |
 
 ### What we ship vs. what we don't
 
@@ -229,7 +236,7 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 
 - **Python 3.13** · `pydantic` (schema) · `numpy` / `scipy` (MC + posterior) · `matplotlib` (distribution plots)
 - **Streamlit** (UI) · Jupyter (analysis deliverables)
-- **pytest** (219 unit tests covering decode / inference / ROI / snipe / hero_value)
+- **pytest** (234 unit tests covering decode / inference / ROI / snipe / hero_value)
 - **PowerShell** (data sync scripts; bash-equivalent path left as an interface)
 
 ---
@@ -250,26 +257,27 @@ Inspiration & prior art:
 
 Full roadmap in [`PROGRESS.md`](PROGRESS.md). Short version:
 
-**Done** (C-1 ~ C-28)
+**Done** (C-1 ~ C-33)
 - ✅ 6 game tables decoded + schema
 - ✅ Inference engine v2 (joint posterior + warehouse pruning + truncated-display rule + huge-item band)
-- ✅ Streamlit Chinese UI (4 tabs + map static info panel)
-- ✅ Per-bucket adaptive MC filter (2026-05-16 fix) — kills 2× over-estimation bug
-- ✅ Analytical-estimate hardening (C-28, 2026-05-16) — `value_sum` / `count`-only buckets now feed brute-force enumeration; `value=None` placeholder pattern across all optional inputs; concretely-identified huge items (game-data-driven dropdown options)
+- ✅ Streamlit Chinese UI (4 tabs + map static info panel); MC default **1500** samples
+- ✅ Per-bucket adaptive MC filter (2026-05-16) — kills 2× over-estimation bug
+- ✅ Analytical-estimate hardening (C-28) + ★ concrete huge items (C-29) + purple `avg_value` input (C-29)
+- ✅ Pass/snipe red constraints in backend (C-30); **UI hidden** until P0-A resumes (C-31)
+- ✅ Field-scope UI copy + joint-constraint enumeration relax (C-31b)
+- ✅ P0-B: fallback preserves `huge_cells_override` (C-32)
 - ✅ LOO tool ROI + player-eyeball noise model
-- ✅ Snipe / walk-away dual gate + three-tier fallback
-- ✅ 5 analysis notebooks + end-to-end case
-- ✅ 219 unit tests · 28-entry TROUBLESHOOTING
-- ✅ Bilingual README (this file) + demo video + screenshots
+- ✅ 5 analysis notebooks + end-to-end case · **234** unit tests · **32** TROUBLESHOOTING entries
+- ✅ Bilingual README + demo video + screenshots
 
-**Possible follow-ups**
-- ⏳ Progressive UI: show warehouse-only result first, then refine with per-bucket constraints in background
-- ⏳ BidMap 23-column compatibility (2026-05-15 event-map patch; doesn't affect runtime)
+**Deferred / optional**
+- ⏸ Snipe / walk-away UI + tier tuning (P0-A — user paused)
+- ⏸ `avg_value` / ★ huge cells in MC (P2 — design split, see #31)
+- ⏳ Progressive UI · BidMap 23-column patch
 
-**Explicitly out of scope** (user-decided)
-- Per-item observation API (sample-N / blessed-light-N inspection)
-- Inspection-tool ROI modelling
+**Explicitly out of scope**
+- Per-item observation API · inspection-tool ROI modelling
 
 ---
 
-<sub>Made with too much coffee · 2026-05-16</sub>
+<sub>Made with too much coffee · 2026-05-17</sub>
