@@ -42,3 +42,4 @@ external_references/**
 
 # Temp commit-message scratchpad
 .git-commit-msg.tmp
+data/samples/_roi_tune.png
