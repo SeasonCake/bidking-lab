@@ -38,6 +38,8 @@
 31. [均价/均格只收紧枚举、不进 MC — 设计如此](#31-均价均格只收紧枚举不进-mc--设计如此)
 32. [MC fallback 重建 bucket 丢失 `huge_cells_override`](#32-mc-fallback-重建-bucket-丢失-huge_cells_override)
 33. [各字段对 MC / 枚举的影响矩阵（设计预期）](#33-各字段对-mc--枚举的影响矩阵设计预期)
+34. [安装 capture OCR 时 pip 下载超时](#34-安装-capture-ocr-时-pip-下载超时)
+35. [换图后 toast 闪烁、地图下拉锁死（widget rev 未同步）](#35-换图后-toast-闪烁地图下拉锁死widget-rev-未同步)
 
 ---
 
@@ -1184,6 +1186,47 @@ OBS #31 审计：玩家选了 `★ 具体巨物（18 格）`，若 MC 走 `adapt
 - **估值**：`PER_CELL_VALUE_HUGE` 金 ≈7000/格、红 ≈30000/格（多形状混合中位），与占格下限分开。
 
 若 MC 分位「突然跳」：优先查是否新填了 **进 MC 的字段**（红=0、红 huge、各品质 cells/value/huge 件数），而非 C-32 或金默认 12。
+
+---
+
+## 34. 安装 capture OCR 时 pip 下载超时
+
+**症状**：`pip install rapidocr-onnxruntime` 在下载 `opencv-python`（~40MB）时报 `ReadTimeoutError`。
+
+**原因**：默认 pip 读超时偏短；且若用 **Anaconda 的 pip** 装到另一套环境，Streamlit 仍用 `C:\Python313\python.exe` 时会继续提示「未安装 OCR」。
+
+**修法**（与 Streamlit 同一解释器）：
+
+```powershell
+C:\Python313\python.exe -m pip install "rapidocr-onnxruntime>=1.2.0" --default-timeout=600 --retries=5
+# 或一次性装 UI + capture 可选依赖：
+cd c:\xiangmuyunxing\biancheng\2026\bidking-lab
+C:\Python313\python.exe -m pip install -e ".[ui,capture]" --default-timeout=600
+```
+
+**验证**：
+
+```powershell
+C:\Python313\python.exe -c "from rapidocr_onnxruntime import RapidOCR; print('OK')"
+```
+
+**教训**：capture 是 **UI 辅助**，与 Anaconda 日常环境可分离；文档与安装命令都写清 **Python313 路径**，避免装错环境。
+
+---
+
+## 35. 换图后 toast 闪烁、地图下拉锁死（widget rev 未同步）
+
+**症状**：侧栏已上传截图（未 OCR）、切换或清空「具体地图」后，右侧「地图已切换…」toast **反复弹出**，地图 selectbox **无法再选**；仓库格数被反复清零。
+
+**原因**：手动换图时 `_on_map_context_changed` 会 `obs_map_select_rev += 1` 生成新 key `obs_map_select__r{N}`，但若未把当前 `map_id` 写入新 key，本 run 末尾 post-selectbox 同步看到 `tracked=旧图`、`resolved=null`，再次调用 reset → 每轮 rerun 都 toast + bump rev。
+
+**修法**（`app/streamlit_app.py`）：
+
+1. bump 后立即 `_sync_map_select_widget_value(new_mid)`。
+2. 本轮已在 `on_change` 处理时设 `_map_change_toast`，post-sync **跳过**二次 reset。
+3. toast 后不再 `st.rerun()`（减少无意义整页刷新）。
+
+**教训**：Streamlit 版本化 widget key 必须 **rev 与 value 同批更新**；`on_change` 与「渲染后校正」不要对同一事件各 reset 一次。
 
 ---
 

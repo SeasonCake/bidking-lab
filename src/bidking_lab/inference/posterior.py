@@ -173,6 +173,10 @@ def filter_truths_by_obs(
 def _describe_constraints(obs: SessionObs) -> list[str]:
     """Build a human-readable list of "what filters are active" for rationale."""
     parts: list[str] = [f"warehouse={obs.warehouse_capacity()}"]
+    if obs.total_item_count is not None:
+        cap = int(obs.total_item_count)
+        item_tol = max(5, int(cap * 0.3))
+        parts.append(f"items≈{cap}±{item_tol}")
     for q in sorted(obs.buckets.keys()):
         b = obs.buckets[q]
         items: list[str] = []

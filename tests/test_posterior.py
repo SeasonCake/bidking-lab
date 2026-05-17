@@ -7,6 +7,7 @@ import numpy as np
 from bidking_lab.inference.ground_truth import BucketTruth, SessionTruth
 from bidking_lab.inference.observation import QualityBucketObs, SessionObs
 from bidking_lab.inference.posterior import (
+    _describe_constraints,
     _fallback_hard_buckets,
     adaptive_filter,
     bucket_posterior_stats,
@@ -212,3 +213,32 @@ class TestBucketPosteriorStats:
         assert stats.n == 20
         assert stats.cells_p50 == 0
         assert stats.p_empty == 1.0
+
+
+class TestDescribeConstraints:
+    def test_includes_total_item_count_and_buckets(self):
+        obs = SessionObs(
+            map_id=2403,
+            hero="ethan",
+            warehouse_total_cells=159,
+            total_item_count=32,
+            buckets={
+                1: QualityBucketObs(quality=1, total_cells=40),
+                3: QualityBucketObs(quality=3, total_cells=12),
+                4: QualityBucketObs(
+                    quality=4,
+                    total_cells=19,
+                    count=6,
+                    value_sum=60_000,
+                    huge_band="1-2",
+                ),
+            },
+        )
+        parts = _describe_constraints(obs)
+        assert parts[0] == "warehouse=159"
+        assert "items≈32±" in parts[1]
+        assert any("q=1(cells=40)" in p for p in parts)
+        assert any("q=3(cells=12)" in p for p in parts)
+        assert any(
+            "q=4(cells=19, count=6, value≈60,000, huge=1-2)" in p for p in parts
+        )

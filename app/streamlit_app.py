@@ -18,7 +18,9 @@ and exposes four panels:
 
 from __future__ import annotations
 
+import re
 import sys
+import time
 from pathlib import Path
 from typing import Mapping
 
@@ -29,8 +31,11 @@ import numpy as np
 import streamlit as st
 
 _SRC = Path(__file__).resolve().parent.parent / "src"
+_APP = Path(__file__).resolve().parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
+if str(_APP) not in sys.path:
+    sys.path.insert(0, str(_APP))
 
 from bidking_lab.extract.bid_map_table import BidMap, load_bid_map_table
 from bidking_lab.extract.drop_table import DropPool, load_drop_table
@@ -46,6 +51,7 @@ from bidking_lab.inference.observation import (
     _single_item_match_names,
     active_reading_constraint_count,
 )
+from bidking_lab.capture.ocr import ocr_warmup_status, start_ocr_warmup_background
 
 
 def _format_db_match_suffix(quality: int, value: int | None,
@@ -450,6 +456,61 @@ def _maps_for_category(
     return out
 
 
+def _map_select_widget_key() -> str:
+    rev = int(st.session_state.get("obs_map_select_rev", 0))
+    return f"obs_map_select__r{rev}"
+
+
+def _bump_map_select_widget() -> None:
+    st.session_state["obs_map_select_rev"] = (
+        int(st.session_state.get("obs_map_select_rev", 0)) + 1
+    )
+
+
+def _sync_map_select_widget_value(map_id: int | None) -> None:
+    """Write map id into the current versioned selectbox key after a rev bump."""
+    mk = _map_select_widget_key()
+    if map_id is not None:
+        st.session_state[mk] = map_id
+    else:
+        st.session_state.pop(mk, None)
+
+
+def _resolved_map_select(map_choices: dict[int, str]) -> int | None:
+    """Current map id from versioned selectbox key (int only)."""
+    raw = st.session_state.get(_map_select_widget_key())
+    if raw is None:
+        raw = st.session_state.get("obs_map_select")
+    return _coerce_map_select(raw, map_choices)
+
+
+def _coerce_map_select(
+    raw: object,
+    map_choices: dict[int, str],
+) -> int | None:
+    """Normalize obs_map_select (int id, label str, or legacy formatted text)."""
+    if raw is None:
+        return None
+    if isinstance(raw, int):
+        return raw if raw in map_choices else None
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s in map_choices.values():
+            for mid, label in map_choices.items():
+                if label == s:
+                    return mid
+        try:
+            mid = int(s)
+            return mid if mid in map_choices else None
+        except ValueError:
+            pass
+        m = re.search(r"\b(\d{4})\b", s)
+        if m:
+            mid = int(m.group(1))
+            return mid if mid in map_choices else None
+    return None
+
+
 def _maybe_red_bucket(state) -> QualityBucketObs | None:
     """Build a q=6 bucket only when something meaningful was entered.
 
@@ -731,9 +792,12 @@ def _build_session(state, maps: Mapping[int, BidMap]) -> SessionObs:
                         quality=6, total_cells=red_residual,
                     )
 
+    mid = state.get("map_id")
+    if mid is None:
+        raise ValueError("map_id is required to build a session")
     tic = state.get("total_item_count") or 0
     return SessionObs(
-        map_id=state["map_id"],
+        map_id=int(mid),
         hero=state["hero"],
         warehouse_total_cells=warehouse or None,
         total_item_count=tic if tic > 0 else None,
@@ -749,6 +813,68 @@ st.set_page_config(
     layout="wide",
 )
 
+_SIDEBAR_COMPACT_CSS = """
+<style>
+[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+  padding-top: 0.75rem;
+}
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div {
+  gap: 0.3rem;
+}
+[data-testid="stSidebar"] hr {
+  margin: 0.35rem 0;
+}
+[data-testid="stSidebar"] h1 {
+  font-size: 1.05rem;
+  margin: 0 0 0.15rem;
+  padding: 0;
+}
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
+  font-size: 0.88rem;
+  margin-bottom: 0.1rem;
+}
+[data-testid="stSidebar"] .stCaption {
+  margin-top: -0.15rem;
+  margin-bottom: 0.1rem;
+  line-height: 1.35;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] section {
+  padding-top: 0;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] small {
+  display: none;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
+  min-height: 7.25rem;
+  padding: 0.35rem 0.65rem 1rem;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] section {
+  padding-top: 0.35rem !important;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] [data-testid="stFileUploaderFiles"] {
+  margin-top: 0.9rem !important;
+  padding-top: 0.15rem !important;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] {
+  margin-top: 0.75rem !important;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] [data-testid="stFileUploaderFileName"] {
+  font-size: 0.82rem;
+}
+[data-testid="stSidebar"] div[data-testid="stAlert"] p {
+  margin: 0.1rem 0 !important;
+  line-height: 1.38 !important;
+}
+[data-testid="stSidebar"] div[data-testid="stAlert"] {
+  padding: 0.5rem 0.65rem !important;
+  margin-bottom: 0.2rem !important;
+}
+[data-testid="stSidebar"] div[data-testid="stAlert"]:last-of-type {
+  margin-bottom: 0 !important;
+}
+</style>
+"""
+
 st.title("\u7ade\u62cd\u4e4b\u738b\u63a8\u65ad\u5b9e\u9a8c\u53f0 \u00b7 BidKing Inference UI")
 st.caption(
     "\u8f93\u5165\u82f1\u96c4 / \u5730\u56fe / \u89c2\u6d4b\u5230\u7684 cells \u4e0e\u4f30\u4ef7\uff0c"
@@ -757,24 +883,237 @@ st.caption(
     "\u8be6\u7ec6\u65b9\u6cd5\u8bba\u89c1 PROGRESS.md\u3002"
 )
 
-# Sidebar - hero, map (2-step), warehouse, MC settings ------------------------
+# Sidebar - hero, map (2-step), capture, warehouse, MC settings ---------------
+start_ocr_warmup_background()
+
 maps, drops, items = _load_tables()
+_map_names: dict[int, str] = {m.map_id: m.name for m in maps.values()}
+
+if "obs" not in st.session_state:
+    st.session_state.obs = {}
+state = st.session_state.obs
+
+if "_optional_int_migrated" not in st.session_state:
+    for _k in ("obs_warehouse_cells", "obs_total_item_count"):
+        if st.session_state.get(_k) == 0:
+            st.session_state[_k] = None
+    st.session_state["_optional_int_migrated"] = True
+
+
+def _session_int(key: str) -> int:
+    raw = st.session_state.get(key)
+    if raw is None:
+        return 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _warehouse_capacity() -> int:
+    return _session_int("obs_warehouse_cells")
+
+def _queue_capture_from_bytes(data: bytes, *, map_names: dict[int, str]) -> str | None:
+    """OCR image → parse; store pending result. Returns error message or None."""
+    from bidking_lab.capture.ocr import image_bytes_to_text
+    from bidking_lab.capture.parser import parse_panel_text
+
+    ocr_text, ocr_err = image_bytes_to_text(data)
+    if ocr_err:
+        return ocr_err
+    if not ocr_text:
+        return "OCR 未识别到文字，请检查截图区域。"
+    st.session_state["_pending_capture"] = parse_panel_text(
+        ocr_text, map_names=map_names,
+    )
+    return None
+
+
+def _snapshot_sidebar_ui() -> dict:
+    """Remember sidebar values before OCR rerun (widgets may not have flushed yet)."""
+    _mk = _map_select_widget_key()
+    return {
+        "obs_warehouse_cells": st.session_state.get("obs_warehouse_cells"),
+        "obs_total_item_count": st.session_state.get("obs_total_item_count"),
+        "obs_map_category": st.session_state.get("obs_map_category"),
+        "_map_widget_key": _mk,
+        "_map_widget_val": st.session_state.get(_mk),
+    }
+
+
+def _pick_preserved_int(
+    key: str,
+    *,
+    widget_val: int | None,
+    snap: dict,
+) -> int | None:
+    """Pick first positive int from session_state, widget return, or pre-OCR snapshot."""
+    for raw in (st.session_state.get(key), widget_val, snap.get(key)):
+        if raw is None:
+            continue
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            return v
+    return None
+
+
+def _apply_pending_capture(
+    obs_state: dict,
+    *,
+    warehouse_cells: int | None = None,
+    total_item_count: int | None = None,
+    map_names: dict[int, str],
+) -> None:
+    """Apply queued OCR parse before map/warehouse widgets render."""
+    if "_pending_capture" not in st.session_state:
+        return
+    from bidking_lab.capture.apply import (
+        apply_capture_result,
+        clear_readings_for_map_change,
+    )
+
+    snap = st.session_state.pop("_pre_ocr_ui_snapshot", {})
+    _map_before_ocr = obs_state.get("map_id")
+    _cap_result = st.session_state.pop("_pending_capture")
+    clear_readings_for_map_change(obs_state, st.session_state)
+    st.session_state["_capture_apply_log"] = apply_capture_result(
+        _cap_result, obs_state, st.session_state, map_names=map_names,
+    )
+    _applied_keys = {s.key for s in _cap_result.suggestions}
+    _keep_wh = _pick_preserved_int(
+        "obs_warehouse_cells", widget_val=warehouse_cells, snap=snap,
+    )
+    _keep_tic = _pick_preserved_int(
+        "obs_total_item_count", widget_val=total_item_count, snap=snap,
+    )
+    if _cap_result.map_id is None:
+        if snap.get("obs_map_category") is not None:
+            st.session_state["obs_map_category"] = snap["obs_map_category"]
+        _mk = snap.get("_map_widget_key") or _map_select_widget_key()
+        _mv = snap.get("_map_widget_val")
+        if _mv is not None:
+            st.session_state[_mk] = _mv
+            _mid = _mv if isinstance(_mv, int) else None
+            if _mid is not None:
+                obs_state["map_id"] = _mid
+    if "warehouse_cells" not in _applied_keys and _keep_wh is not None:
+        st.session_state["obs_warehouse_cells"] = _keep_wh
+        obs_state["warehouse_cells"] = _keep_wh
+    if "total_item_count" not in _applied_keys and _keep_tic is not None:
+        st.session_state["obs_total_item_count"] = _keep_tic
+        obs_state["total_item_count"] = _keep_tic
+    st.session_state["_capture_just_applied"] = True
+    _ocr_map_miss = (
+        _cap_result.map_id is None
+        and bool(_cap_result.suggestions)
+        and obs_state.get("map_id") is None
+    )
+    if _ocr_map_miss:
+        st.session_state["_capture_map_miss"] = True
+    else:
+        st.session_state.pop("_capture_map_miss", None)
+    if st.session_state.get("auto_infer_after_capture", True):
+        st.session_state["_request_bg_hint"] = True
+    st.session_state.pop("_hint_bundle", None)
+    st.session_state.pop("_bg_infer_box", None)
+
+
+def _clear_capture_upload() -> None:
+    """Force user to re-upload after manual map change."""
+    old_rev = int(st.session_state.get("capture_upload_rev", 0))
+    for key in list(st.session_state.keys()):
+        if isinstance(key, str) and key.startswith("capture_file_uploader_"):
+            st.session_state.pop(key, None)
+    st.session_state["capture_upload_rev"] = old_rev + 1
+    st.session_state.pop("_pending_capture", None)
+
+
+def _cancel_background_hint() -> None:
+    box = st.session_state.get("_bg_infer_box")
+    if box and box.get("cancel") is not None:
+        box["cancel"].set()
+    st.session_state.pop("_bg_infer_box", None)
+    st.session_state.pop("_hint_bundle", None)
+    st.session_state.pop("_request_bg_hint", None)
+
+
+def _on_map_context_changed(
+    new_mid: int | None,
+    prev_mid: int | None,
+    *,
+    category_changed: bool = False,
+) -> None:
+    if not category_changed:
+        if prev_mid is None:
+            return
+        if new_mid is not None and new_mid == prev_mid:
+            return
+    from bidking_lab.capture.apply import reset_obs_for_manual_map_change
+
+    reset_obs_for_manual_map_change(state, st.session_state, new_map_id=new_mid)
+    _bump_map_select_widget()
+    _sync_map_select_widget_value(new_mid)
+    _clear_capture_upload()
+    _cancel_background_hint()
+    st.session_state.pop("_capture_apply_log", None)
+    if "seen_shapes" in st.session_state:
+        st.session_state["seen_shapes"] = {
+            s: 0 for s in st.session_state["seen_shapes"]
+        }
+    st.session_state["_map_change_toast"] = True
+
+
+def _on_obs_map_category_changed() -> None:
+    cat = st.session_state.get("obs_map_category")
+    prev_cat = st.session_state.get("_tracked_map_category")
+    prev_mid = st.session_state.get("_tracked_map_id")
+    if prev_cat is not None and cat != prev_cat:
+        _on_map_context_changed(None, prev_mid, category_changed=True)
+        st.session_state["_tracked_map_id"] = None
+    st.session_state["_tracked_map_category"] = cat
+
+
+def _on_obs_map_select_changed() -> None:
+    cat = st.session_state.get("obs_map_category", "mansion")
+    choices = _maps_for_category(maps, cat)
+    new_mid = _coerce_map_select(
+        st.session_state.get(_map_select_widget_key()), choices,
+    )
+    prev_mid = st.session_state.get("_tracked_map_id")
+    if prev_mid is not None and new_mid != prev_mid:
+        _on_map_context_changed(new_mid, prev_mid)
+    elif prev_mid is None and new_mid is not None:
+        pass
+    st.session_state["_tracked_map_id"] = new_mid
+    if new_mid is not None:
+        st.session_state.pop("_capture_map_miss", None)
+
 
 with st.sidebar:
-    st.header("\u4f1a\u8bdd\u53c2\u6570")
+    st.markdown(_SIDEBAR_COMPACT_CSS, unsafe_allow_html=True)
+    _apply_pending_capture(state, map_names=_map_names)
+
+    st.markdown("##### \u4f1a\u8bdd")
+
     hero = st.radio(
         "\u82f1\u96c4",
         options=["ethan", "aisha"],
         format_func=lambda h: HERO_LABELS[h],
         horizontal=True,
+        key="obs_hero",
     )
-    st.markdown("**\u5730\u56fe\u7c7b\u578b**")
+
     category = st.radio(
         "\u5730\u56fe\u7c7b\u578b",
         options=list(MAP_CATEGORIES.keys()),
         format_func=lambda c: CATEGORY_LABELS[c],
         horizontal=True,
         label_visibility="collapsed",
+        key="obs_map_category",
+        on_change=_on_obs_map_category_changed,
     )
     map_choices = _maps_for_category(maps, category)
     if not map_choices:
@@ -782,69 +1121,221 @@ with st.sidebar:
             "\u672a\u80fd\u5728 BidMap.txt \u4e2d\u627e\u5230\u8be5\u7c7b\u578b\u5730\u56fe\u3002"
         )
         st.stop()
+    _map_key = _map_select_widget_key()
+    if "obs_map_select" in st.session_state and _map_key not in st.session_state:
+        st.session_state[_map_key] = st.session_state.pop("obs_map_select")
+    _stale_raw = st.session_state.get(_map_key)
+    _stale_coerced = _coerce_map_select(_stale_raw, map_choices)
+    if _stale_raw is not None and _stale_coerced is None:
+        _bump_map_select_widget()
+        _map_key = _map_select_widget_key()
+        st.session_state.pop(_map_key, None)
+        st.session_state.pop("obs_map_select", None)
+        state.pop("map_id", None)
+        st.warning(
+            "\u5f53\u524d\u5730\u56fe\u4e0e\u300c\u522b\u5885/\u6c89\u8239\u300d\u7c7b\u522b\u4e0d\u5339\u914d\uff0c"
+            "\u5df2\u6e05\u7a7a\u8bf7\u91cd\u65b0\u9009\u62e9\u3002"
+        )
+    elif _stale_coerced is not None and _stale_raw != _stale_coerced:
+        st.session_state[_map_key] = _stale_coerced
+    if "_tracked_map_id" not in st.session_state:
+        st.session_state["_tracked_map_id"] = _resolved_map_select(map_choices)
+    if "_tracked_map_category" not in st.session_state:
+        st.session_state["_tracked_map_category"] = category
     map_id = st.selectbox(
-        "\u5177\u4f53\u5730\u56fe\uff08\u6309\u96be\u5ea6\u00d7\u53d8\u79cd\u6392\u5e8f\uff09",
+        "\u5177\u4f53\u5730\u56fe",
         options=list(map_choices.keys()),
         format_func=lambda mid: map_choices[mid],
         index=None,
         placeholder="\u8bf7\u9009\u62e9\u5177\u4f53\u5730\u56fe...",
+        key=_map_key,
+        on_change=_on_obs_map_select_changed,
+        help="\u6309\u96be\u5ea6\u00d7\u53d8\u79cd\u6392\u5e8f\u3002\u624b\u52a8\u6362\u56fe\u6216\u70b9 \u00d7 \u6e05\u7a7a\u4f1a\u91cd\u7f6e\u8bfb\u6570\u4e0e\u622a\u56fe\u3002",
     )
+    _resolved_mid = _coerce_map_select(map_id, map_choices)
+    _tracked_mid = st.session_state.get("_tracked_map_id")
+    _post_sync_reset = (
+        _tracked_mid is not None
+        and _resolved_mid != _tracked_mid
+        and not st.session_state.get("_map_change_toast")
+    )
+    if _post_sync_reset:
+        _on_map_context_changed(_resolved_mid, _tracked_mid)
+        _tracked_mid = _resolved_mid
     if map_id is None:
-        st.info("\U0001F446 \u5148\u9009\u4e2a\u5177\u4f53\u5730\u56fe\u624d\u80fd\u8fdb\u884c\u63a8\u65ad\u3002")
-        st.stop()
+        st.caption("\U0001f446 \u8bf7\u9009\u62e9\u5177\u4f53\u5730\u56fe")
+    else:
+        _map = maps.get(map_id)
+        if _map is not None:
+            with st.expander("\U0001F4CD \u5730\u56fe\u9759\u6001\u4fe1\u606f",
+                              expanded=False):
+                tier_label = {
+                    "ui_value_low": "\u4f4e\u4ef7\u4f4d",
+                    "ui_value_higher": "\u4e2d\u9ad8\u4ef7\u4f4d",
+                    "ui_value_high": "\u9ad8\u4ef7\u4f4d",
+                }.get(_map.value_tier_ui, _map.value_tier_ui)
+                cat_names = {
+                    0: "\u65e0", 102: "\u533b\u7597", 103: "\u65f6\u5c1a",
+                    104: "\u6b66\u5668", 105: "\u73e0\u5b9d",
+                }
+                hints_display = " / ".join(
+                    f"R{i+1}={cat_names.get(c, str(c))}"
+                    for i, c in enumerate(_map.round_category_hints)
+                    if c != 0
+                ) or "\u65e0\u63d0\u793a"
+                ladder = ",".join(f"{x:,}" for x in _map.bid_price_ladder)
+                st.markdown(
+                    f"**\u4ef6\u6570\u8303\u56f4**\uff1a{_map.items_per_session_min}\u2013"
+                    f"{_map.items_per_session_max} \u4ef6\n\n"
+                    f"**\u8d77\u6b65\u9884\u7b97**\uff1a{_map.starting_budget_silver:,} silver\n\n"
+                    f"**\u5165\u573a\u8d39**\uff1a{_map.entry_fee_silver:,} silver\n\n"
+                    f"**\u4ef7\u503c\u6863\u6b21**\uff1a{tier_label}\n\n"
+                    f"**\u8f6e\u53f7\u5206\u7c7b\u63d0\u793a**\uff1a{hints_display}\n\n"
+                    f"**\u51fa\u4ef7\u68af\u5ea6**\uff1a{ladder}"
+                )
+                st.caption(
+                    "\u8fd9\u4e9b\u6570\u503c\u662f\u5730\u56fe\u9884\u8bbe\u7684\u9759\u6001\u5148\u9a8c\uff0c"
+                    "\u4e0d\u4f1a\u968f\u573a\u6b21\u53d8\u3002\u73a9\u5bb6\u5b9e\u9645\u770b\u5230\u7684 "
+                    "\u300cX \u4ef6\u5747\u4ef7 / Y \u603b\u4ef7\u300d \u662f\u5f00\u5c40\u540e\u52a8\u6001\u751f\u6210\uff0c"
+                    "\u8bf7\u5230\u300c\u8bfb\u6570\u8f93\u5165\u300d tab \u624b\u52a8\u586b\u3002"
+                )
 
-    # ---- Map static priors (BidMap.txt; read-only display) ----
-    _map = maps.get(map_id)
-    if _map is not None:
-        with st.expander("\U0001F4CD \u5730\u56fe\u9759\u6001\u4fe1\u606f\uff08\u4ec5\u53c2\u8003\uff09",
-                          expanded=False):
-            tier_label = {
-                "ui_value_low": "\u4f4e\u4ef7\u4f4d",
-                "ui_value_higher": "\u4e2d\u9ad8\u4ef7\u4f4d",
-                "ui_value_high": "\u9ad8\u4ef7\u4f4d",
-            }.get(_map.value_tier_ui, _map.value_tier_ui)
-            cat_names = {
-                0: "\u65e0", 102: "\u533b\u7597", 103: "\u65f6\u5c1a",
-                104: "\u6b66\u5668", 105: "\u73e0\u5b9d",
-            }
-            hints_display = " / ".join(
-                f"R{i+1}={cat_names.get(c, str(c))}"
-                for i, c in enumerate(_map.round_category_hints)
-                if c != 0
-            ) or "\u65e0\u63d0\u793a"
-            ladder = ",".join(f"{x:,}" for x in _map.bid_price_ladder)
-            st.markdown(
-                f"**\u4ef6\u6570\u8303\u56f4**\uff1a{_map.items_per_session_min}\u2013"
-                f"{_map.items_per_session_max} \u4ef6\n\n"
-                f"**\u8d77\u6b65\u9884\u7b97**\uff1a{_map.starting_budget_silver:,} silver\n\n"
-                f"**\u5165\u573a\u8d39**\uff1a{_map.entry_fee_silver:,} silver\n\n"
-                f"**\u4ef7\u503c\u6863\u6b21**\uff1a{tier_label}\n\n"
-                f"**\u8f6e\u53f7\u5206\u7c7b\u63d0\u793a**\uff1a{hints_display}\n\n"
-                f"**\u51fa\u4ef7\u68af\u5ea6**\uff1a{ladder}"
-            )
-            st.caption(
-                "\u8fd9\u4e9b\u6570\u503c\u662f\u5730\u56fe\u9884\u8bbe\u7684\u9759\u6001\u5148\u9a8c\uff0c"
-                "\u4e0d\u4f1a\u968f\u573a\u6b21\u53d8\u3002\u73a9\u5bb6\u5b9e\u9645\u770b\u5230\u7684 "
-                "\u300cX \u4ef6\u5747\u4ef7 / Y \u603b\u4ef7\u300d \u662f\u5f00\u5c40\u540e\u52a8\u6001\u751f\u6210\uff0c"
-                "\u8bf7\u5230\u300c\u8bfb\u6570\u8f93\u5165\u300d tab \u624b\u52a8\u586b\u3002"
-            )
-
+    st.markdown("##### \u4ed3\u5e93\u4e0e\u4ef6\u6570")
     warehouse_cells = st.number_input(
-        "\u4ed3\u5e93\u603b\u683c\u6570\uff08\u603b\u4ed3\u50a8\u7a7a\u95f4\u9053\u5177 \u6216 \u73a9\u5bb6\u4f30\u8ba1\uff09",
-        min_value=0, max_value=200, value=0, step=1,
-        help="\u63a8\u65ad\u7684\u4e3b\u8981\u8fc7\u6ee4\u6761\u4ef6\u3002\u6709\u300c\u603b\u4ed3\u50a8\u7a7a\u95f4\u300d\u9053\u5177\u53ef\u62ff\u5230\u7cbe\u786e\u503c\uff1b"
-             "\u6ca1\u6709\u9053\u5177\u65f6\u586b\u73a9\u5bb6\u76ee\u6d4b\u503c\u3002\u7559\u7a7a (=0) \u65f6\u5f15\u64ce\u4f1a\u56de\u9000\u5230\u5730\u56fe\u9ed8\u8ba4\u4e0a\u9650 159 \u683c\u3002",
+        "\u4ed3\u5e93\u603b\u683c\u6570 *",
+        min_value=0, max_value=200, step=1,
+        value=None,
+        placeholder="\u5fc5\u586b",
+        key="obs_warehouse_cells",
+        help="\u5fc5\u586b\u3002\u9762\u677f\u300c\u6240\u6709\u85cf\u54c1\u603b\u5360\u7528\u2026\u683c\u300d\u53ef OCR \u81ea\u52a8\u586b\u5165\u3002",
     )
+    _wh = _session_int("obs_warehouse_cells")
+    if _wh <= 0:
+        st.caption(
+            "<span style='color:#c62828;font-weight:600'>"
+            "\u5fc5\u586b\uff0c\u7559\u7a7a\u65f6\u65e0\u6cd5\u8fd0\u884c\u51fa\u4ef7 hint"
+            "</span>",
+            unsafe_allow_html=True,
+        )
     total_item_count = st.number_input(
-        "\u603b\u85cf\u54c1\u4ef6\u6570\uff08\u5730\u56fe hint \u6216 \u91d1\u54c1\u9053\u5177\uff09",
-        min_value=0, max_value=60, value=0, step=1,
-        help="\u90e8\u5206\u522b\u5885\u5730\u56fe\u4f1a\u5728 R1 \u63d0\u793a\u300cX \u4ef6\u85cf\u54c1\u300d\uff1b"
-             "\u827e\u838e\u7684\u91d1\u54c1\u9053\u5177\u4e5f\u53ef\u80fd\u63d0\u4f9b\u3002\u586b\u5165\u540e"
-             "\u8054\u5408\u63a8\u65ad\u4f1a\u591a\u52a0\u4e00\u5c42\u300csum(\u4ef6\u6570) \u2264 \u603b\u4ef6\u6570\u300d\u8fc7\u6ee4\u3002"
-             "\u7559\u7a7a (=0) \u8868\u793a\u672a\u63d0\u4f9b\u3002",
+        "\u603b\u85cf\u54c1\u4ef6\u6570",
+        min_value=0, max_value=60, step=1,
+        value=None,
+        placeholder="\u53ef\u9009",
+        key="obs_total_item_count",
+        help="\u5730\u56fe R1 hint \u6216\u91d1\u54c1\u9053\u5177\u53ef\u63d0\u4f9b\uff1b\u7559\u7a7a\u8868\u793a\u672a\u63d0\u4f9b\u3002",
     )
-    st.divider()
-    with st.expander("\u9ad8\u7ea7\uff1a MC \u91c7\u6837\u53c2\u6570"):
+
+    st.markdown("##### \U0001F4F7 \u9762\u677f\u5bfc\u5165")
+    st.caption(
+        "\u622a\u56fe/\u526a\u8d34\u677f \u2192 \u88c1\u5207\u5de6\u4fa7\u9762\u677f OCR\uff0c\u4e00\u6b65\u5199\u5165\u3002"
+    )
+    st.info(
+        "**\u81ea\u52a8\u5199\u5165\u8bfb\u6570 tab**\uff1a\u5730\u56fe\uff08\u9700\u300c\u5730\u56fe\u540d:\u7ade\u62cd\u4fe1\u606f\u300d\uff09\u3001"
+        "\u4ed3\u5e93\u603b\u5360\u683c\u3001\u626b\u63cf\u683c\u6570\u3001"
+        "\u7d2b/\u91d1 \u5747\u683c\u00b7\u5747\u4ef7\u00b7\u603b\u4ef7\u3001\u603b\u4ef6\u6570\u3002",
+        icon="\u2139\ufe0f",
+    )
+    st.info(
+        "**\u987b\u624b\u9009/\u624b\u586b**\uff08\u9762\u677f\u4e0a\u6ca1\u5199\u6216 OCR \u8bef\u8bfb\uff09\uff1a"
+        "**\u82f1\u96c4**\uff08\u4fa7\u680f\u9876\u90e8\uff09\uff1b"
+        "**\u8bfb\u6570 tab** \u91cc\u7d2b/\u91d1/\u7ea2\u7684 **\u5de8\u7269\u4ef6\u6570**"
+        "\uff081\u4e2a\u00b72-3\u4e2a\u00b74+\uff09\u3001**\u2605 \u5177\u4f53\u7269**"
+        "\uff08\u5982\u6e38\u8239/\u94f6\u94f6\u7b49\uff0c\u5f71\u54cd\u679a\u4e3e\u5360\u683c\uff09\uff1b"
+        "**\u7ea2\u54c1** \u603b\u5360\u683c\u3001\u4ef7\u503c\u533a\u95f4\u3001\u7ea2\u5de8\u7269\u3002",
+        icon="\u2139\ufe0f",
+    )
+    _ocr_st, _ocr_err = ocr_warmup_status()
+    if _ocr_st == "loading":
+        st.caption("\u23f3 OCR \u5f15\u64ce\u540e\u53f0\u52a0\u8f7d\u4e2d\u2026\u9996\u6b21\u70b9\u51fb\u53ef\u80fd\u4ecd\u9700\u51e0\u79d2\u3002")
+    elif _ocr_st == "error" and _ocr_err:
+        st.caption(f"\u26a0\ufe0f OCR \u5f15\u64ce\u672a\u5c31\u7eea\uff1a{_ocr_err[:80]}")
+    _upload_rev = int(st.session_state.get("capture_upload_rev", 0))
+    _cap_upload = st.file_uploader(
+        "\u4e0a\u4f20\u622a\u56fe",
+        type=["png", "jpg", "jpeg", "webp"],
+        label_visibility="collapsed",
+        key=f"capture_file_uploader_{_upload_rev}",
+    )
+    _btn_clip, _btn_ocr = st.columns(2)
+    with _btn_clip:
+        _clip_clicked = st.button(
+            "\u526a\u8d34\u677f OCR",
+            key="capture_run_clipboard",
+            use_container_width=True,
+            help="Win+Shift+S \u6216\u6e38\u620f\u622a\u56fe\u540e\u5148\u590d\u5236\u5230\u526a\u8d34\u677f",
+        )
+    with _btn_ocr:
+        if _cap_upload is not None:
+            _ocr_clicked = st.button(
+                "\u622a\u56fe OCR",
+                key="capture_run_ocr",
+                type="primary",
+                use_container_width=True,
+            )
+        else:
+            st.button(
+                "\u622a\u56fe OCR",
+                key="capture_run_ocr_idle",
+                disabled=True,
+                use_container_width=True,
+            )
+            _ocr_clicked = False
+    if _clip_clicked:
+        from bidking_lab.capture.clipboard import clipboard_image_bytes
+
+        st.session_state["_pre_ocr_ui_snapshot"] = _snapshot_sidebar_ui()
+        _clip_data, _clip_err = clipboard_image_bytes()
+        if _clip_err:
+            st.warning(_clip_err)
+        else:
+            _qerr = _queue_capture_from_bytes(_clip_data, map_names=_map_names)
+            if _qerr:
+                st.warning(_qerr)
+            else:
+                st.rerun()
+    if _ocr_clicked:
+        st.session_state["_pre_ocr_ui_snapshot"] = _snapshot_sidebar_ui()
+        _qerr = _queue_capture_from_bytes(_cap_upload.getvalue(), map_names=_map_names)
+        if _qerr:
+            st.warning(_qerr)
+        else:
+            st.rerun()
+    st.checkbox(
+        "OCR \u540e\u540e\u53f0\u63a8\u65ad",
+        value=True,
+        key="auto_infer_after_capture",
+        help="\u586b\u5165\u540e\u540e\u53f0\u8dd1 MC\uff1b\u6539\u8bfb\u6570/\u5730\u56fe\u4f1a\u53d6\u6d88\u3002\u7ed3\u679c\u5728\u300c\u51fa\u4ef7\u63a8\u8350\u300dtab\u3002",
+    )
+    _prev_auto_infer = st.session_state.get("_prev_auto_infer_after_capture")
+    if _prev_auto_infer and not st.session_state.get("auto_infer_after_capture", True):
+        _cancel_background_hint()
+    st.session_state["_prev_auto_infer_after_capture"] = bool(
+        st.session_state.get("auto_infer_after_capture", True),
+    )
+    if _resolved_mid is not None:
+        st.session_state.pop("_capture_map_miss", None)
+    elif st.session_state.get("_capture_map_miss"):
+        st.caption(
+            "\u26a0\ufe0f \u672c\u6b21 OCR \u672a\u8bc6\u522b\u5730\u56fe\u540d\uff0c"
+            "\u8bf7\u5728\u4e0a\u65b9\u624b\u52a8\u9009\u56fe\u3002"
+        )
+    _wh_after_cap = _session_int("obs_warehouse_cells")
+    if st.session_state.get("_capture_apply_log") and _wh_after_cap <= 0:
+        st.caption(
+            "\u26a0\ufe0f \u672a\u8bc6\u522b\u4ed3\u5e93\u603b\u683c\u6570\uff08\u9876\u90e8\u300c\u6240\u6709\u85cf\u54c1\u603b\u5360\u7528\u2026\u683c\u300d\uff09\uff0c"
+            "\u8bf7\u624b\u52a8\u586b\u5199\u4ef6\u5fc5\u586b\u9879\u3002"
+        )
+
+    st.session_state["_tracked_map_id"] = _resolved_mid
+    st.session_state["_tracked_map_category"] = category
+    if st.session_state.pop("_map_change_toast", False):
+        st.toast(
+            "\u5730\u56fe\u5df2\u5207\u6362\uff0c\u8bfb\u6570\u4e0e\u622a\u56fe\u5df2\u91cd\u7f6e\uff1b\u8bf7\u91cd\u65b0\u4e0a\u4f20\u3002",
+            icon="\U0001F501",
+        )
+
+    with st.expander("\u9ad8\u7ea7\uff1a MC \u91c7\u6837\u53c2\u6570", expanded=False):
         n_trials = st.slider(
             "MC \u6837\u672c\u6570\uff08samples\uff09", 500, 5000, 1500, step=250,
             help="\u9009\u6863\u8bf4\u660e\uff1a"
@@ -873,8 +1364,10 @@ with st.sidebar:
         seed_lock = st.checkbox(
             "\u56fa\u5b9a\u968f\u673a\u79cd\u5b50\uff08\u52fe\u9009 = \u540c\u8f93\u5165\u591a\u6b21\u70b9\u51fb\u7ed3\u679c\u4e00\u81f4\uff09",
             value=False,
+            key="obs_seed_lock",
             help="\u9ed8\u8ba4\u4e0d\u9501\u5b9a\u3002\u4e0d\u52fe\u9009\u65f6\u6bcf\u6b21\u70b9\u51fb\u90fd\u91cd\u65b0\u968f\u673a\u91c7\u6837\uff0cp25/p50/p75 \u4f1a\u968f\u673a\u8df3\u52a8 \u00b1\u51e0\u4e2a %\u3002"
-                 "\u9501\u5b9a\u540e\u540c\u8f93\u5165 \u2192 \u540c\u7ed3\u679c\uff0c\u9002\u5408\u4f60\u68c0\u6d4b\u300c\u586b\u8fd9\u4e2a\u5b57\u6bb5\u80fd\u4e0d\u80fd\u52a8\u300d\u65f6\u52fe\u9009\u3002",
+                 "\u9501\u5b9a\u540e\u540c\u8f93\u5165 \u2192 \u540c\u7ed3\u679c\uff0c\u9002\u5408\u4f60\u68c0\u6d4b\u300c\u586b\u8fd9\u4e2a\u5b57\u6bb5\u80fd\u4e0d\u80fd\u52a8\u300d\u65f6\u52fe\u9009\u3002"
+                 "\u672a\u9501\u5b9a\u65f6\u540e\u53f0\u63a8\u65ad\u4e0d\u56e0\u6bcf\u6b21\u5237\u65b0\u800c\u53d6\u6d88\u3002",
         )
         seed = st.number_input(
             "\u968f\u673a\u79cd\u5b50 seed", value=20260515, step=1,
@@ -885,43 +1378,129 @@ with st.sidebar:
             import time as _time
             seed = int(_time.time_ns() & 0xFFFFFFFF)
 
-# Initialize state container -------------------------------------------------
-if "obs" not in st.session_state:
-    st.session_state.obs = {}
-state = st.session_state.obs
-
-# 切换地图时，自动清空之前的读数 — 减少跨地图带过来的旧值导致误判。
-# 仓库格数 / 总件数 不算"读数"，跟着 UI 当前输入即可，所以不重置它们。
-_prev_map = state.get("map_id")
-if _prev_map is not None and _prev_map != int(map_id):
-    READING_KEYS = (
-        "wg_cells", "white_cells", "white_count", "green_cells", "green_count",
-        "blue_cells", "blue_count",
-        "purple_cells", "purple_count", "purple_value", "purple_avg_value",
-        "purple_huge_band",
-        "gold_cells", "gold_count", "gold_value", "gold_avg_value",
-        "gold_huge_band",
-        "red_value_lo", "red_value_hi", "red_huge_band",
-    )
-    for k in READING_KEYS:
-        state.pop(k, None)
-    # text_input widgets need their st.session_state key reset (different keyspace).
-    for wk in ("purple_avg_raw_widget", "gold_avg_raw_widget"):
-        if wk in st.session_state:
-            st.session_state[wk] = ""
-    if "seen_shapes" in st.session_state:
-        st.session_state["seen_shapes"] = {
-            s: 0 for s in st.session_state["seen_shapes"]
-        }
-    st.toast(
-        f"\u5730\u56fe\u5df2\u5207\u6362\uff0c\u8bfb\u6570\u8f93\u5165\u5df2\u91cd\u7f6e",
-        icon="\U0001F501",
-    )
+    if st.session_state.get("_capture_apply_log"):
+        with st.expander("\u4e0a\u6b21\u5bfc\u5165", expanded=False):
+            for ln in st.session_state["_capture_apply_log"]:
+                st.caption(ln)
 
 state["hero"] = hero
-state["map_id"] = int(map_id)
-state["warehouse_cells"] = int(warehouse_cells)
-state["total_item_count"] = int(total_item_count) if total_item_count > 0 else 0
+# 以 widget session_state 为准（避免 number_input 返回值与 key 不同步）
+_wh_sync = _session_int("obs_warehouse_cells")
+state["warehouse_cells"] = _wh_sync
+_resolved_mid = _coerce_map_select(map_id, map_choices)
+if _resolved_mid is None:
+    _resolved_mid = _resolved_map_select(map_choices)
+if _resolved_mid is not None:
+    state["map_id"] = _resolved_mid
+else:
+    state.pop("map_id", None)
+state["total_item_count"] = int(total_item_count) if total_item_count and total_item_count > 0 else 0
+warehouse_ready = _wh_sync > 0
+map_ready = state.get("map_id") is not None
+inference_ready = warehouse_ready and map_ready
+if st.session_state.pop("_capture_just_applied", False):
+    st.toast("\u5df2\u8bc6\u522b\u5e76\u586b\u5165\u8bfb\u6570\uff08\u8bf7\u6838\u5bf9\u4ed3\u5e93\u683c\u6570\uff09", icon="\u2705")
+
+
+def _mc_sidebar_params() -> dict:
+    return {
+        "n_trials": n_trials,
+        "seed": seed,
+        "warehouse_tol": warehouse_tol,
+        "purple_tol": purple_tol,
+    }
+
+
+def _mc_fingerprint_params(*, seed_locked: bool) -> dict:
+    """MC params for background cancel fingerprint (stable seed unless locked)."""
+    return _mc_sidebar_params() if seed_locked else {
+        **_mc_sidebar_params(),
+        "seed": 0,
+    }
+
+
+def _sync_obs_from_widgets(obs_state: dict) -> None:
+    """Merge sidebar widget session_state into obs before MC / fingerprint."""
+    from bidking_lab.capture.apply import (
+        AVG_RAW_WIDGET_KEYS,
+        READING_WIDGET_KEYS,
+        reading_widget_key,
+    )
+
+    wh = int(st.session_state.get("obs_warehouse_cells") or 0)
+    if wh > 0:
+        obs_state["warehouse_cells"] = wh
+    tic = int(st.session_state.get("obs_total_item_count") or 0)
+    obs_state["total_item_count"] = tic if tic > 0 else 0
+    cat = st.session_state.get("obs_map_category", "mansion")
+    mid = _resolved_map_select(_maps_for_category(maps, cat))
+    if mid is not None:
+        obs_state["map_id"] = mid
+    for obs_key, base_wkey in READING_WIDGET_KEYS.items():
+        wkey = reading_widget_key(base_wkey, st.session_state)
+        if wkey in st.session_state and st.session_state[wkey] is not None:
+            obs_state[obs_key] = st.session_state[wkey]
+    for obs_key, base_wkey in AVG_RAW_WIDGET_KEYS.items():
+        wkey = reading_widget_key(base_wkey, st.session_state)
+        if wkey in st.session_state and st.session_state[wkey]:
+            obs_state[obs_key] = str(st.session_state[wkey])
+
+
+def _compute_hint_bundle_ui(obs_state: dict):
+    from hint_pipeline import compute_hint_bundle
+
+    return compute_hint_bundle(
+        obs_state,
+        _mc_sidebar_params(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        build_session=_build_session,
+        sample_truths=_sample_truths_cached,
+        enable_snipe_pass=_ENABLE_SNIPE_PASS_HINTS,
+    )
+
+
+def _tick_background_hint() -> str:
+    from bg_inference import (
+        inference_fingerprint,
+        start_background_hint,
+        sync_background_hint,
+    )
+    from hint_pipeline import compute_hint_bundle
+
+    _sync_obs_from_widgets(state)
+    seed_locked = bool(st.session_state.get("obs_seed_lock", False))
+    mc = _mc_sidebar_params()
+    fp_mc = _mc_fingerprint_params(seed_locked=seed_locked)
+    status = sync_background_hint(
+        st.session_state, state=state, mc=mc, mc_fingerprint=fp_mc,
+    )
+    if st.session_state.pop("_request_bg_hint", False) and inference_ready:
+        def _compute(st_snap: dict, mc_p: dict):
+            return compute_hint_bundle(
+                st_snap,
+                mc_p,
+                maps=maps,
+                drops=drops,
+                items=items,
+                build_session=_build_session,
+                sample_truths=_sample_truths_cached,
+                enable_snipe_pass=_ENABLE_SNIPE_PASS_HINTS,
+            )
+
+        st.session_state["_bg_infer_box"] = start_background_hint(
+            state=dict(state),
+            mc=mc,
+            mc_fingerprint=fp_mc,
+            compute_fn=_compute,
+        )
+        st.session_state["_hint_bundle"] = None
+        return "running"
+    return status
+
+
+_bg_infer_status = "idle"
 
 # Tabs -----------------------------------------------------------------------
 if show_experimental:
@@ -942,6 +1521,12 @@ else:
 
 # ===== Tab 1: \u8bfb\u6570\u8f93\u5165 =====
 with tab_obs:
+    from bidking_lab.capture.apply import reading_widget_key as _rwk
+
+    st.caption(
+        "\u9762\u677f\u5bfc\u5165\u4e0d\u542b\u5de8\u7269\u4fe1\u606f\uff1a\u8bf7\u624b\u52a8\u586b\u7d2b/\u91d1/\u7ea2 "
+        "\u300c\u5de8\u7269\u6570\u91cf\u300d\u3001\u2605 \u5177\u4f53\u7269\u3001\u7ea2\u54c1\u4ef7\u503c\u533a\u95f4\u3002"
+    )
     st.subheader("\u4f4e\u54c1\u533a\uff08q\u22643\uff09")
     if hero == "ethan":
         st.markdown(
@@ -955,12 +1540,14 @@ with tab_obs:
             min_value=0, max_value=80, value=None, step=1,
             placeholder="\u53ef\u9009",
             help="\u666e\u54c1\u626b\u63cf\u6216\u76ee\u6d4b\u7ed9\u51fa\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+            key=_rwk("obs_reading_wg_cells", st.session_state),
         )
         state["blue_cells"] = c2.number_input(
             "\u84dd\u54c1\u603b\u683c\u6570\uff08\u826f\u54c1\u626b\u63cf\uff09",
             min_value=0, max_value=80, value=None, step=1,
             placeholder="\u53ef\u9009",
             help="\u826f\u54c1\u626b\u63cf\u7ed9\u51fa\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+            key=_rwk("obs_reading_blue_cells", st.session_state),
         )
         state["white_cells"] = state["wg_cells"]
         state["green_cells"] = 0
@@ -983,28 +1570,34 @@ with tab_obs:
                     "\u767d\u54c1\u683c\u6570\uff08R1 \u8f6e\u5ed3\uff09",
                     min_value=0, max_value=60, value=0, step=1,
                     placeholder="0",
+                    key=_rwk("obs_reading_white_cells", st.session_state),
                 )
                 state["white_count"] = st.number_input(
                     "\u767d\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
                     min_value=0, max_value=30, value=0, step=1,
+                    key=_rwk("obs_reading_white_count", st.session_state),
                 )
             with c2:
                 state["green_cells"] = st.number_input(
                     "\u7eff\u54c1\u683c\u6570\uff08R2 \u8f6e\u5ed3\uff09",
                     min_value=0, max_value=60, value=0, step=1,
+                    key=_rwk("obs_reading_green_cells", st.session_state),
                 )
                 state["green_count"] = st.number_input(
                     "\u7eff\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
                     min_value=0, max_value=30, value=0, step=1,
+                    key=_rwk("obs_reading_green_count", st.session_state),
                 )
             with c3:
                 state["blue_cells"] = st.number_input(
                     "\u84dd\u54c1\u683c\u6570\uff08R3 \u8f6e\u5ed3\uff09",
                     min_value=0, max_value=80, value=0, step=1,
+                    key=_rwk("obs_reading_blue_cells", st.session_state),
                 )
                 state["blue_count"] = st.number_input(
                     "\u84dd\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
                     min_value=0, max_value=20, value=0, step=1,
+                    key=_rwk("obs_reading_blue_count", st.session_state),
                 )
         else:
             c1, c2 = st.columns(2)
@@ -1012,10 +1605,12 @@ with tab_obs:
                 state["white_cells"] = st.number_input(
                     "\u767d+\u7eff \u5408\u5e76\u603b\u683c\u6570",
                     min_value=0, max_value=80, value=0, step=1,
+                    key=_rwk("obs_reading_white_cells", st.session_state),
                 )
                 state["white_count"] = st.number_input(
                     "\u767d+\u7eff \u5408\u5e76\u4ef6\u6570\uff08\u53ef\u9009\uff09",
                     min_value=0, max_value=40, value=0, step=1,
+                    key=_rwk("obs_reading_white_count", st.session_state),
                 )
             state["green_cells"] = 0
             state["green_count"] = 0
@@ -1023,10 +1618,12 @@ with tab_obs:
                 state["blue_cells"] = st.number_input(
                     "\u84dd\u54c1\u683c\u6570\uff08R3 \u8f6e\u5ed3\uff09",
                     min_value=0, max_value=80, value=0, step=1,
+                    key=_rwk("obs_reading_blue_cells", st.session_state),
                 )
                 state["blue_count"] = st.number_input(
                     "\u84dd\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
                     min_value=0, max_value=20, value=0, step=1,
+                    key=_rwk("obs_reading_blue_count", st.session_state),
                 )
 
     st.divider()
@@ -1076,6 +1673,7 @@ with tab_obs:
         placeholder="\u53ef\u9009",
         help="\u4f18\u54c1\u626b\u63cf \u6216 \u7d2b\u54c1\u8f6e\u5ed3\u6570\u51fa\u3002"
              "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
+        key=_rwk("obs_reading_purple_cells", st.session_state),
     )
     state["purple_count"] = pr1c2.number_input(
         "\u7d2b\u54c1\u4ef6\u6570",
@@ -1083,6 +1681,7 @@ with tab_obs:
         placeholder="\u53ef\u9009",
         help="\u827e\u838e R4 \u8f6e\u5ed3\u53ef\u6570\u51fa\uff1b\u4f0a\u68ee\u5728\u7d2b\u54c1\u626b\u63cf\u540e\u4e5f\u80fd\u6570\u3002"
              "\u586b\u4e86\u540e\u8054\u5408\u63a8\u65ad\u7684\u7d2b\u54c1 bucket \u4f1a\u88ab\u552f\u4e00\u9501\u5b9a\u3002",
+        key=_rwk("obs_reading_purple_count", st.session_state),
     )
     state["purple_avg_raw"] = pr2c1.text_input(
         "\u7d2b\u54c1\u5747\u683c\uff08\u4f18\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
@@ -1090,13 +1689,14 @@ with tab_obs:
         help="\u300c2.9\u300d\u548c\u300c2.90\u300d\u4e0d\u540c\uff01\u300c2.9\u300d=\u6e38\u620f\u51fa\u7684\u662f\u6070\u597d 2.9 \u7684\u7cbe\u786e\u503c\uff1b"
              "\u300c2.90\u300d=\u771f\u5b9e\u503c\u88ab\u622a\u65ad\u5728\u7b2c\u4e8c\u4f4d\u5c0f\u6570\uff08\u4f8b\u5982 2.9090909... = 32 \u683c 11 \u4ef6\uff09\u3002"
              "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-        key="purple_avg_raw_widget",
+        key=_rwk("purple_avg_raw_widget", st.session_state),
     )
     state["purple_value"] = pr2c2.number_input(
         "\u7d2b\u54c1\u603b\u4f30\u503c\uff08\u4f18\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
         min_value=0, max_value=2_000_000, value=None, step=1000,
         placeholder="\u53ef\u9009",
         help="\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
+        key=_rwk("obs_reading_purple_value", st.session_state),
     )
     state["purple_avg_value"] = pr2c3.number_input(
         "\u7d2b\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
@@ -1106,11 +1706,13 @@ with tab_obs:
              "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
              "\u4e0e\u603b\u4f30\u4ef7\u8054\u5408\u65f6\u5bb9\u5dee \u00b110%\uff08\u540c\u65f6\u586b \u22654 \u9879\u65f6\u81ea\u52a8\u653e\u5bbd\u81f3 \u00b118%\uff09\u3002"
              "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+        key=_rwk("obs_reading_purple_avg_value", st.session_state),
     )
     _purple_opts, _purple_lbls = _huge_options_for_quality(4)
     state["purple_huge_band"] = pr1c3.selectbox(
         "\u7d2b\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u7d2b\u8272\uff09",
         options=_purple_opts, index=0,
+        key="obs_purple_huge_band",
         format_func=lambda b: _purple_lbls[b],
         help="\u53ea\u5728\u901a\u8fc7\u7d2b\u54c1\u8f6e\u5ed3 \u6216 \u4f18\u54c1\u626b\u63cf "
              "\u786e\u8ba4\u5de8\u7269\u4e3a\u7d2b\u8272\u540e\u586b\u3002\u672a\u786e\u8ba4\u5219\u4fdd\u6301\u300c\u65e0\u300d\u3002"
@@ -1145,7 +1747,7 @@ with tab_obs:
     if _has_any:
         _render_candidate_preview(
             _purple_preview_bucket,
-            warehouse_capacity=int(warehouse_cells),
+            warehouse_capacity=_warehouse_capacity(),
             quality_label="\u7d2b\u54c1",
         )
 
@@ -1165,18 +1767,20 @@ with tab_obs:
         placeholder="\u53ef\u9009",
         help="\u5730\u56fe\u63d0\u4f9b\u300c\u91d1\u8272\u85cf\u54c1\u603b\u683c\u6570\u300d\u63d0\u793a\u65f6\u586b\u5165\u3002"
              "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002",
+        key=_rwk("obs_reading_gold_cells", st.session_state),
     )
     state["gold_count"] = gr1c2.number_input(
         "\u91d1\u54c1\u4ef6\u6570",
         min_value=0, max_value=15, value=None, step=1,
         placeholder="\u53ef\u9009",
         help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\u91d1\u8272\u85cf\u54c1\u4ef6\u6570 hint\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+        key=_rwk("obs_reading_gold_count", st.session_state),
     )
     state["gold_avg_raw"] = gr2c1.text_input(
         "\u91d1\u54c1\u5747\u683c\uff08\u6781\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
         value="", placeholder="\u4f8b 3.5 \u6216 4.25",
         help="\u540c\u7d2b\u54c1\u5747\u683c\u89c4\u5219\uff1a\u300c3.5\u300d\u662f\u7cbe\u786e\u503c\u3001\u300c3.50\u300d\u662f\u88ab\u622a\u65ad\u8fc7\u7684\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-        key="gold_avg_raw_widget",
+        key=_rwk("gold_avg_raw_widget", st.session_state),
     )
     state["gold_value"] = gr2c2.number_input(
         "\u91d1\u54c1\u603b\u4f30\u503c\uff08\u6781\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
@@ -1187,6 +1791,7 @@ with tab_obs:
              "\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002"
              "\u4ef7\u503c\u8fdb MC \u8fc7\u6ee4\uff1b\u82e5\u4ef6\u6570=1 \u4e14\u80fd\u547d\u4e2d Item.txt \u5355\u4ef6\uff0c"
              "\u4ec5\u5f71\u54cd\u4e0b\u65b9\u5019\u9009\u6392\u5e8f\uff08\u89c1\u7d2b\u54c1\u4e0a\u65b9\u8bf4\u660e\uff09\u3002",
+        key=_rwk("obs_reading_gold_value", st.session_state),
     )
     state["gold_avg_value"] = gr2c3.number_input(
         "\u91d1\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
@@ -1196,11 +1801,13 @@ with tab_obs:
              "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
              "\u8054\u5408\u603b\u4f30\u4ef7\u65f6 \u00b110%\uff08\u22654 \u9879\u540c\u586b \u2192 \u00b118%\uff09\u3002"
              "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+        key=_rwk("obs_reading_gold_avg_value", st.session_state),
     )
     _gold_opts, _gold_lbls = _huge_options_for_quality(5)
     state["gold_huge_band"] = gr1c3.selectbox(
         "\u91d1\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u91d1\u8272\uff09",
         options=_gold_opts, index=0,
+        key="obs_gold_huge_band",
         format_func=lambda b: _gold_lbls[b],
         disabled=(hero == "aisha"),
         help="\u827e\u838e\u770b\u4e0d\u5230\u91d1\u54c1\u5de8\u7269\u8f6e\u5ed3\uff0c\u8be5\u9009\u9879\u88ab\u9501\u5b9a\u3002"
@@ -1214,7 +1821,7 @@ with tab_obs:
     if _gold_preview_bucket is not None:
         _render_candidate_preview(
             _gold_preview_bucket,
-            warehouse_capacity=int(warehouse_cells),
+            warehouse_capacity=_warehouse_capacity(),
             quality_label="\u91d1\u54c1",
         )
 
@@ -1231,6 +1838,7 @@ with tab_obs:
     state["small_warehouse_confirmed"] = c_chk1.checkbox(
         "\U0001F4E6 \u786e\u8ba4\u5c0f\u4ed3\uff08\u7ea2\u54c1\u6781\u5c11\uff09",
         value=False,
+        key="obs_small_warehouse_confirmed",
         help="\u52fe\u9009\u540e\uff0c\u5f15\u64ce\u4f1a\u9650\u5236\u7ea2\u54c1\u683c\u6570\u4e0a\u9650\u4e3a\u4ed3\u5e93\u7684 5%\uff08"
              "\u4f8b\u5982 80\u683c\u4ed3\u5e93 \u2192 \u7ea2\u54c1 \u2264 4\u683c\uff09\u3002"
              "\u9002\u7528\u4e8e\u4f60\u80fd\u786e\u8ba4\u8fd9\u662f\u5c0f\u4ed3\u3001\u7ea2\u54c1\u5f88\u5c11\u6216\u6ca1\u6709\u7684\u573a\u666f\u3002",
@@ -1238,6 +1846,7 @@ with tab_obs:
     state["red_confirmed_none"] = c_chk2.checkbox(
         "\u2705 \u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\uff08\u7ed3\u7b97\u786e\u8ba4\uff09",
         value=False,
+        key="obs_red_confirmed_none",
         help="\u52fe\u9009\u540e\uff0c\u5f15\u64ce\u5f3a\u5236 q=6 cells=0\uff08MC \u786c\u7ea6\u675f\uff0c\u4f1a\u663e\u8457\u538b\u4f4e\u4ed3\u5e93\u4ef7\u503c\u533a\u95f4\uff0c\u5c5e\u6b63\u786e\u884c\u4e3a\uff09\u3002"
              "\u9002\u7528\u4e8e\u7ed3\u7b97\u540e\u786e\u8ba4\u65e0\u7ea2\u54c1\u3001\u6216\u767d+\u7eff+\u84dd+\u7d2b+\u91d1 = \u4ed3\u5e93\u603b\u683c\u6570\u3002",
     )
@@ -1252,6 +1861,7 @@ with tab_obs:
              "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7ea2\u54c1\u3002"
              "\u586b\u5165\u540e MC \u4f1a\u989d\u5916\u8fc7\u6ee4 |truth.q6\u683c - \u4f60\u586b\u7684\u503c| \u2264 \u5bb9\u5dee\u3002"
              "\u82e5\u4f60\u52fe\u9009\u4e86\u4e0a\u9762\u300c\u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\uff0c\u8fd9\u91cc\u4f1a\u88ab\u9501\u5b9a\u4e3a 0\u3002",
+        key=_rwk("obs_reading_red_cells_total", st.session_state),
     )
 
     c1, c2 = st.columns(2)
@@ -1261,6 +1871,7 @@ with tab_obs:
         placeholder="\u53ef\u9009",
         disabled=red_locked,
         help="\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u4e0a\u4e0b\u9650\u90fd\u586b\u624d\u4f1a\u542f\u7528\u4ef7\u503c\u8fc7\u6ee4\u3002",
+        key=_rwk("obs_reading_red_value_lo", st.session_state),
     )
     state["red_value_hi"] = c2.number_input(
         "\u7ea2\u54c1\u4ef7\u503c\u4e0a\u9650\uff08silver\uff09",
@@ -1268,11 +1879,13 @@ with tab_obs:
         placeholder="\u53ef\u9009",
         disabled=red_locked,
         help="\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u4e0a\u4e0b\u9650\u90fd\u586b\u624d\u4f1a\u542f\u7528\u4ef7\u503c\u8fc7\u6ee4\u3002",
+        key=_rwk("obs_reading_red_value_hi", st.session_state),
     )
     _red_opts, _red_lbls = _huge_options_for_quality(6)
     state["red_huge_band"] = st.selectbox(
         "\u7ea2\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u7ea2\u8272\uff09",
         options=_red_opts, index=0,
+        key="obs_red_huge_band",
         format_func=lambda b: _red_lbls[b],
         disabled=(hero == "aisha") or red_locked,
         help="\u827e\u838e\u770b\u4e0d\u5230\u7ea2\u54c1\u5de8\u7269\u8f6e\u5ed3\u3002\u4f0a\u68ee "
@@ -1297,7 +1910,7 @@ with tab_obs:
     for col, (shape, cands) in zip(shape_cols, BIG_ITEMS_BY_SHAPE.items()):
         seen[shape] = col.number_input(
             shape, min_value=0, max_value=6, value=seen.get(shape, 0),
-            step=1, key=f"shape_{shape}",
+            step=1, key=_rwk(f"shape_{shape}", st.session_state),
             help=f"{len(cands)} \u4ef6\u5019\u9009\uff0c\u5c55\u5f00\u5b57\u5178\u770b\u8be6\u60c5",
         )
 
@@ -1313,6 +1926,10 @@ with tab_obs:
             st.markdown("\n".join(lines))
 
 
+_bg_infer_status = _tick_background_hint()
+st.session_state["_bg_infer_status"] = _bg_infer_status
+
+
 # ===== Tab (实验性): 联合推断 — 默认隐藏 =====
 if tab_joint is not None:
     from experimental_tabs import render_joint_inference_tab
@@ -1326,6 +1943,19 @@ if tab_joint is not None:
 
 # ===== Tab 3: 出价 hint =====
 with tab_hint:
+    _hint_cat = st.session_state.get("obs_map_category", "mansion")
+    _hint_map_choices = _maps_for_category(maps, _hint_cat)
+    _wh_live = int(st.session_state.get("obs_warehouse_cells") or 0)
+    _mid_live = _resolved_map_select(_hint_map_choices)
+    if _mid_live is None:
+        _mid_live = _coerce_map_select(state.get("map_id"), _hint_map_choices)
+    warehouse_ready = _wh_live > 0
+    map_ready = _mid_live is not None
+    inference_ready = warehouse_ready and map_ready
+    if _mid_live is not None:
+        state["map_id"] = _mid_live
+    state["warehouse_cells"] = _wh_live
+
     st.subheader("\u51fa\u4ef7\u5efa\u8bae")
     st.caption(
         "\u57fa\u4e8e\u6761\u4ef6 Monte-Carlo\uff1a\u91c7\u6837 N \u6b21\u672c\u56fe\u4ed3\u5e93\uff0c"
@@ -1338,47 +1968,102 @@ with tab_hint:
         "**\u5747\u683c\u3001\u5747\u4ef7\u4e0d\u8fdb MC**\uff0c\u53ea\u6536\u7d27\u8bfb\u6570\u533a\u7684\u5019\u9009\u679a\u4e3e\u3002"
         "\u6837\u672c\u4e0d\u8db3 30 \u65f6\u4f1a\u81ea\u52a8\u653e\u5bbd\u5bb9\u5dee\u5e76\u6807 \u26a0\ufe0f \u4f4e\u7f6e\u4fe1\u3002"
         "\u300c\u7ea2 bucket \u300d\u52fe\u9009\u300c\u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\u540e\uff0cMC \u4f1a\u5f3a\u5236 q=6 cells=0\u3002"
+        "\u5de6\u4fa7\u680f\u300c\u603b\u85cf\u54c1\u4ef6\u6570\u300d>0 \u65f6\u4f1a\u8fdb MC\uff08\u7ea6\u675f sum(\u4ef6\u6570)\uff09\uff0c"
+        "\u7ed3\u679c\u91cc\u6fc0\u6d3b\u7ea6\u675f\u53ef\u80fd\u663e\u793a items\u2248N\u3002"
     )
-    if st.button("\u8fd0\u884c\u51fa\u4ef7 hint", key="run_hints", type="primary"):
-        session = _build_session(state, maps)
-        with st.spinner(
-            f"MC \u91c7\u6837\u4e2d\uff08{n_trials} \u6837\u672c\uff0c"
-            f"\u540c\u4e00\u7ec4\u6837\u672c\u7528\u4e8e\u4ed3\u5e93\u4ef7\u503c\u533a\u95f4\u4e0e\u5404 bucket \u540e\u9a8c\uff1b"
-            f"\u9996\u6b21\u7ea6\u6570\u79d2\uff0c\u76f8\u540c\u5730\u56fe+\u6837\u672c\u6570\u547d\u4e2d\u7f13\u5b58\u540e\u52a0\u901f\u2026"
-        ):
-            rng_truths = np.random.default_rng(seed)
-            truths = _sample_truths_cached(
-                state["map_id"], n_trials=n_trials, seed=seed,
+    _ready_wh = _wh_live
+    _ready_tic = int(st.session_state.get("obs_total_item_count") or 0)
+    _ready_mid = state.get("map_id")
+    _ready_map_label = (
+        _map_names.get(int(_ready_mid), str(_ready_mid)) if _ready_mid else "\u672a\u9009"
+    )
+    _tic_part = (
+        f"\u603b\u4ef6\u6570 **{_ready_tic}** \u2713"
+        if _ready_tic > 0
+        else "\u603b\u4ef6\u6570\uff08\u672a\u586b\uff0c\u4e0d\u8fdb MC\uff09"
+    )
+    st.caption(
+        f"\u5c31\u7eea\uff1a\u4ed3\u5e93 **{_ready_wh}** \u683c"
+        f"{' \u2713' if warehouse_ready else ' \u2717'}"
+        f"\u00a0\u00b7\u00a0\u5730\u56fe **{_ready_map_label}**"
+        f"{' \u2713' if map_ready else ' \u2717'}"
+        f"\u00a0\u00b7\u00a0{_tic_part}"
+    )
+    if not warehouse_ready:
+        st.error(
+            "\u8bf7\u5728\u5de6\u4fa7\u680f\u300c\u4ed3\u5e93\u603b\u683c\u6570\u300d\u586b\u5199\u5927\u4e8e 0 \u7684\u6570\u5b57"
+            "\uff08\u9762\u677f\u9876\u90e8\u300c\u6240\u6709\u85cf\u54c1\u603b\u5360\u7528\u2026N \u683c\u300d\uff0c"
+            "\u4e0d\u662f\u626b\u63cf\u5de5\u5177\u7684\u84dd/\u767d\u7eff\u683c\u6570\uff09\u3002"
+            "\u586b\u5199\u540e\u8bf7\u70b9\u4e00\u4e0b\u8f93\u5165\u6846\u5916\u533a\u57df\u4ee5\u786e\u4fdd\u751f\u6548\u3002"
+        )
+    elif not map_ready:
+        st.error(
+            "\u8bf7\u5728\u5de6\u4fa7\u680f\u9009\u62e9 **\u5177\u4f53\u5730\u56fe**"
+            "\uff08\u5148\u9009\u522b\u5885/\u6c89\u8239\uff0c\u518d\u70b9\u5177\u4f53\u5730\u56fe\u4e0b\u62c9\u6846\uff09\u3002"
+        )
+    if _bg_infer_status == "running":
+        st.info(
+            "\u23f3 \u540e\u53f0 MC \u63a8\u65ad\u8fdb\u884c\u4e2d\u2026\u53ef\u7ee7\u7eed\u586b\u8868\u3002"
+            "\u4fee\u6539\u8bfb\u6570\u6216\u5730\u56fe\u4f1a\u53d6\u6d88\u672c\u6b21\u63a8\u65ad\u3002"
+        )
+    _cached_bundle = st.session_state.get("_hint_bundle")
+    _bundle_stale = False
+    if _cached_bundle is not None:
+        _b_wh = _cached_bundle.get("warehouse_cells")
+        _b_mid = _cached_bundle.get("map_id")
+        _bundle_stale = (
+            not inference_ready
+            or _b_wh != state.get("warehouse_cells")
+            or _b_mid != state.get("map_id")
+        )
+    if _cached_bundle is not None and not _bundle_stale:
+        st.caption("\u4e0b\u65b9\u4e3a\u5df2\u7f13\u5b58\u7684\u63a8\u65ad\u7ed3\u679c\uff08\u540e\u53f0\u6216\u624b\u52a8\u8fd0\u884c\uff09\u3002")
+    elif _cached_bundle is not None and _bundle_stale:
+        st.warning(
+            "\u4e0b\u65b9\u66fe\u6709\u63a8\u65ad\u7ed3\u679c\uff0c\u4e0e\u5f53\u524d\u4fa7\u8fb9\u680f\u4e0d\u4e00\u81f4\uff08\u4ed3\u5e93/\u5730\u56fe\u672a\u5c31\u7eea\u6216\u5df2\u6539\u52a8\uff09\u3002"
+            "\u8bf7\u5728\u5c31\u7eea\u72b6\u6001\u4e3a \u2713 \u540e\u91cd\u65b0\u70b9\u300c\u8fd0\u884c\u51fa\u4ef7 hint\u300d\u3002"
+        )
+        _cached_bundle = None
+    if st.button(
+        "\u8fd0\u884c\u51fa\u4ef7 hint",
+        key="run_hints",
+        type="primary",
+        disabled=not inference_ready,
+    ):
+        if not inference_ready:
+            st.warning(
+                "\u5c1a\u672a\u6ee1\u8db3\u63a8\u65ad\u6761\u4ef6\uff08\u4ed3\u5e93 > 0 \u4e14\u5df2\u9009\u5730\u56fe\uff09\u3002"
+                "\u8bf7\u67e5\u770b\u4e0a\u65b9\u5c31\u7eea\u72b6\u6001\u3002"
             )
-            all_values = [t.total_value() for t in truths]
-
-            from bidking_lab.inference.posterior import (
-                adaptive_filter,
-                bucket_posterior_stats,
-                compute_analytical_estimate,
-            )
-            filter_result = adaptive_filter(
-                truths, session, min_samples=30,
-                warehouse_tol_levels=(warehouse_tol, warehouse_tol, max(warehouse_tol, 12)),
-            )
-            conditional_truths = filter_result.truths
-            conditional_values = [t.total_value() for t in conditional_truths]
-
-            analytical = compute_analytical_estimate(session)
-
-            snipe = None
-            pass_rec = None
-            if _ENABLE_SNIPE_PASS_HINTS:
-                snipe = compute_snipe_recommendation(
-                    session, maps=maps, drops=drops, items=items,
-                    n_trials=n_trials, warehouse_tolerance=warehouse_tol,
-                    purple_tolerance=purple_tol, truths=truths,
+        else:
+            _box = st.session_state.get("_bg_infer_box")
+            if _box and _box.get("cancel") is not None:
+                _box["cancel"].set()
+            st.session_state.pop("_bg_infer_box", None)
+            with st.spinner(
+                f"MC \u91c7\u6837\u4e2d\uff08{n_trials} \u6837\u672c\uff09\u2026"
+            ):
+                bundle = _compute_hint_bundle_ui(state)
+            if bundle is None:
+                st.error(
+                    "\u63a8\u65ad\u672a\u542f\u52a8\uff1a\u8bf7\u786e\u8ba4\u4fa7\u8fb9\u680f\u4ed3\u5e93\u683c\u6570\u4e0e\u5730\u56fe\u5747\u5df2\u586b\u3002"
                 )
-                pass_rec = compute_pass_recommendation(
-                    session, maps=maps, drops=drops, items=items,
-                    n_trials=n_trials, warehouse_tolerance=warehouse_tol,
-                    purple_tolerance=purple_tol, truths=truths,
-                )
+            else:
+                st.session_state["_hint_bundle"] = bundle
+                st.session_state["_bg_infer_box"] = None
+                _cached_bundle = bundle
+
+    if _cached_bundle is not None and not _bundle_stale:
+        from bidking_lab.inference.posterior import bucket_posterior_stats
+
+        session = _cached_bundle["session"]
+        filter_result = _cached_bundle["filter_result"]
+        conditional_truths = _cached_bundle["conditional_truths"]
+        conditional_values = _cached_bundle["conditional_values"]
+        all_values = _cached_bundle["all_values"]
+        analytical = _cached_bundle["analytical"]
+        snipe = _cached_bundle["snipe"]
+        pass_rec = _cached_bundle["pass_rec"]
 
         # ---- Value range + distribution chart (top) ----
         st.markdown(
@@ -1523,7 +2208,7 @@ with tab_hint:
             cond_legend = (
                 f"All constraints (n={len(conditional_values)})"
                 if n_constraints > 1
-                else f"Warehouse {state['warehouse_cells']}\u00b1{filter_result.warehouse_tol} "
+                else f"Warehouse {state.get('warehouse_cells', 0)}\u00b1{filter_result.warehouse_tol} "
                      f"cells (n={len(conditional_values)})"
             )
             ax.hist(
@@ -1706,8 +2391,11 @@ with tab_hint:
                     )
                     with st.expander("\u8be6\u7ec6\u8bf4\u660e"):
                         st.write(pass_rec.rationale)
-    else:
-        st.info("\u8bbe\u7f6e\u597d\u8bfb\u6570\u540e\u70b9\u51fb\u4e0a\u9762\u6309\u94ae\u3002")
+    elif _cached_bundle is None and _bg_infer_status != "running":
+        st.info(
+            "\u8bbe\u7f6e\u597d\u8bfb\u6570\u540e\u70b9\u51fb\u300c\u8fd0\u884c\u51fa\u4ef7 hint\u300d\uff0c"
+            "\u6216\u5f00\u542f\u300cOCR \u540e\u540e\u53f0\u81ea\u52a8\u63a8\u65ad\u300d\u3002"
+        )
 
 
 # ===== Tab 4: 道具 ROI =====
@@ -1739,7 +2427,7 @@ with tab_roi:
     default_kit = ETHAN_KIT if roi_hero == "ethan" else AISHA_KIT
     st.subheader(
         f"\u9053\u5177\u6027\u4ef7\u6bd4 ROI \u2014 {roi_hero_label} \u6807\u914d "
-        f"\u00b7 \u5730\u56fe {state['map_id']}"
+        f"\u00b7 \u5730\u56fe {state.get('map_id') or '（未选）'}"
     )
     if roi_hero == "aisha":
         st.caption(
@@ -1841,12 +2529,14 @@ with tab_roi:
         )
 
     if st.button("\u8fd0\u884c ROI \u8ba1\u7b97", key="run_roi", type="primary",
-                 disabled=run_disabled):
+                 disabled=run_disabled or state.get("map_id") is None):
+        if state.get("map_id") is None:
+            st.error("\u8bf7\u5148\u9009\u62e9\u5730\u56fe\u3002")
         with st.spinner(
             f"\u8ba1\u7b97\u4e2d\uff08leave-one-out, {roi_trials} trials\uff09..."
         ):
             rois_raw = _cached_tool_roi(
-                state["map_id"], tools=tuple(selected_tools),
+                state.get("map_id"), tools=tuple(selected_tools),
                 hero=roi_hero, n_trials=roi_trials, seed=seed,
                 per_bucket_top=per_bucket_top,
                 include_aisha_outline=include_aisha_outline,
@@ -1930,6 +2620,32 @@ with tab_roi:
             "\u70b9\u51fb\u4e0a\u9762\u6309\u94ae\u8fd0\u884c\u3002"
             "\u9996\u6b21 60 trials \u7ea6 20-40 \u79d2\uff1b\u4e4b\u540e\u540c\u5730\u56fe\u91cd\u590d\u70b9\u51fb\u662f\u77ac\u53d1\u3002"
         )
+
+@st.fragment(run_every=2)
+def _poll_background_hint() -> None:
+    if st.session_state.get("_bg_infer_box") is None:
+        return
+    from bg_inference import sync_background_hint
+
+    _sync_obs_from_widgets(state)
+    seed_locked = bool(st.session_state.get("obs_seed_lock", False))
+    mc = _mc_sidebar_params()
+    fp_mc = _mc_fingerprint_params(seed_locked=seed_locked)
+    had_bundle = st.session_state.get("_hint_bundle") is not None
+    status = sync_background_hint(
+        st.session_state, state=state, mc=mc, mc_fingerprint=fp_mc,
+    )
+    if status == "done" and not had_bundle:
+        st.toast(
+            "\u540e\u53f0\u63a8\u65ad\u5b8c\u6210\uff0c\u5df2\u66f4\u65b0\u300c\u51fa\u4ef7\u63a8\u8350\u300d",
+            icon="\u2705",
+        )
+        st.rerun()
+    elif status == "done":
+        st.rerun()
+
+
+_poll_background_hint()
 
 st.divider()
 st.caption(
