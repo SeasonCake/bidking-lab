@@ -1326,7 +1326,11 @@ with tab_hint:
     )
     if st.button("\u8fd0\u884c\u51fa\u4ef7 hint", key="run_hints", type="primary"):
         session = _build_session(state, maps)
-        with st.spinner(f"MC \u91c7\u6837\u4e2d\uff08{n_trials} \u6837\u672c\uff09..."):
+        with st.spinner(
+            f"MC \u91c7\u6837\u4e2d\uff08{n_trials} \u6837\u672c\uff0c"
+            f"\u540c\u4e00\u7ec4\u6837\u672c\u7528\u4e8e\u4ed3\u5e93\u4ef7\u503c\u533a\u95f4\u4e0e\u5404 bucket \u540e\u9a8c\uff1b"
+            f"\u9996\u6b21\u7ea6\u6570\u79d2\uff0c\u76f8\u540c\u5730\u56fe+\u6837\u672c\u6570\u547d\u4e2d\u7f13\u5b58\u540e\u52a0\u901f\u2026"
+        ):
             rng_truths = np.random.default_rng(seed)
             truths = _sample_truths_cached(
                 state["map_id"], n_trials=n_trials, seed=seed,
