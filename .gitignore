@@ -43,3 +43,7 @@ external_references/**
 # Temp commit-message scratchpad
 .git-commit-msg.tmp
 data/samples/_roi_tune.png
+# Local full-res captures (committed: game_warmup_1920x1080.jpg, panel_round4_*.png)
+data/samples/Desktop_Screenshot*.png
+data/samples/微信图片*.jpg
+data/samples/desktop_screenshot_roi_preview.png

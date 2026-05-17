@@ -1233,7 +1233,13 @@ C:\Python313\python.exe -c "from rapidocr_onnxruntime import RapidOCR; print('OK
 
 ## 36. Capture OCR 日志与 ROI 调参
 
-**OCR 裁切（绿色框）**：`INFO_PANEL_CROP_FRAC = (0.30, 0.07, 0.59, 0.72)`（1920×1080 样例 `data/samples/panel_round4_1920x1080.png`）。预览：
+**OCR 裁切（绿色框）**：`INFO_PANEL_CROP_FRAC = (0.30, 0.07, 0.59, 0.72)`。预览：
+
+**暖机样图**：`data/samples/game_warmup_1920x1080.jpg`（由游戏内 4K 截图压缩；源文件 `Desktop_Screenshot_*.png` 在 gitignore）。重生成：
+
+```powershell
+C:\Python313\python.exe scripts/compress_warmup_sample.py
+```
 
 ```powershell
 C:\Python313\python.exe scripts/preview_panel_roi.py --ocr
