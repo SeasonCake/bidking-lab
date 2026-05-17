@@ -18,6 +18,7 @@ and exposes four panels:
 
 from __future__ import annotations
 
+import logging
 import re
 import sys
 import time
@@ -915,17 +916,23 @@ def _warehouse_capacity() -> int:
 
 def _queue_capture_from_bytes(data: bytes, *, map_names: dict[int, str]) -> str | None:
     """OCR image → parse; store pending result. Returns error message or None."""
+    from bidking_lab.capture.log_util import LOG, configure_capture_logging
     from bidking_lab.capture.ocr import image_bytes_to_text
     from bidking_lab.capture.parser import parse_panel_text
 
+    configure_capture_logging()
     ocr_text, ocr_err = image_bytes_to_text(data)
     if ocr_err:
         return ocr_err
     if not ocr_text:
         return "OCR 未识别到文字，请检查截图区域。"
-    st.session_state["_pending_capture"] = parse_panel_text(
-        ocr_text, map_names=map_names,
-    )
+    parsed = parse_panel_text(ocr_text, map_names=map_names)
+    st.session_state["_pending_capture"] = parsed
+    if LOG.isEnabledFor(logging.INFO):
+        st.session_state["_capture_pipeline_log"] = [
+            f"OCR {len(ocr_text.splitlines())} 行",
+            f"解析字段 {list(parsed.suggestion_map().keys())}",
+        ]
     return None
 
 
@@ -979,9 +986,14 @@ def _apply_pending_capture(
     _map_before_ocr = obs_state.get("map_id")
     _cap_result = st.session_state.pop("_pending_capture")
     clear_readings_for_map_change(obs_state, st.session_state)
-    st.session_state["_capture_apply_log"] = apply_capture_result(
+    _apply_log = apply_capture_result(
         _cap_result, obs_state, st.session_state, map_names=map_names,
     )
+    _pipe = st.session_state.pop("_capture_pipeline_log", None)
+    if _pipe:
+        st.session_state["_capture_apply_log"] = list(_pipe) + _apply_log
+    else:
+        st.session_state["_capture_apply_log"] = _apply_log
     _applied_keys = {s.key for s in _cap_result.suggestions}
     _keep_wh = _pick_preserved_int(
         "obs_warehouse_cells", widget_val=warehouse_cells, snap=snap,

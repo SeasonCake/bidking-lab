@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import io
+import logging
 import threading
 from typing import Any, Literal
 
+from bidking_lab.capture.log_util import LOG, configure_capture_logging
 from bidking_lab.capture.ocr_normalize import normalize_ocr_text
 from bidking_lab.capture.screen import INFO_PANEL_CROP_FRAC
+
+configure_capture_logging()
 
 _ENGINE: Any = None
 _warm_lock = threading.Lock()
@@ -28,15 +32,19 @@ def _get_engine() -> Any:
 
 def warm_ocr_engine() -> None:
     """Load RapidOCR via the same crop/resize path as real screenshots."""
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise RuntimeError("需要 Pillow：pip install pillow") from exc
+    from bidking_lab.capture.screen import OCR_WARMUP_SAMPLE
 
-    buf = io.BytesIO()
-    # Game-sized frame so first user screenshot does not pay cold PIL + ONNX layout cost.
-    Image.new("RGB", (1920, 1080), color=(32, 34, 38)).save(buf, format="PNG")
-    _text, err = image_bytes_to_text(buf.getvalue())
+    if OCR_WARMUP_SAMPLE.is_file():
+        payload = OCR_WARMUP_SAMPLE.read_bytes()
+    else:
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise RuntimeError("需要 Pillow：pip install pillow") from exc
+        buf = io.BytesIO()
+        Image.new("RGB", (1920, 1080), color=(32, 34, 38)).save(buf, format="PNG")
+        payload = buf.getvalue()
+    _text, err = image_bytes_to_text(payload)
     if err and "未安装" in err:
         raise RuntimeError(err)
 
@@ -142,4 +150,13 @@ def image_bytes_to_text(
         return "", "OCR 未识别到文字，请检查截图区域或改用手动粘贴。"
 
     lines = [str(row[1]).strip() for row in result if len(row) > 1 and row[1]]
-    return normalize_ocr_text("\n".join(lines)), None
+    text = normalize_ocr_text("\n".join(lines))
+    LOG.info(
+        "OCR ok: %d lines, crop_panel=%s, crop_frac=%s",
+        len(lines),
+        crop_panel,
+        _PANEL_CROP if crop_panel else None,
+    )
+    if LOG.isEnabledFor(logging.DEBUG):
+        LOG.debug("OCR text:\n%s", text[:2000])
+    return text, None

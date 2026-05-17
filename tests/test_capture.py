@@ -135,6 +135,24 @@ def test_clear_readings_for_map_change():
     assert obs["map_id"] == 2405
 
 
+def test_round4_garbled_ocr_lines():
+    """R4 sample OCR typos (before/after normalize) — panel_round4 screenshot."""
+    from bidking_lab.capture.ocr_normalize import normalize_ocr_text
+
+    raw = (
+        "第4轮\n"
+        "所有蓝色品质置品总占位数为35格\n"
+        "所有自色和绿色品质震品总占位数为12格\n"
+        "所有紫色品质费品总占位数为34格\n"
+        "所有金色品质品总占位数为28格\n"
+    )
+    norm = normalize_ocr_text(raw)
+    assert "藏品" in norm
+    assert "白色" in norm
+    m = parse_panel_text(raw, map_names=MAP_NAMES).suggestion_map()
+    assert m == {"blue_cells": 35, "wg_cells": 12, "purple_cells": 34, "gold_cells": 28}
+
+
 def test_full_scan_panel_ocr_typos():
     """R4 full-screen OCR: 占位数/紧色/扫描误字 + 所有{色}…总占 lines."""
     text = (

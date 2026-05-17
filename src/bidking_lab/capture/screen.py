@@ -12,11 +12,15 @@ to *that* monitor's resolution (not the virtual desktop bbox).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Sequence
 
-# Calibrated on 1920×1080 full-screen captures (see ocr.crop_info_panel).
-# Excludes bottom bid bar / 「当前预估最低价」.
-INFO_PANEL_CROP_FRAC: tuple[float, float, float, float] = (0.17, 0.07, 0.52, 0.72)
+# Calibrated on 1920×1080 (data/samples/panel_round4_1920x1080.png, notebook 06).
+# Center text panel only; excludes left player list & right warehouse grid.
+INFO_PANEL_CROP_FRAC: tuple[float, float, float, float] = (0.30, 0.07, 0.59, 0.72)
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+OCR_WARMUP_SAMPLE = _REPO_ROOT / "data" / "samples" / "panel_round4_1920x1080.png"
 
 PanelCropFrac = tuple[float, float, float, float]
 

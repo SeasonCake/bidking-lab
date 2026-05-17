@@ -5,7 +5,10 @@ from __future__ import annotations
 import re
 from typing import Mapping
 
+from bidking_lab.capture.log_util import LOG, configure_capture_logging
 from bidking_lab.capture.ocr_normalize import normalize_ocr_text
+
+configure_capture_logging()
 from bidking_lab.capture.patterns import (
     AVG_CELLS_RULES,
     IGNORE_PATTERNS,
@@ -162,4 +165,12 @@ def parse_panel_text(
             ParsedLine(line, "tool_scan" if "扫描" in line else "map_metric", sug.label),
         )
 
+    keys = [s.key for s in result.suggestions]
+    LOG.info(
+        "parse: map_id=%s suggestions=%s ignored=%d unknown=%d",
+        result.map_id,
+        keys,
+        len(result.ignored),
+        len(result.unknown),
+    )
     return result

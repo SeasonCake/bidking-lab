@@ -511,7 +511,7 @@ C:\Python313\python.exe -m streamlit run app\streamlit_app.py
 | P0 | **C-36 Streamlit 按钮** | 「抓取当前屏幕」→ `capture_monitor_png_bytes` → 现有 OCR 队列 |
 | P0 | **多显示器实测** | 主屏全屏/窗口化、副屏扩展；确认 ROI 是否要 per-DPI 表 |
 | P1 | **patterns 扩充** | 总件数、艾莎技能相关句式、更多 OCR 错别字 |
-| P1 | **ROI 微调工具** | 脚本或 notebook 叠框预览 fraction，避免盲改常量 |
+| ✅ | **ROI 微调工具** | `scripts/preview_panel_roi.py` + `notebooks/06_panel_roi_preview.ipynb`；样例 `data/samples/panel_round4_*.png` |
 | P2 | **剪贴板 vs 抓屏统一** | 一条 `queue_capture_from_bytes` 入口 |
 | P2 | Streamlit 视觉 polish | 用户暂缓 |
 | ⏸ | P0-A 秒/放仓 UI | 仍关闭 |

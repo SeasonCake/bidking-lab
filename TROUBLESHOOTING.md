@@ -40,6 +40,7 @@
 33. [各字段对 MC / 枚举的影响矩阵（设计预期）](#33-各字段对-mc--枚举的影响矩阵设计预期)
 34. [安装 capture OCR 时 pip 下载超时](#34-安装-capture-ocr-时-pip-下载超时)
 35. [换图后 toast 闪烁、地图下拉锁死（widget rev 未同步）](#35-换图后-toast-闪烁地图下拉锁死widget-rev-未同步)
+36. [Capture OCR 日志与 ROI 调参](#36-capture-ocr-日志与-roi-调参)
 
 ---
 
@@ -1227,6 +1228,27 @@ C:\Python313\python.exe -c "from rapidocr_onnxruntime import RapidOCR; print('OK
 3. toast 后不再 `st.rerun()`（减少无意义整页刷新）。
 
 **教训**：Streamlit 版本化 widget key 必须 **rev 与 value 同批更新**；`on_change` 与「渲染后校正」不要对同一事件各 reset 一次。
+
+---
+
+## 36. Capture OCR 日志与 ROI 调参
+
+**OCR 裁切（绿色框）**：`INFO_PANEL_CROP_FRAC = (0.30, 0.07, 0.59, 0.72)`（1920×1080 样例 `data/samples/panel_round4_1920x1080.png`）。预览：
+
+```powershell
+C:\Python313\python.exe scripts/preview_panel_roi.py --ocr
+```
+
+**错别字**：`ocr_normalize.py` 表驱动替换 → `patterns.py` 正则。R4 全屏常见：`置品/震品/费品→藏品`、`自色→白色`、`总点位→总占位`、`紧色→紫色`、`扫罐/扫装→扫描`。技能/轮廓说明行由 `IGNORE_PATTERNS` 丢弃，不进表单。
+
+**日志**（可选）：
+
+```powershell
+$env:BIDKING_CAPTURE_LOG="1"
+C:\Python313\python.exe -m streamlit run app/streamlit_app.py
+```
+
+控制台见 `bidking_lab.capture`；侧栏「上次导入」展开会多两行 pipeline 摘要（OCR 行数、解析到的 key）。
 
 ---
 
