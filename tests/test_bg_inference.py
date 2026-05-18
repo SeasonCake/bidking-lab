@@ -70,21 +70,39 @@ def test_sync_promotes_done_result():
     assert ss.get("_bg_infer_box") is None
 
 
-def test_sync_cancels_on_fingerprint_mismatch():
-    ss: dict = {}
+def test_sync_cancels_on_readings_rev_change():
+    ss: dict = {"obs_readings_rev": 1}
     state = _fake_state()
     mc = {"n_trials": 10, "seed": 1, "warehouse_tol": 8, "purple_tol": 4}
     cancel = threading.Event()
     ss["_bg_infer_box"] = {
         "status": "running",
-        "fp": "stale_fp",
+        "fp": "fp",
         "cancel": cancel,
+        "cancel_ctx": {"readings_rev": 0, "map_id": 1001, "warehouse_cells": 120},
         "result": None,
         "error": None,
     }
     assert sync_background_hint(ss, state=state, mc=mc) == "cancelled"
     assert cancel.is_set()
     assert ss.get("_bg_infer_box") is None
+
+
+def test_sync_keeps_running_when_only_derived_fields_change():
+    ss: dict = {"obs_readings_rev": 0}
+    state = _fake_state(white_cells=17, green_cells=0)
+    mc = {"n_trials": 10, "seed": 1, "warehouse_tol": 8, "purple_tol": 4}
+    cancel = threading.Event()
+    ss["_bg_infer_box"] = {
+        "status": "running",
+        "fp": "fp",
+        "cancel": cancel,
+        "cancel_ctx": {"readings_rev": 0, "map_id": 1001, "warehouse_cells": 120},
+        "result": None,
+        "error": None,
+    }
+    assert sync_background_hint(ss, state=state, mc=mc) == "running"
+    assert not cancel.is_set()
 
 
 def test_start_background_hint_completes():

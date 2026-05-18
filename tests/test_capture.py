@@ -81,6 +81,48 @@ def test_purple_value_total_phrase():
     assert r.suggestion_map()["purple_value"] == 86490
 
 
+def test_apply_preserves_readings_not_in_ocr():
+    """OCR must not clear fields the panel did not mention."""
+    from bidking_lab.capture.apply import reading_widget_key
+    from bidking_lab.capture.types import CaptureParseResult, FieldSuggestion
+
+    obs = {"purple_cells": 40, "gold_cells": 12}
+    ui: dict = {"obs_readings_rev": 0}
+    ui[reading_widget_key("obs_reading_purple_cells", ui)] = 40
+    ui[reading_widget_key("obs_reading_gold_cells", ui)] = 12
+    result = CaptureParseResult(
+        suggestions=[
+            FieldSuggestion("wg_cells", 22, "白+绿总格"),
+            FieldSuggestion("blue_cells", 15, "蓝品总格"),
+        ],
+    )
+    apply_capture_result(result, obs, ui)
+    assert obs["wg_cells"] == 22
+    assert obs["blue_cells"] == 15
+    assert obs["purple_cells"] == 40
+    assert obs["gold_cells"] == 12
+
+
+def test_apply_overwrites_reading_when_ocr_repeats_field():
+    from bidking_lab.capture.apply import reading_widget_key
+    from bidking_lab.capture.types import CaptureParseResult, FieldSuggestion
+
+    obs = {"wg_cells": 20, "blue_cells": 10}
+    ui: dict = {"obs_readings_rev": 0}
+    ui[reading_widget_key("obs_reading_wg_cells", ui)] = 20
+    ui[reading_widget_key("obs_reading_blue_cells", ui)] = 10
+    result = CaptureParseResult(
+        suggestions=[
+            FieldSuggestion("wg_cells", 22, "白+绿总格"),
+            FieldSuggestion("blue_cells", 15, "蓝品总格"),
+        ],
+    )
+    apply_capture_result(result, obs, ui)
+    assert obs["wg_cells"] == 22
+    assert obs["blue_cells"] == 15
+    assert ui[reading_widget_key("obs_reading_wg_cells", ui)] == 22
+
+
 def test_apply_sets_streamlit_widget_keys():
     from bidking_lab.capture.apply import reading_widget_key
 
@@ -229,6 +271,52 @@ def test_reset_obs_for_manual_map_change_clears_avg_and_warehouse() -> None:
     assert ui["obs_readings_rev"] == 1
 
 
+def test_sync_preserves_obs_when_widget_key_absent() -> None:
+    """Non-obs tabs do not render inputs; sync must not wipe OCR-filled obs."""
+    obs = {"wg_cells": 12, "blue_cells": 35, "purple_cells": 34}
+    ui: dict = {"obs_readings_rev": 0}
+    sync_obs_from_reading_widgets(obs, ui)
+    assert obs == {"wg_cells": 12, "blue_cells": 35, "purple_cells": 34}
+
+
+def test_sync_clears_obs_when_widget_explicitly_none() -> None:
+    obs = {"wg_cells": 12}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("obs_reading_wg_cells", ui)
+    ui[wkey] = None
+    sync_obs_from_reading_widgets(obs, ui, allow_clear=True)
+    assert "wg_cells" not in obs
+
+
+def test_sync_keeps_obs_when_widget_none_but_allow_clear_false() -> None:
+    obs = {"wg_cells": 12, "blue_cells": 35}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("obs_reading_wg_cells", ui)
+    ui[wkey] = None
+    sync_obs_from_reading_widgets(obs, ui, allow_clear=False)
+    assert obs == {"wg_cells": 12, "blue_cells": 35}
+
+
+def test_hydrate_force_numeric_overwrites_stale_widget() -> None:
+    obs = {"wg_cells": 17, "blue_cells": 18}
+    ui: dict = {"obs_readings_rev": 0}
+    wg_key = reading_widget_key("obs_reading_wg_cells", ui)
+    ui[wg_key] = None
+    hydrate_reading_widgets_from_obs(obs, ui, force_numeric=True)
+    assert ui[wg_key] == 17
+
+
+def test_hydrate_fills_none_widget_from_obs() -> None:
+    obs = {"wg_cells": 22, "blue_cells": 15}
+    ui: dict = {"obs_readings_rev": 0}
+    wg_key = reading_widget_key("obs_reading_wg_cells", ui)
+    ui[wg_key] = None
+    hydrate_reading_widgets_from_obs(obs, ui)
+    assert ui[wg_key] == 22
+    blue_key = reading_widget_key("obs_reading_blue_cells", ui)
+    assert ui[blue_key] == 15
+
+
 def test_hydrate_avg_raw_respects_user_cleared_widget() -> None:
     obs = {"purple_avg_raw": "2.66"}
     ui: dict = {"obs_readings_rev": 0}
@@ -236,8 +324,39 @@ def test_hydrate_avg_raw_respects_user_cleared_widget() -> None:
     ui[wkey] = ""
     hydrate_reading_widgets_from_obs(obs, ui)
     assert ui[wkey] == ""
-    sync_obs_from_reading_widgets(obs, ui)
+    sync_obs_from_reading_widgets(obs, ui, allow_clear=False)
+    assert obs["purple_avg_raw"] == "2.66"
+
+
+def test_hydrate_force_avg_raw_refills_empty_widget() -> None:
+    obs = {"purple_avg_raw": "3.27"}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("purple_avg_raw_widget", ui)
+    ui[wkey] = ""
+    hydrate_reading_widgets_from_obs(obs, ui, force_avg_raw=True)
+    assert ui[wkey] == "3.27"
+
+
+def test_strip_empty_avg_raw_from_obs() -> None:
+    obs = {"purple_avg_raw": "", "gold_avg_raw": "4.00"}
+    ui: dict = {"obs_readings_rev": 0}
+    hydrate_reading_widgets_from_obs(obs, ui)
     assert "purple_avg_raw" not in obs
+    assert ui[reading_widget_key("gold_avg_raw_widget", ui)] == "4.00"
+
+
+def test_reconcile_avg_raw_widget_return_from_obs() -> None:
+    from bidking_lab.capture.apply import reconcile_avg_raw_widget_return
+
+    obs = {"purple_avg_raw": "3.27"}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("purple_avg_raw_widget", ui)
+    ui[wkey] = ""
+    out = reconcile_avg_raw_widget_return(
+        obs, ui, "purple_avg_raw", "purple_avg_raw_widget", "",
+    )
+    assert out == "3.27"
+    assert ui[wkey] == "3.27"
 
 
 def test_round4_garbled_ocr_lines():

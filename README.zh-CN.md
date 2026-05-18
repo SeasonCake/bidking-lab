@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-234_passing-2ea043)](./tests)
+[![Tests](https://img.shields.io/badge/tests-360_passing-2ea043)](./tests)
 [![Status](https://img.shields.io/badge/status-Phase_1A_推断稳定-blueviolet)](./PROGRESS.md)
 
 ---
@@ -67,7 +67,7 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 
-# 1) 跑测试（234 个单测）
+# 1) 跑测试（360 个单测）
 pytest -q
 
 # 2) 启动 Streamlit 主界面
@@ -166,20 +166,26 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 ### 4. 工程化的 schema-first 数据层
 所有游戏表先 decode 成 TSV → pydantic schema 校验 → typed JSON。命名跟原始数据源对齐（C-25 修过一次重大命名错位：游戏的"优品=紫、极品=金、珍品=红"，跟我代码里早期的"精品/珍品"完全错位；统一重命名后 202 单测继续绿）。
 
-### 5. 33 条 TROUBLESHOOTING.md，四段式踩坑归档
+### 5. Capture：主屏抓屏 → OCR 预填读数（C-35~37）
+
+- 侧栏 **抓取当前屏幕**（`mss` + 信息区 ROI）；识别结果写入读数 tab，**不**自动填仓库格数。
+- 换图时合并/清空规则见 [`PROGRESS.md`](PROGRESS.md) C-37；踩坑见 [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) **#37–40**。
+- 高级选项可关闭 **实屏 OCR 暖机**（`data/ui_prefs.json`），需重启应用；启动仍慢见 **#40**，下一项优化 **首屏等待 UI**（C-38）。
+
+### 6. 39 条 TROUBLESHOOTING.md，四段式踩坑归档
 所有非显然的踩坑都按 **症状 / 原因 / 修法 / 教训** 四段式归档。若「填了一项 MC 分位或候选突然变了」，先查 [**#33 — MC 与枚举影响矩阵**](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期)。
 
-### 6. 把已识别具体巨物变成一等 observation
+### 7. 把已识别具体巨物变成一等 observation
 `BIG_ITEMS_BY_SHAPE`（紫/金/红 ~20 件唯一形状巨物）直接喂进每个品质的"巨物数量"下拉框：玩家能选 `★ 单人郊游快艇 (18格·106,500)` 精确锁定格数。`huge_cells_override` 主要服务**枚举 + 分析估算**（`min_huge_cells()` → `candidates_for_bucket` → `compute_analytical_estimate`）。MC 仍只按 **巨物件数 band** 过滤（设计分层，见 TROUBLESHOOTING #31）。
 
-### 7. 推断字段分层 + 低风险 backlog 收口（2026-05-17）
+### 8. 推断字段分层 + 低风险 backlog 收口（2026-05-17）
 - **MC**：cells / count / value_sum / value_range / huge_band。
 - **枚举**：另加 avg_cells、avg_value、★ override、Item-DB boost、物理格数上限。
 - **≥4 项联合读数**：仅枚举路径放宽 `avg_value` 容差（C-31b）。
 - **P0-B（C-32）**：MC fallback 时 `_fallback_hard_buckets` 保留 `huge_cells_override`（罕见路径一致性，见 OBS #32）。
 - **暂缓**：秒/放仓 UI（P0-A）、均价/★格数进 MC（P2/P3）。
 
-### 8. 哪些输入会动 MC？哪些只动枚举？（[TROUBLESHOOTING #33](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期)）
+### 9. 哪些输入会动 MC？哪些只动枚举？（[TROUBLESHOOTING #33](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期)）
 
 | 输入 / 改动 | MC 仓库 P25–P90 | 候选预览 / 分析估算 |
 |---|---|---|
@@ -228,7 +234,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | `docs/project_vision.md` | 原始三层架构设计 |
 | **`PROGRESS.md`** | **新协作者起点**：项目全貌 + 当前状态 + 路线图 |
 | **`OBSERVATIONS.md`** | **技术发现日志**：每个 checkpoint 的关键发现 |
-| **`TROUBLESHOOTING.md`** | **33 条** — 踩坑归档 + [#33 影响矩阵](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期) |
+| **`TROUBLESHOOTING.md`** | **39 条** — 踩坑归档 + [#33 影响矩阵](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期) + [#37–40 Capture/UI](TROUBLESHOOTING.md#37-紫品均格-ocr-有数但输入框为空) |
 
 ### 我们 ship 的数据 vs 我们不 ship 的
 
@@ -248,7 +254,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 
 - **Python 3.13** · pydantic（schema 校验）· numpy / scipy（MC + 后验）· matplotlib（分布图）
 - **Streamlit**（UI）· Jupyter（分析交付物）
-- **pytest**（234 单测，覆盖解码 / 推断 / ROI / snipe / hero_value）
+- **pytest**（360 单测，覆盖解码 / 推断 / ROI / snipe / capture / hero_value）
 - **PowerShell**（数据同步脚本；macOS/Linux 等价 bash 已留接口）
 
 ---
@@ -269,18 +275,23 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 
 完整路线图在 [`PROGRESS.md`](PROGRESS.md)。短版：
 
-**已完成**（C-1 ~ C-34）
+**已完成**（C-1 ~ C-37）
 - ✅ 6 张游戏表解码 + schema · 推断引擎 v2 · Streamlit 中文 UI（MC 默认 **1500**）
 - ✅ Per-bucket MC filter（2026-05-16）· 分析估算 + ★ 具体巨物（C-28~29）· 紫品均价输入
 - ✅ 放仓红约束后端（C-30）· 秒/放仓 **UI 隐藏**（C-31）· 字段作用范围文案 + 联合约束枚举放宽（C-31b）
 - ✅ P0-B：fallback 保留 `huge_cells_override`（C-32）
-- ✅ LOO 道具 ROI + 眼估噪声 · 5 册 notebook · **234** 单测 · **33** 条 TROUBLESHOOTING（含 #33 影响矩阵）
+- ✅ 主屏抓屏 + OCR 预填 + 地图纠偏（C-35~36）· UI 稳定与实机 OCR 性能（C-37）
+- ✅ LOO 道具 ROI + 眼估噪声 · 5 册 notebook · **360** 单测 · **39** 条 TROUBLESHOOTING
 - ✅ 双语 README + 演示视频 + 截图
+
+**下一项（C-38）**
+- ⏳ **启动等待界面**（首屏加载 UX；与 OCR 暖机分工）
+- ⏸ 暖机小游戏（Canvas）— 暂缓
 
 **暂缓 / 可选**
 - ⏸ 秒/放仓 UI 与 tier 调参（P0-A）
 - ⏸ 均价 / ★ 格数进 MC（P2，见 #31）
-- ⏳ Progressive UI · BidMap 23 列
+- ⏳ Progressive UI · BidMap 23 列 · GitHub Release 整合包
 
 **明确不做**
 - per-item observation · 抽检 ROI 建模

@@ -50,11 +50,11 @@ bidking-lab/
 │   └── processed/        # 派生 JSON (committed): items.json, maps.json, heroes.json 等
 ├── notebooks/            # 01_map_value_distribution, 02_hero_ranking
 ├── scripts/              # 探查/分析/demo 脚本
-├── tests/                # 234 tests (pytest)
+├── tests/                # 360 tests (pytest)
 ├── docs/                 # project_vision.md, bid_map_schema.md, hero_skill_schema.md
 ├── PROGRESS.md           # ← 本文件
-├── OBSERVATIONS.md       # 技术发现日志 (33 checkpoints)
-└── TROUBLESHOOTING.md    # 踩坑记录 (35条)
+├── OBSERVATIONS.md       # 技术发现日志 (34 checkpoints)
+└── TROUBLESHOOTING.md    # 踩坑记录 (39条)
 ```
 
 ### 技术栈
@@ -438,9 +438,12 @@ C:\Python313\python.exe -m streamlit run app\streamlit_app.py
 | **patterns** | `total_item_count`（本仓共有/意品 OCR）；紫/金总价更多「总价值为」变体；收紧「显示…品质…藏品」忽略规则（不再误杀总价行） |
 | **OCR 回归图** | 6 张（Desktop + 5 张微信）；`scripts/ocr_regression_snapshots.py` |
 | **依赖** | `pip install -e ".[capture]"` 含 `mss`；抓屏后仍走 `ocr.crop_info_panel` / `parse_panel_text` / `apply_capture_result` |
-| **流程** | 抓屏 → OCR → 自动填读数 tab → **玩家手填仓库格数** → 可选后台 MC |
+| **流程** | 侧栏点抓屏 → **延后任务**（`st.status` 内抓屏+OCR）→ 下一轮开头 `apply_capture_result` → 单次 `rerun` → 读数 tab |
+| **实机 OCR 性能（C-37）** | `panel_rgb_array_for_ocr` 直喂 RapidOCR ndarray；默认不生成 4K 全屏预览；诊断区分 `抓屏 / OCR / 诊断图` ms |
+| **UI 偏好** | `data/ui_prefs.json` + `app/ui_prefs.py`：`screen_ocr_warmup`（默认开，改后需重启 Streamlit） |
+| **调试** | `BIDKING_AGENT_DEBUG=1` 才写 `agent_debug_log`；`BIDKING_CAPTURE_DIAG=1` → `capture_diag.jsonl` |
 
-**当前阶段**：上传/剪贴板/主屏抓屏按钮已通；**下一步**多分辨率/DPI ROI 实测与可选显示器选择。
+**当前阶段**：主屏抓屏 + OCR 填表路径已验收（2026-05-18）；**下一步**见「C-38 启动体验」与「待办（边界）」。
 
 **Capture diag（地图 OCR 问题记录）**：
 
@@ -460,19 +463,40 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 
 ---
 
-### 待办（C-37 · OCR 应用状态机 & Release）
+### C-37 已交付（2026-05-18 · Streamlit OCR/UI 稳定性 + 实机性能）
 
-> **2026-05-18**：用户验收 UI/OCR 主路径可用；下列为**边界与分发**，留待下一轮。
+| 类别 | 内容 |
+|------|------|
+| **读数 / widget** | 紫品均格 `text_input` hydrate（`reconcile_avg_raw_widget_return`）；读数 tab `sync_obs(allow_clear=False)` 防切 tab 清空；地图上下文变更才取消 MC |
+| **布局 / rerun** | 主 tab 用 `st.empty()` 槽位；去掉 `_hint_tab_dom_refresh` 多余 rerun；抓屏 OCR 延后到 `st.status`，apply 在 sidebar 前 |
+| **提示文案** | 抓屏 toast 按当前 tab 区分；去掉重复显示器 help |
+| **OCR 热路径** | `panel_rgb_array_for_ocr` → ndarray；`prepare_image_for_ocr` 无变更时原样返回；`include_monitor_preview=False` |
+| **其它** | `bg_inference` MC 片段 `run_every=2`；`ui_prefs` 实屏暖机开关；样例清理（删 `panel_round4_roi_preview.png`，保留 `game_warmup_*.jpg`） |
+| **单测** | `test_capture.py` 合并策略 + apply/hydrate；全仓 **360** tests |
+
+用户验收：实机抓屏 OCR 速度恢复正常。
+
+### 待办（C-37 边界 · 仍开放）
 
 | 状态 | 项 | 说明 |
 |------|-----|------|
-| 🟡 | **OCR 与手填数据的清空边界** | **2026-05-18 部分修复**：仅 OCR 识别到**不同 map_id** 时 `clear_readings`；同图合并填。均格/均价「删不掉」已修（hydrate 不覆盖空串；换图清 `*_avg_raw`）。仓库格数保留仍靠 snapshot。 |
-| ⬜ | **仓库格数 `warehouse_cells` 保留** | OCR 面板常无总格数；用户先填格数 → OCR 识别地图（尤其**自动切图**）时不应清空格数，否则无法推理。与「手动换图清空仓库」需明确规则表。 |
-| ⬜ | **`auto_infer_after_capture` 触发条件** | 避免：先填数据再 OCR 被清空后仍触发/误触发后台 MC；或清空后带着陈旧 fingerprint 推理。 |
-| ⬜ | **状态机文档 + 单测** | 矩阵：{无 OCR / OCR 同图 / OCR 换图 / 手选换图} × {已填仓库 / 已填读数} → 保留/清空/是否 rerun MC。 |
-| ⬜ | **演示视频重做** | 随 Streamlit 布局、抓屏说明、紫品件数填入等更新后重录（非阻塞）。 |
-| ⬜ | **一站式整合包 + GitHub Release** | 计划：`pip install` 可复现、`[ui,capture]` extra、打 tag 发布 zip/说明；可选便携运行脚本；**不含**游戏资产。 |
-| ⬜ | **推断完成后保持当前 tab** | 2026-05-18 曾用 `_main_tab` + 完成后 `st.rerun()`，与按钮导航叠加后切换偏卡，已回滚。后续：用户先点「出价推荐」时，完成后留在该 tab 并刷新结果，且不明显拖慢 tab 切换。 |
+| 🟡 | **OCR 与手填清空边界** | 不同 `map_id` 才 `clear_readings`；同图合并。仓库格数 snapshot 保留；完整状态机矩阵待文档化 |
+| ⬜ | **`auto_infer_after_capture` 边界** | 避免清空后误触发 MC / 陈旧 fingerprint |
+| ⬜ | **状态机文档 + 单测** | {无 OCR / 同图 / 换图 / 手选换图} × {仓库 / 读数} → 保留/清空/MC |
+| ⬜ | **演示视频 / GitHub Release** | 非阻塞分发项 |
+| ⬜ | **推断完成后保持当前 tab** | 曾回滚 `_main_tab` 方案；需不拖慢 tab 切换的替代设计 |
+| ⬜ | **移除临时 `#region agent log`** | 用户确认稳定后删 `agent_debug_log` 埋点 |
+
+### C-38 待办（下一迭代 · 启动体验）
+
+> **2026-05-18 用户拍板**：小游戏方案暂缓；**优先优化 Streamlit 首次打开时的等待界面**（OCR 暖机仍可能发生，但 UX 要可感知、可跳过或可并行）。
+
+| 状态 | 项 | 说明 |
+|------|-----|------|
+| ⬜ | **启动等待 UI** | 首屏 skeleton / 进度条 /「模型加载中」文案；与侧栏 spinner 分工 |
+| ⬜ | **暖机策略** | 默认 `screen_ocr_warmup=true` 仍偏慢：可选仅样本暖机、后台线程完成后再启用抓屏按钮 |
+| ⏸ | **Canvas 跳跃小游戏** | 后台暖机 + 空格/点击；需 OCR 线程与 `components.html`；用户暂缓 |
+| ⬜ | **多分辨率 ROI 实测** | 副屏 / DPI；`preview_panel_roi.py` |
 
 ---
 
@@ -536,6 +560,13 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
+
+### C-37: Streamlit OCR 稳定性 + 实机抓屏性能 (2026-05-18)
+
+- **Capture**：`panel_rgb_array_for_ocr`；`ScreenCaptureConfig.include_monitor_preview`；`apply.py` hydrate/merge 单测扩充。
+- **App**：延后抓屏任务、`apply_capture_result` 前置、tab 槽位、紫均格 widget、MC fragment、`ui_prefs` / `agent_debug_log`。
+- **文档**：PROGRESS / OBS #34 / TROUBLESHOOTING #37–39；README 路线图 C-38。
+- **下一项**：C-38 启动等待界面（非暖机小游戏）。
 
 ### C-36 收口：抓屏 UI、地图纠偏、读数填入与主题 (2026-05-18)
 

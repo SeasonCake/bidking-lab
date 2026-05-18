@@ -60,13 +60,72 @@ def _warmup_payload_bytes() -> bytes:
     return buf.getvalue()
 
 
+def panel_rgb_array_for_ocr(data: bytes, *, crop_panel: bool = True) -> Any:
+    """Decode once, crop/resize, return RGB ``uint8`` array for RapidOCR (no PNG round-trip)."""
+    try:
+        import numpy as np
+        from PIL import Image
+    except ImportError:
+        if crop_panel:
+            data = crop_info_panel(data)
+        data = fit_reference_frame(data)
+        import numpy as np
+        from PIL import Image
+
+        return np.asarray(Image.open(io.BytesIO(data)).convert("RGB"))
+
+    img = Image.open(io.BytesIO(data)).convert("RGB")
+    if crop_panel:
+        w, h = img.size
+        l, t, r, b = _PANEL_CROP
+        img = img.crop((int(w * l), int(h * t), int(w * r), int(h * b)))
+    w, h = img.size
+    if w > REFERENCE_WIDTH or h > REFERENCE_HEIGHT:
+        scale = min(REFERENCE_WIDTH / w, REFERENCE_HEIGHT / h)
+        img = img.resize(
+            (max(1, int(w * scale)), max(1, int(h * scale))),
+            Image.Resampling.LANCZOS,
+        )
+    return np.asarray(img)
+
+
+def prepare_image_for_ocr(data: bytes, *, crop_panel: bool = True) -> bytes:
+    """Encode panel bytes for debug/warmup paths that need PNG."""
+    try:
+        from PIL import Image
+    except ImportError:
+        if crop_panel:
+            data = crop_info_panel(data)
+        return fit_reference_frame(data)
+
+    img = Image.open(io.BytesIO(data))
+    changed = False
+    if crop_panel:
+        w, h = img.size
+        l, t, r, b = _PANEL_CROP
+        img = img.crop((int(w * l), int(h * t), int(w * r), int(h * b)))
+        changed = True
+    w, h = img.size
+    if w > REFERENCE_WIDTH or h > REFERENCE_HEIGHT:
+        scale = min(REFERENCE_WIDTH / w, REFERENCE_HEIGHT / h)
+        img = img.resize(
+            (max(1, int(w * scale)), max(1, int(h * scale))),
+            Image.Resampling.LANCZOS,
+        )
+        changed = True
+    if not changed:
+        return data
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", compress_level=_PNG_COMPRESS_LEVEL)
+    return buf.getvalue()
+
+
 def warmup_engine(engine: Any) -> None:
     """Two inference passes (loads ONNX weights; 2nd pass mirrors first real OCR)."""
     payload = _warmup_payload_bytes()
-    data = crop_info_panel(payload)
-    data = fit_reference_frame(data)
+    arr = panel_rgb_array_for_ocr(payload, crop_panel=True)
     for pass_idx in (1, 2):
-        result, _ = engine(data)
+        result, _ = engine(arr)
         if not result and pass_idx == 1:
             LOG.warning("OCR warm-up: empty result on sample image")
 
@@ -86,10 +145,15 @@ def warmup_engine_screen_primary(engine: Any) -> bool:
     try:
         monitors = list_monitors()
         mon = resolve_monitor(monitors)
-        cap = capture_monitor_panel(ScreenCaptureConfig(monitor_index=mon.index))
-        data = fit_reference_frame(cap.panel_png)
+        cap = capture_monitor_panel(
+            ScreenCaptureConfig(
+                monitor_index=mon.index,
+                include_monitor_preview=False,
+            ),
+        )
+        arr = panel_rgb_array_for_ocr(cap.panel_png, crop_panel=False)
         for _ in range(2):
-            engine(data)
+            engine(arr)
         LOG.info(
             "OCR screen warm-up ok: monitor #%s %sx%s",
             mon.index,
@@ -208,11 +272,9 @@ def image_bytes_to_text(
         )
 
     try:
-        if crop_panel:
-            data = crop_info_panel(data)
-        data = fit_reference_frame(data)
+        rgb = panel_rgb_array_for_ocr(data, crop_panel=crop_panel)
         ocr_engine = engine or _get_engine()
-        result, _ = ocr_engine(data)
+        result, _ = ocr_engine(rgb)
     except Exception as exc:  # noqa: BLE001
         return "", f"OCR 失败: {exc}"
 

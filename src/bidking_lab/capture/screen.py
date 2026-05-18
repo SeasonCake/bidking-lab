@@ -48,6 +48,8 @@ class ScreenCaptureConfig:
     reference_width: int = 1920
     reference_height: int = 1080
     preview_max_width: int = 960
+    include_monitor_preview: bool = False
+    """Full-screen ROI preview (slow on 4K); enable only for diagnostics."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,7 +216,7 @@ def _monitor_preview_png(
             Image.Resampling.LANCZOS,
         )
     out = io.BytesIO()
-    preview.save(out, format="PNG", optimize=True)
+    preview.save(out, format="JPEG", quality=82, optimize=False)
     return out.getvalue()
 
 
@@ -244,12 +246,15 @@ def capture_monitor_panel(
     box = fraction_to_pixel_box(mon.width, mon.height, cfg.crop_frac)
     cropped = img.crop(box)
     panel_out = io.BytesIO()
-    cropped.save(panel_out, format="PNG", optimize=True)
-    preview_png = _monitor_preview_png(
-        img,
-        crop_box=box,
-        max_width=cfg.preview_max_width,
-    )
+    cropped.save(panel_out, format="PNG", compress_level=1, optimize=False)
+    if cfg.include_monitor_preview:
+        preview_png = _monitor_preview_png(
+            img,
+            crop_box=box,
+            max_width=cfg.preview_max_width,
+        )
+    else:
+        preview_png = b""
     return ScreenCaptureResult(
         panel_png=panel_out.getvalue(),
         monitor=mon,

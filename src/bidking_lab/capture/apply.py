@@ -56,6 +56,14 @@ AVG_RAW_WIDGET_KEYS: dict[str, str] = {
 AVG_RAW_OBS_KEYS: tuple[str, ...] = tuple(AVG_RAW_WIDGET_KEYS.keys())
 
 
+def strip_empty_avg_raw_from_obs(obs: dict[str, Any]) -> None:
+    """Remove ``""`` placeholders so hydrate/OCR values are not blocked."""
+    for k in AVG_RAW_OBS_KEYS:
+        v = obs.get(k)
+        if v is not None and not str(v).strip():
+            obs.pop(k, None)
+
+
 def reading_widget_key(base: str, ui_state: Any) -> str:
     """Versioned Streamlit key so map-change reset recreates inputs."""
     rev = int(ui_state.get("obs_readings_rev", 0))
@@ -65,42 +73,92 @@ def reading_widget_key(base: str, ui_state: Any) -> str:
 def hydrate_reading_widgets_from_obs(
     obs: dict[str, Any],
     ui_state: Any,
+    *,
+    force_numeric: bool = False,
+    force_avg_raw: bool = False,
 ) -> None:
     """Pre-fill versioned widget keys from ``obs`` before ``number_input`` renders."""
+    strip_empty_avg_raw_from_obs(obs)
     for obs_key, base_wkey in READING_WIDGET_KEYS.items():
         val = obs.get(obs_key)
         if val is None:
             continue
         wkey = reading_widget_key(base_wkey, ui_state)
+        coerced = _coerce_widget_value(obs_key, val)
+        # Pre-seed missing keys; also refill None (widget mounted empty while obs still has data).
         if wkey not in ui_state or ui_state[wkey] is None:
-            ui_state[wkey] = _coerce_widget_value(obs_key, val)
+            ui_state[wkey] = coerced
+        elif force_numeric:
+            ui_state[wkey] = coerced
     for obs_key, base_wkey in AVG_RAW_WIDGET_KEYS.items():
         val = obs.get(obs_key)
-        if not val:
+        if val is None or not str(val).strip():
             continue
         wkey = reading_widget_key(base_wkey, ui_state)
-        # Empty string = user cleared; do not re-hydrate from obs.
-        if wkey not in ui_state:
+        raw = ui_state.get(wkey)
+        # Empty string = user cleared unless force_avg_raw (OCR / obs tab refill).
+        if wkey not in ui_state or raw is None:
             ui_state[wkey] = str(val)
+        elif force_avg_raw and str(raw).strip() == "":
+            ui_state[wkey] = str(val)
+
+
+def reconcile_avg_raw_widget_return(
+    obs: dict[str, Any],
+    ui_state: Any,
+    obs_key: str,
+    base_wkey: str,
+    widget_return: str | None,
+) -> str:
+    """Align obs + widget when ``text_input`` returns empty but OCR/obs still has data."""
+    strip_empty_avg_raw_from_obs(obs)
+    wkey = reading_widget_key(base_wkey, ui_state)
+    ret = str(widget_return or "").strip()
+    wval = str(ui_state.get(wkey) or "").strip()
+    obs_val = str(obs.get(obs_key) or "").strip()
+    if ret:
+        obs[obs_key] = ret
+        return ret
+    if wval:
+        obs[obs_key] = wval
+        return wval
+    if obs_val:
+        ui_state[wkey] = obs_val
+        obs[obs_key] = obs_val
+        return obs_val
+    obs.pop(obs_key, None)
+    return ""
 
 
 def sync_obs_from_reading_widgets(
     obs: dict[str, Any],
     ui_state: Any,
+    *,
+    allow_clear: bool = False,
 ) -> None:
-    """Merge widget keys into ``obs``; do not use ``number_input`` return values."""
+    """Merge widget keys into ``obs``; do not use ``number_input`` return values.
+
+    Keys absent from ``ui_state`` are ignored (non-obs tab / widget not mounted).
+    When ``allow_clear`` is False, ``None`` values do not remove ``obs`` entries
+  (Streamlit may register keys as None while the obs tab is not rendered).
+    """
     for obs_key, base_wkey in READING_WIDGET_KEYS.items():
         wkey = reading_widget_key(base_wkey, ui_state)
-        if wkey in ui_state and ui_state[wkey] is not None:
+        if wkey not in ui_state:
+            continue
+        if ui_state[wkey] is not None:
             obs[obs_key] = ui_state[wkey]
-        else:
+        elif allow_clear:
             obs.pop(obs_key, None)
+    strip_empty_avg_raw_from_obs(obs)
     for obs_key, base_wkey in AVG_RAW_WIDGET_KEYS.items():
         wkey = reading_widget_key(base_wkey, ui_state)
+        if wkey not in ui_state:
+            continue
         raw = ui_state.get(wkey)
-        if raw:
-            obs[obs_key] = str(raw)
-        else:
+        if raw and str(raw).strip():
+            obs[obs_key] = str(raw).strip()
+        elif allow_clear:
             obs.pop(obs_key, None)
 
 
@@ -125,6 +183,19 @@ def apply_capture_result(
     map_names: Mapping[int, str] | None = None,
 ) -> list[str]:
     """Write suggestions into ``obs`` and Streamlit widget keys.
+
+    Merge policy (per field in ``result.suggestions`` only):
+
+    * OCR **did not** parse a reading key → existing ``obs`` / manual
+      entries for that key are **left unchanged** (e.g. user-estimated
+      purple cells when the panel has no purple total line).
+    * OCR **did** parse a key → **overwrite** ``obs`` and the versioned
+      widget key (whether the previous value was manual or from an earlier
+      OCR). Warehouse / total_item_count use the same rule via
+      ``_apply_pending_capture`` when absent from suggestions.
+
+    Map: OCR map overwrites when resolved; when OCR has no map line, the
+    pre-capture sidebar snapshot restores the user's selection.
 
     Returns human-readable log lines for the UI.
     """

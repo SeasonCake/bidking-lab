@@ -58,6 +58,20 @@ APP_THEME_CSS = f"""
   background: rgba(99, 102, 241, 0.12);
   color: {_ACCENT_SESSION};
 }}
+.bk-tab-status {{
+  min-height: 1.35rem;
+  font-size: 0.82rem;
+  color: rgba(71, 85, 105, 0.95);
+  margin: 0 0 0.35rem;
+  line-height: 1.35;
+}}
+.bk-tab-status--active {{
+  color: {_ACCENT_HINT};
+  font-weight: 500;
+}}
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(button[kind="primary"]) button {{
+  min-height: 2.4rem;
+}}
 .main h3, .main [data-testid="stHeader"] h3 {{
   font-size: 1.05rem;
   font-weight: 600;
@@ -294,12 +308,25 @@ def tab_lead(text: str) -> None:
 
 
 def hint_tab_label(*, infer_status: str, done_flash: bool) -> str:
-    """Dynamic label for the hint tab (running / done indicators)."""
-    if infer_status == "running":
-        return "\U0001f3af \u51fa\u4ef7\u63a8\u8350 \u23f3"
-    if done_flash:
-        return "\U0001f3af \u51fa\u4ef7\u63a8\u8350 \u2713"
+    """Fixed label for the hint tab (status shown via ``hint_tab_status_line``)."""
+    del infer_status, done_flash
     return "\U0001f3af \u51fa\u4ef7\u63a8\u8350"
+
+
+def hint_tab_status_line(*, infer_status: str, done_flash: bool) -> str:
+    """One-line status above tabs; keeps button widths stable."""
+    if infer_status == "running":
+        return "\u540e\u53f0\u51fa\u4ef7\u63a8\u65ad\u8fdb\u884c\u4e2d\u2026"
+    if done_flash:
+        return "\u51fa\u4ef7\u63a8\u65ad\u5df2\u5b8c\u6210\uff0c\u8bf7\u67e5\u770b\u4e0b\u65b9\u7ed3\u679c"
+    return ""
+
+
+def render_tab_status_line(text: str) -> None:
+    """Reserved strip above main tab buttons (fixed layout)."""
+    cls = "bk-tab-status bk-tab-status--active" if text else "bk-tab-status"
+    body = text or "\u00a0"
+    st.markdown(f'<p class="{cls}">{body}</p>', unsafe_allow_html=True)
 
 
 def render_main_tab_nav(
@@ -309,10 +336,24 @@ def render_main_tab_nav(
     session_key: str = "_main_tab",
 ) -> str:
     """Session-persisted tab bar (survives st.rerun; unlike st.tabs)."""
+    from agent_debug_log import agent_debug_log
+
     active = st.session_state.get(session_key, keys[0])
     if active not in keys:
         active = keys[0]
         st.session_state[session_key] = active
+    # #region agent log
+    agent_debug_log(
+        location="ui_theme.py:render_main_tab_nav:entry",
+        message="tab nav render",
+        data={
+            "active": active,
+            "session_has_key": session_key in st.session_state,
+            "hint_label_len": len(labels.get("hint", "")),
+        },
+        hypothesis_id="H1,H3",
+    )
+    # #endregion
     cols = st.columns(len(keys))
     for col, key in zip(cols, keys):
         with col:
@@ -323,6 +364,14 @@ def render_main_tab_nav(
                 width="stretch",
             ):
                 if key != active:
+                    # #region agent log
+                    agent_debug_log(
+                        location="ui_theme.py:render_main_tab_nav:click",
+                        message="tab button clicked",
+                        data={"from": active, "to": key},
+                        hypothesis_id="H1,H4",
+                    )
+                    # #endregion
                     st.session_state[session_key] = key
                     st.rerun()
     return active

@@ -630,6 +630,53 @@ def _maybe_gold_bucket(state, *, allow_huge: bool) -> QualityBucketObs | None:
     )
 
 
+def _mc_active_bucket_qs(state: dict, hero: str) -> list[int]:
+    """Quality buckets actually passed into MC (for UI + debug)."""
+    if hero == "ethan":
+        return sorted(_build_buckets_for_ethan(state).keys())
+    return sorted(_build_buckets_for_aisha(state).keys())
+
+
+def _format_mc_readings_summary(state: dict, hero: str) -> str:
+    """Human-readable list of non-empty readings feeding MC filters."""
+    _parts: list[str] = []
+
+    def _add(label: str, *keys: str) -> None:
+        vals = []
+        for k in keys:
+            v = state.get(k)
+            if v is None or v == "" or v == 0:
+                continue
+            if k.endswith("_band") and v == "none":
+                continue
+            vals.append(f"{k}={v}")
+        if vals:
+            _parts.append(f"**{label}**: " + ", ".join(vals))
+
+    _add("\u767d+\u7eff", "wg_cells", "white_cells", "green_cells")
+    _add("\u84dd", "blue_cells", "blue_count")
+    _add(
+        "\u7d2b",
+        "purple_cells", "purple_count", "purple_avg_raw",
+        "purple_value", "purple_avg_value", "purple_huge_band",
+    )
+    _add(
+        "\u91d1",
+        "gold_cells", "gold_count", "gold_avg_raw",
+        "gold_value", "gold_avg_value", "gold_huge_band",
+    )
+    _add(
+        "\u7ea2",
+        "red_cells_total", "red_value_lo", "red_value_hi",
+        "red_huge_band", "red_confirmed_none",
+    )
+    if state.get("total_item_count"):
+        _parts.append(f"**\u603b\u4ef6\u6570**: {state['total_item_count']}")
+    qs = _mc_active_bucket_qs(state, hero)
+    _parts.append(f"**MC bucket q**: {qs or '（仅仓库容量）'}")
+    return "\u00a0\u00b7\u00a0".join(_parts) if _parts else "\u4ec5\u4ed3\u5e93\u683c\u6570 / \u5730\u56fe\u7ea6\u675f"
+
+
 def _build_buckets_for_ethan(state) -> dict[int, QualityBucketObs]:
     buckets: dict[int, QualityBucketObs] = {}
     if state.get("wg_cells") is not None and state["wg_cells"] > 0:
@@ -849,9 +896,11 @@ st.set_page_config(
 
 from ui_theme import (
     hint_tab_label,
+    hint_tab_status_line,
     inject_app_theme,
     muted_caption,
     render_main_tab_nav,
+    render_tab_status_line,
     sidebar_divider,
     sidebar_section,
     tab_lead,
@@ -885,9 +934,14 @@ muted_caption(
     "\u3001\u79d2\u4ed3 / \u653e\u4ed3\u51fa\u4ef7\u5efa\u8bae\u3001\u4ee5\u53ca\u9053\u5177\u6027\u4ef7\u6bd4 ROI\u3002"
     "\u8be6\u7ec6\u65b9\u6cd5\u8bba\u89c1 PROGRESS.md\u3002"
 )
+def _ocr_warmup_spinner_label(*, screen_warmup: bool) -> str:
+    if screen_warmup:
+        return "正在加载 OCR（样例图 + 主屏抓屏暖机，约 20–50 秒）…"
+    return "正在加载 OCR（样例图暖机，约 15–35 秒）…"
+
 
 @st.cache_resource(show_spinner=False)
-def _cached_ocr_engine():
+def _cached_ocr_engine(screen_warmup: bool):
     """One RapidOCR instance per Streamlit server process (survives reruns)."""
     from bidking_lab.capture.ocr import (
         bind_ocr_engine,
@@ -898,12 +952,13 @@ def _cached_ocr_engine():
 
     eng = create_ocr_engine()
     warmup_engine(eng)
-    warmup_engine_screen_primary(eng)
+    if screen_warmup:
+        warmup_engine_screen_primary(eng)
     bind_ocr_engine(eng)
     return eng
 
 
-def _sidebar_ocr_status_and_engine():
+def _sidebar_ocr_status_and_engine(*, screen_warmup: bool):
     """Warm OCR once per session; banner stays visible after map/input changes."""
     st.session_state.setdefault("ocr_ui_status", "pending")
     status = st.session_state["ocr_ui_status"]
@@ -913,7 +968,7 @@ def _sidebar_ocr_status_and_engine():
             message="OCR 已就绪",
             detail="",
         )
-        return _cached_ocr_engine()
+        return _cached_ocr_engine(screen_warmup)
     if status == "error":
         render_status_banner(
             kind="error",
@@ -924,23 +979,42 @@ def _sidebar_ocr_status_and_engine():
     render_status_banner(
         kind="loading",
         message="OCR 引擎加载中",
-        detail="首次启动较慢，完成后可抓取/上传；切换地图不会取消加载",
+        detail=(
+            "首次启动需加载 ONNX 并暖机（约 20–50 秒），仅本进程一次；"
+            "完成后抓屏会快很多，但第一次 OCR 仍可能比之后慢几秒"
+        ),
     )
     try:
         if status == "pending":
-            with st.spinner(
-                "正在加载 OCR（样例图 + 主屏抓屏暖机，约 20–50 秒）…",
-            ):
-                eng = _cached_ocr_engine()
+            with st.spinner(_ocr_warmup_spinner_label(screen_warmup=screen_warmup)):
+                eng = _cached_ocr_engine(screen_warmup)
         else:
-            eng = _cached_ocr_engine()
+            eng = _cached_ocr_engine(screen_warmup)
     except Exception as exc:  # noqa: BLE001
         st.session_state["ocr_ui_status"] = "error"
         st.session_state["ocr_ui_error"] = str(exc)
         return None
     st.session_state["ocr_ui_status"] = "ready"
-    if status == "pending":
-        st.rerun()
+    return eng
+
+
+def _ensure_ocr_engine(*, screen_warmup: bool):
+    """Load OCR once before sidebar renders (avoids duplicate widgets from mid-sidebar rerun)."""
+    status = st.session_state.setdefault("ocr_ui_status", "pending")
+    if status == "ready":
+        return _cached_ocr_engine(screen_warmup)
+    if status == "error":
+        return None
+    try:
+        with st.spinner(_ocr_warmup_spinner_label(screen_warmup=screen_warmup)):
+            eng = _cached_ocr_engine(screen_warmup)
+    except Exception as exc:  # noqa: BLE001
+        st.session_state["ocr_ui_status"] = "error"
+        st.session_state["ocr_ui_error"] = str(exc)
+        return None
+    st.session_state["ocr_ui_status"] = "ready"
+    st.session_state["_ocr_warmup_toast"] = True
+    st.rerun()
     return eng
 
 
@@ -951,6 +1025,23 @@ _map_names: dict[int, str] = {m.map_id: m.name for m in maps.values()}
 if "obs" not in st.session_state:
     st.session_state.obs = {}
 state = st.session_state.obs
+
+from agent_debug_log import agent_debug_log
+
+# #region agent log
+_agent_run_t0 = time.perf_counter()
+agent_debug_log(
+    location="streamlit_app.py:run_start",
+    message="script run begin",
+    data={
+        "main_tab": st.session_state.get("_main_tab"),
+        "pending_capture": "_pending_capture" in st.session_state,
+        "request_bg_hint": bool(st.session_state.get("_request_bg_hint")),
+        "bg_infer_status": st.session_state.get("_bg_infer_status"),
+    },
+    hypothesis_id="H1,H2,H4",
+)
+# #endregion
 
 if "_optional_int_migrated" not in st.session_state:
     for _k in ("obs_warehouse_cells", "obs_total_item_count"):
@@ -972,6 +1063,31 @@ def _session_int(key: str) -> int:
 def _warehouse_capacity() -> int:
     return _session_int("obs_warehouse_cells")
 
+
+def _png_for_debug_store(data: bytes, *, max_width: int = 720) -> bytes:
+    """Shrink large panel PNGs kept in session (faster reruns, smaller wire)."""
+    if len(data) < 350_000:
+        return data
+    try:
+        import io as _io
+
+        from PIL import Image
+
+        img = Image.open(_io.BytesIO(data))
+        if img.width <= max_width:
+            return data
+        scale = max_width / img.width
+        img = img.resize(
+            (max_width, max(1, int(img.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+        out = _io.BytesIO()
+        img.save(out, format="PNG", compress_level=1, optimize=False)
+        return out.getvalue()
+    except Exception:
+        return data
+
+
 def _queue_capture_from_bytes(
     data: bytes,
     *,
@@ -982,32 +1098,35 @@ def _queue_capture_from_bytes(
 ) -> str | None:
     """OCR image → parse; store pending result. Returns error message or None."""
     from bidking_lab.capture.log_util import LOG, configure_capture_logging
-    from bidking_lab.capture.ocr import crop_info_panel, image_bytes_to_text
+    from bidking_lab.capture.ocr import image_bytes_to_text, prepare_image_for_ocr
     from bidking_lab.capture.parser import parse_panel_text
     from bidking_lab.capture.screen import INFO_PANEL_CROP_FRAC
 
     configure_capture_logging()
     import time as _time
 
-    _t_prep = _time.perf_counter()
-    if crop_panel:
-        data = crop_info_panel(data)
-    panel_for_ocr = data
-    _prep_ms = int((_time.perf_counter() - _t_prep) * 1000)
+    _prep_ms = 0
     _t0 = _time.perf_counter()
     ocr_text, ocr_err = image_bytes_to_text(
         data,
-        crop_panel=False,
-        engine=_cached_ocr_engine(),
+        crop_panel=crop_panel,
+        engine=_cached_ocr_engine(_active_screen_ocr_warmup),
     )
     _ocr_ms = int((_time.perf_counter() - _t0) * 1000)
-    if source.startswith("screen"):
-        st.session_state["_ocr_first_capture_tip"] = True
+    _t_dbg = _time.perf_counter()
+    _panel_debug = _png_for_debug_store(
+        prepare_image_for_ocr(data, crop_panel=crop_panel),
+    )
+    _debug_ms = int((_time.perf_counter() - _t_dbg) * 1000)
+    if source.startswith("screen") and not st.session_state.get(
+        "_ocr_first_grab_notice_done",
+    ):
+        st.session_state["_ocr_show_first_grab_notice"] = True
     debug: dict = {
         "source": source,
         "crop_panel": crop_panel,
         "crop_frac": INFO_PANEL_CROP_FRAC if crop_panel else None,
-        "panel_png": panel_for_ocr,
+        "panel_png": _panel_debug,
         "ocr_text": "",
         "ocr_error": ocr_err,
         "parse_keys": [],
@@ -1031,19 +1150,44 @@ def _queue_capture_from_bytes(
     st.session_state["_last_capture_source"] = source
     st.session_state["_last_capture_crop"] = crop_panel
     debug["ocr_text"] = ocr_text
-    debug["parse_keys"] = list(parsed.suggestion_map().keys())
+    _smap = parsed.suggestion_map()
+    debug["parse_keys"] = list(_smap.keys())
+    debug["parse_values"] = dict(_smap)
     debug["map_id"] = parsed.map_id
     debug["map_name"] = parsed.map_name
     if parsed.map_diag is not None:
         debug["map_diag_status"] = parsed.map_diag.status
     st.session_state["_capture_debug"] = debug
+    if st.session_state.pop("_ocr_show_first_grab_notice", False):
+        st.session_state["_ocr_first_grab_toast"] = True
+        st.session_state["_ocr_first_grab_notice_done"] = True
     if LOG.isEnabledFor(logging.INFO):
+        _grab_ms = int(capture_debug.get("grab_ms") or 0) if capture_debug else 0
+        _timing = (
+            f"抓屏 {_grab_ms}ms · OCR {_ocr_ms}ms · 诊断图 {_debug_ms}ms"
+            if _grab_ms
+            else f"OCR {_ocr_ms}ms · 诊断图 {_debug_ms}ms"
+        )
         st.session_state["_capture_pipeline_log"] = [
             f"来源 {source} · crop_panel={crop_panel}",
-            f"预处理 {_prep_ms}ms · OCR {_ocr_ms}ms",
+            _timing,
             f"OCR {len(ocr_text.splitlines())} 行",
             f"解析字段 {debug['parse_keys']}",
         ]
+    # #region agent log
+    agent_debug_log(
+        location="streamlit_app.py:_queue_capture_from_bytes",
+        message="OCR queued pending_capture",
+        data={
+            "source": source,
+            "prep_ms": _prep_ms,
+            "ocr_ms": _ocr_ms,
+            "parse_keys": debug["parse_keys"],
+        },
+        hypothesis_id="H12,H13",
+        run_id="post-fix",
+    )
+    # #endregion
     return None
 
 
@@ -1080,7 +1224,7 @@ def _render_capture_debug_panel() -> None:
                 f"ROI 比例 {dbg.get('crop_frac')} → 像素 ({l},{t})–({r},{b}) · "
                 f"crop_panel={dbg.get('crop_panel')}",
             )
-        prev = dbg.get("monitor_preview_png")
+        prev = dbg.get("monitor_preview_png") or b""
         panel = dbg.get("panel_png")
         if prev and panel:
             c1, c2 = st.columns(2)
@@ -1110,6 +1254,12 @@ def _render_capture_debug_panel() -> None:
             f"地图 {dbg.get('map_name') or '—'} "
             f"(`{dbg.get('map_diag_status') or '—'}`)",
         )
+        _pvals = dbg.get("parse_values") or {}
+        if _pvals:
+            st.caption(
+                "解析取值："
+                + " · ".join(f"{k}={v!r}" for k, v in _pvals.items()),
+            )
         ocr_text = dbg.get("ocr_text") or ""
         if ocr_text:
             st.text_area(
@@ -1164,6 +1314,7 @@ def _apply_pending_capture(
     if "_pending_capture" not in st.session_state:
         return
     from bidking_lab.capture.apply import (
+        READING_WIDGET_KEYS,
         apply_capture_result,
         clear_readings_for_map_change,
         ocr_should_clear_readings,
@@ -1172,6 +1323,8 @@ def _apply_pending_capture(
     snap = st.session_state.pop("_pre_ocr_ui_snapshot", {})
     _map_before_ocr = obs_state.get("map_id")
     _cap_result = st.session_state.pop("_pending_capture")
+    from bidking_lab.inference.readings_validate import check_warehouse_cell_budget
+
     if ocr_should_clear_readings(_cap_result, _map_before_ocr):
         clear_readings_for_map_change(obs_state, st.session_state)
     _apply_log = apply_capture_result(
@@ -1214,6 +1367,20 @@ def _apply_pending_capture(
             category=st.session_state.get("obs_map_category"),
         )
     st.session_state["_capture_just_applied"] = True
+    st.session_state["_force_hydrate_avg_raw"] = True
+    # #region agent log
+    agent_debug_log(
+        location="streamlit_app.py:_apply_pending_capture:done",
+        message="pending_capture applied to obs",
+        data={
+            "main_tab": st.session_state.get("_main_tab"),
+            "apply_log_lines": len(_apply_log),
+            "obs_keys": sorted(k for k in obs_state if k in READING_WIDGET_KEYS or k.endswith("_avg_raw")),
+        },
+        hypothesis_id="H12",
+        run_id="post-fix",
+    )
+    # #endregion
     _ocr_map_miss = (
         _cap_result.map_id is None
         and bool(_cap_result.suggestions)
@@ -1252,8 +1419,26 @@ def _apply_pending_capture(
     if st.session_state.get("auto_infer_after_capture", True):
         st.session_state["_request_bg_hint"] = True
         st.session_state["_pending_hint_nudge"] = True
+        _wh_apply = int(obs_state.get("warehouse_cells") or 0)
+        _mid_apply = obs_state.get("map_id")
+        if _wh_apply > 0 and _mid_apply is not None:
+            if check_warehouse_cell_budget(obs_state) is None:
+                st.session_state["_main_tab"] = "hint"
     st.session_state.pop("_hint_bundle", None)
     st.session_state.pop("_bg_infer_box", None)
+    # #region agent log
+    agent_debug_log(
+        location="streamlit_app.py:_apply_pending_capture",
+        message="OCR capture applied",
+        data={
+            "main_tab": st.session_state.get("_main_tab"),
+            "auto_infer": bool(st.session_state.get("auto_infer_after_capture", True)),
+            "map_id_after": obs_state.get("map_id"),
+            "inference_ready_wh": obs_state.get("warehouse_cells"),
+        },
+        hypothesis_id="H1,H2,H14",
+    )
+    # #endregion
 
 
 def _clear_capture_upload() -> None:
@@ -1330,6 +1515,112 @@ def _on_obs_map_category_changed() -> None:
     st.session_state["_tracked_map_category"] = cat
 
 
+def _execute_deferred_capture(
+    job: dict,
+    *,
+    map_names: dict[int, str],
+) -> None:
+    """Run capture+OCR on a lightweight rerun (before sidebar / tab bodies)."""
+    import time as _time
+
+    kind = str(job.get("kind", ""))
+    _t0 = _time.perf_counter()
+    # #region agent log
+    agent_debug_log(
+        location="streamlit_app.py:_execute_deferred_capture:begin",
+        message="deferred capture begin",
+        data={"kind": kind, "main_tab": st.session_state.get("_main_tab")},
+        hypothesis_id="H12,H13",
+        run_id="post-fix",
+    )
+    # #endregion
+    _qerr: str | None = None
+    with st.status(
+        job.get("status_label", "\u6293\u5c4f\u4e0e OCR \u8bc6\u522b\u4e2d\u2026"),
+        expanded=False,
+    ) as _cap_status:
+        if st.session_state.get("_ocr_show_first_grab_notice"):
+            st.caption(
+                "\u2139\ufe0f \u9996\u6b21 OCR \u6293\u5c4f\u901a\u5e38\u6bd4\u4e4b\u540e\u6162\u51e0\u79d2"
+                "\uff08\u6a21\u578b\u5df2\u5728\u542f\u52a8\u65f6\u6696\u673a\uff0c\u4e4b\u540e\u4f1a\u66f4\u5feb\uff09\u3002"
+            )
+        if kind == "screen":
+            from bidking_lab.capture.screen import (
+                ScreenCaptureConfig,
+                capture_monitor_panel,
+            )
+
+            _delay = int(job.get("delay_sec") or 0)
+            if _delay > 0:
+                st.caption(
+                    f"\u8bf7\u5207\u6362\u5230\u6e38\u620f\u7a97\u53e3\uff0c**{_delay}** \u79d2\u540e\u6293\u5c4f\u2026",
+                )
+                _time.sleep(_delay)
+            _mon_idx = int(job["monitor_index"])
+            _t_cap = _time.perf_counter()
+            _cap = capture_monitor_panel(
+                ScreenCaptureConfig(
+                    monitor_index=_mon_idx,
+                    include_monitor_preview=False,
+                ),
+            )
+            _grab_ms = int((_time.perf_counter() - _t_cap) * 1000)
+            _cap_status.update(label="\u6293\u5c4f\u5b8c\u6210\uff0cOCR \u8bc6\u522b\u4e2d\u2026")
+            _qerr = _queue_capture_from_bytes(
+                _cap.panel_png,
+                map_names=map_names,
+                crop_panel=False,
+                source=(
+                    f"screen #{_cap.monitor.index} "
+                    f"{_cap.monitor.width}x{_cap.monitor.height}"
+                ),
+                capture_debug={
+                    "monitor_index": _cap.monitor.index,
+                    "monitor_label": job.get("monitor_label", ""),
+                    "crop_frac": _cap.crop_frac,
+                    "crop_box": _cap.crop_box,
+                    "monitor_preview_png": _cap.monitor_preview_png,
+                    "grab_ms": _grab_ms,
+                },
+            )
+        elif kind == "clipboard":
+            from bidking_lab.capture.clipboard import clipboard_image_bytes
+
+            _clip_data, _clip_err = clipboard_image_bytes()
+            if _clip_err:
+                st.warning(_clip_err)
+                _qerr = _clip_err
+            else:
+                _qerr = _queue_capture_from_bytes(
+                    _clip_data, map_names=map_names, source="clipboard",
+                )
+        elif kind == "upload":
+            _qerr = _queue_capture_from_bytes(
+                job["data"],
+                map_names=map_names,
+                source="upload",
+            )
+        else:
+            st.warning(f"\u672a\u77e5\u6293\u5c4f\u4efb\u52a1: {kind}")
+    st.session_state["_capture_debug_expand"] = True
+    if _qerr:
+        st.warning(_qerr)
+    # #region agent log
+    agent_debug_log(
+        location="streamlit_app.py:_execute_deferred_capture:end",
+        message="deferred capture end",
+        data={
+            "kind": kind,
+            "elapsed_ms": int((_time.perf_counter() - _t0) * 1000),
+            "has_pending": "_pending_capture" in st.session_state,
+            "qerr": bool(_qerr),
+        },
+        hypothesis_id="H12,H13",
+        run_id="post-fix",
+    )
+    # #endregion
+
+
 def _on_obs_map_select_changed() -> None:
     cat = st.session_state.get("obs_map_category", "mansion")
     choices = _maps_for_category(maps, cat)
@@ -1346,9 +1637,49 @@ def _on_obs_map_select_changed() -> None:
         st.session_state.pop("_capture_map_miss", None)
 
 
+from ui_prefs import load_ui_prefs, save_ui_prefs
+
+_active_screen_ocr_warmup = bool(load_ui_prefs().get("screen_ocr_warmup", True))
+_ocr_engine = _ensure_ocr_engine(screen_warmup=_active_screen_ocr_warmup)
+if st.session_state.get("ocr_ui_status") == "pending":
+    st.stop()
+
+# Apply OCR results before sidebar/main widgets so first paint has filled values.
+_apply_pending_capture(state, map_names=_map_names)
+
+_deferred_capture = st.session_state.pop("_deferred_capture_job", None)
+if _deferred_capture is not None:
+    if _ocr_engine is None:
+        st.warning("OCR \u5f15\u64ce\u672a\u5c31\u7eea\uff0c\u65e0\u6cd5\u6293\u5c4f\u3002")
+    else:
+        _execute_deferred_capture(_deferred_capture, map_names=_map_names)
+        if "_pending_capture" in st.session_state:
+            _apply_pending_capture(state, map_names=_map_names)
+    st.rerun()
+
 with st.sidebar:
-    _apply_pending_capture(state, map_names=_map_names)
-    _ocr_engine = _sidebar_ocr_status_and_engine()
+    if st.session_state.pop("_ocr_warmup_toast", False):
+        st.toast(
+            "OCR 已就绪（启动暖机已完成）。首次抓屏 OCR 可能比之后慢几秒，属正常现象。",
+            icon="\u2705",
+        )
+    if st.session_state.pop("_ocr_first_grab_toast", False):
+        st.toast(
+            "首次 OCR 已完成。同一会话内再次抓屏通常会更快。",
+            icon="\u2139\ufe0f",
+        )
+    if _ocr_engine is not None:
+        render_status_banner(
+            kind="ready",
+            message="OCR 已就绪",
+            detail="",
+        )
+    elif st.session_state.get("ocr_ui_status") == "error":
+        render_status_banner(
+            kind="error",
+            message="OCR 引擎未就绪",
+            detail=str(st.session_state.get("ocr_ui_error", ""))[:200],
+        )
 
     sidebar_section("\u4f1a\u8bdd", variant="session", icon="\U0001f3ae")
 
@@ -1410,6 +1741,7 @@ with st.sidebar:
     _tracked_mid = st.session_state.get("_tracked_map_id")
     _post_sync_reset = (
         _tracked_mid is not None
+        and _resolved_mid is not None
         and _resolved_mid != _tracked_mid
         and not st.session_state.get("_map_change_toast")
     )
@@ -1417,6 +1749,19 @@ with st.sidebar:
         if st.session_state.pop("_suppress_map_change_reset", False):
             st.session_state["_tracked_map_id"] = _resolved_mid
         else:
+            # #region agent log
+            agent_debug_log(
+                location="streamlit_app.py:sidebar:post_sync_reset",
+                message="map select out of sync; resetting readings",
+                data={
+                    "tracked_mid": _tracked_mid,
+                    "resolved_mid": _resolved_mid,
+                    "main_tab": st.session_state.get("_main_tab"),
+                },
+                hypothesis_id="H15,H16",
+                run_id="post-fix",
+            )
+            # #endregion
             _on_map_context_changed(_resolved_mid, _tracked_mid)
             _tracked_mid = _resolved_mid
     if map_id is None:
@@ -1494,7 +1839,11 @@ with st.sidebar:
             "\u7ea2\u54c1\u603b\u683c/\u4ef7\u503c\u533a\u95f4\u3002\n\n"
             "**\u6293\u53d6\u5f53\u524d\u5c4f\u5e55**\uff1a\u4ec5\u672c\u673a\u622a\u53d6\u6240\u9009\u663e\u793a\u5668\u5de6\u4fa7\u6e38\u620f\u4fe1\u606f\u533a\uff08ROI\uff09"
             "\u505a OCR \u4e0e\u5f15\u64ce\u6696\u673a\uff1b\u4e0d\u4e0a\u4f20\u3001\u4e0d\u5b58\u6863\u3002\u8bf7\u907f\u5f00\u542b\u94f6\u884c\u5361\u3001\u804a\u5929\u7b49\u654f\u611f\u754c\u9762\u3002"
-            "\u9996\u6b21\u6293\u5c4f\u53ef\u80fd\u6bd4\u4e4b\u540e\u6162\u51e0\u79d2\uff08\u5b9e\u51b5\u56fe OCR\uff09\u3002"
+            "\u9996\u6b21\u6293\u5c4f OCR \u901a\u5e38\u6bd4\u4e4b\u540e\u6162\u51e0\u79d2"
+            "\uff08\u542f\u52a8\u65f6\u5df2\u6696\u673a\uff0c\u4f46\u9996\u6b21\u5b9e\u51b5\u6293\u5c4f\u4ecd\u6709\u4e00\u6b21\u5efa\u7acb\u5ef6\u8fdf\uff09\u3002\n\n"
+            "**OCR \u586b\u5165**\uff1a\u4ec5\u8986\u76d6\u672c\u6b21\u8bc6\u522b\u5230\u7684\u5b57\u6bb5\uff1b"
+            "\u672a\u51fa\u73b0\u5728\u9762\u677f\u4e0a\u7684\u9879\uff08\u5982\u81ea\u4f30\u7d2b\u54c1\u683c\u6570\uff09\u4f1a\u4fdd\u7559\u3002"
+            "\u8bc6\u522b\u5230\u7684\u9879\u4f1a\u8986\u76d6\u65e7\u503c\uff08\u542b\u4e0a\u6b21 OCR \u6216\u624b\u586b\uff09\u3002"
         )
     try:
         from bidking_lab.capture.screen import (
@@ -1539,68 +1888,52 @@ with st.sidebar:
             options=list(_mon_labels.keys()),
             format_func=lambda i: _mon_labels[int(i)],
             key="obs_capture_monitor_index",
-            help="\u9009\u6e38\u620f\u7a97\u53e3\u6240\u5728\u7684\u90a3\u4e2a\u5c4f\uff08\u4e0e Streamlit \u5728\u54ea\u4e2a\u5c4f\u65e0\u5173\uff09",
+            help=(
+                "\u6293\u53d6\u6b64\u5904\u9009\u4e2d\u7684\u663e\u793a\u5668\u4e0a\u7684\u6e38\u620f\u4fe1\u606f\u533a\uff08ROI\uff09\uff1b"
+                "\u4e0e\u672c\u9875\u5728\u54ea\u5757\u5c4f\u65e0\u5173\u3002"
+                "\u5efa\u8bae\u628a BidKing \u653e\u526f\u5c4f\u3001\u6e38\u620f\u7559\u5728\u4e3b\u5c4f\uff08\u6216\u6e38\u620f\u5728\u526f\u5c4f\u5219\u5728\u6b64\u9009\u526f\u5c4f\uff09\u3002"
+            ),
         )
     _screen_clicked = st.button(
         "\u6293\u53d6\u5f53\u524d\u5c4f\u5e55",
         key="capture_run_screen",
         width="stretch",
-        help=(
-            "\u672c\u673a ROI \u6293\u5c4f + OCR\uff08\u542b\u5f15\u64ce\u6696\u673a\uff09\uff1b"
-            "\u4e0d\u4e0a\u4f20\u3001\u4e0d\u5b58\u6863\u3002\u8bf7\u907f\u5f00\u542b\u654f\u611f\u4fe1\u606f\u7684\u754c\u9762\u3002"
-        ),
         disabled=not _mons or _ocr_engine is None,
     )
     if _screen_clicked and _mons and _ocr_engine is not None:
+        _delay = (
+            int(st.session_state.get("capture_delay_sec", 2))
+            if _single_monitor
+            else 0
+        )
+        _mon_idx = int(
+            st.session_state.get("obs_capture_monitor_index", _mons[0].index),
+        )
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:screen_capture",
+            message="screen capture deferred",
+            data={
+                "single_monitor": _single_monitor,
+                "monitor_count": len(_mons),
+                "delay_sec": _delay,
+                "main_tab": st.session_state.get("_main_tab"),
+            },
+            hypothesis_id="H5,H12",
+            run_id="post-fix",
+        )
+        # #endregion
         st.session_state["_pre_ocr_ui_snapshot"] = _snapshot_sidebar_ui()
-        try:
-            import time as _time
-
-            _delay = (
-                int(st.session_state.get("capture_delay_sec", 2))
-                if _single_monitor
-                else 0
-            )
-            if _delay > 0:
-                _countdown = st.empty()
-                for _sec in range(_delay, 0, -1):
-                    _countdown.warning(
-                        f"\u8bf7\u5207\u6362\u5230\u6e38\u620f\u7a97\u53e3\u2026 **{_sec}** \u79d2\u540e\u6293\u5c4f",
-                    )
-                    _time.sleep(1)
-                _countdown.empty()
-            _mon_idx = int(st.session_state.get("obs_capture_monitor_index", _mons[0].index))
-            _t_cap = _time.perf_counter()
-            _cap = capture_monitor_panel(
-                ScreenCaptureConfig(monitor_index=_mon_idx),
-            )
-            _grab_ms = int((_time.perf_counter() - _t_cap) * 1000)
-        except RuntimeError as exc:
-            st.warning(str(exc))
-        else:
-            _qerr = _queue_capture_from_bytes(
-                _cap.panel_png,
-                map_names=_map_names,
-                crop_panel=False,
-                source=(
-                    f"screen #{_cap.monitor.index} "
-                    f"{_cap.monitor.width}x{_cap.monitor.height}"
-                ),
-                capture_debug={
-                    "monitor_index": _cap.monitor.index,
-                    "monitor_label": monitor_label(_cap.monitor),
-                    "crop_frac": _cap.crop_frac,
-                    "crop_box": _cap.crop_box,
-                    "monitor_preview_png": _cap.monitor_preview_png,
-                    "grab_ms": _grab_ms,
-                },
-            )
-            st.session_state["_capture_debug_expand"] = True
-            if _qerr:
-                st.warning(_qerr)
-                st.rerun()
-            else:
-                st.rerun()
+        st.session_state["_deferred_capture_job"] = {
+            "kind": "screen",
+            "monitor_index": _mon_idx,
+            "delay_sec": _delay,
+            "monitor_label": monitor_label(
+                next(m for m in _mons if m.index == _mon_idx),
+            ),
+            "status_label": "\u6293\u5c4f\u4e0e OCR \u8bc6\u522b\u4e2d\u2026",
+        }
+        st.rerun()
     _upload_rev = int(st.session_state.get("capture_upload_rev", 0))
     _cap_upload = st.file_uploader(
         "\u4e0a\u4f20\u622a\u56fe",
@@ -1618,55 +1951,33 @@ with st.sidebar:
             disabled=_ocr_engine is None,
         )
     with _btn_ocr:
-        if _cap_upload is not None:
-            _ocr_clicked = st.button(
-                "\u622a\u56fe OCR",
-                key="capture_run_ocr",
-                type="primary",
-                width="stretch",
-                disabled=_ocr_engine is None,
-            )
-        else:
-            st.button(
-                "\u622a\u56fe OCR",
-                key="capture_run_ocr_idle",
-                disabled=True,
-                width="stretch",
-            )
-            _ocr_clicked = False
+        _ocr_clicked = st.button(
+            "\u622a\u56fe OCR",
+            key="capture_run_ocr",
+            type="primary",
+            width="stretch",
+            disabled=_ocr_engine is None or _cap_upload is None,
+            help=(
+                "\u5148\u5728\u4e0a\u65b9\u9009\u62e9\u622a\u56fe\u6587\u4ef6\u540e\u518d\u70b9\u51fb"
+                if _cap_upload is None
+                else "\u5bf9\u5df2\u9009\u622a\u56fe\u8fd0\u884c OCR"
+            ),
+        )
     if _clip_clicked:
-        from bidking_lab.capture.clipboard import clipboard_image_bytes
-
         st.session_state["_pre_ocr_ui_snapshot"] = _snapshot_sidebar_ui()
-        _clip_err: str | None = None
-        _qerr: str | None = None
-        with st.spinner(
-            "\u526a\u8d34\u677f\u8bfb\u53d6\u4e0e OCR \u4e2d\u2026"
-            "\uff08\u5168\u5c4f\u622a\u56fe\u9996\u6b21\u53ef\u80fd\u8f83\u6162\uff09",
-        ):
-            _clip_data, _clip_err = clipboard_image_bytes()
-            if _clip_err:
-                st.warning(_clip_err)
-            else:
-                _qerr = _queue_capture_from_bytes(
-                    _clip_data, map_names=_map_names, source="clipboard",
-                )
-                st.session_state["_capture_debug_expand"] = True
-                if _qerr:
-                    st.warning(_qerr)
-        if not _clip_err and not _qerr:
-            st.rerun()
+        st.session_state["_deferred_capture_job"] = {
+            "kind": "clipboard",
+            "status_label": "\u526a\u8d34\u677f OCR \u4e2d\u2026",
+        }
+        st.rerun()
     if _ocr_clicked:
         st.session_state["_pre_ocr_ui_snapshot"] = _snapshot_sidebar_ui()
-        _qerr = _queue_capture_from_bytes(
-            _cap_upload.getvalue(), map_names=_map_names, source="upload",
-        )
-        st.session_state["_capture_debug_expand"] = True
-        if _qerr:
-            st.warning(_qerr)
-            st.rerun()
-        else:
-            st.rerun()
+        st.session_state["_deferred_capture_job"] = {
+            "kind": "upload",
+            "data": _cap_upload.getvalue(),
+            "status_label": "\u622a\u56fe OCR \u8bc6\u522b\u4e2d\u2026",
+        }
+        st.rerun()
     _render_capture_debug_panel()
     _render_bg_infer_debug_panel()
     st.checkbox(
@@ -1674,8 +1985,9 @@ with st.sidebar:
         value=True,
         key="auto_infer_after_capture",
         help=(
-            "\u586b\u5165\u540e\u540e\u53f0\u8dd1 MC\uff1b\u6539\u8bfb\u6570/\u5730\u56fe\u4f1a\u53d6\u6d88\u3002"
-            "\u7ed3\u679c\u5728\u300c\u51fa\u4ef7\u63a8\u8350\u300dtab\u3002"
+            "\u586b\u5165\u540e\u540e\u53f0\u8dd1 MC\uff08\u4f7f\u7528\u4fa7\u8fb9\u680f\u6837\u672c\u6570\uff0c\u9ed8\u8ba4 1500\uff09\uff1b"
+            "\u6539\u8bfb\u6570/\u5730\u56fe\u4f1a\u53d6\u6d88\u3002"
+            "\u5c31\u7eea\u65f6\u4f1a\u81ea\u52a8\u5207\u5230\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u5e76\u542f\u52a8\u63a8\u65ad\u3002"
             "\u63a8\u65ad\u4e2d\u53ef\u7ee7\u7eed\u6539\u8bfb\u6570\uff08\u975e\u5f53\u524d\u6807\u7b7e\u53ef\u80fd\u7565\u7070\uff0c\u5c5e Streamlit \u5237\u65b0\u6001\uff0c\u4e0d\u4f1a\u9501\u5b9a\u8f93\u5165\uff09\u3002"
         ),
     )
@@ -1710,6 +2022,23 @@ with st.sidebar:
     sidebar_divider()
     sidebar_section("MC \u4e0e\u9ad8\u7ea7", variant="advanced", icon="\u2699\ufe0f")
     with st.expander("\u9ad8\u7ea7\uff1a MC \u91c7\u6837\u53c2\u6570", expanded=False):
+        _prefs_now = load_ui_prefs()
+        _warm_saved = bool(_prefs_now.get("screen_ocr_warmup", True))
+        _warm_pick = st.checkbox(
+            "\u542f\u52a8\u65f6\u4e3b\u5c4f\u6293\u5c4f\u6696\u673a\uff08\u52a0\u5feb\u9996\u6b21\u5b9e\u51b5 OCR\uff09",
+            value=_warm_saved,
+            help=(
+                "\u5f00\u542f\uff1a\u542f\u52a8\u65f6\u591a\u62d3\u4e00\u6b65\u4e3b\u663e\u793a\u5668\u88c1\u5207\u6696\u673a\uff08\u7ea6\u591a\u6570\u79d2\uff09\u3002"
+                "\u5173\u95ed\uff1a\u542f\u52a8\u66f4\u5feb\uff0c\u4f46\u9996\u6b21\u6293\u5c4f\u53ef\u80fd\u66f4\u6162\u3002"
+            ),
+            key="adv_screen_ocr_warmup",
+        )
+        if _warm_pick != _warm_saved:
+            save_ui_prefs({**_prefs_now, "screen_ocr_warmup": _warm_pick})
+            st.caption("\u5df2\u4fdd\u5b58\uff1b\u8bf7\u91cd\u542f Streamlit \u670d\u52a1\u540e\u751f\u6548\u3002")
+        elif _warm_pick != _active_screen_ocr_warmup:
+            st.caption("\u4e0e\u5f53\u524d\u8fd0\u884c\u4e0d\u4e00\u81f4\uff0c\u8bf7\u91cd\u542f Streamlit \u670d\u52a1\u540e\u751f\u6548\u3002")
+        st.divider()
         n_trials = st.slider(
             "MC \u6837\u672c\u6570\uff08samples\uff09", 500, 5000, 1500, step=250,
             help="\u9009\u6863\u8bf4\u660e\uff1a"
@@ -1770,10 +2099,41 @@ else:
     state.pop("map_id", None)
 _tic_sync = _session_int("obs_total_item_count")
 state["total_item_count"] = _tic_sync if _tic_sync > 0 else 0
-from bidking_lab.capture.apply import sync_obs_from_reading_widgets
+from bidking_lab.capture.apply import (
+    hydrate_reading_widgets_from_obs,
+    sync_obs_from_reading_widgets,
+)
 from bidking_lab.inference.readings_validate import check_warehouse_cell_budget
 
-sync_obs_from_reading_widgets(state, st.session_state)
+hydrate_reading_widgets_from_obs(
+    state,
+    st.session_state,
+    force_avg_raw=st.session_state.pop("_force_hydrate_avg_raw", False),
+)
+sync_obs_from_reading_widgets(state, st.session_state, allow_clear=False)
+# #region agent log
+agent_debug_log(
+    location="streamlit_app.py:after_global_hydrate_sync",
+    message="obs snapshot after hydrate (no clear)",
+    data={
+        "obs_reading_keys": sorted(
+            k for k in state if k in (
+                "wg_cells", "white_cells", "blue_cells", "purple_cells",
+                "gold_cells", "purple_avg_raw", "gold_avg_raw",
+            )
+        ),
+        "wg_cells": state.get("wg_cells"),
+        "blue_cells": state.get("blue_cells"),
+        "purple_cells": state.get("purple_cells"),
+        "purple_avg_raw": state.get("purple_avg_raw"),
+        "gold_cells": state.get("gold_cells"),
+        "red_cells_total": state.get("red_cells_total"),
+        "mc_bucket_q": _mc_active_bucket_qs(state, hero),
+    },
+    hypothesis_id="H6,H11",
+    run_id="post-fix",
+)
+# #endregion
 _cells_budget_err = check_warehouse_cell_budget(state)
 warehouse_ready = _wh_sync > 0
 map_ready = state.get("map_id") is not None
@@ -1789,9 +2149,12 @@ if st.session_state.pop("_capture_just_applied", False):
         "\u7d2b\u54c1\u4ef6\u6570" in ln or "purple_count" in ln
         for ln in _cap_lines
     )
+    _on_hint_tab = st.session_state.get("_main_tab") == "hint"
     _toast = "\u5df2\u8bc6\u522b\u5e76\u586b\u5165\u8bfb\u6570\uff08\u8bf7\u6838\u5bf9\u4ed3\u5e93\u683c\u6570\uff09"
-    if _has_purple_cnt:
+    if _has_purple_cnt and not _on_hint_tab:
         _toast += "\uff1b\u7d2b\u54c1\u4ef6\u6570\u5728\u300c\u8bfb\u6570\u8f93\u5165\u300d\u9875"
+    elif _has_purple_cnt:
+        _toast += "\uff1b\u7d2b\u54c1\u4ef6\u6570\u8bf7\u5728\u300c\u8bfb\u6570\u8f93\u5165\u300d\u6838\u5bf9"
     if (
         inference_ready
         and st.session_state.get("auto_infer_after_capture", True)
@@ -1800,7 +2163,10 @@ if st.session_state.pop("_capture_just_applied", False):
             or st.session_state.get("_nudge_hint_tab")
         )
     ):
-        _toast += "\uff1b\u540e\u53f0\u63a8\u65ad\u5df2\u542f\u52a8\uff0c\u8bf7\u6253\u5f00\u300c\u51fa\u4ef7\u63a8\u8350\u300d"
+        if _on_hint_tab:
+            _toast += "\uff1b\u5df2\u5207\u5230\u300c\u51fa\u4ef7\u63a8\u8350\u300d\uff0c\u540e\u53f0\u63a8\u65ad\u8fdb\u884c\u4e2d"
+        else:
+            _toast += "\uff1b\u540e\u53f0\u63a8\u65ad\u5df2\u542f\u52a8\uff0c\u53ef\u5207\u5230\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u67e5\u770b"
     st.toast(_toast, icon="\u2705")
 
 
@@ -1809,11 +2175,9 @@ def _infer_status() -> str:
 
 
 def _mc_ui_running() -> bool:
-    """True while background MC thread is active (live box or session status)."""
+    """True only while the background MC thread box is actively running."""
     box = st.session_state.get("_bg_infer_box")
-    if box is not None and box.get("status") == "running":
-        return True
-    return _infer_status() == "running"
+    return box is not None and box.get("status") == "running"
 
 
 def _hint_banner_show() -> bool:
@@ -1842,33 +2206,89 @@ def _paint_hint_banner(banner_slot) -> None:
     from ui_loading import render_status_banner
 
     status = _infer_status()
-    if status == "running":
-        with banner_slot.container():
+    _banner_branch = "clear"
+    if status == "running" and _mc_ui_running():
+        _banner_branch = "running"
+        with banner_slot:
             render_status_banner(
                 kind="loading",
                 message="\u540e\u53f0\u51fa\u4ef7\u63a8\u65ad\u8fdb\u884c\u4e2d",
                 detail="\u53ef\u7ee7\u7eed\u6539\u8bfb\u6570\uff1b\u4fee\u6539\u8bfb\u6570\u6216\u5730\u56fe\u4f1a\u53d6\u6d88\u672c\u6b21\u63a8\u65ad",
             )
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:_paint_hint_banner",
+            message="banner painted",
+            data={
+                "branch": _banner_branch,
+                "main_tab": st.session_state.get("_main_tab"),
+                "run_elapsed_ms": int((time.perf_counter() - _agent_run_t0) * 1000),
+            },
+            hypothesis_id="H4,H13",
+            run_id="post-fix",
+        )
+        # #endregion
         return
+    if status == "running" and not _mc_ui_running():
+        st.session_state["_bg_infer_status"] = "idle"
+        status = "idle"
     if (
         st.session_state.get("_hint_tab_done_flash")
         and float(st.session_state.get("_hint_infer_until", 0)) > time.time()
     ):
-        with banner_slot.container():
+        _banner_branch = "done"
+        _on_hint = st.session_state.get("_main_tab") == "hint"
+        with banner_slot:
             render_status_banner(
                 kind="ready",
                 message="\u51fa\u4ef7\u63a8\u65ad\u5df2\u5b8c\u6210",
-                detail="\u8bf7\u6253\u5f00\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u6807\u7b7e\u67e5\u770b\u7ed3\u679c",
+                detail=(
+                    "\u7ed3\u679c\u5df2\u66f4\u65b0\u4e8e\u672c\u9875\u4e0b\u65b9"
+                    if _on_hint
+                    else "\u53ef\u5207\u5230\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u6807\u7b7e\u67e5\u770b\u7ed3\u679c"
+                ),
             )
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:_paint_hint_banner",
+            message="banner painted",
+            data={
+                "branch": _banner_branch,
+                "main_tab": st.session_state.get("_main_tab"),
+                "run_elapsed_ms": int((time.perf_counter() - _agent_run_t0) * 1000),
+            },
+            hypothesis_id="H4,H13",
+            run_id="post-fix",
+        )
+        # #endregion
         return
     if st.session_state.get("_nudge_hint_tab"):
+        _banner_branch = "nudge"
         st.session_state.pop("_nudge_hint_tab", None)
-        with banner_slot.container():
+        _on_hint = st.session_state.get("_main_tab") == "hint"
+        with banner_slot:
             render_status_banner(
                 kind="ready",
                 message="\u5df2\u542f\u52a8\u540e\u53f0\u63a8\u65ad",
-                detail="\u6253\u5f00\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u6807\u7b7e\u53ef\u67e5\u770b\u8fdb\u5ea6\u4e0e\u7ed3\u679c",
+                detail=(
+                    "\u8bf7\u5728\u672c\u9875\u7b49\u5f85\u63a8\u65ad\u7ed3\u679c"
+                    if _on_hint
+                    else "\u53ef\u5207\u5230\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u6807\u7b7e\u67e5\u770b\u8fdb\u5ea6\u4e0e\u7ed3\u679c"
+                ),
             )
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:_paint_hint_banner",
+            message="banner painted",
+            data={
+                "branch": _banner_branch,
+                "main_tab": st.session_state.get("_main_tab"),
+                "run_elapsed_ms": int((time.perf_counter() - _agent_run_t0) * 1000),
+            },
+            hypothesis_id="H2,H4,H13",
+            run_id="post-fix",
+        )
+        # #endregion
         return
     banner_slot.empty()
 
@@ -1903,7 +2323,9 @@ def _sync_obs_from_widgets(obs_state: dict) -> None:
     mid = _resolved_map_select(_maps_for_category(maps, cat))
     if mid is not None:
         obs_state["map_id"] = mid
-    sync_obs_from_reading_widgets(obs_state, st.session_state)
+    sync_obs_from_reading_widgets(
+        obs_state, st.session_state, allow_clear=False,
+    )
 
 
 def _compute_hint_bundle_ui(obs_state: dict):
@@ -1929,7 +2351,6 @@ def _tick_background_hint() -> str:
     )
     from hint_pipeline import compute_hint_bundle
 
-    _sync_obs_from_widgets(state)
     seed_locked = bool(st.session_state.get("obs_seed_lock", False))
     mc = _mc_sidebar_params()
     fp_mc = _mc_fingerprint_params(seed_locked=seed_locked)
@@ -1937,6 +2358,14 @@ def _tick_background_hint() -> str:
         st.session_state, state=state, mc=mc, mc_fingerprint=fp_mc,
     )
     if st.session_state.pop("_request_bg_hint", False) and inference_ready:
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:_tick_background_hint:start",
+            message="starting background hint",
+            data={"main_tab": st.session_state.get("_main_tab")},
+            hypothesis_id="H2,H4",
+        )
+        # #endregion
         def _compute(st_snap: dict, mc_p: dict):
             return compute_hint_bundle(
                 st_snap,
@@ -1960,17 +2389,32 @@ def _tick_background_hint() -> str:
         )
         st.session_state["_hint_bundle"] = None
         _clear_hint_done_flash()
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:_tick_background_hint:mc_buckets",
+            message="MC started with bucket qs",
+            data={
+                "hero": state.get("hero"),
+                "mc_bucket_q": _mc_active_bucket_qs(state, str(state.get("hero", "ethan"))),
+                "purple_avg_raw": state.get("purple_avg_raw"),
+                "purple_cells": state.get("purple_cells"),
+                "gold_cells": state.get("gold_cells"),
+                "red_cells_total": state.get("red_cells_total"),
+            },
+            hypothesis_id="H11",
+            run_id="post-fix",
+        )
+        # #endregion
         return "running"
     return status
 
 
-def _fragment_sync_background_hint() -> str:
-    """Poll MC thread; update session bundle. No full-page rerun."""
+def _poll_background_hint() -> str:
+    """Poll MC thread on each main script run (no st.fragment timer)."""
     from bg_inference import sync_background_hint
 
     if st.session_state.get("_bg_infer_box") is None:
         return str(st.session_state.get("_bg_infer_status", "idle"))
-    _sync_obs_from_widgets(state)
     seed_locked = bool(st.session_state.get("obs_seed_lock", False))
     mc = _mc_sidebar_params()
     fp_mc = _mc_fingerprint_params(seed_locked=seed_locked)
@@ -1982,9 +2426,22 @@ def _fragment_sync_background_hint() -> str:
     if status == "done" and not had_bundle:
         import time as _time
 
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:_poll_background_hint:done",
+            message="bg hint finished",
+            data={
+                "main_tab": st.session_state.get("_main_tab"),
+                "had_bundle": had_bundle,
+                "has_bundle_now": st.session_state.get("_hint_bundle") is not None,
+            },
+            hypothesis_id="H1,H2",
+        )
+        # #endregion
         st.session_state.pop("_nudge_hint_tab", None)
         st.session_state["_hint_tab_done_flash"] = True
         st.session_state["_hint_infer_until"] = _time.time() + 8
+        st.session_state["_hint_results_ready_rerun"] = True
         if st.session_state.get("_hint_bundle") is not None:
             if not st.session_state.get("_hint_done_toast_shown"):
                 st.toast(
@@ -2005,27 +2462,24 @@ def _fragment_sync_background_hint() -> str:
 
 _hint_banner_slot = st.empty()
 
-
-@st.fragment(run_every=2)
-def _bg_infer_poll_fragment() -> None:
-    """Poll MC on main thread only; refresh top banner (no full tab repaint)."""
-    if not _bg_infer_poll_needed() and not _hint_banner_show():
-        return
-    if _bg_infer_poll_needed():
-        _fragment_sync_background_hint()
-    _paint_hint_banner(_hint_banner_slot)
-
-
 _bg_infer_status = _tick_background_hint()
 st.session_state["_bg_infer_status"] = _bg_infer_status
-if _bg_infer_poll_needed():
-    _bg_infer_poll_fragment()
-else:
-    _paint_hint_banner(_hint_banner_slot)
+_paint_hint_banner(_hint_banner_slot)
+_infer_status_for_ui = (
+    "running" if _mc_ui_running() else _infer_status()
+)
 _hint_lbl = hint_tab_label(
-    infer_status="running" if _mc_ui_running() else _infer_status(),
+    infer_status=_infer_status_for_ui,
     done_flash=bool(st.session_state.get("_hint_tab_done_flash")),
 )
+# Running state uses the banner only; avoid duplicate "进行中" lines.
+_tab_status_text = hint_tab_status_line(
+    infer_status=_infer_status_for_ui,
+    done_flash=bool(st.session_state.get("_hint_tab_done_flash")),
+)
+if _infer_status_for_ui == "running":
+    _tab_status_text = ""
+render_tab_status_line(_tab_status_text)
 _tab_keys = ["obs", "hint", "roi"]
 _tab_labels = {
     "obs": "\U0001F4DD \u8bfb\u6570\u8f93\u5165",
@@ -2037,428 +2491,513 @@ if show_experimental:
     _tab_labels["joint"] = "\u2697\ufe0f \u8054\u5408\u63a8\u65ad\uff08\u5b9e\u9a8c\u6027\uff09"
 st.session_state.setdefault("_main_tab", "obs")
 _main_tab = render_main_tab_nav(keys=_tab_keys, labels=_tab_labels)
+# #region agent log
+agent_debug_log(
+    location="streamlit_app.py:after_tab_nav",
+    message="tab selected for render",
+    data={
+        "main_tab": _main_tab,
+        "session_main_tab": st.session_state.get("_main_tab"),
+        "infer_status": _bg_infer_status,
+        "mc_running": _mc_ui_running(),
+        "run_elapsed_ms": int((time.perf_counter() - _agent_run_t0) * 1000),
+    },
+    hypothesis_id="H1,H3,H4",
+)
+# #endregion
 tab_joint = None
 
 # ===== Tab 1: \u8bfb\u6570\u8f93\u5165 =====
+_obs_tab_slot = st.empty()
 if _main_tab == "obs":
-    from bidking_lab.capture.apply import (
-        hydrate_reading_widgets_from_obs,
-        reading_widget_key as _rwk,
-        sync_obs_from_reading_widgets,
-    )
+    with _obs_tab_slot.container():
+        from bidking_lab.capture.apply import (
+            hydrate_reading_widgets_from_obs,
+            reading_widget_key as _rwk,
+            reconcile_avg_raw_widget_return,
+            sync_obs_from_reading_widgets,
+        )
 
-    sync_obs_from_reading_widgets(state, st.session_state)
-    hydrate_reading_widgets_from_obs(state, st.session_state)
+        hydrate_reading_widgets_from_obs(
+            state,
+            st.session_state,
+            force_numeric=True,
+            force_avg_raw=True,
+        )
 
-    tab_lead(
-        "\u9762\u677f\u5bfc\u5165\u4e0d\u542b\u5de8\u7269\u4fe1\u606f\uff1a\u8bf7\u624b\u52a8\u586b\u7d2b/\u91d1/\u7ea2 "
-        "\u300c\u5de8\u7269\u6570\u91cf\u300d\u3001\u2605 \u5177\u4f53\u7269\u3001\u7ea2\u54c1\u4ef7\u503c\u533a\u95f4\u3002"
-    )
-    if _cells_budget_err:
-        st.error(_cells_budget_err)
-    st.subheader("\u4f4e\u54c1\u533a\uff08q\u22643\uff09")
-    if hero == "ethan":
-        st.markdown(
-            "Ethan \u4f7f\u7528 **\u666e\u54c1\u626b\u63cf** \u540c\u65f6\u7ed9\u51fa "
-            "\u767d+\u7eff **\u5408\u5e76\u603b cells**\uff1bAisha "
-            "\u7528 R1/R2 **\u8f6e\u5ed3\u5206\u522b\u7ed9** \u767d\u548c\u7eff\u3002"
+        tab_lead(
+            "\u9762\u677f\u5bfc\u5165\u4e0d\u542b\u5de8\u7269\u4fe1\u606f\uff1a\u8bf7\u624b\u52a8\u586b\u7d2b/\u91d1/\u7ea2 "
+            "\u300c\u5de8\u7269\u6570\u91cf\u300d\u3001\u2605 \u5177\u4f53\u7269\u3001\u7ea2\u54c1\u4ef7\u503c\u533a\u95f4\u3002"
         )
-        c1, c2 = st.columns(2)
-        state["wg_cells"] = c1.number_input(
-            "\u767d+\u7eff \u5408\u5e76\u603b\u683c\u6570\uff08\u666e\u54c1\u626b\u63cf\u4e00\u6b21\u7ed9\u51fa\uff09",
-            min_value=0, max_value=80, value=None, step=1,
-            placeholder="\u53ef\u9009",
-            help="\u666e\u54c1\u626b\u63cf\u6216\u76ee\u6d4b\u7ed9\u51fa\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-            key=_rwk("obs_reading_wg_cells", st.session_state),
+        if _cells_budget_err:
+            st.error(_cells_budget_err)
+        st.subheader("\u4f4e\u54c1\u533a\uff08q\u22643\uff09")
+        if hero == "ethan":
+            st.markdown(
+                "Ethan \u4f7f\u7528 **\u666e\u54c1\u626b\u63cf** \u540c\u65f6\u7ed9\u51fa "
+                "\u767d+\u7eff **\u5408\u5e76\u603b cells**\uff1bAisha "
+                "\u7528 R1/R2 **\u8f6e\u5ed3\u5206\u522b\u7ed9** \u767d\u548c\u7eff\u3002"
+            )
+            c1, c2 = st.columns(2)
+            state["wg_cells"] = c1.number_input(
+                "\u767d+\u7eff \u5408\u5e76\u603b\u683c\u6570\uff08\u666e\u54c1\u626b\u63cf\u4e00\u6b21\u7ed9\u51fa\uff09",
+                min_value=0, max_value=80, value=None, step=1,
+                placeholder="\u53ef\u9009",
+                help="\u666e\u54c1\u626b\u63cf\u6216\u76ee\u6d4b\u7ed9\u51fa\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+                key=_rwk("obs_reading_wg_cells", st.session_state),
+            )
+            state["blue_cells"] = c2.number_input(
+                "\u84dd\u54c1\u603b\u683c\u6570\uff08\u826f\u54c1\u626b\u63cf\uff09",
+                min_value=0, max_value=80, value=None, step=1,
+                placeholder="\u53ef\u9009",
+                help="\u826f\u54c1\u626b\u63cf\u7ed9\u51fa\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+                key=_rwk("obs_reading_blue_cells", st.session_state),
+            )
+            state["aisha_split"] = False
+        else:
+            state["aisha_split"] = st.checkbox(
+                "\u62c6\u5206\u767d / \u7eff \u8f6e\u5ed3\uff08R1 \u8f6e\u5ed3 = \u767d\uff0cR2 \u8f6e\u5ed3 = \u7eff\uff09",
+                value=True,
+                help="\u52fe\u9009\u540e\u53ef\u4ee5\u4e3a\u767d / \u7eff / \u84dd \u5206\u522b\u586b\u683c\u6570\uff1b"
+                     "\u4e0d\u52fe\u9009\u5219\u6309 Ethan \u98ce\u683c\u5c06\u767d\u7eff\u5408\u5e76\u3002",
+            )
+            st.caption(
+                "\u827e\u838e\u9760\u8f6e\u5ed3\u81ea\u5df1\u6570\u683c\u5b50 + \u6570\u4ef6\u6570\u3002\u4ef6\u6570\u53ef\u9009\u586b\uff0c"
+                "\u586b\u4e86\u53ef\u8ba9\u8054\u5408\u63a8\u65ad / \u603b\u85cf\u54c1\u6570\u5316\u7b80\u4e00\u4e2a\u91cf\u3002"
+            )
+            if state["aisha_split"]:
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    state["white_cells"] = st.number_input(
+                        "\u767d\u54c1\u683c\u6570\uff08R1 \u8f6e\u5ed3\uff09",
+                        min_value=0, max_value=60, step=1,
+                        placeholder="0",
+                        key=_rwk("obs_reading_white_cells", st.session_state),
+                    )
+                    state["white_count"] = st.number_input(
+                        "\u767d\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
+                        min_value=0, max_value=30, step=1,
+                        placeholder="0",
+                        key=_rwk("obs_reading_white_count", st.session_state),
+                    )
+                with c2:
+                    state["green_cells"] = st.number_input(
+                        "\u7eff\u54c1\u683c\u6570\uff08R2 \u8f6e\u5ed3\uff09",
+                        min_value=0, max_value=60, step=1,
+                        placeholder="0",
+                        key=_rwk("obs_reading_green_cells", st.session_state),
+                    )
+                    state["green_count"] = st.number_input(
+                        "\u7eff\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
+                        min_value=0, max_value=30, step=1,
+                        placeholder="0",
+                        key=_rwk("obs_reading_green_count", st.session_state),
+                    )
+                with c3:
+                    state["blue_cells"] = st.number_input(
+                        "\u84dd\u54c1\u683c\u6570\uff08R3 \u8f6e\u5ed3\uff09",
+                        min_value=0, max_value=80, step=1,
+                        placeholder="0",
+                        key=_rwk("obs_reading_blue_cells", st.session_state),
+                    )
+                    state["blue_count"] = st.number_input(
+                        "\u84dd\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
+                        min_value=0, max_value=20, step=1,
+                        placeholder="0",
+                        key=_rwk("obs_reading_blue_count", st.session_state),
+                    )
+            else:
+                c1, c2 = st.columns(2)
+                with c1:
+                    state["white_cells"] = st.number_input(
+                        "\u767d+\u7eff \u5408\u5e76\u603b\u683c\u6570",
+                        min_value=0, max_value=80, step=1,
+                        placeholder="0",
+                        key=_rwk("obs_reading_white_cells", st.session_state),
+                    )
+                    state["white_count"] = st.number_input(
+                        "\u767d+\u7eff \u5408\u5e76\u4ef6\u6570\uff08\u53ef\u9009\uff09",
+                        min_value=0, max_value=40, step=1,
+                        placeholder="0",
+                        key=_rwk("obs_reading_white_count", st.session_state),
+                    )
+                state["green_cells"] = 0
+                state["green_count"] = 0
+                with c2:
+                    state["blue_cells"] = st.number_input(
+                        "\u84dd\u54c1\u683c\u6570\uff08R3 \u8f6e\u5ed3\uff09",
+                        min_value=0, max_value=80, step=1,
+                        placeholder="0",
+                        key=_rwk("obs_reading_blue_cells", st.session_state),
+                    )
+                    state["blue_count"] = st.number_input(
+                        "\u84dd\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
+                        min_value=0, max_value=20, step=1,
+                        placeholder="0",
+                        key=_rwk("obs_reading_blue_count", st.session_state),
+                    )
+
+        st.divider()
+        with st.expander("\u2139\ufe0f \u4ec0\u4e48\u7b97\u300c\u5de8\u7269 / \u5927\u4ef6\u300d\uff1f", expanded=False):
+            st.markdown(
+                "\u54c1\u8d28\u9608\u503c\u4e0d\u4e00\u6837\uff0c\u56e0\u4e3a\u6e38\u620f\u6570\u636e\u91cc\u4e0d\u540c\u54c1\u8d28\u7684\u5927\u4ef6\u5206\u5e03\u4e0d\u540c\uff1a\n\n"
+                "- **\u7d2b\u54c1\uff1a\u2265 10 \u683c** \u7b97\u5927\u4ef6\u3002\u6e38\u620f\u91cc\u7d2b\u54c1 \u2265 12 \u683c\u53ea\u6709 1 \u4ef6\uff08\u53ef\u6298\u53e0\u9ad8\u97e7\u6027\u9632\u62a4\u76fe 3\u00d74\uff09\uff0c\u4f46 5\u00d72=10 \u683c\u7684\u52a0\u7279\u6797\u91cd\u673a\u67aa\u73a9\u5bb6\u5bb9\u6613\u8bc6\u522b\uff0c\u6240\u4ee5\u9608\u503c\u653e\u5bbd\u5230 10\u3002\n"
+                "- **\u91d1\u54c1\uff1a\u2265 12 \u683c** (3\u00d74)\u3002\u9632\u5f39\u8863 / \u6ce2\u65af\u6bef / \u751f\u5316\u5206\u6790\u4eea / \u670d\u52a1\u5668\u673a\u67dc / \u9502\u7535\u6c60 / \u5feb\u8247\u90fd\u662f\u3002\n"
+                "- **\u7ea2\u54c1\uff1a\u2265 12 \u683c** (3\u00d74)\u3002\u5c4f\u98ce / \u96f7\u8fbe / \u91d1\u67aa\u9c7c / \u8dd1\u8f66 / \u98de\u884c\u5668\u90fd\u662f\u3002\n\n"
+                "\u5f15\u64ce\u9ed8\u8ba4\u7528\u8be5\u54c1\u8d28\u7684\u6700\u5c0f\u5de8\u7269\u5360\u5730\u4f5c\u4e3a\u4e0b\u9650\uff08\u975e\u2605\uff09\uff1b"
+                "\u9009 \u300c\u2605 \u5177\u4f53\u7269\u54c1\u300d \u540e\u7528\u8be5\u7269\u54c1\u51c6\u786e\u683c\u6570\u3002"
+                "\u4f30\u503c\u4fa7\u7528\u6df7\u5408\u5148\u9a8c\uff08\u91d1\u22487000/\u683c\u3001\u7ea2\u224830000/\u683c\uff09\uff0c\u4e0e\u5360\u683c\u4e0b\u9650\u5206\u5f00\u3002"
+                "\u8be6\u89c1 TROUBLESHOOTING #33\u3002\n\n"
+                "**\u53ef\u89c1\u6027**\uff1aEthan \u80fd\u770b\u5230\u7d2b/\u91d1/\u7ea2 \u4e09\u8272\u8f6e\u5ed3\uff1bAisha \u53ea\u80fd\u770b\u5230\u7d2b \u5927\u4ef6\uff08\u91d1/\u7ea2 \u9700\u731c\uff0c\u91d1/\u7ea2 selectbox \u88ab\u9501\uff09\u3002"
+            )
+        st.subheader("\u7d2b\u54c1\uff08q=4\uff0c\u53ef\u9009\uff09")
+        st.info(
+            "**\u5b57\u6bb5\u4f5c\u7528\u8303\u56f4**\uff1a\u4e0a\u65b9\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u91cc\u7684 **\u4ed3\u5e93\u4ef7\u503c\u533a\u95f4 / bucket \u540e\u9a8c** "
+            "\u6765\u81ea MC\uff08\u683c\u6570\u3001\u4ef6\u6570\u3001\u603b\u4f30\u4ef7\u3001\u5de8\u7269 **\u4ef6\u6570 band**\uff09\u3002"
+            "**\u5747\u683c / \u5747\u4ef7** \u53ea\u7528\u4e8e\u672c\u533a\u4e0b\u65b9\u300c\u5f15\u64ce\u679a\u4e3e\u300d\u9884\u89c8\u4e0e\u5206\u6790\u63a8\u683c\uff0c"
+            "**\u4e0d\u4f1a** \u6539\u53d8 MC \u5206\u4f4d\u6570\u3002"
+            "\u300c\u2605 \u5177\u4f53\u5de8\u7269\u300d\u4e3b\u8981\u9501\u5b9a\u6bcf\u4ef6\u5360\u683c\uff08\u679a\u4e3e\u7528\uff09\uff1b"
+            "\u300c1 \u4e2a / 2\u20133 \u4e2a\u300d\u7c7b\u5de8\u7269\u6570\u4f1a\u8fdb\u5165 MC \u8fc7\u6ee4\u3002",
+            icon="\u2139\ufe0f",
         )
-        state["blue_cells"] = c2.number_input(
-            "\u84dd\u54c1\u603b\u683c\u6570\uff08\u826f\u54c1\u626b\u63cf\uff09",
-            min_value=0, max_value=80, value=None, step=1,
-            placeholder="\u53ef\u9009",
-            help="\u826f\u54c1\u626b\u63cf\u7ed9\u51fa\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-            key=_rwk("obs_reading_blue_cells", st.session_state),
-        )
-        state["white_cells"] = state["wg_cells"]
-        state["green_cells"] = 0
-        state["aisha_split"] = False
-    else:
-        state["aisha_split"] = st.checkbox(
-            "\u62c6\u5206\u767d / \u7eff \u8f6e\u5ed3\uff08R1 \u8f6e\u5ed3 = \u767d\uff0cR2 \u8f6e\u5ed3 = \u7eff\uff09",
-            value=True,
-            help="\u52fe\u9009\u540e\u53ef\u4ee5\u4e3a\u767d / \u7eff / \u84dd \u5206\u522b\u586b\u683c\u6570\uff1b"
-                 "\u4e0d\u52fe\u9009\u5219\u6309 Ethan \u98ce\u683c\u5c06\u767d\u7eff\u5408\u5e76\u3002",
+        st.info(
+            "\u5747\u683c\u586b\u5199\u63d0\u793a\uff1a\u300c**2.9**\u300d \u4e0e \u300c**2.90**\u300d \u4e0d\u540c\u3002"
+            "\u300c2.9\u300d = \u6070\u597d 2.9\uff08\u7cbe\u786e\u503c\uff09\uff1b"
+            "\u300c2.90\u300d = \u88ab\u622a\u65ad\u8fc7\u7684\u8fd1\u4f3c\u503c\uff08\u4f8b 2.9090909... = 32 \u683c 11 \u4ef6\uff09\u3002"
+            "\u8bf7\u4e25\u683c\u6309\u6e38\u620f\u539f\u6837\u586b\u5165\uff0c\u5c3e\u96f6\u4f1a\u88ab\u5f15\u64ce\u7528\u6765\u9501\u4f4f (cells, count) \u5019\u9009\u3002",
+            icon="\u2139\ufe0f",
         )
         st.caption(
-            "\u827e\u838e\u9760\u8f6e\u5ed3\u81ea\u5df1\u6570\u683c\u5b50 + \u6570\u4ef6\u6570\u3002\u4ef6\u6570\u53ef\u9009\u586b\uff0c"
-            "\u586b\u4e86\u53ef\u8ba9\u8054\u5408\u63a8\u65ad / \u603b\u85cf\u54c1\u6570\u5316\u7b80\u4e00\u4e2a\u91cf\u3002"
+            "\U0001F4A1 \u5355\u4ef6\u7269\u54c1\u52a0\u901f\uff08\u9002\u7528\u4e8e\u7d2b/\u91d1\uff0c**\u4ec5\u5f71\u54cd\u4e0b\u65b9\u5019\u9009\u6392\u5e8f**\uff0c\u4e0d\u6539 MC \u4ed3\u5e93\u4ef7\u503c\u533a\u95f4\uff09\uff1a"
+            "\u5f53 **\u4ef6\u6570 = 1** \u4e14\u586b\u4e86 **\u603b\u4f30\u503c** \u65f6\uff0c"
+            "\u5f15\u64ce\u67e5 Item.txt\uff1b\u4ef7\u503c \u00b12% \u547d\u4e2d\u5355\u4ef6\u65f6\u5019\u9009\u4f1a\u9876\u7f6e\u8be5 (cells,count)\uff08"
+            "\u4f8b\uff1a\u91d1\u54c1 value=24435 \u2192 2\u683c/1\u4ef6\uff09\u3002"
+            "\u591a\u4ef6 (count\u22652) \u4e0d\u8d70\u6b64\u52a0\u901f\u3002"
         )
-        if state["aisha_split"]:
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                state["white_cells"] = st.number_input(
-                    "\u767d\u54c1\u683c\u6570\uff08R1 \u8f6e\u5ed3\uff09",
-                    min_value=0, max_value=60, value=0, step=1,
-                    placeholder="0",
-                    key=_rwk("obs_reading_white_cells", st.session_state),
-                )
-                state["white_count"] = st.number_input(
-                    "\u767d\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
-                    min_value=0, max_value=30, value=0, step=1,
-                    key=_rwk("obs_reading_white_count", st.session_state),
-                )
-            with c2:
-                state["green_cells"] = st.number_input(
-                    "\u7eff\u54c1\u683c\u6570\uff08R2 \u8f6e\u5ed3\uff09",
-                    min_value=0, max_value=60, value=0, step=1,
-                    key=_rwk("obs_reading_green_cells", st.session_state),
-                )
-                state["green_count"] = st.number_input(
-                    "\u7eff\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
-                    min_value=0, max_value=30, value=0, step=1,
-                    key=_rwk("obs_reading_green_count", st.session_state),
-                )
-            with c3:
-                state["blue_cells"] = st.number_input(
-                    "\u84dd\u54c1\u683c\u6570\uff08R3 \u8f6e\u5ed3\uff09",
-                    min_value=0, max_value=80, value=0, step=1,
-                    key=_rwk("obs_reading_blue_cells", st.session_state),
-                )
-                state["blue_count"] = st.number_input(
-                    "\u84dd\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
-                    min_value=0, max_value=20, value=0, step=1,
-                    key=_rwk("obs_reading_blue_count", st.session_state),
-                )
-        else:
-            c1, c2 = st.columns(2)
-            with c1:
-                state["white_cells"] = st.number_input(
-                    "\u767d+\u7eff \u5408\u5e76\u603b\u683c\u6570",
-                    min_value=0, max_value=80, value=0, step=1,
-                    key=_rwk("obs_reading_white_cells", st.session_state),
-                )
-                state["white_count"] = st.number_input(
-                    "\u767d+\u7eff \u5408\u5e76\u4ef6\u6570\uff08\u53ef\u9009\uff09",
-                    min_value=0, max_value=40, value=0, step=1,
-                    key=_rwk("obs_reading_white_count", st.session_state),
-                )
-            state["green_cells"] = 0
-            state["green_count"] = 0
-            with c2:
-                state["blue_cells"] = st.number_input(
-                    "\u84dd\u54c1\u683c\u6570\uff08R3 \u8f6e\u5ed3\uff09",
-                    min_value=0, max_value=80, value=0, step=1,
-                    key=_rwk("obs_reading_blue_cells", st.session_state),
-                )
-                state["blue_count"] = st.number_input(
-                    "\u84dd\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
-                    min_value=0, max_value=20, value=0, step=1,
-                    key=_rwk("obs_reading_blue_count", st.session_state),
-                )
-
-    st.divider()
-    with st.expander("\u2139\ufe0f \u4ec0\u4e48\u7b97\u300c\u5de8\u7269 / \u5927\u4ef6\u300d\uff1f", expanded=False):
-        st.markdown(
-            "\u54c1\u8d28\u9608\u503c\u4e0d\u4e00\u6837\uff0c\u56e0\u4e3a\u6e38\u620f\u6570\u636e\u91cc\u4e0d\u540c\u54c1\u8d28\u7684\u5927\u4ef6\u5206\u5e03\u4e0d\u540c\uff1a\n\n"
-            "- **\u7d2b\u54c1\uff1a\u2265 10 \u683c** \u7b97\u5927\u4ef6\u3002\u6e38\u620f\u91cc\u7d2b\u54c1 \u2265 12 \u683c\u53ea\u6709 1 \u4ef6\uff08\u53ef\u6298\u53e0\u9ad8\u97e7\u6027\u9632\u62a4\u76fe 3\u00d74\uff09\uff0c\u4f46 5\u00d72=10 \u683c\u7684\u52a0\u7279\u6797\u91cd\u673a\u67aa\u73a9\u5bb6\u5bb9\u6613\u8bc6\u522b\uff0c\u6240\u4ee5\u9608\u503c\u653e\u5bbd\u5230 10\u3002\n"
-            "- **\u91d1\u54c1\uff1a\u2265 12 \u683c** (3\u00d74)\u3002\u9632\u5f39\u8863 / \u6ce2\u65af\u6bef / \u751f\u5316\u5206\u6790\u4eea / \u670d\u52a1\u5668\u673a\u67dc / \u9502\u7535\u6c60 / \u5feb\u8247\u90fd\u662f\u3002\n"
-            "- **\u7ea2\u54c1\uff1a\u2265 12 \u683c** (3\u00d74)\u3002\u5c4f\u98ce / \u96f7\u8fbe / \u91d1\u67aa\u9c7c / \u8dd1\u8f66 / \u98de\u884c\u5668\u90fd\u662f\u3002\n\n"
-            "\u5f15\u64ce\u9ed8\u8ba4\u7528\u8be5\u54c1\u8d28\u7684\u6700\u5c0f\u5de8\u7269\u5360\u5730\u4f5c\u4e3a\u4e0b\u9650\uff08\u975e\u2605\uff09\uff1b"
-            "\u9009 \u300c\u2605 \u5177\u4f53\u7269\u54c1\u300d \u540e\u7528\u8be5\u7269\u54c1\u51c6\u786e\u683c\u6570\u3002"
-            "\u4f30\u503c\u4fa7\u7528\u6df7\u5408\u5148\u9a8c\uff08\u91d1\u22487000/\u683c\u3001\u7ea2\u224830000/\u683c\uff09\uff0c\u4e0e\u5360\u683c\u4e0b\u9650\u5206\u5f00\u3002"
-            "\u8be6\u89c1 TROUBLESHOOTING #33\u3002\n\n"
-            "**\u53ef\u89c1\u6027**\uff1aEthan \u80fd\u770b\u5230\u7d2b/\u91d1/\u7ea2 \u4e09\u8272\u8f6e\u5ed3\uff1bAisha \u53ea\u80fd\u770b\u5230\u7d2b \u5927\u4ef6\uff08\u91d1/\u7ea2 \u9700\u731c\uff0c\u91d1/\u7ea2 selectbox \u88ab\u9501\uff09\u3002"
+        # Row 1: cells / count / huge_band (基础格件 + 巨物)
+        pr1c1, pr1c2, pr1c3 = st.columns([1, 1, 1.6])
+        # Row 2: avg_cells / value_sum / avg_value (读数 / 估价 / 均价)
+        pr2c1, pr2c2, pr2c3 = st.columns([1.2, 1.2, 1.2])
+        state["purple_cells"] = pr1c1.number_input(
+            "\u7d2b\u54c1\u603b\u683c\u6570",
+            min_value=0, max_value=80, value=None, step=1,
+            placeholder="\u53ef\u9009",
+            help="\u4f18\u54c1\u626b\u63cf \u6216 \u7d2b\u54c1\u8f6e\u5ed3\u6570\u51fa\u3002"
+                 "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
+            key=_rwk("obs_reading_purple_cells", st.session_state),
         )
-    st.subheader("\u7d2b\u54c1\uff08q=4\uff0c\u53ef\u9009\uff09")
-    st.info(
-        "**\u5b57\u6bb5\u4f5c\u7528\u8303\u56f4**\uff1a\u4e0a\u65b9\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u91cc\u7684 **\u4ed3\u5e93\u4ef7\u503c\u533a\u95f4 / bucket \u540e\u9a8c** "
-        "\u6765\u81ea MC\uff08\u683c\u6570\u3001\u4ef6\u6570\u3001\u603b\u4f30\u4ef7\u3001\u5de8\u7269 **\u4ef6\u6570 band**\uff09\u3002"
-        "**\u5747\u683c / \u5747\u4ef7** \u53ea\u7528\u4e8e\u672c\u533a\u4e0b\u65b9\u300c\u5f15\u64ce\u679a\u4e3e\u300d\u9884\u89c8\u4e0e\u5206\u6790\u63a8\u683c\uff0c"
-        "**\u4e0d\u4f1a** \u6539\u53d8 MC \u5206\u4f4d\u6570\u3002"
-        "\u300c\u2605 \u5177\u4f53\u5de8\u7269\u300d\u4e3b\u8981\u9501\u5b9a\u6bcf\u4ef6\u5360\u683c\uff08\u679a\u4e3e\u7528\uff09\uff1b"
-        "\u300c1 \u4e2a / 2\u20133 \u4e2a\u300d\u7c7b\u5de8\u7269\u6570\u4f1a\u8fdb\u5165 MC \u8fc7\u6ee4\u3002",
-        icon="\u2139\ufe0f",
-    )
-    st.info(
-        "\u5747\u683c\u586b\u5199\u63d0\u793a\uff1a\u300c**2.9**\u300d \u4e0e \u300c**2.90**\u300d \u4e0d\u540c\u3002"
-        "\u300c2.9\u300d = \u6070\u597d 2.9\uff08\u7cbe\u786e\u503c\uff09\uff1b"
-        "\u300c2.90\u300d = \u88ab\u622a\u65ad\u8fc7\u7684\u8fd1\u4f3c\u503c\uff08\u4f8b 2.9090909... = 32 \u683c 11 \u4ef6\uff09\u3002"
-        "\u8bf7\u4e25\u683c\u6309\u6e38\u620f\u539f\u6837\u586b\u5165\uff0c\u5c3e\u96f6\u4f1a\u88ab\u5f15\u64ce\u7528\u6765\u9501\u4f4f (cells, count) \u5019\u9009\u3002",
-        icon="\u2139\ufe0f",
-    )
-    st.caption(
-        "\U0001F4A1 \u5355\u4ef6\u7269\u54c1\u52a0\u901f\uff08\u9002\u7528\u4e8e\u7d2b/\u91d1\uff0c**\u4ec5\u5f71\u54cd\u4e0b\u65b9\u5019\u9009\u6392\u5e8f**\uff0c\u4e0d\u6539 MC \u4ed3\u5e93\u4ef7\u503c\u533a\u95f4\uff09\uff1a"
-        "\u5f53 **\u4ef6\u6570 = 1** \u4e14\u586b\u4e86 **\u603b\u4f30\u503c** \u65f6\uff0c"
-        "\u5f15\u64ce\u67e5 Item.txt\uff1b\u4ef7\u503c \u00b12% \u547d\u4e2d\u5355\u4ef6\u65f6\u5019\u9009\u4f1a\u9876\u7f6e\u8be5 (cells,count)\uff08"
-        "\u4f8b\uff1a\u91d1\u54c1 value=24435 \u2192 2\u683c/1\u4ef6\uff09\u3002"
-        "\u591a\u4ef6 (count\u22652) \u4e0d\u8d70\u6b64\u52a0\u901f\u3002"
-    )
-    # Row 1: cells / count / huge_band (基础格件 + 巨物)
-    pr1c1, pr1c2, pr1c3 = st.columns([1, 1, 1.6])
-    # Row 2: avg_cells / value_sum / avg_value (读数 / 估价 / 均价)
-    pr2c1, pr2c2, pr2c3 = st.columns([1.2, 1.2, 1.2])
-    state["purple_cells"] = pr1c1.number_input(
-        "\u7d2b\u54c1\u603b\u683c\u6570",
-        min_value=0, max_value=80, value=None, step=1,
-        placeholder="\u53ef\u9009",
-        help="\u4f18\u54c1\u626b\u63cf \u6216 \u7d2b\u54c1\u8f6e\u5ed3\u6570\u51fa\u3002"
-             "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
-        key=_rwk("obs_reading_purple_cells", st.session_state),
-    )
-    state["purple_count"] = pr1c2.number_input(
-        "\u7d2b\u54c1\u4ef6\u6570",
-        min_value=0, max_value=30, value=None, step=1,
-        placeholder="\u53ef\u9009",
-        help="\u827e\u838e R4 \u8f6e\u5ed3\u53ef\u6570\u51fa\uff1b\u4f0a\u68ee\u5728\u7d2b\u54c1\u626b\u63cf\u540e\u4e5f\u80fd\u6570\u3002"
-             "\u586b\u4e86\u540e\u8054\u5408\u63a8\u65ad\u7684\u7d2b\u54c1 bucket \u4f1a\u88ab\u552f\u4e00\u9501\u5b9a\u3002",
-        key=_rwk("obs_reading_purple_count", st.session_state),
-    )
-    state["purple_avg_raw"] = pr2c1.text_input(
-        "\u7d2b\u54c1\u5747\u683c\uff08\u4f18\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
-        value="", placeholder="\u4f8b 2.90 \u6216 3.43",
-        help="\u300c2.9\u300d\u548c\u300c2.90\u300d\u4e0d\u540c\uff01\u300c2.9\u300d=\u6e38\u620f\u51fa\u7684\u662f\u6070\u597d 2.9 \u7684\u7cbe\u786e\u503c\uff1b"
-             "\u300c2.90\u300d=\u771f\u5b9e\u503c\u88ab\u622a\u65ad\u5728\u7b2c\u4e8c\u4f4d\u5c0f\u6570\uff08\u4f8b\u5982 2.9090909... = 32 \u683c 11 \u4ef6\uff09\u3002"
-             "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-        key=_rwk("purple_avg_raw_widget", st.session_state),
-    )
-    state["purple_value"] = pr2c2.number_input(
-        "\u7d2b\u54c1\u603b\u4f30\u503c\uff08\u4f18\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
-        min_value=0, max_value=2_000_000, value=None, step=1000,
-        placeholder="\u53ef\u9009",
-        help="\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
-        key=_rwk("obs_reading_purple_value", st.session_state),
-    )
-    state["purple_avg_value"] = pr2c3.number_input(
-        "\u7d2b\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
-        min_value=0, max_value=200_000, value=None, step=100,
-        placeholder="\u53ef\u9009",
-        help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u7d2b\u54c1\u5747\u4ef7 X silver\u300d\u3002"
-             "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
-             "\u4e0e\u603b\u4f30\u4ef7\u8054\u5408\u65f6\u5bb9\u5dee \u00b110%\uff08\u540c\u65f6\u586b \u22654 \u9879\u65f6\u81ea\u52a8\u653e\u5bbd\u81f3 \u00b118%\uff09\u3002"
-             "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-        key=_rwk("obs_reading_purple_avg_value", st.session_state),
-    )
-    _purple_opts, _purple_lbls = _huge_options_for_quality(4)
-    state["purple_huge_band"] = pr1c3.selectbox(
-        "\u7d2b\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u7d2b\u8272\uff09",
-        options=_purple_opts, index=0,
-        key="obs_purple_huge_band",
-        format_func=lambda b: _purple_lbls[b],
-        help="\u53ea\u5728\u901a\u8fc7\u7d2b\u54c1\u8f6e\u5ed3 \u6216 \u4f18\u54c1\u626b\u63cf "
-             "\u786e\u8ba4\u5de8\u7269\u4e3a\u7d2b\u8272\u540e\u586b\u3002\u672a\u786e\u8ba4\u5219\u4fdd\u6301\u300c\u65e0\u300d\u3002"
-             "\u9009\u300c\u2605 \u5177\u4f53\u7269\u54c1\u300d\u53ef\u51c6\u786e\u9501\u5b9a\u683c\u6570\u3002"
-             + _HUGE_SELECTBOX_HELP_TAIL,
-    )
-
-    # ---- 紫品候选预览 ----
-    _pc = state.get("purple_cells")
-    _pk = state.get("purple_count")
-    _pav = state.get("purple_avg_value")
-    _prev_huge_raw = state.get("purple_huge_band", "none")
-    _prev_huge_band, _prev_huge_override = _resolve_huge_selection(_prev_huge_raw, 4)
-    _purple_preview_bucket = QualityBucketObs(
-        quality=4,
-        total_cells=int(_pc) if _pc is not None and int(_pc) > 0 else None,
-        count=int(_pk) if _pk is not None and int(_pk) > 0 else None,
-        avg_cells=_try_parse_reading(state.get("purple_avg_raw")),
-        value_sum=(state.get("purple_value") or 0) or None,
-        avg_value=int(_pav) if _pav is not None and _pav > 0 else None,
-        huge_band=_prev_huge_band,
-        huge_cells_override=_prev_huge_override,
-    )
-    _has_any = (
-        _purple_preview_bucket.total_cells is not None
-        or _purple_preview_bucket.count is not None
-        or _purple_preview_bucket.avg_cells is not None
-        or _purple_preview_bucket.value_sum is not None
-        or _purple_preview_bucket.avg_value is not None
-        or _purple_preview_bucket.huge_band != "none"
-    )
-    if _has_any:
-        _render_candidate_preview(
-            _purple_preview_bucket,
-            warehouse_capacity=_warehouse_capacity(),
-            quality_label="\u7d2b\u54c1",
+        state["purple_count"] = pr1c2.number_input(
+            "\u7d2b\u54c1\u4ef6\u6570",
+            min_value=0, max_value=30, value=None, step=1,
+            placeholder="\u53ef\u9009",
+            help="\u827e\u838e R4 \u8f6e\u5ed3\u53ef\u6570\u51fa\uff1b\u4f0a\u68ee\u5728\u7d2b\u54c1\u626b\u63cf\u540e\u4e5f\u80fd\u6570\u3002"
+                 "\u586b\u4e86\u540e\u8054\u5408\u63a8\u65ad\u7684\u7d2b\u54c1 bucket \u4f1a\u88ab\u552f\u4e00\u9501\u5b9a\u3002",
+            key=_rwk("obs_reading_purple_count", st.session_state),
+        )
+        _pav_wkey = _rwk("purple_avg_raw_widget", st.session_state)
+        state["purple_avg_raw"] = reconcile_avg_raw_widget_return(
+            state,
+            st.session_state,
+            "purple_avg_raw",
+            "purple_avg_raw_widget",
+            pr2c1.text_input(
+                "\u7d2b\u54c1\u5747\u683c\uff08\u4f18\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
+                placeholder="\u4f8b 2.90 \u6216 3.43",
+                help="\u300c2.9\u300d\u548c\u300c2.90\u300d\u4e0d\u540c\uff01\u300c2.9\u300d=\u6e38\u620f\u51fa\u7684\u662f\u6070\u597d 2.9 \u7684\u7cbe\u786e\u503c\uff1b"
+                     "\u300c2.90\u300d=\u771f\u5b9e\u503c\u88ab\u622a\u65ad\u5728\u7b2c\u4e8c\u4f4d\u5c0f\u6570\uff08\u4f8b\u5982 2.9090909... = 32 \u683c 11 \u4ef6\uff09\u3002"
+                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+                key=_pav_wkey,
+            ),
+        )
+        if str(state.get("purple_avg_raw") or "").strip():
+            st.caption(
+                f"\u2713 \u5f53\u524d\u5747\u683c\u8bfb\u6570\uff1a**{state['purple_avg_raw']}**"
+            )
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:purple_avg_text_input",
+            message="purple avg widget vs obs after reconcile",
+            data={
+                "obs_purple_avg_raw": state.get("purple_avg_raw"),
+                "widget_key": _pav_wkey,
+                "widget_val": st.session_state.get(_pav_wkey),
+            },
+            hypothesis_id="H19",
+            run_id="post-fix",
+        )
+        # #endregion
+        state["purple_value"] = pr2c2.number_input(
+            "\u7d2b\u54c1\u603b\u4f30\u503c\uff08\u4f18\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
+            min_value=0, max_value=2_000_000, value=None, step=1000,
+            placeholder="\u53ef\u9009",
+            help="\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
+            key=_rwk("obs_reading_purple_value", st.session_state),
+        )
+        state["purple_avg_value"] = pr2c3.number_input(
+            "\u7d2b\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
+            min_value=0, max_value=200_000, value=None, step=100,
+            placeholder="\u53ef\u9009",
+            help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u7d2b\u54c1\u5747\u4ef7 X silver\u300d\u3002"
+                 "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
+                 "\u4e0e\u603b\u4f30\u4ef7\u8054\u5408\u65f6\u5bb9\u5dee \u00b110%\uff08\u540c\u65f6\u586b \u22654 \u9879\u65f6\u81ea\u52a8\u653e\u5bbd\u81f3 \u00b118%\uff09\u3002"
+                 "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+            key=_rwk("obs_reading_purple_avg_value", st.session_state),
+        )
+        _purple_opts, _purple_lbls = _huge_options_for_quality(4)
+        state["purple_huge_band"] = pr1c3.selectbox(
+            "\u7d2b\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u7d2b\u8272\uff09",
+            options=_purple_opts, index=0,
+            key="obs_purple_huge_band",
+            format_func=lambda b: _purple_lbls[b],
+            help="\u53ea\u5728\u901a\u8fc7\u7d2b\u54c1\u8f6e\u5ed3 \u6216 \u4f18\u54c1\u626b\u63cf "
+                 "\u786e\u8ba4\u5de8\u7269\u4e3a\u7d2b\u8272\u540e\u586b\u3002\u672a\u786e\u8ba4\u5219\u4fdd\u6301\u300c\u65e0\u300d\u3002"
+                 "\u9009\u300c\u2605 \u5177\u4f53\u7269\u54c1\u300d\u53ef\u51c6\u786e\u9501\u5b9a\u683c\u6570\u3002"
+                 + _HUGE_SELECTBOX_HELP_TAIL,
         )
 
-    st.divider()
-    st.subheader("\u91d1\u54c1\uff08q=5\uff0c\u53ef\u9009\uff09")
-    st.caption(
-        "\u91d1\u54c1\u603b\u683c\u6570 / \u603b\u4ef7 / \u5de8\u7269\u4ef6\u6570 \u4f1a\u8fdb\u5165 MC \u8fc7\u6ee4\u3002"
-        "\u5747\u683c\u3001\u5747\u4ef7\u3001\u2605 \u5177\u4f53\u5de8\u7269 \u540c\u7d2b\u54c1\u8bf4\u660e\uff08\u5747\u4ef7\u53ea\u6536\u7d27\u4e0b\u65b9\u679a\u4e3e\uff09\u3002"
-    )
-    # Row 1: cells / count / huge_band
-    gr1c1, gr1c2, gr1c3 = st.columns([1, 1, 1.6])
-    # Row 2: avg_cells / value_sum / avg_value
-    gr2c1, gr2c2, gr2c3 = st.columns([1.2, 1.2, 1.2])
-    state["gold_cells"] = gr1c1.number_input(
-        "\u91d1\u54c1\u603b\u683c\u6570",
-        min_value=0, max_value=80, value=None, step=1,
-        placeholder="\u53ef\u9009",
-        help="\u5730\u56fe\u63d0\u4f9b\u300c\u91d1\u8272\u85cf\u54c1\u603b\u683c\u6570\u300d\u63d0\u793a\u65f6\u586b\u5165\u3002"
-             "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002",
-        key=_rwk("obs_reading_gold_cells", st.session_state),
-    )
-    state["gold_count"] = gr1c2.number_input(
-        "\u91d1\u54c1\u4ef6\u6570",
-        min_value=0, max_value=15, value=None, step=1,
-        placeholder="\u53ef\u9009",
-        help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\u91d1\u8272\u85cf\u54c1\u4ef6\u6570 hint\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-        key=_rwk("obs_reading_gold_count", st.session_state),
-    )
-    state["gold_avg_raw"] = gr2c1.text_input(
-        "\u91d1\u54c1\u5747\u683c\uff08\u6781\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
-        value="", placeholder="\u4f8b 3.5 \u6216 4.25",
-        help="\u540c\u7d2b\u54c1\u5747\u683c\u89c4\u5219\uff1a\u300c3.5\u300d\u662f\u7cbe\u786e\u503c\u3001\u300c3.50\u300d\u662f\u88ab\u622a\u65ad\u8fc7\u7684\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-        key=_rwk("gold_avg_raw_widget", st.session_state),
-    )
-    state["gold_value"] = gr2c2.number_input(
-        "\u91d1\u54c1\u603b\u4f30\u503c\uff08\u6781\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
-        min_value=0, max_value=5_000_000, value=None, step=5000,
-        placeholder="\u53ef\u9009",
-        help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u76f4\u63a5\u7ed9\u51fa\u91d1\u54c1\u603b\u4ef7\uff0c"
-             "\u8bf7\u4f18\u5148\u586b\u8be5\u503c\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b"
-             "\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002"
-             "\u4ef7\u503c\u8fdb MC \u8fc7\u6ee4\uff1b\u82e5\u4ef6\u6570=1 \u4e14\u80fd\u547d\u4e2d Item.txt \u5355\u4ef6\uff0c"
-             "\u4ec5\u5f71\u54cd\u4e0b\u65b9\u5019\u9009\u6392\u5e8f\uff08\u89c1\u7d2b\u54c1\u4e0a\u65b9\u8bf4\u660e\uff09\u3002",
-        key=_rwk("obs_reading_gold_value", st.session_state),
-    )
-    state["gold_avg_value"] = gr2c3.number_input(
-        "\u91d1\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
-        min_value=0, max_value=2_000_000, value=None, step=500,
-        placeholder="\u53ef\u9009",
-        help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u91d1\u54c1\u5747\u4ef7 X silver\u300d\u3002"
-             "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
-             "\u8054\u5408\u603b\u4f30\u4ef7\u65f6 \u00b110%\uff08\u22654 \u9879\u540c\u586b \u2192 \u00b118%\uff09\u3002"
-             "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-        key=_rwk("obs_reading_gold_avg_value", st.session_state),
-    )
-    _gold_opts, _gold_lbls = _huge_options_for_quality(5)
-    state["gold_huge_band"] = gr1c3.selectbox(
-        "\u91d1\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u91d1\u8272\uff09",
-        options=_gold_opts, index=0,
-        key="obs_gold_huge_band",
-        format_func=lambda b: _gold_lbls[b],
-        disabled=(hero == "aisha"),
-        help="\u827e\u838e\u770b\u4e0d\u5230\u91d1\u54c1\u5de8\u7269\u8f6e\u5ed3\uff0c\u8be5\u9009\u9879\u88ab\u9501\u5b9a\u3002"
-             "Ethan \u53ef\u901a\u8fc7\u6781\u54c1\u626b\u63cf / R5 \u5168\u91cf\u8f6e\u5ed3\u786e\u8ba4\u3002"
-             "\u9009\u300c\u2605 \u5355\u4eba\u90ca\u6e38\u5feb\u8247\u300d\u7b49\u5177\u4f53\u7269\u54c1\u53ef\u51c6\u786e\u9501\u5b9a\u683c\u6570\u3002"
-             + _HUGE_SELECTBOX_HELP_TAIL,
-    )
+        # ---- 紫品候选预览 ----
+        _pc = state.get("purple_cells")
+        _pk = state.get("purple_count")
+        _pav = state.get("purple_avg_value")
+        _prev_huge_raw = state.get("purple_huge_band", "none")
+        _prev_huge_band, _prev_huge_override = _resolve_huge_selection(_prev_huge_raw, 4)
+        _purple_preview_bucket = QualityBucketObs(
+            quality=4,
+            total_cells=int(_pc) if _pc is not None and int(_pc) > 0 else None,
+            count=int(_pk) if _pk is not None and int(_pk) > 0 else None,
+            avg_cells=_try_parse_reading(state.get("purple_avg_raw")),
+            value_sum=(state.get("purple_value") or 0) or None,
+            avg_value=int(_pav) if _pav is not None and _pav > 0 else None,
+            huge_band=_prev_huge_band,
+            huge_cells_override=_prev_huge_override,
+        )
+        _has_any = (
+            _purple_preview_bucket.total_cells is not None
+            or _purple_preview_bucket.count is not None
+            or _purple_preview_bucket.avg_cells is not None
+            or _purple_preview_bucket.value_sum is not None
+            or _purple_preview_bucket.avg_value is not None
+            or _purple_preview_bucket.huge_band != "none"
+        )
+        if _has_any:
+            _render_candidate_preview(
+                _purple_preview_bucket,
+                warehouse_capacity=_warehouse_capacity(),
+                quality_label="\u7d2b\u54c1",
+            )
 
-    # ---- 金品候选预览 ----
-    _gold_preview_bucket = _maybe_gold_bucket(state, allow_huge=(hero == "ethan"))
-    if _gold_preview_bucket is not None:
-        _render_candidate_preview(
-            _gold_preview_bucket,
-            warehouse_capacity=_warehouse_capacity(),
-            quality_label="\u91d1\u54c1",
+        st.divider()
+        st.subheader("\u91d1\u54c1\uff08q=5\uff0c\u53ef\u9009\uff09")
+        st.caption(
+            "\u91d1\u54c1\u603b\u683c\u6570 / \u603b\u4ef7 / \u5de8\u7269\u4ef6\u6570 \u4f1a\u8fdb\u5165 MC \u8fc7\u6ee4\u3002"
+            "\u5747\u683c\u3001\u5747\u4ef7\u3001\u2605 \u5177\u4f53\u5de8\u7269 \u540c\u7d2b\u54c1\u8bf4\u660e\uff08\u5747\u4ef7\u53ea\u6536\u7d27\u4e0b\u65b9\u679a\u4e3e\uff09\u3002"
+        )
+        # Row 1: cells / count / huge_band
+        gr1c1, gr1c2, gr1c3 = st.columns([1, 1, 1.6])
+        # Row 2: avg_cells / value_sum / avg_value
+        gr2c1, gr2c2, gr2c3 = st.columns([1.2, 1.2, 1.2])
+        state["gold_cells"] = gr1c1.number_input(
+            "\u91d1\u54c1\u603b\u683c\u6570",
+            min_value=0, max_value=80, value=None, step=1,
+            placeholder="\u53ef\u9009",
+            help="\u5730\u56fe\u63d0\u4f9b\u300c\u91d1\u8272\u85cf\u54c1\u603b\u683c\u6570\u300d\u63d0\u793a\u65f6\u586b\u5165\u3002"
+                 "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002",
+            key=_rwk("obs_reading_gold_cells", st.session_state),
+        )
+        state["gold_count"] = gr1c2.number_input(
+            "\u91d1\u54c1\u4ef6\u6570",
+            min_value=0, max_value=15, value=None, step=1,
+            placeholder="\u53ef\u9009",
+            help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\u91d1\u8272\u85cf\u54c1\u4ef6\u6570 hint\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+            key=_rwk("obs_reading_gold_count", st.session_state),
+        )
+        _gav_wkey = _rwk("gold_avg_raw_widget", st.session_state)
+        state["gold_avg_raw"] = reconcile_avg_raw_widget_return(
+            state,
+            st.session_state,
+            "gold_avg_raw",
+            "gold_avg_raw_widget",
+            gr2c1.text_input(
+                "\u91d1\u54c1\u5747\u683c\uff08\u6781\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
+                placeholder="\u4f8b 3.5 \u6216 4.25",
+                help="\u540c\u7d2b\u54c1\u5747\u683c\u89c4\u5219\uff1a\u300c3.5\u300d\u662f\u7cbe\u786e\u503c\u3001\u300c3.50\u300d\u662f\u88ab\u622a\u65ad\u8fc7\u7684\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+                key=_gav_wkey,
+            ),
+        )
+        if str(state.get("gold_avg_raw") or "").strip():
+            st.caption(
+                f"\u2713 \u5f53\u524d\u5747\u683c\u8bfb\u6570\uff1a**{state['gold_avg_raw']}**"
+            )
+        state["gold_value"] = gr2c2.number_input(
+            "\u91d1\u54c1\u603b\u4f30\u503c\uff08\u6781\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
+            min_value=0, max_value=5_000_000, value=None, step=5000,
+            placeholder="\u53ef\u9009",
+            help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u76f4\u63a5\u7ed9\u51fa\u91d1\u54c1\u603b\u4ef7\uff0c"
+                 "\u8bf7\u4f18\u5148\u586b\u8be5\u503c\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b"
+                 "\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002"
+                 "\u4ef7\u503c\u8fdb MC \u8fc7\u6ee4\uff1b\u82e5\u4ef6\u6570=1 \u4e14\u80fd\u547d\u4e2d Item.txt \u5355\u4ef6\uff0c"
+                 "\u4ec5\u5f71\u54cd\u4e0b\u65b9\u5019\u9009\u6392\u5e8f\uff08\u89c1\u7d2b\u54c1\u4e0a\u65b9\u8bf4\u660e\uff09\u3002",
+            key=_rwk("obs_reading_gold_value", st.session_state),
+        )
+        state["gold_avg_value"] = gr2c3.number_input(
+            "\u91d1\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
+            min_value=0, max_value=2_000_000, value=None, step=500,
+            placeholder="\u53ef\u9009",
+            help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u91d1\u54c1\u5747\u4ef7 X silver\u300d\u3002"
+                 "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
+                 "\u8054\u5408\u603b\u4f30\u4ef7\u65f6 \u00b110%\uff08\u22654 \u9879\u540c\u586b \u2192 \u00b118%\uff09\u3002"
+                 "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+            key=_rwk("obs_reading_gold_avg_value", st.session_state),
+        )
+        _gold_opts, _gold_lbls = _huge_options_for_quality(5)
+        state["gold_huge_band"] = gr1c3.selectbox(
+            "\u91d1\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u91d1\u8272\uff09",
+            options=_gold_opts, index=0,
+            key="obs_gold_huge_band",
+            format_func=lambda b: _gold_lbls[b],
+            disabled=(hero == "aisha"),
+            help="\u827e\u838e\u770b\u4e0d\u5230\u91d1\u54c1\u5de8\u7269\u8f6e\u5ed3\uff0c\u8be5\u9009\u9879\u88ab\u9501\u5b9a\u3002"
+                 "Ethan \u53ef\u901a\u8fc7\u6781\u54c1\u626b\u63cf / R5 \u5168\u91cf\u8f6e\u5ed3\u786e\u8ba4\u3002"
+                 "\u9009\u300c\u2605 \u5355\u4eba\u90ca\u6e38\u5feb\u8247\u300d\u7b49\u5177\u4f53\u7269\u54c1\u53ef\u51c6\u786e\u9501\u5b9a\u683c\u6570\u3002"
+                 + _HUGE_SELECTBOX_HELP_TAIL,
         )
 
-    st.divider()
-    st.subheader("\u7ea2\u54c1\uff08q=6\uff0c\u53ef\u9009\uff09")
-    st.caption(
-        "\u7ea2\u54c1\u51e0\u4e4e\u4e0d\u4f1a\u88ab\u4f30\u4ef7\u9053\u5177\u51c6\u786e\u8bfb\u51fa "
-        "\u2014 \u63a8\u8350\u586b\u4e2a\u4ef7\u503c\u533a\u95f4\uff08\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\uff09\u3002"
-        "\u7ea2\u54c1\u5de8\u7269 **\u4ef6\u6570 band** \u4f1a\u8fdb\u5165 MC \u8fc7\u6ee4\uff08\u4e0e\u683c\u6570\u3001\u4ef7\u503c\u533a\u95f4\u8054\u5408\uff09\u3002"
-        "\u2605 \u5177\u4f53\u7ea2\u8272\u5de8\u7269\u540c\u7d2b/\u91d1\uff1a\u4e3b\u8981\u5f71\u54cd\u679a\u4e3e\u63a8\u683c\u3002"
-    )
+        # ---- 金品候选预览 ----
+        _gold_preview_bucket = _maybe_gold_bucket(state, allow_huge=(hero == "ethan"))
+        if _gold_preview_bucket is not None:
+            _render_candidate_preview(
+                _gold_preview_bucket,
+                warehouse_capacity=_warehouse_capacity(),
+                quality_label="\u91d1\u54c1",
+            )
 
-    c_chk1, c_chk2 = st.columns(2)
-    state["small_warehouse_confirmed"] = c_chk1.checkbox(
-        "\U0001F4E6 \u786e\u8ba4\u5c0f\u4ed3\uff08\u7ea2\u54c1\u6781\u5c11\uff09",
-        value=False,
-        key="obs_small_warehouse_confirmed",
-        help="\u52fe\u9009\u540e\uff0c\u5f15\u64ce\u4f1a\u9650\u5236\u7ea2\u54c1\u683c\u6570\u4e0a\u9650\u4e3a\u4ed3\u5e93\u7684 5%\uff08"
-             "\u4f8b\u5982 80\u683c\u4ed3\u5e93 \u2192 \u7ea2\u54c1 \u2264 4\u683c\uff09\u3002"
-             "\u9002\u7528\u4e8e\u4f60\u80fd\u786e\u8ba4\u8fd9\u662f\u5c0f\u4ed3\u3001\u7ea2\u54c1\u5f88\u5c11\u6216\u6ca1\u6709\u7684\u573a\u666f\u3002",
-    )
-    state["red_confirmed_none"] = c_chk2.checkbox(
-        "\u2705 \u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\uff08\u7ed3\u7b97\u786e\u8ba4\uff09",
-        value=False,
-        key="obs_red_confirmed_none",
-        help="\u52fe\u9009\u540e\uff0c\u5f15\u64ce\u5f3a\u5236 q=6 cells=0\uff08MC \u786c\u7ea6\u675f\uff0c\u4f1a\u663e\u8457\u538b\u4f4e\u4ed3\u5e93\u4ef7\u503c\u533a\u95f4\uff0c\u5c5e\u6b63\u786e\u884c\u4e3a\uff09\u3002"
-             "\u9002\u7528\u4e8e\u7ed3\u7b97\u540e\u786e\u8ba4\u65e0\u7ea2\u54c1\u3001\u6216\u767d+\u7eff+\u84dd+\u7d2b+\u91d1 = \u4ed3\u5e93\u603b\u683c\u6570\u3002",
-    )
-    red_locked = state["red_confirmed_none"] or state["small_warehouse_confirmed"]
-
-    state["red_cells_total"] = st.number_input(
-        "\u7ea2\u54c1\u603b\u683c\u6570\uff08\u73cd\u54c1\u626b\u63cf / \u5730\u56fe hint\uff09",
-        min_value=0, max_value=200, value=None, step=1,
-        placeholder="\u53ef\u9009",
-        disabled=red_locked,
-        help="\u4f0a\u68ee \u73cd\u54c1\u626b\u63cf \u9053\u5177\u8bfb\u51fa\u7684\u7ea2\u54c1\u603b\u683c\u6570\u3002"
-             "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7ea2\u54c1\u3002"
-             "\u586b\u5165\u540e MC \u4f1a\u989d\u5916\u8fc7\u6ee4 |truth.q6\u683c - \u4f60\u586b\u7684\u503c| \u2264 \u5bb9\u5dee\u3002"
-             "\u82e5\u4f60\u52fe\u9009\u4e86\u4e0a\u9762\u300c\u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\uff0c\u8fd9\u91cc\u4f1a\u88ab\u9501\u5b9a\u4e3a 0\u3002",
-        key=_rwk("obs_reading_red_cells_total", st.session_state),
-    )
-
-    c1, c2 = st.columns(2)
-    state["red_value_lo"] = c1.number_input(
-        "\u7ea2\u54c1\u4ef7\u503c\u4e0b\u9650\uff08silver\uff09",
-        min_value=0, max_value=10_000_000, value=None, step=10000,
-        placeholder="\u53ef\u9009",
-        disabled=red_locked,
-        help="\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u4e0a\u4e0b\u9650\u90fd\u586b\u624d\u4f1a\u542f\u7528\u4ef7\u503c\u8fc7\u6ee4\u3002",
-        key=_rwk("obs_reading_red_value_lo", st.session_state),
-    )
-    state["red_value_hi"] = c2.number_input(
-        "\u7ea2\u54c1\u4ef7\u503c\u4e0a\u9650\uff08silver\uff09",
-        min_value=0, max_value=10_000_000, value=None, step=10000,
-        placeholder="\u53ef\u9009",
-        disabled=red_locked,
-        help="\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u4e0a\u4e0b\u9650\u90fd\u586b\u624d\u4f1a\u542f\u7528\u4ef7\u503c\u8fc7\u6ee4\u3002",
-        key=_rwk("obs_reading_red_value_hi", st.session_state),
-    )
-    _red_opts, _red_lbls = _huge_options_for_quality(6)
-    state["red_huge_band"] = st.selectbox(
-        "\u7ea2\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u7ea2\u8272\uff09",
-        options=_red_opts, index=0,
-        key="obs_red_huge_band",
-        format_func=lambda b: _red_lbls[b],
-        disabled=(hero == "aisha") or red_locked,
-        help="\u827e\u838e\u770b\u4e0d\u5230\u7ea2\u54c1\u5de8\u7269\u8f6e\u5ed3\u3002\u4f0a\u68ee "
-             "\u53ef\u4ee5\u901a\u8fc7\u73cd\u54c1\u626b\u63cf\uff08\u7ea2\u54c1\u603b\u683c\u6570\uff09 / R5 \u5168\u91cf\u8f6e\u5ed3"
-             "\u3001\u6216\u6839\u636e 4\u00d74 \u5de8\u7269\u6392\u9664\u77f3\u72ee\u5b50\u540e\u786e\u8ba4\u3002"
-             "\u9009\u300c\u2605 \u5177\u4f53\u7269\u54c1\u300d\u53ef\u51c6\u786e\u9501\u5b9a\u683c\u6570\u3002"
-             + _HUGE_SELECTBOX_HELP_TAIL,
-    )
-
-    st.divider()
-    st.markdown("### \U0001F4D0 \u672a\u786e\u8ba4\u54c1\u8d28\u7684\u5de8\u7269 / \u5927\u4ef6\uff08\u6309\u5f62\u72b6\uff09")
-    st.warning(
-        "\U0001F9EA **\u6d4b\u8bd5\u529f\u80fd\uff0c\u6682\u672a\u63a5\u5165\u63a8\u65ad\u63a5\u53e3**\u3002\u672c\u533a\u4ec5\u8bb0\u5f55\u4f60\u770b\u5230\u7684\u5f62\u72b6\u6570\u91cf\uff0c"
-        "\u4e0d\u4f1a\u88ab\u63a8\u65ad\u5f15\u64ce\u4f7f\u7528\u3002\u82e5\u80fd\u786e\u8ba4\u54c1\u8d28\uff0c"
-        "\u8bf7\u5728\u4e0a\u65b9\u5bf9\u5e94 bucket \u7684\u300c\u5de8\u7269\u6570\u91cf\u300d\u4e0b\u62c9\u6846\u9009\u62e9\u300c\u2605 \u5177\u4f53\u7269\u54c1\u300d\uff0c\u5f15\u64ce\u4f1a\u7acb\u5373\u4f7f\u7528\u3002"
-    )
-    if "seen_shapes" not in st.session_state:
-        st.session_state["seen_shapes"] = {s: 0 for s in BIG_ITEMS_BY_SHAPE}
-    seen = st.session_state["seen_shapes"]
-
-    shape_cols = st.columns(len(BIG_ITEMS_BY_SHAPE))
-    for col, (shape, cands) in zip(shape_cols, BIG_ITEMS_BY_SHAPE.items()):
-        seen[shape] = col.number_input(
-            shape, min_value=0, max_value=6, value=seen.get(shape, 0),
-            step=1, key=_rwk(f"shape_{shape}", st.session_state),
-            help=f"{len(cands)} \u4ef6\u5019\u9009\uff0c\u5c55\u5f00\u5b57\u5178\u770b\u8be6\u60c5",
+        st.divider()
+        st.subheader("\u7ea2\u54c1\uff08q=6\uff0c\u53ef\u9009\uff09")
+        st.caption(
+            "\u7ea2\u54c1\u51e0\u4e4e\u4e0d\u4f1a\u88ab\u4f30\u4ef7\u9053\u5177\u51c6\u786e\u8bfb\u51fa "
+            "\u2014 \u63a8\u8350\u586b\u4e2a\u4ef7\u503c\u533a\u95f4\uff08\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\uff09\u3002"
+            "\u7ea2\u54c1\u5de8\u7269 **\u4ef6\u6570 band** \u4f1a\u8fdb\u5165 MC \u8fc7\u6ee4\uff08\u4e0e\u683c\u6570\u3001\u4ef7\u503c\u533a\u95f4\u8054\u5408\uff09\u3002"
+            "\u2605 \u5177\u4f53\u7ea2\u8272\u5de8\u7269\u540c\u7d2b/\u91d1\uff1a\u4e3b\u8981\u5f71\u54cd\u679a\u4e3e\u63a8\u683c\u3002"
         )
 
-    with st.expander("\U0001F4D6 \u5f62\u72b6 \u2192 \u7269\u54c1 \u5019\u9009\u5b57\u5178", expanded=False):
-        for shape, cands in BIG_ITEMS_BY_SHAPE.items():
-            lines = [f"**{shape}**\uff1a\u5171 {len(cands)} \u4ef6\u5019\u9009"]
-            for c in cands:
-                uniq = "\u2606" if c["unique"] else " "
-                lines.append(
-                    f"- {uniq} {QUALITY_NAME[c['q']]}\u54c1 (q={c['q']})  \u00b7  "
-                    f"**{c['name']}**  \u00b7  {c['value']:,} silver"
-                )
-            st.markdown("\n".join(lines))
+        c_chk1, c_chk2 = st.columns(2)
+        state["small_warehouse_confirmed"] = c_chk1.checkbox(
+            "\U0001F4E6 \u786e\u8ba4\u5c0f\u4ed3\uff08\u7ea2\u54c1\u6781\u5c11\uff09",
+            value=False,
+            key="obs_small_warehouse_confirmed",
+            help="\u52fe\u9009\u540e\uff0c\u5f15\u64ce\u4f1a\u9650\u5236\u7ea2\u54c1\u683c\u6570\u4e0a\u9650\u4e3a\u4ed3\u5e93\u7684 5%\uff08"
+                 "\u4f8b\u5982 80\u683c\u4ed3\u5e93 \u2192 \u7ea2\u54c1 \u2264 4\u683c\uff09\u3002"
+                 "\u9002\u7528\u4e8e\u4f60\u80fd\u786e\u8ba4\u8fd9\u662f\u5c0f\u4ed3\u3001\u7ea2\u54c1\u5f88\u5c11\u6216\u6ca1\u6709\u7684\u573a\u666f\u3002",
+        )
+        state["red_confirmed_none"] = c_chk2.checkbox(
+            "\u2705 \u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\uff08\u7ed3\u7b97\u786e\u8ba4\uff09",
+            value=False,
+            key="obs_red_confirmed_none",
+            help="\u52fe\u9009\u540e\uff0c\u5f15\u64ce\u5f3a\u5236 q=6 cells=0\uff08MC \u786c\u7ea6\u675f\uff0c\u4f1a\u663e\u8457\u538b\u4f4e\u4ed3\u5e93\u4ef7\u503c\u533a\u95f4\uff0c\u5c5e\u6b63\u786e\u884c\u4e3a\uff09\u3002"
+                 "\u9002\u7528\u4e8e\u7ed3\u7b97\u540e\u786e\u8ba4\u65e0\u7ea2\u54c1\u3001\u6216\u767d+\u7eff+\u84dd+\u7d2b+\u91d1 = \u4ed3\u5e93\u603b\u683c\u6570\u3002",
+        )
+        red_locked = state["red_confirmed_none"] or state["small_warehouse_confirmed"]
 
-    sync_obs_from_reading_widgets(state, st.session_state)
+        state["red_cells_total"] = st.number_input(
+            "\u7ea2\u54c1\u603b\u683c\u6570\uff08\u73cd\u54c1\u626b\u63cf / \u5730\u56fe hint\uff09",
+            min_value=0, max_value=200, value=None, step=1,
+            placeholder="\u53ef\u9009",
+            disabled=red_locked,
+            help="\u4f0a\u68ee \u73cd\u54c1\u626b\u63cf \u9053\u5177\u8bfb\u51fa\u7684\u7ea2\u54c1\u603b\u683c\u6570\u3002"
+                 "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7ea2\u54c1\u3002"
+                 "\u586b\u5165\u540e MC \u4f1a\u989d\u5916\u8fc7\u6ee4 |truth.q6\u683c - \u4f60\u586b\u7684\u503c| \u2264 \u5bb9\u5dee\u3002"
+                 "\u82e5\u4f60\u52fe\u9009\u4e86\u4e0a\u9762\u300c\u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\uff0c\u8fd9\u91cc\u4f1a\u88ab\u9501\u5b9a\u4e3a 0\u3002",
+            key=_rwk("obs_reading_red_cells_total", st.session_state),
+        )
 
+        c1, c2 = st.columns(2)
+        state["red_value_lo"] = c1.number_input(
+            "\u7ea2\u54c1\u4ef7\u503c\u4e0b\u9650\uff08silver\uff09",
+            min_value=0, max_value=10_000_000, value=None, step=10000,
+            placeholder="\u53ef\u9009",
+            disabled=red_locked,
+            help="\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u4e0a\u4e0b\u9650\u90fd\u586b\u624d\u4f1a\u542f\u7528\u4ef7\u503c\u8fc7\u6ee4\u3002",
+            key=_rwk("obs_reading_red_value_lo", st.session_state),
+        )
+        state["red_value_hi"] = c2.number_input(
+            "\u7ea2\u54c1\u4ef7\u503c\u4e0a\u9650\uff08silver\uff09",
+            min_value=0, max_value=10_000_000, value=None, step=10000,
+            placeholder="\u53ef\u9009",
+            disabled=red_locked,
+            help="\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u4e0a\u4e0b\u9650\u90fd\u586b\u624d\u4f1a\u542f\u7528\u4ef7\u503c\u8fc7\u6ee4\u3002",
+            key=_rwk("obs_reading_red_value_hi", st.session_state),
+        )
+        _red_opts, _red_lbls = _huge_options_for_quality(6)
+        state["red_huge_band"] = st.selectbox(
+            "\u7ea2\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u7ea2\u8272\uff09",
+            options=_red_opts, index=0,
+            key="obs_red_huge_band",
+            format_func=lambda b: _red_lbls[b],
+            disabled=(hero == "aisha") or red_locked,
+            help="\u827e\u838e\u770b\u4e0d\u5230\u7ea2\u54c1\u5de8\u7269\u8f6e\u5ed3\u3002\u4f0a\u68ee "
+                 "\u53ef\u4ee5\u901a\u8fc7\u73cd\u54c1\u626b\u63cf\uff08\u7ea2\u54c1\u603b\u683c\u6570\uff09 / R5 \u5168\u91cf\u8f6e\u5ed3"
+                 "\u3001\u6216\u6839\u636e 4\u00d74 \u5de8\u7269\u6392\u9664\u77f3\u72ee\u5b50\u540e\u786e\u8ba4\u3002"
+                 "\u9009\u300c\u2605 \u5177\u4f53\u7269\u54c1\u300d\u53ef\u51c6\u786e\u9501\u5b9a\u683c\u6570\u3002"
+                 + _HUGE_SELECTBOX_HELP_TAIL,
+        )
+
+        st.divider()
+        st.markdown("### \U0001F4D0 \u672a\u786e\u8ba4\u54c1\u8d28\u7684\u5de8\u7269 / \u5927\u4ef6\uff08\u6309\u5f62\u72b6\uff09")
+        st.warning(
+            "\U0001F9EA **\u6d4b\u8bd5\u529f\u80fd\uff0c\u6682\u672a\u63a5\u5165\u63a8\u65ad\u63a5\u53e3**\u3002\u672c\u533a\u4ec5\u8bb0\u5f55\u4f60\u770b\u5230\u7684\u5f62\u72b6\u6570\u91cf\uff0c"
+            "\u4e0d\u4f1a\u88ab\u63a8\u65ad\u5f15\u64ce\u4f7f\u7528\u3002\u82e5\u80fd\u786e\u8ba4\u54c1\u8d28\uff0c"
+            "\u8bf7\u5728\u4e0a\u65b9\u5bf9\u5e94 bucket \u7684\u300c\u5de8\u7269\u6570\u91cf\u300d\u4e0b\u62c9\u6846\u9009\u62e9\u300c\u2605 \u5177\u4f53\u7269\u54c1\u300d\uff0c\u5f15\u64ce\u4f1a\u7acb\u5373\u4f7f\u7528\u3002"
+        )
+        if "seen_shapes" not in st.session_state:
+            st.session_state["seen_shapes"] = {s: 0 for s in BIG_ITEMS_BY_SHAPE}
+        seen = st.session_state["seen_shapes"]
+
+        shape_cols = st.columns(len(BIG_ITEMS_BY_SHAPE))
+        for col, (shape, cands) in zip(shape_cols, BIG_ITEMS_BY_SHAPE.items()):
+            seen[shape] = col.number_input(
+                shape, min_value=0, max_value=6, value=seen.get(shape, 0),
+                step=1, key=_rwk(f"shape_{shape}", st.session_state),
+                help=f"{len(cands)} \u4ef6\u5019\u9009\uff0c\u5c55\u5f00\u5b57\u5178\u770b\u8be6\u60c5",
+            )
+
+        with st.expander("\U0001F4D6 \u5f62\u72b6 \u2192 \u7269\u54c1 \u5019\u9009\u5b57\u5178", expanded=False):
+            for shape, cands in BIG_ITEMS_BY_SHAPE.items():
+                lines = [f"**{shape}**\uff1a\u5171 {len(cands)} \u4ef6\u5019\u9009"]
+                for c in cands:
+                    uniq = "\u2606" if c["unique"] else " "
+                    lines.append(
+                        f"- {uniq} {QUALITY_NAME[c['q']]}\u54c1 (q={c['q']})  \u00b7  "
+                        f"**{c['name']}**  \u00b7  {c['value']:,} silver"
+                    )
+                st.markdown("\n".join(lines))
+
+        sync_obs_from_reading_widgets(
+            state, st.session_state, allow_clear=False,
+        )
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:obs_tab_after_sync",
+            message="obs after obs-tab widget sync",
+            data={
+                "wg_cells": state.get("wg_cells"),
+                "blue_cells": state.get("blue_cells"),
+                "purple_cells": state.get("purple_cells"),
+            "wg_widget": st.session_state.get(
+                _rwk("obs_reading_wg_cells", st.session_state),
+            ),
+            "purple_avg_widget": st.session_state.get(
+                _rwk("purple_avg_raw_widget", st.session_state),
+            ),
+        },
+        hypothesis_id="H6,H15,H18",
+            run_id="post-fix",
+        )
+        # #endregion
+else:
+    _obs_tab_slot.empty()
 
 # ===== Tab (实验性): 联合推断 — 默认隐藏 =====
-elif _main_tab == "joint" and show_experimental:
+if _main_tab == "joint" and show_experimental:
     from experimental_tabs import render_joint_inference_tab
 
     render_joint_inference_tab(
@@ -2479,7 +3018,9 @@ def _render_hint_tab_impl() -> None:
         _mid_live = _coerce_map_select(state.get("map_id"), _hint_map_choices)
     warehouse_ready = _wh_live > 0
     map_ready = _mid_live is not None
-    sync_obs_from_reading_widgets(state, st.session_state)
+    sync_obs_from_reading_widgets(
+        state, st.session_state, allow_clear=False,
+    )
     _hint_budget_err = check_warehouse_cell_budget(state)
     inference_ready = warehouse_ready and map_ready and _hint_budget_err is None
     if _mid_live is not None:
@@ -2808,9 +3349,12 @@ def _render_hint_tab_impl() -> None:
                 )
             st.caption("".join(caption_parts))
 
-            posterior_rows = []
+            posterior_rows: list[dict] = []
+            red_stats = None
             for q in (1, 3, 4, 5, 6):
                 stats = bucket_posterior_stats(conditional_truths, q)
+                if q == 6:
+                    red_stats = stats
                 obs_bucket = session.buckets.get(q)
                 user_cells = obs_bucket.total_cells if obs_bucket and obs_bucket.total_cells is not None else None
                 user_count = obs_bucket.count if obs_bucket and obs_bucket.count is not None else None
@@ -2829,22 +3373,23 @@ def _render_hint_tab_impl() -> None:
                     "\u5de8\u7269 P50": stats.huge_p50,
                     "\u7a7a bucket %": f"{stats.p_empty*100:.1f}%",
                 })
-            st.dataframe(posterior_rows, hide_index=True, width="stretch")
-
-            red_stats = bucket_posterior_stats(conditional_truths, 6)
-            if red_stats.cells_p50 > 0 or red_stats.value_p50 > 0:
-                st.info(
-                    f"\U0001F534 **\u7ea2\u54c1\u540e\u9a8c\u91cd\u70b9**\uff1a\u6a21\u578b\u8ba4\u4e3a\u7ea2\u54c1 \u7ea6 "
-                    f"**{red_stats.cells_p50} cells** (P10={red_stats.cells_p10}, P90={red_stats.cells_p90})\u3001"
-                    f"\u4ef7\u503c\u4e2d\u4f4d **{red_stats.value_p50:,} silver**\uff08P90={red_stats.value_p90:,}\uff09\u3002"
-                    f"\u7a7a bucket \u6982\u7387 {red_stats.p_empty*100:.1f}%\u3002"
-                    f"\u82e5\u4f60\u786e\u8ba4\u8fd9\u4ed3\u65e0\u7ea2\u54c1\uff0c\u8bf7\u5728\u300c\u7ea2\u54c1\u300d\u533a\u5757\u52fe\u9009\u300c\u2705 \u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\u540e\u91cd\u8dd1\u3002"
-                )
-            else:
-                st.success(
-                    f"\u2705 \u8fc7\u6ee4\u540e\u6a21\u578b\u8ba4\u4e3a\u672c\u4ed3\u51e0\u4e4e\u4e0d\u542b\u7ea2\u54c1"
-                    f"\uff08cells P50={red_stats.cells_p50}\u3001\u7a7a bucket={red_stats.p_empty*100:.1f}%\uff09\u3002"
-                )
+            if red_stats is None:
+                red_stats = bucket_posterior_stats(conditional_truths, 6)
+            with st.container():
+                if red_stats.cells_p50 > 0 or red_stats.value_p50 > 0:
+                    st.info(
+                        f"\U0001F534 **\u7ea2\u54c1\u540e\u9a8c\u91cd\u70b9**\uff1a\u6a21\u578b\u8ba4\u4e3a\u7ea2\u54c1 \u7ea6 "
+                        f"**{red_stats.cells_p50} cells** (P10={red_stats.cells_p10}, P90={red_stats.cells_p90})\u3001"
+                        f"\u4ef7\u503c\u4e2d\u4f4d **{red_stats.value_p50:,} silver**\uff08P90={red_stats.value_p90:,}\uff09\u3002"
+                        f"\u7a7a bucket \u6982\u7387 {red_stats.p_empty*100:.1f}%\u3002"
+                        f"\u82e5\u4f60\u786e\u8ba4\u8fd9\u4ed3\u65e0\u7ea2\u54c1\uff0c\u8bf7\u5728\u300c\u7ea2\u54c1\u300d\u533a\u5757\u52fe\u9009\u300c\u2705 \u5df2\u786e\u8ba4\u65e0\u7ea2\u54c1\u300d\u540e\u91cd\u8dd1\u3002"
+                    )
+                else:
+                    st.success(
+                        f"\u2705 \u8fc7\u6ee4\u540e\u6a21\u578b\u8ba4\u4e3a\u672c\u4ed3\u51e0\u4e4e\u4e0d\u542b\u7ea2\u54c1"
+                        f"\uff08cells P50={red_stats.cells_p50}\u3001\u7a7a bucket={red_stats.p_empty*100:.1f}%\uff09\u3002"
+                    )
+                st.dataframe(posterior_rows, hide_index=True, width="stretch")
 
         # ---- Snipe / Pass recommendations (bottom) ----
         st.divider()
@@ -2936,8 +3481,12 @@ def _render_hint_tab_impl() -> None:
 
 
 
+_hint_tab_slot = st.empty()
 if _main_tab == "hint":
-    _render_hint_tab_impl()
+    with _hint_tab_slot.container():
+        _render_hint_tab_impl()
+else:
+    _hint_tab_slot.empty()
 
 
 # ===== Tab 4: 道具 ROI =====
@@ -3165,3 +3714,29 @@ if _main_tab == "roi":
             "\u70b9\u51fb\u4e0a\u9762\u6309\u94ae\u8fd0\u884c\u3002"
             "\u9996\u6b21 60 trials \u7ea6 20-40 \u79d2\uff1b\u4e4b\u540e\u540c\u5730\u56fe\u91cd\u590d\u70b9\u51fb\u662f\u77ac\u53d1\u3002"
         )
+
+@st.fragment(run_every=2)
+def _bg_infer_poll_fragment() -> None:
+    """Poll MC without full-page rerun; full rerun only when done."""
+    if st.session_state.get("_bg_infer_box") is None:
+        return
+    had_bundle = st.session_state.get("_hint_bundle") is not None
+    status = _poll_background_hint()
+    st.session_state["_bg_infer_status"] = status
+    if status == "done" and not had_bundle:
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:_bg_infer_poll_fragment:done",
+            message="MC done; full rerun to show hint results",
+            data={
+                "main_tab": st.session_state.get("_main_tab"),
+                "has_bundle": st.session_state.get("_hint_bundle") is not None,
+            },
+            hypothesis_id="H7,H8",
+            run_id="post-fix",
+        )
+        # #endregion
+        st.rerun()
+
+
+_bg_infer_poll_fragment()

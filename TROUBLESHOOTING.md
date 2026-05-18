@@ -41,6 +41,10 @@
 34. [安装 capture OCR 时 pip 下载超时](#34-安装-capture-ocr-时-pip-下载超时)
 35. [换图后 toast 闪烁、地图下拉锁死（widget rev 未同步）](#35-换图后-toast-闪烁地图下拉锁死widget-rev-未同步)
 36. [Capture OCR 日志与 ROI 调参](#36-capture-ocr-日志与-roi-调参)
+37. [紫品均格 OCR 有数但输入框为空](#37-紫品均格-ocr-有数但输入框为空)
+38. [实机 OCR 比改版前慢](#38-实机-ocr-比改版前慢)
+39. [切 tab 读数被清空 / 抓屏卡顿](#39-切-tab-读数被清空--抓屏卡顿)
+40. [启动仍慢：screen_ocr_warmup 与首屏等待](#40-启动仍慢screen_ocr_warmup-与首屏等待)
 
 ---
 
@@ -1255,6 +1259,89 @@ C:\Python313\python.exe -m streamlit run app/streamlit_app.py
 ```
 
 控制台见 `bidking_lab.capture`；侧栏「上次导入」展开会多两行 pipeline 摘要（OCR 行数、解析到的 key）。
+
+**耗时拆分（C-37）**：诊断展开可见 `抓屏 · OCR · 诊断图` 毫秒数。实机慢时先看 **抓屏** 是否因曾默认生成全屏预览；再看 **OCR** 是否仍 >1s（未重启 Streamlit 时旧模块可能仍在内存）。
+
+---
+
+## 37. 紫品均格 OCR 有数但输入框为空
+
+**症状**：OCR 诊断里 `purple_avg_raw` / 解析值正常（如 3.27），读数 tab「紫品均格」仍空白；或删不掉旧值。
+
+**原因**：
+
+1. `st.text_input(..., value="")` 固定空值，与 session 里 widget key 冲突。
+2. `hydrate_reading_widgets_from_obs` 在 `obs["purple_avg_raw"]==""` 时仍跳过写入。
+3. `sync_obs_from_reading_widgets` 用空 widget 回写覆盖 OCR 刚填的值。
+
+**修法（C-37）**：
+
+- 均格/均价用版本化 key + `reconcile_avg_raw_widget_return`。
+- hydrate：**不**用空 `obs` 覆盖已有 widget；换图时清 `*_avg_raw`。
+- 读数 tab：`sync_obs(..., allow_clear=False)`。
+
+**教训**：Streamlit 的 `text_input` 与 `number_input` 不同 — 显式 `value=""` 会制造「永远空」的假象；OCR 预填要走 widget key + hydrate，不要混用 `value=` 参数。
+
+---
+
+## 38. 实机 OCR 比改版前慢
+
+**症状**：点「抓取当前屏幕」后 `st.status` 转很久；以前感觉「很快就好」。
+
+**原因**（多段叠加，见 OBS #34）：
+
+| 段 | 典型问题 |
+|----|----------|
+| 抓屏 | 4K 全屏复制 + 生成 monitor 预览 JPEG |
+| 预处理 | PNG 编码 → 再解码进 RapidOCR |
+| OCR | 模型本身（暖机后应稳定） |
+| 诊断图 | `_png_for_debug_store` 大图缩放（在 OCR 之后） |
+
+**修法（C-37）**：
+
+- `ScreenCaptureConfig.include_monitor_preview=False`（默认）。
+- `panel_rgb_array_for_ocr` 直传 ndarray；`prepare_image_for_ocr` 无变更时跳过重编码。
+- **完全重启** Streamlit 使 capture 模块生效。
+
+**验收**：诊断区 `OCR` 行单独应回到数百 ms 量级（视 CPU）；`抓屏` 在关预览后明显下降。
+
+---
+
+## 39. 切 tab 读数被清空 / 抓屏卡顿
+
+**症状 A**：填完读数 → 切到「出价推荐」→ 再回「读数输入」，字段变空。  
+**症状 B**：点抓屏后整页无响应数秒。  
+**症状 C**：后台 MC 突然显示已取消。
+
+**原因**：
+
+- A：`sync_obs_from_reading_widgets(allow_clear=True)` 在非读数 tab 渲染时把未挂载的 widget 当成空。
+- B：OCR 在 sidebar 同步执行，阻塞整页 script。
+- C：观测侧栏字段变更触发 `cancel_bg_inference`，与地图 OCR 无关。
+
+**修法**：
+
+- A：读数 tab 专用 `allow_clear=False`；主 tab 用 `st.empty()` 槽避免卸载 widget 丢状态。
+- B：`_deferred_capture_job` + `_execute_deferred_capture`；`apply_capture_result` 在 sidebar 前执行一次 `rerun`。
+- C：仅在 `_on_map_context_changed` 取消 MC。
+
+---
+
+## 40. 启动仍慢：screen_ocr_warmup 与首屏等待
+
+**症状**：`streamlit run` 后首屏要等很久；侧栏显示「OCR 暖机」或样本+实屏双暖机。
+
+**原因**：
+
+- 默认 `screen_ocr_warmup=true`（`data/ui_prefs.json`）：样本图 2 遍 + **实屏抓屏** 2 遍 ONNX。
+- 这与 **实机点抓屏** 的耗时无关，但影响「第一次打开应用」体验。
+
+**临时修法**：
+
+- 高级 →「MC 采样参数」→ 取消 **启动时实屏 OCR 暖机** → **重启 Streamlit**。
+- 仅关暖机不影响识别准确度；首次实机 OCR 可能多 1–2s。
+
+**计划（C-38）**：专用启动等待 UI + 可选后台暖机；见 PROGRESS「C-38 启动体验」。小游戏方案暂缓。
 
 ---
 

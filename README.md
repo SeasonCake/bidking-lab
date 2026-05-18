@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-234_passing-2ea043)](./tests)
+[![Tests](https://img.shields.io/badge/tests-360_passing-2ea043)](./tests)
 [![Status](https://img.shields.io/badge/status-Phase_1A_stable-blueviolet)](./PROGRESS.md)
 
 ---
@@ -67,7 +67,7 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 
-# 1) Run the test suite (234 tests)
+# 1) Run the test suite (360 tests)
 pytest -q
 
 # 2) Launch the Streamlit dashboard
@@ -272,7 +272,9 @@ Inspiration & prior art:
 
 Full roadmap in [`PROGRESS.md`](PROGRESS.md). Short version:
 
-**Done** (C-1 ~ C-34)
+**Done** (C-1 ~ C-37)
+
+**Next** (C-38): startup wait UI while OCR warms; optional mini-game deferred.
 - ✅ 6 game tables decoded + schema
 - ✅ Inference engine v2 (joint posterior + warehouse pruning + truncated-display rule + huge-item band)
 - ✅ Streamlit Chinese UI (4 tabs + map static info panel); MC default **1500** samples
@@ -282,7 +284,7 @@ Full roadmap in [`PROGRESS.md`](PROGRESS.md). Short version:
 - ✅ Field-scope UI copy + joint-constraint enumeration relax (C-31b)
 - ✅ P0-B: fallback preserves `huge_cells_override` (C-32)
 - ✅ LOO tool ROI + player-eyeball noise model
-- ✅ 5 analysis notebooks + end-to-end case · **234** unit tests · **33** TROUBLESHOOTING entries (#33 impact matrix)
+- ✅ Screen capture + OCR prefill (C-35~37) · 5 notebooks · **360** unit tests · **39** TROUBLESHOOTING entries
 - ✅ Bilingual README + demo video + screenshots
 
 **Deferred / optional**

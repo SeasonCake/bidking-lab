@@ -82,9 +82,17 @@ def start_background_hint(
     fp_mc = mc_fingerprint if mc_fingerprint is not None else mc
     fp = inference_fingerprint(state, fp_mc)
 
+    cancel_ctx = {
+        "readings_rev": int(session_state.get("obs_readings_rev", 0))
+        if session_state is not None
+        else 0,
+        "map_id": state.get("map_id"),
+        "warehouse_cells": int(state.get("warehouse_cells") or 0),
+    }
     box: dict[str, Any] = {
         "status": "running",
         "fp": fp,
+        "cancel_ctx": cancel_ctx,
         "gen": 0,
         "result": None,
         "error": None,
@@ -151,6 +159,27 @@ def start_background_hint(
 _BOX_KEY = "_bg_infer_box"
 
 
+def _should_cancel_running(
+    session_state: Any,
+    state: dict[str, Any],
+    cancel_ctx: dict[str, Any],
+) -> bool:
+    """Cancel only on explicit user edits, not render-time obs mutations."""
+    rev = int(session_state.get("obs_readings_rev", 0))
+    if rev != int(cancel_ctx.get("readings_rev", -1)):
+        return True
+    mid = state.get("map_id")
+    ctx_mid = cancel_ctx.get("map_id")
+    if mid is not None and ctx_mid is not None and int(mid) != int(ctx_mid):
+        return True
+    if mid is not None and ctx_mid is None:
+        return True
+    wh = int(state.get("warehouse_cells") or 0)
+    if wh != int(cancel_ctx.get("warehouse_cells") or 0):
+        return True
+    return False
+
+
 def sync_background_hint(
     session_state: Any,
     *,
@@ -165,11 +194,9 @@ def sync_background_hint(
 
     _flush_box_log(session_state, box)
 
-    fp_mc = mc_fingerprint if mc_fingerprint is not None else mc
-    current_fp = inference_fingerprint(state, fp_mc)
-    box_fp = box.get("fp")
-
-    if box.get("status") == "running" and box_fp != current_fp:
+    if box.get("status") == "running" and _should_cancel_running(
+        session_state, state, box.get("cancel_ctx") or {},
+    ):
         cancel = box.get("cancel")
         if cancel is not None:
             cancel.set()
@@ -182,13 +209,13 @@ def sync_background_hint(
 
             append_infer_log(
                 session_state,
-                "bg_hint cancelled (fp %s -> %s)" % (box_fp, current_fp),
+                "bg_hint cancelled (user changed map/warehouse/readings)",
             )
         except Exception:  # noqa: BLE001
             pass
         return "cancelled"
 
-    if box.get("status") == "done" and box_fp == current_fp:
+    if box.get("status") == "done":
         session_state["_hint_bundle"] = box.get("result")
         elapsed = time.time() - float(box.get("started_at") or time.time())
         _flush_box_log(session_state, box)
