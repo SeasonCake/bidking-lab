@@ -51,7 +51,7 @@ bidking-lab/
 ├── notebooks/            # 01_map_value_distribution, 02_hero_ranking
 ├── scripts/              # 探查/分析/demo 脚本
 ├── tests/                # 360 tests (pytest)
-├── docs/                 # project_vision.md, bid_map_schema.md, hero_skill_schema.md
+├── docs/                 # INSTRUCTIONS.zh-CN.md（用户操作）, project_vision.md, schemas…
 ├── PROGRESS.md           # ← 本文件
 ├── OBSERVATIONS.md       # 技术发现日志 (34 checkpoints)
 └── TROUBLESHOOTING.md    # 踩坑记录 (39条)
@@ -487,15 +487,17 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 | ⬜ | **推断完成后保持当前 tab** | 曾回滚 `_main_tab` 方案；需不拖慢 tab 切换的替代设计 |
 | ⬜ | **移除临时 `#region agent log`** | 用户确认稳定后删 `agent_debug_log` 埋点 |
 
-### C-38 待办（下一迭代 · 启动体验）
+### C-38 启动体验（进行中）
 
-> **2026-05-18 用户拍板**：小游戏方案暂缓；**优先优化 Streamlit 首次打开时的等待界面**（OCR 暖机仍可能发生，但 UX 要可感知、可跳过或可并行）。
+> **用户操作说明**不在本文件 — 见 **[`docs/INSTRUCTIONS.zh-CN.md`](docs/INSTRUCTIONS.zh-CN.md)**（仓库内手册）与 Streamlit 子页 **「操作说明」**（`app/pages/1_操作说明.py`，含流程图）。  
+> **PROGRESS** 只记录工程里程碑；**TROUBLESHOOTING** 记录安装/踩坑。
 
 | 状态 | 项 | 说明 |
 |------|-----|------|
-| ⬜ | **启动等待 UI** | 首屏 skeleton / 进度条 /「模型加载中」文案；与侧栏 spinner 分工 |
-| ⬜ | **暖机策略** | 默认 `screen_ocr_warmup=true` 仍偏慢：可选仅样本暖机、后台线程完成后再启用抓屏按钮 |
-| ⏸ | **Canvas 跳跃小游戏** | 后台暖机 + 空格/点击；需 OCR 线程与 `components.html`；用户暂缓 |
+| ✅ | **用户手册 + 子页面** | `docs/INSTRUCTIONS.zh-CN.md`；暖机等待区 `st.page_link` 跳转；右侧小游戏占位 |
+| ✅ | **启动等待 UI（初版）** | `startup_wait.py`：暖机横幅 + 进度提示 + 说明链接 + 游戏占位栏 |
+| ⬜ | **暖机策略** | 后台暖机完成前禁用抓屏；或默认仅样本暖机 |
+| ⏸ | **Canvas 跳跃小游戏** | 填入右侧占位区；用户暂缓 |
 | ⬜ | **多分辨率 ROI 实测** | 副屏 / DPI；`preview_panel_roi.py` |
 
 ---

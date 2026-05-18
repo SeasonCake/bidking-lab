@@ -932,7 +932,8 @@ muted_caption(
     "\u8f93\u5165\u82f1\u96c4 / \u5730\u56fe / \u89c2\u6d4b\u5230\u7684 cells \u4e0e\u4f30\u4ef7\uff0c"
     "\u5e73\u53f0\u4f1a\u8de8 4 \u4e2a tab \u7ed9\u51fa\u8054\u5408\u63a8\u65ad\u7684\u4ed3\u5e93\u7ec4\u6210"
     "\u3001\u79d2\u4ed3 / \u653e\u4ed3\u51fa\u4ef7\u5efa\u8bae\u3001\u4ee5\u53ca\u9053\u5177\u6027\u4ef7\u6bd4 ROI\u3002"
-    "\u8be6\u7ec6\u65b9\u6cd5\u8bba\u89c1 PROGRESS.md\u3002"
+    "\u64cd\u4f5c\u6b65\u9aa4\u89c1\u5de6\u4fa7\u300c\u64cd\u4f5c\u8bf4\u660e\u300d\u6216\u9996\u6b21\u52a0\u8f7d\u65f6\u7684\u94fe\u63a5\uff1b"
+    "\u5de5\u7a0b\u8fdb\u5ea6\u89c1 PROGRESS.md\u3002"
 )
 def _ocr_warmup_spinner_label(*, screen_warmup: bool) -> str:
     if screen_warmup:
@@ -1000,11 +1001,14 @@ def _sidebar_ocr_status_and_engine(*, screen_warmup: bool):
 
 def _ensure_ocr_engine(*, screen_warmup: bool):
     """Load OCR once before sidebar renders (avoids duplicate widgets from mid-sidebar rerun)."""
+    from startup_wait import render_startup_wait_screen
+
     status = st.session_state.setdefault("ocr_ui_status", "pending")
     if status == "ready":
         return _cached_ocr_engine(screen_warmup)
     if status == "error":
         return None
+    render_startup_wait_screen(screen_warmup=screen_warmup)
     try:
         with st.spinner(_ocr_warmup_spinner_label(screen_warmup=screen_warmup)):
             eng = _cached_ocr_engine(screen_warmup)
@@ -1641,8 +1645,6 @@ from ui_prefs import load_ui_prefs, save_ui_prefs
 
 _active_screen_ocr_warmup = bool(load_ui_prefs().get("screen_ocr_warmup", True))
 _ocr_engine = _ensure_ocr_engine(screen_warmup=_active_screen_ocr_warmup)
-if st.session_state.get("ocr_ui_status") == "pending":
-    st.stop()
 
 # Apply OCR results before sidebar/main widgets so first paint has filled values.
 _apply_pending_capture(state, map_names=_map_names)

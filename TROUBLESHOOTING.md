@@ -1341,7 +1341,9 @@ C:\Python313\python.exe -m streamlit run app/streamlit_app.py
 - 高级 →「MC 采样参数」→ 取消 **启动时实屏 OCR 暖机** → **重启 Streamlit**。
 - 仅关暖机不影响识别准确度；首次实机 OCR 可能多 1–2s。
 
-**计划（C-38）**：专用启动等待 UI + 可选后台暖机；见 PROGRESS「C-38 启动体验」。小游戏方案暂缓。
+**操作说明**：等待时可点 **「操作说明」** 子页或阅读 [`docs/INSTRUCTIONS.zh-CN.md`](docs/INSTRUCTIONS.zh-CN.md)（玩家向流程图，不是 PROGRESS）。
+
+**计划（C-38）**：后台暖机 + 右侧小游戏占位区；工程项见 PROGRESS「C-38 启动体验」。
 
 ---
 

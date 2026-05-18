@@ -234,6 +234,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | `docs/project_vision.md` | 原始三层架构设计 |
 | **`PROGRESS.md`** | **新协作者起点**：项目全貌 + 当前状态 + 路线图 |
 | **`OBSERVATIONS.md`** | **技术发现日志**：每个 checkpoint 的关键发现 |
+| **`docs/INSTRUCTIONS.zh-CN.md`** | **玩家操作说明**（流程图、四 Tab、抓屏顺序）— 启动等待页可跳转 |
 | **`TROUBLESHOOTING.md`** | **39 条** — 踩坑归档 + [#33 影响矩阵](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期) + [#37–40 Capture/UI](TROUBLESHOOTING.md#37-紫品均格-ocr-有数但输入框为空) |
 
 ### 我们 ship 的数据 vs 我们不 ship 的
@@ -285,7 +286,8 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 - ✅ 双语 README + 演示视频 + 截图
 
 **下一项（C-38）**
-- ⏳ **启动等待界面**（首屏加载 UX；与 OCR 暖机分工）
+- ✅ **操作说明** — [`docs/INSTRUCTIONS.zh-CN.md`](docs/INSTRUCTIONS.zh-CN.md) + Streamlit「操作说明」子页
+- ⏳ **暖机后台化 / 抓屏按钮门控** — 等待 UI 已有链接与游戏占位
 - ⏸ 暖机小游戏（Canvas）— 暂缓
 
 **暂缓 / 可选**
