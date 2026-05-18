@@ -324,9 +324,5 @@ def render_main_tab_nav(
             ):
                 if key != active:
                     st.session_state[session_key] = key
-                    if key == "hint":
-                        st.session_state["_user_opened_hint_tab"] = True
                     st.rerun()
-    if active == "hint":
-        st.session_state["_user_opened_hint_tab"] = True
     return active

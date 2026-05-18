@@ -472,6 +472,7 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 | ⬜ | **状态机文档 + 单测** | 矩阵：{无 OCR / OCR 同图 / OCR 换图 / 手选换图} × {已填仓库 / 已填读数} → 保留/清空/是否 rerun MC。 |
 | ⬜ | **演示视频重做** | 随 Streamlit 布局、抓屏说明、紫品件数填入等更新后重录（非阻塞）。 |
 | ⬜ | **一站式整合包 + GitHub Release** | 计划：`pip install` 可复现、`[ui,capture]` extra、打 tag 发布 zip/说明；可选便携运行脚本；**不含**游戏资产。 |
+| ⬜ | **推断完成后保持当前 tab** | 2026-05-18 曾用 `_main_tab` + 完成后 `st.rerun()`，与按钮导航叠加后切换偏卡，已回滚。后续：用户先点「出价推荐」时，完成后留在该 tab 并刷新结果，且不明显拖慢 tab 切换。 |
 
 ---
 

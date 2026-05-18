@@ -1272,7 +1272,6 @@ def _clear_hint_done_flash() -> None:
         "_hint_tab_done_flash",
         "_hint_infer_until",
         "_hint_done_toast_shown",
-        "_hint_post_done_rerun",
         "_hint_needs_refresh",
     ):
         st.session_state.pop(_k, None)
@@ -1283,7 +1282,6 @@ def _clear_hint_ui_banners() -> None:
     _clear_hint_done_flash()
     st.session_state.pop("_nudge_hint_tab", None)
     st.session_state.pop("_pending_hint_nudge", None)
-    st.session_state.pop("_user_opened_hint_tab", None)
 
 
 def _cancel_background_hint() -> None:
@@ -1995,11 +1993,6 @@ def _fragment_sync_background_hint() -> str:
                     icon="\u2705",
                 )
                 st.session_state["_hint_done_toast_shown"] = True
-            if not st.session_state.get("_hint_post_done_rerun"):
-                st.session_state["_hint_post_done_rerun"] = True
-                if st.session_state.get("_user_opened_hint_tab"):
-                    st.session_state["_main_tab"] = "hint"
-                    st.rerun()
         else:
             st.session_state.pop("_hint_tab_done_flash", None)
             st.session_state["_bg_infer_status"] = "skipped"
