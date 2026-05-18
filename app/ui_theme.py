@@ -255,7 +255,9 @@ APP_THEME_CSS = f"""
 
 def inject_app_theme() -> None:
     """Inject global CSS once per script run."""
-    st.markdown(APP_THEME_CSS, unsafe_allow_html=True)
+    from ui_loading import LOADING_CSS
+
+    st.markdown(APP_THEME_CSS + LOADING_CSS, unsafe_allow_html=True)
 
 
 def sidebar_section(
@@ -289,3 +291,42 @@ def muted_caption(markdown: str) -> None:
 def tab_lead(text: str) -> None:
     """Soft intro strip at the top of a main tab."""
     st.markdown(f'<p class="bk-tab-lead">{text}</p>', unsafe_allow_html=True)
+
+
+def hint_tab_label(*, infer_status: str, done_flash: bool) -> str:
+    """Dynamic label for the hint tab (running / done indicators)."""
+    if infer_status == "running":
+        return "\U0001f3af \u51fa\u4ef7\u63a8\u8350 \u23f3"
+    if done_flash:
+        return "\U0001f3af \u51fa\u4ef7\u63a8\u8350 \u2713"
+    return "\U0001f3af \u51fa\u4ef7\u63a8\u8350"
+
+
+def render_main_tab_nav(
+    *,
+    keys: list[str],
+    labels: dict[str, str],
+    session_key: str = "_main_tab",
+) -> str:
+    """Session-persisted tab bar (survives st.rerun; unlike st.tabs)."""
+    active = st.session_state.get(session_key, keys[0])
+    if active not in keys:
+        active = keys[0]
+        st.session_state[session_key] = active
+    cols = st.columns(len(keys))
+    for col, key in zip(cols, keys):
+        with col:
+            if st.button(
+                labels[key],
+                key=f"ui_main_tab_{key}",
+                type="primary" if key == active else "secondary",
+                width="stretch",
+            ):
+                if key != active:
+                    st.session_state[session_key] = key
+                    if key == "hint":
+                        st.session_state["_user_opened_hint_tab"] = True
+                    st.rerun()
+    if active == "hint":
+        st.session_state["_user_opened_hint_tab"] = True
+    return active

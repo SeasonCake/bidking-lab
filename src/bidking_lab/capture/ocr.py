@@ -22,6 +22,14 @@ _PANEL_CROP = INFO_PANEL_CROP_FRAC
 # OCR path calibrated on 1920×1080 game captures (notebook 06).
 REFERENCE_WIDTH = 1920
 REFERENCE_HEIGHT = 1080
+# ``optimize=True`` is very slow on large screenshots; level 1 is enough for OCR input.
+_PNG_COMPRESS_LEVEL = 1
+
+
+def _save_png_bytes(img: Any) -> bytes:
+    out = io.BytesIO()
+    img.save(out, format="PNG", compress_level=_PNG_COMPRESS_LEVEL)
+    return out.getvalue()
 
 
 def create_ocr_engine() -> Any:
@@ -153,9 +161,7 @@ def crop_info_panel(
     l, t, r, b = crop
     box = (int(w * l), int(h * t), int(w * r), int(h * b))
     cropped = img.crop(box)
-    out = io.BytesIO()
-    cropped.save(out, format="PNG", optimize=True)
-    return out.getvalue()
+    return _save_png_bytes(cropped)
 
 
 def fit_reference_frame(
@@ -178,9 +184,7 @@ def fit_reference_frame(
     new_w = max(1, int(w * scale))
     new_h = max(1, int(h * scale))
     img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-    out = io.BytesIO()
-    img.save(out, format="PNG", optimize=True)
-    return out.getvalue()
+    return _save_png_bytes(img)
 
 
 def image_bytes_to_text(

@@ -56,7 +56,14 @@ LOADING_CSS = """
 """
 
 
+_loading_css_done = False
+
+
 def inject_loading_css() -> None:
+    global _loading_css_done
+    if _loading_css_done:
+        return
+    _loading_css_done = True
     st.markdown(LOADING_CSS, unsafe_allow_html=True)
 
 

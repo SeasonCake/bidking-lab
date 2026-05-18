@@ -847,9 +847,21 @@ st.set_page_config(
     layout="wide",
 )
 
-from ui_theme import inject_app_theme, muted_caption, sidebar_divider, sidebar_section, tab_lead
+from ui_theme import (
+    hint_tab_label,
+    inject_app_theme,
+    muted_caption,
+    render_main_tab_nav,
+    sidebar_divider,
+    sidebar_section,
+    tab_lead,
+)
 
 inject_app_theme()
+
+from ui_log import configure_ui_logging
+
+configure_ui_logging()
 
 _hdr_title, _hdr_link = st.columns([5, 1], vertical_alignment="top")
 with _hdr_title:
@@ -977,13 +989,15 @@ def _queue_capture_from_bytes(
     configure_capture_logging()
     import time as _time
 
-    panel_for_ocr = (
-        crop_info_panel(data) if crop_panel else data
-    )
+    _t_prep = _time.perf_counter()
+    if crop_panel:
+        data = crop_info_panel(data)
+    panel_for_ocr = data
+    _prep_ms = int((_time.perf_counter() - _t_prep) * 1000)
     _t0 = _time.perf_counter()
     ocr_text, ocr_err = image_bytes_to_text(
         data,
-        crop_panel=crop_panel,
+        crop_panel=False,
         engine=_cached_ocr_engine(),
     )
     _ocr_ms = int((_time.perf_counter() - _t0) * 1000)
@@ -1026,10 +1040,25 @@ def _queue_capture_from_bytes(
     if LOG.isEnabledFor(logging.INFO):
         st.session_state["_capture_pipeline_log"] = [
             f"来源 {source} · crop_panel={crop_panel}",
+            f"预处理 {_prep_ms}ms · OCR {_ocr_ms}ms",
             f"OCR {len(ocr_text.splitlines())} 行",
             f"解析字段 {debug['parse_keys']}",
         ]
     return None
+
+
+def _render_bg_infer_debug_panel() -> None:
+    """Background MC poll log (ring buffer). Set BIDKING_UI_LOG=1 for terminal too."""
+    lines = st.session_state.get("_bg_infer_log")
+    if not lines:
+        return
+    with st.expander("后台推断监视", expanded=False):
+        st.caption(
+            "终端可设环境变量 BIDKING_UI_LOG=1 同步输出。"
+            "若长时间 running，看是否反复 cancelled（读数指纹变化）。"
+        )
+        for ln in lines[-20:]:
+            st.text(ln)
 
 
 def _render_capture_debug_panel() -> None:
@@ -1137,17 +1166,17 @@ def _apply_pending_capture(
     from bidking_lab.capture.apply import (
         apply_capture_result,
         clear_readings_for_map_change,
-        hydrate_reading_widgets_from_obs,
+        ocr_should_clear_readings,
     )
 
     snap = st.session_state.pop("_pre_ocr_ui_snapshot", {})
     _map_before_ocr = obs_state.get("map_id")
     _cap_result = st.session_state.pop("_pending_capture")
-    clear_readings_for_map_change(obs_state, st.session_state)
+    if ocr_should_clear_readings(_cap_result, _map_before_ocr):
+        clear_readings_for_map_change(obs_state, st.session_state)
     _apply_log = apply_capture_result(
         _cap_result, obs_state, st.session_state, map_names=map_names,
     )
-    hydrate_reading_widgets_from_obs(obs_state, st.session_state)
     _pipe = st.session_state.pop("_capture_pipeline_log", None)
     if _pipe:
         st.session_state["_capture_apply_log"] = list(_pipe) + _apply_log
@@ -1176,6 +1205,14 @@ def _apply_pending_capture(
     if "total_item_count" not in _applied_keys and _keep_tic is not None:
         st.session_state["obs_total_item_count"] = _keep_tic
         obs_state["total_item_count"] = _keep_tic
+    if _cap_result.map_id is not None:
+        from bidking_lab.capture.apply import mark_ocr_map_applied_to_ui
+
+        mark_ocr_map_applied_to_ui(
+            st.session_state,
+            int(_cap_result.map_id),
+            category=st.session_state.get("obs_map_category"),
+        )
     st.session_state["_capture_just_applied"] = True
     _ocr_map_miss = (
         _cap_result.map_id is None
@@ -1214,6 +1251,7 @@ def _apply_pending_capture(
         )
     if st.session_state.get("auto_infer_after_capture", True):
         st.session_state["_request_bg_hint"] = True
+        st.session_state["_pending_hint_nudge"] = True
     st.session_state.pop("_hint_bundle", None)
     st.session_state.pop("_bg_infer_box", None)
 
@@ -1228,6 +1266,26 @@ def _clear_capture_upload() -> None:
     st.session_state.pop("_pending_capture", None)
 
 
+def _clear_hint_done_flash() -> None:
+    """Clear completed-state banners only (keep nudge when starting a new run)."""
+    for _k in (
+        "_hint_tab_done_flash",
+        "_hint_infer_until",
+        "_hint_done_toast_shown",
+        "_hint_post_done_rerun",
+        "_hint_needs_refresh",
+    ):
+        st.session_state.pop(_k, None)
+
+
+def _clear_hint_ui_banners() -> None:
+    """Drop all hint banners (map change / manual cancel)."""
+    _clear_hint_done_flash()
+    st.session_state.pop("_nudge_hint_tab", None)
+    st.session_state.pop("_pending_hint_nudge", None)
+    st.session_state.pop("_user_opened_hint_tab", None)
+
+
 def _cancel_background_hint() -> None:
     box = st.session_state.get("_bg_infer_box")
     if box and box.get("cancel") is not None:
@@ -1235,6 +1293,8 @@ def _cancel_background_hint() -> None:
     st.session_state.pop("_bg_infer_box", None)
     st.session_state.pop("_hint_bundle", None)
     st.session_state.pop("_request_bg_hint", None)
+    _clear_hint_ui_banners()
+    st.session_state["_bg_infer_status"] = "idle"
 
 
 def _on_map_context_changed(
@@ -1357,8 +1417,11 @@ with st.sidebar:
         and not st.session_state.get("_map_change_toast")
     )
     if _post_sync_reset:
-        _on_map_context_changed(_resolved_mid, _tracked_mid)
-        _tracked_mid = _resolved_mid
+        if st.session_state.pop("_suppress_map_change_reset", False):
+            st.session_state["_tracked_map_id"] = _resolved_mid
+        else:
+            _on_map_context_changed(_resolved_mid, _tracked_mid)
+            _tracked_mid = _resolved_mid
     if map_id is None:
         st.caption("\U0001f446 \u8bf7\u9009\u62e9\u5177\u4f53\u5730\u56fe")
     else:
@@ -1448,6 +1511,24 @@ with st.sidebar:
     except RuntimeError as _mon_exc:
         _mons = []
         st.caption(f"\u26a0\ufe0f {_mon_exc}")
+    _single_monitor = len(_mons) == 1
+    if _single_monitor:
+        st.info(
+            "\u26a0\ufe0f **\u5355\u5c4f\u6a21\u5f0f**\uff1a\u672a\u68c0\u6d4b\u5230\u7b2c\u2c5f\u663e\u793a\u5668\u3002"
+            "\u70b9\u300c\u6293\u53d6\u5f53\u524d\u5c4f\u5e55\u300d\u524d\u8bf7\u5148\u5207\u5230\u6e38\u620f\u7a97\u53e3\uff1b"
+            "\u4e0b\u65b9\u53ef\u8bbe\u7b49\u5f85\u79d2\u6570\uff08\u9ed8\u8ba4 2 \u79d2\uff09\uff0c"
+            "\u907f\u514d\u6293\u5230\u672c\u9875\u9762\u3002\u53cc\u5c4f\u7528\u6237\u53ef\u8bbe\u4e3a 0\u3002",
+            icon="\u2139\ufe0f",
+        )
+        st.session_state.setdefault("capture_delay_sec", 2)
+        st.slider(
+            "\u6293\u5c4f\u524d\u7b49\u5f85\uff08\u79d2\uff09",
+            min_value=0,
+            max_value=5,
+            step=1,
+            key="capture_delay_sec",
+            help="\u5355\u5c4f\u65f6\u7559\u51fa\u4ece\u6d4f\u89c8\u5668\u5207\u5230\u6e38\u620f\u7684\u65f6\u95f4\u3002\u53cc\u5c4f\u53ef\u8bbe 0\u3002",
+        )
     if _mons:
         _mon_labels = {m.index: monitor_label(m) for m in _mons}
         _default_mon = next(
@@ -1478,6 +1559,19 @@ with st.sidebar:
         try:
             import time as _time
 
+            _delay = (
+                int(st.session_state.get("capture_delay_sec", 2))
+                if _single_monitor
+                else 0
+            )
+            if _delay > 0:
+                _countdown = st.empty()
+                for _sec in range(_delay, 0, -1):
+                    _countdown.warning(
+                        f"\u8bf7\u5207\u6362\u5230\u6e38\u620f\u7a97\u53e3\u2026 **{_sec}** \u79d2\u540e\u6293\u5c4f",
+                    )
+                    _time.sleep(1)
+                _countdown.empty()
             _mon_idx = int(st.session_state.get("obs_capture_monitor_index", _mons[0].index))
             _t_cap = _time.perf_counter()
             _cap = capture_monitor_panel(
@@ -1547,19 +1641,24 @@ with st.sidebar:
         from bidking_lab.capture.clipboard import clipboard_image_bytes
 
         st.session_state["_pre_ocr_ui_snapshot"] = _snapshot_sidebar_ui()
-        _clip_data, _clip_err = clipboard_image_bytes()
-        if _clip_err:
-            st.warning(_clip_err)
-        else:
-            _qerr = _queue_capture_from_bytes(
-                _clip_data, map_names=_map_names, source="clipboard",
-            )
-            st.session_state["_capture_debug_expand"] = True
-            if _qerr:
-                st.warning(_qerr)
-                st.rerun()
+        _clip_err: str | None = None
+        _qerr: str | None = None
+        with st.spinner(
+            "\u526a\u8d34\u677f\u8bfb\u53d6\u4e0e OCR \u4e2d\u2026"
+            "\uff08\u5168\u5c4f\u622a\u56fe\u9996\u6b21\u53ef\u80fd\u8f83\u6162\uff09",
+        ):
+            _clip_data, _clip_err = clipboard_image_bytes()
+            if _clip_err:
+                st.warning(_clip_err)
             else:
-                st.rerun()
+                _qerr = _queue_capture_from_bytes(
+                    _clip_data, map_names=_map_names, source="clipboard",
+                )
+                st.session_state["_capture_debug_expand"] = True
+                if _qerr:
+                    st.warning(_qerr)
+        if not _clip_err and not _qerr:
+            st.rerun()
     if _ocr_clicked:
         st.session_state["_pre_ocr_ui_snapshot"] = _snapshot_sidebar_ui()
         _qerr = _queue_capture_from_bytes(
@@ -1572,11 +1671,16 @@ with st.sidebar:
         else:
             st.rerun()
     _render_capture_debug_panel()
+    _render_bg_infer_debug_panel()
     st.checkbox(
         "OCR \u540e\u540e\u53f0\u63a8\u65ad",
         value=True,
         key="auto_infer_after_capture",
-        help="\u586b\u5165\u540e\u540e\u53f0\u8dd1 MC\uff1b\u6539\u8bfb\u6570/\u5730\u56fe\u4f1a\u53d6\u6d88\u3002\u7ed3\u679c\u5728\u300c\u51fa\u4ef7\u63a8\u8350\u300dtab\u3002",
+        help=(
+            "\u586b\u5165\u540e\u540e\u53f0\u8dd1 MC\uff1b\u6539\u8bfb\u6570/\u5730\u56fe\u4f1a\u53d6\u6d88\u3002"
+            "\u7ed3\u679c\u5728\u300c\u51fa\u4ef7\u63a8\u8350\u300dtab\u3002"
+            "\u63a8\u65ad\u4e2d\u53ef\u7ee7\u7eed\u6539\u8bfb\u6570\uff08\u975e\u5f53\u524d\u6807\u7b7e\u53ef\u80fd\u7565\u7070\uff0c\u5c5e Streamlit \u5237\u65b0\u6001\uff0c\u4e0d\u4f1a\u9501\u5b9a\u8f93\u5165\uff09\u3002"
+        ),
     )
     _prev_auto_infer = st.session_state.get("_prev_auto_infer_after_capture")
     if _prev_auto_infer and not st.session_state.get("auto_infer_after_capture", True):
@@ -1669,9 +1773,19 @@ else:
     state.pop("map_id", None)
 _tic_sync = _session_int("obs_total_item_count")
 state["total_item_count"] = _tic_sync if _tic_sync > 0 else 0
+from bidking_lab.capture.apply import sync_obs_from_reading_widgets
+from bidking_lab.inference.readings_validate import check_warehouse_cell_budget
+
+sync_obs_from_reading_widgets(state, st.session_state)
+_cells_budget_err = check_warehouse_cell_budget(state)
 warehouse_ready = _wh_sync > 0
 map_ready = state.get("map_id") is not None
-inference_ready = warehouse_ready and map_ready
+inference_ready = warehouse_ready and map_ready and _cells_budget_err is None
+if st.session_state.pop("_pending_hint_nudge", False) and inference_ready:
+    st.session_state["_nudge_hint_tab"] = True
+else:
+    st.session_state.pop("_pending_hint_nudge", None)
+
 if st.session_state.pop("_capture_just_applied", False):
     _cap_lines = st.session_state.get("_capture_apply_log") or []
     _has_purple_cnt = any(
@@ -1681,7 +1795,85 @@ if st.session_state.pop("_capture_just_applied", False):
     _toast = "\u5df2\u8bc6\u522b\u5e76\u586b\u5165\u8bfb\u6570\uff08\u8bf7\u6838\u5bf9\u4ed3\u5e93\u683c\u6570\uff09"
     if _has_purple_cnt:
         _toast += "\uff1b\u7d2b\u54c1\u4ef6\u6570\u5728\u300c\u8bfb\u6570\u8f93\u5165\u300d\u9875"
+    if (
+        inference_ready
+        and st.session_state.get("auto_infer_after_capture", True)
+        and (
+            st.session_state.get("_request_bg_hint")
+            or st.session_state.get("_nudge_hint_tab")
+        )
+    ):
+        _toast += "\uff1b\u540e\u53f0\u63a8\u65ad\u5df2\u542f\u52a8\uff0c\u8bf7\u6253\u5f00\u300c\u51fa\u4ef7\u63a8\u8350\u300d"
     st.toast(_toast, icon="\u2705")
+
+
+def _infer_status() -> str:
+    return str(st.session_state.get("_bg_infer_status", "idle"))
+
+
+def _mc_ui_running() -> bool:
+    """True while background MC thread is active (live box or session status)."""
+    box = st.session_state.get("_bg_infer_box")
+    if box is not None and box.get("status") == "running":
+        return True
+    return _infer_status() == "running"
+
+
+def _hint_banner_show() -> bool:
+    """Whether the top banner strip should stay visible."""
+    import time as _ht
+
+    if _infer_status() == "running":
+        return True
+    if st.session_state.get("_nudge_hint_tab"):
+        return True
+    if st.session_state.get("_hint_tab_done_flash"):
+        if float(st.session_state.get("_hint_infer_until", 0)) <= _ht.time():
+            st.session_state.pop("_hint_tab_done_flash", None)
+            st.session_state.pop("_hint_infer_until", None)
+            return False
+        return True
+    return False
+
+
+def _bg_infer_poll_needed() -> bool:
+    return st.session_state.get("_bg_infer_box") is not None
+
+
+def _paint_hint_banner(banner_slot) -> None:
+    """Paint or clear the main-area banner above tabs."""
+    from ui_loading import render_status_banner
+
+    status = _infer_status()
+    if status == "running":
+        with banner_slot.container():
+            render_status_banner(
+                kind="loading",
+                message="\u540e\u53f0\u51fa\u4ef7\u63a8\u65ad\u8fdb\u884c\u4e2d",
+                detail="\u53ef\u7ee7\u7eed\u6539\u8bfb\u6570\uff1b\u4fee\u6539\u8bfb\u6570\u6216\u5730\u56fe\u4f1a\u53d6\u6d88\u672c\u6b21\u63a8\u65ad",
+            )
+        return
+    if (
+        st.session_state.get("_hint_tab_done_flash")
+        and float(st.session_state.get("_hint_infer_until", 0)) > time.time()
+    ):
+        with banner_slot.container():
+            render_status_banner(
+                kind="ready",
+                message="\u51fa\u4ef7\u63a8\u65ad\u5df2\u5b8c\u6210",
+                detail="\u8bf7\u6253\u5f00\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u6807\u7b7e\u67e5\u770b\u7ed3\u679c",
+            )
+        return
+    if st.session_state.get("_nudge_hint_tab"):
+        st.session_state.pop("_nudge_hint_tab", None)
+        with banner_slot.container():
+            render_status_banner(
+                kind="ready",
+                message="\u5df2\u542f\u52a8\u540e\u53f0\u63a8\u65ad",
+                detail="\u6253\u5f00\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u6807\u7b7e\u53ef\u67e5\u770b\u8fdb\u5ea6\u4e0e\u7ed3\u679c",
+            )
+        return
+    banner_slot.empty()
 
 
 def _mc_sidebar_params() -> dict:
@@ -1760,50 +1952,118 @@ def _tick_background_hint() -> str:
                 enable_snipe_pass=_ENABLE_SNIPE_PASS_HINTS,
             )
 
+        import time as _time
+
         st.session_state["_bg_infer_box"] = start_background_hint(
             state=dict(state),
             mc=mc,
             mc_fingerprint=fp_mc,
             compute_fn=_compute,
+            session_state=st.session_state,
         )
         st.session_state["_hint_bundle"] = None
+        _clear_hint_done_flash()
         return "running"
     return status
 
 
-_bg_infer_status = "idle"
+def _fragment_sync_background_hint() -> str:
+    """Poll MC thread; update session bundle. No full-page rerun."""
+    from bg_inference import sync_background_hint
 
-# Tabs -----------------------------------------------------------------------
-if show_experimental:
-    tab_obs, tab_hint, tab_roi, tab_joint = st.tabs([
-        "\U0001F4DD \u8bfb\u6570\u8f93\u5165",
-        "\U0001F3AF \u51fa\u4ef7\u63a8\u8350",
-        "\U0001F4B0 \u9053\u5177 ROI",
-        "\u2697\ufe0f \u8054\u5408\u63a8\u65ad\uff08\u5b9e\u9a8c\u6027\uff09",
-    ])
+    if st.session_state.get("_bg_infer_box") is None:
+        return str(st.session_state.get("_bg_infer_status", "idle"))
+    _sync_obs_from_widgets(state)
+    seed_locked = bool(st.session_state.get("obs_seed_lock", False))
+    mc = _mc_sidebar_params()
+    fp_mc = _mc_fingerprint_params(seed_locked=seed_locked)
+    had_bundle = st.session_state.get("_hint_bundle") is not None
+    status = sync_background_hint(
+        st.session_state, state=state, mc=mc, mc_fingerprint=fp_mc,
+    )
+    st.session_state["_bg_infer_status"] = status
+    if status == "done" and not had_bundle:
+        import time as _time
+
+        st.session_state.pop("_nudge_hint_tab", None)
+        st.session_state["_hint_tab_done_flash"] = True
+        st.session_state["_hint_infer_until"] = _time.time() + 8
+        if st.session_state.get("_hint_bundle") is not None:
+            if not st.session_state.get("_hint_done_toast_shown"):
+                st.toast(
+                    "\u540e\u53f0\u63a8\u65ad\u5b8c\u6210\uff0c\u7ed3\u679c\u5df2\u66f4\u65b0\u4e8e\u672c\u9875",
+                    icon="\u2705",
+                )
+                st.session_state["_hint_done_toast_shown"] = True
+            if not st.session_state.get("_hint_post_done_rerun"):
+                st.session_state["_hint_post_done_rerun"] = True
+                if st.session_state.get("_user_opened_hint_tab"):
+                    st.session_state["_main_tab"] = "hint"
+                    st.rerun()
+        else:
+            st.session_state.pop("_hint_tab_done_flash", None)
+            st.session_state["_bg_infer_status"] = "skipped"
+    if status in ("idle", "cancelled", "error", "skipped"):
+        st.session_state.pop("_hint_done_toast_shown", None)
+    if status in ("cancelled", "error", "skipped"):
+        st.session_state.pop("_hint_infer_until", None)
+        st.session_state.pop("_hint_tab_done_flash", None)
+    return status
+
+
+_hint_banner_slot = st.empty()
+
+
+@st.fragment(run_every=2)
+def _bg_infer_poll_fragment() -> None:
+    """Poll MC on main thread only; refresh top banner (no full tab repaint)."""
+    if not _bg_infer_poll_needed() and not _hint_banner_show():
+        return
+    if _bg_infer_poll_needed():
+        _fragment_sync_background_hint()
+    _paint_hint_banner(_hint_banner_slot)
+
+
+_bg_infer_status = _tick_background_hint()
+st.session_state["_bg_infer_status"] = _bg_infer_status
+if _bg_infer_poll_needed():
+    _bg_infer_poll_fragment()
 else:
-    tab_obs, tab_hint, tab_roi = st.tabs([
-        "\U0001F4DD \u8bfb\u6570\u8f93\u5165",
-        "\U0001F3AF \u51fa\u4ef7\u63a8\u8350",
-        "\U0001F4B0 \u9053\u5177 ROI",
-    ])
-    tab_joint = None
-
+    _paint_hint_banner(_hint_banner_slot)
+_hint_lbl = hint_tab_label(
+    infer_status="running" if _mc_ui_running() else _infer_status(),
+    done_flash=bool(st.session_state.get("_hint_tab_done_flash")),
+)
+_tab_keys = ["obs", "hint", "roi"]
+_tab_labels = {
+    "obs": "\U0001F4DD \u8bfb\u6570\u8f93\u5165",
+    "hint": _hint_lbl,
+    "roi": "\U0001F4B0 \u9053\u5177 ROI",
+}
+if show_experimental:
+    _tab_keys.append("joint")
+    _tab_labels["joint"] = "\u2697\ufe0f \u8054\u5408\u63a8\u65ad\uff08\u5b9e\u9a8c\u6027\uff09"
+st.session_state.setdefault("_main_tab", "obs")
+_main_tab = render_main_tab_nav(keys=_tab_keys, labels=_tab_labels)
+tab_joint = None
 
 # ===== Tab 1: \u8bfb\u6570\u8f93\u5165 =====
-with tab_obs:
+if _main_tab == "obs":
     from bidking_lab.capture.apply import (
         hydrate_reading_widgets_from_obs,
         reading_widget_key as _rwk,
         sync_obs_from_reading_widgets,
     )
 
+    sync_obs_from_reading_widgets(state, st.session_state)
     hydrate_reading_widgets_from_obs(state, st.session_state)
 
     tab_lead(
         "\u9762\u677f\u5bfc\u5165\u4e0d\u542b\u5de8\u7269\u4fe1\u606f\uff1a\u8bf7\u624b\u52a8\u586b\u7d2b/\u91d1/\u7ea2 "
         "\u300c\u5de8\u7269\u6570\u91cf\u300d\u3001\u2605 \u5177\u4f53\u7269\u3001\u7ea2\u54c1\u4ef7\u503c\u533a\u95f4\u3002"
     )
+    if _cells_budget_err:
+        st.error(_cells_budget_err)
     st.subheader("\u4f4e\u54c1\u533a\uff08q\u22643\uff09")
     if hero == "ethan":
         st.markdown(
@@ -2205,23 +2465,20 @@ with tab_obs:
     sync_obs_from_reading_widgets(state, st.session_state)
 
 
-_bg_infer_status = _tick_background_hint()
-st.session_state["_bg_infer_status"] = _bg_infer_status
-
-
 # ===== Tab (实验性): 联合推断 — 默认隐藏 =====
-if tab_joint is not None:
+elif _main_tab == "joint" and show_experimental:
     from experimental_tabs import render_joint_inference_tab
-    with tab_joint:
-        render_joint_inference_tab(
-            session_builder=lambda: _build_session(state, maps),
-            state=state,
-            per_bucket_top=per_bucket_top,
-        )
+
+    render_joint_inference_tab(
+        session_builder=lambda: _build_session(state, maps),
+        state=state,
+        per_bucket_top=per_bucket_top,
+    )
 
 
-# ===== Tab 3: 出价 hint =====
-with tab_hint:
+def _render_hint_tab_impl() -> None:
+    from bidking_lab.capture.apply import sync_obs_from_reading_widgets
+
     _hint_cat = st.session_state.get("obs_map_category", "mansion")
     _hint_map_choices = _maps_for_category(maps, _hint_cat)
     _wh_live = int(st.session_state.get("obs_warehouse_cells") or 0)
@@ -2230,7 +2487,9 @@ with tab_hint:
         _mid_live = _coerce_map_select(state.get("map_id"), _hint_map_choices)
     warehouse_ready = _wh_live > 0
     map_ready = _mid_live is not None
-    inference_ready = warehouse_ready and map_ready
+    sync_obs_from_reading_widgets(state, st.session_state)
+    _hint_budget_err = check_warehouse_cell_budget(state)
+    inference_ready = warehouse_ready and map_ready and _hint_budget_err is None
     if _mid_live is not None:
         state["map_id"] = _mid_live
     state["warehouse_cells"] = _wh_live
@@ -2268,6 +2527,8 @@ with tab_hint:
         f"{' \u2713' if map_ready else ' \u2717'}"
         f"\u00a0\u00b7\u00a0{_tic_part}"
     )
+    if _hint_budget_err:
+        st.error(_hint_budget_err)
     if not warehouse_ready:
         st.error(
             "\u8bf7\u5728\u5de6\u4fa7\u680f\u300c\u4ed3\u5e93\u603b\u683c\u6570\u300d\u586b\u5199\u5927\u4e8e 0 \u7684\u6570\u5b57"
@@ -2280,16 +2541,6 @@ with tab_hint:
             "\u8bf7\u5728\u5de6\u4fa7\u680f\u9009\u62e9 **\u5177\u4f53\u5730\u56fe**"
             "\uff08\u5148\u9009\u522b\u5885/\u6c89\u8239\uff0c\u518d\u70b9\u5177\u4f53\u5730\u56fe\u4e0b\u62c9\u6846\uff09\u3002"
         )
-    _hint_mc_slot = loading_slot()
-    if _bg_infer_status == "running":
-        with _hint_mc_slot.container():
-            render_status_banner(
-                kind="loading",
-                message="后台 MC 推断进行中",
-                detail="可继续填表；修改读数或地图会取消本次推断",
-            )
-    else:
-        _hint_mc_slot.empty()
     _cached_bundle = st.session_state.get("_hint_bundle")
     _bundle_stale = False
     if _cached_bundle is not None:
@@ -2684,11 +2935,17 @@ with tab_hint:
                     )
                     with st.expander("\u8be6\u7ec6\u8bf4\u660e"):
                         st.write(pass_rec.rationale)
-    elif _cached_bundle is None and _bg_infer_status != "running":
+    elif _cached_bundle is None and not _mc_ui_running():
         st.info(
             "\u8bbe\u7f6e\u597d\u8bfb\u6570\u540e\u70b9\u51fb\u300c\u8fd0\u884c\u51fa\u4ef7 hint\u300d\uff0c"
             "\u6216\u5f00\u542f\u300cOCR \u540e\u540e\u53f0\u81ea\u52a8\u63a8\u65ad\u300d\u3002"
         )
+
+
+
+
+if _main_tab == "hint":
+    _render_hint_tab_impl()
 
 
 # ===== Tab 4: 道具 ROI =====
@@ -2714,7 +2971,7 @@ def _cached_tool_roi(map_id: int, *, tools: tuple, hero: str,
     )
 
 
-with tab_roi:
+if _main_tab == "roi":
     roi_hero = state["hero"]
     roi_hero_label = "\u4f0a\u68ee Ethan" if roi_hero == "ethan" else "\u827e\u838e Aisha"
     default_kit = ETHAN_KIT if roi_hero == "ethan" else AISHA_KIT
@@ -2916,29 +3173,3 @@ with tab_roi:
             "\u70b9\u51fb\u4e0a\u9762\u6309\u94ae\u8fd0\u884c\u3002"
             "\u9996\u6b21 60 trials \u7ea6 20-40 \u79d2\uff1b\u4e4b\u540e\u540c\u5730\u56fe\u91cd\u590d\u70b9\u51fb\u662f\u77ac\u53d1\u3002"
         )
-
-@st.fragment(run_every=2)
-def _poll_background_hint() -> None:
-    if st.session_state.get("_bg_infer_box") is None:
-        return
-    from bg_inference import sync_background_hint
-
-    _sync_obs_from_widgets(state)
-    seed_locked = bool(st.session_state.get("obs_seed_lock", False))
-    mc = _mc_sidebar_params()
-    fp_mc = _mc_fingerprint_params(seed_locked=seed_locked)
-    had_bundle = st.session_state.get("_hint_bundle") is not None
-    status = sync_background_hint(
-        st.session_state, state=state, mc=mc, mc_fingerprint=fp_mc,
-    )
-    if status == "done" and not had_bundle:
-        st.toast(
-            "\u540e\u53f0\u63a8\u65ad\u5b8c\u6210\uff0c\u5df2\u66f4\u65b0\u300c\u51fa\u4ef7\u63a8\u8350\u300d",
-            icon="\u2705",
-        )
-        st.rerun()
-    elif status == "done":
-        st.rerun()
-
-
-_poll_background_hint()

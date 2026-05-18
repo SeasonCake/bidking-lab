@@ -466,7 +466,7 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 
 | 状态 | 项 | 说明 |
 |------|-----|------|
-| ⬜ | **OCR 与手填数据的清空边界** | 现状：每次 OCR 前 `clear_readings_for_map_change`，**同地图、未换图**也会清空已填读数。应区分：仅 OCR 补全 vs 换图重置。 |
+| 🟡 | **OCR 与手填数据的清空边界** | **2026-05-18 部分修复**：仅 OCR 识别到**不同 map_id** 时 `clear_readings`；同图合并填。均格/均价「删不掉」已修（hydrate 不覆盖空串；换图清 `*_avg_raw`）。仓库格数保留仍靠 snapshot。 |
 | ⬜ | **仓库格数 `warehouse_cells` 保留** | OCR 面板常无总格数；用户先填格数 → OCR 识别地图（尤其**自动切图**）时不应清空格数，否则无法推理。与「手动换图清空仓库」需明确规则表。 |
 | ⬜ | **`auto_infer_after_capture` 触发条件** | 避免：先填数据再 OCR 被清空后仍触发/误触发后台 MC；或清空后带着陈旧 fingerprint 推理。 |
 | ⬜ | **状态机文档 + 单测** | 矩阵：{无 OCR / OCR 同图 / OCR 换图 / 手选换图} × {已填仓库 / 已填读数} → 保留/清空/是否 rerun MC。 |

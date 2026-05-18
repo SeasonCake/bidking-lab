@@ -2,7 +2,9 @@
 
 from bidking_lab.capture.apply import (
     apply_capture_result,
+    clear_readings_for_map_change,
     hydrate_reading_widgets_from_obs,
+    ocr_should_clear_readings,
     reading_widget_key,
     sync_obs_from_reading_widgets,
 )
@@ -164,18 +166,78 @@ def test_realistic_ocr_fragment_lines():
 
 
 def test_clear_readings_for_map_change():
-    from bidking_lab.capture.apply import clear_readings_for_map_change, reading_widget_key
-
-    obs = {"wg_cells": 22, "blue_cells": 15, "map_id": 2405}
+    obs = {
+        "wg_cells": 22,
+        "blue_cells": 15,
+        "purple_avg_raw": "2.66",
+        "map_id": 2405,
+    }
     ui = {
         reading_widget_key("obs_reading_wg_cells", {}): 22,
         reading_widget_key("obs_reading_blue_cells", {}): 15,
+        reading_widget_key("purple_avg_raw_widget", {}): "2.66",
     }
     clear_readings_for_map_change(obs, ui)
     assert "wg_cells" not in obs
+    assert "purple_avg_raw" not in obs
     assert ui["obs_readings_rev"] == 1
     assert reading_widget_key("obs_reading_wg_cells", ui) not in ui
     assert obs["map_id"] == 2405
+
+
+def test_ocr_should_clear_readings_only_on_map_change() -> None:
+    from bidking_lab.capture.types import CaptureParseResult
+
+    same = CaptureParseResult(map_id=2407, map_name="私人会所")
+    assert ocr_should_clear_readings(same, 2407) is False
+    assert ocr_should_clear_readings(same, None) is False
+    assert ocr_should_clear_readings(CaptureParseResult(), 2407) is False
+    other = CaptureParseResult(map_id=2405, map_name="望族居所")
+    assert ocr_should_clear_readings(other, 2407) is True
+
+
+def test_mark_ocr_map_applied_suppresses_manual_reset() -> None:
+    from bidking_lab.capture.apply import mark_ocr_map_applied_to_ui
+
+    ui: dict = {"_tracked_map_id": 2405}
+    mark_ocr_map_applied_to_ui(ui, 2407, category="mansion")
+    assert ui["_tracked_map_id"] == 2407
+    assert ui["_suppress_map_change_reset"] is True
+    assert ui["_tracked_map_category"] == "mansion"
+
+
+def test_reset_obs_for_manual_map_change_clears_avg_and_warehouse() -> None:
+    from bidking_lab.capture.apply import reset_obs_for_manual_map_change
+
+    obs = {
+        "map_id": 2407,
+        "warehouse_cells": 120,
+        "wg_cells": 17,
+        "purple_avg_raw": "2.66",
+        "gold_avg_raw": "3.1",
+    }
+    ui: dict = {
+        "obs_readings_rev": 0,
+        "obs_warehouse_cells": 120,
+        reading_widget_key("purple_avg_raw_widget", {}): "2.66",
+    }
+    reset_obs_for_manual_map_change(obs, ui, new_map_id=2405)
+    assert obs["map_id"] == 2405
+    assert "warehouse_cells" not in obs
+    assert "purple_avg_raw" not in obs
+    assert ui["obs_warehouse_cells"] is None
+    assert ui["obs_readings_rev"] == 1
+
+
+def test_hydrate_avg_raw_respects_user_cleared_widget() -> None:
+    obs = {"purple_avg_raw": "2.66"}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("purple_avg_raw_widget", ui)
+    ui[wkey] = ""
+    hydrate_reading_widgets_from_obs(obs, ui)
+    assert ui[wkey] == ""
+    sync_obs_from_reading_widgets(obs, ui)
+    assert "purple_avg_raw" not in obs
 
 
 def test_round4_garbled_ocr_lines():

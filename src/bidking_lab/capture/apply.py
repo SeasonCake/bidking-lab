@@ -53,6 +53,8 @@ AVG_RAW_WIDGET_KEYS: dict[str, str] = {
     "gold_avg_raw": "gold_avg_raw_widget",
 }
 
+AVG_RAW_OBS_KEYS: tuple[str, ...] = tuple(AVG_RAW_WIDGET_KEYS.keys())
+
 
 def reading_widget_key(base: str, ui_state: Any) -> str:
     """Versioned Streamlit key so map-change reset recreates inputs."""
@@ -77,7 +79,8 @@ def hydrate_reading_widgets_from_obs(
         if not val:
             continue
         wkey = reading_widget_key(base_wkey, ui_state)
-        if wkey not in ui_state or not ui_state[wkey]:
+        # Empty string = user cleared; do not re-hydrate from obs.
+        if wkey not in ui_state:
             ui_state[wkey] = str(val)
 
 
@@ -177,9 +180,36 @@ def apply_capture_result(
     return log
 
 
+def mark_ocr_map_applied_to_ui(
+    ui_state: Any,
+    map_id: int,
+    *,
+    category: str | None = None,
+) -> None:
+    """After OCR sets map selectbox, avoid manual map-change reset on same rerun."""
+    ui_state["_tracked_map_id"] = int(map_id)
+    ui_state["_suppress_map_change_reset"] = True
+    if category is not None:
+        ui_state["_tracked_map_category"] = category
+
+
+def ocr_should_clear_readings(
+    result: CaptureParseResult,
+    map_id_before: int | None,
+) -> bool:
+    """Clear scan readings only when OCR resolves a *different* map than before."""
+    if result.map_id is None:
+        return False
+    if map_id_before is None:
+        return False
+    return int(result.map_id) != int(map_id_before)
+
+
 def clear_readings_for_map_change(obs: dict[str, Any], ui_state: Any) -> None:
     """Clear obs readings and bump widget revision (orphans old Streamlit keys)."""
     for k in READING_KEYS:
+        obs.pop(k, None)
+    for k in AVG_RAW_OBS_KEYS:
         obs.pop(k, None)
     ui_state["obs_readings_rev"] = int(ui_state.get("obs_readings_rev", 0)) + 1
 

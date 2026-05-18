@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
+import time
 from typing import Any, Callable
+
+LOG = logging.getLogger("bidking_lab.ui")
 
 READING_FP_KEYS: tuple[str, ...] = (
     "map_id", "hero", "warehouse_cells", "total_item_count",
@@ -18,6 +22,32 @@ READING_FP_KEYS: tuple[str, ...] = (
     "red_cells_total", "red_value_lo", "red_value_hi", "red_huge_band",
     "red_confirmed_none", "small_warehouse_confirmed",
 )
+
+
+def _box_log(box: dict[str, Any], message: str, *args: object) -> None:
+    line = message % args if args else message
+    if LOG.isEnabledFor(logging.INFO):
+        LOG.info(line)
+    logs = box.setdefault("_log", [])
+    logs.append(line)
+    if len(logs) > 40:
+        del logs[:-40]
+
+
+def _flush_box_log(session_state: Any, box: dict[str, Any] | None) -> None:
+    if session_state is None or not box:
+        return
+    pending = box.get("_log")
+    if not pending:
+        return
+    try:
+        from ui_log import append_infer_log
+
+        for line in pending:
+            append_infer_log(session_state, line)
+        box["_log"] = []
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def inference_fingerprint(
@@ -46,6 +76,7 @@ def start_background_hint(
     mc: dict[str, Any],
     compute_fn: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any] | None],
     mc_fingerprint: dict[str, Any] | None = None,
+    session_state: Any | None = None,
 ) -> dict[str, Any]:
     """Start a daemon thread; returns the shared result box dict."""
     fp_mc = mc_fingerprint if mc_fingerprint is not None else mc
@@ -57,13 +88,35 @@ def start_background_hint(
         "gen": 0,
         "result": None,
         "error": None,
+        "started_at": time.time(),
+        "_log": [],
     }
     cancel = threading.Event()
     box["cancel"] = cancel
 
     state_snap = dict(state)
+    if session_state is not None:
+        try:
+            from ui_log import append_infer_log
+
+            append_infer_log(
+                session_state,
+                "bg_hint start fp=%s map_id=%s wh=%s trials=%s"
+                % (fp, state_snap.get("map_id"), state_snap.get("warehouse_cells"), mc.get("n_trials")),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+    _box_log(
+        box,
+        "bg_hint start fp=%s map_id=%s wh=%s trials=%s",
+        fp,
+        state_snap.get("map_id"),
+        state_snap.get("warehouse_cells"),
+        mc.get("n_trials"),
+    )
 
     def _worker() -> None:
+        t0 = time.time()
         try:
             if cancel.is_set():
                 box["status"] = "cancelled"
@@ -74,9 +127,22 @@ def start_background_hint(
                 return
             box["result"] = result
             box["status"] = "done" if result is not None else "skipped"
+            _box_log(
+                box,
+                "bg_hint worker %s in %.1fs fp=%s",
+                box["status"],
+                time.time() - t0,
+                fp,
+            )
         except Exception as exc:  # noqa: BLE001
             box["error"] = str(exc)
             box["status"] = "error"
+            _box_log(
+                box,
+                "bg_hint worker error in %.1fs: %s",
+                time.time() - t0,
+                exc,
+            )
 
     threading.Thread(target=_worker, daemon=True).start()
     return box
@@ -97,30 +163,64 @@ def sync_background_hint(
     if not box:
         return "idle"
 
+    _flush_box_log(session_state, box)
+
     fp_mc = mc_fingerprint if mc_fingerprint is not None else mc
     current_fp = inference_fingerprint(state, fp_mc)
-    if box.get("status") == "running" and box.get("fp") != current_fp:
+    box_fp = box.get("fp")
+
+    if box.get("status") == "running" and box_fp != current_fp:
         cancel = box.get("cancel")
         if cancel is not None:
             cancel.set()
         box["status"] = "cancelled"
         session_state["_hint_bundle"] = None
+        _flush_box_log(session_state, box)
+        session_state[_BOX_KEY] = None
+        try:
+            from ui_log import append_infer_log
+
+            append_infer_log(
+                session_state,
+                "bg_hint cancelled (fp %s -> %s)" % (box_fp, current_fp),
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return "cancelled"
 
-    if box.get("status") == "done" and box.get("fp") == current_fp:
+    if box.get("status") == "done" and box_fp == current_fp:
         session_state["_hint_bundle"] = box.get("result")
+        elapsed = time.time() - float(box.get("started_at") or time.time())
+        _flush_box_log(session_state, box)
         session_state[_BOX_KEY] = None
+        try:
+            from ui_log import append_infer_log
+
+            append_infer_log(
+                session_state,
+                "bg_hint promoted to UI in %.1fs fp=%s" % (elapsed, current_fp),
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return "done"
 
     if box.get("status") in ("cancelled", "error", "skipped"):
+        st = str(box["status"])
+        err = box.get("error")
+        _flush_box_log(session_state, box)
         session_state[_BOX_KEY] = None
-        return str(box["status"])
+        try:
+            from ui_log import append_infer_log
+
+            append_infer_log(
+                session_state,
+                "bg_hint terminal %s%s" % (st, (" err=%s" % err) if err else ""),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return st
 
     if box.get("status") == "running":
         return "running"
 
     return "idle"
-
-
-def request_background_hint(session_state: Any) -> None:
-    session_state["_request_bg_hint"] = True

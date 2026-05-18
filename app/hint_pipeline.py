@@ -28,8 +28,12 @@ def compute_hint_bundle(
     enable_snipe_pass: bool = False,
 ) -> dict[str, Any] | None:
     """Run MC + filter; return a plain dict for UI rendering."""
+    from bidking_lab.inference.readings_validate import check_warehouse_cell_budget
+
     map_id = state.get("map_id")
     if map_id is None or not state.get("warehouse_cells"):
+        return None
+    if check_warehouse_cell_budget(state):
         return None
 
     n_trials = int(mc["n_trials"])

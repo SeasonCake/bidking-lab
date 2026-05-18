@@ -19,7 +19,7 @@ def _image_bytes_from_path(path: str) -> tuple[bytes, str | None]:
     try:
         with Image.open(p) as img:
             buf = io.BytesIO()
-            img.convert("RGB").save(buf, format="PNG", optimize=True)
+            img.convert("RGB").save(buf, format="PNG", compress_level=1)
             return buf.getvalue(), None
     except OSError as exc:
         return b"", f"无法读取剪贴板图片文件: {exc}"
@@ -48,7 +48,8 @@ def clipboard_image_bytes() -> tuple[bytes, str | None]:
 
     if isinstance(data, Image.Image):
         buf = io.BytesIO()
-        data.save(buf, format="PNG", optimize=True)
+        rgb = data.convert("RGB") if data.mode != "RGB" else data
+        rgb.save(buf, format="PNG", compress_level=1)
         return buf.getvalue(), None
 
     for path in _paths_from_clipboard_payload(data):
