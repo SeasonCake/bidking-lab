@@ -1272,7 +1272,6 @@ def _clear_hint_done_flash() -> None:
         "_hint_tab_done_flash",
         "_hint_infer_until",
         "_hint_done_toast_shown",
-        "_hint_needs_refresh",
     ):
         st.session_state.pop(_k, None)
 
