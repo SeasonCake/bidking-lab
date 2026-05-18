@@ -935,6 +935,12 @@ muted_caption(
     "\u64cd\u4f5c\u6b65\u9aa4\u89c1\u5de6\u4fa7\u300c\u64cd\u4f5c\u8bf4\u660e\u300d\u6216\u9996\u6b21\u52a0\u8f7d\u65f6\u7684\u94fe\u63a5\uff1b"
     "\u5de5\u7a0b\u8fdb\u5ea6\u89c1 PROGRESS.md\u3002"
 )
+def _maybe_switch_to_hint_tab_after_capture() -> None:
+    """Land on 出价推荐 when OCR auto-infer starts (not after MC finishes)."""
+    if st.session_state.get("auto_infer_after_capture", True):
+        st.session_state["_main_tab"] = "hint"
+
+
 def _ocr_warmup_spinner_label(*, screen_warmup: bool) -> str:
     if screen_warmup:
         return "正在加载 OCR（样例图 + 主屏抓屏暖机，约 20–50 秒）…"
@@ -1425,9 +1431,12 @@ def _apply_pending_capture(
         st.session_state["_pending_hint_nudge"] = True
         _wh_apply = int(obs_state.get("warehouse_cells") or 0)
         _mid_apply = obs_state.get("map_id")
-        if _wh_apply > 0 and _mid_apply is not None:
-            if check_warehouse_cell_budget(obs_state) is None:
-                st.session_state["_main_tab"] = "hint"
+        if (
+            _wh_apply > 0
+            and _mid_apply is not None
+            and check_warehouse_cell_budget(obs_state) is None
+        ):
+            _maybe_switch_to_hint_tab_after_capture()
     st.session_state.pop("_hint_bundle", None)
     st.session_state.pop("_bg_infer_box", None)
     # #region agent log
@@ -2142,6 +2151,7 @@ map_ready = state.get("map_id") is not None
 inference_ready = warehouse_ready and map_ready and _cells_budget_err is None
 if st.session_state.pop("_pending_hint_nudge", False) and inference_ready:
     st.session_state["_nudge_hint_tab"] = True
+    _maybe_switch_to_hint_tab_after_capture()
 else:
     st.session_state.pop("_pending_hint_nudge", None)
 
@@ -2168,7 +2178,7 @@ if st.session_state.pop("_capture_just_applied", False):
         if _on_hint_tab:
             _toast += "\uff1b\u5df2\u5207\u5230\u300c\u51fa\u4ef7\u63a8\u8350\u300d\uff0c\u540e\u53f0\u63a8\u65ad\u8fdb\u884c\u4e2d"
         else:
-            _toast += "\uff1b\u540e\u53f0\u63a8\u65ad\u5df2\u542f\u52a8\uff0c\u53ef\u5207\u5230\u300c\u51fa\u4ef7\u63a8\u8350\u300d\u67e5\u770b"
+            _toast += "\uff1b\u540e\u53f0\u63a8\u65ad\u5df2\u542f\u52a8\uff08\u5c06\u81ea\u52a8\u5207\u5230\u300c\u51fa\u4ef7\u63a8\u8350\u300d\uff09"
     st.toast(_toast, icon="\u2705")
 
 
@@ -2360,6 +2370,7 @@ def _tick_background_hint() -> str:
         st.session_state, state=state, mc=mc, mc_fingerprint=fp_mc,
     )
     if st.session_state.pop("_request_bg_hint", False) and inference_ready:
+        _maybe_switch_to_hint_tab_after_capture()
         # #region agent log
         agent_debug_log(
             location="streamlit_app.py:_tick_background_hint:start",
@@ -3726,6 +3737,8 @@ def _bg_infer_poll_fragment() -> None:
     status = _poll_background_hint()
     st.session_state["_bg_infer_status"] = status
     if status == "done" and not had_bundle:
+        if st.session_state.get("auto_infer_after_capture", True):
+            st.session_state["_main_tab"] = "hint"
         # #region agent log
         agent_debug_log(
             location="streamlit_app.py:_bg_infer_poll_fragment:done",

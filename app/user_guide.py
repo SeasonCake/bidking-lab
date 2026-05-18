@@ -26,12 +26,10 @@ def render_instructions_link(*, label: str = "📖 打开操作说明（新页�
 
 
 def _mermaid_block(diagram: str, *, height: int = 280) -> None:
-    import streamlit.components.v1 as components
+    import base64
 
-    safe = diagram.replace("`", "\\`")
-    components.html(
-        f"""
-<!DOCTYPE html>
+    safe = diagram.strip()
+    doc = f"""<!DOCTYPE html>
 <html><head>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
@@ -41,11 +39,9 @@ def _mermaid_block(diagram: str, *, height: int = 280) -> None:
 </head><body>
 <pre class="mermaid">{safe}</pre>
 <script>mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});</script>
-</body></html>
-""",
-        height=height,
-        scrolling=False,
-    )
+</body></html>"""
+    payload = base64.b64encode(doc.encode("utf-8")).decode("ascii")
+    st.iframe(f"data:text/html;base64,{payload}", height=height)
 
 
 def render_user_guide_page() -> None:

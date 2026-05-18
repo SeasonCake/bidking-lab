@@ -374,4 +374,4 @@ def render_main_tab_nav(
                     # #endregion
                     st.session_state[session_key] = key
                     st.rerun()
-    return active
+    return st.session_state.get(session_key, active)
