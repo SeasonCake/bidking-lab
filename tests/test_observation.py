@@ -240,7 +240,7 @@ def test_active_reading_constraint_count() -> None:
 
 
 def test_joint_relax_widens_avg_value_when_many_fields() -> None:
-    """With >=4 fields, avg_value tol widens so borderline counts survive."""
+    """With >=4 fields, value×count product tol widens (1% → 3%)."""
     strict = QualityBucketObs(
         quality=4,
         total_cells=32,
@@ -259,9 +259,11 @@ def test_joint_relax_widens_avg_value_when_many_fields() -> None:
     assert active_reading_constraint_count(relaxed) >= JOINT_CONSTRAINT_RELAX_THRESHOLD
     c_strict = candidates_for_bucket(strict, warehouse_capacity=159)
     c_relaxed = candidates_for_bucket(relaxed, warehouse_capacity=159)
-    # 86490/12 = 7208 vs avg 6178 → ~16.7% off: fails ±10%, passes ±18%
-    assert not any(c.total_cells == 32 and c.count == 12 for c in c_strict)
-    assert any(c.total_cells == 32 and c.count == 12 for c in c_relaxed)
+    # 86490 ≈ 6178×14; count=12 is not a valid product match at any tol ≤3%.
+    assert not any(c.count == 12 for c in c_strict)
+    assert not any(c.count == 12 for c in c_relaxed)
+    assert any(c.total_cells == 32 and c.count == 14 for c in c_strict)
+    assert any(c.total_cells == 32 and c.count == 14 for c in c_relaxed)
 
 
 def test_avg_value_without_value_sum_uses_loose_pcv_filter() -> None:
@@ -273,6 +275,98 @@ def test_avg_value_without_value_sum_uses_loose_pcv_filter() -> None:
     )
     cands = candidates_for_bucket(bucket, warehouse_capacity=159)
     assert cands  # at least some candidates survive
+
+
+def test_avg_value_fractional_cents_integer_leak_prefers_count() -> None:
+    """39539.17 × 6 ≈ integer silver; do not rank 9格/2件 above 27格/6件."""
+    bucket = QualityBucketObs(quality=5, avg_value=39_539.17)
+    cands = candidates_for_bucket(bucket, warehouse_capacity=150)
+    assert cands
+    assert cands[0].count == 6
+    assert cands[0].total_cells == 27
+    assert not any(c.count == 2 for c in cands)
+
+
+def test_joint_avg_cells_and_fractional_avg_value() -> None:
+    """Lock count via均价小数分, then 均格 4.5 picks (27,6) not (9,2)."""
+    bucket = QualityBucketObs(
+        quality=5,
+        avg_value=39_539.17,
+        avg_cells=parse_reading("4.5"),
+    )
+    cands = candidates_for_bucket(bucket, warehouse_capacity=150)
+    assert cands
+    assert (cands[0].total_cells, cands[0].count) == (27, 6)
+    assert all(c.avg_match for c in cands)
+
+
+def test_purple_value_sum_plus_avg_locks_item_count() -> None:
+    """50630 + 6328.75 → exactly 8 items; top ~2.5 cells/item."""
+    bucket = QualityBucketObs(
+        quality=4, avg_value=6328.75, value_sum=50_630,
+    )
+    cands = candidates_for_bucket(
+        bucket, warehouse_capacity=123, other_known_cells=69,
+    )
+    assert cands
+    assert all(c.count == 8 for c in cands)
+    assert (cands[0].total_cells, cands[0].count) == (20, 8)
+    assert not any(c.total_cells < c.count for c in cands)
+
+
+def test_gold_value_sum_plus_avg_rejects_impossible_low_cells() -> None:
+    """101260 + 6328.75 → 16 items; no 11格/15件 style fits."""
+    bucket = QualityBucketObs(
+        quality=5, avg_value=6328.75, value_sum=101_260,
+    )
+    cands = candidates_for_bucket(
+        bucket, warehouse_capacity=123, other_known_cells=69,
+    )
+    assert cands
+    assert all(c.count == 16 for c in cands)
+    assert all(c.total_cells >= 16 for c in cands)
+    assert not any(c.total_cells == 11 and c.count >= 15 for c in cands)
+
+
+def test_purple_avg_6328_75_uses_integer_leak_not_pcv_flood() -> None:
+    """T4 manual case: decimal avg must not behave like integer 6328 (~5000 cands)."""
+    bucket = QualityBucketObs(quality=4, avg_value=6328.75)
+    cands = candidates_for_bucket(
+        bucket, warehouse_capacity=120, other_known_cells=35,
+    )
+    assert cands
+    assert all(c.count % 4 == 0 for c in cands)
+    assert not any(c.count == 2 for c in cands)
+    assert len(cands) < 1000
+    assert (cands[0].total_cells, cands[0].count) in {
+        (14, 4), (28, 8), (10, 4), (20, 8),
+    }
+
+
+def test_preview_budget_subtracts_lower_buckets() -> None:
+    """Purple 3.43 with wg+blue filled must not show 55 cells when budget < 55."""
+    from bidking_lab.inference.observation import explicit_lower_bucket_cells_from_state
+
+    state = {"hero": "ethan", "wg_cells": 15, "blue_cells": 48}
+    other = explicit_lower_bucket_cells_from_state(state, 4)
+    assert other == 63
+    bucket = QualityBucketObs(quality=4, avg_cells=parse_reading("3.43"))
+    cands = candidates_for_bucket(
+        bucket, warehouse_capacity=110, other_known_cells=other,
+    )
+    assert all(c.total_cells <= 47 for c in cands)
+    assert not any(c.total_cells == 55 for c in cands)
+
+
+def test_avg_cells_hard_filter_drops_incompatible() -> None:
+    bucket = QualityBucketObs(
+        quality=4,
+        avg_cells=parse_reading("2.90"),
+    )
+    cands = candidates_for_bucket(bucket, warehouse_capacity=120)
+    assert cands
+    assert all(c.avg_match for c in cands)
+    assert (32, 11) in {(c.total_cells, c.count) for c in cands}
 
 
 def test_item_db_boost_singleitem_pins_correct_cells() -> None:

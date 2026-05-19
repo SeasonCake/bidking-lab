@@ -250,3 +250,25 @@ def test_warehouse_prior_subtracts_known_shape_cells() -> None:
     # for the rest of the blue bucket is warehouse - 20.
     pruned = filter_by_warehouse_size(cands, warehouse_size=60, shape_known_cells=20)
     assert all(tc <= 40 for tc, _ in pruned)
+
+
+# --- avg_value fractional-cents → integer total silver ---
+
+
+def test_avg_value_integer_leak_distance() -> None:
+    from bidking_lab.inference.display import (
+        integer_total_leak_distance,
+    )
+
+    assert integer_total_leak_distance(39_539.17, 6) < 0.05
+    assert integer_total_leak_distance(39_539.17, 2) > 0.3
+
+
+def test_best_count_for_gold_avg_hint() -> None:
+    from bidking_lab.inference.display import (
+        best_count_for_avg_value_integer_leak,
+    )
+
+    assert best_count_for_avg_value_integer_leak(39_539.17) == 6
+    assert best_count_for_avg_value_integer_leak(32_507.6) == 5
+    assert best_count_for_avg_value_integer_leak(32_507) is None

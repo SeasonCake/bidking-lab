@@ -619,6 +619,38 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 - `capture/screen.py`：主/副屏枚举、`INFO_PANEL_CROP_FRAC`、`capture_monitor_png_bytes`（C-36 预备）。
 - OBS #33 / TB #34–35；移除临时 debug 日志。
 
+### C-40 枚举优化（均价/均格，2026-05-19）
+
+**已做（简单路径，可验证）**
+
+- 小数均价 → `integer_total_leak` **硬过滤件数** + composite 优先；整数均价仍走 PCV ±25%。
+- **均格** → `is_compatible` **硬过滤** `(total_cells, count)`（原先只打 `avg_match` 标志未剔除）。
+- **联合**：先泄漏件数，再均格显示 + 仓格上限；`39539.17` + `4.5` → top `(27,6)`。
+- **总价+均价联合**：`value_sum_matches_avg_at_count`（`均价×件数≈总价`，默认 ±1%）；拒绝 `total_cells < count`（修 11格/15件）。
+- **预览仓预算**：`other_known_cells` = 已填低品 `*_cells` 之和（Ethan wg+蓝等）。
+- **UI**：紫/金均格、均价 `text_input` 旁 **× 一键清空**（对齐 `number_input` 原生清除）；`clear_reading_text_field`。
+- 模拟报告：`data/processed/decimal_reading_sim.txt`；脚本 `scripts/simulate_decimal_readings.py`。
+
+**Streamlit 手测清单（仓库 123，白绿 15 + 蓝 48 → 紫/金上限 54 格）**
+
+| # | 填写 | 预期 |
+|---|------|------|
+| 1 | 紫均价 `6328.75` | 件数仅 4/8/12…；前三约 14/4、28/8、42/12 |
+| 2 | + 紫总价 `50630` | 全部 8 件；前三约 20/8、21/8、19/8 |
+| 3 | + 紫均格 `2.5` | 唯一 20/8 |
+| 4 | 金总价 `101260` + 均价 `6328.75` | 16 件；无 11格/15件；格数 ≥16 |
+| 5 | 紫均格 `3.43`，仓库 **110** | 上限 47 格，无 55 格解 |
+
+MC 仍只用 cells/count/value/huge；均价/均格只收紧预览与分析估算（TB #31）。
+
+**TODO（复杂，暂缓）**
+
+| 项 | 说明 |
+|----|------|
+| **地图/池化先验排序** | 已有白绿蓝格 + 总仓时，按地图 drop 分布 / `decimal_reading_sim` 统计对 top-K 加权（非均匀 composite） |
+| **游戏均价取整方向** | 均格已确认 floor 2dp；均价 `.17` 尾数可能是四舍五入 — 需截图校准或 A/B |
+| **分 display-kind 分支** | integer / .5 / .25/.75 / tight_fraction 分桶枚举，减少 966 解展示 |
+
 ### C-35 后续 TODO（推进方向）
 
 | 优先级 | 项 | 说明 |

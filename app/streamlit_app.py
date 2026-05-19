@@ -96,9 +96,90 @@ def _format_db_match_suffix(quality: int, value: int | None,
     return f" \u2014 \u53ef\u80fd\u4e3a **{suffix}**"
 
 
-def _render_candidate_preview(bucket: QualityBucketObs | None,
-                                warehouse_capacity: int,
-                                quality_label: str) -> None:
+# Per-quality sanity: map「均价」误填成「总价」时提示（仅预览层）
+_AVG_VALUE_LOOKS_LIKE_SUM: dict[int, int] = {
+    4: 25_000,
+    5: 80_000,
+    6: 200_000,
+}
+
+
+def _clearable_reading_text_input(
+    parent,
+    label: str,
+    *,
+    state: dict,
+    ui_state,
+    obs_key: str,
+    base_widget_key: str,
+    placeholder: str = "",
+    help: str | None = None,
+) -> str:
+    """``text_input`` with a × clear button (matches optional ``number_input`` UX)."""
+    from bidking_lab.capture.apply import (
+        clear_reading_text_field,
+        reading_widget_key,
+        reconcile_avg_raw_widget_return,
+    )
+
+    wkey = reading_widget_key(base_widget_key, ui_state)
+    inp_col, btn_col = parent.columns([11, 1], vertical_alignment="bottom")
+    if btn_col.button(
+        "\u00d7",
+        key=f"{wkey}__clear",
+        help="\u6e05\u7a7a\u6b64\u5b57\u6bb5",
+    ):
+        clear_reading_text_field(state, ui_state, obs_key, base_widget_key)
+        st.rerun()
+    widget_return = inp_col.text_input(
+        label,
+        placeholder=placeholder,
+        help=help,
+        key=wkey,
+    )
+    return reconcile_avg_raw_widget_return(
+        state, ui_state, obs_key, base_widget_key, widget_return,
+    )
+
+
+def _avg_value_engine_hint(bucket: QualityBucketObs) -> str | None:
+    """Explain how enumeration will treat ``bucket.avg_value`` (preview only)."""
+    av = bucket.avg_value
+    if av is None or av <= 0:
+        return None
+    from bidking_lab.inference.display import (
+        avg_value_shows_fractional_cents,
+        best_count_for_avg_value_integer_leak,
+    )
+    from bidking_lab.inference.observation import integer_leak_allowed_counts
+
+    if bucket.value_sum is not None and bucket.value_sum > 0:
+        return None
+    if not avg_value_shows_fractional_cents(av):
+        return (
+            f"引擎按 **整数均价 {av:,.0f}** 处理（PCV 软约束，候选偏多）。"
+            "若游戏显示小数请用 **文本框** 填全，如 `6328.75`。"
+        )
+    leak = integer_leak_allowed_counts(bucket, max_count=35)
+    if not leak:
+        return f"已解析 **{av}**；小数分未匹配到件数，仍用 PCV 软约束。"
+    best = best_count_for_avg_value_integer_leak(av, max_count=35)
+    sample = ", ".join(str(c) for c in sorted(leak)[:8])
+    more = "…" if len(leak) > 8 else ""
+    return (
+        f"已解析 **{av:g}** → **小数分泄漏**：件数仅 `{sample}{more}`"
+        + (f"，首选 **{best} 件**" if best else "")
+        + "（非整数 `6328` 的五千解）。"
+    )
+
+
+def _render_candidate_preview(
+    bucket: QualityBucketObs | None,
+    warehouse_capacity: int,
+    quality_label: str,
+    *,
+    other_known_cells: int = 0,
+) -> None:
     """Show enumeration candidates or a confirmation for a bucket.
 
     Three render modes:
@@ -138,8 +219,37 @@ def _render_candidate_preview(bucket: QualityBucketObs | None,
         return
     from bidking_lab.inference.observation import relax_bucket_for_enumeration_preview
 
+    budget = max(0, warehouse_capacity - other_known_cells)
+    if warehouse_capacity > 0 and other_known_cells > 0:
+        st.caption(
+            f"\u2139\ufe0f **{quality_label} \u679a\u4e3e\u683c\u6570\u4e0a\u9650**"
+            f"\uff1a\u4ed3\u5e93 `{warehouse_capacity}` \u2212 "
+            f"\u5df2\u586b\u4f4e\u54c1 `{other_known_cells}` "
+            f"= **\u81f3\u591a `{budget}` \u683c**"
+            "\uff08\u4ec5\u7edf\u8ba1\u5df2\u586b\u603b\u683c\u6570\u7684\u54c1\u8d28\uff09\u3002"
+        )
+    if (
+        bucket.avg_value is not None
+        and bucket.avg_value > 0
+        and (bucket.value_sum is None or bucket.value_sum <= 0)
+    ):
+        cap = _AVG_VALUE_LOOKS_LIKE_SUM.get(bucket.quality, 99_999)
+        if bucket.avg_value > cap:
+            st.warning(
+                f"\u26a0\ufe0f **{quality_label}\u5747\u4ef7** `{bucket.avg_value:,.0f}` "
+                "\u504f\u5927\uff0c\u66f4\u50cf\u300c\u603b\u4f30\u503c\u300d\u3002"
+                f"\u8bf7\u6539\u586b **{quality_label}\u603b\u4f30\u503c**\uff1b"
+                "\u5747\u4ef7\u5e94\u4e3a\u6bcf\u4ef6 silver\uff08\u901a\u5e38\u8fdc\u5c0f\u4e8e\u603b\u4ef7\uff09\u3002"
+            )
+        else:
+            _hint = _avg_value_engine_hint(bucket)
+            if _hint:
+                st.caption(f"\u2139\ufe0f {_hint}")
+
     bucket, _ocr_dropped = relax_bucket_for_enumeration_preview(
-        bucket, warehouse_capacity=warehouse_capacity,
+        bucket,
+        warehouse_capacity=warehouse_capacity,
+        other_known_cells=other_known_cells,
     )
     if _ocr_dropped:
         st.caption(
@@ -155,7 +265,11 @@ def _render_candidate_preview(bucket: QualityBucketObs | None,
             "**\u4e0d\u6539\u53d8** \u4e0a\u65b9 MC \u4ed3\u5e93\u4ef7\u503c\u533a\u95f4 / bucket \u540e\u9a8c\uff09\u3002"
         )
     try:
-        cands = candidates_for_bucket(bucket, warehouse_capacity=warehouse_capacity)
+        cands = candidates_for_bucket(
+            bucket,
+            warehouse_capacity=warehouse_capacity,
+            other_known_cells=other_known_cells,
+        )
     except Exception as exc:                                # noqa: BLE001
         st.warning(f"{quality_label} \u5019\u9009\u679a\u4e3e\u51fa\u9519: {exc}")
         return
@@ -561,6 +675,32 @@ def _resolved_map_select(map_choices: dict[int, str]) -> int | None:
     return _coerce_map_select(raw, map_choices)
 
 
+def _effective_map_id(
+    map_choices: dict[int, str],
+    *,
+    selectbox_return: object = None,
+    obs: dict | None = None,
+) -> int | None:
+    """Resolve map id without treating a transient ``selectbox`` return of None as cleared.
+
+    On tab switches the widget ``key`` and ``obs['map_id']`` often still hold the
+  choice while the selectbox return value is briefly None — using only the return
+  used to call ``reset_obs_for_manual_map_change`` and wipe readings.
+    """
+    obs = obs or {}
+    for raw in (
+        st.session_state.get(_map_select_widget_key()),
+        selectbox_return,
+        st.session_state.get("obs_map_select"),
+        obs.get("map_id"),
+        st.session_state.get("_tracked_map_id"),
+    ):
+        mid = _coerce_map_select(raw, map_choices)
+        if mid is not None:
+            return mid
+    return None
+
+
 def _coerce_map_select(
     raw: object,
     map_choices: dict[int, str],
@@ -919,6 +1059,7 @@ def _build_session(state, maps: Mapping[int, BidMap]) -> SessionObs:
                     or b.huge_band != "none"
                     or b.avg_cells is not None
                     or b.count is not None
+                    or (b.avg_value is not None and b.avg_value > 0)
                 )
                 if not has_info:
                     continue
@@ -1226,6 +1367,13 @@ def _session_int(key: str) -> int:
 
 def _warehouse_capacity() -> int:
     return _session_int("obs_warehouse_cells")
+
+
+def _lower_bucket_cells_for_preview(state: dict, quality: int) -> int:
+    from bidking_lab.inference.observation import explicit_lower_bucket_cells_from_state
+
+    hero = str(state.get("hero") or "ethan")
+    return explicit_lower_bucket_cells_from_state(state, quality, hero=hero)
 
 
 def _png_for_debug_store(data: bytes, *, max_width: int = 720) -> bytes:
@@ -1953,6 +2101,15 @@ with st.sidebar:
         st.session_state["_tracked_map_id"] = _resolved_map_select(map_choices)
     if "_tracked_map_category" not in st.session_state:
         st.session_state["_tracked_map_category"] = category
+    # Pre-seed selectbox from obs before widget exists (cannot set key after st.selectbox).
+    if _map_key not in st.session_state:
+        _pre_mid = _coerce_map_select(state.get("map_id"), map_choices)
+        if _pre_mid is None:
+            _pre_mid = _coerce_map_select(
+                st.session_state.get("_tracked_map_id"), map_choices,
+            )
+        if _pre_mid is not None:
+            st.session_state[_map_key] = _pre_mid
     map_id = st.selectbox(
         "\u5177\u4f53\u5730\u56fe",
         options=list(map_choices.keys()),
@@ -1963,7 +2120,9 @@ with st.sidebar:
         on_change=_on_obs_map_select_changed,
         help="\u6309\u96be\u5ea6\u00d7\u53d8\u79cd\u6392\u5e8f\u3002\u624b\u52a8\u6362\u56fe\u6216\u70b9 \u00d7 \u6e05\u7a7a\u4f1a\u91cd\u7f6e\u8bfb\u6570\u4e0e\u622a\u56fe\u3002",
     )
-    _resolved_mid = _coerce_map_select(map_id, map_choices)
+    _resolved_mid = _effective_map_id(
+        map_choices, selectbox_return=map_id, obs=state,
+    )
     _tracked_mid = st.session_state.get("_tracked_map_id")
     if (
         _resolved_mid is None
@@ -1972,6 +2131,8 @@ with st.sidebar:
     ):
         _on_map_context_changed(None, _tracked_mid)
         _tracked_mid = None
+    elif _resolved_mid is not None:
+        st.session_state["_tracked_map_id"] = _resolved_mid
     _post_sync_reset = (
         _tracked_mid is not None
         and _resolved_mid is not None
@@ -2330,11 +2491,12 @@ if "obs_warehouse_cells" in st.session_state:
         state["warehouse_cells"] = _wh_sync
 else:
     _wh_sync = int(state.get("warehouse_cells") or 0)
-_resolved_mid = _coerce_map_select(map_id, map_choices)
-if _resolved_mid is None:
-    _resolved_mid = _resolved_map_select(map_choices)
+_resolved_mid = _effective_map_id(
+    map_choices, selectbox_return=map_id, obs=state,
+)
 if _resolved_mid is not None:
     state["map_id"] = _resolved_mid
+    st.session_state["_tracked_map_id"] = _resolved_mid
 elif state.get("map_id") is None:
     state.pop("map_id", None)
 _tic_sync = _session_int("obs_total_item_count")
@@ -2347,6 +2509,9 @@ from bidking_lab.inference.readings_validate import check_warehouse_cell_budget
 
 hydrate_reading_widgets_from_obs(state, st.session_state)
 sync_obs_from_reading_widgets(state, st.session_state, allow_clear=False)
+from bidking_lab.capture.apply import hydrate_huge_bands_from_obs, sync_huge_bands_to_obs
+
+sync_huge_bands_to_obs(state, st.session_state)
 # #region agent log
 agent_debug_log(
     location="streamlit_app.py:after_global_hydrate_sync",
@@ -2636,6 +2801,9 @@ def _sync_obs_from_widgets(obs_state: dict) -> None:
     sync_obs_from_reading_widgets(
         obs_state, st.session_state, allow_clear=False,
     )
+    from bidking_lab.capture.apply import sync_huge_bands_to_obs
+
+    sync_huge_bands_to_obs(obs_state, st.session_state)
 
 
 def _compute_hint_bundle_ui(obs_state: dict):
@@ -3091,19 +3259,17 @@ if _main_tab == "obs":
                 key=_rwk("obs_reading_purple_count", st.session_state),
             )
             _pav_wkey = _rwk("purple_avg_raw_widget", st.session_state)
-            state["purple_avg_raw"] = reconcile_avg_raw_widget_return(
-                state,
-                st.session_state,
-                "purple_avg_raw",
-                "purple_avg_raw_widget",
-                pr2c1.text_input(
-                    "\u7d2b\u54c1\u5747\u683c\uff08\u4f18\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
-                    placeholder="\u4f8b 2.90 \u6216 3.43",
-                    help="\u300c2.9\u300d\u548c\u300c2.90\u300d\u4e0d\u540c\uff01\u300c2.9\u300d=\u6e38\u620f\u51fa\u7684\u662f\u6070\u597d 2.9 \u7684\u7cbe\u786e\u503c\uff1b"
-                         "\u300c2.90\u300d=\u771f\u5b9e\u503c\u88ab\u622a\u65ad\u5728\u7b2c\u4e8c\u4f4d\u5c0f\u6570\uff08\u4f8b\u5982 2.9090909... = 32 \u683c 11 \u4ef6\uff09\u3002"
-                         "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-                    key=_pav_wkey,
-                ),
+            state["purple_avg_raw"] = _clearable_reading_text_input(
+                pr2c1,
+                "\u7d2b\u54c1\u5747\u683c\uff08\u4f18\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
+                state=state,
+                ui_state=st.session_state,
+                obs_key="purple_avg_raw",
+                base_widget_key="purple_avg_raw_widget",
+                placeholder="\u4f8b 2.90 \u6216 3.43",
+                help="\u300c2.9\u300d\u548c\u300c2.90\u300d\u4e0d\u540c\uff01\u300c2.9\u300d=\u6e38\u620f\u51fa\u7684\u662f\u6070\u597d 2.9 \u7684\u7cbe\u786e\u503c\uff1b"
+                     "\u300c2.90\u300d=\u771f\u5b9e\u503c\u88ab\u622a\u65ad\u5728\u7b2c\u4e8c\u4f4d\u5c0f\u6570\uff08\u4f8b\u5982 2.9090909... = 32 \u683c 11 \u4ef6\uff09\u3002"
+                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u53f3\u4fa7 \u00d7 \u4e00\u952e\u6e05\u7a7a\u3002",
             )
             if str(state.get("purple_avg_raw") or "").strip():
                 st.caption(
@@ -3130,27 +3296,27 @@ if _main_tab == "obs":
                 key=_rwk("obs_reading_purple_value", st.session_state),
             )
             _pavg_wkey = _rwk("purple_avg_value_widget", st.session_state)
-            state["purple_avg_value"] = reconcile_avg_raw_widget_return(
-                state,
-                st.session_state,
-                "purple_avg_value",
-                "purple_avg_value_widget",
-                pr2c3.text_input(
-                    "\u7d2b\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
-                    placeholder="\u4f8b 9400 \u6216 32507.6",
-                    help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u7d2b\u54c1\u5747\u4ef7 X silver\u300d\u3002"
-                         "\u652f\u6301\u5c0f\u6570\uff08\u5982 32507.6\uff09\u3002"
-                         "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
-                         "\u4e0e\u603b\u4f30\u4ef7\u8054\u5408\u65f6\u5bb9\u5dee \u00b110%\uff08\u540c\u65f6\u586b \u22654 \u9879\u65f6\u81ea\u52a8\u653e\u5bbd\u81f3 \u00b118%\uff09\u3002"
-                         "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-                    key=_pavg_wkey,
-                ),
+            state["purple_avg_value"] = _clearable_reading_text_input(
+                pr2c3,
+                "\u7d2b\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
+                state=state,
+                ui_state=st.session_state,
+                obs_key="purple_avg_value",
+                base_widget_key="purple_avg_value_widget",
+                placeholder="\u4f8b 6328.75 \u6216 9400",
+                help="\u5fc5\u987b\u7528\u672c\u6846\u624b\u52a8\u8f93\u5165\u5c0f\u6570\uff08\u6587\u672c\uff0c\u4e0d\u662f\u6b65\u8fdb\u6570\u5b57\u6846\uff09\u3002"
+                     "\u300c6328\u300d\u4e0e\u300c6328.75\u300d\u5f15\u64ce\u4e0d\u540c\uff1a\u5c0f\u6570\u5206\u624d\u9501\u4ef6\u6570\u3002"
+                     "\u652f\u6301 6328,75 \u6216 6328.75\u3002"
+                     "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
+                     "\u4e0e\u603b\u4f30\u4ef7\u8054\u5408\u65f6\u7528 \u00d7\u4ef6\u6570\u2248\u603b\u4ef7 \u9501\u4ef6\u6570\uff08\u00b11%\uff0c\u22654 \u9879\u540c\u586b\u653e\u5bbd\u81f3 3%\uff09\u3002"
+                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u53f3\u4fa7 \u00d7 \u4e00\u952e\u6e05\u7a7a\u3002",
             )
             if str(state.get("purple_avg_value") or "").strip():
                 st.caption(
                     f"\u2713 \u5f53\u524d\u5747\u4ef7\uff1a**{state['purple_avg_value']}** silver"
                 )
             _purple_opts, _purple_lbls = _huge_options_for_quality(4)
+            hydrate_huge_bands_from_obs(state, st.session_state)
             state["purple_huge_band"] = pr1c3.selectbox(
                 "\u7d2b\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u7d2b\u8272\uff09",
                 options=_purple_opts, index=0,
@@ -3209,6 +3375,7 @@ if _main_tab == "obs":
                     _purple_preview_bucket,
                     warehouse_capacity=_warehouse_capacity(),
                     quality_label="\u7d2b\u54c1",
+                    other_known_cells=_lower_bucket_cells_for_preview(state, 4),
                 )
 
             st.divider()
@@ -3237,17 +3404,16 @@ if _main_tab == "obs":
                 key=_rwk("obs_reading_gold_count", st.session_state),
             )
             _gav_wkey = _rwk("gold_avg_raw_widget", st.session_state)
-            state["gold_avg_raw"] = reconcile_avg_raw_widget_return(
-                state,
-                st.session_state,
-                "gold_avg_raw",
-                "gold_avg_raw_widget",
-                gr2c1.text_input(
-                    "\u91d1\u54c1\u5747\u683c\uff08\u6781\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
-                    placeholder="\u4f8b 3.5 \u6216 4.25",
-                    help="\u540c\u7d2b\u54c1\u5747\u683c\u89c4\u5219\uff1a\u300c3.5\u300d\u662f\u7cbe\u786e\u503c\u3001\u300c3.50\u300d\u662f\u88ab\u622a\u65ad\u8fc7\u7684\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-                    key=_gav_wkey,
-                ),
+            state["gold_avg_raw"] = _clearable_reading_text_input(
+                gr2c1,
+                "\u91d1\u54c1\u5747\u683c\uff08\u6781\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
+                state=state,
+                ui_state=st.session_state,
+                obs_key="gold_avg_raw",
+                base_widget_key="gold_avg_raw_widget",
+                placeholder="\u4f8b 3.5 \u6216 4.25",
+                help="\u540c\u7d2b\u54c1\u5747\u683c\u89c4\u5219\uff1a\u300c3.5\u300d\u662f\u7cbe\u786e\u503c\u3001\u300c3.50\u300d\u662f\u88ab\u622a\u65ad\u8fc7\u7684\u3002"
+                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u53f3\u4fa7 \u00d7 \u4e00\u952e\u6e05\u7a7a\u3002",
             )
             if str(state.get("gold_avg_raw") or "").strip():
                 st.caption(
@@ -3265,21 +3431,19 @@ if _main_tab == "obs":
                 key=_rwk("obs_reading_gold_value", st.session_state),
             )
             _gavg_wkey = _rwk("gold_avg_value_widget", st.session_state)
-            state["gold_avg_value"] = reconcile_avg_raw_widget_return(
-                state,
-                st.session_state,
-                "gold_avg_value",
-                "gold_avg_value_widget",
-                gr2c3.text_input(
-                    "\u91d1\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
-                    placeholder="\u4f8b 32507.6",
-                    help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u91d1\u54c1\u5747\u4ef7 X silver\u300d\u3002"
-                         "\u652f\u6301\u5c0f\u6570\uff08\u5982 32507.6\uff09\u3002"
-                         "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
-                         "\u8054\u5408\u603b\u4f30\u4ef7\u65f6 \u00b110%\uff08\u22654 \u9879\u540c\u586b \u2192 \u00b118%\uff09\u3002"
-                         "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-                    key=_gavg_wkey,
-                ),
+            state["gold_avg_value"] = _clearable_reading_text_input(
+                gr2c3,
+                "\u91d1\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
+                state=state,
+                ui_state=st.session_state,
+                obs_key="gold_avg_value",
+                base_widget_key="gold_avg_value_widget",
+                placeholder="\u4f8b 32507.6",
+                help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u91d1\u54c1\u5747\u4ef7 X silver\u300d\u3002"
+                     "\u652f\u6301\u5c0f\u6570\uff08\u5982 32507.6\uff09\u3002"
+                     "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
+                     "\u8054\u5408\u603b\u4f30\u4ef7\u65f6 \u00d7\u4ef6\u6570\u2248\u603b\u4ef7 \u9501\u4ef6\u6570\u3002"
+                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u53f3\u4fa7 \u00d7 \u4e00\u952e\u6e05\u7a7a\u3002",
             )
             if str(state.get("gold_avg_value") or "").strip():
                 st.caption(
@@ -3296,6 +3460,7 @@ if _main_tab == "obs":
                     "\u5747\u4ef7\u53ea\u7528\u4e8e\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\u4e0e\u5206\u6790\u4f30\u7b97\u7684\u91d1\u54c1\u63a8\u683c\u3002"
                 )
             _gold_opts, _gold_lbls = _huge_options_for_quality(5)
+            hydrate_huge_bands_from_obs(state, st.session_state)
             state["gold_huge_band"] = gr1c3.selectbox(
                 "\u91d1\u54c1\u5de8\u7269\u6570\u91cf\uff08\u5df2\u786e\u8ba4\u4e3a\u91d1\u8272\uff09",
                 options=_gold_opts, index=0,
@@ -3359,6 +3524,7 @@ if _main_tab == "obs":
                     _gold_preview_bucket,
                     warehouse_capacity=_warehouse_capacity(),
                     quality_label="\u91d1\u54c1",
+                    other_known_cells=_lower_bucket_cells_for_preview(state, 5),
                 )
 
             st.divider()
@@ -3499,11 +3665,7 @@ def _render_hint_tab_impl() -> None:
     _wh_live = _session_int("obs_warehouse_cells") or int(
         state.get("warehouse_cells") or 0,
     )
-    _mid_live = _resolved_map_select(_hint_map_choices)
-    if _mid_live is None:
-        _mid_live = _coerce_map_select(state.get("map_id"), _hint_map_choices)
-    if _mid_live is None and state.get("map_id") is not None:
-        _mid_live = int(state["map_id"])
+    _mid_live = _effective_map_id(_hint_map_choices, obs=state)
     warehouse_ready = _wh_live > 0
     map_ready = _mid_live is not None
     sync_obs_from_reading_widgets(

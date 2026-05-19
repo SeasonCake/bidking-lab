@@ -35,12 +35,14 @@ display-rule match and the value-side prior fit.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal, Mapping
 
 from bidking_lab.inference.display import (
     Reading,
+    avg_value_shows_fractional_cents,
     enumerate_candidates,
     filter_by_warehouse_size,
+    integer_total_leak_distance,
     is_compatible,
     parse_reading,
 )
@@ -529,6 +531,80 @@ def _single_item_match_names(
 # tolerance widens in ``candidates_for_bucket`` only (MC path unchanged).
 JOINT_CONSTRAINT_RELAX_THRESHOLD = 4
 
+# ``avg_value`` with fractional cents (e.g. 39539.17): total silver
+# ``avg × count`` should be integral; allow tiny float noise.
+INTEGER_LEAK_MAX_DISTANCE = 0.05
+INTEGER_LEAK_COMPOSITE_WEIGHT = 0.35
+
+
+def _integer_leak_max_distance(bucket: QualityBucketObs) -> float:
+    max_dist = INTEGER_LEAK_MAX_DISTANCE
+    if active_reading_constraint_count(bucket) >= JOINT_CONSTRAINT_RELAX_THRESHOLD:
+        max_dist = 0.08
+    return max_dist
+
+
+def integer_leak_allowed_counts(
+    bucket: QualityBucketObs,
+    *,
+    max_count: int = 35,
+) -> set[int] | None:
+    """Item counts compatible with a fractional ``avg_value`` (silver total leak).
+
+    Returns ``None`` when ``avg_value`` does not impose a count band (integer
+    display → PCV soft filter in the main loop; ``value_sum`` → implied avg).
+    """
+    if bucket.avg_value is None or bucket.avg_value <= 0:
+        return None
+    if bucket.value_sum is not None and bucket.value_sum > 0:
+        return None
+    if not avg_value_shows_fractional_cents(bucket.avg_value):
+        return None
+    max_dist = _integer_leak_max_distance(bucket)
+    return {
+        c
+        for c in range(1, max_count + 1)
+        if integer_total_leak_distance(bucket.avg_value, c) <= max_dist
+    }
+
+
+def explicit_lower_bucket_cells_from_state(
+    state: Mapping[str, Any],
+    quality: int,
+    *,
+    hero: str = "ethan",
+) -> int:
+    """Sum explicit ``*_cells`` for buckets strictly below ``quality``.
+
+    Used by the Streamlit candidate preview so purple/gold enumeration
+    respects ``warehouse − wg − blue − …`` rather than the full warehouse.
+    Only counts fields the player actually filled (scan totals), not inferred cells.
+    """
+    total = 0
+    if quality > 1:
+        if hero == "ethan":
+            wg = state.get("wg_cells")
+            if wg is not None and int(wg) > 0:
+                total += int(wg)
+        else:
+            for key in ("white_cells", "green_cells"):
+                v = state.get(key)
+                if v is not None and int(v) > 0:
+                    total += int(v)
+    if quality > 3:
+        blue = state.get("blue_cells")
+        if blue is not None and int(blue) > 0:
+            total += int(blue)
+    if quality > 4:
+        purple = state.get("purple_cells")
+        if purple is not None and int(purple) > 0:
+            total += int(purple)
+    if quality > 5:
+        gold = state.get("gold_cells")
+        if gold is not None and int(gold) > 0:
+            total += int(gold)
+    return total
+
 
 def active_reading_constraint_count(bucket: QualityBucketObs) -> int:
     """Count filled fields that prune enumeration (not used by MC filter)."""
@@ -550,6 +626,28 @@ def active_reading_constraint_count(bucket: QualityBucketObs) -> int:
         if lo > 0 or hi > 0:
             n += 1
     return n
+
+
+def value_sum_matches_avg_at_count(
+    value_sum: float,
+    avg_value: float,
+    count: int,
+    *,
+    rel_tol: float = 0.01,
+) -> bool:
+    """True when ``value_sum`` ≈ cent-rounded ``avg_value × count`` (silver).
+
+    Used when the player fills both total value and per-item average: the
+    game implies a unique item count (e.g. 101260 / 6328.75 → 16), not merely
+    ``value_sum / count`` within ±10% of the average.
+    """
+    if count <= 0 or value_sum <= 0 or avg_value <= 0:
+        return False
+    cents = round(avg_value * 100)
+    expected = (cents * count) / 100.0
+    if abs(expected - value_sum) <= 0.5:
+        return True
+    return abs(expected - value_sum) / value_sum <= rel_tol
 
 
 def _max_cells_per_single_item(quality: int) -> int:
@@ -663,6 +761,7 @@ def candidates_for_bucket(
     # impossibly-large singletons like "(35, 1) purple" — the largest
     # purple item is 12 cells.
     max_cpi = _max_cells_per_single_item(bucket.quality)
+    leak_counts = integer_leak_allowed_counts(bucket, max_count=max_count)
 
     base: list[tuple[int, int]]
     if bucket.avg_cells is not None:
@@ -672,6 +771,8 @@ def candidates_for_bucket(
             max_count=max_count,
             max_total_cells=min(capacity, 252),
         )
+        if leak_counts is not None:
+            base = [(tc, c) for tc, c in base if c in leak_counts]
     else:
         # No avg reading → enumerate everything within budget. Floor the
         # count at max(1, huge_min); floor the cells at huge_min cells.
@@ -679,9 +780,16 @@ def candidates_for_bucket(
         # Cap count: can't have more items than cells (each item ≥ 1 cell).
         effective_max_cells = bucket.total_cells if bucket.total_cells is not None else capacity
         effective_max_count = min(max_count, max(1, effective_max_cells))
+        count_lo = max(1, huge_min)
+        if leak_counts:
+            count_iter = sorted(c for c in leak_counts if count_lo <= c <= effective_max_count)
+            if not count_iter:
+                return []
+        else:
+            count_iter = range(count_lo, effective_max_count + 1)
         base = [
             (tc, c)
-            for c in range(max(1, huge_min), effective_max_count + 1)
+            for c in count_iter
             for tc in range(min_cells_floor, capacity + 1)
         ]
 
@@ -693,6 +801,9 @@ def candidates_for_bucket(
             continue
         if total_cells > capacity:
             continue
+        # Each item occupies at least one cell.
+        if count > 0 and total_cells < count:
+            continue
         # Physical filter: cells/item cannot exceed the largest item of
         # this quality. Integer-safe form of (total_cells / count > max_cpi).
         if count > 0 and total_cells > max_cpi * count:
@@ -701,10 +812,33 @@ def candidates_for_bucket(
         # R3 hint surfaces this directly. We test it against either the
         # user-given value_sum (tight) or the per-cell prior estimate
         # (loose). Tolerance widens correspondingly.
+        if bucket.avg_cells is not None and not is_compatible(
+            bucket.avg_cells, total_cells, count,
+        ):
+            continue
+
+        integer_leak_dist = 0.0
         if bucket.avg_value is not None and bucket.avg_value > 0:
+            if leak_counts is not None and count not in leak_counts:
+                continue
             if bucket.value_sum is not None and bucket.value_sum > 0:
-                implied_avg = bucket.value_sum / max(1, count)
-                tol = 0.10
+                product_tol = 0.01
+                if (
+                    active_reading_constraint_count(bucket)
+                    >= JOINT_CONSTRAINT_RELAX_THRESHOLD
+                ):
+                    product_tol = 0.03
+                if not value_sum_matches_avg_at_count(
+                    float(bucket.value_sum),
+                    float(bucket.avg_value),
+                    count,
+                    rel_tol=product_tol,
+                ):
+                    continue
+            elif leak_counts is not None:
+                integer_leak_dist = integer_total_leak_distance(
+                    bucket.avg_value, count,
+                )
             else:
                 pcv = PER_CELL_VALUE_DEFAULT.get(bucket.quality, 0)
                 if pcv <= 0:
@@ -712,18 +846,15 @@ def candidates_for_bucket(
                 else:
                     implied_avg = (pcv * total_cells) / max(1, count)
                 tol = 0.25
-            # Joint-field softening: many simultaneous readings AND away
-            # can zero-out enumeration; widen avg_value tol only (MC untouched).
-            if active_reading_constraint_count(bucket) >= JOINT_CONSTRAINT_RELAX_THRESHOLD:
-                tol = (
-                    0.18
-                    if bucket.value_sum is not None and bucket.value_sum > 0
-                    else 0.35
-                )
-            if implied_avg <= 0:
-                continue
-            if abs(implied_avg - bucket.avg_value) / bucket.avg_value > tol:
-                continue
+                if (
+                    active_reading_constraint_count(bucket)
+                    >= JOINT_CONSTRAINT_RELAX_THRESHOLD
+                ):
+                    tol = 0.35
+                if implied_avg <= 0:
+                    continue
+                if abs(implied_avg - bucket.avg_value) / bucket.avg_value > tol:
+                    continue
 
         # Huge-band constraint: there must exist an integer ``h`` in
         # [huge_min, huge_max] such that ``h <= count`` and
@@ -768,10 +899,23 @@ def candidates_for_bucket(
         candidate_avg = total_cells / max(1, count)
         avg_prior_penalty = abs(candidate_avg - expected_avg) / expected_avg
 
-        # Composite: 70% value-side fit + 30% cells-side fit, then a
-        # prior-based penalty on avg cells/item and a small Occam penalty.
-        composite = (0.7 * value_score + 0.3 * cells_score
-                     + 0.15 * avg_prior_penalty + 0.001 * count)
+        # Composite: value/cells priors; fractional avg_value locks count first
+        # (integer_leak_dist), then avg_cells display + per-quality avg_cells prior.
+        composite = (
+            0.7 * value_score
+            + 0.3 * cells_score
+            + 0.15 * avg_prior_penalty
+        )
+        if integer_leak_dist > 0:
+            composite += INTEGER_LEAK_COMPOSITE_WEIGHT * integer_leak_dist
+            if bucket.avg_cells is not None:
+                composite += 0.002 * abs(
+                    total_cells / max(1, count) - bucket.avg_cells.value
+                )
+        elif bucket.avg_cells is not None:
+            composite += 0.0005 * count
+        else:
+            composite += 0.001 * count
 
         # Apply item-DB boost: count=1 candidates whose total_cells matches
         # a unique Item.txt price hit get composite ×0.001 so they beat
@@ -858,6 +1002,7 @@ __all__ = (
     "EXACT_VALUE_TOL_PCT",
     "FALLBACK_VALUE_TOL_PCT",
     "lookup_single_item_value",
+    "explicit_lower_bucket_cells_from_state",
     "candidates_for_bucket",
     "top_k_for_session",
 )

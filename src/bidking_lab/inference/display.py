@@ -238,6 +238,53 @@ def reading_info_bits(
     return math.log2(len(candidates))
 
 
+def avg_value_shows_fractional_cents(avg_value: float) -> bool:
+    """True when the map/UI shows a non-integer per-item silver average.
+
+    Game silver totals are integers, so a reading like ``39539.17`` leaks
+    that ``avg_value × count`` should land near a whole silver amount.
+    Integer displays (``32507``) do not carry this signal.
+    """
+    if avg_value <= 0:
+        return False
+    return abs(avg_value - round(avg_value)) > 0.009
+
+
+def integer_total_leak_distance(avg_value: float, count: int) -> float:
+    """``|avg_value × count − round(avg_value × count)|`` — lower is better.
+
+    Uses cent-rounded ``avg_value`` (game shows at most 2 dp) to avoid
+    float blow-ups at large ``count``.
+    """
+    if count <= 0 or avg_value <= 0:
+        return float("inf")
+    cents = round(avg_value * 100)
+    total_silver = (cents * count) / 100.0
+    return abs(total_silver - round(total_silver))
+
+
+def best_count_for_avg_value_integer_leak(
+    avg_value: float,
+    *,
+    max_count: int = 35,
+    max_distance: float = 0.05,
+) -> int | None:
+    """Smallest item count whose ``avg × count`` is near-integer silver.
+
+    Map hints like ``39539.17`` leak denominator information through the
+    fractional cents (``×6 → 237235.02``). Among counts that pass
+    ``max_distance``, return the **minimum** count (Occam).
+    """
+    if not avg_value_shows_fractional_cents(avg_value):
+        return None
+    matches = [
+        count
+        for count in range(1, max_count + 1)
+        if integer_total_leak_distance(avg_value, count) <= max_distance
+    ]
+    return min(matches) if matches else None
+
+
 def filter_by_warehouse_size(
     candidates: Iterable[tuple[int, int]],
     *,
@@ -266,5 +313,8 @@ __all__ = (
     "is_compatible",
     "enumerate_candidates",
     "reading_info_bits",
+    "avg_value_shows_fractional_cents",
+    "integer_total_leak_distance",
+    "best_count_for_avg_value_integer_leak",
     "filter_by_warehouse_size",
 )

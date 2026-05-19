@@ -47,6 +47,10 @@
 40. [启动仍慢：screen_ocr_warmup 与首屏等待](#40-启动仍慢screen_ocr_warmup-与首屏等待)
 41. [后台推断很慢：MC 采样冷缓存，不是 filter](#41-后台推断很慢mc-采样冷缓存不是-filter)
 42. [金品只填均价预览显示 0格/1件 或 ⚠️ 无候选](#42-金品只填均价预览显示-0格1件-或--无候选)
+43. [切到「出价推荐」后读数/地图全没了](#43-切到出价推荐后读数地图全没了)
+44. [手填金/紫巨物后切 tab 变「无」](#44-手填金紫巨物后切-tab-变无)
+45. [分析估算把「金品均价」当每格价](#45-分析估算把金品均价当每格价)
+46. [均格/均价无法点 × 清空](#46-均格均价无法点--清空)
 
 ---
 
@@ -1404,6 +1408,97 @@ profile 时先看日志里的 **`sample_ms`**，不要先怀疑 `adaptive_filter
 ### 教训
 
 区分 **预览 ⚠️** 与 **MC 分位不变**：前者看枚举+relax，后者看 #33 矩阵。填总格数或清残留后再填均价。
+
+---
+
+## 43. 切到「出价推荐」后读数/地图全没了
+
+### 症状
+
+在读数 tab 手填了仓库格数、各品质格子数并选了地图，一点 **出价推荐**，再切回读数 tab：字段全空，地图也要重选，无法推断。
+
+### 原因
+
+侧栏用 `st.selectbox` **当次返回值** 判断是否「地图被清空」。切 tab 会 `st.rerun()`，某些 run 上 selectbox 返回值短暂为 `None`，但 `session_state[obs_map_select__rN]` 和 `state['map_id']` 里仍有有效地图。
+
+旧逻辑把这种情况当成用户点了 × 清空地图，调用 `reset_obs_for_manual_map_change()` —— **清空全部读数、仓库、map_id** 并 `obs_readings_rev += 1`（widget 键作废）。
+
+### 修法（2026-05-19）
+
+`streamlit_app._effective_map_id()`：按顺序解析 **versioned selectbox key → selectbox 返回值 → obs['map_id'] → _tracked_map_id**，只有全部来源都没有合法地图时才视为清空。
+
+**勿在 `st.selectbox` 之后** 写 `st.session_state[obs_map_select__rN]`（会抛 `StreamlitAPIException`）。若 widget key 尚未存在，只能在 **selectbox 渲染前** 从 `obs['map_id']` 预填。
+
+### 教训
+
+1. Streamlit 有状态控件：**不要只用控件返回值** 做破坏性 reset，要先读 `session_state[key]`。
+2. 切 tab / rerun 与「用户清空」要用同一套权威解析函数。
+3. 读数 tab 末尾 `sync_obs(..., allow_clear=True)` 只在 obs tab 渲染时执行；本次 bug 在侧栏、与 allow_clear 无关。
+
+---
+
+## 44. 手填金/紫巨物后切 tab 变「无」
+
+### 症状
+
+在读数 tab 选了「金品巨物=单人郊游快艇」等，切到出价推荐再回来，selectbox 回到「无」。
+
+### 原因
+
+巨物 selectbox 用固定 key（`obs_gold_huge_band`），**不在** `READING_KEYS` / `obs_readings_rev` 版本化里。读数 tab 未渲染时 widget 与 `obs['gold_huge_band']` 不同步；误触发地图 reset 时只清了 widget、未写回 `obs`，或反过来 widget 为 `none` 而 `obs` 仍有值。
+
+### 修法（2026-05-19）
+
+`apply.sync_huge_bands_to_obs` / `hydrate_huge_bands_from_obs`：每次 hydrate/sync 后把巨物写回 `obs`；渲染紫/金/红巨物 selectbox **前** 从 `obs` 恢复 widget；`reset_obs_for_manual_map_change` 显式 `obs[ok]="none"`。
+
+---
+
+## 45. 分析估算把「金品均价」当每格价
+
+### 症状
+
+游戏显示金品均价 **39,539 silver/件**，9 格枚举得 **2 件**。分析估算却写 `金 9格×39539/格`，中位 ~35.6 万（=9×39539），远高于 `2×39539≈7.9万`。
+
+### 原因
+
+`compute_analytical_estimate` 在 `avg_value` 分支误用 `mid_val = cells × avg_value`。地图 hint「均价」是 **每件**，应 `mid_val = avg_value × count`（`count` 来自枚举或手填件数）。
+
+### 字段对照（勿混）
+
+| UI | obs 字段 | 语义 |
+|----|----------|------|
+| 金品均价（每件 silver） | `gold_avg_value` | 每件均价 → 分析估算 |
+| 金品总估值 | `gold_value` → `value_sum` | 该品质总价 → MC |
+| 金品均格 | `gold_avg_raw` → `avg_cells` | 每件占格 → 枚举 |
+
+### 修法（2026-05-19）
+
+1. `posterior.compute_analytical_estimate`：`mid_val = avg_per_item × cnt`（每件均价，不乘格数）。
+2. `display.integer_total_leak_distance` / `best_count_for_avg_value_integer_leak`：均价带小数分（如 `.17`）时，用 **最小件数** 使 `均价×件数` 最接近整数 silver（`39539.17×6≈237235`），替代仅用 per-cell prior ±25% 推件数。
+3. `candidates_for_bucket`：仅填均价时走整数泄漏过滤，枚举 top-1 不再固定为 `9格/2件`。
+
+---
+
+## 46. 均格/均价无法点 × 清空
+
+### 症状
+
+格数、件数、总价等 `number_input`（`value=None`）右侧有 Streamlit 自带 **×**，一点即空；紫/金 **均格、均价** 是 `text_input`，没有 ×，只能全选删除。
+
+### 原因
+
+Streamlit 只为可选 `number_input` 提供清除控件；文本框需自建。
+
+### 修法（2026-05-19）
+
+- `capture.apply.clear_reading_text_field`：清空版本化 widget key + `obs` 字段。
+- `streamlit_app._clearable_reading_text_input`：输入框右侧 **×** → `st.rerun()`。
+- 紫/金四个字段：`purple_avg_raw`、`purple_avg_value`、`gold_avg_raw`、`gold_avg_value`。
+
+### 相关（枚举精度，同批）
+
+- 总价+均价：`value_sum_matches_avg_at_count` 锁件数；`total_cells >= count` 物理下限。
+- 见 `PROGRESS.md` **C-40** 手测表。
 
 ---
 

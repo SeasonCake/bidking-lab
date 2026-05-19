@@ -264,3 +264,23 @@ def test_analytical_uses_gold_avg_without_cells_not_all_red() -> None:
     assert est.per_bucket[5][1] > 0
     assert "金" in est.breakdown_text
     assert est.red_cells_inferred < 123 - 84 or 6 not in est.per_bucket
+
+
+def test_analytical_gold_avg_value_is_per_item_not_per_cell() -> None:
+    """Map hint「金品均价」uses integer-leak count (6) × per-item price."""
+    obs = SessionObs(
+        map_id=2401,
+        hero="ethan",
+        warehouse_total_cells=120,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=40),
+            3: QualityBucketObs(quality=3, total_cells=30),
+            4: QualityBucketObs(quality=4, total_cells=30),
+            5: QualityBucketObs(quality=5, avg_value=39_539.17),
+        },
+    )
+    est = compute_analytical_estimate(obs)
+    assert est is not None
+    lo, mid, hi = est.per_bucket[5]
+    assert mid == round(39_539.17 * 6)
+    assert "·6件×39539/件" in est.breakdown_text

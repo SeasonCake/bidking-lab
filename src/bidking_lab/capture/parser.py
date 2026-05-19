@@ -46,12 +46,24 @@ def _parse_int(s: str) -> int:
 
 
 def parse_silver_amount(raw: str | float | int) -> float:
-    """Parse silver price text (supports commas and one decimal point)."""
+    """Parse silver price text (commas, dot or European decimal comma)."""
     if isinstance(raw, (int, float)):
         return float(raw)
-    s = str(raw).strip().replace(",", "").replace("，", "").replace(" ", "")
+    s = str(raw).strip().replace(" ", "").replace("，", "")
     if not s:
         raise ValueError("empty silver amount")
+    # ``6328,75`` → decimal; ``9,400`` → thousands (2dp part has ≤2 digits).
+    if "," in s and "." not in s:
+        parts = s.split(",")
+        if len(parts) == 2 and parts[0] and parts[1].isdigit():
+            if len(parts[1]) <= 2:
+                s = parts[0].replace(",", "") + "." + parts[1]
+            else:
+                s = parts[0].replace(",", "") + parts[1]
+        else:
+            s = s.replace(",", "")
+    else:
+        s = s.replace(",", "")
     return float(s)
 
 

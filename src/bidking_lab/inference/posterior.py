@@ -34,6 +34,7 @@ from typing import Sequence
 import numpy as np
 
 from bidking_lab.inference.ground_truth import SessionTruth
+from bidking_lab.inference.display import best_count_for_avg_value_integer_leak
 from bidking_lab.inference.observation import QualityBucketObs, SessionObs
 
 QUALITIES: tuple[int, ...] = (1, 2, 3, 4, 5, 6)
@@ -471,6 +472,14 @@ def compute_analytical_estimate(obs: SessionObs) -> AnalyticalEstimate | None:
         if cands:
             known_cells[q] = cands[0].total_cells
             inferred_count[q] = cands[0].count
+            if (
+                b.avg_value is not None
+                and b.avg_value > 0
+                and (b.value_sum is None or b.value_sum <= 0)
+            ):
+                leak_cnt = best_count_for_avg_value_integer_leak(float(b.avg_value))
+                if leak_cnt is not None:
+                    inferred_count[q] = leak_cnt
             value_derived.add(q)
         else:
             huge_cells = b.min_huge_cells() if b.huge_band != "none" else 0
@@ -523,16 +532,30 @@ def compute_analytical_estimate(obs: SessionObs) -> AnalyticalEstimate | None:
         if has_value_sum:
             mid_val = b_obs.value_sum
             pcv = mid_val / max(1, cells)
+            avg_value_tag = ""
         elif (
             b_obs is not None
             and b_obs.avg_value is not None
             and b_obs.avg_value > 0
         ):
-            pcv = float(b_obs.avg_value)
-            mid_val = int(cells * pcv)
+            avg_per_item = float(b_obs.avg_value)
+            cnt = inferred_count.get(q)
+            if cnt is None and b_obs.count is not None and b_obs.count > 0:
+                cnt = int(b_obs.count)
+            if cnt is None:
+                cnt = best_count_for_avg_value_integer_leak(avg_per_item)
+            if cnt is not None and cnt > 0:
+                mid_val = int(avg_per_item * cnt)
+                pcv = mid_val / max(1, cells)
+                avg_value_tag = f"·{cnt}件×{avg_per_item:.0f}/件"
+            else:
+                mid_val = int(cells * avg_per_item)
+                pcv = avg_per_item
+                avg_value_tag = "（均价/件，件数未锁定）"
         elif q == 1:
             pcv = _merged_pcv
             mid_val = int(cells * pcv)
+            avg_value_tag = ""
         elif huge_cells_in_bucket > 0 and q in PER_CELL_VALUE_HUGE:
             non_huge_cells = max(0, cells - huge_cells_in_bucket)
             mid_val = (
@@ -540,9 +563,11 @@ def compute_analytical_estimate(obs: SessionObs) -> AnalyticalEstimate | None:
                 + non_huge_cells * PER_CELL_VALUE_DEFAULT.get(q, 1000)
             )
             pcv = mid_val / max(1, cells)
+            avg_value_tag = ""
         else:
             pcv = PER_CELL_VALUE_DEFAULT.get(q, 1000)
             mid_val = int(cells * pcv)
+            avg_value_tag = ""
 
         lo = int(mid_val * _VALUE_BAND_FACTORS[0])
         mid = mid_val
@@ -561,7 +586,7 @@ def compute_analytical_estimate(obs: SessionObs) -> AnalyticalEstimate | None:
         else:
             est_tag = ""
         lines.append(
-            f"{q_name} {cells}格×{pcv:.0f}/格 → {lo:,}~{hi:,}"
+            f"{q_name} {cells}格{avg_value_tag}×{pcv:.0f}/格 → {lo:,}~{hi:,}"
             f"{inferred_tag}{huge_tag}{value_tag}{est_tag}"
         )
 

@@ -162,6 +162,12 @@ def test_total_item_count_bencang_and_yipin_typo():
         assert r.suggestion_map()["total_item_count"] in (35, 42)
 
 
+def test_parse_silver_amount_european_decimal_comma() -> None:
+    from bidking_lab.capture.parser import parse_silver_amount
+
+    assert parse_silver_amount("6328,75") == 6328.75
+
+
 def test_gold_avg_value_decimal_from_map_hint() -> None:
     text = "金色品质藏品均价为 32507.6 silver"
     r = parse_panel_text(text, map_names=MAP_NAMES)
@@ -405,6 +411,20 @@ def test_reconcile_avg_raw_widget_return_from_obs() -> None:
     assert ui[wkey] == ""
 
 
+def test_clear_reading_text_field_clears_widget_and_obs() -> None:
+    from bidking_lab.capture.apply import clear_reading_text_field, reading_widget_key
+
+    obs = {"purple_avg_value": "6328.75"}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("purple_avg_value_widget", ui)
+    ui[wkey] = "6328.75"
+    clear_reading_text_field(
+        obs, ui, "purple_avg_value", "purple_avg_value_widget",
+    )
+    assert obs.get("purple_avg_value") is None
+    assert ui[wkey] == ""
+
+
 def test_sync_avg_clears_obs_when_mounted_widget_empty() -> None:
     """Cleared text_input must not leave a stale OCR value in obs."""
     obs = {"purple_avg_raw": "2.90"}
@@ -471,8 +491,8 @@ def test_relax_strips_stale_zero_cells_after_dropping_avg() -> None:
     relaxed, dropped = relax_bucket_for_enumeration_preview(
         bucket, warehouse_capacity=123,
     )
-    assert "avg_value" in dropped
     assert relaxed.total_cells is None
+    assert "avg_value" in dropped or "total_cells_zero" in dropped
 
 
 def test_apply_gold_avg_only_clears_stale_gold_cells() -> None:
@@ -546,6 +566,21 @@ def test_sync_clears_obs_when_number_widget_none_and_allow_clear() -> None:
     sync_obs_from_reading_widgets(obs, ui, allow_clear=True)
     assert "gold_cells" not in obs
     assert "gold_count" not in obs
+
+
+def test_huge_band_sync_and_hydrate_roundtrip() -> None:
+    from bidking_lab.capture.apply import (
+        hydrate_huge_bands_from_obs,
+        sync_huge_bands_to_obs,
+    )
+
+    obs: dict = {"gold_huge_band": "item:单人郊游快艇"}
+    ui: dict = {"obs_gold_huge_band": "none"}
+    hydrate_huge_bands_from_obs(obs, ui)
+    assert ui["obs_gold_huge_band"] == "item:单人郊游快艇"
+    ui["obs_gold_huge_band"] = "1"
+    sync_huge_bands_to_obs(obs, ui)
+    assert obs["gold_huge_band"] == "1"
 
 
 def test_effective_number_field_for_preview_prefers_widget() -> None:

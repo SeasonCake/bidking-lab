@@ -297,6 +297,19 @@ def _coerce_widget_value(key: str, val: Any) -> Any:
     return val
 
 
+def clear_reading_text_field(
+    obs: dict[str, Any],
+    ui_state: Any,
+    obs_key: str,
+    base_widget_key: str,
+) -> None:
+    """Clear a versioned ``text_input`` reading (avg_cells / avg_value)."""
+    strip_empty_avg_raw_from_obs(obs)
+    wkey = reading_widget_key(base_widget_key, ui_state)
+    ui_state[wkey] = ""
+    obs.pop(obs_key, None)
+
+
 def purge_reading_widget(ui_state: Any, obs_key: str) -> None:
     """Drop versioned Streamlit widget session key for ``obs_key``."""
     base_wkey = READING_WIDGET_KEYS.get(obs_key)
@@ -489,6 +502,39 @@ _MAP_RESET_WIDGET_DEFAULTS: dict[str, Any] = {
     "obs_small_warehouse_confirmed": False,
 }
 
+HUGE_BAND_OBS_KEYS: tuple[str, ...] = (
+    "purple_huge_band",
+    "gold_huge_band",
+    "red_huge_band",
+)
+HUGE_BAND_WIDGET_KEYS: tuple[str, ...] = (
+    "obs_purple_huge_band",
+    "obs_gold_huge_band",
+    "obs_red_huge_band",
+)
+
+
+def sync_huge_bands_to_obs(obs: dict[str, Any], ui_state: Any) -> None:
+    """Copy huge-band selectbox session keys into ``obs`` (survives tab switches)."""
+    for ok, wk in zip(HUGE_BAND_OBS_KEYS, HUGE_BAND_WIDGET_KEYS):
+        if wk in ui_state:
+            obs[ok] = ui_state[wk]
+
+
+def hydrate_huge_bands_from_obs(obs: dict[str, Any], ui_state: Any) -> None:
+    """Pre-fill huge selectboxes from ``obs`` before widgets render.
+
+    After a spurious map reset the widget may be ``none`` while ``obs`` still
+    holds the player's choice — restore the widget from ``obs`` in that case.
+    """
+    for ok, wk in zip(HUGE_BAND_OBS_KEYS, HUGE_BAND_WIDGET_KEYS):
+        v = str(obs.get(ok) or "none")
+        if v == "none":
+            continue
+        cur = str(ui_state.get(wk, "none") if wk in ui_state else "none")
+        if cur == "none":
+            ui_state[wk] = v
+
 
 def reset_obs_for_manual_map_change(
     obs: dict[str, Any],
@@ -504,6 +550,8 @@ def reset_obs_for_manual_map_change(
     ui_state["obs_total_item_count"] = None
     for k in _MAP_RESET_EXTRA_OBS:
         obs.pop(k, None)
+    for ok in HUGE_BAND_OBS_KEYS:
+        obs[ok] = "none"
     for wkey, default in _MAP_RESET_WIDGET_DEFAULTS.items():
         ui_state[wkey] = default
     if new_map_id is not None:
