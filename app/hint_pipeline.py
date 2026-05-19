@@ -12,6 +12,7 @@ from bidking_lab.extract.item_table import Item
 from bidking_lab.inference.observation import SessionObs
 from bidking_lab.inference.posterior import (
     adaptive_filter,
+    bucket_posterior_stats,
     compute_analytical_estimate,
 )
 
@@ -36,23 +37,33 @@ def compute_hint_bundle(
     if check_warehouse_cell_budget(state):
         return None
 
+    import time as _time
+
     n_trials = int(mc["n_trials"])
     seed = int(mc["seed"])
     warehouse_tol = int(mc["warehouse_tol"])
     purple_tol = int(mc.get("purple_tol", 4))
 
     session = build_session(state, maps)
+    _t0 = _time.perf_counter()
     truths = sample_truths(int(map_id), n_trials=n_trials, seed=seed)
+    _t_sample_ms = int((_time.perf_counter() - _t0) * 1000)
     all_values = [t.total_value() for t in truths]
 
+    _t1 = _time.perf_counter()
     filter_result = adaptive_filter(
         truths, session, min_samples=30,
         warehouse_tol_levels=(
             warehouse_tol, warehouse_tol, max(warehouse_tol, 12),
         ),
     )
+    _t_filter_ms = int((_time.perf_counter() - _t1) * 1000)
     conditional_truths = filter_result.truths
     conditional_values = [t.total_value() for t in conditional_truths]
+    bucket_posteriors = {
+        q: bucket_posterior_stats(conditional_truths, q)
+        for q in (1, 3, 4, 5, 6)
+    }
     analytical = compute_analytical_estimate(session)
 
     snipe = None
@@ -74,11 +85,35 @@ def compute_hint_bundle(
             purple_tolerance=purple_tol, truths=truths,
         )
 
+    from bg_inference import READING_FP_KEYS, inference_fingerprint
+
+    readings_snap = {k: state.get(k) for k in READING_FP_KEYS}
+
+    try:
+        from agent_debug_log import agent_debug_log
+
+        agent_debug_log(
+            location="hint_pipeline.py:compute_hint_bundle",
+            message="MC timing",
+            data={
+                "n_trials": n_trials,
+                "map_id": int(map_id),
+                "sample_ms": _t_sample_ms,
+                "filter_ms": _t_filter_ms,
+                "n_cond": len(conditional_truths),
+                "n_all": len(truths),
+            },
+            hypothesis_id="perf",
+            run_id="infer",
+        )
+    except Exception:
+        pass
+
     return {
         "session": session,
         "filter_result": filter_result,
-        "conditional_truths": conditional_truths,
         "conditional_values": conditional_values,
+        "bucket_posteriors": bucket_posteriors,
         "all_values": all_values,
         "analytical": analytical,
         "snipe": snipe,
@@ -89,4 +124,6 @@ def compute_hint_bundle(
         "purple_tol": purple_tol,
         "map_id": int(map_id),
         "warehouse_cells": int(state["warehouse_cells"]),
+        "readings_fp": inference_fingerprint(readings_snap, {}, seed_stable=True),
+        "readings_snap": readings_snap,
     }

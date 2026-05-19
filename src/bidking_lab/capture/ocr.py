@@ -22,6 +22,12 @@ _PANEL_CROP = INFO_PANEL_CROP_FRAC
 # OCR path calibrated on 1920×1080 game captures (notebook 06).
 REFERENCE_WIDTH = 1920
 REFERENCE_HEIGHT = 1080
+_last_ocr_panel_meta: dict[str, object] = {}
+
+
+def last_ocr_panel_meta() -> dict[str, object]:
+    """Metadata from the most recent ``panel_rgb_array_for_ocr`` call."""
+    return dict(_last_ocr_panel_meta)
 # ``optimize=True`` is very slow on large screenshots; level 1 is enough for OCR input.
 _PNG_COMPRESS_LEVEL = 1
 
@@ -75,18 +81,32 @@ def panel_rgb_array_for_ocr(data: bytes, *, crop_panel: bool = True) -> Any:
         return np.asarray(Image.open(io.BytesIO(data)).convert("RGB"))
 
     img = Image.open(io.BytesIO(data)).convert("RGB")
+    decoded_w, decoded_h = img.size
+    crop_applied = False
     if crop_panel:
         w, h = img.size
         l, t, r, b = _PANEL_CROP
         img = img.crop((int(w * l), int(h * t), int(w * r), int(h * b)))
+        crop_applied = True
     w, h = img.size
+    resize_applied = False
     if w > REFERENCE_WIDTH or h > REFERENCE_HEIGHT:
+        resize_applied = True
         scale = min(REFERENCE_WIDTH / w, REFERENCE_HEIGHT / h)
         img = img.resize(
             (max(1, int(w * scale)), max(1, int(h * scale))),
             Image.Resampling.LANCZOS,
         )
-    return np.asarray(img)
+    arr = np.asarray(img)
+    global _last_ocr_panel_meta  # noqa: PLW0603
+    _last_ocr_panel_meta = {
+        "decoded_size": [decoded_w, decoded_h],
+        "crop_applied": crop_applied,
+        "resize_applied": resize_applied,
+        "crop_panel": crop_panel,
+        "shape": list(arr.shape),
+    }
+    return arr
 
 
 def prepare_image_for_ocr(data: bytes, *, crop_panel: bool = True) -> bytes:
@@ -274,6 +294,16 @@ def image_bytes_to_text(
     try:
         rgb = panel_rgb_array_for_ocr(data, crop_panel=crop_panel)
         ocr_engine = engine or _get_engine()
+        meta = last_ocr_panel_meta()
+        if LOG.isEnabledFor(logging.INFO):
+            LOG.info(
+                "OCR input shape=%sx%s crop_panel=%s resize_applied=%s decoded=%s",
+                getattr(rgb, "shape", ("?", "?"))[1],
+                getattr(rgb, "shape", ("?", "?"))[0],
+                crop_panel,
+                meta.get("resize_applied"),
+                meta.get("decoded_size"),
+            )
         result, _ = ocr_engine(rgb)
     except Exception as exc:  # noqa: BLE001
         return "", f"OCR 失败: {exc}"

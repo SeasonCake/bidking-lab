@@ -7,7 +7,7 @@ import json
 import logging
 import threading
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 LOG = logging.getLogger("bidking_lab.ui")
 
@@ -51,7 +51,7 @@ def _flush_box_log(session_state: Any, box: dict[str, Any] | None) -> None:
 
 
 def inference_fingerprint(
-    state: dict[str, Any],
+    state: dict[str, Any] | Mapping[str, Any],
     mc: dict[str, Any],
     *,
     seed_stable: bool = True,
@@ -68,6 +68,58 @@ def inference_fingerprint(
     payload["_mc"] = mc_payload
     raw = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()[:20]
+
+
+def hint_bundle_stale_report(
+    bundle: dict[str, Any] | None,
+    obs_state: dict[str, Any],
+    *,
+    inference_ready: bool,
+) -> dict[str, Any]:
+    """Why a cached hint bundle no longer matches current sidebar/obs state."""
+    report: dict[str, Any] = {
+        "stale": False,
+        "reasons": [],
+        "stored_fp": None,
+        "current_fp": None,
+        "changed_fields": [],
+        "bundle_map_id": None,
+        "bundle_warehouse_cells": None,
+        "obs_map_id": obs_state.get("map_id"),
+        "obs_warehouse_cells": obs_state.get("warehouse_cells"),
+    }
+    if bundle is None:
+        return report
+    report["stored_fp"] = bundle.get("readings_fp")
+    report["current_fp"] = inference_fingerprint(obs_state, {}, seed_stable=True)
+    report["bundle_map_id"] = bundle.get("map_id")
+    report["bundle_warehouse_cells"] = bundle.get("warehouse_cells")
+    if not inference_ready:
+        report["stale"] = True
+        report["reasons"].append("inference_not_ready")
+    if bundle.get("warehouse_cells") != obs_state.get("warehouse_cells"):
+        report["stale"] = True
+        report["reasons"].append("warehouse_cells")
+    if bundle.get("map_id") != obs_state.get("map_id"):
+        report["stale"] = True
+        report["reasons"].append("map_id")
+    snap = bundle.get("readings_snap")
+    if isinstance(snap, dict):
+        for key in READING_FP_KEYS:
+            old, new = snap.get(key), obs_state.get(key)
+            if old != new:
+                report["changed_fields"].append(
+                    {"key": key, "was": old, "now": new},
+                )
+        if report["changed_fields"]:
+            report["stale"] = True
+            if "readings_changed" not in report["reasons"]:
+                report["reasons"].append("readings_changed")
+    elif report["stored_fp"] is not None:
+        if report["stored_fp"] != report["current_fp"]:
+            report["stale"] = True
+            report["reasons"].append("readings_fp_hash")
+    return report
 
 
 def start_background_hint(
@@ -170,12 +222,16 @@ def _should_cancel_running(
         return True
     mid = state.get("map_id")
     ctx_mid = cancel_ctx.get("map_id")
-    if mid is not None and ctx_mid is not None and int(mid) != int(ctx_mid):
-        return True
-    if mid is not None and ctx_mid is None:
+    if (
+        mid is not None
+        and ctx_mid is not None
+        and int(mid) != int(ctx_mid)
+    ):
         return True
     wh = int(state.get("warehouse_cells") or 0)
-    if wh != int(cancel_ctx.get("warehouse_cells") or 0):
+    ctx_wh = int(cancel_ctx.get("warehouse_cells") or 0)
+    # OCR 时仓库格数常为 0；用户事后补填不应取消已在跑的推断。
+    if ctx_wh > 0 and wh > 0 and wh != ctx_wh:
         return True
     return False
 
@@ -197,6 +253,27 @@ def sync_background_hint(
     if box.get("status") == "running" and _should_cancel_running(
         session_state, state, box.get("cancel_ctx") or {},
     ):
+        # #region agent log
+        try:
+            from agent_debug_log import agent_debug_log
+
+            agent_debug_log(
+                location="bg_inference.py:sync_background_hint:cancel",
+                message="bg hint cancelled by fingerprint",
+                data={
+                    "map_id": state.get("map_id"),
+                    "ctx_map_id": (box.get("cancel_ctx") or {}).get("map_id"),
+                    "warehouse_cells": state.get("warehouse_cells"),
+                    "ctx_wh": (box.get("cancel_ctx") or {}).get("warehouse_cells"),
+                    "readings_rev": session_state.get("obs_readings_rev"),
+                    "ctx_rev": (box.get("cancel_ctx") or {}).get("readings_rev"),
+                },
+                hypothesis_id="H6,H7",
+                run_id="post-fix",
+            )
+        except Exception:
+            pass
+        # #endregion
         cancel = box.get("cancel")
         if cancel is not None:
             cancel.set()
@@ -225,7 +302,7 @@ def sync_background_hint(
 
             append_infer_log(
                 session_state,
-                "bg_hint promoted to UI in %.1fs fp=%s" % (elapsed, current_fp),
+                "bg_hint promoted to UI in %.1fs fp=%s" % (elapsed, box.get("fp")),
             )
         except Exception:  # noqa: BLE001
             pass

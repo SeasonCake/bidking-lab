@@ -19,9 +19,9 @@ _MAP_PREFIX_TO_CATEGORY: dict[str, str] = {
 READING_KEYS: tuple[str, ...] = (
     "wg_cells", "white_cells", "white_count", "green_cells", "green_count",
     "blue_cells", "blue_count",
-    "purple_cells", "purple_count", "purple_value", "purple_avg_value",
+    "purple_cells", "purple_count", "purple_value",
     "purple_huge_band",
-    "gold_cells", "gold_count", "gold_value", "gold_avg_value",
+    "gold_cells", "gold_count", "gold_value",
     "gold_huge_band",
     "red_cells_total", "red_value_lo", "red_value_hi", "red_huge_band",
 )
@@ -38,11 +38,9 @@ READING_WIDGET_KEYS: dict[str, str] = {
     "purple_cells": "obs_reading_purple_cells",
     "purple_count": "obs_reading_purple_count",
     "purple_value": "obs_reading_purple_value",
-    "purple_avg_value": "obs_reading_purple_avg_value",
     "gold_cells": "obs_reading_gold_cells",
     "gold_count": "obs_reading_gold_count",
     "gold_value": "obs_reading_gold_value",
-    "gold_avg_value": "obs_reading_gold_avg_value",
     "red_cells_total": "obs_reading_red_cells_total",
     "red_value_lo": "obs_reading_red_value_lo",
     "red_value_hi": "obs_reading_red_value_hi",
@@ -53,12 +51,34 @@ AVG_RAW_WIDGET_KEYS: dict[str, str] = {
     "gold_avg_raw": "gold_avg_raw_widget",
 }
 
+AVG_SILVER_WIDGET_KEYS: dict[str, str] = {
+    "purple_avg_value": "purple_avg_value_widget",
+    "gold_avg_value": "gold_avg_value_widget",
+}
+
 AVG_RAW_OBS_KEYS: tuple[str, ...] = tuple(AVG_RAW_WIDGET_KEYS.keys())
+AVG_SILVER_OBS_KEYS: tuple[str, ...] = tuple(AVG_SILVER_WIDGET_KEYS.keys())
+
+# When OCR touches any field in a group, drop other fields in that group not
+# present in this capture (avoids stale gold_avg_value etc. from prior scans).
+_CAPTURE_BUCKET_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("wg_cells", "white_cells", "white_count", "green_cells", "green_count"),
+    ("blue_cells", "blue_count"),
+    (
+        "purple_cells", "purple_count", "purple_value",
+        "purple_avg_raw", "purple_avg_value",
+    ),
+    (
+        "gold_cells", "gold_count", "gold_value",
+        "gold_avg_raw", "gold_avg_value",
+    ),
+    ("red_cells_total", "red_value_lo", "red_value_hi"),
+)
 
 
 def strip_empty_avg_raw_from_obs(obs: dict[str, Any]) -> None:
     """Remove ``""`` placeholders so hydrate/OCR values are not blocked."""
-    for k in AVG_RAW_OBS_KEYS:
+    for k in (*AVG_RAW_OBS_KEYS, *AVG_SILVER_OBS_KEYS):
         v = obs.get(k)
         if v is not None and not str(v).strip():
             obs.pop(k, None)
@@ -85,22 +105,109 @@ def hydrate_reading_widgets_from_obs(
             continue
         wkey = reading_widget_key(base_wkey, ui_state)
         coerced = _coerce_widget_value(obs_key, val)
-        # Pre-seed missing keys; also refill None (widget mounted empty while obs still has data).
-        if wkey not in ui_state or ui_state[wkey] is None:
+        # Pre-seed only when the widget key is new. ``None`` means the player
+        # cleared an optional number_input — do not refill from stale obs.
+        if wkey not in ui_state:
             ui_state[wkey] = coerced
         elif force_numeric:
             ui_state[wkey] = coerced
-    for obs_key, base_wkey in AVG_RAW_WIDGET_KEYS.items():
+    for obs_key, base_wkey in (
+        *AVG_RAW_WIDGET_KEYS.items(),
+        *AVG_SILVER_WIDGET_KEYS.items(),
+    ):
         val = obs.get(obs_key)
-        if val is None or not str(val).strip():
-            continue
         wkey = reading_widget_key(base_wkey, ui_state)
+        if val is None or not str(val).strip():
+            if wkey in ui_state and str(ui_state.get(wkey) or "").strip():
+                # User typing before obs synced; do not wipe the widget.
+                continue
+            if wkey in ui_state:
+                ui_state[wkey] = ""
+            continue
         raw = ui_state.get(wkey)
         # Empty string = user cleared unless force_avg_raw (OCR / obs tab refill).
         if wkey not in ui_state or raw is None:
-            ui_state[wkey] = str(val)
+            ui_state[wkey] = _format_silver_widget_text(val)
         elif force_avg_raw and str(raw).strip() == "":
-            ui_state[wkey] = str(val)
+            ui_state[wkey] = _format_silver_widget_text(val)
+
+
+def effective_number_field_for_preview(
+    obs: dict[str, Any],
+    ui_state: Any,
+    *,
+    obs_key: str,
+    base_widget_key: str,
+) -> int | None:
+    """Return a number_input value for enumeration preview (widget wins)."""
+    wkey = reading_widget_key(base_widget_key, ui_state)
+    if wkey in ui_state:
+        raw = ui_state.get(wkey)
+        if raw is None:
+            return None
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            return None
+        # Optional number_input: stale session ``0`` after OCR is not the same as
+        # the player explicitly entering 0 (confirmed no items). For preview
+        # enumeration, treat 0 as "not provided".
+        if v == 0:
+            return None
+        return v
+    val = obs.get(obs_key)
+    if val is None:
+        return None
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def effective_text_field_for_preview(
+    obs: dict[str, Any],
+    ui_state: Any,
+    *,
+    obs_key: str,
+    base_widget_key: str,
+) -> str:
+    """Return avg text for enumeration preview.
+
+    When the versioned widget key is mounted, its session value wins over
+    ``obs`` so a cleared input box does not keep a stale OCR value that
+    still lives in ``obs`` until the next reconcile (MC path unchanged).
+    """
+    strip_empty_avg_raw_from_obs(obs)
+    wkey = reading_widget_key(base_widget_key, ui_state)
+    if wkey in ui_state:
+        return str(ui_state.get(wkey) or "").strip()
+    return str(obs.get(obs_key) or "").strip()
+
+
+def avg_raw_obs_widget_drift(
+    obs: dict[str, Any],
+    ui_state: Any,
+    *,
+    obs_key: str,
+    base_widget_key: str,
+) -> str | None:
+    """Human hint when ``obs`` and mounted widget disagree (debug / UX)."""
+    wkey = reading_widget_key(base_widget_key, ui_state)
+    obs_val = str(obs.get(obs_key) or "").strip()
+    if wkey not in ui_state:
+        return None
+    widget_val = str(ui_state.get(wkey) or "").strip()
+    if obs_val and not widget_val:
+        return (
+            f"内部 obs 仍保留 **{obs_key}={obs_val}**，但输入框已清空；"
+            "下方枚举按输入框（空）计算。保存/切 tab 后 reconcile 会同步 obs。"
+        )
+    if obs_val and widget_val and obs_val != widget_val:
+        return (
+            f"obs={obs_val} 与输入框={widget_val} 不一致；"
+            "下方枚举以输入框为准。"
+        )
+    return None
 
 
 def reconcile_avg_raw_widget_return(
@@ -110,20 +217,24 @@ def reconcile_avg_raw_widget_return(
     base_wkey: str,
     widget_return: str | None,
 ) -> str:
-    """Align obs + widget when ``text_input`` returns empty but OCR/obs still has data."""
+    """Align ``obs`` with a ``text_input`` return value.
+
+    Must not assign ``ui_state[wkey]`` here — Streamlit forbids changing a
+    widget key after the widget is instantiated. Pre-fill via
+    :func:`hydrate_reading_widgets_from_obs` only.
+    """
     strip_empty_avg_raw_from_obs(obs)
     wkey = reading_widget_key(base_wkey, ui_state)
     ret = str(widget_return or "").strip()
-    wval = str(ui_state.get(wkey) or "").strip()
     obs_val = str(obs.get(obs_key) or "").strip()
     if ret:
         obs[obs_key] = ret
         return ret
-    if wval:
-        obs[obs_key] = wval
-        return wval
+    # Mounted widget: empty return means cleared (ignore stale session wkey).
+    if wkey in ui_state:
+        obs.pop(obs_key, None)
+        return ""
     if obs_val:
-        ui_state[wkey] = obs_val
         obs[obs_key] = obs_val
         return obs_val
     obs.pop(obs_key, None)
@@ -151,23 +262,76 @@ def sync_obs_from_reading_widgets(
         elif allow_clear:
             obs.pop(obs_key, None)
     strip_empty_avg_raw_from_obs(obs)
-    for obs_key, base_wkey in AVG_RAW_WIDGET_KEYS.items():
+    for obs_key, base_wkey in (
+        *AVG_RAW_WIDGET_KEYS.items(),
+        *AVG_SILVER_WIDGET_KEYS.items(),
+    ):
         wkey = reading_widget_key(base_wkey, ui_state)
         if wkey not in ui_state:
             continue
         raw = ui_state.get(wkey)
+        obs_val = str(obs.get(obs_key) or "").strip()
         if raw and str(raw).strip():
             obs[obs_key] = str(raw).strip()
-        elif allow_clear:
+        elif wkey in ui_state and not str(raw or "").strip():
+            obs.pop(obs_key, None)
+        elif obs_val and wkey not in ui_state:
+            pass
+        elif wkey in ui_state and allow_clear:
             obs.pop(obs_key, None)
 
 
+def _format_silver_widget_text(val: Any) -> str:
+    if isinstance(val, float):
+        if val == int(val) and abs(val) < 1e12:
+            return str(int(val))
+        return format(val, ".6f").rstrip("0").rstrip(".")
+    return str(val).strip()
+
+
 def _coerce_widget_value(key: str, val: Any) -> Any:
-    if key.endswith("_avg_raw"):
-        return str(val)
+    if key.endswith("_avg_raw") or key.endswith("_avg_value"):
+        return _format_silver_widget_text(val)
     if isinstance(val, float):
         return int(val) if val == int(val) else val
     return val
+
+
+def purge_reading_widget(ui_state: Any, obs_key: str) -> None:
+    """Drop versioned Streamlit widget session key for ``obs_key``."""
+    base_wkey = READING_WIDGET_KEYS.get(obs_key)
+    if base_wkey is not None:
+        ui_state.pop(reading_widget_key(base_wkey, ui_state), None)
+    elif obs_key in AVG_RAW_WIDGET_KEYS:
+        ui_state.pop(
+            reading_widget_key(AVG_RAW_WIDGET_KEYS[obs_key], ui_state), None,
+        )
+    elif obs_key in AVG_SILVER_WIDGET_KEYS:
+        ui_state.pop(
+            reading_widget_key(AVG_SILVER_WIDGET_KEYS[obs_key], ui_state), None,
+        )
+
+
+def clear_stale_capture_fields(
+    obs: dict[str, Any],
+    ui_state: Any,
+    applied_keys: set[str],
+) -> list[str]:
+    """Remove bucket fields not mentioned in the latest OCR capture."""
+    cleared: list[str] = []
+    for group in _CAPTURE_BUCKET_GROUPS:
+        touched = [k for k in group if k in applied_keys]
+        if not touched:
+            continue
+        for key in group:
+            if key in applied_keys:
+                continue
+            if key in obs:
+                obs.pop(key, None)
+                cleared.append(key)
+            purge_reading_widget(ui_state, key)
+    strip_empty_avg_raw_from_obs(obs)
+    return cleared
 
 
 def category_for_map_id(map_id: int) -> str | None:
@@ -235,6 +399,11 @@ def apply_capture_result(
             )
             ui_state[reading_widget_key(base_wkey, ui_state)] = str(val)
             obs[key] = str(val)
+        elif key.endswith("_avg_value"):
+            base_wkey = AVG_SILVER_WIDGET_KEYS[key]
+            text = _format_silver_widget_text(val)
+            ui_state[reading_widget_key(base_wkey, ui_state)] = text
+            obs[key] = text
         else:
             obs[key] = val
             base_wkey = READING_WIDGET_KEYS.get(key)
@@ -247,6 +416,24 @@ def apply_capture_result(
             elif key == "total_item_count":
                 ui_state["obs_total_item_count"] = int(val)
         log.append(f"{sug.label} → {val}")
+
+    applied = {sug.key for sug in result.suggestions}
+    stale = clear_stale_capture_fields(obs, ui_state, applied)
+    if stale:
+        log.append(
+            "（已清除本次 OCR 未出现的同桶字段: "
+            + ", ".join(sorted(stale))
+            + "）"
+        )
+    # OCR 只写入总格时，确保均价/均格/件数 widget 不会残留上一轮 session。
+    if "gold_cells" in applied:
+        for k in ("gold_avg_raw", "gold_avg_value", "gold_count", "gold_value"):
+            if k not in applied:
+                obs.pop(k, None)
+                purge_reading_widget(ui_state, k)
+    if "gold_avg_value" in applied and "gold_cells" not in applied:
+        obs.pop("gold_cells", None)
+        purge_reading_widget(ui_state, "gold_cells")
 
     return log
 
@@ -280,7 +467,7 @@ def clear_readings_for_map_change(obs: dict[str, Any], ui_state: Any) -> None:
     """Clear obs readings and bump widget revision (orphans old Streamlit keys)."""
     for k in READING_KEYS:
         obs.pop(k, None)
-    for k in AVG_RAW_OBS_KEYS:
+    for k in (*AVG_RAW_OBS_KEYS, *AVG_SILVER_OBS_KEYS):
         obs.pop(k, None)
     ui_state["obs_readings_rev"] = int(ui_state.get("obs_readings_rev", 0)) + 1
 

@@ -162,6 +162,42 @@ def test_total_item_count_bencang_and_yipin_typo():
         assert r.suggestion_map()["total_item_count"] in (35, 42)
 
 
+def test_gold_avg_value_decimal_from_map_hint() -> None:
+    text = "金色品质藏品均价为 32507.6 silver"
+    r = parse_panel_text(text, map_names=MAP_NAMES)
+    assert r.suggestion_map()["gold_avg_value"] == 32507.6
+
+
+def test_purple_avg_value_from_pingjun_jiazhi_phrase() -> None:
+    text = "所有紫色品质藏品平均价值约为6328.75"
+    r = parse_panel_text(text, map_names=MAP_NAMES)
+    assert r.suggestion_map()["purple_avg_value"] == 6328.75
+
+
+def test_map_line_and_gold_avg_value_on_same_line() -> None:
+    import json
+    from pathlib import Path
+
+    raw = json.loads(
+        (Path(__file__).resolve().parents[1] / "data/processed/maps.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+    names = {int(m["map_id"]): str(m["name"]) for m in raw}
+    text = "末日庇护所：竞拍信息 所有金色品质藏品平均价值约为35100"
+    r = parse_panel_text(text, map_names=names)
+    assert r.map_name == "末日庇护所"
+    assert r.suggestion_map()["gold_avg_value"] == 35100
+
+
+def test_random_sample_avg_value_not_total_item_count() -> None:
+    """奢华养老院 R1：随机选择的 N 件藏品平均价值 ≠ 本场总件数。"""
+    text = "随机选择的 9 件藏品平均价值约为 15296.33"
+    r = parse_panel_text(text, map_names=MAP_NAMES)
+    assert "total_item_count" not in r.suggestion_map()
+    assert any("随机选择" in ln or "平均价值" in ln for ln in r.ignored)
+
+
 def test_gold_value_total_phrases():
     for text, val in (
         ("所有金色品质藏品的总价值为24435", 24435),
@@ -257,6 +293,8 @@ def test_reset_obs_for_manual_map_change_clears_avg_and_warehouse() -> None:
         "wg_cells": 17,
         "purple_avg_raw": "2.66",
         "gold_avg_raw": "3.1",
+        "purple_avg_value": 6328.75,
+        "gold_avg_value": 35100,
     }
     ui: dict = {
         "obs_readings_rev": 0,
@@ -267,6 +305,8 @@ def test_reset_obs_for_manual_map_change_clears_avg_and_warehouse() -> None:
     assert obs["map_id"] == 2405
     assert "warehouse_cells" not in obs
     assert "purple_avg_raw" not in obs
+    assert "purple_avg_value" not in obs
+    assert "gold_avg_value" not in obs
     assert ui["obs_warehouse_cells"] is None
     assert ui["obs_readings_rev"] == 1
 
@@ -306,26 +346,31 @@ def test_hydrate_force_numeric_overwrites_stale_widget() -> None:
     assert ui[wg_key] == 17
 
 
-def test_hydrate_fills_none_widget_from_obs() -> None:
+def test_hydrate_does_not_refill_user_cleared_none_widget() -> None:
     obs = {"wg_cells": 22, "blue_cells": 15}
     ui: dict = {"obs_readings_rev": 0}
     wg_key = reading_widget_key("obs_reading_wg_cells", ui)
     ui[wg_key] = None
     hydrate_reading_widgets_from_obs(obs, ui)
+    assert ui[wg_key] is None
+    hydrate_reading_widgets_from_obs(obs, ui, force_numeric=True)
     assert ui[wg_key] == 22
-    blue_key = reading_widget_key("obs_reading_blue_cells", ui)
-    assert ui[blue_key] == 15
 
 
 def test_hydrate_avg_raw_respects_user_cleared_widget() -> None:
+    from bidking_lab.capture.apply import reconcile_avg_raw_widget_return
+
     obs = {"purple_avg_raw": "2.66"}
     ui: dict = {"obs_readings_rev": 0}
     wkey = reading_widget_key("purple_avg_raw_widget", ui)
     ui[wkey] = ""
+    reconcile_avg_raw_widget_return(
+        obs, ui, "purple_avg_raw", "purple_avg_raw_widget", "",
+    )
     hydrate_reading_widgets_from_obs(obs, ui)
     assert ui[wkey] == ""
     sync_obs_from_reading_widgets(obs, ui, allow_clear=False)
-    assert obs["purple_avg_raw"] == "2.66"
+    assert "purple_avg_raw" not in obs
 
 
 def test_hydrate_force_avg_raw_refills_empty_widget() -> None:
@@ -355,8 +400,207 @@ def test_reconcile_avg_raw_widget_return_from_obs() -> None:
     out = reconcile_avg_raw_widget_return(
         obs, ui, "purple_avg_raw", "purple_avg_raw_widget", "",
     )
-    assert out == "3.27"
-    assert ui[wkey] == "3.27"
+    assert out == ""
+    assert "purple_avg_raw" not in obs
+    assert ui[wkey] == ""
+
+
+def test_sync_avg_clears_obs_when_mounted_widget_empty() -> None:
+    """Cleared text_input must not leave a stale OCR value in obs."""
+    obs = {"purple_avg_raw": "2.90"}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("purple_avg_raw_widget", ui)
+    ui[wkey] = ""
+    sync_obs_from_reading_widgets(obs, ui, allow_clear=False)
+    assert "purple_avg_raw" not in obs
+
+
+def test_sync_avg_keeps_obs_when_widget_not_mounted() -> None:
+    """Hint-tab OCR can set obs before the obs-tab widget key exists."""
+    obs = {"purple_avg_raw": "2.90"}
+    ui: dict = {"obs_readings_rev": 0}
+    sync_obs_from_reading_widgets(obs, ui, allow_clear=False)
+    assert obs["purple_avg_raw"] == "2.90"
+
+
+def test_relax_bucket_drops_incompatible_gold_avg_value() -> None:
+    from bidking_lab.inference.display import parse_reading
+    from bidking_lab.inference.observation import (
+        QualityBucketObs,
+        candidates_for_bucket,
+        relax_bucket_for_enumeration_preview,
+    )
+
+    bucket = QualityBucketObs(
+        quality=5,
+        total_cells=26,
+        count=5,
+        avg_value=15296.33,
+    )
+    assert not candidates_for_bucket(bucket, warehouse_capacity=123, other_known_cells=56)
+    relaxed, dropped = relax_bucket_for_enumeration_preview(
+        bucket, warehouse_capacity=123, other_known_cells=56,
+    )
+    assert "avg_value" in dropped
+    assert candidates_for_bucket(relaxed, warehouse_capacity=123, other_known_cells=56)
+
+
+def test_effective_number_preview_treats_zero_as_unset() -> None:
+    from bidking_lab.capture.apply import effective_number_field_for_preview
+
+    obs = {"gold_cells": 0}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("obs_reading_gold_cells", ui)
+    ui[wkey] = 0
+    assert (
+        effective_number_field_for_preview(
+            obs, ui,
+            obs_key="gold_cells", base_widget_key="obs_reading_gold_cells",
+        )
+        is None
+    )
+
+
+def test_relax_strips_stale_zero_cells_after_dropping_avg() -> None:
+    from bidking_lab.inference.observation import (
+        QualityBucketObs,
+        relax_bucket_for_enumeration_preview,
+    )
+
+    bucket = QualityBucketObs(quality=5, total_cells=0, avg_value=35100.0)
+    relaxed, dropped = relax_bucket_for_enumeration_preview(
+        bucket, warehouse_capacity=123,
+    )
+    assert "avg_value" in dropped
+    assert relaxed.total_cells is None
+
+
+def test_apply_gold_avg_only_clears_stale_gold_cells() -> None:
+    from bidking_lab.capture.types import CaptureParseResult, FieldSuggestion
+
+    obs = {"gold_cells": 0, "gold_count": 3}
+    ui: dict = {"obs_readings_rev": 0}
+    ck = reading_widget_key("obs_reading_gold_cells", ui)
+    ui[ck] = 0
+    result = CaptureParseResult(
+        suggestions=[
+            FieldSuggestion("gold_avg_value", 35100.0, "金品均价", 0.9, ""),
+        ],
+    )
+    apply_capture_result(result, obs, ui)
+    assert obs.get("gold_avg_value") == "35100"
+    assert "gold_cells" not in obs
+    assert ck not in ui
+
+
+def test_apply_gold_cells_purges_stale_avg_widgets() -> None:
+    from bidking_lab.capture.types import CaptureParseResult, FieldSuggestion
+
+    obs = {"gold_avg_value": "15296.33", "gold_count": 9}
+    ui: dict = {"obs_readings_rev": 0}
+    avk = reading_widget_key("gold_avg_value_widget", ui)
+    ui[avk] = "15296.33"
+    result = CaptureParseResult(
+        suggestions=[
+            FieldSuggestion("gold_cells", 26, "金品总格", 0.9, ""),
+            FieldSuggestion("wg_cells", 27, "白绿", 0.9, ""),
+        ],
+    )
+    apply_capture_result(result, obs, ui)
+    assert obs.get("gold_cells") == 26
+    assert "gold_avg_value" not in obs
+    assert avk not in ui
+
+
+def test_clear_stale_capture_fields_on_partial_gold_ocr() -> None:
+    from bidking_lab.capture.apply import clear_stale_capture_fields
+
+    obs = {
+        "gold_cells": 26,
+        "gold_avg_value": "15296.33",
+        "gold_count": 9,
+    }
+    ui: dict = {"obs_readings_rev": 0}
+    cleared = clear_stale_capture_fields(obs, ui, {"gold_cells"})
+    assert "gold_avg_value" in cleared
+    assert "gold_count" in cleared
+    assert obs == {"gold_cells": 26}
+
+
+def test_hydrate_does_not_refill_cleared_number_widget() -> None:
+    obs = {"gold_cells": 26}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("obs_reading_gold_cells", ui)
+    ui[wkey] = None
+    hydrate_reading_widgets_from_obs(obs, ui)
+    assert ui[wkey] is None
+
+
+def test_sync_clears_obs_when_number_widget_none_and_allow_clear() -> None:
+    obs = {"gold_cells": 26, "gold_count": 9}
+    ui: dict = {"obs_readings_rev": 0}
+    ck = reading_widget_key("obs_reading_gold_cells", ui)
+    cn = reading_widget_key("obs_reading_gold_count", ui)
+    ui[ck] = None
+    ui[cn] = None
+    sync_obs_from_reading_widgets(obs, ui, allow_clear=True)
+    assert "gold_cells" not in obs
+    assert "gold_count" not in obs
+
+
+def test_effective_number_field_for_preview_prefers_widget() -> None:
+    from bidking_lab.capture.apply import effective_number_field_for_preview
+
+    obs = {"gold_count": 9, "gold_cells": 26}
+    ui: dict = {"obs_readings_rev": 0}
+    ck = reading_widget_key("obs_reading_gold_count", ui)
+    ui[ck] = None
+    assert (
+        effective_number_field_for_preview(
+            obs, ui,
+            obs_key="gold_count", base_widget_key="obs_reading_gold_count",
+        )
+        is None
+    )
+    gk = reading_widget_key("obs_reading_gold_cells", ui)
+    ui[gk] = 26
+    assert (
+        effective_number_field_for_preview(
+            obs, ui,
+            obs_key="gold_cells", base_widget_key="obs_reading_gold_cells",
+        )
+        == 26
+    )
+
+
+def test_effective_text_field_for_preview_prefers_widget() -> None:
+    from bidking_lab.capture.apply import effective_text_field_for_preview
+
+    obs = {"gold_avg_raw": "4.00"}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("gold_avg_raw_widget", ui)
+    ui[wkey] = ""
+    assert (
+        effective_text_field_for_preview(
+            obs, ui, obs_key="gold_avg_raw", base_widget_key="gold_avg_raw_widget",
+        )
+        == ""
+    )
+
+
+def test_reconcile_silver_avg_clears_when_widget_mounted() -> None:
+    from bidking_lab.capture.apply import reconcile_avg_raw_widget_return
+
+    obs = {"gold_avg_value": "32507.6"}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("gold_avg_value_widget", ui)
+    ui[wkey] = ""
+    out = reconcile_avg_raw_widget_return(
+        obs, ui, "gold_avg_value", "gold_avg_value_widget", "",
+    )
+    assert out == ""
+    assert "gold_avg_value" not in obs
+    assert ui[wkey] == ""
 
 
 def test_round4_garbled_ocr_lines():
@@ -434,7 +678,7 @@ def test_apply_purple_count_hydrates_versioned_widget_key() -> None:
     assert ui[wkey] == 10
     ui[wkey] = None
     obs["purple_count"] = 10
-    hydrate_reading_widgets_from_obs(obs, ui)
+    hydrate_reading_widgets_from_obs(obs, ui, force_numeric=True)
     assert ui[wkey] == 10
-    sync_obs_from_reading_widgets(obs, ui)
+    sync_obs_from_reading_widgets(obs, ui, allow_clear=True)
     assert obs["purple_count"] == 10

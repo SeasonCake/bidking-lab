@@ -50,7 +50,7 @@ bidking-lab/
 │   └── processed/        # 派生 JSON (committed): items.json, maps.json, heroes.json 等
 ├── notebooks/            # 01_map_value_distribution, 02_hero_ranking
 ├── scripts/              # 探查/分析/demo 脚本
-├── tests/                # 360 tests (pytest)
+├── tests/                # 383 tests (pytest)
 ├── docs/                 # INSTRUCTIONS.zh-CN.md（用户操作）, project_vision.md, schemas…
 ├── PROGRESS.md           # ← 本文件
 ├── OBSERVATIONS.md       # 技术发现日志 (34 checkpoints)
@@ -476,11 +476,40 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 
 用户验收：实机抓屏 OCR 速度恢复正常。
 
+### C-39 · 读数/OCR 一致性 + 候选预览容错 + MC 性能可观测（2026-05-19）
+
+> 对应与用户的长对话：金品/紫品读数、OCR vs 手填、地图清空残留、`obs` 是否进推断、推理偶发极慢。  
+> 调试日志：`BIDKING_AGENT_DEBUG=1` → 仓库根或会话目录 `debug-*.log`；关键行 `MC timing`（`sample_ms` / `filter_ms`）。
+
+| 类别 | 交付 | 说明 |
+|------|------|------|
+| **候选预览（仅 UI）** | `relax_bucket_for_enumeration_preview` | OCR 残留 `gold_avg_value` / `gold_cells=0` 等导致 0 候选时，按字段顺序放宽（`avg_value` → `count` → …），**不改 MC** |
+| **预览 widget** | `effective_number_field_for_preview` | Streamlit `number_input` 的 `0` 视为「未填」，避免 session 残留 `gold_cells=0` 锁死枚举 |
+| **Capture apply** | `clear_stale_capture_fields`、按桶合并 OCR | 同桶只识别到均价时清同桶未识别字段；`gold_avg_only` 时清陈旧 `gold_cells` |
+| **地图切换** | `reset_obs_for_manual_map_change` | 类别不匹配 / 清空地图时清读数 + bump `obs_readings_rev` + 取消后台 MC |
+| **patterns** | 忽略「随机…平均价值」行；收紧 `gold_count` | 减少均价行误解析为件数 |
+| **性能** | `hint_pipeline` 记录 `MC timing` | 瓶颈在 `_sample_truths_cached` / `sample_session_truth`×N；冷缓存地图（如 2401/2501）可达 50–100s+ |
+| **单测** | `tests/test_capture.py` 等扩充 | **383 passed** |
+
+**仍开放 / 用户暂缓**：完整 OCR×手填×换图状态机矩阵单测；推断完成后保持当前 tab；移除临时 `agent_debug_log` 埋点。
+
+#### 对话结论速查（给新协作者）
+
+| 问题 | 结论 |
+|------|------|
+| 金品只填均格，预览 ⚠️ vs 手填 💡？ | OCR 常带 `gold_avg_value` + 残留 `gold_cells=0` → 枚举无解；手填通常只有 `gold_cells`，约 25 种解。**MC 均格/均价不进**（见 TROUBLESHOOTING #31） |
+| 读数清空但地图也空了？ | 仅 `pop(map_id)` 不清 `obs`；C-39 起换图/类别变更会 `reset_obs` |
+| 数据有没有进推断？ | **有**。`state` → `_build_buckets_for_ethan` → MC + `compute_analytical_estimate`；差别在预览层脏数据 vs 手填干净 |
+| 推理为什么有时很慢？ | `sample_ms` 占 7–100s+；换图 cache miss、侧栏 1500 trials、CPU 争用；`filter_ms` 可忽略。见 TROUBLESHOOTING **#41** |
+| 演示 | `notebooks/07_capture_readings_and_mc_perf.ipynb` |
+
+---
+
 ### 待办（C-37 边界 · 仍开放）
 
 | 状态 | 项 | 说明 |
 |------|-----|------|
-| 🟡 | **OCR 与手填清空边界** | 不同 `map_id` 才 `clear_readings`；同图合并。仓库格数 snapshot 保留；完整状态机矩阵待文档化 |
+| 🟡 | **OCR 与手填清空边界** | C-39 已补桶级清理 + 预览 relax；完整状态机矩阵仍待单测文档化 |
 | ⬜ | **`auto_infer_after_capture` 边界** | 避免清空后误触发 MC / 陈旧 fingerprint |
 | ⬜ | **状态机文档 + 单测** | {无 OCR / 同图 / 换图 / 手选换图} × {仓库 / 读数} → 保留/清空/MC |
 | ⬜ | **演示视频 / GitHub Release** | 非阻塞分发项 |
@@ -562,6 +591,13 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
+
+### C-39: 读数/OCR 一致性、候选预览容错、MC 性能文档 (2026-05-19)
+
+- **Capture / 预览**：`relax_bucket_for_enumeration_preview`；`effective_number_field_for_preview`；`clear_stale_capture_fields`；OCR 仅均价时清陈旧 `gold_cells`；`patterns` 忽略随机均价行。
+- **Streamlit**：换图/类别变更 `reset_obs_for_manual_map_change`；金/紫预览文案与 relax 集成；`hint_pipeline` 输出 `MC timing`（`sample_ms` / `filter_ms`）。
+- **文档**：PROGRESS / OBS #35 / TROUBLESHOOTING #41–42；`notebooks/07_capture_readings_and_mc_perf.ipynb`。
+- **测试**：383 passed。
 
 ### C-37: Streamlit OCR 稳定性 + 实机抓屏性能 (2026-05-18)
 
@@ -1685,7 +1721,19 @@ Layer 1 进度：drop 池完全 typed，item 表 schema 映射到只用数据本
 
 ## 对话历史摘要
 
-本项目在一个长对话中完成（约 6 个 checkpoint），对话中涉及：
+### 2026-05-17 ~ 2026-05-19 · Streamlit 实战与读数链路（C-35 → C-39）
+
+1. **C-35~36**：面板 OCR / 主屏抓屏 / 地图 fuzzy 匹配 / 后台 MC。
+2. **C-37**：紫均格 hydrate、tab 槽位、抓屏延后任务、OCR ndarray 热路径、实机速度验收。
+3. **C-38**：`INSTRUCTIONS.zh-CN.md` + 启动等待 UI + 浏览器打开 `instructions.html`（替代 Streamlit 子页）。
+4. **C-39（本轮）**：
+   - 厘清 **三条数据路径**：MC 后验（`cells/count/value_sum/huge_band`）vs 分析估算（含 `avg_value` 推格）vs **候选预览**（枚举 + `relax_bucket`，仅 UI）。
+   - 修复 OCR/手填不一致：残留 `gold_cells=0` + `gold_avg_value` → 预览误显示「0格/1件」；桶级 `clear_stale_capture_fields`、预览 `effective_number_field_for_preview`。
+   - 地图清空/换类时 `reset_obs_for_manual_map_change`，避免读数与空地图并存。
+   - 用 `debug-*.log` 的 `MC timing` 确认慢在 **采样**（冷缓存 2401/2501 单次 50–100s），非 filter。
+   - 用户表示部分预览 UI 文案可暂缓，但 **推断仍消费读数**（非整体废弃）。
+
+### 早期对话（约 6 个 checkpoint）
 
 1. **数据解码**（Base64→TSV, 列名逆向, schema 建模）
 2. **MC 模型演进**（basic → bidding → hero v1 → hero v2 timing）
@@ -1757,7 +1805,7 @@ data/processed/          ← 派生 JSON (committed, 无需游戏即可用)
 # 环境
 cd c:\xiangmuyunxing\biancheng\2026\bidking-lab
 pip install -e .
-pytest -q  # 应该 237 passed
+pytest -q  # 应该 383 passed
 
 # 关键入口
 python scripts/demo_hero_value.py --trials 10000        # 英雄排名

@@ -11,6 +11,7 @@ from bidking_lab.inference.posterior import (
     _fallback_hard_buckets,
     adaptive_filter,
     bucket_posterior_stats,
+    compute_analytical_estimate,
     filter_truths_by_obs,
 )
 
@@ -242,3 +243,24 @@ class TestDescribeConstraints:
         assert any(
             "q=4(cells=19, count=6, value≈60,000, huge=1-2)" in p for p in parts
         )
+
+
+def test_analytical_uses_gold_avg_without_cells_not_all_red() -> None:
+    """Gold avg_value alone should infer gold cells, not dump remainder into red."""
+    obs = SessionObs(
+        map_id=2401,
+        hero="ethan",
+        warehouse_total_cells=123,
+        buckets={
+            1: QualityBucketObs(quality=1, total_cells=40),
+            3: QualityBucketObs(quality=3, total_cells=26),
+            4: QualityBucketObs(quality=4, total_cells=18),
+            5: QualityBucketObs(quality=5, avg_value=32_507.6),
+        },
+    )
+    est = compute_analytical_estimate(obs)
+    assert est is not None
+    assert 5 in est.per_bucket
+    assert est.per_bucket[5][1] > 0
+    assert "金" in est.breakdown_text
+    assert est.red_cells_inferred < 123 - 84 or 6 not in est.per_bucket

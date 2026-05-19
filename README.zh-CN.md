@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-360_passing-2ea043)](./tests)
+[![Tests](https://img.shields.io/badge/tests-383_passing-2ea043)](./tests)
 [![Status](https://img.shields.io/badge/status-Phase_1A_推断稳定-blueviolet)](./PROGRESS.md)
 
 ---
@@ -67,7 +67,7 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 
-# 1) 跑测试（360 个单测）
+# 1) 跑测试（383 个单测）
 pytest -q
 
 # 2) 启动 Streamlit 主界面
@@ -98,7 +98,7 @@ python scripts\build_processed_data.py       # 重新生成 data/processed/*.jso
 ┌─────────────────────────────────────────────────────────────────────┐
 │ Layer 3 · Surface                                                   │
 │   app/streamlit_app.py           — 4-tab UI（中文）                 │
-│   notebooks/01..05_*.ipynb       — 探索 + 端到端 case               │
+│   notebooks/01..07_*.ipynb       — 探索 + 端到端 + 读数/MC 性能       │
 │   scripts/demo_*.py              — CLI 端到端校验                   │
 └──────────────────────────────────┬──────────────────────────────────┘
                                    │
@@ -166,13 +166,14 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 ### 4. 工程化的 schema-first 数据层
 所有游戏表先 decode 成 TSV → pydantic schema 校验 → typed JSON。命名跟原始数据源对齐（C-25 修过一次重大命名错位：游戏的"优品=紫、极品=金、珍品=红"，跟我代码里早期的"精品/珍品"完全错位；统一重命名后 202 单测继续绿）。
 
-### 5. Capture：主屏抓屏 → OCR 预填读数（C-35~37）
+### 5. Capture：主屏抓屏 → OCR 预填读数（C-35~39）
 
 - 侧栏 **抓取当前屏幕**（`mss` + 信息区 ROI）；识别结果写入读数 tab，**不**自动填仓库格数。
-- 换图时合并/清空规则见 [`PROGRESS.md`](PROGRESS.md) C-37；踩坑见 [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) **#37–40**。
-- 高级选项可关闭 **实屏 OCR 暖机**（`data/ui_prefs.json`），需重启应用；启动仍慢见 **#40**，下一项优化 **首屏等待 UI**（C-38）。
+- 换图/换类别会 **清空读数** 并取消进行中的后台 MC（C-39）；OCR 残留导致预览 ⚠️ 见 **#42**。
+- 推断慢多为 **MC 采样冷缓存**（`sample_ms`），见 [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) **#41**；启动暖机见 **#40**。
+- 演示 notebook：[`07_capture_readings_and_mc_perf.ipynb`](notebooks/07_capture_readings_and_mc_perf.ipynb)。
 
-### 6. 39 条 TROUBLESHOOTING.md，四段式踩坑归档
+### 6. 42 条 TROUBLESHOOTING.md，四段式踩坑归档
 所有非显然的踩坑都按 **症状 / 原因 / 修法 / 教训** 四段式归档。若「填了一项 MC 分位或候选突然变了」，先查 [**#33 — MC 与枚举影响矩阵**](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期)。
 
 ### 7. 把已识别具体巨物变成一等 observation
@@ -210,7 +211,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 |---|---|
 | 解析的游戏表 | 6 张（BidMap / Drop / Item / BattleItem / Hero / Item_Type） |
 | schema 化的实体 | 1132 件藏品 · 64 件道具 · 105 张地图 · 20 个英雄 |
-| 单测数 | **234**，全绿 |
+| 单测数 | **383**，全绿 |
 | Streamlit UI tabs | 4（读数输入 / 出价推荐 / 道具 ROI / 联合推断·实验性） |
 | Notebook | 5 册（map 价值分布 / 英雄排名 / 推断 demo / ROI snipe / 端到端 case） |
 | Phase 1A 推断 | **稳定** — 低风险项已落地；秒/放仓 UI 关闭 |
@@ -226,7 +227,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | `src/bidking_lab/inference/` | 推断引擎：display / observation / joint / posterior / snipe / roi |
 | `src/bidking_lab/simulation/` | MC 模型：basic_mc / hero_value / bidding / robust_value |
 | `app/streamlit_app.py` | Streamlit 中文主界面 |
-| `notebooks/` | 5 册分析 + 端到端 case notebook |
+| `notebooks/` | 7 册（含 `07_capture_readings_and_mc_perf`） |
 | `scripts/` | 数据生成 / 端到端 demo / 一次性 probe |
 | `tests/` | 234 单测 |
 | `data/raw/` | 玩家本地游戏文件（gitignored） |

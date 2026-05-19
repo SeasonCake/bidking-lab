@@ -461,6 +461,7 @@ def compute_analytical_estimate(obs: SessionObs) -> AnalyticalEstimate | None:
             or b.huge_band != "none"
             or b.avg_cells is not None
             or b.count is not None
+            or (b.avg_value is not None and b.avg_value > 0)
         )
         if not has_info:
             continue
@@ -492,7 +493,7 @@ def compute_analytical_estimate(obs: SessionObs) -> AnalyticalEstimate | None:
     provided_qs = set(obs.buckets.keys())
     if 2 in provided_qs:
         required_non_red.add(2)
-    all_non_red_filled = required_non_red.issubset(provided_qs)
+    all_non_red_filled = all(known_cells.get(q, 0) > 0 for q in required_non_red)
 
     red_cells = max(0, warehouse - total_known)
     red_auto = (6 not in known_cells and red_cells > 0 and all_non_red_filled)
@@ -522,6 +523,13 @@ def compute_analytical_estimate(obs: SessionObs) -> AnalyticalEstimate | None:
         if has_value_sum:
             mid_val = b_obs.value_sum
             pcv = mid_val / max(1, cells)
+        elif (
+            b_obs is not None
+            and b_obs.avg_value is not None
+            and b_obs.avg_value > 0
+        ):
+            pcv = float(b_obs.avg_value)
+            mid_val = int(cells * pcv)
         elif q == 1:
             pcv = _merged_pcv
             mid_val = int(cells * pcv)

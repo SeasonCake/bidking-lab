@@ -45,6 +45,16 @@ def _parse_int(s: str) -> int:
     return int(s.replace(",", "").replace("，", ""))
 
 
+def parse_silver_amount(raw: str | float | int) -> float:
+    """Parse silver price text (supports commas and one decimal point)."""
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    s = str(raw).strip().replace(",", "").replace("，", "").replace(" ", "")
+    if not s:
+        raise ValueError("empty silver amount")
+    return float(s)
+
+
 def _should_ignore(line: str) -> bool:
     return any(pat.search(line) for pat in IGNORE_PATTERNS)
 
@@ -62,7 +72,9 @@ def _match_rules(
         raw_val = m.group(1)
         if key.endswith("_avg_raw"):
             value: str | int = raw_val.strip()
-        elif key in ("purple_avg_value", "gold_avg_value", "purple_value", "gold_value"):
+        elif key in ("purple_avg_value", "gold_avg_value"):
+            value = parse_silver_amount(raw_val)
+        elif key in ("purple_value", "gold_value"):
             value = _parse_int(raw_val)
         else:
             value = _parse_int(raw_val)
@@ -126,7 +138,7 @@ def parse_panel_text(
             result.map_id = mid
             result.map_name = mname
             result.lines.append(ParsedLine(line, "map_hint", mname or ""))
-            continue
+            # Same line often has 平均价值/均格 after 「地图：竞拍信息」— keep parsing.
 
         if any(
             tok in line

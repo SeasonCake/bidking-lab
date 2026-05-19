@@ -245,6 +245,13 @@ def capture_monitor_panel(
     img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
     box = fraction_to_pixel_box(mon.width, mon.height, cfg.crop_frac)
     cropped = img.crop(box)
+    cw, ch = cropped.size
+    if cw > cfg.reference_width or ch > cfg.reference_height:
+        scale = min(cfg.reference_width / cw, cfg.reference_height / ch)
+        cropped = cropped.resize(
+            (max(1, int(cw * scale)), max(1, int(ch * scale))),
+            Image.Resampling.LANCZOS,
+        )
     panel_out = io.BytesIO()
     cropped.save(panel_out, format="PNG", compress_level=1, optimize=False)
     if cfg.include_monitor_preview:

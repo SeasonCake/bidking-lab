@@ -12,6 +12,8 @@ if str(_APP) not in sys.path:
     sys.path.insert(0, str(_APP))
 
 from bg_inference import (
+    READING_FP_KEYS,
+    hint_bundle_stale_report,
     inference_fingerprint,
     start_background_hint,
     sync_background_hint,
@@ -52,6 +54,41 @@ def _fake_state(**kw):
     }
     base.update(kw)
     return base
+
+
+def test_hint_bundle_stale_report_field_diff():
+    state = _fake_state(blue_cells=10)
+    bundle = {
+        "map_id": 1001,
+        "warehouse_cells": 120,
+        "readings_fp": inference_fingerprint(state, {}, seed_stable=True),
+        "readings_snap": {k: state.get(k) for k in READING_FP_KEYS},
+    }
+    changed = dict(state)
+    changed["blue_cells"] = 22
+    report = hint_bundle_stale_report(
+        bundle, changed, inference_ready=True,
+    )
+    assert report["stale"] is True
+    assert "readings_changed" in report["reasons"]
+    assert any(d["key"] == "blue_cells" for d in report["changed_fields"])
+
+
+def test_hint_bundle_stale_report_warehouse_only():
+    state = _fake_state()
+    bundle = {
+        "map_id": 1001,
+        "warehouse_cells": 120,
+        "readings_fp": inference_fingerprint(state, {}, seed_stable=True),
+        "readings_snap": dict(state),
+    }
+    changed = dict(state)
+    changed["warehouse_cells"] = 99
+    report = hint_bundle_stale_report(
+        bundle, changed, inference_ready=True,
+    )
+    assert report["stale"] is True
+    assert "warehouse_cells" in report["reasons"]
 
 
 def test_sync_promotes_done_result():

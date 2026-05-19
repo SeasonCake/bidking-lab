@@ -45,6 +45,8 @@
 38. [实机 OCR 比改版前慢](#38-实机-ocr-比改版前慢)
 39. [切 tab 读数被清空 / 抓屏卡顿](#39-切-tab-读数被清空--抓屏卡顿)
 40. [启动仍慢：screen_ocr_warmup 与首屏等待](#40-启动仍慢screen_ocr_warmup-与首屏等待)
+41. [后台推断很慢：MC 采样冷缓存，不是 filter](#41-后台推断很慢mc-采样冷缓存不是-filter)
+42. [金品只填均价预览显示 0格/1件 或 ⚠️ 无候选](#42-金品只填均价预览显示-0格1件-或--无候选)
 
 ---
 
@@ -1344,6 +1346,64 @@ C:\Python313\python.exe -m streamlit run app/streamlit_app.py
 **操作说明**：等待时可点 **「操作说明」** 子页或阅读 [`docs/INSTRUCTIONS.zh-CN.md`](docs/INSTRUCTIONS.zh-CN.md)（玩家向流程图，不是 PROGRESS）。
 
 **计划（C-38）**：后台暖机 + 右侧小游戏占位区；工程项见 PROGRESS「C-38 启动体验」。
+
+---
+
+## 41. 后台推断很慢：MC 采样冷缓存，不是 filter
+
+### 症状
+
+点抓屏或改读数后，「出价推荐」tab 转圈 **几十秒到一两分钟**；有时同一张图第二次又快很多（约 7–12s）。
+
+### 原因
+
+`hint_pipeline.compute_hint_bundle` 写调试日志（`BIDKING_AGENT_DEBUG=1`）：
+
+```json
+{"message": "MC timing", "data": {"sample_ms": 54847, "filter_ms": 1, "n_trials": 1000, "map_id": 2401}}
+```
+
+- **`sample_ms`**：`sample_session_truth` × `n_trials`（默认侧栏常 **1500**；抓屏自动推断常用 **1000**）。
+- **`filter_ms`**：通常 &lt; 20ms，**不是瓶颈**。
+- **冷缓存**：`_sample_truths_cached(map_id, n_trials, seed)` — 换地图或 `max_entries=16` 挤出后，2401/2501 等曾出现 **50–108s** 单次采样。
+- **叠加**：OCR 5–8s 在前；读数 fingerprint 变化会 **cancel** 后台 MC 并整段重跑。
+
+### 修法（使用侧）
+
+1. 侧栏 MC 样本数保持 **1000** 或 **500** 试跑。
+2. **同地图连续推断** — 第二次起多半命中缓存。
+3. 抓屏后少改读数，等 MC 完成再改（避免 cancel 重跑）。
+4. 关闭「启动时实屏 OCR 暖机」只影响首启，不解决单次 MC（见 #40）。
+
+### 教训
+
+profile 时先看日志里的 **`sample_ms`**，不要先怀疑 `adaptive_filter` 或枚举。若要工程优化：按常用 map 预热缓存、抓屏自动推断固定 1000 trials、读数 debounce 再启 MC。
+
+---
+
+## 42. 金品只填均价预览显示 0格/1件 或 ⚠️ 无候选
+
+### 症状
+
+- 只填或 OCR 识别到 **金品均价**（如 35100），预览显示 **「0 格 / 1 件」** 或 ⚠️ 无合法候选。
+- 手填 **金品总格 26** 则正常 💡 约 25 种解。
+
+### 原因
+
+1. **Session 残留** `gold_cells=0`（widget 默认 0 曾被当成已填）。
+2. OCR 写入 `gold_avg_value` 但未写 `gold_cells`；严格枚举下 `total_cells=0` + 均价 → 退化或 0 候选。
+3. **MC 与预览不同步**：均价 **不进 MC**（#31），只影响预览/分析估算 — 用户可能以为「推断没用上均价」，实际是预览路径问题。
+
+### 修法（C-39 代码）
+
+- `effective_number_field_for_preview`：预览时 widget `0` 当未填。
+- `apply_capture_result`：仅 OCR 到金品均价时清除陈旧 `gold_cells`。
+- `relax_bucket_for_enumeration_preview`：预览放宽 `avg_value` 等；去掉 `total_cells=0`。
+- 换图：`reset_obs_for_manual_map_change` 清读数。
+
+### 教训
+
+区分 **预览 ⚠️** 与 **MC 分位不变**：前者看枚举+relax，后者看 #33 矩阵。填总格数或清残留后再填均价。
 
 ---
 

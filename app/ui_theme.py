@@ -336,24 +336,10 @@ def render_main_tab_nav(
     session_key: str = "_main_tab",
 ) -> str:
     """Session-persisted tab bar (survives st.rerun; unlike st.tabs)."""
-    from agent_debug_log import agent_debug_log
-
     active = st.session_state.get(session_key, keys[0])
     if active not in keys:
         active = keys[0]
         st.session_state[session_key] = active
-    # #region agent log
-    agent_debug_log(
-        location="ui_theme.py:render_main_tab_nav:entry",
-        message="tab nav render",
-        data={
-            "active": active,
-            "session_has_key": session_key in st.session_state,
-            "hint_label_len": len(labels.get("hint", "")),
-        },
-        hypothesis_id="H1,H3",
-    )
-    # #endregion
     cols = st.columns(len(keys))
     for col, key in zip(cols, keys):
         with col:
@@ -364,14 +350,6 @@ def render_main_tab_nav(
                 width="stretch",
             ):
                 if key != active:
-                    # #region agent log
-                    agent_debug_log(
-                        location="ui_theme.py:render_main_tab_nav:click",
-                        message="tab button clicked",
-                        data={"from": active, "to": key},
-                        hypothesis_id="H1,H4",
-                    )
-                    # #endregion
                     st.session_state[session_key] = key
                     st.rerun()
     return st.session_state.get(session_key, active)

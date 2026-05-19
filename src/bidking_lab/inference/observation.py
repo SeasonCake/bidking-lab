@@ -193,7 +193,7 @@ class QualityBucketObs:
     total_cells_approx: int | None = None # player estimate, soft prior only
     count: int | None = None              # X品存量
     value_sum: int | None = None          # X品估价 silver
-    avg_value: int | None = None          # X品均价（每件均价 silver；某些地图 R3 hint）
+    avg_value: float | None = None        # X品均价（每件均价 silver；某些地图 R3 hint）
     value_range: tuple[int, int] | None = None
     huge_band: HugeBand = "none"
     huge_cells_override: int = 0          # if set, beats the per-quality default
@@ -565,6 +565,60 @@ def _max_cells_per_single_item(quality: int) -> int:
     return _MAX_CELLS_PER_ITEM_BY_QUALITY.get(
         quality, _MAX_CELLS_PER_ITEM_FALLBACK
     )
+
+
+def relax_bucket_for_enumeration_preview(
+    bucket: QualityBucketObs,
+    *,
+    warehouse_capacity: int,
+    other_known_cells: int = 0,
+) -> tuple[QualityBucketObs, list[str]]:
+    """Drop optional fields that make enumeration empty (OCR residue).
+
+    Only affects the candidate preview path — MC / filter_truths unchanged.
+    """
+    from dataclasses import replace
+
+    try:
+        if candidates_for_bucket(
+            bucket,
+            warehouse_capacity=warehouse_capacity,
+            other_known_cells=other_known_cells,
+        ):
+            return bucket, []
+    except Exception:
+        return bucket, []
+
+    dropped: list[str] = []
+    relaxed = bucket
+    for field in ("avg_cells", "avg_value", "count", "value_sum"):
+        val = getattr(relaxed, field)
+        if val is None:
+            continue
+        if field == "avg_value" and (not val or float(val) <= 0):
+            continue
+        if field == "count" and int(val) <= 0:
+            continue
+        if field == "value_sum" and int(val) <= 0:
+            continue
+        trial = replace(relaxed, **{field: None})
+        try:
+            ok = candidates_for_bucket(
+                trial,
+                warehouse_capacity=warehouse_capacity,
+                other_known_cells=other_known_cells,
+            )
+        except Exception:
+            ok = []
+        if ok:
+            dropped.append(field)
+            relaxed = trial
+
+    if relaxed.total_cells == 0:
+        relaxed = replace(relaxed, total_cells=None)
+        dropped.append("total_cells_zero")
+
+    return relaxed, dropped
 
 
 def candidates_for_bucket(
