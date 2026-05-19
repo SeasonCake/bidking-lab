@@ -104,44 +104,6 @@ _AVG_VALUE_LOOKS_LIKE_SUM: dict[int, int] = {
 }
 
 
-def _clearable_reading_text_input(
-    parent,
-    label: str,
-    *,
-    state: dict,
-    ui_state,
-    obs_key: str,
-    base_widget_key: str,
-    placeholder: str = "",
-    help: str | None = None,
-) -> str:
-    """``text_input`` with a × clear button (matches optional ``number_input`` UX)."""
-    from bidking_lab.capture.apply import (
-        clear_reading_text_field,
-        reading_widget_key,
-        reconcile_avg_raw_widget_return,
-    )
-
-    wkey = reading_widget_key(base_widget_key, ui_state)
-    inp_col, btn_col = parent.columns([11, 1], vertical_alignment="bottom")
-    if btn_col.button(
-        "\u00d7",
-        key=f"{wkey}__clear",
-        help="\u6e05\u7a7a\u6b64\u5b57\u6bb5",
-    ):
-        clear_reading_text_field(state, ui_state, obs_key, base_widget_key)
-        st.rerun()
-    widget_return = inp_col.text_input(
-        label,
-        placeholder=placeholder,
-        help=help,
-        key=wkey,
-    )
-    return reconcile_avg_raw_widget_return(
-        state, ui_state, obs_key, base_widget_key, widget_return,
-    )
-
-
 def _avg_value_engine_hint(bucket: QualityBucketObs) -> str | None:
     """Explain how enumeration will treat ``bucket.avg_value`` (preview only)."""
     av = bucket.avg_value
@@ -3075,6 +3037,7 @@ if _main_tab == "obs":
                 hydrate_reading_widgets_from_obs,
                 reading_widget_key as _rwk,
                 reconcile_avg_raw_widget_return,
+                reconcile_optional_number_field,
                 sync_obs_from_reading_widgets,
             )
 
@@ -3242,34 +3205,50 @@ if _main_tab == "obs":
             pr1c1, pr1c2, pr1c3 = st.columns([1, 1, 1.6])
             # Row 2: avg_cells / value_sum / avg_value (读数 / 估价 / 均价)
             pr2c1, pr2c2, pr2c3 = st.columns([1.2, 1.2, 1.2])
-            state["purple_cells"] = pr1c1.number_input(
-                "\u7d2b\u54c1\u603b\u683c\u6570",
-                min_value=0, max_value=80, value=None, step=1,
-                placeholder="\u53ef\u9009",
-                help="\u4f18\u54c1\u626b\u63cf \u6216 \u7d2b\u54c1\u8f6e\u5ed3\u6570\u51fa\u3002"
-                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
-                key=_rwk("obs_reading_purple_cells", st.session_state),
+            state["purple_cells"] = reconcile_optional_number_field(
+                state,
+                st.session_state,
+                obs_key="purple_cells",
+                base_widget_key="obs_reading_purple_cells",
+                widget_return=pr1c1.number_input(
+                    "\u7d2b\u54c1\u603b\u683c\u6570",
+                    min_value=0, max_value=80, value=None, step=1,
+                    placeholder="\u53ef\u9009",
+                    help="\u4f18\u54c1\u626b\u63cf \u6216 \u7d2b\u54c1\u8f6e\u5ed3\u6570\u51fa\u3002"
+                         "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
+                    key=_rwk("obs_reading_purple_cells", st.session_state),
+                ),
+                widgets_live=True,
             )
-            state["purple_count"] = pr1c2.number_input(
-                "\u7d2b\u54c1\u4ef6\u6570",
-                min_value=0, max_value=30, value=None, step=1,
-                placeholder="\u53ef\u9009",
-                help="\u827e\u838e R4 \u8f6e\u5ed3\u53ef\u6570\u51fa\uff1b\u4f0a\u68ee\u5728\u7d2b\u54c1\u626b\u63cf\u540e\u4e5f\u80fd\u6570\u3002"
-                     "\u586b\u4e86\u540e\u8054\u5408\u63a8\u65ad\u7684\u7d2b\u54c1 bucket \u4f1a\u88ab\u552f\u4e00\u9501\u5b9a\u3002",
-                key=_rwk("obs_reading_purple_count", st.session_state),
+            state["purple_count"] = reconcile_optional_number_field(
+                state,
+                st.session_state,
+                obs_key="purple_count",
+                base_widget_key="obs_reading_purple_count",
+                widget_return=pr1c2.number_input(
+                    "\u7d2b\u54c1\u4ef6\u6570",
+                    min_value=0, max_value=30, value=None, step=1,
+                    placeholder="\u53ef\u9009",
+                    help="\u827e\u838e R4 \u8f6e\u5ed3\u53ef\u6570\u51fa\uff1b\u4f0a\u68ee\u5728\u7d2b\u54c1\u626b\u63cf\u540e\u4e5f\u80fd\u6570\u3002"
+                         "\u586b\u4e86\u540e\u8054\u5408\u63a8\u65ad\u7684\u7d2b\u54c1 bucket \u4f1a\u88ab\u552f\u4e00\u9501\u5b9a\u3002",
+                    key=_rwk("obs_reading_purple_count", st.session_state),
+                ),
+                widgets_live=True,
             )
             _pav_wkey = _rwk("purple_avg_raw_widget", st.session_state)
-            state["purple_avg_raw"] = _clearable_reading_text_input(
-                pr2c1,
-                "\u7d2b\u54c1\u5747\u683c\uff08\u4f18\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
-                state=state,
-                ui_state=st.session_state,
-                obs_key="purple_avg_raw",
-                base_widget_key="purple_avg_raw_widget",
-                placeholder="\u4f8b 2.90 \u6216 3.43",
-                help="\u300c2.9\u300d\u548c\u300c2.90\u300d\u4e0d\u540c\uff01\u300c2.9\u300d=\u6e38\u620f\u51fa\u7684\u662f\u6070\u597d 2.9 \u7684\u7cbe\u786e\u503c\uff1b"
-                     "\u300c2.90\u300d=\u771f\u5b9e\u503c\u88ab\u622a\u65ad\u5728\u7b2c\u4e8c\u4f4d\u5c0f\u6570\uff08\u4f8b\u5982 2.9090909... = 32 \u683c 11 \u4ef6\uff09\u3002"
-                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u53f3\u4fa7 \u00d7 \u4e00\u952e\u6e05\u7a7a\u3002",
+            state["purple_avg_raw"] = reconcile_avg_raw_widget_return(
+                state,
+                st.session_state,
+                "purple_avg_raw",
+                "purple_avg_raw_widget",
+                pr2c1.text_input(
+                    "\u7d2b\u54c1\u5747\u683c\uff08\u4f18\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
+                    placeholder="\u4f8b 2.90 \u6216 3.43",
+                    help="\u300c2.9\u300d\u548c\u300c2.90\u300d\u4e0d\u540c\uff01\u300c2.9\u300d=\u6e38\u620f\u51fa\u7684\u662f\u6070\u597d 2.9 \u7684\u7cbe\u786e\u503c\uff1b"
+                         "\u300c2.90\u300d=\u771f\u5b9e\u503c\u88ab\u622a\u65ad\u5728\u7b2c\u4e8c\u4f4d\u5c0f\u6570\uff08\u4f8b\u5982 2.9090909... = 32 \u683c 11 \u4ef6\uff09\u3002"
+                         "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff08\u6587\u672c\u6846\u8bf7\u5168\u9009\u5220\u9664\uff09\u3002",
+                    key=_pav_wkey,
+                ),
             )
             if str(state.get("purple_avg_raw") or "").strip():
                 st.caption(
@@ -3288,28 +3267,37 @@ if _main_tab == "obs":
                 run_id="post-fix",
             )
             # #endregion
-            state["purple_value"] = pr2c2.number_input(
-                "\u7d2b\u54c1\u603b\u4f30\u503c\uff08\u4f18\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
-                min_value=0, max_value=2_000_000, value=None, step=1000,
-                placeholder="\u53ef\u9009",
-                help="\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
-                key=_rwk("obs_reading_purple_value", st.session_state),
+            state["purple_value"] = reconcile_optional_number_field(
+                state,
+                st.session_state,
+                obs_key="purple_value",
+                base_widget_key="obs_reading_purple_value",
+                widget_return=pr2c2.number_input(
+                    "\u7d2b\u54c1\u603b\u4f30\u503c\uff08\u4f18\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
+                    min_value=0, max_value=2_000_000, value=None, step=1000,
+                    placeholder="\u53ef\u9009",
+                    help="\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
+                    key=_rwk("obs_reading_purple_value", st.session_state),
+                ),
+                widgets_live=True,
             )
             _pavg_wkey = _rwk("purple_avg_value_widget", st.session_state)
-            state["purple_avg_value"] = _clearable_reading_text_input(
-                pr2c3,
-                "\u7d2b\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
-                state=state,
-                ui_state=st.session_state,
-                obs_key="purple_avg_value",
-                base_widget_key="purple_avg_value_widget",
-                placeholder="\u4f8b 6328.75 \u6216 9400",
-                help="\u5fc5\u987b\u7528\u672c\u6846\u624b\u52a8\u8f93\u5165\u5c0f\u6570\uff08\u6587\u672c\uff0c\u4e0d\u662f\u6b65\u8fdb\u6570\u5b57\u6846\uff09\u3002"
-                     "\u300c6328\u300d\u4e0e\u300c6328.75\u300d\u5f15\u64ce\u4e0d\u540c\uff1a\u5c0f\u6570\u5206\u624d\u9501\u4ef6\u6570\u3002"
-                     "\u652f\u6301 6328,75 \u6216 6328.75\u3002"
-                     "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
-                     "\u4e0e\u603b\u4f30\u4ef7\u8054\u5408\u65f6\u7528 \u00d7\u4ef6\u6570\u2248\u603b\u4ef7 \u9501\u4ef6\u6570\uff08\u00b11%\uff0c\u22654 \u9879\u540c\u586b\u653e\u5bbd\u81f3 3%\uff09\u3002"
-                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u53f3\u4fa7 \u00d7 \u4e00\u952e\u6e05\u7a7a\u3002",
+            state["purple_avg_value"] = reconcile_avg_raw_widget_return(
+                state,
+                st.session_state,
+                "purple_avg_value",
+                "purple_avg_value_widget",
+                pr2c3.text_input(
+                    "\u7d2b\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
+                    placeholder="\u4f8b 6328.75 \u6216 9400",
+                    help="\u5fc5\u987b\u7528\u672c\u6846\u624b\u52a8\u8f93\u5165\u5c0f\u6570\uff08\u6587\u672c\uff0c\u4e0d\u662f\u6b65\u8fdb\u6570\u5b57\u6846\uff09\u3002"
+                         "\u300c6328\u300d\u4e0e\u300c6328.75\u300d\u5f15\u64ce\u4e0d\u540c\uff1a\u5c0f\u6570\u5206\u624d\u9501\u4ef6\u6570\u3002"
+                         "\u652f\u6301 6328,75 \u6216 6328.75\u3002"
+                         "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
+                         "\u4e0e\u603b\u4f30\u4ef7\u8054\u5408\u65f6\u7528 \u00d7\u4ef6\u6570\u2248\u603b\u4ef7 \u9501\u4ef6\u6570\uff08\u00b11%\uff0c\u22654 \u9879\u540c\u586b\u653e\u5bbd\u81f3 3%\uff09\u3002"
+                         "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff08\u6587\u672c\u6846\u8bf7\u5168\u9009\u5220\u9664\uff09\u3002",
+                    key=_pavg_wkey,
+                ),
             )
             if str(state.get("purple_avg_value") or "").strip():
                 st.caption(
@@ -3329,12 +3317,14 @@ if _main_tab == "obs":
             )
 
             # ---- 紫品候选预览 ----
-            _pc = state.get("purple_cells")
-            _pk = state.get("purple_count")
+            sync_obs_from_reading_widgets(
+                state, st.session_state, allow_clear=True,
+            )
             _prev_huge_raw = state.get("purple_huge_band", "none")
             _prev_huge_band, _prev_huge_override = _resolve_huge_selection(_prev_huge_raw, 4)
             from bidking_lab.capture.apply import (
                 avg_raw_obs_widget_drift,
+                effective_number_field_for_preview,
                 effective_text_field_for_preview,
             )
 
@@ -3344,6 +3334,18 @@ if _main_tab == "obs":
             )
             if _purple_drift:
                 st.caption(f"\u26a0\ufe0f {_purple_drift}")
+            _pc = effective_number_field_for_preview(
+                state, st.session_state,
+                obs_key="purple_cells", base_widget_key="obs_reading_purple_cells",
+            )
+            _pk = effective_number_field_for_preview(
+                state, st.session_state,
+                obs_key="purple_count", base_widget_key="obs_reading_purple_count",
+            )
+            _pv = effective_number_field_for_preview(
+                state, st.session_state,
+                obs_key="purple_value", base_widget_key="obs_reading_purple_value",
+            )
             _pavg_raw = effective_text_field_for_preview(
                 state, st.session_state,
                 obs_key="purple_avg_raw", base_widget_key="purple_avg_raw_widget",
@@ -3354,10 +3356,10 @@ if _main_tab == "obs":
             )
             _purple_preview_bucket = QualityBucketObs(
                 quality=4,
-                total_cells=int(_pc) if _pc is not None and int(_pc) > 0 else None,
-                count=int(_pk) if _pk is not None and int(_pk) > 0 else None,
+                total_cells=_pc,
+                count=_pk,
                 avg_cells=_try_parse_reading(_pavg_raw) if _pavg_raw else None,
-                value_sum=(state.get("purple_value") or 0) or None,
+                value_sum=_pv,
                 avg_value=_try_parse_silver_amount(_pavg_val) if _pavg_val else None,
                 huge_band=_prev_huge_band,
                 huge_cells_override=_prev_huge_override,
@@ -3388,62 +3390,87 @@ if _main_tab == "obs":
             gr1c1, gr1c2, gr1c3 = st.columns([1, 1, 1.6])
             # Row 2: avg_cells / value_sum / avg_value
             gr2c1, gr2c2, gr2c3 = st.columns([1.2, 1.2, 1.2])
-            state["gold_cells"] = gr1c1.number_input(
-                "\u91d1\u54c1\u603b\u683c\u6570",
-                min_value=0, max_value=80, value=None, step=1,
-                placeholder="\u53ef\u9009",
-                help="\u5730\u56fe\u63d0\u4f9b\u300c\u91d1\u8272\u85cf\u54c1\u603b\u683c\u6570\u300d\u63d0\u793a\u65f6\u586b\u5165\u3002"
-                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002",
-                key=_rwk("obs_reading_gold_cells", st.session_state),
+            state["gold_cells"] = reconcile_optional_number_field(
+                state,
+                st.session_state,
+                obs_key="gold_cells",
+                base_widget_key="obs_reading_gold_cells",
+                widget_return=gr1c1.number_input(
+                    "\u91d1\u54c1\u603b\u683c\u6570",
+                    min_value=0, max_value=80, value=None, step=1,
+                    placeholder="\u53ef\u9009",
+                    help="\u5730\u56fe\u63d0\u4f9b\u300c\u91d1\u8272\u85cf\u54c1\u603b\u683c\u6570\u300d\u63d0\u793a\u65f6\u586b\u5165\u3002"
+                         "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002",
+                    key=_rwk("obs_reading_gold_cells", st.session_state),
+                ),
+                widgets_live=True,
             )
-            state["gold_count"] = gr1c2.number_input(
-                "\u91d1\u54c1\u4ef6\u6570",
-                min_value=0, max_value=15, value=None, step=1,
-                placeholder="\u53ef\u9009",
-                help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\u91d1\u8272\u85cf\u54c1\u4ef6\u6570 hint\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
-                key=_rwk("obs_reading_gold_count", st.session_state),
+            state["gold_count"] = reconcile_optional_number_field(
+                state,
+                st.session_state,
+                obs_key="gold_count",
+                base_widget_key="obs_reading_gold_count",
+                widget_return=gr1c2.number_input(
+                    "\u91d1\u54c1\u4ef6\u6570",
+                    min_value=0, max_value=15, value=None, step=1,
+                    placeholder="\u53ef\u9009",
+                    help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u63d0\u4f9b\u91d1\u8272\u85cf\u54c1\u4ef6\u6570 hint\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
+                    key=_rwk("obs_reading_gold_count", st.session_state),
+                ),
+                widgets_live=True,
             )
             _gav_wkey = _rwk("gold_avg_raw_widget", st.session_state)
-            state["gold_avg_raw"] = _clearable_reading_text_input(
-                gr2c1,
-                "\u91d1\u54c1\u5747\u683c\uff08\u6781\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
-                state=state,
-                ui_state=st.session_state,
-                obs_key="gold_avg_raw",
-                base_widget_key="gold_avg_raw_widget",
-                placeholder="\u4f8b 3.5 \u6216 4.25",
-                help="\u540c\u7d2b\u54c1\u5747\u683c\u89c4\u5219\uff1a\u300c3.5\u300d\u662f\u7cbe\u786e\u503c\u3001\u300c3.50\u300d\u662f\u88ab\u622a\u65ad\u8fc7\u7684\u3002"
-                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u53f3\u4fa7 \u00d7 \u4e00\u952e\u6e05\u7a7a\u3002",
+            state["gold_avg_raw"] = reconcile_avg_raw_widget_return(
+                state,
+                st.session_state,
+                "gold_avg_raw",
+                "gold_avg_raw_widget",
+                gr2c1.text_input(
+                    "\u91d1\u54c1\u5747\u683c\uff08\u6781\u54c1\u5747\u683c \u9053\u5177\u8bfb\u6570\uff09",
+                    placeholder="\u4f8b 3.5 \u6216 4.25",
+                    help="\u540c\u7d2b\u54c1\u5747\u683c\u89c4\u5219\uff1a\u300c3.5\u300d\u662f\u7cbe\u786e\u503c\u3001\u300c3.50\u300d\u662f\u88ab\u622a\u65ad\u8fc7\u7684\u3002"
+                         "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff08\u6587\u672c\u6846\u8bf7\u5168\u9009\u5220\u9664\uff09\u3002",
+                    key=_gav_wkey,
+                ),
             )
             if str(state.get("gold_avg_raw") or "").strip():
                 st.caption(
                     f"\u2713 \u5f53\u524d\u5747\u683c\u8bfb\u6570\uff1a**{state['gold_avg_raw']}**"
                 )
-            state["gold_value"] = gr2c2.number_input(
-                "\u91d1\u54c1\u603b\u4f30\u503c\uff08\u6781\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
-                min_value=0, max_value=5_000_000, value=None, step=5000,
-                placeholder="\u53ef\u9009",
-                help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u76f4\u63a5\u7ed9\u51fa\u91d1\u54c1\u603b\u4ef7\uff0c"
-                     "\u8bf7\u4f18\u5148\u586b\u8be5\u503c\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b"
-                     "\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002"
-                     "\u4ef7\u503c\u8fdb MC \u8fc7\u6ee4\uff1b\u82e5\u4ef6\u6570=1 \u4e14\u80fd\u547d\u4e2d Item.txt \u5355\u4ef6\uff0c"
-                     "\u4ec5\u5f71\u54cd\u4e0b\u65b9\u5019\u9009\u6392\u5e8f\uff08\u89c1\u7d2b\u54c1\u4e0a\u65b9\u8bf4\u660e\uff09\u3002",
-                key=_rwk("obs_reading_gold_value", st.session_state),
+            state["gold_value"] = reconcile_optional_number_field(
+                state,
+                st.session_state,
+                obs_key="gold_value",
+                base_widget_key="obs_reading_gold_value",
+                widget_return=gr2c2.number_input(
+                    "\u91d1\u54c1\u603b\u4f30\u503c\uff08\u6781\u54c1\u4f30\u4ef7 \u00b7 value sum\uff09",
+                    min_value=0, max_value=5_000_000, value=None, step=5000,
+                    placeholder="\u53ef\u9009",
+                    help="\u67d0\u4e9b\u5730\u56fe\u4f1a\u76f4\u63a5\u7ed9\u51fa\u91d1\u54c1\u603b\u4ef7\uff0c"
+                         "\u8bf7\u4f18\u5148\u586b\u8be5\u503c\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b"
+                         "\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002"
+                         "\u4ef7\u503c\u8fdb MC \u8fc7\u6ee4\uff1b\u82e5\u4ef6\u6570=1 \u4e14\u80fd\u547d\u4e2d Item.txt \u5355\u4ef6\uff0c"
+                         "\u4ec5\u5f71\u54cd\u4e0b\u65b9\u5019\u9009\u6392\u5e8f\uff08\u89c1\u7d2b\u54c1\u4e0a\u65b9\u8bf4\u660e\uff09\u3002",
+                    key=_rwk("obs_reading_gold_value", st.session_state),
+                ),
+                widgets_live=True,
             )
             _gavg_wkey = _rwk("gold_avg_value_widget", st.session_state)
-            state["gold_avg_value"] = _clearable_reading_text_input(
-                gr2c3,
-                "\u91d1\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
-                state=state,
-                ui_state=st.session_state,
-                obs_key="gold_avg_value",
-                base_widget_key="gold_avg_value_widget",
-                placeholder="\u4f8b 32507.6",
-                help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u91d1\u54c1\u5747\u4ef7 X silver\u300d\u3002"
-                     "\u652f\u6301\u5c0f\u6570\uff08\u5982 32507.6\uff09\u3002"
-                     "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
-                     "\u8054\u5408\u603b\u4f30\u4ef7\u65f6 \u00d7\u4ef6\u6570\u2248\u603b\u4ef7 \u9501\u4ef6\u6570\u3002"
-                     "\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002\u53f3\u4fa7 \u00d7 \u4e00\u952e\u6e05\u7a7a\u3002",
+            state["gold_avg_value"] = reconcile_avg_raw_widget_return(
+                state,
+                st.session_state,
+                "gold_avg_value",
+                "gold_avg_value_widget",
+                gr2c3.text_input(
+                    "\u91d1\u54c1\u5747\u4ef7\uff08\u6bcf\u4ef6 silver\uff09",
+                    placeholder="\u4f8b 32507.6",
+                    help="\u67d0\u4e9b\u5730\u56fe R3 \u4f1a\u63d0\u793a\u300c\u91d1\u54c1\u5747\u4ef7 X silver\u300d\u3002"
+                         "\u652f\u6301\u5c0f\u6570\uff08\u5982 32507.6\uff09\u3002"
+                         "\u4ec5\u6536\u7d27\u4e0b\u65b9\u5019\u9009\u679a\u4e3e\uff0c\u4e0d\u6539 MC \u4ef7\u503c\u533a\u95f4\u3002"
+                         "\u8054\u5408\u603b\u4f30\u4ef7\u65f6 \u00d7\u4ef6\u6570\u2248\u603b\u4ef7 \u9501\u4ef6\u6570\u3002"
+                         "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff08\u6587\u672c\u6846\u8bf7\u5168\u9009\u5220\u9664\uff09\u3002",
+                    key=_gavg_wkey,
+                ),
             )
             if str(state.get("gold_avg_value") or "").strip():
                 st.caption(

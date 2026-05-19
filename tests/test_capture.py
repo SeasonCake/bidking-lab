@@ -352,15 +352,24 @@ def test_hydrate_force_numeric_overwrites_stale_widget() -> None:
     assert ui[wg_key] == 17
 
 
-def test_hydrate_does_not_refill_user_cleared_none_widget() -> None:
+def test_hydrate_refills_none_widget_from_obs_for_tab_return() -> None:
     obs = {"wg_cells": 22, "blue_cells": 15}
+    ui: dict = {"obs_readings_rev": 0}
+    wg_key = reading_widget_key("obs_reading_wg_cells", ui)
+    ui[wg_key] = None
+    hydrate_reading_widgets_from_obs(obs, ui)
+    assert ui[wg_key] == 22
+
+
+def test_hydrate_does_not_refill_after_obs_cleared() -> None:
+    obs: dict = {}
     ui: dict = {"obs_readings_rev": 0}
     wg_key = reading_widget_key("obs_reading_wg_cells", ui)
     ui[wg_key] = None
     hydrate_reading_widgets_from_obs(obs, ui)
     assert ui[wg_key] is None
     hydrate_reading_widgets_from_obs(obs, ui, force_numeric=True)
-    assert ui[wg_key] == 22
+    assert ui[wg_key] is None
 
 
 def test_hydrate_avg_raw_respects_user_cleared_widget() -> None:
@@ -411,18 +420,41 @@ def test_reconcile_avg_raw_widget_return_from_obs() -> None:
     assert ui[wkey] == ""
 
 
-def test_clear_reading_text_field_clears_widget_and_obs() -> None:
-    from bidking_lab.capture.apply import clear_reading_text_field, reading_widget_key
+def test_reconcile_optional_number_keeps_obs_when_widgets_not_live() -> None:
+    """Hint-tab rerun must not wipe obs when number_input is unmounted."""
+    from bidking_lab.capture.apply import reconcile_optional_number_field
 
-    obs = {"purple_avg_value": "6328.75"}
+    obs = {"purple_value": 41_632}
     ui: dict = {"obs_readings_rev": 0}
-    wkey = reading_widget_key("purple_avg_value_widget", ui)
-    ui[wkey] = "6328.75"
-    clear_reading_text_field(
-        obs, ui, "purple_avg_value", "purple_avg_value_widget",
+    out = reconcile_optional_number_field(
+        obs,
+        ui,
+        obs_key="purple_value",
+        base_widget_key="obs_reading_purple_value",
+        widget_return=None,
+        widgets_live=False,
     )
-    assert obs.get("purple_avg_value") is None
-    assert ui[wkey] == ""
+    assert out == 41_632
+    assert obs["purple_value"] == 41_632
+
+
+def test_effective_number_preview_falls_back_to_obs_when_widget_none() -> None:
+    from bidking_lab.capture.apply import (
+        effective_number_field_for_preview,
+        reading_widget_key,
+    )
+
+    obs = {"purple_count": 11}
+    ui: dict = {"obs_readings_rev": 0}
+    wkey = reading_widget_key("obs_reading_purple_count", ui)
+    ui[wkey] = None
+    assert (
+        effective_number_field_for_preview(
+            obs, ui,
+            obs_key="purple_count", base_widget_key="obs_reading_purple_count",
+        )
+        == 11
+    )
 
 
 def test_sync_avg_clears_obs_when_mounted_widget_empty() -> None:
@@ -547,13 +579,13 @@ def test_clear_stale_capture_fields_on_partial_gold_ocr() -> None:
     assert obs == {"gold_cells": 26}
 
 
-def test_hydrate_does_not_refill_cleared_number_widget() -> None:
+def test_hydrate_refills_cleared_number_widget_when_obs_has_value() -> None:
     obs = {"gold_cells": 26}
     ui: dict = {"obs_readings_rev": 0}
     wkey = reading_widget_key("obs_reading_gold_cells", ui)
     ui[wkey] = None
     hydrate_reading_widgets_from_obs(obs, ui)
-    assert ui[wkey] is None
+    assert ui[wkey] == 26
 
 
 def test_sync_clears_obs_when_number_widget_none_and_allow_clear() -> None:
@@ -583,7 +615,7 @@ def test_huge_band_sync_and_hydrate_roundtrip() -> None:
     assert obs["gold_huge_band"] == "1"
 
 
-def test_effective_number_field_for_preview_prefers_widget() -> None:
+def test_effective_number_field_for_preview_uses_widget_or_obs() -> None:
     from bidking_lab.capture.apply import effective_number_field_for_preview
 
     obs = {"gold_count": 9, "gold_cells": 26}
@@ -595,7 +627,7 @@ def test_effective_number_field_for_preview_prefers_widget() -> None:
             obs, ui,
             obs_key="gold_count", base_widget_key="obs_reading_gold_count",
         )
-        is None
+        == 9
     )
     gk = reading_widget_key("obs_reading_gold_cells", ui)
     ui[gk] = 26
@@ -608,7 +640,7 @@ def test_effective_number_field_for_preview_prefers_widget() -> None:
     )
 
 
-def test_effective_text_field_for_preview_prefers_widget() -> None:
+def test_effective_text_field_for_preview_empty_widget_falls_back_to_obs() -> None:
     from bidking_lab.capture.apply import effective_text_field_for_preview
 
     obs = {"gold_avg_raw": "4.00"}
@@ -619,7 +651,7 @@ def test_effective_text_field_for_preview_prefers_widget() -> None:
         effective_text_field_for_preview(
             obs, ui, obs_key="gold_avg_raw", base_widget_key="gold_avg_raw_widget",
         )
-        == ""
+        == "4.00"
     )
 
 

@@ -22,6 +22,7 @@ def test_classify_integer_vs_tight() -> None:
     assert classify_display_suffix("4") == "integer"
     assert classify_display_suffix("2.5") == "one_decimal_exact"
     assert classify_display_suffix("2.90") == "trailing_zero"
+    assert classify_display_suffix("1.90") == "trailing_zero"
     assert classify_display_suffix("3.43") == "tight_fraction"
 
 

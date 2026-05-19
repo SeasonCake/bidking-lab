@@ -109,6 +109,10 @@ def hydrate_reading_widgets_from_obs(
         # cleared an optional number_input — do not refill from stale obs.
         if wkey not in ui_state:
             ui_state[wkey] = coerced
+        elif ui_state[wkey] is None and val is not None:
+            # Streamlit may leave ``None`` after unmounting the obs tab; restore
+            # from obs so returning from「出价推荐」does not blank the field.
+            ui_state[wkey] = coerced
         elif force_numeric:
             ui_state[wkey] = coerced
     for obs_key, base_wkey in (
@@ -132,6 +136,38 @@ def hydrate_reading_widgets_from_obs(
             ui_state[wkey] = _format_silver_widget_text(val)
 
 
+def reconcile_optional_number_field(
+    obs: dict[str, Any],
+    ui_state: Any,
+    *,
+    obs_key: str,
+    base_widget_key: str,
+    widget_return: int | float | None,
+    widgets_live: bool,
+) -> int | None:
+    """Merge optional ``number_input`` into ``obs`` without tab-switch data loss.
+
+    When ``widgets_live`` is False (hint / ROI tab), a ``None`` return must not
+    wipe ``obs``. When True (obs tab mounted), ``None`` means the player cleared
+    the field (native ×).
+    """
+    wkey = reading_widget_key(base_widget_key, ui_state)
+    if widget_return is not None:
+        v = int(widget_return)
+        obs[obs_key] = v
+        return v
+    if widgets_live and wkey in ui_state:
+        obs.pop(obs_key, None)
+        return None
+    prev = obs.get(obs_key)
+    if prev is None:
+        return None
+    try:
+        return int(prev)
+    except (TypeError, ValueError):
+        return None
+
+
 def effective_number_field_for_preview(
     obs: dict[str, Any],
     ui_state: Any,
@@ -144,7 +180,16 @@ def effective_number_field_for_preview(
     if wkey in ui_state:
         raw = ui_state.get(wkey)
         if raw is None:
-            return None
+            # Tab remount can briefly leave ``None`` while ``obs`` still holds
+            # the last synced value — fall back for preview / MC build.
+            prev = obs.get(obs_key)
+            if prev is None:
+                return None
+            try:
+                v = int(prev)
+            except (TypeError, ValueError):
+                return None
+            return None if v == 0 else v
         try:
             v = int(raw)
         except (TypeError, ValueError):
@@ -180,7 +225,11 @@ def effective_text_field_for_preview(
     strip_empty_avg_raw_from_obs(obs)
     wkey = reading_widget_key(base_widget_key, ui_state)
     if wkey in ui_state:
-        return str(ui_state.get(wkey) or "").strip()
+        raw = ui_state.get(wkey)
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+        prev = str(obs.get(obs_key) or "").strip()
+        return prev
     return str(obs.get(obs_key) or "").strip()
 
 
@@ -295,19 +344,6 @@ def _coerce_widget_value(key: str, val: Any) -> Any:
     if isinstance(val, float):
         return int(val) if val == int(val) else val
     return val
-
-
-def clear_reading_text_field(
-    obs: dict[str, Any],
-    ui_state: Any,
-    obs_key: str,
-    base_widget_key: str,
-) -> None:
-    """Clear a versioned ``text_input`` reading (avg_cells / avg_value)."""
-    strip_empty_avg_raw_from_obs(obs)
-    wkey = reading_widget_key(base_widget_key, ui_state)
-    ui_state[wkey] = ""
-    obs.pop(obs_key, None)
 
 
 def purge_reading_widget(ui_state: Any, obs_key: str) -> None:

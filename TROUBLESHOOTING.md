@@ -50,7 +50,7 @@
 43. [切到「出价推荐」后读数/地图全没了](#43-切到出价推荐后读数地图全没了)
 44. [手填金/紫巨物后切 tab 变「无」](#44-手填金紫巨物后切-tab-变无)
 45. [分析估算把「金品均价」当每格价](#45-分析估算把金品均价当每格价)
-46. [均格/均价无法点 × 清空](#46-均格均价无法点--清空)
+46. [切 tab 后枚举变无候选](#46-切-tab-后紫金枚举变无合法候选但框里仍有数)
 
 ---
 
@@ -1479,25 +1479,31 @@ profile 时先看日志里的 **`sample_ms`**，不要先怀疑 `adaptive_filter
 
 ---
 
-## 46. 均格/均价无法点 × 清空
+## 46. 切 tab 后紫/金枚举变「无合法候选」但框里仍有数
 
 ### 症状
 
-格数、件数、总价等 `number_input`（`value=None`）右侧有 Streamlit 自带 **×**，一点即空；紫/金 **均格、均价** 是 `text_input`，没有 ×，只能全选删除。
+读数 tab 填好紫品件数+均格或总价，预览正常；切到「出价推荐」再回来，框里仍显示原值，但下方 **⚠️ 无合法候选**。
 
 ### 原因
 
-Streamlit 只为可选 `number_input` 提供清除控件；文本框需自建。
+1. `number_input` 返回值曾直接赋给 `state[...]`，控件短暂为 `None` 时把 `obs` 写空。
+2. 紫品预览用 `state.get(...)` 而非 `effective_*_for_preview`（金品侧已用 effective）。
+3. 从出价 tab 返回时 session 里 widget key 可能为 `None`，hydrate 未从 `obs` 恢复。
 
-### 修法（2026-05-19）
+### 修法（2026-05-20）
 
-- `capture.apply.clear_reading_text_field`：清空版本化 widget key + `obs` 字段。
-- `streamlit_app._clearable_reading_text_input`：输入框右侧 **×** → `st.rerun()`。
-- 紫/金四个字段：`purple_avg_raw`、`purple_avg_value`、`gold_avg_raw`、`gold_avg_value`。
+- `reconcile_optional_number_field(..., widgets_live=True/False)`：仅读数 tab 挂载时允许 × 清空 `obs`。
+- `hydrate_reading_widgets_from_obs`：`ui_state[wkey] is None` 且 `obs` 有值时回填。
+- `effective_number_field_for_preview` / `effective_text_field_for_preview`：widget 空时回退 `obs`。
+- 紫品预览与金品一致：先 `sync_obs`，再用 effective 字段组 bucket。
 
-### 相关（枚举精度，同批）
+**均格/均价** 仍为 `text_input`（保留 `2.9` vs `2.90` 尾零）；无 Streamlit 原生 ×，请全选删除。格数/件数/总价继续用 `number_input` 自带 ×。
 
-- 总价+均价：`value_sum_matches_avg_at_count` 锁件数；`total_cells >= count` 物理下限。
+### 相关（枚举精度）
+
+- 总价+均价：`value_sum_matches_avg_at_count`；`total_cells >= count`。
+- 均格 `1.90` 属 `trailing_zero` display kind，模拟与 `is_compatible` 已覆盖。
 - 见 `PROGRESS.md` **C-40** 手测表。
 
 ---

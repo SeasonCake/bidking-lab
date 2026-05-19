@@ -628,7 +628,8 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 - **联合**：先泄漏件数，再均格显示 + 仓格上限；`39539.17` + `4.5` → top `(27,6)`。
 - **总价+均价联合**：`value_sum_matches_avg_at_count`（`均价×件数≈总价`，默认 ±1%）；拒绝 `total_cells < count`（修 11格/15件）。
 - **预览仓预算**：`other_known_cells` = 已填低品 `*_cells` 之和（Ethan wg+蓝等）。
-- **UI**：紫/金均格、均价 `text_input` 旁 **× 一键清空**（对齐 `number_input` 原生清除）；`clear_reading_text_field`。
+- **UI / tab**：`reconcile_optional_number_field` + effective 预览字段；切「出价推荐」再回读数 tab 不再丢枚举输入（TB #46）。
+- **均格/均价**：仍为 `text_input`（尾零语义）；格数/件数/总价用 `number_input` 自带 ×。
 - 模拟报告：`data/processed/decimal_reading_sim.txt`；脚本 `scripts/simulate_decimal_readings.py`。
 
 **Streamlit 手测清单（仓库 123，白绿 15 + 蓝 48 → 紫/金上限 54 格）**
