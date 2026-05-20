@@ -7,28 +7,28 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-383_passing-2ea043)](./tests)
+[![Tests](https://img.shields.io/badge/tests-406_passing-2ea043)](./tests)
 [![Status](https://img.shields.io/badge/status-Phase_1A_stable-blueviolet)](./PROGRESS.md)
 
 ---
 
 ## Demo
 
-https://github.com/user-attachments/assets/ef39bb80-f6fd-40b3-8e60-6564ceda4af8
+https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
 
-> 30-second walkthrough: pick a map → fill in what the player just observed → get a value distribution, a snipe/walk-away recommendation, and per-bucket posteriors.
+> 30-second walkthrough: pick a map → fill readings (manual or OCR sidebar) → switch to the bidding tab for the value distribution, bucket posteriors, and analytical estimate.
 
 ### Snapshots
 
 <table>
 <tr>
-<td width="50%" align="center"><strong>1. Observation input + live candidate enumeration</strong><br/><img src="./docs/assets/01-inputs.png" alt="inputs panel" /></td>
-<td width="50%" align="center"><strong>2. Conditional value distribution + bid hint</strong><br/><img src="./docs/assets/02-bidding.png" alt="bidding hint panel" /></td>
+<td width="50%" align="center"><strong>1. Readings tab + OCR sidebar + live candidate preview</strong><br/><img src="./docs/assets/01-inputs.png" alt="inputs panel" /></td>
+<td width="50%" align="center"><strong>2. Bidding tab — MC histogram + bucket posterior table</strong><br/><img src="./docs/assets/02-bidding.png" alt="bidding hint panel" /></td>
 </tr>
 </table>
 
-> **Left**: the engine watches every field the player types and shows the top-K `(total_cells, count)` candidates that survive every constraint (warehouse size, decimal-truncated `avg_cells` reading, value sum, huge-band, etc.).
-> **Right**: filtered Monte-Carlo (default **1,500** samples, slider 500–5,000), displayed as a histogram with P25/P50/P75/P90 reference lines so the player can pick a bid level matched to their risk appetite. Snipe / walk-away cards are **experimental and hidden** in the UI (`_ENABLE_SNIPE_PASS_HINTS=False`); the backend module remains for future work.
+> **Left**: three main tabs (Readings / Bidding / Tool ROI). The readings tab shows per-field scope captions (MC vs enumeration vs analytical only), OCR capture in the sidebar, and bottom candidate previews that can show ⚠️ *no legal candidates* without blocking inference above.
+> **Right**: conditional Monte Carlo (default **1,000** samples, slider 500–5,000), histogram with P25/P50/P75/P90, per-bucket posterior cards, and the analytical estimate band. Snipe / walk-away cards remain **experimental and hidden** (`_ENABLE_SNIPE_PASS_HINTS=False`).
 
 ---
 
@@ -67,7 +67,7 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 
-# 1) Run the test suite (383 tests)
+# 1) Run the test suite (406 tests)
 pytest -q
 
 # 2) Launch the Streamlit dashboard
@@ -277,14 +277,14 @@ Full roadmap in [`PROGRESS.md`](PROGRESS.md). Short version:
 **Next** (C-38): startup wait UI while OCR warms; optional mini-game deferred.
 - ✅ 6 game tables decoded + schema
 - ✅ Inference engine v2 (joint posterior + warehouse pruning + truncated-display rule + huge-item band)
-- ✅ Streamlit Chinese UI (4 tabs + map static info panel); MC default **1500** samples
+- ✅ Streamlit Chinese UI (3 main tabs + map static info panel); MC default **1000** samples
 - ✅ Per-bucket adaptive MC filter (2026-05-16) — kills 2× over-estimation bug
 - ✅ Analytical-estimate hardening (C-28) + ★ concrete huge items (C-29) + purple `avg_value` input (C-29)
 - ✅ Pass/snipe red constraints in backend (C-30); **UI hidden** until P0-A resumes (C-31)
 - ✅ Field-scope UI copy + joint-constraint enumeration relax (C-31b)
 - ✅ P0-B: fallback preserves `huge_cells_override` (C-32)
 - ✅ LOO tool ROI + player-eyeball noise model
-- ✅ Screen capture + OCR prefill (C-35~39) · 7 notebooks · **383** unit tests · **42** TROUBLESHOOTING entries
+- ✅ Screen capture + OCR prefill (C-35~39) · 7 notebooks · **406** unit tests · **47** TROUBLESHOOTING entries
 - ✅ Bilingual README + demo video + screenshots
 
 **Deferred / optional**

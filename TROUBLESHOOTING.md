@@ -1508,6 +1508,39 @@ profile 时先看日志里的 **`sample_ms`**，不要先怀疑 `adaptive_filter
 
 ---
 
+## 47. 预览「无合法候选」但 MC 仍正常推理
+
+### 症状
+
+读数 tab 下方显示 **⚠️ 无合法候选**（或均价容差放宽 caption），切到「出价推荐」后 histogram / bucket 后验仍有合理区间，不像读数全丢。
+
+### 设计（预期行为）
+
+| 路径 | 用哪些字段 |
+|------|------------|
+| **下方候选预览** | cells + count + value_sum + huge + avg_cells + avg_value（可 relax） |
+| **MC `filter_truths_by_obs`** | warehouse + cells + count + value_sum/range + huge；**不用** avg_cells / avg_value |
+| **分析估算** | 含 avg_cells / avg_value，可走枚举 top-1 或 integer leak |
+
+因此：仅均格/均价矛盾 → 预览可空，**不阻断** MC；总价/格数/件数仍在 `obs` 且会过滤 MC。
+
+### Tab 切换注意
+
+- 非读数 tab 上 `sync_obs_from_reading_widgets(..., allow_clear=False)`，避免 widget 短暂 `None` 清空 `obs`。
+- 读数 tab 预览用 `effective_*_for_preview`，widget 空时回退 `obs`（TB #46）。
+- `MC_FILTER_FP_KEYS`：只改均格/均价不使 hint bundle stale（C-41）。
+
+### 验证
+
+```powershell
+pytest tests/test_posterior.py::TestFilterByObs::test_avg_cells_only_does_not_filter_mc_truths -q
+pytest tests/test_bg_inference.py::test_hint_bundle_stale_report_ignores_avg_cells_only_change -q
+```
+
+Streamlit：填硬字段 → 切 tab → 即使预览 ⚠️，出价 tab 的 P50 与 bucket 表应仍反映硬约束。
+
+---
+
 ## 参考项目（写法）
 
 本文件结构参考同工作区内 `projects/openclaw-discord-bot/TROUBLESHOOTING.md`：**症状 / 原因 / 修法 / 教训** 四段式，便于检索与复用。

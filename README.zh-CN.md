@@ -7,28 +7,28 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-383_passing-2ea043)](./tests)
+[![Tests](https://img.shields.io/badge/tests-406_passing-2ea043)](./tests)
 [![Status](https://img.shields.io/badge/status-Phase_1A_推断稳定-blueviolet)](./PROGRESS.md)
 
 ---
 
 ## 演示 · Demo
 
-https://github.com/user-attachments/assets/ef39bb80-f6fd-40b3-8e60-6564ceda4af8
+https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
 
-> 30 秒走查：选地图 → 把游戏里看到的读数填进对应 bucket → 拿到价值分布、秒仓/放仓建议、各品质后验估计。
+> 30 秒走查：选地图 → 手填或侧栏 OCR 抓屏填入读数 → 切到「出价推荐」看价值分布、各品质后验与分析估算。
 
 ### 截图
 
 <table>
 <tr>
-<td width="50%" align="center"><strong>1. 读数输入 + 实时候选枚举</strong><br/><img src="./docs/assets/01-inputs.png" alt="读数输入" /></td>
-<td width="50%" align="center"><strong>2. 条件价值分布 + 出价建议</strong><br/><img src="./docs/assets/02-bidding.png" alt="出价建议" /></td>
+<td width="50%" align="center"><strong>1. 读数输入 + OCR 侧栏 + 实时候选预览</strong><br/><img src="./docs/assets/01-inputs.png" alt="读数输入" /></td>
+<td width="50%" align="center"><strong>2. 出价推荐 — MC 直方图 + 各品质后验表</strong><br/><img src="./docs/assets/02-bidding.png" alt="出价建议" /></td>
 </tr>
 </table>
 
-> **左**：引擎实时监听用户填的每个字段，把通过所有约束（仓库总格、截断 `均格` 读数、总价、巨物档……）的 top-K `(total_cells, count)` 候选枚举出来。
-> **右**：默认 **1500** 次 MC 抽样（滑块 500–5000），经多重 filter 后画直方图，标 P25/P50/P75/P90。秒仓/放仓卡片为**实验功能且默认隐藏**（`_ENABLE_SNIPE_PASS_HINTS=False`），后端模块保留待 P0-A 恢复。
+> **左**：三个主 tab（读数输入 / 出价推荐 / 道具 ROI）。读数页各字段旁标注作用域（MC / 枚举 / 仅分析估算）；侧栏可 OCR 抓屏预填；下方候选预览即使显示 ⚠️ **无合法候选**，也不阻断上方 MC 推理（硬字段仍在 `state` 里）。
+> **右**：默认 **1000** 次 MC（滑块 500–5000），条件分布直方图 + P25/P50/P75/P90、各品质 bucket 后验卡片与分析估算区间。秒仓/放仓仍为**实验功能且默认隐藏**。
 
 ---
 
@@ -67,7 +67,7 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 
-# 1) 跑测试（383 个单测）
+# 1) 跑测试（406 个单测）
 pytest -q
 
 # 2) 启动 Streamlit 主界面
@@ -211,7 +211,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 |---|---|
 | 解析的游戏表 | 6 张（BidMap / Drop / Item / BattleItem / Hero / Item_Type） |
 | schema 化的实体 | 1132 件藏品 · 64 件道具 · 105 张地图 · 20 个英雄 |
-| 单测数 | **383**，全绿 |
+| 单测数 | **406**，全绿 |
 | Streamlit UI tabs | 4（读数输入 / 出价推荐 / 道具 ROI / 联合推断·实验性） |
 | Notebook | 5 册（map 价值分布 / 英雄排名 / 推断 demo / ROI snipe / 端到端 case） |
 | Phase 1A 推断 | **稳定** — 低风险项已落地；秒/放仓 UI 关闭 |
@@ -278,7 +278,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 完整路线图在 [`PROGRESS.md`](PROGRESS.md)。短版：
 
 **已完成**（C-1 ~ C-37）
-- ✅ 6 张游戏表解码 + schema · 推断引擎 v2 · Streamlit 中文 UI（MC 默认 **1500**）
+- ✅ 6 张游戏表解码 + schema · 推断引擎 v2 · Streamlit 中文 UI（MC 默认 **1000**）
 - ✅ Per-bucket MC filter（2026-05-16）· 分析估算 + ★ 具体巨物（C-28~29）· 紫品均价输入
 - ✅ 放仓红约束后端（C-30）· 秒/放仓 **UI 隐藏**（C-31）· 字段作用范围文案 + 联合约束枚举放宽（C-31b）
 - ✅ P0-B：fallback 保留 `huge_cells_override`（C-32）

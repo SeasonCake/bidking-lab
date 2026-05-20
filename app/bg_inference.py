@@ -23,6 +23,15 @@ READING_FP_KEYS: tuple[str, ...] = (
     "red_confirmed_none", "small_warehouse_confirmed",
 )
 
+# Subset that actually changes MC filter / session buckets (TB #31: not avg_*).
+MC_FILTER_FP_KEYS: tuple[str, ...] = tuple(
+    k for k in READING_FP_KEYS
+    if k not in (
+        "purple_avg_raw", "purple_avg_value",
+        "gold_avg_raw", "gold_avg_value",
+    )
+)
+
 
 def _box_log(box: dict[str, Any], message: str, *args: object) -> None:
     line = message % args if args else message
@@ -105,7 +114,7 @@ def hint_bundle_stale_report(
         report["reasons"].append("map_id")
     snap = bundle.get("readings_snap")
     if isinstance(snap, dict):
-        for key in READING_FP_KEYS:
+        for key in MC_FILTER_FP_KEYS:
             old, new = snap.get(key), obs_state.get(key)
             if old != new:
                 report["changed_fields"].append(

@@ -85,9 +85,9 @@ def compute_hint_bundle(
             purple_tolerance=purple_tol, truths=truths,
         )
 
-    from bg_inference import READING_FP_KEYS, inference_fingerprint
+    from bg_inference import MC_FILTER_FP_KEYS, inference_fingerprint
 
-    readings_snap = {k: state.get(k) for k in READING_FP_KEYS}
+    readings_snap = {k: state.get(k) for k in MC_FILTER_FP_KEYS}
 
     try:
         from agent_debug_log import agent_debug_log

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from bidking_lab.inference.ground_truth import BucketTruth, SessionTruth
-from bidking_lab.inference.observation import QualityBucketObs, SessionObs
+from bidking_lab.inference.observation import QualityBucketObs, SessionObs, candidates_for_bucket, parse_reading
 from bidking_lab.inference.posterior import (
     _describe_constraints,
     _fallback_hard_buckets,
@@ -143,6 +143,39 @@ class TestFilterByObs:
         obs = _obs(72, r=red_obs)
         kept = filter_truths_by_obs(truths, obs, count_tol=5)
         assert len(kept) == 1
+
+    def test_avg_cells_only_does_not_filter_mc_truths(self):
+        """MC filter ignores avg_cells; preview enumeration may still use it."""
+        truths = [
+            _make_truth(warehouse=72, q4=(20, 8, 60_000, 0)),
+            _make_truth(warehouse=72, q4=(21, 7, 62_000, 0)),
+        ]
+        purple_obs = QualityBucketObs(quality=4, avg_cells=parse_reading("2.88"))
+        obs = _obs(72, p=purple_obs)
+        kept = filter_truths_by_obs(truths, obs)
+        assert len(kept) == 2
+
+    def test_value_sum_still_filters_when_preview_avg_inconsistent(self):
+        """Hard value_sum reaches MC even if avg-only preview would warn."""
+        truths = [
+            _make_truth(warehouse=123, q4=(20, 8, 50_630, 0)),
+            _make_truth(warehouse=123, q4=(20, 8, 80_000, 0)),
+        ]
+        purple_obs = QualityBucketObs(
+            quality=4,
+            value_sum=50_630,
+            avg_cells=parse_reading("1.90"),
+            count=8,
+        )
+        cands = candidates_for_bucket(
+            purple_obs, warehouse_capacity=123, other_known_cells=63,
+        )
+        assert cands == [] or all(c.total_cells >= c.count for c in cands)
+
+        obs = _obs(123, p=QualityBucketObs(quality=4, value_sum=50_630))
+        kept = filter_truths_by_obs(truths, obs, warehouse_tol=8, value_rel_tol=0.02)
+        assert len(kept) == 1
+        assert kept[0].buckets[4].value_sum == 50_630
 
 
 # -------------------- adaptive_filter --------------------

@@ -12,6 +12,7 @@ if str(_APP) not in sys.path:
     sys.path.insert(0, str(_APP))
 
 from bg_inference import (
+    MC_FILTER_FP_KEYS,
     READING_FP_KEYS,
     hint_bundle_stale_report,
     inference_fingerprint,
@@ -72,6 +73,24 @@ def test_hint_bundle_stale_report_field_diff():
     assert report["stale"] is True
     assert "readings_changed" in report["reasons"]
     assert any(d["key"] == "blue_cells" for d in report["changed_fields"])
+
+
+def test_hint_bundle_stale_report_ignores_avg_cells_only_change():
+    state = _fake_state(purple_avg_raw="2.88")
+    snap = {k: state.get(k) for k in MC_FILTER_FP_KEYS}
+    bundle = {
+        "map_id": 1001,
+        "warehouse_cells": 120,
+        "readings_fp": inference_fingerprint(state, {}, seed_stable=True),
+        "readings_snap": snap,
+    }
+    changed = dict(state)
+    changed["purple_avg_raw"] = "1.90"
+    report = hint_bundle_stale_report(
+        bundle, changed, inference_ready=True,
+    )
+    assert report["stale"] is False
+    assert report["changed_fields"] == []
 
 
 def test_hint_bundle_stale_report_warehouse_only():
