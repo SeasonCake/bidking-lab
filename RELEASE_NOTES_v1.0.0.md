@@ -8,10 +8,11 @@ Phase 1A 稳定版：**读数输入 · MC 出价推荐 · OCR 抓屏（可选）
 
 | 文件 | 说明 |
 |------|------|
-| **`bidking-lab-v1.0.0.zip`** | 一站式包：解压 → 双击 `start_ui.ps1` |
+| **`bidking-lab-v1.0.0-portable.zip`** | **便携版（推荐玩家）**：解压 → 双击 `启动.bat`，无需安装 Python |
+| **`bidking-lab-v1.0.0.zip`** | 标准版：需本机 Python 3.10+，双击 `start_ui.ps1` |
 | Source code (zip) | 开发者源码（需自行 `pip install` + 复制游戏表） |
 
-玩家请优先下载 **`bidking-lab-v1.0.0.zip`**，不要只用 Source code。
+玩家**无 Python** 请下载 **`-portable.zip`**；已有 Python 可选标准版（体积更小）。
 
 ---
 
@@ -23,13 +24,13 @@ Phase 1A 稳定版：**读数输入 · MC 出价推荐 · OCR 抓屏（可选）
 
 ---
 
-## 3 步上手
+## 3 步上手（便携版）
 
-1. 解压 `bidking-lab-v1.0.0.zip`
-2. 双击 **`start_ui.ps1`**（首次自动建 venv、装依赖，约 1–3 分钟）
+1. 解压 **`bidking-lab-v1.0.0-portable.zip`**
+2. 双击 **`启动.bat`**
 3. 浏览器打开 http://localhost:8501
 
-详见包内 **`RELEASE_QUICKSTART.zh-CN.md`**。
+标准版（需 Python）：解压 `bidking-lab-v1.0.0.zip` → 双击 `start_ui.ps1`。详见各包内说明文档。
 
 ---
 
