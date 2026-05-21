@@ -60,6 +60,16 @@ https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
 
 ## 30 秒上手 · Quick start
 
+### 玩家 · Release 包（推荐）
+
+1. 打开 [GitHub Releases](https://github.com/SeasonCake/bidking-lab/releases) 下载 **`bidking-lab-v1.0.0.zip`**
+2. 解压后双击 **`start_ui.ps1`**
+3. 浏览器打开 http://localhost:8501
+
+详见 [`RELEASE_QUICKSTART.zh-CN.md`](RELEASE_QUICKSTART.zh-CN.md)。
+
+### 开发者 · 从源码
+
 ```powershell
 cd bidking-lab
 python -m venv .venv
@@ -294,7 +304,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 **暂缓 / 可选**
 - ⏸ 秒/放仓 UI 与 tier 调参（P0-A）
 - ⏸ 均价 / ★ 格数进 MC（P2，见 #31）
-- ⏳ Progressive UI · BidMap 23 列 · GitHub Release 整合包
+- ⏳ Progressive UI · BidMap 23 列 · **[GitHub Release v1.0.0](https://github.com/SeasonCake/bidking-lab/releases)** 一站式 zip
 
 **明确不做**
 - per-item observation · 抽检 ROI 建模

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bidking-lab"
-version = "0.1.0"
-description = "Unofficial tools & experiments for BidKing (竞拍之王) — data extraction + simulation (WIP)."
+version = "1.0.0"
+description = "Unofficial tools for BidKing (竞拍之王) — observation inference + MC bidding hints."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

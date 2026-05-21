@@ -60,6 +60,16 @@ This is an unaffiliated hobby project. It **ships no game assets** — it decode
 
 ## Quick start
 
+### Players · Release zip (recommended)
+
+1. Download **`bidking-lab-v1.0.0.zip`** from [GitHub Releases](https://github.com/SeasonCake/bidking-lab/releases)
+2. Extract and double-click **`start_ui.ps1`**
+3. Open http://localhost:8501 in your browser
+
+See [`RELEASE_QUICKSTART.zh-CN.md`](RELEASE_QUICKSTART.zh-CN.md) (Chinese).
+
+### Developers · From source
+
 ```powershell
 cd bidking-lab
 python -m venv .venv
