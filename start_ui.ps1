@@ -39,7 +39,6 @@ if (-not (Test-Path $venvPy)) {
 Write-Host "安装 / 更新依赖（首次约 1–3 分钟）..." -ForegroundColor Cyan
 & $venvPy -m pip install -q --upgrade pip
 & $venvPy -m pip install -q -r requirements-release.txt
-& $venvPy -m pip install -q -e .
 
 $tablesDir = Join-Path $PSScriptRoot "data\raw\tables"
 $bidMap = Join-Path $tablesDir "BidMap.txt"
