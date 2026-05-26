@@ -56,6 +56,7 @@
 49. [全量 pytest 很慢，不适合每次 smoke test](#49-全量-pytest-很慢不适合每次-smoke-test)
 50. [OCR 推理后切回读数页，均格候选预览变「无合法候选」](#50-ocr-推理后切回读数页均格候选预览变无合法候选)
 51. [分析估算局部 top-1 过仓](#51-分析估算局部-top-1-过仓)
+52. [总藏品件数输入 90 被 UI 拒绝](#52-总藏品件数输入-90-被-ui-拒绝)
 
 ---
 
@@ -1713,6 +1714,42 @@ python -m pytest tests/test_joint.py tests/test_posterior.py -q
 ```
 
 新增回归断言：60 格仓库的紫/金组合应输出 `紫 30格`、`金 30格`。
+
+---
+
+## 52. 总藏品件数输入 90 被 UI 拒绝
+
+### 症状
+
+侧栏「总藏品件数」输入 `90` 时，Streamlit 弹出：
+
+```text
+Value must be less than or equal to 60.
+```
+
+类似的小型上限也存在于部分品质格数字段。
+
+### 原因
+
+UI 层早期给 `st.number_input` 写了 `max_value=60/80` 这类经验帽。它们不是游戏规则，
+也不是推理层约束。`items_per_session_max` 是游戏表里的地图生成件数范围，当前最大 44；
+它不能用来阻止玩家输入实际看到的仓库格数或 OCR 读数。
+
+### 修法（2026-05-26）
+
+移除仓库格数、总藏品件数、各品质总格数/件数输入框的小型 UI 上限。前端只保证非负整数；
+是否过仓、总件数是否矛盾，交给容量校验、joint 和 MC 过滤处理。
+
+### 验证
+
+```powershell
+python -m pytest -q tests\test_streamlit_input_limits.py tests\test_capture.py
+.\scripts\test_smoke.ps1
+python -m pytest -q
+```
+
+另用 `Pictures\Bidking*.png` 13 张截图跑 OCR/解析，确认可解析 `warehouse_cells=89`
+和多组 40-54 格品质读数；浏览器手测 `总藏品件数=90` 不再出现 `<=60` 错误。
 
 ---
 

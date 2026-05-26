@@ -1292,5 +1292,30 @@ ProtoHub 方向先做离线 fixture，不连接游戏进程；不注入、不改
 
 ---
 
+## Checkpoint #47 — 观测输入不应被 60/80 这类 UI 小上限截断（2026-05-26）
+
+### 发现
+
+`总藏品件数` 使用 `max_value=60`，部分品质格数使用 `max_value=60/80`。这会让
+Streamlit 在前端直接拒绝玩家输入 `90`，错误信息为
+`Value must be less than or equal to 60`。
+
+### 结论
+
+这些上限是 UI 旧假设，不是推理层规则。游戏表中的 `items_per_session_max`
+目前最大为 44，但这是地图抽样件数范围；它不能作为玩家手填/OCR 读数的前端硬帽。
+截图回归中也能解析到 `warehouse_cells=89` 和多组 40-54 格的品质读数。
+
+### 修复与验证
+
+- 移除仓库格数、总藏品件数、各品质总格数/件数输入框的小型 `max_value`。
+- 保留下游容量校验、joint 总件数约束和 MC 过滤，由推理层判断输入是否矛盾。
+- 新增回归：parser 接受 `本仓共有90件藏品`；主 UI 源码不再保留 `max_value=60/80`。
+- `Pictures\\Bidking*.png` 13 张截图 OCR/解析完成；浏览器验证 `总藏品件数=90`
+  可输入并应用，旧错误不出现。
+- 聚焦测试：`109 passed`；smoke：`418 passed, 13 deselected`；全量：`431 passed`。
+
+---
+
 > **项目全局进度与路线图已迁移至 [`PROGRESS.md`](PROGRESS.md)**。  
 > 本文件专注于每个 checkpoint 的技术细节。

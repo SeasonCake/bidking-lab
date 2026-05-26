@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-429_passing-2ea043)](./tests)
+[![Tests](https://img.shields.io/badge/tests-431_passing-2ea043)](./tests)
 [![Status](https://img.shields.io/badge/status-Phase_1A_stable-blueviolet)](./PROGRESS.md)
 
 ---
@@ -82,7 +82,7 @@ pip install -e .
 # 1) Daily smoke test (skips real OCR image regressions; ~10s)
 .\scripts\test_smoke.ps1
 
-# 2) Run the full test suite (429 tests, includes real OCR image regressions)
+# 2) Run the full test suite (431 tests, includes real OCR image regressions)
 pytest -q
 
 # 3) Launch the Streamlit dashboard
@@ -222,7 +222,7 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 |---|---|
 | Game tables parsed | 6 (BidMap / Drop / Item / BattleItem / Hero / Item_Type) |
 | Schema-typed entities | 1,132 items · 64 tools · 105 maps · 20 heroes |
-| Unit tests | **429**, all green |
+| Unit tests | **431**, all green |
 | Streamlit UI tabs | 4 (input / bidding hint / joint filtering / tool ROI) |
 | Notebooks | 5 (map value · hero ranking · inference demo · ROI snipe · end-to-end case) |
 | Phase 1A inference | **stable** — low-risk backlog closed; snipe/pass UI off |
@@ -299,7 +299,7 @@ Full roadmap in [`PROGRESS.md`](PROGRESS.md). Short version:
 - ✅ Field-scope UI copy + joint-constraint enumeration relax (C-31b)
 - ✅ P0-B: fallback preserves `huge_cells_override` (C-32)
 - ✅ LOO tool ROI + player-eyeball noise model
-- ✅ Screen capture + OCR prefill (C-35~39) · 7 notebooks · **429** unit tests · **51** TROUBLESHOOTING entries
+- ✅ Screen capture + OCR prefill (C-35~39) · 7 notebooks · **431** unit tests · **52** TROUBLESHOOTING entries
 - ✅ Bilingual README + demo video + screenshots
 
 **Deferred / optional**

@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-429_passing-2ea043)](./tests)
+[![Tests](https://img.shields.io/badge/tests-431_passing-2ea043)](./tests)
 [![Status](https://img.shields.io/badge/status-Phase_1A_推断稳定-blueviolet)](./PROGRESS.md)
 
 ---
@@ -82,7 +82,7 @@ pip install -e .
 # 1) 日常 smoke test（跳过真实 OCR 图片回归，约 10 秒）
 .\scripts\test_smoke.ps1
 
-# 2) 跑全量测试（429 个单测，含真实 OCR 图片回归）
+# 2) 跑全量测试（431 个单测，含真实 OCR 图片回归）
 pytest -q
 
 # 3) 启动 Streamlit 主界面
@@ -226,7 +226,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 |---|---|
 | 解析的游戏表 | 6 张（BidMap / Drop / Item / BattleItem / Hero / Item_Type） |
 | schema 化的实体 | 1132 件藏品 · 64 件道具 · 105 张地图 · 20 个英雄 |
-| 单测数 | **429**，全绿 |
+| 单测数 | **431**，全绿 |
 | Streamlit UI tabs | 4（读数输入 / 出价推荐 / 联合筛选 / 道具 ROI） |
 | Notebook | 5 册（map 价值分布 / 英雄排名 / 推断 demo / ROI snipe / 端到端 case） |
 | Phase 1A 推断 | **稳定** — 低风险项已落地；秒/放仓 UI 关闭 |

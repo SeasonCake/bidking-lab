@@ -2133,7 +2133,7 @@ with st.sidebar:
     sidebar_section("\u4ed3\u5e93\u4e0e\u4ef6\u6570", variant="warehouse", icon="\U0001f4e6")
     warehouse_cells = st.number_input(
         "\u4ed3\u5e93\u603b\u683c\u6570 *",
-        min_value=0, max_value=200, step=1,
+        min_value=0, step=1,
         value=None,
         placeholder="\u5fc5\u586b",
         key="obs_warehouse_cells",
@@ -2149,7 +2149,7 @@ with st.sidebar:
         )
     total_item_count = st.number_input(
         "\u603b\u85cf\u54c1\u4ef6\u6570",
-        min_value=0, max_value=60, step=1,
+        min_value=0, step=1,
         value=None,
         placeholder="\u53ef\u9009",
         key="obs_total_item_count",
@@ -3019,14 +3019,14 @@ if _main_tab == "obs":
                 c1, c2 = st.columns(2)
                 state["wg_cells"] = c1.number_input(
                     "\u767d+\u7eff \u5408\u5e76\u603b\u683c\u6570\uff08\u666e\u54c1\u626b\u63cf\u4e00\u6b21\u7ed9\u51fa\uff09",
-                    min_value=0, max_value=80, value=None, step=1,
+                    min_value=0, value=None, step=1,
                     placeholder="\u53ef\u9009",
                     help="\u666e\u54c1\u626b\u63cf\u6216\u76ee\u6d4b\u7ed9\u51fa\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
                     key=_rwk("obs_reading_wg_cells", st.session_state),
                 )
                 state["blue_cells"] = c2.number_input(
                     "\u84dd\u54c1\u603b\u683c\u6570\uff08\u826f\u54c1\u626b\u63cf\uff09",
-                    min_value=0, max_value=80, value=None, step=1,
+                    min_value=0, value=None, step=1,
                     placeholder="\u53ef\u9009",
                     help="\u826f\u54c1\u626b\u63cf\u7ed9\u51fa\u3002\u7559\u7a7a = \u672a\u63d0\u4f9b\u3002",
                     key=_rwk("obs_reading_blue_cells", st.session_state),
@@ -3048,33 +3048,33 @@ if _main_tab == "obs":
                     with c1:
                         state["white_cells"] = st.number_input(
                             "\u767d\u54c1\u683c\u6570\uff08R1 \u8f6e\u5ed3\uff09",
-                            min_value=0, max_value=60, step=1,
+                            min_value=0, step=1,
                             placeholder="0",
                             key=_rwk("obs_reading_white_cells", st.session_state),
                         )
                         state["white_count"] = st.number_input(
                             "\u767d\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
-                            min_value=0, max_value=30, step=1,
+                            min_value=0, step=1,
                             placeholder="0",
                             key=_rwk("obs_reading_white_count", st.session_state),
                         )
                     with c2:
                         state["green_cells"] = st.number_input(
                             "\u7eff\u54c1\u683c\u6570\uff08R2 \u8f6e\u5ed3\uff09",
-                            min_value=0, max_value=60, step=1,
+                            min_value=0, step=1,
                             placeholder="0",
                             key=_rwk("obs_reading_green_cells", st.session_state),
                         )
                         state["green_count"] = st.number_input(
                             "\u7eff\u54c1\u4ef6\u6570\uff08\u53ef\u9009\uff09",
-                            min_value=0, max_value=30, step=1,
+                            min_value=0, step=1,
                             placeholder="0",
                             key=_rwk("obs_reading_green_count", st.session_state),
                         )
                     with c3:
                         state["blue_cells"] = st.number_input(
                             "\u84dd\u54c1\u683c\u6570\uff08R3 \u8f6e\u5ed3\uff09",
-                            min_value=0, max_value=80, step=1,
+                            min_value=0, step=1,
                             placeholder="0",
                             key=_rwk("obs_reading_blue_cells", st.session_state),
                         )
@@ -3089,7 +3089,7 @@ if _main_tab == "obs":
                     with c1:
                         state["white_cells"] = st.number_input(
                             "\u767d+\u7eff \u5408\u5e76\u603b\u683c\u6570",
-                            min_value=0, max_value=80, step=1,
+                            min_value=0, step=1,
                             placeholder="0",
                             key=_rwk("obs_reading_white_cells", st.session_state),
                         )
@@ -3104,7 +3104,7 @@ if _main_tab == "obs":
                     with c2:
                         state["blue_cells"] = st.number_input(
                             "\u84dd\u54c1\u683c\u6570\uff08R3 \u8f6e\u5ed3\uff09",
-                            min_value=0, max_value=80, step=1,
+                            min_value=0, step=1,
                             placeholder="0",
                             key=_rwk("obs_reading_blue_cells", st.session_state),
                         )
@@ -3163,7 +3163,7 @@ if _main_tab == "obs":
                 base_widget_key="obs_reading_purple_cells",
                 widget_return=pr1c1.number_input(
                     "\u7d2b\u54c1\u603b\u683c\u6570",
-                    min_value=0, max_value=80, value=None, step=1,
+                    min_value=0, value=None, step=1,
                     placeholder="\u53ef\u9009",
                     help="\u4f18\u54c1\u626b\u63cf \u6216 \u7d2b\u54c1\u8f6e\u5ed3\u6570\u51fa\u3002"
                          "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u7d2b\u54c1\u3002",
@@ -3178,7 +3178,7 @@ if _main_tab == "obs":
                 base_widget_key="obs_reading_purple_count",
                 widget_return=pr1c2.number_input(
                     "\u7d2b\u54c1\u4ef6\u6570",
-                    min_value=0, max_value=30, value=None, step=1,
+                    min_value=0, value=None, step=1,
                     placeholder="\u53ef\u9009",
                     help="\u827e\u838e R4 \u8f6e\u5ed3\u53ef\u6570\u51fa\uff1b\u4f0a\u68ee\u5728\u7d2b\u54c1\u626b\u63cf\u540e\u4e5f\u80fd\u6570\u3002"
                          "\u586b\u4e86\u540e\u8054\u5408\u63a8\u65ad\u7684\u7d2b\u54c1 bucket \u4f1a\u88ab\u552f\u4e00\u9501\u5b9a\u3002",
@@ -3348,7 +3348,7 @@ if _main_tab == "obs":
                 base_widget_key="obs_reading_gold_cells",
                 widget_return=gr1c1.number_input(
                     "\u91d1\u54c1\u603b\u683c\u6570",
-                    min_value=0, max_value=80, value=None, step=1,
+                    min_value=0, value=None, step=1,
                     placeholder="\u53ef\u9009",
                     help="\u5730\u56fe\u63d0\u4f9b\u300c\u91d1\u8272\u85cf\u54c1\u603b\u683c\u6570\u300d\u63d0\u793a\u65f6\u586b\u5165\u3002"
                          "\u7559\u7a7a = \u672a\u63d0\u4f9b\uff1b\u586b 0 = \u786e\u8ba4\u65e0\u91d1\u54c1\u3002",
@@ -3534,7 +3534,7 @@ if _main_tab == "obs":
 
             state["red_cells_total"] = st.number_input(
                 "\u7ea2\u54c1\u603b\u683c\u6570\uff08\u73cd\u54c1\u626b\u63cf / \u5730\u56fe hint\uff09",
-                min_value=0, max_value=200, value=None, step=1,
+                min_value=0, value=None, step=1,
                 placeholder="\u53ef\u9009",
                 disabled=red_locked,
                 help="\u4f0a\u68ee \u73cd\u54c1\u626b\u63cf \u9053\u5177\u8bfb\u51fa\u7684\u7ea2\u54c1\u603b\u683c\u6570\u3002"
