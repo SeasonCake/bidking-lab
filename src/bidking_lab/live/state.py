@@ -133,6 +133,27 @@ def mark_ready(state: LiveSessionState) -> LiveSessionState:
     return replace(state, dirty=False)
 
 
+def summarize_field_sources(
+    state: LiveSessionState,
+    *,
+    limit: int = 20,
+) -> tuple[dict[str, Any], ...]:
+    """Return compact rows for UI/debug display of field provenance."""
+    rows: list[dict[str, Any]] = []
+    for path, observed in sorted(state.fields.items()):
+        rows.append(
+            {
+                "field": ".".join(path),
+                "value": observed.value,
+                "source": observed.source,
+                "confidence": observed.confidence,
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return tuple(rows)
+
+
 def _field_value(state: LiveSessionState, path: tuple[str, ...]) -> Any:
     field_value = state.fields.get(path)
     if field_value is None:
@@ -247,4 +268,5 @@ __all__ = (
     "live_state_to_session_obs",
     "mark_ready",
     "should_replace_field",
+    "summarize_field_sources",
 )

@@ -12,8 +12,8 @@
 
 已验证基线：
 
-- `pytest -q`：431 passed。
-- `.\scripts\test_smoke.ps1`：418 passed，13 个真实 OCR 图片回归 deselected。
+- `pytest -q`：432 passed。
+- `.\scripts\test_smoke.ps1`：419 passed，13 个真实 OCR 图片回归 deselected。
 - `python scripts/demo_scenarios.py`：端到端 demo 正常。
 - 后台 MC 慢的首个明确瓶颈是 anthology 地图重复 `flatten_pool`，已用 `SessionTruthSampler` 预编译采样器解决。
 - 已新增 `bidking_lab.live` 薄接口层，为未来手填 / OCR / packet 统一观测事件预留接口。

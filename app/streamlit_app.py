@@ -1568,6 +1568,24 @@ def _record_live_observation_snapshot(
     st.session_state["_last_live_observation_batch"] = batch
 
 
+def _render_live_source_summary() -> None:
+    """Show shadow live-field provenance without changing inference input."""
+    from bidking_lab.live import LiveSessionState, summarize_field_sources
+
+    live_state = st.session_state.get("_live_session_state")
+    if not isinstance(live_state, LiveSessionState):
+        return
+    rows = list(summarize_field_sources(live_state, limit=24))
+    if not rows:
+        return
+    with st.expander("\u89c2\u6d4b\u6765\u6e90\uff08shadow\uff09", expanded=False):
+        st.caption(
+            "\u5f53\u524d\u63a8\u8350\u4ecd\u8d70 legacy obs\uff1b\u8fd9\u91cc\u53ea\u7528\u6765\u6838\u5bf9\u624b\u586b/OCR/"
+            "packet \u5207\u6362\u524d\u7684\u5b57\u6bb5\u6765\u6e90\u4e0e\u8986\u76d6\u89c4\u5219\u3002"
+        )
+        st.dataframe(rows, hide_index=True, width="stretch")
+
+
 def _apply_pending_capture(
     obs_state: dict,
     *,
@@ -2330,7 +2348,6 @@ with st.sidebar:
             "\u26a0\ufe0f \u672a\u8bc6\u522b\u4ed3\u5e93\u603b\u683c\u6570\uff08\u9876\u90e8\u300c\u6240\u6709\u85cf\u54c1\u603b\u5360\u7528\u2026\u683c\u300d\uff09\uff0c"
             "\u8bf7\u624b\u52a8\u586b\u5199\u4ef6\u5fc5\u586b\u9879\u3002"
         )
-
     st.session_state["_tracked_map_id"] = _resolved_mid
     st.session_state["_tracked_map_category"] = category
     if st.session_state.pop("_map_change_toast", False):
@@ -2425,6 +2442,8 @@ _record_live_observation_snapshot(
     source="manual",
     event_kind="manual_update",
 )
+with st.sidebar:
+    _render_live_source_summary()
 # #region agent log
 agent_debug_log(
     location="streamlit_app.py:after_global_hydrate_sync",

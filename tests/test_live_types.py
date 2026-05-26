@@ -10,6 +10,7 @@ from bidking_lab.live import (
     live_state_to_session_obs,
     mark_ready,
     source_priority,
+    summarize_field_sources,
 )
 
 
@@ -255,6 +256,46 @@ def test_mark_ready_clears_dirty_without_changing_version() -> None:
 
     assert ready.version == state.version
     assert ready.dirty is False
+
+
+def test_summarize_field_sources_returns_stable_debug_rows() -> None:
+    state = apply_observation_batch(
+        LiveSessionState(),
+        LiveObservationBatch(
+            source="manual",
+            field_updates=(
+                FieldUpdate(
+                    path=("session", "hero"),
+                    value="ethan",
+                    source="manual",
+                    confidence="exact",
+                ),
+                FieldUpdate(
+                    path=("bucket", "4", "avg_cells"),
+                    value="2.90",
+                    source="ocr",
+                    confidence="high",
+                ),
+            ),
+        ),
+    )
+
+    rows = summarize_field_sources(state)
+
+    assert rows == (
+        {
+            "field": "bucket.4.avg_cells",
+            "value": "2.90",
+            "source": "ocr",
+            "confidence": "high",
+        },
+        {
+            "field": "session.hero",
+            "value": "ethan",
+            "source": "manual",
+            "confidence": "exact",
+        },
+    )
 
 
 def test_heartbeat_metadata_update_does_not_make_inference_stale() -> None:
