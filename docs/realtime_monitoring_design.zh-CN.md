@@ -105,6 +105,10 @@ reducer 仍可以存储 `heartbeat` 元数据并增加 state version，但不会
 已有手填值，而 live reducer 的目标规则是 `manual > ocr`。届时应让界面明确显示来源
 并提供用户确认/解除手填覆盖的操作，而不是静默改变读数。
 
+当前 shadow UI 已显示字段赢家来源，并会列出最近一次被更高优先级来源挡住的更新；
+这只是诊断层，不改变 legacy obs 推理输入。后续 canonical input 切换前仍需要在读数
+输入区提供明确的“允许 OCR 覆盖手填”交互。
+
 ---
 
 ## ProtoHub / 抓包方向可行性评估

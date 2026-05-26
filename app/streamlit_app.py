@@ -1529,6 +1529,7 @@ def _record_live_observation_snapshot(
         LiveSessionState,
         apply_observation_batch,
         live_batch_from_legacy_obs,
+        summarize_blocked_field_updates,
     )
 
     prior = (
@@ -1557,10 +1558,14 @@ def _record_live_observation_snapshot(
     )
     st.session_state["_live_legacy_snapshot"] = dict(obs_state)
     if not batch.field_updates:
+        st.session_state["_last_live_blocked_updates"] = []
         return
     live_state = st.session_state.get("_live_session_state")
     if not isinstance(live_state, LiveSessionState):
         live_state = LiveSessionState()
+    st.session_state["_last_live_blocked_updates"] = list(
+        summarize_blocked_field_updates(live_state, batch, limit=24)
+    )
     st.session_state["_live_session_state"] = apply_observation_batch(
         live_state,
         batch,
@@ -1584,6 +1589,13 @@ def _render_live_source_summary() -> None:
             "packet \u5207\u6362\u524d\u7684\u5b57\u6bb5\u6765\u6e90\u4e0e\u8986\u76d6\u89c4\u5219\u3002"
         )
         st.dataframe(rows, hide_index=True, width="stretch")
+        blocked = st.session_state.get("_last_live_blocked_updates") or []
+        if blocked:
+            st.caption(
+                "最近一次观测里，以下字段被当前更高优先级来源保留。"
+                "这用于提前核对 packet > manual > OCR > derived 规则。"
+            )
+            st.dataframe(blocked, hide_index=True, width="stretch")
 
 
 def _apply_pending_capture(

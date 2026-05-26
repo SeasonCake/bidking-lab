@@ -10,6 +10,7 @@ from bidking_lab.live import (
     live_state_to_session_obs,
     mark_ready,
     source_priority,
+    summarize_blocked_field_updates,
     summarize_field_sources,
 )
 
@@ -296,6 +297,49 @@ def test_summarize_field_sources_returns_stable_debug_rows() -> None:
             "confidence": "exact",
         },
     )
+
+
+def test_summarize_blocked_field_updates_reports_lower_priority_attempts() -> None:
+    state = apply_observation_batch(
+        LiveSessionState(),
+        LiveObservationBatch(
+            source="manual",
+            field_updates=(
+                FieldUpdate(
+                    path=("bucket", "4", "value_sum"),
+                    value=86_490,
+                    source="manual",
+                    confidence="exact",
+                ),
+            ),
+        ),
+    )
+    batch = LiveObservationBatch(
+        source="ocr",
+        field_updates=(
+            FieldUpdate(
+                path=("bucket", "4", "value_sum"),
+                value=80_000,
+                source="ocr",
+                confidence="high",
+            ),
+        ),
+    )
+
+    rows = summarize_blocked_field_updates(state, batch)
+    updated = apply_observation_batch(state, batch)
+
+    assert rows == (
+        {
+            "field": "bucket.4.value_sum",
+            "attempted_value": 80_000,
+            "attempted_source": "ocr",
+            "kept_value": 86_490,
+            "kept_source": "manual",
+            "reason": "lower_priority_source",
+        },
+    )
+    assert updated.fields[("bucket", "4", "value_sum")].value == 86_490
 
 
 def test_heartbeat_metadata_update_does_not_make_inference_stale() -> None:

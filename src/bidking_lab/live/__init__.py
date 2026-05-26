@@ -23,6 +23,7 @@ from bidking_lab.live.state import (
     live_state_to_session_obs,
     mark_ready,
     should_replace_field,
+    summarize_blocked_field_updates,
     summarize_field_sources,
 )
 from bidking_lab.live.legacy import (
@@ -44,6 +45,7 @@ __all__ = (
     "live_state_to_session_obs",
     "mark_ready",
     "should_replace_field",
+    "summarize_blocked_field_updates",
     "summarize_field_sources",
     "legacy_obs_fields",
     "live_batch_from_legacy_obs",

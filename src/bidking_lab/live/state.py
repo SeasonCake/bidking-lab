@@ -154,6 +154,40 @@ def summarize_field_sources(
     return tuple(rows)
 
 
+def summarize_blocked_field_updates(
+    state: LiveSessionState,
+    batch: LiveObservationBatch,
+    *,
+    limit: int = 20,
+) -> tuple[dict[str, Any], ...]:
+    """Return attempted updates that would not replace current fields."""
+    rows: list[dict[str, Any]] = []
+    for update in batch.field_updates:
+        old_field = state.fields.get(update.path)
+        if old_field is None:
+            continue
+        new_field = _observed_from_update(update)
+        if should_replace_field(old_field, new_field):
+            continue
+        if source_priority(new_field.source) < source_priority(old_field.source):
+            reason = "lower_priority_source"
+        else:
+            reason = "older_or_lower_confidence"
+        rows.append(
+            {
+                "field": ".".join(update.path),
+                "attempted_value": new_field.value,
+                "attempted_source": new_field.source,
+                "kept_value": old_field.value,
+                "kept_source": old_field.source,
+                "reason": reason,
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return tuple(rows)
+
+
 def _field_value(state: LiveSessionState, path: tuple[str, ...]) -> Any:
     field_value = state.fields.get(path)
     if field_value is None:
@@ -268,5 +302,6 @@ __all__ = (
     "live_state_to_session_obs",
     "mark_ready",
     "should_replace_field",
+    "summarize_blocked_field_updates",
     "summarize_field_sources",
 )
