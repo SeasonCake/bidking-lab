@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-406_passing-2ea043)](./tests)
+[![Tests](https://img.shields.io/badge/tests-429_passing-2ea043)](./tests)
 [![Status](https://img.shields.io/badge/status-Phase_1A_推断稳定-blueviolet)](./PROGRESS.md)
 
 ---
@@ -45,6 +45,8 @@ https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
 
 非官方爱好项目，**不附带任何游戏资源**——只解码玩家本地安装的数据，并产出*推导后的 JSON*。
 
+当前优化路线见 [`docs/optimization_roadmap.zh-CN.md`](docs/optimization_roadmap.zh-CN.md)。
+
 ---
 
 ## 为什么做这个 · Why
@@ -77,16 +79,19 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 
-# 1) 跑测试（406 个单测）
+# 1) 日常 smoke test（跳过真实 OCR 图片回归，约 10 秒）
+.\scripts\test_smoke.ps1
+
+# 2) 跑全量测试（429 个单测，含真实 OCR 图片回归）
 pytest -q
 
-# 2) 启动 Streamlit 主界面
+# 3) 启动 Streamlit 主界面
 streamlit run app/streamlit_app.py
 
-# 3) 终端跑三场景端到端 demo（看不到图，看数）
+# 4) 终端跑三场景端到端 demo（看不到图，看数）
 python scripts/demo_scenarios.py
 
-# 4) 浏览端到端案例 notebook（含分布直方图）
+# 5) 浏览端到端案例 notebook（含分布直方图）
 jupyter notebook notebooks/05_end_to_end_case.ipynb
 ```
 
@@ -180,7 +185,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 
 - 侧栏 **抓取当前屏幕**（`mss` + 信息区 ROI）；识别结果写入读数 tab，**不**自动填仓库格数。
 - 换图/换类别会 **清空读数** 并取消进行中的后台 MC（C-39）；OCR 残留导致预览 ⚠️ 见 **#42**。
-- 推断慢多为 **MC 采样冷缓存**（`sample_ms`），见 [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) **#41**；启动暖机见 **#40**。
+- 推断慢多为 **MC 采样冷缓存**（`sample_ms`），见 [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) **#41**；启动已改为 OCR 首次使用时按需加载，见 **#40**。
 - 演示 notebook：[`07_capture_readings_and_mc_perf.ipynb`](notebooks/07_capture_readings_and_mc_perf.ipynb)。
 
 ### 6. 42 条 TROUBLESHOOTING.md，四段式踩坑归档
@@ -221,11 +226,11 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 |---|---|
 | 解析的游戏表 | 6 张（BidMap / Drop / Item / BattleItem / Hero / Item_Type） |
 | schema 化的实体 | 1132 件藏品 · 64 件道具 · 105 张地图 · 20 个英雄 |
-| 单测数 | **406**，全绿 |
-| Streamlit UI tabs | 4（读数输入 / 出价推荐 / 道具 ROI / 联合推断·实验性） |
+| 单测数 | **429**，全绿 |
+| Streamlit UI tabs | 4（读数输入 / 出价推荐 / 联合筛选 / 道具 ROI） |
 | Notebook | 5 册（map 价值分布 / 英雄排名 / 推断 demo / ROI snipe / 端到端 case） |
 | Phase 1A 推断 | **稳定** — 低风险项已落地；秒/放仓 UI 关闭 |
-| Commit 历史 | C-1 ~ C-34，详见 PROGRESS 提交历史 |
+| Commit 历史 | C-1 ~ C-44，详见 PROGRESS 提交历史 |
 
 ---
 
@@ -245,7 +250,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | `docs/project_vision.md` | 原始三层架构设计 |
 | **`PROGRESS.md`** | **新协作者起点**：项目全貌 + 当前状态 + 路线图 |
 | **`OBSERVATIONS.md`** | **技术发现日志**：每个 checkpoint 的关键发现 |
-| **`docs/INSTRUCTIONS.zh-CN.md`** | **玩家操作说明**（流程图、四 Tab、抓屏顺序）— 启动等待页可跳转 |
+| **`docs/INSTRUCTIONS.zh-CN.md`** | **玩家操作说明**（流程图、四 Tab、抓屏顺序） |
 | **`TROUBLESHOOTING.md`** | **39 条** — 踩坑归档 + [#33 影响矩阵](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期) + [#37–40 Capture/UI](TROUBLESHOOTING.md#37-紫品均格-ocr-有数但输入框为空) |
 
 ### 我们 ship 的数据 vs 我们不 ship 的
@@ -296,10 +301,10 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 - ✅ LOO 道具 ROI + 眼估噪声 · 5 册 notebook · **360** 单测 · **39** 条 TROUBLESHOOTING
 - ✅ 双语 README + 演示视频 + 截图
 
-**下一项（C-38）**
+**启动体验（C-56）**
 - ✅ **操作说明** — [`docs/INSTRUCTIONS.zh-CN.md`](docs/INSTRUCTIONS.zh-CN.md) + Streamlit「操作说明」子页
-- ⏳ **暖机后台化 / 抓屏按钮门控** — 等待 UI 已有链接与游戏占位
-- ⏸ 暖机小游戏（Canvas）— 暂缓
+- ✅ **启动去阻塞** — 首屏不初始化 OCR；首次 OCR 操作按需加载模型
+- ✅ **不再需要暖机等待占位** — 手填与 tab 浏览可立即开始
 
 **暂缓 / 可选**
 - ⏸ 秒/放仓 UI 与 tier 调参（P0-A）

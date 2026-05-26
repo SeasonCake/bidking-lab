@@ -1,107 +1,353 @@
-"""Experimental Streamlit tabs that are not part of the core flow.
+"""Streamlit tab for session-level joint candidate filtering.
 
-These are kept around because the code is wired up correctly and may
-become useful when the engine grows new features (e.g. when
-``SessionObs`` learns about ``unconfirmed_huge_shapes`` and the joint
-table can actually pin down meaningful (cells × count) combinations
-for unobserved buckets).
-
-For the current core flow (价格区间 + 秒仓/放仓 + 道具 ROI), the joint
-table tends to return three near-identical hypotheses because the user
-has already fixed ``total_cells`` for every observed bucket, leaving
-only ``count`` as a degree of freedom — not enough variation to give
-useful information. So we hide it behind a sidebar toggle.
-
-Re-enable via the "高级 → 显示实验性 tab" checkbox in the sidebar.
+The joint engine is most useful when the player has partial readings
+such as avg-cells / avg-value / value-sum but not exact bucket cells.
+It combines the per-bucket candidates under one warehouse capacity
+constraint, so locally good but globally over-budget combinations get
+demoted.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 import streamlit as st
 
-from bidking_lab.inference.joint import joint_top_k_for_session
+from bidking_lab.inference.joint import JointHypothesis, joint_top_k_for_session
+from bidking_lab.inference.observation import (
+    BucketCandidate,
+    QualityBucketObs,
+    SessionObs,
+    candidates_for_bucket,
+)
 from bidking_lab.inference.quality_priors import PER_CELL_VALUE_DEFAULT
 
 QUALITY_LABEL = {1: "白品", 2: "绿品", 3: "蓝品", 4: "紫品", 5: "金品", 6: "红品"}
 
 
-def render_joint_inference_tab(*, session_builder, state, per_bucket_top: int):
-    """Render the joint posterior tab.
+def _reading_raw(bucket: QualityBucketObs) -> str:
+    if bucket.avg_cells is None:
+        return ""
+    return str(getattr(bucket.avg_cells, "raw", bucket.avg_cells))
 
-    Parameters
-    ----------
-    session_builder
-        Zero-arg callable that returns a fresh ``SessionObs`` from the
-        current sidebar/tab inputs.
-    state
-        ``st.session_state.obs`` dict.
-    per_bucket_top
-        Search width forwarded to ``joint_top_k_for_session``.
-    """
-    st.subheader("联合后验 — top-3 仓库组成假设  ⚗️ 实验性")
-    st.caption(
-        "枚举所有品质 bucket 的可能【总格数×件数】组合，加上仓库容量软罚分，"
-        "输出综合 score 最低的 3 个。composite 越小越紧。"
-    )
-    st.info(
-        "💡 当前若所有 bucket 都给了 `total_cells`，top-3 只会在 `count` 上有微小差异，"
-        "看着像 '三个结果一样'。这个表在你**只给了均格/估值、未给总格数**时才能看到真正的"
-        "组合枚举效果。"
+
+def _bucket_constraints(bucket: QualityBucketObs) -> str:
+    parts: list[str] = []
+    if bucket.total_cells is not None:
+        parts.append(f"格数={bucket.total_cells}")
+    if bucket.count is not None:
+        parts.append(f"件数={bucket.count}")
+    if bucket.avg_cells is not None:
+        parts.append(f"均格={_reading_raw(bucket)}")
+    if bucket.value_sum is not None and bucket.value_sum > 0:
+        parts.append(f"总估价={bucket.value_sum:,}")
+    if bucket.avg_value is not None and bucket.avg_value > 0:
+        parts.append(f"均价={bucket.avg_value:,.2f}/件")
+    if bucket.value_range is not None:
+        lo, hi = bucket.value_range
+        parts.append(f"估价区间={lo:,}-{hi:,}")
+    if bucket.huge_band != "none":
+        huge = f"巨物={bucket.huge_band}"
+        if bucket.huge_cells_override:
+            huge += f"({bucket.huge_cells_override}格)"
+        parts.append(huge)
+    return "；".join(parts) if parts else "未提供约束"
+
+
+def _session_fingerprint(session: SessionObs, per_bucket_top: int) -> tuple[Any, ...]:
+    bucket_parts: list[tuple[Any, ...]] = []
+    for q in sorted(session.buckets):
+        b = session.buckets[q]
+        bucket_parts.append(
+            (
+                q,
+                _reading_raw(b),
+                b.total_cells,
+                b.total_cells_approx,
+                b.count,
+                b.value_sum,
+                b.avg_value,
+                b.value_range,
+                b.huge_band,
+                b.huge_cells_override,
+            )
+        )
+    return (
+        session.map_id,
+        session.hero,
+        session.warehouse_total_cells,
+        session.warehouse_total_cells_approx,
+        session.total_item_count,
+        per_bucket_top,
+        tuple(bucket_parts),
     )
 
-    if st.button("运行联合推断", key="run_joint", type="primary"):
-        session = session_builder()
-        with st.spinner("联合枚举中..."):
-            hyps = joint_top_k_for_session(
-                session, k=3, per_bucket_top=per_bucket_top,
+
+def _local_top1_by_quality(session: SessionObs) -> dict[int, BucketCandidate]:
+    capacity = session.warehouse_capacity()
+    out: dict[int, BucketCandidate] = {}
+    for q, bucket in session.buckets.items():
+        cands = candidates_for_bucket(bucket, warehouse_capacity=capacity)
+        if cands:
+            out[q] = cands[0]
+    return out
+
+
+def _joint_context(
+    session: SessionObs,
+    *,
+    per_bucket_top: int,
+    k: int,
+) -> tuple[list[JointHypothesis], dict[int, BucketCandidate]]:
+    hyps = joint_top_k_for_session(
+        session,
+        k=k,
+        per_bucket_top=per_bucket_top,
+        warehouse_slack=5,
+    )
+    return hyps, _local_top1_by_quality(session)
+
+
+def _result_badge(capacity: int, total_cells: int) -> tuple[str, str]:
+    gap = capacity - total_cells
+    if gap > 0:
+        return "未占满", f"剩余 {gap} 格可由未填品质或误差解释"
+    if gap == 0:
+        return "刚好占满", "已观测 bucket 刚好覆盖仓库"
+    return "过仓", f"超出 {-gap} 格，依赖 slack/软罚保留"
+
+
+def _render_summary(
+    *,
+    session: SessionObs,
+    hyps: list[JointHypothesis],
+    local_top1: dict[int, BucketCandidate],
+) -> None:
+    top = hyps[0]
+    capacity = session.warehouse_capacity()
+    local_total = sum(c.total_cells for c in local_top1.values())
+    gap = capacity - top.total_cells
+    local_gap = capacity - local_total
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("联合 top-1 格数", f"{top.total_cells}", f"{gap:+d} vs 仓库")
+    c2.metric("独立 top-1 合计", f"{local_total}", f"{local_gap:+d} vs 仓库")
+    c3.metric("组合评分", f"{top.composite:.3f}")
+    c4.metric("过仓罚分", f"{top.warehouse_penalty:.2f}")
+
+    demoted = []
+    for q, joint_cand in top.per_bucket.items():
+        local_cand = local_top1.get(q)
+        if local_cand and (
+            local_cand.total_cells != joint_cand.total_cells
+            or local_cand.count != joint_cand.count
+        ):
+            demoted.append(
+                f"{QUALITY_LABEL.get(q, f'q{q}')} {local_cand.total_cells}格/{local_cand.count}件"
+                f" → {joint_cand.total_cells}格/{joint_cand.count}件"
             )
-        if not hyps:
-            st.warning(
-                "未产生假设 — 可能输入中 bucket cells 总和超出仓库容量太多，"
-                "或某个 bucket 的 cells/value 组合不存在。"
-            )
-        else:
-            for rank, hyp in enumerate(hyps, start=1):
-                with st.container(border=True):
-                    st.markdown(
-                        f"**第 {rank} 名**  ·  综合评分 "
-                        f"`{hyp.composite:.3f}`  ·  总格数 "
-                        f"`{hyp.total_cells}`  ·  仓库超容罚分 "
-                        f"`{hyp.warehouse_penalty:.2f}`"
-                    )
-                    rows = []
-                    confirmed_cells = sum(
-                        c.total_cells for c in hyp.per_bucket.values()
-                    )
-                    capacity = session.warehouse_capacity() or 0
-                    leftover_cells = max(0, capacity - confirmed_cells)
-                    for q in (1, 2, 3, 4, 5, 6):
-                        c = hyp.per_bucket.get(q)
-                        if c is None:
-                            rows.append({
-                                "品质": f"{QUALITY_LABEL[q]} (q={q})",
-                                "总格数": "—",
-                                "件数": "—",
-                                "均格": "—",
-                                "每格估值": "—",
-                                "价值一致度": "—",
-                            })
-                            continue
-                        avg = c.total_cells / c.count if c.count > 0 else 0
-                        per_cell = PER_CELL_VALUE_DEFAULT.get(q, 0)
-                        rows.append({
-                            "品质": f"{QUALITY_LABEL[q]} (q={q})",
-                            "总格数": c.total_cells,
-                            "件数": c.count,
-                            "均格": f"{avg:.2f}",
-                            "每格估值": f"{per_cell:,}",
-                            "价值一致度": f"{c.value_score:.3f}",
-                        })
-                    st.table(rows)
-                    st.caption(
-                        f"已确认 {confirmed_cells} 格 · 未记录 {leftover_cells} 格"
-                        "（未提供读数的 bucket，价值靠先验估计）。"
-                        "价值一致度越小越加紧，0 = 仅依赖格数、未提供估价。"
-                    )
+    if demoted:
+        st.info("联合筛选为了满足仓库总格约束，调整了：" + "；".join(demoted))
     else:
-        st.info("设置好读数后点击上面按钮。")
+        st.caption("联合 top-1 与各 bucket 独立 top-1 一致；当前读数之间没有明显容量冲突。")
+
+
+def _render_hypothesis(
+    *,
+    rank: int,
+    hyp: JointHypothesis,
+    session: SessionObs,
+    local_top1: dict[int, BucketCandidate],
+) -> None:
+    capacity = session.warehouse_capacity()
+    status, status_text = _result_badge(capacity, hyp.total_cells)
+    title = (
+        f"#{rank}  {status} · {hyp.total_cells}/{capacity} 格 · "
+        f"score {hyp.composite:.3f}"
+    )
+    with st.expander(title, expanded=(rank == 1)):
+        st.caption(
+            f"{status_text}。bucket评分={hyp.bucket_composite:.3f}，"
+            f"仓库罚分={hyp.warehouse_penalty:.2f}。分数越低越符合当前读数。"
+        )
+        rows: list[dict[str, Any]] = []
+        for q in (1, 2, 3, 4, 5, 6):
+            bucket = session.buckets.get(q)
+            cand = hyp.per_bucket.get(q)
+            local = local_top1.get(q)
+            if cand is None:
+                rows.append(
+                    {
+                        "品质": QUALITY_LABEL[q],
+                        "输入约束": _bucket_constraints(bucket) if bucket else "未观察",
+                        "联合结果": "—",
+                        "独立top1": "—",
+                        "评分拆解": "—",
+                        "说明": "该品质未进入本次联合枚举",
+                    }
+                )
+                continue
+            avg = cand.total_cells / max(1, cand.count)
+            per_cell = PER_CELL_VALUE_DEFAULT.get(q, 0)
+            local_text = "—"
+            note = "采用独立top1"
+            if local is not None:
+                local_text = f"{local.total_cells}格/{local.count}件"
+                if local.total_cells != cand.total_cells or local.count != cand.count:
+                    note = "被仓库/其它bucket约束调整"
+            if cand.is_db_matched:
+                note += "；命中单件物品库"
+            rows.append(
+                {
+                    "品质": QUALITY_LABEL[q],
+                    "输入约束": _bucket_constraints(bucket) if bucket else "未观察",
+                    "联合结果": f"{cand.total_cells}格/{cand.count}件 · 均格{avg:.2f}",
+                    "独立top1": local_text,
+                    "评分拆解": (
+                        f"value {cand.value_score:.3f} / "
+                        f"cells {cand.cells_score:.3f} / "
+                        f"local {cand.composite:.3f}"
+                    ),
+                    "说明": f"{note}；先验约 {per_cell:,}/格",
+                }
+            )
+        st.table(rows)
+
+
+def render_joint_reasoning_summary(
+    *,
+    session: SessionObs,
+    per_bucket_top: int,
+    expanded: bool = False,
+) -> None:
+    """Render a compact joint reasoning card for the bidding hint tab."""
+    if not session.buckets:
+        return
+
+    hyps, local_top1 = _joint_context(session, per_bucket_top=per_bucket_top, k=3)
+    if not hyps:
+        st.warning(
+            "🔎 联合筛选没有找到可行组合；当前读数可能互相冲突，"
+            "请到「联合筛选」tab 查看每个 bucket 的候选约束。"
+        )
+        return
+
+    top = hyps[0]
+    capacity = session.warehouse_capacity()
+    local_total = sum(c.total_cells for c in local_top1.values())
+    gap = capacity - top.total_cells
+    local_gap = capacity - local_total
+
+    with st.expander("🔎 推理依据：联合筛选摘要", expanded=expanded):
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("联合 top-1", f"{top.total_cells} 格", f"{gap:+d} vs 仓库")
+        c2.metric("独立 top-1", f"{local_total} 格", f"{local_gap:+d} vs 仓库")
+        c3.metric("组合评分", f"{top.composite:.3f}")
+        c4.metric("过仓罚分", f"{top.warehouse_penalty:.2f}")
+
+        demoted = []
+        for q, joint_cand in top.per_bucket.items():
+            local_cand = local_top1.get(q)
+            if local_cand and (
+                local_cand.total_cells != joint_cand.total_cells
+                or local_cand.count != joint_cand.count
+            ):
+                demoted.append(
+                    f"{QUALITY_LABEL.get(q, f'q{q}')} "
+                    f"{local_cand.total_cells}格/{local_cand.count}件"
+                    f" → {joint_cand.total_cells}格/{joint_cand.count}件"
+                )
+        if demoted:
+            st.info("为满足仓库总格约束，joint 调整了：" + "；".join(demoted))
+        else:
+            st.caption("joint top-1 与各 bucket 独立 top-1 一致；当前读数之间没有明显容量冲突。")
+
+        rows: list[dict[str, Any]] = []
+        for q in sorted(top.per_bucket.keys(), reverse=True):
+            cand = top.per_bucket[q]
+            bucket = session.buckets.get(q)
+            local = local_top1.get(q)
+            local_text = "—" if local is None else f"{local.total_cells}格/{local.count}件"
+            note = "采用独立top1"
+            if local is not None and (
+                local.total_cells != cand.total_cells or local.count != cand.count
+            ):
+                note = "被联合约束修正"
+            rows.append(
+                {
+                    "品质": QUALITY_LABEL.get(q, f"q{q}"),
+                    "输入约束": _bucket_constraints(bucket) if bucket else "未观察",
+                    "joint结果": f"{cand.total_cells}格/{cand.count}件",
+                    "独立top1": local_text,
+                    "依据": (
+                        f"value {cand.value_score:.3f} / "
+                        f"cells {cand.cells_score:.3f} / "
+                        f"local {cand.composite:.3f}"
+                    ),
+                    "说明": note,
+                }
+            )
+        st.table(rows)
+        st.caption("完整 top-5 组合、未观察品质和每个 hypothesis 的展开解释见「联合筛选」tab。")
+
+
+def render_joint_inference_tab(*, session_builder, state, per_bucket_top: int) -> None:
+    """Render the joint candidate filtering tab."""
+    del state  # kept for the caller contract; session_builder is the source of truth.
+
+    st.subheader("联合筛选 — 仓库组成候选")
+    st.caption(
+        "把紫/金/红等 bucket 的均格、均价、总价、巨物和仓库总格放进同一个组合搜索里。"
+        "这里看的不是 MC 分布，而是“哪些格数×件数组合能同时解释当前读数”。"
+    )
+
+    try:
+        session = session_builder()
+    except ValueError as exc:
+        st.info(f"先在侧栏选择地图，并填写仓库总格数。当前无法构建会话：{exc}")
+        return
+    observed = len(session.buckets)
+    if observed == 0:
+        st.info("先在「读数输入」里填至少一个品质 bucket。")
+        return
+
+    st.info(
+        "使用方式：当某些品质没有总格数、只填了均格/均价/估价时，看这里的 top 组合。"
+        "如果“独立top1合计”超过仓库，而“联合top1”没有超过，说明联合筛选正在修正局部最优。"
+    )
+
+    fingerprint = _session_fingerprint(session, per_bucket_top)
+    cache_key = "_joint_filter_result"
+    refresh = st.button("刷新联合筛选", key="run_joint", type="primary")
+    cached = st.session_state.get(cache_key)
+    if refresh or cached is None or cached.get("fingerprint") != fingerprint:
+        with st.spinner("联合枚举中..."):
+            hyps, local_top1 = _joint_context(
+                session,
+                per_bucket_top=per_bucket_top,
+                k=5,
+            )
+        cached = {
+            "fingerprint": fingerprint,
+            "hyps": hyps,
+            "local_top1": local_top1,
+        }
+        st.session_state[cache_key] = cached
+
+    hyps = cached["hyps"]
+    local_top1 = cached["local_top1"]
+    if not hyps:
+        st.warning(
+            "未产生联合候选。通常是某个 bucket 的均格/件数/估价互相矛盾，"
+            "或多个 bucket 的最小格数已经超过仓库容量。先回到读数页检查黄色提示。"
+        )
+        return
+
+    _render_summary(session=session, hyps=hyps, local_top1=local_top1)
+    for rank, hyp in enumerate(hyps, start=1):
+        _render_hypothesis(
+            rank=rank,
+            hyp=hyp,
+            session=session,
+            local_top1=local_top1,
+        )

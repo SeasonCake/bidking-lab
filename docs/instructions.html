@@ -35,7 +35,7 @@
 <body>
   <div class="wrap">
     <h1>bidking-lab · 操作说明</h1>
-    <p class="lead">玩家向简明手册。推断台暖机或抓屏等待时可在浏览器阅读；关闭本页回到 Streamlit 即可。</p>
+    <p class="lead">玩家向简明手册。首次 OCR 识别或抓屏等待时可在浏览器阅读；关闭本页回到 Streamlit 即可。</p>
 
     <section>
       <h2>这个工具做什么</h2>
@@ -59,8 +59,8 @@
         <tbody>
           <tr><td>读数输入</td><td>各品质 cells / 件数 / 总价 / 均格 / 巨物</td></tr>
           <tr><td>出价推荐</td><td>MC 直方图、P25–P90（默认 1500 次）</td></tr>
+          <tr><td>联合筛选</td><td>仓库组成 top 候选与联合约束解释</td></tr>
           <tr><td>道具 ROI</td><td>Ethan 默认道具包性价比</td></tr>
-          <tr><td>联合推断</td><td>实验性，日常可忽略</td></tr>
         </tbody>
       </table>
     </section>
@@ -70,7 +70,7 @@
       <ul>
         <li>游戏窗口在前台；信息区在屏幕<strong>左侧中部</strong></li>
         <li>选对显示器（游戏在哪个屏就选哪个）</li>
-        <li>首次启动 OCR 需暖机 20–50 秒；同一会话内再次抓屏会更快</li>
+        <li>页面会直接打开；首次点击 OCR 时按需加载模型，第一次识别会较慢</li>
       </ul>
     </section>
 
@@ -79,8 +79,8 @@
       <dl class="faq">
         <dt>识别了地图但读数空？</dt>
         <dd>展开侧栏「抓屏 / OCR 诊断」看原文，不清晰就手填。</dd>
-        <dt>启动很慢？</dt>
-        <dd>首次 OCR 暖机；可在高级里关闭「实屏暖机」后重启 Streamlit。</dd>
+        <dt>打开应用仍需等待 OCR？</dt>
+        <dd>不需要；手填与浏览立即可用，首次 OCR 操作才加载模型。</dd>
         <dt>首次抓屏比第二次慢？</dt>
         <dd>正常现象，同一会话内会更快。</dd>
         <dt>换图后仓库被清空？</dt>

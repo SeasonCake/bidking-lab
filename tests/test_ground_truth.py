@@ -11,6 +11,7 @@ from bidking_lab.inference.ground_truth import (
     BucketTruth,
     SessionTruth,
     is_huge_item,
+    prepare_session_sampler,
     sample_session_truth,
 )
 
@@ -239,3 +240,62 @@ def test_sample_session_anthology_sub_pool_routing() -> None:
         rng=np.random.default_rng(5),
     )
     assert truth.buckets[2].items[0].item_id == 1
+
+
+def test_prepared_sampler_matches_single_pool_sample_for_same_seed() -> None:
+    """Prepared sampler keeps sampling semantics while avoiding repeated flatten."""
+    items = {
+        1: _make_item(1, value=1000, quality=2, shape=(2, 1)),
+        2: _make_item(2, value=20_000, quality=4, shape=(3, 3)),
+        3: _make_item(3, value=300_000, quality=6, shape=(4, 4)),
+    }
+    pool = _make_pool(900, [(101, 1, 1, 2, 5), (101, 2, 1, 1, 3), (101, 3, 1, 1, 1)])
+    bmap = _make_map(2000, 900, min_items=10, max_items=12)
+    maps = {2000: bmap}
+    drops = {900: pool}
+
+    direct = sample_session_truth(
+        2000, maps=maps, drops=drops, items=items,
+        rng=np.random.default_rng(123),
+    )
+    sampler = prepare_session_sampler(2000, maps=maps, drops=drops, items=items)
+    prepared = sampler.sample(rng=np.random.default_rng(123))
+
+    assert prepared.warehouse_total_cells == direct.warehouse_total_cells
+    assert prepared.total_value() == direct.total_value()
+    assert {
+        q: (b.count, b.total_cells, b.value_sum, b.huge_count)
+        for q, b in prepared.buckets.items()
+    } == {
+        q: (b.count, b.total_cells, b.value_sum, b.huge_count)
+        for q, b in direct.buckets.items()
+    }
+
+
+def test_prepared_sampler_matches_anthology_sample_for_same_seed() -> None:
+    """Prepared sampler preserves anthology sub-pool routing RNG order."""
+    items = {
+        1: _make_item(1, value=500, quality=2, shape=(1, 1)),
+        2: _make_item(2, value=30_000, quality=5, shape=(2, 3)),
+    }
+    pool_a = _make_pool(910, [(101, 1, 1, 1, 1)])
+    pool_b = _make_pool(911, [(101, 2, 1, 1, 1)])
+    sub_a = _make_map(2001, 910, min_items=1, max_items=1)
+    sub_b = _make_map(2002, 911, min_items=1, max_items=1)
+    outer = _make_map(
+        2000, 999, min_items=5, max_items=5,
+        sub_weights=[(2001, 1), (2002, 3)],
+    )
+    maps = {2000: outer, 2001: sub_a, 2002: sub_b}
+    drops = {910: pool_a, 911: pool_b}
+
+    direct = sample_session_truth(
+        2000, maps=maps, drops=drops, items=items,
+        rng=np.random.default_rng(42),
+    )
+    sampler = prepare_session_sampler(2000, maps=maps, drops=drops, items=items)
+    prepared = sampler.sample(rng=np.random.default_rng(42))
+
+    assert prepared.warehouse_total_cells == direct.warehouse_total_cells
+    assert prepared.total_value() == direct.total_value()
+    assert sorted(prepared.buckets) == sorted(direct.buckets)

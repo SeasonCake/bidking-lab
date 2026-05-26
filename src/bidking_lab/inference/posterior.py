@@ -409,7 +409,8 @@ def bucket_posterior_stats(
 
 # --- Analytical value estimation (bypass MC when cells are fully specified) ---
 
-from bidking_lab.inference.observation import candidates_for_bucket
+from bidking_lab.inference.joint import joint_top_k_for_session
+from bidking_lab.inference.observation import BucketCandidate, candidates_for_bucket
 from bidking_lab.inference.quality_priors import PER_CELL_VALUE_DEFAULT, PER_CELL_VALUE_HUGE, estimate_total_cells
 
 
@@ -431,6 +432,30 @@ class AnalyticalEstimate:
 _VALUE_BAND_FACTORS = (0.6, 1.0, 1.5)
 
 
+def _has_bucket_inference_info(bucket: QualityBucketObs) -> bool:
+    """Return whether a bucket has enough non-cell data to infer cells."""
+    return (
+        (bucket.value_sum is not None and bucket.value_sum > 0)
+        or bucket.huge_band != "none"
+        or bucket.avg_cells is not None
+        or bucket.count is not None
+        or (bucket.avg_value is not None and bucket.avg_value > 0)
+    )
+
+
+def _candidate_count_for_value(bucket: QualityBucketObs, candidate: BucketCandidate) -> int:
+    """Prefer the game's integer-leak count when avg_value exposes it."""
+    if (
+        bucket.avg_value is not None
+        and bucket.avg_value > 0
+        and (bucket.value_sum is None or bucket.value_sum <= 0)
+    ):
+        leak_cnt = best_count_for_avg_value_integer_leak(float(bucket.avg_value))
+        if leak_cnt is not None:
+            return leak_cnt
+    return candidate.count
+
+
 def compute_analytical_estimate(obs: SessionObs) -> AnalyticalEstimate | None:
     """Compute value directly from user-provided cells using per-cell priors.
 
@@ -450,36 +475,40 @@ def compute_analytical_estimate(obs: SessionObs) -> AnalyticalEstimate | None:
         if b.total_cells is not None and b.total_cells > 0:
             known_cells[q if q != 2 else 1] = b.total_cells
 
-    # Second pass: for buckets without explicit cells, use the brute-force
-    # enumeration (top-1 candidate) which considers value_sum, huge_band,
-    # avg_cells, count, and warehouse constraints jointly.
-    explicitly_known = sum(known_cells.values())
+    # Second pass: prefer session-level joint enumeration for buckets without
+    # explicit cells. This lets purple/gold/etc. compete for the same warehouse
+    # capacity instead of each taking its local top-1 independently.
+    joint = joint_top_k_for_session(
+        obs,
+        k=1,
+        per_bucket_top=16,
+        warehouse_slack=5,
+    )
+    if joint:
+        for q, cand in joint[0].per_bucket.items():
+            if q in (1, 2):
+                continue
+            b = obs.buckets[q]
+            if b.total_cells is not None or not _has_bucket_inference_info(b):
+                continue
+            known_cells[q] = cand.total_cells
+            inferred_count[q] = _candidate_count_for_value(b, cand)
+            value_derived.add(q)
+
+    # Fallback for buckets not solved by the joint pass: use the per-bucket
+    # brute-force enumerator, constrained by cells already known or inferred.
     for q, b in obs.buckets.items():
-        if b.total_cells is not None or q in (1, 2):
+        if b.total_cells is not None or q in (1, 2) or q in known_cells:
             continue
-        has_info = (
-            (b.value_sum is not None and b.value_sum > 0)
-            or b.huge_band != "none"
-            or b.avg_cells is not None
-            or b.count is not None
-            or (b.avg_value is not None and b.avg_value > 0)
-        )
-        if not has_info:
+        if not _has_bucket_inference_info(b):
             continue
+        other_known_cells = sum(known_cells.values())
         cands = candidates_for_bucket(
-            b, warehouse_capacity=warehouse, other_known_cells=explicitly_known,
+            b, warehouse_capacity=warehouse, other_known_cells=other_known_cells,
         )
         if cands:
             known_cells[q] = cands[0].total_cells
-            inferred_count[q] = cands[0].count
-            if (
-                b.avg_value is not None
-                and b.avg_value > 0
-                and (b.value_sum is None or b.value_sum <= 0)
-            ):
-                leak_cnt = best_count_for_avg_value_integer_leak(float(b.avg_value))
-                if leak_cnt is not None:
-                    inferred_count[q] = leak_cnt
+            inferred_count[q] = _candidate_count_for_value(b, cands[0])
             value_derived.add(q)
         else:
             huge_cells = b.min_huge_cells() if b.huge_band != "none" else 0

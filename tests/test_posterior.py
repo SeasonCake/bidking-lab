@@ -317,3 +317,28 @@ def test_analytical_gold_avg_value_is_per_item_not_per_cell() -> None:
     lo, mid, hi = est.per_bucket[5]
     assert mid == round(39_539.17 * 6)
     assert "·6件×39539/件" in est.breakdown_text
+
+
+def test_analytical_uses_joint_bucket_capacity_constraint() -> None:
+    """Purple/gold local top-1 candidates must not oversubscribe warehouse."""
+    obs = SessionObs(
+        map_id=2401,
+        hero="ethan",
+        warehouse_total_cells=60,
+        buckets={
+            4: QualityBucketObs(
+                quality=4,
+                avg_cells=parse_reading("2.5"),
+                value_sum=86_490,
+            ),
+            5: QualityBucketObs(
+                quality=5,
+                avg_cells=parse_reading("2.5"),
+                value_sum=329_000,
+            ),
+        },
+    )
+    est = compute_analytical_estimate(obs)
+    assert est is not None
+    assert "紫 30格" in est.breakdown_text
+    assert "金 30格" in est.breakdown_text

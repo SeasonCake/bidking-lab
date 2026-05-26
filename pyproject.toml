@@ -20,6 +20,9 @@ capture = ["rapidocr-onnxruntime>=1.2.0", "mss>=9.0.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "slow: integration/regression tests that are useful before release but too slow for everyday smoke runs",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

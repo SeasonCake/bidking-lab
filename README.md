@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
-[![Tests](https://img.shields.io/badge/tests-406_passing-2ea043)](./tests)
+[![Tests](https://img.shields.io/badge/tests-429_passing-2ea043)](./tests)
 [![Status](https://img.shields.io/badge/status-Phase_1A_stable-blueviolet)](./PROGRESS.md)
 
 ---
@@ -45,6 +45,8 @@ https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
 
 This is an unaffiliated hobby project. It **ships no game assets** — it decodes the player's locally-installed copy and outputs *derived* JSON.
 
+Current optimization roadmap: [`docs/optimization_roadmap.zh-CN.md`](docs/optimization_roadmap.zh-CN.md).
+
 ---
 
 ## Why this project · the engineering problem
@@ -77,16 +79,19 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 
-# 1) Run the test suite (406 tests)
+# 1) Daily smoke test (skips real OCR image regressions; ~10s)
+.\scripts\test_smoke.ps1
+
+# 2) Run the full test suite (429 tests, includes real OCR image regressions)
 pytest -q
 
-# 2) Launch the Streamlit dashboard
+# 3) Launch the Streamlit dashboard
 streamlit run app/streamlit_app.py
 
-# 3) End-to-end CLI demo (three scenarios, numbers only)
+# 4) End-to-end CLI demo (three scenarios, numbers only)
 python scripts/demo_scenarios.py
 
-# 4) End-to-end notebook (with distribution plots)
+# 5) End-to-end notebook (with distribution plots)
 jupyter notebook notebooks/05_end_to_end_case.ipynb
 ```
 
@@ -217,8 +222,8 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 |---|---|
 | Game tables parsed | 6 (BidMap / Drop / Item / BattleItem / Hero / Item_Type) |
 | Schema-typed entities | 1,132 items · 64 tools · 105 maps · 20 heroes |
-| Unit tests | **234**, all green |
-| Streamlit UI tabs | 4 (input / bidding hint / tool ROI / joint inference *experimental*) |
+| Unit tests | **429**, all green |
+| Streamlit UI tabs | 4 (input / bidding hint / joint filtering / tool ROI) |
 | Notebooks | 5 (map value · hero ranking · inference demo · ROI snipe · end-to-end case) |
 | Phase 1A inference | **stable** — low-risk backlog closed; snipe/pass UI off |
 | Commit history | C-1 ~ C-34, every entry with expanded design notes in PROGRESS |
@@ -294,7 +299,7 @@ Full roadmap in [`PROGRESS.md`](PROGRESS.md). Short version:
 - ✅ Field-scope UI copy + joint-constraint enumeration relax (C-31b)
 - ✅ P0-B: fallback preserves `huge_cells_override` (C-32)
 - ✅ LOO tool ROI + player-eyeball noise model
-- ✅ Screen capture + OCR prefill (C-35~39) · 7 notebooks · **406** unit tests · **47** TROUBLESHOOTING entries
+- ✅ Screen capture + OCR prefill (C-35~39) · 7 notebooks · **429** unit tests · **51** TROUBLESHOOTING entries
 - ✅ Bilingual README + demo video + screenshots
 
 **Deferred / optional**

@@ -44,13 +44,18 @@
 37. [紫品均格 OCR 有数但输入框为空](#37-紫品均格-ocr-有数但输入框为空)
 38. [实机 OCR 比改版前慢](#38-实机-ocr-比改版前慢)
 39. [切 tab 读数被清空 / 抓屏卡顿](#39-切-tab-读数被清空--抓屏卡顿)
-40. [启动仍慢：screen_ocr_warmup 与首屏等待](#40-启动仍慢screen_ocr_warmup-与首屏等待)
+40. [启动仍慢：旧启动暖机路径（已移除）](#40-启动仍慢旧启动暖机路径已移除)
 41. [后台推断很慢：MC 采样冷缓存，不是 filter](#41-后台推断很慢mc-采样冷缓存不是-filter)
 42. [金品只填均价预览显示 0格/1件 或 ⚠️ 无候选](#42-金品只填均价预览显示-0格1件-或--无候选)
 43. [切到「出价推荐」后读数/地图全没了](#43-切到出价推荐后读数地图全没了)
 44. [手填金/紫巨物后切 tab 变「无」](#44-手填金紫巨物后切-tab-变无)
 45. [分析估算把「金品均价」当每格价](#45-分析估算把金品均价当每格价)
 46. [切 tab 后枚举变无候选](#46-切-tab-后紫金枚举变无合法候选但框里仍有数)
+47. [预览「无合法候选」但 MC 仍正常推理](#47-预览无合法候选但-mc-仍正常推理)
+48. [Anthology 地图后台 MC 冷启动很慢](#48-anthology-地图后台-mc-冷启动很慢)
+49. [全量 pytest 很慢，不适合每次 smoke test](#49-全量-pytest-很慢不适合每次-smoke-test)
+50. [OCR 推理后切回读数页，均格候选预览变「无合法候选」](#50-ocr-推理后切回读数页均格候选预览变无合法候选)
+51. [分析估算局部 top-1 过仓](#51-分析估算局部-top-1-过仓)
 
 ---
 
@@ -1333,23 +1338,22 @@ C:\Python313\python.exe -m streamlit run app/streamlit_app.py
 
 ---
 
-## 40. 启动仍慢：screen_ocr_warmup 与首屏等待
+## 40. 启动仍慢：旧启动暖机路径（已移除）
 
-**症状**：`streamlit run` 后首屏要等很久；侧栏显示「OCR 暖机」或样本+实屏双暖机。
+**旧症状**：`streamlit run` 后首屏要等很久；侧栏显示「OCR 暖机」或样本+实屏双暖机。
 
-**原因**：
+**旧原因**：
 
-- 默认 `screen_ocr_warmup=true`（`data/ui_prefs.json`）：样本图 2 遍 + **实屏抓屏** 2 遍 ONNX。
-- 这与 **实机点抓屏** 的耗时无关，但影响「第一次打开应用」体验。
+- 主页面在渲染侧栏前同步创建 OCR 引擎，并执行样例图暖机；开启 `screen_ocr_warmup` 时还会执行主屏抓屏暖机。
+- 这条路径阻塞了根本不需要 OCR 的手填和 tab 浏览。
 
-**临时修法**：
+**修法（C-56，2026-05-26）**：
 
-- 高级 →「MC 采样参数」→ 取消 **启动时实屏 OCR 暖机** → **重启 Streamlit**。
-- 仅关暖机不影响识别准确度；首次实机 OCR 可能多 1–2s。
+- 主页面不再在启动期初始化或暖机 OCR，也不再展示等待页或实屏暖机开关。
+- 抓屏、剪贴板和上传图片 OCR 在用户点击后才初始化引擎，并直接处理该次真实输入。
+- 旧安装中残留的 `screen_ocr_warmup` 值不再影响主页面启动；仓库中的旧偏好文件已移除。
 
-**操作说明**：等待时可点 **「操作说明」** 子页或阅读 [`docs/INSTRUCTIONS.zh-CN.md`](docs/INSTRUCTIONS.zh-CN.md)（玩家向流程图，不是 PROGRESS）。
-
-**计划（C-38）**：后台暖机 + 右侧小游戏占位区；工程项见 PROGRESS「C-38 启动体验」。
+**取舍**：应用首屏和手填路径可立即使用；第一次实际 OCR 承担模型加载耗时。同一模型和识别输入不变，因此不改变识别准确度。
 
 ---
 
@@ -1377,7 +1381,7 @@ C:\Python313\python.exe -m streamlit run app/streamlit_app.py
 1. 侧栏 MC 样本数保持 **1000** 或 **500** 试跑。
 2. **同地图连续推断** — 第二次起多半命中缓存。
 3. 抓屏后少改读数，等 MC 完成再改（避免 cancel 重跑）。
-4. 关闭「启动时实屏 OCR 暖机」只影响首启，不解决单次 MC（见 #40）。
+4. OCR 已改为首次使用时按需加载；这不解决单次 MC 慢（见 #40）。
 
 ### 教训
 
@@ -1538,6 +1542,177 @@ pytest tests/test_bg_inference.py::test_hint_bundle_stale_report_ignores_avg_cel
 ```
 
 Streamlit：填硬字段 → 切 tab → 即使预览 ⚠️，出价 tab 的 P50 与 bucket 表应仍反映硬约束。
+
+---
+
+## 48. Anthology 地图后台 MC 冷启动很慢
+
+### 症状
+
+别墅 / 沉船部分地图第一次点「出价推荐」时，MC 长时间停在采样阶段；`filter_ms`
+只有毫秒级，但 `sample_ms` 很大。普通单池地图体感明显快。
+
+### 原因
+
+2401 / 2501 等 anthology 地图包含多个 sub-pool。旧实现中，`_sample_truths_cached`
+循环调用 `sample_session_truth()`，每个 trial 都会重新：
+
+1. 解析地图 sub-pool 权重。
+2. 对候选 sub-map 调 `flatten_pool()`。
+3. 把 `FlattenedPool` list 转 numpy array。
+
+这些结构对同一张地图是固定的，不应该按 trial 重算。
+
+### 修法（2026-05-26）
+
+新增 `prepare_session_sampler()` / `SessionTruthSampler`：
+
+- 每张地图 cache miss 时只 flatten 一次。
+- 预编译 item、probabilities、n_min/n_max、area、quality、value、huge flag。
+- UI 的 `_sample_truths_cached()` 改成先建 sampler，再连续 `sampler.sample(...)`。
+- 旧 `sample_session_truth()` 保留，供单次采样、脚本和旧测试使用。
+
+### 实测
+
+| 地图 | 旧 200 次采样 | 新 200 次采样 |
+|------|---------------|---------------|
+| 2401 未知别墅 | 2.951s | 0.012s |
+| 2405 望族居所 | 0.307s | 0.011s |
+| 2501 未知残骸 | 3.002s | 0.013s |
+
+### 验证
+
+```powershell
+python -m pytest tests/test_ground_truth.py tests/test_bg_inference.py tests/test_posterior.py -q
+python -m pytest -q
+python scripts/demo_scenarios.py
+```
+
+### 教训
+
+先用 timing 拆清楚 `sample_ms` / `filter_ms` / render，再决定是否并行。这里的正确优化是缓存不可变结构，不是开更多线程。
+
+---
+
+## 49. 全量 pytest 很慢，不适合每次 smoke test
+
+### 症状
+
+`python -m pytest -q` 需要 40 秒左右，做小改动时反馈太慢。
+
+### 原因
+
+慢点不在 pytest collection：`--collect-only` 约 0.38 秒。
+耗时集中在 `tests/test_ocr_regression_normalize.py` 的真实 OCR 图片回归：
+
+- RapidOCR 对 repo sample / 用户截图单张耗时约 2–4 秒。
+- 旧测试里同一张图片会在 smoke、parse keys、map-name 检查中重复 OCR。
+
+### 修法（2026-05-26）
+
+1. `test_ocr_regression_normalize.py` 增加模块级 `ocr_text_cache`，同一图片同一 pytest 进程只 OCR 一次。
+2. 真实图片 OCR 测试标记为 `@pytest.mark.slow`。
+3. `pyproject.toml` 注册 `slow` marker。
+4. 新增 `scripts/test_smoke.ps1`：
+
+```powershell
+.\scripts\test_smoke.ps1
+```
+
+等价于：
+
+```powershell
+python -m pytest -q -m "not slow"
+```
+
+### 实测
+
+| 命令 | 结果 | 时间 |
+|------|------|------|
+| `.\scripts\test_smoke.ps1` | 403 passed, 13 deselected | 4.15s（热）/ 约 9.8s（冷） |
+| `python -m pytest -q` | 416 passed | 24.70s |
+
+### 使用约定
+
+- 普通代码 / UI / 文档改动：跑 `.\scripts\test_smoke.ps1`。
+- OCR、normalize、release 前：跑 `python -m pytest -q`。
+
+---
+
+## 50. OCR 推理后切回读数页，均格候选预览变「无合法候选」
+
+### 症状
+
+OCR 抓屏后读数页下方候选预览正常；切到「出价推荐」运行 MC 后再切回读数页，
+紫/金均格预览变成 **⚠️ 当前约束下无合法候选**。但出价 tab 的 MC bundle /
+bucket 后验仍然正常，说明硬读数没有丢。
+
+典型例子：紫品只填 `均格=3.90`，按枚举至少应有 `43格/11件` 等候选。
+如果预览层把仓库容量读成 0 或小于 43，就会误报无候选。
+
+### 原因
+
+hint tab 使用 `_wh_live = obs_warehouse_cells or state["warehouse_cells"]`，
+但读数预览 `_warehouse_capacity()` 旧实现只读 `st.session_state["obs_warehouse_cells"]`。
+
+OCR / fragment / tab 切换后，`obs_warehouse_cells` widget key 可能短暂为 `None`，
+而 `state["warehouse_cells"]` 仍然保留了正确仓库值。此时 MC 路径正常，预览路径
+却用 0 作为仓库容量，导致候选全被容量剪枝。
+
+### 修法（2026-05-26）
+
+`_warehouse_capacity()` 改为：
+
+```python
+return _session_int("obs_warehouse_cells") or int(state.get("warehouse_cells") or 0)
+```
+
+同时当 `warehouse_capacity <= 0` 且无候选时，UI 明确提示“仓库总格数未生效”，
+不再显示均格填错的泛化文案。
+
+### 验证
+
+```powershell
+python -m py_compile app\streamlit_app.py
+.\scripts\test_smoke.ps1
+```
+
+手测：OCR → 出价推荐运行 MC → 切回读数页；紫/金均格候选预览应继续使用仓库总格数，
+不应退化成无候选。
+
+---
+
+## 51. 分析估算局部 top-1 过仓
+
+### 症状
+
+多个 bucket 只填均格/均价/总价时，每个 bucket 单独看都有合法候选，但把各自 top-1
+相加后超过仓库总格数。典型例子：60 格仓库里，紫品和金品局部 top-1 都是
+`35格/14件`，分析估算会合计成 70 格。
+
+### 原因
+
+`compute_analytical_estimate()` 旧实现按 bucket 逐个调用 `candidates_for_bucket()`。
+这能保证单个 bucket 内部自洽，但不能保证紫/金/蓝等 bucket 组合后仍满足同一个仓库容量。
+
+### 修法（2026-05-26）
+
+分析估算先调用 session-level `joint_top_k_for_session()`：
+
+```python
+joint_top_k_for_session(obs, k=1, per_bucket_top=16, warehouse_slack=5)
+```
+
+joint 命中的非显式格数 bucket 直接回填到 `known_cells`；joint 无结果时仍保留旧单桶枚举兜底。
+
+### 验证
+
+```powershell
+python -m pytest tests/test_joint.py tests/test_posterior.py -q
+.\scripts\test_smoke.ps1
+```
+
+新增回归断言：60 格仓库的紫/金组合应输出 `紫 30格`、`金 30格`。
 
 ---
 

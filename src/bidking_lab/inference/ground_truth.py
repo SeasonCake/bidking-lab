@@ -26,7 +26,7 @@ from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropPool
 from bidking_lab.extract.item_table import Item
 from bidking_lab.inference.observation import HUGE_CELLS_PER_QUALITY
-from bidking_lab.simulation.basic_mc import flatten_pool
+from bidking_lab.simulation.basic_mc import FlattenedPool, flatten_pool
 
 
 def is_huge_item(item: Item) -> bool:
@@ -69,6 +69,139 @@ class SessionTruth:
     def total_value(self) -> int:
         """Sum of value across all buckets — the headline ground-truth number."""
         return sum(b.value_sum for b in self.buckets.values())
+
+
+@dataclass
+class _PreparedPool:
+    """Flattened drop pool arrays reused across many session samples."""
+
+    items: tuple[Item, ...]
+    probabilities: np.ndarray
+    n_min: np.ndarray
+    n_max: np.ndarray
+    areas: np.ndarray
+    qualities: np.ndarray
+    values: np.ndarray
+    huge_flags: np.ndarray
+
+
+def _prepare_pool(fp: FlattenedPool, items: Mapping[int, Item]) -> _PreparedPool:
+    pool_items = tuple(items[item_id] for item_id in fp.item_ids)
+    return _PreparedPool(
+        items=pool_items,
+        probabilities=np.array(fp.probabilities, dtype=np.float64),
+        n_min=np.array(fp.n_min, dtype=np.int64),
+        n_max=np.array(fp.n_max, dtype=np.int64),
+        areas=np.array([it.shape_w * it.shape_h for it in pool_items], dtype=np.int64),
+        qualities=np.array([it.quality for it in pool_items], dtype=np.int64),
+        values=np.array([it.value for it in pool_items], dtype=np.int64),
+        huge_flags=np.array([is_huge_item(it) for it in pool_items], dtype=np.bool_),
+    )
+
+
+@dataclass
+class SessionTruthSampler:
+    """Pre-flattened sampler for running many MC trials on the same map."""
+
+    map_id: int
+    map_name: str
+    items_per_session_min: int
+    items_per_session_max: int
+    pools: tuple[_PreparedPool, ...]
+    pool_weights: np.ndarray
+
+    def sample(self, rng: np.random.Generator | None = None) -> SessionTruth:
+        """Sample one session using precomputed pool arrays."""
+        rng = rng or np.random.default_rng()
+        if not self.pools:
+            return SessionTruth(
+                map_id=self.map_id,
+                map_name=self.map_name,
+                warehouse_total_cells=0,
+                buckets={},
+            )
+        pool_idx = (
+            int(rng.choice(len(self.pools), p=self.pool_weights))
+            if len(self.pools) > 1
+            else 0
+        )
+        pool = self.pools[pool_idx]
+        if len(pool.probabilities) == 0:
+            return SessionTruth(
+                map_id=self.map_id,
+                map_name=self.map_name,
+                warehouse_total_cells=0,
+                buckets={},
+            )
+
+        k = int(rng.integers(self.items_per_session_min, self.items_per_session_max + 1))
+        sampled_idx = rng.choice(
+            len(pool.probabilities), size=k, replace=True, p=pool.probabilities,
+        )
+        counts = rng.integers(pool.n_min[sampled_idx], pool.n_max[sampled_idx] + 1)
+
+        buckets: dict[int, BucketTruth] = {}
+        for pool_i, cnt in zip(sampled_idx, counts):
+            idx = int(pool_i)
+            quality = int(pool.qualities[idx])
+            bucket = buckets.setdefault(quality, BucketTruth(quality=quality))
+            item = pool.items[idx]
+            item_count = int(cnt)
+            bucket.count += item_count
+            bucket.total_cells += int(pool.areas[idx]) * item_count
+            bucket.value_sum += int(pool.values[idx]) * item_count
+            if bool(pool.huge_flags[idx]):
+                bucket.huge_count += item_count
+            bucket.items.extend([item] * item_count)
+
+        warehouse_total = sum(b.total_cells for b in buckets.values())
+        return SessionTruth(
+            map_id=self.map_id,
+            map_name=self.map_name,
+            warehouse_total_cells=warehouse_total,
+            buckets=buckets,
+        )
+
+
+def prepare_session_sampler(
+    map_id: int,
+    *,
+    maps: Mapping[int, BidMap],
+    drops: Mapping[int, DropPool],
+    items: Mapping[int, Item],
+) -> SessionTruthSampler:
+    """Build a reusable sampler for repeated MC trials on one map."""
+    bid_map = maps[map_id]
+    pools: list[_PreparedPool] = []
+    weights: list[int] = []
+
+    if not bid_map.sub_pool_weights:
+        pools.append(_prepare_pool(flatten_pool(bid_map.drop_pool_id, drops, items), items))
+        weights.append(1)
+    else:
+        for sub_map_id, weight in bid_map.sub_pool_weights:
+            sub_map = maps.get(sub_map_id)
+            if sub_map is None:
+                continue
+            fp = flatten_pool(sub_map.drop_pool_id, drops, items)
+            if not fp.item_ids:
+                continue
+            pools.append(_prepare_pool(fp, items))
+            weights.append(weight)
+        if not pools:
+            pools.append(_prepare_pool(flatten_pool(bid_map.drop_pool_id, drops, items), items))
+            weights.append(1)
+
+    weights_arr = np.array(weights, dtype=np.float64)
+    weights_arr = weights_arr / weights_arr.sum()
+    return SessionTruthSampler(
+        map_id=map_id,
+        map_name=bid_map.name,
+        items_per_session_min=bid_map.items_per_session_min,
+        items_per_session_max=bid_map.items_per_session_max,
+        pools=tuple(pools),
+        pool_weights=weights_arr,
+    )
 
 
 def _resolve_sub_pool(
@@ -162,7 +295,9 @@ def sample_session_truth(
 
 __all__ = (
     "BucketTruth",
+    "SessionTruthSampler",
     "SessionTruth",
     "is_huge_item",
+    "prepare_session_sampler",
     "sample_session_truth",
 )

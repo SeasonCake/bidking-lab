@@ -17,7 +17,9 @@ from bidking_lab.inference.observation import (
     SessionObs,
     active_reading_constraint_count,
     aisha_can_observe_huge,
+    candidate_cache_info,
     candidates_for_bucket,
+    clear_candidate_cache,
     top_k_for_session,
 )
 
@@ -459,6 +461,60 @@ def test_capacity_minus_known_cells() -> None:
     # 159 - 130 = 29 cells available for purple
     for c in cands:
         assert c.total_cells <= 29
+
+
+def test_candidate_cache_hits_for_equivalent_constraints() -> None:
+    clear_candidate_cache()
+    try:
+        bucket = QualityBucketObs(
+            quality=4,
+            avg_cells=parse_reading("2.5"),
+            value_sum=86_490,
+        )
+        first = candidates_for_bucket(bucket, warehouse_capacity=159)
+        after_first = candidate_cache_info()
+        second = candidates_for_bucket(
+            QualityBucketObs(
+                quality=4,
+                avg_cells=parse_reading("2.5"),
+                value_sum=86_490,
+            ),
+            warehouse_capacity=159,
+        )
+        after_second = candidate_cache_info()
+
+        assert first == second
+        assert after_first.misses == 1
+        assert after_second.hits == 1
+    finally:
+        clear_candidate_cache()
+
+
+def test_candidate_cache_returns_independent_lists() -> None:
+    clear_candidate_cache()
+    try:
+        bucket = QualityBucketObs(quality=4, avg_cells=parse_reading("2.5"))
+        first = candidates_for_bucket(bucket, warehouse_capacity=159)
+        expected_len = len(first)
+
+        first.pop()
+
+        again = candidates_for_bucket(bucket, warehouse_capacity=159)
+        assert len(again) == expected_len
+    finally:
+        clear_candidate_cache()
+
+
+def test_candidate_cache_includes_remaining_warehouse_budget() -> None:
+    clear_candidate_cache()
+    try:
+        bucket = QualityBucketObs(quality=4, avg_cells=parse_reading("2.5"))
+        candidates_for_bucket(bucket, warehouse_capacity=159, other_known_cells=0)
+        candidates_for_bucket(bucket, warehouse_capacity=159, other_known_cells=130)
+
+        assert candidate_cache_info().misses == 2
+    finally:
+        clear_candidate_cache()
 
 
 # --- Top-K per session ---

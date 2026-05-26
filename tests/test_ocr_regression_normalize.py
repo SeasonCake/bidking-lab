@@ -40,6 +40,22 @@ def map_names() -> dict[int, str]:
     return _load_map_names()
 
 
+@pytest.fixture(scope="module")
+def ocr_text_cache() -> dict[Path, tuple[str, str | None]]:
+    return {}
+
+
+def _ocr_text_for(
+    path: Path,
+    cache: dict[Path, tuple[str, str | None]],
+) -> tuple[str, str | None]:
+    """Run OCR at most once per image path within this module."""
+    resolved = path.resolve()
+    if resolved not in cache:
+        cache[resolved] = image_bytes_to_text(path.read_bytes(), crop_panel=True)
+    return cache[resolved]
+
+
 @pytest.mark.parametrize("case", json.loads(_CASES_PATH.read_text(encoding="utf-8")), ids=lambda c: c["id"])
 def test_normalize_fixture_cases(case: dict) -> None:
     out = normalize_ocr_text(case["raw"])
@@ -49,10 +65,14 @@ def test_normalize_fixture_cases(case: dict) -> None:
         assert frag not in out, f"unexpected {frag!r} in {out!r}"
 
 
-def test_panel_round4_sample_normalize_and_parse(map_names: dict[int, str]) -> None:
+@pytest.mark.slow
+def test_panel_round4_sample_normalize_and_parse(
+    map_names: dict[int, str],
+    ocr_text_cache: dict[Path, tuple[str, str | None]],
+) -> None:
     if not _REPO_SAMPLES.is_file():
         pytest.skip("panel_round4 sample missing")
-    text, err = image_bytes_to_text(_REPO_SAMPLES.read_bytes(), crop_panel=True)
+    text, err = _ocr_text_for(_REPO_SAMPLES, ocr_text_cache)
     assert err is None and text
     norm = normalize_ocr_text(text)
     assert "轮廓" in norm
@@ -63,16 +83,22 @@ def test_panel_round4_sample_normalize_and_parse(map_names: dict[int, str]) -> N
 
 
 @pytest.mark.parametrize("label,path", REGRESSION_IMAGES, ids=[x[0] for x in REGRESSION_IMAGES])
-def test_user_regression_image_ocr_smoke(label: str, path: Path) -> None:
+@pytest.mark.slow
+def test_user_regression_image_ocr_smoke(
+    label: str,
+    path: Path,
+    ocr_text_cache: dict[Path, tuple[str, str | None]],
+) -> None:
     if not path.is_file():
         pytest.skip(f"missing {path}")
-    text, err = image_bytes_to_text(path.read_bytes(), crop_panel=True)
+    text, err = _ocr_text_for(path, ocr_text_cache)
     assert err is None, err
     assert text.strip()
     norm = normalize_ocr_text(text)
     assert norm  # normalize must not blank the panel
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("label,path,expected_keys", [
     (
         "desktop_r3_ethan",
@@ -105,20 +131,24 @@ def test_user_regression_parse_keys(
     path: Path,
     expected_keys: set[str],
     map_names: dict[int, str],
+    ocr_text_cache: dict[Path, tuple[str, str | None]],
 ) -> None:
     if not path.is_file():
         pytest.skip(f"missing {path}")
     if not map_names:
         pytest.skip("maps.json missing")
-    text, err = image_bytes_to_text(path.read_bytes(), crop_panel=True)
+    text, err = _ocr_text_for(path, ocr_text_cache)
     assert err is None
     parsed = parse_panel_text(text, map_names=map_names)
     got = set(parsed.suggestion_map().keys())
     missing = expected_keys - got
     assert not missing, f"missing keys {missing}; got {sorted(got)}"
 
-
-def test_user_regression_map_names_when_present(map_names: dict[int, str]) -> None:
+@pytest.mark.slow
+def test_user_regression_map_names_when_present(
+    map_names: dict[int, str],
+    ocr_text_cache: dict[Path, tuple[str, str | None]],
+) -> None:
     if not map_names:
         pytest.skip("maps.json missing")
     cases = [
@@ -129,7 +159,7 @@ def test_user_regression_map_names_when_present(map_names: dict[int, str]) -> No
     for path, name_fragment in cases:
         if not path.is_file():
             pytest.skip(f"missing {path}")
-        text, err = image_bytes_to_text(path.read_bytes(), crop_panel=True)
+        text, err = _ocr_text_for(path, ocr_text_cache)
         assert err is None
         parsed = parse_panel_text(text, map_names=map_names)
         assert parsed.map_id is not None

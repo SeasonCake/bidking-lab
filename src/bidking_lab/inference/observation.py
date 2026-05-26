@@ -35,6 +35,7 @@ display-rule match and the value-side prior fit.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Literal, Mapping
 
 from bidking_lab.inference.display import (
@@ -719,7 +720,7 @@ def relax_bucket_for_enumeration_preview(
     return relaxed, dropped
 
 
-def candidates_for_bucket(
+def _compute_candidates_for_bucket(
     bucket: QualityBucketObs,
     *,
     warehouse_capacity: int,
@@ -941,6 +942,92 @@ def candidates_for_bucket(
     return out
 
 
+def _candidate_fingerprint(bucket: QualityBucketObs) -> tuple[Any, ...]:
+    """Hashable subset of bucket fields consumed by candidate enumeration."""
+    value_range = tuple(bucket.value_range) if bucket.value_range is not None else None
+    return (
+        bucket.quality,
+        bucket.avg_cells.raw if bucket.avg_cells is not None else None,
+        bucket.total_cells,
+        bucket.count,
+        bucket.value_sum,
+        bucket.avg_value,
+        value_range,
+        bucket.huge_band,
+        bucket.huge_cells_override,
+    )
+
+
+@lru_cache(maxsize=1024)
+def _candidates_for_bucket_cached(
+    fingerprint: tuple[Any, ...],
+    warehouse_capacity: int,
+    other_known_cells: int,
+    max_count: int,
+) -> tuple[BucketCandidate, ...]:
+    (
+        quality,
+        avg_cells_raw,
+        total_cells,
+        count,
+        value_sum,
+        avg_value,
+        value_range,
+        huge_band,
+        huge_cells_override,
+    ) = fingerprint
+    bucket = QualityBucketObs(
+        quality=quality,
+        avg_cells=parse_reading(avg_cells_raw) if avg_cells_raw is not None else None,
+        total_cells=total_cells,
+        count=count,
+        value_sum=value_sum,
+        avg_value=avg_value,
+        value_range=value_range,
+        huge_band=huge_band,
+        huge_cells_override=huge_cells_override,
+    )
+    return tuple(
+        _compute_candidates_for_bucket(
+            bucket,
+            warehouse_capacity=warehouse_capacity,
+            other_known_cells=other_known_cells,
+            max_count=max_count,
+        )
+    )
+
+
+def candidates_for_bucket(
+    bucket: QualityBucketObs,
+    *,
+    warehouse_capacity: int,
+    other_known_cells: int = 0,
+    max_count: int = 50,
+) -> list[BucketCandidate]:
+    """Return ranked bucket candidates, cached by the effective constraints.
+
+    The returned list is a copy, so UI preview slicing or mutation cannot
+    modify cached candidates shared with joint and analytical inference.
+    """
+    cached = _candidates_for_bucket_cached(
+        _candidate_fingerprint(bucket),
+        int(warehouse_capacity),
+        int(other_known_cells),
+        int(max_count),
+    )
+    return list(cached)
+
+
+def clear_candidate_cache() -> None:
+    """Clear cached bucket enumeration results."""
+    _candidates_for_bucket_cached.cache_clear()
+
+
+def candidate_cache_info() -> Any:
+    """Expose bucket enumeration cache statistics for diagnostics/tests."""
+    return _candidates_for_bucket_cached.cache_info()
+
+
 def top_k_for_session(
     session: SessionObs,
     *,
@@ -1004,5 +1091,7 @@ __all__ = (
     "lookup_single_item_value",
     "explicit_lower_bucket_cells_from_state",
     "candidates_for_bucket",
+    "clear_candidate_cache",
+    "candidate_cache_info",
     "top_k_for_session",
 )

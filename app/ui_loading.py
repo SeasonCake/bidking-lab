@@ -1,4 +1,4 @@
-"""Animated loading banners for Streamlit (OCR warm-up, MC hints)."""
+"""Animated loading banners for Streamlit inference status."""
 
 from __future__ import annotations
 
@@ -52,43 +52,6 @@ LOADING_CSS = """
 }
 .bk-dots span:nth-child(2) { animation-delay: 0.2s; }
 .bk-dots span:nth-child(3) { animation-delay: 0.4s; }
-.bk-warmup-bar {
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(99, 102, 241, 0.15);
-  overflow: hidden;
-  margin: 0.35rem 0 0.25rem;
-}
-.bk-warmup-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #6366f1, #7c3aed);
-  transition: width 0.55s ease-out;
-}
-.bk-warmup-bar-fill--grow {
-  width: 3%;
-  animation: bk-warmup-grow cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
-}
-.bk-warmup-bar-fill--pct {
-  /* width set inline */
-}
-.bk-warmup-bar-fill--done {
-  width: 100% !important;
-  animation: bk-warmup-complete 0.45s ease-out forwards;
-}
-@keyframes bk-warmup-complete {
-  from { width: 91%; }
-  to { width: 100%; }
-}
-/* Installer-style curve: fast ONNX load → sample OCR → screen path (tuned ~52s total) */
-@keyframes bk-warmup-grow {
-  0% { width: 3%; }
-  10% { width: 14%; }
-  28% { width: 38%; }
-  52% { width: 62%; }
-  78% { width: 80%; }
-  100% { width: 91%; }
-}
 </style>
 """
 
@@ -111,33 +74,6 @@ def _dots_html() -> str:
 def loading_slot():
     """Return a placeholder; call ``.empty()`` after work finishes to dismiss banner."""
     return st.empty()
-
-
-def render_warmup_progress_bar(
-    *,
-    pct: int,
-    screen_warmup: bool,
-    mode: str = "grow",
-) -> None:
-    """Simulated install-style progress (CSS anim while blocked; inline width on reruns)."""
-    inject_loading_css()
-    pct = max(0, min(100, int(pct)))
-    if mode == "done":
-        cls = "bk-warmup-bar-fill bk-warmup-bar-fill--done"
-        style = ""
-    elif mode == "pct":
-        cls = "bk-warmup-bar-fill bk-warmup-bar-fill--pct"
-        style = f' style="width: {pct}%;"'
-    else:
-        dur = 48 if screen_warmup else 24
-        cls = "bk-warmup-bar-fill bk-warmup-bar-fill--grow"
-        style = f' style="animation-duration: {dur}s;"'
-    _d = "div"
-    st.markdown(
-        f'<{_d} class="bk-warmup-bar" aria-label="warmup progress">'
-        f'<{_d} class="{cls}"{style}></{_d}></{_d}>',
-        unsafe_allow_html=True,
-    )
 
 
 def render_status_banner(

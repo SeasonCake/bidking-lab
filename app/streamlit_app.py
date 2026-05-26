@@ -11,8 +11,8 @@ installed game directory; see ``PROGRESS.md`` for the copy workflow)
 and exposes four panels:
 
 1. **\u8bfb\u6570\u8f93\u5165** — bucket-cell / value inputs (split per hero)
-2. **\u8054\u5408\u63a8\u65ad** — top-3 joint posterior hypotheses
-3. **\u51fa\u4ef7 hint** — snipe + pass recommendation cards
+2. **\u51fa\u4ef7 hint** — conditional MC and analytical estimate cards
+3. **\u8054\u5408\u7b5b\u9009** — top joint warehouse composition hypotheses
 4. **\u9053\u5177 ROI** — leave-one-out ROI table for Ethan default kit
 """
 
@@ -41,7 +41,7 @@ if str(_APP) not in sys.path:
 from bidking_lab.extract.bid_map_table import BidMap, load_bid_map_table
 from bidking_lab.extract.drop_table import DropPool, load_drop_table
 from bidking_lab.extract.item_table import Item, load_item_table
-from bidking_lab.inference.ground_truth import sample_session_truth
+from bidking_lab.inference.ground_truth import prepare_session_sampler
 from bidking_lab.inference.display import Reading, parse_reading
 from bidking_lab.inference.joint import candidates_for_bucket
 from bidking_lab.inference.observation import (
@@ -246,6 +246,14 @@ def _render_candidate_preview(
         )
         return
     if not cands:
+        if warehouse_capacity <= 0:
+            st.warning(
+                f"\u26a0\ufe0f {quality_label}\uff1a\u4ed3\u5e93\u603b\u683c\u6570\u672a\u751f\u6548\uff0c"
+                "\u5019\u9009\u679a\u4e3e\u6682\u65f6\u6ca1\u6709\u53ef\u7528\u5bb9\u91cf\u4e0a\u9650\u3002"
+                "\u8bf7\u786e\u8ba4\u5de6\u4fa7\u300c\u4ed3\u5e93\u603b\u683c\u6570\u300d\u6709\u503c\uff0c"
+                "\u6216\u91cd\u65b0\u6293\u5c4f\u3002"
+            )
+            return
         st.warning(
             f"\u26a0\ufe0f {quality_label}\uff1a\u5f53\u524d\u7ea6\u675f\u4e0b\u65e0\u5408\u6cd5\u5019\u9009\u3002"
             "\u68c0\u67e5\u662f\u5426\u8bef\u586b\u5747\u683c\uff08\u4f8b 4.00 \u4ec5\u5728\u88ab\u820d\u5165\u65f6\u51fa\u73b0\uff0c"
@@ -586,10 +594,8 @@ def _sample_truths_cached(map_id: int, *, n_trials: int, seed: int) -> list:
     """
     maps, drops, items = _load_tables()
     rng = np.random.default_rng(seed)
-    return [
-        sample_session_truth(map_id, maps=maps, drops=drops, items=items, rng=rng)
-        for _ in range(n_trials)
-    ]
+    sampler = prepare_session_sampler(map_id, maps=maps, drops=drops, items=items)
+    return [sampler.sample(rng=rng) for _ in range(n_trials)]
 
 
 # ---------- Helpers ----------
@@ -1124,15 +1130,13 @@ def _render_persisted_tab_nav(
     if infer_status == "running":
         _status = ""
     render_tab_status_line(_status)
-    _keys = ["obs", "hint", "roi"]
+    _keys = ["obs", "hint", "joint", "roi"]
     _labels = {
         "obs": "\U0001f4dd \u8bfb\u6570\u8f93\u5165",
         "hint": _hl,
+        "joint": "\U0001f50e \u8054\u5408\u7b5b\u9009",
         "roi": "\U0001f4b0 \u9053\u5177 ROI",
     }
-    if st.session_state.get("show_experimental_tab", False):
-        _keys.append("joint")
-        _labels["joint"] = "\u2697\ufe0f \u8054\u5408\u63a8\u65ad\uff08\u5b9e\u9a8c\u6027\uff09"
     st.session_state.setdefault("_main_tab", "obs")
     return render_main_tab_nav(keys=_keys, labels=_labels)
 
@@ -1177,102 +1181,16 @@ def _materialize_deferred_debug_png() -> None:
     # #endregion
 
 
-def _ocr_warmup_spinner_label(*, screen_warmup: bool) -> str:
-    if screen_warmup:
-        return "正在加载 OCR（样例图 + 主屏抓屏暖机，约 20–50 秒）…"
-    return "正在加载 OCR（样例图暖机，约 15–35 秒）…"
-
-
 @st.cache_resource(show_spinner=False)
-def _cached_ocr_engine(screen_warmup: bool):
-    """One RapidOCR instance per Streamlit server process (survives reruns)."""
+def _cached_ocr_engine():
+    """One lazy RapidOCR instance per Streamlit server process."""
     from bidking_lab.capture.ocr import (
         bind_ocr_engine,
         create_ocr_engine,
-        warmup_engine,
-        warmup_engine_screen_primary,
     )
 
     eng = create_ocr_engine()
-    warmup_engine(eng)
-    if screen_warmup:
-        warmup_engine_screen_primary(eng)
     bind_ocr_engine(eng)
-    return eng
-
-
-def _sidebar_ocr_status_and_engine(*, screen_warmup: bool):
-    """Warm OCR once per session; banner stays visible after map/input changes."""
-    st.session_state.setdefault("ocr_ui_status", "pending")
-    status = st.session_state["ocr_ui_status"]
-    if status == "ready":
-        render_status_banner(
-            kind="ready",
-            message="OCR 已就绪",
-            detail="",
-        )
-        return _cached_ocr_engine(screen_warmup)
-    if status == "error":
-        render_status_banner(
-            kind="error",
-            message="OCR 引擎未就绪",
-            detail=str(st.session_state.get("ocr_ui_error", ""))[:200],
-        )
-        return None
-    render_status_banner(
-        kind="loading",
-        message="OCR 引擎加载中",
-        detail=(
-            "首次启动需加载 ONNX 并暖机（约 20–50 秒），仅本进程一次；"
-            "完成后抓屏会快很多，但第一次 OCR 仍可能比之后慢几秒"
-        ),
-    )
-    try:
-        if status == "pending":
-            with st.spinner(_ocr_warmup_spinner_label(screen_warmup=screen_warmup)):
-                eng = _cached_ocr_engine(screen_warmup)
-        else:
-            eng = _cached_ocr_engine(screen_warmup)
-    except Exception as exc:  # noqa: BLE001
-        st.session_state["ocr_ui_status"] = "error"
-        st.session_state["ocr_ui_error"] = str(exc)
-        return None
-    st.session_state["ocr_ui_status"] = "ready"
-    return eng
-
-
-def _ensure_ocr_engine(*, screen_warmup: bool):
-    """Load OCR once before sidebar renders (avoids duplicate widgets from mid-sidebar rerun)."""
-    import time as _wt
-
-    from startup_wait import render_startup_wait_screen
-
-    status = st.session_state.setdefault("ocr_ui_status", "pending")
-    if status == "ready":
-        st.session_state.pop("_warmup_ui_pane", None)
-        return _cached_ocr_engine(screen_warmup)
-    if status == "error":
-        return None
-    if status == "finalizing":
-        render_startup_wait_screen(screen_warmup=screen_warmup, finalize=True)
-        st.session_state.pop("_warmup_t0", None)
-        st.session_state.pop("_warmup_render_n", None)
-        st.session_state.pop("_warmup_ui_pane", None)
-        st.session_state["ocr_ui_status"] = "ready"
-        st.session_state["_ocr_warmup_toast"] = True
-        st.rerun()
-        return _cached_ocr_engine(screen_warmup)
-    st.session_state.setdefault("_warmup_t0", _wt.perf_counter())
-    render_startup_wait_screen(screen_warmup=screen_warmup)
-    try:
-        eng = _cached_ocr_engine(screen_warmup)
-    except Exception as exc:  # noqa: BLE001
-        st.session_state["ocr_ui_status"] = "error"
-        st.session_state["ocr_ui_error"] = str(exc)
-        st.session_state.pop("_warmup_t0", None)
-        return None
-    st.session_state["ocr_ui_status"] = "finalizing"
-    st.rerun()
     return eng
 
 
@@ -1328,7 +1246,7 @@ def _session_int(key: str) -> int:
 
 
 def _warehouse_capacity() -> int:
-    return _session_int("obs_warehouse_cells")
+    return _session_int("obs_warehouse_cells") or int(state.get("warehouse_cells") or 0)
 
 
 def _lower_bucket_cells_for_preview(state: dict, quality: int) -> int:
@@ -1385,11 +1303,14 @@ def _queue_capture_from_bytes(
 
     _prep_ms = 0
     _t0 = _time.perf_counter()
-    ocr_text, ocr_err = image_bytes_to_text(
-        data,
-        crop_panel=crop_panel,
-        engine=_cached_ocr_engine(_active_screen_ocr_warmup),
-    )
+    try:
+        engine = _cached_ocr_engine()
+    except Exception as exc:  # noqa: BLE001
+        st.session_state["ocr_ui_status"] = "error"
+        st.session_state["ocr_ui_error"] = str(exc)
+        return f"OCR 引擎加载失败：{exc}"
+    st.session_state["ocr_ui_status"] = "ready"
+    ocr_text, ocr_err = image_bytes_to_text(data, crop_panel=crop_panel, engine=engine)
     _ocr_ms = int((_time.perf_counter() - _t0) * 1000)
     _ocr_meta = last_ocr_panel_meta()
     st.session_state["_defer_panel_png_src"] = (data, crop_panel)
@@ -1596,6 +1517,57 @@ def _pick_preserved_int(
     return None
 
 
+def _record_live_observation_snapshot(
+    obs_state: dict[str, Any],
+    *,
+    source: str,
+    event_kind: str,
+    previous: dict[str, Any] | None = None,
+) -> None:
+    """Mirror legacy UI updates into the live reducer without driving UI yet."""
+    from bidking_lab.live import (
+        LiveSessionState,
+        apply_observation_batch,
+        live_batch_from_legacy_obs,
+    )
+
+    prior = (
+        previous
+        if previous is not None
+        else st.session_state.get("_live_legacy_snapshot", {})
+    )
+    current_effective = dict(obs_state)
+    prior_effective = dict(prior)
+    for effective in (current_effective, prior_effective):
+        current_hero = effective.get("hero")
+        for prefix, quality in (("purple", 4), ("gold", 5), ("red", 6)):
+            key = f"{prefix}_huge_band"
+            if key not in effective:
+                continue
+            allowed = quality == 4 or current_hero != "aisha"
+            raw = str(effective.get(key) or "none") if allowed else "none"
+            band, override = _resolve_huge_selection(raw, quality)
+            effective[key] = band
+            effective[f"{prefix}_huge_cells_override"] = override
+    batch = live_batch_from_legacy_obs(
+        current_effective,
+        previous=prior_effective,
+        source=source,
+        event_kind=event_kind,
+    )
+    st.session_state["_live_legacy_snapshot"] = dict(obs_state)
+    if not batch.field_updates:
+        return
+    live_state = st.session_state.get("_live_session_state")
+    if not isinstance(live_state, LiveSessionState):
+        live_state = LiveSessionState()
+    st.session_state["_live_session_state"] = apply_observation_batch(
+        live_state,
+        batch,
+    )
+    st.session_state["_last_live_observation_batch"] = batch
+
+
 def _apply_pending_capture(
     obs_state: dict,
     *,
@@ -1615,6 +1587,7 @@ def _apply_pending_capture(
     )
 
     snap = st.session_state.pop("_pre_ocr_ui_snapshot", {})
+    _before_capture_obs = dict(obs_state)
     _map_before_ocr = obs_state.get("map_id")
     _cap_result = st.session_state.pop("_pending_capture")
     from bidking_lab.inference.readings_validate import check_warehouse_cell_budget
@@ -1660,6 +1633,12 @@ def _apply_pending_capture(
             int(_cap_result.map_id),
             category=st.session_state.get("obs_map_category"),
         )
+    _record_live_observation_snapshot(
+        obs_state,
+        source="ocr",
+        event_kind="ocr_update",
+        previous=_before_capture_obs,
+    )
     st.session_state["_capture_just_applied"] = True
     st.session_state["_force_hydrate_avg_raw"] = True
     st.session_state["_ocr_refill_numeric"] = True
@@ -1845,8 +1824,8 @@ def _execute_deferred_capture(
         with st.status(_status_lbl, expanded=False) as _cap_status:
             if st.session_state.get("_ocr_show_first_grab_notice"):
                 st.caption(
-                    "\u2139\ufe0f \u9996\u6b21 OCR \u6293\u5c4f\u901a\u5e38\u6bd4\u4e4b\u540e\u6162\u51e0\u79d2"
-                    "\uff08\u6a21\u578b\u5df2\u5728\u542f\u52a8\u65f6\u6696\u673a\uff0c\u4e4b\u540e\u4f1a\u66f4\u5feb\uff09\u3002"
+                    "\u2139\ufe0f \u9996\u6b21 OCR \u6293\u5c4f\u901a\u5e38\u6bd4\u4e4b\u540e\u6162\uff1a"
+                    "\u8bc6\u522b\u6a21\u578b\u5c06\u5728\u7b2c\u4e00\u6b21\u5b9e\u9645\u4f7f\u7528\u65f6\u52a0\u8f7d\u3002"
                 )
             if kind == "screen":
                 from bidking_lab.capture.screen import (
@@ -1951,11 +1930,6 @@ def _on_obs_map_select_changed() -> None:
         st.session_state.pop("_capture_map_miss", None)
 
 
-from ui_prefs import load_ui_prefs, save_ui_prefs
-
-_active_screen_ocr_warmup = bool(load_ui_prefs().get("screen_ocr_warmup", True))
-_ocr_engine = _ensure_ocr_engine(screen_warmup=_active_screen_ocr_warmup)
-
 # Apply OCR results before sidebar/main widgets so first paint has filled values.
 _apply_pending_capture(state, map_names=_map_names)
 # #region agent log
@@ -1990,17 +1964,12 @@ agent_phase_log(phase="before_sidebar", hypothesis_id="H1,H3")
 # #endregion
 
 with st.sidebar:
-    if st.session_state.pop("_ocr_warmup_toast", False):
-        st.toast(
-            "OCR 已就绪（启动暖机已完成）。首次抓屏 OCR 可能比之后慢几秒，属正常现象。",
-            icon="\u2705",
-        )
     if st.session_state.pop("_ocr_first_grab_toast", False):
         st.toast(
             "首次 OCR 已完成。同一会话内再次抓屏通常会更快。",
             icon="\u2139\ufe0f",
         )
-    if _ocr_engine is not None:
+    if st.session_state.get("ocr_ui_status") == "ready":
         render_status_banner(
             kind="ready",
             message="OCR 已就绪",
@@ -2012,6 +1981,8 @@ with st.sidebar:
             message="OCR 引擎未就绪",
             detail=str(st.session_state.get("ocr_ui_error", ""))[:200],
         )
+    else:
+        st.caption("OCR 按需加载：手填可立即使用；首次点击 OCR 时模型才会初始化。")
 
     sidebar_section("\u4f1a\u8bdd", variant="session", icon="\U0001f3ae")
 
@@ -2194,9 +2165,9 @@ with st.sidebar:
             "**\u987b\u624b\u9009/\u624b\u586b**\uff1a\u82f1\u96c4\uff1b\u8bfb\u6570 tab \u91cc\u7d2b/\u91d1/\u7ea2\u5de8\u7269\u4e0e\u2605\u5177\u4f53\u7269\u3001"
             "\u7ea2\u54c1\u603b\u683c/\u4ef7\u503c\u533a\u95f4\u3002\n\n"
             "**\u6293\u53d6\u5f53\u524d\u5c4f\u5e55**\uff1a\u4ec5\u672c\u673a\u622a\u53d6\u6240\u9009\u663e\u793a\u5668\u5de6\u4fa7\u6e38\u620f\u4fe1\u606f\u533a\uff08ROI\uff09"
-            "\u505a OCR \u4e0e\u5f15\u64ce\u6696\u673a\uff1b\u4e0d\u4e0a\u4f20\u3001\u4e0d\u5b58\u6863\u3002\u8bf7\u907f\u5f00\u542b\u94f6\u884c\u5361\u3001\u804a\u5929\u7b49\u654f\u611f\u754c\u9762\u3002"
-            "\u9996\u6b21\u6293\u5c4f OCR \u901a\u5e38\u6bd4\u4e4b\u540e\u6162\u51e0\u79d2"
-            "\uff08\u542f\u52a8\u65f6\u5df2\u6696\u673a\uff0c\u4f46\u9996\u6b21\u5b9e\u51b5\u6293\u5c4f\u4ecd\u6709\u4e00\u6b21\u5efa\u7acb\u5ef6\u8fdf\uff09\u3002\n\n"
+            "\u505a OCR\uff1b\u4e0d\u4e0a\u4f20\u3001\u4e0d\u5b58\u6863\u3002\u8bf7\u907f\u5f00\u542b\u94f6\u884c\u5361\u3001\u804a\u5929\u7b49\u654f\u611f\u754c\u9762\u3002"
+            "\u9996\u6b21 OCR \u4f1a\u6309\u9700\u52a0\u8f7d\u6a21\u578b\uff0c\u901a\u5e38\u6bd4\u540e\u7eed\u8bc6\u522b\u6162\uff1b"
+            "\u4f46\u542f\u52a8\u9875\u548c\u624b\u586b\u8def\u5f84\u4e0d\u518d\u7b49\u5f85 OCR \u6696\u673a\u3002\n\n"
             "**OCR \u586b\u5165**\uff1a\u4ec5\u8986\u76d6\u672c\u6b21\u8bc6\u522b\u5230\u7684\u5b57\u6bb5\uff1b"
             "\u672a\u51fa\u73b0\u5728\u9762\u677f\u4e0a\u7684\u9879\uff08\u5982\u81ea\u4f30\u7d2b\u54c1\u683c\u6570\uff09\u4f1a\u4fdd\u7559\u3002"
             "\u8bc6\u522b\u5230\u7684\u9879\u4f1a\u8986\u76d6\u65e7\u503c\uff08\u542b\u4e0a\u6b21 OCR \u6216\u624b\u586b\uff09\u3002"
@@ -2254,9 +2225,9 @@ with st.sidebar:
         "\u6293\u53d6\u5f53\u524d\u5c4f\u5e55",
         key="capture_run_screen",
         width="stretch",
-        disabled=not _mons or _ocr_engine is None,
+        disabled=not _mons,
     )
-    if _screen_clicked and _mons and _ocr_engine is not None:
+    if _screen_clicked and _mons:
         _delay = (
             int(st.session_state.get("capture_delay_sec", 2))
             if _single_monitor
@@ -2302,7 +2273,6 @@ with st.sidebar:
             key="capture_run_clipboard",
             width="stretch",
             help="Win+Shift+S \u6216\u6e38\u620f\u622a\u56fe\u540e\u5148\u590d\u5236\u5230\u526a\u8d34\u677f",
-            disabled=_ocr_engine is None,
         )
     with _btn_ocr:
         _ocr_clicked = st.button(
@@ -2310,7 +2280,7 @@ with st.sidebar:
             key="capture_run_ocr",
             type="primary",
             width="stretch",
-            disabled=_ocr_engine is None or _cap_upload is None,
+            disabled=_cap_upload is None,
             help=(
                 "\u5148\u5728\u4e0a\u65b9\u9009\u62e9\u622a\u56fe\u6587\u4ef6\u540e\u518d\u70b9\u51fb"
                 if _cap_upload is None
@@ -2372,23 +2342,6 @@ with st.sidebar:
     sidebar_divider()
     sidebar_section("MC \u4e0e\u9ad8\u7ea7", variant="advanced", icon="\u2699\ufe0f")
     with st.expander("\u9ad8\u7ea7\uff1a MC \u91c7\u6837\u53c2\u6570", expanded=False):
-        _prefs_now = load_ui_prefs()
-        _warm_saved = bool(_prefs_now.get("screen_ocr_warmup", True))
-        _warm_pick = st.checkbox(
-            "\u542f\u52a8\u65f6\u4e3b\u5c4f\u6293\u5c4f\u6696\u673a\uff08\u52a0\u5feb\u9996\u6b21\u5b9e\u51b5 OCR\uff09",
-            value=_warm_saved,
-            help=(
-                "\u5f00\u542f\uff1a\u542f\u52a8\u65f6\u591a\u62d3\u4e00\u6b65\u4e3b\u663e\u793a\u5668\u88c1\u5207\u6696\u673a\uff08\u7ea6\u591a\u6570\u79d2\uff09\u3002"
-                "\u5173\u95ed\uff1a\u542f\u52a8\u66f4\u5feb\uff0c\u4f46\u9996\u6b21\u6293\u5c4f\u53ef\u80fd\u66f4\u6162\u3002"
-            ),
-            key="adv_screen_ocr_warmup",
-        )
-        if _warm_pick != _warm_saved:
-            save_ui_prefs({**_prefs_now, "screen_ocr_warmup": _warm_pick})
-            st.caption("\u5df2\u4fdd\u5b58\uff1b\u8bf7\u91cd\u542f Streamlit \u670d\u52a1\u540e\u751f\u6548\u3002")
-        elif _warm_pick != _active_screen_ocr_warmup:
-            st.caption("\u4e0e\u5f53\u524d\u8fd0\u884c\u4e0d\u4e00\u81f4\uff0c\u8bf7\u91cd\u542f Streamlit \u670d\u52a1\u540e\u751f\u6548\u3002")
-        st.divider()
         n_trials = st.slider(
             "MC \u6837\u672c\u6570\uff08samples\uff09",
             500,
@@ -2401,13 +2354,6 @@ with st.sidebar:
                  "**1500-2000** = \u66f4\u7a33\u7684\u5206\u4f4d\u6570\uff08\u7a0d\u6162\uff09\uff1b"
                  "**2500-5000** = \u5927\u4ed3\u6216\u5f3a\u7ea6\u675f\u573a\u666f\u5907\u9009\u3002"
                  "\u7f13\u5b58\u5bbd\u5bb9\uff1a(map\\_id, n\\_trials, seed) \u540c\u4e00\u7ec4\u53c2\u6570\u4e0d\u4f1a\u91cd\u7b97\u3002",
-        )
-        show_experimental = st.checkbox(
-            "\u663e\u793a\u5b9e\u9a8c\u6027 tab\uff08\u8054\u5408\u63a8\u65ad\uff09",
-            value=False,
-            key="show_experimental_tab",
-            help="\u8054\u5408\u63a8\u65ad\u8868\u5728\u7528\u6237\u5df2\u7ed9\u51fa total_cells \u7684\u573a\u666f"
-                 "\u4e0b top-3 \u533a\u5206\u4e0d\u660e\u663e\uff0c\u9ed8\u8ba4\u9690\u85cf\u3002\u5f00\u542f\u540e\u51fa\u73b0\u7b2c 4 \u4e2a tab\u3002",
         )
         warehouse_tol = st.slider(
             "\u4ed3\u5e93\u5bb9\u5dee \u00b1\u683c\u6570", 4, 20, 8,
@@ -2474,6 +2420,11 @@ sync_obs_from_reading_widgets(state, st.session_state, allow_clear=False)
 from bidking_lab.capture.apply import hydrate_huge_bands_from_obs, sync_huge_bands_to_obs
 
 sync_huge_bands_to_obs(state, st.session_state)
+_record_live_observation_snapshot(
+    state,
+    source="manual",
+    event_kind="manual_update",
+)
 # #region agent log
 agent_debug_log(
     location="streamlit_app.py:after_global_hydrate_sync",
@@ -2989,7 +2940,7 @@ _paint_hint_banner(_hint_banner_slot)
 _materialize_deferred_debug_png()
 tab_joint = None
 
-_tab_pane = st.empty()
+_tab_pane = st.empty() if _main_tab == "joint" else None
 # #region agent log
 agent_debug_log(
     location="streamlit_app.py:tab_pane",
@@ -3000,8 +2951,9 @@ agent_debug_log(
 )
 # #endregion
 
-if _deferred_capture_pending is not None and _ocr_engine is not None:
-    _tab_pane.empty()
+if _deferred_capture_pending is not None:
+    if _tab_pane is not None:
+        _tab_pane.empty()
     # #region agent log
     agent_debug_log(
         location="streamlit_app.py:tab_pane",
@@ -3026,13 +2978,12 @@ if _deferred_capture_pending is not None and _ocr_engine is not None:
     )
     # #endregion
     st.rerun()
-elif _deferred_capture_pending is not None:
-    st.session_state.pop("_capture_in_progress", None)
-    st.warning("OCR \u5f15\u64ce\u672a\u5c31\u7eea\uff0c\u65e0\u6cd5\u6293\u5c4f\u3002")
 
 # ===== Tab 1: \u8bfb\u6570\u8f93\u5165 =====
 if _main_tab == "obs":
-    with _tab_pane.container():
+    @st.fragment
+    def _render_obs_tab_fragment() -> None:
+        with st.container():
             from bidking_lab.capture.apply import (
                 hydrate_reading_widgets_from_obs,
                 reading_widget_key as _rwk,
@@ -3657,6 +3608,11 @@ if _main_tab == "obs":
             sync_obs_from_reading_widgets(
                 state, st.session_state, allow_clear=True,
             )
+            _record_live_observation_snapshot(
+                state,
+                source="manual",
+                event_kind="manual_update",
+            )
             # #region agent log
             agent_debug_log(
                 location="streamlit_app.py:obs_tab_after_sync",
@@ -3682,6 +3638,8 @@ if _main_tab == "obs":
                 run_id="post-fix",
             )
             # #endregion
+
+    _render_obs_tab_fragment()
 
 
 def _render_hint_tab_impl() -> None:
@@ -3838,6 +3796,14 @@ def _render_hint_tab_impl() -> None:
         analytical = _cached_bundle["analytical"]
         snipe = _cached_bundle["snipe"]
         pass_rec = _cached_bundle["pass_rec"]
+
+        from experimental_tabs import render_joint_reasoning_summary
+
+        render_joint_reasoning_summary(
+            session=session,
+            per_bucket_top=per_bucket_top,
+            expanded=False,
+        )
 
         # ---- Value range + distribution chart (top) ----
         st.markdown(
@@ -4179,11 +4145,11 @@ def _render_hint_tab_impl() -> None:
 
 
 if _main_tab == "hint":
-    with _tab_pane.container():
+    with st.container():
         # #region agent log
         agent_debug_log(
-            location="streamlit_app.py:tab_pane",
-            message="tab_pane_render_hint",
+            location="streamlit_app.py:hint_tab",
+            message="render_hint_tab",
             data={"main_tab": "hint"},
             hypothesis_id="H-ghost",
             run_id="post-fix",
@@ -4191,8 +4157,8 @@ if _main_tab == "hint":
         # #endregion
         _render_hint_tab_impl()
 
-# ===== Tab (实验性): 联合推断 — 默认隐藏 =====
-if _main_tab == "joint" and st.session_state.get("show_experimental_tab", False):
+# ===== Tab: 联合筛选 =====
+if _main_tab == "joint":
     with _tab_pane.container():
         from experimental_tabs import render_joint_inference_tab
 

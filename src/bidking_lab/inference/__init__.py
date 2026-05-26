@@ -34,7 +34,9 @@ from bidking_lab.inference.observation import (
     BucketCandidate,
     QualityBucketObs,
     SessionObs,
+    candidate_cache_info,
     candidates_for_bucket,
+    clear_candidate_cache,
     top_k_for_session,
 )
 from bidking_lab.inference.roi import (
@@ -60,7 +62,9 @@ __all__ = (
     "BucketCandidate",
     "QualityBucketObs",
     "SessionObs",
+    "candidate_cache_info",
     "candidates_for_bucket",
+    "clear_candidate_cache",
     "top_k_for_session",
     "AISHA_DEFAULT_LOADOUT",
     "ETHAN_DEFAULT_LOADOUT",
