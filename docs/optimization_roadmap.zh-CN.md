@@ -12,8 +12,8 @@
 
 已验证基线：
 
-- `pytest -q`：436 passed。
-- `.\scripts\test_smoke.ps1`：423 passed，13 个真实 OCR 图片回归 deselected。
+- `pytest -q`：438 passed。
+- `.\scripts\test_smoke.ps1`：425 passed，13 个真实 OCR 图片回归 deselected。
 - `python scripts/demo_scenarios.py`：端到端 demo 正常。
 - 后台 MC 慢的首个明确瓶颈是 anthology 地图重复 `flatten_pool`，已用 `SessionTruthSampler` 预编译采样器解决。
 - 已新增 `bidking_lab.live` 薄接口层，为未来手填 / OCR / packet 统一观测事件预留接口。
@@ -208,6 +208,7 @@ joint / MC / Pareto
 - [x] 补齐 bridge 显式字段等价性：巨物 override、小仓红品、Aisha 可见性、零值与格式化均价。
 - [x] UI 显示当前字段来源，并补充被阻止覆盖的最近一次更新诊断。
 - [x] 读数页顶部显示关键读数字段来源摘要。
+- [x] 增加 live adapter 组合等价性回归：Ethan 全字段、Aisha 合并低品。
 - [ ] 将推理输入从 legacy `obs` 切到 `LiveSessionState` adapter。
 - [ ] 切换前统一覆盖策略：现有 OCR 会覆盖手填，目标 reducer 为 `manual > ocr`。
 - [ ] 为关键读数输入区增加更细粒度的来源标记和“允许 OCR 覆盖手填”交互。
