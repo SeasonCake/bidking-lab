@@ -12,6 +12,7 @@ from bidking_lab.live import (
     source_priority,
     summarize_blocked_field_updates,
     summarize_field_sources,
+    summarize_selected_field_sources,
 )
 
 
@@ -294,6 +295,40 @@ def test_summarize_field_sources_returns_stable_debug_rows() -> None:
             "field": "session.hero",
             "value": "ethan",
             "source": "manual",
+            "confidence": "exact",
+        },
+    )
+
+
+def test_summarize_selected_field_sources_uses_labels_and_skips_missing() -> None:
+    state = apply_observation_batch(
+        LiveSessionState(),
+        LiveObservationBatch(
+            source="packet",
+            field_updates=(
+                FieldUpdate(
+                    path=("session", "warehouse_total_cells"),
+                    value=90,
+                    source="packet",
+                    confidence="exact",
+                ),
+            ),
+        ),
+    )
+
+    rows = summarize_selected_field_sources(
+        state,
+        {
+            "仓库总格": ("session", "warehouse_total_cells"),
+            "紫品总价": ("bucket", "4", "value_sum"),
+        },
+    )
+
+    assert rows == (
+        {
+            "field": "仓库总格",
+            "value": 90,
+            "source": "packet",
             "confidence": "exact",
         },
     )

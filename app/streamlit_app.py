@@ -1598,6 +1598,50 @@ def _render_live_source_summary() -> None:
             st.dataframe(blocked, hide_index=True, width="stretch")
 
 
+def _render_obs_source_summary() -> None:
+    """Show key reading provenance near the input form."""
+    from bidking_lab.live import (
+        LiveSessionState,
+        summarize_selected_field_sources,
+    )
+
+    live_state = st.session_state.get("_live_session_state")
+    if not isinstance(live_state, LiveSessionState):
+        return
+    rows = list(
+        summarize_selected_field_sources(
+            live_state,
+            {
+                "地图": ("session", "map_id"),
+                "英雄": ("session", "hero"),
+                "仓库总格": ("session", "warehouse_total_cells"),
+                "总藏品件数": ("session", "total_item_count"),
+                "白/绿总格": ("bucket", "1", "total_cells"),
+                "绿品总格": ("bucket", "2", "total_cells"),
+                "蓝品总格": ("bucket", "3", "total_cells"),
+                "紫品总格": ("bucket", "4", "total_cells"),
+                "紫品件数": ("bucket", "4", "count"),
+                "紫品均格": ("bucket", "4", "avg_cells"),
+                "紫品总价": ("bucket", "4", "value_sum"),
+                "金品总格": ("bucket", "5", "total_cells"),
+                "金品件数": ("bucket", "5", "count"),
+                "金品均格": ("bucket", "5", "avg_cells"),
+                "金品总价": ("bucket", "5", "value_sum"),
+                "红品总格": ("bucket", "6", "total_cells"),
+                "红品价值区间": ("bucket", "6", "value_range"),
+            },
+            limit=24,
+        )
+    )
+    if not rows:
+        return
+    with st.expander("当前关键读数来源（shadow）", expanded=False):
+        st.caption(
+            "当前推荐仍走 legacy obs；这里用于核对手填/OCR/packet 切换前的来源。"
+        )
+        st.dataframe(rows, hide_index=True, width="stretch")
+
+
 def _apply_pending_capture(
     obs_state: dict,
     *,
@@ -3038,6 +3082,7 @@ if _main_tab == "obs":
                 "\u9762\u677f\u5bfc\u5165\u4e0d\u542b\u5de8\u7269\u4fe1\u606f\uff1a\u8bf7\u624b\u52a8\u586b\u7d2b/\u91d1/\u7ea2 "
                 "\u300c\u5de8\u7269\u6570\u91cf\u300d\u3001\u2605 \u5177\u4f53\u7269\u3001\u7ea2\u54c1\u4ef7\u503c\u533a\u95f4\u3002"
             )
+            _render_obs_source_summary()
             if _cells_budget_err:
                 st.error(_cells_budget_err)
             st.subheader("\u4f4e\u54c1\u533a\uff08q\u22643\uff09")

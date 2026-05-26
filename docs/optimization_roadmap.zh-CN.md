@@ -12,8 +12,8 @@
 
 已验证基线：
 
-- `pytest -q`：435 passed。
-- `.\scripts\test_smoke.ps1`：422 passed，13 个真实 OCR 图片回归 deselected。
+- `pytest -q`：436 passed。
+- `.\scripts\test_smoke.ps1`：423 passed，13 个真实 OCR 图片回归 deselected。
 - `python scripts/demo_scenarios.py`：端到端 demo 正常。
 - 后台 MC 慢的首个明确瓶颈是 anthology 地图重复 `flatten_pool`，已用 `SessionTruthSampler` 预编译采样器解决。
 - 已新增 `bidking_lab.live` 薄接口层，为未来手填 / OCR / packet 统一观测事件预留接口。
@@ -196,6 +196,7 @@ joint / MC / Pareto
 - 来源优先级：`packet > manual > ocr > derived`。
 - `event_kind`：仅轮次变化、道具揭示、公开信息变化等语义事件触发重算；`heartbeat` 只承载传输元数据。
 - `summarize_blocked_field_updates()`：显示最近一次被更高优先级来源保留的字段，帮助切换 canonical input 前核对覆盖规则。
+- `summarize_selected_field_sources()`：按读数页关键字段列出来源，避免只靠侧边栏完整表核对。
 
 ### TODO
 
@@ -206,6 +207,7 @@ joint / MC / Pareto
 - [x] 新增 legacy snapshot adapter，并让 OCR apply / 手填 sync 镜像发送 live batch。
 - [x] 补齐 bridge 显式字段等价性：巨物 override、小仓红品、Aisha 可见性、零值与格式化均价。
 - [x] UI 显示当前字段来源，并补充被阻止覆盖的最近一次更新诊断。
+- [x] 读数页顶部显示关键读数字段来源摘要。
 - [ ] 将推理输入从 legacy `obs` 切到 `LiveSessionState` adapter。
 - [ ] 切换前统一覆盖策略：现有 OCR 会覆盖手填，目标 reducer 为 `manual > ocr`。
 - [ ] 为关键读数输入区增加更细粒度的来源标记和“允许 OCR 覆盖手填”交互。

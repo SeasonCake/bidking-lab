@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -144,6 +145,31 @@ def summarize_field_sources(
         rows.append(
             {
                 "field": ".".join(path),
+                "value": observed.value,
+                "source": observed.source,
+                "confidence": observed.confidence,
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return tuple(rows)
+
+
+def summarize_selected_field_sources(
+    state: LiveSessionState,
+    path_labels: Mapping[str, tuple[str, ...]],
+    *,
+    limit: int = 20,
+) -> tuple[dict[str, Any], ...]:
+    """Return source rows for a selected set of logical paths."""
+    rows: list[dict[str, Any]] = []
+    for label, path in path_labels.items():
+        observed = state.fields.get(path)
+        if observed is None:
+            continue
+        rows.append(
+            {
+                "field": label,
                 "value": observed.value,
                 "source": observed.source,
                 "confidence": observed.confidence,
@@ -304,4 +330,5 @@ __all__ = (
     "should_replace_field",
     "summarize_blocked_field_updates",
     "summarize_field_sources",
+    "summarize_selected_field_sources",
 )
