@@ -12,8 +12,8 @@
 
 已验证基线：
 
-- `pytest -q`：432 passed。
-- `.\scripts\test_smoke.ps1`：419 passed，13 个真实 OCR 图片回归 deselected。
+- `pytest -q`：434 passed。
+- `.\scripts\test_smoke.ps1`：421 passed，13 个真实 OCR 图片回归 deselected。
 - `python scripts/demo_scenarios.py`：端到端 demo 正常。
 - 后台 MC 慢的首个明确瓶颈是 anthology 地图重复 `flatten_pool`，已用 `SessionTruthSampler` 预编译采样器解决。
 - 已新增 `bidking_lab.live` 薄接口层，为未来手填 / OCR / packet 统一观测事件预留接口。
@@ -28,11 +28,11 @@
 | -------- | ------------------ | ------------------------ | -------------------------------------- |
 | P0       | MC 采样预编译           | 先消掉明显冷启动瓶颈               | 已完成；保留旧 `sample_session_truth` 兼容测试/脚本 |
 | P0       | Pytest smoke 加速     | 日常验证不跑真实 OCR 图片回归         | 已完成；`slow` marker + `scripts/test_smoke.ps1` |
-| P0       | UI 切换效率            | 切 tab、读数编辑、后台 MC 轮询不互相拖慢 | 读数 fragment 与 hint 独立容器 first cut 已完成；后续按指标拆函数 |
+| P0       | UI 切换效率            | 切 tab、读数编辑、后台 MC 轮询不互相拖慢 | 读数 fragment、hint 独立容器、joint 跨 tab cache 已完成；后续按指标拆函数 |
 | P0       | 启动去阻塞             | 手填与浏览不等待 OCR                 | 已完成；首次 OCR 操作按需加载模型                       |
 | P0.5     | 观测事件接口             | 为手填/OCR/packet 三路输入统一入口     | OCR/手填已镜像到 shadow live state；下一步切换 canonical input |
 | P1       | 实时状态机               | 信息变化自动标 dirty、取消旧任务、重算推荐 | 只响应轮次/道具/公开信息等语义事件，不按 heartbeat 重算 |
-| P1       | 枚举 / joint 缓存       | 支撑实时刷新，减少重复枚举             | bucket fingerprint cache 已完成；joint cache 按指标再决定 |
+| P1       | 枚举 / joint 缓存       | 支撑实时刷新，减少重复枚举             | bucket fingerprint cache 与 joint context cache 已完成 |
 | P1       | Session-level 联合候选 | 把仓库大小、均格、均价、总价放到同一个组合评分里 | 已接入分析估算与 UI 联合筛选 tab       |
 | P1       | 多级评估 + Pareto      | 出价建议从单一分位数升级为风险/收益/置信度组合 | 状态机稳定后做；秒仓/放仓作为动作层再恢复             |
 | P2       | 推理并行               | snipe/pass/ROI 等独立分支并行   | 先向量化和缓存，再考虑线程/进程                       |
@@ -84,6 +84,7 @@
 - [x] 读数 tab 整块包进 `@st.fragment`，fragment 内自带 `st.container()`。
 - [x] `_tab_pane` 不再服务读数页与 hint 页；joint 已恢复为常驻主 tab。
 - [x] 保持读数页内部 widget key、hydrate/sync 顺序不变，降低行为回归风险。
+- [x] hint 页“联合筛选摘要”和 joint tab 共享 joint context cache，避免同一读数下切回 hint 重跑 DFS。
 - [x] 语法检查与核心回归测试通过。
 
 ### 决策
@@ -225,6 +226,12 @@ joint / MC / Pareto
 
 `candidates_for_bucket()` 典型耗时可接受，但 UI rerun 频繁。优化重点不是改数学，而是避免重复做同一组枚举。
 
+### 当前本地参考结论
+
+- 游戏静态表已经在 `data/raw/tables` / `data/processed` 解码；地图、物品、道具、英雄仍是当前推理的主数据源。
+- `src/AuctionAnalyzer4.13.3` 是参考计算器：核心价值在 OCR ROI、`OcrParser` 正则、均格/可达格规则和解析枚举思路；它不包含 ProtoHub 抓包 parser。
+- 用户提供的三张截图显示 ProtoHub 叠层能展示轮次、估值、品质格/件数、footprint 网格和道具揭示结果；后续应先把这些截图对应的离线输出整理成 fixture，而不是直接接实时监听。
+
 ### TODO
 
 - [x] 做 bucket fingerprint：quality、cells、count、value_sum、avg_cells raw、avg_value、huge_band、warehouse、other_known_cells。
@@ -284,5 +291,5 @@ joint / MC / Pareto
 1. 给关键读数显示来源，并明确 `manual > ocr` 下重新 OCR 的覆盖/保留交互。
 2. 将 hint/MC 输入逐步从 legacy `obs` 切到 `LiveSessionState` adapter。
 3. 做自动重算状态机：只响应语义事件的 dirty → running → ready，取消陈旧任务。
-4. 以运行指标判断是否需要 joint 组合 cache 或进一步枚举剪枝，再做 Pareto 出价评估。
+4. 继续用运行指标判断是否需要进一步枚举剪枝，再做 Pareto 出价评估。
 5. ProtoHub 走离线 fixture 验证，与主线并行，不阻塞手填/OCR路径。

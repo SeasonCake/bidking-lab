@@ -9,6 +9,7 @@ demoted.
 
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from typing import Any
 
 import streamlit as st
@@ -23,6 +24,7 @@ from bidking_lab.inference.observation import (
 from bidking_lab.inference.quality_priors import PER_CELL_VALUE_DEFAULT
 
 QUALITY_LABEL = {1: "白品", 2: "绿品", 3: "蓝品", 4: "紫品", 5: "金品", 6: "红品"}
+_JOINT_CONTEXT_CACHE_KEY = "_joint_context_cache"
 
 
 def _reading_raw(bucket: QualityBucketObs) -> str:
@@ -106,6 +108,32 @@ def _joint_context(
         warehouse_slack=5,
     )
     return hyps, _local_top1_by_quality(session)
+
+
+def _joint_context_cached(
+    session: SessionObs,
+    *,
+    per_bucket_top: int,
+    k: int,
+    cache: MutableMapping[str, Any],
+    force_refresh: bool = False,
+) -> tuple[list[JointHypothesis], dict[int, BucketCandidate]]:
+    """Cache joint DFS results across tab switches for the same readings."""
+    fingerprint = _session_fingerprint(session, per_bucket_top)
+    key = (fingerprint, k)
+    cache_bucket = cache.setdefault(_JOINT_CONTEXT_CACHE_KEY, {})
+    if force_refresh or key not in cache_bucket:
+        hyps, local_top1 = _joint_context(
+            session,
+            per_bucket_top=per_bucket_top,
+            k=k,
+        )
+        cache_bucket[key] = (hyps, local_top1)
+        if len(cache_bucket) > 8:
+            oldest = next(iter(cache_bucket))
+            if oldest != key:
+                cache_bucket.pop(oldest, None)
+    return cache_bucket[key]
 
 
 def _result_badge(capacity: int, total_cells: int) -> tuple[str, str]:
@@ -224,7 +252,12 @@ def render_joint_reasoning_summary(
     if not session.buckets:
         return
 
-    hyps, local_top1 = _joint_context(session, per_bucket_top=per_bucket_top, k=3)
+    hyps, local_top1 = _joint_context_cached(
+        session,
+        per_bucket_top=per_bucket_top,
+        k=3,
+        cache=st.session_state,
+    )
     if not hyps:
         st.warning(
             "🔎 联合筛选没有找到可行组合；当前读数可能互相冲突，"
@@ -317,25 +350,33 @@ def render_joint_inference_tab(*, session_builder, state, per_bucket_top: int) -
     )
 
     fingerprint = _session_fingerprint(session, per_bucket_top)
-    cache_key = "_joint_filter_result"
     refresh = st.button("刷新联合筛选", key="run_joint", type="primary")
-    cached = st.session_state.get(cache_key)
-    if refresh or cached is None or cached.get("fingerprint") != fingerprint:
+    if refresh:
         with st.spinner("联合枚举中..."):
-            hyps, local_top1 = _joint_context(
+            hyps, local_top1 = _joint_context_cached(
                 session,
                 per_bucket_top=per_bucket_top,
                 k=5,
+                cache=st.session_state,
+                force_refresh=True,
             )
-        cached = {
-            "fingerprint": fingerprint,
-            "hyps": hyps,
-            "local_top1": local_top1,
-        }
-        st.session_state[cache_key] = cached
-
-    hyps = cached["hyps"]
-    local_top1 = cached["local_top1"]
+    else:
+        cache_bucket = st.session_state.get(_JOINT_CONTEXT_CACHE_KEY, {})
+        if (fingerprint, 5) in cache_bucket:
+            hyps, local_top1 = _joint_context_cached(
+                session,
+                per_bucket_top=per_bucket_top,
+                k=5,
+                cache=st.session_state,
+            )
+        else:
+            with st.spinner("联合枚举中..."):
+                hyps, local_top1 = _joint_context_cached(
+                    session,
+                    per_bucket_top=per_bucket_top,
+                    k=5,
+                    cache=st.session_state,
+                )
     if not hyps:
         st.warning(
             "未产生联合候选。通常是某个 bucket 的均格/件数/估价互相矛盾，"

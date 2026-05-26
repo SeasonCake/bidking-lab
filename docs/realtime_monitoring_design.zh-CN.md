@@ -109,6 +109,12 @@ reducer 仍可以存储 `heartbeat` 元数据并增加 state version，但不会
 
 ## ProtoHub / 抓包方向可行性评估
 
+### 当前参考材料判断（2026-05-26）
+
+- `data/raw/tables` 和 `data/processed` 已覆盖游戏静态表：地图、掉落、物品、英雄、道具仍作为推理主数据源。
+- `src/AuctionAnalyzer4.13.3` 是他人的 OCR + 出价计算器，适合参考 OCR ROI、正则解析、均格可达规则和解析枚举；它本身没有 ProtoHub / packet parser。
+- 用户提供的视频截图中的 ProtoHub 叠层看起来是离散游戏状态：轮次、估值、品质格/件数、footprint 网格、道具揭示结果。因此后续 packet 接入应发 `round_changed`、`tool_revealed`、`public_info_changed` 等语义事件，而不是按网络 tick 或 heartbeat 重算。
+
 ### 可能高价值字段
 
 | 字段 | 对推理价值 | 备注 |
