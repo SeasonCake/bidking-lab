@@ -93,6 +93,28 @@ def test_hint_bundle_stale_report_ignores_avg_cells_only_change():
     assert report["changed_fields"] == []
 
 
+def test_hint_bundle_stale_report_tracks_canonical_input_source():
+    state = _fake_state(_canonical_input_source="legacy")
+    snap = {k: state.get(k) for k in MC_FILTER_FP_KEYS}
+    bundle = {
+        "map_id": 1001,
+        "warehouse_cells": 120,
+        "readings_fp": inference_fingerprint(state, {}, seed_stable=True),
+        "readings_snap": snap,
+    }
+    changed = dict(state)
+    changed["_canonical_input_source"] = "live_shadow"
+    report = hint_bundle_stale_report(
+        bundle, changed, inference_ready=True,
+    )
+
+    assert report["stale"] is True
+    assert any(
+        d["key"] == "_canonical_input_source"
+        for d in report["changed_fields"]
+    )
+
+
 def test_hint_bundle_stale_report_warehouse_only():
     state = _fake_state()
     bundle = {

@@ -620,6 +620,14 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
 
+### C-64: canonical input 灰度开关（2026-05-27）
+
+- **问题**：手填/OCR 已进入 `LiveObservationBatch` shadow reducer，但出价 hint 与联合筛选仍只能读取 legacy `obs`；直接切换风险较高，需要可回退的灰度入口。
+- **改动**：高级区新增“使用 live shadow 作为推理输入”开关，默认关闭；打开后出价 hint、后台 MC 与联合筛选优先使用 `LiveSessionState -> SessionObs`，若 live session 与当前地图/仓库不匹配则自动回退 legacy。
+- **等价补齐**：live adapter 增加 legacy residual-red 规则：当白绿/蓝/紫/金都已知且红品未显式填写时，自动用仓库剩余格数生成红品 bucket。
+- **缓存/取消**：`_canonical_input_source` 纳入 hint 指纹与 stale 检测，切换 legacy/live/fallback 会使旧结果过期，避免跨输入源复用缓存。
+- **验证**：live/bg 聚焦 `31 passed`；非 slow smoke `427 passed, 13 deselected`；`py_compile` 覆盖 Streamlit 入口；浏览器 smoke 可见灰度开关、默认 legacy 文案与 3000 样本。
+
 ### C-63: Streamlit Arrow 表格告警修复 + MC 默认精度档（2026-05-27）
 
 - **问题**：live shadow 来源表的 `value` 列同时包含 `int` 与字符串（如 `none`），Streamlit 转 Arrow 时会反复报 `Expected bytes, got a 'int' object` / `Could not convert 'none'`，虽会自动修复但污染终端并增加刷新开销。

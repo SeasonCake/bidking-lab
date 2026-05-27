@@ -124,6 +124,7 @@ def compute_hint_bundle(
         "purple_tol": purple_tol,
         "map_id": int(map_id),
         "warehouse_cells": int(state["warehouse_cells"]),
+        "canonical_input_source": state.get("_canonical_input_source", "legacy"),
         "readings_fp": inference_fingerprint(readings_snap, {}, seed_stable=True),
         "readings_snap": readings_snap,
     }

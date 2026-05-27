@@ -4,6 +4,7 @@ from bidking_lab.live import (
     LiveSessionState,
     apply_observation_batch,
     live_batch_from_legacy_obs,
+    live_session_matches_context,
     live_state_to_session_obs,
 )
 
@@ -341,3 +342,30 @@ def test_live_adapter_matches_legacy_aisha_merged_low_quality_contract() -> None
     assert session.buckets[6].total_cells == 9
     assert session.buckets[6].huge_band == "none"
     assert session.buckets[6].huge_cells_override == 0
+
+
+def test_live_adapter_infers_residual_red_bucket_like_legacy_builder() -> None:
+    session = _session_from_legacy_obs(
+        {
+            "map_id": 2405,
+            "hero": "ethan",
+            "warehouse_cells": 100,
+            "wg_cells": 20,
+            "blue_cells": 10,
+            "purple_cells": 30,
+            "gold_cells": 25,
+        }
+    )
+
+    assert session is not None
+    assert session.buckets[6].total_cells == 15
+    assert live_session_matches_context(
+        session,
+        map_id=2405,
+        warehouse_total_cells=100,
+    )
+    assert not live_session_matches_context(
+        session,
+        map_id=2407,
+        warehouse_total_cells=100,
+    )

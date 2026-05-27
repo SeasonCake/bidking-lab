@@ -11,6 +11,7 @@ from bidking_lab.inference.observation import (
     HUGE_BAND_RANGE,
     QualityBucketObs,
     SessionObs,
+    candidates_for_bucket,
 )
 from bidking_lab.live.types import (
     AuctionPhase,
@@ -310,13 +311,15 @@ def live_state_to_session_obs(state: LiveSessionState) -> SessionObs | None:
         bucket = _bucket_from_fields(state, quality)
         if bucket is not None:
             buckets[quality] = bucket
+    warehouse_total_cells = _as_int(
+        _field_value(state, ("session", "warehouse_total_cells")),
+    )
+    _fill_residual_red_bucket(buckets, warehouse_total_cells)
 
     return SessionObs(
         map_id=map_id,
         hero=hero,
-        warehouse_total_cells=_as_int(
-            _field_value(state, ("session", "warehouse_total_cells")),
-        ),
+        warehouse_total_cells=warehouse_total_cells,
         warehouse_total_cells_approx=_as_int(
             _field_value(state, ("session", "warehouse_total_cells_approx")),
         ),
@@ -327,11 +330,83 @@ def live_state_to_session_obs(state: LiveSessionState) -> SessionObs | None:
     )
 
 
+def _fill_residual_red_bucket(
+    buckets: dict[int, QualityBucketObs],
+    warehouse_total_cells: int | None,
+) -> None:
+    if 6 in buckets or warehouse_total_cells is None or warehouse_total_cells <= 0:
+        return
+    required_qs = {1, 3, 4, 5}
+    if 2 in buckets:
+        required_qs.add(2)
+    if not required_qs.issubset(buckets):
+        return
+
+    explicit_sum = sum(
+        b.total_cells for b in buckets.values()
+        if b.total_cells is not None and b.total_cells > 0
+    )
+    derived_sum = 0
+    for q, bucket in buckets.items():
+        if bucket.total_cells is not None or q in (1, 2):
+            continue
+        has_info = (
+            (bucket.value_sum is not None and bucket.value_sum > 0)
+            or bucket.huge_band != "none"
+            or bucket.avg_cells is not None
+            or bucket.count is not None
+            or (bucket.avg_value is not None and bucket.avg_value > 0)
+        )
+        if not has_info:
+            continue
+        candidates = candidates_for_bucket(
+            bucket,
+            warehouse_capacity=warehouse_total_cells,
+            other_known_cells=explicit_sum + derived_sum,
+        )
+        if candidates:
+            derived_sum += candidates[0].total_cells
+        elif bucket.huge_band != "none":
+            derived_sum += bucket.min_huge_cells()
+
+    known_sum = explicit_sum + derived_sum
+    if known_sum <= 0:
+        return
+    red_residual = warehouse_total_cells - known_sum
+    if red_residual == 0:
+        buckets[6] = QualityBucketObs(
+            quality=6,
+            total_cells=0,
+            count=0,
+            huge_band="none",
+        )
+    elif red_residual > 0:
+        buckets[6] = QualityBucketObs(quality=6, total_cells=red_residual)
+
+
+def live_session_matches_context(
+    session: SessionObs | None,
+    *,
+    map_id: Any,
+    warehouse_total_cells: Any,
+) -> bool:
+    """Return whether a live-derived session matches current UI context."""
+    if session is None:
+        return False
+    if _as_int(map_id) != session.map_id:
+        return False
+    warehouse = _as_int(warehouse_total_cells)
+    if warehouse is not None and warehouse > 0:
+        return session.warehouse_total_cells == warehouse
+    return True
+
+
 __all__ = (
     "LiveSessionState",
     "ObservedField",
     "apply_observation_batch",
     "live_state_to_session_obs",
+    "live_session_matches_context",
     "mark_ready",
     "should_replace_field",
     "summarize_blocked_field_updates",

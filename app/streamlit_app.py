@@ -283,12 +283,14 @@ def _render_candidate_preview(
         suffix = _format_db_match_suffix(
             bucket.quality, bucket.value_sum, cells=cands[0].total_cells
         )
+        tail = ""
+        if len(lines) > 1:
+            tail = "\u3002\u540e\u7eed\u5907\u9009\uff1a " + "  \u00b7  ".join(lines[1:])
         st.success(
             f"\u2705 **{quality_label} DB \u5355\u4ef6\u547d\u4e2d**\uff1a"
             f"{lines[0]}"
             + suffix
-            + (f"\u3002\u540e\u7eed\u5907\u9009\uff1a {'  \u00b7  '.join(lines[1:])}"
-               if len(lines) > 1 else "")
+            + tail
         )
         return
     # Mode 3 / 4: original info / success based on len(cands).
@@ -1064,6 +1066,14 @@ def _build_session(state, maps: Mapping[int, BidMap]) -> SessionObs:
     )
 
 
+def _build_session_for_inference(state, maps: Mapping[int, BidMap]) -> SessionObs:
+    if state.get("_use_live_canonical_input"):
+        session = state.get("_live_canonical_session")
+        if isinstance(session, SessionObs):
+            return session
+    return _build_session(state, maps)
+
+
 # ---------- UI ----------
 
 st.set_page_config(
@@ -1640,6 +1650,43 @@ def _render_obs_source_summary() -> None:
             "当前推荐仍走 legacy obs；这里用于核对手填/OCR/packet 切换前的来源。"
         )
         st.dataframe(rows, hide_index=True, width="stretch")
+
+
+def _live_session_snapshot_for(obs_state: dict[str, Any]) -> SessionObs | None:
+    from bidking_lab.live import (
+        LiveSessionState,
+        live_session_matches_context,
+        live_state_to_session_obs,
+    )
+
+    live_state = st.session_state.get("_live_session_state")
+    if not isinstance(live_state, LiveSessionState):
+        return None
+    session = live_state_to_session_obs(live_state)
+    if live_session_matches_context(
+        session,
+        map_id=obs_state.get("map_id"),
+        warehouse_total_cells=obs_state.get("warehouse_cells"),
+    ):
+        return session
+    return None
+
+
+def _attach_inference_session_source(obs_state: dict[str, Any]) -> None:
+    """Attach the selected canonical input snapshot for current inference."""
+    use_live = bool(st.session_state.get("use_live_canonical_input", False))
+    obs_state["_use_live_canonical_input"] = use_live
+    obs_state.pop("_live_canonical_session", None)
+    source = "legacy"
+    if use_live:
+        live_session = _live_session_snapshot_for(obs_state)
+        if live_session is not None:
+            obs_state["_live_canonical_session"] = live_session
+            source = "live_shadow"
+        else:
+            source = "legacy_fallback"
+    obs_state["_canonical_input_source"] = source
+    st.session_state["_canonical_input_source"] = source
 
 
 def _apply_pending_capture(
@@ -2455,6 +2502,23 @@ with st.sidebar:
             # OS entropy on every click → cache key per-rerun (won't hit cache)
             import time as _time
             seed = int(_time.time_ns() & 0xFFFFFFFF)
+        use_live_canonical_input = st.checkbox(
+            "灰度：使用 live shadow 作为推理输入",
+            value=False,
+            key="use_live_canonical_input",
+            help=(
+                "默认关闭，保持 legacy obs 推理路径。打开后，出价 hint 与联合筛选会优先使用 "
+                "LiveSessionState -> SessionObs；若 live state 与当前地图/仓库不匹配，会自动回退 legacy。"
+            ),
+        )
+        st.caption(
+            "当前推理输入："
+            + (
+                "live shadow（灰度）"
+                if use_live_canonical_input
+                else "legacy obs（默认）"
+            )
+        )
 
     if st.session_state.get("_capture_apply_log"):
         with st.expander("\u4e0a\u6b21\u5bfc\u5165", expanded=False):
@@ -2499,6 +2563,7 @@ _record_live_observation_snapshot(
     source="manual",
     event_kind="manual_update",
 )
+_attach_inference_session_source(state)
 with st.sidebar:
     _render_live_source_summary()
 # #region agent log
@@ -2804,7 +2869,7 @@ def _compute_hint_bundle_ui(obs_state: dict):
         maps=maps,
         drops=drops,
         items=items,
-        build_session=_build_session,
+        build_session=_build_session_for_inference,
         sample_truths=_sample_truths_cached,
         enable_snipe_pass=_ENABLE_SNIPE_PASS_HINTS,
     )
@@ -2869,7 +2934,7 @@ def _tick_background_hint() -> str:
                 maps=maps,
                 drops=drops,
                 items=items,
-                build_session=_build_session,
+                build_session=_build_session_for_inference,
                 sample_truths=_sample_truths_cached,
                 enable_snipe_pass=_ENABLE_SNIPE_PASS_HINTS,
             )
@@ -3690,6 +3755,7 @@ if _main_tab == "obs":
                 source="manual",
                 event_kind="manual_update",
             )
+            _attach_inference_session_source(state)
             # #region agent log
             agent_debug_log(
                 location="streamlit_app.py:obs_tab_after_sync",
@@ -3765,11 +3831,13 @@ def _render_hint_tab_impl() -> None:
         if _ready_tic > 0
         else "\u603b\u4ef6\u6570\uff08\u672a\u586b\uff0c\u4e0d\u8fdb MC\uff09"
     )
+    _warehouse_status = " \u2713" if warehouse_ready else " \u2717"
+    _map_status = " \u2713" if map_ready else " \u2717"
     st.caption(
         f"\u5c31\u7eea\uff1a\u4ed3\u5e93 **{_ready_wh}** \u683c"
-        f"{' \u2713' if warehouse_ready else ' \u2717'}"
+        f"{_warehouse_status}"
         f"\u00a0\u00b7\u00a0\u5730\u56fe **{_ready_map_label}**"
-        f"{' \u2713' if map_ready else ' \u2717'}"
+        f"{_map_status}"
         f"\u00a0\u00b7\u00a0{_tic_part}"
     )
     if _hint_budget_err:
@@ -4240,7 +4308,7 @@ if _main_tab == "joint":
         from experimental_tabs import render_joint_inference_tab
 
         render_joint_inference_tab(
-            session_builder=lambda: _build_session(state, maps),
+            session_builder=lambda: _build_session_for_inference(state, maps),
             state=state,
             per_bucket_top=per_bucket_top,
         )

@@ -21,6 +21,7 @@ READING_FP_KEYS: tuple[str, ...] = (
     "gold_huge_band", "gold_avg_raw",
     "red_cells_total", "red_value_lo", "red_value_hi", "red_huge_band",
     "red_confirmed_none", "small_warehouse_confirmed",
+    "_canonical_input_source",
 )
 
 # Subset that actually changes MC filter / session buckets (TB #31: not avg_*).
