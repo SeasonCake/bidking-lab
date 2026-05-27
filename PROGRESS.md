@@ -620,6 +620,13 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
 
+### C-65: live/legacy canonical input 对照诊断（2026-05-27）
+
+- **问题**：已有 live canonical 灰度开关，但打开前缺少可视化对照，无法快速判断 `legacy obs -> SessionObs` 与 `LiveSessionState -> SessionObs` 是否字段等价。
+- **改动**：新增 `bidking_lab.live.compare`，把 `SessionObs` 展平成稳定字段路径并生成差异行；sidebar 新增“canonical input 对照诊断”折叠面板，展示当前实际输入源、live 是否可用、上下文是否匹配，以及 legacy/live 差异表。
+- **细节**：`Reading` 以 raw 字符串比较，能区分 `2.90` 与 `2.9`；缺失 bucket 会显示 `bucket.N._present` 差异；差异表仅用于输入层诊断，不触发 MC。
+- **验证**：新增 compare 单测；live 聚焦 `28 passed`；`py_compile` 覆盖 Streamlit 与 live compare。
+
 ### C-64: canonical input 灰度开关（2026-05-27）
 
 - **问题**：手填/OCR 已进入 `LiveObservationBatch` shadow reducer，但出价 hint 与联合筛选仍只能读取 legacy `obs`；直接切换风险较高，需要可回退的灰度入口。

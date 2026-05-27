@@ -1689,6 +1689,67 @@ def _attach_inference_session_source(obs_state: dict[str, Any]) -> None:
     st.session_state["_canonical_input_source"] = source
 
 
+def _render_canonical_input_diagnostic(
+    obs_state: dict[str, Any],
+    maps: Mapping[int, BidMap],
+) -> None:
+    from bidking_lab.live import (
+        LiveSessionState,
+        compare_session_obs,
+        live_session_matches_context,
+        live_state_to_session_obs,
+    )
+
+    source = str(st.session_state.get("_canonical_input_source", "legacy"))
+    live_state = st.session_state.get("_live_session_state")
+    live_session = (
+        live_state_to_session_obs(live_state)
+        if isinstance(live_state, LiveSessionState)
+        else None
+    )
+    live_context_ok = live_session_matches_context(
+        live_session,
+        map_id=obs_state.get("map_id"),
+        warehouse_total_cells=obs_state.get("warehouse_cells"),
+    )
+    legacy_session = None
+    legacy_error = None
+    try:
+        legacy_session = _build_session(obs_state, maps)
+    except Exception as exc:  # noqa: BLE001 - diagnostic only
+        legacy_error = str(exc)
+
+    rows = list(compare_session_obs(legacy_session, live_session))
+    with st.expander("canonical input 对照诊断", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        c1.metric("当前实际输入", source)
+        c2.metric("live 可用", "是" if live_session is not None else "否")
+        c3.metric(
+            "live 上下文",
+            "匹配" if live_context_ok else "不匹配",
+        )
+
+        if legacy_error:
+            st.warning(f"legacy session 暂不可构建：{legacy_error}")
+        if live_session is None:
+            st.info("live shadow 还没有足够字段构建 SessionObs。")
+            return
+        if not live_context_ok:
+            st.warning(
+                "live shadow 的地图或仓库总格与当前 UI 不一致；"
+                "灰度开关打开时会自动回退 legacy。"
+            )
+        if not rows and legacy_error is None:
+            st.success("live 与 legacy 的 SessionObs 字段一致。")
+            return
+        if rows:
+            st.caption(
+                "以下差异只比较推理输入，不代表 MC 已运行。"
+                "若差异符合预期，可继续观察；若不符合，应先修 adapter 再默认切 live。"
+            )
+            st.dataframe(rows, hide_index=True, width="stretch")
+
+
 def _apply_pending_capture(
     obs_state: dict,
     *,
@@ -2566,6 +2627,7 @@ _record_live_observation_snapshot(
 _attach_inference_session_source(state)
 with st.sidebar:
     _render_live_source_summary()
+    _render_canonical_input_diagnostic(state, maps)
 # #region agent log
 agent_debug_log(
     location="streamlit_app.py:after_global_hydrate_sync",

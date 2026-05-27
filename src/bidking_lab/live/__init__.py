@@ -28,6 +28,11 @@ from bidking_lab.live.state import (
     summarize_field_sources,
     summarize_selected_field_sources,
 )
+from bidking_lab.live.compare import (
+    compare_session_obs,
+    flatten_session_obs,
+    sessions_match,
+)
 from bidking_lab.live.legacy import (
     legacy_obs_fields,
     live_batch_from_legacy_obs,
@@ -51,6 +56,9 @@ __all__ = (
     "summarize_blocked_field_updates",
     "summarize_field_sources",
     "summarize_selected_field_sources",
+    "compare_session_obs",
+    "flatten_session_obs",
+    "sessions_match",
     "legacy_obs_fields",
     "live_batch_from_legacy_obs",
     "event_requests_recompute",
