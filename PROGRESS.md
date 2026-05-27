@@ -620,6 +620,13 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
 
+### C-69: ProtoHub/packet 离线 fixture adapter（2026-05-27）
+
+- **问题**：实时推理主链路已闭环，继续优化引擎内部收益有限；ProtoHub/packet 若能提供 item shape、公开 footprint、轮次、道具揭示，会直接增加推理约束和准确性。
+- **改动**：新增 `bidking_lab.live.packet.live_batch_from_packet_fixture()`，把宽松 JSON-like fixture 转成 `LiveObservationBatch(source="packet")`。支持 session 字段、bucket 汇总、round/tool/public event、公开/可见物品 footprint、`item_id`、`quality`、`shape_key`、`value`。
+- **边界**：不接实时监听、不连接游戏进程、不做自动竞价；真实 ProtoHub 样本拿到后先补字段别名和 fixture 测试。
+- **验证**：packet/live/legacy/recompute 聚焦 `32 passed`；`py_compile` 覆盖 packet adapter 与 live package。
+
 ### C-68: live dirty 自动重算门控（2026-05-27）
 
 - **问题**：C-67 已能显示 live dirty/running/ready，但 dirty 后仍需要用户手动点“运行出价 hint”；实时路径缺少从语义事件到后台 MC 的受控衔接。

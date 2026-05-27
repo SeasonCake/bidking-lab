@@ -38,6 +38,7 @@ from bidking_lab.live.legacy import (
     legacy_obs_fields,
     live_batch_from_legacy_obs,
 )
+from bidking_lab.live.packet import live_batch_from_packet_fixture
 
 __all__ = (
     "AuctionPhase",
@@ -63,6 +64,7 @@ __all__ = (
     "sessions_match",
     "legacy_obs_fields",
     "live_batch_from_legacy_obs",
+    "live_batch_from_packet_fixture",
     "event_requests_recompute",
     "source_priority",
 )

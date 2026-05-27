@@ -188,8 +188,13 @@ reducer 仍可以存储 `heartbeat` 元数据并增加 state version，但不会
 
 - [ ] 明确 ProtoHub 工具来源、输出格式、是否支持本机只读。
 - [ ] 抓一段离线样本，保存为不含敏感信息的 JSON fixture。
-- [ ] 写 parser：fixture → `LiveObservationBatch`。
+- [x] 写第一版宽松 parser：JSON-like fixture → `LiveObservationBatch`。
 - [ ] 对比同一局 OCR / 手填 / packet 的字段一致性。
+
+第一版 parser 位于 `bidking_lab.live.packet`，暂不绑定具体抓包工具。它接受普通
+dict/JSON fixture，并提取 session、bucket 汇总、公开/可见 item footprint、
+round/tool/public event 等字段。真实 ProtoHub 样本拿到后，优先在这个 adapter
+中补字段别名，而不是改推理引擎。
 
 ---
 
@@ -199,10 +204,13 @@ reducer 仍可以存储 `heartbeat` 元数据并增加 state version，但不会
 
 1. **P0.5 观测事件接口 + reducer**
    shadow 事件流已接入；下一步处理来源展示并切换 canonical input。
-2. **P1 枚举 / joint cache**
-   实时监控会频繁刷新，缓存比并行更优先。
-3. **P1 自动重算状态机**
-   把现有后台 MC 从“按钮触发”升级为“观测变化触发”。
+2. **Research ProtoHub 离线 fixture**
+   packet 可能直接提供 item shape / item id / 公开 footprint，比继续优化现有
+   OCR 数字读数更能提升约束质量。先离线 parser，再实时监听。
+3. **P1 枚举 / joint cache**
+   shape / footprint 约束接入后，缓存和局部分支重算会更重要。
+4. **P1 自动重算状态机**
+   已有 dirty → 后台 MC 门控，后续主要补 packet 来源和取消/合并策略。
 4. **P1 Pareto 多级评估**
    在输入与重算稳定后再给动作建议。
 5. **Research ProtoHub 离线验证**

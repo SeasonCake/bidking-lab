@@ -36,7 +36,7 @@
 | P1       | Session-level 联合候选 | 把仓库大小、均格、均价、总价放到同一个组合评分里 | 已接入分析估算与 UI 联合筛选 tab       |
 | P1       | 多级评估 + Pareto      | 出价建议从单一分位数升级为风险/收益/置信度组合 | 状态机稳定后做；秒仓/放仓作为动作层再恢复             |
 | P2       | 推理并行               | snipe/pass/ROI 等独立分支并行   | 先向量化和缓存，再考虑线程/进程                       |
-| Research | ProtoHub / 网络抓包直读 | 替代或增强 OCR，直接读取当前仓位/物品状态 | 只做离线 fixture → `LiveObservationBatch` 验证      |
+| Research | ProtoHub / 网络抓包直读 | 替代或增强 OCR，直接读取当前仓位/物品状态 | 已有宽松 JSON fixture → `LiveObservationBatch` adapter      |
 
 
 ---
@@ -279,13 +279,14 @@ joint / MC / Pareto
 - 只做本机只读观察，不做注入、改包、自动竞价。
 - 先确认游戏协议是否明文、是否本地回环、是否加密。
 - 先走离线样本：pcap/json fixture → `LiveObservationBatch`。
+- 第一版宽松 JSON adapter 已在 `bidking_lab.live.packet`；真实样本到手后优先补字段别名和 shape/item_id 映射。
 - 任何实时实现前先检查游戏 ToS 和账号风险。
 
 ### TODO
 
 - 明确“ProtoHub”具体工具、仓库或教程来源。
 - 抓一段本机 pcap/json，确认是否有可读 payload。
-- 建离线 parser：pcap/json → `LiveObservationBatch`，不连接游戏进程。
+- 建离线 parser：pcap/json → `LiveObservationBatch`，不连接游戏进程。（已建第一版 JSON-like adapter）
 - 用同一局对比 OCR / 手填 / packet 的字段一致性。
 - 如果协议加密或需要 hook/绕过保护，停止该方向。
 
