@@ -23,7 +23,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import matplotlib
 matplotlib.use("Agg")
@@ -1107,7 +1107,7 @@ with _hdr_link:
     st.link_button(
         "GitHub",
         "https://github.com/SeasonCake/bidking-lab",
-        width="stretch",
+        use_container_width=True,
         help=(
             "bidking-lab \u6e90\u4ee3\u7801\u4e0e\u6587\u6863\u3002"
             "\u89c9\u5f97\u505a\u5f97\u8fd8\u4e0d\u9519\uff1f\u6b22\u8fce\u7ed9\u4f5c\u8005\u4e00\u4e2a\u514d\u8d39\u7684 \u2b50 Star\uff01"
@@ -1456,16 +1456,16 @@ def _render_capture_debug_panel() -> None:
                 st.image(
                     prev,
                     caption="整屏预览（红框=OCR 区域）",
-                    width="stretch",
+                    use_container_width=True,
                 )
             with c2:
                 st.image(
                     panel,
                     caption="送入 OCR 的裁切图",
-                    width="stretch",
+                    use_container_width=True,
                 )
         elif panel:
-            st.image(panel, caption="送入 OCR 的裁切图", width="stretch")
+            st.image(panel, caption="送入 OCR 的裁切图", use_container_width=True)
         if dbg.get("ocr_error"):
             st.warning(str(dbg["ocr_error"]))
         if dbg.get("grab_ms"):
@@ -1583,6 +1583,25 @@ def _record_live_observation_snapshot(
     st.session_state["_last_live_observation_batch"] = batch
 
 
+def _render_records_table(rows: Sequence[Mapping[str, Any]]) -> None:
+    """Render small diagnostic tables without requiring pyarrow."""
+    if not rows:
+        return
+    columns = list(dict.fromkeys(key for row in rows for key in row))
+
+    def cell(value: Any) -> str:
+        text = "" if value is None else str(value)
+        return text.replace("|", "\\|").replace("\n", "<br>")
+
+    header = "| " + " | ".join(columns) + " |"
+    divider = "| " + " | ".join("---" for _ in columns) + " |"
+    body = [
+        "| " + " | ".join(cell(row.get(column)) for column in columns) + " |"
+        for row in rows
+    ]
+    st.markdown("\n".join([header, divider, *body]))
+
+
 def _render_live_source_summary() -> None:
     """Show shadow live-field provenance without changing inference input."""
     from bidking_lab.live import LiveSessionState, summarize_field_sources
@@ -1598,14 +1617,14 @@ def _render_live_source_summary() -> None:
             "\u5f53\u524d\u63a8\u8350\u4ecd\u8d70 legacy obs\uff1b\u8fd9\u91cc\u53ea\u7528\u6765\u6838\u5bf9\u624b\u586b/OCR/"
             "packet \u5207\u6362\u524d\u7684\u5b57\u6bb5\u6765\u6e90\u4e0e\u8986\u76d6\u89c4\u5219\u3002"
         )
-        st.dataframe(rows, hide_index=True, width="stretch")
+        _render_records_table(rows)
         blocked = st.session_state.get("_last_live_blocked_updates") or []
         if blocked:
             st.caption(
                 "最近一次观测里，以下字段被当前更高优先级来源保留。"
                 "这用于提前核对 packet > manual > OCR > derived 规则。"
             )
-            st.dataframe(blocked, hide_index=True, width="stretch")
+            _render_records_table(blocked)
 
 
 def _render_obs_source_summary() -> None:
@@ -1649,7 +1668,7 @@ def _render_obs_source_summary() -> None:
         st.caption(
             "当前推荐仍走 legacy obs；这里用于核对手填/OCR/packet 切换前的来源。"
         )
-        st.dataframe(rows, hide_index=True, width="stretch")
+        _render_records_table(rows)
 
 
 def _live_session_snapshot_for(obs_state: dict[str, Any]) -> SessionObs | None:
@@ -1687,6 +1706,48 @@ def _attach_inference_session_source(obs_state: dict[str, Any]) -> None:
             source = "legacy_fallback"
     obs_state["_canonical_input_source"] = source
     st.session_state["_canonical_input_source"] = source
+
+
+def _mark_live_inference_ready() -> None:
+    from bidking_lab.live import LiveSessionState, mark_ready
+
+    live_state = st.session_state.get("_live_session_state")
+    if isinstance(live_state, LiveSessionState):
+        st.session_state["_live_session_state"] = mark_ready(live_state)
+
+
+def _render_live_inference_status() -> None:
+    from bidking_lab.live import LiveSessionState, live_inference_status
+
+    live_state = st.session_state.get("_live_session_state")
+    if not isinstance(live_state, LiveSessionState):
+        return
+
+    status = live_inference_status(
+        live_state,
+        worker_running=(
+            (st.session_state.get("_bg_infer_box") or {}).get("status")
+            == "running"
+        ),
+        has_result=st.session_state.get("_hint_bundle") is not None,
+        has_error=str(st.session_state.get("_bg_infer_status", "")) == "error",
+    )
+    status_labels = {
+        "idle": "未运行",
+        "dirty": "输入已变化",
+        "running": "后台推理中",
+        "ready": "结果可用",
+        "error": "推理错误",
+    }
+    with st.expander("live 推理状态", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        c1.metric("状态", status_labels[status])
+        c2.metric("live version", live_state.version)
+        c3.metric("dirty", "是" if live_state.dirty else "否")
+        st.caption(
+            "dirty 表示 live 观测已经变化，当前推荐可能需要重算；"
+            "running 表示后台 MC 正在运行；ready 表示已有结果且 live 未标脏。"
+        )
 
 
 def _render_canonical_input_diagnostic(
@@ -1747,7 +1808,7 @@ def _render_canonical_input_diagnostic(
                 "以下差异只比较推理输入，不代表 MC 已运行。"
                 "若差异符合预期，可继续观察；若不符合，应先修 adapter 再默认切 live。"
             )
-            st.dataframe(rows, hide_index=True, width="stretch")
+            _render_records_table(rows)
 
 
 def _apply_pending_capture(
@@ -2406,7 +2467,7 @@ with st.sidebar:
     _screen_clicked = st.button(
         "\u6293\u53d6\u5f53\u524d\u5c4f\u5e55",
         key="capture_run_screen",
-        width="stretch",
+        use_container_width=True,
         disabled=not _mons,
     )
     if _screen_clicked and _mons:
@@ -2453,7 +2514,7 @@ with st.sidebar:
         _clip_clicked = st.button(
             "\u526a\u8d34\u677f OCR",
             key="capture_run_clipboard",
-            width="stretch",
+            use_container_width=True,
             help="Win+Shift+S \u6216\u6e38\u620f\u622a\u56fe\u540e\u5148\u590d\u5236\u5230\u526a\u8d34\u677f",
         )
     with _btn_ocr:
@@ -2461,7 +2522,7 @@ with st.sidebar:
             "\u622a\u56fe OCR",
             key="capture_run_ocr",
             type="primary",
-            width="stretch",
+            use_container_width=True,
             disabled=_cap_upload is None,
             help=(
                 "\u5148\u5728\u4e0a\u65b9\u9009\u62e9\u622a\u56fe\u6587\u4ef6\u540e\u518d\u70b9\u51fb"
@@ -2628,6 +2689,7 @@ _attach_inference_session_source(state)
 with st.sidebar:
     _render_live_source_summary()
     _render_canonical_input_diagnostic(state, maps)
+    _render_live_inference_status()
 # #region agent log
 agent_debug_log(
     location="streamlit_app.py:after_global_hydrate_sync",
@@ -3066,6 +3128,7 @@ def _poll_background_hint() -> str:
         st.session_state["_hint_infer_until"] = _time.time() + 8
         st.session_state["_hint_results_ready_rerun"] = True
         if st.session_state.get("_hint_bundle") is not None:
+            _mark_live_inference_ready()
             if not st.session_state.get("_hint_done_toast_shown"):
                 st.toast(
                     "\u540e\u53f0\u63a8\u65ad\u5b8c\u6210\uff0c\u7ed3\u679c\u5df2\u66f4\u65b0\u4e8e\u672c\u9875",
@@ -4183,7 +4246,7 @@ def _render_hint_tab_impl() -> None:
             ax.xaxis.label.set_size(8)
             ax.yaxis.label.set_size(8)
             plt.tight_layout()
-            st.pyplot(fig, clear_figure=True, width="content")
+            st.pyplot(fig, clear_figure=True, use_container_width=False)
 
         # ---- Per-bucket posterior cards ----
         if _bucket_posteriors:
@@ -4261,7 +4324,7 @@ def _render_hint_tab_impl() -> None:
                         f"\u2705 \u8fc7\u6ee4\u540e\u6a21\u578b\u8ba4\u4e3a\u672c\u4ed3\u51e0\u4e4e\u4e0d\u542b\u7ea2\u54c1"
                         f"\uff08cells P50={red_stats.cells_p50}\u3001\u7a7a bucket={red_stats.p_empty*100:.1f}%\uff09\u3002"
                     )
-                st.dataframe(posterior_rows, hide_index=True, width="stretch")
+                _render_records_table(posterior_rows)
 
         # ---- Snipe / Pass recommendations (bottom) ----
         st.divider()
@@ -4570,7 +4633,7 @@ if _main_tab == "roi":
             fontsize=9,
         )
         plt.tight_layout()
-        st.pyplot(fig, clear_figure=True, width="content")
+        st.pyplot(fig, clear_figure=True, use_container_width=False)
         st.caption(
             "\u6b63\u503c = \u8be5\u9053\u5177\u8d21\u732e\u4e3a\u6b63\uff08\u4ef7\u503c\u63a8\u65ad\u66f4\u51c6\uff09\uff1b"
             "\u8d1f\u503c = \u5728\u73b0\u6709 kit \u4e2d\u88ab\u5176\u5b83\u9053\u5177\u8986\u76d6\uff0c"

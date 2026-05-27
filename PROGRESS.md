@@ -620,6 +620,15 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
 
+### C-67: live 推理状态可见化（2026-05-27）
+
+- **问题**：`LiveSessionState` 已维护 dirty，但 UI 只显示后台 MC 状态；用户看不到 live 输入是否已经让推荐结果过期。
+- **改动**：新增 `live_inference_status()`，合成 `idle/dirty/running/ready/error`；sidebar 新增“live 推理状态”折叠面板；后台 MC 完成且产出结果时调用 `mark_ready()` 清除 live dirty。
+- **UI 兼容**：本地 smoke 发现当前 Streamlit 版本不支持 `width=` 参数，已改为 `use_container_width`；诊断小表从 `st.dataframe()` 改为 Markdown 表格，避免 pyarrow/numpy 二进制不匹配时阻塞主应用启动。
+- **边界**：本轮只做状态可见化和完成态清 dirty，不自动启动重算；自动 `dirty -> running` 调度留下一步实现。
+- **记录**：`docs/engineering_notes.zh-CN.md` 补充“事件驱动刷新优先于持续轮询”和“诊断 UI 依赖要轻”，明确实时推理应由轮次、道具、公开信息、手填/OCR、换图/新局等语义事件触发。
+- **验证**：live/bg 聚焦 `21 passed`；非 slow 回归 `441 passed, 13 deselected`；`py_compile` 覆盖 Streamlit 和 live 包；浏览器 smoke 可见主 tab、canonical input 对照诊断、live 推理状态，且无 Traceback / pyarrow 错误。
+
 ### C-66: 截图派生场景对照 + 工程札记（2026-05-27）
 
 - **问题**：canonical input 对照面板已可见，但还缺少基于真实截图语义的普通回归；同时灰度切换方法论值得单独沉淀，方便后续整理为核心理解。

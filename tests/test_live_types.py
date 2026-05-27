@@ -7,6 +7,7 @@ from bidking_lab.live import (
     LiveObservationBatch,
     apply_observation_batch,
     event_requests_recompute,
+    live_inference_status,
     live_state_to_session_obs,
     mark_ready,
     source_priority,
@@ -258,6 +259,39 @@ def test_mark_ready_clears_dirty_without_changing_version() -> None:
 
     assert ready.version == state.version
     assert ready.dirty is False
+
+
+def test_live_inference_status_orders_running_dirty_ready() -> None:
+    dirty = apply_observation_batch(
+        LiveSessionState(),
+        LiveObservationBatch(
+            source="manual",
+            event_kind="manual_update",
+            field_updates=(
+                FieldUpdate(
+                    path=("session", "warehouse_total_cells"),
+                    value=123,
+                    source="manual",
+                    confidence="exact",
+                ),
+            ),
+        ),
+    )
+    ready = mark_ready(dirty)
+
+    assert live_inference_status(dirty, worker_running=True, has_result=False) == "running"
+    assert live_inference_status(dirty, worker_running=False, has_result=True) == "dirty"
+    assert live_inference_status(ready, worker_running=False, has_result=True) == "ready"
+    assert live_inference_status(None, worker_running=False, has_result=False) == "idle"
+    assert (
+        live_inference_status(
+            ready,
+            worker_running=False,
+            has_result=True,
+            has_error=True,
+        )
+        == "error"
+    )
 
 
 def test_summarize_field_sources_returns_stable_debug_rows() -> None:

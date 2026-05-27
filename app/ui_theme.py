@@ -347,7 +347,7 @@ def render_main_tab_nav(
                 labels[key],
                 key=f"ui_main_tab_{key}",
                 type="primary" if key == active else "secondary",
-                width="stretch",
+                use_container_width=True,
             ):
                 if key != active:
                     st.session_state[session_key] = key

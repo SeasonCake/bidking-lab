@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
+from typing import Literal
 
 from bidking_lab.inference.display import Reading, parse_reading
 from bidking_lab.inference.observation import (
@@ -31,6 +32,8 @@ _CONFIDENCE_PRIORITY: dict[SourceConfidence, int] = {
     "high": 30,
     "exact": 40,
 }
+
+LiveInferenceStatus = Literal["idle", "dirty", "running", "ready", "error"]
 
 
 @dataclass(frozen=True)
@@ -133,6 +136,25 @@ def mark_ready(state: LiveSessionState) -> LiveSessionState:
     if not state.dirty:
         return state
     return replace(state, dirty=False)
+
+
+def live_inference_status(
+    state: LiveSessionState | None,
+    *,
+    worker_running: bool,
+    has_result: bool,
+    has_error: bool = False,
+) -> LiveInferenceStatus:
+    """Summarize live inference freshness for UI state displays."""
+    if has_error:
+        return "error"
+    if worker_running:
+        return "running"
+    if state is not None and state.dirty:
+        return "dirty"
+    if has_result:
+        return "ready"
+    return "idle"
 
 
 def _display_value(value: Any) -> str:
@@ -405,6 +427,7 @@ __all__ = (
     "LiveSessionState",
     "ObservedField",
     "apply_observation_batch",
+    "live_inference_status",
     "live_state_to_session_obs",
     "live_session_matches_context",
     "mark_ready",
