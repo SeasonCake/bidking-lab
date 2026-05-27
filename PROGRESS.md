@@ -620,6 +620,14 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
 
+### C-68: live dirty 自动重算门控（2026-05-27）
+
+- **问题**：C-67 已能显示 live dirty/running/ready，但 dirty 后仍需要用户手动点“运行出价 hint”；实时路径缺少从语义事件到后台 MC 的受控衔接。
+- **改动**：新增 `app/live_recompute.py`，集中管理 live dirty 时钟与自动排队条件；sidebar 增加“live 输入变化后自动重算”开关；当后台 MC 完成并 `mark_ready()` 后才武装自动刷新，后续 live dirty 会复用 `_request_bg_hint_manual` 排队一次后台 MC。
+- **门控**：初次打开 app 不自动暖机；必须 inference ready、无后台任务、无 capture/manual 待处理请求、自动开关开启、且已有成功结果被标记 ready 后才会排队。
+- **边界**：本轮只复用现有后台 MC 队列，不引入 packet 监听器；packet/OCR 未来只需继续发 `LiveObservationBatch(event_kind=...)`。
+- **验证**：live recompute/live/bg 聚焦 `26 passed`；非 slow 回归 `446 passed, 13 deselected`；`py_compile` 覆盖 Streamlit、UI theme、live recompute 与 live state；浏览器 smoke 可见 live 状态与“live 输入变化后自动重算”开关，无 Traceback。
+
 ### C-67: live 推理状态可见化（2026-05-27）
 
 - **问题**：`LiveSessionState` 已维护 dirty，但 UI 只显示后台 MC 状态；用户看不到 live 输入是否已经让推荐结果过期。

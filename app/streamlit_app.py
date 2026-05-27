@@ -1714,6 +1714,7 @@ def _mark_live_inference_ready() -> None:
     live_state = st.session_state.get("_live_session_state")
     if isinstance(live_state, LiveSessionState):
         st.session_state["_live_session_state"] = mark_ready(live_state)
+        st.session_state["_live_auto_recompute_armed"] = True
 
 
 def _render_live_inference_status() -> None:
@@ -1999,6 +2000,7 @@ def _cancel_background_hint() -> None:
     st.session_state.pop("_hint_bundle", None)
     st.session_state.pop("_request_bg_hint_capture", None)
     st.session_state.pop("_request_bg_hint_manual", None)
+    st.session_state.pop("_request_bg_hint_live_dirty", None)
     st.session_state.pop("_awaiting_warehouse_for_infer", None)
     _clear_hint_ui_banners()
     st.session_state["_bg_infer_status"] = "idle"
@@ -2554,6 +2556,16 @@ with st.sidebar:
             "\u63a8\u65ad\u4e2d\u53ef\u7ee7\u7eed\u6539\u8bfb\u6570\uff08\u975e\u5f53\u524d\u6807\u7b7e\u53ef\u80fd\u7565\u7070\uff0c\u5c5e Streamlit \u5237\u65b0\u6001\uff0c\u4e0d\u4f1a\u9501\u5b9a\u8f93\u5165\uff09\u3002"
         ),
     )
+    st.checkbox(
+        "live 输入变化后自动重算",
+        value=True,
+        key="auto_infer_after_live_dirty",
+        help=(
+            "仅在已有一次成功推理结果后启用；"
+            "手填/OCR/后续 packet 事件让 live 输入变 dirty 时，自动排队一次后台 MC。"
+            "初次打开 app 不会因此预热。"
+        ),
+    )
     _prev_auto_infer = st.session_state.get("_prev_auto_infer_after_capture")
     if _prev_auto_infer and not st.session_state.get("auto_infer_after_capture", True):
         _cancel_background_hint()
@@ -2771,6 +2783,45 @@ def _mc_ui_running() -> bool:
     """True only while the background MC thread box is actively running."""
     box = st.session_state.get("_bg_infer_box")
     return box is not None and box.get("status") == "running"
+
+
+def _maybe_queue_live_dirty_recompute(*, inference_ready: bool) -> bool:
+    from bidking_lab.live import LiveSessionState
+    from live_recompute import maybe_schedule_live_dirty_recompute
+
+    live_state = st.session_state.get("_live_session_state")
+    if not isinstance(live_state, LiveSessionState):
+        return False
+    import time as _time
+
+    queued = maybe_schedule_live_dirty_recompute(
+        st.session_state,
+        dirty=live_state.dirty,
+        version=live_state.version,
+        inference_ready=inference_ready,
+        worker_running=_mc_ui_running(),
+        auto_enabled=bool(st.session_state.get("auto_infer_after_live_dirty", True)),
+        armed=bool(st.session_state.get("_live_auto_recompute_armed", False)),
+        has_pending_request=(
+            bool(st.session_state.get("_request_bg_hint_capture"))
+            or bool(st.session_state.get("_request_bg_hint_manual"))
+        ),
+        now=_time.time(),
+    )
+    if queued:
+        _clear_hint_done_flash()
+        # #region agent log
+        agent_debug_log(
+            location="streamlit_app.py:live_dirty_auto_recompute",
+            message="live dirty queued background hint",
+            data={
+                "live_version": live_state.version,
+                "main_tab": st.session_state.get("_main_tab"),
+            },
+            hypothesis_id="live-auto",
+        )
+        # #endregion
+    return queued
 
 
 def _hint_banner_show() -> bool:
@@ -3041,6 +3092,7 @@ def _tick_background_hint() -> str:
     if _want_start and inference_ready:
         st.session_state.pop("_request_bg_hint_capture", None)
         st.session_state.pop("_request_bg_hint_manual", None)
+        st.session_state.pop("_request_bg_hint_live_dirty", None)
         if _for_auto_capture:
             _maybe_switch_to_hint_tab_after_capture()
         # #region agent log
@@ -3175,6 +3227,7 @@ agent_phase_log(
 )
 # #endregion
 
+_maybe_queue_live_dirty_recompute(inference_ready=inference_ready)
 _bg_infer_status = _tick_background_hint()
 _poll_bg_hint_and_maybe_rerun()
 _bg_infer_status = str(st.session_state.get("_bg_infer_status", _bg_infer_status))
