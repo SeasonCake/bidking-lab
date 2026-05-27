@@ -244,6 +244,7 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 | `data/raw/` | Player's local game files (gitignored) |
 | `data/processed/` | Generated schema-validated JSON (committed — works without the game installed) |
 | `docs/project_vision.md` | Original three-layer architecture vision |
+| `docs/engineering_notes.zh-CN.md` | Engineering notes: gray switches, diagnostics, screenshot-derived regression |
 | **`PROGRESS.md`** | **Project handoff doc**: status, hero analysis, roadmap |
 | **`OBSERVATIONS.md`** | **Technical findings log**: per-checkpoint discoveries |
 | **`TROUBLESHOOTING.md`** | **33 entries** — postmortems + [#33 MC vs enum matrix](TROUBLESHOOTING.md#33-各字段对-mc--枚举的影响矩阵设计预期) |

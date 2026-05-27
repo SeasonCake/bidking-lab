@@ -248,6 +248,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | `data/raw/` | 玩家本地游戏文件（gitignored） |
 | `data/processed/` | 我们生成的 schema 化 JSON（入 git，便于无游戏的人也能跑） |
 | `docs/project_vision.md` | 原始三层架构设计 |
+| `docs/engineering_notes.zh-CN.md` | 工程理解札记：灰度切换、诊断层、截图回归 |
 | **`PROGRESS.md`** | **新协作者起点**：项目全貌 + 当前状态 + 路线图 |
 | **`OBSERVATIONS.md`** | **技术发现日志**：每个 checkpoint 的关键发现 |
 | **`docs/INSTRUCTIONS.zh-CN.md`** | **玩家操作说明**（流程图、四 Tab、抓屏顺序） |

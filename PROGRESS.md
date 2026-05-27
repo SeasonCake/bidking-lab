@@ -620,6 +620,13 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
 
+### C-66: 截图派生场景对照 + 工程札记（2026-05-27）
+
+- **问题**：canonical input 对照面板已可见，但还缺少基于真实截图语义的普通回归；同时灰度切换方法论值得单独沉淀，方便后续整理为核心理解。
+- **改动**：新增 `tests/test_live_screenshot_scenarios.py`，覆盖 8 个截图派生场景，包括既有 OCR 回归图和用户指定的 `微信图片_20260526223700/11/15.jpg`；缺少仓库总格时按约定使用 `123`。新增 `docs/engineering_notes.zh-CN.md`，记录 canonical input 灰度切换、诊断层不改变推理、截图回归可靠形态。
+- **边界**：这些测试不跑 OCR 引擎，避免受本机模型安装影响；它们验证的是“截图语义转成 obs 后，live adapter 与期望 SessionObs 等价”。
+- **验证**：截图场景 + live compare/legacy 聚焦 `24 passed`。
+
 ### C-65: live/legacy canonical input 对照诊断（2026-05-27）
 
 - **问题**：已有 live canonical 灰度开关，但打开前缺少可视化对照，无法快速判断 `legacy obs -> SessionObs` 与 `LiveSessionState -> SessionObs` 是否字段等价。
