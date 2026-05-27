@@ -226,6 +226,7 @@ class SessionObs:
     hero: HeroMode
     warehouse_total_cells: int | None = None
     warehouse_total_cells_approx: int | None = None
+    warehouse_total_cells_tolerance: int | None = None
     total_item_count: int | None = None
     """Total number of items in the warehouse, when revealed by a map hint
     (some 别墅 maps surface ``X 件藏品`` as a R1/R3 hint) or by a tool such
@@ -241,6 +242,13 @@ class SessionObs:
         if self.warehouse_total_cells_approx is not None:
             return self.warehouse_total_cells_approx
         return 159   # fallback: big shipwreck size
+
+    def warehouse_capacity_upper_bound(self) -> int:
+        """Capacity bound for pruning when an estimate still has uncertainty."""
+        capacity = self.warehouse_capacity()
+        if self.warehouse_total_cells is not None:
+            return capacity
+        return capacity + max(0, self.warehouse_total_cells_tolerance or 0)
 
 
 @dataclass(frozen=True)
@@ -1044,7 +1052,7 @@ def top_k_for_session(
     cells, <= 50 count per bucket) leave well under 10^4 candidate
     pairs per bucket, total wall time is sub-second on a laptop.
     """
-    capacity = session.warehouse_capacity()
+    capacity = session.warehouse_capacity_upper_bound()
     other_known_cells = 0
     out: dict[int, list[BucketCandidate]] = {}
 

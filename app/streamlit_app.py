@@ -1086,6 +1086,7 @@ from ui_theme import (
     hint_tab_label,
     hint_tab_status_line,
     inject_app_theme,
+    layout_width_kwargs,
     muted_caption,
     render_main_tab_nav,
     render_tab_status_line,
@@ -1107,7 +1108,7 @@ with _hdr_link:
     st.link_button(
         "GitHub",
         "https://github.com/SeasonCake/bidking-lab",
-        use_container_width=True,
+        **layout_width_kwargs("link_button", stretch=True),
         help=(
             "bidking-lab \u6e90\u4ee3\u7801\u4e0e\u6587\u6863\u3002"
             "\u89c9\u5f97\u505a\u5f97\u8fd8\u4e0d\u9519\uff1f\u6b22\u8fce\u7ed9\u4f5c\u8005\u4e00\u4e2a\u514d\u8d39\u7684 \u2b50 Star\uff01"
@@ -1456,16 +1457,20 @@ def _render_capture_debug_panel() -> None:
                 st.image(
                     prev,
                     caption="整屏预览（红框=OCR 区域）",
-                    use_container_width=True,
+                    **layout_width_kwargs("image", stretch=True),
                 )
             with c2:
                 st.image(
                     panel,
                     caption="送入 OCR 的裁切图",
-                    use_container_width=True,
+                    **layout_width_kwargs("image", stretch=True),
                 )
         elif panel:
-            st.image(panel, caption="送入 OCR 的裁切图", use_container_width=True)
+            st.image(
+                panel,
+                caption="送入 OCR 的裁切图",
+                **layout_width_kwargs("image", stretch=True),
+            )
         if dbg.get("ocr_error"):
             st.warning(str(dbg["ocr_error"]))
         if dbg.get("grab_ms"):
@@ -2469,7 +2474,7 @@ with st.sidebar:
     _screen_clicked = st.button(
         "\u6293\u53d6\u5f53\u524d\u5c4f\u5e55",
         key="capture_run_screen",
-        use_container_width=True,
+        **layout_width_kwargs("button", stretch=True),
         disabled=not _mons,
     )
     if _screen_clicked and _mons:
@@ -2516,7 +2521,7 @@ with st.sidebar:
         _clip_clicked = st.button(
             "\u526a\u8d34\u677f OCR",
             key="capture_run_clipboard",
-            use_container_width=True,
+            **layout_width_kwargs("button", stretch=True),
             help="Win+Shift+S \u6216\u6e38\u620f\u622a\u56fe\u540e\u5148\u590d\u5236\u5230\u526a\u8d34\u677f",
         )
     with _btn_ocr:
@@ -2524,7 +2529,7 @@ with st.sidebar:
             "\u622a\u56fe OCR",
             key="capture_run_ocr",
             type="primary",
-            use_container_width=True,
+            **layout_width_kwargs("button", stretch=True),
             disabled=_cap_upload is None,
             help=(
                 "\u5148\u5728\u4e0a\u65b9\u9009\u62e9\u622a\u56fe\u6587\u4ef6\u540e\u518d\u70b9\u51fb"
@@ -4299,7 +4304,11 @@ def _render_hint_tab_impl() -> None:
             ax.xaxis.label.set_size(8)
             ax.yaxis.label.set_size(8)
             plt.tight_layout()
-            st.pyplot(fig, clear_figure=True, use_container_width=False)
+            st.pyplot(
+                fig,
+                clear_figure=True,
+                **layout_width_kwargs("pyplot", stretch=False),
+            )
 
         # ---- Per-bucket posterior cards ----
         if _bucket_posteriors:
@@ -4686,7 +4695,11 @@ if _main_tab == "roi":
             fontsize=9,
         )
         plt.tight_layout()
-        st.pyplot(fig, clear_figure=True, use_container_width=False)
+        st.pyplot(
+            fig,
+            clear_figure=True,
+            **layout_width_kwargs("pyplot", stretch=False),
+        )
         st.caption(
             "\u6b63\u503c = \u8be5\u9053\u5177\u8d21\u732e\u4e3a\u6b63\uff08\u4ef7\u503c\u63a8\u65ad\u66f4\u51c6\uff09\uff1b"
             "\u8d1f\u503c = \u5728\u73b0\u6709 kit \u4e2d\u88ab\u5176\u5b83\u9053\u5177\u8986\u76d6\uff0c"

@@ -1,0 +1,29 @@
+{
+  "event_kind": "public_info_changed",
+  "phase": "bidding",
+  "sequence": 1,
+  "session": {
+    "map_id": 2510,
+    "hero": "ethan",
+    "warehouse_estimated_cells": 112,
+    "warehouse_estimate_tolerance": 18,
+    "round": 2
+  },
+  "buckets": {
+    "4": {
+      "avg_cells": "2.50",
+      "value_sum": 86490
+    }
+  },
+  "visible_items": [
+    {
+      "shape_key": "3x4",
+      "quality": null
+    },
+    {
+      "cells": 6,
+      "shape_key": "2x3",
+      "quality": null
+    }
+  ]
+}

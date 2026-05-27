@@ -121,6 +121,7 @@ def filter_truths_by_obs(
     q=1 and q=2 are present (Aisha split mode), each is compared individually.
     """
     wh_target = obs.warehouse_capacity()
+    warehouse_tol = _effective_warehouse_tol(obs, warehouse_tol)
     # Merge q=1+q=2 when obs has key 1 but NOT key 2 (Ethan / Aisha non-split).
     _merge_q1_q2 = (1 in obs.buckets and 2 not in obs.buckets)
     total_item_cap = obs.total_item_count
@@ -171,9 +172,25 @@ def filter_truths_by_obs(
     return out
 
 
+def _effective_warehouse_tol(obs: SessionObs, warehouse_tol: int) -> int:
+    if obs.warehouse_total_cells is not None:
+        return warehouse_tol
+    return max(warehouse_tol, max(0, obs.warehouse_total_cells_tolerance or 0))
+
+
 def _describe_constraints(obs: SessionObs) -> list[str]:
     """Build a human-readable list of "what filters are active" for rationale."""
-    parts: list[str] = [f"warehouse={obs.warehouse_capacity()}"]
+    if (
+        obs.warehouse_total_cells is None
+        and obs.warehouse_total_cells_approx is not None
+        and obs.warehouse_total_cells_tolerance is not None
+    ):
+        parts: list[str] = [
+            "warehouse≈%s±%s"
+            % (obs.warehouse_capacity(), obs.warehouse_total_cells_tolerance)
+        ]
+    else:
+        parts = [f"warehouse={obs.warehouse_capacity()}"]
     if obs.total_item_count is not None:
         cap = int(obs.total_item_count)
         item_tol = max(5, int(cap * 0.3))
@@ -265,6 +282,10 @@ def adaptive_filter(
         last_result = filtered
         last_level = level
         if len(filtered) >= min_samples:
+            effective_wh_tol = _effective_warehouse_tol(
+                obs,
+                warehouse_tol_levels[level],
+            )
             return FilterResult(
                 truths=filtered,
                 tol_level=level,
@@ -274,7 +295,7 @@ def adaptive_filter(
                 cells_tol=cells_tol_levels[level],
                 count_tol=count_tol_levels[level],
                 value_rel_tol=value_rel_tol_levels[level],
-                warehouse_tol=warehouse_tol_levels[level],
+                warehouse_tol=effective_wh_tol,
                 constraints_applied=constraints,
             )
 
@@ -289,9 +310,11 @@ def adaptive_filter(
             map_id=obs.map_id, hero=obs.hero,
             warehouse_total_cells=obs.warehouse_total_cells,
             warehouse_total_cells_approx=obs.warehouse_total_cells_approx,
+            warehouse_total_cells_tolerance=obs.warehouse_total_cells_tolerance,
             buckets=hard_buckets,
         )
         for wh_tol in (12, 20, 30, 50):
+            effective_wh_tol = _effective_warehouse_tol(fallback_obs, wh_tol)
             wh_only = filter_truths_by_obs(
                 truths, fallback_obs, warehouse_tol=wh_tol,
                 value_rel_tol=value_rel_tol_levels[-1],
@@ -313,7 +336,7 @@ def adaptive_filter(
                 if obs.total_item_count:
                     kept_parts.append(f"items≈{obs.total_item_count}")
                 constraints_wh = [
-                    f"warehouse={obs.warehouse_capacity()}±{wh_tol}"
+                    f"warehouse={obs.warehouse_capacity()}±{effective_wh_tol}"
                     f"({'+'.join(kept_parts)},soft bucket约束已放弃)"
                 ]
                 return FilterResult(
@@ -325,7 +348,7 @@ def adaptive_filter(
                     cells_tol=wh_tol,
                     count_tol=count_tol_levels[-1],
                     value_rel_tol=1.0,
-                    warehouse_tol=wh_tol,
+                    warehouse_tol=effective_wh_tol,
                     constraints_applied=constraints_wh,
                 )
 
@@ -338,7 +361,7 @@ def adaptive_filter(
         cells_tol=cells_tol_levels[last_level],
         count_tol=count_tol_levels[last_level],
         value_rel_tol=value_rel_tol_levels[last_level],
-        warehouse_tol=warehouse_tol_levels[last_level],
+        warehouse_tol=_effective_warehouse_tol(obs, warehouse_tol_levels[last_level]),
         constraints_applied=constraints,
     )
 

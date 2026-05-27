@@ -49,6 +49,12 @@ _SESSION_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hero", ("session", "hero")),
     ("warehouse_total_cells", ("session", "warehouse_total_cells")),
     ("warehouse_cells", ("session", "warehouse_total_cells")),
+    ("warehouse_total_cells_approx", ("session", "warehouse_total_cells_approx")),
+    ("warehouse_cells_approx", ("session", "warehouse_total_cells_approx")),
+    ("warehouse_estimated_cells", ("session", "warehouse_total_cells_approx")),
+    ("warehouse_total_cells_tolerance", ("session", "warehouse_total_cells_tolerance")),
+    ("warehouse_cells_tolerance", ("session", "warehouse_total_cells_tolerance")),
+    ("warehouse_estimate_tolerance", ("session", "warehouse_total_cells_tolerance")),
     ("total_item_count", ("session", "total_item_count")),
     ("round", ("session", "round")),
     ("round_index", ("session", "round")),
@@ -176,8 +182,21 @@ def _packet_session_updates(
 ) -> list[FieldUpdate]:
     session = _first_mapping(payload, "session", "game", "state")
     merged: dict[str, Any] = dict(session)
-    for key in ("map_id", "hero", "warehouse_total_cells", "warehouse_cells",
-                "total_item_count", "round", "round_index"):
+    for key in (
+        "map_id",
+        "hero",
+        "warehouse_total_cells",
+        "warehouse_cells",
+        "warehouse_total_cells_approx",
+        "warehouse_cells_approx",
+        "warehouse_estimated_cells",
+        "warehouse_total_cells_tolerance",
+        "warehouse_cells_tolerance",
+        "warehouse_estimate_tolerance",
+        "total_item_count",
+        "round",
+        "round_index",
+    ):
         if key in payload:
             merged[key] = payload[key]
 

@@ -620,6 +620,14 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
 
+### C-70: 伊森近似仓库冗余 + Streamlit 宽度兼容（2026-05-27）
+
+- **问题**：伊森 R1-R4 根据底部物品站位只能估计仓库总格，固定当作上限会误剪真实候选；同时用户实际使用的 Streamlit 1.57 已弃用 `use_container_width`，而旧 smoke 环境 1.46 不支持新版 `width` 参数。
+- **改动**：`SessionObs` 新增 `warehouse_total_cells_tolerance` 与 `warehouse_capacity_upper_bound()`；packet fixture 支持 `warehouse_estimated_cells` / `warehouse_estimate_tolerance`，joint 和 per-bucket 枚举在仅有近似总格时按容差留冗余，R5 的 exact `warehouse_total_cells` 仍严格优先；不估计 `total_item_count`。
+- **UI 兼容**：新增 `layout_width_kwargs()`，Streamlit 1.57 自动走 `width="stretch"/"content"`，1.46 自动回退 `use_container_width`，避免新版弃用 warning 与旧版 TypeError。
+- **样本流程**：新增 `data/samples/packet_fixture.example.json`、`scripts/inspect_packet_fixture.py` 与 `docs/protohub_fixture_guide.zh-CN.md`，用户拿到任意原始 ProtoHub 导出后可保留原文交由 adapter 对照。
+- **验证**：推理/packet/UI 聚焦 `97 passed`；非 slow 回归 `455 passed, 13 deselected`；示例 fixture 校验输出 `approx=112 tolerance=18 items=None pruning_upper_bound=130`；Python313 Streamlit 浏览器 smoke 无 Traceback 且终端无宽度弃用 warning。
+
 ### C-69: ProtoHub/packet 离线 fixture adapter（2026-05-27）
 
 - **问题**：实时推理主链路已闭环，继续优化引擎内部收益有限；ProtoHub/packet 若能提供 item shape、公开 footprint、轮次、道具揭示，会直接增加推理约束和准确性。

@@ -130,6 +130,7 @@ reducer 仍可以存储 `heartbeat` 元数据并增加 state version，但不会
 | 物品 quality | 极高 | 若能拿到，可大幅降低不确定性 |
 | 物品 item_id / value | 极高 | 若能拿到，接近白盒估价 |
 | 道具读数结果 | 高 | 可替代面板 OCR |
+| 仓库总格近似值 + 容差 | 高 | 伊森 R1-R4 从底部站位估格数时保留冗余；R5 精确值覆盖 |
 
 ### 风险与边界
 
@@ -167,10 +168,10 @@ reducer 仍可以存储 `heartbeat` 元数据并增加 state version，但不会
 
 ### P1：自动重算状态机
 
-- [ ] 定义 `InferenceStatus`: `idle / dirty / running / ready / error`。
-- [ ] 所有观测变化只标记 dirty，不直接在 UI 控件里启动重算。
-- [ ] 后台 worker 监听 fingerprint 变化，自动取消旧任务并启动新任务。
-- [ ] UI 显示“当前结果是否过期、来自哪一版观测”。
+- [x] 定义 `InferenceStatus`: `idle / dirty / running / ready / error`。
+- [x] 所有观测变化先标记 dirty；已有 ready 结果后允许受控排队重算。
+- [x] 复用后台 worker：live dirty 且已武装时只排队一次，不在初次打开 app 暖机。
+- [x] UI 显示“当前结果是否过期、来自哪一版观测”。
 
 ### P1：枚举与 joint cache
 
@@ -195,6 +196,13 @@ reducer 仍可以存储 `heartbeat` 元数据并增加 state version，但不会
 dict/JSON fixture，并提取 session、bucket 汇总、公开/可见 item footprint、
 round/tool/public event 等字段。真实 ProtoHub 样本拿到后，优先在这个 adapter
 中补字段别名，而不是改推理引擎。
+
+伊森模式额外支持 `warehouse_estimated_cells` 与
+`warehouse_estimate_tolerance`：R1-R4 底部站位推测不作为严格容量上限，joint
+剪枝按近似值加容差留余量；R5 若获得 `warehouse_total_cells`，精确值优先。
+当前不从轮廓自动猜 `total_item_count`。
+
+获取样本的用户操作步骤见 `docs/protohub_fixture_guide.zh-CN.md`。
 
 ---
 

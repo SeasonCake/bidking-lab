@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+import inspect
+
 import streamlit as st
 
 # Align with chart_style.py slate / indigo palette
@@ -9,6 +12,15 @@ _ACCENT_SESSION = "#6366f1"
 _ACCENT_WAREHOUSE = "#0d9488"
 _ACCENT_CAPTURE = "#d97706"
 _ACCENT_HINT = "#7c3aed"
+
+
+@lru_cache(maxsize=None)
+def layout_width_kwargs(component: str, *, stretch: bool) -> dict[str, object]:
+    """Use the non-deprecated Streamlit width API available at runtime."""
+    params = inspect.signature(getattr(st, component)).parameters
+    if "width" in params:
+        return {"width": "stretch" if stretch else "content"}
+    return {"use_container_width": stretch}
 
 APP_THEME_CSS = f"""
 <style>
@@ -347,7 +359,7 @@ def render_main_tab_nav(
                 labels[key],
                 key=f"ui_main_tab_{key}",
                 type="primary" if key == active else "secondary",
-                use_container_width=True,
+                **layout_width_kwargs("button", stretch=True),
             ):
                 if key != active:
                     st.session_state[session_key] = key

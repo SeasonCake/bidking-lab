@@ -60,6 +60,35 @@ class TestFilterByObs:
         kept = filter_truths_by_obs(truths, obs, warehouse_tol=8)
         assert len(kept) == 2
 
+    def test_approximate_warehouse_uses_declared_tolerance(self):
+        truths = [
+            _make_truth(warehouse=112),
+            _make_truth(warehouse=128),
+            _make_truth(warehouse=140),
+        ]
+        obs = SessionObs(
+            map_id=9999,
+            hero="ethan",
+            warehouse_total_cells_approx=112,
+            warehouse_total_cells_tolerance=18,
+        )
+
+        kept = filter_truths_by_obs(truths, obs, warehouse_tol=8)
+
+        assert [truth.warehouse_total_cells for truth in kept] == [112, 128]
+
+    def test_adaptive_filter_reports_declared_warehouse_tolerance(self):
+        obs = SessionObs(
+            map_id=9999,
+            hero="ethan",
+            warehouse_total_cells_approx=112,
+            warehouse_total_cells_tolerance=18,
+        )
+
+        result = adaptive_filter([_make_truth(warehouse=128)], obs, min_samples=1)
+
+        assert result.warehouse_tol == 18
+
     def test_purple_cells_filter_keeps_close_matches(self):
         truths = [
             _make_truth(warehouse=72, q4=(19, 6, 60_000, 0)),    # exact
@@ -276,6 +305,16 @@ class TestDescribeConstraints:
         assert any(
             "q=4(cells=19, count=6, value≈60,000, huge=1-2)" in p for p in parts
         )
+
+    def test_describes_approximate_warehouse_tolerance(self):
+        obs = SessionObs(
+            map_id=2403,
+            hero="ethan",
+            warehouse_total_cells_approx=112,
+            warehouse_total_cells_tolerance=18,
+        )
+
+        assert _describe_constraints(obs)[0] == "warehouse≈112±18"
 
 
 def test_analytical_uses_gold_avg_without_cells_not_all_red() -> None:

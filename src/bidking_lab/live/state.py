@@ -345,6 +345,9 @@ def live_state_to_session_obs(state: LiveSessionState) -> SessionObs | None:
         warehouse_total_cells_approx=_as_int(
             _field_value(state, ("session", "warehouse_total_cells_approx")),
         ),
+        warehouse_total_cells_tolerance=_as_int(
+            _field_value(state, ("session", "warehouse_total_cells_tolerance")),
+        ),
         total_item_count=_as_int(
             _field_value(state, ("session", "total_item_count")),
         ),

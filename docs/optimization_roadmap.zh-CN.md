@@ -209,6 +209,7 @@ joint / MC / Pareto
 - [x] UI 显示当前字段来源，并补充被阻止覆盖的最近一次更新诊断。
 - [x] 读数页顶部显示关键读数字段来源摘要。
 - [x] 增加 live adapter 组合等价性回归：Ethan 全字段、Aisha 合并低品。
+- [x] 为 packet fixture 预留伊森仓库近似格数与容差；不从未知轮廓推测件数。
 - [ ] 将推理输入从 legacy `obs` 切到 `LiveSessionState` adapter。
 - [ ] 切换前统一覆盖策略：现有 OCR 会覆盖手填，目标 reducer 为 `manual > ocr`。
 - [ ] 为关键读数输入区增加更细粒度的来源标记和“允许 OCR 覆盖手填”交互。
@@ -280,6 +281,8 @@ joint / MC / Pareto
 - 先确认游戏协议是否明文、是否本地回环、是否加密。
 - 先走离线样本：pcap/json fixture → `LiveObservationBatch`。
 - 第一版宽松 JSON adapter 已在 `bidking_lab.live.packet`；真实样本到手后优先补字段别名和 shape/item_id 映射。
+- 伊森 R1-R4 可传 `warehouse_estimated_cells` + `warehouse_estimate_tolerance`，R5 精确揭示后传 `warehouse_total_cells`。
+- 用户侧最小操作流程见 `docs/protohub_fixture_guide.zh-CN.md`，示例见 `data/samples/packet_fixture.example.json`。
 - 任何实时实现前先检查游戏 ToS 和账号风险。
 
 ### TODO

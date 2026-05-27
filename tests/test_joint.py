@@ -59,6 +59,38 @@ def test_joint_warehouse_slack_filters_overbudget_combos() -> None:
         assert hyp.total_cells <= 50 + 5
 
 
+def test_joint_allows_tolerance_for_approximate_ethan_warehouse() -> None:
+    session = SessionObs(
+        map_id=2510,
+        hero="ethan",
+        warehouse_total_cells_approx=50,
+        warehouse_total_cells_tolerance=15,
+        buckets={
+            3: QualityBucketObs(quality=3, total_cells=60),
+        },
+    )
+
+    out = joint_top_k_for_session(session, k=3, warehouse_slack=5)
+
+    assert out
+    assert out[0].per_bucket[3].total_cells == 60
+    assert out[0].total_cells <= 65
+
+
+def test_exact_warehouse_does_not_use_approximate_tolerance() -> None:
+    session = SessionObs(
+        map_id=2510,
+        hero="ethan",
+        warehouse_total_cells=50,
+        warehouse_total_cells_tolerance=15,
+        buckets={
+            3: QualityBucketObs(quality=3, total_cells=60),
+        },
+    )
+
+    assert joint_top_k_for_session(session, k=3, warehouse_slack=5) == []
+
+
 def test_joint_prefers_combos_under_capacity_no_penalty() -> None:
     """If two hypotheses score equal on bucket composite, the one *under*
     capacity should win on warehouse_penalty (it stays 0)."""

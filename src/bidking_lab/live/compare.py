@@ -13,6 +13,7 @@ _SESSION_FIELDS: tuple[str, ...] = (
     "hero",
     "warehouse_total_cells",
     "warehouse_total_cells_approx",
+    "warehouse_total_cells_tolerance",
     "total_item_count",
 )
 

@@ -79,7 +79,13 @@ def joint_top_k_for_session(
         score (lowest first).
     """
     capacity = session.warehouse_capacity()
-    cap_max = capacity + warehouse_slack
+    tolerance = (
+        max(0, session.warehouse_total_cells_tolerance or 0)
+        if session.warehouse_total_cells is None
+        else 0
+    )
+    cap_max = capacity + max(warehouse_slack, tolerance)
+    candidate_capacity = session.warehouse_capacity_upper_bound()
     total_item_cap = session.total_item_count   # None = unconstrained
 
     per_bucket_cands: dict[int, list[BucketCandidate]] = {}
@@ -87,7 +93,10 @@ def joint_top_k_for_session(
         bucket = session.buckets.get(q)
         if bucket is None:
             continue
-        cands = candidates_for_bucket(bucket, warehouse_capacity=capacity)
+        cands = candidates_for_bucket(
+            bucket,
+            warehouse_capacity=candidate_capacity,
+        )
         if cands:
             per_bucket_cands[q] = cands[:per_bucket_top]
 
