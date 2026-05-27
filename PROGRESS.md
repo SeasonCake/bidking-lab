@@ -620,6 +620,13 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
 
+### C-63: Streamlit Arrow 表格告警修复 + MC 默认精度档（2026-05-27）
+
+- **问题**：live shadow 来源表的 `value` 列同时包含 `int` 与字符串（如 `none`），Streamlit 转 Arrow 时会反复报 `Expected bytes, got a 'int' object` / `Could not convert 'none'`，虽会自动修复但污染终端并增加刷新开销。
+- **改动**：`summarize_field_sources()`、`summarize_selected_field_sources()`、`summarize_blocked_field_updates()` 的调试值统一转为显示字符串，保留 reducer 内部原始类型不变；MC 手动和 OCR 后自动默认样本数从 `1000` 提到 `3000`。
+- **取舍**：来源摘要只是 UI/诊断层，字符串化不会改变 `LiveSessionState -> SessionObs` 推理输入；3000 作为当前性能下的精度优先默认档，滑块仍保留 500-5000。
+- **验证**：聚焦 live/bg/capture/posterior `107 passed`；非 slow smoke `425 passed, 13 deselected`；本机 Streamlit HTTP `200`，启动日志未再出现 Arrow 序列化刷屏。
+
 ### C-62: live adapter 组合等价性回归（2026-05-26）
 
 - **问题**：切换 canonical input 前，需要确认 `LiveSessionState -> SessionObs` 在组合场景下保持 legacy 合同，不能只测单字段映射。

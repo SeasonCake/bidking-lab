@@ -327,7 +327,7 @@ def test_summarize_selected_field_sources_uses_labels_and_skips_missing() -> Non
     assert rows == (
         {
             "field": "仓库总格",
-            "value": 90,
+            "value": "90",
             "source": "packet",
             "confidence": "exact",
         },
@@ -367,9 +367,9 @@ def test_summarize_blocked_field_updates_reports_lower_priority_attempts() -> No
     assert rows == (
         {
             "field": "bucket.4.value_sum",
-            "attempted_value": 80_000,
+            "attempted_value": "80000",
             "attempted_source": "ocr",
-            "kept_value": 86_490,
+            "kept_value": "86490",
             "kept_source": "manual",
             "reason": "lower_priority_source",
         },

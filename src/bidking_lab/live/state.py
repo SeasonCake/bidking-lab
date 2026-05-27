@@ -134,6 +134,12 @@ def mark_ready(state: LiveSessionState) -> LiveSessionState:
     return replace(state, dirty=False)
 
 
+def _display_value(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
 def summarize_field_sources(
     state: LiveSessionState,
     *,
@@ -145,7 +151,7 @@ def summarize_field_sources(
         rows.append(
             {
                 "field": ".".join(path),
-                "value": observed.value,
+                "value": _display_value(observed.value),
                 "source": observed.source,
                 "confidence": observed.confidence,
             }
@@ -170,7 +176,7 @@ def summarize_selected_field_sources(
         rows.append(
             {
                 "field": label,
-                "value": observed.value,
+                "value": _display_value(observed.value),
                 "source": observed.source,
                 "confidence": observed.confidence,
             }
@@ -202,9 +208,9 @@ def summarize_blocked_field_updates(
         rows.append(
             {
                 "field": ".".join(update.path),
-                "attempted_value": new_field.value,
+                "attempted_value": _display_value(new_field.value),
                 "attempted_source": new_field.source,
-                "kept_value": old_field.value,
+                "kept_value": _display_value(old_field.value),
                 "kept_source": old_field.source,
                 "reason": reason,
             }

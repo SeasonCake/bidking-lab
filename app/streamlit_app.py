@@ -345,8 +345,8 @@ from bidking_lab.inference.snipe import (
 # for future work but UI is off until tier logic is stable (see OBSERVATIONS
 # Checkpoint #31, TROUBLESHOOTING #30). Same policy as unknown-quality huge.
 _ENABLE_SNIPE_PASS_HINTS = False
-_MC_TRIALS_AUTO_AFTER_CAPTURE = 1000
-_MC_TRIALS_MANUAL_DEFAULT = 1000
+_MC_TRIALS_AUTO_AFTER_CAPTURE = 3000
+_MC_TRIALS_MANUAL_DEFAULT = 3000
 
 # Map categories by ID prefix.
 # 24xx/34xx/44xx = mansion (\u522b\u5885), 25xx/35xx/45xx = shipwreck (\u6c89\u8239).
@@ -2423,9 +2423,10 @@ with st.sidebar:
             step=250,
             help="\u9009\u6863\u8bf4\u660e\uff1a"
                  "**500** = \u5feb\u901f\u4f30\u7b97\uff0c\u7cbe\u5ea6\u504f\u4f4e\uff08\u5c3e\u90e8\u5206\u5e03\u7684\u4ed3\u5e93\u7ec4\u5408\u53ef\u80fd\u5339\u914d\u4e0d\u8db3\uff09\uff1b"
-                 "**1000** = \u9ed8\u8ba4 / \u63a8\u8350\uff0c\u5feb\u901f\u4e0e\u7cbe\u5ea6\u5e73\u8861\uff1b"
-                 "**1500-2000** = \u66f4\u7a33\u7684\u5206\u4f4d\u6570\uff08\u7a0d\u6162\uff09\uff1b"
-                 "**2500-5000** = \u5927\u4ed3\u6216\u5f3a\u7ea6\u675f\u573a\u666f\u5907\u9009\u3002"
+                 "**1000** = \u5feb\u901f\u4e0e\u7cbe\u5ea6\u5e73\u8861\uff1b"
+                 "**1500-2000** = \u66f4\u7a33\u7684\u5206\u4f4d\u6570\uff1b"
+                 "**3000** = \u9ed8\u8ba4 / \u63a8\u8350\uff0c\u4ee5\u7cbe\u5ea6\u4e3a\u4e3b\uff1b"
+                 "**4000-5000** = \u5927\u4ed3\u6216\u5f3a\u7ea6\u675f\u573a\u666f\u5907\u9009\u3002"
                  "\u7f13\u5b58\u5bbd\u5bb9\uff1a(map\\_id, n\\_trials, seed) \u540c\u4e00\u7ec4\u53c2\u6570\u4e0d\u4f1a\u91cd\u7b97\u3002",
         )
         warehouse_tol = st.slider(

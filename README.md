@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
 </table>
 
 > **Left**: three main tabs (Readings / Bidding / Tool ROI). The readings tab shows per-field scope captions (MC vs enumeration vs analytical only), OCR capture in the sidebar, and bottom candidate previews that can show ⚠️ *no legal candidates* without blocking inference above.
-> **Right**: conditional Monte Carlo (default **1,000** samples, slider 500–5,000), histogram with P25/P50/P75/P90, per-bucket posterior cards, and the analytical estimate band. Snipe / walk-away cards remain **experimental and hidden** (`_ENABLE_SNIPE_PASS_HINTS=False`).
+> **Right**: conditional Monte Carlo (default **3,000** samples, slider 500–5,000), histogram with P25/P50/P75/P90, per-bucket posterior cards, and the analytical estimate band. Snipe / walk-away cards remain **experimental and hidden** (`_ENABLE_SNIPE_PASS_HINTS=False`).
 
 ---
 
@@ -292,7 +292,7 @@ Full roadmap in [`PROGRESS.md`](PROGRESS.md). Short version:
 **Next** (C-38): startup wait UI while OCR warms; optional mini-game deferred.
 - ✅ 6 game tables decoded + schema
 - ✅ Inference engine v2 (joint posterior + warehouse pruning + truncated-display rule + huge-item band)
-- ✅ Streamlit Chinese UI (3 main tabs + map static info panel); MC default **1000** samples
+- ✅ Streamlit Chinese UI (3 main tabs + map static info panel); MC default **3000** samples
 - ✅ Per-bucket adaptive MC filter (2026-05-16) — kills 2× over-estimation bug
 - ✅ Analytical-estimate hardening (C-28) + ★ concrete huge items (C-29) + purple `avg_value` input (C-29)
 - ✅ Pass/snipe red constraints in backend (C-30); **UI hidden** until P0-A resumes (C-31)
