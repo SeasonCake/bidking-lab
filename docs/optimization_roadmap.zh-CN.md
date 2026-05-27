@@ -281,7 +281,7 @@ joint / MC / Pareto
 - 先确认游戏协议是否明文、是否本地回环、是否加密。
 - 先走离线样本：pcap/json fixture → `LiveObservationBatch`。
 - 第一版宽松 JSON adapter 已在 `bidking_lab.live.packet`；真实样本到手后优先补字段别名和 shape/item_id 映射。
-- 伊森 R1-R4 可传 `warehouse_estimated_cells` + `warehouse_estimate_tolerance`，R5 精确揭示后传 `warehouse_total_cells`。
+- 伊森 R1-R4 可传 `warehouse_estimated_cells` + `warehouse_estimate_tolerance`，不自动猜未知总件数；R5 精确揭示后传 `warehouse_total_cells`，若协议给出完整物品列表/件数则同步传 `total_item_count`。
 - 用户侧最小操作流程见 `docs/protohub_fixture_guide.zh-CN.md`，示例见 `data/samples/packet_fixture.example.json`。
 - 任何实时实现前先检查游戏 ToS 和账号风险。
 

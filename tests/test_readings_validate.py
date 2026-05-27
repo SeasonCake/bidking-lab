@@ -36,6 +36,25 @@ def test_within_budget_ok():
     assert check_warehouse_cell_budget(_ethan_state(purple_cells=40)) is None
 
 
+def test_estimated_warehouse_budget_uses_tolerance():
+    state = _ethan_state(
+        warehouse_cells=120,
+        warehouse_cells_mode="estimate",
+        warehouse_cells_tolerance=10,
+    )
+    assert check_warehouse_cell_budget(state) is None
+
+    msg = check_warehouse_cell_budget(
+        _ethan_state(
+            warehouse_cells=120,
+            warehouse_cells_mode="estimate",
+            warehouse_cells_tolerance=3,
+        )
+    )
+    assert msg is not None
+    assert "120+3" in msg
+
+
 def test_aisha_split_sums():
     st = {
         "hero": "aisha",

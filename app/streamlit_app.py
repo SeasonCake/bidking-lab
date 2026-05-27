@@ -54,6 +54,7 @@ from bidking_lab.inference.observation import (
     _single_item_match_names,
     active_reading_constraint_count,
     lookup_single_item_value,
+    recommended_warehouse_tolerance,
 )
 from chart_style import apply_bidking_chart_style, style_roi_barh, style_value_hist
 from ui_loading import loading_slot, render_status_banner
@@ -698,6 +699,23 @@ def _coerce_map_select(
     return None
 
 
+def _warehouse_cells_is_estimate(state: dict[str, Any]) -> bool:
+    return (
+        state.get("hero") == "ethan"
+        and str(state.get("warehouse_cells_mode") or "").strip().lower()
+        == "estimate"
+    )
+
+
+def _warehouse_cells_tolerance(state: dict[str, Any]) -> int:
+    if not _warehouse_cells_is_estimate(state):
+        return 0
+    try:
+        return max(0, int(state.get("warehouse_cells_tolerance") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _maybe_red_bucket(state) -> QualityBucketObs | None:
     """Build a q=6 bucket only when something meaningful was entered.
 
@@ -998,12 +1016,13 @@ def _build_session(state, maps: Mapping[int, BidMap]) -> SessionObs:
         buckets = _build_buckets_for_aisha(state)
 
     warehouse = state.get("warehouse_cells") or 0
+    warehouse_is_estimate = _warehouse_cells_is_estimate(state)
 
     # Auto-detect "no red" or infer red cells from residual:
     # If user has NOT explicitly set any red info, but we can compute
     # red cells from warehouse minus all other specified bucket cells,
     # add the inferred red bucket automatically.
-    if 6 not in buckets and warehouse > 0:
+    if 6 not in buckets and warehouse > 0 and not warehouse_is_estimate:
         # Only auto-infer red when ALL non-red buckets are accounted for.
         # Ethan: need q1(wg), q3(blue), q4(purple), q5(gold).
         # Aisha: same set (q1 may be split into q1+q2).
@@ -1060,7 +1079,11 @@ def _build_session(state, maps: Mapping[int, BidMap]) -> SessionObs:
     return SessionObs(
         map_id=int(mid),
         hero=state["hero"],
-        warehouse_total_cells=warehouse or None,
+        warehouse_total_cells=None if warehouse_is_estimate else (warehouse or None),
+        warehouse_total_cells_approx=warehouse if warehouse_is_estimate else None,
+        warehouse_total_cells_tolerance=(
+            _warehouse_cells_tolerance(state) if warehouse_is_estimate else None
+        ),
         total_item_count=tic if tic > 0 else None,
         buckets=buckets,
     )
@@ -1257,7 +1280,15 @@ def _session_int(key: str) -> int:
 
 
 def _warehouse_capacity() -> int:
-    return _session_int("obs_warehouse_cells") or int(state.get("warehouse_cells") or 0)
+    capacity = _session_int("obs_warehouse_cells") or int(
+        state.get("warehouse_cells") or 0
+    )
+    if (
+        state.get("hero") == "ethan"
+        and st.session_state.get("obs_warehouse_cells_mode") == "estimate"
+    ):
+        return capacity + _session_int("obs_warehouse_cells_tolerance")
+    return capacity
 
 
 def _lower_bucket_cells_for_preview(state: dict, quality: int) -> int:
@@ -1506,6 +1537,10 @@ def _snapshot_sidebar_ui() -> dict:
     _mk = _map_select_widget_key()
     return {
         "obs_warehouse_cells": st.session_state.get("obs_warehouse_cells"),
+        "obs_warehouse_cells_mode": st.session_state.get("obs_warehouse_cells_mode"),
+        "obs_warehouse_cells_tolerance": st.session_state.get(
+            "obs_warehouse_cells_tolerance"
+        ),
         "obs_total_item_count": st.session_state.get("obs_total_item_count"),
         "obs_map_category": st.session_state.get("obs_map_category"),
         "_map_widget_key": _mk,
@@ -1871,6 +1906,22 @@ def _apply_pending_capture(
     if "warehouse_cells" not in _applied_keys and _keep_wh is not None:
         st.session_state["obs_warehouse_cells"] = _keep_wh
         obs_state["warehouse_cells"] = _keep_wh
+        if snap.get("obs_warehouse_cells_mode") is not None:
+            st.session_state["obs_warehouse_cells_mode"] = snap[
+                "obs_warehouse_cells_mode"
+            ]
+            obs_state["warehouse_cells_mode"] = snap["obs_warehouse_cells_mode"]
+        if snap.get("obs_warehouse_cells_tolerance") is not None:
+            st.session_state["obs_warehouse_cells_tolerance"] = snap[
+                "obs_warehouse_cells_tolerance"
+            ]
+            obs_state["warehouse_cells_tolerance"] = snap[
+                "obs_warehouse_cells_tolerance"
+            ]
+    elif "warehouse_cells" in _applied_keys:
+        st.session_state["obs_warehouse_cells_mode"] = "strict"
+        obs_state["warehouse_cells_mode"] = "strict"
+        obs_state.pop("warehouse_cells_tolerance", None)
     if "total_item_count" not in _applied_keys and _keep_tic is not None:
         st.session_state["obs_total_item_count"] = _keep_tic
         obs_state["total_item_count"] = _keep_tic
@@ -2390,6 +2441,53 @@ with st.sidebar:
         help="\u5fc5\u586b\u3002\u9762\u677f\u300c\u6240\u6709\u85cf\u54c1\u603b\u5360\u7528\u2026\u683c\u300d\u53ef OCR \u81ea\u52a8\u586b\u5165\u3002",
     )
     _wh = _session_int("obs_warehouse_cells")
+    if hero == "ethan":
+        st.radio(
+            "\u4ed3\u5e93\u683c\u6570\u7ea6\u675f",
+            options=["strict", "estimate"],
+            format_func=lambda mode: (
+                "\u4e25\u683c\u7b49\u4e8e\u624b\u586b/OCR"
+                if mode == "strict"
+                else "\u4f30\u8ba1\u503c + \u5bb9\u5dee"
+            ),
+            key="obs_warehouse_cells_mode",
+            horizontal=True,
+            help=(
+                "OCR \u8bc6\u522b\u5230\u9762\u677f\u603b\u683c\u65f6\u5efa\u8bae\u4fdd\u6301\u4e25\u683c\u3002"
+                "\u4f0a\u68ee R1-R4 \u53ea\u6839\u636e\u5e95\u90e8\u8f6e\u5ed3\u624b\u4f30\u65f6\uff0c"
+                "\u53ef\u9009\u300c\u4f30\u8ba1\u503c+\u5bb9\u5dee\u300d\uff0c\u907f\u514d\u628a\u4f30\u9519\u5f53\u786c\u4e0a\u9650\u3002"
+            ),
+        )
+        if st.session_state.get("obs_warehouse_cells_mode") == "estimate":
+            _default_wh_tol = recommended_warehouse_tolerance(_wh)
+            st.session_state.setdefault(
+                "obs_warehouse_cells_tolerance",
+                _default_wh_tol,
+            )
+            if st.button(
+                "\u6309\u4ed3\u5e93\u5927\u5c0f\u91cd\u7f6e\u63a8\u8350\u5bb9\u5dee",
+                key="obs_warehouse_tol_reset",
+                **layout_width_kwargs("button", stretch=True),
+            ):
+                st.session_state["obs_warehouse_cells_tolerance"] = _default_wh_tol
+            st.slider(
+                "\u624b\u4f30\u4ed3\u5e93\u5bb9\u5dee \u00b1\u683c",
+                min_value=0,
+                max_value=30,
+                step=1,
+                key="obs_warehouse_cells_tolerance",
+                help=(
+                    "\u9ed8\u8ba4\u63a8\u8350\u4f1a\u968f\u4ed3\u5e93\u5927\u5c0f\u589e\u957f\uff1b"
+                    "\u5c0f\u4ed3\u5e93\u4e0d\u5efa\u8bae\u7ed9\u592a\u5927\u5bb9\u5dee\uff0c"
+                    "\u5426\u5219\u4f1a\u628a\u660e\u663e\u4e0d\u540c\u7684\u4ed3\u5e93\u89c4\u6a21\u6df7\u5728\u4e00\u8d77\u3002"
+                ),
+            )
+            st.caption(
+                f"\u5f53\u524d\u6309 `{_wh}` \u683c\u4f30\u8ba1\uff0c"
+                f"\u526a\u679d\u4e0a\u9650\u4e3a `{_wh + _session_int('obs_warehouse_cells_tolerance')}` \u683c\u3002"
+            )
+    else:
+        st.session_state["obs_warehouse_cells_mode"] = "strict"
     if _wh <= 0:
         st.caption(
             "<span style='color:#c62828;font-weight:600'>"
@@ -2676,6 +2774,13 @@ if "obs_warehouse_cells" in st.session_state:
         state["warehouse_cells"] = _wh_sync
 else:
     _wh_sync = int(state.get("warehouse_cells") or 0)
+state["warehouse_cells_mode"] = st.session_state.get(
+    "obs_warehouse_cells_mode",
+    "strict",
+)
+state["warehouse_cells_tolerance"] = _session_int(
+    "obs_warehouse_cells_tolerance",
+)
 _resolved_mid = _effective_map_id(
     map_choices, selectbox_return=map_id, obs=state,
 )
@@ -3026,6 +3131,13 @@ def _sync_obs_from_widgets(obs_state: dict) -> None:
     wh = int(st.session_state.get("obs_warehouse_cells") or 0)
     if wh > 0:
         obs_state["warehouse_cells"] = wh
+    obs_state["warehouse_cells_mode"] = st.session_state.get(
+        "obs_warehouse_cells_mode",
+        "strict",
+    )
+    obs_state["warehouse_cells_tolerance"] = int(
+        st.session_state.get("obs_warehouse_cells_tolerance") or 0
+    )
     tic = int(st.session_state.get("obs_total_item_count") or 0)
     obs_state["total_item_count"] = tic if tic > 0 else 0
     cat = st.session_state.get("obs_map_category", "mansion")
@@ -3987,6 +4099,13 @@ def _render_hint_tab_impl() -> None:
     if _mid_live is not None:
         state["map_id"] = _mid_live
     state["warehouse_cells"] = _wh_live
+    state["warehouse_cells_mode"] = st.session_state.get(
+        "obs_warehouse_cells_mode",
+        "strict",
+    )
+    state["warehouse_cells_tolerance"] = int(
+        st.session_state.get("obs_warehouse_cells_tolerance") or 0
+    )
 
     st.subheader("\u51fa\u4ef7\u5efa\u8bae")
     st.caption(

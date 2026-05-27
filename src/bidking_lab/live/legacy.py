@@ -58,6 +58,10 @@ def _copy_positive_amount(
         fields[path] = parsed
 
 
+def _warehouse_is_estimate(obs: Mapping[str, Any]) -> bool:
+    return str(obs.get("warehouse_cells_mode") or "").strip().lower() == "estimate"
+
+
 def _sum_if_present(obs: Mapping[str, Any], *keys: str) -> int | None:
     if not any(key in obs for key in keys):
         return None
@@ -81,12 +85,26 @@ def legacy_obs_fields(obs: Mapping[str, Any]) -> dict[tuple[str, ...], Any]:
     fields: dict[tuple[str, ...], Any] = {}
     for legacy_key, field_key in (("map_id", "map_id"), ("hero", "hero")):
         _copy_if_present(fields, obs, legacy_key, ("session", field_key))
-    _copy_positive_int(
-        fields,
-        obs,
-        "warehouse_cells",
-        ("session", "warehouse_total_cells"),
-    )
+    if _warehouse_is_estimate(obs):
+        _copy_positive_int(
+            fields,
+            obs,
+            "warehouse_cells",
+            ("session", "warehouse_total_cells_approx"),
+        )
+        _copy_positive_int(
+            fields,
+            obs,
+            "warehouse_cells_tolerance",
+            ("session", "warehouse_total_cells_tolerance"),
+        )
+    else:
+        _copy_positive_int(
+            fields,
+            obs,
+            "warehouse_cells",
+            ("session", "warehouse_total_cells"),
+        )
     _copy_positive_int(
         fields,
         obs,

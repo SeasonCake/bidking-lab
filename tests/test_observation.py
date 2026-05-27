@@ -20,6 +20,7 @@ from bidking_lab.inference.observation import (
     candidate_cache_info,
     candidates_for_bucket,
     clear_candidate_cache,
+    recommended_warehouse_tolerance,
     top_k_for_session,
 )
 
@@ -32,6 +33,13 @@ def test_huge_band_ranges() -> None:
     assert HUGE_BAND_RANGE["2-3"] == (2, 3)
     assert HUGE_BAND_RANGE["4+"][0] == 4
     assert HUGE_BAND_RANGE["4+"][1] >= 4
+
+
+def test_recommended_warehouse_tolerance_scales_with_size() -> None:
+    assert recommended_warehouse_tolerance(None) == 0
+    assert recommended_warehouse_tolerance(60) <= recommended_warehouse_tolerance(120)
+    assert recommended_warehouse_tolerance(60) < 10
+    assert recommended_warehouse_tolerance(180) <= 20
 
 
 def test_huge_cells_per_quality() -> None:

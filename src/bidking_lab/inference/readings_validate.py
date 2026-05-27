@@ -40,10 +40,17 @@ def check_warehouse_cell_budget(state: dict[str, Any]) -> str | None:
     wh = _cell_val(state.get("warehouse_cells"))
     if wh <= 0:
         return None
+    tolerance = (
+        _cell_val(state.get("warehouse_cells_tolerance"))
+        if state.get("warehouse_cells_mode") == "estimate"
+        else 0
+    )
+    capacity = wh + tolerance
     filled = sum_filled_bucket_cells(state)
-    if filled > wh:
+    if filled > capacity:
+        limit_text = f"{wh}+{tolerance}" if tolerance > 0 else str(wh)
         return (
-            f"已填各品级格数合计 **{filled}** 格，超过左侧栏仓库总格数 **{wh}** 格。"
+            f"已填各品级格数合计 **{filled}** 格，超过左侧栏仓库总格数 **{limit_text}** 格。"
             f"请核对 OCR/手填（白绿、蓝、紫、金、红），修正后再推断。"
         )
     return None

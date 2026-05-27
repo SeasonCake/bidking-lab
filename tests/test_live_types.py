@@ -7,7 +7,9 @@ from bidking_lab.live import (
     LiveObservationBatch,
     apply_observation_batch,
     event_requests_recompute,
+    legacy_obs_fields,
     live_inference_status,
+    live_session_matches_context,
     live_state_to_session_obs,
     mark_ready,
     source_priority,
@@ -409,6 +411,59 @@ def test_summarize_blocked_field_updates_reports_lower_priority_attempts() -> No
         },
     )
     assert updated.fields[("bucket", "4", "value_sum")].value == 86_490
+
+
+def test_legacy_obs_estimated_warehouse_maps_to_approx_fields() -> None:
+    fields = legacy_obs_fields(
+        {
+            "map_id": 2510,
+            "hero": "ethan",
+            "warehouse_cells": 112,
+            "warehouse_cells_mode": "estimate",
+            "warehouse_cells_tolerance": 9,
+        }
+    )
+
+    assert ("session", "warehouse_total_cells") not in fields
+    assert fields[("session", "warehouse_total_cells_approx")] == 112
+    assert fields[("session", "warehouse_total_cells_tolerance")] == 9
+
+
+def test_live_context_matches_approximate_warehouse_value() -> None:
+    state = apply_observation_batch(
+        LiveSessionState(),
+        LiveObservationBatch(
+            source="manual",
+            event_kind="manual_update",
+            field_updates=(
+                FieldUpdate(
+                    path=("session", "map_id"),
+                    value=2510,
+                    source="manual",
+                    confidence="exact",
+                ),
+                FieldUpdate(
+                    path=("session", "hero"),
+                    value="ethan",
+                    source="manual",
+                    confidence="exact",
+                ),
+                FieldUpdate(
+                    path=("session", "warehouse_total_cells_approx"),
+                    value=112,
+                    source="manual",
+                    confidence="exact",
+                ),
+            ),
+        ),
+    )
+    session = live_state_to_session_obs(state)
+
+    assert live_session_matches_context(
+        session,
+        map_id=2510,
+        warehouse_total_cells=112,
+    )
 
 
 def test_heartbeat_metadata_update_does_not_make_inference_stale() -> None:

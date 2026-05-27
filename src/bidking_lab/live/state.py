@@ -422,7 +422,9 @@ def live_session_matches_context(
         return False
     warehouse = _as_int(warehouse_total_cells)
     if warehouse is not None and warehouse > 0:
-        return session.warehouse_total_cells == warehouse
+        if session.warehouse_total_cells is not None:
+            return session.warehouse_total_cells == warehouse
+        return session.warehouse_total_cells_approx == warehouse
     return True
 
 

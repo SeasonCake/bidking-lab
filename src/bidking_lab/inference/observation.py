@@ -90,6 +90,22 @@ def aisha_can_observe_huge(quality: int) -> bool:
     return quality == 4
 
 
+def recommended_warehouse_tolerance(approx_cells: int | None) -> int:
+    """Return a conservative default slack for an estimated warehouse size.
+
+    Ethan's early-round footprint estimate is useful, but it should not become
+    a hard upper bound. The default grows slowly with the estimated warehouse
+    size so small warehouses do not get an oversized slack window.
+    """
+    if approx_cells is None or approx_cells <= 0:
+        return 0
+    if approx_cells <= 80:
+        return max(3, round(approx_cells * 0.06))
+    if approx_cells <= 130:
+        return round(approx_cells * 0.08)
+    return min(20, round(approx_cells * 0.10))
+
+
 # --- Standard tool loadouts (refined 2026-05-15 per user playtesting) ---
 #
 # Tool-name → target-quality mapping (per BattleItem.txt, verified 2026-05-15):

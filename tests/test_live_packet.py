@@ -129,3 +129,29 @@ def test_packet_fixture_keeps_ethan_warehouse_estimate_without_item_count() -> N
     assert session.warehouse_capacity() == 112
     assert session.warehouse_capacity_upper_bound() == 130
     assert session.total_item_count is None
+
+
+def test_packet_fixture_r5_exact_warehouse_and_item_count_override_estimate() -> None:
+    batch = live_batch_from_packet_fixture(
+        {
+            "event": "public",
+            "session": {
+                "map_id": 2510,
+                "hero": "ethan",
+                "warehouse_estimated_cells": 112,
+                "warehouse_estimate_tolerance": 18,
+                "warehouse_total_cells": 123,
+                "total_item_count": 37,
+            },
+        }
+    )
+    session = live_state_to_session_obs(
+        apply_observation_batch(LiveSessionState(), batch)
+    )
+
+    assert session is not None
+    assert session.warehouse_total_cells == 123
+    assert session.warehouse_total_cells_approx == 112
+    assert session.warehouse_capacity() == 123
+    assert session.warehouse_capacity_upper_bound() == 123
+    assert session.total_item_count == 37

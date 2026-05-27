@@ -620,10 +620,17 @@ C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
 > 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
 > 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
 
+### C-71: 伊森手填仓库严格/估计模式（2026-05-27）
+
+- **问题**：C-70 只在 packet / `SessionObs` 层支持近似仓库容差，但 UI 手填仍只能把仓库总格当作硬上限；用户补充确认伊森 R5 可获得准确总格和总件数，R1-R4 只能估计且小仓库不宜给过大冗余。
+- **改动**：伊森侧栏新增“严格等于手填/OCR / 估计值+容差”模式；严格模式写 `warehouse_total_cells`，估计模式写 `warehouse_total_cells_approx` + `warehouse_total_cells_tolerance`。OCR 识别到仓库总格时自动回到严格模式；budget 校验在估计模式按 `估计+容差` 判断。
+- **推理语义**：R1-R4 仍不自动猜 `total_item_count`；R5 packet 若提供完整轮廓/物品列表/件数，可写入 `total_item_count`，并且 exact `warehouse_total_cells` 严格优先于近似值。
+- **验证**：新增 observation / live legacy / packet / warehouse budget 回归，覆盖容差推荐、legacy approx 字段映射、approx live 上下文匹配、R5 exact 件数。
+
 ### C-70: 伊森近似仓库冗余 + Streamlit 宽度兼容（2026-05-27）
 
 - **问题**：伊森 R1-R4 根据底部物品站位只能估计仓库总格，固定当作上限会误剪真实候选；同时用户实际使用的 Streamlit 1.57 已弃用 `use_container_width`，而旧 smoke 环境 1.46 不支持新版 `width` 参数。
-- **改动**：`SessionObs` 新增 `warehouse_total_cells_tolerance` 与 `warehouse_capacity_upper_bound()`；packet fixture 支持 `warehouse_estimated_cells` / `warehouse_estimate_tolerance`，joint 和 per-bucket 枚举在仅有近似总格时按容差留冗余，R5 的 exact `warehouse_total_cells` 仍严格优先；不估计 `total_item_count`。
+- **改动**：`SessionObs` 新增 `warehouse_total_cells_tolerance` 与 `warehouse_capacity_upper_bound()`；packet fixture 支持 `warehouse_estimated_cells` / `warehouse_estimate_tolerance`，joint 和 per-bucket 枚举在仅有近似总格时按容差留冗余，R5 的 exact `warehouse_total_cells` 仍严格优先；R1-R4 不估计 `total_item_count`。
 - **UI 兼容**：新增 `layout_width_kwargs()`，Streamlit 1.57 自动走 `width="stretch"/"content"`，1.46 自动回退 `use_container_width`，避免新版弃用 warning 与旧版 TypeError。
 - **样本流程**：新增 `data/samples/packet_fixture.example.json`、`scripts/inspect_packet_fixture.py` 与 `docs/protohub_fixture_guide.zh-CN.md`，用户拿到任意原始 ProtoHub 导出后可保留原文交由 adapter 对照。
 - **验证**：推理/packet/UI 聚焦 `97 passed`；非 slow 回归 `455 passed, 13 deselected`；示例 fixture 校验输出 `approx=112 tolerance=18 items=None pruning_upper_bound=130`；Python313 Streamlit 浏览器 smoke 无 Traceback 且终端无宽度弃用 warning。
