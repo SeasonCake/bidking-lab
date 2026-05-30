@@ -226,6 +226,9 @@ def evaluate_path(
         cells_p10 = _round(report.total_cells.p10 if report.total_cells else None)
         cells_p50 = _round(report.total_cells.p50 if report.total_cells else None)
         cells_p90 = _round(report.total_cells.p90 if report.total_cells else None)
+        diagnostics = ";".join(report.diagnostics)
+        layout_diagnostics = ";".join(report.layout_diagnostics)
+        final_q6_value = int(truth_breakdown.get("final_q6_value") or 0)
         return {
             "file": path.name,
             "status": "ok",
@@ -283,8 +286,23 @@ def evaluate_path(
             "anchor_count": report.anchor_count,
             "known_value": report.known_value,
             "layout_score": report.layout_score,
-            "layout_diagnostics": ";".join(report.layout_diagnostics),
-            "diagnostics": ";".join(report.diagnostics),
+            "layout_diagnostics": layout_diagnostics,
+            "diagnostics": diagnostics,
+            "relaxed_exact_used": "relaxed_exact_bucket_targets:" in diagnostics,
+            "layout_conflict": (
+                "footprint_overlap_cells:" in layout_diagnostics
+                or "footprint_overflow:" in layout_diagnostics
+            ),
+            "q6_false_low_risk": (
+                final_q6_value > 0
+                and report.q6_match_rate is not None
+                and report.q6_match_rate < 0.10
+            ),
+            "q6_p90_misses_truth": (
+                final_q6_value > 0
+                and q6_value_p90 is not None
+                and q6_value_p90 < final_q6_value
+            ),
             "bucket_targets": _format_bucket_targets(problem),
             "footprint_count": problem.layout.footprint_count,
             "footprint_occupied_cells": problem.layout.occupied_cells,
@@ -310,7 +328,15 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     relaxed = [
         row for row in ok
-        if "relaxed_exact_bucket_targets:" in str(row.get("diagnostics") or "")
+        if row.get("relaxed_exact_used")
+    ]
+    layout_conflict = [row for row in ok if row.get("layout_conflict")]
+    q6_false_low = [row for row in ok if row.get("q6_false_low_risk")]
+    q6_p90_miss = [row for row in ok if row.get("q6_p90_misses_truth")]
+    high_value_undercovered = [
+        row for row in ok
+        if row.get("value_tier") == ">=1.2m"
+        and row.get("v2_value_p90_covers_final") is False
     ]
     abs_errors = [abs(int(row["v2_value_p50_error"])) for row in valued]
     decision_valued = [
@@ -332,6 +358,14 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "valued": len(valued),
         "zero_match": len(zero),
         "relaxed_exact": len(relaxed),
+        "zero_match_after_relax": sum(1 for row in zero if row.get("relaxed_exact_used")),
+        "layout_conflict": len(layout_conflict),
+        "zero_match_with_layout_conflict": sum(
+            1 for row in zero if row.get("layout_conflict")
+        ),
+        "q6_false_low_risk": len(q6_false_low),
+        "q6_p90_misses_truth": len(q6_p90_miss),
+        "high_value_p90_undercovered": len(high_value_undercovered),
         "skip_or_error": len(rows) - len(ok),
         "value_mae": _round(statistics.mean(abs_errors)) if abs_errors else None,
         "value_median_abs_error": (
@@ -425,6 +459,19 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "diagnostics": row.get("diagnostics"),
             }
             for row in zero[:12]
+        ],
+        "q6_false_low_details": [
+            {
+                "file": row["file"],
+                "hero": row.get("hero"),
+                "map_id": row.get("map_id"),
+                "final_q6_count": row.get("final_q6_count"),
+                "final_q6_value": row.get("final_q6_value"),
+                "v2_q6_match_rate": row.get("v2_q6_match_rate"),
+                "v2_q6_value_p90": row.get("v2_q6_value_p90"),
+                "diagnostics": row.get("diagnostics"),
+            }
+            for row in q6_false_low[:12]
         ],
         "groups": {
             "hero": _group_summary(ok, "hero"),
