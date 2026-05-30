@@ -201,6 +201,8 @@ def evaluate_path(
         value_p10 = _round(report.total_value.p10 if report.total_value else None)
         value_p50 = _round(report.total_value.p50 if report.total_value else None)
         value_p90 = _round(report.total_value.p90 if report.total_value else None)
+        q6_value_p50 = _round(report.q6_value.p50 if report.q6_value else None)
+        q6_value_p90 = _round(report.q6_value.p90 if report.q6_value else None)
         cells_p10 = _round(report.total_cells.p10 if report.total_cells else None)
         cells_p50 = _round(report.total_cells.p50 if report.total_cells else None)
         cells_p90 = _round(report.total_cells.p90 if report.total_cells else None)
@@ -220,6 +222,9 @@ def evaluate_path(
             "v2_value_p10": value_p10,
             "v2_value_p50": value_p50,
             "v2_value_p90": value_p90,
+            "v2_q6_match_rate": report.q6_match_rate,
+            "v2_q6_value_p50": q6_value_p50,
+            "v2_q6_value_p90": q6_value_p90,
             "v2_value_p50_error": (
                 value_p50 - final_value if value_p50 is not None else None
             ),
@@ -336,6 +341,8 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                     "v2_value_p90_error": row.get("v2_value_p90_error"),
                     "v2_matched": row.get("v2_matched"),
                     "anchor_count": row.get("anchor_count"),
+                    "v2_q6_match_rate": row.get("v2_q6_match_rate"),
+                    "v2_q6_value_p90": row.get("v2_q6_value_p90"),
                     "final_q6_count": row.get("final_q6_count"),
                     "final_q6_value": row.get("final_q6_value"),
                     "final_top_item_name": row.get("final_top_item_name"),

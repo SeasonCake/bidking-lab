@@ -230,6 +230,8 @@ class PosteriorReport:
     known_cells: int
     known_value: int
     layout_score: float
+    q6_match_rate: float | None = None
+    q6_value: QuantileSummary | None = None
     layout_diagnostics: tuple[str, ...] = ()
     diagnostics: tuple[str, ...] = ()
 
@@ -877,6 +879,7 @@ def estimate_posterior_v2(
     rng = np.random.default_rng(seed)
     values: list[int] = []
     cells: list[int] = []
+    q6_values: list[int] = []
     weights: list[float] = []
     trials = max(0, int(n_trials))
     for _ in range(trials):
@@ -900,7 +903,14 @@ def estimate_posterior_v2(
         weight = category_observation_soft_score(truth, obs) * layout_score * value_score
         values.append(truth.total_value())
         cells.append(truth.warehouse_total_cells)
+        q6_bucket = truth.buckets.get(6)
+        q6_values.append(q6_bucket.value_sum if q6_bucket is not None else 0)
         weights.append(weight)
+    diagnostics = list(problem.diagnostics)
+    q6_match_count = sum(1 for value in q6_values if value > 0)
+    q6_match_rate = q6_match_count / len(q6_values) if q6_values else None
+    if 6 not in problem.bucket_targets and q6_match_rate is not None and q6_match_rate < 0.10:
+        diagnostics.append(f"q6_unconstrained_low_sample_rate:{q6_match_rate:.3f}")
     return PosteriorReport(
         map_id=problem.map_id,
         map_name=problem.map_name,
@@ -912,8 +922,10 @@ def estimate_posterior_v2(
         known_cells=problem.known_cells,
         known_value=problem.known_value,
         layout_score=problem.layout.score,
+        q6_match_rate=q6_match_rate,
+        q6_value=_quantiles(q6_values, weights),
         layout_diagnostics=problem.layout.diagnostics,
-        diagnostics=problem.diagnostics,
+        diagnostics=tuple(diagnostics),
     )
 
 

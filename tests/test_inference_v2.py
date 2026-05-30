@@ -266,6 +266,12 @@ def test_estimate_posterior_v2_uses_anchor_without_rejection_dead_end() -> None:
     assert report.n_matched == 50
     assert report.total_value is not None
     assert report.total_value.p10 >= 3_240
+    assert report.q6_match_rate is not None
+    assert report.q6_value is not None
+    assert any(
+        diagnostic.startswith("q6_unconstrained_low_sample_rate:")
+        for diagnostic in report.diagnostics
+    )
 
 
 def test_residual_problem_guides_per_quality_bucket_targets() -> None:
