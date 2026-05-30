@@ -5,9 +5,11 @@ import numpy as np
 from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropEntry, DropPool
 from bidking_lab.extract.item_table import Item
+from bidking_lab.inference.ground_truth import BucketTruth, SessionTruth
 from bidking_lab.inference.observation import QualityBucketObs, SessionObs
 from bidking_lab.inference.v2 import (
     ConditionalSampler,
+    EvidenceFact,
     EvidenceStoreBuilder,
     RuntimeEvidence,
     build_residual_problem,
@@ -17,6 +19,7 @@ from bidking_lab.inference.v2 import (
     known_item_anchors,
     layout_feasibility_from_store,
     layout_feasibility_score,
+    value_evidence_score,
 )
 from bidking_lab.live.fatbeans import (
     FatbeansActionResult,
@@ -79,6 +82,7 @@ def _map() -> BidMap:
 def _tables() -> tuple[dict[int, BidMap], dict[int, DropPool], dict[int, Item]]:
     anchor = _item(1103006, quality=3, value=3_240, shape=(2, 1), tags=[110])
     filler = _item(1011001, quality=1, value=100, shape=(1, 1), tags=[101])
+    gold = _item(1055001, quality=5, value=30_000, shape=(1, 1), tags=[105])
     red = _item(1086001, quality=6, value=444_000, shape=(4, 4), tags=[108])
     return (
         {2401: _map()},
@@ -104,6 +108,13 @@ def _tables() -> tuple[dict[int, BidMap], dict[int, DropPool], dict[int, Item]]:
                         weight=999,
                     ),
                     DropEntry(
+                        category=105,
+                        item_id=gold.item_id,
+                        n_min=1,
+                        n_max=1,
+                        weight=1,
+                    ),
+                    DropEntry(
                         category=108,
                         item_id=red.item_id,
                         n_min=1,
@@ -113,7 +124,12 @@ def _tables() -> tuple[dict[int, BidMap], dict[int, DropPool], dict[int, Item]]:
                 ],
             ),
         },
-        {anchor.item_id: anchor, filler.item_id: filler, red.item_id: red},
+        {
+            anchor.item_id: anchor,
+            filler.item_id: filler,
+            gold.item_id: gold,
+            red.item_id: red,
+        },
     )
 
 
@@ -367,3 +383,81 @@ def test_layout_feasibility_rejects_impossible_sample() -> None:
     assert 0 < problem.layout.score < 1
     assert problem.layout.diagnostics == ("footprint_overflow:1",)
     assert layout_feasibility_score(truth, problem.layout) > 0
+
+
+def test_residual_problem_tracks_value_floor_from_exact_evidence() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            item_id=1103006,
+            quality=3,
+            value=3_240,
+            shape_key="21",
+            cells=2,
+            sources=("public:200022",),
+        )
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+
+    assert problem.bucket_targets[3].value_floor == 3_240
+
+
+def test_public_gold_avg_value_scores_posterior_samples() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_fact(
+        EvidenceFact(
+            kind="public_info",
+            key="200037",
+            value=30_000,
+            source="public",
+        )
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    matching = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=1,
+        buckets={
+            5: BucketTruth(
+                quality=5,
+                count=1,
+                total_cells=1,
+                value_sum=30_000,
+                items=[items[1055001]],
+            ),
+        },
+    )
+    mismatch = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=1,
+        buckets={
+            5: BucketTruth(
+                quality=5,
+                count=1,
+                total_cells=1,
+                value_sum=3_000,
+                items=[items[1055001]],
+            ),
+        },
+    )
+
+    assert problem.bucket_targets[5].count_floor == 1
+    assert problem.bucket_targets[5].avg_value == 30_000
+    assert value_evidence_score(matching, problem) == 1
+    assert 0 < value_evidence_score(mismatch, problem) < 1

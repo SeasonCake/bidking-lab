@@ -68,6 +68,7 @@ from bidking_lab.inference.v2 import (
     known_item_anchors,
     layout_feasibility_from_store,
     layout_feasibility_score,
+    value_evidence_score,
 )
 from bidking_lab.inference.observation import (
     AISHA_DEFAULT_LOADOUT,
@@ -150,6 +151,7 @@ __all__ = (
     "known_item_anchors",
     "layout_feasibility_from_store",
     "layout_feasibility_score",
+    "value_evidence_score",
     "BucketTruth",
     "SessionTruth",
     "is_huge_item",

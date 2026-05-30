@@ -32,6 +32,10 @@ from bidking_lab.inference.observation import SessionObs
 
 EvidenceStrength = Literal["hard", "soft"]
 
+_PUBLIC_AVG_VALUE_QUALITY: dict[int, int] = {
+    200037: 5,  # 所有金色品质藏品的平均价值
+}
+
 
 @dataclass(frozen=True)
 class EvidenceFact:
@@ -208,6 +212,8 @@ class ResidualBucketTarget:
     quality: int
     total_cells_floor: int | None = None
     count_floor: int | None = None
+    value_floor: int | None = None
+    avg_value: float | None = None
 
 
 @dataclass(frozen=True)
@@ -500,9 +506,10 @@ def layout_feasibility_score(
 
 def _quality_evidence_floors(
     store: EvidenceStore,
-) -> dict[int, tuple[int, int]]:
+) -> dict[int, tuple[int, int, int]]:
     count_by_quality: Counter[int] = Counter()
     cells_by_quality: Counter[int] = Counter()
+    value_by_quality: Counter[int] = Counter()
     seen: set[str] = set()
     for evidence in store.items():
         if evidence.quality is None:
@@ -515,10 +522,29 @@ def _quality_evidence_floors(
         count_by_quality[quality] += 1
         if evidence.cells is not None:
             cells_by_quality[quality] += int(evidence.cells)
+        if evidence.value is not None:
+            value_by_quality[quality] += int(evidence.value)
     return {
-        quality: (count, cells_by_quality[quality])
+        quality: (count, cells_by_quality[quality], value_by_quality[quality])
         for quality, count in count_by_quality.items()
     }
+
+
+def _public_avg_value_targets(store: EvidenceStore) -> dict[int, float]:
+    targets: dict[int, float] = {}
+    for fact in store.facts:
+        if fact.kind != "public_info":
+            continue
+        try:
+            info_id = int(fact.key)
+            value = float(fact.value)
+        except (TypeError, ValueError):
+            continue
+        quality = _PUBLIC_AVG_VALUE_QUALITY.get(info_id)
+        if quality is None or value <= 0:
+            continue
+        targets[quality] = value
+    return targets
 
 
 def build_residual_problem(
@@ -557,25 +583,60 @@ def build_residual_problem(
             count_floor = bucket.count
             if count_floor is None:
                 count_floor = bucket.count_min
-            if cells_floor is None and count_floor is None:
+            value_floor = (
+                bucket.value_sum
+                if bucket.value_sum is not None and bucket.value_sum > 0
+                else None
+            )
+            avg_value = (
+                bucket.avg_value
+                if bucket.avg_value is not None and bucket.avg_value > 0
+                else None
+            )
+            if avg_value is not None:
+                count_floor = max(count_floor or 0, 1)
+            if (
+                cells_floor is None
+                and count_floor is None
+                and value_floor is None
+                and avg_value is None
+            ):
                 continue
             bucket_targets[quality] = ResidualBucketTarget(
                 quality=quality,
                 total_cells_floor=int(cells_floor) if cells_floor is not None else None,
                 count_floor=int(count_floor) if count_floor is not None else None,
+                value_floor=int(value_floor) if value_floor is not None else None,
+                avg_value=float(avg_value) if avg_value is not None else None,
             )
-    for quality, (count_floor, cells_floor) in _quality_evidence_floors(store).items():
+    for quality, (count_floor, cells_floor, value_floor) in _quality_evidence_floors(store).items():
         current = bucket_targets.get(quality)
         target_cells = cells_floor if cells_floor > 0 else None
         target_count = count_floor
+        target_value = value_floor if value_floor > 0 else None
+        target_avg_value = None
         if current is not None:
             if current.total_cells_floor is not None or target_cells is not None:
                 target_cells = max(current.total_cells_floor or 0, target_cells or 0)
             target_count = max(current.count_floor or 0, target_count)
+            if current.value_floor is not None or target_value is not None:
+                target_value = max(current.value_floor or 0, target_value or 0)
+            target_avg_value = current.avg_value
         bucket_targets[quality] = ResidualBucketTarget(
             quality=quality,
             total_cells_floor=target_cells,
             count_floor=target_count,
+            value_floor=target_value,
+            avg_value=target_avg_value,
+        )
+    for quality, avg_value in _public_avg_value_targets(store).items():
+        current = bucket_targets.get(quality)
+        bucket_targets[quality] = ResidualBucketTarget(
+            quality=quality,
+            total_cells_floor=current.total_cells_floor if current else None,
+            count_floor=max(current.count_floor or 0, 1) if current else 1,
+            value_floor=current.value_floor if current else None,
+            avg_value=avg_value,
         )
     return ResidualProblem(
         map_id=map_id,
@@ -717,6 +778,9 @@ class ConditionalSampler:
             return False
         if target.count_floor is not None and count < target.count_floor:
             return False
+        value = bucket.value_sum if bucket is not None else 0
+        if target.value_floor is not None and value < target.value_floor:
+            return False
         return True
 
     def _truth_from_buckets(self, buckets: dict[int, BucketTruth]) -> SessionTruth:
@@ -752,6 +816,35 @@ def _quantiles(values: Sequence[int], weights: Sequence[float]) -> QuantileSumma
         arr,
     )
     return QuantileSummary(p10=float(p10), p50=float(p50), p90=float(p90))
+
+
+def value_evidence_score(
+    truth: SessionTruth,
+    problem: ResidualProblem,
+) -> float:
+    """Score value floor and average-value evidence for one sampled truth."""
+
+    score = 1.0
+    for target in problem.bucket_targets.values():
+        bucket = truth.buckets.get(target.quality)
+        if target.value_floor is not None:
+            value = bucket.value_sum if bucket is not None else 0
+            if value < target.value_floor:
+                return 0.0
+        if target.avg_value is None:
+            continue
+        if bucket is None or bucket.count <= 0:
+            return 0.0
+        actual = bucket.value_sum / bucket.count
+        rel_err = abs(actual - target.avg_value) / max(1.0, target.avg_value)
+        if rel_err <= 0.10:
+            factor = 1.0
+        elif rel_err <= 0.50:
+            factor = max(0.20, 1.0 - rel_err)
+        else:
+            factor = 0.10
+        score *= factor
+    return score
 
 
 def estimate_posterior_v2(
@@ -801,7 +894,10 @@ def estimate_posterior_v2(
         layout_score = layout_feasibility_score(truth, problem.layout)
         if layout_score <= 0:
             continue
-        weight = category_observation_soft_score(truth, obs) * layout_score
+        value_score = value_evidence_score(truth, problem)
+        if value_score <= 0:
+            continue
+        weight = category_observation_soft_score(truth, obs) * layout_score * value_score
         values.append(truth.total_value())
         cells.append(truth.warehouse_total_cells)
         weights.append(weight)
@@ -840,4 +936,5 @@ __all__ = (
     "known_item_anchors",
     "layout_feasibility_from_store",
     "layout_feasibility_score",
+    "value_evidence_score",
 )
