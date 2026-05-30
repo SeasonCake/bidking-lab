@@ -762,13 +762,14 @@ class ConditionalSampler:
         self._sample_category_targets(pool, buckets, rng)
         self._sample_bucket_targets(pool, buckets, rng)
 
-        total_draws = int(
-            rng.integers(
-                self._sampler.items_per_session_min,
-                self._sampler.items_per_session_max + 1,
-            )
-        )
         current_count = sum(bucket.count for bucket in buckets.values())
+        draw_min = max(
+            self._sampler.items_per_session_min,
+            current_count,
+            self.problem.layout.footprint_count,
+        )
+        draw_max = max(self._sampler.items_per_session_max, draw_min)
+        total_draws = int(rng.integers(draw_min, draw_max + 1))
         residual_draws = max(0, total_draws - current_count)
         if residual_draws:
             sampled_idx = rng.choice(

@@ -69,7 +69,9 @@
 
 **更新**：分类/形状 target 现在先于 bucket target 采样，让已知类别轮廓计入 exact 桶已占用量。69 份样本 `--trials 300` 下 `relaxed_exact` 进一步降到 9。
 
-**复查点**：fallback 使用率已下降；下一轮重点转向 q6 residual、shape-category 条件采样和 layout posterior，而不是继续扩大 exact 放宽范围。
+**更新**：layout footprint count 现在会前移为 total draws 下限，减少已知轮廓很多时的无效样本。69 份样本 `--trials 300` 下 `relaxed_exact` 降到 6，decision P50 MAE 约 34.4 万；代价是 `zero_match` 从 5 升到 6。
+
+**复查点**：fallback 使用率已下降；下一轮重点转向 q6 residual、shape-category 条件采样和 layout posterior。layout overlap/重复 footprint 要做可信度分层，避免 Ethan 高约束局被过硬过滤。
 
 ## 2026-05-30 · 实时出价主口径切到 decision_value
 

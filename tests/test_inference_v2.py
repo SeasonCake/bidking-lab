@@ -633,6 +633,34 @@ def test_layout_feasibility_rejects_impossible_sample() -> None:
     assert layout_feasibility_score(truth, problem.layout) > 0
 
 
+def test_layout_footprint_count_guides_total_draws() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    for local_index in range(4):
+        builder.add_item(
+            RuntimeEvidence(
+                local_index=local_index,
+                shape_key="11",
+                cells=1,
+                sources=("action:100160",),
+            )
+        )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(5))
+
+    assert problem.layout.footprint_count == 4
+    assert sum(bucket.count for bucket in truth.buckets.values()) >= 4
+    assert layout_feasibility_score(truth, problem.layout) > 0
+
+
 def test_residual_problem_tracks_value_floor_from_exact_evidence() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()
