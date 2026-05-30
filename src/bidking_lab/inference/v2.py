@@ -9,7 +9,7 @@ keeps v2 separate so realtime code can compare both engines before switching.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Literal, Mapping, Sequence
 
 import numpy as np
@@ -330,6 +330,29 @@ def known_item_anchors(
     return tuple(anchors)
 
 
+def _quality_evidence_floors(
+    store: EvidenceStore,
+) -> dict[int, tuple[int, int]]:
+    count_by_quality: Counter[int] = Counter()
+    cells_by_quality: Counter[int] = Counter()
+    seen: set[str] = set()
+    for evidence in store.items():
+        if evidence.quality is None:
+            continue
+        key = evidence.evidence_key
+        if key in seen:
+            continue
+        seen.add(key)
+        quality = int(evidence.quality)
+        count_by_quality[quality] += 1
+        if evidence.cells is not None:
+            cells_by_quality[quality] += int(evidence.cells)
+    return {
+        quality: (count, cells_by_quality[quality])
+        for quality, count in count_by_quality.items()
+    }
+
+
 def build_residual_problem(
     map_id: int,
     store: EvidenceStore,
@@ -372,6 +395,19 @@ def build_residual_problem(
                 total_cells_floor=int(cells_floor) if cells_floor is not None else None,
                 count_floor=int(count_floor) if count_floor is not None else None,
             )
+    for quality, (count_floor, cells_floor) in _quality_evidence_floors(store).items():
+        current = bucket_targets.get(quality)
+        target_cells = cells_floor if cells_floor > 0 else None
+        target_count = count_floor
+        if current is not None:
+            if current.total_cells_floor is not None or target_cells is not None:
+                target_cells = max(current.total_cells_floor or 0, target_cells or 0)
+            target_count = max(current.count_floor or 0, target_count)
+        bucket_targets[quality] = ResidualBucketTarget(
+            quality=quality,
+            total_cells_floor=target_cells,
+            count_floor=target_count,
+        )
     return ResidualProblem(
         map_id=map_id,
         map_name=bid_map.name,

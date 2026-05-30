@@ -76,6 +76,7 @@ def _map() -> BidMap:
 def _tables() -> tuple[dict[int, BidMap], dict[int, DropPool], dict[int, Item]]:
     anchor = _item(1103006, quality=3, value=3_240, shape=(2, 1), tags=[110])
     filler = _item(1011001, quality=1, value=100, shape=(1, 1), tags=[101])
+    red = _item(1086001, quality=6, value=444_000, shape=(4, 4), tags=[108])
     return (
         {2401: _map()},
         {
@@ -99,10 +100,17 @@ def _tables() -> tuple[dict[int, BidMap], dict[int, DropPool], dict[int, Item]]:
                         n_max=1,
                         weight=999,
                     ),
+                    DropEntry(
+                        category=108,
+                        item_id=red.item_id,
+                        n_min=1,
+                        n_max=1,
+                        weight=1,
+                    ),
                 ],
             ),
         },
-        {anchor.item_id: anchor, filler.item_id: filler},
+        {anchor.item_id: anchor, filler.item_id: filler, red.item_id: red},
     )
 
 
@@ -275,3 +283,29 @@ def test_residual_problem_guides_per_quality_bucket_targets() -> None:
     assert problem.bucket_targets[3].count_floor == 3
     assert truth.buckets[3].total_cells >= 6
     assert truth.buckets[3].count >= 3
+
+
+def test_quality_only_runtime_evidence_guides_count_floor() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=999,
+            quality=6,
+            sources=("public:200027",),
+        )
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(3))
+
+    assert problem.bucket_targets[6].count_floor == 1
+    assert problem.bucket_targets[6].total_cells_floor is None
+    assert truth.buckets[6].count >= 1

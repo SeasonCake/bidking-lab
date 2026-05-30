@@ -2079,6 +2079,12 @@ python scripts\evaluate_fatbeans_layout_samples.py C:\Users\shenc\Desktop\bid_ki
 这说明 per-quality 条件采样能缓解高信息样本 `0/N` 问题；但 `sample22/23`
 价值仍偏低，下一步要把 public exact item value、aggregate avg-value、layout 空间约束和地图长尾权重一起校准。
 
+quality-only runtime 证据现在也会提升对应品质的 count floor，但不猜格子/价值：
+
+- `sample22` 的红色 quality-only 进入 `q6 count_floor=1` 后，500 trials 下价值 P50 从约
+  `166,432` 提到约 `267,831`。
+- 这仍低于最终 `443,951`，说明红/金长尾价值还需要通过 exact item/空间/聚合均值进一步校准。
+
 下一步 v2 重点不是加 trials，而是把 `ResidualProblem` 扩展为 per-quality residual targets：
 
 - 从 exact bucket totals / lower bounds 扣除 anchor bucket contribution。
