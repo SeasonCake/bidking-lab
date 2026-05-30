@@ -272,6 +272,27 @@ def test_prepared_sampler_matches_single_pool_sample_for_same_seed() -> None:
     }
 
 
+def test_prepared_sampler_temporarily_includes_blue_zodiac_candidates() -> None:
+    items = {
+        1: _make_item(1, value=1000, quality=2, shape=(1, 1)),
+        1306006: _make_item(1306006, value=8_888, quality=3, shape=(2, 2)),
+        1306001: _make_item(1306001, value=188_888, quality=6, shape=(3, 3)),
+    }
+    pool = _make_pool(900, [(101, 1, 1, 1, 1)])
+    bmap = _make_map(2000, 900, min_items=1, max_items=1)
+
+    sampler = prepare_session_sampler(
+        2000,
+        maps={2000: bmap},
+        drops={900: pool},
+        items=items,
+    )
+    pool_item_ids = {item.item_id for pool in sampler.pools for item in pool.items}
+
+    assert 1306006 in pool_item_ids
+    assert 1306001 not in pool_item_ids
+
+
 def test_prepared_sampler_matches_anthology_sample_for_same_seed() -> None:
     """Prepared sampler preserves anthology sub-pool routing RNG order."""
     items = {

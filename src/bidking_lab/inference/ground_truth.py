@@ -17,7 +17,7 @@ sessions are statistically identical to those in our existing MC.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Mapping
 
 import numpy as np
@@ -27,6 +27,9 @@ from bidking_lab.extract.drop_table import DropPool
 from bidking_lab.extract.item_table import Item
 from bidking_lab.inference.observation import HUGE_CELLS_PER_QUALITY
 from bidking_lab.simulation.basic_mc import FlattenedPool, flatten_pool
+
+_TEMPORARY_BLUE_ZODIAC_ITEM_IDS = frozenset(range(1306003, 1306015))
+_TEMPORARY_BLUE_ZODIAC_POOL_MASS = 0.01
 
 
 def is_huge_item(item: Item) -> bool:
@@ -97,6 +100,72 @@ def _prepare_pool(fp: FlattenedPool, items: Mapping[int, Item]) -> _PreparedPool
         values=np.array([it.value for it in pool_items], dtype=np.int64),
         huge_flags=np.array([is_huge_item(it) for it in pool_items], dtype=np.bool_),
     )
+
+
+def _with_temporary_blue_zodiac_pool_items(
+    sampler: "SessionTruthSampler",
+    items: Mapping[int, Item],
+) -> "SessionTruthSampler":
+    """Temporarily include active ordinary 2x2 q3 zodiac items in MC pools."""
+
+    zodiac_items = tuple(
+        item
+        for item_id in sorted(_TEMPORARY_BLUE_ZODIAC_ITEM_IDS)
+        if (item := items.get(item_id)) is not None
+        and item.quality == 3
+        and item.shape_w == 2
+        and item.shape_h == 2
+    )
+    if not zodiac_items:
+        return sampler
+
+    pools = []
+    for pool in sampler.pools:
+        existing_ids = {item.item_id for item in pool.items}
+        extras = tuple(item for item in zodiac_items if item.item_id not in existing_ids)
+        if not extras:
+            pools.append(pool)
+            continue
+
+        existing_probabilities = pool.probabilities.astype(np.float64) * (
+            1.0 - _TEMPORARY_BLUE_ZODIAC_POOL_MASS
+        )
+        extra_probabilities = np.full(
+            len(extras),
+            _TEMPORARY_BLUE_ZODIAC_POOL_MASS / len(extras),
+            dtype=np.float64,
+        )
+        pools.append(
+            replace(
+                pool,
+                items=tuple((*pool.items, *extras)),
+                probabilities=np.concatenate(
+                    (existing_probabilities, extra_probabilities)
+                ),
+                n_min=np.concatenate(
+                    (pool.n_min, np.ones(len(extras), dtype=np.int64))
+                ),
+                n_max=np.concatenate(
+                    (pool.n_max, np.ones(len(extras), dtype=np.int64))
+                ),
+                areas=np.concatenate(
+                    (pool.areas, np.full(len(extras), 4, dtype=np.int64))
+                ),
+                qualities=np.concatenate(
+                    (pool.qualities, np.full(len(extras), 3, dtype=np.int64))
+                ),
+                values=np.concatenate(
+                    (
+                        pool.values,
+                        np.asarray([item.value for item in extras], dtype=np.int64),
+                    )
+                ),
+                huge_flags=np.concatenate(
+                    (pool.huge_flags, np.zeros(len(extras), dtype=np.bool_))
+                ),
+            )
+        )
+    return replace(sampler, pools=tuple(pools))
 
 
 @dataclass
@@ -194,7 +263,7 @@ def prepare_session_sampler(
 
     weights_arr = np.array(weights, dtype=np.float64)
     weights_arr = weights_arr / weights_arr.sum()
-    return SessionTruthSampler(
+    sampler = SessionTruthSampler(
         map_id=map_id,
         map_name=bid_map.name,
         items_per_session_min=bid_map.items_per_session_min,
@@ -202,6 +271,7 @@ def prepare_session_sampler(
         pools=tuple(pools),
         pool_weights=weights_arr,
     )
+    return _with_temporary_blue_zodiac_pool_items(sampler, items)
 
 
 def _resolve_sub_pool(

@@ -37,8 +37,6 @@ EvidenceStrength = Literal["hard", "soft"]
 _PUBLIC_AVG_VALUE_QUALITY: dict[int, int] = {
     200037: 5,  # 所有金色品质藏品的平均价值
 }
-_TEMPORARY_BLUE_ZODIAC_ITEM_IDS = frozenset(range(1306003, 1306015))
-_TEMPORARY_BLUE_ZODIAC_POOL_MASS = 0.01
 
 
 @dataclass(frozen=True)
@@ -592,11 +590,7 @@ def build_residual_problem(
         for pool in sampler.pools
         for item in pool.items
     }
-    missing = sorted(
-        {anchor.item_id for anchor in anchors}
-        - pool_item_ids
-        - _TEMPORARY_BLUE_ZODIAC_ITEM_IDS
-    )
+    missing = sorted({anchor.item_id for anchor in anchors} - pool_item_ids)
     diagnostics: list[str] = []
     if missing:
         diagnostics.append(
@@ -725,58 +719,6 @@ def _add_item_to_buckets(
     bucket.items.extend([item] * count)
 
 
-def _with_temporary_blue_zodiac_pool_items(
-    sampler: Any,
-    items: Mapping[int, Item],
-) -> Any:
-    """Temporarily include ordinary 2x2 q3 zodiac items in v2 sampling."""
-
-    zodiac_items = tuple(
-        item for item_id in sorted(_TEMPORARY_BLUE_ZODIAC_ITEM_IDS)
-        if (item := items.get(item_id)) is not None
-        and item.quality == 3
-        and item.shape_w == 2
-        and item.shape_h == 2
-    )
-    if not zodiac_items:
-        return sampler
-    pools = []
-    for pool in sampler.pools:
-        existing_ids = {item.item_id for item in pool.items}
-        extras = tuple(item for item in zodiac_items if item.item_id not in existing_ids)
-        if not extras:
-            pools.append(pool)
-            continue
-        mass = min(_TEMPORARY_BLUE_ZODIAC_POOL_MASS, 0.20)
-        existing_probabilities = pool.probabilities.astype(np.float64) * (1.0 - mass)
-        extra_probabilities = np.full(
-            len(extras),
-            mass / len(extras),
-            dtype=np.float64,
-        )
-        pools.append(
-            replace(
-                pool,
-                items=tuple((*pool.items, *extras)),
-                probabilities=np.concatenate((existing_probabilities, extra_probabilities)),
-                n_min=np.concatenate((pool.n_min, np.ones(len(extras), dtype=np.int64))),
-                n_max=np.concatenate((pool.n_max, np.ones(len(extras), dtype=np.int64))),
-                areas=np.concatenate((pool.areas, np.full(len(extras), 4, dtype=np.int64))),
-                qualities=np.concatenate((pool.qualities, np.full(len(extras), 3, dtype=np.int64))),
-                values=np.concatenate(
-                    (
-                        pool.values,
-                        np.asarray([item.value for item in extras], dtype=np.int64),
-                    )
-                ),
-                huge_flags=np.concatenate(
-                    (pool.huge_flags, np.zeros(len(extras), dtype=np.bool_))
-                ),
-            )
-        )
-    return replace(sampler, pools=tuple(pools))
-
-
 class ConditionalSampler:
     """Sample sessions while forcing KnownItemAnchor items to exist."""
 
@@ -796,7 +738,6 @@ class ConditionalSampler:
             drops=drops,
             items=items,
         )
-        self._sampler = _with_temporary_blue_zodiac_pool_items(self._sampler, items)
 
     def sample(self, rng: np.random.Generator | None = None) -> SessionTruth:
         rng = rng or np.random.default_rng()
