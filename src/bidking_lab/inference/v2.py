@@ -212,6 +212,8 @@ class ResidualBucketTarget:
     """Per-quality target after known anchors are accounted for."""
 
     quality: int
+    total_cells_exact: int | None = None
+    count_exact: int | None = None
     total_cells_floor: int | None = None
     count_floor: int | None = None
     value_floor: int | None = None
@@ -603,12 +605,10 @@ def build_residual_problem(
             if target.item_id is None
         ]
         for quality, bucket in obs.buckets.items():
-            cells_floor = bucket.total_cells
-            if cells_floor is None:
-                cells_floor = bucket.total_cells_min
-            count_floor = bucket.count
-            if count_floor is None:
-                count_floor = bucket.count_min
+            cells_exact = bucket.total_cells
+            cells_floor = bucket.total_cells_min
+            count_exact = bucket.count
+            count_floor = bucket.count_min
             value_floor = (
                 bucket.value_sum
                 if bucket.value_sum is not None and bucket.value_sum > 0
@@ -622,7 +622,9 @@ def build_residual_problem(
             if avg_value is not None:
                 count_floor = max(count_floor or 0, 1)
             if (
-                cells_floor is None
+                cells_exact is None
+                and cells_floor is None
+                and count_exact is None
                 and count_floor is None
                 and value_floor is None
                 and avg_value is None
@@ -630,6 +632,8 @@ def build_residual_problem(
                 continue
             bucket_targets[quality] = ResidualBucketTarget(
                 quality=quality,
+                total_cells_exact=int(cells_exact) if cells_exact is not None else None,
+                count_exact=int(count_exact) if count_exact is not None else None,
                 total_cells_floor=int(cells_floor) if cells_floor is not None else None,
                 count_floor=int(count_floor) if count_floor is not None else None,
                 value_floor=int(value_floor) if value_floor is not None else None,
@@ -641,6 +645,8 @@ def build_residual_problem(
         target_count = count_floor
         target_value = value_floor if value_floor > 0 else None
         target_avg_value = None
+        target_cells_exact = None
+        target_count_exact = None
         if current is not None:
             if current.total_cells_floor is not None or target_cells is not None:
                 target_cells = max(current.total_cells_floor or 0, target_cells or 0)
@@ -648,8 +654,12 @@ def build_residual_problem(
             if current.value_floor is not None or target_value is not None:
                 target_value = max(current.value_floor or 0, target_value or 0)
             target_avg_value = current.avg_value
+            target_cells_exact = current.total_cells_exact
+            target_count_exact = current.count_exact
         bucket_targets[quality] = ResidualBucketTarget(
             quality=quality,
+            total_cells_exact=target_cells_exact,
+            count_exact=target_count_exact,
             total_cells_floor=target_cells,
             count_floor=target_count,
             value_floor=target_value,
@@ -659,6 +669,8 @@ def build_residual_problem(
         current = bucket_targets.get(quality)
         bucket_targets[quality] = ResidualBucketTarget(
             quality=quality,
+            total_cells_exact=current.total_cells_exact if current else None,
+            count_exact=current.count_exact if current else None,
             total_cells_floor=current.total_cells_floor if current else None,
             count_floor=max(current.count_floor or 0, 1) if current else 1,
             value_floor=current.value_floor if current else None,
@@ -815,22 +827,80 @@ class ConditionalSampler:
             indexes = np.flatnonzero(qualities == target.quality)
             if len(indexes) == 0:
                 continue
-            probs = pool.probabilities[indexes].astype(np.float64)
-            total = float(probs.sum())
-            if total <= 0:
-                continue
-            probs = probs / total
             attempts = 0
             while not self._bucket_target_met(buckets.get(target.quality), target):
                 attempts += 1
                 if attempts > 200:
                     break
-                local_i = int(rng.choice(len(indexes), p=probs))
-                pool_i = int(indexes[local_i])
-                count = int(
-                    rng.integers(pool.n_min[pool_i], pool.n_max[pool_i] + 1)
+                feasible = self._feasible_target_indexes(
+                    pool,
+                    indexes,
+                    buckets.get(target.quality),
+                    target,
                 )
-                _add_item_to_buckets(buckets, pool.items[pool_i], count=count)
+                if len(feasible) == 0:
+                    break
+                probs = pool.probabilities[feasible].astype(np.float64)
+                total = float(probs.sum())
+                if total <= 0:
+                    break
+                probs = probs / total
+                local_i = int(rng.choice(len(feasible), p=probs))
+                pool_i = int(feasible[local_i])
+                item = pool.items[pool_i]
+                max_count = self._max_add_count_for_target(
+                    buckets.get(target.quality),
+                    target,
+                    item,
+                    int(pool.n_max[pool_i]),
+                )
+                if max_count < int(pool.n_min[pool_i]):
+                    continue
+                count = int(rng.integers(int(pool.n_min[pool_i]), max_count + 1))
+                _add_item_to_buckets(buckets, item, count=count)
+
+    def _feasible_target_indexes(
+        self,
+        pool: Any,
+        indexes: np.ndarray,
+        bucket: BucketTruth | None,
+        target: ResidualBucketTarget,
+    ) -> np.ndarray:
+        if target.count_exact is None and target.total_cells_exact is None:
+            return indexes
+        feasible: list[int] = []
+        for pool_i in indexes:
+            max_count = self._max_add_count_for_target(
+                bucket,
+                target,
+                pool.items[int(pool_i)],
+                int(pool.n_max[int(pool_i)]),
+            )
+            if max_count >= int(pool.n_min[int(pool_i)]):
+                feasible.append(int(pool_i))
+        return np.asarray(feasible, dtype=np.int64)
+
+    @staticmethod
+    def _max_add_count_for_target(
+        bucket: BucketTruth | None,
+        target: ResidualBucketTarget,
+        item: Item,
+        default_max: int,
+    ) -> int:
+        max_count = max(0, int(default_max))
+        current_count = bucket.count if bucket is not None else 0
+        current_cells = bucket.total_cells if bucket is not None else 0
+        if target.count_exact is not None:
+            max_count = min(max_count, max(0, target.count_exact - current_count))
+        if target.total_cells_exact is not None:
+            area = item.shape_w * item.shape_h
+            if area <= 0:
+                return 0
+            max_count = min(
+                max_count,
+                max(0, (target.total_cells_exact - current_cells) // area),
+            )
+        return max_count
 
     @staticmethod
     def _bucket_target_met(
@@ -839,9 +909,15 @@ class ConditionalSampler:
     ) -> bool:
         cells = bucket.total_cells if bucket is not None else 0
         count = bucket.count if bucket is not None else 0
-        if target.total_cells_floor is not None and cells < target.total_cells_floor:
+        if target.total_cells_exact is not None:
+            if cells != target.total_cells_exact:
+                return False
+        elif target.total_cells_floor is not None and cells < target.total_cells_floor:
             return False
-        if target.count_floor is not None and count < target.count_floor:
+        if target.count_exact is not None:
+            if count != target.count_exact:
+                return False
+        elif target.count_floor is not None and count < target.count_floor:
             return False
         value = bucket.value_sum if bucket is not None else 0
         if target.value_floor is not None and value < target.value_floor:

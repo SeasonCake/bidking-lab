@@ -52,3 +52,15 @@
 **取舍**：避免把活动藏品误判为拍卖可出；如果未来活动地图真实接入，需要按地图池重新验证可达性。
 
 **复查点**：若新活动地图上线，重新跑 map-reachable 检查，而不是凭 item_id 前缀永久排除。
+
+## 2026-05-30 · exact bucket 上界先进入 v2 条件采样，但需要回退层
+
+**背景**：`QualityBucketObs.total_cells/count` 在旧过滤层已经按 exact 检查，但 v2 条件采样阶段之前只把它们当 floor 填充，导致先过采样再被过滤，浪费 trials。
+
+**推荐**：把 `total_cells/count` 拆成 `total_cells_exact/count_exact`，`total_cells_min/count_min` 继续作为 lower bound。条件采样填 exact 桶时，只在不越过剩余件数/格数的候选里抽样。
+
+**用户选择**：认可逐步把可信上界接入，而不是所有证据都只按下界处理。
+
+**取舍**：strict exact 让已匹配样本的决策价值误差下降，但 zero-match 变多；这是采样器表达力还不够，而不是 exact 语义错误。
+
+**复查点**：下一步增加 “strict exact 零匹配时降级为 floor” 的 posterior fallback，并在报告里标明哪些约束被放宽。

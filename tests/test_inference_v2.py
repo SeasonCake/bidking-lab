@@ -315,6 +315,31 @@ def test_residual_problem_guides_per_quality_bucket_targets() -> None:
     assert truth.buckets[3].count >= 3
 
 
+def test_exact_bucket_target_limits_conditional_sampler() -> None:
+    maps, drops, items = _tables()
+    obs = SessionObs(
+        map_id=2401,
+        hero="aisha",
+        buckets={6: QualityBucketObs(quality=6, total_cells=16, count=1)},
+    )
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(12))
+
+    assert problem.bucket_targets[6].total_cells_exact == 16
+    assert problem.bucket_targets[6].count_exact == 1
+    assert truth.buckets[6].total_cells == 16
+    assert truth.buckets[6].count == 1
+
+
 def test_quality_only_runtime_evidence_guides_count_floor() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()

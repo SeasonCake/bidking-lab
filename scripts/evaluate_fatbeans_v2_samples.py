@@ -92,9 +92,13 @@ def _format_bucket_targets(problem: Any) -> str:
     parts: list[str] = []
     for quality, target in sorted(problem.bucket_targets.items()):
         fields: list[str] = []
-        if target.count_floor is not None:
+        if target.count_exact is not None:
+            fields.append(f"count={target.count_exact}")
+        if target.total_cells_exact is not None:
+            fields.append(f"cells={target.total_cells_exact}")
+        if target.count_floor is not None and target.count_exact is None:
             fields.append(f"count>={target.count_floor}")
-        if target.total_cells_floor is not None:
+        if target.total_cells_floor is not None and target.total_cells_exact is None:
             fields.append(f"cells>={target.total_cells_floor}")
         if target.value_floor is not None:
             fields.append(f"value>={target.value_floor}")
