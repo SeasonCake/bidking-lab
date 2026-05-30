@@ -36,6 +36,7 @@ from bidking_lab.live.monitor import (  # noqa: E402
     _states_to_session,
     load_monitor_tables,
 )
+from bidking_lab.simulation.robust_value import is_confusable_long_tail  # noqa: E402
 
 
 def _default_paths() -> list[Path]:
@@ -120,6 +121,9 @@ def _inventory_truth_breakdown(events: Any, items: Any) -> dict[str, Any]:
         cells: Counter[int] = Counter()
         values: defaultdict[int, int] = defaultdict(int)
         top_item: dict[str, Any] = {}
+        decision_value = 0
+        trimmed_value = 0
+        trimmed_items: list[str] = []
         for inv_item in state.inventory_items:
             item = items.get(inv_item.item_id)
             quality = inv_item.quality
@@ -128,6 +132,12 @@ def _inventory_truth_breakdown(events: Any, items: Any) -> dict[str, Any]:
             if quality is None:
                 continue
             value = item.value if item is not None else 0
+            if item is not None and is_confusable_long_tail(item):
+                trimmed_value += value
+                if len(trimmed_items) < 4:
+                    trimmed_items.append(f"{item.name}:{value}")
+            else:
+                decision_value += value
             counts[int(quality)] += 1
             cells[int(quality)] += inv_item.cells
             values[int(quality)] += value
@@ -147,6 +157,9 @@ def _inventory_truth_breakdown(events: Any, items: Any) -> dict[str, Any]:
             "final_q5_value": values.get(5, 0),
             "final_q6_count": counts.get(6, 0),
             "final_q6_value": values.get(6, 0),
+            "final_decision_value": decision_value,
+            "final_trimmed_tail_value": trimmed_value,
+            "final_trimmed_tail_items": ";".join(trimmed_items),
             "final_top_item_id": top_item.get("id"),
             "final_top_item_name": top_item.get("name"),
             "final_top_item_quality": top_item.get("quality"),
@@ -201,6 +214,9 @@ def evaluate_path(
         value_p10 = _round(report.total_value.p10 if report.total_value else None)
         value_p50 = _round(report.total_value.p50 if report.total_value else None)
         value_p90 = _round(report.total_value.p90 if report.total_value else None)
+        decision_p10 = _round(report.decision_value.p10 if report.decision_value else None)
+        decision_p50 = _round(report.decision_value.p50 if report.decision_value else None)
+        decision_p90 = _round(report.decision_value.p90 if report.decision_value else None)
         q6_value_p50 = _round(report.q6_value.p50 if report.q6_value else None)
         q6_value_p90 = _round(report.q6_value.p90 if report.q6_value else None)
         cells_p10 = _round(report.total_cells.p10 if report.total_cells else None)
@@ -222,6 +238,19 @@ def evaluate_path(
             "v2_value_p10": value_p10,
             "v2_value_p50": value_p50,
             "v2_value_p90": value_p90,
+            "v2_decision_value_p10": decision_p10,
+            "v2_decision_value_p50": decision_p50,
+            "v2_decision_value_p90": decision_p90,
+            "v2_decision_value_p50_error": (
+                decision_p50 - truth_breakdown["final_decision_value"]
+                if decision_p50 is not None and "final_decision_value" in truth_breakdown
+                else None
+            ),
+            "v2_decision_value_p90_error": (
+                decision_p90 - truth_breakdown["final_decision_value"]
+                if decision_p90 is not None and "final_decision_value" in truth_breakdown
+                else None
+            ),
             "v2_q6_match_rate": report.q6_match_rate,
             "v2_q6_value_p50": q6_value_p50,
             "v2_q6_value_p90": q6_value_p90,
@@ -276,6 +305,13 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if not row.get("v2_matched")
     ]
     abs_errors = [abs(int(row["v2_value_p50_error"])) for row in valued]
+    decision_valued = [
+        row for row in ok
+        if row.get("v2_decision_value_p50_error") is not None
+    ]
+    decision_abs_errors = [
+        abs(int(row["v2_decision_value_p50_error"])) for row in decision_valued
+    ]
     p90_valued = [
         row for row in ok
         if row.get("v2_value_p90_error") is not None
@@ -291,6 +327,14 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "value_mae": _round(statistics.mean(abs_errors)) if abs_errors else None,
         "value_median_abs_error": (
             _round(statistics.median(abs_errors)) if abs_errors else None
+        ),
+        "decision_value_mae": (
+            _round(statistics.mean(decision_abs_errors)) if decision_abs_errors else None
+        ),
+        "decision_value_median_abs_error": (
+            _round(statistics.median(decision_abs_errors))
+            if decision_abs_errors
+            else None
         ),
         "value_p90_mae": (
             _round(statistics.mean(p90_abs_errors)) if p90_abs_errors else None
@@ -337,8 +381,14 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                     "final_value": row.get("final_value"),
                     "v2_value_p50": row.get("v2_value_p50"),
                     "v2_value_p90": row.get("v2_value_p90"),
+                    "final_decision_value": row.get("final_decision_value"),
+                    "v2_decision_value_p50": row.get("v2_decision_value_p50"),
+                    "v2_decision_value_p90": row.get("v2_decision_value_p90"),
                     "v2_value_p50_error": row.get("v2_value_p50_error"),
                     "v2_value_p90_error": row.get("v2_value_p90_error"),
+                    "v2_decision_value_p50_error": row.get(
+                        "v2_decision_value_p50_error"
+                    ),
                     "v2_matched": row.get("v2_matched"),
                     "anchor_count": row.get("anchor_count"),
                     "v2_q6_match_rate": row.get("v2_q6_match_rate"),
@@ -386,6 +436,11 @@ def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
             for row in group_rows
             if row.get("v2_value_p50_error") is not None
         ]
+        decision_p50_abs = [
+            abs(int(row["v2_decision_value_p50_error"]))
+            for row in group_rows
+            if row.get("v2_decision_value_p50_error") is not None
+        ]
         p90_abs = [
             abs(int(row["v2_value_p90_error"]))
             for row in group_rows
@@ -403,6 +458,11 @@ def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
                 "value_mae": _round(statistics.mean(p50_abs)) if p50_abs else None,
                 "value_median_abs_error": (
                     _round(statistics.median(p50_abs)) if p50_abs else None
+                ),
+                "decision_value_mae": (
+                    _round(statistics.mean(decision_p50_abs))
+                    if decision_p50_abs
+                    else None
                 ),
                 "value_p90_mae": (
                     _round(statistics.mean(p90_abs)) if p90_abs else None

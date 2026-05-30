@@ -29,6 +29,7 @@ from bidking_lab.inference.map_likelihood import (
     truth_matches_obs,
 )
 from bidking_lab.inference.observation import SessionObs
+from bidking_lab.simulation.robust_value import is_confusable_long_tail
 
 EvidenceStrength = Literal["hard", "soft"]
 
@@ -230,6 +231,7 @@ class PosteriorReport:
     known_cells: int
     known_value: int
     layout_score: float
+    decision_value: QuantileSummary | None = None
     q6_match_rate: float | None = None
     q6_value: QuantileSummary | None = None
     layout_diagnostics: tuple[str, ...] = ()
@@ -849,6 +851,19 @@ def value_evidence_score(
     return score
 
 
+def decision_value_for_truth(truth: SessionTruth, problem: ResidualProblem) -> int:
+    """Return decision value after trimming unconfirmed small rare tails."""
+
+    exact_anchor_ids = set(problem.anchor_item_counts)
+    total = 0
+    for bucket in truth.buckets.values():
+        for item in bucket.items:
+            if item.item_id not in exact_anchor_ids and is_confusable_long_tail(item):
+                continue
+            total += item.value
+    return total
+
+
 def estimate_posterior_v2(
     map_id: int,
     obs: SessionObs,
@@ -878,6 +893,7 @@ def estimate_posterior_v2(
     sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
     rng = np.random.default_rng(seed)
     values: list[int] = []
+    decision_values: list[int] = []
     cells: list[int] = []
     q6_values: list[int] = []
     weights: list[float] = []
@@ -902,6 +918,7 @@ def estimate_posterior_v2(
             continue
         weight = category_observation_soft_score(truth, obs) * layout_score * value_score
         values.append(truth.total_value())
+        decision_values.append(decision_value_for_truth(truth, problem))
         cells.append(truth.warehouse_total_cells)
         q6_bucket = truth.buckets.get(6)
         q6_values.append(q6_bucket.value_sum if q6_bucket is not None else 0)
@@ -922,6 +939,7 @@ def estimate_posterior_v2(
         known_cells=problem.known_cells,
         known_value=problem.known_value,
         layout_score=problem.layout.score,
+        decision_value=_quantiles(decision_values, weights),
         q6_match_rate=q6_match_rate,
         q6_value=_quantiles(q6_values, weights),
         layout_diagnostics=problem.layout.diagnostics,
@@ -942,6 +960,7 @@ __all__ = (
     "ResidualProblem",
     "RuntimeEvidence",
     "build_residual_problem",
+    "decision_value_for_truth",
     "estimate_posterior_v2",
     "evidence_store_from_fatbeans_events",
     "known_footprints",

@@ -388,6 +388,7 @@ def live_state_to_session_obs(state: LiveSessionState) -> SessionObs | None:
         CategoryItemObservation(
             category=item.category,
             cells=item.cells,
+            shape_key=item.shape_key,
             quality=item.quality,
             item_id=item.item_id,
         )

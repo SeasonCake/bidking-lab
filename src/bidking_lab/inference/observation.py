@@ -258,6 +258,7 @@ class CategoryItemObservation:
 
     category: int
     cells: int | None = None
+    shape_key: str | None = None
     quality: int | None = None
     item_id: int | None = None
     count: int = 1

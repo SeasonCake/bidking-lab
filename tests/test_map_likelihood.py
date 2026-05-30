@@ -264,6 +264,47 @@ def test_category_item_observation_matches_secondary_item_tags() -> None:
     assert category_observation_soft_score(truth, obs) == 1
 
 
+def test_category_item_observation_uses_shape_key_when_present() -> None:
+    matching = _item(1, quality=6, value=300_000, shape=(3, 4), tags=[108])
+    same_area = _item(2, quality=6, value=300_000, shape=(4, 3), tags=[108])
+    obs = SessionObs(
+        map_id=0,
+        hero="aisha",
+        category_items=(CategoryItemObservation(category=108, cells=12, shape_key="34"),),
+    )
+    matching_truth = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=12,
+        buckets={
+            6: BucketTruth(
+                quality=6,
+                count=1,
+                total_cells=12,
+                value_sum=300_000,
+                items=[matching],
+            ),
+        },
+    )
+    same_area_truth = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=12,
+        buckets={
+            6: BucketTruth(
+                quality=6,
+                count=1,
+                total_cells=12,
+                value_sum=300_000,
+                items=[same_area],
+            ),
+        },
+    )
+
+    assert category_observation_soft_score(matching_truth, obs) == 1
+    assert 0 < category_observation_soft_score(same_area_truth, obs) < 1
+
+
 def test_summarize_map_truths_reports_likelihood_and_quantiles() -> None:
     obs = SessionObs(
         map_id=0,

@@ -83,8 +83,29 @@ def _item_categories(item: Item) -> tuple[int, ...]:
     return tuple(int(tag) for tag in item.tags)
 
 
-def _category_item_key(item: Item) -> tuple[tuple[int, ...], int, int, int]:
-    return (_item_categories(item), item.quality, item.shape_w * item.shape_h, item.item_id)
+def _shape_dimensions(shape_key: str | int | None) -> tuple[int, int] | None:
+    if shape_key is None:
+        return None
+    try:
+        code = int(shape_key)
+    except (TypeError, ValueError):
+        return None
+    width = code // 10
+    height = code % 10
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def _category_item_key(item: Item) -> tuple[tuple[int, ...], int, int, int, int, int]:
+    return (
+        _item_categories(item),
+        item.quality,
+        item.shape_w * item.shape_h,
+        item.shape_w,
+        item.shape_h,
+        item.item_id,
+    )
 
 
 def category_observation_soft_score(
@@ -118,12 +139,15 @@ def category_observation_soft_score(
             for key, count in available.items():
                 if count <= 0:
                     continue
-                categories, quality, cells, item_id = key
+                categories, quality, cells, width, height, item_id = key
                 if observed.category not in categories:
                     continue
                 if observed.quality is not None and quality != observed.quality:
                     continue
                 if observed.cells is not None and cells != observed.cells:
+                    continue
+                observed_dims = _shape_dimensions(observed.shape_key)
+                if observed_dims is not None and observed_dims != (width, height):
                     continue
                 if observed.item_id is not None and item_id != observed.item_id:
                     continue

@@ -13,6 +13,7 @@ from bidking_lab.inference.v2 import (
     EvidenceStoreBuilder,
     RuntimeEvidence,
     build_residual_problem,
+    decision_value_for_truth,
     estimate_posterior_v2,
     evidence_store_from_fatbeans_events,
     known_footprints,
@@ -467,3 +468,74 @@ def test_public_gold_avg_value_scores_posterior_samples() -> None:
     assert problem.bucket_targets[5].avg_value == 30_000
     assert value_evidence_score(matching, problem) == 1
     assert 0 < value_evidence_score(mismatch, problem) < 1
+
+
+def test_decision_value_trims_unconfirmed_small_rare_tail() -> None:
+    maps, drops, items = _tables()
+    small_rare = _item(1086002, quality=6, value=1_495_000, shape=(1, 1))
+    large_rare = _item(1086003, quality=6, value=900_000, shape=(4, 4))
+    items = {**items, small_rare.item_id: small_rare, large_rare.item_id: large_rare}
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    truth = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=17,
+        buckets={
+            6: BucketTruth(
+                quality=6,
+                count=2,
+                total_cells=17,
+                value_sum=2_395_000,
+                items=[small_rare, large_rare],
+            ),
+        },
+    )
+
+    assert decision_value_for_truth(truth, problem) == 900_000
+
+
+def test_decision_value_counts_exactly_identified_small_rare_tail() -> None:
+    maps, drops, items = _tables()
+    small_rare = _item(1086002, quality=6, value=1_495_000, shape=(1, 1))
+    items = {**items, small_rare.item_id: small_rare}
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=321,
+            item_id=small_rare.item_id,
+            quality=6,
+            value=small_rare.value,
+            shape_key="11",
+            cells=1,
+            sources=("public:200022",),
+        )
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    truth = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=1,
+        buckets={
+            6: BucketTruth(
+                quality=6,
+                count=1,
+                total_cells=1,
+                value_sum=small_rare.value,
+                items=[small_rare],
+            ),
+        },
+    )
+
+    assert decision_value_for_truth(truth, problem) == small_rare.value
