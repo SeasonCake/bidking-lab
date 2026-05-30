@@ -6,7 +6,11 @@ from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropEntry, DropPool
 from bidking_lab.extract.item_table import Item
 from bidking_lab.inference.ground_truth import BucketTruth, SessionTruth
-from bidking_lab.inference.observation import QualityBucketObs, SessionObs
+from bidking_lab.inference.observation import (
+    CategoryItemObservation,
+    QualityBucketObs,
+    SessionObs,
+)
 from bidking_lab.inference.v2 import (
     ConditionalSampler,
     EvidenceFact,
@@ -335,6 +339,64 @@ def test_quality_only_runtime_evidence_guides_count_floor() -> None:
     assert problem.bucket_targets[6].count_floor == 1
     assert problem.bucket_targets[6].total_cells_floor is None
     assert truth.buckets[6].count >= 1
+
+
+def test_category_shape_target_guides_conditional_sampler() -> None:
+    maps, drops, items = _tables()
+    obs = SessionObs(
+        map_id=2401,
+        hero="aisha",
+        category_items=(
+            CategoryItemObservation(
+                category=108,
+                quality=6,
+                cells=16,
+                shape_key="44",
+            ),
+        ),
+    )
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(11))
+
+    assert problem.category_targets == obs.category_items
+    assert any(item.item_id == 1086001 for item in truth.buckets[6].items)
+
+
+def test_category_shape_target_reports_no_pool_match() -> None:
+    maps, drops, items = _tables()
+    obs = SessionObs(
+        map_id=2401,
+        hero="aisha",
+        category_items=(
+            CategoryItemObservation(
+                category=108,
+                quality=6,
+                cells=9,
+                shape_key="33",
+            ),
+        ),
+    )
+
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+
+    assert problem.category_targets == obs.category_items
+    assert problem.diagnostics == ("category_target_no_pool_match:108:6:33:9",)
 
 
 def test_known_footprints_build_layout_feasibility() -> None:

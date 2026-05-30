@@ -1,0 +1,14 @@
+{
+  "name": "antique_4x4_q6",
+  "description": "Synthetic v2 probe: antique category + red 4x4 footprint should concentrate candidates on jade / rosewood screens.",
+  "map_id": 2401,
+  "hero": "aisha",
+  "category_items": [
+    {
+      "category": 106,
+      "quality": 6,
+      "cells": 16,
+      "shape_key": "44"
+    }
+  ]
+}

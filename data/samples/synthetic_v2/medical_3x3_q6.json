@@ -1,0 +1,14 @@
+{
+  "name": "medical_3x3_q6",
+  "description": "Synthetic v2 probe: medical category + red 3x3 footprint should concentrate candidates on ventilator / ultrasound.",
+  "map_id": 2401,
+  "hero": "aisha",
+  "category_items": [
+    {
+      "category": 102,
+      "quality": 6,
+      "cells": 9,
+      "shape_key": "33"
+    }
+  ]
+}

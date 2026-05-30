@@ -28,7 +28,7 @@ from bidking_lab.inference.map_likelihood import (
     category_observation_soft_score,
     truth_matches_obs,
 )
-from bidking_lab.inference.observation import SessionObs
+from bidking_lab.inference.observation import CategoryItemObservation, SessionObs
 from bidking_lab.simulation.robust_value import is_confusable_long_tail
 
 EvidenceStrength = Literal["hard", "soft"]
@@ -202,6 +202,7 @@ class ResidualProblem:
     known_value: int
     anchor_item_counts: Mapping[int, int]
     bucket_targets: Mapping[int, "ResidualBucketTarget"]
+    category_targets: tuple[CategoryItemObservation, ...]
     layout: LayoutFeasibility
     diagnostics: tuple[str, ...] = ()
 
@@ -551,6 +552,22 @@ def _public_avg_value_targets(store: EvidenceStore) -> dict[int, float]:
     return targets
 
 
+def _item_matches_category_target(
+    item: Item,
+    target: CategoryItemObservation,
+) -> bool:
+    if target.category not in item.tags:
+        return False
+    if target.quality is not None and item.quality != target.quality:
+        return False
+    if target.cells is not None and item.shape_w * item.shape_h != target.cells:
+        return False
+    dims = _shape_dimensions(target.shape_key)
+    if dims is not None and (item.shape_w, item.shape_h) != dims:
+        return False
+    return True
+
+
 def build_residual_problem(
     map_id: int,
     store: EvidenceStore,
@@ -579,7 +596,12 @@ def build_residual_problem(
     counts = Counter(anchor.item_id for anchor in anchors)
     layout = layout_feasibility_from_store(store)
     bucket_targets: dict[int, ResidualBucketTarget] = {}
+    category_targets: list[CategoryItemObservation] = []
     if obs is not None:
+        category_targets = [
+            target for target in obs.category_items
+            if target.item_id is None
+        ]
         for quality, bucket in obs.buckets.items():
             cells_floor = bucket.total_cells
             if cells_floor is None:
@@ -642,6 +664,17 @@ def build_residual_problem(
             value_floor=current.value_floor if current else None,
             avg_value=avg_value,
         )
+    if category_targets:
+        for target in category_targets:
+            if not any(
+                _item_matches_category_target(item, target)
+                for pool in sampler.pools
+                for item in pool.items
+            ):
+                diagnostics.append(
+                    "category_target_no_pool_match:"
+                    f"{target.category}:{target.quality}:{target.shape_key}:{target.cells}"
+                )
     return ResidualProblem(
         map_id=map_id,
         map_name=bid_map.name,
@@ -651,6 +684,7 @@ def build_residual_problem(
         known_value=sum(anchor.value for anchor in anchors),
         anchor_item_counts=dict(counts),
         bucket_targets=bucket_targets,
+        category_targets=tuple(category_targets),
         layout=layout,
         diagnostics=tuple((*diagnostics, *layout.diagnostics)),
     )
@@ -713,6 +747,7 @@ class ConditionalSampler:
             return self._truth_from_buckets(buckets)
 
         self._sample_bucket_targets(pool, buckets, rng)
+        self._sample_category_targets(pool, buckets, rng)
 
         total_draws = int(
             rng.integers(
@@ -740,6 +775,32 @@ class ConditionalSampler:
                     count=int(count),
                 )
         return self._truth_from_buckets(buckets)
+
+    def _sample_category_targets(
+        self,
+        pool: Any,
+        buckets: dict[int, BucketTruth],
+        rng: np.random.Generator,
+    ) -> None:
+        if not self.problem.category_targets:
+            return
+        for target in self.problem.category_targets:
+            indexes = [
+                idx for idx, item in enumerate(pool.items)
+                if _item_matches_category_target(item, target)
+            ]
+            if not indexes:
+                continue
+            probs = pool.probabilities[indexes].astype(np.float64)
+            total = float(probs.sum())
+            if total <= 0:
+                continue
+            probs = probs / total
+            repeats = max(1, int(target.count))
+            for _ in range(repeats):
+                local_i = int(rng.choice(len(indexes), p=probs))
+                pool_i = int(indexes[local_i])
+                _add_item_to_buckets(buckets, pool.items[pool_i])
 
     def _sample_bucket_targets(
         self,

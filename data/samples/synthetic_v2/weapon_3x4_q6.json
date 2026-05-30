@@ -1,0 +1,14 @@
+{
+  "name": "weapon_3x4_q6",
+  "description": "Synthetic v2 probe: weapon category + red 3x4 footprint should concentrate candidates on phased-array radar / exoskeleton.",
+  "map_id": 2401,
+  "hero": "aisha",
+  "category_items": [
+    {
+      "category": 104,
+      "quality": 6,
+      "cells": 12,
+      "shape_key": "34"
+    }
+  ]
+}
