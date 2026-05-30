@@ -401,6 +401,56 @@ def test_exact_bucket_combo_sampler_fills_count_and_cells() -> None:
     assert truth.buckets[3].count == 3
 
 
+def test_temporary_blue_zodiac_items_are_v2_candidates() -> None:
+    maps, drops, items = _tables()
+    zodiac = _item(1306006, quality=3, value=8_888, shape=(2, 2), tags=[100])
+    items[zodiac.item_id] = zodiac
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    assert any(
+        item.item_id == zodiac.item_id
+        for pool in sampler._sampler.pools
+        for item in pool.items
+    )
+
+
+def test_temporary_blue_zodiac_anchor_is_not_reported_missing() -> None:
+    maps, drops, items = _tables()
+    zodiac = _item(1306006, quality=3, value=8_888, shape=(2, 2), tags=[100])
+    items[zodiac.item_id] = zodiac
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=1306006,
+            item_id=zodiac.item_id,
+            quality=3,
+            shape_key="22",
+            cells=4,
+            sources=("public:200022",),
+        )
+    )
+
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+
+    assert not any(
+        diagnostic.startswith("anchors_not_in_flattened_pool")
+        for diagnostic in problem.diagnostics
+    )
+
+
 def test_estimate_posterior_v2_relaxes_exact_bucket_when_strict_has_no_matches() -> None:
     maps, drops, items = _tables()
     obs = SessionObs(
