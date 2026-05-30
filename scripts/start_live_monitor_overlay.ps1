@@ -3,7 +3,8 @@ param(
   [string]$LogDir = "data\logs\live",
   [int]$NTrials = 500,
   [int]$RoiTrials = 250,
-  [double]$StableSeconds = 1.0
+  [double]$StableSeconds = 1.0,
+  [switch]$ProcessExisting
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,16 +13,22 @@ $Python = "python"
 $Monitor = Join-Path $Repo "scripts\run_fatbeans_live_monitor.py"
 $Overlay = Join-Path $Repo "scripts\run_live_overlay.py"
 $LogPath = Join-Path $Repo $LogDir
-
-New-Item -ItemType Directory -Path $LogPath -Force | Out-Null
-
-Start-Process -FilePath $Python -WorkingDirectory $Repo -WindowStyle Hidden -ArgumentList @(
+$MonitorArgs = @(
   $Monitor,
   "--watch-dir", $WatchDir,
   "--log-dir", $LogPath,
   "--n-trials", "$NTrials",
   "--roi-trials", "$RoiTrials",
   "--stable-seconds", "$StableSeconds"
+)
+if (-not $ProcessExisting) {
+  $MonitorArgs += "--ignore-existing"
+}
+
+New-Item -ItemType Directory -Path $LogPath -Force | Out-Null
+
+Start-Process -FilePath $Python -WorkingDirectory $Repo -WindowStyle Hidden -ArgumentList @(
+  $MonitorArgs
 )
 
 Start-Process -FilePath $Python -WorkingDirectory $Repo -ArgumentList @(

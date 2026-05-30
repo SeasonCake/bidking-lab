@@ -158,6 +158,11 @@ def main() -> int:
         help="Ignore processed manifest and process matching files again",
     )
     parser.add_argument(
+        "--ignore-existing",
+        action="store_true",
+        help="When watching, mark currently existing JSON files as processed at startup",
+    )
+    parser.add_argument(
         "--no-archive-raw",
         action="store_true",
         help="Do not copy processed raw JSON files into log-dir/raw",
@@ -199,6 +204,19 @@ def main() -> int:
     root = Path(args.watch_dir)
     manifest_path = log_dir / "processed_files.json"
     manifest = _load_manifest(manifest_path)
+    if args.ignore_existing and not args.reprocess:
+        for path in _json_files(root):
+            try:
+                fingerprint = _fingerprint(path)
+            except OSError:
+                continue
+            manifest[str(path.resolve())] = {
+                **fingerprint,
+                "processed_at": time.time(),
+                "name": path.name,
+                "ignored_at_startup": True,
+            }
+        _save_manifest(manifest_path, manifest)
     print(f"[watch] {root} -> {log_dir}")
     while True:
         for path in _json_files(root):
