@@ -59,6 +59,21 @@ def _rate(rows: list[dict[str, Any]], key: str) -> float | None:
     return round(statistics.mean(1.0 if value else 0.0 for value in values), 4)
 
 
+def _dedupe_latest_by_file(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    selected: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for row in rows:
+        key = str(row.get("file") or "")
+        if not key:
+            key = f"row:{len(order)}"
+        if key not in selected:
+            order.append(key)
+        current = selected.get(key)
+        if current is None or float(row.get("ts") or 0) >= float(current.get("ts") or 0):
+            selected[key] = row
+    return [selected[key] for key in order]
+
+
 def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -85,7 +100,10 @@ def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
     return out
 
 
-def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize(rows: list[dict[str, Any]], *, dedupe: bool = True) -> dict[str, Any]:
+    original_count = len(rows)
+    if dedupe:
+        rows = _dedupe_latest_by_file(rows)
     valid = [
         row for row in rows
         if row.get("final_value") is not None or row.get("final_cells") is not None
@@ -93,6 +111,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     q6_truth = [row for row in valid if int(row.get("final_q6_value") or 0) > 0]
     return {
         "rows": len(rows),
+        "raw_rows": original_count,
+        "deduped_rows": original_count - len(rows),
         "valid": len(valid),
         "q6_truth_rows": len(q6_truth),
         "decision_value_mae": _mae(valid, "decision_value_p50_error"),
@@ -132,9 +152,14 @@ def main() -> int:
         default=str(ROOT / "data" / "logs" / "live" / "model_eval.jsonl"),
         help="Path to model_eval.jsonl",
     )
+    parser.add_argument(
+        "--no-dedupe",
+        action="store_true",
+        help="Do not collapse duplicate rows with the same file name",
+    )
     args = parser.parse_args()
     rows = _read_jsonl(Path(args.path))
-    print(json.dumps(summarize(rows), ensure_ascii=False, indent=2))
+    print(json.dumps(summarize(rows, dedupe=not args.no_dedupe), ensure_ascii=False, indent=2))
     return 0
 
 
