@@ -65,7 +65,9 @@
 
 **更新**：已增加 “strict exact 零匹配时降级为 floor” 的 posterior fallback，并在报告里用 `relaxed_exact_bucket_targets:*` 标明哪些约束被放宽。
 
-**复查点**：继续降低 fallback 使用率；优先改进 exact 桶组合采样，而不是扩大放宽范围。
+**更新**：已加入 exact 桶组合采样：当同一品质同时有 exact 件数和 exact 格数时，先求可达组合再采样，降低走进不可达剩余状态的概率。69 份样本 `--trials 300` 下 `relaxed_exact` 从 18 降到 11，`zero_match` 从 7 降到 5。
+
+**复查点**：fallback 使用率已下降；下一轮重点转向 q6 residual、shape-category 条件采样和 layout posterior，而不是继续扩大 exact 放宽范围。
 
 ## 2026-05-30 · 实时出价主口径切到 decision_value
 

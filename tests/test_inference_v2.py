@@ -340,6 +340,67 @@ def test_exact_bucket_target_limits_conditional_sampler() -> None:
     assert truth.buckets[6].count == 1
 
 
+def test_exact_bucket_combo_sampler_fills_count_and_cells() -> None:
+    q3_1x1 = _item(3001, quality=3, value=1_000, shape=(1, 1), tags=[101])
+    q3_2x1 = _item(3002, quality=3, value=2_000, shape=(2, 1), tags=[101])
+    q3_2x2 = _item(3003, quality=3, value=4_000, shape=(2, 2), tags=[101])
+    maps = {
+        2402: BidMap(
+            map_id=2402,
+            name="combo_map",
+            description="",
+            category=101,
+            auction_mode="open",
+            sub_pool_weights=[],
+            rounds_total=5,
+            entry_fee_silver=0,
+            starting_budget_silver=100_000,
+            drop_pool_id=9002,
+            items_per_session_min=3,
+            items_per_session_max=3,
+            value_tier_ui="",
+            mode_flag=4,
+            bid_price_ladder=[],
+            raw_row=[],
+        ),
+    }
+    drops = {
+        9002: DropPool(
+            pool_id=9002,
+            name="combo_pool",
+            description="",
+            pool_type=2,
+            entries=[
+                DropEntry(category=101, item_id=q3_1x1.item_id, n_min=1, n_max=1, weight=1),
+                DropEntry(category=101, item_id=q3_2x1.item_id, n_min=1, n_max=1, weight=1),
+                DropEntry(category=101, item_id=q3_2x2.item_id, n_min=1, n_max=1, weight=1),
+            ],
+        ),
+    }
+    items = {item.item_id: item for item in (q3_1x1, q3_2x1, q3_2x2)}
+    obs = SessionObs(
+        map_id=2402,
+        hero="aisha",
+        buckets={3: QualityBucketObs(quality=3, total_cells=5, count=3)},
+    )
+    problem = build_residual_problem(
+        2402,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(123))
+
+    assert problem.bucket_targets[3].total_cells_exact == 5
+    assert problem.bucket_targets[3].count_exact == 3
+    assert truth.buckets[3].total_cells == 5
+    assert truth.buckets[3].count == 3
+
+
 def test_estimate_posterior_v2_relaxes_exact_bucket_when_strict_has_no_matches() -> None:
     maps, drops, items = _tables()
     obs = SessionObs(
