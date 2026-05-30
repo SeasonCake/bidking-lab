@@ -8,8 +8,10 @@ and keep the log schema unchanged.
 
 from __future__ import annotations
 
+import atexit
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -66,6 +68,37 @@ def _save_manifest(path: Path, manifest: dict[str, dict[str, Any]]) -> None:
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _acquire_lock(log_dir: Path) -> Path:
+    lock_path = log_dir / "monitor.lock"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise RuntimeError(
+            f"monitor already appears to be running; remove {lock_path} if stale"
+        ) from exc
+    payload = json.dumps(
+        {
+            "pid": os.getpid(),
+            "started_at": time.time(),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(payload)
+        fh.write(b"\n")
+
+    def _cleanup() -> None:
+        try:
+            lock_path.unlink()
+        except OSError:
+            pass
+
+    atexit.register(_cleanup)
+    return lock_path
 
 
 def _is_stable_file(path: Path, stable_seconds: float) -> bool:
@@ -167,6 +200,11 @@ def main() -> int:
         action="store_true",
         help="Do not copy processed raw JSON files into log-dir/raw",
     )
+    parser.add_argument(
+        "--no-lock",
+        action="store_true",
+        help="Allow multiple monitor processes to write to the same log dir",
+    )
     parser.add_argument("--n-trials", type=int, default=500, help="MC trials per map")
     parser.add_argument("--roi-trials", type=int, default=250, help="ROI MC trials")
     parser.add_argument("--seed", type=int, default=20260530)
@@ -174,6 +212,12 @@ def main() -> int:
 
     log_dir = Path(args.log_dir)
     archive_dir = None if args.no_archive_raw else log_dir / "raw"
+    if args.watch_dir and not args.no_lock:
+        try:
+            _acquire_lock(log_dir)
+        except RuntimeError as exc:
+            print(f"[error] {exc}", file=sys.stderr)
+            return 2
     tables = load_monitor_tables(tables_dir=args.tables_dir)
 
     if args.stdin:
