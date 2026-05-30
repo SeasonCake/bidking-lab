@@ -63,4 +63,6 @@
 
 **取舍**：strict exact 让已匹配样本的决策价值误差下降，但 zero-match 变多；这是采样器表达力还不够，而不是 exact 语义错误。
 
-**复查点**：下一步增加 “strict exact 零匹配时降级为 floor” 的 posterior fallback，并在报告里标明哪些约束被放宽。
+**更新**：已增加 “strict exact 零匹配时降级为 floor” 的 posterior fallback，并在报告里用 `relaxed_exact_bucket_targets:*` 标明哪些约束被放宽。
+
+**复查点**：继续降低 fallback 使用率；优先改进 exact 桶组合采样，而不是扩大放宽范围。

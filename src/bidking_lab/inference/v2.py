@@ -9,7 +9,7 @@ keeps v2 separate so realtime code can compare both engines before switching.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal, Mapping, Sequence
 
 import numpy as np
@@ -1001,10 +1001,37 @@ def decision_value_for_truth(truth: SessionTruth, problem: ResidualProblem) -> i
     return total
 
 
-def estimate_posterior_v2(
-    map_id: int,
+def _relax_exact_bucket_obs(obs: SessionObs) -> tuple[SessionObs, tuple[str, ...]]:
+    relaxed_buckets = {}
+    relaxed: list[str] = []
+    for quality, bucket in obs.buckets.items():
+        cells_min = bucket.total_cells_min
+        count_min = bucket.count_min
+        if bucket.total_cells is not None:
+            cells_min = max(cells_min or 0, bucket.total_cells)
+        if bucket.count is not None:
+            count_min = max(count_min or 0, bucket.count)
+        if bucket.total_cells is not None or bucket.count is not None:
+            relaxed.append(
+                f"q{quality}:count={bucket.count}:cells={bucket.total_cells}"
+            )
+        relaxed_buckets[quality] = replace(
+            bucket,
+            total_cells=None,
+            count=None,
+            total_cells_min=cells_min,
+            count_min=count_min,
+        )
+    if not relaxed:
+        return obs, ()
+    return replace(obs, buckets=relaxed_buckets), (
+        "relaxed_exact_bucket_targets:" + ";".join(relaxed),
+    )
+
+
+def _estimate_posterior_for_problem(
+    problem: ResidualProblem,
     obs: SessionObs,
-    store: EvidenceStore,
     *,
     maps: Mapping[int, BidMap],
     drops: Mapping[int, DropPool],
@@ -1016,17 +1043,8 @@ def estimate_posterior_v2(
     value_rel_tol: float = 0.10,
     warehouse_tol: int = 8,
     total_item_count_tol: int = 0,
+    extra_diagnostics: tuple[str, ...] = (),
 ) -> PosteriorReport:
-    """Estimate a posterior with exact item anchors forced into every trial."""
-
-    problem = build_residual_problem(
-        map_id,
-        store,
-        maps=maps,
-        drops=drops,
-        items=items,
-        obs=obs,
-    )
     sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
     rng = np.random.default_rng(seed)
     values: list[int] = []
@@ -1060,7 +1078,7 @@ def estimate_posterior_v2(
         q6_bucket = truth.buckets.get(6)
         q6_values.append(q6_bucket.value_sum if q6_bucket is not None else 0)
         weights.append(weight)
-    diagnostics = list(problem.diagnostics)
+    diagnostics = [*extra_diagnostics, *problem.diagnostics]
     q6_match_count = sum(1 for value in q6_values if value > 0)
     q6_match_rate = q6_match_count / len(q6_values) if q6_values else None
     if 6 not in problem.bucket_targets and q6_match_rate is not None and q6_match_rate < 0.10:
@@ -1081,6 +1099,77 @@ def estimate_posterior_v2(
         q6_value=_quantiles(q6_values, weights),
         layout_diagnostics=problem.layout.diagnostics,
         diagnostics=tuple(diagnostics),
+    )
+
+
+def estimate_posterior_v2(
+    map_id: int,
+    obs: SessionObs,
+    store: EvidenceStore,
+    *,
+    maps: Mapping[int, BidMap],
+    drops: Mapping[int, DropPool],
+    items: Mapping[int, Item],
+    n_trials: int = 3000,
+    seed: int = 0,
+    cells_tol: int = 2,
+    count_tol: int = 1,
+    value_rel_tol: float = 0.10,
+    warehouse_tol: int = 8,
+    total_item_count_tol: int = 0,
+) -> PosteriorReport:
+    """Estimate a posterior with exact item anchors forced into every trial."""
+
+    problem = build_residual_problem(
+        map_id,
+        store,
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    strict = _estimate_posterior_for_problem(
+        problem,
+        obs,
+        maps=maps,
+        drops=drops,
+        items=items,
+        n_trials=n_trials,
+        seed=seed,
+        cells_tol=cells_tol,
+        count_tol=count_tol,
+        value_rel_tol=value_rel_tol,
+        warehouse_tol=warehouse_tol,
+        total_item_count_tol=total_item_count_tol,
+    )
+    if strict.n_matched > 0:
+        return strict
+
+    relaxed_obs, diagnostics = _relax_exact_bucket_obs(obs)
+    if not diagnostics:
+        return strict
+    relaxed_problem = build_residual_problem(
+        map_id,
+        store,
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=relaxed_obs,
+    )
+    return _estimate_posterior_for_problem(
+        relaxed_problem,
+        relaxed_obs,
+        maps=maps,
+        drops=drops,
+        items=items,
+        n_trials=n_trials,
+        seed=seed,
+        cells_tol=cells_tol,
+        count_tol=count_tol,
+        value_rel_tol=value_rel_tol,
+        warehouse_tol=warehouse_tol,
+        total_item_count_tol=total_item_count_tol,
+        extra_diagnostics=diagnostics,
     )
 
 

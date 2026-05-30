@@ -308,6 +308,10 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         row for row in ok
         if not row.get("v2_matched")
     ]
+    relaxed = [
+        row for row in ok
+        if "relaxed_exact_bucket_targets:" in str(row.get("diagnostics") or "")
+    ]
     abs_errors = [abs(int(row["v2_value_p50_error"])) for row in valued]
     decision_valued = [
         row for row in ok
@@ -327,6 +331,7 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "ok": len(ok),
         "valued": len(valued),
         "zero_match": len(zero),
+        "relaxed_exact": len(relaxed),
         "skip_or_error": len(rows) - len(ok),
         "value_mae": _round(statistics.mean(abs_errors)) if abs_errors else None,
         "value_median_abs_error": (

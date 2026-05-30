@@ -340,6 +340,33 @@ def test_exact_bucket_target_limits_conditional_sampler() -> None:
     assert truth.buckets[6].count == 1
 
 
+def test_estimate_posterior_v2_relaxes_exact_bucket_when_strict_has_no_matches() -> None:
+    maps, drops, items = _tables()
+    obs = SessionObs(
+        map_id=2401,
+        hero="aisha",
+        buckets={6: QualityBucketObs(quality=6, total_cells=15, count=1)},
+    )
+
+    report = estimate_posterior_v2(
+        2401,
+        obs,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        n_trials=50,
+        seed=12,
+    )
+
+    assert report.n_matched > 0
+    assert report.total_cells is not None
+    assert report.total_cells.p10 >= 16
+    assert report.diagnostics == (
+        "relaxed_exact_bucket_targets:q6:count=1:cells=15",
+    )
+
+
 def test_quality_only_runtime_evidence_guides_count_floor() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()
