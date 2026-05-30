@@ -7,6 +7,7 @@ Fatbeans JSON payload or file; later a true realtime source can feed the same
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, replace
 import json
 from pathlib import Path
@@ -356,14 +357,62 @@ def _build_bid_rows(
     return rows
 
 
-def _parse_range_p50(label: str) -> int | None:
+def _parse_range_value(label: str, index: int) -> int | None:
     parts = [part.strip().replace(",", "") for part in label.split("/")]
-    if len(parts) < 2 or parts[1] in ("", "?"):
+    if len(parts) <= index or parts[index] in ("", "?"):
         return None
     try:
-        return int(float(parts[1]))
+        return int(float(parts[index]))
     except ValueError:
         return None
+
+
+def _parse_range_p50(label: str) -> int | None:
+    return _parse_range_value(label, 1)
+
+
+def _parse_percent_text(value: Any) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip().replace("%", "")
+    if not text:
+        return None
+    try:
+        return float(text) / 100.0
+    except ValueError:
+        return None
+
+
+def _inventory_quality_breakdown(
+    events: FatbeansCaptureEvents,
+    items: Mapping[int, Item],
+) -> dict[str, Any]:
+    for state in reversed(events.states):
+        if not state.inventory_items:
+            continue
+        counts: Counter[int] = Counter()
+        cells: Counter[int] = Counter()
+        values: defaultdict[int, int] = defaultdict(int)
+        for inv_item in state.inventory_items:
+            item = items.get(inv_item.item_id)
+            quality = inv_item.quality
+            if quality is None and item is not None:
+                quality = item.quality
+            if quality is None:
+                continue
+            q = int(quality)
+            counts[q] += 1
+            cells[q] += inv_item.cells
+            values[q] += item.value if item is not None else 0
+        return {
+            "final_q5_count": counts.get(5, 0),
+            "final_q5_cells": cells.get(5, 0),
+            "final_q5_value": values.get(5, 0),
+            "final_q6_count": counts.get(6, 0),
+            "final_q6_cells": cells.get(6, 0),
+            "final_q6_value": values.get(6, 0),
+        }
+    return {}
 
 
 def _model_eval_row(
@@ -372,16 +421,21 @@ def _model_eval_row(
     artifact: Mapping[str, Any],
     final_value: int | None,
     final_cells: int | None,
+    truth_breakdown: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if final_value is None and final_cells is None:
         return None
     warehouse_rows = artifact.get("warehouse_rows") or []
     bid_rows = artifact.get("bid_rows") or []
     layout_rows = artifact.get("layout_replay_rows") or []
+    v2_rows = artifact.get("v2_posterior_rows") or []
     warehouse_p50 = None
     value_p50 = None
     decision_value_p50 = None
     raw_value_p50 = None
+    q6_match_rate = None
+    q6_value_p90 = None
+    posterior_diagnostics = ""
     if warehouse_rows:
         warehouse_p50 = _parse_range_p50(
             str(warehouse_rows[0].get("总格 P10/P50/P90", ""))
@@ -396,6 +450,13 @@ def _model_eval_row(
         raw_value_p50 = _parse_range_p50(
             str(bid_rows[0].get("原始价值 P10/P50/P90", ""))
         )
+    if v2_rows:
+        q6_match_rate = _parse_percent_text(v2_rows[0].get("q6样本率"))
+        q6_value_p90 = _parse_range_value(
+            str(v2_rows[0].get("q6价值 P10/P50/P90", "")),
+            2,
+        )
+        posterior_diagnostics = str(v2_rows[0].get("诊断") or "")
     latest_layout_fit = next(
         (
             row for row in reversed(layout_rows)
@@ -416,10 +477,12 @@ def _model_eval_row(
     return {
         "ts": time.time(),
         "file": file,
+        "hero": artifact.get("hero"),
         "map_id": artifact.get("map_id"),
         "round": artifact.get("round"),
         "final_value": final_value,
         "final_cells": final_cells,
+        **dict(truth_breakdown or {}),
         "value_p50": value_p50,
         "decision_value_p50": decision_value_p50,
         "decision_value_p50_error": (
@@ -448,6 +511,26 @@ def _model_eval_row(
         "highest_bid": highest_bid,
         "attack_bid": attack_bid,
         "stop_bid": stop_bid,
+        "v2_q6_match_rate": q6_match_rate,
+        "v2_q6_value_p90": q6_value_p90,
+        "q6_p90_misses_truth": (
+            q6_value_p90 < int((truth_breakdown or {}).get("final_q6_value") or 0)
+            if q6_value_p90 is not None
+            and int((truth_breakdown or {}).get("final_q6_value") or 0) > 0
+            else None
+        ),
+        "q6_false_low_risk": (
+            q6_match_rate < 0.10
+            if q6_match_rate is not None
+            and int((truth_breakdown or {}).get("final_q6_value") or 0) > 0
+            else None
+        ),
+        "relaxed_exact_used": "relaxed_exact_bucket_targets:" in posterior_diagnostics,
+        "layout_conflict": (
+            "footprint_overlap_cells:" in posterior_diagnostics
+            or "footprint_overflow:" in posterior_diagnostics
+        ),
+        "posterior_diagnostics": posterior_diagnostics,
         "stop_minus_final_value": (
             stop_bid - final_value
             if stop_bid is not None and final_value is not None
@@ -620,6 +703,7 @@ def build_monitor_artifact_from_events(
     )
     inventory_count, inventory_cells = _inventory_totals(events)
     final_value = _inventory_value(events, tables.items)
+    truth_breakdown = _inventory_quality_breakdown(events, tables.items)
     artifact: dict[str, Any] = {
         "schema_version": 1,
         "created_at": time.time(),
@@ -628,11 +712,13 @@ def build_monitor_artifact_from_events(
         "frames": len(events.frames),
         "states": len(events.states),
         "batches": len(batches),
+        "hero": base_session.hero if base_session is not None else None,
         "map_id": _latest_map_id(events),
         "round": _latest_round(events),
         "inventory_count": inventory_count,
         "inventory_cells": inventory_cells,
         "known_value_sum": final_value,
+        **truth_breakdown,
         "latest_bids": dict(latest_bids),
         "evidence_label": evidence_label,
         "map_rows": map_rows,
@@ -653,6 +739,7 @@ def build_monitor_artifact_from_events(
         artifact=artifact,
         final_value=final_value,
         final_cells=inventory_cells,
+        truth_breakdown=truth_breakdown,
     )
     if eval_row is not None:
         artifact["model_eval"] = eval_row

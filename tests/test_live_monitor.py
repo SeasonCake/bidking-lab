@@ -128,8 +128,10 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     )
 
     assert artifact["file"] == "sample.json"
+    assert artifact["hero"] == "aisha"
     assert artifact["map_id"] == 2401
     assert artifact["known_value_sum"] == 20_000
+    assert artifact["final_q6_count"] == 0
     assert artifact["latest_bids"] == {"leader": 15_000}
     assert artifact["warehouse_rows"]
     assert artifact["v2_posterior_rows"]
@@ -140,7 +142,10 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["panel"]["summary_rows"]
     assert artifact["model_eval"]["final_value"] == 20_000
     assert artifact["model_eval"]["final_cells"] == 4
+    assert artifact["model_eval"]["hero"] == "aisha"
+    assert artifact["model_eval"]["final_q6_count"] == 0
     assert artifact["model_eval"]["decision_value_p50"] == 20_000
+    assert artifact["model_eval"]["relaxed_exact_used"] is False
 
 
 def test_write_monitor_logs_updates_latest_and_jsonl(tmp_path: Path) -> None:
