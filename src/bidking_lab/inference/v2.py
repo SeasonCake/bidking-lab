@@ -153,6 +153,39 @@ class KnownItemAnchor:
 
 
 @dataclass(frozen=True)
+class KnownFootprint:
+    """One trusted shape-bearing layout footprint."""
+
+    key: str
+    local_index: int
+    shape_key: str
+    cells: int
+    row: int
+    col: int
+    width: int
+    height: int
+    bottom_row: int
+    right_col: int
+    item_id: int | None = None
+    quality: int | None = None
+
+
+@dataclass(frozen=True)
+class LayoutFeasibility:
+    """Lightweight layout feasibility diagnostics for v2 samples."""
+
+    footprint_count: int
+    occupied_cells: int
+    item_cells: int
+    overlap_cells: int
+    overflow_count: int
+    bottom_row: int | None
+    bounding_cells: int
+    score: float
+    diagnostics: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ResidualProblem:
     """Map problem after exact known items have been anchored."""
 
@@ -164,6 +197,7 @@ class ResidualProblem:
     known_value: int
     anchor_item_counts: Mapping[int, int]
     bucket_targets: Mapping[int, "ResidualBucketTarget"]
+    layout: LayoutFeasibility
     diagnostics: tuple[str, ...] = ()
 
 
@@ -189,6 +223,8 @@ class PosteriorReport:
     anchor_count: int
     known_cells: int
     known_value: int
+    layout_score: float
+    layout_diagnostics: tuple[str, ...] = ()
     diagnostics: tuple[str, ...] = ()
 
 
@@ -204,6 +240,20 @@ def _shape_cells(shape_key: str | None) -> int | None:
     if w <= 0 or h <= 0:
         return None
     return w * h
+
+
+def _shape_dimensions(shape_key: str | None) -> tuple[int, int] | None:
+    if shape_key is None:
+        return None
+    try:
+        code = int(shape_key)
+    except (TypeError, ValueError):
+        return None
+    width = code // 10
+    height = code % 10
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
 
 
 def _observed_item_to_runtime_evidence(
@@ -330,6 +380,124 @@ def known_item_anchors(
     return tuple(anchors)
 
 
+def known_footprints(
+    store: EvidenceStore,
+    *,
+    columns: int = 10,
+) -> tuple[KnownFootprint, ...]:
+    footprints: list[KnownFootprint] = []
+    seen: set[str] = set()
+    for evidence in store.items():
+        if evidence.local_index is None or evidence.shape_key is None:
+            continue
+        if evidence.local_index < 0:
+            continue
+        dims = _shape_dimensions(evidence.shape_key)
+        if dims is None:
+            continue
+        key = evidence.evidence_key
+        if key in seen:
+            continue
+        seen.add(key)
+        width, height = dims
+        row = evidence.local_index // columns + 1
+        col = evidence.local_index % columns + 1
+        footprints.append(
+            KnownFootprint(
+                key=key,
+                local_index=evidence.local_index,
+                shape_key=evidence.shape_key,
+                cells=evidence.cells or width * height,
+                row=row,
+                col=col,
+                width=width,
+                height=height,
+                bottom_row=row + height - 1,
+                right_col=col + width - 1,
+                item_id=evidence.item_id,
+                quality=evidence.quality,
+            )
+        )
+    return tuple(footprints)
+
+
+def layout_feasibility_from_store(
+    store: EvidenceStore,
+    *,
+    columns: int = 10,
+) -> LayoutFeasibility:
+    footprints = known_footprints(store, columns=columns)
+    if not footprints:
+        return LayoutFeasibility(
+            footprint_count=0,
+            occupied_cells=0,
+            item_cells=0,
+            overlap_cells=0,
+            overflow_count=0,
+            bottom_row=None,
+            bounding_cells=0,
+            score=1.0,
+        )
+    occupied: set[tuple[int, int]] = set()
+    overflow_count = 0
+    item_cells = 0
+    item_cells_in_grid = 0
+    for footprint in footprints:
+        item_cells += footprint.cells
+        if footprint.right_col > columns:
+            overflow_count += 1
+        for row in range(footprint.row, footprint.bottom_row + 1):
+            for col in range(footprint.col, footprint.right_col + 1):
+                if 1 <= col <= columns:
+                    item_cells_in_grid += 1
+                    occupied.add((row, col))
+    occupied_cells = len(occupied)
+    overlap_cells = max(0, item_cells_in_grid - occupied_cells)
+    bottom_row = max(footprint.bottom_row for footprint in footprints)
+    diagnostics: list[str] = []
+    score = 1.0
+    if overflow_count:
+        diagnostics.append(f"footprint_overflow:{overflow_count}")
+        score *= max(0.25, 1.0 - 0.15 * overflow_count)
+    if overlap_cells:
+        diagnostics.append(f"footprint_overlap_cells:{overlap_cells}")
+        score *= max(0.25, 1.0 - overlap_cells / max(1, item_cells))
+    return LayoutFeasibility(
+        footprint_count=len(footprints),
+        occupied_cells=occupied_cells,
+        item_cells=item_cells,
+        overlap_cells=overlap_cells,
+        overflow_count=overflow_count,
+        bottom_row=bottom_row,
+        bounding_cells=bottom_row * columns,
+        score=score,
+        diagnostics=tuple(diagnostics),
+    )
+
+
+def layout_feasibility_score(
+    truth: SessionTruth,
+    layout: LayoutFeasibility,
+) -> float:
+    if layout.footprint_count <= 0:
+        return 1.0
+    truth_count = sum(bucket.count for bucket in truth.buckets.values())
+    if truth_count < layout.footprint_count:
+        return 0.0
+    if truth.warehouse_total_cells < layout.occupied_cells:
+        return 0.0
+    if layout.bottom_row is None or layout.bounding_cells <= 0:
+        return layout.score
+
+    minimum_dense_cells = max(0, (layout.bottom_row - 1) * 10)
+    if minimum_dense_cells <= layout.occupied_cells:
+        return layout.score
+    if truth.warehouse_total_cells >= minimum_dense_cells:
+        return layout.score
+    gap = minimum_dense_cells - truth.warehouse_total_cells
+    return layout.score * max(0.25, 1.0 - gap / max(1, minimum_dense_cells))
+
+
 def _quality_evidence_floors(
     store: EvidenceStore,
 ) -> dict[int, tuple[int, int]]:
@@ -379,6 +547,7 @@ def build_residual_problem(
             "anchors_not_in_flattened_pool:" + ",".join(str(item_id) for item_id in missing)
         )
     counts = Counter(anchor.item_id for anchor in anchors)
+    layout = layout_feasibility_from_store(store)
     bucket_targets: dict[int, ResidualBucketTarget] = {}
     if obs is not None:
         for quality, bucket in obs.buckets.items():
@@ -417,7 +586,8 @@ def build_residual_problem(
         known_value=sum(anchor.value for anchor in anchors),
         anchor_item_counts=dict(counts),
         bucket_targets=bucket_targets,
-        diagnostics=tuple(diagnostics),
+        layout=layout,
+        diagnostics=tuple((*diagnostics, *layout.diagnostics)),
     )
 
 
@@ -628,7 +798,10 @@ def estimate_posterior_v2(
             total_item_count_tol=total_item_count_tol,
         ):
             continue
-        weight = category_observation_soft_score(truth, obs)
+        layout_score = layout_feasibility_score(truth, problem.layout)
+        if layout_score <= 0:
+            continue
+        weight = category_observation_soft_score(truth, obs) * layout_score
         values.append(truth.total_value())
         cells.append(truth.warehouse_total_cells)
         weights.append(weight)
@@ -642,6 +815,8 @@ def estimate_posterior_v2(
         anchor_count=problem.known_item_count,
         known_cells=problem.known_cells,
         known_value=problem.known_value,
+        layout_score=problem.layout.score,
+        layout_diagnostics=problem.layout.diagnostics,
         diagnostics=problem.diagnostics,
     )
 
@@ -652,6 +827,8 @@ __all__ = (
     "EvidenceStore",
     "EvidenceStoreBuilder",
     "KnownItemAnchor",
+    "KnownFootprint",
+    "LayoutFeasibility",
     "PosteriorReport",
     "ResidualBucketTarget",
     "ResidualProblem",
@@ -659,5 +836,8 @@ __all__ = (
     "build_residual_problem",
     "estimate_posterior_v2",
     "evidence_store_from_fatbeans_events",
+    "known_footprints",
     "known_item_anchors",
+    "layout_feasibility_from_store",
+    "layout_feasibility_score",
 )

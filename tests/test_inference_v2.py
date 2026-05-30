@@ -13,7 +13,10 @@ from bidking_lab.inference.v2 import (
     build_residual_problem,
     estimate_posterior_v2,
     evidence_store_from_fatbeans_events,
+    known_footprints,
     known_item_anchors,
+    layout_feasibility_from_store,
+    layout_feasibility_score,
 )
 from bidking_lab.live.fatbeans import (
     FatbeansActionResult,
@@ -309,3 +312,58 @@ def test_quality_only_runtime_evidence_guides_count_floor() -> None:
     assert problem.bucket_targets[6].count_floor == 1
     assert problem.bucket_targets[6].total_cells_floor is None
     assert truth.buckets[6].count >= 1
+
+
+def test_known_footprints_build_layout_feasibility() -> None:
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            local_index=18,
+            shape_key="22",
+            cells=4,
+            item_id=1103006,
+            quality=3,
+            sources=("public:200022",),
+        )
+    )
+    store = builder.build()
+
+    footprints = known_footprints(store)
+    layout = layout_feasibility_from_store(store)
+
+    assert len(footprints) == 1
+    assert footprints[0].row == 2
+    assert footprints[0].col == 9
+    assert footprints[0].right_col == 10
+    assert layout.footprint_count == 1
+    assert layout.occupied_cells == 4
+    assert layout.score == 1.0
+
+
+def test_layout_feasibility_rejects_impossible_sample() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            local_index=19,
+            shape_key="22",
+            cells=4,
+            sources=("public:200022",),
+        )
+    )
+    store = builder.build()
+    problem = build_residual_problem(
+        2401,
+        store,
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+    truth = sampler.sample(rng=np.random.default_rng(4))
+
+    assert 0 < problem.layout.score < 1
+    assert problem.layout.diagnostics == ("footprint_overflow:1",)
+    assert layout_feasibility_score(truth, problem.layout) > 0
