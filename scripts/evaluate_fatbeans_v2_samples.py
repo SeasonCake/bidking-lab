@@ -7,6 +7,7 @@ import csv
 import json
 import statistics
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -103,6 +104,58 @@ def _format_bucket_targets(problem: Any) -> str:
     return ";".join(parts)
 
 
+def _format_quality_map(values: Any) -> str:
+    return ";".join(
+        f"q{quality}={value}"
+        for quality, value in sorted(values.items())
+        if value
+    )
+
+
+def _inventory_truth_breakdown(events: Any, items: Any) -> dict[str, Any]:
+    for state in reversed(events.states):
+        if not state.inventory_items:
+            continue
+        counts: Counter[int] = Counter()
+        cells: Counter[int] = Counter()
+        values: defaultdict[int, int] = defaultdict(int)
+        top_item: dict[str, Any] = {}
+        for inv_item in state.inventory_items:
+            item = items.get(inv_item.item_id)
+            quality = inv_item.quality
+            if quality is None and item is not None:
+                quality = item.quality
+            if quality is None:
+                continue
+            value = item.value if item is not None else 0
+            counts[int(quality)] += 1
+            cells[int(quality)] += inv_item.cells
+            values[int(quality)] += value
+            if not top_item or value > int(top_item.get("value") or 0):
+                top_item = {
+                    "id": inv_item.item_id,
+                    "name": item.name if item is not None else "",
+                    "quality": int(quality),
+                    "value": value,
+                    "cells": inv_item.cells,
+                }
+        return {
+            "final_quality_counts": _format_quality_map(counts),
+            "final_quality_cells": _format_quality_map(cells),
+            "final_quality_values": _format_quality_map(values),
+            "final_q5_count": counts.get(5, 0),
+            "final_q5_value": values.get(5, 0),
+            "final_q6_count": counts.get(6, 0),
+            "final_q6_value": values.get(6, 0),
+            "final_top_item_id": top_item.get("id"),
+            "final_top_item_name": top_item.get("name"),
+            "final_top_item_quality": top_item.get("quality"),
+            "final_top_item_value": top_item.get("value"),
+            "final_top_item_cells": top_item.get("cells"),
+        }
+    return {}
+
+
 def evaluate_path(
     path: Path,
     *,
@@ -118,6 +171,7 @@ def evaluate_path(
         base_session, *_ = _states_to_session(batches)
         final_value = _inventory_value(events, tables.items)
         inventory_count, final_cells = _inventory_totals(events)
+        truth_breakdown = _inventory_truth_breakdown(events, tables.items)
         if base_session is None:
             return {"file": path.name, "status": "skip", "reason": "no_session_obs"}
         if final_value is None:
@@ -160,6 +214,7 @@ def evaluate_path(
             "inventory_count": inventory_count,
             "final_value": final_value,
             "final_cells": final_cells,
+            **truth_breakdown,
             "v2_matched": report.n_matched,
             "v2_match_rate": report.n_matched / max(1, report.n_total),
             "v2_value_p10": value_p10,
@@ -221,6 +276,7 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if row.get("v2_value_p90_error") is not None
     ]
     p90_abs_errors = [abs(int(row["v2_value_p90_error"])) for row in p90_valued]
+    q6_rows = [row for row in valued if int(row.get("final_q6_count") or 0) > 0]
     return {
         "files": len(rows),
         "ok": len(ok),
@@ -253,6 +309,18 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             if valued
             else None
         ),
+        "q6_truth_files": len(q6_rows),
+        "q6_truth_p90_coverage": (
+            round(
+                statistics.mean(
+                    1.0 if row["v2_value_p90_covers_final"] else 0.0
+                    for row in q6_rows
+                ),
+                4,
+            )
+            if q6_rows
+            else None
+        ),
         "worst_value_errors": sorted(
             (
                 {
@@ -268,6 +336,10 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                     "v2_value_p90_error": row.get("v2_value_p90_error"),
                     "v2_matched": row.get("v2_matched"),
                     "anchor_count": row.get("anchor_count"),
+                    "final_q6_count": row.get("final_q6_count"),
+                    "final_q6_value": row.get("final_q6_value"),
+                    "final_top_item_name": row.get("final_top_item_name"),
+                    "final_top_item_value": row.get("final_top_item_value"),
                     "layout_score": row.get("layout_score"),
                     "diagnostics": row.get("diagnostics"),
                 }
