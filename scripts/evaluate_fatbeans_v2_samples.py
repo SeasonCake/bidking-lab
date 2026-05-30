@@ -1,0 +1,413 @@
+"""Batch-evaluate Fatbeans captures with the evidence-first v2 posterior."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import statistics
+import sys
+from pathlib import Path
+from typing import Any, Iterable
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", newline="")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", newline="")
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from bidking_lab.inference.v2 import (  # noqa: E402
+    build_residual_problem,
+    estimate_posterior_v2,
+    evidence_store_from_fatbeans_events,
+)
+from bidking_lab.live.fatbeans import (  # noqa: E402
+    live_batches_from_fatbeans_events,
+    parse_fatbeans_capture,
+)
+from bidking_lab.live.monitor import (  # noqa: E402
+    _inventory_totals,
+    _inventory_value,
+    _states_to_session,
+    load_monitor_tables,
+)
+
+
+def _default_paths() -> list[Path]:
+    paths: list[Path] = []
+    for root in (
+        Path(r"C:\Users\shenc\Desktop\bid_king_packages"),
+        ROOT / "data" / "samples" / "fatbeans",
+    ):
+        if root.exists():
+            paths.extend(sorted(root.glob("*.json")))
+    return paths
+
+
+def _iter_unique(paths: Iterable[Path]) -> Iterable[Path]:
+    seen: set[str] = set()
+    for path in paths:
+        if path.name in seen:
+            continue
+        seen.add(path.name)
+        yield path
+
+
+def _round(value: float | int | None) -> int | None:
+    if value is None:
+        return None
+    return int(round(float(value)))
+
+
+def _map_family(file: str, map_id: int | None) -> str:
+    lower = file.lower()
+    if "villa" in lower:
+        return "villa"
+    if "shipwreck" in lower:
+        return "shipwreck"
+    if map_id is None:
+        return "unknown"
+    return f"map_{map_id // 100}xx"
+
+
+def _value_tier(value: int | None) -> str:
+    if value is None:
+        return "unknown"
+    if value < 300_000:
+        return "<300k"
+    if value < 800_000:
+        return "300k-800k"
+    if value < 1_200_000:
+        return "800k-1.2m"
+    return ">=1.2m"
+
+
+def _format_bucket_targets(problem: Any) -> str:
+    parts: list[str] = []
+    for quality, target in sorted(problem.bucket_targets.items()):
+        fields: list[str] = []
+        if target.count_floor is not None:
+            fields.append(f"count>={target.count_floor}")
+        if target.total_cells_floor is not None:
+            fields.append(f"cells>={target.total_cells_floor}")
+        if target.value_floor is not None:
+            fields.append(f"value>={target.value_floor}")
+        if target.avg_value is not None:
+            fields.append(f"avg={target.avg_value:.2f}")
+        if fields:
+            parts.append(f"q{quality}:" + ",".join(fields))
+    return ";".join(parts)
+
+
+def evaluate_path(
+    path: Path,
+    *,
+    tables: Any,
+    n_trials: int,
+    seed: int,
+    cells_tol: int,
+    count_tol: int,
+) -> dict[str, Any]:
+    try:
+        events = parse_fatbeans_capture(path)
+        batches = live_batches_from_fatbeans_events(events)
+        base_session, *_ = _states_to_session(batches)
+        final_value = _inventory_value(events, tables.items)
+        inventory_count, final_cells = _inventory_totals(events)
+        if base_session is None:
+            return {"file": path.name, "status": "skip", "reason": "no_session_obs"}
+        if final_value is None:
+            return {"file": path.name, "status": "skip", "reason": "no_inventory_truth"}
+
+        store = evidence_store_from_fatbeans_events(events)
+        problem = build_residual_problem(
+            base_session.map_id,
+            store,
+            maps=tables.maps,
+            drops=tables.drops,
+            items=tables.items,
+            obs=base_session,
+        )
+        report = estimate_posterior_v2(
+            base_session.map_id,
+            base_session,
+            store,
+            maps=tables.maps,
+            drops=tables.drops,
+            items=tables.items,
+            n_trials=n_trials,
+            seed=seed,
+            cells_tol=cells_tol,
+            count_tol=count_tol,
+        )
+        value_p10 = _round(report.total_value.p10 if report.total_value else None)
+        value_p50 = _round(report.total_value.p50 if report.total_value else None)
+        value_p90 = _round(report.total_value.p90 if report.total_value else None)
+        cells_p10 = _round(report.total_cells.p10 if report.total_cells else None)
+        cells_p50 = _round(report.total_cells.p50 if report.total_cells else None)
+        cells_p90 = _round(report.total_cells.p90 if report.total_cells else None)
+        return {
+            "file": path.name,
+            "status": "ok",
+            "hero": base_session.hero,
+            "map_id": base_session.map_id,
+            "map_family": _map_family(path.name, base_session.map_id),
+            "value_tier": _value_tier(final_value),
+            "inventory_count": inventory_count,
+            "final_value": final_value,
+            "final_cells": final_cells,
+            "v2_matched": report.n_matched,
+            "v2_match_rate": report.n_matched / max(1, report.n_total),
+            "v2_value_p10": value_p10,
+            "v2_value_p50": value_p50,
+            "v2_value_p90": value_p90,
+            "v2_value_p50_error": (
+                value_p50 - final_value if value_p50 is not None else None
+            ),
+            "v2_value_p90_error": (
+                value_p90 - final_value if value_p90 is not None else None
+            ),
+            "v2_value_p90_covers_final": (
+                value_p90 >= final_value if value_p90 is not None else None
+            ),
+            "v2_cells_p10": cells_p10,
+            "v2_cells_p50": cells_p50,
+            "v2_cells_p90": cells_p90,
+            "v2_cells_p50_error": (
+                cells_p50 - final_cells
+                if cells_p50 is not None and final_cells is not None
+                else None
+            ),
+            "v2_cells_p90_error": (
+                cells_p90 - final_cells
+                if cells_p90 is not None and final_cells is not None
+                else None
+            ),
+            "anchor_count": report.anchor_count,
+            "known_value": report.known_value,
+            "layout_score": report.layout_score,
+            "layout_diagnostics": ";".join(report.layout_diagnostics),
+            "diagnostics": ";".join(report.diagnostics),
+            "bucket_targets": _format_bucket_targets(problem),
+            "footprint_count": problem.layout.footprint_count,
+            "footprint_occupied_cells": problem.layout.occupied_cells,
+            "footprint_bottom_row": problem.layout.bottom_row,
+        }
+    except Exception as exc:
+        return {
+            "file": path.name,
+            "status": "error",
+            "reason": f"{type(exc).__name__}: {str(exc)[:160]}",
+        }
+
+
+def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    ok = [row for row in rows if row.get("status") == "ok"]
+    valued = [
+        row for row in ok
+        if row.get("v2_value_p50_error") is not None
+    ]
+    zero = [
+        row for row in ok
+        if not row.get("v2_matched")
+    ]
+    abs_errors = [abs(int(row["v2_value_p50_error"])) for row in valued]
+    p90_valued = [
+        row for row in ok
+        if row.get("v2_value_p90_error") is not None
+    ]
+    p90_abs_errors = [abs(int(row["v2_value_p90_error"])) for row in p90_valued]
+    return {
+        "files": len(rows),
+        "ok": len(ok),
+        "valued": len(valued),
+        "zero_match": len(zero),
+        "skip_or_error": len(rows) - len(ok),
+        "value_mae": _round(statistics.mean(abs_errors)) if abs_errors else None,
+        "value_median_abs_error": (
+            _round(statistics.median(abs_errors)) if abs_errors else None
+        ),
+        "value_p90_mae": (
+            _round(statistics.mean(p90_abs_errors)) if p90_abs_errors else None
+        ),
+        "value_p90_median_abs_error": (
+            _round(statistics.median(p90_abs_errors)) if p90_abs_errors else None
+        ),
+        "value_p90_coverage": (
+            round(
+                statistics.mean(
+                    1.0 if row["v2_value_p90_covers_final"] else 0.0
+                    for row in p90_valued
+                ),
+                4,
+            )
+            if p90_valued
+            else None
+        ),
+        "mean_match_rate": (
+            round(statistics.mean(row["v2_match_rate"] for row in valued), 4)
+            if valued
+            else None
+        ),
+        "worst_value_errors": sorted(
+            (
+                {
+                    "file": row["file"],
+                    "hero": row.get("hero"),
+                    "map_id": row.get("map_id"),
+                    "map_family": row.get("map_family"),
+                    "value_tier": row.get("value_tier"),
+                    "final_value": row.get("final_value"),
+                    "v2_value_p50": row.get("v2_value_p50"),
+                    "v2_value_p90": row.get("v2_value_p90"),
+                    "v2_value_p50_error": row.get("v2_value_p50_error"),
+                    "v2_value_p90_error": row.get("v2_value_p90_error"),
+                    "v2_matched": row.get("v2_matched"),
+                    "anchor_count": row.get("anchor_count"),
+                    "layout_score": row.get("layout_score"),
+                    "diagnostics": row.get("diagnostics"),
+                }
+                for row in valued
+            ),
+            key=lambda row: abs(int(row["v2_value_p50_error"])),
+            reverse=True,
+        )[:12],
+        "zero_match_details": [
+            {
+                "file": row["file"],
+                "hero": row.get("hero"),
+                "map_id": row.get("map_id"),
+                "map_family": row.get("map_family"),
+                "final_value": row.get("final_value"),
+                "bucket_targets": row.get("bucket_targets"),
+                "diagnostics": row.get("diagnostics"),
+            }
+            for row in zero[:12]
+        ],
+        "groups": {
+            "hero": _group_summary(ok, "hero"),
+            "map_family": _group_summary(ok, "map_family"),
+            "value_tier": _group_summary(ok, "value_tier"),
+        },
+    }
+
+
+def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get(key) or "unknown"), []).append(row)
+    summary: list[dict[str, Any]] = []
+    for value, group_rows in sorted(groups.items()):
+        p50_abs = [
+            abs(int(row["v2_value_p50_error"]))
+            for row in group_rows
+            if row.get("v2_value_p50_error") is not None
+        ]
+        p90_abs = [
+            abs(int(row["v2_value_p90_error"]))
+            for row in group_rows
+            if row.get("v2_value_p90_error") is not None
+        ]
+        p90_rows = [
+            row for row in group_rows
+            if row.get("v2_value_p90_covers_final") is not None
+        ]
+        summary.append(
+            {
+                key: value,
+                "n": len(group_rows),
+                "zero_match": sum(1 for row in group_rows if not row.get("v2_matched")),
+                "value_mae": _round(statistics.mean(p50_abs)) if p50_abs else None,
+                "value_median_abs_error": (
+                    _round(statistics.median(p50_abs)) if p50_abs else None
+                ),
+                "value_p90_mae": (
+                    _round(statistics.mean(p90_abs)) if p90_abs else None
+                ),
+                "value_p90_coverage": (
+                    round(
+                        statistics.mean(
+                            1.0 if row["v2_value_p90_covers_final"] else 0.0
+                            for row in p90_rows
+                        ),
+                        4,
+                    )
+                    if p90_rows
+                    else None
+                ),
+                "mean_match_rate": round(
+                    statistics.mean(row["v2_match_rate"] for row in group_rows),
+                    4,
+                ),
+            }
+        )
+    return summary
+
+
+def _write_csv(rows: list[dict[str, Any]]) -> None:
+    fieldnames = sorted({key for row in rows for key in row})
+    writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Evaluate Fatbeans JSON captures with v2 posterior.",
+    )
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        help="JSON files or directories. Defaults to desktop package dir + data/samples/fatbeans.",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("summary", "jsonl", "csv"),
+        default="summary",
+    )
+    parser.add_argument("--trials", type=int, default=300)
+    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--cells-tol", type=int, default=8)
+    parser.add_argument("--count-tol", type=int, default=3)
+    args = parser.parse_args()
+
+    paths: list[Path] = []
+    if args.paths:
+        for raw in args.paths:
+            path = Path(raw)
+            if path.is_dir():
+                paths.extend(sorted(path.glob("*.json")))
+            else:
+                paths.append(path)
+    else:
+        paths = _default_paths()
+
+    tables = load_monitor_tables()
+    rows = [
+        evaluate_path(
+            path,
+            tables=tables,
+            n_trials=args.trials,
+            seed=args.seed,
+            cells_tol=args.cells_tol,
+            count_tol=args.count_tol,
+        )
+        for path in _iter_unique(paths)
+    ]
+
+    if args.format == "jsonl":
+        for row in rows:
+            print(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
+    elif args.format == "csv":
+        _write_csv(rows)
+    else:
+        print(json.dumps(_summary(rows), ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
