@@ -704,8 +704,8 @@
     ],
     "quality": 4,
     "quality_color": "purple",
-    "effect_type": 4,
-    "effect_type_label": "show_avg_cells"
+    "effect_type": 8,
+    "effect_type_label": "unknown_8"
   },
   {
     "battle_item_id": 100170,
@@ -716,8 +716,8 @@
     ],
     "quality": 4,
     "quality_color": "purple",
-    "effect_type": 4,
-    "effect_type_label": "show_avg_cells"
+    "effect_type": 8,
+    "effect_type_label": "unknown_8"
   },
   {
     "battle_item_id": 100171,
@@ -728,8 +728,8 @@
     ],
     "quality": 4,
     "quality_color": "purple",
-    "effect_type": 4,
-    "effect_type_label": "show_avg_cells"
+    "effect_type": 8,
+    "effect_type_label": "unknown_8"
   },
   {
     "battle_item_id": 100172,
@@ -740,8 +740,8 @@
     ],
     "quality": 4,
     "quality_color": "purple",
-    "effect_type": 4,
-    "effect_type_label": "show_avg_cells"
+    "effect_type": 8,
+    "effect_type_label": "unknown_8"
   },
   {
     "battle_item_id": 100173,
@@ -752,8 +752,8 @@
     ],
     "quality": 4,
     "quality_color": "purple",
-    "effect_type": 4,
-    "effect_type_label": "show_avg_cells"
+    "effect_type": 8,
+    "effect_type_label": "unknown_8"
   },
   {
     "battle_item_id": 100174,

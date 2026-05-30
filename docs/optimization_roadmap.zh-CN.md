@@ -12,12 +12,14 @@
 
 已验证基线：
 
-- `pytest -q`：438 passed。
+- `pytest -q -m "not slow"`：499 passed, 13 deselected。
 - `.\scripts\test_smoke.ps1`：425 passed，13 个真实 OCR 图片回归 deselected。
 - `python scripts/demo_scenarios.py`：端到端 demo 正常。
 - 后台 MC 慢的首个明确瓶颈是 anthology 地图重复 `flatten_pool`，已用 `SessionTruthSampler` 预编译采样器解决。
 - 已新增 `bidking_lab.live` 薄接口层，为未来手填 / OCR / packet 统一观测事件预留接口。
 - 启动等待已取消：手填和 tab 浏览不再初始化 OCR，首次 OCR 请求时按需加载模型。
+- 已新增 `bidking_lab.inference.map_likelihood`、`warehouse_estimator` 和 `tool_info_roi` first cut，并接入 Fatbeans 导入诊断：地图似然不把未知仓储格数当作 159，可用艾莎/道具/公开信息约束先做多地图排序，同时反推总格 P10/P50/P90；补信息 ROI 可估算再用一张道具能压缩多少价值/仓储区间。Fatbeans 导入后会自动启用 live canonical 输入，出价建议 v1 已接主出价 hint 面板，并按轮次/信息强度/仓储后验调整阈值。补信息建议已改为成本敏感，R1 优先低成本宝光四鉴/抽检二。
+- Fatbeans package12/13 已把“全库透视锁仓”和“明镜之眼 + 伊森轮廓锁仓”纳入回归；`GridItemObservation.local_index` 已保留，位置校准 first cut 确认 10 列 0 基坐标公式。下一步重点是滚动截图校准和仓库高度/底部下限推断。
 
 ---
 
@@ -34,9 +36,14 @@
 | P1       | 实时状态机               | 信息变化自动标 dirty、取消旧任务、重算推荐 | 只响应轮次/道具/公开信息等语义事件，不按 heartbeat 重算 |
 | P1       | 枚举 / joint 缓存       | 支撑实时刷新，减少重复枚举             | bucket fingerprint cache 与 joint context cache 已完成 |
 | P1       | Session-level 联合候选 | 把仓库大小、均格、均价、总价放到同一个组合评分里 | 已接入分析估算与 UI 联合筛选 tab       |
+| P1       | 地图似然 / 总仓储价值量化 | 在未知地图/未知总格时按 packet/live 证据排序候选地图 | 独立模块已完成；Fatbeans 导入诊断已接入；live shadow 可作为主推理输入 |
+| P1       | 仓储估计 | 未获得总仓储空间时，按当前证据反推总格区间 | 独立模块已完成；Fatbeans 导入诊断已接入 |
+| P1       | 实时出价建议 v1 | 把当前最高价映射到探价/防守/抢仓/停止阈值 | 已接主出价 hint 面板；仓储后验和低成本补信息建议已接入，后续接对手行为模型和经验价位 |
+| P1       | 补信息 ROI | 比较宝光/抽检/扫描等道具在当前局面的信息压缩收益 | 独立模块已完成；Fatbeans 导入诊断和主 hint 面板已接入；明镜之眼只作为高成本机制验证/特殊局面信号 |
+| P1       | 位置/堆叠校准 | 将 packet `local_index` 映射到 10 列仓库坐标，形成仓储下限 | `local_index = (row - 1) * 10 + (col - 1)` 已用 package12/13 初步验证；等待滚动截图样本 |
 | P1       | 多级评估 + Pareto      | 出价建议从单一分位数升级为风险/收益/置信度组合 | 状态机稳定后做；秒仓/放仓作为动作层再恢复             |
 | P2       | 推理并行               | snipe/pass/ROI 等独立分支并行   | 先向量化和缓存，再考虑线程/进程                       |
-| Research | ProtoHub / 网络抓包直读 | 替代或增强 OCR，直接读取当前仓位/物品状态 | 已有宽松 JSON fixture → `LiveObservationBatch` adapter      |
+| Research | Fatbeans / 网络抓包直读 | 替代或增强 OCR，直接读取当前仓位/物品状态 | Fatbeans JSON adapter 已接 live shadow；只读解析，不做注入/改包/自动竞价      |
 
 
 ---
@@ -268,7 +275,7 @@ joint / MC / Pareto
 
 ---
 
-## Research：ProtoHub / 网络抓包直读
+## Research：Fatbeans / 网络抓包直读
 
 ### 目标
 
@@ -278,19 +285,22 @@ joint / MC / Pareto
 ### 边界
 
 - 只做本机只读观察，不做注入、改包、自动竞价。
-- 先确认游戏协议是否明文、是否本地回环、是否加密。
-- 先走离线样本：pcap/json fixture → `LiveObservationBatch`。
-- 第一版宽松 JSON adapter 已在 `bidking_lab.live.packet`；真实样本到手后优先补字段别名和 shape/item_id 映射。
+- 已确认 Fatbeans JSON 可导出主 TCP payload，协议层可离线重组为状态 frame。
+- 先走离线样本：Fatbeans JSON / pcap / fixture → `LiveObservationBatch`。
+- 第一版宽松 JSON adapter 已在 `bidking_lab.live.packet`；真实 Fatbeans adapter 已在 `bidking_lab.live.fatbeans`，优先维护 Fatbeans 路线。
 - 伊森 R1-R4 可传 `warehouse_estimated_cells` + `warehouse_estimate_tolerance`，不自动猜未知总件数；R5 精确揭示后传 `warehouse_total_cells`，若协议给出完整物品列表/件数则同步传 `total_item_count`。
-- 用户侧最小操作流程见 `docs/protohub_fixture_guide.zh-CN.md`，示例见 `data/samples/packet_fixture.example.json`。
+- 用户侧当前采样流程见 `docs/protohub_fixture_guide.zh-CN.md` 顶部 Fatbeans 更新；示例 fixture 仍见 `data/samples/packet_fixture.example.json`。
 - 任何实时实现前先检查游戏 ToS 和账号风险。
 
 ### TODO
 
-- 明确“ProtoHub”具体工具、仓库或教程来源。
-- 抓一段本机 pcap/json，确认是否有可读 payload。
-- 建离线 parser：pcap/json → `LiveObservationBatch`，不连接游戏进程。（已建第一版 JSON-like adapter）
-- 用同一局对比 OCR / 手填 / packet 的字段一致性。
+- [x] 明确当前可用工具：FatbeansCreater JSON 导出。
+- [x] 抓一段本机 pcap/json，确认是否有可读 payload。（2026-05-27 Fatbeans JSON：
+  `220` 条主 TCP packet，可重组 `193` 条完整 frame；详见
+  `docs/fatbeans_capture_analysis_2026-05-27.zh-CN.md`）
+- [x] 建离线 parser：Fatbeans JSON → `LiveObservationBatch`，不连接游戏进程。
+- [x] 用同一局对比截图/手填/packet 的字段一致性：package12/13 已验证全库透视、明镜、伊森轮廓和结算一致。
+- [ ] 位置/滚动校准：用顶部/中部/底部截图验证 `local_index` 与屏幕网格连续性。
 - 如果协议加密或需要 hook/绕过保护，停止该方向。
 
 ---
@@ -301,4 +311,4 @@ joint / MC / Pareto
 2. 将 hint/MC 输入逐步从 legacy `obs` 切到 `LiveSessionState` adapter。
 3. 做自动重算状态机：只响应语义事件的 dirty → running → ready，取消陈旧任务。
 4. 继续用运行指标判断是否需要进一步枚举剪枝，再做 Pareto 出价评估。
-5. ProtoHub 走离线 fixture 验证，与主线并行，不阻塞手填/OCR路径。
+5. Fatbeans 继续走离线 JSON 验证，优先完成位置/滚动校准；ProtoHub 只保留为备选。

@@ -9,6 +9,7 @@ from typing import Literal
 
 from bidking_lab.inference.display import Reading, parse_reading
 from bidking_lab.inference.observation import (
+    CategoryItemObservation,
     HUGE_BAND_RANGE,
     QualityBucketObs,
     SessionObs,
@@ -321,6 +322,46 @@ def _bucket_from_fields(
     )
 
 
+def _merge_grid_item_bucket_mins(
+    buckets: dict[int, QualityBucketObs],
+    grid_items: tuple[GridItemObservation, ...],
+) -> dict[int, QualityBucketObs]:
+    """Add per-quality lower bounds from known-quality visible outlines."""
+    if not grid_items:
+        return buckets
+
+    cells_by_quality: dict[int, int] = {}
+    count_by_quality: dict[int, int] = {}
+    for item in grid_items:
+        if item.quality is None:
+            continue
+        cells_by_quality[item.quality] = (
+            cells_by_quality.get(item.quality, 0) + item.cells
+        )
+        count_by_quality[item.quality] = count_by_quality.get(item.quality, 0) + 1
+
+    if not cells_by_quality:
+        return buckets
+
+    merged = dict(buckets)
+    for quality, cells_min in cells_by_quality.items():
+        count_min = count_by_quality[quality]
+        bucket = merged.get(quality)
+        if bucket is None:
+            merged[quality] = QualityBucketObs(
+                quality=quality,
+                total_cells_min=cells_min,
+                count_min=count_min,
+            )
+            continue
+        merged[quality] = replace(
+            bucket,
+            total_cells_min=max(bucket.total_cells_min or 0, cells_min),
+            count_min=max(bucket.count_min or 0, count_min),
+        )
+    return merged
+
+
 def live_state_to_session_obs(state: LiveSessionState) -> SessionObs | None:
     """Convert live state into inference ``SessionObs`` when possible."""
     map_id = _as_int(_field_value(state, ("session", "map_id")))
@@ -333,10 +374,30 @@ def live_state_to_session_obs(state: LiveSessionState) -> SessionObs | None:
         bucket = _bucket_from_fields(state, quality)
         if bucket is not None:
             buckets[quality] = bucket
+    visible_outline_items = tuple(state.grid_items)
+    buckets = _merge_grid_item_bucket_mins(buckets, visible_outline_items)
     warehouse_total_cells = _as_int(
         _field_value(state, ("session", "warehouse_total_cells")),
     )
     _fill_residual_red_bucket(buckets, warehouse_total_cells)
+    unknown_outline_items = tuple(
+        item for item in visible_outline_items
+        if item.quality is None
+    )
+    category_items = tuple(
+        CategoryItemObservation(
+            category=item.category,
+            cells=item.cells,
+            quality=item.quality,
+            item_id=item.item_id,
+        )
+        for item in visible_outline_items
+        if item.category is not None
+    )
+    footprints = tuple(
+        footprint for item in visible_outline_items
+        if (footprint := item.footprint()) is not None
+    )
 
     return SessionObs(
         map_id=map_id,
@@ -351,6 +412,28 @@ def live_state_to_session_obs(state: LiveSessionState) -> SessionObs | None:
         total_item_count=_as_int(
             _field_value(state, ("session", "total_item_count")),
         ),
+        visible_outline_item_count_min=(
+            len(visible_outline_items) if visible_outline_items else None
+        ),
+        visible_outline_total_cells_min=(
+            sum(item.cells for item in visible_outline_items)
+            if visible_outline_items
+            else None
+        ),
+        visible_outline_bottom_row_min=(
+            max(footprint.bottom_row for footprint in footprints)
+            if footprints
+            else None
+        ),
+        unknown_outline_item_count=(
+            len(unknown_outline_items) if unknown_outline_items else None
+        ),
+        unknown_outline_total_cells=(
+            sum(item.cells for item in unknown_outline_items)
+            if unknown_outline_items
+            else None
+        ),
+        category_items=category_items,
         buckets=buckets,
     )
 

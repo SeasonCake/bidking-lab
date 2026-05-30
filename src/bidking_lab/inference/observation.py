@@ -64,6 +64,9 @@ The wide ``"4+"`` bucket is bounded at 7 in the enumerator (no real
 map has more than ~10 large items across all qualities combined).
 """
 
+QualitySampleMode = Literal["unknown", "with_replacement", "without_replacement"]
+"""Reserved mode for future Sophie/Gabriela/Baoguang quality samples."""
+
 HUGE_BAND_RANGE: dict[str, tuple[int, int]] = {
     "none": (0, 0),
     "1":    (1, 1),
@@ -211,6 +214,15 @@ class QualityBucketObs:
     total_cells: int | None = None        # exact, from scan tool or map
     total_cells_approx: int | None = None # player estimate, soft prior only
     count: int | None = None              # X品存量
+    total_cells_min: int | None = None
+    count_min: int | None = None
+    """Lower bounds from partial item-level reveals.
+
+    Public-info item reveals, 鉴影, 抽检 and some hero samples may show a few
+    known-quality outlines without proving the whole quality bucket total.
+    These fields keep that evidence separate from exact ``total_cells`` /
+    ``count`` readings.
+    """
     value_sum: int | None = None          # X品估价 silver
     avg_value: float | None = None        # X品均价（每件均价 silver；某些地图 R3 hint）
     value_range: tuple[int, int] | None = None
@@ -234,6 +246,23 @@ class QualityBucketObs:
         return self.huge_count_range()[1] * self.huge_cells_per_item()
 
 
+@dataclass(frozen=True)
+class CategoryItemObservation:
+    """One category-aware item reveal from 分类鉴影 or exact item metadata.
+
+    These observations are intentionally soft evidence for MC matching. A
+    category reveal may depend on action-id mapping or incomplete item tags,
+    so downstream code should use it to weight posterior samples rather than
+    reject every non-matching sample.
+    """
+
+    category: int
+    cells: int | None = None
+    quality: int | None = None
+    item_id: int | None = None
+    count: int = 1
+
+
 @dataclass
 class SessionObs:
     """All inputs for one auction session."""
@@ -249,6 +278,36 @@ class SessionObs:
     as Aisha's R4 ``全量轮廓`` / ``总藏品数量`` reveal. Used by the joint
     inference engine as a cross-bucket constraint: ``sum(count_q) == total``.
     None means the player did not provide this hint."""
+    visible_outline_item_count_min: int | None = None
+    visible_outline_total_cells_min: int | None = None
+    visible_outline_bottom_row_min: int | None = None
+    """Lower-bound constraints from visible item outlines.
+
+    Unknown-quality outlines are deliberately not assigned to buckets here.
+    They only say the sampled truth must contain at least this many visible
+    items / cells overall. ``visible_outline_bottom_row_min`` records the
+    deepest observed 10-column layout row for diagnostics; it is not a hard
+    total-cell constraint because packed layouts may contain holes.
+    """
+    unknown_outline_item_count: int | None = None
+    unknown_outline_total_cells: int | None = None
+    quality_sample_histogram: dict[int, int] | None = None
+    quality_sample_mode: QualitySampleMode = "unknown"
+    """Reserved interface for random quality samples.
+
+    Sophie/Gabriela and Baoguang-style reveals give sampled qualities, not full
+    quality bucket totals. This field is intentionally not consumed by the MC
+    filters yet; it keeps the future extension point explicit without adding
+    current inference complexity.
+    """
+    category_items: tuple[CategoryItemObservation, ...] = ()
+    """Soft item-level category evidence.
+
+    Example: ``【数码娱乐】鉴影`` revealing 3x1 / 1x1 / 1x1 outlines becomes
+    three observations with category=107 and cells 3/1/1. MC consumers can
+    prefer samples containing those category+shape facts without treating
+    them as a hard filter.
+    """
     buckets: dict[int, QualityBucketObs] = field(default_factory=dict)
 
     def warehouse_capacity(self) -> int:
@@ -1096,6 +1155,7 @@ def top_k_for_session(
 __all__ = (
     "HeroMode",
     "HugeBand",
+    "QualitySampleMode",
     "HUGE_BAND_RANGE",
     "HUGE_CELLS_PER_QUALITY",
     "ETHAN_DEFAULT_LOADOUT",
@@ -1107,6 +1167,7 @@ __all__ = (
     "tool_price",
     "aisha_can_observe_huge",
     "QualityBucketObs",
+    "CategoryItemObservation",
     "SessionObs",
     "BucketCandidate",
     "SingleItemValueLookup",

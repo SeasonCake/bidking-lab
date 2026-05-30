@@ -48,6 +48,7 @@ _RECOMPUTE_EVENTS: frozenset[LiveEventKind] = frozenset(
         "session_settled",
     }
 )
+GRID_COLUMNS = 10
 
 
 def source_priority(source: ObservationSource) -> int:
@@ -63,6 +64,69 @@ def source_priority(source: ObservationSource) -> int:
 def event_requests_recompute(event_kind: LiveEventKind) -> bool:
     """Return whether a batch can change inference recommendations."""
     return event_kind in _RECOMPUTE_EVENTS
+
+
+@dataclass(frozen=True)
+class GridFootprint:
+    """Warehouse grid footprint using 1-based row/column coordinates."""
+
+    row: int
+    col: int
+    width: int
+    height: int
+
+    @property
+    def right_col(self) -> int:
+        return self.col + self.width - 1
+
+    @property
+    def bottom_row(self) -> int:
+        return self.row + self.height - 1
+
+
+def shape_key_dimensions(shape_key: str | int | None) -> tuple[int, int] | None:
+    """Parse a Fatbeans-style shape code into ``(width, height)``.
+
+    The captures observed so far encode shapes as ``width * 10 + height``:
+    ``23`` means 2 columns by 3 rows, ``61`` means 6 columns by 1 row.
+    """
+    if shape_key is None:
+        return None
+    try:
+        code = int(shape_key)
+    except (TypeError, ValueError):
+        return None
+    width = code // 10
+    height = code % 10
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def grid_footprint(
+    local_index: int | None,
+    shape_key: str | int | None,
+    *,
+    columns: int = GRID_COLUMNS,
+) -> GridFootprint | None:
+    """Convert ``local_index + shape_key`` to a 1-based grid footprint.
+
+    Fatbeans omits protobuf default ``0`` in some cases, so ``None`` is
+    interpreted as top-left index 0 when a shape is present.
+    """
+    dims = shape_key_dimensions(shape_key)
+    if dims is None or columns <= 0:
+        return None
+    local = 0 if local_index is None else local_index
+    if local < 0:
+        return None
+    width, height = dims
+    return GridFootprint(
+        row=local // columns + 1,
+        col=local % columns + 1,
+        width=width,
+        height=height,
+    )
 
 
 @dataclass(frozen=True)
@@ -98,7 +162,13 @@ class GridItemObservation:
     quality: int | None = None
     shape_key: str | None = None
     value: int | None = None
+    local_index: int | None = None
+    category: int | None = None
     observed_at_ms: int | None = None
+
+    def footprint(self) -> GridFootprint | None:
+        """Return a 1-based grid footprint when this item has a shape."""
+        return grid_footprint(self.local_index, self.shape_key)
 
 
 @dataclass(frozen=True)

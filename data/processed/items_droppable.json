@@ -8,6 +8,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       1
     ],
@@ -26,6 +28,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 1000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       1
     ],
@@ -44,6 +48,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 1,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       2
     ],
@@ -62,6 +68,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 1,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       2
     ],
@@ -80,6 +88,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 1,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       2
     ],
@@ -98,6 +108,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 1,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       2
     ],
@@ -116,6 +128,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 1,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       2
     ],
@@ -134,10 +148,13 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
     "allowed_shelves": [
+      11,
       100,
       101,
       102,
@@ -162,10 +179,13 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 50000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
     "allowed_shelves": [
+      11,
       100,
       101,
       102,
@@ -190,10 +210,13 @@
     "quality": 6,
     "quality_color": "red",
     "value": 200000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
     "allowed_shelves": [
+      11,
       100,
       101,
       102,
@@ -218,6 +241,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -236,6 +261,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -254,6 +281,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -272,6 +301,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -290,6 +321,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -308,6 +341,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -326,6 +361,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -344,6 +381,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -362,6 +401,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -380,6 +421,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -398,6 +441,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -416,6 +461,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -434,6 +481,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -452,6 +501,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -470,6 +521,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -488,6 +541,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -506,6 +561,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -524,6 +581,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -542,6 +601,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -560,6 +621,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -578,6 +641,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -596,6 +661,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -614,6 +681,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -632,6 +701,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -650,6 +721,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -668,6 +741,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -686,6 +761,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -704,6 +781,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -722,6 +801,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -740,6 +821,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       7
     ],
@@ -758,6 +841,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       3
     ],
@@ -776,6 +861,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       3
     ],
@@ -794,6 +881,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       3
     ],
@@ -812,6 +901,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       3
     ],
@@ -830,6 +921,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       3
     ],
@@ -848,6 +941,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       3
     ],
@@ -866,6 +961,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       3
     ],
@@ -884,6 +981,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       3
     ],
@@ -902,6 +1001,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -920,6 +1021,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -938,6 +1041,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -956,6 +1061,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -974,6 +1081,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -992,6 +1101,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -1010,6 +1121,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -1028,6 +1141,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -1046,6 +1161,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -1064,6 +1181,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -1082,6 +1201,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       6
     ],
@@ -1100,6 +1221,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       5
     ],
@@ -1118,6 +1241,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1136,6 +1261,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1154,6 +1281,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1172,6 +1301,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1190,6 +1321,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1208,6 +1341,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1226,6 +1361,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1244,6 +1381,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1262,6 +1401,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1280,6 +1421,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1298,6 +1441,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1316,6 +1461,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1334,6 +1481,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1352,6 +1501,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1370,6 +1521,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1388,6 +1541,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1406,6 +1561,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1424,6 +1581,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1442,6 +1601,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1460,6 +1621,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1478,6 +1641,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1496,6 +1661,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1514,6 +1681,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1532,6 +1701,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1550,6 +1721,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1568,6 +1741,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1586,6 +1761,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1604,6 +1781,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1622,6 +1801,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1640,6 +1821,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1658,6 +1841,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1676,6 +1861,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1694,6 +1881,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1712,6 +1901,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1730,6 +1921,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1748,6 +1941,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1766,6 +1961,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1784,6 +1981,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1802,6 +2001,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1820,6 +2021,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1838,6 +2041,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1856,6 +2061,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1874,6 +2081,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1892,6 +2101,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1910,6 +2121,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1928,6 +2141,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1946,6 +2161,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1964,6 +2181,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -1982,6 +2201,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2000,6 +2221,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2018,6 +2241,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2036,6 +2261,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2054,6 +2281,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2072,6 +2301,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2090,6 +2321,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2108,6 +2341,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2126,6 +2361,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2144,6 +2381,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2162,6 +2401,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2180,6 +2421,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2198,6 +2441,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2216,6 +2461,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2234,6 +2481,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2252,6 +2501,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       8
     ],
@@ -2270,6 +2521,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2288,6 +2541,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2306,6 +2561,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2324,6 +2581,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2342,6 +2601,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2360,6 +2621,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2378,6 +2641,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2396,6 +2661,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2414,6 +2681,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2432,6 +2701,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2450,6 +2721,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2468,6 +2741,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2486,6 +2761,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2504,6 +2781,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2522,6 +2801,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2540,6 +2821,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2558,6 +2841,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 100,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       19
     ],
@@ -2576,6 +2861,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2594,6 +2881,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2612,6 +2901,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2630,6 +2921,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 25000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2648,6 +2941,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2666,6 +2961,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2684,6 +2981,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2702,6 +3001,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2720,6 +3021,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 25000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2738,6 +3041,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2756,6 +3061,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2774,6 +3081,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2792,6 +3101,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2810,6 +3121,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 25000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2828,6 +3141,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2846,6 +3161,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2864,6 +3181,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2882,6 +3201,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2900,6 +3221,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2918,6 +3241,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 25000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2936,6 +3261,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 50000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2954,6 +3281,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2972,6 +3301,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -2990,6 +3321,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3008,6 +3341,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3026,6 +3361,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 50000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3044,6 +3381,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 50000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3062,6 +3401,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3080,6 +3421,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3098,6 +3441,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3116,6 +3461,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 25000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3134,6 +3481,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 50000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3152,6 +3501,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 50000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3170,6 +3521,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 50000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3188,6 +3541,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3206,6 +3561,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3224,6 +3581,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3242,6 +3601,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3260,6 +3621,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3278,6 +3641,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 25000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3296,6 +3661,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3314,6 +3681,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3332,6 +3701,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3350,6 +3721,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3368,6 +3741,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3386,6 +3761,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3404,6 +3781,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3422,6 +3801,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3440,6 +3821,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3458,6 +3841,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3476,6 +3861,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3494,6 +3881,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3512,6 +3901,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3530,6 +3921,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 25000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3548,6 +3941,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3566,6 +3961,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3584,6 +3981,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3602,6 +4001,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3620,6 +4021,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3638,6 +4041,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3656,6 +4061,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3674,6 +4081,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3692,6 +4101,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3710,6 +4121,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 50000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       11
     ],
@@ -3728,6 +4141,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       12
     ],
@@ -3746,6 +4161,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       12
     ],
@@ -3764,6 +4181,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       12
     ],
@@ -3782,6 +4201,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       12
     ],
@@ -3800,6 +4221,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       12
     ],
@@ -3818,13 +4241,15 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       17
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_01",
+    "icon_name": "ui_avatarframe_01",
     "model_name": "Cube"
   },
   {
@@ -3836,13 +4261,15 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       17
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_02",
+    "icon_name": "ui_avatarframe_02",
     "model_name": "Cube"
   },
   {
@@ -3854,13 +4281,15 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       17
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_03",
+    "icon_name": "ui_avatarframe_03",
     "model_name": "Cube"
   },
   {
@@ -3872,13 +4301,15 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       17
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_04",
+    "icon_name": "ui_avatarframe_04",
     "model_name": "Cube"
   },
   {
@@ -3890,13 +4321,15 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       17
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_05",
+    "icon_name": "ui_avatarframe_05",
     "model_name": "Cube"
   },
   {
@@ -3908,13 +4341,15 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       17
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_06",
+    "icon_name": "ui_avatarframe_06",
     "model_name": "Cube"
   },
   {
@@ -3926,13 +4361,15 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       17
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_07",
+    "icon_name": "ui_avatarframe_07",
     "model_name": "Cube"
   },
   {
@@ -3944,13 +4381,15 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       17
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_08",
+    "icon_name": "ui_avatarframe_08",
     "model_name": "Cube"
   },
   {
@@ -3962,6 +4401,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -3980,6 +4421,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -3998,6 +4441,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4016,6 +4461,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4034,6 +4481,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4052,6 +4501,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4070,6 +4521,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4088,6 +4541,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4106,6 +4561,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4124,6 +4581,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4142,6 +4601,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4160,6 +4621,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4178,6 +4641,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4196,6 +4661,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4214,6 +4681,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       18
     ],
@@ -4232,6 +4701,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4250,6 +4721,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4268,6 +4741,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4286,6 +4761,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4304,6 +4781,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4322,6 +4801,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4340,6 +4821,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4358,6 +4841,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4376,6 +4861,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4394,6 +4881,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4412,6 +4901,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4430,6 +4921,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4448,6 +4941,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4466,6 +4961,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4484,6 +4981,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4502,6 +5001,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4520,6 +5021,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4538,6 +5041,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4556,6 +5061,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4574,6 +5081,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       15
     ],
@@ -4592,6 +5101,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4610,6 +5121,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4628,6 +5141,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4646,6 +5161,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4664,13 +5181,15 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_04",
+    "icon_name": "ui_avatarframe_04",
     "model_name": "Cube"
   },
   {
@@ -4682,13 +5201,15 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_06",
+    "icon_name": "ui_avatarframe_06",
     "model_name": "Cube"
   },
   {
@@ -4700,13 +5221,15 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_07",
+    "icon_name": "ui_avatarframe_07",
     "model_name": "Cube"
   },
   {
@@ -4718,13 +5241,15 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
     "allowed_shelves": [
       0
     ],
-    "icon_name": "ui_AvatarFrame_08",
+    "icon_name": "ui_avatarframe_08",
     "model_name": "Cube"
   },
   {
@@ -4736,6 +5261,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4754,6 +5281,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4772,6 +5301,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4790,6 +5321,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4808,6 +5341,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4826,6 +5361,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4844,6 +5381,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4862,6 +5401,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4880,6 +5421,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4898,6 +5441,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4916,6 +5461,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4934,6 +5481,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4952,6 +5501,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4970,6 +5521,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       4
     ],
@@ -4988,6 +5541,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 19371213,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       100
     ],
@@ -5006,6 +5561,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 160,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       107
@@ -5025,6 +5582,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 198,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       109
@@ -5044,6 +5603,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 179,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101
     ],
@@ -5062,6 +5623,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 602,
+    "shape_w": 3,
+    "shape_h": 1,
     "tags": [
       101
     ],
@@ -5080,6 +5643,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 200,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       107
@@ -5099,6 +5664,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 209,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101
     ],
@@ -5117,6 +5684,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 470,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101,
       102
@@ -5136,6 +5705,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 599,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101,
       109
@@ -5155,6 +5726,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 305,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       101
     ],
@@ -5173,6 +5746,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 885,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101
     ],
@@ -5191,6 +5766,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 445,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       107
@@ -5210,6 +5787,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1258,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101
     ],
@@ -5228,6 +5807,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 755,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       107
@@ -5247,6 +5828,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1481,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101
     ],
@@ -5265,6 +5848,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1480,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101
     ],
@@ -5283,6 +5868,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1776,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       101
     ],
@@ -5301,6 +5888,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 2415,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       101
     ],
@@ -5319,6 +5908,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1106,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       101,
       107
@@ -5338,6 +5929,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 619,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       107
@@ -5357,6 +5950,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1045,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       101,
       107
@@ -5376,6 +5971,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3855,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101,
       109
@@ -5395,6 +5992,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1461,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       107
@@ -5414,6 +6013,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2045,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       101,
       107
@@ -5433,6 +6034,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1767,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       107
@@ -5452,6 +6055,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3551,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101
     ],
@@ -5470,6 +6075,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3870,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       101,
       103
@@ -5489,6 +6096,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1175,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       107,
@@ -5509,6 +6118,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 4761,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       101,
       107
@@ -5528,6 +6139,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3791,
+    "shape_w": 3,
+    "shape_h": 1,
     "tags": [
       101
     ],
@@ -5546,6 +6159,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2858,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       101,
       110
@@ -5565,6 +6180,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8974,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101,
       102
@@ -5584,6 +6201,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 3454,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       101,
       107
@@ -5603,6 +6222,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8115,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101,
       107
@@ -5622,6 +6243,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 6554,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       101,
       107
@@ -5641,6 +6264,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 4624,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       101,
       107,
@@ -5661,6 +6286,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 9115,
+    "shape_w": 3,
+    "shape_h": 1,
     "tags": [
       101,
       107
@@ -5680,6 +6307,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 7758,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101,
       102,
@@ -5700,6 +6329,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 2514,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       103
@@ -5719,6 +6350,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 13251,
+    "shape_w": 2,
+    "shape_h": 4,
     "tags": [
       101,
       103
@@ -5738,6 +6371,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10542,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       101,
       107
@@ -5757,6 +6392,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 24969,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       101,
       109
@@ -5776,6 +6413,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 61143,
+    "shape_w": 2,
+    "shape_h": 4,
     "tags": [
       101,
       109,
@@ -5796,6 +6435,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 30159,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       101,
       107
@@ -5815,6 +6456,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 65610,
+    "shape_w": 3,
+    "shape_h": 1,
     "tags": [
       101
     ],
@@ -5833,6 +6476,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 51801,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       101,
       106
@@ -5852,6 +6497,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 71499,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       101,
       106
@@ -5871,6 +6518,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 48703,
+    "shape_w": 2,
+    "shape_h": 4,
     "tags": [
       101
     ],
@@ -5889,6 +6538,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 15345,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       106
@@ -5908,6 +6559,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 21201,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       106,
@@ -5928,6 +6581,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 50604,
+    "shape_w": 1,
+    "shape_h": 4,
     "tags": [
       101
     ],
@@ -5946,6 +6601,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 187812,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101,
       106
@@ -5965,6 +6622,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 170362,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101,
       107
@@ -5984,6 +6643,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 255115,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       101,
       107
@@ -6003,6 +6664,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 7402320,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       101
     ],
@@ -6021,6 +6684,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 85623,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       101,
       106
@@ -6040,6 +6705,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 361000,
+    "shape_w": 4,
+    "shape_h": 4,
     "tags": [
       101,
       110,
@@ -6060,6 +6727,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 123,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6078,6 +6747,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 146,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102,
       101
@@ -6097,6 +6768,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 169,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102,
       101
@@ -6116,6 +6789,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 346,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6134,6 +6809,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 207,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6152,6 +6829,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 414,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102
     ],
@@ -6170,6 +6849,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 386,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       102
     ],
@@ -6188,6 +6869,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 331,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102,
       101
@@ -6207,6 +6890,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 143,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6225,6 +6910,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 134,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6243,6 +6930,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 770,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102,
       101
@@ -6262,6 +6951,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 312,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102,
       107
@@ -6281,6 +6972,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 661,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       102,
       107
@@ -6300,6 +6993,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 422,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6318,6 +7013,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1433,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102,
       101
@@ -6337,6 +7034,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 293,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102,
       101
@@ -6356,6 +7055,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1044,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102
     ],
@@ -6374,6 +7075,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 403,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6392,6 +7095,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 277,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6410,6 +7115,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 654,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6428,6 +7135,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1433,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102,
       107
@@ -6447,6 +7156,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 855,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6465,6 +7176,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3083,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102
     ],
@@ -6483,6 +7196,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 5040,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       102
     ],
@@ -6501,6 +7216,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3294,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102
     ],
@@ -6519,6 +7236,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2385,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102,
       107
@@ -6538,6 +7257,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2322,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       102
     ],
@@ -6556,6 +7277,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2052,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       102,
       107
@@ -6575,6 +7298,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1313,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6593,6 +7318,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3798,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102,
       101
@@ -6612,6 +7339,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 9880,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102
     ],
@@ -6630,6 +7359,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 12976,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       102,
       107
@@ -6649,6 +7380,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 6012,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       102
     ],
@@ -6667,6 +7400,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 6780,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102,
       107
@@ -6686,6 +7421,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 11424,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       102
     ],
@@ -6704,6 +7441,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 12581,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       102,
       107
@@ -6723,6 +7462,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 14240,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102,
       101,
@@ -6743,6 +7484,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 3640,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102,
       106,
@@ -6763,6 +7506,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 5724,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       102
     ],
@@ -6781,6 +7526,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 3780,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       102,
       109
@@ -6800,6 +7547,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 49920,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102
     ],
@@ -6818,6 +7567,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 40385,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102
     ],
@@ -6836,6 +7587,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 86130,
+    "shape_w": 3,
+    "shape_h": 4,
     "tags": [
       102,
       107
@@ -6855,6 +7608,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 62055,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       102,
       107
@@ -6874,6 +7629,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 16200,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -6892,6 +7649,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 60342,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       102
     ],
@@ -6910,6 +7669,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 76233,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102,
       107
@@ -6929,6 +7690,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 1089660,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       102,
       107
@@ -6948,6 +7711,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 259165,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       102
     ],
@@ -6966,6 +7731,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 158940,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       102,
       110,
@@ -6986,6 +7753,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 112896,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       102,
       106
@@ -7005,6 +7774,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 54675,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -7023,6 +7794,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 130296,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       102
     ],
@@ -7041,6 +7814,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 475000,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       102
     ],
@@ -7059,6 +7834,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 1039000,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       102,
       109
@@ -7078,6 +7855,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 123,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7097,6 +7876,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 146,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -7115,6 +7896,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 169,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -7133,6 +7916,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 146,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7152,6 +7937,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 369,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103,
       101
@@ -7171,6 +7958,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 248,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7190,6 +7979,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 189,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       106
@@ -7209,6 +8000,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 248,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       103,
       107
@@ -7228,6 +8021,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 299,
+    "shape_w": 3,
+    "shape_h": 1,
     "tags": [
       103,
       107
@@ -7247,6 +8042,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 115,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7266,6 +8063,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 738,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103,
       110
@@ -7285,6 +8084,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 295,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7304,6 +8105,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 315,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7323,6 +8126,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 718,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       103
     ],
@@ -7341,6 +8146,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 708,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103,
       101
@@ -7360,6 +8167,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 532,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103
     ],
@@ -7378,6 +8187,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 886,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103,
       101
@@ -7397,6 +8208,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1240,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       103,
       101
@@ -7416,6 +8229,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 295,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -7434,6 +8249,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 288,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7453,6 +8270,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2214,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103,
       101
@@ -7472,6 +8291,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2214,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103
     ],
@@ -7490,6 +8311,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3875,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       103,
       101
@@ -7509,6 +8332,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 923,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -7527,6 +8352,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 923,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -7545,6 +8372,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1661,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7564,6 +8393,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 923,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -7582,6 +8413,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1661,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       103,
       101
@@ -7601,6 +8434,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1661,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       103,
       101
@@ -7620,6 +8455,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 711,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       106
@@ -7639,6 +8476,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 9749,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       103
     ],
@@ -7657,6 +8496,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 4428,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7676,6 +8517,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 4428,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       103,
       106
@@ -7695,6 +8538,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 2460,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       106
@@ -7714,6 +8559,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 2560,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7733,6 +8580,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10332,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       103
     ],
@@ -7751,6 +8600,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 4428,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       103,
       106
@@ -7770,6 +8621,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 7380,
+    "shape_w": 4,
+    "shape_h": 1,
     "tags": [
       103,
       101
@@ -7789,6 +8642,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8380,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103,
       106
@@ -7808,6 +8663,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 25000,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       103
     ],
@@ -7826,6 +8683,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 28450,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103,
       110,
@@ -7846,6 +8705,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 38745,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       103
     ],
@@ -7864,6 +8725,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 12225,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       106,
@@ -7884,6 +8747,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 15325,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103,
       105
@@ -7903,6 +8768,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 9245,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -7921,6 +8788,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 38745,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       103,
       106,
@@ -7941,6 +8810,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 26605,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       103,
       106,
@@ -7961,6 +8832,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 27675,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103
     ],
@@ -7979,6 +8852,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 36511,
+    "shape_w": 6,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -7997,6 +8872,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 24332,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -8015,6 +8892,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 88888,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -8033,6 +8912,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 168000,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       103
     ],
@@ -8051,6 +8932,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 266050,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       103,
       110
@@ -8070,6 +8953,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 465000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -8088,6 +8973,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 195154,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       103
     ],
@@ -8106,6 +8993,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 123,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8124,6 +9013,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 438,
+    "shape_w": 1,
+    "shape_h": 4,
     "tags": [
       104,
       101
@@ -8143,6 +9034,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 304,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       104,
       101
@@ -8162,6 +9055,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 346,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       104,
       101
@@ -8181,6 +9076,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 276,
+    "shape_w": 3,
+    "shape_h": 1,
     "tags": [
       104,
       101
@@ -8200,6 +9097,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 138,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8218,6 +9117,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 483,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104,
       101
@@ -8237,6 +9138,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 184,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104,
       101
@@ -8256,6 +9159,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 221,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104,
       101
@@ -8275,6 +9180,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 388,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       104,
       101
@@ -8294,6 +9201,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 462,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       104
     ],
@@ -8312,6 +9221,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 312,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8330,6 +9241,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 367,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8348,6 +9261,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1267,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104,
       101
@@ -8367,6 +9282,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 859,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       104,
       101
@@ -8386,6 +9303,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 878,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104,
       101
@@ -8405,6 +9324,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1044,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104
     ],
@@ -8423,6 +9344,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1452,
+    "shape_w": 1,
+    "shape_h": 5,
     "tags": [
       104
     ],
@@ -8441,6 +9364,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1375,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104,
       101
@@ -8460,6 +9385,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 301,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104,
       101
@@ -8479,6 +9406,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2565,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104,
       101
@@ -8498,6 +9427,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 4316,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       104
     ],
@@ -8516,6 +9447,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3600,
+    "shape_w": 4,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8534,6 +9467,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3294,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       104
     ],
@@ -8552,6 +9487,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3339,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       104,
       101
@@ -8571,6 +9508,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 968,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8589,6 +9528,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2052,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8607,6 +9548,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2363,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8625,6 +9568,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3851,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104
     ],
@@ -8643,6 +9588,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1373,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104,
       101
@@ -8662,6 +9609,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 4840,
+    "shape_w": 5,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8680,6 +9629,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 12584,
+    "shape_w": 4,
+    "shape_h": 2,
     "tags": [
       104
     ],
@@ -8698,6 +9649,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8976,
+    "shape_w": 4,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8716,6 +9669,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 16310,
+    "shape_w": 5,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8734,6 +9689,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 7140,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104,
       107
@@ -8753,6 +9710,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 11752,
+    "shape_w": 4,
+    "shape_h": 2,
     "tags": [
       104
     ],
@@ -8771,6 +9730,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 2720,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -8789,6 +9750,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 3180,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104,
       107
@@ -8808,6 +9771,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10920,
+    "shape_w": 1,
+    "shape_h": 4,
     "tags": [
       104,
       101
@@ -8827,6 +9792,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 20082,
+    "shape_w": 3,
+    "shape_h": 4,
     "tags": [
       104
     ],
@@ -8845,6 +9812,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8830,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104,
       101
@@ -8864,6 +9833,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 31688,
+    "shape_w": 5,
+    "shape_h": 2,
     "tags": [
       104
     ],
@@ -8882,6 +9853,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 67600,
+    "shape_w": 5,
+    "shape_h": 2,
     "tags": [
       104
     ],
@@ -8900,6 +9873,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 74745,
+    "shape_w": 3,
+    "shape_h": 4,
     "tags": [
       104
     ],
@@ -8918,6 +9893,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 34490,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104,
       107
@@ -8937,6 +9914,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 82740,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       104,
       107
@@ -8956,6 +9935,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 29500,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104,
       107
@@ -8975,6 +9956,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 55770,
+    "shape_w": 4,
+    "shape_h": 2,
     "tags": [
       104
     ],
@@ -8993,6 +9976,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 37350,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       104,
       101
@@ -9012,6 +9997,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 42525,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       104
     ],
@@ -9030,6 +10017,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 12400,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -9048,6 +10037,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 93753,
+    "shape_w": 4,
+    "shape_h": 3,
     "tags": [
       104,
       107
@@ -9067,6 +10058,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 226800,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       104,
       107
@@ -9086,6 +10079,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 199080,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       104,
       103,
@@ -9106,6 +10101,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 54300,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       103,
@@ -9126,6 +10123,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 305920,
+    "shape_w": 3,
+    "shape_h": 4,
     "tags": [
       104
     ],
@@ -9144,6 +10143,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 422002,
+    "shape_w": 4,
+    "shape_h": 2,
     "tags": [
       104,
       106
@@ -9163,6 +10164,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 531000,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -9181,6 +10184,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 143100,
+    "shape_w": 3,
+    "shape_h": 1,
     "tags": [
       104,
       106
@@ -9200,6 +10205,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 1003000,
+    "shape_w": 3,
+    "shape_h": 4,
     "tags": [
       104
     ],
@@ -9218,6 +10225,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 104400,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       104
     ],
@@ -9236,6 +10245,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 123,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       108
@@ -9255,6 +10266,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 146,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       101,
@@ -9275,6 +10288,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 507,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105,
       108
@@ -9294,6 +10309,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 192,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       108
@@ -9313,6 +10330,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 345,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105,
       108
@@ -9332,6 +10351,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 414,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105,
       108
@@ -9351,6 +10372,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 902,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       105
     ],
@@ -9369,6 +10392,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 184,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       108
@@ -9388,6 +10413,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 265,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       105,
       101
@@ -9407,6 +10434,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 125,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       101
@@ -9426,6 +10455,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 5885,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       105,
       101
@@ -9445,6 +10476,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1300,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -9463,6 +10496,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1530,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -9481,6 +10516,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 5280,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105,
       106
@@ -9500,6 +10537,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 5970,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105,
       106
@@ -9519,6 +10558,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 6710,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       106,
@@ -9539,6 +10580,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1450,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -9557,6 +10600,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 5040,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105,
       108
@@ -9576,6 +10621,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 5730,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105,
       108
@@ -9595,6 +10642,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1780,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       103
@@ -9614,6 +10663,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8680,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105
     ],
@@ -9632,6 +10683,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8440,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105
     ],
@@ -9650,6 +10703,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 6152,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       105
     ],
@@ -9668,6 +10723,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10960,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -9686,6 +10743,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 4240,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       103
@@ -9705,6 +10764,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 5160,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       106
@@ -9724,6 +10785,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 18240,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105
     ],
@@ -9742,6 +10805,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 21000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105
     ],
@@ -9760,6 +10825,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 23760,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105
     ],
@@ -9778,6 +10845,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 16520,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105
     ],
@@ -9796,6 +10865,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 13000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       103
@@ -9815,6 +10886,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 13332,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -9833,6 +10906,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 14520,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       106,
@@ -9853,6 +10928,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 96768,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       105,
       106
@@ -9872,6 +10949,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 48096,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       105,
       106
@@ -9891,6 +10970,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 68400,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       106
@@ -9910,6 +10991,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 34408,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105
     ],
@@ -9928,6 +11011,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 39168,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       105
     ],
@@ -9946,6 +11031,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 34344,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -9964,6 +11051,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 21840,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -9982,6 +11071,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 52500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -10000,6 +11091,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 128000,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       105
     ],
@@ -10018,6 +11111,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 75500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -10036,6 +11131,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 87000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -10054,6 +11151,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 295500,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105
     ],
@@ -10072,6 +11171,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 180000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       105,
       106
@@ -10091,6 +11192,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 71500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105,
       103
@@ -10110,6 +11213,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 94500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -10128,6 +11233,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 56000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -10146,6 +11253,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 512000,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       105
     ],
@@ -10164,6 +11273,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 316000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -10182,6 +11293,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 2516000,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       105,
       106
@@ -10201,6 +11314,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 13145200,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -10219,6 +11334,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 457200,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -10237,6 +11354,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 3000000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       105
     ],
@@ -10255,6 +11374,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 107,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       106,
       101
@@ -10274,6 +11395,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 205,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       106,
       101
@@ -10293,6 +11416,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 315,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       106,
       101
@@ -10312,6 +11437,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 384,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       101
@@ -10331,6 +11458,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 135,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       101
@@ -10350,6 +11479,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 142,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       105
@@ -10369,6 +11500,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 149,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       101
@@ -10388,6 +11521,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 156,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       106
     ],
@@ -10406,6 +11541,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 411,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       101
@@ -10425,6 +11562,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 377,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       110,
@@ -10445,6 +11584,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 734,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       109
@@ -10464,6 +11605,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1274,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       101
@@ -10483,6 +11626,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 794,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       106,
       110
@@ -10502,6 +11647,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 458,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       105
@@ -10521,6 +11668,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1426,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       106,
       104
@@ -10540,6 +11689,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 252,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       105
@@ -10559,6 +11710,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 269,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       101
@@ -10578,6 +11731,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 514,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       106
     ],
@@ -10596,6 +11751,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 907,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       110,
@@ -10616,6 +11773,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 319,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106
     ],
@@ -10634,6 +11793,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1050,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       103
@@ -10653,6 +11814,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1985,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       106,
       110
@@ -10672,6 +11835,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2079,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       106,
       110,
@@ -10692,6 +11857,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3623,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106
     ],
@@ -10710,6 +11877,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1260,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       105,
@@ -10730,6 +11899,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3938,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       101
@@ -10749,6 +11920,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 5733,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       106,
       109
@@ -10768,6 +11941,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2552,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       106
     ],
@@ -10786,6 +11961,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 6174,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       106,
       101
@@ -10805,6 +11982,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2318,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       101
@@ -10824,6 +12003,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 9168,
+    "shape_w": 4,
+    "shape_h": 4,
     "tags": [
       106,
       101,
@@ -10844,6 +12025,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 9600,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       101
@@ -10863,6 +12046,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 4828,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       105
@@ -10882,6 +12067,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 9440,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       101
@@ -10901,6 +12088,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 6620,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106
     ],
@@ -10919,6 +12108,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 15456,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       105
@@ -10938,6 +12129,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 12045,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       106
     ],
@@ -10956,6 +12149,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 11768,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       106
     ],
@@ -10974,6 +12169,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 3650,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       110
@@ -10993,6 +12190,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 9960,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106
     ],
@@ -11011,6 +12210,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10380,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       105
@@ -11030,6 +12231,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 56700,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       106,
       105
@@ -11049,6 +12252,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 78540,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       106
     ],
@@ -11067,6 +12272,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 43650,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       106,
       105
@@ -11086,6 +12293,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 60600,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       106,
       103
@@ -11105,6 +12314,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 15542,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       109,
@@ -11125,6 +12336,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 48300,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       106,
       101
@@ -11144,6 +12357,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 27450,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       105
@@ -11163,6 +12378,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 29025,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       110
@@ -11182,6 +12399,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 30600,
+    "shape_w": 1,
+    "shape_h": 4,
     "tags": [
       106,
       104
@@ -11201,6 +12420,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 85800,
+    "shape_w": 3,
+    "shape_h": 4,
     "tags": [
       106,
       101
@@ -11220,6 +12441,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 73682,
+    "shape_w": 4,
+    "shape_h": 2,
     "tags": [
       106,
       101,
@@ -11240,6 +12463,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 89461,
+    "shape_w": 2,
+    "shape_h": 5,
     "tags": [
       106
     ],
@@ -11258,6 +12483,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 112500,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       106,
       101,
@@ -11278,6 +12505,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 141300,
+    "shape_w": 1,
+    "shape_h": 4,
     "tags": [
       106,
       105
@@ -11297,6 +12526,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 255840,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       106,
       110
@@ -11316,6 +12547,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 287280,
+    "shape_w": 2,
+    "shape_h": 5,
     "tags": [
       106
     ],
@@ -11334,6 +12567,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160200,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       105
@@ -11353,6 +12588,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 844000,
+    "shape_w": 4,
+    "shape_h": 4,
     "tags": [
       106,
       101
@@ -11372,6 +12609,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 322560,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       106
     ],
@@ -11390,6 +12629,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 179100,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106
     ],
@@ -11408,6 +12649,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 281600,
+    "shape_w": 4,
+    "shape_h": 2,
     "tags": [
       106
     ],
@@ -11426,6 +12669,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 167800,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106
     ],
@@ -11444,6 +12689,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 567900,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       106,
       109
@@ -11463,6 +12710,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 247,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -11481,6 +12730,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 120,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       101
@@ -11500,6 +12751,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 126,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11518,6 +12771,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 137,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       101
@@ -11537,6 +12792,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 127,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       103,
@@ -11557,6 +12814,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 178,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11575,6 +12834,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 168,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11593,6 +12854,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 360,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11611,6 +12874,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 161,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       101
@@ -11630,6 +12895,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 338,
+    "shape_w": 1,
+    "shape_h": 4,
     "tags": [
       107,
       101
@@ -11649,6 +12916,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 401,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11667,6 +12936,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1346,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107,
       101
@@ -11686,6 +12957,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 613,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11704,6 +12977,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 505,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11722,6 +12997,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1411,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107,
       101
@@ -11741,6 +13018,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 466,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       101
@@ -11760,6 +13039,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 870,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       101
@@ -11779,6 +13060,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 420,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       101
@@ -11798,6 +13081,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 914,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -11816,6 +13101,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1166,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -11834,6 +13121,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3893,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -11852,6 +13141,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 923,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11870,6 +13161,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1005,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11888,6 +13181,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2133,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11906,6 +13201,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2588,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11924,6 +13221,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 7644,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       107,
       101
@@ -11943,6 +13242,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1651,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -11961,6 +13262,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2541,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -11979,6 +13282,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1178,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       101
@@ -11998,6 +13303,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 810,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -12016,6 +13323,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 3960,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       101,
@@ -12036,6 +13345,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 12000,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12054,6 +13365,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 2400,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       101
@@ -12073,6 +13386,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 3120,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -12091,6 +13406,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 9604,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12109,6 +13426,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8360,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12127,6 +13446,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 14364,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       107,
       101
@@ -12146,6 +13467,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10500,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12164,6 +13487,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 11880,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12182,6 +13507,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 19096,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       107
     ],
@@ -12200,6 +13527,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 54495,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12218,6 +13547,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 7800,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107,
       101
@@ -12237,6 +13568,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 37800,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12255,6 +13588,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 51660,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12273,6 +13608,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 78120,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       107
     ],
@@ -12291,6 +13628,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 12675,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -12309,6 +13648,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 41850,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12327,6 +13668,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 19845,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -12345,6 +13688,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 70140,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       107
     ],
@@ -12363,6 +13708,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 14850,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -12381,6 +13728,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 97382,
+    "shape_w": 3,
+    "shape_h": 5,
     "tags": [
       107
     ],
@@ -12399,6 +13748,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 258760,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12417,6 +13768,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 186900,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12435,6 +13788,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 122600,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       107
     ],
@@ -12453,6 +13808,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 470400,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       107
     ],
@@ -12471,6 +13828,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 375000,
+    "shape_w": 3,
+    "shape_h": 5,
     "tags": [
       107
     ],
@@ -12489,6 +13848,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 54600,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       107
     ],
@@ -12507,6 +13868,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 112,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       108
     ],
@@ -12525,6 +13888,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 168,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108
     ],
@@ -12543,6 +13908,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 185,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108
     ],
@@ -12561,6 +13928,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 315,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108,
       101
@@ -12580,6 +13949,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 340,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       108,
       101
@@ -12599,6 +13970,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 754,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       108
     ],
@@ -12617,6 +13990,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 170,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108
     ],
@@ -12635,6 +14010,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 609,
+    "shape_w": 4,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -12653,6 +14030,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 200,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       101
@@ -12672,6 +14051,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 277,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -12690,6 +14071,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 2297,
+    "shape_w": 3,
+    "shape_h": 1,
     "tags": [
       108,
       101
@@ -12709,6 +14092,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 804,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       108
     ],
@@ -12727,6 +14112,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 979,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       107
@@ -12746,6 +14133,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1426,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       108
     ],
@@ -12764,6 +14153,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 806,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108,
       107
@@ -12783,6 +14174,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 466,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       104
@@ -12802,6 +14195,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1440,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108,
       101
@@ -12821,6 +14216,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1835,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -12839,6 +14236,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1210,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108,
       101
@@ -12858,6 +14257,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1130,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108,
       101,
@@ -12878,6 +14279,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 5129,
+    "shape_w": 4,
+    "shape_h": 3,
     "tags": [
       108,
       107,
@@ -12898,6 +14301,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 6258,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       108,
       107,
@@ -12918,6 +14323,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3488,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108,
       107
@@ -12937,6 +14344,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 4118,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108,
       107,
@@ -12957,6 +14366,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1388,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       107
@@ -12976,6 +14387,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 4915,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       108
     ],
@@ -12994,6 +14407,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 4410,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       108,
       101
@@ -13013,6 +14428,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3173,
+    "shape_w": 2,
+    "shape_h": 4,
     "tags": [
       108,
       104
@@ -13032,6 +14449,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1470,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       104
@@ -13051,6 +14470,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 4208,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -13069,6 +14490,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3906,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       108,
       101,
@@ -13089,6 +14512,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 14659,
+    "shape_w": 5,
+    "shape_h": 3,
     "tags": [
       108,
       101
@@ -13108,6 +14533,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 11940,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108,
       107
@@ -13127,6 +14554,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 22064,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       108
     ],
@@ -13145,6 +14574,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 15680,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       108
     ],
@@ -13163,6 +14594,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10080,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       108,
       101
@@ -13182,6 +14615,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 18872,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       108
     ],
@@ -13200,6 +14635,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 12296,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -13218,6 +14655,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10620,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -13236,6 +14675,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 2600,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       107,
@@ -13256,6 +14697,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 3940,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       107
@@ -13275,6 +14718,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 3040,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       107
@@ -13294,6 +14739,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 7655,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -13312,6 +14759,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 31950,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -13330,6 +14779,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 34425,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -13348,6 +14799,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 39690,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -13366,6 +14819,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 51240,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       108
     ],
@@ -13384,6 +14839,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 101400,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       108
     ],
@@ -13402,6 +14859,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 199900,
+    "shape_w": 4,
+    "shape_h": 4,
     "tags": [
       108
     ],
@@ -13420,6 +14879,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 77700,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       108,
       101,
@@ -13440,6 +14901,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 106500,
+    "shape_w": 6,
+    "shape_h": 3,
     "tags": [
       108,
       101
@@ -13459,6 +14922,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 11175,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       101
@@ -13478,6 +14943,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 45231,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -13496,6 +14963,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 444000,
+    "shape_w": 4,
+    "shape_h": 4,
     "tags": [
       108
     ],
@@ -13514,6 +14983,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 1495000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       103
@@ -13533,6 +15004,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 357040,
+    "shape_w": 4,
+    "shape_h": 3,
     "tags": [
       108,
       103
@@ -13552,6 +15025,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 1688400,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -13570,6 +15045,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 362400,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       108
     ],
@@ -13588,6 +15065,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 68800,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       108,
       107
@@ -13607,6 +15086,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 452800,
+    "shape_w": 5,
+    "shape_h": 3,
     "tags": [
       108
     ],
@@ -13625,6 +15106,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 293400,
+    "shape_w": 5,
+    "shape_h": 3,
     "tags": [
       108,
       103
@@ -13644,6 +15127,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 200,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13662,6 +15147,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 344,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -13680,6 +15167,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 486,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -13698,6 +15187,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 437,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       109
     ],
@@ -13716,6 +15207,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 107,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13734,6 +15227,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 320,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13752,6 +15247,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 150,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13770,6 +15267,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 139,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13788,6 +15287,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 192,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13806,6 +15307,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 186,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13824,6 +15327,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 458,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109,
       102
@@ -13843,6 +15348,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 473,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13861,6 +15368,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 346,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -13879,6 +15388,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 360,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13897,6 +15408,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 475,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109,
       102
@@ -13916,6 +15429,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 480,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13934,6 +15449,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 635,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13952,6 +15469,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 430,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -13970,6 +15489,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 446,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -13988,6 +15509,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 262,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14006,6 +15529,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3285,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       109
     ],
@@ -14024,6 +15549,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1350,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14042,6 +15569,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 938,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14060,6 +15589,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 5261,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       109
     ],
@@ -14078,6 +15609,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2484,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14096,6 +15629,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1125,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14114,6 +15649,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1863,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14132,6 +15669,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 848,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14150,6 +15689,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 4578,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       109
     ],
@@ -14168,6 +15709,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 983,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14186,6 +15729,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 11280,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14204,6 +15749,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 5040,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14222,6 +15769,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 2100,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14240,6 +15789,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 4788,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14258,6 +15809,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 5076,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14276,6 +15829,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 6540,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14294,6 +15849,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 2160,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109,
       102
@@ -14313,6 +15870,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 16212,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       109
     ],
@@ -14331,6 +15890,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 3920,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14349,6 +15910,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 6960,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14367,6 +15930,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 18600,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14385,6 +15950,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 12825,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14403,6 +15970,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 54180,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       109
     ],
@@ -14421,6 +15990,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 12600,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14439,6 +16010,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 33000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14457,6 +16030,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 49200,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14475,6 +16050,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 42975,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14493,6 +16070,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 19600,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14511,6 +16090,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 29025,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14529,6 +16110,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 39600,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14547,6 +16130,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 92880,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14565,6 +16150,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 390000,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14583,6 +16170,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 168000,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109,
       102
@@ -14602,6 +16191,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 68100,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14620,6 +16211,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 127260,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       109
     ],
@@ -14638,6 +16231,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 249000,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14656,6 +16251,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 1552500,
+    "shape_w": 3,
+    "shape_h": 5,
     "tags": [
       109
     ],
@@ -14674,6 +16271,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 294000,
+    "shape_w": 3,
+    "shape_h": 5,
     "tags": [
       109
     ],
@@ -14692,6 +16291,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 193200,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       109
     ],
@@ -14710,6 +16311,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 360,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -14728,6 +16331,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 341,
+    "shape_w": 1,
+    "shape_h": 4,
     "tags": [
       110,
       101
@@ -14747,6 +16352,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 317,
+    "shape_w": 1,
+    "shape_h": 4,
     "tags": [
       110,
       101
@@ -14766,6 +16373,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 218,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       110,
       101
@@ -14785,6 +16394,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 221,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       110,
       101
@@ -14804,6 +16415,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 114,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       110,
       101
@@ -14823,6 +16436,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 137,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       110,
       101
@@ -14842,6 +16457,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 257,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       110,
       101
@@ -14861,6 +16478,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 308,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       110,
       107
@@ -14880,6 +16499,8 @@
     "quality": 1,
     "quality_color": "white",
     "value": 117,
+    "shape_w": 1,
+    "shape_h": 1,
     "tags": [
       110
     ],
@@ -14898,6 +16519,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 441,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       110,
       106
@@ -14917,6 +16540,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1089,
+    "shape_w": 1,
+    "shape_h": 3,
     "tags": [
       110
     ],
@@ -14935,6 +16560,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1246,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -14953,6 +16580,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 2016,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -14971,6 +16600,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 786,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -14989,6 +16620,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 760,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15007,6 +16640,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 536,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15025,6 +16660,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 721,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15043,6 +16680,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 734,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15061,6 +16700,8 @@
     "quality": 2,
     "quality_color": "green",
     "value": 1119,
+    "shape_w": 3,
+    "shape_h": 1,
     "tags": [
       110
     ],
@@ -15079,6 +16720,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2700,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15097,6 +16740,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3960,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15115,6 +16760,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 1796,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       110
     ],
@@ -15133,6 +16780,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2565,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15151,6 +16800,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 8880,
+    "shape_w": 5,
+    "shape_h": 4,
     "tags": [
       110,
       101
@@ -15170,6 +16821,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3240,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       110
     ],
@@ -15188,6 +16841,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 4343,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15206,6 +16861,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 2768,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       110
     ],
@@ -15224,6 +16881,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 4388,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       110
     ],
@@ -15242,6 +16901,8 @@
     "quality": 3,
     "quality_color": "blue",
     "value": 3690,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       110
     ],
@@ -15260,6 +16921,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8940,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15278,6 +16941,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 6824,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15297,6 +16962,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 7472,
+    "shape_w": 4,
+    "shape_h": 1,
     "tags": [
       110,
       106
@@ -15316,6 +16983,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 11760,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15334,6 +17003,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 11520,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15352,6 +17023,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8240,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15371,6 +17044,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 10260,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15390,6 +17065,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 6624,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15409,6 +17086,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 8700,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       110,
       106
@@ -15428,6 +17107,8 @@
     "quality": 4,
     "quality_color": "purple",
     "value": 14112,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15447,6 +17128,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 35200,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15466,6 +17149,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 37920,
+    "shape_w": 2,
+    "shape_h": 1,
     "tags": [
       110,
       106
@@ -15485,6 +17170,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 55440,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15504,6 +17191,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 53550,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       110,
       106
@@ -15523,6 +17212,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 29700,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15542,6 +17233,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 58395,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       110,
       106
@@ -15561,6 +17254,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 25875,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15579,6 +17274,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 57540,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       110,
       106
@@ -15598,6 +17295,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 24435,
+    "shape_w": 1,
+    "shape_h": 2,
     "tags": [
       110
     ],
@@ -15616,6 +17315,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 88473,
+    "shape_w": 2,
+    "shape_h": 4,
     "tags": [
       110,
       106
@@ -15635,6 +17336,8 @@
     "quality": 5,
     "quality_color": "gold",
     "value": 79825,
+    "shape_w": 6,
+    "shape_h": 1,
     "tags": [
       110,
       106
@@ -15654,6 +17357,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 240660,
+    "shape_w": 6,
+    "shape_h": 1,
     "tags": [
       110,
       106
@@ -15673,6 +17378,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 120600,
+    "shape_w": 2,
+    "shape_h": 3,
     "tags": [
       110,
       106
@@ -15692,6 +17399,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 160200,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15711,6 +17420,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 191800,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15730,6 +17441,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 170200,
+    "shape_w": 3,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15749,6 +17462,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 282240,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       110,
       106
@@ -15768,6 +17483,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 175500,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15787,6 +17504,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 148840,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15806,6 +17525,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 1491800,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15825,6 +17546,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 1553900,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106
@@ -15844,6 +17567,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 1236666,
+    "shape_w": 3,
+    "shape_h": 1,
     "tags": [
       110,
       106
@@ -15863,6 +17588,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 284519,
+    "shape_w": 2,
+    "shape_h": 2,
     "tags": [
       110,
       106,
@@ -15883,6 +17610,8 @@
     "quality": 6,
     "quality_color": "red",
     "value": 188888,
+    "shape_w": 3,
+    "shape_h": 3,
     "tags": [
       100
     ],
@@ -15901,6 +17630,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -15919,6 +17650,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -15937,6 +17670,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -15955,6 +17690,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -15973,6 +17710,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -15991,6 +17730,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16009,6 +17750,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16027,6 +17770,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16045,6 +17790,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16063,6 +17810,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16081,6 +17830,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16099,6 +17850,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16117,6 +17870,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16135,6 +17890,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16153,6 +17910,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16171,6 +17930,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16189,6 +17950,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16207,6 +17970,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16225,6 +17990,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],
@@ -16243,6 +18010,8 @@
     "quality": 0,
     "quality_color": "none",
     "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
     "tags": [
       14
     ],

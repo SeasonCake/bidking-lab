@@ -1,0 +1,680 @@
+"""Live monitor artifact builder and append-only evaluation logs.
+
+The monitor layer is intentionally source-agnostic: today it can process a
+Fatbeans JSON payload or file; later a true realtime source can feed the same
+``FatbeansCaptureEvents`` object without changing inference, logging, or UI.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, replace
+import json
+from pathlib import Path
+import tempfile
+import time
+from typing import Any, Mapping, Sequence
+
+from bidking_lab.config import project_root
+from bidking_lab.extract.bid_map_table import BidMap, load_bid_map_table
+from bidking_lab.extract.drop_table import DropPool, load_drop_table
+from bidking_lab.extract.item_table import Item, load_item_table
+from bidking_lab.inference.bid_strategy import recommend_bid_strategy
+from bidking_lab.inference.map_likelihood import estimate_map_likelihood
+from bidking_lab.inference.tool_info_roi import estimate_tool_info_roi
+from bidking_lab.inference.warehouse_estimator import estimate_warehouse_cells
+from bidking_lab.live.evaluation import evaluate_fatbeans_layout_events
+from bidking_lab.live.fatbeans import (
+    FatbeansCaptureEvents,
+    latest_player_bids,
+    parse_fatbeans_capture,
+    parse_fatbeans_capture_payload,
+)
+from bidking_lab.live.layout import SAMPLE_FIT_LAYOUT_ESTIMATE_POLICY
+from bidking_lab.live.replay import layout_replay_stages
+from bidking_lab.live.state import (
+    LiveSessionState,
+    apply_observation_batch,
+    live_state_to_session_obs,
+)
+from bidking_lab.live.types import LiveObservationBatch
+from bidking_lab.live.fatbeans import live_batches_from_fatbeans_events
+from bidking_lab.runtime import (
+    layout_replay_rows_from_stages,
+    tactical_panel_from_rows,
+)
+
+
+@dataclass(frozen=True)
+class MonitorTables:
+    """Loaded local game tables used by live monitor inference."""
+
+    maps: Mapping[int, BidMap]
+    drops: Mapping[int, DropPool]
+    items: Mapping[int, Item]
+
+
+def load_monitor_tables(
+    *,
+    tables_dir: str | Path | None = None,
+) -> MonitorTables:
+    """Load raw game tables from ``data/raw/tables`` or an explicit folder."""
+    root = Path(tables_dir) if tables_dir is not None else (
+        project_root() / "data" / "raw" / "tables"
+    )
+    return MonitorTables(
+        maps=load_bid_map_table(root / "BidMap.txt"),
+        drops=load_drop_table(root / "Drop.txt"),
+        items=load_item_table(root / "Item.txt"),
+    )
+
+
+def _format_quantile_interval(summary: Any) -> str:
+    if summary is None:
+        return ""
+    return f"{summary.p10:,.0f} / {summary.p50:,.0f} / {summary.p90:,.0f}"
+
+
+def _format_quantile_width(summary: Any) -> str:
+    if summary is None:
+        return ""
+    return f"{summary.p90 - summary.p10:,.0f}"
+
+
+def _candidate_map_ids_for_likelihood(
+    map_id: int,
+    maps: Mapping[int, BidMap],
+) -> tuple[int, ...]:
+    if map_id in maps:
+        return (map_id,)
+    return (map_id,)
+
+
+def _relax_exact_bucket_constraints(obs: Any) -> Any:
+    buckets = {}
+    changed = False
+    for quality, bucket in obs.buckets.items():
+        total_cells_min = bucket.total_cells_min
+        count_min = bucket.count_min
+        if bucket.total_cells is not None:
+            total_cells_min = max(total_cells_min or 0, bucket.total_cells)
+            changed = True
+        if bucket.count is not None:
+            count_min = max(count_min or 0, bucket.count)
+            changed = True
+        buckets[quality] = replace(
+            bucket,
+            total_cells=None,
+            count=None,
+            total_cells_min=total_cells_min,
+            count_min=count_min,
+        )
+    if not changed:
+        return obs
+    return replace(obs, buckets=buckets)
+
+
+def _map_likelihood_result_rows(
+    results: Sequence[Any],
+    label: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for result in results[:5]:
+        rows.append(
+            {
+                "证据": label,
+                "地图": f"{result.map_id} {result.map_name}",
+                "匹配": f"{result.n_matched}/{result.n_total}",
+                "后验": f"{result.posterior_probability:.1%}",
+                "总格 P10/P50/P90": _format_quantile_interval(result.total_cells),
+                "价值 P10/P50/P90": _format_quantile_interval(result.total_value),
+            }
+        )
+    return rows
+
+
+def _warehouse_estimate_rows(estimate: Any) -> list[dict[str, Any]]:
+    if estimate is None:
+        return []
+    rows = [
+        {
+            "范围": "跨候选地图汇总",
+            "匹配": f"{estimate.n_matched}/{estimate.n_total}",
+            "置信度": estimate.confidence,
+            "总格 P10/P50/P90": _format_quantile_interval(estimate.total_cells),
+            "价值 P10/P50/P90": _format_quantile_interval(estimate.total_value),
+            "说明": estimate.reason,
+        }
+    ]
+    for row in estimate.map_contributions[:5]:
+        rows.append(
+            {
+                "范围": f"{row.map_id} {row.map_name}",
+                "匹配": f"{row.n_matched}/{row.n_total}",
+                "置信度": f"地图后验 {row.posterior_probability:.1%}",
+                "总格 P10/P50/P90": _format_quantile_interval(row.total_cells),
+                "价值 P10/P50/P90": "",
+                "说明": "",
+            }
+        )
+    return rows
+
+
+def _tool_info_roi_rows(rows: Sequence[Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows[:8]:
+        out.append(
+            {
+                "道具": row.tool_name,
+                "价格": f"{row.silver_cost:,}",
+                "匹配样本": row.n_matched,
+                "价值区间压缩": f"{row.value_width_gain:,.0f}",
+                "仓储区间压缩": f"{row.cells_width_gain:,.0f}",
+                "信息ROI": f"{row.roi_value:.2f}",
+                "说明": row.note,
+            }
+        )
+    return out
+
+
+def _brief_layout_stage_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    limit: int = 4,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows[:limit]:
+        estimate = row.get("样本拟合估计") or row.get("布局估计", "")
+        confidence = row.get("样本拟合置信") or row.get("估计置信", "")
+        out.append(
+            {
+                "阶段": f"R{row.get('R') or '?'} / sort {row.get('sort')}",
+                "已知格": row.get("已知格", ""),
+                "覆盖": row.get("已知覆盖", ""),
+                "最深行": row.get("最深行", ""),
+                "布局估计": estimate,
+                "置信": confidence,
+                "风险": row.get("风险", ""),
+            }
+        )
+    return out
+
+
+def _states_to_session(
+    batches: Sequence[LiveObservationBatch],
+) -> tuple[Any | None, Any | None, LiveSessionState, LiveSessionState]:
+    final_state = LiveSessionState()
+    pre_settlement_state = LiveSessionState()
+    saw_pre_settlement = False
+    for batch in batches:
+        final_state = apply_observation_batch(final_state, batch)
+        if batch.phase != "settled":
+            pre_settlement_state = apply_observation_batch(
+                pre_settlement_state,
+                batch,
+            )
+            saw_pre_settlement = True
+    base_session = (
+        live_state_to_session_obs(pre_settlement_state)
+        if saw_pre_settlement
+        else None
+    )
+    if base_session is None:
+        base_session = live_state_to_session_obs(final_state)
+    return (
+        base_session,
+        live_state_to_session_obs(final_state),
+        pre_settlement_state,
+        final_state,
+    )
+
+
+def _inventory_value(events: FatbeansCaptureEvents, items: Mapping[int, Item]) -> int | None:
+    for state in reversed(events.states):
+        if not state.inventory_items:
+            continue
+        total = 0
+        for inv_item in state.inventory_items:
+            item = items.get(inv_item.item_id)
+            if item is not None:
+                total += item.value
+        return total
+    return None
+
+
+def _latest_round(events: FatbeansCaptureEvents) -> int | None:
+    for state in reversed(events.states):
+        if state.round_no is not None:
+            return state.round_no
+    return None
+
+
+def _latest_map_id(events: FatbeansCaptureEvents) -> int | None:
+    for state in reversed(events.states):
+        if state.map_id is not None:
+            return state.map_id
+    return None
+
+
+def _inventory_totals(events: FatbeansCaptureEvents) -> tuple[int | None, int | None]:
+    for state in reversed(events.states):
+        if state.inventory_items:
+            return len(state.inventory_items), sum(item.cells for item in state.inventory_items)
+    return None, None
+
+
+def _build_bid_rows(
+    *,
+    latest_bids: Mapping[str, int],
+    value_summary: Any,
+    evidence_label: str,
+    session: Any,
+    round_no: int | None,
+    posterior_samples: int,
+    warehouse_estimate: Any,
+) -> list[dict[str, Any]]:
+    report = recommend_bid_strategy(
+        latest_bids=latest_bids,
+        value_summary=value_summary,
+        evidence_label=evidence_label,
+        session=session,
+        round_no=round_no,
+        total_rounds=5,
+        posterior_samples=posterior_samples,
+        warehouse_estimate=warehouse_estimate,
+    )
+    if report is None:
+        return []
+    thresholds = report.thresholds
+    rows = [
+        {
+            "证据": report.evidence_label,
+            "轮次": report.round_label,
+            "信息强度": report.info_strength,
+            "仓储": report.warehouse_status,
+            "当前最高": f"{report.leader} {report.highest_bid:,}",
+            "风险带": report.risk_band,
+            "探价(P10)": f"{thresholds.probe_bid:,}",
+            "防守价": f"{thresholds.defend_bid:,}",
+            "抢仓上限": f"{thresholds.attack_bid:,}",
+            "停止价": f"{thresholds.stop_bid:,}",
+            "依据": report.rationale,
+            "补信息": report.next_info_hint,
+            "建议": report.action,
+        }
+    ]
+    for player in report.player_risks:
+        rows.append(
+            {
+                "证据": "玩家价位",
+                "轮次": "",
+                "信息强度": "",
+                "仓储": "",
+                "当前最高": f"{player.name} {player.bid:,}",
+                "风险带": player.risk_band,
+                "探价(P10)": "",
+                "防守价": "",
+                "抢仓上限": "",
+                "停止价": "",
+                "依据": "",
+                "补信息": "",
+                "建议": "",
+            }
+        )
+    return rows
+
+
+def _parse_range_p50(label: str) -> int | None:
+    parts = [part.strip().replace(",", "") for part in label.split("/")]
+    if len(parts) < 2 or parts[1] in ("", "?"):
+        return None
+    try:
+        return int(float(parts[1]))
+    except ValueError:
+        return None
+
+
+def _model_eval_row(
+    *,
+    file: str,
+    artifact: Mapping[str, Any],
+    final_value: int | None,
+    final_cells: int | None,
+) -> dict[str, Any] | None:
+    if final_value is None and final_cells is None:
+        return None
+    warehouse_rows = artifact.get("warehouse_rows") or []
+    bid_rows = artifact.get("bid_rows") or []
+    layout_rows = artifact.get("layout_replay_rows") or []
+    warehouse_p50 = None
+    value_p50 = None
+    if warehouse_rows:
+        warehouse_p50 = _parse_range_p50(
+            str(warehouse_rows[0].get("总格 P10/P50/P90", ""))
+        )
+        value_p50 = _parse_range_p50(
+            str(warehouse_rows[0].get("价值 P10/P50/P90", ""))
+        )
+    latest_layout_fit = next(
+        (
+            row for row in reversed(layout_rows)
+            if row.get("最终格") and row.get("样本拟合估计")
+        ),
+        {},
+    )
+    layout_p50 = _parse_range_p50(str(latest_layout_fit.get("样本拟合估计", "")))
+    stop_bid = None
+    attack_bid = None
+    highest_bid = None
+    if bid_rows:
+        row = bid_rows[0]
+        stop_bid = _parse_int_text(row.get("停止价"))
+        attack_bid = _parse_int_text(row.get("抢仓上限"))
+        current = str(row.get("当前最高", ""))
+        highest_bid = _parse_int_text(current.split(" ")[-1] if current else None)
+    return {
+        "ts": time.time(),
+        "file": file,
+        "map_id": artifact.get("map_id"),
+        "round": artifact.get("round"),
+        "final_value": final_value,
+        "final_cells": final_cells,
+        "value_p50": value_p50,
+        "value_p50_error": (
+            value_p50 - final_value
+            if value_p50 is not None and final_value is not None
+            else None
+        ),
+        "warehouse_p50": warehouse_p50,
+        "warehouse_p50_error": (
+            warehouse_p50 - final_cells
+            if warehouse_p50 is not None and final_cells is not None
+            else None
+        ),
+        "layout_fit_p50": layout_p50,
+        "layout_fit_p50_error": (
+            layout_p50 - final_cells
+            if layout_p50 is not None and final_cells is not None
+            else None
+        ),
+        "highest_bid": highest_bid,
+        "attack_bid": attack_bid,
+        "stop_bid": stop_bid,
+        "stop_minus_final_value": (
+            stop_bid - final_value
+            if stop_bid is not None and final_value is not None
+            else None
+        ),
+    }
+
+
+def _parse_int_text(value: Any) -> int | None:
+    if value is None:
+        return None
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
+def build_monitor_artifact_from_events(
+    events: FatbeansCaptureEvents,
+    *,
+    file: str = "",
+    tables: MonitorTables,
+    n_trials: int = 500,
+    roi_trials: int = 250,
+    seed: int = 20260530,
+) -> dict[str, Any]:
+    """Build a JSON-serializable live monitor artifact from parsed events."""
+    batches = live_batches_from_fatbeans_events(events)
+    base_session, final_session, _, _ = _states_to_session(batches)
+    latest_bids = latest_player_bids(events.states)
+    layout_replay_rows = list(
+        layout_replay_rows_from_stages(
+            layout_replay_stages(events),
+            comparison_policy=SAMPLE_FIT_LAYOUT_ESTIMATE_POLICY,
+        )
+    )
+    layout_stage_rows = _brief_layout_stage_rows(layout_replay_rows)
+
+    map_rows: list[dict[str, Any]] = []
+    warehouse_rows: list[dict[str, Any]] = []
+    tool_rows: list[dict[str, Any]] = []
+    bid_rows: list[dict[str, Any]] = []
+    evidence_label = "暂无"
+    if base_session is not None:
+        candidate_map_ids = _candidate_map_ids_for_likelihood(
+            base_session.map_id,
+            tables.maps,
+        )
+        evidence_label = "结算前最后状态"
+        cells_tol = 8
+        count_tol = 3
+        without_warehouse = replace(
+            base_session,
+            warehouse_total_cells=None,
+            warehouse_total_cells_approx=None,
+            warehouse_total_cells_tolerance=None,
+            total_item_count=None,
+        )
+        inference_session = without_warehouse
+        base_results = estimate_map_likelihood(
+            candidate_map_ids,
+            inference_session,
+            maps=tables.maps,
+            drops=tables.drops,
+            items=tables.items,
+            n_trials=n_trials,
+            seed=seed,
+            cells_tol=cells_tol,
+            count_tol=count_tol,
+        )
+        warehouse_estimate = estimate_warehouse_cells(
+            candidate_map_ids,
+            inference_session,
+            maps=tables.maps,
+            drops=tables.drops,
+            items=tables.items,
+            n_trials=n_trials,
+            seed=seed,
+            cells_tol=cells_tol,
+            count_tol=count_tol,
+        )
+        if not any(result.n_matched for result in base_results):
+            relaxed_session = _relax_exact_bucket_constraints(without_warehouse)
+            if relaxed_session is not without_warehouse:
+                relaxed_results = estimate_map_likelihood(
+                    candidate_map_ids,
+                    relaxed_session,
+                    maps=tables.maps,
+                    drops=tables.drops,
+                    items=tables.items,
+                    n_trials=n_trials,
+                    seed=seed,
+                    cells_tol=cells_tol,
+                    count_tol=count_tol,
+                )
+                relaxed_warehouse_estimate = estimate_warehouse_cells(
+                    candidate_map_ids,
+                    relaxed_session,
+                    maps=tables.maps,
+                    drops=tables.drops,
+                    items=tables.items,
+                    n_trials=n_trials,
+                    seed=seed,
+                    cells_tol=cells_tol,
+                    count_tol=count_tol,
+                )
+                if any(result.n_matched for result in relaxed_results):
+                    inference_session = relaxed_session
+                    base_results = relaxed_results
+                    warehouse_estimate = relaxed_warehouse_estimate
+                    evidence_label = "结算前最后状态（放宽精确桶约束）"
+        map_rows = _map_likelihood_result_rows(base_results, evidence_label)
+        warehouse_rows = _warehouse_estimate_rows(warehouse_estimate)
+        if roi_trials > 0:
+            tool_rows = _tool_info_roi_rows(
+                estimate_tool_info_roi(
+                    candidate_map_ids,
+                    inference_session,
+                    maps=tables.maps,
+                    drops=tables.drops,
+                    items=tables.items,
+                    n_trials=roi_trials,
+                    seed=seed + 1,
+                    cells_tol=cells_tol,
+                    count_tol=count_tol,
+                )
+            )
+        best_value_summary = (
+            base_results[0].total_value
+            if base_results and base_results[0].total_value is not None
+            else None
+        )
+        if best_value_summary is not None:
+            bid_rows = _build_bid_rows(
+                latest_bids=latest_bids,
+                value_summary=best_value_summary,
+                evidence_label=evidence_label,
+                session=inference_session,
+                round_no=_latest_round(events),
+                posterior_samples=base_results[0].n_matched if base_results else 0,
+                warehouse_estimate=warehouse_estimate,
+            )
+
+    panel = tactical_panel_from_rows(
+        bid_rows=bid_rows,
+        warehouse_rows=warehouse_rows,
+        tool_rows=tool_rows,
+        layout_stage_rows=layout_stage_rows,
+        layout_note="",
+    )
+    inventory_count, inventory_cells = _inventory_totals(events)
+    final_value = _inventory_value(events, tables.items)
+    artifact: dict[str, Any] = {
+        "schema_version": 1,
+        "created_at": time.time(),
+        "file": file,
+        "packets": len(events.packets),
+        "frames": len(events.frames),
+        "states": len(events.states),
+        "batches": len(batches),
+        "map_id": _latest_map_id(events),
+        "round": _latest_round(events),
+        "inventory_count": inventory_count,
+        "inventory_cells": inventory_cells,
+        "known_value_sum": final_value,
+        "latest_bids": dict(latest_bids),
+        "evidence_label": evidence_label,
+        "map_rows": map_rows,
+        "warehouse_rows": warehouse_rows,
+        "tool_rows": tool_rows,
+        "bid_rows": bid_rows,
+        "layout_replay_rows": layout_replay_rows,
+        "layout_stage_rows": layout_stage_rows,
+        "panel": asdict(panel),
+        "layout_sample_rows": [
+            row.as_dict()
+            for row in evaluate_fatbeans_layout_events(events, file=file)
+        ],
+    }
+    eval_row = _model_eval_row(
+        file=file,
+        artifact=artifact,
+        final_value=final_value,
+        final_cells=inventory_cells,
+    )
+    if eval_row is not None:
+        artifact["model_eval"] = eval_row
+    return artifact
+
+
+def build_monitor_artifact_from_file(
+    path: str | Path,
+    *,
+    tables: MonitorTables,
+    n_trials: int = 500,
+    roi_trials: int = 250,
+    seed: int = 20260530,
+) -> dict[str, Any]:
+    path = Path(path)
+    return build_monitor_artifact_from_events(
+        parse_fatbeans_capture(path),
+        file=path.name,
+        tables=tables,
+        n_trials=n_trials,
+        roi_trials=roi_trials,
+        seed=seed,
+    )
+
+
+def build_monitor_artifact_from_payload(
+    payload: str | bytes,
+    *,
+    file: str = "stdin",
+    tables: MonitorTables,
+    n_trials: int = 500,
+    roi_trials: int = 250,
+    seed: int = 20260530,
+) -> dict[str, Any]:
+    return build_monitor_artifact_from_events(
+        parse_fatbeans_capture_payload(payload),
+        file=file,
+        tables=tables,
+        n_trials=n_trials,
+        roi_trials=roi_trials,
+        seed=seed,
+    )
+
+
+def _append_jsonl(path: Path, row: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
+        fh.write("\n")
+
+
+def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        newline="\n",
+        dir=path.parent,
+        delete=False,
+    ) as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+        tmp = Path(fh.name)
+    tmp.replace(path)
+
+
+def write_monitor_logs(
+    artifact: Mapping[str, Any],
+    *,
+    log_dir: str | Path | None = None,
+) -> None:
+    """Write latest snapshot and append long-running JSONL logs."""
+    root = Path(log_dir) if log_dir is not None else project_root() / "data" / "logs" / "live"
+    root.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(root / "latest_snapshot.json", artifact)
+    _append_jsonl(root / "sessions.jsonl", artifact)
+    eval_row = artifact.get("model_eval")
+    if isinstance(eval_row, Mapping):
+        _append_jsonl(root / "model_eval.jsonl", eval_row)
+    for row in artifact.get("layout_sample_rows", ()) or ():
+        if isinstance(row, Mapping):
+            _append_jsonl(root / "layout_samples.jsonl", row)
+
+
+__all__ = (
+    "MonitorTables",
+    "build_monitor_artifact_from_events",
+    "build_monitor_artifact_from_file",
+    "build_monitor_artifact_from_payload",
+    "load_monitor_tables",
+    "write_monitor_logs",
+)

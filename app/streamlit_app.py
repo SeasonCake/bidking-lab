@@ -18,6 +18,8 @@ and exposes four panels:
 
 from __future__ import annotations
 
+import html
+import json
 import logging
 import re
 import sys
@@ -1686,8 +1688,11 @@ def _render_obs_source_summary() -> None:
                 "仓库总格": ("session", "warehouse_total_cells"),
                 "总藏品件数": ("session", "total_item_count"),
                 "白/绿总格": ("bucket", "1", "total_cells"),
+                "白品件数": ("bucket", "1", "count"),
                 "绿品总格": ("bucket", "2", "total_cells"),
+                "绿品件数": ("bucket", "2", "count"),
                 "蓝品总格": ("bucket", "3", "total_cells"),
+                "蓝品件数": ("bucket", "3", "count"),
                 "紫品总格": ("bucket", "4", "total_cells"),
                 "紫品件数": ("bucket", "4", "count"),
                 "紫品均格": ("bucket", "4", "avg_cells"),
@@ -1714,7 +1719,6 @@ def _render_obs_source_summary() -> None:
 def _live_session_snapshot_for(obs_state: dict[str, Any]) -> SessionObs | None:
     from bidking_lab.live import (
         LiveSessionState,
-        live_session_matches_context,
         live_state_to_session_obs,
     )
 
@@ -1722,13 +1726,21 @@ def _live_session_snapshot_for(obs_state: dict[str, Any]) -> SessionObs | None:
     if not isinstance(live_state, LiveSessionState):
         return None
     session = live_state_to_session_obs(live_state)
-    if live_session_matches_context(
-        session,
-        map_id=obs_state.get("map_id"),
-        warehouse_total_cells=obs_state.get("warehouse_cells"),
-    ):
-        return session
-    return None
+    if session is None:
+        return None
+
+    ui_map = obs_state.get("map_id")
+    if ui_map is not None and int(ui_map) != session.map_id:
+        return None
+
+    ui_warehouse = int(obs_state.get("warehouse_cells") or 0)
+    if ui_warehouse > 0:
+        if session.warehouse_total_cells is not None:
+            if session.warehouse_total_cells != ui_warehouse:
+                return None
+        elif session.warehouse_total_cells_approx != ui_warehouse:
+            return None
+    return session
 
 
 def _attach_inference_session_source(obs_state: dict[str, Any]) -> None:
@@ -1741,6 +1753,19 @@ def _attach_inference_session_source(obs_state: dict[str, Any]) -> None:
         live_session = _live_session_snapshot_for(obs_state)
         if live_session is not None:
             obs_state["_live_canonical_session"] = live_session
+            obs_state["map_id"] = live_session.map_id
+            obs_state["hero"] = live_session.hero
+            if live_session.warehouse_total_cells is not None:
+                obs_state["warehouse_cells"] = live_session.warehouse_total_cells
+                obs_state["warehouse_cells_mode"] = "strict"
+            elif live_session.warehouse_total_cells_approx is not None:
+                obs_state["warehouse_cells"] = live_session.warehouse_total_cells_approx
+                obs_state["warehouse_cells_mode"] = "estimate"
+                obs_state["warehouse_cells_tolerance"] = (
+                    live_session.warehouse_total_cells_tolerance or 0
+                )
+            if live_session.total_item_count is not None:
+                obs_state["total_item_count"] = live_session.total_item_count
             source = "live_shadow"
         else:
             source = "legacy_fallback"
@@ -1789,6 +1814,1215 @@ def _render_live_inference_status() -> None:
             "dirty 表示 live 观测已经变化，当前推荐可能需要重算；"
             "running 表示后台 MC 正在运行；ready 表示已有结果且 live 未标脏。"
         )
+
+
+@st.cache_data(max_entries=1, show_spinner=False)
+def _battle_item_names_by_id() -> dict[int, str]:
+    path = Path(__file__).resolve().parent.parent / "data" / "processed" / "battle_items.json"
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - optional diagnostic lookup only
+        return {}
+    return {
+        int(row["battle_item_id"]): str(row["name"])
+        for row in rows
+        if isinstance(row, Mapping) and row.get("battle_item_id") is not None
+    }
+
+
+def _fatbeans_inventory_summary_rows(
+    inventory_items: Sequence[Any],
+) -> tuple[list[dict[str, Any]], int, list[int]]:
+    """Summarize settlement inventory using the local Item table when possible."""
+    rows: list[dict[str, Any]] = []
+    total_value = 0
+    missing_item_ids: list[int] = []
+    for quality in (1, 2, 3, 4, 5, 6):
+        quality_items = [
+            item for item in inventory_items
+            if item.quality == quality
+        ]
+        if not quality_items:
+            continue
+        value_sum = 0
+        missing_for_quality: list[int] = []
+        for item in quality_items:
+            item_row = items.get(item.item_id)
+            if item_row is None:
+                missing_for_quality.append(item.item_id)
+                continue
+            value_sum += item_row.value
+        total_value += value_sum
+        missing_item_ids.extend(missing_for_quality)
+        rows.append(
+            {
+                "品质": f"{quality} {QUALITY_NAME.get(quality, '')}",
+                "件数": len(quality_items),
+                "格数": sum(item.cells for item in quality_items),
+                "已知价值": value_sum,
+                "缺失item": ",".join(str(x) for x in sorted(set(missing_for_quality))),
+            }
+        )
+    return rows, total_value, sorted(set(missing_item_ids))
+
+
+def _apply_live_packet_batches(batches: Sequence[Any]) -> int:
+    """Merge packet-derived live batches into the shadow reducer."""
+    from bidking_lab.live import (
+        LiveSessionState,
+        apply_observation_batch,
+        summarize_blocked_field_updates,
+    )
+
+    live_state = st.session_state.get("_live_session_state")
+    if not isinstance(live_state, LiveSessionState):
+        live_state = LiveSessionState()
+    blocked: list[dict[str, Any]] = []
+    applied = 0
+    for batch in batches:
+        blocked.extend(summarize_blocked_field_updates(live_state, batch, limit=24))
+        live_state = apply_observation_batch(live_state, batch)
+        applied += 1
+    st.session_state["_live_session_state"] = live_state
+    st.session_state["_last_live_blocked_updates"] = blocked[:24]
+    if batches:
+        st.session_state["_last_live_observation_batch"] = batches[-1]
+    return applied
+
+
+def _format_quantile_interval(summary: Any) -> str:
+    if summary is None:
+        return ""
+    return f"{summary.p10:,.0f} / {summary.p50:,.0f} / {summary.p90:,.0f}"
+
+
+def _format_quantile_width(summary: Any) -> str:
+    if summary is None:
+        return ""
+    return f"{summary.p90 - summary.p10:,.0f}"
+
+
+def _candidate_map_ids_for_likelihood(
+    session: SessionObs,
+    maps: Mapping[int, BidMap],
+) -> tuple[int, ...]:
+    if session.map_id in maps:
+        return (session.map_id,)
+    return (session.map_id,)
+
+
+def _map_likelihood_result_rows(results: Sequence[Any], label: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for result in results[:5]:
+        rows.append(
+            {
+                "证据": label,
+                "地图": f"{result.map_id} {result.map_name}",
+                "匹配": f"{result.n_matched}/{result.n_total}",
+                "后验": f"{result.posterior_probability:.1%}",
+                "总格 P10/P50/P90": _format_quantile_interval(result.total_cells),
+                "价值 P10/P50/P90": _format_quantile_interval(result.total_value),
+            }
+        )
+    return rows
+
+
+def _warehouse_estimate_rows(estimate: Any) -> list[dict[str, Any]]:
+    if estimate is None:
+        return []
+    rows = [
+        {
+            "范围": "跨候选地图汇总",
+            "匹配": f"{estimate.n_matched}/{estimate.n_total}",
+            "置信度": estimate.confidence,
+            "总格 P10/P50/P90": _format_quantile_interval(estimate.total_cells),
+            "价值 P10/P50/P90": _format_quantile_interval(estimate.total_value),
+            "说明": estimate.reason,
+        }
+    ]
+    for row in estimate.map_contributions[:5]:
+        rows.append(
+            {
+                "范围": f"{row.map_id} {row.map_name}",
+                "匹配": f"{row.n_matched}/{row.n_total}",
+                "置信度": f"地图后验 {row.posterior_probability:.1%}",
+                "总格 P10/P50/P90": _format_quantile_interval(row.total_cells),
+                "价值 P10/P50/P90": "",
+                "说明": "",
+            }
+        )
+    return rows
+
+
+def _brief_warehouse_estimate_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    row = rows[0]
+    return [
+        {
+            "匹配": row.get("匹配", ""),
+            "置信度": row.get("置信度", ""),
+            "总格 P10/P50/P90": row.get("总格 P10/P50/P90", ""),
+            "价值 P10/P50/P90": row.get("价值 P10/P50/P90", ""),
+            "说明": row.get("说明", ""),
+        }
+    ]
+
+
+def _tool_info_roi_rows(rows: Sequence[Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows[:8]:
+        out.append(
+            {
+                "道具": row.tool_name,
+                "价格": f"{row.silver_cost:,}",
+                "匹配样本": row.n_matched,
+                "价值区间压缩": f"{row.value_width_gain:,.0f}",
+                "仓储区间压缩": f"{row.cells_width_gain:,.0f}",
+                "信息ROI": f"{row.roi_value:.2f}",
+                "说明": row.note,
+            }
+        )
+    return out
+
+
+def _brief_tool_info_roi_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows[:3]:
+        out.append(
+            {
+                "道具": row.get("道具", ""),
+                "价格": row.get("价格", ""),
+                "价值压缩": row.get("价值区间压缩", ""),
+                "仓储压缩": row.get("仓储区间压缩", ""),
+                "信息ROI": row.get("信息ROI", ""),
+            }
+        )
+    return out
+
+
+def _decision_summary_rows(
+    *,
+    bid_rows: Sequence[Mapping[str, Any]],
+    warehouse_rows: Sequence[Mapping[str, Any]],
+    tool_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    from bidking_lab.runtime import (
+        tactical_snapshot_from_rows,
+        tactical_summary_rows,
+    )
+
+    snapshot = tactical_snapshot_from_rows(
+        bid_rows=bid_rows,
+        warehouse_rows=warehouse_rows,
+        tool_rows=tool_rows,
+    )
+    return [
+        {
+            "问题": row.topic,
+            "结论": row.conclusion,
+            "依据": row.detail,
+        }
+        for row in tactical_summary_rows(snapshot)
+    ]
+
+
+def _render_decision_summary(
+    *,
+    bid_rows: Sequence[Mapping[str, Any]] | None = None,
+    warehouse_rows: Sequence[Mapping[str, Any]] | None = None,
+    tool_rows: Sequence[Mapping[str, Any]] | None = None,
+) -> None:
+    rows = _decision_summary_rows(
+        bid_rows=bid_rows or (),
+        warehouse_rows=warehouse_rows or (),
+        tool_rows=tool_rows or (),
+    )
+    if not any(row["结论"] not in ("暂无", "暂无后验", "暂无出价后验") for row in rows):
+        return
+    st.markdown("### 决策小结")
+    _render_records_table(rows)
+
+
+def _bid_advice_rows(
+    *,
+    latest_bids: Mapping[str, int],
+    value_summary: Any,
+    evidence_label: str,
+    session: SessionObs | None = None,
+    round_no: int | None = None,
+    total_rounds: int | None = None,
+    posterior_samples: int = 0,
+    warehouse_estimate: Any = None,
+) -> list[dict[str, Any]]:
+    if value_summary is None or not latest_bids:
+        return []
+    from bidking_lab.inference.bid_strategy import recommend_bid_strategy
+
+    report = recommend_bid_strategy(
+        latest_bids=latest_bids,
+        value_summary=value_summary,
+        evidence_label=evidence_label,
+        session=session,
+        round_no=round_no,
+        total_rounds=total_rounds,
+        posterior_samples=posterior_samples,
+        warehouse_estimate=warehouse_estimate,
+    )
+    if report is None:
+        return []
+    thresholds = report.thresholds
+    rows = [
+        {
+            "证据": report.evidence_label,
+            "轮次": report.round_label,
+            "信息强度": report.info_strength,
+            "仓储": report.warehouse_status,
+            "当前最高": f"{report.leader} {report.highest_bid:,}",
+            "风险带": report.risk_band,
+            "探价(P10)": f"{thresholds.probe_bid:,}",
+            "防守价": f"{thresholds.defend_bid:,}",
+            "抢仓上限": f"{thresholds.attack_bid:,}",
+            "停止价": f"{thresholds.stop_bid:,}",
+            "依据": report.rationale,
+            "补信息": report.next_info_hint,
+            "建议": report.action,
+        }
+    ]
+    for player in report.player_risks:
+        rows.append(
+            {
+                "证据": "玩家价位",
+                "轮次": "",
+                "信息强度": "",
+                "仓储": "",
+                "当前最高": f"{player.name} {player.bid:,}",
+                "风险带": player.risk_band,
+                "探价(P10)": "",
+                "防守价": "",
+                "抢仓上限": "",
+                "停止价": "",
+                "依据": "",
+                "补信息": "",
+                "建议": "",
+            }
+        )
+    return rows
+
+
+def _latest_fatbeans_bids() -> dict[str, int]:
+    summary = st.session_state.get("_last_fatbeans_import_summary")
+    if not isinstance(summary, Mapping):
+        return {}
+    raw = summary.get("latest_bids")
+    if not isinstance(raw, Mapping):
+        return {}
+    out: dict[str, int] = {}
+    for name, value in raw.items():
+        try:
+            out[str(name)] = int(value)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _latest_fatbeans_round() -> int | None:
+    summary = st.session_state.get("_last_fatbeans_import_summary")
+    if not isinstance(summary, Mapping):
+        return None
+    try:
+        value = int(summary.get("round") or 0)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _latest_warehouse_estimate() -> Any:
+    summary = st.session_state.get("_last_fatbeans_import_summary")
+    if not isinstance(summary, Mapping):
+        return None
+    map_likelihood = summary.get("map_likelihood")
+    if not isinstance(map_likelihood, Mapping):
+        return None
+    return map_likelihood.get("warehouse_estimate")
+
+
+def _rounds_total_for_session(session: SessionObs | None) -> int | None:
+    return None
+
+
+def _bid_advice_rows_from_hint_bundle(bundle: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(bundle, Mapping):
+        return []
+    latest_bids = _latest_fatbeans_bids()
+    if not latest_bids:
+        return []
+    values = bundle.get("conditional_values")
+    if not values:
+        values = bundle.get("all_values")
+    if not values:
+        return []
+
+    from types import SimpleNamespace
+
+    p10, p50, p90 = np.percentile(np.asarray(values, dtype=np.float64), [10, 50, 90])
+    value_summary = SimpleNamespace(p10=float(p10), p50=float(p50), p90=float(p90))
+    source = str(bundle.get("canonical_input_source") or "legacy")
+    session = bundle.get("session")
+    session_obs = session if isinstance(session, SessionObs) else None
+    return _bid_advice_rows(
+        latest_bids=latest_bids,
+        value_summary=value_summary,
+        evidence_label=f"主推理 {source}",
+        session=session_obs,
+        round_no=_latest_fatbeans_round(),
+        total_rounds=_rounds_total_for_session(session_obs),
+        posterior_samples=len(values),
+        warehouse_estimate=_latest_warehouse_estimate(),
+    )
+
+
+def _render_main_warehouse_estimate_panel() -> None:
+    summary = st.session_state.get("_last_fatbeans_import_summary")
+    if not isinstance(summary, Mapping):
+        return
+    map_likelihood = summary.get("map_likelihood")
+    if not isinstance(map_likelihood, Mapping):
+        return
+    rows = map_likelihood.get("warehouse_estimate_rows")
+    if not isinstance(rows, list) or not rows:
+        return
+    st.markdown("### 仓储估计")
+    st.caption(
+        "不使用最终结算总格数，只用当前 live/Fatbeans 证据反推总格区间；"
+        "区间越宽，出价策略越保守。"
+    )
+    layout_note = map_likelihood.get("layout_note")
+    if layout_note:
+        st.caption(str(layout_note))
+    _render_records_table(_brief_warehouse_estimate_rows(rows))
+    tool_rows = map_likelihood.get("tool_info_roi_rows")
+    if isinstance(tool_rows, list) and tool_rows:
+        st.caption(
+            "补信息 ROI：比较当前局面下一张道具对价值/仓储区间的预期压缩。"
+        )
+        _render_records_table(_brief_tool_info_roi_rows(tool_rows))
+    with st.expander("展开仓储 / 补信息 ROI 详细诊断", expanded=False):
+        _render_records_table(rows)
+        if isinstance(tool_rows, list) and tool_rows:
+            _render_records_table(tool_rows)
+
+
+def _main_warehouse_and_tool_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    summary = st.session_state.get("_last_fatbeans_import_summary")
+    if not isinstance(summary, Mapping):
+        return [], []
+    map_likelihood = summary.get("map_likelihood")
+    if not isinstance(map_likelihood, Mapping):
+        return [], []
+    warehouse_rows = map_likelihood.get("warehouse_estimate_rows")
+    tool_rows = map_likelihood.get("tool_info_roi_rows")
+    return (
+        _brief_warehouse_estimate_rows(warehouse_rows)
+        if isinstance(warehouse_rows, list)
+        else [],
+        _brief_tool_info_roi_rows(tool_rows)
+        if isinstance(tool_rows, list)
+        else [],
+    )
+
+
+def _render_main_bid_advice_panel(bundle: Mapping[str, Any] | None) -> None:
+    rows = _bid_advice_rows_from_hint_bundle(bundle)
+    warehouse_summary_rows, tool_summary_rows = _main_warehouse_and_tool_rows()
+    if rows:
+        _render_decision_summary(
+            bid_rows=rows[:1],
+            warehouse_rows=warehouse_summary_rows,
+            tool_rows=tool_summary_rows,
+        )
+    _render_main_warehouse_estimate_panel()
+    if rows:
+        st.markdown("### 实时出价建议 v1")
+        st.caption(
+            "用当前 Fatbeans 最高价对比本页 MC 条件后验。"
+            "只读建议，不自动出价；阈值会按轮次、仓储状态和信息强度调整。"
+        )
+        _render_records_table(rows)
+        return
+
+    summary = st.session_state.get("_last_fatbeans_import_summary")
+    if not isinstance(summary, Mapping):
+        return
+    fallback_rows = summary.get("bid_advice_rows")
+    if isinstance(fallback_rows, list) and fallback_rows:
+        _render_decision_summary(
+            bid_rows=fallback_rows[:1],
+            warehouse_rows=warehouse_summary_rows,
+            tool_rows=tool_summary_rows,
+        )
+        st.markdown("### 实时出价建议 v1")
+        st.caption(
+            "当前还没有本页 MC 后验，先显示 Fatbeans 导入诊断中的地图似然估值。"
+            "运行出价 hint 后会切换为本页条件后验。"
+        )
+        _render_records_table(fallback_rows)
+
+
+def _render_fatbeans_detail_tables(summary: Mapping[str, Any]) -> None:
+    with st.expander("展开 inventory / 轮次 / 道具 / 出价明细", expanded=False):
+        grid_summary_rows = summary.get("grid_summary_rows")
+        if isinstance(grid_summary_rows, list) and grid_summary_rows:
+            st.caption(
+                "当前轮廓证据（优先使用结算前最后一批 grid_items；未知品质只作诊断）："
+            )
+            _render_records_table(grid_summary_rows)
+        grid_batches = summary.get("grid_batches")
+        if isinstance(grid_batches, tuple):
+            _render_fatbeans_grid_preview(grid_batches)
+        grid_position_rows = summary.get("grid_position_rows")
+        if isinstance(grid_position_rows, list) and grid_position_rows:
+            st.caption(
+                "轮廓坐标证据（行/列为 1-based；local=None 按 top-left 0 处理）："
+            )
+            _render_records_table(grid_position_rows)
+        quality_rows = summary.get("quality_rows")
+        if isinstance(quality_rows, list) and quality_rows:
+            st.caption("结算 inventory 按品质汇总：")
+            _render_records_table(quality_rows)
+        state_round_rows = summary.get("state_round_rows")
+        if isinstance(state_round_rows, list) and state_round_rows:
+            st.caption(
+                "状态包轮次审计（使用顶层状态轮次；技能块内部轮次不作为展示轮次）："
+            )
+            _render_records_table(state_round_rows)
+        tool_rows = summary.get("tool_rows")
+        if isinstance(tool_rows, list) and tool_rows:
+            st.caption("本局发送的道具/动作：")
+            _render_records_table(tool_rows)
+        result_rows = summary.get("result_rows")
+        if isinstance(result_rows, list) and result_rows:
+            st.caption("最新状态中的道具结果：")
+            _render_records_table(result_rows)
+        bid_rows = summary.get("bid_rows")
+        if isinstance(bid_rows, list) and bid_rows:
+            st.caption(
+                "结算/最新状态中的玩家出价候选（诊断用，不参与推理；"
+                "values 不保证按时间排序）。"
+            )
+            _render_records_table(bid_rows)
+        replay_rows = summary.get("layout_replay_rows")
+        if isinstance(replay_rows, list) and replay_rows:
+            st.caption(
+                "布局回放评估：按状态切片对比最终结算真值；边界误差不是预测，只是布局深度诊断。"
+            )
+            _render_records_table(replay_rows)
+
+
+def _render_fatbeans_tactical_summary(
+    summary: Mapping[str, Any],
+    *,
+    warehouse_summary_rows: Sequence[Mapping[str, Any]],
+    tool_summary_rows: Sequence[Mapping[str, Any]],
+    bid_advice_rows: Sequence[Mapping[str, Any]],
+) -> None:
+    from bidking_lab.runtime import tactical_panel_from_rows
+
+    layout_stage_rows = summary.get("layout_stage_rows")
+    layout_stage_rows = (
+        layout_stage_rows
+        if isinstance(layout_stage_rows, list)
+        else []
+    )
+    map_likelihood = summary.get("map_likelihood")
+    layout_note = ""
+    if isinstance(map_likelihood, Mapping):
+        layout_note = str(map_likelihood.get("layout_note") or "")
+    panel = tactical_panel_from_rows(
+        bid_rows=bid_advice_rows,
+        warehouse_rows=warehouse_summary_rows,
+        tool_rows=tool_summary_rows,
+        layout_stage_rows=layout_stage_rows,
+        layout_note=layout_note,
+    )
+    st.markdown("### Fatbeans 实战摘要")
+    if panel.layout_note:
+        st.caption(panel.layout_note)
+    _render_records_table(
+        [
+            {
+                "项目": row.topic,
+                "结论": row.conclusion,
+                "补充": row.detail,
+            }
+            for row in panel.summary_rows
+        ]
+    )
+    grid_batches = summary.get("grid_batches")
+    if isinstance(grid_batches, tuple):
+        _render_fatbeans_grid_preview(grid_batches)
+    if panel.layout_stages:
+        st.caption("布局阶段摘要：")
+        _render_records_table(
+            [
+                {
+                    "阶段": stage.stage,
+                    "已知格": stage.known_cells,
+                    "覆盖": stage.coverage,
+                    "最深行": stage.deepest_row,
+                    "布局估计": stage.estimate,
+                    "置信": stage.confidence,
+                    "风险": stage.risk,
+                }
+                for stage in panel.layout_stages
+            ]
+        )
+    if panel.warehouse_rows:
+        st.caption("仓储估计（摘要）：")
+        _render_records_table(panel.warehouse_rows)
+    if panel.tool_rows:
+        st.caption("补信息 ROI（摘要，Top 3）：")
+        _render_records_table(panel.tool_rows)
+    if panel.bid_rows:
+        st.caption("实时出价建议 v1（摘要）：")
+        _render_records_table(panel.bid_rows)
+
+
+def _brief_layout_stage_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    limit: int = 4,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows[:limit]:
+        estimate = row.get("样本拟合估计") or row.get("布局估计", "")
+        confidence = row.get("样本拟合置信") or row.get("估计置信", "")
+        out.append(
+            {
+                "阶段": f"R{row.get('R') or '?'} / sort {row.get('sort')}",
+                "已知格": row.get("已知格", ""),
+                "覆盖": row.get("已知覆盖", ""),
+                "最深行": row.get("最深行", ""),
+                "布局估计": estimate,
+                "置信": confidence,
+                "风险": row.get("风险", ""),
+            }
+        )
+    return out
+
+
+def _fatbeans_state_round_rows(events: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for state in events.states:
+        if not (
+            state.action_results
+            or state.skill_reveals
+            or state.public_infos
+            or state.inventory_items
+        ):
+            continue
+        rows.append(
+            {
+                "sort": state.sort_id,
+                "时间": state.capture_time[-15:],
+                "状态轮次(R)": state.round_no,
+                "消息": hex(state.message_id),
+                "道具结果": ", ".join(
+                    str(result.action_id) for result in state.action_results
+                ),
+                "技能": ", ".join(
+                    str(reveal.skill_id) for reveal in state.skill_reveals
+                ),
+                "结算物品": len(state.inventory_items) or "",
+            }
+        )
+    return rows[-8:]
+
+
+def _latest_fatbeans_grid_batch(batches: Sequence[Any]) -> Any | None:
+    from bidking_lab.live.layout import latest_grid_batch
+
+    return latest_grid_batch(batches)
+
+
+def _fatbeans_grid_item_summary_rows(
+    batches: Sequence[Any],
+) -> list[dict[str, Any]]:
+    selected = _latest_fatbeans_grid_batch(batches)
+    if selected is None:
+        return []
+    by_quality: dict[int | None, dict[str, Any]] = {}
+    for item in selected.grid_items:
+        row = by_quality.setdefault(
+            item.quality,
+            {
+                "_quality_order": item.quality if item.quality is not None else 99,
+                "状态": selected.sequence,
+                "品质": (
+                    f"{item.quality} {QUALITY_NAME.get(item.quality, '')}"
+                    if item.quality is not None
+                    else "未知品质轮廓"
+                ),
+                "件数": 0,
+                "格数": 0,
+                "示例形状": [],
+                "说明": (
+                    "可进入品质桶"
+                    if item.quality is not None
+                    else "只记录轮廓，暂不枚举品质组合"
+                ),
+            },
+        )
+        row["件数"] += 1
+        row["格数"] += item.cells
+        footprint = item.footprint()
+        if footprint is not None:
+            row["最深行"] = max(int(row.get("最深行") or 0), footprint.bottom_row)
+        if item.shape_key and len(row["示例形状"]) < 6:
+            row["示例形状"].append(item.shape_key)
+    rows = list(by_quality.values())
+    for row in rows:
+        row["示例形状"] = ", ".join(row["示例形状"])
+    rows.sort(key=lambda row: int(row.pop("_quality_order")))
+    return rows
+
+
+def _fatbeans_grid_position_rows(
+    batches: Sequence[Any],
+    *,
+    limit: int = 16,
+) -> list[dict[str, Any]]:
+    selected = _latest_fatbeans_grid_batch(batches)
+    if selected is None:
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in selected.grid_items:
+        footprint = item.footprint()
+        if footprint is None:
+            continue
+        rows.append(
+            {
+                "状态": selected.sequence,
+                "品质": (
+                    f"{item.quality} {QUALITY_NAME.get(item.quality, '')}"
+                    if item.quality is not None
+                    else "未知"
+                ),
+                "item": item.item_id or "",
+                "local": 0 if item.local_index is None else item.local_index,
+                "形状": f"{footprint.width}x{footprint.height}",
+                "行": f"{footprint.row}-{footprint.bottom_row}",
+                "列": f"{footprint.col}-{footprint.right_col}",
+                "格数": item.cells,
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            int(str(row["行"]).split("-")[0]),
+            int(str(row["列"]).split("-")[0]),
+            str(row["品质"]),
+        )
+    )
+    return rows[:limit]
+
+
+_GRID_QUALITY_STYLE: dict[int | None, tuple[str, str]] = {
+    None: ("rgba(148, 163, 184, 0.28)", "#64748b"),
+    1: ("rgba(241, 245, 249, 0.58)", "#94a3b8"),
+    2: ("rgba(34, 197, 94, 0.30)", "#22c55e"),
+    3: ("rgba(59, 130, 246, 0.30)", "#3b82f6"),
+    4: ("rgba(168, 85, 247, 0.32)", "#a855f7"),
+    5: ("rgba(234, 179, 8, 0.32)", "#eab308"),
+    6: ("rgba(239, 68, 68, 0.34)", "#ef4444"),
+}
+
+
+def _render_fatbeans_grid_preview(batches: Sequence[Any]) -> None:
+    from bidking_lab.live.layout import (
+        layout_evidence_from_batches,
+        layout_grid_view,
+    )
+
+    evidence = layout_evidence_from_batches(batches)
+    if evidence is None:
+        return
+    view = layout_grid_view(evidence)
+
+    base_cells: list[str] = []
+    for row in range(1, view.rows + 1):
+        for col in range(1, view.columns + 1):
+            base_cells.append(
+                '<div style="'
+                f"grid-row:{row};grid-column:{col};"
+                "border:1px solid rgba(148,163,184,.22);"
+                "background:rgba(15,23,42,.10);"
+                '"></div>'
+            )
+
+    item_cells: list[str] = []
+    for item in view.items:
+        bg, border = _GRID_QUALITY_STYLE.get(item.quality, _GRID_QUALITY_STYLE[None])
+        label = html.escape(item.label).replace("\n", "<br>")
+        title = html.escape(item.tooltip)
+        item_cells.append(
+            '<div title="'
+            + title
+            + '" style="'
+            f"grid-row:{item.row} / span {item.height};"
+            f"grid-column:{item.col} / span {item.width};"
+            f"background:{bg};border:2px solid {border};"
+            "box-sizing:border-box;border-radius:4px;"
+            "display:flex;align-items:center;justify-content:center;"
+            "font-size:10px;line-height:1.15;text-align:center;"
+            "color:#0f172a;font-weight:600;overflow:hidden;"
+            f"z-index:{item.z_index};"
+            '">'
+            + label
+            + "</div>"
+        )
+
+    st.caption(view.summary)
+    st.markdown(
+        '<div style="overflow:auto;max-height:720px;max-width:100%;">'
+        '<div style="'
+        "display:grid;"
+        f"grid-template-columns:repeat({view.columns},34px);"
+        "grid-auto-rows:24px;"
+        "gap:1px;"
+        "padding:6px;"
+        "background:rgba(15,23,42,.04);"
+        "width:max-content;"
+        '">'
+        + "".join(base_cells)
+        + "".join(item_cells)
+        + "</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _fatbeans_grid_layout_note(
+    batches: Sequence[Any],
+) -> str:
+    from bidking_lab.live.layout import (
+        layout_evidence_from_batches,
+        layout_risk_label,
+    )
+
+    evidence = layout_evidence_from_batches(batches)
+    if evidence is None:
+        return ""
+    return (
+        f"轮廓坐标：已解析 {len(evidence.items)} 件 / {evidence.total_cells} 格，"
+        f"最深到第 {evidence.max_row} 行，边界空洞率约 {evidence.sparsity_ratio:.0%}。"
+        f"{layout_risk_label(evidence)}；这是布局深度证据，不直接等同于总格数。"
+    )
+
+
+def _fatbeans_layout_replay_rows(events: Any) -> list[dict[str, Any]]:
+    from bidking_lab.live import SAMPLE_FIT_LAYOUT_ESTIMATE_POLICY
+    from bidking_lab.live.replay import layout_replay_stages
+    from bidking_lab.runtime import layout_replay_rows_from_stages
+
+    return list(
+        layout_replay_rows_from_stages(
+            layout_replay_stages(events),
+            comparison_policy=SAMPLE_FIT_LAYOUT_ESTIMATE_POLICY,
+        )
+    )
+
+
+def _fatbeans_map_likelihood_summary(
+    batches: Sequence[Any],
+) -> dict[str, Any] | None:
+    """Estimate map likelihood for the latest useful pre-settlement state."""
+    from dataclasses import replace
+
+    from bidking_lab.inference.map_likelihood import estimate_map_likelihood
+    from bidking_lab.inference.tool_info_roi import estimate_tool_info_roi
+    from bidking_lab.inference.warehouse_estimator import estimate_warehouse_cells
+    from bidking_lab.live import (
+        LiveSessionState,
+        apply_observation_batch,
+        live_state_to_session_obs,
+    )
+
+    maps_, drops_, items_ = _load_tables()
+    final_state = LiveSessionState()
+    pre_settlement_state = LiveSessionState()
+    saw_pre_settlement = False
+    for batch in batches:
+        final_state = apply_observation_batch(final_state, batch)
+        if getattr(batch, "phase", None) != "settled":
+            pre_settlement_state = apply_observation_batch(
+                pre_settlement_state,
+                batch,
+            )
+            saw_pre_settlement = True
+
+    base_session = (
+        live_state_to_session_obs(pre_settlement_state)
+        if saw_pre_settlement
+        else None
+    )
+    evidence_label = "结算前最后状态"
+    if base_session is None:
+        base_session = live_state_to_session_obs(final_state)
+        evidence_label = "最新状态"
+    if base_session is None:
+        return None
+
+    final_session = live_state_to_session_obs(final_state)
+    candidate_map_ids = _candidate_map_ids_for_likelihood(base_session, maps_)
+    n_trials = 500
+    seed = 20260528
+    cells_tol = 8
+    count_tol = 3
+    without_warehouse = replace(
+        base_session,
+        warehouse_total_cells=None,
+        warehouse_total_cells_approx=None,
+        warehouse_total_cells_tolerance=None,
+        total_item_count=None,
+    )
+    base_results = estimate_map_likelihood(
+        candidate_map_ids,
+        without_warehouse,
+        maps=maps_,
+        drops=drops_,
+        items=items_,
+        n_trials=n_trials,
+        seed=seed,
+        cells_tol=cells_tol,
+        count_tol=count_tol,
+    )
+    warehouse_estimate = estimate_warehouse_cells(
+        candidate_map_ids,
+        without_warehouse,
+        maps=maps_,
+        drops=drops_,
+        items=items_,
+        n_trials=n_trials,
+        seed=seed,
+        cells_tol=cells_tol,
+        count_tol=count_tol,
+    )
+    tool_info_roi = estimate_tool_info_roi(
+        candidate_map_ids,
+        without_warehouse,
+        maps=maps_,
+        drops=drops_,
+        items=items_,
+        n_trials=250,
+        seed=seed + 1,
+        cells_tol=cells_tol,
+        count_tol=count_tol,
+    )
+
+    with_results: list[Any] = []
+    compression_rows: list[dict[str, Any]] = []
+    final_warehouse = (
+        final_session.warehouse_total_cells
+        if final_session is not None
+        else None
+    )
+    if final_warehouse is not None:
+        with_warehouse = replace(
+            without_warehouse,
+            warehouse_total_cells=final_warehouse,
+            warehouse_total_cells_approx=None,
+            warehouse_total_cells_tolerance=0,
+        )
+        with_results = estimate_map_likelihood(
+            candidate_map_ids,
+            with_warehouse,
+            maps=maps_,
+            drops=drops_,
+            items=items_,
+            n_trials=n_trials,
+            seed=seed,
+            cells_tol=cells_tol,
+            count_tol=count_tol,
+        )
+        before = base_results[0] if base_results else None
+        after = with_results[0] if with_results else None
+        compression_rows.append(
+            {
+                "对比": "加入总仓储格数",
+                "总仓储": final_warehouse,
+                "Top后验 前": (
+                    f"{before.posterior_probability:.1%}" if before else ""
+                ),
+                "Top后验 后": (
+                    f"{after.posterior_probability:.1%}" if after else ""
+                ),
+                "Top价值宽度 前": (
+                    _format_quantile_width(before.total_value) if before else ""
+                ),
+                "Top价值宽度 后": (
+                    _format_quantile_width(after.total_value) if after else ""
+                ),
+            }
+        )
+
+    rows = _map_likelihood_result_rows(base_results, evidence_label)
+    best_result = base_results[0] if base_results else None
+    best_evidence_label = evidence_label
+    if with_results:
+        rows.extend(_map_likelihood_result_rows(with_results, f"{evidence_label}+总仓储"))
+        if with_results[0].total_value is not None:
+            best_result = with_results[0]
+            best_evidence_label = f"{evidence_label}+总仓储"
+    return {
+        "evidence_label": evidence_label,
+        "candidate_count": len(candidate_map_ids),
+        "n_trials": n_trials,
+        "tolerance": f"cells±{cells_tol}, count±{count_tol}",
+        "rows": rows,
+        "compression_rows": compression_rows,
+        "warehouse_estimate": warehouse_estimate,
+        "warehouse_estimate_rows": _warehouse_estimate_rows(warehouse_estimate),
+        "tool_info_roi_rows": _tool_info_roi_rows(tool_info_roi),
+        "layout_note": _fatbeans_grid_layout_note(batches),
+        "best_value_summary": (
+            best_result.total_value if best_result is not None else None
+        ),
+        "best_evidence_label": best_evidence_label,
+    }
+
+
+def _render_fatbeans_json_importer() -> None:
+    """Import a Fatbeans JSON export into live shadow state."""
+    from bidking_lab.live import (
+        LiveSessionState,
+        latest_player_bids,
+        live_batches_from_fatbeans_capture_payload,
+        live_state_to_session_obs,
+        parse_fatbeans_capture_payload,
+    )
+
+    with st.expander("Fatbeans JSON 导入（packet shadow）", expanded=False):
+        st.caption(
+            "导入 Fatbeans 导出的 JSON；只写入本地 live shadow，当前不会自动控制游戏。"
+            "对手出价先作为诊断展示，暂不进入推理输入。"
+        )
+        rev = int(st.session_state.get("fatbeans_upload_rev", 0))
+        upload = st.file_uploader(
+            "选择 Fatbeans JSON",
+            type=["json"],
+            key=f"fatbeans_json_uploader_{rev}",
+        )
+        c1, c2, c3 = st.columns(3)
+        import_clicked = c1.button(
+            "导入到 live shadow",
+            disabled=upload is None,
+            key="fatbeans_import_live_shadow",
+            **layout_width_kwargs("button", stretch=True),
+        )
+        clear_clicked = c2.button(
+            "清空选择",
+            key="fatbeans_clear_upload",
+            **layout_width_kwargs("button", stretch=True),
+        )
+        reset_clicked = c3.button(
+            "重置 shadow",
+            key="fatbeans_reset_live_shadow",
+            **layout_width_kwargs("button", stretch=True),
+        )
+        if clear_clicked:
+            st.session_state["fatbeans_upload_rev"] = rev + 1
+            st.rerun()
+        if reset_clicked:
+            for key in (
+                "_live_session_state",
+                "_last_live_blocked_updates",
+                "_last_live_observation_batch",
+                "_last_fatbeans_import_summary",
+            ):
+                st.session_state.pop(key, None)
+            st.rerun()
+
+        if import_clicked and upload is not None:
+            try:
+                from bidking_lab.runtime import (
+                    action_result_rows_from_results,
+                    packet_action_rows_from_sends,
+                    player_bid_candidate_rows_from_bids,
+                )
+
+                raw = upload.getvalue()
+                events = parse_fatbeans_capture_payload(raw)
+                batches = live_batches_from_fatbeans_capture_payload(raw)
+                applied = _apply_live_packet_batches(batches)
+                live_state = st.session_state.get("_live_session_state")
+                live_session = (
+                    live_state_to_session_obs(live_state)
+                    if isinstance(live_state, LiveSessionState)
+                    else None
+                )
+                st.session_state["use_live_canonical_input"] = True
+                latest_state = events.states[-1] if events.states else None
+                inventory_items = (
+                    latest_state.inventory_items
+                    if latest_state is not None
+                    else ()
+                )
+                quality_rows, known_value_sum, missing_item_ids = (
+                    _fatbeans_inventory_summary_rows(inventory_items)
+                )
+                battle_item_names = _battle_item_names_by_id()
+                map_likelihood = _fatbeans_map_likelihood_summary(batches)
+                latest_bids = latest_player_bids(events.states)
+                bid_advice_rows = (
+                    _bid_advice_rows(
+                        latest_bids=latest_bids,
+                        value_summary=map_likelihood.get("best_value_summary"),
+                        evidence_label=str(
+                            map_likelihood.get("best_evidence_label") or ""
+                        ),
+                        round_no=latest_state.round_no if latest_state else None,
+                        total_rounds=None,
+                        posterior_samples=int(map_likelihood.get("n_trials") or 0),
+                        warehouse_estimate=map_likelihood.get("warehouse_estimate"),
+                        session=live_session,
+                    )
+                    if isinstance(map_likelihood, Mapping)
+                    else []
+                )
+                layout_replay_rows = _fatbeans_layout_replay_rows(events)
+                st.session_state["_last_fatbeans_import_summary"] = {
+                    "file": upload.name,
+                    "packets": len(events.packets),
+                    "frames": len(events.frames),
+                    "states": len(events.states),
+                    "batches": len(batches),
+                    "applied": applied,
+                    "map_id": latest_state.map_id if latest_state else None,
+                    "round": latest_state.round_no if latest_state else None,
+                    "inventory_count": len(inventory_items),
+                    "inventory_cells": sum(item.cells for item in inventory_items),
+                    "known_value_sum": known_value_sum,
+                    "missing_item_ids": missing_item_ids,
+                    "quality_rows": quality_rows,
+                    "grid_summary_rows": _fatbeans_grid_item_summary_rows(batches),
+                    "grid_batches": batches,
+                    "grid_position_rows": _fatbeans_grid_position_rows(batches),
+                    "layout_replay_rows": layout_replay_rows,
+                    "layout_stage_rows": _brief_layout_stage_rows(
+                        layout_replay_rows,
+                    ),
+                    "state_round_rows": _fatbeans_state_round_rows(events),
+                    "map_likelihood": map_likelihood,
+                    "latest_bids": dict(latest_bids),
+                    "bid_advice_rows": bid_advice_rows,
+                    "tool_rows": list(
+                        packet_action_rows_from_sends(
+                            events.sends,
+                            battle_item_names,
+                        )
+                    ),
+                    "result_rows": list(
+                        action_result_rows_from_results(
+                            latest_state.action_results if latest_state else (),
+                            battle_item_names,
+                        )
+                    ),
+                    "bid_rows": list(
+                        player_bid_candidate_rows_from_bids(
+                            latest_state.bids if latest_state else (),
+                        )
+                    ),
+                }
+                st.success(f"已导入 {applied} 个 packet live batch。")
+            except Exception as exc:  # noqa: BLE001 - user-facing import boundary
+                st.error(f"Fatbeans JSON 解析失败：{exc}")
+
+        summary = st.session_state.get("_last_fatbeans_import_summary")
+        if isinstance(summary, Mapping):
+            from bidking_lab.runtime import import_overview_from_summary
+
+            overview = import_overview_from_summary(summary)
+            rows = [
+                {
+                    "文件": overview.file,
+                    "packets": overview.packets,
+                    "frames": overview.frames,
+                    "states": overview.states,
+                    "live batches": overview.live_batches,
+                    "map": overview.map_id,
+                    "round": overview.round_no,
+                    "结算件数": overview.settlement_items,
+                    "结算格数": overview.settlement_cells,
+                    "已知战利品价值": overview.known_loot_value,
+                }
+            ]
+            _render_records_table(rows)
+            missing_item_ids = summary.get("missing_item_ids")
+            if isinstance(missing_item_ids, list) and missing_item_ids:
+                st.warning(
+                    "有结算 item_id 不在当前本地 Item 表中，战利品价值为已知部分合计："
+                    + ", ".join(str(x) for x in missing_item_ids)
+                )
+            map_likelihood = summary.get("map_likelihood")
+            if isinstance(map_likelihood, Mapping):
+                warehouse_rows = map_likelihood.get("warehouse_estimate_rows")
+                warehouse_summary_rows = (
+                    _brief_warehouse_estimate_rows(warehouse_rows)
+                    if isinstance(warehouse_rows, list)
+                    else []
+                )
+                tool_info_rows = map_likelihood.get("tool_info_roi_rows")
+                tool_summary_rows = (
+                    _brief_tool_info_roi_rows(tool_info_rows)
+                    if isinstance(tool_info_rows, list)
+                    else []
+                )
+                bid_advice_rows = summary.get("bid_advice_rows")
+                bid_summary_rows = (
+                    bid_advice_rows
+                    if isinstance(bid_advice_rows, list)
+                    else []
+                )
+                _render_fatbeans_tactical_summary(
+                    summary,
+                    warehouse_summary_rows=warehouse_summary_rows,
+                    tool_summary_rows=tool_summary_rows,
+                    bid_advice_rows=bid_summary_rows,
+                )
+                with st.expander("展开 Fatbeans 推理详细诊断", expanded=False):
+                    rows = map_likelihood.get("rows")
+                    if isinstance(rows, list) and rows:
+                        st.caption(
+                            "地图似然诊断：基于 live shadow 里当前可用的品质桶/道具证据。"
+                        )
+                        st.caption(
+                            f"候选地图 {map_likelihood.get('candidate_count')} 张；"
+                            f"每图 MC {map_likelihood.get('n_trials')} 次；"
+                            f"探索容差 {map_likelihood.get('tolerance')}。"
+                        )
+                        _render_records_table(rows)
+                    if isinstance(warehouse_rows, list) and warehouse_rows:
+                        st.caption(
+                            "仓储估计：不使用最终总格数，只用当前品质桶/道具证据反推总格区间。"
+                        )
+                        _render_records_table(warehouse_rows)
+                    if isinstance(tool_info_rows, list) and tool_info_rows:
+                        st.caption(
+                            "补信息 ROI：估算再用一张道具能压缩多少价值/仓储区间，"
+                            "当前优先用于比较低成本常态道具。"
+                        )
+                        _render_records_table(tool_info_rows)
+                    compression_rows = map_likelihood.get("compression_rows")
+                    if isinstance(compression_rows, list) and compression_rows:
+                        st.caption("总仓储空间的信息压缩效果（用结算总格模拟该道具读数）：")
+                        _render_records_table(compression_rows)
+            bid_advice_rows = summary.get("bid_advice_rows")
+            if not isinstance(map_likelihood, Mapping) and isinstance(bid_advice_rows, list) and bid_advice_rows:
+                st.caption(
+                    "实时出价建议 v1（诊断）：用当前最高价对比价值区间，"
+                    "不自动出价；停止价暂按 P90 × 1.05。"
+                )
+                _render_records_table(bid_advice_rows[:1])
+            _render_fatbeans_detail_tables(summary)
 
 
 def _render_canonical_input_diagnostic(
@@ -2669,6 +3903,7 @@ with st.sidebar:
             "初次打开 app 不会因此预热。"
         ),
     )
+    _render_fatbeans_json_importer()
     _prev_auto_infer = st.session_state.get("_prev_auto_infer_after_capture")
     if _prev_auto_infer and not st.session_state.get("auto_infer_after_capture", True):
         _cancel_background_hint()
@@ -2837,7 +4072,7 @@ agent_debug_log(
 )
 # #endregion
 _cells_budget_err = check_warehouse_cell_budget(state)
-warehouse_ready = _wh_sync > 0
+warehouse_ready = int(state.get("warehouse_cells") or 0) > 0
 map_ready = state.get("map_id") is not None
 inference_ready = warehouse_ready and map_ready and _cells_budget_err is None
 if st.session_state.get("_pending_hint_nudge") and inference_ready:
@@ -4181,6 +5416,7 @@ def _render_hint_tab_impl() -> None:
         _cached_bundle = None
     elif _cached_bundle is not None:
         st.caption("\u4e0b\u65b9\u4e3a\u5df2\u7f13\u5b58\u7684\u63a8\u65ad\u7ed3\u679c\uff08\u540e\u53f0\u6216\u624b\u52a8\u8fd0\u884c\uff09\u3002")
+    _render_main_bid_advice_panel(_cached_bundle)
     _hint_btn_cols = st.columns([3, 1])
     with _hint_btn_cols[0]:
         _run_hint_clicked = st.button(

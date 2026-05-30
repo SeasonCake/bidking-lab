@@ -1317,5 +1317,768 @@ Streamlit 在前端直接拒绝玩家输入 `90`，错误信息为
 
 ---
 
+## Checkpoint #48 — 第一份真实 TCP 抓包样本进入离线分析（2026-05-27）
+
+### 关键判断
+
+FatbeansCreater 底栏显示的“已捕获 741”不是本轮真正需要的范围。用户按 TCP 与
+`BidKing.exe` 主连接过滤后导出的 `220` 条 packet，全部集中在
+`127.0.0.1:59685 <-> 8.133.195.27:10000`，已经排除了公告、登录、HTTP 文本等
+噪声。对 packet adapter 来说，这种筛选后的主会话比“全部包”更适合作为第一份
+fixture。
+
+### 技术发现
+
+- Fatbeans JSON 同时保存 `HexData` 和 Base64 `Data`，解码后长度与 `DataLength`
+  一致，说明不是 UI 文本复制，也没有明显截断。
+- 应用协议使用 4 字节大端长度前缀。当前样本可重组为 `193` 条完整 frame：
+  上行 `73` 条，下行 `120` 条，无尾部残片。
+- 上行 frame 头部形态为 `length + 32 d2 55 xx + message_id + body`。
+- 下行 frame 头部形态为 `length + server_seq + request_tag + message_id + body`。
+  当 `request_tag=0` 时，看起来是服务器主动 push。
+- 已定位候选业务消息：
+  - `SEND msg=0x0022`：字段 2 为 session id，字段 3 像出价值。
+  - `SEND msg=0x0026`：字段 2 为 session id，字段 3 像道具或局内动作 id。
+  - `REV push msg=0x0025`：疑似每轮状态同步，嵌套字段可读 `map=2401`、
+    `round=1..4`，并有玩家/结果/公开信息重复字段。
+  - `REV push msg=0x002d`：疑似 R5 / 结算 / 技能结果大包，包含同一 session、
+    `map=2401`、`round=4` 和多组玩家/结果块。
+
+第二份样本 `bidking_package3.json` 进一步验证了消息结构稳定性：
+
+- `map=2404`、session `2404:1274127889621635`，3 轮对局。
+- `SEND msg=0x0026` 的字段 3 是道具/动作 id，例如 `100105`、`100104`、
+  `100124`。
+- `REV push msg=0x0025` / `0x002d` 的 field8 里能找到动作结果：
+  `100105 -> 51`（蓝品总格）、`100104 -> 10`（白绿总格）、
+  `100124 -> 36798`（紫品总价）。
+- `REV push msg=0x0025/0x002d` 的 field7 能表示地图公开信息，例如
+  `map=2404 -> 8`（金品总格）。
+- 等待时收到的 `REV push msg=0x0077` 小包包含玩家 id 与 session id，但当前没有
+  看到可直接解释为“对手出价金额”的字段；更可能是玩家已行动/状态同步通知。
+
+第三份样本 `bid_king_project4.json` 把截图/人工备注对齐到更细字段：
+
+- `map=2401`，session `2401:1274127923736451`，3 轮未知别墅局。
+- 地图公开信息可读为 fixed32 小端浮点：`200014 -> 2.965517`（平均格数），
+  `200033 -> 3765.0`（随机 9 件平均价值）。
+- 道具结果仍在 `0x0027` 直接响应和 `0x0025/0x002d` 状态包中复现：
+  `100105 -> 48`、`100104 -> 8`、`100124 -> 45778`。
+- `0x0025/0x002d` 的玩家块能读出揭示价序列：我方 `290000 -> 290000 -> 290000`、
+  梦色幻想 `288888 -> 288888 -> 188888`、折翼的奇美拉 `220000 -> 220000 -> 220000`、
+  设计师 lcjeremy `153299 -> 145555 -> 417779`。
+- 结算包 `0x002d` 顶层 field5 为 `16566`，对应用户截图亏损 `165,660` 的
+  10 倍显示关系；最终状态嵌套字段能找到仓库总格 `86` 与物品数 `29`。
+
+第四份样本 `bid_king_packages_5.json` 进一步确认了 item 级字段：
+
+- `100136` 是宝光四鉴。它的 action block 不返回整数结果，而是返回 4 条
+  `runtime id + quality`：两紫两金。该包不直接给 item_id。
+- `100129` 是随机抽检（2）。它的 action block 直接返回 item_id、品质、价值、
+  shape code 和 cells：`1021005 医用一次性口罩`（白，2 格，207）与
+  `1023009 静脉注射用人免疫球蛋白`（蓝，1 格，1313）。
+- `100112` 是优品均格，结果在 fixed32 field11 中，本样本为 `2.3076923`。
+- 结算 `0x002d` 的 inventory block 可用 runtime id 还原完整战利品清单，并把宝光
+  的 4 条品质结果对回具体物品：输液泵、单兵水下推进器、和田玉原石、机械腕表。
+- package5 的完整 inventory 为 `42` 件、`114` 格、表内价值 `753522`；用户手动记的
+  `114` 格与 `753522` 对齐，手动 `41` 件应以 packet 的 `42` 件为准。
+- 结算玩家 values 序列不保证按时间顺序排列；例如赢家 `九千年之梦` 的 `750000`
+  出现在 values 序列开头，因此不能简单用“最后一个 values”当最终成交价。
+- 用户实测 VPN / UU 加速器会干扰 Fatbeans 抓包；后续采样应关闭加速器，筛选主 TCP
+  会话后导出 JSON。
+
+第五份样本 `bidking_package6.json` 验证了艾莎路线：
+
+- 艾莎技能 reveal block 可解析为 `runtime_id + quality + shape_code`，R1-R4 累积给出
+  白/绿/蓝/紫轮廓，能直接生成对应品质的 cells 与 count。
+- 该样本结算 inventory 为 `53` 件、`137` 格；品质件数/格数分别为
+  白 `6/11`、绿 `13/24`、蓝 `14/28`、紫 `9/32`、金 `7/29`、红 `4/13`。
+- 公开信息 `200026` 能给出若干物品的 `runtime_id + quality`，但不一定给 shape/name；
+  要靠后续技能 reveal 或结算 inventory 回填。
+
+第六/七份样本 `bid_king_packages7.json` 与 `bidking_package8.json` 继续验证艾莎和
+分类鉴影：
+
+- 两份包里没有 `100107 极品扫描`。实际 action 为：
+  - package7：`100129 随机抽检（2）`、`100136 宝光四鉴`。
+  - package8：`100136 宝光四鉴`、`100129 随机抽检（2）`、
+    `100157 【数码娱乐】鉴影`。
+- `100157` 返回数码娱乐轮廓 item observation；当前样本为 3 件，shape code
+  `13`、`11`、`11`。
+- package7 结算：`33` 件、`85` 格、价值 `292428`；品质件数
+  白/绿/蓝/紫/金/红 = `8/7/8/4/5/1`，品质格数 = `18/11/27/9/19/1`。
+- package8 结算：`37` 件、`101` 格、价值 `483668`；品质件数
+  白/绿/蓝/紫/金/红 = `5/3/14/8/4/3`，品质格数 = `7/4/44/35/7/4`。
+- package8 里缺失的 `1306006/1306007/1306011/1306013` 来自 5.27 活动表：
+  十二生肖藏品 `1306003..1306014`，均为蓝色品质、`2x2`、价值 `8888`。
+  同步游戏源表并重建 processed 后，战利品价值可完整计算。
+- 同步源表时确认当前 `BidMap.txt` 为 23 列、125 张地图。`bid_map_table`
+  已兼容旧 21 列和新 23 列，保持原 `BidMap` public schema 不变。
+
+### 工程取舍
+
+本轮只把语义已经稳定的字段接入 `LiveObservationBatch`：地图、轮次、道具结果、
+公开信息、技能/道具揭示 item shape、结算 inventory 的总格/件数/品质桶。对手出价
+先只做诊断，因为结算 values 不保证按时间顺序。Fatbeans JSON 现在可通过
+`bidking_lab.live.fatbeans` 离线解析，也可在 Streamlit 侧边栏导入到 live shadow。
+
+艾莎 reveal 已从诊断信息升级为正式 live 约束：`1001034/1001033/1001032/1001031`
+分别映射为白/绿/蓝/紫 bucket 的 `count + total_cells`。这意味着导入一局艾莎
+Fatbeans JSON 后，白/绿/蓝/紫轮廓不再需要手填即可进入 `SessionObs`。
+
+保留通用检查脚本 `scripts/inspect_fatbeans_capture.py` / `scripts/inspect_fatbeans_events.py`
+和多份报告，后续继续用新样本验证 message id 与字段位置稳定性，再考虑把 live shadow
+切为默认输入。
+
+### 简历叙事价值
+
+这是项目第一次把“概率推理 / OCR UI”延展到网络协议分析：用户从零开始完成抓包，
+项目侧完成主连接筛选、payload 校验、应用层 frame 重组、protobuf wire 级字段探查
+和事件候选表生成。这个链路适合后续写成“从黑盒网络样本到实时观测接口”的项目亮点。
+
+---
+
+## Checkpoint #49 — 地图似然 first cut：未知仓储不再误当 159（2026-05-28）
+
+### 背景
+
+艾莎/Fatbeans 路线能稳定给出白/绿/蓝/紫 bucket 的 `count + total_cells`，
+分类鉴影和抽检也能给出部分 item 形状/品质/价值。但很多实时阶段还没有总仓储格数。
+如果直接复用 `posterior.filter_truths_by_obs()`，`SessionObs.warehouse_capacity()`
+会把未知仓储 fallback 成 `159`，从而错误地按大型仓库过滤地图样本。
+
+### 改动
+
+- 新增 `bidking_lab.inference.map_likelihood`：
+  - `truth_matches_obs()`：只在观测里存在精确或近似仓储格数时才启用仓储过滤。
+  - `summarize_map_truths()`：对单地图 MC truth 计算匹配率，并输出总格/总价值 P10/P50/P90。
+  - `estimate_map_likelihood()`：对多个候选地图采样、匹配、归一化 posterior probability。
+- 新增 `tests/test_map_likelihood.py`，覆盖：
+  - 未知仓储时不会使用 `159` fallback。
+  - 提供仓储时正常约束。
+  - 单地图匹配率与分位数。
+  - 两张确定性地图按 bucket 证据排序。
+- Fatbeans 导入 UI 已接入地图似然诊断：
+  - 导入 JSON 后展示同前缀候选地图的匹配率、后验概率、总格/价值 P10/P50/P90。
+  - 使用结算总格模拟“总仓储空间”道具读数，对比加入总仓储前后的 top 后验和价值区间宽度。
+  - 诊断层使用较宽探索容差 `cells±8, count±3`，避免艾莎 q1-q4 多桶精确约束在小样本 MC 下全零匹配。
+- 实时出价建议 v1 已接入 Fatbeans 导入诊断：解析当前玩家最高价，并按地图似然的
+  `P50/P90` 价值区间标记“防守区 / 进攻区 / 过热区”，停止价暂取 `P90 × 1.05`。
+  这是只读诊断，不自动出价。
+- Fatbeans JSON 导入成功后会自动打开 live canonical 输入；主出价 hint 面板已能优先使用
+  本页 MC 条件后验生成实时出价建议，没有本页后验时回退到 Fatbeans 导入诊断估值。
+- 出价策略已从 Streamlit UI 抽到 `bidking_lab.inference.bid_strategy`：当前不预测玩家心理价位，
+  只按轮次、信息强度、仓储状态和后验样本数调整探价/防守/抢仓/停止阈值。R1 或仓储未知时
+  策略会显式降级为保守，并在依据中提示“不确定性来自仓储/低信息阶段”。
+- 仓储估计已抽到 `bidking_lab.inference.warehouse_estimator`：估计时会主动移除
+  `warehouse_total_cells` / approximate warehouse 字段，避免把结算总格或 UI 估计反灌进结果。
+  它只用地图、品质桶、道具/公开信息证据筛选 MC truth，输出跨候选地图的总格 P10/P50/P90、
+  价值区间、匹配样本数、置信度和各地图贡献。
+- 主出价策略现在会消费仓储估计后验：若仓储未知但后验区间窄且置信度高，可提高信息强度；
+  若区间宽或无匹配，则继续保守。补信息建议加入成本意识：R1 不默认推荐总仓储空间或高品质扫描，
+  优先提示宝光四鉴、抽检二这类低成本常态道具；总仓储/高价扫描只在高价值局或折扣时考虑。
+- 补信息 ROI 已抽到 `bidking_lab.inference.tool_info_roi`：它从当前匹配 truth 集合出发，
+  对每个候选道具模拟“使用后会看到的信号”，再按信号分组计算价值/仓储区间的期望压缩。
+  首批覆盖常规扫描/估价/均格、总仓储空间、随机抽检（2）、宝光四鉴、四象/十方窥视和全库透视。
+  其中宝光四鉴当前只按“品质信号”估算；全库/窥视只按“轮廓格数”估算，尚未把屏幕位置和堆叠坐标计入收益。
+- UI 信息密度调整：Fatbeans 导入和主 hint 面板默认只展示决策摘要，详细地图似然、仓储明细、
+  补信息 ROI 全表、inventory、轮次审计、道具结果和玩家 values 放入折叠区。已知 `map_id` 的
+  Fatbeans 包默认只采样本地图，不再把同前缀 10 张地图都作为候选；默认 MC 采样从每图 1000
+  降到 500，补信息 ROI 从 500 降到 250，以改善导入等待。
+- 决策摘要面板新增：从现有出价建议、仓储估计和补信息 ROI 表中提取 4 行，不触发新推理：
+  当前最高价是否可追、当前价值区间、当前仓储区间、下一次优先使用道具及原因。
+- 本地 Fatbeans JSON 已复制到 `data/samples/fatbeans/` 供回归复用；该目录的 JSON 已加入 `.gitignore`，不提交原始抓包。
+
+### 轮次审计
+
+状态包顶层 `round` 字段是 1 基游戏轮次；package5 第四轮状态为 `round=4`，
+用户第四轮使用道具的判断是对的。艾莎技能块内部字段不能当作展示轮次：q1 reveal
+没有 inner round，q2/q3/q4 分别带 `1/2/3`。后续 UI 展示统一使用状态包顶层轮次，
+技能轮次语义只按 skill id 映射品质。
+
+### 策略含义
+
+`总仓储空间` 在新路线里的价值上升：它不只是一个后验过滤字段，而是会直接压缩
+地图似然和总价值 posterior。尤其在艾莎 R1-R3 只确认低/中品质轮廓时，总仓储能约束
+剩余金/红格数，从而更早给出防守价和进攻价。若已经有完整艾莎 reveal、金/红扫描或
+结算 inventory，它的边际价值会下降。
+
+### 验证
+
+- `python -m py_compile app/streamlit_app.py src/bidking_lab/live/fatbeans.py src/bidking_lab/inference/map_likelihood.py src/bidking_lab/inference/bid_strategy.py src/bidking_lab/inference/warehouse_estimator.py`
+- `PYTHONPATH=src python -m pytest tests/test_map_likelihood.py`：`4 passed`
+- `PYTHONPATH=src python -m pytest tests/test_live_fatbeans.py tests/test_map_likelihood.py tests/test_snipe.py`：`42 passed`
+- `PYTHONPATH=src python -m pytest tests/test_bid_strategy.py tests/test_live_fatbeans.py tests/test_map_likelihood.py tests/test_bg_inference.py`：`28 passed`
+- `PYTHONPATH=src python -m pytest tests/test_warehouse_estimator.py tests/test_map_likelihood.py tests/test_live_fatbeans.py tests/test_bid_strategy.py`：`23 passed`
+- `PYTHONPATH=src python -m pytest tests/test_bid_strategy.py tests/test_warehouse_estimator.py tests/test_map_likelihood.py tests/test_live_fatbeans.py`：`24 passed`
+- `PYTHONPATH=src python -m pytest tests/test_tool_info_roi.py tests/test_roi.py tests/test_bid_strategy.py tests/test_warehouse_estimator.py tests/test_live_fatbeans.py`：`28 passed`
+- `PYTHONPATH=src python -m pytest -m "not slow"`：`487 passed, 13 deselected`
+
+---
+
+## Checkpoint #50 — 明镜之眼 + 位置校准 first cut（2026-05-29）
+
+### 背景
+
+用户新增两份高价值 Fatbeans 样本：
+
+- `bidking_package12_wholebucktperspection_scan_publicinfo_basicitems_aisha.json`：艾莎局，包含宝光、抽检、全库透视、极品扫描、公开信息和最终结算。
+- `bidking_package13_eye_of_clarity_ethan.json`：伊森局，只使用 `100134 明镜之眼`，用于验证“全库品质 + 伊森轮廓”是否能合并。
+
+### 机制确认
+
+package12 验证了艾莎与全库透视：
+
+- `100100 全库透视` 在结算前返回 `42` 个完整轮廓，shape 面积合计 `123` 格。
+- 结算 inventory 同样为 `42` 件、`123` 格，表内价值 `1,295,769`。
+- 结算品质件数/格数：白 `3/6`、绿 `4/11`、蓝 `15/41`、紫 `10/27`、金 `4/15`、红 `6/23`。
+- 艾莎技能块仍稳定映射为白/绿/蓝/紫累计轮廓：
+  - `1001034` → 白 `3/6`
+  - `1001033` → 绿 `4/11`
+  - `1001032` → 蓝 `15/41`
+  - `1001031` → 紫 `10/27`
+
+package13 验证了伊森 + 明镜之眼：
+
+- `100134 明镜之眼` 返回全库 `58` 件品质，品质件数为白/绿/蓝/紫/金/红 = `1/13/12/20/7/5`。
+- 伊森 `1002082/1002083/1002084` 返回同一批 `58` 件形状，shape 面积合计 `216` 格。
+- 结算 inventory 同样为 `58` 件、`216` 格，表内价值 `2,448,112`。
+- 合并后的品质格数为白 `1`、绿 `37`、蓝 `29`、紫 `75`、金 `37`、红 `37`。
+- 因此“R1 明镜之眼 + 伊森已知品质轮廓”可在结算前锁定全库品质 + 形状 + 总格/总件数。这个样本主要用于机制验证；由于明镜成本高，默认策略不把它当常态推荐道具。
+
+### 代码改动
+
+- `bidking_lab.live.fatbeans`：
+  - 新增明镜品质 runtime 集合与伊森已知品质轮廓集合的匹配逻辑。
+  - 当 `100134` 的 runtime ids 与伊森 `1002082/1002083/1002084` 的轮廓 runtime ids 完全一致时，结算前写入精确 `session.warehouse_total_cells` 与 `session.total_item_count`。
+- `GridItemObservation`：
+  - 新增 `local_index: int | None`，防止后续位置/堆叠校准丢失包内坐标。
+- pytest 环境：
+  - `pyproject.toml` 增加 `pythonpath = ["src"]`，裸 `pytest` 可直接导入本地包。
+  - `scripts/build_map_fragment_fixes.py` 自行插入 repo `src` 路径，修复 pytest 子进程脚本导入失败。
+
+### 位置校准结论
+
+带 `shape_code` 的包内位置已和用户截图标注对齐，当前规则为：
+
+```text
+local_index = (行 - 1) * 10 + (列 - 1)
+```
+
+也就是 10 列、0 基左上角索引。已验证样本：
+
+- 银丝笔筒：第 3 列、第 1-2 行 → `local_index=2`、shape `12`。
+- 弹性绷带：第 9-10 列、第 4 行 → `local_index=38`、shape `21`。
+- 可调式尾翼：第 3-5 列、第 10-11 行 → `local_index=92`、shape `32`。
+
+注意：部分左上角物品的 `local_index=None` 很可能是 protobuf 默认值 `0` 未编码，
+即第 1 行第 1 列。这一条还需要后续用完整顶部截图继续确认。
+
+### 后续采样需求
+
+下一批样本不需要再堆普通对局，优先做位置/滚动校准：
+
+1. 使用全库透视或伊森全轮廓。
+2. 同局导出 Fatbeans JSON。
+3. 截仓库顶部、向下滚一屏、中部、底部。
+4. 每张截图标注滚动位置。
+5. 备注 3-5 个显眼物品，特别是左上角、底部附近、4x4 / 3x4 / 5x3 大物品。
+
+目标是验证：
+
+- `local_index=None` 是否稳定代表 `0`。
+- 滚动页下 local index 是否连续。
+- 屏幕行号与包内行号是否保持 `row * 10 + col`。
+- 仓库底部可见物品能否转化为更强仓储下限。
+
+### 验证
+
+- `pytest -q tests/test_live_fatbeans.py -k "package12 or package13"`：`2 passed, 19 deselected`
+- `pytest -q -m "not slow"`：`499 passed, 13 deselected`
+
+### 2026-05-29 追加：package14-17 坐标校准
+
+用户继续提供 4 份新样本：
+
+- package14：艾莎，含宝光、抽检、公开信息。
+- package15/16：伊森，含宝光、抽检、扫描。
+- package17：伊森 + 明镜之眼，含上下滚动截图。
+
+新增确认：
+
+- package14：
+  - 泡泡水弹：`local_index=69`、shape `11`，对应第 7 行第 10 列。
+  - 章丘铁锅：`local_index=75`、shape `21`，对应第 8 行第 6 列。
+  - 蓝纹奶酪：公开信息 `200050`，`local_index=94`、shape `33`，对应第 10-12 行、第 5-7 列。
+- package15：
+  - 印花雨伞：`local_index=100`、shape `22`，对应第 11-12 行、第 1-2 列。
+  - 玛瑙棋：`local_index=23`、shape `22`，对应第 3-4 行、第 4-5 列。
+  - 宝光红品 runtime 与伊森轮廓合并后：`local_index=114`、shape `22`，对应第 12-13 行、第 5-6 列。
+- package16：
+  - 黄唇鱼鱼胶：`local_index=85`、shape `22`，对应第 9-10 行、第 6-7 列。
+  - 宗教壁画残片：伊森轮廓 `local_index=None`、shape `23`；用户截图标注为第 1-3 行、第 1-2 列，支持 `None == 0`。
+- package17：
+  - 满分斯诺克纪念球杆：`local_index=60`、shape `61`，对应第 7 行、第 1-6 列。
+  - 赛车座椅：`local_index=105`、shape `33`，对应第 11-13 行、第 6-8 列。
+  - 单兵水下推进器：`local_index=140`、shape `23`，对应第 15-17 行、第 1-2 列。
+  - 智能手表：`local_index=None`、shape `11`，再次支持左上角默认值省略。
+
+关键修正：
+
+- 宝光/明镜这类 quality-only 结果的 `local_index` 不能直接当作形状左上角。package16 中宗教壁画残片的品质记录 local 为 `10`，但伊森轮廓 local 为 `None`，截图也表明真实左上角是第 1 行第 1 列。
+- 因此坐标锚点只信带 `shape_code` 的轮廓项；品质、item_id、value 仍按 runtime id 合并。
+- `GridItemObservation.local_index` 改为只保留轮廓自身 local，不再用 metadata local fallback 覆盖。
+
+验证更新：
+
+- `pytest -q tests/test_live_fatbeans.py -k "package12 or package13 or package14 or package15 or package16 or package17"`：`6 passed, 19 deselected`
+- `pytest -q -m "not slow"`：`503 passed, 13 deselected`
+
+### 2026-05-29 追加：坐标工具与仓储约束边界
+
+新增 `grid_footprint(local_index, shape_key)`，统一把 Fatbeans 轮廓项转换为
+1-based `row/col/width/height/bottom_row`，并接入 Fatbeans 导入诊断：
+
+- `shape_key` 按 `width * 10 + height` 解析，例如 `33 = 3x3`、`61 = 6x1`。
+- `local_index=None` 在有 shape 时按 `0` 处理，用于 protobuf 默认值省略的左上角物品。
+- `SessionObs.visible_outline_bottom_row_min` 记录当前 live 轮廓证据的最深布局行，只作诊断字段。
+- Fatbeans 明细表新增“轮廓坐标证据”，显示状态、品质、item、local、形状、行列范围和格数。
+- Fatbeans 明细表新增“仓位证据图”：用 10 列网格把当前已确认坐标的轮廓画出来。该图是证据可视化，不是完整仓库预测；空白格只表示当前包内没有确认坐标，不能解释为真实为空。
+- `live.layout` 已抽成纯模块，输出 `LayoutEvidence`：当前批次、已放置物品、最深行、已确认格数、边界空洞率、底部尾部物品数、已知/未知品质计数。Streamlit 现在消费这个结构渲染证据图；后续仓储软似然也应直接消费这个结构，不再从 UI 表格反推。
+
+重要边界：最深行不能直接当作总格数硬约束。package17 中
+`local_index=140`、shape `23` 的物品到第 17 行，但结算总格为 157，小于 `17*10=170`。
+这说明 10 列布局存在空洞或排布留白。当前实现只展示“布局深度证据”，不把
+`bottom_row * 10` 注入 MC 过滤，避免误杀真实样本。后续如果要使用位置增强仓储估计，
+应基于多局全库样本拟合软约束，例如“最深行、已知轮廓总格、空洞率、地图类型”共同估计。
+
+验证：
+
+- `pytest -q tests/test_live_fatbeans.py -k "grid_footprint or package12 or package13 or package14 or package15 or package16 or package17"`：
+  `8 passed, 19 deselected`
+- `pytest -q -m "not slow"`：`505 passed, 13 deselected`
+- 追加 `live.layout` 后：`pytest -q -m "not slow"`：`506 passed, 13 deselected`
+- 追加 `live.replay` 后：`pytest -q -m "not slow"`：`510 passed, 13 deselected`
+- 追加 `LayoutGridView` 后：`pytest -q -m "not slow"`：`511 passed, 13 deselected`
+- 追加 `ImportOverviewSnapshot` 后：`pytest -q -m "not slow"`：`512 passed, 13 deselected`
+- 追加 Fatbeans 诊断 rows runtime 化后：`pytest -q -m "not slow"`：`513 passed, 13 deselected`
+- 追加 `TacticalPanelSnapshot` 后：`pytest -q -m "not slow"`：`514 passed, 13 deselected`
+- 追加布局回放 rows runtime 化后：`pytest -q -m "not slow"`：`515 passed, 13 deselected`
+- 追加 `LayoutEstimatePolicy` 后：`pytest -q -m "not slow"`：`516 passed, 13 deselected`
+- 追加 Fatbeans layout 样本批量评估器后：`pytest -q -m "not slow"`：`518 passed, 13 deselected`
+- 追加评估 summary 后：`pytest -q -m "not slow"`：`519 passed, 13 deselected`
+- 追加文件名过滤与 policy 拟合输出后：`pytest -q -m "not slow"`：`521 passed, 13 deselected`
+
+### 2026-05-29 追加：仓位证据图 View Model
+
+`live.layout` 新增 `LayoutGridView` / `LayoutGridItemView` 与 `layout_grid_view()`：
+
+- `LayoutEvidence` 继续表示布局证据和风险指标。
+- `LayoutGridView` 表示可渲染网格：行数、列数、物品位置、label、tooltip、z-index、摘要文案。
+- Streamlit 证据图现在只消费 `LayoutGridView`，不再从 `LayoutEvidence` 内部重新拼 label / tooltip。
+
+设计决策：这一步不做新的仓库预测，只把“证据图是什么”从“如何用 HTML 画出来”里拆开。
+后续做 PySide/Qt 悬浮窗或桌面小窗时，可以复用同一个 view model，用原生控件或 canvas 渲染，
+而不是把 Streamlit HTML 迁过去。
+
+### 2026-05-29 追加：JSON 回放评估 first cut
+
+新增 `live.replay`，用于把单局 Fatbeans JSON 按状态切片，评估每个阶段的布局证据相对最终结算真值的差距：
+
+- `final_truth_from_events(events)`：提取最终结算总格数和总件数。
+- `layout_replay_stages(events)`：对每个有 `grid_items` 的阶段输出 `LayoutReplayStage`。
+- 阶段字段包括：sort、round、phase、布局证据、最终总格、最终件数、已知格覆盖率、`max_row * 10` 边界误差、已知格误差。
+
+注意：`bounding_cell_error` 不是预测误差，只是布局深度诊断。它用于观察“最深行乘 10”与最终格数的偏离，帮助后续拟合软约束。
+
+package17 回放示例：
+
+- sort 26 / R1：已知 66 格，最终 157 格，覆盖约 42%。
+- sort 45 / R2：明镜 + 伊森后已知 157 格，覆盖 100%。
+- sort 60/74：继续维持 157 格。
+
+Streamlit Fatbeans 详细诊断已新增“布局回放评估”表。后续你只提供 JSON 时，我们可以直接看各轮证据如何收敛，以及什么类型的底部稀疏会导致估计风险上升。
+
+### 2026-05-29 追加：布局仓储估计接口骨架
+
+新增 `LayoutWarehouseEstimate` 与 `estimate_warehouse_from_layout()`。这是保守接口骨架，不是正式预测模型：
+
+- 若布局已知格数覆盖最终结算格数，则标记 `locked=True`，P50/P90 均为最终格数。
+- 若底部稀疏且空洞率高，则只给 `min_reasonable_cells = 已知格数`，不输出 P50/P90 点估计。
+- 若底部较密，则允许给一个弱诊断点估计，但文案明确“仍需样本拟合校准”。
+
+Streamlit 布局回放表现在显示 `布局估计` 与 `估计置信`。这一步的目标是打接口和 UI 链路，
+等后续积累更多 JSON 后，把规则替换为基于样本的软似然。
+
+### 2026-05-29 追加：布局阶段摘要
+
+Fatbeans 导入默认区域新增“布局阶段摘要”，从完整回放中压缩出最多 4 行：
+
+- 阶段：`R?/sort`
+- 已知格、覆盖率、最深行
+- 布局估计、估计置信、风险
+
+完整 `布局回放评估` 表仍保留在详细诊断折叠项里。这样默认 UI 更接近实战视角，
+同时不丢工程阶段需要的细节。
+
+### 2026-05-29 追加：Fatbeans 实战摘要块
+
+Fatbeans 导入默认区域进一步整理为“Fatbeans 实战摘要”：
+
+- 决策小结
+- 仓位证据图
+- 布局阶段摘要
+- 仓储估计摘要
+- 补信息 ROI Top 3
+- 实时出价建议摘要
+
+地图似然、inventory、轮次审计、道具结果、玩家 values、完整布局回放仍保留在折叠诊断里。
+这一步只调整 UI 结构，不改变推理逻辑。
+
+### 2026-05-29 追加：Runtime Snapshot 边界
+
+新增 `bidking_lab.runtime.TacticalSnapshot`，把默认小结面板从 Streamlit 表格里拆出来：
+
+- `price_decision`：当前最高价是否可追。
+- `value_range`：当前价值 P10/P50/P90。
+- `warehouse_range`：当前仓储 P10/P50/P90 或后验文案。
+- `next_tool_hint`：当前已携带/可用道具里的下一张优先使用建议。
+- `layout_stages`：压缩后的布局阶段摘要。
+
+后续补充：`tactical_summary_rows()` 也已放进 runtime 层，主 hint 面板与 Fatbeans 导入摘要
+都复用同一组“四行小结”行格式。Streamlit 只做表格渲染，不再各自拼接“当前最高价 /
+价值区间 / 仓储区间 / 道具建议”的文案。
+
+再次补充：`ImportOverviewSnapshot` 也已放进 runtime 层，用于承接 Fatbeans 导入概览：
+文件名、packets、frames、states、live batches、地图、轮次、结算件数、结算格数和已知战利品价值。
+Streamlit 顶部导入概览表现在只消费该 snapshot，避免后续悬浮窗或桌面小窗再次手写 summary 字段映射。
+
+同一方向继续推进：Fatbeans 明细里的本局道具动作、最新道具结果、玩家出价候选也已抽到
+runtime 层。Streamlit 仍负责展示，但不再在 UI 代码里直接拼接这三类诊断行。
+
+再进一步：`TacticalPanelSnapshot` 已把 Fatbeans 默认实战摘要块整体收口到 runtime 层，
+包括四行小结、布局阶段、仓储摘要、ROI 摘要、出价摘要和布局提示文案。Streamlit 当前只负责
+把该 panel 渲染成表格；后续悬浮 UI 可以直接复用同一个对象。
+
+布局回放评估也已 runtime 化：`layout_replay_rows_from_stages()` 接收 live replay stages，
+输出包含已知格、最深行、空洞率、最终覆盖、布局估计、估计置信和风险的前端无关 rows。
+这让后续“布局深度 → 总格数软估计”模型可以只替换估计函数，UI 与悬浮窗展示层不需要改。
+
+`live.layout` 新增 `LayoutEstimatePolicy`。默认仍是保守 `conservative-v0`，不会把最深行当硬下界；
+但 sparse/dense 阈值和 P50 margin 已经可替换。后续 20 份伊森 + 20 份艾莎样本主要用于拟合这个
+policy，而不是重写 UI。索菲/加布里每类 2 份可先做兼容性 smoke，暂不用于统计建模。
+
+新增 `bidking_lab.live.evaluation` 和 `scripts/evaluate_fatbeans_layout_samples.py`，用于把目录里的
+Fatbeans JSON 批量转成布局拟合日志。每行对应一个 layout-bearing stage，字段包括文件名、地图、
+轮次、已知件/格、最深行、边界格、空洞率、底部物品数、最终总格/件数、覆盖率、边界误差、
+最终格误差、当前估计区间、policy 和风险文案。脚本支持 CSV 与 JSONL，显式 UTF-8 输出。
+现在也支持 `--format summary`，用于快速判断样本是否够拟合。
+
+示例：
+
+```powershell
+python scripts\evaluate_fatbeans_layout_samples.py data\samples\fatbeans --format jsonl
+python scripts\evaluate_fatbeans_layout_samples.py data\samples\fatbeans --format summary
+```
+
+当前本地 16 份样本 summary：
+
+- files=16, rows=47, errors=0
+- sparse_rows=3, dense_rows=12
+- large_warehouse_files=1, max_final_total_cells=216
+- fit_readiness=样本不足
+- 缺口：总文件数不足 40，sparse 底部样本不足 5
+
+### 2026-05-30 追加：48 份新样本批量评估
+
+用户提供目录 `C:\Users\shenc\Desktop\bid_king_packages`，其中包含 48 份新命名样本：
+
+- 伊森 20 份、艾莎 20 份、索菲 4 份、加布里 4 份。
+- 别墅 24 份、沉船 24 份。
+- 文件名已有 dense/sparse/big/huge/small/medium/unknown 初始备注。
+
+评估脚本新增 `--name-regex`，避免把目录里的旧包和历史包混入新批次：
+
+```powershell
+python scripts\evaluate_fatbeans_layout_samples.py C:\Users\shenc\Desktop\bid_king_packages --format summary --name-regex "^(ethan|aisha|sophine|gabriela)_"
+```
+
+新批次 summary：
+
+- files=48, files_with_rows=45, rows=128, errors=0
+- rows_with_final_truth=128
+- sparse_rows=29, dense_rows=22
+- large_warehouse_files=3, max_final_total_cells=184
+- mean_abs_bounding_error≈11.59
+- fit_readiness=可拟合v1
+
+缺布局 rows 的 3 份：
+
+- `aisha_shipwreck_test_sample10_sparse_1rounds.json`
+- `ethan_villa_test_sample2_dense_1rounds.json`
+- `sophine_villa_test_sample1_unknown_2rounds.json`
+
+这三份都有最终结算 inventory，可用于价值/总格真值，但缺少 shape-bearing 坐标阶段，
+因此不进入布局拟合。主要原因是低轮次或英雄技能只给品质/抽样，不给完整轮廓。
+
+`aisha_shipwreck_test_sample2_dense_3rounds.json` 的 Fatbeans 列表序号最高到 322，
+但主 TCP 解析只有 67 个 packet、72 个 frame、3 个 state。判断是 Fatbeans 捕获列表里存在
+非主会话/无效包序号空洞，不是业务状态异常膨胀；解析层没有缺帧。
+
+公开信息新增观察：
+
+- `200001` 仍稳定表示“紫色全轮廓”，已经接入 live bucket/shape 约束。
+- 新批次中 `200050/200022/200023/200021/200048` 也携带 shape/local，可作为后续
+  public-info item-level 轮廓扩展目标。
+- `200026/200027/200028` 多数是 quality-only runtime 信息，可合并品质，但不能单独当坐标锚点。
+
+Policy 拟合：
+
+```powershell
+python scripts\evaluate_fatbeans_layout_samples.py C:\Users\shenc\Desktop\bid_king_packages --format policy --name-regex "^(ethan|aisha|sophine|gabriela)_"
+```
+
+输出 first cut：
+
+- dense_samples=22, medium_samples=77, sparse_samples=29
+- dense_p50_margin=6
+- medium_p50_margin=6
+- notes=[]
+
+当前默认保守 policy 的 P50 误差：MAE≈12.72，bias≈-12.11（偏低）。
+用该样本拟合 policy 重新估算非 sparse 行：MAE≈7.81，bias≈-0.43。
+但 sparse 行仍不应给强 P50 点估计，因为误差分布多峰，可能隐藏深部物品。
+
+这个日志结构对后续版本很有价值：实时 Fatbeans 接口接入后，每局都可以自动追加同样的 rows。
+我们可以用这些 logs 做三类长期优化：
+
+- 拟合 `LayoutEstimatePolicy`，判断 sparse/dense 底部在什么条件下可靠。
+- 校准补信息 ROI，比较“用了某道具前后价值/仓储区间实际压缩多少”。
+- 校准出价策略，按玩家行为和最终盈亏回放防守价、抢仓上限、停止价是否过激。
+
+设计决策：先保留 Streamlit 作为实验台，但新增前端无关 snapshot 边界。后续如果做 PySide/Qt
+悬浮窗、桌面小窗、甚至“宠物式”提示 UI，只消费同一个 snapshot，不直接绑定 Streamlit HTML
+结构，也不把推理逻辑搬进 UI 层。
+
+简历价值：这把项目叙事从“做了一个网页分析器”提升到“抓包协议解析 → 状态归一化 →
+概率推理 → 实时策略 snapshot → 多前端展示”的完整工程链路。技术点覆盖网络数据解析、
+逆向字段校准、概率建模、状态机、可视化与前端解耦。
+
+### 何时需要新样本
+
+当前不需要更多样本来验证坐标公式；坐标和 UI 渲染已可继续工程化。下一次需要样本是在做
+“布局深度 → 总格数软估计”时，最有价值的数据是：
+
+- 伊森 R1 技能截图 + R2 全库透视截图 + 同局 Fatbeans JSON。
+- 至少包含 1 张底部稀疏局、1 张底部较密局、1 张仓库很大的局。
+- 第一批拟合量级：伊森约 20 份、艾莎约 20 份足够做 v1；索菲/加布里各 2 份只做解析兼容验证。
+- 如果需要滚动，顶部/中部/底部分段截图，并备注滚动位置。
+- 最终结算 JSON 已足够；最终截图只在需要核对成交价/盈亏 UI 时再补。
+
+### 2026-05-30 追加：公开信息与地图价值分层
+
+新增 `scripts/summarize_map_value_tiers.py`，用于从本地 `BidMap/Drop/Item` 表直接跑地图价值基线。
+它只做离线报表，不影响 live shadow 或实时出价逻辑。
+
+示例：
+
+```powershell
+python scripts\summarize_map_value_tiers.py --map 2401 --map 2501 --map 2601 --samples 1200
+python scripts\summarize_map_value_tiers.py --category 105 --samples 1200 --top 12
+```
+
+当前本地 MC 观察：
+
+- 别墅 24xx：P50 大多约 35-41 万，P90 大多约 80-95 万，红色出现率约 76-79%。
+- 沉船 25xx：P50 大多约 52-63 万，P90 大多约 109-136 万，红色出现率约 90-92%。
+- `2601 隐秘拍卖会` 已存在于本地地图表，且明显是超高价值图：P50≈143 万，P90≈282 万，
+  红/金出现率在当前表下接近 100%。
+
+按 2000 次 MC、P50 排序的当前推荐 Top5：
+
+- 别墅：`2409 末日庇护所`、`2403 科学家居所`、`2406 学者居所`、`2401 未知别墅`、
+  `2405 望族居所`。
+- 沉船：`2503 军用舰艇保险库`、`2509 私掠船军火舱`、`2506 探险家座舰资料库`、
+  `2501 未知残骸`、`2505 殖民商船宝库`。
+
+`2601` 原始掉落池已包含 `非洲之心`、`金陵折扇`、`豪宅管理用黑盒`、`黑王子红宝石`、
+`羊脂白玉籽和田玉` 等超稀有红货。当前报表按游戏表原样计算；若后续要做“玩家体验场景”
+（例如暂不计入非洲之心/金陵折扇，只看黑盒/黑王子/羊脂玉等），应新增 scenario filter，
+不要改原始数据表。
+
+公开信息 ID 观察：
+
+- `200001`：稳定作为“紫色全轮廓”使用，已接入 live bucket/shape 约束。
+- `200050`：携带单个或少量 item-level shape/local，样本表现接近“显示占位格最高物品”类公开信息。
+- `200022/200023/200021/200048`：也携带 shape/local，可作为后续 item-level public outline 扩展目标。
+- `200026/200027/200028`：多数是 quality-only runtime 信息，可用于品质存在性/数量线索，但不能单独作为坐标锚点。
+
+结论：`2000xxx` 可以继续靠包内结构自动归类，不需要每个编号都人工标注；人工备注主要用于确认中文语义，
+例如“占位格最高”“随机显示 N 件”“显示某品质全部轮廓”。均值类公开信息也已经能读到精确小数，
+但只有在样本值明显偏高、或与当前道具证据形成强约束时，才应显著影响出价建议。
+
+代码更新：item-level 轮廓现在会转成对应品质的下界，而不是整桶总量。例如公开信息只显示
+一个 3x3 蓝色物品时，live state 会生成“蓝色至少 1 件 / 9 格”。这样 `map_likelihood`
+和仓储估计可以消费它，但不会把单件公开信息误当成“全部蓝色只有 1 件 / 9 格”。
+
+鉴影/分类约束的实现边界：
+
+- 当前 parser 已能把鉴影类结果作为“已知物品/已知轮廓/已知品质”证据进入 grid items。
+- 下一步可以把 `Item.tags` 或分类字段作为软约束加入 MC：例如“已知一个能源交通类金色 4x4”
+  会比单纯“金色 16 格”更窄。
+- 暂不把分类约束做成硬过滤，直到确认各鉴影道具的 action id 与类别语义足够稳定；否则容易因为
+  物品标签映射不完整误杀真实解。
+
+### 2026-05-30 追加：分类鉴影软约束 v1
+
+`100151..100159` 分类鉴影已作为软约束接入 live shadow 与 MC：
+
+- action → Item.tags 分类码映射：
+  `100151=101 家具物品`、`100152=102 医疗药品`、`100153=103 时尚潮流`、
+  `100154=104 兵装军火`、`100155=105 珠宝矿藏`、`100156=106 文物古董`、
+  `100157=107 数码娱乐`、`100158=108 能源交通`、`100159=109 食饮珍馐`。
+- `GridItemObservation` 新增 `category`，`live_state_to_session_obs` 会把这类轮廓写入
+  `SessionObs.category_items`。若同 runtime 已经通过宝光/抽检/公开信息补到品质或 item_id，
+  也会一起带入分类 item observation。
+- `map_likelihood` 新增 `category_observation_soft_score()`：对 truth 中的 `Item.tags + quality +
+  cells + item_id` 做多重集匹配。命中给满权重，未命中只降权到 `0.35`，不做硬拒绝。
+- `warehouse_estimator` 使用同一软权重计算每张候选图的 likelihood；当前总仓储分位数仍以硬匹配样本
+  为主体，后续可升级为完整加权分位数。
+
+设计边界不变：分类鉴影 v1 只影响 MC 后验权重和诊断排序，不替代已有品质桶精确约束，也不把
+“某分类显示了 N 个轮廓”误解释为整局只存在 N 个该分类物品。最新回归：
+
+```powershell
+pytest -q -m "not slow"
+# 530 passed, 13 deselected
+```
+
+### 2026-05-30 追加：布局 sample-fit v1 评估收口
+
+布局样本拟合不再只输出 policy 参数，也会输出 conservative 与 fitted 的分组误差：
+
+```powershell
+python scripts\evaluate_fatbeans_layout_samples.py C:\Users\shenc\Desktop\bid_king_packages --format policy --name-regex "^(ethan|aisha|sophine|gabriela)_"
+```
+
+48 份命名样本下当前结果：
+
+- `sample-fit-v1`: `dense_p50_margin=6`，`medium_p50_margin=6`。
+- conservative 非 sparse：`rows=99, MAE≈12.72, bias≈-12.11`，整体偏低。
+- sample-fit 非 sparse：`rows=99, MAE≈7.61, bias≈-0.64`，偏差基本消掉。
+- dense：`MAE≈3.45, bias≈0.09`。
+- medium：`MAE≈8.79, bias≈-0.84`。
+- sparse：`rows=29`，继续全部跳过 P50 点估计，不输出误导性中位数。
+
+因此 UI 的 Fatbeans 实战摘要可以优先展示 sample-fit 估计；详细诊断继续保留 conservative
+与 sample-fit 两列对照，方便后续样本扩充后回看策略是否过拟合。
+
+### 2026-05-30 追加：public-info item-level 样本扫描
+
+对 48 份命名样本只读扫描 `200050/200022/200023/200021/200048`：
+
+- `200050`：5 个文件、18 次事件，每次 1 件，均携带 `item_id + quality + shape/local`；
+  继续像“显示单件最高/关键物品”。
+- `200048`：1 个文件、5 次事件，每次 1 件，携带完整 item-level shape/local。
+- `200021`：1 个文件、5 次事件，每次 2 件，携带完整 item-level shape/local。
+- `200022`：3 个文件、11 次事件，每次 4 件，携带完整 item-level shape/local。
+- `200023`：2 个文件、6 次事件，每次 6 件，携带完整 item-level shape/local。
+- `200026/200027/200028`：分别表现为 3/6/9 件 quality-only runtime 信息，仍不作为坐标锚点。
+
+当前可先把 `200021/200022/200023/200048/200050` 统一归为“public item-level reveal”
+写入诊断/ROI 文案；是否带有“最高格/最高价值/随机 N 件”的中文语义，还需要结合截图或道具/地图提示文案确认。
+
+### 2026-05-30 追加：live monitor 与悬浮 UI first cut
+
+新增 `bidking_lab.live.monitor`，把 “Fatbeans capture → 推理摘要 → 长期日志” 从 Streamlit 中抽出来：
+
+- `build_monitor_artifact_from_file/payload/events()`：生成 JSON-serializable artifact。
+- `write_monitor_logs()`：写入：
+  - `latest_snapshot.json`：悬浮窗/未来桌面 UI 读取的当前态。
+  - `sessions.jsonl`：每次处理的完整 snapshot 回放日志。
+  - `model_eval.jsonl`：最终真值存在时追加模型误差。
+  - `layout_samples.jsonl`：布局拟合 rows，长期扩样用。
+- `scripts/run_fatbeans_live_monitor.py`：
+  - `--file some.json` 处理单个文件。
+  - `--watch-dir dir` 轮询目录。
+  - `--stdin` 从标准输入读一个 JSON payload，给未来实时 feed 预留接口。
+- `scripts/run_live_overlay.py`：tkinter always-on-top 小窗，每秒读取 `latest_snapshot.json`。
+
+当前 model_eval 字段包含：
+
+- `value_p50_error`
+- `warehouse_p50_error`
+- `layout_fit_p50_error`
+- `highest_bid`
+- `attack_bid`
+- `stop_bid`
+- `stop_minus_final_value`
+
+用 `ethan_shipwreck_test_sample20_dense_4rounds.json` 做 smoke：
+
+- 最终价值 `330,282`，价值 P50 `690,878`，`value_p50_error=360,596`。
+- 最终仓储 `76`，仓储 P50 `100`，`warehouse_p50_error=24`。
+- layout sample-fit P50 `74`，`layout_fit_p50_error=-2`。
+
+这说明当前布局拟合在该局表现很好，但价值/出价侧仍明显偏乐观，正好需要长期实时日志回放来校准出价策略 v2。
+
+### 2026-05-30 追加：样本 21-25 对照与推理层风险
+
+`C:\Users\shenc\Desktop\bid_king_packages` 新增 21-25 中，手记编号与文件名存在整体错位：
+
+- 手记“样本 21”对应文件 `sample22_4rounds_2timesofitemreveal_3imagedetectiontools.json`：
+  `200027` 给 6 件品质（三紫一红一绿一蓝），随后医疗/文物古董/数码娱乐鉴影。
+- 手记“样本 22”对应文件 `sample23_4rounds_1timesofitemrevealand1qualityreveal_3imagedetectiontools.json`：
+  `200022` 给 4 件完整 item-level，家具/珠宝矿藏/时尚潮流鉴影，结算前还有 `100129` 抽检 2 件。
+- 手记“样本 23”对应文件 `sample24_2rounds_1timeofgoldenavgvalue_2imagedetectiontools.json`：
+  `200037=28714.25`，能源交通与兵装军火鉴影。
+- 手记“样本 24”对应文件 `sample25_4rounds_1timeofbiggestitemreveal1timeofgolditemnum_2imagedetectiontools.json`：
+  `200050` 确认为 `碳纤维单体壳车身`，随后食饮珍馐/书画古籍鉴影，`100129` 抽检出 `木梭子`、`骨笛`。
+- 文件 `sample21_2rounds_reveal_all_purpleitemscontour.json` 只看到 `200001` 全紫轮廓、宝光四鉴、抽检 2 件，像早停/残缺捕获或另一局。
+
+字段语义边界：
+
+- `100129` 抽检与 `200021/200022/200023/200048/200050` public item-level 都能解析出
+  `item_id + quality + shape/local + cells + value`，在当前项目里可以确定具体道具，不只是位置。
+- `200026/200027/200028` 仍是 quality-only runtime 信息；除非后续同 runtime 被形状源连接，否则不能当坐标锚点。
+- 分类鉴影 `100151..100160` 给 `category + shape/local/runtime`，不是价格或 item_id；已补齐
+  `100160 -> 110 书画古籍`，并修正同 runtime 分类信息被去重丢失的问题。
+
+推理层风险：
+
+- 高信息 Fatbeans 样本里，Aisha/公共信息会给大量精确桶总格/件数和形状事实；当前 MC 仍主要靠 rejection sampling，
+  采样不到完全兼容组合时会出现 `0/N` 匹配。加 trials 不能根治，需要条件采样/已知 item 锚定。
+- live monitor 增加了一个保守 fallback：严格匹配为 0 时，把精确桶总格/件数降级为同等下界再采样，并在证据标签标注
+  “放宽精确桶约束”。这只是避免面板空白，不代表准确性保证。
+- `category_observation_soft_score` 已改为支持多 tag 藏品，避免 `JK制服 [103,101]` 这类交叉分类只匹配第一个 tag。
+
+### 2026-05-30 追加：Evidence-first v2 推理内核起步
+
+新增 `bidking_lab.inference.v2` 作为旁路内核，不替换 v1：
+
+- `EvidenceStore` / `RuntimeEvidence`：按 runtime/local 合并 public、action、skill 证据。
+- `KnownItemAnchor`：从 `item_id` 明确的 public item-level / 抽检事实中提取必须存在的锚点。
+- `ResidualProblem`：记录锚点数量、已知格、已知价值、锚点 item 计数和诊断。
+- `ConditionalSampler`：每个样本先强制加入锚点，再采剩余未知部分。
+- `PosteriorReport`：输出 `n_matched`、总格/总价值分位数、锚点已知价值和诊断。
+
+第一版故意不做“同类型物品概率加权”。比如抽检出古董后提高其他古董权重，这类 bias 可能与分类鉴影、
+地图权重、后续空间组合重复计权；现阶段只把分类和 item-level 作为证据保存，等有 `model_eval.jsonl`
+长日志后再做校准。
+
+新样本 smoke：
+
+- `sample22/23/25` 可以正确抽取 6/5/3 个 known item anchors。
+- `sample24` 无 item anchor，v2 以 500 trials 有 27 个匹配样本，价值 P50 约 `406,677`。
+- `sample22/23/25` 仍可能 `0/500`，原因是剩余未知部分还没有按“各品质剩余格/件数”条件采样。
+
+下一步 v2 重点不是加 trials，而是把 `ResidualProblem` 扩展为 per-quality residual targets：
+
+- 从 exact bucket totals / lower bounds 扣除 anchor bucket contribution。
+- 对每个品质单独采剩余候选，再组合为全局样本。
+- 之后再把 Aisha 剩余空间、layout rows 和 known local footprint 接进 feasibility score。
+
+---
+
 > **项目全局进度与路线图已迁移至 [`PROGRESS.md`](PROGRESS.md)**。  
 > 本文件专注于每个 checkpoint 的技术细节。

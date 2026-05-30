@@ -48,4 +48,10 @@ data/samples/_roi_tune.png
 data/samples/Desktop_Screenshot*.png
 data/samples/微信图片*.jpg
 data/samples/desktop_screenshot_roi_preview.png
+data/samples/fatbeans/*.json
 data/logs/
+
+# Local reverse-engineering scratch artifacts
+src/AuctionAnalyzer*.zip
+src/AuctionAnalyzer*/
+tools/

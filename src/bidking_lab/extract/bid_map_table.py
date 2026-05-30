@@ -47,6 +47,7 @@ from pydantic import BaseModel, Field
 from bidking_lab.extract.tables import load_table_rows
 
 BID_MAP_TABLE_COLUMN_COUNT = 21
+BID_MAP_TABLE_COLUMN_COUNT_V2 = 23
 
 AuctionMode = Literal["open", "sealed", "training"]
 
@@ -136,41 +137,63 @@ BidMapSummary = BidMap
 
 
 def parse_bid_map_row(row: Sequence[str]) -> BidMap:
-    if len(row) != BID_MAP_TABLE_COLUMN_COUNT:
-        # 2026-05-15 game patch shifted BidMap to 23 columns (added 2
-        # new fields and reshuffled positions: old col[X] → new col[X+1]
-        # for X >= 10, plus a new flag at col[8]). The processed
-        # maps.json committed to the repo is still the pre-patch 21-col
-        # extract, which is what the rest of the codebase (simulation,
-        # bidding, hero ranking) reads. Re-extraction under the new
-        # game data is a TODO; until then, fail loudly if anyone tries
-        # to parse the live tables directly.
+    if len(row) == BID_MAP_TABLE_COLUMN_COUNT:
+        idx = {
+            "category": 7,
+            "sub_pool_weights": 8,
+            "value_tier_ui": 9,
+            "rounds_total": 10,
+            "entry_fee": 11,
+            "starting_budget": 14,
+            "drop_ref": 16,
+            "mode_flag": 17,
+            "bid_price_ladder": 18,
+            "round_category_hints": 19,
+        }
+    elif len(row) == BID_MAP_TABLE_COLUMN_COUNT_V2:
+        # 2026-05-27 game data has two extra columns. Confirmed old fields
+        # moved as follows: old col[8] -> new col[9], and old col[9+] ->
+        # new col[10+]. The parser keeps the previous public schema and
+        # preserves all raw columns for future mapping of the new fields.
+        idx = {
+            "category": 7,
+            "sub_pool_weights": 9,
+            "value_tier_ui": 10,
+            "rounds_total": 11,
+            "entry_fee": 12,
+            "starting_budget": 15,
+            "drop_ref": 17,
+            "mode_flag": 18,
+            "bid_price_ladder": 19,
+            "round_category_hints": 20,
+        }
+    else:
         raise ValueError(
-            f"bid map row must have {BID_MAP_TABLE_COLUMN_COUNT} columns, got {len(row)}; "
-            f"if you're seeing 23, the live game is post-2026-05-15 patch and the "
-            f"parser needs updating to the new schema before re-extraction"
+            f"bid map row must have {BID_MAP_TABLE_COLUMN_COUNT} or "
+            f"{BID_MAP_TABLE_COLUMN_COUNT_V2} columns, got {len(row)}"
         )
-    drop_pool_id, items_min, items_max = _parse_drop_ref(row[16])
+    drop_pool_id, items_min, items_max = _parse_drop_ref(row[idx["drop_ref"]])
     map_id = int(row[0])
-    mode_flag = int(row[17])
-    ladder_raw = json.loads(row[18]) if row[18] not in ("", "[]") else []
-    hints_raw_text = row[19] if len(row) > 19 else ""
+    mode_flag = int(row[idx["mode_flag"]])
+    ladder_text = row[idx["bid_price_ladder"]]
+    ladder_raw = json.loads(ladder_text) if ladder_text not in ("", "[]") else []
+    hints_raw_text = row[idx["round_category_hints"]]
     hints_parsed = json.loads(hints_raw_text) if hints_raw_text not in ("", "[]") else []
     hints_raw = hints_parsed if isinstance(hints_parsed, list) else []
     return BidMap(
         map_id=map_id,
         name=row[1],
         description=row[2],
-        category=int(row[7]),
+        category=int(row[idx["category"]]),
         auction_mode=_infer_auction_mode(map_id, mode_flag),
-        sub_pool_weights=_parse_sub_pool_weights(row[8]),
-        rounds_total=int(row[10]),
-        entry_fee_silver=_silver_amount(row[11]),
-        starting_budget_silver=_silver_amount(row[14]),
+        sub_pool_weights=_parse_sub_pool_weights(row[idx["sub_pool_weights"]]),
+        rounds_total=int(row[idx["rounds_total"]]),
+        entry_fee_silver=_silver_amount(row[idx["entry_fee"]]),
+        starting_budget_silver=_silver_amount(row[idx["starting_budget"]]),
         drop_pool_id=drop_pool_id,
         items_per_session_min=items_min,
         items_per_session_max=items_max,
-        value_tier_ui=row[9],
+        value_tier_ui=row[idx["value_tier_ui"]],
         mode_flag=mode_flag,
         bid_price_ladder=ladder_raw,
         round_category_hints=[int(x) for x in hints_raw],
