@@ -303,7 +303,11 @@ def tactical_snapshot_from_rows(
 
     return TacticalSnapshot(
         price_decision=_text(bid.get("建议") or "暂无出价后验"),
-        value_range=_text(warehouse.get("价值 P10/P50/P90") or "暂无后验"),
+        value_range=_text(
+            bid.get("决策价值 P10/P50/P90")
+            or warehouse.get("价值 P10/P50/P90")
+            or "暂无后验"
+        ),
         warehouse_range=_text(
             warehouse.get("总格 P10/P50/P90")
             or bid.get("仓储")
@@ -313,7 +317,18 @@ def tactical_snapshot_from_rows(
         highest_bid=_text(bid.get("当前最高")),
         risk_band=_text(bid.get("风险带")),
         stop_price=_text(bid.get("停止价")),
-        evidence=_text(bid.get("证据") or warehouse.get("匹配")),
+        evidence=_join_nonempty(
+            (
+                _text(bid.get("证据") or warehouse.get("匹配")),
+                (
+                    f"raw {_text(bid.get('原始价值 P10/P50/P90'))}"
+                    if bid.get("原始价值 P10/P50/P90")
+                    else ""
+                ),
+                _text(bid.get("后验诊断")),
+            ),
+            sep="；",
+        ),
         warehouse_note=_join_nonempty(
             (
                 _text(warehouse.get("置信度")),

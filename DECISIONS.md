@@ -66,3 +66,15 @@
 **更新**：已增加 “strict exact 零匹配时降级为 floor” 的 posterior fallback，并在报告里用 `relaxed_exact_bucket_targets:*` 标明哪些约束被放宽。
 
 **复查点**：继续降低 fallback 使用率；优先改进 exact 桶组合采样，而不是扩大放宽范围。
+
+## 2026-05-30 · 实时出价主口径切到 decision_value
+
+**背景**：raw `total_value` 保留真实结算价值风险，但会被超低概率小红货和不可规划尾部影响。用户实际出价更需要“当前证据下可行动的稳健价值”。
+
+**推荐**：monitor/bid hint 的主阈值使用 v2 `decision_value`；raw `total_value` 保留在诊断字段中，用来提示爆尾风险。
+
+**用户选择**：认可 UI/出价主显示切到 `decision_value`，同时保留 raw 后验和放宽诊断。
+
+**取舍**：常规追价更稳健；如果真实出了未确认极端尾部，主建议不会为了它追高，但 raw 诊断仍能看到风险。
+
+**复查点**：后续用 `model_eval.jsonl` 同时评估 `decision_value_p50_error` 与 raw `value_p50_error`，再决定 bid v2 阈值。

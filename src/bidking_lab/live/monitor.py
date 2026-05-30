@@ -19,6 +19,10 @@ from bidking_lab.extract.bid_map_table import BidMap, load_bid_map_table
 from bidking_lab.extract.drop_table import DropPool, load_drop_table
 from bidking_lab.extract.item_table import Item, load_item_table
 from bidking_lab.inference.bid_strategy import recommend_bid_strategy
+from bidking_lab.inference.v2 import (
+    estimate_posterior_v2,
+    evidence_store_from_fatbeans_events,
+)
 from bidking_lab.inference.map_likelihood import estimate_map_likelihood
 from bidking_lab.inference.tool_info_roi import estimate_tool_info_roi
 from bidking_lab.inference.warehouse_estimator import estimate_warehouse_cells
@@ -159,6 +163,28 @@ def _warehouse_estimate_rows(estimate: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
+    if report is None:
+        return []
+    diagnostics = ";".join(getattr(report, "diagnostics", ()) or ())
+    return [
+        {
+            "范围": f"{report.map_id} {report.map_name}",
+            "匹配": f"{report.n_matched}/{report.n_total}",
+            "价值口径": "decision_value",
+            "决策价值 P10/P50/P90": _format_quantile_interval(report.decision_value),
+            "原始价值 P10/P50/P90": _format_quantile_interval(report.total_value),
+            "q6价值 P10/P50/P90": _format_quantile_interval(report.q6_value),
+            "q6样本率": (
+                f"{report.q6_match_rate:.1%}"
+                if report.q6_match_rate is not None
+                else ""
+            ),
+            "诊断": diagnostics,
+        }
+    ]
+
+
 def _tool_info_roi_rows(rows: Sequence[Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for row in rows[:8]:
@@ -271,6 +297,9 @@ def _build_bid_rows(
     round_no: int | None,
     posterior_samples: int,
     warehouse_estimate: Any,
+    decision_value_summary: Any = None,
+    raw_value_summary: Any = None,
+    posterior_diagnostics: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
     report = recommend_bid_strategy(
         latest_bids=latest_bids,
@@ -288,9 +317,12 @@ def _build_bid_rows(
     rows = [
         {
             "证据": report.evidence_label,
+            "价值口径": "decision_value" if decision_value_summary is not None else "raw_value",
             "轮次": report.round_label,
             "信息强度": report.info_strength,
             "仓储": report.warehouse_status,
+            "决策价值 P10/P50/P90": _format_quantile_interval(decision_value_summary),
+            "原始价值 P10/P50/P90": _format_quantile_interval(raw_value_summary),
             "当前最高": f"{report.leader} {report.highest_bid:,}",
             "风险带": report.risk_band,
             "探价(P10)": f"{thresholds.probe_bid:,}",
@@ -299,6 +331,7 @@ def _build_bid_rows(
             "停止价": f"{thresholds.stop_bid:,}",
             "依据": report.rationale,
             "补信息": report.next_info_hint,
+            "后验诊断": ";".join(posterior_diagnostics),
             "建议": report.action,
         }
     ]
@@ -347,12 +380,21 @@ def _model_eval_row(
     layout_rows = artifact.get("layout_replay_rows") or []
     warehouse_p50 = None
     value_p50 = None
+    decision_value_p50 = None
+    raw_value_p50 = None
     if warehouse_rows:
         warehouse_p50 = _parse_range_p50(
             str(warehouse_rows[0].get("总格 P10/P50/P90", ""))
         )
         value_p50 = _parse_range_p50(
             str(warehouse_rows[0].get("价值 P10/P50/P90", ""))
+        )
+    if bid_rows:
+        decision_value_p50 = _parse_range_p50(
+            str(bid_rows[0].get("决策价值 P10/P50/P90", ""))
+        )
+        raw_value_p50 = _parse_range_p50(
+            str(bid_rows[0].get("原始价值 P10/P50/P90", ""))
         )
     latest_layout_fit = next(
         (
@@ -379,6 +421,13 @@ def _model_eval_row(
         "final_value": final_value,
         "final_cells": final_cells,
         "value_p50": value_p50,
+        "decision_value_p50": decision_value_p50,
+        "decision_value_p50_error": (
+            decision_value_p50 - final_value
+            if decision_value_p50 is not None and final_value is not None
+            else None
+        ),
+        "raw_value_p50": raw_value_p50,
         "value_p50_error": (
             value_p50 - final_value
             if value_p50 is not None and final_value is not None
@@ -442,6 +491,7 @@ def build_monitor_artifact_from_events(
 
     map_rows: list[dict[str, Any]] = []
     warehouse_rows: list[dict[str, Any]] = []
+    v2_posterior_rows: list[dict[str, Any]] = []
     tool_rows: list[dict[str, Any]] = []
     bid_rows: list[dict[str, Any]] = []
     evidence_label = "暂无"
@@ -515,6 +565,19 @@ def build_monitor_artifact_from_events(
                     evidence_label = "结算前最后状态（放宽精确桶约束）"
         map_rows = _map_likelihood_result_rows(base_results, evidence_label)
         warehouse_rows = _warehouse_estimate_rows(warehouse_estimate)
+        v2_report = estimate_posterior_v2(
+            inference_session.map_id,
+            inference_session,
+            evidence_store_from_fatbeans_events(events),
+            maps=tables.maps,
+            drops=tables.drops,
+            items=tables.items,
+            n_trials=n_trials,
+            seed=seed + 2,
+            cells_tol=cells_tol,
+            count_tol=count_tol,
+        )
+        v2_posterior_rows = _v2_posterior_rows(v2_report)
         if roi_trials > 0:
             tool_rows = _tool_info_roi_rows(
                 estimate_tool_info_roi(
@@ -529,7 +592,7 @@ def build_monitor_artifact_from_events(
                     count_tol=count_tol,
                 )
             )
-        best_value_summary = (
+        best_value_summary = v2_report.decision_value or (
             base_results[0].total_value
             if base_results and base_results[0].total_value is not None
             else None
@@ -538,11 +601,14 @@ def build_monitor_artifact_from_events(
             bid_rows = _build_bid_rows(
                 latest_bids=latest_bids,
                 value_summary=best_value_summary,
-                evidence_label=evidence_label,
+                evidence_label="v2 decision_value",
                 session=inference_session,
                 round_no=_latest_round(events),
-                posterior_samples=base_results[0].n_matched if base_results else 0,
+                posterior_samples=v2_report.n_matched,
                 warehouse_estimate=warehouse_estimate,
+                decision_value_summary=v2_report.decision_value,
+                raw_value_summary=v2_report.total_value,
+                posterior_diagnostics=v2_report.diagnostics,
             )
 
     panel = tactical_panel_from_rows(
@@ -571,6 +637,7 @@ def build_monitor_artifact_from_events(
         "evidence_label": evidence_label,
         "map_rows": map_rows,
         "warehouse_rows": warehouse_rows,
+        "v2_posterior_rows": v2_posterior_rows,
         "tool_rows": tool_rows,
         "bid_rows": bid_rows,
         "layout_replay_rows": layout_replay_rows,

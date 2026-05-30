@@ -132,10 +132,15 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["known_value_sum"] == 20_000
     assert artifact["latest_bids"] == {"leader": 15_000}
     assert artifact["warehouse_rows"]
+    assert artifact["v2_posterior_rows"]
     assert artifact["bid_rows"]
+    assert artifact["bid_rows"][0]["价值口径"] == "decision_value"
+    assert artifact["bid_rows"][0]["决策价值 P10/P50/P90"]
+    assert artifact["bid_rows"][0]["原始价值 P10/P50/P90"]
     assert artifact["panel"]["summary_rows"]
     assert artifact["model_eval"]["final_value"] == 20_000
     assert artifact["model_eval"]["final_cells"] == 4
+    assert artifact["model_eval"]["decision_value_p50"] == 20_000
 
 
 def test_write_monitor_logs_updates_latest_and_jsonl(tmp_path: Path) -> None:

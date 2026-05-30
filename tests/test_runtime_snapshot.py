@@ -184,6 +184,32 @@ def test_tactical_summary_rows_match_compact_panel_shape() -> None:
     assert rows[3].conclusion == "暂无建议"
 
 
+def test_tactical_snapshot_prefers_decision_value_and_keeps_raw_detail() -> None:
+    snapshot = tactical_snapshot_from_rows(
+        bid_rows=[
+            {
+                "建议": "可守不抢",
+                "证据": "v2 decision_value",
+                "决策价值 P10/P50/P90": "180,000 / 260,000 / 420,000",
+                "原始价值 P10/P50/P90": "180,000 / 260,000 / 1,200,000",
+                "后验诊断": "relaxed_exact_bucket_targets:q4:count=3:cells=9",
+            }
+        ],
+        warehouse_rows=[
+            {
+                "价值 P10/P50/P90": "200,000 / 350,000 / 500,000",
+                "总格 P10/P50/P90": "80 / 100 / 125",
+            }
+        ],
+    )
+
+    assert snapshot.value_range == "180,000 / 260,000 / 420,000"
+    assert snapshot.evidence == (
+        "v2 decision_value；raw 180,000 / 260,000 / 1,200,000；"
+        "relaxed_exact_bucket_targets:q4:count=3:cells=9"
+    )
+
+
 def test_tactical_panel_from_rows_keeps_render_sections_together() -> None:
     panel = tactical_panel_from_rows(
         bid_rows=[
