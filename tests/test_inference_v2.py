@@ -239,3 +239,39 @@ def test_estimate_posterior_v2_uses_anchor_without_rejection_dead_end() -> None:
     assert report.n_matched == 50
     assert report.total_value is not None
     assert report.total_value.p10 >= 3_240
+
+
+def test_residual_problem_guides_per_quality_bucket_targets() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            item_id=1103006,
+            quality=3,
+            shape_key="21",
+            cells=2,
+            sources=("public:200022",),
+        )
+    )
+    obs = SessionObs(
+        map_id=2401,
+        hero="aisha",
+        buckets={3: QualityBucketObs(quality=3, total_cells_min=6, count_min=3)},
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(2))
+
+    assert problem.bucket_targets[3].total_cells_floor == 6
+    assert problem.bucket_targets[3].count_floor == 3
+    assert truth.buckets[3].total_cells >= 6
+    assert truth.buckets[3].count >= 3

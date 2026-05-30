@@ -2070,7 +2070,14 @@ python scripts\evaluate_fatbeans_layout_samples.py C:\Users\shenc\Desktop\bid_ki
 
 - `sample22/23/25` 可以正确抽取 6/5/3 个 known item anchors。
 - `sample24` 无 item anchor，v2 以 500 trials 有 27 个匹配样本，价值 P50 约 `406,677`。
-- `sample22/23/25` 仍可能 `0/500`，原因是剩余未知部分还没有按“各品质剩余格/件数”条件采样。
+- 第二步加入 per-quality residual targets 后，同样 500 trials：
+  - `sample22`：6 anchors，`167/500` 匹配，价值 P50 约 `166,432`。
+  - `sample23`：5 anchors，`40/500` 匹配，价值 P50 约 `154,366`。
+  - `sample24`：0 anchors，`76/500` 匹配，价值 P50 约 `214,339`。
+  - `sample25`：3 anchors，`169/500` 匹配，价值 P50 约 `507,135`。
+
+这说明 per-quality 条件采样能缓解高信息样本 `0/N` 问题；但 `sample22/23`
+价值仍偏低，下一步要把 public exact item value、aggregate avg-value、layout 空间约束和地图长尾权重一起校准。
 
 下一步 v2 重点不是加 trials，而是把 `ResidualProblem` 扩展为 per-quality residual targets：
 

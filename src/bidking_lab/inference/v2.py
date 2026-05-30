@@ -163,7 +163,17 @@ class ResidualProblem:
     known_cells: int
     known_value: int
     anchor_item_counts: Mapping[int, int]
+    bucket_targets: Mapping[int, "ResidualBucketTarget"]
     diagnostics: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ResidualBucketTarget:
+    """Per-quality target after known anchors are accounted for."""
+
+    quality: int
+    total_cells_floor: int | None = None
+    count_floor: int | None = None
 
 
 @dataclass(frozen=True)
@@ -327,6 +337,7 @@ def build_residual_problem(
     maps: Mapping[int, BidMap],
     drops: Mapping[int, DropPool],
     items: Mapping[int, Item],
+    obs: SessionObs | None = None,
 ) -> ResidualProblem:
     """Create a residual problem by forcing exact known items into every sample."""
 
@@ -345,6 +356,22 @@ def build_residual_problem(
             "anchors_not_in_flattened_pool:" + ",".join(str(item_id) for item_id in missing)
         )
     counts = Counter(anchor.item_id for anchor in anchors)
+    bucket_targets: dict[int, ResidualBucketTarget] = {}
+    if obs is not None:
+        for quality, bucket in obs.buckets.items():
+            cells_floor = bucket.total_cells
+            if cells_floor is None:
+                cells_floor = bucket.total_cells_min
+            count_floor = bucket.count
+            if count_floor is None:
+                count_floor = bucket.count_min
+            if cells_floor is None and count_floor is None:
+                continue
+            bucket_targets[quality] = ResidualBucketTarget(
+                quality=quality,
+                total_cells_floor=int(cells_floor) if cells_floor is not None else None,
+                count_floor=int(count_floor) if count_floor is not None else None,
+            )
     return ResidualProblem(
         map_id=map_id,
         map_name=bid_map.name,
@@ -353,6 +380,7 @@ def build_residual_problem(
         known_cells=sum(anchor.cells for anchor in anchors),
         known_value=sum(anchor.value for anchor in anchors),
         anchor_item_counts=dict(counts),
+        bucket_targets=bucket_targets,
         diagnostics=tuple(diagnostics),
     )
 
@@ -413,13 +441,16 @@ class ConditionalSampler:
         if len(pool.probabilities) == 0:
             return self._truth_from_buckets(buckets)
 
+        self._sample_bucket_targets(pool, buckets, rng)
+
         total_draws = int(
             rng.integers(
                 self._sampler.items_per_session_min,
                 self._sampler.items_per_session_max + 1,
             )
         )
-        residual_draws = max(0, total_draws - self.problem.known_item_count)
+        current_count = sum(bucket.count for bucket in buckets.values())
+        residual_draws = max(0, total_draws - current_count)
         if residual_draws:
             sampled_idx = rng.choice(
                 len(pool.probabilities),
@@ -438,6 +469,49 @@ class ConditionalSampler:
                     count=int(count),
                 )
         return self._truth_from_buckets(buckets)
+
+    def _sample_bucket_targets(
+        self,
+        pool: Any,
+        buckets: dict[int, BucketTruth],
+        rng: np.random.Generator,
+    ) -> None:
+        if not self.problem.bucket_targets:
+            return
+        qualities = np.asarray([item.quality for item in pool.items], dtype=np.int64)
+        for target in self.problem.bucket_targets.values():
+            indexes = np.flatnonzero(qualities == target.quality)
+            if len(indexes) == 0:
+                continue
+            probs = pool.probabilities[indexes].astype(np.float64)
+            total = float(probs.sum())
+            if total <= 0:
+                continue
+            probs = probs / total
+            attempts = 0
+            while not self._bucket_target_met(buckets.get(target.quality), target):
+                attempts += 1
+                if attempts > 200:
+                    break
+                local_i = int(rng.choice(len(indexes), p=probs))
+                pool_i = int(indexes[local_i])
+                count = int(
+                    rng.integers(pool.n_min[pool_i], pool.n_max[pool_i] + 1)
+                )
+                _add_item_to_buckets(buckets, pool.items[pool_i], count=count)
+
+    @staticmethod
+    def _bucket_target_met(
+        bucket: BucketTruth | None,
+        target: ResidualBucketTarget,
+    ) -> bool:
+        cells = bucket.total_cells if bucket is not None else 0
+        count = bucket.count if bucket is not None else 0
+        if target.total_cells_floor is not None and cells < target.total_cells_floor:
+            return False
+        if target.count_floor is not None and count < target.count_floor:
+            return False
+        return True
 
     def _truth_from_buckets(self, buckets: dict[int, BucketTruth]) -> SessionTruth:
         return SessionTruth(
@@ -498,6 +572,7 @@ def estimate_posterior_v2(
         maps=maps,
         drops=drops,
         items=items,
+        obs=obs,
     )
     sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
     rng = np.random.default_rng(seed)
@@ -542,6 +617,7 @@ __all__ = (
     "EvidenceStoreBuilder",
     "KnownItemAnchor",
     "PosteriorReport",
+    "ResidualBucketTarget",
     "ResidualProblem",
     "RuntimeEvidence",
     "build_residual_problem",
