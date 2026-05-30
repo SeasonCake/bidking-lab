@@ -759,8 +759,8 @@ class ConditionalSampler:
         if len(pool.probabilities) == 0:
             return self._truth_from_buckets(buckets)
 
-        self._sample_bucket_targets(pool, buckets, rng)
         self._sample_category_targets(pool, buckets, rng)
+        self._sample_bucket_targets(pool, buckets, rng)
 
         total_draws = int(
             rng.integers(

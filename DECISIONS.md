@@ -67,6 +67,8 @@
 
 **更新**：已加入 exact 桶组合采样：当同一品质同时有 exact 件数和 exact 格数时，先求可达组合再采样，降低走进不可达剩余状态的概率。69 份样本 `--trials 300` 下 `relaxed_exact` 从 18 降到 11，`zero_match` 从 7 降到 5。
 
+**更新**：分类/形状 target 现在先于 bucket target 采样，让已知类别轮廓计入 exact 桶已占用量。69 份样本 `--trials 300` 下 `relaxed_exact` 进一步降到 9。
+
 **复查点**：fallback 使用率已下降；下一轮重点转向 q6 residual、shape-category 条件采样和 layout posterior，而不是继续扩大 exact 放宽范围。
 
 ## 2026-05-30 · 实时出价主口径切到 decision_value

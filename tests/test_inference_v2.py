@@ -484,6 +484,72 @@ def test_category_shape_target_guides_conditional_sampler() -> None:
     assert any(item.item_id == 1086001 for item in truth.buckets[6].items)
 
 
+def test_category_target_counts_toward_exact_bucket() -> None:
+    weapon = _item(6001, quality=6, value=1_003_000, shape=(3, 4), tags=[104])
+    decoy = _item(6002, quality=6, value=844_000, shape=(4, 4), tags=[106])
+    maps = {
+        2403: BidMap(
+            map_id=2403,
+            name="category_exact_map",
+            description="",
+            category=101,
+            auction_mode="open",
+            sub_pool_weights=[],
+            rounds_total=5,
+            entry_fee_silver=0,
+            starting_budget_silver=100_000,
+            drop_pool_id=9003,
+            items_per_session_min=1,
+            items_per_session_max=1,
+            value_tier_ui="",
+            mode_flag=4,
+            bid_price_ladder=[],
+            raw_row=[],
+        ),
+    }
+    drops = {
+        9003: DropPool(
+            pool_id=9003,
+            name="category_exact_pool",
+            description="",
+            pool_type=2,
+            entries=[
+                DropEntry(category=104, item_id=weapon.item_id, n_min=1, n_max=1, weight=1),
+                DropEntry(category=106, item_id=decoy.item_id, n_min=1, n_max=1, weight=1),
+            ],
+        ),
+    }
+    items = {item.item_id: item for item in (weapon, decoy)}
+    obs = SessionObs(
+        map_id=2403,
+        hero="aisha",
+        buckets={6: QualityBucketObs(quality=6, total_cells=12, count=1)},
+        category_items=(
+            CategoryItemObservation(
+                category=104,
+                quality=6,
+                cells=12,
+                shape_key="34",
+            ),
+        ),
+    )
+    problem = build_residual_problem(
+        2403,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(17))
+
+    assert truth.buckets[6].count == 1
+    assert truth.buckets[6].total_cells == 12
+    assert truth.buckets[6].items[0].item_id == weapon.item_id
+
+
 def test_category_shape_target_reports_no_pool_match() -> None:
     maps, drops, items = _tables()
     obs = SessionObs(
