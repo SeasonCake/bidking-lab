@@ -2,7 +2,8 @@ param(
   [string]$WatchDir = "C:\Users\shenc\Desktop\bid_king_packages",
   [string]$LogDir = "data\logs\live",
   [int]$NTrials = 500,
-  [int]$RoiTrials = 250
+  [int]$RoiTrials = 250,
+  [double]$StableSeconds = 1.0
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,7 +20,8 @@ Start-Process -FilePath $Python -WorkingDirectory $Repo -WindowStyle Hidden -Arg
   "--watch-dir", $WatchDir,
   "--log-dir", $LogPath,
   "--n-trials", "$NTrials",
-  "--roi-trials", "$RoiTrials"
+  "--roi-trials", "$RoiTrials",
+  "--stable-seconds", "$StableSeconds"
 )
 
 Start-Process -FilePath $Python -WorkingDirectory $Repo -ArgumentList @(

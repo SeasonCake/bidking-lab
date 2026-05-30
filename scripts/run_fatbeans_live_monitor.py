@@ -9,9 +9,12 @@ and keep the log schema unchanged.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
+import shutil
 import sys
 import time
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -32,6 +35,66 @@ def _json_files(path: Path) -> list[Path]:
     return sorted(path.glob("*.json"))
 
 
+def _fingerprint(path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    return {
+        "path": str(path.resolve()),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
+
+
+def _load_manifest(path: Path) -> dict[str, dict[str, Any]]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(key): value
+        for key, value in raw.items()
+        if isinstance(value, dict)
+    }
+
+
+def _save_manifest(path: Path, manifest: dict[str, dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _is_stable_file(path: Path, stable_seconds: float) -> bool:
+    if stable_seconds <= 0:
+        return path.exists()
+    try:
+        first = _fingerprint(path)
+    except OSError:
+        return False
+    time.sleep(stable_seconds)
+    try:
+        second = _fingerprint(path)
+    except OSError:
+        return False
+    return first == second
+
+
+def _archive_raw_file(path: Path, archive_dir: Path) -> Path:
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    target = archive_dir / f"{stamp}_{path.name}"
+    suffix = 1
+    while target.exists():
+        target = archive_dir / f"{stamp}_{suffix}_{path.name}"
+        suffix += 1
+    shutil.copy2(path, target)
+    return target
+
+
 def _process_file(
     path: Path,
     *,
@@ -40,6 +103,7 @@ def _process_file(
     n_trials: int,
     roi_trials: int,
     seed: int,
+    archive_dir: Path | None = None,
 ) -> None:
     artifact = build_monitor_artifact_from_file(
         path,
@@ -48,6 +112,9 @@ def _process_file(
         roi_trials=roi_trials,
         seed=seed,
     )
+    if archive_dir is not None:
+        archived = _archive_raw_file(path, archive_dir)
+        artifact["raw_archive"] = str(archived)
     write_monitor_logs(artifact, log_dir=log_dir)
     print(
         f"[ok] {path.name}: map={artifact.get('map_id')} "
@@ -78,13 +145,30 @@ def main() -> int:
         help="Override raw game table directory; defaults to data/raw/tables",
     )
     parser.add_argument("--poll", type=float, default=1.0, help="Watch poll seconds")
+    parser.add_argument(
+        "--stable-seconds",
+        type=float,
+        default=1.0,
+        help="Require file size/mtime to stay unchanged before processing",
+    )
     parser.add_argument("--once", action="store_true", help="Watch existing files once")
+    parser.add_argument(
+        "--reprocess",
+        action="store_true",
+        help="Ignore processed manifest and process matching files again",
+    )
+    parser.add_argument(
+        "--no-archive-raw",
+        action="store_true",
+        help="Do not copy processed raw JSON files into log-dir/raw",
+    )
     parser.add_argument("--n-trials", type=int, default=500, help="MC trials per map")
     parser.add_argument("--roi-trials", type=int, default=250, help="ROI MC trials")
     parser.add_argument("--seed", type=int, default=20260530)
     args = parser.parse_args()
 
     log_dir = Path(args.log_dir)
+    archive_dir = None if args.no_archive_raw else log_dir / "raw"
     tables = load_monitor_tables(tables_dir=args.tables_dir)
 
     if args.stdin:
@@ -108,16 +192,29 @@ def main() -> int:
             n_trials=args.n_trials,
             roi_trials=args.roi_trials,
             seed=args.seed,
+            archive_dir=archive_dir,
         )
         return 0
 
     root = Path(args.watch_dir)
-    seen: set[Path] = set()
+    manifest_path = log_dir / "processed_files.json"
+    manifest = _load_manifest(manifest_path)
     print(f"[watch] {root} -> {log_dir}")
     while True:
         for path in _json_files(root):
             resolved = path.resolve()
-            if resolved in seen:
+            try:
+                fingerprint = _fingerprint(path)
+            except OSError:
+                continue
+            manifest_key = str(resolved)
+            if (
+                not args.reprocess
+                and manifest.get(manifest_key, {}).get("size") == fingerprint["size"]
+                and manifest.get(manifest_key, {}).get("mtime_ns") == fingerprint["mtime_ns"]
+            ):
+                continue
+            if not _is_stable_file(path, args.stable_seconds):
                 continue
             try:
                 _process_file(
@@ -127,8 +224,15 @@ def main() -> int:
                     n_trials=args.n_trials,
                     roi_trials=args.roi_trials,
                     seed=args.seed,
+                    archive_dir=archive_dir,
                 )
-                seen.add(resolved)
+                latest = _fingerprint(path)
+                manifest[manifest_key] = {
+                    **latest,
+                    "processed_at": time.time(),
+                    "name": path.name,
+                }
+                _save_manifest(manifest_path, manifest)
             except Exception as exc:  # noqa: BLE001 - long-running monitor boundary
                 print(f"[error] {path}: {exc}", file=sys.stderr)
         if args.once:

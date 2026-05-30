@@ -96,3 +96,15 @@
 **取舍**：短期精度不会靠少量样本硬拟合；长期可避免把手工样本偏差写进实战策略。
 
 **复查点**：当 `model_eval.jsonl` 累积到每个主要英雄/地图族至少 30 份有效结算局，再开始做参数化校准。
+
+## 2026-05-30 · 自动采样先做稳定 JSON watcher，真实时 feed 后续替换
+
+**背景**：用户希望开游戏后自动积累每局日志，而不是每次手动把导出文件交给项目。当前项目已有 source-agnostic monitor，但缺少长期采样所需的稳定文件检测、去重和原始包归档。
+
+**推荐**：短期先把 Fatbeans JSON 目录 watcher 做扎实：游戏前启动 monitor/overlay，Fatbeans 或未来抓包 feed 只要持续写 JSON，项目自动生成 snapshot、session/model/layout logs。真实时网络 feed 后续只要喂同一个 monitor artifact builder，不改日志 schema。
+
+**用户选择**：希望尽可能多采集 100+ 份样本，用于降低极端样本对估计的拉偏。
+
+**取舍**：这不是完整网络直连实时监听，但能先解决“批量打局自动入库”和“日志可恢复”的问题；避免在推理主干还没稳定时同时引入网络抓包复杂度。
+
+**复查点**：如果后续确认 Fatbeans/抓包工具能在游戏运行中自动写增量 JSON，再把 watcher 的处理粒度从“文件完成”扩展到“session 增量 snapshot”。
