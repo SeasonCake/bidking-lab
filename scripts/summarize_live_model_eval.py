@@ -12,6 +12,18 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _map_family(map_id: Any) -> str:
+    try:
+        mid = int(map_id)
+    except (TypeError, ValueError):
+        return "unknown"
+    if 2400 <= mid < 2500:
+        return "villa"
+    if 2500 <= mid < 2600:
+        return "shipwreck"
+    return f"map_{mid // 100}xx"
+
+
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if not path.exists():
@@ -100,7 +112,60 @@ def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
     return out
 
 
-def summarize(rows: list[dict[str, Any]], *, dedupe: bool = True) -> dict[str, Any]:
+def _collection_readiness(
+    rows: list[dict[str, Any]],
+    *,
+    target_per_hero_family: int,
+) -> dict[str, Any]:
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        hero = str(row.get("hero") or "unknown")
+        family = _map_family(row.get("map_id"))
+        groups.setdefault((hero, family), []).append(row)
+
+    rows_out: list[dict[str, Any]] = []
+    for hero in ("aisha", "ethan"):
+        for family in ("villa", "shipwreck"):
+            count = len(groups.get((hero, family), ()))
+            rows_out.append(
+                {
+                    "hero": hero,
+                    "map_family": family,
+                    "n": count,
+                    "target": target_per_hero_family,
+                    "needed": max(0, target_per_hero_family - count),
+                    "ready": count >= target_per_hero_family,
+                }
+            )
+    missing = sum(row["needed"] for row in rows_out)
+    return {
+        "target_per_hero_family": target_per_hero_family,
+        "ready": missing == 0,
+        "total_needed": missing,
+        "groups": rows_out,
+    }
+
+
+def _log_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "missing_hero": sum(1 for row in rows if not row.get("hero")),
+        "missing_final_value": sum(1 for row in rows if row.get("final_value") is None),
+        "missing_final_cells": sum(1 for row in rows if row.get("final_cells") is None),
+        "missing_decision_value": sum(
+            1 for row in rows if row.get("decision_value_p50") is None
+        ),
+        "missing_q6_truth_fields": sum(
+            1 for row in rows if row.get("final_q6_value") is None
+        ),
+    }
+
+
+def summarize(
+    rows: list[dict[str, Any]],
+    *,
+    dedupe: bool = True,
+    target_per_hero_family: int = 30,
+) -> dict[str, Any]:
     original_count = len(rows)
     if dedupe:
         rows = _dedupe_latest_by_file(rows)
@@ -123,6 +188,11 @@ def summarize(rows: list[dict[str, Any]], *, dedupe: bool = True) -> dict[str, A
         "raw_value_mae": _mae(valid, "value_p50_error"),
         "warehouse_mae": _mae(valid, "warehouse_p50_error"),
         "layout_fit_mae": _mae(valid, "layout_fit_p50_error"),
+        "log_quality": _log_quality(valid),
+        "collection_readiness": _collection_readiness(
+            valid,
+            target_per_hero_family=target_per_hero_family,
+        ),
         "q6_false_low_count": sum(
             1 for row in valid if row.get("q6_false_low_risk") is True
         ),
@@ -137,6 +207,16 @@ def summarize(rows: list[dict[str, Any]], *, dedupe: bool = True) -> dict[str, A
         ),
         "groups": {
             "hero": _group_summary(valid, "hero"),
+            "map_family": _group_summary(
+                [
+                    {
+                        **row,
+                        "map_family": _map_family(row.get("map_id")),
+                    }
+                    for row in valid
+                ],
+                "map_family",
+            ),
             "map_id": _group_summary(valid, "map_id"),
         },
     }
@@ -157,9 +237,25 @@ def main() -> int:
         action="store_true",
         help="Do not collapse duplicate rows with the same file name",
     )
+    parser.add_argument(
+        "--target-per-hero-family",
+        type=int,
+        default=30,
+        help="Readiness target for each hero x map-family bucket",
+    )
     args = parser.parse_args()
     rows = _read_jsonl(Path(args.path))
-    print(json.dumps(summarize(rows, dedupe=not args.no_dedupe), ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            summarize(
+                rows,
+                dedupe=not args.no_dedupe,
+                target_per_hero_family=args.target_per_hero_family,
+            ),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 

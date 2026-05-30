@@ -45,9 +45,12 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
     if not snapshot:
         return [("等待 latest_snapshot.json ...", "dim")]
     age = ""
+    stale = False
     created_at = snapshot.get("created_at")
     if isinstance(created_at, int | float):
-        age = f"  {max(0, int(time.time() - created_at))}s前"
+        seconds_old = max(0, int(time.time() - created_at))
+        stale = seconds_old > 120
+        age = f"  {seconds_old}s前"
     header = (
         f"{snapshot.get('hero') or '?'}  "
         f"map {snapshot.get('map_id') or '?'}  "
@@ -56,6 +59,8 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
         f"{age}"
     )
     entries.append((header, "header"))
+    if stale:
+        entries.append(("状态: snapshot 超过 120 秒未更新，检查 Fatbeans 导出或 monitor 进程", "warn"))
     for row in rows[:4]:
         topic = row.get("topic", "")
         conclusion = row.get("conclusion", "")

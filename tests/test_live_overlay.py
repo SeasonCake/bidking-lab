@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,3 +65,18 @@ def test_overlay_summary_lines_include_q6_and_diagnostics() -> None:
     assert any("q6 P90" in line for line in lines)
     assert any("footprint" in line for line in lines)
     assert any("决策P50误差" in line for line in lines)
+
+
+def test_overlay_warns_when_snapshot_is_stale() -> None:
+    overlay = _overlay_module()
+
+    lines = overlay._summary_lines(
+        {
+            "created_at": time.time() - 180,
+            "map_id": 2401,
+            "round": 1,
+            "panel": {"summary_rows": ()},
+        }
+    )
+
+    assert any("超过 120 秒未更新" in line for line in lines)
