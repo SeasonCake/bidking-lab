@@ -281,6 +281,60 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     )
 
 
+def test_q6_count_cell_prior_floor_experiment_is_separate_from_raw_floor() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "file": "q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "q6_top_size_band": "q6_top_large",
+            "final_q6_value": 500,
+            "final_q6_decision_value": 500,
+            "v2_q6_value_p90": 100,
+            "v2_q6_decision_value_p90": 100,
+            "v2_match_rate": 1.0,
+            "q6_p90_misses_truth": True,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+            "v2_q6_cells_p90_under_prior_by": 4.0,
+        },
+        {
+            "status": "ok",
+            "file": "no_q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "q6_top_size_band": "no_q6",
+            "final_q6_value": 0,
+            "final_q6_decision_value": 0,
+            "v2_q6_value_p90": 0,
+            "v2_q6_decision_value_p90": 0,
+            "v2_match_rate": 1.0,
+            "q6_p90_misses_truth": False,
+            "q6_plannable_p90_misses_truth": False,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+        },
+    ]
+
+    experiment = module._summary(rows, q6_residual_floor_ratio=1.0)[
+        "q6_count_cell_prior_floor_experiment"
+    ]
+
+    assert experiment["eligible_rows"] == 1
+    assert experiment["eligible_no_q6_rows"] == 1
+    assert experiment["q6_plannable_p90_misses_truth"] == 0
+    assert experiment["q6_plannable_value_p90_coverage"] == 1.0
+    assert (
+        experiment["groups"]["hero_map_family"][0][
+            "q6_plannable_miss_improvement"
+        ]
+        == 1
+    )
+
+
 def test_expand_cli_paths_supports_globs(tmp_path: Path) -> None:
     module = _eval_module()
     first = tmp_path / "a.json"
