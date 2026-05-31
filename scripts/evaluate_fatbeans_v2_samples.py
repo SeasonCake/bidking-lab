@@ -304,6 +304,8 @@ def _q6_miss_root(row: dict[str, Any]) -> str:
     markers: list[str] = []
     if row.get("q6_false_low_risk"):
         markers.append("low_q6_sample_rate")
+    if "q6_below_drop_prior:" in str(row.get("diagnostics") or ""):
+        markers.append("below_drop_prior")
     markers.append(_q6_top_size_band(row))
     if row.get("layout_conflict"):
         markers.append("layout_conflict")
@@ -422,6 +424,8 @@ def evaluate_path(
                 else None
             ),
             "v2_q6_match_rate": report.q6_match_rate,
+            "v2_q6_prior_match_rate": report.q6_prior_match_rate,
+            "v2_q6_prior_expected_value": _round(report.q6_prior_expected_value),
             "v2_q6_value_p50": q6_value_p50,
             "v2_q6_value_p90": q6_value_p90,
             "v2_q6_value_p90_error": (

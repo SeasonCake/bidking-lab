@@ -242,6 +242,7 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
     if v2_rows:
         row = v2_rows[0]
         q6_rate = row.get("q6样本率") or ""
+        q6_prior = row.get("q6掉落先验") or ""
         q6_value = row.get("q6价值 P10/P50/P90") or ""
         if q6_rate or q6_value:
             tag = "warn"
@@ -249,7 +250,10 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
                 tag = "bad" if float(str(q6_rate).strip("%")) < 10 else "normal"
             except ValueError:
                 tag = "normal"
-            entries.append((f"红货: q6样本率 {q6_rate or '?'}  |  {q6_value}", tag))
+            prior_text = f" / 先验 {q6_prior}" if q6_prior else ""
+            entries.append(
+                (f"红货: q6样本率 {q6_rate or '?'}{prior_text}  |  {q6_value}", tag)
+            )
         diagnostics = str(row.get("诊断") or "")
         if diagnostics:
             tag = "warn"

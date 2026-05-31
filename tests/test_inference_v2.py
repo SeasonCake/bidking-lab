@@ -280,6 +280,29 @@ def test_estimate_posterior_v2_uses_anchor_without_rejection_dead_end() -> None:
     )
 
 
+def test_quality_drop_prior_uses_drop_weights_and_count_ranges() -> None:
+    maps, drops, items = _tables()
+    sampler = ConditionalSampler(
+        build_residual_problem(
+            2401,
+            EvidenceStoreBuilder().build(),
+            maps=maps,
+            drops=drops,
+            items=items,
+        ),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+
+    prior = sampler.quality_drop_prior(6)
+
+    assert prior is not None
+    assert abs(prior.draw_probability - 1 / 1002) < 1e-12
+    assert abs(prior.session_probability - (1 - (1001 / 1002) ** 2)) < 1e-12
+    assert abs(prior.expected_session_value - (2 * 444_000 / 1002)) < 1e-12
+
+
 def test_residual_problem_guides_per_quality_bucket_targets() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()

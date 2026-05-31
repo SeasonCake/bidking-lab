@@ -241,6 +241,16 @@ class ResidualBucketTarget:
 
 
 @dataclass(frozen=True)
+class QualityDropPrior:
+    """Drop-table prior for one quality before runtime evidence filters it."""
+
+    quality: int
+    draw_probability: float
+    session_probability: float
+    expected_session_value: float
+
+
+@dataclass(frozen=True)
 class PosteriorReport:
     """Unified posterior summary produced by the v2 conditional sampler."""
 
@@ -257,6 +267,8 @@ class PosteriorReport:
     decision_value: QuantileSummary | None = None
     q6_match_rate: float | None = None
     q6_value: QuantileSummary | None = None
+    q6_prior_match_rate: float | None = None
+    q6_prior_expected_value: float | None = None
     layout_diagnostics: tuple[str, ...] = ()
     diagnostics: tuple[str, ...] = ()
 
@@ -948,6 +960,41 @@ class ConditionalSampler:
             items=items,
         )
 
+    def quality_drop_prior(self, quality: int) -> QualityDropPrior | None:
+        if not self._sampler.pools:
+            return None
+        draw_probability = 0.0
+        session_probability = 0.0
+        expected_session_value = 0.0
+        mean_draws = (
+            self._sampler.items_per_session_min + self._sampler.items_per_session_max
+        ) / 2
+        for pool, pool_weight in zip(self._sampler.pools, self._sampler.pool_weights):
+            if len(pool.probabilities) == 0:
+                continue
+            mask = pool.qualities == quality
+            if not np.any(mask):
+                continue
+            pool_draw_p = float(pool.probabilities[mask].sum())
+            pool_session_p = _session_probability_for_draw(
+                pool_draw_p,
+                self._sampler.items_per_session_min,
+                self._sampler.items_per_session_max,
+            )
+            mean_counts = (pool.n_min[mask] + pool.n_max[mask]) / 2
+            pool_expected_value = float(
+                (pool.probabilities[mask] * pool.values[mask] * mean_counts).sum()
+            ) * mean_draws
+            draw_probability += float(pool_weight) * pool_draw_p
+            session_probability += float(pool_weight) * pool_session_p
+            expected_session_value += float(pool_weight) * pool_expected_value
+        return QualityDropPrior(
+            quality=quality,
+            draw_probability=draw_probability,
+            session_probability=session_probability,
+            expected_session_value=expected_session_value,
+        )
+
     def sample(self, rng: np.random.Generator | None = None) -> SessionTruth:
         rng = rng or np.random.default_rng()
         buckets: dict[int, BucketTruth] = {}
@@ -1364,6 +1411,24 @@ class ConditionalSampler:
         )
 
 
+def _session_probability_for_draw(
+    draw_probability: float,
+    min_draws: int,
+    max_draws: int,
+) -> float:
+    if draw_probability <= 0:
+        return 0.0
+    if draw_probability >= 1:
+        return 1.0
+    lo = min(int(min_draws), int(max_draws))
+    hi = max(int(min_draws), int(max_draws))
+    probabilities = [
+        1.0 - (1.0 - draw_probability) ** draws
+        for draws in range(lo, hi + 1)
+    ]
+    return float(sum(probabilities) / len(probabilities))
+
+
 def _quantiles(values: Sequence[int], weights: Sequence[float]) -> QuantileSummary | None:
     if not values:
         return None
@@ -1544,6 +1609,7 @@ def _estimate_posterior_for_problem(
     extra_diagnostics: tuple[str, ...] = (),
 ) -> PosteriorReport:
     sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+    q6_prior = sampler.quality_drop_prior(6)
     rng = np.random.default_rng(seed)
     values: list[int] = []
     decision_values: list[int] = []
@@ -1592,6 +1658,17 @@ def _estimate_posterior_for_problem(
         and q6_match_rate < 0.10
     ):
         diagnostics.append(f"q6_unconstrained_low_sample_rate:{q6_match_rate:.3f}")
+    if (
+        6 not in problem.bucket_targets
+        and q6_prior is not None
+        and q6_prior.session_probability >= 0.50
+        and q6_match_rate is not None
+        and q6_match_rate < q6_prior.session_probability * 0.35
+    ):
+        diagnostics.append(
+            "q6_below_drop_prior:"
+            f"{q6_match_rate:.3f}<prior:{q6_prior.session_probability:.3f}"
+        )
     return PosteriorReport(
         map_id=problem.map_id,
         map_name=problem.map_name,
@@ -1606,6 +1683,12 @@ def _estimate_posterior_for_problem(
         decision_value=_quantiles(decision_values, weights),
         q6_match_rate=q6_match_rate,
         q6_value=_quantiles(q6_values, weights),
+        q6_prior_match_rate=(
+            q6_prior.session_probability if q6_prior is not None else None
+        ),
+        q6_prior_expected_value=(
+            q6_prior.expected_session_value if q6_prior is not None else None
+        ),
         layout_diagnostics=problem.layout.diagnostics,
         diagnostics=tuple(diagnostics),
     )
@@ -1691,6 +1774,7 @@ __all__ = (
     "KnownFootprint",
     "LayoutFeasibility",
     "PosteriorReport",
+    "QualityDropPrior",
     "ResidualBucketTarget",
     "ResidualProblem",
     "RuntimeEvidence",

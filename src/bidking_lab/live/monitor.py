@@ -181,6 +181,16 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
                 if report.q6_match_rate is not None
                 else ""
             ),
+            "q6掉落先验": (
+                f"{report.q6_prior_match_rate:.1%}"
+                if report.q6_prior_match_rate is not None
+                else ""
+            ),
+            "q6先验价值": (
+                f"{report.q6_prior_expected_value:,.0f}"
+                if report.q6_prior_expected_value is not None
+                else ""
+            ),
             "诊断": diagnostics,
         }
     ]
@@ -434,6 +444,8 @@ def _model_eval_row(
     decision_value_p50 = None
     raw_value_p50 = None
     q6_match_rate = None
+    q6_prior_match_rate = None
+    q6_prior_expected_value = None
     q6_value_p90 = None
     posterior_diagnostics = ""
     if warehouse_rows:
@@ -452,6 +464,8 @@ def _model_eval_row(
         )
     if v2_rows:
         q6_match_rate = _parse_percent_text(v2_rows[0].get("q6样本率"))
+        q6_prior_match_rate = _parse_percent_text(v2_rows[0].get("q6掉落先验"))
+        q6_prior_expected_value = _parse_int_text(v2_rows[0].get("q6先验价值"))
         q6_value_p90 = _parse_range_value(
             str(v2_rows[0].get("q6价值 P10/P50/P90", "")),
             2,
@@ -512,6 +526,8 @@ def _model_eval_row(
         "attack_bid": attack_bid,
         "stop_bid": stop_bid,
         "v2_q6_match_rate": q6_match_rate,
+        "v2_q6_prior_match_rate": q6_prior_match_rate,
+        "v2_q6_prior_expected_value": q6_prior_expected_value,
         "v2_q6_value_p90": q6_value_p90,
         "q6_p90_misses_truth": (
             q6_value_p90 < int((truth_breakdown or {}).get("final_q6_value") or 0)

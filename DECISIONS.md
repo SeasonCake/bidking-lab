@@ -274,3 +274,20 @@ q6 3x3 不能直接锁定 item_id；旧逻辑只把它们转成桶下界和 layo
 
 **复查点**：下一阶段优先处理 Aisha shipwreck q6 residual；shape target 只解决“应该采到这个形状”，
 不解决“红货数量/价值先验偏低”的问题。
+
+## 2026-05-31 · q6 residual 先接 Drop 先验对照，不直接抬价
+
+**背景**：用户提醒项目已解码不同地图的详细爆率权重。当前 v2 q6 后验低估可能来自两类原因：
+原始 Drop 先验确实低，或 evidence/layout/value 过滤后 q6 residual 被采样不足。两者需要分开。
+
+**推荐**：先把 Drop 权重解码出的 q6 每局出现率和 q6 期望价值写入 `PosteriorReport`、live log 和批评估，
+并增加 `q6_below_drop_prior:*` 诊断。暂不把该先验直接混入 P90 或出价 hint，避免把没有实证支持的红货
+强行计入常规决策价值。
+
+**用户选择**：认可加权方向，希望继续利用已解码的地图爆率，同时避免极端值拉偏。
+
+**取舍**：短期不会改善 MAE，但能区分“红货本来低概率”和“后验过滤过度低估红货”。这为后续 q6 residual
+floor、按地图族/英雄/证据类型分层校准提供可靠输入。
+
+**复查点**：当 live `model_eval.jsonl` 继续累积后，优先分析 `below_drop_prior` 局；若这些局集中在
+Aisha shipwreck 且最终 truth 常有 q6，则再做受限的 q6 residual floor，而不是全局提高 q6 权重。
