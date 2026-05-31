@@ -103,4 +103,5 @@ def test_demo_snapshot_has_compact_overlay_sections() -> None:
         "红货 q6",
         "布局",
     ]
+    assert any(section[0] == "鉴影命中" for section in model["sections"])
     assert any(alert[0].startswith("q6 P90") for alert in model["alerts"])

@@ -36,6 +36,7 @@ from bidking_lab.live.fatbeans import (
     parse_fatbeans_capture_payload,
 )
 from bidking_lab.live.layout import SAMPLE_FIT_LAYOUT_ESTIMATE_POLICY
+from bidking_lab.live.layout import latest_grid_batch
 from bidking_lab.live.replay import layout_replay_stages
 from bidking_lab.live.state import (
     LiveSessionState,
@@ -48,6 +49,19 @@ from bidking_lab.runtime import (
     layout_replay_rows_from_stages,
     tactical_panel_from_rows,
 )
+
+_CATEGORY_LABELS = {
+    101: "家具",
+    102: "医疗",
+    103: "时尚",
+    104: "武器",
+    105: "珠宝",
+    106: "古董",
+    107: "数码",
+    108: "能源",
+    109: "食饮",
+    110: "书画",
+}
 
 
 @dataclass(frozen=True)
@@ -667,6 +681,39 @@ def _model_eval_row(
     }
 
 
+def _category_grid_items(
+    batches: Sequence[LiveObservationBatch],
+) -> list[dict[str, Any]]:
+    batch = latest_grid_batch(batches)
+    if batch is None:
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in batch.grid_items:
+        if item.category is None:
+            continue
+        footprint = item.footprint()
+        rows.append(
+            {
+                "category": item.category,
+                "category_label": _CATEGORY_LABELS.get(
+                    item.category,
+                    str(item.category),
+                ),
+                "quality": item.quality,
+                "item_id": item.item_id,
+                "local_index": item.local_index,
+                "cells": item.cells,
+                "shape_key": item.shape_key,
+                "row": footprint.row if footprint is not None else None,
+                "col": footprint.col if footprint is not None else None,
+                "width": footprint.width if footprint is not None else None,
+                "height": footprint.height if footprint is not None else None,
+                "source": item.source,
+            }
+        )
+    return rows
+
+
 def _parse_int_text(value: Any) -> int | None:
     if value is None:
         return None
@@ -857,6 +904,7 @@ def build_monitor_artifact_from_events(
         "layout_replay_rows": layout_replay_rows,
         "layout_stage_rows": layout_stage_rows,
         "panel": asdict(panel),
+        "category_grid_items": _category_grid_items(batches),
         "layout_sample_rows": [
             row.as_dict()
             for row in evaluate_fatbeans_layout_events(events, file=file)

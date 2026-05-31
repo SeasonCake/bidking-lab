@@ -666,6 +666,28 @@ def _q6_residual_floor_experiment(
             4,
         ),
         "q6_p90_misses_truth": adjusted_misses,
+        "groups": {
+            "hero_map_family": _q6_residual_floor_group_summary(
+                rows,
+                ("hero", "map_family"),
+                floor_ratio=floor_ratio,
+            ),
+            "map_family_value_tier": _q6_residual_floor_group_summary(
+                rows,
+                ("map_family", "value_tier"),
+                floor_ratio=floor_ratio,
+            ),
+            "evidence_stage": _q6_residual_floor_group_summary(
+                rows,
+                ("evidence_stage",),
+                floor_ratio=floor_ratio,
+            ),
+            "top_item_size": _q6_residual_floor_group_summary(
+                rows,
+                ("q6_top_size_band",),
+                floor_ratio=floor_ratio,
+            ),
+        },
     }
 
 
@@ -1055,6 +1077,75 @@ def _root_cause_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, 
 
 def _group_key(row: dict[str, Any], keys: tuple[str, ...]) -> str:
     return "|".join(f"{key}={row.get(key) or 'unknown'}" for key in keys)
+
+
+def _q6_residual_floor_group_summary(
+    rows: list[dict[str, Any]],
+    keys: tuple[str, ...],
+    *,
+    floor_ratio: float,
+) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if row.get("status") != "ok":
+            continue
+        groups.setdefault(_group_key(row, keys), []).append(row)
+
+    out: list[dict[str, Any]] = []
+    for group, group_rows in groups.items():
+        q6_truth = [
+            row for row in group_rows
+            if int(row.get("final_q6_value") or 0) > 0
+            and row.get("v2_q6_value_p90") is not None
+        ]
+        if not q6_truth:
+            continue
+        before_misses = sum(1 for row in q6_truth if row.get("q6_p90_misses_truth"))
+        after_misses = 0
+        floors: list[int] = []
+        eligible_truth = 0
+        for row in q6_truth:
+            q6_p90 = int(row.get("v2_q6_value_p90") or 0)
+            floor_value = _q6_residual_floor_value(row, floor_ratio=floor_ratio)
+            if floor_value is not None:
+                eligible_truth += 1
+                floors.append(floor_value)
+                q6_p90 = max(q6_p90, floor_value)
+            if q6_p90 < int(row.get("final_q6_value") or 0):
+                after_misses += 1
+        eligible_no_q6 = sum(
+            1 for row in group_rows
+            if int(row.get("final_q6_value") or 0) <= 0
+            and _q6_residual_floor_value(row, floor_ratio=floor_ratio) is not None
+        )
+        out.append(
+            {
+                "group": group,
+                "n": len(group_rows),
+                "q6_truth": len(q6_truth),
+                "eligible_rows": eligible_truth,
+                "eligible_no_q6_rows": eligible_no_q6,
+                "q6_p90_misses_before": before_misses,
+                "q6_p90_misses_after": after_misses,
+                "q6_p90_miss_improvement": before_misses - after_misses,
+                "q6_value_p90_coverage_after": round(
+                    1.0 - after_misses / len(q6_truth),
+                    4,
+                ),
+                "floor_median": _round(statistics.median(floors))
+                if floors
+                else None,
+            }
+        )
+    return sorted(
+        out,
+        key=lambda row: (
+            int(row["q6_p90_miss_improvement"]),
+            -int(row["eligible_no_q6_rows"]),
+            int(row["q6_truth"]),
+        ),
+        reverse=True,
+    )[:12]
 
 
 def _q6_group_summary(

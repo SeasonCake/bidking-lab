@@ -8,6 +8,7 @@ working when the monitor source becomes a true realtime feed.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 from pathlib import Path
 import time
@@ -172,6 +173,28 @@ def _demo_snapshot() -> dict[str, Any]:
             "warehouse_p50_error": 9,
             "stop_minus_final_value": -122_000,
         },
+        "category_grid_items": [
+            {
+                "category": 108,
+                "category_label": "能源",
+                "quality": 6,
+                "local_index": 14,
+                "cells": 16,
+                "shape_key": "44",
+                "row": 2,
+                "col": 4,
+            },
+            {
+                "category": 107,
+                "category_label": "数码",
+                "quality": 4,
+                "local_index": 26,
+                "cells": 4,
+                "shape_key": "22",
+                "row": 3,
+                "col": 6,
+            },
+        ],
     }
 
 
@@ -325,6 +348,21 @@ def _summary_by_topic(snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
+def _category_focus_text(items: list[dict[str, Any]]) -> tuple[str, str]:
+    counts = Counter(str(item.get("category_label") or item.get("category") or "?") for item in items)
+    summary = " / ".join(f"{label}×{count}" for label, count in counts.most_common(4))
+    details: list[str] = []
+    for item in items[:5]:
+        label = item.get("category_label") or item.get("category") or "?"
+        quality = item.get("quality")
+        q_text = f"Q{quality}" if quality is not None else "Q?"
+        loc = item.get("local_index")
+        pos = f"#{loc}" if loc is not None else ""
+        shape = item.get("shape_key") or ""
+        details.append(" ".join(str(part) for part in (label, q_text, shape, pos) if part))
+    return summary, "；".join(details)
+
+
 def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     if not snapshot:
         return {
@@ -345,6 +383,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     v2 = _first(snapshot.get("v2_posterior_rows"))
     model_eval = snapshot.get("model_eval") or {}
     panel = snapshot.get("panel") or {}
+    category_items = snapshot.get("category_grid_items") or []
     layout = _first(panel.get("layout_stages"))
     hero = str(snapshot.get("hero") or "?").upper()
     map_id = snapshot.get("map_id") or "?"
@@ -417,7 +456,6 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
                 "warn" if layout.get("risk") not in ("", "低", "低风险") else "normal",
             )
         )
-
     sections: list[tuple[str, str, str]] = []
     if tool_row := summary.get("下一次优先使用道具"):
         sections.append(
@@ -427,6 +465,9 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
                 _short(tool_row.get("detail"), 110),
             )
         )
+    if category_items:
+        category_summary, category_detail = _category_focus_text(category_items)
+        sections.append(("鉴影命中", category_summary, _short(category_detail, 118)))
     diagnostics = str(v2.get("诊断") or "")
     if diagnostics:
         sections.append(("后验诊断", _short(diagnostics, 118), ""))

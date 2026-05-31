@@ -500,3 +500,27 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：30 份新增 imaging 样本和 271 份全量快速扫显示这是低副作用的小修，但总体改善有限；说明主要瓶颈仍是 q6 residual 数量/总值，而不是单个 target 候选内部排序。
 
 **复查点**：下一步不要继续加大 value tilt；应做分英雄/地图族的 q6 residual floor 实验，并把它保持为风险上界或离线校准，直到有足够实时日志确认不会抬偏普通局。
+
+## 2026-06-01 · q6 residual floor 只做分组诊断，不进正式估价
+
+**背景**：全局 `q6-residual-floor-ratio=0.5` 只能小幅提升 q6 P90 覆盖，并且会覆盖一批真实无 q6 的局。分组后发现收益主要集中在 Aisha shipwreck，villa/Ethan 基本无收益。
+
+**推荐**：保留 floor 为 batch evaluator 的离线 what-if，并输出 hero/map_family、value tier、evidence stage、top item size 分组。正式 posterior 和 bid hint 暂不接 floor。
+
+**用户选择**：继续优先保证常规估价稳定，不用全局红货上界拉高主出价。
+
+**取舍**：短期 q6 P90 仍会低估部分大局；换来的是普通局不被风险上界污染。后续若 Aisha shipwreck 有足够实时日志，可只对该组做更窄的风险提示，而不是全局参数。
+
+**复查点**：看 `q6_residual_floor_experiment.groups.hero_map_family`。只有当某组 `q6_p90_miss_improvement` 明显大于 `eligible_no_q6_rows`，才考虑进入正式风险提示。
+
+## 2026-06-01 · 鉴影高亮先做 snapshot 数据契约
+
+**背景**：用户希望悬浮窗 UI 可以按刚刚使用的鉴影筛选/高亮 minimap。当前 Tk overlay 还没有可交互 minimap，但 Fatbeans grid item 已经带 category/local/shape。
+
+**推荐**：先在 live snapshot 输出 `category_grid_items`，包含 category label、quality、shape、local、row/col 等字段；overlay 先显示“鉴影命中”文本摘要。后续 Streamlit 或桌面小窗做按钮筛选时，不需要再改 monitor 日志 schema。
+
+**用户选择**：先做能用的悬浮窗铺垫，后续再细化 UI 表现。
+
+**取舍**：这一步不是完整的交互式 minimap，但把数据边界打通了；后续改 UI 不会牵动推理层。
+
+**复查点**：下一轮 UI 优化时，用 `category_grid_items` 渲染 10 列网格，并加类别按钮过滤能源/医疗/古董等鉴影命中。

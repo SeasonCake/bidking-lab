@@ -176,12 +176,28 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     assert experiment["eligible_rows"] == 1
     assert experiment["floor_median"] == 600_000
     assert experiment["q6_p90_misses_truth"] == 1
+    assert experiment["groups"]["hero_map_family"][0]["group"] == (
+        "hero=ethan|map_family=shipwreck"
+    )
+    assert experiment["groups"]["hero_map_family"][0]["eligible_rows"] == 1
+    assert (
+        experiment["groups"]["hero_map_family"][0]["q6_p90_misses_before"]
+        == 1
+    )
+    assert (
+        experiment["groups"]["hero_map_family"][0]["q6_p90_misses_after"]
+        == 1
+    )
 
     experiment = module._summary(rows, q6_residual_floor_ratio=1.0)[
         "q6_residual_floor_experiment"
     ]
     assert experiment["q6_p90_misses_truth"] == 0
     assert experiment["q6_value_p90_coverage"] == 1.0
+    assert (
+        experiment["groups"]["hero_map_family"][0]["q6_p90_miss_improvement"]
+        == 1
+    )
 
 
 def test_expand_cli_paths_supports_globs(tmp_path: Path) -> None:

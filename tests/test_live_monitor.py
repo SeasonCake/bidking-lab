@@ -135,6 +135,7 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["latest_bids"] == {"leader": 15_000}
     assert artifact["warehouse_rows"]
     assert artifact["v2_posterior_rows"]
+    assert "category_grid_items" in artifact
     assert artifact["bid_rows"]
     assert artifact["bid_rows"][0]["价值口径"] == "decision_value"
     assert artifact["bid_rows"][0]["决策价值 P10/P50/P90"]
