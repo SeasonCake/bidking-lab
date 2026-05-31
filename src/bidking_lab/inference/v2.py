@@ -66,6 +66,7 @@ class RuntimeEvidence:
     shape_key: str | None = None
     cells: int | None = None
     categories: tuple[int, ...] = ()
+    excluded_categories: tuple[int, ...] = ()
     sources: tuple[str, ...] = ()
 
     @property
@@ -81,6 +82,9 @@ class RuntimeEvidence:
         other: RuntimeEvidence,
     ) -> RuntimeEvidence:
         categories = tuple(dict.fromkeys((*self.categories, *other.categories)))
+        excluded_categories = tuple(
+            dict.fromkeys((*self.excluded_categories, *other.excluded_categories))
+        )
         sources = tuple(dict.fromkeys((*self.sources, *other.sources)))
         return RuntimeEvidence(
             runtime_id=self.runtime_id if self.runtime_id is not None else other.runtime_id,
@@ -93,6 +97,7 @@ class RuntimeEvidence:
             shape_key=self.shape_key if self.shape_key is not None else other.shape_key,
             cells=self.cells if self.cells is not None else other.cells,
             categories=categories,
+            excluded_categories=excluded_categories,
             sources=sources,
         )
 
@@ -158,6 +163,7 @@ class KnownItemAnchor:
     local_index: int | None = None
     runtime_id: int | None = None
     categories: tuple[int, ...] = ()
+    excluded_categories: tuple[int, ...] = ()
     sources: tuple[str, ...] = ()
 
 
@@ -188,6 +194,7 @@ class ShapeTarget:
     shape_key: str
     cells: int
     categories: tuple[int, ...] = ()
+    excluded_categories: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -221,6 +228,8 @@ class ResidualProblem:
     category_targets: tuple[CategoryItemObservation, ...]
     shape_targets: tuple[ShapeTarget, ...]
     layout: LayoutFeasibility
+    total_item_count: int | None = None
+    warehouse_total_cells: int | None = None
     max_quality: int | None = None
     max_item_cells: int | None = None
     diagnostics: tuple[str, ...] = ()
@@ -326,6 +335,27 @@ def _observed_item_to_runtime_evidence(
     )
 
 
+def _evidence_keys_for_observed_item(item: Any) -> tuple[str, ...]:
+    keys: list[str] = []
+    runtime_id = getattr(item, "runtime_id", None)
+    if runtime_id is not None:
+        keys.append(f"runtime:{runtime_id}")
+    local_index = getattr(item, "local_index", None)
+    shape_code = getattr(item, "shape_code", None)
+    if local_index is not None and shape_code:
+        keys.append(f"local:{local_index}:{shape_code}")
+    return tuple(keys)
+
+
+def _evidence_keys_for_runtime_evidence(evidence: RuntimeEvidence) -> tuple[str, ...]:
+    keys: list[str] = []
+    if evidence.runtime_id is not None:
+        keys.append(f"runtime:{evidence.runtime_id}")
+    if evidence.local_index is not None and evidence.shape_key is not None:
+        keys.append(f"local:{evidence.local_index}:{evidence.shape_key}")
+    return tuple(keys)
+
+
 def evidence_store_from_fatbeans_events(
     events: Any,
     *,
@@ -342,6 +372,18 @@ def evidence_store_from_fatbeans_events(
     builder = EvidenceStoreBuilder()
     for state in getattr(events, "states", ()) or ():
         sequence = getattr(state, "sort_id", None)
+        known_shape_items: dict[str, RuntimeEvidence] = {}
+
+        def remember_known_shape_item(item: Any, *, source: str) -> None:
+            ev = _observed_item_to_runtime_evidence(item, source=source)
+            if ev is None or ev.evidence_key == "anonymous":
+                return
+            if ev.shape_key is None and ev.cells is None:
+                return
+            for key in _evidence_keys_for_runtime_evidence(ev):
+                current = known_shape_items.get(key)
+                known_shape_items[key] = ev if current is None else current.merge(ev)
+
         for info in getattr(state, "public_infos", ()) or ():
             builder.add_fact(
                 EvidenceFact(
@@ -353,16 +395,55 @@ def evidence_store_from_fatbeans_events(
                 )
             )
             for item in getattr(info, "observed_items", ()) or ():
+                remember_known_shape_item(
+                    item,
+                    source=f"public:{getattr(info, 'info_id', '')}",
+                )
                 ev = _observed_item_to_runtime_evidence(
                     item,
                     source=f"public:{getattr(info, 'info_id', '')}",
                 )
                 if ev is not None:
                     builder.add_item(ev)
+        for reveal in getattr(state, "skill_reveals", ()) or ():
+            for item in getattr(reveal, "observed_items", ()) or ():
+                remember_known_shape_item(
+                    item,
+                    source=f"skill:{getattr(reveal, 'skill_id', '')}",
+                )
         for result in getattr(state, "action_results", ()) or ():
             action_id = getattr(result, "action_id", None)
             category = _CATEGORY_OUTLINE_ACTIONS.get(action_id)
+            positive_keys = {
+                key
+                for item in getattr(result, "observed_items", ()) or ()
+                for key in _evidence_keys_for_observed_item(item)
+            }
+            if category is not None:
+                emitted_negative: set[str] = set()
+                for known in known_shape_items.values():
+                    known_keys = _evidence_keys_for_runtime_evidence(known)
+                    if any(known_key in positive_keys for known_key in known_keys):
+                        continue
+                    if known.evidence_key in emitted_negative:
+                        continue
+                    emitted_negative.add(known.evidence_key)
+                    builder.add_item(
+                        RuntimeEvidence(
+                            runtime_id=known.runtime_id,
+                            local_index=known.local_index,
+                            quality=known.quality,
+                            shape_key=known.shape_key,
+                            cells=known.cells,
+                            excluded_categories=(category,),
+                            sources=(f"action_negative:{action_id}",),
+                        )
+                    )
             for item in getattr(result, "observed_items", ()) or ():
+                remember_known_shape_item(
+                    item,
+                    source=f"action:{action_id}",
+                )
                 ev = _observed_item_to_runtime_evidence(
                     item,
                     source=f"action:{action_id}",
@@ -419,6 +500,7 @@ def known_item_anchors(
                 cells=evidence.cells or item.shape_w * item.shape_h,
                 value=evidence.value or item.value,
                 categories=evidence.categories,
+                excluded_categories=evidence.excluded_categories,
                 sources=evidence.sources,
             )
         )
@@ -463,6 +545,15 @@ def _unique_shape_item_anchors(
         matched_item: Item | None = None
         for lookup_key in lookup_keys:
             candidates = candidates_by_key.get(lookup_key, {})
+            if evidence.excluded_categories:
+                candidates = {
+                    item_id: item
+                    for item_id, item in candidates.items()
+                    if not any(
+                        category in item.tags
+                        for category in evidence.excluded_categories
+                    )
+                }
             if len(candidates) == 1:
                 matched_item = next(iter(candidates.values()))
                 break
@@ -482,6 +573,7 @@ def _unique_shape_item_anchors(
                 cells=evidence.cells or matched_item.shape_w * matched_item.shape_h,
                 value=matched_item.value,
                 categories=evidence.categories,
+                excluded_categories=evidence.excluded_categories,
                 sources=(*evidence.sources, "inferred:unique_shape"),
             )
         )
@@ -520,6 +612,7 @@ def shape_targets_from_store(
                 shape_key=evidence.shape_key,
                 cells=int(cells),
                 categories=evidence.categories,
+                excluded_categories=evidence.excluded_categories,
             )
         )
     return tuple(targets)
@@ -752,6 +845,10 @@ def _item_matches_shape_target(
         category in item.tags for category in target.categories
     ):
         return False
+    if target.excluded_categories and any(
+        category in item.tags for category in target.excluded_categories
+    ):
+        return False
     return True
 
 
@@ -918,6 +1015,8 @@ def build_residual_problem(
         category_targets=tuple(category_targets),
         shape_targets=shape_targets,
         layout=layout,
+        total_item_count=obs.total_item_count if obs is not None else None,
+        warehouse_total_cells=obs.warehouse_total_cells if obs is not None else None,
         max_quality=max_quality,
         max_item_cells=max_item_cells,
         diagnostics=tuple((*diagnostics, *layout.diagnostics)),
@@ -1020,15 +1119,23 @@ class ConditionalSampler:
         self._sample_bucket_targets(pool, buckets, rng)
 
         current_count = sum(bucket.count for bucket in buckets.values())
-        draw_min = max(
-            self._sampler.items_per_session_min,
-            current_count,
-            self.problem.layout.footprint_count,
-        )
-        draw_max = max(self._sampler.items_per_session_max, draw_min)
-        total_draws = int(rng.integers(draw_min, draw_max + 1))
+        if (
+            self.problem.total_item_count is not None
+            and self.problem.total_item_count >= current_count
+        ):
+            total_draws = int(self.problem.total_item_count)
+        else:
+            draw_min = max(
+                self._sampler.items_per_session_min,
+                current_count,
+                self.problem.layout.footprint_count,
+            )
+            draw_max = max(self._sampler.items_per_session_max, draw_min)
+            total_draws = int(rng.integers(draw_min, draw_max + 1))
         residual_draws = max(0, total_draws - current_count)
-        if residual_draws:
+        if residual_draws and self.problem.total_item_count is not None:
+            self._sample_exact_count_residual(pool, buckets, residual_draws, rng)
+        elif residual_draws:
             sampled_idx = rng.choice(
                 len(pool.probabilities),
                 size=residual_draws,
@@ -1046,6 +1153,70 @@ class ConditionalSampler:
                     count=int(count),
                 )
         return self._truth_from_buckets(buckets)
+
+    def _sample_exact_count_residual(
+        self,
+        pool: Any,
+        buckets: dict[int, BucketTruth],
+        residual_count: int,
+        rng: np.random.Generator,
+    ) -> None:
+        remaining = max(0, int(residual_count))
+        areas = np.asarray(
+            [item.shape_w * item.shape_h for item in pool.items],
+            dtype=np.int64,
+        )
+        min_area = int(areas.min()) if len(areas) else 1
+        max_area = int(areas.max()) if len(areas) else 16
+        target_cells = self.problem.warehouse_total_cells
+        cell_tol = 8
+        attempts = 0
+        while remaining > 0:
+            attempts += 1
+            if attempts > 500:
+                break
+            current_cells = sum(bucket.total_cells for bucket in buckets.values())
+            feasible_pairs: list[tuple[int, int, float]] = []
+            for pool_i in np.flatnonzero(pool.n_min <= remaining):
+                max_count = min(int(pool.n_max[pool_i]), remaining)
+                min_count = min(int(pool.n_min[pool_i]), max_count)
+                if min_count <= 0 or max_count <= 0:
+                    continue
+                for count in range(min_count, max_count + 1):
+                    add_cells = int(areas[pool_i]) * count
+                    future_count = remaining - count
+                    if target_cells is not None:
+                        future_min = current_cells + add_cells + future_count * min_area
+                        future_max = current_cells + add_cells + future_count * max_area
+                        if future_min > target_cells + cell_tol:
+                            continue
+                        if future_max < target_cells - cell_tol:
+                            continue
+                    feasible_pairs.append(
+                        (int(pool_i), count, float(pool.probabilities[pool_i]))
+                    )
+            if not feasible_pairs:
+                feasible_pairs = [
+                    (
+                        int(pool_i),
+                        int(pool.n_min[pool_i]),
+                        float(pool.probabilities[pool_i]),
+                    )
+                    for pool_i in np.flatnonzero(pool.n_min <= remaining)
+                    if int(pool.n_min[pool_i]) > 0
+                ]
+            if not feasible_pairs:
+                break
+            probs = np.asarray([pair[2] for pair in feasible_pairs], dtype=np.float64)
+            total = float(probs.sum())
+            if total <= 0:
+                break
+            probs = probs / total
+            pool_i, count, _weight = feasible_pairs[
+                int(rng.choice(len(feasible_pairs), p=probs))
+            ]
+            _add_item_to_buckets(buckets, pool.items[pool_i], count=count)
+            remaining -= count
 
     def _sample_shape_targets(
         self,

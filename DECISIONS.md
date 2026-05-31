@@ -392,3 +392,27 @@ trusted footprint 归零，再考虑降权而不是硬过滤。
 
 **复查点**：新样本累积后，若 `q6_miss_root_causes` 集中在 `below_drop_prior`，优先做分地图族 q6
 residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+category 条件采样增强。
+
+## 2026-06-01 · 反向分类证据只绑定已知物品
+
+**背景**：用户提出“古董竖 2 格红，用医疗未命中，所以推羊脂玉”和“家具命中、数码/古董未命中，再结合品质排除推黑盒”这类反向排除。旧 v2 只支持正向 `category+shape`，无法表达“某个已知 runtime/local 不是某分类”。
+
+**推荐**：新增 runtime/local 级 `excluded_categories`，只对已经由 public/skill/action 看到 shape 的同一物品记录反证；分类鉴影未返回该物品时，写入 `action_negative:{action_id}`。匹配时同时用 runtime key 和 local+shape key 对齐，避免 action 结果缺 runtime 时误判为未命中。
+
+**用户选择**：优先补这类历史缺口，但不把“某次分类鉴影没看到任何东西”升级为全局硬排除。
+
+**取舍**：能支持明确物品的反向排除和唯一形状 anchor 推断；一般黑盒仍需要 positive category、negative category、quality/shape 交集足够唯一才会自动推出来。这个实现刻意保守，避免错误地排除整局未知物品。
+
+**复查点**：后续重点看有多次鉴影的 Aisha 样本，确认 `excluded_categories` 是否能把 2x1/3x3/4x4 红货候选收窄；若误杀，优先检查 Fatbeans state 内 action/result 的时序。
+
+## 2026-06-01 · 残差采样先吃总件数和轻量总格数
+
+**背景**：别墅明牌永乐局已正确识别永乐 anchor，但采样器在剩余组合上仍接近零匹配，说明瓶颈不是 item 识别，而是高 anchor 后的 residual sampler 仍太像无条件采样。
+
+**推荐**：`ResidualProblem` 保留 `total_item_count` 和 `warehouse_total_cells`；当总件数已知时，`ConditionalSampler` 精确补足剩余件数，并用总格数的轻量可达区间约束选择候选，不做完整装箱搜索。
+
+**用户选择**：先做能稳定改善高 anchor 局的轻量版本，完整空间装箱和 Aisha 剩余空间推理留到下一阶段。
+
+**取舍**：永乐这类高 anchor 局能明显减少不合理 residual；代价是仍不能保证具体摆放可行，只是把“件数/格数明显不可能”的组合降下来。
+
+**复查点**：本次 targeted eval 中明牌永乐局 `v2_matched=4/80`、P50 误差约 2.36 万、格子 P50 命中。后续如果 zero-match 仍集中在 exact q3/q6 cells，再把 exact bucket cells 从硬等式改成可解释的放宽策略。

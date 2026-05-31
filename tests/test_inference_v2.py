@@ -32,6 +32,7 @@ from bidking_lab.live.fatbeans import (
     FatbeansCaptureEvents,
     FatbeansObservedItem,
     FatbeansPublicInfo,
+    FatbeansSkillReveal,
     FatbeansStateEvent,
 )
 
@@ -206,6 +207,173 @@ def test_evidence_store_from_fatbeans_merges_item_and_category_runtime() -> None
     assert anchors[0].categories == (110,)
 
 
+def test_category_action_absence_adds_runtime_negative_category() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2401,
+                round_index=1,
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=1002081,
+                        hero_id=208,
+                        round_index=1,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=22,
+                                runtime_id=123,
+                                item_id=None,
+                                quality=6,
+                                value=None,
+                                shape_code=21,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+                action_results=(
+                    FatbeansActionResult(
+                        action_id=100152,  # 医疗药品
+                        result=None,
+                        result_field=None,
+                        observed_items=(),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    store = evidence_store_from_fatbeans_events(events)
+
+    assert store.by_runtime[123].excluded_categories == (102,)
+    assert "action_negative:100152" in store.by_runtime[123].sources
+
+
+def test_category_action_matches_known_shape_by_local_key() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2401,
+                round_index=1,
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=1002081,
+                        hero_id=208,
+                        round_index=1,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=22,
+                                runtime_id=123,
+                                item_id=None,
+                                quality=6,
+                                value=None,
+                                shape_code=21,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+                action_results=(
+                    FatbeansActionResult(
+                        action_id=100152,
+                        result=None,
+                        result_field=None,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=22,
+                                runtime_id=None,
+                                item_id=None,
+                                quality=6,
+                                value=None,
+                                shape_code=21,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    store = evidence_store_from_fatbeans_events(events)
+
+    assert store.by_runtime[123].excluded_categories == ()
+    assert not any(
+        "action_negative:100152" in item.sources
+        for item in store.items()
+    )
+
+
+def test_unique_shape_anchor_uses_negative_category_evidence() -> None:
+    maps, _drops, _items = _tables()
+    medical = _item(1026001, quality=6, value=120_000, shape=(2, 1), tags=[102])
+    antique = _item(1066001, quality=6, value=260_000, shape=(2, 1), tags=[106])
+    drops = {
+        9001: DropPool(
+            pool_id=9001,
+            name="pool",
+            description="",
+            pool_type=2,
+            entries=[
+                DropEntry(
+                    category=102,
+                    item_id=medical.item_id,
+                    n_min=1,
+                    n_max=1,
+                    weight=1,
+                ),
+                DropEntry(
+                    category=106,
+                    item_id=antique.item_id,
+                    n_min=1,
+                    n_max=1,
+                    weight=1,
+                ),
+            ],
+        ),
+    }
+    items = {medical.item_id: medical, antique.item_id: antique}
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            quality=6,
+            shape_key="21",
+            cells=2,
+            excluded_categories=(102,),
+            sources=("skill:1002081", "action_negative:100152"),
+        )
+    )
+
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+
+    assert len(problem.anchors) == 1
+    assert problem.anchors[0].item_id == antique.item_id
+    assert problem.anchors[0].excluded_categories == (102,)
+
+
 def test_conditional_sampler_forces_known_item_anchor() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()
@@ -234,6 +402,29 @@ def test_conditional_sampler_forces_known_item_anchor() -> None:
         q3 = truth.buckets[3]
         assert any(item.item_id == 1103006 for item in q3.items)
         assert truth.total_value() >= 3_240
+
+
+def test_conditional_sampler_honors_exact_total_item_count() -> None:
+    maps, drops, items = _tables()
+    obs = SessionObs(
+        map_id=2401,
+        hero="ethan",
+        total_item_count=2,
+        buckets={3: QualityBucketObs(quality=3, count_min=1)},
+    )
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(4))
+
+    assert sum(bucket.count for bucket in truth.buckets.values()) == 2
 
 
 def test_estimate_posterior_v2_uses_anchor_without_rejection_dead_end() -> None:
