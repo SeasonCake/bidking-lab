@@ -24,6 +24,10 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from bidking_lab.inference.diagnostics import layout_conflict_root  # noqa: E402
+from bidking_lab.inference.quality_combo_presolve import (  # noqa: E402
+    is_quality_combo_reachable,
+    load_quality_combo_presolve,
+)
 from bidking_lab.inference.v2 import (  # noqa: E402
     build_residual_problem,
     estimate_posterior_v2,
@@ -60,6 +64,9 @@ _CATEGORY_ACTION_LABELS = {
     100159: "食饮",
     100160: "书画",
 }
+_DEFAULT_COMBO_PRESOLVE_PATH = (
+    ROOT / "data" / "processed" / "quality_combo_presolve_q456.json"
+)
 
 
 def _default_paths() -> list[Path]:
@@ -190,6 +197,28 @@ def _format_bucket_targets(problem: Any) -> str:
             fields.append(f"avg={target.avg_value:.2f}")
         if fields:
             parts.append(f"q{quality}:" + ",".join(fields))
+    return ";".join(parts)
+
+
+def _format_presolve_unreachable_exact_buckets(
+    problem: Any,
+    payload: Mapping[str, object] | None,
+) -> str:
+    if payload is None:
+        return ""
+    parts: list[str] = []
+    for quality, target in sorted(problem.bucket_targets.items()):
+        reachable = is_quality_combo_reachable(
+            payload,
+            map_id=int(problem.map_id),
+            quality=int(quality),
+            count=target.count_exact,
+            cells=target.total_cells_exact,
+        )
+        if reachable is False:
+            parts.append(
+                f"q{quality}:count={target.count_exact},cells={target.total_cells_exact}"
+            )
     return ";".join(parts)
 
 
@@ -361,6 +390,8 @@ def _zero_match_root(row: dict[str, Any]) -> str:
         markers.append("public_max_quality")
     if row.get("public_max_item_cells_used"):
         markers.append("public_max_item_cells")
+    if row.get("presolve_unreachable_exact_buckets"):
+        markers.append("presolve_unreachable_exact_bucket")
     markers.extend(_exact_bucket_markers(row.get("bucket_targets")))
     if not markers:
         markers.append("unclassified")
@@ -389,6 +420,8 @@ def _q6_miss_root(row: dict[str, Any]) -> str:
         markers.append("public_max_quality")
     if row.get("public_max_item_cells_used"):
         markers.append("public_max_item_cells")
+    if row.get("presolve_unreachable_exact_buckets"):
+        markers.append("presolve_unreachable_exact_bucket")
     markers.extend(
         marker
         for marker in _exact_bucket_markers(row.get("bucket_targets"))
@@ -405,6 +438,7 @@ def evaluate_path(
     seed: int,
     cells_tol: int,
     count_tol: int,
+    combo_presolve: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     try:
         events = parse_fatbeans_capture(path)
@@ -572,6 +606,9 @@ def evaluate_path(
                 and q6_value_p90 < final_q6_value
             ),
             "bucket_targets": _format_bucket_targets(problem),
+            "presolve_unreachable_exact_buckets": (
+                _format_presolve_unreachable_exact_buckets(problem, combo_presolve)
+            ),
             "shape_target_count": len(problem.shape_targets),
             "category_target_count": len(problem.category_targets),
             "category_exclusion_count": sum(
@@ -725,6 +762,10 @@ def _summary(
         row for row in ok
         if "category_target_no_pool_match:" in str(row.get("diagnostics") or "")
     ]
+    presolve_unreachable_rows = [
+        row for row in ok
+        if row.get("presolve_unreachable_exact_buckets")
+    ]
     calibration_rows = [
         row for row in ok
         if row.get("calibration_eligible") is True
@@ -783,6 +824,7 @@ def _summary(
         "q6_below_drop_prior": len(q6_below_prior),
         "q6_p90_misses_truth": len(q6_p90_miss),
         "high_value_p90_undercovered": len(high_value_undercovered),
+        "presolve_unreachable_exact_rows": len(presolve_unreachable_rows),
         "skip_or_error": len(rows) - len(ok),
         "value_mae": _round(statistics.mean(abs_errors)) if abs_errors else None,
         "value_median_abs_error": (
@@ -993,6 +1035,31 @@ def _summary(
                     "diagnostics": row.get("diagnostics"),
                 }
                 for row in category_no_pool_rows[:10]
+            ],
+        },
+        "presolve_exact_bucket": {
+            "unreachable_rows": len(presolve_unreachable_rows),
+            "zero_match_rows": sum(
+                1 for row in presolve_unreachable_rows
+                if not row.get("v2_matched")
+            ),
+            "relaxed_exact_rows": sum(
+                1 for row in presolve_unreachable_rows
+                if row.get("relaxed_exact_used")
+            ),
+            "examples": [
+                {
+                    "file": row["file"],
+                    "hero": row.get("hero"),
+                    "map_family": row.get("map_family"),
+                    "bucket_targets": row.get("bucket_targets"),
+                    "presolve_unreachable_exact_buckets": row.get(
+                        "presolve_unreachable_exact_buckets"
+                    ),
+                    "zero_match_root": row.get("zero_match_root"),
+                    "diagnostics": row.get("diagnostics"),
+                }
+                for row in presolve_unreachable_rows[:12]
             ],
         },
         "sample_feasibility": {
@@ -1427,6 +1494,14 @@ def main() -> int:
             "to this fraction of q6 prior expected value in the summary."
         ),
     )
+    parser.add_argument(
+        "--combo-presolve",
+        default=str(_DEFAULT_COMBO_PRESOLVE_PATH),
+        help=(
+            "Optional q4/q5/q6 count/cells presolve JSON. If absent, "
+            "presolve diagnostics are skipped."
+        ),
+    )
     args = parser.parse_args()
 
     paths: list[Path] = []
@@ -1436,6 +1511,10 @@ def main() -> int:
         paths = _default_paths()
 
     tables = load_monitor_tables()
+    combo_presolve = None
+    combo_presolve_path = Path(args.combo_presolve) if args.combo_presolve else None
+    if combo_presolve_path is not None and combo_presolve_path.exists():
+        combo_presolve = load_quality_combo_presolve(combo_presolve_path)
     rows = [
         evaluate_path(
             path,
@@ -1444,6 +1523,7 @@ def main() -> int:
             seed=args.seed,
             cells_tol=args.cells_tol,
             count_tol=args.count_tol,
+            combo_presolve=combo_presolve,
         )
         for path in _iter_unique(paths)
     ]

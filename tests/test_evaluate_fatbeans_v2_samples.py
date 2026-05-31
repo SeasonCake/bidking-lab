@@ -78,6 +78,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "category_exclusion_count": 1,
             "category_action_combo": "100153:时尚;100158:能源",
             "diagnostics": "",
+            "presolve_unreachable_exact_buckets": "",
             "public_constraint_key": "none",
             "anchor_band": "3-5",
             "q6_top_size_band": "q6_top_large",
@@ -112,9 +113,11 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "category_exclusion_count": 0,
             "category_action_combo": "100152:医疗",
             "diagnostics": "category_target_no_pool_match:108:6:33:9",
+            "presolve_unreachable_exact_buckets": "q4:count=4,cells=12",
             "zero_match_root": (
                 "layout_conflict;footprint_overlap;footprint_count_relaxed;"
-                "relaxed_exact_fallback;q4_exact_count_cells"
+                "relaxed_exact_fallback;presolve_unreachable_exact_bucket;"
+                "q4_exact_count_cells"
             ),
             "public_constraint_key": "none",
             "anchor_band": "6+",
@@ -160,6 +163,16 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     assert (
         summary["category_evidence"]["no_pool_match_examples"][0]["file"]
         == "b.json"
+    )
+    assert summary["presolve_unreachable_exact_rows"] == 1
+    assert summary["presolve_exact_bucket"]["unreachable_rows"] == 1
+    assert summary["presolve_exact_bucket"]["zero_match_rows"] == 1
+    assert summary["presolve_exact_bucket"]["relaxed_exact_rows"] == 1
+    assert (
+        summary["presolve_exact_bucket"]["examples"][0][
+            "presolve_unreachable_exact_buckets"
+        ]
+        == "q4:count=4,cells=12"
     )
     assert summary["sample_feasibility"]["calibration_eligible_rows"] == 1
     assert summary["sample_feasibility"]["early_rows"] == 1
@@ -259,3 +272,28 @@ def test_category_action_combo_uses_first_seen_order() -> None:
         module._category_action_combo(events)
         == "100153:时尚;100158:能源;100151:家具"
     )
+
+
+def test_presolve_unreachable_exact_bucket_formatter() -> None:
+    module = _eval_module()
+    problem = SimpleNamespace(
+        map_id=2401,
+        bucket_targets={
+            6: SimpleNamespace(count_exact=1, total_cells_exact=16),
+            5: SimpleNamespace(count_exact=2, total_cells_exact=None),
+        },
+    )
+    payload = {
+        "maps": {
+            "2401": {
+                "6": {
+                    "1": [12],
+                },
+            },
+        },
+    }
+
+    assert module._format_presolve_unreachable_exact_buckets(
+        problem,
+        payload,
+    ) == "q6:count=1,cells=16"

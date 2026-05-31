@@ -535,4 +535,4 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **取舍**：第一版只做可达性和诊断，不直接替换 sampler；避免把预计算错误写进正式 posterior。下一步可把 unreachable exact bucket 作为诊断，确认稳定后再用它跳过无效采样分支。
 
-**复查点**：先在 batch evaluator 输出 exact bucket 是否 presolve-unreachable；如果 unreachable 与 zero-match/fallback 高度一致，再接入 `ConditionalSampler` 的 exact bucket 快路径。
+**复查点**：先在 batch evaluator 输出 exact bucket 是否 presolve-unreachable；如果 unreachable 与 zero-match/fallback 高度一致，再接入 `ConditionalSampler` 的 exact bucket 快路径。初次 271 份快速扫 unreachable 为 0，因此短期不把 presolve 当作精度修复主线，只作为后续提速/坏约束诊断基础。
