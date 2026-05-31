@@ -167,3 +167,25 @@ def test_map_family_groups_hidden_and_late_map_prefixes() -> None:
     assert groups["hidden"] == 1
     assert groups["villa"] == 1
     assert groups["shipwreck"] == 1
+
+
+def test_q6_miss_root_marks_missing_top_item_as_unknown() -> None:
+    module = _summary_module()
+
+    summary = module.summarize(
+        [
+            {
+                "file": "a.json",
+                "final_value": 100,
+                "final_q6_value": 80,
+                "q6_p90_misses_truth": True,
+                "v2_q6_value_p90": 20,
+            }
+        ]
+    )
+
+    causes = {
+        row["cause"]: row["n"]
+        for row in summary["q6_miss_root_causes"]
+    }
+    assert causes["q6_top_unknown_cells"] == 1

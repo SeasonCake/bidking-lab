@@ -469,7 +469,10 @@ def _inventory_quality_breakdown(
 def _q6_top_size_band(truth_breakdown: Mapping[str, Any] | None) -> str:
     if int((truth_breakdown or {}).get("final_q6_count") or 0) <= 0:
         return "no_q6"
-    if int((truth_breakdown or {}).get("final_top_item_quality") or 0) != 6:
+    top_quality = (truth_breakdown or {}).get("final_top_item_quality")
+    if top_quality is None:
+        return "q6_top_unknown_cells"
+    if int(top_quality) != 6:
         return "q6_not_top_item"
     cells = (truth_breakdown or {}).get("final_top_item_cells")
     if cells is None:

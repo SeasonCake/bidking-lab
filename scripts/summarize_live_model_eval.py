@@ -148,6 +148,8 @@ def _q6_top_size_band(row: dict[str, Any]) -> str:
         and int(row.get("final_q6_value") or 0) <= 0
     ):
         return "no_q6"
+    if row.get("final_top_item_quality") is None:
+        return "q6_top_unknown_cells"
     if int(row.get("final_top_item_quality") or 0) != 6:
         return "q6_not_top_item"
     cells = row.get("final_top_item_cells")
