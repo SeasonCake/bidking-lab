@@ -182,3 +182,22 @@ source adapter，不会影响推理层和悬浮窗。
 
 **复查点**：当拿到可稳定增量输出的实时 feed 后，优先实现 `events -> build_monitor_artifact_from_events`
 适配器；只有 Fatbeans 输出不再可靠或无法增量化时，才考虑替换 watcher 进程。
+
+## 2026-05-31 · public item-level 上界只接已验证语义
+
+**背景**：新增样本覆盖更多 public-info。用户确认关注“显示站位/占格最高物品”、
+“显示品质最高藏品”、随机抽检/展示若干件，以及总件数/总格数等信息是否都进入过滤。
+
+**推荐**：只把跨样本已验证的 item-level public info 升级为全局上界：
+`200048` 作为最高品质物品，写入 `max_quality`；`200050` 作为最大占格物品，写入
+`max_item_cells`。随机 2/4/6 件展示继续作为具体 item/quality/shape anchor 与
+bucket/layout 下界，不把它们携带的均格 value 当整局统计。未确认语义的 public numeric
+只保留事实和软诊断，暂不硬写总件数/总格数。
+
+**用户选择**：希望能加入过滤的公开信息都加入，同时避免不确定语义扰乱当前推理。
+
+**取舍**：`max_quality` / `max_item_cells` 能排除明显不可能的样本；不确定 public 数值暂缓硬化，
+避免把“随机展示若干件的均格/均价”误当成全局统计导致 zero-match。
+
+**复查点**：后续 hidden 或更多地图族出现新 public-info id 时，先用结算 truth 做语义验证，
+再决定 hard/soft 等级。

@@ -205,6 +205,8 @@ class ResidualProblem:
     bucket_targets: Mapping[int, "ResidualBucketTarget"]
     category_targets: tuple[CategoryItemObservation, ...]
     layout: LayoutFeasibility
+    max_quality: int | None = None
+    max_item_cells: int | None = None
     diagnostics: tuple[str, ...] = ()
 
 
@@ -619,6 +621,29 @@ def _public_avg_value_targets(store: EvidenceStore) -> dict[int, float]:
     return targets
 
 
+def _public_global_constraints(
+    store: EvidenceStore,
+) -> tuple[int | None, int | None, tuple[str, ...]]:
+    """Return global upper-bound constraints from item-level public info."""
+
+    max_quality: int | None = None
+    max_item_cells: int | None = None
+    diagnostics: list[str] = []
+    for evidence in store.items():
+        sources = set(evidence.sources)
+        if "public:200048" in sources and evidence.quality is not None:
+            quality = int(evidence.quality)
+            max_quality = quality if max_quality is None else min(max_quality, quality)
+        if "public:200050" in sources and evidence.cells is not None:
+            cells = int(evidence.cells)
+            max_item_cells = cells if max_item_cells is None else min(max_item_cells, cells)
+    if max_quality is not None:
+        diagnostics.append(f"public_max_quality:{max_quality}")
+    if max_item_cells is not None:
+        diagnostics.append(f"public_max_item_cells:{max_item_cells}")
+    return max_quality, max_item_cells, tuple(diagnostics)
+
+
 def _item_matches_category_target(
     item: Item,
     target: CategoryItemObservation,
@@ -769,6 +794,8 @@ def build_residual_problem(
                     "category_target_no_pool_match:"
                     f"{target.category}:{target.quality}:{target.shape_key}:{target.cells}"
                 )
+    max_quality, max_item_cells, global_diagnostics = _public_global_constraints(store)
+    diagnostics.extend(global_diagnostics)
     return ResidualProblem(
         map_id=map_id,
         map_name=bid_map.name,
@@ -780,6 +807,8 @@ def build_residual_problem(
         bucket_targets=bucket_targets,
         category_targets=tuple(category_targets),
         layout=layout,
+        max_quality=max_quality,
+        max_item_cells=max_item_cells,
         diagnostics=tuple((*diagnostics, *layout.diagnostics)),
     )
 
@@ -1182,6 +1211,26 @@ def value_evidence_score(
     return score
 
 
+def global_evidence_score(
+    truth: SessionTruth,
+    problem: ResidualProblem,
+) -> float:
+    """Apply global public-info upper bounds to one sampled truth."""
+
+    if problem.max_quality is None and problem.max_item_cells is None:
+        return 1.0
+    for bucket in truth.buckets.values():
+        for item in bucket.items:
+            if problem.max_quality is not None and item.quality > problem.max_quality:
+                return 0.0
+            if (
+                problem.max_item_cells is not None
+                and item.shape_w * item.shape_h > problem.max_item_cells
+            ):
+                return 0.0
+    return 1.0
+
+
 def decision_value_for_truth(truth: SessionTruth, problem: ResidualProblem) -> int:
     """Return decision value after trimming unconfirmed small rare tails."""
 
@@ -1265,7 +1314,15 @@ def _estimate_posterior_for_problem(
         value_score = value_evidence_score(truth, problem)
         if value_score <= 0:
             continue
-        weight = category_observation_soft_score(truth, obs) * layout_score * value_score
+        global_score = global_evidence_score(truth, problem)
+        if global_score <= 0:
+            continue
+        weight = (
+            category_observation_soft_score(truth, obs)
+            * layout_score
+            * value_score
+            * global_score
+        )
         values.append(truth.total_value())
         decision_values.append(decision_value_for_truth(truth, problem))
         cells.append(truth.warehouse_total_cells)
@@ -1383,6 +1440,7 @@ __all__ = (
     "decision_value_for_truth",
     "estimate_posterior_v2",
     "evidence_store_from_fatbeans_events",
+    "global_evidence_score",
     "known_footprints",
     "known_item_anchors",
     "layout_feasibility_from_store",

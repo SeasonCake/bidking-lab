@@ -20,6 +20,7 @@ from bidking_lab.inference.v2 import (
     decision_value_for_truth,
     estimate_posterior_v2,
     evidence_store_from_fatbeans_events,
+    global_evidence_score,
     known_footprints,
     known_item_anchors,
     layout_feasibility_from_store,
@@ -921,6 +922,130 @@ def test_public_gold_avg_value_scores_posterior_samples() -> None:
     assert problem.bucket_targets[5].avg_value == 30_000
     assert value_evidence_score(matching, problem) == 1
     assert 0 < value_evidence_score(mismatch, problem) < 1
+
+
+def test_public_highest_quality_limits_sample_quality() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=501,
+            item_id=1055001,
+            quality=5,
+            shape_key="11",
+            cells=1,
+            sources=("public:200048",),
+        )
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    with_red = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=17,
+        buckets={
+            5: BucketTruth(
+                quality=5,
+                count=1,
+                total_cells=1,
+                value_sum=30_000,
+                items=[items[1055001]],
+            ),
+            6: BucketTruth(
+                quality=6,
+                count=1,
+                total_cells=16,
+                value_sum=444_000,
+                items=[items[1086001]],
+            ),
+        },
+    )
+    without_red = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=1,
+        buckets={
+            5: BucketTruth(
+                quality=5,
+                count=1,
+                total_cells=1,
+                value_sum=30_000,
+                items=[items[1055001]],
+            ),
+        },
+    )
+
+    assert problem.max_quality == 5
+    assert "public_max_quality:5" in problem.diagnostics
+    assert global_evidence_score(with_red, problem) == 0
+    assert global_evidence_score(without_red, problem) == 1
+
+
+def test_public_largest_item_limits_sample_item_cells() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=502,
+            item_id=1055001,
+            quality=5,
+            shape_key="11",
+            cells=1,
+            sources=("public:200050",),
+        )
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    too_large = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=17,
+        buckets={
+            5: BucketTruth(
+                quality=5,
+                count=1,
+                total_cells=1,
+                value_sum=30_000,
+                items=[items[1055001]],
+            ),
+            6: BucketTruth(
+                quality=6,
+                count=1,
+                total_cells=16,
+                value_sum=444_000,
+                items=[items[1086001]],
+            ),
+        },
+    )
+    matching = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=1,
+        buckets={
+            5: BucketTruth(
+                quality=5,
+                count=1,
+                total_cells=1,
+                value_sum=30_000,
+                items=[items[1055001]],
+            ),
+        },
+    )
+
+    assert problem.max_item_cells == 1
+    assert "public_max_item_cells:1" in problem.diagnostics
+    assert global_evidence_score(too_large, problem) == 0
+    assert global_evidence_score(matching, problem) == 1
 
 
 def test_decision_value_trims_unconfirmed_small_rare_tail() -> None:
