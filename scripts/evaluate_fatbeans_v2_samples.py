@@ -612,6 +612,18 @@ def _summary(
     q6_false_low = [row for row in ok if row.get("q6_false_low_risk")]
     q6_below_prior = [row for row in ok if row.get("q6_below_drop_prior")]
     q6_p90_miss = [row for row in ok if row.get("q6_p90_misses_truth")]
+    category_target_rows = [
+        row for row in ok
+        if int(row.get("category_target_count") or 0) > 0
+    ]
+    category_exclusion_rows = [
+        row for row in ok
+        if int(row.get("category_exclusion_count") or 0) > 0
+    ]
+    category_no_pool_rows = [
+        row for row in ok
+        if "category_target_no_pool_match:" in str(row.get("diagnostics") or "")
+    ]
     high_value_undercovered = [
         row for row in ok
         if row.get("value_tier") == ">=1.2m"
@@ -822,6 +834,46 @@ def _summary(
             "anchor_band": _q6_group_summary(ok, ("anchor_band",)),
             "public_constraint": _q6_group_summary(ok, ("public_constraint_key",)),
             "top_item_size": _q6_group_summary(ok, ("q6_top_size_band",)),
+        },
+        "category_evidence": {
+            "target_rows": len(category_target_rows),
+            "exclusion_rows": len(category_exclusion_rows),
+            "target_total": sum(
+                int(row.get("category_target_count") or 0)
+                for row in ok
+            ),
+            "exclusion_total": sum(
+                int(row.get("category_exclusion_count") or 0)
+                for row in ok
+            ),
+            "no_pool_match_rows": len(category_no_pool_rows),
+            "examples": [
+                {
+                    "file": row["file"],
+                    "hero": row.get("hero"),
+                    "map_family": row.get("map_family"),
+                    "category_target_count": row.get("category_target_count"),
+                    "category_exclusion_count": row.get("category_exclusion_count"),
+                    "diagnostics": row.get("diagnostics"),
+                }
+                for row in sorted(
+                    category_target_rows,
+                    key=lambda item: (
+                        int(item.get("category_exclusion_count") or 0),
+                        int(item.get("category_target_count") or 0),
+                    ),
+                    reverse=True,
+                )[:10]
+            ],
+            "no_pool_match_examples": [
+                {
+                    "file": row["file"],
+                    "hero": row.get("hero"),
+                    "map_family": row.get("map_family"),
+                    "diagnostics": row.get("diagnostics"),
+                }
+                for row in category_no_pool_rows[:10]
+            ],
         },
         "groups": {
             "hero": _group_summary(ok, "hero"),

@@ -139,6 +139,8 @@ ethan_shipwreck_sample72_weapon_energy_5rounds.json
 
 如果 10-15 份样本里 `category_target_count` / `category_exclusion_count` 普遍有值，
 就可以进入下一步权重评估；如果普遍为 0，先修采集或解析链路，不急着调模型。
+批量评估的 summary 会额外输出 `category_evidence`，列出 target/exclusion 总量、
+no-pool-match 数量和最有代表性的样本文件。
 
 ## 看结果时重点关注
 

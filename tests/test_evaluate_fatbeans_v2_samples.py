@@ -73,6 +73,9 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "q6_p90_misses_truth": True,
             "layout_conflict": False,
             "relaxed_exact_used": False,
+            "category_target_count": 2,
+            "category_exclusion_count": 1,
+            "diagnostics": "",
             "public_constraint_key": "none",
             "anchor_band": "3-5",
             "q6_top_size_band": "q6_top_large",
@@ -101,6 +104,9 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "layout_conflict_root": "footprint_overlap;footprint_count_relaxed",
             "relaxed_exact_used": True,
             "bucket_targets": "q4:count=4,cells=12",
+            "category_target_count": 1,
+            "category_exclusion_count": 0,
+            "diagnostics": "category_target_no_pool_match:108:6:33:9",
             "zero_match_root": (
                 "layout_conflict;footprint_overlap;footprint_count_relaxed;"
                 "relaxed_exact_fallback;q4_exact_count_cells"
@@ -134,6 +140,16 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     assert summary["tail_event_count"] == 1
     assert summary["regular_decision_value_mae"] == 40_000
     assert summary["tail_event_decision_value_mae"] == 80_000
+    assert summary["category_evidence"]["target_rows"] == 2
+    assert summary["category_evidence"]["exclusion_rows"] == 1
+    assert summary["category_evidence"]["target_total"] == 3
+    assert summary["category_evidence"]["exclusion_total"] == 1
+    assert summary["category_evidence"]["no_pool_match_rows"] == 1
+    assert summary["category_evidence"]["examples"][0]["file"] == "a.json"
+    assert (
+        summary["category_evidence"]["no_pool_match_examples"][0]["file"]
+        == "b.json"
+    )
 
     experiment = module._summary(rows, q6_residual_floor_ratio=0.75)[
         "q6_residual_floor_experiment"
