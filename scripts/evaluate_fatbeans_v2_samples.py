@@ -502,7 +502,80 @@ def evaluate_path(
         }
 
 
-def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _q6_residual_floor_value(
+    row: dict[str, Any],
+    *,
+    floor_ratio: float,
+) -> int | None:
+    if floor_ratio <= 0:
+        return None
+    if not row.get("q6_below_drop_prior"):
+        return None
+    if row.get("public_max_quality_used"):
+        return None
+    prior_value = row.get("v2_q6_prior_expected_value")
+    if prior_value is None:
+        return None
+    return max(0, _round(float(prior_value) * floor_ratio) or 0)
+
+
+def _q6_residual_floor_experiment(
+    rows: list[dict[str, Any]],
+    *,
+    floor_ratio: float,
+) -> dict[str, Any] | None:
+    if floor_ratio <= 0:
+        return None
+    q6_truth = [
+        row for row in rows
+        if int(row.get("final_q6_value") or 0) > 0
+        and row.get("v2_q6_value_p90") is not None
+    ]
+    if not q6_truth:
+        return {
+            "enabled": True,
+            "floor_ratio": floor_ratio,
+            "q6_truth_files": 0,
+            "eligible_rows": 0,
+            "q6_value_p90_coverage": None,
+            "q6_p90_misses_truth": 0,
+        }
+    eligible_rows = 0
+    adjusted_misses = 0
+    floors: list[int] = []
+    for row in q6_truth:
+        q6_p90 = int(row.get("v2_q6_value_p90") or 0)
+        floor_value = _q6_residual_floor_value(row, floor_ratio=floor_ratio)
+        if floor_value is not None:
+            eligible_rows += 1
+            floors.append(floor_value)
+            q6_p90 = max(q6_p90, floor_value)
+        if q6_p90 < int(row.get("final_q6_value") or 0):
+            adjusted_misses += 1
+    return {
+        "enabled": True,
+        "floor_ratio": floor_ratio,
+        "q6_truth_files": len(q6_truth),
+        "eligible_rows": eligible_rows,
+        "eligible_no_q6_rows": sum(
+            1 for row in rows
+            if int(row.get("final_q6_value") or 0) <= 0
+            and _q6_residual_floor_value(row, floor_ratio=floor_ratio) is not None
+        ),
+        "floor_median": _round(statistics.median(floors)) if floors else None,
+        "q6_value_p90_coverage": round(
+            1.0 - adjusted_misses / len(q6_truth),
+            4,
+        ),
+        "q6_p90_misses_truth": adjusted_misses,
+    }
+
+
+def _summary(
+    rows: list[dict[str, Any]],
+    *,
+    q6_residual_floor_ratio: float = 0.0,
+) -> dict[str, Any]:
     ok = [row for row in rows if row.get("status") == "ok"]
     valued = [
         row for row in ok
@@ -555,7 +628,7 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     p90_abs_errors = [abs(int(row["v2_value_p90_error"])) for row in p90_valued]
     q6_rows = [row for row in valued if int(row.get("final_q6_count") or 0) > 0]
-    return {
+    summary = {
         "files": len(rows),
         "ok": len(ok),
         "valued": len(valued),
@@ -742,6 +815,13 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "map_family": _bid_gap_summary(ok, "map_family"),
         },
     }
+    experiment = _q6_residual_floor_experiment(
+        ok,
+        floor_ratio=q6_residual_floor_ratio,
+    )
+    if experiment is not None:
+        summary["q6_residual_floor_experiment"] = experiment
+    return summary
 
 
 def _root_cause_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
@@ -1023,6 +1103,15 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--cells-tol", type=int, default=8)
     parser.add_argument("--count-tol", type=int, default=3)
+    parser.add_argument(
+        "--q6-residual-floor-ratio",
+        type=float,
+        default=0.0,
+        help=(
+            "Offline what-if only: floor q6 P90 for q6_below_drop_prior rows "
+            "to this fraction of q6 prior expected value in the summary."
+        ),
+    )
     args = parser.parse_args()
 
     paths: list[Path] = []
@@ -1055,7 +1144,16 @@ def main() -> int:
     elif args.format == "csv":
         _write_csv(rows)
     else:
-        print(json.dumps(_summary(rows), ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                _summary(
+                    rows,
+                    q6_residual_floor_ratio=args.q6_residual_floor_ratio,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     return 0
 
 

@@ -64,7 +64,9 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "v2_q6_value_p90_error": -400_000,
             "v2_q6_value_p90_under_by": 400_000,
             "v2_q6_match_rate": 0.05,
+            "v2_q6_prior_expected_value": 800_000,
             "q6_false_low_risk": True,
+            "q6_below_drop_prior": True,
             "q6_p90_misses_truth": True,
             "layout_conflict": False,
             "relaxed_exact_used": False,
@@ -119,3 +121,16 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     assert summary["tail_event_count"] == 1
     assert summary["regular_decision_value_mae"] == 40_000
     assert summary["tail_event_decision_value_mae"] == 80_000
+
+    experiment = module._summary(rows, q6_residual_floor_ratio=0.75)[
+        "q6_residual_floor_experiment"
+    ]
+    assert experiment["eligible_rows"] == 1
+    assert experiment["floor_median"] == 600_000
+    assert experiment["q6_p90_misses_truth"] == 1
+
+    experiment = module._summary(rows, q6_residual_floor_ratio=1.0)[
+        "q6_residual_floor_experiment"
+    ]
+    assert experiment["q6_p90_misses_truth"] == 0
+    assert experiment["q6_value_p90_coverage"] == 1.0

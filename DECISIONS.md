@@ -291,3 +291,21 @@ floor、按地图族/英雄/证据类型分层校准提供可靠输入。
 
 **复查点**：当 live `model_eval.jsonl` 继续累积后，优先分析 `below_drop_prior` 局；若这些局集中在
 Aisha shipwreck 且最终 truth 常有 q6，则再做受限的 q6 residual floor，而不是全局提高 q6 权重。
+
+## 2026-05-31 · q6 residual floor 先做离线 what-if
+
+**背景**：当前 q6 P90 低估分成两类：证据真的排除了 q6，或 evidence/layout/value 过滤把 q6 residual
+压得过低。直接把 floor 写入正式后验会影响实战出价，尤其可能把普通局 P50 抬偏。
+
+**推荐**：先在 `evaluate_fatbeans_v2_samples.py` 增加 `--q6-residual-floor-ratio`，只在 summary
+里做离线 what-if：对 `q6_below_drop_prior` 且未被最高品质 public info 排除的局，把 q6 P90
+临时抬到 q6 Drop 先验期望价值的一定比例，用于观察 q6 coverage 会提升多少、会牵连多少无 q6 局。
+
+**用户选择**：继续做工程铺垫，决策点写入 `DECISIONS.md`；正式估价仍保留最可能且逻辑合理的 P50，
+黑天鹅进入 ceiling / 风险提示。
+
+**取舍**：这个开关不改变正式 posterior、悬浮窗出价和 live 日志，只提供可复现实验。等 hidden 和 shipwreck
+新样本补齐后，再决定是否把其中一部分变成正式 residual floor。
+
+**复查点**：重点比较 `q6_residual_floor_experiment.q6_value_p90_coverage`、`eligible_no_q6_rows`，
+以及 regular/tail-event MAE 是否被抬偏。
