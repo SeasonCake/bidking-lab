@@ -95,6 +95,12 @@ def _round(value: float | int | None) -> int | None:
     return int(round(float(value)))
 
 
+def _round_float(value: float | int | None, digits: int = 2) -> float | None:
+    if value is None:
+        return None
+    return round(float(value), digits)
+
+
 def _evidence_stage(round_no: int | None) -> str:
     if round_no is None:
         return "unknown"
@@ -623,6 +629,14 @@ def evaluate_path(
             ),
             "v2_q6_match_rate": report.q6_match_rate,
             "v2_q6_prior_match_rate": report.q6_prior_match_rate,
+            "v2_q6_prior_expected_count": _round_float(
+                report.q6_prior_expected_count,
+                2,
+            ),
+            "v2_q6_prior_expected_cells": _round_float(
+                report.q6_prior_expected_cells,
+                1,
+            ),
             "v2_q6_prior_expected_value": _round(report.q6_prior_expected_value),
             "v2_q6_value_p50": q6_value_p50,
             "v2_q6_value_p90": q6_value_p90,
@@ -1110,6 +1124,8 @@ def _summary(
                 "final_q6_decision_value": row.get("final_q6_decision_value"),
                 "final_q6_trimmed_tail_value": row.get("final_q6_trimmed_tail_value"),
                 "v2_q6_match_rate": row.get("v2_q6_match_rate"),
+                "v2_q6_prior_expected_count": row.get("v2_q6_prior_expected_count"),
+                "v2_q6_prior_expected_cells": row.get("v2_q6_prior_expected_cells"),
                 "v2_q6_value_p90": row.get("v2_q6_value_p90"),
                 "v2_q6_decision_value_p90": row.get("v2_q6_decision_value_p90"),
                 "v2_q6_count_p90": row.get("v2_q6_count_p90"),

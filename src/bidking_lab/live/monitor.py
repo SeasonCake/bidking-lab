@@ -231,6 +231,16 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
                 if report.q6_prior_match_rate is not None
                 else ""
             ),
+            "q6先验件数": (
+                f"{report.q6_prior_expected_count:.2f}"
+                if getattr(report, "q6_prior_expected_count", None) is not None
+                else ""
+            ),
+            "q6先验格数": (
+                f"{report.q6_prior_expected_cells:.1f}"
+                if getattr(report, "q6_prior_expected_cells", None) is not None
+                else ""
+            ),
             "q6先验价值": (
                 f"{report.q6_prior_expected_value:,.0f}"
                 if report.q6_prior_expected_value is not None
@@ -453,6 +463,18 @@ def _parse_percent_text(value: Any) -> float | None:
         return None
 
 
+def _parse_float_text(value: Any) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 def _inventory_quality_breakdown(
     events: FatbeansCaptureEvents,
     items: Mapping[int, Item],
@@ -545,6 +567,8 @@ def _model_eval_row(
     raw_value_p90 = None
     q6_match_rate = None
     q6_prior_match_rate = None
+    q6_prior_expected_count = None
+    q6_prior_expected_cells = None
     q6_prior_expected_value = None
     q6_value_p90 = None
     q6_decision_value_p90 = None
@@ -576,6 +600,8 @@ def _model_eval_row(
     if v2_rows:
         q6_match_rate = _parse_percent_text(v2_rows[0].get("q6样本率"))
         q6_prior_match_rate = _parse_percent_text(v2_rows[0].get("q6掉落先验"))
+        q6_prior_expected_count = _parse_float_text(v2_rows[0].get("q6先验件数"))
+        q6_prior_expected_cells = _parse_float_text(v2_rows[0].get("q6先验格数"))
         q6_prior_expected_value = _parse_int_text(v2_rows[0].get("q6先验价值"))
         shape_target_count = _parse_int_text(v2_rows[0].get("形状约束数"))
         category_target_count = _parse_int_text(v2_rows[0].get("分类约束数"))
@@ -668,6 +694,8 @@ def _model_eval_row(
         "stop_bid": stop_bid,
         "v2_q6_match_rate": q6_match_rate,
         "v2_q6_prior_match_rate": q6_prior_match_rate,
+        "v2_q6_prior_expected_count": q6_prior_expected_count,
+        "v2_q6_prior_expected_cells": q6_prior_expected_cells,
         "v2_q6_prior_expected_value": q6_prior_expected_value,
         "v2_q6_value_p90": q6_value_p90,
         "v2_q6_decision_value_p90": q6_decision_value_p90,

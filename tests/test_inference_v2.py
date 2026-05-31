@@ -496,6 +496,8 @@ def test_quality_drop_prior_uses_drop_weights_and_count_ranges() -> None:
     assert prior is not None
     assert abs(prior.draw_probability - 1 / 1002) < 1e-12
     assert abs(prior.session_probability - (1 - (1001 / 1002) ** 2)) < 1e-12
+    assert abs(prior.expected_session_count - (2 / 1002)) < 1e-12
+    assert abs(prior.expected_session_cells - (2 * 16 / 1002)) < 1e-12
     assert abs(prior.expected_session_value - (2 * 444_000 / 1002)) < 1e-12
 
 

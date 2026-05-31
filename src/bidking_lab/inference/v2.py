@@ -263,6 +263,8 @@ class QualityDropPrior:
     quality: int
     draw_probability: float
     session_probability: float
+    expected_session_count: float
+    expected_session_cells: float
     expected_session_value: float
 
 
@@ -287,6 +289,8 @@ class PosteriorReport:
     q6_count: QuantileSummary | None = None
     q6_cells: QuantileSummary | None = None
     q6_prior_match_rate: float | None = None
+    q6_prior_expected_count: float | None = None
+    q6_prior_expected_cells: float | None = None
     q6_prior_expected_value: float | None = None
     shape_target_count: int = 0
     category_target_count: int = 0
@@ -1208,6 +1212,8 @@ class ConditionalSampler:
             return None
         draw_probability = 0.0
         session_probability = 0.0
+        expected_session_count = 0.0
+        expected_session_cells = 0.0
         expected_session_value = 0.0
         mean_draws = (
             self._sampler.items_per_session_min + self._sampler.items_per_session_max
@@ -1225,16 +1231,26 @@ class ConditionalSampler:
                 self._sampler.items_per_session_max,
             )
             mean_counts = (pool.n_min[mask] + pool.n_max[mask]) / 2
+            pool_expected_count = float(
+                (pool.probabilities[mask] * mean_counts).sum()
+            ) * mean_draws
+            pool_expected_cells = float(
+                (pool.probabilities[mask] * pool.areas[mask] * mean_counts).sum()
+            ) * mean_draws
             pool_expected_value = float(
                 (pool.probabilities[mask] * pool.values[mask] * mean_counts).sum()
             ) * mean_draws
             draw_probability += float(pool_weight) * pool_draw_p
             session_probability += float(pool_weight) * pool_session_p
+            expected_session_count += float(pool_weight) * pool_expected_count
+            expected_session_cells += float(pool_weight) * pool_expected_cells
             expected_session_value += float(pool_weight) * pool_expected_value
         return QualityDropPrior(
             quality=quality,
             draw_probability=draw_probability,
             session_probability=session_probability,
+            expected_session_count=expected_session_count,
+            expected_session_cells=expected_session_cells,
             expected_session_value=expected_session_value,
         )
 
@@ -2067,6 +2083,12 @@ def _estimate_posterior_for_problem(
         q6_cells=_quantiles(q6_cells, weights),
         q6_prior_match_rate=(
             q6_prior.session_probability if q6_prior is not None else None
+        ),
+        q6_prior_expected_count=(
+            q6_prior.expected_session_count if q6_prior is not None else None
+        ),
+        q6_prior_expected_cells=(
+            q6_prior.expected_session_cells if q6_prior is not None else None
         ),
         q6_prior_expected_value=(
             q6_prior.expected_session_value if q6_prior is not None else None
