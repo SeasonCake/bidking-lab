@@ -215,6 +215,12 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
             "q6决策价值 P10/P50/P90": _format_quantile_interval(
                 getattr(report, "q6_decision_value", None)
             ),
+            "q6件数 P10/P50/P90": _format_quantile_interval(
+                getattr(report, "q6_count", None)
+            ),
+            "q6格数 P10/P50/P90": _format_quantile_interval(
+                getattr(report, "q6_cells", None)
+            ),
             "q6样本率": (
                 f"{report.q6_match_rate:.1%}"
                 if report.q6_match_rate is not None
@@ -542,6 +548,8 @@ def _model_eval_row(
     q6_prior_expected_value = None
     q6_value_p90 = None
     q6_decision_value_p90 = None
+    q6_count_p90 = None
+    q6_cells_p90 = None
     posterior_diagnostics = ""
     if warehouse_rows:
         warehouse_p50 = _parse_range_p50(
@@ -579,6 +587,14 @@ def _model_eval_row(
         )
         q6_decision_value_p90 = _parse_range_value(
             str(v2_rows[0].get("q6决策价值 P10/P50/P90", "")),
+            2,
+        )
+        q6_count_p90 = _parse_range_value(
+            str(v2_rows[0].get("q6件数 P10/P50/P90", "")),
+            2,
+        )
+        q6_cells_p90 = _parse_range_value(
+            str(v2_rows[0].get("q6格数 P10/P50/P90", "")),
             2,
         )
         posterior_diagnostics = str(v2_rows[0].get("诊断") or "")
@@ -655,6 +671,8 @@ def _model_eval_row(
         "v2_q6_prior_expected_value": q6_prior_expected_value,
         "v2_q6_value_p90": q6_value_p90,
         "v2_q6_decision_value_p90": q6_decision_value_p90,
+        "v2_q6_count_p90": q6_count_p90,
+        "v2_q6_cells_p90": q6_cells_p90,
         "v2_q6_value_p90_under_by": (
             max(0, final_q6_value - q6_value_p90)
             if q6_value_p90 is not None

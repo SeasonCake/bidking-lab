@@ -284,6 +284,8 @@ class PosteriorReport:
     q6_match_rate: float | None = None
     q6_value: QuantileSummary | None = None
     q6_decision_value: QuantileSummary | None = None
+    q6_count: QuantileSummary | None = None
+    q6_cells: QuantileSummary | None = None
     q6_prior_match_rate: float | None = None
     q6_prior_expected_value: float | None = None
     shape_target_count: int = 0
@@ -1987,6 +1989,8 @@ def _estimate_posterior_for_problem(
     cells: list[int] = []
     q6_values: list[int] = []
     q6_decision_values: list[int] = []
+    q6_counts: list[int] = []
+    q6_cells: list[int] = []
     weights: list[float] = []
     trials = max(0, int(n_trials))
     for _ in range(trials):
@@ -2021,6 +2025,8 @@ def _estimate_posterior_for_problem(
         cells.append(truth.warehouse_total_cells)
         q6_bucket = truth.buckets.get(6)
         q6_values.append(q6_bucket.value_sum if q6_bucket is not None else 0)
+        q6_counts.append(q6_bucket.count if q6_bucket is not None else 0)
+        q6_cells.append(q6_bucket.total_cells if q6_bucket is not None else 0)
         q6_decision_values.append(q6_decision_value_for_truth(truth, problem))
         weights.append(weight)
     diagnostics = [*extra_diagnostics, *problem.diagnostics]
@@ -2057,6 +2063,8 @@ def _estimate_posterior_for_problem(
         q6_match_rate=q6_match_rate,
         q6_value=_quantiles(q6_values, weights),
         q6_decision_value=_quantiles(q6_decision_values, weights),
+        q6_count=_quantiles(q6_counts, weights),
+        q6_cells=_quantiles(q6_cells, weights),
         q6_prior_match_rate=(
             q6_prior.session_probability if q6_prior is not None else None
         ),

@@ -468,6 +468,8 @@ def test_estimate_posterior_v2_uses_anchor_without_rejection_dead_end() -> None:
     assert report.q6_match_rate is not None
     assert report.q6_value is not None
     assert report.q6_decision_value is not None
+    assert report.q6_count is not None
+    assert report.q6_cells is not None
     assert any(
         diagnostic.startswith("q6_unconstrained_low_sample_rate:")
         for diagnostic in report.diagnostics

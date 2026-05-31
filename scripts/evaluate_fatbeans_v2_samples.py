@@ -295,8 +295,10 @@ def _inventory_truth_breakdown(
             "final_quality_cells": _format_quality_map(cells),
             "final_quality_values": _format_quality_map(values),
             "final_q5_count": counts.get(5, 0),
+            "final_q5_cells": cells.get(5, 0),
             "final_q5_value": values.get(5, 0),
             "final_q6_count": counts.get(6, 0),
+            "final_q6_cells": cells.get(6, 0),
             "final_q6_value": values.get(6, 0),
             "final_q6_decision_value": q6_decision_value,
             "final_q6_trimmed_tail_value": q6_trimmed_value,
@@ -457,6 +459,10 @@ def _q6_plannable_miss_root(row: dict[str, Any]) -> str:
         markers.append("mixed_q6_sample_value")
     if row.get("q6_below_drop_prior"):
         markers.append("below_drop_prior")
+    if int(row.get("v2_q6_count_p90_under_by") or 0) > 0:
+        markers.append("q6_count_under")
+    if int(row.get("v2_q6_cells_p90_under_by") or 0) > 0:
+        markers.append("q6_cells_under")
     markers.append(_q6_top_size_band(row))
     if row.get("layout_conflict"):
         markers.append("layout_conflict")
@@ -550,6 +556,8 @@ def evaluate_path(
             if report.q6_decision_value
             else None
         )
+        q6_count_p90 = _round(report.q6_count.p90 if report.q6_count else None)
+        q6_cells_p90 = _round(report.q6_cells.p90 if report.q6_cells else None)
         cells_p10 = _round(report.total_cells.p10 if report.total_cells else None)
         cells_p50 = _round(report.total_cells.p50 if report.total_cells else None)
         cells_p90 = _round(report.total_cells.p90 if report.total_cells else None)
@@ -620,6 +628,18 @@ def evaluate_path(
             "v2_q6_value_p90": q6_value_p90,
             "v2_q6_decision_value_p50": q6_decision_value_p50,
             "v2_q6_decision_value_p90": q6_decision_value_p90,
+            "v2_q6_count_p90": q6_count_p90,
+            "v2_q6_cells_p90": q6_cells_p90,
+            "v2_q6_count_p90_under_by": (
+                max(0, int(truth_breakdown.get("final_q6_count") or 0) - q6_count_p90)
+                if q6_count_p90 is not None
+                else None
+            ),
+            "v2_q6_cells_p90_under_by": (
+                max(0, int(truth_breakdown.get("final_q6_cells") or 0) - q6_cells_p90)
+                if q6_cells_p90 is not None
+                else None
+            ),
             "v2_q6_value_p90_error": (
                 q6_value_p90 - final_q6_value if q6_value_p90 is not None else None
             ),
@@ -1048,7 +1068,10 @@ def _summary(
                     "v2_q6_decision_value_p90": row.get(
                         "v2_q6_decision_value_p90"
                     ),
+                    "v2_q6_count_p90": row.get("v2_q6_count_p90"),
+                    "v2_q6_cells_p90": row.get("v2_q6_cells_p90"),
                     "final_q6_count": row.get("final_q6_count"),
+                    "final_q6_cells": row.get("final_q6_cells"),
                     "final_q6_value": row.get("final_q6_value"),
                     "final_q6_decision_value": row.get("final_q6_decision_value"),
                     "final_q6_trimmed_tail_value": row.get(
@@ -1089,6 +1112,10 @@ def _summary(
                 "v2_q6_match_rate": row.get("v2_q6_match_rate"),
                 "v2_q6_value_p90": row.get("v2_q6_value_p90"),
                 "v2_q6_decision_value_p90": row.get("v2_q6_decision_value_p90"),
+                "v2_q6_count_p90": row.get("v2_q6_count_p90"),
+                "v2_q6_cells_p90": row.get("v2_q6_cells_p90"),
+                "v2_q6_count_p90_under_by": row.get("v2_q6_count_p90_under_by"),
+                "v2_q6_cells_p90_under_by": row.get("v2_q6_cells_p90_under_by"),
                 "v2_q6_value_p90_under_by": row.get("v2_q6_value_p90_under_by"),
                 "v2_q6_decision_value_p90_under_by": row.get(
                     "v2_q6_decision_value_p90_under_by"
