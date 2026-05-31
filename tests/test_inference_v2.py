@@ -745,6 +745,7 @@ def test_known_footprints_build_layout_feasibility() -> None:
     assert footprints[0].col == 9
     assert footprints[0].right_col == 10
     assert layout.footprint_count == 1
+    assert layout.trusted_footprint_count == 1
     assert layout.occupied_cells == 4
     assert layout.score == 1.0
 
@@ -773,7 +774,10 @@ def test_layout_feasibility_rejects_impossible_sample() -> None:
     truth = sampler.sample(rng=np.random.default_rng(4))
 
     assert 0 < problem.layout.score < 1
-    assert problem.layout.diagnostics == ("footprint_overflow:1",)
+    assert problem.layout.diagnostics == (
+        "footprint_overflow:1",
+        "footprint_count_relaxed:1->0",
+    )
     assert layout_feasibility_score(truth, problem.layout) > 0
 
 
@@ -801,8 +805,74 @@ def test_layout_footprint_count_guides_total_draws() -> None:
     truth = sampler.sample(rng=np.random.default_rng(5))
 
     assert problem.layout.footprint_count == 4
+    assert problem.layout.trusted_footprint_count == 4
     assert sum(bucket.count for bucket in truth.buckets.values()) >= 4
     assert layout_feasibility_score(truth, problem.layout) > 0
+
+
+def test_conflicting_layout_footprints_report_relaxed_count_diagnostic() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    for runtime_id in (1, 2):
+        builder.add_item(
+            RuntimeEvidence(
+                runtime_id=runtime_id,
+                local_index=0,
+                shape_key="22",
+                cells=4,
+                sources=("action:100160",),
+            )
+        )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(5))
+
+    assert problem.layout.footprint_count == 2
+    assert problem.layout.trusted_footprint_count == 0
+    assert "footprint_overlap_cells:4" in problem.layout.diagnostics
+    assert "footprint_count_relaxed:2->0" in problem.layout.diagnostics
+    assert sum(bucket.count for bucket in truth.buckets.values()) >= 1
+
+
+def test_cells_only_exact_bucket_uses_combo_sampling() -> None:
+    maps, drops, items = _tables()
+    obs = SessionObs(
+        map_id=2401,
+        hero="ethan",
+        buckets={3: QualityBucketObs(quality=3, total_cells=6, count_min=3)},
+    )
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    pool = sampler._sampler.pools[0]
+    indexes = np.flatnonzero(np.asarray([item.quality for item in pool.items]) == 3)
+    buckets: dict[int, BucketTruth] = {}
+
+    filled = sampler._sample_exact_cells_bucket_combo(
+        pool,
+        indexes,
+        buckets,
+        problem.bucket_targets[3],
+        np.random.default_rng(3),
+    )
+
+    assert filled is True
+    assert buckets[3].total_cells == 6
+    assert buckets[3].count >= 3
 
 
 def test_residual_problem_tracks_value_floor_from_exact_evidence() -> None:

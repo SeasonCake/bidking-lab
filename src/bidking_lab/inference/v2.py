@@ -181,6 +181,7 @@ class LayoutFeasibility:
     """Lightweight layout feasibility diagnostics for v2 samples."""
 
     footprint_count: int
+    trusted_footprint_count: int
     occupied_cells: int
     item_cells: int
     overlap_cells: int
@@ -510,6 +511,7 @@ def layout_feasibility_from_store(
     if not footprints:
         return LayoutFeasibility(
             footprint_count=0,
+            trusted_footprint_count=0,
             occupied_cells=0,
             item_cells=0,
             overlap_cells=0,
@@ -542,8 +544,19 @@ def layout_feasibility_from_store(
     if overlap_cells:
         diagnostics.append(f"footprint_overlap_cells:{overlap_cells}")
         score *= max(0.25, 1.0 - overlap_cells / max(1, item_cells))
+    trusted_footprint_count = len(footprints)
+    if overflow_count or overlap_cells:
+        trusted_footprint_count = max(
+            0,
+            len(footprints) - overflow_count - min(overlap_cells, len(footprints)),
+        )
+        if trusted_footprint_count < len(footprints):
+            diagnostics.append(
+                f"footprint_count_relaxed:{len(footprints)}->{trusted_footprint_count}"
+            )
     return LayoutFeasibility(
         footprint_count=len(footprints),
+        trusted_footprint_count=trusted_footprint_count,
         occupied_cells=occupied_cells,
         item_cells=item_cells,
         overlap_cells=overlap_cells,
@@ -942,6 +955,9 @@ class ConditionalSampler:
             if self._sample_exact_bucket_combo(pool, indexes, buckets, target, rng):
                 if self._bucket_target_met(buckets.get(target.quality), target):
                     continue
+            if self._sample_exact_cells_bucket_combo(pool, indexes, buckets, target, rng):
+                if self._bucket_target_met(buckets.get(target.quality), target):
+                    continue
             attempts = 0
             while not self._bucket_target_met(buckets.get(target.quality), target):
                 attempts += 1
@@ -1069,6 +1085,99 @@ class ConditionalSampler:
             count_left -= count
             cells_left -= key[1]
         return True
+
+    def _sample_exact_cells_bucket_combo(
+        self,
+        pool: Any,
+        indexes: np.ndarray,
+        buckets: dict[int, BucketTruth],
+        target: ResidualBucketTarget,
+        rng: np.random.Generator,
+    ) -> bool:
+        if target.total_cells_exact is None or target.count_exact is not None:
+            return False
+        bucket = buckets.get(target.quality)
+        current_count = bucket.count if bucket is not None else 0
+        current_cells = bucket.total_cells if bucket is not None else 0
+        remaining_cells = int(target.total_cells_exact - current_cells)
+        min_count_left = max(0, int(target.count_floor or 0) - current_count)
+        if remaining_cells == 0 and min_count_left == 0:
+            return True
+        if remaining_cells < 0 or remaining_cells > 320:
+            return False
+
+        options_by_delta: dict[tuple[int, int], list[tuple[int, int, float]]] = {}
+        for pool_i in indexes:
+            pool_i = int(pool_i)
+            item = pool.items[pool_i]
+            area = int(item.shape_w * item.shape_h)
+            if area <= 0:
+                continue
+            min_count = int(pool.n_min[pool_i])
+            max_count = int(pool.n_max[pool_i])
+            for count in range(min_count, max_count + 1):
+                added_cells = area * count
+                if added_cells <= remaining_cells:
+                    key = (count, added_cells)
+                    weight = float(pool.probabilities[pool_i])
+                    options_by_delta.setdefault(key, []).append((pool_i, count, weight))
+        if not options_by_delta:
+            return False
+
+        deltas = tuple(sorted(options_by_delta))
+
+        @lru_cache(maxsize=None)
+        def can_fill(cells_left: int, count_floor_left: int) -> bool:
+            if cells_left == 0:
+                return count_floor_left <= 0
+            if cells_left < 0:
+                return False
+            for count, cells in deltas:
+                if cells <= cells_left:
+                    if can_fill(cells_left - cells, max(0, count_floor_left - count)):
+                        return True
+            return False
+
+        if not can_fill(remaining_cells, min_count_left):
+            return False
+
+        cells_left = remaining_cells
+        count_floor_left = min_count_left
+        while cells_left:
+            feasible = [
+                (count, cells)
+                for count, cells in deltas
+                if cells <= cells_left
+                and can_fill(cells_left - cells, max(0, count_floor_left - count))
+            ]
+            if not feasible:
+                return False
+            weights = np.asarray(
+                [
+                    sum(weight for _pool_i, _count, weight in options_by_delta[key])
+                    for key in feasible
+                ],
+                dtype=np.float64,
+            )
+            total = float(weights.sum())
+            if total <= 0:
+                return False
+            key = feasible[int(rng.choice(len(feasible), p=weights / total))]
+            choices = options_by_delta[key]
+            choice_weights = np.asarray(
+                [weight for _pool_i, _count, weight in choices],
+                dtype=np.float64,
+            )
+            choice_total = float(choice_weights.sum())
+            if choice_total <= 0:
+                return False
+            pool_i, count, _weight = choices[
+                int(rng.choice(len(choices), p=choice_weights / choice_total))
+            ]
+            _add_item_to_buckets(buckets, pool.items[pool_i], count=count)
+            cells_left -= key[1]
+            count_floor_left = max(0, count_floor_left - key[0])
+        return count_floor_left <= 0
 
     def _feasible_target_indexes(
         self,

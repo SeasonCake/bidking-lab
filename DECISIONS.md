@@ -220,3 +220,21 @@ layout 冲突和 Ethan exact bucket 混成同一个“模型不准”问题。
 **复查点**：当 hidden 样本补齐、live `model_eval.jsonl` 稳定累积后，优先查看
 `q6_calibration_priority` 和 `zero_match_root_causes`，再决定是否做 q6 residual 参数化或
 layout 可信度分层。
+
+## 2026-05-31 · layout 冲突先降为诊断，Ethan cells-only exact 先补组合采样
+
+**背景**：分层归因显示 Ethan zero-match 经常带 `q3_exact_cells`，同时很多样本带
+`footprint_overlap_cells` / `footprint_overflow`。试验中直接把冲突 footprint 从硬件数下界扣除，
+没有改善 zero-match，且 q6 覆盖略降。
+
+**推荐**：layout 冲突先保留 `trusted_footprint_count` 和 `footprint_count_relaxed:*` 诊断，
+但不改变采样主行为；优先补 `total_cells_exact` 且 `count_exact=None` 的 cells-only 组合采样，
+减少 exact 桶只能靠随机 while 命中的情况。
+
+**用户选择**：继续优先推进引擎主干可达性和诊断，而不是全局调概率。
+
+**取舍**：这一步不会直接解决 q6 长尾低估，但能减少 exact bucket fallback 使用率，让后续 q6
+residual 在更稳定的样本集合上校准。
+
+**复查点**：若后续 layout 冲突样本仍高，下一步应区分“重复 runtime/local 合并问题”和“真实重叠/越界解析问题”，
+再决定是否让 `trusted_footprint_count` 参与采样。

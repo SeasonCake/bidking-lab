@@ -455,6 +455,7 @@ def evaluate_path(
             ),
             "bucket_targets": _format_bucket_targets(problem),
             "footprint_count": problem.layout.footprint_count,
+            "trusted_footprint_count": problem.layout.trusted_footprint_count,
             "footprint_occupied_cells": problem.layout.occupied_cells,
             "footprint_bottom_row": problem.layout.bottom_row,
         }
