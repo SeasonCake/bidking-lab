@@ -101,7 +101,10 @@ def _format_bucket_targets(problem: Any) -> str:
         if target.total_cells_floor is not None and target.total_cells_exact is None:
             fields.append(f"cells>={target.total_cells_floor}")
         if target.value_floor is not None:
-            fields.append(f"value>={target.value_floor}")
+            if getattr(target, "value_exact", None) is not None:
+                fields.append(f"value={target.value_exact}")
+            else:
+                fields.append(f"value>={target.value_floor}")
         if target.avg_value is not None:
             fields.append(f"avg={target.avg_value:.2f}")
         if fields:

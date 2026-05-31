@@ -218,6 +218,7 @@ class ResidualBucketTarget:
     total_cells_floor: int | None = None
     count_floor: int | None = None
     value_floor: int | None = None
+    value_exact: int | None = None
     avg_value: float | None = None
 
 
@@ -389,6 +390,69 @@ def known_item_anchors(
                 value=evidence.value or item.value,
                 categories=evidence.categories,
                 sources=evidence.sources,
+            )
+        )
+    return tuple(anchors)
+
+
+def _unique_shape_item_anchors(
+    map_id: int,
+    store: EvidenceStore,
+    *,
+    maps: Mapping[int, BidMap],
+    drops: Mapping[int, DropPool],
+    items: Mapping[int, Item],
+    existing_keys: set[str],
+) -> tuple[KnownItemAnchor, ...]:
+    sampler = prepare_session_sampler(map_id, maps=maps, drops=drops, items=items)
+    candidates_by_key: dict[
+        tuple[int, str, tuple[int, ...]],
+        dict[int, Item],
+    ] = {}
+    for pool in sampler.pools:
+        for item in pool.items:
+            shape_key = f"{item.shape_w}{item.shape_h}"
+            category_keys = [()]
+            category_keys.extend((tag,) for tag in item.tags)
+            for category_key in category_keys:
+                key = (item.quality, shape_key, category_key)
+                candidates_by_key.setdefault(key, {})[item.item_id] = item
+
+    anchors: list[KnownItemAnchor] = []
+    seen_keys = set(existing_keys)
+    for evidence in store.items():
+        if evidence.item_id is not None:
+            continue
+        if evidence.quality is None or evidence.shape_key is None:
+            continue
+        lookup_keys = [
+            (int(evidence.quality), evidence.shape_key, (category,))
+            for category in evidence.categories
+        ]
+        lookup_keys.append((int(evidence.quality), evidence.shape_key, ()))
+        matched_item: Item | None = None
+        for lookup_key in lookup_keys:
+            candidates = candidates_by_key.get(lookup_key, {})
+            if len(candidates) == 1:
+                matched_item = next(iter(candidates.values()))
+                break
+        if matched_item is None:
+            continue
+        key = evidence.evidence_key
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        anchors.append(
+            KnownItemAnchor(
+                key=key,
+                runtime_id=evidence.runtime_id,
+                local_index=evidence.local_index,
+                item_id=matched_item.item_id,
+                quality=matched_item.quality,
+                cells=evidence.cells or matched_item.shape_w * matched_item.shape_h,
+                value=matched_item.value,
+                categories=evidence.categories,
+                sources=(*evidence.sources, "inferred:unique_shape"),
             )
         )
     return tuple(anchors)
@@ -584,6 +648,17 @@ def build_residual_problem(
 
     bid_map = maps[map_id]
     anchors = known_item_anchors(store, items=items)
+    anchors = (
+        *anchors,
+        *_unique_shape_item_anchors(
+            map_id,
+            store,
+            maps=maps,
+            drops=drops,
+            items=items,
+            existing_keys={anchor.key for anchor in anchors},
+        ),
+    )
     sampler = prepare_session_sampler(map_id, maps=maps, drops=drops, items=items)
     pool_item_ids = {
         item.item_id
@@ -638,6 +713,7 @@ def build_residual_problem(
                 total_cells_floor=int(cells_floor) if cells_floor is not None else None,
                 count_floor=int(count_floor) if count_floor is not None else None,
                 value_floor=int(value_floor) if value_floor is not None else None,
+                value_exact=int(value_floor) if value_floor is not None else None,
                 avg_value=float(avg_value) if avg_value is not None else None,
             )
     for quality, (count_floor, cells_floor, value_floor) in _quality_evidence_floors(store).items():
@@ -655,8 +731,11 @@ def build_residual_problem(
             if current.value_floor is not None or target_value is not None:
                 target_value = max(current.value_floor or 0, target_value or 0)
             target_avg_value = current.avg_value
+            target_value_exact = current.value_exact
             target_cells_exact = current.total_cells_exact
             target_count_exact = current.count_exact
+        else:
+            target_value_exact = None
         bucket_targets[quality] = ResidualBucketTarget(
             quality=quality,
             total_cells_exact=target_cells_exact,
@@ -664,6 +743,7 @@ def build_residual_problem(
             total_cells_floor=target_cells,
             count_floor=target_count,
             value_floor=target_value,
+            value_exact=target_value_exact,
             avg_value=target_avg_value,
         )
     for quality, avg_value in _public_avg_value_targets(store).items():
@@ -675,6 +755,7 @@ def build_residual_problem(
             total_cells_floor=current.total_cells_floor if current else None,
             count_floor=max(current.count_floor or 0, 1) if current else 1,
             value_floor=current.value_floor if current else None,
+            value_exact=current.value_exact if current else None,
             avg_value=avg_value,
         )
     if category_targets:
@@ -1073,6 +1154,18 @@ def value_evidence_score(
             value = bucket.value_sum if bucket is not None else 0
             if value < target.value_floor:
                 return 0.0
+        if target.value_exact is not None:
+            value = bucket.value_sum if bucket is not None else 0
+            rel_err = abs(value - target.value_exact) / max(1.0, target.value_exact)
+            if rel_err <= 0.05:
+                factor = 1.0
+            elif rel_err <= 0.25:
+                factor = max(0.35, 1.0 - rel_err * 2)
+            elif rel_err <= 0.75:
+                factor = max(0.10, 1.0 - rel_err)
+            else:
+                factor = 0.05
+            score *= factor
         if target.avg_value is None:
             continue
         if bucket is None or bucket.count <= 0:

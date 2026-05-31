@@ -451,6 +451,99 @@ def test_temporary_blue_zodiac_anchor_is_not_reported_missing() -> None:
     )
 
 
+def test_unique_quality_shape_evidence_becomes_known_item_anchor() -> None:
+    maps, drops, items = _tables()
+    wall = _item(1103005, quality=3, value=8_880, shape=(5, 4), tags=[110, 101])
+    other_blue = _item(1103008, quality=3, value=2_000, shape=(2, 2), tags=[110])
+    items.update({wall.item_id: wall, other_blue.item_id: other_blue})
+    drops[9001].entries.extend(
+        [
+            DropEntry(
+                category=110,
+                item_id=wall.item_id,
+                n_min=1,
+                n_max=1,
+                weight=1,
+            ),
+            DropEntry(
+                category=110,
+                item_id=other_blue.item_id,
+                n_min=1,
+                n_max=1,
+                weight=1,
+            ),
+        ]
+    )
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=54,
+            local_index=12,
+            quality=3,
+            shape_key="54",
+            cells=20,
+            sources=("skill:1002085",),
+        )
+    )
+
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+
+    assert [anchor.item_id for anchor in problem.anchors] == [wall.item_id]
+    assert problem.known_value == wall.value
+    assert problem.anchors[0].sources[-1] == "inferred:unique_shape"
+
+
+def test_nonunique_quality_shape_evidence_stays_soft() -> None:
+    maps, drops, items = _tables()
+    first = _item(1103005, quality=3, value=8_880, shape=(5, 4), tags=[110])
+    second = _item(1103010, quality=3, value=9_000, shape=(5, 4), tags=[101])
+    items.update({first.item_id: first, second.item_id: second})
+    drops[9001].entries.extend(
+        [
+            DropEntry(
+                category=110,
+                item_id=first.item_id,
+                n_min=1,
+                n_max=1,
+                weight=1,
+            ),
+            DropEntry(
+                category=101,
+                item_id=second.item_id,
+                n_min=1,
+                n_max=1,
+                weight=1,
+            ),
+        ]
+    )
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=55,
+            quality=3,
+            shape_key="54",
+            cells=20,
+            sources=("skill:1002085",),
+        )
+    )
+
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+
+    assert problem.anchors == ()
+
+
 def test_estimate_posterior_v2_relaxes_exact_bucket_when_strict_has_no_matches() -> None:
     maps, drops, items = _tables()
     obs = SessionObs(
@@ -734,6 +827,47 @@ def test_residual_problem_tracks_value_floor_from_exact_evidence() -> None:
     )
 
     assert problem.bucket_targets[3].value_floor == 3_240
+
+
+def test_tool_value_sum_softly_penalizes_over_value_samples() -> None:
+    maps, drops, items = _tables()
+    obs = SessionObs(
+        map_id=2401,
+        hero="ethan",
+        buckets={4: QualityBucketObs(quality=4, value_sum=20_000)},
+    )
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    matching = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=4,
+        buckets={4: BucketTruth(quality=4, count=1, total_cells=4, value_sum=20_000)},
+    )
+    over_value = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=4,
+        buckets={4: BucketTruth(quality=4, count=1, total_cells=4, value_sum=40_000)},
+    )
+    under_value = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=4,
+        buckets={4: BucketTruth(quality=4, count=1, total_cells=4, value_sum=10_000)},
+    )
+
+    assert problem.bucket_targets[4].value_floor == 20_000
+    assert problem.bucket_targets[4].value_exact == 20_000
+    assert value_evidence_score(matching, problem) == 1
+    assert 0 < value_evidence_score(over_value, problem) < 1
+    assert value_evidence_score(under_value, problem) == 0
 
 
 def test_public_gold_avg_value_scores_posterior_samples() -> None:

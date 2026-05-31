@@ -71,6 +71,16 @@ def _rate(rows: list[dict[str, Any]], key: str) -> float | None:
     return round(statistics.mean(1.0 if value else 0.0 for value in values), 4)
 
 
+def _numeric(row: dict[str, Any], key: str) -> float | None:
+    value = row.get(key)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _dedupe_latest_by_file(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     selected: dict[str, dict[str, Any]] = {}
     order: list[str] = []
@@ -107,6 +117,58 @@ def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
                 "q6_p90_miss_rate": _rate(group_rows, "q6_p90_misses_truth"),
                 "layout_conflict_rate": _rate(group_rows, "layout_conflict"),
                 "relaxed_exact_rate": _rate(group_rows, "relaxed_exact_used"),
+            }
+        )
+    return out
+
+
+def _bid_gap_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get(key) or "unknown"), []).append(row)
+
+    out: list[dict[str, Any]] = []
+    for value, group_rows in sorted(groups.items()):
+        bid_ratios: list[float] = []
+        stop_minus_values: list[float] = []
+        over_final = 0
+        usable_bid_rows = 0
+        for row in group_rows:
+            highest = _numeric(row, "highest_bid")
+            final_value = _numeric(row, "final_value")
+            if highest is not None and final_value is not None and final_value > 0:
+                usable_bid_rows += 1
+                bid_ratios.append(highest / final_value)
+                if highest > final_value:
+                    over_final += 1
+            stop_minus = _numeric(row, "stop_minus_final_value")
+            if stop_minus is not None:
+                stop_minus_values.append(stop_minus)
+        out.append(
+            {
+                key: value,
+                "n": len(group_rows),
+                "bid_rows": usable_bid_rows,
+                "highest_bid_over_final_median": (
+                    round(statistics.median(bid_ratios), 3)
+                    if bid_ratios
+                    else None
+                ),
+                "highest_bid_over_final_p75": (
+                    round(statistics.quantiles(bid_ratios, n=4)[2], 3)
+                    if len(bid_ratios) >= 4
+                    else None
+                ),
+                "highest_bid_over_final_rate": (
+                    round(over_final / usable_bid_rows, 4)
+                    if usable_bid_rows
+                    else None
+                ),
+                "stop_minus_final_median": (
+                    _round(statistics.median(stop_minus_values))
+                    if stop_minus_values
+                    else None
+                ),
             }
         )
     return out
@@ -218,6 +280,19 @@ def summarize(
                 "map_family",
             ),
             "map_id": _group_summary(valid, "map_id"),
+        },
+        "bid_gap": {
+            "hero": _bid_gap_summary(valid, "hero"),
+            "map_family": _bid_gap_summary(
+                [
+                    {
+                        **row,
+                        "map_family": _map_family(row.get("map_id")),
+                    }
+                    for row in valid
+                ],
+                "map_family",
+            ),
         },
     }
 
