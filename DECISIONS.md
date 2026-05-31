@@ -536,3 +536,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：第一版只做可达性和诊断，不直接替换 sampler；避免把预计算错误写进正式 posterior。下一步可把 unreachable exact bucket 作为诊断，确认稳定后再用它跳过无效采样分支。
 
 **复查点**：先在 batch evaluator 输出 exact bucket 是否 presolve-unreachable；如果 unreachable 与 zero-match/fallback 高度一致，再接入 `ConditionalSampler` 的 exact bucket 快路径。初次 271 份快速扫 unreachable 为 0，因此短期不把 presolve 当作精度修复主线，只作为后续提速/坏约束诊断基础。
+
+## 2026-06-01 · q6 校准主看可规划红货，不用黑天鹅尾部拉主估价
+
+**背景**：用户明确指出 q6 不追求全部准确，常规实战更需要“最常见、最可能、逻辑合理”的结果准确。未被证据命中的超跑钥匙、永乐、雷达等极端尾部应作为风险上界或特殊提示，而不是把主 P50/P90 与出价阈值整体抬高。
+
+**推荐**：batch evaluator 同时输出 raw q6 结算真值和 `final_q6_decision_value`。前者用于风险/ceiling 诊断，后者裁掉未确认尾部后用于 q6 residual 校准主线。新增 `q6_plannable_*` 指标，后续优先优化这组，而不是追求 raw q6 100% 覆盖。
+
+**用户选择**：先转回 q6 主线，UI 暂缓；presolve 不作为提升准确率主线，仅保留为后续提速和坏约束诊断基础。
+
+**取舍**：普通局不会被少数黑天鹅样本拉偏；代价是 raw 结算价值在极端爆局会继续显示低覆盖。该低覆盖应解释为“不可规划尾部风险”，不等同于常规估价模型失败。
+
+**复查点**：全量 271 份、`--trials 40` 快速扫中，raw q6 P90 覆盖约 `49.3%`，可规划 q6 P90 覆盖约 `51.8%`，只小幅改善；说明 Aisha shipwreck 等组仍有真实 q6 residual 问题。下一步聚焦分英雄/地图族 residual 与 shape/category 条件采样，不继续全局抬红货权重。

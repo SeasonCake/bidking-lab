@@ -246,6 +246,9 @@ def _inventory_truth_breakdown(
         decision_value = 0
         trimmed_value = 0
         trimmed_items: list[str] = []
+        q6_decision_value = 0
+        q6_trimmed_value = 0
+        q6_trimmed_items: list[str] = []
         for inv_item in state.inventory_items:
             item = items.get(inv_item.item_id)
             quality = inv_item.quality
@@ -268,8 +271,14 @@ def _inventory_truth_breakdown(
                 trimmed_value += value
                 if len(trimmed_items) < 4:
                     trimmed_items.append(f"{item.name}:{value}")
+                if int(quality) == 6:
+                    q6_trimmed_value += value
+                    if len(q6_trimmed_items) < 4:
+                        q6_trimmed_items.append(f"{item.name}:{value}")
             else:
                 decision_value += value
+                if int(quality) == 6:
+                    q6_decision_value += value
             counts[int(quality)] += 1
             cells[int(quality)] += inv_item.cells
             values[int(quality)] += value
@@ -289,6 +298,9 @@ def _inventory_truth_breakdown(
             "final_q5_value": values.get(5, 0),
             "final_q6_count": counts.get(6, 0),
             "final_q6_value": values.get(6, 0),
+            "final_q6_decision_value": q6_decision_value,
+            "final_q6_trimmed_tail_value": q6_trimmed_value,
+            "final_q6_trimmed_tail_items": ";".join(q6_trimmed_items),
             "final_decision_value": decision_value,
             "final_trimmed_tail_value": trimmed_value,
             "final_trimmed_tail_items": ";".join(trimmed_items),
@@ -500,6 +512,9 @@ def evaluate_path(
             trusted_footprint_count=problem.layout.trusted_footprint_count,
         )
         final_q6_value = int(truth_breakdown.get("final_q6_value") or 0)
+        final_q6_decision_value = int(
+            truth_breakdown.get("final_q6_decision_value") or 0
+        )
         row = {
             "file": path.name,
             "status": "ok",
@@ -562,6 +577,11 @@ def evaluate_path(
                 if q6_value_p90 is not None
                 else None
             ),
+            "v2_q6_decision_value_p90_under_by": (
+                max(0, final_q6_decision_value - q6_value_p90)
+                if q6_value_p90 is not None
+                else None
+            ),
             "v2_value_p50_error": (
                 value_p50 - final_value if value_p50 is not None else None
             ),
@@ -604,6 +624,11 @@ def evaluate_path(
                 final_q6_value > 0
                 and q6_value_p90 is not None
                 and q6_value_p90 < final_q6_value
+            ),
+            "q6_plannable_p90_misses_truth": (
+                final_q6_decision_value > 0
+                and q6_value_p90 is not None
+                and q6_value_p90 < final_q6_decision_value
             ),
             "bucket_targets": _format_bucket_targets(problem),
             "presolve_unreachable_exact_buckets": (
@@ -750,6 +775,10 @@ def _summary(
     q6_false_low = [row for row in ok if row.get("q6_false_low_risk")]
     q6_below_prior = [row for row in ok if row.get("q6_below_drop_prior")]
     q6_p90_miss = [row for row in ok if row.get("q6_p90_misses_truth")]
+    q6_plannable_p90_miss = [
+        row for row in ok
+        if row.get("q6_plannable_p90_misses_truth")
+    ]
     category_target_rows = [
         row for row in ok
         if int(row.get("category_target_count") or 0) > 0
@@ -809,6 +838,14 @@ def _summary(
     ]
     p90_abs_errors = [abs(int(row["v2_value_p90_error"])) for row in p90_valued]
     q6_rows = [row for row in valued if int(row.get("final_q6_count") or 0) > 0]
+    q6_plannable_rows = [
+        row for row in valued
+        if int(row.get("final_q6_decision_value") or 0) > 0
+    ]
+    q6_tail_rows = [
+        row for row in valued
+        if int(row.get("final_q6_trimmed_tail_value") or 0) > 0
+    ]
     summary = {
         "files": len(rows),
         "ok": len(ok),
@@ -823,6 +860,7 @@ def _summary(
         "q6_false_low_risk": len(q6_false_low),
         "q6_below_drop_prior": len(q6_below_prior),
         "q6_p90_misses_truth": len(q6_p90_miss),
+        "q6_plannable_p90_misses_truth": len(q6_plannable_p90_miss),
         "high_value_p90_undercovered": len(high_value_undercovered),
         "presolve_unreachable_exact_rows": len(presolve_unreachable_rows),
         "skip_or_error": len(rows) - len(ok),
@@ -882,6 +920,8 @@ def _summary(
             else None
         ),
         "q6_truth_files": len(q6_rows),
+        "q6_plannable_truth_files": len(q6_plannable_rows),
+        "q6_tail_event_files": len(q6_tail_rows),
         "q6_value_p90_coverage": (
             round(
                 statistics.mean(
@@ -892,6 +932,31 @@ def _summary(
                 4,
             )
             if any(row.get("v2_q6_value_p90") is not None for row in q6_rows)
+            else None
+        ),
+        "q6_plannable_value_p90_coverage": (
+            round(
+                statistics.mean(
+                    0.0 if row.get("q6_plannable_p90_misses_truth") else 1.0
+                    for row in q6_plannable_rows
+                    if row.get("v2_q6_value_p90") is not None
+                ),
+                4,
+            )
+            if any(
+                row.get("v2_q6_value_p90") is not None
+                for row in q6_plannable_rows
+            )
+            else None
+        ),
+        "q6_tail_trimmed_value_median": (
+            _round(
+                statistics.median(
+                    int(row.get("final_q6_trimmed_tail_value") or 0)
+                    for row in q6_tail_rows
+                )
+            )
+            if q6_tail_rows
             else None
         ),
         "q6_truth_p90_coverage": (
@@ -930,6 +995,10 @@ def _summary(
                     "v2_q6_value_p90": row.get("v2_q6_value_p90"),
                     "final_q6_count": row.get("final_q6_count"),
                     "final_q6_value": row.get("final_q6_value"),
+                    "final_q6_decision_value": row.get("final_q6_decision_value"),
+                    "final_q6_trimmed_tail_value": row.get(
+                        "final_q6_trimmed_tail_value"
+                    ),
                     "final_top_item_name": row.get("final_top_item_name"),
                     "final_top_item_value": row.get("final_top_item_value"),
                     "layout_score": row.get("layout_score"),
@@ -960,9 +1029,14 @@ def _summary(
                 "map_id": row.get("map_id"),
                 "final_q6_count": row.get("final_q6_count"),
                 "final_q6_value": row.get("final_q6_value"),
+                "final_q6_decision_value": row.get("final_q6_decision_value"),
+                "final_q6_trimmed_tail_value": row.get("final_q6_trimmed_tail_value"),
                 "v2_q6_match_rate": row.get("v2_q6_match_rate"),
                 "v2_q6_value_p90": row.get("v2_q6_value_p90"),
                 "v2_q6_value_p90_under_by": row.get("v2_q6_value_p90_under_by"),
+                "v2_q6_decision_value_p90_under_by": row.get(
+                    "v2_q6_decision_value_p90_under_by"
+                ),
                 "q6_top_size_band": row.get("q6_top_size_band"),
                 "q6_miss_root": row.get("q6_miss_root"),
                 "diagnostics": row.get("diagnostics"),
@@ -976,6 +1050,7 @@ def _summary(
         ),
         "q6_miss_root_causes": _root_cause_summary(q6_p90_miss, "q6_miss_root"),
         "q6_calibration_priority": _q6_calibration_priority(ok),
+        "q6_plannable_calibration_priority": _q6_plannable_calibration_priority(ok),
         "q6_risk_groups": {
             "hero_map_family": _q6_group_summary(ok, ("hero", "map_family")),
             "map_family_value_tier": _q6_group_summary(
@@ -985,6 +1060,16 @@ def _summary(
             "anchor_band": _q6_group_summary(ok, ("anchor_band",)),
             "public_constraint": _q6_group_summary(ok, ("public_constraint_key",)),
             "top_item_size": _q6_group_summary(ok, ("q6_top_size_band",)),
+        },
+        "q6_plannable_risk_groups": {
+            "hero_map_family": _q6_plannable_group_summary(
+                ok,
+                ("hero", "map_family"),
+            ),
+            "top_item_size": _q6_plannable_group_summary(
+                ok,
+                ("q6_top_size_band",),
+            ),
         },
         "category_evidence": {
             "target_rows": len(category_target_rows),
@@ -1277,6 +1362,62 @@ def _q6_group_summary(
     )
 
 
+def _q6_plannable_group_summary(
+    rows: list[dict[str, Any]],
+    keys: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(_group_key(row, keys), []).append(row)
+
+    out: list[dict[str, Any]] = []
+    for group, group_rows in groups.items():
+        q6_truth = [
+            row for row in group_rows
+            if int(row.get("final_q6_decision_value") or 0) > 0
+        ]
+        if not q6_truth:
+            continue
+        q6_misses = [
+            row for row in q6_truth
+            if row.get("q6_plannable_p90_misses_truth")
+        ]
+        under_by = [
+            int(row["v2_q6_decision_value_p90_under_by"])
+            for row in q6_misses
+            if row.get("v2_q6_decision_value_p90_under_by") is not None
+        ]
+        out.append(
+            {
+                "group": group,
+                "n": len(group_rows),
+                "q6_plannable_truth": len(q6_truth),
+                "q6_plannable_p90_misses_truth": len(q6_misses),
+                "q6_plannable_miss_rate": round(len(q6_misses) / len(q6_truth), 4),
+                "median_q6_plannable_under_by": (
+                    _round(statistics.median(under_by)) if under_by else None
+                ),
+                "q6_tail_event_files": sum(
+                    1 for row in group_rows
+                    if int(row.get("final_q6_trimmed_tail_value") or 0) > 0
+                ),
+                "zero_match": sum(1 for row in group_rows if not row.get("v2_matched")),
+                "layout_conflict": sum(
+                    1 for row in group_rows if row.get("layout_conflict")
+                ),
+            }
+        )
+    return sorted(
+        out,
+        key=lambda row: (
+            int(row["q6_plannable_p90_misses_truth"]),
+            int(row["median_q6_plannable_under_by"] or 0),
+            int(row["q6_plannable_truth"]),
+        ),
+        reverse=True,
+    )
+
+
 def _q6_calibration_priority(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     primary = _q6_group_summary(rows, ("hero", "map_family"))
     return [
@@ -1290,6 +1431,18 @@ def _q6_calibration_priority(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
         }
         for row in primary
         if row["q6_p90_misses_truth"] or row["q6_truth"] < 10
+    ][:10]
+
+
+def _q6_plannable_calibration_priority(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    primary = _q6_plannable_group_summary(rows, ("hero", "map_family"))
+    return [
+        {
+            **row,
+            "priority_reason": "plannable_q6_p90_undercoverage",
+        }
+        for row in primary
+        if row["q6_plannable_p90_misses_truth"]
     ][:10]
 
 

@@ -56,6 +56,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "final_trimmed_tail_value": 600_000,
             "final_q6_count": 1,
             "final_q6_value": 700_000,
+            "final_q6_decision_value": 250_000,
+            "final_q6_trimmed_tail_value": 450_000,
             "final_top_item_quality": 6,
             "final_top_item_cells": 9,
             "v2_matched": 2,
@@ -67,11 +69,13 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "v2_q6_value_p90": 300_000,
             "v2_q6_value_p90_error": -400_000,
             "v2_q6_value_p90_under_by": 400_000,
+            "v2_q6_decision_value_p90_under_by": 0,
             "v2_q6_match_rate": 0.05,
             "v2_q6_prior_expected_value": 800_000,
             "q6_false_low_risk": True,
             "q6_below_drop_prior": True,
             "q6_p90_misses_truth": True,
+            "q6_plannable_p90_misses_truth": False,
             "layout_conflict": False,
             "relaxed_exact_used": False,
             "category_target_count": 2,
@@ -97,6 +101,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "final_trimmed_tail_value": 0,
             "final_q6_count": 0,
             "final_q6_value": 0,
+            "final_q6_decision_value": 0,
+            "final_q6_trimmed_tail_value": 0,
             "v2_matched": 0,
             "v2_match_rate": 0.0,
             "v2_value_p50_error": 50_000,
@@ -105,6 +111,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "v2_value_p90_covers_final": True,
             "q6_false_low_risk": False,
             "q6_p90_misses_truth": False,
+            "q6_plannable_p90_misses_truth": False,
             "layout_conflict": True,
             "layout_conflict_root": "footprint_overlap;footprint_count_relaxed",
             "relaxed_exact_used": True,
@@ -147,6 +154,21 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     assert priority[0]["group"] == "hero=ethan|map_family=shipwreck"
     assert priority[0]["q6_p90_misses_truth"] == 1
     assert priority[0]["median_q6_under_by"] == 400_000
+    assert summary["q6_truth_files"] == 1
+    assert summary["q6_plannable_truth_files"] == 1
+    assert summary["q6_tail_event_files"] == 1
+    assert summary["q6_p90_misses_truth"] == 1
+    assert summary["q6_plannable_p90_misses_truth"] == 0
+    assert summary["q6_value_p90_coverage"] == 0.0
+    assert summary["q6_plannable_value_p90_coverage"] == 1.0
+    assert summary["q6_tail_trimmed_value_median"] == 450_000
+    assert (
+        summary["q6_plannable_risk_groups"]["hero_map_family"][0][
+            "q6_plannable_p90_misses_truth"
+        ]
+        == 0
+    )
+    assert summary["q6_plannable_calibration_priority"] == []
     assert summary["tail_event_count"] == 1
     assert summary["regular_decision_value_mae"] == 40_000
     assert summary["tail_event_decision_value_mae"] == 80_000
