@@ -442,6 +442,45 @@ def _q6_miss_root(row: dict[str, Any]) -> str:
     return ";".join(dict.fromkeys(markers))
 
 
+def _q6_plannable_miss_root(row: dict[str, Any]) -> str:
+    if not row.get("q6_plannable_p90_misses_truth"):
+        return ""
+    markers: list[str] = []
+    q6_rate = row.get("v2_q6_match_rate")
+    if q6_rate is None:
+        markers.append("unknown_q6_sample_rate")
+    elif float(q6_rate) < 0.10:
+        markers.append("low_q6_sample_rate")
+    elif float(q6_rate) >= 0.80:
+        markers.append("low_q6_value_distribution")
+    else:
+        markers.append("mixed_q6_sample_value")
+    if row.get("q6_below_drop_prior"):
+        markers.append("below_drop_prior")
+    markers.append(_q6_top_size_band(row))
+    if row.get("layout_conflict"):
+        markers.append("layout_conflict")
+        markers.extend(
+            part
+            for part in str(row.get("layout_conflict_root") or "").split(";")
+            if part
+        )
+    if row.get("relaxed_exact_used"):
+        markers.append("relaxed_exact_fallback")
+    if row.get("public_max_quality_used"):
+        markers.append("public_max_quality")
+    if row.get("public_max_item_cells_used"):
+        markers.append("public_max_item_cells")
+    if row.get("presolve_unreachable_exact_buckets"):
+        markers.append("presolve_unreachable_exact_bucket")
+    markers.extend(
+        marker
+        for marker in _exact_bucket_markers(row.get("bucket_targets"))
+        if marker.startswith("q6_")
+    )
+    return ";".join(dict.fromkeys(markers))
+
+
 def evaluate_path(
     path: Path,
     *,
@@ -665,6 +704,7 @@ def evaluate_path(
         row["public_constraint_key"] = _public_constraint_key(row)
         row["zero_match_root"] = _zero_match_root(row)
         row["q6_miss_root"] = _q6_miss_root(row)
+        row["q6_plannable_miss_root"] = _q6_plannable_miss_root(row)
         return row
     except Exception as exc:
         return {
@@ -1055,6 +1095,7 @@ def _summary(
                 ),
                 "q6_top_size_band": row.get("q6_top_size_band"),
                 "q6_miss_root": row.get("q6_miss_root"),
+                "q6_plannable_miss_root": row.get("q6_plannable_miss_root"),
                 "diagnostics": row.get("diagnostics"),
             }
             for row in q6_false_low[:12]
@@ -1065,6 +1106,10 @@ def _summary(
             "layout_conflict_root",
         ),
         "q6_miss_root_causes": _root_cause_summary(q6_p90_miss, "q6_miss_root"),
+        "q6_plannable_miss_root_causes": _root_cause_summary(
+            q6_plannable_p90_miss,
+            "q6_plannable_miss_root",
+        ),
         "q6_calibration_priority": _q6_calibration_priority(ok),
         "q6_plannable_calibration_priority": _q6_plannable_calibration_priority(ok),
         "q6_risk_groups": {

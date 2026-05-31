@@ -41,6 +41,42 @@ def test_zero_match_root_classifies_exact_and_public_constraints() -> None:
     assert "q4_avg_value" in root
 
 
+def test_q6_plannable_miss_root_splits_rate_and_value_causes() -> None:
+    module = _eval_module()
+
+    low_value_root = module._q6_plannable_miss_root(
+        {
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_match_rate": 1.0,
+            "q6_below_drop_prior": False,
+            "final_q6_count": 2,
+            "final_top_item_quality": 6,
+            "final_top_item_cells": 12,
+            "layout_conflict": True,
+            "layout_conflict_root": "footprint_overlap",
+            "bucket_targets": "",
+        }
+    )
+    low_rate_root = module._q6_plannable_miss_root(
+        {
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_match_rate": 0.0,
+            "q6_below_drop_prior": True,
+            "final_q6_count": 1,
+            "final_top_item_quality": 6,
+            "final_top_item_cells": 1,
+            "bucket_targets": "q6:count=1,cells=1",
+        }
+    )
+
+    assert "low_q6_value_distribution" in low_value_root
+    assert "layout_conflict" in low_value_root
+    assert "q6_top_large" in low_value_root
+    assert "low_q6_sample_rate" in low_rate_root
+    assert "below_drop_prior" in low_rate_root
+    assert "q6_exact_count_cells" in low_rate_root
+
+
 def test_summary_reports_q6_priority_and_root_causes() -> None:
     module = _eval_module()
 
