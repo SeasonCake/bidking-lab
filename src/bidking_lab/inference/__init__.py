@@ -72,6 +72,7 @@ from bidking_lab.inference.v2 import (
     known_item_anchors,
     layout_feasibility_from_store,
     layout_feasibility_score,
+    q6_decision_value_for_truth,
     shape_targets_from_store,
     value_evidence_score,
 )
@@ -167,6 +168,7 @@ __all__ = (
     "known_item_anchors",
     "layout_feasibility_from_store",
     "layout_feasibility_score",
+    "q6_decision_value_for_truth",
     "shape_targets_from_store",
     "value_evidence_score",
     "QualityComboPresolve",

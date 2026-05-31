@@ -26,6 +26,7 @@ from bidking_lab.inference.v2 import (
     known_item_anchors,
     layout_feasibility_from_store,
     layout_feasibility_score,
+    q6_decision_value_for_truth,
     value_evidence_score,
 )
 from bidking_lab.live.fatbeans import (
@@ -466,6 +467,7 @@ def test_estimate_posterior_v2_uses_anchor_without_rejection_dead_end() -> None:
     assert report.total_value.p10 >= 3_240
     assert report.q6_match_rate is not None
     assert report.q6_value is not None
+    assert report.q6_decision_value is not None
     assert any(
         diagnostic.startswith("q6_unconstrained_low_sample_rate:")
         for diagnostic in report.diagnostics
@@ -1618,6 +1620,7 @@ def test_decision_value_trims_unconfirmed_small_rare_tail() -> None:
     )
 
     assert decision_value_for_truth(truth, problem) == 900_000
+    assert q6_decision_value_for_truth(truth, problem) == 900_000
 
 
 def test_decision_value_counts_exactly_identified_small_rare_tail() -> None:
@@ -1659,6 +1662,7 @@ def test_decision_value_counts_exactly_identified_small_rare_tail() -> None:
     )
 
     assert decision_value_for_truth(truth, problem) == small_rare.value
+    assert q6_decision_value_for_truth(truth, problem) == small_rare.value
 
 
 def test_decision_value_trims_unconfirmed_large_extreme_tail() -> None:
@@ -1689,6 +1693,7 @@ def test_decision_value_trims_unconfirmed_large_extreme_tail() -> None:
     )
 
     assert decision_value_for_truth(truth, problem) == normal.value
+    assert q6_decision_value_for_truth(truth, problem) == normal.value
 
 
 def test_decision_value_counts_shape_category_supported_extreme_tail() -> None:
@@ -1732,3 +1737,4 @@ def test_decision_value_counts_shape_category_supported_extreme_tail() -> None:
     )
 
     assert decision_value_for_truth(truth, problem) == radar.value
+    assert q6_decision_value_for_truth(truth, problem) == radar.value

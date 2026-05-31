@@ -267,6 +267,7 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
         q6_rate = row.get("q6样本率") or ""
         q6_prior = row.get("q6掉落先验") or ""
         q6_value = row.get("q6价值 P10/P50/P90") or ""
+        q6_decision_value = row.get("q6决策价值 P10/P50/P90") or ""
         if q6_rate or q6_value:
             tag = "warn"
             try:
@@ -274,8 +275,12 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
             except ValueError:
                 tag = "normal"
             prior_text = f" / 先验 {q6_prior}" if q6_prior else ""
+            value_text = q6_decision_value or q6_value
             entries.append(
-                (f"红货: q6样本率 {q6_rate or '?'}{prior_text}  |  {q6_value}", tag)
+                (
+                    f"红货: q6样本率 {q6_rate or '?'}{prior_text}  |  {value_text}",
+                    tag,
+                )
             )
         diagnostics = str(row.get("诊断") or "")
         if diagnostics:
@@ -443,7 +448,11 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
             (
                 "红货 q6",
                 q6_rate,
-                str(v2.get("q6价值 P10/P50/P90") or ""),
+                str(
+                    v2.get("q6决策价值 P10/P50/P90")
+                    or v2.get("q6价值 P10/P50/P90")
+                    or ""
+                ),
                 q6_tag,
             )
         )

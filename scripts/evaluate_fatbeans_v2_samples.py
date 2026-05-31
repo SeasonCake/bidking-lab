@@ -501,6 +501,16 @@ def evaluate_path(
         decision_p90 = _round(report.decision_value.p90 if report.decision_value else None)
         q6_value_p50 = _round(report.q6_value.p50 if report.q6_value else None)
         q6_value_p90 = _round(report.q6_value.p90 if report.q6_value else None)
+        q6_decision_value_p50 = _round(
+            report.q6_decision_value.p50
+            if report.q6_decision_value
+            else None
+        )
+        q6_decision_value_p90 = _round(
+            report.q6_decision_value.p90
+            if report.q6_decision_value
+            else None
+        )
         cells_p10 = _round(report.total_cells.p10 if report.total_cells else None)
         cells_p50 = _round(report.total_cells.p50 if report.total_cells else None)
         cells_p90 = _round(report.total_cells.p90 if report.total_cells else None)
@@ -569,6 +579,8 @@ def evaluate_path(
             "v2_q6_prior_expected_value": _round(report.q6_prior_expected_value),
             "v2_q6_value_p50": q6_value_p50,
             "v2_q6_value_p90": q6_value_p90,
+            "v2_q6_decision_value_p50": q6_decision_value_p50,
+            "v2_q6_decision_value_p90": q6_decision_value_p90,
             "v2_q6_value_p90_error": (
                 q6_value_p90 - final_q6_value if q6_value_p90 is not None else None
             ),
@@ -578,8 +590,8 @@ def evaluate_path(
                 else None
             ),
             "v2_q6_decision_value_p90_under_by": (
-                max(0, final_q6_decision_value - q6_value_p90)
-                if q6_value_p90 is not None
+                max(0, final_q6_decision_value - q6_decision_value_p90)
+                if q6_decision_value_p90 is not None
                 else None
             ),
             "v2_value_p50_error": (
@@ -627,8 +639,8 @@ def evaluate_path(
             ),
             "q6_plannable_p90_misses_truth": (
                 final_q6_decision_value > 0
-                and q6_value_p90 is not None
-                and q6_value_p90 < final_q6_decision_value
+                and q6_decision_value_p90 is not None
+                and q6_decision_value_p90 < final_q6_decision_value
             ),
             "bucket_targets": _format_bucket_targets(problem),
             "presolve_unreachable_exact_buckets": (
@@ -939,12 +951,12 @@ def _summary(
                 statistics.mean(
                     0.0 if row.get("q6_plannable_p90_misses_truth") else 1.0
                     for row in q6_plannable_rows
-                    if row.get("v2_q6_value_p90") is not None
+                    if row.get("v2_q6_decision_value_p90") is not None
                 ),
                 4,
             )
             if any(
-                row.get("v2_q6_value_p90") is not None
+                row.get("v2_q6_decision_value_p90") is not None
                 for row in q6_plannable_rows
             )
             else None
@@ -993,6 +1005,9 @@ def _summary(
                     "anchor_count": row.get("anchor_count"),
                     "v2_q6_match_rate": row.get("v2_q6_match_rate"),
                     "v2_q6_value_p90": row.get("v2_q6_value_p90"),
+                    "v2_q6_decision_value_p90": row.get(
+                        "v2_q6_decision_value_p90"
+                    ),
                     "final_q6_count": row.get("final_q6_count"),
                     "final_q6_value": row.get("final_q6_value"),
                     "final_q6_decision_value": row.get("final_q6_decision_value"),
@@ -1033,6 +1048,7 @@ def _summary(
                 "final_q6_trimmed_tail_value": row.get("final_q6_trimmed_tail_value"),
                 "v2_q6_match_rate": row.get("v2_q6_match_rate"),
                 "v2_q6_value_p90": row.get("v2_q6_value_p90"),
+                "v2_q6_decision_value_p90": row.get("v2_q6_decision_value_p90"),
                 "v2_q6_value_p90_under_by": row.get("v2_q6_value_p90_under_by"),
                 "v2_q6_decision_value_p90_under_by": row.get(
                     "v2_q6_decision_value_p90_under_by"

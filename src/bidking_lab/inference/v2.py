@@ -283,6 +283,7 @@ class PosteriorReport:
     decision_value: QuantileSummary | None = None
     q6_match_rate: float | None = None
     q6_value: QuantileSummary | None = None
+    q6_decision_value: QuantileSummary | None = None
     q6_prior_match_rate: float | None = None
     q6_prior_expected_value: float | None = None
     shape_target_count: int = 0
@@ -1899,15 +1900,39 @@ def decision_value_for_truth(truth: SessionTruth, problem: ResidualProblem) -> i
     total = 0
     for bucket in truth.buckets.values():
         for item in bucket.items:
-            if item.item_id not in exact_anchor_ids and is_confusable_long_tail(item):
-                continue
-            if (
-                item.value >= DEFAULT_VALUE_FLOOR
-                and not is_tail_supported_by_evidence(item, problem)
-            ):
+            if not _is_plannable_item(item, problem, exact_anchor_ids):
                 continue
             total += item.value
     return total
+
+
+def q6_decision_value_for_truth(truth: SessionTruth, problem: ResidualProblem) -> int:
+    """Return the q6 component of plannable value."""
+
+    exact_anchor_ids = set(problem.anchor_item_counts)
+    bucket = truth.buckets.get(6)
+    if bucket is None:
+        return 0
+    return sum(
+        item.value
+        for item in bucket.items
+        if _is_plannable_item(item, problem, exact_anchor_ids)
+    )
+
+
+def _is_plannable_item(
+    item: Item,
+    problem: ResidualProblem,
+    exact_anchor_ids: set[int],
+) -> bool:
+    if item.item_id not in exact_anchor_ids and is_confusable_long_tail(item):
+        return False
+    if item.value >= DEFAULT_VALUE_FLOOR and not is_tail_supported_by_evidence(
+        item,
+        problem,
+    ):
+        return False
+    return True
 
 
 def _relax_exact_bucket_obs(obs: SessionObs) -> tuple[SessionObs, tuple[str, ...]]:
@@ -1961,6 +1986,7 @@ def _estimate_posterior_for_problem(
     decision_values: list[int] = []
     cells: list[int] = []
     q6_values: list[int] = []
+    q6_decision_values: list[int] = []
     weights: list[float] = []
     trials = max(0, int(n_trials))
     for _ in range(trials):
@@ -1995,6 +2021,7 @@ def _estimate_posterior_for_problem(
         cells.append(truth.warehouse_total_cells)
         q6_bucket = truth.buckets.get(6)
         q6_values.append(q6_bucket.value_sum if q6_bucket is not None else 0)
+        q6_decision_values.append(q6_decision_value_for_truth(truth, problem))
         weights.append(weight)
     diagnostics = [*extra_diagnostics, *problem.diagnostics]
     q6_match_rate = _weighted_positive_rate(q6_values, weights)
@@ -2029,6 +2056,7 @@ def _estimate_posterior_for_problem(
         decision_value=_quantiles(decision_values, weights),
         q6_match_rate=q6_match_rate,
         q6_value=_quantiles(q6_values, weights),
+        q6_decision_value=_quantiles(q6_decision_values, weights),
         q6_prior_match_rate=(
             q6_prior.session_probability if q6_prior is not None else None
         ),
@@ -2143,6 +2171,7 @@ __all__ = (
     "known_item_anchors",
     "layout_feasibility_from_store",
     "layout_feasibility_score",
+    "q6_decision_value_for_truth",
     "shape_targets_from_store",
     "value_evidence_score",
 )
