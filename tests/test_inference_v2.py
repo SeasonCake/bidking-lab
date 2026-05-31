@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+import bidking_lab.inference.v2 as v2_module
 from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropEntry, DropPool
 from bidking_lab.extract.item_table import Item
@@ -848,6 +849,35 @@ def test_category_shape_target_guides_conditional_sampler() -> None:
     assert any(item.item_id == 1086001 for item in truth.buckets[6].items)
 
 
+def test_q6_target_candidate_sampling_tilts_toward_value_without_global_boost() -> None:
+    low = _item(6101, quality=6, value=120_000, shape=(3, 3), tags=[102])
+    high = _item(6102, quality=6, value=480_000, shape=(3, 3), tags=[102])
+    pool = type(
+        "Pool",
+        (),
+        {
+            "items": [low, high],
+            "probabilities": np.asarray([1.0, 1.0], dtype=np.float64),
+        },
+    )()
+
+    q6_probs = v2_module._target_sampling_probabilities(
+        pool,
+        [0, 1],
+        quality=6,
+    )
+    q5_probs = v2_module._target_sampling_probabilities(
+        pool,
+        [0, 1],
+        quality=5,
+    )
+
+    assert q6_probs is not None
+    assert q5_probs is not None
+    assert q6_probs[1] > q6_probs[0]
+    assert q5_probs.tolist() == [0.5, 0.5]
+
+
 def test_store_category_evidence_becomes_category_target() -> None:
     valid_a = _item(7001, quality=6, value=210_000, shape=(2, 2), tags=[105])
     valid_b = _item(7002, quality=6, value=220_000, shape=(2, 2), tags=[105])
@@ -1405,14 +1435,20 @@ def test_public_gold_avg_value_scores_posterior_samples() -> None:
 def test_public_random_sample_avg_value_is_retained_but_not_bucket_target() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()
-    builder.add_fact(
-        EvidenceFact(
-            kind="public_info",
-            key="200032",
-            value=96_897.6640625,
-            source="public",
+    for info_id, value in (
+        (200031, 69_183.0),
+        (200032, 96_897.6640625),
+        (200033, 14_798.8),
+        (200034, 88_888.0),
+    ):
+        builder.add_fact(
+            EvidenceFact(
+                kind="public_info",
+                key=str(info_id),
+                value=value,
+                source="public",
+            )
         )
-    )
     problem = build_residual_problem(
         2401,
         builder.build(),
@@ -1421,7 +1457,12 @@ def test_public_random_sample_avg_value_is_retained_but_not_bucket_target() -> N
         items=items,
     )
 
-    assert problem.random_sample_avg_values == ((6, 96_897.6640625),)
+    assert problem.random_sample_avg_values == (
+        (3, 69_183.0),
+        (6, 96_897.6640625),
+        (9, 14_798.8),
+        (12, 88_888.0),
+    )
     assert problem.bucket_targets == {}
 
 

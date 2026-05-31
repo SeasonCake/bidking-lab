@@ -41,8 +41,10 @@ _PUBLIC_AVG_VALUE_QUALITY: dict[int, int] = {
     200037: 5,  # 所有金色品质藏品的平均价值
 }
 _PUBLIC_RANDOM_SAMPLE_AVG_VALUE_COUNT: dict[int, int] = {
+    200031: 3,  # 随机 3 件藏品的平均价值
     200032: 6,  # 随机 6 件藏品的平均价值
     200033: 9,  # 随机 9 件藏品的平均价值
+    200034: 12,  # 随机 12 件藏品的平均价值
 }
 
 
@@ -1372,11 +1374,13 @@ class ConditionalSampler:
             ]
             if not indexes:
                 continue
-            probs = pool.probabilities[indexes].astype(np.float64)
-            total = float(probs.sum())
-            if total <= 0:
+            probs = _target_sampling_probabilities(
+                pool,
+                indexes,
+                quality=target.quality,
+            )
+            if probs is None:
                 continue
-            probs = probs / total
             local_i = int(rng.choice(len(indexes), p=probs))
             pool_i = int(indexes[local_i])
             _add_item_to_buckets(buckets, pool.items[pool_i])
@@ -1396,11 +1400,13 @@ class ConditionalSampler:
             ]
             if not indexes:
                 continue
-            probs = pool.probabilities[indexes].astype(np.float64)
-            total = float(probs.sum())
-            if total <= 0:
+            probs = _target_sampling_probabilities(
+                pool,
+                indexes,
+                quality=target.quality,
+            )
+            if probs is None:
                 continue
-            probs = probs / total
             repeats = max(1, int(target.count))
             for _ in range(repeats):
                 local_i = int(rng.choice(len(indexes), p=probs))
@@ -1737,6 +1743,36 @@ def _session_probability_for_draw(
         for draws in range(lo, hi + 1)
     ]
     return float(sum(probabilities) / len(probabilities))
+
+
+def _target_sampling_probabilities(
+    pool: Any,
+    indexes: Sequence[int],
+    *,
+    quality: int | None,
+) -> np.ndarray | None:
+    """Return target-candidate probabilities with a conservative q6 value tilt."""
+
+    if not indexes:
+        return None
+    index_array = np.asarray(indexes, dtype=np.int64)
+    probs = pool.probabilities[index_array].astype(np.float64)
+    if quality == 6 and len(index_array) > 1:
+        values = np.asarray(
+            [max(1, int(pool.items[int(idx)].value)) for idx in index_array],
+            dtype=np.float64,
+        )
+        median_value = float(np.median(values))
+        if median_value > 0:
+            # The target already proves a q6 item with this shape/category exists.
+            # Tilt only within that candidate set so low-probability high-value
+            # matches are not starved, without raising global red-item odds.
+            tilt = np.sqrt(values / median_value)
+            probs *= np.clip(tilt, 0.50, 3.00)
+    total = float(probs.sum())
+    if total <= 0:
+        return None
+    return probs / total
 
 
 def _quantiles(values: Sequence[int], weights: Sequence[float]) -> QuantileSummary | None:

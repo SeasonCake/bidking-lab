@@ -159,7 +159,7 @@ no-pool-match 数量和最有代表性的样本文件。
 - `mid_3_4` / `full_5`：优先用于稳定估价校准。
 - `calibration_decision_value_mae`：只统计中后期有效局的决策价值误差。
 
-`random_sample_avg_values` 会保留“随机 6/9 件藏品平均价值”这类 public info；
+`random_sample_avg_values` 会保留“随机 3/6/9/12 件藏品平均价值”这类 public info；
 它们当前只做诊断，不作为全库均价或品质桶均价硬过滤。
 
 ## 看结果时重点关注
