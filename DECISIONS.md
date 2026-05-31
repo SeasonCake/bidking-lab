@@ -548,3 +548,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：普通局不会被少数黑天鹅样本拉偏；代价是 raw 结算价值在极端爆局会继续显示低覆盖。该低覆盖应解释为“不可规划尾部风险”，不等同于常规估价模型失败。
 
 **复查点**：全量 271 份、`--trials 40` 快速扫中，raw q6 P90 覆盖约 `49.3%`，可规划 q6 自身 P90 覆盖约 `48.2%`。这说明去掉黑天鹅尾部后，Aisha shipwreck 等组仍有真实 q6 residual 问题。下一步聚焦分英雄/地图族 residual 与 shape/category 条件采样，不继续全局抬红货权重。
+
+## 2026-06-01 · 外部 grid_view 先读导出数据，不反编译 exe
+
+**背景**：`src/grid_view_v1.3.7/` 包含 117MB `grid_view.exe`，但同目录已有 `map_quality_p50_out.csv`、`drop_table_weights.csv`、`tier_combo_presolve_q456.json` 和地图 pricing override。当前问题是 q6 residual 和布局/空位估计，不需要先碰 exe。
+
+**推荐**：新增只读对照脚本，先比较外部导出 CSV 与本项目 Drop/Item/BidMap 推导结果。若基础掉率、品质 p50 一致，则外部项目可参考 UI、空位 phantom、出价比例配置；不把 exe 反编译作为近期主线。
+
+**用户选择**：继续按当前规划推进，外部项目作为参考，不替换本项目主干。
+
+**取舍**：避免把黑盒实现或自动化策略混进现有白盒推理；如果后续发现导出数据解释不了其效果，再单独评估 exe 分析成本。
+
+**复查点**：首轮别墅/沉船/hidden q5/q6 对照显示外部 `map_quality_p50_out.csv` 与本项目本地 Drop 推导基本一致；q6 低估不是因为我们漏了一套基础爆率。
