@@ -14,6 +14,12 @@ cd C:\xiangmuyunxing\biancheng\2026\bidking-lab
 
 默认只处理启动后新增或变化的 JSON。需要回放旧目录时才加 `-ProcessExisting`。
 
+如果只想先看悬浮窗样式，不启动监听，可打开内置 demo snapshot：
+
+```powershell
+python scripts\run_live_overlay.py --demo
+```
+
 当前链路仍需要 Fatbeans 或未来 feed 写出 JSON：
 
 ```text

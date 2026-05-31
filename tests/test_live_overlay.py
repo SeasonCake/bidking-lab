@@ -60,8 +60,9 @@ def test_overlay_summary_lines_include_q6_and_diagnostics() -> None:
         }
     )
 
-    assert lines[0].startswith("ethan  map 2401")
-    assert any(line.startswith("q6:") for line in lines)
+    assert lines[0].startswith("ETHAN  |  map 2401")
+    assert any(line.startswith("决策:") for line in lines)
+    assert any(line.startswith("红货:") for line in lines)
     assert any("q6 P90" in line for line in lines)
     assert any("footprint" in line for line in lines)
     assert any("决策P50误差" in line for line in lines)
@@ -80,3 +81,16 @@ def test_overlay_warns_when_snapshot_is_stale() -> None:
     )
 
     assert any("超过 120 秒未更新" in line for line in lines)
+
+
+def test_demo_snapshot_has_compact_overlay_sections() -> None:
+    overlay = _overlay_module()
+
+    lines = overlay._summary_lines(overlay._demo_snapshot())
+
+    assert any(line.startswith("决策:") for line in lines)
+    assert any(line.startswith("价值:") for line in lines)
+    assert any(line.startswith("仓储:") for line in lines)
+    assert any(line.startswith("红货:") for line in lines)
+    assert any(line.startswith("布局:") for line in lines)
+    assert any(line.startswith("道具:") for line in lines)
