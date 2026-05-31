@@ -848,6 +848,97 @@ def test_category_shape_target_guides_conditional_sampler() -> None:
     assert any(item.item_id == 1086001 for item in truth.buckets[6].items)
 
 
+def test_store_category_evidence_becomes_category_target() -> None:
+    valid_a = _item(7001, quality=6, value=210_000, shape=(2, 2), tags=[105])
+    valid_b = _item(7002, quality=6, value=220_000, shape=(2, 2), tags=[105])
+    excluded = _item(7003, quality=6, value=230_000, shape=(2, 2), tags=[105, 107])
+    maps = {
+        2403: BidMap(
+            map_id=2403,
+            name="category_from_store_map",
+            description="",
+            category=101,
+            auction_mode="open",
+            sub_pool_weights=[],
+            rounds_total=5,
+            entry_fee_silver=0,
+            starting_budget_silver=100_000,
+            drop_pool_id=9003,
+            items_per_session_min=1,
+            items_per_session_max=1,
+            value_tier_ui="",
+            mode_flag=4,
+            bid_price_ladder=[],
+            raw_row=[],
+        ),
+    }
+    drops = {
+        9003: DropPool(
+            pool_id=9003,
+            name="category_from_store_pool",
+            description="",
+            pool_type=2,
+            entries=[
+                DropEntry(
+                    category=105,
+                    item_id=valid_a.item_id,
+                    n_min=1,
+                    n_max=1,
+                    weight=1,
+                ),
+                DropEntry(
+                    category=105,
+                    item_id=valid_b.item_id,
+                    n_min=1,
+                    n_max=1,
+                    weight=1,
+                ),
+                DropEntry(
+                    category=105,
+                    item_id=excluded.item_id,
+                    n_min=1,
+                    n_max=1,
+                    weight=99,
+                ),
+            ],
+        ),
+    }
+    items = {item.item_id: item for item in (valid_a, valid_b, excluded)}
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            quality=6,
+            shape_key="22",
+            cells=4,
+            categories=(105,),
+            excluded_categories=(107,),
+            sources=("action:100153", "action_negative:100154"),
+        )
+    )
+    problem = build_residual_problem(
+        2403,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(19))
+
+    assert problem.category_targets == (
+        CategoryItemObservation(
+            category=105,
+            quality=6,
+            cells=4,
+            shape_key="22",
+            excluded_categories=(107,),
+        ),
+    )
+    assert 107 not in truth.buckets[6].items[0].tags
+
+
 def test_category_target_counts_toward_exact_bucket() -> None:
     weapon = _item(6001, quality=6, value=1_003_000, shape=(3, 4), tags=[104])
     decoy = _item(6002, quality=6, value=844_000, shape=(4, 4), tags=[106])

@@ -416,3 +416,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：永乐这类高 anchor 局能明显减少不合理 residual；代价是仍不能保证具体摆放可行，只是把“件数/格数明显不可能”的组合降下来。
 
 **复查点**：本次 targeted eval 中明牌永乐局 `v2_matched=4/80`、P50 误差约 2.36 万、格子 P50 命中。后续如果 zero-match 仍集中在 exact q3/q6 cells，再把 exact bucket cells 从硬等式改成可解释的放宽策略。
+
+## 2026-06-01 · 正向/反向分类证据合流到 category target
+
+**背景**：Fatbeans 的分类鉴影命中已经会进入 `EvidenceStore.categories`，但如果它不能唯一推出具体 item，旧流程可能只停留在 evidence store，不一定进入 `ConditionalSampler` 的 category target。这样“家具命中、数码/古董未命中”的黑盒交集推断仍然偏弱。
+
+**推荐**：把非 anchor 的 runtime/local 分类证据转成 `CategoryItemObservation`，并给该 observation 保留 `excluded_categories`。同一 category+shape+quality target 来自 live obs 和 evidence store 时只合并一次，避免重复计数。
+
+**用户选择**：继续按渐进替换路线推进，先接入保守条件采样，不直接改 bid 阈值。
+
+**取舍**：这一步让分类鉴影更稳定地影响 v2 posterior，尤其是同形状候选里有反向排除时；但它仍然只是 item 候选约束，不做完整逻辑证明，也不把未知物品全局排除。
+
+**复查点**：批量 60 trials 摘要中 `zero_match=7` 未回退，`decision_value_mae≈39.0万`，`value_p90_coverage≈0.449`。后续重点看多鉴影样本里 `category_target_no_pool_match` 是否增加；若增加，优先修 action→category 映射或物品 tags。

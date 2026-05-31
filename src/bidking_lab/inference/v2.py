@@ -618,6 +618,76 @@ def shape_targets_from_store(
     return tuple(targets)
 
 
+def _category_target_merge_key(
+    target: CategoryItemObservation,
+) -> tuple[int, int | None, str | None, int | None, int | None]:
+    return (
+        target.category,
+        target.cells,
+        target.shape_key,
+        target.quality,
+        target.item_id,
+    )
+
+
+def _merge_category_targets(
+    targets: Sequence[CategoryItemObservation],
+) -> tuple[CategoryItemObservation, ...]:
+    merged: dict[
+        tuple[int, int | None, str | None, int | None, int | None],
+        CategoryItemObservation,
+    ] = {}
+    for target in targets:
+        key = _category_target_merge_key(target)
+        current = merged.get(key)
+        if current is None:
+            merged[key] = target
+            continue
+        excluded_categories = tuple(
+            dict.fromkeys((
+                *current.excluded_categories,
+                *target.excluded_categories,
+            ))
+        )
+        merged[key] = replace(
+            current,
+            excluded_categories=excluded_categories,
+            count=max(current.count, target.count),
+        )
+    return tuple(merged.values())
+
+
+def category_targets_from_store(
+    store: EvidenceStore,
+    *,
+    anchored_keys: set[str],
+) -> tuple[CategoryItemObservation, ...]:
+    """Return non-unique category+shape targets from item evidence."""
+
+    targets: list[CategoryItemObservation] = []
+    for evidence in store.items():
+        if evidence.item_id is not None:
+            continue
+        if evidence.evidence_key in anchored_keys:
+            continue
+        if not evidence.categories:
+            continue
+        cells = evidence.cells
+        if cells is None and evidence.shape_key is not None:
+            cells = _shape_cells(evidence.shape_key)
+        for category in evidence.categories:
+            targets.append(
+                CategoryItemObservation(
+                    category=category,
+                    cells=int(cells) if cells is not None else None,
+                    shape_key=evidence.shape_key,
+                    quality=evidence.quality,
+                    excluded_categories=evidence.excluded_categories,
+                )
+            )
+    return _merge_category_targets(targets)
+
+
 def known_footprints(
     store: EvidenceStore,
     *,
@@ -820,6 +890,10 @@ def _item_matches_category_target(
 ) -> bool:
     if target.category not in item.tags:
         return False
+    if target.excluded_categories and any(
+        category in item.tags for category in target.excluded_categories
+    ):
+        return False
     if target.quality is not None and item.quality != target.quality:
         return False
     if target.cells is not None and item.shape_w * item.shape_h != target.cells:
@@ -893,14 +967,21 @@ def build_residual_problem(
         store,
         anchored_keys={anchor.key for anchor in anchors},
     )
+    store_category_targets = category_targets_from_store(
+        store,
+        anchored_keys={anchor.key for anchor in anchors},
+    )
     layout = layout_feasibility_from_store(store)
     bucket_targets: dict[int, ResidualBucketTarget] = {}
-    category_targets: list[CategoryItemObservation] = []
+    category_targets: tuple[CategoryItemObservation, ...] = store_category_targets
     if obs is not None:
-        category_targets = [
-            target for target in obs.category_items
-            if target.item_id is None
-        ]
+        category_targets = _merge_category_targets((
+            *category_targets,
+            *(
+                target for target in obs.category_items
+                if target.item_id is None
+            ),
+        ))
         for quality, bucket in obs.buckets.items():
             cells_exact = bucket.total_cells
             cells_floor = bucket.total_cells_min
@@ -1012,7 +1093,7 @@ def build_residual_problem(
         known_value=sum(anchor.value for anchor in anchors),
         anchor_item_counts=dict(counts),
         bucket_targets=bucket_targets,
-        category_targets=tuple(category_targets),
+        category_targets=category_targets,
         shape_targets=shape_targets,
         layout=layout,
         total_item_count=obs.total_item_count if obs is not None else None,
@@ -1951,6 +2032,7 @@ __all__ = (
     "RuntimeEvidence",
     "ShapeTarget",
     "build_residual_problem",
+    "category_targets_from_store",
     "decision_value_for_truth",
     "estimate_posterior_v2",
     "evidence_store_from_fatbeans_events",
