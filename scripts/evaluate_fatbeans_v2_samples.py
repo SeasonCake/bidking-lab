@@ -497,6 +497,11 @@ def evaluate_path(
             ),
             "bucket_targets": _format_bucket_targets(problem),
             "shape_target_count": len(problem.shape_targets),
+            "category_target_count": len(problem.category_targets),
+            "category_exclusion_count": sum(
+                len(target.excluded_categories)
+                for target in problem.category_targets
+            ),
             "footprint_count": problem.layout.footprint_count,
             "trusted_footprint_count": problem.layout.trusted_footprint_count,
             "footprint_occupied_cells": problem.layout.occupied_cells,

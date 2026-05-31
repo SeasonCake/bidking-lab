@@ -428,3 +428,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：这一步让分类鉴影更稳定地影响 v2 posterior，尤其是同形状候选里有反向排除时；但它仍然只是 item 候选约束，不做完整逻辑证明，也不把未知物品全局排除。
 
 **复查点**：批量 60 trials 摘要中 `zero_match=7` 未回退，`decision_value_mae≈39.0万`，`value_p90_coverage≈0.449`。后续重点看多鉴影样本里 `category_target_no_pool_match` 是否增加；若增加，优先修 action→category 映射或物品 tags。
+
+## 2026-06-01 · 鉴影样本需要先看证据是否被吃到
+
+**背景**：分类鉴影和反向排除已经进入 v2，但后续要决定是否加权或加硬，需要先知道每局实际有多少 category target 和 negative category 被写入后验。
+
+**推荐**：batch evaluator 和 live `model_eval.jsonl` 增加 `category_target_count`、`category_exclusion_count`、`shape_target_count`；live 汇总增加 category target / exclusion 的行数和总量。采样判断先看这些字段，而不是只看最终 MAE。
+
+**用户选择**：先继续工程铺垫，后续按日志反馈决定是否再收集更多带鉴影样本。
+
+**取舍**：不改变出价策略，只增加日志宽度；但能明确区分“样本没带鉴影”、“Fatbeans 没解析到鉴影”、“解析到了但没有影响后验”。
+
+**复查点**：一份多鉴影 Aisha 别墅样本已输出 `category_target_count=14`、`category_exclusion_count=25`。若后续十几份样本这些字段普遍为 0，则优先检查采集/解析；若字段有值但精度无改善，再考虑权重或候选采样策略。

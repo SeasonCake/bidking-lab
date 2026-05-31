@@ -278,6 +278,9 @@ class PosteriorReport:
     q6_value: QuantileSummary | None = None
     q6_prior_match_rate: float | None = None
     q6_prior_expected_value: float | None = None
+    shape_target_count: int = 0
+    category_target_count: int = 0
+    category_exclusion_count: int = 0
     layout_diagnostics: tuple[str, ...] = ()
     diagnostics: tuple[str, ...] = ()
 
@@ -1940,6 +1943,12 @@ def _estimate_posterior_for_problem(
         ),
         q6_prior_expected_value=(
             q6_prior.expected_session_value if q6_prior is not None else None
+        ),
+        shape_target_count=len(problem.shape_targets),
+        category_target_count=len(problem.category_targets),
+        category_exclusion_count=sum(
+            len(target.excluded_categories)
+            for target in problem.category_targets
         ),
         layout_diagnostics=problem.layout.diagnostics,
         diagnostics=tuple(diagnostics),

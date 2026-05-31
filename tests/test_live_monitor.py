@@ -152,6 +152,9 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "v2_q6_value_p90_under_by" in artifact["model_eval"]
     assert "raw_minus_decision_p90" in artifact["model_eval"]
     assert "layout_conflict_root" in artifact["model_eval"]
+    assert "shape_target_count" in artifact["model_eval"]
+    assert "category_target_count" in artifact["model_eval"]
+    assert "category_exclusion_count" in artifact["model_eval"]
     assert artifact["model_eval"]["relaxed_exact_used"] is False
 
 

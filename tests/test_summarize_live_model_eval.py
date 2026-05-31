@@ -58,6 +58,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "final_q6_value": 0,
                 "decision_value_p50": 120,
                 "raw_minus_decision_p90": 0,
+                "category_target_count": 1,
+                "category_exclusion_count": 0,
                 "layout_conflict": False,
                 "layout_conflict_root": "",
             },
@@ -76,6 +78,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "q6_p90_misses_truth": True,
                 "v2_q6_value_p90": 30,
                 "raw_minus_decision_p90": 300_000,
+                "category_target_count": 2,
+                "category_exclusion_count": 1,
                 "layout_conflict": True,
                 "posterior_diagnostics": (
                     "footprint_overlap_cells:2;footprint_count_relaxed:3->1"
@@ -111,6 +115,10 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert summary["q6_below_drop_prior_count"] == 1
     assert summary["q6_p90_miss_count"] == 1
     assert summary["q6_p90_under_by_median"] == 50
+    assert summary["category_target_rows"] == 2
+    assert summary["category_exclusion_rows"] == 1
+    assert summary["category_target_total"] == 3
+    assert summary["category_exclusion_total"] == 1
     q6_causes = {
         row["cause"]: row["n"]
         for row in summary["q6_miss_root_causes"]

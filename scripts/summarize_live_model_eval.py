@@ -471,6 +471,22 @@ def summarize(
         ),
         "warehouse_mae": _mae(valid, "warehouse_p50_error"),
         "layout_fit_mae": _mae(valid, "layout_fit_p50_error"),
+        "category_target_rows": sum(
+            1 for row in valid
+            if (_numeric(row, "category_target_count") or 0) > 0
+        ),
+        "category_exclusion_rows": sum(
+            1 for row in valid
+            if (_numeric(row, "category_exclusion_count") or 0) > 0
+        ),
+        "category_target_total": sum(
+            int(_numeric(row, "category_target_count") or 0)
+            for row in valid
+        ),
+        "category_exclusion_total": sum(
+            int(_numeric(row, "category_exclusion_count") or 0)
+            for row in valid
+        ),
         "log_quality": _log_quality(valid),
         "collection_readiness": collection_readiness,
         "next_sampling_targets": _next_sampling_targets(collection_readiness),
