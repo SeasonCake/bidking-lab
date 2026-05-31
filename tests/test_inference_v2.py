@@ -1187,3 +1187,76 @@ def test_decision_value_counts_exactly_identified_small_rare_tail() -> None:
     )
 
     assert decision_value_for_truth(truth, problem) == small_rare.value
+
+
+def test_decision_value_trims_unconfirmed_large_extreme_tail() -> None:
+    maps, drops, items = _tables()
+    radar = _item(1086004, quality=6, value=1_003_000, shape=(3, 4), tags=[108])
+    normal = _item(1086005, quality=6, value=444_000, shape=(4, 4), tags=[108])
+    items = {**items, radar.item_id: radar, normal.item_id: normal}
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    truth = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=28,
+        buckets={
+            6: BucketTruth(
+                quality=6,
+                count=2,
+                total_cells=28,
+                value_sum=1_447_000,
+                items=[radar, normal],
+            ),
+        },
+    )
+
+    assert decision_value_for_truth(truth, problem) == normal.value
+
+
+def test_decision_value_counts_shape_category_supported_extreme_tail() -> None:
+    maps, drops, items = _tables()
+    radar = _item(1086004, quality=6, value=1_003_000, shape=(3, 4), tags=[108])
+    items = {**items, radar.item_id: radar}
+    obs = SessionObs(
+        map_id=2401,
+        hero="aisha",
+        category_items=(
+            CategoryItemObservation(
+                category=108,
+                quality=6,
+                count=1,
+                cells=12,
+                shape_key="34",
+            ),
+        ),
+    )
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    truth = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=12,
+        buckets={
+            6: BucketTruth(
+                quality=6,
+                count=1,
+                total_cells=12,
+                value_sum=radar.value,
+                items=[radar],
+            ),
+        },
+    )
+
+    assert decision_value_for_truth(truth, problem) == radar.value

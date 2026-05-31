@@ -26,6 +26,7 @@ from bidking_lab.inference.v2 import (  # noqa: E402
     build_residual_problem,
     estimate_posterior_v2,
     evidence_store_from_fatbeans_events,
+    is_tail_supported_by_evidence,
 )
 from bidking_lab.live.fatbeans import (  # noqa: E402
     latest_player_bids,
@@ -38,7 +39,10 @@ from bidking_lab.live.monitor import (  # noqa: E402
     _states_to_session,
     load_monitor_tables,
 )
-from bidking_lab.simulation.robust_value import is_confusable_long_tail  # noqa: E402
+from bidking_lab.simulation.robust_value import (  # noqa: E402
+    DEFAULT_VALUE_FLOOR,
+    is_confusable_long_tail,
+)
 
 
 def _default_paths() -> list[Path]:
@@ -133,7 +137,12 @@ def _format_quality_map(values: Any) -> str:
     )
 
 
-def _inventory_truth_breakdown(events: Any, items: Any) -> dict[str, Any]:
+def _inventory_truth_breakdown(
+    events: Any,
+    items: Any,
+    *,
+    problem: Any | None = None,
+) -> dict[str, Any]:
     for state in reversed(events.states):
         if not state.inventory_items:
             continue
@@ -152,7 +161,17 @@ def _inventory_truth_breakdown(events: Any, items: Any) -> dict[str, Any]:
             if quality is None:
                 continue
             value = item.value if item is not None else 0
+            trim_item = False
             if item is not None and is_confusable_long_tail(item):
+                trim_item = True
+            if (
+                item is not None
+                and problem is not None
+                and item.value >= DEFAULT_VALUE_FLOOR
+                and not is_tail_supported_by_evidence(item, problem)
+            ):
+                trim_item = True
+            if item is not None and trim_item:
                 trimmed_value += value
                 if len(trimmed_items) < 4:
                     trimmed_items.append(f"{item.name}:{value}")
@@ -317,7 +336,6 @@ def evaluate_path(
         base_session, *_ = _states_to_session(batches)
         final_value = _inventory_value(events, tables.items)
         inventory_count, final_cells = _inventory_totals(events)
-        truth_breakdown = _inventory_truth_breakdown(events, tables.items)
         latest_bids = latest_player_bids(events.states)
         highest_bid = max(latest_bids.values()) if latest_bids else None
         if base_session is None:
@@ -333,6 +351,11 @@ def evaluate_path(
             drops=tables.drops,
             items=tables.items,
             obs=base_session,
+        )
+        truth_breakdown = _inventory_truth_breakdown(
+            events,
+            tables.items,
+            problem=problem,
         )
         report = estimate_posterior_v2(
             base_session.map_id,

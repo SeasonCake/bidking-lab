@@ -30,7 +30,10 @@ from bidking_lab.inference.map_likelihood import (
     truth_matches_obs,
 )
 from bidking_lab.inference.observation import CategoryItemObservation, SessionObs
-from bidking_lab.simulation.robust_value import is_confusable_long_tail
+from bidking_lab.simulation.robust_value import (
+    DEFAULT_VALUE_FLOOR,
+    is_confusable_long_tail,
+)
 
 EvidenceStrength = Literal["hard", "soft"]
 
@@ -1340,14 +1343,30 @@ def global_evidence_score(
     return 1.0
 
 
+def is_tail_supported_by_evidence(item: Item, problem: ResidualProblem) -> bool:
+    """Whether explicit evidence supports planning around an extreme tail item."""
+
+    if item.item_id in problem.anchor_item_counts:
+        return True
+    return any(
+        _item_matches_category_target(item, target)
+        for target in problem.category_targets
+    )
+
+
 def decision_value_for_truth(truth: SessionTruth, problem: ResidualProblem) -> int:
-    """Return decision value after trimming unconfirmed small rare tails."""
+    """Return plannable value after trimming unconfirmed extreme tails."""
 
     exact_anchor_ids = set(problem.anchor_item_counts)
     total = 0
     for bucket in truth.buckets.values():
         for item in bucket.items:
             if item.item_id not in exact_anchor_ids and is_confusable_long_tail(item):
+                continue
+            if (
+                item.value >= DEFAULT_VALUE_FLOOR
+                and not is_tail_supported_by_evidence(item, problem)
+            ):
                 continue
             total += item.value
     return total
@@ -1550,6 +1569,7 @@ __all__ = (
     "estimate_posterior_v2",
     "evidence_store_from_fatbeans_events",
     "global_evidence_score",
+    "is_tail_supported_by_evidence",
     "known_footprints",
     "known_item_anchors",
     "layout_feasibility_from_store",
