@@ -51,6 +51,8 @@ def test_q6_plannable_miss_root_splits_rate_and_value_causes() -> None:
             "q6_below_drop_prior": False,
             "v2_q6_count_p90_under_by": 1,
             "v2_q6_cells_p90_under_by": 4,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+            "v2_q6_cells_p90_under_prior_by": 3.0,
             "final_q6_count": 2,
             "final_top_item_quality": 6,
             "final_top_item_cells": 12,
@@ -74,6 +76,8 @@ def test_q6_plannable_miss_root_splits_rate_and_value_causes() -> None:
     assert "low_q6_value_distribution" in low_value_root
     assert "q6_count_under" in low_value_root
     assert "q6_cells_under" in low_value_root
+    assert "q6_count_below_prior" in low_value_root
+    assert "q6_cells_below_prior" in low_value_root
     assert "layout_conflict" in low_value_root
     assert "q6_top_large" in low_value_root
     assert "low_q6_sample_rate" in low_rate_root

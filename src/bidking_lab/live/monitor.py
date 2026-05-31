@@ -701,6 +701,18 @@ def _model_eval_row(
         "v2_q6_decision_value_p90": q6_decision_value_p90,
         "v2_q6_count_p90": q6_count_p90,
         "v2_q6_cells_p90": q6_cells_p90,
+        "v2_q6_count_p90_under_prior_by": (
+            max(0.0, q6_prior_expected_count - q6_count_p90)
+            if q6_prior_expected_count is not None
+            and q6_count_p90 is not None
+            else None
+        ),
+        "v2_q6_cells_p90_under_prior_by": (
+            max(0.0, q6_prior_expected_cells - q6_cells_p90)
+            if q6_prior_expected_cells is not None
+            and q6_cells_p90 is not None
+            else None
+        ),
         "v2_q6_value_p90_under_by": (
             max(0, final_q6_value - q6_value_p90)
             if q6_value_p90 is not None

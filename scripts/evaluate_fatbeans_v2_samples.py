@@ -469,6 +469,10 @@ def _q6_plannable_miss_root(row: dict[str, Any]) -> str:
         markers.append("q6_count_under")
     if int(row.get("v2_q6_cells_p90_under_by") or 0) > 0:
         markers.append("q6_cells_under")
+    if float(row.get("v2_q6_count_p90_under_prior_by") or 0) > 0:
+        markers.append("q6_count_below_prior")
+    if float(row.get("v2_q6_cells_p90_under_prior_by") or 0) > 0:
+        markers.append("q6_cells_below_prior")
     markers.append(_q6_top_size_band(row))
     if row.get("layout_conflict"):
         markers.append("layout_conflict")
@@ -653,6 +657,20 @@ def evaluate_path(
                 max(0, int(truth_breakdown.get("final_q6_cells") or 0) - q6_cells_p90)
                 if q6_cells_p90 is not None
                 else None
+            ),
+            "v2_q6_count_p90_under_prior_by": (
+                _round_float(report.q6_prior_expected_count - q6_count_p90, 2)
+                if report.q6_prior_expected_count is not None
+                and q6_count_p90 is not None
+                and q6_count_p90 < report.q6_prior_expected_count
+                else 0.0
+            ),
+            "v2_q6_cells_p90_under_prior_by": (
+                _round_float(report.q6_prior_expected_cells - q6_cells_p90, 1)
+                if report.q6_prior_expected_cells is not None
+                and q6_cells_p90 is not None
+                and q6_cells_p90 < report.q6_prior_expected_cells
+                else 0.0
             ),
             "v2_q6_value_p90_error": (
                 q6_value_p90 - final_q6_value if q6_value_p90 is not None else None
@@ -1132,6 +1150,12 @@ def _summary(
                 "v2_q6_cells_p90": row.get("v2_q6_cells_p90"),
                 "v2_q6_count_p90_under_by": row.get("v2_q6_count_p90_under_by"),
                 "v2_q6_cells_p90_under_by": row.get("v2_q6_cells_p90_under_by"),
+                "v2_q6_count_p90_under_prior_by": row.get(
+                    "v2_q6_count_p90_under_prior_by"
+                ),
+                "v2_q6_cells_p90_under_prior_by": row.get(
+                    "v2_q6_cells_p90_under_prior_by"
+                ),
                 "v2_q6_value_p90_under_by": row.get("v2_q6_value_p90_under_by"),
                 "v2_q6_decision_value_p90_under_by": row.get(
                     "v2_q6_decision_value_p90_under_by"
