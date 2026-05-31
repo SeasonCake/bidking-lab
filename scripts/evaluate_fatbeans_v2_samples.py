@@ -67,7 +67,18 @@ def _round(value: float | int | None) -> int | None:
 
 
 def _map_family(file: str, map_id: int | None) -> str:
+    if map_id is not None:
+        prefix = map_id // 100
+        if map_id == 2601:
+            return "hidden"
+        if prefix in {24, 34, 44}:
+            return "villa"
+        if prefix in {25, 35, 45}:
+            return "shipwreck"
+        return f"map_{prefix}xx"
     lower = file.lower()
+    if "hidden" in lower or "secret" in lower:
+        return "hidden"
     if "villa" in lower:
         return "villa"
     if "shipwreck" in lower:
@@ -493,10 +504,60 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "map_family": _group_summary(ok, "map_family"),
             "value_tier": _group_summary(ok, "value_tier"),
         },
+        "collection_readiness": _collection_readiness(
+            ok,
+            target_per_hero_family=30,
+            hidden_target_per_hero=10,
+        ),
         "bid_gap": {
             "hero": _bid_gap_summary(ok, "hero"),
             "map_family": _bid_gap_summary(ok, "map_family"),
         },
+    }
+
+
+def _collection_readiness(
+    rows: list[dict[str, Any]],
+    *,
+    target_per_hero_family: int,
+    hidden_target_per_hero: int,
+) -> dict[str, Any]:
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        hero = str(row.get("hero") or "unknown")
+        family = str(row.get("map_family") or "unknown")
+        groups.setdefault((hero, family), []).append(row)
+
+    rows_out: list[dict[str, Any]] = []
+    for hero in ("aisha", "ethan"):
+        for family in ("villa", "shipwreck", "hidden"):
+            target = (
+                hidden_target_per_hero
+                if family == "hidden"
+                else target_per_hero_family
+            )
+            count = len(groups.get((hero, family), ()))
+            rows_out.append(
+                {
+                    "hero": hero,
+                    "map_family": family,
+                    "n": count,
+                    "target": target,
+                    "needed": max(0, target - count),
+                    "ready": count >= target,
+                }
+            )
+    missing = sum(row["needed"] for row in rows_out)
+    return {
+        "target_per_hero_family": target_per_hero_family,
+        "hidden_target_per_hero": hidden_target_per_hero,
+        "ready": missing == 0,
+        "total_needed": missing,
+        "groups": rows_out,
+        "priority_needs": [
+            row for row in rows_out
+            if row["needed"] > 0
+        ],
     }
 
 

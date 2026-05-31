@@ -77,11 +77,13 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
             },
         ],
         target_per_hero_family=2,
+        hidden_target_per_hero=1,
     )
 
     readiness = summary["collection_readiness"]
     assert readiness["ready"] is False
-    assert readiness["total_needed"] == 6
+    assert readiness["total_needed"] == 8
+    assert readiness["hidden_target_per_hero"] == 1
     assert summary["log_quality"]["missing_hero"] == 1
     assert summary["log_quality"]["missing_q6_truth_fields"] == 1
     assert any(
@@ -91,3 +93,30 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
         and row["needed"] == 1
         for row in readiness["groups"]
     )
+    assert any(
+        row["hero"] == "ethan"
+        and row["map_family"] == "hidden"
+        and row["n"] == 0
+        and row["needed"] == 1
+        for row in readiness["priority_needs"]
+    )
+
+
+def test_map_family_groups_hidden_and_late_map_prefixes() -> None:
+    module = _summary_module()
+
+    summary = module.summarize(
+        [
+            {"file": "a.json", "hero": "aisha", "map_id": 2601, "final_value": 1},
+            {"file": "b.json", "hero": "aisha", "map_id": 3401, "final_value": 1},
+            {"file": "c.json", "hero": "aisha", "map_id": 4510, "final_value": 1},
+        ]
+    )
+
+    groups = {
+        row["map_family"]: row["n"]
+        for row in summary["groups"]["map_family"]
+    }
+    assert groups["hidden"] == 1
+    assert groups["villa"] == 1
+    assert groups["shipwreck"] == 1

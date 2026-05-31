@@ -39,14 +39,18 @@ aisha_villa_sample32_4rounds_medical_antique_inspection.json
 python scripts\summarize_live_model_eval.py
 ```
 
-重点看 `collection_readiness.groups`。默认目标是每个英雄/地图族 30 份有效结算局：
+重点看 `collection_readiness.groups` 和 `priority_needs`。默认目标是主要英雄/地图族
+30 份有效结算局，隐秘拍卖会先按每个英雄 10 份作为冷启动基线：
 
 - Aisha + villa
 - Aisha + shipwreck
 - Ethan + villa
 - Ethan + shipwreck
+- Aisha + hidden
+- Ethan + hidden
 
-如果时间有限，优先补 `needed` 最大的桶。
+如果时间有限，优先补 `needed` 最大的桶。当前已有样本较多时，别墅桶通常不再是
+第一优先级；沉船用于补足 30 份主桶，隐秘用于确认独立地图族的掉落/出价分布。
 
 ## 建议样本类型
 

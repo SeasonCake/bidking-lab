@@ -17,11 +17,14 @@ def _map_family(map_id: Any) -> str:
         mid = int(map_id)
     except (TypeError, ValueError):
         return "unknown"
-    if 2400 <= mid < 2500:
+    prefix = mid // 100
+    if mid == 2601:
+        return "hidden"
+    if prefix in {24, 34, 44}:
         return "villa"
-    if 2500 <= mid < 2600:
+    if prefix in {25, 35, 45}:
         return "shipwreck"
-    return f"map_{mid // 100}xx"
+    return f"map_{prefix}xx"
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -178,6 +181,7 @@ def _collection_readiness(
     rows: list[dict[str, Any]],
     *,
     target_per_hero_family: int,
+    hidden_target_per_hero: int,
 ) -> dict[str, Any]:
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in rows:
@@ -187,24 +191,34 @@ def _collection_readiness(
 
     rows_out: list[dict[str, Any]] = []
     for hero in ("aisha", "ethan"):
-        for family in ("villa", "shipwreck"):
+        for family in ("villa", "shipwreck", "hidden"):
+            target = (
+                hidden_target_per_hero
+                if family == "hidden"
+                else target_per_hero_family
+            )
             count = len(groups.get((hero, family), ()))
             rows_out.append(
                 {
                     "hero": hero,
                     "map_family": family,
                     "n": count,
-                    "target": target_per_hero_family,
-                    "needed": max(0, target_per_hero_family - count),
-                    "ready": count >= target_per_hero_family,
+                    "target": target,
+                    "needed": max(0, target - count),
+                    "ready": count >= target,
                 }
             )
     missing = sum(row["needed"] for row in rows_out)
     return {
         "target_per_hero_family": target_per_hero_family,
+        "hidden_target_per_hero": hidden_target_per_hero,
         "ready": missing == 0,
         "total_needed": missing,
         "groups": rows_out,
+        "priority_needs": [
+            row for row in rows_out
+            if row["needed"] > 0
+        ],
     }
 
 
@@ -227,6 +241,7 @@ def summarize(
     *,
     dedupe: bool = True,
     target_per_hero_family: int = 30,
+    hidden_target_per_hero: int = 10,
 ) -> dict[str, Any]:
     original_count = len(rows)
     if dedupe:
@@ -254,6 +269,7 @@ def summarize(
         "collection_readiness": _collection_readiness(
             valid,
             target_per_hero_family=target_per_hero_family,
+            hidden_target_per_hero=hidden_target_per_hero,
         ),
         "q6_false_low_count": sum(
             1 for row in valid if row.get("q6_false_low_risk") is True
@@ -318,6 +334,12 @@ def main() -> int:
         default=30,
         help="Readiness target for each hero x map-family bucket",
     )
+    parser.add_argument(
+        "--hidden-target-per-hero",
+        type=int,
+        default=10,
+        help="Readiness target for each hero x hidden-auction bucket",
+    )
     args = parser.parse_args()
     rows = _read_jsonl(Path(args.path))
     print(
@@ -326,6 +348,7 @@ def main() -> int:
                 rows,
                 dedupe=not args.no_dedupe,
                 target_per_hero_family=args.target_per_hero_family,
+                hidden_target_per_hero=args.hidden_target_per_hero,
             ),
             ensure_ascii=False,
             indent=2,
