@@ -375,3 +375,20 @@ trusted footprint 归零，再考虑降权而不是硬过滤。
 **取舍**：这只是兼容层，不改写原始日志；如果旧日志没有保留 diagnostics，仍然会显示 `unclassified`。
 
 **复查点**：等新 monitor 日志生成后，`unclassified` 应该自然下降。
+
+## 2026-05-31 · live 日志补齐 q6 低估根因字段
+
+**背景**：batch evaluator 已能输出 q6 P90 低估幅度、q6 top size band 和最高价值物品；live
+`model_eval.jsonl` 只有 q6 是否低估，后续要做实时样本校准时信息不够。
+
+**推荐**：live monitor 写入 `final_top_item_*`、`v2_q6_value_p90_under_by`、
+`q6_top_size_band`；`summarize_live_model_eval.py` 派生 `q6_miss_root_causes` 和
+`q6_p90_under_by_median`。这仍是诊断层，不改 posterior 和出价。
+
+**用户选择**：继续做工程铺垫，等新样本回来后再优化推理引擎。
+
+**取舍**：日志稍微更宽，但后续能直接回答“q6 低估是低样本率、低于 Drop 先验、top item 尺寸带、
+还是 layout 冲突导致”。
+
+**复查点**：新样本累积后，若 `q6_miss_root_causes` 集中在 `below_drop_prior`，优先做分地图族 q6
+residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+category 条件采样增强。

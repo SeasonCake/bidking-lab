@@ -140,6 +140,74 @@ def _with_derived_layout_root(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _q6_top_size_band(row: dict[str, Any]) -> str:
+    if row.get("q6_top_size_band"):
+        return str(row["q6_top_size_band"])
+    if (
+        int(row.get("final_q6_count") or 0) <= 0
+        and int(row.get("final_q6_value") or 0) <= 0
+    ):
+        return "no_q6"
+    if int(row.get("final_top_item_quality") or 0) != 6:
+        return "q6_not_top_item"
+    cells = row.get("final_top_item_cells")
+    if cells is None:
+        return "q6_top_unknown_cells"
+    cells = int(cells)
+    if cells <= 2:
+        return "q6_top_small"
+    if cells <= 4:
+        return "q6_top_compact"
+    if cells <= 9:
+        return "q6_top_medium"
+    if cells <= 12:
+        return "q6_top_large"
+    return "q6_top_huge"
+
+
+def _q6_miss_root(row: dict[str, Any]) -> str:
+    if row.get("q6_miss_root"):
+        return str(row["q6_miss_root"])
+    if row.get("q6_p90_misses_truth") is not True:
+        return ""
+    markers: list[str] = []
+    if row.get("q6_false_low_risk"):
+        markers.append("low_q6_sample_rate")
+    if row.get("q6_below_drop_prior"):
+        markers.append("below_drop_prior")
+    markers.append(_q6_top_size_band(row))
+    if row.get("layout_conflict"):
+        markers.append("layout_conflict")
+        markers.extend(
+            part
+            for part in str(row.get("layout_conflict_root") or "").split(";")
+            if part
+        )
+    if row.get("relaxed_exact_used"):
+        markers.append("relaxed_exact_fallback")
+    return ";".join(dict.fromkeys(markers))
+
+
+def _with_derived_q6_fields(row: dict[str, Any]) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if row.get("q6_top_size_band") is None:
+        updates["q6_top_size_band"] = _q6_top_size_band(row)
+    if row.get("q6_miss_root") is None:
+        root = _q6_miss_root({**row, **updates})
+        if root:
+            updates["q6_miss_root"] = root
+    if (
+        row.get("v2_q6_value_p90_under_by") is None
+        and row.get("v2_q6_value_p90") is not None
+        and int(row.get("final_q6_value") or 0) > 0
+    ):
+        updates["v2_q6_value_p90_under_by"] = max(
+            0,
+            int(row.get("final_q6_value") or 0) - int(row["v2_q6_value_p90"]),
+        )
+    return {**row, **updates} if updates else row
+
+
 def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -360,7 +428,7 @@ def summarize(
     if dedupe:
         rows = _dedupe_latest_by_file(rows)
     valid = [
-        _with_derived_layout_root(row) for row in rows
+        _with_derived_q6_fields(_with_derived_layout_root(row)) for row in rows
         if row.get("final_value") is not None or row.get("final_cells") is not None
     ]
     q6_truth = [row for row in valid if int(row.get("final_q6_value") or 0) > 0]
@@ -372,6 +440,10 @@ def summarize(
     layout_conflict = [
         row for row in valid
         if row.get("layout_conflict") is True
+    ]
+    q6_p90_miss = [
+        row for row in valid
+        if row.get("q6_p90_misses_truth") is True
     ]
     return {
         "rows": len(rows),
@@ -408,6 +480,24 @@ def summarize(
         ),
         "q6_p90_miss_count": sum(
             1 for row in valid if row.get("q6_p90_misses_truth") is True
+        ),
+        "q6_p90_under_by_median": (
+            _round(
+                statistics.median(
+                    int(row["v2_q6_value_p90_under_by"])
+                    for row in q6_p90_miss
+                    if row.get("v2_q6_value_p90_under_by") is not None
+                )
+            )
+            if any(
+                row.get("v2_q6_value_p90_under_by") is not None
+                for row in q6_p90_miss
+            )
+            else None
+        ),
+        "q6_miss_root_causes": _root_cause_summary(
+            q6_p90_miss,
+            "q6_miss_root",
         ),
         "layout_conflict_count": sum(
             1 for row in valid if row.get("layout_conflict") is True

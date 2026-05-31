@@ -145,7 +145,11 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["model_eval"]["final_cells"] == 4
     assert artifact["model_eval"]["hero"] == "aisha"
     assert artifact["model_eval"]["final_q6_count"] == 0
+    assert artifact["model_eval"]["final_top_item_name"] == "test_item"
+    assert artifact["model_eval"]["final_top_item_value"] == 20_000
     assert artifact["model_eval"]["decision_value_p50"] == 20_000
+    assert artifact["model_eval"]["q6_top_size_band"] == "no_q6"
+    assert "v2_q6_value_p90_under_by" in artifact["model_eval"]
     assert "raw_minus_decision_p90" in artifact["model_eval"]
     assert "layout_conflict_root" in artifact["model_eval"]
     assert artifact["model_eval"]["relaxed_exact_used"] is False

@@ -429,17 +429,27 @@ def _inventory_quality_breakdown(
         counts: Counter[int] = Counter()
         cells: Counter[int] = Counter()
         values: defaultdict[int, int] = defaultdict(int)
+        top_item: dict[str, Any] = {}
         for inv_item in state.inventory_items:
             item = items.get(inv_item.item_id)
             quality = inv_item.quality
             if quality is None and item is not None:
                 quality = item.quality
+            item_value = item.value if item is not None else 0
+            if not top_item or item_value > int(top_item.get("value") or 0):
+                top_item = {
+                    "id": inv_item.item_id,
+                    "name": item.name if item is not None else "",
+                    "quality": quality,
+                    "value": item_value,
+                    "cells": inv_item.cells,
+                }
             if quality is None:
                 continue
             q = int(quality)
             counts[q] += 1
             cells[q] += inv_item.cells
-            values[q] += item.value if item is not None else 0
+            values[q] += item_value
         return {
             "final_q5_count": counts.get(5, 0),
             "final_q5_cells": cells.get(5, 0),
@@ -447,8 +457,33 @@ def _inventory_quality_breakdown(
             "final_q6_count": counts.get(6, 0),
             "final_q6_cells": cells.get(6, 0),
             "final_q6_value": values.get(6, 0),
+            "final_top_item_id": top_item.get("id"),
+            "final_top_item_name": top_item.get("name"),
+            "final_top_item_quality": top_item.get("quality"),
+            "final_top_item_value": top_item.get("value"),
+            "final_top_item_cells": top_item.get("cells"),
         }
     return {}
+
+
+def _q6_top_size_band(truth_breakdown: Mapping[str, Any] | None) -> str:
+    if int((truth_breakdown or {}).get("final_q6_count") or 0) <= 0:
+        return "no_q6"
+    if int((truth_breakdown or {}).get("final_top_item_quality") or 0) != 6:
+        return "q6_not_top_item"
+    cells = (truth_breakdown or {}).get("final_top_item_cells")
+    if cells is None:
+        return "q6_top_unknown_cells"
+    cells = int(cells)
+    if cells <= 2:
+        return "q6_top_small"
+    if cells <= 4:
+        return "q6_top_compact"
+    if cells <= 9:
+        return "q6_top_medium"
+    if cells <= 12:
+        return "q6_top_large"
+    return "q6_top_huge"
 
 
 def _model_eval_row(
@@ -525,6 +560,7 @@ def _model_eval_row(
         attack_bid = _parse_int_text(row.get("抢仓上限"))
         current = str(row.get("当前最高", ""))
         highest_bid = _parse_int_text(current.split(" ")[-1] if current else None)
+    final_q6_value = int((truth_breakdown or {}).get("final_q6_value") or 0)
     return {
         "ts": time.time(),
         "file": file,
@@ -573,16 +609,22 @@ def _model_eval_row(
         "v2_q6_prior_match_rate": q6_prior_match_rate,
         "v2_q6_prior_expected_value": q6_prior_expected_value,
         "v2_q6_value_p90": q6_value_p90,
-        "q6_p90_misses_truth": (
-            q6_value_p90 < int((truth_breakdown or {}).get("final_q6_value") or 0)
+        "v2_q6_value_p90_under_by": (
+            max(0, final_q6_value - q6_value_p90)
             if q6_value_p90 is not None
-            and int((truth_breakdown or {}).get("final_q6_value") or 0) > 0
+            else None
+        ),
+        "q6_top_size_band": _q6_top_size_band(truth_breakdown),
+        "q6_p90_misses_truth": (
+            q6_value_p90 < final_q6_value
+            if q6_value_p90 is not None
+            and final_q6_value > 0
             else None
         ),
         "q6_false_low_risk": (
             q6_match_rate < 0.10
             if q6_match_rate is not None
-            and int((truth_breakdown or {}).get("final_q6_value") or 0) > 0
+            and final_q6_value > 0
             else None
         ),
         "q6_below_drop_prior": "q6_below_drop_prior:" in posterior_diagnostics,

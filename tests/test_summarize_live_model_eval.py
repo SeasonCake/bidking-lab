@@ -69,8 +69,12 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "final_value": 200,
                 "final_cells": 12,
                 "final_q6_value": 80,
+                "final_top_item_quality": 6,
+                "final_top_item_cells": 9,
                 "decision_value_p50": 180,
                 "q6_below_drop_prior": True,
+                "q6_p90_misses_truth": True,
+                "v2_q6_value_p90": 30,
                 "raw_minus_decision_p90": 300_000,
                 "layout_conflict": True,
                 "posterior_diagnostics": (
@@ -105,6 +109,14 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert summary["log_quality"]["missing_hero"] == 1
     assert summary["log_quality"]["missing_q6_truth_fields"] == 1
     assert summary["q6_below_drop_prior_count"] == 1
+    assert summary["q6_p90_miss_count"] == 1
+    assert summary["q6_p90_under_by_median"] == 50
+    q6_causes = {
+        row["cause"]: row["n"]
+        for row in summary["q6_miss_root_causes"]
+    }
+    assert q6_causes["below_drop_prior"] == 1
+    assert q6_causes["q6_top_medium"] == 1
     assert summary["layout_conflict_count"] == 1
     assert summary["layout_conflict_root_causes"][0]["cause"] == "footprint_overlap"
     assert summary["raw_ceiling_gap_median"] == 300_000
