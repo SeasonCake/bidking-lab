@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import statistics
 import sys
 from collections import Counter, defaultdict
@@ -188,6 +189,119 @@ def _inventory_truth_breakdown(events: Any, items: Any) -> dict[str, Any]:
     return {}
 
 
+def _int_or_none(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _anchor_band(anchor_count: Any) -> str:
+    count = _int_or_none(anchor_count)
+    if count is None:
+        return "unknown"
+    if count == 0:
+        return "0"
+    if count <= 2:
+        return "1-2"
+    if count <= 5:
+        return "3-5"
+    return "6+"
+
+
+def _q6_top_size_band(row: dict[str, Any]) -> str:
+    if int(row.get("final_q6_count") or 0) <= 0:
+        return "no_q6"
+    if _int_or_none(row.get("final_top_item_quality")) != 6:
+        return "q6_not_top_item"
+    cells = _int_or_none(row.get("final_top_item_cells"))
+    if cells is None:
+        return "q6_top_unknown_cells"
+    if cells <= 2:
+        return "q6_top_small"
+    if cells <= 4:
+        return "q6_top_compact"
+    if cells <= 8:
+        return "q6_top_medium"
+    if cells <= 12:
+        return "q6_top_large"
+    return "q6_top_huge"
+
+
+def _public_constraint_key(row: dict[str, Any]) -> str:
+    parts: list[str] = []
+    if row.get("public_max_quality_used"):
+        parts.append("max_quality")
+    if row.get("public_max_item_cells_used"):
+        parts.append("max_item_cells")
+    return "+".join(parts) if parts else "none"
+
+
+def _exact_bucket_markers(bucket_targets: Any) -> list[str]:
+    text = str(bucket_targets or "")
+    markers: list[str] = []
+    for match in re.finditer(r"q(?P<q>\d+):(?P<fields>[^;]+)", text):
+        quality = match.group("q")
+        fields = match.group("fields")
+        has_count = "count=" in fields
+        has_cells = "cells=" in fields
+        has_value = "value=" in fields
+        if has_count and has_cells:
+            markers.append(f"q{quality}_exact_count_cells")
+        elif has_count:
+            markers.append(f"q{quality}_exact_count")
+        elif has_cells:
+            markers.append(f"q{quality}_exact_cells")
+        if has_value:
+            markers.append(f"q{quality}_exact_value")
+        if "avg=" in fields:
+            markers.append(f"q{quality}_avg_value")
+    return markers
+
+
+def _zero_match_root(row: dict[str, Any]) -> str:
+    if row.get("v2_matched"):
+        return ""
+    markers: list[str] = []
+    if row.get("layout_conflict"):
+        markers.append("layout_conflict")
+    if row.get("relaxed_exact_used"):
+        markers.append("relaxed_exact_fallback")
+    if row.get("public_max_quality_used"):
+        markers.append("public_max_quality")
+    if row.get("public_max_item_cells_used"):
+        markers.append("public_max_item_cells")
+    markers.extend(_exact_bucket_markers(row.get("bucket_targets")))
+    if not markers:
+        markers.append("unclassified")
+    return ";".join(dict.fromkeys(markers))
+
+
+def _q6_miss_root(row: dict[str, Any]) -> str:
+    if not row.get("q6_p90_misses_truth"):
+        return ""
+    markers: list[str] = []
+    if row.get("q6_false_low_risk"):
+        markers.append("low_q6_sample_rate")
+    markers.append(_q6_top_size_band(row))
+    if row.get("layout_conflict"):
+        markers.append("layout_conflict")
+    if row.get("relaxed_exact_used"):
+        markers.append("relaxed_exact_fallback")
+    if row.get("public_max_quality_used"):
+        markers.append("public_max_quality")
+    if row.get("public_max_item_cells_used"):
+        markers.append("public_max_item_cells")
+    markers.extend(
+        marker
+        for marker in _exact_bucket_markers(row.get("bucket_targets"))
+        if marker.startswith("q6_")
+    )
+    return ";".join(dict.fromkeys(markers))
+
+
 def evaluate_path(
     path: Path,
     *,
@@ -246,7 +360,7 @@ def evaluate_path(
         diagnostics = ";".join(report.diagnostics)
         layout_diagnostics = ";".join(report.layout_diagnostics)
         final_q6_value = int(truth_breakdown.get("final_q6_value") or 0)
-        return {
+        row = {
             "file": path.name,
             "status": "ok",
             "hero": base_session.hero,
@@ -287,6 +401,14 @@ def evaluate_path(
             "v2_q6_match_rate": report.q6_match_rate,
             "v2_q6_value_p50": q6_value_p50,
             "v2_q6_value_p90": q6_value_p90,
+            "v2_q6_value_p90_error": (
+                q6_value_p90 - final_q6_value if q6_value_p90 is not None else None
+            ),
+            "v2_q6_value_p90_under_by": (
+                max(0, final_q6_value - q6_value_p90)
+                if q6_value_p90 is not None
+                else None
+            ),
             "v2_value_p50_error": (
                 value_p50 - final_value if value_p50 is not None else None
             ),
@@ -315,6 +437,8 @@ def evaluate_path(
             "layout_diagnostics": layout_diagnostics,
             "diagnostics": diagnostics,
             "relaxed_exact_used": "relaxed_exact_bucket_targets:" in diagnostics,
+            "public_max_quality_used": "public_max_quality:" in diagnostics,
+            "public_max_item_cells_used": "public_max_item_cells:" in diagnostics,
             "layout_conflict": (
                 "footprint_overlap_cells:" in layout_diagnostics
                 or "footprint_overflow:" in layout_diagnostics
@@ -334,6 +458,12 @@ def evaluate_path(
             "footprint_occupied_cells": problem.layout.occupied_cells,
             "footprint_bottom_row": problem.layout.bottom_row,
         }
+        row["anchor_band"] = _anchor_band(row.get("anchor_count"))
+        row["q6_top_size_band"] = _q6_top_size_band(row)
+        row["public_constraint_key"] = _public_constraint_key(row)
+        row["zero_match_root"] = _zero_match_root(row)
+        row["q6_miss_root"] = _q6_miss_root(row)
+        return row
     except Exception as exc:
         return {
             "file": path.name,
@@ -428,6 +558,18 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             else None
         ),
         "q6_truth_files": len(q6_rows),
+        "q6_value_p90_coverage": (
+            round(
+                statistics.mean(
+                    0.0 if row.get("q6_p90_misses_truth") else 1.0
+                    for row in q6_rows
+                    if row.get("v2_q6_value_p90") is not None
+                ),
+                4,
+            )
+            if any(row.get("v2_q6_value_p90") is not None for row in q6_rows)
+            else None
+        ),
         "q6_truth_p90_coverage": (
             round(
                 statistics.mean(
@@ -482,6 +624,7 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "map_family": row.get("map_family"),
                 "final_value": row.get("final_value"),
                 "bucket_targets": row.get("bucket_targets"),
+                "zero_match_root": row.get("zero_match_root"),
                 "diagnostics": row.get("diagnostics"),
             }
             for row in zero[:12]
@@ -495,10 +638,26 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "final_q6_value": row.get("final_q6_value"),
                 "v2_q6_match_rate": row.get("v2_q6_match_rate"),
                 "v2_q6_value_p90": row.get("v2_q6_value_p90"),
+                "v2_q6_value_p90_under_by": row.get("v2_q6_value_p90_under_by"),
+                "q6_top_size_band": row.get("q6_top_size_band"),
+                "q6_miss_root": row.get("q6_miss_root"),
                 "diagnostics": row.get("diagnostics"),
             }
             for row in q6_false_low[:12]
         ],
+        "zero_match_root_causes": _root_cause_summary(zero, "zero_match_root"),
+        "q6_miss_root_causes": _root_cause_summary(q6_p90_miss, "q6_miss_root"),
+        "q6_calibration_priority": _q6_calibration_priority(ok),
+        "q6_risk_groups": {
+            "hero_map_family": _q6_group_summary(ok, ("hero", "map_family")),
+            "map_family_value_tier": _q6_group_summary(
+                ok,
+                ("map_family", "value_tier"),
+            ),
+            "anchor_band": _q6_group_summary(ok, ("anchor_band",)),
+            "public_constraint": _q6_group_summary(ok, ("public_constraint_key",)),
+            "top_item_size": _q6_group_summary(ok, ("q6_top_size_band",)),
+        },
         "groups": {
             "hero": _group_summary(ok, "hero"),
             "map_family": _group_summary(ok, "map_family"),
@@ -514,6 +673,105 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "map_family": _bid_gap_summary(ok, "map_family"),
         },
     }
+
+
+def _root_cause_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    counts: Counter[str] = Counter()
+    examples: dict[str, list[str]] = defaultdict(list)
+    for row in rows:
+        raw = str(row.get(key) or "unclassified")
+        markers = [part for part in raw.split(";") if part] or ["unclassified"]
+        for marker in markers:
+            counts[marker] += 1
+            if len(examples[marker]) < 5:
+                examples[marker].append(str(row.get("file") or ""))
+    return [
+        {
+            "cause": cause,
+            "n": n,
+            "examples": examples[cause],
+        }
+        for cause, n in counts.most_common()
+    ]
+
+
+def _group_key(row: dict[str, Any], keys: tuple[str, ...]) -> str:
+    return "|".join(f"{key}={row.get(key) or 'unknown'}" for key in keys)
+
+
+def _q6_group_summary(
+    rows: list[dict[str, Any]],
+    keys: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(_group_key(row, keys), []).append(row)
+
+    out: list[dict[str, Any]] = []
+    for group, group_rows in groups.items():
+        q6_truth = [row for row in group_rows if int(row.get("final_q6_value") or 0) > 0]
+        if not q6_truth:
+            continue
+        q6_misses = [row for row in q6_truth if row.get("q6_p90_misses_truth")]
+        under_by = [
+            int(row["v2_q6_value_p90_under_by"])
+            for row in q6_misses
+            if row.get("v2_q6_value_p90_under_by") is not None
+        ]
+        q6_p90_errors = [
+            int(row["v2_q6_value_p90_error"])
+            for row in q6_truth
+            if row.get("v2_q6_value_p90_error") is not None
+        ]
+        out.append(
+            {
+                "group": group,
+                "n": len(group_rows),
+                "q6_truth": len(q6_truth),
+                "q6_p90_misses_truth": len(q6_misses),
+                "q6_false_low_risk": sum(
+                    1 for row in q6_truth if row.get("q6_false_low_risk")
+                ),
+                "q6_miss_rate": round(len(q6_misses) / len(q6_truth), 4),
+                "median_q6_under_by": (
+                    _round(statistics.median(under_by)) if under_by else None
+                ),
+                "median_q6_p90_error": (
+                    _round(statistics.median(q6_p90_errors))
+                    if q6_p90_errors
+                    else None
+                ),
+                "zero_match": sum(1 for row in group_rows if not row.get("v2_matched")),
+                "layout_conflict": sum(
+                    1 for row in group_rows if row.get("layout_conflict")
+                ),
+            }
+        )
+    return sorted(
+        out,
+        key=lambda row: (
+            int(row["q6_p90_misses_truth"]),
+            int(row["median_q6_under_by"] or 0),
+            int(row["q6_truth"]),
+        ),
+        reverse=True,
+    )
+
+
+def _q6_calibration_priority(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    primary = _q6_group_summary(rows, ("hero", "map_family"))
+    return [
+        {
+            **row,
+            "priority_reason": (
+                "q6_p90_undercoverage"
+                if row["q6_p90_misses_truth"]
+                else "low_q6_truth_coverage"
+            ),
+        }
+        for row in primary
+        if row["q6_p90_misses_truth"] or row["q6_truth"] < 10
+    ][:10]
 
 
 def _collection_readiness(
