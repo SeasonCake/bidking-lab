@@ -49,6 +49,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "map_family": "shipwreck",
             "value_tier": ">=1.2m",
             "final_value": 1_500_000,
+            "final_trimmed_tail_value": 600_000,
             "final_q6_count": 1,
             "final_q6_value": 700_000,
             "final_top_item_quality": 6,
@@ -80,6 +81,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "map_family": "shipwreck",
             "value_tier": "300k-800k",
             "final_value": 500_000,
+            "final_trimmed_tail_value": 0,
             "final_q6_count": 0,
             "final_q6_value": 0,
             "v2_matched": 0,
@@ -114,3 +116,6 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     assert priority[0]["group"] == "hero=ethan|map_family=shipwreck"
     assert priority[0]["q6_p90_misses_truth"] == 1
     assert priority[0]["median_q6_under_by"] == 400_000
+    assert summary["tail_event_count"] == 1
+    assert summary["regular_decision_value_mae"] == 40_000
+    assert summary["tail_event_decision_value_mae"] == 80_000

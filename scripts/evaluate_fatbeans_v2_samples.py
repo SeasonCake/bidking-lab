@@ -530,8 +530,24 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         row for row in ok
         if row.get("v2_decision_value_p50_error") is not None
     ]
+    regular_decision_valued = [
+        row for row in decision_valued
+        if int(row.get("final_trimmed_tail_value") or 0) == 0
+    ]
+    tail_event_decision_valued = [
+        row for row in decision_valued
+        if int(row.get("final_trimmed_tail_value") or 0) > 0
+    ]
     decision_abs_errors = [
         abs(int(row["v2_decision_value_p50_error"])) for row in decision_valued
+    ]
+    regular_decision_abs_errors = [
+        abs(int(row["v2_decision_value_p50_error"]))
+        for row in regular_decision_valued
+    ]
+    tail_event_decision_abs_errors = [
+        abs(int(row["v2_decision_value_p50_error"]))
+        for row in tail_event_decision_valued
     ]
     p90_valued = [
         row for row in ok
@@ -562,9 +578,30 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "decision_value_mae": (
             _round(statistics.mean(decision_abs_errors)) if decision_abs_errors else None
         ),
+        "regular_decision_value_mae": (
+            _round(statistics.mean(regular_decision_abs_errors))
+            if regular_decision_abs_errors
+            else None
+        ),
+        "tail_event_decision_value_mae": (
+            _round(statistics.mean(tail_event_decision_abs_errors))
+            if tail_event_decision_abs_errors
+            else None
+        ),
+        "tail_event_count": len(tail_event_decision_valued),
         "decision_value_median_abs_error": (
             _round(statistics.median(decision_abs_errors))
             if decision_abs_errors
+            else None
+        ),
+        "tail_event_trimmed_value_median": (
+            _round(
+                statistics.median(
+                    int(row.get("final_trimmed_tail_value") or 0)
+                    for row in tail_event_decision_valued
+                )
+            )
+            if tail_event_decision_valued
             else None
         ),
         "value_p90_mae": (
