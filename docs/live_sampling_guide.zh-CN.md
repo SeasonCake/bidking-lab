@@ -58,6 +58,17 @@ python scripts\summarize_live_model_eval.py
 如果时间有限，优先补 `needed` 最大的桶。当前已有样本较多时，别墅桶通常不再是
 第一优先级；沉船用于补足 30 份主桶，隐秘用于确认独立地图族的掉落/出价分布。
 
+截至 2026-05-31，别墅/沉船的 Aisha 和 Ethan 主桶都已经超过 30 份有效局；
+短期最有价值的新样本是：
+
+- Aisha + hidden：先采 10 份有效结算局。
+- Ethan + hidden：先采 10 份有效结算局。
+- Aisha + shipwreck：再补 10-15 份，优先保留 q6 低估、layout conflict、鉴影/抽检混合局。
+- Ethan + shipwreck：再补 5-10 份，优先保留五轮伊森、优品估价、exact cells 较多的局。
+
+hidden 对 q6 residual 有直接帮助，但不要和 villa/shipwreck 混成一个全局红货权重；
+它应该作为独立地图族校准“高红先验下，后验应保留多少 q6 residual”的基线。
+
 ## 建议样本类型
 
 每个英雄/地图族里尽量混合以下局面：
@@ -73,6 +84,7 @@ python scripts\summarize_live_model_eval.py
 `model_eval.jsonl` 和汇总脚本会记录：
 
 - `q6_false_low_risk`：真实有红货，但后验 q6 样本率过低。
+- `q6_below_drop_prior`：原始 Drop 先验 q6 很高，但证据后验 q6 被压得明显过低。
 - `q6_p90_misses_truth`：q6 P90 仍低于真实 q6 价值。
 - `layout_conflict`：存在 footprint overlap/overflow。
 - `relaxed_exact_used`：exact 桶约束被放宽。

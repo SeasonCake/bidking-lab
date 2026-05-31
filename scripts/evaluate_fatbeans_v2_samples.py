@@ -518,6 +518,7 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     layout_conflict = [row for row in ok if row.get("layout_conflict")]
     q6_false_low = [row for row in ok if row.get("q6_false_low_risk")]
+    q6_below_prior = [row for row in ok if row.get("q6_below_drop_prior")]
     q6_p90_miss = [row for row in ok if row.get("q6_p90_misses_truth")]
     high_value_undercovered = [
         row for row in ok
@@ -550,6 +551,7 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             1 for row in zero if row.get("layout_conflict")
         ),
         "q6_false_low_risk": len(q6_false_low),
+        "q6_below_drop_prior": len(q6_below_prior),
         "q6_p90_misses_truth": len(q6_p90_miss),
         "high_value_p90_undercovered": len(high_value_undercovered),
         "skip_or_error": len(rows) - len(ok),
@@ -761,6 +763,9 @@ def _q6_group_summary(
                 "q6_p90_misses_truth": len(q6_misses),
                 "q6_false_low_risk": sum(
                     1 for row in q6_truth if row.get("q6_false_low_risk")
+                ),
+                "q6_below_drop_prior": sum(
+                    1 for row in q6_truth if row.get("q6_below_drop_prior")
                 ),
                 "q6_miss_rate": round(len(q6_misses) / len(q6_truth), 4),
                 "median_q6_under_by": (
