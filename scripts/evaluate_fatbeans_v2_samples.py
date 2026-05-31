@@ -27,6 +27,7 @@ from bidking_lab.inference.v2 import (  # noqa: E402
     evidence_store_from_fatbeans_events,
 )
 from bidking_lab.live.fatbeans import (  # noqa: E402
+    latest_player_bids,
     live_batches_from_fatbeans_events,
     parse_fatbeans_capture,
 )
@@ -192,6 +193,8 @@ def evaluate_path(
         final_value = _inventory_value(events, tables.items)
         inventory_count, final_cells = _inventory_totals(events)
         truth_breakdown = _inventory_truth_breakdown(events, tables.items)
+        latest_bids = latest_player_bids(events.states)
+        highest_bid = max(latest_bids.values()) if latest_bids else None
         if base_session is None:
             return {"file": path.name, "status": "skip", "reason": "no_session_obs"}
         if final_value is None:
@@ -242,6 +245,15 @@ def evaluate_path(
             "inventory_count": inventory_count,
             "final_value": final_value,
             "final_cells": final_cells,
+            "highest_bid": highest_bid,
+            "highest_bid_over_final": (
+                highest_bid / final_value
+                if highest_bid is not None and final_value > 0
+                else None
+            ),
+            "highest_bid_minus_final": (
+                highest_bid - final_value if highest_bid is not None else None
+            ),
             **truth_breakdown,
             "v2_matched": report.n_matched,
             "v2_match_rate": report.n_matched / max(1, report.n_total),
@@ -481,7 +493,56 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "map_family": _group_summary(ok, "map_family"),
             "value_tier": _group_summary(ok, "value_tier"),
         },
+        "bid_gap": {
+            "hero": _bid_gap_summary(ok, "hero"),
+            "map_family": _bid_gap_summary(ok, "map_family"),
+        },
     }
+
+
+def _bid_gap_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get(key) or "unknown"), []).append(row)
+    summary: list[dict[str, Any]] = []
+    for value, group_rows in sorted(groups.items()):
+        ratios = [
+            float(row["highest_bid_over_final"])
+            for row in group_rows
+            if row.get("highest_bid_over_final") is not None
+        ]
+        gaps = [
+            int(row["highest_bid_minus_final"])
+            for row in group_rows
+            if row.get("highest_bid_minus_final") is not None
+        ]
+        summary.append(
+            {
+                key: value,
+                "n": len(group_rows),
+                "bid_rows": len(ratios),
+                "highest_bid_over_final_median": (
+                    round(statistics.median(ratios), 3) if ratios else None
+                ),
+                "highest_bid_over_final_p75": (
+                    round(statistics.quantiles(ratios, n=4)[2], 3)
+                    if len(ratios) >= 4
+                    else None
+                ),
+                "highest_bid_over_final_rate": (
+                    round(
+                        statistics.mean(1.0 if ratio > 1.0 else 0.0 for ratio in ratios),
+                        4,
+                    )
+                    if ratios
+                    else None
+                ),
+                "highest_bid_minus_final_median": (
+                    _round(statistics.median(gaps)) if gaps else None
+                ),
+            }
+        )
+    return summary
 
 
 def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
