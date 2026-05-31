@@ -67,6 +67,27 @@ def _median_abs(rows: list[dict[str, Any]], key: str) -> int | None:
     return _round(statistics.median(values)) if values else None
 
 
+def _numeric_values(rows: list[dict[str, Any]], key: str) -> list[float]:
+    values: list[float] = []
+    for row in rows:
+        value = _numeric(row, key)
+        if value is not None:
+            values.append(value)
+    return values
+
+
+def _median_value(rows: list[dict[str, Any]], key: str) -> int | None:
+    values = _numeric_values(rows, key)
+    return _round(statistics.median(values)) if values else None
+
+
+def _p75_value(rows: list[dict[str, Any]], key: str) -> int | None:
+    values = _numeric_values(rows, key)
+    if len(values) < 4:
+        return None
+    return _round(statistics.quantiles(values, n=4)[2])
+
+
 def _rate(rows: list[dict[str, Any]], key: str) -> float | None:
     values = [row.get(key) for row in rows if row.get(key) is not None]
     if not values:
@@ -118,6 +139,10 @@ def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
                 "layout_fit_mae": _mae(group_rows, "layout_fit_p50_error"),
                 "q6_false_low_rate": _rate(group_rows, "q6_false_low_risk"),
                 "q6_p90_miss_rate": _rate(group_rows, "q6_p90_misses_truth"),
+                "raw_ceiling_gap_median": _median_value(
+                    group_rows,
+                    "raw_minus_decision_p90",
+                ),
                 "layout_conflict_rate": _rate(group_rows, "layout_conflict"),
                 "relaxed_exact_rate": _rate(group_rows, "relaxed_exact_used"),
             }
@@ -263,6 +288,16 @@ def summarize(
             "decision_value_p50_error",
         ),
         "raw_value_mae": _mae(valid, "value_p50_error"),
+        "raw_ceiling_gap_median": _median_value(valid, "raw_minus_decision_p90"),
+        "raw_ceiling_gap_p75": _p75_value(valid, "raw_minus_decision_p90"),
+        "raw_ceiling_gap_250k_count": sum(
+            1 for row in valid
+            if (_numeric(row, "raw_minus_decision_p90") or 0) >= 250_000
+        ),
+        "raw_ceiling_gap_700k_count": sum(
+            1 for row in valid
+            if (_numeric(row, "raw_minus_decision_p90") or 0) >= 700_000
+        ),
         "warehouse_mae": _mae(valid, "warehouse_p50_error"),
         "layout_fit_mae": _mae(valid, "layout_fit_p50_error"),
         "log_quality": _log_quality(valid),

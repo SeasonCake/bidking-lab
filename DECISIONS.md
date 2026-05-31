@@ -317,7 +317,8 @@ Aisha shipwreck 且最终 truth 常有 q6，则再做受限的 q6 residual floor
 
 **推荐**：live monitor 在 bid row 中增加 `上界风险`，并在 `model_eval.jsonl` 写入
 `decision_value_p90`、`raw_value_p90`、`raw_minus_decision_p90`。悬浮窗/Streamlit 只读这些字段，
-不把它们接入 bid strategy。
+不把它们接入 bid strategy；`summarize_live_model_eval.py` 聚合该 gap，便于按 hero/map_family
+追踪尾部风险。
 
 **用户选择**：继续做工程铺垫；常规估价保留最可能且逻辑合理的 P50/P90，尾部只做风险提示和离线校准。
 
