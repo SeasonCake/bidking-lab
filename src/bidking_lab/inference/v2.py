@@ -1390,6 +1390,25 @@ def _quantiles(values: Sequence[int], weights: Sequence[float]) -> QuantileSumma
     return QuantileSummary(p10=float(p10), p50=float(p50), p90=float(p90))
 
 
+def _weighted_positive_rate(
+    values: Sequence[int],
+    weights: Sequence[float],
+) -> float | None:
+    if not values:
+        return None
+    if not weights or len(weights) != len(values):
+        return sum(1 for value in values if value > 0) / len(values)
+    arr = np.asarray(values, dtype=np.float64)
+    w = np.asarray(weights, dtype=np.float64)
+    valid = w > 0
+    if not np.any(valid):
+        return None
+    total = float(w[valid].sum())
+    if total <= 0:
+        return None
+    return float(w[valid & (arr > 0)].sum() / total)
+
+
 def value_evidence_score(
     truth: SessionTruth,
     problem: ResidualProblem,
@@ -1566,9 +1585,12 @@ def _estimate_posterior_for_problem(
         q6_values.append(q6_bucket.value_sum if q6_bucket is not None else 0)
         weights.append(weight)
     diagnostics = [*extra_diagnostics, *problem.diagnostics]
-    q6_match_count = sum(1 for value in q6_values if value > 0)
-    q6_match_rate = q6_match_count / len(q6_values) if q6_values else None
-    if 6 not in problem.bucket_targets and q6_match_rate is not None and q6_match_rate < 0.10:
+    q6_match_rate = _weighted_positive_rate(q6_values, weights)
+    if (
+        6 not in problem.bucket_targets
+        and q6_match_rate is not None
+        and q6_match_rate < 0.10
+    ):
         diagnostics.append(f"q6_unconstrained_low_sample_rate:{q6_match_rate:.3f}")
     return PosteriorReport(
         map_id=problem.map_id,
