@@ -22,6 +22,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from bidking_lab.inference.diagnostics import layout_conflict_root  # noqa: E402
 from bidking_lab.inference.v2 import (  # noqa: E402
     build_residual_problem,
     estimate_posterior_v2,
@@ -286,6 +287,11 @@ def _zero_match_root(row: dict[str, Any]) -> str:
     markers: list[str] = []
     if row.get("layout_conflict"):
         markers.append("layout_conflict")
+        markers.extend(
+            part
+            for part in str(row.get("layout_conflict_root") or "").split(";")
+            if part
+        )
     if row.get("relaxed_exact_used"):
         markers.append("relaxed_exact_fallback")
     if row.get("public_max_quality_used"):
@@ -309,6 +315,11 @@ def _q6_miss_root(row: dict[str, Any]) -> str:
     markers.append(_q6_top_size_band(row))
     if row.get("layout_conflict"):
         markers.append("layout_conflict")
+        markers.extend(
+            part
+            for part in str(row.get("layout_conflict_root") or "").split(";")
+            if part
+        )
     if row.get("relaxed_exact_used"):
         markers.append("relaxed_exact_fallback")
     if row.get("public_max_quality_used"):
@@ -384,6 +395,11 @@ def evaluate_path(
         cells_p90 = _round(report.total_cells.p90 if report.total_cells else None)
         diagnostics = ";".join(report.diagnostics)
         layout_diagnostics = ";".join(report.layout_diagnostics)
+        layout_root = layout_conflict_root(
+            layout_diagnostics,
+            footprint_count=problem.layout.footprint_count,
+            trusted_footprint_count=problem.layout.trusted_footprint_count,
+        )
         final_q6_value = int(truth_breakdown.get("final_q6_value") or 0)
         row = {
             "file": path.name,
@@ -467,10 +483,8 @@ def evaluate_path(
             "public_max_quality_used": "public_max_quality:" in diagnostics,
             "public_max_item_cells_used": "public_max_item_cells:" in diagnostics,
             "q6_below_drop_prior": "q6_below_drop_prior:" in diagnostics,
-            "layout_conflict": (
-                "footprint_overlap_cells:" in layout_diagnostics
-                or "footprint_overflow:" in layout_diagnostics
-            ),
+            "layout_conflict": bool(layout_root),
+            "layout_conflict_root": layout_root,
             "q6_false_low_risk": (
                 final_q6_value > 0
                 and report.q6_match_rate is not None
@@ -788,6 +802,10 @@ def _summary(
             for row in q6_false_low[:12]
         ],
         "zero_match_root_causes": _root_cause_summary(zero, "zero_match_root"),
+        "layout_conflict_root_causes": _root_cause_summary(
+            layout_conflict,
+            "layout_conflict_root",
+        ),
         "q6_miss_root_causes": _root_cause_summary(q6_p90_miss, "q6_miss_root"),
         "q6_calibration_priority": _q6_calibration_priority(ok),
         "q6_risk_groups": {

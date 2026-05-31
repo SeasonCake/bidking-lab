@@ -147,6 +147,7 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["model_eval"]["final_q6_count"] == 0
     assert artifact["model_eval"]["decision_value_p50"] == 20_000
     assert "raw_minus_decision_p90" in artifact["model_eval"]
+    assert "layout_conflict_root" in artifact["model_eval"]
     assert artifact["model_eval"]["relaxed_exact_used"] is False
 
 

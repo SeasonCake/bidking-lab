@@ -20,6 +20,7 @@ from bidking_lab.extract.bid_map_table import BidMap, load_bid_map_table
 from bidking_lab.extract.drop_table import DropPool, load_drop_table
 from bidking_lab.extract.item_table import Item, load_item_table
 from bidking_lab.inference.bid_strategy import recommend_bid_strategy
+from bidking_lab.inference.diagnostics import layout_conflict_root
 from bidking_lab.inference.v2 import (
     estimate_posterior_v2,
     evidence_store_from_fatbeans_events,
@@ -506,6 +507,7 @@ def _model_eval_row(
             2,
         )
         posterior_diagnostics = str(v2_rows[0].get("诊断") or "")
+    layout_root = layout_conflict_root(posterior_diagnostics)
     latest_layout_fit = next(
         (
             row for row in reversed(layout_rows)
@@ -585,10 +587,8 @@ def _model_eval_row(
         ),
         "q6_below_drop_prior": "q6_below_drop_prior:" in posterior_diagnostics,
         "relaxed_exact_used": "relaxed_exact_bucket_targets:" in posterior_diagnostics,
-        "layout_conflict": (
-            "footprint_overlap_cells:" in posterior_diagnostics
-            or "footprint_overflow:" in posterior_diagnostics
-        ),
+        "layout_conflict": bool(layout_root),
+        "layout_conflict_root": layout_root,
         "posterior_diagnostics": posterior_diagnostics,
         "stop_minus_final_value": (
             stop_bid - final_value

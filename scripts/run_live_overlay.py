@@ -295,7 +295,8 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
         elif _flag(eval_row.get("q6_p90_misses_truth")):
             entries.append(("回测警告: q6 P90 低于结算 q6 价值", "warn"))
         if _flag(eval_row.get("layout_conflict")):
-            entries.append(("布局诊断: footprint 存在重叠或越界", "warn"))
+            root = str(eval_row.get("layout_conflict_root") or "footprint 存在重叠或越界")
+            entries.append((f"布局诊断: {root}", "warn"))
         if _flag(eval_row.get("relaxed_exact_used")):
             entries.append(("约束诊断: exact 桶约束已放宽", "warn"))
         parts = []
@@ -440,7 +441,8 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     elif _flag(model_eval.get("q6_p90_misses_truth")):
         alerts.append(("q6 P90 低于结算 q6 价值", "warn"))
     if _flag(model_eval.get("layout_conflict")):
-        alerts.append(("footprint 存在重叠或越界", "warn"))
+        root = str(model_eval.get("layout_conflict_root") or "footprint 存在重叠或越界")
+        alerts.append((root, "warn"))
     if _flag(model_eval.get("relaxed_exact_used")):
         alerts.append(("exact 桶约束已放宽", "warn"))
 

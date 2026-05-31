@@ -327,3 +327,22 @@ Aisha shipwreck 且最终 truth 常有 q6，则再做受限的 q6 residual floor
 
 **复查点**：当 hidden、沉船样本补齐后，按 `raw_minus_decision_p90` 分层检查：
 差距大的局是否真的来自可识别形状/分类证据，还是纯长尾噪声。
+
+## 2026-05-31 · layout conflict 先拆根因，不直接加重空间约束
+
+**背景**：当前 `layout_conflict` 只是布尔值，无法区分 footprint 重叠、越界、或冲突后 trusted footprint
+被放宽。直接把空间约束加硬，可能让已有样本更多 zero-match。
+
+**推荐**：新增稳定的 `layout_conflict_root` 标记：`footprint_overlap`、`footprint_overflow`、
+`footprint_count_relaxed`、`all_footprints_untrusted` / `partial_footprints_untrusted`。live 日志、
+batch evaluator 和汇总脚本都记录这些根因，但暂不改变 layout feasibility score。
+
+**用户选择**：先做工程铺垫，后续等更多样本进入日志后再决定是否把 Aisha/伊森 local+shape 变成更强的
+空间可行性约束。
+
+**取舍**：这一步不会立刻提升估价准确率，但能把后续优化方向拆清楚：如果主要是 overlap，
+优先排查 local 合并/重复证据；如果主要是 overflow，优先排查 shape 方向或列宽解释；如果主要是
+trusted footprint 归零，再考虑降权而不是硬过滤。
+
+**复查点**：新样本累积后检查 `layout_conflict_root_causes` 和分组 `layout_overlap_rate` /
+`layout_overflow_rate`，再决定是否进入剩余空间 feasibility。

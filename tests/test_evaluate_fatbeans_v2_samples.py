@@ -24,6 +24,7 @@ def test_zero_match_root_classifies_exact_and_public_constraints() -> None:
         {
             "v2_matched": 0,
             "layout_conflict": True,
+            "layout_conflict_root": "footprint_overlap;footprint_count_relaxed",
             "relaxed_exact_used": True,
             "public_max_item_cells_used": True,
             "bucket_targets": "q6:count=1,cells=16;q4:avg=12000.00",
@@ -31,6 +32,8 @@ def test_zero_match_root_classifies_exact_and_public_constraints() -> None:
     )
 
     assert "layout_conflict" in root
+    assert "footprint_overlap" in root
+    assert "footprint_count_relaxed" in root
     assert "relaxed_exact_fallback" in root
     assert "public_max_item_cells" in root
     assert "q6_exact_count_cells" in root
@@ -95,9 +98,13 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "q6_false_low_risk": False,
             "q6_p90_misses_truth": False,
             "layout_conflict": True,
+            "layout_conflict_root": "footprint_overlap;footprint_count_relaxed",
             "relaxed_exact_used": True,
             "bucket_targets": "q4:count=4,cells=12",
-            "zero_match_root": "layout_conflict;relaxed_exact_fallback;q4_exact_count_cells",
+            "zero_match_root": (
+                "layout_conflict;footprint_overlap;footprint_count_relaxed;"
+                "relaxed_exact_fallback;q4_exact_count_cells"
+            ),
             "public_constraint_key": "none",
             "anchor_band": "6+",
             "q6_top_size_band": "no_q6",
@@ -108,7 +115,13 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
 
     zero_causes = {row["cause"]: row["n"] for row in summary["zero_match_root_causes"]}
     assert zero_causes["layout_conflict"] == 1
+    assert zero_causes["footprint_overlap"] == 1
     assert zero_causes["q4_exact_count_cells"] == 1
+    layout_causes = {
+        row["cause"]: row["n"]
+        for row in summary["layout_conflict_root_causes"]
+    }
+    assert layout_causes["footprint_count_relaxed"] == 1
 
     q6_causes = {row["cause"]: row["n"] for row in summary["q6_miss_root_causes"]}
     assert q6_causes["low_q6_sample_rate"] == 1

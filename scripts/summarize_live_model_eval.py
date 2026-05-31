@@ -144,10 +144,51 @@ def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
                     "raw_minus_decision_p90",
                 ),
                 "layout_conflict_rate": _rate(group_rows, "layout_conflict"),
+                "layout_overlap_rate": _marker_rate(
+                    group_rows,
+                    "layout_conflict_root",
+                    "footprint_overlap",
+                ),
+                "layout_overflow_rate": _marker_rate(
+                    group_rows,
+                    "layout_conflict_root",
+                    "footprint_overflow",
+                ),
                 "relaxed_exact_rate": _rate(group_rows, "relaxed_exact_used"),
             }
         )
     return out
+
+
+def _marker_rate(rows: list[dict[str, Any]], key: str, marker: str) -> float | None:
+    values = [str(row.get(key) or "") for row in rows if row.get(key) is not None]
+    if not values:
+        return None
+    return round(
+        statistics.mean(1.0 if marker in value.split(";") else 0.0 for value in values),
+        4,
+    )
+
+
+def _root_cause_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    counts: dict[str, int] = {}
+    examples: dict[str, list[str]] = {}
+    for row in rows:
+        raw = str(row.get(key) or "unclassified")
+        markers = [part for part in raw.split(";") if part] or ["unclassified"]
+        for marker in markers:
+            counts[marker] = counts.get(marker, 0) + 1
+            examples.setdefault(marker, [])
+            if len(examples[marker]) < 5:
+                examples[marker].append(str(row.get("file") or ""))
+    return [
+        {
+            "cause": cause,
+            "n": n,
+            "examples": examples.get(cause, []),
+        }
+        for cause, n in sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    ]
 
 
 def _bid_gap_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
@@ -276,6 +317,10 @@ def summarize(
         if row.get("final_value") is not None or row.get("final_cells") is not None
     ]
     q6_truth = [row for row in valid if int(row.get("final_q6_value") or 0) > 0]
+    layout_conflict = [
+        row for row in valid
+        if row.get("layout_conflict") is True
+    ]
     return {
         "rows": len(rows),
         "raw_rows": original_count,
@@ -317,6 +362,10 @@ def summarize(
         ),
         "layout_conflict_count": sum(
             1 for row in valid if row.get("layout_conflict") is True
+        ),
+        "layout_conflict_root_causes": _root_cause_summary(
+            layout_conflict,
+            "layout_conflict_root",
         ),
         "relaxed_exact_count": sum(
             1 for row in valid if row.get("relaxed_exact_used") is True
