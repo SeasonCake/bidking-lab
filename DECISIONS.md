@@ -476,3 +476,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：避免重复补物品，交集约束更贴近“同一物品被多次鉴影命中”的游戏语义；代价是如果 item tags 有缺漏，会更容易暴露为 no-pool-match，需要继续监控 tags。
 
 **复查点**：30 份 Aisha imaging 样本中，修正后 `category_target_no_pool_match=0`，`decision_value_mae≈37.1万`，中后期子集 `≈36.4万`；q6 P90 低估仍需 residual 层单独处理。
+
+## 2026-06-01 · 多鉴影样本按组合追踪，而不是只看总次数
+
+**背景**：用户补充了两套明确组合：别墅侧为时尚、能源、家具、古董、数码；沉船侧为医疗、古董、时尚、能源、武器。部分样本成交轮次较早，单看 MAE 会把“解析有效但信息不足”的样本误判为模型退化。
+
+**推荐**：batch evaluator 每行输出 `category_action_combo` 和 `category_action_count`，summary 的 `category_evidence.action_combo_top` 汇总最常见组合。短轮样本继续进入解析/早期提示验证，稳定校准只看 `calibration_eligible=True` 的 3-5 轮子集。
+
+**用户选择**：先补缺失诊断和工程铺垫，再根据组合样本反馈决定是否继续加强 q6 residual 或 shape/category 条件采样。
+
+**取舍**：这一步不改变 posterior 和出价，只降低人工对照成本；如果某个组合字段有值但 target/exclusion 为 0，优先查 Fatbeans action 解析。如果 target/exclusion 有值但 q6 仍低估，再进入 residual/权重层。
+
+**复查点**：用新增 30 份 imaging 样本检查 `action_combo_top`、`category_target_no_pool_match`、`sample_feasibility`；确认 sample15 的 `200032` 随机 6 件均价只进入 `random_sample_avg_values`。

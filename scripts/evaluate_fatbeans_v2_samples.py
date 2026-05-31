@@ -31,6 +31,7 @@ from bidking_lab.inference.v2 import (  # noqa: E402
     is_tail_supported_by_evidence,
 )
 from bidking_lab.live.fatbeans import (  # noqa: E402
+    _CATEGORY_OUTLINE_ACTIONS,
     latest_player_bids,
     live_batches_from_fatbeans_events,
     parse_fatbeans_capture,
@@ -46,6 +47,19 @@ from bidking_lab.simulation.robust_value import (  # noqa: E402
     DEFAULT_VALUE_FLOOR,
     is_confusable_long_tail,
 )
+
+_CATEGORY_ACTION_LABELS = {
+    100151: "家具",
+    100152: "医疗",
+    100153: "时尚",
+    100154: "武器",
+    100155: "珠宝",
+    100156: "古董",
+    100157: "数码",
+    100158: "能源",
+    100159: "食饮",
+    100160: "书画",
+}
 
 
 def _default_paths() -> list[Path]:
@@ -102,6 +116,22 @@ def _format_random_sample_avg_values(
     return ";".join(
         f"n={sample_count}:avg={value:.2f}"
         for sample_count, value in values
+    )
+
+
+def _category_action_combo(events: Any) -> str:
+    action_ids: list[int] = []
+    seen: set[int] = set()
+    for state in events.states:
+        for result in state.action_results:
+            action_id = int(result.action_id)
+            if action_id not in _CATEGORY_OUTLINE_ACTIONS or action_id in seen:
+                continue
+            seen.add(action_id)
+            action_ids.append(action_id)
+    return ";".join(
+        f"{action_id}:{_CATEGORY_ACTION_LABELS.get(action_id, str(action_id))}"
+        for action_id in action_ids
     )
 
 
@@ -383,6 +413,7 @@ def evaluate_path(
         final_value = _inventory_value(events, tables.items)
         inventory_count, final_cells = _inventory_totals(events)
         capture_round = _capture_round(events)
+        category_action_combo = _category_action_combo(events)
         latest_bids = latest_player_bids(events.states)
         highest_bid = max(latest_bids.values()) if latest_bids else None
         if base_session is None:
@@ -447,6 +478,12 @@ def evaluate_path(
             "evidence_stage": _evidence_stage(capture_round),
             "calibration_eligible": (
                 capture_round is not None and capture_round >= 3
+            ),
+            "category_action_combo": category_action_combo,
+            "category_action_count": (
+                len(category_action_combo.split(";"))
+                if category_action_combo
+                else 0
             ),
             "final_value": final_value,
             "final_cells": final_cells,
@@ -897,11 +934,22 @@ def _summary(
                 for row in ok
             ),
             "no_pool_match_rows": len(category_no_pool_rows),
+            "action_combo_top": [
+                {
+                    "combo": combo,
+                    "n": n,
+                }
+                for combo, n in Counter(
+                    str(row.get("category_action_combo") or "none")
+                    for row in ok
+                ).most_common(12)
+            ],
             "examples": [
                 {
                     "file": row["file"],
                     "hero": row.get("hero"),
                     "map_family": row.get("map_family"),
+                    "category_action_combo": row.get("category_action_combo"),
                     "category_target_count": row.get("category_target_count"),
                     "category_exclusion_count": row.get("category_exclusion_count"),
                     "diagnostics": row.get("diagnostics"),

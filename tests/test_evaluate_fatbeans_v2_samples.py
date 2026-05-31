@@ -76,6 +76,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "relaxed_exact_used": False,
             "category_target_count": 2,
             "category_exclusion_count": 1,
+            "category_action_combo": "100153:时尚;100158:能源",
             "diagnostics": "",
             "public_constraint_key": "none",
             "anchor_band": "3-5",
@@ -109,6 +110,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "bucket_targets": "q4:count=4,cells=12",
             "category_target_count": 1,
             "category_exclusion_count": 0,
+            "category_action_combo": "100152:医疗",
             "diagnostics": "category_target_no_pool_match:108:6:33:9",
             "zero_match_root": (
                 "layout_conflict;footprint_overlap;footprint_count_relaxed;"
@@ -150,6 +152,10 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     assert summary["category_evidence"]["target_total"] == 3
     assert summary["category_evidence"]["exclusion_total"] == 1
     assert summary["category_evidence"]["no_pool_match_rows"] == 1
+    assert summary["category_evidence"]["action_combo_top"][0] == {
+        "combo": "100153:时尚;100158:能源",
+        "n": 1,
+    }
     assert summary["category_evidence"]["examples"][0]["file"] == "a.json"
     assert (
         summary["category_evidence"]["no_pool_match_examples"][0]["file"]
@@ -211,3 +217,29 @@ def test_capture_round_uses_cumulative_actions_at_settlement() -> None:
     )
 
     assert module._capture_round(events) == 4
+
+
+def test_category_action_combo_uses_first_seen_order() -> None:
+    module = _eval_module()
+    events = SimpleNamespace(
+        states=(
+            SimpleNamespace(
+                action_results=(
+                    SimpleNamespace(action_id=100153),
+                    SimpleNamespace(action_id=100158),
+                ),
+            ),
+            SimpleNamespace(
+                action_results=(
+                    SimpleNamespace(action_id=100153),
+                    SimpleNamespace(action_id=100151),
+                    SimpleNamespace(action_id=100129),
+                ),
+            ),
+        ),
+    )
+
+    assert (
+        module._category_action_combo(events)
+        == "100153:时尚;100158:能源;100151:家具"
+    )
