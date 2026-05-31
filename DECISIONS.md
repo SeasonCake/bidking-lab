@@ -524,3 +524,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：这一步不是完整的交互式 minimap，但把数据边界打通了；后续改 UI 不会牵动推理层。
 
 **复查点**：下一轮 UI 优化时，用 `category_grid_items` 渲染 10 列网格，并加类别按钮过滤能源/医疗/古董等鉴影命中。
+
+## 2026-06-01 · q4/q5/q6 组合预计算先作为可重建缓存
+
+**背景**：外部 `grid_view_v1.3.7` 带 `tier_combo_presolve_q456.json`，说明预计算品质组合可以减少实时推理时 exact bucket 可达性搜索。当前 v2 exact bucket 已有在线组合采样，但每局重复计算，后续会拖慢实时。
+
+**推荐**：先用本项目自己的 Drop/Item/BidMap 表生成 `quality_combo_presolve_q456.json`：按 map_id、quality、exact count 列出可达 total cells。它只回答 count/cells 是否可达，不混入价格或外部参数。生成脚本保留在仓库，缓存文件本地可重建，暂不强制提交 15MB JSON。
+
+**用户选择**：认可预加载/配置可能剩余组合的方向，用于加速实时推理。
+
+**取舍**：第一版只做可达性和诊断，不直接替换 sampler；避免把预计算错误写进正式 posterior。下一步可把 unreachable exact bucket 作为诊断，确认稳定后再用它跳过无效采样分支。
+
+**复查点**：先在 batch evaluator 输出 exact bucket 是否 presolve-unreachable；如果 unreachable 与 zero-match/fallback 高度一致，再接入 `ConditionalSampler` 的 exact bucket 快路径。

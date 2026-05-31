@@ -75,6 +75,13 @@ from bidking_lab.inference.v2 import (
     shape_targets_from_store,
     value_evidence_score,
 )
+from bidking_lab.inference.quality_combo_presolve import (
+    QualityComboPresolve,
+    is_quality_combo_reachable,
+    load_quality_combo_presolve,
+    quality_combo_presolve_for_map,
+    quality_combo_presolve_payload,
+)
 from bidking_lab.inference.observation import (
     AISHA_DEFAULT_LOADOUT,
     ETHAN_ALT_LOADOUT,
@@ -162,6 +169,11 @@ __all__ = (
     "layout_feasibility_score",
     "shape_targets_from_store",
     "value_evidence_score",
+    "QualityComboPresolve",
+    "is_quality_combo_reachable",
+    "load_quality_combo_presolve",
+    "quality_combo_presolve_for_map",
+    "quality_combo_presolve_payload",
     "BucketTruth",
     "SessionTruth",
     "is_huge_item",
