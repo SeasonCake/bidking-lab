@@ -5,11 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+import sys
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from bidking_lab.inference.diagnostics import layout_conflict_root  # noqa: E402
 
 
 def _map_family(map_id: Any) -> str:
@@ -118,6 +124,20 @@ def _dedupe_latest_by_file(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if current is None or float(row.get("ts") or 0) >= float(current.get("ts") or 0):
             selected[key] = row
     return [selected[key] for key in order]
+
+
+def _with_derived_layout_root(row: dict[str, Any]) -> dict[str, Any]:
+    if not row.get("layout_conflict") or row.get("layout_conflict_root"):
+        return row
+    root = layout_conflict_root(
+        row.get("posterior_diagnostics") or row.get("layout_diagnostics")
+    )
+    if not root:
+        return row
+    return {
+        **row,
+        "layout_conflict_root": root,
+    }
 
 
 def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
@@ -340,7 +360,7 @@ def summarize(
     if dedupe:
         rows = _dedupe_latest_by_file(rows)
     valid = [
-        row for row in rows
+        _with_derived_layout_root(row) for row in rows
         if row.get("final_value") is not None or row.get("final_cells") is not None
     ]
     q6_truth = [row for row in valid if int(row.get("final_q6_value") or 0) > 0]

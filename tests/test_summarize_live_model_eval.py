@@ -73,7 +73,9 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "q6_below_drop_prior": True,
                 "raw_minus_decision_p90": 300_000,
                 "layout_conflict": True,
-                "layout_conflict_root": "footprint_overlap;footprint_count_relaxed",
+                "posterior_diagnostics": (
+                    "footprint_overlap_cells:2;footprint_count_relaxed:3->1"
+                ),
             },
             {
                 "ts": 3,

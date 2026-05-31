@@ -361,3 +361,17 @@ trusted footprint 归零，再考虑降权而不是硬过滤。
 也纳入采样优先级，可以在这个字段上扩展。
 
 **复查点**：hidden 每英雄 10 份补齐后，检查 `next_sampling_targets` 是否自然转向沉船/q6 undercoverage。
+
+## 2026-05-31 · 历史 live 日志尽量反推 layout 根因
+
+**背景**：新增 `layout_conflict_root` 后，旧的 `model_eval.jsonl` 只有 `layout_conflict=True` 和
+`posterior_diagnostics`，直接汇总会把历史 layout 根因归为 `unclassified`。
+
+**推荐**：`summarize_live_model_eval.py` 在汇总时，如果缺少 `layout_conflict_root`，就从
+`posterior_diagnostics` / `layout_diagnostics` 反推 root。新日志仍以结构化字段为准。
+
+**用户选择**：继续工程铺垫，让已有日志也尽量参与诊断。
+
+**取舍**：这只是兼容层，不改写原始日志；如果旧日志没有保留 diagnostics，仍然会显示 `unclassified`。
+
+**复查点**：等新 monitor 日志生成后，`unclassified` 应该自然下降。
