@@ -155,6 +155,7 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "shape_target_count" in artifact["model_eval"]
     assert "category_target_count" in artifact["model_eval"]
     assert "category_exclusion_count" in artifact["model_eval"]
+    assert "random_sample_avg_values" in artifact["model_eval"]
     assert artifact["model_eval"]["relaxed_exact_used"] is False
 
 

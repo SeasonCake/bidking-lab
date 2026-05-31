@@ -1305,6 +1305,29 @@ def test_public_gold_avg_value_scores_posterior_samples() -> None:
     assert 0 < value_evidence_score(mismatch, problem) < 1
 
 
+def test_public_random_sample_avg_value_is_retained_but_not_bucket_target() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_fact(
+        EvidenceFact(
+            kind="public_info",
+            key="200032",
+            value=96_897.6640625,
+            source="public",
+        )
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+
+    assert problem.random_sample_avg_values == ((6, 96_897.6640625),)
+    assert problem.bucket_targets == {}
+
+
 def test_public_highest_quality_limits_sample_quality() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()

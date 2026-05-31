@@ -216,6 +216,14 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
             "形状约束数": getattr(report, "shape_target_count", 0),
             "分类约束数": getattr(report, "category_target_count", 0),
             "分类反排数": getattr(report, "category_exclusion_count", 0),
+            "随机样本均价": ";".join(
+                f"n={sample_count}:avg={value:.2f}"
+                for sample_count, value in getattr(
+                    report,
+                    "random_sample_avg_values",
+                    (),
+                )
+            ),
             "诊断": diagnostics,
         }
     ]
@@ -546,6 +554,7 @@ def _model_eval_row(
         shape_target_count = _parse_int_text(v2_rows[0].get("形状约束数"))
         category_target_count = _parse_int_text(v2_rows[0].get("分类约束数"))
         category_exclusion_count = _parse_int_text(v2_rows[0].get("分类反排数"))
+        random_sample_avg_values = str(v2_rows[0].get("随机样本均价") or "")
         q6_value_p90 = _parse_range_value(
             str(v2_rows[0].get("q6价值 P10/P50/P90", "")),
             2,
@@ -555,6 +564,7 @@ def _model_eval_row(
         shape_target_count = None
         category_target_count = None
         category_exclusion_count = None
+        random_sample_avg_values = ""
     layout_root = layout_conflict_root(posterior_diagnostics)
     latest_layout_fit = next(
         (
@@ -645,6 +655,7 @@ def _model_eval_row(
         "shape_target_count": shape_target_count,
         "category_target_count": category_target_count,
         "category_exclusion_count": category_exclusion_count,
+        "random_sample_avg_values": random_sample_avg_values,
         "layout_conflict": bool(layout_root),
         "layout_conflict_root": layout_root,
         "posterior_diagnostics": posterior_diagnostics,

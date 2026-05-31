@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,6 +81,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "anchor_band": "3-5",
             "q6_top_size_band": "q6_top_large",
             "q6_miss_root": "low_q6_sample_rate;q6_top_large",
+            "evidence_stage": "mid_3_4",
+            "calibration_eligible": True,
         },
         {
             "file": "b.json",
@@ -114,6 +117,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "public_constraint_key": "none",
             "anchor_band": "6+",
             "q6_top_size_band": "no_q6",
+            "evidence_stage": "early_1_2",
+            "calibration_eligible": False,
         },
     ]
 
@@ -150,6 +155,14 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
         summary["category_evidence"]["no_pool_match_examples"][0]["file"]
         == "b.json"
     )
+    assert summary["sample_feasibility"]["calibration_eligible_rows"] == 1
+    assert summary["sample_feasibility"]["early_rows"] == 1
+    assert summary["sample_feasibility"]["calibration_decision_value_mae"] == 80_000
+    assert summary["sample_feasibility"]["calibration_q6_p90_misses_truth"] == 1
+    assert summary["sample_feasibility"]["by_evidence_stage"] == {
+        "mid_3_4": 1,
+        "early_1_2": 1,
+    }
 
     experiment = module._summary(rows, q6_residual_floor_ratio=0.75)[
         "q6_residual_floor_experiment"
@@ -163,3 +176,38 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     ]
     assert experiment["q6_p90_misses_truth"] == 0
     assert experiment["q6_value_p90_coverage"] == 1.0
+
+
+def test_expand_cli_paths_supports_globs(tmp_path: Path) -> None:
+    module = _eval_module()
+    first = tmp_path / "a.json"
+    second = tmp_path / "b.json"
+    first.write_text("[]", encoding="utf-8")
+    second.write_text("[]", encoding="utf-8")
+
+    assert module._expand_cli_paths([str(tmp_path / "*.json")]) == [
+        first,
+        second,
+    ]
+
+
+def test_evidence_stage_marks_early_rounds_separately() -> None:
+    module = _eval_module()
+
+    assert module._evidence_stage(1) == "early_1_2"
+    assert module._evidence_stage(2) == "early_1_2"
+    assert module._evidence_stage(3) == "mid_3_4"
+    assert module._evidence_stage(5) == "full_5"
+
+
+def test_capture_round_uses_cumulative_actions_at_settlement() -> None:
+    module = _eval_module()
+    events = SimpleNamespace(
+        states=(
+            SimpleNamespace(round_no=1, action_results=(1,)),
+            SimpleNamespace(round_no=2, action_results=(1, 2)),
+            SimpleNamespace(round_no=3, action_results=(1, 2, 3, 4)),
+        ),
+    )
+
+    assert module._capture_round(events) == 4

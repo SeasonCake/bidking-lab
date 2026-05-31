@@ -40,6 +40,10 @@ EvidenceStrength = Literal["hard", "soft"]
 _PUBLIC_AVG_VALUE_QUALITY: dict[int, int] = {
     200037: 5,  # 所有金色品质藏品的平均价值
 }
+_PUBLIC_RANDOM_SAMPLE_AVG_VALUE_COUNT: dict[int, int] = {
+    200032: 6,  # 随机 6 件藏品的平均价值
+    200033: 9,  # 随机 9 件藏品的平均价值
+}
 
 
 @dataclass(frozen=True)
@@ -230,6 +234,7 @@ class ResidualProblem:
     layout: LayoutFeasibility
     total_item_count: int | None = None
     warehouse_total_cells: int | None = None
+    random_sample_avg_values: tuple[tuple[int, float], ...] = ()
     max_quality: int | None = None
     max_item_cells: int | None = None
     diagnostics: tuple[str, ...] = ()
@@ -281,6 +286,7 @@ class PosteriorReport:
     shape_target_count: int = 0
     category_target_count: int = 0
     category_exclusion_count: int = 0
+    random_sample_avg_values: tuple[tuple[int, float], ...] = ()
     layout_diagnostics: tuple[str, ...] = ()
     diagnostics: tuple[str, ...] = ()
 
@@ -864,6 +870,30 @@ def _public_avg_value_targets(store: EvidenceStore) -> dict[int, float]:
     return targets
 
 
+def _public_random_sample_avg_values(
+    store: EvidenceStore,
+) -> tuple[tuple[int, float], ...]:
+    values: list[tuple[int, float]] = []
+    seen: set[tuple[int, float]] = set()
+    for fact in store.facts:
+        if fact.kind != "public_info":
+            continue
+        try:
+            info_id = int(fact.key)
+            value = float(fact.value)
+        except (TypeError, ValueError):
+            continue
+        sample_count = _PUBLIC_RANDOM_SAMPLE_AVG_VALUE_COUNT.get(info_id)
+        if sample_count is None or value <= 0:
+            continue
+        key = (sample_count, value)
+        if key in seen:
+            continue
+        seen.add(key)
+        values.append(key)
+    return tuple(values)
+
+
 def _public_global_constraints(
     store: EvidenceStore,
 ) -> tuple[int | None, int | None, tuple[str, ...]]:
@@ -1087,6 +1117,7 @@ def build_residual_problem(
                 )
     max_quality, max_item_cells, global_diagnostics = _public_global_constraints(store)
     diagnostics.extend(global_diagnostics)
+    random_sample_avg_values = _public_random_sample_avg_values(store)
     return ResidualProblem(
         map_id=map_id,
         map_name=bid_map.name,
@@ -1101,6 +1132,7 @@ def build_residual_problem(
         layout=layout,
         total_item_count=obs.total_item_count if obs is not None else None,
         warehouse_total_cells=obs.warehouse_total_cells if obs is not None else None,
+        random_sample_avg_values=random_sample_avg_values,
         max_quality=max_quality,
         max_item_cells=max_item_cells,
         diagnostics=tuple((*diagnostics, *layout.diagnostics)),
@@ -1950,6 +1982,7 @@ def _estimate_posterior_for_problem(
             len(target.excluded_categories)
             for target in problem.category_targets
         ),
+        random_sample_avg_values=problem.random_sample_avg_values,
         layout_diagnostics=problem.layout.diagnostics,
         diagnostics=tuple(diagnostics),
     )

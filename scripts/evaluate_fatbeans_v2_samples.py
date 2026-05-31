@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import glob
 import json
 import re
 import statistics
@@ -37,6 +38,7 @@ from bidking_lab.live.fatbeans import (  # noqa: E402
 from bidking_lab.live.monitor import (  # noqa: E402
     _inventory_totals,
     _inventory_value,
+    _latest_round,
     _states_to_session,
     load_monitor_tables,
 )
@@ -70,6 +72,37 @@ def _round(value: float | int | None) -> int | None:
     if value is None:
         return None
     return int(round(float(value)))
+
+
+def _evidence_stage(round_no: int | None) -> str:
+    if round_no is None:
+        return "unknown"
+    if round_no <= 2:
+        return "early_1_2"
+    if round_no <= 4:
+        return "mid_3_4"
+    return "full_5"
+
+
+def _capture_round(events: Any) -> int | None:
+    """Return the visible evidence coverage round for settlement captures."""
+
+    latest_round = _latest_round(events)
+    action_round = max(
+        (len(state.action_results) for state in events.states),
+        default=0,
+    )
+    visible_round = max(latest_round or 0, action_round)
+    return visible_round or None
+
+
+def _format_random_sample_avg_values(
+    values: Iterable[tuple[int, float]],
+) -> str:
+    return ";".join(
+        f"n={sample_count}:avg={value:.2f}"
+        for sample_count, value in values
+    )
 
 
 def _map_family(file: str, map_id: int | None) -> str:
@@ -349,6 +382,7 @@ def evaluate_path(
         base_session, *_ = _states_to_session(batches)
         final_value = _inventory_value(events, tables.items)
         inventory_count, final_cells = _inventory_totals(events)
+        capture_round = _capture_round(events)
         latest_bids = latest_player_bids(events.states)
         highest_bid = max(latest_bids.values()) if latest_bids else None
         if base_session is None:
@@ -409,6 +443,11 @@ def evaluate_path(
             "map_family": _map_family(path.name, base_session.map_id),
             "value_tier": _value_tier(final_value),
             "inventory_count": inventory_count,
+            "capture_round": capture_round,
+            "evidence_stage": _evidence_stage(capture_round),
+            "calibration_eligible": (
+                capture_round is not None and capture_round >= 3
+            ),
             "final_value": final_value,
             "final_cells": final_cells,
             "highest_bid": highest_bid,
@@ -501,6 +540,9 @@ def evaluate_path(
             "category_exclusion_count": sum(
                 len(target.excluded_categories)
                 for target in problem.category_targets
+            ),
+            "random_sample_avg_values": _format_random_sample_avg_values(
+                problem.random_sample_avg_values
             ),
             "footprint_count": problem.layout.footprint_count,
             "trusted_footprint_count": problem.layout.trusted_footprint_count,
@@ -623,6 +665,14 @@ def _summary(
     category_no_pool_rows = [
         row for row in ok
         if "category_target_no_pool_match:" in str(row.get("diagnostics") or "")
+    ]
+    calibration_rows = [
+        row for row in ok
+        if row.get("calibration_eligible") is True
+    ]
+    early_rows = [
+        row for row in ok
+        if row.get("evidence_stage") == "early_1_2"
     ]
     high_value_undercovered = [
         row for row in ok
@@ -873,6 +923,42 @@ def _summary(
                     "diagnostics": row.get("diagnostics"),
                 }
                 for row in category_no_pool_rows[:10]
+            ],
+        },
+        "sample_feasibility": {
+            "calibration_eligible_rows": len(calibration_rows),
+            "early_rows": len(early_rows),
+            "calibration_decision_value_mae": (
+                _round(
+                    statistics.mean(
+                        abs(int(row["v2_decision_value_p50_error"]))
+                        for row in calibration_rows
+                        if row.get("v2_decision_value_p50_error") is not None
+                    )
+                )
+                if any(
+                    row.get("v2_decision_value_p50_error") is not None
+                    for row in calibration_rows
+                )
+                else None
+            ),
+            "calibration_q6_p90_misses_truth": sum(
+                1 for row in calibration_rows
+                if row.get("q6_p90_misses_truth")
+            ),
+            "by_evidence_stage": dict(
+                Counter(str(row.get("evidence_stage") or "unknown") for row in ok)
+            ),
+            "early_examples": [
+                {
+                    "file": row["file"],
+                    "hero": row.get("hero"),
+                    "map_family": row.get("map_family"),
+                    "capture_round": row.get("capture_round"),
+                    "category_target_count": row.get("category_target_count"),
+                    "category_exclusion_count": row.get("category_exclusion_count"),
+                }
+                for row in early_rows[:10]
             ],
         },
         "groups": {
@@ -1160,6 +1246,21 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
     writer.writerows(rows)
 
 
+def _expand_cli_paths(raw_paths: Iterable[str]) -> list[Path]:
+    paths: list[Path] = []
+    for raw in raw_paths:
+        matches = sorted(glob.glob(raw))
+        if not matches:
+            matches = [raw]
+        for match in matches:
+            path = Path(match)
+            if path.is_dir():
+                paths.extend(sorted(path.glob("*.json")))
+            else:
+                paths.append(path)
+    return paths
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Evaluate Fatbeans JSON captures with v2 posterior.",
@@ -1191,12 +1292,7 @@ def main() -> int:
 
     paths: list[Path] = []
     if args.paths:
-        for raw in args.paths:
-            path = Path(raw)
-            if path.is_dir():
-                paths.extend(sorted(path.glob("*.json")))
-            else:
-                paths.append(path)
+        paths = _expand_cli_paths(args.paths)
     else:
         paths = _default_paths()
 
