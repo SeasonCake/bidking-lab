@@ -139,12 +139,14 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["bid_rows"][0]["价值口径"] == "decision_value"
     assert artifact["bid_rows"][0]["决策价值 P10/P50/P90"]
     assert artifact["bid_rows"][0]["原始价值 P10/P50/P90"]
+    assert "上界风险" in artifact["bid_rows"][0]
     assert artifact["panel"]["summary_rows"]
     assert artifact["model_eval"]["final_value"] == 20_000
     assert artifact["model_eval"]["final_cells"] == 4
     assert artifact["model_eval"]["hero"] == "aisha"
     assert artifact["model_eval"]["final_q6_count"] == 0
     assert artifact["model_eval"]["decision_value_p50"] == 20_000
+    assert "raw_minus_decision_p90" in artifact["model_eval"]
     assert artifact["model_eval"]["relaxed_exact_used"] is False
 
 

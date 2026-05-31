@@ -85,6 +85,27 @@ def _format_quantile_width(summary: Any) -> str:
     return f"{summary.p90 - summary.p10:,.0f}"
 
 
+def _raw_ceiling_risk_label(decision_summary: Any, raw_summary: Any) -> str:
+    if decision_summary is None or raw_summary is None:
+        return ""
+    decision_p90 = getattr(decision_summary, "p90", None)
+    raw_p90 = getattr(raw_summary, "p90", None)
+    if decision_p90 is None or raw_p90 is None:
+        return ""
+    gap = int(round(raw_p90 - decision_p90))
+    if gap <= 0:
+        return "低"
+    baseline = max(float(decision_p90), 1.0)
+    ratio = gap / baseline
+    if gap >= 700_000 or ratio >= 1.0:
+        level = "高"
+    elif gap >= 250_000 or ratio >= 0.45:
+        level = "中"
+    else:
+        level = "低"
+    return f"{level} / raw P90 +{gap:,.0f}"
+
+
 def _candidate_map_ids_for_likelihood(
     map_id: int,
     maps: Mapping[int, BidMap],
@@ -334,6 +355,10 @@ def _build_bid_rows(
             "仓储": report.warehouse_status,
             "决策价值 P10/P50/P90": _format_quantile_interval(decision_value_summary),
             "原始价值 P10/P50/P90": _format_quantile_interval(raw_value_summary),
+            "上界风险": _raw_ceiling_risk_label(
+                decision_value_summary,
+                raw_value_summary,
+            ),
             "当前最高": f"{report.leader} {report.highest_bid:,}",
             "风险带": report.risk_band,
             "探价(P10)": f"{thresholds.probe_bid:,}",
@@ -442,7 +467,9 @@ def _model_eval_row(
     warehouse_p50 = None
     value_p50 = None
     decision_value_p50 = None
+    decision_value_p90 = None
     raw_value_p50 = None
+    raw_value_p90 = None
     q6_match_rate = None
     q6_prior_match_rate = None
     q6_prior_expected_value = None
@@ -459,8 +486,16 @@ def _model_eval_row(
         decision_value_p50 = _parse_range_p50(
             str(bid_rows[0].get("决策价值 P10/P50/P90", ""))
         )
+        decision_value_p90 = _parse_range_value(
+            str(bid_rows[0].get("决策价值 P10/P50/P90", "")),
+            2,
+        )
         raw_value_p50 = _parse_range_p50(
             str(bid_rows[0].get("原始价值 P10/P50/P90", ""))
+        )
+        raw_value_p90 = _parse_range_value(
+            str(bid_rows[0].get("原始价值 P10/P50/P90", "")),
+            2,
         )
     if v2_rows:
         q6_match_rate = _parse_percent_text(v2_rows[0].get("q6样本率"))
@@ -499,12 +534,19 @@ def _model_eval_row(
         **dict(truth_breakdown or {}),
         "value_p50": value_p50,
         "decision_value_p50": decision_value_p50,
+        "decision_value_p90": decision_value_p90,
         "decision_value_p50_error": (
             decision_value_p50 - final_value
             if decision_value_p50 is not None and final_value is not None
             else None
         ),
         "raw_value_p50": raw_value_p50,
+        "raw_value_p90": raw_value_p90,
+        "raw_minus_decision_p90": (
+            raw_value_p90 - decision_value_p90
+            if raw_value_p90 is not None and decision_value_p90 is not None
+            else None
+        ),
         "value_p50_error": (
             value_p50 - final_value
             if value_p50 is not None and final_value is not None

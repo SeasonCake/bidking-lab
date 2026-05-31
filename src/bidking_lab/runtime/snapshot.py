@@ -325,6 +325,11 @@ def tactical_snapshot_from_rows(
                     if bid.get("原始价值 P10/P50/P90")
                     else ""
                 ),
+                (
+                    f"上界 {_text(bid.get('上界风险'))}"
+                    if bid.get("上界风险")
+                    else ""
+                ),
                 _text(bid.get("后验诊断")),
             ),
             sep="；",

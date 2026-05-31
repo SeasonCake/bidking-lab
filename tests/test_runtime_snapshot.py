@@ -192,6 +192,7 @@ def test_tactical_snapshot_prefers_decision_value_and_keeps_raw_detail() -> None
                 "证据": "v2 decision_value",
                 "决策价值 P10/P50/P90": "180,000 / 260,000 / 420,000",
                 "原始价值 P10/P50/P90": "180,000 / 260,000 / 1,200,000",
+                "上界风险": "高 / raw P90 +780,000",
                 "后验诊断": "relaxed_exact_bucket_targets:q4:count=3:cells=9",
             }
         ],
@@ -206,6 +207,7 @@ def test_tactical_snapshot_prefers_decision_value_and_keeps_raw_detail() -> None
     assert snapshot.value_range == "180,000 / 260,000 / 420,000"
     assert snapshot.evidence == (
         "v2 decision_value；raw 180,000 / 260,000 / 1,200,000；"
+        "上界 高 / raw P90 +780,000；"
         "relaxed_exact_bucket_targets:q4:count=3:cells=9"
     )
 

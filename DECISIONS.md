@@ -309,3 +309,20 @@ Aisha shipwreck 且最终 truth 常有 q6，则再做受限的 q6 residual floor
 
 **复查点**：重点比较 `q6_residual_floor_experiment.q6_value_p90_coverage`、`eligible_no_q6_rows`，
 以及 regular/tail-event MAE 是否被抬偏。
+
+## 2026-05-31 · 实时 UI 先区分常规价值和尾部上界
+
+**背景**：`decision_value` 已经用于常规出价，`raw total_value` 保留永乐、超跑、雷达等极端尾部。
+如果 UI 只显示一个价值区间，实战时容易把“可规划价值”和“黑天鹅上界”混在一起。
+
+**推荐**：live monitor 在 bid row 中增加 `上界风险`，并在 `model_eval.jsonl` 写入
+`decision_value_p90`、`raw_value_p90`、`raw_minus_decision_p90`。悬浮窗/Streamlit 只读这些字段，
+不把它们接入 bid strategy。
+
+**用户选择**：继续做工程铺垫；常规估价保留最可能且逻辑合理的 P50/P90，尾部只做风险提示和离线校准。
+
+**取舍**：实战提示更清楚，后续也能按“普通局/尾部局”拆开评估；代价是 UI 上会多一个上界提示，
+但不会改变当前推荐价。
+
+**复查点**：当 hidden、沉船样本补齐后，按 `raw_minus_decision_p90` 分层检查：
+差距大的局是否真的来自可识别形状/分类证据，还是纯长尾噪声。
