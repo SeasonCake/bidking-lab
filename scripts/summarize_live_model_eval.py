@@ -288,6 +288,33 @@ def _collection_readiness(
     }
 
 
+def _next_sampling_targets(readiness: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = list(readiness.get("priority_needs") or [])
+    rows.sort(
+        key=lambda row: (
+            0 if row.get("map_family") == "hidden" else 1,
+            -int(row.get("needed") or 0),
+            str(row.get("hero") or ""),
+        )
+    )
+    out: list[dict[str, Any]] = []
+    for row in rows[:6]:
+        family = str(row.get("map_family") or "unknown")
+        out.append(
+            {
+                "hero": row.get("hero"),
+                "map_family": family,
+                "needed": row.get("needed"),
+                "reason": (
+                    "hidden_cold_start"
+                    if family == "hidden"
+                    else "coverage_gap"
+                ),
+            }
+        )
+    return out
+
+
 def _log_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "missing_hero": sum(1 for row in rows if not row.get("hero")),
@@ -317,6 +344,11 @@ def summarize(
         if row.get("final_value") is not None or row.get("final_cells") is not None
     ]
     q6_truth = [row for row in valid if int(row.get("final_q6_value") or 0) > 0]
+    collection_readiness = _collection_readiness(
+        valid,
+        target_per_hero_family=target_per_hero_family,
+        hidden_target_per_hero=hidden_target_per_hero,
+    )
     layout_conflict = [
         row for row in valid
         if row.get("layout_conflict") is True
@@ -346,11 +378,8 @@ def summarize(
         "warehouse_mae": _mae(valid, "warehouse_p50_error"),
         "layout_fit_mae": _mae(valid, "layout_fit_p50_error"),
         "log_quality": _log_quality(valid),
-        "collection_readiness": _collection_readiness(
-            valid,
-            target_per_hero_family=target_per_hero_family,
-            hidden_target_per_hero=hidden_target_per_hero,
-        ),
+        "collection_readiness": collection_readiness,
+        "next_sampling_targets": _next_sampling_targets(collection_readiness),
         "q6_false_low_count": sum(
             1 for row in valid if row.get("q6_false_low_risk") is True
         ),

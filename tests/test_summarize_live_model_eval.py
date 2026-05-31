@@ -94,6 +94,12 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert readiness["ready"] is False
     assert readiness["total_needed"] == 8
     assert readiness["hidden_target_per_hero"] == 1
+    assert summary["next_sampling_targets"][0] == {
+        "hero": "aisha",
+        "map_family": "hidden",
+        "needed": 1,
+        "reason": "hidden_cold_start",
+    }
     assert summary["log_quality"]["missing_hero"] == 1
     assert summary["log_quality"]["missing_q6_truth_fields"] == 1
     assert summary["q6_below_drop_prior_count"] == 1

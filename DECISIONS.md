@@ -346,3 +346,18 @@ trusted footprint 归零，再考虑降权而不是硬过滤。
 
 **复查点**：新样本累积后检查 `layout_conflict_root_causes` 和分组 `layout_overlap_rate` /
 `layout_overflow_rate`，再决定是否进入剩余空间 feasibility。
+
+## 2026-05-31 · 采样缺口输出可执行目标
+
+**背景**：`collection_readiness.priority_needs` 已能说明缺口，但它更像原始表格；用户采集样本时还需要
+手动判断先补 hidden 还是主桶。
+
+**推荐**：live `model_eval.jsonl` 汇总增加 `next_sampling_targets`，把 hidden 冷启动放在主桶 coverage gap
+之前，并保留 `needed` 和 `reason`。采样指南同步说明该字段。
+
+**用户选择**：用户正在收集数据；当前工程侧先把后续回收日志的诊断和采样指引铺好。
+
+**取舍**：不改变任何模型，只减少人工读 JSON 的成本；后续如果要把 q6 undercoverage、layout conflict
+也纳入采样优先级，可以在这个字段上扩展。
+
+**复查点**：hidden 每英雄 10 份补齐后，检查 `next_sampling_targets` 是否自然转向沉船/q6 undercoverage。
