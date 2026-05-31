@@ -464,3 +464,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：保留实战早拍局，不浪费样本；稳定估价校准优先看 3-5 轮子集。
 
 **复查点**：30 份新增 imaging 样本中，23 份可进入稳定校准，7 份归为 early 1-2 轮。后续按 `sample_feasibility.calibration_decision_value_mae` 与全量 MAE 对照。
+
+## 2026-06-01 · 多鉴影命中按同一物品交集建模
+
+**背景**：新增样本大量使用能源、时尚、家具、古董、数码等组合鉴影。同一个 runtime/local 物品可能被多个分类鉴影命中，旧桥接会把每个分类拆成独立 category target，采样器可能把它当作多件物品补入。
+
+**推荐**：`CategoryItemObservation` 增加 `required_categories`。EvidenceStore 中同一个物品的多分类命中转成一个交集 target；采样时要求候选 item 同时具备所有正向分类，并仍应用 `excluded_categories` 反排。
+
+**用户选择**：优先修正组合鉴影语义，再考虑权重或 q6 residual 调参。
+
+**取舍**：避免重复补物品，交集约束更贴近“同一物品被多次鉴影命中”的游戏语义；代价是如果 item tags 有缺漏，会更容易暴露为 no-pool-match，需要继续监控 tags。
+
+**复查点**：30 份 Aisha imaging 样本中，修正后 `category_target_no_pool_match=0`，`decision_value_mae≈37.1万`，中后期子集 `≈36.4万`；q6 P90 低估仍需 residual 层单独处理。

@@ -142,6 +142,16 @@ def category_observation_soft_score(
                 categories, quality, cells, width, height, item_id = key
                 if observed.category not in categories:
                     continue
+                if observed.required_categories and not all(
+                    category in categories
+                    for category in observed.required_categories
+                ):
+                    continue
+                if observed.excluded_categories and any(
+                    category in categories
+                    for category in observed.excluded_categories
+                ):
+                    continue
                 if observed.quality is not None and quality != observed.quality:
                     continue
                 if observed.cells is not None and cells != observed.cells:

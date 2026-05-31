@@ -629,13 +629,21 @@ def shape_targets_from_store(
 
 def _category_target_merge_key(
     target: CategoryItemObservation,
-) -> tuple[int, int | None, str | None, int | None, int | None]:
+) -> tuple[
+    int,
+    int | None,
+    str | None,
+    int | None,
+    int | None,
+    tuple[int, ...],
+]:
     return (
         target.category,
         target.cells,
         target.shape_key,
         target.quality,
         target.item_id,
+        target.required_categories,
     )
 
 
@@ -643,7 +651,14 @@ def _merge_category_targets(
     targets: Sequence[CategoryItemObservation],
 ) -> tuple[CategoryItemObservation, ...]:
     merged: dict[
-        tuple[int, int | None, str | None, int | None, int | None],
+        tuple[
+            int,
+            int | None,
+            str | None,
+            int | None,
+            int | None,
+            tuple[int, ...],
+        ],
         CategoryItemObservation,
     ] = {}
     for target in targets:
@@ -684,16 +699,20 @@ def category_targets_from_store(
         cells = evidence.cells
         if cells is None and evidence.shape_key is not None:
             cells = _shape_cells(evidence.shape_key)
-        for category in evidence.categories:
-            targets.append(
-                CategoryItemObservation(
-                    category=category,
-                    cells=int(cells) if cells is not None else None,
-                    shape_key=evidence.shape_key,
-                    quality=evidence.quality,
-                    excluded_categories=evidence.excluded_categories,
-                )
+        targets.append(
+            CategoryItemObservation(
+                category=evidence.categories[0],
+                cells=int(cells) if cells is not None else None,
+                shape_key=evidence.shape_key,
+                quality=evidence.quality,
+                required_categories=(
+                    evidence.categories
+                    if len(evidence.categories) > 1
+                    else ()
+                ),
+                excluded_categories=evidence.excluded_categories,
             )
+        )
     return _merge_category_targets(targets)
 
 
@@ -922,6 +941,10 @@ def _item_matches_category_target(
     target: CategoryItemObservation,
 ) -> bool:
     if target.category not in item.tags:
+        return False
+    if target.required_categories and not all(
+        category in item.tags for category in target.required_categories
+    ):
         return False
     if target.excluded_categories and any(
         category in item.tags for category in target.excluded_categories

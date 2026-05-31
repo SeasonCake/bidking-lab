@@ -137,6 +137,9 @@ ethan_shipwreck_sample72_weapon_energy_5rounds.json
 - `shape_target_count`：表示非唯一 shape 约束数量。
 - `category_target_no_pool_match`：如果增加，优先检查 action→category 映射或物品 tags。
 
+同一物品被多个鉴影命中时，v2 会按“交集”建模，例如能源+时尚要求候选物品同时具备两个分类；
+不会把它当成两件不同物品。
+
 如果 10-15 份样本里 `category_target_count` / `category_exclusion_count` 普遍有值，
 就可以进入下一步权重评估；如果普遍为 0，先修采集或解析链路，不急着调模型。
 批量评估的 summary 会额外输出 `category_evidence`，列出 target/exclusion 总量、

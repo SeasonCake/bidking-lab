@@ -939,6 +939,103 @@ def test_store_category_evidence_becomes_category_target() -> None:
     assert 107 not in truth.buckets[6].items[0].tags
 
 
+def test_store_multi_category_evidence_samples_one_intersection_item() -> None:
+    energy = _item(7101, quality=6, value=210_000, shape=(2, 2), tags=[108])
+    fashion = _item(7102, quality=6, value=220_000, shape=(2, 2), tags=[103])
+    intersection = _item(
+        7103,
+        quality=6,
+        value=230_000,
+        shape=(2, 2),
+        tags=[103, 108],
+    )
+    maps = {
+        2403: BidMap(
+            map_id=2403,
+            name="category_intersection_map",
+            description="",
+            category=101,
+            auction_mode="open",
+            sub_pool_weights=[],
+            rounds_total=5,
+            entry_fee_silver=0,
+            starting_budget_silver=100_000,
+            drop_pool_id=9003,
+            items_per_session_min=1,
+            items_per_session_max=1,
+            value_tier_ui="",
+            mode_flag=4,
+            bid_price_ladder=[],
+            raw_row=[],
+        ),
+    }
+    drops = {
+        9003: DropPool(
+            pool_id=9003,
+            name="category_intersection_pool",
+            description="",
+            pool_type=2,
+            entries=[
+                DropEntry(
+                    category=108,
+                    item_id=energy.item_id,
+                    n_min=1,
+                    n_max=1,
+                    weight=99,
+                ),
+                DropEntry(
+                    category=103,
+                    item_id=fashion.item_id,
+                    n_min=1,
+                    n_max=1,
+                    weight=99,
+                ),
+                DropEntry(
+                    category=108,
+                    item_id=intersection.item_id,
+                    n_min=1,
+                    n_max=1,
+                    weight=1,
+                ),
+            ],
+        ),
+    }
+    items = {item.item_id: item for item in (energy, fashion, intersection)}
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            quality=6,
+            shape_key="22",
+            cells=4,
+            categories=(108, 103),
+            sources=("action:100158", "action:100153"),
+        )
+    )
+    problem = build_residual_problem(
+        2403,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(21))
+
+    assert problem.category_targets == (
+        CategoryItemObservation(
+            category=108,
+            quality=6,
+            cells=4,
+            shape_key="22",
+            required_categories=(108, 103),
+        ),
+    )
+    assert truth.buckets[6].count == 1
+    assert truth.buckets[6].items[0].item_id == intersection.item_id
+
+
 def test_category_target_counts_toward_exact_bucket() -> None:
     weapon = _item(6001, quality=6, value=1_003_000, shape=(3, 4), tags=[104])
     decoy = _item(6002, quality=6, value=844_000, shape=(4, 4), tags=[106])

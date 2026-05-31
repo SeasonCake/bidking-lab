@@ -261,6 +261,7 @@ class CategoryItemObservation:
     shape_key: str | None = None
     quality: int | None = None
     item_id: int | None = None
+    required_categories: tuple[int, ...] = ()
     excluded_categories: tuple[int, ...] = ()
     count: int = 1
 
