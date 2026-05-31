@@ -466,6 +466,7 @@ def evaluate_path(
             "relaxed_exact_used": "relaxed_exact_bucket_targets:" in diagnostics,
             "public_max_quality_used": "public_max_quality:" in diagnostics,
             "public_max_item_cells_used": "public_max_item_cells:" in diagnostics,
+            "q6_below_drop_prior": "q6_below_drop_prior:" in diagnostics,
             "layout_conflict": (
                 "footprint_overlap_cells:" in layout_diagnostics
                 or "footprint_overflow:" in layout_diagnostics

@@ -274,6 +274,9 @@ def summarize(
         "q6_false_low_count": sum(
             1 for row in valid if row.get("q6_false_low_risk") is True
         ),
+        "q6_below_drop_prior_count": sum(
+            1 for row in valid if row.get("q6_below_drop_prior") is True
+        ),
         "q6_p90_miss_count": sum(
             1 for row in valid if row.get("q6_p90_misses_truth") is True
         ),

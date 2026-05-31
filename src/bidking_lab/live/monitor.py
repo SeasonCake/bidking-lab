@@ -541,6 +541,7 @@ def _model_eval_row(
             and int((truth_breakdown or {}).get("final_q6_value") or 0) > 0
             else None
         ),
+        "q6_below_drop_prior": "q6_below_drop_prior:" in posterior_diagnostics,
         "relaxed_exact_used": "relaxed_exact_bucket_targets:" in posterior_diagnostics,
         "layout_conflict": (
             "footprint_overlap_cells:" in posterior_diagnostics

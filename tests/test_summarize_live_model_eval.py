@@ -67,6 +67,7 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "final_cells": 12,
                 "final_q6_value": 80,
                 "decision_value_p50": 180,
+                "q6_below_drop_prior": True,
             },
             {
                 "ts": 3,
@@ -86,6 +87,7 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert readiness["hidden_target_per_hero"] == 1
     assert summary["log_quality"]["missing_hero"] == 1
     assert summary["log_quality"]["missing_q6_truth_fields"] == 1
+    assert summary["q6_below_drop_prior_count"] == 1
     assert any(
         row["hero"] == "aisha"
         and row["map_family"] == "villa"
