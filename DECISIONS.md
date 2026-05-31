@@ -255,3 +255,22 @@ residual 在更稳定的样本集合上校准。
 
 **复查点**：当 shape+category 条件采样增强后，复查 3x4 武器、4x4 古董、3x3 医疗等强证据局是否能把
 对应百万级物品正确计入 decision value。
+
+## 2026-05-31 · 非唯一品质+形状证据进入条件采样
+
+**背景**：Aisha/伊森经常看到 quality+shape，但地图池内同质量同形状不唯一。例如 q6 4x4、q6 3x4、
+q6 3x3 不能直接锁定 item_id；旧逻辑只把它们转成桶下界和 layout footprint，条件采样不保证抽到
+一个对应形状的物品。
+
+**推荐**：新增 `ShapeTarget`：没有 item_id、没有分类标签、但有 quality+shape/cells 的证据，
+作为“必须存在一个匹配形状物品”的条件采样目标。它不锁具体物品，只提高样本可达性；shape+category
+仍由 `CategoryItemObservation` 处理，唯一 quality+shape 仍升级为 `KnownItemAnchor`。
+
+**用户选择**：继续逐步替换推理主干，优先让已知形状证据实际进入后验，不急于做完整装箱搜索。
+
+**取舍**：该方案比纯 soft score 更能利用墙面涂鸦、雷达/外骨骼、屏风/车身这类形状信息，
+但不会把非唯一候选硬判成某个高价物品，降低对极端尾部的过拟合风险。194 份 JSON、`--trials 80`
+快速扫下，`zero_match` 从 13 降到 11，`relaxed_exact` 从 19 降到 18；q6 P90 覆盖仍需 residual 校准。
+
+**复查点**：下一阶段优先处理 Aisha shipwreck q6 residual；shape target 只解决“应该采到这个形状”，
+不解决“红货数量/价值先验偏低”的问题。

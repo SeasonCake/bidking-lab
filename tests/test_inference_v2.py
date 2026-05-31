@@ -541,8 +541,14 @@ def test_nonunique_quality_shape_evidence_stays_soft() -> None:
         drops=drops,
         items=items,
     )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+    truth = sampler.sample(rng=np.random.default_rng(7))
+    q3_items = truth.buckets[3].items
 
     assert problem.anchors == ()
+    assert len(problem.shape_targets) == 1
+    assert problem.shape_targets[0].shape_key == "54"
+    assert any(item.shape_w == 5 and item.shape_h == 4 for item in q3_items)
 
 
 def test_estimate_posterior_v2_relaxes_exact_bucket_when_strict_has_no_matches() -> None:

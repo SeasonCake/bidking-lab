@@ -180,6 +180,17 @@ class KnownFootprint:
 
 
 @dataclass(frozen=True)
+class ShapeTarget:
+    """One non-unique quality+shape item that should exist in samples."""
+
+    key: str
+    quality: int
+    shape_key: str
+    cells: int
+    categories: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
 class LayoutFeasibility:
     """Lightweight layout feasibility diagnostics for v2 samples."""
 
@@ -208,6 +219,7 @@ class ResidualProblem:
     anchor_item_counts: Mapping[int, int]
     bucket_targets: Mapping[int, "ResidualBucketTarget"]
     category_targets: tuple[CategoryItemObservation, ...]
+    shape_targets: tuple[ShapeTarget, ...]
     layout: LayoutFeasibility
     max_quality: int | None = None
     max_item_cells: int | None = None
@@ -464,6 +476,43 @@ def _unique_shape_item_anchors(
     return tuple(anchors)
 
 
+def shape_targets_from_store(
+    store: EvidenceStore,
+    *,
+    anchored_keys: set[str],
+) -> tuple[ShapeTarget, ...]:
+    """Return non-unique quality+shape targets from outline evidence."""
+
+    targets: list[ShapeTarget] = []
+    seen: set[str] = set()
+    for evidence in store.items():
+        if evidence.item_id is not None:
+            continue
+        if evidence.categories:
+            continue
+        if evidence.quality is None or evidence.shape_key is None:
+            continue
+        cells = evidence.cells
+        if cells is None:
+            cells = _shape_cells(evidence.shape_key)
+        if cells is None:
+            continue
+        key = evidence.evidence_key
+        if key in anchored_keys or key in seen:
+            continue
+        seen.add(key)
+        targets.append(
+            ShapeTarget(
+                key=key,
+                quality=int(evidence.quality),
+                shape_key=evidence.shape_key,
+                cells=int(cells),
+                categories=evidence.categories,
+            )
+        )
+    return tuple(targets)
+
+
 def known_footprints(
     store: EvidenceStore,
     *,
@@ -676,6 +725,24 @@ def _item_matches_category_target(
     return True
 
 
+def _item_matches_shape_target(
+    item: Item,
+    target: ShapeTarget,
+) -> bool:
+    if item.quality != target.quality:
+        return False
+    dims = _shape_dimensions(target.shape_key)
+    if dims is not None and (item.shape_w, item.shape_h) != dims:
+        return False
+    if target.cells is not None and item.shape_w * item.shape_h != target.cells:
+        return False
+    if target.categories and not any(
+        category in item.tags for category in target.categories
+    ):
+        return False
+    return True
+
+
 def build_residual_problem(
     map_id: int,
     store: EvidenceStore,
@@ -713,6 +780,10 @@ def build_residual_problem(
             "anchors_not_in_flattened_pool:" + ",".join(str(item_id) for item_id in missing)
         )
     counts = Counter(anchor.item_id for anchor in anchors)
+    shape_targets = shape_targets_from_store(
+        store,
+        anchored_keys={anchor.key for anchor in anchors},
+    )
     layout = layout_feasibility_from_store(store)
     bucket_targets: dict[int, ResidualBucketTarget] = {}
     category_targets: list[CategoryItemObservation] = []
@@ -810,6 +881,17 @@ def build_residual_problem(
                     "category_target_no_pool_match:"
                     f"{target.category}:{target.quality}:{target.shape_key}:{target.cells}"
                 )
+    if shape_targets:
+        for target in shape_targets:
+            if not any(
+                _item_matches_shape_target(item, target)
+                for pool in sampler.pools
+                for item in pool.items
+            ):
+                diagnostics.append(
+                    "shape_target_no_pool_match:"
+                    f"q{target.quality}:{target.shape_key}:{target.cells}"
+                )
     max_quality, max_item_cells, global_diagnostics = _public_global_constraints(store)
     diagnostics.extend(global_diagnostics)
     return ResidualProblem(
@@ -822,6 +904,7 @@ def build_residual_problem(
         anchor_item_counts=dict(counts),
         bucket_targets=bucket_targets,
         category_targets=tuple(category_targets),
+        shape_targets=shape_targets,
         layout=layout,
         max_quality=max_quality,
         max_item_cells=max_item_cells,
@@ -885,6 +968,7 @@ class ConditionalSampler:
         if len(pool.probabilities) == 0:
             return self._truth_from_buckets(buckets)
 
+        self._sample_shape_targets(pool, buckets, rng)
         self._sample_category_targets(pool, buckets, rng)
         self._sample_bucket_targets(pool, buckets, rng)
 
@@ -915,6 +999,30 @@ class ConditionalSampler:
                     count=int(count),
                 )
         return self._truth_from_buckets(buckets)
+
+    def _sample_shape_targets(
+        self,
+        pool: Any,
+        buckets: dict[int, BucketTruth],
+        rng: np.random.Generator,
+    ) -> None:
+        if not self.problem.shape_targets:
+            return
+        for target in self.problem.shape_targets:
+            indexes = [
+                idx for idx, item in enumerate(pool.items)
+                if _item_matches_shape_target(item, target)
+            ]
+            if not indexes:
+                continue
+            probs = pool.probabilities[indexes].astype(np.float64)
+            total = float(probs.sum())
+            if total <= 0:
+                continue
+            probs = probs / total
+            local_i = int(rng.choice(len(indexes), p=probs))
+            pool_i = int(indexes[local_i])
+            _add_item_to_buckets(buckets, pool.items[pool_i])
 
     def _sample_category_targets(
         self,
@@ -1564,6 +1672,7 @@ __all__ = (
     "ResidualBucketTarget",
     "ResidualProblem",
     "RuntimeEvidence",
+    "ShapeTarget",
     "build_residual_problem",
     "decision_value_for_truth",
     "estimate_posterior_v2",
@@ -1574,5 +1683,6 @@ __all__ = (
     "known_item_anchors",
     "layout_feasibility_from_store",
     "layout_feasibility_score",
+    "shape_targets_from_store",
     "value_evidence_score",
 )

@@ -477,6 +477,7 @@ def evaluate_path(
                 and q6_value_p90 < final_q6_value
             ),
             "bucket_targets": _format_bucket_targets(problem),
+            "shape_target_count": len(problem.shape_targets),
             "footprint_count": problem.layout.footprint_count,
             "trusted_footprint_count": problem.layout.trusted_footprint_count,
             "footprint_occupied_cells": problem.layout.occupied_cells,
