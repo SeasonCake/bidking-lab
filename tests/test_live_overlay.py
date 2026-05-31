@@ -87,6 +87,7 @@ def test_demo_snapshot_has_compact_overlay_sections() -> None:
     overlay = _overlay_module()
 
     lines = overlay._summary_lines(overlay._demo_snapshot())
+    model = overlay._overlay_model(overlay._demo_snapshot())
 
     assert any(line.startswith("决策:") for line in lines)
     assert any(line.startswith("价值:") for line in lines)
@@ -94,3 +95,12 @@ def test_demo_snapshot_has_compact_overlay_sections() -> None:
     assert any(line.startswith("红货:") for line in lines)
     assert any(line.startswith("布局:") for line in lines)
     assert any(line.startswith("道具:") for line in lines)
+    assert model["title"].startswith("ETHAN")
+    assert model["decision"][0] == "可守不抢"
+    assert [row[0] for row in model["metrics"]] == [
+        "决策价值",
+        "仓储",
+        "红货 q6",
+        "布局",
+    ]
+    assert any(alert[0].startswith("q6 P90") for alert in model["alerts"])
