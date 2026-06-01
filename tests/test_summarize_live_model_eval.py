@@ -81,6 +81,12 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "q6_count_cell_prior_floor_value": 486_510,
                 "q6_practical_gate": "shipwreck_positive_net",
                 "q6_practical_p90": 486_510,
+                "q6_practical_gate_hit": True,
+                "q6_practical_gate_under_before": True,
+                "q6_practical_gate_covered_after": True,
+                "q6_practical_gate_helped": True,
+                "q6_practical_gate_false_positive_proxy": False,
+                "q6_practical_p90_under_by": 0,
                 "q6_p90_misses_truth": True,
                 "v2_q6_value_p90": 30,
                 "raw_minus_decision_p90": 300_000,
@@ -124,6 +130,10 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert summary["q6_count_cell_prior_floor_median"] == 486_510
     assert summary["q6_practical_gate_count"] == 1
     assert summary["q6_practical_p90_median"] == 486_510
+    assert summary["q6_practical_gate_under_before_count"] == 1
+    assert summary["q6_practical_gate_helped_count"] == 1
+    assert summary["q6_practical_gate_false_positive_proxy_count"] == 0
+    assert summary["q6_practical_p90_under_by_median"] == 0
     assert summary["q6_p90_miss_count"] == 1
     assert summary["q6_p90_under_by_median"] == 50
     assert summary["category_target_rows"] == 2
@@ -158,6 +168,11 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
         for row in summary["groups"]["information_density"]
     )
     assert any(
+        row["hero_information_density"] == "ethan|medium"
+        and row["n"] == 1
+        for row in summary["groups"]["hero_information_density"]
+    )
+    assert any(
         row["map_family"] == "villa"
         and row["raw_ceiling_gap_median"] == 450_000
         and row["layout_overlap_rate"] == 0.0
@@ -167,7 +182,15 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
         row["hero"] == "ethan"
         and row["layout_overlap_rate"] == 1.0
         and row["q6_prior_risk_rate"] == 1.0
+        and row["q6_practical_gate_rate"] == 1.0
         for row in summary["groups"]["hero"]
+    )
+    assert summary["q6_practical_gate"]["map_family"][0]["gated_rows"] == 1
+    assert summary["q6_practical_gate"]["map_family"][0]["helped_rows"] == 1
+    assert any(
+        row["hero_map_family"] == "hero=ethan|map_family=shipwreck"
+        and row["gated_rows"] == 1
+        for row in summary["q6_practical_gate"]["hero_map_family"]
     )
     assert any(
         row["hero"] == "ethan"

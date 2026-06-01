@@ -161,6 +161,12 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "q6_count_cell_prior_floor_value" in artifact["model_eval"]
     assert "q6_practical_gate" in artifact["model_eval"]
     assert "q6_practical_p90" in artifact["model_eval"]
+    assert "q6_practical_gate_hit" in artifact["model_eval"]
+    assert "q6_practical_gate_false_positive_proxy" in artifact["model_eval"]
+    assert "q6_practical_gate_under_before" in artifact["model_eval"]
+    assert "q6_practical_gate_covered_after" in artifact["model_eval"]
+    assert "q6_practical_gate_helped" in artifact["model_eval"]
+    assert "q6_practical_p90_under_by" in artifact["model_eval"]
     assert "raw_minus_decision_p90" in artifact["model_eval"]
     assert "layout_conflict_root" in artifact["model_eval"]
     assert "shape_target_count" in artifact["model_eval"]
@@ -174,6 +180,7 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
         "medium",
         "high",
     }
+    assert "hero_information_density" in artifact["model_eval"]
     assert artifact["model_eval"]["relaxed_exact_used"] is False
 
 

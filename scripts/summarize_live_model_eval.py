@@ -261,6 +261,13 @@ def _with_derived_information_density(row: dict[str, Any]) -> dict[str, Any]:
         updates["information_density_band"] = _information_density_band(
             score
         )
+    density = str(
+        updates.get("information_density_band")
+        or row.get("information_density_band")
+        or "unknown"
+    )
+    if row.get("hero_information_density") is None:
+        updates["hero_information_density"] = f"{row.get('hero') or 'unknown'}|{density}"
     return {**row, **updates} if updates else row
 
 
@@ -285,6 +292,24 @@ def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
                 "q6_prior_risk_rate": _rate(
                     group_rows,
                     "q6_count_cell_prior_risk",
+                ),
+                "q6_practical_gate_rate": _rate(
+                    group_rows,
+                    "q6_practical_gate_hit",
+                ),
+                "q6_practical_false_positive_rate": _rate(
+                    [
+                        row for row in group_rows
+                        if row.get("q6_practical_gate_hit")
+                    ],
+                    "q6_practical_gate_false_positive_proxy",
+                ),
+                "q6_practical_helped_rate": _rate(
+                    [
+                        row for row in group_rows
+                        if row.get("q6_practical_gate_under_before")
+                    ],
+                    "q6_practical_gate_helped",
                 ),
                 "q6_p90_miss_rate": _rate(group_rows, "q6_p90_misses_truth"),
                 "raw_ceiling_gap_median": _median_value(
@@ -385,6 +410,44 @@ def _bid_gap_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any
                     _round(statistics.median(stop_minus_values))
                     if stop_minus_values
                     else None
+                ),
+            }
+        )
+    return out
+
+
+def _q6_practical_gate_summary(
+    rows: list[dict[str, Any]],
+    key: str,
+) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get(key) or "unknown"), []).append(row)
+
+    out: list[dict[str, Any]] = []
+    for value, group_rows in sorted(groups.items()):
+        gated = [row for row in group_rows if row.get("q6_practical_gate_hit")]
+        under_before = [
+            row for row in gated
+            if row.get("q6_practical_gate_under_before")
+        ]
+        out.append(
+            {
+                key: value,
+                "n": len(group_rows),
+                "gated_rows": len(gated),
+                "under_before_rows": len(under_before),
+                "helped_rows": sum(
+                    1 for row in under_before
+                    if row.get("q6_practical_gate_helped")
+                ),
+                "false_positive_proxy_rows": sum(
+                    1 for row in gated
+                    if row.get("q6_practical_gate_false_positive_proxy")
+                ),
+                "practical_p90_under_by_median": _median_value(
+                    gated,
+                    "q6_practical_p90_under_by",
                 ),
             }
         )
@@ -577,6 +640,23 @@ def summarize(
             ],
             "q6_practical_p90",
         ),
+        "q6_practical_gate_under_before_count": sum(
+            1 for row in valid if row.get("q6_practical_gate_under_before")
+        ),
+        "q6_practical_gate_helped_count": sum(
+            1 for row in valid if row.get("q6_practical_gate_helped")
+        ),
+        "q6_practical_gate_false_positive_proxy_count": sum(
+            1 for row in valid
+            if row.get("q6_practical_gate_false_positive_proxy")
+        ),
+        "q6_practical_p90_under_by_median": _median_value(
+            [
+                row for row in valid
+                if row.get("q6_practical_gate_hit")
+            ],
+            "q6_practical_p90_under_by",
+        ),
         "q6_p90_miss_count": sum(
             1 for row in valid if row.get("q6_p90_misses_truth") is True
         ),
@@ -623,6 +703,10 @@ def summarize(
             "map_id": _group_summary(valid, "map_id"),
             "evidence_stage": _group_summary(valid, "evidence_stage"),
             "information_density": _group_summary(valid, "information_density_band"),
+            "hero_information_density": _group_summary(
+                valid,
+                "hero_information_density",
+            ),
         },
         "bid_gap": {
             "hero": _bid_gap_summary(valid, "hero"),
@@ -635,6 +719,37 @@ def summarize(
                     for row in valid
                 ],
                 "map_family",
+            ),
+        },
+        "q6_practical_gate": {
+            "hero": _q6_practical_gate_summary(valid, "hero"),
+            "hero_map_family": _q6_practical_gate_summary(
+                [
+                    {
+                        **row,
+                        "hero_map_family": (
+                            f"hero={row.get('hero') or 'unknown'}|"
+                            f"map_family={_map_family(row.get('map_id'))}"
+                        ),
+                    }
+                    for row in valid
+                ],
+                "hero_map_family",
+            ),
+            "map_family": _q6_practical_gate_summary(
+                [
+                    {
+                        **row,
+                        "map_family": _map_family(row.get("map_id")),
+                    }
+                    for row in valid
+                ],
+                "map_family",
+            ),
+            "evidence_stage": _q6_practical_gate_summary(valid, "evidence_stage"),
+            "information_density": _q6_practical_gate_summary(
+                valid,
+                "information_density_band",
             ),
         },
     }

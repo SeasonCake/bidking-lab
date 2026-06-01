@@ -784,6 +784,10 @@ def evaluate_path(
         row["density_value_tier"] = (
             f"{row['information_density_band']}|{row['value_tier']}"
         )
+        row["hero_information_density"] = (
+            f"{row['hero']}|{row['information_density_band']}"
+        )
+        row["hero_evidence_stage"] = f"{row['hero']}|{row['evidence_stage']}"
         row["anchor_band"] = _anchor_band(row.get("anchor_count"))
         row["q6_top_size_band"] = _q6_top_size_band(row)
         row["public_constraint_key"] = _public_constraint_key(row)
@@ -1540,6 +1544,8 @@ def _summary(
             "value_tier": _group_summary(ok, "value_tier"),
             "evidence_stage": _group_summary(ok, "evidence_stage"),
             "information_density": _group_summary(ok, "information_density_band"),
+            "hero_information_density": _group_summary(ok, "hero_information_density"),
+            "hero_evidence_stage": _group_summary(ok, "hero_evidence_stage"),
             "density_value_tier": _group_summary(ok, "density_value_tier"),
         },
         "collection_readiness": _collection_readiness(

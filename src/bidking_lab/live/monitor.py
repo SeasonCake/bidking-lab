@@ -798,6 +798,26 @@ def _model_eval_row(
         current = str(row.get("当前最高", ""))
         highest_bid = _parse_int_text(current.split(" ")[-1] if current else None)
     final_q6_value = int((truth_breakdown or {}).get("final_q6_value") or 0)
+    q6_practical_gate_hit = bool(q6_practical_gate)
+    q6_practical_under_before = (
+        q6_practical_gate_hit
+        and q6_decision_value_p90 is not None
+        and final_q6_value > q6_decision_value_p90
+    )
+    q6_practical_covered_after = (
+        q6_practical_gate_hit
+        and q6_practical_p90 is not None
+        and final_q6_value <= q6_practical_p90
+    )
+    evidence_stage = _evidence_stage(artifact.get("round"))
+    density_score = _live_information_density_score(
+        artifact.get("round"),
+        anchor_count=anchor_count,
+        shape_target_count=shape_target_count,
+        category_target_count=category_target_count,
+        category_exclusion_count=category_exclusion_count,
+    )
+    density_band = _information_density_band(density_score)
     return {
         "ts": time.time(),
         "file": file,
@@ -868,6 +888,20 @@ def _model_eval_row(
         "q6_count_cell_prior_floor_value": q6_prior_floor_value,
         "q6_practical_gate": q6_practical_gate,
         "q6_practical_p90": q6_practical_p90,
+        "q6_practical_gate_hit": q6_practical_gate_hit,
+        "q6_practical_gate_false_positive_proxy": (
+            q6_practical_gate_hit and final_q6_value <= 0
+        ),
+        "q6_practical_gate_under_before": q6_practical_under_before,
+        "q6_practical_gate_covered_after": q6_practical_covered_after,
+        "q6_practical_gate_helped": (
+            q6_practical_under_before and q6_practical_covered_after
+        ),
+        "q6_practical_p90_under_by": (
+            max(0, final_q6_value - q6_practical_p90)
+            if q6_practical_p90 is not None
+            else None
+        ),
         "v2_q6_value_p90_under_by": (
             max(0, final_q6_value - q6_value_p90)
             if q6_value_p90 is not None
@@ -893,23 +927,10 @@ def _model_eval_row(
         "category_exclusion_count": category_exclusion_count,
         "anchor_count": anchor_count,
         "random_sample_avg_values": random_sample_avg_values,
-        "evidence_stage": _evidence_stage(artifact.get("round")),
-        "information_density_score": _live_information_density_score(
-            artifact.get("round"),
-            anchor_count=anchor_count,
-            shape_target_count=shape_target_count,
-            category_target_count=category_target_count,
-            category_exclusion_count=category_exclusion_count,
-        ),
-        "information_density_band": _information_density_band(
-            _live_information_density_score(
-                artifact.get("round"),
-                anchor_count=anchor_count,
-                shape_target_count=shape_target_count,
-                category_target_count=category_target_count,
-                category_exclusion_count=category_exclusion_count,
-            )
-        ),
+        "evidence_stage": evidence_stage,
+        "information_density_score": density_score,
+        "information_density_band": density_band,
+        "hero_information_density": f"{artifact.get('hero')}|{density_band}",
         "layout_conflict": bool(layout_root),
         "layout_conflict_root": layout_root,
         "posterior_diagnostics": posterior_diagnostics,

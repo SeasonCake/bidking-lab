@@ -135,6 +135,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "evidence_stage": "mid_3_4",
             "information_density_band": "medium",
             "density_value_tier": "medium|>=1.2m",
+            "hero_information_density": "ethan|medium",
+            "hero_evidence_stage": "ethan|mid_3_4",
             "calibration_eligible": True,
         },
         {
@@ -180,6 +182,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "evidence_stage": "early_1_2",
             "information_density_band": "low",
             "density_value_tier": "low|300k-800k",
+            "hero_information_density": "ethan|low",
+            "hero_evidence_stage": "ethan|early_1_2",
             "calibration_eligible": False,
         },
     ]
@@ -266,6 +270,10 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
         row["density_value_tier"]: row["n"]
         for row in summary["groups"]["density_value_tier"]
     } == {"low|300k-800k": 1, "medium|>=1.2m": 1}
+    assert {
+        row["hero_information_density"]: row["n"]
+        for row in summary["groups"]["hero_information_density"]
+    } == {"ethan|low": 1, "ethan|medium": 1}
     assert (
         summary["q6_plannable_risk_groups"]["information_density"][0][
             "q6_plannable_truth"
