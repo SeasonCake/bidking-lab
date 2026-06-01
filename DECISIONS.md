@@ -636,3 +636,5 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **更新 3**：已实现默认关闭的 `q6_residual_boost` sampler 开关。全局 boost 虽然显著改善 q6 coverage，但无 q6 正报代理明显上升；`shipwreck_profile_v1` 门控能把正报率维持在 baseline，同时改善 q6 coverage 和 MAE。该开关暂时只用于批评估实验，不进入 live 默认或 bid hint。
 
 **更新 4**：批评估已补 `q6_residual_boost_experiment` 结构化摘要。以后判断 b=3/b=5 不再只看全局 coverage，而要同时看 active profile、active no-q6 rows、无 q6 P90 正报率和 decision MAE。
+
+**更新 5**：新增 `compare_q6_residual_boost.py` 作为固定对比入口。后续是否把 profile-gated boost 接成 live shadow，必须先通过该脚本在更高 trials 和新增样本上复测，而不是凭单次手工命令决定。
