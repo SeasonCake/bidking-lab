@@ -1704,6 +1704,7 @@ def _summary(
         "q6_plannable_calibration_priority": _q6_plannable_calibration_priority(ok),
         "q6_actionable_targets": _q6_actionable_targets(ok),
         "q6_space_diagnostics": _q6_space_diagnostics(ok),
+        "q6_residual_boost_experiment": _q6_residual_boost_summary(ok),
         "q6_risk_groups": {
             "hero_map_family": _q6_group_summary(ok, ("hero", "map_family")),
             "map_family_value_tier": _q6_group_summary(
@@ -2594,6 +2595,135 @@ def _q6_space_group_summary(
         key=lambda row: (
             int(row["q6_plannable_miss_rows"]),
             int(row["median_q6_plannable_under_by"] or 0),
+        ),
+        reverse=True,
+    )[:12]
+
+
+def _q6_residual_boost_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    valued = [
+        row for row in rows
+        if row.get("v2_decision_value_p50_error") is not None
+    ]
+    active = [
+        row for row in rows
+        if float(row.get("q6_residual_boost") or 1.0) > 1.0
+    ]
+    active_no_q6 = [
+        row for row in active
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+    ]
+    active_no_q6_positive = [
+        row for row in active_no_q6
+        if int(row.get("v2_q6_decision_value_p90") or 0) > 0
+    ]
+    q6_truth = [
+        row for row in valued
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    q6_misses = [
+        row for row in q6_truth
+        if row.get("q6_plannable_p90_misses_truth")
+    ]
+    return {
+        "boost_values": sorted(
+            {
+                float(row.get("q6_residual_boost") or 1.0)
+                for row in rows
+            }
+        ),
+        "gate_values": sorted(
+            {
+                str(row.get("q6_residual_boost_gate") or "none")
+                for row in rows
+            }
+        ),
+        "active_rows": len(active),
+        "active_rate": round(len(active) / len(rows), 4) if rows else None,
+        "active_no_q6_rows": len(active_no_q6),
+        "active_no_q6_p90_positive": len(active_no_q6_positive),
+        "active_no_q6_p90_positive_rate": (
+            round(len(active_no_q6_positive) / len(active_no_q6), 4)
+            if active_no_q6
+            else None
+        ),
+        "q6_plannable_truth_rows": len(q6_truth),
+        "q6_plannable_miss_rows": len(q6_misses),
+        "q6_plannable_value_p90_coverage": (
+            round(1.0 - len(q6_misses) / len(q6_truth), 4)
+            if q6_truth
+            else None
+        ),
+        "groups": {
+            "hero_map_profile": _q6_residual_boost_group_summary(
+                rows,
+                ("hero", "map_family", "evidence_profile_key"),
+            ),
+            "hero_map_family": _q6_residual_boost_group_summary(
+                rows,
+                ("hero", "map_family"),
+            ),
+        },
+    }
+
+
+def _q6_residual_boost_group_summary(
+    rows: list[dict[str, Any]],
+    keys: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(_group_key(row, keys), []).append(row)
+
+    out: list[dict[str, Any]] = []
+    for group, group_rows in groups.items():
+        active = [
+            row for row in group_rows
+            if float(row.get("q6_residual_boost") or 1.0) > 1.0
+        ]
+        if not active:
+            continue
+        active_no_q6 = [
+            row for row in active
+            if int(row.get("final_q6_decision_value") or 0) <= 0
+        ]
+        q6_truth = [
+            row for row in group_rows
+            if int(row.get("final_q6_decision_value") or 0) > 0
+            and row.get("v2_q6_decision_value_p90") is not None
+        ]
+        q6_misses = [
+            row for row in q6_truth
+            if row.get("q6_plannable_p90_misses_truth")
+        ]
+        out.append(
+            {
+                "group": group,
+                "n": len(group_rows),
+                "active_rows": len(active),
+                "active_no_q6_rows": len(active_no_q6),
+                "q6_plannable_truth": len(q6_truth),
+                "q6_plannable_misses": len(q6_misses),
+                "q6_plannable_coverage": (
+                    round(1.0 - len(q6_misses) / len(q6_truth), 4)
+                    if q6_truth
+                    else None
+                ),
+                "boost_values": sorted(
+                    {
+                        float(row.get("q6_residual_boost") or 1.0)
+                        for row in active
+                    }
+                ),
+            }
+        )
+    return sorted(
+        out,
+        key=lambda row: (
+            int(row["active_rows"]),
+            int(row["q6_plannable_truth"]),
+            -int(row["active_no_q6_rows"]),
         ),
         reverse=True,
     )[:12]

@@ -463,6 +463,59 @@ def test_q6_residual_boost_profile_gate_is_narrow() -> None:
     ) == 1.0
 
 
+def test_q6_residual_boost_summary_reports_activation_and_no_q6_proxy() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 600,
+            "q6_plannable_p90_misses_truth": False,
+            "v2_decision_value_p50_error": 0,
+            "q6_residual_boost": 3.0,
+            "q6_residual_boost_gate": "shipwreck_profile_v1",
+        },
+        {
+            "status": "ok",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 0,
+            "v2_q6_decision_value_p90": 200,
+            "q6_plannable_p90_misses_truth": False,
+            "v2_decision_value_p50_error": 0,
+            "q6_residual_boost": 3.0,
+            "q6_residual_boost_gate": "shipwreck_profile_v1",
+        },
+        {
+            "status": "ok",
+            "hero": "aisha",
+            "map_family": "villa",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_decision_value_p50_error": 0,
+            "q6_residual_boost": 1.0,
+            "q6_residual_boost_gate": "shipwreck_profile_v1",
+        },
+    ]
+
+    summary = module._q6_residual_boost_summary(rows)
+
+    assert summary["boost_values"] == [1.0, 3.0]
+    assert summary["active_rows"] == 2
+    assert summary["active_no_q6_rows"] == 1
+    assert summary["active_no_q6_p90_positive_rate"] == 1.0
+    assert summary["q6_plannable_value_p90_coverage"] == 0.5
+    assert summary["groups"]["hero_map_profile"][0]["group"] == (
+        "hero=aisha|map_family=shipwreck|evidence_profile_key=shape+layout"
+    )
+
+
 def test_q6_low_space_residual_floor_experiment_is_narrower_than_prior_floor() -> None:
     module = _eval_module()
     rows = [
