@@ -614,3 +614,5 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **更新**：已新增 profile 级 q6 floor 门控离线实验。当前 profile 门控误触发代理更低，但 q6 coverage 也更低；因此仅作为诊断和未来规则候选，live 仍保持 hero+map_family shipwreck 门控。
 
 **更新 2**：已新增 `q6_actionable_targets`，把分层结果自动转成下一步建议。当前推荐聚焦剩余空间可行性、Aisha shipwreck q6 件数/格数门控、高信息局 layout conflict 审计；不推荐继续做全局红货抬权。
+
+**更新 3**：q6 分组摘要已加入空间压力字段。`shape+layout` 组的 q6 count/cell under 与 layout conflict 都很集中，所以下一步优先做 remaining space feasibility 和 layout 可信度分层。

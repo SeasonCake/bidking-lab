@@ -1916,6 +1916,16 @@ def _q6_plannable_group_summary(
             for row in q6_misses
             if row.get("v2_q6_decision_value_p90_under_by") is not None
         ]
+        trusted_footprints = [
+            int(row["trusted_footprint_count"])
+            for row in group_rows
+            if row.get("trusted_footprint_count") is not None
+        ]
+        occupied_cells = [
+            int(row["footprint_occupied_cells"])
+            for row in group_rows
+            if row.get("footprint_occupied_cells") is not None
+        ]
         out.append(
             {
                 "group": group,
@@ -1933,6 +1943,32 @@ def _q6_plannable_group_summary(
                 "zero_match": sum(1 for row in group_rows if not row.get("v2_matched")),
                 "layout_conflict": sum(
                     1 for row in group_rows if row.get("layout_conflict")
+                ),
+                "q6_count_under": sum(
+                    1 for row in q6_misses
+                    if int(row.get("v2_q6_count_p90_under_by") or 0) > 0
+                ),
+                "q6_cells_under": sum(
+                    1 for row in q6_misses
+                    if int(row.get("v2_q6_cells_p90_under_by") or 0) > 0
+                ),
+                "q6_count_below_prior": sum(
+                    1 for row in q6_misses
+                    if float(row.get("v2_q6_count_p90_under_prior_by") or 0) > 0
+                ),
+                "q6_cells_below_prior": sum(
+                    1 for row in q6_misses
+                    if float(row.get("v2_q6_cells_p90_under_prior_by") or 0) > 0
+                ),
+                "trusted_footprint_median": (
+                    _round(statistics.median(trusted_footprints))
+                    if trusted_footprints
+                    else None
+                ),
+                "footprint_occupied_cells_median": (
+                    _round(statistics.median(occupied_cells))
+                    if occupied_cells
+                    else None
                 ),
             }
         )

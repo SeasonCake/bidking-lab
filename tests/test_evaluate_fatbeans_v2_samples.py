@@ -115,6 +115,10 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "v2_q6_value_p90_error": -400_000,
             "v2_q6_value_p90_under_by": 400_000,
             "v2_q6_decision_value_p90_under_by": 0,
+            "v2_q6_count_p90_under_by": 0,
+            "v2_q6_cells_p90_under_by": 0,
+            "v2_q6_count_p90_under_prior_by": 0,
+            "v2_q6_cells_p90_under_prior_by": 0,
             "v2_q6_match_rate": 0.05,
             "v2_q6_prior_expected_value": 800_000,
             "q6_false_low_risk": True,
@@ -138,6 +142,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "density_value_tier": "medium|>=1.2m",
             "hero_information_density": "ethan|medium",
             "hero_evidence_stage": "ethan|mid_3_4",
+            "trusted_footprint_count": 2,
+            "footprint_occupied_cells": 10,
             "calibration_eligible": True,
         },
         {
@@ -161,6 +167,10 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "v2_value_p90_covers_final": True,
             "q6_false_low_risk": False,
             "v2_q6_decision_value_p90": None,
+            "v2_q6_count_p90_under_by": 0,
+            "v2_q6_cells_p90_under_by": 0,
+            "v2_q6_count_p90_under_prior_by": 0,
+            "v2_q6_cells_p90_under_prior_by": 0,
             "q6_p90_misses_truth": False,
             "q6_plannable_p90_misses_truth": False,
             "layout_conflict": True,
@@ -186,6 +196,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "density_value_tier": "low|300k-800k",
             "hero_information_density": "ethan|low",
             "hero_evidence_stage": "ethan|early_1_2",
+            "trusted_footprint_count": 0,
+            "footprint_occupied_cells": 0,
             "calibration_eligible": False,
         },
     ]
@@ -281,6 +293,18 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "q6_plannable_truth"
         ]
         == 1
+    )
+    assert (
+        summary["q6_plannable_risk_groups"]["hero_map_family"][0][
+            "trusted_footprint_median"
+        ]
+        == 1
+    )
+    assert (
+        summary["q6_plannable_risk_groups"]["hero_map_family"][0][
+            "footprint_occupied_cells_median"
+        ]
+        == 5
     )
     assert summary["groups"]["evidence_profile"][0]["evidence_profile_key"] == (
         "tool:category"
