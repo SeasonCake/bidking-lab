@@ -288,6 +288,9 @@ class PosteriorReport:
     q6_decision_value: QuantileSummary | None = None
     q6_count: QuantileSummary | None = None
     q6_cells: QuantileSummary | None = None
+    remaining_cells_after_layout: QuantileSummary | None = None
+    q6_space_pressure: QuantileSummary | None = None
+    q6_space_overflow_rate: float | None = None
     q6_prior_match_rate: float | None = None
     q6_prior_expected_count: float | None = None
     q6_prior_expected_cells: float | None = None
@@ -2007,7 +2010,13 @@ def _estimate_posterior_for_problem(
     q6_decision_values: list[int] = []
     q6_counts: list[int] = []
     q6_cells: list[int] = []
+    remaining_cells_after_layout: list[int] = []
+    q6_space_pressures: list[float] = []
+    q6_space_overflows: list[int] = []
     weights: list[float] = []
+    known_q6_anchor_cells = sum(
+        anchor.cells for anchor in problem.anchors if anchor.quality == 6
+    )
     trials = max(0, int(n_trials))
     for _ in range(trials):
         truth = sampler.sample(rng=rng)
@@ -2042,8 +2051,25 @@ def _estimate_posterior_for_problem(
         q6_bucket = truth.buckets.get(6)
         q6_values.append(q6_bucket.value_sum if q6_bucket is not None else 0)
         q6_counts.append(q6_bucket.count if q6_bucket is not None else 0)
-        q6_cells.append(q6_bucket.total_cells if q6_bucket is not None else 0)
+        q6_cell_count = q6_bucket.total_cells if q6_bucket is not None else 0
+        q6_cells.append(q6_cell_count)
         q6_decision_values.append(q6_decision_value_for_truth(truth, problem))
+        remaining_cells = max(
+            0,
+            int(truth.warehouse_total_cells) - int(problem.layout.occupied_cells),
+        )
+        remaining_cells_after_layout.append(remaining_cells)
+        q6_residual_cell_count = max(0, q6_cell_count - known_q6_anchor_cells)
+        if problem.layout.occupied_cells > 0:
+            q6_space_pressures.append(
+                q6_residual_cell_count / max(1, remaining_cells)
+            )
+            q6_space_overflows.append(
+                1 if q6_residual_cell_count > remaining_cells else 0
+            )
+        else:
+            q6_space_pressures.append(0.0)
+            q6_space_overflows.append(0)
         weights.append(weight)
     diagnostics = [*extra_diagnostics, *problem.diagnostics]
     q6_match_rate = _weighted_positive_rate(q6_values, weights)
@@ -2081,6 +2107,9 @@ def _estimate_posterior_for_problem(
         q6_decision_value=_quantiles(q6_decision_values, weights),
         q6_count=_quantiles(q6_counts, weights),
         q6_cells=_quantiles(q6_cells, weights),
+        remaining_cells_after_layout=_quantiles(remaining_cells_after_layout, weights),
+        q6_space_pressure=_quantiles(q6_space_pressures, weights),
+        q6_space_overflow_rate=_weighted_positive_rate(q6_space_overflows, weights),
         q6_prior_match_rate=(
             q6_prior.session_probability if q6_prior is not None else None
         ),

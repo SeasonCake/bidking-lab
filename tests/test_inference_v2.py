@@ -884,6 +884,37 @@ def test_q6_target_candidate_sampling_tilts_toward_value_without_global_boost() 
     assert q5_probs.tolist() == [0.5, 0.5]
 
 
+def test_posterior_reports_remaining_space_pressure_diagnostics() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            local_index=0,
+            shape_key="11",
+            cells=1,
+            sources=("test_layout",),
+        )
+    )
+
+    report = estimate_posterior_v2(
+        2401,
+        SessionObs(map_id=2401, hero="aisha"),
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        n_trials=80,
+        seed=23,
+    )
+
+    assert report.n_matched > 0
+    assert report.remaining_cells_after_layout is not None
+    assert report.q6_space_pressure is not None
+    assert report.q6_space_overflow_rate is not None
+    assert report.remaining_cells_after_layout.p50 >= 1
+    assert 0.0 <= report.q6_space_overflow_rate <= 1.0
+
+
 def test_store_category_evidence_becomes_category_target() -> None:
     valid_a = _item(7001, quality=6, value=210_000, shape=(2, 2), tags=[105])
     valid_b = _item(7002, quality=6, value=220_000, shape=(2, 2), tags=[105])

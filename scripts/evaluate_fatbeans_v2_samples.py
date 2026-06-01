@@ -516,6 +516,10 @@ def _q6_plannable_miss_root(row: dict[str, Any]) -> str:
         markers.append("q6_count_below_prior")
     if float(row.get("v2_q6_cells_p90_under_prior_by") or 0) > 0:
         markers.append("q6_cells_below_prior")
+    if float(row.get("v2_q6_space_pressure_p90") or 0) >= 1.0:
+        markers.append("q6_space_pressure_high")
+    if float(row.get("v2_q6_space_overflow_rate") or 0) > 0:
+        markers.append("q6_space_overflow")
     markers.append(_q6_top_size_band(row))
     if row.get("layout_conflict"):
         markers.append("layout_conflict")
@@ -611,6 +615,34 @@ def evaluate_path(
         )
         q6_count_p90 = _round(report.q6_count.p90 if report.q6_count else None)
         q6_cells_p90 = _round(report.q6_cells.p90 if report.q6_cells else None)
+        remaining_cells_after_layout_p10 = _round(
+            report.remaining_cells_after_layout.p10
+            if report.remaining_cells_after_layout
+            else None
+        )
+        remaining_cells_after_layout_p50 = _round(
+            report.remaining_cells_after_layout.p50
+            if report.remaining_cells_after_layout
+            else None
+        )
+        remaining_cells_after_layout_p90 = _round(
+            report.remaining_cells_after_layout.p90
+            if report.remaining_cells_after_layout
+            else None
+        )
+        q6_space_pressure_p50 = _round_float(
+            report.q6_space_pressure.p50
+            if report.q6_space_pressure
+            else None,
+            3,
+        )
+        q6_space_pressure_p90 = _round_float(
+            report.q6_space_pressure.p90
+            if report.q6_space_pressure
+            else None,
+            3,
+        )
+        q6_space_overflow_rate = _round_float(report.q6_space_overflow_rate, 4)
         cells_p10 = _round(report.total_cells.p10 if report.total_cells else None)
         cells_p50 = _round(report.total_cells.p50 if report.total_cells else None)
         cells_p90 = _round(report.total_cells.p90 if report.total_cells else None)
@@ -691,6 +723,12 @@ def evaluate_path(
             "v2_q6_decision_value_p90": q6_decision_value_p90,
             "v2_q6_count_p90": q6_count_p90,
             "v2_q6_cells_p90": q6_cells_p90,
+            "v2_remaining_cells_after_layout_p10": remaining_cells_after_layout_p10,
+            "v2_remaining_cells_after_layout_p50": remaining_cells_after_layout_p50,
+            "v2_remaining_cells_after_layout_p90": remaining_cells_after_layout_p90,
+            "v2_q6_space_pressure_p50": q6_space_pressure_p50,
+            "v2_q6_space_pressure_p90": q6_space_pressure_p90,
+            "v2_q6_space_overflow_rate": q6_space_overflow_rate,
             "v2_q6_count_p90_under_by": (
                 max(0, int(truth_breakdown.get("final_q6_count") or 0) - q6_count_p90)
                 if q6_count_p90 is not None
@@ -1926,6 +1964,21 @@ def _q6_plannable_group_summary(
             for row in group_rows
             if row.get("footprint_occupied_cells") is not None
         ]
+        remaining_cells_p50 = [
+            int(row["v2_remaining_cells_after_layout_p50"])
+            for row in group_rows
+            if row.get("v2_remaining_cells_after_layout_p50") is not None
+        ]
+        q6_space_pressure_p90 = [
+            float(row["v2_q6_space_pressure_p90"])
+            for row in group_rows
+            if row.get("v2_q6_space_pressure_p90") is not None
+        ]
+        q6_space_overflow_rates = [
+            float(row["v2_q6_space_overflow_rate"])
+            for row in group_rows
+            if row.get("v2_q6_space_overflow_rate") is not None
+        ]
         out.append(
             {
                 "group": group,
@@ -1968,6 +2021,21 @@ def _q6_plannable_group_summary(
                 "footprint_occupied_cells_median": (
                     _round(statistics.median(occupied_cells))
                     if occupied_cells
+                    else None
+                ),
+                "remaining_cells_after_layout_p50_median": (
+                    _round(statistics.median(remaining_cells_p50))
+                    if remaining_cells_p50
+                    else None
+                ),
+                "q6_space_pressure_p90_median": (
+                    _round_float(statistics.median(q6_space_pressure_p90), 3)
+                    if q6_space_pressure_p90
+                    else None
+                ),
+                "q6_space_overflow_rate_mean": (
+                    _round_float(statistics.mean(q6_space_overflow_rates), 4)
+                    if q6_space_overflow_rates
                     else None
                 ),
             }

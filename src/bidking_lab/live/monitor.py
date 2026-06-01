@@ -94,6 +94,16 @@ def _format_quantile_interval(summary: Any) -> str:
     return f"{summary.p10:,.0f} / {summary.p50:,.0f} / {summary.p90:,.0f}"
 
 
+def _format_quantile_interval_float(summary: Any, digits: int = 2) -> str:
+    if summary is None:
+        return ""
+    return (
+        f"{summary.p10:.{digits}f} / "
+        f"{summary.p50:.{digits}f} / "
+        f"{summary.p90:.{digits}f}"
+    )
+
+
 def _format_quantile_width(summary: Any) -> str:
     if summary is None:
         return ""
@@ -221,6 +231,17 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
             ),
             "q6格数 P10/P50/P90": _format_quantile_interval(
                 getattr(report, "q6_cells", None)
+            ),
+            "剩余空间 P10/P50/P90": _format_quantile_interval(
+                getattr(report, "remaining_cells_after_layout", None)
+            ),
+            "q6空间压力 P10/P50/P90": _format_quantile_interval_float(
+                getattr(report, "q6_space_pressure", None)
+            ),
+            "q6空间溢出率": (
+                f"{report.q6_space_overflow_rate:.1%}"
+                if getattr(report, "q6_space_overflow_rate", None) is not None
+                else ""
             ),
             "q6样本率": (
                 f"{report.q6_match_rate:.1%}"
@@ -615,6 +636,16 @@ def _parse_range_value(label: str, index: int) -> int | None:
         return None
 
 
+def _parse_range_float_value(label: str, index: int) -> float | None:
+    parts = [part.strip().replace(",", "") for part in label.split("/")]
+    if len(parts) <= index or parts[index] in ("", "?"):
+        return None
+    try:
+        return float(parts[index])
+    except ValueError:
+        return None
+
+
 def _parse_range_p50(label: str) -> int | None:
     return _parse_range_value(label, 1)
 
@@ -742,6 +773,12 @@ def _model_eval_row(
     q6_decision_value_p90 = None
     q6_count_p90 = None
     q6_cells_p90 = None
+    remaining_cells_after_layout_p10 = None
+    remaining_cells_after_layout_p50 = None
+    remaining_cells_after_layout_p90 = None
+    q6_space_pressure_p50 = None
+    q6_space_pressure_p90 = None
+    q6_space_overflow_rate = None
     q6_prior_gap_summary = ""
     q6_prior_floor_value = None
     q6_practical_gate = ""
@@ -795,6 +832,16 @@ def _model_eval_row(
         q6_cells_p90 = _parse_range_value(
             str(v2_rows[0].get("q6格数 P10/P50/P90", "")),
             2,
+        )
+        remaining_label = str(v2_rows[0].get("剩余空间 P10/P50/P90", ""))
+        remaining_cells_after_layout_p10 = _parse_range_value(remaining_label, 0)
+        remaining_cells_after_layout_p50 = _parse_range_value(remaining_label, 1)
+        remaining_cells_after_layout_p90 = _parse_range_value(remaining_label, 2)
+        pressure_label = str(v2_rows[0].get("q6空间压力 P10/P50/P90", ""))
+        q6_space_pressure_p50 = _parse_range_float_value(pressure_label, 1)
+        q6_space_pressure_p90 = _parse_range_float_value(pressure_label, 2)
+        q6_space_overflow_rate = _parse_percent_text(
+            v2_rows[0].get("q6空间溢出率")
         )
         q6_prior_gap_summary = str(v2_rows[0].get("q6先验缺口") or "")
         q6_prior_floor_value = _parse_int_text(v2_rows[0].get("q6先验风险参考"))
@@ -908,6 +955,12 @@ def _model_eval_row(
         "v2_q6_decision_value_p90": q6_decision_value_p90,
         "v2_q6_count_p90": q6_count_p90,
         "v2_q6_cells_p90": q6_cells_p90,
+        "v2_remaining_cells_after_layout_p10": remaining_cells_after_layout_p10,
+        "v2_remaining_cells_after_layout_p50": remaining_cells_after_layout_p50,
+        "v2_remaining_cells_after_layout_p90": remaining_cells_after_layout_p90,
+        "v2_q6_space_pressure_p50": q6_space_pressure_p50,
+        "v2_q6_space_pressure_p90": q6_space_pressure_p90,
+        "v2_q6_space_overflow_rate": q6_space_overflow_rate,
         "v2_q6_count_p90_under_prior_by": (
             max(0.0, q6_prior_expected_count - q6_count_p90)
             if q6_prior_expected_count is not None

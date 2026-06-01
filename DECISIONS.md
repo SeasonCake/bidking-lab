@@ -616,3 +616,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **更新 2**：已新增 `q6_actionable_targets`，把分层结果自动转成下一步建议。当前推荐聚焦剩余空间可行性、Aisha shipwreck q6 件数/格数门控、高信息局 layout conflict 审计；不推荐继续做全局红货抬权。
 
 **更新 3**：q6 分组摘要已加入空间压力字段。`shape+layout` 组的 q6 count/cell under 与 layout conflict 都很集中，所以下一步优先做 remaining space feasibility 和 layout 可信度分层。
+
+## 2026-06-01 · 格子装箱可视化归入空间/布局约束主线
+
+**背景**：用户问格子装箱可视化属于哪个推进项，是否和 UI 优化一起做。当前 q6 低估瓶颈已经指向已知 footprint、剩余空间和 q6 件数/格数组合，若只做 UI 画面而没有后验字段，无法提高实战判断。
+
+**推荐**：把格子装箱可视化放在“空间/布局约束”阶段：推理层先输出 known footprint、剩余空间、residual q6 空间压力和溢出诊断；UI/悬浮窗后续只负责把这些字段画成 minimap、装箱压力和风险标记。
+
+**用户选择**：继续按推荐路线推进。
+
+**取舍**：短期先做轻量 feasibility，不上完整装箱搜索，避免实时推理变慢或被复杂约束扰乱；后续如果空间压力诊断能解释 q6 under，再逐步加入更强的 shape/remaining-space score。
+
+**复查点**：观察 `model_eval.jsonl` 与 batch summary 中 `v2_q6_space_pressure_p90`、`v2_q6_space_overflow_rate` 是否能区分 q6 低估局和正常局，再决定是否进入正式 layout posterior 权重或装箱可视化面板。
