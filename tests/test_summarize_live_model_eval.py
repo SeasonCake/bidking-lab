@@ -75,6 +75,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "final_top_item_cells": 9,
                 "decision_value_p50": 180,
                 "q6_below_drop_prior": True,
+                "q6_count_cell_prior_risk": True,
+                "q6_count_cell_prior_floor_value": 486_510,
                 "q6_p90_misses_truth": True,
                 "v2_q6_value_p90": 30,
                 "raw_minus_decision_p90": 300_000,
@@ -113,6 +115,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert summary["log_quality"]["missing_hero"] == 1
     assert summary["log_quality"]["missing_q6_truth_fields"] == 1
     assert summary["q6_below_drop_prior_count"] == 1
+    assert summary["q6_count_cell_prior_risk_count"] == 1
+    assert summary["q6_count_cell_prior_floor_median"] == 486_510
     assert summary["q6_p90_miss_count"] == 1
     assert summary["q6_p90_under_by_median"] == 50
     assert summary["category_target_rows"] == 2
@@ -146,6 +150,7 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert any(
         row["hero"] == "ethan"
         and row["layout_overlap_rate"] == 1.0
+        and row["q6_prior_risk_rate"] == 1.0
         for row in summary["groups"]["hero"]
     )
     assert any(

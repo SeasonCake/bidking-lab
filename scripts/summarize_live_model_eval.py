@@ -228,6 +228,10 @@ def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
                 "warehouse_mae": _mae(group_rows, "warehouse_p50_error"),
                 "layout_fit_mae": _mae(group_rows, "layout_fit_p50_error"),
                 "q6_false_low_rate": _rate(group_rows, "q6_false_low_risk"),
+                "q6_prior_risk_rate": _rate(
+                    group_rows,
+                    "q6_count_cell_prior_risk",
+                ),
                 "q6_p90_miss_rate": _rate(group_rows, "q6_p90_misses_truth"),
                 "raw_ceiling_gap_median": _median_value(
                     group_rows,
@@ -495,6 +499,16 @@ def summarize(
         ),
         "q6_below_drop_prior_count": sum(
             1 for row in valid if row.get("q6_below_drop_prior") is True
+        ),
+        "q6_count_cell_prior_risk_count": sum(
+            1 for row in valid if row.get("q6_count_cell_prior_risk") is True
+        ),
+        "q6_count_cell_prior_floor_median": _median_value(
+            [
+                row for row in valid
+                if row.get("q6_count_cell_prior_risk") is True
+            ],
+            "q6_count_cell_prior_floor_value",
         ),
         "q6_p90_miss_count": sum(
             1 for row in valid if row.get("q6_p90_misses_truth") is True
