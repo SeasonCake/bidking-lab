@@ -572,3 +572,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：实战时能看到“Aisha shipwreck 等局可能被 q6 count/cells 压低”的警告；代价是它还不是自动策略。等实时日志足够后，再评估是否只对特定 hero/map/evidence 组合启用更窄门控。
 
 **复查点**：观察 live `q6_count_cell_prior_risk` 的真阳性/假阳性。若 Aisha shipwreck 的风险提示明显对应后续 q6 低估，才考虑进入分组 residual floor。
+
+## 2026-06-01 · q6 floor 下一步只考虑正净收益门控
+
+**背景**：全局 q6 count/cell prior floor 能提高覆盖，但会把不少无 q6 局也打成风险。用户目标是实战常见局更稳，而不是为了覆盖率把普通局估价拉偏。
+
+**推荐**：先在评估器里做正净收益门控：按 hero+map_family 统计 floor 之后的 q6 低估改善数和无 q6 误触发代理数，只保留改善数大于误触发数的组合。
+
+**用户选择**：继续逐步优化 q6，让它更具实战意义。
+
+**取舍**：当前 271 份样本下，门控只选中 `Aisha+shipwreck` 和 `Ethan+shipwreck`；coverage 接近全局 floor，但误触发代理明显更低。villa 暂不接入，避免用红货先验污染普通局。
+
+**复查点**：下一步如果要进 live/出价层，应先把该门控作为“shipwreck q6 风险参考”，继续观察实时日志里的真阳性/假阳性；不直接改 `decision_value` P50。

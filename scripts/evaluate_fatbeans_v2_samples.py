@@ -948,6 +948,79 @@ def _q6_count_cell_prior_floor_experiment(
     }
 
 
+def _q6_count_cell_prior_gated_floor_experiment(
+    rows: list[dict[str, Any]],
+    *,
+    floor_ratio: float,
+) -> dict[str, Any] | None:
+    if floor_ratio <= 0:
+        return None
+    gate_rows = _q6_count_cell_prior_floor_gate_candidates(
+        rows,
+        floor_ratio=floor_ratio,
+    )
+    gate_groups = {str(row["group"]) for row in gate_rows}
+    q6_truth = [
+        row for row in rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    if not q6_truth:
+        return {
+            "enabled": True,
+            "floor_ratio": floor_ratio,
+            "gate": "hero_map_family_positive_net",
+            "gates": gate_rows,
+            "q6_plannable_truth_files": 0,
+            "eligible_rows": 0,
+            "eligible_no_q6_rows": 0,
+            "q6_plannable_value_p90_coverage": None,
+            "q6_plannable_p90_misses_truth": 0,
+        }
+
+    eligible_rows = 0
+    adjusted_misses = 0
+    floors: list[int] = []
+    for row in q6_truth:
+        q6_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        if _group_key(row, ("hero", "map_family")) in gate_groups:
+            floor_value = _q6_count_cell_prior_floor_value(
+                row,
+                floor_ratio=floor_ratio,
+            )
+            if floor_value is not None:
+                eligible_rows += 1
+                floors.append(floor_value)
+                q6_p90 = max(q6_p90, floor_value)
+        if q6_p90 < int(row.get("final_q6_decision_value") or 0):
+            adjusted_misses += 1
+
+    return {
+        "enabled": True,
+        "floor_ratio": floor_ratio,
+        "gate": "hero_map_family_positive_net",
+        "gates": gate_rows,
+        "q6_plannable_truth_files": len(q6_truth),
+        "eligible_rows": eligible_rows,
+        "eligible_no_q6_rows": sum(
+            1 for row in rows
+            if int(row.get("final_q6_decision_value") or 0) <= 0
+            and _group_key(row, ("hero", "map_family")) in gate_groups
+            and _q6_count_cell_prior_floor_value(
+                row,
+                floor_ratio=floor_ratio,
+            )
+            is not None
+        ),
+        "floor_median": _round(statistics.median(floors)) if floors else None,
+        "q6_plannable_value_p90_coverage": round(
+            1.0 - adjusted_misses / len(q6_truth),
+            4,
+        ),
+        "q6_plannable_p90_misses_truth": adjusted_misses,
+    }
+
+
 def _summary(
     rows: list[dict[str, Any]],
     *,
@@ -1429,6 +1502,14 @@ def _summary(
     )
     if count_cell_experiment is not None:
         summary["q6_count_cell_prior_floor_experiment"] = count_cell_experiment
+    gated_count_cell_experiment = _q6_count_cell_prior_gated_floor_experiment(
+        ok,
+        floor_ratio=q6_residual_floor_ratio,
+    )
+    if gated_count_cell_experiment is not None:
+        summary["q6_count_cell_prior_gated_floor_experiment"] = (
+            gated_count_cell_experiment
+        )
     return summary
 
 
@@ -1600,6 +1681,38 @@ def _q6_count_cell_prior_floor_group_summary(
         ),
         reverse=True,
     )[:12]
+
+
+def _q6_count_cell_prior_floor_gate_candidates(
+    rows: list[dict[str, Any]],
+    *,
+    floor_ratio: float,
+) -> list[dict[str, Any]]:
+    candidates = []
+    for row in _q6_count_cell_prior_floor_group_summary(
+        rows,
+        ("hero", "map_family"),
+        floor_ratio=floor_ratio,
+    ):
+        improvement = int(row["q6_plannable_miss_improvement"])
+        false_positive_proxy = int(row["eligible_no_q6_rows"])
+        if improvement <= 0 or improvement <= false_positive_proxy:
+            continue
+        candidates.append(
+            {
+                **row,
+                "net_improvement": improvement - false_positive_proxy,
+            }
+        )
+    return sorted(
+        candidates,
+        key=lambda row: (
+            int(row["net_improvement"]),
+            int(row["q6_plannable_miss_improvement"]),
+            int(row["q6_plannable_truth"]),
+        ),
+        reverse=True,
+    )
 
 
 def _q6_group_summary(

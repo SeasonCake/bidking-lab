@@ -335,6 +335,57 @@ def test_q6_count_cell_prior_floor_experiment_is_separate_from_raw_floor() -> No
     )
 
 
+def test_q6_count_cell_prior_gated_floor_prefers_positive_net_groups() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "file": "good_gate_q6.json",
+            "hero": "ethan",
+            "map_family": "shipwreck",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+        },
+        {
+            "status": "ok",
+            "file": "bad_gate_q6.json",
+            "hero": "aisha",
+            "map_family": "villa",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+        },
+        {
+            "status": "ok",
+            "file": "bad_gate_no_q6.json",
+            "hero": "aisha",
+            "map_family": "villa",
+            "final_q6_decision_value": 0,
+            "v2_q6_decision_value_p90": 0,
+            "q6_plannable_p90_misses_truth": False,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+        },
+    ]
+
+    experiment = module._q6_count_cell_prior_gated_floor_experiment(
+        rows,
+        floor_ratio=1.0,
+    )
+
+    assert [row["group"] for row in experiment["gates"]] == [
+        "hero=ethan|map_family=shipwreck"
+    ]
+    assert experiment["eligible_rows"] == 1
+    assert experiment["eligible_no_q6_rows"] == 0
+    assert experiment["q6_plannable_p90_misses_truth"] == 1
+
+
 def test_expand_cli_paths_supports_globs(tmp_path: Path) -> None:
     module = _eval_module()
     first = tmp_path / "a.json"
