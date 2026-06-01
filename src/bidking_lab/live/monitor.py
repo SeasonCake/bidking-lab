@@ -204,6 +204,7 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
     if report is None:
         return []
     diagnostics = ";".join(getattr(report, "diagnostics", ()) or ())
+    q6_prior_gap = _q6_prior_gap_summary(report)
     return [
         {
             "范围": f"{report.map_id} {report.map_name}",
@@ -246,6 +247,13 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
                 if report.q6_prior_expected_value is not None
                 else ""
             ),
+            "q6先验缺口": q6_prior_gap["summary"],
+            "q6先验风险参考": (
+                f"{q6_prior_gap['floor_value']:,.0f}"
+                if q6_prior_gap["floor_value"] is not None
+                else ""
+            ),
+            "q6先验风险": "是" if q6_prior_gap["risk"] else "",
             "形状约束数": getattr(report, "shape_target_count", 0),
             "分类约束数": getattr(report, "category_target_count", 0),
             "分类反排数": getattr(report, "category_exclusion_count", 0),
@@ -260,6 +268,40 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
             "诊断": diagnostics,
         }
     ]
+
+
+def _q6_prior_gap_summary(report: Any) -> dict[str, Any]:
+    parts: list[str] = []
+    count_gap = _quantile_prior_gap(
+        getattr(report, "q6_count", None),
+        getattr(report, "q6_prior_expected_count", None),
+    )
+    cells_gap = _quantile_prior_gap(
+        getattr(report, "q6_cells", None),
+        getattr(report, "q6_prior_expected_cells", None),
+    )
+    if count_gap is not None and count_gap >= 0.25:
+        parts.append(f"件数P90低{count_gap:.2f}")
+    if cells_gap is not None and cells_gap >= 1.0:
+        parts.append(f"格数P90低{cells_gap:.1f}")
+    return {
+        "risk": bool(parts),
+        "summary": "；".join(parts),
+        "floor_value": (
+            getattr(report, "q6_prior_expected_value", None)
+            if parts
+            else None
+        ),
+    }
+
+
+def _quantile_prior_gap(quantile: Any, prior: Any) -> float | None:
+    if quantile is None or prior is None:
+        return None
+    p90 = getattr(quantile, "p90", None)
+    if p90 is None:
+        return None
+    return max(0.0, float(prior) - float(p90))
 
 
 def _tool_info_roi_rows(rows: Sequence[Any]) -> list[dict[str, Any]]:
@@ -574,6 +616,8 @@ def _model_eval_row(
     q6_decision_value_p90 = None
     q6_count_p90 = None
     q6_cells_p90 = None
+    q6_prior_gap_summary = ""
+    q6_prior_floor_value = None
     posterior_diagnostics = ""
     if warehouse_rows:
         warehouse_p50 = _parse_range_p50(
@@ -623,6 +667,8 @@ def _model_eval_row(
             str(v2_rows[0].get("q6格数 P10/P50/P90", "")),
             2,
         )
+        q6_prior_gap_summary = str(v2_rows[0].get("q6先验缺口") or "")
+        q6_prior_floor_value = _parse_int_text(v2_rows[0].get("q6先验风险参考"))
         posterior_diagnostics = str(v2_rows[0].get("诊断") or "")
     else:
         shape_target_count = None
@@ -713,6 +759,9 @@ def _model_eval_row(
             and q6_cells_p90 is not None
             else None
         ),
+        "q6_count_cell_prior_risk": bool(q6_prior_gap_summary),
+        "q6_count_cell_prior_gap": q6_prior_gap_summary,
+        "q6_count_cell_prior_floor_value": q6_prior_floor_value,
         "v2_q6_value_p90_under_by": (
             max(0, final_q6_value - q6_value_p90)
             if q6_value_p90 is not None

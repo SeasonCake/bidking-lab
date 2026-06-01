@@ -48,6 +48,8 @@ def test_overlay_summary_lines_include_q6_and_diagnostics() -> None:
                 {
                     "q6样本率": "12.0%",
                     "q6价值 P10/P50/P90": "0 / 120,000 / 360,000",
+                    "q6先验缺口": "件数P90低1.00",
+                    "q6先验风险参考": "486,510",
                     "诊断": "footprint_overlap_cells:2",
                 },
             ),
@@ -63,6 +65,7 @@ def test_overlay_summary_lines_include_q6_and_diagnostics() -> None:
     assert lines[0].startswith("ETHAN  |  map 2401")
     assert any(line.startswith("决策:") for line in lines)
     assert any(line.startswith("红货:") for line in lines)
+    assert any("先验缺口" in line for line in lines)
     assert any("q6 P90" in line for line in lines)
     assert any("footprint" in line for line in lines)
     assert any("决策P50误差" in line for line in lines)
@@ -105,3 +108,4 @@ def test_demo_snapshot_has_compact_overlay_sections() -> None:
     ]
     assert any(section[0] == "鉴影命中" for section in model["sections"])
     assert any(alert[0].startswith("q6 P90") for alert in model["alerts"])
+    assert any(alert[0].startswith("q6 件数/格数低于先验") for alert in model["alerts"])

@@ -560,3 +560,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：避免把黑盒实现或自动化策略混进现有白盒推理；如果后续发现导出数据解释不了其效果，再单独评估 exe 分析成本。
 
 **复查点**：首轮别墅/沉船/hidden q5/q6 对照显示外部 `map_quality_p50_out.csv` 与本项目本地 Drop 推导基本一致；q6 低估不是因为我们漏了一套基础爆率。
+
+## 2026-06-01 · q6 count/cell 先验 floor 先作为 live 风险提示
+
+**背景**：离线 `q6_count_cell_prior_floor_experiment` 显示，当后验 q6 件数/格数 P90 低于 Drop 先验期望时，用先验价值做 floor 能提高一部分 q6 覆盖，但也会覆盖真实无 q6 的局。
+
+**推荐**：把该信号接入 live snapshot、`model_eval.jsonl` 和 overlay，作为黄色风险提示与上界参考；不写入正式 posterior、`decision_value` 或出价阈值。
+
+**用户选择**：继续优先保证常规估价稳定，q6 上界只提醒用户，不自动拉高实战建议。
+
+**取舍**：实战时能看到“Aisha shipwreck 等局可能被 q6 count/cells 压低”的警告；代价是它还不是自动策略。等实时日志足够后，再评估是否只对特定 hero/map/evidence 组合启用更窄门控。
+
+**复查点**：观察 live `q6_count_cell_prior_risk` 的真阳性/假阳性。若 Aisha shipwreck 的风险提示明显对应后续 q6 低估，才考虑进入分组 residual floor。

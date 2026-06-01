@@ -147,7 +147,13 @@ def _demo_snapshot() -> dict[str, Any]:
                 "决策价值 P10/P50/P90": "402,000 / 741,000 / 1,180,000",
                 "原始价值 P10/P50/P90": "402,000 / 812,000 / 1,620,000",
                 "q6价值 P10/P50/P90": "120,000 / 452,800 / 932,715",
+                "q6决策价值 P10/P50/P90": "90,000 / 386,200 / 712,400",
+                "q6件数 P10/P50/P90": "0 / 1 / 1",
+                "q6格数 P10/P50/P90": "0 / 4 / 6",
                 "q6样本率": "68.0%",
+                "q6先验缺口": "件数P90低1.10；格数P90低3.5",
+                "q6先验风险参考": "486,510",
+                "q6先验风险": "是",
                 "诊断": "footprint_overlap_cells:1",
             },
         ],
@@ -268,17 +274,27 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
         q6_prior = row.get("q6掉落先验") or ""
         q6_value = row.get("q6价值 P10/P50/P90") or ""
         q6_decision_value = row.get("q6决策价值 P10/P50/P90") or ""
+        q6_prior_gap = str(row.get("q6先验缺口") or "")
+        q6_prior_floor = str(row.get("q6先验风险参考") or "")
         if q6_rate or q6_value:
             tag = "warn"
             try:
                 tag = "bad" if float(str(q6_rate).strip("%")) < 10 else "normal"
             except ValueError:
                 tag = "normal"
+            if q6_prior_gap:
+                tag = "warn"
             prior_text = f" / 先验 {q6_prior}" if q6_prior else ""
             value_text = q6_decision_value or q6_value
+            gap_text = (
+                f"  |  先验缺口 {q6_prior_gap}"
+                + (f" / 参考 {q6_prior_floor}" if q6_prior_floor else "")
+                if q6_prior_gap
+                else ""
+            )
             entries.append(
                 (
-                    f"红货: q6样本率 {q6_rate or '?'}{prior_text}  |  {value_text}",
+                    f"红货: q6样本率 {q6_rate or '?'}{prior_text}  |  {value_text}{gap_text}",
                     tag,
                 )
             )
@@ -444,6 +460,8 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
             q6_tag = "bad" if float(q6_rate.strip("%")) < 10 else "normal"
         except ValueError:
             pass
+        if str(v2.get("q6先验缺口") or ""):
+            q6_tag = "warn"
         metrics.append(
             (
                 "红货 q6",
@@ -490,6 +508,11 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         alerts.append(("真实有红货，但后验 q6 样本率过低", "bad"))
     elif _flag(model_eval.get("q6_p90_misses_truth")):
         alerts.append(("q6 P90 低于结算 q6 价值", "warn"))
+    if v2 and str(v2.get("q6先验缺口") or ""):
+        gap = str(v2.get("q6先验缺口") or "")
+        floor = str(v2.get("q6先验风险参考") or "")
+        suffix = f"，参考上界 {floor}" if floor else ""
+        alerts.append((f"q6 件数/格数低于先验：{gap}{suffix}", "warn"))
     if _flag(model_eval.get("layout_conflict")):
         root = str(model_eval.get("layout_conflict_root") or "footprint 存在重叠或越界")
         alerts.append((root, "warn"))
