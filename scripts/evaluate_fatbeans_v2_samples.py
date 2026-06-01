@@ -895,6 +895,20 @@ def _q6_count_cell_prior_floor_value(
     return max(0, _round(float(prior_value) * floor_ratio) or 0)
 
 
+def _q6_low_space_residual_floor_value(
+    row: dict[str, Any],
+    *,
+    floor_ratio: float,
+) -> int | None:
+    if row.get("v2_q6_space_pressure_p90") is None:
+        return None
+    if float(row.get("v2_q6_space_pressure_p90") or 0) >= 0.50:
+        return None
+    if float(row.get("v2_q6_space_overflow_rate") or 0) > 0:
+        return None
+    return _q6_count_cell_prior_floor_value(row, floor_ratio=floor_ratio)
+
+
 def _q6_residual_floor_experiment(
     rows: list[dict[str, Any]],
     *,
@@ -966,6 +980,159 @@ def _q6_residual_floor_experiment(
                 floor_ratio=floor_ratio,
             ),
         },
+    }
+
+
+def _q6_low_space_residual_floor_experiment(
+    rows: list[dict[str, Any]],
+    *,
+    floor_ratio: float,
+) -> dict[str, Any] | None:
+    if floor_ratio <= 0:
+        return None
+    q6_truth = [
+        row for row in rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    if not q6_truth:
+        return {
+            "enabled": True,
+            "floor_ratio": floor_ratio,
+            "q6_plannable_truth_files": 0,
+            "eligible_rows": 0,
+            "q6_plannable_value_p90_coverage": None,
+            "q6_plannable_p90_misses_truth": 0,
+        }
+    eligible_rows = 0
+    adjusted_misses = 0
+    floors: list[int] = []
+    for row in q6_truth:
+        q6_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        floor_value = _q6_low_space_residual_floor_value(
+            row,
+            floor_ratio=floor_ratio,
+        )
+        if floor_value is not None:
+            eligible_rows += 1
+            floors.append(floor_value)
+            q6_p90 = max(q6_p90, floor_value)
+        if q6_p90 < int(row.get("final_q6_decision_value") or 0):
+            adjusted_misses += 1
+    return {
+        "enabled": True,
+        "floor_ratio": floor_ratio,
+        "gate": "low_space_pressure_count_cell_prior",
+        "q6_plannable_truth_files": len(q6_truth),
+        "eligible_rows": eligible_rows,
+        "eligible_no_q6_rows": sum(
+            1 for row in rows
+            if int(row.get("final_q6_decision_value") or 0) <= 0
+            and _q6_low_space_residual_floor_value(
+                row,
+                floor_ratio=floor_ratio,
+            )
+            is not None
+        ),
+        "floor_median": _round(statistics.median(floors)) if floors else None,
+        "q6_plannable_value_p90_coverage": round(
+            1.0 - adjusted_misses / len(q6_truth),
+            4,
+        ),
+        "q6_plannable_p90_misses_truth": adjusted_misses,
+        "groups": {
+            "hero_map_profile": _q6_low_space_residual_floor_group_summary(
+                rows,
+                ("hero", "map_family", "evidence_profile_key"),
+                floor_ratio=floor_ratio,
+            ),
+            "evidence_profile": _q6_low_space_residual_floor_group_summary(
+                rows,
+                ("evidence_profile_key",),
+                floor_ratio=floor_ratio,
+            ),
+        },
+    }
+
+
+def _q6_low_space_residual_gated_floor_experiment(
+    rows: list[dict[str, Any]],
+    *,
+    floor_ratio: float,
+    gate_keys: tuple[str, ...] = ("hero", "map_family", "evidence_profile_key"),
+    gate_name: str = "low_space_profile_positive_net",
+    min_q6_truth: int = 10,
+) -> dict[str, Any] | None:
+    if floor_ratio <= 0:
+        return None
+    gate_rows = [
+        row for row in _q6_low_space_residual_floor_group_summary(
+            rows,
+            gate_keys,
+            floor_ratio=floor_ratio,
+        )
+        if int(row["net_improvement"]) > 0
+        and int(row["q6_plannable_truth"]) >= min_q6_truth
+    ]
+    gate_groups = {str(row["group"]) for row in gate_rows}
+    q6_truth = [
+        row for row in rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    if not q6_truth:
+        return {
+            "enabled": True,
+            "floor_ratio": floor_ratio,
+            "gate": gate_name,
+            "gates": gate_rows,
+            "q6_plannable_truth_files": 0,
+            "eligible_rows": 0,
+            "eligible_no_q6_rows": 0,
+            "q6_plannable_value_p90_coverage": None,
+            "q6_plannable_p90_misses_truth": 0,
+        }
+
+    eligible_rows = 0
+    adjusted_misses = 0
+    floors: list[int] = []
+    for row in q6_truth:
+        q6_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        if _group_key(row, gate_keys) in gate_groups:
+            floor_value = _q6_low_space_residual_floor_value(
+                row,
+                floor_ratio=floor_ratio,
+            )
+            if floor_value is not None:
+                eligible_rows += 1
+                floors.append(floor_value)
+                q6_p90 = max(q6_p90, floor_value)
+        if q6_p90 < int(row.get("final_q6_decision_value") or 0):
+            adjusted_misses += 1
+
+    return {
+        "enabled": True,
+        "floor_ratio": floor_ratio,
+        "gate": gate_name,
+        "gates": gate_rows,
+        "q6_plannable_truth_files": len(q6_truth),
+        "eligible_rows": eligible_rows,
+        "eligible_no_q6_rows": sum(
+            1 for row in rows
+            if int(row.get("final_q6_decision_value") or 0) <= 0
+            and _group_key(row, gate_keys) in gate_groups
+            and _q6_low_space_residual_floor_value(
+                row,
+                floor_ratio=floor_ratio,
+            )
+            is not None
+        ),
+        "floor_median": _round(statistics.median(floors)) if floors else None,
+        "q6_plannable_value_p90_coverage": round(
+            1.0 - adjusted_misses / len(q6_truth),
+            4,
+        ),
+        "q6_plannable_p90_misses_truth": adjusted_misses,
     }
 
 
@@ -1638,6 +1805,20 @@ def _summary(
     )
     if count_cell_experiment is not None:
         summary["q6_count_cell_prior_floor_experiment"] = count_cell_experiment
+    low_space_experiment = _q6_low_space_residual_floor_experiment(
+        ok,
+        floor_ratio=q6_residual_floor_ratio,
+    )
+    if low_space_experiment is not None:
+        summary["q6_low_space_residual_floor_experiment"] = low_space_experiment
+    low_space_gated_experiment = _q6_low_space_residual_gated_floor_experiment(
+        ok,
+        floor_ratio=q6_residual_floor_ratio,
+    )
+    if low_space_gated_experiment is not None:
+        summary["q6_low_space_residual_gated_floor_experiment"] = (
+            low_space_gated_experiment
+        )
     gated_count_cell_experiment = _q6_count_cell_prior_gated_floor_experiment(
         ok,
         floor_ratio=q6_residual_floor_ratio,
@@ -1822,6 +2003,85 @@ def _q6_count_cell_prior_floor_group_summary(
     return sorted(
         out,
         key=lambda row: (
+            int(row["q6_plannable_miss_improvement"]),
+            -int(row["eligible_no_q6_rows"]),
+            int(row["q6_plannable_truth"]),
+        ),
+        reverse=True,
+    )[:12]
+
+
+def _q6_low_space_residual_floor_group_summary(
+    rows: list[dict[str, Any]],
+    keys: tuple[str, ...],
+    *,
+    floor_ratio: float,
+) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(_group_key(row, keys), []).append(row)
+
+    out: list[dict[str, Any]] = []
+    for group, group_rows in groups.items():
+        q6_truth = [
+            row for row in group_rows
+            if int(row.get("final_q6_decision_value") or 0) > 0
+            and row.get("v2_q6_decision_value_p90") is not None
+        ]
+        if not q6_truth:
+            continue
+        before_misses = sum(
+            1 for row in q6_truth
+            if row.get("q6_plannable_p90_misses_truth")
+        )
+        after_misses = 0
+        eligible_truth = 0
+        floors: list[int] = []
+        for row in q6_truth:
+            q6_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+            floor_value = _q6_low_space_residual_floor_value(
+                row,
+                floor_ratio=floor_ratio,
+            )
+            if floor_value is not None:
+                eligible_truth += 1
+                floors.append(floor_value)
+                q6_p90 = max(q6_p90, floor_value)
+            if q6_p90 < int(row.get("final_q6_decision_value") or 0):
+                after_misses += 1
+        eligible_no_q6 = sum(
+            1 for row in group_rows
+            if int(row.get("final_q6_decision_value") or 0) <= 0
+            and _q6_low_space_residual_floor_value(
+                row,
+                floor_ratio=floor_ratio,
+            )
+            is not None
+        )
+        out.append(
+            {
+                "group": group,
+                "n": len(group_rows),
+                "q6_plannable_truth": len(q6_truth),
+                "eligible_rows": eligible_truth,
+                "eligible_no_q6_rows": eligible_no_q6,
+                "q6_plannable_misses_before": before_misses,
+                "q6_plannable_misses_after": after_misses,
+                "q6_plannable_miss_improvement": before_misses - after_misses,
+                "net_improvement": before_misses - after_misses - eligible_no_q6,
+                "q6_plannable_coverage_after": round(
+                    1.0 - after_misses / len(q6_truth),
+                    4,
+                ),
+                "floor_median": _round(statistics.median(floors))
+                if floors
+                else None,
+            }
+        )
+    return sorted(
+        out,
+        key=lambda row: (
+            int(row["net_improvement"]),
             int(row["q6_plannable_miss_improvement"]),
             -int(row["eligible_no_q6_rows"]),
             int(row["q6_plannable_truth"]),

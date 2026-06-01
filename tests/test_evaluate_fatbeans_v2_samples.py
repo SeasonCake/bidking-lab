@@ -398,6 +398,131 @@ def test_q6_count_cell_prior_floor_experiment_is_separate_from_raw_floor() -> No
     )
 
 
+def test_q6_low_space_residual_floor_experiment_is_narrower_than_prior_floor() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "file": "low_space_q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+            "v2_q6_space_pressure_p90": 0.2,
+            "v2_q6_space_overflow_rate": 0.0,
+        },
+        {
+            "status": "ok",
+            "file": "high_space_q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+            "v2_q6_space_pressure_p90": 1.2,
+            "v2_q6_space_overflow_rate": 0.0,
+        },
+        {
+            "status": "ok",
+            "file": "low_space_no_q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 0,
+            "v2_q6_decision_value_p90": 0,
+            "q6_plannable_p90_misses_truth": False,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+            "v2_q6_space_pressure_p90": 0.1,
+            "v2_q6_space_overflow_rate": 0.0,
+        },
+    ]
+
+    experiment = module._q6_low_space_residual_floor_experiment(
+        rows,
+        floor_ratio=1.0,
+    )
+
+    assert experiment["eligible_rows"] == 1
+    assert experiment["eligible_no_q6_rows"] == 1
+    assert experiment["q6_plannable_p90_misses_truth"] == 1
+    assert experiment["groups"]["hero_map_profile"][0]["net_improvement"] == 0
+
+
+def test_q6_low_space_residual_gated_floor_keeps_positive_net_profiles() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+            "v2_q6_space_pressure_p90": 0.2,
+            "v2_q6_space_overflow_rate": 0.0,
+        },
+        {
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+            "v2_q6_space_pressure_p90": 0.3,
+            "v2_q6_space_overflow_rate": 0.0,
+        },
+        {
+            "hero": "aisha",
+            "map_family": "villa",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+            "v2_q6_space_pressure_p90": 0.2,
+            "v2_q6_space_overflow_rate": 0.0,
+        },
+        {
+            "hero": "aisha",
+            "map_family": "villa",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 0,
+            "v2_q6_decision_value_p90": 0,
+            "q6_plannable_p90_misses_truth": False,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+            "v2_q6_space_pressure_p90": 0.2,
+            "v2_q6_space_overflow_rate": 0.0,
+        },
+    ]
+
+    experiment = module._q6_low_space_residual_gated_floor_experiment(
+        rows,
+        floor_ratio=1.0,
+        min_q6_truth=1,
+    )
+
+    assert [row["group"] for row in experiment["gates"]] == [
+        "hero=aisha|map_family=shipwreck|evidence_profile_key=shape+layout"
+    ]
+    assert experiment["eligible_rows"] == 2
+    assert experiment["eligible_no_q6_rows"] == 0
+    assert experiment["q6_plannable_p90_misses_truth"] == 1
+
+
 def test_q6_count_cell_prior_gated_floor_prefers_positive_net_groups() -> None:
     module = _eval_module()
     rows = [

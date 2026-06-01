@@ -630,3 +630,5 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **复查点**：观察 `model_eval.jsonl` 与 batch summary 中 `v2_q6_space_pressure_p90`、`v2_q6_space_overflow_rate` 是否能区分 q6 低估局和正常局，再决定是否进入正式 layout posterior 权重或装箱可视化面板。
 
 **更新**：首轮 `q6_space_diagnostics` 显示多数 q6 低估是低空间压力低估，不是高空间压力或溢出。Aisha shipwreck + shape+layout 尤其明显。因此下一步推荐先做 `residual_q6_count_cell_sampler`，完整装箱搜索继续作为 UI/诊断与少数高压力局的后续项。
+
+**更新 2**：低空间压力本身不适合作为正式启用门控。离线 floor 实验显示它能解释低估，但不能明显降低无 q6 代理；更稳的是 hero+map+evidence_profile 正净收益门控。后续 sampler 改动应以 profile gate 为主，空间压力作为辅助诊断。
