@@ -1412,6 +1412,7 @@ def _summary(
         ),
         "q6_calibration_priority": _q6_calibration_priority(ok),
         "q6_plannable_calibration_priority": _q6_plannable_calibration_priority(ok),
+        "q6_actionable_targets": _q6_actionable_targets(ok),
         "q6_risk_groups": {
             "hero_map_family": _q6_group_summary(ok, ("hero", "map_family")),
             "map_family_value_tier": _q6_group_summary(
@@ -1972,6 +1973,68 @@ def _q6_plannable_calibration_priority(rows: list[dict[str, Any]]) -> list[dict[
         for row in primary
         if row["q6_plannable_p90_misses_truth"]
     ][:10]
+
+
+def _q6_actionable_targets(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    scopes = (
+        ("hero_map_family", ("hero", "map_family"), 10),
+        ("hero_map_profile", ("hero", "map_family", "evidence_profile_key"), 10),
+        ("information_density", ("information_density_band",), 10),
+        ("evidence_profile", ("evidence_profile_key",), 10),
+    )
+    for scope, keys, min_truth in scopes:
+        for row in _q6_plannable_group_summary(rows, keys):
+            truth = int(row["q6_plannable_truth"])
+            misses = int(row["q6_plannable_p90_misses_truth"])
+            if truth < min_truth or misses <= 0:
+                continue
+            under_by = int(row["median_q6_plannable_under_by"] or 0)
+            priority_score = round(misses * max(1.0, under_by / 100_000), 2)
+            candidates.append(
+                {
+                    "scope": scope,
+                    "group": row["group"],
+                    "q6_plannable_truth": truth,
+                    "q6_plannable_misses": misses,
+                    "q6_plannable_miss_rate": row["q6_plannable_miss_rate"],
+                    "median_q6_plannable_under_by": (
+                        row["median_q6_plannable_under_by"]
+                    ),
+                    "layout_conflict": row["layout_conflict"],
+                    "zero_match": row["zero_match"],
+                    "priority_score": priority_score,
+                    "recommended_next": _q6_action_recommendation(
+                        str(row["group"]),
+                        layout_conflict=int(row["layout_conflict"]),
+                    ),
+                }
+            )
+    return sorted(
+        candidates,
+        key=lambda row: (
+            float(row["priority_score"]),
+            int(row["q6_plannable_misses"]),
+            int(row["q6_plannable_truth"]),
+        ),
+        reverse=True,
+    )[:12]
+
+
+def _q6_action_recommendation(group: str, *, layout_conflict: int) -> str:
+    if "shipwreck" in group and "shape+layout" in group:
+        return "shipwreck_shape_space_residual"
+    if "shipwreck" in group and "tool:category" in group:
+        return "shipwreck_category_shape_residual"
+    if "shipwreck" in group:
+        return "shipwreck_q6_count_cell_gate"
+    if layout_conflict > 0 and "information_density_band=high" in group:
+        return "high_density_layout_conflict_audit"
+    if "public:random_avg" in group:
+        return "random_avg_likelihood_calibration"
+    if "shape+layout" in group:
+        return "remaining_space_feasibility"
+    return "q6_residual_diagnostics"
 
 
 def _collection_readiness(

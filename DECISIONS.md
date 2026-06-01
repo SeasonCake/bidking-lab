@@ -612,3 +612,5 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **复查点**：后续新增实时样本后，先看 `groups.evidence_profile` 和 `q6_plannable_risk_groups.evidence_profile`，再决定是否给某些证据组合加更窄的 residual/space 门控。
 
 **更新**：已新增 profile 级 q6 floor 门控离线实验。当前 profile 门控误触发代理更低，但 q6 coverage 也更低；因此仅作为诊断和未来规则候选，live 仍保持 hero+map_family shipwreck 门控。
+
+**更新 2**：已新增 `q6_actionable_targets`，把分层结果自动转成下一步建议。当前推荐聚焦剩余空间可行性、Aisha shipwreck q6 件数/格数门控、高信息局 layout conflict 审计；不推荐继续做全局红货抬权。

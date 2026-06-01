@@ -442,6 +442,36 @@ def test_q6_count_cell_prior_gated_floor_prefers_positive_net_groups() -> None:
     assert strict_profile_experiment["gates"] == []
 
 
+def test_q6_actionable_targets_prioritize_shipwreck_profiles() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "information_density_band": "high",
+            "final_q6_decision_value": 500_000,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_decision_value_p90_under_by": 300_000,
+            "final_q6_trimmed_tail_value": 0,
+            "v2_matched": 10,
+            "layout_conflict": True,
+        }
+        for _ in range(10)
+    ]
+
+    targets = module._q6_actionable_targets(rows)
+
+    assert targets[0]["q6_plannable_truth"] == 10
+    assert targets[0]["q6_plannable_misses"] == 10
+    assert any(
+        target["scope"] == "hero_map_profile"
+        and target["recommended_next"] == "shipwreck_shape_space_residual"
+        for target in targets
+    )
+
+
 def test_expand_cli_paths_supports_globs(tmp_path: Path) -> None:
     module = _eval_module()
     first = tmp_path / "a.json"
