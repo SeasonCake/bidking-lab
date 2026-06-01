@@ -260,6 +260,7 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
                 if q6_prior_gap["practical_p90"] is not None
                 else ""
             ),
+            "锚点数": getattr(report, "anchor_count", 0),
             "形状约束数": getattr(report, "shape_target_count", 0),
             "分类约束数": getattr(report, "category_target_count", 0),
             "分类反排数": getattr(report, "category_exclusion_count", 0),
@@ -327,6 +328,59 @@ def _map_family_from_id(map_id: Any) -> str:
     if prefix in {25, 35, 45}:
         return "shipwreck"
     return f"map_{prefix}xx"
+
+
+def _evidence_stage(round_no: Any) -> str:
+    try:
+        value = int(round_no)
+    except (TypeError, ValueError):
+        return "unknown"
+    if value <= 2:
+        return "early_1_2"
+    if value <= 4:
+        return "mid_3_4"
+    return "full_5"
+
+
+def _live_information_density_score(
+    round_no: Any,
+    *,
+    anchor_count: Any,
+    shape_target_count: Any,
+    category_target_count: Any,
+    category_exclusion_count: Any,
+) -> int:
+    try:
+        round_value = int(round_no)
+    except (TypeError, ValueError):
+        round_value = 0
+    evidence_count = sum(
+        _safe_int(value)
+        for value in (
+            anchor_count,
+            shape_target_count,
+            category_target_count,
+            category_exclusion_count,
+        )
+    )
+    return round_value * 2 + min(evidence_count, 6) * 2
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _information_density_band(score: int | None) -> str:
+    if score is None:
+        return "unknown"
+    if score < 18:
+        return "low"
+    if score < 34:
+        return "medium"
+    return "high"
 
 
 def _quantile_p90(quantile: Any) -> float | None:
@@ -663,6 +717,7 @@ def _model_eval_row(
     q6_prior_floor_value = None
     q6_practical_gate = ""
     q6_practical_p90 = None
+    anchor_count = None
     posterior_diagnostics = ""
     if warehouse_rows:
         warehouse_p50 = _parse_range_p50(
@@ -716,11 +771,13 @@ def _model_eval_row(
         q6_prior_floor_value = _parse_int_text(v2_rows[0].get("q6先验风险参考"))
         q6_practical_gate = str(v2_rows[0].get("q6实战门控") or "")
         q6_practical_p90 = _parse_int_text(v2_rows[0].get("q6实战参考P90"))
+        anchor_count = _parse_int_text(v2_rows[0].get("锚点数"))
         posterior_diagnostics = str(v2_rows[0].get("诊断") or "")
     else:
         shape_target_count = None
         category_target_count = None
         category_exclusion_count = None
+        anchor_count = None
         random_sample_avg_values = ""
     layout_root = layout_conflict_root(posterior_diagnostics)
     latest_layout_fit = next(
@@ -834,7 +891,25 @@ def _model_eval_row(
         "shape_target_count": shape_target_count,
         "category_target_count": category_target_count,
         "category_exclusion_count": category_exclusion_count,
+        "anchor_count": anchor_count,
         "random_sample_avg_values": random_sample_avg_values,
+        "evidence_stage": _evidence_stage(artifact.get("round")),
+        "information_density_score": _live_information_density_score(
+            artifact.get("round"),
+            anchor_count=anchor_count,
+            shape_target_count=shape_target_count,
+            category_target_count=category_target_count,
+            category_exclusion_count=category_exclusion_count,
+        ),
+        "information_density_band": _information_density_band(
+            _live_information_density_score(
+                artifact.get("round"),
+                anchor_count=anchor_count,
+                shape_target_count=shape_target_count,
+                category_target_count=category_target_count,
+                category_exclusion_count=category_exclusion_count,
+            )
+        ),
         "layout_conflict": bool(layout_root),
         "layout_conflict_root": layout_root,
         "posterior_diagnostics": posterior_diagnostics,

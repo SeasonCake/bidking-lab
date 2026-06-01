@@ -210,6 +210,60 @@ def _with_derived_q6_fields(row: dict[str, Any]) -> dict[str, Any]:
     return {**row, **updates} if updates else row
 
 
+def _evidence_stage(round_no: Any) -> str:
+    try:
+        value = int(round_no)
+    except (TypeError, ValueError):
+        return "unknown"
+    if value <= 2:
+        return "early_1_2"
+    if value <= 4:
+        return "mid_3_4"
+    return "full_5"
+
+
+def _information_density_score(row: dict[str, Any]) -> int:
+    round_no = _numeric(row, "round") or 0
+    evidence_count = sum(
+        int(_numeric(row, key) or 0)
+        for key in (
+            "anchor_count",
+            "shape_target_count",
+            "category_target_count",
+            "category_exclusion_count",
+        )
+    )
+    return int(round_no) * 2 + min(evidence_count, 6) * 2
+
+
+def _information_density_band(score: int | None) -> str:
+    if score is None:
+        return "unknown"
+    if score < 18:
+        return "low"
+    if score < 34:
+        return "medium"
+    return "high"
+
+
+def _with_derived_information_density(row: dict[str, Any]) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if row.get("evidence_stage") is None:
+        updates["evidence_stage"] = _evidence_stage(row.get("round"))
+    if row.get("information_density_score") is None:
+        updates["information_density_score"] = _information_density_score(row)
+    if row.get("information_density_band") is None:
+        score = int(
+            updates.get("information_density_score")
+            or row.get("information_density_score")
+            or 0
+        )
+        updates["information_density_band"] = _information_density_band(
+            score
+        )
+    return {**row, **updates} if updates else row
+
+
 def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -434,7 +488,10 @@ def summarize(
     if dedupe:
         rows = _dedupe_latest_by_file(rows)
     valid = [
-        _with_derived_q6_fields(_with_derived_layout_root(row)) for row in rows
+        _with_derived_information_density(
+            _with_derived_q6_fields(_with_derived_layout_root(row))
+        )
+        for row in rows
         if row.get("final_value") is not None or row.get("final_cells") is not None
     ]
     q6_truth = [row for row in valid if int(row.get("final_q6_value") or 0) > 0]
@@ -564,6 +621,8 @@ def summarize(
                 "map_family",
             ),
             "map_id": _group_summary(valid, "map_id"),
+            "evidence_stage": _group_summary(valid, "evidence_stage"),
+            "information_density": _group_summary(valid, "information_density_band"),
         },
         "bid_gap": {
             "hero": _bid_gap_summary(valid, "hero"),

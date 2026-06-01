@@ -133,6 +133,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "q6_top_size_band": "q6_top_large",
             "q6_miss_root": "low_q6_sample_rate;q6_top_large",
             "evidence_stage": "mid_3_4",
+            "information_density_band": "medium",
+            "density_value_tier": "medium|>=1.2m",
             "calibration_eligible": True,
         },
         {
@@ -176,6 +178,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "anchor_band": "6+",
             "q6_top_size_band": "no_q6",
             "evidence_stage": "early_1_2",
+            "information_density_band": "low",
+            "density_value_tier": "low|300k-800k",
             "calibration_eligible": False,
         },
     ]
@@ -250,6 +254,24 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
         "mid_3_4": 1,
         "early_1_2": 1,
     }
+    assert summary["sample_feasibility"]["by_information_density"] == {
+        "medium": 1,
+        "low": 1,
+    }
+    assert {
+        row["information_density_band"]: row["n"]
+        for row in summary["groups"]["information_density"]
+    } == {"low": 1, "medium": 1}
+    assert {
+        row["density_value_tier"]: row["n"]
+        for row in summary["groups"]["density_value_tier"]
+    } == {"low|300k-800k": 1, "medium|>=1.2m": 1}
+    assert (
+        summary["q6_plannable_risk_groups"]["information_density"][0][
+            "q6_plannable_truth"
+        ]
+        == 1
+    )
 
     experiment = module._summary(rows, q6_residual_floor_ratio=0.75)[
         "q6_residual_floor_experiment"
@@ -406,6 +428,28 @@ def test_evidence_stage_marks_early_rounds_separately() -> None:
     assert module._evidence_stage(2) == "early_1_2"
     assert module._evidence_stage(3) == "mid_3_4"
     assert module._evidence_stage(5) == "full_5"
+
+
+def test_information_density_combines_round_and_evidence_counts() -> None:
+    module = _eval_module()
+
+    score = module._information_density_score(
+        {
+            "capture_round": 4,
+            "anchor_count": 3,
+            "shape_target_count": 1,
+            "category_target_count": 2,
+            "category_exclusion_count": 1,
+            "trusted_footprint_count": 5,
+            "public_constraint_key": "max_quality",
+        }
+    )
+
+    assert score == 29
+    assert module._information_density_band(score) == "medium"
+    assert module._information_density_band(17) == "low"
+    assert module._information_density_band(18) == "medium"
+    assert module._information_density_band(34) == "high"
 
 
 def test_capture_round_uses_cumulative_actions_at_settlement() -> None:

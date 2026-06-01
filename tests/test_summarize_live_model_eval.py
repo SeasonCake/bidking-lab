@@ -53,6 +53,7 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "file": "a.json",
                 "hero": "aisha",
                 "map_id": 2401,
+                "round": 1,
                 "final_value": 100,
                 "final_cells": 10,
                 "final_q6_value": 0,
@@ -68,6 +69,7 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "file": "b.json",
                 "hero": "ethan",
                 "map_id": 2501,
+                "round": 4,
                 "final_value": 200,
                 "final_cells": 12,
                 "final_q6_value": 80,
@@ -82,6 +84,7 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "q6_p90_misses_truth": True,
                 "v2_q6_value_p90": 30,
                 "raw_minus_decision_p90": 300_000,
+                "anchor_count": 3,
                 "category_target_count": 2,
                 "category_exclusion_count": 1,
                 "layout_conflict": True,
@@ -144,6 +147,15 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
         and row["n"] == 1
         and row["needed"] == 1
         for row in readiness["groups"]
+    )
+    assert {
+        row["evidence_stage"]: row["n"]
+        for row in summary["groups"]["evidence_stage"]
+    }["mid_3_4"] == 1
+    assert any(
+        row["information_density_band"] == "medium"
+        and row["n"] == 1
+        for row in summary["groups"]["information_density"]
     )
     assert any(
         row["map_family"] == "villa"

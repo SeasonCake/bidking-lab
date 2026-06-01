@@ -111,6 +111,33 @@ def _evidence_stage(round_no: int | None) -> str:
     return "full_5"
 
 
+def _information_density_score(row: Mapping[str, Any]) -> int:
+    round_no = _int_or_none(row.get("capture_round"))
+    anchors = _int_or_none(row.get("anchor_count")) or 0
+    shape_targets = _int_or_none(row.get("shape_target_count")) or 0
+    category_targets = _int_or_none(row.get("category_target_count")) or 0
+    category_exclusions = _int_or_none(row.get("category_exclusion_count")) or 0
+    trusted_footprints = _int_or_none(row.get("trusted_footprint_count")) or 0
+    public_bonus = 2 if row.get("public_constraint_key") not in (None, "", "none") else 0
+    return (
+        (round_no or 0) * 2
+        + min(anchors, 6) * 2
+        + min(shape_targets + category_targets + category_exclusions, 6) * 2
+        + min(trusted_footprints, 8)
+        + public_bonus
+    )
+
+
+def _information_density_band(score: int | None) -> str:
+    if score is None:
+        return "unknown"
+    if score < 18:
+        return "low"
+    if score < 34:
+        return "medium"
+    return "high"
+
+
 def _capture_round(events: Any) -> int | None:
     """Return the visible evidence coverage round for settlement captures."""
 
@@ -751,6 +778,12 @@ def evaluate_path(
             "footprint_occupied_cells": problem.layout.occupied_cells,
             "footprint_bottom_row": problem.layout.bottom_row,
         }
+        density_score = _information_density_score(row)
+        row["information_density_score"] = density_score
+        row["information_density_band"] = _information_density_band(density_score)
+        row["density_value_tier"] = (
+            f"{row['information_density_band']}|{row['value_tier']}"
+        )
         row["anchor_band"] = _anchor_band(row.get("anchor_count"))
         row["q6_top_size_band"] = _q6_top_size_band(row)
         row["public_constraint_key"] = _public_constraint_key(row)
@@ -942,6 +975,16 @@ def _q6_count_cell_prior_floor_experiment(
             "top_item_size": _q6_count_cell_prior_floor_group_summary(
                 rows,
                 ("q6_top_size_band",),
+                floor_ratio=floor_ratio,
+            ),
+            "evidence_stage": _q6_count_cell_prior_floor_group_summary(
+                rows,
+                ("evidence_stage",),
+                floor_ratio=floor_ratio,
+            ),
+            "information_density": _q6_count_cell_prior_floor_group_summary(
+                rows,
+                ("information_density_band",),
                 floor_ratio=floor_ratio,
             ),
         },
@@ -1352,6 +1395,8 @@ def _summary(
             "anchor_band": _q6_group_summary(ok, ("anchor_band",)),
             "public_constraint": _q6_group_summary(ok, ("public_constraint_key",)),
             "top_item_size": _q6_group_summary(ok, ("q6_top_size_band",)),
+            "evidence_stage": _q6_group_summary(ok, ("evidence_stage",)),
+            "information_density": _q6_group_summary(ok, ("information_density_band",)),
         },
         "q6_plannable_risk_groups": {
             "hero_map_family": _q6_plannable_group_summary(
@@ -1361,6 +1406,14 @@ def _summary(
             "top_item_size": _q6_plannable_group_summary(
                 ok,
                 ("q6_top_size_band",),
+            ),
+            "evidence_stage": _q6_plannable_group_summary(
+                ok,
+                ("evidence_stage",),
+            ),
+            "information_density": _q6_plannable_group_summary(
+                ok,
+                ("information_density_band",),
             ),
         },
         "category_evidence": {
@@ -1463,6 +1516,12 @@ def _summary(
             "by_evidence_stage": dict(
                 Counter(str(row.get("evidence_stage") or "unknown") for row in ok)
             ),
+            "by_information_density": dict(
+                Counter(
+                    str(row.get("information_density_band") or "unknown")
+                    for row in ok
+                )
+            ),
             "early_examples": [
                 {
                     "file": row["file"],
@@ -1479,6 +1538,9 @@ def _summary(
             "hero": _group_summary(ok, "hero"),
             "map_family": _group_summary(ok, "map_family"),
             "value_tier": _group_summary(ok, "value_tier"),
+            "evidence_stage": _group_summary(ok, "evidence_stage"),
+            "information_density": _group_summary(ok, "information_density_band"),
+            "density_value_tier": _group_summary(ok, "density_value_tier"),
         },
         "collection_readiness": _collection_readiness(
             ok,

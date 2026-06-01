@@ -584,3 +584,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：当前 271 份样本下，门控只选中 `Aisha+shipwreck` 和 `Ethan+shipwreck`；coverage 接近全局 floor，但误触发代理明显更低。villa 暂不接入，避免用红货先验污染普通局。
 
 **复查点**：该门控已先进入 live 风险参考字段：shipwreck 正净收益门控局输出 `q6实战门控=shipwreck_positive_net` 和 `q6实战参考P90`。继续观察实时日志里的真阳性/假阳性；不直接改 `decision_value` P50。
+
+## 2026-06-01 · 准确率按轮次和信息密度分层评估
+
+**背景**：用户指出早轮次应允许更大误差，后轮次和信息密度高的局应要求更准。此前总 MAE 把早轮次、满轮次、低信息和高约束难局混在一起，不利于判断实战表现。
+
+**推荐**：新增 `evidence_stage` 和 `information_density_score/band`，先作为评估与 live 日志维度；高信息局若误差仍大，不立刻用全局调权修，而是继续按地图族、价值档、q6 件数/格数和 layout conflict 拆原因。
+
+**用户选择**：继续推进 q6 实战意义，要求模型准确性按已知信息密度分开看。
+
+**取舍**：短期多了一组诊断字段，但不会影响推理输出；换来的是后续可以设置“早轮次看风险范围、后轮次看收敛精度”的校准目标。
+
+**复查点**：下一步根据 `groups.evidence_stage`、`groups.information_density`、`groups.density_value_tier` 判断 q6 优化是否真正改善高信息高价值局，而不是只降低全局 MAE。
