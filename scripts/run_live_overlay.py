@@ -154,6 +154,8 @@ def _demo_snapshot() -> dict[str, Any]:
                 "q6先验缺口": "件数P90低1.10；格数P90低3.5",
                 "q6先验风险参考": "486,510",
                 "q6先验风险": "是",
+                "q6实战门控": "shipwreck_positive_net",
+                "q6实战参考P90": "486,510",
                 "诊断": "footprint_overlap_cells:1",
             },
         ],
@@ -276,6 +278,7 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
         q6_decision_value = row.get("q6决策价值 P10/P50/P90") or ""
         q6_prior_gap = str(row.get("q6先验缺口") or "")
         q6_prior_floor = str(row.get("q6先验风险参考") or "")
+        q6_practical_p90 = str(row.get("q6实战参考P90") or "")
         if q6_rate or q6_value:
             tag = "warn"
             try:
@@ -288,7 +291,13 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
             value_text = q6_decision_value or q6_value
             gap_text = (
                 f"  |  先验缺口 {q6_prior_gap}"
-                + (f" / 参考 {q6_prior_floor}" if q6_prior_floor else "")
+                + (
+                    f" / 实战参考P90 {q6_practical_p90}"
+                    if q6_practical_p90
+                    else f" / 参考上界 {q6_prior_floor}"
+                    if q6_prior_floor
+                    else ""
+                )
                 if q6_prior_gap
                 else ""
             )
@@ -511,7 +520,14 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     if v2 and str(v2.get("q6先验缺口") or ""):
         gap = str(v2.get("q6先验缺口") or "")
         floor = str(v2.get("q6先验风险参考") or "")
-        suffix = f"，参考上界 {floor}" if floor else ""
+        practical = str(v2.get("q6实战参考P90") or "")
+        suffix = (
+            f"，实战参考P90 {practical}"
+            if practical
+            else f"，参考上界 {floor}"
+            if floor
+            else ""
+        )
         alerts.append((f"q6 件数/格数低于先验：{gap}{suffix}", "warn"))
     if _flag(model_eval.get("layout_conflict")):
         root = str(model_eval.get("layout_conflict_root") or "footprint 存在重叠或越界")

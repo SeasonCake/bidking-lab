@@ -77,6 +77,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "q6_below_drop_prior": True,
                 "q6_count_cell_prior_risk": True,
                 "q6_count_cell_prior_floor_value": 486_510,
+                "q6_practical_gate": "shipwreck_positive_net",
+                "q6_practical_p90": 486_510,
                 "q6_p90_misses_truth": True,
                 "v2_q6_value_p90": 30,
                 "raw_minus_decision_p90": 300_000,
@@ -117,6 +119,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert summary["q6_below_drop_prior_count"] == 1
     assert summary["q6_count_cell_prior_risk_count"] == 1
     assert summary["q6_count_cell_prior_floor_median"] == 486_510
+    assert summary["q6_practical_gate_count"] == 1
+    assert summary["q6_practical_p90_median"] == 486_510
     assert summary["q6_p90_miss_count"] == 1
     assert summary["q6_p90_under_by_median"] == 50
     assert summary["category_target_rows"] == 2

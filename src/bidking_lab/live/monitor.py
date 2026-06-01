@@ -254,6 +254,12 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
                 else ""
             ),
             "q6先验风险": "是" if q6_prior_gap["risk"] else "",
+            "q6实战门控": q6_prior_gap["gate"],
+            "q6实战参考P90": (
+                f"{q6_prior_gap['practical_p90']:,.0f}"
+                if q6_prior_gap["practical_p90"] is not None
+                else ""
+            ),
             "形状约束数": getattr(report, "shape_target_count", 0),
             "分类约束数": getattr(report, "category_target_count", 0),
             "分类反排数": getattr(report, "category_exclusion_count", 0),
@@ -284,15 +290,52 @@ def _q6_prior_gap_summary(report: Any) -> dict[str, Any]:
         parts.append(f"件数P90低{count_gap:.2f}")
     if cells_gap is not None and cells_gap >= 1.0:
         parts.append(f"格数P90低{cells_gap:.1f}")
+    floor_value = (
+        getattr(report, "q6_prior_expected_value", None)
+        if parts
+        else None
+    )
+    gate = (
+        "shipwreck_positive_net"
+        if parts and _map_family_from_id(getattr(report, "map_id", None)) == "shipwreck"
+        else ""
+    )
+    decision_p90 = _quantile_p90(getattr(report, "q6_decision_value", None))
     return {
         "risk": bool(parts),
         "summary": "；".join(parts),
-        "floor_value": (
-            getattr(report, "q6_prior_expected_value", None)
-            if parts
+        "floor_value": floor_value,
+        "gate": gate,
+        "practical_p90": (
+            max(float(decision_p90 or 0), float(floor_value or 0))
+            if gate and floor_value is not None
             else None
         ),
     }
+
+
+def _map_family_from_id(map_id: Any) -> str:
+    try:
+        mid = int(map_id)
+    except (TypeError, ValueError):
+        return "unknown"
+    prefix = mid // 100
+    if mid == 2601:
+        return "hidden"
+    if prefix in {24, 34, 44}:
+        return "villa"
+    if prefix in {25, 35, 45}:
+        return "shipwreck"
+    return f"map_{prefix}xx"
+
+
+def _quantile_p90(quantile: Any) -> float | None:
+    if quantile is None:
+        return None
+    p90 = getattr(quantile, "p90", None)
+    if p90 is None:
+        return None
+    return float(p90)
 
 
 def _quantile_prior_gap(quantile: Any, prior: Any) -> float | None:
@@ -618,6 +661,8 @@ def _model_eval_row(
     q6_cells_p90 = None
     q6_prior_gap_summary = ""
     q6_prior_floor_value = None
+    q6_practical_gate = ""
+    q6_practical_p90 = None
     posterior_diagnostics = ""
     if warehouse_rows:
         warehouse_p50 = _parse_range_p50(
@@ -669,6 +714,8 @@ def _model_eval_row(
         )
         q6_prior_gap_summary = str(v2_rows[0].get("q6先验缺口") or "")
         q6_prior_floor_value = _parse_int_text(v2_rows[0].get("q6先验风险参考"))
+        q6_practical_gate = str(v2_rows[0].get("q6实战门控") or "")
+        q6_practical_p90 = _parse_int_text(v2_rows[0].get("q6实战参考P90"))
         posterior_diagnostics = str(v2_rows[0].get("诊断") or "")
     else:
         shape_target_count = None
@@ -762,6 +809,8 @@ def _model_eval_row(
         "q6_count_cell_prior_risk": bool(q6_prior_gap_summary),
         "q6_count_cell_prior_gap": q6_prior_gap_summary,
         "q6_count_cell_prior_floor_value": q6_prior_floor_value,
+        "q6_practical_gate": q6_practical_gate,
+        "q6_practical_p90": q6_practical_p90,
         "v2_q6_value_p90_under_by": (
             max(0, final_q6_value - q6_value_p90)
             if q6_value_p90 is not None

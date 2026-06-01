@@ -50,6 +50,7 @@ def test_overlay_summary_lines_include_q6_and_diagnostics() -> None:
                     "q6价值 P10/P50/P90": "0 / 120,000 / 360,000",
                     "q6先验缺口": "件数P90低1.00",
                     "q6先验风险参考": "486,510",
+                    "q6实战参考P90": "486,510",
                     "诊断": "footprint_overlap_cells:2",
                 },
             ),
@@ -66,6 +67,7 @@ def test_overlay_summary_lines_include_q6_and_diagnostics() -> None:
     assert any(line.startswith("决策:") for line in lines)
     assert any(line.startswith("红货:") for line in lines)
     assert any("先验缺口" in line for line in lines)
+    assert any("实战参考P90" in line for line in lines)
     assert any("q6 P90" in line for line in lines)
     assert any("footprint" in line for line in lines)
     assert any("决策P50误差" in line for line in lines)

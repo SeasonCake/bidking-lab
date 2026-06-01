@@ -510,6 +510,16 @@ def summarize(
             ],
             "q6_count_cell_prior_floor_value",
         ),
+        "q6_practical_gate_count": sum(
+            1 for row in valid if row.get("q6_practical_gate")
+        ),
+        "q6_practical_p90_median": _median_value(
+            [
+                row for row in valid
+                if row.get("q6_practical_gate")
+            ],
+            "q6_practical_p90",
+        ),
         "q6_p90_miss_count": sum(
             1 for row in valid if row.get("q6_p90_misses_truth") is True
         ),

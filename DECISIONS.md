@@ -583,4 +583,4 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **取舍**：当前 271 份样本下，门控只选中 `Aisha+shipwreck` 和 `Ethan+shipwreck`；coverage 接近全局 floor，但误触发代理明显更低。villa 暂不接入，避免用红货先验污染普通局。
 
-**复查点**：下一步如果要进 live/出价层，应先把该门控作为“shipwreck q6 风险参考”，继续观察实时日志里的真阳性/假阳性；不直接改 `decision_value` P50。
+**复查点**：该门控已先进入 live 风险参考字段：shipwreck 正净收益门控局输出 `q6实战门控=shipwreck_positive_net` 和 `q6实战参考P90`。继续观察实时日志里的真阳性/假阳性；不直接改 `decision_value` P50。

@@ -138,6 +138,8 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "q6先验缺口" in artifact["v2_posterior_rows"][0]
     assert "q6先验风险参考" in artifact["v2_posterior_rows"][0]
     assert "q6先验风险" in artifact["v2_posterior_rows"][0]
+    assert "q6实战门控" in artifact["v2_posterior_rows"][0]
+    assert "q6实战参考P90" in artifact["v2_posterior_rows"][0]
     assert "category_grid_items" in artifact
     assert artifact["bid_rows"]
     assert artifact["bid_rows"][0]["价值口径"] == "decision_value"
@@ -157,6 +159,8 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "q6_count_cell_prior_risk" in artifact["model_eval"]
     assert "q6_count_cell_prior_gap" in artifact["model_eval"]
     assert "q6_count_cell_prior_floor_value" in artifact["model_eval"]
+    assert "q6_practical_gate" in artifact["model_eval"]
+    assert "q6_practical_p90" in artifact["model_eval"]
     assert "raw_minus_decision_p90" in artifact["model_eval"]
     assert "layout_conflict_root" in artifact["model_eval"]
     assert "shape_target_count" in artifact["model_eval"]
