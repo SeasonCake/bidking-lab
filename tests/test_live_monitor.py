@@ -174,6 +174,8 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "category_exclusion_count" in artifact["model_eval"]
     assert "anchor_count" in artifact["model_eval"]
     assert "random_sample_avg_values" in artifact["model_eval"]
+    assert "public_constraint_key" in artifact["model_eval"]
+    assert "evidence_profile_key" in artifact["model_eval"]
     assert artifact["model_eval"]["evidence_stage"] == "full_5"
     assert artifact["model_eval"]["information_density_band"] in {
         "low",

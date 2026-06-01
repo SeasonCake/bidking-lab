@@ -268,7 +268,27 @@ def _with_derived_information_density(row: dict[str, Any]) -> dict[str, Any]:
     )
     if row.get("hero_information_density") is None:
         updates["hero_information_density"] = f"{row.get('hero') or 'unknown'}|{density}"
+    if row.get("evidence_profile_key") is None:
+        updates["evidence_profile_key"] = _evidence_profile_key(row)
     return {**row, **updates} if updates else row
+
+
+def _evidence_profile_key(row: dict[str, Any]) -> str:
+    parts: list[str] = []
+    public_key = str(row.get("public_constraint_key") or "none")
+    if public_key != "none":
+        parts.append(f"public:{public_key}")
+    if str(row.get("random_sample_avg_values") or ""):
+        parts.append("public:random_avg")
+    if (
+        int(_numeric(row, "category_target_count") or 0)
+        + int(_numeric(row, "category_exclusion_count") or 0)
+        > 0
+    ):
+        parts.append("tool:category")
+    if int(_numeric(row, "shape_target_count") or 0) > 0:
+        parts.append("shape")
+    return "+".join(parts) if parts else "basic"
 
 
 def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
@@ -707,6 +727,7 @@ def summarize(
                 valid,
                 "hero_information_density",
             ),
+            "evidence_profile": _group_summary(valid, "evidence_profile_key"),
         },
         "bid_gap": {
             "hero": _bid_gap_summary(valid, "hero"),

@@ -383,6 +383,35 @@ def _information_density_band(score: int | None) -> str:
     return "high"
 
 
+def _public_constraint_key(diagnostics: str) -> str:
+    parts: list[str] = []
+    if "public_max_quality:" in diagnostics:
+        parts.append("max_quality")
+    if "public_max_item_cells:" in diagnostics:
+        parts.append("max_item_cells")
+    return "+".join(parts) if parts else "none"
+
+
+def _live_evidence_profile_key(
+    *,
+    public_constraint_key: str,
+    random_sample_avg_values: str,
+    category_target_count: Any,
+    category_exclusion_count: Any,
+    shape_target_count: Any,
+) -> str:
+    parts: list[str] = []
+    if public_constraint_key != "none":
+        parts.append(f"public:{public_constraint_key}")
+    if random_sample_avg_values:
+        parts.append("public:random_avg")
+    if _safe_int(category_target_count) + _safe_int(category_exclusion_count) > 0:
+        parts.append("tool:category")
+    if _safe_int(shape_target_count) > 0:
+        parts.append("shape")
+    return "+".join(parts) if parts else "basic"
+
+
 def _quantile_p90(quantile: Any) -> float | None:
     if quantile is None:
         return None
@@ -818,6 +847,14 @@ def _model_eval_row(
         category_exclusion_count=category_exclusion_count,
     )
     density_band = _information_density_band(density_score)
+    public_constraint_key = _public_constraint_key(posterior_diagnostics)
+    evidence_profile_key = _live_evidence_profile_key(
+        public_constraint_key=public_constraint_key,
+        random_sample_avg_values=random_sample_avg_values,
+        category_target_count=category_target_count,
+        category_exclusion_count=category_exclusion_count,
+        shape_target_count=shape_target_count,
+    )
     return {
         "ts": time.time(),
         "file": file,
@@ -927,6 +964,8 @@ def _model_eval_row(
         "category_exclusion_count": category_exclusion_count,
         "anchor_count": anchor_count,
         "random_sample_avg_values": random_sample_avg_values,
+        "public_constraint_key": public_constraint_key,
+        "evidence_profile_key": evidence_profile_key,
         "evidence_stage": evidence_stage,
         "information_density_score": density_score,
         "information_density_band": density_band,

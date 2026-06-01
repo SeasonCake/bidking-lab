@@ -129,6 +129,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "diagnostics": "",
             "presolve_unreachable_exact_buckets": "",
             "public_constraint_key": "none",
+            "evidence_profile_key": "tool:category",
             "anchor_band": "3-5",
             "q6_top_size_band": "q6_top_large",
             "q6_miss_root": "low_q6_sample_rate;q6_top_large",
@@ -177,6 +178,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
                 "q4_exact_count_cells"
             ),
             "public_constraint_key": "none",
+            "evidence_profile_key": "tool:category",
             "anchor_band": "6+",
             "q6_top_size_band": "no_q6",
             "evidence_stage": "early_1_2",
@@ -279,6 +281,9 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "q6_plannable_truth"
         ]
         == 1
+    )
+    assert summary["groups"]["evidence_profile"][0]["evidence_profile_key"] == (
+        "tool:category"
     )
 
     experiment = module._summary(rows, q6_residual_floor_ratio=0.75)[
@@ -458,6 +463,21 @@ def test_information_density_combines_round_and_evidence_counts() -> None:
     assert module._information_density_band(17) == "low"
     assert module._information_density_band(18) == "medium"
     assert module._information_density_band(34) == "high"
+
+
+def test_evidence_profile_key_summarizes_public_tool_and_layout() -> None:
+    module = _eval_module()
+
+    assert module._evidence_profile_key(
+        {
+            "public_constraint_key": "max_quality",
+            "random_sample_avg_values": "n=6:avg=96897.66",
+            "category_action_count": 2,
+            "shape_target_count": 1,
+            "trusted_footprint_count": 3,
+        }
+    ) == "public:max_quality+public:random_avg+tool:category+shape+layout"
+    assert module._evidence_profile_key({}) == "basic"
 
 
 def test_capture_round_uses_cumulative_actions_at_settlement() -> None:

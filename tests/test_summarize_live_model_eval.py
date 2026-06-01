@@ -93,6 +93,7 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "anchor_count": 3,
                 "category_target_count": 2,
                 "category_exclusion_count": 1,
+                "random_sample_avg_values": "n=6:avg=96897.66",
                 "layout_conflict": True,
                 "posterior_diagnostics": (
                     "footprint_overlap_cells:2;footprint_count_relaxed:3->1"
@@ -171,6 +172,11 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
         row["hero_information_density"] == "ethan|medium"
         and row["n"] == 1
         for row in summary["groups"]["hero_information_density"]
+    )
+    assert any(
+        row["evidence_profile_key"] == "public:random_avg+tool:category"
+        and row["n"] == 1
+        for row in summary["groups"]["evidence_profile"]
     )
     assert any(
         row["map_family"] == "villa"

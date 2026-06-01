@@ -398,6 +398,22 @@ def _public_constraint_key(row: dict[str, Any]) -> str:
     return "+".join(parts) if parts else "none"
 
 
+def _evidence_profile_key(row: Mapping[str, Any]) -> str:
+    parts: list[str] = []
+    public_key = str(row.get("public_constraint_key") or "none")
+    if public_key != "none":
+        parts.append(f"public:{public_key}")
+    if str(row.get("random_sample_avg_values") or ""):
+        parts.append("public:random_avg")
+    if int(row.get("category_action_count") or 0) > 0:
+        parts.append("tool:category")
+    if int(row.get("shape_target_count") or 0) > 0:
+        parts.append("shape")
+    if int(row.get("trusted_footprint_count") or 0) > 0:
+        parts.append("layout")
+    return "+".join(parts) if parts else "basic"
+
+
 def _exact_bucket_markers(bucket_targets: Any) -> list[str]:
     text = str(bucket_targets or "")
     markers: list[str] = []
@@ -778,6 +794,8 @@ def evaluate_path(
             "footprint_occupied_cells": problem.layout.occupied_cells,
             "footprint_bottom_row": problem.layout.bottom_row,
         }
+        row["public_constraint_key"] = _public_constraint_key(row)
+        row["evidence_profile_key"] = _evidence_profile_key(row)
         density_score = _information_density_score(row)
         row["information_density_score"] = density_score
         row["information_density_band"] = _information_density_band(density_score)
@@ -790,7 +808,6 @@ def evaluate_path(
         row["hero_evidence_stage"] = f"{row['hero']}|{row['evidence_stage']}"
         row["anchor_band"] = _anchor_band(row.get("anchor_count"))
         row["q6_top_size_band"] = _q6_top_size_band(row)
-        row["public_constraint_key"] = _public_constraint_key(row)
         row["zero_match_root"] = _zero_match_root(row)
         row["q6_miss_root"] = _q6_miss_root(row)
         row["q6_plannable_miss_root"] = _q6_plannable_miss_root(row)
@@ -1398,6 +1415,7 @@ def _summary(
             ),
             "anchor_band": _q6_group_summary(ok, ("anchor_band",)),
             "public_constraint": _q6_group_summary(ok, ("public_constraint_key",)),
+            "evidence_profile": _q6_group_summary(ok, ("evidence_profile_key",)),
             "top_item_size": _q6_group_summary(ok, ("q6_top_size_band",)),
             "evidence_stage": _q6_group_summary(ok, ("evidence_stage",)),
             "information_density": _q6_group_summary(ok, ("information_density_band",)),
@@ -1418,6 +1436,10 @@ def _summary(
             "information_density": _q6_plannable_group_summary(
                 ok,
                 ("information_density_band",),
+            ),
+            "evidence_profile": _q6_plannable_group_summary(
+                ok,
+                ("evidence_profile_key",),
             ),
         },
         "category_evidence": {
@@ -1547,6 +1569,7 @@ def _summary(
             "hero_information_density": _group_summary(ok, "hero_information_density"),
             "hero_evidence_stage": _group_summary(ok, "hero_evidence_stage"),
             "density_value_tier": _group_summary(ok, "density_value_tier"),
+            "evidence_profile": _group_summary(ok, "evidence_profile_key"),
         },
         "collection_readiness": _collection_readiness(
             ok,

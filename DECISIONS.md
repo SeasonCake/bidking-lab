@@ -598,3 +598,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：短期多了一组诊断字段，但不会影响推理输出；换来的是后续可以设置“早轮次看风险范围、后轮次看收敛精度”的校准目标。
 
 **复查点**：下一步根据 `groups.evidence_stage`、`groups.information_density`、`groups.density_value_tier` 判断 q6 优化是否真正改善高信息高价值局，而不是只降低全局 MAE。
+
+## 2026-06-01 · 证据类型也进入准确率分层
+
+**背景**：用户提醒公开信息和道具类型本身会影响准确性，例如紫色轮廓、随机均价、金色格子数、最高品质、鉴影分类。只看轮次/信息密度仍会把不同证据混在一起。
+
+**推荐**：新增 `evidence_profile_key`，按 public max quality / max item cells / random avg / category tool / shape / layout 组合拆分；同时修正 public 证据没有进入 density score 的顺序问题。
+
+**用户选择**：继续按可解释维度拆准确率，并优先优化 q6 实战意义。
+
+**取舍**：profile 会比较细，部分组合样本数少，不适合直接调权；但能指出下一轮优化方向。当前 `shape+layout`、`public:random_avg+shape+layout`、`tool:category+shape+layout` 的 q6 miss 仍明显，说明重点应是 q6 剩余件数/格数和空间可行性，不是单纯识别证据有没有进入系统。
+
+**复查点**：后续新增实时样本后，先看 `groups.evidence_profile` 和 `q6_plannable_risk_groups.evidence_profile`，再决定是否给某些证据组合加更窄的 residual/space 门控。
