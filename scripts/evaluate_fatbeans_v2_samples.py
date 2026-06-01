@@ -414,6 +414,51 @@ def _evidence_profile_key(row: Mapping[str, Any]) -> str:
     return "+".join(parts) if parts else "basic"
 
 
+def _evidence_profile_key_from_problem(problem: Any) -> str:
+    parts: list[str] = []
+    diagnostics = ";".join(getattr(problem, "diagnostics", ()) or ())
+    public_parts: list[str] = []
+    if "public_max_quality:" in diagnostics:
+        public_parts.append("max_quality")
+    if "public_max_item_cells:" in diagnostics:
+        public_parts.append("max_item_cells")
+    if public_parts:
+        parts.append(f"public:{'+'.join(public_parts)}")
+    if getattr(problem, "random_sample_avg_values", ()):
+        parts.append("public:random_avg")
+    if len(getattr(problem, "category_targets", ()) or ()) > 0:
+        parts.append("tool:category")
+    if len(getattr(problem, "shape_targets", ()) or ()) > 0:
+        parts.append("shape")
+    if getattr(getattr(problem, "layout", None), "trusted_footprint_count", 0) > 0:
+        parts.append("layout")
+    return "+".join(parts) if parts else "basic"
+
+
+def _q6_residual_boost_for_profile(
+    *,
+    hero: str | None,
+    map_family: str,
+    evidence_profile_key: str,
+    requested_boost: float,
+    gate: str,
+) -> float:
+    if requested_boost <= 1.0:
+        return 1.0
+    if gate == "all":
+        return requested_boost
+    if gate != "shipwreck_profile_v1":
+        return 1.0
+    allowed = {
+        ("aisha", "shipwreck", "shape+layout"),
+        ("aisha", "shipwreck", "tool:category+shape+layout"),
+        ("ethan", "shipwreck", "layout"),
+        ("ethan", "shipwreck", "shape+layout"),
+    }
+    key = (str(hero or "").lower(), map_family, evidence_profile_key)
+    return requested_boost if key in allowed else 1.0
+
+
 def _exact_bucket_markers(bucket_targets: Any) -> list[str]:
     text = str(bucket_targets or "")
     markers: list[str] = []
@@ -553,6 +598,8 @@ def evaluate_path(
     cells_tol: int,
     count_tol: int,
     combo_presolve: Mapping[str, object] | None = None,
+    q6_residual_boost: float = 1.0,
+    q6_residual_boost_gate: str = "all",
 ) -> dict[str, Any]:
     try:
         events = parse_fatbeans_capture(path)
@@ -578,6 +625,15 @@ def evaluate_path(
             items=tables.items,
             obs=base_session,
         )
+        map_family = _map_family(path.name, base_session.map_id)
+        pre_profile_key = _evidence_profile_key_from_problem(problem)
+        active_q6_residual_boost = _q6_residual_boost_for_profile(
+            hero=base_session.hero,
+            map_family=map_family,
+            evidence_profile_key=pre_profile_key,
+            requested_boost=q6_residual_boost,
+            gate=q6_residual_boost_gate,
+        )
         truth_breakdown = _inventory_truth_breakdown(
             events,
             tables.items,
@@ -594,6 +650,7 @@ def evaluate_path(
             seed=seed,
             cells_tol=cells_tol,
             count_tol=count_tol,
+            q6_residual_boost=active_q6_residual_boost,
         )
         value_p10 = _round(report.total_value.p10 if report.total_value else None)
         value_p50 = _round(report.total_value.p50 if report.total_value else None)
@@ -662,7 +719,7 @@ def evaluate_path(
             "status": "ok",
             "hero": base_session.hero,
             "map_id": base_session.map_id,
-            "map_family": _map_family(path.name, base_session.map_id),
+            "map_family": map_family,
             "value_tier": _value_tier(final_value),
             "inventory_count": inventory_count,
             "capture_round": capture_round,
@@ -793,6 +850,8 @@ def evaluate_path(
             "layout_score": report.layout_score,
             "layout_diagnostics": layout_diagnostics,
             "diagnostics": diagnostics,
+            "q6_residual_boost": active_q6_residual_boost,
+            "q6_residual_boost_gate": q6_residual_boost_gate,
             "relaxed_exact_used": "relaxed_exact_bucket_targets:" in diagnostics,
             "public_max_quality_used": "public_max_quality:" in diagnostics,
             "public_max_item_cells_used": "public_max_item_cells:" in diagnostics,
@@ -1384,6 +1443,15 @@ def _summary(
         row for row in valued
         if int(row.get("final_q6_decision_value") or 0) > 0
     ]
+    q6_no_plannable_rows = [
+        row for row in valued
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    q6_no_plannable_p90_positive = [
+        row for row in q6_no_plannable_rows
+        if int(row.get("v2_q6_decision_value_p90") or 0) > 0
+    ]
     q6_tail_rows = [
         row for row in valued
         if int(row.get("final_q6_trimmed_tail_value") or 0) > 0
@@ -1464,6 +1532,23 @@ def _summary(
         "q6_truth_files": len(q6_rows),
         "q6_plannable_truth_files": len(q6_plannable_rows),
         "q6_tail_event_files": len(q6_tail_rows),
+        "q6_no_plannable_truth_files": len(q6_no_plannable_rows),
+        "q6_no_plannable_p90_positive": len(q6_no_plannable_p90_positive),
+        "q6_no_plannable_p90_positive_rate": (
+            round(len(q6_no_plannable_p90_positive) / len(q6_no_plannable_rows), 4)
+            if q6_no_plannable_rows
+            else None
+        ),
+        "q6_no_plannable_p90_positive_median": (
+            _round(
+                statistics.median(
+                    int(row.get("v2_q6_decision_value_p90") or 0)
+                    for row in q6_no_plannable_p90_positive
+                )
+            )
+            if q6_no_plannable_p90_positive
+            else None
+        ),
         "q6_value_p90_coverage": (
             round(
                 statistics.mean(
@@ -2799,6 +2884,25 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--q6-residual-boost",
+        type=float,
+        default=1.0,
+        help=(
+            "Offline sampler experiment only: multiply q6 candidate weights "
+            "during residual sampling. Default 1.0 keeps the production sampler."
+        ),
+    )
+    parser.add_argument(
+        "--q6-residual-boost-gate",
+        choices=("all", "shipwreck_profile_v1"),
+        default="all",
+        help=(
+            "Offline sampler experiment gate for --q6-residual-boost. "
+            "shipwreck_profile_v1 limits the boost to positive-net "
+            "hero+shipwreck+evidence-profile groups."
+        ),
+    )
+    parser.add_argument(
         "--combo-presolve",
         default=str(_DEFAULT_COMBO_PRESOLVE_PATH),
         help=(
@@ -2828,6 +2932,8 @@ def main() -> int:
             cells_tol=args.cells_tol,
             count_tol=args.count_tol,
             combo_presolve=combo_presolve,
+            q6_residual_boost=args.q6_residual_boost,
+            q6_residual_boost_gate=args.q6_residual_boost_gate,
         )
         for path in _iter_unique(paths)
     ]

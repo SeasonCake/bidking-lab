@@ -632,3 +632,5 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **更新**：首轮 `q6_space_diagnostics` 显示多数 q6 低估是低空间压力低估，不是高空间压力或溢出。Aisha shipwreck + shape+layout 尤其明显。因此下一步推荐先做 `residual_q6_count_cell_sampler`，完整装箱搜索继续作为 UI/诊断与少数高压力局的后续项。
 
 **更新 2**：低空间压力本身不适合作为正式启用门控。离线 floor 实验显示它能解释低估，但不能明显降低无 q6 代理；更稳的是 hero+map+evidence_profile 正净收益门控。后续 sampler 改动应以 profile gate 为主，空间压力作为辅助诊断。
+
+**更新 3**：已实现默认关闭的 `q6_residual_boost` sampler 开关。全局 boost 虽然显著改善 q6 coverage，但无 q6 正报代理明显上升；`shipwreck_profile_v1` 门控能把正报率维持在 baseline，同时改善 q6 coverage 和 MAE。该开关暂时只用于批评估实验，不进入 live 默认或 bid hint。

@@ -228,6 +228,8 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     assert priority[0]["median_q6_under_by"] == 400_000
     assert summary["q6_truth_files"] == 1
     assert summary["q6_plannable_truth_files"] == 1
+    assert summary["q6_no_plannable_truth_files"] == 0
+    assert summary["q6_no_plannable_p90_positive"] == 0
     assert summary["q6_tail_event_files"] == 1
     assert summary["q6_p90_misses_truth"] == 1
     assert summary["q6_plannable_p90_misses_truth"] == 0
@@ -396,6 +398,69 @@ def test_q6_count_cell_prior_floor_experiment_is_separate_from_raw_floor() -> No
         ]
         == 1
     )
+
+
+def test_summary_reports_no_q6_positive_p90_proxy() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "file": "no_q6.json",
+            "final_value": 100,
+            "final_q6_count": 0,
+            "final_q6_decision_value": 0,
+            "final_q6_trimmed_tail_value": 0,
+            "v2_matched": 10,
+            "v2_match_rate": 1.0,
+            "v2_value_p50_error": 0,
+            "v2_decision_value_p50_error": 0,
+            "v2_value_p90_error": 50,
+            "v2_value_p90_covers_final": True,
+            "v2_q6_decision_value_p90": 200,
+            "q6_false_low_risk": False,
+            "q6_below_drop_prior": False,
+            "q6_p90_misses_truth": False,
+            "q6_plannable_p90_misses_truth": False,
+            "layout_conflict": False,
+            "relaxed_exact_used": False,
+            "category_target_count": 0,
+            "category_exclusion_count": 0,
+            "presolve_unreachable_exact_buckets": "",
+        }
+    ]
+
+    summary = module._summary(rows)
+
+    assert summary["q6_no_plannable_truth_files"] == 1
+    assert summary["q6_no_plannable_p90_positive"] == 1
+    assert summary["q6_no_plannable_p90_positive_rate"] == 1.0
+    assert summary["q6_no_plannable_p90_positive_median"] == 200
+
+
+def test_q6_residual_boost_profile_gate_is_narrow() -> None:
+    module = _eval_module()
+
+    assert module._q6_residual_boost_for_profile(
+        hero="aisha",
+        map_family="shipwreck",
+        evidence_profile_key="shape+layout",
+        requested_boost=3.0,
+        gate="shipwreck_profile_v1",
+    ) == 3.0
+    assert module._q6_residual_boost_for_profile(
+        hero="aisha",
+        map_family="villa",
+        evidence_profile_key="shape+layout",
+        requested_boost=3.0,
+        gate="shipwreck_profile_v1",
+    ) == 1.0
+    assert module._q6_residual_boost_for_profile(
+        hero="aisha",
+        map_family="shipwreck",
+        evidence_profile_key="public:random_avg+shape+layout",
+        requested_boost=3.0,
+        gate="shipwreck_profile_v1",
+    ) == 1.0
 
 
 def test_q6_low_space_residual_floor_experiment_is_narrower_than_prior_floor() -> None:

@@ -1200,9 +1200,11 @@ class ConditionalSampler:
         maps: Mapping[int, BidMap],
         drops: Mapping[int, DropPool],
         items: Mapping[int, Item],
+        q6_residual_boost: float = 1.0,
     ) -> None:
         self.problem = problem
         self.items = items
+        self.q6_residual_boost = max(1.0, float(q6_residual_boost))
         self._sampler = prepare_session_sampler(
             problem.map_id,
             maps=maps,
@@ -1299,11 +1301,12 @@ class ConditionalSampler:
         if residual_draws and self.problem.total_item_count is not None:
             self._sample_exact_count_residual(pool, buckets, residual_draws, rng)
         elif residual_draws:
+            residual_probs = self._residual_probabilities(pool)
             sampled_idx = rng.choice(
-                len(pool.probabilities),
+                len(residual_probs),
                 size=residual_draws,
                 replace=True,
-                p=pool.probabilities,
+                p=residual_probs,
             )
             counts = rng.integers(
                 pool.n_min[sampled_idx],
@@ -1316,6 +1319,29 @@ class ConditionalSampler:
                     count=int(count),
                 )
         return self._truth_from_buckets(buckets)
+
+    def _residual_probabilities(self, pool: Any) -> np.ndarray:
+        probs = pool.probabilities.astype(np.float64)
+        if self.q6_residual_boost <= 1.0:
+            return probs
+        qualities = getattr(pool, "qualities", None)
+        if qualities is None:
+            return probs
+        boosted = probs.copy()
+        boosted[np.asarray(qualities) == 6] *= self.q6_residual_boost
+        total = float(boosted.sum())
+        if total <= 0:
+            return probs
+        return boosted / total
+
+    def _residual_candidate_weight(self, pool: Any, pool_i: int) -> float:
+        weight = float(pool.probabilities[pool_i])
+        if (
+            self.q6_residual_boost > 1.0
+            and int(getattr(pool.items[int(pool_i)], "quality", 0)) == 6
+        ):
+            weight *= self.q6_residual_boost
+        return weight
 
     def _sample_exact_count_residual(
         self,
@@ -1356,14 +1382,18 @@ class ConditionalSampler:
                         if future_max < target_cells - cell_tol:
                             continue
                     feasible_pairs.append(
-                        (int(pool_i), count, float(pool.probabilities[pool_i]))
+                        (
+                            int(pool_i),
+                            count,
+                            self._residual_candidate_weight(pool, int(pool_i)),
+                        )
                     )
             if not feasible_pairs:
                 feasible_pairs = [
                     (
                         int(pool_i),
                         int(pool.n_min[pool_i]),
-                        float(pool.probabilities[pool_i]),
+                        self._residual_candidate_weight(pool, int(pool_i)),
                     )
                     for pool_i in np.flatnonzero(pool.n_min <= remaining)
                     if int(pool.n_min[pool_i]) > 0
@@ -1998,9 +2028,16 @@ def _estimate_posterior_for_problem(
     value_rel_tol: float = 0.10,
     warehouse_tol: int = 8,
     total_item_count_tol: int = 0,
+    q6_residual_boost: float = 1.0,
     extra_diagnostics: tuple[str, ...] = (),
 ) -> PosteriorReport:
-    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+    sampler = ConditionalSampler(
+        problem,
+        maps=maps,
+        drops=drops,
+        items=items,
+        q6_residual_boost=q6_residual_boost,
+    )
     q6_prior = sampler.quality_drop_prior(6)
     rng = np.random.default_rng(seed)
     values: list[int] = []
@@ -2072,6 +2109,8 @@ def _estimate_posterior_for_problem(
             q6_space_overflows.append(0)
         weights.append(weight)
     diagnostics = [*extra_diagnostics, *problem.diagnostics]
+    if q6_residual_boost > 1.0:
+        diagnostics.append(f"q6_residual_boost:{q6_residual_boost:.2f}")
     q6_match_rate = _weighted_positive_rate(q6_values, weights)
     if (
         6 not in problem.bucket_targets
@@ -2149,6 +2188,7 @@ def estimate_posterior_v2(
     value_rel_tol: float = 0.10,
     warehouse_tol: int = 8,
     total_item_count_tol: int = 0,
+    q6_residual_boost: float = 1.0,
 ) -> PosteriorReport:
     """Estimate a posterior with exact item anchors forced into every trial."""
 
@@ -2173,6 +2213,7 @@ def estimate_posterior_v2(
         value_rel_tol=value_rel_tol,
         warehouse_tol=warehouse_tol,
         total_item_count_tol=total_item_count_tol,
+        q6_residual_boost=q6_residual_boost,
     )
     if strict.n_matched > 0:
         return strict
@@ -2201,6 +2242,7 @@ def estimate_posterior_v2(
         value_rel_tol=value_rel_tol,
         warehouse_tol=warehouse_tol,
         total_item_count_tol=total_item_count_tol,
+        q6_residual_boost=q6_residual_boost,
         extra_diagnostics=diagnostics,
     )
 

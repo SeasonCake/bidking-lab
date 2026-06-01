@@ -501,6 +501,34 @@ def test_quality_drop_prior_uses_drop_weights_and_count_ranges() -> None:
     assert abs(prior.expected_session_value - (2 * 444_000 / 1002)) < 1e-12
 
 
+def test_q6_residual_boost_only_changes_residual_sampling_weights() -> None:
+    maps, drops, items = _tables()
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    baseline = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+    boosted = ConditionalSampler(
+        problem,
+        maps=maps,
+        drops=drops,
+        items=items,
+        q6_residual_boost=100.0,
+    )
+    pool = baseline._sampler.pools[0]
+    q6_mask = np.asarray([item.quality == 6 for item in pool.items])
+
+    base_probs = baseline._residual_probabilities(pool)
+    boosted_probs = boosted._residual_probabilities(pool)
+
+    assert abs(float(base_probs[q6_mask].sum()) - 1 / 1002) < 1e-12
+    assert float(boosted_probs[q6_mask].sum()) > float(base_probs[q6_mask].sum())
+    assert abs(float(boosted_probs.sum()) - 1.0) < 1e-12
+
+
 def test_residual_problem_guides_per_quality_bucket_targets() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()
