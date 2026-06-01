@@ -482,6 +482,8 @@ def test_q6_actionable_targets_prioritize_shipwreck_profiles() -> None:
             "final_q6_decision_value": 500_000,
             "q6_plannable_p90_misses_truth": True,
             "v2_q6_decision_value_p90_under_by": 300_000,
+            "v2_q6_space_pressure_p90": 0.10,
+            "v2_q6_space_overflow_rate": 0.0,
             "final_q6_trimmed_tail_value": 0,
             "v2_matched": 10,
             "layout_conflict": True,
@@ -495,8 +497,66 @@ def test_q6_actionable_targets_prioritize_shipwreck_profiles() -> None:
     assert targets[0]["q6_plannable_misses"] == 10
     assert any(
         target["scope"] == "hero_map_profile"
-        and target["recommended_next"] == "shipwreck_shape_space_residual"
+        and target["recommended_next"] == "shipwreck_shape_residual_sampler"
         for target in targets
+    )
+
+
+def test_q6_space_diagnostics_separates_residual_from_space_pressure() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 500_000,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_decision_value_p90_under_by": 300_000,
+            "v2_q6_space_pressure_p90": 0.25,
+            "v2_q6_space_overflow_rate": 0.0,
+        },
+        {
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 400_000,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_decision_value_p90_under_by": 200_000,
+            "v2_q6_space_pressure_p90": 0.40,
+            "v2_q6_space_overflow_rate": 0.0,
+        },
+        {
+            "hero": "ethan",
+            "map_family": "villa",
+            "evidence_profile_key": "layout",
+            "final_q6_decision_value": 300_000,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_decision_value_p90_under_by": 100_000,
+            "v2_q6_space_pressure_p90": 1.20,
+            "v2_q6_space_overflow_rate": 0.5,
+        },
+        {
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "final_q6_decision_value": 300_000,
+            "q6_plannable_p90_misses_truth": False,
+            "v2_q6_space_pressure_p90": 0.30,
+            "v2_q6_space_overflow_rate": 0.0,
+        },
+    ]
+
+    diagnostics = module._q6_space_diagnostics(rows)
+
+    assert diagnostics["q6_plannable_miss_rows"] == 3
+    assert diagnostics["low_space_pressure_miss_rows"] == 2
+    assert diagnostics["high_space_pressure_miss_rows"] == 1
+    assert diagnostics["recommended_next"] == "residual_q6_count_cell_sampler"
+    assert diagnostics["groups"]["hero_map_profile"][0]["group"] == (
+        "hero=aisha|map_family=shipwreck|evidence_profile_key=shape+layout"
+    )
+    assert diagnostics["groups"]["hero_map_profile"][0]["recommended_next"] == (
+        "residual_q6_count_cell_sampler"
     )
 
 

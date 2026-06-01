@@ -1451,6 +1451,7 @@ def _summary(
         "q6_calibration_priority": _q6_calibration_priority(ok),
         "q6_plannable_calibration_priority": _q6_plannable_calibration_priority(ok),
         "q6_actionable_targets": _q6_actionable_targets(ok),
+        "q6_space_diagnostics": _q6_space_diagnostics(ok),
         "q6_risk_groups": {
             "hero_map_family": _q6_group_summary(ok, ("hero", "map_family")),
             "map_family_value_tier": _q6_group_summary(
@@ -2079,6 +2080,180 @@ def _q6_plannable_calibration_priority(rows: list[dict[str, Any]]) -> list[dict[
     ][:10]
 
 
+def _float_values(rows: list[dict[str, Any]], key: str) -> list[float]:
+    out: list[float] = []
+    for row in rows:
+        value = row.get(key)
+        if value is None:
+            continue
+        out.append(float(value))
+    return out
+
+
+def _median_float_value(
+    rows: list[dict[str, Any]],
+    key: str,
+    *,
+    digits: int = 3,
+) -> float | None:
+    values = _float_values(rows, key)
+    return _round_float(statistics.median(values), digits) if values else None
+
+
+def _mean_float_value(
+    rows: list[dict[str, Any]],
+    key: str,
+    *,
+    digits: int = 4,
+) -> float | None:
+    values = _float_values(rows, key)
+    return _round_float(statistics.mean(values), digits) if values else None
+
+
+def _q6_space_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    q6_truth = [
+        row for row in rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_space_pressure_p90") is not None
+    ]
+    q6_misses = [
+        row for row in q6_truth
+        if row.get("q6_plannable_p90_misses_truth")
+    ]
+    q6_covered = [
+        row for row in q6_truth
+        if not row.get("q6_plannable_p90_misses_truth")
+    ]
+    low_pressure_misses = [
+        row for row in q6_misses
+        if float(row.get("v2_q6_space_pressure_p90") or 0) < 0.50
+        and float(row.get("v2_q6_space_overflow_rate") or 0) <= 0
+    ]
+    high_pressure_misses = [
+        row for row in q6_misses
+        if float(row.get("v2_q6_space_pressure_p90") or 0) >= 1.00
+        or float(row.get("v2_q6_space_overflow_rate") or 0) > 0
+    ]
+    miss_count = len(q6_misses)
+    low_pressure_rate = (
+        round(len(low_pressure_misses) / miss_count, 4) if miss_count else None
+    )
+    high_pressure_rate = (
+        round(len(high_pressure_misses) / miss_count, 4) if miss_count else None
+    )
+    if miss_count == 0:
+        recommendation = "q6_space_not_current_bottleneck"
+    elif low_pressure_rate is not None and low_pressure_rate >= 0.60:
+        recommendation = "residual_q6_count_cell_sampler"
+    elif high_pressure_rate is not None and high_pressure_rate >= 0.30:
+        recommendation = "space_feasibility_weight"
+    else:
+        recommendation = "mixed_residual_and_space_audit"
+    return {
+        "q6_plannable_truth_rows": len(q6_truth),
+        "q6_plannable_miss_rows": miss_count,
+        "q6_plannable_covered_rows": len(q6_covered),
+        "miss_q6_space_pressure_p90_median": _median_float_value(
+            q6_misses,
+            "v2_q6_space_pressure_p90",
+        ),
+        "covered_q6_space_pressure_p90_median": _median_float_value(
+            q6_covered,
+            "v2_q6_space_pressure_p90",
+        ),
+        "miss_q6_space_overflow_rate_mean": _mean_float_value(
+            q6_misses,
+            "v2_q6_space_overflow_rate",
+        ),
+        "covered_q6_space_overflow_rate_mean": _mean_float_value(
+            q6_covered,
+            "v2_q6_space_overflow_rate",
+        ),
+        "low_space_pressure_miss_rows": len(low_pressure_misses),
+        "low_space_pressure_miss_rate": low_pressure_rate,
+        "high_space_pressure_miss_rows": len(high_pressure_misses),
+        "high_space_pressure_miss_rate": high_pressure_rate,
+        "recommended_next": recommendation,
+        "groups": {
+            "hero_map_profile": _q6_space_group_summary(
+                rows,
+                ("hero", "map_family", "evidence_profile_key"),
+            ),
+            "evidence_profile": _q6_space_group_summary(
+                rows,
+                ("evidence_profile_key",),
+            ),
+        },
+    }
+
+
+def _q6_space_group_summary(
+    rows: list[dict[str, Any]],
+    keys: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(_group_key(row, keys), []).append(row)
+
+    out: list[dict[str, Any]] = []
+    for group, group_rows in groups.items():
+        q6_misses = [
+            row for row in group_rows
+            if row.get("q6_plannable_p90_misses_truth")
+            and row.get("v2_q6_space_pressure_p90") is not None
+        ]
+        if not q6_misses:
+            continue
+        low_pressure_misses = [
+            row for row in q6_misses
+            if float(row.get("v2_q6_space_pressure_p90") or 0) < 0.50
+            and float(row.get("v2_q6_space_overflow_rate") or 0) <= 0
+        ]
+        high_pressure_misses = [
+            row for row in q6_misses
+            if float(row.get("v2_q6_space_pressure_p90") or 0) >= 1.00
+            or float(row.get("v2_q6_space_overflow_rate") or 0) > 0
+        ]
+        under_by = [
+            int(row["v2_q6_decision_value_p90_under_by"])
+            for row in q6_misses
+            if row.get("v2_q6_decision_value_p90_under_by") is not None
+        ]
+        recommendation = (
+            "residual_q6_count_cell_sampler"
+            if len(low_pressure_misses) >= len(high_pressure_misses)
+            else "space_feasibility_weight"
+        )
+        out.append(
+            {
+                "group": group,
+                "q6_plannable_miss_rows": len(q6_misses),
+                "low_space_pressure_miss_rows": len(low_pressure_misses),
+                "high_space_pressure_miss_rows": len(high_pressure_misses),
+                "miss_q6_space_pressure_p90_median": _median_float_value(
+                    q6_misses,
+                    "v2_q6_space_pressure_p90",
+                ),
+                "miss_q6_space_overflow_rate_mean": _mean_float_value(
+                    q6_misses,
+                    "v2_q6_space_overflow_rate",
+                ),
+                "median_q6_plannable_under_by": (
+                    _round(statistics.median(under_by)) if under_by else None
+                ),
+                "recommended_next": recommendation,
+            }
+        )
+    return sorted(
+        out,
+        key=lambda row: (
+            int(row["q6_plannable_miss_rows"]),
+            int(row["median_q6_plannable_under_by"] or 0),
+        ),
+        reverse=True,
+    )[:12]
+
+
 def _q6_actionable_targets(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     scopes = (
@@ -2111,6 +2286,12 @@ def _q6_actionable_targets(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "recommended_next": _q6_action_recommendation(
                         str(row["group"]),
                         layout_conflict=int(row["layout_conflict"]),
+                        q6_space_pressure_p90_median=row.get(
+                            "q6_space_pressure_p90_median"
+                        ),
+                        q6_space_overflow_rate_mean=row.get(
+                            "q6_space_overflow_rate_mean"
+                        ),
                     ),
                 }
             )
@@ -2125,7 +2306,22 @@ def _q6_actionable_targets(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )[:12]
 
 
-def _q6_action_recommendation(group: str, *, layout_conflict: int) -> str:
+def _q6_action_recommendation(
+    group: str,
+    *,
+    layout_conflict: int,
+    q6_space_pressure_p90_median: Any = None,
+    q6_space_overflow_rate_mean: Any = None,
+) -> str:
+    low_space_pressure = (
+        q6_space_pressure_p90_median is not None
+        and float(q6_space_pressure_p90_median) < 0.50
+        and float(q6_space_overflow_rate_mean or 0) < 0.10
+    )
+    if low_space_pressure and "shipwreck" in group and "shape+layout" in group:
+        return "shipwreck_shape_residual_sampler"
+    if low_space_pressure and "shape+layout" in group:
+        return "residual_q6_count_cell_sampler"
     if "shipwreck" in group and "shape+layout" in group:
         return "shipwreck_shape_space_residual"
     if "shipwreck" in group and "tool:category" in group:
