@@ -1016,12 +1016,17 @@ def _q6_count_cell_prior_gated_floor_experiment(
     rows: list[dict[str, Any]],
     *,
     floor_ratio: float,
+    gate_keys: tuple[str, ...] = ("hero", "map_family"),
+    gate_name: str = "hero_map_family_positive_net",
+    min_q6_truth: int = 1,
 ) -> dict[str, Any] | None:
     if floor_ratio <= 0:
         return None
     gate_rows = _q6_count_cell_prior_floor_gate_candidates(
         rows,
         floor_ratio=floor_ratio,
+        keys=gate_keys,
+        min_q6_truth=min_q6_truth,
     )
     gate_groups = {str(row["group"]) for row in gate_rows}
     q6_truth = [
@@ -1033,7 +1038,7 @@ def _q6_count_cell_prior_gated_floor_experiment(
         return {
             "enabled": True,
             "floor_ratio": floor_ratio,
-            "gate": "hero_map_family_positive_net",
+            "gate": gate_name,
             "gates": gate_rows,
             "q6_plannable_truth_files": 0,
             "eligible_rows": 0,
@@ -1047,7 +1052,7 @@ def _q6_count_cell_prior_gated_floor_experiment(
     floors: list[int] = []
     for row in q6_truth:
         q6_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
-        if _group_key(row, ("hero", "map_family")) in gate_groups:
+        if _group_key(row, gate_keys) in gate_groups:
             floor_value = _q6_count_cell_prior_floor_value(
                 row,
                 floor_ratio=floor_ratio,
@@ -1062,14 +1067,14 @@ def _q6_count_cell_prior_gated_floor_experiment(
     return {
         "enabled": True,
         "floor_ratio": floor_ratio,
-        "gate": "hero_map_family_positive_net",
+        "gate": gate_name,
         "gates": gate_rows,
         "q6_plannable_truth_files": len(q6_truth),
         "eligible_rows": eligible_rows,
         "eligible_no_q6_rows": sum(
             1 for row in rows
             if int(row.get("final_q6_decision_value") or 0) <= 0
-            and _group_key(row, ("hero", "map_family")) in gate_groups
+            and _group_key(row, gate_keys) in gate_groups
             and _q6_count_cell_prior_floor_value(
                 row,
                 floor_ratio=floor_ratio,
@@ -1601,6 +1606,17 @@ def _summary(
         summary["q6_count_cell_prior_gated_floor_experiment"] = (
             gated_count_cell_experiment
         )
+    profile_gated_count_cell_experiment = _q6_count_cell_prior_gated_floor_experiment(
+        ok,
+        floor_ratio=q6_residual_floor_ratio,
+        gate_keys=("hero", "map_family", "evidence_profile_key"),
+        gate_name="hero_map_family_profile_positive_net",
+        min_q6_truth=10,
+    )
+    if profile_gated_count_cell_experiment is not None:
+        summary["q6_count_cell_prior_profile_gated_floor_experiment"] = (
+            profile_gated_count_cell_experiment
+        )
     return summary
 
 
@@ -1778,16 +1794,22 @@ def _q6_count_cell_prior_floor_gate_candidates(
     rows: list[dict[str, Any]],
     *,
     floor_ratio: float,
+    keys: tuple[str, ...] = ("hero", "map_family"),
+    min_q6_truth: int = 1,
 ) -> list[dict[str, Any]]:
     candidates = []
     for row in _q6_count_cell_prior_floor_group_summary(
         rows,
-        ("hero", "map_family"),
+        keys,
         floor_ratio=floor_ratio,
     ):
         improvement = int(row["q6_plannable_miss_improvement"])
         false_positive_proxy = int(row["eligible_no_q6_rows"])
-        if improvement <= 0 or improvement <= false_positive_proxy:
+        if (
+            improvement <= 0
+            or improvement <= false_positive_proxy
+            or int(row["q6_plannable_truth"]) < min_q6_truth
+        ):
             continue
         candidates.append(
             {

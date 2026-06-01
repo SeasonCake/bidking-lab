@@ -610,3 +610,5 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：profile 会比较细，部分组合样本数少，不适合直接调权；但能指出下一轮优化方向。当前 `shape+layout`、`public:random_avg+shape+layout`、`tool:category+shape+layout` 的 q6 miss 仍明显，说明重点应是 q6 剩余件数/格数和空间可行性，不是单纯识别证据有没有进入系统。
 
 **复查点**：后续新增实时样本后，先看 `groups.evidence_profile` 和 `q6_plannable_risk_groups.evidence_profile`，再决定是否给某些证据组合加更窄的 residual/space 门控。
+
+**更新**：已新增 profile 级 q6 floor 门控离线实验。当前 profile 门控误触发代理更低，但 q6 coverage 也更低；因此仅作为诊断和未来规则候选，live 仍保持 hero+map_family shipwreck 门控。

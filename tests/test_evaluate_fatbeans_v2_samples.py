@@ -378,6 +378,7 @@ def test_q6_count_cell_prior_gated_floor_prefers_positive_net_groups() -> None:
             "file": "good_gate_q6.json",
             "hero": "ethan",
             "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
             "final_q6_decision_value": 500,
             "v2_q6_decision_value_p90": 100,
             "q6_plannable_p90_misses_truth": True,
@@ -389,6 +390,7 @@ def test_q6_count_cell_prior_gated_floor_prefers_positive_net_groups() -> None:
             "file": "bad_gate_q6.json",
             "hero": "aisha",
             "map_family": "villa",
+            "evidence_profile_key": "shape+layout",
             "final_q6_decision_value": 500,
             "v2_q6_decision_value_p90": 100,
             "q6_plannable_p90_misses_truth": True,
@@ -400,6 +402,7 @@ def test_q6_count_cell_prior_gated_floor_prefers_positive_net_groups() -> None:
             "file": "bad_gate_no_q6.json",
             "hero": "aisha",
             "map_family": "villa",
+            "evidence_profile_key": "shape+layout",
             "final_q6_decision_value": 0,
             "v2_q6_decision_value_p90": 0,
             "q6_plannable_p90_misses_truth": False,
@@ -419,6 +422,24 @@ def test_q6_count_cell_prior_gated_floor_prefers_positive_net_groups() -> None:
     assert experiment["eligible_rows"] == 1
     assert experiment["eligible_no_q6_rows"] == 0
     assert experiment["q6_plannable_p90_misses_truth"] == 1
+
+    profile_experiment = module._q6_count_cell_prior_gated_floor_experiment(
+        rows,
+        floor_ratio=1.0,
+        gate_keys=("hero", "map_family", "evidence_profile_key"),
+        gate_name="hero_map_family_profile_positive_net",
+    )
+    assert profile_experiment["gates"][0]["group"] == (
+        "hero=ethan|map_family=shipwreck|evidence_profile_key=shape+layout"
+    )
+    strict_profile_experiment = module._q6_count_cell_prior_gated_floor_experiment(
+        rows,
+        floor_ratio=1.0,
+        gate_keys=("hero", "map_family", "evidence_profile_key"),
+        gate_name="hero_map_family_profile_positive_net",
+        min_q6_truth=2,
+    )
+    assert strict_profile_experiment["gates"] == []
 
 
 def test_expand_cli_paths_supports_globs(tmp_path: Path) -> None:
