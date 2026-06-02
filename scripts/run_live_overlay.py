@@ -93,6 +93,10 @@ def _int_or_none(value: Any) -> int | None:
 
 
 def _matplotlib_minimap_enabled(model: dict[str, Any]) -> bool:
+    return _matplotlib_minimap_state(model)[0]
+
+
+def _matplotlib_minimap_state(model: dict[str, Any]) -> tuple[bool, str]:
     interaction = _as_mapping(model.get("interaction"))
     detail = _as_mapping(interaction.get("detail"))
     round_no = _int_or_none(model.get("round"))
@@ -102,8 +106,12 @@ def _matplotlib_minimap_enabled(model: dict[str, Any]) -> bool:
         if renderer.get("name") != "matplotlib_minimap":
             continue
         min_round = _int_or_none(renderer.get("min_round")) or 1
-        return round_no is not None and round_no >= min_round
-    return False
+        if round_no is None:
+            return False, f"R{min_round}+ 详情渲染，当前轮次未知"
+        if round_no < min_round:
+            return False, f"R{min_round}+ 详情渲染，当前 R{round_no} 不渲染"
+        return True, f"R{min_round}+ 详情渲染"
+    return False, ""
 
 
 def _fmt_int(value: Any) -> str:
@@ -222,22 +230,23 @@ def _quality_style(quality: Any) -> dict[str, str]:
         q = int(quality)
     except (TypeError, ValueError):
         return {
-            "fill": "#1f2937",
-            "outline": "#64748b",
-            "stipple": "gray50",
+            "fill": "",
+            "outline": "#94a3b8",
+            "stipple": "",
             "hatch": "///",
+            "unknown": "1",
         }
     if q >= 6:
-        return {"fill": BAD, "outline": "#fecdd3", "stipple": "", "hatch": ""}
+        return {"fill": BAD, "outline": "#fecdd3", "stipple": "", "hatch": "", "unknown": ""}
     if q == 5:
-        return {"fill": WARN, "outline": "#fde68a", "stipple": "", "hatch": ""}
+        return {"fill": WARN, "outline": "#fde68a", "stipple": "", "hatch": "", "unknown": ""}
     if q == 4:
-        return {"fill": PURPLE, "outline": "#e9d5ff", "stipple": "", "hatch": ""}
+        return {"fill": PURPLE, "outline": "#e9d5ff", "stipple": "", "hatch": "", "unknown": ""}
     if q == 3:
-        return {"fill": ACCENT, "outline": "#bfdbfe", "stipple": "", "hatch": ""}
+        return {"fill": ACCENT, "outline": "#bfdbfe", "stipple": "", "hatch": "", "unknown": ""}
     if q == 2:
-        return {"fill": GOOD, "outline": "#bbf7d0", "stipple": "", "hatch": ""}
-    return {"fill": "#f8fafc", "outline": "#ffffff", "stipple": "", "hatch": ""}
+        return {"fill": GOOD, "outline": "#bbf7d0", "stipple": "", "hatch": "", "unknown": ""}
+    return {"fill": "#ffffff", "outline": "#e2e8f0", "stipple": "", "hatch": "", "unknown": ""}
 
 
 def _age(snapshot: dict[str, Any]) -> tuple[str, bool]:
@@ -1928,7 +1937,10 @@ class Overlay:
         minimap = _as_mapping(model.get("minimap"))
         if minimap.get("status") != "available":
             return
-        if not _matplotlib_minimap_enabled(model):
+        matplotlib_enabled, matplotlib_note = _matplotlib_minimap_state(model)
+        if not matplotlib_enabled:
+            if matplotlib_note:
+                self._render_matplotlib_status(parent, matplotlib_note)
             return
         signature = json.dumps(
             {
@@ -1949,6 +1961,10 @@ class Overlay:
                 from matplotlib.figure import Figure
                 from matplotlib.patches import Rectangle
             except Exception:
+                self._render_matplotlib_status(
+                    parent,
+                    "matplotlib 不可用，已回退 Tk Canvas",
+                )
                 return
             geometry = _minimap_canvas_geometry(minimap)
             columns = geometry["columns"]
@@ -1978,23 +1994,35 @@ class Overlay:
                 except (TypeError, ValueError):
                     continue
                 style = _quality_style(item.get("quality"))
+                facecolor = "none" if style.get("unknown") else style["fill"]
                 axis.add_patch(
                     Rectangle(
                         (col_i - 1, row_i - 1),
                         width,
                         height,
-                        facecolor=style["fill"],
+                        facecolor=facecolor,
                         edgecolor=style["outline"],
                         linewidth=0.8,
                         hatch=style.get("hatch") or None,
                     )
                 )
             buffer = BytesIO()
-            FigureCanvasAgg(fig).print_png(buffer)
-            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            try:
+                FigureCanvasAgg(fig).print_png(buffer)
+                encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            except Exception:
+                self._render_matplotlib_status(
+                    parent,
+                    "渲染失败，已回退 Tk Canvas",
+                )
+                return
             try:
                 photo = tk.PhotoImage(data=encoded, format="png")
             except tk.TclError:
+                self._render_matplotlib_status(
+                    parent,
+                    "图片载入失败，已回退 Tk Canvas",
+                )
                 return
             self._matplotlib_minimap_cache = (signature, photo)
 
@@ -2008,6 +2036,43 @@ class Overlay:
             font=("Microsoft YaHei UI", 9, "bold"),
         ).pack(anchor="w")
         tk.Label(frame, image=photo, bg=PANEL_SOFT, bd=0).pack(anchor="w", pady=(4, 0))
+
+    def _render_matplotlib_status(self, parent: tk.Widget, text: str) -> None:
+        self._label(
+            parent,
+            f"Matplotlib MiniMap：{text}",
+            fg=MUTED,
+            bg=PANEL_SOFT,
+            font=("Microsoft YaHei UI", 8),
+        ).pack(anchor="w", pady=(4, 0))
+
+    def _draw_unknown_quality_fill(
+        self,
+        canvas: tk.Canvas,
+        x0: int,
+        y0: int,
+        x1: int,
+        y1: int,
+        *,
+        color: str,
+    ) -> None:
+        width = max(1, x1 - x0)
+        height = max(1, y1 - y0)
+        step = max(4, min(width, height) // 3)
+        for start_x in range(x0 - height, x1, step):
+            clipped_start_x = max(x0, start_x)
+            clipped_end_x = min(x1, start_x + height)
+            start_y = y1 - (clipped_start_x - start_x)
+            end_y = y1 - (clipped_end_x - start_x)
+            if clipped_start_x < clipped_end_x and y0 <= end_y <= start_y <= y1:
+                canvas.create_line(
+                    clipped_start_x,
+                    start_y,
+                    clipped_end_x,
+                    end_y,
+                    fill=color,
+                    width=1,
+                )
 
     def _draw_minimap(self, canvas: tk.Canvas, minimap: dict[str, Any]) -> None:
         geometry = _minimap_canvas_geometry(minimap)
@@ -2061,6 +2126,15 @@ class Overlay:
                 y1,
                 **options,
             )
+            if style.get("unknown"):
+                self._draw_unknown_quality_fill(
+                    canvas,
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    color=style["outline"],
+                )
 
     def _render(self, model: dict[str, Any]) -> None:
         previous_scroll = (

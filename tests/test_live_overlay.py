@@ -152,9 +152,13 @@ def test_overlay_quality_style_distinguishes_white_and_unknown() -> None:
     white = overlay._quality_style(1)
 
     assert unknown["fill"] != white["fill"]
-    assert unknown["stipple"] == "gray50"
+    assert unknown["fill"] == ""
+    assert unknown["unknown"] == "1"
+    assert unknown["hatch"] == "///"
+    assert unknown["stipple"] == ""
+    assert white["unknown"] == ""
     assert white["stipple"] == ""
-    assert white["fill"].lower() == "#f8fafc"
+    assert white["fill"].lower() == "#ffffff"
 
 
 def test_overlay_matplotlib_minimap_gated_by_round() -> None:
@@ -171,12 +175,17 @@ def test_overlay_matplotlib_minimap_gated_by_round() -> None:
         }
     }
 
-    assert overlay._matplotlib_minimap_enabled(
+    enabled, reason = overlay._matplotlib_minimap_state(
         {"round": 2, "interaction": interaction}
-    ) is False
-    assert overlay._matplotlib_minimap_enabled(
+    )
+    assert enabled is False
+    assert "当前 R2 不渲染" in reason
+
+    enabled, reason = overlay._matplotlib_minimap_state(
         {"round": 3, "interaction": interaction}
-    ) is True
+    )
+    assert enabled is True
+    assert "R3+" in reason
 
 
 def test_demo_snapshot_has_compact_overlay_sections() -> None:
