@@ -151,6 +151,10 @@ Get-Content .\data\logs\live\capture_source_status.json
 保留为 `accepted_frames` 的兼容别名。未进入对局时，`raw_packets` 可能增长，
 `accepted_frames` 和 `active_session_id` 可以仍为空或为 0，这是预期行为。
 
+轮次显示使用“当前可操作轮次”：`0x0025` 包里的 round 是刚完成/揭示的轮次，因此
+live artifact 会额外保留 `observed_round`，并把 UI/出价使用的 `round` / `action_round`
+前移到下一轮。结算 `0x002d` 不前移，保持最终轮次。
+
 当候选进入 `candidate_for_review` 后，可直接从现有 live 日志导出 active 样本清单，
 不需要重新跑推理：
 

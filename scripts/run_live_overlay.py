@@ -251,7 +251,7 @@ def _chip_style(text: Any, fallback_tag: str = "normal") -> dict[str, str]:
 
 def _is_price_metric(title: Any) -> bool:
     title_text = str(title or "")
-    return any(token in title_text for token in ("价值", "价", "红货"))
+    return any(token in title_text for token in ("价值", "价", "红货", "抢仓", "停止", "最高"))
 
 
 def _quality_color(quality: Any) -> str:
@@ -1292,7 +1292,13 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     layout = _first(panel.get("layout_stages"))
     hero = str(contract_context.get("hero") or snapshot.get("hero") or "?").upper()
     map_id = contract_context.get("map_id") or snapshot.get("map_id") or "?"
-    round_no = contract_context.get("round") or snapshot.get("round") or "?"
+    round_no = (
+        contract_context.get("action_round")
+        or contract_context.get("round")
+        or snapshot.get("action_round")
+        or snapshot.get("round")
+        or "?"
+    )
     title = f"{hero}  ·  map {map_id}  ·  R{round_no}"
     subtitle_parts = [
         f"文件 {contract_source.get('file') or snapshot.get('file') or '?'}",
@@ -1359,6 +1365,27 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         decision_severity = _severity_for_bid(f"{decision_text} {decision_detail}")
 
     metrics: list[tuple[str, str, str, str]] = []
+    if contract_decision.get("attack_bid"):
+        metrics.append(
+            (
+                "抢仓上限",
+                str(contract_decision.get("attack_bid") or "?"),
+                _short(
+                    f"停止 {contract_decision.get('stop_price') or '?'}",
+                    46,
+                ),
+                decision_severity,
+            )
+        )
+    if contract_decision.get("attack_bid") and contract_decision.get("current_highest"):
+        metrics.append(
+            (
+                "当前最高",
+                str(contract_decision.get("current_highest") or "?"),
+                str(contract_decision.get("risk_band") or ""),
+                decision_severity,
+            )
+        )
     if contract_posterior.get("decision_value_range"):
         metrics.append(
             (

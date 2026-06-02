@@ -757,6 +757,39 @@ def _latest_round(events: FatbeansCaptureEvents) -> int | None:
     return None
 
 
+def _latest_state(events: FatbeansCaptureEvents) -> Any:
+    return events.states[-1] if events.states else None
+
+
+def _latest_phase(events: FatbeansCaptureEvents) -> str:
+    state = _latest_state(events)
+    if state is None:
+        return "unknown"
+    if state.message_id == 0x002D or state.inventory_items:
+        return "settled"
+    if state.message_id == 0x0021:
+        return "reading"
+    return "bidding"
+
+
+def _action_round(events: FatbeansCaptureEvents) -> int | None:
+    """Return the in-game round the user is about to act on.
+
+    Packet round indices in ``0x0025`` are completed/revealed rounds. During
+    bidding, the actionable UI has already advanced to the next round.
+    """
+    state = _latest_state(events)
+    if state is None:
+        return None
+    if state.message_id == 0x002D or state.inventory_items:
+        return state.round_no
+    if state.message_id == 0x0021:
+        return 1
+    if state.round_no is None:
+        return None
+    return state.round_no + 1
+
+
 def _latest_map_id(events: FatbeansCaptureEvents) -> int | None:
     for state in reversed(events.states):
         if state.map_id is not None:
@@ -1531,9 +1564,11 @@ def _model_eval_row(
         final_q6_decision_value=final_q6_decision_value,
         zero_q6_proven_control=zero_q6_proven_control,
     )
-    evidence_stage = _evidence_stage(artifact.get("round"))
+    eval_round = artifact.get("observed_round", artifact.get("round"))
+    action_round = artifact.get("action_round", artifact.get("round"))
+    evidence_stage = _evidence_stage(eval_round)
     density_score = _live_information_density_score(
-        artifact.get("round"),
+        eval_round,
         anchor_count=anchor_count,
         shape_target_count=shape_target_count,
         category_target_count=category_target_count,
@@ -1556,7 +1591,8 @@ def _model_eval_row(
         "file": file,
         "hero": artifact.get("hero"),
         "map_id": artifact.get("map_id"),
-        "round": artifact.get("round"),
+        "round": eval_round,
+        "action_round": action_round,
         "final_value": final_value,
         "final_cells": final_cells,
         **dict(truth_breakdown or {}),
@@ -1964,6 +2000,9 @@ def build_monitor_artifact_from_events(
         _final_state,
     ) = _states_to_session(batches)
     latest_bids = latest_player_bids(events.states)
+    observed_round = _latest_round(events)
+    action_round = _action_round(events)
+    phase = _latest_phase(events)
     layout_replay_rows = list(
         layout_replay_rows_from_stages(
             layout_replay_stages(events),
@@ -2278,7 +2317,7 @@ def build_monitor_artifact_from_events(
                 value_summary=best_value_summary,
                 evidence_label="v2 decision_value",
                 session=inference_session,
-                round_no=_latest_round(events),
+                round_no=action_round,
                 posterior_samples=v2_report.n_matched,
                 warehouse_estimate=warehouse_estimate,
                 decision_value_summary=v2_report.decision_value,
@@ -2294,7 +2333,7 @@ def build_monitor_artifact_from_events(
                 candidate_map_ids=candidate_map_ids,
                 inference_session=inference_session,
                 latest_bids=latest_bids,
-                round_no=_latest_round(events),
+                round_no=action_round,
                 maps=tables.maps,
                 drops=tables.drops,
                 items=tables.items,
@@ -2336,7 +2375,10 @@ def build_monitor_artifact_from_events(
         "batches": len(batches),
         "hero": base_session.hero if base_session is not None else None,
         "map_id": _latest_map_id(events),
-        "round": _latest_round(events),
+        "round": action_round,
+        "action_round": action_round,
+        "observed_round": observed_round,
+        "phase": phase,
         "inventory_count": inventory_count,
         "inventory_cells": inventory_cells,
         "known_value_sum": final_value,

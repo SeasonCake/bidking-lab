@@ -475,8 +475,9 @@ class FatbeansWebhookMonitor:
             self._last_processed_count = len(rows)
             self._last_inference_at = time.monotonic()
             self._last_partial_error = ""
+        count_label = self.config.packet_count_key.replace("_", " ")
         print(
-            f"[ok] webhook packets={len(rows)} -> "
+            f"[ok] {self.config.source_name} {count_label}={len(rows)} -> "
             f"{self.config.log_dir / 'latest_snapshot.json'}",
             flush=True,
         )

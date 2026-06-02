@@ -38,6 +38,72 @@ from bidking_lab.inference.q6_residual import (
 from bidking_lab.inference.v2 import LayoutFeasibility, ResidualProblem
 
 
+def test_action_round_advances_after_completed_state() -> None:
+    start = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=1,
+                capture_time="",
+                message_id=0x0021,
+                session_id="2401:1",
+                map_id=2401,
+                round_index=None,
+            ),
+        ),
+    )
+    after_round_one = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            *start.states,
+            FatbeansStateEvent(
+                sort_id=2,
+                capture_time="",
+                message_id=0x0025,
+                session_id="2401:1",
+                map_id=2401,
+                round_index=1,
+            ),
+        ),
+    )
+    settled = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            *after_round_one.states,
+            FatbeansStateEvent(
+                sort_id=3,
+                capture_time="",
+                message_id=0x002D,
+                session_id="2401:1",
+                map_id=2401,
+                round_index=3,
+                inventory_items=(
+                    FatbeansInventoryItem(
+                        runtime_id=1,
+                        item_id=1001,
+                        quality=4,
+                        cells=4,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert monitor_module._action_round(start) == 1
+    assert monitor_module._action_round(after_round_one) == 2
+    assert monitor_module._action_round(settled) == 3
+    assert monitor_module._latest_round(after_round_one) == 1
+
+
 def _item() -> Item:
     return Item(
         item_id=1001,
