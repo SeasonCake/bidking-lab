@@ -58,6 +58,28 @@ python scripts\summarize_live_model_eval.py
 python scripts\summarize_live_model_eval.py --brief
 ```
 
+日常只判断 live monitor / overlay 当前是否可用时，优先用轻量状态检查：
+
+```powershell
+.\scripts\live_status.ps1
+```
+
+它只读取 `latest_snapshot.json`、`model_eval.jsonl`、`monitor_errors.jsonl`、
+`processed_files.json` 和 `monitor.lock`，不会重新跑推理。输出会直接标出最新样本、
+推理耗时、baseline 建议、posterior 匹配、q6 风险是否影响出价、fallback 是否启用、
+错误日志和处理队列状态。若只是回放旧样本、最新 snapshot 本来就会很旧，可临时放宽
+stale 判断：
+
+```powershell
+.\scripts\live_status.ps1 -StaleSeconds 999999
+```
+
+需要给自动化或审计脚本读取时可输出 JSON：
+
+```powershell
+.\scripts\live_status.ps1 -Json
+```
+
 当候选进入 `candidate_for_review` 后，可直接从现有 live 日志导出 active 样本清单，
 不需要重新跑推理：
 

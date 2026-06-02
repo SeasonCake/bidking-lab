@@ -1,0 +1,232 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _module():
+    path = ROOT / "scripts" / "live_status.py"
+    spec = importlib.util.spec_from_file_location("live_status", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _write_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+
+
+def _append_jsonl(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _healthy_snapshot(now: float) -> dict:
+    return {
+        "created_at": now - 5.0,
+        "file": "aisha_shipwreck_sample.json",
+        "hero": "aisha",
+        "map_id": 2501,
+        "round": 4,
+        "processing_seconds": 4.2,
+        "n_trials": 500,
+        "shadow_trials": 80,
+        "ui_contract": {
+            "baseline": {
+                "decision": {
+                    "action": "可守不抢",
+                    "current_highest": "玩家A 500,000",
+                    "risk_band": "防守区",
+                    "attack_bid": "620,000",
+                    "stop_price": "700,000",
+                },
+                "posterior": {
+                    "status": "ok",
+                    "matched": 72,
+                    "total": 80,
+                    "decision_value_range": "580,000 / 690,000 / 830,000",
+                    "total_cells_range": "118 / 126 / 134",
+                    "q6_decision_value_range": "0 / 120,000 / 420,000",
+                },
+            },
+            "q6_risk_reference": {
+                "risk": True,
+                "affects_bid": False,
+                "bid_floor_applied": False,
+                "practical_reference_p90": 420000,
+            },
+            "fallback": {
+                "active": False,
+                "affects_bid": False,
+                "mode": "",
+            },
+        },
+    }
+
+
+def test_live_status_reports_healthy_log_dir(tmp_path: Path) -> None:
+    module = _module()
+    now = 1_000.0
+    _write_json(tmp_path / "latest_snapshot.json", _healthy_snapshot(now))
+    _append_jsonl(
+        tmp_path / "model_eval.jsonl",
+        [
+            {
+                "ts": now - 4.0,
+                "file": "aisha_shipwreck_sample.json",
+                "zero_posterior_match": False,
+                "layout_conflict": False,
+            }
+        ],
+    )
+    _write_json(
+        tmp_path / "processed_files.json",
+        {
+            str((tmp_path / "aisha_shipwreck_sample.json").resolve()): {
+                "name": "aisha_shipwreck_sample.json",
+                "status": "ok",
+                "processed_at": now - 3.0,
+            }
+        },
+    )
+    _write_json(tmp_path / "monitor.lock", {"pid": 1234, "started_at": now - 60.0})
+
+    status = module.build_live_status(tmp_path, now=now)
+
+    assert status["level"] == "ok"
+    assert status["snapshot"]["source_file"] == "aisha_shipwreck_sample.json"
+    assert status["baseline"]["action"] == "可守不抢"
+    assert status["baseline"]["posterior_status"] == "ok"
+    assert status["q6"]["risk"] is True
+    assert status["q6"]["affects_bid"] is False
+    assert status["q6"]["bid_floor_applied"] is False
+    assert status["fallback"]["active"] is False
+    assert status["processed_files"]["status_counts"] == {"ok": 1}
+
+    text = module.format_status_text(status)
+    assert "BidKing live status: OK" in text
+    assert "aisha_shipwreck_sample.json" in text
+    assert "Q6: risk=True affects_bid=False floor=False" in text
+
+
+def test_live_status_warns_on_stale_slow_fallback_and_bid_affecting_q6(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    now = 1_000.0
+    snapshot = _healthy_snapshot(now)
+    snapshot["created_at"] = now - 100.0
+    snapshot["processing_seconds"] = 22.5
+    snapshot["ui_contract"]["baseline"]["decision"]["action"] = ""
+    snapshot["ui_contract"]["baseline"]["posterior"]["status"] = "zero_match"
+    snapshot["ui_contract"]["q6_risk_reference"]["affects_bid"] = True
+    snapshot["ui_contract"]["q6_risk_reference"]["bid_floor_applied"] = True
+    snapshot["ui_contract"]["fallback"]["active"] = True
+    snapshot["ui_contract"]["fallback"]["affects_bid"] = False
+    snapshot["ui_contract"]["fallback"]["mode"] = "v1_map_prior_zero_match"
+    _write_json(tmp_path / "latest_snapshot.json", snapshot)
+    _append_jsonl(
+        tmp_path / "model_eval.jsonl",
+        [{"ts": now - 10.0, "file": "old.json"}],
+    )
+    _append_jsonl(
+        tmp_path / "monitor_errors.jsonl",
+        [
+            {
+                "ts": now - 2.0,
+                "name": "bad.json",
+                "error_type": "ValueError",
+                "error": "malformed",
+            }
+        ],
+    )
+
+    status = module.build_live_status(
+        tmp_path,
+        now=now,
+        stale_seconds=30.0,
+        slow_seconds=15.0,
+    )
+
+    assert status["level"] == "warn"
+    assert status["fallback"]["active"] is True
+    assert status["q6"]["affects_bid"] is True
+    assert status["q6"]["bid_floor_applied"] is True
+    assert any("stale" in warning for warning in status["warnings"])
+    assert any("slow" in warning for warning in status["warnings"])
+    assert any("baseline action is empty" in warning for warning in status["warnings"])
+    assert any("zero_match" in warning for warning in status["warnings"])
+    assert any("fallback is active" in warning for warning in status["warnings"])
+    assert any("q6 risk is affecting bid" in warning for warning in status["warnings"])
+    assert any("monitor error" in warning for warning in status["warnings"])
+
+
+def test_live_status_errors_when_snapshot_missing(tmp_path: Path) -> None:
+    module = _module()
+
+    status = module.build_live_status(tmp_path, now=1_000.0)
+
+    assert status["level"] == "error"
+    assert status["errors"] == ["latest_snapshot.json is missing"]
+    text = module.format_status_text(status)
+    assert "BidKing live status: ERROR" in text
+    assert "ERROR: latest_snapshot.json is missing" in text
+
+
+def test_live_status_uses_snapshot_file_age_when_created_at_missing(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    now = 1_000.0
+    snapshot = _healthy_snapshot(now)
+    snapshot.pop("created_at")
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    _write_json(snapshot_path, snapshot)
+    os.utime(snapshot_path, (now - 100.0, now - 100.0))
+    _append_jsonl(tmp_path / "model_eval.jsonl", [{"ts": now - 2.0}])
+
+    status = module.build_live_status(
+        tmp_path,
+        now=now,
+        stale_seconds=30.0,
+    )
+
+    assert status["level"] == "warn"
+    assert status["snapshot"]["age_seconds"] is None
+    assert status["snapshot"]["file_age_seconds"] == 100.0
+    assert any("latest snapshot is stale" in warning for warning in status["warnings"])
+
+
+def test_live_status_cli_strict_returns_nonzero_for_warning(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    module = _module()
+    _write_json(tmp_path / "latest_snapshot.json", _healthy_snapshot(1_000.0))
+
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "live_status.py",
+            "--log-dir",
+            str(tmp_path),
+            "--stale-seconds",
+            "999999",
+            "--strict",
+        ],
+    )
+
+    assert module.main() == 1
+    assert "model_eval.jsonl has no rows" in capsys.readouterr().out

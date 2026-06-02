@@ -1,0 +1,409 @@
+"""Inspect live monitor logs without running inference.
+
+This is a lightweight operational check for the live monitor / overlay stack.
+It reads the current log directory and reports whether the latest snapshot,
+model-eval log, processed manifest, and error log look usable.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+import json
+from pathlib import Path
+import sys
+import time
+from typing import Any, Mapping
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _read_json(path: Path) -> Mapping[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, Mapping) else {}
+
+
+def _read_jsonl_rows(path: Path) -> list[dict[str, Any]]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            rows.append(value)
+    return rows
+
+
+def _first_mapping(value: Any) -> Mapping[str, Any]:
+    if isinstance(value, Mapping):
+        return value
+    if isinstance(value, list) and value and isinstance(value[0], Mapping):
+        return value[0]
+    return {}
+
+
+def _age_seconds(ts: Any, *, now: float) -> float | None:
+    try:
+        return max(0.0, now - float(ts))
+    except (TypeError, ValueError):
+        return None
+
+
+def _file_age_seconds(path: Path, *, now: float) -> float | None:
+    try:
+        return max(0.0, now - path.stat().st_mtime)
+    except OSError:
+        return None
+
+
+def _round_float(value: float | None) -> float | None:
+    return round(value, 3) if value is not None else None
+
+
+def _text(value: Any) -> str:
+    return "" if value is None else str(value)
+
+
+def _status_level(messages: list[str], errors: list[str]) -> str:
+    if errors:
+        return "error"
+    if messages:
+        return "warn"
+    return "ok"
+
+
+def build_live_status(
+    log_dir: Path,
+    *,
+    now: float | None = None,
+    stale_seconds: float = 30.0,
+    slow_seconds: float = 15.0,
+) -> dict[str, Any]:
+    """Return a compact status object for one live monitor log directory."""
+
+    now = time.time() if now is None else float(now)
+    root = log_dir.resolve()
+    snapshot_path = root / "latest_snapshot.json"
+    model_eval_path = root / "model_eval.jsonl"
+    error_path = root / "monitor_errors.jsonl"
+    manifest_path = root / "processed_files.json"
+    lock_path = root / "monitor.lock"
+
+    artifact = _read_json(snapshot_path)
+    contract = (
+        artifact.get("ui_contract")
+        if isinstance(artifact.get("ui_contract"), Mapping)
+        else {}
+    )
+    baseline = _first_mapping(contract.get("baseline"))
+    baseline_decision = _first_mapping(baseline.get("decision"))
+    baseline_posterior = _first_mapping(baseline.get("posterior"))
+    q6_risk = _first_mapping(contract.get("q6_risk_reference"))
+    fallback = _first_mapping(contract.get("fallback"))
+
+    model_rows = _read_jsonl_rows(model_eval_path)
+    last_model_row = model_rows[-1] if model_rows else {}
+    error_rows = _read_jsonl_rows(error_path)
+    last_error = error_rows[-1] if error_rows else {}
+    manifest = _read_json(manifest_path)
+    manifest_values = [
+        value for value in manifest.values()
+        if isinstance(value, Mapping)
+    ]
+    manifest_status = Counter(
+        str(value.get("status") or (
+            "ignored" if value.get("ignored_at_startup") else "ok"
+        ))
+        for value in manifest_values
+    )
+    latest_manifest = max(
+        manifest_values,
+        key=lambda row: float(row.get("processed_at") or 0.0),
+        default={},
+    )
+    lock = _read_json(lock_path)
+
+    snapshot_age = _age_seconds(artifact.get("created_at"), now=now)
+    snapshot_file_age = _file_age_seconds(snapshot_path, now=now)
+    effective_snapshot_age = (
+        snapshot_age if snapshot_age is not None else snapshot_file_age
+    )
+    model_age = _age_seconds(last_model_row.get("ts"), now=now)
+    error_age = _age_seconds(last_error.get("ts"), now=now)
+    processing_seconds = artifact.get("processing_seconds")
+
+    warnings: list[str] = []
+    errors: list[str] = []
+    if not snapshot_path.exists():
+        errors.append("latest_snapshot.json is missing")
+    elif effective_snapshot_age is not None and effective_snapshot_age > stale_seconds:
+        warnings.append(
+            "latest snapshot is stale "
+            f"({effective_snapshot_age:.1f}s > {stale_seconds:.1f}s)"
+        )
+    if not model_rows:
+        warnings.append("model_eval.jsonl has no rows")
+    if error_rows and (
+        model_age is None
+        or error_age is not None
+        and error_age <= model_age
+    ):
+        warnings.append("latest monitor error is newer than or as new as model_eval")
+    try:
+        if processing_seconds is not None and float(processing_seconds) > slow_seconds:
+            warnings.append(
+                f"latest inference was slow ({float(processing_seconds):.1f}s)"
+            )
+    except (TypeError, ValueError):
+        pass
+    if _text(baseline_decision.get("action")) == "":
+        warnings.append("baseline action is empty")
+    if baseline_posterior.get("status") == "zero_match":
+        warnings.append("baseline posterior is zero_match")
+    if bool(fallback.get("active")):
+        warnings.append("fallback is active")
+    if bool(q6_risk.get("affects_bid")) or bool(q6_risk.get("bid_floor_applied")):
+        warnings.append("q6 risk is affecting bid thresholds")
+
+    return {
+        "level": _status_level(warnings, errors),
+        "errors": errors,
+        "warnings": warnings,
+        "log_dir": str(root),
+        "snapshot": {
+            "exists": snapshot_path.exists(),
+            "path": str(snapshot_path),
+            "age_seconds": _round_float(snapshot_age),
+            "file_age_seconds": _round_float(snapshot_file_age),
+            "source_file": artifact.get("file"),
+            "hero": artifact.get("hero"),
+            "map_id": artifact.get("map_id"),
+            "round": artifact.get("round"),
+            "processing_seconds": artifact.get("processing_seconds"),
+            "n_trials": artifact.get("n_trials"),
+            "shadow_trials": artifact.get("shadow_trials"),
+        },
+        "baseline": {
+            "action": _text(baseline_decision.get("action")),
+            "current_highest": _text(baseline_decision.get("current_highest")),
+            "risk_band": _text(baseline_decision.get("risk_band")),
+            "attack_bid": _text(baseline_decision.get("attack_bid")),
+            "stop_price": _text(baseline_decision.get("stop_price")),
+            "posterior_status": _text(baseline_posterior.get("status")),
+            "matched": baseline_posterior.get("matched"),
+            "total": baseline_posterior.get("total"),
+            "decision_value_range": _text(
+                baseline_posterior.get("decision_value_range")
+            ),
+            "total_cells_range": _text(baseline_posterior.get("total_cells_range")),
+        },
+        "q6": {
+            "risk": bool(q6_risk.get("risk")),
+            "affects_bid": bool(q6_risk.get("affects_bid")),
+            "bid_floor_applied": bool(q6_risk.get("bid_floor_applied")),
+            "reference_p90": _text(
+                q6_risk.get("practical_reference_p90")
+                or q6_risk.get("prior_reference_p90")
+            ),
+            "decision_value_range": _text(
+                baseline_posterior.get("q6_decision_value_range")
+            ),
+        },
+        "fallback": {
+            "active": bool(fallback.get("active")),
+            "mode": _text(fallback.get("mode")),
+            "affects_bid": bool(fallback.get("affects_bid")),
+        },
+        "model_eval": {
+            "exists": model_eval_path.exists(),
+            "path": str(model_eval_path),
+            "rows": len(model_rows),
+            "last_age_seconds": _round_float(model_age),
+            "last_file": last_model_row.get("file"),
+            "zero_match": bool(last_model_row.get("zero_posterior_match")),
+            "layout_conflict": bool(last_model_row.get("layout_conflict")),
+        },
+        "monitor_errors": {
+            "exists": error_path.exists(),
+            "path": str(error_path),
+            "rows": len(error_rows),
+            "last_age_seconds": _round_float(error_age),
+            "last_name": last_error.get("name"),
+            "last_error_type": last_error.get("error_type"),
+            "last_error": last_error.get("error"),
+        },
+        "processed_files": {
+            "exists": manifest_path.exists(),
+            "path": str(manifest_path),
+            "total": len(manifest_values),
+            "status_counts": dict(sorted(manifest_status.items())),
+            "latest_name": latest_manifest.get("name"),
+            "latest_age_seconds": _round_float(
+                _age_seconds(latest_manifest.get("processed_at"), now=now)
+            ),
+        },
+        "lock": {
+            "exists": lock_path.exists(),
+            "path": str(lock_path),
+            "pid": lock.get("pid"),
+            "age_seconds": _round_float(_age_seconds(lock.get("started_at"), now=now)),
+        },
+    }
+
+
+def _fmt_age(value: Any) -> str:
+    if value is None:
+        return "?"
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return "?"
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes = seconds / 60.0
+    if minutes < 60:
+        return f"{minutes:.1f}m"
+    return f"{minutes / 60.0:.1f}h"
+
+
+def format_status_text(status: Mapping[str, Any]) -> str:
+    snapshot = _first_mapping(status.get("snapshot"))
+    baseline = _first_mapping(status.get("baseline"))
+    q6 = _first_mapping(status.get("q6"))
+    fallback = _first_mapping(status.get("fallback"))
+    model_eval = _first_mapping(status.get("model_eval"))
+    errors = _first_mapping(status.get("monitor_errors"))
+    processed = _first_mapping(status.get("processed_files"))
+    lock = _first_mapping(status.get("lock"))
+    lines = [
+        f"BidKing live status: {str(status.get('level') or 'unknown').upper()}",
+        f"LogDir: {status.get('log_dir')}",
+        (
+            "Snapshot: "
+            f"{snapshot.get('source_file') or '?'} | "
+            f"age {_fmt_age(snapshot.get('age_seconds'))} | "
+            f"hero={snapshot.get('hero') or '?'} "
+            f"map={snapshot.get('map_id') or '?'} "
+            f"round={snapshot.get('round') or '?'} | "
+            f"processing={snapshot.get('processing_seconds') or '?'}s"
+        ),
+        (
+            "Baseline: "
+            f"{baseline.get('action') or 'no action'} | "
+            f"{baseline.get('current_highest') or 'no bid'} | "
+            f"risk={baseline.get('risk_band') or '?'} | "
+            f"stop={baseline.get('stop_price') or '?'}"
+        ),
+        (
+            "Posterior: "
+            f"{baseline.get('posterior_status') or '?'} "
+            f"{baseline.get('matched') or '?'}/{baseline.get('total') or '?'} | "
+            f"value={baseline.get('decision_value_range') or '?'} | "
+            f"cells={baseline.get('total_cells_range') or '?'}"
+        ),
+        (
+            "Q6: "
+            f"risk={q6.get('risk')} "
+            f"affects_bid={q6.get('affects_bid')} "
+            f"floor={q6.get('bid_floor_applied')} | "
+            f"ref={q6.get('reference_p90') or '?'} | "
+            f"range={q6.get('decision_value_range') or '?'}"
+        ),
+        (
+            "Fallback: "
+            f"active={fallback.get('active')} "
+            f"affects_bid={fallback.get('affects_bid')} "
+            f"mode={fallback.get('mode') or '-'}"
+        ),
+        (
+            "Logs: "
+            f"model_eval rows={model_eval.get('rows') or 0} "
+            f"last_age={_fmt_age(model_eval.get('last_age_seconds'))}; "
+            f"errors={errors.get('rows') or 0} "
+            f"last={errors.get('last_name') or '-'} "
+            f"{errors.get('last_error_type') or ''}".rstrip()
+        ),
+        (
+            "Processed: "
+            f"total={processed.get('total') or 0} "
+            f"status={processed.get('status_counts') or {}} "
+            f"latest={processed.get('latest_name') or '-'} "
+            f"age={_fmt_age(processed.get('latest_age_seconds'))}"
+        ),
+        (
+            "Lock: "
+            f"exists={lock.get('exists')} "
+            f"pid={lock.get('pid') or '-'} "
+            f"age={_fmt_age(lock.get('age_seconds'))}"
+        ),
+    ]
+    for error in status.get("errors") or ():
+        lines.append(f"ERROR: {error}")
+    for warning in status.get("warnings") or ():
+        lines.append(f"WARN: {warning}")
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Inspect BidKing live monitor logs and current UI contract.",
+    )
+    parser.add_argument(
+        "--log-dir",
+        default=str(ROOT / "data" / "logs" / "live"),
+        help="Live monitor log directory.",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format.",
+    )
+    parser.add_argument(
+        "--stale-seconds",
+        type=float,
+        default=30.0,
+        help="Warn when latest_snapshot.json is older than this many seconds.",
+    )
+    parser.add_argument(
+        "--slow-seconds",
+        type=float,
+        default=15.0,
+        help="Warn when latest inference processing time is above this threshold.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Return non-zero for warnings as well as errors.",
+    )
+    args = parser.parse_args()
+
+    status = build_live_status(
+        Path(args.log_dir),
+        stale_seconds=args.stale_seconds,
+        slow_seconds=args.slow_seconds,
+    )
+    if args.format == "json":
+        print(json.dumps(status, ensure_ascii=False, indent=2))
+    else:
+        print(format_status_text(status))
+    if status["level"] == "error":
+        return 2
+    if args.strict and status["level"] == "warn":
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
