@@ -23,9 +23,12 @@ from bidking_lab.inference.bid_strategy import recommend_bid_strategy
 from bidking_lab.inference.diagnostics import layout_conflict_root
 from bidking_lab.inference.q6_residual import (
     AISHA_BOTTOM_ROW_RISK_THRESHOLD,
+    AISHA_Q6_QUALITY_ONLY_DEEP_ROW_THRESHOLD,
     actionable_random_sample_avg_values,
     aisha_bottom_row_risk,
+    aisha_q6_quality_only_deep_local_risk,
     evidence_profile_key_from_problem,
+    q6_quality_only_local_diagnostics,
     q6_residual_boost_for_profile,
     q6_residual_prior_floor_ratio_for_profile,
 )
@@ -1144,6 +1147,7 @@ def _model_eval_row(
     hidden_floor_shadow = artifact.get("q6_residual_hidden_floor_shadow") or {}
     villa_floor_shadow = artifact.get("q6_residual_villa_floor_shadow") or {}
     bottom_row_risk = artifact.get("q6_aisha_bottom_row_risk") or {}
+    quality_only_local_risk = artifact.get("q6_quality_only_local_risk") or {}
     input_constraints = (
         artifact.get("inference_input_constraints")
         if isinstance(artifact.get("inference_input_constraints"), Mapping)
@@ -1482,6 +1486,21 @@ def _model_eval_row(
         "layout_bottom_row_risk_threshold": _parse_int_text(
             bottom_row_risk.get("bottom_row_threshold")
         ),
+        "q6_quality_only_local_count": _parse_int_text(
+            quality_only_local_risk.get("count")
+        ),
+        "q6_quality_only_deepest_local_index": _parse_int_text(
+            quality_only_local_risk.get("deepest_local_index")
+        ),
+        "q6_quality_only_deepest_start_row": _parse_int_text(
+            quality_only_local_risk.get("deepest_start_row")
+        ),
+        "q6_quality_only_deep_local_risk": bool(
+            quality_only_local_risk.get("active")
+        ),
+        "q6_quality_only_deep_row_threshold": _parse_int_text(
+            quality_only_local_risk.get("deep_row_threshold")
+        ),
         "v2_q6_value_p90_under_by": (
             max(0, final_q6_value - q6_value_p90)
             if q6_value_p90 is not None
@@ -1695,6 +1714,7 @@ def build_monitor_artifact_from_events(
     q6_residual_sampler_shadows: list[dict[str, Any]] = []
     q6_residual_boost_shadow_rows: list[dict[str, Any]] = []
     q6_aisha_bottom_row_risk: dict[str, Any] = {}
+    q6_quality_only_local_risk: dict[str, Any] = {}
     tool_rows: list[dict[str, Any]] = []
     bid_rows: list[dict[str, Any]] = []
     fallback_map_rows: list[dict[str, Any]] = []
@@ -1785,6 +1805,20 @@ def build_monitor_artifact_from_events(
             obs=inference_session,
         )
         evidence_profile_key = evidence_profile_key_from_problem(problem)
+        q6_quality_only_local_risk = q6_quality_only_local_diagnostics(store)
+        q6_quality_only_local_risk["active"] = (
+            aisha_q6_quality_only_deep_local_risk(
+                hero=inference_session.hero,
+                map_family=_map_family_from_id(inference_session.map_id),
+                evidence_profile_key=evidence_profile_key,
+                deepest_start_row=q6_quality_only_local_risk.get(
+                    "deepest_start_row"
+                ),
+            )
+        )
+        q6_quality_only_local_risk["deep_row_threshold"] = (
+            AISHA_Q6_QUALITY_ONLY_DEEP_ROW_THRESHOLD
+        )
         q6_aisha_bottom_row_risk = {
             "active": aisha_bottom_row_risk(
                 hero=inference_session.hero,
@@ -2052,6 +2086,7 @@ def build_monitor_artifact_from_events(
         "q6_residual_sampler_shadows": q6_residual_sampler_shadows,
         "q6_residual_boost_shadow_rows": q6_residual_boost_shadow_rows,
         "q6_aisha_bottom_row_risk": q6_aisha_bottom_row_risk,
+        "q6_quality_only_local_risk": q6_quality_only_local_risk,
         "evidence_profile_key": evidence_profile_key,
         "tool_rows": tool_rows,
         "bid_rows": bid_rows,
@@ -2143,7 +2178,18 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
         tmp = Path(fh.name)
-    tmp.replace(path)
+    try:
+        for attempt in range(5):
+            try:
+                tmp.replace(path)
+                return
+            except PermissionError:
+                if attempt >= 4:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def write_monitor_logs(

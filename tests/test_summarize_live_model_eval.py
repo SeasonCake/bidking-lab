@@ -151,6 +151,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "q6_residual_deep_floor_shadow_false_positive_proxy": False,
                 "q6_residual_deep_floor_shadow_q6_p90_delta": 180,
                 "q6_aisha_bottom_row_risk": True,
+                "q6_quality_only_local_count": 1,
+                "q6_quality_only_deep_local_risk": True,
                 "q6_p90_misses_truth": True,
                 "v2_q6_value_p90": 30,
                 "raw_minus_decision_p90": 300_000,
@@ -241,6 +243,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert readiness_summary["aisha_villa_floor05"]["status"] == "needs_live_samples"
     assert readiness_summary["aisha_villa_floor05"]["tracked_rows"] == 0
     assert summary["q6_aisha_bottom_row_risk_count"] == 1
+    assert summary["q6_quality_only_local_count"] == 1
+    assert summary["q6_quality_only_deep_local_risk_count"] == 1
     assert summary["q6_p90_miss_count"] == 1
     assert summary["q6_p90_under_by_median"] == 50
     assert summary["category_target_rows"] == 2

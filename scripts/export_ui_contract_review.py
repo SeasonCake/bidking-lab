@@ -443,6 +443,8 @@ def _review_flags(
         )
         if q6_review["class"] == "truth_p90_miss":
             flags.append("q6_below_drop_prior_truth_miss")
+    if _bool(diag_q6.get("quality_only_deep_local_risk")):
+        flags.append("q6_quality_only_deep_local_risk")
     processing_seconds = _float(sampling.get("processing_seconds"))
     if processing_seconds is not None and processing_seconds >= 10:
         flags.append("slow_monitor_processing")
@@ -692,6 +694,19 @@ def review_row_from_artifact(
         "q6_below_drop_prior_actionable": q6_below_prior_review["actionable"],
         "q6_actionable_shadow_status": q6_actionable_shadow_status,
         "q6_top_size_band": diag_q6.get("top_size_band"),
+        "q6_quality_only_local_count": diag_q6.get("quality_only_local_count"),
+        "q6_quality_only_deepest_local_index": diag_q6.get(
+            "quality_only_deepest_local_index"
+        ),
+        "q6_quality_only_deepest_start_row": diag_q6.get(
+            "quality_only_deepest_start_row"
+        ),
+        "q6_quality_only_deep_local_risk": diag_q6.get(
+            "quality_only_deep_local_risk"
+        ),
+        "q6_quality_only_deep_row_threshold": diag_q6.get(
+            "quality_only_deep_row_threshold"
+        ),
         "processing_seconds": sampling.get("processing_seconds"),
         "n_trials": sampling.get("n_trials") or source.get("n_trials"),
         "shadow_trials": sampling.get("shadow_trials") or source.get("shadow_trials"),
@@ -803,6 +818,9 @@ def summarize_review_rows(
         ),
         "q6_below_drop_prior_actionable_rows": sum(
             1 for row in rows if _bool(row.get("q6_below_drop_prior_actionable"))
+        ),
+        "q6_quality_only_deep_local_risk_rows": sum(
+            1 for row in rows if _bool(row.get("q6_quality_only_deep_local_risk"))
         ),
         "q6_actionable_miss_by_hero_map": dict(
             sorted(q6_actionable_group_counts.items())

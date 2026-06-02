@@ -66,6 +66,11 @@ _Q6_SHADOW_REVIEW_FIELDS: tuple[str, ...] = (
     "evidence_profile_key",
     "public_constraint_key",
     "layout_bottom_row",
+    "q6_quality_only_local_count",
+    "q6_quality_only_deepest_local_index",
+    "q6_quality_only_deepest_start_row",
+    "q6_quality_only_deep_local_risk",
+    "q6_quality_only_deep_row_threshold",
     "layout_conflict",
     "layout_conflict_root",
     "relaxed_exact_used",
@@ -375,6 +380,12 @@ def brief_summary(summary: dict[str, Any]) -> dict[str, Any]:
             "q6_practical_gate_false_positive_proxy_count": summary.get(
                 "q6_practical_gate_false_positive_proxy_count"
             ),
+            "q6_quality_only_local_count": summary.get(
+                "q6_quality_only_local_count"
+            ),
+            "q6_quality_only_deep_local_risk_count": summary.get(
+                "q6_quality_only_deep_local_risk_count"
+            ),
             "top_miss_root_causes": _limit_rows(
                 summary.get("q6_miss_root_causes"),
                 limit=5,
@@ -427,6 +438,19 @@ def _shadow_candidate_review_row(
         "evidence_profile_key": row.get("evidence_profile_key"),
         "public_constraint_key": row.get("public_constraint_key"),
         "layout_bottom_row": row.get("layout_bottom_row"),
+        "q6_quality_only_local_count": row.get("q6_quality_only_local_count"),
+        "q6_quality_only_deepest_local_index": row.get(
+            "q6_quality_only_deepest_local_index"
+        ),
+        "q6_quality_only_deepest_start_row": row.get(
+            "q6_quality_only_deepest_start_row"
+        ),
+        "q6_quality_only_deep_local_risk": row.get(
+            "q6_quality_only_deep_local_risk"
+        ),
+        "q6_quality_only_deep_row_threshold": row.get(
+            "q6_quality_only_deep_row_threshold"
+        ),
         "layout_conflict": row.get("layout_conflict"),
         "layout_conflict_root": row.get("layout_conflict_root"),
         "relaxed_exact_used": row.get("relaxed_exact_used"),
@@ -1622,6 +1646,13 @@ def summarize(
         ),
         "q6_aisha_bottom_row_risk_count": sum(
             1 for row in valid if row.get("q6_aisha_bottom_row_risk")
+        ),
+        "q6_quality_only_local_count": sum(
+            int(_numeric(row, "q6_quality_only_local_count") or 0)
+            for row in valid
+        ),
+        "q6_quality_only_deep_local_risk_count": sum(
+            1 for row in valid if row.get("q6_quality_only_deep_local_risk")
         ),
         "q6_p90_miss_count": sum(
             1 for row in valid if row.get("q6_p90_misses_truth") is True

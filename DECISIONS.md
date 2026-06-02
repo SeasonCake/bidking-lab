@@ -800,6 +800,8 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新 6**：用新版 current-schema replay 重放 338 份样本后，hidden 结论进一步收紧：`aisha_hidden_floor15` active `11` 行全部按 plannable truth covered（`8 helped / 3 observation / 0 false-positive`），但其中 3 行有 tail trimmed/replacement review 标记。因此 hidden 可作为高可信 shadow 风险参考继续观察，但仍不直接改 baseline 出价；升级前要先确认 tail replacement 口径、事件可信度和正式 live 性能。`aisha_deep_floor1` 仍是普通/沉船风险参考候选但有 `10` 个 still-missed，`aisha_villa_floor05` 因 `4` 个 active no-q6 false-positive 继续 blocked/pending。watch-dir replay 的性能判断必须区分文件稳定等待和推理耗时：`--stable-seconds 0` 全量 replay 约 `130s`，单样本 median `0.322s`，默认 `stable-seconds=1` 会给每个文件额外等待，不能当作实时推理瓶颈。
 
+**更新 7**：deep 高 trials 定向审计发现一类不能用统一 floor 解决的局面：公开信息能看到 q6 品质点和局部位置，但没有该红货形状，因此现有 residual problem 只能把它计入 q6 件数 floor，不能可靠推断大红格数尾部。`aisha_shipwreck_test_sample40_4rounds.json` 的 shape-less q6 local 为 `142`，结算 q6 为 `5 件 / 38 格 / 205.33万`，现有 deep shadow 的 q6 P90 约 `110.40万`；`sample58` local 为 `137`，真实 q6 约 `318.57万`，且因已知 layout bottom row 只有 `12` 未进入原 deep gate。ratio `3.0` 可覆盖这两行，但样本只有 2 份，直接抬 floor 过拟合风险过高。决策：新增 review-only `q6_quality_only_*` 诊断和 UI review flag，收集正式 live 证据；不改 sampler、baseline、现有 shadow 或正式 bid hint。
+
 ## 2026-06-02 · 公开总格/总件数可进入正式 baseline，结算 truth 必须隔离
 
 **背景**：UI 需要展示格数预测、实际格子数、件数预测、已知紫/金件数和排除条件；同时审计发现 monitor 曾统一清掉 `warehouse_total_cells` / `total_item_count`，这会丢掉结算前全量轮廓或透视给出的安全公开约束。

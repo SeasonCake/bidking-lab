@@ -34,6 +34,7 @@ def _artifact(
     fallback_active: bool = False,
     include_tail_shadow: bool = True,
     evidence_profile_key: str = "public:max_quality+shape+layout",
+    q6_quality_only_deep_local_risk: bool = False,
 ) -> dict:
     shadows = [
         {
@@ -196,6 +197,13 @@ def _artifact(
                 "q6": {
                     "below_drop_prior": q6_below_drop_prior,
                     "top_size_band": "q6_top_huge",
+                    "quality_only_local_count": 1,
+                    "quality_only_deepest_local_index": 142,
+                    "quality_only_deepest_start_row": 15,
+                    "quality_only_deep_local_risk": (
+                        q6_quality_only_deep_local_risk
+                    ),
+                    "quality_only_deep_row_threshold": 13,
                 },
                 "sampling": {
                     "processing_seconds": 1.25,
@@ -230,6 +238,11 @@ def test_review_row_keeps_manual_check_fields_without_flags() -> None:
     assert row["layout_bottom_row"] == 16
     assert row["layout_bottom_row_risk"] is True
     assert row["layout_bottom_row_risk_threshold"] == 13
+    assert row["q6_quality_only_local_count"] == 1
+    assert row["q6_quality_only_deepest_local_index"] == 142
+    assert row["q6_quality_only_deepest_start_row"] == 15
+    assert row["q6_quality_only_deep_local_risk"] is False
+    assert row["q6_quality_only_deep_row_threshold"] == 13
     assert row["truth_q6_count"] == 1
     assert row["input_constraints_mode"] == "pre_settlement_trusted_totals"
     assert row["public_constraint_key"] == "max_quality"
@@ -258,6 +271,7 @@ def test_review_row_flags_ui_contract_regressions() -> None:
                 tail_shadow_active=True,
                 layout_conflict=True,
                 v2_match="0/80",
+                q6_quality_only_deep_local_risk=True,
             )
     )
 
@@ -269,6 +283,7 @@ def test_review_row_flags_ui_contract_regressions() -> None:
     assert "layout_conflict" in flags
     assert "zero_posterior_match" in flags
     assert "zero_match_without_fallback" in flags
+    assert "q6_quality_only_deep_local_risk" in flags
     assert row["minimap_nonempty_display_labels"] == 1
     assert row["shadow_affects_bid_count"] == 1
 
@@ -308,6 +323,7 @@ def test_summarize_review_rows_counts_flags_and_groups() -> None:
                 tail_shadow_active=True,
                 layout_conflict=True,
                 v2_match="0/80",
+                q6_quality_only_deep_local_risk=True,
             ),
             source_path="b.json",
         ),
@@ -320,6 +336,7 @@ def test_summarize_review_rows_counts_flags_and_groups() -> None:
     assert summary["rows_with_review_flags"] == 1
     assert summary["flag_counts"]["compact_minimap_label_present"] == 1
     assert summary["flag_counts"]["layout_conflict"] == 1
+    assert summary["q6_quality_only_deep_local_risk_rows"] == 1
     assert summary["flag_counts"]["shadow_affects_bid"] == 1
     assert summary["flag_counts"]["zero_match_without_fallback"] == 1
     assert summary["hero_map_counts"] == {"aisha:shipwreck": 2}

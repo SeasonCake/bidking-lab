@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,6 +31,10 @@ from bidking_lab.live.monitor import (
     write_monitor_logs,
 )
 from bidking_lab.inference.observation import QualityBucketObs, SessionObs
+from bidking_lab.inference.q6_residual import (
+    aisha_q6_quality_only_deep_local_risk,
+    q6_quality_only_local_diagnostics,
+)
 from bidking_lab.inference.v2 import LayoutFeasibility, ResidualProblem
 
 
@@ -50,6 +55,36 @@ def _item() -> Item:
         icon_name="",
         model_name="",
         raw_row=[],
+    )
+
+
+def test_q6_quality_only_local_diagnostics_is_review_only() -> None:
+    store = SimpleNamespace(
+        items=lambda: (
+            SimpleNamespace(quality=6, cells=None, local_index=142),
+            SimpleNamespace(quality=6, cells=16, local_index=130),
+            SimpleNamespace(quality=5, cells=None, local_index=160),
+        )
+    )
+
+    diagnostics = q6_quality_only_local_diagnostics(store)
+
+    assert diagnostics == {
+        "count": 1,
+        "deepest_local_index": 142,
+        "deepest_start_row": 15,
+    }
+    assert aisha_q6_quality_only_deep_local_risk(
+        hero="aisha",
+        map_family="shipwreck",
+        evidence_profile_key="shape+layout",
+        deepest_start_row=diagnostics["deepest_start_row"],
+    )
+    assert not aisha_q6_quality_only_deep_local_risk(
+        hero="aisha",
+        map_family="villa",
+        evidence_profile_key="shape+layout",
+        deepest_start_row=diagnostics["deepest_start_row"],
     )
 
 
@@ -368,6 +403,9 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "public_constraint_key" in artifact["model_eval"]
     assert "evidence_profile_key" in artifact["model_eval"]
     assert "q6_aisha_bottom_row_risk" in artifact["model_eval"]
+    assert artifact["model_eval"]["q6_quality_only_local_count"] == 0
+    assert artifact["model_eval"]["q6_quality_only_deep_local_risk"] is False
+    assert artifact["model_eval"]["q6_quality_only_deep_row_threshold"] == 13
     assert "layout_bottom_row" in artifact["model_eval"]
     assert artifact["model_eval"]["evidence_stage"] == "full_5"
     assert artifact["model_eval"]["information_density_band"] in {
@@ -757,3 +795,28 @@ def test_write_monitor_logs_updates_latest_and_jsonl(tmp_path: Path) -> None:
     assert latest["file"] == "sample.json"
     assert (tmp_path / "sessions.jsonl").read_text(encoding="utf-8")
     assert (tmp_path / "model_eval.jsonl").read_text(encoding="utf-8")
+
+
+def test_atomic_write_json_retries_transient_permission_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_replace = Path.replace
+    calls = 0
+
+    def flaky_replace(path: Path, target: Path) -> Path:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise PermissionError("transient snapshot lock")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+    monkeypatch.setattr(monitor_module.time, "sleep", lambda _seconds: None)
+
+    target = tmp_path / "latest_snapshot.json"
+    monitor_module._atomic_write_json(target, {"file": "sample.json"})
+
+    assert calls == 2
+    assert json.loads(target.read_text(encoding="utf-8"))["file"] == "sample.json"
+    assert [path for path in tmp_path.iterdir() if path != target] == []

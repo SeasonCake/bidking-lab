@@ -1874,6 +1874,72 @@ no-q6 false-positive。若 replay 使用默认 `stable-seconds=1`，会给每个
 
 ---
 
+## 55. 深部 q6 品质点已知，但未知形状导致大红格数尾部低估
+
+### 症状
+
+Aisha 沉船局已经通过公开信息看到 q6 品质点和局部位置，但没有对应 shape/cells。
+`aisha_deep_floor1` 能补 q6 件数 floor，仍可能低估两个 `4x4` 大红同时出现的格数和值。
+
+### 原因
+
+shape-less q6 品质点会进入 `_quality_evidence_floors()`，所以 count floor 正常；
+但没有 shape 时不能进入 layout footprint，也不能硬推 cells floor。统一把 prior-floor ratio
+抬到 `3.0` 虽能覆盖少量已知样本，但会把两行证据过拟合成全局抬价规则。
+
+### 修法（2026-06-02）
+
+- 新增 review-only `q6_quality_only_local_count`、`q6_quality_only_deepest_local_index`、
+  `q6_quality_only_deepest_start_row`、`q6_quality_only_deep_local_risk`。
+- `ui_contract.diagnostics.q6`、UI review CSV/JSONL、review flag 和 live summary 同步透传。
+- 不修改 sampler、baseline、现有 shadow 或正式 bid hint；等待 live 日志积累后再决定是否新增窄 shadow。
+
+### 验证
+
+```powershell
+python -m pytest tests\test_live_monitor.py tests\test_runtime_snapshot.py tests\test_summarize_live_model_eval.py tests\test_export_ui_contract_review.py
+python scripts\export_ui_contract_review.py data\samples\fatbeans\aisha_shipwreck_test_sample40_4rounds.json --out-dir data\review\ui_contract_quality_only_smoke --n-trials 20 --shadow-trials 20 --roi-trials 0
+```
+
+`sample40` smoke 会得到 `q6_quality_only_deep_local_risk=1`，且 `shadow_affects_bid_rows=0`。
+全量 333 个有效样本中 41 行包含 shape-less q6 品质点、合计 47 个点；满足 Aisha shipwreck
+`shape+layout` 且起始行 `>=13` 的 deep-local 风险只有 `sample40` 和 `sample58` 两行。
+
+---
+
+## 56. Windows 偶发拒绝替换 `latest_snapshot.json`
+
+### 症状
+
+批量 replay 或 live overlay 同时读取 snapshot 时，monitor 偶发报错：
+
+```text
+PermissionError: [WinError 5] Access is denied: 'tmp...' -> 'latest_snapshot.json'
+```
+
+该错误会让当前样本没有追加到 `sessions.jsonl` / `model_eval.jsonl`。
+
+### 原因
+
+`_atomic_write_json()` 原先只执行一次 `tmp.replace(path)`。Windows 上 overlay、杀毒软件或
+文件索引器短暂占用目标文件时，原子替换可能瞬时失败；这是写盘竞争，不是解析或推理失败。
+
+### 修法（2026-06-02）
+
+- snapshot `replace()` 遇到 `PermissionError` 时最多重试 5 次，等待 `0.05s` 到 `0.20s`。
+- 最终失败仍抛出异常并清理 temp，保留现有 monitor error log 行为。
+- JSONL 继续只在 snapshot 成功后追加，避免 snapshot 与长日志状态分叉。
+
+### 验证
+
+```powershell
+python -m pytest tests\test_live_monitor.py
+```
+
+单测模拟第一次 replace 失败、第二次成功，并确认 snapshot 已更新且 temp 文件被清理。
+
+---
+
 ## 参考项目（写法）
 
 本文件结构参考同工作区内 `projects/openclaw-discord-bot/TROUBLESHOOTING.md`：**症状 / 原因 / 修法 / 教训** 四段式，便于检索与复用。

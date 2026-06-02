@@ -858,6 +858,21 @@ def _ui_diagnostics_contract(
             "false_low_risk": model_eval.get("q6_false_low_risk"),
             "below_drop_prior": bool(model_eval.get("q6_below_drop_prior")),
             "top_size_band": _text(model_eval.get("q6_top_size_band")),
+            "quality_only_local_count": model_eval.get(
+                "q6_quality_only_local_count"
+            ),
+            "quality_only_deepest_local_index": model_eval.get(
+                "q6_quality_only_deepest_local_index"
+            ),
+            "quality_only_deepest_start_row": model_eval.get(
+                "q6_quality_only_deepest_start_row"
+            ),
+            "quality_only_deep_local_risk": bool(
+                model_eval.get("q6_quality_only_deep_local_risk")
+            ),
+            "quality_only_deep_row_threshold": model_eval.get(
+                "q6_quality_only_deep_row_threshold"
+            ),
         },
         "sampling": {
             "relaxed_exact_used": bool(model_eval.get("relaxed_exact_used")),

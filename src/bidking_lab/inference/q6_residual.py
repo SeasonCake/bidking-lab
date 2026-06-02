@@ -8,6 +8,7 @@ from typing import Any
 RANDOM_SAMPLE_AVG_PROFILE_SIGNAL_FLOOR = 20_000.0
 AISHA_BOTTOM_ROW_RISK_THRESHOLD = 16
 AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD = 13
+AISHA_Q6_QUALITY_ONLY_DEEP_ROW_THRESHOLD = 13
 
 
 SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_BOOST_PROFILES = frozenset(
@@ -61,6 +62,49 @@ def aisha_bottom_row_risk(
         and map_family == "shipwreck"
         and bottom_row is not None
         and int(bottom_row) >= AISHA_BOTTOM_ROW_RISK_THRESHOLD
+    )
+
+
+def q6_quality_only_local_diagnostics(
+    store: Any,
+    *,
+    columns: int = 10,
+) -> dict[str, int | None]:
+    """Summarize q6 quality observations whose footprint is still unknown."""
+    locals_ = [
+        int(evidence.local_index)
+        for evidence in store.items()
+        if getattr(evidence, "quality", None) == 6
+        and getattr(evidence, "cells", None) is None
+        and getattr(evidence, "local_index", None) is not None
+    ]
+    deepest_local_index = max(locals_, default=None)
+    return {
+        "count": len(locals_),
+        "deepest_local_index": deepest_local_index,
+        "deepest_start_row": (
+            deepest_local_index // columns + 1
+            if deepest_local_index is not None and columns > 0
+            else None
+        ),
+    }
+
+
+def aisha_q6_quality_only_deep_local_risk(
+    *,
+    hero: str | None,
+    map_family: str,
+    evidence_profile_key: str,
+    deepest_start_row: int | None,
+) -> bool:
+    """Flag review-only Aisha shipwreck risk from a deep q6 quality-only point."""
+    key = (str(hero or "").lower(), map_family, evidence_profile_key)
+    return (
+        str(hero or "").lower() == "aisha"
+        and map_family == "shipwreck"
+        and key in AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES
+        and deepest_start_row is not None
+        and int(deepest_start_row) >= AISHA_Q6_QUALITY_ONLY_DEEP_ROW_THRESHOLD
     )
 
 
@@ -201,6 +245,7 @@ def q6_residual_prior_floor_ratio_for_profile(
 
 __all__ = (
     "AISHA_HIDDEN_V1_Q6_RESIDUAL_PROFILES",
+    "AISHA_Q6_QUALITY_ONLY_DEEP_ROW_THRESHOLD",
     "AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES",
     "AISHA_VILLA_V1_Q6_RESIDUAL_PROFILES",
     "AISHA_BOTTOM_ROW_RISK_THRESHOLD",
@@ -209,7 +254,9 @@ __all__ = (
     "SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_BOOST_PROFILES",
     "actionable_random_sample_avg_values",
     "aisha_bottom_row_risk",
+    "aisha_q6_quality_only_deep_local_risk",
     "evidence_profile_key_from_problem",
+    "q6_quality_only_local_diagnostics",
     "q6_residual_boost_for_profile",
     "q6_residual_prior_floor_ratio_for_profile",
 )

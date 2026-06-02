@@ -514,6 +514,11 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
                 "q6_aisha_bottom_row_risk": True,
                 "layout_bottom_row": 16,
                 "layout_bottom_row_risk_threshold": 15,
+                "q6_quality_only_local_count": 1,
+                "q6_quality_only_deepest_local_index": 142,
+                "q6_quality_only_deepest_start_row": 15,
+                "q6_quality_only_deep_local_risk": True,
+                "q6_quality_only_deep_row_threshold": 13,
                 "q6_p90_misses_truth": True,
                 "q6_false_low_risk": False,
                 "q6_below_drop_prior": True,
@@ -639,6 +644,11 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert contract["diagnostics"]["posterior"] == "public_max_quality:6"
     assert contract["diagnostics"]["layout"]["bottom_row_risk"] is True
     assert contract["diagnostics"]["q6"]["below_drop_prior"] is True
+    assert contract["diagnostics"]["q6"]["quality_only_local_count"] == 1
+    assert contract["diagnostics"]["q6"]["quality_only_deepest_local_index"] == 142
+    assert contract["diagnostics"]["q6"]["quality_only_deepest_start_row"] == 15
+    assert contract["diagnostics"]["q6"]["quality_only_deep_local_risk"] is True
+    assert contract["diagnostics"]["q6"]["quality_only_deep_row_threshold"] == 13
     assert contract["diagnostics"]["sampling"]["n_trials"] == 200
     assert contract["interaction"]["compact"]["purpose"] == "always_on_top_core_tips"
     assert "constraints.summary" in contract["interaction"]["hover"]["fields"]
