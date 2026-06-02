@@ -185,6 +185,14 @@ def build_live_status(
         capture_status_path.exists()
         and _text(capture_status.get("source")) in {"windivert", "webhook"}
     )
+    lock_age = _age_seconds(lock.get("started_at"), now=now)
+    active_flows = capture_status.get("active_flows")
+    raw_packets = capture_status.get("raw_packets")
+    accepted_frames = (
+        capture_status.get("accepted_frames")
+        if "accepted_frames" in capture_status
+        else capture_status.get("accepted_packets")
+    )
 
     warnings: list[str] = []
     errors: list[str] = []
@@ -224,6 +232,32 @@ def build_live_status(
         warnings.append("live monitor is not running (monitor.lock missing)")
     if has_live_capture_status and lock_path.exists() and lock_pid_running is False:
         warnings.append("live monitor process is not running")
+    try:
+        if (
+            has_live_capture_status
+            and lock_pid_running is True
+            and lock_age is not None
+            and lock_age >= 15.0
+            and int(active_flows or 0) > 0
+            and int(raw_packets or 0) == 0
+        ):
+            warnings.append(
+                "live capture has active flow but no new payload packets yet"
+            )
+    except (TypeError, ValueError):
+        pass
+    try:
+        if (
+            has_live_capture_status
+            and lock_pid_running is True
+            and int(raw_packets or 0) > 0
+            and int(accepted_frames or 0) == 0
+        ):
+            warnings.append(
+                "live capture saw payload but no auction frames were accepted"
+            )
+    except (TypeError, ValueError):
+        pass
 
     return {
         "level": _status_level(warnings, errors),
@@ -309,7 +343,7 @@ def build_live_status(
             "path": str(lock_path),
             "pid": lock.get("pid"),
             "pid_running": lock_pid_running,
-            "age_seconds": _round_float(_age_seconds(lock.get("started_at"), now=now)),
+            "age_seconds": _round_float(lock_age),
         },
         "capture_source": {
             "exists": capture_status_path.exists(),
@@ -317,13 +351,9 @@ def build_live_status(
             "source": capture_status.get("source"),
             "age_seconds": _round_float(capture_age),
             "process_name": capture_status.get("process_name"),
-            "active_flows": capture_status.get("active_flows"),
-            "raw_packets": capture_status.get("raw_packets"),
-            "accepted_frames": (
-                capture_status.get("accepted_frames")
-                if "accepted_frames" in capture_status
-                else capture_status.get("accepted_packets")
-            ),
+            "active_flows": active_flows,
+            "raw_packets": raw_packets,
+            "accepted_frames": accepted_frames,
             "ignored_frames": capture_status.get("ignored_frames"),
             "active_session_id": capture_status.get("active_session_id"),
         },

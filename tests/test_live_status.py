@@ -281,6 +281,60 @@ def test_live_status_warns_when_capture_status_exists_but_lock_missing(
     assert "WARN: live monitor is not running" in text
 
 
+def test_live_status_warns_when_active_flow_has_no_payload(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _module()
+    monkeypatch.setattr(module, "_pid_running", lambda _pid: True)
+    now = 1_000.0
+    _write_json(tmp_path / "latest_snapshot.json", _healthy_snapshot(now))
+    _append_jsonl(tmp_path / "model_eval.jsonl", [{"ts": now - 2.0}])
+    _write_json(tmp_path / "monitor.lock", {"pid": 1234, "started_at": now - 20.0})
+    _write_json(
+        tmp_path / "capture_source_status.json",
+        {
+            "ts": now - 1.0,
+            "source": "windivert",
+            "active_flows": 1,
+            "raw_packets": 0,
+            "accepted_frames": 0,
+        },
+    )
+
+    status = module.build_live_status(tmp_path, now=now)
+
+    assert status["level"] == "warn"
+    assert any("no new payload" in warning for warning in status["warnings"])
+
+
+def test_live_status_warns_when_payload_has_no_accepted_frames(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _module()
+    monkeypatch.setattr(module, "_pid_running", lambda _pid: True)
+    now = 1_000.0
+    _write_json(tmp_path / "latest_snapshot.json", _healthy_snapshot(now))
+    _append_jsonl(tmp_path / "model_eval.jsonl", [{"ts": now - 2.0}])
+    _write_json(tmp_path / "monitor.lock", {"pid": 1234, "started_at": now - 20.0})
+    _write_json(
+        tmp_path / "capture_source_status.json",
+        {
+            "ts": now - 1.0,
+            "source": "windivert",
+            "active_flows": 1,
+            "raw_packets": 4,
+            "accepted_frames": 0,
+        },
+    )
+
+    status = module.build_live_status(tmp_path, now=now)
+
+    assert status["level"] == "warn"
+    assert any("no auction frames" in warning for warning in status["warnings"])
+
+
 def test_live_status_cli_strict_returns_nonzero_for_warning(
     tmp_path: Path,
     monkeypatch,
