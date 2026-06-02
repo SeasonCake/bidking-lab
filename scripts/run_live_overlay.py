@@ -25,8 +25,6 @@ COMPACT_WIDTH = 480
 COMPACT_HEIGHT = 420
 COMPACT_MIN_WIDTH = 360
 COMPACT_MIN_HEIGHT = 260
-STANDBY_WIDTH = 360
-STANDBY_HEIGHT = 260
 DETAIL_MIN_WIDTH = 820
 DETAIL_MIN_HEIGHT = 620
 DETAIL_MAX_WIDTH = 980
@@ -1380,23 +1378,49 @@ def _standby_model(
     subtitle: str,
     detail: str = "",
 ) -> dict[str, Any]:
+    decision_detail = detail or "等待实时数据"
+    metrics = [
+        ("P50估值", "--", "等待新状态", "dim"),
+        ("防守价", "--", "等待新状态", "dim"),
+        ("当前最高", "--", "等待新状态", "dim"),
+        ("q6风险", "--", "等待新状态", "dim"),
+    ]
+    sections = [
+        ("监听状态", "等待实时数据", "捕获到新对局状态后自动切换到推荐面板"),
+        ("显示说明", "未显示旧局建议", "当前只展示默认等待面板"),
+    ]
     return {
         "empty": False,
-        "standby": True,
         "title": "BidKing Live",
         "subtitle": subtitle,
         "round": "?",
         "status": ("待机", "dim"),
-        "decision": ("等待对局开始", detail, "dim"),
-        "metrics": [],
-        "sections": [],
+        "decision": ("等待对局开始", decision_detail, "dim"),
+        "metrics": metrics,
+        "sections": sections,
         "alerts": [],
-        "interaction": _interaction_layers(
-            {},
-            metrics=[],
-            sections=[],
-            alerts=[],
-        ),
+        "interaction": {
+            "mini": {
+                "purpose": "standby_core_tips",
+                "fields": (),
+                "metrics": metrics,
+                "sections": sections,
+            },
+            "hover": {
+                "purpose": "disabled_until_live_data",
+                "fields": (),
+                "enabled": False,
+                "sections": [],
+            },
+            "detail": {
+                "purpose": "disabled_until_live_data",
+                "fields": (),
+                "enabled": False,
+                "collapsible": True,
+                "renderers": (),
+                "sections": [],
+            },
+        },
         "minimap": {},
         "footer": "",
     }
@@ -1406,6 +1430,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     if not snapshot:
         model = _standby_model(
             subtitle="等待实时对局状态",
+            detail="等待实时数据",
         )
         model["empty"] = True
         return model
@@ -1441,6 +1466,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     ):
         return _standby_model(
             subtitle="等待下一局开始",
+            detail="上一局结算已结束",
         )
     if (
         not is_settled
@@ -1449,6 +1475,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     ):
         return _standby_model(
             subtitle="等待新的实时对局状态",
+            detail="不显示过期旧局出价",
         )
     category_items = snapshot.get("category_grid_items") or []
     layout = _first(panel.get("layout_stages"))
@@ -1954,9 +1981,6 @@ class Overlay:
                 self.root.geometry(f"{width}x{height}+{x}+{y}")
                 return
             x, y = self._window_origin()
-            if self._current_model and self._current_model.get("standby"):
-                self.root.geometry(f"{STANDBY_WIDTH}x{STANDBY_HEIGHT}+{x}+{y}")
-                return
             width_height = self._compact_geometry.split("+", 1)[0]
             self.root.geometry(f"{width_height}+{x}+{y}")
 
@@ -2098,60 +2122,6 @@ class Overlay:
                 wraplength=wraplength,
                 justify="left",
             ).pack(side="left", padx=(0, 5), pady=(0, 4))
-
-    def _render_standby(self, model: dict[str, Any]) -> None:
-        header = tk.Frame(self.frame, bg=BG)
-        header.pack(fill="x")
-        title_box = tk.Frame(header, bg=BG)
-        title_box.pack(side="left", fill="x", expand=True)
-        self._label(
-            title_box,
-            model["title"],
-            bg=BG,
-            font=("Microsoft YaHei UI", 11, "bold"),
-        ).pack(anchor="w")
-        self._label(
-            title_box,
-            model["subtitle"],
-            fg=MUTED,
-            bg=BG,
-            font=("Microsoft YaHei UI", 9),
-        ).pack(anchor="w", pady=(2, 0))
-
-        status_text, status_tag = model["status"]
-        tk.Label(
-            header,
-            text=status_text,
-            fg=BG,
-            bg=_severity_color(status_tag),
-            font=("Microsoft YaHei UI", 10, "bold"),
-            padx=12,
-            pady=5,
-        ).pack(side="right", padx=(10, 0))
-
-        decision_text, _decision_detail, decision_tag = model["decision"]
-        card = self._card(self.frame, bg=PANEL_SOFT)
-        card.pack(fill="x", pady=(18, 0), ipady=6)
-        tk.Frame(card, width=5, bg=_severity_color(decision_tag)).pack(
-            side="left",
-            fill="y",
-        )
-        body = tk.Frame(card, bg=PANEL_SOFT, padx=14, pady=10)
-        body.pack(fill="x", expand=True)
-        self._label(
-            body,
-            decision_text,
-            fg=_severity_color(decision_tag),
-            bg=PANEL_SOFT,
-            font=("Microsoft YaHei UI", 15, "bold"),
-        ).pack(anchor="w")
-        self._label(
-            body,
-            "未显示旧局建议",
-            fg=MUTED,
-            bg=PANEL_SOFT,
-            font=("Microsoft YaHei UI", 9),
-        ).pack(anchor="w", pady=(4, 0))
 
     def _render_hover_minimap(
         self,
@@ -2635,12 +2605,6 @@ class Overlay:
         self._hide_hover()
         self._current_model = model
         self._clear()
-        if model.get("standby"):
-            self._detail_open = False
-            self._render_standby(model)
-            self._resize_for_mode()
-            self._restore_canvas_scroll(0.0)
-            return
         interaction = _as_mapping(model.get("interaction"))
         mini = _as_mapping(interaction.get("mini"))
         hover = _as_mapping(interaction.get("hover"))

@@ -643,12 +643,18 @@ def test_overlay_model_hides_old_settlement_after_retention_window() -> None:
     )
 
     assert model["status"] == ("待机", "dim")
-    assert model["standby"] is True
     assert model["decision"][0] == "等待对局开始"
-    assert model["decision"][1] == ""
+    assert model["decision"][1] == "上一局结算已结束"
     assert model["subtitle"] == "等待下一局开始"
-    assert model["metrics"] == []
-    assert model["sections"] == []
+    assert [metric[0] for metric in model["metrics"]] == [
+        "P50估值",
+        "防守价",
+        "当前最高",
+        "q6风险",
+    ]
+    assert any(section[0] == "监听状态" for section in model["sections"])
+    assert model["interaction"]["hover"]["enabled"] is False
+    assert model["interaction"]["detail"]["enabled"] is False
 
 
 def test_overlay_model_hides_stale_non_settlement_snapshot() -> None:
@@ -676,10 +682,11 @@ def test_overlay_model_hides_stale_non_settlement_snapshot() -> None:
     )
 
     assert model["status"] == ("待机", "dim")
-    assert model["standby"] is True
     assert model["decision"][0] == "等待对局开始"
-    assert model["decision"][1] == ""
+    assert model["decision"][1] == "不显示过期旧局出价"
     assert model["subtitle"] == "等待新的实时对局状态"
+    assert model["metrics"][0][1] == "--"
+    assert not any("小幅进攻" in str(value) for value in model.values())
 
 
 def test_overlay_model_empty_snapshot_uses_standby_copy() -> None:
@@ -689,10 +696,11 @@ def test_overlay_model_empty_snapshot_uses_standby_copy() -> None:
 
     assert model["empty"] is True
     assert model["status"] == ("待机", "dim")
-    assert model["standby"] is True
     assert model["decision"][0] == "等待对局开始"
-    assert model["decision"][1] == ""
+    assert model["decision"][1] == "等待实时数据"
     assert model["subtitle"] == "等待实时对局状态"
+    assert model["metrics"][0][0] == "P50估值"
+    assert model["sections"][0][0] == "监听状态"
 
 
 def test_overlay_model_surfaces_zero_match_baseline() -> None:
