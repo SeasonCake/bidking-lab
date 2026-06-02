@@ -9,6 +9,25 @@
 ```powershell
 cd C:\xiangmuyunxing\biancheng\2026\bidking-lab
 .\scripts\stop_live_monitor.ps1
+python -m pip install -e ".[packet]"
+.\scripts\start_live_windivert_overlay.ps1 -Restart
+```
+
+`start_live_windivert_overlay.ps1` 默认使用 WinDivert sniff 模式抓取本机 TCP payload，
+再用 Windows TCP 连接表只保留归属于 `BidKing.exe` 的流量。默认是
+`broad-sniff + process-match`，适合 VPN / TUN / UU / system proxy 导致真实端口未知的场景。
+如果确认游戏直连服务器端口 `10000`，可用更轻的端口过滤模式：
+
+```powershell
+.\scripts\start_live_windivert_overlay.ps1 -Restart -PortOnly
+```
+
+WinDivert 通常需要管理员 PowerShell。若 `monitor.stderr.log` 提示缺 `pydivert`，先运行上面的
+`python -m pip install -e ".[packet]"` 或 `python -m pip install pydivert`。
+
+如果 Fatbeans 账号已支持 WebHook，也可以使用 Fatbeans WebHook 入口：
+
+```powershell
 .\scripts\start_live_webhook_overlay.ps1 -Restart
 ```
 
@@ -38,6 +57,12 @@ python scripts\run_live_overlay.py --demo
 ```
 
 当前实时优先链路：
+
+```text
+WinDivert sniff -> process flow match -> Fatbeans-row adapter -> latest_snapshot.json / model_eval.jsonl / layout_samples.jsonl
+```
+
+Fatbeans WebHook 备用链路：
 
 ```text
 Fatbeans WebHook packet POST -> webhook monitor -> latest_snapshot.json / model_eval.jsonl / layout_samples.jsonl

@@ -120,6 +120,18 @@
 
 **复查点**：如果后续确认 Fatbeans/抓包工具能在游戏运行中自动写增量 JSON，再把 watcher 的处理粒度从“文件完成”扩展到“session 增量 snapshot”。
 
+## 2026-06-02 · Fatbeans WebHook 受限时改走自有 WinDivert 只读抓包
+
+**背景**：Fatbeans WebHook 入口需要会员，不能作为项目落地的唯一实时 feed。用户提出可考虑绕过、参考 `AuctionAnalyzer4.13.3`、自行写抓包或破解 Fatbeans，并要求 VPN / TUN / system proxy / UU 场景下能尽量自动识别 `BidKing.exe` 流量。
+
+**推荐**：不破解 Fatbeans 付费功能；保留 Fatbeans JSON watcher 和 WebHook 作为可用时的入口，同时新增自有 WinDivert sniff 入口。WinDivert packet 层负责只读抓 TCP payload，`psutil` TCP 连接表负责把 4-tuple 归因到 `BidKing.exe`，再转换为现有 Fatbeans export row 形状，复用 parser、v2 推理、日志和 overlay。
+
+**用户选择**：接受先推进项目落地实用部分，优先解决无需手动导出 JSON 的实时 feed。
+
+**取舍**：WinDivert 需要管理员权限和 `pydivert`；默认 broad sniff 会观察系统 TCP payload，但项目只保留匹配 `BidKing.exe` flow 的包。若 UU 把游戏流量完全迁移到另一个本地代理进程，需用 `capture_source_status.json` 和 raw rows 实测是否还能在 `BidKing.exe` flow 中看到协议 payload。
+
+**复查点**：用户实机分别测试直连、TUN/system proxy、UU 三种模式：确认 `capture_source_status.json.active_flows > 0`、`latest_snapshot.json.source` 为 WinDivert 入口、raw rows 的 `ProcessName=BidKing.exe` 且 parser 能产出 states。若 UU 模式 active flow 为 0 或 payload 不可解析，再增加“按本地代理进程/端口识别”的第二 profile。
+
 ## 2026-05-31 · 普通 2x2 生肖临时放回 v2 候选
 
 **背景**：用户确认普通 2x2 十二生肖活动仍剩约一周，蓝色品质普通生肖在短期实战中仍可能出现；此前为避免活动兑换污染，已把生肖整体排除出普通候选。

@@ -341,6 +341,32 @@ class FatbeansWebhookMonitor:
             "filtered_count": filtered,
         }
 
+    def accept_row(self, row: Mapping[str, Any]) -> dict[str, Any]:
+        """Accept an already-normalized Fatbeans export row.
+
+        This is used by source adapters that do their own packet capture but
+        still want to reuse the same debounce, artifact, and log writer path.
+        """
+        with self._lock:
+            self._received += 1
+            normalized = dict(row)
+            normalized["SortID"] = int(normalized.get("SortID") or self._next_sort_id)
+            self._rows.append(normalized)
+            self._next_sort_id = max(self._next_sort_id, normalized["SortID"] + 1)
+            self._accepted += 1
+            self._last_packet_at = time.monotonic()
+            accepted_count = self._accepted
+            received = self._received
+            filtered = self._filtered
+        self._queue.put_nowait(object())
+        return {
+            "accepted": True,
+            "reason": "accepted",
+            "received": received,
+            "accepted_count": accepted_count,
+            "filtered_count": filtered,
+        }
+
     def status(self) -> dict[str, Any]:
         with self._lock:
             return {

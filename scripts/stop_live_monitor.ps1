@@ -13,7 +13,8 @@ $MonitorProcesses = @(
     $_.Name -like "python*" -and
     (
       $_.CommandLine -like "*run_fatbeans_live_monitor.py*" -or
-      $_.CommandLine -like "*run_fatbeans_webhook_monitor.py*"
+      $_.CommandLine -like "*run_fatbeans_webhook_monitor.py*" -or
+      $_.CommandLine -like "*run_windivert_live_monitor.py*"
     )
   }
 )
