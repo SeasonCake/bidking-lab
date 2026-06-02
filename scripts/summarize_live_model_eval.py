@@ -163,6 +163,133 @@ def _numeric(row: dict[str, Any], key: str) -> float | None:
         return None
 
 
+def _limit_rows(rows: Any, limit: int = 5) -> list[dict[str, Any]]:
+    if not isinstance(rows, list):
+        return []
+    return [
+        row
+        for row in rows[:limit]
+        if isinstance(row, dict)
+    ]
+
+
+def _readiness_brief(readiness: Any) -> dict[str, Any]:
+    if not isinstance(readiness, dict):
+        return {}
+    source_groups = readiness.get("groups") or readiness.get("targets")
+    groups = [
+        {
+            "hero": row.get("hero"),
+            "map_family": row.get("map_family"),
+            "n": row.get("n"),
+            "target": row.get("target"),
+            "needed": row.get("needed"),
+        }
+        for row in _limit_rows(source_groups, limit=12)
+    ]
+    return {
+        "ready": readiness.get("ready"),
+        "total_needed": readiness.get("total_needed"),
+        "priority_needs": _limit_rows(readiness.get("priority_needs"), limit=8),
+        "groups": groups,
+    }
+
+
+def _candidate_readiness_brief(candidates: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(candidates, dict):
+        return {}
+    brief: dict[str, dict[str, Any]] = {}
+    for label, candidate in candidates.items():
+        if not isinstance(candidate, dict):
+            continue
+        brief[str(label)] = {
+            "status": candidate.get("status"),
+            "target_ready": candidate.get("target_ready"),
+            "target_total_needed": candidate.get("target_total_needed"),
+            "tracked_rows": candidate.get("tracked_rows"),
+            "active_rows": candidate.get("active_rows"),
+            "active_no_q6_rows": candidate.get("active_no_q6_rows"),
+            "under_before_rows": candidate.get("under_before_rows"),
+            "helped_rows": candidate.get("helped_rows"),
+            "still_missed_rows": candidate.get("still_missed_rows"),
+            "helped_rate": candidate.get("helped_rate"),
+            "false_positive_proxy_rows": candidate.get("false_positive_proxy_rows"),
+            "false_positive_proxy_rate_active": candidate.get(
+                "false_positive_proxy_rate_active"
+            ),
+            "q6_p90_delta_median": candidate.get("q6_p90_delta_median"),
+            "priority_needs": _limit_rows(candidate.get("priority_needs"), limit=5),
+        }
+    return brief
+
+
+def brief_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    """Return the high-signal subset used for live calibration check-ins."""
+
+    return {
+        "rows": summary.get("rows"),
+        "raw_rows": summary.get("raw_rows"),
+        "deduped_rows": summary.get("deduped_rows"),
+        "valid": summary.get("valid"),
+        "decision_value_mae": summary.get("decision_value_mae"),
+        "decision_value_median_abs_error": summary.get(
+            "decision_value_median_abs_error"
+        ),
+        "raw_value_mae": summary.get("raw_value_mae"),
+        "warehouse_mae": summary.get("warehouse_mae"),
+        "layout_fit_mae": summary.get("layout_fit_mae"),
+        "performance": {
+            "processing_seconds_median": summary.get(
+                "monitor_processing_seconds_median"
+            ),
+            "processing_seconds_p75": summary.get("monitor_processing_seconds_p75"),
+            "n_trials": summary.get("monitor_n_trials_values"),
+            "shadow_trials": summary.get("monitor_shadow_trials_values"),
+            "roi_trials": summary.get("monitor_roi_trials_values"),
+        },
+        "log_quality": summary.get("log_quality"),
+        "monitor_errors": summary.get("monitor_errors"),
+        "collection_readiness": _readiness_brief(
+            summary.get("collection_readiness")
+        ),
+        "q6_shadow_sampling_progress": _readiness_brief(
+            summary.get("q6_shadow_sampling_progress")
+        ),
+        "q6_shadow_candidate_readiness": _candidate_readiness_brief(
+            summary.get("q6_shadow_candidate_readiness")
+        ),
+        "next_sampling_targets": _limit_rows(
+            summary.get("next_sampling_targets"),
+            limit=8,
+        ),
+        "q6": {
+            "q6_p90_miss_count": summary.get("q6_p90_miss_count"),
+            "q6_p90_under_by_median": summary.get("q6_p90_under_by_median"),
+            "q6_false_low_count": summary.get("q6_false_low_count"),
+            "q6_below_drop_prior_count": summary.get("q6_below_drop_prior_count"),
+            "q6_practical_gate_count": summary.get("q6_practical_gate_count"),
+            "q6_practical_gate_helped_count": summary.get(
+                "q6_practical_gate_helped_count"
+            ),
+            "q6_practical_gate_false_positive_proxy_count": summary.get(
+                "q6_practical_gate_false_positive_proxy_count"
+            ),
+            "top_miss_root_causes": _limit_rows(
+                summary.get("q6_miss_root_causes"),
+                limit=5,
+            ),
+        },
+        "layout": {
+            "layout_conflict_count": summary.get("layout_conflict_count"),
+            "relaxed_exact_count": summary.get("relaxed_exact_count"),
+            "top_conflict_root_causes": _limit_rows(
+                summary.get("layout_conflict_root_causes"),
+                limit=5,
+            ),
+        },
+    }
+
+
 def _dedupe_latest_by_file(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     selected: dict[str, dict[str, Any]] = {}
     order: list[str] = []
@@ -1504,6 +1631,17 @@ def main() -> int:
             "to the selected model_eval.jsonl."
         ),
     )
+    parser.add_argument(
+        "--format",
+        choices=("full", "brief"),
+        default="full",
+        help="Output full JSON summary or a compact live-calibration summary",
+    )
+    parser.add_argument(
+        "--brief",
+        action="store_true",
+        help="Shortcut for --format brief",
+    )
     args = parser.parse_args()
     path = Path(args.path)
     rows = _read_jsonl(path)
@@ -1511,19 +1649,22 @@ def main() -> int:
         "monitor_errors.jsonl"
     )
     monitor_errors = _read_jsonl(error_log)
+    summary = summarize(
+        rows,
+        dedupe=not args.no_dedupe,
+        target_per_hero_family=args.target_per_hero_family,
+        hidden_target_per_hero=args.hidden_target_per_hero,
+        hidden_target_by_hero={
+            "aisha": args.aisha_hidden_target,
+            "ethan": args.ethan_hidden_target,
+        },
+        monitor_error_rows=monitor_errors,
+    )
+    if args.brief or args.format == "brief":
+        summary = brief_summary(summary)
     print(
         json.dumps(
-            summarize(
-                rows,
-                dedupe=not args.no_dedupe,
-                target_per_hero_family=args.target_per_hero_family,
-                hidden_target_per_hero=args.hidden_target_per_hero,
-                hidden_target_by_hero={
-                    "aisha": args.aisha_hidden_target,
-                    "ethan": args.ethan_hidden_target,
-                },
-                monitor_error_rows=monitor_errors,
-            ),
+            summary,
             ensure_ascii=False,
             indent=2,
         )

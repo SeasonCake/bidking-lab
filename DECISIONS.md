@@ -748,6 +748,8 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新**：matplotlib 可作为 detail 层可选异步渲染器使用，但不进入首屏同步路径。当前契约只声明 `matplotlib_minimap / optional_async / min_round=3`，避免图像渲染影响实时推理和小悬浮窗响应。
 
+**更新 2**：2026-06-02 工程版 Tk overlay 暂时关闭 `matplotlib_minimap` renderer，契约 `detail.renderers=()`，只保留 Tk MiniMap。原因是实测信息量已经足够，而同步图像渲染会增加 detail 点击时的卡顿与“未显示图片”的交互成本。后续若做正式异步 UI，可重新作为后台 detail renderer 评估，但不能进入首屏正式出价路径。
+
 **更新**：MiniMap compact 层只显示品质颜色和空间占位，不显示短名、形状编号或局部序号。`item_id` / `item_name` / `shape_key` 仍保留在 `ui_contract.minimap.items`，供后续 hover/detail、人工复核和推理审计使用。
 
 **更新**：`baseline.posterior` 记录 `match_text/matched/total/status`。当 baseline posterior 为 `zero_match` 时，overlay 显示“后验无匹配/需复核约束”，不输出正式出价动作，也不把该状态显示成普通等待。

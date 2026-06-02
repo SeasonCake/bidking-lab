@@ -348,6 +348,112 @@ def test_map_family_groups_hidden_and_late_map_prefixes() -> None:
     assert groups["shipwreck"] == 1
 
 
+def test_brief_summary_keeps_live_review_signals_compact() -> None:
+    module = _summary_module()
+
+    summary = {
+        "rows": 303,
+        "raw_rows": 422,
+        "deduped_rows": 119,
+        "valid": 303,
+        "decision_value_mae": 470_430,
+        "decision_value_median_abs_error": 286_826,
+        "raw_value_mae": 348_541,
+        "warehouse_mae": 20,
+        "layout_fit_mae": 7,
+        "monitor_processing_seconds_median": 6.982,
+        "monitor_processing_seconds_p75": 13.803,
+        "monitor_n_trials_values": {"500": 163},
+        "monitor_shadow_trials_values": {"80": 163},
+        "monitor_roi_trials_values": {"250": 163},
+        "log_quality": {"missing_hero": 2},
+        "monitor_errors": {"rows": 1},
+        "collection_readiness": {
+            "ready": True,
+            "total_needed": 0,
+            "priority_needs": [],
+            "groups": [
+                {
+                    "hero": "aisha",
+                    "map_family": "shipwreck",
+                    "n": 60,
+                    "target": 30,
+                    "needed": 0,
+                }
+            ],
+        },
+        "q6_shadow_sampling_progress": {
+            "ready": True,
+            "total_needed": 0,
+            "priority_needs": [],
+            "targets": [
+                {
+                    "hero": "aisha",
+                    "map_family": "shipwreck",
+                    "n": 60,
+                    "target": 20,
+                    "needed": 0,
+                }
+            ],
+        },
+        "q6_shadow_candidate_readiness": {
+            "aisha_deep_floor1": {
+                "status": "candidate_for_review",
+                "target_ready": True,
+                "target_total_needed": 0,
+                "tracked_rows": 163,
+                "active_rows": 30,
+                "active_no_q6_rows": 0,
+                "under_before_rows": 21,
+                "helped_rows": 15,
+                "still_missed_rows": 6,
+                "helped_rate": 0.7143,
+                "false_positive_proxy_rows": 0,
+                "false_positive_proxy_rate_active": 0.0,
+                "q6_p90_delta_median": 674_579,
+                "priority_needs": [],
+            }
+        },
+        "next_sampling_targets": [],
+        "q6_p90_miss_count": 101,
+        "q6_p90_under_by_median": 346_051,
+        "q6_false_low_count": 16,
+        "q6_below_drop_prior_count": 16,
+        "q6_practical_gate_count": 46,
+        "q6_practical_gate_helped_count": 9,
+        "q6_practical_gate_false_positive_proxy_count": 5,
+        "q6_miss_root_causes": [{"cause": "q6_top_unknown_cells", "n": 43}],
+        "layout_conflict_count": 65,
+        "relaxed_exact_count": 21,
+        "layout_conflict_root_causes": [{"cause": "footprint_overlap", "n": 62}],
+        "groups": {"hero": [{"hero": "aisha", "n": 161}]},
+    }
+
+    brief = module.brief_summary(summary)
+
+    assert brief["rows"] == 303
+    assert brief["performance"] == {
+        "processing_seconds_median": 6.982,
+        "processing_seconds_p75": 13.803,
+        "n_trials": {"500": 163},
+        "shadow_trials": {"80": 163},
+        "roi_trials": {"250": 163},
+    }
+    assert brief["collection_readiness"]["ready"] is True
+    assert brief["collection_readiness"]["groups"][0]["hero"] == "aisha"
+    assert brief["q6_shadow_sampling_progress"]["groups"][0]["target"] == 20
+    assert brief["q6_shadow_candidate_readiness"]["aisha_deep_floor1"][
+        "status"
+    ] == "candidate_for_review"
+    assert brief["q6"]["top_miss_root_causes"] == [
+        {"cause": "q6_top_unknown_cells", "n": 43}
+    ]
+    assert brief["layout"]["top_conflict_root_causes"] == [
+        {"cause": "footprint_overlap", "n": 62}
+    ]
+    assert "groups" not in brief
+
+
 def test_q6_miss_root_marks_missing_top_item_as_unknown() -> None:
     module = _summary_module()
 
