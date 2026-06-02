@@ -3,6 +3,17 @@
 > 本文件记录项目推进中的工程/建模决策：背景、推荐方案、用户选择、取舍和后续复查点。
 > 详细实验数据仍放在 `OBSERVATIONS.md`，总体路线仍放在 `PROGRESS.md`。
 
+## 核心文档地图
+
+| 文档 | 职责 |
+|---|---|
+| [`PROGRESS.md`](PROGRESS.md) | 当前项目状态、路线图和下一步 TODO，是新对话入口。 |
+| [`DECISIONS.md`](DECISIONS.md) | 本文件；记录用户决策、推荐方案、取舍、边界和复查点。 |
+| [`OBSERVATIONS.md`](OBSERVATIONS.md) | 记录实验结果、指标、根因分析和 checkpoint 技术细节，为决策提供证据。 |
+| [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | 记录可复用的故障排查手册，只收关键 bug / 环境坑 / 回归模式。 |
+
+使用关系：先在 `OBSERVATIONS.md` 形成证据，再在本文件固化决策；决策落地后的当前状态回写 `PROGRESS.md`，可复用的排查方法再沉淀到 `TROUBLESHOOTING.md`。
+
 ---
 
 ## 2026-05-30 · v2 推理主干采用 evidence-first 渐进替换
@@ -638,3 +649,147 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **更新 4**：批评估已补 `q6_residual_boost_experiment` 结构化摘要。以后判断 b=3/b=5 不再只看全局 coverage，而要同时看 active profile、active no-q6 rows、无 q6 P90 正报率和 decision MAE。
 
 **更新 5**：新增 `compare_q6_residual_boost.py` 作为固定对比入口。后续是否把 profile-gated boost 接成 live shadow，必须先通过该脚本在更高 trials 和新增样本上复测，而不是凭单次手工命令决定。
+
+**更新 6**：全量 `--trials 80` 对比属于长任务，不作为无反馈的交互式命令直接跑。脚本需要先打印样本数、配置数和 trial 预算，并允许只跑 `baseline/profile_b5` 等关键组合；完整四配置对比留给明确的长跑验证。
+
+**更新 7**：`profile_b5` 先进入 live shadow，不进入正式 posterior 或 bid hint。实时日志只记录 shadow 的 q6 P90 delta、helped 和 false-positive proxy；是否升级为风险参考，必须等新版 live 日志样本确认。采样目标以最新需求为准：Aisha/Ethan 沉船各 20 份、Aisha hidden 10 份、Ethan hidden 5 份。
+
+**更新 8**：boost 判断增加 paired 审计口径。当前旧样本上 `profile_b5` 能修复 30 个 baseline q6 低估且没有新增 q6 newly-missed / no-q6 positive，但仍剩 87 个 q6 miss；因此继续作为 shadow 收数，不扩大到 public-normalized gate，也不进入正式 bid hint。更深的 q6 sampler 改动等新版沉船/hidden 样本补齐后再推进。
+
+**更新 9**：311 份样本复测后，`profile_b5` 可规划 q6 coverage 为 `62.60%`，较 baseline `45.85%` 提高 `16.75` 个百分点；paired 修复 42 个 q6 低估，没有新增 q6 newly-missed 或 no-q6 new-positive。但无 q6 正报金额中位会上升，所以继续只做 shadow，不进入正式 posterior / bid hint。
+
+**更新 10**：低值随机均价只影响 evidence-profile 路由，不删除原始 public info，也不作为整库价值硬过滤。当前阈值为 `< 20000` 降为低信号；`200036` 紫品均价作为已验证语义接入 q4 soft target。Aisha 沉船 `bottom_row >= 16` 只写风险诊断，不直接抬价。
+
+**更新 11**：离线参考覆盖与 live shadow 新收数必须分开。batch 输出 `q6_shadow_reference_coverage`，可包含历史 JSON；live 汇总输出 `q6_shadow_sampling_progress`，只统计带 `profile_b5` shadow 字段的新日志。升级风险提示前，以 live 新日志的 helped / false-positive / newly-missed / still-missed 为准。
+
+**更新 12**：`profile_b5` 在 311 份样本、低 trials 稳定性复测下仍是合格 shadow，但不是正式 posterior。它提高 q6 可规划覆盖并降低 MAE，但会抬高无可规划 q6 局的正报金额中位；因此正式出价继续使用 baseline，shadow 只用于日志和后续实战判断。
+
+**更新 13**：暂不启动 v3 重写。新切片显示 high-info q6 miss 主要是 residual q6 count/cells 采样不足，public-info、均格 float、evidence store 和 posterior 报告结构没有表现出需要推翻的系统性错误。v3 只在“默认关闭的 sampler 实验无法在不误抬 no-q6 的前提下继续改善”时再开。
+
+**更新 14**：`q6_residual_prior_floor_ratio` 作为默认关闭实验保留，不进入正式 posterior。它能显著降低 high-info q6 miss，但 no-q6 control 正报率和正报金额中位都偏高；下一步应找比“强制 q6 先验件数/格数”更窄的触发条件，例如结合剩余空间、Aisha bottom risk、public max item cells 和已知 q6 形状，而不是直接把 prior floor 接到 live。
+
+**更新 15**：`aisha_deep_floor1` 是当前 q6 residual sampler 的最佳下一候选，但仍默认关闭。它把宽 prior-floor 收窄到 Aisha + shipwreck + shape/layout profile + `bottom_row >= 13`；311 份、`--trials 80` 下修复 30 个 q6 低估且没有新增 no-q6 positive，decision MAE 和 high-info q6 miss 都优于 `profile_b5`。下一步必须用 live shadow 复测样本漂移和实战 no-q6 副作用后，才考虑接入正式 posterior 或风险提示。
+
+**更新 16**：live shadow 允许同时记录 `profile_b5` 与 `aisha_deep_floor1`，但正式估价仍只使用 baseline v2 posterior。`aisha_deep_floor1` 的实战证据以 `q6_residual_deep_floor_shadow_*` 为准；只有当 live 新日志继续显示 helped 明显高于 false-positive，且 Aisha shipwreck no-q6 副作用可控，才考虑升级为正式风险参考。为避免 shadow 拖慢 live，shadow 默认 trials 上限为 80，若要更高稳定性必须显式设置 `--shadow-trials`。
+
+**更新 17**：暂不把 `aisha_deep_floor1` 放宽到 `shipwreck_profile_v1` 或 `aisha_shipwreck_profile_v1`。离线审计显示两者会继续提高 q6 coverage，但 active no-q6 行全部正报，且 no-q6 正报金额中位明显上升；这类改动不满足正式推理的安全边界。下一阶段以 live shadow 新样本为准，不再仅凭旧样本继续加宽 q6 prior-floor。
+
+## 2026-06-01 · public-info 上界进入候选预筛，均格 float 只在唯一时硬解
+
+**背景**：用户确认需要区分 total/all 均格与紫/金等品质均格，并复查 `200050` 最大格公开信息是否只排除更大候选。当前样本还要求明确哪些 public info 已唯一映射，哪些需要截图补证。
+
+**推荐**：把已验证的 public-info 上界移到 sampler 候选层：`200048` 用最高品质排除更高品质候选，`200050` 用最大占格排除更大格候选，等于最大格允许。均格/均价 fixed32 进入 soft evidence 和唯一性审计；只有 count、total、item-table 离散候选共同收敛时，才把它解释为唯一 `(count,cells)`。
+
+**用户选择**：认可“完整 float 消除 OCR 两位小数歧义，但不必然给唯一解”的边界，继续按当前规划推进。
+
+**取舍**：上界 public info 直接减少无效采样，不再等采完后拒绝；但均格不被过度硬化，避免把 `49/108` 与 `98/216` 这类倍数解误杀。代价是部分均格样本只会改善权重，不会立刻变成零误差硬约束。
+
+**复查点**：当前 public-info 语义审计中 `pending_model_ids/unknown_ids/needs_screenshot_ids` 为空。avg-cells 审计在 311 份文件、304 份 v2 ok 样本里只有 total/all 均格 3 行唯一，48 行仍多解；后续若新增 public id 或出现 truth 对不上，再要求截图确认。
+
+## 2026-06-01 · 长 Fatbeans JSON 先导出 compact review 数据集
+
+**背景**：原样本 JSON 很长，人工审查 public info、均格、多解、q6 miss 和极端局时成本高。
+
+**推荐**：新增一个只读导出脚本，把每局压缩成 summary CSV 和逐事件 JSONL；保留 public infos、action、skill reveal、bid、inventory truth、质量 count/cells、最新出价等关键字段。
+
+**用户选择**：认可先生成便于审查和评估的新子目录，不急着把每个小变化都 commit/push。
+
+**取舍**：compact 数据便于人工复核和后续评估切片；它是派生审查数据，不替代原始 JSON，也不改变模型输入。当前导出 306 份成功、5 份 malformed frame-length 报错，错误仍保留在 `errors.jsonl`。
+
+**复查点**：后续审查极端单轮、少红但超跑钥匙、特殊爆率或 public avg-cells 多解时，优先从 `data/review/fatbeans_compact/summary.csv` 和对应 `events/*.jsonl` 抽样，而不是手翻完整 raw JSON。
+
+## 2026-06-01 · Aisha hidden 从 normal 评估中剥离，新增 shadow-only 候选
+
+**背景**：新增 hidden 样本后，`2601 隐秘拍卖会` 明显不是普通局分布。22 份 hidden 中 21 份有 q6，结算价值集中在高位；Aisha hidden 的 q6 residual 低估尤其严重，而 Ethan hidden 当前没有 q6 miss。
+
+**推荐**：评估口径上新增 `hidden_case`，并把 hidden 从 `normal_case` 中排除。模型实验上新增默认关闭的 `aisha_hidden_floor1`：Aisha + hidden + `shape+layout` profile 时，使用 q6 prior-floor ratio `1.0` 作为 shadow-only 候选。
+
+**取舍**：该候选只进入 batch/live shadow，不改变 baseline v2 posterior、正式出价或 bid hint。现有样本没有 hidden no-q6 对照，因此不能直接升级为正式风险参考；需要继续用 `q6_residual_hidden_floor_shadow_*` 观察新样本 helped 与 false-positive。
+
+**复查点**：`trials=20` 全 329 样本 paired 对照中，`aisha_hidden_floor1` 只激活 11 个 Aisha hidden 行，active no-q6 为 0，normal-case 指标不变；hidden MAE `91.3万 -> 51.4万`，hidden q6 coverage `52.38% -> 66.67%`。
+
+**更新**：新增离线组合候选 `aisha_deep_hidden_floor1`，用于评估未来“shipwreck deep + hidden”合并升级的效果。`trials=40` 全 329 样本下，组合候选 active rows 为 58、active no-q6 为 0，paired 修复 34 个 q6 低估且没有 newly-missed / no-q6 new-positive；decision MAE `41.999万 -> 34.425万`，normal MAE `40.992万 -> 35.044万`，hidden MAE `86.745万 -> 45.927万`。该组合暂不接 live 第四套 shadow，live 继续用三套独立 shadow 收证据。
+
+**更新 2**：`aisha_hidden_floor1` 在 live replay 中 helped 只有 `2/9`，仍有 `7/9` under-before 行未修复；人工复核状态不能解释成可上线。ratio 扫描显示 `1.5` 已把 Aisha hidden q6 miss 清零，`2.0` 只小幅继续降 MAE但更激进。当前 live hidden shadow 改为 `aisha_hidden_floor15`，仍只做 shadow；正式 posterior 与 bid hint 不变。
+
+**更新 3**：`aisha_hidden_floor15` 已通过 22 份 hidden live artifact 小批量复核，helped `7/9`、still-missed `2/9`、false-positive proxy `0`。因此它可以进入人工升级复核，但仍不自动接正式 posterior：当前 hidden 样本几乎全是有 q6 高价值局，缺少 hidden no-q6 对照；同时剩余两份 Aisha hidden 高价值尾部仍低估。离线组合候选继续只保留已验证的 `aisha_deep_hidden_floor1`，不新增把 deep 与 hidden 都套到 1.5 倍 floor 的组合配置。
+
+## 2026-06-02 · Isabella 最高品质技能复用全局上界，Wuqilin 进入 category evidence
+
+**背景**：新增 9 份 Villa 新英雄样本，其中包含 3 份 no-q6 对照和 2 份单格小红对照。旧 Fatbeans parser 只识别 Aisha/Ethan，导致 Isabella/Wuqilin 样本不能稳定进入正式 v2/live 评估。
+
+**推荐**：把英雄识别扩展到 Isabella/Wuqilin，并把 Isabella `100110` 最高品质技能接入与 `200048` 相同的全局最高品质上界；同时把 Isabella 珠宝轮廓、Wuqilin 古董轮廓/品质/完整信息标成 category evidence，供后续鉴影反推复用。
+
+**取舍**：该改动不新增 q6 floor gate，也不扩大 shadow 作用范围。最高品质为金色时可以硬排 q6；但 Wuqilin no-q6 只看到最大格 `6` 时，仍不能排除小红，模型保留小红 P90 是合理保守。
+
+**复查点**：两份 Isabella no-q6 样本 q6 P90 均为 `0`；Wuqilin no-q6 样本 q6 P90 约 `15.9万`，作为 normal no-q6 误抬校准保留。两份单格小红样本三套 shadow 均未激活，说明当前 hidden/deep shadow 没有污染 Villa 小红对照。
+
+**更新**：该方向先降级为支线。Isabella/Wuqilin 的基础解析和 evidence 已打通，后续更细的英雄技能、鉴影反推和可视化交互等到正式 UI 接入时再继续；当前主线回到 q6 residual、live shadow readiness 和正式推理接入前的最小闭环。
+
+## 2026-06-02 · `aisha_deep_floor1` 冻结为正式接入前风险参考候选
+
+**背景**：新增 Villa no-q6 / 单格小红对照后，需要确认窄门控 residual floor 是否仍保持普通局安全边界，并判断 Aisha shipwreck 剩余 miss 是否值得继续统一加权。
+
+**推荐**：停止扩大 deep floor 参数，把 `aisha_deep_floor1` 冻结为风险参考候选。正式 baseline posterior、`decision_value` 和 bid hint 继续不变；真实 UI 接入后，通过 live shadow 新日志复核 helped / still-missed / false-positive，再决定是否将它展示为尾部风险参考。
+
+**取舍**：Aisha shipwreck 定向 `trials=80` 下，q6 coverage `38% -> 68%`、miss `62 -> 32`、decision MAE `47.45万 -> 33.80万`，paired 修复 30 行且 active no-q6 为 0。剩余 miss 同时包含 q6 件数/格数不足和极端高单价尾部，继续统一抬 floor 缺少安全边界。
+
+**复查点**：历史 replay 只能证明候选值得进入 live shadow 复核，不能替代实战新日志。正式 UI 接入后，优先观察 `q6_residual_deep_floor_shadow_*` 的 `helped_rate`、`still_missed_rate`、`false_positive_proxy_rows` 和性能字段；没有真实 live no-q6 证据前，不升级正式 posterior。
+
+## 2026-06-02 · 正式 UI 接入优先使用 `ui_contract`
+
+**背景**：live artifact 已包含 baseline posterior、bid rows、q6 风险提示、三套 shadow、model_eval 和调试行。直接让 UI 读取完整 artifact 容易把 shadow 误当正式出价来源。
+
+**推荐**：`latest_snapshot.json` 新增 `ui_contract` 作为 UI 稳定接入层。正式首屏只使用 `ui_contract.baseline`；`q6_risk_reference` 只作为黄色风险参考；`ui_contract.shadows` 只读展示 shadow 状态和 q6 P90，全部标记 `affects_bid=false`。minimap 与后续 hover/click 详情也走该契约：`minimap` 提供轻量地图数据，默认 `10` 列、`130` 格视口并预留 `250` 格上限；`interaction` 预留 compact / hover / detail 三层。
+
+**取舍**：该契约不减少完整 artifact 的调试信息，也不改变 baseline v2 posterior 或 `bid_rows`。代价是 snapshot 多一层派生字段，但能让 UI 与实验 shadow 解耦，后续做“baseline 先显示、shadow 后台补齐”、迷你地图、hover 展开和点击详情时字段边界更清楚。
+
+**复查点**：UI 层不得用 shadow 字段覆盖 `decision_value`、停止价或抢仓上限。若未来某个 shadow 升级为正式逻辑，必须先经过 live readiness 复核并更新本决策。
+
+**更新**：matplotlib 可作为 detail 层可选异步渲染器使用，但不进入首屏同步路径。当前契约只声明 `matplotlib_minimap / optional_async / min_round=3`，避免图像渲染影响实时推理和小悬浮窗响应。
+
+**更新**：MiniMap compact 层只显示品质颜色和空间占位，不显示短名、形状编号或局部序号。`item_id` / `item_name` / `shape_key` 仍保留在 `ui_contract.minimap.items`，供后续 hover/detail、人工复核和推理审计使用。
+
+**更新**：`baseline.posterior` 记录 `match_text/matched/total/status`。当 baseline posterior 为 `zero_match` 时，overlay 显示“后验无匹配/需复核约束”，不输出正式出价动作，也不把该状态显示成普通等待。
+
+**更新**：zero-match 可生成 `fallback` 低置信参考，但必须与 baseline 分离。当前 fallback 使用 `v1_map_prior_zero_match`：只保留 map/hero 和明确 q6=0 上界，放下容易冲突的 item-level/轮廓硬约束，用 map-prior MC + 当前出价生成临时建议。`fallback.affects_bid=false`，用于引擎优化阶段兜底和人工复核，不作为 v2 posterior 修复或 shadow 升级证据。
+
+## 2026-06-02 · zero-match 暂用 v1 map-prior 低置信兜底，v2 根因修复继续推进
+
+**背景**：正式 UI 接入前的 readiness batch 仍有一批 `zero_posterior_match`。其中部分样本同时带 `layout_conflict`，另一些样本即使没有布局冲突也会因为公开总格/总件数、轮廓或 item-level 约束组合过紧而无匹配。v2 无匹配时如果 UI 完全不显示建议，实战可用性不足；但直接放宽 baseline 又会掩盖解析或约束建模问题。
+
+**用户决策**：引擎优化阶段遇到 zero-match 时，可以回到最初 v1 的方式：基于推测格子数、保留的已知安全信息和 map-prior MC，继续给出可能价值区间和临时出价建议。待 v2 根因修复和引擎进一步稳定后，再替换为更精确的方案。
+
+**推荐**：采用独立 `v1_map_prior_zero_match` fallback，而不是修改正式 v2 baseline。fallback 只保留 map/hero 和明确 q6=0 上界，暂时放下容易互相冲突的全局总格/总件数、可见轮廓下界和 category item 硬证据；继续复用原有 `recommend_bid_strategy`，按当前对手最高价给出探价、防守价、抢仓上限、停止价、攻防动作、依据和补信息 hint。
+
+**实现边界**：`fallback.affects_bid=false`。UI 首屏必须标记“低置信参考”，不能把 fallback 显示成 v2 正式后验，也不能用它作为 q6 shadow 升级证据。`ui_contract.fallback.decision` 单独导出 thresholds、`rationale`、`next_info_hint` 和逐个对手 `player_risks`，供 hover/detail 与 overlay 参考卡展示。
+
+**取舍**：该方案恢复 zero-match 时的可操作提示，并保留根据对手价位切换进攻/防守/停止的 v1 行为；代价是 map-prior 区间会比正常 v2 宽，且主动放下了部分高信息约束，因此只能作为优化阶段临时兜底。正式精度问题仍需继续拆分 `layout_conflict`、公开 totals 冲突和 Ethan 高约束样本。
+
+**复查点**：持续统计 `zero_posterior_match`、`zero_match_with_fallback_rows`、`fallback_active_rows` 和 `zero_match_without_fallback`。根因修复后 fallback 使用率应下降；若 fallback 长期高频触发，不应继续扩展 UI 功能掩盖问题，而应回到 v2 约束分层。
+
+## 2026-06-02 · zero-match 根因优先修 evidence / sampler，不扩大 fallback
+
+**背景**：fallback 接入后继续审计 Ethan 高约束和轮廓重叠样本。初始 readiness batch 中 `layout_conflict=129`、`zero_posterior_match=14`，n80 复跑仍有稳定 zero-match。进一步分层发现 layout conflict 和 zero-match 不是同一个问题：大量 layout conflict 来自 stale local_index，部分 zero-match 来自 q6 残余格数反推过硬，另一些来自 residual 抽样破坏已满足桶约束。
+
+**用户决策**：fallback 可以作为优化阶段临时兜底，但仍要继续修 v2 根因；不能因为 UI 已有低置信参考，就停止处理正式 posterior 的约束问题。
+
+**推荐**：先修 confirmed defects，而不是把 `cells_tol/count_tol` 全局放宽或把 fallback 升级成正式建议。具体处理：runtime evidence 合并时使用最新 `local_index`；总件数和总格数同时已知时，residual sampler 优先精确填充 `(count,cells)`；residual 候选不得继续添加会破坏 exact bucket / value target 的品质；`_fill_residual_red_bucket` 只在非红关键桶都有明确 `total_cells` 时才硬推 q6 residual。
+
+**取舍**：这些改动会减少错误 zero-match 和错误 layout conflict，同时保留 v2 对公开约束的解释力。代价是部分原本由 avg/value 推导出的“红货剩余格”不再被硬化，q6 可能回到概率估计；这是更合理的保守行为，因为 avg/value/huge 推导不是完整非红总格证明。
+
+**复查点**：338 样本 readiness batch（`n_trials=20 / shadow_trials=20 / roi=0`）从 `zero_posterior_match=14` 降到 `0`，`layout_conflict=129` 降到 `13`，`fallback_active_rows=0`。剩余 `missing_baseline_action=2` 是 Gabriela/Sophine 未完整接入，不是 v2 zero-match。下一阶段转向剩余 13 个 layout conflict 的位置/overflow 根因，以及 `q6_below_drop_prior=55` 的风险提示校准。
+
+**更新**：layout conflict 第二轮审计确认剩余 13 行不是当前 minimap 真实重叠，而是 evidence-store 合并把 shape-less action 的 local 误用于 shape footprint。修复后同一 readiness batch `layout_conflict=0`，`zero_posterior_match=0`、`fallback_active_rows=0` 保持不变。当前主线转向 `q6_below_drop_prior=56` 的风险提示与 shadow 校准；Gabriela/Sophine `missing_baseline_action=2` 仍作为英雄解析支线。
+
+**更新**：`q6_below_drop_prior` 不能直接作为正式抬价规则。当前已拆成 review-only `class/actionable/under_by`：54 行 below-prior 中 41 行是真实 q6 P90 漏真值，8 行是 truth q6=0 噪声，5 行 P90 已覆盖 truth；`public_max_quality < 6` / Isabella 最高品质金色这类已证明无红的局不再生成该诊断。`aisha_deep_floor1` paired 结果继续支持作为普通/沉船 shadow 候选，但仍不影响 baseline 出价；`aisha_hidden_floor15` 继续只作为 hidden shadow 收证。v2 仍被判断为可行且有优化空间，v3 重写降为最低候选，仅在后续证据显示 v2 局部修补无法收敛时再讨论。
+
+## 2026-06-02 · 公开总格/总件数可进入正式 baseline，结算 truth 必须隔离
+
+**背景**：UI 需要展示格数预测、实际格子数、件数预测、已知紫/金件数和排除条件；同时审计发现 monitor 曾统一清掉 `warehouse_total_cells` / `total_item_count`，这会丢掉结算前全量轮廓或透视给出的安全公开约束。
+
+**推荐**：只恢复 pre-settlement 且 high/exact 置信的 session totals。恢复后的字段写入 `inference_input_constraints`，并作为 baseline v2 输入；结算 inventory 继续只进入 `truth` / `model_eval`，不能进入 pre-settlement 推理输入。
+
+**取舍**：全量轮廓局会更快收敛到真实总格/总件数，UI 也能解释“输入约束来自哪里”。代价是 session totals 成为正式硬约束，因此来源必须可审计；OCR 或人工来源后续若出现误识别，需要通过 source/confidence 和 UI 复核处理。
+
+**复查点**：Fatbeans 状态只要带 `inventory_items` 就标记为 `settled`，避免非 `0x002D` inventory 泄漏。真实 smoke 中普通 Aisha Villa 没有公开总件数时仍为 `session_totals_stripped`；package12 Aisha 全量透视恢复 `total_item_count=42 / warehouse_total_cells=123`，package17 Ethan 全量轮廓恢复 `50 / 157`。

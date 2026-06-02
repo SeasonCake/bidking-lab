@@ -26,6 +26,13 @@ python scripts\run_live_overlay.py --demo
 Fatbeans JSON -> monitor watcher -> latest_snapshot.json / model_eval.jsonl / layout_samples.jsonl
 ```
 
+watch 模式遇到 malformed capture 时会写入 `monitor_errors.jsonl`，并把该文件当前
+size/mtime 指纹标到 `processed_files.json` 的 `status=error`，避免同一个坏包在轮询中
+反复阻塞队列。文件内容变化后会按新指纹重试；如果要强制重跑旧失败文件，使用 `--reprocess`。
+调试采集器时如果希望保留旧的反复重试行为，可加 `--retry-errors`。
+`summarize_live_model_eval.py` 默认会读取同目录的 `monitor_errors.jsonl`，在
+`monitor_errors` 中汇总错误总数、唯一坏文件指纹、错误类型和最近错误。
+
 ## 每局需要保留的信息
 
 - 结算 inventory 必须保留，否则不能算真实价值/q6 误差。
@@ -46,7 +53,7 @@ python scripts\summarize_live_model_eval.py
 ```
 
 重点看 `collection_readiness.groups` 和 `priority_needs`。默认目标是主要英雄/地图族
-30 份有效结算局，隐秘拍卖会先按每个英雄 10 份作为冷启动基线：
+30 份有效结算局；隐秘拍卖会冷启动目标为 Aisha 10 份、Ethan 5 份：
 
 - Aisha + villa
 - Aisha + shipwreck
@@ -59,16 +66,99 @@ python scripts\summarize_live_model_eval.py
 第一优先级；沉船用于补足 30 份主桶，隐秘用于确认独立地图族的掉落/出价分布。
 `next_sampling_targets` 会把这些缺口按优先级整理成可直接执行的采样目标。
 
-截至 2026-05-31，别墅/沉船的 Aisha 和 Ethan 主桶都已经超过 30 份有效局；
-短期最有价值的新样本是：
+截至 2026-06-01 晚间，采样目标按 q6 residual boost / live shadow 的新需求调整为：
 
-- Aisha + hidden：先采 10 份有效结算局。
-- Ethan + hidden：先采 10 份有效结算局。
-- Aisha + shipwreck：再补 10-15 份，优先保留 q6 低估、layout conflict、鉴影/抽检混合局。
-- Ethan + shipwreck：再补 5-10 份，优先保留五轮伊森、优品估价、exact cells 较多的局。
+- Aisha + shipwreck：补 20 份有效结算局，优先保留 q6 低估、layout conflict、鉴影/抽检混合局。
+- Ethan + shipwreck：补 20 份有效结算局，优先保留五轮伊森、优品估价、exact cells 较多的局。
+- Aisha + hidden：补 10 份有效结算局，用作 hidden 高红先验冷启动基线。
+- Ethan + hidden：补 5 份有效结算局，用作 hidden 高红先验冷启动基线。
 
 hidden 对 q6 residual 有直接帮助，但不要和 villa/shipwreck 混成一个全局红货权重；
 它应该作为独立地图族校准“高红先验下，后验应保留多少 q6 residual”的基线。
+
+注意区分两个统计块：
+
+- 批评估的 `q6_shadow_reference_coverage` 统计全部可用 JSON，只说明离线参考样本是否覆盖目标。
+- live 汇总的 `q6_shadow_sampling_progress` 只统计带 `profile_b5` shadow 字段的新日志，用于判断 shadow 上线后的实战收数进度；旧日志不会计入。
+- 新版 live monitor 会同时写三套 shadow：`q6_residual_boost_shadow_*` 继续表示
+  `profile_b5`，`q6_residual_deep_floor_shadow_*` 表示 `aisha_deep_floor1`，
+  `q6_residual_hidden_floor_shadow_*` 表示 `aisha_hidden_floor15`。
+  后两者分别跟踪 Aisha + shipwreck 的深布局 prior-floor 候选、Aisha + hidden 的高红先验候选，
+  不改变正式估价或出价。
+  汇总脚本的 `q6_shadow_sampling_progress.candidates.aisha_deep_floor1` 会单独统计该候选的
+  Aisha shipwreck 收数进度；`candidates.aisha_hidden_floor15` 会单独统计 Aisha hidden
+  收数进度。为了避免实时监控过慢，shadow 默认 trials 为
+  `min(--n-trials, 80)`；需要更稳定的 shadow P90 时可显式传 `--shadow-trials`。
+
+性能口径也要分清：当前 monitor 是“新 JSON 文件落盘后，同步生成完整 artifact 和日志”，
+不是每一帧 UI 都阻塞推理。两套 shadow 都激活的 Aisha shipwreck 样本上，`--n-trials 80`
+约 2 秒，`--n-trials 500` 且 shadow cap 80 约 10 秒；其中大头是主路径 500 trials，
+shadow 额外约 2-3 秒。实战收数建议先用默认 cap；若要更接近即时 UI，可把 `--n-trials`
+降到 80-200，并保留 shadow cap。异步/分批适合后续 UI 需要“先显示 baseline、再补 shadow”
+时再做。
+
+后续正式 UI 的推荐方向是分批输出：先同步显示 baseline v2 posterior / bid rows，随后后台补
+`profile_b5`、`aisha_deep_floor1` 和 `aisha_hidden_floor15` shadow 结果，并在面板上标记“shadow 更新中/已更新”。
+这能保留高质量 shadow 证据，又不会让首屏提示等待完整 shadow。
+
+`latest_snapshot.json` 现在额外提供 `ui_contract`，作为 UI 优先读取的稳定字段边界：
+
+- `ui_contract.baseline`：正式显示与正式出价口径，来自 baseline v2 `decision_value` / `bid_rows`。
+- `ui_contract.q6_risk_reference`：q6 先验缺口、实战参考 P90 等黄色风险参考，不改变出价。
+- `ui_contract.shadows`：三套 q6 shadow 的只读状态、trials 和 q6 P90；`affects_bid=false`。
+- `ui_contract.minimap`：最新 grid batch 的轻量地图数据，包含已知物品位置、尺寸、品质和分类。
+- `ui_contract.interaction`：预留 compact / hover / detail 三层交互边界。
+
+UI 可以继续读取完整 artifact 做 debug，但首屏正式决策应优先使用 `ui_contract.baseline`。
+shadow 区域只展示为风险参考或诊断状态，不能直接覆盖 `decision_value`、停止价或抢仓上限。
+当前 overlay 已能在右侧绘制简化 minimap。minimap 默认按游戏近似展示 `10` 列、`130`
+格视口，并在契约里预留最高 `250` 格；hover 展开和点击详情后续继续基于同一契约扩展。
+当前 compact MiniMap 只显示品质颜色和空间占位，不显示物品短名、形状编号或局部序号；物品
+`item_id` / `item_name` / `shape_key` 仍保留在契约里，后续用于详情与推理审计。
+matplotlib 当前作为 detail 层可选异步渲染候选，不进入首屏同步推理路径。
+
+人工复核 UI 契约时可导出 compact review：
+
+```powershell
+python scripts\export_ui_contract_review.py
+```
+
+默认读取 `data/logs/live/latest_snapshot.json`，输出
+`data/review/ui_contract/ui_contract_review.csv`、`.jsonl` 和
+`ui_contract_review_summary.json`。也可以直接传 Fatbeans 原始样本或目录，例如：
+
+```powershell
+python scripts\export_ui_contract_review.py data\samples\fatbeans\aisha_hidden_test_sample1_5rounds.json --n-trials 20 --roi-trials 0 --shadow-trials 20
+```
+
+复核时优先看 `review_flags` / `manual_review_focus`、`hero/map_id/round`、
+`baseline_*`、`truth_*`、`input_*`、`minimap_*`、`shadow_*` 和性能字段。
+`zero_posterior_match` 表示 baseline posterior 采样 `0/N`，overlay 会显示“后验无匹配”，
+不能当作正式出价建议。
+若 `fallback_active=true`，说明系统额外生成了 `v1_map_prior_zero_match` 低置信参考：
+它只按地图先验 MC 和当前出价给一个临时区间/建议，用于引擎优化阶段兜底；不要把它当成
+v2 baseline，也不要据此升级 shadow 或调 q6 参数。
+
+判断 shadow 是否可升级，优先看汇总脚本的 `q6_shadow_candidate_readiness`：
+
+- `needs_live_samples`：样本数还没到目标，继续收数。
+- `blocked_false_positive`：已有无 q6 误抬，不升级。
+- `no_observed_help`：没有观察到修复低估，不升级。
+- `candidate_for_review`：样本目标已到、没有 false-positive、且观察到 helped；进入人工复核，不代表自动升级。复核时要看 `helped_rows/helped_rate`、`still_missed_rows/still_missed_rate`、`false_positive_proxy_rows`、激活范围和对应局面截图/事件是否可信。
+
+截至 2026-06-02，`aisha_deep_floor1` 已冻结为正式接入前的风险参考候选：
+历史 Aisha shipwreck replay 和定向高 trials 对照都显示正净收益，但它仍只写 shadow，
+不修改 baseline posterior、`decision_value` 或 bid hint。`aisha_hidden_floor15` 也继续保持
+shadow-only，等待真实 hidden no-q6 / live 日志。Isabella/Wuqilin 技能细化和鉴影反推暂列
+UI 接入阶段支线。
+
+判断是否需要降 trials 或异步化，优先看汇总脚本的性能字段：
+
+- `monitor_processing_seconds_median`
+- `monitor_processing_seconds_p75`
+- `monitor_n_trials_values`
+- `monitor_shadow_trials_values`
+- `monitor_roi_trials_values`
 
 ## 建议样本类型
 
@@ -160,7 +250,9 @@ no-pool-match 数量和最有代表性的样本文件。
 - `calibration_decision_value_mae`：只统计中后期有效局的决策价值误差。
 
 `random_sample_avg_values` 会保留“随机 3/6/9/12 件藏品平均价值”这类 public info；
-它们当前只做诊断，不作为全库均价或品质桶均价硬过滤。
+它们当前不作为全库均价或品质桶均价硬过滤。低于 `20000` 的随机均价仍保留在日志中，
+但会从 q6 evidence-profile 路由降为低信号，避免几千银币的噪音让沉船 shadow gate 绕路。
+`200036` 已作为紫色品质藏品平均价值的 soft target 接入，不做硬过滤。
 
 ## 看结果时重点关注
 

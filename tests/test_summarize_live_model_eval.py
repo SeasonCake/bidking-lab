@@ -43,6 +43,47 @@ def test_summarize_dedupes_latest_row_by_file() -> None:
     assert summary["decision_value_mae"] == 10
 
 
+def test_summarize_includes_monitor_error_log_summary() -> None:
+    module = _summary_module()
+
+    summary = module.summarize(
+        [],
+        monitor_error_rows=[
+            {
+                "ts": 1,
+                "path": "C:/captures/a.json",
+                "name": "a.json",
+                "fingerprint": {"size": 10, "mtime_ns": 100},
+                "error_type": "ValueError",
+                "error": "invalid frame length 123",
+            },
+            {
+                "ts": 2,
+                "path": "C:/captures/a.json",
+                "name": "a.json",
+                "fingerprint": {"size": 10, "mtime_ns": 100},
+                "error_type": "ValueError",
+                "error": "invalid frame length 123",
+            },
+            {
+                "ts": 3,
+                "path": "C:/captures/b.json",
+                "name": "b.json",
+                "fingerprint": {"size": 20, "mtime_ns": 200},
+                "error_type": "RuntimeError",
+                "error": "bad packet",
+            },
+        ],
+    )
+
+    errors = summary["monitor_errors"]
+    assert errors["rows"] == 3
+    assert errors["unique_file_fingerprints"] == 2
+    assert errors["error_type_counts"] == {"RuntimeError": 1, "ValueError": 2}
+    assert errors["latest"][0]["name"] == "b.json"
+    assert errors["latest"][0]["error_type"] == "RuntimeError"
+
+
 def test_summarize_reports_collection_readiness_gaps() -> None:
     module = _summary_module()
 
@@ -54,6 +95,10 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "hero": "aisha",
                 "map_id": 2401,
                 "round": 1,
+                "monitor_processing_seconds": 1.25,
+                "monitor_n_trials": 80,
+                "monitor_shadow_trials": 80,
+                "monitor_roi_trials": 0,
                 "final_value": 100,
                 "final_cells": 10,
                 "final_q6_value": 0,
@@ -70,6 +115,10 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "hero": "ethan",
                 "map_id": 2501,
                 "round": 4,
+                "monitor_processing_seconds": 3.75,
+                "monitor_n_trials": 500,
+                "monitor_shadow_trials": 80,
+                "monitor_roi_trials": 250,
                 "final_value": 200,
                 "final_cells": 12,
                 "final_q6_value": 80,
@@ -87,6 +136,20 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "q6_practical_gate_helped": True,
                 "q6_practical_gate_false_positive_proxy": False,
                 "q6_practical_p90_under_by": 0,
+                "q6_residual_boost_shadow_active": True,
+                "q6_residual_boost_shadow_under_before": True,
+                "q6_residual_boost_shadow_covered_after": True,
+                "q6_residual_boost_shadow_helped": True,
+                "q6_residual_boost_shadow_false_positive_proxy": False,
+                "q6_residual_boost_shadow_q6_p90_delta": 120,
+                "q6_residual_deep_floor_shadow_label": "aisha_deep_floor1",
+                "q6_residual_deep_floor_shadow_active": True,
+                "q6_residual_deep_floor_shadow_under_before": True,
+                "q6_residual_deep_floor_shadow_covered_after": True,
+                "q6_residual_deep_floor_shadow_helped": True,
+                "q6_residual_deep_floor_shadow_false_positive_proxy": False,
+                "q6_residual_deep_floor_shadow_q6_p90_delta": 180,
+                "q6_aisha_bottom_row_risk": True,
                 "q6_p90_misses_truth": True,
                 "v2_q6_value_p90": 30,
                 "raw_minus_decision_p90": 300_000,
@@ -103,6 +166,10 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "ts": 3,
                 "file": "c.json",
                 "map_id": 2402,
+                "monitor_processing_seconds": 9.0,
+                "monitor_n_trials": 500,
+                "monitor_shadow_trials": 1,
+                "monitor_roi_trials": 0,
                 "final_value": 300,
                 "final_cells": 14,
                 "raw_minus_decision_p90": 900_000,
@@ -118,6 +185,11 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert readiness["ready"] is False
     assert readiness["total_needed"] == 8
     assert readiness["hidden_target_per_hero"] == 1
+    assert summary["monitor_processing_seconds_median"] == 3.75
+    assert summary["monitor_processing_seconds_p75"] is None
+    assert summary["monitor_n_trials_values"] == {"80": 1, "500": 2}
+    assert summary["monitor_shadow_trials_values"] == {"1": 1, "80": 2}
+    assert summary["monitor_roi_trials_values"] == {"0": 2, "250": 1}
     assert summary["next_sampling_targets"][0] == {
         "hero": "aisha",
         "map_family": "hidden",
@@ -135,6 +207,35 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert summary["q6_practical_gate_helped_count"] == 1
     assert summary["q6_practical_gate_false_positive_proxy_count"] == 0
     assert summary["q6_practical_p90_under_by_median"] == 0
+    assert summary["q6_residual_boost_shadow_active_count"] == 1
+    assert summary["q6_residual_boost_shadow_under_before_count"] == 1
+    assert summary["q6_residual_boost_shadow_helped_count"] == 1
+    assert summary["q6_residual_boost_shadow_false_positive_proxy_count"] == 0
+    assert summary["q6_residual_boost_shadow_q6_p90_delta_median"] == 120
+    assert summary["q6_residual_deep_floor_shadow_active_count"] == 1
+    assert summary["q6_residual_deep_floor_shadow_under_before_count"] == 1
+    assert summary["q6_residual_deep_floor_shadow_helped_count"] == 1
+    assert summary["q6_residual_deep_floor_shadow_false_positive_proxy_count"] == 0
+    assert summary["q6_residual_deep_floor_shadow_q6_p90_delta_median"] == 180
+    assert summary["q6_residual_hidden_floor_shadow_active_count"] == 0
+    assert summary["q6_residual_hidden_floor_shadow_helped_count"] == 0
+    readiness_summary = summary["q6_shadow_candidate_readiness"]
+    assert readiness_summary["profile_b5"]["status"] == "needs_live_samples"
+    assert readiness_summary["profile_b5"]["tracked_rows"] == 0
+    assert readiness_summary["aisha_deep_floor1"]["status"] == "needs_live_samples"
+    assert readiness_summary["aisha_deep_floor1"]["tracked_rows"] == 1
+    assert readiness_summary["aisha_deep_floor1"]["active_rows"] == 1
+    assert readiness_summary["aisha_deep_floor1"]["under_before_rows"] == 1
+    assert readiness_summary["aisha_deep_floor1"]["helped_rows"] == 1
+    assert readiness_summary["aisha_deep_floor1"]["still_missed_rows"] == 0
+    assert readiness_summary["aisha_deep_floor1"]["still_missed_rate"] == 0.0
+    assert (
+        readiness_summary["aisha_deep_floor1"]["false_positive_proxy_rows"] == 0
+    )
+    assert readiness_summary["aisha_deep_floor1"]["q6_p90_delta_median"] == 180
+    assert readiness_summary["aisha_hidden_floor15"]["status"] == "needs_live_samples"
+    assert readiness_summary["aisha_hidden_floor15"]["tracked_rows"] == 0
+    assert summary["q6_aisha_bottom_row_risk_count"] == 1
     assert summary["q6_p90_miss_count"] == 1
     assert summary["q6_p90_under_by_median"] == 50
     assert summary["category_target_rows"] == 2
@@ -189,6 +290,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
         and row["layout_overlap_rate"] == 1.0
         and row["q6_prior_risk_rate"] == 1.0
         and row["q6_practical_gate_rate"] == 1.0
+        and row["q6_residual_boost_shadow_active_rate"] == 1.0
+        and row["q6_residual_deep_floor_shadow_active_rate"] == 1.0
         for row in summary["groups"]["hero"]
     )
     assert summary["q6_practical_gate"]["map_family"][0]["gated_rows"] == 1
@@ -198,6 +301,17 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
         and row["gated_rows"] == 1
         for row in summary["q6_practical_gate"]["hero_map_family"]
     )
+    assert summary["q6_residual_boost_shadow"]["map_family"][0]["active_rows"] == 1
+    assert summary["q6_residual_boost_shadow"]["map_family"][0]["helped_rows"] == 1
+    assert summary["q6_residual_boost_shadow"]["map_family"][0][
+        "q6_p90_delta_median"
+    ] == 120
+    assert summary["q6_residual_deep_floor_shadow"]["map_family"][0][
+        "active_rows"
+    ] == 1
+    assert summary["q6_residual_deep_floor_shadow"]["map_family"][0][
+        "q6_p90_delta_median"
+    ] == 180
     assert any(
         row["hero"] == "ethan"
         and row["map_family"] == "hidden"
@@ -247,3 +361,193 @@ def test_q6_miss_root_marks_missing_top_item_as_unknown() -> None:
         for row in summary["q6_miss_root_causes"]
     }
     assert causes["q6_top_unknown_cells"] == 1
+
+
+def test_collection_readiness_supports_per_hero_hidden_targets() -> None:
+    module = _summary_module()
+
+    readiness = module._collection_readiness(
+        [],
+        target_per_hero_family=30,
+        hidden_target_per_hero=10,
+        hidden_target_by_hero={"aisha": 10, "ethan": 5},
+    )
+
+    hidden = {
+        row["hero"]: row["target"]
+        for row in readiness["groups"]
+        if row["map_family"] == "hidden"
+    }
+    assert hidden == {"aisha": 10, "ethan": 5}
+
+
+def test_q6_shadow_sampling_progress_uses_current_focus_targets() -> None:
+    module = _summary_module()
+
+    progress = module._q6_shadow_sampling_progress(
+        [
+            {
+                "hero": "ethan",
+                "map_id": 2601,
+                "q6_residual_boost_shadow_label": "profile_b5",
+            },
+            {
+                "hero": "ethan",
+                "map_id": 2601,
+                "q6_residual_boost_shadow_label": "profile_b5",
+            },
+            {
+                "hero": "aisha",
+                "map_id": 2501,
+                "q6_residual_boost_shadow_label": "profile_b5",
+            },
+            {
+                "hero": "aisha",
+                "map_id": 2501,
+                "q6_residual_deep_floor_shadow_label": "aisha_deep_floor1",
+            },
+            {
+                "hero": "aisha",
+                "map_id": 2601,
+                "q6_residual_hidden_floor_shadow_label": "aisha_hidden_floor15",
+            },
+        ]
+    )
+
+    assert progress["sample_scope"] == "live_profile_b5_logs"
+    assert progress["tracked_rows"] == 3
+    assert progress["ready"] is False
+    assert {
+        (row["hero"], row["map_family"]): row["target"]
+        for row in progress["targets"]
+    } == {
+        ("aisha", "shipwreck"): 20,
+        ("ethan", "shipwreck"): 20,
+        ("aisha", "hidden"): 10,
+        ("ethan", "hidden"): 5,
+    }
+    deep = progress["candidates"]["aisha_deep_floor1"]
+    assert deep["sample_scope"] == "live_aisha_deep_floor1_logs"
+    assert deep["tracked_rows"] == 1
+    assert deep["targets"] == [
+        {
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "n": 1,
+            "target": 20,
+            "needed": 19,
+            "ready": False,
+        }
+    ]
+    hidden = progress["candidates"]["aisha_hidden_floor15"]
+    assert hidden["sample_scope"] == "live_aisha_hidden_floor15_logs"
+    assert hidden["tracked_rows"] == 1
+    assert hidden["targets"] == [
+        {
+            "hero": "aisha",
+            "map_family": "hidden",
+            "n": 1,
+            "target": 10,
+            "needed": 9,
+            "ready": False,
+        }
+    ]
+
+
+def test_q6_shadow_sampling_progress_ignores_legacy_rows() -> None:
+    module = _summary_module()
+
+    progress = module._q6_shadow_sampling_progress(
+        [{"hero": "aisha", "map_id": 2501}]
+    )
+
+    assert progress["tracked_rows"] == 0
+    assert progress["total_needed"] == 55
+
+
+def test_q6_shadow_candidate_readiness_blocks_false_positive() -> None:
+    module = _summary_module()
+
+    rows = [
+        {
+            "hero": "aisha",
+            "map_id": 2501,
+            "final_value": 100,
+            "final_q6_value": 0,
+            "q6_residual_deep_floor_shadow_label": "aisha_deep_floor1",
+            "q6_residual_deep_floor_shadow_active": True,
+            "q6_residual_deep_floor_shadow_false_positive_proxy": True,
+            "q6_residual_deep_floor_shadow_q6_p90_delta": 200,
+        }
+        for _ in range(20)
+    ]
+
+    summary = module.summarize(rows)
+    readiness = summary["q6_shadow_candidate_readiness"]["aisha_deep_floor1"]
+
+    assert readiness["status"] == "blocked_false_positive"
+    assert readiness["target_ready"] is True
+    assert readiness["tracked_rows"] == 20
+    assert readiness["active_no_q6_rows"] == 20
+    assert readiness["false_positive_proxy_rows"] == 20
+    assert readiness["false_positive_proxy_rate_active_no_q6"] == 1.0
+
+
+def test_q6_shadow_candidate_readiness_marks_review_candidate() -> None:
+    module = _summary_module()
+
+    rows = [
+        {
+            "hero": "aisha",
+            "map_id": 2501,
+            "final_value": 100,
+            "final_q6_value": 100,
+            "q6_residual_deep_floor_shadow_label": "aisha_deep_floor1",
+            "q6_residual_deep_floor_shadow_active": True,
+            "q6_residual_deep_floor_shadow_under_before": True,
+            "q6_residual_deep_floor_shadow_helped": True,
+            "q6_residual_deep_floor_shadow_false_positive_proxy": False,
+            "q6_residual_deep_floor_shadow_q6_p90_delta": 300,
+        }
+        for _ in range(20)
+    ]
+
+    summary = module.summarize(rows)
+    readiness = summary["q6_shadow_candidate_readiness"]["aisha_deep_floor1"]
+
+    assert readiness["status"] == "candidate_for_review"
+    assert readiness["target_ready"] is True
+    assert readiness["under_before_rows"] == 20
+    assert readiness["helped_rate"] == 1.0
+    assert readiness["still_missed_rows"] == 0
+    assert readiness["false_positive_proxy_rows"] == 0
+
+
+def test_q6_hidden_shadow_candidate_readiness_marks_review_candidate() -> None:
+    module = _summary_module()
+
+    rows = [
+        {
+            "hero": "aisha",
+            "map_id": 2601,
+            "final_value": 100,
+            "final_q6_value": 100,
+            "q6_residual_hidden_floor_shadow_label": "aisha_hidden_floor15",
+            "q6_residual_hidden_floor_shadow_active": True,
+            "q6_residual_hidden_floor_shadow_under_before": True,
+            "q6_residual_hidden_floor_shadow_helped": True,
+            "q6_residual_hidden_floor_shadow_false_positive_proxy": False,
+            "q6_residual_hidden_floor_shadow_q6_p90_delta": 300,
+        }
+        for _ in range(10)
+    ]
+
+    summary = module.summarize(rows)
+    readiness = summary["q6_shadow_candidate_readiness"]["aisha_hidden_floor15"]
+
+    assert readiness["status"] == "candidate_for_review"
+    assert readiness["target_ready"] is True
+    assert readiness["under_before_rows"] == 10
+    assert readiness["helped_rate"] == 1.0
+    assert readiness["still_missed_rows"] == 0
+    assert readiness["false_positive_proxy_rows"] == 0

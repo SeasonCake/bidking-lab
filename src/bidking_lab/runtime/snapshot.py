@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
+
+_MINIMAP_COLUMNS = 10
+_MINIMAP_DEFAULT_CELLS = 130
+_MINIMAP_MAX_CELLS = 250
+_MINIMAP_DEFAULT_ROWS = _MINIMAP_DEFAULT_CELLS // _MINIMAP_COLUMNS
+_MINIMAP_MAX_ROWS = _MINIMAP_MAX_CELLS // _MINIMAP_COLUMNS
 
 
 @dataclass(frozen=True)
@@ -88,6 +95,14 @@ def _first(rows: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
     return rows[0] if rows else {}
 
 
+def _first_mapping(rows: Any) -> Mapping[str, Any]:
+    if isinstance(rows, Sequence) and not isinstance(rows, str | bytes) and rows:
+        row = rows[0]
+        if isinstance(row, Mapping):
+            return row
+    return {}
+
+
 def _string_row(row: Mapping[str, Any]) -> dict[str, str]:
     return {str(key): _text(value) for key, value in row.items()}
 
@@ -99,6 +114,42 @@ def _string_rows(
 ) -> tuple[dict[str, str], ...]:
     selected = rows if limit is None else rows[:limit]
     return tuple(_string_row(row) for row in selected)
+
+
+def _first_non_empty(*values: Any) -> Any:
+    for value in values:
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _constraint_value(
+    constraints: Mapping[str, Any],
+    name: str,
+) -> Any:
+    row = constraints.get(name)
+    if isinstance(row, Mapping):
+        return row.get("value")
+    return None
+
+
+def _match_counts(value: Any) -> tuple[int | None, int | None]:
+    text = _text(value).strip()
+    if "/" not in text:
+        return None, None
+    left, right = text.split("/", 1)
+    return _int_or_none(left.strip()), _int_or_none(right.strip())
+
+
+def _posterior_status(
+    matched: int | None,
+    total: int | None,
+) -> str:
+    if matched == 0 and (total or 0) > 0:
+        return "zero_match"
+    if matched is not None and total is not None:
+        return "matched"
+    return "unknown"
 
 
 def import_overview_from_summary(
@@ -405,6 +456,628 @@ def tactical_panel_from_rows(
     )
 
 
+def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
+    """Build the stable UI contract from a live monitor artifact.
+
+    The full monitor artifact intentionally keeps diagnostics, raw rows, and
+    experimental shadow outputs. UI frontends should prefer this smaller
+    contract for first-screen rendering and treat shadows as read-only risk
+    references, not as formal bid inputs.
+    """
+    bid = _first_mapping(artifact.get("bid_rows"))
+    v2 = _first_mapping(artifact.get("v2_posterior_rows"))
+    warehouse = _first_mapping(artifact.get("warehouse_rows"))
+    panel = artifact.get("panel") if isinstance(artifact.get("panel"), Mapping) else {}
+    layout = _first_mapping(panel.get("layout_stages") if panel else ())
+    model_eval = (
+        artifact.get("model_eval")
+        if isinstance(artifact.get("model_eval"), Mapping)
+        else {}
+    )
+    input_constraints = (
+        artifact.get("inference_input_constraints")
+        if isinstance(artifact.get("inference_input_constraints"), Mapping)
+        else {}
+    )
+    minimap = _ui_minimap_contract(artifact)
+    shadows = [
+        _ui_shadow_contract(shadow, model_eval)
+        for shadow in artifact.get("q6_residual_sampler_shadows", ()) or ()
+        if isinstance(shadow, Mapping)
+    ]
+    q6_risk = {
+        "risk": bool(v2.get("q6先验风险")),
+        "prior_gap": _text(v2.get("q6先验缺口")),
+        "prior_reference_p90": _text(v2.get("q6先验风险参考")),
+        "practical_gate": _text(v2.get("q6实战门控")),
+        "practical_reference_p90": _text(v2.get("q6实战参考P90")),
+        "display_mode": "risk_reference",
+        "affects_bid": False,
+    }
+    posterior_matched, posterior_total = _match_counts(v2.get("匹配"))
+    return {
+        "schema_version": 1,
+        "mode": "baseline_first_shadow_reference",
+        "source": {
+            "file": _text(artifact.get("file")),
+            "created_at": artifact.get("created_at"),
+            "processing_seconds": artifact.get("processing_seconds"),
+            "n_trials": artifact.get("n_trials"),
+            "shadow_trials": artifact.get("shadow_trials"),
+        },
+        "context": {
+            "hero": artifact.get("hero"),
+            "map_id": artifact.get("map_id"),
+            "round": artifact.get("round"),
+            "known_value_sum": artifact.get("known_value_sum"),
+            "inventory_count": artifact.get("inventory_count"),
+            "inventory_cells": artifact.get("inventory_cells"),
+        },
+        "baseline": {
+            "official": True,
+            "affects_bid": True,
+            "decision": {
+                "action": _text(bid.get("建议")),
+                "current_highest": _text(bid.get("当前最高")),
+                "risk_band": _text(bid.get("风险带")),
+                "attack_bid": _text(bid.get("抢仓上限")),
+                "stop_price": _text(bid.get("停止价")),
+                "evidence": _text(bid.get("证据")),
+                "round": _text(bid.get("轮次")),
+                "information_density": _text(bid.get("信息强度")),
+            },
+            "posterior": {
+                "value_basis": _text(v2.get("价值口径") or "decision_value"),
+                "match_text": _text(v2.get("匹配")),
+                "matched": posterior_matched,
+                "total": posterior_total,
+                "status": _posterior_status(posterior_matched, posterior_total),
+                "total_value_range": _text(warehouse.get("价值 P10/P50/P90")),
+                "total_cells_range": _text(warehouse.get("总格 P10/P50/P90")),
+                "total_item_count_range": "",
+                "total_item_count_status": (
+                    "exact_input_constraint"
+                    if _constraint_value(input_constraints, "total_item_count")
+                    is not None
+                    else "not_estimated_by_v2"
+                ),
+                "input_total_item_count": _constraint_value(
+                    input_constraints,
+                    "total_item_count",
+                ),
+                "input_warehouse_total_cells": _constraint_value(
+                    input_constraints,
+                    "warehouse_total_cells",
+                ),
+                "input_warehouse_total_cells_approx": _constraint_value(
+                    input_constraints,
+                    "warehouse_total_cells_approx",
+                ),
+                "decision_value_range": _text(v2.get("决策价值 P10/P50/P90")),
+                "raw_value_range": _text(v2.get("原始价值 P10/P50/P90")),
+                "q6_sample_rate": _text(v2.get("q6样本率")),
+                "q6_prior_rate": _text(v2.get("q6掉落先验")),
+                "q6_prior_expected_count": _text(v2.get("q6先验件数")),
+                "q6_prior_expected_cells": _text(v2.get("q6先验格数")),
+                "q6_prior_expected_value": _text(v2.get("q6先验价值")),
+                "q6_decision_value_range": _text(v2.get("q6决策价值 P10/P50/P90")),
+                "q6_count_range": _text(v2.get("q6件数 P10/P50/P90")),
+                "q6_cells_range": _text(v2.get("q6格数 P10/P50/P90")),
+                "remaining_cells_after_layout_range": _text(
+                    v2.get("剩余空间 P10/P50/P90")
+                ),
+                "q6_space_pressure_range": _text(v2.get("q6空间压力 P10/P50/P90")),
+                "q6_space_overflow_rate": _text(v2.get("q6空间溢出率")),
+                "diagnostics": _text(v2.get("诊断")),
+            },
+            "layout": {
+                "stage": _text(layout.get("stage")),
+                "known_cells": _text(layout.get("known_cells")),
+                "estimate": _text(layout.get("estimate")),
+                "confidence": _text(layout.get("confidence")),
+                "risk": _text(layout.get("risk")),
+            },
+        },
+        "q6_risk_reference": q6_risk,
+        "shadows": shadows,
+        "fallback": _ui_fallback_contract(artifact),
+        "minimap": minimap,
+        "truth": _ui_truth_contract(artifact, model_eval),
+        "constraints": _ui_constraints_contract(
+            v2,
+            model_eval,
+            minimap,
+            input_constraints,
+        ),
+        "diagnostics": _ui_diagnostics_contract(v2, model_eval),
+        "interaction": {
+            "compact": {
+                "purpose": "always_on_top_core_tips",
+                "fields": (
+                    "baseline.decision.action",
+                    "baseline.decision.current_highest",
+                    "baseline.decision.risk_band",
+                    "baseline.decision.stop_price",
+                    "baseline.posterior.decision_value_range",
+                    "baseline.posterior.total_cells_range",
+                    "q6_risk_reference.risk",
+                    "fallback.active",
+                ),
+            },
+            "hover": {
+                "purpose": "expanded_quick_context",
+                "fields": (
+                    "baseline.decision",
+                    "baseline.posterior",
+                    "baseline.layout",
+                    "fallback",
+                    "q6_risk_reference",
+                    "constraints.summary",
+                    "minimap",
+                ),
+            },
+            "detail": {
+                "purpose": "click_to_open_full_reasoning",
+                "fields": (
+                    "truth",
+                    "baseline.posterior",
+                    "baseline.layout",
+                    "constraints",
+                    "q6_risk_reference",
+                    "fallback",
+                    "shadows",
+                    "minimap.items",
+                    "diagnostics",
+                    "model_eval",
+                ),
+                "collapsible": True,
+                "renderers": (
+                    {
+                        "name": "matplotlib_minimap",
+                        "mode": "optional_async",
+                        "min_round": 3,
+                    },
+                ),
+            },
+        },
+    }
+
+
+def _ui_truth_contract(
+    artifact: Mapping[str, Any],
+    model_eval: Mapping[str, Any],
+) -> dict[str, Any]:
+    total_items = _first_non_empty(
+        artifact.get("inventory_count"),
+    )
+    total_cells = _first_non_empty(
+        model_eval.get("final_cells"),
+        artifact.get("inventory_cells"),
+    )
+    total_value = _first_non_empty(
+        model_eval.get("final_value"),
+        artifact.get("known_value_sum"),
+    )
+    available = any(
+        value is not None
+        for value in (total_items, total_cells, total_value)
+    )
+    return {
+        "available": available,
+        "source": (
+            "settlement_or_sample_replay"
+            if available
+            else "not_available_live_pre_settlement"
+        ),
+        "total_value": total_value,
+        "total_items": total_items,
+        "total_cells": total_cells,
+        "q5": {
+            "count": _first_non_empty(
+                model_eval.get("final_q5_count"),
+                artifact.get("final_q5_count"),
+            ),
+            "cells": _first_non_empty(
+                model_eval.get("final_q5_cells"),
+                artifact.get("final_q5_cells"),
+            ),
+            "value": _first_non_empty(
+                model_eval.get("final_q5_value"),
+                artifact.get("final_q5_value"),
+            ),
+        },
+        "q6": {
+            "count": _first_non_empty(
+                model_eval.get("final_q6_count"),
+                artifact.get("final_q6_count"),
+            ),
+            "cells": _first_non_empty(
+                model_eval.get("final_q6_cells"),
+                artifact.get("final_q6_cells"),
+            ),
+            "value": _first_non_empty(
+                model_eval.get("final_q6_value"),
+                artifact.get("final_q6_value"),
+            ),
+        },
+        "top_item": {
+            "id": _first_non_empty(
+                model_eval.get("final_top_item_id"),
+                artifact.get("final_top_item_id"),
+            ),
+            "name": _text(
+                _first_non_empty(
+                    model_eval.get("final_top_item_name"),
+                    artifact.get("final_top_item_name"),
+                )
+            ),
+            "quality": _first_non_empty(
+                model_eval.get("final_top_item_quality"),
+                artifact.get("final_top_item_quality"),
+            ),
+            "value": _first_non_empty(
+                model_eval.get("final_top_item_value"),
+                artifact.get("final_top_item_value"),
+            ),
+            "cells": _first_non_empty(
+                model_eval.get("final_top_item_cells"),
+                artifact.get("final_top_item_cells"),
+            ),
+        },
+    }
+
+
+def _ui_constraints_contract(
+    v2: Mapping[str, Any],
+    model_eval: Mapping[str, Any],
+    minimap: Mapping[str, Any],
+    input_constraints: Mapping[str, Any],
+) -> dict[str, Any]:
+    quality_counts = (
+        minimap.get("quality_counts")
+        if isinstance(minimap.get("quality_counts"), Mapping)
+        else {}
+    )
+    anchor_count = _first_non_empty(
+        model_eval.get("anchor_count"),
+        v2.get("锚点数"),
+    )
+    shape_target_count = _first_non_empty(
+        model_eval.get("shape_target_count"),
+        v2.get("形状约束数"),
+    )
+    category_target_count = _first_non_empty(
+        model_eval.get("category_target_count"),
+        v2.get("分类约束数"),
+    )
+    category_exclusion_count = _first_non_empty(
+        model_eval.get("category_exclusion_count"),
+        v2.get("分类反排数"),
+    )
+    public_constraint_key = _text(model_eval.get("public_constraint_key"))
+    evidence_profile_key = _text(model_eval.get("evidence_profile_key"))
+    random_sample_avg_values = _text(
+        _first_non_empty(
+            model_eval.get("random_sample_avg_values"),
+            v2.get("随机样本均价"),
+        )
+    )
+    random_sample_avg_signal_values = _text(
+        _first_non_empty(
+            model_eval.get("random_sample_avg_signal_values"),
+            v2.get("随机样本均价信号"),
+        )
+    )
+    summary = {
+        "anchor_count": anchor_count,
+        "shape_target_count": shape_target_count,
+        "category_target_count": category_target_count,
+        "category_exclusion_count": category_exclusion_count,
+        "input_total_item_count": _constraint_value(
+            input_constraints,
+            "total_item_count",
+        ),
+        "input_warehouse_total_cells": _constraint_value(
+            input_constraints,
+            "warehouse_total_cells",
+        ),
+        "input_warehouse_total_cells_approx": _constraint_value(
+            input_constraints,
+            "warehouse_total_cells_approx",
+        ),
+        "known_grid_items": minimap.get("known_items"),
+        "known_purple_item_count": quality_counts.get("q4", 0),
+        "known_gold_item_count": quality_counts.get("q5", 0),
+        "known_red_item_count": quality_counts.get("q6", 0),
+        "public_constraint_key": public_constraint_key,
+        "evidence_profile_key": evidence_profile_key,
+        "information_density_band": _text(
+            model_eval.get("information_density_band")
+        ),
+    }
+    return {
+        "summary": summary,
+        "counts": {
+            "anchor_count": anchor_count,
+            "shape_target_count": shape_target_count,
+            "category_target_count": category_target_count,
+            "category_exclusion_count": category_exclusion_count,
+            "known_quality_counts": dict(quality_counts),
+            "input_total_item_count": _constraint_value(
+                input_constraints,
+                "total_item_count",
+            ),
+            "input_warehouse_total_cells": _constraint_value(
+                input_constraints,
+                "warehouse_total_cells",
+            ),
+        },
+        "public_info": {
+            "input_constraints_mode": _text(input_constraints.get("mode")),
+            "input_constraints": input_constraints,
+            "public_constraint_key": public_constraint_key,
+            "evidence_profile_key": evidence_profile_key,
+            "evidence_stage": _text(model_eval.get("evidence_stage")),
+            "information_density_score": model_eval.get(
+                "information_density_score"
+            ),
+            "information_density_band": _text(
+                model_eval.get("information_density_band")
+            ),
+            "random_sample_avg_values": random_sample_avg_values,
+            "random_sample_avg_signal_values": random_sample_avg_signal_values,
+        },
+        "exclusions": {
+            "category_exclusion_count": category_exclusion_count,
+            "note": (
+                "specific_category_ids_are_in_posterior_diagnostics"
+                if (_int_or_none(category_exclusion_count) or 0) > 0
+                else ""
+            ),
+        },
+    }
+
+
+def _ui_diagnostics_contract(
+    v2: Mapping[str, Any],
+    model_eval: Mapping[str, Any],
+) -> dict[str, Any]:
+    posterior = _text(
+        _first_non_empty(
+            model_eval.get("posterior_diagnostics"),
+            v2.get("诊断"),
+        )
+    )
+    return {
+        "posterior": posterior,
+        "layout": {
+            "conflict": bool(model_eval.get("layout_conflict")),
+            "conflict_root": _text(model_eval.get("layout_conflict_root")),
+            "bottom_row": model_eval.get("layout_bottom_row"),
+            "bottom_row_risk": bool(model_eval.get("q6_aisha_bottom_row_risk")),
+            "bottom_row_risk_threshold": model_eval.get(
+                "layout_bottom_row_risk_threshold"
+            ),
+        },
+        "q6": {
+            "p90_misses_truth": model_eval.get("q6_p90_misses_truth"),
+            "false_low_risk": model_eval.get("q6_false_low_risk"),
+            "below_drop_prior": bool(model_eval.get("q6_below_drop_prior")),
+            "top_size_band": _text(model_eval.get("q6_top_size_band")),
+        },
+        "sampling": {
+            "relaxed_exact_used": bool(model_eval.get("relaxed_exact_used")),
+            "processing_seconds": model_eval.get(
+                "monitor_processing_seconds"
+            ),
+            "n_trials": model_eval.get("monitor_n_trials"),
+            "roi_trials": model_eval.get("monitor_roi_trials"),
+            "shadow_trials": model_eval.get("monitor_shadow_trials"),
+        },
+    }
+
+
+def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
+    raw_items = [
+        item
+        for item in (
+            artifact.get("minimap_grid_items")
+            or artifact.get("category_grid_items")
+            or ()
+        )
+        if isinstance(item, Mapping)
+    ]
+    items: list[dict[str, Any]] = []
+    quality_counts: Counter[str] = Counter()
+    category_counts: Counter[str] = Counter()
+    max_row = 0
+    for item in raw_items:
+        row = _int_or_none(item.get("row"))
+        col = _int_or_none(item.get("col"))
+        width = _int_or_none(item.get("width")) or 1
+        height = _int_or_none(item.get("height")) or 1
+        if row is not None:
+            max_row = max(max_row, row + height - 1)
+        quality = item.get("quality")
+        category_label = _text(item.get("category_label") or item.get("category"))
+        item_name = _text(item.get("item_name") or item.get("name"))
+        shape_key = _text(item.get("shape_key"))
+        q_label = f"Q{quality}" if quality is not None else "Q?"
+        tooltip = _join_nonempty(
+            [
+                item_name,
+                q_label,
+                shape_key,
+                category_label,
+            ],
+            sep=" / ",
+        )
+        if quality is not None:
+            quality_counts[f"q{quality}"] += 1
+        if category_label:
+            category_counts[category_label] += 1
+        items.append(
+            {
+                "row": row,
+                "col": col,
+                "width": width,
+                "height": height,
+                "quality": quality,
+                "category": item.get("category"),
+                "category_label": category_label,
+                "item_id": item.get("item_id"),
+                "item_name": item_name,
+                "display_label": "",
+                "tooltip": tooltip,
+                "shape_key": shape_key,
+                "cells": item.get("cells"),
+                "local_index": item.get("local_index"),
+                "source": _text(item.get("source")),
+            }
+        )
+    rows_hint = min(
+        _MINIMAP_MAX_ROWS,
+        max(_MINIMAP_DEFAULT_ROWS, max_row),
+    )
+    return {
+        "schema_version": 1,
+        "status": "available",
+        "columns": _MINIMAP_COLUMNS,
+        "default_cells": _MINIMAP_DEFAULT_CELLS,
+        "max_cells": _MINIMAP_MAX_CELLS,
+        "viewport_rows": _MINIMAP_DEFAULT_ROWS,
+        "max_rows": _MINIMAP_MAX_ROWS,
+        "rows_hint": rows_hint,
+        "scrollable": rows_hint > _MINIMAP_DEFAULT_ROWS,
+        "known_items": len(items),
+        "quality_counts": dict(sorted(quality_counts.items())),
+        "category_counts": dict(category_counts.most_common()),
+        "items": items,
+    }
+
+
+def _ui_fallback_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
+    bid = _first_mapping(artifact.get("fallback_bid_rows"))
+    map_row = _first_mapping(artifact.get("fallback_map_rows"))
+    warehouse = _first_mapping(artifact.get("fallback_warehouse_rows"))
+    player_risks = [
+        {
+            "current_bid": _text(row.get("当前最高")),
+            "risk_band": _text(row.get("风险带")),
+        }
+        for row in artifact.get("fallback_bid_rows", ()) or ()
+        if isinstance(row, Mapping) and row.get("证据") == "玩家价位"
+    ]
+    active = bool(bid)
+    return {
+        "active": active,
+        "mode": _text(bid.get("fallback_mode") or "v1_map_prior_zero_match")
+        if active
+        else "",
+        "display_mode": "low_confidence_reference" if active else "",
+        "affects_bid": False,
+        "reason": "baseline_zero_match" if active else "",
+        "note": _text(
+            bid.get("fallback_note")
+            or "v2 后验无匹配时的低置信参考；不替代 baseline v2"
+        )
+        if active
+        else "",
+        "decision": {
+            "action": _text(bid.get("建议")),
+            "current_highest": _text(bid.get("当前最高")),
+            "risk_band": _text(bid.get("风险带")),
+            "probe_bid": _text(bid.get("探价(P10)")),
+            "defend_bid": _text(bid.get("防守价")),
+            "attack_bid": _text(bid.get("抢仓上限")),
+            "stop_price": _text(bid.get("停止价")),
+            "evidence": _text(bid.get("证据")),
+            "round": _text(bid.get("轮次")),
+            "information_density": _text(bid.get("信息强度")),
+            "warehouse_status": _text(bid.get("仓储")),
+            "rationale": _text(bid.get("依据")),
+            "next_info_hint": _text(bid.get("补信息")),
+            "player_risks": player_risks,
+        },
+        "posterior": {
+            "value_basis": _text(bid.get("价值口径") or "raw_value"),
+            "raw_value_range": _text(
+                bid.get("原始价值 P10/P50/P90")
+                or warehouse.get("价值 P10/P50/P90")
+                or map_row.get("价值 P10/P50/P90")
+            ),
+            "total_cells_range": _text(
+                warehouse.get("总格 P10/P50/P90")
+                or map_row.get("总格 P10/P50/P90")
+            ),
+            "match_text": _text(map_row.get("匹配") or warehouse.get("匹配")),
+            "confidence": _text(warehouse.get("置信度")),
+        },
+    }
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ui_shadow_contract(
+    shadow: Mapping[str, Any],
+    model_eval: Mapping[str, Any],
+) -> dict[str, Any]:
+    label = _text(shadow.get("label"))
+    prefix_by_label = {
+        "profile_b5": "q6_residual_boost_shadow",
+        "aisha_deep_floor1": "q6_residual_deep_floor_shadow",
+        "aisha_hidden_floor15": "q6_residual_hidden_floor_shadow",
+    }
+    prefix = prefix_by_label.get(label, "")
+    active = bool(shadow.get("active"))
+    role_by_label = {
+        "profile_b5": "diagnostic_shadow",
+        "aisha_deep_floor1": "tail_risk_reference_candidate",
+        "aisha_hidden_floor15": "hidden_tail_risk_shadow",
+    }
+    display_by_label = {
+        "profile_b5": "debug_only",
+        "aisha_deep_floor1": "risk_reference_candidate",
+        "aisha_hidden_floor15": "shadow_only_pending_no_q6_controls",
+    }
+    return {
+        "label": label,
+        "role": role_by_label.get(label, "shadow"),
+        "display_mode": display_by_label.get(label, "debug_only"),
+        "affects_bid": False,
+        "active": active,
+        "status": "active" if active else "inactive",
+        "gate": _text(shadow.get("gate")),
+        "evidence_profile": _text(shadow.get("evidence_profile_key")),
+        "trials": shadow.get("trials"),
+        "q6_decision_value_p90": shadow.get("q6_decision_value_p90"),
+        "q6_count_p90": shadow.get("q6_count_p90"),
+        "q6_cells_p90": shadow.get("q6_cells_p90"),
+        "q6_p90_delta": (
+            model_eval.get(f"{prefix}_q6_p90_delta")
+            if prefix
+            else None
+        ),
+        "helped": (
+            bool(model_eval.get(f"{prefix}_helped"))
+            if prefix
+            else False
+        ),
+        "false_positive_proxy": (
+            bool(model_eval.get(f"{prefix}_false_positive_proxy"))
+            if prefix
+            else False
+        ),
+    }
+
+
 __all__ = (
     "ImportOverviewSnapshot",
     "LayoutStageSnapshot",
@@ -419,4 +1092,5 @@ __all__ = (
     "tactical_panel_from_rows",
     "tactical_summary_rows",
     "tactical_snapshot_from_rows",
+    "ui_contract_from_artifact",
 )

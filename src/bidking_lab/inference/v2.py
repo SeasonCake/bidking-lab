@@ -38,13 +38,23 @@ from bidking_lab.simulation.robust_value import (
 EvidenceStrength = Literal["hard", "soft"]
 
 _PUBLIC_AVG_VALUE_QUALITY: dict[int, int] = {
+    200036: 4,  # 所有紫色品质藏品的平均价值
     200037: 5,  # 所有金色品质藏品的平均价值
+    200038: 6,  # 所有红色品质藏品的平均价值
 }
 _PUBLIC_RANDOM_SAMPLE_AVG_VALUE_COUNT: dict[int, int] = {
     200031: 3,  # 随机 3 件藏品的平均价值
     200032: 6,  # 随机 6 件藏品的平均价值
     200033: 9,  # 随机 9 件藏品的平均价值
     200034: 12,  # 随机 12 件藏品的平均价值
+}
+_PUBLIC_AVG_CELLS_QUALITY: dict[int, int] = {
+    200013: 4,  # 紫色品质藏品平均占用的格子数量
+    200015: 5,  # 金色品质藏品平均占用的格子数量
+    200016: 6,  # 红色品质藏品平均占用的格子数量
+}
+_PUBLIC_TOTAL_AVG_CELLS_IDS: set[int] = {
+    200014,  # 每件藏品平均占用的格子数量
 }
 
 
@@ -92,16 +102,28 @@ class RuntimeEvidence:
             dict.fromkeys((*self.excluded_categories, *other.excluded_categories))
         )
         sources = tuple(dict.fromkeys((*self.sources, *other.sources)))
+        if other.shape_key is not None:
+            shape_key = other.shape_key
+            cells = other.cells if other.cells is not None else self.cells
+            local_index = other.local_index
+        elif self.shape_key is not None:
+            shape_key = self.shape_key
+            cells = self.cells if self.cells is not None else other.cells
+            local_index = self.local_index
+        else:
+            shape_key = None
+            cells = self.cells if self.cells is not None else other.cells
+            local_index = (
+                other.local_index if other.local_index is not None else self.local_index
+            )
         return RuntimeEvidence(
             runtime_id=self.runtime_id if self.runtime_id is not None else other.runtime_id,
-            local_index=(
-                self.local_index if self.local_index is not None else other.local_index
-            ),
+            local_index=local_index,
             item_id=self.item_id if self.item_id is not None else other.item_id,
             quality=self.quality if self.quality is not None else other.quality,
             value=self.value if self.value is not None else other.value,
-            shape_key=self.shape_key if self.shape_key is not None else other.shape_key,
-            cells=self.cells if self.cells is not None else other.cells,
+            shape_key=shape_key,
+            cells=cells,
             categories=categories,
             excluded_categories=excluded_categories,
             sources=sources,
@@ -236,6 +258,7 @@ class ResidualProblem:
     layout: LayoutFeasibility
     total_item_count: int | None = None
     warehouse_total_cells: int | None = None
+    total_avg_cells: float | None = None
     random_sample_avg_values: tuple[tuple[int, float], ...] = ()
     max_quality: int | None = None
     max_item_cells: int | None = None
@@ -254,6 +277,7 @@ class ResidualBucketTarget:
     value_floor: int | None = None
     value_exact: int | None = None
     avg_value: float | None = None
+    avg_cells: float | None = None
 
 
 @dataclass(frozen=True)
@@ -388,7 +412,10 @@ def evidence_store_from_fatbeans_events(
     not use settlement truth as pre-settlement evidence.
     """
 
-    from bidking_lab.live.fatbeans import _CATEGORY_OUTLINE_ACTIONS
+    from bidking_lab.live.fatbeans import (
+        _CATEGORY_OUTLINE_ACTIONS,
+        _skill_reveal_category,
+    )
 
     builder = EvidenceStoreBuilder()
     for state in getattr(events, "states", ()) or ():
@@ -473,10 +500,12 @@ def evidence_store_from_fatbeans_events(
                 if ev is not None:
                     builder.add_item(ev)
         for reveal in getattr(state, "skill_reveals", ()) or ():
+            skill_category = _skill_reveal_category(getattr(reveal, "skill_id", None))
             for item in getattr(reveal, "observed_items", ()) or ():
                 ev = _observed_item_to_runtime_evidence(
                     item,
                     source=f"skill:{getattr(reveal, 'skill_id', '')}",
+                    category=skill_category,
                 )
                 if ev is not None:
                     builder.add_item(ev)
@@ -736,9 +765,10 @@ def known_footprints(
     footprints: list[KnownFootprint] = []
     seen: set[str] = set()
     for evidence in store.items():
-        if evidence.local_index is None or evidence.shape_key is None:
+        if evidence.shape_key is None:
             continue
-        if evidence.local_index < 0:
+        local_index = 0 if evidence.local_index is None else evidence.local_index
+        if local_index < 0:
             continue
         dims = _shape_dimensions(evidence.shape_key)
         if dims is None:
@@ -748,12 +778,12 @@ def known_footprints(
             continue
         seen.add(key)
         width, height = dims
-        row = evidence.local_index // columns + 1
-        col = evidence.local_index % columns + 1
+        row = local_index // columns + 1
+        col = local_index % columns + 1
         footprints.append(
             KnownFootprint(
                 key=key,
-                local_index=evidence.local_index,
+                local_index=local_index,
                 shape_key=evidence.shape_key,
                 cells=evidence.cells or width * height,
                 row=row,
@@ -901,6 +931,39 @@ def _public_avg_value_targets(store: EvidenceStore) -> dict[int, float]:
     return targets
 
 
+def _public_avg_cells_targets(store: EvidenceStore) -> dict[int, float]:
+    targets: dict[int, float] = {}
+    for fact in store.facts:
+        if fact.kind != "public_info":
+            continue
+        try:
+            info_id = int(fact.key)
+            value = float(fact.value)
+        except (TypeError, ValueError):
+            continue
+        quality = _PUBLIC_AVG_CELLS_QUALITY.get(info_id)
+        if quality is None or value <= 0:
+            continue
+        targets[quality] = value
+    return targets
+
+
+def _public_total_avg_cells_target(store: EvidenceStore) -> float | None:
+    target: float | None = None
+    for fact in store.facts:
+        if fact.kind != "public_info":
+            continue
+        try:
+            info_id = int(fact.key)
+            value = float(fact.value)
+        except (TypeError, ValueError):
+            continue
+        if info_id not in _PUBLIC_TOTAL_AVG_CELLS_IDS or value <= 0:
+            continue
+        target = value
+    return target
+
+
 def _public_random_sample_avg_values(
     store: EvidenceStore,
 ) -> tuple[tuple[int, float], ...]:
@@ -935,7 +998,10 @@ def _public_global_constraints(
     diagnostics: list[str] = []
     for evidence in store.items():
         sources = set(evidence.sources)
-        if "public:200048" in sources and evidence.quality is not None:
+        if (
+            {"public:200048", "skill:100110"} & sources
+            and evidence.quality is not None
+        ):
             quality = int(evidence.quality)
             max_quality = quality if max_quality is None else min(max_quality, quality)
         if "public:200050" in sources and evidence.cells is not None:
@@ -1092,6 +1158,7 @@ def build_residual_problem(
         target_count = count_floor
         target_value = value_floor if value_floor > 0 else None
         target_avg_value = None
+        target_avg_cells = None
         target_cells_exact = None
         target_count_exact = None
         if current is not None:
@@ -1101,6 +1168,7 @@ def build_residual_problem(
             if current.value_floor is not None or target_value is not None:
                 target_value = max(current.value_floor or 0, target_value or 0)
             target_avg_value = current.avg_value
+            target_avg_cells = current.avg_cells
             target_value_exact = current.value_exact
             target_cells_exact = current.total_cells_exact
             target_count_exact = current.count_exact
@@ -1115,6 +1183,7 @@ def build_residual_problem(
             value_floor=target_value,
             value_exact=target_value_exact,
             avg_value=target_avg_value,
+            avg_cells=target_avg_cells,
         )
     for quality, avg_value in _public_avg_value_targets(store).items():
         current = bucket_targets.get(quality)
@@ -1127,6 +1196,20 @@ def build_residual_problem(
             value_floor=current.value_floor if current else None,
             value_exact=current.value_exact if current else None,
             avg_value=avg_value,
+            avg_cells=current.avg_cells if current else None,
+        )
+    for quality, avg_cells in _public_avg_cells_targets(store).items():
+        current = bucket_targets.get(quality)
+        bucket_targets[quality] = ResidualBucketTarget(
+            quality=quality,
+            total_cells_exact=current.total_cells_exact if current else None,
+            count_exact=current.count_exact if current else None,
+            total_cells_floor=current.total_cells_floor if current else None,
+            count_floor=max(current.count_floor or 0, 1) if current else 1,
+            value_floor=current.value_floor if current else None,
+            value_exact=current.value_exact if current else None,
+            avg_value=current.avg_value if current else None,
+            avg_cells=avg_cells,
         )
     if category_targets:
         for target in category_targets:
@@ -1153,6 +1236,9 @@ def build_residual_problem(
     max_quality, max_item_cells, global_diagnostics = _public_global_constraints(store)
     diagnostics.extend(global_diagnostics)
     random_sample_avg_values = _public_random_sample_avg_values(store)
+    total_avg_cells = _public_total_avg_cells_target(store)
+    if total_avg_cells is not None:
+        diagnostics.append(f"public_total_avg_cells:{total_avg_cells:.4f}")
     return ResidualProblem(
         map_id=map_id,
         map_name=bid_map.name,
@@ -1167,6 +1253,7 @@ def build_residual_problem(
         layout=layout,
         total_item_count=obs.total_item_count if obs is not None else None,
         warehouse_total_cells=obs.warehouse_total_cells if obs is not None else None,
+        total_avg_cells=total_avg_cells,
         random_sample_avg_values=random_sample_avg_values,
         max_quality=max_quality,
         max_item_cells=max_item_cells,
@@ -1201,10 +1288,15 @@ class ConditionalSampler:
         drops: Mapping[int, DropPool],
         items: Mapping[int, Item],
         q6_residual_boost: float = 1.0,
+        q6_residual_prior_floor_ratio: float = 0.0,
     ) -> None:
         self.problem = problem
         self.items = items
         self.q6_residual_boost = max(1.0, float(q6_residual_boost))
+        self.q6_residual_prior_floor_ratio = max(
+            0.0,
+            float(q6_residual_prior_floor_ratio),
+        )
         self._sampler = prepare_session_sampler(
             problem.map_id,
             maps=maps,
@@ -1282,6 +1374,7 @@ class ConditionalSampler:
         self._sample_shape_targets(pool, buckets, rng)
         self._sample_category_targets(pool, buckets, rng)
         self._sample_bucket_targets(pool, buckets, rng)
+        self._sample_q6_prior_floor(pool, buckets, rng)
 
         current_count = sum(bucket.count for bucket in buckets.values())
         if (
@@ -1299,7 +1392,16 @@ class ConditionalSampler:
             total_draws = int(rng.integers(draw_min, draw_max + 1))
         residual_draws = max(0, total_draws - current_count)
         if residual_draws and self.problem.total_item_count is not None:
-            self._sample_exact_count_residual(pool, buckets, residual_draws, rng)
+            filled_exact_cells = False
+            if self.problem.warehouse_total_cells is not None:
+                filled_exact_cells = self._sample_exact_count_cells_residual(
+                    pool,
+                    buckets,
+                    residual_draws,
+                    rng,
+                )
+            if not filled_exact_cells:
+                self._sample_exact_count_residual(pool, buckets, residual_draws, rng)
         elif residual_draws:
             residual_probs = self._residual_probabilities(pool)
             sampled_idx = rng.choice(
@@ -1313,6 +1415,12 @@ class ConditionalSampler:
                 pool.n_max[sampled_idx] + 1,
             )
             for pool_i, count in zip(sampled_idx, counts):
+                if not self._residual_bucket_delta_allowed(
+                    pool.items[int(pool_i)],
+                    buckets,
+                    int(count),
+                ):
+                    continue
                 _add_item_to_buckets(
                     buckets,
                     pool.items[int(pool_i)],
@@ -1320,12 +1428,110 @@ class ConditionalSampler:
                 )
         return self._truth_from_buckets(buckets)
 
+    def _sample_exact_count_cells_residual(
+        self,
+        pool: Any,
+        buckets: dict[int, BucketTruth],
+        residual_count: int,
+        rng: np.random.Generator,
+    ) -> bool:
+        target_cells = self.problem.warehouse_total_cells
+        if target_cells is None:
+            return False
+        remaining_count = max(0, int(residual_count))
+        current_cells = sum(bucket.total_cells for bucket in buckets.values())
+        remaining_cells = int(target_cells) - int(current_cells)
+        if remaining_count == 0 and remaining_cells == 0:
+            return True
+        if remaining_count <= 0 or remaining_cells <= 0:
+            return False
+
+        options_by_delta: dict[tuple[int, int], list[tuple[int, int, float]]] = {}
+        for pool_i, item in enumerate(pool.items):
+            if not self._item_allowed_by_global_constraints(item):
+                continue
+            area = int(item.shape_w * item.shape_h)
+            if area <= 0:
+                continue
+            min_count = int(pool.n_min[pool_i])
+            max_count = min(int(pool.n_max[pool_i]), remaining_count)
+            if min_count <= 0 or max_count < min_count:
+                continue
+            weight = self._residual_candidate_weight(pool, int(pool_i))
+            if weight <= 0:
+                continue
+            for count in range(min_count, max_count + 1):
+                if not self._residual_bucket_delta_allowed(item, buckets, count):
+                    continue
+                added_cells = area * count
+                if added_cells <= remaining_cells:
+                    options_by_delta.setdefault((count, added_cells), []).append(
+                        (int(pool_i), count, weight)
+                    )
+        if not options_by_delta:
+            return False
+
+        deltas = tuple(sorted(options_by_delta))
+
+        @lru_cache(maxsize=None)
+        def can_fill(count_left: int, cells_left: int) -> bool:
+            if count_left == 0 and cells_left == 0:
+                return True
+            if count_left < 0 or cells_left < 0:
+                return False
+            for count, cells in deltas:
+                if count <= count_left and cells <= cells_left:
+                    if can_fill(count_left - count, cells_left - cells):
+                        return True
+            return False
+
+        if not can_fill(remaining_count, remaining_cells):
+            return False
+
+        count_left = remaining_count
+        cells_left = remaining_cells
+        while count_left or cells_left:
+            feasible = [
+                (count, cells)
+                for count, cells in deltas
+                if count <= count_left
+                and cells <= cells_left
+                and can_fill(count_left - count, cells_left - cells)
+            ]
+            if not feasible:
+                return False
+            weights = np.asarray(
+                [
+                    sum(weight for _pool_i, _count, weight in options_by_delta[key])
+                    for key in feasible
+                ],
+                dtype=np.float64,
+            )
+            total = float(weights.sum())
+            if total <= 0:
+                return False
+            key = feasible[int(rng.choice(len(feasible), p=weights / total))]
+            choices = options_by_delta[key]
+            choice_weights = np.asarray(
+                [weight for _pool_i, _count, weight in choices],
+                dtype=np.float64,
+            )
+            choice_total = float(choice_weights.sum())
+            if choice_total <= 0:
+                return False
+            pool_i, count, _weight = choices[
+                int(rng.choice(len(choices), p=choice_weights / choice_total))
+            ]
+            _add_item_to_buckets(buckets, pool.items[pool_i], count=count)
+            count_left -= key[0]
+            cells_left -= key[1]
+        return True
+
     def _residual_probabilities(self, pool: Any) -> np.ndarray:
         probs = pool.probabilities.astype(np.float64)
-        if self.q6_residual_boost <= 1.0:
-            return probs
+        probs = self._apply_global_candidate_constraints(pool, probs)
         qualities = getattr(pool, "qualities", None)
-        if qualities is None:
+        if self.q6_residual_boost <= 1.0 or qualities is None:
             return probs
         boosted = probs.copy()
         boosted[np.asarray(qualities) == 6] *= self.q6_residual_boost
@@ -1335,6 +1541,8 @@ class ConditionalSampler:
         return boosted / total
 
     def _residual_candidate_weight(self, pool: Any, pool_i: int) -> float:
+        if not self._item_allowed_by_global_constraints(pool.items[int(pool_i)]):
+            return 0.0
         weight = float(pool.probabilities[pool_i])
         if (
             self.q6_residual_boost > 1.0
@@ -1342,6 +1550,60 @@ class ConditionalSampler:
         ):
             weight *= self.q6_residual_boost
         return weight
+
+    def _residual_bucket_delta_allowed(
+        self,
+        item: Item,
+        buckets: Mapping[int, BucketTruth],
+        count: int,
+    ) -> bool:
+        target = self.problem.bucket_targets.get(int(item.quality))
+        if target is None:
+            return True
+        bucket = buckets.get(int(item.quality))
+        current_count = bucket.count if bucket is not None else 0
+        current_cells = bucket.total_cells if bucket is not None else 0
+        current_value = bucket.value_sum if bucket is not None else 0
+        added_count = max(0, int(count))
+        added_cells = int(item.shape_w * item.shape_h) * added_count
+        added_value = int(item.value) * added_count
+        if target.count_exact is not None:
+            if current_count + added_count > target.count_exact:
+                return False
+        if target.total_cells_exact is not None:
+            if current_cells + added_cells > target.total_cells_exact:
+                return False
+        if target.value_exact is not None:
+            value_limit = target.value_exact * 1.10
+            if current_value + added_value > value_limit:
+                return False
+        return True
+
+    def _item_allowed_by_global_constraints(self, item: Item) -> bool:
+        if self.problem.max_quality is not None and item.quality > self.problem.max_quality:
+            return False
+        if (
+            self.problem.max_item_cells is not None
+            and item.shape_w * item.shape_h > self.problem.max_item_cells
+        ):
+            return False
+        return True
+
+    def _apply_global_candidate_constraints(
+        self,
+        pool: Any,
+        probs: np.ndarray,
+    ) -> np.ndarray:
+        if self.problem.max_quality is None and self.problem.max_item_cells is None:
+            return probs
+        masked = probs.copy()
+        for index, item in enumerate(pool.items):
+            if not self._item_allowed_by_global_constraints(item):
+                masked[index] = 0.0
+        total = float(masked.sum())
+        if total <= 0:
+            return probs
+        return masked / total
 
     def _sample_exact_count_residual(
         self,
@@ -1367,11 +1629,19 @@ class ConditionalSampler:
             current_cells = sum(bucket.total_cells for bucket in buckets.values())
             feasible_pairs: list[tuple[int, int, float]] = []
             for pool_i in np.flatnonzero(pool.n_min <= remaining):
+                if not self._item_allowed_by_global_constraints(pool.items[int(pool_i)]):
+                    continue
                 max_count = min(int(pool.n_max[pool_i]), remaining)
                 min_count = min(int(pool.n_min[pool_i]), max_count)
                 if min_count <= 0 or max_count <= 0:
                     continue
                 for count in range(min_count, max_count + 1):
+                    if not self._residual_bucket_delta_allowed(
+                        pool.items[int(pool_i)],
+                        buckets,
+                        count,
+                    ):
+                        continue
                     add_cells = int(areas[pool_i]) * count
                     future_count = remaining - count
                     if target_cells is not None:
@@ -1397,6 +1667,12 @@ class ConditionalSampler:
                     )
                     for pool_i in np.flatnonzero(pool.n_min <= remaining)
                     if int(pool.n_min[pool_i]) > 0
+                    and self._item_allowed_by_global_constraints(pool.items[int(pool_i)])
+                    and self._residual_bucket_delta_allowed(
+                        pool.items[int(pool_i)],
+                        buckets,
+                        int(pool.n_min[pool_i]),
+                    )
                 ]
             if not feasible_pairs:
                 break
@@ -1411,6 +1687,98 @@ class ConditionalSampler:
             _add_item_to_buckets(buckets, pool.items[pool_i], count=count)
             remaining -= count
 
+    def _sample_q6_prior_floor(
+        self,
+        pool: Any,
+        buckets: dict[int, BucketTruth],
+        rng: np.random.Generator,
+    ) -> None:
+        if self.q6_residual_prior_floor_ratio <= 0:
+            return
+        if self.problem.max_quality is not None and self.problem.max_quality < 6:
+            return
+        q6_target = self.problem.bucket_targets.get(6)
+        if q6_target is not None and (
+            q6_target.count_exact is not None
+            or q6_target.total_cells_exact is not None
+        ):
+            return
+        prior = self.quality_drop_prior(6)
+        if prior is None:
+            return
+        target_count = int(
+            np.ceil(prior.expected_session_count * self.q6_residual_prior_floor_ratio)
+        )
+        target_cells = int(
+            np.ceil(prior.expected_session_cells * self.q6_residual_prior_floor_ratio)
+        )
+        if target_count <= 0 and target_cells <= 0:
+            return
+
+        attempts = 0
+        while attempts < 50:
+            attempts += 1
+            q6_bucket = buckets.get(6)
+            current_q6_count = q6_bucket.count if q6_bucket is not None else 0
+            current_q6_cells = q6_bucket.total_cells if q6_bucket is not None else 0
+            if current_q6_count >= target_count and current_q6_cells >= target_cells:
+                return
+
+            total_count = sum(bucket.count for bucket in buckets.values())
+            if self.problem.total_item_count is not None:
+                remaining_count_capacity = int(self.problem.total_item_count) - total_count
+                if remaining_count_capacity <= 0:
+                    return
+            else:
+                remaining_count_capacity = None
+
+            total_cells = sum(bucket.total_cells for bucket in buckets.values())
+            if self.problem.warehouse_total_cells is not None:
+                remaining_cell_capacity = (
+                    int(self.problem.warehouse_total_cells) - total_cells
+                )
+                if remaining_cell_capacity <= 0:
+                    return
+            else:
+                remaining_cell_capacity = None
+
+            candidates: list[tuple[int, int, float]] = []
+            for pool_i, item in enumerate(pool.items):
+                if int(item.quality) != 6:
+                    continue
+                if not self._item_allowed_by_global_constraints(item):
+                    continue
+                area = int(item.shape_w * item.shape_h)
+                if area <= 0:
+                    continue
+                min_count = int(pool.n_min[pool_i])
+                max_count = int(pool.n_max[pool_i])
+                if remaining_count_capacity is not None:
+                    max_count = min(max_count, remaining_count_capacity)
+                if remaining_cell_capacity is not None:
+                    max_count = min(max_count, remaining_cell_capacity // area)
+                if max_count < min_count or min_count <= 0:
+                    continue
+                needed_count = max(0, target_count - current_q6_count)
+                if needed_count > 0:
+                    max_count = min(max_count, max(min_count, needed_count))
+                weight = self._residual_candidate_weight(pool, pool_i)
+                if weight > 0:
+                    candidates.append((int(pool_i), max_count, weight))
+            if not candidates:
+                return
+
+            weights = np.asarray([candidate[2] for candidate in candidates], dtype=np.float64)
+            total = float(weights.sum())
+            if total <= 0:
+                return
+            pool_i, max_count, _weight = candidates[
+                int(rng.choice(len(candidates), p=weights / total))
+            ]
+            min_count = int(pool.n_min[pool_i])
+            count = int(rng.integers(min_count, max_count + 1))
+            _add_item_to_buckets(buckets, pool.items[pool_i], count=count)
+
     def _sample_shape_targets(
         self,
         pool: Any,
@@ -1422,7 +1790,8 @@ class ConditionalSampler:
         for target in self.problem.shape_targets:
             indexes = [
                 idx for idx, item in enumerate(pool.items)
-                if _item_matches_shape_target(item, target)
+                if self._item_allowed_by_global_constraints(item)
+                and _item_matches_shape_target(item, target)
             ]
             if not indexes:
                 continue
@@ -1448,7 +1817,8 @@ class ConditionalSampler:
         for target in self.problem.category_targets:
             indexes = [
                 idx for idx, item in enumerate(pool.items)
-                if _item_matches_category_target(item, target)
+                if self._item_allowed_by_global_constraints(item)
+                and _item_matches_category_target(item, target)
             ]
             if not indexes:
                 continue
@@ -1475,7 +1845,14 @@ class ConditionalSampler:
             return
         qualities = np.asarray([item.quality for item in pool.items], dtype=np.int64)
         for target in self.problem.bucket_targets.values():
-            indexes = np.flatnonzero(qualities == target.quality)
+            indexes = np.asarray(
+                [
+                    int(index)
+                    for index in np.flatnonzero(qualities == target.quality)
+                    if self._item_allowed_by_global_constraints(pool.items[int(index)])
+                ],
+                dtype=np.int64,
+            )
             if len(indexes) == 0:
                 continue
             if self._sample_exact_bucket_combo(pool, indexes, buckets, target, rng):
@@ -1913,6 +2290,42 @@ def value_evidence_score(
     return score
 
 
+def _avg_cells_evidence_factor(actual: float, target: float) -> float:
+    abs_err = abs(actual - target)
+    if abs_err <= 0.025:
+        return 1.0
+    if abs_err <= 0.25:
+        return max(0.35, 1.0 - abs_err * 2.0)
+    if abs_err <= 1.00:
+        return max(0.10, 1.0 - abs_err * 0.60)
+    return 0.05
+
+
+def cell_evidence_score(
+    truth: SessionTruth,
+    problem: ResidualProblem,
+) -> float:
+    """Score public average-cell evidence without hard-filtering samples."""
+
+    score = 1.0
+    for target in problem.bucket_targets.values():
+        if target.avg_cells is None:
+            continue
+        bucket = truth.buckets.get(target.quality)
+        if bucket is None or bucket.count <= 0:
+            return 0.0
+        actual = bucket.total_cells / bucket.count
+        score *= _avg_cells_evidence_factor(actual, target.avg_cells)
+
+    if problem.total_avg_cells is not None:
+        total_count = sum(bucket.count for bucket in truth.buckets.values())
+        if total_count <= 0:
+            return 0.0
+        actual = truth.warehouse_total_cells / total_count
+        score *= _avg_cells_evidence_factor(actual, problem.total_avg_cells)
+    return score
+
+
 def global_evidence_score(
     truth: SessionTruth,
     problem: ResidualProblem,
@@ -2029,6 +2442,7 @@ def _estimate_posterior_for_problem(
     warehouse_tol: int = 8,
     total_item_count_tol: int = 0,
     q6_residual_boost: float = 1.0,
+    q6_residual_prior_floor_ratio: float = 0.0,
     extra_diagnostics: tuple[str, ...] = (),
 ) -> PosteriorReport:
     sampler = ConditionalSampler(
@@ -2037,6 +2451,7 @@ def _estimate_posterior_for_problem(
         drops=drops,
         items=items,
         q6_residual_boost=q6_residual_boost,
+        q6_residual_prior_floor_ratio=q6_residual_prior_floor_ratio,
     )
     q6_prior = sampler.quality_drop_prior(6)
     rng = np.random.default_rng(seed)
@@ -2073,6 +2488,9 @@ def _estimate_posterior_for_problem(
         value_score = value_evidence_score(truth, problem)
         if value_score <= 0:
             continue
+        cell_score = cell_evidence_score(truth, problem)
+        if cell_score <= 0:
+            continue
         global_score = global_evidence_score(truth, problem)
         if global_score <= 0:
             continue
@@ -2080,6 +2498,7 @@ def _estimate_posterior_for_problem(
             category_observation_soft_score(truth, obs)
             * layout_score
             * value_score
+            * cell_score
             * global_score
         )
         values.append(truth.total_value())
@@ -2111,14 +2530,25 @@ def _estimate_posterior_for_problem(
     diagnostics = [*extra_diagnostics, *problem.diagnostics]
     if q6_residual_boost > 1.0:
         diagnostics.append(f"q6_residual_boost:{q6_residual_boost:.2f}")
+    if q6_residual_prior_floor_ratio > 0:
+        diagnostics.append(
+            f"q6_residual_prior_floor_ratio:{q6_residual_prior_floor_ratio:.2f}"
+        )
     q6_match_rate = _weighted_positive_rate(q6_values, weights)
+    q6_drop_prior_allowed = not (
+        problem.max_quality is not None and problem.max_quality < 6
+    )
     if (
+        q6_drop_prior_allowed
+        and
         6 not in problem.bucket_targets
         and q6_match_rate is not None
         and q6_match_rate < 0.10
     ):
         diagnostics.append(f"q6_unconstrained_low_sample_rate:{q6_match_rate:.3f}")
     if (
+        q6_drop_prior_allowed
+        and
         6 not in problem.bucket_targets
         and q6_prior is not None
         and q6_prior.session_probability >= 0.50
@@ -2189,6 +2619,7 @@ def estimate_posterior_v2(
     warehouse_tol: int = 8,
     total_item_count_tol: int = 0,
     q6_residual_boost: float = 1.0,
+    q6_residual_prior_floor_ratio: float = 0.0,
 ) -> PosteriorReport:
     """Estimate a posterior with exact item anchors forced into every trial."""
 
@@ -2214,6 +2645,7 @@ def estimate_posterior_v2(
         warehouse_tol=warehouse_tol,
         total_item_count_tol=total_item_count_tol,
         q6_residual_boost=q6_residual_boost,
+        q6_residual_prior_floor_ratio=q6_residual_prior_floor_ratio,
     )
     if strict.n_matched > 0:
         return strict
@@ -2243,6 +2675,7 @@ def estimate_posterior_v2(
         warehouse_tol=warehouse_tol,
         total_item_count_tol=total_item_count_tol,
         q6_residual_boost=q6_residual_boost,
+        q6_residual_prior_floor_ratio=q6_residual_prior_floor_ratio,
         extra_diagnostics=diagnostics,
     )
 
@@ -2263,6 +2696,7 @@ __all__ = (
     "ShapeTarget",
     "build_residual_problem",
     "category_targets_from_store",
+    "cell_evidence_score",
     "decision_value_for_truth",
     "estimate_posterior_v2",
     "evidence_store_from_fatbeans_events",

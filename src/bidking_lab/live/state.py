@@ -13,7 +13,6 @@ from bidking_lab.inference.observation import (
     HUGE_BAND_RANGE,
     QualityBucketObs,
     SessionObs,
-    candidates_for_bucket,
 )
 from bidking_lab.live.types import (
     AuctionPhase,
@@ -366,7 +365,7 @@ def live_state_to_session_obs(state: LiveSessionState) -> SessionObs | None:
     """Convert live state into inference ``SessionObs`` when possible."""
     map_id = _as_int(_field_value(state, ("session", "map_id")))
     hero = _field_value(state, ("session", "hero"))
-    if map_id is None or hero not in ("ethan", "aisha"):
+    if map_id is None or not hero:
         return None
 
     buckets: dict[int, QualityBucketObs] = {}
@@ -451,34 +450,14 @@ def _fill_residual_red_bucket(
     if not required_qs.issubset(buckets):
         return
 
+    if any(buckets[q].total_cells is None for q in required_qs):
+        return
+
     explicit_sum = sum(
         b.total_cells for b in buckets.values()
         if b.total_cells is not None and b.total_cells > 0
     )
-    derived_sum = 0
-    for q, bucket in buckets.items():
-        if bucket.total_cells is not None or q in (1, 2):
-            continue
-        has_info = (
-            (bucket.value_sum is not None and bucket.value_sum > 0)
-            or bucket.huge_band != "none"
-            or bucket.avg_cells is not None
-            or bucket.count is not None
-            or (bucket.avg_value is not None and bucket.avg_value > 0)
-        )
-        if not has_info:
-            continue
-        candidates = candidates_for_bucket(
-            bucket,
-            warehouse_capacity=warehouse_total_cells,
-            other_known_cells=explicit_sum + derived_sum,
-        )
-        if candidates:
-            derived_sum += candidates[0].total_cells
-        elif bucket.huge_band != "none":
-            derived_sum += bucket.min_huge_cells()
-
-    known_sum = explicit_sum + derived_sum
+    known_sum = explicit_sum
     if known_sum <= 0:
         return
     red_residual = warehouse_total_cells - known_sum

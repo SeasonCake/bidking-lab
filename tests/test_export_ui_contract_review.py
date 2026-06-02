@@ -1,0 +1,362 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _review_module():
+    path = ROOT / "scripts" / "export_ui_contract_review.py"
+    spec = importlib.util.spec_from_file_location("export_ui_contract_review", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _artifact(
+    *,
+    display_label: str = "",
+    baseline_official: bool = True,
+    shadow_affects_bid: bool = False,
+    truth_q6_count: int = 1,
+    truth_q6_value: int | None = None,
+    q6_below_drop_prior: bool = False,
+    q6_decision_value_range: str = "0 / 120,000 / 300,000",
+    tail_shadow_active: bool = False,
+    layout_conflict: bool = False,
+    unknown_minimap_quality: bool = False,
+    v2_match: str = "12/80",
+    fallback_active: bool = False,
+) -> dict:
+    return {
+        "file": "sample.json",
+        "known_value_sum": 800000,
+        "v2_posterior_rows": [
+            {
+                "匹配": v2_match,
+            }
+        ],
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "map_id": 2501,
+                "round": 4,
+                "known_value_sum": 800000,
+            },
+            "source": {
+                "file": "sample.json",
+                "n_trials": 80,
+                "shadow_trials": 80,
+            },
+            "baseline": {
+                "official": baseline_official,
+                "affects_bid": True,
+                "decision": {
+                    "action": "可守不抢",
+                    "risk_band": "防守区",
+                    "current_highest": "玩家A 500,000",
+                    "stop_price": "680,000",
+                },
+                "posterior": {
+                    "decision_value_range": "300,000 / 500,000 / 700,000",
+                    "raw_value_range": "300,000 / 540,000 / 900,000",
+                    "q6_sample_rate": "12.0%",
+                    "q6_decision_value_range": q6_decision_value_range,
+                    "q6_count_range": "0 / 1 / 1",
+                    "q6_cells_range": "0 / 4 / 6",
+                    "total_cells_range": "90 / 108 / 130",
+                },
+            },
+            "q6_risk_reference": {
+                "risk": False,
+                "affects_bid": False,
+            },
+            "fallback": {
+                "active": fallback_active,
+                "mode": "v1_map_prior_zero_match" if fallback_active else "",
+                "affects_bid": False,
+                "decision": {
+                    "action": "停止追价" if fallback_active else "",
+                },
+                "posterior": {
+                    "raw_value_range": "180,000 / 280,000 / 420,000"
+                    if fallback_active
+                    else "",
+                    "match_text": "22/80" if fallback_active else "",
+                },
+            },
+            "truth": {
+                "available": True,
+                "source": "settlement_or_sample_replay",
+                "total_items": 36,
+                "total_cells": 108,
+                "q6": {
+                    "count": truth_q6_count,
+                    "cells": 16 if truth_q6_count else 0,
+                    "value": (
+                        truth_q6_value
+                        if truth_q6_value is not None
+                        else 486510 if truth_q6_count else 0
+                    ),
+                },
+            },
+            "constraints": {
+                "summary": {
+                    "input_total_item_count": 36,
+                    "input_warehouse_total_cells": 108,
+                    "known_grid_items": 2,
+                    "known_purple_item_count": 10,
+                    "known_gold_item_count": 3,
+                    "known_red_item_count": truth_q6_count,
+                    "shape_target_count": 4,
+                    "category_target_count": 2,
+                    "category_exclusion_count": 1,
+                    "public_constraint_key": "max_quality",
+                },
+                "public_info": {
+                    "input_constraints_mode": "pre_settlement_trusted_totals",
+                },
+            },
+            "minimap": {
+                "status": "available",
+                "known_items": 2,
+                "quality_counts": {"q5": 1, "q6": truth_q6_count},
+                "category_counts": {"能源": 1},
+                "rows_hint": 13,
+                "scrollable": False,
+                "items": [
+                    {
+                        "row": 2,
+                        "col": 4,
+                        "width": 4,
+                        "height": 4,
+                        "quality": (
+                            None
+                            if unknown_minimap_quality
+                            else 6 if truth_q6_count else 5
+                        ),
+                        "item_id": 1086001,
+                        "item_name": "民用垂直起降飞行器",
+                        "shape_key": "44",
+                        "display_label": display_label,
+                    },
+                ],
+            },
+            "shadows": [
+                {
+                    "label": "profile_b5",
+                    "active": False,
+                    "display_mode": "debug_only",
+                    "affects_bid": shadow_affects_bid,
+                    "q6_decision_value_p90": 0,
+                },
+                {
+                    "label": "aisha_deep_floor1",
+                    "active": tail_shadow_active,
+                    "display_mode": "risk_reference_candidate",
+                    "affects_bid": False,
+                    "q6_decision_value_p90": 300000 if tail_shadow_active else 0,
+                },
+            ],
+            "diagnostics": {
+                "layout": {
+                    "conflict": layout_conflict,
+                    "conflict_root": "footprint_overlap" if layout_conflict else "",
+                },
+                "q6": {
+                    "below_drop_prior": q6_below_drop_prior,
+                    "top_size_band": "q6_top_huge",
+                },
+                "sampling": {
+                    "processing_seconds": 1.25,
+                    "n_trials": 80,
+                    "shadow_trials": 80,
+                },
+            },
+        },
+    }
+
+
+def test_review_row_keeps_manual_check_fields_without_flags() -> None:
+    module = _review_module()
+    row = module.review_row_from_artifact(_artifact(), source_path="snapshot.json")
+
+    assert row["hero"] == "aisha"
+    assert row["map_id"] == 2501
+    assert row["baseline_action"] == "可守不抢"
+    assert row["v2_match_text"] == "12/80"
+    assert row["v2_matched"] == 12
+    assert row["v2_total"] == 80
+    assert row["fallback_active"] is False
+    assert row["truth_q6_count"] == 1
+    assert row["input_constraints_mode"] == "pre_settlement_trusted_totals"
+    assert row["minimap_nonempty_display_labels"] == 0
+    assert row["minimap_unknown_quality_items"] == 0
+    assert row["minimap_items_with_names"] == 1
+    assert row["shadow_affects_bid_count"] == 0
+    assert row["review_flags"] == ""
+    assert row["manual_review_focus"] == (
+        "check_hero_map_round;check_public_constraints;check_minimap_colors"
+    )
+    assert row["minimap_item_sample"][0]["item_name"] == "民用垂直起降飞行器"
+
+
+def test_review_row_flags_ui_contract_regressions() -> None:
+    module = _review_module()
+    row = module.review_row_from_artifact(
+        _artifact(
+            display_label="飞行器",
+            baseline_official=False,
+            shadow_affects_bid=True,
+            truth_q6_count=0,
+                tail_shadow_active=True,
+                layout_conflict=True,
+                v2_match="0/80",
+            )
+    )
+
+    flags = set(row["review_flags"].split(";"))
+    assert "baseline_not_official" in flags
+    assert "shadow_affects_bid" in flags
+    assert "compact_minimap_label_present" in flags
+    assert "zero_q6_truth_with_active_tail_shadow" in flags
+    assert "layout_conflict" in flags
+    assert "zero_posterior_match" in flags
+    assert "zero_match_without_fallback" in flags
+    assert row["minimap_nonempty_display_labels"] == 1
+    assert row["shadow_affects_bid_count"] == 1
+
+
+def test_export_review_rows_writes_csv_and_jsonl(tmp_path: Path) -> None:
+    module = _review_module()
+    snapshot = tmp_path / "latest_snapshot.json"
+    snapshot.write_text(
+        json.dumps(_artifact(), ensure_ascii=False),
+        encoding="utf-8-sig",
+    )
+
+    result = module.export_review_rows([snapshot], out_dir=tmp_path / "review")
+
+    assert result["exported"] == 1
+    assert result["errors"] == 0
+    assert result["summary"]["total_rows"] == 1
+    assert result["summary"]["rows_with_review_flags"] == 0
+    csv_text = Path(result["review_csv"]).read_text(encoding="utf-8-sig")
+    jsonl_text = Path(result["review_jsonl"]).read_text(encoding="utf-8")
+    summary = json.loads(Path(result["summary_json"]).read_text(encoding="utf-8"))
+    assert "baseline_action" in csv_text
+    assert "可守不抢" in csv_text
+    assert '"manual_review_focus"' in jsonl_text
+    assert summary["hero_map_counts"] == {"aisha:shipwreck": 1}
+
+
+def test_summarize_review_rows_counts_flags_and_groups() -> None:
+    module = _review_module()
+    rows = [
+        module.review_row_from_artifact(_artifact(), source_path="a.json"),
+        module.review_row_from_artifact(
+            _artifact(
+                display_label="飞行器",
+                shadow_affects_bid=True,
+                truth_q6_count=0,
+                tail_shadow_active=True,
+                layout_conflict=True,
+                v2_match="0/80",
+            ),
+            source_path="b.json",
+        ),
+    ]
+
+    summary = module.summarize_review_rows(rows, errors=[{"path": "bad.json"}])
+
+    assert summary["total_rows"] == 2
+    assert summary["error_rows"] == 1
+    assert summary["rows_with_review_flags"] == 1
+    assert summary["flag_counts"]["compact_minimap_label_present"] == 1
+    assert summary["flag_counts"]["layout_conflict"] == 1
+    assert summary["flag_counts"]["shadow_affects_bid"] == 1
+    assert summary["flag_counts"]["zero_match_without_fallback"] == 1
+    assert summary["hero_map_counts"] == {"aisha:shipwreck": 2}
+    assert summary["zero_q6_truth_rows"] == 1
+    assert summary["zero_posterior_match_rows"] == 1
+    assert summary["zero_match_with_fallback_rows"] == 0
+    assert summary["fallback_active_rows"] == 0
+    assert summary["tail_shadow_candidate_rows"] == 2
+    assert summary["active_tail_shadow_candidate_rows"] == 1
+    assert summary["minimap_text_regression_rows"] == 1
+    assert summary["shadow_affects_bid_rows"] == 1
+
+
+def test_unknown_minimap_quality_is_informational_not_a_flag() -> None:
+    module = _review_module()
+    row = module.review_row_from_artifact(
+        _artifact(unknown_minimap_quality=True),
+        source_path="outline_only.json",
+    )
+    summary = module.summarize_review_rows([row])
+
+    assert row["minimap_unknown_quality_items"] == 1
+    assert "minimap_item_missing_quality" not in row["review_flags"]
+    assert row["review_flags"] == ""
+    assert summary["minimap_unknown_quality_rows"] == 1
+
+
+def test_q6_below_prior_review_class_splits_true_miss_from_noise() -> None:
+    module = _review_module()
+    miss = module.review_row_from_artifact(
+        _artifact(
+            q6_below_drop_prior=True,
+            truth_q6_count=2,
+            truth_q6_value=486510,
+            q6_decision_value_range="0 / 120,000 / 300,000",
+        ),
+        source_path="miss.json",
+    )
+    zero_noise = module.review_row_from_artifact(
+        _artifact(
+            q6_below_drop_prior=True,
+            truth_q6_count=0,
+            truth_q6_value=0,
+            q6_decision_value_range="0 / 0 / 180,000",
+        ),
+        source_path="zero.json",
+    )
+    summary = module.summarize_review_rows([miss, zero_noise])
+
+    miss_flags = set(miss["review_flags"].split(";"))
+    zero_flags = set(zero_noise["review_flags"].split(";"))
+    assert miss["q6_below_drop_prior_class"] == "truth_p90_miss"
+    assert miss["q6_below_drop_prior_under_by"] == 186510
+    assert miss["q6_below_drop_prior_actionable"] is True
+    assert "q6_below_drop_prior_truth_miss" in miss_flags
+    assert zero_noise["q6_below_drop_prior_class"] == "truth_zero_noise"
+    assert zero_noise["q6_below_drop_prior_actionable"] is False
+    assert "q6_below_drop_prior_truth_miss" not in zero_flags
+    assert summary["q6_below_drop_prior_rows"] == 2
+    assert summary["q6_below_drop_prior_actionable_rows"] == 1
+    assert summary["q6_below_drop_prior_class_counts"] == {
+        "truth_p90_miss": 1,
+        "truth_zero_noise": 1,
+    }
+
+
+def test_zero_match_with_fallback_is_counted_separately() -> None:
+    module = _review_module()
+    row = module.review_row_from_artifact(
+        _artifact(v2_match="0/80", fallback_active=True),
+        source_path="zero_match.json",
+    )
+    summary = module.summarize_review_rows([row])
+
+    flags = set(row["review_flags"].split(";"))
+    assert "zero_posterior_match" in flags
+    assert "zero_match_without_fallback" not in flags
+    assert row["fallback_active"] is True
+    assert row["fallback_action"] == "停止追价"
+    assert row["fallback_match_text"] == "22/80"
+    assert summary["zero_match_with_fallback_rows"] == 1
+    assert summary["fallback_active_rows"] == 1

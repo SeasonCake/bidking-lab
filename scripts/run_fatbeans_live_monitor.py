@@ -16,6 +16,7 @@ from pathlib import Path
 import shutil
 import sys
 import time
+import traceback
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,31 @@ def _save_manifest(path: Path, manifest: dict[str, dict[str, Any]]) -> None:
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _append_error_log(
+    log_dir: Path,
+    path: Path,
+    *,
+    fingerprint: dict[str, Any],
+    exc: Exception,
+) -> dict[str, Any]:
+    row = {
+        "ts": time.time(),
+        "path": str(path.resolve()),
+        "name": path.name,
+        "fingerprint": fingerprint,
+        "error_type": type(exc).__name__,
+        "error": str(exc),
+        "traceback": "".join(
+            traceback.format_exception(type(exc), exc, exc.__traceback__, limit=6)
+        ),
+    }
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with (log_dir / "monitor_errors.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
+        fh.write("\n")
+    return row
 
 
 def _acquire_lock(log_dir: Path) -> Path:
@@ -135,6 +161,7 @@ def _process_file(
     log_dir: Path,
     n_trials: int,
     roi_trials: int,
+    shadow_trials: int | None,
     seed: int,
     archive_dir: Path | None = None,
 ) -> None:
@@ -143,6 +170,7 @@ def _process_file(
         tables=tables,
         n_trials=n_trials,
         roi_trials=roi_trials,
+        shadow_trials=shadow_trials,
         seed=seed,
     )
     if archive_dir is not None:
@@ -191,6 +219,15 @@ def main() -> int:
         help="Ignore processed manifest and process matching files again",
     )
     parser.add_argument(
+        "--retry-errors",
+        action="store_true",
+        help=(
+            "In watch mode, keep retrying files that fail processing. By default "
+            "a failed file fingerprint is recorded in processed_files.json after "
+            "writing monitor_errors.jsonl, so malformed captures do not block the queue."
+        ),
+    )
+    parser.add_argument(
         "--ignore-existing",
         action="store_true",
         help="When watching, mark currently existing JSON files as processed at startup",
@@ -207,6 +244,15 @@ def main() -> int:
     )
     parser.add_argument("--n-trials", type=int, default=500, help="MC trials per map")
     parser.add_argument("--roi-trials", type=int, default=250, help="ROI MC trials")
+    parser.add_argument(
+        "--shadow-trials",
+        type=int,
+        default=None,
+        help=(
+            "Trials for q6 residual shadow candidates. Defaults to "
+            "min(--n-trials, 80) to keep live monitoring responsive."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=20260530)
     args = parser.parse_args()
 
@@ -227,6 +273,7 @@ def main() -> int:
             tables=tables,
             n_trials=args.n_trials,
             roi_trials=args.roi_trials,
+            shadow_trials=args.shadow_trials,
             seed=args.seed,
         )
         write_monitor_logs(artifact, log_dir=log_dir)
@@ -240,6 +287,7 @@ def main() -> int:
             log_dir=log_dir,
             n_trials=args.n_trials,
             roi_trials=args.roi_trials,
+            shadow_trials=args.shadow_trials,
             seed=args.seed,
             archive_dir=archive_dir,
         )
@@ -285,6 +333,7 @@ def main() -> int:
                     log_dir=log_dir,
                     n_trials=args.n_trials,
                     roi_trials=args.roi_trials,
+                    shadow_trials=args.shadow_trials,
                     seed=args.seed,
                     archive_dir=archive_dir,
                 )
@@ -297,6 +346,23 @@ def main() -> int:
                 _save_manifest(manifest_path, manifest)
             except Exception as exc:  # noqa: BLE001 - long-running monitor boundary
                 print(f"[error] {path}: {exc}", file=sys.stderr)
+                error_row = _append_error_log(
+                    log_dir,
+                    path,
+                    fingerprint=fingerprint,
+                    exc=exc,
+                )
+                if not args.retry_errors:
+                    manifest[manifest_key] = {
+                        **fingerprint,
+                        "processed_at": time.time(),
+                        "failed_at": error_row["ts"],
+                        "name": path.name,
+                        "status": "error",
+                        "error_type": error_row["error_type"],
+                        "error": str(error_row["error"])[:240],
+                    }
+                    _save_manifest(manifest_path, manifest)
         if args.once:
             return 0
         time.sleep(max(0.2, args.poll))

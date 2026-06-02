@@ -18,6 +18,7 @@ from bidking_lab.runtime.snapshot import (
     tactical_panel_from_rows,
     tactical_summary_rows,
     tactical_snapshot_from_rows,
+    ui_contract_from_artifact,
 )
 
 __all__ = (
@@ -34,4 +35,5 @@ __all__ = (
     "tactical_panel_from_rows",
     "tactical_summary_rows",
     "tactical_snapshot_from_rows",
+    "ui_contract_from_artifact",
 )

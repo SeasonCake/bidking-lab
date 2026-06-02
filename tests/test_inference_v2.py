@@ -18,6 +18,7 @@ from bidking_lab.inference.v2 import (
     EvidenceStoreBuilder,
     RuntimeEvidence,
     build_residual_problem,
+    cell_evidence_score,
     decision_value_for_truth,
     estimate_posterior_v2,
     evidence_store_from_fatbeans_events,
@@ -209,6 +210,44 @@ def test_evidence_store_from_fatbeans_merges_item_and_category_runtime() -> None
     assert anchors[0].categories == (110,)
 
 
+def test_runtime_evidence_merge_uses_latest_layout_position() -> None:
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=1,
+            local_index=0,
+            shape_key="22",
+            cells=4,
+            sources=("skill:r1",),
+        )
+    )
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=2,
+            local_index=0,
+            shape_key="22",
+            cells=4,
+            sources=("skill:r1",),
+        )
+    )
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=1,
+            local_index=20,
+            shape_key="22",
+            cells=4,
+            sources=("skill:r2",),
+        )
+    )
+
+    store = builder.build()
+    layout = layout_feasibility_from_store(store)
+
+    assert store.by_runtime[1].local_index == 20
+    assert layout.overlap_cells == 0
+    assert layout.trusted_footprint_count == 2
+
+
 def test_category_action_absence_adds_runtime_negative_category() -> None:
     events = FatbeansCaptureEvents(
         packets=(),
@@ -257,6 +296,48 @@ def test_category_action_absence_adds_runtime_negative_category() -> None:
 
     assert store.by_runtime[123].excluded_categories == (102,)
     assert "action_negative:100152" in store.by_runtime[123].sources
+
+
+def test_wuqilin_skill_reveal_becomes_antique_category_evidence() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2401,
+                round_index=1,
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=10002071,
+                        hero_id=207,
+                        round_index=1,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=22,
+                                runtime_id=123,
+                                item_id=None,
+                                quality=None,
+                                value=None,
+                                shape_code=12,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    store = evidence_store_from_fatbeans_events(events)
+
+    assert store.by_runtime[123].categories == (106,)
+    assert "skill:10002071" in store.by_runtime[123].sources
 
 
 def test_category_action_matches_known_shape_by_local_key() -> None:
@@ -429,6 +510,42 @@ def test_conditional_sampler_honors_exact_total_item_count() -> None:
     assert sum(bucket.count for bucket in truth.buckets.values()) == 2
 
 
+def test_conditional_sampler_honors_exact_total_count_and_cells() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            item_id=1103006,
+            quality=3,
+            shape_key="21",
+            cells=2,
+            sources=("public:200022",),
+        )
+    )
+    obs = SessionObs(
+        map_id=2401,
+        hero="ethan",
+        total_item_count=2,
+        warehouse_total_cells=18,
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truth = sampler.sample(rng=np.random.default_rng(4))
+
+    assert sum(bucket.count for bucket in truth.buckets.values()) == 2
+    assert truth.warehouse_total_cells == 18
+    assert truth.buckets[6].count == 1
+
+
 def test_estimate_posterior_v2_uses_anchor_without_rejection_dead_end() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()
@@ -527,6 +644,29 @@ def test_q6_residual_boost_only_changes_residual_sampling_weights() -> None:
     assert abs(float(base_probs[q6_mask].sum()) - 1 / 1002) < 1e-12
     assert float(boosted_probs[q6_mask].sum()) > float(base_probs[q6_mask].sum())
     assert abs(float(boosted_probs.sum()) - 1.0) < 1e-12
+
+
+def test_q6_residual_prior_floor_sampler_adds_q6_when_enabled() -> None:
+    maps, drops, items = _tables()
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(
+        problem,
+        maps=maps,
+        drops=drops,
+        items=items,
+        q6_residual_prior_floor_ratio=1000.0,
+    )
+
+    sampled = sampler.sample(np.random.default_rng(7))
+
+    assert sampled.buckets[6].count >= 1
+    assert sampled.buckets[6].total_cells >= 16
 
 
 def test_residual_problem_guides_per_quality_bucket_targets() -> None:
@@ -1253,6 +1393,68 @@ def test_known_footprints_build_layout_feasibility() -> None:
     assert layout.score == 1.0
 
 
+def test_shape_less_local_does_not_move_shape_footprint() -> None:
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            local_index=30,
+            quality=5,
+            sources=("action:100134",),
+        )
+    )
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            local_index=None,
+            shape_key="44",
+            cells=16,
+            sources=("skill:100208",),
+        )
+    )
+    store = builder.build()
+
+    footprints = known_footprints(store)
+    layout = layout_feasibility_from_store(store)
+
+    assert len(footprints) == 1
+    assert footprints[0].local_index == 0
+    assert footprints[0].row == 1
+    assert footprints[0].col == 1
+    assert layout.diagnostics == ()
+
+
+def test_latest_shape_bearing_local_updates_footprint() -> None:
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            local_index=30,
+            shape_key="22",
+            cells=4,
+            sources=("skill:old",),
+        )
+    )
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            local_index=42,
+            shape_key="22",
+            cells=4,
+            quality=4,
+            sources=("skill:new",),
+        )
+    )
+    store = builder.build()
+
+    footprints = known_footprints(store)
+
+    assert len(footprints) == 1
+    assert footprints[0].local_index == 42
+    assert footprints[0].row == 5
+    assert footprints[0].col == 3
+
+
 def test_layout_feasibility_rejects_impossible_sample() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()
@@ -1497,6 +1699,109 @@ def test_public_gold_avg_value_scores_posterior_samples() -> None:
     assert 0 < value_evidence_score(mismatch, problem) < 1
 
 
+def test_public_purple_avg_value_is_retained_as_soft_target() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_fact(
+        EvidenceFact(
+            kind="public_info",
+            key="200036",
+            value=8_958.21,
+            source="public",
+        )
+    )
+
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+
+    assert problem.bucket_targets[4].count_floor == 1
+    assert problem.bucket_targets[4].avg_value == 8_958.21
+
+
+def test_public_quality_avg_cells_scores_posterior_samples() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_fact(
+        EvidenceFact(
+            kind="public_info",
+            key="200013",
+            value=2.5,
+            source="public",
+        )
+    )
+
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    matching = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=5,
+        buckets={4: BucketTruth(quality=4, count=2, total_cells=5)},
+    )
+    mismatch = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=10,
+        buckets={4: BucketTruth(quality=4, count=1, total_cells=10)},
+    )
+
+    assert problem.bucket_targets[4].count_floor == 1
+    assert problem.bucket_targets[4].avg_cells == 2.5
+    assert cell_evidence_score(matching, problem) == 1
+    assert 0 < cell_evidence_score(mismatch, problem) < 1
+
+
+def test_public_total_avg_cells_scores_posterior_samples() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_fact(
+        EvidenceFact(
+            kind="public_info",
+            key="200014",
+            value=3.0,
+            source="public",
+        )
+    )
+
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    matching = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=6,
+        buckets={
+            4: BucketTruth(quality=4, count=1, total_cells=4),
+            5: BucketTruth(quality=5, count=1, total_cells=2),
+        },
+    )
+    mismatch = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=10,
+        buckets={4: BucketTruth(quality=4, count=1, total_cells=10)},
+    )
+
+    assert problem.total_avg_cells == 3.0
+    assert "public_total_avg_cells:3.0000" in problem.diagnostics
+    assert cell_evidence_score(matching, problem) == 1
+    assert 0 < cell_evidence_score(mismatch, problem) < 1
+
+
 def test_public_random_sample_avg_value_is_retained_but_not_bucket_target() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()
@@ -1591,6 +1896,95 @@ def test_public_highest_quality_limits_sample_quality() -> None:
     assert "public_max_quality:5" in problem.diagnostics
     assert global_evidence_score(with_red, problem) == 0
     assert global_evidence_score(without_red, problem) == 1
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+    pool = sampler._sampler.pools[0]
+    probs = sampler._residual_probabilities(pool)
+    q6_mask = np.asarray([item.quality == 6 for item in pool.items])
+    assert float(probs[q6_mask].sum()) == 0.0
+
+
+def test_public_highest_quality_suppresses_q6_drop_prior_warning() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=501,
+            item_id=1055001,
+            quality=5,
+            shape_key="11",
+            cells=1,
+            sources=("public:200048",),
+        )
+    )
+    report = estimate_posterior_v2(
+        2401,
+        SessionObs(map_id=2401, hero="isabella"),
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        n_trials=40,
+        seed=3,
+    )
+
+    diagnostics = ";".join(report.diagnostics)
+    assert "public_max_quality:5" in diagnostics
+    assert "q6_unconstrained_low_sample_rate" not in diagnostics
+    assert "q6_below_drop_prior" not in diagnostics
+
+
+def test_isabella_highest_quality_skill_limits_sample_quality() -> None:
+    maps, drops, items = _tables()
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2401,
+                round_index=1,
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=100110,
+                        hero_id=110,
+                        round_index=1,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=29,
+                                runtime_id=501,
+                                item_id=None,
+                                quality=5,
+                                value=None,
+                                shape_code=None,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    problem = build_residual_problem(
+        2401,
+        evidence_store_from_fatbeans_events(events),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+    pool = sampler._sampler.pools[0]
+    probs = sampler._residual_probabilities(pool)
+    q6_mask = np.asarray([item.quality == 6 for item in pool.items])
+
+    assert problem.max_quality == 5
+    assert "public_max_quality:5" in problem.diagnostics
+    assert float(probs[q6_mask].sum()) == 0.0
 
 
 def test_public_largest_item_limits_sample_item_cells() -> None:
@@ -1653,6 +2047,20 @@ def test_public_largest_item_limits_sample_item_cells() -> None:
     assert "public_max_item_cells:1" in problem.diagnostics
     assert global_evidence_score(too_large, problem) == 0
     assert global_evidence_score(matching, problem) == 1
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+    pool = sampler._sampler.pools[0]
+    probs = sampler._residual_probabilities(pool)
+    too_large_mask = np.asarray(
+        [item.shape_w * item.shape_h > 1 for item in pool.items]
+    )
+    assert float(probs[too_large_mask].sum()) == 0.0
+    for _ in range(20):
+        sampled = sampler.sample(np.random.default_rng(7))
+        assert all(
+            item.shape_w * item.shape_h <= 1
+            for bucket in sampled.buckets.values()
+            for item in bucket.items
+        )
 
 
 def test_decision_value_trims_unconfirmed_small_rare_tail() -> None:

@@ -33,6 +33,18 @@ _CATEGORY_OUTLINE_ACTIONS: dict[int, int] = {
     100159: 109,  # 食饮珍馐
     100160: 110,  # 书画古籍
 }
+_HERO_MODE_BY_ID: dict[int, str] = {
+    103: "aisha",
+    110: "isabella",
+    207: "wuqilin",
+    208: "ethan",
+}
+_SKILL_REVEAL_CATEGORIES: dict[int, int] = {
+    1001101: 105,  # 伊莎贝拉: 珠宝矿藏轮廓
+    10002071: 106,  # 吴起灵: 文物古董轮廓
+    10002072: 106,  # 吴起灵: 文物古董品质
+    10002073: 106,  # 吴起灵: 文物古董完整信息
+}
 
 
 Direction = Literal["SEND", "REV"]
@@ -719,7 +731,7 @@ def parse_fatbeans_packets(
 
 
 def _event_kind_for_state(state: FatbeansStateEvent) -> str:
-    if state.message_id == 0x002D:
+    if state.message_id == 0x002D or state.inventory_items:
         return "session_settled"
     if state.action_results or state.skill_reveals:
         return "tool_revealed"
@@ -798,21 +810,25 @@ def _state_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
 
 
 def _hero_mode_from_state(state: FatbeansStateEvent) -> str | None:
-    hero_ids = {
-        reveal.hero_id
-        for reveal in state.skill_reveals
-        if reveal.hero_id is not None
-    }
-    if 103 in hero_ids:
-        return "aisha"
-    if 208 in hero_ids:
-        return "ethan"
+    for reveal in state.skill_reveals:
+        if reveal.hero_id is None:
+            continue
+        hero = _HERO_MODE_BY_ID.get(reveal.hero_id)
+        if hero is not None:
+            return hero
     for bid in state.bids:
-        if bid.hero_id == 103:
-            return "aisha"
-        if bid.hero_id == 208:
-            return "ethan"
+        if bid.hero_id is None:
+            continue
+        hero = _HERO_MODE_BY_ID.get(bid.hero_id)
+        if hero is not None:
+            return hero
     return None
+
+
+def _skill_reveal_category(skill_id: int | None) -> int | None:
+    if skill_id is None:
+        return None
+    return _SKILL_REVEAL_CATEGORIES.get(int(skill_id))
 
 
 def _inventory_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
@@ -1137,8 +1153,9 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
             index_by_runtime[item.runtime_id] = len(revealed_items) - 1
 
     for reveal in state.skill_reveals:
+        category = _skill_reveal_category(reveal.skill_id)
         for item in reveal.observed_items:
-            append_observed_item(item)
+            append_observed_item(item, category=category)
     for info in state.public_infos:
         for item in info.observed_items:
             append_observed_item(item)
@@ -1189,7 +1206,11 @@ def live_batches_from_fatbeans_events(
             LiveObservationBatch(
                 source="packet",
                 event_kind=_event_kind_for_state(state),  # type: ignore[arg-type]
-                phase="settled" if state.message_id == 0x002D else "bidding",
+                phase=(
+                    "settled"
+                    if state.message_id == 0x002D or state.inventory_items
+                    else "bidding"
+                ),
                 field_updates=tuple(updates),
                 grid_items=grid_items,
                 sequence=state.sort_id,

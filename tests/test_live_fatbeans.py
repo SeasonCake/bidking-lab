@@ -8,8 +8,10 @@ import pytest
 from bidking_lab.live.fatbeans import (
     FatbeansActionResult,
     FatbeansCaptureEvents,
+    FatbeansInventoryItem,
     FatbeansObservedItem,
     FatbeansPublicInfo,
+    FatbeansSkillReveal,
     FatbeansStateEvent,
     latest_player_bids,
     live_batches_from_fatbeans_capture,
@@ -51,6 +53,39 @@ def test_grid_footprint_decodes_fatbeans_local_and_shape() -> None:
     assert (footprint.row, footprint.col) == (10, 5)
     assert (footprint.width, footprint.height) == (3, 3)
     assert (footprint.bottom_row, footprint.right_col) == (12, 7)
+
+
+def test_inventory_items_mark_batch_settled_even_without_loss_packet() -> None:
+    batches = live_batches_from_fatbeans_events(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=1,
+                    capture_time="",
+                    message_id=0x0025,
+                    session_id="s1",
+                    map_id=2401,
+                    round_index=5,
+                    inventory_items=(
+                        FatbeansInventoryItem(
+                            runtime_id=101,
+                            item_id=1001,
+                            quality=4,
+                            cells=4,
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert len(batches) == 1
+    assert batches[0].phase == "settled"
+    assert batches[0].event_kind == "session_settled"
 
 
 def test_grid_footprint_treats_missing_local_as_zero() -> None:
@@ -266,6 +301,113 @@ def test_known_quality_grid_items_become_bucket_lower_bounds() -> None:
     assert session.unknown_outline_total_cells == 6
 
 
+def _session_with_bucket_fields(*updates: FieldUpdate) -> object:
+    state = LiveSessionState()
+    batch = LiveObservationBatch(
+        source="packet",
+        event_kind="public_info",
+        phase="reading",
+        field_updates=(
+            FieldUpdate(
+                path=("session", "map_id"),
+                value=2401,
+                source="packet",
+                confidence="exact",
+            ),
+            FieldUpdate(
+                path=("session", "hero"),
+                value="ethan",
+                source="packet",
+                confidence="exact",
+            ),
+            *updates,
+        ),
+    )
+    session = live_state_to_session_obs(apply_observation_batch(state, batch))
+    assert session is not None
+    return session
+
+
+def test_residual_red_bucket_requires_explicit_non_red_cells() -> None:
+    session = _session_with_bucket_fields(
+        FieldUpdate(
+            path=("session", "warehouse_total_cells"),
+            value=100,
+            source="packet",
+            confidence="exact",
+        ),
+        FieldUpdate(
+            path=("bucket", "1", "total_cells"),
+            value=10,
+            source="packet",
+            confidence="exact",
+        ),
+        FieldUpdate(
+            path=("bucket", "3", "total_cells"),
+            value=20,
+            source="packet",
+            confidence="exact",
+        ),
+        FieldUpdate(
+            path=("bucket", "4", "avg_cells"),
+            value="2.307692",
+            source="packet",
+            confidence="exact",
+        ),
+        FieldUpdate(
+            path=("bucket", "4", "count"),
+            value=13,
+            source="packet",
+            confidence="exact",
+        ),
+        FieldUpdate(
+            path=("bucket", "5", "total_cells"),
+            value=30,
+            source="packet",
+            confidence="exact",
+        ),
+    )
+
+    assert 6 not in session.buckets
+
+
+def test_residual_red_bucket_uses_only_explicit_non_red_cells() -> None:
+    session = _session_with_bucket_fields(
+        FieldUpdate(
+            path=("session", "warehouse_total_cells"),
+            value=100,
+            source="packet",
+            confidence="exact",
+        ),
+        FieldUpdate(
+            path=("bucket", "1", "total_cells"),
+            value=10,
+            source="packet",
+            confidence="exact",
+        ),
+        FieldUpdate(
+            path=("bucket", "3", "total_cells"),
+            value=20,
+            source="packet",
+            confidence="exact",
+        ),
+        FieldUpdate(
+            path=("bucket", "4", "total_cells"),
+            value=30,
+            source="packet",
+            confidence="exact",
+        ),
+        FieldUpdate(
+            path=("bucket", "5", "total_cells"),
+            value=25,
+            source="packet",
+            confidence="exact",
+        ),
+    )
+
+    assert session.buckets[6].total_cells == 15
+
+
 @pytest.mark.parametrize(
     ("action_id", "category"),
     [
@@ -396,6 +538,56 @@ def test_category_outline_merges_with_existing_runtime_item() -> None:
     assert len(batch.grid_items) == 1
     assert batch.grid_items[0].item_id == 1103006
     assert batch.grid_items[0].category == 110
+
+
+def test_new_hero_skill_reveals_set_session_hero_and_category() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2401,
+                round_index=1,
+                bids=(),
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=10002071,
+                        hero_id=207,
+                        round_index=1,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=22,
+                                runtime_id=123,
+                                item_id=None,
+                                quality=None,
+                                value=None,
+                                shape_code=12,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+    state = apply_observation_batch(LiveSessionState(), batch)
+    session = live_state_to_session_obs(state)
+
+    assert {update.path: update.value for update in batch.field_updates}[
+        ("session", "hero")
+    ] == "wuqilin"
+    assert batch.grid_items[0].category == 106
+    assert session is not None
+    assert session.hero == "wuqilin"
+    assert session.category_items[0].category == 106
 
 
 def test_fatbeans_loader_skips_non_tcp_rows_with_http_payload_metadata() -> None:

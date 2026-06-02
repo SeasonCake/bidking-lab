@@ -21,7 +21,16 @@ from bidking_lab.extract.drop_table import DropPool, load_drop_table
 from bidking_lab.extract.item_table import Item, load_item_table
 from bidking_lab.inference.bid_strategy import recommend_bid_strategy
 from bidking_lab.inference.diagnostics import layout_conflict_root
+from bidking_lab.inference.q6_residual import (
+    AISHA_BOTTOM_ROW_RISK_THRESHOLD,
+    actionable_random_sample_avg_values,
+    aisha_bottom_row_risk,
+    evidence_profile_key_from_problem,
+    q6_residual_boost_for_profile,
+    q6_residual_prior_floor_ratio_for_profile,
+)
 from bidking_lab.inference.v2 import (
+    build_residual_problem,
     estimate_posterior_v2,
     evidence_store_from_fatbeans_events,
 )
@@ -48,6 +57,7 @@ from bidking_lab.live.fatbeans import live_batches_from_fatbeans_events
 from bidking_lab.runtime import (
     layout_replay_rows_from_stages,
     tactical_panel_from_rows,
+    ui_contract_from_artifact,
 )
 
 _CATEGORY_LABELS = {
@@ -62,6 +72,14 @@ _CATEGORY_LABELS = {
     109: "食饮",
     110: "书画",
 }
+DEFAULT_Q6_SHADOW_TRIALS_CAP = 80
+_TRUSTED_SESSION_TOTAL_CONFIDENCES = {"high", "exact"}
+_SAFE_SESSION_TOTAL_FIELDS = (
+    "warehouse_total_cells",
+    "warehouse_total_cells_approx",
+    "warehouse_total_cells_tolerance",
+    "total_item_count",
+)
 
 
 @dataclass(frozen=True)
@@ -162,6 +180,36 @@ def _relax_exact_bucket_constraints(obs: Any) -> Any:
     if not changed:
         return obs
     return replace(obs, buckets=buckets)
+
+
+def _zero_match_fallback_session(obs: Any) -> Any:
+    buckets = {}
+    for quality, bucket in obs.buckets.items():
+        if quality == 6 and (bucket.total_cells == 0 or bucket.count == 0):
+            buckets[quality] = replace(
+                bucket,
+                total_cells=0,
+                count=0,
+                total_cells_min=0,
+                count_min=0,
+                value_sum=None,
+                avg_value=None,
+                value_range=None,
+                huge_band="none",
+                huge_cells_override=0,
+            )
+    return replace(
+        obs,
+        warehouse_total_cells=None,
+        warehouse_total_cells_approx=None,
+        warehouse_total_cells_tolerance=None,
+        total_item_count=None,
+        buckets=buckets,
+        visible_outline_item_count_min=None,
+        visible_outline_total_cells_min=None,
+        visible_outline_bottom_row_min=None,
+        category_items=(),
+    )
 
 
 def _map_likelihood_result_rows(
@@ -293,6 +341,12 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
                     (),
                 )
             ),
+            "随机样本均价信号": ";".join(
+                f"n={sample_count}:avg={value:.2f}"
+                for sample_count, value in actionable_random_sample_avg_values(
+                    getattr(report, "random_sample_avg_values", ())
+                )
+            ),
             "诊断": diagnostics,
         }
     ]
@@ -334,6 +388,86 @@ def _q6_prior_gap_summary(report: Any) -> dict[str, Any]:
             else None
         ),
     }
+
+
+def _quantile_value(summary: Any, name: str) -> int | None:
+    if summary is None:
+        return None
+    value = getattr(summary, name, None)
+    if value is None:
+        return None
+    return int(round(float(value)))
+
+
+def _q6_residual_boost_shadow_summary(
+    report: Any | None,
+    *,
+    label: str,
+    requested_boost: float,
+    active_boost: float,
+    gate: str,
+    evidence_profile_key: str,
+    trials: int,
+    requested_prior_floor_ratio: float = 0.0,
+    active_prior_floor_ratio: float = 0.0,
+) -> dict[str, Any]:
+    return {
+        "label": label,
+        "gate": gate,
+        "requested_boost": requested_boost,
+        "active_boost": active_boost,
+        "requested_prior_floor_ratio": requested_prior_floor_ratio,
+        "active_prior_floor_ratio": active_prior_floor_ratio,
+        "active": active_boost > 1.0 or active_prior_floor_ratio > 0.0,
+        "trials": trials,
+        "evidence_profile_key": evidence_profile_key,
+        "n_matched": getattr(report, "n_matched", None),
+        "n_total": getattr(report, "n_total", None),
+        "decision_value_p50": _quantile_value(
+            getattr(report, "decision_value", None),
+            "p50",
+        ),
+        "decision_value_p90": _quantile_value(
+            getattr(report, "decision_value", None),
+            "p90",
+        ),
+        "q6_decision_value_p90": _quantile_value(
+            getattr(report, "q6_decision_value", None),
+            "p90",
+        ),
+        "q6_count_p90": _quantile_value(getattr(report, "q6_count", None), "p90"),
+        "q6_cells_p90": _quantile_value(getattr(report, "q6_cells", None), "p90"),
+        "diagnostics": ";".join(getattr(report, "diagnostics", ()) or ()),
+    }
+
+
+def _q6_residual_shadow_rows(
+    shadows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for shadow in shadows:
+        if not shadow:
+            continue
+        rows.append(
+            {
+                "策略": shadow.get("label") or "",
+                "门控": shadow.get("gate") or "",
+                "激活": "是" if shadow.get("active") else "",
+                "boost": shadow.get("active_boost"),
+                "prior floor": shadow.get("active_prior_floor_ratio"),
+                "trials": shadow.get("trials"),
+                "证据profile": shadow.get("evidence_profile_key") or "",
+                "匹配": (
+                    f"{shadow.get('n_matched')}/{shadow.get('n_total')}"
+                    if shadow.get("n_total") is not None
+                    else ""
+                ),
+                "q6决策P90": shadow.get("q6_decision_value_p90"),
+                "q6件数P90": shadow.get("q6_count_p90"),
+                "q6格数P90": shadow.get("q6_cells_p90"),
+            }
+        )
+    return rows
 
 
 def _map_family_from_id(map_id: Any) -> str:
@@ -520,6 +654,59 @@ def _states_to_session(
     )
 
 
+def _trusted_pre_settlement_session_totals(
+    state: LiveSessionState,
+) -> dict[str, dict[str, Any]]:
+    constraints: dict[str, dict[str, Any]] = {}
+    for field in _SAFE_SESSION_TOTAL_FIELDS:
+        observed = state.fields.get(("session", field))
+        if observed is None:
+            continue
+        if observed.confidence not in _TRUSTED_SESSION_TOTAL_CONFIDENCES:
+            continue
+        value = _parse_int_text(observed.value)
+        if value is None:
+            continue
+        constraints[field] = {
+            "value": value,
+            "source": observed.source,
+            "confidence": observed.confidence,
+            "sequence": observed.sequence,
+        }
+    return constraints
+
+
+def _inference_session_with_safe_totals(
+    base_session: Any,
+    pre_settlement_state: LiveSessionState,
+) -> tuple[Any, dict[str, Any]]:
+    constraints = _trusted_pre_settlement_session_totals(pre_settlement_state)
+    session = replace(
+        base_session,
+        warehouse_total_cells=(
+            constraints.get("warehouse_total_cells", {}).get("value")
+        ),
+        warehouse_total_cells_approx=(
+            constraints.get("warehouse_total_cells_approx", {}).get("value")
+        ),
+        warehouse_total_cells_tolerance=(
+            constraints.get("warehouse_total_cells_tolerance", {}).get("value")
+        ),
+        total_item_count=constraints.get("total_item_count", {}).get("value"),
+    )
+    return (
+        session,
+        {
+            "mode": (
+                "pre_settlement_trusted_totals"
+                if constraints
+                else "session_totals_stripped"
+            ),
+            **constraints,
+        },
+    )
+
+
 def _inventory_value(events: FatbeansCaptureEvents, items: Mapping[int, Item]) -> int | None:
     for state in reversed(events.states):
         if not state.inventory_items:
@@ -624,6 +811,87 @@ def _build_bid_rows(
             }
         )
     return rows
+
+
+def _build_zero_match_fallback_rows(
+    *,
+    candidate_map_ids: Sequence[int],
+    inference_session: Any,
+    latest_bids: Mapping[str, int],
+    round_no: int | None,
+    maps: Mapping[int, BidMap],
+    drops: Mapping[int, DropPool],
+    items: Mapping[int, Item],
+    n_trials: int,
+    seed: int,
+    cells_tol: int,
+    count_tol: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    fallback_session = _zero_match_fallback_session(inference_session)
+    fallback_cells_tol = max(cells_tol, 12)
+    fallback_count_tol = max(count_tol, 3)
+    fallback_results = estimate_map_likelihood(
+        candidate_map_ids,
+        fallback_session,
+        maps=maps,
+        drops=drops,
+        items=items,
+        n_trials=n_trials,
+        seed=seed,
+        cells_tol=fallback_cells_tol,
+        count_tol=fallback_count_tol,
+        warehouse_tol=fallback_cells_tol,
+        total_item_count_tol=fallback_count_tol,
+    )
+    fallback_warehouse = estimate_warehouse_cells(
+        candidate_map_ids,
+        fallback_session,
+        maps=maps,
+        drops=drops,
+        items=items,
+        n_trials=n_trials,
+        seed=seed,
+        cells_tol=fallback_cells_tol,
+        count_tol=fallback_count_tol,
+        total_item_count_tol=fallback_count_tol,
+    )
+    fallback_map_rows = _map_likelihood_result_rows(
+        fallback_results,
+        "v1 fallback（v2无匹配，map prior）",
+    )
+    fallback_warehouse_rows = _warehouse_estimate_rows(fallback_warehouse)
+    value_summary = next(
+        (
+            result.total_value
+            for result in fallback_results
+            if result.total_value is not None
+        ),
+        fallback_warehouse.total_value,
+    )
+    posterior_samples = max(
+        [fallback_warehouse.n_matched]
+        + [result.n_matched for result in fallback_results],
+        default=0,
+    )
+    fallback_bid_rows: list[dict[str, Any]] = []
+    if value_summary is not None:
+        fallback_bid_rows = _build_bid_rows(
+            latest_bids=latest_bids,
+            value_summary=value_summary,
+            evidence_label="v1 fallback（v2无匹配）",
+            session=fallback_session,
+            round_no=round_no,
+            posterior_samples=posterior_samples,
+            warehouse_estimate=fallback_warehouse,
+            raw_value_summary=value_summary,
+        )
+        for row in fallback_bid_rows:
+            row["fallback"] = "是"
+            row["fallback_mode"] = "v1_map_prior_zero_match"
+            row["fallback_note"] = (
+                "v2 后验无匹配时的 map-prior 低置信参考；不替代 baseline v2"
+            )
+    return fallback_map_rows, fallback_warehouse_rows, fallback_bid_rows
 
 
 def _parse_range_value(label: str, index: int) -> int | None:
@@ -744,6 +1012,61 @@ def _q6_top_size_band(truth_breakdown: Mapping[str, Any] | None) -> str:
     return "q6_top_huge"
 
 
+def _model_eval_shadow_fields(
+    prefix: str,
+    shadow: Mapping[str, Any],
+    *,
+    baseline_q6_decision_value_p90: int | None,
+    final_q6_value: int,
+) -> dict[str, Any]:
+    active = bool(shadow.get("active"))
+    shadow_q6_p90 = _parse_int_text(shadow.get("q6_decision_value_p90"))
+    under_before = (
+        active
+        and baseline_q6_decision_value_p90 is not None
+        and final_q6_value > baseline_q6_decision_value_p90
+    )
+    covered_after = (
+        active
+        and shadow_q6_p90 is not None
+        and final_q6_value <= shadow_q6_p90
+    )
+    return {
+        f"{prefix}_label": shadow.get("label"),
+        f"{prefix}_gate": shadow.get("gate"),
+        f"{prefix}_evidence_profile": shadow.get("evidence_profile_key"),
+        f"{prefix}_active": active,
+        f"{prefix}_trials": _parse_int_text(shadow.get("trials")),
+        f"{prefix}_active_boost": _parse_float_text(shadow.get("active_boost")),
+        f"{prefix}_active_prior_floor_ratio": _parse_float_text(
+            shadow.get("active_prior_floor_ratio")
+        ),
+        f"{prefix}_decision_value_p50": _parse_int_text(
+            shadow.get("decision_value_p50")
+        ),
+        f"{prefix}_decision_value_p90": _parse_int_text(
+            shadow.get("decision_value_p90")
+        ),
+        f"{prefix}_q6_decision_value_p90": shadow_q6_p90,
+        f"{prefix}_q6_count_p90": _parse_int_text(shadow.get("q6_count_p90")),
+        f"{prefix}_q6_cells_p90": _parse_int_text(shadow.get("q6_cells_p90")),
+        f"{prefix}_q6_p90_delta": (
+            shadow_q6_p90 - baseline_q6_decision_value_p90
+            if shadow_q6_p90 is not None
+            and baseline_q6_decision_value_p90 is not None
+            else None
+        ),
+        f"{prefix}_under_before": under_before,
+        f"{prefix}_covered_after": covered_after,
+        f"{prefix}_helped": under_before and covered_after,
+        f"{prefix}_false_positive_proxy": (
+            active
+            and final_q6_value <= 0
+            and (shadow_q6_p90 or 0) > 0
+        ),
+    }
+
+
 def _model_eval_row(
     *,
     file: str,
@@ -758,6 +1081,15 @@ def _model_eval_row(
     bid_rows = artifact.get("bid_rows") or []
     layout_rows = artifact.get("layout_replay_rows") or []
     v2_rows = artifact.get("v2_posterior_rows") or []
+    shadow = artifact.get("q6_residual_boost_shadow") or {}
+    deep_floor_shadow = artifact.get("q6_residual_deep_floor_shadow") or {}
+    hidden_floor_shadow = artifact.get("q6_residual_hidden_floor_shadow") or {}
+    bottom_row_risk = artifact.get("q6_aisha_bottom_row_risk") or {}
+    input_constraints = (
+        artifact.get("inference_input_constraints")
+        if isinstance(artifact.get("inference_input_constraints"), Mapping)
+        else {}
+    )
     warehouse_p50 = None
     value_p50 = None
     decision_value_p50 = None
@@ -783,6 +1115,19 @@ def _model_eval_row(
     q6_prior_floor_value = None
     q6_practical_gate = ""
     q6_practical_p90 = None
+    q6_shadow_active = bool(shadow.get("active"))
+    q6_shadow_active_boost = _parse_float_text(shadow.get("active_boost"))
+    q6_shadow_decision_value_p50 = _parse_int_text(
+        shadow.get("decision_value_p50")
+    )
+    q6_shadow_decision_value_p90 = _parse_int_text(
+        shadow.get("decision_value_p90")
+    )
+    q6_shadow_q6_decision_value_p90 = _parse_int_text(
+        shadow.get("q6_decision_value_p90")
+    )
+    q6_shadow_q6_count_p90 = _parse_int_text(shadow.get("q6_count_p90"))
+    q6_shadow_q6_cells_p90 = _parse_int_text(shadow.get("q6_cells_p90"))
     anchor_count = None
     posterior_diagnostics = ""
     if warehouse_rows:
@@ -817,6 +1162,9 @@ def _model_eval_row(
         category_target_count = _parse_int_text(v2_rows[0].get("分类约束数"))
         category_exclusion_count = _parse_int_text(v2_rows[0].get("分类反排数"))
         random_sample_avg_values = str(v2_rows[0].get("随机样本均价") or "")
+        random_sample_avg_signal_values = str(
+            v2_rows[0].get("随机样本均价信号") or ""
+        )
         q6_value_p90 = _parse_range_value(
             str(v2_rows[0].get("q6价值 P10/P50/P90", "")),
             2,
@@ -855,6 +1203,7 @@ def _model_eval_row(
         category_exclusion_count = None
         anchor_count = None
         random_sample_avg_values = ""
+        random_sample_avg_signal_values = ""
     layout_root = layout_conflict_root(posterior_diagnostics)
     latest_layout_fit = next(
         (
@@ -874,6 +1223,16 @@ def _model_eval_row(
         current = str(row.get("当前最高", ""))
         highest_bid = _parse_int_text(current.split(" ")[-1] if current else None)
     final_q6_value = int((truth_breakdown or {}).get("final_q6_value") or 0)
+    q6_shadow_under_before = (
+        q6_shadow_active
+        and q6_decision_value_p90 is not None
+        and final_q6_value > q6_decision_value_p90
+    )
+    q6_shadow_covered_after = (
+        q6_shadow_active
+        and q6_shadow_q6_decision_value_p90 is not None
+        and final_q6_value <= q6_shadow_q6_decision_value_p90
+    )
     q6_practical_gate_hit = bool(q6_practical_gate)
     q6_practical_under_before = (
         q6_practical_gate_hit
@@ -884,6 +1243,18 @@ def _model_eval_row(
         q6_practical_gate_hit
         and q6_practical_p90 is not None
         and final_q6_value <= q6_practical_p90
+    )
+    deep_floor_shadow_fields = _model_eval_shadow_fields(
+        "q6_residual_deep_floor_shadow",
+        deep_floor_shadow,
+        baseline_q6_decision_value_p90=q6_decision_value_p90,
+        final_q6_value=final_q6_value,
+    )
+    hidden_floor_shadow_fields = _model_eval_shadow_fields(
+        "q6_residual_hidden_floor_shadow",
+        hidden_floor_shadow,
+        baseline_q6_decision_value_p90=q6_decision_value_p90,
+        final_q6_value=final_q6_value,
     )
     evidence_stage = _evidence_stage(artifact.get("round"))
     density_score = _live_information_density_score(
@@ -897,7 +1268,7 @@ def _model_eval_row(
     public_constraint_key = _public_constraint_key(posterior_diagnostics)
     evidence_profile_key = _live_evidence_profile_key(
         public_constraint_key=public_constraint_key,
-        random_sample_avg_values=random_sample_avg_values,
+        random_sample_avg_values=random_sample_avg_signal_values,
         category_target_count=category_target_count,
         category_exclusion_count=category_exclusion_count,
         shape_target_count=shape_target_count,
@@ -992,6 +1363,48 @@ def _model_eval_row(
             if q6_practical_p90 is not None
             else None
         ),
+        "q6_residual_boost_shadow_label": shadow.get("label"),
+        "q6_residual_boost_shadow_gate": shadow.get("gate"),
+        "q6_residual_boost_shadow_evidence_profile": shadow.get(
+            "evidence_profile_key"
+        ),
+        "q6_residual_boost_shadow_active": q6_shadow_active,
+        "q6_residual_boost_shadow_trials": _parse_int_text(shadow.get("trials")),
+        "q6_residual_boost_shadow_active_boost": q6_shadow_active_boost,
+        "q6_residual_boost_shadow_decision_value_p50": (
+            q6_shadow_decision_value_p50
+        ),
+        "q6_residual_boost_shadow_decision_value_p90": (
+            q6_shadow_decision_value_p90
+        ),
+        "q6_residual_boost_shadow_q6_decision_value_p90": (
+            q6_shadow_q6_decision_value_p90
+        ),
+        "q6_residual_boost_shadow_q6_count_p90": q6_shadow_q6_count_p90,
+        "q6_residual_boost_shadow_q6_cells_p90": q6_shadow_q6_cells_p90,
+        "q6_residual_boost_shadow_q6_p90_delta": (
+            q6_shadow_q6_decision_value_p90 - q6_decision_value_p90
+            if q6_shadow_q6_decision_value_p90 is not None
+            and q6_decision_value_p90 is not None
+            else None
+        ),
+        "q6_residual_boost_shadow_under_before": q6_shadow_under_before,
+        "q6_residual_boost_shadow_covered_after": q6_shadow_covered_after,
+        "q6_residual_boost_shadow_helped": (
+            q6_shadow_under_before and q6_shadow_covered_after
+        ),
+        "q6_residual_boost_shadow_false_positive_proxy": (
+            q6_shadow_active
+            and final_q6_value <= 0
+            and (q6_shadow_q6_decision_value_p90 or 0) > 0
+        ),
+        **deep_floor_shadow_fields,
+        **hidden_floor_shadow_fields,
+        "q6_aisha_bottom_row_risk": bool(bottom_row_risk.get("active")),
+        "layout_bottom_row": _parse_int_text(bottom_row_risk.get("bottom_row")),
+        "layout_bottom_row_risk_threshold": _parse_int_text(
+            bottom_row_risk.get("bottom_row_threshold")
+        ),
         "v2_q6_value_p90_under_by": (
             max(0, final_q6_value - q6_value_p90)
             if q6_value_p90 is not None
@@ -1017,6 +1430,7 @@ def _model_eval_row(
         "category_exclusion_count": category_exclusion_count,
         "anchor_count": anchor_count,
         "random_sample_avg_values": random_sample_avg_values,
+        "random_sample_avg_signal_values": random_sample_avg_signal_values,
         "public_constraint_key": public_constraint_key,
         "evidence_profile_key": evidence_profile_key,
         "evidence_stage": evidence_stage,
@@ -1031,11 +1445,45 @@ def _model_eval_row(
             if stop_bid is not None and final_value is not None
             else None
         ),
+        "monitor_processing_seconds": artifact.get("processing_seconds"),
+        "monitor_n_trials": artifact.get("n_trials"),
+        "monitor_roi_trials": artifact.get("roi_trials"),
+        "monitor_shadow_trials": artifact.get("shadow_trials"),
+        "input_constraints_mode": input_constraints.get("mode"),
+        "input_warehouse_total_cells": (
+            (input_constraints.get("warehouse_total_cells") or {}).get("value")
+            if isinstance(input_constraints.get("warehouse_total_cells"), Mapping)
+            else None
+        ),
+        "input_warehouse_total_cells_approx": (
+            (input_constraints.get("warehouse_total_cells_approx") or {}).get("value")
+            if isinstance(
+                input_constraints.get("warehouse_total_cells_approx"),
+                Mapping,
+            )
+            else None
+        ),
+        "input_total_item_count": (
+            (input_constraints.get("total_item_count") or {}).get("value")
+            if isinstance(input_constraints.get("total_item_count"), Mapping)
+            else None
+        ),
     }
+
+
+def _grid_item_name(
+    item_id: int | None,
+    items: Mapping[int, Item],
+) -> str:
+    if item_id is None:
+        return ""
+    item = items.get(int(item_id))
+    return item.name if item is not None else ""
 
 
 def _category_grid_items(
     batches: Sequence[LiveObservationBatch],
+    items: Mapping[int, Item],
 ) -> list[dict[str, Any]]:
     batch = latest_grid_batch(batches)
     if batch is None:
@@ -1054,6 +1502,41 @@ def _category_grid_items(
                 ),
                 "quality": item.quality,
                 "item_id": item.item_id,
+                "item_name": _grid_item_name(item.item_id, items),
+                "local_index": item.local_index,
+                "cells": item.cells,
+                "shape_key": item.shape_key,
+                "row": footprint.row if footprint is not None else None,
+                "col": footprint.col if footprint is not None else None,
+                "width": footprint.width if footprint is not None else None,
+                "height": footprint.height if footprint is not None else None,
+                "source": item.source,
+            }
+        )
+    return rows
+
+
+def _minimap_grid_items(
+    batches: Sequence[LiveObservationBatch],
+    items: Mapping[int, Item],
+) -> list[dict[str, Any]]:
+    batch = latest_grid_batch(batches)
+    if batch is None:
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in batch.grid_items:
+        footprint = item.footprint()
+        rows.append(
+            {
+                "category": item.category,
+                "category_label": (
+                    _CATEGORY_LABELS.get(item.category, str(item.category))
+                    if item.category is not None
+                    else ""
+                ),
+                "quality": item.quality,
+                "item_id": item.item_id,
+                "item_name": _grid_item_name(item.item_id, items),
                 "local_index": item.local_index,
                 "cells": item.cells,
                 "shape_key": item.shape_key,
@@ -1079,6 +1562,12 @@ def _parse_int_text(value: Any) -> int | None:
         return None
 
 
+def _resolve_shadow_trials(n_trials: int, shadow_trials: int | None) -> int:
+    if shadow_trials is not None:
+        return max(1, int(shadow_trials))
+    return max(1, min(int(n_trials), DEFAULT_Q6_SHADOW_TRIALS_CAP))
+
+
 def build_monitor_artifact_from_events(
     events: FatbeansCaptureEvents,
     *,
@@ -1086,11 +1575,18 @@ def build_monitor_artifact_from_events(
     tables: MonitorTables,
     n_trials: int = 500,
     roi_trials: int = 250,
+    shadow_trials: int | None = None,
     seed: int = 20260530,
 ) -> dict[str, Any]:
     """Build a JSON-serializable live monitor artifact from parsed events."""
+    started_at = time.perf_counter()
     batches = live_batches_from_fatbeans_events(events)
-    base_session, final_session, _, _ = _states_to_session(batches)
+    (
+        base_session,
+        final_session,
+        pre_settlement_state,
+        _final_state,
+    ) = _states_to_session(batches)
     latest_bids = latest_player_bids(events.states)
     layout_replay_rows = list(
         layout_replay_rows_from_stages(
@@ -1103,9 +1599,22 @@ def build_monitor_artifact_from_events(
     map_rows: list[dict[str, Any]] = []
     warehouse_rows: list[dict[str, Any]] = []
     v2_posterior_rows: list[dict[str, Any]] = []
+    q6_residual_boost_shadow: dict[str, Any] = {}
+    q6_residual_deep_floor_shadow: dict[str, Any] = {}
+    q6_residual_hidden_floor_shadow: dict[str, Any] = {}
+    q6_residual_sampler_shadows: list[dict[str, Any]] = []
+    q6_residual_boost_shadow_rows: list[dict[str, Any]] = []
+    q6_aisha_bottom_row_risk: dict[str, Any] = {}
     tool_rows: list[dict[str, Any]] = []
     bid_rows: list[dict[str, Any]] = []
+    fallback_map_rows: list[dict[str, Any]] = []
+    fallback_warehouse_rows: list[dict[str, Any]] = []
+    fallback_bid_rows: list[dict[str, Any]] = []
     evidence_label = "暂无"
+    resolved_shadow_trials = _resolve_shadow_trials(n_trials, shadow_trials)
+    inference_input_constraints: dict[str, Any] = {
+        "mode": "no_inference_session",
+    }
     if base_session is not None:
         candidate_map_ids = _candidate_map_ids_for_likelihood(
             base_session.map_id,
@@ -1114,14 +1623,12 @@ def build_monitor_artifact_from_events(
         evidence_label = "结算前最后状态"
         cells_tol = 8
         count_tol = 3
-        without_warehouse = replace(
-            base_session,
-            warehouse_total_cells=None,
-            warehouse_total_cells_approx=None,
-            warehouse_total_cells_tolerance=None,
-            total_item_count=None,
+        inference_session, inference_input_constraints = (
+            _inference_session_with_safe_totals(
+                base_session,
+                pre_settlement_state,
+            )
         )
-        inference_session = without_warehouse
         base_results = estimate_map_likelihood(
             candidate_map_ids,
             inference_session,
@@ -1145,8 +1652,8 @@ def build_monitor_artifact_from_events(
             count_tol=count_tol,
         )
         if not any(result.n_matched for result in base_results):
-            relaxed_session = _relax_exact_bucket_constraints(without_warehouse)
-            if relaxed_session is not without_warehouse:
+            relaxed_session = _relax_exact_bucket_constraints(inference_session)
+            if relaxed_session is not inference_session:
                 relaxed_results = estimate_map_likelihood(
                     candidate_map_ids,
                     relaxed_session,
@@ -1176,10 +1683,53 @@ def build_monitor_artifact_from_events(
                     evidence_label = "结算前最后状态（放宽精确桶约束）"
         map_rows = _map_likelihood_result_rows(base_results, evidence_label)
         warehouse_rows = _warehouse_estimate_rows(warehouse_estimate)
+        store = evidence_store_from_fatbeans_events(events)
+        problem = build_residual_problem(
+            inference_session.map_id,
+            store,
+            maps=tables.maps,
+            drops=tables.drops,
+            items=tables.items,
+            obs=inference_session,
+        )
+        evidence_profile_key = evidence_profile_key_from_problem(problem)
+        q6_aisha_bottom_row_risk = {
+            "active": aisha_bottom_row_risk(
+                hero=inference_session.hero,
+                map_family=_map_family_from_id(inference_session.map_id),
+                bottom_row=problem.layout.bottom_row,
+            ),
+            "bottom_row": problem.layout.bottom_row,
+            "bottom_row_threshold": AISHA_BOTTOM_ROW_RISK_THRESHOLD,
+        }
+        active_shadow_boost = q6_residual_boost_for_profile(
+            hero=inference_session.hero,
+            map_family=_map_family_from_id(inference_session.map_id),
+            evidence_profile_key=evidence_profile_key,
+            requested_boost=5.0,
+            gate="shipwreck_profile_v1",
+            bottom_row=problem.layout.bottom_row,
+        )
+        active_deep_floor_ratio = q6_residual_prior_floor_ratio_for_profile(
+            hero=inference_session.hero,
+            map_family=_map_family_from_id(inference_session.map_id),
+            evidence_profile_key=evidence_profile_key,
+            requested_ratio=1.0,
+            gate="aisha_shipwreck_deep_v1",
+            bottom_row=problem.layout.bottom_row,
+        )
+        active_hidden_floor_ratio = q6_residual_prior_floor_ratio_for_profile(
+            hero=inference_session.hero,
+            map_family=_map_family_from_id(inference_session.map_id),
+            evidence_profile_key=evidence_profile_key,
+            requested_ratio=1.5,
+            gate="aisha_hidden_v1",
+            bottom_row=problem.layout.bottom_row,
+        )
         v2_report = estimate_posterior_v2(
             inference_session.map_id,
             inference_session,
-            evidence_store_from_fatbeans_events(events),
+            store,
             maps=tables.maps,
             drops=tables.drops,
             items=tables.items,
@@ -1189,6 +1739,90 @@ def build_monitor_artifact_from_events(
             count_tol=count_tol,
         )
         v2_posterior_rows = _v2_posterior_rows(v2_report)
+        shadow_report = None
+        if active_shadow_boost > 1.0:
+            shadow_report = estimate_posterior_v2(
+                inference_session.map_id,
+                inference_session,
+                store,
+                maps=tables.maps,
+                drops=tables.drops,
+                items=tables.items,
+                n_trials=resolved_shadow_trials,
+                seed=seed + 2,
+                cells_tol=cells_tol,
+                count_tol=count_tol,
+                q6_residual_boost=active_shadow_boost,
+            )
+        q6_residual_boost_shadow = _q6_residual_boost_shadow_summary(
+            shadow_report,
+            label="profile_b5",
+            requested_boost=5.0,
+            active_boost=active_shadow_boost,
+            gate="shipwreck_profile_v1",
+            evidence_profile_key=evidence_profile_key,
+            trials=resolved_shadow_trials,
+        )
+        deep_floor_report = None
+        if active_deep_floor_ratio > 0.0:
+            deep_floor_report = estimate_posterior_v2(
+                inference_session.map_id,
+                inference_session,
+                store,
+                maps=tables.maps,
+                drops=tables.drops,
+                items=tables.items,
+                n_trials=resolved_shadow_trials,
+                seed=seed + 2,
+                cells_tol=cells_tol,
+                count_tol=count_tol,
+                q6_residual_prior_floor_ratio=active_deep_floor_ratio,
+            )
+        q6_residual_deep_floor_shadow = _q6_residual_boost_shadow_summary(
+            deep_floor_report,
+            label="aisha_deep_floor1",
+            requested_boost=1.0,
+            active_boost=1.0,
+            requested_prior_floor_ratio=1.0,
+            active_prior_floor_ratio=active_deep_floor_ratio,
+            gate="aisha_shipwreck_deep_v1",
+            evidence_profile_key=evidence_profile_key,
+            trials=resolved_shadow_trials,
+        )
+        hidden_floor_report = None
+        if active_hidden_floor_ratio > 0.0:
+            hidden_floor_report = estimate_posterior_v2(
+                inference_session.map_id,
+                inference_session,
+                store,
+                maps=tables.maps,
+                drops=tables.drops,
+                items=tables.items,
+                n_trials=resolved_shadow_trials,
+                seed=seed + 2,
+                cells_tol=cells_tol,
+                count_tol=count_tol,
+                q6_residual_prior_floor_ratio=active_hidden_floor_ratio,
+            )
+        q6_residual_hidden_floor_shadow = _q6_residual_boost_shadow_summary(
+            hidden_floor_report,
+            label="aisha_hidden_floor15",
+            requested_boost=1.0,
+            active_boost=1.0,
+            requested_prior_floor_ratio=1.5,
+            active_prior_floor_ratio=active_hidden_floor_ratio,
+            gate="aisha_hidden_v1",
+            evidence_profile_key=evidence_profile_key,
+            trials=resolved_shadow_trials,
+        )
+        q6_residual_sampler_shadows = [
+            q6_residual_boost_shadow,
+            q6_residual_deep_floor_shadow,
+            q6_residual_hidden_floor_shadow,
+        ]
+        q6_residual_boost_shadow_rows = _q6_residual_shadow_rows(
+            q6_residual_sampler_shadows
+        )
         if roi_trials > 0:
             tool_rows = _tool_info_roi_rows(
                 estimate_tool_info_roi(
@@ -1221,6 +1855,24 @@ def build_monitor_artifact_from_events(
                 raw_value_summary=v2_report.total_value,
                 posterior_diagnostics=v2_report.diagnostics,
             )
+        if v2_report.n_matched <= 0:
+            (
+                fallback_map_rows,
+                fallback_warehouse_rows,
+                fallback_bid_rows,
+            ) = _build_zero_match_fallback_rows(
+                candidate_map_ids=candidate_map_ids,
+                inference_session=inference_session,
+                latest_bids=latest_bids,
+                round_no=_latest_round(events),
+                maps=tables.maps,
+                drops=tables.drops,
+                items=tables.items,
+                n_trials=n_trials,
+                seed=seed + 4,
+                cells_tol=cells_tol,
+                count_tol=count_tol,
+            )
 
     panel = tactical_panel_from_rows(
         bid_rows=bid_rows,
@@ -1232,9 +1884,14 @@ def build_monitor_artifact_from_events(
     inventory_count, inventory_cells = _inventory_totals(events)
     final_value = _inventory_value(events, tables.items)
     truth_breakdown = _inventory_quality_breakdown(events, tables.items)
+    processing_seconds = round(time.perf_counter() - started_at, 4)
     artifact: dict[str, Any] = {
         "schema_version": 1,
         "created_at": time.time(),
+        "processing_seconds": processing_seconds,
+        "n_trials": n_trials,
+        "roi_trials": roi_trials,
+        "shadow_trials": resolved_shadow_trials,
         "file": file,
         "packets": len(events.packets),
         "frames": len(events.frames),
@@ -1247,17 +1904,28 @@ def build_monitor_artifact_from_events(
         "inventory_cells": inventory_cells,
         "known_value_sum": final_value,
         **truth_breakdown,
+        "inference_input_constraints": inference_input_constraints,
         "latest_bids": dict(latest_bids),
         "evidence_label": evidence_label,
         "map_rows": map_rows,
         "warehouse_rows": warehouse_rows,
         "v2_posterior_rows": v2_posterior_rows,
+        "fallback_map_rows": fallback_map_rows,
+        "fallback_warehouse_rows": fallback_warehouse_rows,
+        "fallback_bid_rows": fallback_bid_rows,
+        "q6_residual_boost_shadow": q6_residual_boost_shadow,
+        "q6_residual_deep_floor_shadow": q6_residual_deep_floor_shadow,
+        "q6_residual_hidden_floor_shadow": q6_residual_hidden_floor_shadow,
+        "q6_residual_sampler_shadows": q6_residual_sampler_shadows,
+        "q6_residual_boost_shadow_rows": q6_residual_boost_shadow_rows,
+        "q6_aisha_bottom_row_risk": q6_aisha_bottom_row_risk,
         "tool_rows": tool_rows,
         "bid_rows": bid_rows,
         "layout_replay_rows": layout_replay_rows,
         "layout_stage_rows": layout_stage_rows,
         "panel": asdict(panel),
-        "category_grid_items": _category_grid_items(batches),
+        "category_grid_items": _category_grid_items(batches, tables.items),
+        "minimap_grid_items": _minimap_grid_items(batches, tables.items),
         "layout_sample_rows": [
             row.as_dict()
             for row in evaluate_fatbeans_layout_events(events, file=file)
@@ -1272,6 +1940,7 @@ def build_monitor_artifact_from_events(
     )
     if eval_row is not None:
         artifact["model_eval"] = eval_row
+    artifact["ui_contract"] = ui_contract_from_artifact(artifact)
     return artifact
 
 
@@ -1281,6 +1950,7 @@ def build_monitor_artifact_from_file(
     tables: MonitorTables,
     n_trials: int = 500,
     roi_trials: int = 250,
+    shadow_trials: int | None = None,
     seed: int = 20260530,
 ) -> dict[str, Any]:
     path = Path(path)
@@ -1290,6 +1960,7 @@ def build_monitor_artifact_from_file(
         tables=tables,
         n_trials=n_trials,
         roi_trials=roi_trials,
+        shadow_trials=shadow_trials,
         seed=seed,
     )
 
@@ -1301,6 +1972,7 @@ def build_monitor_artifact_from_payload(
     tables: MonitorTables,
     n_trials: int = 500,
     roi_trials: int = 250,
+    shadow_trials: int | None = None,
     seed: int = 20260530,
 ) -> dict[str, Any]:
     return build_monitor_artifact_from_events(
@@ -1309,6 +1981,7 @@ def build_monitor_artifact_from_payload(
         tables=tables,
         n_trials=n_trials,
         roi_trials=roi_trials,
+        shadow_trials=shadow_trials,
         seed=seed,
     )
 

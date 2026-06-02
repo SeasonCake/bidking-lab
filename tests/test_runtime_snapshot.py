@@ -7,6 +7,7 @@ from bidking_lab.runtime import (
     tactical_panel_from_rows,
     tactical_snapshot_from_rows,
     tactical_summary_rows,
+    ui_contract_from_artifact,
 )
 from bidking_lab.live.layout import (
     LayoutEstimatePolicy,
@@ -279,6 +280,348 @@ def test_tactical_panel_from_rows_keeps_render_sections_together() -> None:
         },
     )
     assert panel.layout_note == "底部稀疏，只作布局深度证据"
+
+
+def test_ui_contract_separates_baseline_and_shadow_references() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "file": "sample.json",
+            "created_at": 123.0,
+            "processing_seconds": 1.25,
+            "n_trials": 200,
+            "shadow_trials": 80,
+            "hero": "aisha",
+            "map_id": 2501,
+            "round": 4,
+            "known_value_sum": 800000,
+            "inventory_count": 36,
+            "inventory_cells": 108,
+            "inference_input_constraints": {
+                "mode": "pre_settlement_trusted_totals",
+                "warehouse_total_cells": {
+                    "value": 108,
+                    "source": "packet",
+                    "confidence": "exact",
+                    "sequence": 80,
+                },
+                "total_item_count": {
+                    "value": 36,
+                    "source": "packet",
+                    "confidence": "exact",
+                    "sequence": 80,
+                },
+            },
+            "bid_rows": [
+                {
+                    "建议": "可守不抢",
+                    "当前最高": "玩家A 500,000",
+                    "风险带": "防守区",
+                    "抢仓上限": "620,000",
+                    "停止价": "680,000",
+                    "证据": "v2 decision_value",
+                    "轮次": "R4/5",
+                    "信息强度": "中",
+                }
+            ],
+            "v2_posterior_rows": [
+                {
+                    "匹配": "12/200",
+                    "价值口径": "decision_value",
+                    "决策价值 P10/P50/P90": "300,000 / 500,000 / 700,000",
+                    "原始价值 P10/P50/P90": "300,000 / 540,000 / 900,000",
+                    "剩余空间 P10/P50/P90": "12 / 22 / 34",
+                    "q6空间压力 P10/P50/P90": "0.00 / 0.22 / 0.55",
+                    "q6空间溢出率": "3.0%",
+                    "q6样本率": "12.0%",
+                    "q6掉落先验": "80.0%",
+                    "q6先验件数": "1.50",
+                    "q6先验格数": "7.0",
+                    "q6先验价值": "486,510",
+                    "q6决策价值 P10/P50/P90": "0 / 120,000 / 300,000",
+                    "q6件数 P10/P50/P90": "0 / 1 / 1",
+                    "q6格数 P10/P50/P90": "0 / 4 / 6",
+                    "q6先验风险": "是",
+                    "q6先验缺口": "件数P90低1.00",
+                    "q6先验风险参考": "486,510",
+                    "q6实战门控": "shipwreck_positive_net",
+                    "q6实战参考P90": "486,510",
+                    "诊断": "q6_below_drop_prior:0.12<prior:0.80",
+                }
+            ],
+            "warehouse_rows": [
+                {
+                    "价值 P10/P50/P90": "320,000 / 540,000 / 760,000",
+                    "总格 P10/P50/P90": "90 / 108 / 130",
+                }
+            ],
+            "fallback_map_rows": [
+                {
+                    "匹配": "18/80",
+                    "价值 P10/P50/P90": "220,000 / 420,000 / 620,000",
+                    "总格 P10/P50/P90": "95 / 118 / 140",
+                }
+            ],
+            "fallback_warehouse_rows": [
+                {
+                    "匹配": "18/80",
+                    "置信度": "低",
+                    "价值 P10/P50/P90": "220,000 / 420,000 / 620,000",
+                    "总格 P10/P50/P90": "95 / 118 / 140",
+                }
+            ],
+            "fallback_bid_rows": [
+                {
+                    "建议": "低置信防守",
+                    "当前最高": "玩家A 500,000",
+                    "风险带": "高风险抢仓",
+                    "探价(P10)": "220,000",
+                    "防守价": "294,000",
+                    "抢仓上限": "560,000",
+                    "停止价": "620,000",
+                    "证据": "v1 fallback（v2无匹配）",
+                    "轮次": "R4/5",
+                    "信息强度": "低",
+                    "仓储": "后验 95/118/140 (低)",
+                    "依据": "早期/低信息阶段保守折价",
+                    "补信息": "优先补轮廓或具体物品",
+                    "价值口径": "raw_value",
+                    "原始价值 P10/P50/P90": "220,000 / 420,000 / 620,000",
+                    "fallback": "是",
+                    "fallback_mode": "v1_map_prior_zero_match",
+                    "fallback_note": "v2 后验无匹配时的 map-prior 低置信参考；不替代 baseline v2",
+                },
+                {
+                    "证据": "玩家价位",
+                    "当前最高": "玩家A 500,000",
+                    "风险带": "高风险抢仓",
+                }
+            ],
+            "panel": {
+                "layout_stages": [
+                    {
+                        "stage": "R4 / sort 80",
+                        "known_cells": "108",
+                        "estimate": "108/120/140",
+                        "confidence": "中",
+                        "risk": "中",
+                    }
+                ]
+            },
+            "q6_residual_sampler_shadows": [
+                {
+                    "label": "profile_b5",
+                    "active": True,
+                    "gate": "shipwreck_profile_v1",
+                    "evidence_profile_key": "shape+layout",
+                    "trials": 80,
+                    "q6_decision_value_p90": 420000,
+                    "q6_count_p90": 2,
+                    "q6_cells_p90": 8,
+                },
+                {
+                    "label": "aisha_deep_floor1",
+                    "active": True,
+                    "gate": "aisha_shipwreck_deep_v1",
+                    "evidence_profile_key": "shape+layout",
+                    "trials": 80,
+                    "q6_decision_value_p90": 486510,
+                    "q6_count_p90": 2,
+                    "q6_cells_p90": 9,
+                },
+            ],
+            "category_grid_items": [
+                {
+                    "category": 108,
+                    "category_label": "能源",
+                    "quality": 6,
+                    "item_id": 1086001,
+                    "item_name": "民用垂直起降飞行器",
+                    "local_index": 14,
+                    "cells": 16,
+                    "shape_key": "44",
+                    "row": 2,
+                    "col": 4,
+                    "width": 4,
+                    "height": 4,
+                    "source": "packet",
+                },
+                {
+                    "category": 106,
+                    "category_label": "古董",
+                    "quality": 5,
+                    "item_id": 1065001,
+                    "item_name": "青铜古镜",
+                    "local_index": 40,
+                    "cells": 4,
+                    "shape_key": "22",
+                    "row": 5,
+                    "col": 1,
+                    "width": 2,
+                    "height": 2,
+                    "source": "packet",
+                },
+            ],
+            "model_eval": {
+                "final_value": 800000,
+                "final_cells": 108,
+                "final_q5_count": 1,
+                "final_q5_cells": 4,
+                "final_q5_value": 120000,
+                "final_q6_count": 1,
+                "final_q6_cells": 16,
+                "final_q6_value": 486510,
+                "final_top_item_name": "沉船红货",
+                "final_top_item_quality": 6,
+                "final_top_item_value": 486510,
+                "final_top_item_cells": 16,
+                "q6_residual_boost_shadow_q6_p90_delta": 120000,
+                "q6_residual_boost_shadow_helped": True,
+                "q6_residual_deep_floor_shadow_q6_p90_delta": 186510,
+                "q6_residual_deep_floor_shadow_helped": True,
+                "shape_target_count": 1,
+                "category_target_count": 2,
+                "category_exclusion_count": 1,
+                "anchor_count": 3,
+                "random_sample_avg_values": "n=6:avg=96897.66",
+                "random_sample_avg_signal_values": "n=6:avg=96897.66",
+                "public_constraint_key": "max_quality",
+                "evidence_profile_key": "public:max_quality+random_avg+tool:category+shape",
+                "evidence_stage": "full_5",
+                "information_density_score": 5,
+                "information_density_band": "high",
+                "posterior_diagnostics": "public_max_quality:6",
+                "layout_conflict": False,
+                "q6_aisha_bottom_row_risk": True,
+                "layout_bottom_row": 16,
+                "layout_bottom_row_risk_threshold": 15,
+                "q6_p90_misses_truth": True,
+                "q6_false_low_risk": False,
+                "q6_below_drop_prior": True,
+                "q6_top_size_band": "q6_top_large",
+                "relaxed_exact_used": False,
+                "monitor_processing_seconds": 1.25,
+                "monitor_n_trials": 200,
+                "monitor_roi_trials": 50,
+                "monitor_shadow_trials": 80,
+            },
+        }
+    )
+
+    assert contract["schema_version"] == 1
+    assert contract["mode"] == "baseline_first_shadow_reference"
+    assert contract["source"]["n_trials"] == 200
+    assert contract["baseline"]["official"] is True
+    assert contract["baseline"]["affects_bid"] is True
+    assert contract["baseline"]["decision"]["action"] == "可守不抢"
+    assert contract["baseline"]["posterior"]["value_basis"] == "decision_value"
+    assert contract["baseline"]["posterior"]["match_text"] == "12/200"
+    assert contract["baseline"]["posterior"]["matched"] == 12
+    assert contract["baseline"]["posterior"]["total"] == 200
+    assert contract["baseline"]["posterior"]["status"] == "matched"
+    assert contract["baseline"]["posterior"]["total_cells_range"] == "90 / 108 / 130"
+    assert (
+        contract["baseline"]["posterior"]["total_item_count_status"]
+        == "exact_input_constraint"
+    )
+    assert contract["baseline"]["posterior"]["input_total_item_count"] == 36
+    assert contract["baseline"]["posterior"]["input_warehouse_total_cells"] == 108
+    assert contract["baseline"]["posterior"]["q6_prior_expected_count"] == "1.50"
+    assert contract["baseline"]["posterior"][
+        "remaining_cells_after_layout_range"
+    ] == "12 / 22 / 34"
+    assert contract["baseline"]["posterior"]["q6_space_overflow_rate"] == "3.0%"
+    assert contract["fallback"]["active"] is True
+    assert contract["fallback"]["affects_bid"] is False
+    assert contract["fallback"]["mode"] == "v1_map_prior_zero_match"
+    assert contract["fallback"]["decision"]["action"] == "低置信防守"
+    assert contract["fallback"]["decision"]["probe_bid"] == "220,000"
+    assert contract["fallback"]["decision"]["defend_bid"] == "294,000"
+    assert contract["fallback"]["decision"]["warehouse_status"] == "后验 95/118/140 (低)"
+    assert contract["fallback"]["decision"]["rationale"] == "早期/低信息阶段保守折价"
+    assert contract["fallback"]["decision"]["next_info_hint"] == "优先补轮廓或具体物品"
+    assert contract["fallback"]["decision"]["player_risks"] == [
+        {
+            "current_bid": "玩家A 500,000",
+            "risk_band": "高风险抢仓",
+        }
+    ]
+    assert contract["fallback"]["posterior"]["match_text"] == "18/80"
+    assert contract["fallback"]["posterior"]["confidence"] == "低"
+    assert contract["q6_risk_reference"] == {
+        "risk": True,
+        "prior_gap": "件数P90低1.00",
+        "prior_reference_p90": "486,510",
+        "practical_gate": "shipwreck_positive_net",
+        "practical_reference_p90": "486,510",
+        "display_mode": "risk_reference",
+        "affects_bid": False,
+    }
+    assert [shadow["label"] for shadow in contract["shadows"]] == [
+        "profile_b5",
+        "aisha_deep_floor1",
+    ]
+    assert contract["shadows"][0]["role"] == "diagnostic_shadow"
+    assert contract["shadows"][0]["display_mode"] == "debug_only"
+    assert contract["shadows"][0]["affects_bid"] is False
+    assert contract["shadows"][0]["q6_p90_delta"] == 120000
+    assert contract["shadows"][1]["role"] == "tail_risk_reference_candidate"
+    assert contract["shadows"][1]["display_mode"] == "risk_reference_candidate"
+    assert contract["minimap"]["status"] == "available"
+    assert contract["minimap"]["known_items"] == 2
+    assert contract["minimap"]["columns"] == 10
+    assert contract["minimap"]["default_cells"] == 130
+    assert contract["minimap"]["max_cells"] == 250
+    assert contract["minimap"]["viewport_rows"] == 13
+    assert contract["minimap"]["max_rows"] == 25
+    assert contract["minimap"]["rows_hint"] == 13
+    assert contract["minimap"]["scrollable"] is False
+    assert contract["minimap"]["quality_counts"] == {"q5": 1, "q6": 1}
+    assert contract["minimap"]["category_counts"] == {"能源": 1, "古董": 1}
+    assert contract["minimap"]["items"][0]["row"] == 2
+    assert contract["minimap"]["items"][0]["width"] == 4
+    assert contract["minimap"]["items"][0]["item_name"] == "民用垂直起降飞行器"
+    assert contract["minimap"]["items"][0]["display_label"] == ""
+    assert "short_name" not in contract["minimap"]["items"][0]
+    assert "Q6" in contract["minimap"]["items"][0]["tooltip"]
+    assert contract["truth"]["available"] is True
+    assert contract["truth"]["source"] == "settlement_or_sample_replay"
+    assert contract["truth"]["total_items"] == 36
+    assert contract["truth"]["total_cells"] == 108
+    assert contract["truth"]["q6"] == {
+        "count": 1,
+        "cells": 16,
+        "value": 486510,
+    }
+    assert contract["truth"]["top_item"]["name"] == "沉船红货"
+    assert contract["constraints"]["summary"]["known_gold_item_count"] == 1
+    assert contract["constraints"]["summary"]["known_red_item_count"] == 1
+    assert contract["constraints"]["summary"]["category_exclusion_count"] == 1
+    assert contract["constraints"]["summary"]["input_total_item_count"] == 36
+    assert contract["constraints"]["summary"]["input_warehouse_total_cells"] == 108
+    assert contract["constraints"]["public_info"]["input_constraints_mode"] == (
+        "pre_settlement_trusted_totals"
+    )
+    assert contract["constraints"]["public_info"]["public_constraint_key"] == (
+        "max_quality"
+    )
+    assert contract["constraints"]["exclusions"]["note"] == (
+        "specific_category_ids_are_in_posterior_diagnostics"
+    )
+    assert contract["diagnostics"]["posterior"] == "public_max_quality:6"
+    assert contract["diagnostics"]["layout"]["bottom_row_risk"] is True
+    assert contract["diagnostics"]["q6"]["below_drop_prior"] is True
+    assert contract["diagnostics"]["sampling"]["n_trials"] == 200
+    assert contract["interaction"]["compact"]["purpose"] == "always_on_top_core_tips"
+    assert "constraints.summary" in contract["interaction"]["hover"]["fields"]
+    assert "truth" in contract["interaction"]["detail"]["fields"]
+    assert contract["interaction"]["detail"]["collapsible"] is True
+    assert contract["interaction"]["detail"]["renderers"] == (
+        {
+            "name": "matplotlib_minimap",
+            "mode": "optional_async",
+            "min_round": 3,
+        },
+    )
 
 
 def test_layout_replay_rows_from_stages_are_frontend_neutral() -> None:

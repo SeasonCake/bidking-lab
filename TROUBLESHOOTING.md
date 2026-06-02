@@ -3,6 +3,17 @@
 > 记录 BidKing 数据解析 / 本地工具链里**真实踩过的坑**，按主题归档，方便以后自己和协作者查阅。  
 > 环境参考：Windows 11 / PowerShell 7 / Python 3.13 / Steam 版《竞拍之王》安装于自定义库目录。
 
+## 核心文档地图
+
+| 文档 | 职责 |
+|---|---|
+| [`PROGRESS.md`](PROGRESS.md) | 当前项目状态、路线图和下一步 TODO，是新对话入口。 |
+| [`DECISIONS.md`](DECISIONS.md) | 记录用户决策、推荐方案、取舍、边界和复查点。 |
+| [`OBSERVATIONS.md`](OBSERVATIONS.md) | 记录实验结果、指标、根因分析和 checkpoint 技术细节。 |
+| [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | 本文件；记录可复用的症状、原因、修法和验证手册。 |
+
+使用关系：这里不记录每轮推进，只记录遇到相似问题时能直接复用的排查路径。完整指标去 `OBSERVATIONS.md`，当前路线去 `PROGRESS.md`，模型或 UI 口径取舍去 `DECISIONS.md`。
+
 ## 目录
 
 1. [可编辑安装 `pip install -e` 是干什么的](#1-可编辑安装-pip-install--e-是干什么的)
@@ -57,6 +68,7 @@
 50. [OCR 推理后切回读数页，均格候选预览变「无合法候选」](#50-ocr-推理后切回读数页均格候选预览变无合法候选)
 51. [分析估算局部 top-1 过仓](#51-分析估算局部-top-1-过仓)
 52. [总藏品件数输入 90 被 UI 拒绝](#52-总藏品件数输入-90-被-ui-拒绝)
+53. [v2 zero-match / layout conflict 排查顺序](#53-v2-zero-match--layout-conflict-排查顺序)
 
 ---
 
@@ -1750,6 +1762,61 @@ python -m pytest -q
 
 另用 `Pictures\Bidking*.png` 13 张截图跑 OCR/解析，确认可解析 `warehouse_cells=89`
 和多组 40-54 格品质读数；浏览器手测 `总藏品件数=90` 不再出现 `<=60` 错误。
+
+---
+
+## 53. v2 zero-match / layout conflict 排查顺序
+
+### 症状
+
+UI readiness batch 里出现 `zero_posterior_match`，部分行还带 `layout_conflict`。
+直觉上容易把它们都归因成“Ethan 轮廓太硬”或“v2 约束太严格”，但实测两者不完全相同：
+有些 layout conflict 不是导致 zero-match 的根因，有些 zero-match 也不是布局问题。
+
+### 原因
+
+本轮审计确认了几类不同层级的问题：
+
+- `RuntimeEvidence.merge` 保留旧轮次的 `local_index`，会把已经更新的位置继续当作有效位置，制造假 overlap。
+- 总件数和总格数同时已知时，residual sampler 只做近似填充，可能在可见轮廓下界过滤后无解。
+- residual 抽样会继续加入已经满足 exact bucket / value target 的品质，事后破坏桶约束。
+- q6 residual 反推曾把 avg/value/huge 推导出的非红信息当成明确非红总格，导致红品硬约束过早收死。
+- Fatbeans 的 shape-bearing 证据里 `local_index=None` 可能代表 protobuf 默认值 0；如果把
+  shape-less 质量/估价 action 的 `local_index` merge 到该形状上，会把大件错误移动到中间格，
+  造成假 overlap。
+- `public_max_quality < 6` 或 Isabella 最高品质技能已证明无红时，q6 采样率低是正确结果；
+  不应再打 `q6_below_drop_prior` 风险提示。
+
+### 排查顺序
+
+1. 先看 `v2_match_text` / `baseline.posterior.status`，区分“无匹配”和“低匹配率”。
+2. 再看 `layout_conflict_root`。如果多数是 `footprint_overlap`，先检查 latest grid batch 和 evidence store 的位置是否一致。
+3. 对 zero-match 行做逐层剥离：只保留 map/hero、再加 total count/cells、再加 bucket、再加 layout。哪个阶段从有解变无解，哪个阶段就是优先根因。
+4. 如果 q6 被硬推到 0 或极小，检查 `_fill_residual_red_bucket` 的输入是否来自明确 `total_cells`，不要把均价、估价或巨物推导当完整非红证明。
+
+### 修法（2026-06-02）
+
+- evidence 合并时优先使用最新 `local_index`。
+- layout 位置只跟 shape-bearing 证据同步；shape-less action 可以补 quality/value，但不能移动
+  shape footprint。shape-bearing `local_index=None` 按默认 0 参与 v2 footprint，和 minimap
+  口径保持一致。
+- 当 `total_item_count` 和 `warehouse_total_cells` 都可信时，residual sampler 先尝试精确填充 `(count, cells)`。
+- residual 候选不能破坏已满足的 exact bucket / value target。
+- q6 residual 硬反推只允许来自明确非红总格；不明确时回到概率估计。
+- q6 below-prior 只在 q6 仍可能存在时生成；已被最高品质上界排除的局直接 suppress。
+- `v1_map_prior_zero_match` fallback 保留为低置信 UI 参考，但不影响正式 baseline 出价。
+
+### 验证
+
+```powershell
+python scripts\export_ui_contract_review.py data\samples\fatbeans --out-dir data\review\ui_contract_batch_n20 --n-trials 20 --roi-trials 0 --shadow-trials 20
+python scripts\export_ui_contract_review.py data\review\ui_contract_zero_match_n80\ui_contract_review.jsonl --out-dir data\review\ui_contract_remaining_zero_n80 --n-trials 80 --roi-trials 0 --shadow-trials 80
+python -m pytest -q
+```
+
+第二轮修复后的 338 样本 readiness batch：333 行成功、5 个 malformed 原始抓包错误；
+`zero_posterior_match_rows=0`、`fallback_active_rows=0`、`layout_conflict=0`。
+因此 fallback 当前基本是静默兜底；若后续真实日志里高频触发，应回到 v2 约束分层，而不是继续扩大 fallback。
 
 ---
 

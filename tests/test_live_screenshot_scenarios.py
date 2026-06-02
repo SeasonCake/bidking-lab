@@ -188,7 +188,6 @@ SCENARIOS: tuple[dict, ...] = (
                 3: _bucket(3, total_cells=32),
                 4: _bucket(4, total_cells=42),
                 5: _bucket(5, count=2),
-                6: _bucket(6, total_cells=0, count=0),
             },
         ),
     },

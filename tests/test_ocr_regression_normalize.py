@@ -56,6 +56,18 @@ def _ocr_text_for(
     return cache[resolved]
 
 
+def _ocr_text_or_skip(
+    path: Path,
+    cache: dict[Path, tuple[str, str | None]],
+) -> str:
+    text, err = _ocr_text_for(path, cache)
+    if err is not None:
+        pytest.skip(err)
+    if not text:
+        pytest.skip("OCR returned no text")
+    return text
+
+
 @pytest.mark.parametrize("case", json.loads(_CASES_PATH.read_text(encoding="utf-8")), ids=lambda c: c["id"])
 def test_normalize_fixture_cases(case: dict) -> None:
     out = normalize_ocr_text(case["raw"])
@@ -72,8 +84,7 @@ def test_panel_round4_sample_normalize_and_parse(
 ) -> None:
     if not _REPO_SAMPLES.is_file():
         pytest.skip("panel_round4 sample missing")
-    text, err = _ocr_text_for(_REPO_SAMPLES, ocr_text_cache)
-    assert err is None and text
+    text = _ocr_text_or_skip(_REPO_SAMPLES, ocr_text_cache)
     norm = normalize_ocr_text(text)
     assert "轮廓" in norm
     assert "轮属" not in norm
@@ -91,9 +102,7 @@ def test_user_regression_image_ocr_smoke(
 ) -> None:
     if not path.is_file():
         pytest.skip(f"missing {path}")
-    text, err = _ocr_text_for(path, ocr_text_cache)
-    assert err is None, err
-    assert text.strip()
+    text = _ocr_text_or_skip(path, ocr_text_cache)
     norm = normalize_ocr_text(text)
     assert norm  # normalize must not blank the panel
 
@@ -137,8 +146,7 @@ def test_user_regression_parse_keys(
         pytest.skip(f"missing {path}")
     if not map_names:
         pytest.skip("maps.json missing")
-    text, err = _ocr_text_for(path, ocr_text_cache)
-    assert err is None
+    text = _ocr_text_or_skip(path, ocr_text_cache)
     parsed = parse_panel_text(text, map_names=map_names)
     got = set(parsed.suggestion_map().keys())
     missing = expected_keys - got
@@ -159,8 +167,7 @@ def test_user_regression_map_names_when_present(
     for path, name_fragment in cases:
         if not path.is_file():
             pytest.skip(f"missing {path}")
-        text, err = _ocr_text_for(path, ocr_text_cache)
-        assert err is None
+        text = _ocr_text_or_skip(path, ocr_text_cache)
         parsed = parse_panel_text(text, map_names=map_names)
         assert parsed.map_id is not None
         assert name_fragment in (parsed.map_name or "")

@@ -6,6 +6,7 @@ import argparse
 import json
 import statistics
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,20 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from bidking_lab.inference.diagnostics import layout_conflict_root  # noqa: E402
+
+
+_Q6_SHADOW_SAMPLING_TARGETS: tuple[tuple[str, str, int], ...] = (
+    ("aisha", "shipwreck", 20),
+    ("ethan", "shipwreck", 20),
+    ("aisha", "hidden", 10),
+    ("ethan", "hidden", 5),
+)
+_Q6_DEEP_FLOOR_SHADOW_SAMPLING_TARGETS: tuple[tuple[str, str, int], ...] = (
+    ("aisha", "shipwreck", 20),
+)
+_Q6_HIDDEN_FLOOR_SHADOW_SAMPLING_TARGETS: tuple[tuple[str, str, int], ...] = (
+    ("aisha", "hidden", 10),
+)
 
 
 def _map_family(map_id: Any) -> str:
@@ -87,11 +102,45 @@ def _median_value(rows: list[dict[str, Any]], key: str) -> int | None:
     return _round(statistics.median(values)) if values else None
 
 
+def _median_float_value(
+    rows: list[dict[str, Any]],
+    key: str,
+    *,
+    digits: int = 3,
+) -> float | None:
+    values = _numeric_values(rows, key)
+    return round(statistics.median(values), digits) if values else None
+
+
 def _p75_value(rows: list[dict[str, Any]], key: str) -> int | None:
     values = _numeric_values(rows, key)
     if len(values) < 4:
         return None
     return _round(statistics.quantiles(values, n=4)[2])
+
+
+def _p75_float_value(
+    rows: list[dict[str, Any]],
+    key: str,
+    *,
+    digits: int = 3,
+) -> float | None:
+    values = _numeric_values(rows, key)
+    if len(values) < 4:
+        return None
+    return round(statistics.quantiles(values, n=4)[2], digits)
+
+
+def _numeric_distribution(rows: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: Counter[int] = Counter()
+    for row in rows:
+        value = _numeric(row, key)
+        if value is not None:
+            counts[int(round(value))] += 1
+    return {
+        str(value): count
+        for value, count in sorted(counts.items())
+    }
 
 
 def _rate(rows: list[dict[str, Any]], key: str) -> float | None:
@@ -278,7 +327,12 @@ def _evidence_profile_key(row: dict[str, Any]) -> str:
     public_key = str(row.get("public_constraint_key") or "none")
     if public_key != "none":
         parts.append(f"public:{public_key}")
-    if str(row.get("random_sample_avg_values") or ""):
+    random_sample_avg_values = (
+        row.get("random_sample_avg_signal_values")
+        if "random_sample_avg_signal_values" in row
+        else row.get("random_sample_avg_values")
+    )
+    if str(random_sample_avg_values or ""):
         parts.append("public:random_avg")
     if (
         int(_numeric(row, "category_target_count") or 0)
@@ -330,6 +384,42 @@ def _group_summary(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
                         if row.get("q6_practical_gate_under_before")
                     ],
                     "q6_practical_gate_helped",
+                ),
+                "q6_residual_boost_shadow_active_rate": _rate(
+                    group_rows,
+                    "q6_residual_boost_shadow_active",
+                ),
+                "q6_residual_boost_shadow_false_positive_rate": _rate(
+                    [
+                        row for row in group_rows
+                        if row.get("q6_residual_boost_shadow_active")
+                    ],
+                    "q6_residual_boost_shadow_false_positive_proxy",
+                ),
+                "q6_residual_boost_shadow_helped_rate": _rate(
+                    [
+                        row for row in group_rows
+                        if row.get("q6_residual_boost_shadow_under_before")
+                    ],
+                    "q6_residual_boost_shadow_helped",
+                ),
+                "q6_residual_deep_floor_shadow_active_rate": _rate(
+                    group_rows,
+                    "q6_residual_deep_floor_shadow_active",
+                ),
+                "q6_residual_deep_floor_shadow_false_positive_rate": _rate(
+                    [
+                        row for row in group_rows
+                        if row.get("q6_residual_deep_floor_shadow_active")
+                    ],
+                    "q6_residual_deep_floor_shadow_false_positive_proxy",
+                ),
+                "q6_residual_deep_floor_shadow_helped_rate": _rate(
+                    [
+                        row for row in group_rows
+                        if row.get("q6_residual_deep_floor_shadow_under_before")
+                    ],
+                    "q6_residual_deep_floor_shadow_helped",
                 ),
                 "q6_p90_miss_rate": _rate(group_rows, "q6_p90_misses_truth"),
                 "raw_ceiling_gap_median": _median_value(
@@ -474,11 +564,88 @@ def _q6_practical_gate_summary(
     return out
 
 
+def _q6_shadow_summary(
+    rows: list[dict[str, Any]],
+    key: str,
+    *,
+    prefix: str,
+) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get(key) or "unknown"), []).append(row)
+
+    out: list[dict[str, Any]] = []
+    for value, group_rows in sorted(groups.items()):
+        active = [
+            row for row in group_rows
+            if row.get(f"{prefix}_active")
+        ]
+        under_before = [
+            row for row in active
+            if row.get(f"{prefix}_under_before")
+        ]
+        out.append(
+            {
+                key: value,
+                "n": len(group_rows),
+                "active_rows": len(active),
+                "under_before_rows": len(under_before),
+                "helped_rows": sum(
+                    1 for row in under_before
+                    if row.get(f"{prefix}_helped")
+                ),
+                "false_positive_proxy_rows": sum(
+                    1 for row in active
+                    if row.get(f"{prefix}_false_positive_proxy")
+                ),
+                "q6_p90_delta_median": _median_value(
+                    active,
+                    f"{prefix}_q6_p90_delta",
+                ),
+            }
+        )
+    return out
+
+
+def _q6_residual_boost_shadow_summary(
+    rows: list[dict[str, Any]],
+    key: str,
+) -> list[dict[str, Any]]:
+    return _q6_shadow_summary(
+        rows,
+        key,
+        prefix="q6_residual_boost_shadow",
+    )
+
+
+def _q6_residual_deep_floor_shadow_summary(
+    rows: list[dict[str, Any]],
+    key: str,
+) -> list[dict[str, Any]]:
+    return _q6_shadow_summary(
+        rows,
+        key,
+        prefix="q6_residual_deep_floor_shadow",
+    )
+
+
+def _q6_residual_hidden_floor_shadow_summary(
+    rows: list[dict[str, Any]],
+    key: str,
+) -> list[dict[str, Any]]:
+    return _q6_shadow_summary(
+        rows,
+        key,
+        prefix="q6_residual_hidden_floor_shadow",
+    )
+
+
 def _collection_readiness(
     rows: list[dict[str, Any]],
     *,
     target_per_hero_family: int,
     hidden_target_per_hero: int,
+    hidden_target_by_hero: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in rows:
@@ -490,7 +657,7 @@ def _collection_readiness(
     for hero in ("aisha", "ethan"):
         for family in ("villa", "shipwreck", "hidden"):
             target = (
-                hidden_target_per_hero
+                int((hidden_target_by_hero or {}).get(hero, hidden_target_per_hero))
                 if family == "hidden"
                 else target_per_hero_family
             )
@@ -509,6 +676,7 @@ def _collection_readiness(
     return {
         "target_per_hero_family": target_per_hero_family,
         "hidden_target_per_hero": hidden_target_per_hero,
+        "hidden_target_by_hero": dict(hidden_target_by_hero or {}),
         "ready": missing == 0,
         "total_needed": missing,
         "groups": rows_out,
@@ -546,6 +714,194 @@ def _next_sampling_targets(readiness: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _q6_shadow_sampling_progress_for_label(
+    rows: list[dict[str, Any]],
+    *,
+    label_key: str,
+    label: str,
+    sample_scope: str,
+    targets_config: tuple[tuple[str, str, int], ...],
+) -> dict[str, Any]:
+    shadow_rows = [
+        row
+        for row in rows
+        if row.get(label_key) == label
+    ]
+    counts = Counter(
+        (
+            str(row.get("hero") or "unknown"),
+            _map_family(row.get("map_id")),
+        )
+        for row in shadow_rows
+    )
+    targets = [
+        {
+            "hero": hero,
+            "map_family": family,
+            "n": counts[(hero, family)],
+            "target": target,
+            "needed": max(0, target - counts[(hero, family)]),
+            "ready": counts[(hero, family)] >= target,
+        }
+        for hero, family, target in targets_config
+    ]
+    return {
+        "sample_scope": sample_scope,
+        "tracked_rows": len(shadow_rows),
+        "ready": all(row["ready"] for row in targets),
+        "total_needed": sum(row["needed"] for row in targets),
+        "targets": targets,
+        "priority_needs": [row for row in targets if row["needed"] > 0],
+    }
+
+
+def _q6_shadow_sampling_progress(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    profile_b5 = _q6_shadow_sampling_progress_for_label(
+        rows,
+        label_key="q6_residual_boost_shadow_label",
+        label="profile_b5",
+        sample_scope="live_profile_b5_logs",
+        targets_config=_Q6_SHADOW_SAMPLING_TARGETS,
+    )
+    aisha_deep_floor1 = _q6_shadow_sampling_progress_for_label(
+        rows,
+        label_key="q6_residual_deep_floor_shadow_label",
+        label="aisha_deep_floor1",
+        sample_scope="live_aisha_deep_floor1_logs",
+        targets_config=_Q6_DEEP_FLOOR_SHADOW_SAMPLING_TARGETS,
+    )
+    aisha_hidden_floor15 = _q6_shadow_sampling_progress_for_label(
+        rows,
+        label_key="q6_residual_hidden_floor_shadow_label",
+        label="aisha_hidden_floor15",
+        sample_scope="live_aisha_hidden_floor15_logs",
+        targets_config=_Q6_HIDDEN_FLOOR_SHADOW_SAMPLING_TARGETS,
+    )
+    return {
+        **profile_b5,
+        "candidates": {
+            "profile_b5": profile_b5,
+            "aisha_deep_floor1": aisha_deep_floor1,
+            "aisha_hidden_floor15": aisha_hidden_floor15,
+        },
+    }
+
+
+def _q6_shadow_candidate_readiness(
+    rows: list[dict[str, Any]],
+    *,
+    prefix: str,
+    label_key: str,
+    label: str,
+    progress: dict[str, Any],
+) -> dict[str, Any]:
+    tracked = [
+        row for row in rows
+        if row.get(label_key) == label
+    ]
+    active = [
+        row for row in tracked
+        if row.get(f"{prefix}_active")
+    ]
+    active_no_q6 = [
+        row for row in active
+        if int(row.get("final_q6_value") or 0) <= 0
+    ]
+    under_before = [
+        row for row in active
+        if row.get(f"{prefix}_under_before")
+    ]
+    helped = [
+        row for row in under_before
+        if row.get(f"{prefix}_helped")
+    ]
+    still_missed = [
+        row for row in under_before
+        if not row.get(f"{prefix}_helped")
+    ]
+    false_positive = [
+        row for row in active
+        if row.get(f"{prefix}_false_positive_proxy")
+    ]
+    target_ready = bool(progress.get("ready"))
+    if not target_ready:
+        status = "needs_live_samples"
+    elif false_positive:
+        status = "blocked_false_positive"
+    elif under_before and not helped:
+        status = "no_observed_help"
+    elif helped:
+        status = "candidate_for_review"
+    else:
+        status = "monitoring"
+    return {
+        "label": label,
+        "sample_scope": progress.get("sample_scope"),
+        "status": status,
+        "target_ready": target_ready,
+        "target_total_needed": progress.get("total_needed"),
+        "tracked_rows": len(tracked),
+        "active_rows": len(active),
+        "active_no_q6_rows": len(active_no_q6),
+        "under_before_rows": len(under_before),
+        "helped_rows": len(helped),
+        "still_missed_rows": len(still_missed),
+        "helped_rate": (
+            round(len(helped) / len(under_before), 4)
+            if under_before
+            else None
+        ),
+        "still_missed_rate": (
+            round(len(still_missed) / len(under_before), 4)
+            if under_before
+            else None
+        ),
+        "false_positive_proxy_rows": len(false_positive),
+        "false_positive_proxy_rate_active": (
+            round(len(false_positive) / len(active), 4)
+            if active
+            else None
+        ),
+        "false_positive_proxy_rate_active_no_q6": (
+            round(len(false_positive) / len(active_no_q6), 4)
+            if active_no_q6
+            else None
+        ),
+        "q6_p90_delta_median": _median_value(active, f"{prefix}_q6_p90_delta"),
+        "priority_needs": progress.get("priority_needs") or [],
+    }
+
+
+def _q6_shadow_candidate_readiness_summary(
+    rows: list[dict[str, Any]],
+    progress: dict[str, Any],
+) -> dict[str, Any]:
+    candidates = progress.get("candidates") or {}
+    return {
+        "profile_b5": _q6_shadow_candidate_readiness(
+            rows,
+            prefix="q6_residual_boost_shadow",
+            label_key="q6_residual_boost_shadow_label",
+            label="profile_b5",
+            progress=candidates.get("profile_b5") or {},
+        ),
+        "aisha_deep_floor1": _q6_shadow_candidate_readiness(
+            rows,
+            prefix="q6_residual_deep_floor_shadow",
+            label_key="q6_residual_deep_floor_shadow_label",
+            label="aisha_deep_floor1",
+            progress=candidates.get("aisha_deep_floor1") or {},
+        ),
+        "aisha_hidden_floor15": _q6_shadow_candidate_readiness(
+            rows,
+            prefix="q6_residual_hidden_floor_shadow",
+            label_key="q6_residual_hidden_floor_shadow_label",
+            label="aisha_hidden_floor15",
+            progress=candidates.get("aisha_hidden_floor15") or {},
+        ),
+    }
+
+
 def _log_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "missing_hero": sum(1 for row in rows if not row.get("hero")),
@@ -560,12 +916,52 @@ def _log_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _monitor_error_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    type_counts: Counter[str] = Counter()
+    fingerprint_keys: set[str] = set()
+    latest: list[dict[str, Any]] = []
+    for row in rows:
+        error_type = str(row.get("error_type") or "unknown")
+        type_counts[error_type] += 1
+        fingerprint = row.get("fingerprint") or {}
+        if isinstance(fingerprint, dict):
+            key = "|".join(
+                str(part)
+                for part in (
+                    row.get("path") or row.get("name") or "",
+                    fingerprint.get("size"),
+                    fingerprint.get("mtime_ns"),
+                )
+            )
+        else:
+            key = str(row.get("path") or row.get("name") or row.get("ts") or "")
+        if key:
+            fingerprint_keys.add(key)
+        latest.append(
+            {
+                "ts": row.get("ts"),
+                "name": row.get("name"),
+                "error_type": error_type,
+                "error": str(row.get("error") or "")[:240],
+            }
+        )
+    latest.sort(key=lambda row: float(row.get("ts") or 0), reverse=True)
+    return {
+        "rows": len(rows),
+        "unique_file_fingerprints": len(fingerprint_keys),
+        "error_type_counts": dict(sorted(type_counts.items())),
+        "latest": latest[:5],
+    }
+
+
 def summarize(
     rows: list[dict[str, Any]],
     *,
     dedupe: bool = True,
     target_per_hero_family: int = 30,
     hidden_target_per_hero: int = 10,
+    hidden_target_by_hero: dict[str, int] | None = None,
+    monitor_error_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     original_count = len(rows)
     if dedupe:
@@ -582,6 +978,7 @@ def summarize(
         valid,
         target_per_hero_family=target_per_hero_family,
         hidden_target_per_hero=hidden_target_per_hero,
+        hidden_target_by_hero=hidden_target_by_hero,
     )
     layout_conflict = [
         row for row in valid
@@ -591,6 +988,7 @@ def summarize(
         row for row in valid
         if row.get("q6_p90_misses_truth") is True
     ]
+    q6_shadow_sampling_progress = _q6_shadow_sampling_progress(valid)
     return {
         "rows": len(rows),
         "raw_rows": original_count,
@@ -615,6 +1013,23 @@ def summarize(
         ),
         "warehouse_mae": _mae(valid, "warehouse_p50_error"),
         "layout_fit_mae": _mae(valid, "layout_fit_p50_error"),
+        "monitor_processing_seconds_median": _median_float_value(
+            valid,
+            "monitor_processing_seconds",
+        ),
+        "monitor_processing_seconds_p75": _p75_float_value(
+            valid,
+            "monitor_processing_seconds",
+        ),
+        "monitor_n_trials_values": _numeric_distribution(valid, "monitor_n_trials"),
+        "monitor_shadow_trials_values": _numeric_distribution(
+            valid,
+            "monitor_shadow_trials",
+        ),
+        "monitor_roi_trials_values": _numeric_distribution(
+            valid,
+            "monitor_roi_trials",
+        ),
         "category_target_rows": sum(
             1 for row in valid
             if (_numeric(row, "category_target_count") or 0) > 0
@@ -632,7 +1047,13 @@ def summarize(
             for row in valid
         ),
         "log_quality": _log_quality(valid),
+        "monitor_errors": _monitor_error_summary(monitor_error_rows or []),
         "collection_readiness": collection_readiness,
+        "q6_shadow_sampling_progress": q6_shadow_sampling_progress,
+        "q6_shadow_candidate_readiness": _q6_shadow_candidate_readiness_summary(
+            valid,
+            q6_shadow_sampling_progress,
+        ),
         "next_sampling_targets": _next_sampling_targets(collection_readiness),
         "q6_false_low_count": sum(
             1 for row in valid if row.get("q6_false_low_risk") is True
@@ -676,6 +1097,78 @@ def summarize(
                 if row.get("q6_practical_gate_hit")
             ],
             "q6_practical_p90_under_by",
+        ),
+        "q6_residual_boost_shadow_active_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_boost_shadow_active")
+        ),
+        "q6_residual_boost_shadow_under_before_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_boost_shadow_under_before")
+        ),
+        "q6_residual_boost_shadow_helped_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_boost_shadow_helped")
+        ),
+        "q6_residual_boost_shadow_false_positive_proxy_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_boost_shadow_false_positive_proxy")
+        ),
+        "q6_residual_boost_shadow_q6_p90_delta_median": _median_value(
+            [
+                row for row in valid
+                if row.get("q6_residual_boost_shadow_active")
+            ],
+            "q6_residual_boost_shadow_q6_p90_delta",
+        ),
+        "q6_residual_deep_floor_shadow_active_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_deep_floor_shadow_active")
+        ),
+        "q6_residual_deep_floor_shadow_under_before_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_deep_floor_shadow_under_before")
+        ),
+        "q6_residual_deep_floor_shadow_helped_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_deep_floor_shadow_helped")
+        ),
+        "q6_residual_deep_floor_shadow_false_positive_proxy_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_deep_floor_shadow_false_positive_proxy")
+        ),
+        "q6_residual_deep_floor_shadow_q6_p90_delta_median": _median_value(
+            [
+                row for row in valid
+                if row.get("q6_residual_deep_floor_shadow_active")
+            ],
+            "q6_residual_deep_floor_shadow_q6_p90_delta",
+        ),
+        "q6_residual_hidden_floor_shadow_active_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_hidden_floor_shadow_active")
+        ),
+        "q6_residual_hidden_floor_shadow_under_before_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_hidden_floor_shadow_under_before")
+        ),
+        "q6_residual_hidden_floor_shadow_helped_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_hidden_floor_shadow_helped")
+        ),
+        "q6_residual_hidden_floor_shadow_false_positive_proxy_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_hidden_floor_shadow_false_positive_proxy")
+        ),
+        "q6_residual_hidden_floor_shadow_q6_p90_delta_median": _median_value(
+            [
+                row for row in valid
+                if row.get("q6_residual_hidden_floor_shadow_active")
+            ],
+            "q6_residual_hidden_floor_shadow_q6_p90_delta",
+        ),
+        "q6_aisha_bottom_row_risk_count": sum(
+            1 for row in valid if row.get("q6_aisha_bottom_row_risk")
         ),
         "q6_p90_miss_count": sum(
             1 for row in valid if row.get("q6_p90_misses_truth") is True
@@ -773,6 +1266,108 @@ def summarize(
                 "information_density_band",
             ),
         },
+        "q6_residual_boost_shadow": {
+            "hero": _q6_residual_boost_shadow_summary(valid, "hero"),
+            "hero_map_family": _q6_residual_boost_shadow_summary(
+                [
+                    {
+                        **row,
+                        "hero_map_family": (
+                            f"hero={row.get('hero') or 'unknown'}|"
+                            f"map_family={_map_family(row.get('map_id'))}"
+                        ),
+                    }
+                    for row in valid
+                ],
+                "hero_map_family",
+            ),
+            "map_family": _q6_residual_boost_shadow_summary(
+                [
+                    {
+                        **row,
+                        "map_family": _map_family(row.get("map_id")),
+                    }
+                    for row in valid
+                ],
+                "map_family",
+            ),
+            "evidence_stage": _q6_residual_boost_shadow_summary(
+                valid,
+                "evidence_stage",
+            ),
+            "information_density": _q6_residual_boost_shadow_summary(
+                valid,
+                "information_density_band",
+            ),
+        },
+        "q6_residual_deep_floor_shadow": {
+            "hero": _q6_residual_deep_floor_shadow_summary(valid, "hero"),
+            "hero_map_family": _q6_residual_deep_floor_shadow_summary(
+                [
+                    {
+                        **row,
+                        "hero_map_family": (
+                            f"hero={row.get('hero') or 'unknown'}|"
+                            f"map_family={_map_family(row.get('map_id'))}"
+                        ),
+                    }
+                    for row in valid
+                ],
+                "hero_map_family",
+            ),
+            "map_family": _q6_residual_deep_floor_shadow_summary(
+                [
+                    {
+                        **row,
+                        "map_family": _map_family(row.get("map_id")),
+                    }
+                    for row in valid
+                ],
+                "map_family",
+            ),
+            "evidence_stage": _q6_residual_deep_floor_shadow_summary(
+                valid,
+                "evidence_stage",
+            ),
+            "information_density": _q6_residual_deep_floor_shadow_summary(
+                valid,
+                "information_density_band",
+            ),
+        },
+        "q6_residual_hidden_floor_shadow": {
+            "hero": _q6_residual_hidden_floor_shadow_summary(valid, "hero"),
+            "hero_map_family": _q6_residual_hidden_floor_shadow_summary(
+                [
+                    {
+                        **row,
+                        "hero_map_family": (
+                            f"hero={row.get('hero') or 'unknown'}|"
+                            f"map_family={_map_family(row.get('map_id'))}"
+                        ),
+                    }
+                    for row in valid
+                ],
+                "hero_map_family",
+            ),
+            "map_family": _q6_residual_hidden_floor_shadow_summary(
+                [
+                    {
+                        **row,
+                        "map_family": _map_family(row.get("map_id")),
+                    }
+                    for row in valid
+                ],
+                "map_family",
+            ),
+            "evidence_stage": _q6_residual_hidden_floor_shadow_summary(
+                valid,
+                "evidence_stage",
+            ),
+            "information_density": _q6_residual_hidden_floor_shadow_summary(
+                valid,
+                "information_density_band",
+            ),
+        },
     }
 
 
@@ -801,10 +1396,35 @@ def main() -> int:
         "--hidden-target-per-hero",
         type=int,
         default=10,
-        help="Readiness target for each hero x hidden-auction bucket",
+        help="Fallback readiness target for each hero x hidden-auction bucket",
+    )
+    parser.add_argument(
+        "--aisha-hidden-target",
+        type=int,
+        default=10,
+        help="Readiness target for Aisha x hidden-auction",
+    )
+    parser.add_argument(
+        "--ethan-hidden-target",
+        type=int,
+        default=5,
+        help="Readiness target for Ethan x hidden-auction",
+    )
+    parser.add_argument(
+        "--error-log",
+        default=None,
+        help=(
+            "Path to monitor_errors.jsonl. Defaults to monitor_errors.jsonl next "
+            "to the selected model_eval.jsonl."
+        ),
     )
     args = parser.parse_args()
-    rows = _read_jsonl(Path(args.path))
+    path = Path(args.path)
+    rows = _read_jsonl(path)
+    error_log = Path(args.error_log) if args.error_log else path.with_name(
+        "monitor_errors.jsonl"
+    )
+    monitor_errors = _read_jsonl(error_log)
     print(
         json.dumps(
             summarize(
@@ -812,6 +1432,11 @@ def main() -> int:
                 dedupe=not args.no_dedupe,
                 target_per_hero_family=args.target_per_hero_family,
                 hidden_target_per_hero=args.hidden_target_per_hero,
+                hidden_target_by_hero={
+                    "aisha": args.aisha_hidden_target,
+                    "ethan": args.ethan_hidden_target,
+                },
+                monitor_error_rows=monitor_errors,
             ),
             ensure_ascii=False,
             indent=2,

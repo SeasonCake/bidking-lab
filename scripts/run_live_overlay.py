@@ -47,6 +47,20 @@ def _load_snapshot(path: Path) -> dict:
         return {}
 
 
+def _snapshot_file_signature(path: Path) -> tuple[str, int, int] | tuple[str]:
+    try:
+        stat = path.stat()
+    except OSError:
+        return ("missing",)
+    return ("file", stat.st_mtime_ns, stat.st_size)
+
+
+def _default_window_geometry(screen_width: int, screen_height: int) -> str:
+    width = max(700, min(920, screen_width - 120))
+    height = max(480, min(680, screen_height - 160))
+    return f"{width}x{height}+40+80"
+
+
 def _fmt_int(value: Any) -> str:
     if value is None or value == "":
         return "?"
@@ -85,6 +99,22 @@ def _severity_for_bid(text: str) -> str:
 
 def _severity_color(severity: str) -> str:
     return TAG_COLORS.get(severity, TEXT)
+
+
+def _quality_color(quality: Any) -> str:
+    try:
+        q = int(quality)
+    except (TypeError, ValueError):
+        return MUTED
+    if q >= 6:
+        return BAD
+    if q == 5:
+        return WARN
+    if q == 4:
+        return PURPLE
+    if q == 3:
+        return ACCENT
+    return MUTED
 
 
 def _age(snapshot: dict[str, Any]) -> tuple[str, bool]:
@@ -393,6 +423,241 @@ def _category_focus_text(items: list[dict[str, Any]]) -> tuple[str, str]:
     return summary, "；".join(details)
 
 
+def _ui_contract_shadow_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    shadows = [
+        shadow
+        for shadow in contract.get("shadows", ()) or ()
+        if isinstance(shadow, dict)
+    ]
+    if not shadows:
+        return None
+    active = [shadow for shadow in shadows if _flag(shadow.get("active"))]
+    if active:
+        selected = [
+            shadow
+            for shadow in active
+            if shadow.get("display_mode") != "debug_only"
+        ] or active
+        details = []
+        for shadow in selected[:3]:
+            q6_p90 = shadow.get("q6_decision_value_p90")
+            delta = shadow.get("q6_p90_delta")
+            trials = shadow.get("trials")
+            parts = [
+                str(shadow.get("label") or "shadow"),
+                f"q6P90 {_fmt_int(q6_p90)}" if q6_p90 is not None else "",
+                f"Δ{_fmt_int(delta)}" if delta is not None else "",
+                f"trials {trials}" if trials is not None else "",
+            ]
+            details.append(" ".join(part for part in parts if part))
+        return ("Shadow 风险参考", "；".join(details), "只读参考，不改变正式出价")
+    inactive_labels = [
+        str(shadow.get("label") or "shadow")
+        for shadow in shadows
+        if not _flag(shadow.get("active"))
+    ]
+    return (
+        "Shadow 状态",
+        "未激活",
+        " / ".join(inactive_labels[:3]),
+    )
+
+
+def _ui_contract_minimap_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    minimap = contract.get("minimap") or {}
+    if not isinstance(minimap, dict) or minimap.get("status") != "available":
+        return None
+    known_items = minimap.get("known_items") or 0
+    quality_counts = minimap.get("quality_counts") or {}
+    category_counts = minimap.get("category_counts") or {}
+    q_text = " / ".join(
+        f"{label.upper()}×{count}"
+        for label, count in list(quality_counts.items())[-3:]
+    )
+    c_text = " / ".join(
+        f"{label}×{count}"
+        for label, count in list(category_counts.items())[:4]
+    )
+    grid_note = (
+        f"默认{minimap.get('default_cells', 130)}格"
+        f" / 最高{minimap.get('max_cells', 250)}格"
+    )
+    if minimap.get("scrollable"):
+        grid_note += " / 需滚动"
+    return (
+        "MiniMap",
+        f"已知 {known_items} 件" + (f"  |  {q_text}" if q_text else ""),
+        c_text or grid_note,
+    )
+
+
+def _ui_contract_fallback_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    fallback = contract.get("fallback") or {}
+    if not isinstance(fallback, dict) or not _flag(fallback.get("active")):
+        return None
+    decision = fallback.get("decision") or {}
+    if not isinstance(decision, dict):
+        return None
+    thresholds = " / ".join(
+        part
+        for part in (
+            f"探价 {decision.get('probe_bid')}" if decision.get("probe_bid") else "",
+            f"防守 {decision.get('defend_bid')}" if decision.get("defend_bid") else "",
+            f"抢仓 {decision.get('attack_bid')}" if decision.get("attack_bid") else "",
+            f"停止 {decision.get('stop_price')}" if decision.get("stop_price") else "",
+        )
+        if part
+    )
+    player_risks = "；".join(
+        " ".join(
+            part
+            for part in (
+                str(row.get("current_bid") or ""),
+                str(row.get("risk_band") or ""),
+            )
+            if part
+        )
+        for row in decision.get("player_risks", ()) or ()
+        if isinstance(row, dict)
+    )
+    detail = "；".join(
+        part
+        for part in (
+            f"对手：{player_risks}" if player_risks else "",
+            f"补信息：{decision.get('next_info_hint')}"
+            if decision.get("next_info_hint")
+            else "",
+            str(decision.get("rationale") or ""),
+        )
+        if part
+    )
+    return (
+        "Fallback 出价参考",
+        thresholds or "已生成 map-prior 低置信参考",
+        detail,
+    )
+
+
+def _ui_contract_constraints_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    constraints = contract.get("constraints") or {}
+    if not isinstance(constraints, dict):
+        return None
+    summary = constraints.get("summary") or {}
+    if not isinstance(summary, dict):
+        return None
+    headline_parts: list[str] = []
+    if summary.get("input_total_item_count") is not None:
+        headline_parts.append(f"总件 {summary.get('input_total_item_count')}")
+    if summary.get("input_warehouse_total_cells") is not None:
+        headline_parts.append(f"总格 {summary.get('input_warehouse_total_cells')}")
+    elif summary.get("input_warehouse_total_cells_approx") is not None:
+        headline_parts.append(
+            f"估格 {summary.get('input_warehouse_total_cells_approx')}"
+        )
+    if summary.get("known_grid_items"):
+        headline_parts.append(f"已知 {summary.get('known_grid_items')} 件")
+
+    quality_parts = []
+    for key, label in (
+        ("known_purple_item_count", "紫"),
+        ("known_gold_item_count", "金"),
+        ("known_red_item_count", "红"),
+    ):
+        count = summary.get(key)
+        if count:
+            quality_parts.append(f"{label}×{count}")
+
+    detail_parts = []
+    for key, label in (
+        ("anchor_count", "锚点"),
+        ("shape_target_count", "形状"),
+        ("category_target_count", "分类"),
+        ("category_exclusion_count", "反排"),
+    ):
+        count = summary.get(key)
+        if count:
+            detail_parts.append(f"{label}{count}")
+    if summary.get("public_constraint_key"):
+        detail_parts.append(str(summary.get("public_constraint_key")))
+
+    if not headline_parts and not quality_parts and not detail_parts:
+        return None
+    headline = " / ".join(headline_parts or quality_parts)
+    detail = " / ".join([*quality_parts, *detail_parts])
+    return ("输入约束", headline, detail)
+
+
+def _minimap_canvas_geometry(minimap: dict[str, Any]) -> dict[str, int]:
+    columns = max(1, int(minimap.get("columns") or 10))
+    viewport_rows = max(1, int(minimap.get("viewport_rows") or 13))
+    max_rows = max(viewport_rows, int(minimap.get("max_rows") or 25))
+    rows_hint = int(minimap.get("rows_hint") or viewport_rows)
+    rows = max(viewport_rows, min(rows_hint, max_rows))
+    visible_rows = min(viewport_rows, rows)
+    cell = max(6, min(14, 196 // columns))
+    return {
+        "columns": columns,
+        "rows": rows,
+        "visible_rows": visible_rows,
+        "cell": cell,
+        "width": columns * cell + 1,
+        "height": rows * cell + 1,
+        "visible_height": visible_rows * cell + 1,
+    }
+
+
+def _ui_contract_alerts(contract: dict[str, Any]) -> list[tuple[str, str]]:
+    alerts: list[tuple[str, str]] = []
+    baseline = contract.get("baseline") or {}
+    posterior = baseline.get("posterior") or {}
+    if posterior.get("status") == "zero_match":
+        alerts.append(
+            (
+                f"baseline 后验无匹配：{posterior.get('match_text') or '0/N'}，"
+                "需复核约束或样本解析",
+                "bad",
+            )
+        )
+    fallback = contract.get("fallback") or {}
+    if _flag(fallback.get("active")):
+        alerts.append(
+            (
+                "v1 fallback 已生成低置信参考，不替代 baseline v2",
+                "warn",
+            )
+        )
+    q6_risk = contract.get("q6_risk_reference") or {}
+    if _flag(q6_risk.get("risk")):
+        reference = (
+            q6_risk.get("practical_reference_p90")
+            or q6_risk.get("prior_reference_p90")
+            or "?"
+        )
+        gap = q6_risk.get("prior_gap") or "q6 prior gap"
+        alerts.append((f"UI契约 q6 风险参考：{gap}，参考P90 {reference}", "warn"))
+    for shadow in contract.get("shadows", ()) or ():
+        if not isinstance(shadow, dict) or not _flag(shadow.get("active")):
+            continue
+        if shadow.get("display_mode") != "risk_reference_candidate":
+            continue
+        alerts.append(
+            (
+                f"{shadow.get('label')} tail-risk shadow 已激活，q6P90 "
+                f"{_fmt_int(shadow.get('q6_decision_value_p90'))}，不改正式出价",
+                "warn",
+            )
+        )
+    return alerts
+
+
 def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     if not snapshot:
         return {
@@ -413,15 +678,27 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     v2 = _first(snapshot.get("v2_posterior_rows"))
     model_eval = snapshot.get("model_eval") or {}
     panel = snapshot.get("panel") or {}
+    ui_contract = snapshot.get("ui_contract") or {}
+    if not isinstance(ui_contract, dict):
+        ui_contract = {}
+    contract_context = ui_contract.get("context") or {}
+    contract_source = ui_contract.get("source") or {}
+    contract_baseline = ui_contract.get("baseline") or {}
+    contract_decision = contract_baseline.get("decision") or {}
+    contract_posterior = contract_baseline.get("posterior") or {}
+    contract_layout = contract_baseline.get("layout") or {}
+    contract_fallback = ui_contract.get("fallback") or {}
+    fallback_decision = contract_fallback.get("decision") or {}
+    fallback_posterior = contract_fallback.get("posterior") or {}
     category_items = snapshot.get("category_grid_items") or []
     layout = _first(panel.get("layout_stages"))
-    hero = str(snapshot.get("hero") or "?").upper()
-    map_id = snapshot.get("map_id") or "?"
-    round_no = snapshot.get("round") or "?"
+    hero = str(contract_context.get("hero") or snapshot.get("hero") or "?").upper()
+    map_id = contract_context.get("map_id") or snapshot.get("map_id") or "?"
+    round_no = contract_context.get("round") or snapshot.get("round") or "?"
     title = f"{hero}  ·  map {map_id}  ·  R{round_no}"
     subtitle_parts = [
-        f"文件 {snapshot.get('file') or '?'}",
-        f"结算 {_fmt_int(snapshot.get('known_value_sum'))}",
+        f"文件 {contract_source.get('file') or snapshot.get('file') or '?'}",
+        f"结算 {_fmt_int(contract_context.get('known_value_sum') or snapshot.get('known_value_sum'))}",
     ]
     if age:
         subtitle_parts.append(age)
@@ -430,7 +707,35 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     decision_text = "等待建议"
     decision_detail = ""
     decision_severity = "dim"
-    if bid:
+    if contract_decision.get("action"):
+        action = str(contract_decision.get("action") or "?")
+        current = str(contract_decision.get("current_highest") or "?")
+        risk = str(contract_decision.get("risk_band") or "?")
+        stop = str(contract_decision.get("stop_price") or "?")
+        decision_text = action
+        decision_detail = f"最高 {current}  |  停止 {stop}  |  {risk}"
+        decision_severity = _severity_for_bid(f"{action} {risk}")
+    elif (
+        contract_posterior.get("status") == "zero_match"
+        and _flag(contract_fallback.get("active"))
+        and fallback_decision.get("action")
+    ):
+        action = str(fallback_decision.get("action") or "?")
+        current = str(fallback_decision.get("current_highest") or "?")
+        risk = str(fallback_decision.get("risk_band") or "?")
+        stop = str(fallback_decision.get("stop_price") or "?")
+        match_text = str(contract_posterior.get("match_text") or "0/N")
+        decision_text = f"低置信参考：{action}"
+        decision_detail = (
+            f"v2匹配 {match_text}  |  最高 {current}  |  停止 {stop}  |  {risk}"
+        )
+        decision_severity = _severity_for_bid(f"{action} {risk}")
+    elif contract_posterior.get("status") == "zero_match":
+        match_text = str(contract_posterior.get("match_text") or "0/N")
+        decision_text = "后验无匹配"
+        decision_detail = f"匹配 {match_text}  |  复核公开约束/布局解析"
+        decision_severity = "bad"
+    elif bid:
         action = str(bid.get("建议") or "?")
         current = str(bid.get("当前最高") or "?")
         risk = str(bid.get("风险带") or "?")
@@ -444,7 +749,33 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         decision_severity = _severity_for_bid(f"{decision_text} {decision_detail}")
 
     metrics: list[tuple[str, str, str, str]] = []
-    if value_row := summary.get("当前价值区间"):
+    if contract_posterior.get("decision_value_range"):
+        metrics.append(
+            (
+                "决策价值",
+                str(contract_posterior.get("decision_value_range") or "?"),
+                _short(
+                    f"raw {contract_posterior.get('raw_value_range') or '?'}",
+                    46,
+                ),
+                "normal",
+            )
+        )
+    elif _flag(contract_fallback.get("active")) and fallback_posterior.get(
+        "raw_value_range"
+    ):
+        metrics.append(
+            (
+                "fallback价值",
+                str(fallback_posterior.get("raw_value_range") or "?"),
+                _short(
+                    f"v1低置信 / {fallback_posterior.get('match_text') or '?'}",
+                    46,
+                ),
+                "warn",
+            )
+        )
+    elif value_row := summary.get("当前价值区间"):
         metrics.append(
             (
                 "决策价值",
@@ -453,7 +784,22 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
                 "normal",
             )
         )
-    if warehouse_row := summary.get("当前仓储区间"):
+    if _flag(contract_fallback.get("active")) and fallback_posterior.get(
+        "total_cells_range"
+    ):
+        metrics.append(
+            (
+                "fallback仓储",
+                str(fallback_posterior.get("total_cells_range") or "?"),
+                _short(
+                    f"{fallback_posterior.get('confidence') or '低置信'} / "
+                    f"{fallback_posterior.get('match_text') or '?'}",
+                    46,
+                ),
+                "warn",
+            )
+        )
+    elif warehouse_row := summary.get("当前仓储区间"):
         metrics.append(
             (
                 "仓储",
@@ -462,8 +808,12 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
                 "normal",
             )
         )
-    if v2:
-        q6_rate = str(v2.get("q6样本率") or "?")
+    if contract_posterior.get("q6_sample_rate") or v2:
+        q6_rate = str(
+            contract_posterior.get("q6_sample_rate")
+            or v2.get("q6样本率")
+            or "?"
+        )
         q6_tag = "normal"
         try:
             q6_tag = "bad" if float(q6_rate.strip("%")) < 10 else "normal"
@@ -476,20 +826,25 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
                 "红货 q6",
                 q6_rate,
                 str(
-                    v2.get("q6决策价值 P10/P50/P90")
+                    contract_posterior.get("q6_decision_value_range")
+                    or v2.get("q6决策价值 P10/P50/P90")
                     or v2.get("q6价值 P10/P50/P90")
                     or ""
                 ),
                 q6_tag,
             )
         )
-    if layout:
+    if contract_layout.get("estimate") or layout:
+        layout_estimate = contract_layout.get("estimate") or layout.get("estimate")
+        layout_known = contract_layout.get("known_cells") or layout.get("known_cells")
+        layout_confidence = contract_layout.get("confidence") or layout.get("confidence")
+        layout_risk = contract_layout.get("risk") or layout.get("risk")
         metrics.append(
             (
                 "布局",
-                str(layout.get("estimate") or "?"),
-                f"已知 {layout.get('known_cells') or '?'}格 · {layout.get('confidence') or '?'}",
-                "warn" if layout.get("risk") not in ("", "低", "低风险") else "normal",
+                str(layout_estimate or "?"),
+                f"已知 {layout_known or '?'}格 · {layout_confidence or '?'}",
+                "warn" if layout_risk not in ("", "低", "低风险") else "normal",
             )
         )
     sections: list[tuple[str, str, str]] = []
@@ -504,6 +859,24 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     if category_items:
         category_summary, category_detail = _category_focus_text(category_items)
         sections.append(("鉴影命中", category_summary, _short(category_detail, 118)))
+    fallback_section = _ui_contract_fallback_section(ui_contract)
+    if fallback_section is not None:
+        sections.append(
+            (
+                fallback_section[0],
+                _short(fallback_section[1], 118),
+                _short(fallback_section[2], 168),
+            )
+        )
+    minimap_section = _ui_contract_minimap_section(ui_contract)
+    if minimap_section is not None:
+        sections.append(minimap_section)
+    constraints_section = _ui_contract_constraints_section(ui_contract)
+    if constraints_section is not None:
+        sections.append(constraints_section)
+    shadow_section = _ui_contract_shadow_section(ui_contract)
+    if shadow_section is not None:
+        sections.append(shadow_section)
     diagnostics = str(v2.get("诊断") or "")
     if diagnostics:
         sections.append(("后验诊断", _short(diagnostics, 118), ""))
@@ -517,7 +890,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         alerts.append(("真实有红货，但后验 q6 样本率过低", "bad"))
     elif _flag(model_eval.get("q6_p90_misses_truth")):
         alerts.append(("q6 P90 低于结算 q6 价值", "warn"))
-    if v2 and str(v2.get("q6先验缺口") or ""):
+    if not ui_contract and v2 and str(v2.get("q6先验缺口") or ""):
         gap = str(v2.get("q6先验缺口") or "")
         floor = str(v2.get("q6先验风险参考") or "")
         practical = str(v2.get("q6实战参考P90") or "")
@@ -534,6 +907,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         alerts.append((root, "warn"))
     if _flag(model_eval.get("relaxed_exact_used")):
         alerts.append(("exact 桶约束已放宽", "warn"))
+    alerts.extend(_ui_contract_alerts(ui_contract))
 
     eval_parts = []
     if model_eval.get("decision_value_p50_error") is not None:
@@ -552,6 +926,12 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         "metrics": metrics,
         "sections": sections,
         "alerts": alerts,
+        "minimap": (
+            ui_contract.get("minimap")
+            if isinstance(ui_contract.get("minimap"), dict)
+            and ui_contract.get("minimap", {}).get("status") == "available"
+            else {}
+        ),
         "footer": " / ".join(eval_parts),
     }
 
@@ -569,15 +949,61 @@ class Overlay:
         self.snapshot_path = snapshot_path
         self.interval_ms = interval_ms
         self.demo = demo
+        self._last_snapshot_signature: tuple[Any, ...] | None = None
+        self._last_snapshot: dict[str, Any] | None = None
+        self._last_stale_state: bool | None = None
+        self._demo_snapshot = _demo_snapshot() if demo else None
         root.title("BidKing Live")
         root.attributes("-topmost", True)
         root.attributes("-alpha", 0.96)
-        root.geometry("760x430+40+80")
-        root.minsize(620, 340)
+        root.geometry(
+            _default_window_geometry(
+                root.winfo_screenwidth(),
+                root.winfo_screenheight(),
+            )
+        )
+        root.minsize(700, 420)
         root.configure(bg=BG)
-        self.frame = tk.Frame(root, bg=BG, padx=12, pady=12)
-        self.frame.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(root, bg=BG, highlightthickness=0, bd=0)
+        self.scrollbar = tk.Scrollbar(
+            root,
+            orient="vertical",
+            command=self.canvas.yview,
+        )
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        self.frame = tk.Frame(self.canvas, bg=BG, padx=12, pady=12)
+        self._frame_window = self.canvas.create_window(
+            (0, 0),
+            window=self.frame,
+            anchor="nw",
+        )
+        self.frame.bind(
+            "<Configure>",
+            lambda _event: self.canvas.configure(
+                scrollregion=self.canvas.bbox("all")
+            ),
+        )
+        self.canvas.bind(
+            "<Configure>",
+            lambda event: self.canvas.itemconfigure(
+                self._frame_window,
+                width=event.width,
+            ),
+        )
+        self.canvas.bind_all(
+            "<MouseWheel>",
+            lambda event: self._scroll_canvas(self.canvas, event),
+        )
         self.refresh()
+
+    def _scroll_canvas(self, canvas: tk.Canvas, event: tk.Event) -> str:
+        canvas.yview_scroll(
+            -int(event.delta / 120),
+            "units",
+        )
+        return "break"
 
     def _clear(self) -> None:
         for child in self.frame.winfo_children():
@@ -610,8 +1036,56 @@ class Overlay:
         frame.configure(highlightbackground=BORDER, highlightcolor=BORDER)
         return frame
 
+    def _draw_minimap(self, canvas: tk.Canvas, minimap: dict[str, Any]) -> None:
+        geometry = _minimap_canvas_geometry(minimap)
+        columns = geometry["columns"]
+        rows = geometry["rows"]
+        cell = geometry["cell"]
+        width = geometry["width"]
+        height = geometry["height"]
+        canvas.configure(
+            width=width,
+            height=geometry["visible_height"],
+            scrollregion=(0, 0, width, height),
+        )
+        for col in range(columns + 1):
+            x = col * cell
+            canvas.create_line(x, 0, x, height, fill=BORDER)
+        for row in range(rows + 1):
+            y = row * cell
+            canvas.create_line(0, y, width, y, fill=BORDER)
+        for item in minimap.get("items", ()) or ():
+            if not isinstance(item, dict):
+                continue
+            row = item.get("row")
+            col = item.get("col")
+            if row is None or col is None:
+                continue
+            try:
+                row_i = int(row)
+                col_i = int(col)
+                item_w = max(1, int(item.get("width") or 1))
+                item_h = max(1, int(item.get("height") or 1))
+            except (TypeError, ValueError):
+                continue
+            if row_i < 1 or col_i < 1 or row_i > rows:
+                continue
+            x0 = (col_i - 1) * cell + 1
+            y0 = (row_i - 1) * cell + 1
+            x1 = min(columns * cell, (col_i - 1 + item_w) * cell) - 1
+            y1 = min(rows * cell, (row_i - 1 + item_h) * cell) - 1
+            canvas.create_rectangle(
+                x0,
+                y0,
+                x1,
+                y1,
+                fill=_quality_color(item.get("quality")),
+                outline=TEXT,
+            )
+
     def _render(self, model: dict[str, Any]) -> None:
         self._clear()
+        self.canvas.yview_moveto(0)
         header = tk.Frame(self.frame, bg=BG)
         header.pack(fill="x")
         title_box = tk.Frame(header, bg=BG)
@@ -708,6 +1182,55 @@ class Overlay:
             if detail:
                 self._label(body, detail, fg=MUTED, wraplength=430, font=("Microsoft YaHei UI", 8)).pack(anchor="w")
 
+        if model.get("minimap"):
+            minimap_card = self._card(right)
+            minimap_card.pack(fill="x", pady=(0, 8))
+            minimap_body = tk.Frame(minimap_card, bg=PANEL, padx=10, pady=8)
+            minimap_body.pack(fill="x")
+            self._label(
+                minimap_body,
+                "MiniMap",
+                fg=ACCENT,
+                font=("Microsoft YaHei UI", 10, "bold"),
+            ).pack(anchor="w")
+            canvas_frame = tk.Frame(minimap_body, bg=PANEL)
+            canvas_frame.pack(anchor="w", pady=(6, 0))
+            canvas = tk.Canvas(
+                canvas_frame,
+                bg=PANEL_SOFT,
+                highlightthickness=0,
+                bd=0,
+            )
+            minimap_geometry = _minimap_canvas_geometry(model["minimap"])
+            scrollable = (
+                model["minimap"].get("scrollable")
+                or minimap_geometry["height"] > minimap_geometry["visible_height"]
+            )
+            if scrollable:
+                scrollbar = tk.Scrollbar(
+                    canvas_frame,
+                    orient="vertical",
+                    command=canvas.yview,
+                )
+                canvas.configure(yscrollcommand=scrollbar.set)
+                canvas.pack(side="left")
+                scrollbar.pack(side="right", fill="y")
+                canvas.bind(
+                    "<MouseWheel>",
+                    lambda event: self._scroll_canvas(canvas, event),
+                )
+            else:
+                canvas.pack(side="left")
+            self._draw_minimap(canvas, model["minimap"])
+            self._label(
+                minimap_body,
+                f"已知 {model['minimap'].get('known_items', 0)} 件 · "
+                f"默认{model['minimap'].get('default_cells', 130)}格"
+                f" / 最高{model['minimap'].get('max_cells', 250)}格",
+                fg=MUTED,
+                font=("Microsoft YaHei UI", 8),
+            ).pack(anchor="w", pady=(5, 0))
+
         alert_card = self._card(right)
         alert_card.pack(fill="both", expand=True)
         alert_body = tk.Frame(alert_card, bg=PANEL, padx=10, pady=8)
@@ -744,8 +1267,28 @@ class Overlay:
             ).pack(anchor="w", side="bottom", pady=(10, 0))
 
     def refresh(self) -> None:
-        snapshot = _demo_snapshot() if self.demo else _load_snapshot(self.snapshot_path)
-        self._render(_overlay_model(snapshot))
+        signature: tuple[Any, ...]
+        if self.demo:
+            signature = ("demo",)
+            snapshot = self._demo_snapshot or {}
+        else:
+            signature = _snapshot_file_signature(self.snapshot_path)
+            snapshot = (
+                _load_snapshot(self.snapshot_path)
+                if signature != self._last_snapshot_signature
+                else self._last_snapshot
+            )
+        should_render = signature != self._last_snapshot_signature
+        if snapshot is not None:
+            _age_text, stale = _age(snapshot)
+            if stale != self._last_stale_state:
+                should_render = True
+        if should_render:
+            snapshot = snapshot or {}
+            self._render(_overlay_model(snapshot))
+            self._last_snapshot_signature = signature
+            self._last_snapshot = snapshot
+            self._last_stale_state = _age(snapshot)[1]
         self.root.after(self.interval_ms, self.refresh)
 
 
