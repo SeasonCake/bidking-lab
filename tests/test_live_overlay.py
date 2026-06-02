@@ -131,6 +131,9 @@ def test_demo_snapshot_has_compact_overlay_sections() -> None:
     assert any(section[0] == "鉴影命中" for section in model["sections"])
     assert any(alert[0].startswith("q6 P90") for alert in model["alerts"])
     assert any(alert[0].startswith("q6 件数/格数低于先验") for alert in model["alerts"])
+    assert model["interaction"]["hover"]["enabled"] is True
+    assert model["interaction"]["detail"]["enabled"] is True
+    assert model["interaction"]["mini"]["sections"] == model["sections"][:4]
 
 
 def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
@@ -240,6 +243,62 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
                         "public_constraint_key": "max_item_cells",
                     },
                 },
+                "truth": {
+                    "available": True,
+                    "source": "settlement_or_sample_replay",
+                    "total_value": 800000,
+                    "total_items": 42,
+                    "total_cells": 123,
+                    "q6": {"count": 1, "cells": 16, "value": 320000},
+                    "top_item": {
+                        "name": "民用垂直起降飞行器",
+                        "quality": 6,
+                        "cells": 16,
+                        "value": 320000,
+                    },
+                },
+                "diagnostics": {
+                    "posterior": "q6_below_drop_prior:0.12<prior:0.80",
+                    "layout": {
+                        "conflict": False,
+                        "bottom_row": 18,
+                        "bottom_row_risk": True,
+                        "bottom_row_risk_threshold": 12,
+                    },
+                    "q6": {
+                        "p90_misses_truth": True,
+                        "below_drop_prior": True,
+                        "top_size_band": "large",
+                    },
+                    "sampling": {
+                        "relaxed_exact_used": False,
+                        "n_trials": 500,
+                        "shadow_trials": 80,
+                        "processing_seconds": 1.2,
+                    },
+                },
+                "interaction": {
+                    "compact": {
+                        "purpose": "always_on_top_core_tips",
+                        "fields": ("baseline.decision.action",),
+                    },
+                    "hover": {
+                        "purpose": "expanded_quick_context",
+                        "fields": ("constraints.summary", "minimap"),
+                    },
+                    "detail": {
+                        "purpose": "click_to_open_full_reasoning",
+                        "fields": ("truth", "shadows", "diagnostics"),
+                        "collapsible": True,
+                        "renderers": (
+                            {
+                                "name": "matplotlib_minimap",
+                                "mode": "optional_async",
+                                "min_round": 3,
+                            },
+                        ),
+                    },
+                },
                 "shadows": [
                     {
                         "label": "profile_b5",
@@ -294,6 +353,24 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert model["metrics"][0][1] == "300,000 / 500,000 / 700,000"
     assert any("UI契约 q6 风险参考" in alert[0] for alert in model["alerts"])
     assert any("aisha_deep_floor1 tail-risk shadow" in alert[0] for alert in model["alerts"])
+    interaction = model["interaction"]
+    assert interaction["mini"]["purpose"] == "always_on_top_core_tips"
+    assert interaction["mini"]["metrics"][0][0] == "决策价值"
+    assert interaction["hover"]["enabled"] is True
+    assert any(section[0] == "输入约束" for section in interaction["hover"]["sections"])
+    assert any(section[0] == "q6 风险参考" for section in interaction["hover"]["sections"])
+    assert interaction["detail"]["enabled"] is True
+    assert interaction["detail"]["collapsible"] is True
+    assert interaction["detail"]["renderers"] == (
+        {
+            "name": "matplotlib_minimap",
+            "mode": "optional_async",
+            "min_round": 3,
+        },
+    )
+    assert any(section[0] == "结算/Truth" for section in interaction["detail"]["sections"])
+    assert any(section[0] == "Shadow 明细" for section in interaction["detail"]["sections"])
+    assert any(section[0] == "诊断明细" for section in interaction["detail"]["sections"])
 
 
 def test_overlay_model_surfaces_zero_match_baseline() -> None:
@@ -414,3 +491,11 @@ def test_overlay_model_uses_zero_match_fallback_reference() -> None:
     assert "对手：玩家A 500,000 过热区" in fallback_section[2]
     assert "补信息：优先补轮廓或具体物品" in fallback_section[2]
     assert any("v1 fallback 已生成低置信参考" in alert[0] for alert in model["alerts"])
+    assert any(
+        section[0] == "Fallback 出价参考"
+        for section in model["interaction"]["hover"]["sections"]
+    )
+    assert any(
+        section[0] == "Fallback 出价参考"
+        for section in model["interaction"]["detail"]["sections"]
+    )

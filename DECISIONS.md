@@ -754,6 +754,8 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新**：zero-match 可生成 `fallback` 低置信参考，但必须与 baseline 分离。当前 fallback 使用 `v1_map_prior_zero_match`：只保留 map/hero 和明确 q6=0 上界，放下容易冲突的 item-level/轮廓硬约束，用 map-prior MC + 当前出价生成临时建议。`fallback.affects_bid=false`，用于引擎优化阶段兜底和人工复核，不作为 v2 posterior 修复或 shadow 升级证据。
 
+**更新**：Tk live overlay 先落地三层工程版交互，而不是一次性做复杂正式视觉稿。`mini` 常驻层只展示 baseline 正式建议、核心指标、核心 section 和轻量 MiniMap；`hover` 作为快速上下文，显示后验、布局、输入约束、q6 风险参考、fallback 和 MiniMap 摘要；`click detail` 在同一窗口内展开 truth、shadow、诊断和更多推理依据。MiniMap compact 层继续只显示品质颜色块，不显示短名/形状编号/局部序号；shadow/fallback/detail 均不得覆盖 `decision_value`、停止价或抢仓上限。
+
 ## 2026-06-02 · zero-match 暂用 v1 map-prior 低置信兜底，v2 根因修复继续推进
 
 **背景**：正式 UI 接入前的 readiness batch 仍有一批 `zero_posterior_match`。其中部分样本同时带 `layout_conflict`，另一些样本即使没有布局冲突也会因为公开总格/总件数、轮廓或 item-level 约束组合过紧而无匹配。v2 无匹配时如果 UI 完全不显示建议，实战可用性不足；但直接放宽 baseline 又会掩盖解析或约束建模问题。

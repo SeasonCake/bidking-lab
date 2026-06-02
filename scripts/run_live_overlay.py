@@ -89,6 +89,14 @@ def _short(value: Any, limit: int = 92) -> str:
     return text[: max(0, limit - 1)].rstrip() + "…"
 
 
+def _as_mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _join_parts(parts: tuple[Any, ...] | list[Any], *, sep: str = " / ") -> str:
+    return sep.join(str(part) for part in parts if str(part or "").strip())
+
+
 def _severity_for_bid(text: str) -> str:
     if "停止" in text or "过热" in text or "不追" in text:
         return "bad"
@@ -595,6 +603,390 @@ def _ui_contract_constraints_section(
     return ("输入约束", headline, detail)
 
 
+def _ui_contract_decision_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    baseline = _as_mapping(contract.get("baseline"))
+    decision = _as_mapping(baseline.get("decision"))
+    if not decision:
+        return None
+    headline = str(decision.get("action") or "暂无正式建议")
+    detail = _join_parts(
+        (
+            f"最高 {decision.get('current_highest')}"
+            if decision.get("current_highest")
+            else "",
+            f"风险 {decision.get('risk_band')}" if decision.get("risk_band") else "",
+            f"抢仓 {decision.get('attack_bid')}" if decision.get("attack_bid") else "",
+            f"停止 {decision.get('stop_price')}" if decision.get("stop_price") else "",
+            str(decision.get("evidence") or ""),
+        )
+    )
+    return ("正式出价", headline, detail)
+
+
+def _ui_contract_posterior_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    baseline = _as_mapping(contract.get("baseline"))
+    posterior = _as_mapping(baseline.get("posterior"))
+    if not posterior:
+        return None
+    headline = _join_parts(
+        (
+            f"匹配 {posterior.get('match_text')}" if posterior.get("match_text") else "",
+            str(posterior.get("status") or ""),
+            f"q6样本 {posterior.get('q6_sample_rate')}"
+            if posterior.get("q6_sample_rate")
+            else "",
+        )
+    )
+    detail = _join_parts(
+        (
+            f"决策 {posterior.get('decision_value_range')}"
+            if posterior.get("decision_value_range")
+            else "",
+            f"raw {posterior.get('raw_value_range')}"
+            if posterior.get("raw_value_range")
+            else "",
+            f"总格 {posterior.get('total_cells_range')}"
+            if posterior.get("total_cells_range")
+            else "",
+            f"q6价值 {posterior.get('q6_decision_value_range')}"
+            if posterior.get("q6_decision_value_range")
+            else "",
+            f"q6件数 {posterior.get('q6_count_range')}"
+            if posterior.get("q6_count_range")
+            else "",
+            f"q6格数 {posterior.get('q6_cells_range')}"
+            if posterior.get("q6_cells_range")
+            else "",
+            f"剩余空间 {posterior.get('remaining_cells_after_layout_range')}"
+            if posterior.get("remaining_cells_after_layout_range")
+            else "",
+            f"空间压力 {posterior.get('q6_space_pressure_range')}"
+            if posterior.get("q6_space_pressure_range")
+            else "",
+            f"溢出 {posterior.get('q6_space_overflow_rate')}"
+            if posterior.get("q6_space_overflow_rate")
+            else "",
+        )
+    )
+    return ("后验概览", headline or "暂无匹配信息", detail)
+
+
+def _ui_contract_layout_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    baseline = _as_mapping(contract.get("baseline"))
+    layout = _as_mapping(baseline.get("layout"))
+    if not layout:
+        return None
+    headline = _join_parts(
+        (
+            f"估计 {layout.get('estimate')}" if layout.get("estimate") else "",
+            f"已知 {layout.get('known_cells')}格" if layout.get("known_cells") else "",
+            str(layout.get("confidence") or ""),
+        )
+    )
+    detail = _join_parts(
+        (
+            str(layout.get("stage") or ""),
+            str(layout.get("risk") or ""),
+        )
+    )
+    return ("布局概览", headline or "暂无布局估计", detail)
+
+
+def _ui_contract_q6_risk_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    q6_risk = _as_mapping(contract.get("q6_risk_reference"))
+    if not q6_risk:
+        return None
+    has_signal = any(
+        q6_risk.get(key)
+        for key in (
+            "risk",
+            "prior_gap",
+            "prior_reference_p90",
+            "practical_gate",
+            "practical_reference_p90",
+        )
+    )
+    if not has_signal:
+        return None
+    reference = (
+        q6_risk.get("practical_reference_p90")
+        or q6_risk.get("prior_reference_p90")
+        or ""
+    )
+    headline = _join_parts(
+        (
+            "已触发" if _flag(q6_risk.get("risk")) else "未触发",
+            str(q6_risk.get("practical_gate") or ""),
+            f"参考P90 {reference}" if reference else "",
+        )
+    )
+    detail = _join_parts(
+        (
+            str(q6_risk.get("prior_gap") or ""),
+            f"display {q6_risk.get('display_mode')}"
+            if q6_risk.get("display_mode")
+            else "",
+            "不影响正式出价"
+            if q6_risk.get("affects_bid") is False
+            else "",
+        )
+    )
+    return ("q6 风险参考", headline, detail)
+
+
+def _ui_contract_truth_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    truth = _as_mapping(contract.get("truth"))
+    if not truth:
+        return None
+    if not _flag(truth.get("available")):
+        return ("结算/Truth", "实时结算前不可用", str(truth.get("source") or ""))
+    q6 = _as_mapping(truth.get("q6"))
+    top = _as_mapping(truth.get("top_item"))
+    headline = _join_parts(
+        (
+            f"总值 {_fmt_int(truth.get('total_value'))}"
+            if truth.get("total_value") is not None
+            else "",
+            f"总件 {truth.get('total_items')}"
+            if truth.get("total_items") is not None
+            else "",
+            f"总格 {truth.get('total_cells')}"
+            if truth.get("total_cells") is not None
+            else "",
+        )
+    )
+    top_label = _join_parts(
+        (
+            str(top.get("name") or ""),
+            f"Q{top.get('quality')}" if top.get("quality") is not None else "",
+            f"{top.get('cells')}格" if top.get("cells") is not None else "",
+            _fmt_int(top.get("value")) if top.get("value") is not None else "",
+        ),
+        sep=" ",
+    )
+    detail = _join_parts(
+        (
+            f"q6 {q6.get('count')}件/{q6.get('cells')}格/{_fmt_int(q6.get('value'))}"
+            if any(q6.get(key) is not None for key in ("count", "cells", "value"))
+            else "",
+            f"最高 {top_label}" if top_label else "",
+            str(truth.get("source") or ""),
+        )
+    )
+    return ("结算/Truth", headline or "已记录结算", detail)
+
+
+def _ui_contract_diagnostics_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    diagnostics = _as_mapping(contract.get("diagnostics"))
+    if not diagnostics:
+        return None
+    layout = _as_mapping(diagnostics.get("layout"))
+    q6 = _as_mapping(diagnostics.get("q6"))
+    sampling = _as_mapping(diagnostics.get("sampling"))
+    headline = _join_parts(
+        (
+            _short(diagnostics.get("posterior"), 74),
+            "layout_conflict" if _flag(layout.get("conflict")) else "",
+            "bottom_row_risk" if _flag(layout.get("bottom_row_risk")) else "",
+            "q6_below_prior" if _flag(q6.get("below_drop_prior")) else "",
+        )
+    )
+    detail = _join_parts(
+        (
+            f"bottom_row {layout.get('bottom_row')}"
+            if layout.get("bottom_row") is not None
+            else "",
+            f"阈值 {layout.get('bottom_row_risk_threshold')}"
+            if layout.get("bottom_row_risk_threshold") is not None
+            else "",
+            "q6 P90 漏真值" if _flag(q6.get("p90_misses_truth")) else "",
+            f"top_size {q6.get('top_size_band')}" if q6.get("top_size_band") else "",
+            "exact放宽" if _flag(sampling.get("relaxed_exact_used")) else "",
+            f"n_trials {sampling.get('n_trials')}"
+            if sampling.get("n_trials") is not None
+            else "",
+            f"shadow {sampling.get('shadow_trials')}"
+            if sampling.get("shadow_trials") is not None
+            else "",
+            f"{sampling.get('processing_seconds')}s"
+            if sampling.get("processing_seconds") is not None
+            else "",
+        )
+    )
+    if not headline and not detail:
+        return None
+    return ("诊断明细", headline or "无高亮诊断", detail)
+
+
+def _ui_contract_shadow_detail_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    shadows = [
+        shadow
+        for shadow in contract.get("shadows", ()) or ()
+        if isinstance(shadow, dict)
+    ]
+    if not shadows:
+        return None
+    active_count = sum(1 for shadow in shadows if _flag(shadow.get("active")))
+    details: list[str] = []
+    for shadow in shadows[:5]:
+        details.append(
+            _join_parts(
+                (
+                    str(shadow.get("label") or "shadow"),
+                    str(shadow.get("status") or ""),
+                    str(shadow.get("display_mode") or ""),
+                    f"profile {shadow.get('evidence_profile')}"
+                    if shadow.get("evidence_profile")
+                    else "",
+                    f"q6P90 {_fmt_int(shadow.get('q6_decision_value_p90'))}"
+                    if shadow.get("q6_decision_value_p90") is not None
+                    else "",
+                    f"件{shadow.get('q6_count_p90')}"
+                    if shadow.get("q6_count_p90") is not None
+                    else "",
+                    f"格{shadow.get('q6_cells_p90')}"
+                    if shadow.get("q6_cells_p90") is not None
+                    else "",
+                    f"Δ{_fmt_int(shadow.get('q6_p90_delta'))}"
+                    if shadow.get("q6_p90_delta") is not None
+                    else "",
+                ),
+                sep=" ",
+            )
+        )
+    return (
+        "Shadow 明细",
+        f"active {active_count}/{len(shadows)}，全部不影响正式出价",
+        "；".join(detail for detail in details if detail),
+    )
+
+
+def _ui_contract_minimap_detail_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    minimap = _as_mapping(contract.get("minimap"))
+    if minimap.get("status") != "available":
+        return None
+    base = _ui_contract_minimap_section(contract)
+    if base is None:
+        return None
+    geometry_note = _join_parts(
+        (
+            f"{minimap.get('columns') or 10}列",
+            f"rows_hint {minimap.get('rows_hint')}"
+            if minimap.get("rows_hint") is not None
+            else "",
+            f"viewport {minimap.get('viewport_rows')}"
+            if minimap.get("viewport_rows") is not None
+            else "",
+            "滚动" if minimap.get("scrollable") else "不滚动",
+            "颜色块显示品质，不显示短名",
+        )
+    )
+    detail = _join_parts((base[2], geometry_note))
+    return (base[0], base[1], detail)
+
+
+def _ui_contract_hover_sections(contract: dict[str, Any]) -> list[tuple[str, str, str]]:
+    sections: list[tuple[str, str, str]] = []
+    for section in (
+        _ui_contract_decision_section(contract),
+        _ui_contract_posterior_section(contract),
+        _ui_contract_layout_section(contract),
+        _ui_contract_constraints_section(contract),
+        _ui_contract_q6_risk_section(contract),
+        _ui_contract_fallback_section(contract),
+        _ui_contract_minimap_section(contract),
+    ):
+        if section is not None:
+            sections.append(section)
+    return sections
+
+
+def _ui_contract_detail_sections(contract: dict[str, Any]) -> list[tuple[str, str, str]]:
+    sections: list[tuple[str, str, str]] = []
+    for section in (
+        _ui_contract_truth_section(contract),
+        _ui_contract_decision_section(contract),
+        _ui_contract_posterior_section(contract),
+        _ui_contract_layout_section(contract),
+        _ui_contract_constraints_section(contract),
+        _ui_contract_q6_risk_section(contract),
+        _ui_contract_fallback_section(contract),
+        _ui_contract_shadow_detail_section(contract),
+        _ui_contract_minimap_detail_section(contract),
+        _ui_contract_diagnostics_section(contract),
+    ):
+        if section is not None:
+            sections.append(section)
+    return sections
+
+
+def _interaction_layers(
+    contract: dict[str, Any],
+    *,
+    metrics: list[tuple[str, str, str, str]],
+    sections: list[tuple[str, str, str]],
+    alerts: list[tuple[str, str]],
+) -> dict[str, Any]:
+    raw = _as_mapping(contract.get("interaction"))
+    compact = _as_mapping(raw.get("compact"))
+    hover = _as_mapping(raw.get("hover"))
+    detail = _as_mapping(raw.get("detail"))
+    hover_sections = _ui_contract_hover_sections(contract) if contract else []
+    detail_sections = _ui_contract_detail_sections(contract) if contract else []
+
+    if not hover_sections and sections:
+        hover_sections = sections[:5]
+    if not detail_sections and (sections or alerts):
+        detail_sections = [*sections]
+        if alerts:
+            detail_sections.append(
+                (
+                    "风险与回测",
+                    " / ".join(text for text, _tag in alerts[:5]),
+                    "",
+                )
+            )
+
+    return {
+        "mini": {
+            "purpose": compact.get("purpose") or "always_on_top_core_tips",
+            "fields": tuple(compact.get("fields") or ()),
+            "metrics": metrics[:4],
+            "sections": sections[:4],
+        },
+        "hover": {
+            "purpose": hover.get("purpose") or "expanded_quick_context",
+            "fields": tuple(hover.get("fields") or ()),
+            "enabled": bool(hover_sections),
+            "sections": hover_sections[:8],
+        },
+        "detail": {
+            "purpose": detail.get("purpose") or "click_to_open_full_reasoning",
+            "fields": tuple(detail.get("fields") or ()),
+            "enabled": bool(detail_sections),
+            "collapsible": detail.get("collapsible", True) is not False,
+            "renderers": tuple(detail.get("renderers") or ()),
+            "sections": detail_sections[:14],
+        },
+    }
+
+
 def _minimap_canvas_geometry(minimap: dict[str, Any]) -> dict[str, int]:
     columns = max(1, int(minimap.get("columns") or 10))
     viewport_rows = max(1, int(minimap.get("viewport_rows") or 13))
@@ -669,6 +1061,12 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
             "metrics": [],
             "sections": [],
             "alerts": [],
+            "interaction": _interaction_layers(
+                {},
+                metrics=[],
+                sections=[],
+                alerts=[],
+            ),
             "footer": "",
         }
 
@@ -917,6 +1315,13 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     if model_eval.get("stop_minus_final_value") is not None:
         eval_parts.append(f"停止价-结算 {_fmt_int(model_eval['stop_minus_final_value'])}")
 
+    interaction = _interaction_layers(
+        ui_contract,
+        metrics=metrics,
+        sections=sections,
+        alerts=alerts,
+    )
+
     return {
         "empty": False,
         "title": title,
@@ -926,6 +1331,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         "metrics": metrics,
         "sections": sections,
         "alerts": alerts,
+        "interaction": interaction,
         "minimap": (
             ui_contract.get("minimap")
             if isinstance(ui_contract.get("minimap"), dict)
@@ -953,6 +1359,10 @@ class Overlay:
         self._last_snapshot: dict[str, Any] | None = None
         self._last_stale_state: bool | None = None
         self._demo_snapshot = _demo_snapshot() if demo else None
+        self._current_model: dict[str, Any] | None = None
+        self._detail_open = False
+        self._hover_window: tk.Toplevel | None = None
+        self._last_click_time: int | None = None
         root.title("BidKing Live")
         root.attributes("-topmost", True)
         root.attributes("-alpha", 0.96)
@@ -1036,6 +1446,197 @@ class Overlay:
         frame.configure(highlightbackground=BORDER, highlightcolor=BORDER)
         return frame
 
+    def _interaction_sections_text(
+        self,
+        sections: list[tuple[str, str, str]],
+        *,
+        limit: int,
+    ) -> str:
+        lines: list[str] = []
+        for title, value, detail in sections[:limit]:
+            headline = _join_parts((title, value), sep=": ")
+            if headline:
+                lines.append(_short(headline, 112))
+            if detail:
+                lines.append("  " + _short(detail, 132))
+        return "\n".join(lines)
+
+    def _position_hover(self, event: tk.Event) -> None:
+        if self._hover_window is None:
+            return
+        try:
+            self._hover_window.geometry(f"+{event.x_root + 18}+{event.y_root + 18}")
+        except tk.TclError:
+            self._hover_window = None
+
+    def _show_hover(self, event: tk.Event) -> None:
+        if self._detail_open or self._current_model is None:
+            self._hide_hover()
+            return
+        hover = _as_mapping(
+            _as_mapping(self._current_model.get("interaction")).get("hover")
+        )
+        sections = hover.get("sections") or []
+        if not hover.get("enabled") or not sections:
+            return
+        text = self._interaction_sections_text(sections, limit=6)
+        if not text:
+            return
+        try:
+            exists = self._hover_window is not None and self._hover_window.winfo_exists()
+        except tk.TclError:
+            exists = False
+            self._hover_window = None
+        if not exists:
+            window = tk.Toplevel(self.root)
+            window.withdraw()
+            window.overrideredirect(True)
+            window.attributes("-topmost", True)
+            window.configure(bg=BORDER)
+            body = tk.Frame(window, bg=PANEL_SOFT, padx=10, pady=8)
+            body.pack(fill="both", expand=True, padx=1, pady=1)
+            self._label(
+                body,
+                "悬浮详情",
+                fg=ACCENT,
+                bg=PANEL_SOFT,
+                font=("Microsoft YaHei UI", 9, "bold"),
+            ).pack(anchor="w")
+            self._label(
+                body,
+                text,
+                fg=TEXT,
+                bg=PANEL_SOFT,
+                font=("Microsoft YaHei UI", 8),
+                wraplength=460,
+            ).pack(anchor="w", pady=(4, 0))
+            self._hover_window = window
+        self._position_hover(event)
+        if self._hover_window is not None:
+            self._hover_window.deiconify()
+
+    def _hide_hover(self) -> None:
+        if self._hover_window is None:
+            return
+        try:
+            self._hover_window.destroy()
+        except tk.TclError:
+            pass
+        self._hover_window = None
+
+    def _is_inside_root(self, widget: tk.Widget | None) -> bool:
+        while widget is not None:
+            if widget == self.root:
+                return True
+            widget = widget.master
+        return False
+
+    def _hide_hover_if_pointer_outside(self) -> None:
+        try:
+            widget = self.root.winfo_containing(
+                self.root.winfo_pointerx(),
+                self.root.winfo_pointery(),
+            )
+        except tk.TclError:
+            widget = None
+        if not self._is_inside_root(widget):
+            self._hide_hover()
+
+    def _schedule_hide_hover(self, _event: tk.Event) -> None:
+        self.root.after(120, self._hide_hover_if_pointer_outside)
+
+    def _toggle_detail(self, event: tk.Event) -> None:
+        if self._current_model is None:
+            return
+        detail = _as_mapping(
+            _as_mapping(self._current_model.get("interaction")).get("detail")
+        )
+        if not detail.get("enabled"):
+            return
+        event_time = int(getattr(event, "time", 0) or 0)
+        if event_time and event_time == self._last_click_time:
+            return
+        self._last_click_time = event_time
+        self._detail_open = not self._detail_open
+        self._hide_hover()
+        self._render(self._current_model)
+
+    def _bind_layer_events(self, widget: tk.Widget) -> None:
+        if not isinstance(widget, tk.Scrollbar):
+            widget.bind("<Enter>", self._show_hover, add="+")
+            widget.bind("<Motion>", self._position_hover, add="+")
+            widget.bind("<Leave>", self._schedule_hide_hover, add="+")
+            widget.bind("<Button-1>", self._toggle_detail, add="+")
+        for child in widget.winfo_children():
+            self._bind_layer_events(child)
+
+    def _render_detail_panel(
+        self,
+        parent: tk.Widget,
+        model: dict[str, Any],
+    ) -> None:
+        detail = _as_mapping(_as_mapping(model.get("interaction")).get("detail"))
+        sections = detail.get("sections") or []
+        if not detail.get("enabled") or not sections:
+            return
+        card = self._card(parent, bg=PANEL_SOFT)
+        card.pack(fill="x", pady=(10, 0))
+        body = tk.Frame(card, bg=PANEL_SOFT, padx=12, pady=10)
+        body.pack(fill="x")
+        header = tk.Frame(body, bg=PANEL_SOFT)
+        header.pack(fill="x")
+        self._label(
+            header,
+            "点击全量详情（再次点击收起）",
+            fg=ACCENT,
+            bg=PANEL_SOFT,
+            font=("Microsoft YaHei UI", 11, "bold"),
+        ).pack(side="left", anchor="w")
+        renderer_note = ""
+        renderers = detail.get("renderers") or ()
+        if renderers:
+            names = [
+                str(renderer.get("name"))
+                for renderer in renderers
+                if isinstance(renderer, dict) and renderer.get("name")
+            ]
+            renderer_note = " / ".join(names)
+        if renderer_note:
+            self._label(
+                header,
+                renderer_note,
+                fg=MUTED,
+                bg=PANEL_SOFT,
+                font=("Microsoft YaHei UI", 8),
+            ).pack(side="right", anchor="e")
+        for title, value, detail_text in sections:
+            row = tk.Frame(body, bg=PANEL_SOFT)
+            row.pack(fill="x", pady=(8, 0))
+            self._label(
+                row,
+                title,
+                fg=PURPLE,
+                bg=PANEL_SOFT,
+                font=("Microsoft YaHei UI", 9, "bold"),
+            ).pack(anchor="w")
+            if value:
+                self._label(
+                    row,
+                    value,
+                    fg=TEXT,
+                    bg=PANEL_SOFT,
+                    wraplength=800,
+                ).pack(anchor="w", pady=(2, 0))
+            if detail_text:
+                self._label(
+                    row,
+                    detail_text,
+                    fg=MUTED,
+                    bg=PANEL_SOFT,
+                    font=("Microsoft YaHei UI", 8),
+                    wraplength=800,
+                ).pack(anchor="w")
+
     def _draw_minimap(self, canvas: tk.Canvas, minimap: dict[str, Any]) -> None:
         geometry = _minimap_canvas_geometry(minimap)
         columns = geometry["columns"]
@@ -1084,8 +1685,14 @@ class Overlay:
             )
 
     def _render(self, model: dict[str, Any]) -> None:
+        self._hide_hover()
+        self._current_model = model
         self._clear()
         self.canvas.yview_moveto(0)
+        interaction = _as_mapping(model.get("interaction"))
+        mini = _as_mapping(interaction.get("mini"))
+        hover = _as_mapping(interaction.get("hover"))
+        detail = _as_mapping(interaction.get("detail"))
         header = tk.Frame(self.frame, bg=BG)
         header.pack(fill="x")
         title_box = tk.Frame(header, bg=BG)
@@ -1103,6 +1710,15 @@ class Overlay:
             bg=BG,
             font=("Microsoft YaHei UI", 9),
         ).pack(anchor="w", pady=(2, 0))
+        if hover.get("enabled") or detail.get("enabled"):
+            detail_state = "收起全量" if self._detail_open else "展开全量"
+            self._label(
+                title_box,
+                f"mini 常驻 · 悬浮看详情 · 点击{detail_state}",
+                fg=ACCENT if self._detail_open else MUTED,
+                bg=BG,
+                font=("Microsoft YaHei UI", 8),
+            ).pack(anchor="w", pady=(2, 0))
         status_text, status_tag = model["status"]
         status = tk.Label(
             header,
@@ -1142,7 +1758,8 @@ class Overlay:
 
         metrics = tk.Frame(self.frame, bg=BG)
         metrics.pack(fill="x")
-        for index, (title, value, detail, tag) in enumerate(model["metrics"][:4]):
+        mini_metrics = mini.get("metrics") or model["metrics"][:4]
+        for index, (title, value, detail, tag) in enumerate(mini_metrics[:4]):
             card = self._card(metrics)
             card.grid(row=0, column=index, padx=(0 if index == 0 else 8, 0), sticky="nsew")
             metrics.grid_columnconfigure(index, weight=1, uniform="metric")
@@ -1172,7 +1789,8 @@ class Overlay:
         right = tk.Frame(lower, bg=BG, width=230)
         right.pack(side="right", fill="y", padx=(10, 0))
 
-        for title, value, detail in model["sections"][:4]:
+        mini_sections = mini.get("sections") or model["sections"][:4]
+        for title, value, detail in mini_sections[:4]:
             row = self._card(left)
             row.pack(fill="x", pady=(0, 8))
             body = tk.Frame(row, bg=PANEL, padx=10, pady=7)
@@ -1265,6 +1883,9 @@ class Overlay:
                 wraplength=190,
                 font=("Microsoft YaHei UI", 8),
             ).pack(anchor="w", side="bottom", pady=(10, 0))
+        if self._detail_open:
+            self._render_detail_panel(self.frame, model)
+        self._bind_layer_events(self.frame)
 
     def refresh(self) -> None:
         signature: tuple[Any, ...]

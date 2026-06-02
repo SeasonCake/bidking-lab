@@ -2322,3 +2322,11 @@ python scripts/demo_shipwreck_r4_inference.py           # Phase 1A 推断 demo
 - 剩余 14 个 not-covered q6 actionable miss 已补齐 review 审计列：`layout_bottom_row`、q6 prior rate/expected count/cells/value、q6 P90 相对 prior 的 count/cells gap、count-cell prior floor。Aisha shipwreck 的 6 个未覆盖行集中在 bottom row `9-12`，说明它们被现有 `aisha_deep_floor1` 排除是预期行为。宽 `aisha_shipwreck_profile_v1` floor05 虽能修 28 行，但 active no-q6 为 8，no-q6 正报中位 `21.5万 -> 38.1万`，不适合接入；两阶段 “baseline below-prior + Aisha shipwreck profile” floor05 仍有 1 个 active no-q6 边界样本，修 12 行但不够干净。结论：暂不新增 Aisha shipwreck low-bottom shadow，继续保留现有 deep gate；剩余 not-covered 行作为人工复核/后续特征拆分对象。
 - UI review 现在把 q6 actionable miss 输出为复核桶：41 个真漏中，`shadow_observation=27`（18 个 active risk + 9 个 active pending），未覆盖 14 个拆成 `aisha_shipwreck_low_bottom_floor_risky=6`、`aisha_villa_public_profile_outside_pending_gate=2`、`ethan_layout_floor_risky=5`、`ethan_non_layout_floor_risky=1`。这让下一步不再只是“消 flag”，而是按桶处理：Aisha Villa public profile 需要单独 no-q6 控制；Ethan layout 继续先做解释/复核字段，不加 floor gate；Aisha shipwreck low-bottom 暂不扩 deep gate。
 - 2026-06-02 继续复核两个剩余高风险桶：Aisha Villa public-profile floor05/075/1.0 在 67 个 Aisha Villa 样本切片上最多修 2 行，但会显著抬高 2 个 active no-q6/no-plannable 控制，因此不并入 `aisha_villa_floor05`；Ethan layout floor05/075/1.0 在 133 个 Ethan 样本切片上可修 7-9 行，但会抬高 5 个 active no-q6/no-plannable 控制（其中 4 个真 0 红，1 个是超高尾红被 decision 口径裁掉），继续保持 `ethan_layout_floor_risky`，不新增 Ethan floor shadow。
+
+## 2026-06-02 · Overlay 三层交互工程版
+
+- Tk live overlay 已开始消费 `ui_contract.interaction` 的三层语义：`mini` 常驻首屏继续展示正式 baseline 出价、4 个核心指标、最多 4 个核心 section 和右侧 MiniMap/风险卡；`hover` 显示快速上下文 tooltip；`detail` 通过点击在同一 overlay 内展开全量详情。
+- hover 详情当前聚合正式出价、baseline 后验、布局、输入约束、q6 风险参考、fallback 和 MiniMap 摘要；click detail 额外显示结算 truth（若可用）、shadow 明细、MiniMap 几何说明和诊断明细。zero-match fallback 仍以“低置信参考”展示，`fallback.affects_bid=false` 不变。
+- MiniMap compact 层继续只画品质颜色块，不显示短名、形状编号或局部序号；`item_id/item_name/shape_key` 仍留在 contract 中供 hover/detail 和人工审计使用。
+- 当前实现仍是工程版 Tk overlay，不做复杂视觉风格：优先保证字段边界、可验证行为和滚动可用性。后续正式 UI 可继续演进为“baseline 先显示，shadow/detail 后台补齐”的异步/分批方案。
+- 验证：`python -m pytest tests\test_live_overlay.py` 8 passed；`python -m pytest tests\test_live_overlay.py tests\test_runtime_snapshot.py` 18 passed；`python -m py_compile scripts\run_live_overlay.py` 与 `python -m compileall -q scripts\run_live_overlay.py tests\test_live_overlay.py` 通过。
