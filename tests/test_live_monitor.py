@@ -406,6 +406,12 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["model_eval"]["q6_quality_only_local_count"] == 0
     assert artifact["model_eval"]["q6_quality_only_deep_local_risk"] is False
     assert artifact["model_eval"]["q6_quality_only_deep_row_threshold"] == 13
+    assert "final_q6_tail_replacement_value" in artifact["model_eval"]
+    assert "q6_tail_replacement_p90_misses_truth" in artifact["model_eval"]
+    assert (
+        "v2_q6_tail_replacement_decision_value_p90_under_by"
+        in artifact["model_eval"]
+    )
     assert "layout_bottom_row" in artifact["model_eval"]
     assert artifact["model_eval"]["evidence_stage"] == "full_5"
     assert artifact["model_eval"]["information_density_band"] in {
@@ -513,6 +519,23 @@ def test_inventory_quality_breakdown_keeps_exact_tail_anchor_plannable() -> None
         model_name="",
         raw_row=[],
     )
+    ordinary_same_shape = Item(
+        item_id=9002,
+        name="ordinary",
+        description="",
+        name_key="ordinary",
+        desc_key="ordinary_desc",
+        quality=6,
+        quality_color="red",
+        value=93_000,
+        shape_w=1,
+        shape_h=2,
+        tags=[109],
+        allowed_shelves=[],
+        icon_name="",
+        model_name="",
+        raw_row=[],
+    )
     events = FatbeansCaptureEvents(
         packets=(),
         frames=(),
@@ -538,10 +561,14 @@ def test_inventory_quality_breakdown_keeps_exact_tail_anchor_plannable() -> None
         ),
     )
 
-    unsupported = _inventory_quality_breakdown(events, {tail.item_id: tail})
+    item_table = {
+        tail.item_id: tail,
+        ordinary_same_shape.item_id: ordinary_same_shape,
+    }
+    unsupported = _inventory_quality_breakdown(events, item_table)
     anchored = _inventory_quality_breakdown(
         events,
-        {tail.item_id: tail},
+        item_table,
         problem=ResidualProblem(
             map_id=2501,
             map_name="shipwreck",
@@ -570,8 +597,13 @@ def test_inventory_quality_breakdown_keeps_exact_tail_anchor_plannable() -> None
     assert unsupported["final_q6_value"] == tail.value
     assert unsupported["final_q6_decision_value"] == 0
     assert unsupported["final_q6_trimmed_tail_value"] == tail.value
+    assert unsupported["final_q6_tail_replacement_value"] == 93_000
+    assert unsupported["final_q6_tail_replacement_count"] == 1
+    assert unsupported["final_q6_tail_replacement_source"] == "item_table_median"
+    assert unsupported["final_q6_decision_value_with_tail_replacement"] == 93_000
     assert anchored["final_q6_decision_value"] == tail.value
     assert anchored["final_q6_trimmed_tail_value"] == 0
+    assert anchored["final_q6_tail_replacement_value"] == 0
 
 
 def test_debug_shadow_can_be_skipped_without_suppressing_baseline(monkeypatch) -> None:

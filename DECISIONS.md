@@ -802,6 +802,8 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新 7**：deep 高 trials 定向审计发现一类不能用统一 floor 解决的局面：公开信息能看到 q6 品质点和局部位置，但没有该红货形状，因此现有 residual problem 只能把它计入 q6 件数 floor，不能可靠推断大红格数尾部。`aisha_shipwreck_test_sample40_4rounds.json` 的 shape-less q6 local 为 `142`，结算 q6 为 `5 件 / 38 格 / 205.33万`，现有 deep shadow 的 q6 P90 约 `110.40万`；`sample58` local 为 `137`，真实 q6 约 `318.57万`，且因已知 layout bottom row 只有 `12` 未进入原 deep gate。ratio `3.0` 可覆盖这两行，但样本只有 2 份，直接抬 floor 过拟合风险过高。决策：新增 review-only `q6_quality_only_*` 诊断和 UI review flag，收集正式 live 证据；不改 sampler、baseline、现有 shadow 或正式 bid hint。
 
+**更新 8**：tail replacement truth 已落地为 review-only 第二审计轴：对被裁掉的 q6 极端尾部，按同品质同形状普通红候选估计替代值，live 路径优先使用当前地图池权重的 P50，缺少 map/drop 权重时才退回 Item 表中位。新增 `final_q6_tail_replacement_value/count/items/source`、`final_q6_decision_value_with_tail_replacement`、`q6_tail_replacement_p90_misses_truth` 和对应 under-by/summary/UI review 字段。该字段只用于判断“裁 0 口径是否低估实战可替代红货”，不改变 `final_q6_decision_value`、posterior、baseline 出价、shadow 出价或 bid hint。`aisha_shipwreck_test_newsample7__normal_4rounds.json` 的 smoke 中，百年人参 raw tail `103.9万` 被裁掉，但同形状替代值为 `15.894万`；`n_trials=500 / shadow_trials=80` 下仍触发 replacement truth miss，且 `shadow_affects_bid_rows=0`。
+
 ## 2026-06-02 · 公开总格/总件数可进入正式 baseline，结算 truth 必须隔离
 
 **背景**：UI 需要展示格数预测、实际格子数、件数预测、已知紫/金件数和排除条件；同时审计发现 monitor 曾统一清掉 `warehouse_total_cells` / `total_item_count`，这会丢掉结算前全量轮廓或透视给出的安全公开约束。

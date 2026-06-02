@@ -877,8 +877,18 @@ def _inventory_truth_breakdown(
     items: Any,
     *,
     problem: Any | None = None,
+    maps: Any | None = None,
+    drops: Any | None = None,
+    map_id: int | None = None,
 ) -> dict[str, Any]:
-    return _inventory_quality_breakdown(events, items, problem=problem)
+    return _inventory_quality_breakdown(
+        events,
+        items,
+        problem=problem,
+        maps=maps,
+        drops=drops,
+        map_id=map_id,
+    )
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -1188,6 +1198,9 @@ def evaluate_path(
             events,
             tables.items,
             problem=problem,
+            maps=tables.maps,
+            drops=tables.drops,
+            map_id=base_session.map_id,
         )
         report = estimate_posterior_v2(
             base_session.map_id,

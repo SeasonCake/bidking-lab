@@ -1940,6 +1940,46 @@ python -m pytest tests\test_live_monitor.py
 
 ---
 
+## 57. q6 tail 被裁到 0 后，review 仍需要同形状普通红替代值
+
+### 症状
+
+raw 结算里有极端 q6 tail，例如百年人参、超级跑车钥匙、相控阵雷达等；`final_q6_decision_value`
+会把未被证据支持的 tail 裁掉。这样 shadow readiness 不再被不可规划尾部污染，但人工复核时会发现：
+即使真实不是这件极端红，同品质同形状的普通红仍可能有实战价值，完全裁到 0 会低估“可替代红货”的小中额缺口。
+
+### 原因
+
+`final_q6_decision_value` 是正式保守决策口径：不把无法规划的百万级 tail 当作必然收益。
+但 replacement truth 是审计口径：它回答的是“如果不承认极端 tail，至少应该按同形状普通红估多少”。
+两者不能混用；否则 posterior、truth 和 bid hint 会用不同价值基准。
+
+### 修法（2026-06-02）
+
+- `_inventory_quality_breakdown()` 新增 review-only replacement 字段：
+  `final_q6_tail_replacement_value/count/items/source`、
+  `final_q6_decision_value_with_tail_replacement`。
+- live 路径优先按当前地图 flattened drop pool 权重取同品质同形状普通红 weighted P50；缺少 map/drop
+  权重时退回 Item 表中位。
+- `model_eval` 新增 `q6_tail_replacement_p90_misses_truth` 和
+  `v2_q6_tail_replacement_decision_value_p90_under_by`。
+- `summarize_live_model_eval.py`、shadow candidate review、`ui_contract.diagnostics.q6` 和
+  `export_ui_contract_review.py` 均透传该字段和 flag。
+- 不修改 `final_q6_decision_value`、posterior、baseline 出价、shadow 出价或 bid hint。
+
+### 验证
+
+```powershell
+python -m pytest tests\test_live_monitor.py tests\test_runtime_snapshot.py tests\test_summarize_live_model_eval.py tests\test_export_ui_contract_review.py tests\test_evaluate_fatbeans_v2_samples.py
+python scripts\export_ui_contract_review.py data\samples\fatbeans\aisha_shipwreck_test_newsample7__normal_4rounds.json --out-dir data\review\tail_replacement_smoke_500 --n-trials 500 --shadow-trials 80 --roi-trials 0
+```
+
+`newsample7` smoke 中：raw q6 `187.94万`、plannable q6 `84.04万`、百年人参 tail
+`103.9万 -> 15.894万` replacement、replacement q6 truth `99.9342万`，会触发
+`q6_tail_replacement_truth_miss`；summary 仍为 `shadow_affects_bid_rows=0`。
+
+---
+
 ## 参考项目（写法）
 
 本文件结构参考同工作区内 `projects/openclaw-discord-bot/TROUBLESHOOTING.md`：**症状 / 原因 / 修法 / 教训** 四段式，便于检索与复用。

@@ -445,6 +445,8 @@ def _review_flags(
             flags.append("q6_below_drop_prior_truth_miss")
     if _bool(diag_q6.get("quality_only_deep_local_risk")):
         flags.append("q6_quality_only_deep_local_risk")
+    if _bool(diag_q6.get("tail_replacement_p90_misses_truth")):
+        flags.append("q6_tail_replacement_truth_miss")
     processing_seconds = _float(sampling.get("processing_seconds"))
     if processing_seconds is not None and processing_seconds >= 10:
         flags.append("slow_monitor_processing")
@@ -631,6 +633,14 @@ def review_row_from_artifact(
         "truth_q6_count": truth_q6.get("count"),
         "truth_q6_cells": truth_q6.get("cells"),
         "truth_q6_value": truth_q6.get("value"),
+        "truth_q6_decision_value": truth_q6.get("decision_value"),
+        "truth_q6_trimmed_tail_value": truth_q6.get("trimmed_tail_value"),
+        "truth_q6_tail_replacement_value": truth_q6.get(
+            "tail_replacement_value"
+        ),
+        "truth_q6_decision_value_with_tail_replacement": truth_q6.get(
+            "decision_value_with_tail_replacement"
+        ),
         "input_constraints_mode": public_info.get("input_constraints_mode"),
         "input_total_item_count": summary.get("input_total_item_count"),
         "input_warehouse_total_cells": summary.get("input_warehouse_total_cells"),
@@ -707,6 +717,15 @@ def review_row_from_artifact(
         "q6_quality_only_deep_row_threshold": diag_q6.get(
             "quality_only_deep_row_threshold"
         ),
+        "q6_tail_replacement_p90_misses_truth": diag_q6.get(
+            "tail_replacement_p90_misses_truth"
+        ),
+        "q6_tail_replacement_p90_under_by": diag_q6.get(
+            "tail_replacement_p90_under_by"
+        ),
+        "q6_tail_replacement_count": diag_q6.get("tail_replacement_count"),
+        "q6_tail_replacement_items": diag_q6.get("tail_replacement_items"),
+        "q6_tail_replacement_source": diag_q6.get("tail_replacement_source"),
         "processing_seconds": sampling.get("processing_seconds"),
         "n_trials": sampling.get("n_trials") or source.get("n_trials"),
         "shadow_trials": sampling.get("shadow_trials") or source.get("shadow_trials"),
@@ -821,6 +840,14 @@ def summarize_review_rows(
         ),
         "q6_quality_only_deep_local_risk_rows": sum(
             1 for row in rows if _bool(row.get("q6_quality_only_deep_local_risk"))
+        ),
+        "q6_tail_replacement_value_rows": sum(
+            1 for row in rows
+            if (_int(row.get("truth_q6_tail_replacement_value")) or 0) > 0
+        ),
+        "q6_tail_replacement_truth_miss_rows": sum(
+            1 for row in rows
+            if _bool(row.get("q6_tail_replacement_p90_misses_truth"))
         ),
         "q6_actionable_miss_by_hero_map": dict(
             sorted(q6_actionable_group_counts.items())

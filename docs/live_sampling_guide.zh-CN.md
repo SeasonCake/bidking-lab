@@ -298,8 +298,11 @@ no-pool-match 数量和最有代表性的样本文件。
 - `v2_q6_value_p90_under_by`：q6 P90 低估了多少。
 - `final_q6_decision_value`：裁掉未证据支持极端尾部后的可规划红货 truth。
 - `final_q6_trimmed_tail_value` / `final_q6_trimmed_tail_items`：被裁掉的 raw 尾部红货，用于尾部风险复核。
+- `final_q6_tail_replacement_value` / `final_q6_tail_replacement_items`：review-only 的同品质同形状普通红替代值；不会进入正式出价。
+- `final_q6_decision_value_with_tail_replacement`：`final_q6_decision_value + final_q6_tail_replacement_value`，用于复核“裁 0 是否过保守”。
 - `q6_plannable_p90_misses_truth`：q6 decision P90 是否低于可规划红货 truth；shadow 升级优先看这个字段。
 - `v2_q6_decision_value_p90_under_by`：q6 decision P90 对可规划红货的低估金额。
+- `q6_tail_replacement_p90_misses_truth`：q6 decision P90 是否低于 replacement truth；这是第二审计轴，不直接代表正式出价应提高。
 - `q6_top_size_band`：最终最高价值物品是否为 q6，以及它是 small/compact/medium/large/huge。
 - `layout_conflict`：存在 footprint overlap/overflow。
 - `layout_conflict_root`：拆分 `footprint_overlap`、`footprint_overflow`、

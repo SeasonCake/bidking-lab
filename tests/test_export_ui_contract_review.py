@@ -24,6 +24,8 @@ def _artifact(
     shadow_affects_bid: bool = False,
     truth_q6_count: int = 1,
     truth_q6_value: int | None = None,
+    truth_q6_tail_replacement_value: int = 0,
+    q6_tail_replacement_miss: bool = False,
     q6_below_drop_prior: bool = False,
     q6_decision_value_range: str = "0 / 120,000 / 300,000",
     tail_shadow_active: bool = False,
@@ -136,6 +138,15 @@ def _artifact(
                         if truth_q6_value is not None
                         else 486510 if truth_q6_count else 0
                     ),
+                    "decision_value": (
+                        486510 if truth_q6_count else 0
+                    ),
+                    "trimmed_tail_value": 0,
+                    "tail_replacement_value": truth_q6_tail_replacement_value,
+                    "decision_value_with_tail_replacement": (
+                        (486510 if truth_q6_count else 0)
+                        + truth_q6_tail_replacement_value
+                    ),
                 },
             },
             "constraints": {
@@ -204,6 +215,25 @@ def _artifact(
                         q6_quality_only_deep_local_risk
                     ),
                     "quality_only_deep_row_threshold": 13,
+                    "tail_replacement_p90_misses_truth": q6_tail_replacement_miss,
+                    "tail_replacement_p90_under_by": (
+                        truth_q6_tail_replacement_value
+                        if q6_tail_replacement_miss
+                        else 0
+                    ),
+                    "tail_replacement_count": (
+                        1 if truth_q6_tail_replacement_value else 0
+                    ),
+                    "tail_replacement_items": (
+                        "tail:1039000->93000"
+                        if truth_q6_tail_replacement_value
+                        else ""
+                    ),
+                    "tail_replacement_source": (
+                        "map_weighted_p50"
+                        if truth_q6_tail_replacement_value
+                        else ""
+                    ),
                 },
                 "sampling": {
                     "processing_seconds": 1.25,
@@ -244,6 +274,9 @@ def test_review_row_keeps_manual_check_fields_without_flags() -> None:
     assert row["q6_quality_only_deep_local_risk"] is False
     assert row["q6_quality_only_deep_row_threshold"] == 13
     assert row["truth_q6_count"] == 1
+    assert row["truth_q6_tail_replacement_value"] == 0
+    assert row["q6_tail_replacement_p90_misses_truth"] is False
+    assert row["q6_tail_replacement_p90_under_by"] == 0
     assert row["input_constraints_mode"] == "pre_settlement_trusted_totals"
     assert row["public_constraint_key"] == "max_quality"
     assert row["evidence_profile_key"] == "public:max_quality+shape+layout"
@@ -268,11 +301,13 @@ def test_review_row_flags_ui_contract_regressions() -> None:
             baseline_official=False,
             shadow_affects_bid=True,
             truth_q6_count=0,
-                tail_shadow_active=True,
-                layout_conflict=True,
-                v2_match="0/80",
-                q6_quality_only_deep_local_risk=True,
-            )
+            truth_q6_tail_replacement_value=93_000,
+            q6_tail_replacement_miss=True,
+            tail_shadow_active=True,
+            layout_conflict=True,
+            v2_match="0/80",
+            q6_quality_only_deep_local_risk=True,
+        )
     )
 
     flags = set(row["review_flags"].split(";"))
@@ -284,6 +319,7 @@ def test_review_row_flags_ui_contract_regressions() -> None:
     assert "zero_posterior_match" in flags
     assert "zero_match_without_fallback" in flags
     assert "q6_quality_only_deep_local_risk" in flags
+    assert "q6_tail_replacement_truth_miss" in flags
     assert row["minimap_nonempty_display_labels"] == 1
     assert row["shadow_affects_bid_count"] == 1
 
@@ -320,6 +356,8 @@ def test_summarize_review_rows_counts_flags_and_groups() -> None:
                 display_label="飞行器",
                 shadow_affects_bid=True,
                 truth_q6_count=0,
+                truth_q6_tail_replacement_value=93_000,
+                q6_tail_replacement_miss=True,
                 tail_shadow_active=True,
                 layout_conflict=True,
                 v2_match="0/80",
@@ -337,7 +375,10 @@ def test_summarize_review_rows_counts_flags_and_groups() -> None:
     assert summary["flag_counts"]["compact_minimap_label_present"] == 1
     assert summary["flag_counts"]["layout_conflict"] == 1
     assert summary["q6_quality_only_deep_local_risk_rows"] == 1
+    assert summary["q6_tail_replacement_value_rows"] == 1
+    assert summary["q6_tail_replacement_truth_miss_rows"] == 1
     assert summary["flag_counts"]["shadow_affects_bid"] == 1
+    assert summary["flag_counts"]["q6_tail_replacement_truth_miss"] == 1
     assert summary["flag_counts"]["zero_match_without_fallback"] == 1
     assert summary["hero_map_counts"] == {"aisha:shipwreck": 2}
     assert summary["zero_q6_truth_rows"] == 1

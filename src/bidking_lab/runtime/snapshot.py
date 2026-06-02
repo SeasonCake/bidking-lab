@@ -693,6 +693,24 @@ def _ui_truth_contract(
                 model_eval.get("final_q6_value"),
                 artifact.get("final_q6_value"),
             ),
+            "decision_value": _first_non_empty(
+                model_eval.get("final_q6_decision_value"),
+                artifact.get("final_q6_decision_value"),
+            ),
+            "trimmed_tail_value": _first_non_empty(
+                model_eval.get("final_q6_trimmed_tail_value"),
+                artifact.get("final_q6_trimmed_tail_value"),
+            ),
+            "tail_replacement_value": _first_non_empty(
+                model_eval.get("final_q6_tail_replacement_value"),
+                artifact.get("final_q6_tail_replacement_value"),
+            ),
+            "decision_value_with_tail_replacement": _first_non_empty(
+                model_eval.get(
+                    "final_q6_decision_value_with_tail_replacement"
+                ),
+                artifact.get("final_q6_decision_value_with_tail_replacement"),
+            ),
         },
         "top_item": {
             "id": _first_non_empty(
@@ -855,6 +873,24 @@ def _ui_diagnostics_contract(
         },
         "q6": {
             "p90_misses_truth": model_eval.get("q6_p90_misses_truth"),
+            "plannable_p90_misses_truth": model_eval.get(
+                "q6_plannable_p90_misses_truth"
+            ),
+            "tail_replacement_p90_misses_truth": model_eval.get(
+                "q6_tail_replacement_p90_misses_truth"
+            ),
+            "tail_replacement_p90_under_by": model_eval.get(
+                "v2_q6_tail_replacement_decision_value_p90_under_by"
+            ),
+            "tail_replacement_count": model_eval.get(
+                "final_q6_tail_replacement_count"
+            ),
+            "tail_replacement_items": _text(
+                model_eval.get("final_q6_tail_replacement_items")
+            ),
+            "tail_replacement_source": _text(
+                model_eval.get("final_q6_tail_replacement_source")
+            ),
             "false_low_risk": model_eval.get("q6_false_low_risk"),
             "below_drop_prior": bool(model_eval.get("q6_below_drop_prior")),
             "top_size_band": _text(model_eval.get("q6_top_size_band")),

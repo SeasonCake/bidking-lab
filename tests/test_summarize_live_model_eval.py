@@ -123,6 +123,14 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "final_value": 200,
                 "final_cells": 12,
                 "final_q6_value": 80,
+                "final_q6_decision_value": 80,
+                "final_q6_tail_replacement_value": 93_000,
+                "final_q6_tail_replacement_count": 1,
+                "final_q6_tail_replacement_items": "tail:1039000->93000",
+                "final_q6_tail_replacement_source": "map_weighted_p50",
+                "final_q6_decision_value_with_tail_replacement": 93_080,
+                "q6_tail_replacement_p90_misses_truth": True,
+                "v2_q6_tail_replacement_decision_value_p90_under_by": 93_050,
                 "final_top_item_quality": 6,
                 "final_top_item_cells": 9,
                 "decision_value_p50": 180,
@@ -245,6 +253,10 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert summary["q6_aisha_bottom_row_risk_count"] == 1
     assert summary["q6_quality_only_local_count"] == 1
     assert summary["q6_quality_only_deep_local_risk_count"] == 1
+    assert summary["q6_tail_replacement_value_count"] == 1
+    assert summary["q6_tail_replacement_value_median"] == 93_000
+    assert summary["q6_tail_replacement_p90_miss_count"] == 1
+    assert summary["q6_tail_replacement_p90_under_by_median"] == 93_050
     assert summary["q6_p90_miss_count"] == 1
     assert summary["q6_p90_under_by_median"] == 50
     assert summary["category_target_rows"] == 2
@@ -422,6 +434,10 @@ def test_brief_summary_keeps_live_review_signals_compact() -> None:
         "next_sampling_targets": [],
         "q6_p90_miss_count": 101,
         "q6_p90_under_by_median": 346_051,
+        "q6_tail_replacement_value_count": 3,
+        "q6_tail_replacement_value_median": 93_000,
+        "q6_tail_replacement_p90_miss_count": 1,
+        "q6_tail_replacement_p90_under_by_median": 93_050,
         "q6_false_low_count": 16,
         "q6_below_drop_prior_count": 16,
         "q6_practical_gate_count": 46,
@@ -453,6 +469,8 @@ def test_brief_summary_keeps_live_review_signals_compact() -> None:
     assert brief["q6"]["top_miss_root_causes"] == [
         {"cause": "q6_top_unknown_cells", "n": 43}
     ]
+    assert brief["q6"]["q6_tail_replacement_value_count"] == 3
+    assert brief["q6"]["q6_tail_replacement_p90_under_by_median"] == 93_050
     assert brief["layout"]["top_conflict_root_causes"] == [
         {"cause": "footprint_overlap", "n": 62}
     ]
@@ -509,8 +527,16 @@ def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> N
             "final_q6_decision_value": 0,
             "final_q6_trimmed_tail_value": 1_039_000,
             "final_q6_trimmed_tail_items": "tail:1039000",
+            "final_q6_tail_replacement_value": 93_000,
+            "final_q6_tail_replacement_count": 1,
+            "final_q6_tail_replacement_items": "tail:1039000->93000",
+            "final_q6_tail_replacement_source": "map_weighted_p50",
+            "final_q6_decision_value_with_tail_replacement": 93_000,
+            "q6_tail_replacement_p90_misses_truth": True,
+            "v2_q6_tail_replacement_decision_value_p90_under_by": 93_000,
             "q6_residual_hidden_floor_shadow_label": "aisha_hidden_floor15",
             "q6_residual_hidden_floor_shadow_active": True,
+            "q6_residual_hidden_floor_shadow_q6_decision_value_p90": 80_000,
             "q6_residual_hidden_floor_shadow_under_before": False,
             "q6_residual_hidden_floor_shadow_helped": False,
             "q6_residual_hidden_floor_shadow_false_positive_proxy": False,
@@ -548,8 +574,10 @@ def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> N
     ]
     assert deep_rows[0]["baseline_decision_value_p50"] == 310_000
     assert deep_rows[0]["baseline_q6_plannable_under_by"] == 390_000
+    assert deep_rows[0]["baseline_q6_tail_replacement_under_by"] == 390_000
     assert deep_rows[0]["shadow_q6_plannable_under_by"] == 0
     assert deep_rows[0]["shadow_q6_plannable_gap_band"] == "covered"
+    assert deep_rows[0]["shadow_q6_tail_replacement_gap_band"] == "covered"
     assert deep_rows[0]["tail_replacement_review_needed"] is False
     hidden_rows = [
         json.loads(line)
@@ -560,9 +588,13 @@ def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> N
     assert hidden_rows[0]["final_q6_value"] == 1_039_000
     assert hidden_rows[0]["final_q6_decision_value"] == 0
     assert hidden_rows[0]["final_q6_trimmed_tail_value"] == 1_039_000
-    assert hidden_rows[0]["shadow_q6_plannable_gap_band"] == "unknown"
+    assert hidden_rows[0]["final_q6_tail_replacement_value"] == 93_000
+    assert hidden_rows[0]["final_q6_decision_value_with_tail_replacement"] == 93_000
+    assert hidden_rows[0]["shadow_q6_plannable_gap_band"] == "covered"
+    assert hidden_rows[0]["shadow_q6_tail_replacement_under_by"] == 13_000
+    assert hidden_rows[0]["shadow_q6_tail_replacement_gap_band"] == "small_<=100k"
     assert hidden_rows[0]["tail_trimmed_q6"] is True
-    assert hidden_rows[0]["tail_replacement_review_needed"] is False
+    assert hidden_rows[0]["tail_replacement_review_needed"] is True
     assert (tmp_path / "aisha_hidden_floor15.csv").exists()
     assert (tmp_path / "q6_shadow_candidate_review_summary.json").exists()
 

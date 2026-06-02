@@ -520,9 +520,19 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
                 "q6_quality_only_deep_local_risk": True,
                 "q6_quality_only_deep_row_threshold": 13,
                 "q6_p90_misses_truth": True,
+                "q6_plannable_p90_misses_truth": False,
+                "q6_tail_replacement_p90_misses_truth": True,
+                "v2_q6_tail_replacement_decision_value_p90_under_by": 93_000,
                 "q6_false_low_risk": False,
                 "q6_below_drop_prior": True,
                 "q6_top_size_band": "q6_top_large",
+                "final_q6_decision_value": 0,
+                "final_q6_trimmed_tail_value": 486_510,
+                "final_q6_tail_replacement_value": 93_000,
+                "final_q6_tail_replacement_count": 1,
+                "final_q6_tail_replacement_items": "tail:486510->93000",
+                "final_q6_tail_replacement_source": "map_weighted_p50",
+                "final_q6_decision_value_with_tail_replacement": 93_000,
                 "relaxed_exact_used": False,
                 "monitor_processing_seconds": 1.25,
                 "monitor_n_trials": 200,
@@ -625,6 +635,10 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
         "count": 1,
         "cells": 16,
         "value": 486510,
+        "decision_value": 0,
+        "trimmed_tail_value": 486510,
+        "tail_replacement_value": 93000,
+        "decision_value_with_tail_replacement": 93000,
     }
     assert contract["truth"]["top_item"]["name"] == "沉船红货"
     assert contract["constraints"]["summary"]["known_gold_item_count"] == 1
@@ -644,6 +658,13 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert contract["diagnostics"]["posterior"] == "public_max_quality:6"
     assert contract["diagnostics"]["layout"]["bottom_row_risk"] is True
     assert contract["diagnostics"]["q6"]["below_drop_prior"] is True
+    assert contract["diagnostics"]["q6"]["plannable_p90_misses_truth"] is False
+    assert contract["diagnostics"]["q6"]["tail_replacement_p90_misses_truth"] is True
+    assert contract["diagnostics"]["q6"]["tail_replacement_p90_under_by"] == 93000
+    assert contract["diagnostics"]["q6"]["tail_replacement_count"] == 1
+    assert contract["diagnostics"]["q6"]["tail_replacement_items"] == (
+        "tail:486510->93000"
+    )
     assert contract["diagnostics"]["q6"]["quality_only_local_count"] == 1
     assert contract["diagnostics"]["q6"]["quality_only_deepest_local_index"] == 142
     assert contract["diagnostics"]["q6"]["quality_only_deepest_start_row"] == 15

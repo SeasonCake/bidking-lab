@@ -11,6 +11,7 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, replace
 import json
 from pathlib import Path
+import statistics
 import tempfile
 import time
 from typing import Any, Mapping, Sequence
@@ -68,6 +69,7 @@ from bidking_lab.simulation.robust_value import (
     DEFAULT_VALUE_FLOOR,
     is_confusable_long_tail,
 )
+from bidking_lab.simulation.basic_mc import flatten_pool
 
 _CATEGORY_LABELS = {
     101: "家具",
@@ -956,7 +958,19 @@ def _inventory_quality_breakdown(
     items: Mapping[int, Item],
     *,
     problem: ResidualProblem | None = None,
+    maps: Mapping[int, BidMap] | None = None,
+    drops: Mapping[int, DropPool] | None = None,
+    map_id: int | None = None,
 ) -> dict[str, Any]:
+    resolved_map_id = map_id if map_id is not None else (
+        problem.map_id if problem is not None else None
+    )
+    map_item_weights = _effective_item_weights_for_map(
+        resolved_map_id,
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
     for state in reversed(events.states):
         if not state.inventory_items:
             continue
@@ -970,6 +984,10 @@ def _inventory_quality_breakdown(
         q6_decision_value = 0
         q6_trimmed_value = 0
         q6_trimmed_items: list[str] = []
+        q6_tail_replacement_value = 0
+        q6_tail_replacement_count = 0
+        q6_tail_replacement_items: list[str] = []
+        q6_tail_replacement_sources: set[str] = set()
         exact_anchor_ids = set(problem.anchor_item_counts) if problem else set()
         for inv_item in state.inventory_items:
             item = items.get(inv_item.item_id)
@@ -1010,6 +1028,22 @@ def _inventory_quality_breakdown(
                     q6_trimmed_value += value
                     if len(q6_trimmed_items) < 4:
                         q6_trimmed_items.append(f"{item.name}:{value}")
+                    replacement = _tail_replacement_for_item(
+                        item,
+                        items,
+                        map_item_weights=map_item_weights,
+                    )
+                    if replacement["value"] > 0:
+                        q6_tail_replacement_count += 1
+                        q6_tail_replacement_value += int(replacement["value"])
+                        if replacement["source"]:
+                            q6_tail_replacement_sources.add(
+                                str(replacement["source"])
+                            )
+                        if len(q6_tail_replacement_items) < 4:
+                            q6_tail_replacement_items.append(
+                                f"{item.name}:{value}->{replacement['value']}"
+                            )
             else:
                 decision_value += value
                 if q == 6:
@@ -1030,6 +1064,17 @@ def _inventory_quality_breakdown(
             "final_q6_decision_value": q6_decision_value,
             "final_q6_trimmed_tail_value": q6_trimmed_value,
             "final_q6_trimmed_tail_items": ";".join(q6_trimmed_items),
+            "final_q6_tail_replacement_value": q6_tail_replacement_value,
+            "final_q6_tail_replacement_count": q6_tail_replacement_count,
+            "final_q6_tail_replacement_items": ";".join(
+                q6_tail_replacement_items
+            ),
+            "final_q6_tail_replacement_source": ";".join(
+                sorted(q6_tail_replacement_sources)
+            ),
+            "final_q6_decision_value_with_tail_replacement": (
+                q6_decision_value + q6_tail_replacement_value
+            ),
             "final_decision_value": decision_value,
             "final_trimmed_tail_value": trimmed_value,
             "final_trimmed_tail_items": ";".join(trimmed_items),
@@ -1040,6 +1085,102 @@ def _inventory_quality_breakdown(
             "final_top_item_cells": top_item.get("cells"),
         }
     return {}
+
+
+def _effective_item_weights_for_map(
+    map_id: int | None,
+    *,
+    maps: Mapping[int, BidMap] | None,
+    drops: Mapping[int, DropPool] | None,
+    items: Mapping[int, Item],
+) -> dict[int, float]:
+    if map_id is None or maps is None or drops is None:
+        return {}
+    bid_map = maps.get(map_id)
+    if bid_map is None:
+        return {}
+    out: defaultdict[int, float] = defaultdict(float)
+    try:
+        if not bid_map.sub_pool_weights:
+            flat = flatten_pool(bid_map.drop_pool_id, drops, items)
+            for item_id, probability in zip(flat.item_ids, flat.probabilities):
+                out[int(item_id)] += float(probability)
+        else:
+            total_weight = sum(
+                weight
+                for sub_map_id, weight in bid_map.sub_pool_weights
+                if weight > 0 and sub_map_id in maps
+            )
+            if total_weight <= 0:
+                return {}
+            for sub_map_id, sub_weight in bid_map.sub_pool_weights:
+                if sub_weight <= 0:
+                    continue
+                sub_map = maps.get(sub_map_id)
+                if sub_map is None:
+                    continue
+                flat = flatten_pool(sub_map.drop_pool_id, drops, items)
+                sub_probability = float(sub_weight) / float(total_weight)
+                for item_id, probability in zip(flat.item_ids, flat.probabilities):
+                    out[int(item_id)] += sub_probability * float(probability)
+    except Exception:
+        return {}
+    return dict(out)
+
+
+def _tail_replacement_for_item(
+    item: Item,
+    items: Mapping[int, Item],
+    *,
+    map_item_weights: Mapping[int, float] | None = None,
+) -> dict[str, Any]:
+    candidates = [
+        candidate
+        for candidate in items.values()
+        if candidate.item_id != item.item_id
+        and candidate.quality == item.quality
+        and candidate.shape_w == item.shape_w
+        and candidate.shape_h == item.shape_h
+        and 0 < candidate.value < DEFAULT_VALUE_FLOOR
+    ]
+    if not candidates:
+        return {"value": 0, "source": "", "candidate_count": 0}
+
+    if map_item_weights:
+        weighted = [
+            (candidate.value, float(map_item_weights.get(candidate.item_id) or 0.0))
+            for candidate in candidates
+            if float(map_item_weights.get(candidate.item_id) or 0.0) > 0.0
+        ]
+        weighted_value = _weighted_median_value(weighted)
+        if weighted_value is not None:
+            return {
+                "value": weighted_value,
+                "source": "map_weighted_p50",
+                "candidate_count": len(weighted),
+            }
+        return {"value": 0, "source": "", "candidate_count": 0}
+
+    values = sorted(candidate.value for candidate in candidates)
+    return {
+        "value": int(round(statistics.median(values))),
+        "source": "item_table_median",
+        "candidate_count": len(values),
+    }
+
+
+def _weighted_median_value(values: Sequence[tuple[int, float]]) -> int | None:
+    positive = [(int(value), float(weight)) for value, weight in values if weight > 0]
+    if not positive:
+        return None
+    total = sum(weight for _, weight in positive)
+    midpoint = total / 2.0
+    running = 0.0
+    for value, weight in sorted(positive, key=lambda row: row[0]):
+        running += weight
+        if running >= midpoint:
+            return value
+    return positive[-1][0]
 
 
 def _format_quality_map(values: Mapping[int, int]) -> str:
@@ -1294,6 +1435,19 @@ def _model_eval_row(
         )
         or 0
     )
+    final_q6_decision_value_with_tail_replacement = int(
+        (
+            (truth_breakdown or {}).get(
+                "final_q6_decision_value_with_tail_replacement"
+            )
+            if (truth_breakdown or {}).get(
+                "final_q6_decision_value_with_tail_replacement"
+            )
+            is not None
+            else final_q6_decision_value
+        )
+        or 0
+    )
     q6_shadow_under_before = (
         q6_shadow_active
         and q6_decision_value_p90 is not None
@@ -1522,6 +1676,22 @@ def _model_eval_row(
             q6_decision_value_p90 < final_q6_decision_value
             if q6_decision_value_p90 is not None
             and final_q6_decision_value > 0
+            else None
+        ),
+        "v2_q6_tail_replacement_decision_value_p90_under_by": (
+            max(
+                0,
+                final_q6_decision_value_with_tail_replacement
+                - q6_decision_value_p90,
+            )
+            if q6_decision_value_p90 is not None
+            else None
+        ),
+        "q6_tail_replacement_p90_misses_truth": (
+            q6_decision_value_p90
+            < final_q6_decision_value_with_tail_replacement
+            if q6_decision_value_p90 is not None
+            and final_q6_decision_value_with_tail_replacement > 0
             else None
         ),
         "q6_false_low_risk": (
@@ -2049,6 +2219,9 @@ def build_monitor_artifact_from_events(
         events,
         tables.items,
         problem=problem,
+        maps=tables.maps,
+        drops=tables.drops,
+        map_id=base_session.map_id if base_session is not None else None,
     )
     processing_seconds = round(time.perf_counter() - started_at, 4)
     artifact: dict[str, Any] = {
