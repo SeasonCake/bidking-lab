@@ -583,6 +583,34 @@ def test_q6_residual_boost_profile_gate_is_narrow() -> None:
         requested_ratio=1.0,
         gate="aisha_hidden_v1",
     ) == 0.0
+    assert module.q6_residual_prior_floor_ratio_for_profile(
+        hero="aisha",
+        map_family="villa",
+        evidence_profile_key="shape+layout",
+        requested_ratio=0.75,
+        gate="aisha_villa_shape_layout_v1",
+    ) == 0.75
+    assert module.q6_residual_prior_floor_ratio_for_profile(
+        hero="aisha",
+        map_family="shipwreck",
+        evidence_profile_key="shape+layout",
+        requested_ratio=0.75,
+        gate="aisha_villa_shape_layout_v1",
+    ) == 0.0
+    assert module.q6_residual_prior_floor_ratio_for_profile(
+        hero="ethan",
+        map_family="villa",
+        evidence_profile_key="shape+layout",
+        requested_ratio=0.75,
+        gate="aisha_villa_shape_layout_v1",
+    ) == 0.0
+    assert module.q6_residual_prior_floor_ratio_for_profile(
+        hero="aisha",
+        map_family="villa",
+        evidence_profile_key="public:random_avg+shape+layout",
+        requested_ratio=0.75,
+        gate="aisha_villa_shape_layout_v1",
+    ) == 0.0
 
 
 def test_q6_residual_boost_summary_reports_activation_and_no_q6_proxy() -> None:

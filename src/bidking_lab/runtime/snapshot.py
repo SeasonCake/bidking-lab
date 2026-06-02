@@ -1034,6 +1034,7 @@ def _ui_shadow_contract(
         "profile_b5": "q6_residual_boost_shadow",
         "aisha_deep_floor1": "q6_residual_deep_floor_shadow",
         "aisha_hidden_floor15": "q6_residual_hidden_floor_shadow",
+        "aisha_villa_floor05": "q6_residual_villa_floor_shadow",
     }
     prefix = prefix_by_label.get(label, "")
     active = bool(shadow.get("active"))
@@ -1041,11 +1042,13 @@ def _ui_shadow_contract(
         "profile_b5": "diagnostic_shadow",
         "aisha_deep_floor1": "tail_risk_reference_candidate",
         "aisha_hidden_floor15": "hidden_tail_risk_shadow",
+        "aisha_villa_floor05": "villa_tail_risk_shadow",
     }
     display_by_label = {
         "profile_b5": "debug_only",
         "aisha_deep_floor1": "risk_reference_candidate",
         "aisha_hidden_floor15": "shadow_only_pending_no_q6_controls",
+        "aisha_villa_floor05": "shadow_only_pending_no_q6_controls",
     }
     return {
         "label": label,

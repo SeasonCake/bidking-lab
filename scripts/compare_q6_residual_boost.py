@@ -30,6 +30,8 @@ _EXTRA_CONFIGS: tuple[tuple[str, float, str, float, str], ...] = (
     ("aisha_hidden_floor1", 1.0, "all", 1.0, "aisha_hidden_v1"),
     ("aisha_deep_hidden_floor1", 1.0, "all", 1.0, "aisha_deep_or_hidden_v1"),
     ("aisha_hidden_floor15", 1.0, "all", 1.5, "aisha_hidden_v1"),
+    ("aisha_villa_floor05", 1.0, "all", 0.5, "aisha_villa_shape_layout_v1"),
+    ("aisha_villa_floor075", 1.0, "all", 0.75, "aisha_villa_shape_layout_v1"),
 )
 _CONFIGS = _DEFAULT_CONFIGS + _EXTRA_CONFIGS
 _CONFIG_LABELS = tuple(

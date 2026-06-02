@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import bidking_lab.live.monitor as monitor_module
 from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropEntry, DropPool
 from bidking_lab.extract.item_table import Item
@@ -20,6 +21,7 @@ from bidking_lab.live.monitor import (
     DEFAULT_Q6_SHADOW_TRIALS_CAP,
     MonitorTables,
     _build_zero_match_fallback_rows,
+    _model_eval_row,
     _resolve_shadow_trials,
     build_monitor_artifact_from_file,
     build_monitor_artifact_from_events,
@@ -253,10 +255,19 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["q6_residual_hidden_floor_shadow"]["gate"] == "aisha_hidden_v1"
     assert artifact["q6_residual_hidden_floor_shadow"]["trials"] == 10
     assert artifact["q6_residual_hidden_floor_shadow"]["active"] is False
+    assert artifact["q6_residual_villa_floor_shadow"]["label"] == (
+        "aisha_villa_floor05"
+    )
+    assert artifact["q6_residual_villa_floor_shadow"]["gate"] == (
+        "aisha_villa_shape_layout_v1"
+    )
+    assert artifact["q6_residual_villa_floor_shadow"]["trials"] == 10
+    assert artifact["q6_residual_villa_floor_shadow"]["active"] is False
     assert [row["策略"] for row in artifact["q6_residual_boost_shadow_rows"]] == [
         "profile_b5",
         "aisha_deep_floor1",
         "aisha_hidden_floor15",
+        "aisha_villa_floor05",
     ]
     assert artifact["q6_residual_boost_shadow_rows"]
     assert "q6先验缺口" in artifact["v2_posterior_rows"][0]
@@ -288,6 +299,7 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
         "profile_b5",
         "aisha_deep_floor1",
         "aisha_hidden_floor15",
+        "aisha_villa_floor05",
     ]
     assert all(
         shadow["affects_bid"] is False
@@ -336,6 +348,13 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
         in artifact["model_eval"]
     )
     assert artifact["model_eval"]["q6_residual_hidden_floor_shadow_active"] is False
+    assert "q6_residual_villa_floor_shadow_active" in artifact["model_eval"]
+    assert artifact["model_eval"]["q6_residual_villa_floor_shadow_trials"] == 10
+    assert (
+        "q6_residual_villa_floor_shadow_q6_p90_delta"
+        in artifact["model_eval"]
+    )
+    assert artifact["model_eval"]["q6_residual_villa_floor_shadow_active"] is False
     assert "raw_minus_decision_p90" in artifact["model_eval"]
     assert "layout_conflict_root" in artifact["model_eval"]
     assert "shape_target_count" in artifact["model_eval"]
@@ -356,6 +375,78 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     }
     assert "hero_information_density" in artifact["model_eval"]
     assert artifact["model_eval"]["relaxed_exact_used"] is False
+
+
+def test_model_eval_uses_problem_evidence_profile_when_available() -> None:
+    row = _model_eval_row(
+        file="sample.json",
+        artifact={
+            "file": "sample.json",
+            "hero": "aisha",
+            "map_id": 2501,
+            "round": 3,
+            "evidence_profile_key": "shape+layout",
+            "bid_rows": [
+                {
+                    "决策价值 P10/P50/P90": "100 / 200 / 300",
+                    "原始价值 P10/P50/P90": "100 / 200 / 300",
+                },
+            ],
+            "warehouse_rows": [{"价值 P10/P50/P90": "100 / 200 / 300"}],
+            "v2_posterior_rows": [
+                {
+                    "形状约束数": 2,
+                    "分类约束数": 0,
+                    "分类反排数": 0,
+                    "诊断": "",
+                },
+            ],
+        },
+        final_value=200,
+        final_cells=10,
+        truth_breakdown={},
+    )
+
+    assert row is not None
+    assert row["evidence_profile_key"] == "shape+layout"
+
+
+def test_debug_shadow_can_be_skipped_without_suppressing_baseline(monkeypatch) -> None:
+    original_estimate = monitor_module.estimate_posterior_v2
+    calls: list[dict] = []
+
+    def wrapped_estimate(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return original_estimate(*args, **kwargs)
+
+    monkeypatch.setattr(
+        monitor_module,
+        "q6_residual_boost_for_profile",
+        lambda **_kwargs: 5.0,
+    )
+    monkeypatch.setattr(
+        monitor_module,
+        "estimate_posterior_v2",
+        wrapped_estimate,
+    )
+
+    artifact = build_monitor_artifact_from_events(
+        _events(),
+        file="sample.json",
+        tables=_tables(),
+        n_trials=10,
+        roi_trials=0,
+        run_debug_shadows=False,
+    )
+
+    assert artifact["q6_residual_boost_shadow"]["active"] is False
+    assert artifact["q6_residual_boost_shadow"]["active_boost"] == 1.0
+    assert any(
+        "q6_residual_boost" not in call
+        and "q6_residual_prior_floor_ratio" not in call
+        for call in calls
+    )
+    assert not any(float(call.get("q6_residual_boost", 1.0)) > 1.0 for call in calls)
 
 
 def test_zero_match_fallback_rows_use_relaxed_v1_reference() -> None:

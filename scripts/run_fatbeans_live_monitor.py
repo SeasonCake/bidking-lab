@@ -162,6 +162,7 @@ def _process_file(
     n_trials: int,
     roi_trials: int,
     shadow_trials: int | None,
+    run_debug_shadows: bool,
     seed: int,
     archive_dir: Path | None = None,
 ) -> None:
@@ -171,6 +172,7 @@ def _process_file(
         n_trials=n_trials,
         roi_trials=roi_trials,
         shadow_trials=shadow_trials,
+        run_debug_shadows=run_debug_shadows,
         seed=seed,
     )
     if archive_dir is not None:
@@ -253,6 +255,14 @@ def main() -> int:
             "min(--n-trials, 80) to keep live monitoring responsive."
         ),
     )
+    parser.add_argument(
+        "--skip-debug-shadows",
+        action="store_true",
+        help=(
+            "Skip debug-only q6 shadows such as profile_b5. Baseline and "
+            "risk-reference shadows still run."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=20260530)
     args = parser.parse_args()
 
@@ -274,6 +284,7 @@ def main() -> int:
             n_trials=args.n_trials,
             roi_trials=args.roi_trials,
             shadow_trials=args.shadow_trials,
+            run_debug_shadows=not args.skip_debug_shadows,
             seed=args.seed,
         )
         write_monitor_logs(artifact, log_dir=log_dir)
@@ -288,6 +299,7 @@ def main() -> int:
             n_trials=args.n_trials,
             roi_trials=args.roi_trials,
             shadow_trials=args.shadow_trials,
+            run_debug_shadows=not args.skip_debug_shadows,
             seed=args.seed,
             archive_dir=archive_dir,
         )
@@ -334,6 +346,7 @@ def main() -> int:
                     n_trials=args.n_trials,
                     roi_trials=args.roi_trials,
                     shadow_trials=args.shadow_trials,
+                    run_debug_shadows=not args.skip_debug_shadows,
                     seed=args.seed,
                     archive_dir=archive_dir,
                 )

@@ -793,3 +793,15 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 **取舍**：全量轮廓局会更快收敛到真实总格/总件数，UI 也能解释“输入约束来自哪里”。代价是 session totals 成为正式硬约束，因此来源必须可审计；OCR 或人工来源后续若出现误识别，需要通过 source/confidence 和 UI 复核处理。
 
 **复查点**：Fatbeans 状态只要带 `inventory_items` 就标记为 `settled`，避免非 `0x002D` inventory 泄漏。真实 smoke 中普通 Aisha Villa 没有公开总件数时仍为 `session_totals_stripped`；package12 Aisha 全量透视恢复 `total_item_count=42 / warehouse_total_cells=123`，package17 Ethan 全量轮廓恢复 `50 / 157`。
+
+## 2026-06-02 · Aisha Villa floor 进入 pending shadow，不进入正式出价
+
+**背景**：q6 actionable review 把 41 个真实 q6 P90 漏估拆成 18 个已有 active shadow candidate 和 23 个未覆盖组。首轮 paired 审计显示 Aisha Villa `shape+layout` 有稳定收益，而 Ethan `layout` 虽有收益但会在 no-q6 对照上误抬。
+
+**用户决策**：继续推进 v2 的局部优化，不做 v3；允许把低风险候选先接入 shadow/log readiness，但正式 UI 首屏和出价仍以 baseline v2 为准。
+
+**推荐**：新增 `aisha_villa_floor05`，门控限定为 Aisha + Villa + `shape+layout`，prior-floor ratio `0.5`。该候选只作为 `shadow_only_pending_no_q6_controls` 输出，用于 live 日志和人工复核；`affects_bid=false`，不覆盖 `decision_value`、stop price 或 bid hint。
+
+**取舍**：`0.5` 与 `0.75` 在全量 compare 中都修复 7 个 q6 漏估且没有 no-q6 new-positive，但 `0.75` 更激进，尾部/已有 no-q6 正报金额抬升更明显。当前选择 `0.5` 是为了先扩大可观测性，而不是提前把 Villa 风险抬价正式化。
+
+**复查点**：338 样本 `trials=20` compare 中，`aisha_villa_floor05` 把 decision MAE `38.28万 -> 37.30万`、q6 plannable coverage `55.25% -> 57.63%`；review 复跑中 11 个 Aisha Villa actionable miss 有 9 个进入 active pending shadow。后续需要真实 live 日志确认 `helped_rate`、`still_missed_rate`、`false_positive_proxy_rows` 和 active no-q6 表现，满足复核条件前不得升级 baseline。

@@ -219,6 +219,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert summary["q6_residual_deep_floor_shadow_q6_p90_delta_median"] == 180
     assert summary["q6_residual_hidden_floor_shadow_active_count"] == 0
     assert summary["q6_residual_hidden_floor_shadow_helped_count"] == 0
+    assert summary["q6_residual_villa_floor_shadow_active_count"] == 0
+    assert summary["q6_residual_villa_floor_shadow_helped_count"] == 0
     readiness_summary = summary["q6_shadow_candidate_readiness"]
     assert readiness_summary["profile_b5"]["status"] == "needs_live_samples"
     assert readiness_summary["profile_b5"]["tracked_rows"] == 0
@@ -235,6 +237,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert readiness_summary["aisha_deep_floor1"]["q6_p90_delta_median"] == 180
     assert readiness_summary["aisha_hidden_floor15"]["status"] == "needs_live_samples"
     assert readiness_summary["aisha_hidden_floor15"]["tracked_rows"] == 0
+    assert readiness_summary["aisha_villa_floor05"]["status"] == "needs_live_samples"
+    assert readiness_summary["aisha_villa_floor05"]["tracked_rows"] == 0
     assert summary["q6_aisha_bottom_row_risk_count"] == 1
     assert summary["q6_p90_miss_count"] == 1
     assert summary["q6_p90_under_by_median"] == 50
@@ -312,6 +316,9 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert summary["q6_residual_deep_floor_shadow"]["map_family"][0][
         "q6_p90_delta_median"
     ] == 180
+    assert summary["q6_residual_villa_floor_shadow"]["map_family"][0][
+        "active_rows"
+    ] == 0
     assert any(
         row["hero"] == "ethan"
         and row["map_family"] == "hidden"
@@ -411,6 +418,11 @@ def test_q6_shadow_sampling_progress_uses_current_focus_targets() -> None:
                 "map_id": 2601,
                 "q6_residual_hidden_floor_shadow_label": "aisha_hidden_floor15",
             },
+            {
+                "hero": "aisha",
+                "map_id": 2401,
+                "q6_residual_villa_floor_shadow_label": "aisha_villa_floor05",
+            },
         ]
     )
 
@@ -449,6 +461,19 @@ def test_q6_shadow_sampling_progress_uses_current_focus_targets() -> None:
             "n": 1,
             "target": 10,
             "needed": 9,
+            "ready": False,
+        }
+    ]
+    villa = progress["candidates"]["aisha_villa_floor05"]
+    assert villa["sample_scope"] == "live_aisha_villa_floor05_logs"
+    assert villa["tracked_rows"] == 1
+    assert villa["targets"] == [
+        {
+            "hero": "aisha",
+            "map_family": "villa",
+            "n": 1,
+            "target": 20,
+            "needed": 19,
             "ready": False,
         }
     ]
@@ -551,3 +576,34 @@ def test_q6_hidden_shadow_candidate_readiness_marks_review_candidate() -> None:
     assert readiness["helped_rate"] == 1.0
     assert readiness["still_missed_rows"] == 0
     assert readiness["false_positive_proxy_rows"] == 0
+
+
+def test_q6_villa_shadow_candidate_readiness_marks_review_candidate() -> None:
+    module = _summary_module()
+
+    rows = [
+        {
+            "hero": "aisha",
+            "map_id": 2401,
+            "final_value": 100,
+            "final_q6_value": 100,
+            "q6_residual_villa_floor_shadow_label": "aisha_villa_floor05",
+            "q6_residual_villa_floor_shadow_active": True,
+            "q6_residual_villa_floor_shadow_under_before": True,
+            "q6_residual_villa_floor_shadow_helped": True,
+            "q6_residual_villa_floor_shadow_false_positive_proxy": False,
+            "q6_residual_villa_floor_shadow_q6_p90_delta": 240,
+        }
+        for _ in range(20)
+    ]
+
+    summary = module.summarize(rows)
+    readiness = summary["q6_shadow_candidate_readiness"]["aisha_villa_floor05"]
+
+    assert readiness["status"] == "candidate_for_review"
+    assert readiness["target_ready"] is True
+    assert readiness["under_before_rows"] == 20
+    assert readiness["helped_rate"] == 1.0
+    assert readiness["still_missed_rows"] == 0
+    assert readiness["false_positive_proxy_rows"] == 0
+    assert readiness["q6_p90_delta_median"] == 240

@@ -31,6 +31,9 @@ _Q6_DEEP_FLOOR_SHADOW_SAMPLING_TARGETS: tuple[tuple[str, str, int], ...] = (
 _Q6_HIDDEN_FLOOR_SHADOW_SAMPLING_TARGETS: tuple[tuple[str, str, int], ...] = (
     ("aisha", "hidden", 10),
 )
+_Q6_VILLA_FLOOR_SHADOW_SAMPLING_TARGETS: tuple[tuple[str, str, int], ...] = (
+    ("aisha", "villa", 20),
+)
 
 
 def _map_family(map_id: Any) -> str:
@@ -640,6 +643,17 @@ def _q6_residual_hidden_floor_shadow_summary(
     )
 
 
+def _q6_residual_villa_floor_shadow_summary(
+    rows: list[dict[str, Any]],
+    key: str,
+) -> list[dict[str, Any]]:
+    return _q6_shadow_summary(
+        rows,
+        key,
+        prefix="q6_residual_villa_floor_shadow",
+    )
+
+
 def _collection_readiness(
     rows: list[dict[str, Any]],
     *,
@@ -777,12 +791,20 @@ def _q6_shadow_sampling_progress(rows: list[dict[str, Any]]) -> dict[str, Any]:
         sample_scope="live_aisha_hidden_floor15_logs",
         targets_config=_Q6_HIDDEN_FLOOR_SHADOW_SAMPLING_TARGETS,
     )
+    aisha_villa_floor05 = _q6_shadow_sampling_progress_for_label(
+        rows,
+        label_key="q6_residual_villa_floor_shadow_label",
+        label="aisha_villa_floor05",
+        sample_scope="live_aisha_villa_floor05_logs",
+        targets_config=_Q6_VILLA_FLOOR_SHADOW_SAMPLING_TARGETS,
+    )
     return {
         **profile_b5,
         "candidates": {
             "profile_b5": profile_b5,
             "aisha_deep_floor1": aisha_deep_floor1,
             "aisha_hidden_floor15": aisha_hidden_floor15,
+            "aisha_villa_floor05": aisha_villa_floor05,
         },
     }
 
@@ -898,6 +920,13 @@ def _q6_shadow_candidate_readiness_summary(
             label_key="q6_residual_hidden_floor_shadow_label",
             label="aisha_hidden_floor15",
             progress=candidates.get("aisha_hidden_floor15") or {},
+        ),
+        "aisha_villa_floor05": _q6_shadow_candidate_readiness(
+            rows,
+            prefix="q6_residual_villa_floor_shadow",
+            label_key="q6_residual_villa_floor_shadow_label",
+            label="aisha_villa_floor05",
+            progress=candidates.get("aisha_villa_floor05") or {},
         ),
     }
 
@@ -1167,6 +1196,29 @@ def summarize(
             ],
             "q6_residual_hidden_floor_shadow_q6_p90_delta",
         ),
+        "q6_residual_villa_floor_shadow_active_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_villa_floor_shadow_active")
+        ),
+        "q6_residual_villa_floor_shadow_under_before_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_villa_floor_shadow_under_before")
+        ),
+        "q6_residual_villa_floor_shadow_helped_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_villa_floor_shadow_helped")
+        ),
+        "q6_residual_villa_floor_shadow_false_positive_proxy_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_villa_floor_shadow_false_positive_proxy")
+        ),
+        "q6_residual_villa_floor_shadow_q6_p90_delta_median": _median_value(
+            [
+                row for row in valid
+                if row.get("q6_residual_villa_floor_shadow_active")
+            ],
+            "q6_residual_villa_floor_shadow_q6_p90_delta",
+        ),
         "q6_aisha_bottom_row_risk_count": sum(
             1 for row in valid if row.get("q6_aisha_bottom_row_risk")
         ),
@@ -1364,6 +1416,40 @@ def summarize(
                 "evidence_stage",
             ),
             "information_density": _q6_residual_hidden_floor_shadow_summary(
+                valid,
+                "information_density_band",
+            ),
+        },
+        "q6_residual_villa_floor_shadow": {
+            "hero": _q6_residual_villa_floor_shadow_summary(valid, "hero"),
+            "hero_map_family": _q6_residual_villa_floor_shadow_summary(
+                [
+                    {
+                        **row,
+                        "hero_map_family": (
+                            f"hero={row.get('hero') or 'unknown'}|"
+                            f"map_family={_map_family(row.get('map_id'))}"
+                        ),
+                    }
+                    for row in valid
+                ],
+                "hero_map_family",
+            ),
+            "map_family": _q6_residual_villa_floor_shadow_summary(
+                [
+                    {
+                        **row,
+                        "map_family": _map_family(row.get("map_id")),
+                    }
+                    for row in valid
+                ],
+                "map_family",
+            ),
+            "evidence_stage": _q6_residual_villa_floor_shadow_summary(
+                valid,
+                "evidence_stage",
+            ),
+            "information_density": _q6_residual_villa_floor_shadow_summary(
                 valid,
                 "information_density_band",
             ),

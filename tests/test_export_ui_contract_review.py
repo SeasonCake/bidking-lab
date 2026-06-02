@@ -116,9 +116,14 @@ def _artifact(
                     "category_target_count": 2,
                     "category_exclusion_count": 1,
                     "public_constraint_key": "max_quality",
+                    "evidence_profile_key": "public:max_quality+shape+layout",
+                    "information_density_band": "high",
                 },
                 "public_info": {
                     "input_constraints_mode": "pre_settlement_trusted_totals",
+                    "evidence_profile_key": "public:max_quality+shape+layout",
+                    "random_sample_avg_values": "200000.0000",
+                    "random_sample_avg_signal_values": "good",
                 },
             },
             "minimap": {
@@ -194,6 +199,10 @@ def test_review_row_keeps_manual_check_fields_without_flags() -> None:
     assert row["fallback_active"] is False
     assert row["truth_q6_count"] == 1
     assert row["input_constraints_mode"] == "pre_settlement_trusted_totals"
+    assert row["public_constraint_key"] == "max_quality"
+    assert row["evidence_profile_key"] == "public:max_quality+shape+layout"
+    assert row["information_density_band"] == "high"
+    assert row["random_sample_avg_values"] == "200000.0000"
     assert row["minimap_nonempty_display_labels"] == 0
     assert row["minimap_unknown_quality_items"] == 0
     assert row["minimap_items_with_names"] == 1
@@ -313,6 +322,7 @@ def test_q6_below_prior_review_class_splits_true_miss_from_noise() -> None:
             truth_q6_count=2,
             truth_q6_value=486510,
             q6_decision_value_range="0 / 120,000 / 300,000",
+            tail_shadow_active=True,
         ),
         source_path="miss.json",
     )
@@ -332,15 +342,37 @@ def test_q6_below_prior_review_class_splits_true_miss_from_noise() -> None:
     assert miss["q6_below_drop_prior_class"] == "truth_p90_miss"
     assert miss["q6_below_drop_prior_under_by"] == 186510
     assert miss["q6_below_drop_prior_actionable"] is True
+    assert miss["q6_actionable_shadow_status"] == "active_shadow_candidate"
     assert "q6_below_drop_prior_truth_miss" in miss_flags
     assert zero_noise["q6_below_drop_prior_class"] == "truth_zero_noise"
     assert zero_noise["q6_below_drop_prior_actionable"] is False
+    assert zero_noise["q6_actionable_shadow_status"] == ""
     assert "q6_below_drop_prior_truth_miss" not in zero_flags
     assert summary["q6_below_drop_prior_rows"] == 2
     assert summary["q6_below_drop_prior_actionable_rows"] == 1
     assert summary["q6_below_drop_prior_class_counts"] == {
         "truth_p90_miss": 1,
         "truth_zero_noise": 1,
+    }
+    assert summary["q6_actionable_miss_by_hero_map"] == {"aisha:shipwreck": 1}
+    assert summary["q6_actionable_miss_by_evidence_profile"] == {
+        "public:max_quality+shape+layout": 1,
+    }
+    assert summary["q6_actionable_miss_by_hero_map_profile"] == {
+        "aisha:shipwreck:public:max_quality+shape+layout": 1,
+    }
+    assert summary["q6_actionable_shadow_status_counts"] == {
+        "active_shadow_candidate": 1,
+    }
+    assert summary["q6_actionable_miss_by_hero_map_shadow_status"] == {
+        "aisha:shipwreck:active_shadow_candidate": 1,
+    }
+    assert summary["q6_actionable_under_by_by_hero_map"] == {
+        "aisha:shipwreck": {
+            "count": 1,
+            "max": 186510,
+            "median": 186510,
+        }
     }
 
 

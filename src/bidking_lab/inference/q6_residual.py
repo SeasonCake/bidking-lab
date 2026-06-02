@@ -29,6 +29,11 @@ AISHA_HIDDEN_V1_Q6_RESIDUAL_PROFILES = frozenset(
         ("aisha", "hidden", "shape+layout"),
     }
 )
+AISHA_VILLA_V1_Q6_RESIDUAL_PROFILES = frozenset(
+    {
+        ("aisha", "villa", "shape+layout"),
+    }
+)
 
 
 def actionable_random_sample_avg_values(
@@ -177,6 +182,12 @@ def q6_residual_prior_floor_ratio_for_profile(
             if key in AISHA_HIDDEN_V1_Q6_RESIDUAL_PROFILES
             else 0.0
         )
+    if gate == "aisha_villa_shape_layout_v1":
+        return (
+            requested_ratio
+            if key in AISHA_VILLA_V1_Q6_RESIDUAL_PROFILES
+            else 0.0
+        )
     if gate == "aisha_deep_or_hidden_v1":
         if (
             key in AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES
@@ -191,6 +202,7 @@ def q6_residual_prior_floor_ratio_for_profile(
 __all__ = (
     "AISHA_HIDDEN_V1_Q6_RESIDUAL_PROFILES",
     "AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES",
+    "AISHA_VILLA_V1_Q6_RESIDUAL_PROFILES",
     "AISHA_BOTTOM_ROW_RISK_THRESHOLD",
     "AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD",
     "RANDOM_SAMPLE_AVG_PROFILE_SIGNAL_FLOOR",

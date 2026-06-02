@@ -1084,6 +1084,7 @@ def _model_eval_row(
     shadow = artifact.get("q6_residual_boost_shadow") or {}
     deep_floor_shadow = artifact.get("q6_residual_deep_floor_shadow") or {}
     hidden_floor_shadow = artifact.get("q6_residual_hidden_floor_shadow") or {}
+    villa_floor_shadow = artifact.get("q6_residual_villa_floor_shadow") or {}
     bottom_row_risk = artifact.get("q6_aisha_bottom_row_risk") or {}
     input_constraints = (
         artifact.get("inference_input_constraints")
@@ -1256,6 +1257,12 @@ def _model_eval_row(
         baseline_q6_decision_value_p90=q6_decision_value_p90,
         final_q6_value=final_q6_value,
     )
+    villa_floor_shadow_fields = _model_eval_shadow_fields(
+        "q6_residual_villa_floor_shadow",
+        villa_floor_shadow,
+        baseline_q6_decision_value_p90=q6_decision_value_p90,
+        final_q6_value=final_q6_value,
+    )
     evidence_stage = _evidence_stage(artifact.get("round"))
     density_score = _live_information_density_score(
         artifact.get("round"),
@@ -1266,12 +1273,15 @@ def _model_eval_row(
     )
     density_band = _information_density_band(density_score)
     public_constraint_key = _public_constraint_key(posterior_diagnostics)
-    evidence_profile_key = _live_evidence_profile_key(
-        public_constraint_key=public_constraint_key,
-        random_sample_avg_values=random_sample_avg_signal_values,
-        category_target_count=category_target_count,
-        category_exclusion_count=category_exclusion_count,
-        shape_target_count=shape_target_count,
+    evidence_profile_key = str(
+        artifact.get("evidence_profile_key")
+        or _live_evidence_profile_key(
+            public_constraint_key=public_constraint_key,
+            random_sample_avg_values=random_sample_avg_signal_values,
+            category_target_count=category_target_count,
+            category_exclusion_count=category_exclusion_count,
+            shape_target_count=shape_target_count,
+        )
     )
     return {
         "ts": time.time(),
@@ -1400,6 +1410,7 @@ def _model_eval_row(
         ),
         **deep_floor_shadow_fields,
         **hidden_floor_shadow_fields,
+        **villa_floor_shadow_fields,
         "q6_aisha_bottom_row_risk": bool(bottom_row_risk.get("active")),
         "layout_bottom_row": _parse_int_text(bottom_row_risk.get("bottom_row")),
         "layout_bottom_row_risk_threshold": _parse_int_text(
@@ -1576,6 +1587,7 @@ def build_monitor_artifact_from_events(
     n_trials: int = 500,
     roi_trials: int = 250,
     shadow_trials: int | None = None,
+    run_debug_shadows: bool = True,
     seed: int = 20260530,
 ) -> dict[str, Any]:
     """Build a JSON-serializable live monitor artifact from parsed events."""
@@ -1602,6 +1614,7 @@ def build_monitor_artifact_from_events(
     q6_residual_boost_shadow: dict[str, Any] = {}
     q6_residual_deep_floor_shadow: dict[str, Any] = {}
     q6_residual_hidden_floor_shadow: dict[str, Any] = {}
+    q6_residual_villa_floor_shadow: dict[str, Any] = {}
     q6_residual_sampler_shadows: list[dict[str, Any]] = []
     q6_residual_boost_shadow_rows: list[dict[str, Any]] = []
     q6_aisha_bottom_row_risk: dict[str, Any] = {}
@@ -1611,6 +1624,7 @@ def build_monitor_artifact_from_events(
     fallback_warehouse_rows: list[dict[str, Any]] = []
     fallback_bid_rows: list[dict[str, Any]] = []
     evidence_label = "暂无"
+    evidence_profile_key = ""
     resolved_shadow_trials = _resolve_shadow_trials(n_trials, shadow_trials)
     inference_input_constraints: dict[str, Any] = {
         "mode": "no_inference_session",
@@ -1726,6 +1740,14 @@ def build_monitor_artifact_from_events(
             gate="aisha_hidden_v1",
             bottom_row=problem.layout.bottom_row,
         )
+        active_villa_floor_ratio = q6_residual_prior_floor_ratio_for_profile(
+            hero=inference_session.hero,
+            map_family=_map_family_from_id(inference_session.map_id),
+            evidence_profile_key=evidence_profile_key,
+            requested_ratio=0.5,
+            gate="aisha_villa_shape_layout_v1",
+            bottom_row=problem.layout.bottom_row,
+        )
         v2_report = estimate_posterior_v2(
             inference_session.map_id,
             inference_session,
@@ -1740,7 +1762,8 @@ def build_monitor_artifact_from_events(
         )
         v2_posterior_rows = _v2_posterior_rows(v2_report)
         shadow_report = None
-        if active_shadow_boost > 1.0:
+        emitted_shadow_boost = active_shadow_boost if run_debug_shadows else 1.0
+        if run_debug_shadows and active_shadow_boost > 1.0:
             shadow_report = estimate_posterior_v2(
                 inference_session.map_id,
                 inference_session,
@@ -1758,7 +1781,7 @@ def build_monitor_artifact_from_events(
             shadow_report,
             label="profile_b5",
             requested_boost=5.0,
-            active_boost=active_shadow_boost,
+            active_boost=emitted_shadow_boost,
             gate="shipwreck_profile_v1",
             evidence_profile_key=evidence_profile_key,
             trials=resolved_shadow_trials,
@@ -1815,10 +1838,37 @@ def build_monitor_artifact_from_events(
             evidence_profile_key=evidence_profile_key,
             trials=resolved_shadow_trials,
         )
+        villa_floor_report = None
+        if active_villa_floor_ratio > 0.0:
+            villa_floor_report = estimate_posterior_v2(
+                inference_session.map_id,
+                inference_session,
+                store,
+                maps=tables.maps,
+                drops=tables.drops,
+                items=tables.items,
+                n_trials=resolved_shadow_trials,
+                seed=seed + 2,
+                cells_tol=cells_tol,
+                count_tol=count_tol,
+                q6_residual_prior_floor_ratio=active_villa_floor_ratio,
+            )
+        q6_residual_villa_floor_shadow = _q6_residual_boost_shadow_summary(
+            villa_floor_report,
+            label="aisha_villa_floor05",
+            requested_boost=1.0,
+            active_boost=1.0,
+            requested_prior_floor_ratio=0.5,
+            active_prior_floor_ratio=active_villa_floor_ratio,
+            gate="aisha_villa_shape_layout_v1",
+            evidence_profile_key=evidence_profile_key,
+            trials=resolved_shadow_trials,
+        )
         q6_residual_sampler_shadows = [
             q6_residual_boost_shadow,
             q6_residual_deep_floor_shadow,
             q6_residual_hidden_floor_shadow,
+            q6_residual_villa_floor_shadow,
         ]
         q6_residual_boost_shadow_rows = _q6_residual_shadow_rows(
             q6_residual_sampler_shadows
@@ -1916,9 +1966,11 @@ def build_monitor_artifact_from_events(
         "q6_residual_boost_shadow": q6_residual_boost_shadow,
         "q6_residual_deep_floor_shadow": q6_residual_deep_floor_shadow,
         "q6_residual_hidden_floor_shadow": q6_residual_hidden_floor_shadow,
+        "q6_residual_villa_floor_shadow": q6_residual_villa_floor_shadow,
         "q6_residual_sampler_shadows": q6_residual_sampler_shadows,
         "q6_residual_boost_shadow_rows": q6_residual_boost_shadow_rows,
         "q6_aisha_bottom_row_risk": q6_aisha_bottom_row_risk,
+        "evidence_profile_key": evidence_profile_key,
         "tool_rows": tool_rows,
         "bid_rows": bid_rows,
         "layout_replay_rows": layout_replay_rows,
@@ -1951,6 +2003,7 @@ def build_monitor_artifact_from_file(
     n_trials: int = 500,
     roi_trials: int = 250,
     shadow_trials: int | None = None,
+    run_debug_shadows: bool = True,
     seed: int = 20260530,
 ) -> dict[str, Any]:
     path = Path(path)
@@ -1961,6 +2014,7 @@ def build_monitor_artifact_from_file(
         n_trials=n_trials,
         roi_trials=roi_trials,
         shadow_trials=shadow_trials,
+        run_debug_shadows=run_debug_shadows,
         seed=seed,
     )
 
@@ -1973,6 +2027,7 @@ def build_monitor_artifact_from_payload(
     n_trials: int = 500,
     roi_trials: int = 250,
     shadow_trials: int | None = None,
+    run_debug_shadows: bool = True,
     seed: int = 20260530,
 ) -> dict[str, Any]:
     return build_monitor_artifact_from_events(
@@ -1982,6 +2037,7 @@ def build_monitor_artifact_from_payload(
         n_trials=n_trials,
         roi_trials=roi_trials,
         shadow_trials=shadow_trials,
+        run_debug_shadows=run_debug_shadows,
         seed=seed,
     )
 

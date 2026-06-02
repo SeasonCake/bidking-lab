@@ -150,6 +150,34 @@ def _q6_below_prior_review(
     }
 
 
+def _q6_actionable_shadow_status(
+    shadows: Iterable[Mapping[str, Any]],
+    *,
+    actionable: bool,
+) -> str:
+    if not actionable:
+        return ""
+    risk_candidates = [
+        shadow
+        for shadow in shadows
+        if shadow.get("display_mode") == "risk_reference_candidate"
+    ]
+    pending_candidates = [
+        shadow
+        for shadow in shadows
+        if shadow.get("display_mode") == "shadow_only_pending_no_q6_controls"
+    ]
+    if any(_bool(shadow.get("active")) for shadow in risk_candidates):
+        return "active_shadow_candidate"
+    if any(_bool(shadow.get("active")) for shadow in pending_candidates):
+        return "active_pending_shadow_candidate"
+    if risk_candidates:
+        return "not_covered_by_shadow_gate"
+    if pending_candidates:
+        return "pending_shadow_candidate_inactive"
+    return "no_shadow_candidate"
+
+
 def _map_family(map_id: Any) -> str:
     try:
         mid = int(map_id)
@@ -210,6 +238,7 @@ def _artifact_from_path(
     n_trials: int,
     roi_trials: int,
     shadow_trials: int | None,
+    run_debug_shadows: bool,
     seed: int,
 ) -> tuple[dict[str, Any], Any | None]:
     payload = _read_json(path)
@@ -224,6 +253,7 @@ def _artifact_from_path(
             n_trials=n_trials,
             roi_trials=roi_trials,
             shadow_trials=shadow_trials,
+            run_debug_shadows=run_debug_shadows,
             seed=seed,
         ),
         tables,
@@ -483,6 +513,10 @@ def review_row_from_artifact(
         truth_q6,
         below_drop_prior=_bool(diag_q6.get("below_drop_prior")),
     )
+    q6_actionable_shadow_status = _q6_actionable_shadow_status(
+        shadows,
+        actionable=bool(q6_below_prior_review["actionable"]),
+    )
     row = {
         "source_path": source_path,
         "file": source.get("file") or artifact.get("file") or Path(source_path).name,
@@ -532,6 +566,18 @@ def review_row_from_artifact(
         "category_target_count": summary.get("category_target_count"),
         "category_exclusion_count": summary.get("category_exclusion_count"),
         "public_constraint_key": summary.get("public_constraint_key"),
+        "evidence_profile_key": (
+            summary.get("evidence_profile_key")
+            or public_info.get("evidence_profile_key")
+        ),
+        "information_density_band": (
+            summary.get("information_density_band")
+            or public_info.get("information_density_band")
+        ),
+        "random_sample_avg_values": public_info.get("random_sample_avg_values"),
+        "random_sample_avg_signal_values": public_info.get(
+            "random_sample_avg_signal_values"
+        ),
         "minimap_known_items": minimap.get("known_items"),
         "minimap_quality_counts": _compact_mapping(minimap.get("quality_counts")),
         "minimap_category_counts": _compact_mapping(minimap.get("category_counts")),
@@ -565,6 +611,7 @@ def review_row_from_artifact(
         "q6_below_drop_prior_class": q6_below_prior_review["class"],
         "q6_below_drop_prior_under_by": q6_below_prior_review["under_by"],
         "q6_below_drop_prior_actionable": q6_below_prior_review["actionable"],
+        "q6_actionable_shadow_status": q6_actionable_shadow_status,
         "q6_top_size_band": diag_q6.get("top_size_band"),
         "processing_seconds": sampling.get("processing_seconds"),
         "n_trials": sampling.get("n_trials") or source.get("n_trials"),
@@ -603,6 +650,12 @@ def summarize_review_rows(
     focus_counts: Counter[str] = Counter()
     group_counts: Counter[str] = Counter()
     q6_below_class_counts: Counter[str] = Counter()
+    q6_actionable_group_counts: Counter[str] = Counter()
+    q6_actionable_profile_counts: Counter[str] = Counter()
+    q6_actionable_group_profile_counts: Counter[str] = Counter()
+    q6_actionable_shadow_status_counts: Counter[str] = Counter()
+    q6_actionable_group_shadow_counts: Counter[str] = Counter()
+    q6_actionable_under_by: dict[str, list[int]] = {}
     rows_with_flags = 0
     for row in rows:
         flags = _split_flags(row.get("review_flags"))
@@ -611,10 +664,32 @@ def summarize_review_rows(
         flag_counts.update(flags)
         focus_counts.update(_split_flags(row.get("manual_review_focus")))
         group_key = f"{row.get('hero') or '?'}:{_map_family(row.get('map_id'))}"
+        profile_key = str(row.get("evidence_profile_key") or "unknown")
         group_counts[group_key] += 1
         q6_below_class = str(row.get("q6_below_drop_prior_class") or "")
         if q6_below_class:
             q6_below_class_counts[q6_below_class] += 1
+        if _bool(row.get("q6_below_drop_prior_actionable")):
+            q6_actionable_group_counts[group_key] += 1
+            q6_actionable_profile_counts[profile_key] += 1
+            q6_actionable_group_profile_counts[
+                f"{group_key}:{profile_key}"
+            ] += 1
+            shadow_status = str(row.get("q6_actionable_shadow_status") or "unknown")
+            q6_actionable_shadow_status_counts[shadow_status] += 1
+            q6_actionable_group_shadow_counts[f"{group_key}:{shadow_status}"] += 1
+            under_by = _int(row.get("q6_below_drop_prior_under_by"))
+            if under_by is not None:
+                q6_actionable_under_by.setdefault(group_key, []).append(under_by)
+    q6_actionable_under_summary = {
+        key: {
+            "count": len(values),
+            "max": max(values),
+            "median": sorted(values)[len(values) // 2],
+        }
+        for key, values in sorted(q6_actionable_under_by.items())
+        if values
+    }
     return {
         "total_rows": len(rows),
         "error_rows": len(errors or ()),
@@ -634,6 +709,22 @@ def summarize_review_rows(
         "q6_below_drop_prior_actionable_rows": sum(
             1 for row in rows if _bool(row.get("q6_below_drop_prior_actionable"))
         ),
+        "q6_actionable_miss_by_hero_map": dict(
+            sorted(q6_actionable_group_counts.items())
+        ),
+        "q6_actionable_miss_by_evidence_profile": dict(
+            sorted(q6_actionable_profile_counts.items())
+        ),
+        "q6_actionable_miss_by_hero_map_profile": dict(
+            sorted(q6_actionable_group_profile_counts.items())
+        ),
+        "q6_actionable_shadow_status_counts": dict(
+            sorted(q6_actionable_shadow_status_counts.items())
+        ),
+        "q6_actionable_miss_by_hero_map_shadow_status": dict(
+            sorted(q6_actionable_group_shadow_counts.items())
+        ),
+        "q6_actionable_under_by_by_hero_map": q6_actionable_under_summary,
         "zero_q6_truth_rows": sum(
             1 for row in rows if _int(row.get("truth_q6_count")) == 0
         ),
@@ -674,6 +765,7 @@ def export_review_rows(
     n_trials: int = 80,
     roi_trials: int = 0,
     shadow_trials: int | None = None,
+    run_debug_shadows: bool = False,
     seed: int = 20260530,
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -689,6 +781,7 @@ def export_review_rows(
                 n_trials=n_trials,
                 roi_trials=roi_trials,
                 shadow_trials=shadow_trials,
+                run_debug_shadows=run_debug_shadows,
                 seed=seed,
             )
             rows.append(review_row_from_artifact(artifact, source_path=str(path)))
@@ -759,6 +852,15 @@ def main() -> int:
     parser.add_argument("--n-trials", type=int, default=80)
     parser.add_argument("--roi-trials", type=int, default=0)
     parser.add_argument("--shadow-trials", type=int, default=None)
+    parser.add_argument(
+        "--include-debug-shadows",
+        action="store_true",
+        help=(
+            "Run debug-only q6 shadows such as profile_b5. By default review "
+            "exports skip them because they are not shown in the UI contract "
+            "risk path and are expensive on full batches."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=20260530)
     args = parser.parse_args()
 
@@ -783,6 +885,7 @@ def main() -> int:
         n_trials=args.n_trials,
         roi_trials=args.roi_trials,
         shadow_trials=args.shadow_trials,
+        run_debug_shadows=args.include_debug_shadows,
         seed=args.seed,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))

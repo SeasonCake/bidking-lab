@@ -223,6 +223,22 @@ def test_selected_configs_can_include_hidden_floor15_experiment() -> None:
     assert rows[1][3:] == (1.5, "aisha_hidden_v1")
 
 
+def test_selected_configs_can_include_aisha_villa_floor_experiments() -> None:
+    module = _module()
+
+    rows = module._selected_configs(
+        ["baseline", "aisha_villa_floor05", "aisha_villa_floor075"]
+    )
+
+    assert [row[0] for row in rows] == [
+        "baseline",
+        "aisha_villa_floor05",
+        "aisha_villa_floor075",
+    ]
+    assert rows[1][3:] == (0.5, "aisha_villa_shape_layout_v1")
+    assert rows[2][3:] == (0.75, "aisha_villa_shape_layout_v1")
+
+
 def test_paired_q6_delta_summary_counts_help_and_new_false_positive() -> None:
     module = _module()
 
