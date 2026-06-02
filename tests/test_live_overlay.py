@@ -145,6 +145,40 @@ def test_overlay_section_style_classifies_key_topics() -> None:
     assert overlay._section_style("正式出价", "停止追价")["tag"] == "bad"
 
 
+def test_overlay_quality_style_distinguishes_white_and_unknown() -> None:
+    overlay = _overlay_module()
+
+    unknown = overlay._quality_style(None)
+    white = overlay._quality_style(1)
+
+    assert unknown["fill"] != white["fill"]
+    assert unknown["stipple"] == "gray50"
+    assert white["stipple"] == ""
+    assert white["fill"].lower() == "#f8fafc"
+
+
+def test_overlay_matplotlib_minimap_gated_by_round() -> None:
+    overlay = _overlay_module()
+    interaction = {
+        "detail": {
+            "renderers": (
+                {
+                    "name": "matplotlib_minimap",
+                    "mode": "optional_async",
+                    "min_round": 3,
+                },
+            )
+        }
+    }
+
+    assert overlay._matplotlib_minimap_enabled(
+        {"round": 2, "interaction": interaction}
+    ) is False
+    assert overlay._matplotlib_minimap_enabled(
+        {"round": 3, "interaction": interaction}
+    ) is True
+
+
 def test_demo_snapshot_has_compact_overlay_sections() -> None:
     overlay = _overlay_module()
 

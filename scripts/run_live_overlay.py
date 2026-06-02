@@ -8,6 +8,7 @@ working when the monitor source becomes a true realtime feed.
 from __future__ import annotations
 
 import argparse
+import base64
 from collections import Counter
 import json
 from pathlib import Path
@@ -82,6 +83,27 @@ def _detail_window_size(
     width = max(DETAIL_MIN_WIDTH, min(max_width, requested_width + 40))
     height = max(DETAIL_MIN_HEIGHT, min(max_height, requested_height + 60))
     return width, height
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _matplotlib_minimap_enabled(model: dict[str, Any]) -> bool:
+    interaction = _as_mapping(model.get("interaction"))
+    detail = _as_mapping(interaction.get("detail"))
+    round_no = _int_or_none(model.get("round"))
+    for renderer in detail.get("renderers", ()) or ():
+        if not isinstance(renderer, dict):
+            continue
+        if renderer.get("name") != "matplotlib_minimap":
+            continue
+        min_round = _int_or_none(renderer.get("min_round")) or 1
+        return round_no is not None and round_no >= min_round
+    return False
 
 
 def _fmt_int(value: Any) -> str:
@@ -173,20 +195,49 @@ def _section_style(
     return {"badge": "提示", "tag": "normal", "color": ACCENT}
 
 
+def _chip_style(text: Any, fallback_tag: str = "normal") -> dict[str, str]:
+    value = str(text or "")
+    if any(token in value for token in ("过热", "停止", "不追", "后验无匹配")):
+        return {"fg": BAD, "bg": "#2b1720"}
+    if any(token in value for token in ("最高", "当前", "抢仓")):
+        return {"fg": WARN, "bg": "#2a2114"}
+    if any(token in value for token in ("防守", "可守", "谨慎")):
+        return {"fg": WARN, "bg": "#2a2114"}
+    if "进攻" in value:
+        return {"fg": GOOD, "bg": "#13261b"}
+    return {"fg": _severity_color(fallback_tag), "bg": PANEL}
+
+
+def _is_price_metric(title: Any) -> bool:
+    title_text = str(title or "")
+    return any(token in title_text for token in ("价值", "价", "红货"))
+
+
 def _quality_color(quality: Any) -> str:
+    return _quality_style(quality)["fill"]
+
+
+def _quality_style(quality: Any) -> dict[str, str]:
     try:
         q = int(quality)
     except (TypeError, ValueError):
-        return MUTED
+        return {
+            "fill": "#1f2937",
+            "outline": "#64748b",
+            "stipple": "gray50",
+            "hatch": "///",
+        }
     if q >= 6:
-        return BAD
+        return {"fill": BAD, "outline": "#fecdd3", "stipple": "", "hatch": ""}
     if q == 5:
-        return WARN
+        return {"fill": WARN, "outline": "#fde68a", "stipple": "", "hatch": ""}
     if q == 4:
-        return PURPLE
+        return {"fill": PURPLE, "outline": "#e9d5ff", "stipple": "", "hatch": ""}
     if q == 3:
-        return ACCENT
-    return MUTED
+        return {"fill": ACCENT, "outline": "#bfdbfe", "stipple": "", "hatch": ""}
+    if q == 2:
+        return {"fill": GOOD, "outline": "#bbf7d0", "stipple": "", "hatch": ""}
+    return {"fill": "#f8fafc", "outline": "#ffffff", "stipple": "", "hatch": ""}
 
 
 def _age(snapshot: dict[str, Any]) -> tuple[str, bool]:
@@ -1390,6 +1441,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         "empty": False,
         "title": title,
         "subtitle": "  ·  ".join(subtitle_parts),
+        "round": round_no,
         "status": status,
         "decision": (decision_text, decision_detail, decision_severity),
         "metrics": metrics,
@@ -1427,6 +1479,7 @@ class Overlay:
         self._detail_open = False
         self._hover_window: tk.Toplevel | None = None
         self._last_click_time: int | None = None
+        self._matplotlib_minimap_cache: tuple[str, tk.PhotoImage] | None = None
         self._compact_geometry = _default_window_geometry(
             root.winfo_screenwidth(),
             root.winfo_screenheight(),
@@ -1604,6 +1657,34 @@ class Overlay:
                     font=("Microsoft YaHei UI", 8),
                     wraplength=wraplength,
                 ).pack(anchor="w")
+
+    def _render_decision_chips(
+        self,
+        parent: tk.Widget,
+        detail: str,
+        *,
+        severity: str,
+        bg: str,
+        wraplength: int,
+    ) -> None:
+        chips = [part.strip() for part in str(detail or "").split("  |  ") if part.strip()]
+        if not chips:
+            return
+        row = tk.Frame(parent, bg=bg)
+        row.pack(fill="x", pady=(5, 0))
+        for chip_text in chips[:4]:
+            style = _chip_style(chip_text, severity)
+            tk.Label(
+                row,
+                text=_short(chip_text, 42),
+                fg=style["fg"],
+                bg=style["bg"],
+                font=("Microsoft YaHei UI", 9, "bold"),
+                padx=7,
+                pady=3,
+                wraplength=wraplength,
+                justify="left",
+            ).pack(side="left", padx=(0, 5), pady=(0, 4))
 
     def _render_hover_minimap(
         self,
@@ -1830,6 +1911,7 @@ class Overlay:
                 bg=PANEL_SOFT,
                 font=("Microsoft YaHei UI", 8),
             ).pack(side="right", anchor="e")
+        self._render_matplotlib_minimap(body, model)
         self._render_section_rows(
             body,
             sections,
@@ -1837,6 +1919,95 @@ class Overlay:
             limit=len(sections),
             wraplength=800,
         )
+
+    def _render_matplotlib_minimap(
+        self,
+        parent: tk.Widget,
+        model: dict[str, Any],
+    ) -> None:
+        minimap = _as_mapping(model.get("minimap"))
+        if minimap.get("status") != "available":
+            return
+        if not _matplotlib_minimap_enabled(model):
+            return
+        signature = json.dumps(
+            {
+                "round": model.get("round"),
+                "rows_hint": minimap.get("rows_hint"),
+                "items": minimap.get("items", ()),
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        if self._matplotlib_minimap_cache and self._matplotlib_minimap_cache[0] == signature:
+            photo = self._matplotlib_minimap_cache[1]
+        else:
+            try:
+                from io import BytesIO
+
+                from matplotlib.backends.backend_agg import FigureCanvasAgg
+                from matplotlib.figure import Figure
+                from matplotlib.patches import Rectangle
+            except Exception:
+                return
+            geometry = _minimap_canvas_geometry(minimap)
+            columns = geometry["columns"]
+            rows = geometry["rows"]
+            fig_height = max(2.4, min(5.6, rows / max(1, columns) * 3.2))
+            fig = Figure(figsize=(3.2, fig_height), dpi=96)
+            axis = fig.add_subplot(111)
+            axis.set_xlim(0, columns)
+            axis.set_ylim(rows, 0)
+            axis.set_aspect("equal")
+            axis.set_xticks(range(columns + 1))
+            axis.set_yticks(range(rows + 1))
+            axis.grid(color=BORDER, linewidth=0.45)
+            axis.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+            for spine in axis.spines.values():
+                spine.set_color(BORDER)
+            axis.set_facecolor(PANEL_SOFT)
+            fig.patch.set_facecolor(PANEL_SOFT)
+            for item in minimap.get("items", ()) or ():
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    row_i = int(item.get("row"))
+                    col_i = int(item.get("col"))
+                    width = max(1, int(item.get("width") or 1))
+                    height = max(1, int(item.get("height") or 1))
+                except (TypeError, ValueError):
+                    continue
+                style = _quality_style(item.get("quality"))
+                axis.add_patch(
+                    Rectangle(
+                        (col_i - 1, row_i - 1),
+                        width,
+                        height,
+                        facecolor=style["fill"],
+                        edgecolor=style["outline"],
+                        linewidth=0.8,
+                        hatch=style.get("hatch") or None,
+                    )
+                )
+            buffer = BytesIO()
+            FigureCanvasAgg(fig).print_png(buffer)
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            try:
+                photo = tk.PhotoImage(data=encoded, format="png")
+            except tk.TclError:
+                return
+            self._matplotlib_minimap_cache = (signature, photo)
+
+        frame = tk.Frame(parent, bg=PANEL_SOFT)
+        frame.pack(fill="x", pady=(8, 4))
+        self._label(
+            frame,
+            "Matplotlib MiniMap（R3+ 详情渲染）",
+            fg=ACCENT,
+            bg=PANEL_SOFT,
+            font=("Microsoft YaHei UI", 9, "bold"),
+        ).pack(anchor="w")
+        tk.Label(frame, image=photo, bg=PANEL_SOFT, bd=0).pack(anchor="w", pady=(4, 0))
 
     def _draw_minimap(self, canvas: tk.Canvas, minimap: dict[str, Any]) -> None:
         geometry = _minimap_canvas_geometry(minimap)
@@ -1876,13 +2047,19 @@ class Overlay:
             y0 = (row_i - 1) * cell + 1
             x1 = min(columns * cell, (col_i - 1 + item_w) * cell) - 1
             y1 = min(rows * cell, (row_i - 1 + item_h) * cell) - 1
+            style = _quality_style(item.get("quality"))
+            options = {
+                "fill": style["fill"],
+                "outline": style["outline"],
+            }
+            if style.get("stipple"):
+                options["stipple"] = style["stipple"]
             canvas.create_rectangle(
                 x0,
                 y0,
                 x1,
                 y1,
-                fill=_quality_color(item.get("quality")),
-                outline=TEXT,
+                **options,
             )
 
     def _render(self, model: dict[str, Any]) -> None:
@@ -1953,13 +2130,13 @@ class Overlay:
             font=("Microsoft YaHei UI", 15, "bold"),
         ).pack(anchor="w")
         if decision_detail:
-            self._label(
+            self._render_decision_chips(
                 decision_body,
                 decision_detail,
-                fg=TEXT,
+                severity=decision_tag,
                 bg=PANEL_SOFT,
                 wraplength=420,
-            ).pack(anchor="w", pady=(4, 0))
+            )
 
         metrics = tk.Frame(self.frame, bg=BG)
         metrics.pack(fill="x")
@@ -1993,7 +2170,7 @@ class Overlay:
                 body,
                 value,
                 fg=_severity_color(tag),
-                font=("Microsoft YaHei UI", 10, "bold"),
+                font=("Microsoft YaHei UI", 12 if _is_price_metric(title) else 10, "bold"),
                 wraplength=185,
             ).pack(anchor="w", pady=(3, 0))
             if detail:
