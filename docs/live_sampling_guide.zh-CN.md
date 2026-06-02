@@ -9,6 +9,23 @@
 ```powershell
 cd C:\xiangmuyunxing\biancheng\2026\bidking-lab
 .\scripts\stop_live_monitor.ps1
+.\scripts\start_live_webhook_overlay.ps1 -Restart
+```
+
+然后在 Fatbeans 里开启 WebHook，并把接口地址配置为：
+
+```text
+http://127.0.0.1:8765/fatbeans
+```
+
+Fatbeans 抓包过滤仍建议锁定 `BidKing.exe`，服务器端口默认按 `10000` 推断
+`SEND/REV`。这条链路不需要手动导出 JSON；Fatbeans 每抓到一个 TCP 包，会实时 POST
+给本项目，本项目立即返回放行，再在后台 debounce 后写入
+`latest_snapshot.json` / `model_eval.jsonl` / `layout_samples.jsonl`。
+
+如果要回放历史导出的 Fatbeans JSON，再使用旧目录 watcher：
+
+```powershell
 .\scripts\start_live_monitor_overlay.ps1 -WatchDir "C:\Users\shenc\Desktop\bid_king_packages"
 ```
 
@@ -20,7 +37,13 @@ cd C:\xiangmuyunxing\biancheng\2026\bidking-lab
 python scripts\run_live_overlay.py --demo
 ```
 
-当前链路仍需要 Fatbeans 或未来 feed 写出 JSON：
+当前实时优先链路：
+
+```text
+Fatbeans WebHook packet POST -> webhook monitor -> latest_snapshot.json / model_eval.jsonl / layout_samples.jsonl
+```
+
+历史回放链路：
 
 ```text
 Fatbeans JSON -> monitor watcher -> latest_snapshot.json / model_eval.jsonl / layout_samples.jsonl
