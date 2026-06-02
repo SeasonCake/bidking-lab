@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -452,6 +453,91 @@ def test_brief_summary_keeps_live_review_signals_compact() -> None:
         {"cause": "footprint_overlap", "n": 62}
     ]
     assert "groups" not in brief
+
+
+def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> None:
+    module = _summary_module()
+    rows = [
+        {
+            "ts": 1,
+            "file": "deep_helped.json",
+            "hero": "aisha",
+            "map_id": 2501,
+            "final_q6_value": 600_000,
+            "decision_value_p50": 300_000,
+            "v2_q6_decision_value_p90": 200_000,
+            "q6_residual_deep_floor_shadow_label": "aisha_deep_floor1",
+            "q6_residual_deep_floor_shadow_active": True,
+            "q6_residual_deep_floor_shadow_q6_decision_value_p90": 700_000,
+            "q6_residual_deep_floor_shadow_q6_p90_delta": 500_000,
+            "q6_residual_deep_floor_shadow_under_before": True,
+            "q6_residual_deep_floor_shadow_covered_after": True,
+            "q6_residual_deep_floor_shadow_helped": True,
+            "q6_residual_deep_floor_shadow_false_positive_proxy": False,
+        },
+        {
+            "ts": 2,
+            "file": "deep_helped.json",
+            "hero": "aisha",
+            "map_id": 2501,
+            "final_q6_value": 600_000,
+            "decision_value_p50": 310_000,
+            "v2_q6_decision_value_p90": 210_000,
+            "q6_residual_deep_floor_shadow_label": "aisha_deep_floor1",
+            "q6_residual_deep_floor_shadow_active": True,
+            "q6_residual_deep_floor_shadow_q6_decision_value_p90": 710_000,
+            "q6_residual_deep_floor_shadow_q6_p90_delta": 500_000,
+            "q6_residual_deep_floor_shadow_under_before": True,
+            "q6_residual_deep_floor_shadow_covered_after": True,
+            "q6_residual_deep_floor_shadow_helped": True,
+            "q6_residual_deep_floor_shadow_false_positive_proxy": False,
+        },
+        {
+            "ts": 3,
+            "file": "hidden_control.json",
+            "hero": "aisha",
+            "map_id": 2601,
+            "final_q6_value": 0,
+            "q6_residual_hidden_floor_shadow_label": "aisha_hidden_floor15",
+            "q6_residual_hidden_floor_shadow_active": True,
+            "q6_residual_hidden_floor_shadow_under_before": False,
+            "q6_residual_hidden_floor_shadow_helped": False,
+            "q6_residual_hidden_floor_shadow_false_positive_proxy": False,
+        },
+        {
+            "ts": 4,
+            "file": "hidden_inactive.json",
+            "hero": "aisha",
+            "map_id": 2601,
+            "q6_residual_hidden_floor_shadow_label": "aisha_hidden_floor15",
+            "q6_residual_hidden_floor_shadow_active": False,
+        },
+    ]
+
+    summary = module.export_shadow_candidate_reviews(
+        rows,
+        out_dir=tmp_path,
+        candidate_labels=("aisha_deep_floor1", "aisha_hidden_floor15"),
+    )
+
+    deep = summary["candidates"]["aisha_deep_floor1"]
+    assert deep["tracked_rows"] == 1
+    assert deep["active_rows"] == 1
+    assert deep["review_class_counts"] == {"active_helped": 1}
+    hidden = summary["candidates"]["aisha_hidden_floor15"]
+    assert hidden["tracked_rows"] == 2
+    assert hidden["active_rows"] == 1
+    assert hidden["inactive_rows"] == 1
+    assert hidden["review_class_counts"] == {"active_no_q6_control": 1}
+    deep_rows = [
+        json.loads(line)
+        for line in (tmp_path / "aisha_deep_floor1.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert deep_rows[0]["baseline_decision_value_p50"] == 310_000
+    assert (tmp_path / "aisha_hidden_floor15.csv").exists()
+    assert (tmp_path / "q6_shadow_candidate_review_summary.json").exists()
 
 
 def test_q6_miss_root_marks_missing_top_item_as_unknown() -> None:

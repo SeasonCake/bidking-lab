@@ -58,6 +58,20 @@ python scripts\summarize_live_model_eval.py
 python scripts\summarize_live_model_eval.py --brief
 ```
 
+当候选进入 `candidate_for_review` 后，可直接从现有 live 日志导出 active 样本清单，
+不需要重新跑推理：
+
+```powershell
+python scripts\summarize_live_model_eval.py --brief `
+  --export-shadow-review-dir data\review\q6_shadow_candidates `
+  --shadow-review-candidate aisha_deep_floor1 `
+  --shadow-review-candidate aisha_hidden_floor15
+```
+
+导出目录会包含每个候选的 CSV/JSONL 和 `q6_shadow_candidate_review_summary.json`。
+`review_class` 会把 active 行拆成 `active_helped`、`active_still_missed`、
+`active_false_positive`、`active_no_q6_control` 和普通 observation，便于逐样本复核。
+
 重点看 `collection_readiness.groups` 和 `priority_needs`。默认目标是主要英雄/地图族
 30 份有效结算局；隐秘拍卖会冷启动目标为 Aisha 10 份、Ethan 5 份：
 

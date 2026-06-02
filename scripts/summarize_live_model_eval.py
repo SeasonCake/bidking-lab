@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import statistics
 import sys
@@ -33,6 +34,61 @@ _Q6_HIDDEN_FLOOR_SHADOW_SAMPLING_TARGETS: tuple[tuple[str, str, int], ...] = (
 )
 _Q6_VILLA_FLOOR_SHADOW_SAMPLING_TARGETS: tuple[tuple[str, str, int], ...] = (
     ("aisha", "villa", 20),
+)
+_Q6_SHADOW_REVIEW_SPECS: dict[str, tuple[str, str]] = {
+    "profile_b5": (
+        "q6_residual_boost_shadow_label",
+        "q6_residual_boost_shadow",
+    ),
+    "aisha_deep_floor1": (
+        "q6_residual_deep_floor_shadow_label",
+        "q6_residual_deep_floor_shadow",
+    ),
+    "aisha_hidden_floor15": (
+        "q6_residual_hidden_floor_shadow_label",
+        "q6_residual_hidden_floor_shadow",
+    ),
+    "aisha_villa_floor05": (
+        "q6_residual_villa_floor_shadow_label",
+        "q6_residual_villa_floor_shadow",
+    ),
+}
+_Q6_SHADOW_REVIEW_FIELDS: tuple[str, ...] = (
+    "candidate",
+    "review_class",
+    "file",
+    "hero",
+    "map_id",
+    "map_family",
+    "round",
+    "evidence_stage",
+    "information_density_band",
+    "evidence_profile_key",
+    "public_constraint_key",
+    "layout_bottom_row",
+    "layout_conflict",
+    "layout_conflict_root",
+    "relaxed_exact_used",
+    "final_value",
+    "final_cells",
+    "final_q6_count",
+    "final_q6_cells",
+    "final_q6_value",
+    "q6_top_size_band",
+    "baseline_decision_value_p50",
+    "baseline_decision_value_p90",
+    "baseline_q6_decision_value_p90",
+    "shadow_decision_value_p50",
+    "shadow_decision_value_p90",
+    "shadow_q6_decision_value_p90",
+    "shadow_q6_count_p90",
+    "shadow_q6_cells_p90",
+    "shadow_q6_p90_delta",
+    "shadow_under_before",
+    "shadow_covered_after",
+    "shadow_helped",
+    "shadow_false_positive_proxy",
+    "monitor_processing_seconds",
 )
 
 
@@ -287,6 +343,151 @@ def brief_summary(summary: dict[str, Any]) -> dict[str, Any]:
                 limit=5,
             ),
         },
+    }
+
+
+def _shadow_review_class(row: dict[str, Any], *, prefix: str) -> str:
+    if row.get(f"{prefix}_false_positive_proxy"):
+        return "active_false_positive"
+    if row.get(f"{prefix}_helped"):
+        return "active_helped"
+    if row.get(f"{prefix}_under_before"):
+        return "active_still_missed"
+    if int(row.get("final_q6_value") or 0) <= 0:
+        return "active_no_q6_control"
+    return "active_observation"
+
+
+def _shadow_candidate_review_row(
+    row: dict[str, Any],
+    *,
+    label: str,
+    prefix: str,
+) -> dict[str, Any]:
+    return {
+        "candidate": label,
+        "review_class": _shadow_review_class(row, prefix=prefix),
+        "file": row.get("file"),
+        "hero": row.get("hero"),
+        "map_id": row.get("map_id"),
+        "map_family": _map_family(row.get("map_id")),
+        "round": row.get("round"),
+        "evidence_stage": row.get("evidence_stage"),
+        "information_density_band": row.get("information_density_band"),
+        "evidence_profile_key": row.get("evidence_profile_key"),
+        "public_constraint_key": row.get("public_constraint_key"),
+        "layout_bottom_row": row.get("layout_bottom_row"),
+        "layout_conflict": row.get("layout_conflict"),
+        "layout_conflict_root": row.get("layout_conflict_root"),
+        "relaxed_exact_used": row.get("relaxed_exact_used"),
+        "final_value": row.get("final_value"),
+        "final_cells": row.get("final_cells"),
+        "final_q6_count": row.get("final_q6_count"),
+        "final_q6_cells": row.get("final_q6_cells"),
+        "final_q6_value": row.get("final_q6_value"),
+        "q6_top_size_band": row.get("q6_top_size_band"),
+        "baseline_decision_value_p50": row.get("decision_value_p50"),
+        "baseline_decision_value_p90": row.get("decision_value_p90"),
+        "baseline_q6_decision_value_p90": row.get("v2_q6_decision_value_p90"),
+        "shadow_decision_value_p50": row.get(f"{prefix}_decision_value_p50"),
+        "shadow_decision_value_p90": row.get(f"{prefix}_decision_value_p90"),
+        "shadow_q6_decision_value_p90": row.get(
+            f"{prefix}_q6_decision_value_p90"
+        ),
+        "shadow_q6_count_p90": row.get(f"{prefix}_q6_count_p90"),
+        "shadow_q6_cells_p90": row.get(f"{prefix}_q6_cells_p90"),
+        "shadow_q6_p90_delta": row.get(f"{prefix}_q6_p90_delta"),
+        "shadow_under_before": row.get(f"{prefix}_under_before"),
+        "shadow_covered_after": row.get(f"{prefix}_covered_after"),
+        "shadow_helped": row.get(f"{prefix}_helped"),
+        "shadow_false_positive_proxy": row.get(
+            f"{prefix}_false_positive_proxy"
+        ),
+        "monitor_processing_seconds": row.get("monitor_processing_seconds"),
+    }
+
+
+def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=_Q6_SHADOW_REVIEW_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.write_text(
+        "".join(
+            json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n"
+            for row in rows
+        ),
+        encoding="utf-8",
+    )
+
+
+def export_shadow_candidate_reviews(
+    rows: list[dict[str, Any]],
+    *,
+    out_dir: Path,
+    candidate_labels: list[str] | tuple[str, ...] | None = None,
+    dedupe: bool = True,
+) -> dict[str, Any]:
+    """Export active live-shadow rows for candidate promotion review."""
+
+    selected_rows = _dedupe_latest_by_file(rows) if dedupe else list(rows)
+    labels = list(candidate_labels or _Q6_SHADOW_REVIEW_SPECS)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary: dict[str, Any] = {
+        "source_rows": len(rows),
+        "deduped_rows": len(selected_rows),
+        "out_dir": str(out_dir),
+        "candidates": {},
+    }
+    for label in labels:
+        if label not in _Q6_SHADOW_REVIEW_SPECS:
+            raise ValueError(f"unknown q6 shadow review candidate: {label}")
+        label_key, prefix = _Q6_SHADOW_REVIEW_SPECS[label]
+        tracked = [
+            row for row in selected_rows
+            if row.get(label_key) == label
+        ]
+        active = [
+            row for row in tracked
+            if row.get(f"{prefix}_active")
+        ]
+        review_rows = [
+            _shadow_candidate_review_row(row, label=label, prefix=prefix)
+            for row in active
+        ]
+        review_rows.sort(
+            key=lambda row: (
+                str(row.get("review_class") or ""),
+                str(row.get("file") or ""),
+            )
+        )
+        csv_path = out_dir / f"{label}.csv"
+        jsonl_path = out_dir / f"{label}.jsonl"
+        _write_csv(csv_path, review_rows)
+        _write_jsonl(jsonl_path, review_rows)
+        class_counts = Counter(
+            str(row.get("review_class") or "unknown")
+            for row in review_rows
+        )
+        summary["candidates"][label] = {
+            "tracked_rows": len(tracked),
+            "active_rows": len(active),
+            "inactive_rows": len(tracked) - len(active),
+            "review_class_counts": dict(sorted(class_counts.items())),
+            "csv": str(csv_path),
+            "jsonl": str(jsonl_path),
+        }
+    summary_path = out_dir / "q6_shadow_candidate_review_summary.json"
+    summary_path.write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        **summary,
+        "summary": str(summary_path),
     }
 
 
@@ -1642,6 +1843,18 @@ def main() -> int:
         action="store_true",
         help="Shortcut for --format brief",
     )
+    parser.add_argument(
+        "--export-shadow-review-dir",
+        default=None,
+        help="Optional directory for active q6-shadow candidate CSV/JSONL review rows",
+    )
+    parser.add_argument(
+        "--shadow-review-candidate",
+        action="append",
+        choices=tuple(_Q6_SHADOW_REVIEW_SPECS),
+        default=None,
+        help="Limit shadow-review export to one or more candidate labels",
+    )
     args = parser.parse_args()
     path = Path(args.path)
     rows = _read_jsonl(path)
@@ -1660,8 +1873,18 @@ def main() -> int:
         },
         monitor_error_rows=monitor_errors,
     )
+    shadow_review_export = None
+    if args.export_shadow_review_dir:
+        shadow_review_export = export_shadow_candidate_reviews(
+            rows,
+            out_dir=Path(args.export_shadow_review_dir),
+            candidate_labels=args.shadow_review_candidate,
+            dedupe=not args.no_dedupe,
+        )
     if args.brief or args.format == "brief":
         summary = brief_summary(summary)
+    if shadow_review_export is not None:
+        summary["shadow_review_export"] = shadow_review_export
     print(
         json.dumps(
             summary,

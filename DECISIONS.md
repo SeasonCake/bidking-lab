@@ -790,6 +790,8 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新**：`q6_below_drop_prior` 不能直接作为正式抬价规则。当前已拆成 review-only `class/actionable/under_by`：54 行 below-prior 中 41 行是真实 q6 P90 漏真值，8 行是 truth q6=0 噪声，5 行 P90 已覆盖 truth；`public_max_quality < 6` / Isabella 最高品质金色这类已证明无红的局不再生成该诊断。`aisha_deep_floor1` paired 结果继续支持作为普通/沉船 shadow 候选，但仍不影响 baseline 出价；`aisha_hidden_floor15` 继续只作为 hidden shadow 收证。v2 仍被判断为可行且有优化空间，v3 重写降为最低候选，仅在后续证据显示 v2 局部修补无法收敛时再讨论。
 
+**更新 2**：2026-06-02 live `model_eval.jsonl` 复核中，`aisha_deep_floor1` active `30` 行：`15 helped / 6 still_missed / 9 observation / 0 false-positive`，且 active 行 `layout_conflict=0`；`aisha_hidden_floor15` active `11` 行：`7 helped / 2 still_missed / 2 observation / 0 false-positive`，同样 `layout_conflict=0`。`aisha_deep_floor1` 继续作为 UI 黄色 tail-risk reference candidate 展示，不覆盖 baseline `decision_value`、停止价或抢仓上限；`aisha_hidden_floor15` 虽收益明显，但缺少 hidden q6=0 对照，继续 shadow-only。`profile_b5` 因 live false-positive 继续阻塞。
+
 ## 2026-06-02 · 公开总格/总件数可进入正式 baseline，结算 truth 必须隔离
 
 **背景**：UI 需要展示格数预测、实际格子数、件数预测、已知紫/金件数和排除条件；同时审计发现 monitor 曾统一清掉 `warehouse_total_cells` / `total_item_count`，这会丢掉结算前全量轮廓或透视给出的安全公开约束。
