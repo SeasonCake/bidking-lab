@@ -756,6 +756,8 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新**：Tk live overlay 先落地三层工程版交互，而不是一次性做复杂正式视觉稿。`mini` 常驻层只展示 baseline 正式建议、核心指标、核心 section 和轻量 MiniMap；`hover` 作为快速上下文，显示后验、布局、输入约束、q6 风险参考、fallback 和 MiniMap 摘要；`click detail` 在同一窗口内展开 truth、shadow、诊断和更多推理依据。MiniMap compact 层继续只显示品质颜色块，不显示短名/形状编号/局部序号；shadow/fallback/detail 均不得覆盖 `decision_value`、停止价或抢仓上限。
 
+**更新**：后续 mini 常驻层可以演进为“监听猫”视觉入口：猫形象只负责状态感和伴随 UI，常驻字体块仍必须来自 `ui_contract.baseline` 与明确风险参考；hover/click 分层继续使用同一 contract。猫图、像素风或 Q 版资源先作为视觉 TODO，不进入推理或出价逻辑。
+
 ## 2026-06-02 · zero-match 暂用 v1 map-prior 低置信兜底，v2 根因修复继续推进
 
 **背景**：正式 UI 接入前的 readiness batch 仍有一批 `zero_posterior_match`。其中部分样本同时带 `layout_conflict`，另一些样本即使没有布局冲突也会因为公开总格/总件数、轮廓或 item-level 约束组合过紧而无匹配。v2 无匹配时如果 UI 完全不显示建议，实战可用性不足；但直接放宽 baseline 又会掩盖解析或约束建模问题。

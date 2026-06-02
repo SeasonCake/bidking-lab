@@ -2330,3 +2330,5 @@ python scripts/demo_shipwreck_r4_inference.py           # Phase 1A 推断 demo
 - MiniMap compact 层继续只画品质颜色块，不显示短名、形状编号或局部序号；`item_id/item_name/shape_key` 仍留在 contract 中供 hover/detail 和人工审计使用。
 - 当前实现仍是工程版 Tk overlay，不做复杂视觉风格：优先保证字段边界、可验证行为和滚动可用性。后续正式 UI 可继续演进为“baseline 先显示，shadow/detail 后台补齐”的异步/分批方案。
 - 验证：`python -m pytest tests\test_live_overlay.py` 8 passed；`python -m pytest tests\test_live_overlay.py tests\test_runtime_snapshot.py` 18 passed；`python -m py_compile scripts\run_live_overlay.py` 与 `python -m compileall -q scripts\run_live_overlay.py tests\test_live_overlay.py` 通过。
+- 后续 UI TODO：常驻 mini 层可以演进为“监听猫”伴随形象。猫本体负责占位和状态感，猫上方/旁边常驻少量字体块：出价建议、进攻/防守、决策价值、仓储估计、道具推荐和必要风险；hover 猫时显示稍详细的 MiniMap、红格子估计、红货/q6、布局、约束、紫/金/红计数；click 后再展开完整推理依据、helper、先后验、shadow/fallback 和折叠诊断。图片资源先不接入代码，后续生成几张抽象/像素猫样本供人工选择。
+- 2026-06-02 小窗布局补丁：默认 overlay 从宽调试窗压缩为约 `480x420`，最小 `360x260`；mini 首屏指标改为两列，常驻层不再绘制右侧完整 MiniMap/风险栏，只保留核心卡片和紧凑风险提示；点击详细时再显示右侧 MiniMap/风险栏和 full detail。

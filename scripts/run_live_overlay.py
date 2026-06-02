@@ -56,8 +56,8 @@ def _snapshot_file_signature(path: Path) -> tuple[str, int, int] | tuple[str]:
 
 
 def _default_window_geometry(screen_width: int, screen_height: int) -> str:
-    width = max(700, min(920, screen_width - 120))
-    height = max(480, min(680, screen_height - 160))
+    width = max(360, min(480, screen_width - 80))
+    height = max(260, min(420, screen_height - 120))
     return f"{width}x{height}+40+80"
 
 
@@ -1380,7 +1380,7 @@ class Overlay:
                 root.winfo_screenheight(),
             )
         )
-        root.minsize(700, 420)
+        root.minsize(360, 260)
         root.configure(bg=BG)
         self.canvas = tk.Canvas(root, bg=BG, highlightthickness=0, bd=0)
         self.scrollbar = tk.Scrollbar(
@@ -1391,7 +1391,7 @@ class Overlay:
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
-        self.frame = tk.Frame(self.canvas, bg=BG, padx=12, pady=12)
+        self.frame = tk.Frame(self.canvas, bg=BG, padx=8, pady=8)
         self._frame_window = self.canvas.create_window(
             (0, 0),
             window=self.frame,
@@ -1730,7 +1730,7 @@ class Overlay:
             title_box,
             model["title"],
             bg=BG,
-            font=("Microsoft YaHei UI", 13, "bold"),
+            font=("Microsoft YaHei UI", 11, "bold"),
         ).pack(anchor="w")
         self._label(
             title_box,
@@ -1743,7 +1743,7 @@ class Overlay:
             detail_state = "收起全量" if self._detail_open else "展开全量"
             self._label(
                 title_box,
-                f"mini 常驻 · 悬浮看详情 · 点击{detail_state}",
+                f"mini · hover 详情 · 点击{detail_state}",
                 fg=ACCENT if self._detail_open else MUTED,
                 bg=BG,
                 font=("Microsoft YaHei UI", 8),
@@ -1762,7 +1762,7 @@ class Overlay:
 
         decision_text, decision_detail, decision_tag = model["decision"]
         decision = self._card(self.frame, bg=PANEL_SOFT)
-        decision.pack(fill="x", pady=(12, 10), ipady=8)
+        decision.pack(fill="x", pady=(8, 8), ipady=5)
         tk.Frame(decision, width=5, bg=_severity_color(decision_tag)).pack(
             side="left",
             fill="y",
@@ -1774,7 +1774,7 @@ class Overlay:
             decision_text,
             fg=_severity_color(decision_tag),
             bg=PANEL_SOFT,
-            font=("Microsoft YaHei UI", 18, "bold"),
+            font=("Microsoft YaHei UI", 15, "bold"),
         ).pack(anchor="w")
         if decision_detail:
             self._label(
@@ -1782,7 +1782,7 @@ class Overlay:
                 decision_detail,
                 fg=TEXT,
                 bg=PANEL_SOFT,
-                wraplength=690,
+                wraplength=420,
             ).pack(anchor="w", pady=(4, 0))
 
         metrics = tk.Frame(self.frame, bg=BG)
@@ -1790,33 +1790,44 @@ class Overlay:
         mini_metrics = mini.get("metrics") or model["metrics"][:4]
         for index, (title, value, detail, tag) in enumerate(mini_metrics[:4]):
             card = self._card(metrics)
-            card.grid(row=0, column=index, padx=(0 if index == 0 else 8, 0), sticky="nsew")
-            metrics.grid_columnconfigure(index, weight=1, uniform="metric")
-            body = tk.Frame(card, bg=PANEL, padx=10, pady=8)
+            row_no = index // 2
+            col_no = index % 2
+            card.grid(
+                row=row_no,
+                column=col_no,
+                padx=(0 if col_no == 0 else 6, 0),
+                pady=(0 if row_no == 0 else 6, 0),
+                sticky="nsew",
+            )
+            metrics.grid_columnconfigure(col_no, weight=1, uniform="metric")
+            body = tk.Frame(card, bg=PANEL, padx=8, pady=6)
             body.pack(fill="both", expand=True)
             self._label(body, title, fg=MUTED, font=("Microsoft YaHei UI", 9)).pack(anchor="w")
             self._label(
                 body,
                 value,
                 fg=_severity_color(tag),
-                font=("Microsoft YaHei UI", 12, "bold"),
-                wraplength=145,
+                font=("Microsoft YaHei UI", 10, "bold"),
+                wraplength=185,
             ).pack(anchor="w", pady=(3, 0))
             if detail:
                 self._label(
                     body,
-                    _short(detail, 54),
+                    _short(detail, 46),
                     fg=MUTED,
                     font=("Microsoft YaHei UI", 8),
-                    wraplength=145,
+                    wraplength=185,
                 ).pack(anchor="w", pady=(3, 0))
 
         lower = tk.Frame(self.frame, bg=BG)
-        lower.pack(fill="both", expand=True, pady=(10, 0))
+        lower.pack(fill="both", expand=True, pady=(8, 0))
         left = tk.Frame(lower, bg=BG)
         left.pack(side="left", fill="both", expand=True)
-        right = tk.Frame(lower, bg=BG, width=230)
-        right.pack(side="right", fill="y", padx=(10, 0))
+        show_side_panel = self._detail_open
+        right: tk.Frame | None = None
+        if show_side_panel:
+            right = tk.Frame(lower, bg=BG, width=210)
+            right.pack(side="right", fill="y", padx=(8, 0))
 
         mini_sections = mini.get("sections") or model["sections"][:4]
         for title, value, detail in mini_sections[:4]:
@@ -1825,11 +1836,33 @@ class Overlay:
             body = tk.Frame(row, bg=PANEL, padx=10, pady=7)
             body.pack(fill="x")
             self._label(body, title, fg=ACCENT, font=("Microsoft YaHei UI", 9, "bold")).pack(anchor="w")
-            self._label(body, value, wraplength=430).pack(anchor="w", pady=(3, 0))
+            self._label(body, value, wraplength=420).pack(anchor="w", pady=(3, 0))
             if detail:
-                self._label(body, detail, fg=MUTED, wraplength=430, font=("Microsoft YaHei UI", 8)).pack(anchor="w")
+                self._label(body, detail, fg=MUTED, wraplength=420, font=("Microsoft YaHei UI", 8)).pack(anchor="w")
 
-        if model.get("minimap"):
+        if not show_side_panel and model["alerts"]:
+            alert_row = self._card(left, bg=PANEL_SOFT)
+            alert_row.pack(fill="x", pady=(0, 8))
+            alert_body = tk.Frame(alert_row, bg=PANEL_SOFT, padx=10, pady=7)
+            alert_body.pack(fill="x")
+            self._label(
+                alert_body,
+                "风险提示",
+                fg=PURPLE,
+                bg=PANEL_SOFT,
+                font=("Microsoft YaHei UI", 9, "bold"),
+            ).pack(anchor="w")
+            for text, tag in model["alerts"][:2]:
+                self._label(
+                    alert_body,
+                    "• " + _short(text, 86),
+                    fg=_severity_color(tag),
+                    bg=PANEL_SOFT,
+                    wraplength=420,
+                    font=("Microsoft YaHei UI", 8),
+                ).pack(anchor="w", pady=(3, 0))
+
+        if show_side_panel and right is not None and model.get("minimap"):
             minimap_card = self._card(right)
             minimap_card.pack(fill="x", pady=(0, 8))
             minimap_body = tk.Frame(minimap_card, bg=PANEL, padx=10, pady=8)
@@ -1878,40 +1911,41 @@ class Overlay:
                 font=("Microsoft YaHei UI", 8),
             ).pack(anchor="w", pady=(5, 0))
 
-        alert_card = self._card(right)
-        alert_card.pack(fill="both", expand=True)
-        alert_body = tk.Frame(alert_card, bg=PANEL, padx=10, pady=8)
-        alert_body.pack(fill="both", expand=True)
-        self._label(
-            alert_body,
-            "风险与回测",
-            fg=PURPLE,
-            font=("Microsoft YaHei UI", 10, "bold"),
-        ).pack(anchor="w")
-        if model["alerts"]:
-            for text, tag in model["alerts"][:5]:
+        if show_side_panel and right is not None:
+            alert_card = self._card(right)
+            alert_card.pack(fill="both", expand=True)
+            alert_body = tk.Frame(alert_card, bg=PANEL, padx=10, pady=8)
+            alert_body.pack(fill="both", expand=True)
+            self._label(
+                alert_body,
+                "风险与回测",
+                fg=PURPLE,
+                font=("Microsoft YaHei UI", 10, "bold"),
+            ).pack(anchor="w")
+            if model["alerts"]:
+                for text, tag in model["alerts"][:5]:
+                    self._label(
+                        alert_body,
+                        "• " + text,
+                        fg=_severity_color(tag),
+                        wraplength=190,
+                        font=("Microsoft YaHei UI", 9),
+                    ).pack(anchor="w", pady=(6, 0))
+            else:
                 self._label(
                     alert_body,
-                    "• " + text,
-                    fg=_severity_color(tag),
-                    wraplength=190,
+                    "暂无高亮风险",
+                    fg=GOOD,
                     font=("Microsoft YaHei UI", 9),
                 ).pack(anchor="w", pady=(6, 0))
-        else:
-            self._label(
-                alert_body,
-                "暂无高亮风险",
-                fg=GOOD,
-                font=("Microsoft YaHei UI", 9),
-            ).pack(anchor="w", pady=(6, 0))
-        if model["footer"]:
-            self._label(
-                alert_body,
-                model["footer"],
-                fg=MUTED,
-                wraplength=190,
-                font=("Microsoft YaHei UI", 8),
-            ).pack(anchor="w", side="bottom", pady=(10, 0))
+            if model["footer"]:
+                self._label(
+                    alert_body,
+                    model["footer"],
+                    fg=MUTED,
+                    wraplength=190,
+                    font=("Microsoft YaHei UI", 8),
+                ).pack(anchor="w", side="bottom", pady=(10, 0))
         if self._detail_open:
             self._render_detail_panel(self.frame, model)
         self._bind_layer_events(self.frame)

@@ -88,12 +88,12 @@ def test_overlay_warns_when_snapshot_is_stale() -> None:
     assert any("超过 120 秒未更新" in line for line in lines)
 
 
-def test_overlay_window_geometry_scales_above_old_small_default() -> None:
+def test_overlay_window_geometry_uses_compact_default() -> None:
     overlay = _overlay_module()
 
     geometry = overlay._default_window_geometry(1920, 1080)
 
-    assert geometry.startswith("920x680")
+    assert geometry.startswith("480x420")
 
 
 def test_overlay_snapshot_signature_changes_when_file_changes(tmp_path: Path) -> None:
