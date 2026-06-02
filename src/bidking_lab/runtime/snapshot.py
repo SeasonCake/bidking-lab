@@ -493,6 +493,12 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
         "practical_reference_p90": _text(v2.get("q6实战参考P90")),
         "display_mode": "risk_reference",
         "affects_bid": False,
+        "bid_floor_applied": False,
+        "minimum_bid_floor": "",
+        "note": (
+            "q6 risk is displayed as a reference only; baseline bid thresholds "
+            "are still based on decision_value."
+        ),
     }
     posterior_matched, posterior_total = _match_counts(v2.get("匹配"))
     return {
@@ -872,6 +878,10 @@ def _ui_diagnostics_contract(
             ),
         },
         "q6": {
+            "no_plannable_control": model_eval.get("q6_no_plannable_control"),
+            "zero_q6_proven_control": model_eval.get(
+                "q6_zero_q6_proven_control"
+            ),
             "p90_misses_truth": model_eval.get("q6_p90_misses_truth"),
             "plannable_p90_misses_truth": model_eval.get(
                 "q6_plannable_p90_misses_truth"

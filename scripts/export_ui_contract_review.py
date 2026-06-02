@@ -117,7 +117,13 @@ def _q6_below_prior_review(
             "under_by": None,
             "actionable": False,
         }
-    truth_value = _int(truth_q6.get("value"))
+    raw_truth_value = _int(truth_q6.get("value"))
+    decision_truth_value = _int(truth_q6.get("decision_value"))
+    truth_value = (
+        decision_truth_value
+        if decision_truth_value is not None
+        else raw_truth_value
+    )
     q6_p90 = _range_p90(posterior.get("q6_decision_value_range"))
     if truth_value is None:
         return {
@@ -132,6 +138,12 @@ def _q6_below_prior_review(
             "actionable": False,
         }
     if truth_value <= 0:
+        if raw_truth_value and raw_truth_value > 0:
+            return {
+                "class": "no_plannable_tail_review",
+                "under_by": 0,
+                "actionable": False,
+            }
         return {
             "class": "truth_zero_noise",
             "under_by": 0,
@@ -683,6 +695,9 @@ def review_row_from_artifact(
             q6_risk.get("practical_reference_p90")
             or q6_risk.get("prior_reference_p90")
         ),
+        "q6_risk_affects_bid": q6_risk.get("affects_bid"),
+        "q6_risk_bid_floor_applied": q6_risk.get("bid_floor_applied"),
+        "q6_risk_minimum_bid_floor": q6_risk.get("minimum_bid_floor"),
         "shadow_labels": _shadow_labels(shadows),
         "shadow_risk_candidates": _shadow_labels(
             shadows,
@@ -698,6 +713,8 @@ def review_row_from_artifact(
         "layout_bottom_row_risk_threshold": diag_layout.get(
             "bottom_row_risk_threshold"
         ),
+        "q6_no_plannable_control": diag_q6.get("no_plannable_control"),
+        "q6_zero_q6_proven_control": diag_q6.get("zero_q6_proven_control"),
         "q6_below_drop_prior": diag_q6.get("below_drop_prior"),
         "q6_below_drop_prior_class": q6_below_prior_review["class"],
         "q6_below_drop_prior_under_by": q6_below_prior_review["under_by"],
@@ -847,6 +864,18 @@ def summarize_review_rows(
         "q6_below_drop_prior_actionable_rows": sum(
             1 for row in rows if _bool(row.get("q6_below_drop_prior_actionable"))
         ),
+        "q6_below_drop_prior_no_plannable_rows": sum(
+            1
+            for row in rows
+            if row.get("q6_below_drop_prior") is True
+            and _bool(row.get("q6_no_plannable_control"))
+        ),
+        "q6_below_drop_prior_zero_q6_proven_rows": sum(
+            1
+            for row in rows
+            if row.get("q6_below_drop_prior") is True
+            and _bool(row.get("q6_zero_q6_proven_control"))
+        ),
         "q6_quality_only_deep_local_risk_rows": sum(
             1 for row in rows if _bool(row.get("q6_quality_only_deep_local_risk"))
         ),
@@ -882,6 +911,18 @@ def summarize_review_rows(
         "q6_actionable_under_by_by_hero_map": q6_actionable_under_summary,
         "zero_q6_truth_rows": sum(
             1 for row in rows if _int(row.get("truth_q6_count")) == 0
+        ),
+        "q6_no_plannable_control_rows": sum(
+            1 for row in rows if _bool(row.get("q6_no_plannable_control"))
+        ),
+        "q6_zero_q6_proven_control_rows": sum(
+            1 for row in rows if _bool(row.get("q6_zero_q6_proven_control"))
+        ),
+        "q6_risk_affects_bid_rows": sum(
+            1 for row in rows if _bool(row.get("q6_risk_affects_bid"))
+        ),
+        "q6_risk_bid_floor_applied_rows": sum(
+            1 for row in rows if _bool(row.get("q6_risk_bid_floor_applied"))
         ),
         "zero_posterior_match_rows": sum(
             1 for row in rows if _int(row.get("v2_matched")) == 0

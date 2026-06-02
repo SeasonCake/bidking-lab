@@ -501,9 +501,66 @@ def test_model_eval_shadow_readiness_uses_plannable_q6_truth() -> None:
     assert row is not None
     assert row["q6_p90_misses_truth"] is True
     assert row["q6_plannable_p90_misses_truth"] is None
+    assert row["q6_no_plannable_control"] is True
+    assert row["q6_zero_q6_proven_control"] is False
     assert row["q6_residual_deep_floor_shadow_under_before"] is False
     assert row["q6_residual_deep_floor_shadow_helped"] is False
+    assert row["q6_residual_deep_floor_shadow_no_plannable_control"] is True
+    assert (
+        row["q6_residual_deep_floor_shadow_no_plannable_positive_proxy"]
+        is True
+    )
+    assert (
+        row["q6_residual_deep_floor_shadow_zero_q6_proven_false_positive"]
+        is False
+    )
     assert row["q6_residual_deep_floor_shadow_false_positive_proxy"] is True
+
+
+def test_model_eval_separates_zero_q6_proven_shadow_false_positive() -> None:
+    row = _model_eval_row(
+        file="isabella_zero.json",
+        artifact={
+            "file": "isabella_zero.json",
+            "hero": "isabella",
+            "map_id": 2401,
+            "round": 3,
+            "bid_rows": [
+                {
+                    "决策价值 P10/P50/P90": "100 / 200 / 300",
+                    "原始价值 P10/P50/P90": "100 / 200 / 300",
+                },
+            ],
+            "warehouse_rows": [{"价值 P10/P50/P90": "100 / 200 / 300"}],
+            "v2_posterior_rows": [
+                {
+                    "q6价值 P10/P50/P90": "0 / 0 / 0",
+                    "q6决策价值 P10/P50/P90": "0 / 0 / 0",
+                    "诊断": "public_max_quality:5",
+                },
+            ],
+            "q6_residual_villa_floor_shadow": {
+                "label": "aisha_villa_floor05",
+                "active": True,
+                "q6_decision_value_p90": 120_000,
+            },
+        },
+        final_value=300_000,
+        final_cells=10,
+        truth_breakdown={
+            "final_q6_value": 0,
+            "final_q6_decision_value": 0,
+        },
+    )
+
+    assert row is not None
+    assert row["q6_no_plannable_control"] is True
+    assert row["q6_zero_q6_proven_control"] is True
+    assert row["q6_residual_villa_floor_shadow_false_positive_proxy"] is True
+    assert (
+        row["q6_residual_villa_floor_shadow_zero_q6_proven_false_positive"]
+        is True
+    )
 
 
 def test_model_eval_tail_replacement_miss_requires_replacement_value() -> None:

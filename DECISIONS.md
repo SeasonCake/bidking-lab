@@ -806,6 +806,10 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新 9**：replacement 已进一步接入 posterior 实验字段，但仍不进入正式出价链路。v2 report 新增 `tail_replacement_decision_value` 与 `q6_tail_replacement_decision_value` quantile，live/review 用 `v2_q6_tail_replacement_estimate_p90` 判断替代口径本身是否覆盖 truth；baseline 出价、停止价、抢仓上限继续只读正式 `decision_value`。同时收紧 flag：只有 `final_q6_tail_replacement_value > 0` 时才允许打 `q6_tail_replacement_truth_miss`，避免 `sample58` 这类永乐/大红 plannable miss 被误归因到 replacement。`sample58` 已确认最高红为 `永乐大典残本二`，属于 quality-only 深红风险，不是裁尾问题。
 
+**更新 10**：no-q6 诊断拆成两层：`q6_no_plannable_control` 只表示结算或样本 truth 没有可规划 q6，不代表当时公开信息已证明无红；`q6_zero_q6_proven_control` 才表示 `public_max_quality < 6` 等确定约束已证明无 q6。shadow/readiness 继续保留兼容字段 `false_positive_proxy`，但 review 必须同时看 zero-proven 分层，避免把未知局里的合理低红后验当成硬错误。q6 risk reference、shadow 和 replacement estimate 仍只作为提示/审计字段，`affects_bid=false` 且 `bid_floor_applied=false`；正式停止价、抢仓上限不会自动抬到 q6 风险参考或 shadow P90。
+
+**更新 11**：`q6_below_drop_prior_actionable` 改用 plannable `final_q6_decision_value`，raw tail 但 plannable q6 为 0 的行归为 `no_plannable_tail_review`，由 tail replacement 轴复核。targeted floor05 复核显示，Aisha shipwreck low-bottom、Aisha Villa public-profile 和 Ethan layout/shape 三个未覆盖桶都会显著抬高 no-plannable controls；因此暂不新增对应 shadow/floor gate。当前策略继续是：保留 `aisha_deep_floor1`、`aisha_hidden_floor15` 和 pending `aisha_villa_floor05`，剩余未覆盖 miss 作为人工复核/特征拆分对象，不进入正式 baseline 出价。
+
 ## 2026-06-02 · 公开总格/总件数可进入正式 baseline，结算 truth 必须隔离
 
 **背景**：UI 需要展示格数预测、实际格子数、件数预测、已知紫/金件数和排除条件；同时审计发现 monitor 曾统一清掉 `warehouse_total_cells` / `total_item_count`，这会丢掉结算前全量轮廓或透视给出的安全公开约束。

@@ -93,6 +93,8 @@ _Q6_SHADOW_REVIEW_FIELDS: tuple[str, ...] = (
     "q6_tail_replacement_estimate_p90_misses_truth",
     "v2_q6_tail_replacement_estimate_p90_under_by",
     "q6_top_size_band",
+    "q6_no_plannable_control",
+    "q6_zero_q6_proven_control",
     "baseline_decision_value_p50",
     "baseline_decision_value_p90",
     "baseline_q6_decision_value_p90",
@@ -113,6 +115,10 @@ _Q6_SHADOW_REVIEW_FIELDS: tuple[str, ...] = (
     "shadow_under_before",
     "shadow_covered_after",
     "shadow_helped",
+    "shadow_no_plannable_control",
+    "shadow_no_plannable_positive_proxy",
+    "shadow_zero_q6_proven_control",
+    "shadow_zero_q6_proven_false_positive",
     "shadow_false_positive_proxy",
     "monitor_processing_seconds",
 )
@@ -261,6 +267,17 @@ def _final_q6_tail_replacement_decision_value(row: dict[str, Any]) -> int:
     return int(value or 0)
 
 
+def _q6_no_plannable_control(row: dict[str, Any]) -> bool:
+    value = row.get("q6_no_plannable_control")
+    if value is not None:
+        return bool(value)
+    return _final_q6_decision_value(row) <= 0
+
+
+def _q6_zero_q6_proven_control(row: dict[str, Any]) -> bool:
+    return bool(row.get("q6_zero_q6_proven_control"))
+
+
 def _q6_plannable_under_by(
     row: dict[str, Any],
     predicted_key: str,
@@ -342,11 +359,17 @@ def _candidate_readiness_brief(candidates: Any) -> dict[str, dict[str, Any]]:
             "tracked_rows": candidate.get("tracked_rows"),
             "active_rows": candidate.get("active_rows"),
             "active_no_q6_rows": candidate.get("active_no_q6_rows"),
+            "active_zero_q6_proven_rows": candidate.get(
+                "active_zero_q6_proven_rows"
+            ),
             "under_before_rows": candidate.get("under_before_rows"),
             "helped_rows": candidate.get("helped_rows"),
             "still_missed_rows": candidate.get("still_missed_rows"),
             "helped_rate": candidate.get("helped_rate"),
             "false_positive_proxy_rows": candidate.get("false_positive_proxy_rows"),
+            "zero_q6_proven_false_positive_rows": candidate.get(
+                "zero_q6_proven_false_positive_rows"
+            ),
             "false_positive_proxy_rate_active": candidate.get(
                 "false_positive_proxy_rate_active"
             ),
@@ -454,13 +477,15 @@ def brief_summary(summary: dict[str, Any]) -> dict[str, Any]:
 
 
 def _shadow_review_class(row: dict[str, Any], *, prefix: str) -> str:
+    if row.get(f"{prefix}_zero_q6_proven_false_positive"):
+        return "active_zero_q6_proven_false_positive"
     if row.get(f"{prefix}_false_positive_proxy"):
         return "active_false_positive"
     if row.get(f"{prefix}_helped"):
         return "active_helped"
     if row.get(f"{prefix}_under_before"):
         return "active_still_missed"
-    if _final_q6_decision_value(row) <= 0:
+    if _q6_no_plannable_control(row):
         return "active_no_q6_control"
     return "active_observation"
 
@@ -549,6 +574,8 @@ def _shadow_candidate_review_row(
             "v2_q6_tail_replacement_estimate_p90_under_by"
         ),
         "q6_top_size_band": row.get("q6_top_size_band"),
+        "q6_no_plannable_control": _q6_no_plannable_control(row),
+        "q6_zero_q6_proven_control": _q6_zero_q6_proven_control(row),
         "baseline_decision_value_p50": row.get("decision_value_p50"),
         "baseline_decision_value_p90": row.get("decision_value_p90"),
         "baseline_q6_decision_value_p90": row.get("v2_q6_decision_value_p90"),
@@ -580,6 +607,18 @@ def _shadow_candidate_review_row(
         "shadow_under_before": row.get(f"{prefix}_under_before"),
         "shadow_covered_after": row.get(f"{prefix}_covered_after"),
         "shadow_helped": row.get(f"{prefix}_helped"),
+        "shadow_no_plannable_control": row.get(
+            f"{prefix}_no_plannable_control"
+        ),
+        "shadow_no_plannable_positive_proxy": row.get(
+            f"{prefix}_no_plannable_positive_proxy"
+        ),
+        "shadow_zero_q6_proven_control": row.get(
+            f"{prefix}_zero_q6_proven_control"
+        ),
+        "shadow_zero_q6_proven_false_positive": row.get(
+            f"{prefix}_zero_q6_proven_false_positive"
+        ),
         "shadow_false_positive_proxy": row.get(
             f"{prefix}_false_positive_proxy"
         ),
@@ -1066,6 +1105,10 @@ def _q6_practical_gate_summary(
                     1 for row in gated
                     if row.get("q6_practical_gate_false_positive_proxy")
                 ),
+                "zero_q6_proven_false_positive_rows": sum(
+                    1 for row in gated
+                    if row.get("q6_practical_gate_zero_q6_proven_false_positive")
+                ),
                 "practical_p90_under_by_median": _median_value(
                     gated,
                     "q6_practical_p90_under_by",
@@ -1108,6 +1151,10 @@ def _q6_shadow_summary(
                 "false_positive_proxy_rows": sum(
                     1 for row in active
                     if row.get(f"{prefix}_false_positive_proxy")
+                ),
+                "zero_q6_proven_false_positive_rows": sum(
+                    1 for row in active
+                    if row.get(f"{prefix}_zero_q6_proven_false_positive")
                 ),
                 "q6_p90_delta_median": _median_value(
                     active,
@@ -1335,7 +1382,11 @@ def _q6_shadow_candidate_readiness(
     ]
     active_no_q6 = [
         row for row in active
-        if _final_q6_decision_value(row) <= 0
+        if _q6_no_plannable_control(row)
+    ]
+    active_zero_q6_proven = [
+        row for row in active
+        if _q6_zero_q6_proven_control(row)
     ]
     under_before = [
         row for row in active
@@ -1352,6 +1403,10 @@ def _q6_shadow_candidate_readiness(
     false_positive = [
         row for row in active
         if row.get(f"{prefix}_false_positive_proxy")
+    ]
+    zero_q6_false_positive = [
+        row for row in active
+        if row.get(f"{prefix}_zero_q6_proven_false_positive")
     ]
     target_ready = bool(progress.get("ready"))
     if not target_ready:
@@ -1373,6 +1428,7 @@ def _q6_shadow_candidate_readiness(
         "tracked_rows": len(tracked),
         "active_rows": len(active),
         "active_no_q6_rows": len(active_no_q6),
+        "active_zero_q6_proven_rows": len(active_zero_q6_proven),
         "under_before_rows": len(under_before),
         "helped_rows": len(helped),
         "still_missed_rows": len(still_missed),
@@ -1387,6 +1443,7 @@ def _q6_shadow_candidate_readiness(
             else None
         ),
         "false_positive_proxy_rows": len(false_positive),
+        "zero_q6_proven_false_positive_rows": len(zero_q6_false_positive),
         "false_positive_proxy_rate_active": (
             round(len(false_positive) / len(active), 4)
             if active
@@ -1395,6 +1452,11 @@ def _q6_shadow_candidate_readiness(
         "false_positive_proxy_rate_active_no_q6": (
             round(len(false_positive) / len(active_no_q6), 4)
             if active_no_q6
+            else None
+        ),
+        "zero_q6_proven_false_positive_rate": (
+            round(len(zero_q6_false_positive) / len(active_zero_q6_proven), 4)
+            if active_zero_q6_proven
             else None
         ),
         "q6_p90_delta_median": _median_value(active, f"{prefix}_q6_p90_delta"),
@@ -1655,6 +1717,10 @@ def summarize(
             1 for row in valid
             if row.get("q6_practical_gate_false_positive_proxy")
         ),
+        "q6_practical_gate_zero_q6_proven_false_positive_count": sum(
+            1 for row in valid
+            if row.get("q6_practical_gate_zero_q6_proven_false_positive")
+        ),
         "q6_practical_p90_under_by_median": _median_value(
             [
                 row for row in valid
@@ -1677,6 +1743,10 @@ def summarize(
         "q6_residual_boost_shadow_false_positive_proxy_count": sum(
             1 for row in valid
             if row.get("q6_residual_boost_shadow_false_positive_proxy")
+        ),
+        "q6_residual_boost_shadow_zero_q6_proven_false_positive_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_boost_shadow_zero_q6_proven_false_positive")
         ),
         "q6_residual_boost_shadow_q6_p90_delta_median": _median_value(
             [
@@ -1701,6 +1771,10 @@ def summarize(
             1 for row in valid
             if row.get("q6_residual_deep_floor_shadow_false_positive_proxy")
         ),
+        "q6_residual_deep_floor_shadow_zero_q6_proven_false_positive_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_deep_floor_shadow_zero_q6_proven_false_positive")
+        ),
         "q6_residual_deep_floor_shadow_q6_p90_delta_median": _median_value(
             [
                 row for row in valid
@@ -1724,6 +1798,10 @@ def summarize(
             1 for row in valid
             if row.get("q6_residual_hidden_floor_shadow_false_positive_proxy")
         ),
+        "q6_residual_hidden_floor_shadow_zero_q6_proven_false_positive_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_hidden_floor_shadow_zero_q6_proven_false_positive")
+        ),
         "q6_residual_hidden_floor_shadow_q6_p90_delta_median": _median_value(
             [
                 row for row in valid
@@ -1746,6 +1824,10 @@ def summarize(
         "q6_residual_villa_floor_shadow_false_positive_proxy_count": sum(
             1 for row in valid
             if row.get("q6_residual_villa_floor_shadow_false_positive_proxy")
+        ),
+        "q6_residual_villa_floor_shadow_zero_q6_proven_false_positive_count": sum(
+            1 for row in valid
+            if row.get("q6_residual_villa_floor_shadow_zero_q6_proven_false_positive")
         ),
         "q6_residual_villa_floor_shadow_q6_p90_delta_median": _median_value(
             [

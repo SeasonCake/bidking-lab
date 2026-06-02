@@ -11,6 +11,7 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, replace
 import json
 from pathlib import Path
+import re
 import statistics
 import tempfile
 import time
@@ -562,6 +563,18 @@ def _public_constraint_key(diagnostics: str) -> str:
     if "public_max_item_cells:" in diagnostics:
         parts.append("max_item_cells")
     return "+".join(parts) if parts else "none"
+
+
+def _diagnostic_int(diagnostics: str, name: str) -> int | None:
+    match = re.search(rf"(?:^|;){re.escape(name)}:(-?\d+)", diagnostics)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _zero_q6_proven_from_diagnostics(diagnostics: str) -> bool:
+    max_quality = _diagnostic_int(diagnostics, "public_max_quality")
+    return max_quality is not None and max_quality < 6
 
 
 def _live_evidence_profile_key(
@@ -1226,9 +1239,16 @@ def _model_eval_shadow_fields(
     *,
     baseline_q6_decision_value_p90: int | None,
     final_q6_decision_value: int,
+    zero_q6_proven_control: bool,
 ) -> dict[str, Any]:
     active = bool(shadow.get("active"))
     shadow_q6_p90 = _parse_int_text(shadow.get("q6_decision_value_p90"))
+    no_plannable_control = active and final_q6_decision_value <= 0
+    no_plannable_positive = no_plannable_control and (shadow_q6_p90 or 0) > 0
+    zero_q6_positive = (
+        no_plannable_positive
+        and zero_q6_proven_control
+    )
     under_before = (
         active
         and baseline_q6_decision_value_p90 is not None
@@ -1267,11 +1287,13 @@ def _model_eval_shadow_fields(
         f"{prefix}_under_before": under_before,
         f"{prefix}_covered_after": covered_after,
         f"{prefix}_helped": under_before and covered_after,
-        f"{prefix}_false_positive_proxy": (
-            active
-            and final_q6_decision_value <= 0
-            and (shadow_q6_p90 or 0) > 0
+        f"{prefix}_no_plannable_control": no_plannable_control,
+        f"{prefix}_no_plannable_positive_proxy": no_plannable_positive,
+        f"{prefix}_zero_q6_proven_control": (
+            no_plannable_control and zero_q6_proven_control
         ),
+        f"{prefix}_zero_q6_proven_false_positive": zero_q6_positive,
+        f"{prefix}_false_positive_proxy": no_plannable_positive,
     }
 
 
@@ -1462,6 +1484,11 @@ def _model_eval_row(
     final_q6_tail_replacement_value = int(
         (truth_breakdown or {}).get("final_q6_tail_replacement_value") or 0
     )
+    no_plannable_q6_control = final_q6_decision_value <= 0
+    zero_q6_proven_control = (
+        no_plannable_q6_control
+        and _zero_q6_proven_from_diagnostics(posterior_diagnostics)
+    )
     q6_shadow_under_before = (
         q6_shadow_active
         and q6_decision_value_p90 is not None
@@ -1488,18 +1515,21 @@ def _model_eval_row(
         deep_floor_shadow,
         baseline_q6_decision_value_p90=q6_decision_value_p90,
         final_q6_decision_value=final_q6_decision_value,
+        zero_q6_proven_control=zero_q6_proven_control,
     )
     hidden_floor_shadow_fields = _model_eval_shadow_fields(
         "q6_residual_hidden_floor_shadow",
         hidden_floor_shadow,
         baseline_q6_decision_value_p90=q6_decision_value_p90,
         final_q6_decision_value=final_q6_decision_value,
+        zero_q6_proven_control=zero_q6_proven_control,
     )
     villa_floor_shadow_fields = _model_eval_shadow_fields(
         "q6_residual_villa_floor_shadow",
         villa_floor_shadow,
         baseline_q6_decision_value_p90=q6_decision_value_p90,
         final_q6_decision_value=final_q6_decision_value,
+        zero_q6_proven_control=zero_q6_proven_control,
     )
     evidence_stage = _evidence_stage(artifact.get("round"))
     density_score = _live_information_density_score(
@@ -1599,8 +1629,25 @@ def _model_eval_row(
         "q6_practical_gate": q6_practical_gate,
         "q6_practical_p90": q6_practical_p90,
         "q6_practical_gate_hit": q6_practical_gate_hit,
+        "q6_no_plannable_control": no_plannable_q6_control,
+        "q6_zero_q6_proven_control": zero_q6_proven_control,
+        "q6_practical_gate_no_plannable_control": (
+            q6_practical_gate_hit and no_plannable_q6_control
+        ),
+        "q6_practical_gate_no_plannable_positive_proxy": (
+            q6_practical_gate_hit
+            and no_plannable_q6_control
+            and (q6_practical_p90 or 0) > 0
+        ),
+        "q6_practical_gate_zero_q6_proven_false_positive": (
+            q6_practical_gate_hit
+            and zero_q6_proven_control
+            and (q6_practical_p90 or 0) > 0
+        ),
         "q6_practical_gate_false_positive_proxy": (
-            q6_practical_gate_hit and final_q6_decision_value <= 0
+            q6_practical_gate_hit
+            and no_plannable_q6_control
+            and (q6_practical_p90 or 0) > 0
         ),
         "q6_practical_gate_under_before": q6_practical_under_before,
         "q6_practical_gate_covered_after": q6_practical_covered_after,
@@ -1642,9 +1689,25 @@ def _model_eval_row(
         "q6_residual_boost_shadow_helped": (
             q6_shadow_under_before and q6_shadow_covered_after
         ),
+        "q6_residual_boost_shadow_no_plannable_control": (
+            q6_shadow_active and no_plannable_q6_control
+        ),
+        "q6_residual_boost_shadow_no_plannable_positive_proxy": (
+            q6_shadow_active
+            and no_plannable_q6_control
+            and (q6_shadow_q6_decision_value_p90 or 0) > 0
+        ),
+        "q6_residual_boost_shadow_zero_q6_proven_control": (
+            q6_shadow_active and zero_q6_proven_control
+        ),
+        "q6_residual_boost_shadow_zero_q6_proven_false_positive": (
+            q6_shadow_active
+            and zero_q6_proven_control
+            and (q6_shadow_q6_decision_value_p90 or 0) > 0
+        ),
         "q6_residual_boost_shadow_false_positive_proxy": (
             q6_shadow_active
-            and final_q6_decision_value <= 0
+            and no_plannable_q6_control
             and (q6_shadow_q6_decision_value_p90 or 0) > 0
         ),
         **deep_floor_shadow_fields,

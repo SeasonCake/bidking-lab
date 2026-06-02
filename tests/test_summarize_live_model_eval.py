@@ -775,8 +775,41 @@ def test_q6_shadow_candidate_readiness_blocks_false_positive() -> None:
     assert readiness["target_ready"] is True
     assert readiness["tracked_rows"] == 20
     assert readiness["active_no_q6_rows"] == 20
+    assert readiness["active_zero_q6_proven_rows"] == 0
     assert readiness["false_positive_proxy_rows"] == 20
+    assert readiness["zero_q6_proven_false_positive_rows"] == 0
     assert readiness["false_positive_proxy_rate_active_no_q6"] == 1.0
+
+
+def test_q6_shadow_candidate_readiness_splits_zero_q6_proven_controls() -> None:
+    module = _summary_module()
+
+    rows = [
+        {
+            "hero": "aisha",
+            "map_id": 2401,
+            "final_value": 100,
+            "final_q6_value": 0,
+            "q6_no_plannable_control": True,
+            "q6_zero_q6_proven_control": True,
+            "q6_residual_villa_floor_shadow_label": "aisha_villa_floor05",
+            "q6_residual_villa_floor_shadow_active": True,
+            "q6_residual_villa_floor_shadow_false_positive_proxy": True,
+            "q6_residual_villa_floor_shadow_zero_q6_proven_false_positive": True,
+            "q6_residual_villa_floor_shadow_q6_p90_delta": 200,
+        }
+        for _ in range(20)
+    ]
+
+    summary = module.summarize(rows)
+    readiness = summary["q6_shadow_candidate_readiness"]["aisha_villa_floor05"]
+
+    assert readiness["status"] == "blocked_false_positive"
+    assert readiness["active_no_q6_rows"] == 20
+    assert readiness["active_zero_q6_proven_rows"] == 20
+    assert readiness["false_positive_proxy_rows"] == 20
+    assert readiness["zero_q6_proven_false_positive_rows"] == 20
+    assert readiness["zero_q6_proven_false_positive_rate"] == 1.0
 
 
 def test_q6_shadow_candidate_readiness_uses_plannable_no_q6_controls() -> None:

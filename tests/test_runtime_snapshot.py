@@ -529,6 +529,8 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
                 "q6_false_low_risk": False,
                 "q6_below_drop_prior": True,
                 "q6_top_size_band": "q6_top_large",
+                "q6_no_plannable_control": True,
+                "q6_zero_q6_proven_control": False,
                 "final_q6_decision_value": 0,
                 "final_q6_trimmed_tail_value": 486_510,
                 "final_q6_tail_replacement_value": 93_000,
@@ -593,6 +595,12 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
         "practical_reference_p90": "486,510",
         "display_mode": "risk_reference",
         "affects_bid": False,
+        "bid_floor_applied": False,
+        "minimum_bid_floor": "",
+        "note": (
+            "q6 risk is displayed as a reference only; baseline bid thresholds "
+            "are still based on decision_value."
+        ),
     }
     assert [shadow["label"] for shadow in contract["shadows"]] == [
         "profile_b5",
@@ -661,6 +669,8 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert contract["diagnostics"]["posterior"] == "public_max_quality:6"
     assert contract["diagnostics"]["layout"]["bottom_row_risk"] is True
     assert contract["diagnostics"]["q6"]["below_drop_prior"] is True
+    assert contract["diagnostics"]["q6"]["no_plannable_control"] is True
+    assert contract["diagnostics"]["q6"]["zero_q6_proven_control"] is False
     assert contract["diagnostics"]["q6"]["plannable_p90_misses_truth"] is False
     assert contract["diagnostics"]["q6"]["tail_replacement_p90_misses_truth"] is True
     assert contract["diagnostics"]["q6"]["tail_replacement_p90_under_by"] == 93000

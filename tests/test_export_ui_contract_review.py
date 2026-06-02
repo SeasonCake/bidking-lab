@@ -24,6 +24,7 @@ def _artifact(
     shadow_affects_bid: bool = False,
     truth_q6_count: int = 1,
     truth_q6_value: int | None = None,
+    truth_q6_decision_value: int | None = None,
     truth_q6_tail_replacement_value: int = 0,
     q6_tail_replacement_miss: bool = False,
     q6_below_drop_prior: bool = False,
@@ -38,6 +39,11 @@ def _artifact(
     evidence_profile_key: str = "public:max_quality+shape+layout",
     q6_quality_only_deep_local_risk: bool = False,
 ) -> dict:
+    q6_decision_value = (
+        truth_q6_decision_value
+        if truth_q6_decision_value is not None
+        else 486510 if truth_q6_count else 0
+    )
     shadows = [
         {
             "label": "profile_b5",
@@ -110,6 +116,8 @@ def _artifact(
             "q6_risk_reference": {
                 "risk": False,
                 "affects_bid": False,
+                "bid_floor_applied": False,
+                "minimum_bid_floor": "",
             },
             "fallback": {
                 "active": fallback_active,
@@ -139,7 +147,7 @@ def _artifact(
                         else 486510 if truth_q6_count else 0
                     ),
                     "decision_value": (
-                        486510 if truth_q6_count else 0
+                        q6_decision_value
                     ),
                     "trimmed_tail_value": 0,
                     "tail_replacement_value": truth_q6_tail_replacement_value,
@@ -206,6 +214,8 @@ def _artifact(
                     "bottom_row_risk_threshold": 13,
                 },
                 "q6": {
+                    "no_plannable_control": q6_decision_value <= 0,
+                    "zero_q6_proven_control": False,
                     "below_drop_prior": q6_below_drop_prior,
                     "top_size_band": "q6_top_huge",
                     "quality_only_local_count": 1,
@@ -276,6 +286,9 @@ def test_review_row_keeps_manual_check_fields_without_flags() -> None:
     assert row["q6_count_cell_prior_risk"] is True
     assert row["q6_count_cell_prior_gap"] == "count_low;cells_low"
     assert row["q6_count_cell_prior_floor_value"] == 486510
+    assert row["q6_risk_affects_bid"] is False
+    assert row["q6_risk_bid_floor_applied"] is False
+    assert row["q6_risk_minimum_bid_floor"] == ""
     assert row["layout_bottom_row"] == 16
     assert row["layout_bottom_row_risk"] is True
     assert row["layout_bottom_row_risk_threshold"] == 13
@@ -285,6 +298,8 @@ def test_review_row_keeps_manual_check_fields_without_flags() -> None:
     assert row["q6_quality_only_deep_local_risk"] is False
     assert row["q6_quality_only_deep_row_threshold"] == 13
     assert row["truth_q6_count"] == 1
+    assert row["q6_no_plannable_control"] is False
+    assert row["q6_zero_q6_proven_control"] is False
     assert row["truth_q6_tail_replacement_value"] == 0
     assert row["q6_tail_replacement_p90_misses_truth"] is False
     assert row["q6_tail_replacement_p90_under_by"] == 0
@@ -396,6 +411,10 @@ def test_summarize_review_rows_counts_flags_and_groups() -> None:
     assert summary["flag_counts"]["zero_match_without_fallback"] == 1
     assert summary["hero_map_counts"] == {"aisha:shipwreck": 2}
     assert summary["zero_q6_truth_rows"] == 1
+    assert summary["q6_no_plannable_control_rows"] == 1
+    assert summary["q6_zero_q6_proven_control_rows"] == 0
+    assert summary["q6_risk_affects_bid_rows"] == 0
+    assert summary["q6_risk_bid_floor_applied_rows"] == 0
     assert summary["zero_posterior_match_rows"] == 1
     assert summary["zero_match_with_fallback_rows"] == 0
     assert summary["fallback_active_rows"] == 0
@@ -440,7 +459,18 @@ def test_q6_below_prior_review_class_splits_true_miss_from_noise() -> None:
         ),
         source_path="zero.json",
     )
-    summary = module.summarize_review_rows([miss, zero_noise])
+    no_plannable_tail = module.review_row_from_artifact(
+        _artifact(
+            q6_below_drop_prior=True,
+            truth_q6_count=1,
+            truth_q6_value=1_039_000,
+            truth_q6_decision_value=0,
+            truth_q6_tail_replacement_value=93_000,
+            q6_decision_value_range="0 / 0 / 180,000",
+        ),
+        source_path="tail.json",
+    )
+    summary = module.summarize_review_rows([miss, zero_noise, no_plannable_tail])
 
     miss_flags = set(miss["review_flags"].split(";"))
     zero_flags = set(zero_noise["review_flags"].split(";"))
@@ -455,9 +485,19 @@ def test_q6_below_prior_review_class_splits_true_miss_from_noise() -> None:
     assert zero_noise["q6_below_drop_prior_actionable"] is False
     assert zero_noise["q6_actionable_shadow_status"] == ""
     assert "q6_below_drop_prior_truth_miss" not in zero_flags
-    assert summary["q6_below_drop_prior_rows"] == 2
+    tail_flags = set(no_plannable_tail["review_flags"].split(";"))
+    assert no_plannable_tail["q6_below_drop_prior_class"] == (
+        "no_plannable_tail_review"
+    )
+    assert no_plannable_tail["q6_below_drop_prior_actionable"] is False
+    assert no_plannable_tail["q6_below_drop_prior_under_by"] == 0
+    assert "q6_below_drop_prior_truth_miss" not in tail_flags
+    assert summary["q6_below_drop_prior_rows"] == 3
     assert summary["q6_below_drop_prior_actionable_rows"] == 1
+    assert summary["q6_below_drop_prior_no_plannable_rows"] == 2
+    assert summary["q6_below_drop_prior_zero_q6_proven_rows"] == 0
     assert summary["q6_below_drop_prior_class_counts"] == {
+        "no_plannable_tail_review": 1,
         "truth_p90_miss": 1,
         "truth_zero_noise": 1,
     }

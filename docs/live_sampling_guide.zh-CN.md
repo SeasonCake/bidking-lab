@@ -294,6 +294,13 @@ no-pool-match 数量和最有代表性的样本文件。
 
 - `q6_false_low_risk`：真实有红货，但后验 q6 样本率过低。
 - `q6_below_drop_prior`：原始 Drop 先验 q6 很高，但证据后验 q6 被压得明显过低。
+- `q6_no_plannable_control`：结算或样本 truth 显示没有可规划 q6；这是 review/control
+  口径，不代表当时公开信息已经证明无红。
+- `q6_zero_q6_proven_control`：公开信息或确定约束已证明无 q6，例如
+  `public_max_quality < 6`。这类误抬比普通 no-plannable control 更严重。
+- `q6_below_drop_prior_class=no_plannable_tail_review`：raw q6 有极端尾部，
+  但正式可规划 q6 truth 为 0；这类样本不进入 q6 below-prior actionable，
+  改由 tail replacement 轴复核。
 - `q6_p90_misses_truth`：q6 P90 仍低于真实 q6 价值。
 - `v2_q6_value_p90_under_by`：q6 P90 低估了多少。
 - `final_q6_decision_value`：裁掉未证据支持极端尾部后的可规划红货 truth。
@@ -305,6 +312,7 @@ no-pool-match 数量和最有代表性的样本文件。
 - `q6_tail_replacement_p90_misses_truth`：q6 decision P90 是否低于 replacement truth；这是第二审计轴，不直接代表正式出价应提高。
 - `v2_q6_tail_replacement_estimate_p90`：实验性 posterior replacement q6 P90，用于看“替代估计口径”本身是否覆盖 truth；正式出价不读它。
 - `q6_tail_replacement_estimate_p90_misses_truth`：实验性 replacement estimate 是否仍低于 replacement truth。
+- `q6_risk_reference.affects_bid=false` / `bid_floor_applied=false`：q6 风险参考只用于提示和 review；当前正式停止价、抢仓上限仍来自 baseline `decision_value`，不会因为 shadow 或 risk floor 自动抬高。
 - `q6_top_size_band`：最终最高价值物品是否为 q6，以及它是 small/compact/medium/large/huge。
 - `layout_conflict`：存在 footprint overlap/overflow。
 - `layout_conflict_root`：拆分 `footprint_overlap`、`footprint_overflow`、
