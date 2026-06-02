@@ -135,6 +135,16 @@ def test_overlay_scroll_fraction_is_clamped() -> None:
     assert overlay._clamp_scroll_fraction(1.25) == 1.0
 
 
+def test_overlay_section_style_classifies_key_topics() -> None:
+    overlay = _overlay_module()
+
+    assert overlay._section_style("MiniMap")["badge"] == "地图"
+    assert overlay._section_style("q6 风险参考", "已触发")["tag"] == "warn"
+    assert overlay._section_style("Fallback 出价参考")["badge"] == "兜底"
+    assert overlay._section_style("下一步道具")["tag"] == "good"
+    assert overlay._section_style("正式出价", "停止追价")["tag"] == "bad"
+
+
 def test_demo_snapshot_has_compact_overlay_sections() -> None:
     overlay = _overlay_module()
 

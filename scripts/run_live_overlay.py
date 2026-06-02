@@ -140,6 +140,39 @@ def _severity_color(severity: str) -> str:
     return TAG_COLORS.get(severity, TEXT)
 
 
+def _section_style(
+    title: Any,
+    value: Any = "",
+    detail: Any = "",
+) -> dict[str, str]:
+    title_text = str(title or "")
+    text = f"{title_text} {value or ''} {detail or ''}"
+    if any(token in text for token in ("后验无匹配", "过热", "停止追价", "冲突")):
+        return {"badge": "风险", "tag": "bad", "color": BAD}
+    if any(token in text for token in ("风险", "q6", "红货", "漏", "低置信")):
+        return {"badge": "红货", "tag": "warn", "color": WARN}
+    if "Fallback" in title_text:
+        return {"badge": "兜底", "tag": "warn", "color": WARN}
+    if "Shadow" in title_text:
+        return {"badge": "SHADOW", "tag": "dim", "color": PURPLE}
+    if "MiniMap" in title_text:
+        return {"badge": "地图", "tag": "normal", "color": ACCENT}
+    if "输入约束" in title_text:
+        return {"badge": "约束", "tag": "normal", "color": PURPLE}
+    if "布局" in title_text:
+        return {"badge": "布局", "tag": "normal", "color": ACCENT}
+    if "道具" in title_text:
+        return {"badge": "道具", "tag": "good", "color": GOOD}
+    if "正式出价" in title_text:
+        tag = _severity_for_bid(text)
+        return {"badge": "出价", "tag": tag, "color": _severity_color(tag)}
+    if "诊断" in title_text:
+        return {"badge": "诊断", "tag": "dim", "color": PURPLE}
+    if "结算" in title_text or "Truth" in title_text:
+        return {"badge": "TRUTH", "tag": "dim", "color": MUTED}
+    return {"badge": "提示", "tag": "normal", "color": ACCENT}
+
+
 def _quality_color(quality: Any) -> str:
     try:
         q = int(quality)
@@ -1518,20 +1551,59 @@ class Overlay:
 
         self.root.after_idle(restore)
 
-    def _interaction_sections_text(
+    def _render_section_rows(
         self,
+        parent: tk.Widget,
         sections: list[tuple[str, str, str]],
         *,
+        bg: str,
         limit: int,
-    ) -> str:
-        lines: list[str] = []
+        wraplength: int,
+        compact: bool = False,
+    ) -> None:
         for title, value, detail in sections[:limit]:
-            headline = _join_parts((title, value), sep=": ")
-            if headline:
-                lines.append(_short(headline, 112))
+            style = _section_style(title, value, detail)
+            row = tk.Frame(parent, bg=bg)
+            row.pack(fill="x", pady=(5 if compact else 8, 0))
+            tk.Frame(row, width=3, bg=style["color"]).pack(side="left", fill="y")
+            body = tk.Frame(row, bg=bg, padx=7, pady=(1 if compact else 2))
+            body.pack(side="left", fill="x", expand=True)
+            header = tk.Frame(body, bg=bg)
+            header.pack(fill="x")
+            tk.Label(
+                header,
+                text=style["badge"],
+                fg=BG,
+                bg=style["color"],
+                font=("Microsoft YaHei UI", 7, "bold"),
+                padx=5,
+                pady=1,
+            ).pack(side="left")
+            self._label(
+                header,
+                str(title),
+                fg=style["color"],
+                bg=bg,
+                font=("Microsoft YaHei UI", 8 if compact else 9, "bold"),
+            ).pack(side="left", padx=(6, 0))
+            if value:
+                self._label(
+                    body,
+                    str(value),
+                    fg=TEXT,
+                    bg=bg,
+                    font=("Microsoft YaHei UI", 8 if compact else 9, "bold"),
+                    wraplength=wraplength,
+                ).pack(anchor="w", pady=(2, 0))
             if detail:
-                lines.append("  " + _short(detail, 132))
-        return "\n".join(lines)
+                self._label(
+                    body,
+                    str(detail),
+                    fg=MUTED,
+                    bg=bg,
+                    font=("Microsoft YaHei UI", 8),
+                    wraplength=wraplength,
+                ).pack(anchor="w")
 
     def _render_hover_minimap(
         self,
@@ -1626,8 +1698,7 @@ class Overlay:
             for section in sections
             if not (minimap and section[0] == "MiniMap")
         ]
-        text = self._interaction_sections_text(text_sections, limit=6)
-        if not text and not minimap:
+        if not text_sections and not minimap:
             return
         try:
             exists = self._hover_window is not None and self._hover_window.winfo_exists()
@@ -1651,15 +1722,15 @@ class Overlay:
             ).pack(anchor="w")
             if minimap:
                 self._render_hover_minimap(body, minimap)
-            if text:
-                self._label(
+            if text_sections:
+                self._render_section_rows(
                     body,
-                    text,
-                    fg=TEXT,
                     bg=PANEL_SOFT,
-                    font=("Microsoft YaHei UI", 8),
+                    sections=text_sections,
+                    limit=6,
                     wraplength=460,
-                ).pack(anchor="w", pady=(4, 0))
+                    compact=True,
+                )
             self._hover_window = window
         self._position_hover(event)
         if self._hover_window is not None:
@@ -1759,33 +1830,13 @@ class Overlay:
                 bg=PANEL_SOFT,
                 font=("Microsoft YaHei UI", 8),
             ).pack(side="right", anchor="e")
-        for title, value, detail_text in sections:
-            row = tk.Frame(body, bg=PANEL_SOFT)
-            row.pack(fill="x", pady=(8, 0))
-            self._label(
-                row,
-                title,
-                fg=PURPLE,
-                bg=PANEL_SOFT,
-                font=("Microsoft YaHei UI", 9, "bold"),
-            ).pack(anchor="w")
-            if value:
-                self._label(
-                    row,
-                    value,
-                    fg=TEXT,
-                    bg=PANEL_SOFT,
-                    wraplength=800,
-                ).pack(anchor="w", pady=(2, 0))
-            if detail_text:
-                self._label(
-                    row,
-                    detail_text,
-                    fg=MUTED,
-                    bg=PANEL_SOFT,
-                    font=("Microsoft YaHei UI", 8),
-                    wraplength=800,
-                ).pack(anchor="w")
+        self._render_section_rows(
+            body,
+            sections,
+            bg=PANEL_SOFT,
+            limit=len(sections),
+            wraplength=800,
+        )
 
     def _draw_minimap(self, canvas: tk.Canvas, minimap: dict[str, Any]) -> None:
         geometry = _minimap_canvas_geometry(minimap)
@@ -1925,9 +1976,19 @@ class Overlay:
                 sticky="nsew",
             )
             metrics.grid_columnconfigure(col_no, weight=1, uniform="metric")
+            metric_color = _severity_color(tag) if tag != "normal" else ACCENT
+            tk.Frame(card, width=3, bg=metric_color).pack(
+                side="left",
+                fill="y",
+            )
             body = tk.Frame(card, bg=PANEL, padx=8, pady=6)
-            body.pack(fill="both", expand=True)
-            self._label(body, title, fg=MUTED, font=("Microsoft YaHei UI", 9)).pack(anchor="w")
+            body.pack(side="left", fill="both", expand=True)
+            self._label(
+                body,
+                title,
+                fg=metric_color if tag != "normal" else MUTED,
+                font=("Microsoft YaHei UI", 9, "bold"),
+            ).pack(anchor="w")
             self._label(
                 body,
                 value,
@@ -1956,11 +2017,29 @@ class Overlay:
 
         mini_sections = mini.get("sections") or model["sections"][:4]
         for title, value, detail in mini_sections[:4]:
+            style = _section_style(title, value, detail)
             row = self._card(left)
             row.pack(fill="x", pady=(0, 8))
+            tk.Frame(row, width=4, bg=style["color"]).pack(side="left", fill="y")
             body = tk.Frame(row, bg=PANEL, padx=10, pady=7)
-            body.pack(fill="x")
-            self._label(body, title, fg=ACCENT, font=("Microsoft YaHei UI", 9, "bold")).pack(anchor="w")
+            body.pack(side="left", fill="x", expand=True)
+            header = tk.Frame(body, bg=PANEL)
+            header.pack(fill="x")
+            tk.Label(
+                header,
+                text=style["badge"],
+                fg=BG,
+                bg=style["color"],
+                font=("Microsoft YaHei UI", 7, "bold"),
+                padx=5,
+                pady=1,
+            ).pack(side="left")
+            self._label(
+                header,
+                title,
+                fg=style["color"],
+                font=("Microsoft YaHei UI", 9, "bold"),
+            ).pack(side="left", padx=(6, 0))
             self._label(body, value, wraplength=420).pack(anchor="w", pady=(3, 0))
             if detail:
                 self._label(body, detail, fg=MUTED, wraplength=420, font=("Microsoft YaHei UI", 8)).pack(anchor="w")
