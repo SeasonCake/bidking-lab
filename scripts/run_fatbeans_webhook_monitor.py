@@ -367,6 +367,15 @@ class FatbeansWebhookMonitor:
             "filtered_count": filtered,
         }
 
+    def reset_rows(self) -> None:
+        """Clear accumulated raw rows before a new live session starts."""
+        with self._lock:
+            self._rows = []
+            self._next_sort_id = 1
+            self._last_packet_at = 0.0
+            self._last_processed_count = 0
+            self._last_partial_error = ""
+
     def status(self) -> dict[str, Any]:
         with self._lock:
             return {

@@ -10,6 +10,105 @@ import types
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _varint(value: int) -> bytes:
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def _field_varint(field_no: int, value: int) -> bytes:
+    return _varint((field_no << 3) | 0) + _varint(value)
+
+
+def _field_bytes(field_no: int, value: bytes) -> bytes:
+    return _varint((field_no << 3) | 2) + _varint(len(value)) + value
+
+
+def _send_frame(
+    message_id: int,
+    *,
+    session: str = "2401:1274127880525303",
+    value: int = 123456,
+) -> bytes:
+    body = _field_varint(1, 1285603971496202)
+    body += _field_bytes(2, session.encode("utf-8"))
+    body += _field_varint(3, value)
+    frame_len = 12 + len(body)
+    return (
+        frame_len.to_bytes(4, "big")
+        + b"\x32\xd2\x55\x5f"
+        + message_id.to_bytes(4, "big")
+        + body
+    )
+
+
+def _rev_state_frame(
+    message_id: int = 0x0025,
+    *,
+    session: str = "2401:1274127880525303",
+    map_id: int = 2401,
+    round_no: int = 1,
+) -> bytes:
+    payload = _field_bytes(1, session.encode("utf-8"))
+    payload += _field_varint(2, map_id)
+    payload += _field_varint(3, round_no)
+    if message_id == 0x0025:
+        body = _field_bytes(1, payload)
+    elif message_id == 0x002D:
+        body = _field_varint(1, 393075406931726)
+        body += _field_bytes(2, payload)
+    else:
+        raise ValueError(f"unsupported state message id: {message_id}")
+    frame_len = 16 + len(body)
+    return (
+        frame_len.to_bytes(4, "big")
+        + b"\x32\xd2\x55\x60"
+        + b"\x00\x00\x00\x00"
+        + message_id.to_bytes(4, "big")
+        + body
+    )
+
+
+def _rev_status_frame(
+    *,
+    session: str = "2401:1274127880525303",
+) -> bytes:
+    body = _field_varint(1, 436506118628741)
+    body += _field_bytes(2, session.encode("utf-8"))
+    frame_len = 16 + len(body)
+    return (
+        frame_len.to_bytes(4, "big")
+        + b"\x32\xd2\x55\x61"
+        + b"\x00\x00\x00\x00"
+        + (0x0077).to_bytes(4, "big")
+        + body
+    )
+
+
+def _row(direction: str, payload: bytes, *, sort_id: int = 1) -> dict[str, object]:
+    return {
+        "SortID": sort_id,
+        "Direct": direction,
+        "Protocol": "Tcp",
+        "SrcIP": "8.133.195.27" if direction == "REV" else "198.18.0.1",
+        "SrcPort": 10000 if direction == "REV" else 60213,
+        "DstIP": "198.18.0.1" if direction == "REV" else "8.133.195.27",
+        "DstPort": 60213 if direction == "REV" else 10000,
+        "CaptureTime": "2026-06-02 12:00:00.000",
+        "Data": base64.b64encode(payload).decode("ascii"),
+        "DataLength": len(payload),
+        "PID": 1234,
+        "ProcessName": "BidKing.exe",
+        "Source": "WinDivert",
+    }
+
+
 def _module():
     path = ROOT / "scripts" / "run_windivert_live_monitor.py"
     spec = importlib.util.spec_from_file_location("run_windivert_live_monitor", path)
@@ -136,3 +235,93 @@ def test_flow_index_filters_loopback_but_keeps_server_port(
         index.match(("198.18.0.1", 60213, "8.133.195.27", 10000)).direction
         == "SEND"
     )
+
+
+def test_game_frame_gate_ignores_non_auction_status_frames() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    emitted = gate.feed_row(_row("REV", _rev_status_frame()))
+
+    assert emitted.rows == ()
+    assert emitted.reset_session is False
+    assert gate.active_session_id is None
+    assert gate.ignored_frames == 1
+
+
+def test_game_frame_gate_accepts_state_and_matching_session_sends() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    early_send = gate.feed_row(_row("SEND", _send_frame(0x0022), sort_id=1))
+    state = gate.feed_row(_row("REV", _rev_state_frame(), sort_id=2))
+    matching_send = gate.feed_row(_row("SEND", _send_frame(0x0026), sort_id=3))
+    other_session_send = gate.feed_row(
+        _row(
+            "SEND",
+            _send_frame(0x0022, session="2401:9999999999999999"),
+            sort_id=4,
+        )
+    )
+
+    assert early_send.rows == ()
+    assert len(state.rows) == 1
+    assert state.rows[0]["MessageID"] == "0x0025"
+    assert state.rows[0]["SessionID"] == "2401:1274127880525303"
+    assert state.rows[0]["Source"] == "WinDivertFrameGate"
+    assert state.rows[0]["SortID"] == 1
+    assert gate.active_session_id == "2401:1274127880525303"
+    assert len(matching_send.rows) == 1
+    assert matching_send.rows[0]["MessageID"] == "0x0026"
+    assert matching_send.rows[0]["SortID"] == 2
+    assert other_session_send.rows == ()
+    assert gate.ignored_frames == 2
+
+
+def test_game_frame_gate_reconstructs_split_frames() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+    frame = _rev_state_frame()
+
+    first = gate.feed_row(_row("REV", frame[:7], sort_id=1))
+    second = gate.feed_row(_row("REV", frame[7:], sort_id=2))
+
+    assert first.rows == ()
+    assert len(second.rows) == 1
+    assert second.rows[0]["DataLength"] == len(frame)
+
+
+def test_game_frame_gate_resets_on_new_state_session() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    first_state = gate.feed_row(
+        _row(
+            "REV",
+            _rev_state_frame(session="2401:1111111111111111"),
+            sort_id=1,
+        )
+    )
+    first_send = gate.feed_row(
+        _row(
+            "SEND",
+            _send_frame(0x0022, session="2401:1111111111111111"),
+            sort_id=2,
+        )
+    )
+    second_state = gate.feed_row(
+        _row(
+            "REV",
+            _rev_state_frame(session="2405:2222222222222222", map_id=2405),
+            sort_id=3,
+        )
+    )
+
+    assert len(first_state.rows) == 1
+    assert first_state.rows[0]["SortID"] == 1
+    assert len(first_send.rows) == 1
+    assert first_send.rows[0]["SortID"] == 2
+    assert second_state.reset_session is True
+    assert len(second_state.rows) == 1
+    assert second_state.rows[0]["SortID"] == 1
+    assert second_state.rows[0]["SessionID"] == "2405:2222222222222222"

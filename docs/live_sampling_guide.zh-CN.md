@@ -25,6 +25,18 @@ python -m pip install -e ".[packet]"
 WinDivert 通常需要管理员 PowerShell。若 `monitor.stderr.log` 提示缺 `pydivert`，先运行上面的
 `python -m pip install -e ".[packet]"` 或 `python -m pip install pydivert`。
 
+WinDivert 入口现在还有第二层对局 frame gate：目标进程的 TCP payload 会先按 4 字节长度
+重组为应用层 frame，然后只放行当前可解析的对局消息：
+
+- `SEND msg=0x0022`：出价候选。
+- `SEND msg=0x0026`：道具/动作候选。
+- `REV push msg=0x0025`：每轮状态同步。
+- `REV push msg=0x002d`：R5/结算/技能结果同步。
+
+购买道具、账号/设置 JSON、界面交互、心跳/等待包和非当前 session 的发送帧不会进入
+`windivert_live.json`，因此不会触发推理。`REV msg=0x0021` 目前只作为首轮信息提前量的
+后续候选；正式 parser 尚未消费它，所以本阶段不把它写入推理输入。
+
 如果 Fatbeans 账号已支持 WebHook，也可以使用 Fatbeans WebHook 入口：
 
 ```powershell
@@ -59,7 +71,7 @@ python scripts\run_live_overlay.py --demo
 当前实时优先链路：
 
 ```text
-WinDivert sniff -> process flow match -> Fatbeans-row adapter -> latest_snapshot.json / model_eval.jsonl / layout_samples.jsonl
+WinDivert sniff -> process flow match -> auction frame gate -> Fatbeans-row adapter -> latest_snapshot.json / model_eval.jsonl / layout_samples.jsonl
 ```
 
 Fatbeans WebHook 备用链路：
@@ -127,6 +139,17 @@ stale 判断：
 ```powershell
 .\scripts\live_status.ps1 -Json
 ```
+
+WinDivert 抓包源状态可直接查看：
+
+```powershell
+Get-Content .\data\logs\live\capture_source_status.json
+```
+
+其中 `raw_packets` 是归因到 `BidKing.exe` 目标流的 TCP payload 数，`accepted_frames`
+是通过对局 frame gate、真正写入推理输入的 frame 数；旧字段 `accepted_packets`
+保留为 `accepted_frames` 的兼容别名。未进入对局时，`raw_packets` 可能增长，
+`accepted_frames` 和 `active_session_id` 可以仍为空或为 0，这是预期行为。
 
 当候选进入 `candidate_for_review` 后，可直接从现有 live 日志导出 active 样本清单，
 不需要重新跑推理：

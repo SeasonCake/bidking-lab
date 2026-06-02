@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import ipaddress
 import json
 from pathlib import Path
+import re
 import sys
 import time
 from typing import Any, Mapping
@@ -30,10 +31,19 @@ from run_fatbeans_webhook_monitor import (  # noqa: E402
     WebhookMonitorConfig,
     _acquire_lock,
 )
+from bidking_lab.live.fatbeans import (  # noqa: E402
+    FatbeansFrame,
+    _parse_send_event,
+    _parse_state_event,
+)
 from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
 
 
 FlowKey = tuple[str, int, str, int]
+GAME_SEND_MESSAGE_IDS = {0x0022, 0x0026}
+GAME_STATE_MESSAGE_IDS = {0x0025, 0x002D}
+SESSION_ID_RE = re.compile(r"^\d{4}:\d+$")
+MAX_FRAME_BYTES = 1_000_000
 
 
 def _normalize_ip(value: Any) -> str:
@@ -251,6 +261,194 @@ def _packet_to_fatbeans_row(
     }
 
 
+@dataclass(frozen=True)
+class GameFrame:
+    template_row: Mapping[str, Any]
+    raw: bytes
+    direction: str
+    message_id: int
+    session_id: str
+    is_state: bool
+
+
+@dataclass(frozen=True)
+class FrameGateEmit:
+    rows: tuple[dict[str, Any], ...]
+    reset_session: bool = False
+
+
+def _valid_session_id(value: str | None) -> bool:
+    return bool(value and SESSION_ID_RE.match(value))
+
+
+def _frame_message_id(direction: str, raw: bytes) -> int | None:
+    if direction == "SEND" and len(raw) >= 12:
+        return int.from_bytes(raw[8:12], "big")
+    if direction == "REV" and len(raw) >= 16:
+        return int.from_bytes(raw[12:16], "big")
+    return None
+
+
+def _frame_packet_tag(direction: str, raw: bytes) -> int | None:
+    if direction == "SEND" and len(raw) >= 8:
+        return int.from_bytes(raw[4:8], "big")
+    if direction == "REV" and len(raw) >= 12:
+        return int.from_bytes(raw[8:12], "big")
+    return None
+
+
+class GameFrameGate:
+    """Turn TCP payload chunks into game-session frame rows.
+
+    The raw BidKing connection also carries heartbeat and non-auction UI frames.
+    The live parser only needs bid/action sends and round/settlement state
+    pushes, so this gate keeps complete frames with known session ids and drops
+    the rest before they reach the monitor artifact builder.
+    """
+
+    def __init__(self) -> None:
+        self._buffers = {
+            "SEND": bytearray(),
+            "REV": bytearray(),
+        }
+        self._current_session_id: str | None = None
+        self._next_sort_id = 1
+        self.dropped_bytes = 0
+        self.ignored_frames = 0
+        self.accepted_frames = 0
+
+    @property
+    def active_session_id(self) -> str | None:
+        return self._current_session_id
+
+    def feed_row(self, row: Mapping[str, Any]) -> FrameGateEmit:
+        direction = str(row.get("Direct") or "").upper()
+        if direction not in self._buffers:
+            return FrameGateEmit(())
+        try:
+            payload = base64.b64decode(row.get("Data") or "", validate=True)
+        except Exception:  # noqa: BLE001 - malformed packet boundary
+            return FrameGateEmit(())
+        if not payload:
+            return FrameGateEmit(())
+
+        frames = self._extract_frames(direction, payload)
+        emitted: list[dict[str, Any]] = []
+        reset_session = False
+        for raw in frames:
+            game_frame = self._classify_frame(row, direction, raw)
+            if game_frame is None:
+                self.ignored_frames += 1
+                continue
+            should_emit, should_reset = self._should_emit(game_frame)
+            if should_reset:
+                reset_session = True
+                emitted.clear()
+                self._next_sort_id = 1
+            if should_emit:
+                emitted.append(self._row_from_game_frame(game_frame))
+                self.accepted_frames += 1
+            else:
+                self.ignored_frames += 1
+        return FrameGateEmit(tuple(emitted), reset_session=reset_session)
+
+    def _extract_frames(self, direction: str, payload: bytes) -> list[bytes]:
+        buffer = self._buffers[direction]
+        buffer.extend(payload)
+        frames: list[bytes] = []
+        while len(buffer) >= 4:
+            frame_len = int.from_bytes(buffer[:4], "big")
+            min_len = 12 if direction == "SEND" else 16
+            if frame_len < min_len or frame_len > MAX_FRAME_BYTES:
+                del buffer[0]
+                self.dropped_bytes += 1
+                continue
+            if len(buffer) < frame_len:
+                break
+            frames.append(bytes(buffer[:frame_len]))
+            del buffer[:frame_len]
+        return frames
+
+    def _classify_frame(
+        self,
+        row: Mapping[str, Any],
+        direction: str,
+        raw: bytes,
+    ) -> GameFrame | None:
+        message_id = _frame_message_id(direction, raw)
+        if message_id is None:
+            return None
+        frame = FatbeansFrame(
+            index=0,
+            direction=direction,  # type: ignore[arg-type]
+            sort_id=int(row.get("SortID") or 0),
+            capture_time=str(row.get("CaptureTime") or ""),
+            raw=raw,
+        )
+        if direction == "SEND" and message_id in GAME_SEND_MESSAGE_IDS:
+            event = _parse_send_event(frame)
+            if event is None or not _valid_session_id(event.session_id):
+                return None
+            return GameFrame(
+                template_row=row,
+                raw=raw,
+                direction=direction,
+                message_id=message_id,
+                session_id=event.session_id or "",
+                is_state=False,
+            )
+        if (
+            direction == "REV"
+            and _frame_packet_tag(direction, raw) == 0
+            and message_id in GAME_STATE_MESSAGE_IDS
+        ):
+            state = _parse_state_event(frame)
+            if state is None or not _valid_session_id(state.session_id):
+                return None
+            if (
+                state.map_id is None
+                and state.round_index is None
+                and not state.inventory_items
+                and not state.bids
+                and not state.action_results
+                and not state.public_infos
+                and not state.skill_reveals
+            ):
+                return None
+            return GameFrame(
+                template_row=row,
+                raw=raw,
+                direction=direction,
+                message_id=message_id,
+                session_id=state.session_id or "",
+                is_state=True,
+            )
+        return None
+
+    def _should_emit(self, frame: GameFrame) -> tuple[bool, bool]:
+        if frame.is_state:
+            reset = (
+                self._current_session_id is not None
+                and self._current_session_id != frame.session_id
+            )
+            self._current_session_id = frame.session_id
+            return True, reset
+        if self._current_session_id == frame.session_id:
+            return True, False
+        return False, False
+
+    def _row_from_game_frame(self, frame: GameFrame) -> dict[str, Any]:
+        row = dict(frame.template_row)
+        row["SortID"] = self._next_sort_id
+        row["Data"] = base64.b64encode(frame.raw).decode("ascii")
+        row["DataLength"] = len(frame.raw)
+        row["Source"] = "WinDivertFrameGate"
+        row["MessageID"] = f"0x{frame.message_id:04x}"
+        row["SessionID"] = frame.session_id
+        self._next_sort_id += 1
+        return row
+
+
 def _default_filter(server_ports: list[int], *, broad: bool) -> str:
     if broad or not server_ports:
         return "tcp and tcp.PayloadLength > 0"
@@ -268,6 +466,10 @@ def _write_source_status(
     filter_text: str,
     active_flows: int,
     accepted_packets: int,
+    raw_packets: int = 0,
+    ignored_frames: int = 0,
+    dropped_bytes: int = 0,
+    active_session_id: str | None = None,
 ) -> None:
     path = log_dir / "capture_source_status.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -277,7 +479,12 @@ def _write_source_status(
         "process_name": process_name,
         "filter": filter_text,
         "active_flows": active_flows,
+        "accepted_frames": accepted_packets,
         "accepted_packets": accepted_packets,
+        "raw_packets": raw_packets,
+        "ignored_frames": ignored_frames,
+        "dropped_bytes": dropped_bytes,
+        "active_session_id": active_session_id,
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -378,6 +585,7 @@ def main() -> int:
         include_loopback=args.include_loopback,
     )
     flow_index.refresh_if_due(force=True)
+    frame_gate = GameFrameGate()
 
     server_ports = args.server_port or [10000]
     filter_text = args.filter or _default_filter(server_ports, broad=args.broad)
@@ -387,6 +595,10 @@ def main() -> int:
         filter_text=filter_text,
         active_flows=flow_index.active_flow_count(),
         accepted_packets=0,
+        raw_packets=0,
+        ignored_frames=0,
+        dropped_bytes=0,
+        active_session_id=None,
     )
     print(f"[listen] Python: {sys.executable}", flush=True)
     print(f"[listen] WinDivert filter: {filter_text}", flush=True)
@@ -397,6 +609,7 @@ def main() -> int:
     )
     sort_id = 1
     accepted = 0
+    raw_packets = 0
     last_status = 0.0
     try:
         with pydivert.WinDivert(filter_text, flags=sniff_flag) as handle:
@@ -408,12 +621,18 @@ def main() -> int:
                 )
                 now = time.monotonic()
                 if row is not None:
-                    monitor.accept_row(row)
+                    raw_packets += 1
                     sort_id += 1
-                    accepted += 1
+                    emitted = frame_gate.feed_row(row)
+                    if emitted.reset_session:
+                        monitor.reset_rows()
+                    for game_row in emitted.rows:
+                        monitor.accept_row(game_row)
+                        accepted += 1
                     if args.verbose:
                         print(
-                            f"[packet] {row['Direct']} {row['SrcIP']}:{row['SrcPort']} "
+                            f"[packet] raw={raw_packets} emitted={accepted} "
+                            f"{row['Direct']} {row['SrcIP']}:{row['SrcPort']} "
                             f"-> {row['DstIP']}:{row['DstPort']} len={row['DataLength']}",
                             flush=True,
                         )
@@ -425,6 +644,10 @@ def main() -> int:
                         filter_text=filter_text,
                         active_flows=active,
                         accepted_packets=accepted,
+                        raw_packets=raw_packets,
+                        ignored_frames=frame_gate.ignored_frames,
+                        dropped_bytes=frame_gate.dropped_bytes,
+                        active_session_id=frame_gate.active_session_id,
                     )
                     if args.verbose:
                         print(
