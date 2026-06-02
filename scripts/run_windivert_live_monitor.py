@@ -79,6 +79,13 @@ def _matches_process_name(actual: Any, expected: str) -> bool:
     return str(actual or "").casefold() == expected.casefold()
 
 
+def _is_loopback_ip(value: str) -> bool:
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
 @dataclass(frozen=True)
 class FlowMatch:
     direction: str
@@ -125,17 +132,50 @@ def _flow_direction_map(process_name: str) -> dict[FlowKey, FlowMatch]:
     return flows
 
 
+def _flow_is_capture_target(
+    match: FlowMatch,
+    *,
+    server_ports: set[int],
+    include_loopback: bool,
+) -> bool:
+    remote_ip, remote_port = match.remote
+    local_ip, local_port = match.local
+    if server_ports and (remote_port in server_ports or local_port in server_ports):
+        return True
+    if include_loopback:
+        return True
+    return not _is_loopback_ip(remote_ip) and not _is_loopback_ip(local_ip)
+
+
 class FlowIndex:
-    def __init__(self, *, process_name: str, refresh_seconds: float) -> None:
+    def __init__(
+        self,
+        *,
+        process_name: str,
+        refresh_seconds: float,
+        server_ports: set[int] | None = None,
+        include_loopback: bool = False,
+    ) -> None:
         self.process_name = process_name
         self.refresh_seconds = max(0.05, refresh_seconds)
+        self.server_ports = set(server_ports or ())
+        self.include_loopback = include_loopback
         self._flows: dict[FlowKey, FlowMatch] = {}
         self._last_refresh = 0.0
 
     def refresh_if_due(self, *, force: bool = False) -> None:
         now = time.monotonic()
         if force or now - self._last_refresh >= self.refresh_seconds:
-            self._flows = _flow_direction_map(self.process_name)
+            flows = _flow_direction_map(self.process_name)
+            self._flows = {
+                key: match
+                for key, match in flows.items()
+                if _flow_is_capture_target(
+                    match,
+                    server_ports=self.server_ports,
+                    include_loopback=self.include_loopback,
+                )
+            }
             self._last_refresh = now
 
     def match(self, key: FlowKey) -> FlowMatch | None:
@@ -268,6 +308,11 @@ def main() -> int:
     )
     parser.add_argument("--filter", default=None, help="Override WinDivert filter")
     parser.add_argument("--flow-refresh-seconds", type=float, default=0.25)
+    parser.add_argument(
+        "--include-loopback",
+        action="store_true",
+        help="Also keep BidKing.exe loopback flows. Off by default because local control flows are not game frames.",
+    )
     parser.add_argument("--status-seconds", type=float, default=2.0)
     parser.add_argument("--debounce-seconds", type=float, default=0.7)
     parser.add_argument("--min-inference-interval-seconds", type=float, default=1.0)
@@ -329,6 +374,8 @@ def main() -> int:
     flow_index = FlowIndex(
         process_name=args.process_name,
         refresh_seconds=args.flow_refresh_seconds,
+        server_ports=set(args.server_port or [10000]),
+        include_loopback=args.include_loopback,
     )
     flow_index.refresh_if_due(force=True)
 

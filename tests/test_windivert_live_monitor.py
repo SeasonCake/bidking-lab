@@ -99,3 +99,40 @@ def test_flow_direction_map_indexes_bidking_send_and_receive(
     assert send.direction == "SEND"
     assert recv.direction == "REV"
     assert send.pid == 1234
+
+
+def test_flow_index_filters_loopback_but_keeps_server_port(
+    monkeypatch,
+) -> None:
+    module = _module()
+    flows = {
+        ("127.0.0.1", 60215, "127.0.0.1", 60214): module.FlowMatch(
+            direction="SEND",
+            pid=1,
+            process_name="BidKing.exe",
+            local=("127.0.0.1", 60215),
+            remote=("127.0.0.1", 60214),
+        ),
+        ("198.18.0.1", 60213, "8.133.195.27", 10000): module.FlowMatch(
+            direction="SEND",
+            pid=1,
+            process_name="BidKing.exe",
+            local=("198.18.0.1", 60213),
+            remote=("8.133.195.27", 10000),
+        ),
+    }
+    monkeypatch.setattr(module, "_flow_direction_map", lambda _name: flows)
+
+    index = module.FlowIndex(
+        process_name="BidKing.exe",
+        refresh_seconds=60.0,
+        server_ports={10000},
+        include_loopback=False,
+    )
+    index.refresh_if_due(force=True)
+
+    assert index.match(("127.0.0.1", 60215, "127.0.0.1", 60214)) is None
+    assert (
+        index.match(("198.18.0.1", 60213, "8.133.195.27", 10000)).direction
+        == "SEND"
+    )
