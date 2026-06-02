@@ -88,6 +88,22 @@ def test_overlay_warns_when_snapshot_is_stale() -> None:
     assert any("超过 120 秒未更新" in line for line in lines)
 
 
+def test_overlay_warns_when_latest_inference_is_slow() -> None:
+    overlay = _overlay_module()
+
+    lines = overlay._summary_lines(
+        {
+            "created_at": time.time(),
+            "map_id": 2401,
+            "round": 1,
+            "processing_seconds": 18.25,
+            "panel": {"summary_rows": ()},
+        }
+    )
+
+    assert any("本次推理耗时 18.2s" in line for line in lines)
+
+
 def test_overlay_window_geometry_uses_compact_default() -> None:
     overlay = _overlay_module()
 
@@ -459,6 +475,57 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert any(section[0] == "结算/Truth" for section in interaction["detail"]["sections"])
     assert any(section[0] == "Shadow 明细" for section in interaction["detail"]["sections"])
     assert any(section[0] == "诊断明细" for section in interaction["detail"]["sections"])
+
+
+def test_overlay_model_surfaces_live_health_warnings() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model(
+        {
+            "file": "slow.json",
+            "created_at": time.time(),
+            "hero": "aisha",
+            "map_id": 2501,
+            "round": 4,
+            "ui_contract": {
+                "context": {
+                    "hero": "aisha",
+                    "map_id": 2501,
+                    "round": 4,
+                    "known_value_sum": 800000,
+                },
+                "source": {
+                    "file": "slow.json",
+                    "processing_seconds": 18.25,
+                },
+                "baseline": {
+                    "decision": {
+                        "action": "可守不抢",
+                        "current_highest": "玩家A 500,000",
+                        "risk_band": "防守区",
+                        "stop_price": "680,000",
+                    },
+                    "posterior": {
+                        "status": "matched",
+                        "match_text": "80/80",
+                        "decision_value_range": "300,000 / 500,000 / 700,000",
+                    },
+                },
+                "q6_risk_reference": {
+                    "risk": True,
+                    "prior_gap": "件数P90低1.00",
+                    "practical_reference_p90": "486,510",
+                    "affects_bid": True,
+                    "bid_floor_applied": True,
+                },
+            },
+        }
+    )
+
+    assert model["status"] == ("慢", "warn")
+    assert "推理 18.2s" in model["subtitle"]
+    assert any("本次推理耗时 18.2s" in alert[0] for alert in model["alerts"])
+    assert any("q6 风险参考不应影响正式出价" in alert[0] for alert in model["alerts"])
 
 
 def test_overlay_model_surfaces_zero_match_baseline() -> None:

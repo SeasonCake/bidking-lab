@@ -31,6 +31,7 @@ HOVER_OFFSET = 18
 HOVER_MARGIN = 12
 HOVER_MOVE_DEADZONE = 8
 ENABLE_MATPLOTLIB_MINIMAP = False
+SLOW_PROCESSING_SECONDS = 15.0
 
 BG = "#09111f"
 PANEL = "#111827"
@@ -94,6 +95,32 @@ def _int_or_none(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _processing_seconds(
+    snapshot: dict[str, Any],
+    ui_contract: dict[str, Any] | None = None,
+) -> float | None:
+    contract = ui_contract if isinstance(ui_contract, dict) else {}
+    source = _as_mapping(contract.get("source"))
+    diagnostics = _as_mapping(contract.get("diagnostics"))
+    sampling = _as_mapping(diagnostics.get("sampling"))
+    for value in (
+        source.get("processing_seconds"),
+        sampling.get("processing_seconds"),
+        snapshot.get("processing_seconds"),
+    ):
+        seconds = _float_or_none(value)
+        if seconds is not None:
+            return seconds
+    return None
 
 
 def _matplotlib_minimap_enabled(model: dict[str, Any]) -> bool:
@@ -413,6 +440,20 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
     entries.append((header, "header"))
     if stale:
         entries.append(("状态: snapshot 超过 120 秒未更新，检查 Fatbeans 导出或 monitor 进程", "warn"))
+    processing_seconds = _processing_seconds(
+        snapshot,
+        snapshot.get("ui_contract") if isinstance(snapshot.get("ui_contract"), dict) else {},
+    )
+    if (
+        processing_seconds is not None
+        and processing_seconds > SLOW_PROCESSING_SECONDS
+    ):
+        entries.append(
+            (
+                f"状态: 本次推理耗时 {processing_seconds:.1f}s，观察是否连续变慢",
+                "warn",
+            )
+        )
 
     summary_by_topic = {
         str(row.get("topic") or ""): row
@@ -1187,6 +1228,13 @@ def _ui_contract_alerts(contract: dict[str, Any]) -> list[tuple[str, str]]:
         )
         gap = q6_risk.get("prior_gap") or "q6 prior gap"
         alerts.append((f"UI契约 q6 风险参考：{gap}，参考P90 {reference}", "warn"))
+    if _flag(q6_risk.get("affects_bid")) or _flag(q6_risk.get("bid_floor_applied")):
+        alerts.append(
+            (
+                "q6 风险参考不应影响正式出价：检查 affects_bid/bid_floor_applied",
+                "bad",
+            )
+        )
     for shadow in contract.get("shadows", ()) or ():
         if not isinstance(shadow, dict) or not _flag(shadow.get("active")):
             continue
@@ -1252,7 +1300,19 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     ]
     if age:
         subtitle_parts.append(age)
-    status = ("过期", "bad") if stale else ("实时", "good")
+    processing_seconds = _processing_seconds(snapshot, ui_contract)
+    if processing_seconds is not None:
+        subtitle_parts.append(f"推理 {processing_seconds:.1f}s")
+    slow_processing = (
+        processing_seconds is not None
+        and processing_seconds > SLOW_PROCESSING_SECONDS
+    )
+    if stale:
+        status = ("过期", "bad")
+    elif slow_processing:
+        status = ("慢", "warn")
+    else:
+        status = ("实时", "good")
 
     decision_text = "等待建议"
     decision_detail = ""
@@ -1436,6 +1496,14 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     alerts: list[tuple[str, str]] = []
     if stale:
         alerts.append(("snapshot 超过 120 秒未更新，检查 Fatbeans 导出或 monitor 进程", "bad"))
+    if slow_processing:
+        alerts.append(
+            (
+                f"本次推理耗时 {processing_seconds:.1f}s；若连续出现，优先考虑降低 "
+                "n_trials 或 baseline-first / shadow 后台补齐",
+                "warn",
+            )
+        )
     if _flag(model_eval.get("q6_false_low_risk")):
         alerts.append(("真实有红货，但后验 q6 样本率过低", "bad"))
     elif _flag(model_eval.get("q6_p90_misses_truth")):
