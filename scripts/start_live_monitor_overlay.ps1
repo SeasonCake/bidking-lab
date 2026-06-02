@@ -4,7 +4,9 @@ param(
   [int]$NTrials = 500,
   [int]$RoiTrials = 250,
   [double]$StableSeconds = 1.0,
+  [double]$ProcessDelaySeconds = 1.5,
   [switch]$ProcessExisting,
+  [switch]$ReprocessExisting,
   [switch]$Restart
 )
 
@@ -25,9 +27,13 @@ $MonitorArgs = @(
   "--log-dir", $LogPath,
   "--n-trials", "$NTrials",
   "--roi-trials", "$RoiTrials",
-  "--stable-seconds", "$StableSeconds"
+  "--stable-seconds", "$StableSeconds",
+  "--process-delay-seconds", "$ProcessDelaySeconds"
 )
-if (-not $ProcessExisting) {
+if ($ReprocessExisting) {
+  $MonitorArgs += "--reprocess-existing-once"
+}
+if (-not $ProcessExisting -and -not $ReprocessExisting) {
   $MonitorArgs += "--ignore-existing"
 }
 
@@ -81,6 +87,10 @@ if (-not $OverlayProcesses) {
 Write-Host "BidKing live monitor started." -ForegroundColor Green
 Write-Host "WatchDir: $WatchDir"
 Write-Host "LogDir:   $LogPath"
+Write-Host "Delay:    $ProcessDelaySeconds sec between processed files"
+if ($ReprocessExisting) {
+  Write-Host "Replay:   existing files will be reprocessed once"
+}
 if ($MonitorProcesses) {
   Write-Host "Monitor:  already running (PID $($MonitorProcesses[0].ProcessId))"
 }

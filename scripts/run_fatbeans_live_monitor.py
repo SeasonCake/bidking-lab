@@ -221,6 +221,25 @@ def main() -> int:
         help="Ignore processed manifest and process matching files again",
     )
     parser.add_argument(
+        "--reprocess-existing-once",
+        action="store_true",
+        help=(
+            "In watch mode, forget manifest entries for files currently in "
+            "watch-dir, process them once, then continue normal fingerprint "
+            "tracking. This is safer than --reprocess for replaying a sample set."
+        ),
+    )
+    parser.add_argument(
+        "--process-delay-seconds",
+        type=float,
+        default=0.0,
+        help=(
+            "Sleep after each successfully processed watch-dir file. Useful "
+            "when replaying existing captures so latest_snapshot.json does not "
+            "change too quickly to inspect."
+        ),
+    )
+    parser.add_argument(
         "--retry-errors",
         action="store_true",
         help=(
@@ -308,6 +327,10 @@ def main() -> int:
     root = Path(args.watch_dir)
     manifest_path = log_dir / "processed_files.json"
     manifest = _load_manifest(manifest_path)
+    if args.reprocess_existing_once and not args.reprocess:
+        for path in _json_files(root):
+            manifest.pop(str(path.resolve()), None)
+        _save_manifest(manifest_path, manifest)
     if args.ignore_existing and not args.reprocess:
         for path in _json_files(root):
             try:
@@ -357,6 +380,8 @@ def main() -> int:
                     "name": path.name,
                 }
                 _save_manifest(manifest_path, manifest)
+                if args.process_delay_seconds > 0:
+                    time.sleep(args.process_delay_seconds)
             except Exception as exc:  # noqa: BLE001 - long-running monitor boundary
                 print(f"[error] {path}: {exc}", file=sys.stderr)
                 error_row = _append_error_log(

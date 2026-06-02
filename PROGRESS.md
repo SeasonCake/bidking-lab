@@ -2334,3 +2334,4 @@ python scripts/demo_shipwreck_r4_inference.py           # Phase 1A 推断 demo
 - 2026-06-02 小窗布局补丁：默认 overlay 从宽调试窗压缩为约 `480x420`，最小 `360x260`；mini 首屏指标改为两列，常驻层不再绘制右侧完整 MiniMap/风险栏，只保留核心卡片和紧凑风险提示；点击详细时再显示右侧 MiniMap/风险栏和 full detail。
 - 2026-06-02 hover/detail 补丁：hover 小窗现在优先绘制 MiniMap canvas，并把 q6/红货、布局、约束摘要放在文字区；点击 detail 时窗口会按内容请求尺寸自动放大到详情视图，收起后恢复 mini 尺寸。
 - 2026-06-02 live 试用细节补丁：MiniMap 未知品质改为深色斜纹，白色品质改为浅白色块，避免二者混淆；首屏最高价/停止价/风险带改为价格 chips，价值类指标字号加重；detail 层新增 `matplotlib_minimap` 可选渲染，按 contract 的 `min_round=3` 只在 R3+ 点击详情时生成，失败则回退到 Tk Canvas，不影响 mini/hover。
+- 2026-06-02 live monitor 回放补丁：`start_live_monitor_overlay.ps1` 默认在 watch-dir 每成功处理一个文件后等待 `1.5s`，避免历史样本批量回放时 overlay 切换过快；新增 `-ReprocessExisting`，对应 monitor 的 `--reprocess-existing-once`，可把当前目录内已记录过的文件重新放入队列一次，之后继续正常 fingerprint 跟踪，不会像 `--reprocess` 那样无限重复。
