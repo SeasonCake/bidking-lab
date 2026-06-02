@@ -96,6 +96,23 @@ def test_overlay_window_geometry_uses_compact_default() -> None:
     assert geometry.startswith("480x420")
 
 
+def test_overlay_detail_window_size_expands_within_screen() -> None:
+    overlay = _overlay_module()
+
+    assert overlay._detail_window_size(
+        1920,
+        1080,
+        requested_width=1200,
+        requested_height=1200,
+    ) == (980, 860)
+    assert overlay._detail_window_size(
+        900,
+        700,
+        requested_width=300,
+        requested_height=300,
+    ) == (820, 620)
+
+
 def test_overlay_snapshot_signature_changes_when_file_changes(tmp_path: Path) -> None:
     overlay = _overlay_module()
     snapshot = tmp_path / "latest_snapshot.json"
@@ -367,6 +384,7 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert interaction["mini"]["purpose"] == "always_on_top_core_tips"
     assert interaction["mini"]["metrics"][0][0] == "决策价值"
     assert interaction["hover"]["enabled"] is True
+    assert interaction["hover"]["sections"][0][0] == "MiniMap"
     assert any(section[0] == "输入约束" for section in interaction["hover"]["sections"])
     assert any(section[0] == "q6 风险参考" for section in interaction["hover"]["sections"])
     assert interaction["detail"]["enabled"] is True

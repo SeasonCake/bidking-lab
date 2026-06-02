@@ -18,6 +18,15 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 
+COMPACT_WIDTH = 480
+COMPACT_HEIGHT = 420
+COMPACT_MIN_WIDTH = 360
+COMPACT_MIN_HEIGHT = 260
+DETAIL_MIN_WIDTH = 820
+DETAIL_MIN_HEIGHT = 620
+DETAIL_MAX_WIDTH = 980
+DETAIL_MAX_HEIGHT = 860
+
 BG = "#09111f"
 PANEL = "#111827"
 PANEL_SOFT = "#162033"
@@ -56,9 +65,23 @@ def _snapshot_file_signature(path: Path) -> tuple[str, int, int] | tuple[str]:
 
 
 def _default_window_geometry(screen_width: int, screen_height: int) -> str:
-    width = max(360, min(480, screen_width - 80))
-    height = max(260, min(420, screen_height - 120))
+    width = max(COMPACT_MIN_WIDTH, min(COMPACT_WIDTH, screen_width - 80))
+    height = max(COMPACT_MIN_HEIGHT, min(COMPACT_HEIGHT, screen_height - 120))
     return f"{width}x{height}+40+80"
+
+
+def _detail_window_size(
+    screen_width: int,
+    screen_height: int,
+    *,
+    requested_width: int = 0,
+    requested_height: int = 0,
+) -> tuple[int, int]:
+    max_width = max(DETAIL_MIN_WIDTH, min(DETAIL_MAX_WIDTH, screen_width - 80))
+    max_height = max(DETAIL_MIN_HEIGHT, min(DETAIL_MAX_HEIGHT, screen_height - 120))
+    width = max(DETAIL_MIN_WIDTH, min(max_width, requested_width + 40))
+    height = max(DETAIL_MIN_HEIGHT, min(max_height, requested_height + 60))
+    return width, height
 
 
 def _fmt_int(value: Any) -> str:
@@ -912,13 +935,13 @@ def _ui_contract_minimap_detail_section(
 def _ui_contract_hover_sections(contract: dict[str, Any]) -> list[tuple[str, str, str]]:
     sections: list[tuple[str, str, str]] = []
     for section in (
-        _ui_contract_decision_section(contract),
+        _ui_contract_minimap_section(contract),
         _ui_contract_posterior_section(contract),
+        _ui_contract_q6_risk_section(contract),
         _ui_contract_layout_section(contract),
         _ui_contract_constraints_section(contract),
-        _ui_contract_q6_risk_section(contract),
+        _ui_contract_decision_section(contract),
         _ui_contract_fallback_section(contract),
-        _ui_contract_minimap_section(contract),
     ):
         if section is not None:
             sections.append(section)
@@ -1371,16 +1394,15 @@ class Overlay:
         self._detail_open = False
         self._hover_window: tk.Toplevel | None = None
         self._last_click_time: int | None = None
+        self._compact_geometry = _default_window_geometry(
+            root.winfo_screenwidth(),
+            root.winfo_screenheight(),
+        )
         root.title("BidKing Live")
         root.attributes("-topmost", True)
         root.attributes("-alpha", 0.96)
-        root.geometry(
-            _default_window_geometry(
-                root.winfo_screenwidth(),
-                root.winfo_screenheight(),
-            )
-        )
-        root.minsize(360, 260)
+        root.geometry(self._compact_geometry)
+        root.minsize(COMPACT_MIN_WIDTH, COMPACT_MIN_HEIGHT)
         root.configure(bg=BG)
         self.canvas = tk.Canvas(root, bg=BG, highlightthickness=0, bd=0)
         self.scrollbar = tk.Scrollbar(
@@ -1415,6 +1437,31 @@ class Overlay:
             lambda event: self._scroll_canvas(self.canvas, event),
         )
         self.refresh()
+
+    def _window_origin(self) -> tuple[int, int]:
+        try:
+            return max(0, self.root.winfo_x()), max(0, self.root.winfo_y())
+        except tk.TclError:
+            return 40, 80
+
+    def _resize_for_mode(self) -> None:
+        def resize() -> None:
+            if self._detail_open:
+                self.root.update_idletasks()
+                width, height = _detail_window_size(
+                    self.root.winfo_screenwidth(),
+                    self.root.winfo_screenheight(),
+                    requested_width=self.frame.winfo_reqwidth(),
+                    requested_height=self.frame.winfo_reqheight(),
+                )
+                x, y = self._window_origin()
+                self.root.geometry(f"{width}x{height}+{x}+{y}")
+                return
+            x, y = self._window_origin()
+            width_height = self._compact_geometry.split("+", 1)[0]
+            self.root.geometry(f"{width_height}+{x}+{y}")
+
+        self.root.after_idle(resize)
 
     def _scroll_canvas(self, canvas: tk.Canvas, event: tk.Event) -> str:
         canvas.yview_scroll(
@@ -1486,6 +1533,75 @@ class Overlay:
                 lines.append("  " + _short(detail, 132))
         return "\n".join(lines)
 
+    def _render_hover_minimap(
+        self,
+        parent: tk.Widget,
+        minimap: dict[str, Any],
+    ) -> None:
+        if minimap.get("status") != "available":
+            return
+        card = tk.Frame(parent, bg=PANEL_SOFT)
+        card.pack(anchor="w", fill="x", pady=(6, 2))
+        head = _join_parts(
+            (
+                f"MiniMap 已知 {minimap.get('known_items', 0)} 件",
+                f"默认{minimap.get('default_cells', 130)}格",
+                f"最高{minimap.get('max_cells', 250)}格",
+            )
+        )
+        self._label(
+            card,
+            head,
+            fg=ACCENT,
+            bg=PANEL_SOFT,
+            font=("Microsoft YaHei UI", 8, "bold"),
+        ).pack(anchor="w")
+        canvas_frame = tk.Frame(card, bg=PANEL_SOFT)
+        canvas_frame.pack(anchor="w", pady=(4, 0))
+        canvas = tk.Canvas(
+            canvas_frame,
+            bg=PANEL,
+            highlightthickness=0,
+            bd=0,
+        )
+        geometry = _minimap_canvas_geometry(minimap)
+        scrollable = minimap.get("scrollable") or (
+            geometry["height"] > geometry["visible_height"]
+        )
+        if scrollable:
+            scrollbar = tk.Scrollbar(
+                canvas_frame,
+                orient="vertical",
+                command=canvas.yview,
+            )
+            canvas.configure(yscrollcommand=scrollbar.set)
+            canvas.pack(side="left")
+            scrollbar.pack(side="right", fill="y")
+            canvas.bind(
+                "<MouseWheel>",
+                lambda event: self._scroll_canvas(canvas, event),
+            )
+        else:
+            canvas.pack(side="left")
+        self._draw_minimap(canvas, minimap)
+        quality_counts = _as_mapping(minimap.get("quality_counts"))
+        q_text = _join_parts(
+            (
+                f"紫×{quality_counts.get('q4', 0)}",
+                f"金×{quality_counts.get('q5', 0)}",
+                f"红×{quality_counts.get('q6', 0)}",
+            ),
+            sep="  ",
+        )
+        if q_text:
+            self._label(
+                card,
+                q_text,
+                fg=MUTED,
+                bg=PANEL_SOFT,
+                font=("Microsoft YaHei UI", 8),
+            ).pack(anchor="w", pady=(3, 0))
+
     def _position_hover(self, event: tk.Event) -> None:
         if self._hover_window is None:
             return
@@ -1504,8 +1620,14 @@ class Overlay:
         sections = hover.get("sections") or []
         if not hover.get("enabled") or not sections:
             return
-        text = self._interaction_sections_text(sections, limit=6)
-        if not text:
+        minimap = _as_mapping(self._current_model.get("minimap"))
+        text_sections = [
+            section
+            for section in sections
+            if not (minimap and section[0] == "MiniMap")
+        ]
+        text = self._interaction_sections_text(text_sections, limit=6)
+        if not text and not minimap:
             return
         try:
             exists = self._hover_window is not None and self._hover_window.winfo_exists()
@@ -1522,19 +1644,22 @@ class Overlay:
             body.pack(fill="both", expand=True, padx=1, pady=1)
             self._label(
                 body,
-                "悬浮详情",
+                "悬浮局面",
                 fg=ACCENT,
                 bg=PANEL_SOFT,
                 font=("Microsoft YaHei UI", 9, "bold"),
             ).pack(anchor="w")
-            self._label(
-                body,
-                text,
-                fg=TEXT,
-                bg=PANEL_SOFT,
-                font=("Microsoft YaHei UI", 8),
-                wraplength=460,
-            ).pack(anchor="w", pady=(4, 0))
+            if minimap:
+                self._render_hover_minimap(body, minimap)
+            if text:
+                self._label(
+                    body,
+                    text,
+                    fg=TEXT,
+                    bg=PANEL_SOFT,
+                    font=("Microsoft YaHei UI", 8),
+                    wraplength=460,
+                ).pack(anchor="w", pady=(4, 0))
             self._hover_window = window
         self._position_hover(event)
         if self._hover_window is not None:
@@ -1949,6 +2074,7 @@ class Overlay:
         if self._detail_open:
             self._render_detail_panel(self.frame, model)
         self._bind_layer_events(self.frame)
+        self._resize_for_mode()
         self._restore_canvas_scroll(previous_scroll)
 
     def refresh(self) -> None:
