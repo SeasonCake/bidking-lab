@@ -124,6 +124,10 @@ def _cleanup_exit_targets(
             pass
 
 
+def _should_cleanup_exit_targets(overlay: Any) -> bool:
+    return bool(getattr(overlay, "user_closed", False))
+
+
 def _default_window_geometry(screen_width: int, screen_height: int) -> str:
     width = max(COMPACT_MIN_WIDTH, min(COMPACT_WIDTH, screen_width - 80))
     height = max(COMPACT_MIN_HEIGHT, min(COMPACT_HEIGHT, screen_height - 120))
@@ -1917,6 +1921,7 @@ class Overlay:
         self._last_hover_position: tuple[int, int] | None = None
         self._last_click_time: int | None = None
         self._matplotlib_minimap_cache: tuple[str, tk.PhotoImage] | None = None
+        self.user_closed = False
         self._compact_geometry = _default_window_geometry(
             root.winfo_screenwidth(),
             root.winfo_screenheight(),
@@ -1959,7 +1964,12 @@ class Overlay:
             "<MouseWheel>",
             lambda event: self._scroll_canvas(self.canvas, event),
         )
+        root.protocol("WM_DELETE_WINDOW", self._on_user_close)
         self.refresh()
+
+    def _on_user_close(self) -> None:
+        self.user_closed = True
+        self.root.destroy()
 
     def _window_origin(self) -> tuple[int, int]:
         try:
@@ -2923,14 +2933,15 @@ def main() -> int:
     args = parser.parse_args()
 
     root = tk.Tk()
-    Overlay(root, Path(args.snapshot), max(250, args.interval_ms), demo=args.demo)
+    overlay = Overlay(root, Path(args.snapshot), max(250, args.interval_ms), demo=args.demo)
     try:
         root.mainloop()
     finally:
-        _cleanup_exit_targets(
-            tuple(args.stop_pid_on_exit),
-            tuple(args.cleanup_lock_on_exit),
-        )
+        if _should_cleanup_exit_targets(overlay):
+            _cleanup_exit_targets(
+                tuple(args.stop_pid_on_exit),
+                tuple(args.cleanup_lock_on_exit),
+            )
     return 0
 
 

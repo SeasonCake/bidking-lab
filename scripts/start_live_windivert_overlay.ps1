@@ -21,6 +21,8 @@ $LogPath = Join-Path $Repo $LogDir
 $LockPath = Join-Path $LogPath "monitor.lock"
 $MonitorOut = Join-Path $LogPath "monitor.stdout.log"
 $MonitorErr = Join-Path $LogPath "monitor.stderr.log"
+$OverlayOut = Join-Path $LogPath "overlay.stdout.log"
+$OverlayErr = Join-Path $LogPath "overlay.stderr.log"
 
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
   [Security.Principal.WindowsBuiltinRole]::Administrator
@@ -222,7 +224,7 @@ if (-not $OverlayProcesses) {
       "--cleanup-lock-on-exit", $LockPath
     )
   }
-  Start-Process -FilePath $PythonWindowed -WorkingDirectory $Repo -ArgumentList $OverlayArgs
+  Start-Process -FilePath $PythonWindowed -WorkingDirectory $Repo -ArgumentList $OverlayArgs -RedirectStandardOutput $OverlayOut -RedirectStandardError $OverlayErr
 }
 
 Write-Host "BidKing WinDivert live monitor started." -ForegroundColor Green

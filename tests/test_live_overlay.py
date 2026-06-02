@@ -187,6 +187,19 @@ def test_overlay_exit_cleanup_terminates_unique_pids_and_removes_locks(
     assert not lock_path.exists()
 
 
+def test_overlay_exit_cleanup_only_after_user_close() -> None:
+    overlay = _overlay_module()
+
+    class Dummy:
+        user_closed = False
+
+    dummy = Dummy()
+    assert overlay._should_cleanup_exit_targets(dummy) is False
+
+    dummy.user_closed = True
+    assert overlay._should_cleanup_exit_targets(dummy) is True
+
+
 def test_overlay_section_style_classifies_key_topics() -> None:
     overlay = _overlay_module()
 
