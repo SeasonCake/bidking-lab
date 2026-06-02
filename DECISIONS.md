@@ -804,6 +804,8 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新 8**：tail replacement truth 已落地为 review-only 第二审计轴：对被裁掉的 q6 极端尾部，按同品质同形状普通红候选估计替代值，live 路径优先使用当前地图池权重的 P50，缺少 map/drop 权重时才退回 Item 表中位。新增 `final_q6_tail_replacement_value/count/items/source`、`final_q6_decision_value_with_tail_replacement`、`q6_tail_replacement_p90_misses_truth` 和对应 under-by/summary/UI review 字段。该字段只用于判断“裁 0 口径是否低估实战可替代红货”，不改变 `final_q6_decision_value`、posterior、baseline 出价、shadow 出价或 bid hint。`aisha_shipwreck_test_newsample7__normal_4rounds.json` 的 smoke 中，百年人参 raw tail `103.9万` 被裁掉，但同形状替代值为 `15.894万`；`n_trials=500 / shadow_trials=80` 下仍触发 replacement truth miss，且 `shadow_affects_bid_rows=0`。
 
+**更新 9**：replacement 已进一步接入 posterior 实验字段，但仍不进入正式出价链路。v2 report 新增 `tail_replacement_decision_value` 与 `q6_tail_replacement_decision_value` quantile，live/review 用 `v2_q6_tail_replacement_estimate_p90` 判断替代口径本身是否覆盖 truth；baseline 出价、停止价、抢仓上限继续只读正式 `decision_value`。同时收紧 flag：只有 `final_q6_tail_replacement_value > 0` 时才允许打 `q6_tail_replacement_truth_miss`，避免 `sample58` 这类永乐/大红 plannable miss 被误归因到 replacement。`sample58` 已确认最高红为 `永乐大典残本二`，属于 quality-only 深红风险，不是裁尾问题。
+
 ## 2026-06-02 · 公开总格/总件数可进入正式 baseline，结算 truth 必须隔离
 
 **背景**：UI 需要展示格数预测、实际格子数、件数预测、已知紫/金件数和排除条件；同时审计发现 monitor 曾统一清掉 `warehouse_total_cells` / `total_item_count`，这会丢掉结算前全量轮廓或透视给出的安全公开约束。

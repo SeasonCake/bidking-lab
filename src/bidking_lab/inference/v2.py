@@ -307,9 +307,11 @@ class PosteriorReport:
     known_value: int
     layout_score: float
     decision_value: QuantileSummary | None = None
+    tail_replacement_decision_value: QuantileSummary | None = None
     q6_match_rate: float | None = None
     q6_value: QuantileSummary | None = None
     q6_decision_value: QuantileSummary | None = None
+    q6_tail_replacement_decision_value: QuantileSummary | None = None
     q6_count: QuantileSummary | None = None
     q6_cells: QuantileSummary | None = None
     remaining_cells_after_layout: QuantileSummary | None = None
@@ -1351,6 +1353,36 @@ class ConditionalSampler:
             expected_session_value=expected_session_value,
         )
 
+    def tail_replacement_values(self) -> dict[tuple[int, int, int], int]:
+        """Map ``(quality, width, height)`` to map-weighted ordinary item P50."""
+
+        values_by_shape: dict[tuple[int, int, int], list[int]] = {}
+        weights_by_shape: dict[tuple[int, int, int], list[float]] = {}
+        for pool, pool_weight in zip(self._sampler.pools, self._sampler.pool_weights):
+            if len(pool.probabilities) == 0:
+                continue
+            mean_counts = (pool.n_min + pool.n_max) / 2
+            for item, probability, mean_count in zip(
+                pool.items,
+                pool.probabilities,
+                mean_counts,
+            ):
+                if item.shape_w <= 0 or item.shape_h <= 0:
+                    continue
+                if item.value <= 0 or item.value >= DEFAULT_VALUE_FLOOR:
+                    continue
+                key = (item.quality, item.shape_w, item.shape_h)
+                values_by_shape.setdefault(key, []).append(int(item.value))
+                weights_by_shape.setdefault(key, []).append(
+                    float(pool_weight) * float(probability) * float(mean_count)
+                )
+        out: dict[tuple[int, int, int], int] = {}
+        for key, values in values_by_shape.items():
+            summary = _quantiles(values, weights_by_shape.get(key, ()))
+            if summary is not None:
+                out[key] = int(round(summary.p50))
+        return out
+
     def sample(self, rng: np.random.Generator | None = None) -> SessionTruth:
         rng = rng or np.random.default_rng()
         buckets: dict[int, BucketTruth] = {}
@@ -2384,6 +2416,53 @@ def q6_decision_value_for_truth(truth: SessionTruth, problem: ResidualProblem) -
     )
 
 
+def tail_replacement_decision_value_for_truth(
+    truth: SessionTruth,
+    problem: ResidualProblem,
+    replacement_values: Mapping[tuple[int, int, int], int],
+) -> int:
+    """Return decision value plus same-shape ordinary replacement for trimmed tails."""
+
+    exact_anchor_ids = set(problem.anchor_item_counts)
+    total = 0
+    for bucket in truth.buckets.values():
+        for item in bucket.items:
+            if _is_plannable_item(item, problem, exact_anchor_ids):
+                total += item.value
+                continue
+            total += _tail_replacement_value(item, replacement_values)
+    return total
+
+
+def q6_tail_replacement_decision_value_for_truth(
+    truth: SessionTruth,
+    problem: ResidualProblem,
+    replacement_values: Mapping[tuple[int, int, int], int],
+) -> int:
+    """Return q6 decision value plus same-shape ordinary replacement."""
+
+    exact_anchor_ids = set(problem.anchor_item_counts)
+    bucket = truth.buckets.get(6)
+    if bucket is None:
+        return 0
+    total = 0
+    for item in bucket.items:
+        if _is_plannable_item(item, problem, exact_anchor_ids):
+            total += item.value
+            continue
+        total += _tail_replacement_value(item, replacement_values)
+    return total
+
+
+def _tail_replacement_value(
+    item: Item,
+    replacement_values: Mapping[tuple[int, int, int], int],
+) -> int:
+    if item.shape_w <= 0 or item.shape_h <= 0:
+        return 0
+    return int(replacement_values.get((item.quality, item.shape_w, item.shape_h), 0))
+
+
 def _is_plannable_item(
     item: Item,
     problem: ResidualProblem,
@@ -2454,12 +2533,15 @@ def _estimate_posterior_for_problem(
         q6_residual_prior_floor_ratio=q6_residual_prior_floor_ratio,
     )
     q6_prior = sampler.quality_drop_prior(6)
+    tail_replacement_values = sampler.tail_replacement_values()
     rng = np.random.default_rng(seed)
     values: list[int] = []
     decision_values: list[int] = []
+    tail_replacement_decision_values: list[int] = []
     cells: list[int] = []
     q6_values: list[int] = []
     q6_decision_values: list[int] = []
+    q6_tail_replacement_decision_values: list[int] = []
     q6_counts: list[int] = []
     q6_cells: list[int] = []
     remaining_cells_after_layout: list[int] = []
@@ -2503,6 +2585,13 @@ def _estimate_posterior_for_problem(
         )
         values.append(truth.total_value())
         decision_values.append(decision_value_for_truth(truth, problem))
+        tail_replacement_decision_values.append(
+            tail_replacement_decision_value_for_truth(
+                truth,
+                problem,
+                tail_replacement_values,
+            )
+        )
         cells.append(truth.warehouse_total_cells)
         q6_bucket = truth.buckets.get(6)
         q6_values.append(q6_bucket.value_sum if q6_bucket is not None else 0)
@@ -2510,6 +2599,13 @@ def _estimate_posterior_for_problem(
         q6_cell_count = q6_bucket.total_cells if q6_bucket is not None else 0
         q6_cells.append(q6_cell_count)
         q6_decision_values.append(q6_decision_value_for_truth(truth, problem))
+        q6_tail_replacement_decision_values.append(
+            q6_tail_replacement_decision_value_for_truth(
+                truth,
+                problem,
+                tail_replacement_values,
+            )
+        )
         remaining_cells = max(
             0,
             int(truth.warehouse_total_cells) - int(problem.layout.occupied_cells),
@@ -2571,9 +2667,17 @@ def _estimate_posterior_for_problem(
         known_value=problem.known_value,
         layout_score=problem.layout.score,
         decision_value=_quantiles(decision_values, weights),
+        tail_replacement_decision_value=_quantiles(
+            tail_replacement_decision_values,
+            weights,
+        ),
         q6_match_rate=q6_match_rate,
         q6_value=_quantiles(q6_values, weights),
         q6_decision_value=_quantiles(q6_decision_values, weights),
+        q6_tail_replacement_decision_value=_quantiles(
+            q6_tail_replacement_decision_values,
+            weights,
+        ),
         q6_count=_quantiles(q6_counts, weights),
         q6_cells=_quantiles(q6_cells, weights),
         remaining_cells_after_layout=_quantiles(remaining_cells_after_layout, weights),

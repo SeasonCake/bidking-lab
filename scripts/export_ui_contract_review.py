@@ -723,6 +723,15 @@ def review_row_from_artifact(
         "q6_tail_replacement_p90_under_by": diag_q6.get(
             "tail_replacement_p90_under_by"
         ),
+        "q6_tail_replacement_estimate_p90": diag_q6.get(
+            "tail_replacement_estimate_p90"
+        ),
+        "q6_tail_replacement_estimate_p90_misses_truth": diag_q6.get(
+            "tail_replacement_estimate_p90_misses_truth"
+        ),
+        "q6_tail_replacement_estimate_p90_under_by": diag_q6.get(
+            "tail_replacement_estimate_p90_under_by"
+        ),
         "q6_tail_replacement_count": diag_q6.get("tail_replacement_count"),
         "q6_tail_replacement_items": diag_q6.get("tail_replacement_items"),
         "q6_tail_replacement_source": diag_q6.get("tail_replacement_source"),

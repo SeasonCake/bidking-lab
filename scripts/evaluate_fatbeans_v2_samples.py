@@ -1222,6 +1222,11 @@ def evaluate_path(
         decision_p10 = _round(report.decision_value.p10 if report.decision_value else None)
         decision_p50 = _round(report.decision_value.p50 if report.decision_value else None)
         decision_p90 = _round(report.decision_value.p90 if report.decision_value else None)
+        tail_replacement_decision_p90 = _round(
+            report.tail_replacement_decision_value.p90
+            if report.tail_replacement_decision_value
+            else None
+        )
         q6_value_p50 = _round(report.q6_value.p50 if report.q6_value else None)
         q6_value_p90 = _round(report.q6_value.p90 if report.q6_value else None)
         q6_decision_value_p50 = _round(
@@ -1232,6 +1237,11 @@ def evaluate_path(
         q6_decision_value_p90 = _round(
             report.q6_decision_value.p90
             if report.q6_decision_value
+            else None
+        )
+        q6_tail_replacement_decision_value_p90 = _round(
+            report.q6_tail_replacement_decision_value.p90
+            if report.q6_tail_replacement_decision_value
             else None
         )
         q6_count_p90 = _round(report.q6_count.p90 if report.q6_count else None)
@@ -1278,6 +1288,15 @@ def evaluate_path(
         final_q6_decision_value = int(
             truth_breakdown.get("final_q6_decision_value") or 0
         )
+        final_q6_tail_replacement_value = int(
+            truth_breakdown.get("final_q6_tail_replacement_value") or 0
+        )
+        final_q6_decision_value_with_tail_replacement = int(
+            truth_breakdown.get(
+                "final_q6_decision_value_with_tail_replacement"
+            )
+            or final_q6_decision_value
+        )
         row = {
             "file": path.name,
             "status": "ok",
@@ -1323,6 +1342,9 @@ def evaluate_path(
             "v2_decision_value_p10": decision_p10,
             "v2_decision_value_p50": decision_p50,
             "v2_decision_value_p90": decision_p90,
+            "v2_tail_replacement_decision_value_p90": (
+                tail_replacement_decision_p90
+            ),
             "v2_decision_value_p50_error": (
                 decision_p50 - truth_breakdown["final_decision_value"]
                 if decision_p50 is not None and "final_decision_value" in truth_breakdown
@@ -1348,6 +1370,9 @@ def evaluate_path(
             "v2_q6_value_p90": q6_value_p90,
             "v2_q6_decision_value_p50": q6_decision_value_p50,
             "v2_q6_decision_value_p90": q6_decision_value_p90,
+            "v2_q6_tail_replacement_decision_value_p90": (
+                q6_tail_replacement_decision_value_p90
+            ),
             "v2_q6_count_p90": q6_count_p90,
             "v2_q6_cells_p90": q6_cells_p90,
             "v2_remaining_cells_after_layout_p10": remaining_cells_after_layout_p10,
@@ -1391,6 +1416,26 @@ def evaluate_path(
             "v2_q6_decision_value_p90_under_by": (
                 max(0, final_q6_decision_value - q6_decision_value_p90)
                 if q6_decision_value_p90 is not None
+                else None
+            ),
+            "v2_q6_tail_replacement_decision_value_p90_under_by": (
+                max(
+                    0,
+                    final_q6_decision_value_with_tail_replacement
+                    - q6_decision_value_p90,
+                )
+                if q6_decision_value_p90 is not None
+                and final_q6_tail_replacement_value > 0
+                else None
+            ),
+            "v2_q6_tail_replacement_estimate_p90_under_by": (
+                max(
+                    0,
+                    final_q6_decision_value_with_tail_replacement
+                    - q6_tail_replacement_decision_value_p90,
+                )
+                if q6_tail_replacement_decision_value_p90 is not None
+                and final_q6_tail_replacement_value > 0
                 else None
             ),
             "v2_value_p50_error": (
@@ -1444,6 +1489,18 @@ def evaluate_path(
                 final_q6_decision_value > 0
                 and q6_decision_value_p90 is not None
                 and q6_decision_value_p90 < final_q6_decision_value
+            ),
+            "q6_tail_replacement_p90_misses_truth": (
+                final_q6_tail_replacement_value > 0
+                and q6_decision_value_p90 is not None
+                and q6_decision_value_p90
+                < final_q6_decision_value_with_tail_replacement
+            ),
+            "q6_tail_replacement_estimate_p90_misses_truth": (
+                final_q6_tail_replacement_value > 0
+                and q6_tail_replacement_decision_value_p90 is not None
+                and q6_tail_replacement_decision_value_p90
+                < final_q6_decision_value_with_tail_replacement
             ),
             "bucket_targets": _format_bucket_targets(problem),
             "presolve_unreachable_exact_buckets": (

@@ -89,6 +89,9 @@ _Q6_SHADOW_REVIEW_FIELDS: tuple[str, ...] = (
     "final_q6_decision_value_with_tail_replacement",
     "q6_tail_replacement_p90_misses_truth",
     "v2_q6_tail_replacement_decision_value_p90_under_by",
+    "v2_q6_tail_replacement_estimate_p90",
+    "q6_tail_replacement_estimate_p90_misses_truth",
+    "v2_q6_tail_replacement_estimate_p90_under_by",
     "q6_top_size_band",
     "baseline_decision_value_p50",
     "baseline_decision_value_p90",
@@ -413,6 +416,12 @@ def brief_summary(summary: dict[str, Any]) -> dict[str, Any]:
             "q6_tail_replacement_p90_under_by_median": summary.get(
                 "q6_tail_replacement_p90_under_by_median"
             ),
+            "q6_tail_replacement_estimate_p90_miss_count": summary.get(
+                "q6_tail_replacement_estimate_p90_miss_count"
+            ),
+            "q6_tail_replacement_estimate_p90_under_by_median": summary.get(
+                "q6_tail_replacement_estimate_p90_under_by_median"
+            ),
             "q6_false_low_count": summary.get("q6_false_low_count"),
             "q6_below_drop_prior_count": summary.get("q6_below_drop_prior_count"),
             "q6_practical_gate_count": summary.get("q6_practical_gate_count"),
@@ -529,6 +538,15 @@ def _shadow_candidate_review_row(
         ),
         "v2_q6_tail_replacement_decision_value_p90_under_by": row.get(
             "v2_q6_tail_replacement_decision_value_p90_under_by"
+        ),
+        "v2_q6_tail_replacement_estimate_p90": row.get(
+            "v2_q6_tail_replacement_estimate_p90"
+        ),
+        "q6_tail_replacement_estimate_p90_misses_truth": row.get(
+            "q6_tail_replacement_estimate_p90_misses_truth"
+        ),
+        "v2_q6_tail_replacement_estimate_p90_under_by": row.get(
+            "v2_q6_tail_replacement_estimate_p90_under_by"
         ),
         "q6_top_size_band": row.get("q6_top_size_band"),
         "baseline_decision_value_p50": row.get("decision_value_p50"),
@@ -1518,12 +1536,20 @@ def summarize(
         row for row in valid
         if row.get("q6_tail_replacement_p90_misses_truth") is True
     ]
+    q6_tail_replacement_estimate_p90_miss = [
+        row for row in valid
+        if row.get("q6_tail_replacement_estimate_p90_misses_truth") is True
+    ]
     has_q6_plannable_metrics = any(
         row.get("q6_plannable_p90_misses_truth") is not None
         for row in valid
     )
     has_q6_tail_replacement_metrics = any(
         row.get("q6_tail_replacement_p90_misses_truth") is not None
+        for row in valid
+    )
+    has_q6_tail_replacement_estimate_metrics = any(
+        row.get("q6_tail_replacement_estimate_p90_misses_truth") is not None
         for row in valid
     )
     q6_shadow_sampling_progress = _q6_shadow_sampling_progress(valid)
@@ -1790,6 +1816,19 @@ def summarize(
                 "v2_q6_tail_replacement_decision_value_p90_under_by",
             )
             if has_q6_tail_replacement_metrics
+            else None
+        ),
+        "q6_tail_replacement_estimate_p90_miss_count": (
+            len(q6_tail_replacement_estimate_p90_miss)
+            if has_q6_tail_replacement_estimate_metrics
+            else None
+        ),
+        "q6_tail_replacement_estimate_p90_under_by_median": (
+            _median_value(
+                q6_tail_replacement_estimate_p90_miss,
+                "v2_q6_tail_replacement_estimate_p90_under_by",
+            )
+            if has_q6_tail_replacement_estimate_metrics
             else None
         ),
         "q6_miss_root_causes": _root_cause_summary(

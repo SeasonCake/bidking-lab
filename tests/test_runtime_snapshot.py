@@ -523,6 +523,9 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
                 "q6_plannable_p90_misses_truth": False,
                 "q6_tail_replacement_p90_misses_truth": True,
                 "v2_q6_tail_replacement_decision_value_p90_under_by": 93_000,
+                "v2_q6_tail_replacement_estimate_p90": 80_000,
+                "q6_tail_replacement_estimate_p90_misses_truth": True,
+                "v2_q6_tail_replacement_estimate_p90_under_by": 13_000,
                 "q6_false_low_risk": False,
                 "q6_below_drop_prior": True,
                 "q6_top_size_band": "q6_top_large",
@@ -661,6 +664,14 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert contract["diagnostics"]["q6"]["plannable_p90_misses_truth"] is False
     assert contract["diagnostics"]["q6"]["tail_replacement_p90_misses_truth"] is True
     assert contract["diagnostics"]["q6"]["tail_replacement_p90_under_by"] == 93000
+    assert contract["diagnostics"]["q6"]["tail_replacement_estimate_p90"] == 80000
+    assert (
+        contract["diagnostics"]["q6"][
+            "tail_replacement_estimate_p90_misses_truth"
+        ]
+        is True
+    )
+    assert contract["diagnostics"]["q6"]["tail_replacement_estimate_p90_under_by"] == 13000
     assert contract["diagnostics"]["q6"]["tail_replacement_count"] == 1
     assert contract["diagnostics"]["q6"]["tail_replacement_items"] == (
         "tail:486510->93000"

@@ -221,6 +221,17 @@ def _artifact(
                         if q6_tail_replacement_miss
                         else 0
                     ),
+                    "tail_replacement_estimate_p90": (
+                        truth_q6_tail_replacement_value - 1_000
+                        if truth_q6_tail_replacement_value
+                        else 0
+                    ),
+                    "tail_replacement_estimate_p90_misses_truth": (
+                        q6_tail_replacement_miss
+                    ),
+                    "tail_replacement_estimate_p90_under_by": (
+                        1_000 if q6_tail_replacement_miss else 0
+                    ),
                     "tail_replacement_count": (
                         1 if truth_q6_tail_replacement_value else 0
                     ),
@@ -277,6 +288,9 @@ def test_review_row_keeps_manual_check_fields_without_flags() -> None:
     assert row["truth_q6_tail_replacement_value"] == 0
     assert row["q6_tail_replacement_p90_misses_truth"] is False
     assert row["q6_tail_replacement_p90_under_by"] == 0
+    assert row["q6_tail_replacement_estimate_p90"] == 0
+    assert row["q6_tail_replacement_estimate_p90_misses_truth"] is False
+    assert row["q6_tail_replacement_estimate_p90_under_by"] == 0
     assert row["input_constraints_mode"] == "pre_settlement_trusted_totals"
     assert row["public_constraint_key"] == "max_quality"
     assert row["evidence_profile_key"] == "public:max_quality+shape+layout"

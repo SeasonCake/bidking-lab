@@ -303,6 +303,8 @@ no-pool-match 数量和最有代表性的样本文件。
 - `q6_plannable_p90_misses_truth`：q6 decision P90 是否低于可规划红货 truth；shadow 升级优先看这个字段。
 - `v2_q6_decision_value_p90_under_by`：q6 decision P90 对可规划红货的低估金额。
 - `q6_tail_replacement_p90_misses_truth`：q6 decision P90 是否低于 replacement truth；这是第二审计轴，不直接代表正式出价应提高。
+- `v2_q6_tail_replacement_estimate_p90`：实验性 posterior replacement q6 P90，用于看“替代估计口径”本身是否覆盖 truth；正式出价不读它。
+- `q6_tail_replacement_estimate_p90_misses_truth`：实验性 replacement estimate 是否仍低于 replacement truth。
 - `q6_top_size_band`：最终最高价值物品是否为 q6，以及它是 small/compact/medium/large/huge。
 - `layout_conflict`：存在 footprint overlap/overflow。
 - `layout_conflict_root`：拆分 `footprint_overlap`、`footprint_overflow`、

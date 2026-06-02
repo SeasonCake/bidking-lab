@@ -408,6 +408,11 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["model_eval"]["q6_quality_only_deep_row_threshold"] == 13
     assert "final_q6_tail_replacement_value" in artifact["model_eval"]
     assert "q6_tail_replacement_p90_misses_truth" in artifact["model_eval"]
+    assert "v2_q6_tail_replacement_estimate_p90" in artifact["model_eval"]
+    assert (
+        "q6_tail_replacement_estimate_p90_misses_truth"
+        in artifact["model_eval"]
+    )
     assert (
         "v2_q6_tail_replacement_decision_value_p90_under_by"
         in artifact["model_eval"]
@@ -499,6 +504,47 @@ def test_model_eval_shadow_readiness_uses_plannable_q6_truth() -> None:
     assert row["q6_residual_deep_floor_shadow_under_before"] is False
     assert row["q6_residual_deep_floor_shadow_helped"] is False
     assert row["q6_residual_deep_floor_shadow_false_positive_proxy"] is True
+
+
+def test_model_eval_tail_replacement_miss_requires_replacement_value() -> None:
+    row = _model_eval_row(
+        file="sample58.json",
+        artifact={
+            "file": "sample58.json",
+            "hero": "aisha",
+            "map_id": 2502,
+            "round": 2,
+            "bid_rows": [
+                {
+                    "决策价值 P10/P50/P90": "100 / 200 / 300",
+                    "原始价值 P10/P50/P90": "100 / 200 / 300",
+                },
+            ],
+            "warehouse_rows": [{"价值 P10/P50/P90": "100 / 200 / 300"}],
+            "v2_posterior_rows": [
+                {
+                    "q6价值 P10/P50/P90": "0 / 0 / 2,100,000",
+                    "q6决策价值 P10/P50/P90": "0 / 0 / 2,100,000",
+                    "诊断": "",
+                },
+            ],
+            "q6_residual_deep_floor_shadow": {},
+        },
+        final_value=3_185_700,
+        final_cells=38,
+        truth_breakdown={
+            "final_q6_value": 3_185_700,
+            "final_q6_decision_value": 3_185_700,
+            "final_q6_trimmed_tail_value": 0,
+            "final_q6_tail_replacement_value": 0,
+            "final_q6_decision_value_with_tail_replacement": 3_185_700,
+        },
+    )
+
+    assert row is not None
+    assert row["q6_plannable_p90_misses_truth"] is True
+    assert row["q6_tail_replacement_p90_misses_truth"] is None
+    assert row["v2_q6_tail_replacement_decision_value_p90_under_by"] is None
 
 
 def test_inventory_quality_breakdown_keeps_exact_tail_anchor_plannable() -> None:

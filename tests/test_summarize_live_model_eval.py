@@ -131,6 +131,9 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
                 "final_q6_decision_value_with_tail_replacement": 93_080,
                 "q6_tail_replacement_p90_misses_truth": True,
                 "v2_q6_tail_replacement_decision_value_p90_under_by": 93_050,
+                "v2_q6_tail_replacement_estimate_p90": 93_000,
+                "q6_tail_replacement_estimate_p90_misses_truth": True,
+                "v2_q6_tail_replacement_estimate_p90_under_by": 80,
                 "final_top_item_quality": 6,
                 "final_top_item_cells": 9,
                 "decision_value_p50": 180,
@@ -257,6 +260,8 @@ def test_summarize_reports_collection_readiness_gaps() -> None:
     assert summary["q6_tail_replacement_value_median"] == 93_000
     assert summary["q6_tail_replacement_p90_miss_count"] == 1
     assert summary["q6_tail_replacement_p90_under_by_median"] == 93_050
+    assert summary["q6_tail_replacement_estimate_p90_miss_count"] == 1
+    assert summary["q6_tail_replacement_estimate_p90_under_by_median"] == 80
     assert summary["q6_p90_miss_count"] == 1
     assert summary["q6_p90_under_by_median"] == 50
     assert summary["category_target_rows"] == 2
@@ -438,6 +443,8 @@ def test_brief_summary_keeps_live_review_signals_compact() -> None:
         "q6_tail_replacement_value_median": 93_000,
         "q6_tail_replacement_p90_miss_count": 1,
         "q6_tail_replacement_p90_under_by_median": 93_050,
+        "q6_tail_replacement_estimate_p90_miss_count": 1,
+        "q6_tail_replacement_estimate_p90_under_by_median": 80,
         "q6_false_low_count": 16,
         "q6_below_drop_prior_count": 16,
         "q6_practical_gate_count": 46,
@@ -471,6 +478,9 @@ def test_brief_summary_keeps_live_review_signals_compact() -> None:
     ]
     assert brief["q6"]["q6_tail_replacement_value_count"] == 3
     assert brief["q6"]["q6_tail_replacement_p90_under_by_median"] == 93_050
+    assert (
+        brief["q6"]["q6_tail_replacement_estimate_p90_under_by_median"] == 80
+    )
     assert brief["layout"]["top_conflict_root_causes"] == [
         {"cause": "footprint_overlap", "n": 62}
     ]

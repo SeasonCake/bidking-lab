@@ -280,10 +280,16 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
             "匹配": f"{report.n_matched}/{report.n_total}",
             "价值口径": "decision_value",
             "决策价值 P10/P50/P90": _format_quantile_interval(report.decision_value),
+            "替代决策价值 P10/P50/P90": _format_quantile_interval(
+                getattr(report, "tail_replacement_decision_value", None)
+            ),
             "原始价值 P10/P50/P90": _format_quantile_interval(report.total_value),
             "q6价值 P10/P50/P90": _format_quantile_interval(report.q6_value),
             "q6决策价值 P10/P50/P90": _format_quantile_interval(
                 getattr(report, "q6_decision_value", None)
+            ),
+            "q6替代决策价值 P10/P50/P90": _format_quantile_interval(
+                getattr(report, "q6_tail_replacement_decision_value", None)
             ),
             "q6件数 P10/P50/P90": _format_quantile_interval(
                 getattr(report, "q6_count", None)
@@ -1307,6 +1313,7 @@ def _model_eval_row(
     q6_prior_expected_value = None
     q6_value_p90 = None
     q6_decision_value_p90 = None
+    q6_tail_replacement_estimate_p90 = None
     q6_count_p90 = None
     q6_cells_p90 = None
     remaining_cells_after_layout_p10 = None
@@ -1375,6 +1382,10 @@ def _model_eval_row(
         )
         q6_decision_value_p90 = _parse_range_value(
             str(v2_rows[0].get("q6决策价值 P10/P50/P90", "")),
+            2,
+        )
+        q6_tail_replacement_estimate_p90 = _parse_range_value(
+            str(v2_rows[0].get("q6替代决策价值 P10/P50/P90", "")),
             2,
         )
         q6_count_p90 = _parse_range_value(
@@ -1447,6 +1458,9 @@ def _model_eval_row(
             else final_q6_decision_value
         )
         or 0
+    )
+    final_q6_tail_replacement_value = int(
+        (truth_breakdown or {}).get("final_q6_tail_replacement_value") or 0
     )
     q6_shadow_under_before = (
         q6_shadow_active
@@ -1558,6 +1572,7 @@ def _model_eval_row(
         "v2_q6_prior_expected_value": q6_prior_expected_value,
         "v2_q6_value_p90": q6_value_p90,
         "v2_q6_decision_value_p90": q6_decision_value_p90,
+        "v2_q6_tail_replacement_estimate_p90": q6_tail_replacement_estimate_p90,
         "v2_q6_count_p90": q6_count_p90,
         "v2_q6_cells_p90": q6_cells_p90,
         "v2_remaining_cells_after_layout_p10": remaining_cells_after_layout_p10,
@@ -1685,6 +1700,17 @@ def _model_eval_row(
                 - q6_decision_value_p90,
             )
             if q6_decision_value_p90 is not None
+            and final_q6_tail_replacement_value > 0
+            else None
+        ),
+        "v2_q6_tail_replacement_estimate_p90_under_by": (
+            max(
+                0,
+                final_q6_decision_value_with_tail_replacement
+                - q6_tail_replacement_estimate_p90,
+            )
+            if q6_tail_replacement_estimate_p90 is not None
+            and final_q6_tail_replacement_value > 0
             else None
         ),
         "q6_tail_replacement_p90_misses_truth": (
@@ -1692,6 +1718,15 @@ def _model_eval_row(
             < final_q6_decision_value_with_tail_replacement
             if q6_decision_value_p90 is not None
             and final_q6_decision_value_with_tail_replacement > 0
+            and final_q6_tail_replacement_value > 0
+            else None
+        ),
+        "q6_tail_replacement_estimate_p90_misses_truth": (
+            q6_tail_replacement_estimate_p90
+            < final_q6_decision_value_with_tail_replacement
+            if q6_tail_replacement_estimate_p90 is not None
+            and final_q6_decision_value_with_tail_replacement > 0
+            and final_q6_tail_replacement_value > 0
             else None
         ),
         "q6_false_low_risk": (

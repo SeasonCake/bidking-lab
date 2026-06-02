@@ -28,6 +28,8 @@ from bidking_lab.inference.v2 import (
     layout_feasibility_from_store,
     layout_feasibility_score,
     q6_decision_value_for_truth,
+    q6_tail_replacement_decision_value_for_truth,
+    tail_replacement_decision_value_for_truth,
     value_evidence_score,
 )
 from bidking_lab.live.fatbeans import (
@@ -582,9 +584,11 @@ def test_estimate_posterior_v2_uses_anchor_without_rejection_dead_end() -> None:
     assert report.n_matched == 50
     assert report.total_value is not None
     assert report.total_value.p10 >= 3_240
+    assert report.tail_replacement_decision_value is not None
     assert report.q6_match_rate is not None
     assert report.q6_value is not None
     assert report.q6_decision_value is not None
+    assert report.q6_tail_replacement_decision_value is not None
     assert report.q6_count is not None
     assert report.q6_cells is not None
     assert any(
@@ -2092,6 +2096,52 @@ def test_decision_value_trims_unconfirmed_small_rare_tail() -> None:
 
     assert decision_value_for_truth(truth, problem) == 900_000
     assert q6_decision_value_for_truth(truth, problem) == 900_000
+
+
+def test_tail_replacement_decision_value_uses_same_shape_ordinary_value() -> None:
+    maps, drops, items = _tables()
+    small_rare = _item(1086002, quality=6, value=1_495_000, shape=(1, 1))
+    ordinary_same_shape = _item(1086006, quality=6, value=93_000, shape=(1, 1))
+    large_rare = _item(1086003, quality=6, value=900_000, shape=(4, 4))
+    items = {
+        **items,
+        small_rare.item_id: small_rare,
+        ordinary_same_shape.item_id: ordinary_same_shape,
+        large_rare.item_id: large_rare,
+    }
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    truth = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=18,
+        buckets={
+            6: BucketTruth(
+                quality=6,
+                count=2,
+                total_cells=17,
+                value_sum=2_395_000,
+                items=[small_rare, large_rare],
+            ),
+        },
+    )
+    replacements = {(6, 1, 1): ordinary_same_shape.value}
+
+    assert decision_value_for_truth(truth, problem) == large_rare.value
+    assert q6_decision_value_for_truth(truth, problem) == large_rare.value
+    assert (
+        tail_replacement_decision_value_for_truth(truth, problem, replacements)
+        == large_rare.value + ordinary_same_shape.value
+    )
+    assert (
+        q6_tail_replacement_decision_value_for_truth(truth, problem, replacements)
+        == large_rare.value + ordinary_same_shape.value
+    )
 
 
 def test_decision_value_counts_exactly_identified_small_rare_tail() -> None:

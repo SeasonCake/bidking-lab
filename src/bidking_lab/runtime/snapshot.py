@@ -882,6 +882,15 @@ def _ui_diagnostics_contract(
             "tail_replacement_p90_under_by": model_eval.get(
                 "v2_q6_tail_replacement_decision_value_p90_under_by"
             ),
+            "tail_replacement_estimate_p90": model_eval.get(
+                "v2_q6_tail_replacement_estimate_p90"
+            ),
+            "tail_replacement_estimate_p90_misses_truth": model_eval.get(
+                "q6_tail_replacement_estimate_p90_misses_truth"
+            ),
+            "tail_replacement_estimate_p90_under_by": model_eval.get(
+                "v2_q6_tail_replacement_estimate_p90_under_by"
+            ),
             "tail_replacement_count": model_eval.get(
                 "final_q6_tail_replacement_count"
             ),
