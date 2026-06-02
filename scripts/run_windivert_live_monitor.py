@@ -484,6 +484,7 @@ def _write_source_status(
     filter_text: str,
     active_flows: int,
     accepted_packets: int,
+    sniffed_packets: int = 0,
     raw_packets: int = 0,
     ignored_frames: int = 0,
     dropped_bytes: int = 0,
@@ -497,6 +498,7 @@ def _write_source_status(
         "process_name": process_name,
         "filter": filter_text,
         "active_flows": active_flows,
+        "sniffed_packets": sniffed_packets,
         "accepted_frames": accepted_packets,
         "accepted_packets": accepted_packets,
         "raw_packets": raw_packets,
@@ -615,6 +617,7 @@ def main() -> int:
         filter_text=filter_text,
         active_flows=flow_index.active_flow_count(),
         accepted_packets=0,
+        sniffed_packets=0,
         raw_packets=0,
         ignored_frames=0,
         dropped_bytes=0,
@@ -629,11 +632,13 @@ def main() -> int:
     )
     sort_id = 1
     accepted = 0
+    sniffed_packets = 0
     raw_packets = 0
     last_status = 0.0
     try:
         with pydivert.WinDivert(filter_text, flags=sniff_flag) as handle:
             for packet in handle:
+                sniffed_packets += 1
                 row = _packet_to_fatbeans_row(
                     packet,
                     sort_id=sort_id,
@@ -664,6 +669,7 @@ def main() -> int:
                         filter_text=filter_text,
                         active_flows=active,
                         accepted_packets=accepted,
+                        sniffed_packets=sniffed_packets,
                         raw_packets=raw_packets,
                         ignored_frames=frame_gate.ignored_frames,
                         dropped_bytes=frame_gate.dropped_bytes,

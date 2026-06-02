@@ -110,6 +110,7 @@ def test_live_status_reports_healthy_log_dir(tmp_path: Path, monkeypatch) -> Non
             "source": "windivert",
             "process_name": "BidKing.exe",
             "active_flows": 2,
+            "sniffed_packets": 12,
             "raw_packets": 10,
             "accepted_frames": 3,
             "active_session_id": "2501:123",
@@ -129,6 +130,7 @@ def test_live_status_reports_healthy_log_dir(tmp_path: Path, monkeypatch) -> Non
     assert status["fallback"]["active"] is False
     assert status["lock"]["pid_running"] is True
     assert status["capture_source"]["source"] == "windivert"
+    assert status["capture_source"]["sniffed_packets"] == 12
     assert status["capture_source"]["accepted_frames"] == 3
     assert status["processed_files"]["status_counts"] == {"ok": 1}
 
@@ -333,6 +335,34 @@ def test_live_status_warns_when_payload_has_no_accepted_frames(
 
     assert status["level"] == "warn"
     assert any("no auction frames" in warning for warning in status["warnings"])
+
+
+def test_live_status_warns_when_sniffed_packets_do_not_match_bidking_flow(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _module()
+    monkeypatch.setattr(module, "_pid_running", lambda _pid: True)
+    now = 1_000.0
+    _write_json(tmp_path / "latest_snapshot.json", _healthy_snapshot(now))
+    _append_jsonl(tmp_path / "model_eval.jsonl", [{"ts": now - 2.0}])
+    _write_json(tmp_path / "monitor.lock", {"pid": 1234, "started_at": now - 20.0})
+    _write_json(
+        tmp_path / "capture_source_status.json",
+        {
+            "ts": now - 1.0,
+            "source": "windivert",
+            "active_flows": 1,
+            "sniffed_packets": 20,
+            "raw_packets": 0,
+            "accepted_frames": 0,
+        },
+    )
+
+    status = module.build_live_status(tmp_path, now=now)
+
+    assert status["level"] == "warn"
+    assert any("none matched BidKing flow" in warning for warning in status["warnings"])
 
 
 def test_live_status_cli_strict_returns_nonzero_for_warning(

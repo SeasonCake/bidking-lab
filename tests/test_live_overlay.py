@@ -702,6 +702,37 @@ def test_overlay_model_hides_stale_non_settlement_snapshot() -> None:
     assert not any("小幅进攻" in str(value) for value in model.values())
 
 
+def test_overlay_model_uses_capture_status_for_stale_snapshot_waiting_copy() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model(
+        {
+            "created_at": time.time() - 180,
+            "hero": "ethan",
+            "map_id": 2401,
+            "round": 3,
+            "_capture_source_status": {
+                "ts": time.time() - 1,
+                "source": "windivert",
+                "active_flows": 1,
+                "raw_packets": 0,
+                "accepted_frames": 0,
+            },
+            "ui_contract": {
+                "context": {"hero": "ethan", "map_id": 2401, "round": 3},
+                "baseline": {
+                    "decision": {"action": "小幅进攻"},
+                },
+            },
+        }
+    )
+
+    assert model["status"] == ("待机", "dim")
+    assert model["subtitle"] == "监听中，等待对局数据"
+    assert model["decision"][1] == "已连接游戏服务器，等待下一条对局状态包"
+    assert any(section[0] == "抓包状态" for section in model["sections"])
+
+
 def test_overlay_model_empty_snapshot_uses_standby_copy() -> None:
     overlay = _overlay_module()
 

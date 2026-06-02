@@ -187,6 +187,7 @@ def build_live_status(
     )
     lock_age = _age_seconds(lock.get("started_at"), now=now)
     active_flows = capture_status.get("active_flows")
+    sniffed_packets = capture_status.get("sniffed_packets")
     raw_packets = capture_status.get("raw_packets")
     accepted_frames = (
         capture_status.get("accepted_frames")
@@ -241,9 +242,14 @@ def build_live_status(
             and int(active_flows or 0) > 0
             and int(raw_packets or 0) == 0
         ):
-            warnings.append(
-                "live capture has active flow but no new payload packets yet"
-            )
+            if int(sniffed_packets or 0) > 0:
+                warnings.append(
+                    "live capture saw TCP payload but none matched BidKing flow"
+                )
+            else:
+                warnings.append(
+                    "live capture has active flow but no new payload packets yet"
+                )
     except (TypeError, ValueError):
         pass
     try:
@@ -352,6 +358,7 @@ def build_live_status(
             "age_seconds": _round_float(capture_age),
             "process_name": capture_status.get("process_name"),
             "active_flows": active_flows,
+            "sniffed_packets": sniffed_packets,
             "raw_packets": raw_packets,
             "accepted_frames": accepted_frames,
             "ignored_frames": capture_status.get("ignored_frames"),
@@ -453,6 +460,7 @@ def format_status_text(status: Mapping[str, Any]) -> str:
             f"source={capture.get('source') or '-'} "
             f"age={_fmt_age(capture.get('age_seconds'))} "
             f"flows={capture.get('active_flows') if capture.get('active_flows') is not None else '?'} "
+            f"sniffed={capture.get('sniffed_packets') if capture.get('sniffed_packets') is not None else '?'} "
             f"raw={capture.get('raw_packets') if capture.get('raw_packets') is not None else '?'} "
             f"accepted={capture.get('accepted_frames') if capture.get('accepted_frames') is not None else '?'} "
             f"session={capture.get('active_session_id') or '-'}"

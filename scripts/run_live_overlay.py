@@ -73,6 +73,21 @@ def _load_snapshot(path: Path) -> dict:
         return {}
 
 
+def _capture_status_path(snapshot_path: Path) -> Path:
+    return snapshot_path.parent / "capture_source_status.json"
+
+
+def _load_live_snapshot(snapshot_path: Path) -> dict:
+    snapshot = _load_snapshot(snapshot_path)
+    capture = _load_snapshot(_capture_status_path(snapshot_path))
+    if not snapshot and capture:
+        snapshot = {"_no_artifact": True}
+    if capture:
+        snapshot = dict(snapshot)
+        snapshot["_capture_source_status"] = capture
+    return snapshot
+
+
 def _snapshot_file_signature(path: Path) -> tuple[str, int, int] | tuple[str]:
     try:
         stat = path.stat()
@@ -404,6 +419,72 @@ def _snapshot_age_seconds(snapshot: dict[str, Any]) -> float | None:
     if not isinstance(created_at, int | float):
         return None
     return max(0.0, time.time() - float(created_at))
+
+
+def _capture_status_age_seconds(capture: dict[str, Any]) -> float | None:
+    ts = capture.get("ts")
+    if not isinstance(ts, int | float):
+        return None
+    return max(0.0, time.time() - float(ts))
+
+
+def _capture_waiting_copy(
+    capture: dict[str, Any] | None,
+    *,
+    fallback_subtitle: str,
+    fallback_detail: str,
+) -> tuple[str, str, list[tuple[str, str]]]:
+    if not isinstance(capture, dict) or not capture:
+        return fallback_subtitle, fallback_detail, []
+    age_seconds = _capture_status_age_seconds(capture)
+    fresh = age_seconds is not None and age_seconds <= 10.0
+    active_flows = capture.get("active_flows")
+    sniffed_packets = capture.get("sniffed_packets")
+    raw_packets = capture.get("raw_packets")
+    accepted_frames = (
+        capture.get("accepted_frames")
+        if capture.get("accepted_frames") is not None
+        else capture.get("accepted_packets")
+    )
+    try:
+        active_flow_count = int(active_flows or 0)
+    except (TypeError, ValueError):
+        active_flow_count = 0
+    try:
+        raw_count = int(raw_packets or 0)
+    except (TypeError, ValueError):
+        raw_count = 0
+    try:
+        accepted_count = int(accepted_frames or 0)
+    except (TypeError, ValueError):
+        accepted_count = 0
+    session = capture.get("active_session_id")
+    if not fresh:
+        return fallback_subtitle, fallback_detail, []
+    if session:
+        subtitle = "监听中，已有对局会话"
+        detail = "等待下一次实时推理更新"
+    elif active_flow_count > 0 and raw_count > 0 and accepted_count == 0:
+        subtitle = "监听中，识别对局数据"
+        detail = "已抓到网络包，等待可解析状态"
+    elif active_flow_count > 0:
+        subtitle = "监听中，等待对局数据"
+        detail = "已连接游戏服务器，等待下一条对局状态包"
+    else:
+        subtitle = "监听中，等待游戏连接"
+        detail = "等待 BidKing.exe 建立对局连接"
+    notes = [
+        (
+            "抓包状态",
+            f"flows {active_flows if active_flows is not None else '?'} / "
+            f"sniffed {sniffed_packets if sniffed_packets is not None else '?'} / "
+            f"raw {raw_packets if raw_packets is not None else '?'} / "
+            f"accepted {accepted_frames if accepted_frames is not None else '?'}",
+        )
+    ]
+    if session:
+        notes.append(("当前会话", str(session)))
+    return subtitle, detail, notes
 
 
 def _demo_snapshot() -> dict[str, Any]:
@@ -1381,6 +1462,7 @@ def _standby_model(
     *,
     subtitle: str,
     detail: str = "",
+    notes: list[tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
     decision_detail = detail or "等待实时数据"
     metrics = [
@@ -1390,9 +1472,11 @@ def _standby_model(
         ("q6风险", "--", "等待新状态", "dim"),
     ]
     sections = [
-        ("监听状态", "等待实时数据", "捕获到新对局状态后自动切换到推荐面板"),
+        ("监听状态", decision_detail, "捕获到新对局状态后自动切换到推荐面板"),
         ("显示说明", "未显示旧局建议", "当前只展示默认等待面板"),
     ]
+    for title, value in notes or []:
+        sections.append((title, value, ""))
     return {
         "empty": False,
         "title": "BidKing Live",
@@ -1431,10 +1515,17 @@ def _standby_model(
 
 
 def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
-    if not snapshot:
+    capture_status = _as_mapping(snapshot.get("_capture_source_status"))
+    if not snapshot or snapshot.get("_no_artifact"):
+        subtitle, detail, notes = _capture_waiting_copy(
+            capture_status,
+            fallback_subtitle="等待实时对局状态",
+            fallback_detail="等待实时数据",
+        )
         model = _standby_model(
-            subtitle="等待实时对局状态",
-            detail="等待实时数据",
+            subtitle=subtitle,
+            detail=detail,
+            notes=notes,
         )
         model["empty"] = True
         return model
@@ -1468,18 +1559,30 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         and age_seconds is not None
         and age_seconds > SETTLED_RESULT_RETAIN_SECONDS
     ):
+        subtitle, detail, notes = _capture_waiting_copy(
+            capture_status,
+            fallback_subtitle="等待下一局开始",
+            fallback_detail="上一局结算已结束",
+        )
         return _standby_model(
-            subtitle="等待下一局开始",
-            detail="上一局结算已结束",
+            subtitle=subtitle,
+            detail=detail,
+            notes=notes,
         )
     if (
         not is_settled
         and age_seconds is not None
         and age_seconds > STALE_SNAPSHOT_SECONDS
     ):
+        subtitle, detail, notes = _capture_waiting_copy(
+            capture_status,
+            fallback_subtitle="等待新的实时对局状态",
+            fallback_detail="不显示过期旧局出价",
+        )
         return _standby_model(
-            subtitle="等待新的实时对局状态",
-            detail="不显示过期旧局出价",
+            subtitle=subtitle,
+            detail=detail,
+            notes=notes,
         )
     category_items = snapshot.get("category_grid_items") or []
     layout = _first(panel.get("layout_stages"))
@@ -2883,12 +2986,12 @@ class Overlay:
             signature = ("demo",)
             snapshot = self._demo_snapshot or {}
         else:
-            signature = _snapshot_file_signature(self.snapshot_path)
-            snapshot = (
-                _load_snapshot(self.snapshot_path)
-                if signature != self._last_snapshot_signature
-                else self._last_snapshot
+            signature = (
+                "live",
+                _snapshot_file_signature(self.snapshot_path),
+                _snapshot_file_signature(_capture_status_path(self.snapshot_path)),
             )
+            snapshot = _load_live_snapshot(self.snapshot_path)
         should_render = signature != self._last_snapshot_signature
         if snapshot is not None:
             _age_text, stale = _age(snapshot)
