@@ -1041,7 +1041,7 @@ def _ui_shadow_contract(
     display_by_label = {
         "profile_b5": "debug_only",
         "aisha_deep_floor1": "risk_reference_candidate",
-        "aisha_hidden_floor15": "shadow_only_pending_no_q6_controls",
+        "aisha_hidden_floor15": "shadow_only_hidden_tail_review",
         "aisha_villa_floor05": "shadow_only_pending_no_q6_controls",
     }
     return {

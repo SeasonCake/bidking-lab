@@ -165,7 +165,11 @@ def _q6_actionable_shadow_status(
     pending_candidates = [
         shadow
         for shadow in shadows
-        if shadow.get("display_mode") == "shadow_only_pending_no_q6_controls"
+        if shadow.get("display_mode")
+        in {
+            "shadow_only_pending_no_q6_controls",
+            "shadow_only_hidden_tail_review",
+        }
     ]
     if any(_bool(shadow.get("active")) for shadow in risk_candidates):
         return "active_shadow_candidate"

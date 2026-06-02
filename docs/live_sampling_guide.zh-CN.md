@@ -169,7 +169,8 @@ v2 baseline，也不要据此升级 shadow 或调 q6 参数。
 截至 2026-06-02，`aisha_deep_floor1` 已冻结为正式接入前的风险参考候选：
 历史 Aisha shipwreck replay 和定向高 trials 对照都显示正净收益，但它仍只写 shadow，
 不修改 baseline posterior、`decision_value` 或 bid hint。`aisha_hidden_floor15` 也继续保持
-shadow-only，等待真实 hidden no-q6 / live 日志。Isabella/Wuqilin 技能细化和鉴影反推暂列
+shadow-only，但 hidden 基本不可能出现 q6=0，不再等待 no-q6 对照；复核重点改为
+helped/still-missed、plannable gap band、tail 裁剪、性能和事件/截图可信度。Isabella/Wuqilin 技能细化和鉴影反推暂列
 UI 接入阶段支线。
 
 判断是否需要降 trials 或异步化，优先看汇总脚本的性能字段：

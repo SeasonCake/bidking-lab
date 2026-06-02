@@ -448,6 +448,23 @@ def test_q6_actionable_followup_marks_uncovered_low_bottom_shipwreck() -> None:
     }
 
 
+def test_hidden_tail_review_shadow_counts_as_pending_candidate() -> None:
+    module = _review_module()
+
+    status = module._q6_actionable_shadow_status(
+        [
+            {
+                "label": "aisha_hidden_floor15",
+                "active": True,
+                "display_mode": "shadow_only_hidden_tail_review",
+            }
+        ],
+        actionable=True,
+    )
+
+    assert status == "active_pending_shadow_candidate"
+
+
 def test_zero_match_with_fallback_is_counted_separately() -> None:
     module = _review_module()
     row = module.review_row_from_artifact(

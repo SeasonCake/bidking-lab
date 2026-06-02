@@ -704,7 +704,7 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **推荐**：评估口径上新增 `hidden_case`，并把 hidden 从 `normal_case` 中排除。模型实验上新增默认关闭的 `aisha_hidden_floor1`：Aisha + hidden + `shape+layout` profile 时，使用 q6 prior-floor ratio `1.0` 作为 shadow-only 候选。
 
-**取舍**：该候选只进入 batch/live shadow，不改变 baseline v2 posterior、正式出价或 bid hint。现有样本没有 hidden no-q6 对照，因此不能直接升级为正式风险参考；需要继续用 `q6_residual_hidden_floor_shadow_*` 观察新样本 helped 与 false-positive。
+**取舍**：该候选只进入 batch/live shadow，不改变 baseline v2 posterior、正式出价或 bid hint。Hidden 分布本身几乎不出现 q6=0，因此不再把 hidden no-q6 对照作为升级前置条件；需要继续用 `q6_residual_hidden_floor_shadow_*` 观察新样本 helped、still-missed、gap band、tail 裁剪和事件可信度。
 
 **复查点**：`trials=20` 全 329 样本 paired 对照中，`aisha_hidden_floor1` 只激活 11 个 Aisha hidden 行，active no-q6 为 0，normal-case 指标不变；hidden MAE `91.3万 -> 51.4万`，hidden q6 coverage `52.38% -> 66.67%`。
 
@@ -712,7 +712,7 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新 2**：`aisha_hidden_floor1` 在 live replay 中 helped 只有 `2/9`，仍有 `7/9` under-before 行未修复；人工复核状态不能解释成可上线。ratio 扫描显示 `1.5` 已把 Aisha hidden q6 miss 清零，`2.0` 只小幅继续降 MAE但更激进。当前 live hidden shadow 改为 `aisha_hidden_floor15`，仍只做 shadow；正式 posterior 与 bid hint 不变。
 
-**更新 3**：`aisha_hidden_floor15` 已通过 22 份 hidden live artifact 小批量复核，helped `7/9`、still-missed `2/9`、false-positive proxy `0`。因此它可以进入人工升级复核，但仍不自动接正式 posterior：当前 hidden 样本几乎全是有 q6 高价值局，缺少 hidden no-q6 对照；同时剩余两份 Aisha hidden 高价值尾部仍低估。离线组合候选继续只保留已验证的 `aisha_deep_hidden_floor1`，不新增把 deep 与 hidden 都套到 1.5 倍 floor 的组合配置。
+**更新 3**：`aisha_hidden_floor15` 已通过 22 份 hidden live artifact 小批量复核，helped `7/9`、still-missed `2/9`、false-positive proxy `0`。因此它可以进入人工升级复核，但仍不自动接正式 posterior：hidden 基本不可能出现 q6=0，所以升级前置条件改为继续观察 helped/still-missed、plannable gap band、tail 裁剪、性能和事件/截图可信度；同时剩余两份 Aisha hidden 高价值尾部仍低估。离线组合候选继续只保留已验证的 `aisha_deep_hidden_floor1`，不新增把 deep 与 hidden 都套到 1.5 倍 floor 的组合配置。
 
 ## 2026-06-02 · Isabella 最高品质技能复用全局上界，Wuqilin 进入 category evidence
 
@@ -790,11 +790,13 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新**：`q6_below_drop_prior` 不能直接作为正式抬价规则。当前已拆成 review-only `class/actionable/under_by`：54 行 below-prior 中 41 行是真实 q6 P90 漏真值，8 行是 truth q6=0 噪声，5 行 P90 已覆盖 truth；`public_max_quality < 6` / Isabella 最高品质金色这类已证明无红的局不再生成该诊断。`aisha_deep_floor1` paired 结果继续支持作为普通/沉船 shadow 候选，但仍不影响 baseline 出价；`aisha_hidden_floor15` 继续只作为 hidden shadow 收证。v2 仍被判断为可行且有优化空间，v3 重写降为最低候选，仅在后续证据显示 v2 局部修补无法收敛时再讨论。
 
-**更新 2**：2026-06-02 live `model_eval.jsonl` 复核中，`aisha_deep_floor1` active `30` 行：`15 helped / 6 still_missed / 9 observation / 0 false-positive`，且 active 行 `layout_conflict=0`；`aisha_hidden_floor15` active `11` 行：`7 helped / 2 still_missed / 2 observation / 0 false-positive`，同样 `layout_conflict=0`。`aisha_deep_floor1` 继续作为 UI 黄色 tail-risk reference candidate 展示，不覆盖 baseline `decision_value`、停止价或抢仓上限；`aisha_hidden_floor15` 虽收益明显，但缺少 hidden q6=0 对照，继续 shadow-only。`profile_b5` 因 live false-positive 继续阻塞。
+**更新 2**：2026-06-02 live `model_eval.jsonl` 复核中，`aisha_deep_floor1` active `30` 行：`15 helped / 6 still_missed / 9 observation / 0 false-positive`，且 active 行 `layout_conflict=0`；`aisha_hidden_floor15` active `11` 行：`7 helped / 2 still_missed / 2 observation / 0 false-positive`，同样 `layout_conflict=0`。`aisha_deep_floor1` 继续作为 UI 黄色 tail-risk reference candidate 展示，不覆盖 baseline `decision_value`、停止价或抢仓上限；`aisha_hidden_floor15` 收益明显，且 hidden 不再等待 q6=0 对照，但仍需继续复核 still-missed、gap band、tail 和事件可信度后再讨论是否升级。`profile_b5` 因 live false-positive 继续阻塞。
 
 **更新 3**：上述 live 复核发现诊断口径缺陷：shadow 输出的是 `q6_decision_value_p90`，但 live readiness 曾用 raw `final_q6_value` 判断 under/covered/helped，导致部分未被证据支持的极端尾部被误算成 still-missed。已把 live/batch 的结算 truth breakdown 收敛为同一 helper，并新增 `final_q6_decision_value`、`final_q6_trimmed_tail_value`、`q6_plannable_p90_misses_truth`。旧 `model_eval.jsonl` 不会自动回填；后续 live shadow 升级复核必须优先看 plannable 字段。定向重建 6 个旧 deep still-missed 行后，口径变为 `4 still_missed / 1 helped / 1 observation`，不再把《富春山居图》这类不可规划尾部当成 deep floor 失败。baseline 正式出价仍不受 shadow 影响。
 
 **更新 4**：用户指出“极端尾部被裁掉后，实战上仍应考虑同形状普通红替代”的口径问题。当前系统只有部分做到：posterior 采样会在同形状/同品质候选池中隐式采普通替代，但 `final_q6_decision_value` 对未证据支持尾部是裁到 `0`，不是显式替换成同形状普通红 weighted P50。决策：不直接改正式 `decision_value`，否则 posterior 与 truth 会混口径；先把 tail-replacement truth 作为 q6 shadow review 的第二审计轴，等新版 live 日志和更多样本确认后再统一评估是否同步修改 posterior decision 口径。
+
+**更新 5**：Hidden 候选的 UI/display 口径同步修正：`aisha_hidden_floor15` 不再标记为 `shadow_only_pending_no_q6_controls`，改为 `shadow_only_hidden_tail_review`；review 工具仍把它计入 pending shadow 覆盖，但不再暗示需要 no-q6 控制。当前旧日志导出中 hidden active `11` 行，gap band 为 `9 covered / 1 medium_<=300k / 1 large_>300k`，tail trimmed 为 `0`。
 
 ## 2026-06-02 · 公开总格/总件数可进入正式 baseline，结算 truth 必须隔离
 

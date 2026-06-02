@@ -428,6 +428,26 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
                     "q6_count_p90": 2,
                     "q6_cells_p90": 9,
                 },
+                {
+                    "label": "aisha_hidden_floor15",
+                    "active": True,
+                    "gate": "aisha_hidden_v1",
+                    "evidence_profile_key": "shape+layout",
+                    "trials": 80,
+                    "q6_decision_value_p90": 1400000,
+                    "q6_count_p90": 5,
+                    "q6_cells_p90": 18,
+                },
+                {
+                    "label": "aisha_villa_floor05",
+                    "active": True,
+                    "gate": "aisha_villa_shape_layout_v1",
+                    "evidence_profile_key": "shape+layout",
+                    "trials": 80,
+                    "q6_decision_value_p90": 380000,
+                    "q6_count_p90": 1,
+                    "q6_cells_p90": 4,
+                },
             ],
             "category_grid_items": [
                 {
@@ -559,6 +579,8 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert [shadow["label"] for shadow in contract["shadows"]] == [
         "profile_b5",
         "aisha_deep_floor1",
+        "aisha_hidden_floor15",
+        "aisha_villa_floor05",
     ]
     assert contract["shadows"][0]["role"] == "diagnostic_shadow"
     assert contract["shadows"][0]["display_mode"] == "debug_only"
@@ -566,6 +588,13 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert contract["shadows"][0]["q6_p90_delta"] == 120000
     assert contract["shadows"][1]["role"] == "tail_risk_reference_candidate"
     assert contract["shadows"][1]["display_mode"] == "risk_reference_candidate"
+    assert contract["shadows"][2]["role"] == "hidden_tail_risk_shadow"
+    assert contract["shadows"][2]["display_mode"] == "shadow_only_hidden_tail_review"
+    assert contract["shadows"][3]["role"] == "villa_tail_risk_shadow"
+    assert (
+        contract["shadows"][3]["display_mode"]
+        == "shadow_only_pending_no_q6_controls"
+    )
     assert contract["minimap"]["status"] == "available"
     assert contract["minimap"]["known_items"] == 2
     assert contract["minimap"]["columns"] == 10
