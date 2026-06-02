@@ -1859,6 +1859,19 @@ python -m pytest tests\test_live_monitor.py tests\test_summarize_live_model_eval
 `aisha_shipwreck_test_sample69_4rounds.json` 的《富春山居图》被计入
 `final_q6_trimmed_tail_value`，不再作为 deep floor 没覆盖的失败样本。
 
+current-schema 全量健康检查要用隔离日志目录重放，避免旧 live 日志混入：
+
+```powershell
+python scripts\run_fatbeans_live_monitor.py --watch-dir data\samples\fatbeans --once --log-dir data\logs\live_replay_current_fast --stable-seconds 0 --process-delay-seconds 0 --n-trials 20 --shadow-trials 20 --roi-trials 0 --skip-debug-shadows --no-archive-raw --no-lock
+python scripts\summarize_live_model_eval.py data\logs\live_replay_current_fast\model_eval.jsonl --brief --format brief --export-shadow-review-dir data\review\q6_shadow_candidates_current_fast --shadow-review-candidate aisha_deep_floor1 --shadow-review-candidate aisha_hidden_floor15 --shadow-review-candidate aisha_villa_floor05
+```
+
+2026-06-02 replay 结果：333 行成功、5 个 malformed；`aisha_hidden_floor15`
+active 11 行全部 covered（8 helped / 3 observation），`aisha_deep_floor1`
+active 47 行中仍有 10 个 still-missed，`aisha_villa_floor05` 仍有 4 个 active
+no-q6 false-positive。若 replay 使用默认 `stable-seconds=1`，会给每个样本增加文件稳定等待；
+这会让批量重放看起来像性能退化，不能直接代表单次实时推理耗时。
+
 ---
 
 ## 参考项目（写法）

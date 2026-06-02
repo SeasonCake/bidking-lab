@@ -798,6 +798,8 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新 5**：Hidden 候选的 UI/display 口径同步修正：`aisha_hidden_floor15` 不再标记为 `shadow_only_pending_no_q6_controls`，改为 `shadow_only_hidden_tail_review`；review 工具仍把它计入 pending shadow 覆盖，但不再暗示需要 no-q6 控制。当前旧日志导出中 hidden active `11` 行，gap band 为 `9 covered / 1 medium_<=300k / 1 large_>300k`，tail trimmed 为 `0`。
 
+**更新 6**：用新版 current-schema replay 重放 338 份样本后，hidden 结论进一步收紧：`aisha_hidden_floor15` active `11` 行全部按 plannable truth covered（`8 helped / 3 observation / 0 false-positive`），但其中 3 行有 tail trimmed/replacement review 标记。因此 hidden 可作为高可信 shadow 风险参考继续观察，但仍不直接改 baseline 出价；升级前要先确认 tail replacement 口径、事件可信度和正式 live 性能。`aisha_deep_floor1` 仍是普通/沉船风险参考候选但有 `10` 个 still-missed，`aisha_villa_floor05` 因 `4` 个 active no-q6 false-positive 继续 blocked/pending。watch-dir replay 的性能判断必须区分文件稳定等待和推理耗时：`--stable-seconds 0` 全量 replay 约 `130s`，单样本 median `0.322s`，默认 `stable-seconds=1` 会给每个文件额外等待，不能当作实时推理瓶颈。
+
 ## 2026-06-02 · 公开总格/总件数可进入正式 baseline，结算 truth 必须隔离
 
 **背景**：UI 需要展示格数预测、实际格子数、件数预测、已知紫/金件数和排除条件；同时审计发现 monitor 曾统一清掉 `warehouse_total_cells` / `total_item_count`，这会丢掉结算前全量轮廓或透视给出的安全公开约束。
