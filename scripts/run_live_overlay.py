@@ -97,6 +97,14 @@ def _join_parts(parts: tuple[Any, ...] | list[Any], *, sep: str = " / ") -> str:
     return sep.join(str(part) for part in parts if str(part or "").strip())
 
 
+def _clamp_scroll_fraction(value: Any) -> float:
+    try:
+        fraction = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, fraction))
+
+
 def _severity_for_bid(text: str) -> str:
     if "停止" in text or "过热" in text or "不追" in text:
         return "bad"
@@ -1446,6 +1454,23 @@ class Overlay:
         frame.configure(highlightbackground=BORDER, highlightcolor=BORDER)
         return frame
 
+    def _canvas_scroll_fraction(self) -> float:
+        try:
+            return _clamp_scroll_fraction(self.canvas.yview()[0])
+        except tk.TclError:
+            return 0.0
+
+    def _restore_canvas_scroll(self, fraction: float) -> None:
+        fraction = _clamp_scroll_fraction(fraction)
+
+        def restore() -> None:
+            try:
+                self.canvas.yview_moveto(fraction)
+            except tk.TclError:
+                pass
+
+        self.root.after_idle(restore)
+
     def _interaction_sections_text(
         self,
         sections: list[tuple[str, str, str]],
@@ -1685,10 +1710,14 @@ class Overlay:
             )
 
     def _render(self, model: dict[str, Any]) -> None:
+        previous_scroll = (
+            self._canvas_scroll_fraction()
+            if self._current_model is not None
+            else 0.0
+        )
         self._hide_hover()
         self._current_model = model
         self._clear()
-        self.canvas.yview_moveto(0)
         interaction = _as_mapping(model.get("interaction"))
         mini = _as_mapping(interaction.get("mini"))
         hover = _as_mapping(interaction.get("hover"))
@@ -1886,6 +1915,7 @@ class Overlay:
         if self._detail_open:
             self._render_detail_panel(self.frame, model)
         self._bind_layer_events(self.frame)
+        self._restore_canvas_scroll(previous_scroll)
 
     def refresh(self) -> None:
         signature: tuple[Any, ...]

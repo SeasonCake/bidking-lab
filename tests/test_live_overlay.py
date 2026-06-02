@@ -108,6 +108,16 @@ def test_overlay_snapshot_signature_changes_when_file_changes(tmp_path: Path) ->
     assert first != second
 
 
+def test_overlay_scroll_fraction_is_clamped() -> None:
+    overlay = _overlay_module()
+
+    assert overlay._clamp_scroll_fraction(None) == 0.0
+    assert overlay._clamp_scroll_fraction("bad") == 0.0
+    assert overlay._clamp_scroll_fraction(-0.25) == 0.0
+    assert overlay._clamp_scroll_fraction(0.4) == 0.4
+    assert overlay._clamp_scroll_fraction(1.25) == 1.0
+
+
 def test_demo_snapshot_has_compact_overlay_sections() -> None:
     overlay = _overlay_module()
 
