@@ -215,12 +215,12 @@ def _q6_actionable_followup(
     if hero == "ethan" and profile == "layout":
         return {
             "bucket": "ethan_layout_floor_risky",
-            "reason": "prior_floor_experiments_show_no_q6_false_positive_risk",
+            "reason": "prior_floor_experiments_raise_no_q6_or_no_plannable_controls",
         }
     if hero == "ethan":
         return {
             "bucket": "ethan_non_layout_floor_risky",
-            "reason": "ethan_floor_not_clean_enough_for_shadow_gate",
+            "reason": "ethan_floor_not_clean_enough_for_shadow_or_no_plannable_controls",
         }
     return {
         "bucket": "unsupported_q6_miss",
