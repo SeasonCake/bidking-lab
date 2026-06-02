@@ -28,14 +28,14 @@ WinDivert 通常需要管理员 PowerShell。若 `monitor.stderr.log` 提示缺 
 WinDivert 入口现在还有第二层对局 frame gate：目标进程的 TCP payload 会先按 4 字节长度
 重组为应用层 frame，然后只放行当前可解析的对局消息：
 
+- `REV msg=0x0021`：开局初始状态，可提前给出 map / hero / public info / 初始布局。
 - `SEND msg=0x0022`：出价候选。
 - `SEND msg=0x0026`：道具/动作候选。
 - `REV push msg=0x0025`：每轮状态同步。
 - `REV push msg=0x002d`：R5/结算/技能结果同步。
 
 购买道具、账号/设置 JSON、界面交互、心跳/等待包和非当前 session 的发送帧不会进入
-`windivert_live.json`，因此不会触发推理。`REV msg=0x0021` 目前只作为首轮信息提前量的
-后续候选；正式 parser 尚未消费它，所以本阶段不把它写入推理输入。
+`windivert_live.json`，因此不会触发推理。
 
 如果 Fatbeans 账号已支持 WebHook，也可以使用 Fatbeans WebHook 入口：
 
@@ -71,7 +71,7 @@ python scripts\run_live_overlay.py --demo
 当前实时优先链路：
 
 ```text
-WinDivert sniff -> process flow match -> auction frame gate -> Fatbeans-row adapter -> latest_snapshot.json / model_eval.jsonl / layout_samples.jsonl
+WinDivert sniff -> process flow match -> auction frame gate -> capture-row adapter -> latest_snapshot.json / model_eval.jsonl / layout_samples.jsonl
 ```
 
 Fatbeans WebHook 备用链路：

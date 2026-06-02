@@ -41,7 +41,7 @@ from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
 
 FlowKey = tuple[str, int, str, int]
 GAME_SEND_MESSAGE_IDS = {0x0022, 0x0026}
-GAME_STATE_MESSAGE_IDS = {0x0025, 0x002D}
+GAME_STATE_MESSAGE_IDS = {0x0021, 0x0025, 0x002D}
 SESSION_ID_RE = re.compile(r"^\d{4}:\d+$")
 MAX_FRAME_BYTES = 1_000_000
 
@@ -574,6 +574,8 @@ def main() -> int:
             debounce_seconds=args.debounce_seconds,
             min_inference_interval_seconds=args.min_inference_interval_seconds,
             file_name="windivert_live.json",
+            source_name="windivert",
+            packet_count_key="windivert_frames",
         ),
         tables=tables,
     )

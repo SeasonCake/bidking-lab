@@ -257,7 +257,7 @@ process flow match by BidKing.exe
         ↓
 auction frame gate
         ↓
-Fatbeans export rows in memory
+Fatbeans-compatible capture rows in memory
         ↓
 build_monitor_artifact_from_payload
         ↓
@@ -276,14 +276,14 @@ WinDivert 路线的关键边界：
 - 默认 broad filter 捕获所有 TCP payload 后只保留 `BidKing.exe` flow；若确认端口稳定，
   可用 `-PortOnly` 降低系统范围。
 - 进程级 flow 之后还有对局 frame gate：先按应用层长度重组，再只放行
-  `SEND 0x0022`、`SEND 0x0026`、`REV push 0x0025`、`REV push 0x002d`，
-  并要求有效 session id。商店/账号/设置 JSON、界面交互、心跳等待包、非当前局
-  session 的发送帧会被过滤在推理输入之前。
+  `REV push 0x0021`、`SEND 0x0022`、`SEND 0x0026`、`REV push 0x0025`、
+  `REV push 0x002d`，并要求有效 session id。商店/账号/设置 JSON、界面交互、
+  心跳等待包、非当前局 session 的发送帧会被过滤在推理输入之前。
 - `capture_source_status.json` 中 `raw_packets` 表示归因到目标 flow 的 TCP payload，
   `accepted_frames` 表示通过对局 gate 的 frame；`accepted_packets` 是旧兼容别名。
   未进入对局时 raw 增长但 accepted 为 0 属于正常状态。
-- `REV 0x0021` 已在离线样本中表现为开局/首轮信息候选，但当前 parser 主链路尚未消费；
-  它应作为后续“首个出价前给 UI 提前量”的单独验证项，不在本阶段直接放宽 live 输入。
+- `REV 0x0021` 已接入为 `session_started` 初始状态；历史样本显示它通常是点击开始对局后
+  第一个有效对局 frame，可提前提供 map、hero、公开信息和部分布局。
 - 依赖 `pydivert>=3.0` 和管理员权限；缺依赖时脚本会明确报错，不影响旧 JSON watcher。
 
 Fatbeans WebHook 备用链路：

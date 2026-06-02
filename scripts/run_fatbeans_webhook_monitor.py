@@ -169,7 +169,14 @@ def _atomic_write_json(path: Path, value: Any) -> None:
         fh.write("\n")
         tmp = Path(fh.name)
     try:
-        tmp.replace(path)
+        for attempt in range(5):
+            try:
+                tmp.replace(path)
+                return
+            except PermissionError:
+                if attempt >= 4:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
     finally:
         if tmp.exists():
             tmp.unlink()
@@ -261,6 +268,8 @@ class WebhookMonitorConfig:
     debounce_seconds: float
     min_inference_interval_seconds: float
     file_name: str = "fatbeans_webhook_live.json"
+    source_name: str = "fatbeans_webhook"
+    packet_count_key: str = "webhook_packets"
 
 
 class FatbeansWebhookMonitor:
@@ -433,9 +442,10 @@ class FatbeansWebhookMonitor:
                 run_debug_shadows=self.config.run_debug_shadows,
                 seed=self.config.seed,
             )
-            artifact["source"] = "fatbeans_webhook"
+            artifact["source"] = self.config.source_name
             artifact["raw_capture"] = str(raw_path.resolve())
-            artifact["webhook_packets"] = len(rows)
+            artifact["capture_rows"] = len(rows)
+            artifact[self.config.packet_count_key] = len(rows)
             write_monitor_logs(artifact, log_dir=self.config.log_dir)
         except Exception as exc:  # noqa: BLE001 - long-running monitor boundary
             if _looks_like_partial_stream_error(exc):

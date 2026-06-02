@@ -139,4 +139,57 @@ def test_webhook_monitor_processes_accumulated_rows(
     assert rows[0]["Direct"] == "SEND"
     artifact = calls["artifact"]
     assert artifact["source"] == "fatbeans_webhook"
+    assert artifact["capture_rows"] == 1
     assert artifact["webhook_packets"] == 1
+
+
+def test_capture_row_monitor_uses_configured_source_name(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _module()
+    log_dir = tmp_path / "logs"
+    raw_dir = tmp_path / "raw"
+    calls: dict[str, object] = {}
+
+    def fake_build(payload, *, file, **_kwargs):
+        calls["payload"] = json.loads(payload)
+        return {"created_at": 1000.0, "file": file}
+
+    def fake_write(artifact, *, log_dir):
+        calls["artifact"] = dict(artifact)
+        calls["log_dir"] = Path(log_dir)
+
+    monkeypatch.setattr(module, "build_monitor_artifact_from_payload", fake_build)
+    monkeypatch.setattr(module, "write_monitor_logs", fake_write)
+
+    monitor = module.FatbeansWebhookMonitor(
+        config=module.WebhookMonitorConfig(
+            log_dir=log_dir,
+            raw_dir=raw_dir,
+            process_name="BidKing.exe",
+            server_ports=(10000,),
+            n_trials=20,
+            roi_trials=0,
+            shadow_trials=20,
+            run_debug_shadows=False,
+            seed=1,
+            debounce_seconds=0.0,
+            min_inference_interval_seconds=0.0,
+            file_name="windivert_live.json",
+            source_name="windivert",
+            packet_count_key="windivert_frames",
+        ),
+        tables=object(),
+    )
+
+    row = module._webhook_payload_to_row(_payload(), sort_id=1)
+    assert row is not None
+    monitor.accept_row(row)
+    monitor._process_snapshot(force=True)
+
+    artifact = calls["artifact"]
+    assert artifact["source"] == "windivert"
+    assert artifact["capture_rows"] == 1
+    assert artifact["windivert_frames"] == 1
+    assert "webhook_packets" not in artifact

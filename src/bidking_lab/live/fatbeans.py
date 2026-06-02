@@ -621,7 +621,7 @@ def _state_payload(frame: FatbeansFrame) -> tuple[bytes | None, int | None]:
     fields = _parse_fields(frame.body)
     if frame.direction != "REV" or frame.packet_tag != 0:
         return None, None
-    if frame.message_id == 0x0025:
+    if frame.message_id in (0x0021, 0x0025):
         payload = _first(fields, 1)
         return (payload if isinstance(payload, bytes) else None), None
     if frame.message_id == 0x002D:
@@ -731,6 +731,8 @@ def parse_fatbeans_packets(
 
 
 def _event_kind_for_state(state: FatbeansStateEvent) -> str:
+    if state.message_id == 0x0021:
+        return "session_started"
     if state.message_id == 0x002D or state.inventory_items:
         return "session_settled"
     if state.action_results or state.skill_reveals:
@@ -1209,7 +1211,7 @@ def live_batches_from_fatbeans_events(
                 phase=(
                     "settled"
                     if state.message_id == 0x002D or state.inventory_items
-                    else "bidding"
+                    else "reading" if state.message_id == 0x0021 else "bidding"
                 ),
                 field_updates=tuple(updates),
                 grid_items=grid_items,

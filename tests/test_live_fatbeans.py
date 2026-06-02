@@ -645,6 +645,15 @@ def test_fatbeans_project4_extracts_known_round_facts() -> None:
         100124,
     ]
 
+    start_state = next(state for state in events.states if state.sort_id == 10)
+    assert start_state.message_id == 0x0021
+    assert start_state.session_id == "2401:1274127923736451"
+    assert start_state.map_id == 2401
+    assert start_state.round_index is None
+    assert start_state.public_infos[0].info_id == 200014
+    assert start_state.public_infos[0].value == pytest.approx(2.965517, abs=1e-6)
+    assert any(reveal.hero_id == 208 for reveal in start_state.skill_reveals)
+
     first_state = next(state for state in events.states if state.sort_id == 34)
     assert first_state.session_id == "2401:1274127923736451"
     assert first_state.map_id == 2401
@@ -704,6 +713,10 @@ def test_fatbeans_project4_converts_supported_fields_to_live_batches() -> None:
     assert updates[("bucket", "3", "total_cells")] == 48
     assert updates[("bucket", "4", "value_sum")] == 45778
     assert all(batch.source == "packet" for batch in batches)
+    assert batches[0].sequence == 10
+    assert batches[0].event_kind == "session_started"
+    assert batches[0].phase == "reading"
+    assert len(batches[0].grid_items) == 17
 
 
 @pytest.mark.skipif(
@@ -1442,17 +1455,18 @@ def test_fatbeans_package17_layout_replay_scores_against_settlement() -> None:
     assert final_truth.total_cells == 157
     assert final_truth.total_items == 50
     assert [(stage.sort_id, stage.layout.total_cells) for stage in stages] == [
+        (6, 66),
         (26, 66),
         (45, 157),
         (60, 157),
         (74, 157),
     ]
     assert stages[0].known_cell_ratio == pytest.approx(66 / 157)
-    assert stages[1].known_cell_ratio == 1
-    assert stages[1].bounding_cell_error == 13
+    assert stages[2].known_cell_ratio == 1
+    assert stages[2].bounding_cell_error == 13
     locked = estimate_warehouse_from_layout(
-        stages[1].layout,
-        final_total_cells=stages[1].final_total_cells,
+        stages[2].layout,
+        final_total_cells=stages[2].final_total_cells,
     )
     assert locked.locked
     assert locked.p50_guess == 157

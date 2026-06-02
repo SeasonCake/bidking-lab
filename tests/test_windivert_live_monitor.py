@@ -53,12 +53,13 @@ def _rev_state_frame(
     *,
     session: str = "2401:1274127880525303",
     map_id: int = 2401,
-    round_no: int = 1,
+    round_no: int | None = 1,
 ) -> bytes:
     payload = _field_bytes(1, session.encode("utf-8"))
     payload += _field_varint(2, map_id)
-    payload += _field_varint(3, round_no)
-    if message_id == 0x0025:
+    if round_no is not None:
+        payload += _field_varint(3, round_no)
+    if message_id in (0x0021, 0x0025):
         body = _field_bytes(1, payload)
     elif message_id == 0x002D:
         body = _field_varint(1, 393075406931726)
@@ -276,6 +277,23 @@ def test_game_frame_gate_accepts_state_and_matching_session_sends() -> None:
     assert matching_send.rows[0]["SortID"] == 2
     assert other_session_send.rows == ()
     assert gate.ignored_frames == 2
+
+
+def test_game_frame_gate_accepts_session_started_state() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    started = gate.feed_row(
+        _row("REV", _rev_state_frame(0x0021, round_no=None), sort_id=1)
+    )
+    first_send = gate.feed_row(_row("SEND", _send_frame(0x0022), sort_id=2))
+
+    assert len(started.rows) == 1
+    assert started.rows[0]["MessageID"] == "0x0021"
+    assert started.rows[0]["SessionID"] == "2401:1274127880525303"
+    assert gate.active_session_id == "2401:1274127880525303"
+    assert len(first_send.rows) == 1
+    assert first_send.rows[0]["MessageID"] == "0x0022"
 
 
 def test_game_frame_gate_reconstructs_split_frames() -> None:
