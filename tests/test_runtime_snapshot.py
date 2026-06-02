@@ -316,6 +316,8 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
                     "建议": "可守不抢",
                     "当前最高": "玩家A 500,000",
                     "风险带": "防守区",
+                    "探价(P10)": "300,000",
+                    "防守价": "450,000",
                     "抢仓上限": "620,000",
                     "停止价": "680,000",
                     "证据": "v2 decision_value",
@@ -553,6 +555,9 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert contract["baseline"]["official"] is True
     assert contract["baseline"]["affects_bid"] is True
     assert contract["baseline"]["decision"]["action"] == "可守不抢"
+    assert contract["baseline"]["decision"]["probe_bid"] == "300,000"
+    assert contract["baseline"]["decision"]["defend_bid"] == "450,000"
+    assert contract["baseline"]["decision"]["attack_bid"] == "620,000"
     assert contract["baseline"]["posterior"]["value_basis"] == "decision_value"
     assert contract["baseline"]["posterior"]["match_text"] == "12/200"
     assert contract["baseline"]["posterior"]["matched"] == 12

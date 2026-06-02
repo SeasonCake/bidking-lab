@@ -156,6 +156,22 @@ def _fmt_int(value: Any) -> str:
         return str(value)
 
 
+def _range_parts(value: Any) -> tuple[str, ...]:
+    text = str(value or "").strip()
+    if not text:
+        return ()
+    return tuple(part.strip() for part in text.split("/") if part.strip())
+
+
+def _range_p50(value: Any) -> str:
+    parts = _range_parts(value)
+    if len(parts) >= 3:
+        return parts[1]
+    if len(parts) == 1:
+        return parts[0]
+    return ""
+
+
 def _flag(value: Any) -> bool:
     return value is True or str(value).lower() == "true"
 
@@ -251,7 +267,10 @@ def _chip_style(text: Any, fallback_tag: str = "normal") -> dict[str, str]:
 
 def _is_price_metric(title: Any) -> bool:
     title_text = str(title or "")
-    return any(token in title_text for token in ("价值", "价", "红货", "抢仓", "停止", "最高"))
+    return any(
+        token in title_text
+        for token in ("价值", "估值", "P50", "价", "红货", "抢仓", "停止", "最高")
+    )
 
 
 def _quality_color(quality: Any) -> str:
@@ -810,6 +829,8 @@ def _ui_contract_decision_section(
             if decision.get("current_highest")
             else "",
             f"风险 {decision.get('risk_band')}" if decision.get("risk_band") else "",
+            f"探价 {decision.get('probe_bid')}" if decision.get("probe_bid") else "",
+            f"防守 {decision.get('defend_bid')}" if decision.get("defend_bid") else "",
             f"抢仓 {decision.get('attack_bid')}" if decision.get("attack_bid") else "",
             f"停止 {decision.get('stop_price')}" if decision.get("stop_price") else "",
             str(decision.get("evidence") or ""),
@@ -1288,6 +1309,11 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     contract_fallback = ui_contract.get("fallback") or {}
     fallback_decision = contract_fallback.get("decision") or {}
     fallback_posterior = contract_fallback.get("posterior") or {}
+    contract_truth = _as_mapping(ui_contract.get("truth"))
+    truth_q6 = _as_mapping(contract_truth.get("q6"))
+    truth_top = _as_mapping(contract_truth.get("top_item"))
+    phase = str(contract_context.get("phase") or snapshot.get("phase") or "")
+    is_settled = phase == "settled" and _flag(contract_truth.get("available"))
     category_items = snapshot.get("category_grid_items") or []
     layout = _first(panel.get("layout_stages"))
     hero = str(contract_context.get("hero") or snapshot.get("hero") or "?").upper()
@@ -1323,13 +1349,54 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     decision_text = "等待建议"
     decision_detail = ""
     decision_severity = "dim"
-    if contract_decision.get("action"):
+    decision_current = str(contract_decision.get("current_highest") or "")
+    decision_risk = str(contract_decision.get("risk_band") or "")
+    decision_probe = str(contract_decision.get("probe_bid") or "")
+    decision_defend = str(contract_decision.get("defend_bid") or "")
+    decision_stop = str(contract_decision.get("stop_price") or "")
+    if bid:
+        decision_current = decision_current or str(bid.get("当前最高") or "")
+        decision_risk = decision_risk or str(bid.get("风险带") or "")
+        decision_probe = decision_probe or str(bid.get("探价(P10)") or "")
+        decision_defend = decision_defend or str(bid.get("防守价") or "")
+        decision_stop = decision_stop or str(bid.get("停止价") or "")
+    if is_settled:
+        total_value = contract_truth.get("total_value")
+        total_items = contract_truth.get("total_items")
+        total_cells = contract_truth.get("total_cells")
+        decision_text = f"结算 {_fmt_int(total_value)}"
+        decision_detail = _join_parts(
+            (
+                f"总件 {total_items}" if total_items is not None else "",
+                f"总格 {total_cells}" if total_cells is not None else "",
+                (
+                    f"红货 {truth_q6.get('count')}件/"
+                    f"{truth_q6.get('cells')}格/"
+                    f"{_fmt_int(truth_q6.get('value'))}"
+                )
+                if any(
+                    truth_q6.get(key) is not None
+                    for key in ("count", "cells", "value")
+                )
+                else "",
+            ),
+            sep="  |  ",
+        )
+        decision_severity = "good"
+    elif contract_decision.get("action"):
         action = str(contract_decision.get("action") or "?")
-        current = str(contract_decision.get("current_highest") or "?")
-        risk = str(contract_decision.get("risk_band") or "?")
-        stop = str(contract_decision.get("stop_price") or "?")
+        current = decision_current or "?"
+        risk = decision_risk or "?"
         decision_text = action
-        decision_detail = f"最高 {current}  |  停止 {stop}  |  {risk}"
+        decision_detail = _join_parts(
+            (
+                f"最高 {current}",
+                f"防守 {decision_defend}" if decision_defend else "",
+                f"停止 {decision_stop}" if decision_stop else "",
+                risk,
+            ),
+            sep="  |  ",
+        )
         decision_severity = _severity_for_bid(f"{action} {risk}")
     elif (
         contract_posterior.get("status") == "zero_match"
@@ -1365,34 +1432,73 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         decision_severity = _severity_for_bid(f"{decision_text} {decision_detail}")
 
     metrics: list[tuple[str, str, str, str]] = []
-    if contract_decision.get("attack_bid"):
+    if is_settled:
         metrics.append(
             (
-                "抢仓上限",
-                str(contract_decision.get("attack_bid") or "?"),
-                _short(
-                    f"停止 {contract_decision.get('stop_price') or '?'}",
-                    46,
+                "结算总值",
+                _fmt_int(contract_truth.get("total_value")),
+                "最终准确值",
+                "good",
+            )
+        )
+        metrics.append(
+            (
+                "总件/总格",
+                _join_parts(
+                    (
+                        str(contract_truth.get("total_items") or "?"),
+                        str(contract_truth.get("total_cells") or "?"),
+                    ),
+                    sep=" / ",
                 ),
-                decision_severity,
+                "结算 inventory",
+                "normal",
             )
         )
-    if contract_decision.get("attack_bid") and contract_decision.get("current_highest"):
-        metrics.append(
-            (
-                "当前最高",
-                str(contract_decision.get("current_highest") or "?"),
-                str(contract_decision.get("risk_band") or ""),
-                decision_severity,
+        if any(truth_q6.get(key) is not None for key in ("count", "cells", "value")):
+            metrics.append(
+                (
+                    "红货 q6",
+                    _fmt_int(truth_q6.get("value")),
+                    _join_parts(
+                        (
+                            f"{truth_q6.get('count')}件"
+                            if truth_q6.get("count") is not None
+                            else "",
+                            f"{truth_q6.get('cells')}格"
+                            if truth_q6.get("cells") is not None
+                            else "",
+                        ),
+                        sep=" / ",
+                    ),
+                    "warn" if (truth_q6.get("value") or 0) else "normal",
+                )
             )
+        top_label = _join_parts(
+            (
+                str(truth_top.get("name") or ""),
+                f"Q{truth_top.get('quality')}"
+                if truth_top.get("quality") is not None
+                else "",
+            ),
+            sep=" ",
         )
-    if contract_posterior.get("decision_value_range"):
+        if top_label or truth_top.get("value") is not None:
+            metrics.append(
+                (
+                    "最高货",
+                    _fmt_int(truth_top.get("value")),
+                    top_label,
+                    "warn" if truth_top.get("quality") == 6 else "normal",
+                )
+            )
+    elif contract_posterior.get("decision_value_range"):
         metrics.append(
             (
-                "决策价值",
-                str(contract_posterior.get("decision_value_range") or "?"),
+                "P50估值",
+                _range_p50(contract_posterior.get("decision_value_range")) or "?",
                 _short(
-                    f"raw {contract_posterior.get('raw_value_range') or '?'}",
+                    f"P10/P50/P90 {contract_posterior.get('decision_value_range') or '?'}",
                     46,
                 ),
                 "normal",
@@ -1403,8 +1509,8 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     ):
         metrics.append(
             (
-                "fallback价值",
-                str(fallback_posterior.get("raw_value_range") or "?"),
+                "fallback P50",
+                _range_p50(fallback_posterior.get("raw_value_range")) or "?",
                 _short(
                     f"v1低置信 / {fallback_posterior.get('match_text') or '?'}",
                     46,
@@ -1415,37 +1521,40 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     elif value_row := summary.get("当前价值区间"):
         metrics.append(
             (
-                "决策价值",
-                str(value_row.get("conclusion") or "?"),
-                _short(value_row.get("detail"), 46),
+                "P50估值",
+                _range_p50(value_row.get("conclusion"))
+                or str(value_row.get("conclusion") or "?"),
+                _short(value_row.get("conclusion"), 46),
                 "normal",
             )
         )
-    if _flag(contract_fallback.get("active")) and fallback_posterior.get(
-        "total_cells_range"
-    ):
+    if not is_settled and decision_defend:
         metrics.append(
             (
-                "fallback仓储",
-                str(fallback_posterior.get("total_cells_range") or "?"),
+                "防守价",
+                decision_defend,
                 _short(
-                    f"{fallback_posterior.get('confidence') or '低置信'} / "
-                    f"{fallback_posterior.get('match_text') or '?'}",
+                    _join_parts(
+                        (
+                            f"探价 {decision_probe}" if decision_probe else "",
+                            f"停止 {decision_stop}" if decision_stop else "",
+                        )
+                    ),
                     46,
                 ),
-                "warn",
+                "warn" if decision_severity == "warn" else "normal",
             )
         )
-    elif warehouse_row := summary.get("当前仓储区间"):
+    if not is_settled and decision_current:
         metrics.append(
             (
-                "仓储",
-                str(warehouse_row.get("conclusion") or "?"),
-                _short(warehouse_row.get("detail"), 46),
-                "normal",
+                "当前最高",
+                decision_current,
+                decision_risk,
+                decision_severity,
             )
         )
-    if contract_posterior.get("q6_sample_rate") or v2:
+    if not is_settled and (contract_posterior.get("q6_sample_rate") or v2):
         q6_rate = str(
             contract_posterior.get("q6_sample_rate")
             or v2.get("q6样本率")
@@ -1471,7 +1580,36 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
                 q6_tag,
             )
         )
-    if contract_layout.get("estimate") or layout:
+    if (
+        not is_settled
+        and len(metrics) < 4
+        and _flag(contract_fallback.get("active"))
+        and fallback_posterior.get("total_cells_range")
+    ):
+        metrics.append(
+            (
+                "fallback仓储",
+                str(fallback_posterior.get("total_cells_range") or "?"),
+                _short(
+                    f"{fallback_posterior.get('confidence') or '低置信'} / "
+                    f"{fallback_posterior.get('match_text') or '?'}",
+                    46,
+                ),
+                "warn",
+            )
+        )
+    elif not is_settled and len(metrics) < 4 and (
+        warehouse_row := summary.get("当前仓储区间")
+    ):
+        metrics.append(
+            (
+                "仓储",
+                str(warehouse_row.get("conclusion") or "?"),
+                _short(warehouse_row.get("detail"), 46),
+                "normal",
+            )
+        )
+    if not is_settled and len(metrics) < 4 and (contract_layout.get("estimate") or layout):
         layout_estimate = contract_layout.get("estimate") or layout.get("estimate")
         layout_known = contract_layout.get("known_cells") or layout.get("known_cells")
         layout_confidence = contract_layout.get("confidence") or layout.get("confidence")
@@ -1485,7 +1623,10 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
             )
         )
     sections: list[tuple[str, str, str]] = []
-    if tool_row := summary.get("下一次优先使用道具"):
+    truth_section = _ui_contract_truth_section(ui_contract)
+    if is_settled and truth_section is not None:
+        sections.append(truth_section)
+    if not is_settled and (tool_row := summary.get("下一次优先使用道具")):
         sections.append(
             (
                 "下一步道具",

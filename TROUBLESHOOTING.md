@@ -1985,6 +1985,39 @@ python scripts\export_ui_contract_review.py data\samples\fatbeans\aisha_shipwrec
 
 ---
 
+## 58. live 使用道具后只在下一轮刷新
+
+### 症状
+
+WinDivert live monitor 能抓到当前局，`latest_snapshot.json` 也会随轮次更新；但玩家使用道具后，
+overlay 不会立刻刷新道具结果，通常要等下一次 `REV push msg=0x0025` 轮次状态同步。
+
+### 原因
+
+BidKing 服务端会先发 `REV msg=0x0027` 直接道具响应，再在后续 `0x0025` 状态包中重复同一结果。
+旧 auction frame gate 只接受 `0x0021/0x0025/0x002d` 和发送帧，导致 `0x0027` 被当成无关包丢弃。
+此外，`0x0027` payload 本身不携带 session/map/round，只包含 action result；不能独立建状态，
+必须继承当前已激活对局上下文。空 ack 型 `0x0027` 也会出现，不能进入推理。
+
+### 修法（2026-06-02）
+
+- `run_windivert_live_monitor.py` 的 gate 接受当前 session 内、packet tag 为 `0` 且能解析出
+  action result 的 `REV msg=0x0027`。
+- `bidking_lab.live.fatbeans.parse_fatbeans_packets()` 对 `0x0027` 继承最近一次状态的
+  session/map/round，并输出 `tool_revealed` batch。
+- 空 ack、未激活 session、非当前局响应继续过滤，不触发推理。
+
+### 验证
+
+```powershell
+python -m pytest tests\test_windivert_live_monitor.py tests\test_live_fatbeans.py::test_fatbeans_project4_extracts_known_round_facts tests\test_live_fatbeans.py::test_fatbeans_project4_converts_supported_fields_to_live_batches
+```
+
+真实 project4 样本中，`sort 26/59/82` 的 `100105/100104/100124` 直接响应会在下一轮状态包前进入
+live batch；`capture_source_status.json` 的 `accepted_frames` 会在道具响应时增长。
+
+---
+
 ## 参考项目（写法）
 
 本文件结构参考同工作区内 `projects/openclaw-discord-bot/TROUBLESHOOTING.md`：**症状 / 原因 / 修法 / 教训** 四段式，便于检索与复用。

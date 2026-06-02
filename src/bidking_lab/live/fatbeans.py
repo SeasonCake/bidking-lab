@@ -477,6 +477,28 @@ def _parse_action_result(block: bytes) -> FatbeansActionResult | None:
     return None
 
 
+def _parse_direct_action_response(
+    frame: FatbeansFrame,
+) -> FatbeansActionResult | None:
+    """Parse ``REV msg=0x0027`` direct tool/action responses.
+
+    These frames carry only the action result payload. They do not repeat the
+    session/map/round fields, so callers must attach the current auction
+    context before converting them into state events.
+    """
+    if (
+        frame.direction != "REV"
+        or frame.packet_tag != 0
+        or frame.message_id != 0x0027
+    ):
+        return None
+    fields = _parse_fields(frame.body)
+    payload = _first(fields, 2)
+    if not isinstance(payload, bytes):
+        return None
+    return _parse_action_result(payload)
+
+
 def _parse_observed_item(block: bytes) -> FatbeansObservedItem | None:
     fields = _parse_fields(block)
     local_index = _int(_first(fields, 1))
@@ -702,7 +724,7 @@ def parse_fatbeans_packets(
         *reconstruct_fatbeans_frames(packets, "SEND"),
         *reconstruct_fatbeans_frames(packets, "REV"),
     ]
-    frames.sort(key=lambda frame: (frame.capture_time, frame.direction, frame.index))
+    frames.sort(key=lambda frame: (frame.sort_id, frame.index))
     sends = tuple(
         event
         for frame in frames
@@ -715,17 +737,41 @@ def parse_fatbeans_packets(
         for event in (_parse_status_event(frame),)
         if event is not None
     )
-    states = tuple(
-        event
-        for frame in frames
-        for event in (_parse_state_event(frame),)
-        if event is not None
-    )
+    states_list: list[FatbeansStateEvent] = []
+    current_session_id: str | None = None
+    current_map_id: int | None = None
+    current_round_index: int | None = None
+    for frame in frames:
+        state = _parse_state_event(frame)
+        if state is not None:
+            states_list.append(state)
+            if state.session_id is not None:
+                current_session_id = state.session_id
+            if state.map_id is not None:
+                current_map_id = state.map_id
+            if state.round_index is not None:
+                current_round_index = state.round_index
+            continue
+
+        direct_action = _parse_direct_action_response(frame)
+        if direct_action is None or current_session_id is None:
+            continue
+        states_list.append(
+            FatbeansStateEvent(
+                sort_id=frame.sort_id,
+                capture_time=frame.capture_time,
+                message_id=frame.message_id,
+                session_id=current_session_id,
+                map_id=current_map_id,
+                round_index=current_round_index,
+                action_results=(direct_action,),
+            )
+        )
     return FatbeansCaptureEvents(
         packets=tuple(packets),
         frames=tuple(frames),
         sends=sends,
-        states=states,
+        states=tuple(states_list),
         statuses=statuses,
     )
 

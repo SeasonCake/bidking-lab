@@ -654,6 +654,18 @@ def test_fatbeans_project4_extracts_known_round_facts() -> None:
     assert start_state.public_infos[0].value == pytest.approx(2.965517, abs=1e-6)
     assert any(reveal.hero_id == 208 for reveal in start_state.skill_reveals)
 
+    direct_actions = [
+        (state.sort_id, result.action_id, result.result, state.session_id, state.map_id)
+        for state in events.states
+        if state.message_id == 0x0027
+        for result in state.action_results
+    ]
+    assert direct_actions == [
+        (26, 100105, 48, "2401:1274127923736451", 2401),
+        (59, 100104, 8, "2401:1274127923736451", 2401),
+        (82, 100124, 45778, "2401:1274127923736451", 2401),
+    ]
+
     first_state = next(state for state in events.states if state.sort_id == 34)
     assert first_state.session_id == "2401:1274127923736451"
     assert first_state.map_id == 2401
@@ -717,6 +729,13 @@ def test_fatbeans_project4_converts_supported_fields_to_live_batches() -> None:
     assert batches[0].event_kind == "session_started"
     assert batches[0].phase == "reading"
     assert len(batches[0].grid_items) == 17
+    direct_batch = next(batch for batch in batches if batch.sequence == 26)
+    assert direct_batch.event_kind == "tool_revealed"
+    assert direct_batch.phase == "bidding"
+    assert {
+        update.path: update.value
+        for update in direct_batch.field_updates
+    }[("bucket", "3", "total_cells")] == 48
 
 
 @pytest.mark.skipif(

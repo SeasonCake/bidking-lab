@@ -32,7 +32,8 @@ WinDivert 入口现在还有第二层对局 frame gate：目标进程的 TCP pay
 - `SEND msg=0x0022`：出价候选。
 - `SEND msg=0x0026`：道具/动作候选。
 - `REV push msg=0x0025`：每轮状态同步。
-- `REV push msg=0x002d`：R5/结算/技能结果同步。
+- `REV msg=0x0027`：当前局内道具/动作直接响应，可在下一轮状态同步前即时更新读数。
+- `REV push msg=0x002d`：R5/结算/技能结果同步；overlay 会切换为最终准确结算视图。
 
 购买道具、账号/设置 JSON、界面交互、心跳/等待包和非当前 session 的发送帧不会进入
 `windivert_live.json`，因此不会触发推理。

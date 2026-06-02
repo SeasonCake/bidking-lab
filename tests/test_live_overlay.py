@@ -238,10 +238,10 @@ def test_demo_snapshot_has_compact_overlay_sections() -> None:
     assert model["title"].startswith("ETHAN")
     assert model["decision"][0] == "可守不抢"
     assert [row[0] for row in model["metrics"]] == [
-        "决策价值",
-        "仓储",
+        "P50估值",
+        "防守价",
+        "当前最高",
         "红货 q6",
-        "布局",
     ]
     assert any(section[0] == "鉴影命中" for section in model["sections"])
     assert any(alert[0].startswith("q6 P90") for alert in model["alerts"])
@@ -287,6 +287,7 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
                         "action": "可守不抢",
                         "current_highest": "玩家A 500,000",
                         "risk_band": "防守区",
+                        "defend_bid": "450,000",
                         "stop_price": "680,000",
                     },
                     "posterior": {
@@ -459,12 +460,20 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert model["minimap"]["max_cells"] == 250
     assert model["title"] == "AISHA  ·  map 2501  ·  R4"
     assert model["decision"][0] == "可守不抢"
-    assert model["metrics"][0][1] == "300,000 / 500,000 / 700,000"
+    assert model["metrics"][0] == (
+        "P50估值",
+        "500,000",
+        "P10/P50/P90 300,000 / 500,000 / 700,000",
+        "normal",
+    )
+    assert model["metrics"][1][0] == "防守价"
+    assert model["metrics"][1][1] == "450,000"
+    assert model["metrics"][2][0] == "当前最高"
     assert any("UI契约 q6 风险参考" in alert[0] for alert in model["alerts"])
     assert any("aisha_deep_floor1 tail-risk shadow" in alert[0] for alert in model["alerts"])
     interaction = model["interaction"]
     assert interaction["mini"]["purpose"] == "always_on_top_core_tips"
-    assert interaction["mini"]["metrics"][0][0] == "决策价值"
+    assert interaction["mini"]["metrics"][0][0] == "P50估值"
     assert interaction["hover"]["enabled"] is True
     assert interaction["hover"]["sections"][0][0] == "MiniMap"
     assert any(section[0] == "输入约束" for section in interaction["hover"]["sections"])
@@ -526,6 +535,70 @@ def test_overlay_model_surfaces_live_health_warnings() -> None:
     assert "推理 18.2s" in model["subtitle"]
     assert any("本次推理耗时 18.2s" in alert[0] for alert in model["alerts"])
     assert any("q6 风险参考不应影响正式出价" in alert[0] for alert in model["alerts"])
+
+
+def test_overlay_model_switches_to_settlement_view_when_settled() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model(
+        {
+            "file": "settled.json",
+            "hero": "ethan",
+            "map_id": 2401,
+            "round": 5,
+            "phase": "settled",
+            "known_value_sum": 801824,
+            "ui_contract": {
+                "context": {
+                    "hero": "ethan",
+                    "map_id": 2401,
+                    "round": 5,
+                    "phase": "settled",
+                    "known_value_sum": 801824,
+                    "inventory_count": 38,
+                    "inventory_cells": 112,
+                },
+                "source": {"file": "settled.json"},
+                "baseline": {
+                    "decision": {
+                        "action": "仍在可防守区",
+                        "current_highest": "玩家A 500,000",
+                        "risk_band": "防守区",
+                        "defend_bid": "650,000",
+                        "stop_price": "900,000",
+                    },
+                    "posterior": {
+                        "decision_value_range": "500,000 / 750,000 / 900,000",
+                    },
+                },
+                "truth": {
+                    "available": True,
+                    "source": "settlement_or_sample_replay",
+                    "total_value": 801824,
+                    "total_items": 38,
+                    "total_cells": 112,
+                    "q6": {"count": 1, "cells": 9, "value": 320000},
+                    "top_item": {
+                        "name": "永乐大典",
+                        "quality": 6,
+                        "cells": 9,
+                        "value": 320000,
+                    },
+                },
+            },
+        }
+    )
+
+    assert model["decision"][0] == "结算 801,824"
+    assert "总件 38" in model["decision"][1]
+    assert [metric[0] for metric in model["metrics"]] == [
+        "结算总值",
+        "总件/总格",
+        "红货 q6",
+        "最高货",
+    ]
+    assert model["metrics"][0][1] == "801,824"
+    assert any(section[0] == "结算/Truth" for section in model["sections"])
 
 
 def test_overlay_model_surfaces_zero_match_baseline() -> None:
@@ -631,8 +704,8 @@ def test_overlay_model_uses_zero_match_fallback_reference() -> None:
         "bad",
     )
     assert model["metrics"][0] == (
-        "fallback价值",
-        "180,000 / 280,000 / 420,000",
+        "fallback P50",
+        "280,000",
         "v1低置信 / 22/80",
         "warn",
     )

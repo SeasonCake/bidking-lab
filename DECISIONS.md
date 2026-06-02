@@ -772,6 +772,36 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新**：后续 mini 常驻层可以演进为“监听猫”视觉入口：视觉方向是抽象像素猫，不需要写实；猫形象只负责状态感和伴随 UI，常驻字体块仍必须来自 `ui_contract.baseline` 与明确风险参考；hover/click 分层继续使用同一 contract。抽象像素猫资源先作为视觉 TODO，不进入推理或出价逻辑。
 
+**更新**：2026-06-02 mini 首屏价格口径调整为“最可能/可防守优先”。`baseline.decision`
+正式导出 `probe_bid` 与 `defend_bid`；overlay 首屏优先显示 `P50估值`、`防守价`、`当前最高`
+和 q6 风险，完整区间、停止价、抢仓上限进入 chips / hover / detail。用户决策是避免把
+P90、停止价或抢仓上限误读成最可能仓位价格；推荐取舍是保持抢仓上限可见但降级展示，不改变
+`recommend_bid_strategy` 或 baseline 正式出价。
+
+**更新**：2026-06-02 结算 `phase=settled` 后，overlay 首屏切换为最终 truth 视图，不继续把
+对局中的出价建议作为主决策。结算 truth 仍隔离在 `ui_contract.truth`，不回流到 pre-settlement
+posterior；该切换只是 UI 表达，不改变推理输入边界。
+
+## 2026-06-02 · WinDivert 直接道具响应进入 live 输入，但必须继承当前局上下文
+
+**背景**：实测 live 包流中，使用道具后会先出现 `REV msg=0x0027` 直接响应；此前 gate 只接受
+`0x0021/0x0025/0x002d`，所以道具结果要等下一轮状态同步才进入推理，表现为“用了道具但 UI 不实时更新”。
+
+**用户决策**：以 live 监听为准，不回退到 OCR，也不依赖 Fatbeans WebHook 会员链路；需要过滤掉购买道具、
+界面交互、心跳和非当前局数据，避免所有包都进入推理。
+
+**推荐**：接受当前局内可解析的 `0x0027`，并把它转换为 `tool_revealed` batch。由于 `0x0027`
+payload 不带 session/map/round，只能继承最近一次已确认状态的上下文；没有 active session、
+packet tag 非 0、或解析不出 action result 的帧继续丢弃。
+
+**取舍**：这能让道具结果在下一轮 `0x0025` 前刷新 posterior/UI，同时不会放宽到所有 `0x0027`
+或所有 BidKing TCP payload。代价是如果刚开局只有空 ack 或上下文尚未建立，直接响应会被忽略；
+这比伪造 session 更安全。
+
+**复查点**：观察 `capture_source_status.json` 中 `accepted_frames/raw_packets`，以及
+`latest_snapshot.json` 的 `phase/event_kind` 是否在道具后快速更新。若未来发现某些有效道具响应
+在 `0x0021` 前出现，需要先确认是否存在可靠 session 字段，再决定是否扩展 gate。
+
 ## 2026-06-02 · zero-match 暂用 v1 map-prior 低置信兜底，v2 根因修复继续推进
 
 **背景**：正式 UI 接入前的 readiness batch 仍有一批 `zero_posterior_match`。其中部分样本同时带 `layout_conflict`，另一些样本即使没有布局冲突也会因为公开总格/总件数、轮廓或 item-level 约束组合过紧而无匹配。v2 无匹配时如果 UI 完全不显示建议，实战可用性不足；但直接放宽 baseline 又会掩盖解析或约束建模问题。

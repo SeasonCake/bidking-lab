@@ -33,6 +33,7 @@ from run_fatbeans_webhook_monitor import (  # noqa: E402
 )
 from bidking_lab.live.fatbeans import (  # noqa: E402
     FatbeansFrame,
+    _parse_direct_action_response,
     _parse_send_event,
     _parse_state_event,
 )
@@ -41,7 +42,7 @@ from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
 
 FlowKey = tuple[str, int, str, int]
 GAME_SEND_MESSAGE_IDS = {0x0022, 0x0026}
-GAME_STATE_MESSAGE_IDS = {0x0021, 0x0025, 0x002D}
+GAME_STATE_MESSAGE_IDS = {0x0021, 0x0025, 0x0027, 0x002D}
 SESSION_ID_RE = re.compile(r"^\d{4}:\d+$")
 MAX_FRAME_BYTES = 1_000_000
 
@@ -401,6 +402,7 @@ class GameFrameGate:
             direction == "REV"
             and _frame_packet_tag(direction, raw) == 0
             and message_id in GAME_STATE_MESSAGE_IDS
+            and message_id != 0x0027
         ):
             state = _parse_state_event(frame)
             if state is None or not _valid_session_id(state.session_id):
@@ -421,6 +423,22 @@ class GameFrameGate:
                 direction=direction,
                 message_id=message_id,
                 session_id=state.session_id or "",
+                is_state=True,
+            )
+        if (
+            direction == "REV"
+            and _frame_packet_tag(direction, raw) == 0
+            and message_id == 0x0027
+        ):
+            result = _parse_direct_action_response(frame)
+            if result is None or not _valid_session_id(self._current_session_id):
+                return None
+            return GameFrame(
+                template_row=row,
+                raw=raw,
+                direction=direction,
+                message_id=message_id,
+                session_id=self._current_session_id or "",
                 is_state=True,
             )
         return None

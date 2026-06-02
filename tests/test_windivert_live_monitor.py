@@ -76,6 +76,26 @@ def _rev_state_frame(
     )
 
 
+def _rev_action_response_frame(
+    *,
+    action_id: int = 100105,
+    result: int = 48,
+    result_field: int = 14,
+    packet_tag: int = 0,
+) -> bytes:
+    payload = _field_varint(4, action_id)
+    payload += _field_varint(result_field, result)
+    body = _field_bytes(2, payload)
+    frame_len = 16 + len(body)
+    return (
+        frame_len.to_bytes(4, "big")
+        + b"\x32\xd2\x55\x60"
+        + packet_tag.to_bytes(4, "big")
+        + (0x0027).to_bytes(4, "big")
+        + body
+    )
+
+
 def _rev_status_frame(
     *,
     session: str = "2401:1274127880525303",
@@ -294,6 +314,33 @@ def test_game_frame_gate_accepts_session_started_state() -> None:
     assert gate.active_session_id == "2401:1274127880525303"
     assert len(first_send.rows) == 1
     assert first_send.rows[0]["MessageID"] == "0x0022"
+
+
+def test_game_frame_gate_accepts_current_session_direct_action_response() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    early_response = gate.feed_row(
+        _row("REV", _rev_action_response_frame(), sort_id=1)
+    )
+    started = gate.feed_row(
+        _row("REV", _rev_state_frame(0x0021, round_no=None), sort_id=2)
+    )
+    direct_response = gate.feed_row(
+        _row("REV", _rev_action_response_frame(), sort_id=3)
+    )
+    empty_ack = gate.feed_row(
+        _row("REV", _rev_action_response_frame(packet_tag=1234), sort_id=4)
+    )
+
+    assert early_response.rows == ()
+    assert len(started.rows) == 1
+    assert len(direct_response.rows) == 1
+    assert direct_response.rows[0]["MessageID"] == "0x0027"
+    assert direct_response.rows[0]["SessionID"] == "2401:1274127880525303"
+    assert direct_response.rows[0]["SortID"] == 2
+    assert empty_ack.rows == ()
+    assert gate.ignored_frames == 2
 
 
 def test_game_frame_gate_reconstructs_split_frames() -> None:

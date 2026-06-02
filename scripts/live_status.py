@@ -236,6 +236,8 @@ def build_live_status(
             "action": _text(baseline_decision.get("action")),
             "current_highest": _text(baseline_decision.get("current_highest")),
             "risk_band": _text(baseline_decision.get("risk_band")),
+            "probe_bid": _text(baseline_decision.get("probe_bid")),
+            "defend_bid": _text(baseline_decision.get("defend_bid")),
             "attack_bid": _text(baseline_decision.get("attack_bid")),
             "stop_price": _text(baseline_decision.get("stop_price")),
             "posterior_status": _text(baseline_posterior.get("status")),
@@ -342,6 +344,7 @@ def format_status_text(status: Mapping[str, Any]) -> str:
             f"{baseline.get('action') or 'no action'} | "
             f"{baseline.get('current_highest') or 'no bid'} | "
             f"risk={baseline.get('risk_band') or '?'} | "
+            f"defend={baseline.get('defend_bid') or '?'} | "
             f"stop={baseline.get('stop_price') or '?'}"
         ),
         (

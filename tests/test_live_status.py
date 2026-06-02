@@ -47,6 +47,8 @@ def _healthy_snapshot(now: float) -> dict:
                     "action": "可守不抢",
                     "current_highest": "玩家A 500,000",
                     "risk_band": "防守区",
+                    "probe_bid": "580,000",
+                    "defend_bid": "620,000",
                     "attack_bid": "620,000",
                     "stop_price": "700,000",
                 },
@@ -107,6 +109,7 @@ def test_live_status_reports_healthy_log_dir(tmp_path: Path, monkeypatch) -> Non
     assert status["level"] == "ok"
     assert status["snapshot"]["source_file"] == "aisha_shipwreck_sample.json"
     assert status["baseline"]["action"] == "可守不抢"
+    assert status["baseline"]["defend_bid"] == "620,000"
     assert status["baseline"]["posterior_status"] == "ok"
     assert status["q6"]["risk"] is True
     assert status["q6"]["affects_bid"] is False
@@ -118,6 +121,7 @@ def test_live_status_reports_healthy_log_dir(tmp_path: Path, monkeypatch) -> Non
     text = module.format_status_text(status)
     assert "BidKing live status: OK" in text
     assert "aisha_shipwreck_sample.json" in text
+    assert "defend=620,000" in text
     assert "Q6: risk=True affects_bid=False floor=False" in text
     assert "running=True" in text
 
