@@ -40,6 +40,13 @@ def _artifact(
                 "匹配": v2_match,
             }
         ],
+        "model_eval": {
+            "v2_q6_count_p90_under_prior_by": 0.5,
+            "v2_q6_cells_p90_under_prior_by": 2.5,
+            "q6_count_cell_prior_risk": True,
+            "q6_count_cell_prior_gap": "count_low;cells_low",
+            "q6_count_cell_prior_floor_value": 486510,
+        },
         "ui_contract": {
             "context": {
                 "hero": "aisha",
@@ -65,6 +72,10 @@ def _artifact(
                     "decision_value_range": "300,000 / 500,000 / 700,000",
                     "raw_value_range": "300,000 / 540,000 / 900,000",
                     "q6_sample_rate": "12.0%",
+                    "q6_prior_rate": "77.5%",
+                    "q6_prior_expected_count": "1.50",
+                    "q6_prior_expected_cells": "5.6",
+                    "q6_prior_expected_value": "486,510",
                     "q6_decision_value_range": q6_decision_value_range,
                     "q6_count_range": "0 / 1 / 1",
                     "q6_cells_range": "0 / 4 / 6",
@@ -171,6 +182,9 @@ def _artifact(
                 "layout": {
                     "conflict": layout_conflict,
                     "conflict_root": "footprint_overlap" if layout_conflict else "",
+                    "bottom_row": 16,
+                    "bottom_row_risk": True,
+                    "bottom_row_risk_threshold": 13,
                 },
                 "q6": {
                     "below_drop_prior": q6_below_drop_prior,
@@ -197,6 +211,18 @@ def test_review_row_keeps_manual_check_fields_without_flags() -> None:
     assert row["v2_matched"] == 12
     assert row["v2_total"] == 80
     assert row["fallback_active"] is False
+    assert row["q6_prior_rate"] == "77.5%"
+    assert row["q6_prior_expected_count"] == "1.50"
+    assert row["q6_prior_expected_cells"] == "5.6"
+    assert row["q6_prior_expected_value"] == "486,510"
+    assert row["q6_count_p90_under_prior_by"] == 0.5
+    assert row["q6_cells_p90_under_prior_by"] == 2.5
+    assert row["q6_count_cell_prior_risk"] is True
+    assert row["q6_count_cell_prior_gap"] == "count_low;cells_low"
+    assert row["q6_count_cell_prior_floor_value"] == 486510
+    assert row["layout_bottom_row"] == 16
+    assert row["layout_bottom_row_risk"] is True
+    assert row["layout_bottom_row_risk_threshold"] == 13
     assert row["truth_q6_count"] == 1
     assert row["input_constraints_mode"] == "pre_settlement_trusted_totals"
     assert row["public_constraint_key"] == "max_quality"

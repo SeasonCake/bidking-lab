@@ -507,6 +507,11 @@ def review_row_from_artifact(
     )
     v2_row = _first_mapping(artifact.get("v2_posterior_rows"))
     v2_matched, v2_total = _match_counts(v2_row.get("匹配"))
+    model_eval = (
+        artifact.get("model_eval")
+        if isinstance(artifact.get("model_eval"), Mapping)
+        else {}
+    )
     flags = _review_flags(artifact, contract)
     q6_below_prior_review = _q6_below_prior_review(
         posterior,
@@ -540,9 +545,24 @@ def review_row_from_artifact(
         "fallback_match_text": fallback_posterior.get("match_text"),
         "fallback_affects_bid": fallback.get("affects_bid"),
         "q6_sample_rate": posterior.get("q6_sample_rate"),
+        "q6_prior_rate": posterior.get("q6_prior_rate"),
+        "q6_prior_expected_count": posterior.get("q6_prior_expected_count"),
+        "q6_prior_expected_cells": posterior.get("q6_prior_expected_cells"),
+        "q6_prior_expected_value": posterior.get("q6_prior_expected_value"),
         "q6_decision_value_range": posterior.get("q6_decision_value_range"),
         "q6_count_range": posterior.get("q6_count_range"),
         "q6_cells_range": posterior.get("q6_cells_range"),
+        "q6_count_p90_under_prior_by": model_eval.get(
+            "v2_q6_count_p90_under_prior_by"
+        ),
+        "q6_cells_p90_under_prior_by": model_eval.get(
+            "v2_q6_cells_p90_under_prior_by"
+        ),
+        "q6_count_cell_prior_risk": model_eval.get("q6_count_cell_prior_risk"),
+        "q6_count_cell_prior_gap": model_eval.get("q6_count_cell_prior_gap"),
+        "q6_count_cell_prior_floor_value": model_eval.get(
+            "q6_count_cell_prior_floor_value"
+        ),
         "total_cells_range": posterior.get("total_cells_range"),
         "remaining_cells_after_layout_range": posterior.get(
             "remaining_cells_after_layout_range"
@@ -607,6 +627,11 @@ def review_row_from_artifact(
         ),
         "layout_conflict": diag_layout.get("conflict"),
         "layout_conflict_root": diag_layout.get("conflict_root"),
+        "layout_bottom_row": diag_layout.get("bottom_row"),
+        "layout_bottom_row_risk": diag_layout.get("bottom_row_risk"),
+        "layout_bottom_row_risk_threshold": diag_layout.get(
+            "bottom_row_risk_threshold"
+        ),
         "q6_below_drop_prior": diag_q6.get("below_drop_prior"),
         "q6_below_drop_prior_class": q6_below_prior_review["class"],
         "q6_below_drop_prior_under_by": q6_below_prior_review["under_by"],
