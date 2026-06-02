@@ -631,13 +631,7 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                     "model_eval",
                 ),
                 "collapsible": True,
-                "renderers": (
-                    {
-                        "name": "matplotlib_minimap",
-                        "mode": "optional_async",
-                        "min_round": 3,
-                    },
-                ),
+                "renderers": (),
             },
         },
     }

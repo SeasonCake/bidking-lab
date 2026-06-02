@@ -615,13 +615,7 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert "constraints.summary" in contract["interaction"]["hover"]["fields"]
     assert "truth" in contract["interaction"]["detail"]["fields"]
     assert contract["interaction"]["detail"]["collapsible"] is True
-    assert contract["interaction"]["detail"]["renderers"] == (
-        {
-            "name": "matplotlib_minimap",
-            "mode": "optional_async",
-            "min_round": 3,
-        },
-    )
+    assert contract["interaction"]["detail"]["renderers"] == ()
 
 
 def test_layout_replay_rows_from_stages_are_frontend_neutral() -> None:

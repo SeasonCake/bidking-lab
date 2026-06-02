@@ -96,6 +96,24 @@ def test_overlay_window_geometry_uses_compact_default() -> None:
     assert geometry.startswith("480x420")
 
 
+def test_overlay_hover_position_stays_inside_screen_edges() -> None:
+    overlay = _overlay_module()
+
+    x, y = overlay._bounded_popup_position(
+        pointer_x=1880,
+        pointer_y=1030,
+        popup_width=420,
+        popup_height=360,
+        screen_width=1920,
+        screen_height=1080,
+    )
+
+    assert x + 420 + overlay.HOVER_MARGIN <= 1920
+    assert y + 360 + overlay.HOVER_MARGIN <= 1080
+    assert x < 1880
+    assert y < 1030
+
+
 def test_overlay_detail_window_size_expands_within_screen() -> None:
     overlay = _overlay_module()
 
@@ -158,10 +176,11 @@ def test_overlay_quality_style_distinguishes_white_and_unknown() -> None:
     assert unknown["stipple"] == ""
     assert white["unknown"] == ""
     assert white["stipple"] == ""
-    assert white["fill"].lower() == "#ffffff"
+    assert white["fill"].lower() == "#f8fafc"
+    assert white["outline"].lower() == "#cbd5e1"
 
 
-def test_overlay_matplotlib_minimap_gated_by_round() -> None:
+def test_overlay_matplotlib_minimap_is_temporarily_disabled() -> None:
     overlay = _overlay_module()
     interaction = {
         "detail": {
@@ -179,13 +198,13 @@ def test_overlay_matplotlib_minimap_gated_by_round() -> None:
         {"round": 2, "interaction": interaction}
     )
     assert enabled is False
-    assert "当前 R2 不渲染" in reason
+    assert "已暂时关闭" in reason
 
     enabled, reason = overlay._matplotlib_minimap_state(
         {"round": 3, "interaction": interaction}
     )
-    assert enabled is True
-    assert "R3+" in reason
+    assert enabled is False
+    assert "已暂时关闭" in reason
 
 
 def test_demo_snapshot_has_compact_overlay_sections() -> None:
@@ -370,13 +389,7 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
                         "purpose": "click_to_open_full_reasoning",
                         "fields": ("truth", "shadows", "diagnostics"),
                         "collapsible": True,
-                        "renderers": (
-                            {
-                                "name": "matplotlib_minimap",
-                                "mode": "optional_async",
-                                "min_round": 3,
-                            },
-                        ),
+                        "renderers": (),
                     },
                 },
                 "shadows": [
@@ -442,13 +455,7 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert any(section[0] == "q6 风险参考" for section in interaction["hover"]["sections"])
     assert interaction["detail"]["enabled"] is True
     assert interaction["detail"]["collapsible"] is True
-    assert interaction["detail"]["renderers"] == (
-        {
-            "name": "matplotlib_minimap",
-            "mode": "optional_async",
-            "min_round": 3,
-        },
-    )
+    assert interaction["detail"]["renderers"] == ()
     assert any(section[0] == "结算/Truth" for section in interaction["detail"]["sections"])
     assert any(section[0] == "Shadow 明细" for section in interaction["detail"]["sections"])
     assert any(section[0] == "诊断明细" for section in interaction["detail"]["sections"])

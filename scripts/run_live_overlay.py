@@ -27,6 +27,10 @@ DETAIL_MIN_WIDTH = 820
 DETAIL_MIN_HEIGHT = 620
 DETAIL_MAX_WIDTH = 980
 DETAIL_MAX_HEIGHT = 860
+HOVER_OFFSET = 18
+HOVER_MARGIN = 12
+HOVER_MOVE_DEADZONE = 8
+ENABLE_MATPLOTLIB_MINIMAP = False
 
 BG = "#09111f"
 PANEL = "#111827"
@@ -105,6 +109,8 @@ def _matplotlib_minimap_state(model: dict[str, Any]) -> tuple[bool, str]:
             continue
         if renderer.get("name") != "matplotlib_minimap":
             continue
+        if not ENABLE_MATPLOTLIB_MINIMAP:
+            return False, "matplotlib MiniMap 已暂时关闭，使用 Tk MiniMap"
         min_round = _int_or_none(renderer.get("min_round")) or 1
         if round_no is None:
             return False, f"R{min_round}+ 详情渲染，当前轮次未知"
@@ -246,7 +252,29 @@ def _quality_style(quality: Any) -> dict[str, str]:
         return {"fill": ACCENT, "outline": "#bfdbfe", "stipple": "", "hatch": "", "unknown": ""}
     if q == 2:
         return {"fill": GOOD, "outline": "#bbf7d0", "stipple": "", "hatch": "", "unknown": ""}
-    return {"fill": "#ffffff", "outline": "#e2e8f0", "stipple": "", "hatch": "", "unknown": ""}
+    return {"fill": "#f8fafc", "outline": "#cbd5e1", "stipple": "", "hatch": "", "unknown": ""}
+
+
+def _bounded_popup_position(
+    *,
+    pointer_x: int,
+    pointer_y: int,
+    popup_width: int,
+    popup_height: int,
+    screen_width: int,
+    screen_height: int,
+    offset: int = HOVER_OFFSET,
+    margin: int = HOVER_MARGIN,
+) -> tuple[int, int]:
+    x = pointer_x + offset
+    y = pointer_y + offset
+    if x + popup_width + margin > screen_width:
+        x = pointer_x - popup_width - offset
+    if y + popup_height + margin > screen_height:
+        y = pointer_y - popup_height - offset
+    max_x = max(margin, screen_width - popup_width - margin)
+    max_y = max(margin, screen_height - popup_height - margin)
+    return max(margin, min(x, max_x)), max(margin, min(y, max_y))
 
 
 def _age(snapshot: dict[str, Any]) -> tuple[str, bool]:
@@ -1487,6 +1515,7 @@ class Overlay:
         self._current_model: dict[str, Any] | None = None
         self._detail_open = False
         self._hover_window: tk.Toplevel | None = None
+        self._last_hover_position: tuple[int, int] | None = None
         self._last_click_time: int | None = None
         self._matplotlib_minimap_cache: tuple[str, tk.PhotoImage] | None = None
         self._compact_geometry = _default_window_geometry(
@@ -1768,9 +1797,29 @@ class Overlay:
         if self._hover_window is None:
             return
         try:
-            self._hover_window.geometry(f"+{event.x_root + 18}+{event.y_root + 18}")
+            self._hover_window.update_idletasks()
+            width = max(1, self._hover_window.winfo_reqwidth())
+            height = max(1, self._hover_window.winfo_reqheight())
+            x, y = _bounded_popup_position(
+                pointer_x=int(event.x_root),
+                pointer_y=int(event.y_root),
+                popup_width=width,
+                popup_height=height,
+                screen_width=self.root.winfo_screenwidth(),
+                screen_height=self.root.winfo_screenheight(),
+            )
+            if self._last_hover_position is not None:
+                last_x, last_y = self._last_hover_position
+                if (
+                    abs(x - last_x) < HOVER_MOVE_DEADZONE
+                    and abs(y - last_y) < HOVER_MOVE_DEADZONE
+                ):
+                    return
+            self._hover_window.geometry(f"+{x}+{y}")
+            self._last_hover_position = (x, y)
         except tk.TclError:
             self._hover_window = None
+            self._last_hover_position = None
 
     def _show_hover(self, event: tk.Event) -> None:
         if self._detail_open or self._current_model is None:
@@ -1822,6 +1871,8 @@ class Overlay:
                     compact=True,
                 )
             self._hover_window = window
+            self._last_hover_position = None
+            window.bind("<Leave>", self._schedule_hide_hover, add="+")
         self._position_hover(event)
         if self._hover_window is not None:
             self._hover_window.deiconify()
@@ -1834,10 +1885,20 @@ class Overlay:
         except tk.TclError:
             pass
         self._hover_window = None
+        self._last_hover_position = None
 
     def _is_inside_root(self, widget: tk.Widget | None) -> bool:
         while widget is not None:
             if widget == self.root:
+                return True
+            widget = widget.master
+        return False
+
+    def _is_inside_hover(self, widget: tk.Widget | None) -> bool:
+        if self._hover_window is None:
+            return False
+        while widget is not None:
+            if widget == self._hover_window:
                 return True
             widget = widget.master
         return False
@@ -1850,7 +1911,7 @@ class Overlay:
             )
         except tk.TclError:
             widget = None
-        if not self._is_inside_root(widget):
+        if not self._is_inside_root(widget) and not self._is_inside_hover(widget):
             self._hide_hover()
 
     def _schedule_hide_hover(self, _event: tk.Event) -> None:
