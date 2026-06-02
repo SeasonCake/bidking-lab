@@ -1820,6 +1820,47 @@ python -m pytest -q
 
 ---
 
+## 54. live q6 shadow still-missed 被极端尾部误抬
+
+### 症状
+
+`summarize_live_model_eval.py --export-shadow-review-dir` 导出的 `aisha_deep_floor1`
+active 行里，部分 `active_still_missed` 的最终红货来自百年人参、富春山居图等极端高价尾部。
+这类物品在只有 shape/layout 证据时本来就不应完全进入实战决策价值，但 live readiness
+仍把它们当成 shadow 没覆盖的失败样本。
+
+### 原因
+
+batch evaluator 已经区分 raw truth 和 plannable truth：`final_q6_value` 是结算 raw 红货，
+`final_q6_decision_value` 是裁掉未证据支持尾部后的可规划红货。但 live monitor 之前只输出
+raw breakdown，并用 raw `final_q6_value` 去对比 shadow 的 `q6_decision_value_p90`。
+两边口径不同，会把不可规划尾部误算为 `under_before` / `still_missed`。
+
+### 修法（2026-06-02）
+
+- `live.monitor._inventory_quality_breakdown()` 与 batch evaluator 共用同一套 truth breakdown。
+- live `model_eval` 新增 `final_q6_decision_value`、`final_q6_trimmed_tail_value`、
+  `final_q6_trimmed_tail_items`、`v2_q6_decision_value_p90_under_by`、
+  `q6_plannable_p90_misses_truth`。
+- q6 practical gate、q6 shadow `under_before/covered_after/helped/false_positive_proxy`
+  改为使用 plannable truth；raw `final_q6_value` 和 `q6_p90_misses_truth` 保留作 raw ceiling
+  与尾部风险诊断。
+- `summarize_live_model_eval.py` 的 candidate readiness / review export 改用
+  `final_q6_decision_value`，旧日志缺字段时只对 readiness 回退到 raw truth。
+
+### 验证
+
+```powershell
+python -m pytest tests\test_live_monitor.py tests\test_summarize_live_model_eval.py tests\test_evaluate_fatbeans_v2_samples.py
+```
+
+定向重建 6 个旧 `aisha_deep_floor1` still-missed 样本后，分类从 raw 口径的
+`6 still_missed` 变成 `4 still_missed / 1 helped / 1 observation`。其中
+`aisha_shipwreck_test_sample69_4rounds.json` 的《富春山居图》被计入
+`final_q6_trimmed_tail_value`，不再作为 deep floor 没覆盖的失败样本。
+
+---
+
 ## 参考项目（写法）
 
 本文件结构参考同工作区内 `projects/openclaw-discord-bot/TROUBLESHOOTING.md`：**症状 / 原因 / 修法 / 教训** 四段式，便于检索与复用。

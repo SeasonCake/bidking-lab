@@ -497,7 +497,10 @@ def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> N
             "file": "hidden_control.json",
             "hero": "aisha",
             "map_id": 2601,
-            "final_q6_value": 0,
+            "final_q6_value": 1_039_000,
+            "final_q6_decision_value": 0,
+            "final_q6_trimmed_tail_value": 1_039_000,
+            "final_q6_trimmed_tail_items": "tail:1039000",
             "q6_residual_hidden_floor_shadow_label": "aisha_hidden_floor15",
             "q6_residual_hidden_floor_shadow_active": True,
             "q6_residual_hidden_floor_shadow_under_before": False,
@@ -536,6 +539,15 @@ def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> N
         .splitlines()
     ]
     assert deep_rows[0]["baseline_decision_value_p50"] == 310_000
+    hidden_rows = [
+        json.loads(line)
+        for line in (tmp_path / "aisha_hidden_floor15.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert hidden_rows[0]["final_q6_value"] == 1_039_000
+    assert hidden_rows[0]["final_q6_decision_value"] == 0
+    assert hidden_rows[0]["final_q6_trimmed_tail_value"] == 1_039_000
     assert (tmp_path / "aisha_hidden_floor15.csv").exists()
     assert (tmp_path / "q6_shadow_candidate_review_summary.json").exists()
 
@@ -708,6 +720,32 @@ def test_q6_shadow_candidate_readiness_blocks_false_positive() -> None:
     assert readiness["active_no_q6_rows"] == 20
     assert readiness["false_positive_proxy_rows"] == 20
     assert readiness["false_positive_proxy_rate_active_no_q6"] == 1.0
+
+
+def test_q6_shadow_candidate_readiness_uses_plannable_no_q6_controls() -> None:
+    module = _summary_module()
+
+    rows = [
+        {
+            "hero": "aisha",
+            "map_id": 2501,
+            "final_value": 1_039_000,
+            "final_q6_value": 1_039_000,
+            "final_q6_decision_value": 0,
+            "q6_residual_deep_floor_shadow_label": "aisha_deep_floor1",
+            "q6_residual_deep_floor_shadow_active": True,
+            "q6_residual_deep_floor_shadow_false_positive_proxy": True,
+            "q6_residual_deep_floor_shadow_q6_p90_delta": 200,
+        }
+        for _ in range(20)
+    ]
+
+    summary = module.summarize(rows)
+    readiness = summary["q6_shadow_candidate_readiness"]["aisha_deep_floor1"]
+
+    assert readiness["status"] == "blocked_false_positive"
+    assert readiness["active_no_q6_rows"] == 20
+    assert readiness["false_positive_proxy_rows"] == 20
 
 
 def test_q6_shadow_candidate_readiness_marks_review_candidate() -> None:

@@ -42,7 +42,6 @@ from bidking_lab.inference.v2 import (  # noqa: E402
     build_residual_problem,
     estimate_posterior_v2,
     evidence_store_from_fatbeans_events,
-    is_tail_supported_by_evidence,
 )
 from bidking_lab.live.fatbeans import (  # noqa: E402
     _CATEGORY_OUTLINE_ACTIONS,
@@ -51,15 +50,12 @@ from bidking_lab.live.fatbeans import (  # noqa: E402
     parse_fatbeans_capture,
 )
 from bidking_lab.live.monitor import (  # noqa: E402
+    _inventory_quality_breakdown,
     _inventory_totals,
     _inventory_value,
     _latest_round,
     _states_to_session,
     load_monitor_tables,
-)
-from bidking_lab.simulation.robust_value import (  # noqa: E402
-    DEFAULT_VALUE_FLOOR,
-    is_confusable_long_tail,
 )
 
 _CATEGORY_ACTION_LABELS = {
@@ -876,97 +872,13 @@ def _format_presolve_unreachable_exact_buckets(
     return ";".join(parts)
 
 
-def _format_quality_map(values: Any) -> str:
-    return ";".join(
-        f"q{quality}={value}"
-        for quality, value in sorted(values.items())
-        if value
-    )
-
-
 def _inventory_truth_breakdown(
     events: Any,
     items: Any,
     *,
     problem: Any | None = None,
 ) -> dict[str, Any]:
-    for state in reversed(events.states):
-        if not state.inventory_items:
-            continue
-        counts: Counter[int] = Counter()
-        cells: Counter[int] = Counter()
-        values: defaultdict[int, int] = defaultdict(int)
-        top_item: dict[str, Any] = {}
-        decision_value = 0
-        trimmed_value = 0
-        trimmed_items: list[str] = []
-        q6_decision_value = 0
-        q6_trimmed_value = 0
-        q6_trimmed_items: list[str] = []
-        for inv_item in state.inventory_items:
-            item = items.get(inv_item.item_id)
-            quality = inv_item.quality
-            if quality is None and item is not None:
-                quality = item.quality
-            if quality is None:
-                continue
-            value = item.value if item is not None else 0
-            trim_item = False
-            if item is not None and is_confusable_long_tail(item):
-                trim_item = True
-            if (
-                item is not None
-                and problem is not None
-                and item.value >= DEFAULT_VALUE_FLOOR
-                and not is_tail_supported_by_evidence(item, problem)
-            ):
-                trim_item = True
-            if item is not None and trim_item:
-                trimmed_value += value
-                if len(trimmed_items) < 4:
-                    trimmed_items.append(f"{item.name}:{value}")
-                if int(quality) == 6:
-                    q6_trimmed_value += value
-                    if len(q6_trimmed_items) < 4:
-                        q6_trimmed_items.append(f"{item.name}:{value}")
-            else:
-                decision_value += value
-                if int(quality) == 6:
-                    q6_decision_value += value
-            counts[int(quality)] += 1
-            cells[int(quality)] += inv_item.cells
-            values[int(quality)] += value
-            if not top_item or value > int(top_item.get("value") or 0):
-                top_item = {
-                    "id": inv_item.item_id,
-                    "name": item.name if item is not None else "",
-                    "quality": int(quality),
-                    "value": value,
-                    "cells": inv_item.cells,
-                }
-        return {
-            "final_quality_counts": _format_quality_map(counts),
-            "final_quality_cells": _format_quality_map(cells),
-            "final_quality_values": _format_quality_map(values),
-            "final_q5_count": counts.get(5, 0),
-            "final_q5_cells": cells.get(5, 0),
-            "final_q5_value": values.get(5, 0),
-            "final_q6_count": counts.get(6, 0),
-            "final_q6_cells": cells.get(6, 0),
-            "final_q6_value": values.get(6, 0),
-            "final_q6_decision_value": q6_decision_value,
-            "final_q6_trimmed_tail_value": q6_trimmed_value,
-            "final_q6_trimmed_tail_items": ";".join(q6_trimmed_items),
-            "final_decision_value": decision_value,
-            "final_trimmed_tail_value": trimmed_value,
-            "final_trimmed_tail_items": ";".join(trimmed_items),
-            "final_top_item_id": top_item.get("id"),
-            "final_top_item_name": top_item.get("name"),
-            "final_top_item_quality": top_item.get("quality"),
-            "final_top_item_value": top_item.get("value"),
-            "final_top_item_cells": top_item.get("cells"),
-        }
-    return {}
+    return _inventory_quality_breakdown(events, items, problem=problem)
 
 
 def _int_or_none(value: Any) -> int | None:

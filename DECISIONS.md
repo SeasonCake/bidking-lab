@@ -792,6 +792,8 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新 2**：2026-06-02 live `model_eval.jsonl` 复核中，`aisha_deep_floor1` active `30` 行：`15 helped / 6 still_missed / 9 observation / 0 false-positive`，且 active 行 `layout_conflict=0`；`aisha_hidden_floor15` active `11` 行：`7 helped / 2 still_missed / 2 observation / 0 false-positive`，同样 `layout_conflict=0`。`aisha_deep_floor1` 继续作为 UI 黄色 tail-risk reference candidate 展示，不覆盖 baseline `decision_value`、停止价或抢仓上限；`aisha_hidden_floor15` 虽收益明显，但缺少 hidden q6=0 对照，继续 shadow-only。`profile_b5` 因 live false-positive 继续阻塞。
 
+**更新 3**：上述 live 复核发现诊断口径缺陷：shadow 输出的是 `q6_decision_value_p90`，但 live readiness 曾用 raw `final_q6_value` 判断 under/covered/helped，导致部分未被证据支持的极端尾部被误算成 still-missed。已把 live/batch 的结算 truth breakdown 收敛为同一 helper，并新增 `final_q6_decision_value`、`final_q6_trimmed_tail_value`、`q6_plannable_p90_misses_truth`。旧 `model_eval.jsonl` 不会自动回填；后续 live shadow 升级复核必须优先看 plannable 字段。定向重建 6 个旧 deep still-missed 行后，口径变为 `4 still_missed / 1 helped / 1 observation`，不再把《富春山居图》这类不可规划尾部当成 deep floor 失败。baseline 正式出价仍不受 shadow 影响。
+
 ## 2026-06-02 · 公开总格/总件数可进入正式 baseline，结算 truth 必须隔离
 
 **背景**：UI 需要展示格数预测、实际格子数、件数预测、已知紫/金件数和排除条件；同时审计发现 monitor 曾统一清掉 `warehouse_total_cells` / `total_item_count`，这会丢掉结算前全量轮廓或透视给出的安全公开约束。

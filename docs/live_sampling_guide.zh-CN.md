@@ -282,6 +282,10 @@ no-pool-match 数量和最有代表性的样本文件。
 - `q6_below_drop_prior`：原始 Drop 先验 q6 很高，但证据后验 q6 被压得明显过低。
 - `q6_p90_misses_truth`：q6 P90 仍低于真实 q6 价值。
 - `v2_q6_value_p90_under_by`：q6 P90 低估了多少。
+- `final_q6_decision_value`：裁掉未证据支持极端尾部后的可规划红货 truth。
+- `final_q6_trimmed_tail_value` / `final_q6_trimmed_tail_items`：被裁掉的 raw 尾部红货，用于尾部风险复核。
+- `q6_plannable_p90_misses_truth`：q6 decision P90 是否低于可规划红货 truth；shadow 升级优先看这个字段。
+- `v2_q6_decision_value_p90_under_by`：q6 decision P90 对可规划红货的低估金额。
 - `q6_top_size_band`：最终最高价值物品是否为 q6，以及它是 small/compact/medium/large/huge。
 - `layout_conflict`：存在 footprint overlap/overflow。
 - `layout_conflict_root`：拆分 `footprint_overlap`、`footprint_overflow`、
@@ -311,5 +315,7 @@ python scripts\evaluate_fatbeans_v2_samples.py --trials 80 --q6-residual-floor-r
 `summarize_live_model_eval.py` 会输出 `q6_miss_root_causes` 和
 `q6_p90_under_by_median`。这两个字段用于判断下一步应该优先调 q6 residual、
 shape/category 条件采样，还是先修 layout/root 约束。
+如果旧 live 日志缺少 `final_q6_decision_value`，汇总里的 `q6_plannable_*` 会显示为
+`null`；需要用新版 monitor 重新采集或重放后再做 shadow 升级判断。
 
 现阶段不要用少量样本强行调红货概率。等每个主要英雄/地图族至少 30 份有效局后，再做 q6 residual、layout posterior 和 bid v2 阈值校准。

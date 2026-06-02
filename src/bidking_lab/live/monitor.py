@@ -30,9 +30,11 @@ from bidking_lab.inference.q6_residual import (
     q6_residual_prior_floor_ratio_for_profile,
 )
 from bidking_lab.inference.v2 import (
+    ResidualProblem,
     build_residual_problem,
     estimate_posterior_v2,
     evidence_store_from_fatbeans_events,
+    is_tail_supported_by_evidence,
 )
 from bidking_lab.inference.map_likelihood import estimate_map_likelihood
 from bidking_lab.inference.tool_info_roi import estimate_tool_info_roi
@@ -58,6 +60,10 @@ from bidking_lab.runtime import (
     layout_replay_rows_from_stages,
     tactical_panel_from_rows,
     ui_contract_from_artifact,
+)
+from bidking_lab.simulation.robust_value import (
+    DEFAULT_VALUE_FLOOR,
+    is_confusable_long_tail,
 )
 
 _CATEGORY_LABELS = {
@@ -945,6 +951,8 @@ def _parse_float_text(value: Any) -> float | None:
 def _inventory_quality_breakdown(
     events: FatbeansCaptureEvents,
     items: Mapping[int, Item],
+    *,
+    problem: ResidualProblem | None = None,
 ) -> dict[str, Any]:
     for state in reversed(events.states):
         if not state.inventory_items:
@@ -953,33 +961,75 @@ def _inventory_quality_breakdown(
         cells: Counter[int] = Counter()
         values: defaultdict[int, int] = defaultdict(int)
         top_item: dict[str, Any] = {}
+        decision_value = 0
+        trimmed_value = 0
+        trimmed_items: list[str] = []
+        q6_decision_value = 0
+        q6_trimmed_value = 0
+        q6_trimmed_items: list[str] = []
+        exact_anchor_ids = set(problem.anchor_item_counts) if problem else set()
         for inv_item in state.inventory_items:
             item = items.get(inv_item.item_id)
             quality = inv_item.quality
             if quality is None and item is not None:
                 quality = item.quality
-            item_value = item.value if item is not None else 0
-            if not top_item or item_value > int(top_item.get("value") or 0):
+            value = item.value if item is not None else 0
+            if not top_item or value > int(top_item.get("value") or 0):
                 top_item = {
                     "id": inv_item.item_id,
                     "name": item.name if item is not None else "",
                     "quality": quality,
-                    "value": item_value,
+                    "value": value,
                     "cells": inv_item.cells,
                 }
             if quality is None:
                 continue
             q = int(quality)
+            trim_item = False
+            if (
+                item is not None
+                and item.item_id not in exact_anchor_ids
+                and is_confusable_long_tail(item)
+            ):
+                trim_item = True
+            if (
+                item is not None
+                and problem is not None
+                and item.value >= DEFAULT_VALUE_FLOOR
+                and not is_tail_supported_by_evidence(item, problem)
+            ):
+                trim_item = True
+            if item is not None and trim_item:
+                trimmed_value += value
+                if len(trimmed_items) < 4:
+                    trimmed_items.append(f"{item.name}:{value}")
+                if q == 6:
+                    q6_trimmed_value += value
+                    if len(q6_trimmed_items) < 4:
+                        q6_trimmed_items.append(f"{item.name}:{value}")
+            else:
+                decision_value += value
+                if q == 6:
+                    q6_decision_value += value
             counts[q] += 1
             cells[q] += inv_item.cells
-            values[q] += item_value
+            values[q] += value
         return {
+            "final_quality_counts": _format_quality_map(counts),
+            "final_quality_cells": _format_quality_map(cells),
+            "final_quality_values": _format_quality_map(values),
             "final_q5_count": counts.get(5, 0),
             "final_q5_cells": cells.get(5, 0),
             "final_q5_value": values.get(5, 0),
             "final_q6_count": counts.get(6, 0),
             "final_q6_cells": cells.get(6, 0),
             "final_q6_value": values.get(6, 0),
+            "final_q6_decision_value": q6_decision_value,
+            "final_q6_trimmed_tail_value": q6_trimmed_value,
+            "final_q6_trimmed_tail_items": ";".join(q6_trimmed_items),
+            "final_decision_value": decision_value,
+            "final_trimmed_tail_value": trimmed_value,
+            "final_trimmed_tail_items": ";".join(trimmed_items),
             "final_top_item_id": top_item.get("id"),
             "final_top_item_name": top_item.get("name"),
             "final_top_item_quality": top_item.get("quality"),
@@ -987,6 +1037,14 @@ def _inventory_quality_breakdown(
             "final_top_item_cells": top_item.get("cells"),
         }
     return {}
+
+
+def _format_quality_map(values: Mapping[int, int]) -> str:
+    return ";".join(
+        f"q{quality}={value}"
+        for quality, value in sorted(values.items())
+        if value
+    )
 
 
 def _q6_top_size_band(truth_breakdown: Mapping[str, Any] | None) -> str:
@@ -1017,19 +1075,19 @@ def _model_eval_shadow_fields(
     shadow: Mapping[str, Any],
     *,
     baseline_q6_decision_value_p90: int | None,
-    final_q6_value: int,
+    final_q6_decision_value: int,
 ) -> dict[str, Any]:
     active = bool(shadow.get("active"))
     shadow_q6_p90 = _parse_int_text(shadow.get("q6_decision_value_p90"))
     under_before = (
         active
         and baseline_q6_decision_value_p90 is not None
-        and final_q6_value > baseline_q6_decision_value_p90
+        and final_q6_decision_value > baseline_q6_decision_value_p90
     )
     covered_after = (
         active
         and shadow_q6_p90 is not None
-        and final_q6_value <= shadow_q6_p90
+        and final_q6_decision_value <= shadow_q6_p90
     )
     return {
         f"{prefix}_label": shadow.get("label"),
@@ -1061,7 +1119,7 @@ def _model_eval_shadow_fields(
         f"{prefix}_helped": under_before and covered_after,
         f"{prefix}_false_positive_proxy": (
             active
-            and final_q6_value <= 0
+            and final_q6_decision_value <= 0
             and (shadow_q6_p90 or 0) > 0
         ),
     }
@@ -1224,44 +1282,52 @@ def _model_eval_row(
         current = str(row.get("当前最高", ""))
         highest_bid = _parse_int_text(current.split(" ")[-1] if current else None)
     final_q6_value = int((truth_breakdown or {}).get("final_q6_value") or 0)
+    final_q6_decision_value = int(
+        (
+            (truth_breakdown or {}).get("final_q6_decision_value")
+            if (truth_breakdown or {}).get("final_q6_decision_value") is not None
+            else final_q6_value
+        )
+        or 0
+    )
     q6_shadow_under_before = (
         q6_shadow_active
         and q6_decision_value_p90 is not None
-        and final_q6_value > q6_decision_value_p90
+        and final_q6_decision_value > q6_decision_value_p90
     )
     q6_shadow_covered_after = (
         q6_shadow_active
         and q6_shadow_q6_decision_value_p90 is not None
-        and final_q6_value <= q6_shadow_q6_decision_value_p90
+        and final_q6_decision_value <= q6_shadow_q6_decision_value_p90
     )
     q6_practical_gate_hit = bool(q6_practical_gate)
     q6_practical_under_before = (
         q6_practical_gate_hit
         and q6_decision_value_p90 is not None
-        and final_q6_value > q6_decision_value_p90
+        and final_q6_decision_value > q6_decision_value_p90
     )
     q6_practical_covered_after = (
         q6_practical_gate_hit
         and q6_practical_p90 is not None
-        and final_q6_value <= q6_practical_p90
+        and final_q6_decision_value <= q6_practical_p90
     )
     deep_floor_shadow_fields = _model_eval_shadow_fields(
         "q6_residual_deep_floor_shadow",
         deep_floor_shadow,
         baseline_q6_decision_value_p90=q6_decision_value_p90,
-        final_q6_value=final_q6_value,
+        final_q6_decision_value=final_q6_decision_value,
     )
     hidden_floor_shadow_fields = _model_eval_shadow_fields(
         "q6_residual_hidden_floor_shadow",
         hidden_floor_shadow,
         baseline_q6_decision_value_p90=q6_decision_value_p90,
-        final_q6_value=final_q6_value,
+        final_q6_decision_value=final_q6_decision_value,
     )
     villa_floor_shadow_fields = _model_eval_shadow_fields(
         "q6_residual_villa_floor_shadow",
         villa_floor_shadow,
         baseline_q6_decision_value_p90=q6_decision_value_p90,
-        final_q6_value=final_q6_value,
+        final_q6_decision_value=final_q6_decision_value,
     )
     evidence_stage = _evidence_stage(artifact.get("round"))
     density_score = _live_information_density_score(
@@ -1361,7 +1427,7 @@ def _model_eval_row(
         "q6_practical_p90": q6_practical_p90,
         "q6_practical_gate_hit": q6_practical_gate_hit,
         "q6_practical_gate_false_positive_proxy": (
-            q6_practical_gate_hit and final_q6_value <= 0
+            q6_practical_gate_hit and final_q6_decision_value <= 0
         ),
         "q6_practical_gate_under_before": q6_practical_under_before,
         "q6_practical_gate_covered_after": q6_practical_covered_after,
@@ -1369,7 +1435,7 @@ def _model_eval_row(
             q6_practical_under_before and q6_practical_covered_after
         ),
         "q6_practical_p90_under_by": (
-            max(0, final_q6_value - q6_practical_p90)
+            max(0, final_q6_decision_value - q6_practical_p90)
             if q6_practical_p90 is not None
             else None
         ),
@@ -1405,7 +1471,7 @@ def _model_eval_row(
         ),
         "q6_residual_boost_shadow_false_positive_proxy": (
             q6_shadow_active
-            and final_q6_value <= 0
+            and final_q6_decision_value <= 0
             and (q6_shadow_q6_decision_value_p90 or 0) > 0
         ),
         **deep_floor_shadow_fields,
@@ -1421,11 +1487,22 @@ def _model_eval_row(
             if q6_value_p90 is not None
             else None
         ),
+        "v2_q6_decision_value_p90_under_by": (
+            max(0, final_q6_decision_value - q6_decision_value_p90)
+            if q6_decision_value_p90 is not None
+            else None
+        ),
         "q6_top_size_band": _q6_top_size_band(truth_breakdown),
         "q6_p90_misses_truth": (
             q6_value_p90 < final_q6_value
             if q6_value_p90 is not None
             and final_q6_value > 0
+            else None
+        ),
+        "q6_plannable_p90_misses_truth": (
+            q6_decision_value_p90 < final_q6_decision_value
+            if q6_decision_value_p90 is not None
+            and final_q6_decision_value > 0
             else None
         ),
         "q6_false_low_risk": (
@@ -1629,6 +1706,7 @@ def build_monitor_artifact_from_events(
     inference_input_constraints: dict[str, Any] = {
         "mode": "no_inference_session",
     }
+    problem: ResidualProblem | None = None
     if base_session is not None:
         candidate_map_ids = _candidate_map_ids_for_likelihood(
             base_session.map_id,
@@ -1933,7 +2011,11 @@ def build_monitor_artifact_from_events(
     )
     inventory_count, inventory_cells = _inventory_totals(events)
     final_value = _inventory_value(events, tables.items)
-    truth_breakdown = _inventory_quality_breakdown(events, tables.items)
+    truth_breakdown = _inventory_quality_breakdown(
+        events,
+        tables.items,
+        problem=problem,
+    )
     processing_seconds = round(time.perf_counter() - started_at, 4)
     artifact: dict[str, Any] = {
         "schema_version": 1,

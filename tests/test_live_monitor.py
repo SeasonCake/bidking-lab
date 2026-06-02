@@ -21,6 +21,7 @@ from bidking_lab.live.monitor import (
     DEFAULT_Q6_SHADOW_TRIALS_CAP,
     MonitorTables,
     _build_zero_match_fallback_rows,
+    _inventory_quality_breakdown,
     _model_eval_row,
     _resolve_shadow_trials,
     build_monitor_artifact_from_file,
@@ -29,6 +30,7 @@ from bidking_lab.live.monitor import (
     write_monitor_logs,
 )
 from bidking_lab.inference.observation import QualityBucketObs, SessionObs
+from bidking_lab.inference.v2 import LayoutFeasibility, ResidualProblem
 
 
 def _item() -> Item:
@@ -409,6 +411,129 @@ def test_model_eval_uses_problem_evidence_profile_when_available() -> None:
 
     assert row is not None
     assert row["evidence_profile_key"] == "shape+layout"
+
+
+def test_model_eval_shadow_readiness_uses_plannable_q6_truth() -> None:
+    row = _model_eval_row(
+        file="tail.json",
+        artifact={
+            "file": "tail.json",
+            "hero": "aisha",
+            "map_id": 2501,
+            "round": 4,
+            "bid_rows": [
+                {
+                    "决策价值 P10/P50/P90": "100 / 200 / 300",
+                    "原始价值 P10/P50/P90": "100 / 200 / 300",
+                },
+            ],
+            "warehouse_rows": [{"价值 P10/P50/P90": "100 / 200 / 300"}],
+            "v2_posterior_rows": [
+                {
+                    "q6价值 P10/P50/P90": "0 / 0 / 0",
+                    "q6决策价值 P10/P50/P90": "0 / 0 / 0",
+                    "诊断": "",
+                },
+            ],
+            "q6_residual_deep_floor_shadow": {
+                "label": "aisha_deep_floor1",
+                "active": True,
+                "q6_decision_value_p90": 900_000,
+            },
+        },
+        final_value=1_039_000,
+        final_cells=2,
+        truth_breakdown={
+            "final_q6_value": 1_039_000,
+            "final_q6_decision_value": 0,
+        },
+    )
+
+    assert row is not None
+    assert row["q6_p90_misses_truth"] is True
+    assert row["q6_plannable_p90_misses_truth"] is None
+    assert row["q6_residual_deep_floor_shadow_under_before"] is False
+    assert row["q6_residual_deep_floor_shadow_helped"] is False
+    assert row["q6_residual_deep_floor_shadow_false_positive_proxy"] is True
+
+
+def test_inventory_quality_breakdown_keeps_exact_tail_anchor_plannable() -> None:
+    tail = Item(
+        item_id=9001,
+        name="tail",
+        description="",
+        name_key="tail",
+        desc_key="tail_desc",
+        quality=6,
+        quality_color="red",
+        value=1_039_000,
+        shape_w=1,
+        shape_h=2,
+        tags=[109],
+        allowed_shelves=[],
+        icon_name="",
+        model_name="",
+        raw_row=[],
+    )
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=1,
+                capture_time="",
+                message_id=0x002D,
+                session_id="s1",
+                map_id=2501,
+                round_index=4,
+                inventory_items=(
+                    FatbeansInventoryItem(
+                        runtime_id=1,
+                        item_id=tail.item_id,
+                        quality=6,
+                        cells=2,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    unsupported = _inventory_quality_breakdown(events, {tail.item_id: tail})
+    anchored = _inventory_quality_breakdown(
+        events,
+        {tail.item_id: tail},
+        problem=ResidualProblem(
+            map_id=2501,
+            map_name="shipwreck",
+            anchors=(),
+            known_item_count=1,
+            known_cells=2,
+            known_value=tail.value,
+            anchor_item_counts={tail.item_id: 1},
+            bucket_targets={},
+            category_targets=(),
+            shape_targets=(),
+            layout=LayoutFeasibility(
+                footprint_count=0,
+                trusted_footprint_count=0,
+                occupied_cells=0,
+                item_cells=0,
+                overlap_cells=0,
+                overflow_count=0,
+                bottom_row=None,
+                bounding_cells=0,
+                score=1.0,
+            ),
+        ),
+    )
+
+    assert unsupported["final_q6_value"] == tail.value
+    assert unsupported["final_q6_decision_value"] == 0
+    assert unsupported["final_q6_trimmed_tail_value"] == tail.value
+    assert anchored["final_q6_decision_value"] == tail.value
+    assert anchored["final_q6_trimmed_tail_value"] == 0
 
 
 def test_debug_shadow_can_be_skipped_without_suppressing_baseline(monkeypatch) -> None:

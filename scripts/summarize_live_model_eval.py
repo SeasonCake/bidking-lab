@@ -74,6 +74,9 @@ _Q6_SHADOW_REVIEW_FIELDS: tuple[str, ...] = (
     "final_q6_count",
     "final_q6_cells",
     "final_q6_value",
+    "final_q6_decision_value",
+    "final_q6_trimmed_tail_value",
+    "final_q6_trimmed_tail_items",
     "q6_top_size_band",
     "baseline_decision_value_p50",
     "baseline_decision_value_p90",
@@ -219,6 +222,15 @@ def _numeric(row: dict[str, Any], key: str) -> float | None:
         return None
 
 
+def _final_q6_decision_value(row: dict[str, Any]) -> int:
+    """Read plannable q6 truth while remaining compatible with old live logs."""
+
+    value = row.get("final_q6_decision_value")
+    if value is None:
+        value = row.get("final_q6_value")
+    return int(value or 0)
+
+
 def _limit_rows(rows: Any, limit: int = 5) -> list[dict[str, Any]]:
     if not isinstance(rows, list):
         return []
@@ -321,6 +333,12 @@ def brief_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "q6": {
             "q6_p90_miss_count": summary.get("q6_p90_miss_count"),
             "q6_p90_under_by_median": summary.get("q6_p90_under_by_median"),
+            "q6_plannable_p90_miss_count": summary.get(
+                "q6_plannable_p90_miss_count"
+            ),
+            "q6_plannable_p90_under_by_median": summary.get(
+                "q6_plannable_p90_under_by_median"
+            ),
             "q6_false_low_count": summary.get("q6_false_low_count"),
             "q6_below_drop_prior_count": summary.get("q6_below_drop_prior_count"),
             "q6_practical_gate_count": summary.get("q6_practical_gate_count"),
@@ -353,7 +371,7 @@ def _shadow_review_class(row: dict[str, Any], *, prefix: str) -> str:
         return "active_helped"
     if row.get(f"{prefix}_under_before"):
         return "active_still_missed"
-    if int(row.get("final_q6_value") or 0) <= 0:
+    if _final_q6_decision_value(row) <= 0:
         return "active_no_q6_control"
     return "active_observation"
 
@@ -385,6 +403,9 @@ def _shadow_candidate_review_row(
         "final_q6_count": row.get("final_q6_count"),
         "final_q6_cells": row.get("final_q6_cells"),
         "final_q6_value": row.get("final_q6_value"),
+        "final_q6_decision_value": row.get("final_q6_decision_value"),
+        "final_q6_trimmed_tail_value": row.get("final_q6_trimmed_tail_value"),
+        "final_q6_trimmed_tail_items": row.get("final_q6_trimmed_tail_items"),
         "q6_top_size_band": row.get("q6_top_size_band"),
         "baseline_decision_value_p50": row.get("decision_value_p50"),
         "baseline_decision_value_p90": row.get("decision_value_p90"),
@@ -1155,7 +1176,7 @@ def _q6_shadow_candidate_readiness(
     ]
     active_no_q6 = [
         row for row in active
-        if int(row.get("final_q6_value") or 0) <= 0
+        if _final_q6_decision_value(row) <= 0
     ]
     under_before = [
         row for row in active
@@ -1270,6 +1291,9 @@ def _log_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "missing_q6_truth_fields": sum(
             1 for row in rows if row.get("final_q6_value") is None
         ),
+        "missing_q6_decision_truth_fields": sum(
+            1 for row in rows if row.get("final_q6_decision_value") is None
+        ),
     }
 
 
@@ -1345,6 +1369,14 @@ def summarize(
         row for row in valid
         if row.get("q6_p90_misses_truth") is True
     ]
+    q6_plannable_p90_miss = [
+        row for row in valid
+        if row.get("q6_plannable_p90_misses_truth") is True
+    ]
+    has_q6_plannable_metrics = any(
+        row.get("q6_plannable_p90_misses_truth") is not None
+        for row in valid
+    )
     q6_shadow_sampling_progress = _q6_shadow_sampling_progress(valid)
     return {
         "rows": len(rows),
@@ -1565,6 +1597,19 @@ def summarize(
                 row.get("v2_q6_value_p90_under_by") is not None
                 for row in q6_p90_miss
             )
+            else None
+        ),
+        "q6_plannable_p90_miss_count": (
+            len(q6_plannable_p90_miss)
+            if has_q6_plannable_metrics
+            else None
+        ),
+        "q6_plannable_p90_under_by_median": (
+            _median_value(
+                q6_plannable_p90_miss,
+                "v2_q6_decision_value_p90_under_by",
+            )
+            if has_q6_plannable_metrics
             else None
         ),
         "q6_miss_root_causes": _root_cause_summary(
