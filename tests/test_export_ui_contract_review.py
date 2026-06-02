@@ -28,10 +28,32 @@ def _artifact(
     q6_decision_value_range: str = "0 / 120,000 / 300,000",
     tail_shadow_active: bool = False,
     layout_conflict: bool = False,
+    layout_bottom_row: int = 16,
     unknown_minimap_quality: bool = False,
     v2_match: str = "12/80",
     fallback_active: bool = False,
+    include_tail_shadow: bool = True,
+    evidence_profile_key: str = "public:max_quality+shape+layout",
 ) -> dict:
+    shadows = [
+        {
+            "label": "profile_b5",
+            "active": False,
+            "display_mode": "debug_only",
+            "affects_bid": shadow_affects_bid,
+            "q6_decision_value_p90": 0,
+        },
+    ]
+    if include_tail_shadow:
+        shadows.append(
+            {
+                "label": "aisha_deep_floor1",
+                "active": tail_shadow_active,
+                "display_mode": "risk_reference_candidate",
+                "affects_bid": False,
+                "q6_decision_value_p90": 300000 if tail_shadow_active else 0,
+            }
+        )
     return {
         "file": "sample.json",
         "known_value_sum": 800000,
@@ -127,12 +149,12 @@ def _artifact(
                     "category_target_count": 2,
                     "category_exclusion_count": 1,
                     "public_constraint_key": "max_quality",
-                    "evidence_profile_key": "public:max_quality+shape+layout",
+                    "evidence_profile_key": evidence_profile_key,
                     "information_density_band": "high",
                 },
                 "public_info": {
                     "input_constraints_mode": "pre_settlement_trusted_totals",
-                    "evidence_profile_key": "public:max_quality+shape+layout",
+                    "evidence_profile_key": evidence_profile_key,
                     "random_sample_avg_values": "200000.0000",
                     "random_sample_avg_signal_values": "good",
                 },
@@ -162,27 +184,12 @@ def _artifact(
                     },
                 ],
             },
-            "shadows": [
-                {
-                    "label": "profile_b5",
-                    "active": False,
-                    "display_mode": "debug_only",
-                    "affects_bid": shadow_affects_bid,
-                    "q6_decision_value_p90": 0,
-                },
-                {
-                    "label": "aisha_deep_floor1",
-                    "active": tail_shadow_active,
-                    "display_mode": "risk_reference_candidate",
-                    "affects_bid": False,
-                    "q6_decision_value_p90": 300000 if tail_shadow_active else 0,
-                },
-            ],
+            "shadows": shadows,
             "diagnostics": {
                 "layout": {
                     "conflict": layout_conflict,
                     "conflict_root": "footprint_overlap" if layout_conflict else "",
-                    "bottom_row": 16,
+                    "bottom_row": layout_bottom_row,
                     "bottom_row_risk": True,
                     "bottom_row_risk_threshold": 13,
                 },
@@ -369,6 +376,8 @@ def test_q6_below_prior_review_class_splits_true_miss_from_noise() -> None:
     assert miss["q6_below_drop_prior_under_by"] == 186510
     assert miss["q6_below_drop_prior_actionable"] is True
     assert miss["q6_actionable_shadow_status"] == "active_shadow_candidate"
+    assert miss["q6_actionable_followup_bucket"] == "shadow_observation"
+    assert miss["q6_actionable_followup_reason"] == "covered_by_active_shadow"
     assert "q6_below_drop_prior_truth_miss" in miss_flags
     assert zero_noise["q6_below_drop_prior_class"] == "truth_zero_noise"
     assert zero_noise["q6_below_drop_prior_actionable"] is False
@@ -393,12 +402,49 @@ def test_q6_below_prior_review_class_splits_true_miss_from_noise() -> None:
     assert summary["q6_actionable_miss_by_hero_map_shadow_status"] == {
         "aisha:shipwreck:active_shadow_candidate": 1,
     }
+    assert summary["q6_actionable_followup_bucket_counts"] == {
+        "shadow_observation": 1,
+    }
+    assert summary["q6_actionable_followup_by_hero_map"] == {
+        "aisha:shipwreck:shadow_observation": 1,
+    }
     assert summary["q6_actionable_under_by_by_hero_map"] == {
         "aisha:shipwreck": {
             "count": 1,
             "max": 186510,
             "median": 186510,
         }
+    }
+
+
+def test_q6_actionable_followup_marks_uncovered_low_bottom_shipwreck() -> None:
+    module = _review_module()
+    row = module.review_row_from_artifact(
+        _artifact(
+            q6_below_drop_prior=True,
+            truth_q6_count=2,
+            truth_q6_value=486510,
+            q6_decision_value_range="0 / 0 / 300,000",
+            include_tail_shadow=False,
+            evidence_profile_key="shape+layout",
+            layout_bottom_row=9,
+        ),
+        source_path="low_bottom.json",
+    )
+    summary = module.summarize_review_rows([row])
+
+    assert row["q6_actionable_shadow_status"] == "no_shadow_candidate"
+    assert row["q6_actionable_followup_bucket"] == (
+        "aisha_shipwreck_low_bottom_floor_risky"
+    )
+    assert row["q6_actionable_followup_reason"] == (
+        "below_current_deep_floor_gate_and_no_q6_controls_raise"
+    )
+    assert summary["q6_actionable_followup_bucket_counts"] == {
+        "aisha_shipwreck_low_bottom_floor_risky": 1,
+    }
+    assert summary["q6_actionable_followup_by_hero_map"] == {
+        "aisha:shipwreck:aisha_shipwreck_low_bottom_floor_risky": 1,
     }
 
 

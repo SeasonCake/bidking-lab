@@ -178,6 +178,56 @@ def _q6_actionable_shadow_status(
     return "no_shadow_candidate"
 
 
+def _q6_actionable_followup(
+    row: Mapping[str, Any],
+    *,
+    actionable: bool,
+    shadow_status: str,
+) -> dict[str, str]:
+    if not actionable:
+        return {"bucket": "", "reason": ""}
+    if shadow_status in {"active_shadow_candidate", "active_pending_shadow_candidate"}:
+        return {"bucket": "shadow_observation", "reason": "covered_by_active_shadow"}
+    hero = str(row.get("hero") or "").lower()
+    family = _map_family(row.get("map_id"))
+    profile = str(row.get("evidence_profile_key") or "")
+    bottom_row = _int(row.get("layout_bottom_row"))
+    if hero == "aisha" and family == "shipwreck":
+        if bottom_row is not None and bottom_row < 13:
+            return {
+                "bucket": "aisha_shipwreck_low_bottom_floor_risky",
+                "reason": "below_current_deep_floor_gate_and_no_q6_controls_raise",
+            }
+        return {
+            "bucket": "aisha_shipwreck_profile_gap",
+            "reason": "outside_active_shipwreck_shadow_or_sampler_boundary",
+        }
+    if hero == "aisha" and family == "villa":
+        if profile.startswith("public:"):
+            return {
+                "bucket": "aisha_villa_public_profile_outside_pending_gate",
+                "reason": "pending_villa_floor_only_covers_plain_shape_layout",
+            }
+        return {
+            "bucket": "aisha_villa_uncovered_profile",
+            "reason": "outside_active_pending_villa_gate",
+        }
+    if hero == "ethan" and profile == "layout":
+        return {
+            "bucket": "ethan_layout_floor_risky",
+            "reason": "prior_floor_experiments_show_no_q6_false_positive_risk",
+        }
+    if hero == "ethan":
+        return {
+            "bucket": "ethan_non_layout_floor_risky",
+            "reason": "ethan_floor_not_clean_enough_for_shadow_gate",
+        }
+    return {
+        "bucket": "unsupported_q6_miss",
+        "reason": "needs_manual_feature_split",
+    }
+
+
 def _map_family(map_id: Any) -> str:
     try:
         mid = int(map_id)
@@ -645,6 +695,13 @@ def review_row_from_artifact(
         "manual_review_focus": _manual_focus(flags),
         "minimap_item_sample": _minimap_item_sample(minimap),
     }
+    q6_followup = _q6_actionable_followup(
+        row,
+        actionable=bool(q6_below_prior_review["actionable"]),
+        shadow_status=q6_actionable_shadow_status,
+    )
+    row["q6_actionable_followup_bucket"] = q6_followup["bucket"]
+    row["q6_actionable_followup_reason"] = q6_followup["reason"]
     return row
 
 
@@ -680,6 +737,8 @@ def summarize_review_rows(
     q6_actionable_group_profile_counts: Counter[str] = Counter()
     q6_actionable_shadow_status_counts: Counter[str] = Counter()
     q6_actionable_group_shadow_counts: Counter[str] = Counter()
+    q6_actionable_followup_counts: Counter[str] = Counter()
+    q6_actionable_group_followup_counts: Counter[str] = Counter()
     q6_actionable_under_by: dict[str, list[int]] = {}
     rows_with_flags = 0
     for row in rows:
@@ -703,6 +762,13 @@ def summarize_review_rows(
             shadow_status = str(row.get("q6_actionable_shadow_status") or "unknown")
             q6_actionable_shadow_status_counts[shadow_status] += 1
             q6_actionable_group_shadow_counts[f"{group_key}:{shadow_status}"] += 1
+            followup_bucket = str(
+                row.get("q6_actionable_followup_bucket") or "unknown"
+            )
+            q6_actionable_followup_counts[followup_bucket] += 1
+            q6_actionable_group_followup_counts[
+                f"{group_key}:{followup_bucket}"
+            ] += 1
             under_by = _int(row.get("q6_below_drop_prior_under_by"))
             if under_by is not None:
                 q6_actionable_under_by.setdefault(group_key, []).append(under_by)
@@ -748,6 +814,12 @@ def summarize_review_rows(
         ),
         "q6_actionable_miss_by_hero_map_shadow_status": dict(
             sorted(q6_actionable_group_shadow_counts.items())
+        ),
+        "q6_actionable_followup_bucket_counts": dict(
+            sorted(q6_actionable_followup_counts.items())
+        ),
+        "q6_actionable_followup_by_hero_map": dict(
+            sorted(q6_actionable_group_followup_counts.items())
         ),
         "q6_actionable_under_by_by_hero_map": q6_actionable_under_summary,
         "zero_q6_truth_rows": sum(
