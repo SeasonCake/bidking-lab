@@ -69,6 +69,12 @@
 51. [分析估算局部 top-1 过仓](#51-分析估算局部-top-1-过仓)
 52. [总藏品件数输入 90 被 UI 拒绝](#52-总藏品件数输入-90-被-ui-拒绝)
 53. [v2 zero-match / layout conflict 排查顺序](#53-v2-zero-match--layout-conflict-排查顺序)
+54. [live q6 shadow still-missed 被极端尾部误抬](#54-live-q6-shadow-still-missed-被极端尾部误抬)
+55. [深部 q6 品质点已知，但未知形状导致大红格数尾部低估](#55-深部-q6-品质点已知但未知形状导致大红格数尾部低估)
+56. [Windows 偶发拒绝替换 `latest_snapshot.json`](#56-windows-偶发拒绝替换-latest_snapshotjson)
+57. [q6 tail 被裁到 0 后，review 仍需要同形状普通红替代值](#57-q6-tail-被裁到-0-后review-仍需要同形状普通红替代值)
+58. [live 使用道具后只在下一轮刷新](#58-live-使用道具后只在下一轮刷新)
+59. [关闭 overlay 后 live monitor 仍在后台运行](#59-关闭-overlay-后-live-monitor-仍在后台运行)
 
 ---
 
@@ -2015,6 +2021,47 @@ python -m pytest tests\test_windivert_live_monitor.py tests\test_live_fatbeans.p
 
 真实 project4 样本中，`sort 26/59/82` 的 `100105/100104/100124` 直接响应会在下一轮状态包前进入
 live batch；`capture_source_status.json` 的 `accepted_frames` 会在道具响应时增长。
+
+---
+
+## 59. 关闭 overlay 后 live monitor 仍在后台运行
+
+### 症状
+
+用户关闭悬浮窗后，`BidKing.exe` 已经不再需要监听，但后台仍有 `python.exe` monitor 进程运行，
+`capture_source_status.json` 或 live logs 可能继续更新。更麻烦的是，隐藏进程的
+`CommandLine` 可能为空，旧 `stop_live_monitor.ps1` 只按命令行匹配时抓不到它。
+
+### 原因
+
+combined 启动脚本此前把 monitor 和 overlay 分开启动，overlay 退出没有清理 monitor 的责任。
+`Start-Process -PassThru` 返回的对象使用 `Id`，CIM 查询返回的对象使用 `ProcessId`；如果脚本直接读
+`ProcessId`，新启动 monitor 的 PID 可能没有传给 overlay。旧 stop 脚本也没有读取 `monitor.lock`
+里的 PID，因此命令行不可见时会漏掉残留进程。
+
+### 修法（2026-06-02）
+
+- `start_live_windivert_overlay.ps1`、`start_live_webhook_overlay.ps1`、
+  `start_live_monitor_overlay.ps1` 默认把 monitor PID 传给 `run_live_overlay.py`。
+- overlay 退出时调用 `--stop-pid-on-exit` 停止对应 monitor，并用 `--cleanup-lock-on-exit`
+  清理 lock。
+- 需要关闭 UI 后继续后台收数时，启动脚本显式传 `-KeepMonitorOnOverlayClose`。
+- `stop_live_monitor.ps1` 现在会读取 `monitor.lock` 内 PID，并在进程名为 `python*` 时一并停止，
+  不再只依赖命令行匹配。
+
+### 验证
+
+```powershell
+cd C:\xiangmuyunxing\biancheng\2026\bidking-lab
+.\scripts\start_live_windivert_overlay.ps1 -Restart
+# 关闭 overlay 窗口后：
+.\scripts\live_status.ps1 -StaleSeconds 999999
+Get-CimInstance Win32_Process |
+  Where-Object { $_.Name -like "python*" -and $_.CommandLine -like "*run_windivert_live_monitor.py*" }
+```
+
+期望 `live_status` 显示 `Lock: exists=False` 或 PID 不再 running，进程查询为空。
+若要测试后台常驻，改用 `-KeepMonitorOnOverlayClose`，此时关闭 overlay 后 monitor 继续运行是预期行为。
 
 ---
 

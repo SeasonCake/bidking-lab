@@ -11,7 +11,9 @@ import argparse
 import base64
 from collections import Counter
 import json
+import os
 from pathlib import Path
+import signal
 import time
 import tkinter as tk
 from typing import Any
@@ -32,6 +34,15 @@ HOVER_MARGIN = 12
 HOVER_MOVE_DEADZONE = 8
 ENABLE_MATPLOTLIB_MINIMAP = False
 SLOW_PROCESSING_SECONDS = 15.0
+STALE_SNAPSHOT_SECONDS = 120
+SETTLED_RESULT_RETAIN_SECONDS = 60
+ROUND_WAREHOUSE_REFERENCE_MULTIPLIERS = {
+    1: 2.0,
+    2: 1.6,
+    3: 1.3,
+    4: 1.1,
+    5: 0.0,
+}
 
 BG = "#09111f"
 PANEL = "#111827"
@@ -70,6 +81,49 @@ def _snapshot_file_signature(path: Path) -> tuple[str, int, int] | tuple[str]:
     return ("file", stat.st_mtime_ns, stat.st_size)
 
 
+def _terminate_pid(pid: int) -> bool:
+    if pid <= 0 or pid == os.getpid():
+        return False
+    try:
+        import psutil
+
+        process = psutil.Process(pid)
+        process.terminate()
+        try:
+            process.wait(timeout=3.0)
+        except psutil.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=3.0)
+        return True
+    except ImportError:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            return True
+        except OSError:
+            return False
+    except Exception:
+        return False
+
+
+def _cleanup_exit_targets(
+    pids: list[int] | tuple[int, ...],
+    lock_paths: list[Path] | tuple[Path, ...],
+    *,
+    terminate_fn: Any = _terminate_pid,
+) -> None:
+    seen: set[int] = set()
+    for pid in pids:
+        if pid in seen:
+            continue
+        seen.add(pid)
+        terminate_fn(int(pid))
+    for lock_path in lock_paths:
+        try:
+            lock_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def _default_window_geometry(screen_width: int, screen_height: int) -> str:
     width = max(COMPACT_MIN_WIDTH, min(COMPACT_WIDTH, screen_width - 80))
     height = max(COMPACT_MIN_HEIGHT, min(COMPACT_HEIGHT, screen_height - 120))
@@ -100,6 +154,16 @@ def _int_or_none(value: Any) -> int | None:
 def _float_or_none(value: Any) -> float | None:
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _price_int(value: Any) -> int | None:
+    text = str(value or "").strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        return int(float(text))
     except (TypeError, ValueError):
         return None
 
@@ -324,11 +388,18 @@ def _bounded_popup_position(
 
 
 def _age(snapshot: dict[str, Any]) -> tuple[str, bool]:
+    seconds = _snapshot_age_seconds(snapshot)
+    if seconds is None:
+        return "", False
+    seconds_old = max(0, int(seconds))
+    return f"{seconds_old}s前", seconds_old > STALE_SNAPSHOT_SECONDS
+
+
+def _snapshot_age_seconds(snapshot: dict[str, Any]) -> float | None:
     created_at = snapshot.get("created_at")
     if not isinstance(created_at, int | float):
-        return "", False
-    seconds_old = max(0, int(time.time() - created_at))
-    return f"{seconds_old}s前", seconds_old > 120
+        return None
+    return max(0.0, time.time() - float(created_at))
 
 
 def _demo_snapshot() -> dict[str, Any]:
@@ -839,6 +910,35 @@ def _ui_contract_decision_section(
     return ("正式出价", headline, detail)
 
 
+def _ui_contract_round_reference_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    context = _as_mapping(contract.get("context"))
+    baseline = _as_mapping(contract.get("baseline"))
+    posterior = _as_mapping(baseline.get("posterior"))
+    round_no = _int_or_none(context.get("action_round") or context.get("round"))
+    if round_no is None:
+        return None
+    multiplier = ROUND_WAREHOUSE_REFERENCE_MULTIPLIERS.get(round_no)
+    if multiplier is None:
+        return None
+    p50 = _price_int(_range_p50(posterior.get("decision_value_range")))
+    if p50 is None:
+        return None
+    if multiplier <= 0:
+        return (
+            "轮次仓位参考",
+            f"R{round_no} 不按仓位倍数追价",
+            f"P50 {_fmt_int(p50)}；只作提示，不改变正式出价",
+        )
+    reference = int(p50 * multiplier)
+    return (
+        "轮次仓位参考",
+        f"R{round_no} 参考 {_fmt_int(reference)}",
+        f"P50 {_fmt_int(p50)} × {multiplier:g}；只作仓位/防守提示，不改变正式出价",
+    )
+
+
 def _ui_contract_posterior_section(
     contract: dict[str, Any],
 ) -> tuple[str, str, str] | None:
@@ -1124,6 +1224,7 @@ def _ui_contract_hover_sections(contract: dict[str, Any]) -> list[tuple[str, str
         _ui_contract_layout_section(contract),
         _ui_contract_constraints_section(contract),
         _ui_contract_decision_section(contract),
+        _ui_contract_round_reference_section(contract),
         _ui_contract_fallback_section(contract),
     ):
         if section is not None:
@@ -1141,6 +1242,7 @@ def _ui_contract_detail_sections(contract: dict[str, Any]) -> list[tuple[str, st
         _ui_contract_constraints_section(contract),
         _ui_contract_q6_risk_section(contract),
         _ui_contract_fallback_section(contract),
+        _ui_contract_round_reference_section(contract),
         _ui_contract_shadow_detail_section(contract),
         _ui_contract_minimap_detail_section(contract),
         _ui_contract_diagnostics_section(contract),
@@ -1271,25 +1373,40 @@ def _ui_contract_alerts(contract: dict[str, Any]) -> list[tuple[str, str]]:
     return alerts
 
 
+def _standby_model(
+    *,
+    subtitle: str,
+    detail: str = "",
+) -> dict[str, Any]:
+    return {
+        "empty": False,
+        "title": "BidKing Live",
+        "subtitle": subtitle,
+        "round": "?",
+        "status": ("待机", "dim"),
+        "decision": ("等待对局开始", detail, "dim"),
+        "metrics": [],
+        "sections": [],
+        "alerts": [],
+        "interaction": _interaction_layers(
+            {},
+            metrics=[],
+            sections=[],
+            alerts=[],
+        ),
+        "minimap": {},
+        "footer": "",
+    }
+
+
 def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     if not snapshot:
-        return {
-            "empty": True,
-            "title": "BidKing Live",
-            "subtitle": "等待 latest_snapshot.json",
-            "status": ("等待", "dim"),
-            "decision": ("等待数据", "", "dim"),
-            "metrics": [],
-            "sections": [],
-            "alerts": [],
-            "interaction": _interaction_layers(
-                {},
-                metrics=[],
-                sections=[],
-                alerts=[],
-            ),
-            "footer": "",
-        }
+        model = _standby_model(
+            subtitle="等待对局开始或实时状态",
+            detail="未找到 latest_snapshot.json；启动 monitor 后捕获新局会自动刷新",
+        )
+        model["empty"] = True
+        return model
 
     age, stale = _age(snapshot)
     summary = _summary_by_topic(snapshot)
@@ -1314,6 +1431,27 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     truth_top = _as_mapping(contract_truth.get("top_item"))
     phase = str(contract_context.get("phase") or snapshot.get("phase") or "")
     is_settled = phase == "settled" and _flag(contract_truth.get("available"))
+    age_seconds = _snapshot_age_seconds(snapshot)
+    if (
+        is_settled
+        and age_seconds is not None
+        and age_seconds > SETTLED_RESULT_RETAIN_SECONDS
+    ):
+        return _standby_model(
+            subtitle=(
+                f"上一局结算已保留 {SETTLED_RESULT_RETAIN_SECONDS}s，等待新对局"
+            ),
+            detail="monitor 捕获到新开局或新状态后会自动刷新",
+        )
+    if (
+        not is_settled
+        and age_seconds is not None
+        and age_seconds > STALE_SNAPSHOT_SECONDS
+    ):
+        return _standby_model(
+            subtitle="等待对局开始或新的实时状态",
+            detail="当前 latest_snapshot.json 已过期，不显示旧局出价建议",
+        )
     category_items = snapshot.get("category_grid_items") or []
     layout = _first(panel.get("layout_stages"))
     hero = str(contract_context.get("hero") or snapshot.get("hero") or "?").upper()
@@ -2743,11 +2881,31 @@ def main() -> int:
         action="store_true",
         help="Show a built-in demo snapshot instead of reading latest_snapshot.json.",
     )
+    parser.add_argument(
+        "--stop-pid-on-exit",
+        type=int,
+        action="append",
+        default=[],
+        help="Terminate this monitor PID when the overlay exits.",
+    )
+    parser.add_argument(
+        "--cleanup-lock-on-exit",
+        type=Path,
+        action="append",
+        default=[],
+        help="Remove this monitor lock file after exit cleanup.",
+    )
     args = parser.parse_args()
 
     root = tk.Tk()
     Overlay(root, Path(args.snapshot), max(250, args.interval_ms), demo=args.demo)
-    root.mainloop()
+    try:
+        root.mainloop()
+    finally:
+        _cleanup_exit_targets(
+            tuple(args.stop_pid_on_exit),
+            tuple(args.cleanup_lock_on_exit),
+        )
     return 0
 
 

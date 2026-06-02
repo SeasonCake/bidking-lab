@@ -11,6 +11,7 @@ param(
   [double]$MinInferenceIntervalSeconds = 1.0,
   [string]$FatbeansPath = "C:\Users\shenc\Desktop\FatbeansCreaterV1.0.3\FatbeansCreater.exe",
   [switch]$StartFatbeans,
+  [switch]$KeepMonitorOnOverlayClose,
   [switch]$Restart
 )
 
@@ -40,6 +41,20 @@ $MonitorArgs = @(
 )
 foreach ($PortValue in $ServerPort) {
   $MonitorArgs += @("--server-port", "$PortValue")
+}
+
+function Get-ProcessIdValue {
+  param($Process)
+  if (-not $Process) {
+    return $null
+  }
+  if ($Process.PSObject.Properties.Name -contains "ProcessId" -and $Process.ProcessId) {
+    return [int]$Process.ProcessId
+  }
+  if ($Process.PSObject.Properties.Name -contains "Id" -and $Process.Id) {
+    return [int]$Process.Id
+  }
+  return $null
 }
 
 New-Item -ItemType Directory -Path $LogPath -Force | Out-Null
@@ -92,17 +107,28 @@ if ($StartFatbeans) {
   }
 }
 
+$StartedMonitor = $null
 if (-not $MonitorProcesses) {
-  Start-Process -FilePath $Python -WorkingDirectory $Repo -WindowStyle Hidden -ArgumentList @(
+  $StartedMonitor = Start-Process -FilePath $Python -WorkingDirectory $Repo -WindowStyle Hidden -PassThru -ArgumentList @(
     $MonitorArgs
   ) -RedirectStandardOutput $MonitorOut -RedirectStandardError $MonitorErr
+} else {
+  $StartedMonitor = $MonitorProcesses[0]
 }
+$StartedMonitorPid = Get-ProcessIdValue $StartedMonitor
 
 if (-not $OverlayProcesses) {
-  Start-Process -FilePath $PythonWindowed -WorkingDirectory $Repo -ArgumentList @(
+  $OverlayArgs = @(
     $Overlay,
     "--snapshot", (Join-Path $LogPath "latest_snapshot.json")
   )
+  if (-not $KeepMonitorOnOverlayClose -and $StartedMonitorPid) {
+    $OverlayArgs += @(
+      "--stop-pid-on-exit", "$StartedMonitorPid",
+      "--cleanup-lock-on-exit", $LockPath
+    )
+  }
+  Start-Process -FilePath $PythonWindowed -WorkingDirectory $Repo -ArgumentList $OverlayArgs
 }
 
 $WebhookUrl = "http://$HostName`:$Port$WebhookPath"
@@ -117,4 +143,7 @@ if ($MonitorProcesses) {
 }
 if ($OverlayProcesses) {
   Write-Host "Overlay:     already running (PID $($OverlayProcesses[0].ProcessId))"
+}
+if (-not $KeepMonitorOnOverlayClose -and $StartedMonitorPid) {
+  Write-Host "Lifecycle:   closing overlay will stop monitor PID $StartedMonitorPid"
 }

@@ -8,6 +8,7 @@ param(
   [double]$DebounceSeconds = 0.7,
   [double]$MinInferenceIntervalSeconds = 1.0,
   [switch]$PortOnly,
+  [switch]$KeepMonitorOnOverlayClose,
   [switch]$Restart
 )
 
@@ -31,6 +32,20 @@ function Test-PythonModules {
   }
   & $Candidate -c "import pydivert, psutil" *> $null
   return $LASTEXITCODE -eq 0
+}
+
+function Get-ProcessIdValue {
+  param($Process)
+  if (-not $Process) {
+    return $null
+  }
+  if ($Process.PSObject.Properties.Name -contains "ProcessId" -and $Process.ProcessId) {
+    return [int]$Process.ProcessId
+  }
+  if ($Process.PSObject.Properties.Name -contains "Id" -and $Process.Id) {
+    return [int]$Process.Id
+  }
+  return $null
 }
 
 function Resolve-MonitorPython {
@@ -132,17 +147,28 @@ if ((Test-Path $LockPath) -and -not $MonitorProcesses) {
   Remove-Item -LiteralPath $LockPath -Force
 }
 
+$StartedMonitor = $null
 if (-not $MonitorProcesses) {
-  Start-Process -FilePath $Python -WorkingDirectory $Repo -WindowStyle Hidden -ArgumentList @(
+  $StartedMonitor = Start-Process -FilePath $Python -WorkingDirectory $Repo -WindowStyle Hidden -PassThru -ArgumentList @(
     $MonitorArgs
   ) -RedirectStandardOutput $MonitorOut -RedirectStandardError $MonitorErr
+} else {
+  $StartedMonitor = $MonitorProcesses[0]
 }
+$StartedMonitorPid = Get-ProcessIdValue $StartedMonitor
 
 if (-not $OverlayProcesses) {
-  Start-Process -FilePath $PythonWindowed -WorkingDirectory $Repo -ArgumentList @(
+  $OverlayArgs = @(
     $Overlay,
     "--snapshot", (Join-Path $LogPath "latest_snapshot.json")
   )
+  if (-not $KeepMonitorOnOverlayClose -and $StartedMonitorPid) {
+    $OverlayArgs += @(
+      "--stop-pid-on-exit", "$StartedMonitorPid",
+      "--cleanup-lock-on-exit", $LockPath
+    )
+  }
+  Start-Process -FilePath $PythonWindowed -WorkingDirectory $Repo -ArgumentList $OverlayArgs
 }
 
 Write-Host "BidKing WinDivert live monitor started." -ForegroundColor Green
@@ -164,4 +190,7 @@ if ($MonitorProcesses) {
 }
 if ($OverlayProcesses) {
   Write-Host "Overlay:    already running (PID $($OverlayProcesses[0].ProcessId))"
+}
+if (-not $KeepMonitorOnOverlayClose -and $StartedMonitorPid) {
+  Write-Host "Lifecycle:  closing overlay will stop monitor PID $StartedMonitorPid"
 }

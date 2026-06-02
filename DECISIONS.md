@@ -873,3 +873,15 @@ packet tag 非 0、或解析不出 action result 的帧继续丢弃。
 **取舍**：`0.5` 与 `0.75` 在全量 compare 中都修复 7 个 q6 漏估且没有 no-q6 new-positive，但 `0.75` 更激进，尾部/已有 no-q6 正报金额抬升更明显。当前选择 `0.5` 是为了先扩大可观测性，而不是提前把 Villa 风险抬价正式化。
 
 **复查点**：338 样本 `trials=20` compare 中，`aisha_villa_floor05` 把 decision MAE `38.28万 -> 37.30万`、q6 plannable coverage `55.25% -> 57.63%`；review 复跑中 11 个 Aisha Villa actionable miss 有 9 个进入 active pending shadow。后续需要真实 live 日志确认 `helped_rate`、`still_missed_rate`、`false_positive_proxy_rows` 和 active no-q6 表现，满足复核条件前不得升级 baseline。
+
+## 2026-06-02 · Overlay 关闭默认带停 monitor，结算短保留后回待机
+
+**背景**：实机验证中，用户关闭 overlay 后后台 monitor 仍可能继续运行；如果命令行不可见或 lock 已被旧脚本清掉，残留进程不容易被发现。另一个交互问题是 fresh UI 或 stale snapshot 不应继续显示旧局出价建议，结算结果也不应无限期常驻。
+
+**用户决策**：当前工程阶段优先稳定可用。UI 关闭时应自动结束对应监听进程；如果 missed start 但只看到结束包，可以短时间保留上一局结果；刚开 UI 没有新局时应显示等待对局开始。轮次倍率仓位/防守价有参考价值，但暂不要求改成正式策略。
+
+**推荐**：combined 启动脚本默认把 monitor PID 和 lock path 交给 overlay，由 overlay 退出时清理。需要后台持续抓包时显式传 `-KeepMonitorOnOverlayClose`。overlay 对 stale snapshot 分层处理：非结算状态超过 120 秒显示待机，不再输出旧局 bid；结算 truth 保留 60 秒后回待机。轮次倍率只作为 hover/detail 的“轮次仓位参考”，基于 baseline P50 与 R1/R2/R3/R4 的 `2.0/1.6/1.3/1.1` 倍数，不改变 `recommend_bid_strategy`。
+
+**取舍**：默认绑定生命周期能避免后台残留和重复写 live logs；代价是想长期后台收数时必须使用明确开关。待机/结算保留避免 stale bid 误导用户，但如果 monitor 中断超过 120 秒，UI 会停止展示上一局建议。轮次仓位参考提高可读性，但不作为正式防守价或抢仓阈值，后续若要升级策略必须单独回测。
+
+**复查点**：用 `scripts/live_status.ps1` 检查 `monitor.lock` 与 PID running 状态；关闭 overlay 后应无对应 live monitor 进程。正式策略若要消费轮次倍率，需要在 live `model_eval.jsonl` 上回测对 MAE、overbid、missed-value 和 no-q6 control 的影响。

@@ -169,6 +169,24 @@ def test_overlay_scroll_fraction_is_clamped() -> None:
     assert overlay._clamp_scroll_fraction(1.25) == 1.0
 
 
+def test_overlay_exit_cleanup_terminates_unique_pids_and_removes_locks(
+    tmp_path: Path,
+) -> None:
+    overlay = _overlay_module()
+    lock_path = tmp_path / "monitor.lock"
+    lock_path.write_text('{"pid": 123}', encoding="utf-8")
+    terminated: list[int] = []
+
+    overlay._cleanup_exit_targets(
+        [123, 123, 456],
+        [lock_path],
+        terminate_fn=terminated.append,
+    )
+
+    assert terminated == [123, 456]
+    assert not lock_path.exists()
+
+
 def test_overlay_section_style_classifies_key_topics() -> None:
     overlay = _overlay_module()
 
@@ -478,6 +496,11 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert interaction["hover"]["sections"][0][0] == "MiniMap"
     assert any(section[0] == "输入约束" for section in interaction["hover"]["sections"])
     assert any(section[0] == "q6 风险参考" for section in interaction["hover"]["sections"])
+    round_section = next(
+        section for section in interaction["hover"]["sections"] if section[0] == "轮次仓位参考"
+    )
+    assert round_section[1] == "R4 参考 550,000"
+    assert "不改变正式出价" in round_section[2]
     assert interaction["detail"]["enabled"] is True
     assert interaction["detail"]["collapsible"] is True
     assert interaction["detail"]["renderers"] == ()
@@ -599,6 +622,69 @@ def test_overlay_model_switches_to_settlement_view_when_settled() -> None:
     ]
     assert model["metrics"][0][1] == "801,824"
     assert any(section[0] == "结算/Truth" for section in model["sections"])
+
+
+def test_overlay_model_hides_old_settlement_after_retention_window() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model(
+        {
+            "created_at": time.time() - 90,
+            "file": "settled.json",
+            "phase": "settled",
+            "ui_contract": {
+                "context": {"phase": "settled", "known_value_sum": 801824},
+                "truth": {
+                    "available": True,
+                    "total_value": 801824,
+                },
+            },
+        }
+    )
+
+    assert model["status"] == ("待机", "dim")
+    assert model["decision"][0] == "等待对局开始"
+    assert "上一局结算已保留" in model["subtitle"]
+
+
+def test_overlay_model_hides_stale_non_settlement_snapshot() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model(
+        {
+            "created_at": time.time() - 180,
+            "hero": "ethan",
+            "map_id": 2401,
+            "round": 3,
+            "ui_contract": {
+                "context": {"hero": "ethan", "map_id": 2401, "round": 3},
+                "baseline": {
+                    "decision": {
+                        "action": "小幅进攻",
+                        "current_highest": "玩家A 200,000",
+                    },
+                    "posterior": {
+                        "decision_value_range": "100,000 / 200,000 / 300,000",
+                    },
+                },
+            },
+        }
+    )
+
+    assert model["status"] == ("待机", "dim")
+    assert model["decision"][0] == "等待对局开始"
+    assert "已过期" in model["decision"][1]
+
+
+def test_overlay_model_empty_snapshot_uses_standby_copy() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model({})
+
+    assert model["empty"] is True
+    assert model["status"] == ("待机", "dim")
+    assert model["decision"][0] == "等待对局开始"
+    assert "latest_snapshot.json" in model["decision"][1]
 
 
 def test_overlay_model_surfaces_zero_match_baseline() -> None:

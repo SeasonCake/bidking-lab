@@ -13,6 +13,17 @@ python -m pip install -e ".[packet]"
 .\scripts\start_live_windivert_overlay.ps1 -Restart
 ```
 
+combined 启动脚本默认把监听进程绑定到 overlay 生命周期：关闭 overlay 窗口会停止本次启动的
+monitor，并清理 `data/logs/live/monitor.lock`。如果希望关闭 UI 后仍继续后台收数，启动时显式加：
+
+```powershell
+.\scripts\start_live_windivert_overlay.ps1 -Restart -KeepMonitorOnOverlayClose
+```
+
+旧的目录 watcher 和 Fatbeans WebHook 入口也遵循同一规则：
+`start_live_monitor_overlay.ps1` / `start_live_webhook_overlay.ps1` 默认随 overlay 退出停止 monitor，
+需要后台常驻时同样传 `-KeepMonitorOnOverlayClose`。
+
 `start_live_windivert_overlay.ps1` 默认使用 WinDivert sniff 模式抓取本机 TCP payload，
 再用 Windows TCP 连接表只保留归属于 `BidKing.exe` 的流量。默认是
 `broad-sniff + process-match`，适合 VPN / TUN / UU / system proxy 导致真实端口未知的场景。
@@ -155,6 +166,10 @@ Get-Content .\data\logs\live\capture_source_status.json
 轮次显示使用“当前可操作轮次”：`0x0025` 包里的 round 是刚完成/揭示的轮次，因此
 live artifact 会额外保留 `observed_round`，并把 UI/出价使用的 `round` / `action_round`
 前移到下一轮。结算 `0x002d` 不前移，保持最终轮次。
+
+overlay 的 stale 行为也要按阶段区分：非结算 snapshot 超过 120 秒未更新时，mini 层回到
+“等待对局开始或新的实时状态”，不继续展示旧局出价；结算 truth 会保留最多 60 秒，便于看到
+最终总值/q6/最高货，之后同样回到待机。刚开 UI 且没有新实时状态时，这是正常待机，不代表推理失败。
 
 当候选进入 `candidate_for_review` 后，可直接从现有 live 日志导出 active 样本清单，
 不需要重新跑推理：
