@@ -25,6 +25,8 @@ COMPACT_WIDTH = 480
 COMPACT_HEIGHT = 420
 COMPACT_MIN_WIDTH = 360
 COMPACT_MIN_HEIGHT = 260
+STANDBY_WIDTH = 360
+STANDBY_HEIGHT = 260
 DETAIL_MIN_WIDTH = 820
 DETAIL_MIN_HEIGHT = 620
 DETAIL_MAX_WIDTH = 980
@@ -1380,6 +1382,7 @@ def _standby_model(
 ) -> dict[str, Any]:
     return {
         "empty": False,
+        "standby": True,
         "title": "BidKing Live",
         "subtitle": subtitle,
         "round": "?",
@@ -1402,8 +1405,7 @@ def _standby_model(
 def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     if not snapshot:
         model = _standby_model(
-            subtitle="等待对局开始或实时状态",
-            detail="未找到 latest_snapshot.json；启动 monitor 后捕获新局会自动刷新",
+            subtitle="等待实时对局状态",
         )
         model["empty"] = True
         return model
@@ -1438,10 +1440,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         and age_seconds > SETTLED_RESULT_RETAIN_SECONDS
     ):
         return _standby_model(
-            subtitle=(
-                f"上一局结算已保留 {SETTLED_RESULT_RETAIN_SECONDS}s，等待新对局"
-            ),
-            detail="monitor 捕获到新开局或新状态后会自动刷新",
+            subtitle="等待下一局开始",
         )
     if (
         not is_settled
@@ -1449,8 +1448,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         and age_seconds > STALE_SNAPSHOT_SECONDS
     ):
         return _standby_model(
-            subtitle="等待对局开始或新的实时状态",
-            detail="当前 latest_snapshot.json 已过期，不显示旧局出价建议",
+            subtitle="等待新的实时对局状态",
         )
     category_items = snapshot.get("category_grid_items") or []
     layout = _first(panel.get("layout_stages"))
@@ -1956,6 +1954,9 @@ class Overlay:
                 self.root.geometry(f"{width}x{height}+{x}+{y}")
                 return
             x, y = self._window_origin()
+            if self._current_model and self._current_model.get("standby"):
+                self.root.geometry(f"{STANDBY_WIDTH}x{STANDBY_HEIGHT}+{x}+{y}")
+                return
             width_height = self._compact_geometry.split("+", 1)[0]
             self.root.geometry(f"{width_height}+{x}+{y}")
 
@@ -2097,6 +2098,60 @@ class Overlay:
                 wraplength=wraplength,
                 justify="left",
             ).pack(side="left", padx=(0, 5), pady=(0, 4))
+
+    def _render_standby(self, model: dict[str, Any]) -> None:
+        header = tk.Frame(self.frame, bg=BG)
+        header.pack(fill="x")
+        title_box = tk.Frame(header, bg=BG)
+        title_box.pack(side="left", fill="x", expand=True)
+        self._label(
+            title_box,
+            model["title"],
+            bg=BG,
+            font=("Microsoft YaHei UI", 11, "bold"),
+        ).pack(anchor="w")
+        self._label(
+            title_box,
+            model["subtitle"],
+            fg=MUTED,
+            bg=BG,
+            font=("Microsoft YaHei UI", 9),
+        ).pack(anchor="w", pady=(2, 0))
+
+        status_text, status_tag = model["status"]
+        tk.Label(
+            header,
+            text=status_text,
+            fg=BG,
+            bg=_severity_color(status_tag),
+            font=("Microsoft YaHei UI", 10, "bold"),
+            padx=12,
+            pady=5,
+        ).pack(side="right", padx=(10, 0))
+
+        decision_text, _decision_detail, decision_tag = model["decision"]
+        card = self._card(self.frame, bg=PANEL_SOFT)
+        card.pack(fill="x", pady=(18, 0), ipady=6)
+        tk.Frame(card, width=5, bg=_severity_color(decision_tag)).pack(
+            side="left",
+            fill="y",
+        )
+        body = tk.Frame(card, bg=PANEL_SOFT, padx=14, pady=10)
+        body.pack(fill="x", expand=True)
+        self._label(
+            body,
+            decision_text,
+            fg=_severity_color(decision_tag),
+            bg=PANEL_SOFT,
+            font=("Microsoft YaHei UI", 15, "bold"),
+        ).pack(anchor="w")
+        self._label(
+            body,
+            "未显示旧局建议",
+            fg=MUTED,
+            bg=PANEL_SOFT,
+            font=("Microsoft YaHei UI", 9),
+        ).pack(anchor="w", pady=(4, 0))
 
     def _render_hover_minimap(
         self,
@@ -2580,6 +2635,12 @@ class Overlay:
         self._hide_hover()
         self._current_model = model
         self._clear()
+        if model.get("standby"):
+            self._detail_open = False
+            self._render_standby(model)
+            self._resize_for_mode()
+            self._restore_canvas_scroll(0.0)
+            return
         interaction = _as_mapping(model.get("interaction"))
         mini = _as_mapping(interaction.get("mini"))
         hover = _as_mapping(interaction.get("hover"))
