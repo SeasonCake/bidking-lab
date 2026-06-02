@@ -8,6 +8,7 @@ param(
   [double]$DebounceSeconds = 0.7,
   [double]$MinInferenceIntervalSeconds = 1.0,
   [switch]$PortOnly,
+  [switch]$ExcludeLoopback,
   [switch]$KeepMonitorOnOverlayClose,
   [switch]$NoAutoElevate,
   [switch]$Restart
@@ -68,6 +69,9 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
   }
   if ($PortOnly) {
     $ElevatedArgs += "-PortOnly"
+  }
+  if ($ExcludeLoopback) {
+    $ElevatedArgs += "-ExcludeLoopback"
   }
   if ($KeepMonitorOnOverlayClose) {
     $ElevatedArgs += "-KeepMonitorOnOverlayClose"
@@ -164,6 +168,9 @@ foreach ($PortValue in $ServerPort) {
 if (-not $PortOnly) {
   $MonitorArgs += "--broad"
 }
+if (-not $ExcludeLoopback) {
+  $MonitorArgs += "--include-loopback"
+}
 
 New-Item -ItemType Directory -Path $LogPath -Force | Out-Null
 
@@ -231,6 +238,7 @@ Write-Host "BidKing WinDivert live monitor started." -ForegroundColor Green
 Write-Host "LogDir:     $LogPath"
 Write-Host "Process:    $ProcessName"
 Write-Host "Mode:       $(if ($PortOnly) { 'port-filter' } else { 'broad-sniff + process-match' })"
+Write-Host "Loopback:   $(if ($ExcludeLoopback) { 'excluded' } else { 'included' })"
 Write-Host "ServerPort: $($ServerPort -join ',')"
 Write-Host "Python:     $Python"
 if (-not $IsAdmin) {

@@ -96,6 +96,24 @@ def _snapshot_file_signature(path: Path) -> tuple[str, int, int] | tuple[str]:
     return ("file", stat.st_mtime_ns, stat.st_size)
 
 
+def _capture_status_signature(capture: dict[str, Any] | None) -> tuple[Any, ...]:
+    if not isinstance(capture, dict) or not capture:
+        return ("missing",)
+    return (
+        "capture",
+        capture.get("source"),
+        capture.get("process_name"),
+        capture.get("active_flows"),
+        capture.get("raw_packets"),
+        capture.get("accepted_frames")
+        if capture.get("accepted_frames") is not None
+        else capture.get("accepted_packets"),
+        capture.get("ignored_frames"),
+        capture.get("dropped_bytes"),
+        capture.get("active_session_id"),
+    )
+
+
 def _terminate_pid(pid: int) -> bool:
     if pid <= 0 or pid == os.getpid():
         return False
@@ -2986,12 +3004,14 @@ class Overlay:
             signature = ("demo",)
             snapshot = self._demo_snapshot or {}
         else:
+            snapshot = _load_live_snapshot(self.snapshot_path)
             signature = (
                 "live",
                 _snapshot_file_signature(self.snapshot_path),
-                _snapshot_file_signature(_capture_status_path(self.snapshot_path)),
+                _capture_status_signature(
+                    _as_mapping(snapshot.get("_capture_source_status"))
+                ),
             )
-            snapshot = _load_live_snapshot(self.snapshot_path)
         should_render = signature != self._last_snapshot_signature
         if snapshot is not None:
             _age_text, stale = _age(snapshot)

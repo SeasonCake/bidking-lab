@@ -159,6 +159,30 @@ def test_overlay_snapshot_signature_changes_when_file_changes(tmp_path: Path) ->
     assert first != second
 
 
+def test_capture_status_signature_ignores_timestamp_only_changes() -> None:
+    overlay = _overlay_module()
+    first = {
+        "ts": 1000.0,
+        "source": "windivert",
+        "process_name": "BidKing.exe",
+        "active_flows": 1,
+        "sniffed_packets": 100,
+        "raw_packets": 1,
+        "accepted_frames": 0,
+        "ignored_frames": 1,
+        "dropped_bytes": 0,
+        "active_session_id": None,
+    }
+    second = dict(first)
+    second["ts"] = 1002.0
+    second["sniffed_packets"] = 120
+
+    assert overlay._capture_status_signature(first) == overlay._capture_status_signature(second)
+
+    second["raw_packets"] = 2
+    assert overlay._capture_status_signature(first) != overlay._capture_status_signature(second)
+
+
 def test_overlay_scroll_fraction_is_clamped() -> None:
     overlay = _overlay_module()
 

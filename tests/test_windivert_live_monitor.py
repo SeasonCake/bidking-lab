@@ -258,6 +258,33 @@ def test_flow_index_filters_loopback_but_keeps_server_port(
     )
 
 
+def test_flow_index_can_include_loopback_flows(monkeypatch) -> None:
+    module = _module()
+    flows = {
+        ("127.0.0.1", 15940, "127.0.0.1", 7897): module.FlowMatch(
+            direction="SEND",
+            pid=1,
+            process_name="BidKing.exe",
+            local=("127.0.0.1", 15940),
+            remote=("127.0.0.1", 7897),
+        ),
+    }
+    monkeypatch.setattr(module, "_flow_direction_map", lambda _name: flows)
+
+    index = module.FlowIndex(
+        process_name="BidKing.exe",
+        refresh_seconds=60.0,
+        server_ports={10000},
+        include_loopback=True,
+    )
+    index.refresh_if_due(force=True)
+
+    assert (
+        index.match(("127.0.0.1", 15940, "127.0.0.1", 7897)).direction
+        == "SEND"
+    )
+
+
 def test_game_frame_gate_ignores_non_auction_status_frames() -> None:
     module = _module()
     gate = module.GameFrameGate()

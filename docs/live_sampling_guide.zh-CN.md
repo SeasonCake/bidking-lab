@@ -26,7 +26,9 @@ monitor，并清理 `data/logs/live/monitor.lock`。如果希望关闭 UI 后仍
 
 `start_live_windivert_overlay.ps1` 默认使用 WinDivert sniff 模式抓取本机 TCP payload，
 再用 Windows TCP 连接表只保留归属于 `BidKing.exe` 的流量。默认是
-`broad-sniff + process-match`，适合 VPN / TUN / UU / system proxy 导致真实端口未知的场景。
+`broad-sniff + process-match`，并包含 `BidKing.exe` 的 loopback flow，适合 VPN / TUN / UU /
+system proxy 导致真实端口未知或走本地代理的场景。如果 loopback 噪声过多，可加
+`-ExcludeLoopback` 回到只看非回环流量。
 如果确认游戏直连服务器端口 `10000`，可用更轻的端口过滤模式：
 
 ```powershell
