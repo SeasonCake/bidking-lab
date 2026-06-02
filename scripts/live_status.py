@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -83,6 +84,40 @@ def _status_level(messages: list[str], errors: list[str]) -> str:
     return "ok"
 
 
+def _pid_running(pid: Any) -> bool | None:
+    try:
+        pid_int = int(pid)
+    except (TypeError, ValueError):
+        return None
+    if pid_int <= 0:
+        return None
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            process_query_limited_information = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(
+                process_query_limited_information,
+                False,
+                pid_int,
+            )
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True
+            return False
+        except Exception:
+            return None
+    try:
+        os.kill(pid_int, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return None
+    return True
+
+
 def build_live_status(
     log_dir: Path,
     *,
@@ -142,6 +177,7 @@ def build_live_status(
     model_age = _age_seconds(last_model_row.get("ts"), now=now)
     error_age = _age_seconds(last_error.get("ts"), now=now)
     processing_seconds = artifact.get("processing_seconds")
+    lock_pid_running = _pid_running(lock.get("pid")) if lock_path.exists() else None
 
     warnings: list[str] = []
     errors: list[str] = []
@@ -175,6 +211,8 @@ def build_live_status(
         warnings.append("fallback is active")
     if bool(q6_risk.get("affects_bid")) or bool(q6_risk.get("bid_floor_applied")):
         warnings.append("q6 risk is affecting bid thresholds")
+    if lock_path.exists() and lock.get("pid") and lock_pid_running is False:
+        warnings.append("monitor lock pid is not running")
 
     return {
         "level": _status_level(warnings, errors),
@@ -257,6 +295,7 @@ def build_live_status(
             "exists": lock_path.exists(),
             "path": str(lock_path),
             "pid": lock.get("pid"),
+            "pid_running": lock_pid_running,
             "age_seconds": _round_float(_age_seconds(lock.get("started_at"), now=now)),
         },
     }
@@ -345,6 +384,7 @@ def format_status_text(status: Mapping[str, Any]) -> str:
             "Lock: "
             f"exists={lock.get('exists')} "
             f"pid={lock.get('pid') or '-'} "
+            f"running={lock.get('pid_running')} "
             f"age={_fmt_age(lock.get('age_seconds'))}"
         ),
     ]

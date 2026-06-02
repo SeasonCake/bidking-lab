@@ -74,8 +74,9 @@ def _healthy_snapshot(now: float) -> dict:
     }
 
 
-def test_live_status_reports_healthy_log_dir(tmp_path: Path) -> None:
+def test_live_status_reports_healthy_log_dir(tmp_path: Path, monkeypatch) -> None:
     module = _module()
+    monkeypatch.setattr(module, "_pid_running", lambda _pid: True)
     now = 1_000.0
     _write_json(tmp_path / "latest_snapshot.json", _healthy_snapshot(now))
     _append_jsonl(
@@ -111,12 +112,14 @@ def test_live_status_reports_healthy_log_dir(tmp_path: Path) -> None:
     assert status["q6"]["affects_bid"] is False
     assert status["q6"]["bid_floor_applied"] is False
     assert status["fallback"]["active"] is False
+    assert status["lock"]["pid_running"] is True
     assert status["processed_files"]["status_counts"] == {"ok": 1}
 
     text = module.format_status_text(status)
     assert "BidKing live status: OK" in text
     assert "aisha_shipwreck_sample.json" in text
     assert "Q6: risk=True affects_bid=False floor=False" in text
+    assert "running=True" in text
 
 
 def test_live_status_warns_on_stale_slow_fallback_and_bid_affecting_q6(
@@ -205,6 +208,25 @@ def test_live_status_uses_snapshot_file_age_when_created_at_missing(
     assert status["snapshot"]["age_seconds"] is None
     assert status["snapshot"]["file_age_seconds"] == 100.0
     assert any("latest snapshot is stale" in warning for warning in status["warnings"])
+
+
+def test_live_status_warns_when_monitor_lock_pid_is_not_running(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _module()
+    monkeypatch.setattr(module, "_pid_running", lambda _pid: False)
+    now = 1_000.0
+    _write_json(tmp_path / "latest_snapshot.json", _healthy_snapshot(now))
+    _append_jsonl(tmp_path / "model_eval.jsonl", [{"ts": now - 2.0}])
+    _write_json(tmp_path / "monitor.lock", {"pid": 987654, "started_at": now - 50.0})
+
+    status = module.build_live_status(tmp_path, now=now)
+
+    assert status["level"] == "warn"
+    assert status["lock"]["pid_running"] is False
+    assert any("lock pid is not running" in warning for warning in status["warnings"])
+    assert "running=False" in module.format_status_text(status)
 
 
 def test_live_status_cli_strict_returns_nonzero_for_warning(
