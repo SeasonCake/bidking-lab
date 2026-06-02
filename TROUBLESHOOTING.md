@@ -2048,6 +2048,11 @@ combined 启动脚本此前把 monitor 和 overlay 分开启动，overlay 退出
 - 需要关闭 UI 后继续后台收数时，启动脚本显式传 `-KeepMonitorOnOverlayClose`。
 - `stop_live_monitor.ps1` 现在会读取 `monitor.lock` 内 PID，并在进程名为 `python*` 时一并停止，
   不再只依赖命令行匹配。
+- WinDivert 入口额外处理管理员权限：普通 PowerShell 中运行 `start_live_windivert_overlay.ps1`
+  会默认用 UAC 重新启动自身；如果 monitor stderr 出现
+  `WinDivert capture requires an elevated PowerShell/admin process.`，说明当前监听没有真的跑起来。
+  `live_status.ps1` 会把这种状态显示为 `Capture: source=windivert ...` 且
+  `WARN: live monitor is not running (monitor.lock missing)`。
 
 ### 验证
 

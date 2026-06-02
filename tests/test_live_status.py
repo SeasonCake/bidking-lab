@@ -103,6 +103,18 @@ def test_live_status_reports_healthy_log_dir(tmp_path: Path, monkeypatch) -> Non
         },
     )
     _write_json(tmp_path / "monitor.lock", {"pid": 1234, "started_at": now - 60.0})
+    _write_json(
+        tmp_path / "capture_source_status.json",
+        {
+            "ts": now - 1.0,
+            "source": "windivert",
+            "process_name": "BidKing.exe",
+            "active_flows": 2,
+            "raw_packets": 10,
+            "accepted_frames": 3,
+            "active_session_id": "2501:123",
+        },
+    )
 
     status = module.build_live_status(tmp_path, now=now)
 
@@ -116,6 +128,8 @@ def test_live_status_reports_healthy_log_dir(tmp_path: Path, monkeypatch) -> Non
     assert status["q6"]["bid_floor_applied"] is False
     assert status["fallback"]["active"] is False
     assert status["lock"]["pid_running"] is True
+    assert status["capture_source"]["source"] == "windivert"
+    assert status["capture_source"]["accepted_frames"] == 3
     assert status["processed_files"]["status_counts"] == {"ok": 1}
 
     text = module.format_status_text(status)
@@ -124,6 +138,7 @@ def test_live_status_reports_healthy_log_dir(tmp_path: Path, monkeypatch) -> Non
     assert "defend=620,000" in text
     assert "Q6: risk=True affects_bid=False floor=False" in text
     assert "running=True" in text
+    assert "Capture: source=windivert" in text
 
 
 def test_live_status_warns_on_stale_slow_fallback_and_bid_affecting_q6(
@@ -231,6 +246,39 @@ def test_live_status_warns_when_monitor_lock_pid_is_not_running(
     assert status["lock"]["pid_running"] is False
     assert any("lock pid is not running" in warning for warning in status["warnings"])
     assert "running=False" in module.format_status_text(status)
+
+
+def test_live_status_warns_when_capture_status_exists_but_lock_missing(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    now = 1_000.0
+    _write_json(tmp_path / "latest_snapshot.json", _healthy_snapshot(now))
+    _append_jsonl(tmp_path / "model_eval.jsonl", [{"ts": now - 2.0}])
+    _write_json(
+        tmp_path / "capture_source_status.json",
+        {
+            "ts": now - 1.0,
+            "source": "windivert",
+            "active_flows": 1,
+            "raw_packets": 0,
+            "accepted_frames": 0,
+        },
+    )
+
+    status = module.build_live_status(
+        tmp_path,
+        now=now,
+        stale_seconds=999999.0,
+    )
+
+    assert status["level"] == "warn"
+    assert status["lock"]["exists"] is False
+    assert status["capture_source"]["raw_packets"] == 0
+    assert any("monitor.lock missing" in warning for warning in status["warnings"])
+    text = module.format_status_text(status)
+    assert "Capture: source=windivert" in text
+    assert "WARN: live monitor is not running" in text
 
 
 def test_live_status_cli_strict_returns_nonzero_for_warning(

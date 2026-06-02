@@ -35,6 +35,9 @@ monitor，并清理 `data/logs/live/monitor.lock`。如果希望关闭 UI 后仍
 
 WinDivert 通常需要管理员 PowerShell。若 `monitor.stderr.log` 提示缺 `pydivert`，先运行上面的
 `python -m pip install -e ".[packet]"` 或 `python -m pip install pydivert`。
+`start_live_windivert_overlay.ps1` 在普通 PowerShell 中运行时会默认弹出 UAC，并在管理员窗口里
+重新启动监听；如果你显式传 `-NoAutoElevate`，则不会自动提权，WinDivert monitor 可能因权限不足
+启动后立即退出。
 
 WinDivert 入口现在还有第二层对局 frame gate：目标进程的 TCP payload 会先按 4 字节长度
 重组为应用层 frame，然后只放行当前可解析的对局消息：
@@ -162,6 +165,9 @@ Get-Content .\data\logs\live\capture_source_status.json
 是通过对局 frame gate、真正写入推理输入的 frame 数；旧字段 `accepted_packets`
 保留为 `accepted_frames` 的兼容别名。未进入对局时，`raw_packets` 可能增长，
 `accepted_frames` 和 `active_session_id` 可以仍为空或为 0，这是预期行为。
+如果 `Lock: exists=False` 且 `Capture: source=windivert`，说明当前没有 live monitor 进程；
+这时 overlay 只是在读旧 snapshot，通常需要重新运行 `start_live_windivert_overlay.ps1`
+并通过管理员/UAC 权限。
 
 轮次显示使用“当前可操作轮次”：`0x0025` 包里的 round 是刚完成/揭示的轮次，因此
 live artifact 会额外保留 `observed_round`，并把 UI/出价使用的 `round` / `action_round`

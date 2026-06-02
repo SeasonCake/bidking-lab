@@ -9,6 +9,7 @@ param(
   [double]$MinInferenceIntervalSeconds = 1.0,
   [switch]$PortOnly,
   [switch]$KeepMonitorOnOverlayClose,
+  [switch]$NoAutoElevate,
   [switch]$Restart
 )
 
@@ -24,6 +25,59 @@ $MonitorErr = Join-Path $LogPath "monitor.stderr.log"
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
   [Security.Principal.WindowsBuiltinRole]::Administrator
 )
+
+function Get-CurrentPowerShellPath {
+  try {
+    $Current = Get-Process -Id $PID -ErrorAction Stop
+    if ($Current.Path) {
+      return $Current.Path
+    }
+  } catch {
+  }
+  $Pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+  if ($Pwsh) {
+    return $Pwsh.Source
+  }
+  $PowerShell = Get-Command powershell -ErrorAction SilentlyContinue
+  if ($PowerShell) {
+    return $PowerShell.Source
+  }
+  throw "PowerShell executable not found for elevation"
+}
+
+if (-not $IsAdmin -and -not $NoAutoElevate) {
+  $ElevatedArgs = @(
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", $PSCommandPath,
+    "-LogDir", $LogDir,
+    "-ProcessName", $ProcessName,
+    "-NTrials", "$NTrials",
+    "-RoiTrials", "$RoiTrials",
+    "-DebounceSeconds", "$DebounceSeconds",
+    "-MinInferenceIntervalSeconds", "$MinInferenceIntervalSeconds",
+    "-NoAutoElevate"
+  )
+  if ($PythonPath) {
+    $ElevatedArgs += @("-PythonPath", $PythonPath)
+  }
+  foreach ($PortValue in $ServerPort) {
+    $ElevatedArgs += @("-ServerPort", "$PortValue")
+  }
+  if ($PortOnly) {
+    $ElevatedArgs += "-PortOnly"
+  }
+  if ($KeepMonitorOnOverlayClose) {
+    $ElevatedArgs += "-KeepMonitorOnOverlayClose"
+  }
+  if ($Restart) {
+    $ElevatedArgs += "-Restart"
+  }
+  $PowerShellPath = Get-CurrentPowerShellPath
+  Start-Process -FilePath $PowerShellPath -Verb RunAs -WorkingDirectory $Repo -ArgumentList $ElevatedArgs
+  Write-Host "WinDivert requires Administrator. Relaunched an elevated PowerShell for live monitor." -ForegroundColor Yellow
+  return
+}
 
 function Test-PythonModules {
   param([string]$Candidate)

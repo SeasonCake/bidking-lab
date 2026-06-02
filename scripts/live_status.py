@@ -134,6 +134,7 @@ def build_live_status(
     error_path = root / "monitor_errors.jsonl"
     manifest_path = root / "processed_files.json"
     lock_path = root / "monitor.lock"
+    capture_status_path = root / "capture_source_status.json"
 
     artifact = _read_json(snapshot_path)
     contract = (
@@ -152,6 +153,7 @@ def build_live_status(
     error_rows = _read_jsonl_rows(error_path)
     last_error = error_rows[-1] if error_rows else {}
     manifest = _read_json(manifest_path)
+    capture_status = _read_json(capture_status_path)
     manifest_values = [
         value for value in manifest.values()
         if isinstance(value, Mapping)
@@ -176,8 +178,13 @@ def build_live_status(
     )
     model_age = _age_seconds(last_model_row.get("ts"), now=now)
     error_age = _age_seconds(last_error.get("ts"), now=now)
+    capture_age = _age_seconds(capture_status.get("ts"), now=now)
     processing_seconds = artifact.get("processing_seconds")
     lock_pid_running = _pid_running(lock.get("pid")) if lock_path.exists() else None
+    has_live_capture_status = (
+        capture_status_path.exists()
+        and _text(capture_status.get("source")) in {"windivert", "webhook"}
+    )
 
     warnings: list[str] = []
     errors: list[str] = []
@@ -213,6 +220,10 @@ def build_live_status(
         warnings.append("q6 risk is affecting bid thresholds")
     if lock_path.exists() and lock.get("pid") and lock_pid_running is False:
         warnings.append("monitor lock pid is not running")
+    if has_live_capture_status and not lock_path.exists():
+        warnings.append("live monitor is not running (monitor.lock missing)")
+    if has_live_capture_status and lock_path.exists() and lock_pid_running is False:
+        warnings.append("live monitor process is not running")
 
     return {
         "level": _status_level(warnings, errors),
@@ -300,6 +311,22 @@ def build_live_status(
             "pid_running": lock_pid_running,
             "age_seconds": _round_float(_age_seconds(lock.get("started_at"), now=now)),
         },
+        "capture_source": {
+            "exists": capture_status_path.exists(),
+            "path": str(capture_status_path),
+            "source": capture_status.get("source"),
+            "age_seconds": _round_float(capture_age),
+            "process_name": capture_status.get("process_name"),
+            "active_flows": capture_status.get("active_flows"),
+            "raw_packets": capture_status.get("raw_packets"),
+            "accepted_frames": (
+                capture_status.get("accepted_frames")
+                if "accepted_frames" in capture_status
+                else capture_status.get("accepted_packets")
+            ),
+            "ignored_frames": capture_status.get("ignored_frames"),
+            "active_session_id": capture_status.get("active_session_id"),
+        },
     }
 
 
@@ -327,6 +354,7 @@ def format_status_text(status: Mapping[str, Any]) -> str:
     errors = _first_mapping(status.get("monitor_errors"))
     processed = _first_mapping(status.get("processed_files"))
     lock = _first_mapping(status.get("lock"))
+    capture = _first_mapping(status.get("capture_source"))
     lines = [
         f"BidKing live status: {str(status.get('level') or 'unknown').upper()}",
         f"LogDir: {status.get('log_dir')}",
@@ -389,6 +417,15 @@ def format_status_text(status: Mapping[str, Any]) -> str:
             f"pid={lock.get('pid') or '-'} "
             f"running={lock.get('pid_running')} "
             f"age={_fmt_age(lock.get('age_seconds'))}"
+        ),
+        (
+            "Capture: "
+            f"source={capture.get('source') or '-'} "
+            f"age={_fmt_age(capture.get('age_seconds'))} "
+            f"flows={capture.get('active_flows') if capture.get('active_flows') is not None else '?'} "
+            f"raw={capture.get('raw_packets') if capture.get('raw_packets') is not None else '?'} "
+            f"accepted={capture.get('accepted_frames') if capture.get('accepted_frames') is not None else '?'} "
+            f"session={capture.get('active_session_id') or '-'}"
         ),
     ]
     for error in status.get("errors") or ():
