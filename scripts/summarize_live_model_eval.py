@@ -81,9 +81,14 @@ _Q6_SHADOW_REVIEW_FIELDS: tuple[str, ...] = (
     "baseline_decision_value_p50",
     "baseline_decision_value_p90",
     "baseline_q6_decision_value_p90",
+    "baseline_q6_plannable_under_by",
     "shadow_decision_value_p50",
     "shadow_decision_value_p90",
     "shadow_q6_decision_value_p90",
+    "shadow_q6_plannable_under_by",
+    "shadow_q6_plannable_gap_band",
+    "tail_trimmed_q6",
+    "tail_replacement_review_needed",
     "shadow_q6_count_p90",
     "shadow_q6_cells_p90",
     "shadow_q6_p90_delta",
@@ -229,6 +234,28 @@ def _final_q6_decision_value(row: dict[str, Any]) -> int:
     if value is None:
         value = row.get("final_q6_value")
     return int(value or 0)
+
+
+def _q6_plannable_under_by(
+    row: dict[str, Any],
+    predicted_key: str,
+) -> int | None:
+    predicted = row.get(predicted_key)
+    if predicted is None:
+        return None
+    return max(0, _final_q6_decision_value(row) - int(predicted or 0))
+
+
+def _q6_under_gap_band(value: int | None) -> str:
+    if value is None:
+        return "unknown"
+    if value <= 0:
+        return "covered"
+    if value <= 100_000:
+        return "small_<=100k"
+    if value <= 300_000:
+        return "medium_<=300k"
+    return "large_>300k"
 
 
 def _limit_rows(rows: Any, limit: int = 5) -> list[dict[str, Any]]:
@@ -382,6 +409,11 @@ def _shadow_candidate_review_row(
     label: str,
     prefix: str,
 ) -> dict[str, Any]:
+    shadow_under_by = _q6_plannable_under_by(
+        row,
+        f"{prefix}_q6_decision_value_p90",
+    )
+    tail_trimmed_q6 = int(row.get("final_q6_trimmed_tail_value") or 0) > 0
     return {
         "candidate": label,
         "review_class": _shadow_review_class(row, prefix=prefix),
@@ -410,10 +442,19 @@ def _shadow_candidate_review_row(
         "baseline_decision_value_p50": row.get("decision_value_p50"),
         "baseline_decision_value_p90": row.get("decision_value_p90"),
         "baseline_q6_decision_value_p90": row.get("v2_q6_decision_value_p90"),
+        "baseline_q6_plannable_under_by": row.get(
+            "v2_q6_decision_value_p90_under_by"
+        ),
         "shadow_decision_value_p50": row.get(f"{prefix}_decision_value_p50"),
         "shadow_decision_value_p90": row.get(f"{prefix}_decision_value_p90"),
         "shadow_q6_decision_value_p90": row.get(
             f"{prefix}_q6_decision_value_p90"
+        ),
+        "shadow_q6_plannable_under_by": shadow_under_by,
+        "shadow_q6_plannable_gap_band": _q6_under_gap_band(shadow_under_by),
+        "tail_trimmed_q6": tail_trimmed_q6,
+        "tail_replacement_review_needed": (
+            tail_trimmed_q6 and _final_q6_decision_value(row) > 0
         ),
         "shadow_q6_count_p90": row.get(f"{prefix}_q6_count_p90"),
         "shadow_q6_cells_p90": row.get(f"{prefix}_q6_cells_p90"),

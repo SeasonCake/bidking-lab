@@ -464,8 +464,10 @@ def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> N
             "hero": "aisha",
             "map_id": 2501,
             "final_q6_value": 600_000,
+            "final_q6_decision_value": 600_000,
             "decision_value_p50": 300_000,
             "v2_q6_decision_value_p90": 200_000,
+            "v2_q6_decision_value_p90_under_by": 400_000,
             "q6_residual_deep_floor_shadow_label": "aisha_deep_floor1",
             "q6_residual_deep_floor_shadow_active": True,
             "q6_residual_deep_floor_shadow_q6_decision_value_p90": 700_000,
@@ -481,8 +483,10 @@ def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> N
             "hero": "aisha",
             "map_id": 2501,
             "final_q6_value": 600_000,
+            "final_q6_decision_value": 600_000,
             "decision_value_p50": 310_000,
             "v2_q6_decision_value_p90": 210_000,
+            "v2_q6_decision_value_p90_under_by": 390_000,
             "q6_residual_deep_floor_shadow_label": "aisha_deep_floor1",
             "q6_residual_deep_floor_shadow_active": True,
             "q6_residual_deep_floor_shadow_q6_decision_value_p90": 710_000,
@@ -539,6 +543,10 @@ def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> N
         .splitlines()
     ]
     assert deep_rows[0]["baseline_decision_value_p50"] == 310_000
+    assert deep_rows[0]["baseline_q6_plannable_under_by"] == 390_000
+    assert deep_rows[0]["shadow_q6_plannable_under_by"] == 0
+    assert deep_rows[0]["shadow_q6_plannable_gap_band"] == "covered"
+    assert deep_rows[0]["tail_replacement_review_needed"] is False
     hidden_rows = [
         json.loads(line)
         for line in (tmp_path / "aisha_hidden_floor15.jsonl")
@@ -548,6 +556,9 @@ def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> N
     assert hidden_rows[0]["final_q6_value"] == 1_039_000
     assert hidden_rows[0]["final_q6_decision_value"] == 0
     assert hidden_rows[0]["final_q6_trimmed_tail_value"] == 1_039_000
+    assert hidden_rows[0]["shadow_q6_plannable_gap_band"] == "unknown"
+    assert hidden_rows[0]["tail_trimmed_q6"] is True
+    assert hidden_rows[0]["tail_replacement_review_needed"] is False
     assert (tmp_path / "aisha_hidden_floor15.csv").exists()
     assert (tmp_path / "q6_shadow_candidate_review_summary.json").exists()
 

@@ -794,6 +794,8 @@ residual；若集中在 `q6_top_large/huge` 且有 shape 证据，再做 shape+c
 
 **更新 3**：上述 live 复核发现诊断口径缺陷：shadow 输出的是 `q6_decision_value_p90`，但 live readiness 曾用 raw `final_q6_value` 判断 under/covered/helped，导致部分未被证据支持的极端尾部被误算成 still-missed。已把 live/batch 的结算 truth breakdown 收敛为同一 helper，并新增 `final_q6_decision_value`、`final_q6_trimmed_tail_value`、`q6_plannable_p90_misses_truth`。旧 `model_eval.jsonl` 不会自动回填；后续 live shadow 升级复核必须优先看 plannable 字段。定向重建 6 个旧 deep still-missed 行后，口径变为 `4 still_missed / 1 helped / 1 observation`，不再把《富春山居图》这类不可规划尾部当成 deep floor 失败。baseline 正式出价仍不受 shadow 影响。
 
+**更新 4**：用户指出“极端尾部被裁掉后，实战上仍应考虑同形状普通红替代”的口径问题。当前系统只有部分做到：posterior 采样会在同形状/同品质候选池中隐式采普通替代，但 `final_q6_decision_value` 对未证据支持尾部是裁到 `0`，不是显式替换成同形状普通红 weighted P50。决策：不直接改正式 `decision_value`，否则 posterior 与 truth 会混口径；先把 tail-replacement truth 作为 q6 shadow review 的第二审计轴，等新版 live 日志和更多样本确认后再统一评估是否同步修改 posterior decision 口径。
+
 ## 2026-06-02 · 公开总格/总件数可进入正式 baseline，结算 truth 必须隔离
 
 **背景**：UI 需要展示格数预测、实际格子数、件数预测、已知紫/金件数和排除条件；同时审计发现 monitor 曾统一清掉 `warehouse_total_cells` / `total_item_count`，这会丢掉结算前全量轮廓或透视给出的安全公开约束。
