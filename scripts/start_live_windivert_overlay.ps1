@@ -1,6 +1,7 @@
 param(
   [string]$LogDir = "data\logs\live",
   [string]$ProcessName = "BidKing.exe",
+  [string]$PythonPath = "",
   [int[]]$ServerPort = @(10000),
   [int]$NTrials = 500,
   [int]$RoiTrials = 250,
@@ -12,9 +13,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$Python = (Get-Command python).Source
-$PythonwCommand = Get-Command pythonw -ErrorAction SilentlyContinue
-$PythonWindowed = if ($PythonwCommand) { $PythonwCommand.Source } else { $Python }
 $Monitor = Join-Path $Repo "scripts\run_windivert_live_monitor.py"
 $Overlay = Join-Path $Repo "scripts\run_live_overlay.py"
 $LogPath = Join-Path $Repo $LogDir
@@ -25,6 +23,60 @@ $MonitorErr = Join-Path $LogPath "monitor.stderr.log"
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
   [Security.Principal.WindowsBuiltinRole]::Administrator
 )
+
+function Test-PythonModules {
+  param([string]$Candidate)
+  if (-not $Candidate -or -not (Test-Path $Candidate)) {
+    return $false
+  }
+  & $Candidate -c "import pydivert, psutil" *> $null
+  return $LASTEXITCODE -eq 0
+}
+
+function Resolve-MonitorPython {
+  param([string]$ExplicitPython)
+  $Candidates = New-Object System.Collections.Generic.List[string]
+  if ($ExplicitPython) {
+    $Candidates.Add($ExplicitPython)
+  }
+  $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
+  if ($PythonCommand) {
+    $Candidates.Add($PythonCommand.Source)
+  }
+  $PyCommand = Get-Command py -ErrorAction SilentlyContinue
+  if ($PyCommand) {
+    $PyOutput = & $PyCommand.Source -0p 2>$null
+    foreach ($Line in $PyOutput) {
+      if ($Line -match '([A-Z]:\\.*python\.exe)') {
+        $Candidates.Add($Matches[1])
+      }
+    }
+  }
+  $Candidates.Add("C:\Users\shenc\anaconda3\python.exe")
+  $Candidates.Add("C:\Python313\python.exe")
+  $Seen = @{}
+  foreach ($Candidate in $Candidates) {
+    if (-not $Candidate -or $Seen.ContainsKey($Candidate)) {
+      continue
+    }
+    $Seen[$Candidate] = $true
+    if (Test-PythonModules $Candidate) {
+      return $Candidate
+    }
+  }
+  if ($ExplicitPython) {
+    return $ExplicitPython
+  }
+  if ($PythonCommand) {
+    return $PythonCommand.Source
+  }
+  throw "python not found"
+}
+
+$Python = Resolve-MonitorPython $PythonPath
+$PythonwCandidate = Join-Path (Split-Path -Parent $Python) "pythonw.exe"
+$PythonWindowed = if (Test-Path $PythonwCandidate) { $PythonwCandidate } else { $Python }
+$HasPacketDeps = Test-PythonModules $Python
 
 $MonitorArgs = @(
   $Monitor,
@@ -98,10 +150,15 @@ Write-Host "LogDir:     $LogPath"
 Write-Host "Process:    $ProcessName"
 Write-Host "Mode:       $(if ($PortOnly) { 'port-filter' } else { 'broad-sniff + process-match' })"
 Write-Host "ServerPort: $($ServerPort -join ',')"
+Write-Host "Python:     $Python"
 if (-not $IsAdmin) {
   Write-Host "Warning: WinDivert usually requires an elevated/admin PowerShell." -ForegroundColor Yellow
 }
-Write-Host "If monitor.stderr.log says pydivert is missing, run: python -m pip install pydivert"
+if (-not $HasPacketDeps) {
+  Write-Host "Warning: selected Python cannot import pydivert/psutil." -ForegroundColor Yellow
+  Write-Host "Install with: `"$Python`" -m pip install -e `"$Repo[packet]`""
+}
+Write-Host "If monitor.stderr.log says pydivert is missing, run: `"$Python`" -m pip install pydivert"
 if ($MonitorProcesses) {
   Write-Host "Monitor:    already running (PID $($MonitorProcesses[0].ProcessId))"
 }

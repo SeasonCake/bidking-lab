@@ -285,9 +285,10 @@ def main() -> int:
     except ImportError:
         print(
             "[error] pydivert is not installed. Install it with: "
-            "python -m pip install pydivert",
+            f'"{sys.executable}" -m pip install pydivert',
             file=sys.stderr,
         )
+        print(f"[env] python={sys.executable}", file=sys.stderr)
         return 2
     sniff_flag = getattr(getattr(pydivert, "Flag", object), "SNIFF", None)
     if sniff_flag is None:
@@ -333,6 +334,14 @@ def main() -> int:
 
     server_ports = args.server_port or [10000]
     filter_text = args.filter or _default_filter(server_ports, broad=args.broad)
+    _write_source_status(
+        log_dir,
+        process_name=args.process_name,
+        filter_text=filter_text,
+        active_flows=flow_index.active_flow_count(),
+        accepted_packets=0,
+    )
+    print(f"[listen] Python: {sys.executable}", flush=True)
     print(f"[listen] WinDivert filter: {filter_text}", flush=True)
     print(
         f"[listen] process={args.process_name} active_flows={flow_index.active_flow_count()} "
