@@ -75,6 +75,7 @@
 57. [q6 tail 被裁到 0 后，review 仍需要同形状普通红替代值](#57-q6-tail-被裁到-0-后review-仍需要同形状普通红替代值)
 58. [live 使用道具后只在下一轮刷新](#58-live-使用道具后只在下一轮刷新)
 59. [关闭 overlay 后 live monitor 仍在后台运行](#59-关闭-overlay-后-live-monitor-仍在后台运行)
+60. [WinDivert monitor 活着但 UI 一直等待](#60-windivert-monitor-活着但-ui-一直等待)
 
 ---
 
@@ -2067,6 +2068,60 @@ Get-CimInstance Win32_Process |
 
 期望 `live_status` 显示 `Lock: exists=False` 或 PID 不再 running，进程查询为空。
 若要测试后台常驻，改用 `-KeepMonitorOnOverlayClose`，此时关闭 overlay 后 monitor 继续运行是预期行为。
+
+---
+
+## 60. WinDivert monitor 活着但 UI 一直等待
+
+### 症状
+
+游戏已经开局甚至完整打完一局，overlay 仍显示“监听中，等待对局数据”。`live_status.ps1` 中
+`monitor.lock` 存在且 PID running，但状态类似：
+
+```text
+Capture: source=windivert age=1.3s flows=1 sniffed=241 raw=1 accepted=0 session=-
+WARN: live capture saw payload but no auction frames were accepted
+```
+
+另一个常见表象是 overlay 约每两秒闪一下，即使没有新的对局信息。
+
+### 原因
+
+先按计数定位层级：
+
+- `sniffed_packets=0`：WinDivert 没看到系统 TCP payload，先查管理员权限、驱动和网络。
+- `sniffed_packets>0 / raw_packets≈0`：系统有包，但没有进入目标进程 flow match。VPN / UU / TUN /
+  system proxy 场景下，真实流量可能走 `BidKing.exe` 的 loopback 代理路径。
+- `raw_packets>0 / accepted_frames=0`：目标流已抓到，但 auction frame gate 没识别出开局、轮次、
+  道具或结算帧；下一步应记录受限 frame 诊断，不应盲目放宽到所有 TCP payload。
+- `accepted_frames>0` 但 UI 不更新：继续查 snapshot 构建、stale 判断和 overlay 渲染。
+
+overlay 闪烁的独立根因是旧刷新签名包含 `capture_source_status.json` 文件 mtime。状态文件定时写入
+timestamp / sniffed 心跳时，即使用户可见状态不变，也会触发整窗 render。
+
+### 修法（2026-06-02）
+
+- `start_live_windivert_overlay.ps1` 默认包含 `BidKing.exe` loopback flow，适配 VPN / UU / TUN /
+  本地代理链路；噪声过多时可显式传 `-ExcludeLoopback`。
+- `run_live_overlay.py` 的 capture signature 忽略 timestamp-only / sniffed-only 变化，只在
+  source、flow、raw、accepted、session 等语义状态变化时重绘。
+- 代码修复不等于实机闭环：必须停止旧 monitor，再用新脚本重启并完整打一局。
+
+### 验证
+
+```powershell
+cd C:\xiangmuyunxing\biancheng\2026\bidking-lab
+.\scripts\stop_live_monitor.ps1
+.\scripts\start_live_windivert_overlay.ps1 -Restart
+# 通过 UAC 后，完整打一局并使用一次道具
+.\scripts\live_status.ps1 -StaleSeconds 999999
+Get-Content .\data\logs\live\capture_source_status.json
+Get-Content .\data\logs\live\monitor.stdout.log -Tail 60
+Get-Content .\data\logs\live\monitor.stderr.log -Tail 60
+```
+
+目标是 `accepted_frames>0`，`active_session_id` 在开局后非空，snapshot 能随道具 `0x0027`、
+轮次和结算更新，overlay 不再按心跳闪烁。
 
 ---
 

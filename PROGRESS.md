@@ -1,7 +1,7 @@
 # bidking-lab · 项目进度与路线图
 
 > **用途**：新对话/新协作者的起点文件。阅读本文即可了解项目全貌、当前状态、下一步方向。  
-> **相关文件**：`handoff_2026-05-30.zh-CN.md`（最新长线程交接）、`DECISIONS.md`（项目决策记录）、`OBSERVATIONS.md`（技术发现日志）、`TROUBLESHOOTING.md`（踩坑记录）、`docs/project_vision.md`（原始架构设计）、`docs/optimization_roadmap.zh-CN.md`（当前优化路线图）、`docs/live_sampling_guide.zh-CN.md`（实时日志采样指南）。
+> **相关文件**：`handoff_2026-06-02.zh-CN.md`（最新长线程交接）、`DECISIONS.md`（项目决策记录）、`OBSERVATIONS.md`（技术发现日志）、`TROUBLESHOOTING.md`（踩坑记录）、`docs/project_vision.md`（原始架构设计）、`docs/optimization_roadmap.zh-CN.md`（历史优化路线图）、`docs/live_sampling_guide.zh-CN.md`（实时日志采样指南）。
 
 ## 核心文档地图
 
@@ -2357,3 +2357,33 @@ python scripts/demo_shipwreck_r4_inference.py           # Phase 1A 推断 demo
 - 2026-06-02 live 生命周期与待机补丁：三套 combined 启动脚本现在默认把 monitor PID 传给 overlay；关闭 overlay 会停止对应 monitor 并清理 `monitor.lock`，需要后台持续监听时显式传 `-KeepMonitorOnOverlayClose`。`stop_live_monitor.ps1` 同时读取 lock 内 PID，能清掉命令行不可见的隐藏 monitor。overlay 对旧 snapshot 新增状态边界：非结算状态超过 120 秒未更新时显示“等待对局开始/新状态”，不继续展示旧局出价；结算 truth 最多保留 60 秒，之后回到待机。hover/detail 新增“轮次仓位参考”提示，按 P50 与 R1/R2/R3/R4 的 `2.0/1.6/1.3/1.1` 倍数给仓位/防守参考，但不改变正式出价策略或 baseline bid。
 - 2026-06-02 live 日志审计确认：WinDivert 实时链路会把当前 session 累计 raw rows 写入 `data/logs/live/raw/windivert_live.json`，并通过 artifact builder 更新 `latest_snapshot.json`、追加 `sessions.jsonl` / `model_eval.jsonl` / `layout_samples.jsonl`；`capture_source_status.json` 记录 packet/frame/source 状态。目录 watcher 的 `processed_files.json` 仍主要用于历史 JSON 去重与错误 fingerprint，不代表 WinDivert 包流状态。当前实机目录可读到 `sessions=757`、`model_eval=746`、`layout_samples=2003`，说明储存和预处理链路正常；旧错误仍在 `monitor_errors.jsonl` 中保留用于追踪 malformed 样本。
 - 2026-06-02 WinDivert 权限诊断补丁：实机确认普通 PowerShell 下 monitor 会写一次 `capture_source_status.json` 后因 `WinDivert capture requires an elevated PowerShell/admin process` 退出，overlay 只能显示旧 snapshot 待机。`start_live_windivert_overlay.ps1` 现在非管理员时默认自动用 UAC 重启自身，不再假启动 monitor；`live_status` 新增 capture source 行，并在存在 WinDivert 状态文件但 `monitor.lock` 缺失时即使放宽 stale 阈值也输出 WARN。
+
+## 2026-06-02 · 长线程交接 checkpoint
+
+完整的新窗口续接说明见 [`handoff_2026-06-02.zh-CN.md`](handoff_2026-06-02.zh-CN.md)。
+
+### 当前结论
+
+- v2 baseline 已是正式 UI 出价主链路。q6 risk reference、`aisha_deep_floor1`、`aisha_hidden_floor15`、
+  `aisha_villa_floor05` 和 tail replacement 仍为只读风险提示或 review 字段，均不覆盖正式出价。
+- 338 份历史样本的当前 schema replay 为 333 成功、5 个 malformed/invalid-frame 错误；
+  `zero_posterior_match=0`、`layout_conflict=0`、fallback 未触发。v3 重写仍是最低优先级候选。
+- overlay 工程版已具备 mini / hover / detail 三层、品质 MiniMap、显眼 P50/防守价、结算视图、
+  stale 待机、状态检查和 monitor 生命周期管理。像素猫和正式视觉优化继续延后。
+- 当前 P0 阻塞不再是模型精度，而是 VPN / UU / TUN 场景下 WinDivert 实时包流验证。
+  最近一次旧进程实测为 `sniffed=241 / raw=1 / accepted=0 / session=-`；同时看到
+  `BidKing.exe` 的直连和 loopback flow。提交 `d9de276` 已把 loopback 默认纳入 process-match，
+  但仍需要重启后完整打一局，确认 `accepted_frames`、snapshot、道具即时响应和结算链路。
+- overlay 闪烁根因已定位为 `capture_source_status.json` 每两秒重写导致 mtime 变化。
+  提交 `d9de276` 已改成语义签名：只在 flow/raw/accepted/session 等有效状态变化时刷新，不跟随
+  timestamp 或 `sniffed_packets` 心跳整窗重绘。
+
+### 当前 TODO
+
+1. 用最新脚本重启 WinDivert overlay，完整打一局并记录 `sniffed_packets/raw_packets/accepted_frames`。
+2. 若 `raw_packets` 上升但 `accepted_frames=0`，补一个受限 ignored-frame 诊断环，记录 flow、方向、
+   frame 长度、消息标签和短前缀，继续收窄 frame gate。
+3. 若启用 loopback 后仍为 `sniffed_packets>0 / raw_packets≈0`，检查本地代理端口对应进程，
+   决定是否增加 proxy-process 归因或 tuple 关联。
+4. `accepted_frames>0` 后复核：开局、轮次、道具 `0x0027`、结算、UI 推荐价、无闪烁和两种退出模式。
+5. live 链路稳定后再恢复 q6 shadow 校准、pixel-cat UI、异步 baseline-first/shadow-later 和英雄支线。

@@ -163,10 +163,12 @@ WinDivert 抓包源状态可直接查看：
 Get-Content .\data\logs\live\capture_source_status.json
 ```
 
-其中 `raw_packets` 是归因到 `BidKing.exe` 目标流的 TCP payload 数，`accepted_frames`
-是通过对局 frame gate、真正写入推理输入的 frame 数；旧字段 `accepted_packets`
-保留为 `accepted_frames` 的兼容别名。未进入对局时，`raw_packets` 可能增长，
-`accepted_frames` 和 `active_session_id` 可以仍为空或为 0，这是预期行为。
+其中 `sniffed_packets` 是 WinDivert 看到的全部系统 TCP payload 数，`raw_packets` 是进一步归因到
+`BidKing.exe` 目标流的 TCP payload 数，`accepted_frames` 是通过对局 frame gate、真正写入推理输入
+的 frame 数；旧字段 `accepted_packets` 保留为 `accepted_frames` 的兼容别名。未进入对局时，
+`raw_packets` 可能增长，`accepted_frames` 和 `active_session_id` 可以仍为空或为 0，这是预期行为。
+完整打一局仍没有更新时，按层级定位：`sniffed=0` 先查权限/驱动；`sniffed>0 / raw≈0` 先查
+process-flow 归因和 VPN/TUN/本地代理路径；`raw>0 / accepted=0` 再查 auction frame gate。
 如果 `Lock: exists=False` 且 `Capture: source=windivert`，说明当前没有 live monitor 进程；
 这时 overlay 只是在读旧 snapshot，通常需要重新运行 `start_live_windivert_overlay.ps1`
 并通过管理员/UAC 权限。

@@ -885,3 +885,27 @@ packet tag 非 0、或解析不出 action result 的帧继续丢弃。
 **取舍**：默认绑定生命周期能避免后台残留和重复写 live logs；代价是想长期后台收数时必须使用明确开关。待机/结算保留避免 stale bid 误导用户，但如果 monitor 中断超过 120 秒，UI 会停止展示上一局建议。轮次仓位参考提高可读性，但不作为正式防守价或抢仓阈值，后续若要升级策略必须单独回测。
 
 **复查点**：用 `scripts/live_status.ps1` 检查 `monitor.lock` 与 PID running 状态；关闭 overlay 后应无对应 live monitor 进程。正式策略若要消费轮次倍率，需要在 live `model_eval.jsonl` 上回测对 MAE、overbid、missed-value 和 no-q6 control 的影响。
+
+## 2026-06-02 · WinDivert 默认纳入 loopback 代理路径，overlay 只按语义状态重绘
+
+**背景**：WinDivert 提权后 monitor 能稳定存活，但旧进程完整打一局仍显示
+`sniffed_packets=241 / raw_packets=1 / accepted_frames=0 / active_session_id=null`。
+系统 payload 已被 sniff 到，主要游戏包却没有进入 `BidKing.exe` flow match。当前 VPN / UU / TUN
+环境下同时存在 `BidKing.exe` 直连、loopback 和本地代理端口，排除 loopback 会漏掉代理路径。
+另有 overlay 闪烁回归：状态文件定期重写导致 mtime 变化，旧刷新签名会无条件整窗 render。
+
+**用户决策**：当前优先把 live 实时监听落地，不回到 OCR，也不先继续扩大 q6 调参。UI 工程版可以保持
+朴素，但必须稳定、可验证、不会因为后台状态心跳持续闪烁。
+
+**推荐**：`start_live_windivert_overlay.ps1` 默认包含 `BidKing.exe` loopback flow，保留
+`-ExcludeLoopback` 作为噪声过多时的回退开关。overlay 的 capture source 刷新签名只消费
+flow/raw/accepted/session 等语义状态，不跟随 timestamp 或 `sniffed_packets` 心跳刷新。
+
+**取舍**：纳入 loopback 可能增加本地代理噪声，但 auction frame gate 仍负责过滤购买、界面交互、
+心跳和非当前 session 数据；它比漏掉真实游戏流更可控。忽略 sniffed-only UI 刷新不会损失状态判断，
+因为 `live_status.ps1` 和状态文件仍保留完整计数；overlay 只减少无意义重绘。
+
+**复查点**：必须用提交 `d9de276` 之后的新进程重启并完整打一局。若 `raw_packets` 上升而
+`accepted_frames=0`，下一步排查 frame gate；若仍为 `sniffed_packets>0 / raw_packets≈0`，
+下一步排查代理进程归因或 tuple 关联。只有 `accepted_frames>0`、snapshot 随开局/道具/轮次/结算更新、
+且 overlay 不闪烁时，才能把 WinDivert live 链路记为闭环。
