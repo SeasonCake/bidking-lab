@@ -7,6 +7,7 @@ directory, not nested files, and it never overwrites an existing destination.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -97,17 +98,32 @@ def _rounds(events: FatbeansCaptureEvents) -> int:
 
 
 def _looks_manually_renamed(path: Path, *, prefix: str) -> bool:
-    return path.stem.startswith(prefix) and "rounds" in path.stem
+    stem = path.stem.lower()
+    if not stem.startswith(prefix.lower()):
+        return False
+    if "_hero_map_rounds" in stem or "_map_rounds" in stem:
+        return False
+    pattern = re.compile(
+        rf"^{re.escape(prefix.lower())}_\d{{3}}_[a-z0-9_]+_\d+_\d+rounds(?:_.+)?$"
+    )
+    return bool(pattern.match(stem))
 
 
-def _next_available_path(directory: Path, stem: str, suffix: str) -> Path:
+def _next_available_path(
+    directory: Path,
+    stem: str,
+    suffix: str,
+    *,
+    source_paths: set[Path] | None = None,
+) -> Path:
+    source_paths = source_paths or set()
     candidate = directory / f"{stem}{suffix}"
-    if not candidate.exists():
+    if not candidate.exists() or candidate.resolve() in source_paths:
         return candidate
     counter = 2
     while True:
         candidate = directory / f"{stem}_dup{counter}{suffix}"
-        if not candidate.exists():
+        if not candidate.exists() or candidate.resolve() in source_paths:
             return candidate
         counter += 1
 
@@ -118,15 +134,21 @@ def build_rename_plan(
     prefix: str = "manual_2026-06-04",
     start_index: int = 1,
     force_existing_named: bool = False,
+    renumber_all: bool = False,
 ) -> list[RenamePlan]:
     files = sorted(
         (path for path in directory.glob("*.json") if path.is_file()),
         key=lambda path: (path.stat().st_mtime, path.name.lower()),
     )
+    source_paths = {path.resolve() for path in files}
     plans: list[RenamePlan] = []
     next_index = int(start_index)
     for path in files:
-        if _looks_manually_renamed(path, prefix=prefix) and not force_existing_named:
+        if (
+            _looks_manually_renamed(path, prefix=prefix)
+            and not force_existing_named
+            and not renumber_all
+        ):
             plans.append(
                 RenamePlan(
                     source=path,
@@ -162,7 +184,28 @@ def build_rename_plan(
         ]
         if session_token:
             parts.append(session_token)
-        destination = _next_available_path(path.parent, "_".join(parts), path.suffix.lower())
+        destination = _next_available_path(
+            path.parent,
+            "_".join(parts),
+            path.suffix.lower(),
+            source_paths=source_paths,
+        )
+        if destination.resolve() == path.resolve():
+            plans.append(
+                RenamePlan(
+                    source=path,
+                    destination=None,
+                    status="skip",
+                    reason="already_named_exact",
+                    index=next_index,
+                    hero=hero,
+                    map_id=map_id,
+                    rounds=rounds,
+                    session_token=session_token,
+                )
+            )
+            next_index += 1
+            continue
         plans.append(
             RenamePlan(
                 source=path,
@@ -197,12 +240,28 @@ def _print_plan(plans: list[RenamePlan], *, dry_run: bool) -> None:
 
 
 def apply_plan(plans: list[RenamePlan]) -> None:
-    for plan in plans:
-        if plan.status != "rename" or plan.destination is None:
-            continue
-        if plan.destination.exists():
+    rename_plans = [
+        plan for plan in plans if plan.status == "rename" and plan.destination is not None
+    ]
+    sources = {plan.source.resolve() for plan in rename_plans}
+    destinations = [plan.destination.resolve() for plan in rename_plans if plan.destination]
+    if len(destinations) != len(set(destinations)):
+        raise ValueError("duplicate rename destinations in plan")
+    for plan in rename_plans:
+        assert plan.destination is not None
+        if plan.destination.exists() and plan.destination.resolve() not in sources:
             raise FileExistsError(plan.destination)
-        plan.source.rename(plan.destination)
+
+    staged: list[tuple[Path, Path, Path]] = []
+    for index, plan in enumerate(rename_plans, start=1):
+        assert plan.destination is not None
+        temp = plan.source.with_name(f".manual_rename_tmp_{index:04d}_{plan.source.name}")
+        if temp.exists():
+            raise FileExistsError(temp)
+        plan.source.rename(temp)
+        staged.append((temp, plan.destination, plan.source))
+    for temp, destination, _source in staged:
+        temp.rename(destination)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -222,6 +281,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Also rename files that already look like manual_YYYY_MM_DD_* samples.",
     )
     parser.add_argument(
+        "--renumber-all",
+        action="store_true",
+        help="Parse every JSON and assign continuous indexes by file modified time.",
+    )
+    parser.add_argument(
         "--apply",
         action="store_true",
         help="Actually rename files. Without this flag, only prints a dry-run plan.",
@@ -236,6 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         prefix=args.prefix,
         start_index=max(1, int(args.start_index)),
         force_existing_named=bool(args.force_existing_named),
+        renumber_all=bool(args.renumber_all),
     )
     _print_plan(plans, dry_run=not args.apply)
     if args.apply:

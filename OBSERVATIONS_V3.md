@@ -176,3 +176,25 @@ bid_windows=1262 ready_windows=1247 no_state_windows=15 constraint_conflict_wind
 - mixed 文件不能整局丢弃，否则浪费有效窗口；但 no-state 窗口不能进入 MAE/coverage/pinball 分母。
 - 当前 manifest 还统计 public info/action/skill 出现次数，可作为“数据里有但 pipeline 未消费”的审查入口。
 - 当前公开 exact 信息出现次数包括：`200009` 总格 `118` 次、`200017` 总件数 `74` 次、`200010/200011/200018/200019` 分品质格数/件数若干次。后续 v3 registry/UI/archive 审查应优先确认这些信息全链路消费。
+
+## O-v3-014：manual inbox 77 份新增样本质量高，可作为下一轮校准候选
+
+2026-06-05 复核 `data/samples/fatbeans_manual_inbox`：
+
+```text
+files=77 parsed_files=77 parse_errors=0 valid_files=77 mixed_files=0 invalid_files=0
+bid_windows=264 ready_windows=264 no_state_windows=0 constraint_conflict_windows=0
+```
+
+分布：
+
+- hero：Ethan `20`、Aisha `20`、Gabriela `10`、Sophie `10`、Wuqilin `17`。
+- round：R1 `8`、R2 `7`、R3 `19`、R4 `30`、R5 `13`。
+- 高频 map：`2501` 19、`2401` 13、`2504` 8、`2507` 6、`2408` 6。
+
+结论：
+
+- 新增样本没有 parse error、no-state 或 constraint conflict，质量明显好于早期 live capture。
+- 与当前主样本库无重复 session。
+- 若作为 v3 校准输入，整体 ready 窗口会从 `1247` 增至 `1511`。
+- 这批样本偏 Ethan/Aisha/Wuqilin 与 R4，适合补充 q6/tail/value sampler 诊断；但还不能替代按地图/英雄均衡采样。

@@ -298,6 +298,37 @@
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --posterior-trials 0 --fail-on-conflicts`
     通过。
 
+### Phase 3 增量：manual inbox 样本审查
+
+- `data/samples/fatbeans_manual_inbox` 收到 77 份手动导出 JSON，非 78 份。
+- 修正 `scripts/rename_manual_fatbeans_samples.py`：
+  - 占位名如 `hero_map_rounds`、`ethan_map_rounds` 不再误判为已命名。
+  - 新增 `--renumber-all`，按文件修改时间连续编号。
+  - 应用重命名时使用两阶段 rename，避免目标名与现有文件互相占用。
+- 已对 inbox 执行连续重命名，当前范围为 `manual_2026-06-04_001_...json` 到
+  `manual_2026-06-04_077_...json`。
+- 单独 inbox 质量：
+  - `files=77`
+  - `parsed_files=77`
+  - `valid_files=77`
+  - `ready_windows=264`
+  - `parse_errors=0`
+  - `no_state_windows=0`
+  - `constraint_conflict_windows=0`
+- 与主样本库合并的轻量口径：
+  - `files=432`
+  - `parsed_files=427`
+  - `usable_metric_files=427`
+  - `ready_windows=1511`
+  - 仅保留旧主库 5 个 parse error。
+- 验证：
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_rename_manual_fatbeans_samples.py tests\test_summarize_fatbeans_sample_manifest.py -q`
+    为 `7 passed`。
+  - `C:\Python313\python.exe .\scripts\summarize_fatbeans_sample_manifest.py .\data\samples\fatbeans_manual_inbox`
+    通过。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py .\data\samples\fatbeans .\data\samples\fatbeans_manual_inbox --skip-table-report --posterior-trials 0 --fail-on-conflicts`
+    通过。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：
@@ -317,6 +348,7 @@
 
 - Fatbeans 本地样本：`data/samples/fatbeans`，当前 355 份 JSON。
 - v3 coverage 可解析样本：350 份。
+- Fatbeans 手动 staging 样本：`data/samples/fatbeans_manual_inbox`，当前 77 份 JSON，尚未并入默认 baseline。
 - 已知 parse error：5 份旧样本，作为数据质量问题，不计为 registry gap。
 - v3 canonical evidence events：10,164。
 - 当前 coverage：`coverage_ok=True`，unknown/pending 均为 `none`。
