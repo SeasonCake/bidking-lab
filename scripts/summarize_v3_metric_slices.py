@@ -48,6 +48,10 @@ def _below_rate(pairs: Iterable[tuple[float, float]]) -> float | None:
     return _mean(1.0 if pred < truth else 0.0 for pred, truth in pairs)
 
 
+def _over_rate(pairs: Iterable[tuple[float, float]]) -> float | None:
+    return _mean(1.0 if pred > truth else 0.0 for pred, truth in pairs)
+
+
 def _coverage_rate(pairs: Iterable[tuple[float, float]]) -> float | None:
     return _mean(1.0 if truth <= pred else 0.0 for pred, truth in pairs)
 
@@ -116,10 +120,12 @@ def summarize_slice(
                 "formal_p50_mae": _round_metric(_mae(formal_p50), 1),
                 "formal_p50_bias": _round_metric(_bias(formal_p50), 1),
                 "formal_p50_below_rate": _round_metric(_below_rate(formal_p50), 6),
+                "formal_p50_over_rate": _round_metric(_over_rate(formal_p50), 6),
                 "formal_p90_coverage": _round_metric(_coverage_rate(formal_p90), 6),
                 "q6_formal_p50_mae": _round_metric(_mae(q6_p50), 1),
                 "q6_formal_p50_bias": _round_metric(_bias(q6_p50), 1),
                 "q6_formal_p50_below_rate": _round_metric(_below_rate(q6_p50), 6),
+                "q6_formal_p50_over_rate": _round_metric(_over_rate(q6_p50), 6),
                 "q6_formal_p90_coverage": _round_metric(_coverage_rate(q6_p90), 6),
             }
         )
@@ -141,6 +147,7 @@ def _print_table(rows: list[dict[str, Any]], *, top: int) -> None:
                     f"formal_mae={row['formal_p50_mae']}",
                     f"formal_bias={row['formal_p50_bias']}",
                     f"formal_below={row['formal_p50_below_rate']}",
+                    f"formal_over={row['formal_p50_over_rate']}",
                     f"p90_cover={row['formal_p90_coverage']}",
                     f"q6_mae={row['q6_formal_p50_mae']}",
                     f"q6_bias={row['q6_formal_p50_bias']}",

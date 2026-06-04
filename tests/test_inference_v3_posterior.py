@@ -314,3 +314,29 @@ def test_v3_posterior_weights_category_anchor_matches_for_formal_value() -> None
     assert report.strict_ready is True
     assert "anchor_likelihood_weighted" in report.diagnostics
     assert report.q6_formal_decision_value.p50 == 2_000_000
+
+
+def test_v3_posterior_practical_p50_guard_uses_support_p60() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=99,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=0,
+        buckets=(BucketFeasibleSummary(quality=6, count_floor=1, cells_floor=4),),
+    )
+    truths = tuple(
+        _truth_with_q6_item(item_id=1086100 + index, value=value, cells=4)
+        for index, value in enumerate((100, 200, 300, 400, 500))
+    )
+
+    report = estimate_q6_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=truths,
+    )
+
+    assert report.ready is True
+    assert report.match_scope == "summary_likelihood"
+    assert report.q6_value.p50 == 340

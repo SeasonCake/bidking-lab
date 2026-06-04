@@ -234,6 +234,7 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["formal_p50_mae_fallback"] == 50
     assert summary["formal_p50_bias"] == 20
     assert summary["formal_p50_below_rate"] == 0.5
+    assert summary["formal_p50_over_rate"] == 0.5
     assert summary["formal_p50_pinball"] == 15
     assert summary["formal_p90_coverage"] == 1.0
     assert summary["formal_p90_coverage_strict"] == 1.0
@@ -243,6 +244,7 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["q6_formal_p50_mae_strict"] == 20
     assert summary["q6_formal_p50_mae_fallback"] == 0
     assert summary["q6_formal_p50_bias"] == -10
+    assert summary["q6_formal_p50_over_rate"] == 0.0
     assert summary["q6_formal_p90_pinball"] == 0.5
 
 

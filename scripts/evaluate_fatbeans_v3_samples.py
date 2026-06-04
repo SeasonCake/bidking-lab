@@ -458,6 +458,9 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     def below_rate(pairs: tuple[tuple[float, float], ...]) -> float | None:
         return _mean(1.0 if pred < truth else 0.0 for pred, truth in pairs)
 
+    def over_rate(pairs: tuple[tuple[float, float], ...]) -> float | None:
+        return _mean(1.0 if pred > truth else 0.0 for pred, truth in pairs)
+
     def coverage_rate(pairs: tuple[tuple[float, float], ...]) -> float | None:
         return _mean(1.0 if truth <= pred else 0.0 for pred, truth in pairs)
 
@@ -489,6 +492,7 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "formal_p50_mae_fallback": _round_metric(mae(formal_p50_fallback)),
         "formal_p50_bias": _round_metric(bias(formal_p50)),
         "formal_p50_below_rate": _round_metric(below_rate(formal_p50), 6),
+        "formal_p50_over_rate": _round_metric(over_rate(formal_p50), 6),
         "formal_p50_pinball": _round_metric(pinball(formal_p50, 0.5)),
         "formal_p90_coverage": _round_metric(coverage_rate(formal_p90), 6),
         "formal_p90_coverage_strict": _round_metric(
@@ -505,6 +509,7 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "q6_formal_p50_mae_fallback": _round_metric(mae(q6_p50_fallback)),
         "q6_formal_p50_bias": _round_metric(bias(q6_p50)),
         "q6_formal_p50_below_rate": _round_metric(below_rate(q6_p50), 6),
+        "q6_formal_p50_over_rate": _round_metric(over_rate(q6_p50), 6),
         "q6_formal_p90_coverage": _round_metric(coverage_rate(q6_p90), 6),
         "q6_formal_p90_pinball": _round_metric(pinball(q6_p90, 0.9)),
     }
@@ -596,10 +601,14 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"formal_p50_mae={summary['formal_p50_mae']}",
                 f"formal_p50_mae_strict={summary['formal_p50_mae_strict']}",
                 f"formal_p50_mae_fallback={summary['formal_p50_mae_fallback']}",
+                f"formal_p50_below_rate={summary['formal_p50_below_rate']}",
+                f"formal_p50_over_rate={summary['formal_p50_over_rate']}",
                 f"formal_p90_coverage={summary['formal_p90_coverage']}",
                 f"q6_formal_p50_mae={summary['q6_formal_p50_mae']}",
                 f"q6_formal_p50_mae_strict={summary['q6_formal_p50_mae_strict']}",
                 f"q6_formal_p50_mae_fallback={summary['q6_formal_p50_mae_fallback']}",
+                f"q6_formal_p50_below_rate={summary['q6_formal_p50_below_rate']}",
+                f"q6_formal_p50_over_rate={summary['q6_formal_p50_over_rate']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",

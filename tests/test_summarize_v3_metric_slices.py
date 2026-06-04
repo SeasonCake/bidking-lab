@@ -62,10 +62,12 @@ def test_summarize_slice_reports_formal_and_q6_metrics() -> None:
             "formal_p50_mae": 25,
             "formal_p50_bias": 15,
             "formal_p50_below_rate": 0.5,
+            "formal_p50_over_rate": 0.5,
             "formal_p90_coverage": 0.5,
             "q6_formal_p50_mae": 12.5,
             "q6_formal_p50_bias": -2.5,
             "q6_formal_p50_below_rate": 0.5,
+            "q6_formal_p50_over_rate": 0.5,
             "q6_formal_p90_coverage": 1.0,
         }
     ]

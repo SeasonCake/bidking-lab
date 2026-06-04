@@ -657,3 +657,73 @@ C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --to
 ```
 
 结果：`37 passed`，全样本 evaluator 通过。
+
+## 2026-06-05 checkpoint：practical P50 support guard
+
+问题：
+
+- 2601/2506 的剩余 top miss 多数不是 hard floor 缺失，而是 q6 count/cell/value 的真实值落在地图厚尾。
+- 用户实战反馈长期偏低估，允许适度更激进，但不能牺牲整体 MAE。
+- 当前 weighted P50 即使用 support median guard，仍对厚尾地图保守。
+
+修复：
+
+- 将 likelihood-weighted posterior 的 P50 support guard 从未加权 P50 提升到未加权 P60。
+- 只在已有 likelihood weights 的窗口生效；无 evidence weights 的 strict prior 不受影响。
+- P90 tail guard 不变。
+- evaluator 和 slice 诊断新增：
+  - `formal_p50_over_rate`
+  - `q6_formal_p50_over_rate`
+
+433 canonical 样本、512 samples/map 当前指标：
+
+```text
+formal_p50_mae=316976.209
+formal_p50_mae_strict=320981.105
+formal_p50_mae_fallback=314963.955
+formal_p50_bias=-129378.797
+formal_p50_below_rate=0.582790
+formal_p50_over_rate=0.417210
+formal_p90_coverage=0.780965
+q6_formal_p50_mae=287225.034
+q6_formal_p50_mae_strict=294466.555
+q6_formal_p50_mae_fallback=283586.543
+q6_formal_p50_bias=-70104.765
+q6_formal_p50_below_rate=0.505867
+q6_formal_p50_over_rate=0.490222
+q6_formal_p90_coverage=0.828553
+```
+
+相对 anchor-aware likelihood：
+
+- `formal_p50_mae`：`323364.373 -> 316976.209`，下降约 `6,388`。
+- `formal_p50_bias`：`-170223.445 -> -129378.797`，低估明显缓解。
+- `formal_p50_below_rate`：`0.622555 -> 0.582790`。
+- `q6_formal_p50_mae`：`289531.125 -> 287225.034`，下降约 `2,306`。
+- `q6_formal_p50_below_rate`：`0.567145 -> 0.505867`，q6 P50 接近平衡。
+
+分片：
+
+```text
+2601 n=86 mae=579876.3 bias=-409070.1 below=0.755814 over=0.244186 q6_mae=504121.7
+2506 n=71 mae=472738.8 bias=-394345.0 below=0.746479 over=0.253521 q6_mae=435284.4
+2501 n=310 mae=348661.3 bias=-206859.0 below=0.638710 over=0.361290 q6_mae=311027.5
+2507 n=74 mae=331450.1 bias=5958.6 below=0.378378 over=0.621622 q6_mae=333991.3
+2508 n=54 mae=275955.0 bias=21238.3 below=0.537037 over=0.462963 q6_mae=234905.1
+```
+
+结论：
+
+- 全局 MAE/bias 继续改善，且 q6 P50 below/over 接近平衡。
+- 2601/2506 仍低估，但比前一版明显缓解。
+- 2507/2508/2505 已出现正 bias 或 over-rate 偏高，下一步若继续激进必须做 map/证据条件化，而不是继续全局提高 guard。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_organize_fatbeans_real_samples.py tests\test_rename_manual_fatbeans_samples.py tests\test_summarize_fatbeans_sample_manifest.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_posterior.py tests\test_inference_v3_summary.py tests\test_inference_v3_priors_truth.py tests\test_inference_v3_evidence_registry.py tests\test_live_monitor.py::test_ethan_sample37_residual_does_not_break_exact_bucket_targets tests\test_summarize_v3_metric_slices.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --top 12
+```
+
+结果：`38 passed`，全样本 evaluator 通过。

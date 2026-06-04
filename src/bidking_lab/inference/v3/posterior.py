@@ -17,6 +17,8 @@ from bidking_lab.inference.v3.constraints import ConstraintSet, ItemAnchor, Shap
 from bidking_lab.inference.v3.summary import BucketFeasibleSummary, FeasibleSummaryReport
 from bidking_lab.inference.v3.truth import decision_truth_from_session_truth
 
+_PRACTICAL_P50_GUARD_QUANTILE = 0.60
+
 
 @dataclass(frozen=True)
 class V3PosteriorReport:
@@ -119,6 +121,13 @@ def _quantiles(values: Sequence[int | float]) -> QuantileSummary | None:
     )
 
 
+def _quantile_value(values: Sequence[int | float], probability: float) -> float | None:
+    if not values:
+        return None
+    arr = np.asarray(tuple(values), dtype=np.float64)
+    return float(np.quantile(arr, probability))
+
+
 def _weighted_quantiles(
     values: Sequence[int | float],
     weights: Sequence[float] | None,
@@ -153,7 +162,11 @@ def _weighted_quantiles(
     if p50_tail_guard or p90_tail_guard:
         unweighted = _quantiles(values)
         if p50_tail_guard and unweighted is not None:
-            p50 = max(p50, unweighted.p50)
+            practical_p50 = _quantile_value(values, _PRACTICAL_P50_GUARD_QUANTILE)
+            p50 = max(
+                p50,
+                practical_p50 if practical_p50 is not None else unweighted.p50,
+            )
         if p90_tail_guard and unweighted is not None:
             p90 = max(p90, unweighted.p90)
     return QuantileSummary(p10=pick(0.10), p50=p50, p90=p90)

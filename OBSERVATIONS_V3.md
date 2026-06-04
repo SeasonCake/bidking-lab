@@ -360,3 +360,42 @@ q6_formal_p90_coverage=0.815515
 
 - v3 sampler 不能只消费 summary；必须保留 anchor-aware 层。
 - 但 anchor weighting 仍是 likelihood 层，不是最终 proposal。2601/2506 的剩余低估需要专门的 map-tail/q6 value proposal。
+
+## O-v3-019：P50 support guard 提到 P60 后，整体 MAE 改善但部分地图开始偏高
+
+2026-06-05 将 likelihood-weighted posterior 的 P50 support guard 从 support P50 提到 support P60。
+
+整体结果：
+
+```text
+formal_p50_mae=316976.209
+formal_p50_bias=-129378.797
+formal_p50_below_rate=0.582790
+formal_p50_over_rate=0.417210
+formal_p90_coverage=0.780965
+q6_formal_p50_mae=287225.034
+q6_formal_p50_bias=-70104.765
+q6_formal_p50_below_rate=0.505867
+q6_formal_p50_over_rate=0.490222
+q6_formal_p90_coverage=0.828553
+```
+
+对比 anchor-aware 版本：
+
+```text
+formal_p50_mae=323364.373
+formal_p50_bias=-170223.445
+q6_formal_p50_mae=289531.125
+q6_formal_p50_bias=-114997.727
+```
+
+分片观察：
+
+- 2601/2506/2501 的低估继续缓解。
+- 2507、2508、2505 开始出现正 bias 或较高 over-rate。
+
+结论：
+
+- P60 是当前全局 practical guard 的合理上限；继续全局提高会伤害已接近平衡或偏高地图。
+- 下一步需要 map/证据条件化的 proposal，而不是全局 P65/P70。
+- over-rate 必须和 below-rate 一起报告，否则会只追求“少低估”而忽略实战过激风险。
