@@ -1,0 +1,3528 @@
+# bidking-lab · 项目进度与路线图
+
+> **用途**：新对话/新协作者的起点文件。阅读本文即可了解项目全貌、当前状态、下一步方向。  
+> **相关文件**：`handoff_2026-06-02.zh-CN.md`（最新长线程交接）、`DECISIONS.md`（项目决策记录）、`OBSERVATIONS.md`（技术发现日志）、`TROUBLESHOOTING.md`（踩坑记录）、`docs/project_vision.md`（原始架构设计）、`docs/optimization_roadmap.zh-CN.md`（历史优化路线图）、`docs/live_sampling_guide.zh-CN.md`（实时日志采样指南）。
+
+## 核心文档地图
+
+| 文档 | 作用 | 什么时候先读 | 主要链接关系 |
+|---|---|---|---|
+| [`PROGRESS.md`](PROGRESS.md) | 当前状态、路线图、下一步 TODO | 新对话、接手项目、判断下一步 | 入口文件；引用决策、观察、troubleshooting 和 live 采样指南 |
+| [`DECISIONS.md`](DECISIONS.md) | 记录用户决策、推荐方案、取舍和复查点 | 要改变模型口径、UI 口径或工程边界前 | 决策依据通常来自 `OBSERVATIONS.md`，落地状态回写 `PROGRESS.md` |
+| [`OBSERVATIONS.md`](OBSERVATIONS.md) | 技术发现、实验结果、指标和 checkpoint 细节 | 需要复核某个结论、指标或根因时 | 为 `DECISIONS.md` 提供证据；关键修复可沉淀到 `TROUBLESHOOTING.md` |
+| [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | 已踩坑、症状/原因/修法/验证手册 | 遇到相似 bug、环境问题或回归时 | 只收关键可复用经验；不替代 `PROGRESS.md` 的路线记录 |
+
+阅读顺序建议：先读 `PROGRESS.md` 确认当前主线，再读 `DECISIONS.md` 看边界与取舍；需要证据时跳到 `OBSERVATIONS.md`，遇到具体故障或回归时查 `TROUBLESHOOTING.md`。
+
+---
+
+## 项目定位
+
+`bidking-lab` 是 Steam 游戏 **The Bid King**（竞拍之王）的**本地数据驱动概率分析库**。
+
+### 双重目标
+
+| 维度 | 目标 | 当前状态 |
+|---|---|---|
+| **实际游玩价值** | 量化"选哪张图、用哪个英雄、带什么道具"的最优策略 | ✅ 地图期望值、英雄排名已完成；装箱/道具搭配待做 |
+| **简历/GitHub 展示** | 展示数据工程 + 概率模型 + 可视化能力 | ✅ 2个notebook已完成，可在GitHub直接渲染 |
+
+### 不做的事
+
+- **不是外挂/自动化**（那是 nql1314/bidking-booooot 在做的）
+- **不做 ML 拟合掉率**（Drop.txt 白盒抽样）；**C-35** 起可选 OCR 仅用于**读玩家面板文字**，不参与掉落抽样
+- **不重新分发游戏资源**（`data/raw/` 永远 gitignore）
+
+---
+
+## 架构概览
+
+```
+Layer 3 (表现层)  notebooks / Streamlit UI        [~30%]
+       ↑
+Layer 2 (计算层)  MC / 英雄模型 / 鲁棒估价 / 推断引擎 / 装箱模型  [~70% Phase 1A 推断稳定 ✅]
+       ↑
+Layer 1 (数据层)  Base64解码 → pydantic schema    [~95%]
+```
+
+### 目录结构
+
+```
+bidking-lab/
+├── src/bidking_lab/
+│   ├── extract/          # 每张表一个模块：tables.py, item_table.py, drop_table.py, bid_map_table.py
+│   ├── simulation/       # basic_mc.py, bidding.py, hero_skills.py, hero_value.py, robust_value.py
+│   ├── inference/        # ✅ display.py, quality_priors.py, observation.py (Phase 1A MVP)
+│   ├── capture/          # 🚧 C-35 面板文字解析 → UI 预填（不碰 inference）
+│   ├── data/             # quality.py 等辅助
+│   └── config.py
+├── data/
+│   ├── raw/tables/       # 游戏原始 Tables/*.txt (gitignored)
+│   └── processed/        # 派生 JSON (committed): items.json, maps.json, heroes.json 等
+├── notebooks/            # 01_map_value_distribution, 02_hero_ranking
+├── scripts/              # 探查/分析/demo 脚本
+├── tests/                # 真实抓包/live/OCR/推理回归测试
+├── docs/                 # INSTRUCTIONS.zh-CN.md（用户操作）, project_vision.md, schemas…
+├── PROGRESS.md           # ← 本文件
+├── OBSERVATIONS.md       # 技术发现日志 (47 checkpoints)
+└── TROUBLESHOOTING.md    # 踩坑记录 (52条)
+```
+
+### 技术栈
+
+Python 3.13 · pydantic v2 · numpy · matplotlib + seaborn + pandas · pytest · pip editable install
+
+---
+
+## 当前优化路线（2026-05-30）
+
+详见 [`docs/optimization_roadmap.zh-CN.md`](docs/optimization_roadmap.zh-CN.md)。本节只放开工入口和优先级，避免 PROGRESS 继续膨胀。
+
+### 当前基线
+
+- 最新非 slow 回归：**563 passed / 13 deselected**；`pyproject.toml` 已配置 `pythonpath = ["src"]`，日常可直接运行 `pytest -q -m "not slow"`，不再需要手动设置 `PYTHONPATH`。
+- Fatbeans package7-17 已进入本地回归；新活动生肖物品已从游戏源表同步。
+- 新增地图似然 first cut 并接入 Fatbeans 导入诊断：没有仓储格数时不再误用 `159` fallback，可用艾莎/道具桶约束对多地图做 MC 匹配率排序，并显示总仓储格数的信息压缩效果；Fatbeans 导入后会自动启用 live canonical 输入，实时出价建议 v1 已接入主出价 hint 面板。
+- 出价策略已抽成 `bidking_lab.inference.bid_strategy`：按轮次、信息强度、仓储状态和 MC 后验样本数调整探价/防守/抢仓/停止阈值；低信息 R1 默认保守，不把 P90 当作可追价。
+- 仓储估计 first cut 已抽成 `bidking_lab.inference.warehouse_estimator`：在没有最终总格数时，去掉仓储约束，只用地图/艾莎轮廓/道具桶证据反推总格 P10/P50/P90，并接入 Fatbeans 导入诊断。
+- 主出价策略已消费仓储估计后验：仓储未知但后验区间较窄时可提升信息强度；补信息建议改为成本敏感，R1 优先提示宝光四鉴/抽检二等低成本常态道具，总仓储或高品质扫描只在当前配置已携带且收益明确时建议使用。
+- 补信息 ROI first cut 已抽成 `bidking_lab.inference.tool_info_roi`：从当前 live/Fatbeans 证据出发，估算再用一张道具能压缩多少价值/仓储区间，并按道具价格给出信息 ROI。首批覆盖宝光四鉴、随机抽检（2）、四象/十方窥视、全库透视、常规扫描/估价/均格、总仓储空间。
+- Fatbeans 导入 UI 已改为实战摘要优先：默认区域整合为“Fatbeans 实战摘要”，集中显示决策小结、仓位证据图、布局阶段摘要、仓储估计摘要、补信息 ROI Top3、出价建议摘要；地图似然、inventory、轮次审计、道具结果、玩家 values、完整布局回放全部折叠到详细诊断。已知地图的包默认只跑本地图，不再展开同前缀 10 张地图，导入采样量下调以降低等待时间。
+- 主 hint 与 Fatbeans 导入摘要新增“四行决策小结”：当前最高价是否可追、当前价值区间、当前仓储区间、下一次优先使用道具及原因。该面板只复用已有推理结果，不增加额外采样成本。
+- 新增 `bidking_lab.runtime.TacticalSnapshot` / `TacticalPanelSnapshot` / `ImportOverviewSnapshot`：把当前最高价判断、价值区间、仓储区间、道具建议、布局阶段摘要、布局回放估计、Fatbeans 导入概览元数据，以及道具动作/结果/玩家出价候选明细抽成前端无关对象。Streamlit 的主 hint 与 Fatbeans 摘要现在都消费 runtime snapshot/rows 渲染表格；后续做 PySide/Qt 悬浮窗、桌面小窗或更轻的伴随 UI 时，不需要重写推理链路。
+- Fatbeans package12/13 已验证新机制：
+  - 艾莎 + 全库透视：全库透视包可在结算前锁定 `42 件 / 123 格`，结算价值 `1,295,769`。
+  - 伊森 + 明镜之眼：`100134 明镜之眼` 给全库品质，伊森已知品质轮廓给同一批形状，结算前即可锁定 `58 件 / 216 格`，结算价值 `2,448,112`。
+- `GridItemObservation` 已保留 `local_index`，位置校准 first cut 成立：带 shape 的包里 `local_index = (行 - 1) * 10 + (列 - 1)`。抽检/公开信息/伊森轮廓多样本已对齐；`local_index=None` 已由左上角宗教壁画残片、智能手表样本支持为 protobuf 默认值 `0`。注意宝光/明镜这类 quality-only 的 local 可能不是形状左上角，坐标锚点只信带 `shape_code` 的轮廓 local，品质按 runtime 合并。当前已新增 `live.layout` 纯模块，输出 `LayoutEvidence`、最深行、边界空洞率和底部稀疏风险；`live.replay` 可按状态切片回放布局证据并对比最终结算真值；`LayoutWarehouseEstimate` 已提供保守接口骨架，`LayoutEstimatePolicy` 已让阈值/边界 margin 可被后续样本拟合替换。`LayoutGridView` 已把仓位证据图也抽成前端无关 view model，Streamlit 只负责渲染该结构。最深行只作为布局深度证据展示，暂不作为总格数硬约束。
+- 新增 `bidking_lab.live.evaluation` 与 `scripts/evaluate_fatbeans_layout_samples.py`：可批量读取 Fatbeans JSON 文件/目录，输出每个布局阶段的结构化 CSV/JSONL，包括已知格、最深行、空洞率、最终格、覆盖率、边界误差、估计区间、policy 和风险；也可输出目录级 summary，判断样本数、sparse/dense 覆盖、大仓覆盖和解析错误。后续实时 Fatbeans 接口接入后，这套 rows 可直接作为长期 logs 结构，用于持续校准布局估计、道具 ROI 和出价策略。
+- 2026-05-30 新批次 48 份命名样本已可解析：20 份伊森、20 份艾莎、4 份索菲、4 份加布里，别墅/沉船各 24。过滤旧包后 summary 为 `files=48, files_with_rows=45, rows=128, errors=0, sparse_rows=29, dense_rows=22, large_warehouse_files=3`，已达到 `fit_readiness=可拟合v1`。当前缺布局 rows 的 3 份是只有品质/低轮次信息、缺 shape-bearing 坐标阶段，不影响结算解析。
+- 新增 `scripts/summarize_map_value_tiers.py`：从本地 `BidMap/Drop/Item` 表跑地图价值基线。当前表下，别墅 24xx P50 多在 35-41 万，沉船 25xx P50 多在 52-63 万；`2601 隐秘拍卖会` 已存在且明显更肥，P50≈143 万、P90≈282 万。该脚本用于离线理解地图/高爆图，不影响 live 推理。
+- 公开信息/鉴影/抽检的 item-level 轮廓现在会进入品质桶下界约束：例如 `200050` 只露出一个 3x3 蓝色物品时，会写成“蓝色至少 1 件 / 9 格”，不会误写成整桶总量。`map_likelihood` 与仓储估计可消费这些下界，主枚举仍保持原有精确桶语义。
+- 分类鉴影约束 v1 已接入 MC 软权重：`100151..100159` 鉴影结果会带上 Item.tags 分类码，进入 `SessionObs.category_items`；`map_likelihood` / `warehouse_estimator` 对样本做分类+形状多重集匹配，命中样本保留满权重，未命中样本降权但不归零，避免 action 语义或标签映射未完全校准时误杀真实解。
+- 布局估计 sample-fit v1 已补齐评估口径：`--format policy` 现在同时输出 conservative 与 fitted 的 P50 MAE/bias。48 份样本下，非 sparse 行从 conservative `MAE≈12.72 / bias≈-12.11` 改善到 sample-fit `MAE≈7.61 / bias≈-0.64`；sparse 行仍跳过 P50 点估计。Fatbeans 实战摘要的压缩布局阶段优先展示样本拟合估计，详细诊断仍保留保守估计与样本拟合估计对照。
+- 新增 live monitor / 悬浮 UI first cut：`bidking_lab.live.monitor` 可把 Fatbeans capture 转成 `latest_snapshot.json`、`sessions.jsonl`、`model_eval.jsonl`、`layout_samples.jsonl`；`scripts/run_fatbeans_live_monitor.py` 支持单文件、目录轮询和 stdin payload；`scripts/run_live_overlay.py` 提供一个 tkinter always-on-top 小窗读取最新 snapshot；`scripts/start_live_monitor_overlay.ps1` 可一键启动后台 monitor + 前台悬浮窗。历史回放数据源仍支持 Fatbeans JSON/file/stdin；日志 schema 已包含价值 P50 误差、仓储 P50 误差、布局拟合误差、最高价/抢仓价/停止价与最终价值差。
+- 2026-06-02 新增 Fatbeans WebHook 实时包流入口：`scripts/run_fatbeans_webhook_monitor.py` 接收 Fatbeans WebHook POST 的 TCP 包，按 `BidKing.exe` 和服务器端口 `10000` 过滤/推断 `SEND/REV`，转换成 Fatbeans export rows 后复用现有 parser、v2 推理、日志和 overlay；`scripts/start_live_webhook_overlay.ps1` 可启动 receiver + overlay，并可选启动 Fatbeans 程序。WebHook 请求线程只返回放行，推理在后台 debounce 后执行；当前仍需要在 Fatbeans UI 中配置 WebHook URL `http://127.0.0.1:8765/fatbeans` 并开启抓包。
+- 2026-06-02 Fatbeans WebHook 若受会员限制，不走破解路线，新增自有 WinDivert 只读抓包入口：`scripts/run_windivert_live_monitor.py` 使用 `pydivert` sniff 本机 TCP payload，再用 `psutil` TCP 连接表只保留 `BidKing.exe` flow，转换成同一 Fatbeans export row 形状并复用现有 parser/v2/overlay；`scripts/start_live_windivert_overlay.ps1` 默认 broad sniff + process-match，适配 VPN/TUN/UU/system proxy 端口未知场景，`-PortOnly` 可切回端口 10000 轻量模式。该路线需要管理员 PowerShell 和 `pydivert`，不改包、不注入、不自动竞价。
+- live monitor 的目录轮询已增强为采样模式：等待 JSON 文件 size/mtime 稳定后处理，成功后写 `processed_files.json` 避免重启重复入库，并把原始 JSON 归档到 `data/logs/live/raw/`。`start_live_monitor_overlay.ps1` 默认忽略启动前已存在的 JSON，只处理新文件；如需回放旧目录，传 `-ProcessExisting`。watch 模式默认用 `monitor.lock` 防止多个隐藏 monitor 同时写同一 log dir。这仍然依赖 Fatbeans 或未来 feed 写出 JSON，但你开局前启动 monitor 后，可以连续打局并自动累积 `model_eval.jsonl` / `layout_samples.jsonl`，不需要每局手动交给项目。
+- 新增 `scripts/stop_live_monitor.ps1`：停止后台 `run_fatbeans_live_monitor.py` 进程并清理 `monitor.lock`，用于测试前清掉残留监听进程。
+- `start_live_monitor_overlay.ps1` 已改为幂等启动：已有同 log dir monitor 时不重复启动；stale lock 会自动清理；悬浮窗用 `pythonw.exe` 启动，避免控制台闪窗；monitor stdout/stderr 会写到 `data/logs/live/monitor.stdout.log` / `monitor.stderr.log`。`stop_live_monitor.ps1` 现在会同时停止 monitor 与 overlay。
+- `model_eval.jsonl` 新增 hero、q5/q6 结算真值、q6 后验 P90、q6 低估标记、layout conflict、relaxed exact 等字段；新增 `scripts/summarize_live_model_eval.py`，可直接汇总 live 日志，不必重新解析原始 JSON。汇总默认按 `file` 去重并保留最新行，避免多 monitor 进程造成重复样本拉偏，并输出采样覆盖度与日志质量缺口。
+- 新增 `docs/live_sampling_guide.zh-CN.md`，记录启动顺序、命名建议、每局必须保留的信息、英雄/地图族采样目标和 q6/layout/bid 校准关注字段。
+- 悬浮窗 UI 已增强为卡片式面板：顶部显示 hero/map/round/数据新鲜度，主决策条高亮“可追/防守/停止”，四个指标卡显示决策价值、仓储、q6、布局，底部拆分道具建议、后验诊断、布局风险和回测风险。若 `latest_snapshot.json` 超过 120 秒未更新，会提示检查 Fatbeans 导出或 monitor 进程。`scripts/run_live_overlay.py --demo` 可直接打开内置样本面板，用于无新日志时预览样式。
+- 实时接入策略暂定继续复用 Fatbeans watcher：现有入口已支持 file/watch-dir/stdin，公共边界在 `build_monitor_artifact_from_events` 和 `write_monitor_logs`。后续真实时 feed 优先实现 source adapter 喂同一 artifact builder，不另写一套会分叉日志/UI schema 的 monitor 主干。
+- 新增 v2 全样本批量评估器：`scripts/evaluate_fatbeans_v2_samples.py` 默认扫描桌面 `bid_king_packages` 与项目内 Fatbeans copy，按文件名去重，输出 summary/jsonl/csv，并按英雄、地图族、最终价值档位拆分误差。当前 69 份唯一 JSON 中 67 份可解析、55 份有价值后验、12 份零匹配；P50 MAE 约 37.5 万，P90 覆盖约 50.9%，`>=1.2m` 高价值档 P90 覆盖仅约 14.3%。评估器已输出最终品质分布和最高价值物品，确认最坏误差主要来自未被证据命中的 q6 红货长尾。这确认当前 v2 已能批量诊断，但实战精度瓶颈在红/金高价值长尾和 Ethan 高约束零匹配，不应直接承诺准确性保证。
+- v2 后验报告新增 q6 红货风险诊断：输出匹配样本内 q6 出现率与 q6 价值分位数；没有 q6 证据且匹配样本 q6 率过低时，会追加 `q6_unconstrained_low_sample_rate:*`，供后续出价层避免把低 P90 当成安全上限。
+- v2 新增实战稳健价值 `decision_value`：raw `total_value` 仍保留真实价值后验，`decision_value` 裁掉未确认的 1x1/1x2 百万级 small-and-rare 红货；若抽检/public item-level 已明确 item_id，则照常计入真实价值。分类鉴影 soft score 也已保留 `shape_key`，可按“分类+格数+方向形状”给 4x4 屏风/车身、3x4 雷达、3x3 医疗设备等更明确的候选加权。
+- v2 shape+category 条件采样已起步：分类鉴影等证据带有 category/quality/cells/shape_key 时，会先采一个地图池内可达的匹配候选，再补剩余未知物品；没有匹配候选会输出 `category_target_no_pool_match:*`。新增 `scripts/evaluate_synthetic_v2_specs.py` 和 `data/samples/synthetic_v2/*.json`，用于重复测量医疗 3x3、武器 3x4、古董 4x4 等合成证据对后验的影响。候选口径使用 map-reachable，不使用全 Item 表；高价值/兑换类生肖不进入普通候选，普通 q3 生肖见下一条临时活动口径。
+- 2026-05-31 临时活动口径：`1306003..1306014` 普通十二生肖按 q3 2x2 低价值候选加入基础 MC sampler，因此 v2、地图似然和仓库估计共用同一候选口径；观测到这些 item anchor 时不再报不可达。`1306001/1306002` 与 `1306015` 仍不加入普通候选。该口径应在活动结束后复查。
+- v2 新增唯一质量+形状锚点：当 runtime/local 证据只有 quality+shape、但当前 map pool 内该组合唯一时，会升级成 `KnownItemAnchor`，例如 q3 5x4 `墙面涂鸦墙`、q5 6x3 `单人郊游快艇`。非唯一形状仍保持软约束，例如 q6 4x4 屏风/车身、q6 3x4 外骨骼/相控阵雷达不会被硬锁。
+- 优品估价等 `value_sum` 道具在 v2 中已从单纯 value floor 扩展为 exact-ish 软评分：低于估价值仍直接不匹配，高于估价值的样本按偏离程度降权，避免 Ethan 局把 q4 估价当成只增不减的下界。
+- v2 bucket target 已拆分 exact 与 floor：明确 `total_cells/count` 会作为 `total_cells_exact/count_exact` 进入条件采样，`*_min` 与 item-level evidence 仍作为下界。strict exact 零匹配时会自动降级为 floor 重跑，并在 diagnostics 写 `relaxed_exact_bucket_targets:*`。exact bucket 组合采样已加入“件数+格数”可达性填充，且分类/形状 target 会先入桶再填剩余 exact 目标。布局 footprint 数量也会抬高 total draws 下限，减少事后过滤浪费。69 份样本 `--trials 300` 当前为 `valued=61, zero_match=6, relaxed_exact=6`，decision P50 MAE 约 34.4 万；fallback 下降但 Ethan 高约束/重叠 footprint 的 zero-match 仍需分层处理。
+- v2 批评估器新增面向后续校准的诊断计数：`q6_false_low_risk`、`q6_p90_misses_truth`、`layout_conflict`、`zero_match_with_layout_conflict`、`zero_match_after_relax`。当前 69 份样本分别为 `5 / 21 / 40 / 6 / 5`，说明下一阶段重点应是 q6 residual 与布局冲突分层，而不是简单增加 trials。
+- 2026-05-31 新增样本后，桌面目录 + 项目 copy 共 174 个唯一 Fatbeans JSON，当前代码 `--trials 300` 批评估为 `ok=168, valued=158, zero_match=10, relaxed_exact=11, q6_false_low_risk=12, q6_p90_misses_truth=61, decision_value_mae≈36.9万, value_p90_coverage≈54.4%`。红货/q6 residual 和 Ethan exact bucket zero-match 仍是主要瓶颈。
+- 采样缺口统计已统一地图族口径：240x/340x/440x 记为 villa，250x/350x/450x 记为 shipwreck，2601 记为 hidden。`collection_readiness` 现在同时给出主要桶 30 局目标和 hidden 冷启动目标。源 JSON `--trials 30` 快速扫下，Aisha villa 52、Aisha shipwreck 53、Ethan villa 38、Ethan shipwreck 25、hidden 0；该批旧建议已被 2026-06-01 q6 residual boost / live shadow 新目标覆盖，当前按 Aisha/Ethan 沉船各 20 份、Aisha hidden 10 份、Ethan hidden 5 份推进。
+- 2026-05-31 下午新增沉船样本已复制到本地 `data/samples/fatbeans/`，当前源 JSON 共 194 份唯一文件，`ok=188`。除 hidden 外主要桶都已超过校准门槛：Aisha shipwreck 61、Ethan shipwreck 37、Aisha villa 52、Ethan villa 38。
+- public-info 约束继续增强：`200048` 最高品质 item-level 信息现在给 v2 写入 `max_quality` 上界，`200050` 最大占格 item-level 信息写入 `max_item_cells` 上界；随机 2/4/6 件展示仍按已知 item/quality/shape 进入 anchor、bucket floor 和 layout footprint，不把其均格 value 误作整局统计。
+- v2 批评估器新增 q6/zero-match 分层归因：每行输出 q6 P90 under-by、q6 top item 尺寸段、anchor 数量段、public 上界参与情况、zero-match root 和 q6 miss root；summary 新增 `q6_value_p90_coverage`、`zero_match_root_causes`、`q6_miss_root_causes`、`q6_calibration_priority`、`q6_risk_groups`。194 份唯一 JSON、`--trials 80` 快速扫下，`ok=188, valued=175, zero_match=13, relaxed_exact=22, layout_conflict=84, q6_false_low_risk=14, q6_p90_misses_truth=77, q6_value_p90_coverage≈51.3%, decision_value_mae≈40.4万`。当前优先级明确为 Aisha shipwreck q6 residual、Ethan exact bucket 可达性、layout footprint 可信度分层，而不是全局抬红货权重。
+- v2 exact bucket 继续推进：layout overlap/overflow 现在输出 `trusted_footprint_count` 与 `footprint_count_relaxed:*` 诊断，但暂不改变采样件数下界；cells-only exact bucket 新增组合采样，处理 `q3:cells=27` 这类只有总格 exact、没有 count exact 的 Ethan 证据。194 份唯一 JSON、`--trials 80` 快速扫下 `relaxed_exact` 从 22 降到 19，`zero_match` 维持 13，决策价值 MAE 基本不变；下一步仍是 q6 residual/形状条件采样，而不是 layout 硬降级。
+- v2 `decision_value` 扩展为常规可规划价值：raw `total_value` 仍保留百万级尾部作为上界风险；未被 exact anchor 或 shape+category 证据支持的超跑钥匙、永乐、雷达等百万级尾部不进入常规出价口径。批评估的 `final_decision_value` 同步使用该口径，194 份唯一 JSON、`--trials 80` 下整体 `decision_value_mae≈39.4万`，高价值档约 `80.0万`，用于后续“经常值覆盖”校准。
+- v2 非唯一 quality+shape 证据已进入条件采样：无法唯一锁 item_id、且没有分类标签的形状轮廓会生成 `ShapeTarget`，要求样本中至少采到一个同品质同形状物品；唯一 quality+shape 仍走 `KnownItemAnchor`，shape+category 仍走分类目标。194 份唯一 JSON、`--trials 80` 快速扫下，`zero_match=11`、`relaxed_exact=18`、`valued=177`，比上一轮继续改善；Aisha shipwreck q6 P90 undercoverage 仍是下一阶段主瓶颈。
+- q6 样本率诊断改为加权口径：`report.q6_match_rate` 现在使用与后验分位数相同的 evidence weights，而不是未加权命中数。该改动不改变 q6/价值 P90，只让日志、悬浮窗和 `q6_false_low_risk` 更准确反映分类、布局、估价与 public 上界后的有效 q6 质量。
+- v2 新增 q6 Drop 先验对照：`QualityDropPrior` 从原始 Drop 多层权重、地图子池权重、每局件数范围和 `n_min/n_max` 计算 q6 每局出现率与期望价值；`PosteriorReport`、live monitor、`model_eval.jsonl` 和批评估行现在输出 `q6_prior_match_rate` / `q6_prior_expected_value`。194 份唯一 JSON、`--trials 80` 下总体后验指标不变，但 `q6_miss_root_causes` 新增 `below_drop_prior=29`，明确标出“Drop 先验很高但证据后验 q6 被压低”的局。
+- q6 评估口径已拆成 raw 结算与可规划红货：posterior 新增 `q6_decision_value`，批评估新增 `final_q6_decision_value`、`final_q6_trimmed_tail_value`、`q6_plannable_p90_misses_truth`、`q6_plannable_value_p90_coverage` 和 `q6_plannable_calibration_priority`。271 份唯一 JSON、`--trials 40` 快速扫下，raw q6 覆盖约 `49.3%`，可规划 q6 自身覆盖约 `48.2%`，尾部 q6 事件 13 份、裁尾中位约 `123.7万`。结论是极端尾部不再作为准确率主线，但 Aisha shipwreck 的可规划 q6 residual 仍需继续优化。
+- q6 可规划低估根因继续拆分：posterior/live/batch 新增 q6 件数和格数分位，以及 Drop 先验 q6 期望件数/格数；批评估新增 `q6_plannable_miss_root_causes`。271 份、`--trials 20` 快速扫下，低估不只来自 q6 没采到；`q6_cells_under=92`、`q6_count_under=90`、`q6_count_below_prior=83`、`q6_cells_below_prior=70`、`low_q6_value_distribution=56`、`mixed_q6_sample_value=44`、`layout_conflict=44`、`below_drop_prior=35`。Aisha shipwreck 仍是第一优先级，说明下一步应处理 q6 件数/格数与 layout footprint 可信度，而不是继续全局抬 q6 出现率。
+- 空间/装箱主线已开始接入 q6 诊断：posterior/live/batch 新增 `remaining_cells_after_layout`、`q6_space_pressure` 和 `q6_space_overflow_rate`，用于判断已知 footprint 占用后，剩余 q6 格数是否在剩余空间里显得过满或不合理。当前只做轻量可行性诊断，不做完整装箱搜索；后续格子装箱可视化应消费这些字段，归属“空间/布局约束”阶段，而不是单纯 UI 美化。
+- 新增 `q6_space_diagnostics`，从另一个角度拆 q6 低估：若多数 miss 是低空间压力且无溢出，优先修 residual q6 count/cell sampler；只有空间压力高或溢出集中时，才优先上 layout feasibility weight 或装箱搜索。271 份、`--trials 20` 快速扫中，117 个可规划 q6 低估里 90 个属于低空间压力，14 个属于高空间压力/溢出；当前推荐转向 `residual_q6_count_cell_sampler`，暂不把完整装箱搜索作为准确率主线。
+- 低空间 residual floor 离线实验已加入：单独用“低空间压力 + q6 count/cell 低于先验”仍会命中 26 个无 q6 代理，不够窄；再加 hero+map+evidence_profile 正净收益门控后，无 q6 代理降到 6，但 coverage 略低于现有 profile gated floor。因此低空间压力更适合作为“瓶颈解释/诊断字段”，正式 residual sampler 仍应按 `Aisha+shipwreck+shape+layout` 等 profile 门控推进。
+- v2 residual q6 sampler 已新增默认关闭的实验开关：`q6_residual_boost` 只在 residual 抽样阶段提高 q6 候选权重，默认 `1.0` 与生产路径一致；批评估 CLI 新增 `--q6-residual-boost` 和 `--q6-residual-boost-gate shipwreck_profile_v1`。271 份、`--trials 20` 下，全局 boost=3 把可规划 q6 coverage 提到 `65.3%`，但无 q6 正报率从 `77.4%` 升到 `93.6%`；profile-gated boost=5 coverage `60.2%`、decision MAE `36.6万`，无 q6 正报率保持 `77.4%`。结论：boost 有效，但只能作为 profile-gated residual sampler 候选，不进入 live 默认。
+- 批评估 summary 新增 `q6_residual_boost_experiment` 结构化块，记录本次 boost/gate、激活行数、active no-q6 代理和激活 profile。`shipwreck_profile_v1 + b=5` 快速扫激活 113/264 行，集中在 Aisha/Ethan shipwreck 的 4 个 profile；active no-q6 代理 8 行。后续更高 trials 对比可以直接读取该块，不再靠手工命令拼结果。
+- 新增 `scripts/compare_q6_residual_boost.py`，可一次性比较 baseline、global b=3、profile-gated b=3、profile-gated b=5，并输出 q6 coverage、miss、decision MAE、no-q6 P90 正报代理和相对 baseline 的 delta。示例：`python scripts/compare_q6_residual_boost.py --trials 80 --format json`。
+- `compare_q6_residual_boost.py` 已补进度输出和配置筛选。当前默认全量会去重扫描 271 份 Fatbeans 样本，`--trials 80` 跑 4 套配置相当于 86,720 个 posterior trial，耗时较长且不是交互式命令。快速验证建议先跑 `--configs baseline profile_b5`，确认 profile-gated b=5 后再补全 `global_b3/profile_b3`。
+- `compare_q6_residual_boost.py` 继续补 paired 对比字段：逐样本比较 baseline 与 boost 后输出 helped、newly_missed、still_missed、no-q6 new-positive 和 q6 P90 delta。当前 271 份、`--trials 20 --configs baseline profile_b5` 下，`profile_b5` paired 修复 30 个 q6 低估、没有新增 q6 newly-missed、没有新增 no-q6 positive，但仍剩 87 个 q6 miss；因此它是合格 shadow，不是最终 q6 解法。
+- live monitor 已接 `profile_b5` q6 residual boost shadow：实时 artifact 和 `model_eval.jsonl` 会记录 shadow 是否激活、q6 决策 P90、q6 count/cells P90、相对 baseline q6 P90 delta、helped/false-positive proxy 等字段；正式 `v2_posterior_rows`、`decision_value` 和 `bid_rows` 仍使用 baseline，不抬正式出价。当前新版采样目标按最新需求调整为 Aisha/Ethan 沉船各 20 份、Aisha hidden 10 份、Ethan hidden 5 份。
+- 2026-06-01 晚间桌面源目录已增量同步到项目 `data/samples/fatbeans/`：项目 copy 与桌面源目录均为 311 份 JSON。当前 `--trials 20 --configs baseline profile_b5` 下，baseline 为 `ok=304, valued=285, zero_match=19, q6_plannable_coverage=45.85%, miss=137, decision_MAE≈38.93万`；`profile_b5` 为 `valued=286, zero_match=18, coverage=62.60%, miss=95, decision_MAE≈35.59万`。paired 审计修复 42 个 q6 低估，没有新增 q6 newly-missed 或 no-q6 new-positive；但无可规划 q6 局的正报金额中位从 `18.0万` 升到约 `30.86万`，所以继续只做 shadow。
+- 公共信息路由已做窄化：随机 3/6/9/12 件均价原值继续写日志，不作为整库或品质桶硬过滤；低于 `20000` 的随机均价只从 q6 evidence-profile 路由降为低信号，避免几千银币噪音让沉船 shadow gate 绕路。`200036` 已按“所有紫色品质藏品平均价值”接为 q4 soft target。
+- Aisha 沉船底部布局风险已加入 batch/live 诊断，不改变 posterior：当前全量基线中 `bottom_row >= 16` 的可规划 q6 miss 为 `21/23=91.3%`，低于阈值组为 `50/78=64.1%`；cells P50 绝对误差均值分别为 `37 / 18`。批评估另将全部历史 JSON 标为 `q6_shadow_reference_coverage`；只有 live 汇总的 `q6_shadow_sampling_progress` 统计 shadow 上线后的新日志，避免历史样本误报收数完成。
+- `q6_count_cell_prior_floor_experiment` 已作为离线 what-if 接入评估器：只在 q6 count/cells P90 低于 Drop 先验期望时尝试用 q6 先验价值做 floor。`floor_ratio=0.5` 改善很小；`1.0` 可把可规划 q6 coverage 提到约 `58.9%`，但会覆盖 26 个无可规划 q6 的 eligible 行。因此暂不进入正式 posterior，后续只考虑更窄的 Aisha shipwreck 风险提示或证据门控。
+- 评估器新增 `q6_count_cell_prior_gated_floor_experiment`：只保留“q6 低估改善数 > 无 q6 误触发代理数”的 hero+map_family 组合。271 份、`--trials 20 --q6-residual-floor-ratio 1.0` 下，门控只选中 `Aisha+shipwreck` 与 `Ethan+shipwreck`；可规划 q6 coverage 约 `57.1%`，miss 从 `117` 降到 `94`，eligible 无 q6 代理从全局 floor 的 `26` 降到 `8`。这说明 shipwreck 可以作为下一步实战 q6 风险门控候选，villa 暂不适合。
+- live snapshot / overlay 已把 q6 count/cells 低于 Drop 先验期望的情况转成风险提示：`v2_posterior_rows` 输出 `q6先验缺口`、`q6先验风险参考`、`q6先验风险`；shipwreck 正净收益门控局额外输出 `q6实战门控` 和 `q6实战参考P90`。`model_eval.jsonl` 同步结构化字段，`summarize_live_model_eval.py` 会统计风险次数、参考上界中位数、实战门控次数和分组风险率。悬浮窗只显示黄色风险上界提示，不抬高正式 posterior、bid hint 或 `decision_value`。
+- 评估与 live 日志新增轮次/信息密度分层：`evidence_stage` 按 `early_1_2 / mid_3_4 / full_5` 拆分，`information_density_score/band` 综合轮次、anchor、shape/category/反排与可信 footprint。271 份、`--trials 20` 快速扫分布为 low `40`、medium `125`、high `99`；高信息局当前 MAE 仍高，主要因为样本更集中在复杂/高价值/高约束局，所以评估器同时输出 `density_value_tier` 和 q6 按信息密度分组，后续优化要按“信息密度 + 价值档 + 地图族”看，不再混成一个总 MAE。
+- live `model_eval.jsonl` 的 q6 实战门控已补齐真阳性/假阳性评估字段：`q6_practical_gate_hit`、`q6_practical_gate_under_before`、`q6_practical_gate_covered_after`、`q6_practical_gate_helped`、`q6_practical_gate_false_positive_proxy`、`q6_practical_p90_under_by`。`summarize_live_model_eval.py` 会按 hero、hero+map_family、evidence_stage、information_density 统计门控是否真的覆盖了低估，以及是否误触发无 q6 局。现有 140 行 live 日志是旧 schema，门控统计为 0；后续用新版 monitor 采集后才会产生有效真阳性/假阳性。
+- 批评估和 live 汇总新增 `evidence_profile_key`，按公开信息/道具证据类型拆分：`public:max_quality`、`public:max_item_cells`、`public:random_avg`、`tool:category`、`shape`、`layout`。同时修正信息密度的 public bonus 计算顺序。271 份、`--trials 20` 快速扫后信息密度分布为 low `38`、medium `124`、high `102`；`Aisha|high` 样本 93 份且 decision MAE 约 `44.6万`，说明艾莎高信息局仍集中在复杂/高价值/高约束局。q6 profile 显示 `shape+layout`、`public:random_avg+shape+layout`、`tool:category+shape+layout` 仍有明显 q6 miss，下一步应优先优化这些“看见很多但 q6 仍低估”的组合。
+- q6 count/cell floor 新增更细的 `q6_count_cell_prior_profile_gated_floor_experiment`，按 `hero+map_family+evidence_profile` 做正净收益门控，并要求每组至少 10 个可规划 q6 truth。271 份、`--trials 20 --q6-residual-floor-ratio 1.0` 下，profile 门控只保留 4 个较稳组合，eligible 无 q6 代理从 hero+map 门控的 `8` 降到 `6`，但可规划 q6 coverage 从 `57.1%` 降到 `54.8%`、miss 从 `94` 增到 `99`。结论：profile 门控适合作为候选诊断，暂不替换 live 的 shipwreck 风险门控。
+- 批评估新增 `q6_actionable_targets`，把 hero/map、证据 profile、信息密度的 q6 分组自动转成可行动优先级。271 份、`--trials 20` 下前列目标为：`evidence_profile=shape+layout` 推荐 `remaining_space_feasibility`，`Aisha+shipwreck` 推荐 `shipwreck_q6_count_cell_gate`，`information_density=high` 推荐 `high_density_layout_conflict_audit`，`Aisha+shipwreck+shape+layout` 推荐 `shipwreck_shape_space_residual`。这与当前手工判断一致，下一步应优先推进空间/剩余 q6 件数组合，而不是继续只加全局权重。
+- 公开信息语义已在当前 311 份样本中闭环：17 个 public info id 均有模型用途或诊断用途，`pending_model_ids/unknown_ids/needs_screenshot_ids` 为空。`200048` 最高品质与 `200050` 最大占格现在进入 sampler 候选预筛，先排除超过上界的候选；`200050` 允许等于最大格，且只排除更大格子，不排除更小红货。
+- 公共均格/品质均格 fixed32 已接入 v2 soft evidence 和批评估唯一性审计。精确 float 消除了 OCR 两位小数歧义，但不必然给唯一解；当前样本里 total/all avg cells 只有 3 行在诊断边界内唯一，9 行仍多解，q4/q5 均格样本全部多解。因此正式 posterior 继续加权，不把均格统一硬解成唯一 `(count,cells)`。
+- 新增 `scripts/export_fatbeans_review_samples.py`，把长 Fatbeans JSON 裁成便于人工审查的 CSV/JSONL。当前已导出 `data/review/fatbeans_compact/summary.csv`、`events/*.jsonl` 和 `errors.jsonl`：306 份成功、5 份仍是已知 malformed frame-length 原始抓包。
+- 评估器新增 `case_tags` 与扩展 `case_breakdown`，固定拆出 normal/single-round/tail/no-q6-control/zero-q6-proven/high-info-miss/avg-cells unique/ambiguous。311 份、`--trials 5` 下，baseline normal-case q6 可规划覆盖约 `28.2%`，`profile_b5` 提到约 `44.4%`，但 normal no-q6 新正报率也上升到 `11.1%`，因此仍只做 shadow。
+- v2 暂不启动 v3 重写：当前 high-info q6 miss 主要集中在 Aisha shipwreck + `shape+layout`，根因为 q6 count/cells under，而不是 public-info、均格或 evidence store 大面积失效。新增默认关闭的 `q6_residual_prior_floor_ratio` sampler 实验；`aisha_shipwreck_profile_v1` 下 ratio `1.0` 可把 high-info q6 miss 从 79 降到 39，但 no-q6 正报中位抬到约 `35.0万`，所以不进入正式 posterior/bid hint。
+- q6 residual gate 继续收窄：新增 `aisha_shipwreck_deep_v1`（Aisha + shipwreck + shape/layout profile + bottom_row >= 13）和 compare 配置 `aisha_deep_floor1`。311 份、`--trials 80` 三配置复测下，`profile_b5` 修复 43 个 q6 低估、coverage 更高，但 no-q6 正报金额中位从 `18.72万` 到 `25.23万`；`aisha_deep_floor1` 修复 30 个 q6 低估、无 q6 newly-missed、无 no-q6 new-positive，no-q6 中位不变，decision MAE `38.10万 -> 33.04万`，normal q6 覆盖 `43.50% -> 57.50%`，high-info q6 miss `67 -> 45`。当前优先把 `aisha_deep_floor1` 作为更稳的 shadow 候选。
+- live monitor 已新增第二套 q6 residual shadow：保留旧 `profile_b5` 的 `q6_residual_boost_shadow_*` 字段，同时新增 `aisha_deep_floor1` 的 `q6_residual_deep_floor_shadow_*` 字段和 `q6_residual_sampler_shadows` 列表。该路径只写 artifact / `model_eval.jsonl` / 汇总统计，不改变正式 posterior、bid rows 或出价建议。为控制实时性能，shadow 默认使用 `min(n_trials, 80)`，可用 `--shadow-trials` 覆盖；两套 shadow 都激活的样本在 `n_trials=500` 未限流时约 `26.6s`，限流后 smoke 为约 `10.0s`。
+- `aisha_deep_floor1` 剩余 q6 miss 已审计：`--trials 20` 下 111 个 miss 中只有 11 个还在当前 active gate，100 个在非激活路径，主要分散到 Aisha villa、Ethan shipwreck layout/shape。继续放宽 prior-floor 到 `shipwreck_profile_v1` 或 `aisha_shipwreck_profile_v1` 虽可多修 22-37 个 miss，但会把 no-q6 正报金额中位抬到约 `37.68万`，且 active no-q6 行全部正报；因此当前不扩大 gate，转入 live shadow 收证。
+- live shadow 汇总新增 `q6_shadow_candidate_readiness`，按候选输出 `needs_live_samples / blocked_false_positive / no_observed_help / candidate_for_review`。后续是否把 `aisha_deep_floor1` 从 shadow 升级，优先看该块，而不是手工拼 helped 和 false-positive。正式 UI 的 baseline-first、shadow 后台补齐方案已放入 live 采样指南规划，暂不实现。
+- live 性能 telemetry 已进入 artifact 和 `model_eval.jsonl`：`processing_seconds`、`monitor_n_trials`、`monitor_shadow_trials`、`monitor_roi_trials`。`summarize_live_model_eval.py` 现在会输出处理耗时中位/P75 与 trials 分布，后续判断是否要异步化或降低 live trials 不再靠手工 stopwatch。
+- q6 分组摘要新增空间压力字段：`q6_count_under`、`q6_cells_under`、`q6_count_below_prior`、`q6_cells_below_prior`、`trusted_footprint_median`、`footprint_occupied_cells_median`。271 份、`--trials 20` 下 `shape+layout` 的可规划 q6 miss 为 `56/111`，其中 q6 count under `46`、cells under `49`、count below prior `43`、cells below prior `38`，layout conflict `68`，可信 footprint 中位 `27`、已占格中位 `70`。这进一步确认主瓶颈是剩余空间/剩余 q6 件数组合与 layout 可信度。
+- 新增 `scripts/compare_grid_view_reference.py`，只读对照外部 `external_references/grid_view_v1.3.7` 的 `map_quality_p50_out.csv` 与本项目 Drop/Item/BidMap 推导。2401/2501/4401/4501 的 q5/q6 draw probability、p50 per item、p50 per cell 基本一致，2601 hidden 也只存在很小差异；因此外部项目短期可参考空位 phantom、出价配置和 UI 思路，不需要先反编译 `grid_view.exe`。
+- live monitor / bid hint 主口径已接 v2 `decision_value`：`bid_rows` 新增“价值口径 / 决策价值 P10/P50/P90 / 原始价值 P10/P50/P90 / 后验诊断”，`v2_posterior_rows` 保留完整 v2 后验，runtime panel 的“当前价值区间”优先显示决策价值。`model_eval.jsonl` 也新增 `decision_value_p50` 和误差字段，后续可分开评估实战稳健价值与 raw 结算价值。
+- `scripts/summarize_live_model_eval.py` 与 `scripts/evaluate_fatbeans_v2_samples.py` 都已输出 bid_gap 统计，可按 hero / map_family 汇总最高价与结算价值比例、过结算率、停止价或最高价与结算差值。174 份源 JSON 重扫口径下，Ethan 最高价/结算中位比约 1.169，Aisha 约 1.026；沉船约 1.113，别墅约 1.047，支持“Ethan 和沉船对手给价更激进”的观察。
+- 上一次完整 smoke 基线见交接记录；真实 OCR 图片回归仍按 `slow` 管理。
+- `python scripts/demo_scenarios.py`：端到端 demo 正常
+- 已完成首个性能优化：`SessionTruthSampler` 预编译 drop pool，解决 anthology 地图重复 `flatten_pool` 的冷采样瓶颈
+
+### 优先级
+
+| 优先级 | 方向 | 决策 |
+|---|---|---|
+| P0 | UI 切换效率 | 已完成读数 fragment 与 hint 独立容器 first cut；后续按指标继续拆 render 函数 |
+| P0 | Pytest smoke 加速 | 真实 OCR 图片回归标 `slow`，日常用 `scripts/test_smoke.ps1` |
+| P0 | 启动去阻塞 | 已完成：首屏不初始化 OCR；首次 OCR 操作按需加载模型 |
+| P0.5 | 观测事件接口 / 状态机地基 | OCR/手填已镜像进 shadow live state；后续切换推理输入 |
+| P0.5 | Fatbeans → live shadow | Fatbeans JSON 可导入；艾莎 q1-q4 reveal 已自动转为 bucket count/cells |
+| P1 | Session-level 联合候选 | 已接入分析估算与常驻「联合筛选」tab |
+| P1 | 地图似然 / 总仓储价值量化 | 已新增独立 `map_likelihood` 模块并接入 Fatbeans 导入诊断；live shadow 可作为主推理输入 |
+| P1 | 仓储估计 | 已新增独立 `warehouse_estimator` 模块；导入 JSON 后展示跨候选地图的总格 P10/P50/P90 |
+| P1 | 实时出价建议 v1 | 已接主出价 hint 面板；策略阈值按轮次、信息强度、仓储后验动态调整，补信息建议已加入成本意识 |
+| P1 | 补信息 ROI | 已新增当前局面工具信息 ROI；明镜之眼已登记为全库品质信号，但默认只作为高成本/机制验证道具，不常规推荐 |
+| P1 | 位置/堆叠校准 | 已保留 `local_index` 并确认 10 列 0 基坐标公式；`live.layout` 已抽出证据结构和风险指标，`live.replay` 已支持逐状态回放并对比结算真值，`LayoutWarehouseEstimate` 已有保守骨架，`LayoutEstimatePolicy` 已支持后续样本拟合替换阈值，仓位证据图已接入诊断，`LayoutGridView` 已让网格可复用到悬浮 UI；布局回放估计行和批量样本评估器已完成；公开 item-level 轮廓已作为品质下界进入地图/仓储估计 |
+| P1 | 前端解耦 / 悬浮 UI 地基 | 已新增 `runtime` snapshot 层；`TacticalSnapshot`、`TacticalPanelSnapshot`、`ImportOverviewSnapshot`、Fatbeans 诊断 rows、布局回放 rows 和 `LayoutGridView` 已覆盖小结、实战摘要块、导入概览、明细诊断、布局估计和仓位图。当前保留 Streamlit 作为实验台，后续若做悬浮窗，只接这些前端无关结构，不直接依赖 Streamlit/HTML 表格 |
+| P1 | 枚举缓存 | bucket fingerprint cache 已完成；joint cache 按指标决定 |
+| P1 | 自动重算状态机 | 仅轮次、道具揭示、公开信息等事件置 dirty 并重算 |
+| P1 | 多级评估 + Pareto | 状态机稳定后做；秒仓/放仓作为动作层再恢复 |
+| P1 | 地图价值分层 / 隐秘拍卖会 | 已新增离线 MC 报表脚本；`2601 隐秘拍卖会` 已在地图表中，后续可增加“稀有红货计入/排除”的 scenario filter |
+| P2 | 推理并行 | 先缓存/向量化，只有独立分支仍慢时再并行 |
+| Research | Fatbeans / 网络抓包直读 | Fatbeans JSON 离线 adapter 已接 live shadow；艾莎轮廓、伊森轮廓、明镜品质、全库透视、道具结果、结算 inventory 已稳定解析；只读验证，不做注入/改包/自动竞价 |
+
+---
+
+## 已完成的核心模块
+
+### 1. 数据层（Layer 1）
+
+**游戏数据格式**：`Tables/*.txt` = Base64 编码的 UTF-8 TSV，全部 11 张表列数一致。
+
+| 表 | 列 | Schema | 关键字段 |
+|---|---|---|---|
+| Drop.txt | 5 | `DropPool` + `DropEntry` | 608个池，4层嵌套递归树 |
+| Item.txt | 38 | `Item`（13字段） | id, name, quality(0-6), value, **shape_w, shape_h** |
+| BidMap.txt | 21/23 | `BidMap`（17字段） | 兼容旧 105 张与新 125 张地图，drop_pool_id, 经济参数, **round_category_hints** |
+| BattleItem.txt | 6 | `BattleItem` | 64个道具 |
+| Hero.txt | 21 | `Hero`（基础） | 20个英雄 |
+| Cabinet.txt | 14 | 已探查 | 6×7网格，12种柜子 |
+
+**关键机制**：Drop 池是 4 层嵌套：`map pool → 品质分布 → 分类×品质盲盒 → 叶子池`。  
+`flatten_pool()` 递归展平为 `{item_id → 有效概率}` 扁平分布。
+
+### 2. 计算层（Layer 2）
+
+#### Monte Carlo 基础模型
+- `simulate_map()`：单场物品价值期望/方差/分位数
+- 结果：沉船(~71万) > 别墅(~46万) > 集装箱(~26万) > 仓库(~10万) > 快递(~5万)
+- 同主题不同难度档位**共用同一drop pool**，只是经济参数（入场费/预算/轮次）不同
+
+#### Bidding 经济模型
+- `simulate_session()`：含预算、入场费、NPC底价、bid_factor
+- **简化决策**：明暗拍 drop pool 完全一样、预算约束在绝大多数场景不生效 → 核心模型不区分明暗
+
+#### 英雄技能模型 v2（timing-aware）
+- 20个英雄的技能 → `SkillEffect` DSL（信息类型 × 分类过滤 × 品质过滤 × 时间）
+- **核心改进**：v2 加入 `available_at_round` + `TIMING_WEIGHTS`（R1=1.0 → R5=0.05）
+- 估算公式：非线性三段（≥0.5 → 80%真值, ≥0.2 → 40%真值, <0.2 → 均值）
+
+#### Robust 估价（Checkpoint #7）
+- `robust_value.robust_session_value` 默认剔除 **value ≥ 100万 且 area ≤ 3** 的"小而贵陷阱"
+- 别墅高仓 -4.8% / 沉船大仓 -5.2% / 快递集装箱 0%
+- 长尾红物名单（14 件 > 100 万）+ 形状指纹字典已就绪
+- `winsorize` 工具用于 notebook 视觉去尾
+
+### 3. 表现层（Layer 3）
+
+- `notebooks/01_map_value_distribution.ipynb`：5主题 session value 小提琴图 + 分档对比 + 品质分布
+- `notebooks/02_hero_ranking.ipynb`：20英雄×5地图 热力图 + v1/v2对比 + Top-5 柱状图
+
+---
+
+## 核心分析结论
+
+### 当前聚焦的 2 英雄（Phase 1A 测试范围，2026-05-15 截图校准后）
+
+| 英雄 | 技能名 | 信息维度 | 道具协同方向 |
+|---|---|---|---|
+| **艾莎(103)** | 遗珍慧眼 | 4 级渐进：R1=白, R2=绿, R3=蓝, R4=紫；**每轮揭示该品质全部物品的轮廓+品质** | 配 X品均格 + X品估价 反推价值（轮廓+品质已固定，缺的是 value） |
+| **伊森(208)** | 空间觉知 | R1=随机 5 个 category 的全部物品轮廓（**无品质无 hover 提示**）；R5=全部轮廓 | 配**珍品均格 + 珍品估价** 联立反算红物件数；用地图爆率猜分类 |
+
+**为什么只 2 个**：艾莎/伊森都是 OUTLINE 系（艾莎额外带 QUALITY），都依赖"看到形状后再用道具补 value"，共用同一套推断引擎。玛丽亚/索菲（直接报价 + 品质揭示）暂停。
+
+**校准后的 v2 ranking 变化**：
+- **伊森从 A 飙到 S**（别墅 +13.7% → **+20.5%**；沉船跳到 #2 +15.3%）——5 categories 修正后覆盖率翻倍
+- **艾莎从 S 略微下调**（+22.4% → +20.3%）——OUTLINE_QUALITY 升档但 R1=白品价值低、R4=紫品 timing 衰减重
+
+**实战道具搭配（用户提供）**：
+- 默认：3 张白绿 + 1 张蓝
+- 伊森专属：珍品均格 + 珍品估价（联立反算红物件数）
+- 绿色均格类：便宜但**显示整数时几乎白用**（信息量瞬间归零）
+
+### 地图自带先验（Checkpoint #7）
+
+`BidMap.round_category_hints` 是 5 元素列表，每轮拍卖前 UI 预告的分类（`0` = 无提示）：
+
+| 主题 | 提示数 | 模式 |
+|---|---|---|
+| 21xx 快递 / 22xx 仓库 | 5 个 | 全提示，入门 |
+| 23xx 集装箱 | 3 个 | R1/R3/R5 |
+| 24xx 别墅 | 2 个 | R1+R3 |
+| 25xx 沉船 | 1 个 | 仅 R1，道具/英雄价值最高 |
+
+- R1 100% 给提示；值域只有 `{102医疗, 103时尚, 104武器, 105珠宝}`
+- 明拍 / 暗拍提示完全一致（再次印证物品分布无差异）
+
+### 形状指纹字典（Phase 1A 直接可用）
+
+```
+5×4  → 唯一: 墙面涂鸦墙 (蓝, 8880)         ★ 单点识别
+6×3  → 唯一: 单人郊游快艇 (金, 10.7万)      ★ 单点识别
+4×4  → 5 件 (4 红/金 + 1 蓝石狮子)         ★ 80% 红/金
+3×4 / 3×5 / 5×3 / 6×1 → 全是金红, 无混淆
+```
+
+详见 `scripts/probe_distinctive_shapes.py`。
+
+### 长尾红物降权（Checkpoint #7）
+
+14 件 value > 100 万的红物中，**9 件形状 1×1 / 1×2 / 2×1 / 1×3**（金陵折扇1937万、非洲之心1314万、黑王子300万、羊脂玉251万、超级跑车钥匙、百年人参 …）。  
+这些物品池里数百件便宜物共存，**形状不可识别** → `robust_session_value` 默认归零。
+
+**保留**的"大而贵"红物（形状强信号）：复苏呼吸机3×3、相控阵雷达3×4、蓝鳍金枪鱼3×5、翡翠屏风4×4、永乐大典2×2 等。
+
+### 仓库大小先验
+
+| 仓库 | 总格数 | 决策含义 |
+|---|---|---|
+| 小仓 | < 70 | 极保守，几乎不上道具 |
+| 中仓 | < 110 | 白绿道具为主 |
+| 大仓 | > 130 | 才考虑金道具 |
+
+玩家用 `总仓储空间` 道具（金色）可直接读总格数；推断引擎把它作为强先验。
+
+**形状特例**：看到 5×4 时 → 总格数减 20（这格属于已知的低价值蓝物"墙面涂鸦墙"）。
+
+### 英雄排名（v2 timing-aware，别墅2407为代表）
+
+| Tier | 英雄 | marginal% | 核心能力 | 实战评价 |
+|---|---|---|---|---|
+| **S** | 玛丽亚(108) | +23.6% | R1 白绿蓝 VALUE | "老奶奶"，直接报价覆盖70%+物品 |
+| **S** | 艾莎(103) | +22.4% | R1蓝→R2绿→R3白 OUTLINE | 渐进覆盖所有低品质轮廓 |
+| **S** | 索菲(107) | +21.6% | R1 5品质 + 每轮2品质 | 通用型品质渐进 |
+| **S** | 加布里埃拉(104) | +20.2% | 每轮随机2品质 | 通用型品质渐进 |
+| A | 伊森(208) | +13.7% | R1 5轮廓 + 渐进 | "扫格子"，R5全轮廓来太晚 |
+| A | 伊万(205) | +12.5% | 武器+能源 OUTLINE | 沉船上更强 |
+| A | 娜奥米(106) | +11.6% | 时尚+数码 OUTLINE | 分类特化 |
+| ... | ... | ... | ... | ... |
+| **D** | 艾哈迈德(204) | -0.4% | COUNT_HINT | 统计量不帮选品，但有"场次筛选"价值 |
+| **D** | 拉文(301) | -0.6% | R5全品质 | 太晚，模型正确反映了 |
+| **D** | 维克托(209) | -0.8% | 金紫计数 | 仅场次级信息 |
+
+**重要发现**：
+- 玛丽亚只覆盖白/绿/蓝，但这些占物品70%+，高覆盖率弥补了"只看低端"的局限
+- 艾莎的 OUTLINE（0.3分）看似弱，但结合**形状→价值强相关**的发现，实际信息量可能接近0.5-0.6
+- 伊森的"扫格子"策略在形状→价值映射下比模型预估更有价值（模型待升级）
+
+### 形状→价值映射（Checkpoint #6 新发现）
+
+```
+Item.txt col[7] = WH编码（十位=宽, 个位=高）
+Cabinet grid = 6列 × 7行 (42格)
+
+形状面积 → 平均价值（别墅池）:
+  1格(1×1):  8,000   占52.6%   ← 大量低价白绿物品
+  4格(2×2): 19,000   占20.4%
+  9格(3×3): 34,000   占 2.6%
+ 16格(4×4):218,000   占 0.3%   ← 几乎全是紫金红
+  ≥6格的大物品: 几乎全是红色品质, 价值10万-155万
+```
+
+**结论**：**看到轮廓就能估价**。4×4 = 必拍，1×1 = 大概率白绿，3×3 = 可能蓝紫金。  
+这让伊森和艾莎的 OUTLINE 能力比当前模型估算的更强。
+
+### 分类分布（因地图而异）
+
+- 别墅：医疗(20.8%) > 武器(13.7%) > 时尚(12.7%)
+- 沉船：武器(19.3%) > 能源(17.0%) > 医疗(13.3%)
+- 集装箱：比较均匀，每类 8-12%
+
+### 战斗道具（64个）
+
+关键道具类型：
+- **随机抽检(N)**：完全揭示N件随机物品（N=1/2/4/6/8/10）
+- **宝光N鉴**：随机N件品质（N=2/4/6/8/10/15）
+- **分类鉴影**：特定分类全部轮廓（10种分类各一个）
+- **至宝系列**：最高品质1件的轮廓/格数/价值/完整信息
+- **巨物系列**：格子最多1件的轮廓/品质/价值/完整信息
+- **N格均价**：占位N格物品的平均价值（N=1/2/3/4/6）
+
+---
+
+## 下一步路线图（优先级排序）
+
+### Phase 1A：信息推断引擎（MVP 完成 2026-05-15，沉船 R4 demo 复现 35/14 ✓）
+
+**核心问题（2 英雄聚焦版）**：
+
+```
+给定 N 个 shape 已知的占位物品 (来自艾莎/伊森的 OUTLINE)
+    + K 个道具读数 (X品均格 / X品扫描 / X品估价 / 等)
+    + 仓库大小先验
+    + drop pool 先验
+→ 反推每个占位的 (quality, value)，输出 top-3 候选
+```
+
+**关键洞察（用户提供，已验证）**：
+- 均格类道具的小数显示泄漏分母信息（"2.9" 精确除尽，"2.90" 含尾零 = 约到的，分母不整除10）→ 反推 (品质×件数×总格数)。
+- 游戏显示**最多 3 位小数**，偶尔会显示 3 位（如 "2.345"）。
+- **显示整数 = 几乎白用**（多解空间巨大），故绿色均格道具的边际价值期望要计入"显示整数概率"折扣。
+- 多解时用仓库大小先验排序，给玩家 **top-3 候选**。
+
+**MVP 现状（已落地）**：
+- ✅ `display.py`：截断显示规则（floor at 2dp，尾零按精确除尽规则保留）+ 候选枚举 + 仓库剪枝（26 tests）
+- ✅ `quality_priors.py`：per-cell value 中位数常量（紫 2500 / 金 9400 / 红 50000；红巨物 30000 分流）+ `estimate_total_cells`（15 tests）
+- ✅ `observation.py`：`SessionObs` / `QualityBucketObs` UI dataclass + 暴力枚举引擎 + 巨物优先剪枝 + composite ranking
+- ✅ `scripts/demo_shipwreck_r4_inference.py`：复现"均格 2.5 + 估价 86,490 → 35 格 14 件"top-3 推断
+
+**Phase 1A 余下**：
+- ⏳ 巨物数量分级输入（1 / 2-3 / 4+）+ 品质级可见性规则（艾莎只能看紫色巨物，伊森可看全部）
+- ⏳ `OutlineObservation`（艾莎/伊森看到 N 个形状）
+- ⏳ Quality / RoundCategory / HeroSkill observation
+- ⏳ joint posterior（当前是按品质 greedy，存在多 bucket 相互制约的精度损失）
+- ⏳ `notebooks/03_inference_demo.ipynb` 可视化
+
+**地基（已完成）**：
+- ✅ `BidMap.round_category_hints` 入 schema
+- ✅ `robust_session_value` 长尾降权
+- ✅ 形状指纹字典数据就绪
+
+### Phase 1B：形状→价值估价模型
+
+**目标**：利用 shape→value 的强相关性，升级英雄模型。  
+**做什么**：
+- 建 `shape_value_prior`：给定 (shape_w, shape_h, map_id) → value 分布
+- 升级 `compute_info_score()`：OUTLINE 信息类型的得分从固定 0.3 改为查表
+- 重跑英雄排名，观察伊森/艾莎是否上升
+
+Phase 1A 的 `OutlineObservation` 实质上就是 shape→value 的"使用方"，1A 完成后 1B 大部分顺带落地。
+
+### Phase 2：英雄+道具组合优化
+
+**目标**：量化"英雄X + 道具A + 道具B"的最优搭配。  
+**做什么**：
+- 建道具效果模型（类似 SkillEffect 但一次性）
+- 交叉模拟：对每个英雄 × 热门道具组合 × 地图，跑 contrast MC
+- 输出推荐表：给定地图，推荐英雄+道具组合
+
+**道具约束（实战经济性）**：
+- 默认配置：**3 张白绿 + 1 张蓝**（成本低）
+- 金色道具仅在确认是大仓时才用（蓝及以上道具是动态定价）
+- 鉴影（分类轮廓蓝）实战性价比低，搜索时降低优先级
+
+**重点组合**（用户讨论确认）：
+- 玛丽亚 + 至宝估价 + 随机抽检(2)：精确估价路线
+- 艾莎 + 至宝寻踪 + 宝光四鉴：轮廓+品质交叉路线
+- 伊森 + 宝光四鉴 + 随机抽检(2)：格子扫描+品质补充路线
+
+### Phase 3：装箱模型
+
+**目标**：回答"这些物品能不能装进 6×7 柜子"。  
+**做什么**：
+- 6×7 网格 + 矩形物品的 2D bin packing
+- 贪心/启发式放置（玩家也不可能算最优解）
+- 让伊森/艾哈迈德的"格数"信息有量化价值
+
+**可行性**：✅ 物品形状数据已在 Item.txt col[7]，不需要 Unity 逆向。
+
+### Phase 4：交互 UI（Streamlit）
+
+**目标**：下拉框选地图/英雄/道具 → 实时MC + 推荐。  
+**价值**：简历展示的终极形态；玩家可直接使用。
+
+### Phase 5：模型精化（低优先）
+
+- Sampling-without-replacement 修正（当前 with-replacement 高估方差）
+- 艾哈迈德"场次筛选"独立指标（不改选品模型，单独算"避免亏本局"概率）
+- 条件概率："已经看到了 [A, B, C]，剩下出 X 的概率？"（Q2）
+
+---
+
+## 关键设计决策记录
+
+| 决策 | 理由 | Checkpoint |
+|---|---|---|
+| 不区分明暗拍 | drop pool 完全一样、预算不瓶颈 | #4 |
+| 快递是票制 | 1000银币=10张票，不是传统入场费 | #4 |
+| 英雄模型用 timing discount | R5信息几乎无价值，v1高估了拉文 | #5 |
+| 估算用非线性三段而非线性插值 | 线性让低分全覆盖英雄（艾哈迈德）不合理地高 | #5 |
+| 物品形状用 WH 两位数编码 | Item.txt col[7] 直接存储，无需逆向 | #6 |
+| 装箱用贪心不用精确算法 | 在线决策场景，玩家不可能算最优解 | #6 |
+| 聚焦 4 英雄（玛丽亚/索菲/艾莎/伊森）| 加布里埃拉与索菲重叠；伊森在 shape→value 后潜力高 | #7 |
+| col[19] 入 schema（round_category_hints）| 地图自带 1–5 个免费分类约束，是推断引擎的零成本先验 | #7 |
+| robust_value 默认剔小贵 | 9 件 ≤3 格红物形状不可识别，纳入只污染估价 | #7 |
+| 推断引擎用拒绝采样 | 玩家观测维度多但样本量小，REJECT 直观且可调采样数 | #7 |
+| 均格小数尾零=约的 | 用户实测：2.90 暗示分母不整除10（如 32/11）| #7 |
+
+---
+
+## 当前剩余工作（用户视角的"还差多少")
+
+| 模块 | 状态 | 备注 |
+|---|---|---|
+| **艾莎/伊森 核心建模** | ✅ ~95% | 4 级渐进轮廓 + R1/R5 + timing-aware MC 全到位 |
+| **推断引擎** | ✅ ~95% | Joint posterior + 仓库剪枝 + 总件数约束 + 巨物分级 + 截断显示规则 |
+| **道具 Observation** | ✅ ~90% | 11 件道具登记完整（普良优极珍 × 扫描/估价/均格 + 总仓储）；per-item 接口（抽检/宝光）按用户要求 skip |
+| **地图自带信息** | ✅ ~80% | 静态字段（件数 / 预算 / 梯度 / R1+R3 类别提示）已抓取并在 UI 侧边栏展示；动态 hint 由玩家手动填 |
+| **可视化 / UI** | ✅ ~90% | Streamlit：价值区间 + bucket 后验 + ROI；**秒/放仓卡片已下线（实验）**；未知形状巨物仍仅记录 |
+| **游戏 patch 兼容** | ~0% | 2026-05-15 patch BidMap 21→23 列；parser 还没改；processed maps.json 仍是 patch 前的；runtime 不受影响 |
+| **README / 简历包装** | ~30% | PROGRESS / OBSERVATIONS / TROUBLESHOOTING 三件套齐全；缺一份顶层 README pitch + 架构图 + 截图 |
+
+**整体 ~92%**（剩余主要是简历包装而非工程）。
+
+### 用户聚焦：别墅 + 沉船优先（2026-05-15）
+
+- **主玩**：别墅 2407 / 沉船 2510 —— Phase 2 contrast MC 只跑这两张
+- **集装箱**：**引擎不细做**，用预算的均值回落即可。玩家选集装箱时 UI 直接显示"E[session] ≈ 26 万银币（从 baseline MC 取均）"；不跑推断引擎、不算英雄边际值
+- **快递 / 仓库**：略过（入门图，不是简历亮点目标）
+- **网吧（极客改造屋）**：实际是 col[7]=104（别墅类别），drop_pool 跟别墅同源，所以本来就在别墅覆盖范围内
+
+### 2026-05-15 patch 事件图（5 天后下线）
+
+用户 2026-05-15 实测确认：
+- 沉船 (2501 等) 是 **drop rate up 的活动图**，**5 天后自动下线**
+- 别墅可能有暗改（明面无 up 标识）
+- → **不为活动图重写 BidMap parser**，等下线后再判断是否要支持 23-col 重抽取
+- 推断引擎本来就跟"具体地图 ID"解耦，玩家在活动期玩这些图也能正常用（手动 hint 输入流程已覆盖）
+
+### 艾莎/伊森 标准道具组合（2026-05-15 校准后）
+
+| 英雄 | 5-tool 标准 | 备注 |
+|---|---|---|
+| **伊森** | 普品扫描 + 良品扫描 + 精品估价 + 精品均格 + 珍品估价 | 4 便宜 + 1 金；估价道具比扫描便宜，但扫描信息密度更高 |
+| **伊森 alt** | 普品扫描 + 良品扫描 + **随机抽检(1)** + 精品均格 + 珍品估价 | 用抽检替换精品估价，换 1 个 category 信息（帮 brute force 估价剪枝）|
+| **艾莎** | 抽检2 + 抽检1 + 宝光四鉴 + 珍品估价（或扫描）+ 总仓储空间 | 艾莎技能本身已 pin 死 q=1..4 的轮廓+品质，所以道具偏 reveal-个体型；金品估价或扫描看玩家偏好 |
+
+### 下一开工的优先序
+
+**已完成（C-1 ~ C-26 期间一次性补齐）**：
+- ✅ Streamlit UI 完整版（11 件道具 / 6 品质 / 巨物 / 价值分布图 / 秒仓放仓 / ROI / 候选预览 / 地图静态信息面板）
+- ✅ Joint posterior（DFS + 仓库剪枝 + 总件数交叉约束）— 替代了 greedy
+- ✅ 道具命名修正（优品 / 极品 / 珍品 与游戏一致；新增 q=6 红品道具）
+- ✅ ROI 引擎 + 玩家眼估噪声模型（修复总仓储 ROI = 0 的假信号）
+- ✅ Snipe gate low-confidence fallback（小仓 / 稀采样不再静默失败）
+- ✅ 03_inference_demo + 04_roi_and_snipe + **05_end_to_end_case** 三册 notebook
+- ✅ BidMap col 调研结论：动态 hint 不在表里，静态字段（件数 / 预算 / 梯度 / 分类提示）已侧边栏暴露
+
+### C-35 · 信息面板导入（capture）— **MVP 已验收**（2026-05-17）
+
+**定位**：独立模块 `src/bidking_lab/capture/`，**不 import 推断核心**；只解析游戏左侧信息区文字 → 建议填入 Streamlit 表单。
+
+**运行环境（与 Streamlit 一致）**：
+
+```powershell
+cd c:\xiangmuyunxing\biancheng\2026\bidking-lab
+C:\Python313\python.exe -m pip install -e ".[ui,capture]" --default-timeout=600
+C:\Python313\python.exe -m streamlit run app\streamlit_app.py
+```
+
+> Anaconda 可保留日常环境；**本项目的 UI / OCR 请用 `C:\Python313\python.exe`**（见 TROUBLESHOOTING #9、#34）。
+
+| 状态 | 任务 | 说明 |
+|------|------|------|
+| ✅ | `capture/` 包：`types` / `patterns` / `parser` / `apply` / `ocr` | 与 `inference/` 解耦 |
+| ✅ | 左侧栏：粘贴 / 上传截图 / OCR / 解析预览 / 应用到表单 | **过渡方案**，用于验证 regex |
+| ✅ | 过滤无用地图行 | 显示品质轮廓、随机显示 N 件品质、×最高 等 |
+| ✅ | 仓库总格数必填 + 红色提示；未填禁用「运行出价 hint」 | 唯一硬必填 |
+| ✅ | 导入换图时 `_suppress_reading_reset` | 避免刚填读数被地图切换清空 |
+| ✅ | `tests/test_capture.py` 等 | capture + clipboard + ocr_warmup + screen ROI |
+| ✅ | Python 3.13 安装 `rapidocr-onnxruntime` | 用户 pip 超时后已用 `--default-timeout=600` 装好 |
+| ✅ | 真实截图 OCR → 白/绿/蓝/紫/金格数 + 地图名 | 用户验收 2026-05-17 |
+| ✅ | apply 同步 `obs_reading_*` widget keys；OCR 一步填入 | 2026-05-17 |
+| ✅ | OCR 裁切 + `ocr_normalize` + 容错 regex | 2026-05-17 |
+| ✅ | OCR 后后台 MC + 改读数/换图自动 cancel | `app/bg_inference.py` |
+| ✅ | 换图/清空地图：读数 rev + 仓库清空 + **截图 rev**（无单独上传 ×） | 2026-05-17 |
+| ✅ | 换图 widget rev 同步修复（toast 闪烁/锁图） | TROUBLESHOOTING #35 |
+| ✅ | 侧栏紧凑布局；`number_input` 空值；OCR 后台暖机 | 2026-05-17 |
+| ✅ | Streamlit 视觉 polish | `app/ui_theme.py` 分区色条、Tab/标题样式、侧栏紧凑布局（2026-05-18） |
+| ✅ | 根据截图扩充 `patterns.py` | 紫品件数「品质道具 N 件」；总件数不再误吃紫品行 |
+| ✅ | **C-36 UI**：侧栏「抓取当前屏幕」→ `capture_monitor_png_bytes` | `crop_panel=False` 避免双裁 |
+| ⬜ | **C-36 深化**：多显示器选择、非 1920×1080 DPI 下 ROI 微调 | 见下 |
+| ✅ | `map_fragment_fixes.json` 检索表扩充 | `build_map_fragment_fixes.py` 手 curated + 短语 typo；`--check` 校验 |
+| ✅ | **Capture diag**：`capture/diag.py` JSONL（`BIDKING_CAPTURE_DIAG=1`） | 区分「无地图行」vs「有行未匹配」 |
+| ✅ | `scripts/propose_map_fixes_from_diag.py` | 读 diag JSONL 汇总 `line_unmatched` 片段；需实战日志 |
+
+#### C-36 · 视觉动态抓屏（接口已建，UI 待接）
+
+**模块**：`src/bidking_lab/capture/screen.py`
+
+| 项 | 说明 |
+|----|------|
+| **参考分辨率** | 标定用 `1920×1080`；暖机/OCR 同尺寸 |
+| **主屏** | `list_monitors()` 默认 `is_primary`；抓屏 bbox 以该屏 `width×height` 为准 |
+| **副屏** | `ScreenCaptureConfig.monitor_index` 指定；裁剪比例仍相对**该屏**宽高（非虚拟桌面整体） |
+| **ROI 比例** | `INFO_PANEL_CROP_FRAC = (0.30, 0.07, 0.59, 0.72)` → 横向约 30%–59%、纵向约 7%–72%（左中信息区） |
+| **地图名纠偏** | `map_resolve.py` + `map_fragment_fixes.json`（内置 + JSON 短语/单字 typo）；`build_map_fragment_fixes.py` / `propose_map_fixes_from_diag.py` |
+| **读数填入** | `apply.hydrate_reading_widgets_from_obs` + `sync_obs_from_reading_widgets`（避免 `number_input` 返回值冲掉 OCR） |
+| **patterns** | `total_item_count`（本仓共有/意品 OCR）；紫/金总价更多「总价值为」变体；收紧「显示…品质…藏品」忽略规则（不再误杀总价行） |
+| **OCR 回归图** | 6 张（Desktop + 5 张微信）；`scripts/ocr_regression_snapshots.py` |
+| **依赖** | `pip install -e ".[capture]"` 含 `mss`；抓屏后仍走 `ocr.crop_info_panel` / `parse_panel_text` / `apply_capture_result` |
+| **流程** | 侧栏点抓屏 → **延后任务**（`st.status` 内抓屏+OCR）→ 下一轮开头 `apply_capture_result` → 单次 `rerun` → 读数 tab |
+| **实机 OCR 性能（C-37）** | `panel_rgb_array_for_ocr` 直喂 RapidOCR ndarray；默认不生成 4K 全屏预览；诊断区分 `抓屏 / OCR / 诊断图` ms |
+| **OCR 启动策略** | C-56 起首屏不初始化 OCR；首次 OCR 操作按需加载模型 |
+| **调试** | `BIDKING_AGENT_DEBUG=1` 才写 `agent_debug_log`；`BIDKING_CAPTURE_DIAG=1` → `capture_diag.jsonl` |
+
+**当前阶段**：主屏抓屏 + OCR 填表路径已验收；C-56 已移除首屏暖机阻塞，后续边界见「待办」。
+
+**Capture diag（地图 OCR 问题记录）**：
+
+```powershell
+set BIDKING_CAPTURE_DIAG=1
+streamlit run app/streamlit_app.py
+# 使用后查看 data/logs/capture_diag.jsonl
+C:\Python313\python.exe scripts\propose_map_fixes_from_diag.py
+```
+
+| `map.status` | 含义 |
+|--------------|------|
+| `no_map_line` | 裁切/OCR 文本里没有「X：竞拍信息」行（非 bug） |
+| `line_unmatched` | **有地图标题行但 fuzzy 未命中** → 优先补 fix |
+| `resolved` | 已识别并写入 `map_id` |
+| `ambiguous_lines` | 多行命中不同地图名 |
+
+---
+
+### C-37 已交付（2026-05-18 · Streamlit OCR/UI 稳定性 + 实机性能）
+
+| 类别 | 内容 |
+|------|------|
+| **读数 / widget** | 紫品均格 `text_input` hydrate（`reconcile_avg_raw_widget_return`）；读数 tab `sync_obs(allow_clear=False)` 防切 tab 清空；地图上下文变更才取消 MC |
+| **布局 / rerun** | 主 tab 用 `st.empty()` 槽位；去掉 `_hint_tab_dom_refresh` 多余 rerun；抓屏 OCR 延后到 `st.status`，apply 在 sidebar 前 |
+| **提示文案** | 抓屏 toast 按当前 tab 区分；去掉重复显示器 help |
+| **OCR 热路径** | `panel_rgb_array_for_ocr` → ndarray；`prepare_image_for_ocr` 无变更时原样返回；`include_monitor_preview=False` |
+| **其它** | `bg_inference` MC 片段 `run_every=2`；历史实屏暖机开关已由 C-56 移除；样例清理（删 `panel_round4_roi_preview.png`，保留 `game_warmup_*.jpg`） |
+| **单测** | `test_capture.py` 合并策略 + apply/hydrate；全仓 **360** tests |
+
+用户验收：实机抓屏 OCR 速度恢复正常。
+
+### C-39 · 读数/OCR 一致性 + 候选预览容错 + MC 性能可观测（2026-05-19）
+
+> 对应与用户的长对话：金品/紫品读数、OCR vs 手填、地图清空残留、`obs` 是否进推断、推理偶发极慢。  
+> 调试日志：`BIDKING_AGENT_DEBUG=1` → 仓库根或会话目录 `debug-*.log`；关键行 `MC timing`（`sample_ms` / `filter_ms`）。
+
+| 类别 | 交付 | 说明 |
+|------|------|------|
+| **候选预览（仅 UI）** | `relax_bucket_for_enumeration_preview` | OCR 残留 `gold_avg_value` / `gold_cells=0` 等导致 0 候选时，按字段顺序放宽（`avg_value` → `count` → …），**不改 MC** |
+| **预览 widget** | `effective_number_field_for_preview` | Streamlit `number_input` 的 `0` 视为「未填」，避免 session 残留 `gold_cells=0` 锁死枚举 |
+| **Capture apply** | `clear_stale_capture_fields`、按桶合并 OCR | 同桶只识别到均价时清同桶未识别字段；`gold_avg_only` 时清陈旧 `gold_cells` |
+| **地图切换** | `reset_obs_for_manual_map_change` | 类别不匹配 / 清空地图时清读数 + bump `obs_readings_rev` + 取消后台 MC |
+| **patterns** | 忽略「随机…平均价值」行；收紧 `gold_count` | 减少均价行误解析为件数 |
+| **性能** | `hint_pipeline` 记录 `MC timing` | 瓶颈在 `_sample_truths_cached` / `sample_session_truth`×N；冷缓存地图（如 2401/2501）可达 50–100s+ |
+| **单测** | `tests/test_capture.py` 等扩充 | **383 passed** |
+
+**仍开放 / 用户暂缓**：完整 OCR×手填×换图状态机矩阵单测；推断完成后保持当前 tab；移除临时 `agent_debug_log` 埋点。
+
+#### 对话结论速查（给新协作者）
+
+| 问题 | 结论 |
+|------|------|
+| 金品只填均格，预览 ⚠️ vs 手填 💡？ | OCR 常带 `gold_avg_value` + 残留 `gold_cells=0` → 枚举无解；手填通常只有 `gold_cells`，约 25 种解。**MC 均格/均价不进**（见 TROUBLESHOOTING #31） |
+| 读数清空但地图也空了？ | 仅 `pop(map_id)` 不清 `obs`；C-39 起换图/类别变更会 `reset_obs` |
+| 数据有没有进推断？ | **有**。`state` → `_build_buckets_for_ethan` → MC + `compute_analytical_estimate`；差别在预览层脏数据 vs 手填干净 |
+| 推理为什么有时很慢？ | `sample_ms` 占 7–100s+；换图 cache miss、侧栏 1500 trials、CPU 争用；`filter_ms` 可忽略。见 TROUBLESHOOTING **#41** |
+| 演示 | `notebooks/07_capture_readings_and_mc_perf.ipynb` |
+
+---
+
+### 待办（C-37 边界 · 仍开放）
+
+| 状态 | 项 | 说明 |
+|------|-----|------|
+| 🟡 | **OCR 与手填清空边界** | C-39 已补桶级清理 + 预览 relax；完整状态机矩阵仍待单测文档化 |
+| ⬜ | **`auto_infer_after_capture` 边界** | 避免清空后误触发 MC / 陈旧 fingerprint |
+| ⬜ | **状态机文档 + 单测** | {无 OCR / 同图 / 换图 / 手选换图} × {仓库 / 读数} → 保留/清空/MC |
+| ⬜ | **演示视频 / GitHub Release** | 非阻塞分发项 → **v1.0.0 打包脚本已就绪**（`scripts/build_release_zip.ps1`） |
+| ⬜ | **推断完成后保持当前 tab** | 曾回滚 `_main_tab` 方案；需不拖慢 tab 切换的替代设计 |
+| ⬜ | **移除临时 `#region agent log`** | 用户确认稳定后删 `agent_debug_log` 埋点 |
+
+### C-38 启动体验（历史方案，已由 C-56 替代）
+
+> **用户操作说明**不在本文件 — 见 **[`docs/INSTRUCTIONS.zh-CN.md`](docs/INSTRUCTIONS.zh-CN.md)**（仓库内手册）与 Streamlit 子页 **「操作说明」**（`app/pages/1_操作说明.py`，含流程图）。  
+> **PROGRESS** 只记录工程里程碑；**TROUBLESHOOTING** 记录安装/踩坑。
+
+| 状态 | 项 | 说明 |
+|------|-----|------|
+| ✅ | **用户手册 + 子页面** | `docs/INSTRUCTIONS.zh-CN.md`；已更新为 OCR 按需加载说明 |
+| ↩ | **启动等待 UI（初版）** | C-56 已移除：不再以等待页阻塞首屏 |
+| ✅ | **暖机策略** | C-56：不预暖机，首次实际 OCR 时初始化 |
+| — | **Canvas 跳跃小游戏** | 启动不再等待，因此不再需要等待占位 |
+| ⬜ | **多分辨率 ROI 实测** | 副屏 / DPI；`preview_panel_roi.py` |
+
+---
+
+### 下一步推进 TODO（2026-05-17 用户拍板 · 推断侧）
+
+| 状态 | 项 | 说明 |
+|------|-----|------|
+| ✅ **已完成（C-35）** | 信息面板 capture（粘贴/OCR/换图重置） | 见上表 |
+| ▶ **下一步（C-36）** | 实时主屏 ROI 抓屏 + Streamlit 按钮 | `capture/screen.py` 已建 |
+| ✅ 已完成（C-32） | **P0-B**：`adaptive_filter` fallback 保留 `huge_cells_override` | `_fallback_hard_buckets` + 单测；234 tests |
+| ✅ 已完成（C-33） | **文档对齐**：README / PROGRESS / OBS / TROUBLESHOOTING | 与 C-31~32 拍板一致；推断低风险项收口 |
+| **▶ 可选** | BidMap 23 列、Progressive UI | 非阻塞；见 backlog |
+| ⏸ 暂缓 | **P0-A**：秒/放仓（tier / 小红仓门控 / 重开 UI） | 用户决定暂不投入；`_ENABLE_SNIPE_PASS_HINTS=False` 保持；`snipe.py` 仅保留 |
+| ✅ 已完成 | P1 文案 + 联合约束枚举放宽 | C-31b |
+| ✅ 已完成 | MC 默认 1500、`width` 弃用修复、语法 `\uff08` 修复 | C-31 / c5ceb43 / 029fd29 |
+| ✅ 已完成 | 秒/放仓 UI 实验下线 + 参数审计文档 | C-31 |
+| ❌ 不做 | P2 均价进 MC | 设计分层，见 OBS #31 / TROUBLESHOOTING #31 |
+| ⏸ 暂缓 | P2 ★具体巨物进 MC、P3 未知形状巨物、P3 紫/金 huge 进秒放仓 | 依赖 P0-A 或工作量大 |
+
+**C-32 验收标准（动工后）**：
+
+1. `hard_buckets` 重建 `QualityBucketObs` 时拷贝 `huge_cells_override`（及已有 `huge_band` / `value_sum`）。
+2. `tests/` 新增：fallback 路径下 override 不丢失。
+3. `pytest` 全绿；实战：小仓 + 仅选 ★金/紫巨物时，激活约束文案仍含 huge 信息（若触发 fallback）。
+
+---
+
+### 推断引擎 backlog（C-31 审计归档）
+
+| 优先级 | 项 | 状态 |
+|--------|-----|------|
+| P0-A | 秒/放仓 tier / 小红仓 / 重开 UI | ⏸ **用户暂缓** |
+| P0-B | fallback 保留 `huge_cells_override` | ✅ **C-32** |
+| P1 | 字段作用范围 UI 文案 | ✅ C-31b |
+| P1 | 联合约束 ≥4 项枚举放宽 | ✅ C-31b |
+| P2 | 均价进 MC | ❌ 不建议 |
+| P2 | ★巨物格数进 MC | ⏸ 暂缓 |
+| P3 | 未知形状巨物 | ⏸ 暂缓 |
+| P3 | 秒/放仓加紫/金 huge | ⏸ 随 P0-A |
+
+**已做（C-31）**：秒/放仓 UI 实验下线；OBSERVATIONS / TROUBLESHOOTING #30–31。
+
+**已做（C-31b）**：P1 字段作用范围 UI 文案；联合约束 ≥4 项时仅放宽枚举 `avg_value` 容差（MC 不变）。
+
+---
+
+**剩余可选项（按性价比降序）**：
+
+1. **顶层 README.md 重写**（简历友好，~1h）
+   - 30 秒项目 pitch + 架构图 + Streamlit 截图 + 一键运行
+2. **TROUBLESHOOTING.md 补 C-22~C-26 条目**（已在做，~15 min）
+3. **per-item Observation 接口**：抽检 N / 宝光 N 鉴
+   - 用户明确说"不要做，过度复杂化"。**Skip**。
+4. **23 列 BidMap parser**：等 2026-05-15 patch 活动图下线后再判断；不影响 runtime
+5. **joint posterior 改 belief propagation**：学术优化，工程价值不高
+6. **抽检 ROI 建模**：用户：\"不必要的复杂度\"。**Skip**。
+
+---
+
+## 提交历史
+
+> 每次 commit 之后追加（append-only，不删改旧条目）。最新在最上面。  
+> 用 `git log --oneline` 看简明列表；下面的展开版用于回顾设计决策。
+
+### C-74: 明镜之眼 + 位置校准接口（2026-05-29）
+
+- **问题**：package12/13 证明包内已经含有更强的全库品质、全库轮廓和坐标信息，但 `LiveObservationBatch` 之前没有保留 `local_index`，位置/滚动/堆叠校准会丢关键信号。
+- **改动**：`GridItemObservation` 新增 `local_index`；Fatbeans adapter 在可见轮廓中保留包内坐标；新增明镜之眼 `100134` 与伊森已知品质轮廓的 runtime 集合匹配，完全一致时结算前锁定 `warehouse_total_cells` 和 `total_item_count`。
+- **样本验证**：
+  - package12 艾莎 + 全库透视：结算前锁定 `42 件 / 123 格`，结算价值 `1,295,769`。
+  - package13 伊森 + 明镜：结算前锁定 `58 件 / 216 格`，结算价值 `2,448,112`。
+  - 位置公式 first cut：`local_index = (行 - 1) * 10 + (列 - 1)`；银丝笔筒、弹性绷带、可调式尾翼均与截图标注对齐。
+- **工程修复**：`pyproject.toml` 增加 pytest `pythonpath = ["src"]`；`scripts/build_map_fragment_fixes.py` 在子进程中自行插入 repo `src`，裸 `pytest` 不再需要手动设置 `PYTHONPATH`。
+- **下一步**：等待用户提供全库透视或伊森全轮廓的顶部/中部/底部截图，继续确认滚动页连续性，并从多局样本拟合“最深行/空洞率/总格数”的软关系。
+- **验证**：`pytest -q tests/test_live_fatbeans.py -k "package12 or package13"`：`2 passed, 19 deselected`；`pytest -q -m "not slow"`：`499 passed, 13 deselected`。
+- **2026-05-29 追加样本 package14-17**：确认抽检、公开信息、宝光、明镜、伊森轮廓的坐标语义。带 `shape_code` 的 `local_index` 使用 10 列 0 基左上角；`local_index=None` 代表左上角 `0` 的判断已由宗教壁画残片/智能手表支持。宝光/明镜的 quality-only local 可能是内部格或高亮点，不能覆盖轮廓 local；品质合并应优先用 runtime id。已新增坐标工具和 Fatbeans 轮廓坐标表。package17 证明最深行第 17 行但真实总格 157，小于 `17*10`，所以最深行不是总格数硬下界。回归更新为 `pytest -q -m "not slow"`：`505 passed, 13 deselected`。
+
+### C-73: Fatbeans JSON 离线事件适配层（2026-05-28）
+
+- **问题**：前三份 Fatbeans 样本已经验证了稳定消息号，但解析逻辑仍主要停留在探查脚本和人工报告里，无法被 `LiveObservationBatch` 或测试复用。
+- **改动**：新增 `bidking_lab.live.fatbeans`，把 Fatbeans JSON 导出解析为 packets、frames、上行发送事件、玩家状态事件、玩家出价、动作结果和公开信息；新增 `scripts/inspect_fatbeans_events.py` 输出面向本局复盘的事件摘要。
+- **当前可安全接入 live 的字段**：`map_id`、`round`、良品扫描 `100105 -> 蓝品总格`、优品估价 `100124 -> 紫品总价`、优品均格 `100112 -> 紫品均格`、结算 inventory 的总格/总件数/各品质格数/件数，以及完整 `grid_items`。白绿合计、随机 9 件均价、全局均格、对手出价先保留在 Fatbeans normalized event 层，不强行塞进现有品质桶 schema。
+- **package5 新验证**：`C:\Users\shenc\Desktop\bid_king_packages_5.json` 证明宝光四鉴 `100136` 返回“runtime id + 品质”列表，随机抽检 `100129` 直接返回 item_id / 品质 / 价值 / shape code / cells，优品均格 `100112` 返回 fixed32 均格 `2.3076923`。结算 `0x002d` 可还原完整 inventory：`42` 件、`114` 格、表内价值 `753522`，并可用 runtime id 把宝光结果对回具体物品。
+- **源文件判断**：本地游戏是 IL2CPP 构建，没有 `BidKing_Data\Managed` C# 程序集；只有 `global-metadata.dat`。直接看业务源码需要 IL2CPP dump/decompile，短期性价比低于继续用真实封包 + 截图对照固定字段。
+- **验证**：`project4` 本地样本回归能自动读出 `2.965517`、`3765.0`、`100105 -> 48`、`100104 -> 8`、`100124 -> 45778` 和玩家出价序列；live/packet/observation 聚焦 `93 passed`。
+
+### C-72: 第一份 Fatbeans 真实抓包样本离线解析（2026-05-27）
+
+- **背景**：用户首次实际使用网络抓包工具，FatbeansCreater 捕获到 `BidKing.exe` 与游戏服务器的 TCP 会话；这是项目从“预留 packet 接口”进入“真实协议样本分析”的第一步。
+- **样本**：`C:\Users\shenc\Desktop\bid_king_packages_2.json`，不提交原始抓包文件。导出文件包含筛选后的 `220` 条主游戏 TCP packet，而不是底栏全部 `741` 条噪声流量；全部属于 `127.0.0.1:59685 <-> 8.133.195.27:10000`，并保留 `HexData` / Base64 `Data` 原始 payload。
+- **改动**：新增 `scripts/inspect_fatbeans_capture.py`，读取 Fatbeans JSON，校验 payload 长度，按 4 字节大端长度前缀重组应用层 frame，并输出 Markdown 报告。生成首份报告 `docs/fatbeans_capture_analysis_2026-05-27.zh-CN.md`。
+- **发现**：`220` 条 packet 可重组为 `193` 条完整 frame（上行 `73`、下行 `120`），无残片。已初步定位：上行 `msg=0x0022` 疑似出价；上行 `msg=0x0026` 疑似道具/局内动作；下行 push `msg=0x0025` 疑似每轮局状态同步，可读出 `map=2401`、`round=1..4`；下行 push `msg=0x002d` 疑似第五轮/结算/技能结果大包。
+- **第二样本验证**：`C:\Users\shenc\Desktop\bidking_package3.json` 可重组 `80` 条 frame，复现同一消息结构。截图对照确认 `msg=0x0026` 的 action id 与 `msg=0x0025/0x002d` 的结果字段能解释蓝品总格 `51`、白绿总格 `10`、金品总格 `8`、紫品总价 `36798`。报告见 `docs/fatbeans_capture_analysis_2026-05-27_package3.zh-CN.md`。
+- **第三样本验证**：`C:\Users\shenc\Desktop\bid_king_project4.json` 可重组 `83` 条 frame，确认别墅 `map=2401` 三轮局。封包与人工记录对齐：公开均格 `2.965517`、公开随机 9 件均价 `3765.0`、良品扫描 `100105 -> 48`、普品扫描 `100104 -> 8`、优品估价 `100124 -> 45778`；揭示价可精确读出为我方 `290000 -> 290000 -> 290000`、梦色幻想 `288888 -> 288888 -> 188888`、折翼的奇美拉 `220000 -> 220000 -> 220000`、设计师 lcjeremy `153299 -> 145555 -> 417779`。报告见 `docs/fatbeans_capture_analysis_2026-05-28_project4.zh-CN.md`。
+- **边界**：本轮只做离线解析与字段定位，不连接游戏、不注入、不改包、不自动竞价；不把原始抓包文件加入 Git。
+- **简历价值**：这是项目新增的网络协议分析链路：从 GUI 抓包、筛选主连接、导出原始 payload、重组 TCP 应用层 frame、做 protobuf wire 级字段探查，再把结果接回既有 `LiveObservationBatch` 架构设计。
+
+### C-71: 伊森手填仓库严格/估计模式（2026-05-27）
+
+- **问题**：C-70 只在 packet / `SessionObs` 层支持近似仓库容差，但 UI 手填仍只能把仓库总格当作硬上限；用户补充确认伊森 R5 可获得准确总格和总件数，R1-R4 只能估计且小仓库不宜给过大冗余。
+- **改动**：伊森侧栏新增“严格等于手填/OCR / 估计值+容差”模式；严格模式写 `warehouse_total_cells`，估计模式写 `warehouse_total_cells_approx` + `warehouse_total_cells_tolerance`。OCR 识别到仓库总格时自动回到严格模式；budget 校验在估计模式按 `估计+容差` 判断。
+- **推理语义**：R1-R4 仍不自动猜 `total_item_count`；R5 packet 若提供完整轮廓/物品列表/件数，可写入 `total_item_count`，并且 exact `warehouse_total_cells` 严格优先于近似值。
+- **验证**：新增 observation / live legacy / packet / warehouse budget 回归，覆盖容差推荐、legacy approx 字段映射、approx live 上下文匹配、R5 exact 件数。
+
+### C-70: 伊森近似仓库冗余 + Streamlit 宽度兼容（2026-05-27）
+
+- **问题**：伊森 R1-R4 根据底部物品站位只能估计仓库总格，固定当作上限会误剪真实候选；同时用户实际使用的 Streamlit 1.57 已弃用 `use_container_width`，而旧 smoke 环境 1.46 不支持新版 `width` 参数。
+- **改动**：`SessionObs` 新增 `warehouse_total_cells_tolerance` 与 `warehouse_capacity_upper_bound()`；packet fixture 支持 `warehouse_estimated_cells` / `warehouse_estimate_tolerance`，joint 和 per-bucket 枚举在仅有近似总格时按容差留冗余，R5 的 exact `warehouse_total_cells` 仍严格优先；R1-R4 不估计 `total_item_count`。
+- **UI 兼容**：新增 `layout_width_kwargs()`，Streamlit 1.57 自动走 `width="stretch"/"content"`，1.46 自动回退 `use_container_width`，避免新版弃用 warning 与旧版 TypeError。
+- **样本流程**：新增 `data/samples/packet_fixture.example.json`、`scripts/inspect_packet_fixture.py` 与 `docs/protohub_fixture_guide.zh-CN.md`，用户拿到任意原始 ProtoHub 导出后可保留原文交由 adapter 对照。
+- **验证**：推理/packet/UI 聚焦 `97 passed`；非 slow 回归 `455 passed, 13 deselected`；示例 fixture 校验输出 `approx=112 tolerance=18 items=None pruning_upper_bound=130`；Python313 Streamlit 浏览器 smoke 无 Traceback 且终端无宽度弃用 warning。
+
+### C-69: ProtoHub/packet 离线 fixture adapter（2026-05-27）
+
+- **问题**：实时推理主链路已闭环，继续优化引擎内部收益有限；ProtoHub/packet 若能提供 item shape、公开 footprint、轮次、道具揭示，会直接增加推理约束和准确性。
+- **改动**：新增 `bidking_lab.live.packet.live_batch_from_packet_fixture()`，把宽松 JSON-like fixture 转成 `LiveObservationBatch(source="packet")`。支持 session 字段、bucket 汇总、round/tool/public event、公开/可见物品 footprint、`item_id`、`quality`、`shape_key`、`value`。
+- **边界**：不接实时监听、不连接游戏进程、不做自动竞价；真实 ProtoHub 样本拿到后先补字段别名和 fixture 测试。
+- **验证**：packet/live/legacy/recompute 聚焦 `32 passed`；`py_compile` 覆盖 packet adapter 与 live package。
+
+### C-68: live dirty 自动重算门控（2026-05-27）
+
+- **问题**：C-67 已能显示 live dirty/running/ready，但 dirty 后仍需要用户手动点“运行出价 hint”；实时路径缺少从语义事件到后台 MC 的受控衔接。
+- **改动**：新增 `app/live_recompute.py`，集中管理 live dirty 时钟与自动排队条件；sidebar 增加“live 输入变化后自动重算”开关；当后台 MC 完成并 `mark_ready()` 后才武装自动刷新，后续 live dirty 会复用 `_request_bg_hint_manual` 排队一次后台 MC。
+- **门控**：初次打开 app 不自动暖机；必须 inference ready、无后台任务、无 capture/manual 待处理请求、自动开关开启、且已有成功结果被标记 ready 后才会排队。
+- **边界**：本轮只复用现有后台 MC 队列，不引入 packet 监听器；packet/OCR 未来只需继续发 `LiveObservationBatch(event_kind=...)`。
+- **验证**：live recompute/live/bg 聚焦 `26 passed`；非 slow 回归 `446 passed, 13 deselected`；`py_compile` 覆盖 Streamlit、UI theme、live recompute 与 live state；浏览器 smoke 可见 live 状态与“live 输入变化后自动重算”开关，无 Traceback。
+
+### C-67: live 推理状态可见化（2026-05-27）
+
+- **问题**：`LiveSessionState` 已维护 dirty，但 UI 只显示后台 MC 状态；用户看不到 live 输入是否已经让推荐结果过期。
+- **改动**：新增 `live_inference_status()`，合成 `idle/dirty/running/ready/error`；sidebar 新增“live 推理状态”折叠面板；后台 MC 完成且产出结果时调用 `mark_ready()` 清除 live dirty。
+- **UI 兼容**：本地 smoke 发现当前 Streamlit 版本不支持 `width=` 参数，已改为 `use_container_width`；诊断小表从 `st.dataframe()` 改为 Markdown 表格，避免 pyarrow/numpy 二进制不匹配时阻塞主应用启动。
+- **边界**：本轮只做状态可见化和完成态清 dirty，不自动启动重算；自动 `dirty -> running` 调度留下一步实现。
+- **记录**：`docs/engineering_notes.zh-CN.md` 补充“事件驱动刷新优先于持续轮询”和“诊断 UI 依赖要轻”，明确实时推理应由轮次、道具、公开信息、手填/OCR、换图/新局等语义事件触发。
+- **验证**：live/bg 聚焦 `21 passed`；非 slow 回归 `441 passed, 13 deselected`；`py_compile` 覆盖 Streamlit 和 live 包；浏览器 smoke 可见主 tab、canonical input 对照诊断、live 推理状态，且无 Traceback / pyarrow 错误。
+
+### C-66: 截图派生场景对照 + 工程札记（2026-05-27）
+
+- **问题**：canonical input 对照面板已可见，但还缺少基于真实截图语义的普通回归；同时灰度切换方法论值得单独沉淀，方便后续整理为核心理解。
+- **改动**：新增 `tests/test_live_screenshot_scenarios.py`，覆盖 8 个截图派生场景，包括既有 OCR 回归图和用户指定的 `微信图片_20260526223700/11/15.jpg`；缺少仓库总格时按约定使用 `123`。新增 `docs/engineering_notes.zh-CN.md`，记录 canonical input 灰度切换、诊断层不改变推理、截图回归可靠形态。
+- **边界**：这些测试不跑 OCR 引擎，避免受本机模型安装影响；它们验证的是“截图语义转成 obs 后，live adapter 与期望 SessionObs 等价”。
+- **验证**：截图场景 + live compare/legacy 聚焦 `24 passed`。
+
+### C-65: live/legacy canonical input 对照诊断（2026-05-27）
+
+- **问题**：已有 live canonical 灰度开关，但打开前缺少可视化对照，无法快速判断 `legacy obs -> SessionObs` 与 `LiveSessionState -> SessionObs` 是否字段等价。
+- **改动**：新增 `bidking_lab.live.compare`，把 `SessionObs` 展平成稳定字段路径并生成差异行；sidebar 新增“canonical input 对照诊断”折叠面板，展示当前实际输入源、live 是否可用、上下文是否匹配，以及 legacy/live 差异表。
+- **细节**：`Reading` 以 raw 字符串比较，能区分 `2.90` 与 `2.9`；缺失 bucket 会显示 `bucket.N._present` 差异；差异表仅用于输入层诊断，不触发 MC。
+- **验证**：新增 compare 单测；live 聚焦 `28 passed`；`py_compile` 覆盖 Streamlit 与 live compare。
+
+### C-64: canonical input 灰度开关（2026-05-27）
+
+- **问题**：手填/OCR 已进入 `LiveObservationBatch` shadow reducer，但出价 hint 与联合筛选仍只能读取 legacy `obs`；直接切换风险较高，需要可回退的灰度入口。
+- **改动**：高级区新增“使用 live shadow 作为推理输入”开关，默认关闭；打开后出价 hint、后台 MC 与联合筛选优先使用 `LiveSessionState -> SessionObs`，若 live session 与当前地图/仓库不匹配则自动回退 legacy。
+- **等价补齐**：live adapter 增加 legacy residual-red 规则：当白绿/蓝/紫/金都已知且红品未显式填写时，自动用仓库剩余格数生成红品 bucket。
+- **缓存/取消**：`_canonical_input_source` 纳入 hint 指纹与 stale 检测，切换 legacy/live/fallback 会使旧结果过期，避免跨输入源复用缓存。
+- **验证**：live/bg 聚焦 `31 passed`；非 slow smoke `427 passed, 13 deselected`；`py_compile` 覆盖 Streamlit 入口；浏览器 smoke 可见灰度开关、默认 legacy 文案与 3000 样本。
+
+### C-63: Streamlit Arrow 表格告警修复 + MC 默认精度档（2026-05-27）
+
+- **问题**：live shadow 来源表的 `value` 列同时包含 `int` 与字符串（如 `none`），Streamlit 转 Arrow 时会反复报 `Expected bytes, got a 'int' object` / `Could not convert 'none'`，虽会自动修复但污染终端并增加刷新开销。
+- **改动**：`summarize_field_sources()`、`summarize_selected_field_sources()`、`summarize_blocked_field_updates()` 的调试值统一转为显示字符串，保留 reducer 内部原始类型不变；MC 手动和 OCR 后自动默认样本数从 `1000` 提到 `3000`。
+- **取舍**：来源摘要只是 UI/诊断层，字符串化不会改变 `LiveSessionState -> SessionObs` 推理输入；3000 作为当前性能下的精度优先默认档，滑块仍保留 500-5000。
+- **验证**：聚焦 live/bg/capture/posterior `107 passed`；非 slow smoke `425 passed, 13 deselected`；本机 Streamlit HTTP `200`，启动日志未再出现 Arrow 序列化刷屏。
+
+### C-62: live adapter 组合等价性回归（2026-05-26）
+
+- **问题**：切换 canonical input 前，需要确认 `LiveSessionState -> SessionObs` 在组合场景下保持 legacy 合同，不能只测单字段映射。
+- **改动**：新增 Ethan 全字段读数、Aisha 低品合并两组回归，覆盖总件数、均格/均价、巨物 override、红品区间，以及 Aisha 金/红巨物不可见规则。
+- **结论**：当前 live adapter 未暴露新的映射差异；可继续推进 canonical input 的灰度切换测试。
+- **验证**：新增 2 条回归；聚焦 `22 passed`；smoke `425 passed, 13 deselected`；全量 `438 passed`。
+
+### C-61: 读数页关键字段来源摘要（2026-05-26）
+
+- **问题**：侧边栏已有完整 shadow 来源表，但玩家在读数页编辑关键字段时仍要离开当前区域核对来源。
+- **改动**：新增 `summarize_selected_field_sources()`，按指定逻辑路径返回带中文标签的来源摘要；读数页顶部新增折叠的“当前关键读数来源（shadow）”表格。
+- **边界**：仍只做展示，不改变 legacy obs 推理输入；逐字段 badge 和“允许 OCR 覆盖手填”交互留到 canonical input 切换前处理。
+- **验证**：新增 1 条 selected-source 回归；聚焦 `22 passed`；smoke `423 passed, 13 deselected`；全量 `436 passed`。
+
+### C-60: live shadow 覆盖诊断（2026-05-26）
+
+- **问题**：shadow live reducer 已采用 `packet > manual > ocr > derived`，但 UI 只显示当前赢家来源；当 OCR 尝试覆盖手填值时，用户看不到哪条更新被保留规则挡住。
+- **改动**：新增 `summarize_blocked_field_updates()`，在应用 batch 前列出不会替换当前字段的更新；侧边栏“观测来源（shadow）”会显示最近一次被挡住的字段、尝试值、保留值和原因。
+- **边界**：仍不改变 legacy obs 推理输入；这是切换 canonical input 前的诊断层，帮助确认未来 `manual > ocr` 覆盖交互。
+- **验证**：新增 1 条 reducer 诊断回归；聚焦 `21 passed`；smoke `422 passed, 13 deselected`；全量 `435 passed`。
+
+### C-59: 联合筛选结果跨 tab 缓存（2026-05-26）
+
+- **问题**：从“出价推荐”切到“联合筛选”再切回时，hint 页的“联合筛选摘要”会重新跑 joint DFS；同一读数下重复切 tab 可能卡几秒。
+- **改动**：将 joint context 缓存抽到 `experimental_tabs._joint_context_cached()`，按 session fingerprint、`per_bucket_top` 和 top-k 复用；hint 摘要和 joint tab 都走同一缓存桶，手动“刷新联合筛选”仍强制重算。
+- **边界**：缓存只针对当前读数 fingerprint；任意地图、仓库、bucket 读数、总件数变化都会生成新 key，不复用旧结果。
+- **参考**：本地 `AuctionAnalyzer4.13.3` 是 OCR + 解析枚举计算器，没有 ProtoHub parser；用户截图里的 ProtoHub 叠层更适合后续作为离线 fixture → `LiveObservationBatch` 验证来源。
+- **验证**：新增 2 条 cache 回归；聚焦 `19 passed`；smoke `421 passed, 13 deselected`；全量 `434 passed`。
+
+### C-58: live shadow 字段来源摘要（2026-05-26）
+
+- **问题**：手填/OCR/packet 统一观测流进入 shadow live state 后，UI 还缺少一个低成本核对入口，无法直观看到字段由哪个来源写入。
+- **改动**：新增 `summarize_field_sources()`，返回稳定排序的字段、值、来源、置信度摘要；Streamlit 侧边栏新增折叠的“观测来源（shadow）”表格。
+- **边界**：当前推荐仍走 legacy obs；摘要只用于切换前核对来源与覆盖规则，不改变推理输入，也不触发额外实时重算。
+- **修正**：摘要渲染放到 legacy snapshot 写入之后，避免首轮侧边栏先渲染导致不可见。
+- **验证**：新增 1 条回归；聚焦 `77 passed`；smoke `419 passed, 13 deselected`；全量 `432 passed`；Streamlit 浏览器 smoke 无 console error，侧边栏摘要可见。
+
+### C-57: 取消观测输入的小型硬上限（2026-05-26）
+
+- **问题**：Streamlit `number_input` 对总藏品件数和若干格数字段保留了 `max_value=60/80` 旧上限，玩家输入 `90` 会被前端拦截。
+- **判断**：这些上限不属于推理模型约束。游戏表的 `items_per_session_max` 当前最大 44，只能说明地图生成件数范围；玩家看到的仓库格数和各品质格数可明显超过 60。
+- **改动**：移除仓库格数、总藏品件数、各品质总格数/件数输入框的小型 UI 上限；矛盾输入交给容量校验、joint 和 MC 约束层处理。
+- **实测**：`Pictures\\Bidking*.png` 13 张截图 OCR/解析正常，包含 `warehouse_cells=89` 与多组 40-54 格读数；浏览器验证 `总藏品件数=90` 可输入且无 `<=60` 错误。
+- **验证**：新增 2 条回归；聚焦 `109 passed`；smoke `418 passed, 13 deselected`；全量 `431 passed`。
+
+### C-56: 启动去阻塞：OCR 按需初始化（2026-05-26）
+
+- **问题**：主页面渲染前同步创建 OCR 引擎并执行样例/可选实屏暖机，导致手填和 tab 浏览也必须等待约 20-50 秒。
+- **改动**：首屏不初始化 OCR；抓屏、剪贴板和上传图片 OCR 按钮直接可用，用户首次请求 OCR 时才创建引擎并处理真实输入。
+- **清理**：移除旧启动等待页、实屏暖机偏好开关和对应进度条；操作手册与 troubleshooting 同步到按需加载行为。
+- **取舍**：应用与手填流程立即可用；第一次 OCR 承担模型初始化成本，识别算法与准确度不变。
+- **验证**：聚焦 `160 passed`；smoke `416 passed, 13 deselected`；全量 `429 passed`；demo 正常；新 Streamlit 进程首屏直接显示四 tab 与按需加载提示，抓屏/剪贴板按钮均可用，旧 OCR 等待文案未出现。
+
+### C-55: shadow live bridge 显式字段等价性补全（2026-05-26）
+
+- **审计结论**：C-54 已正确建立 shadow event 流，但尚不能无损替代现有 `_build_session()`：`★ 具体物品` 巨物选项未转换为 `huge_cells_override`，默认零值会误生成低品质 bucket。
+- **桥接修复**：Streamlit 发 live batch 前解析巨物选项；legacy adapter 对小仓红品上限、Aisha 金/红巨物不可见、低品/件数零值、带千分位均价保持与现有构建器一致。
+- **防御行为**：live adapter 遇到非法 `huge_band` 时回退到 `none`，避免未来数据源把 UI 原始 selector 直接送入枚举。
+- **保持边界**：hint/MC 仍以 legacy `obs` 为 canonical input；字段来源展示、OCR 覆盖确认和 canonical 切换仍是下一阶段，不在本轮静默改变推荐依据。
+- **验证**：新增 5 条 bridge 回归；聚焦 `157 passed`；smoke `416 passed, 13 deselected`；全量 `429 passed`；`python scripts/demo_scenarios.py` 正常。
+
+### C-54: OCR/手填到 live state 的兼容桥接（2026-05-26）
+
+- **适配器**：新增 `bidking_lab.live.legacy`，把现有 `obs` 快照差异映射为逻辑字段 `LiveObservationBatch`；覆盖 session、紫/金/红与艾莎白绿拆分字段。
+- **运行接入**：Streamlit 在 OCR apply 完成后发 `ocr_update`，在侧栏/读数 tab 手填同步后发 `manual_update`，合并结果存入 shadow `LiveSessionState`。
+- **风险控制**：本轮没有把 hint/MC 改为读取 live state；现有用户可见推理仍走 legacy `obs`，避免来源合并规则改变已有结果。
+- **开放决策**：切 canonical input 前需解决覆盖行为差异：当前 OCR 可覆盖手填，目标 live 策略为 `manual > ocr`；应配合字段来源展示和显式覆盖操作落地。
+- **验证**：新增 OCR 映射、手填清空、艾莎 split 三条测试；聚焦 `76 passed`，smoke `411 passed, 13 deselected`，全量 `424 passed`；Streamlit HTTP health/page 均为 `200`。
+
+### C-53: 枚举 fingerprint cache + 离散事件重算门控（2026-05-26）
+
+- **枚举缓存**：`candidates_for_bucket()` 外层增加 LRU cache，key 覆盖 bucket 读数、仓库容量与 `other_known_cells`；joint 和分析估算通过原公共函数自动复用。
+- **结果隔离**：缓存内部保存 tuple，公共接口每次返回新 list，避免 UI 预览操作污染后续推理。
+- **实时边界**：`LiveObservationBatch` 新增 `event_kind`；`round_changed`、`tool_revealed`、`public_info_changed` 等语义事件请求重算，`heartbeat` 元数据更新不置 dirty。
+- **实测**：紫品相同约束枚举 cold 约 `22.1ms`；后续 1000 次 cache hit 总计约 `0.39ms`。
+- **验证**：新增缓存命中/隔离/预算区分和 event gate 回归；聚焦测试 `79 passed`，smoke `408 passed, 13 deselected`，全量 `421 passed`。
+
+### C-49: 分析估算接入 Session-level 联合候选（2026-05-26）
+
+- **推理**：`compute_analytical_estimate()` 先调用 `joint_top_k_for_session(k=1, per_bucket_top=16)`，把紫/金等无显式格数 bucket 放进同一个仓库容量约束里。
+- **兜底**：joint 无结果或未覆盖的 bucket 仍走原 `candidates_for_bucket()` 单桶枚举；`avg_value` 的整数泄漏件数逻辑保持不变。
+- **修复场景**：紫/金均格和总价各自局部 top-1 都是 `35格/14件` 时，60 格仓库会改选全局可行的 `30格/12件 + 30格/12件`，避免分析估算过仓。
+- **测试**：新增 `test_analytical_uses_joint_bucket_capacity_constraint`；`tests/test_joint.py tests/test_posterior.py` 28 passed；smoke `403 passed, 13 deselected`。
+
+### C-50: 恢复联合筛选 tab + 解释型展示（2026-05-26）
+
+- **入口**：联合推断从侧栏实验开关恢复为常驻主 tab，命名为「联合筛选」。
+- **展示**：top-5 hypothesis 改为解释型 expander；显示 `联合 top-1`、`独立 top-1 合计`、仓库剩余/过仓、组合评分和过仓罚分。
+- **依据**：每个品质行展示输入约束、联合结果、独立 top-1、value/cells/local 评分拆解，以及是否被仓库/其它 bucket 调整。
+- **体验**：结果按当前读数 fingerprint 缓存；读数改变后自动刷新，避免按钮 rerun 后结果消失。
+
+### C-51: 出价推荐页接入 joint 推理依据摘要（2026-05-26）
+
+- **定位**：joint 摘要是“推理依据层”，不等同于秒仓/放仓动作建议。
+- **入口**：当 hint bundle 有效时，在「仓库价值可能区间」前显示折叠的「推理依据：联合筛选摘要」。
+- **内容**：展示联合 top-1 格数、独立 top-1 合计、组合评分、过仓罚分，以及各品质 joint 结果 vs 独立 top-1。
+- **复用**：摘要复用 `experimental_tabs.py` 的 joint context / local top-1 逻辑，避免出价页和联合筛选 tab 两套算法分叉。
+
+### C-52: 实时监控路线重排 + live 观测接口（2026-05-26）
+
+- **方向调整**：未来目标从“手动运行推理”升级为“实时观测游戏状态 → 自动标 dirty → 自动重算推荐”。
+- **接口**：新增 `src/bidking_lab/live/`，定义 `FieldUpdate`、`GridItemObservation`、`LiveObservationBatch` 和来源优先级。
+- **Reducer**：新增 `LiveSessionState`、`apply_observation_batch()`、`mark_ready()`，按 `packet > manual > ocr > derived` 合并字段并维护 dirty/version。
+- **Adapter**：新增 `live_state_to_session_obs()`，把 live state 转成推理层 `SessionObs`，先覆盖 session 字段与 q1-q6 bucket 字段。
+- **优先级调整**：`LiveSessionState reducer + adapter` 与枚举/joint cache 提前到 Pareto 之前；秒仓/放仓继续作为 Pareto 后的动作层。
+- **文档**：新增 `docs/realtime_monitoring_design.zh-CN.md`，记录状态机、ProtoHub 可行性、边界和分阶段路线。
+
+### C-45: P0 UI fragment first cut (2026-05-26)
+
+- **Streamlit**：读数 tab 整块包进 `@st.fragment`，fragment 内自带 `st.container()`；读数页不再使用共享 `_tab_pane`。
+- **Pane 作用域**：`_tab_pane` 只在 hint / joint 旧路径创建；ROI 原本不走 `_tab_pane`。
+- **风险控制**：保留读数页内部 widget key、hydrate/sync 顺序和文案；暂不移动 600+ 行 UI 到独立模块。
+- **测试**：`py_compile app/streamlit_app.py`；`tests/test_bg_inference.py tests/test_capture.py tests/test_posterior.py tests/test_ground_truth.py`；`tests/test_inference_display.py tests/test_observation.py`。
+
+### C-46: Pytest smoke 加速（slow OCR 回归分层，2026-05-26）
+
+- **诊断**：pytest collection 仅 `0.38s`；慢点集中在真实 OCR 图片回归（`test_ocr_regression_normalize.py`），旧全量约 `40.75s`。
+- **优化**：OCR 图片测试加模块级 `ocr_text_cache`，同一图片只跑一次 OCR；真实图片/样例 OCR 测试标记为 `@pytest.mark.slow`。
+- **入口**：新增 `scripts/test_smoke.ps1`，运行 `python -m pytest -q -m "not slow"`。
+- **实测**：smoke `395 passed, 13 deselected`，约 `3.94s`（热）/ `~9.8s`（冷）；全量 `408 passed` 约 `25.83s`。
+
+### C-47: OCR 推理后切回读数页候选预览误空（2026-05-26）
+
+- **症状**：OCR 后先能正确显示紫/金均格候选；切到「出价推荐」运行推理再切回读数页，预览显示“当前约束下无合法候选”，但 MC bundle 仍正常。
+- **原因**：读数预览 `_warehouse_capacity()` 只读 `st.session_state["obs_warehouse_cells"]`；hint 页则使用 `session_state 或 obs state` fallback。切 tab / fragment / OCR hydrate 后，预览层可能短暂拿到 `0` 仓库容量，导致 `3.90` 这类至少需要 43 格的均格候选被全部剪掉。
+- **修法**：`_warehouse_capacity()` 改为 `obs_warehouse_cells` 或 `state["warehouse_cells"]` fallback；无候选且仓库容量为 0 时，UI 明确提示“仓库总格数未生效”，不再误导为均格填错。
+- **测试**：`py_compile app/streamlit_app.py`；`scripts/test_smoke.ps1`。
+
+### C-48: P0 hint tab 脱离 `_tab_pane`（2026-05-26）
+
+- **Streamlit**：hint tab 改为 `with st.container(): _render_hint_tab_impl()`，不再使用共享 `_tab_pane`。
+- **Pane 作用域**：`_tab_pane` 现在只服务 joint tab；读数 / hint / ROI 均不走共享 pane。
+- **后台轮询**：保留现有 `_bg_infer_autopoll_fragment(run_every=2)`，不改变 MC 启停逻辑。
+- **验证**：`py_compile app/streamlit_app.py`；`scripts/test_smoke.ps1`；Streamlit HTTP smoke `status=200`。
+
+### C-44: 优化路线图 + MC 采样预编译 (2026-05-26)
+
+- **性能**：新增 `SessionTruthSampler` / `prepare_session_sampler`，批量 MC 每张地图只 flatten drop pool 一次；UI `_sample_truths_cached` 改用预编译 sampler。
+- **实测**：2401 / 2501 anthology 地图 200 次 truth 采样约 `3.0s → 0.013s`；单池地图 2405 约 `0.307s → 0.011s`。
+- **文档**：新增 `docs/optimization_roadmap.zh-CN.md`；PROGRESS 增加当前优化路线入口；OBS #36；TROUBLESHOOTING #48。
+- **测试**：新增 prepared sampler 单池 / anthology 同 seed 回归；`408 passed`；`scripts/demo_scenarios.py` 正常。
+
+### C-39: 读数/OCR 一致性、候选预览容错、MC 性能文档 (2026-05-19)
+
+- **Capture / 预览**：`relax_bucket_for_enumeration_preview`；`effective_number_field_for_preview`；`clear_stale_capture_fields`；OCR 仅均价时清陈旧 `gold_cells`；`patterns` 忽略随机均价行。
+- **Streamlit**：换图/类别变更 `reset_obs_for_manual_map_change`；金/紫预览文案与 relax 集成；`hint_pipeline` 输出 `MC timing`（`sample_ms` / `filter_ms`）。
+- **文档**：PROGRESS / OBS #35 / TROUBLESHOOTING #41–42；`notebooks/07_capture_readings_and_mc_perf.ipynb`。
+- **测试**：383 passed。
+
+### C-37: Streamlit OCR 稳定性 + 实机抓屏性能 (2026-05-18)
+
+- **Capture**：`panel_rgb_array_for_ocr`；`ScreenCaptureConfig.include_monitor_preview`；`apply.py` hydrate/merge 单测扩充。
+- **App**：延后抓屏任务、`apply_capture_result` 前置、tab 槽位、紫均格 widget、MC fragment、`ui_prefs` / `agent_debug_log`。
+- **文档**：PROGRESS / OBS #34 / TROUBLESHOOTING #37–39；README 路线图 C-38。
+- **下一项**：C-38 启动等待界面（非暖机小游戏）。
+
+### C-36 收口：抓屏 UI、地图纠偏、读数填入与主题 (2026-05-18)
+
+- **Capture**：`map_resolve.py` + `map_fragment_fixes.json`（28 条）；紫品件数 pattern；`apply` hydrate/sync widget；`diag` JSONL；回归脚本与单测。
+- **Streamlit**：多显示器抓屏、抓屏隐私说明、侧栏紧凑 + `ui_theme.py`；GitHub 置顶与 Star 提示；读数 tab 紫品件数可填。
+- **待办**：C-37 OCR/换图状态机边界、演示视频、GitHub Release 整合包（见上表）。
+
+### C-35: 信息面板 capture + 换图状态机 + screen ROI 接口 (2026-05-17)
+
+- 新增 `src/bidking_lab/capture/`（parser / patterns / apply / ocr / clipboard / **screen**）。
+- Streamlit：侧栏 OCR/剪贴板、后台 MC、换图清读数+截图、地图 rev 同步（TB #35）。
+- `capture/screen.py`：主/副屏枚举、`INFO_PANEL_CROP_FRAC`、`capture_monitor_png_bytes`（C-36 预备）。
+- OBS #33 / TB #34–35；移除临时 debug 日志。
+
+### C-40 枚举优化（均价/均格，2026-05-19）
+
+**已做（简单路径，可验证）**
+
+- 小数均价 → `integer_total_leak` **硬过滤件数** + composite 优先；整数均价仍走 PCV ±25%。
+- **均格** → `is_compatible` **硬过滤** `(total_cells, count)`（原先只打 `avg_match` 标志未剔除）。
+- **联合**：先泄漏件数，再均格显示 + 仓格上限；`39539.17` + `4.5` → top `(27,6)`。
+- **总价+均价联合**：`value_sum_matches_avg_at_count`（`均价×件数≈总价`，默认 ±1%）；拒绝 `total_cells < count`（修 11格/15件）。
+- **预览仓预算**：`other_known_cells` = 已填低品 `*_cells` 之和（Ethan wg+蓝等）。
+- **UI / tab**：`reconcile_optional_number_field` + effective 预览字段；切「出价推荐」再回读数 tab 不再丢枚举输入（TB #46）。
+- **均格/均价**：仍为 `text_input`（尾零语义）；格数/件数/总价用 `number_input` 自带 ×。
+- 模拟报告：`data/processed/decimal_reading_sim.txt`；脚本 `scripts/simulate_decimal_readings.py`。
+
+**Streamlit 手测清单（仓库 123，白绿 15 + 蓝 48 → 紫/金上限 54 格）**
+
+| # | 填写 | 预期 |
+|---|------|------|
+| 1 | 紫均价 `6328.75` | 件数仅 4/8/12…；前三约 14/4、28/8、42/12 |
+| 2 | + 紫总价 `50630` | 全部 8 件；前三约 20/8、21/8、19/8 |
+| 3 | + 紫均格 `2.5` | 唯一 20/8 |
+| 4 | 金总价 `101260` + 均价 `6328.75` | 16 件；无 11格/15件；格数 ≥16 |
+| 5 | 紫均格 `3.43`，仓库 **110** | 上限 47 格，无 55 格解 |
+
+MC 仍只用 cells/count/value/huge；均价/均格只收紧预览与分析估算（TB #31）。
+
+**TODO（复杂，暂缓）**
+
+| 项 | 说明 |
+|----|------|
+| **地图/池化先验排序** | 已有白绿蓝格 + 总仓时，按地图 drop 分布 / `decimal_reading_sim` 统计对 top-K 加权（非均匀 composite） |
+| **游戏均价取整方向** | 均格已确认 floor 2dp；均价 `.17` 尾数可能是四舍五入 — 需截图校准或 A/B |
+| **分 display-kind 分支** | integer / .5 / .25/.75 / tight_fraction 分桶枚举，减少 966 解展示 |
+
+### C-41 文档/UI 同步 + MC 缓存 + 预览/推理分层（2026-05-20）
+
+**背景**：三主 tab UI、侧栏 OCR、字段作用域标注；需确认切 tab 后预览 ⚠️ 时 MC 仍用硬读数。
+
+**已做**
+
+| 项 | 说明 |
+|----|------|
+| Tab 同步 | `reconcile` + `hydrate` + `effective_*_for_preview`（TB #46） |
+| MC 指纹 | `MC_FILTER_FP_KEYS` 排除 `*_avg_raw` / `*_avg_value` |
+| 预览 vs MC | 枚举预览可失败；`filter_truths_by_obs` 不用 avg_cells/avg_value |
+| 性能 | 均格 `1.90` 枚举 ~15ms；慢 run = 冷 MC sample |
+| README | 新演示视频 + 截图；MC 默认 1000；408 tests |
+| 单测 | `test_avg_cells_only_does_not_filter_mc_truths` 等 |
+
+**手测**：填硬字段 → 切出价 tab → 切回；预览 ⚠️ 时 MC 区间仍应反映总价/格数/件数（TB #47）。
+
+### C-42 Release v1.0.0 一站式包（2026-05-20）
+
+| 文件 | 用途 |
+|------|------|
+| `start_ui.ps1` | Windows 一键 venv + 依赖 + Streamlit |
+| `requirements-release.txt` | UI + OCR 运行时依赖 |
+| `RELEASE_QUICKSTART.zh-CN.md` | 玩家 3 步上手 |
+| `RELEASE_NOTES_v1.0.0.md` | GitHub Release 说明（复制粘贴） |
+| `scripts/build_release_zip.ps1` | 打 `dist/bidking-lab-v1.0.0.zip` |
+
+zip 含 `data/raw/tables/{BidMap,Drop,Item}.txt`（构建机本地复制，不入 git）。`pyproject.toml` → **1.0.0**。
+
+### C-43 Release 便携版（2026-05-21）
+
+| 文件 | 用途 |
+|------|------|
+| `启动.bat` | 双击启动（内置 Python，无 pip/venv） |
+| `RELEASE_PORTABLE.zh-CN.md` | 便携版说明 |
+| `scripts/build_release_portable.ps1` | 打 `dist/bidking-lab-v1.0.0-portable.zip` |
+
+构建：下载 Python **3.13.3 embed-amd64** → `Lib/site-packages` 预装 `requirements-release.txt` → 与 app/src/data 一并打包（约 300–600 MB）。
+
+### C-35 后续 TODO（推进方向）
+
+| 优先级 | 项 | 说明 |
+|--------|-----|------|
+| P0 | **C-36 Streamlit 按钮** | 「抓取当前屏幕」→ `capture_monitor_png_bytes` → 现有 OCR 队列 |
+| P0 | **多显示器实测** | 主屏全屏/窗口化、副屏扩展；确认 ROI 是否要 per-DPI 表 |
+| P1 | **patterns 扩充** | 总件数、艾莎技能相关句式、更多 OCR 错别字 |
+| ✅ | **ROI 微调工具** | `scripts/preview_panel_roi.py` + `notebooks/06_panel_roi_preview.ipynb`；样例 `data/samples/panel_round4_*.png` |
+| P2 | **剪贴板 vs 抓屏统一** | 一条 `queue_capture_from_bytes` 入口 |
+| P2 | Streamlit 视觉 polish | 用户暂缓 |
+| ⏸ | P0-A 秒/放仓 UI | 仍关闭 |
+| ⏸ | P2 ★巨物进 MC | 见 OBS #31 |
+
+### C-35: 信息面板 capture 模块 + Streamlit 导入（历史草稿）
+
+- 见上条 C-35 正式条目；以下为早期记录保留要点：
+- 修复「紫品平均占位」误匹配（`QUALITY_CELLS` 仅匹配「总占」）。
+- Python 3.13 + `rapidocr-onnxruntime>=1.2.0`；optional `capture` 含 `mss`。
+
+### C-34b: README 同步 TROUBLESHOOTING #33 影响矩阵 (2026-05-17)
+
+- 双语 README §8：MC vs 枚举对照表 + 巨物默认说明；链到 TB #33。
+
+### C-34: 巨物默认/文案 + 字段影响矩阵 (#33) (2026-05-17)
+
+- `observation.py`：模块/类 doc 与 `HUGE_CELLS_PER_QUALITY` 一致（紫10/金红12；★ override）。
+- Streamlit：紫/金/红巨物 help、单品加速 caption、无红 MC 硬约束说明。
+- `TROUBLESHOOTING.md` **#33**：各改动对 MC vs 枚举的影响表（设计预期核对）。
+
+### C-33: 文档对齐 + 推断低风险项收口说明 (2026-05-17)
+
+- README 双语：234 tests、MC 默认 1500、秒/放仓 UI 实验下线、C-29~32 路线图。
+- OBS #32、TROUBLESHOOTING #32：记录 P0-B 作用域与风险（见下）。
+- **推断引擎「低风险且有切实提升」项**：P0-B / P1 / C-30 等已落地；**P0-A 秒/放仓** 与 **P2/P3** 按用户拍板暂缓。
+
+### C-32: P0-B fallback 保留 huge_cells_override (2026-05-17)
+
+- `posterior._fallback_hard_buckets`：重建 `QualityBucketObs` 时拷贝 `huge_cells_override`（`value_sum` / `huge_band` 分支）。
+- `tests/test_posterior.py::TestFallbackHardBuckets`；`pytest` 234 passed。
+
+### docs: 推进 TODO 拍板 — P0-A 暂缓，下一项 C-32 仅 P0-B (2026-05-17)
+
+- 用户确认：秒/放仓（P0-A）**暂不开发**；`_ENABLE_SNIPE_PASS_HINTS` 保持 `False`。
+- 下一里程碑 **C-32**：`adaptive_filter` hard_buckets 保留 `huge_cells_override`（小改，主 MC fallback 一致性）。
+- PROGRESS「下一步推进 TODO」+ OBS #31 用户拍板；MC spinner 文案恢复完整表述。
+- **本 commit 不含 C-32 代码实现**（文档与规划先行）。
+
+### C-31: 参数审计 + 秒/放仓 UI 实验下线 + MC 默认 1500 (2026-05-17)
+
+- **审计**：紫/金/红 `huge_band` 进 MC；`huge_cells_override` / `avg_cells` / `avg_value` 主要进枚举与分析估算（设计分层，见 TROUBLESHOOTING #31）。
+- **UI**：`_ENABLE_SNIPE_PASS_HINTS=False`，与未知巨物同策略；后端 `snipe.py` 保留。
+- **UI**：Streamlit `use_container_width` → `width`；MC 默认 **1500**（实战速度与精度平衡）。
+- **文档**：OBSERVATIONS Checkpoint #31、PROGRESS backlog 表、TROUBLESHOOTING #30–31。
+
+### C-30: 放仓红约束 + Item-DB boost + ratio 守卫 (2026-05-16)
+
+（见 OBSERVATIONS Checkpoint #N 与 commit `e0c7e47`。）
+
+### C-29: 紫品/金品均价输入 + 紫色 huge 阈值放宽 + MC 滑块三档说明 (2026-05-16)
+
+实战使用反馈三项功能性优化，每项都是"有现成基础设施 + 用户场景频繁但 UI 没暴露"的典型补丁。
+
+**(1) 均价输入字段（`avg_value`）**
+
+游戏里 R3 提示偶尔会直接给「紫品均价 X silver」「金品均价 Y silver」——这是一份独立信息：跟 `value_sum`、`count`、`avg_cells` 都不一样，但能跟它们联立。比如玩家填了 `avg_value=6178 + value_sum=86,490`，引擎能立刻反推 `count ≈ 14`。
+
+实现：
+- `QualityBucketObs` 新增 `avg_value: int | None = None` 字段
+- `candidates_for_bucket` 加硬过滤层：候选 `(total_cells, count)` 推得的 `implied_avg_value` 需在 ±10%（同时填 `value_sum`）或 ±25%（仅有先验估算）内
+- UI 紫品 / 金品 section 6 列布局：cells / count / avg_cells / value_sum / **avg_value** / huge_band
+- 全链路自动消费——预览面板、`_build_session` 红品残差、`compute_analytical_estimate` 通过 `candidates_for_bucket` 自动用上
+
+新增测试 3 条（`test_avg_value_filter_with_value_sum_pins_count` / `test_avg_value_filter_rejects_off_target` / `test_avg_value_without_value_sum_uses_loose_pcv_filter`）。
+
+**(2) 紫色 huge 阈值 12 → 10**
+
+实战里玩家提到游戏中能识别为"大件"的紫色物品不止防护盾。查了 `Item.txt` 全表，紫品 ≥12 格物品**只有 1 件**（防护盾 3×4=12, 20,082），但 5×2=10 格的 `加特林重机枪` (31,688) 也是常见的"大紫"且形状唯一可识别。
+
+修法：
+- `HUGE_CELLS_PER_QUALITY[4] = 10`（金/红 仍 ≥12）
+- `BIG_ITEMS_BY_SHAPE` 新增 `5×2 = 10 格` 行，含 `加特林重机枪` (q=4, unique purple) + `巴雷特狙击枪` (q=5, 67,600)
+- `_items_for_quality(q)` 新增 per-quality 阈值过滤：金品下拉**不会**显示 5×2=10 的巴雷特（金品阈值 12），紫品下拉**会**显示 5×2=10 的加特林——保持品质阈值差异下的语义一致
+- UI 文案重写「什么算 巨物 / 大件」expander，按品质拆分阈值说明
+
+测试同步：原假设"全部 12 格"的 3 条测试改为反映新阈值（紫 ≥ 10）。
+
+**(3) MC 滑块改 step 200 + 三档说明**
+
+`st.slider` 参数 `(500, 5000, 1000, step=250)` 改为 `step=200`，help 文本拆三档：
+
+- **500** = 快速估算，精度偏低（尾部分布的仓库组合可能匹配不足）
+- **1000** = 默认平衡点
+- **2000** = 高精度，安静倒可接受（推荐大仓 + 强约束场景）
+- **3000-5000** = 冷门大仓 / 严重尾部场景备选
+
+代码改动：`src/bidking_lab/inference/observation.py` (~30 行：avg_value 字段 + 过滤层 + 阈值常量) · `app/streamlit_app.py` (~80 行：UI 6-列布局 + state 接入 + huge 阈值导入 + caption 重写) · `tests/test_observation.py` (3 新测试 + 3 既有测试更新阈值)
+
+测试：222 单测全绿（+3 from C-28）。
+
+---
+
+### C-28: 出价 hint 实战回归一连串修复 + 已识别具体巨物 (2026-05-16)
+
+实战测试一晚发现 5 个独立但互相加强的"上游字段没被消费"bug，以及 1 个新功能。修完整个出价 hint 模块的实战准确度有质变。详细技术分析见 [`OBSERVATIONS.md` Checkpoint #11](OBSERVATIONS.md#checkpoint-11--出价-hint-鲁棒化--已识别具体巨物2026-05-16)，每个 bug 单独入 [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) `#23-#28`。
+
+**Bug 链（一处错引发下游连环错）**：
+
+1. **#23**：`compute_analytical_estimate` 的红品自动推断没检查"非红 bucket 是否填全"——金品没填时残差全部归红 → 估值×5-10 飞天。修法：加 `all_non_red_filled` gate，未填全时按"全金到全红"区间显示。
+
+2. **#24**：7 个数值字段默认 `value=0` 让"未提供"和"确认为零"无法区分。修法：全改 `value=None` + `placeholder="可选"`，配合后端 `if x is not None` 判断。
+
+3. **#25**：`compute_analytical_estimate` 没用 `candidates_for_bucket` 枚举器——紫品 `value_sum=86,490 + huge_band=1` 被估成 12 格，而枚举能算出 35 格。修法：加二次 pass，对 `total_cells is None` 但有其它字段的 bucket 调枚举取 top-1。
+
+4. **#26**：`_build_session` 红品残差也没用枚举——"金品仅填件数=5"贡献 0 格 → 红品错算 32 格 → 后续金品被红品挤光彻底消失。修法：跟 #25 对称，从源头修。
+
+5. **#27**：`HUGE_CELLS_PER_QUALITY` 跟 UI 文案漂移（UI 说 ≥12 格，常量是 16/18）。修成 `{4:12, 5:12, 6:12}`，金品 huge per-cell value 同步上调到 7,000/格。
+
+**新功能：已识别具体巨物**
+
+`huge_cells_override` 字段早就在数据模型里，但 UI 上「巨物数量」选项只有数量段。新版从 `BIG_ITEMS_BY_SHAPE` 自动派生具体物品选项：
+
+```
+紫品下拉框：[无 / 1个 / 2-3个 / 4+个 / ★ 防护盾 (12格·20,082) / ★ 雷达 (...)]
+金品下拉框：[... / ★ 单人郊游快艇 (18格·106,500) / ★ 重型防弹衣 (12格·74,745) / ...]
+```
+
+零额外接线——`huge_cells_override` 已被 `huge_cells_per_item()` 消费，下游推断模块全部自动用上。
+
+「未确认品质巨物」(按形状) 区块明确改为 `🧪 测试功能，暂未接入推断接口` 横幅，避免玩家以为这部分会参与推断。
+
+**实战收益**：
+
+| 场景 | 修复前 | 修复后 |
+|---|---|---|
+| 仓库 80，未填金品 | 红=19 格、估值 ~100 万 | 「未分配 9 格（金未填）」350K-1M 区间，明确提示 |
+| 紫品 value_sum=86,490, huge=1 | 紫=12 格 | 紫=35 格（用户估价直接用） |
+| 金品仅填件数=5 | 金=0 格、红=32 格 | 金=22 格、红=10 格 |
+| 紫品识别为防护盾 | 紫=12 格 generic | 引擎知道是具体物品 |
+
+代码改动：`src/bidking_lab/inference/posterior.py` (~70 行净增) · `src/bidking_lab/inference/observation.py` (`HUGE_CELLS_PER_QUALITY` 常量) · `src/bidking_lab/inference/quality_priors.py` (`PER_CELL_VALUE_HUGE[5]` 6,000→7,000) · `app/streamlit_app.py` (~150 行：value=None pattern + `_huge_options_for_quality` + `_resolve_huge_selection` + bucket 构造调整 + 未确认巨物 warning)
+
+测试：219 单测继续绿，无新增（修复都是行为正确性，覆盖在既有 dataclass / candidates / posterior 测试里），TROUBLESHOOTING.md 新增 6 条踩坑入档。
+
+---
+
+### C-26: 项目尾巴一次性清理（地图先验面板 + snipe 兜底 + 端到端 notebook + 路线图刷新）(2026-05-15)
+
+用户 23:36 问"项目已经很完善了，后续步骤是什么"。盘点后 4 件可一次清理的"尾巴"打包做掉，全程不引入新依赖、不破坏既有 API。
+
+**(1) BidMap 静态先验调研 + UI 侧边栏面板**
+
+probe `BidMap.txt` 105 行全表后确认：所有有用的**静态**字段（`items_per_session_min/max`, `starting_budget_silver`, `bid_price_ladder`, `round_category_hints`, `value_tier_ui`）pydantic parser 早已抓全，但 Streamlit UI 一个都没显示。**动态**hint（"X 件均价 Y"）则确实如用户先前判断不在表里。
+
+在侧边栏地图选择下方加 `st.expander("📍 地图静态信息（仅参考）")`，一个面板就展示了：
+- 件数范围 / 起步预算 / 入场费 / 价值档次
+- 轮号分类提示（"R1=武器 / R3=时尚"等）
+- 出价梯度
+
+零成本暴露既有信息，玩家选完地图能马上看到地图设定参数。
+
+**(2) Snipe / Pass gate 低置信兜底（fixes 场景 A 痛点）**
+
+之前 `min_matching_samples=30` 是硬阈值，差 1 个样本就静默 return None。用户原话："场景 A 只差 1 个样本就触发"。新增三阶 fallback：
+1. purple + warehouse, ≥ min_matching_samples（30）→ 高置信
+2. warehouse only, ≥ min_matching_samples（30）→ 正常
+3. warehouse only, ≥ `min_matching_samples_relaxed`（默认 10）→ **`low_confidence=True` + rationale 里挂 ⚠️ 警告**
+4. 仍不足 → return None
+
+`SnipeRecommendation` / `PassRecommendation` 加 `low_confidence: bool` 字段。Streamlit 出价 tab 在低置信场景把 `st.success()` 替换成 `st.warning()` 显式提醒"样本不稳"。新增 3 个单测（low-conf trigger / 真不足返回 None / pass-rec 对称行为）。
+
+实测场景 A（沉船 145 格仓 + ±8 容差，n=3000）：之前返回 None，现在返回 `snipe_max=1,761,306, samples=29, ⚠️LOW-CONF`——既不静默丢失，也老实告知玩家可靠性。
+
+**(3) `notebooks/05_end_to_end_case.ipynb` 长期保留产出**
+
+把 `demo_scenarios.py` 三个场景包装成可视化 notebook：
+- **场景 A**：伊森 + 沉船 145 格 + 优品均格 2.90（尾零）+ 1 红巨物 → 演示截断显示规则锁死 (cells, count) 候选
+- **场景 B**：伊森 + 沉船 95 格 + 优品均格 4（整数）+ 无巨物 → 演示低品占比 + 小仓 + 全 bucket 多约束
+- **场景 C**：艾莎 + 别墅 128 格 + R1-R4 轮廓 + 优品估价 89,400 + 紫巨物 2-3 → 演示信息密度最高场景
+
+每场景三块：联合推断 top-3 + MC 价值分布直方图（matplotlib，全图 vs 仓库匹配子集 + P25/P50/P75 竖线）+ 秒仓 / 放仓推荐。`jupyter nbconvert --execute` 通过 152 KB 完成产物，3 张分布图，全场景无报错。
+
+附带修一个 bug：`demo_scenarios.py` 之前用过 stale API `snipe.snipe_price` / `pass_rec.walk_away_price`（实际字段是 `snipe_max_bid` / `pass_max_bid`），直接 `python scripts/demo_scenarios.py` 会 AttributeError 崩溃。统一修正，端到端跑通。
+
+**(4) PROGRESS.md "下一开工优先序" 刷新**
+
+之前的列表停留在 C-12 之前的 stale 版本（列了已经做完的"Streamlit UI"、"per-item 接口"等）。按 C-26 现状重写：
+- 把已完成的 6 项打上 ✅ + 简短结论
+- 剩余 6 项按性价比排序，明确标注哪些是用户拍板 Skip 的（per-item 接口、抽检 ROI 建模）
+- 项目整体进度从 67% 提到 92%——剩下主要是简历包装，工程基本完工
+
+测试：205 单测继续绿（snipe 新加 3 个 fallback case）；demo_scenarios.py 三场景端到端跑通；05 notebook 执行无错；Streamlit smoke import 跑过模块加载阶段。
+
+### C-25: 道具命名修正 + 总仓储 ROI 引入玩家眼估噪声 (2026-05-15)
+
+用户 23:14 指出两个关键问题：(1) 道具命名混淆，"优品"才是紫品工具、"极品"是金品、"珍品"是红品；之前代码里叫"精品/珍品"是错的；(2) 总仓储 ROI = 0 不真实，因为玩家眼估格数是有 ±10 误差的，引擎应该建模这层噪声而不是默认精确。
+
+**(1) 解码 `BattleItem.txt` 锁定真值**：
+
+| 前缀 | 操作品质 | 之前代码里叫 |
+|---|---|---|
+| 普品 | white+green q=1+2 | ✓ 对 |
+| 良品 | blue q=3 | ✓ 对 |
+| **优品** | **purple q=4** | ❌ 之前叫 "精品" |
+| **极品** | **gold q=5** | ❌ 之前叫 "珍品" |
+| **珍品** | **red q=6** | ❌ 没建模 |
+
+`scripts/_decode_battle_items` (一次性 probe) 解出 100100~100135 全表，证实 100126 珍品估价的描述是"显示红色品质藏品总价值" → 红品工具，不是金品。
+
+**(2) 系统重命名 + 新增 q=6 红品工具**：
+
+- `synth_readings.TOOL_SPECS`：重命名 6 条（精→优、珍→极），新增 3 条（珍品扫描/估价/均格 → q=6），共 11 条道具。
+- `observation.{ETHAN_DEFAULT_LOADOUT, ETHAN_ALT_LOADOUT, AISHA_DEFAULT_LOADOUT, TOOL_PRICE_BY_RARITY}` 同步重命名 + 注释解释品质映射。
+- `app/streamlit_app.py`：`ETHAN_KIT / AISHA_KIT / ALL_TOOLS / TOOL_EN_LABEL / TOOL_DEFAULT_PRICE / TOOL_PRICE_OVERRIDABLE` 全部跟进 + UI 文案改"精品估价→优品估价"等。
+- `tests/`、`scripts/demo_outline_joint.py`、`scripts/compute_tool_roi.py`、`scripts/demo_scenarios.py` 一次性 batch 替换，全部 202 单测继续绿。
+
+**(3) 玩家眼估噪声模型 (`compute_tool_roi(..., player_warehouse_noise_std=10.0)`)**：
+
+之前 `_run_inference` 没把 "总仓储不在 kit 里" 这种场景配上玩家的近似估计，导致引擎走 `warehouse_capacity()` 的 159-cell 兜底——这个数对中小仓离谱地大，让 LOO 时引擎反而比 truth 多了一堆乱猜的格子。修正：每 trial 抽一次玩家眼估 `approx_capacity = truth_cells + N(0, σ)`，所有 LOO run（包括"撤掉总仓储"）都用这个 `warehouse_total_cells_approx`，full run 在带总仓储时仍用真值。
+
+端到端验证 (Aisha + 别墅 2407 + R1-R4 轮廓加料, n=80 trials)：
+
+| σ (cells) | 总仓储 value-gain | 总仓储 ROI | 极品估价 value-gain | 极品估价 ROI |
+|---|---|---|---|---|
+|  0.0 |        +0 | +0.000 | +79,336 | +2.267 |
+|  5.0 |    +4,379 | +0.080 | +79,429 | +2.269 |
+| 10.0 |   +24,511 | +0.446 | +79,429 | +2.269 |
+| 15.0 |   +50,824 | +0.924 | +79,429 | +2.269 |
+
+**两点新结论**：
+
+- **总仓储 ROI 在现实噪声下是显著正的**：默认 σ=10 时回收 24,511 silver 值误差、ROI=+0.446（折回 45% 售价）；新手玩家 σ=15 时基本回本 (+0.924)。**老玩家 σ≈5 时 ROI 才接近 0**——这解释了为啥艾莎玩家偏好带总仓储：不是为了挽回 value 误差，而是为了在不确定格数下守住 cells 锁。
+- **极品估价 ROI 稳如老狗在 +2.27**：仓库噪声不影响它的 value-pinning 行为（紫价的方差是艾莎最大的盲区，跟仓库总格数无关）。这印证了 C-24 那条"+3.09"读数其实就是极品估价（被误标成珍品估价）。
+
+**(4) UI 配套**：
+
+- ROI tab 新增 "仓库格数眼估误差 σ" 滑块（0-20，默认 10），缓存 key 加 σ 维度（参数变才重跑 MC）。
+- `st.info` 顶部加 ⚠️ 说明：σ=0 → 总仓储 ROI 趋零；σ=10 → 真实 ROI 浮现。
+- 紫品均格输入下方加 `st.info`，把 "2.9 vs 2.90 区别" 从 tooltip 升级到可见 caption（用户反馈"注释要表明"）。
+- 全 UI 把"精品估价/精品均格"改成"优品估价/优品均格"、"珍品估价"改成"极品估价"等；q=6 红品输入区的 help 里加"珍品扫描"参考（这次是正确语义）。
+
+**关于艾莎英文名**：用户问"是不是 Elsa 不是 Aisha"。grep 全仓库 0 个 Elsa 命中，所有 hero_value / streamlit / progress 历史都是 "艾莎 (Aisha)" → 一直就是 Aisha，没改过。
+
+测试：202 单测 + ROI 新断言（noise=0 → 总仓储 cells-gain=0；noise>0 → cells-gain≥0）继续绿。
+
+### C-24: ROI tab 接入艾莎 + 轮廓加料开关 (2026-05-15)
+
+用户 23:02 问"有没有艾莎的 ROI"。引擎其实早就支持 (`compute_tool_roi(hero="aisha", include_aisha_outline=True)`)，只是 UI 把 hero 硬编码成 `"ethan"`。这一轮：
+
+- 新增 `AISHA_KIT = (珍品估价, 总仓储空间)` — 艾莎免费拿白绿蓝紫轮廓，所以"道具"专门加在 q=4 价值 + 仓库 cells 两个紧缺信息上。
+- ROI tab 顶部 `roi_hero` 改成跟着主侧边栏走，标题显示 "伊森 Ethan" / "艾莎 Aisha"。Aisha 模式下加一段 caption 解释"R1-R4 轮廓免费"。
+- multiselect 默认 kit 跟着 hero 走（Ethan → ETHAN_KIT，Aisha → AISHA_KIT）。
+- Aisha 模式下多出一个复选框 `加料 艾莎 R1-R4 轮廓信息（0 silver）`，默认勾选；底层就是 `include_aisha_outline=True`。
+- `_cached_tool_roi` 缓存 key 加 `include_aisha_outline`，缓存仍然安全。
+
+端到端验证（n_trials=40, seed=42, 别墅 2407）：
+| Tool | Cost | ROI | info_gain_value |
+|---|---|---|---|
+| 珍品估价 | 35,000 | +3.091 | 108,185 |
+| 总仓储空间 | 55,000 | +0.000 | 0 |
+
+**两个发现**：
+1. 珍品估价对艾莎极高 — 因为轮廓只给 cells/count 不给价值，紫价是她唯一缺口。
+2. 总仓储空间 ROI ≈ 0 — 在轮廓加料场景下，cells 已经被 outline 死锁，仓库总数边际为零。这不是 bug 而是真信号：**艾莎玩家如果带轮廓没必要再使用总仓储**。这种 finding 正好就是 ROI tab 的设计目标。
+
+测试：202 单测继续绿；Streamlit smoke launch 无报错。
+
+### C-23: ROI tab 道具自选 + 价格覆盖 + 图表英文标签 (2026-05-15)
+
+用户 22:53 反馈 3 件事：
+
+1. **seed 默认不勾选** — 上轮 C-22 默认勾选，用户怀疑会让结果"假性固定"。改默认 `False`：每次点击 OS 熵重新随机；勾上才锁定。
+2. **ROI 道具自选 + 价格覆盖** — 之前硬编码 `ETHAN_KIT`。这一轮：
+   - 加 `ALL_TOOLS` 注册表（8 个道具：白扫、绿扫、蓝扫/估/均、紫扫/估、总仓储）
+   - UI 加 `st.multiselect`，默认还是 ETHAN_KIT 但用户可勾选
+   - 蓝品及以上道具加价格覆盖输入（折叠 expander），默认价复用 `TOOL_PRICE_BY_RARITY`
+   - **价格覆盖通过显示层 `dataclasses.replace` 实现** — 因为 `info_gain` 只取决于 (map, hero, kit, MC) 与价格无关，所以缓存继续命中，仅 ROI 比值在显示层重算。改价 → 瞬发更新。
+   - 选道具少于 2 个时禁用按钮（LOO 需要≥2）。
+3. **ROI 图表英文标签** — 中文在 matplotlib 字体回退中容易变方块。所有道具加 `TOOL_EN_LABEL` 映射（"精品估价" → "Blue Appraise" 等），图表用英文，下面的详细表保留中英对照。
+
+代码改动：
+- `app/streamlit_app.py`：
+  - `seed_lock` 默认 `False`
+  - 顶部新增 `ALL_TOOLS / TOOL_EN_LABEL / TOOL_DEFAULT_PRICE / TOOL_PRICE_OVERRIDABLE`
+  - ROI tab 整段重写，加 multiselect + 折叠价格覆盖 + 图表英文化
+  - `_override` helper 用 `dataclasses.replace` 修改 silver_cost + roi_value
+
+测试：202 单测继续绿；Streamlit smoke launch 无报错。
+
+### C-22: 地图必选 / 仓库去默认 / seed 可选 / 巨物定义 (2026-05-15)
+
+用户 22:38 反馈 4 件事，配合截图：
+
+1. **"改了数据还是一个解，是有什么问题吗"** — 实际是误会。截图里他同时填了 `紫品总格数=58 + 紫品均格=2.9`，58/x=2.9 数学上 x=20 唯一，候选预览正确返回 "✅ 已唯一锁定 58/20"。回答：候选预览**完全不依赖 MC seed**，是确定性的算术枚举；想看多解，只填 avg / 只填 cells 就行。借此机会把 MC seed 改成可选 — 加 `seed_lock` 复选框（默认勾选），取消后每次点击用 OS 熵重新随机，p25/p50/p75 会浮动 ±几个百分点。
+2. **地图必选 placeholder** — `selectbox(index=None, placeholder="请选择具体地图...")`，未选则 `st.stop()` + 友好提示。
+3. **仓库总格数仍有默认 140** — 改 `value=0`；help 文案说明 "留空 (=0) 时引擎回退到地图默认上限 159 格"。
+4. **巨物定义** — 紫品 section 上方加 expander："巨物 = 占 ≥ 12 格 (4×3) 的藏品（屏风/涂鸦墙/游艇/护甲/石狮子）；引擎按品质用不同标准面积：紫红=16 格，金=18 格；可见性：Ethan 可见三色，Aisha 仅紫"。
+
+代码改动：
+- `app/streamlit_app.py`：上述 4 处 UI 调整。`seed` 在 `seed_lock=False` 时用 `time.time_ns()` 当 OS 熵，缓存自动失效。
+
+测试：202 单测继续绿；Streamlit smoke launch 无报错。
+
+### C-21: 件数 / 均格 Reading 修复 / 候选预览 / 总藏品数 / 文案优化 (2026-05-15)
+
+用户 22:00 反馈一连串问题，里面**藏着一个真 bug**：
+
+1. **UI 的 `avg_cells` 实际从未生效** — 用 `st.number_input(..., format="%.2f")` 收的是 `float`，`2.90` 在 UI 内部就塌成了 `2.9`，尾零信息丢了。更糟的是 `QualityBucketObs.avg_cells` 期望 `Reading`，引擎调用 `enumerate_candidates(bucket.avg_cells)` 会触发 `AttributeError: 'float' object has no attribute 'raw'`。这个 bug 之前被两件事盖住了：(a) 实验性联合推断 tab 上轮被隐藏；(b) snipe MC 不用 avg_cells。这一轮修了。
+2. **均格多解处理** — 单独输入 `2.90` 时引擎能枚举 10 个解（32/11, 61/21, 64/22, 90/31, ...），UI 没把这个暴露给玩家。新增 `_render_candidate_preview` 在紫品 / 金品输入下方显示当前约束下的 top-3 候选 + 仓深加权 composite，玩家可以根据 "32 格 vs 64 格" 两种解的占比决定要不要继续填 cells / count。
+3. **艾莎件数 UI 缺失** — 之前 UI **完全没有 count 输入**，但艾莎玩家依赖 R1-R4 轮廓自己数件数。本轮加了 `white_count / green_count / blue_count / purple_count / gold_count` 字段；伊森只在紫品 + 金品加 count（低品质段他用扫描，不需要数）。
+4. **总藏品数量** — 别墅地图的 R1 hint / 艾莎金品工具能透露 "本仓 X 件藏品"。新增 `SessionObs.total_item_count` 字段；`joint_top_k_for_session` DFS 用它做硬剪枝（`running_count > total → return`）+ 软罚（`missing × 0.02`）。Sidebar 加了对应输入。
+5. **p25/p50/p75 文案** — 改成 "悲观估值 / 中位估值 / 偏乐观 / 乐观上限"，metric tooltip 解释每个分位代表多大概率。matplotlib 图 legend 同步改成 Pessimistic / Median / Optimistic / Upside（避免中文字体问题）。
+6. **placeholder + 切换地图清空** — 紫品/金品的均格改成 `st.text_input(placeholder="例 2.90 或 3.43")`；其它 number_input 的默认值改 0 表示"未提供"。新增 map-change 监听：`map_id` 变化时清掉所有读数字段（不清仓库格数 / 总件数），并弹 `st.toast` 提示。
+
+引擎侧改动：
+- `src/bidking_lab/inference/observation.py`：`SessionObs` 加 `total_item_count: int | None = None`。
+- `src/bidking_lab/inference/joint.py`：DFS 多传 `running_count`，硬过滤 + 软罚分。
+
+UI 侧改动（`app/streamlit_app.py`）：
+- 加 `from bidking_lab.inference.display import Reading, parse_reading` + helper `_try_parse_reading`，所有 avg_cells 经由 Reading 进入引擎，尾零得以保留。
+- 紫品/金品改 `text_input`，5 列布局（cells / count / avg_raw / value / huge_band）。
+- 艾莎拆分模式额外暴露 white/green/blue 的件数输入。
+- 紫品 / 金品下面挂候选预览块，实时显示 top-3 (cells, count) + composite。
+
+测试：全量 202 单测继续绿；smoke compile + import 通过；端到端 demo_scenarios.py 3 个场景全部一致输出。新增 1 个端到端验证（terminal 内）：joint 加 `total_item_count=6` 约束后，top-5 假设都收敛到 `sum(count)==6`。
+
+发现 / 教训：
+- **UI 数据类型不匹配是隐形 bug** — `number_input` 永远返回 float，跟 dataclass 标注的 `Reading | None` 不兼容但 Python 不抓。每一个非平凡字段都该有 round-trip 单测（用户填了 → 引擎能消费 → 结果合理）。已记录到 `TROUBLESHOOTING.md` 的下一条。
+- 候选预览是"半透明"的引擎窗口，让玩家**直观看到约束如何收紧** — 比单纯一个 top-3 表更有教学价值。
+- 总藏品数硬约束很强：从 5 个 hypothesis 变成"全部 sum=6"，是 cells 之外的第二条独立信息。值得在 UI 里强调。
+
+### C-20: 收敛核心流程 — 隐藏联合推断表 / ROI 加图表 / MC 默认 1000 (2026-05-15)
+
+用户 21:43 反馈 4 件事：
+
+1. **填巨物 / 估值后秒仓·放仓输出不变** — 怀疑共享采样改坏了。
+   - 排查后确认这不是 bug：`compute_snipe_recommendation` 只用 `(warehouse_cells, purple_cells)` 做 conditioning（见 `snipe.py:147-166`），huge_band / value_sum / avg_cells 一直没参与。
+   - 进一步收窄会让匹配样本不够 — 当前设计是 "宁可放宽也要有 sample"。
+   - 修法：**出价 tab 加一条 `st.warning`** 明确告知 conditioning 集合，避免被当 bug。
+2. **采样数 2000 过多**，大仓很慢。改默认 1000，仍然支持 500-5000，并在 help 里写明"大仓低匹配率可调高，重复点击有缓存"。
+3. **联合推断表三个结果一样、没区分意义** — 用户明确说"如果没必要，先删掉 / 注释 / 迁到 undefined_toolkit"。
+   - 砍掉是对的：当 user 已经填了 `total_cells`，top-3 只在 `count` 上有微小差异。
+   - 处理：**把整段渲染搬到 `app/experimental_tabs.py::render_joint_inference_tab`**，侧边栏加 `show_experimental` 复选框，默认关。等以后 `unconfirmed_huge_shapes` 真的让 bucket 有自由度时再打开。
+4. **ROI 慢 + 表意不清 + 不知道是否依赖输入**：
+   - 加大段说明（"在这张地图上，哪个道具的价值推断提升最值"）。
+   - 明确告诉用户 **ROI 与读数输入完全无关**（`compute_tool_roi` 不读 `SessionObs`）。
+   - 加 `@st.cache_data` 包了一层 `_cached_tool_roi(map_id, tools, hero, n_trials, seed)`，重复点击瞬发。
+   - 加 matplotlib 条形图（横向、正负配色），让 ROI 排序一目了然。
+   - 新增"排序方式"下拉（ROI / 价值贡献 / 售价）方便不同视角阅读。
+
+代码改动：
+- `app/streamlit_app.py`：拆 tabs（默认 3 个，开关开启变 4 个）；ROI tab 重写为 说明 + 排序 + 图表 + 表格；MC slider 默认 1000；出价 tab 加 conditioning warning。
+- `app/experimental_tabs.py`（新增）：搬走联合推断表全部渲染逻辑，配独立 docstring 说明何时该恢复。
+- 移除 `streamlit_app.py` 里不再用到的 `joint_top_k_for_session` / `PER_CELL_VALUE_DEFAULT` import。
+
+测试：全量 202 单测继续绿；smoke compile + import 通过。
+
+### C-19: 均格输入 + 6 行联合表 + 采样共享提速 (2026-05-15)
+
+用户 21:18 反馈 4 件事：
+
+1. **联合推断表"价值一致度 0.0000"看不出意义**，而且只有用户填过的 bucket 出现 — 应该 6 个品质都列出来（白 / 绿 / 蓝 / 紫 / 金 / 红）。
+2. **均格概念漏了** — 精品均格、珍品均格是核心道具读数（含小数点泄露：2.5 vs 2.90），UI 完全没有这个字段。
+3. **价值分布图过大**，挤掉了下面的秒仓 / 放仓推荐，得下滑。
+4. **采样还是慢** — 即使小仓 65 格的 case，也要等好几秒。
+
+**Profile**（命令行直测）：
+
+```
+== OLD path: 3 independent samplings (distribution + snipe + pass) ==
+  total: 5.61s
+== NEW path: sample once, reuse via truths= param ==
+  total: 2.84s
+```
+
+旧 bidding tab 在一次按钮点击里**采样 3 次**（分布图 1 次 + `compute_snipe_recommendation` 内部 1 次 + `compute_pass_recommendation` 内部 1 次），每次 2000 truths × 1.4ms = ~3s，总共 ~6-9s。这就是用户感受到的卡。
+
+**改动**：
+
+| 模块 | 变化 |
+|---|---|
+| `inference/snipe.py` | `compute_snipe_recommendation` / `compute_pass_recommendation` 新增 `truths: list[SessionTruth] \| None = None` 参数；若提供则跳过内部采样循环。21 单测无变动全过。 |
+| `app/streamlit_app.py` 数据层 | 新增 `_sample_truths_cached(map_id, n_trials, seed)` 用 `@st.cache_data(max_entries=8)` 缓存；同一 (map, n_trials, seed) 三元组第二次点击瞬间返回 |
+| `app/streamlit_app.py` UI | 出价 tab 改成"采样一次→三处复用"（分布图、snipe、pass）；首次 ~3s，重复点击 ~0s |
+| `app/streamlit_app.py` 紫品/金品 section | 列数 3 → 4，新增 `purple_avg` / `gold_avg`（`step=0.01, format="%.2f"`），对接 `QualityBucketObs.avg_cells` |
+| `app/streamlit_app.py` 联合推断表 | 固定 6 行（q=1..6），未观察的填 `—`；列扩到「品质 / 总格数 / 件数 / 均格 / 每格估值 / 价值一致度」；价值一致度保留 3 位小数；表下方加 "已确认 X 格 · 未记录 Y 格" caption |
+| `app/streamlit_app.py` 价值分布图 | `figsize` 9×4.0 → 7×2.6；字体 size 7/8；`use_container_width=False` 防止被拉伸 |
+
+**实测加速**：
+
+- 单次点击「运行出价 hint」：5.6s → 2.8s（2× 加速）
+- 重复点击同地图：2.8s → ~0.1s（cache hit）
+- 切换地图也只重新采样一次
+
+**测试**：202 单测全过；Streamlit `--server.port 8503` 起来 HTTP 200。
+
+**下一步候选**：
+- C-20: `SessionObs.unconfirmed_huge_shapes` 字段 + 引擎 bucket 锁定（接 UI 里 `seen_shapes`）
+- C-21: 地图动态信息字段（数量/均格/总价 hint 等手动输入） + `notebooks/05_end_to_end_case.ipynb`
+
+---
+
+### C-18-hotfix: 形状字典改为"按形状数量"避免 widget 爆炸 (2026-05-15)
+
+用户 21:00 反馈跑 UI 时"推理时间特别长，等了一会还在推理"。截图显示：Ethan / 沉船 2503 / 仓库 140 / 白绿=24 / 蓝=16 / 紫=50 + 2-3 巨物。
+
+**性能 profile**（命令行直接跑）：
+
+- `joint_top_k_for_session` 这个 case = **1.7 ms**
+- `sample_session_truth` × 2000 = **2.77 s**
+
+两边都不可能让用户等"很久"。真正的瓶颈是 **Streamlit 前端 widget 数量爆炸**：上一轮 C-18 在形状字典每个 unique 物品行加了 `[+1]` + `[↻]` button + `metric` 共 3 个 widget，5 个 shape × 23 件物品 = **~70 个新 widget**。每次任意 widget 变化 / `st.rerun()` 都会**重建整个页面所有 widget**，浏览器端渲染就到秒级，给用户造成"还在推理"错觉。
+
+**同时用户反馈**：
+
+> 不能要求用户明确给出是什么物品，而是一般可以让用户给出大致的几乘几的形状的数量，这个是比较泛用的
+
+——非常对。看到 4×5 巨物时，玩家通常只能说"我看到 1 个 4×5"，**不可能**精确到"我看到 1 个墙面涂鸦"（除非品质道具锁定了）。所以"按 unique 物品 +1"的设计本身就不实用。
+
+**修法**（一举两得）：
+
+- 删除所有 `[+1]` `[↻]` button + 每行 metric（~70 widget → 0）
+- 改成 5 个 `number_input`：每个 shape 一个，例 "3×4 = 12 格 = 2"
+- 候选物品列表放进 expander，用纯 `st.markdown` 渲染（不占 widget 配额）
+- state key 从 `confirmed_items[name]` 改成 `seen_shapes[shape]`，下一轮 C-19 接 `SessionObs.unconfirmed_huge_shapes` 时也更顺
+
+**测试**：本地 Streamlit `--server.headless true --server.port 8502` 起来 HTTP 200；202 单测仍全绿（仅改 UI）。
+
+**教训**：Streamlit widget 数量 > 50 时就要警惕。能用 `st.markdown` 表达的信息不要塞进 widget；交互复杂的列表优先考虑"折叠到一个聚合 widget（slider / select_slider / number_input）"，而不是每行一个 button。
+
+---
+
+### C-18: UI 价值分布图 + 金品格数 + 形状字典 +1 按钮 (2026-05-15)
+
+用户 20:38 反馈 C-17 三件小事：
+
+1. **形状反查字典加点击 +1**：每个 unique / 大件候选行旁边给 button，让玩家"看到这件物品"时直接 +1 计数（一局最多几件，按钮比 number_input 更顺手）。
+2. **联合推断结果不只是 top-3 表，要给"仓库价值可能区间 + 范围分布图"**，参考 `notebooks/04_roi_and_snipe.ipynb` 中的 conditional-MC histogram，让玩家直观看到价值的 P25/P50/P75/P90。
+3. **金品 q=5 只有"总估值"输入，漏了"金品总格数"**——某些地图会直接给出"金色藏品格数"提示。
+
+**改动**（仅 `app/streamlit_app.py`，约 80 行）：
+
+| 模块 | 变化 |
+|---|---|
+| imports | 加 `matplotlib` + `bidking_lab.inference.ground_truth.sample_session_truth` |
+| 金品 section | 由 2 列改为 3 列，新增 `state["gold_cells"]`；`_maybe_gold_bucket` 把 `total_cells` 也传给 `QualityBucketObs`（既有支持） |
+| 出价 tab | 顶部加 conditional-MC histogram：`n_trials` 次 `sample_session_truth` 采样，按 `warehouse_cells ± warehouse_tol` 过滤后画图，4 列 metric 显示 P25/P50/P75/P90；snipe/pass 推荐卡片下移到底部（符合用户"先看价格区间，再做决策"的心智模型） |
+| 形状字典 expander | 每行从 `st.table` 单行展开成 6 列布局：品质 / 唯一性 / 名称 / 估值 / 当前计数 / [+1] [↻] 双按钮；底部汇总"已确认物品"表 |
+
+**UI 占位策略**：`confirmed_items` 存在 `st.session_state` 但暂不传入 `SessionObs`——下一轮 C-19 加 SessionObs 字段 + 引擎 bucket 锁定时再接通，避免"填了没下游"。
+
+**Chart 备注**：matplotlib 在 anaconda 环境里 Chinese 字体可能缺失，所以 axes label 用 English（图例值是数字 + 中文 metric 卡片在图下方补足）。
+
+**测试**：202 → 202 passed；语法 `python -m ast` OK；lint 0。
+
+**下一步候选**：
+- C-19: `SessionObs.confirmed_items` + `unconfirmed_huge_shapes` 字段 + bucket 锁定逻辑（这一轮 UI 占位的真正接入）
+- C-20: 地图动态信息字段（数量/均格/总价 等手动 hint）+ `notebooks/05_end_to_end_case.ipynb`
+
+---
+
+### C-17: 修 pyarrow bug + 形状反查字典升级 (2026-05-15)
+
+用户 20:23 反馈 streamlit 在 anaconda 环境跑挂了：
+
+```
+ImportError: numpy.core.multiarray failed to import
+pyarrow.lib import failed under numpy 2.2.6
+```
+
+根因：用户 anaconda 里 pyarrow 是 numpy 1.x 时代编译的，与现在 numpy 2.2.6 不兼容。`st.dataframe` 内部 import pyarrow 导致 crash。
+
+**修法**：把所有 `st.dataframe` 改成 `st.table`（纯 HTML，不走 pyarrow）。3 处全替换。
+
+**附带升级**：用户同时提议把唯一物品字典扩成"形状反查 / 大件物品字典"——按形状（不按品质）组织，给出每个形状下所有候选物品，并标 ☆唯一 / 多候选。让玩家"看到形状但不确定品质"时能快速划出候选集。
+
+**数据调研**（`Item.txt` >=12 格 + quality 聚合）：
+
+| 形状 | 候选数 | unique 物品 | 多候选品质 |
+|---|---|---|---|
+| 3×4 = 12 格 | 9 | 电动三轮车(绿) / 防护盾(紫) | 金 ×4 / 红 ×3 |
+| 3×5 = 15 格 | 7 | 小型面包车(蓝) / 服务器机柜(金) | 红 ×5 |
+| 4×4 = 16 格 | 5 | 石狮子(蓝) / 轻量化锂电池(金) | 红 ×3（红木屏风 / 翡翠屏风 / 碳纤维车身） |
+| 3×6 = 18 格 | 1 | 单人郊游快艇=游艇(金) | — |
+| 4×5 = 20 格 | 1 | 墙面涂鸦墙(蓝) | — |
+
+涵盖了用户之前提到的所有典型 decoy / 巨物（游艇、屏风、石狮子、面包车、涂鸦）。
+
+**未做（defer 到 C-18）**：用户还提到"未确认品质的巨物分级输入"。当前引擎 `SessionObs.QualityBucketObs.huge_band` 是按 quality 存的，没"未分类巨物"字段。如果纯 UI 加输入但不接引擎，用户填了没下游 \u2014 反而误导。所以 C-18 会和 unique 物品 checkbox 一起做引擎层改造。
+
+**测试**：202 → 202 passed；streamlit HTTP 200，浏览器截图确认 5 张 shape 表全部渲染（st.table 不依赖 pyarrow）。
+
+**下一步候选**：
+- C-18: SessionObs 增加 `confirmed_items` + `unconfirmed_huge_shapes` 字段，UI 加 checkbox/分级输入，引擎可据此锁定 bucket
+- C-19: 地图动态信息字段（数量/均格/总价 等手动 hint）
+
+---
+
+### C-16: UI 完善 — 地图二段式 / 巨物语义 / 全中文化 / 唯一物品字典 (2026-05-15)
+
+用户 20:00 反馈 C-15 的 UI 几个问题：
+1. "红品 巨物" 标签暗示已限定红色，但实际玩家看到巨物未必能立即确定颜色 → 改成 **"红品巨物数量（已确认为红色）"** 等明确语义；
+2. 墙面涂鸦、游艇等唯一物品没有提示 → 加 **唯一物品字典 expander**；
+3. 地图选项只有 9 张，太少 → 改成 **两段式：先选别墅 / 沉船，再选具体地图（全 60 张可选）**；
+4. UI 大量英文术语（value_sum / cells / huge_band） → **全中文化，英文以辅助形式跟随**；
+5. 还顺手修了一个 typo 文案"挭回量"→"挽回量"。
+
+**主要改动**（`app/streamlit_app.py` +120 LOC）：
+
+| 区块 | 改动 |
+|---|---|
+| 地图选择 | `_filter_priority_maps` → `_maps_for_category(maps, category)`，按 ID 前缀（24/34/44 = 别墅，25/35/45 = 沉船）分类，每张显示 `[Tier] map_id - name` |
+| 侧边栏 | 顶部加 `radio("地图类型", options=["mansion","shipwreck"])`，下方下拉框依此过滤；选项 60 张全可见 |
+| 英雄标签 | "ethan" → "伊森 (Ethan)"，"aisha" → "艾莎 (Aisha)" 通过 `format_func` 渲染 |
+| 巨物标签 | "紫品 巨物" → **"紫品巨物数量（已确认为紫色）"**；金 / 红同；并加 help tooltip 解释何时该填 |
+| HUGE_BAND_LABELS | "none/1/2-3/4+" → "无/1个/2-3个/4个及以上" 通过 `format_func` 渲染 |
+| 唯一物品字典 | 新 `UNIQUE_ITEMS_BY_QUALITY` 常量 + expander，按 q=3/4/5/6 列出 9 件常见 unique（墙面涂鸦/石狮子/防护盾/游艇/防弹衣/波斯毯/红木屏风/翡翠屏风等），含形状、格数、估值、说明 |
+| 子标题 caption | 每个 section 加一行说明它的语义（"提供紫品 cells 后 MC 会额外加一层过滤"、"红品几乎不会被估价道具准确读出"等） |
+| 联合推断表格 | 列名 quality / total_cells → "品质 / 总格数 / 件数 / 价值一致度" |
+| 出价 hint | "matching" → "匹配样本"，"safe_floor" → "保底价"，加 cond_label 显式标注是否含紫品条件 |
+| ROI 表格 | 列名英文 → "道具 / 道具售价 / value 贡献 / cells 贡献 / ROI" |
+| Tab 名 | "出价 hint" → "出价推荐" |
+
+**唯一物品字典数据**（基于 Item.txt 调研）：
+
+| 品质 | 唯一形状 | 物品 | 估值 |
+|---|---|---|---|
+| 蓝 q=3 | 5×4 = 20 格 | 墙面涂鸦墙 | 8,880 |
+| 蓝 q=3 | 4×4 = 16 格 | 石狮子（与红屏风同形，需排除） | 9,168 |
+| 紫 q=4 | 3×4 = 12 格 | 可折叠高韧性防护盾 | 20,082 |
+| 金 q=5 | 6×3 = 18 格 | 单人郊游快艇（即"游艇"） | 106,500 |
+| 红 q=6 | 4×4 = 16 格 | 红木屏风 / 翡翠屏风 | 361,000 / 844,000 |
+
+下迭代会把这些 unique items 接入 `SessionObs.confirmed_items`，让引擎在玩家勾选后锁定对应 bucket。
+
+**烟测**：`streamlit run` HTTP 200；浏览器全屏截图确认：
+- 侧边栏：地图类型 button（🏛️ 别墅 / 🚢 沉船）+ 60 张下拉地图，含 Tier 标识
+- 主面板：所有 section title / caption / 字段标签全中文
+- 唯一物品 expander：4 张表格按品质列全 9 件
+
+**测试**：202 → 202 passed（UI 无新单测；C-15 留下的 typo bug 在 C-16-pre 已修）。
+
+**下一步**：
+- C-17 候选：地图动态信息字段（数量 / 均格 / 总价 等手动 hint）注入 SessionObs
+- C-18 候选：唯一物品 checkbox → SessionObs.confirmed_items 接入推断引擎
+
+---
+
+### C-15: Streamlit UI scaffold — 4 个 tab 串联推断/出价/ROI (2026-05-15)
+
+用户 18:28 决定开 Streamlit，并明确：**Ethan 用普品扫描 → 白绿合并一个输入；Aisha 靠 R1/R2 轮廓 → 白/绿可拆开（也允许合并）**。同时把巨物形状识别正式删除（与 outline.py 重叠，边际效用低）。
+
+**交付**：`app/streamlit_app.py`（~330 行）含 4 个 tab：
+
+| Tab | 功能 | 调用 |
+|---|---|---|
+| 📝 读数输入 | hero/map/仓库 + 各品质 cells / value / 巨物 band；Ethan 合并白绿，Aisha 拆白绿 | `SessionObs` |
+| 🔍 联合推断 | top-3 joint posterior，含 composite/total_cells/warehouse_gap | `joint_top_k_for_session` |
+| 🎯 出价 hint | snipe + pass 两张卡片，含 P50/P75/P90/safe_floor，标注是否启用紫品条件 | `compute_snipe/pass_recommendation` |
+| 💰 道具 ROI | Ethan default kit 的 LOO ROI 表 | `compute_tool_roi` |
+
+**Aisha 输入分流细节**：
+- 默认勾选 "拆分白/绿轮廓" → 白(q=1)/绿(q=2)/蓝(q=3) 三个分开输入
+- 取消勾选 → 合并白+绿到 q=1（Ethan 风格）
+- 金品/红品巨物 band 在 Aisha 视角自动 disabled（她看不到金红巨物，只能看紫巨）— 通过 `disabled=(hero=="aisha")` 实现
+
+**侧边栏**：英雄、地图（仅 priority maps = 别墅 240x/340x/440x + 沉船 25xx/35xx/45xx）、仓库格数、可展开的 MC 高级参数（trials / 仓库容差 / 紫品容差 / search width / seed）。
+
+**配套小修**：`demo_snipe.py` 的 None-fallback 文案分三档显示原因（warehouse<80 / 80-120 / >120），让用户看到具体哪步 gate 失败，而不是笼统说"both returned None"。
+
+**烟测**：`streamlit run` 启动正常（HTTP 200，5.4 KB 首屏）；浏览器渲染验证 Ethan 单输入 / Aisha 三输入切换 + 金红巨物正确 disabled。
+
+**依赖**：`pyproject.toml` 新增 `[project.optional-dependencies]` 的 `ui` extra（`streamlit>=1.30` + `matplotlib>=3.7`）。本地用 `pip install -e ".[ui]"`。
+
+**用户问题 "warehouse=140 / 100 都返回 None 是对的吗"** 已澄清：
+- 140：snipe 门控通过，但 MC 在别墅 2407 上 140±8 cells 落在 0.7% 尾部，匹配样本不足 → 应换沉船 2510
+- 100：处于 80–120 的 no-hint 死区，gate 结构性失败 — 这是设计意图
+
+**测试**：202 → 202 passed（无回归；UI 不带新单测）。
+
+**下一步**：
+- C-16 候选：把 `ROI` tab 改成读 `docs/tool_roi_table.md` 缓存（瞬时）+ 全量重算按钮（30-60s）
+- C-17 候选：地图动态信息字段输入（数量 / 均格 / 总价 等手动数字 hint）
+
+---
+
+### C-14: 紫色 cells 条件细化 — 分段精度的秒仓/放仓 (2026-05-15)
+
+用户 18:14 提议："秒仓放仓系数可以分段式考虑——一般是在白绿蓝给出后有提示，但是如果用户有给出紫色，那么也可以有更准确的提示"。同时把巨物形状识别延后（与 outline.py 重叠，下迭代再做）。
+
+**做法**：MC 过滤增加一层 optional 紫色 cells 约束，**tight filter 优先 + fallback 透明**：
+
+1. 收集 `cond_warehouse`（仅过滤仓库大小）和 `cond_purple`（同时过滤紫色 cells, ±`purple_tolerance` 默认 4 格）两份样本
+2. 若 `len(cond_purple) >= min_matching_samples` → 用 tighter filter，`purple_conditioned = True`
+3. 否则 fallback 到 `cond_warehouse`，rationale 里显式标 "（紫品样本不足, fallback）"
+
+**新字段**：`SnipeRecommendation.purple_conditioned` + `PassRecommendation.purple_conditioned`（bool），UI 可据此区分"粗 hint"和"精 hint"。
+
+**真实数据效果**（沉船 2510, 140 格仓库, n=4000, tol=±10/±4）：
+
+| 紫色 cells | P50 | snipe_max | conditioned | n |
+|---|---|---|---|---|
+| None       | 1,088,876 | 1,611,158 | False | 102 |
+| 10 / 22    | 1,088,876 | 1,611,158 | False (fallback) | 102 |
+| **35**     | 1,294,920 | **1,797,730** (+12%) | **True** | 30 |
+
+紫色 35 格 → 系统识别为"价值偏高仓库" → snipe_max 自动上调 12%。语义合理：紫色多 = 整仓价值高。Fallback 也透明（rationale 里能看到）。
+
+**测试**：4 新单测，198 → **202 passed**：
+- `test_snipe_purple_conditioned_when_purple_cells_given` — 命中条件
+- `test_snipe_falls_back_when_purple_tolerance_too_tight` — fallback 路径
+- `test_snipe_purple_conditioned_field_defaults_false_when_no_purple_obs` — 无紫品默认 False
+- `test_pass_purple_conditioned_when_purple_cells_given` — pass 镜像
+
+**延后项目**：巨物形状识别（用户提议"明确车壳/屏风/大鱼形状或排除墙面涂鸦/游艇..."）—— 这部分与现有 `outline.py` 高度重叠，需要重新设计 conditional 接口。等 Streamlit 上线后再做。
+
+### C-13: 放仓推荐（秒仓镜像）+ notebook 04 三段式收尾 (2026-05-15)
+
+用户 18:01 review C-12 反馈：数字与体感一致 (`snipe_max ≈ 1.6M` 合理)、措辞可接受、图表清晰。新提议：**对称加一个"放仓"hint**——小仓 (≤80) + 白绿蓝占比高 → 期望值低于均值时给"超过 X 就放"提示。
+
+**`snipe.py` 加 `compute_pass_recommendation`**（6 新测试，合计 17 snipe+pass 测试）
+
+设计上完全对称：
+
+| Hint | warehouse | 低品门控 | 输出 |
+|---|---|---|---|
+| **snipe (C-11/12)** | `>= 120` | 低品扫齐 | `snipe_max_bid = P75 × 1.15`（高风险溢价） |
+| **pass (新)** | `<= 80` | 低品扫齐 **AND** `low_cells/warehouse >= 0.40` | `pass_max_bid = 条件 P50`，`safe_entry_bid = 条件 P25` |
+
+`PassRecommendation` 多出两个字段：
+- `unconditional_p50`：全图 MC 均值（不带 warehouse 过滤），作为对比基准
+- `value_ratio = expected / unconditional_p50`：这个仓库比全图均值低多少。tooltip 直接显示 "预期仓价仅是全图均值的 79%"
+
+**`scripts/demo_snipe.py`** 升级为"双 hint demo"，自动跑 snipe + pass 两套。  
+**别墅 2407 (60 格仓, 白绿 22 + 蓝 8 = 50% 低品占比)** 实数据 demo 输出：
+- 850 匹配样本
+- 条件 P25 / P50 / P75 = 175k / **276k** / 438k 银币
+- 全图 P50 = 350k
+- 这个仓库 = 79% × 全图均值
+- **pass_max_bid = 276k 银币**（超过就放）
+- safe_entry_bid = 175k（P25 安全入场）
+
+**Notebook 04 (`04_roi_and_snipe.ipynb` + `.html`) 升级为三段式**：
+
+第三段加 `## 3. Symmetric Hint: 放仓` 章节 + 1 markdown (对比表) + 1 code cell (real-data demo)。Summary 改成三个 actionable surfaces：buy (ROI) / bid (snipe) / fold (pass)。
+
+HTML 重新执行导出：155 KB ipynb / 470 KB HTML。
+
+**测试数**：192 → **198 passed**（+6 pass 测试）。
+
+### C-12: Aisha R3 对称秒仓 + notebook 04 ROI/秒仓可视化 HTML 产出 (2026-05-15)
+
+用户 17:34 反馈："3 个方向都不错，按推荐做"。我的推荐：**做 3+2 (Aisha 对称秒仓 + notebook 04 HTML)，把 Streamlit (1) 留到下轮专门做**——理由：1 需要本地 `streamlit run`，不能给文件链接；2 可以导出单文件 HTML 直接交付。
+
+**任务 3：snipe.py 扩展 Aisha R3 分支**（3 新测试，合计 11 snipe 测试）
+
+- `compute_snipe_recommendation` 现支持 hero in {ethan, aisha}：
+  - **Ethan @ R2**：门控仍是 `q=1 (普品扫描合并) + q=3 (良品扫描)`，3700 银币扫描成本
+  - **Aisha @ R3**：门控变成 `q=1 + q=2 + q=3` 全部观察（她 R1→R3 轮廓积累），**0 银币扫描成本**
+- `SnipeRecommendation` 加 2 字段：`hero` + `round_window` ("R2"/"R3")
+- 推荐数值（safe_floor/expected/snipe_max）两个英雄相同——MC 分布只依赖地图+仓库大小，不依赖英雄；差别在 rationale 文本：
+  - Ethan: "白绿(普品扫描) 24 + 蓝(良品扫描) 18 ... R2 是秒仓黄金窗口（对手还未锁价）"
+  - Aisha: "白(轮廓 R1) 14 + 绿(轮廓 R2) 10 + 蓝(轮廓 R3) 18 ... R3 轮廓叠加后低品信息全齐（0 银币扫描成本），对手可能已开始抬价但你以零成本拿到同等信息"
+- Tooltip 加上 round_window 前缀："高风险操作 (R2): 可秒仓, 推荐价格 X 以内"
+
+**任务 2：notebooks/04_roi_and_snipe.ipynb + .html**（执行+导出，2 张图）
+
+10 个 cell，结构：
+1. Intro markdown：项目背景 + 两个产出概述
+2. Setup：sys.path hack + imports + load 真实数据
+3. ROI section markdown：解释 LOO metric + 精品均格 caveat
+4. Code：`compute_tool_roi` 跑 Ethan default × {别墅 2407, 沉船 2510} × 60 trials
+5. Code：grouped horizontal bar chart（双地图 ROI 对比）→ `fig_tool_roi.png`
+6. Takeaway markdown：良品扫描 ROI ≈ 6× 最优、精品均格 = 0 caveat
+7. Snipe section markdown：表格对比 Ethan@R2 vs Aisha@R3 信息渠道与成本
+8. Code：snipe rec for 两个英雄（沉船 2510, 140 格仓库）
+9. Code：MC value distribution histogram（unconditional vs warehouse-filtered）+ 4 条 marker 线（safe_floor / expected / snipe_max / P90）→ `fig_snipe_distribution.png`，x 轴 P98 clip + Million-format
+10. Summary markdown：项目闭环（buy + bid 双产出）
+
+**最终数字**（沉船 2510, 140±10 格仓库, n=89 matching）：
+- safe_floor = 762,213 (P50 × 0.70)
+- expected  = 1,088,876 (P50)
+- snipe_max = 1,611,158 (P75 × 1.15)
+- P90      = 1,889,298
+
+**交付物**：
+- `notebooks/04_roi_and_snipe.ipynb` (151 KB，含 baked outputs)
+- `notebooks/04_roi_and_snipe.html` (460 KB，单文件 HTML，简历附件直接打开)
+- `notebooks/fig_tool_roi.png` (49 KB)
+- `notebooks/fig_snipe_distribution.png` (73 KB)
+
+**`inference/__init__.py`** 已 re-export `SnipeRecommendation` + `compute_snipe_recommendation`（C-11 已加）。
+
+测试数：189 → **192 passed**（+3 Aisha snipe 分支测试）。
+
+### C-11: Ethan R2 秒仓推荐模块 + 精品均格 ROI caveat note (2026-05-15)
+
+用户 17:25 反馈两点：
+
+1. **跳过抽检/宝光建模**——只是简要推荐，不增加项目复杂度
+2. **新功能**：Ethan 玩家在给出白绿+蓝 cells + 仓库格数 ≥ 120 后，UI 应弹出"高风险操作：可秒仓，推荐价格 xxx 以内"——R2 是秒仓黄金窗口，对手还没开始抬价
+3. **修正 ROI 解读**：精品均格 ROI≈0 不等于无用——整数/2.5 这种均格读数会通过截断显示规则 pin 死紫色 (total_cells, count) 配对，这是 cells 精度而非 value 精度
+
+**新模块 `inference/snipe.py`**（8 单测，全绿）
+
+- `SnipeRecommendation` dataclass：`expected_value` (P50) / `p25_value` / `p75_value` / `p90_value` / `safe_floor_bid` / `snipe_max_bid` / 多行 `rationale` + 单行 `as_ui_tooltip()`
+- `compute_snipe_recommendation(session, *, maps, drops, items, ...)` 硬门控：
+  - hero == "ethan"
+  - warehouse_total_cells >= 120
+  - q=1 (白+绿合并) total_cells 已知
+  - q=3 (蓝) total_cells 已知
+  - MC 匹配样本数 >= `min_matching_samples` (默认 30)
+- 算法：对地图采样 `n_trials=2000` 次 ground truth，过滤 `|truth.warehouse_cells - obs.warehouse_cells| <= tolerance` (默认 ±8 格)，取剩余分布的分位数。`snipe_max_bid = P75 × snipe_premium (1.15)` 体现高风险溢价（低于 P75 是对手出价默认区，超过 = 拓宽胜面）
+- 任何门控失败返回 `None`（UI 该 hint 不弹出）
+
+**`scripts/demo_snipe.py`** 在沉船 2510 (140 格仓库, 白绿 24 + 蓝 18) 跑出实例：
+- P50 仓价 ≈ 99 万银币、P75 = 125 万、P90 = 160 万
+- 推荐区间：safe_floor 69 万 (P50 × 0.7) → snipe_max 144 万 (P75 × 1.15)
+- 4000 trials 里匹配窗口的样本数 = 90，可信
+- Rationale 是多行中文，可直接喂 Streamlit tooltip
+
+**为什么 R2 是秒仓窗口**：游戏内 R1 出价多数玩家保守（信息不全），R3 同行已经摸清局势开始抬价。R2 是 Ethan 信息优势最大且对手价格未锁定的黄金 1 轮。所以推荐区间偏激进（P75 × 1.15）而非保守均值。
+
+**`docs/tool_roi_table.md` 补充 caveat**：在表头下加 ⚠️ block 说明精品均格 value-ROI=0 不等于无用——它的核心价值是通过整数/2.5 这种 avg 的截断显示规则 pin 死 (cells, count) 对，这是 cells 精度收益不在当前 metric 里。Phase 2.1 可补一列 "cells-error ROI"。
+
+**inference/__init__.py** 同步 re-export `SnipeRecommendation` + `compute_snipe_recommendation`。
+
+测试数：181 → **189 passed**（+8 snipe）。
+
+### C-10: Phase 2 tool-ROI infra — ground truth + synth readings + LOO ROI + 真实地图表 (2026-05-15)
+
+终于把 ROI 表跑出来了。三个新模块 + 一个脚本，落地 25 新单测，再加 `docs/tool_roi_table.md` 把别墅 2407 与沉船 2510 的 ROI 数字 baked-in。
+
+**`inference/ground_truth.py`**（11 单测）
+
+- `BucketTruth(quality, count, total_cells, value_sum, huge_count, items)` + `SessionTruth(map_id, map_name, warehouse_total_cells, buckets)` 数据类
+- `sample_session_truth(map_id, *, maps, drops, items, rng)`：复用 `flatten_pool` 抽 K 件 + 展开 n_min..n_max，按 quality 分桶。复刻 `simulation.basic_mc` 的统计分布，但保留 raw `Item` 对象方便下游合成读数
+- `is_huge_item(item)`：仅对 q=4 / q=5 / q=6 判定，按 `HUGE_CELLS_PER_QUALITY` 阈值（其他品质永远 False —— 游戏内白绿蓝无 "巨物" 概念）
+
+**`inference/synth_readings.py`**（14 单测）
+
+- `TOOL_SPECS` 静态表登记 7 件已建模道具（普品/良品/精品/珍品 扫描 + 精品 估价/均格 + 珍品估价）；`SESSION_TOOL_SPECS` 单独放 `总仓储空间`（写 SessionObs.warehouse_total_cells）
+- `apply_tool(truth, name) → ToolEffect`：每件道具产出 `bucket_patches: dict[q, dict[field, value]]` + 可选 `session_patch`。`普品扫描` 把白+绿合并写到 q=1（沿用 demo_shipwreck 约定）；`精品均格` 调用 `format_value` → `parse_reading` 复刻游戏 2 位截断显示
+- `build_session_obs(truth, *, hero, tools, include_aisha_outline, huge_band_inputs) → (SessionObs, total_silver)`：把多件道具读数合并成一个 SessionObs。huge_band 自动按 hero 可见性导出（伊森紫/金/红，艾莎只紫）；可选地把艾莎 R1-R3 outline 当作 free 信息源，pin q=1..4 的 count + total_cells
+- 抽检 / 宝光四鉴等 random-item reveal 未建模（Phase 2.1 follow-up）
+
+**`inference/roi.py`**（5 单测）
+
+- LOO 算法核心：每 trial 抽一个 ground truth → 全 kit 推断一次 → 对每件道具 `t`，去掉它再推断一次 → 比较 `|truth_value − inferred_value|`，差值就是 `t` 的 info gain。除以银币价 = ROI
+- `_inferred_total_value(top1, obs)`：每个 bucket 优先用 `bucket.value_sum`（exact），其次 `value_range` midpoint，最后才 fallback 到 `cand.total_cells × per_cell_prior`（含 huge 拆分以避免双重计价）
+- `compute_tool_roi(map_id, tool_kit, *, ..., per_bucket_top=8) → list[ToolROI]`：参数化的 search width 让单测能 4-5 跑快、生产脚本用 6-8 跑准
+- 测试发现：薄 kit 下 ROI 可能为负——道具真值替换掉了"凑巧准"的 prior 导致整体误差变大。这是有意保留的诊断信号而非 bug
+
+**`scripts/compute_tool_roi.py` + `docs/tool_roi_table.md`**
+
+跑别墅 2407 + 沉船 2510 × {Ethan default, Ethan +warehouse, Aisha minimal}，落地真实 ROI 表（n=60 trials/cell, per_bucket_top=6）。**结论非常 actionable**：
+
+| 排名 | 道具 | 银币 | 别墅 ROI | 沉船 ROI | 备注 |
+|---|---|---|---|---|---|
+| 🥇 | **良品扫描** | 2,500 | +6.6 | +7.3 | **性价比最高**，蓝品扫描每银币挽回 6-7 银币的估值误差 |
+| 🥈 | 珍品估价 | 35,000 | +1.6 | +3.3 | 绝对信息量最大（金品估值方差大，单件就值数十万） |
+| 🥉 | 普品扫描 | 1,200 | +0.8 | +1.8 | 便宜实用，沉船更值 |
+| 4 | 精品估价 | 20,000 | +0.5 | +0.4 | 中规中矩 |
+| 5 | 精品均格 | 20,000 | **+0.0** | **+0.0** | **冗余**——给定其他 4 件已在 kit，再加均格不再贡献 value 精度 |
+| — | 总仓储空间 | 55,000 | +0.0 (value) | +0.0 (value) | 值无增益，但 cells-side info_gain > 0（薄 kit 下能锚定 cells 预算） |
+
+UI 推荐 hint 直接可挂："本次跑别墅，buy 良品扫描 (ROI≈6.6) 而不是 精品均格 (ROI≈0)，因为后者在你现有 kit 下不再补充信息。"  
+艾莎极简 kit (3 件道具) 也跑出 `珍品估价 ROI = +2.3 ~ +3.7`，验证她的 outline pin 是真正的 free 信息源 —— 不用花扫描银币就能让 value-side 推断收紧。
+
+**为何精品均格 ROI = 0**：在已有 `精品估价` (pin 紫品 value_sum) + `普品/良品扫描` (pin 低端 cells) 的前提下，均格读数的"约束作用"已被其它读数覆盖；DSL 的 `value_consistency_score` 与 `is_compatible` 两侧都不再因均格收紧。这反过来也确认了引擎的 joint posterior 不是 over-engineered。
+
+测试数：151 → **181 passed**（+11 ground_truth, +14 synth_readings, +5 roi, -1 合并清理）。
+
+### `6adb7c2` — C-9: notebook 03 outline-术语澄清 + 总仓储 5.5w override + map-fields scope cut (2026-05-15)
+
+用户 2026-05-15 16:40 反馈梳理：
+
+1. **澄清: 03 notebook 的 "outlines" 是艾莎技能**：用户看图后误以为 outline 指道具扫描。加 markdown cell 显式列三类信息来源对比表（艾莎技能 vs 扫描道具 vs 地图提示）并把图标题改成 "Aisha hero skill (free R1-R3 outline reveal) shrinks the warehouse coverage gap by 74% — no tool silver spent in either scenario"。重新 `jupyter nbconvert --execute`，新图 (69KB) 落地。
+2. **总仓储空间 = 55_000 银币**（用户之前忘说）：新增 `TOOL_PRICE_OVERRIDES` 字典放工具级精确价 + `tool_price(name, rarity)` helper（先查 override 再 fallback 到 rarity tier）。1 个新单测 pin 55k 数字 + override 行为。
+3. **地图字段范围收窄**：用户确认 "9件均价 / 几件总价 / 最高格数藏品 / 最高品质藏品" 这些**对推断没帮助**（指代模糊，没法定位具体物件），引擎不建模。已支持的 count / avg_cells / total_cells / value_sum / value_range / huge_band 字段就够覆盖玩家手输需求。无新代码，省时间。
+4. **Phase 2 ROI metric 选 value-error**：用户确认"仓位价格准确性"是核心，metric = `|true_value_sum - inferred_value_sum| 的减小量 / 工具银币成本`；cell-error 作辅助诊断。`ROI = 1` 意味"使用 1 银币成本的工具，估值精度提升 1 银币"——超过 1 就值得在配置中携带。
+
+测试数：150 → **151 passed**。
+
+### `b70b412` — C-6+C-7+C-8: seal hero skills + loadout refresh + joint posterior + outline-joint demo (2026-05-15)
+
+**C-8 新增 (outline-joint demo + 紫色 huge per-cell 校准)**：
+
+跑 outline + joint 联立 demo 时发现：`estimate_total_cells(quality=4, huge_cells=16)` 会**双重计算**——因为 `PER_CELL_VALUE_HUGE` 没有 key 4，函数 fallback 到"不减 huge_value"，结果 38 non-huge + 16 huge = 54（应该 = 38）。修复：
+- `PER_CELL_VALUE_HUGE[4] = 2500`（紫色 4×4 屏风/雷达/防弹衣 均 ~40k, 即 2500/cell；和 default 一致但显式声明可让 estimator 干净减去 huge_value）
+- 顺手修了 gold huge 注释/常量不一致：值从 18000 改为 6000（单人郊游快艇 108k/18 ≈ 6000，原值 18000 是 typo）
+- 加 1 个新单测 `test_estimate_total_cells_purple_with_huge_avoids_double_count` pin 住正确行为
+- 已有测试 `test_per_cell_value_huge_flag` 中"Purple has no huge override" 注释更新（行为不变，但语义现在显式）
+
+新脚本 `scripts/demo_outline_joint.py` 展示 Aisha 的 R1-R3 outline 信息收益（别墅 2407, 109 格仓库 scenario）：
+- 不用 outline：joint top-1 总 67 格，仓储 coverage gap = 42 格（white/green/blue 完全没建模，"隐形"占 109 中的 42 格）
+- 用 outline：joint top-1 总 98 格，coverage gap = 11 格（剩下的 11 格留给 red 的 value range 弹性）
+- **gap shrink 73.8%** —— 这是简历可用的 headline 数字
+
+注意：rare bucket per-bucket cell spread 在这个场景下没变（value reading 太精确已经 pin 死），outline 的价值体现在"low-tier 的诚实记账让 downstream value-density 估算更可靠"。后续可以做更紧凑的场景把 spread shrink 也露出来。
+
+测试数：148 → **149 passed**（+1 purple-huge bug fix test）。
+
+**C-8 后补（per 用户 2026-05-15 16:30 反馈）**：
+- 加 `TOOL_PRICE_BY_RARITY` 常量到 `observation.py`：白 1200 / 绿 2500 / 蓝 20000 / 紫 35000 / 金 50000（占位，珍品估价/扫描/总仓储空间精确价后续 probe）。用户提示这些会动态波动，Phase 2 ROI 表应给 ±30% sensitivity band
+- 加 1 单测 pin 价格单调递增 + 用户给出的具体数字
+- **地图动态信息字段盘点**（关于 "BidMap 给出哪些有用数据"）：
+  - `BidMap.col[20]` 是"提示槽位调度器"——它声明"哪轮放什么类型的提示"，**不是**具体数值
+  - 具体数值（count / avg_cells / total_cells / value_sum / value_range）是开局后**动态生成**的
+  - 4 张截图归纳：地图通常给紫品/金品的 `数量` 或 `均格` 或 `总价` 中的 1-2 个
+  - **这些字段全部已经被 `QualityBucketObs` 覆盖**，玩家手输即可，引擎无需新代码；UI 那边可以做 per-map preset 暴露"R1 通常会给紫品 count / R3 通常会给紫品 avg_cells"（未来 UI 工作）
+- **澄清: hero ROI ≠ tool ROI**：v2 hero ranking 已交付（hero marginal value），Phase 2 的 ROI 表对比的是**工具组合**（Ethan default vs alt vs Aisha default 的"每银币信息收益"），跟英雄选择解耦。
+
+测试数：149 → **150 passed**（+1 TOOL_PRICE_BY_RARITY 单测）。
+
+**附**: `notebooks/03_inference_demo.ipynb` 通过 `jupyter nbconvert --execute` 预先跑过，所有输出 + 图片已 baked 进文件，用户打开直接看即可，不需要本地重跑（除非要改 scenario 参数）。
+
+**C-7 新增 (joint posterior, 多 bucket 联立收紧)**：
+
+为推断引擎补上跨 bucket 一致性约束。原 `top_k_for_session` 是 greedy：q=6 top-1 一旦选错，后面的 q=5 / q=4 budget 估算连环错。新 `inference/joint.py`：
+
+- `JointHypothesis` dataclass：捕获一组跨 bucket 的 `(quality → BucketCandidate)` 联合赋值，含 `total_cells / bucket_composite / warehouse_penalty / composite`
+- `joint_top_k_for_session(session, k=5, per_bucket_top=8, warehouse_slack=10, warehouse_over_weight=0.05)` —— DFS over cartesian of per-bucket top-N + running cells-sum pruning + 软仓储约束。typical 3-5 buckets × top-8 → 远小于 10^4 探索路径，sub-ms 收敛
+- `inference/__init__.py` 把核心 surface 都 re-export 出来，外部调用 `from bidking_lab.inference import joint_top_k_for_session` 即可
+
+7 个 joint 单测覆盖：
+- 空 buckets → 空结果
+- 单 bucket → joint top-1 ≡ per-bucket top-1
+- warehouse slack 切掉超出 budget 的 combo
+- 等分情况下偏好不超 capacity 的（warehouse_penalty=0）
+- **关键场景**：greedy top-1 在仓储紧张时会冲突，joint 必须 demote 那个 top-1 改选第二顺位（仿真 50 格仓 + 30 格蓝扫 + 紫均格 2.5 + 紫估价 37500 的场景）
+- 3 bucket × top-8 性能：< 1s
+- 输出按 composite 升序
+
+**C-6（同 commit）：seal 英雄技能 + 道具组合常量校准**：
+
+1. 补 6 个 hero_skills 单测覆盖 C-5 的新机制：
+   - `InfoType.OUTLINE_QUALITY` 位于 `OUTLINE (0.3) < OUTLINE_QUALITY (0.85) < FULL (1.0)` 之间
+   - 艾莎 4 stages 各自 fire OUTLINE_QUALITY on q=1..4（disable timing 测）
+   - 艾莎紫色 R4 因 timing weight 急剧下降，确认 R4 > R3 > R2 > R1 的 timing 折扣阶梯
+   - 伊森 R1 random_categories=5：固定 rng seed 重现 5 个被命中 / 5 个 R5-only 的精确 split
+   - 伊森 R1 无 rng → 取 first-5 sorted category id 的确定性 fallback
+   - OUTLINE_QUALITY 同时命中时优于 OUTLINE 的 max 行为
+2. 道具组合常量校准 (按用户 2026-05-15 最新口径)：
+   - `ETHAN_DEFAULT_LOADOUT = (普品扫描, 良品扫描, 精品估价, 精品均格, 珍品估价)` —— 5 slot, 4 cheap + 1 gold
+   - 新增 `ETHAN_ALT_LOADOUT`：把精品估价换成 `随机抽检(1)` 给 category 信息（让 brute force 估价可以先按 category 剪枝）
+   - `AISHA_DEFAULT_LOADOUT = (随机抽检(2), 随机抽检(1), 宝光四鉴, 珍品估价, 总仓储空间)` —— 5 slot
+   - 新增 `STANDARD_LOADOUTS: dict[HeroMode, tuple[str, ...]]` 便于 Phase 2 contrast MC 自动取
+3. **集装箱降级**：PROGRESS.md "用户聚焦" 章节标注：集装箱不进推断引擎，UI 直接显示 baseline MC 均值即可
+4. **事件图策略**：明确不为 5.15 patch 临时事件图改 BidMap parser（5 天后下线）；推断引擎跟具体 map_id 解耦，玩家手动 hint 输入流程已覆盖
+
+测试数：132 → **148 passed**（+6 hero skills, +2 loadout, +1 alt-loadout, +7 joint posterior）。
+
+**用户后续指示**（直接影响后续开发优先序）：
+- 宝光四鉴 / 抽检：**不进入推断引擎模型**。宝光是用户为不空过轮次的自主选择；抽检主要为提升穷举效率，非必输入。引擎主要推断"格子数和地图"
+- commit 节奏：不必频繁 commit，大进展再来；进度有 PROGRESS.md 记录
+
+### `28ecfef` — docs+probe: detect 2026-05-15 game patch, document map-info DSL analysis (2026-05-15)
+
+游戏 2026-05-15 patch 实测发现：
+- BidMap 21 列 → 23 列，105 行 → 125 行（+20 张事件图）
+- Item 1132 → 1134，Drop 608 → 629
+- 旧 col[10] 在新 schema 里去到 col[11]，整体右移 1
+- 新 col[8] 和 col[22] 是 patch 加的 flag
+
+加 3 个 probe 脚本：
+- `probe_table_column_drift.py`：一键检测各表实际列数 vs 预期
+- `probe_bidmap_new_layout.py`：对照新旧 schema 逐列 dump
+- `probe_map_info_columns.py`：按地图名字定位截图里的 4 张事件图记录
+
+关键认知更正：截图里的 "金品 count=3", "紫品均格 2.54" 等具体数值**不在 BidMap 任何静态列里**，是 **session 开局后基于实际抽样动态算出来**的。BidMap col[20] (旧 round_category_hints) 实际是"提示槽位调度器"——告诉游戏"哪轮放提示、风格类型代码"，具体数值游戏跑时算。这意味着 inference engine 不需要等 BidMap 改完——玩家手动把看到的数值输入 QualityBucketObs 字段即可。
+
+`parse_bid_map_row` 改为遇到 != 21 列时显式报错并提示 patch 信息，避免静默错误解析。`_parse_drop_ref` 回滚到严格 4-元素检查（之前为了过 23-col 试错放松了）。
+
+OBSERVATIONS.md 新增 Checkpoint #10 完整记录 patch 细节、动态生成假说、4 张事件图归属、下次开工优先序。PROGRESS.md 新增"当前剩余工作"章节给项目状态盘点 + "用户聚焦：别墅 + 沉船优先"明确 Phase 2 范围收窄。
+
+132 tests 仍全绿；纯文档+probe 增量。
+
+### `bbbdd40` — C-5: hero skill rewrite — Aisha 4-stage outline+quality, Ethan 5-categories (2026-05-15)
+
+2026-05-15 用户提供 5 张游戏内截图（沉船 R4 / 集装箱 R4 / 网吧 R2 / 别墅 R3 / 沉船 R2 round info panel），逐条解读后实锤了之前怀疑的两个建模偏差，并发现地图自带信息 DSL 比 `round_category_hints` 丰富得多。详见 OBSERVATIONS.md Checkpoint #9。
+
+`hero_skills.py` 关键改动：
+- **新增 `InfoType.OUTLINE_QUALITY = 0.85`**：介于 QUALITY (0.7) 和 FULL (1.0) 之间，对应"轮廓+品质"复合信号
+- **新增 `SkillEffect.random_categories: int = 0`**：替代 max_items 的不正确硬编码，per-trial 真正随机抽 N 个分类
+- **艾莎 (103) 重写为 4 stages**：R1=白, R2=绿, R3=蓝, R4=紫，每轮一个 OUTLINE_QUALITY effect，技能名"遗珍慧眼"（截图实锤；游戏 Hero.txt col[2] 描述的"R1=蓝, R2=绿, R3=白"3 轮是基础等级，col[10] 的 4 个 effect_id 对应 4 级升级）
+- **伊森 (208) R1 改为 `random_categories=5`**：替代旧的 max_items=5（之前误以为是 5 件物品），现在反映"5 of 10 random categories"语义；技能名"空间觉知"
+- `compute_info_score` 新增可选 `rng: random.Random` 参数，hero_value MC 每 trial 用 numpy rng 派生 python rng 传入，保 reproducibility
+
+v2 ranking 大改：
+- **别墅 2407**：伊森从 +13.7% (A) 跃到 **+20.5% (#3, S-tier)**；艾莎从 +22.4% 微调到 +20.3%
+- **沉船 2510**：伊森 **+15.3% (#2)**；艾莎 +15.5% (#4)；玛丽亚 +15.3% (#3)；索菲 +16.9% (#1)；都进 S-tier
+
+Phase 1A 文档（`PROGRESS.md` 英雄表 + OBSERVATIONS.md）同步更新。
+
+待做（已记 TODO）：probe BidMap.txt 找剩下 4 种地图信息列（gold count / gold total_cells / purple avg_cells / random_reveal），伊森 R2-R4 条件触发建模留 Phase 2。
+
+132 tests 仍全绿（无新增测试；下次校准时为 OUTLINE_QUALITY + random_categories 补单测）。
+
+### `a823a21` — docs: append commit log to PROGRESS.md + Checkpoint #8 to OBSERVATIONS.md (2026-05-15)
+
+按 2026-05-15 用户要求，PROGRESS.md 长出一个 append-only "提交历史" 章节，让每次 commit 的设计 rationale 留在 in-repo 备查。覆盖从初始 scaffold 到 C-4.2 的所有 commit，反时间序。
+
+OBSERVATIONS.md 新增 Checkpoint #8，记录 Phase 1A 推断引擎 MVP 发现（截断显示规则确认、per-cell 价值 prior 校准、沉船 R4 demo 通过、巨物 band UX、英雄不对称规则、标准道具组合、Phase 2 ROI 题目），外加用户 2026-05-15 实测确认的两个事实：
+
+- 伊森 outline UI **没有** category-on-hover 提示；玩家必须用地图爆率先验猜分类。验证 Ethan outline 应建模为 `quality_hint=None`（纯形状信号）
+- 艾莎实战 4 轮（白起）和 Hero.txt col[2] 的 3 轮（蓝起）不一致；col[10] 4 个 effect id 对应 4 级升级。`hero_skills.py` 和 v2 ranking 留待截图证据再改
+
+纯文档变更；tests 不动（132 passed）。
+
+### `16f2191` — C-4.2: Outline observation module — Aisha-style bucket pinning (2026-05-15)
+
+新增 `inference/outline.py`，覆盖艾莎和伊森 outline 技能（按 2026-05-15 用户口述：艾莎 R1=白, R2=绿, R3=蓝, R4=紫；伊森 R1 揭示 5 个随机分类的轮廓，R5 揭示全部）。
+
+- `OutlineObs(shape, round_seen, quality_hint, hero)`：UI 输出的单位类型，每个 cabinet 轮廓一个。
+- `make_aisha_outlines` / `make_ethan_outlines`：每英雄构造器；艾莎的 quality_hint 自动从 `AISHA_ROUND_QUALITY` 取，伊森的 quality_hint=None（无品质信息，**hover 也不显示分类**——用户实测确认）。
+- `build_shape_index({item_id: Item}) → {(quality, w, h): [Item]}`：shape → 候选物品反查表。
+- `candidates_for_outline`：给定 outline + shape index → 兼容 shape+quality 约束的物品集。
+- `derive_bucket_from_outlines(quality, outlines, shape_index)`：艾莎模式——她揭示某品质全部轮廓时，可以**精确**锁定 count、total_cells，并从每形状候选物的 min/max value 推出 tight value_range。
+
+**警示**：本模块**不动** `hero_skills.py`。用户的实战艾莎（4 轮，白起）与 `heroes.json` 描述（3 轮，蓝起）不一致；先保留旧的 SkillEffect ranking，等游戏内截图验证后再统一改。详见 OBSERVATIONS.md Checkpoint #8。
+
+11 个新单测，总 132（之前 121）。
+
+### `b07940c` — C-4.1: refine huge-item input — band system + hero visibility rules (2026-05-15)
+
+2026-05-15 设计 session 中用户提的 UX 细化：
+
+- `HugeBand`：离散桶输入（`"none"` / `"1"` / `"2-3"` / `"4+"`），让玩家从下拉里选，不用算清精确件数。
+- `HUGE_CELLS_PER_QUALITY`：每品质巨物面积常量（紫 16, 金 18 只此一件, 红 16）。
+- `aisha_can_observe_huge()`：编码英雄不对称——艾莎只看紫色巨物，伊森看全部。session validator 在艾莎模式下检测到金/红 band 时报警。
+- `ETHAN_DEFAULT_LOADOUT` / `AISHA_DEFAULT_LOADOUT`：标准道具组合常量，给将来 UI 默认值用（伊森 4 便宜+1 金；艾莎 2 便宜+2 金，偏估价类）。
+- `QualityBucketObs.{huge_count_range, huge_cells_per_item, min/max_huge_cells}`：驱动暴力枚举过滤的 helper。
+- 引擎：huge-band 过滤的实现是"存在整数 h ∈ [min, max] 使 h ≤ count 且 h × huge_per_item ≤ total_cells"——比硬编码 huge_count 更灵活。
+
+16 个新单测，总 121（之前 105）。
+
+### `4a56555` — C-4: Phase 1A inference engine MVP — display rule + priors + demo (2026-05-15)
+
+- `inference/display.py`：truncate-at-2dp 显示模型 + 候选枚举 + 仓库剪枝，已用截图观察校准（26 单测）。
+- `inference/quality_priors.py`：per-cell 价值中位数（紫 2500, 金 9400, 红 50000 默认 / 30000 巨物），用沉船 drop-weighted p50 验证；红色巨物分流（15 单测）。
+- `inference/observation.py`：UI 形状的 `SessionObs` + `QualityBucketObs` dataclass + 暴力候选枚举器，按 capacity / huge-floor / avg-cells display rule 三层剪枝，按品质 top-K 复合排序输出。
+- `scripts/demo_shipwreck_r4_inference.py`：端到端 demo，从 2026-05-15 截图（avg=2.5, 估价=86,490）复原紫品 (35 cells / 14 items)。
+- `scripts/probe_value_per_cell.py`：drop-weighted p50 探针，验证用户启发式数字。
+- `PROGRESS.md`：测试数上调到 105，Phase 1A 标记 MVP 完成。
+
+### `f7176b3` — C-3: Phase 1A foundation — round category hints, robust value, hero v2 polish (2026-05-15)
+
+跨 Checkpoint #5/#6/#7 的整合 commit。
+
+- **#5**：SkillEffect / hero_skills.py timing 模型 + hero_value.py contrast MC 精化
+- **#6**：`notebooks/01_map_value_distribution.ipynb` + `02_hero_ranking.ipynb`；Item.txt shape_w/shape_h 字段（col[7] WH 编码）；`scripts/probe_item_shapes.py` / `analyze_shape_quality.py`
+- **#7**：
+  - `BidMap.col[19]` 入 schema 为 `round_category_hints`，用 `probe_round_categories.py` 验证（R1 100%, R3 ~67%, R5 ~35%, R2/R4 ~18%；明暗拍提示一致；密度与难度对应：快递/仓库 5 → 沉船 1）
+  - `simulation/robust_value.py`：剔除"小而贵"长尾（value ≥ 100 万 AND area ≤ 3）；影响：别墅 -4.8%, 沉船 -5.2%, 快递/集装箱 0%
+  - 形状指纹字典：5×4 = 唯一蓝物（涂鸦墙，8880），6×3 = 唯一金物（游艇，10.7 万），4×4 = 4 红/金 + 1 蓝石狮子（唯一混淆）
+  - `compare_raw_vs_robust.py`：side-by-side raw vs robust E[session]
+  - `PROGRESS.md`：项目全局入口，当前聚焦 4 英雄（玛丽亚/索菲/艾莎/伊森），道具预算（3 白绿 + 1 蓝），仓库分档，Phase 1A 推断引擎路线图
+
+用户决策固化：英雄 scope 排除加布里埃拉（与索菲重叠），保留伊森（与形状信息协同）；道具预算默认 3 白绿+1 蓝，仅大仓 >130 才考虑金道具；均格小数尾零=约的（用户实测：2.90 暗示分母不整除 10，如 32/11），打开均格类道具的小数 leakage 反推路径。
+
+测试 53 → 64。
+
+### `9430bcc` — C-1: hero skill marginal value model + contrast MC (2026-05-14)
+
+- `simulation.hero_skills`：DSL 风格的 SkillEffect 模型覆盖全部 20 英雄。每个英雄技能拆为 `SkillEffect(info_type, category 过滤, quality 过滤, max_items, per_round, rounds)`。`compute_info_score()` 给特定英雄+场局返回 [0,1] 的 per-item info 分。
+- `simulation.hero_value`：contrast MC，对比英雄存在 vs 不存在。每个 trial 抽一场物品，测理性玩家在英雄给信息后比随机出价多赚多少。`HeroValueResult` 报 baseline_mean / hero_mean / marginal_value / %。
+- `docs/hero_skill_schema.md`：全部 20 英雄技能按 info type / category 过滤 / 时间分类。
+
+关键发现（10K 试验, 4 地图）：
+- 玛丽亚（108, 白/绿/蓝 value 揭示）稳居 top-3，marginal +23–116%
+- 艾莎（103, 渐进品质揭示）+ 伊万（208, 广轮廓）是通用型强者
+- 艾哈迈德（204, 计数/均值）+0% — 统计聚合对选品几乎无用
+- 维克托（209, 计数提示）所有地图最弱
+- 英雄价值在快递最高（+100%，rounds << items），沉船最低（+15%，rounds ≈ items）
+
+测试 46 → 52。
+
+### `ce455a6` — Add observations.md project log + simplification decisions (2026-05-14)
+
+新增 `docs/observations.md`：按 checkpoint 记录关键发现、设计决策、所用技术、项目状态。覆盖 Checkpoint 1-4：drop pool 递归、BidMap schema 拆解、MC 验证结果、出价模型发现。
+
+关键简化决策固化：明拍/暗拍共享 drop pool，预算约束极少触发，所以核心模型不区分拍卖模式。
+
+后续 `a6554a4` 把它从 docs/ 挪到 repo root。
+
+### `1d424cf` — C-2: budget-aware bidding model + auction_mode (open/sealed/training) (2026-05-14)
+
+BidMap schema v2：
+- `auction_mode`（open/sealed/training）从 map_id 前缀 + col[17] mode_flag 派生。用户确认：2xxx=open, 4xxx=sealed, 3xxx=training
+- `mode_flag` (col[17]) + `bid_price_ladder` (col[18]) 入 schema
+- maps.json 重新生成
+
+`simulation.bidding` 模块：
+- `BidPolicy`：可配 bid_factor + NPC 底价区间
+- `simulate_session()`：每 trial 循环，玩家出 bid_factor*value，bid ≥ NPC 底价就赢，从预算扣
+- `SessionSummary`：gross mean / net profit (mean/std/quantile) / win rate / 预算使用率 / ROI
+- 关键发现：别墅明暗拍（200 万 vs 100 万预算）在典型 bid_factor 下 net profit 几乎一致——预算约束只在 bid_factor ≥ 0.50 的暗拍侧触发。沉船预算两边一样所以明暗拍数字 identical。
+
+脚本：`demo_bidding_compare.py`, `sensitivity_bid_factor.py`, `compare_map_tiers.py`
+
+测试 41 → 46。
+
+### `60de342` — Layer 2 kickoff: full BidMap schema + first working Monte Carlo (2026-05-14)
+
+Layer 1 收尾：
+- 把 `BidMap` 从 3 字段 summary 扩到 13 字段 schema，覆盖 drop_pool 路由、入场费、起始预算、items-per-session 范围、轮数、合集子池权重（完整列映射见 `docs/bid_map_schema.md`）
+- 用新字段重新生成 `data/processed/maps.json`
+
+Layer 2 v1：
+- 发现 Drop.txt 池是多级嵌套（顶层 → 品质 → 盲盒 → 叶子），`category == 9999` 表示"这条 entry 引用另一个池，递归"；写入 `docs/bid_map_schema.md`
+- 新增 `bidking_lab.simulation.flatten_pool(pool_id, drops, items)` 遍历池图，返回扁平 `{leaf_item_id → 有效概率}` 分布
+- 新增 `bidking_lab.simulation.simulate_map(map_id, n_trials=10_000)` Monte Carlo：每 trial 抽 K ~ Uniform[min, max] 件，从扁平池有放回采样，返回 mean / std / q05 / q50 / q95
+- 内联记录 caveat：with-replacement、无英雄技能、无出价机制
+
+测试 35 → 39。
+
+Demo：`scripts/demo_simulate_maps.py` 给 13 张地图排序——沉船 > 别墅 > 集装箱 > 仓库 > 快递（期望值递减，变异系数单调递增）匹配设计直觉。
+
+依赖：加 `numpy>=1.26`。
+
+### `1f39cc4` — Publish derived JSON datasets so the package runs without the game (2026-05-14)
+
+Plan A 落地：克隆这个 repo 的人立刻拿到可用的 items / battle_items / heroes / maps 数据。原始游戏文件保持 gitignored。
+
+新增 Layer 1 解析器：
+- `data/quality.py`：共享 `Quality` 枚举 (0..6 → 白绿蓝紫金红) + 中英文颜色名 helper
+- `extract/item_table.py`：`Item` pydantic 模型 + parser；命名 11 个已确认列，保留 raw_row 给 27 个未定列。quality 验证 0..6
+- `extract/battle_item_table.py`：`BattleItem` 带 quality_color + effect_type_label 派生字段
+- `extract/hero_table.py`：`Hero`（id / name / skill 文本 + raw_row）
+- `extract/bid_map_table.py`：`BidMapSummary`（id / name / desc + raw_row）。完整子池解析等里程碑 B
+
+新脚本 `scripts/build_processed_data.py`：从 `data/raw/tables/*.txt` 读，写派生 JSON；raw_row 不入 JSON 以减小体积。
+
+提交进 git 的产出（`data/processed/*.json`）：
+- `items.json` — 1132 件 ~520 KB
+- `items_droppable.json` — 883 件 ~425 KB
+- `battle_items.json` — 64 个 ~18 KB
+- `heroes.json` — 20 个 ~4 KB
+- `maps.json` — 105 张 ~25 KB
+
+.gitignore：保持 `data/raw/**` 和 `data/processed/tables/**` 在外（字节等价游戏文件），但显式允许派生 JSON。README "Data sources" 节说清边界。
+
+测试 → 28。
+
+### `df9b7dc` — Confirm Item.txt quality (col[8]) and value (col[9]) via cross-check (2026-05-14)
+
+Drop.txt entries 交叉验证 Item.txt 找到 883 物品的 loot universe，然后用玩家给的游戏内观察验证 quality + value 映射：
+
+- col[8] = quality。7 档 (0..6)，0 是"无品质 / 系统物"，1..6 映射白绿蓝紫金红。每升一档中位 value 是上一档的 ~5-10 倍，单调
+- col[9] = item value（游戏显示的"X 万" = col[9] / 10000）。验证案例：1006001 金陵折扇 → 19,371,213（游戏内 1900w）；1056013 非洲之心 → 13,145,200（游戏 1314w）
+- Drop entry category 字段也搞清：1=货币, 6=柜子, 7=礼盒, 8/19=英雄试用卡, 11=战斗道具, 12/14/15=头像/皮肤变种, 101-110 是 Layer-2 真正关心的 10 类家具/文物分类, 9999 = 跨池元分类别名
+
+- `scripts/analyze_loot_universe.py`：可复用 Join Drop × Item；打印 loot universe 大小、品质直方图、每品质 value 统计、每品质样本物品、category → item_ids 拆分
+- `docs/item_table_schema.md`：col[8] / col[9] 由"较可能"提升为"确定"；附上正式品质颜色表 + category 含义表
+- `docs/project_vision.md`：交叉验证步骤标 done；下一步 `parse_item_table()` v1 + `data/processed/items.json` 导出
+
+### `017e0d1` — Add dump_processed_tables.py (2026-05-14)
+
+产出本地 artifacts（gitignored），表能直接在 Excel / VS Code 打开不用重跑解码器：
+
+- `data/processed/tables/<Name>.tsv`：每张 `Tables/*.txt` 解码到 UTF-8（BOM 前缀让 Excel 正确渲染中文），每表一个 TSV
+- `data/processed/tables/_with_headers/{Drop,Item}.tsv`：同样行但加表头（来自 `docs/item_table_schema.md` 暂定名）；`_?` 后缀标未确认列
+- `data/processed/drop_entries.csv`：Drop.txt entries 摊平到每 (pool_id, entry_idx, category, item_id, n_min, n_max, weight) + weight_share_in_pool 一行，方便 join Item 行交叉检查
+
+可重跑：`copy_game_tables.ps1` 之后再跑一次就刷新。
+
+### `33c15c5` — Add Drop.txt schema parser + Item.txt column profiler (2026-05-14)
+
+Layer 1 进度：drop 池完全 typed，item 表 schema 映射到只用数据本身就能站得住脚的程度（暂无游戏 UI 交叉检查）。
+
+- `extract/drop_table.py`：`DropEntry`, `DropPool` pydantic 模型；`parse_drop_row` / `parse_drop_table` / `load_drop_table`。容忍空 `[]` 和退化 `[[]]` entry。原始 weight 不归一化，留给模拟侧合并
+- `tests/test_drop_table.py`：7 单测，覆盖 happy path / 空池 / 重复 pool_id 检测 / JSON 畸形 entry / 列数错
+- `scripts/summarize_drop_table.py`：真实 Drop.txt 烟雾测试（608 池, 类型直方图 {1: 48, 2: 560}, top category=11 有 4402 entry）
+- `scripts/profile_item_columns.py`：Item.txt 每列 distinct / type / range / 样本，给 schema 逆向当指南
+- `docs/item_table_schema.md`：暂定列映射，三级置信度（certain / probable / unknown）。指出**网格形状不在 Item.txt**（col[14] 全 1132 行只有 3 个 distinct 值，所以 footprint 住在别处——估计是模型 prefab）
+- `docs/project_vision.md`：checklist 更新，下一步是 Item.txt 列交叉验证（用 Drop.txt item_id join）
+
+测试 → 16。
+
+### `133cd74` — Add Tables/*.txt decoder (Base64 → UTF-8 TSV) + project vision doc (2026-05-14)
+
+`BidKing_Data/StreamingAssets/Tables/*.txt` 原来是纯 Base64 包裹 UTF-8 TSV，不是加密 blob。Layer 1（数据层）不用任何逆向即可达成。
+
+- `extract/tables.py`：`decode_table_text`, `iter_table_rows`, `load_table_rows`, `assert_uniform_columns`, `discover_tables`
+- `tests/test_tables.py`：7 单测（base64 往返 / UTF-8 / 锯齿性）
+- `scripts/probe_tables.py`：hex+base64+解压三件套烟雾探针
+- `scripts/decode_table_preview.py`：单表 TSV 预览（Windows 上 stdout 走 UTF-8）
+- `scripts/decode_all_tables.py`：全表扫，每表打印行/列形状
+- `docs/project_vision.md`：3 层架构, KPI 问题 Q1-Q5, 明确反目标（不做 OCR / 自动化 / ML 拟合 drop 表）
+- `docs/upstream_references.md`：外部 repo 笔记，保持本地不入 vendor
+- `README.md`：指向 `project_vision.md` 而非内联 stub
+- `TROUBLESHOOTING.md`：节 7（解码结果）+ 节 8（PS UTF-8 控制台）
+- `.gitignore`：`external_references/**` 不入仓
+
+### `10539c8` — Initial commit: bidking-lab scaffold (2026-05-14)
+
+仓库骨架：config / extract stubs / scripts / docs 基础结构。
+
+---
+
+## 对话历史摘要
+
+### 2026-05-17 ~ 2026-05-19 · Streamlit 实战与读数链路（C-35 → C-39）
+
+1. **C-35~36**：面板 OCR / 主屏抓屏 / 地图 fuzzy 匹配 / 后台 MC。
+2. **C-37**：紫均格 hydrate、tab 槽位、抓屏延后任务、OCR ndarray 热路径、实机速度验收。
+3. **C-38**：`INSTRUCTIONS.zh-CN.md` + 启动等待 UI + 浏览器打开 `instructions.html`（替代 Streamlit 子页）。
+4. **C-39（本轮）**：
+   - 厘清 **三条数据路径**：MC 后验（`cells/count/value_sum/huge_band`）vs 分析估算（含 `avg_value` 推格）vs **候选预览**（枚举 + `relax_bucket`，仅 UI）。
+   - 修复 OCR/手填不一致：残留 `gold_cells=0` + `gold_avg_value` → 预览误显示「0格/1件」；桶级 `clear_stale_capture_fields`、预览 `effective_number_field_for_preview`。
+   - 地图清空/换类时 `reset_obs_for_manual_map_change`，避免读数与空地图并存。
+   - 用 `debug-*.log` 的 `MC timing` 确认慢在 **采样**（冷缓存 2401/2501 单次 50–100s），非 filter。
+   - 用户表示部分预览 UI 文案可暂缓，但 **推断仍消费读数**（非整体废弃）。
+
+### 早期对话（约 6 个 checkpoint）
+
+1. **数据解码**（Base64→TSV, 列名逆向, schema 建模）
+2. **MC 模型演进**（basic → bidding → hero v1 → hero v2 timing）
+3. **用户提供的游戏知识**：
+   - 明暗拍物品分布相同
+   - 预算约束极少生效（除快递外）
+   - 快递是票制
+   - 艾哈迈德在实战中"很垃圾"（模型验证了这一点）
+   - 伊森的"扫格子"策略、艾莎的渐进轮廓、玛丽亚("老奶奶")的估价能力
+4. **用户的战略方向**：
+   - 筛选到 3-5 个核心英雄（玛丽亚/艾莎/伊森 + 索菲/加布里埃拉）
+   - 结合格子大小形状和品质来估价
+   - 英雄+道具组合优化（限1金+1蓝）
+   - 最终做成简历可放的 GitHub 项目
+
+---
+
+## 本地路径
+
+### 项目仓库
+
+```
+c:\xiangmuyunxing\biancheng\2026\bidking-lab\
+```
+
+### 游戏安装路径
+
+```
+C:\xiangmuyunxing\steamapps\common\BidKing\
+├── BidKing.exe
+└── BidKing_Data\
+    └── StreamingAssets\
+        ├── Tables\               ← 所有游戏数据表 (Base64 编码的 TSV)
+        │   ├── Drop.txt          ← 掉落池 (608池, 4层嵌套)
+        │   ├── Item.txt          ← 物品 (1132件, 38列)
+        │   ├── BidMap.txt        ← 地图 (105张, 21列)
+        │   ├── Hero.txt          ← 英雄 (20人, 21列)
+        │   ├── BattleItem.txt    ← 战斗道具 (64个, 6列)
+        │   ├── Cabinet.txt       ← 柜子 (12种, 14列)
+        │   ├── Condition.txt     ← 条件 (未解析)
+        │   ├── Constant.txt      ← 常量 (未解析)
+        │   ├── Item_Type.txt     ← 物品分类 (未解析)
+        │   ├── ItemRestock.txt   ← 补货 (未解析)
+        │   └── LevelUp.txt       ← 升级 (未解析)
+        ├── filelist.txt
+        └── fileVersion
+```
+
+**配置**：代码通过 `bidking_lab.config.get_game_root()` 自动检测，也可设 `$env:BIDKING_GAME_ROOT` 覆盖。  
+**同步**：`.\scripts\copy_game_tables.ps1` 将 Tables/*.txt 复制到 `data/raw/tables/`（gitignored）。
+
+### 已复制到项目中的数据
+
+```
+data/raw/tables/         ← 游戏原始表 (gitignored, 需本地游戏)
+data/processed/          ← 派生 JSON (committed, 无需游戏即可用)
+├── items.json           ← 全部 1157 物品
+├── items_droppable.json ← 883 件可掉落物品
+├── battle_items.json    ← 64 个战斗道具
+├── heroes.json          ← 20 个英雄
+└── maps.json            ← 125 张地图
+```
+
+---
+
+## 快速恢复指南（给新对话）
+
+```powershell
+# 环境
+cd c:\xiangmuyunxing\biancheng\2026\bidking-lab
+pip install -e .
+.\scripts\test_smoke.ps1  # 日常 smoke，应该 425 passed / 13 deselected
+pytest -q                 # 全量，应该 438 passed
+
+# 关键入口
+python scripts/demo_hero_value.py --trials 10000        # 英雄排名
+python scripts/demo_simulate_maps.py                    # 地图价值
+python scripts/analyze_shape_quality.py                 # 形状×品质分析
+python scripts/compare_raw_vs_robust.py                 # raw vs robust 估价对比
+python scripts/probe_round_categories.py                # col[19] 提示密度全扫描
+python scripts/probe_rare_red_items.py                  # 长尾红物概率
+python scripts/probe_distinctive_shapes.py              # 形状指纹字典
+python scripts/probe_value_per_cell.py                  # 每格价值中位数（priors 校准）
+python scripts/demo_shipwreck_r4_inference.py           # Phase 1A 推断 demo
+
+# 需要先读的文件
+# 1. 本文件 (PROGRESS.md)
+# 2. OBSERVATIONS.md                              — 7个 checkpoint 技术细节
+# 3. src/bidking_lab/simulation/hero_skills.py    — 英雄技能DSL
+# 4. src/bidking_lab/simulation/hero_value.py     — 对照MC
+# 5. src/bidking_lab/simulation/basic_mc.py       — 基础MC + flatten_pool
+# 6. src/bidking_lab/simulation/robust_value.py   — 长尾降权 (新)
+# 7. src/bidking_lab/extract/bid_map_table.py     — BidMap schema (含 round_category_hints)
+# 8. src/bidking_lab/extract/item_table.py        — Item schema (含 shape)
+```
+
+## 2026-06-01 · 新增 hidden 样本后的当前进度
+
+- 已从桌面采集目录增量同步 18 份新 Fatbeans JSON 到 `data/samples/fatbeans/`，项目样本数从 311 增至 329；compact review 重新导出为 324 份成功、5 份 malformed 原始抓包错误。
+- `case_breakdown` 新增 `hidden_case`，并把 hidden 从 `normal_case` 中排除，避免 `2601 隐秘拍卖会` 的高红/高价值分布污染常规局指标。
+- hidden 审计显示问题集中在 Aisha：`trials=80` 下 Aisha hidden baseline q6 coverage 仅 `10%`、decision MAE 约 `150.7万`；Ethan hidden q6 coverage 为 `100%`、decision MAE 约 `22.1万`。
+- 新增默认关闭候选 `aisha_hidden_floor1`，门控为 Aisha + hidden + `shape+layout`，prior-floor ratio `1.0`。Aisha hidden 定向 `trials=80` 下 MAE `150.7万 -> 66.95万`，q6 coverage `10% -> 60%`。
+- 全 329 样本 `trials=20` paired 对照中，`aisha_hidden_floor1` 只激活 11 个 Aisha hidden 行，active no-q6 为 0，normal-case MAE/q6 coverage 不变；hidden MAE `91.3万 -> 51.4万`，hidden q6 coverage `52.38% -> 66.67%`。
+- live monitor 已新增第三套 shadow：`q6_residual_hidden_floor_shadow_*` / label `aisha_hidden_floor1`。正式 baseline posterior、bid rows 与已上线 shadow cap 策略不变。
+- 离线评估新增组合候选 `aisha_deep_hidden_floor1`，用于衡量未来“`aisha_deep_floor1` + `aisha_hidden_floor1`”合并升级。全 329 样本 `trials=40` 下，组合候选 active rows 58、active no-q6 0，paired 修复 34 个 q6 低估且无 newly-missed / no-q6 new-positive；decision MAE `41.999万 -> 34.425万`，q6 coverage `47.83% -> 60.14%`，hidden MAE `86.745万 -> 45.927万`。
+- live hidden shadow 已从 `aisha_hidden_floor1` 调整为 `aisha_hidden_floor15`。原因是 replay 显示 floor1 仍有 `7/9` under-before 行未修复；ratio 扫描中 `1.5` 在 Aisha hidden `trials=80` 下 q6 coverage 达到 `100%`，全 329 样本 `trials=20` 下 normal/no-q6 指标不变、active no-q6 仍为 0。该调整仍只影响 shadow 字段，不改正式估价。
+- 复测 22 份 hidden live artifact（`n_trials=80`、`shadow_trials=80`）后，`aisha_hidden_floor15` active rows 为 11，under-before 为 9，helped 为 7，still-missed 为 2，false-positive proxy 为 0，`helped_rate=0.7778`。剩余 miss 是 Aisha hidden 高价值尾部仍偏保守，不是 gate 误触发；该候选进入人工升级复核，但仍不自动上线。
+
+## 2026-06-02 · 新增 Isabella / Wuqilin Villa 对照样本
+
+- 已从桌面采集目录同步 9 份新 Villa JSON 到 `data/samples/fatbeans/`，项目样本数从 329 增至 338；compact review 已重新导出，333 份成功、5 份 malformed 原始抓包错误。
+- Fatbeans 解析新增 `isabella` / `wuqilin` 英雄识别。之前这些局会因为 parser 只认 Aisha/Ethan 而变成 `hero=null` 或被对手英雄误判。
+- Isabella `100110` 最高品质技能已接入全局最高品质上界：当最高品质只到金色（q5）时，q6 residual 采样会被压到 0。`isabella_villa_test_sample5_noq6_4rounds.json` 与 `isabella_villa_test_sample6_noq6_2rounds.json` 均验证为 q6 P90 `0`。
+- Isabella `1001101` 珠宝轮廓标为 category `105`，Wuqilin `10002071/10002072/10002073` 标为古董 category `106`，为后续“吴起灵 + 鉴影”反推提供同一套 category evidence。
+- 新增 3 份 no-q6 对照中，两个 Isabella no-q6 已被最高品质上界准确压红；`wuqilin_villa_test_sample1_noq6_5rounds.json` 没有全局最高品质上界，只靠 `max_item_cells=6` 不能排除小红，baseline q6 P90 仍约 `15.9万`，可作为普通 Villa no-q6 误抬校准样本。
+- 两份“单格小红”样本（Isabella q6 value `6.88万`，Wuqilin q6 value `11.25万`）当前 q6 P90 明显高于 truth，但三套 q6 residual shadow 均未激活，说明 hidden/deep floor 改动没有污染这些 Villa 小红样本。
+- 该方向暂记为支线：基础解析和 evidence 已打通，后续 Isabella/Wuqilin 技能细化、鉴影反推、UI 呈现等到正式 UI 接入时再继续；当前主线回到 q6 residual / live shadow readiness。
+
+## 2026-06-02 · q6 residual 主线收敛检查
+
+- 全 338 样本 `trials=20` 快速回归中，新增 Villa no-q6 / 单格小红对照没有让窄门控 floor 候选产生新的 no-q6 positive：`aisha_deep_floor1` active rows 47、active no-q6 0；`aisha_hidden_floor15` active rows 11、active no-q6 0。`profile_b5` 仍会提高已有 no-q6 正报金额中位，因此继续只保留为激进 shadow。
+- 110 份有效 Aisha shipwreck 历史 artifact replay（另 1 份 malformed）中，`aisha_deep_floor1` active rows 47、under-before 39、helped 28、still-missed 11、false-positive 0，`helped_rate=0.7179`。该结果只能作为离线 replay 证据，不能替代正式 live 新日志。
+- Aisha shipwreck 定向 `trials=80` paired 对照进一步确认：`aisha_deep_floor1` 把 q6 coverage `38% -> 68%`、miss `62 -> 32`、decision MAE `47.45万 -> 33.80万`；paired 修复 30 行，无 newly-missed / no-q6 new-positive，active no-q6 仍为 0。
+- 剩余 11 个 deep still-missed 没有单一低风险放宽模式：部分仍是 q6 count/cells 偏低，部分已达到较高件数/格数但真实红货单价处于极端尾部。当前不继续统一抬 floor，冻结 `aisha_deep_floor1` 为正式接入前的风险参考候选，等待真实 live 日志复核。
+- live monitor watch 模式已补 malformed 文件保护：处理异常会写 `monitor_errors.jsonl`，并把当前文件指纹以 `status=error` 写入 `processed_files.json`，避免坏样本在实时采集时反复阻塞队列；文件内容变化或显式 `--reprocess` 后仍会重试。`summarize_live_model_eval.py` 现在会把同目录错误日志汇总到 `monitor_errors`，便于实时采样时直接看到坏包数量和错误类型。
+- 真实 watch smoke 已用“1 个有效 Villa 样本 + 1 个 malformed JSON”跑通：有效样本写入 `model_eval.jsonl`，坏样本写入 `monitor_errors.jsonl`，第二次同目录轮询不会重复处理同指纹坏样本。`profile_b5` 的 `q6_residual_boost_shadow_trials` 也已补齐到 `model_eval.jsonl`，与 deep/hidden shadow trials 字段保持一致。
+- `latest_snapshot.json` 已新增 `ui_contract` 稳定接入层：`baseline` 是正式 UI / 出价口径，`q6_risk_reference` 是黄色风险参考，`shadows` 只读展示三套 shadow 且全部 `affects_bid=false`。现有 overlay 已开始读取该契约展示 shadow 风险参考，但仍保持 baseline 正式决策不被 shadow 覆盖。
+- `ui_contract` 已继续扩展 minimap / interaction 基础：`minimap` 使用最新 grid batch 的全部已知物品位置、尺寸、品质和分类，不再只依赖鉴影 category items；`interaction` 预留 compact / hover / detail 三层。overlay 现在优先从 `ui_contract.baseline` 取首屏决策，并在右侧绘制轻量 minimap。
+- minimap 工程版已按用户目标改为默认 `10` 列、`130` 格视口，并预留最高 `250` 格；compact 层只显示品质颜色和空间占位，不显示短名、形状编号或局部序号，原始 `item_id/item_name/shape_key` 保留给 hover/detail 与推理审计。真实 Villa 样本 smoke 产出 `known_items=35 / default_cells=130 / max_cells=250`。matplotlib 已确认可用（本机 `3.10.0`，项目 `ui` extra 声明 `matplotlib>=3.7`），当前只作为 detail 层 `optional_async` renderer 候选，不进入首屏同步路径。
+- `ui_contract` 已新增 `truth` / `constraints` / `diagnostics` 三层详情字段：首屏只拿正式 baseline，hover/detail 可以稳定读取输入总格/总件数、已知紫/金/红件数、shape/category/exclusion 计数、q6 件数/格数预测、剩余空间、空间压力和采样诊断。
+- live monitor 已恢复结算前可信公开总格/总件数作为推理输入：全量轮廓/透视给出的 `warehouse_total_cells`、`total_item_count` 会写入 `inference_input_constraints` 并进入 baseline v2；结算 inventory 即使出现在非 `0x002D` 状态也会被标记为 `settled`，不进入 pre-settlement 推理输入。真实 smoke 中普通 Aisha Villa 仍为 `session_totals_stripped`，package12/package17 全量轮廓分别恢复 `42/123`、`50/157`。
+- 新增 `scripts/export_ui_contract_review.py` 作为人工复核入口：可读取 `latest_snapshot.json`、monitor artifact 或 Fatbeans 原始样本，导出 `ui_contract_review.csv/jsonl`，集中显示 baseline/truth/constraints/minimap/shadow/performance，并把 `shadow_affects_bid`、compact minimap 文本残留、0 红 tail shadow、layout conflict、q6 below-prior 等写入 `review_flags`。
+- UI contract readiness batch（338 份 Fatbeans 样本，`n_trials=20 / shadow_trials=20 / roi=0`）已导出到 `data/review/ui_contract_batch_n20/`：333 行成功、5 个 malformed/invalid-frame 错误；安全项通过：`minimap_text_regression_rows=0`、`shadow_affects_bid_rows=0`。zero-match 根因修复后，`zero_posterior_match_rows=0`、`zero_match_with_fallback_rows=0`、`fallback_active_rows=0`；fallback 仍保留为低置信兜底，但当前样本不再需要它。本轮关键修复为 runtime layout 使用最新 local_index、全局总件数+总格数 exact residual fill、残余抽样不再破坏已满足 bucket target，以及 q6 residual 反推只允许来自明确非红总格。
+- layout conflict 已完成第二轮根因修复：Fatbeans shape-bearing 证据中 `local_index=None` 代表默认左上角 0，但 shape-less 质量/估价 action 的 local 曾被 merge 到形状证据上，制造假 overlap。修复后 338 样本 readiness batch `layout_conflict_rows=13 -> 0`，Ethan 6 个 layout conflict 全部清零；`zero_posterior_match=0`、`fallback_active=0` 保持不变。当前主要剩余复核项变为 q6 actionable miss 与 `missing_baseline_action=2`（Gabriela/Sophine 未完整接入）。
+- Ethan 高约束方向已从“会无解/假 layout conflict”转为“有解但仍需 q6 校准”：当前 131 行 Ethan review 中 `zero_posterior_match=0`、`fallback_active=0`、`layout_conflict=0`，但还有 `q6_below_drop_prior=8`。因此下一步不再扩大 zero-match fallback，也不需要 v3 重写；主线转向 q6 below-prior 风险提示与 shadow 校准。
+- q6 below-prior 已完成首轮分层并降噪：review 行新增 `q6_below_drop_prior_class/actionable/under_by`，summary 直接输出 actionable 行数。最高品质低于红色时不再打 q6 below-prior，因此 Isabella 两个 no-q6 噪声行被源头消掉；当前 54 行 below-prior 中，41 行是真实 q6 P90 漏真值，8 行是真实 0 红但采样率低，5 行 q6 P90 已覆盖 truth。`aisha_deep_floor1` 当前仍是最稳普通/沉船 shadow：338 样本、`trials=20` paired 对照修复 27 个 q6 漏估、无 newly-missed、无 no-q6 new-positive，decision MAE `38.38万 -> 33.74万`，normal-case MAE `37.67万 -> 31.92万`。`aisha_hidden_floor15` 主要修 hidden，hidden q6 coverage `59.09% -> 100%`，但该离线 compare 出现 1 个 shadow zero-match，仍只保留为 shadow。
+- q6 actionable review 继续拆 shadow 覆盖状态：41 个真实 q6 P90 漏估中，18 个已有 active `aisha_deep_floor1` shadow 候选，23 个未被当前 shadow gate 覆盖。按 hero/map 看，Aisha shipwreck 是唯一已有 active shadow 覆盖的主战场（24 个 miss 中 18 个 active、6 个未覆盖）；Aisha villa 11、Ethan villa 5、Ethan shipwreck 1 都未被当前 gate 覆盖，暂不扩大 floor，而是作为 unsupported miss 分组继续审计。
+- UI/review profile 接口审计修复一处诊断错位：`model_eval.evidence_profile_key` 以前由 UI 行重算，会漏掉 `layout`，导致 review 看到 `shape` 但 shadow gate 实际按 `shape+layout` 激活。现在 live artifact 以 `evidence_profile_key_from_problem(problem)` 为权威来源，`ui_contract.constraints.summary.evidence_profile_key`、review 行和 shadow summary 对齐。修复后 q6 actionable miss 分层为：`shape+layout=27`、`tool:category+shape+layout=6`、`layout=5`、`public:random_avg+shape+layout=2`、`public:max_item_cells+shape+layout=1`；剩余 5 个 review error 仍是 malformed/invalid-frame 原始抓包。
+- UI review 性能热点已定位：50-60 样本 profile 显示耗时主要在 v2 posterior，解析约 `1%`，v1 map/warehouse 合计不到 `9%`，baseline v2、boost shadow、floor shadow 是主成本；重复 `build_residual_problem` 约 `10%`，不是第一瓶颈。`profile_b5` 属于 `debug_only` 且不参与 UI 风险参考，已新增 `run_debug_shadows` / `--skip-debug-shadows` / review `--include-debug-shadows` 开关；`export_ui_contract_review.py` 默认跳过 debug shadow 后，338 样本 `n_trials=20 / shadow_trials=20` 导出耗时约 `147.5s -> 115.3s`，summary 指标不变。
+- 23 个 not-covered q6 actionable miss 已完成首轮 paired 审计。Aisha Villa `shape+layout` 候选用 prior-floor ratio `0.5/0.75` 在 35 个同 profile 样本上可修 5 行、无 no-q6 new-positive，MAE 约 `33.34万 -> 24.12-24.56万`；not-covered 子集 ratio `0.75` 修 4/11，仍 miss 4 行。Ethan `layout` 候选收益更大，但 ratio `0.5/0.75/1.0` 都会让 `ethan_villa_test_sample41_4rounds.json` 产生 no-q6 new-positive，因此暂不做 gate。结论：Aisha Villa 可进入“新 shadow 候选”进一步全量 compare；Ethan layout 继续作为高风险人工复核组。
+- `aisha_villa_floor05` 已接入 live shadow-only pending 候选，门控限定为 Aisha + Villa + `shape+layout`，prior-floor ratio `0.5`，不影响 baseline posterior、bid rows 或正式出价。338 样本全量 compare（`trials=20`）中，decision MAE `38.28万 -> 37.30万`，q6 plannable coverage `55.25% -> 57.63%`，paired 修复 7 个 q6 漏估，newly-missed 和 no-q6 new-positive 均为 0；`0.75` 版本整体接近但高尾/误抬压力更大，因此先不上更激进参数。UI review 复跑仍为 333 行成功、5 个 malformed 错误，`layout_conflict=0`、`zero_posterior_match=0`、`shadow_affects_bid=0`；41 个 q6 actionable miss 中，shadow 状态变为 active risk candidate 18、active pending candidate 9、not covered 14，其中 Aisha Villa 11 个 miss 有 9 个被 pending shadow 覆盖。导出耗时约 `119.7s`，相较跳过 debug shadow 后的 `115.3s` 只有小幅增加。
+- 剩余 14 个 not-covered q6 actionable miss 已补齐 review 审计列：`layout_bottom_row`、q6 prior rate/expected count/cells/value、q6 P90 相对 prior 的 count/cells gap、count-cell prior floor。Aisha shipwreck 的 6 个未覆盖行集中在 bottom row `9-12`，说明它们被现有 `aisha_deep_floor1` 排除是预期行为。宽 `aisha_shipwreck_profile_v1` floor05 虽能修 28 行，但 active no-q6 为 8，no-q6 正报中位 `21.5万 -> 38.1万`，不适合接入；两阶段 “baseline below-prior + Aisha shipwreck profile” floor05 仍有 1 个 active no-q6 边界样本，修 12 行但不够干净。结论：暂不新增 Aisha shipwreck low-bottom shadow，继续保留现有 deep gate；剩余 not-covered 行作为人工复核/后续特征拆分对象。
+- UI review 现在把 q6 actionable miss 输出为复核桶：41 个真漏中，`shadow_observation=27`（18 个 active risk + 9 个 active pending），未覆盖 14 个拆成 `aisha_shipwreck_low_bottom_floor_risky=6`、`aisha_villa_public_profile_outside_pending_gate=2`、`ethan_layout_floor_risky=5`、`ethan_non_layout_floor_risky=1`。这让下一步不再只是“消 flag”，而是按桶处理：Aisha Villa public profile 需要单独 no-q6 控制；Ethan layout 继续先做解释/复核字段，不加 floor gate；Aisha shipwreck low-bottom 暂不扩 deep gate。
+- 2026-06-02 继续复核两个剩余高风险桶：Aisha Villa public-profile floor05/075/1.0 在 67 个 Aisha Villa 样本切片上最多修 2 行，但会显著抬高 2 个 active no-q6/no-plannable 控制，因此不并入 `aisha_villa_floor05`；Ethan layout floor05/075/1.0 在 133 个 Ethan 样本切片上可修 7-9 行，但会抬高 5 个 active no-q6/no-plannable 控制（其中 4 个真 0 红，1 个是超高尾红被 decision 口径裁掉），继续保持 `ethan_layout_floor_risky`，不新增 Ethan floor shadow。
+
+## 2026-06-02 · Overlay 三层交互工程版
+
+- Tk live overlay 已开始消费 `ui_contract.interaction` 的三层语义：`mini` 常驻首屏继续展示正式 baseline 出价、4 个核心指标、最多 4 个核心 section 和右侧 MiniMap/风险卡；`hover` 显示快速上下文 tooltip；`detail` 通过点击在同一 overlay 内展开全量详情。
+- hover 详情当前聚合正式出价、baseline 后验、布局、输入约束、q6 风险参考、fallback 和 MiniMap 摘要；click detail 额外显示结算 truth（若可用）、shadow 明细、MiniMap 几何说明和诊断明细。zero-match fallback 仍以“低置信参考”展示，`fallback.affects_bid=false` 不变。
+- MiniMap compact 层继续只画品质颜色块，不显示短名、形状编号或局部序号；`item_id/item_name/shape_key` 仍留在 contract 中供 hover/detail 和人工审计使用。
+- 当前实现仍是工程版 Tk overlay，不做复杂视觉风格：优先保证字段边界、可验证行为和滚动可用性。后续正式 UI 可继续演进为“baseline 先显示，shadow/detail 后台补齐”的异步/分批方案。
+- 验证：`python -m pytest tests\test_live_overlay.py` 8 passed；`python -m pytest tests\test_live_overlay.py tests\test_runtime_snapshot.py` 18 passed；`python -m py_compile scripts\run_live_overlay.py` 与 `python -m compileall -q scripts\run_live_overlay.py tests\test_live_overlay.py` 通过。
+- 后续 UI TODO：常驻 mini 层可以演进为“监听猫”伴随形象，视觉方向是抽象像素猫，不需要写实。猫本体负责占位和状态感，猫上方/旁边常驻少量字体块：出价建议、进攻/防守、决策价值、仓储估计、道具推荐和必要风险；hover 猫时显示稍详细的 MiniMap、红格子估计、红货/q6、布局、约束、紫/金/红计数；click 后再展开完整推理依据、helper、先后验、shadow/fallback 和折叠诊断。图片资源先不接入代码，后续生成几张抽象像素猫样本供人工选择。
+- 2026-06-02 小窗布局补丁：默认 overlay 从宽调试窗压缩为约 `480x420`，最小 `360x260`；mini 首屏指标改为两列，常驻层不再绘制右侧完整 MiniMap/风险栏，只保留核心卡片和紧凑风险提示；点击详细时再显示右侧 MiniMap/风险栏和 full detail。
+- 2026-06-02 hover/detail 补丁：hover 小窗现在优先绘制 MiniMap canvas，并把 q6/红货、布局、约束摘要放在文字区；点击 detail 时窗口会按内容请求尺寸自动放大到详情视图，收起后恢复 mini 尺寸。
+- 2026-06-02 live 试用细节补丁：MiniMap 未知品质改为空框多斜线，白色品质改回浅灰白色块，避免二者混淆且降低深色 UI 里的刺眼程度；首屏最高价/停止价/风险带改为价格 chips，价值类指标字号加重；detail 层现在只保留 Tk MiniMap，`matplotlib_minimap` 旧路径已删除，避免实时交互里增加额外渲染成本。
+- 2026-06-02 live monitor 回放补丁：`start_live_monitor_overlay.ps1` 默认在 watch-dir 每成功处理一个文件后等待 `1.5s`，避免历史样本批量回放时 overlay 切换过快；新增 `-ReprocessExisting`，对应 monitor 的 `--reprocess-existing-once`，可把当前目录内已记录过的文件重新放入队列一次，之后继续正常 fingerprint 跟踪，不会像 `--reprocess` 那样无限重复。
+- 2026-06-02 hover 体验补丁：hover 小窗根据屏幕边界自动翻转/夹紧，右侧或底部触发时不会出屏；hover 移动加入小幅 deadzone，减少鼠标移动导致的频繁 geometry 更新；鼠标进入 hover 小窗时不会立即销毁，方便阅读和滚动 MiniMap。
+- 2026-06-02 live 校准入口补丁：`summarize_live_model_eval.py` 新增 `--brief` / `--format brief`，用于快速查看 readiness、性能、日志质量、q6 shadow 候选状态和 q6/layout 关键计数。当前 UI 暂时收口，下一阶段主线转回 live 日志复核：`profile_b5` 因 false positive 继续阻塞；`aisha_deep_floor1` 与 `aisha_hidden_floor15` 已进入 candidate-for-review，但仍需人工/样本复核后才可能升级，baseline 出价不变。
+- 2026-06-02 q6 shadow 候选复核补丁：`summarize_live_model_eval.py` 新增 `--export-shadow-review-dir` 与可重复 `--shadow-review-candidate`，可直接从已落盘 `model_eval.jsonl` 导出 candidate CSV/JSONL，不重跑昂贵推理。当前 active 审计：`aisha_deep_floor1=30` 行（`15 helped / 6 still_missed / 9 observation / 0 false-positive`），`aisha_hidden_floor15=11` 行（`7 helped / 2 still_missed / 2 observation / 0 false-positive`），两组 active 行均无 layout conflict。deep 候选继续作为 UI 黄色 tail-risk 参考，不覆盖 baseline 正式出价；hidden 基本不可能出现 q6=0，因此不再等待 no-q6 对照，改为继续复核 helped/still-missed、gap band、tail 裁剪和事件可信度。
+- 2026-06-02 q6 shadow 复核口径修复：live monitor 现在和 batch evaluator 共用结算 truth breakdown，`model_eval` 同时输出 raw `final_q6_value` 与 plannable `final_q6_decision_value` / trimmed-tail 字段；shadow readiness、q6 practical gate 和候选导出改用 plannable truth 对比 `q6_decision_value_p90`。旧 live 日志缺少这些字段，summary 会把 `q6_plannable_*` 显示为 `null`。定向重建旧 6 个 deep still-missed 样本后，分类从 raw 口径 `6 still_missed` 修正为 `4 still_missed / 1 helped / 1 observation`。
+- 2026-06-02 tail replacement 观察点：当前 plannable truth 对未支持极端尾部是裁到 `0`，posterior 采样才隐式体现同形状普通红替代。用同形状普通红 weighted P50 审计旧样本时，`newsample7` 会从 covered 变成约 `9.3万` 小幅 still-missed，`sample69` 仍 covered。该替代口径先作为 review-only 第二审计轴，不改正式 `decision_value`；剩余 deep 可规划 still-missed 在 `n_trials=500 / shadow_trials=80` 下为 4 行，其中 2 行 gap 小于 `10万`、2 行约 `24-25万`，暂无大于 `30万` 的 deep miss。
+- 2026-06-02 hidden shadow 口径修正：hidden 基本不出现 q6=0，不再等待 no-q6 对照；`aisha_hidden_floor15` 的 UI display mode 改为 `shadow_only_hidden_tail_review`。当前旧日志导出 active 11 行：gap band 为 `9 covered / 1 medium_<=300k / 1 large_>300k`，tail trimmed 为 0；后续看新版 live 日志的 helped/still-missed、gap band、tail 裁剪、性能和事件可信度。
+- 2026-06-02 current-schema live replay 已用隔离目录重放 338 份 Fatbeans 样本（333 成功、5 个 malformed/invalid-frame 错误），参数为 `n_trials=20 / shadow_trials=20 / roi=0 / --skip-debug-shadows / --stable-seconds 0`。性能摘要：全量耗时约 `130s`，单样本 `processing_seconds_median=0.322`、`p75=0.49`；此前 300s 超时主要来自 watch-dir 默认 `stable-seconds=1` 给每个文件加等待，不能直接解释为引擎单次推理太慢。新版 plannable review 中：`aisha_hidden_floor15` active 11 行全部 covered（8 helped / 3 observation / 0 false-positive，3 行 tail review），可继续作为 hidden 高可信 shadow 观察；`aisha_deep_floor1` active 47 行（29 helped / 10 still-missed / 8 observation / 0 false-positive），剩余 miss 以 7 个小 gap、2 个中 gap、1 个大 gap 为主；`aisha_villa_floor05` active 35 行但仍有 4 个 no-q6 false-positive，因此保持 pending/blocked，不升级正式出价。
+- 2026-06-02 deep 高 trials 定向复测与 quality-only q6 诊断：对 deep still-missed、villa false-positive/still-missed、hidden tail-review 共 25 行跑 `n_trials=500 / shadow_trials=80` 后，hidden 3 个 tail 行仍全部 covered；villa 4 个 no-q6 false-positive 全部保留，继续 blocked；deep 10 个低 trials miss 收敛为 5 个。最大剩余 gap 来自 `aisha_shipwreck_test_sample40_4rounds.json`：公开 q6 品质点 local `142` 但形状未知，结算包含两个 `4x4` 大红，现有 floor 只能补件数、不能充分补格数。全量 333 行解析中，41 行包含 shape-less q6 品质点、合计 47 个点；满足 Aisha shipwreck `shape+layout` 且起始行 `>=13` 的 deep-local 风险只有 `sample40` 与 `sample58` 两行，均为高 q6。已新增 review-only `q6_quality_only_local_count/deepest_local_index/deepest_start_row/deep_local_risk` 字段，并透传 summary、`ui_contract.diagnostics.q6` 和 UI review flag；不修改 sampler、baseline、shadow 或正式出价。
+- 2026-06-02 Windows live snapshot 写盘加固：全量 replay 中出现 1 次 `latest_snapshot.json` 原子替换 `PermissionError`，导致一个 Ethan 样本未写入日志。`_atomic_write_json()` 现对瞬时 `PermissionError` 最多重试 5 次，并在最终失败时清理 temp；新增单测模拟首轮 replace 失败、第二轮成功。该改动只提高日志可靠性，不影响推理结果。
+- 2026-06-02 tail replacement truth 已从观察点落成 review-only 字段：live/batch 共用 truth breakdown 现在对被裁掉的 q6 tail 计算同品质同形状普通红替代值，优先使用地图池权重 P50，缺权重时退回 Item 表中位。新增 `final_q6_tail_replacement_value/count/items/source`、`final_q6_decision_value_with_tail_replacement`、`q6_tail_replacement_p90_misses_truth` 和 summary/UI review flag；正式 `final_q6_decision_value`、posterior、baseline bid、shadow bid 均不变。真实 smoke `aisha_shipwreck_test_newsample7__normal_4rounds.json` 在 `n_trials=500 / shadow_trials=80` 下：raw q6 `187.94万`、plannable q6 `84.04万`、百年人参 tail `103.9万 -> 15.894万` replacement、replacement q6 truth `99.9342万`，触发 `q6_tail_replacement_truth_miss`，但 `shadow_affects_bid_rows=0`。
+- 2026-06-02 tail replacement posterior 也补成实验性估计字段：v2 report 新增 `tail_replacement_decision_value` / `q6_tail_replacement_decision_value` quantile，live/review 输出 `v2_q6_tail_replacement_estimate_p90` 与 estimate under-by；正式出价仍只读 `decision_value`。修正一个诊断噪声：没有 replacement value 的永乐/大红低估不再打 `q6_tail_replacement_truth_miss`。关键三样本复核：`sample58` 最高红为 `永乐大典残本二`，q6 truth `318.57万`、replacement value `0`，只保留 `q6_quality_only_deep_local_risk`；`sample40` 同属 quality-only 深红；`newsample7` 才是 replacement miss，实验 replacement q6 P90 约 `19.18万`，仍低于 replacement truth `99.93万`，说明后续还要修 q6 出现/件数/格数，而不是只靠替代口径。
+- 2026-06-02 q6 no-plannable 口径继续收窄：review summary 现在区分 `q6_no_plannable_control` 与 `q6_zero_q6_proven_control`，并把 raw tail 但 plannable q6 为 0 的 below-prior 行归为 `no_plannable_tail_review`，不再算 q6 actionable miss。338 样本轻量 review 仍为 333 成功、5 malformed，`q6_below_drop_prior=54`，其中 `truth_p90_miss=39`、`truth_zero_noise=8`、`truth_p90_covered=5`、`no_plannable_tail_review=2`；`q6_risk_affects_bid=0`、`bid_floor_applied=0`。剩余 13 个未覆盖 actionable 继续分为 Aisha shipwreck low-bottom 6、Aisha Villa public-profile 2、Ethan layout/shape 5。targeted floor05 实验均不够干净：Aisha shipwreck low-bottom 9 个 no-plannable control 全部被抬高（candidate q6 P90 中位约 `88.9万`），Aisha Villa public-profile 2 个 no-plannable control 被抬到 `37-48万`，Ethan layout/shape 10 个 no-plannable control 全部正报（中位约 `68.1万`）；因此不新增这些 floor/shadow gate，继续保留为复核桶。
+- 2026-06-02 live 落地入口补丁：新增 `scripts/live_status.py` 与 `scripts/live_status.ps1`，用于只读检查 `latest_snapshot.json`、`model_eval.jsonl`、`monitor_errors.jsonl`、`processed_files.json` 和 `monitor.lock`，快速判断当前 monitor/overlay 是否可用。它会输出最新样本、推理耗时、baseline 建议、posterior 匹配、q6 风险是否影响出价、fallback 是否启用、错误日志和处理队列状态；`--strict` / `-Strict` 可把 warning 作为非零退出，`--format json` / `-Json` 可供后续自动化读取。真实 live 日志 smoke 显示当前最后样本为 `wuqilin_villa_test_sample3_3rounds.json`，`processing_seconds=8.6616`、baseline matched `500/500`、fallback 关闭、q6 risk 不影响出价；放宽 stale 阈值后状态为 `OK`。
+- 2026-06-02 overlay live health 联动补丁：overlay 现在会在 subtitle 显示本次 `processing_seconds`，超过 `15s` 时状态 chip 从“实时”变为“慢”，并在风险提示中建议后续优先考虑降低 `n_trials` 或 baseline-first / shadow 后台补齐；若 `q6_risk_reference.affects_bid` 或 `bid_floor_applied` 异常为 true，会直接标红为工程警报。当前真实 snapshot 因长时间未更新仍优先显示“过期”，但 `8.6616s` 推理耗时不会触发慢推理告警。
+- 2026-06-02 live status lock 诊断补丁：`live_status` 现在会检查 `monitor.lock` 内 PID 是否仍存活，并在文本输出中显示 `running=True/False/None`。这用于区分“没有新 JSON 导致 stale”和“monitor 进程已退出但 lock 残留”。当前真实 live 目录显示 `pid=712 running=True`。
+- 2026-06-02 WinDivert 实时道具响应补丁：auction frame gate 新增当前局内有效 `REV msg=0x0027` 直接响应，parser 会继承最近状态的 session/map/round，把它转换为 `tool_revealed` batch。这样使用道具后不必等下一次 `0x0025` 轮次同步才刷新推理；空 ack、未激活 session 和非当前局响应仍被过滤。真实 project4 样本验证 `sort 26/59/82` 的 `100105/100104/100124` 道具结果会提前进入 live batch。
+- 2026-06-02 UI 首屏显示口径补丁：`ui_contract.baseline.decision` 新增 `probe_bid` / `defend_bid`，overlay mini 首屏改为优先显示 `P50估值`、`防守价`、`当前最高` 和 q6 风险；`抢仓上限` 降级到 hover/detail。结算 `phase=settled` 时 overlay 不再显示对局建议，而是切换为最终准确结算视图（总值、总件/总格、q6、最高货）。`live_status` 文本也同步显示 `defend=`，方便终端抽查。
+- 2026-06-02 live 生命周期与待机补丁：三套 combined 启动脚本现在默认把 monitor PID 传给 overlay；关闭 overlay 会停止对应 monitor 并清理 `monitor.lock`，需要后台持续监听时显式传 `-KeepMonitorOnOverlayClose`。`stop_live_monitor.ps1` 同时读取 lock 内 PID，能清掉命令行不可见的隐藏 monitor。overlay 对旧 snapshot 新增状态边界：非结算状态超过 120 秒未更新时显示“等待对局开始/新状态”，不继续展示旧局出价；结算 truth 最多保留 60 秒，之后回到待机。hover/detail 新增“轮次仓位参考”提示，按 P50 与 R1/R2/R3/R4 的 `2.0/1.6/1.3/1.1` 倍数给仓位/防守参考，但不改变正式出价策略或 baseline bid。
+- 2026-06-02 live 日志审计确认：WinDivert 实时链路会把当前 session 累计 raw rows 写入 `data/logs/live/raw/windivert_live.json`，并通过 artifact builder 更新 `latest_snapshot.json`、追加 `sessions.jsonl` / `model_eval.jsonl` / `layout_samples.jsonl`；`capture_source_status.json` 记录 packet/frame/source 状态。目录 watcher 的 `processed_files.json` 仍主要用于历史 JSON 去重与错误 fingerprint，不代表 WinDivert 包流状态。当前实机目录可读到 `sessions=757`、`model_eval=746`、`layout_samples=2003`，说明储存和预处理链路正常；旧错误仍在 `monitor_errors.jsonl` 中保留用于追踪 malformed 样本。
+- 2026-06-02 WinDivert 权限诊断补丁：实机确认普通 PowerShell 下 monitor 会写一次 `capture_source_status.json` 后因 `WinDivert capture requires an elevated PowerShell/admin process` 退出，overlay 只能显示旧 snapshot 待机。`start_live_windivert_overlay.ps1` 现在非管理员时默认自动用 UAC 重启自身，不再假启动 monitor；`live_status` 新增 capture source 行，并在存在 WinDivert 状态文件但 `monitor.lock` 缺失时即使放宽 stale 阈值也输出 WARN。
+
+## 2026-06-02 · 长线程交接 checkpoint
+
+完整的新窗口续接说明见 [`handoff_2026-06-02.zh-CN.md`](handoff_2026-06-02.zh-CN.md)。
+
+### 当前结论
+
+- v2 baseline 已是正式 UI 出价主链路。q6 risk reference、`aisha_deep_floor1`、`aisha_hidden_floor15`、
+  `aisha_villa_floor05` 和 tail replacement 仍为只读风险提示或 review 字段，均不覆盖正式出价。
+- 338 份历史样本的当前 schema replay 为 333 成功、5 个 malformed/invalid-frame 错误；
+  `zero_posterior_match=0`、`layout_conflict=0`、fallback 未触发。v3 重写仍是最低优先级候选。
+- overlay 工程版已具备 mini / hover / detail 三层、品质 MiniMap、显眼 P50/防守价、结算视图、
+  stale 待机、状态检查和 monitor 生命周期管理。像素猫和正式视觉优化继续延后。
+- 当前 P0 阻塞不再是模型精度，而是 VPN / UU / TUN 场景下 WinDivert 实时包流验证。
+  最近一次旧进程实测为 `sniffed=241 / raw=1 / accepted=0 / session=-`；同时看到
+  `BidKing.exe` 的直连和 loopback flow。提交 `d9de276` 已把 loopback 默认纳入 process-match，
+  但仍需要重启后完整打一局，确认 `accepted_frames`、snapshot、道具即时响应和结算链路。
+- overlay 闪烁根因已定位为 `capture_source_status.json` 每两秒重写导致 mtime 变化。
+  提交 `d9de276` 已改成语义签名：只在 flow/raw/accepted/session 等有效状态变化时刷新，不跟随
+  timestamp 或 `sniffed_packets` 心跳整窗重绘。
+
+### 当前 TODO
+
+1. 用最新脚本重启 WinDivert overlay，完整打一局并记录 `sniffed_packets/raw_packets/accepted_frames`。
+2. 若 `raw_packets` 上升但 `accepted_frames=0`，补一个受限 ignored-frame 诊断环，记录 flow、方向、
+   frame 长度、消息标签和短前缀，继续收窄 frame gate。
+3. 若启用 loopback 后仍为 `sniffed_packets>0 / raw_packets≈0`，检查本地代理端口对应进程，
+   决定是否增加 proxy-process 归因或 tuple 关联。
+4. `accepted_frames>0` 后复核：开局、轮次、道具 `0x0027`、结算、UI 推荐价、无闪烁和两种退出模式。
+5. live 链路稳定后再恢复 q6 shadow 校准、pixel-cat UI、异步 baseline-first/shadow-later 和英雄支线。
+
+## 2026-06-03 · P0 WinDivert live 快照闭环 checkpoint
+
+- 实机完整局已确认 loopback 后 WinDivert 能闭环：`sniffed=2327`、`raw=233`、`accepted=14`、
+  `active_session_id=2403:1295018838811735`，包含开局 `0x0021`、轮次 `0x0025`、道具直响
+  `0x0027` 和结算 `0x002d`。完整 raw 已归档为
+  `data/logs/live/raw/archive/windivert_2026-06-03_001737_aisha_2403_1295018838811735.json`，
+  可用于后续重放/校准。
+- 用户随后反馈的“对局结束才出估值/带着跑会拖慢游戏”对应第二份 partial raw：
+  `data/logs/live/raw/archive/windivert_2026-06-03_003330_partial_2401_1295018839903133.json`。
+  该文件只有 1 个 accepted `0x0025`，没有 `0x0021`、`0x0027` 或 `0x002d`，不适合作为完整
+  校准样本；保留为抓包丢帧、broad sniff 性能和 dropped-bytes 回归材料。
+- MiniMap 增量替换问题已修复：`GridItemObservation` 透传 `runtime_id`，live state/layout replay
+  按 runtime/footprint 累积已知格子，`0x0027` 道具响应不再用最新 batch 覆盖旧已知格。
+  完整 raw 重建后 `minimap_grid_items=25`、`ui_contract.minimap.known_items=25`。
+- overlay 每 2 秒闪烁问题已收窄：capture source status 签名不再跟随 raw/accepted/sniffed 计数心跳，
+  只在 source/process/flow/session 等语义状态变化时触发整窗刷新。
+- WinDivert frame gate 已按 TCP 五元组分别缓存流，不再把多个 TCP flow 混入同一个 `SEND`/`REV`
+  buffer；这解释了第二局 partial 中 `dropped_bytes=55064` 和 accepted frames 缺失。
+- live monitor 已改为 fast snapshot / full archive 两段：非 force 实时更新默认 `fast_n_trials=20`、
+  `roi_trials=0`、`shadow_trials=1`、跳过 debug shadow，只写 `latest_snapshot.json`；停止/force 时
+  仍用完整 `n_trials=500 / roi_trials=250` 追加正式 `sessions.jsonl` / `model_eval.jsonl`。
+  离线完整 raw smoke：20-trial fast 约 `0.12s`，full 约 `1.75s`，两者都能生成 bid rows。
+- 第三次 PortOnly 实机局抓包健康：`sniffed=104`、`raw=104`、`accepted=16`、`dropped=0`、
+  session `2408:1295018841215488`，说明上一轮 dropped-bytes 问题已修复。该 partial raw 已归档为
+  `data/logs/live/raw/archive/windivert_2026-06-03_004912_partial_2408_1295018841215488.json`。
+- 该局暴露出标准道具字段漏接：`100107 极品扫描` 在 direct `0x0027` 中返回 `12`，旧 live reducer
+  没有映射到 `bucket.5.total_cells`，导致实时 P50/P90 明显偏低。已补标准道具映射：
+  扫描 `100104-100108 -> total_cells`，均格 `100110-100114 -> avg_cells`，估价
+  `100122-100126 -> value_sum`。同一 raw 重算后，20-trial decision P50 从约 `26.5万`
+  提升到约 `40.3万`，P90/停止价约 `44.3万`；当前最高 `55.5万` 仍高于 P90，所以“停止追价”
+  结论保持，但低估根因已修。
+- `latest_snapshot.json` / `ui_contract` 已新增最近道具发送与结果摘要；overlay mini/hover/detail 会显示
+  `最近道具`，例如 `极品扫描: 12`、`宝光四鉴: Q4x3 / Q2x1 / pos ...`。宝光四鉴品质抽样暂只展示，
+  不作为硬过滤推理约束，等待进一步确认其抽样语义。
+- 宝光四鉴质量-only 结果已继续进入 minimap 作为圆点 marker：`revealed_items_detail` 会保留在 artifact
+  里供 UI contract 生成 marker，但 actions 文本摘要会主动剥离这段 detail，避免把文本区塞满底层结构信息。
+- live 推理覆盖审查新增 `scripts/audit_live_inference_coverage.py`。全样本/日志扫描结果：
+  `scanned_files=1022`、`parsed_files=1017`、`UNMODELED_NUMERIC_ACTIONS=[]`、
+  `PENDING_NUMERIC_ACTIONS=[]`、`PENDING_PUBLIC_FACTS=[]`。`100103 总仓储空间` 已映射到
+  `session.warehouse_total_cells`；`100169–100173` N格均价经 `size_avg_evidence` 进入 v2 占格证据
+ （`score_only` 默认）。live 验收脚本：`scripts/summarize_size_bucket_live.py`；overlay hover/detail
+  展示 **N格均价** 读数与推理 tier（只读，不改 bid）。
+- 宝光四鉴当前结论更正为：结果会作为 `action:100136` item evidence 进入 v2 EvidenceStore，并能按
+  runtime 与艾莎技能的 shape/cells 证据合并；但仍不会写入 `SessionObs.quality_sample_histogram`，
+  因此不是“4 次品质抽样硬约束”。第三次 partial raw 审查显示 `100107`、抽检、宝光四鉴、艾莎技能
+  都已进入当前支持的对应链路。
+- 2026-06-03 hidden 连局识别补丁：实机第三局 hidden 抓到新 `SEND msg=0x0022`
+  `frame_session_id=2410:...`，但 active session 仍停在上一局 `2401:...`，旧 gate 将其记为
+  `send_wrong_session`，导致第三/第四局不刷新。`GameFrameGate` 现在允许“已有 active session 后出现的新
+  `0x0022` 出价 SEND”切换 session 并触发 reset；冷启动早期 SEND 仍不作为开局，跨 session 的
+  action SEND 仍丢弃。需要重启 elevated monitor 后实机复核。
+- overlay/monitor 生命周期补强：overlay 正常退出时会清理传入的 monitor PID 与 lock，不再只依赖
+  `user_closed` 标记；启动脚本会把 monitor PID 传给 overlay 的 `--exit-when-pid-exits`，monitor 停止时
+  UI 自动退出。`-KeepMonitorOnOverlayClose` 仍只保留“关 UI 不杀 monitor”的显式后台监听语义。
+- 当前实战建议启动低影响模式：`.\scripts\start_live_windivert_overlay.ps1 -Restart -PortOnly`。
+  默认 broad + loopback 仍可用于诊断代理/VPN，但会让 Python 看到更多系统 TCP payload，实战时优先
+  避免 broad sniff。
+- 验证：`python -m pytest -q tests/test_live_overlay.py tests/test_live_fatbeans.py -q` 通过；
+  全量 `python -m pytest -q` 为 `736 passed, 13 skipped`；`python -m compileall -q src scripts`
+  通过，PowerShell 启动脚本可解析，`git diff --check` 仅有仓库 CRLF 提示。
+
+## 2026-06-03 · live 多局衔接与交接 checkpoint
+
+完整新窗口说明见 [`handoff_2026-06-03.zh-CN.md`](handoff_2026-06-03.zh-CN.md)。上一断点见
+[`handoff_2026-06-02.zh-CN.md`](handoff_2026-06-02.zh-CN.md)。
+
+### 相对 2026-06-02 handoff 的续接增量
+
+- 环境：默认 Python 3.13；`scripts/diagnose_windivert.py` 预检驱动路径、脆弱驱动 blocklist、火绒；
+  实机确认火绒关 + 提权后 `accepted_frames>0`、monitor 有 `[ok] windivert fast`。
+- WinDivert：flow 切换只清 frame gate 缓冲，不在 flow 变更时 `monitor.reset_rows()`；新局仍靠
+  `reset_session` 清行。
+- WinDivert/Monitor：`GameFrameGate` 在 flow 切换时只裁剪非活跃 5 元组缓冲，保留活跃 flow 半包；
+  `capture_source_status.json` 现在带 `ignored_samples`，`live_status` 可直接打印最后一条 ignored 样本。
+- Monitor：`fast` 且 `rows<3` 且 `phase=settled` 时跳过写入 `latest_snapshot.json`（bootstrap 防污染）。
+- Overlay：抓包 `active_session_id` 领先陈旧 `settled` 快照时显示「新局监听中」；需重启 overlay 进程生效。
+- MiniMap：`action_result_rows.revealed_items_detail` 进入 `ui_contract.minimap` marker，宝光四鉴这类
+  quality-only 揭示会以圆点标记保留，不再只显示 footprint；WebHook / WinDivert 启动会清理旧 raw 工作文件。
+- 脚本：`attach_live_overlay.ps1`、`post_game_live.ps1`、`summarize_live_windivert_brief.py`。
+- Hero 识别补丁：`FatbeansStateEvent.player_id` 通过本地 `SEND` bid 值在后续 bid 列表中反推；已知本地
+  player 时 `_hero_mode_from_state` 只信己方 bid，不再取全桌第一个 `hero_id`。未锁定本地玩家时只在
+  单一候选时回退，避免艾莎被对手伊森污染。实测 smoke：Aisha live raw 仍输出 `aisha`，project4 仍输出
+  `ethan`。
+- 结算保留补丁：artifact / `ui_contract.context` 写入 `session_id`；overlay 在 60 秒结算保留期内优先显示
+  settled truth，即使抓包 `active_session_id` 已切到新局；超过保留期后才切「新局监听中」或待机。
+
+### 最新实测问题（用户 2026-06-03）
+
+1. **英雄错识**：已修己方 player 绑定；下一局需实机确认 UI/快照 hero 与选人一致。
+2. **结算被跳过**：已修 60s settled truth 优先；下一局需实机确认结算先显示，再进入新局监听。
+3. **第二局开局帧不足**：`accepted_frames` 仍低、`send_wrong_session` / `rev_not_game_frame` 高；
+   fast 推理常在 `frames=1` 写盘。
+4. **前几轮推理偏低**：`fast_n_trials=10` + 证据稀疏；v2 采样是否按 `action_round` 约束待查。
+5. **火绒拦截 WinDivert**：白名单/blocklist/或改 Fatbeans WebHook 路线。
+
+### 当前 P0 TODO
+
+1. 实机复核 hero 与结算保留：连续两局验证 Aisha 不再显示 Ethan，局末 truth 保留约 60 秒。
+2. 第二局抓包：归档 raw、对比 `0x0021` 到达与 ignored 原因；复核 flow-change `keep_flow` 是否足以保住开局半包。
+3. 轮次：按 round 分组 live `model_eval` / 试验提高 fast trials 或 round-filtered 采样。
+4. 部署：火绒白名单或 WebHook 备选；`diagnose_windivert` 进启动前检查。
+5. 验证：全量 `python -m pytest -q` 为 `755 passed, 13 skipped`；覆盖审查
+   `UNMODELED_NUMERIC_ACTIONS=[]`、`PENDING_NUMERIC_ACTIONS=[]`、`PENDING_PUBLIC_FACTS=[]`；
+   `git diff --check` 仅 CRLF 提示。
+   当前最新全量回归为 `764 passed, 13 skipped`。
+
+## 2026-06-04 · Gabriela live 验证与新局可见性 checkpoint
+
+- 用户实机 Gabriela / 沉船局 raw 已抓到：当前 `capture_source_status.json` 为
+  `session=2510:1295018927355083`、`sniffed=463`、`raw=463`、`accepted=23`。该局技能和宝光四鉴圆点
+  能进入 minimap，但旧 snapshot `hero=?` 且无 bid rows。已归档为
+  `data/logs/live/raw/archive/windivert_2026-06-04_003508_gabriela_2510_1295018927355083.json`
+  （10 rows，含 `0x0022/0x0025/0x0026/0x0027/0x002d`）。
+- 根因：Fatbeans `hero_id=104` 未映射为 `gabriela`，所以 live reducer 能看到 Gabriela 技能，却不能把本局
+  建成支持推理的 session。已补 `_HERO_MODE_BY_ID[104] = "gabriela"`，并加入
+  `GABRIELA_DEFAULT_LOADOUT`。同一 raw smoke 重建后输出 `hero=gabriela`、`bid_rows=5`，宝光四鉴
+  marker 保持在 `54/18/126/99`。
+- 基础英雄映射已扩到 `data/processed/heroes.json` 的 20 个 hero_id：后续本地 bid 帧只要带己方
+  `hero_id`，live session 不再因为未识别英雄退成 `hero=?`。尚未深度适配的英雄只走通用推理路径；
+  `STANDARD_LOADOUTS` 补了通用 kit，并对 Gabriela / Maria / Ahmed 保留专门默认 kit。单类别技能
+  reveal（Fatima/Tatiana/Helena/George/Takeda 等）会附带 category 软证据；多类别或统计型技能暂不硬猜。
+- 标准数量类道具结果已接入 live reducer：`100115 库存清点 -> session.total_item_count`，
+  `100116-100120 存量 -> bucket.count`。这为 Ahmed 这类数量/均格信息后续建模留出稳定约束槽。
+- 第二局“要等第一轮出价后才显示”的边界已明确：新局 `SEND 0x0022` 可以先切 active session，但 map/hero/
+  bid/minimap 的完整状态仍要等首个 `REV 0x0025`。overlay/status 现在会从 `active_session_id` 前缀提前显示
+  `map_id`，提示「已抓到新局，等待首个状态帧/推理更新」，不把 SEND 包伪造成完整推理输入。
+- `scripts/archive_live_raw.py` 已新增并接入 `scripts/post_game_live.ps1`：当前 raw 会按
+  `complete / partial / diagnostic` 分类归档，发现同 session 已归档则跳过。当前 Gabriela 样本复核为
+  `duplicate complete`，后续新局不会被下一次启动覆盖掉工作文件而丢样本。
+- 异步基础链路复核：WinDivert 入口复用 `FatbeansWebhookMonitor`，`accept_row` 只累积 raw row 并投递后台
+  worker；推理由 worker 按 debounce / min interval 触发，不在抓包循环里同步阻塞。当前仍需后续拆分的是
+  baseline-first / shadow-later / full-archive-later，而不是从零改成异步。
+- 实时估值明显不准的问题先留档，不在本 checkpoint 调参：当前优先顺序保持为 live 稳定、异步推理细分、
+  样本归档分类；早轮低估/推荐价偏差后续用归档样本单独审推理输入覆盖、round-filtered 采样和参数。
+- 当前本机 live monitor 没在跑：`live_status` 报 `monitor.lock missing`、snapshot stale；`diagnose_windivert`
+  报 Python 非提权，且 WinDivert 2.2 被 Windows vulnerable driver blocklist 拦截。下一次实机前需要重启
+  elevated monitor，并处理 blocklist/白名单问题，否则 overlay 只会显示旧快照。
+- 本轮验证：`python -m pytest tests/test_live_overlay.py tests/test_live_status.py tests/test_live_fatbeans.py tests/test_observation.py -q`
+  为 `129 passed`。
+- 追加验证：`python -m pytest tests/test_archive_live_raw.py tests/test_live_fatbeans.py tests/test_observation.py tests/test_live_status.py tests/test_live_overlay.py -q`
+  为 `155 passed`；`python -m compileall -q scripts/archive_live_raw.py src/bidking_lab/live/fatbeans.py src/bidking_lab/inference/observation.py src/bidking_lab/inference/__init__.py`
+  通过。
+- 异步调度验证：`python -m pytest tests/test_fatbeans_webhook_monitor.py tests/test_live_recompute.py -q`
+  为 `18 passed`。
+
+### 后续 TODO / 计划留档
+
+1. **默认 loadout 推荐从样本统计升级**：先把历史 raw 的本地/对手英雄频率、本地道具发送、结算收益统一成
+   可复跑脚本，再按英雄和地图分层推荐。2026-06-04 轻量统计：685 个 raw 路径中 684 个可解析，680 个能锁定
+   本地玩家；本地英雄样本以 `aisha=383`、`ethan=262` 为主，已补 `gabriela=9`、`wuqilin=6` 等近期样本。
+   对手英雄频率靠前为 `gabriela=348`、`ethan=291`、`aisha=286`、`sophie=253`、`wuqilin=188`、
+   `raven=162`、`ahmed=45`、`victor=31`。本地道具发送靠前为 `100129 随机抽检(2)=454`、
+   `100136 宝光四鉴=360`、`100128 随机抽检(1)=245`、`100105 良品扫描=239`、
+   `100104 普品扫描=200`、`100107 极品扫描=160`。注意：当前 packet 只能可靠归因本地 SEND；
+   “对手用了什么道具”只有在后续能稳定从状态包带出 player 归因时再纳入收益统计。
+2. **宝光四鉴位置语义**：继续作为 minimap marker 与 v2 item evidence 保留，能按 runtime 与已有轮廓/品质合并；
+   暂不把 quality-only `local_index` 写成硬 footprint 或总格数下界。下一步设计 shadow-only
+   `quality_only_deep_local` / `bottom_row_soft_hint`，先只影响诊断和候选排序，重点覆盖 Raven 这类一整局低信息局。
+3. **英雄覆盖分层**：已完成 20 个 hero_id 名字映射、通用 loadout、Maria/Ahmed 专门默认 kit、标准扫描/估价/
+   均格/存量/库存清点 reducer，以及 Fatima/Tatiana/Helena/George/Takeda/Wuqilin/Isabella 等单类别软证据。
+   待接入但不在本轮硬改：Ahmed R2-R4 均格/数量技能到现有 `avg_cells/count/total_item_count` 槽；
+   Maria 低品质总价值与品质信息；Victor `q4+q5` 合并件数；Chenmei/Naomi/Carlos/Ivan/Leonard 这类多类别集合证据。
+4. **异步细分**：基础后台 worker 已存在，WinDivert 抓包循环只投递 row，不同步跑推理。后续优化重点是
+   `baseline-first / shadow-later / full-archive-later`，并继续限制 fast snapshot 的 trials、ROI 和 debug shadow，
+   降低游戏运行时的 CPU 抖动。
+5. **估值准确性**：实时推荐价偏低/早轮不准先用归档样本复盘，不在 live 稳定期继续 q6 调参。下一阶段按 round
+   分层检查推理输入覆盖、采样 trials 敏感性和 v2 参数，而不是直接启动 v3。
+
+### 2026-06-04 追加：样本统计先验与 soft 仓储线索
+
+- 新增 `scripts/summarize_live_sample_usage.py`：按 `session_id` 去重扫描 `data/logs/live/raw`，输出本地/
+  对手英雄频率、本地 action SEND 频率、action-session outcome 和候选 loadout。当前生成结果已写到
+  `data/review/live_sample_usage/summary_2026-06-04.json`（review 目录 gitignored）。
+- 当前去重统计：685 个 raw 路径、684 个可解析、337 个去重 session、347 个重复 session 跳过；
+  335 局有结算、334 局能锁本地玩家和本地英雄。本地英雄：`aisha=187`、`ethan=129`、
+  `isabella=6`、`gabriela=5`、`sophie=4`、`wuqilin=3`。对手英雄靠前：
+  `gabriela=171`、`aisha=142`、`ethan=136`、`sophie=126`、`wuqilin=93`、`raven=81`。
+- 本地 action-session 频率靠前：`100129 随机抽检(2)=229`、`100136 宝光四鉴=183`、
+  `100128 随机抽检(1)=128`、`100105 良品扫描=118`、`100104 普品扫描=98`、
+  `100107 极品扫描=76`、`100124 优品估价=64`。这些 outcome 只作为描述性推荐先验，不当作因果收益。
+- Decision 已补：宝光/Sophie/Raven 这类 quality-only `local_index` 不能写成硬 footprint 或总格下界，
+  但必须保留为 soft/shadow 仓储线索；后续设计 `bottom_row_soft_hint`，先只影响诊断、候选排序或
+  warehouse posterior shadow，不改正式 baseline 出价。
+- Victor `q4+q5` 合并件数、Ahmed R2-R4 均格/数量技能、Maria 低品质总价值和多类别集合证据统一放入
+  后续 q6/英雄技能建模 TODO。本轮不临时硬塞字段。
+- 异步判断：当前 fast/full 两段和后台 worker 已经覆盖 P0 低影响需求；真正的
+  `baseline-first / shadow-later / full-archive-later` 需要调整 artifact builder 的计算顺序和日志语义，
+  不是几行小改。暂不在用户实战收数前扩大行为变更。
+- loadout 配置 first cut 已按样本频率落地：`GENERIC_DEFAULT_LOADOUT` 改为
+  抽检2 / 宝光四鉴 / 抽检1 / 良品扫描 / 极品扫描；新增 `FREQUENCY_PRIOR_LOADOUT`、
+  `QUALITY_ONLY_DEFAULT_LOADOUT`、`VICTOR_DEFAULT_LOADOUT`、`RAVEN_DEFAULT_LOADOUT`。Sophie/Raven
+  走 quality-only 低信息包，Maria 走宝光联动包（宝光、抽检2、良品扫描、至宝寻踪、珍品估价），
+  Victor 走 q4/q5 互补包，Ahmed 走估价/扫描互补包。仍是推荐默认配置，不等价于专属技能完整建模。
+- 默认 loadout 再收紧为不使用红色稀有度道具：Maria 将 `珍品估价` 替换为 `极品扫描`；Ahmed 改为
+  `良品存量 / 普品扫描 / 优品均格 / 极品扫描 / 宝光四鉴`；Victor 改为
+  `随机抽检(2) / 优品扫描 / 优品均格 / 极品扫描 / 极品均格`。Victor 的 `优品/极品存量`
+  作为后续 q4+q5 合并件数建模时的替换候选，不在本轮多开配置。
+
+### 2026-06-04 追加：0x0077 预监听与换局 raw 备份
+
+- 用户连续实机后复核：等待结算回待机再开下一局时监听正常；未等待时容易出现新局前段不更新、首轮英雄名缺失。
+  本轮 post-game 只正式归档了最后一局 Gabriela，前面的 Tatiana/Sophie 中间局被下一 session 的 raw 工作文件替换，
+  说明需要在换局 reset 前做轻量备份。
+- 已把 WinDivert `REV 0x0077` 状态帧从“非游戏帧”提升为 session prewarm 帧：它会更新
+  `active_session_id` 并在 session 变化时触发 reset，但不会调度推理；后续首个 `REV 0x0021/0x0025`
+  到达后才正常生成 snapshot。复核 2026-06-04 两局 raw 后修正：`0x0077.player_id` 不能当作本地玩家，
+  它会轮到不同玩家；解析器只保留其 session 语义，本地玩家仍由 `SEND 0x0022` 出价值反推。
+- 首轮英雄提前显示改走首个 state 的单一 `skill_reveal.hero_id`：当前样本文件名可确认的 317 局中，
+  首个 skill reveal hero 与本地英雄一致（Aisha/Ethan/Gabriela/Wuqilin 覆盖）。这让 `0x0021`
+  开局包即可形成 `SessionObs(map, hero)` 和 v2 posterior；若还没有当前最高价，UI 只展示开局估值，
+  不生成防守/停止价，主决策文案显示为“开局估值”而不是“等待建议”。
+- `FatbeansWebhookMonitor.reset_rows()` 在清空前把当前 raw rows 写到
+  `data/logs/live/raw/archive/reset/*_reset.json`，格式保持 Fatbeans rows 数组，供后续诊断读取；正式
+  `post_game_live` complete/partial 归档仍是主路径。
+- `start_live_windivert_overlay.ps1` 提权重启改为 hidden PowerShell；UAC 仍会出现，但授权后不再额外弹出可见
+  管理员控制台。Ahmed 默认 loadout 更新为
+  `良品存量 / 普品扫描 / 普品均格 / 优品均格 / 极品扫描`，继续不使用红道具。
+- 验证：`C:\Python313\python.exe -m pytest tests/test_windivert_live_monitor.py tests/test_fatbeans_webhook_monitor.py tests/test_live_fatbeans.py tests/test_observation.py -q`
+  为 `146 passed`。
+- 追加修复验证：同一 Gabriela raw 的 prefix=1 现在能得到 `SessionObs(2403, gabriela)` 和
+  `decision_value 138,271 / 230,646 / 481,026`；上一局 reset 备份不再被 `0x0077` 误解析为 Sophie。
+  `C:\Python313\python.exe -m pytest tests/test_live_fatbeans.py tests/test_windivert_live_monitor.py tests/test_fatbeans_webhook_monitor.py tests/test_observation.py -q`
+  为 `148 passed`；`tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py -q`
+  为 `58 passed`；追加 `tests/test_live_overlay.py tests/test_live_monitor.py tests/test_live_fatbeans.py -q`
+  为 `119 passed`。
+
+### 2026-06-04 追加：结算 MiniMap 全布局复盘
+
+- 修复 final inventory -> MiniMap 的 UI 链路：结算 inventory 解析保留父块 `local_index`，monitor 在结算态优先使用
+  `settlement_inventory` 批次，并用 item table 补 `shape_key/category/name`，只影响 UI minimap 复盘，不改变
+  pre-settlement layout evidence 的推理选择。
+- `ui_contract.minimap` 新增 `layout_source/layout_complete/drawable_items/final_total_items` 等字段；overlay 文案区分
+  “赛中已知 / 结算布局 / 结算全布局”，hover 顺序调整为正式出价、后验、结算、MiniMap、轮次参考、最近道具优先。
+- 用最新两份实机归档验证：Sophie 结算 `41/41` 件可画，Gabriela 结算 `49/49` 件可画，均为
+  `layout_complete=True` 且 `missing_footprints=0`。已生成 review 快照：
+  `data/logs/live/ui_review/settled_sophie_full_minimap_snapshot.json` 和
+  `data/logs/live/ui_review/settled_gabriela_full_minimap_snapshot.json`。
+- 验证：`C:\Python313\python.exe -m pytest tests/test_live_fatbeans.py tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py -q`
+  为 `132 passed`。
+- 低成本风险收口：结算 MiniMap 用 item table 补形状时新增面积校验，要求 `shape_w * shape_h == inventory.cells`；
+  若不匹配则不画 footprint，避免未来 cells 解析异常时画错布局。验证最新 Sophie/Gabriela review raw 仍为
+  `41/41`、`49/49` 完整可画；相关回归为 `134 passed`。
+- `archive_live_raw.py` 新增默认分类目录：新样本会写入 `archive/complete`、`archive/partial` 或
+  `archive/diagnostic`，保留 `--flat` 兼容旧平铺输出；重复检测仍跨整个 archive 目录。当前 live raw dry-run 为
+  Sophie complete duplicate，不会重复归档。验证：
+  `C:\Python313\python.exe -m pytest tests/test_archive_live_raw.py tests/test_summarize_live_windivert_brief.py tests/test_live_overlay.py -q`
+  为 `33 passed`。
+
+### 2026-06-04 追加：公共信息 MiniMap 与新局监听覆盖
+
+- 修复公共信息 quality-only marker：monitor artifact 新增 `public_info_rows`，复用 action result 的
+  `revealed_items_detail` schema；`ui_contract.minimap` 现在同时从 `action_result_rows` 和
+  `public_info_rows` 生成未知形状品质点。实包复盘 `windivert_2026-06-04_034429_complete_gabriela_2401...`
+  的第 11 帧前缀已能生成 `source=public_info` 的 MiniMap markers；6 个公共品质点中 1 个与既有已知格去重，
+  因此新增 5 个 marker。
+- 修复新局开始被上局结算保留挡住：overlay 现在在非 review 模式下，只要 `capture_source_status` 有
+  10 秒内的新鲜 `active_session_id` 且不同于当前 snapshot session，即立即显示“新局监听中”，不再等待
+  60 秒结算保留窗口结束。陈旧 capture status 仍保留近期结算，避免误清屏。
+- 艾莎结算差异留档：用户报实际 `1,575,614`，当前 2501 结算包的 inventory sum 与 UI 均为
+  `1,158,401`，在已解析 inventory 和 `0x002D` 整数扫描中暂未发现 `1,575,614`。后续需要继续确认是否存在
+  结算/技能/加成字段未接入，或是否为游戏结算界面显示口径与藏品总值不同。
+- 验证：`C:\Python313\python.exe -m pytest tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py -q`
+  为 `62 passed`。
+
+### 2026-06-04 追加：两局实战复核与进度判断
+
+- 用户又实测两局，未再发现结算值异常，开局刷新也正常。最新两份有效样本已归入
+  `data/logs/live/raw/archive/complete`：
+  - `windivert_2026-06-04_040735_complete_gabriela_2401_2401_1295018938454653.json`：
+    Gabriela/map 2401，`0x0021` 开局、`0x002D` 结算齐全，24 件、57 格、结算总值 `91,754`。
+  - `windivert_2026-06-04_041132_complete_ethan_2401_2401_1295018938590021.json`：
+    Ethan/map 2401，`0x0021` 开局、`0x002D` 结算齐全，44 件、121 格、结算总值 `912,997`。
+- `archive_live_raw.py` 补兼容 JSON array 输入。原因：换局 reset 备份写的是 JSON 数组，当前 live 工作文件是
+  JSONL；旧归档脚本只能读 JSONL，导致完整 reset 样本不能补归档到 `archive/complete`。现在两种格式都可读，
+  输出仍统一写 JSON array。验证：`C:\Python313\python.exe -m pytest tests/test_archive_live_raw.py -q`
+  为 `3 passed`。
+- 综合判断：P0 live 闭环可进入“基本可用/继续采样”状态。当前抓包、开局 session 切换、英雄首帧识别、
+  公共信息/宝光 marker、结算 full minimap、complete/partial/diagnostic 归档都已有可用路径。
+- 仍需收口的 P0 后半段：live fast 样本还没有进入 `model_eval.jsonl`/`summarize_live_windivert_brief.py`
+  的有效统计，`post_game_live` 当前显示 `windivert_rows=0` 且 `model_eval` 最新仍是旧离线 500-trial 数据。
+  下一步应先打通“archive complete -> replay/eval summary”的桥，再正式进入早轮估值与 q6/仓位准确性审查。
+- 当前 `live_status` 显示 monitor lock missing、latest snapshot stale，说明本轮实战后 monitor 已停止/断开；
+  下次继续实机前需要重新启动 overlay/monitor。
+- 验证：`C:\Python313\python.exe -m pytest tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py tests/test_archive_live_raw.py -q`
+  为 `65 passed`。
+
+### 2026-06-04 追加：archive complete -> live brief/eval summary
+
+- `summarize_live_windivert_brief.py` 已打通 `data/logs/live/raw/archive/complete` replay 输入：默认仍读取
+  `model_eval.jsonl`，同时按 `--since-hours` 选择 recent WinDivert complete archives，用 live-fast 口径
+  `n_trials=10 / roi_trials=0 / shadow_trials=1 / debug_shadows=False` 在内存中重建 `model_eval` row。该路径只服务
+  brief 统计，不自动追加到正式 `model_eval.jsonl`，避免污染后续 500-trial 校准日志。
+- brief 现在输出 `source_counts`，可区分 `model_eval` 与 `windivert_archive` 来源；按 `session_id` 去重，避免同一局
+  同时存在日志 row 和 archive replay row 时重复计数。
+- 最新 24h 实测输出已从 `windivert_rows=0` 变为 `windivert_rows=6`，来源为 `windivert_archive=6`。当前 fast
+  brief 口径：median matched `10/10`，P50 中位误差 `-82,673.5`，P50 低估率 `0.83`，P90 覆盖率 `0.67`；
+  R3 组 3 行的 P50 中位误差 `-643,663`、P90 覆盖率 `0.33`，继续支持“中早轮实时估值明显偏低”的后续审查方向。
+- 验证：`C:\Python313\python.exe -m pytest tests/test_summarize_live_windivert_brief.py -q` 为 `4 passed`；
+  `C:\Python313\python.exe -m pytest tests/test_summarize_live_windivert_brief.py tests/test_archive_live_raw.py tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py -q`
+  为 `69 passed`；`git diff --check` 通过。
+
+### 2026-06-04 追加：pre-bid 估计窗口定稿
+
+- 评估窗口定为 **每轮用户出价前一刻**：即该轮道具使用与返回、可能的公共信息更新之后，用户 `SEND 0x0022`
+  出价之前的 raw prefix。原因是 `REV 0x0025` 已经是出价公示/轮次状态，整局结算态更晚；用这些时点评估会混入
+  未来信息，不能代表实战当轮决策。
+- `summarize_live_windivert_brief.py` 默认 archive replay 改为 `--archive-window prebid`：每个 complete archive
+  按每个 `SEND 0x0022` 生成一行 pre-bid window eval。保留 `--archive-window full` 对照旧的一局一行口径。
+- pre-bid prefix 没有 settlement inventory，因此 eval row 使用完整 archive 的结算 truth（最终价值/格数/q6 truth）
+  作为对照，只用 prefix 信息生成估计。`model_eval` 也补了 v2 fallback：当首轮没有 `bid_rows/current_highest`
+  时，仍从 `v2_posterior_rows` 的“决策价值/原始价值 P10/P50/P90”计算估值误差，避免首轮窗口空值。
+- 最新 24h pre-bid 输出：`windivert_rows=25`，`windivert_archive_prebid=25`，median matched `10/10`，
+  P50 中位误差 `-113,762`，P50 低估率 `0.78`，P90 覆盖率 `0.52`。分轮更关键：
+  R1 `rows=6` / median P50 error `-193,139.5` / P90 coverage `0.50`；
+  R2 `rows=6` / median P50 error `-399,257` / P90 coverage `0.50`；
+  R3 `rows=6` / median P50 error `-426,723` / P90 coverage `0.50`；
+  R4+ `rows=7` / median P50 error `-113,762` / P90 coverage `0.57`。
+- 旧 full 口径对照仍是 `windivert_rows=6`，median P50 error `-82,673.5`，明显不是实战窗口指标。
+  后续 q6/仓位准确性审查必须以 pre-bid 窗口为主，full 只作 sanity check。
+- 异步状态判断：当前抓包循环已经异步投递，推理在 worker 后台跑；fast 模式 `n_trials=10 / roi=0 / shadow=1`
+  已可支持继续采样。真正的 baseline-first / shadow-later 细拆仍有价值，但目前低估问题比异步细拆更阻塞实战质量，
+  下一步应优先审 pre-bid 低估根因（q6、仓位/总格、公共信息与扫描输入覆盖）。
+- 验证：`C:\Python313\python.exe -m pytest tests/test_summarize_live_windivert_brief.py tests/test_archive_live_raw.py tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py -q`
+  为 `71 passed`；`git diff --check` 通过（仅 CRLF 提示）。
+
+### 2026-06-04 追加：出价倍率复核与 pre-bid 低估分组
+
+- 修正正式出价阈值：`bidking_lab.inference.bid_strategy` 现在按游戏轮次秒仓倍率反推价格，
+  R1/R2/R3/R4/R5 分别使用 `2.0/1.6/1.3/1.1/1.0`。阈值口径为
+  `probe=P10/倍率`、`defend=P50/倍率`、`attack=P90/倍率`，高信息态 `stop` 保留小幅 P90 premium。
+  用户给出的校验例 `400,000` 仓在 R2 防守价应为 `250,000` 已加入回归测试。
+- overlay 的“轮次仓位参考”同步从 `P50 × 倍率` 改为 `P50 ÷ 倍率`，并把 `秒仓倍率` 写入
+  bid row / ui contract / hover detail，便于实机区分“估值错、轮次错、倍率公式错”。
+- `summarize_live_windivert_brief.py` 新增 `q6_truth`、`random_avg`、`warehouse_p50_error` 分组。
+  最新 24h pre-bid fast 输出仍为 `windivert_rows=25`，overall P50 低估率 `0.78`、P90 覆盖率 `0.52`；
+  但分组后差异非常明确：
+  - `q6=0`：`12` 行，P50 中位误差 `-12,357`，P90 覆盖率 `1.0`。
+  - `q6>0`：`13` 行，P50 全部低估，中位误差 `-797,120.5`，P90 覆盖率 `0.08`。
+  - `random_avg signal`：`4` 行，P50 全部低估，中位误差 `-752,640`，P90 覆盖率 `0.0`。
+  - `warehouse_p50_error under<-20`：`7` 行，P90 覆盖率 `0.29`，说明仓位低估也有影响，但 q6
+    truth/random_avg signal 的解释力更强。
+- trials 复核：同一 pre-bid 窗口用 `--archive-n-trials 80` 与 `200` 回放，P90 覆盖率仍为 `0.52`，
+  因此早轮低估不应优先归因于 live fast trials 太少。下一步应优先审 q6/random sample avg tail-risk
+  如何从 diagnostic/shadow 安全进入正式出价，再处理宝光/Sophie/Raven quality-only 仓位 soft hint。
+- random sample avg signal 已先接入 q6 风险参考：`_q6_prior_gap_summary` 现在会把高随机均价写入
+  `q6先验缺口`，并把 `q6实战参考P90` 至少抬到 `N × avg`，但仍不改变正式 posterior、停止价或抢仓上限。
+  最新 Ethan/map 2401 重放中，`200031` 三件均价 `124,892` 会显示
+  `随机3件均价高124,892；参考P90 374,676；门控 random_avg_signal；仅作风险参考，未抬高正式停止价`。
+  同时 q6 residual shipwreck profile 允许 `public:random_avg+...+layout` 变体，避免该公共信号阻断既有 shadow gate；
+  但 map 2401 是 `未知别墅`，不属于 shipwreck gate，因此当前 Ethan villa 低估仍需后续专门建模/回测。
+- 出价防守价从纯 `P50 ÷ 倍率` 改为轻微成交溢价：使用 `P50 + 0.15*(P90-P50)`，上限 `P50*1.15`，
+  再除以本轮倍率。R2 `400,000/600,000` 的 P50/P90 例子现在防守价为 `268,750`，不是刚好 `250,000`；
+  `attack_bid/可追(P90)` 仍是 `P90 ÷ 倍率`，表示当前原始出价/最高价的 P90 可承受线，不是仓值本身。
+- 公共随机均价正式进入 v2 全局评分，策略改为“硬下界 + 最小有效样本回退”：高于 `20,000` 的
+  `随机 N 件均价 avg` 生成 `random_sample_value_floor = int(0.95*N*avg)`；若通过下界的样本数达到
+  `max(3, min(20, ceil(candidate_count*0.20)))`，则 hard filter；否则低于下界的 trial 权重乘 `0.10`。
+  随机均价出现时最多额外采 `40` 次，尝试补足 hard floor 样本。它仍不进入品质桶、不硬筛 item、
+  不预填站位。
+- adaptive floor 后最新 24h pre-bid fast 输出：overall P50 中位误差仍为 `-113,762`，P90 覆盖率 `0.52`；
+  `random_avg signal` 组 median matched 从 `5` 提到 `14`，P50 中位误差约 `-615,700.5`。新增
+  `random_floor_mode` 分组：`hard=1` 行、`soft=3` 行、`none=21` 行。Ethan/map 2401 的 R1 达到
+  `hard:pass=3/7:min=3:attempts=28`，R2-R4 仍 soft，说明该补丁有效利用随机均价下界，但 q6 大低估
+  仍需后续 q6/候选 tail 正式建模。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests/test_bid_strategy.py tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py -q`
+    为 `69 passed`。
+  - `C:\Python313\python.exe -m pytest tests/test_summarize_live_windivert_brief.py -q`
+    为 `5 passed`。
+  - `C:\Python313\python.exe -m pytest tests/test_live_monitor.py::test_q6_prior_gap_summary_uses_random_sample_avg_signal_as_reference tests/test_live_monitor.py::test_q6_risk_reference_text_is_explicitly_non_binding tests/test_evaluate_fatbeans_v2_samples.py::test_q6_residual_boost_profile_gate_is_narrow -q`
+    为 `3 passed`。
+  - `C:\Python313\python.exe -m pytest tests/test_bid_strategy.py tests/test_inference_v2.py::test_public_random_sample_avg_value_is_retained_but_not_bucket_target tests/test_live_overlay.py::test_overlay_model_uses_zero_match_fallback_reference tests/test_runtime_snapshot.py::test_ui_contract_separates_baseline_and_shadow_references -q`
+    为 `9 passed`。
+  - `C:\Python313\python.exe -m pytest tests/test_summarize_live_windivert_brief.py tests/test_inference_v2.py::test_public_random_sample_avg_value_is_retained_but_not_bucket_target -q`
+    为 `6 passed`。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 24`
+    输出上述分组。
+
+### 2026-06-04 追加：q6 shadow 分组与 Ethan villa random_avg gate
+
+- `summarize_live_windivert_brief.py` 新增 `q6_shadow` 分组，用于把 q6 truth 窗口拆成：
+  `covered`、`active_miss`、`inactive_q6`、`none`。这比只看 `q6_truth` 更可行动：可以区分 shadow
+  没触发、触发但仍未覆盖、以及覆盖后正式估值仍偏低。
+- 最新 24h pre-bid fast + debug shadows(`--archive-shadow-trials 10`) 初始结果：
+  `q6>0=13` 行，`inactive_q6=5`、`covered=6`、`active_miss=2`。说明低估不是单纯 trials 问题；
+  一部分是门控漏配，一部分是 tail/空间价值分布即使 shadow 也压低。
+- 针对实测 Ethan/map 2401：该 map 被识别为 `villa`，不是 `shipwreck`，所以之前只补
+  `public:random_avg+layout` 的 shipwreck gate 没命中。现在 legacy `shipwreck_profile_v1` shadow
+  额外允许 `ethan + villa + public:random_avg+layout/shape+layout`，仅用于 `profile_b5`/离线 shadow
+  诊断，不改变正式 baseline posterior 或出价。
+- 修正后同一 25 个 pre-bid 窗口 debug shadow 结果：`inactive_q6` 从 `5` 降到 `1`，
+  `covered` 从 `6` 升到 `8`，`active_miss` 为 `4`。剩余 `inactive_q6` 是首轮 prefix 尚无 hero/map 的
+  Aisha 2506 窗口；`active_miss` 明细显示 Aisha 2506 final q6 value `2,767,171`，shadow q6 P90 仍只有
+  约 `0.77m-1.00m`，Ethan 2401 后几轮随机均价下界仍不足以覆盖最终 `912,997`。下一步应进入
+  q6/tail value sampler 或空间分布审查，而不是继续盲目扩 gate。
+- 同一回放把 `--archive-shadow-trials` 从 `10` 提到 `80` 后，`covered=9`、`active_miss=3`、
+  `inactive_q6=1`，整体正式 P90 覆盖仍为 `0.52`。这进一步排除 shadow 采样数不足作为主因；
+  剩余问题更偏 q6/tail 价值分布与空间候选。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests/test_evaluate_fatbeans_v2_samples.py::test_q6_residual_boost_profile_gate_is_narrow tests/test_summarize_live_windivert_brief.py -q`
+    为 `6 passed`。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 24 --archive-debug-shadows --archive-shadow-trials 10`
+    输出上述分组。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 24 --archive-debug-shadows --archive-shadow-trials 80`
+    输出上述 80-trial shadow 对照。
+
+### 2026-06-04 追加：pre-bid 误差根因细分
+
+- `summarize_live_windivert_brief.py` 新增两层误差诊断：
+  - `primary_error`：互斥主因，用于快速决定下一步先修哪里。
+  - `diagnostic_tag_multi`：可重复标签，同一窗口可同时标记 q6、公共信息、英雄/证据 profile、仓位、
+    样本空间、空间压力、长尾、信息密度、均格/size bucket/类别/形状约束等。
+- 默认 brief 仍保持相对短，只新增 `primary_error` 和 `top_p90_misses`；完整矩阵用
+  `--detail-groups` 查看。JSON 输出保留全部分组，便于后续脚本消费。
+- `--format json` 改为 ASCII-safe 输出，避免 Windows PowerShell/管道按控制台编码写中文导致 UTF-8
+  消费端解析失败；文本模式不变。
+- 最新 25 个 24h pre-bid 窗口的默认主因：
+  - `p90_covered=12`，其中 no-q6 组整体 P90 覆盖仍为 `1.0`。
+  - `q6_tail_value=5`，median P50 error `-2,599,271`，是当前最大误差来源。
+  - `q6_value_distribution=4`，多为 low space pressure 下 q6 价值分布压低，不是空间装不下。
+  - `q6_space_constrained=2`，属于空间压力/溢出相关。
+  - `no_estimate=2`，主要是首轮 prefix 尚无 hero/map 的开局上下文。
+- 详细矩阵确认：
+  - `q6_space_low_space_pressure=8` 且 P90 覆盖 `0.0`，说明很多 q6 miss 不是容量不足，而是 tail/value
+    sampler 没把高价值候选抬起来。
+  - `q6_space_space_overflow=2`，空间约束确实存在但不是主量级。
+  - `random_avg_signal=4`、`public:random_avg+layout` profile P90 覆盖 `0.0`，Ethan/villa 高均价仍需要
+    random_avg likelihood/tail 校准。
+  - `warehouse_under<-20=7`，P90 覆盖 `0.29`，仓位低估是共因，但最大 top misses 仍由 q6 tail 主导。
+- 当前 top misses 前三均来自 Aisha/map 2506：R3/R4/R2 pre-bid 的 P90 分别低估约
+  `1.67m / 1.47m / 1.04m`，证据 profile 为 `shape+layout`，q6 shadow active/covered 不足以覆盖，
+  `space=low_space_pressure`。这把下一步明确指向 q6 tail/value sampler，而不是先继续加 trials 或扩 gate。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests/test_summarize_live_windivert_brief.py -q` 为 `5 passed`。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 24 --archive-debug-shadows --archive-shadow-trials 10`
+    输出上述默认分组。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 24 --archive-debug-shadows --archive-shadow-trials 10 --detail-groups`
+    可输出完整细分矩阵。
+  - JSON subprocess 捕获可解析，输出 `25 ['no_estimate', 'p90_covered', 'q6_space_constrained', 'q6_tail_value', 'q6_value_distribution']`。
+
+### 2026-06-04 追加：Aisha 深沉船 q6 prior-floor 提升为 live 正式估值
+
+- 根因复核：Aisha/map 2506 pre-bid R3/R4 不是 `100107` 漏接，也不是 trials 少。R4 prefix 中已有
+  `35` 个 q1-q4 `shape+layout` target、q5 精确 `20` 格和 `95` 个已占布局格；采样器先填这些硬目标后，
+  把无总件数场景的 residual draws 压到当前已填件数附近，导致未知 q6 几乎没有抽样空间。复现中 q6 样本率
+  从 R2 `~0.77` 降到 R4 `~0.017`，q6 决策 P90 直接掉到 `0`。
+- 全量 338 份旧样本 `--trials 20` 复核后，`aisha_deep_floor1` 仍是最窄、最干净的升级候选：
+  q6 plannable coverage `0.4505 -> 0.5408`，q6 miss `161 -> 135`，decision MAE
+  `401,660 -> 363,336`；paired no-q6 new-positive 为 `0`。`profile_b5` 虽覆盖更高
+  (`0.5734`)，但会把已有 no-q6 正报中位从约 `302k` 抬到 `453k`，所以继续只作 shadow/debug。
+- live baseline 现在只在 `aisha_shipwreck_deep_v1` 命中时正式传
+  `q6_residual_prior_floor_ratio=1.0`；Ethan villa random_avg、Aisha hidden/villa floor、profile boost
+  仍不影响正式 posterior 或出价。artifact/model_eval 新增 `q6_formal_prior_floor_*` 字段，用于区分正式生效
+  与 shadow 对照。
+- 最新 25 个 24h pre-bid 窗口重放：overall P90 覆盖 `0.52 -> 0.65`，q6>0 组 `0.08 -> 0.33`，
+  Aisha 组 `0.12 -> 0.50`，`shape+layout` profile `0.53 -> 0.73`。Aisha/map 2506 R3/R4 不再 q6 P90=0；
+  剩余 top misses 转为 R2 Aisha tail 以及 Ethan `public:random_avg+layout`。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests/test_live_monitor.py tests/test_fatbeans_webhook_monitor.py tests/test_summarize_live_windivert_brief.py -q`
+    为 `41 passed`。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 24 --archive-n-trials 20 --archive-shadow-trials 20 --archive-debug-shadows --format json`
+    输出上述覆盖率。
+
+### 2026-06-04 追加：residual 槽位语义与全仓先验字段
+
+- 复核后把 Aisha 2506 根因表述收窄：当前 live 地图 2506/2501/2401/2403 的掉落池均为
+  `n_min=n_max=1`，因此不是“一个 drop 槽掉多件导致件数/槽位折算错误”。实际问题是高信息 Aisha
+  prefix 先填入大量 q1-q4 shape/layout 目标后，剩余未知 item slots 很少，而 q6 在剩余 slots 中仍按
+  原始低概率/低 tail-value 分布抽样，导致 q6 件数、格数和价值 P90 系统性偏低。`aisha_deep_floor1`
+  仍是当前正式修复；不应把它误解释为全局多件掉落修复。
+- 条件采样器仍补了一层语义防线：无精确总件数时，已知 bucket 物品会按掉落池期望 `n_min/n_max`
+  折算为已用 draw slots；layout-only footprint 只提高最低总 draw slots，不会被当作已填 bucket
+  扣掉。新增单测覆盖“每槽固定掉 2 件”场景，防止未来多件掉落地图再次把 residual 抽样空间扣没。
+  对当前 n=1 live 地图该改动应为等价行为。
+- 新增全仓 Drop 先验期望字段：`PosteriorReport.prior_expected_count/cells/value/decision_value`，
+  live `v2_posterior_rows` 显示为 `先验件数/先验格数/先验原始价值/先验决策价值`，`model_eval` 透传为
+  `v2_prior_expected_*`。`prior_expected_decision_value` 复用现有 plannable tail 裁剪逻辑，避免未证实的
+  极端尾部直接污染实战主估值。
+- 用户复核后修正 tail replacement 口径：`prior_expected_decision_value` 继续代表正式裁尾决策值；
+  新增 `prior_expected_tail_replacement_decision_value` 专门表示“未证实极端尾部按同品质同形状普通物品替代”的
+  先验审计值。live `v2_posterior_rows` 显示为 `先验替代决策价值`，`model_eval` 透传为
+  `v2_prior_expected_tail_replacement_decision_value`。结算 truth breakdown 同步新增全仓
+  `final_decision_value_with_tail_replacement`，避免只看 q6 分量时漏掉“整仓裁尾后可替代值”。
+- 复盘用户记忆中的“300 多万但 180 万附近可规划值”实战局：raw archive 仍在
+  `data/logs/live/raw/archive/complete/windivert_2026-06-04_034748_complete_aisha_2506_2506_1295018937738841.json`。
+  当前 schema 重放结果为 final `3,095,318`、最高物品 `《富春山居图》` `1,236,666`、
+  `final_decision_value=1,858,652`、`final_decision_value_with_tail_replacement=2,001,752`。这说明原始局没有丢，
+  但旧 UI 当时显示的 exact snapshot/model_eval 行没有留在 `model_eval.jsonl`，大概率已被后续 live snapshot 覆盖；
+  后续以 raw archive 重放作为可复核来源。
+- 只读实验：最近 72h 的 25 个 pre-bid rows 上，简单 early-round 全仓先验 P50 shrinkage 会把
+  median abs P50 error 从约 `142,264` 推高到 `181,974-261,395`，主要因为 Gabriela 低真值局会被全仓
+  先验抬高；直接用全仓先验作 P90 floor 也没有提高 q6>0 覆盖。因此“信息少时先验+后验”方向保留，
+  但不能全局启用，下一步只适合按 q6/random_avg/hero/map/evidence profile 做 shadow 门控评估。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests/test_inference_v2.py tests/test_live_monitor.py tests/test_runtime_snapshot.py -q`
+    为 `90 passed`。
+  - `C:\Python313\python.exe -m pytest -q` 为 `826 passed`。
+  - `C:\Python313\python.exe scripts\compare_q6_residual_boost.py --trials 20 --configs baseline aisha_deep_floor1 profile_b5 --format json --no-progress`
+    仍显示 `aisha_deep_floor1` MAE 最好：baseline `401,660`、profile_b5 `378,942`、aisha_deep_floor1
+    `363,336`；profile_b5 q6 覆盖更高但无 q6 正报金额中位上升，继续只作 shadow。
+
+### 2026-06-04 追加：长窗口收束与 handoff checkpoint
+
+- 新增 `handoff_2026-06-04.zh-CN.md`，把本长窗口收束为下一窗口入口：当前 live 状态、已完成主线、
+  q6/pre-bid 低估结论、归档路径、tail replacement 口径、宝光 quality-only 约束边界、下一步命令和暂不做事项。
+- 当前 live 主链路状态：WinDivert/overlay/UI/归档已基本可用；`live_status.ps1` 交接时为 `WARN`，原因是
+  monitor 当前没有运行且快照约 7.7 小时未更新。下一次实机前应重新执行
+  `.\scripts\start_live_windivert_overlay.ps1 -Restart -PortOnly`。
+- 最新 72h WinDivert archive brief（`--archive-n-trials 10 --archive-shadow-trials 1`）：
+  `windivert_rows=26`、overall `p90_coverage=0.62`、`q6=0` 组覆盖 `1.00`、`q6>0` 组覆盖 `0.25`、
+  `random_avg signal` 组覆盖 `0.00`。主要 miss 仍集中在 Aisha 2506 R2/R3/R4 和 Ethan 2401
+  `public:random_avg+layout`，下一步优先 q6/tail/value sampler 与 Ethan villa random_avg/q6 gate，
+  不优先继续加 trials。
+- 宝光/quality-only 证据边界已补回归测试：同 runtime 的无轮廓宝光点移动时用最新 local_index、品质下界只算一次、
+  不生成 hard layout footprint；已有 shape/footprint 时，后续宝光只补品质，不移动已有轮廓。验证：
+  `C:\Python313\python.exe -m pytest tests\test_inference_v2.py -q` 为 `59 passed`；
+  `C:\Python313\python.exe -m pytest -q` 为 `829 passed`。
+- 当前待办顺序：
+  1. q6/pre-bid 估值准确性：重点 `q6_gate_inactive`、`q6_tail_value`、`public:random_avg+layout`、
+     `warehouse_under<-20`、`quality_only_deep_local_risk`。
+  2. live 多局继续采样并确认 archive complete/reset 分类。
+  3. 做 baseline-first / shadow-later / full-archive-later 异步细分，降低 Python 推理 CPU 抖动。
+  4. 样本归档分类脚本化，按 hero/map/session/prebid/q6 root/profile 输出 review 集。
+  5. 后续再统一接 Ahmed/Maria/Victor/Raven/Sophie 技能推理槽。
+
+### 2026-06-04 追加：Ethan villa random_avg q6 shadow 候选
+
+- 复跑 72h WinDivert archive brief 后确认：`q6=0` 仍全覆盖，`q6>0`/`random_avg signal` 仍是主漏项；
+  top miss 继续集中在 Aisha 2506 R2/R3/R4 与 Ethan 2401 `public:random_avg+layout`。
+- 针对 Ethan 2401 做窄门控候选：新增 `ethan_villa_random_avg_floor1`，仅当
+  `hero=ethan`、`map_family=villa`、evidence profile 为 `public:random_avg+layout` 或
+  `public:random_avg+shape+layout` 时激活，shadow 使用 `q6_residual_prior_floor_ratio=1.0`。
+  该候选只写 artifact/model_eval/UI shadow/brief 诊断，不改变正式 v2 posterior、bid hint、stop price 或
+  tail replacement 口径。
+- fast/live `shadow_trials=1` 时只记录 gate active 元数据，不额外跑 posterior，避免拖慢实机；当
+  `shadow_trials>1` 时才计算候选 P90。Ethan 2401 R3 抽样复核中，fast 行显示
+  `ethan_shadow_active=true` 且候选 P90 为空；`shadow_trials=10` 时候选 q6 P90 约 `1,068,708`，
+  能覆盖 q6 truth `559,519`。
+- brief 诊断同步纳入 `q6_residual_ethan_villa_random_floor_shadow_*`，并补
+  `quality_only_deep_local_risk` detail tag。当前 72h fast JSON 中 `quality_only_deep_local_risk` 无命中；
+  Ethan 2401 top miss 已从 `q6_gate_inactive` 转为 active shadow 下的 `q6_tail_value`/`q6_space_constrained`。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_live_monitor.py tests\test_runtime_snapshot.py tests\test_summarize_live_windivert_brief.py -q`
+    为 `41 passed`。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-n-trials 10 --archive-shadow-trials 1`
+    仍为 overall `p90_coverage=0.62`；fast 单独测约 `5.1s`。
+  - `git diff --check` 通过（仅 CRLF 提示）。
+
+### 2026-06-04 追加：目录整理与 q6 floor 候选复核
+
+- 项目结构已收口：`src/` 现在只保留正式 Python 包 `src/bidking_lab`。本地外部参考移动到
+  `external_references/`：`grid_view_v1.3.7`、`AuctionAnalyzer4.13.3`、`AuctionAnalyzer4.13.3.zip`。
+  `src/bidking_lab.egg-info` 是构建产物，已删除。相关脚本默认路径改为 `external_references/...`，
+  文档同步更新；`external_references/**` 仍不入仓。
+- 验证目录整理未破坏运行：
+  - `import bidking_lab` 成功，路径为 `src/bidking_lab/__init__.py`。
+  - `C:\Python313\python.exe .\scripts\compare_grid_view_reference.py --map 2401 --quality 6 --format json`
+    成功读取新位置的 grid_view 数据。
+  - 反编译/探测辅助脚本 `compileall` 通过；未运行会重写 `_extracted/_decompiled` 的破坏性重提取。
+- `compare_q6_residual_boost.py` 新增两个离线配置：
+  - `ethan_villa_random_avg_floor1`：Ethan + villa + `public:random_avg+layout/shape+layout` 的
+    q6 prior-floor 候选。
+  - `aisha_shipwreck_profile_floor1`：Aisha shipwreck profile-wide prior-floor 上界实验，仅用于说明
+    放宽 deep threshold 的收益/副作用边界。
+- 338 份历史样本 `trials=20` 快速对照：
+  - `ethan_villa_random_avg_floor1` 只激活 `2` 行，paired 修复 `1` 个 q6 miss，未新增 no-q6 positive；
+    方向为正但样本太少，继续 shadow 收数，不升级正式 baseline。
+  - `aisha_shipwreck_profile_floor1` 覆盖提升更明显：q6 plannable coverage `0.4505 -> 0.6088`，
+    paired 修复 `47` 个 q6 miss；但 active no-q6 `8` 行全部有 q6 P90 正报，no-q6 正报中位从约
+    `302,254` 抬到 `452,800`，不适合正式启用。
+  - threshold 扫描显示 `bottom_row >= 13` 是当前历史样本中 active no-q6 为 `0` 的边界；
+    若放宽到 `>=11` 才能覆盖 Aisha 2506 R2 这类窗口，但会引入 `2` 个 no-q6 active control，
+    no-q6 candidate q6 P90 中位约 `925,929`。因此当前正式 `aisha_shipwreck_deep_v1`
+    仍不下调阈值。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_compare_q6_residual_boost.py tests\test_live_monitor.py::test_ethan_villa_random_avg_prior_floor_gate_is_narrow -q`
+    为 `12 passed`。
+
+### 2026-06-04 追加：样本路径默认值收口与 Aisha tail/value 候选
+
+- 样本入口进一步收口：`evaluate_fatbeans_v2_samples.py` 的默认输入改为仓内
+  `data/samples/fatbeans/*.json`，不再隐式混入 `C:\Users\shenc\Desktop\bid_king_packages`。外部抓包目录仍可作为
+  显式 positional path 传入；历史 handoff/observation 中的桌面路径保留为当时记录，不作为当前默认运行路径。
+- `start_live_monitor_overlay.ps1` 的默认 watch dir 改为仓内 `data/samples/fatbeans`；若要监控桌面抓包目录，
+  现在必须显式传 `-WatchDir "C:\Users\shenc\Desktop\bid_king_packages"`。这让 300+ 历史样本、repo 样本和实时采样
+  在默认口径上分清：默认复跑看仓内样本，外部目录只在用户明确指定时参与。
+- Aisha 2506 R2/R3/R4 复盘显示，简单 tail replacement candidate 基本不抬高 q6 P90：R3/R4 的
+  tail replacement 估计几乎等于 formal q6 P90，R2 只有宽 profile shadow 能覆盖但 no-q6 control 风险偏高。
+  因此当前主要问题不是“把极端尾部换普通红”本身，而是 q6 residual count/cells/ordinary high-value 分布偏低。
+- 新增离线诊断 `q6_residual_value_power`，只在指定 gate 内把 q6 residual 候选按 value 轻微倾斜，并保持 q6 总概率质量
+  不变；该参数只用于 evaluator/compare 复跑，不改变正式 live baseline。338 份仓内样本、`trials=20` 对照：
+  - baseline：q6 plannable coverage `0.4505`，q6 misses `161`，decision MAE `401,660`。
+  - `aisha_deep_floor1`：coverage `0.5408`，misses `135`，paired 修复 `27`，无新增 no-q6 positive，MAE `363,336`。
+  - `aisha_deep_floor1_value05`：coverage `0.5510`，misses `132`，paired 修复 `30`，无新增 no-q6 positive，但 MAE
+    `368,354`，比 `aisha_deep_floor1` 差约 `5,018`。
+- 当前结论：value tilt 方向有小幅正信号（多修复 3 个 q6 miss），但收益太窄且 MAE 回退，继续作为离线/shadow 候选；
+  不升级正式 baseline，也不把 tail replacement 接入正式 `decision_value`。
+
+### 2026-06-04 追加：v2 估值审查与五轮窗口合同
+
+- 新增专项文档 `docs/v2_estimation_review_2026-06-04.zh-CN.md`，固定五轮 pre-bid 评估窗口、replacement-adjusted
+  主评估 truth、formal/raw 辅助口径、分轮验收指标、v2 已确认问题、继续修 v2 的停止条件和未来 v3 的输入设计约束。
+- 修正 live/model_eval 诊断口径：主 `decision_value_p50_error` / `decision_value_p90_error` 现在按
+  `decision_value_p50/p90 - final_decision_value_with_tail_replacement` 计算；formal 裁尾真值和 raw 原始结算对照另写
+  `*_vs_formal` / `*_vs_raw`。正式出价链路仍只读裁尾 plannable `decision_value`，tail replacement 不进入正式出价。
+- `summarize_live_windivert_brief.py` 已按最多 5 个真实报价窗口单独统计，不再把 R4/R5 合并为 `R4+`；
+  新增 `prebid_window_audit`、`prebid_session_progression`、`prebid_round_q6`、replacement-adjusted normalized
+  P50 error、P90 covered-excess / extreme-over 指标。历史 `summarize_live_model_eval.py` 与
+  `summarize_size_bucket_live.py` 也会优先重算 replacement-adjusted decision error，避免旧 JSONL 误差字段污染汇总。
+- 最新 72h pre-bid archive 重放：`25` 个报价窗口、`23` 个 ready accuracy 窗口；只有 `2` 局有完整 5 个报价窗口，
+  `2` 个 R1 窗口在第一条 bid 前没有状态/估值，属于采集缺口。本轮所有 action send 的结果都在报价前返回，
+  窗口边界符合“用完道具后、报价前最后推荐”的设计。
+- 当前 v2 主要诊断：
+  - pre-bid replacement-adjusted overall：MAE `399,468`，median normalized P50 error `0.525`，P90 coverage `0.61`，
+    P90 extreme-over rate `0.39`。
+  - q6=0：replacement-adjusted MAE `86,802`，P50 under-rate `0.50`，P90 coverage `1.00`，但 P90 extreme-over `0.83`。
+  - q6>0：replacement-adjusted MAE `679,784`，P50 under-rate `0.92`，P90 coverage `0.25`，P90 extreme-over `0.00`。
+  - 同局相邻轮次 `17` 个 transition 中，P50 误差缩小或持平比例 `0.76`，仍有 `4` 次后轮变差；R4->R5
+    样本只有 `2` 个且 P50 误差都缩小，仍不足以单独校准后轮收敛性。
+- 338 份静态样本 baseline `trials=20` 复跑仍为：files `338`、ok `333`、valued `329`、replacement-adjusted
+  decision MAE `408,675`、regular MAE `397,031`、tail-event MAE `588,566`、q6 plannable coverage `0.4505`、
+  q6 miss `161`。静态样本用于候选/control 审计，不能替代五轮 pre-bid 评估。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_live_monitor.py::test_model_eval_decision_error_uses_replacement_truth_and_keeps_comparisons tests\test_summarize_live_windivert_brief.py tests\test_summarize_live_model_eval.py tests\test_summarize_size_bucket_live.py -q`
+    为 `30 passed`。
+  - 相关宽测试组为 `170 passed`；全量 `C:\Python313\python.exe -m pytest -q` 为 `844 passed`。
+  - `git diff --check` 通过（仅 CRLF 提示）。
+
+### 2026-06-04 追加：q6 top miss 分量诊断
+
+- `summarize_live_windivert_brief.py` 新增 `q6_component` 分组，并在 `top_p90_misses` 中输出
+  q6 count/cells/value/tail replacement 的 truth、P90 和 under-by 字段。该改动只影响诊断输出，不改变正式
+  posterior、bid hint、stop price 或 tail replacement 接线。
+- 72h pre-bid brief 复跑后，Aisha 2506 R2/R3/R4 的共同根因更清楚：不是单纯 tail replacement，
+  而是 q6 count/cells P90 明显低于 truth。
+  - R2：q6 count/cells truth `6/57`，P90 `4/12`，q6 replacement truth `1,673,605`，q6 P90 `697,163`。
+  - R3：truth `6/57`，P90 `5/27`，q6 replacement truth `1,673,605`，q6 P90 `996,086`。
+  - R4：truth `6/57`，P90 `4/19`，q6 replacement truth `1,673,605`，q6 P90 `771,750`。
+- Ethan 2401 `public:random_avg+layout` 同样表现为 q6 count/cells under，并伴随 `warehouse_under<-20`：
+  R3 truth `3/21`，P90 `1/4`，q6 P90 under `284,963`；R1/R2/R4 也有 cells under。
+- 静态 338 样本复核支持 count-cell 方向：Aisha shipwreck q6 plannable miss `62/101`，其中 count under `56`、
+  cells under `55`、count below prior `49`、cells below prior `44`；整体 q6 miss 的 low-space-pressure rate
+  为 `124/161 = 0.7702`。简单 tail replacement candidate 在 bottom-row `9..13` 阈值下 `q6_helped_rows=0`。
+- 当前下一步：优先做 Aisha/Ethan 的 q6 count-cell residual sampler 或条件 likelihood 设计评估；tail replacement
+  继续只作 evaluation truth/audit，不接正式出价。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_summarize_live_windivert_brief.py -q` 为 `8 passed`。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-n-trials 10 --archive-shadow-trials 1`
+    成功输出新增 `q6_component` 和扩展后的 `top_p90_misses`。
+
+### 2026-06-04 追加：q6 count/cell P90-only 窄门控对照
+
+- `evaluate_fatbeans_v2_samples.py` 新增 `q6_count_cell_prior_narrow_gate_p90_sweep`，只在离线 summary 中输出
+  `aisha_shipwreck_deep_v1` 与 `ethan_villa_random_avg_v1` 两个窄门控的 count/cell prior P90 包络扫描。该字段
+  明确标记 `offline_shadow_only=true`、`formal_decision_value_unchanged=true`、`p50_unchanged=true`，不改变
+  posterior、正式出价、停止价、抢仓上限或 tail replacement 接线。
+- 338 份仓内样本、`trials=20` raw baseline 上：
+  - Aisha deep gate active `46` 行，全部为 q6 truth、active no-q6 为 `0`；ratio `1.0/1.25/1.5/2.0`
+    分别修复 `12/17/21/26` 个 q6 plannable P90 miss，coverage `0.4505 -> 0.4915/0.5085/0.5222/0.5392`。
+  - Ethan villa random_avg 仍只 active `2` 行，active no-q6 为 `0`；ratio `1.5/2.0` 修复 `1` 个 q6 miss，
+    ratio `1.0` 未修复。样本量仍不足以升级正式 baseline。
+- 用 Aisha deep sampler floor1 作为当前正式候选基线复跑时，decision MAE 为 `369,462`、q6 coverage `0.5408`；
+  同一 count/cell-under-prior trigger 下，P90-only 包络没有额外 eligible Aisha deep 行。这说明当前 deep floor1 已经
+  吃掉了可由“低于 prior count/cells”直接解释的部分，剩余 active miss 不能靠同一 post-hoc floor 继续修。
+- `compare_q6_residual_boost.py` 的全 sampler floor 对照显示：Aisha deep floor `1.5/2.0` 虽把 q6 coverage 提到
+  `0.5646/0.5748`，但 decision MAE 回退到 `374,538/389,537`。因此继续提高正式 sampler floor 不符合
+  “P90 可以更宽，但不能带偏 MAE”的目标；P90-only 包络只适合作为审计/shadow 输出或未来 v3 risk layer 参考。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_evaluate_fatbeans_v2_samples.py -q` 为 `33 passed`。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v2_samples.py --trials 20 --format summary`
+    成功输出新增窄门控扫描。
+
+### 2026-06-04 追加：估值准确性指标合同补强
+
+- MAE 继续作为 P50 中心估值的主指标之一，但不再单独代表“准确性”。静态 evaluator 新增
+  `decision_value_accuracy` 汇总，和 live pre-bid brief 对齐输出中心误差、归一化误差、under-rate、P90
+  coverage、P90 under/excess、P90 extreme-over 以及 P50/P90 pinball loss。
+- 338 份仓内样本 raw baseline：MAE `408,675`，median normalized abs P50 error `0.491`，
+  P50 under-rate `0.8419`，P90 coverage `0.4377`，median P90 under ratio `0.45`，P90 pinball loss `251,190`。
+- Aisha deep floor1：MAE `369,462`，normalized P50 error `0.439`，under-rate `0.7848`，P90 coverage `0.5152`，
+  P90 pinball loss `212,368`，是当前较均衡点。
+- Aisha deep floor1.5/2.0：P90 coverage 继续到 `0.5273/0.5394`，P90 pinball loss略降到
+  `209,652/208,731`，但 MAE 回退到 `374,538/389,537`，normalized P50 error 回退到 `0.458/0.467`，
+  P90 extreme-over rate 升到 `0.1212/0.1273`。结论不变：更高 floor 可作为 P90 风险参考，不升级 formal
+  P50 baseline。
+
+### 2026-06-04 追加：关键证据参数审计面
+
+- `evaluate_fatbeans_v2_samples.py` 新增 `evidence_parameter_audit`，集中输出 random sample avg、public info、
+  public avg-cells、Aisha bottom/deep/quality-only 阈值和 q6 gate activity。该字段只作审计，不改变模型。
+- 338 份仓内样本、`trials=20` 当前触发面：
+  - random sample avg：profile signal floor `20000`；rows 为 `signal=19`、`low_filtered=44`、`none=270`。
+    `signal` 组全为 q6 plannable truth，P90 coverage `0.2105`、q6 plannable coverage `0.2632`、P50 under-rate
+    `0.9474`，但没有 no-q6 control，不能直接证明可安全放宽。
+  - random sample value floor：factor `0.95`，hard floor min matched `3`、min rate `0.2`、extra trials `40`、
+    soft penalty `0.1`。注意：`--random-sample-avg-profile-floor` 目前只改 evidence-profile routing；
+    posterior value floor 仍使用代码内默认 signal floor，若要联动调整必须先确认语义。
+  - public avg-cells：`unique_rows=4`、`ambiguous_rows=50`、`none=279`；多数均格仍非唯一解，不能当 hard inventory
+    solver。
+  - public info：无 pending/unknown id；hard/soft/diagnostic/partial 都有模型归类。后续若新增公开项或改变 id
+    语义，需要先过 `public_info_semantics`。
+  - Aisha 位置阈值：bottom-row risk `16`，shipwreck deep gate `13`，quality-only deep row `13`。bottom-row risk
+    组 q6 miss rate `0.8095`，below-threshold `0.5769`；但 threshold 放宽仍需 no-q6 control 证明。
+  - q6 gate activity：`aisha_shipwreck_deep_v1` active `47` 行、active no-q6 `0`、active q6 coverage `0.2128`；
+    `ethan_villa_random_avg_v1` active `2` 行、active no-q6 `0`、coverage `0`。Ethan 仍是收数/shadow，不升级。
+- 后续凡涉及以下参数的新增、删除或权重调整，都先单独沟通再接 formal：random_avg profile/value floor、
+  public avg value/cells hardening、Aisha row thresholds、quality-only 位置风险、q6 residual floor ratio、
+  q6 value_power/boost。
+
+### 2026-06-04 追加：q6 条件审计与 live gate 字段
+
+- `summarize_live_windivert_brief.py` 的 `top_p90_misses` 继续增强为复盘表：新增/补齐
+  `map_family`、`layout_bottom_row`、Aisha deep threshold/gap、formal q6 prior floor active/ratio/gate、
+  random sample avg hard/soft floor mode 等字段。该改动只影响摘要诊断，不改变正式 posterior、bid hint、
+  stop price、抢仓上限或 tail replacement 接线。
+- 72h archive 复跑确认当前 top miss 的 gate 状态：
+  - Aisha 2506 R2：`map_family=shipwreck`、`layout_bottom_row=11`、deep threshold `13`、gap `2`、
+    formal prior floor inactive；这是 gate 边界 miss，但不能直接把 threshold 下调，因为历史 no-q6 control
+    对 profile-wide/floor 放宽敏感。
+  - Aisha 2506 R3/R4：`layout_bottom_row=15`、gap `0`、formal prior floor active、ratio `1.0`，仍然
+    q6 count/cells/value under；说明 active gate 内还有 count/cell/value likelihood 缺口。
+  - Ethan 2401：`map_family=villa`，R1 random floor mode 为 `hard`，R2-R4 为 `soft`，仍然 q6
+    count/cells under 且 `warehouse_under<-20`；random avg floor 本身不足以解释 q6 件数/占格。
+- `evaluate_fatbeans_v2_samples.py` 新增 `q6_condition_audit`，按非互斥标签统计 q6 truth 与 miss。338 份、
+  `trials=20` 当前结果：
+  - q6 plannable truth `293`，miss `161`，coverage `0.4505`。
+  - `q6_count_under_truth`：truth `161`、miss `142`、coverage `0.118`。
+  - `q6_cells_under_truth`：truth `151`、miss `142`、coverage `0.0596`。
+  - `low_space_pressure`：truth `195`、miss `126`、coverage `0.3538`，说明许多 miss 不是空间压力过高导致。
+  - `q6_count_below_prior` / `q6_cells_below_prior`：miss `125` / `118`。
+  - `aisha_deep_gate_active`：truth `46`、miss `37`、coverage `0.1957`；`aisha_shipwreck_deep_gate_inactive`：
+    truth `54`、miss `25`、coverage `0.537`。
+  - `random_avg_signal`：truth `19`、miss `14`、coverage `0.2632`；`ethan_villa_random_avg_gate_active`
+    仍只有 `2` 个 q6 truth 且都 miss。
+- `evaluate_fatbeans_v2_samples.py` 同步新增 `aisha_shipwreck_deep_threshold_p90_sweep`，只扫描 Aisha
+  shipwreck residual profile 的 bottom-row threshold，保持 P50/formal decision 不变。338 份、`trials=20`、
+  floor ratio `1.0`：
+  - threshold `13`（当前 formal）：active `46`、active no-q6 `0`、修复 `12` 个 q6 miss，coverage
+    `0.4915`。
+  - threshold `12`：active `57`、active no-q6 `1`、修复 `13` 个，no-q6 P90 increased `1`，保守净收益
+    `12`。
+  - threshold `11`：active `69`、active no-q6 `2`、修复 `14` 个，no-q6 P90 increased `2`，保守净收益
+    `12`。
+  - threshold `9/10`：修复 `19/16` 个，但 no-q6 P90 increased 都为 `5`。所有阈值下
+    no-q6 new positive 都是 `0`。
+  结论更精确：下调到 `11/12` 作为 P90-only audit 有研究价值，但相对当前 threshold `13` 的保守净收益并不更好；
+  不足以进入 formal sampler，也不能替代 MAE/control/excess 检查。
+- 结论：当前 v2 瓶颈已经更明确地指向 q6 presence/count/cells/value 的条件建模，而不是 trial 数、
+  tail replacement 或单一 floor 阈值。下一步若继续 v2，应围绕可复跑 conditional likelihood / count-cell-value
+  sampler 做实验；若该路线连续无法兼顾 q6 coverage、P50 MAE 和 no-q6 control，再进入 v3 设计评审。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_summarize_live_windivert_brief.py tests\test_evaluate_fatbeans_v2_samples.py -q`
+    为 `43 passed`。
+  - `C:\Python313\python.exe -m py_compile scripts\summarize_live_windivert_brief.py scripts\evaluate_fatbeans_v2_samples.py`
+    通过。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-n-trials 10 --archive-shadow-trials 1`
+    成功输出 gate/gap/random floor 字段。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v2_samples.py --trials 20 --format summary`
+    成功输出 `q6_condition_audit` 与 `aisha_shipwreck_deep_threshold_p90_sweep`。
+
+### 2026-06-04 追加：Aisha deep11 actual sampler shadow 候选
+
+- 新增离线/diagnostic gate：`aisha_shipwreck_deep12_v1`、`aisha_shipwreck_deep11_v1`，只用于
+  `q6_residual_prior_floor_ratio` 的 evaluator/compare/live shadow 参数；默认 formal gate 仍是
+  `aisha_shipwreck_deep_v1`，threshold `13` 不变。
+- `compare_q6_residual_boost.py` 新增 `aisha_deep12_floor1` 和 `aisha_deep11_floor1`。338 份样本、
+  `trials=20`、seed `1` paired 对照：
+  - baseline：MAE `408,675`，q6 coverage `0.4505`，q6 miss `161`。
+  - current `aisha_deep_floor1`：MAE `369,462`，coverage `0.5408`，miss `135`，paired helped `27`。
+  - `aisha_deep12_floor1`：MAE `362,895`，coverage `0.5612`，miss `129`，paired helped `33`，
+    no-q6 new positive `0`，no-q6 positive median +`5,703`。
+  - `aisha_deep11_floor1`：MAE `359,733`，coverage `0.5748`，miss `125`，paired helped `37`，
+    no-q6 new positive `0`，no-q6 positive median +`5,703`，floor active no-q6 `2`。
+- seed `2` 聚焦复核也支持 deep11 方向：baseline MAE `406,107`、coverage `0.4189`；current
+  `aisha_deep_floor1` MAE `372,204`、coverage `0.5152`、paired helped `29`；`aisha_deep11_floor1`
+  MAE `360,351`、coverage `0.5455`、paired helped `38`，no-q6 new positive `0`，no-q6 positive median
+  +`40,740`。
+- live/归档已接 `q6_residual_deep11_floor_shadow`，UI contract 标记为 `shadow_only_aisha_deep11_review`，
+  `affects_bid=false`。默认 `shadow_trials=1` 只记录 active 元数据；`shadow_trials>1` 才跑 deep11 posterior，
+  不影响正式 baseline、bid hint、stop price、抢仓上限或 tail replacement 接线。
+- 72h archive 验证：
+  - `--archive-shadow-trials 1` 成功输出 deep11 active 元数据，`q6_shadow` 中 active_miss 增至 `9`。
+  - `--archive-shadow-trials 10` 下，shadow covered `9`、active_miss `3`；Ethan 2401 R1-R4 与 Aisha 2501 R1
+    被 shadow 覆盖，但 Aisha 2506 R2/R3/R4 仍是 active_miss。说明 deep11 是正向 shadow 候选，但不能解决
+    当前最大的 Aisha 2506 tail/count/cells 缺口。
+- 当前结论：`aisha_deep11_floor1` 可以作为下一轮实机/归档 shadow 候选收数；formal baseline 暂不升级。升级条件
+  仍需 live five-window ready 样本、paired helped、no-q6 control、P50 MAE/normalized error 和 P90 excess
+  同时过线。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_live_monitor.py tests\test_runtime_snapshot.py tests\test_summarize_live_windivert_brief.py tests\test_compare_q6_residual_boost.py tests\test_evaluate_fatbeans_v2_samples.py -q`
+    为 `94 passed`。
+  - `C:\Python313\python.exe -m py_compile src\bidking_lab\live\monitor.py src\bidking_lab\runtime\snapshot.py scripts\summarize_live_windivert_brief.py src\bidking_lab\inference\q6_residual.py scripts\compare_q6_residual_boost.py scripts\evaluate_fatbeans_v2_samples.py`
+    通过。
+
+### 2026-06-04 追加：deep11 对照输出与 Aisha 2506 active-miss 复核
+
+- `compare_q6_residual_boost.py` 的配置对照表已展开 `decision_value_accuracy`，现在同一行包含
+  median abs P50、median normalized P50、P50 under-rate、P50/P90 pinball、P90 coverage、P90 under/excess
+  和 P90 extreme-over，并输出相对 baseline 的 delta。该改动只影响离线候选筛选表，不改变 evaluator truth、
+  posterior、live baseline 或出价。
+- 338 份样本、`trials=20`、seed `1` 四配置复跑：
+  - baseline：MAE `408,675`，normalized P50 `0.491`，P50 under-rate `0.8419`，P90 coverage `0.4377`，
+    P90 extreme-over `0.0851`，P90 pinball `251,190`。
+  - current `aisha_deep_floor1`：MAE `369,462`，normalized P50 `0.439`，coverage `0.5152`，
+    extreme-over `0.1152`，pinball `212,368`，paired helped `27`。
+  - `aisha_deep12_floor1`：MAE `362,895`，normalized P50 `0.423`，coverage `0.5333`，
+    extreme-over `0.1242`，pinball `205,994`，paired helped `33`。
+  - `aisha_deep11_floor1`：MAE `359,733`，normalized P50 `0.415`，coverage `0.5455`，
+    extreme-over `0.1303`，pinball `203,308`，paired helped `37`。
+  deep11 的中心误差和 q6 coverage 继续向好，但 P90 extreme-over 也升高，因此仍按 shadow 候选处理，不升级 formal。
+- `summarize_live_windivert_brief.py` 的 `top_p90_misses` 新增
+  `q6_shadow_covered_labels`、`q6_shadow_active_labels`、`q6_shadow_active_miss_labels`，用于区分是哪套 shadow
+  激活/覆盖/未覆盖。
+- 72h archive、`--archive-shadow-trials 10` 复核 Aisha 2506：
+  - R2：`aisha_deep11_floor1` active_miss，formal deep gate 仍 inactive；q6 truth `6` 件/`57` 格，
+    baseline q6 P90 `4` 件/`12` 格，replacement q6 truth `1,673,605`，q6 P90 `697,163`。
+  - R3：`aisha_deep_floor1;aisha_deep11_floor1` active_miss；q6 truth `6` 件/`57` 格，
+    q6 P90 `5` 件/`27` 格，replacement under-by `677,519`。
+  - R4：`aisha_deep_floor1;aisha_deep11_floor1` active_miss；q6 truth `6` 件/`57` 格，
+    q6 P90 `4` 件/`19` 格，replacement under-by `901,855`。
+- 结论：Aisha 2506 的最大缺口已经不是 deep11 是否激活，而是 active gate 内 q6 count/cells/value 分布偏低；
+  下一步 v2 应做可复跑的 count-cell-value 条件 sampler / likelihood 对照，不继续下调 threshold 或提高 sampler floor。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_compare_q6_residual_boost.py -q` 为 `14 passed`。
+  - `C:\Python313\python.exe -m pytest tests\test_summarize_live_windivert_brief.py -q` 为 `9 passed`。
+  - `C:\Python313\python.exe -m py_compile scripts\compare_q6_residual_boost.py scripts\summarize_live_windivert_brief.py`
+    通过。
+  - `C:\Python313\python.exe .\scripts\compare_q6_residual_boost.py --trials 20 --configs baseline aisha_deep_floor1 aisha_deep12_floor1 aisha_deep11_floor1 --format json --no-progress`
+    成功复跑。
+
+### 2026-06-04 追加：q6 prior count/cell 拆分 sampler 对照
+
+- tail/value replacement sampler 先复跑确认：`q6_tail_value_sampler_experiment` 在 338 份样本、`trials=20`
+  下各 Aisha shipwreck bottom-row threshold 的 `q6_helped_rows` 都是 `0`。原因是
+  `v2_q6_tail_replacement_decision_value_p90` 通常没有高于正式 `v2_q6_decision_value_p90`；它不能解释
+  Aisha 2506 的 active-miss。
+- `ConditionalSampler` 新增离线参数 `q6_residual_prior_cell_floor_ratio`，用于把 q6 prior floor 的 cells target
+  与 count target 拆开。默认 `0.0` 表示沿用旧 `q6_residual_prior_floor_ratio`，因此正式 baseline/live 行为不变。
+  evaluator 和 compare 已接行级字段 `q6_residual_prior_cell_floor_ratio` / `prior_cell_floor_ratio`。
+- `compare_q6_residual_boost.py` 新增 cell-floor 离线配置：
+  `aisha_deep_cell2_floor1`、`aisha_deep_cell3_floor1`、`aisha_deep12_cell2_floor1`、
+  `aisha_deep12_cell3_floor1`、`aisha_deep11_cell2_floor1`、`aisha_deep11_cell3_floor1`、
+  `aisha_deep11_cell4_floor1`。这些配置只用于离线/审计；未接 live shadow，也不影响正式出价。
+- 338 样本、`trials=20`、seed `1` 对照：
+  - current `aisha_deep_floor1`：MAE `369,462`，normalized P50 `0.439`，q6 coverage `0.5408`，
+    P90 coverage `0.5152`，P90 extreme-over `0.1152`，paired helped `27`。
+  - `aisha_deep_cell2_floor1`：MAE `382,204`，normalized P50 `0.457`，q6 coverage `0.5714`，
+    P90 coverage `0.5364`，P90 extreme-over `0.1242`，paired helped `35`。
+  - `aisha_deep_cell3_floor1`：MAE `417,913`，normalized P50 `0.480`，q6 coverage `0.5714`，
+    P90 coverage `0.5455`，P90 extreme-over `0.1606`，paired helped `35`。
+  - `aisha_deep11_floor1`：MAE `359,733`，normalized P50 `0.415`，q6 coverage `0.5748`，
+    P90 coverage `0.5455`，P90 extreme-over `0.1303`，paired helped `37`。
+  - `aisha_deep11_cell2_floor1`：MAE `378,097`，normalized P50 `0.446`，q6 coverage `0.6088`，
+    P90 coverage `0.5758`，P90 extreme-over `0.1545`，paired helped `46`。
+  - `aisha_deep11_cell3_floor1`：MAE `436,608`，normalized P50 `0.500`，q6 coverage `0.6088`，
+    P90 coverage `0.5848`，P90 extreme-over `0.2121`，paired helped `46`。
+  - `aisha_deep11_cell4_floor1`：MAE `506,046`，normalized P50 `0.539`，q6 coverage `0.6190`，
+    P90 coverage `0.5939`，P90 extreme-over `0.2394`，paired helped `49`。
+- 结论：拆分 count/cell floor 证明“q6 cells target 偏低”是有效信号，但简单提高 cells multiplier 会迅速把
+  P50 MAE 和 P90 over 推坏。`aisha_deep11_cell2_floor1` 可以作为离线参考上界；不接 formal，不接 live shadow。
+  下一步如果继续 v2，应改为条件 likelihood：根据 Aisha 2506 这类证据解释“为什么需要更多 q6 cells”，而不是
+  固定乘以 prior expected cells。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_inference_v2.py tests\test_evaluate_fatbeans_v2_samples.py tests\test_compare_q6_residual_boost.py -q`
+    为 `112 passed`。
+  - `C:\Python313\python.exe -m py_compile src\bidking_lab\inference\v2.py scripts\evaluate_fatbeans_v2_samples.py scripts\compare_q6_residual_boost.py`
+    通过。
+
+### 2026-06-04 追加：q6 cell-gap by feature 诊断表
+
+- `evaluate_fatbeans_v2_samples.py` 新增 `q6_cell_gap_by_feature` summary。该表只作 audit，按
+  `hero+map+evidence_profile`、Aisha shipwreck deep band、bottom-row、random_avg、stage+density、
+  q6 prior gap / truth gap 等维度聚合 q6 plannable truth/miss、count/cells/value under 中位数、
+  no-q6 P90 positive 控制风险、active prior-floor 行数和示例文件；不改变 posterior、live shadow、
+  bid hint、stop price 或正式 `decision_value`。
+- 默认 338 样本、`trials=20` 复跑：q6 plannable truth `293`，miss `161`，其中 `131`
+  为 count 与 cells 同时 under；no-q6 control `36`，已有 q6 P90 positive `27`。Aisha shipwreck
+  `shape+layout` 是最大 raw 缺口：`66` truth / `42` miss，count/cells 同时 under `38`，
+  median under-by `363,739`，median count gap `2.5`、cells gap `10.0`。
+- 用当前 formal 候选 `--q6-residual-prior-floor-ratio 1 --q6-residual-prior-floor-gate aisha_shipwreck_deep_v1`
+  复跑：整体 miss `135`，count+cells under miss `100`。Aisha shipwreck ge13 `shape+layout`
+  从 raw 的 `32` truth / `25` miss / `24` count+cells under，降到 `33` truth / `9` miss /
+  `1` count+cells under；说明 formal deep floor 对门内 count/cell under 有效，剩余更偏 value 分布和
+  low-bottom gate。
+- 用 deep11 shadow gate 复跑：整体 miss `125`，count+cells under miss `91`；Aisha 11-12 行
+  `shape+layout` 不再进入 top miss，说明 deep11 修复的是 low-bottom 门控缺口。但 ge13 仍剩
+  `9` 个较小 miss，bottom 9-10、Aisha/Ethan villa、Ethan shipwreck 等桶仍有明显 under，不能再用
+  单一 threshold/floor 解释。
+- 结论：下一步条件 likelihood 应先面向分组表中“q6 count/cells under 高、no-q6 控制风险可审计”的桶，
+  例如 Aisha shipwreck ge13/11-12 与 Ethan shipwreck/villa layout；候选必须在该表、paired compare、
+  MAE/normalized P50/P90 over/pinball 中同时过线。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_evaluate_fatbeans_v2_samples.py -q` 为 `37 passed`。
+  - `C:\Python313\python.exe -m py_compile scripts\evaluate_fatbeans_v2_samples.py` 通过。
+
+### 2026-06-04 追加：q6 条件 count/cells/value target 上界实验
+
+- `evaluate_fatbeans_v2_samples.py` 新增 `q6_conditional_target_experiment` summary。它按证据组合从当前样本中
+  估计收缩后的 q6 `target_count` / `target_cells` / `target_value`，只在该行当前 q6 count 或 cells P90
+  低于目标时做 P90 what-if。该实验是 in-sample upper-bound audit：用于筛选真实 sampler 方向，不接
+  posterior/live/bid，不代表可部署精度。
+- raw baseline、338 样本、`trials=20`：`hero_map_profile` 可把 q6 miss `161 -> 88`
+  (`73` helped)，但会增加 `21` 个 no-q6 P90，其中 `4` 个是 new positive；说明 profile 条件目标有信号，
+  但过宽。`hero_map_bottom_profile` 较窄，`161 -> 112` (`49` helped)，no-q6 increased `6`、
+  new positive `0`。
+- 当前 formal 基线
+  `--q6-residual-prior-floor-ratio 1 --q6-residual-prior-floor-gate aisha_shipwreck_deep_v1`
+  下：`hero_map_profile` 为 `135 -> 84` (`51` helped / `21` no-q6 increased)；更窄的
+  `hero_map_bottom_profile` 为 `135 -> 107` (`28` helped / `6` no-q6 increased / `0` new positive)。
+  Aisha deep-only profile 只有 `36 -> 28` (`8` helped / `4` no-q6 increased)，净收益已经小。
+- deep11 shadow 基线下：整体 `hero_map_profile` 为 `125 -> 80` (`45` helped / `19`
+  no-q6 increased)，但 Aisha shipwreck deep profile 只剩 `26 -> 24` (`2` helped / `2`
+  no-q6 increased)，净收益 `0`。这确认 deep11 已基本吃掉 Aisha 11-12 的可解释门控缺口；Aisha bottom 9-10
+  不适合继续统一抬。
+- 条件 target 的最干净候选在 Ethan shipwreck layout：
+  - current formal 基线下 `hero=ethan|map_family=shipwreck|evidence_profile_key=layout` 为
+    `15` helped / `0` no-q6 increased，推荐目标约 `count=3.79`、`cells=15.6`、`value=766,420`。
+  - `prior_gap=count_and_cells_below_prior` 子桶也为 `15` helped / `0` no-q6 increased，目标约
+    `count=4.11`、`cells=14.5`、`value=771,728`。
+- Aisha shipwreck 当前更像“formal/deep11 已修掉大部分 count/cells 机制，剩余是局部 value 分布或
+  bottom 9-10 控制风险”；下一步 v2 真正值得写 sampler 的首选不是继续 Aisha threshold，而是 Ethan
+  shipwreck/villa 的条件 q6 count/cells likelihood，并用 bottom/profile/prior-gap 作为收缩门控。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_evaluate_fatbeans_v2_samples.py -q` 为 `38 passed`。
+  - `C:\Python313\python.exe -m py_compile scripts\evaluate_fatbeans_v2_samples.py` 通过。
+
+### 2026-06-04 追加：Ethan shipwreck 条件 q6 sampler shadow
+
+- 基于 `q6_conditional_target_experiment` 的最干净上界桶，新增真实 sampler 参数：
+  `q6_conditional_target_count`、`q6_conditional_target_cells`、`q6_conditional_value_power`，并新增
+  `ethan_shipwreck_layout_v1` gate。默认值全为 `0` / `none`，因此正式 baseline、live bid、stop price、
+  tail replacement 口径不变。
+- 新增 compare/evaluator 候选 `ethan_shipwreck_layout_conditional_c4_cells15` 及 Aisha deep/deep11 组合。
+  该 sampler 在门控命中时预采 q6 到 `count=4` / `cells=15` 左右，只移动 q6 count/cells likelihood；
+  value tilt 仍作为离线变量，不默认启用。
+- 338 样本、`trials=20`、seed `1`，当前 formal `aisha_deep_floor1` 基线对照：
+  - baseline：MAE `369,462`，normalized P50 `0.439`，P90 coverage `0.5152`，
+    P90 extreme-over `0.1152`，q6 coverage `0.5408`，q6 miss `135`。
+  - `aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15`：MAE `341,354`，
+    normalized P50 `0.389`，P90 coverage `0.5909`，P90 extreme-over `0.1394`，
+    q6 coverage `0.6190`，q6 miss `112`，paired q6 helped `23`，no-q6 new positive `0`，
+    conditional active rows `34`。
+  - `value_power=0.25/0.5` 能把 q6 miss 再降到 `111`，但 MAE 回升到 `342,897` / `342,012`，
+    P90 extreme-over 升到 `0.1424` / `0.1485`。因此当前最稳取舍是不加 value tilt。
+- `live/monitor.py` 已接入 `q6_residual_ethan_shipwreck_layout_conditional_shadow`，
+  `runtime/snapshot.py` 显示为 `shipwreck_layout_q6_likelihood_shadow`，`affects_bid=false`。
+  `summarize_live_windivert_brief.py` 和 `summarize_live_model_eval.py` 已能识别该 shadow，便于后续实机采样复核。
+- 结论：适度放宽 q6 count/cells 对 Ethan shipwreck layout 有实战参考价值，且当前样本未新增 no-q6 positive；
+  但 P90 extreme-over 增加约 `+0.0242`，仍只作为 shadow 候选收数，不进入 formal 出价。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_live_monitor.py tests\test_runtime_snapshot.py tests\test_summarize_live_windivert_brief.py tests\test_summarize_live_model_eval.py tests\test_inference_v2.py tests\test_evaluate_fatbeans_v2_samples.py tests\test_compare_q6_residual_boost.py -q`
+    为 `181 passed`。
+  - `C:\Python313\python.exe .\scripts\compare_q6_residual_boost.py --seed 1 --trials 20 --configs aisha_deep_floor1 aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15 aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15_value025 aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15_value05 --format json --no-progress`
+    通过。
+
+### 2026-06-04 追加：19:03/19:06/19:10 live 三局复核与归档
+
+- 复核用户实时反馈的三局：
+  - `19:03` Ethan `2502` reset 归档实际有结算，结算后一条 `0x0027` direct action 属于下一局。
+  - `19:06` Ethan `2501` reset 归档实际有结算，旧 gate 因缺少新 session 上下文，导致新局开头首道具未马上归到新局。
+  - `19:10` Aisha `2405` complete 归档正常，R2/R3/R4 估值相对可接受。
+- 修复 WinDivert gate：结算后收到无 session 的 `0x0027` direct action 时不再污染上一局，而是暂存到下一条新
+  session bid/state/status，并作为新局 SortID=1 写入。真实拼接回放确认 `2502` 结算后的 `0x0027`
+  现在会归属到 `2501:1295018985041399`，排在新局 `0x0077/0x0022` 之前。
+- `summarize_live_windivert_brief.py` 现在扫描 `archive/reset` 和 `archive/complete` 的候选文件；无结算/无真值
+  仍自然跳过，已结算但被 reset 收走的局可以进入 pre-bid 评估。`--since-hours 2` 结果为 `sessions=3`、
+  `windows=12`、`ready=10`、`no_state=2`；`--since-hours 72` 结果为 `sessions=17`、`windows=65`、
+  `ready=59`、`no_state=5`、`action_result_not_ready=1`。
+- 三局已归档到 `data/samples/fatbeans`，样本数从 `338` 增至 `341`：
+  - `windivert_2026-06-04_190337_complete_ethan_2502_2502_1295018984864579.json`
+  - `windivert_2026-06-04_190618_complete_ethan_2501_2501_1295018985041399.json`
+  - `windivert_2026-06-04_191016_complete_aisha_2405_2405_1295018985347835.json`
+- 新三样本 `trials=5` 小评估可复跑，`ok=3`、`valued=2`、`zero_match=1`。Aisha 2405
+  formal decision P50 误差约 `-59,654`、P90 覆盖；Ethan 2502 是主要低估，`q6_below_drop_prior`
+  且 q6 P90 为 `0`，对应用户看到的“普品扫描后价格突然很低”。Ethan 2501 仍有 exact bucket
+  约束过紧导致 `relaxed_exact_fallback`，需要单独评估 q1/q3 exact cells 与 q4 exact value。
+- 结论：本轮修复的是 live 衔接和归档可用性；Ethan 船图普品扫描后的低估仍是 q6 count/cells likelihood
+  采样坍缩问题。现有 `ethan_shipwreck_layout_conditional_c4_cells15` 仍保持 shadow，不直接改变 formal
+  stop price 或 bid。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests/test_windivert_live_monitor.py tests/test_summarize_live_windivert_brief.py -q`
+    为 `27 passed`。
+  - `C:\Python313\python.exe -m py_compile scripts/run_windivert_live_monitor.py scripts/summarize_live_windivert_brief.py tests/test_windivert_live_monitor.py tests/test_summarize_live_windivert_brief.py`
+    通过。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v2_samples.py --trials 5 --format summary <3 new samples>`
+    通过。
+
+### 2026-06-04 追加：19:30/19:33/19:36 实战复核与 q6 风险参考升级
+
+- 用户复测确认第二局切换已修复；第三局仍需报价后才跳转。逐帧复盘显示这是另一类情况：`19:35:08`
+  Aisha `2401` 结算后，到 `19:36:19` Aisha `2410` 首次 `0x0022` 报价前，没有收到任何带新 session
+  的 `0x0021`、状态、道具发送或 direct-action 帧；期间只有非游戏心跳类 `0x019a/0x019b`。因此当前
+  WinDivert 协议路径无法在该局首报价前知道新 session/map。已补一个低风险边界：若新局先发送 `0x0026`
+  道具发送且上一局已结算，也允许触发 session reset；进行中的局仍不会被异 session action 抢占。
+- 已运行 `post_game_live.ps1 -SinceHours 2`，当前 Aisha `2410` 已归档到 complete。新增三局已加入
+  `data/samples/fatbeans`，样本数从 `341` 增至 `344`：
+  - `windivert_2026-06-04_193030_complete_ethan_2501_2501_1295018987075792.json`
+  - `windivert_2026-06-04_193314_complete_aisha_2401_2401_1295018987305544.json`
+  - `windivert_2026-06-04_193619_complete_aisha_2410_2410_1295018987511073.json`
+- 实战低估确认集中在 q6 sampler：
+  - Ethan `2501` formal truth `1,338,112`，formal P90 仅约 `187,813`，q6 P90 为 `0`，
+    q6 truth `854,210`。原因是 `q6_below_drop_prior` / count+cells under，不是 UI 误读。
+  - Aisha `2401` P90 覆盖但 P50 保守。
+  - Aisha `2410` truth `352,169`，formal P90 约 `261,817`，q6 truth `122,600` 但 q6 P90 为 `0`；
+    属于 Aisha villa high-info q6 compact miss，当前 villa floor shadow 仍有误抬历史，未升级。
+- 全 344 样本、`trials=20`、当前 formal `aisha_deep_floor1` 基线对照：
+  - baseline：MAE `369,816`，normalized P50 `0.439`，P90 coverage `0.513`，
+    P90 extreme-over `0.113`，q6 coverage `0.538`，q6 miss `138`。
+  - `aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15`：MAE `339,118`，
+    normalized P50 `0.387`，P90 coverage `0.594`，P90 extreme-over `0.140`，
+    q6 coverage `0.622`，q6 miss `113`，paired q6 helped `25`，no-q6 new positive `0`。
+  - `value_power=0.25/0.5` 没有形成更稳取舍：MAE/P90 over 不优于无 value tilt。
+- 已把 Ethan shipwreck conditional shadow 合并进 q6 实战风险参考：
+  - fast live shadow trials 从固定 `1` 改为 `min(full_shadow_trials, fast_n_trials)`；默认实战配置为 `10`。
+  - `q6_practical_p90` / `红货风险参考` 会取 active Ethan conditional shadow 的 q6 P90 上沿，
+    但仍显示“仅作风险参考，未抬高正式停止价”，`ui_contract.q6_risk_reference.affects_bid=false`。
+  - 最新 Ethan `2501` 构建检查：formal P90 `192,631`、formal q6 P90 `0` 不变；风险参考 q6 P90
+    升至 `996,850`，门控 `shipwreck_positive_net+ethan_shipwreck_layout_v1`。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_fatbeans_webhook_monitor.py tests/test_windivert_live_monitor.py tests/test_summarize_live_windivert_brief.py -q`
+    为 `80 passed`。
+  - `C:\Python313\python.exe -m py_compile src/bidking_lab/live/monitor.py scripts/run_fatbeans_webhook_monitor.py scripts/run_windivert_live_monitor.py`
+    通过。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 2 --archive-n-trials 10 --archive-shadow-trials 10`
+    通过，最新 Ethan `2501` R1-R4 的 conditional shadow 均为 `covered`。
+
+### 2026-06-04 追加：19:55-20:05 四局归档、公开精确信息与 exact-cells 修复
+
+- 四局已归档到统一样本目录，`data/samples/fatbeans` 从 `344` 增至 `348`：
+  - `windivert_2026-06-04_195524_complete_aisha_2403_2403_1295018989226069.json`
+  - `windivert_2026-06-04_195911_complete_aisha_2409_2409_1295018989558399.json`
+  - `windivert_2026-06-04_200317_complete_aisha_2508_2508_1295018989891683.json`
+  - `windivert_2026-06-04_200501_complete_aisha_2403_2403_1295018990047075.json`
+- 确认第一局开局已收到公开 `200009=98` 总格数，但旧 parser 没读取 protobuf field `14`，UI 因而显示
+  layout 估格。现已接入 `200009-200012` 的格数 exact 字段和 `200017-200020` 的件数 exact 字段；
+  `200001-200003` 也统一作为 q4/q5/q6 全轮廓 exact bucket 输入。UI 总格/总件数范围和 minimap
+  容量文本优先显示 exact 输入。
+- 当前 348 样本中已观察的 `23` 个 public info id 均已归类，`pending_model_ids=[]`、
+  `unknown_ids=[]`。公开 exact 影响的 `128` 个样本对照中，启用 exact 相对剥离 exact：
+  decision MAE `404,953 -> 300,145`，median abs `258,920 -> 179,112`，q6 plannable coverage
+  `0.4505 -> 0.5321`；paired P50 abs `79` improved / `29` worsened，q6 coverage
+  `16` helped / `6` lost。
+- exact 总格数也暴露了 v2 的结构缺口：只有 total cells、没有 total count 时，旧 residual sampler
+  只能随机填充后 rejection，容易 zero-match。新增 exact-cells residual fill 后，全 348 样本、
+  `trials=20` 的 zero-match `10 -> 6`、relaxed exact `29 -> 25`、decision MAE
+  `378,114 -> 369,956`、median abs `280,536 -> 269,986`、q6 plannable coverage
+  `0.453 -> 0.4784`、q6 miss `163 -> 157`。该修复只让 hard exact 约束可采样，不改变 formal
+  q6 gate、tail replacement 或正式出价口径。
+- 跨局复盘：前两局有开局 `0x0021`，可立即切换；后两局没有开局 `0x0021`，只能在首个可识别的
+  `0x0026/0x0027/0x0022/0x0025` 到达时切换。VPN/TUN 可能影响包可见性和归因，但本轮日志中
+  accepted frames 正常，延迟与“服务端尚未发送可识别新局帧”一致，不是确认的 VPN 根因。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_inference_v2.py tests\test_live_fatbeans.py tests\test_live_monitor.py tests\test_runtime_snapshot.py tests\test_live_overlay.py -q`
+    为 `217 passed`。
+  - `C:\Python313\python.exe -m py_compile ...` 通过。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-n-trials 10 --archive-shadow-trials 1`
+    通过；72h ready 窗口的主问题仍是 q6 tail/value、gate inactive 和 count/cells under。
+
+### 2026-06-04 追加：20:35-20:49 七局归档、VPN/缺首状态帧复核
+
+- 用户继续实测后，`post_game_live.ps1` 已把当前 Ethan `2405` 归档到 raw complete；同时复核 20:35
+  以后的 reset/complete raw，确认 `7` 局都有 settlement frame，已复制到统一样本目录，样本数
+  `348 -> 355`：
+  - `windivert_2026-06-04_203524_complete_aisha_2404_2404_1295018992793264.json`
+  - `windivert_2026-06-04_203753_complete_aisha_2401_2401_1295018992993210.json`
+  - `windivert_2026-06-04_203941_complete_aisha_2404_2404_1295018993181021.json`
+  - `windivert_2026-06-04_204222_complete_ethan_2401_2401_1295018993425922.json`
+  - `windivert_2026-06-04_204542_complete_ethan_2401_2401_1295018993738101.json`
+  - `windivert_2026-06-04_204801_complete_ethan_2407_2407_1295018993925150.json`
+  - `windivert_2026-06-04_204903_complete_ethan_2405_2405_1295018994048203.json`
+- 首帧复核：`5/7` 局有 `0x0021`，可开局立即生成状态；`203753` 与 `204801` 无 `0x0021`，
+  开头只有 `SEND 0x0026` 道具、`0x0027/0x0077` 响应和首个 `SEND 0x0022` 报价，第一条可解析
+  state 分别到 sort `9` / `8` 的 `0x0025`。这解释了“部分局仍需出价后才刷新”：抓包层已经知道
+  new session，但 artifact 估值仍缺 hero/round/bids/state。
+- 已做 UI 防误导修复：当 `capture_source_status.active_session_id` 已领先 `latest_snapshot` 的 session，
+  overlay 直接进入“新局监听中 / 等待首个状态帧”，不再展示上一局出价建议。该修复只影响展示，不伪造
+  state，不改变 v2 估值、formal decision 或 bid。
+- 新 7 局 `trials=20` 小评估：`ok=7`、`zero_match=0`、`relaxed_exact=0`、`layout_conflict=0`；
+  decision MAE `424,944`，P50 under rate `1.0`，P90 coverage `0.4286`，7 局都有 q6 且 5 局
+  q6 plannable P90 miss。主要新增压力来自 Ethan Villa：4/4 q6 plannable miss，median under
+  约 `212,874`。
+- 全 355 样本、`trials=20`：`ok=350`、`valued=344`、`zero_match=6`、decision MAE
+  `371,075`、median abs `277,498`、q6 plannable truth `308`、q6 miss `162`、coverage `0.474`。
+  相比 348 快评，整体结构没有回退，但新增样本继续强化 q6 count/cells/value likelihood 是主线。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_live_overlay.py tests\test_windivert_live_monitor.py tests\test_summarize_live_windivert_brief.py -q`
+    为 `59 passed`。
+  - `C:\Python313\python.exe -m py_compile scripts\run_live_overlay.py tests\test_live_overlay.py` 通过。
+
+### 2026-06-04 追加：v3 推理引擎设计启动
+
+- 用户确认 v2 实战估值仍存在大量严重低估，继续调参收益不足，要求直接规划 v3 重构并保留 v1/v2 可复用能力。
+  已新增设计文档 `docs/v3_inference_design_2026-06-04.zh-CN.md`，把 v2 停止条件、v3 目标、证据注册表、
+  hard constraint compiler、q6 条件 likelihood / count-cell-value sampler、formal/raw/replacement
+  truth 分离、五窗口评估和 v2 归档顺序记录为主线。
+- v3 关键方向：
+  - 先做 evidence registry，所有 public/action/state 输入必须登记为 hard/soft/diagnostic/ignored，
+    unknown/pending 不允许静默遗漏。
+  - hard exact 先编译成可行约束，再采样；不再依赖 rejection sampler 碰运气。
+  - q6 presence、count、cells、ordinary value、tail scenario 分开建模，避免继续叠加 profile gate。
+  - 五窗口按 `SEND 0x0022` pre-bid 截止，采集缺口和模型误差分开统计。
+  - v3 先 shadow，不改变当前 formal 出价；tail replacement 仍只作审计辅助。
+- 外部参考只用于设计思想，不作为运行依赖：Pyro/PyMC/pgmpy 和 SMC 文献支持显式概率模型、顺序 filtering、
+  soft likelihood、ESS/resampling 与因子图式组合 API；本项目实现保持原生 Python 数据结构，便于协议和 UI
+  合同调试。
+- 下一步实现顺序：
+  1. 新建 `src/bidking_lab/inference/v3/` 的 registry/events/timeline 骨架。
+  2. 从现有 Fatbeans/live/archive 路径生成 canonical `EvidenceEvent`。
+  3. 用 355 个 archive 样本跑 evidence coverage，先把 unknown/pending 清零。
+  4. 实现 hard constraint compiler 并复跑 exact/multi-bucket 约束样本。
+  5. 再接 v3 posterior shadow 和 v2/v3 paired compare。
+
+### 2026-06-04 追加：v3 evidence registry / coverage / hard constraint 骨架
+
+- 新增 `src/bidking_lab/inference/v3/` 诊断包，当前只提供 evidence registry、canonical `EvidenceEvent`、
+  coverage report 和第一版 hard numeric constraint compiler，不改变 v2 posterior、live formal、bid hint、
+  停止价或 UI 默认决策。
+- `PUBLIC_INFO_SPECS` 已把当前 v2/evaluator 中确认过的 public info 语义迁入源码包；`evaluate_fatbeans_v2_samples.py`
+  的 `_public_info_semantic()` 已改为调用 v3 registry，避免后续 public 语义在脚本和源码中继续分叉。
+- `ACTION_RESULT_SPECS` / `SKILL_REVEAL_SPECS` 覆盖当前 355 样本里已观察到的 action/skill id，包括：
+  - `100128-131` 物品锚点类；
+  - `100135-140` 与 `100136` 宝光/quality-only 类；
+  - `100168/169-173` 大件/尺寸均价类；
+  - Aisha `1001031-1001034`、Ethan `1002081-1002085` 和已观察到的 category/hero skill reveal。
+- 新增 `scripts/summarize_v3_evidence_coverage.py`：
+  - 当前 355 个样本中 `350` 个可解析；
+  - canonical evidence events `10,164`；
+  - `public_info=1,922`、`action_result=4,075`、`skill_reveal=3,817`、`settlement=350`；
+  - `coverage_ok=True`，unknown/pending 均为 `none`；
+  - 另有 `5` 个既有样本 parse error，作为数据质量问题单独报告，不计为 registry gap。
+- hard constraint compiler 第一版只编译 exact numeric 约束并记录 item/shape/quality-floor anchor events；
+  已能报告同一 target 的 hard exact 冲突。后续 Phase 2 需要把 anchor events 继续编译成 shape/item 可行空间。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests\test_inference_v3_evidence_registry.py tests\test_evaluate_fatbeans_v2_samples.py -q`
+    为 `45 passed`。
+  - `C:\Python313\python.exe -m py_compile src\bidking_lab\inference\v3\__init__.py src\bidking_lab\inference\v3\events.py src\bidking_lab\inference\v3\constraints.py src\bidking_lab\inference\v3\coverage.py scripts\summarize_v3_evidence_coverage.py`
+    通过。
+  - `C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-gaps`
+    通过；该开关只检查 unknown/pending evidence gap，parse error 用单独数据质量口径处理。

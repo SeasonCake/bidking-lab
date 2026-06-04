@@ -59,3 +59,6 @@ src/AuctionAnalyzer*.zip
 src/AuctionAnalyzer*/
 src/grid_view_v1.3.7/
 tools/
+
+# Local-only archive for ignored/generated artifacts moved out of the root.
+archive/local_ignored/
