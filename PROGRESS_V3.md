@@ -528,3 +528,64 @@ C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by round --by 
 ```
 
 结论：下一轮不是全局调高，而是优先解释 2601、2506、2501 为什么在 formal/q6 上都系统低估。
+
+## 2026-06-05 checkpoint：posterior 硬约束下界 guard
+
+问题：
+
+- 诊断 2501 top miss 时发现一个窗口 `q6_value_floor=1,553,900`，但
+  `v3_post_q6_formal_decision_value_p90=1,210,464`。
+- 这不是 sampler 权重问题，而是 posterior 输出没有把 `FeasibleSummaryReport` 中已经确定的
+  floor/exact 重新投影到 quantile 字段。
+
+修复：
+
+- raw posterior 字段守住硬约束：
+  - `total_cells` 使用 `session_total_cells_exact` 或 `known_cells_floor`。
+  - `total_value` 使用 `known_value_floor`。
+  - `q6_count/q6_cells/q6_value` 使用 q6 bucket exact/floor。
+- formal/tail-replacement decision 字段守住 item-anchor 汇总出的 `known_value_floor`：
+  - `formal_decision_value`
+  - `tail_replacement_decision_value`
+  - `q6_formal_decision_value`
+  - `q6_tail_replacement_decision_value`
+- 不把公开 aggregate `value_exact` 直接当作 formal plannable 值；它只约束 raw bucket value。
+
+433 canonical 样本、512 samples/map 当前指标：
+
+```text
+formal_p50_mae=325128.627
+formal_p50_mae_strict=325206.588
+formal_p50_mae_fallback=325089.455
+formal_p50_bias=-184211.561
+formal_p50_below_rate=0.632986
+formal_p90_coverage=0.769883
+q6_formal_p50_mae=289689.021
+q6_formal_p50_mae_strict=291964.226
+q6_formal_p50_mae_fallback=288545.847
+q6_formal_p50_bias=-127315.277
+q6_formal_p50_below_rate=0.580834
+q6_formal_p90_coverage=0.815515
+```
+
+相对 summary-likelihood 第一版：
+
+- `formal_p50_mae`：`329399.887 -> 325128.627`，下降约 `4,271`。
+- `q6_formal_p50_mae`：`295957.275 -> 289689.021`，下降约 `6,268`。
+- `formal_p50_bias`：`-188482.821 -> -184211.561`，低估略缓解。
+- `P90 coverage` 保持不变。
+
+分片变化：
+
+- 2501 明显改善：`formal_mae 367176.4 -> 362810.8`，`q6_mae 328573.6 -> 320906.7`。
+- 2601、2506 基本不动，说明它们不是 floor 投影缺口，而是 q6/tail prior 条件建模不足。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_organize_fatbeans_real_samples.py tests\test_rename_manual_fatbeans_samples.py tests\test_summarize_fatbeans_sample_manifest.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_posterior.py tests\test_inference_v3_summary.py tests\test_inference_v3_priors_truth.py tests\test_inference_v3_evidence_registry.py tests\test_live_monitor.py::test_ethan_sample37_residual_does_not_break_exact_bucket_targets tests\test_summarize_v3_metric_slices.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --top 8
+```
+
+结果：`36 passed`，全样本 evaluator 通过。

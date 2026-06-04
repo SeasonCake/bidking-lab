@@ -159,6 +159,29 @@ def _weighted_quantiles(
     return QuantileSummary(p10=pick(0.10), p50=p50, p90=p90)
 
 
+def _guard_quantiles(
+    summary: QuantileSummary | None,
+    *,
+    floor: int | float | None = None,
+    exact: int | float | None = None,
+) -> QuantileSummary | None:
+    if summary is None:
+        return None
+    if exact is not None:
+        value = float(exact)
+        return QuantileSummary(p10=value, p50=value, p90=value)
+    if floor is None:
+        return summary
+    value = float(floor)
+    if value <= 0:
+        return summary
+    return QuantileSummary(
+        p10=max(summary.p10, value),
+        p50=max(summary.p50, value),
+        p90=max(summary.p90, value),
+    )
+
+
 def sample_truth_bank(
     map_id: int,
     *,
@@ -508,6 +531,13 @@ def estimate_q6_posterior_from_truths(
             else None
         )
     tail_guard = matched_weights is not None
+    q6_summary = summary.bucket(6)
+    q6_count_exact = q6_summary.count_exact if q6_summary is not None else None
+    q6_cells_exact = q6_summary.cells_exact if q6_summary is not None else None
+    q6_value_exact = q6_summary.value_exact if q6_summary is not None else None
+    q6_count_floor = q6_summary.count_floor if q6_summary is not None else 0
+    q6_cells_floor = q6_summary.cells_floor if q6_summary is not None else 0
+    q6_value_floor = q6_summary.value_floor if q6_summary is not None else 0
     return V3PosteriorReport(
         map_id=int(map_id),
         map_name=map_name,
@@ -516,59 +546,90 @@ def estimate_q6_posterior_from_truths(
         n_strict_matched=len(strict_matched),
         match_scope=match_scope,
         q6_present_rate=q6_present_rate,
-        total_cells=_weighted_quantiles(
-            total_cells,
-            matched_weights,
-            p50_tail_guard=tail_guard,
-            p90_tail_guard=tail_guard,
+        total_cells=_guard_quantiles(
+            _weighted_quantiles(
+                total_cells,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+            ),
+            floor=summary.known_cells_floor,
+            exact=summary.session_total_cells_exact,
         ),
-        total_value=_weighted_quantiles(
-            total_values,
-            matched_weights,
-            p50_tail_guard=tail_guard,
-            p90_tail_guard=tail_guard,
+        total_value=_guard_quantiles(
+            _weighted_quantiles(
+                total_values,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+            ),
+            floor=summary.known_value_floor,
         ),
-        formal_decision_value=_weighted_quantiles(
-            formal_decision_values,
-            matched_weights,
-            p50_tail_guard=tail_guard,
-            p90_tail_guard=tail_guard,
+        formal_decision_value=_guard_quantiles(
+            _weighted_quantiles(
+                formal_decision_values,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+            ),
+            floor=summary.known_value_floor,
         ),
-        tail_replacement_decision_value=_weighted_quantiles(
-            tail_replacement_decision_values,
-            matched_weights,
-            p50_tail_guard=tail_guard,
-            p90_tail_guard=tail_guard,
+        tail_replacement_decision_value=_guard_quantiles(
+            _weighted_quantiles(
+                tail_replacement_decision_values,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+            ),
+            floor=summary.known_value_floor,
         ),
-        q6_count=_weighted_quantiles(
-            q6_counts,
-            matched_weights,
-            p50_tail_guard=tail_guard,
-            p90_tail_guard=tail_guard,
+        q6_count=_guard_quantiles(
+            _weighted_quantiles(
+                q6_counts,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+            ),
+            floor=q6_count_floor,
+            exact=q6_count_exact,
         ),
-        q6_cells=_weighted_quantiles(
-            q6_cells,
-            matched_weights,
-            p50_tail_guard=tail_guard,
-            p90_tail_guard=tail_guard,
+        q6_cells=_guard_quantiles(
+            _weighted_quantiles(
+                q6_cells,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+            ),
+            floor=q6_cells_floor,
+            exact=q6_cells_exact,
         ),
-        q6_value=_weighted_quantiles(
-            q6_values,
-            matched_weights,
-            p50_tail_guard=tail_guard,
-            p90_tail_guard=tail_guard,
+        q6_value=_guard_quantiles(
+            _weighted_quantiles(
+                q6_values,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+            ),
+            floor=q6_value_floor,
+            exact=q6_value_exact,
         ),
-        q6_formal_decision_value=_weighted_quantiles(
-            q6_formal_decision_values,
-            matched_weights,
-            p50_tail_guard=tail_guard,
-            p90_tail_guard=tail_guard,
+        q6_formal_decision_value=_guard_quantiles(
+            _weighted_quantiles(
+                q6_formal_decision_values,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+            ),
+            floor=q6_value_floor,
         ),
-        q6_tail_replacement_decision_value=_weighted_quantiles(
-            q6_tail_replacement_decision_values,
-            matched_weights,
-            p50_tail_guard=tail_guard,
-            p90_tail_guard=tail_guard,
+        q6_tail_replacement_decision_value=_guard_quantiles(
+            _weighted_quantiles(
+                q6_tail_replacement_decision_values,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+            ),
+            floor=q6_value_floor,
         ),
         diagnostics=tuple(diagnostics),
     )

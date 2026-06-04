@@ -282,3 +282,41 @@ q6_formal_p90_coverage=0.815515
 - v3 的下一步不是继续盲目加 prior trials，而是让条件 proposal 能构造满足 count/cell/value summary 的样本。
 - 在 proposal 完成前，likelihood fallback 必须保留 tail guard；否则 P90 coverage 会被中位数校准一起压坏。
 - 当前版本降低 formal P50 MAE，但仍有明显低估 bias；2601、2506、2501 是下一轮地图级校准重点。
+
+## O-v3-017：posterior quantile 曾违反已知 value floor
+
+2501 top miss 诊断发现：
+
+```text
+q6_value_floor=1553900
+v3_post_q6_formal_decision_value_p50=628300
+v3_post_q6_formal_decision_value_p90=1210464
+```
+
+这个窗口已有 q6 item-anchor value floor，但 posterior formal q6 quantile 仍低于 floor。原因是：
+
+- strict/summary-likelihood 只用 constraints 影响样本筛选和单个样本的 formal decision 计算。
+- 当 prior bank 没有抽到同一个已知高值 item 时，样本 formal decision 可以低于已知 floor。
+- 输出 quantile 没有再投影 `FeasibleSummaryReport` 的 lower bounds。
+
+修复后指标：
+
+```text
+formal_p50_mae=325128.627
+formal_p50_bias=-184211.561
+q6_formal_p50_mae=289689.021
+q6_formal_p50_bias=-127315.277
+```
+
+对比修复前：
+
+```text
+formal_p50_mae=329399.887
+q6_formal_p50_mae=295957.275
+```
+
+结论：
+
+- v3 posterior 输出层必须做 hard-constraint projection；不能只靠 sampler 恰好抽中已知证据。
+- 这类修复直接降低 q6/formal MAE，并减少低估 bias。
+- 2601、2506 在该修复后仍是高误差地图，说明下一步应做 map-tail / q6 value 条件 proposal，而不是继续找 floor 投影问题。
