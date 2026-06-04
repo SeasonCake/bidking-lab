@@ -62,3 +62,14 @@ numeric=549 item_anchors=1851 shape_anchors=10083 quality_floor_anchors=1384 con
 关键边界仍成立：quality-only/宝光类证据没有 shape/cells 时只进入 `quality_floor_anchors`，不生成 hard footprint。category outline 的 category id 已随 item anchor 保留，后续可行空间不能丢掉该条件。
 
 5 个 parse error 仍是旧样本数据质量问题，不是 hard constraint 冲突。
+
+## O-v3-007：五窗口 constraint skeleton 已把 no-state 和冲突分开
+
+`scripts/evaluate_fatbeans_v3_samples.py` 当前只做 pre-bid window ConstraintSet，不做估值。355 个 archive 样本扫描结果：
+
+```text
+windows=1262 ready=1247 no_state=15 constraint_conflict=0 parse_errors=5
+numeric_constraints=1386 item_anchors=5137 shape_anchors=27549 quality_floor_anchors=4678
+```
+
+这说明 v3 下一步可以在 1,247 个 ready 窗口上接 shadow posterior；15 个 no-state 窗口和 5 个 parse error 应继续作为采集/数据质量，不进入模型准确率分母。

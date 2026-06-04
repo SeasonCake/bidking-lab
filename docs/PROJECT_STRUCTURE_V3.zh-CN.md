@@ -17,7 +17,9 @@
 | `src/bidking_lab/inference/v3/` | v3 推理引擎新包 |
 | `scripts/summarize_v3_evidence_coverage.py` | v3 evidence coverage 检查 |
 | `scripts/summarize_v3_constraints.py` | v3 hard constraint compiler 摘要 |
+| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator |
 | `tests/test_inference_v3_evidence_registry.py` | v3 registry/constraint 骨架测试 |
+| `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
 
 ## v2 保留路径
 

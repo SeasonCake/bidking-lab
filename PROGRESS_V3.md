@@ -58,6 +58,33 @@
   - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_evidence_registry.py tests\test_evaluate_fatbeans_v2_samples.py -q`
     为 `47 passed`。
 
+### Phase 3 起步：Archive pre-bid ConstraintSet evaluator skeleton
+
+- 新增 `scripts/evaluate_fatbeans_v3_samples.py`。
+- 该脚本是 shadow-only skeleton，不计算 posterior value，不影响 live/formal bid。
+- 复用当前五窗口合同：每个 `SEND 0x0022` 报价前的 prefix 作为 pre-bid window。
+- 每个窗口输出：
+  - `ready`
+  - `no_state`
+  - `constraint_conflict`
+  - parse error 作为文件级 data quality
+  - numeric/item/shape/quality-floor anchor 数量
+- 当前 355 archive 扫描：
+  - windows `1,262`
+  - ready `1,247`
+  - no_state `15`
+  - constraint_conflict `0`
+  - parse_errors `5`
+  - prebid numeric constraints `1,386`
+  - prebid item anchors `5,137`
+  - prebid shape anchors `27,549`
+  - prebid quality-floor anchors `4,678`
+- 新增测试：`tests/test_evaluate_fatbeans_v3_samples.py`。
+- 验证：
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_evidence_registry.py -q`
+    为 `10 passed`。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：
@@ -89,9 +116,9 @@ C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-ga
 
 ## 下一步
 
-1. 对 355 archive 生成 per-window `ConstraintSet`，把模型 infeasible 和 capture/parser data quality 分开。
-2. 建 `scripts/evaluate_fatbeans_v3_samples.py`，先输出 shadow-only posterior report skeleton。
-3. 迁移 v1/v2 可复用先验：map/drop/item table、formal/raw/replacement truth、five-window evaluator。
+1. 迁移 v1/v2 可复用先验：map/drop/item table、formal/raw/replacement truth、five-window evaluator。
+2. 在 `scripts/evaluate_fatbeans_v3_samples.py` 的 ready 窗口上输出 shadow-only posterior report skeleton。
+3. 实现 feasible summary generator，先在 quality bucket 层满足 hard constraints。
 4. 再实现 q6 条件 likelihood / count-cell-value sampler。
 5. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
 
