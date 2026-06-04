@@ -1060,3 +1060,19 @@ baseline 出价链路仍使用裁尾 plannable value；新增
 `windivert_2026-06-04_034748_complete_aisha_2506_2506_1295018937738841.json` 可复盘出 final
 `3,095,318`、裁尾决策值 `1,858,652`、replacement 决策值 `2,001,752`。后续判断 q6/尾部问题时必须同时看
 raw final、formal decision、tail replacement 三列，避免把“记录覆盖”和“模型估计口径变化”混为一类问题。
+
+## 2026-06-04 · 宝光/quality-only 位置只作软线索，不移动已有轮廓
+
+**背景**：用户询问宝光四鉴如果再次抽到同一个物品但位置变化，应按新位置还是旧位置处理，以及约束如何变化。
+这会影响 MiniMap、q6 deep-local risk 和仓位推理边界。
+
+**决策**：同 `runtime_id` 的无轮廓 quality-only 证据按最新 `local_index` 合并，品质下界只计一次；
+但无轮廓点不生成 `known_footprints`，不得作为 hard layout footprint 或仓位硬下界。若同一 runtime 已有
+shape/footprint，后续宝光只补品质，不移动已有 footprint；只有新的 shape-bearing 证据才能更新 footprint 位置。
+
+**取舍**：这样能利用宝光深位置作为 q6/仓储 soft risk 线索，同时避免把宝光高亮点或内部格误当成物品完整轮廓，
+污染布局硬约束。Raven/Sophie/宝光这类低信息局后续仍可接 `quality_only_bottom_row_soft_hint`，
+但必须先走 shadow/diagnostic，不直接改正式 baseline bid。
+
+**复查点**：已补回归测试覆盖两个边界：无轮廓宝光移动只保留最新 local 且不重复计数；已有 shape 时宝光补品质但
+不移动 footprint。若后续实包发现 runtime_id 不稳定，再改成 source+local+quality 的更弱去重，而不是直接硬塞仓位。

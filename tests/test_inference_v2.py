@@ -252,6 +252,33 @@ def test_runtime_evidence_merge_uses_latest_layout_position() -> None:
     assert layout.trusted_footprint_count == 2
 
 
+def test_quality_only_runtime_move_uses_latest_local_without_duplicate_floor() -> None:
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            local_index=12,
+            quality=6,
+            sources=("skill:baoguang:r1",),
+        )
+    )
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            local_index=47,
+            quality=6,
+            sources=("skill:baoguang:r2",),
+        )
+    )
+
+    store = builder.build()
+    layout = layout_feasibility_from_store(store)
+
+    assert store.by_runtime[123].local_index == 47
+    assert v2_module._quality_evidence_floors(store) == {6: (1, 0, 0)}
+    assert layout.footprint_count == 0
+
+
 def test_category_action_absence_adds_runtime_negative_category() -> None:
     events = FatbeansCaptureEvents(
         packets=(),
@@ -1557,6 +1584,38 @@ def test_latest_shape_bearing_local_updates_footprint() -> None:
     assert footprints[0].local_index == 42
     assert footprints[0].row == 5
     assert footprints[0].col == 3
+
+
+def test_quality_only_local_does_not_move_existing_shape_footprint() -> None:
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            local_index=30,
+            shape_key="22",
+            cells=4,
+            sources=("skill:outline",),
+        )
+    )
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            local_index=42,
+            quality=6,
+            sources=("skill:baoguang",),
+        )
+    )
+
+    store = builder.build()
+    footprints = known_footprints(store)
+
+    assert store.by_runtime[123].local_index == 30
+    assert store.by_runtime[123].quality == 6
+    assert len(footprints) == 1
+    assert footprints[0].local_index == 30
+    assert footprints[0].quality == 6
+    assert footprints[0].row == 4
+    assert footprints[0].col == 1
 
 
 def test_layout_feasibility_rejects_impossible_sample() -> None:

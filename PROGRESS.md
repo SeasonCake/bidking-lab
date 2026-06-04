@@ -2887,3 +2887,27 @@ python scripts/demo_shipwreck_r4_inference.py           # Phase 1A 推断 demo
   - `C:\Python313\python.exe scripts\compare_q6_residual_boost.py --trials 20 --configs baseline aisha_deep_floor1 profile_b5 --format json --no-progress`
     仍显示 `aisha_deep_floor1` MAE 最好：baseline `401,660`、profile_b5 `378,942`、aisha_deep_floor1
     `363,336`；profile_b5 q6 覆盖更高但无 q6 正报金额中位上升，继续只作 shadow。
+
+### 2026-06-04 追加：长窗口收束与 handoff checkpoint
+
+- 新增 `handoff_2026-06-04.zh-CN.md`，把本长窗口收束为下一窗口入口：当前 live 状态、已完成主线、
+  q6/pre-bid 低估结论、归档路径、tail replacement 口径、宝光 quality-only 约束边界、下一步命令和暂不做事项。
+- 当前 live 主链路状态：WinDivert/overlay/UI/归档已基本可用；`live_status.ps1` 交接时为 `WARN`，原因是
+  monitor 当前没有运行且快照约 7.7 小时未更新。下一次实机前应重新执行
+  `.\scripts\start_live_windivert_overlay.ps1 -Restart -PortOnly`。
+- 最新 72h WinDivert archive brief（`--archive-n-trials 10 --archive-shadow-trials 1`）：
+  `windivert_rows=26`、overall `p90_coverage=0.62`、`q6=0` 组覆盖 `1.00`、`q6>0` 组覆盖 `0.25`、
+  `random_avg signal` 组覆盖 `0.00`。主要 miss 仍集中在 Aisha 2506 R2/R3/R4 和 Ethan 2401
+  `public:random_avg+layout`，下一步优先 q6/tail/value sampler 与 Ethan villa random_avg/q6 gate，
+  不优先继续加 trials。
+- 宝光/quality-only 证据边界已补回归测试：同 runtime 的无轮廓宝光点移动时用最新 local_index、品质下界只算一次、
+  不生成 hard layout footprint；已有 shape/footprint 时，后续宝光只补品质，不移动已有轮廓。验证：
+  `C:\Python313\python.exe -m pytest tests\test_inference_v2.py -q` 为 `59 passed`；
+  `C:\Python313\python.exe -m pytest -q` 为 `829 passed`。
+- 当前待办顺序：
+  1. q6/pre-bid 估值准确性：重点 `q6_gate_inactive`、`q6_tail_value`、`public:random_avg+layout`、
+     `warehouse_under<-20`、`quality_only_deep_local_risk`。
+  2. live 多局继续采样并确认 archive complete/reset 分类。
+  3. 做 baseline-first / shadow-later / full-archive-later 异步细分，降低 Python 推理 CPU 抖动。
+  4. 样本归档分类脚本化，按 hero/map/session/prebid/q6 root/profile 输出 review 集。
+  5. 后续再统一接 Ahmed/Maria/Victor/Raven/Sophie 技能推理槽。
