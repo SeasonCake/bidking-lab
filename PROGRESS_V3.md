@@ -85,6 +85,33 @@
     为 `10 passed`。
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
 
+### Phase 3 增量：v3 prior/truth shadow report skeleton
+
+- 新增 `src/bidking_lab/inference/v3/priors.py`：
+  - 复用 `prepare_session_sampler()` 的 map/drop/item 解析结果。
+  - 用解析式输出 drop prior，不依赖随机 trials。
+  - 输出 total 与 q6 的 expected count/cells/value、draw probability、session probability。
+- 新增 `src/bidking_lab/inference/v3/truth.py`：
+  - 从 Fatbeans settlement inventory 提取 raw truth。
+  - 输出 total/q6 raw value、count、cells。
+  - 当前不复刻 v2 formal/tail-replacement truth，不改变正式口径。
+- `scripts/evaluate_fatbeans_v3_samples.py` 已接入 shadow 字段：
+  - 默认加载本地 tables，输出 `v3_prior_*` 与 `v3_truth_*`。
+  - 新增 `--skip-table-report` 保留纯 constraint 轻量路径。
+- 当前 355 archive 扫描：
+  - windows `1,262`
+  - ready `1,247`
+  - no_state `15`
+  - constraint_conflict `0`
+  - parse_errors `5`
+  - prior_ready `1,247`
+  - truth_ready `1,262`
+- 验证：
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_priors_truth.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_evidence_registry.py -q`
+    为 `13 passed`。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --fail-on-conflicts` 通过。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：
@@ -117,10 +144,11 @@ C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-ga
 ## 下一步
 
 1. 迁移 v1/v2 可复用先验：map/drop/item table、formal/raw/replacement truth、five-window evaluator。
-2. 在 `scripts/evaluate_fatbeans_v3_samples.py` 的 ready 窗口上输出 shadow-only posterior report skeleton。
-3. 实现 feasible summary generator，先在 quality bucket 层满足 hard constraints。
-4. 再实现 q6 条件 likelihood / count-cell-value sampler。
-5. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
+2. 复刻 v2 formal/replacement truth 口径，和当前 raw truth 并列输出，避免指标再次混淆。
+3. 在 `scripts/evaluate_fatbeans_v3_samples.py` 的 ready 窗口上输出 shadow-only posterior report skeleton。
+4. 实现 feasible summary generator，先在 quality bucket 层满足 hard constraints。
+5. 再实现 q6 条件 likelihood / count-cell-value sampler。
+6. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
 
 ## 不做事项
 

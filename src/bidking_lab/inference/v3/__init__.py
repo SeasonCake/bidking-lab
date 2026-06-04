@@ -30,6 +30,17 @@ from bidking_lab.inference.v3.evidence_registry import (
     public_info_spec,
     skill_reveal_spec,
 )
+from bidking_lab.inference.v3.priors import (
+    QualityPriorReport,
+    SessionPriorReport,
+    summarize_drop_prior,
+)
+from bidking_lab.inference.v3.truth import (
+    QualityTruthReport,
+    SettlementTruthReport,
+    empty_truth_flat_dict,
+    settlement_truth_from_fatbeans,
+)
 
 __all__ = (
     "ACTION_RESULT_SPECS",
@@ -43,14 +54,21 @@ __all__ = (
     "HardNumericConstraint",
     "ItemAnchor",
     "QualityFloorAnchor",
+    "QualityPriorReport",
+    "QualityTruthReport",
     "ShapeAnchor",
+    "SessionPriorReport",
+    "SettlementTruthReport",
     "action_result_spec",
     "audit_fatbeans_events",
     "audit_fatbeans_paths",
     "compile_hard_constraints",
+    "empty_truth_flat_dict",
     "events_from_fatbeans",
     "public_info_semantic",
     "public_info_semantics_dict",
     "public_info_spec",
+    "settlement_truth_from_fatbeans",
     "skill_reveal_spec",
+    "summarize_drop_prior",
 )

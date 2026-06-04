@@ -28,12 +28,16 @@ if str(SRC) not in sys.path:
 
 from bidking_lab.inference.v3 import (  # noqa: E402
     compile_hard_constraints,
+    empty_truth_flat_dict,
     events_from_fatbeans,
+    settlement_truth_from_fatbeans,
+    summarize_drop_prior,
 )
 from bidking_lab.live.fatbeans import (  # noqa: E402
     FatbeansCaptureEvents,
     parse_fatbeans_capture,
 )
+from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
 
 
 def _default_paths() -> tuple[Path, ...]:
@@ -61,13 +65,83 @@ def _events_before_sort(events: FatbeansCaptureEvents, sort_id: int) -> Fatbeans
     )
 
 
-def _round_rows_for_events(path: Path, events: FatbeansCaptureEvents) -> list[dict[str, Any]]:
+def _latest_map_id(events: FatbeansCaptureEvents) -> int | None:
+    for state in reversed(events.states):
+        map_id = getattr(state, "map_id", None)
+        if map_id is not None:
+            return int(map_id)
+    return None
+
+
+def _empty_prior_flat_dict() -> dict[str, Any]:
+    return {
+        "v3_prior_available": False,
+        "v3_prior_error": None,
+        "v3_prior_map_id": None,
+        "v3_prior_map_name": None,
+        "v3_prior_items_per_session_min": None,
+        "v3_prior_items_per_session_max": None,
+        "v3_prior_pool_count": None,
+        "v3_prior_expected_draws": None,
+        "v3_prior_expected_count": None,
+        "v3_prior_expected_cells": None,
+        "v3_prior_expected_value": None,
+        "v3_prior_q6_draw_probability": None,
+        "v3_prior_q6_session_probability": None,
+        "v3_prior_q6_expected_count": None,
+        "v3_prior_q6_expected_cells": None,
+        "v3_prior_q6_expected_value": None,
+    }
+
+
+def _prior_flat_dict(
+    map_id: int | None,
+    *,
+    tables: Any | None,
+    cache: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    if map_id is None or tables is None:
+        return _empty_prior_flat_dict()
+    if map_id in cache:
+        return cache[map_id]
+    try:
+        prior = summarize_drop_prior(
+            int(map_id),
+            maps=tables.maps,
+            drops=tables.drops,
+            items=tables.items,
+        )
+    except Exception as exc:
+        row = _empty_prior_flat_dict()
+        row["v3_prior_error"] = type(exc).__name__
+    else:
+        row = {"v3_prior_available": True, "v3_prior_error": None}
+        row.update(prior.to_flat_dict())
+    cache[map_id] = row
+    return row
+
+
+def _round_rows_for_events(
+    path: Path,
+    events: FatbeansCaptureEvents,
+    *,
+    tables: Any | None = None,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    prior_cache: dict[int, dict[str, Any]] = {}
+    truth = (
+        settlement_truth_from_fatbeans(events, items=tables.items)
+        if tables is not None
+        else None
+    )
+    truth_fields = truth.to_flat_dict() if truth is not None else empty_truth_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
     for window_round, bid_send in enumerate(bid_sends, start=1):
         bid_sort_id = int(bid_send.sort_id)
         prefix = _events_before_sort(events, bid_sort_id)
+        map_id = _latest_map_id(prefix)
+        prior_fields = _prior_flat_dict(map_id, tables=tables, cache=prior_cache)
         round_states = [
             state
             for state in events.states
@@ -89,6 +163,7 @@ def _round_rows_for_events(path: Path, events: FatbeansCaptureEvents) -> list[di
                     "session_id": getattr(bid_send, "session_id", None),
                     "bid_sort_id": bid_sort_id,
                     "bid_value": getattr(bid_send, "value", None),
+                    "map_id": map_id,
                     "prior_state_count": 0,
                     "round_state_count": len(round_states),
                     "round_action_send_count": len(round_action_sends),
@@ -98,6 +173,8 @@ def _round_rows_for_events(path: Path, events: FatbeansCaptureEvents) -> list[di
                     "quality_floor_anchors": 0,
                     "conflicts": 0,
                     "constraint_ok": False,
+                    **prior_fields,
+                    **truth_fields,
                 }
             )
             previous_bid_sort_id = bid_sort_id
@@ -112,6 +189,7 @@ def _round_rows_for_events(path: Path, events: FatbeansCaptureEvents) -> list[di
                 "session_id": getattr(bid_send, "session_id", None),
                 "bid_sort_id": bid_sort_id,
                 "bid_value": getattr(bid_send, "value", None),
+                "map_id": map_id,
                 "prior_state_count": len(prefix.states),
                 "round_state_count": len(round_states),
                 "round_action_send_count": len(round_action_sends),
@@ -121,13 +199,19 @@ def _round_rows_for_events(path: Path, events: FatbeansCaptureEvents) -> list[di
                 "quality_floor_anchors": len(constraints.quality_floor_anchors),
                 "conflicts": len(constraints.conflicts),
                 "constraint_ok": constraints.feasible,
+                **prior_fields,
+                **truth_fields,
             }
         )
         previous_bid_sort_id = bid_sort_id
     return rows
 
 
-def evaluate_paths(paths: Iterable[Path]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+def evaluate_paths(
+    paths: Iterable[Path],
+    *,
+    tables: Any | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     rows: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
     for path in _iter_paths(paths):
@@ -136,7 +220,7 @@ def evaluate_paths(paths: Iterable[Path]) -> tuple[list[dict[str, Any]], list[di
         except Exception as exc:
             errors.append({"file": str(path), "error": type(exc).__name__})
             continue
-        rows.extend(_round_rows_for_events(path, events))
+        rows.extend(_round_rows_for_events(path, events, tables=tables))
     return rows, errors
 
 
@@ -150,6 +234,8 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         "no_state": statuses.get("no_state", 0),
         "constraint_conflict": statuses.get("constraint_conflict", 0),
         "parse_errors": len(errors),
+        "prior_ready": sum(1 for row in rows if row.get("v3_prior_available")),
+        "truth_ready": sum(1 for row in rows if row.get("v3_truth_available")),
         "status_counts": dict(sorted(statuses.items())),
         "round_counts": dict(sorted(round_counts.items())),
         "numeric_constraints": sum(int(row.get("numeric_constraints") or 0) for row in ready_rows),
@@ -171,6 +257,8 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"no_state={summary['no_state']}",
                 f"constraint_conflict={summary['constraint_conflict']}",
                 f"parse_errors={summary['parse_errors']}",
+                f"prior_ready={summary['prior_ready']}",
+                f"truth_ready={summary['truth_ready']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",
@@ -196,6 +284,7 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "session_id",
         "bid_sort_id",
         "bid_value",
+        "map_id",
         "prior_state_count",
         "round_state_count",
         "round_action_send_count",
@@ -205,6 +294,32 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "quality_floor_anchors",
         "conflicts",
         "constraint_ok",
+        "v3_prior_available",
+        "v3_prior_error",
+        "v3_prior_map_id",
+        "v3_prior_map_name",
+        "v3_prior_items_per_session_min",
+        "v3_prior_items_per_session_max",
+        "v3_prior_pool_count",
+        "v3_prior_expected_draws",
+        "v3_prior_expected_count",
+        "v3_prior_expected_cells",
+        "v3_prior_expected_value",
+        "v3_prior_q6_draw_probability",
+        "v3_prior_q6_session_probability",
+        "v3_prior_q6_expected_count",
+        "v3_prior_q6_expected_cells",
+        "v3_prior_q6_expected_value",
+        "v3_truth_available",
+        "v3_truth_session_id",
+        "v3_truth_map_id",
+        "v3_truth_sort_id",
+        "v3_truth_item_count",
+        "v3_truth_total_cells",
+        "v3_truth_raw_total_value",
+        "v3_truth_q6_count",
+        "v3_truth_q6_cells",
+        "v3_truth_q6_raw_value",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
@@ -227,11 +342,17 @@ def main(argv: list[str] | None = None) -> int:
         choices=("summary", "json", "jsonl", "csv"),
         default="summary",
     )
+    parser.add_argument(
+        "--skip-table-report",
+        action="store_true",
+        help="Skip v3 prior/truth fields and only audit pre-bid constraints.",
+    )
     parser.add_argument("--fail-on-conflicts", action="store_true")
     parser.add_argument("--fail-on-parse-errors", action="store_true")
     args = parser.parse_args(argv)
 
-    rows, errors = evaluate_paths(args.paths or _default_paths())
+    tables = None if args.skip_table_report else load_monitor_tables()
+    rows, errors = evaluate_paths(args.paths or _default_paths(), tables=tables)
     summary = summarize_rows(rows, errors)
     if args.format == "json":
         print(json.dumps({"summary": summary, "rows": rows}, ensure_ascii=False, indent=2, sort_keys=True))

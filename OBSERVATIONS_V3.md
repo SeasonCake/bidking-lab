@@ -73,3 +73,19 @@ numeric_constraints=1386 item_anchors=5137 shape_anchors=27549 quality_floor_anc
 ```
 
 这说明 v3 下一步可以在 1,247 个 ready 窗口上接 shadow posterior；15 个 no-state 窗口和 5 个 parse error 应继续作为采集/数据质量，不进入模型准确率分母。
+
+## O-v3-008：prior/truth 可先作为 shadow 诊断接入
+
+v3 evaluator 已能在每个 pre-bid window 上附加确定性 drop prior 与 settlement raw truth：
+
+```text
+windows=1262 ready=1247 no_state=15 constraint_conflict=0 parse_errors=5 prior_ready=1247 truth_ready=1262
+```
+
+含义：
+
+- `prior_ready=1247` 对齐 ready 窗口；no-state 窗口没有 map state，因此不能生成 prior。
+- `truth_ready=1262` 来自完整 archive 的最终 inventory，可用于窗口级 paired evaluation，但不能把 no-state 计入模型精度。
+- 当前 truth 是 raw settlement truth，不是 v2 formal decision truth，也不含 tail replacement。
+
+下一步需要把 formal/replacement truth 并列输出，之后再接 posterior，否则 raw 长尾会再次污染 P50/MAE 诊断。

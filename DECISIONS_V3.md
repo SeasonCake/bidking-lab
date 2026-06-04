@@ -64,3 +64,14 @@ v3 进入正式候选前必须先以 offline/shadow 运行。当前 formal decis
 - `OBSERVATIONS_V3.md`
 
 v2 历史大记录归档到 `archive/v2_legacy_2026-06-04/`。
+
+## D-v3-007：v3 archive report 先并列 raw/prior，不替代 formal truth
+
+v3 evaluator 可以默认输出 `v3_prior_*` 与 `v3_truth_*`，但这些字段当前只用于 shadow 诊断：
+
+- `v3_prior_*` 是 map/drop/item 的确定性先验，不是 posterior。
+- `v3_truth_*` 当前是 settlement raw truth，不是 formal decision truth。
+- P50/MAE 后续必须默认对齐 formal decision truth；raw truth 只作为明确命名的对照。
+- tail replacement 仍只能作为 audit/helper truth，并列输出，不进入正式 bid/stop price。
+
+原因：v2 曾经出现 raw 长尾 truth 与 formal decision estimate 混算，导致“正式估值严重低估”的诊断被放大。v3 不允许再次混淆指标口径。

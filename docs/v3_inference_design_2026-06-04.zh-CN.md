@@ -452,6 +452,13 @@ v3 可进入正式候选前：
 5. 对 Ethan Villa random_avg/q6 gate 与 Aisha 2506 tail/value sampler 建 fixture。
 6. 再开始 q6 条件 likelihood / count-cell-value sampler。
 
+### 2026-06-04 执行进展
+
+- Phase 1/2 已有可跑实现：registry coverage、canonical `EvidenceEvent`、hard numeric/item/shape/quality-floor constraint compiler。
+- Phase 3 已起步：archive pre-bid evaluator 能按报价前窗口输出 ConstraintSet、确定性 drop prior、settlement raw truth。
+- 当前 prior/truth 字段仅为 shadow 诊断；posterior、formal truth、replacement truth 仍是下一步。
+- 后续 sampler 必须以 hard constraints 为输入，再做条件 likelihood；不回到 v2 的“先采样再 reject 所有证据”的主路径。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html
