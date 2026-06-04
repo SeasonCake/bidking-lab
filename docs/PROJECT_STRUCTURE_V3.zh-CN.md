@@ -16,6 +16,7 @@
 | `docs/v3_inference_design_2026-06-04.zh-CN.md` | v3 设计文档 |
 | `src/bidking_lab/inference/v3/` | v3 推理引擎新包 |
 | `scripts/summarize_v3_evidence_coverage.py` | v3 evidence coverage 检查 |
+| `scripts/summarize_v3_constraints.py` | v3 hard constraint compiler 摘要 |
 | `tests/test_inference_v3_evidence_registry.py` | v3 registry/constraint 骨架测试 |
 
 ## v2 保留路径

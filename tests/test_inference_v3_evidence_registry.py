@@ -100,6 +100,8 @@ def test_fatbeans_events_extract_canonical_evidence_and_coverage_gaps() -> None:
     ]
     assert canonical[0].semantic == "total_cells"
     assert canonical[2].payload["observed_item_count"] == 1
+    assert canonical[2].payload["items"][0]["shape_key"] == "12"
+    assert canonical[2].payload["items"][0]["cells"] == 2
     assert canonical[3].hero_id == 103
 
     report = audit_fatbeans_events(events, file_name="sample.json")
@@ -151,6 +153,93 @@ def test_compile_hard_constraints_records_exact_numeric_and_anchors() -> None:
     assert constraints.numeric["session.total_cells"].value == 98
     assert len(constraints.item_anchor_events) == 1
     assert len(constraints.shape_anchor_events) == 1
+    anchor = next(iter(constraints.item_anchors.values()))
+    assert anchor.key == "local:38:21"
+    assert anchor.item_id == 1021004
+    assert anchor.quality == 1
+    assert anchor.shape_key == "21"
+    assert anchor.cells == 2
+    footprint = next(iter(constraints.shape_anchors.values()))
+    assert footprint.key == "local:38:21"
+    assert footprint.shape_key == "21"
+    assert footprint.cells == 2
+
+
+def test_compile_hard_constraints_keeps_quality_only_out_of_footprints() -> None:
+    state = SimpleNamespace(
+        sort_id=20,
+        session_id="2401:abc",
+        round_index=2,
+        map_id=2401,
+        public_infos=(),
+        action_results=(
+            SimpleNamespace(
+                action_id=100136,
+                result=None,
+                result_field=None,
+                observed_items=(
+                    SimpleNamespace(
+                        runtime_id=123,
+                        local_index=14,
+                        item_id=None,
+                        quality=6,
+                        value=None,
+                        shape_code=None,
+                        cells=None,
+                    ),
+                ),
+            ),
+        ),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    constraints = compile_hard_constraints(
+        events_from_fatbeans(SimpleNamespace(states=(state,)))
+    )
+
+    assert constraints.item_anchors == {}
+    assert constraints.shape_anchors == {}
+    assert constraints.quality_floor_anchors["runtime:123"].quality == 6
+    assert constraints.quality_floor_anchors["runtime:123"].local_index == 14
+
+
+def test_compile_hard_constraints_preserves_category_anchor() -> None:
+    state = SimpleNamespace(
+        sort_id=30,
+        session_id="2401:abc",
+        round_index=3,
+        map_id=2401,
+        public_infos=(),
+        action_results=(
+            SimpleNamespace(
+                action_id=100151,
+                result=None,
+                result_field=None,
+                observed_items=(
+                    SimpleNamespace(
+                        runtime_id=456,
+                        local_index=7,
+                        item_id=None,
+                        quality=4,
+                        value=None,
+                        shape_code=22,
+                        cells=None,
+                    ),
+                ),
+            ),
+        ),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    constraints = compile_hard_constraints(
+        events_from_fatbeans(SimpleNamespace(states=(state,)))
+    )
+
+    anchor = constraints.item_anchors["runtime:456"]
+    assert anchor.categories == (101,)
+    assert anchor.quality == 4
+    assert anchor.shape_key == "22"
+    assert constraints.shape_anchors["runtime:456"].cells == 4
 
 
 def test_compile_hard_constraints_reports_exact_conflicts() -> None:

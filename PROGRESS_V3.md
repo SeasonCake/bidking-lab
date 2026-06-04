@@ -33,6 +33,31 @@
 - 已支持 exact numeric target 编译和冲突报告。
 - 已记录 item/shape/quality-floor anchor events，下一步继续编译成可行空间。
 
+### Phase 2 追加：Item/shape/quality-floor anchor 编译
+
+- `EvidenceEvent.payload` 现在保留每个 observed item 的结构化字段：
+  runtime_id、local_index、item_id、quality、value、shape_key、cells。
+- `compile_hard_constraints()` 现在输出：
+  - `item_anchors`
+  - `shape_anchors`
+  - `quality_floor_anchors`
+  - exact numeric `conflicts`
+- quality-only / 宝光类证据继续只生成 `quality_floor_anchors`；没有 shape/cells 时不生成 footprint。
+- category outline 会把 category id 保留到 item anchor，避免后续可行空间丢类别条件。
+- 新增复跑脚本：`scripts/summarize_v3_constraints.py`。
+- 当前 355 archive 扫描：
+  - parsed_files `350`
+  - numeric constraints `549`
+  - item anchors `1,851`
+  - shape anchors `10,083`
+  - quality-floor anchors `1,384`
+  - hard conflicts `0`
+  - 5 个旧样本 parse error 继续按数据质量问题单独处理。
+- 验证：
+  - `C:\Python313\python.exe .\scripts\summarize_v3_constraints.py --fail-on-conflicts` 通过。
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_evidence_registry.py tests\test_evaluate_fatbeans_v2_samples.py -q`
+    为 `47 passed`。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：
@@ -64,11 +89,11 @@ C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-ga
 
 ## 下一步
 
-1. 扩展 hard constraint compiler：item anchors、shape anchors、quality-only floors。
-2. 对 355 archive 生成 per-window `ConstraintSet`，把模型 infeasible 和 capture/parser data quality 分开。
-3. 建 `scripts/evaluate_fatbeans_v3_samples.py`，先输出 shadow-only posterior report skeleton。
-4. 迁移 v1/v2 可复用先验：map/drop/item table、formal/raw/replacement truth、five-window evaluator。
-5. 再实现 q6 条件 likelihood / count-cell-value sampler。
+1. 对 355 archive 生成 per-window `ConstraintSet`，把模型 infeasible 和 capture/parser data quality 分开。
+2. 建 `scripts/evaluate_fatbeans_v3_samples.py`，先输出 shadow-only posterior report skeleton。
+3. 迁移 v1/v2 可复用先验：map/drop/item table、formal/raw/replacement truth、five-window evaluator。
+4. 再实现 q6 条件 likelihood / count-cell-value sampler。
+5. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
 
 ## 不做事项
 

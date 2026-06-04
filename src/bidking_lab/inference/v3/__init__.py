@@ -13,6 +13,9 @@ from bidking_lab.inference.v3.constraints import (
     ConstraintConflict,
     ConstraintSet,
     HardNumericConstraint,
+    ItemAnchor,
+    QualityFloorAnchor,
+    ShapeAnchor,
     compile_hard_constraints,
 )
 from bidking_lab.inference.v3.events import EvidenceEvent, events_from_fatbeans
@@ -38,6 +41,9 @@ __all__ = (
     "EvidenceEvent",
     "EvidenceSpec",
     "HardNumericConstraint",
+    "ItemAnchor",
+    "QualityFloorAnchor",
+    "ShapeAnchor",
     "action_result_spec",
     "audit_fatbeans_events",
     "audit_fatbeans_paths",

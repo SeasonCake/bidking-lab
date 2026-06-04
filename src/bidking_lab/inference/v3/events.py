@@ -66,14 +66,47 @@ def _event_key(prefix: str, sort_id: int | None, source_id: int | str, index: in
     return f"{prefix}:{sort}:{source_id}:{index}"
 
 
+def _shape_cells(shape_code: Any) -> int | None:
+    if shape_code in (None, ""):
+        return None
+    try:
+        code = int(shape_code)
+    except (TypeError, ValueError):
+        return None
+    width = code // 10
+    height = code % 10
+    if width <= 0 or height <= 0:
+        return None
+    return width * height
+
+
+def _observed_item_payload(item: Any) -> dict[str, Any]:
+    shape_code = getattr(item, "shape_code", None)
+    cells = getattr(item, "cells", None)
+    if cells is None:
+        cells = _shape_cells(shape_code)
+    return {
+        "runtime_id": getattr(item, "runtime_id", None),
+        "local_index": getattr(item, "local_index", None),
+        "item_id": getattr(item, "item_id", None),
+        "quality": getattr(item, "quality", None),
+        "value": getattr(item, "value", None),
+        "shape_code": shape_code,
+        "shape_key": str(shape_code) if shape_code else None,
+        "cells": cells,
+    }
+
+
 def _item_payload(items: Any) -> dict[str, Any]:
     observed_items = tuple(items or ())
+    payload_items = tuple(_observed_item_payload(item) for item in observed_items)
     return {
         "observed_item_count": len(observed_items),
         "with_item_id": sum(1 for item in observed_items if getattr(item, "item_id", None) is not None),
         "with_shape": sum(1 for item in observed_items if getattr(item, "shape_code", None) is not None),
         "with_local": sum(1 for item in observed_items if getattr(item, "local_index", None) is not None),
         "with_quality": sum(1 for item in observed_items if getattr(item, "quality", None) is not None),
+        "items": payload_items,
     }
 
 

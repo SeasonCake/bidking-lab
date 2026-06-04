@@ -50,3 +50,15 @@ pending=none
 ## O-v3-005：UI 设计当前可保留
 
 用户确认当前 UI 设计可以保存，不需要重复设计。v3 期间只应维护字段兼容和风险提示准确性，不做视觉重构。
+
+## O-v3-006：Phase 2 anchor 编译已证明 archive 可跑
+
+v3 hard constraint compiler 从 numeric exact 扩展到了结构化 anchors。当前 350 个可解析 archive 样本扫描结果：
+
+```text
+numeric=549 item_anchors=1851 shape_anchors=10083 quality_floor_anchors=1384 conflicts=0
+```
+
+关键边界仍成立：quality-only/宝光类证据没有 shape/cells 时只进入 `quality_floor_anchors`，不生成 hard footprint。category outline 的 category id 已随 item anchor 保留，后续可行空间不能丢掉该条件。
+
+5 个 parse error 仍是旧样本数据质量问题，不是 hard constraint 冲突。
