@@ -414,8 +414,8 @@ C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-ga
 
 ## 下一步
 
-1. 实现条件 proposal / likelihood weighting，降低 formal/q6 MAE，并提高 P90 coverage。
-2. 按 hero/map/round/match_scope 拆分 v3 metrics，定位 Aisha 2506、Ethan villa 等重点 miss。
+1. 按 hero/map/round/match_scope 拆分 v3 metrics，定位 2601、2506、2501 等当前高 MAE 地图。
+2. 继续校准 summary-likelihood 的 q6/value tail；重点看 q6 presence 只有低信息量时的保守低估。
 3. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
 
 ## 不做事项
@@ -424,3 +424,83 @@ C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-ga
 - 不接 Fatbeans 会员 WebHook 路线。
 - 不把 tail replacement 接入正式出价。
 - 不直接把 v3 shadow 改成 formal decision。
+
+## 2026-06-05 checkpoint：v3 summary-likelihood posterior 第一版
+
+已完成：
+
+- `match_scope=strict` 保持原硬命中语义。
+- strict 无命中时，新增 `match_scope=summary_likelihood`：
+  - 消费 `FeasibleSummaryReport`，不绕过 compiler 直接解释 raw payload。
+  - session total count/cells exact、known floors、各品质 count/cells/value exact/floor 全部进入 likelihood。
+  - q6 证据有轻量 boost，但不会把 q6 projection 直接升为正式路径。
+  - P50 使用 evidence-weighted posterior，并加温和 lower guard，减少实战低估。
+  - P90 使用 tail guard，从 likelihood support 保留长尾，不让 P50 校准压掉覆盖。
+- evaluator 新增 scope 计数：
+  - `posterior_summary_likelihood`
+  - `posterior_q6_projection`
+  - `metric_summary_likelihood_rows`
+  - `metric_q6_projection_rows`
+  - `posterior_scope_counts`
+
+433 canonical 样本、512 samples/map 当前指标：
+
+```text
+windows=1551
+ready=1534
+no_state=17
+constraint_conflict=0
+parse_errors=0
+posterior_ready=1534
+posterior_strict_ready=513
+posterior_summary_likelihood=1021
+posterior_q6_projection=0
+metric_rows=1534
+formal_p50_mae=329399.887
+formal_p50_mae_strict=330542.046
+formal_p50_mae_fallback=328826.011
+formal_p50_bias=-188482.821
+formal_p50_below_rate=0.632986
+formal_p90_coverage=0.769883
+q6_formal_p50_mae=295957.275
+q6_formal_p50_mae_fallback=294703.346
+q6_formal_p50_bias=-133583.532
+q6_formal_p50_below_rate=0.582790
+q6_formal_p90_coverage=0.815515
+```
+
+相对 canonical skeleton 基线：
+
+- `formal_p50_mae`：`335384.256 -> 329399.887`，下降约 `5,984`。
+- `formal_p50_mae_fallback`：`337817.217 -> 328826.011`，下降约 `8,991`。
+- `formal_p90_coverage`：`0.767927 -> 0.769883`，小幅上升。
+- `q6_formal_p50_mae`：`295848.365 -> 295957.275`，基本持平，fallback 略优于旧 fallback。
+
+按轮次 formal P50：
+
+```text
+R1 n=416 mae=351780.1 bias=-194490.4 below=0.640 p90cover=0.730
+R2 n=407 mae=320266.2 bias=-190904.0 below=0.640 p90cover=0.770
+R3 n=360 mae=310245.8 bias=-167713.0 below=0.610 p90cover=0.800
+R4 n=248 mae=333422.1 bias=-194834.7 below=0.620 p90cover=0.790
+R5 n=103 mae=332362.8 bias=-211951.8 below=0.690 p90cover=0.780
+```
+
+当前高 MAE 地图：
+
+```text
+2601 n=86 mae=614055.0 bias=-467064.5 below=0.77
+2506 n=71 mae=502413.1 bias=-444963.9 below=0.82
+2509 n=40 mae=414159.0 bias=-167713.2 below=0.57
+2503 n=37 mae=372821.0 bias=-199747.8 below=0.70
+2501 n=310 mae=367176.4 bias=-274498.7 below=0.70
+```
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_organize_fatbeans_real_samples.py tests\test_rename_manual_fatbeans_samples.py tests\test_summarize_fatbeans_sample_manifest.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_posterior.py tests\test_inference_v3_summary.py tests\test_inference_v3_priors_truth.py tests\test_inference_v3_evidence_registry.py tests\test_live_monitor.py::test_ethan_sample37_residual_does_not_break_exact_bucket_targets -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+```
+
+结果：`33 passed`，全样本 evaluator 通过。

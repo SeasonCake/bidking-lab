@@ -464,11 +464,21 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     def pinball(pairs: tuple[tuple[float, float], ...], quantile: float) -> float | None:
         return _mean(_pinball_loss(truth, pred, quantile) for pred, truth in pairs)
 
+    metric_scope_counts = Counter(
+        str(row.get("v3_post_match_scope") or "none")
+        for row in paired
+        if row.get("v3_post_ready")
+    )
     return {
         "metric_rows": len(paired),
         "metric_strict_rows": sum(
             1 for row in paired if row.get("v3_post_match_scope") == "strict"
         ),
+        "metric_summary_likelihood_rows": metric_scope_counts.get(
+            "summary_likelihood",
+            0,
+        ),
+        "metric_q6_projection_rows": metric_scope_counts.get("q6_projection", 0),
         "metric_fallback_rows": sum(
             1
             for row in paired
@@ -503,6 +513,11 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[str, Any]:
     statuses = Counter(str(row.get("status") or "unknown") for row in rows)
     round_counts = Counter(f"R{row.get('round')}" for row in rows)
+    posterior_scope_counts = Counter(
+        str(row.get("v3_post_match_scope") or "none")
+        for row in rows
+        if row.get("v3_post_ready")
+    )
     ready_rows = [row for row in rows if row.get("status") == "ready"]
     summary = {
         "windows": len(rows),
@@ -525,6 +540,11 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         "posterior_strict_ready": sum(
             1 for row in rows if row.get("v3_post_strict_ready")
         ),
+        "posterior_summary_likelihood": posterior_scope_counts.get(
+            "summary_likelihood",
+            0,
+        ),
+        "posterior_q6_projection": posterior_scope_counts.get("q6_projection", 0),
         "posterior_fallback": sum(
             1
             for row in rows
@@ -539,6 +559,7 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         ),
         "status_counts": dict(sorted(statuses.items())),
         "round_counts": dict(sorted(round_counts.items())),
+        "posterior_scope_counts": dict(sorted(posterior_scope_counts.items())),
         "numeric_constraints": sum(int(row.get("numeric_constraints") or 0) for row in ready_rows),
         "item_anchors": sum(int(row.get("item_anchors") or 0) for row in ready_rows),
         "shape_anchors": sum(int(row.get("shape_anchors") or 0) for row in ready_rows),
@@ -567,6 +588,8 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"summary_conflict={summary['summary_conflict']}",
                 f"posterior_ready={summary['posterior_ready']}",
                 f"posterior_strict_ready={summary['posterior_strict_ready']}",
+                f"posterior_summary_likelihood={summary['posterior_summary_likelihood']}",
+                f"posterior_q6_projection={summary['posterior_q6_projection']}",
                 f"posterior_fallback={summary['posterior_fallback']}",
                 f"posterior_no_match={summary['posterior_no_match']}",
                 f"metric_rows={summary['metric_rows']}",

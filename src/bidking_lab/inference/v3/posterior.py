@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -118,6 +119,46 @@ def _quantiles(values: Sequence[int | float]) -> QuantileSummary | None:
     )
 
 
+def _weighted_quantiles(
+    values: Sequence[int | float],
+    weights: Sequence[float] | None,
+    *,
+    p50_tail_guard: bool = False,
+    p90_tail_guard: bool = False,
+) -> QuantileSummary | None:
+    if weights is None:
+        return _quantiles(values)
+    if not values:
+        return None
+    pairs = sorted(
+        (float(value), float(weight))
+        for value, weight in zip(values, weights, strict=True)
+        if math.isfinite(float(weight)) and float(weight) > 0.0
+    )
+    if not pairs:
+        return None
+    arr = np.asarray([value for value, _ in pairs], dtype=np.float64)
+    w = np.asarray([weight for _, weight in pairs], dtype=np.float64)
+    total = float(w.sum())
+    if total <= 0.0 or not math.isfinite(total):
+        return None
+    cumulative = np.cumsum(w)
+
+    def pick(probability: float) -> float:
+        index = int(np.searchsorted(cumulative, probability * total, side="left"))
+        return float(arr[min(index, len(arr) - 1)])
+
+    p50 = pick(0.50)
+    p90 = pick(0.90)
+    if p50_tail_guard or p90_tail_guard:
+        unweighted = _quantiles(values)
+        if p50_tail_guard and unweighted is not None:
+            p50 = max(p50, unweighted.p50)
+        if p90_tail_guard and unweighted is not None:
+            p90 = max(p90, unweighted.p90)
+    return QuantileSummary(p10=pick(0.10), p50=p50, p90=p90)
+
+
 def sample_truth_bank(
     map_id: int,
     *,
@@ -189,6 +230,176 @@ def truth_matches_feasible_summary(
     return all(_bucket_matches(truth, bucket) for bucket in summary.buckets)
 
 
+def _likelihood_scale(target: int | float, *, base: float, ratio: float) -> float:
+    return max(float(base), abs(float(target)) * float(ratio))
+
+
+def _exact_log_likelihood(
+    value: int | float,
+    target: int | float | None,
+    *,
+    base_scale: float,
+    ratio_scale: float,
+    importance: float,
+) -> float:
+    if target is None:
+        return 0.0
+    diff = abs(float(value) - float(target))
+    if diff <= 0.0:
+        return 0.0
+    scale = _likelihood_scale(target, base=base_scale, ratio=ratio_scale)
+    return -float(importance) * (diff / scale) ** 2
+
+
+def _floor_log_likelihood(
+    value: int | float,
+    floor: int | float | None,
+    *,
+    base_scale: float,
+    ratio_scale: float,
+    importance: float,
+) -> float:
+    if floor is None:
+        return 0.0
+    deficit = max(0.0, float(floor) - float(value))
+    if deficit <= 0.0:
+        return 0.0
+    scale = _likelihood_scale(floor, base=base_scale, ratio=ratio_scale)
+    return -float(importance) * (deficit / scale) ** 2
+
+
+def _bucket_log_likelihood(
+    truth: SessionTruth,
+    bucket: BucketFeasibleSummary,
+) -> float:
+    count, cells, value = _bucket_fields(truth, bucket.quality)
+    q6_boost = 1.45 if int(bucket.quality) == 6 else 1.0
+    return sum((
+        _exact_log_likelihood(
+            count,
+            bucket.count_exact,
+            base_scale=1.0,
+            ratio_scale=0.30,
+            importance=1.65 * q6_boost,
+        ),
+        _exact_log_likelihood(
+            cells,
+            bucket.cells_exact,
+            base_scale=5.0,
+            ratio_scale=0.22,
+            importance=1.35 * q6_boost,
+        ),
+        _exact_log_likelihood(
+            value,
+            bucket.value_exact,
+            base_scale=90_000.0,
+            ratio_scale=0.30,
+            importance=0.85 * q6_boost,
+        ),
+        _floor_log_likelihood(
+            count,
+            bucket.count_floor,
+            base_scale=1.0,
+            ratio_scale=0.35,
+            importance=1.30 * q6_boost,
+        ),
+        _floor_log_likelihood(
+            cells,
+            bucket.cells_floor,
+            base_scale=5.0,
+            ratio_scale=0.25,
+            importance=1.05 * q6_boost,
+        ),
+        _floor_log_likelihood(
+            value,
+            bucket.value_floor,
+            base_scale=90_000.0,
+            ratio_scale=0.35,
+            importance=0.70 * q6_boost,
+        ),
+    ))
+
+
+def _summary_log_likelihood(
+    truth: SessionTruth,
+    summary: FeasibleSummaryReport,
+) -> float:
+    total_count = _truth_total_count(truth)
+    total_cells = int(truth.warehouse_total_cells)
+    total_value = int(truth.total_value())
+    score = sum((
+        _exact_log_likelihood(
+            total_count,
+            summary.session_total_count_exact,
+            base_scale=2.0,
+            ratio_scale=0.12,
+            importance=1.20,
+        ),
+        _exact_log_likelihood(
+            total_cells,
+            summary.session_total_cells_exact,
+            base_scale=8.0,
+            ratio_scale=0.12,
+            importance=1.35,
+        ),
+        _floor_log_likelihood(
+            total_count,
+            summary.known_count_floor,
+            base_scale=2.0,
+            ratio_scale=0.20,
+            importance=0.80,
+        ),
+        _floor_log_likelihood(
+            total_cells,
+            summary.known_cells_floor,
+            base_scale=8.0,
+            ratio_scale=0.20,
+            importance=0.80,
+        ),
+        _floor_log_likelihood(
+            total_value,
+            summary.known_value_floor,
+            base_scale=120_000.0,
+            ratio_scale=0.35,
+            importance=0.55,
+        ),
+    ))
+    for bucket in summary.buckets:
+        score += _bucket_log_likelihood(truth, bucket)
+    return score
+
+
+def _summary_likelihood_matches(
+    truths: Sequence[SessionTruth],
+    summary: FeasibleSummaryReport,
+    *,
+    relative_floor: float = 1e-8,
+    temperature: float = 4.0,
+) -> tuple[tuple[SessionTruth, ...], tuple[float, ...], float]:
+    if not truths:
+        return (), (), 0.0
+    log_weights = np.asarray(
+        [_summary_log_likelihood(truth, summary) for truth in truths],
+        dtype=np.float64,
+    )
+    finite = np.isfinite(log_weights)
+    if not finite.any():
+        return (), (), 0.0
+    max_log = float(log_weights[finite].max())
+    relative = np.zeros(len(log_weights), dtype=np.float64)
+    relative[finite] = np.exp(
+        (log_weights[finite] - max_log) / max(float(temperature), 1e-9)
+    )
+    keep = relative >= max(float(relative_floor), 0.0)
+    if not keep.any():
+        keep[int(np.argmax(relative))] = True
+    weights = relative[keep]
+    total = float(weights.sum())
+    ess = float(total * total / float(np.square(weights).sum())) if total > 0 else 0.0
+    matched = tuple(truth for truth, use in zip(truths, keep, strict=True) if bool(use))
+    return matched, tuple(float(weight) for weight in weights), ess
+
+
 def estimate_q6_posterior_from_truths(
     *,
     map_id: int,
@@ -208,32 +419,47 @@ def estimate_q6_posterior_from_truths(
         if truth_matches_feasible_summary(truth, summary)
     )
     matched = strict_matched
+    matched_weights: tuple[float, ...] | None = None
     match_scope = "strict"
     if n_total <= 0:
         diagnostics.append("no_prior_samples")
     if n_total > 0 and not strict_matched and summary.feasible:
         diagnostics.append("no_strict_summary_matched_samples")
-        q6_summary = summary.bucket(6)
-        q6_projection = FeasibleSummaryReport(
-            session_total_count_exact=None,
-            session_total_cells_exact=None,
-            known_count_floor=0,
-            known_cells_floor=0,
-            known_value_floor=0,
-            buckets=(q6_summary,) if q6_summary is not None else (),
-        )
-        matched = tuple(
-            truth
-            for truth in truths
-            if truth_matches_feasible_summary(truth, q6_projection)
+        matched, matched_weights, effective_n = _summary_likelihood_matches(
+            truths,
+            summary,
         )
         if matched:
-            match_scope = "q6_projection"
-            diagnostics.append("q6_projection_fallback")
+            match_scope = "summary_likelihood"
+            diagnostics.append("summary_likelihood_fallback")
+            diagnostics.append(
+                f"summary_likelihood_effective_samples={effective_n:.3f}"
+            )
         else:
-            diagnostics.append("no_q6_projection_matched_samples")
+            diagnostics.append("no_summary_likelihood_samples")
+            q6_summary = summary.bucket(6)
+            q6_projection = FeasibleSummaryReport(
+                session_total_count_exact=None,
+                session_total_cells_exact=None,
+                known_count_floor=0,
+                known_cells_floor=0,
+                known_value_floor=0,
+                buckets=(q6_summary,) if q6_summary is not None else (),
+            )
+            matched = tuple(
+                truth
+                for truth in truths
+                if truth_matches_feasible_summary(truth, q6_projection)
+            )
+            matched_weights = None
+            if matched:
+                match_scope = "q6_projection"
+                diagnostics.append("q6_projection_fallback")
+            else:
+                diagnostics.append("no_q6_projection_matched_samples")
     elif not summary.feasible:
         matched = ()
+        matched_weights = None
     q6_counts: list[int] = []
     q6_cells: list[int] = []
     q6_values: list[int] = []
@@ -269,6 +495,19 @@ def estimate_q6_posterior_from_truths(
         if q6_counts
         else None
     )
+    if q6_counts and matched_weights is not None:
+        weight_total = sum(matched_weights)
+        q6_present_rate = (
+            sum(
+                weight
+                for count, weight in zip(q6_counts, matched_weights, strict=True)
+                if count > 0
+            )
+            / weight_total
+            if weight_total > 0
+            else None
+        )
+    tail_guard = matched_weights is not None
     return V3PosteriorReport(
         map_id=int(map_id),
         map_name=map_name,
@@ -277,16 +516,59 @@ def estimate_q6_posterior_from_truths(
         n_strict_matched=len(strict_matched),
         match_scope=match_scope,
         q6_present_rate=q6_present_rate,
-        total_cells=_quantiles(total_cells),
-        total_value=_quantiles(total_values),
-        formal_decision_value=_quantiles(formal_decision_values),
-        tail_replacement_decision_value=_quantiles(tail_replacement_decision_values),
-        q6_count=_quantiles(q6_counts),
-        q6_cells=_quantiles(q6_cells),
-        q6_value=_quantiles(q6_values),
-        q6_formal_decision_value=_quantiles(q6_formal_decision_values),
-        q6_tail_replacement_decision_value=_quantiles(
-            q6_tail_replacement_decision_values
+        total_cells=_weighted_quantiles(
+            total_cells,
+            matched_weights,
+            p50_tail_guard=tail_guard,
+            p90_tail_guard=tail_guard,
+        ),
+        total_value=_weighted_quantiles(
+            total_values,
+            matched_weights,
+            p50_tail_guard=tail_guard,
+            p90_tail_guard=tail_guard,
+        ),
+        formal_decision_value=_weighted_quantiles(
+            formal_decision_values,
+            matched_weights,
+            p50_tail_guard=tail_guard,
+            p90_tail_guard=tail_guard,
+        ),
+        tail_replacement_decision_value=_weighted_quantiles(
+            tail_replacement_decision_values,
+            matched_weights,
+            p50_tail_guard=tail_guard,
+            p90_tail_guard=tail_guard,
+        ),
+        q6_count=_weighted_quantiles(
+            q6_counts,
+            matched_weights,
+            p50_tail_guard=tail_guard,
+            p90_tail_guard=tail_guard,
+        ),
+        q6_cells=_weighted_quantiles(
+            q6_cells,
+            matched_weights,
+            p50_tail_guard=tail_guard,
+            p90_tail_guard=tail_guard,
+        ),
+        q6_value=_weighted_quantiles(
+            q6_values,
+            matched_weights,
+            p50_tail_guard=tail_guard,
+            p90_tail_guard=tail_guard,
+        ),
+        q6_formal_decision_value=_weighted_quantiles(
+            q6_formal_decision_values,
+            matched_weights,
+            p50_tail_guard=tail_guard,
+            p90_tail_guard=tail_guard,
+        ),
+        q6_tail_replacement_decision_value=_weighted_quantiles(
+            q6_tail_replacement_decision_values,
+            matched_weights,
+            p50_tail_guard=tail_guard,
+            p90_tail_guard=tail_guard,
         ),
         diagnostics=tuple(diagnostics),
     )

@@ -227,3 +227,58 @@ q6_formal_p50_mae=295848.365
 - P90 coverage 基本仍停在 `~0.768`，说明主要瓶颈仍是 posterior proposal/sampler，不是样本数量。
 - `mixed` 文件仍有 17 个 no-state 窗口；它们只作为数据质量记录，不进入模型准确率分母。
 - 后续 v3 调参默认使用 433 canonical 样本；旧 06-04 manifest 仅作历史映射参考。
+
+## O-v3-016：summary-likelihood 需要保留 tail guard，否则会复现低估
+
+2026-06-05 在 433 canonical 样本上对比了 strict 缺口的第一版 likelihood fallback。
+
+直接用未展平的 evidence likelihood 会明显恶化：
+
+```text
+posterior_summary_likelihood=1021
+formal_p50_mae=344718.493
+formal_p50_mae_fallback=351841.429
+formal_p90_coverage=0.653194
+q6_formal_p50_mae=315351.666
+```
+
+原因：
+
+- strict 无命中窗口中，证据经常只有低信息量 q6 presence、少量 floor 或局部格数。
+- 如果 likelihood 权重过尖，effective samples 常压到 `1-5` 个，P90 也变成“最像证据的一小撮样本”，长尾直接消失。
+- 这和实战低估反馈一致，不能作为 v3 promotion 方向。
+
+加入 temperature 后，P50 变好但 P90 仍偏窄：
+
+```text
+temperature=4
+formal_p50_mae=332122.447
+formal_p90_coverage=0.747066
+q6_formal_p50_mae=299595.192
+```
+
+最终当前版本采用：
+
+- P50：evidence-weighted likelihood + likelihood support 未加权 P50 lower guard。
+- P90：likelihood support 未加权 P90 tail guard。
+
+当前指标：
+
+```text
+formal_p50_mae=329399.887
+formal_p50_mae_fallback=328826.011
+formal_p50_bias=-188482.821
+formal_p50_below_rate=0.632986
+formal_p90_coverage=0.769883
+q6_formal_p50_mae=295957.275
+q6_formal_p50_mae_fallback=294703.346
+q6_formal_p50_bias=-133583.532
+q6_formal_p50_below_rate=0.582790
+q6_formal_p90_coverage=0.815515
+```
+
+结论：
+
+- v3 的下一步不是继续盲目加 prior trials，而是让条件 proposal 能构造满足 count/cell/value summary 的样本。
+- 在 proposal 完成前，likelihood fallback 必须保留 tail guard；否则 P90 coverage 会被中位数校准一起压坏。
+- 当前版本降低 formal P50 MAE，但仍有明显低估 bias；2601、2506、2501 是下一轮地图级校准重点。

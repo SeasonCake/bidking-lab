@@ -81,7 +81,7 @@ def test_v3_posterior_filters_truths_by_feasible_summary() -> None:
     assert report.q6_value.p50 == 200_000
 
 
-def test_v3_posterior_reports_no_match_diagnostic() -> None:
+def test_v3_posterior_uses_summary_likelihood_when_exact_q6_is_unseen() -> None:
     summary = FeasibleSummaryReport(
         session_total_count_exact=None,
         session_total_cells_exact=None,
@@ -98,15 +98,18 @@ def test_v3_posterior_reports_no_match_diagnostic() -> None:
         truths=(_truth(), _truth(q6_count=1, q6_cells=16, q6_value=200_000)),
     )
 
-    assert report.ready is False
-    assert report.n_matched == 0
-    assert report.diagnostics == (
+    assert report.ready is True
+    assert report.strict_ready is False
+    assert report.match_scope == "summary_likelihood"
+    assert report.n_strict_matched == 0
+    assert report.q6_count.p50 == 1
+    assert report.diagnostics[0:2] == (
         "no_strict_summary_matched_samples",
-        "no_q6_projection_matched_samples",
+        "summary_likelihood_fallback",
     )
 
 
-def test_v3_posterior_uses_q6_projection_fallback_when_strict_has_no_match() -> None:
+def test_v3_posterior_uses_summary_likelihood_when_strict_has_no_match() -> None:
     summary = FeasibleSummaryReport(
         session_total_count_exact=None,
         session_total_cells_exact=99,
@@ -125,11 +128,10 @@ def test_v3_posterior_uses_q6_projection_fallback_when_strict_has_no_match() -> 
 
     assert report.ready is True
     assert report.strict_ready is False
-    assert report.match_scope == "q6_projection"
+    assert report.match_scope == "summary_likelihood"
     assert report.n_strict_matched == 0
-    assert report.n_matched == 1
     assert report.q6_count.p50 == 1
-    assert report.diagnostics == (
+    assert report.diagnostics[0:2] == (
         "no_strict_summary_matched_samples",
-        "q6_projection_fallback",
+        "summary_likelihood_fallback",
     )
