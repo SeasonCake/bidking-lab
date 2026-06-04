@@ -4,6 +4,7 @@ from bidking_lab.inference.v3 import (
     BucketFeasibleSummary,
     ConstraintSet,
     FeasibleSummaryReport,
+    ItemAnchor,
     estimate_q6_posterior_from_truths,
     truth_matches_feasible_summary,
 )
@@ -47,6 +48,7 @@ def _item(
     quality: int,
     value: int,
     shape: tuple[int, int],
+    tags: tuple[int, ...] = (),
 ) -> Item:
     return Item(
         item_id=item_id,
@@ -59,7 +61,7 @@ def _item(
         value=value,
         shape_w=shape[0],
         shape_h=shape[1],
-        tags=[],
+        tags=list(tags),
         allowed_shelves=[],
         icon_name="",
         model_name="",
@@ -67,8 +69,21 @@ def _item(
     )
 
 
-def _truth_with_q6_item(*, value: int = 100_000, cells: int = 4) -> SessionTruth:
-    q6_item = _item(1086001, quality=6, value=value, shape=(cells, 1))
+def _truth_with_q6_item(
+    *,
+    item_id: int = 1086001,
+    value: int = 100_000,
+    cells: int = 4,
+    tags: tuple[int, ...] = (),
+) -> SessionTruth:
+    shape = (4, 4) if cells == 16 else (cells, 1)
+    q6_item = _item(
+        item_id,
+        quality=6,
+        value=value,
+        shape=shape,
+        tags=tags,
+    )
     return SessionTruth(
         map_id=2401,
         map_name="test_map",
@@ -249,3 +264,53 @@ def test_v3_posterior_guards_q6_exact_bucket_fields() -> None:
     assert report.q6_count.p50 == 3
     assert report.q6_cells.p50 == 12
     assert report.q6_value.p50 == 300_000
+
+
+def test_v3_posterior_weights_category_anchor_matches_for_formal_value() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=None,
+        known_count_floor=1,
+        known_cells_floor=16,
+        known_value_floor=0,
+        buckets=(BucketFeasibleSummary(quality=6, count_floor=1, cells_floor=16),),
+    )
+    matching_tail = _truth_with_q6_item(
+        item_id=1086002,
+        value=2_000_000,
+        cells=16,
+        tags=(106,),
+    )
+    unsupported_tail = _truth_with_q6_item(
+        item_id=1086003,
+        value=2_000_000,
+        cells=16,
+        tags=(999,),
+    )
+    constraints = ConstraintSet(
+        item_anchors={
+            "category:106": ItemAnchor(
+                key="category:106",
+                event_id="event:category",
+                source_kind="action_result",
+                source_id="10002072",
+                sort_id=10,
+                quality=6,
+                cells=16,
+                categories=(106,),
+            )
+        }
+    )
+
+    report = estimate_q6_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(unsupported_tail, matching_tail),
+        constraints=constraints,
+    )
+
+    assert report.ready is True
+    assert report.strict_ready is True
+    assert "anchor_likelihood_weighted" in report.diagnostics
+    assert report.q6_formal_decision_value.p50 == 2_000_000

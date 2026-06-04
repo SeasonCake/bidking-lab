@@ -589,3 +589,71 @@ C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --to
 ```
 
 结果：`36 passed`，全样本 evaluator 通过。
+
+## 2026-06-05 checkpoint：anchor-aware posterior likelihood
+
+问题：
+
+- 2601/2506 修复 hard floor 后仍系统低估。
+- 进一步审查发现 v3 summary 只保留 quality count/cell/value，丢掉了 item/category/shape anchor 对
+  formal plannable 判断的影响。
+- `decision_truth_from_*` 会用 exact/category support 决定高值 item 是否进入 formal decision；posterior
+  sampler 若不按 anchor 匹配加权，就会低估这些被道具支持的高值红品。
+
+修复：
+
+- posterior likelihood 新增 anchor match 权重：
+  - `ItemAnchor`：按 item_id、value、category、shape/cells、quality 匹配样本 item。
+  - `ShapeAnchor`：对未被 item anchor 覆盖的 shape/cell/quality 做匹配。
+  - strict matched 样本集合也会按 anchor 权重重排；summary-likelihood fallback 会把 anchor log-likelihood
+    叠加到 summary log-likelihood。
+- 仍不改变 hard summary，不改变正式出价，`affects_bid=false`。
+
+433 canonical 样本、512 samples/map 当前指标：
+
+```text
+formal_p50_mae=323364.373
+formal_p50_mae_strict=324863.640
+formal_p50_mae_fallback=322611.068
+formal_p50_bias=-170223.445
+formal_p50_below_rate=0.622555
+formal_p90_coverage=0.780965
+q6_formal_p50_mae=289531.125
+q6_formal_p50_mae_strict=293163.116
+q6_formal_p50_mae_fallback=287706.237
+q6_formal_p50_bias=-114997.727
+q6_formal_p50_below_rate=0.567145
+q6_formal_p90_coverage=0.828553
+```
+
+相对 hard-bound guard：
+
+- `formal_p50_mae`：`325128.627 -> 323364.373`，继续下降约 `1,764`。
+- `formal_p90_coverage`：`0.769883 -> 0.780965`。
+- `q6_formal_p50_mae`：`289689.021 -> 289531.125`，基本持平略好。
+- `q6_formal_p90_coverage`：`0.815515 -> 0.828553`。
+- `formal_p50_bias`：`-184211.561 -> -170223.445`，低估继续缓解。
+
+分片：
+
+```text
+2601 n=86 mae=594835.6 bias=-438014.8 p90_cover=0.581395 q6_mae=533650.4
+2506 n=71 mae=497158.7 bias=-425473.2 p90_cover=0.605634 q6_mae=453468.5
+2501 n=310 mae=363304.4 bias=-256607.5 p90_cover=0.709677 q6_mae=321219.2
+2507 n=74 mae=324716.0 bias=-42013.3 p90_cover=0.837838 q6_mae=323266.1
+```
+
+结论：
+
+- anchor-aware likelihood 对全局、2601、2506 是正向，但 2507 分片回退。
+- 2601/2506 仍明显低估，下一步需要 map-tail / q6 value 条件 proposal，而不是继续只靠重权。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_organize_fatbeans_real_samples.py tests\test_rename_manual_fatbeans_samples.py tests\test_summarize_fatbeans_sample_manifest.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_posterior.py tests\test_inference_v3_summary.py tests\test_inference_v3_priors_truth.py tests\test_inference_v3_evidence_registry.py tests\test_live_monitor.py::test_ethan_sample37_residual_does_not_break_exact_bucket_targets tests\test_summarize_v3_metric_slices.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --top 8
+```
+
+结果：`37 passed`，全样本 evaluator 通过。

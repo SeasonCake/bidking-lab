@@ -320,3 +320,43 @@ q6_formal_p50_mae=295957.275
 - v3 posterior 输出层必须做 hard-constraint projection；不能只靠 sampler 恰好抽中已知证据。
 - 这类修复直接降低 q6/formal MAE，并减少低估 bias。
 - 2601、2506 在该修复后仍是高误差地图，说明下一步应做 map-tail / q6 value 条件 proposal，而不是继续找 floor 投影问题。
+
+## O-v3-018：summary-only posterior 会丢掉 category/shape 对 formal value 的支持
+
+2601/2506 在 hard floor guard 后仍大幅低估。核心原因之一：
+
+- `FeasibleSummaryReport` 只表达 quality count/cell/value exact/floor。
+- formal decision truth 还依赖 item/category/shape anchor 判断高值 item 是否 plannable。
+- 如果 posterior 样本只按 summary 过滤，不按 anchor 匹配加权，样本里的高值红品会被裁尾或低权重，导致 formal P50/P90 偏低。
+
+新增 anchor-aware likelihood 后：
+
+```text
+formal_p50_mae=323364.373
+formal_p50_bias=-170223.445
+formal_p90_coverage=0.780965
+q6_formal_p50_mae=289531.125
+q6_formal_p50_bias=-114997.727
+q6_formal_p90_coverage=0.828553
+```
+
+对比 hard-bound guard：
+
+```text
+formal_p50_mae=325128.627
+formal_p90_coverage=0.769883
+q6_formal_p50_mae=289689.021
+q6_formal_p90_coverage=0.815515
+```
+
+分片结果：
+
+- 2601 formal MAE `614055.0 -> 594835.6`，P90 coverage `0.569767 -> 0.581395`。
+- 2506 formal MAE `502413.1 -> 497158.7`。
+- 2501 bias `-270133.2 -> -256607.5`。
+- 2507 q6 MAE 回退，说明 anchor weighting 需要继续做分片监控。
+
+结论：
+
+- v3 sampler 不能只消费 summary；必须保留 anchor-aware 层。
+- 但 anchor weighting 仍是 likelihood 层，不是最终 proposal。2601/2506 的剩余低估需要专门的 map-tail/q6 value proposal。

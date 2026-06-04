@@ -13,7 +13,7 @@ from bidking_lab.extract.drop_table import DropPool
 from bidking_lab.extract.item_table import Item
 from bidking_lab.inference.ground_truth import SessionTruth, prepare_session_sampler
 from bidking_lab.inference.map_likelihood import QuantileSummary
-from bidking_lab.inference.v3.constraints import ConstraintSet
+from bidking_lab.inference.v3.constraints import ConstraintSet, ItemAnchor, ShapeAnchor
 from bidking_lab.inference.v3.summary import BucketFeasibleSummary, FeasibleSummaryReport
 from bidking_lab.inference.v3.truth import decision_truth_from_session_truth
 
@@ -214,6 +214,10 @@ def _truth_total_count(truth: SessionTruth) -> int:
     return sum(int(bucket.count) for bucket in truth.buckets.values())
 
 
+def _truth_items(truth: SessionTruth) -> tuple[Item, ...]:
+    return tuple(item for bucket in truth.buckets.values() for item in bucket.items)
+
+
 def _bucket_matches(
     truth: SessionTruth,
     bucket: BucketFeasibleSummary,
@@ -343,9 +347,180 @@ def _bucket_log_likelihood(
     ))
 
 
+def _shape_dimensions(shape_key: str | int | None) -> tuple[int, int] | None:
+    if shape_key in (None, ""):
+        return None
+    try:
+        code = int(shape_key)
+    except (TypeError, ValueError):
+        return None
+    width = code // 10
+    height = code % 10
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def _item_area(item: Item) -> int:
+    return int(item.shape_w) * int(item.shape_h)
+
+
+def _item_matches_categories(item: Item, categories: tuple[int, ...]) -> bool:
+    if not categories:
+        return True
+    item_categories = {int(category) for category in item.tags}
+    return any(int(category) in item_categories for category in categories)
+
+
+def _item_anchor_weight(anchor: ItemAnchor) -> float:
+    weight = 0.0
+    if anchor.item_id is not None:
+        weight += 3.0
+    if anchor.value is not None:
+        weight += 2.0
+    if anchor.categories:
+        weight += 1.5
+    if anchor.shape_key is not None or anchor.cells is not None:
+        weight += 1.0
+    if anchor.quality is not None:
+        weight += 0.5
+    return max(weight, 0.5)
+
+
+def _shape_anchor_weight(anchor: ShapeAnchor) -> float:
+    weight = 1.0
+    if anchor.quality is not None:
+        weight += 0.5
+    if anchor.item_id is not None:
+        weight += 1.5
+    return weight
+
+
+def _item_matches_item_anchor(item: Item, anchor: ItemAnchor) -> bool:
+    if anchor.item_id is not None and int(item.item_id) != int(anchor.item_id):
+        return False
+    if anchor.quality is not None and int(item.quality) != int(anchor.quality):
+        return False
+    if anchor.value is not None and int(item.value) != int(anchor.value):
+        return False
+    if anchor.cells is not None and _item_area(item) != int(anchor.cells):
+        return False
+    dims = _shape_dimensions(anchor.shape_key)
+    if dims is not None and (int(item.shape_w), int(item.shape_h)) != dims:
+        return False
+    if not _item_matches_categories(item, anchor.categories):
+        return False
+    return True
+
+
+def _item_matches_shape_anchor(item: Item, anchor: ShapeAnchor) -> bool:
+    if anchor.item_id is not None and int(item.item_id) != int(anchor.item_id):
+        return False
+    if anchor.quality is not None and int(item.quality) != int(anchor.quality):
+        return False
+    if _item_area(item) != int(anchor.cells):
+        return False
+    dims = _shape_dimensions(anchor.shape_key)
+    if dims is not None and (int(item.shape_w), int(item.shape_h)) != dims:
+        return False
+    return True
+
+
+def _consume_best_match(
+    items: tuple[Item, ...],
+    used: set[int],
+    predicate: Any,
+) -> bool:
+    for index, item in enumerate(items):
+        if index in used:
+            continue
+        if predicate(item):
+            used.add(index)
+            return True
+    return False
+
+
+def _anchor_log_likelihood(
+    truth: SessionTruth,
+    constraints: ConstraintSet | None,
+) -> float:
+    if constraints is None:
+        return 0.0
+    items = _truth_items(truth)
+    if not items:
+        return 0.0
+    used: set[int] = set()
+    miss_weight = 0.0
+    total_weight = 0.0
+    for anchor in constraints.item_anchors.values():
+        weight = _item_anchor_weight(anchor)
+        total_weight += weight
+        matched = _consume_best_match(
+            items,
+            used,
+            lambda item, anchor=anchor: _item_matches_item_anchor(item, anchor),
+        )
+        if not matched:
+            miss_weight += weight
+    for anchor in constraints.shape_anchors.values():
+        if anchor.key in constraints.item_anchors:
+            continue
+        weight = _shape_anchor_weight(anchor)
+        total_weight += weight
+        matched = _consume_best_match(
+            items,
+            used,
+            lambda item, anchor=anchor: _item_matches_shape_anchor(item, anchor),
+        )
+        if not matched:
+            miss_weight += weight
+    if total_weight <= 0.0:
+        return 0.0
+    miss_ratio = miss_weight / total_weight
+    return -min(18.0, 0.75 * miss_weight + 3.0 * miss_ratio * miss_ratio)
+
+
+def _anchor_likelihood_weights(
+    truths: Sequence[SessionTruth],
+    constraints: ConstraintSet | None,
+    *,
+    temperature: float = 4.0,
+    relative_floor: float = 1e-8,
+) -> tuple[tuple[float, ...] | None, float]:
+    if constraints is None or not truths:
+        return None, 0.0
+    if not constraints.item_anchors and not constraints.shape_anchors:
+        return None, 0.0
+    log_weights = np.asarray(
+        [_anchor_log_likelihood(truth, constraints) for truth in truths],
+        dtype=np.float64,
+    )
+    finite = np.isfinite(log_weights)
+    if not finite.any():
+        return None, 0.0
+    max_log = float(log_weights[finite].max())
+    relative = np.zeros(len(log_weights), dtype=np.float64)
+    relative[finite] = np.exp(
+        (log_weights[finite] - max_log) / max(float(temperature), 1e-9)
+    )
+    keep = relative >= max(float(relative_floor), 0.0)
+    if not keep.any():
+        return None, 0.0
+    weights = relative[keep]
+    if len(weights) != len(truths):
+        return None, 0.0
+    total = float(weights.sum())
+    if total <= 0.0:
+        return None, 0.0
+    ess = float(total * total / float(np.square(weights).sum()))
+    return tuple(float(weight) for weight in weights), ess
+
+
 def _summary_log_likelihood(
     truth: SessionTruth,
     summary: FeasibleSummaryReport,
+    *,
+    constraints: ConstraintSet | None = None,
 ) -> float:
     total_count = _truth_total_count(truth)
     total_cells = int(truth.warehouse_total_cells)
@@ -389,12 +564,14 @@ def _summary_log_likelihood(
     ))
     for bucket in summary.buckets:
         score += _bucket_log_likelihood(truth, bucket)
+    score += _anchor_log_likelihood(truth, constraints)
     return score
 
 
 def _summary_likelihood_matches(
     truths: Sequence[SessionTruth],
     summary: FeasibleSummaryReport,
+    constraints: ConstraintSet | None,
     *,
     relative_floor: float = 1e-8,
     temperature: float = 4.0,
@@ -402,7 +579,10 @@ def _summary_likelihood_matches(
     if not truths:
         return (), (), 0.0
     log_weights = np.asarray(
-        [_summary_log_likelihood(truth, summary) for truth in truths],
+        [
+            _summary_log_likelihood(truth, summary, constraints=constraints)
+            for truth in truths
+        ],
         dtype=np.float64,
     )
     finite = np.isfinite(log_weights)
@@ -444,6 +624,14 @@ def estimate_q6_posterior_from_truths(
     matched = strict_matched
     matched_weights: tuple[float, ...] | None = None
     match_scope = "strict"
+    if strict_matched:
+        matched_weights, effective_n = _anchor_likelihood_weights(
+            strict_matched,
+            constraints,
+        )
+        if matched_weights is not None:
+            diagnostics.append("anchor_likelihood_weighted")
+            diagnostics.append(f"anchor_likelihood_effective_samples={effective_n:.3f}")
     if n_total <= 0:
         diagnostics.append("no_prior_samples")
     if n_total > 0 and not strict_matched and summary.feasible:
@@ -451,6 +639,7 @@ def estimate_q6_posterior_from_truths(
         matched, matched_weights, effective_n = _summary_likelihood_matches(
             truths,
             summary,
+            constraints,
         )
         if matched:
             match_scope = "summary_likelihood"
