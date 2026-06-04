@@ -2849,3 +2849,30 @@ python scripts/demo_shipwreck_r4_inference.py           # Phase 1A 推断 demo
     为 `41 passed`。
   - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 24 --archive-n-trials 20 --archive-shadow-trials 20 --archive-debug-shadows --format json`
     输出上述覆盖率。
+
+### 2026-06-04 追加：residual 槽位语义与全仓先验字段
+
+- 复核后把 Aisha 2506 根因表述收窄：当前 live 地图 2506/2501/2401/2403 的掉落池均为
+  `n_min=n_max=1`，因此不是“一个 drop 槽掉多件导致件数/槽位折算错误”。实际问题是高信息 Aisha
+  prefix 先填入大量 q1-q4 shape/layout 目标后，剩余未知 item slots 很少，而 q6 在剩余 slots 中仍按
+  原始低概率/低 tail-value 分布抽样，导致 q6 件数、格数和价值 P90 系统性偏低。`aisha_deep_floor1`
+  仍是当前正式修复；不应把它误解释为全局多件掉落修复。
+- 条件采样器仍补了一层语义防线：无精确总件数时，已知 bucket 物品会按掉落池期望 `n_min/n_max`
+  折算为已用 draw slots；layout-only footprint 只提高最低总 draw slots，不会被当作已填 bucket
+  扣掉。新增单测覆盖“每槽固定掉 2 件”场景，防止未来多件掉落地图再次把 residual 抽样空间扣没。
+  对当前 n=1 live 地图该改动应为等价行为。
+- 新增全仓 Drop 先验期望字段：`PosteriorReport.prior_expected_count/cells/value/decision_value`，
+  live `v2_posterior_rows` 显示为 `先验件数/先验格数/先验原始价值/先验决策价值`，`model_eval` 透传为
+  `v2_prior_expected_*`。`prior_expected_decision_value` 复用现有 plannable tail 裁剪逻辑，避免未证实的
+  极端尾部直接污染实战主估值。
+- 只读实验：最近 72h 的 25 个 pre-bid rows 上，简单 early-round 全仓先验 P50 shrinkage 会把
+  median abs P50 error 从约 `142,264` 推高到 `181,974-261,395`，主要因为 Gabriela 低真值局会被全仓
+  先验抬高；直接用全仓先验作 P90 floor 也没有提高 q6>0 覆盖。因此“信息少时先验+后验”方向保留，
+  但不能全局启用，下一步只适合按 q6/random_avg/hero/map/evidence profile 做 shadow 门控评估。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests/test_inference_v2.py tests/test_live_monitor.py tests/test_runtime_snapshot.py -q`
+    为 `90 passed`。
+  - `C:\Python313\python.exe -m pytest -q` 为 `826 passed`。
+  - `C:\Python313\python.exe scripts\compare_q6_residual_boost.py --trials 20 --configs baseline aisha_deep_floor1 profile_b5 --format json --no-progress`
+    仍显示 `aisha_deep_floor1` MAE 最好：baseline `401,660`、profile_b5 `378,942`、aisha_deep_floor1
+    `363,336`；profile_b5 q6 覆盖更高但无 q6 正报金额中位上升，继续只作 shadow。

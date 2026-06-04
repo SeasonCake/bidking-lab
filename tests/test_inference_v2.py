@@ -624,6 +624,32 @@ def test_quality_drop_prior_uses_drop_weights_and_count_ranges() -> None:
     assert abs(prior.expected_session_value - (2 * 444_000 / 1002)) < 1e-12
 
 
+def test_session_drop_prior_uses_drop_weights_and_count_ranges() -> None:
+    maps, drops, items = _tables()
+    sampler = ConditionalSampler(
+        build_residual_problem(
+            2401,
+            EvidenceStoreBuilder().build(),
+            maps=maps,
+            drops=drops,
+            items=items,
+        ),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+
+    prior = sampler.session_drop_prior()
+
+    assert prior is not None
+    expected_cells_per_draw = (2 + 999 + 1 + 16) / 1002
+    expected_value_per_draw = (3_240 + 999 * 100 + 30_000 + 444_000) / 1002
+    assert abs(prior.expected_session_count - 2) < 1e-12
+    assert abs(prior.expected_session_cells - 2 * expected_cells_per_draw) < 1e-12
+    assert abs(prior.expected_session_value - 2 * expected_value_per_draw) < 1e-12
+    assert prior.expected_session_decision_value == prior.expected_session_value
+
+
 def test_q6_residual_boost_only_changes_residual_sampling_weights() -> None:
     maps, drops, items = _tables()
     problem = build_residual_problem(
@@ -1519,6 +1545,92 @@ def test_layout_footprint_count_guides_total_draws() -> None:
     assert problem.layout.trusted_footprint_count == 4
     assert sum(bucket.count for bucket in truth.buckets.values()) >= 4
     assert layout_feasibility_score(truth, problem.layout) > 0
+
+
+def test_residual_draw_budget_uses_drop_slots_not_observed_item_count() -> None:
+    known_low = _item(1010001, quality=1, value=100, shape=(1, 1), tags=[101])
+    red = _item(1060001, quality=6, value=400_000, shape=(1, 1), tags=[106])
+    maps = {
+        2404: BidMap(
+            map_id=2404,
+            name="multi_count_drop_map",
+            description="",
+            category=101,
+            auction_mode="open",
+            sub_pool_weights=[],
+            rounds_total=5,
+            entry_fee_silver=0,
+            starting_budget_silver=100_000,
+            drop_pool_id=9004,
+            items_per_session_min=2,
+            items_per_session_max=2,
+            value_tier_ui="",
+            mode_flag=4,
+            bid_price_ladder=[],
+            raw_row=[],
+        )
+    }
+    drops = {
+        9004: DropPool(
+            pool_id=9004,
+            name="multi_count_pool",
+            description="",
+            pool_type=2,
+            entries=[
+                DropEntry(
+                    category=101,
+                    item_id=known_low.item_id,
+                    n_min=2,
+                    n_max=2,
+                    weight=1,
+                ),
+                DropEntry(
+                    category=106,
+                    item_id=red.item_id,
+                    n_min=2,
+                    n_max=2,
+                    weight=1_000_000,
+                ),
+            ],
+        )
+    }
+    items = {known_low.item_id: known_low, red.item_id: red}
+    builder = EvidenceStoreBuilder()
+    for local_index in range(2):
+        builder.add_item(
+            RuntimeEvidence(
+                local_index=local_index,
+                quality=1,
+                shape_key="11",
+                cells=1,
+                sources=("action:100160",),
+            )
+        )
+    obs = SessionObs(
+        map_id=2404,
+        hero="aisha",
+        buckets={1: QualityBucketObs(quality=1, total_cells=2, count=2)},
+    )
+    problem = build_residual_problem(
+        2404,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+    pool = sampler._sampler.pools[0]
+
+    assert sampler._estimated_draws_for_item_count(
+        pool,
+        item_count=2,
+    ) == 1
+
+    truth = sampler.sample(rng=np.random.default_rng(5))
+
+    assert truth.buckets[1].count == 2
+    assert truth.buckets[6].count == 2
 
 
 def test_conflicting_layout_footprints_report_relaxed_count_diagnostic() -> None:

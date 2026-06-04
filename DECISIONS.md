@@ -1036,3 +1036,14 @@ prefix 会把 residual draws 挤掉，造成 R3/R4 q6 样本率塌到接近 0；
 27 个 paired q6 miss、无 no-q6 new-positive，最新 25 个 pre-bid 窗口 overall P90 覆盖 `0.52 -> 0.65`。
 artifact/model_eval 写入 `q6_formal_prior_floor_*` 字段作为追踪边界。Ethan villa random_avg 仍留在
 shadow/diagnostic，下一步需单独做 random_avg likelihood 或 q6/tail sampler 校准。
+
+**更新 5**：不要把“信息少时混全仓先验”直接升级为正式 P50/P90。最新只读实验显示，按早轮把 P50
+向全仓 Drop 先验收缩会恶化最近 25 个 pre-bid 窗口的 median abs P50 error，原因是低真值 Gabriela
+等普通局会被先验抬高；全仓先验 P90 floor 也没有覆盖新增 q6 miss。决策是先记录 `v2_prior_expected_*`
+字段，用它做后续 shadow 分组和门控实验。若要使用先验，优先只在 q6/random_avg/hero/map/evidence profile
+证明有正净收益的组合上使用，并保留 public max quality、exact count 和 no-q6 control 约束。
+
+**更新 6**：Aisha 2506 的“residual 被挤掉”主要是剩余未知 item slots 变少和 q6 residual 概率/价值分布偏低，
+不是当前地图的多件掉落槽位折算错误。已修复条件采样器中无精确总件数场景的 draw-slot 语义：已知 bucket
+物品按掉落池期望件数折算为已用 draw slots，layout-only footprint 只提高最低总 draw slots。该修复对当前
+`n_min=n_max=1` live 地图应为等价行为，但能防止未来多件掉落地图重新压扁 residual 空间。

@@ -286,6 +286,26 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
                 getattr(report, "tail_replacement_decision_value", None)
             ),
             "原始价值 P10/P50/P90": _format_quantile_interval(report.total_value),
+            "先验件数": (
+                f"{report.prior_expected_count:.2f}"
+                if getattr(report, "prior_expected_count", None) is not None
+                else ""
+            ),
+            "先验格数": (
+                f"{report.prior_expected_cells:.1f}"
+                if getattr(report, "prior_expected_cells", None) is not None
+                else ""
+            ),
+            "先验原始价值": (
+                f"{report.prior_expected_value:,.0f}"
+                if getattr(report, "prior_expected_value", None) is not None
+                else ""
+            ),
+            "先验决策价值": (
+                f"{report.prior_expected_decision_value:,.0f}"
+                if getattr(report, "prior_expected_decision_value", None) is not None
+                else ""
+            ),
             "q6价值 P10/P50/P90": _format_quantile_interval(report.q6_value),
             "q6决策价值 P10/P50/P90": _format_quantile_interval(
                 getattr(report, "q6_decision_value", None)
@@ -1429,6 +1449,10 @@ def _model_eval_row(
     q6_prior_expected_count = None
     q6_prior_expected_cells = None
     q6_prior_expected_value = None
+    prior_expected_count = None
+    prior_expected_cells = None
+    prior_expected_value = None
+    prior_expected_decision_value = None
     q6_value_p90 = None
     q6_decision_value_p90 = None
     q6_tail_replacement_estimate_p90 = None
@@ -1508,6 +1532,12 @@ def _model_eval_row(
         q6_prior_expected_count = _parse_float_text(v2_rows[0].get("q6先验件数"))
         q6_prior_expected_cells = _parse_float_text(v2_rows[0].get("q6先验格数"))
         q6_prior_expected_value = _parse_int_text(v2_rows[0].get("q6先验价值"))
+        prior_expected_count = _parse_float_text(v2_rows[0].get("先验件数"))
+        prior_expected_cells = _parse_float_text(v2_rows[0].get("先验格数"))
+        prior_expected_value = _parse_int_text(v2_rows[0].get("先验原始价值"))
+        prior_expected_decision_value = _parse_int_text(
+            v2_rows[0].get("先验决策价值")
+        )
         shape_target_count = _parse_int_text(v2_rows[0].get("形状约束数"))
         category_target_count = _parse_int_text(v2_rows[0].get("分类约束数"))
         category_exclusion_count = _parse_int_text(v2_rows[0].get("分类反排数"))
@@ -1720,6 +1750,10 @@ def _model_eval_row(
         "v2_q6_prior_expected_count": q6_prior_expected_count,
         "v2_q6_prior_expected_cells": q6_prior_expected_cells,
         "v2_q6_prior_expected_value": q6_prior_expected_value,
+        "v2_prior_expected_count": prior_expected_count,
+        "v2_prior_expected_cells": prior_expected_cells,
+        "v2_prior_expected_value": prior_expected_value,
+        "v2_prior_expected_decision_value": prior_expected_decision_value,
         "v2_q6_value_p90": q6_value_p90,
         "v2_q6_decision_value_p90": q6_decision_value_p90,
         "v2_q6_tail_replacement_estimate_p90": q6_tail_replacement_estimate_p90,

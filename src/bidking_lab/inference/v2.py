@@ -316,6 +316,16 @@ class QualityDropPrior:
 
 
 @dataclass(frozen=True)
+class SessionDropPrior:
+    """Drop-table prior for the whole session before runtime evidence filters it."""
+
+    expected_session_count: float
+    expected_session_cells: float
+    expected_session_value: float
+    expected_session_decision_value: float
+
+
+@dataclass(frozen=True)
 class PosteriorReport:
     """Unified posterior summary produced by the v2 conditional sampler."""
 
@@ -344,6 +354,10 @@ class PosteriorReport:
     q6_prior_expected_count: float | None = None
     q6_prior_expected_cells: float | None = None
     q6_prior_expected_value: float | None = None
+    prior_expected_count: float | None = None
+    prior_expected_cells: float | None = None
+    prior_expected_value: float | None = None
+    prior_expected_decision_value: float | None = None
     shape_target_count: int = 0
     category_target_count: int = 0
     category_exclusion_count: int = 0
@@ -1461,6 +1475,49 @@ class ConditionalSampler:
             expected_session_value=expected_session_value,
         )
 
+    def session_drop_prior(self) -> SessionDropPrior | None:
+        if not self._sampler.pools:
+            return None
+        expected_session_count = 0.0
+        expected_session_cells = 0.0
+        expected_session_value = 0.0
+        expected_session_decision_value = 0.0
+        mean_draws = (
+            self._sampler.items_per_session_min + self._sampler.items_per_session_max
+        ) / 2
+        exact_anchor_ids = set(self.problem.anchor_item_counts)
+        for pool, pool_weight in zip(self._sampler.pools, self._sampler.pool_weights):
+            if len(pool.probabilities) == 0:
+                continue
+            mean_counts = (pool.n_min + pool.n_max) / 2
+            for item, probability, mean_count in zip(
+                pool.items,
+                pool.probabilities,
+                mean_counts,
+            ):
+                expected_item_count = (
+                    float(pool_weight)
+                    * float(probability)
+                    * float(mean_count)
+                    * mean_draws
+                )
+                if expected_item_count <= 0:
+                    continue
+                expected_session_count += expected_item_count
+                expected_session_cells += (
+                    expected_item_count * int(item.shape_w * item.shape_h)
+                )
+                expected_value = expected_item_count * int(item.value)
+                expected_session_value += expected_value
+                if _is_plannable_item(item, self.problem, exact_anchor_ids):
+                    expected_session_decision_value += expected_value
+        return SessionDropPrior(
+            expected_session_count=expected_session_count,
+            expected_session_cells=expected_session_cells,
+            expected_session_value=expected_session_value,
+            expected_session_decision_value=expected_session_decision_value,
+        )
+
     def tail_replacement_values(self) -> dict[tuple[int, int, int], int]:
         """Map ``(quality, width, height)`` to map-weighted ordinary item P50."""
 
@@ -1490,6 +1547,22 @@ class ConditionalSampler:
             if summary is not None:
                 out[key] = int(round(summary.p50))
         return out
+
+    def _expected_items_per_draw(self, pool: Any) -> float:
+        mean_counts = (pool.n_min + pool.n_max) / 2
+        expected = float((pool.probabilities * mean_counts).sum())
+        return max(1.0, expected)
+
+    def _estimated_draws_for_item_count(
+        self,
+        pool: Any,
+        *,
+        item_count: int,
+    ) -> int:
+        if item_count <= 0:
+            return 0
+        expected_items_per_draw = self._expected_items_per_draw(pool)
+        return max(1, int(math.ceil(int(item_count) / expected_items_per_draw)))
 
     def sample(self, rng: np.random.Generator | None = None) -> SessionTruth:
         rng = rng or np.random.default_rng()
@@ -1531,15 +1604,23 @@ class ConditionalSampler:
             and self.problem.total_item_count >= current_count
         ):
             total_draws = int(self.problem.total_item_count)
+            residual_draws = max(0, total_draws - current_count)
         else:
+            used_draws = self._estimated_draws_for_item_count(
+                pool,
+                item_count=current_count,
+            )
+            observed_min_draws = self._estimated_draws_for_item_count(
+                pool,
+                item_count=max(current_count, self.problem.layout.footprint_count),
+            )
             draw_min = max(
                 self._sampler.items_per_session_min,
-                current_count,
-                self.problem.layout.footprint_count,
+                observed_min_draws,
             )
             draw_max = max(self._sampler.items_per_session_max, draw_min)
             total_draws = int(rng.integers(draw_min, draw_max + 1))
-        residual_draws = max(0, total_draws - current_count)
+            residual_draws = max(0, total_draws - used_draws)
         if residual_draws and self.problem.total_item_count is not None:
             filled_exact_cells = False
             if self.problem.warehouse_total_cells is not None:
@@ -2710,6 +2791,7 @@ def _estimate_posterior_for_problem(
         q6_residual_boost=q6_residual_boost,
         q6_residual_prior_floor_ratio=q6_residual_prior_floor_ratio,
     )
+    session_prior = sampler.session_drop_prior()
     q6_prior = sampler.quality_drop_prior(6)
     tail_replacement_values = sampler.tail_replacement_values()
     rng = np.random.default_rng(seed)
@@ -2951,6 +3033,20 @@ def _estimate_posterior_for_problem(
         q6_prior_expected_value=(
             q6_prior.expected_session_value if q6_prior is not None else None
         ),
+        prior_expected_count=(
+            session_prior.expected_session_count if session_prior is not None else None
+        ),
+        prior_expected_cells=(
+            session_prior.expected_session_cells if session_prior is not None else None
+        ),
+        prior_expected_value=(
+            session_prior.expected_session_value if session_prior is not None else None
+        ),
+        prior_expected_decision_value=(
+            session_prior.expected_session_decision_value
+            if session_prior is not None
+            else None
+        ),
         shape_target_count=len(problem.shape_targets),
         category_target_count=len(problem.category_targets),
         category_exclusion_count=sum(
@@ -3057,6 +3153,7 @@ __all__ = (
     "LayoutFeasibility",
     "PosteriorReport",
     "QualityDropPrior",
+    "SessionDropPrior",
     "RANDOM_SAMPLE_HARD_FLOOR_MAX_MIN_MATCHED",
     "RANDOM_SAMPLE_HARD_FLOOR_EXTRA_TRIALS",
     "RANDOM_SAMPLE_HARD_FLOOR_MIN_MATCHED",
