@@ -8,6 +8,8 @@ from typing import Any
 RANDOM_SAMPLE_AVG_PROFILE_SIGNAL_FLOOR = 20_000.0
 AISHA_BOTTOM_ROW_RISK_THRESHOLD = 16
 AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD = 13
+AISHA_SHIPWRECK_DEEP12_ROW_THRESHOLD = 12
+AISHA_SHIPWRECK_DEEP11_ROW_THRESHOLD = 11
 AISHA_Q6_QUALITY_ONLY_DEEP_ROW_THRESHOLD = 13
 
 
@@ -27,6 +29,15 @@ ETHAN_VILLA_RANDOM_AVG_Q6_RESIDUAL_BOOST_PROFILES = frozenset(
     {
         ("ethan", "villa", "public:random_avg+layout"),
         ("ethan", "villa", "public:random_avg+shape+layout"),
+    }
+)
+ETHAN_VILLA_RANDOM_AVG_Q6_PRIOR_FLOOR_PROFILES = (
+    ETHAN_VILLA_RANDOM_AVG_Q6_RESIDUAL_BOOST_PROFILES
+)
+ETHAN_SHIPWRECK_LAYOUT_Q6_CONDITIONAL_TARGET_PROFILES = frozenset(
+    {
+        ("ethan", "shipwreck", "layout"),
+        ("ethan", "shipwreck", "public:random_avg+layout"),
     }
 )
 AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES = frozenset(
@@ -190,6 +201,19 @@ def q6_residual_boost_for_profile(
     return 1.0
 
 
+def _aisha_shipwreck_profile_active(
+    key: tuple[str, str, str],
+    *,
+    bottom_row: int | None,
+    threshold: int,
+) -> bool:
+    return (
+        key in AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES
+        and bottom_row is not None
+        and int(bottom_row) >= threshold
+    )
+
+
 def q6_residual_prior_floor_ratio_for_profile(
     *,
     hero: str | None,
@@ -221,17 +245,41 @@ def q6_residual_prior_floor_ratio_for_profile(
     if gate == "aisha_shipwreck_bottom_v1":
         return (
             requested_ratio
-            if key in AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES
-            and bottom_row is not None
-            and int(bottom_row) >= AISHA_BOTTOM_ROW_RISK_THRESHOLD
+            if _aisha_shipwreck_profile_active(
+                key,
+                bottom_row=bottom_row,
+                threshold=AISHA_BOTTOM_ROW_RISK_THRESHOLD,
+            )
             else 0.0
         )
     if gate == "aisha_shipwreck_deep_v1":
         return (
             requested_ratio
-            if key in AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES
-            and bottom_row is not None
-            and int(bottom_row) >= AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD
+            if _aisha_shipwreck_profile_active(
+                key,
+                bottom_row=bottom_row,
+                threshold=AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD,
+            )
+            else 0.0
+        )
+    if gate == "aisha_shipwreck_deep12_v1":
+        return (
+            requested_ratio
+            if _aisha_shipwreck_profile_active(
+                key,
+                bottom_row=bottom_row,
+                threshold=AISHA_SHIPWRECK_DEEP12_ROW_THRESHOLD,
+            )
+            else 0.0
+        )
+    if gate == "aisha_shipwreck_deep11_v1":
+        return (
+            requested_ratio
+            if _aisha_shipwreck_profile_active(
+                key,
+                bottom_row=bottom_row,
+                threshold=AISHA_SHIPWRECK_DEEP11_ROW_THRESHOLD,
+            )
             else 0.0
         )
     if gate == "aisha_hidden_v1":
@@ -246,15 +294,80 @@ def q6_residual_prior_floor_ratio_for_profile(
             if key in AISHA_VILLA_V1_Q6_RESIDUAL_PROFILES
             else 0.0
         )
+    if gate == "ethan_villa_random_avg_v1":
+        return (
+            requested_ratio
+            if key in ETHAN_VILLA_RANDOM_AVG_Q6_PRIOR_FLOOR_PROFILES
+            else 0.0
+        )
     if gate == "aisha_deep_or_hidden_v1":
         if (
-            key in AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES
-            and bottom_row is not None
-            and int(bottom_row) >= AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD
+            _aisha_shipwreck_profile_active(
+                key,
+                bottom_row=bottom_row,
+                threshold=AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD,
+            )
         ) or key in AISHA_HIDDEN_V1_Q6_RESIDUAL_PROFILES:
             return requested_ratio
         return 0.0
     return 0.0
+
+
+def q6_residual_value_power_for_profile(
+    *,
+    hero: str | None,
+    map_family: str,
+    evidence_profile_key: str,
+    requested_power: float,
+    gate: str,
+    bottom_row: int | None = None,
+) -> float:
+    """Return active q6 residual value-tilt power for a named profile gate."""
+    if requested_power <= 0:
+        return 0.0
+    if gate == "all":
+        return requested_power
+    key = (str(hero or "").lower(), map_family, evidence_profile_key)
+    if gate == "aisha_shipwreck_profile_v1":
+        return (
+            requested_power
+            if key in AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES
+            else 0.0
+        )
+    if gate == "aisha_shipwreck_deep_v1":
+        return (
+            requested_power
+            if key in AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES
+            and bottom_row is not None
+            and int(bottom_row) >= AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD
+            else 0.0
+        )
+    if gate == "ethan_villa_random_avg_v1":
+        return (
+            requested_power
+            if key in ETHAN_VILLA_RANDOM_AVG_Q6_PRIOR_FLOOR_PROFILES
+            else 0.0
+        )
+    return 0.0
+
+
+def q6_conditional_target_active_for_profile(
+    *,
+    hero: str | None,
+    map_family: str,
+    evidence_profile_key: str,
+    gate: str,
+) -> bool:
+    """Return whether an experimental q6 conditional target gate is active."""
+
+    if gate in {"", "none"}:
+        return False
+    if gate == "all":
+        return True
+    key = (str(hero or "").lower(), map_family, evidence_profile_key)
+    if gate == "ethan_shipwreck_layout_v1":
+        return key in ETHAN_SHIPWRECK_LAYOUT_Q6_CONDITIONAL_TARGET_PROFILES
+    return False
 
 
 __all__ = (
@@ -264,14 +377,20 @@ __all__ = (
     "AISHA_VILLA_V1_Q6_RESIDUAL_PROFILES",
     "AISHA_BOTTOM_ROW_RISK_THRESHOLD",
     "AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD",
+    "AISHA_SHIPWRECK_DEEP12_ROW_THRESHOLD",
+    "AISHA_SHIPWRECK_DEEP11_ROW_THRESHOLD",
+    "ETHAN_VILLA_RANDOM_AVG_Q6_PRIOR_FLOOR_PROFILES",
     "ETHAN_VILLA_RANDOM_AVG_Q6_RESIDUAL_BOOST_PROFILES",
+    "ETHAN_SHIPWRECK_LAYOUT_Q6_CONDITIONAL_TARGET_PROFILES",
     "RANDOM_SAMPLE_AVG_PROFILE_SIGNAL_FLOOR",
     "SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_BOOST_PROFILES",
     "actionable_random_sample_avg_values",
     "aisha_bottom_row_risk",
     "aisha_q6_quality_only_deep_local_risk",
     "evidence_profile_key_from_problem",
+    "q6_conditional_target_active_for_profile",
     "q6_quality_only_local_diagnostics",
     "q6_residual_boost_for_profile",
     "q6_residual_prior_floor_ratio_for_profile",
+    "q6_residual_value_power_for_profile",
 )

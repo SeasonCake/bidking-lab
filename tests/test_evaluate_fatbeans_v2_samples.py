@@ -113,6 +113,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "v2_value_p50_error": -100_000,
             "v2_decision_value_p50_error": -80_000,
             "v2_value_p90_error": -20_000,
+            "v2_decision_value_p90_error": -100_000,
             "v2_value_p90_covers_final": False,
             "v2_q6_value_p90": 300_000,
             "v2_q6_decision_value_p90": 300_000,
@@ -168,6 +169,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
             "v2_value_p50_error": 50_000,
             "v2_decision_value_p50_error": 40_000,
             "v2_value_p90_error": 100_000,
+            "v2_decision_value_p90_error": 60_000,
             "v2_value_p90_covers_final": True,
             "q6_false_low_risk": False,
             "v2_q6_decision_value_p90": None,
@@ -246,6 +248,14 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     assert summary["tail_event_count"] == 1
     assert summary["regular_decision_value_mae"] == 40_000
     assert summary["tail_event_decision_value_mae"] == 80_000
+    assert summary["decision_value_accuracy"]["decision_value_mae"] == 60_000
+    assert (
+        summary["decision_value_accuracy"]["median_normalized_abs_p50_error"]
+        == 0.067
+    )
+    assert summary["decision_value_accuracy"]["p50_under_rate"] == 0.5
+    assert summary["decision_value_accuracy"]["p90_coverage"] == 0.5
+    assert summary["decision_value_accuracy"]["p90_pinball_loss_mean"] == 48_000
     assert summary["category_evidence"]["target_rows"] == 2
     assert summary["category_evidence"]["exclusion_rows"] == 1
     assert summary["category_evidence"]["target_total"] == 3
@@ -315,6 +325,7 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
     assert summary["groups"]["evidence_profile"][0]["evidence_profile_key"] == (
         "tool:category"
     )
+    assert "q6_cell_gap_by_feature" in summary
 
     experiment = module._summary(rows, q6_residual_floor_ratio=0.75)[
         "q6_residual_floor_experiment"
@@ -344,6 +355,213 @@ def test_summary_reports_q6_priority_and_root_causes() -> None:
         experiment["groups"]["hero_map_family"][0]["q6_p90_miss_improvement"]
         == 1
     )
+
+
+def test_q6_cell_gap_by_feature_splits_count_cells_and_controls() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "file": "aisha_r2.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "capture_round": 2,
+            "evidence_stage": "early_1_2",
+            "information_density_band": "medium",
+            "evidence_profile_key": "shape+layout",
+            "random_sample_avg_signal_band": "none",
+            "public_avg_cells_solution_band": "none",
+            "q6_top_size_band": "q6_top_huge",
+            "footprint_bottom_row": 11,
+            "final_q6_count": 6,
+            "final_q6_cells": 57,
+            "final_q6_decision_value": 1_000_000,
+            "v2_q6_count_p90": 4,
+            "v2_q6_cells_p90": 12,
+            "v2_q6_decision_value_p90": 700_000,
+            "v2_q6_prior_expected_count": 4.5,
+            "v2_q6_prior_expected_cells": 25.0,
+            "v2_q6_count_p90_under_by": 2,
+            "v2_q6_cells_p90_under_by": 45,
+            "v2_q6_count_p90_under_prior_by": 0.5,
+            "v2_q6_cells_p90_under_prior_by": 13.0,
+            "v2_q6_decision_value_p90_under_by": 300_000,
+            "q6_plannable_p90_misses_truth": True,
+        },
+        {
+            "status": "ok",
+            "file": "aisha_no_q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "capture_round": 2,
+            "evidence_stage": "early_1_2",
+            "information_density_band": "medium",
+            "evidence_profile_key": "shape+layout",
+            "random_sample_avg_signal_band": "none",
+            "public_avg_cells_solution_band": "none",
+            "q6_top_size_band": "no_q6",
+            "footprint_bottom_row": 11,
+            "final_q6_count": 0,
+            "final_q6_cells": 0,
+            "final_q6_decision_value": 0,
+            "v2_q6_decision_value_p90": 180_000,
+            "q6_plannable_p90_misses_truth": False,
+        },
+        {
+            "status": "ok",
+            "file": "aisha_r4.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "capture_round": 4,
+            "evidence_stage": "mid_3_4",
+            "information_density_band": "high",
+            "evidence_profile_key": "shape+layout",
+            "random_sample_avg_signal_band": "none",
+            "public_avg_cells_solution_band": "all_unique",
+            "q6_top_size_band": "q6_top_large",
+            "footprint_bottom_row": 14,
+            "final_q6_count": 4,
+            "final_q6_cells": 20,
+            "final_q6_decision_value": 400_000,
+            "v2_q6_count_p90": 4,
+            "v2_q6_cells_p90": 22,
+            "v2_q6_decision_value_p90": 450_000,
+            "v2_q6_prior_expected_count": 3.5,
+            "v2_q6_prior_expected_cells": 18.0,
+            "v2_q6_count_p90_under_by": 0,
+            "v2_q6_cells_p90_under_by": 0,
+            "v2_q6_count_p90_under_prior_by": 0,
+            "v2_q6_cells_p90_under_prior_by": 0,
+            "v2_q6_decision_value_p90_under_by": 0,
+            "q6_plannable_p90_misses_truth": False,
+        },
+    ]
+
+    summary = module._q6_cell_gap_by_feature_summary(rows)
+
+    assert summary["audit_only"] is True
+    assert summary["q6_plannable_truth_rows"] == 2
+    assert summary["q6_plannable_miss_rows"] == 1
+    assert summary["q6_count_and_cells_under_miss_rows"] == 1
+    assert summary["no_q6_control_rows"] == 1
+    assert summary["no_q6_p90_positive_rows"] == 1
+
+    profile = summary["feature_groups"]["hero_map_profile"][0]
+    assert profile["group"] == (
+        "hero=aisha|map_family=shipwreck|evidence_profile_key=shape+layout"
+    )
+    assert profile["q6_plannable_truth_rows"] == 2
+    assert profile["q6_plannable_miss_rows"] == 1
+    assert profile["q6_plannable_coverage"] == 0.5
+    assert profile["median_truth_count"] == 5
+    assert profile["median_p90_cells"] == 17.0
+    assert profile["no_q6_p90_positive_rate"] == 1.0
+
+    bottom = summary["feature_groups"]["hero_map_bottom_row"][0]
+    assert bottom["group"] == (
+        "hero=aisha|map_family=shipwreck|q6_bottom_row_band=bottom_11_12"
+    )
+    assert bottom["median_cells_under_by"] == 45.0
+    assert bottom["median_prior_cells_gap"] == 13.0
+    assert bottom["examples"][0]["file"] == "aisha_r2.json"
+
+    deep = summary["feature_groups"]["aisha_shipwreck_deep_band"][0]
+    assert deep["group"] == (
+        "aisha_shipwreck_deep_band=aisha_shipwreck_deep11_12_shadow|"
+        "evidence_profile_key=shape+layout"
+    )
+    assert deep["q6_count_below_prior_rows"] == 1
+
+    prior_gap = summary["feature_groups"]["hero_map_prior_gap"][0]
+    assert prior_gap["group"] == (
+        "hero=aisha|map_family=shipwreck|"
+        "q6_prior_gap_kind=count_and_cells_below_prior"
+    )
+
+
+def test_q6_conditional_target_experiment_reports_help_and_control_risk() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "file": "miss.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 13,
+            "final_q6_count": 4,
+            "final_q6_cells": 12,
+            "final_q6_decision_value": 500,
+            "v2_q6_count_p90": 1,
+            "v2_q6_cells_p90": 2,
+            "v2_q6_decision_value_p90": 200,
+            "v2_q6_count_p90_under_by": 3,
+            "v2_q6_cells_p90_under_by": 10,
+            "v2_q6_decision_value_p90_under_by": 300,
+            "q6_plannable_p90_misses_truth": True,
+        },
+        {
+            "status": "ok",
+            "file": "covered.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 13,
+            "final_q6_count": 2,
+            "final_q6_cells": 6,
+            "final_q6_decision_value": 300,
+            "v2_q6_count_p90": 2,
+            "v2_q6_cells_p90": 6,
+            "v2_q6_decision_value_p90": 350,
+            "v2_q6_count_p90_under_by": 0,
+            "v2_q6_cells_p90_under_by": 0,
+            "v2_q6_decision_value_p90_under_by": 0,
+            "q6_plannable_p90_misses_truth": False,
+        },
+        {
+            "status": "ok",
+            "file": "control.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 13,
+            "final_q6_count": 0,
+            "final_q6_cells": 0,
+            "final_q6_decision_value": 0,
+            "v2_q6_count_p90": 0,
+            "v2_q6_cells_p90": 0,
+            "v2_q6_decision_value_p90": 0,
+            "q6_plannable_p90_misses_truth": False,
+        },
+    ]
+
+    experiment = module._q6_conditional_target_experiment(
+        rows,
+        name="test",
+        keys=("hero", "map_family", "evidence_profile_key"),
+        target_quantile=1.0,
+        shrinkage_k=0.0,
+        min_q6_truth=2,
+        min_miss_rows=1,
+    )
+
+    assert experiment["candidate_groups"] == 1
+    assert experiment["q6_misses_before"] == 1
+    assert experiment["q6_misses_after"] == 0
+    assert experiment["q6_helped_rows"] == 1
+    assert experiment["active_no_q6_rows"] == 1
+    assert experiment["no_q6_increased_rows"] == 1
+    assert experiment["no_q6_new_positive_rows"] == 1
+    assert experiment["groups"][0]["target_count"] == 4.0
+    assert experiment["groups"][0]["target_cells"] == 12.0
+    assert experiment["groups"][0]["target_value"] == 500
+    assert experiment["helped_examples"][0]["file"] == "miss.json"
+    assert experiment["no_q6_increased_examples"][0]["file"] == "control.json"
+
+    summary = module._q6_conditional_target_experiment_summary(rows)
+    assert summary["audit_only"] is True
+    assert summary["in_sample_upper_bound"] is True
+    assert "configs" in summary
 
 
 def test_q6_count_cell_prior_floor_experiment_is_separate_from_raw_floor() -> None:
@@ -549,6 +767,38 @@ def test_q6_residual_boost_profile_gate_is_narrow() -> None:
         map_family="shipwreck",
         evidence_profile_key="shape+layout",
         requested_ratio=0.75,
+        gate="aisha_shipwreck_deep12_v1",
+        bottom_row=12,
+    ) == 0.75
+    assert module.q6_residual_prior_floor_ratio_for_profile(
+        hero="aisha",
+        map_family="shipwreck",
+        evidence_profile_key="shape+layout",
+        requested_ratio=0.75,
+        gate="aisha_shipwreck_deep12_v1",
+        bottom_row=11,
+    ) == 0.0
+    assert module.q6_residual_prior_floor_ratio_for_profile(
+        hero="aisha",
+        map_family="shipwreck",
+        evidence_profile_key="shape+layout",
+        requested_ratio=0.75,
+        gate="aisha_shipwreck_deep11_v1",
+        bottom_row=11,
+    ) == 0.75
+    assert module.q6_residual_prior_floor_ratio_for_profile(
+        hero="aisha",
+        map_family="shipwreck",
+        evidence_profile_key="public:random_avg+layout",
+        requested_ratio=0.75,
+        gate="aisha_shipwreck_deep11_v1",
+        bottom_row=11,
+    ) == 0.0
+    assert module.q6_residual_prior_floor_ratio_for_profile(
+        hero="aisha",
+        map_family="shipwreck",
+        evidence_profile_key="shape+layout",
+        requested_ratio=0.75,
         gate="aisha_shipwreck_bottom_v1",
         bottom_row=16,
     ) == 0.75
@@ -639,6 +889,47 @@ def test_q6_residual_boost_profile_gate_is_narrow() -> None:
         requested_ratio=0.75,
         gate="aisha_villa_shape_layout_v1",
     ) == 0.0
+    assert module.q6_residual_value_power_for_profile(
+        hero="aisha",
+        map_family="shipwreck",
+        evidence_profile_key="shape+layout",
+        requested_power=0.5,
+        gate="aisha_shipwreck_deep_v1",
+        bottom_row=13,
+    ) == 0.5
+    assert module.q6_residual_value_power_for_profile(
+        hero="aisha",
+        map_family="shipwreck",
+        evidence_profile_key="shape+layout",
+        requested_power=0.5,
+        gate="aisha_shipwreck_deep_v1",
+        bottom_row=12,
+    ) == 0.0
+    assert module.q6_residual_value_power_for_profile(
+        hero="ethan",
+        map_family="villa",
+        evidence_profile_key="public:random_avg+layout",
+        requested_power=0.5,
+        gate="ethan_villa_random_avg_v1",
+    ) == 0.5
+    assert module.q6_conditional_target_active_for_profile(
+        hero="ethan",
+        map_family="shipwreck",
+        evidence_profile_key="layout",
+        gate="ethan_shipwreck_layout_v1",
+    )
+    assert module.q6_conditional_target_active_for_profile(
+        hero="ethan",
+        map_family="shipwreck",
+        evidence_profile_key="public:random_avg+layout",
+        gate="ethan_shipwreck_layout_v1",
+    )
+    assert not module.q6_conditional_target_active_for_profile(
+        hero="ethan",
+        map_family="shipwreck",
+        evidence_profile_key="shape+layout",
+        gate="ethan_shipwreck_layout_v1",
+    )
 
 
 def test_q6_residual_boost_summary_reports_activation_and_no_q6_proxy() -> None:
@@ -702,6 +993,7 @@ def test_q6_residual_prior_floor_sampler_summary_reports_activation() -> None:
             "v2_q6_decision_value_p90": 600,
             "q6_plannable_p90_misses_truth": False,
             "q6_residual_prior_floor_ratio": 0.75,
+            "q6_residual_prior_cell_floor_ratio": 3.0,
             "q6_residual_prior_floor_gate": "aisha_shipwreck_profile_v1",
         },
         {
@@ -722,6 +1014,94 @@ def test_q6_residual_prior_floor_sampler_summary_reports_activation() -> None:
     summary = module._q6_residual_prior_floor_sampler_summary(rows)
 
     assert summary["floor_ratios"] == [0.0, 0.75]
+    assert summary["cell_floor_ratios"] == [0.0, 3.0]
+    assert summary["active_rows"] == 2
+    assert summary["active_no_q6_rows"] == 1
+    assert summary["active_no_q6_p90_positive_rate"] == 1.0
+    assert summary["q6_plannable_value_p90_coverage"] == 0.5
+
+
+def test_q6_residual_value_sampler_summary_reports_activation() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 600,
+            "q6_plannable_p90_misses_truth": False,
+            "q6_residual_value_power": 0.5,
+            "q6_residual_value_gate": "aisha_shipwreck_deep_v1",
+        },
+        {
+            "final_q6_decision_value": 0,
+            "v2_q6_decision_value_p90": 200,
+            "q6_residual_value_power": 0.5,
+            "q6_residual_value_gate": "aisha_shipwreck_deep_v1",
+        },
+        {
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "q6_residual_value_power": 0.0,
+            "q6_residual_value_gate": "aisha_shipwreck_deep_v1",
+        },
+    ]
+
+    summary = module._q6_residual_value_sampler_summary(rows)
+
+    assert summary["value_powers"] == [0.0, 0.5]
+    assert summary["active_rows"] == 2
+    assert summary["active_no_q6_rows"] == 1
+    assert summary["active_no_q6_p90_positive_rate"] == 1.0
+    assert summary["q6_plannable_value_p90_coverage"] == 0.5
+
+
+def test_q6_conditional_target_sampler_summary_reports_activation() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "hero": "ethan",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 600,
+            "q6_plannable_p90_misses_truth": False,
+            "q6_conditional_target_count": 4.0,
+            "q6_conditional_target_cells": 15.0,
+            "q6_conditional_target_gate": "ethan_shipwreck_layout_v1",
+            "q6_conditional_value_power": 0.25,
+        },
+        {
+            "status": "ok",
+            "hero": "ethan",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "layout",
+            "final_q6_decision_value": 0,
+            "v2_q6_decision_value_p90": 200,
+            "q6_conditional_target_count": 4.0,
+            "q6_conditional_target_cells": 15.0,
+            "q6_conditional_target_gate": "ethan_shipwreck_layout_v1",
+            "q6_conditional_value_power": 0.25,
+        },
+        {
+            "status": "ok",
+            "hero": "ethan",
+            "map_family": "villa",
+            "evidence_profile_key": "layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "q6_conditional_target_count": 0.0,
+            "q6_conditional_target_cells": 0.0,
+            "q6_conditional_target_gate": "ethan_shipwreck_layout_v1",
+        },
+    ]
+
+    summary = module._q6_conditional_target_sampler_summary(rows)
+
+    assert summary["target_counts"] == [0.0, 4.0]
+    assert summary["target_cells"] == [0.0, 15.0]
+    assert summary["value_powers"] == [0.0, 0.25]
     assert summary["active_rows"] == 2
     assert summary["active_no_q6_rows"] == 1
     assert summary["active_no_q6_p90_positive_rate"] == 1.0
@@ -853,6 +1233,64 @@ def test_q6_low_space_residual_gated_floor_keeps_positive_net_profiles() -> None
     assert experiment["q6_plannable_p90_misses_truth"] == 1
 
 
+def test_q6_tail_value_sampler_experiment_scans_aisha_shipwreck_thresholds() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 11,
+            "final_q6_decision_value": 1_000,
+            "final_q6_decision_value_with_tail_replacement": 1_200,
+            "v2_q6_decision_value_p90": 500,
+            "v2_q6_tail_replacement_decision_value_p90": 1_200,
+        },
+        {
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 10,
+            "final_q6_decision_value": 1_000,
+            "final_q6_decision_value_with_tail_replacement": 1_000,
+            "v2_q6_decision_value_p90": 500,
+            "v2_q6_tail_replacement_decision_value_p90": 1_200,
+        },
+        {
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 11,
+            "final_q6_decision_value": 0,
+            "v2_q6_decision_value_p90": 0,
+            "v2_q6_tail_replacement_decision_value_p90": 200,
+        },
+        {
+            "hero": "ethan",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 11,
+            "final_q6_decision_value": 1_000,
+            "v2_q6_decision_value_p90": 500,
+            "v2_q6_tail_replacement_decision_value_p90": 1_200,
+        },
+    ]
+
+    experiment = module._q6_tail_value_sampler_experiment(rows)
+    threshold_11 = next(
+        row for row in experiment["thresholds"]
+        if row["bottom_row_threshold"] == 11
+    )
+
+    assert experiment["formal_decision_value_unchanged"] is True
+    assert threshold_11["active_q6_truth_rows"] == 1
+    assert threshold_11["q6_helped_rows"] == 1
+    assert threshold_11["tail_replacement_helped_rows"] == 1
+    assert threshold_11["active_no_q6_rows"] == 1
+    assert threshold_11["active_no_q6_new_positive_rows"] == 1
+    assert threshold_11["net_improvement"] == 0
+
+
 def test_q6_count_cell_prior_gated_floor_prefers_positive_net_groups() -> None:
     module = _eval_module()
     rows = [
@@ -923,6 +1361,183 @@ def test_q6_count_cell_prior_gated_floor_prefers_positive_net_groups() -> None:
         min_q6_truth=2,
     )
     assert strict_profile_experiment["gates"] == []
+
+
+def test_q6_count_cell_prior_narrow_gate_p90_sweep_keeps_p50_separate() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "file": "aisha_deep_q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 13,
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+        },
+        {
+            "status": "ok",
+            "file": "aisha_deep_no_q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 13,
+            "final_q6_decision_value": 0,
+            "v2_q6_decision_value_p90": 0,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_cells_p90_under_prior_by": 1.0,
+        },
+        {
+            "status": "ok",
+            "file": "aisha_shallow_q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 12,
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+        },
+        {
+            "status": "ok",
+            "file": "ethan_villa_q6.json",
+            "hero": "ethan",
+            "map_family": "villa",
+            "evidence_profile_key": "public:random_avg+layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+        },
+    ]
+
+    sweep = module._q6_count_cell_prior_narrow_gate_p90_sweep(rows)
+    aisha = next(
+        row for row in sweep["candidates"]
+        if row["gate"] == "aisha_shipwreck_deep_v1"
+        and row["floor_ratio"] == 1.0
+    )
+    ethan = next(
+        row for row in sweep["candidates"]
+        if row["gate"] == "ethan_villa_random_avg_v1"
+        and row["floor_ratio"] == 1.0
+    )
+
+    assert sweep["offline_shadow_only"] is True
+    assert sweep["formal_decision_value_unchanged"] is True
+    assert sweep["p50_unchanged"] is True
+    assert aisha["active_rows"] == 2
+    assert aisha["q6_helped_rows"] == 1
+    assert aisha["no_q6_p90_increased_rows"] == 1
+    assert aisha["no_q6_new_positive_rows"] == 1
+    assert aisha["q6_plannable_misses_after"] == 2
+    assert ethan["active_rows"] == 1
+    assert ethan["q6_helped_rows"] == 1
+    assert ethan["eligible_no_q6_rows"] == 0
+
+
+def test_aisha_threshold_sweep_shows_lower_threshold_control_risk() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "status": "ok",
+            "file": "aisha_bottom11_q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 11,
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_count_p90_under_prior_by": 1.0,
+        },
+        {
+            "status": "ok",
+            "file": "aisha_bottom11_no_q6.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 11,
+            "final_q6_decision_value": 0,
+            "v2_q6_decision_value_p90": 0,
+            "v2_q6_prior_expected_value": 600,
+            "v2_q6_cells_p90_under_prior_by": 1.0,
+        },
+    ]
+
+    sweep = module._aisha_shipwreck_deep_threshold_p90_sweep(rows)
+    by_threshold = {
+        row["bottom_row_threshold"]: row for row in sweep["thresholds"]
+    }
+
+    assert sweep["audit_only"] is True
+    assert sweep["formal_decision_value_unchanged"] is True
+    assert sweep["p50_unchanged"] is True
+    assert sweep["current_formal_threshold"] == 13
+    assert by_threshold[13]["active_rows"] == 0
+    assert by_threshold[13]["q6_helped_rows"] == 0
+    assert by_threshold[11]["active_rows"] == 2
+    assert by_threshold[11]["q6_helped_rows"] == 1
+    assert by_threshold[11]["no_q6_new_positive_rows"] == 1
+    assert by_threshold[11]["net_helped_minus_no_q6_new_positive"] == 0
+    assert by_threshold[11]["net_helped_minus_no_q6_p90_increase"] == 0
+
+
+def test_q6_condition_audit_counts_nonexclusive_miss_tags() -> None:
+    module = _eval_module()
+    rows = [
+        {
+            "file": "aisha_deep_miss.json",
+            "hero": "aisha",
+            "map_family": "shipwreck",
+            "evidence_profile_key": "shape+layout",
+            "footprint_bottom_row": 13,
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 100,
+            "q6_plannable_p90_misses_truth": True,
+            "v2_q6_decision_value_p90_under_by": 400,
+            "v2_q6_count_p90_under_by": 1,
+            "v2_q6_cells_p90_under_by": 2,
+            "v2_q6_count_p90_under_prior_by": 0.5,
+            "v2_q6_cells_p90_under_prior_by": 1.0,
+            "v2_q6_space_pressure_p90": 0.1,
+            "v2_q6_space_overflow_rate": 0.0,
+            "random_sample_avg_signal_band": "none",
+            "public_avg_cells_solution_band": "all_unique",
+        },
+        {
+            "file": "ethan_random_covered.json",
+            "hero": "ethan",
+            "map_family": "villa",
+            "evidence_profile_key": "public:random_avg+layout",
+            "final_q6_decision_value": 500,
+            "v2_q6_decision_value_p90": 600,
+            "q6_plannable_p90_misses_truth": False,
+            "v2_q6_space_pressure_p90": 1.1,
+            "random_sample_avg_signal_band": "signal",
+            "public_avg_cells_solution_band": "ambiguous",
+        },
+    ]
+
+    audit = module._q6_condition_audit_summary(rows)
+    by_tag = {row["tag"]: row for row in audit["tags"]}
+
+    assert audit["audit_only"] is True
+    assert audit["q6_plannable_truth_rows"] == 2
+    assert audit["q6_plannable_miss_rows"] == 1
+    assert by_tag["q6_count_under_truth"]["q6_plannable_miss_rows"] == 1
+    assert by_tag["q6_cells_below_prior"]["examples"] == [
+        "aisha_deep_miss.json"
+    ]
+    assert by_tag["aisha_deep_gate_active"]["q6_plannable_miss_rows"] == 1
+    assert by_tag["ethan_villa_random_avg_gate_active"][
+        "q6_plannable_miss_rows"
+    ] == 0
+    assert by_tag["random_avg_signal"]["q6_plannable_coverage"] == 1.0
 
 
 def test_q6_actionable_targets_prioritize_shipwreck_profiles() -> None:
@@ -1355,6 +1970,70 @@ def test_public_avg_cells_uniqueness_summary_counts_status_bands() -> None:
     assert summary["unique_rows"] == 1
     assert summary["ambiguous_rows"] == 1
     assert summary["examples"]["total_avg_cells:unique"] == ["unique.json"]
+
+
+def test_evidence_parameter_audit_centralizes_thresholds_and_gate_activity() -> None:
+    module = _eval_module()
+
+    audit = module._evidence_parameter_audit_summary(
+        [
+            {
+                "file": "aisha_deep_q6.json",
+                "hero": "aisha",
+                "map_family": "shipwreck",
+                "evidence_profile_key": "shape+layout",
+                "footprint_bottom_row": 13,
+                "final_q6_decision_value": 500,
+                "q6_plannable_p90_misses_truth": True,
+                "random_sample_avg_profile_floor": 20_000.0,
+                "random_sample_avg_signal_band": "signal",
+                "public_avg_cells_solution_band": "all_unique",
+                "public_avg_cells_solution_statuses": "total_avg_cells:unique",
+            },
+            {
+                "file": "ethan_random_q6.json",
+                "hero": "ethan",
+                "map_family": "villa",
+                "evidence_profile_key": "public:random_avg+layout",
+                "final_q6_decision_value": 500,
+                "q6_plannable_p90_misses_truth": False,
+                "random_sample_avg_profile_floor": 20_000.0,
+                "random_sample_avg_signal_band": "low_filtered",
+                "public_avg_cells_solution_band": "ambiguous",
+                "public_avg_cells_solution_statuses": "q5_avg_cells:ambiguous",
+            },
+        ]
+    )
+
+    assert audit["audit_only"] is True
+    assert audit["random_sample_avg"]["profile_signal_floor"] == 20_000.0
+    assert (
+        audit["random_sample_avg"]["compiled_value_floor_signal_floor"]
+        == 20_000.0
+    )
+    assert "evidence-profile routing" in audit["random_sample_avg"]["floor_scope_note"]
+    assert audit["random_sample_avg"]["value_floor_factor"] == 0.95
+    assert audit["random_sample_avg"]["soft_penalty"] == 0.10
+    assert audit["random_sample_avg"]["signal_band_counts"] == {
+        "low_filtered": 1,
+        "signal": 1,
+    }
+    assert audit["public_avg_cells"]["unique_rows"] == 1
+    assert audit["public_avg_cells"]["ambiguous_rows"] == 1
+    assert audit["aisha_q6_position"]["shipwreck_deep_row_threshold"] == 13
+    assert audit["aisha_q6_position"]["quality_only_deep_row_threshold"] == 13
+    assert (
+        audit["q6_gate_activity"]["aisha_shipwreck_deep_v1"]["active_rows"]
+        == 1
+    )
+    assert (
+        audit["q6_gate_activity"]["ethan_villa_random_avg_v1"]["active_rows"]
+        == 1
+    )
+    assert any(
+        row["parameter"] == "RANDOM_SAMPLE_VALUE_FLOOR_*"
+        for row in audit["change_requires_confirmation"]
+    )
 
 
 def test_low_random_sample_avg_does_not_change_problem_profile() -> None:

@@ -989,10 +989,10 @@ def _minimap_capacity_text(
         ) or truth.get("total_cells")
         if cells is not None:
             return f"当前{cells}格"
-    if layout.get("estimate"):
-        return f"估格 {layout.get('estimate')}"
     if summary.get("input_warehouse_total_cells") is not None:
         return f"当前{summary.get('input_warehouse_total_cells')}格"
+    if layout.get("estimate"):
+        return f"估格 {layout.get('estimate')}"
     if summary.get("input_warehouse_total_cells_approx") is not None:
         return f"估格 {summary.get('input_warehouse_total_cells_approx')}"
     return f"默认{minimap.get('default_cells', 130)}格"
@@ -1803,6 +1803,17 @@ def _overlay_model(
     phase = str(contract_context.get("phase") or snapshot.get("phase") or "")
     is_settled = phase == "settled" and _flag(contract_truth.get("available"))
     age_seconds = _snapshot_age_seconds(snapshot)
+    if (
+        not review_snapshot
+        and _capture_session_ahead_of_snapshot(capture_status, snapshot)
+        and _capture_has_fresh_session(capture_status)
+    ):
+        return _overlay_standby_from_capture(
+            capture_status,
+            fallback_subtitle="新局监听中",
+            fallback_detail="抓包会话已更新，等待首个状态帧/推理快照",
+            decision_text="新局监听中",
+        )
     if (
         not review_snapshot
         and is_settled

@@ -31,17 +31,31 @@ from bidking_lab.inference.quality_combo_presolve import (  # noqa: E402
 )
 from bidking_lab.inference.q6_residual import (  # noqa: E402
     AISHA_BOTTOM_ROW_RISK_THRESHOLD,
+    AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES,
+    AISHA_Q6_QUALITY_ONLY_DEEP_ROW_THRESHOLD,
+    AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD,
     RANDOM_SAMPLE_AVG_PROFILE_SIGNAL_FLOOR,
     actionable_random_sample_avg_values,
     aisha_bottom_row_risk,
     evidence_profile_key_from_problem,
+    q6_conditional_target_active_for_profile,
     q6_residual_boost_for_profile,
     q6_residual_prior_floor_ratio_for_profile,
+    q6_residual_value_power_for_profile,
 )
 from bidking_lab.inference.v2 import (  # noqa: E402
+    RANDOM_SAMPLE_HARD_FLOOR_EXTRA_TRIALS,
+    RANDOM_SAMPLE_HARD_FLOOR_MAX_MIN_MATCHED,
+    RANDOM_SAMPLE_HARD_FLOOR_MIN_MATCHED,
+    RANDOM_SAMPLE_HARD_FLOOR_MIN_RATE,
+    RANDOM_SAMPLE_VALUE_FLOOR_FACTOR,
+    RANDOM_SAMPLE_VALUE_FLOOR_SOFT_PENALTY,
     build_residual_problem,
     estimate_posterior_v2,
     evidence_store_from_fatbeans_events,
+)
+from bidking_lab.inference.v3.evidence_registry import (  # noqa: E402
+    public_info_semantic as _v3_public_info_semantic,
 )
 from bidking_lab.live.fatbeans import (  # noqa: E402
     _CATEGORY_OUTLINE_ACTIONS,
@@ -70,6 +84,12 @@ _CATEGORY_ACTION_LABELS = {
     100159: "食饮",
     100160: "书画",
 }
+
+_Q6_COUNT_CELL_NARROW_P90_SWEEP = (
+    ("aisha_shipwreck_deep_v1", (1.0, 1.25, 1.5, 2.0)),
+    ("ethan_villa_random_avg_v1", (1.0, 1.5, 2.0)),
+)
+_AISHA_SHIPWRECK_DEEP_THRESHOLD_P90_SWEEP = (9, 10, 11, 12, 13)
 _DEFAULT_COMBO_PRESOLVE_PATH = (
     ROOT / "data" / "processed" / "quality_combo_presolve_q456.json"
 )
@@ -89,6 +109,15 @@ _AVG_CELLS_REVIEW_MAX_TOTAL_COUNT = 120
 _AVG_CELLS_REVIEW_MAX_QUALITY_COUNT = 80
 _AVG_CELLS_REVIEW_MAX_CELLS = 240
 _HIGH_INFO_DECISION_MISS_THRESHOLD = 300_000
+_AISHA_SHIPWRECK_TAIL_VALUE_PROFILES = frozenset(
+    {
+        "shape+layout",
+        "public:random_avg+shape+layout",
+        "tool:category+shape+layout",
+        "public:random_avg+tool:category+shape+layout",
+    }
+)
+_AISHA_SHIPWRECK_TAIL_VALUE_BOTTOM_THRESHOLDS = (9, 10, 11, 12, 13)
 _PUBLIC_INFO_SEMANTICS = {
     200001: {
         "semantic": "q4_all_outlines",
@@ -98,14 +127,14 @@ _PUBLIC_INFO_SEMANTICS = {
     },
     200002: {
         "semantic": "q5_all_outlines",
-        "model_use": "generic_item_evidence_pending_bucket_exact",
-        "constraint": "pending",
+        "model_use": "modeled_bucket_outline",
+        "constraint": "hard",
         "reference": "known",
     },
     200003: {
         "semantic": "q6_all_outlines",
-        "model_use": "generic_item_evidence_pending_bucket_exact",
-        "constraint": "pending",
+        "model_use": "modeled_bucket_outline",
+        "constraint": "hard",
         "reference": "known",
     },
     200004: {
@@ -116,26 +145,26 @@ _PUBLIC_INFO_SEMANTICS = {
     },
     200009: {
         "semantic": "total_cells",
-        "model_use": "pending_numeric_exact",
-        "constraint": "pending",
+        "model_use": "modeled_numeric_exact",
+        "constraint": "hard",
         "reference": "known",
     },
     200010: {
         "semantic": "q4_total_cells",
-        "model_use": "pending_numeric_exact",
-        "constraint": "pending",
+        "model_use": "modeled_numeric_exact",
+        "constraint": "hard",
         "reference": "known",
     },
     200011: {
         "semantic": "q5_total_cells",
-        "model_use": "pending_numeric_exact",
-        "constraint": "pending",
+        "model_use": "modeled_numeric_exact",
+        "constraint": "hard",
         "reference": "known",
     },
     200012: {
         "semantic": "q6_total_cells",
-        "model_use": "pending_numeric_exact",
-        "constraint": "pending",
+        "model_use": "modeled_numeric_exact",
+        "constraint": "hard",
         "reference": "known",
     },
     200013: {
@@ -164,26 +193,26 @@ _PUBLIC_INFO_SEMANTICS = {
     },
     200017: {
         "semantic": "total_item_count",
-        "model_use": "pending_numeric_exact",
-        "constraint": "pending",
+        "model_use": "modeled_numeric_exact",
+        "constraint": "hard",
         "reference": "known",
     },
     200018: {
         "semantic": "q4_item_count",
-        "model_use": "pending_numeric_exact",
-        "constraint": "pending",
+        "model_use": "modeled_numeric_exact",
+        "constraint": "hard",
         "reference": "known",
     },
     200019: {
         "semantic": "q5_item_count",
-        "model_use": "pending_numeric_exact",
-        "constraint": "pending",
+        "model_use": "modeled_numeric_exact",
+        "constraint": "hard",
         "reference": "known",
     },
     200020: {
         "semantic": "q6_item_count",
-        "model_use": "pending_numeric_exact",
-        "constraint": "pending",
+        "model_use": "modeled_numeric_exact",
+        "constraint": "hard",
         "reference": "known",
     },
     200021: {
@@ -328,14 +357,8 @@ _PUBLIC_INFO_SEMANTICS = {
 
 
 def _default_paths() -> list[Path]:
-    paths: list[Path] = []
-    for root in (
-        Path(r"C:\Users\shenc\Desktop\bid_king_packages"),
-        ROOT / "data" / "samples" / "fatbeans",
-    ):
-        if root.exists():
-            paths.extend(sorted(root.glob("*.json")))
-    return paths
+    root = ROOT / "data" / "samples" / "fatbeans"
+    return sorted(root.glob("*.json")) if root.exists() else []
 
 
 def _iter_unique(paths: Iterable[Path]) -> Iterable[Path]:
@@ -357,6 +380,10 @@ def _round_float(value: float | int | None, digits: int = 2) -> float | None:
     if value is None:
         return None
     return round(float(value), digits)
+
+
+def _normalized_error_denominator(truth: float) -> float:
+    return max(100_000.0, abs(float(truth)))
 
 
 def _evidence_stage(round_no: int | None) -> str:
@@ -613,15 +640,7 @@ def _parse_counter_field(value: Any) -> Counter[str]:
 
 
 def _public_info_semantic(info_id: int) -> dict[str, str]:
-    return _PUBLIC_INFO_SEMANTICS.get(
-        info_id,
-        {
-            "semantic": "unknown",
-            "model_use": "unknown_pending_reference",
-            "constraint": "unknown",
-            "reference": "missing",
-        },
-    )
+    return _v3_public_info_semantic(info_id)
 
 
 def _public_info_row_summary(events: Any) -> dict[str, Any]:
@@ -1144,7 +1163,14 @@ def evaluate_path(
     q6_residual_boost: float = 1.0,
     q6_residual_boost_gate: str = "all",
     q6_residual_prior_floor_ratio: float = 0.0,
+    q6_residual_prior_cell_floor_ratio: float = 0.0,
     q6_residual_prior_floor_gate: str = "all",
+    q6_residual_value_power: float = 0.0,
+    q6_residual_value_gate: str = "all",
+    q6_conditional_target_count: float = 0.0,
+    q6_conditional_target_cells: float = 0.0,
+    q6_conditional_target_gate: str = "none",
+    q6_conditional_value_power: float = 0.0,
     random_sample_avg_profile_floor: float = RANDOM_SAMPLE_AVG_PROFILE_SIGNAL_FLOOR,
 ) -> dict[str, Any]:
     try:
@@ -1194,6 +1220,35 @@ def evaluate_path(
                 bottom_row=problem.layout.bottom_row,
             )
         )
+        active_q6_residual_prior_cell_floor_ratio = (
+            q6_residual_prior_cell_floor_ratio
+            if active_q6_residual_prior_floor_ratio > 0
+            and q6_residual_prior_cell_floor_ratio > 0
+            else 0.0
+        )
+        active_q6_residual_value_power = q6_residual_value_power_for_profile(
+            hero=base_session.hero,
+            map_family=map_family,
+            evidence_profile_key=pre_profile_key,
+            requested_power=q6_residual_value_power,
+            gate=q6_residual_value_gate,
+            bottom_row=problem.layout.bottom_row,
+        )
+        active_q6_conditional_target = q6_conditional_target_active_for_profile(
+            hero=base_session.hero,
+            map_family=map_family,
+            evidence_profile_key=pre_profile_key,
+            gate=q6_conditional_target_gate,
+        )
+        active_q6_conditional_target_count = (
+            q6_conditional_target_count if active_q6_conditional_target else 0.0
+        )
+        active_q6_conditional_target_cells = (
+            q6_conditional_target_cells if active_q6_conditional_target else 0.0
+        )
+        active_q6_conditional_value_power = (
+            q6_conditional_value_power if active_q6_conditional_target else 0.0
+        )
         truth_breakdown = _inventory_truth_breakdown(
             events,
             tables.items,
@@ -1215,6 +1270,13 @@ def evaluate_path(
             count_tol=count_tol,
             q6_residual_boost=active_q6_residual_boost,
             q6_residual_prior_floor_ratio=active_q6_residual_prior_floor_ratio,
+            q6_residual_prior_cell_floor_ratio=(
+                active_q6_residual_prior_cell_floor_ratio
+            ),
+            q6_residual_value_power=active_q6_residual_value_power,
+            q6_conditional_target_count=active_q6_conditional_target_count,
+            q6_conditional_target_cells=active_q6_conditional_target_cells,
+            q6_conditional_value_power=active_q6_conditional_value_power,
         )
         value_p10 = _round(report.total_value.p10 if report.total_value else None)
         value_p50 = _round(report.total_value.p50 if report.total_value else None)
@@ -1297,6 +1359,32 @@ def evaluate_path(
             )
             or final_q6_decision_value
         )
+        has_formal_decision_truth = truth_breakdown.get("final_decision_value") is not None
+        has_replacement_decision_truth = (
+            truth_breakdown.get("final_decision_value_with_tail_replacement")
+            is not None
+        )
+        final_formal_decision_value = (
+            int(truth_breakdown["final_decision_value"])
+            if has_formal_decision_truth
+            else None
+        )
+        final_replacement_decision_value = (
+            int(truth_breakdown["final_decision_value_with_tail_replacement"])
+            if has_replacement_decision_truth
+            else final_formal_decision_value
+            if has_formal_decision_truth
+            else final_value
+        )
+        if has_replacement_decision_truth and (
+            not has_formal_decision_truth
+            or final_replacement_decision_value != final_formal_decision_value
+        ):
+            decision_value_truth_source = "tail_replacement"
+        elif has_formal_decision_truth:
+            decision_value_truth_source = "formal"
+        else:
+            decision_value_truth_source = "raw"
         row = {
             "file": path.name,
             "status": "ok",
@@ -1345,14 +1433,38 @@ def evaluate_path(
             "v2_tail_replacement_decision_value_p90": (
                 tail_replacement_decision_p90
             ),
+            "v2_decision_value_truth": final_replacement_decision_value,
+            "v2_decision_value_truth_source": decision_value_truth_source,
             "v2_decision_value_p50_error": (
-                decision_p50 - truth_breakdown["final_decision_value"]
-                if decision_p50 is not None and "final_decision_value" in truth_breakdown
+                decision_p50 - final_replacement_decision_value
+                if decision_p50 is not None
                 else None
             ),
             "v2_decision_value_p90_error": (
-                decision_p90 - truth_breakdown["final_decision_value"]
-                if decision_p90 is not None and "final_decision_value" in truth_breakdown
+                decision_p90 - final_replacement_decision_value
+                if decision_p90 is not None
+                else None
+            ),
+            "v2_decision_value_p50_error_vs_formal": (
+                decision_p50 - final_formal_decision_value
+                if decision_p50 is not None
+                and final_formal_decision_value is not None
+                else None
+            ),
+            "v2_decision_value_p90_error_vs_formal": (
+                decision_p90 - final_formal_decision_value
+                if decision_p90 is not None
+                and final_formal_decision_value is not None
+                else None
+            ),
+            "v2_decision_value_p50_error_vs_raw": (
+                decision_p50 - final_value
+                if decision_p50 is not None
+                else None
+            ),
+            "v2_decision_value_p90_error_vs_raw": (
+                decision_p90 - final_value
+                if decision_p90 is not None
                 else None
             ),
             "v2_q6_match_rate": report.q6_match_rate,
@@ -1468,7 +1580,16 @@ def evaluate_path(
             "q6_residual_boost": active_q6_residual_boost,
             "q6_residual_boost_gate": q6_residual_boost_gate,
             "q6_residual_prior_floor_ratio": active_q6_residual_prior_floor_ratio,
+            "q6_residual_prior_cell_floor_ratio": (
+                active_q6_residual_prior_cell_floor_ratio
+            ),
             "q6_residual_prior_floor_gate": q6_residual_prior_floor_gate,
+            "q6_residual_value_power": active_q6_residual_value_power,
+            "q6_residual_value_gate": q6_residual_value_gate,
+            "q6_conditional_target_count": active_q6_conditional_target_count,
+            "q6_conditional_target_cells": active_q6_conditional_target_cells,
+            "q6_conditional_target_gate": q6_conditional_target_gate,
+            "q6_conditional_value_power": active_q6_conditional_value_power,
             "relaxed_exact_used": "relaxed_exact_bucket_targets:" in diagnostics,
             "public_max_quality_used": "public_max_quality:" in diagnostics,
             "public_max_item_cells_used": "public_max_item_cells:" in diagnostics,
@@ -1997,6 +2118,1786 @@ def _q6_count_cell_prior_gated_floor_experiment(
     }
 
 
+def _q6_count_cell_prior_named_gate_active(
+    row: Mapping[str, Any],
+    *,
+    gate: str,
+) -> bool:
+    return (
+        q6_residual_prior_floor_ratio_for_profile(
+            hero=str(row.get("hero") or ""),
+            map_family=str(row.get("map_family") or ""),
+            evidence_profile_key=str(row.get("evidence_profile_key") or ""),
+            requested_ratio=1.0,
+            gate=gate,
+            bottom_row=_int_or_none(row.get("footprint_bottom_row")),
+        )
+        > 0
+    )
+
+
+def _q6_count_cell_prior_named_gate_p90_experiment(
+    rows: list[dict[str, Any]],
+    *,
+    gate: str,
+    floor_ratio: float,
+) -> dict[str, Any] | None:
+    if floor_ratio <= 0:
+        return None
+    q6_truth = [
+        row for row in rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    active_rows = [
+        row for row in rows
+        if _q6_count_cell_prior_named_gate_active(row, gate=gate)
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    active_q6_truth = [
+        row for row in active_rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+    ]
+    active_no_q6 = [
+        row for row in active_rows
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+    ]
+
+    eligible_rows = 0
+    eligible_q6_truth_rows = 0
+    eligible_no_q6_rows = 0
+    adjusted_misses = 0
+    active_misses_before = 0
+    active_misses_after = 0
+    helped_examples: list[str] = []
+    no_q6_increased_examples: list[str] = []
+    floors: list[int] = []
+    increases: list[int] = []
+    no_q6_increased_rows = 0
+    no_q6_new_positive_rows = 0
+
+    for row in active_rows:
+        baseline_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        floor_value = _q6_count_cell_prior_floor_value(
+            row,
+            floor_ratio=floor_ratio,
+        )
+        if floor_value is None:
+            continue
+        eligible_rows += 1
+        floors.append(floor_value)
+        candidate_p90 = max(baseline_p90, floor_value)
+        increase = candidate_p90 - baseline_p90
+        if increase > 0:
+            increases.append(increase)
+        if int(row.get("final_q6_decision_value") or 0) > 0:
+            eligible_q6_truth_rows += 1
+        else:
+            eligible_no_q6_rows += 1
+            if increase > 0:
+                no_q6_increased_rows += 1
+                if len(no_q6_increased_examples) < 5:
+                    no_q6_increased_examples.append(str(row.get("file") or ""))
+            if baseline_p90 <= 0 < candidate_p90:
+                no_q6_new_positive_rows += 1
+
+    active_q6_truth_ids = {id(row) for row in active_q6_truth}
+    for row in q6_truth:
+        truth = int(row.get("final_q6_decision_value") or 0)
+        baseline_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        candidate_p90 = baseline_p90
+        if id(row) in active_q6_truth_ids:
+            floor_value = _q6_count_cell_prior_floor_value(
+                row,
+                floor_ratio=floor_ratio,
+            )
+            if floor_value is not None:
+                candidate_p90 = max(candidate_p90, floor_value)
+            if baseline_p90 < truth:
+                active_misses_before += 1
+            if candidate_p90 < truth:
+                active_misses_after += 1
+            elif baseline_p90 < truth and len(helped_examples) < 5:
+                helped_examples.append(str(row.get("file") or ""))
+        if candidate_p90 < truth:
+            adjusted_misses += 1
+
+    misses_before = sum(
+        1 for row in q6_truth
+        if int(row.get("v2_q6_decision_value_p90") or 0)
+        < int(row.get("final_q6_decision_value") or 0)
+    )
+    return {
+        "enabled": True,
+        "gate": gate,
+        "floor_ratio": floor_ratio,
+        "formal_decision_value_unchanged": True,
+        "p50_unchanged": True,
+        "q6_plannable_truth_files": len(q6_truth),
+        "active_rows": len(active_rows),
+        "active_q6_truth_rows": len(active_q6_truth),
+        "active_no_q6_rows": len(active_no_q6),
+        "eligible_rows": eligible_rows,
+        "eligible_q6_truth_rows": eligible_q6_truth_rows,
+        "eligible_no_q6_rows": eligible_no_q6_rows,
+        "no_q6_p90_increased_rows": no_q6_increased_rows,
+        "no_q6_new_positive_rows": no_q6_new_positive_rows,
+        "q6_plannable_misses_before": misses_before,
+        "q6_plannable_misses_after": adjusted_misses,
+        "q6_helped_rows": misses_before - adjusted_misses,
+        "active_q6_misses_before": active_misses_before,
+        "active_q6_misses_after": active_misses_after,
+        "active_q6_helped_rows": active_misses_before - active_misses_after,
+        "q6_plannable_coverage_before": (
+            round(1.0 - misses_before / len(q6_truth), 4)
+            if q6_truth
+            else None
+        ),
+        "q6_plannable_coverage_after": (
+            round(1.0 - adjusted_misses / len(q6_truth), 4)
+            if q6_truth
+            else None
+        ),
+        "floor_median": _round(statistics.median(floors)) if floors else None,
+        "p90_increase_median": (
+            _round(statistics.median(increases)) if increases else None
+        ),
+        "p90_increase_max": max(increases, default=None),
+        "helped_examples": helped_examples,
+        "no_q6_increased_examples": no_q6_increased_examples,
+    }
+
+
+def _q6_count_cell_prior_narrow_gate_p90_sweep(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    candidates = [
+        experiment
+        for gate, ratios in _Q6_COUNT_CELL_NARROW_P90_SWEEP
+        for floor_ratio in ratios
+        if (
+            experiment := _q6_count_cell_prior_named_gate_p90_experiment(
+                rows,
+                gate=gate,
+                floor_ratio=floor_ratio,
+            )
+        )
+        is not None
+    ]
+    return {
+        "offline_shadow_only": True,
+        "formal_decision_value_unchanged": True,
+        "p50_unchanged": True,
+        "candidates": candidates,
+    }
+
+
+def _aisha_shipwreck_threshold_gate_active(
+    row: Mapping[str, Any],
+    *,
+    bottom_row_threshold: int,
+) -> bool:
+    key = (
+        str(row.get("hero") or "").lower(),
+        str(row.get("map_family") or ""),
+        str(row.get("evidence_profile_key") or ""),
+    )
+    bottom_row = _int_or_none(row.get("footprint_bottom_row"))
+    return (
+        key in AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES
+        and bottom_row is not None
+        and bottom_row >= bottom_row_threshold
+    )
+
+
+def _q6_count_cell_prior_aisha_threshold_p90_summary(
+    rows: list[dict[str, Any]],
+    *,
+    bottom_row_threshold: int,
+    floor_ratio: float,
+) -> dict[str, Any]:
+    q6_truth = [
+        row for row in rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    active_rows = [
+        row for row in rows
+        if row.get("v2_q6_decision_value_p90") is not None
+        and _aisha_shipwreck_threshold_gate_active(
+            row,
+            bottom_row_threshold=bottom_row_threshold,
+        )
+    ]
+    active_q6_truth = [
+        row for row in active_rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+    ]
+    active_no_q6 = [
+        row for row in active_rows
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+    ]
+
+    eligible_rows = 0
+    eligible_q6_truth_rows = 0
+    eligible_no_q6_rows = 0
+    no_q6_increased_rows = 0
+    no_q6_new_positive_rows = 0
+    no_q6_increased_examples: list[str] = []
+    floors: list[int] = []
+    increases: list[int] = []
+
+    for row in active_rows:
+        baseline_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        floor_value = _q6_count_cell_prior_floor_value(
+            row,
+            floor_ratio=floor_ratio,
+        )
+        if floor_value is None:
+            continue
+        eligible_rows += 1
+        floors.append(floor_value)
+        candidate_p90 = max(baseline_p90, floor_value)
+        increase = candidate_p90 - baseline_p90
+        if increase > 0:
+            increases.append(increase)
+        if int(row.get("final_q6_decision_value") or 0) > 0:
+            eligible_q6_truth_rows += 1
+        else:
+            eligible_no_q6_rows += 1
+            if increase > 0:
+                no_q6_increased_rows += 1
+                if len(no_q6_increased_examples) < 5:
+                    no_q6_increased_examples.append(str(row.get("file") or ""))
+            if baseline_p90 <= 0 < candidate_p90:
+                no_q6_new_positive_rows += 1
+
+    active_q6_truth_ids = {id(row) for row in active_q6_truth}
+    adjusted_misses = 0
+    active_misses_before = 0
+    active_misses_after = 0
+    helped_examples: list[str] = []
+    for row in q6_truth:
+        truth = int(row.get("final_q6_decision_value") or 0)
+        baseline_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        candidate_p90 = baseline_p90
+        if id(row) in active_q6_truth_ids:
+            floor_value = _q6_count_cell_prior_floor_value(
+                row,
+                floor_ratio=floor_ratio,
+            )
+            if floor_value is not None:
+                candidate_p90 = max(candidate_p90, floor_value)
+            if baseline_p90 < truth:
+                active_misses_before += 1
+            if candidate_p90 < truth:
+                active_misses_after += 1
+            elif baseline_p90 < truth and len(helped_examples) < 5:
+                helped_examples.append(str(row.get("file") or ""))
+        if candidate_p90 < truth:
+            adjusted_misses += 1
+
+    misses_before = sum(
+        1 for row in q6_truth
+        if int(row.get("v2_q6_decision_value_p90") or 0)
+        < int(row.get("final_q6_decision_value") or 0)
+    )
+    return {
+        "bottom_row_threshold": bottom_row_threshold,
+        "floor_ratio": floor_ratio,
+        "formal_decision_value_unchanged": True,
+        "p50_unchanged": True,
+        "q6_plannable_truth_files": len(q6_truth),
+        "active_rows": len(active_rows),
+        "active_q6_truth_rows": len(active_q6_truth),
+        "active_no_q6_rows": len(active_no_q6),
+        "eligible_rows": eligible_rows,
+        "eligible_q6_truth_rows": eligible_q6_truth_rows,
+        "eligible_no_q6_rows": eligible_no_q6_rows,
+        "no_q6_p90_increased_rows": no_q6_increased_rows,
+        "no_q6_new_positive_rows": no_q6_new_positive_rows,
+        "q6_plannable_misses_before": misses_before,
+        "q6_plannable_misses_after": adjusted_misses,
+        "q6_helped_rows": misses_before - adjusted_misses,
+        "active_q6_misses_before": active_misses_before,
+        "active_q6_misses_after": active_misses_after,
+        "active_q6_helped_rows": active_misses_before - active_misses_after,
+        "q6_plannable_coverage_before": (
+            round(1.0 - misses_before / len(q6_truth), 4)
+            if q6_truth
+            else None
+        ),
+        "q6_plannable_coverage_after": (
+            round(1.0 - adjusted_misses / len(q6_truth), 4)
+            if q6_truth
+            else None
+        ),
+        "floor_median": _round(statistics.median(floors)) if floors else None,
+        "p90_increase_median": (
+            _round(statistics.median(increases)) if increases else None
+        ),
+        "p90_increase_max": max(increases, default=None),
+        "net_helped_minus_no_q6_new_positive": (
+            misses_before - adjusted_misses - no_q6_new_positive_rows
+        ),
+        "net_helped_minus_no_q6_p90_increase": (
+            misses_before - adjusted_misses - no_q6_increased_rows
+        ),
+        "helped_examples": helped_examples,
+        "no_q6_increased_examples": no_q6_increased_examples,
+    }
+
+
+def _aisha_shipwreck_deep_threshold_p90_sweep(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    thresholds = [
+        _q6_count_cell_prior_aisha_threshold_p90_summary(
+            rows,
+            bottom_row_threshold=threshold,
+            floor_ratio=1.0,
+        )
+        for threshold in _AISHA_SHIPWRECK_DEEP_THRESHOLD_P90_SWEEP
+    ]
+    return {
+        "audit_only": True,
+        "formal_decision_value_unchanged": True,
+        "p50_unchanged": True,
+        "profile_scope": "AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES",
+        "current_formal_threshold": AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD,
+        "floor_ratio": 1.0,
+        "thresholds": thresholds,
+        "best_by_net": sorted(
+            thresholds,
+            key=lambda row: (
+                int(row["net_helped_minus_no_q6_p90_increase"]),
+                int(row["net_helped_minus_no_q6_new_positive"]),
+                int(row["q6_helped_rows"]),
+                -int(row["active_no_q6_rows"]),
+            ),
+            reverse=True,
+        )[:3],
+    }
+
+
+def _q6_condition_tags(row: dict[str, Any]) -> tuple[str, ...]:
+    tags: list[str] = []
+    if float(row.get("v2_q6_count_p90_under_by") or 0) > 0:
+        tags.append("q6_count_under_truth")
+    if float(row.get("v2_q6_cells_p90_under_by") or 0) > 0:
+        tags.append("q6_cells_under_truth")
+    if float(row.get("v2_q6_count_p90_under_prior_by") or 0) > 0:
+        tags.append("q6_count_below_prior")
+    if float(row.get("v2_q6_cells_p90_under_prior_by") or 0) > 0:
+        tags.append("q6_cells_below_prior")
+    if float(row.get("v2_q6_space_pressure_p90") or 0) < 0.50:
+        tags.append("low_space_pressure")
+    if (
+        row.get("v2_q6_space_pressure_p90") is not None
+        and float(row.get("v2_q6_space_pressure_p90") or 0) >= 1.0
+    ) or float(row.get("v2_q6_space_overflow_rate") or 0) > 0:
+        tags.append("space_overflow_or_constrained")
+    random_band = str(row.get("random_sample_avg_signal_band") or "none")
+    if random_band == "signal":
+        tags.append("random_avg_signal")
+    elif random_band == "low_filtered":
+        tags.append("random_avg_low_filtered")
+    if _q6_count_cell_prior_named_gate_active(
+        row,
+        gate="aisha_shipwreck_deep_v1",
+    ):
+        tags.append("aisha_deep_gate_active")
+    elif (
+        str(row.get("hero") or "").lower() == "aisha"
+        and str(row.get("map_family") or "") == "shipwreck"
+    ):
+        tags.append("aisha_shipwreck_deep_gate_inactive")
+    if _q6_count_cell_prior_named_gate_active(
+        row,
+        gate="ethan_villa_random_avg_v1",
+    ):
+        tags.append("ethan_villa_random_avg_gate_active")
+    avg_cells_band = str(row.get("public_avg_cells_solution_band") or "none")
+    if avg_cells_band == "all_unique":
+        tags.append("public_avg_cells_unique")
+    elif avg_cells_band == "ambiguous":
+        tags.append("public_avg_cells_ambiguous")
+    if row.get("public_max_quality_used"):
+        tags.append("public_max_quality")
+    if row.get("public_max_item_cells_used"):
+        tags.append("public_max_item_cells")
+    if int(row.get("final_q6_trimmed_tail_value") or 0) > 0:
+        tags.append("q6_tail_event")
+    else:
+        tags.append("q6_no_tail_event")
+    return tuple(dict.fromkeys(tags))
+
+
+def _q6_condition_audit_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    q6_truth = [
+        row for row in rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    q6_misses = [
+        row for row in q6_truth
+        if row.get("q6_plannable_p90_misses_truth")
+    ]
+    by_tag: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in q6_truth:
+        for tag in _q6_condition_tags(row):
+            by_tag[tag].append(row)
+
+    tags: list[dict[str, Any]] = []
+    for tag, tagged_rows in by_tag.items():
+        tagged_misses = [
+            row for row in tagged_rows
+            if row.get("q6_plannable_p90_misses_truth")
+        ]
+        under_by = [
+            int(row["v2_q6_decision_value_p90_under_by"])
+            for row in tagged_misses
+            if row.get("v2_q6_decision_value_p90_under_by") is not None
+        ]
+        tags.append(
+            {
+                "tag": tag,
+                "q6_plannable_truth_rows": len(tagged_rows),
+                "q6_plannable_miss_rows": len(tagged_misses),
+                "q6_plannable_coverage": (
+                    round(1.0 - len(tagged_misses) / len(tagged_rows), 4)
+                    if tagged_rows
+                    else None
+                ),
+                "median_q6_under_by": (
+                    _round(statistics.median(under_by)) if under_by else None
+                ),
+                "examples": [
+                    str(row.get("file") or "")
+                    for row in tagged_misses[:5]
+                ],
+            }
+        )
+
+    return {
+        "audit_only": True,
+        "q6_plannable_truth_rows": len(q6_truth),
+        "q6_plannable_miss_rows": len(q6_misses),
+        "q6_plannable_coverage": (
+            round(1.0 - len(q6_misses) / len(q6_truth), 4)
+            if q6_truth
+            else None
+        ),
+        "tags": sorted(
+            tags,
+            key=lambda row: (
+                int(row["q6_plannable_miss_rows"]),
+                int(row["median_q6_under_by"] or 0),
+                int(row["q6_plannable_truth_rows"]),
+            ),
+            reverse=True,
+        ),
+    }
+
+
+def _q6_bottom_row_band(row: Mapping[str, Any]) -> str:
+    bottom_row = _int_or_none(row.get("footprint_bottom_row"))
+    if bottom_row is None:
+        return "unknown"
+    if bottom_row < 9:
+        return "bottom_lt9"
+    if bottom_row <= 10:
+        return "bottom_9_10"
+    if bottom_row <= 12:
+        return "bottom_11_12"
+    if bottom_row <= 14:
+        return "bottom_13_14"
+    return "bottom_15_plus"
+
+
+def _aisha_shipwreck_deep_band(row: Mapping[str, Any]) -> str:
+    if (
+        str(row.get("hero") or "").lower() != "aisha"
+        or str(row.get("map_family") or "") != "shipwreck"
+    ):
+        return "not_aisha_shipwreck"
+    bottom_row = _int_or_none(row.get("footprint_bottom_row"))
+    if bottom_row is None:
+        return "aisha_shipwreck_bottom_unknown"
+    if bottom_row >= AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD:
+        return "aisha_shipwreck_deep_ge13_formal"
+    if bottom_row >= 11:
+        return "aisha_shipwreck_deep11_12_shadow"
+    if bottom_row >= 9:
+        return "aisha_shipwreck_bottom9_10_review"
+    return "aisha_shipwreck_shallow_lt9"
+
+
+def _q6_prior_gap_kind(row: Mapping[str, Any]) -> str:
+    count_gap = float(row.get("v2_q6_count_p90_under_prior_by") or 0.0)
+    cells_gap = float(row.get("v2_q6_cells_p90_under_prior_by") or 0.0)
+    if count_gap > 0 and cells_gap > 0:
+        return "count_and_cells_below_prior"
+    if count_gap > 0:
+        return "count_below_prior"
+    if cells_gap > 0:
+        return "cells_below_prior"
+    return "not_below_prior"
+
+
+def _q6_truth_gap_kind(row: Mapping[str, Any]) -> str:
+    count_gap = float(row.get("v2_q6_count_p90_under_by") or 0.0)
+    cells_gap = float(row.get("v2_q6_cells_p90_under_by") or 0.0)
+    if count_gap > 0 and cells_gap > 0:
+        return "count_and_cells_under_truth"
+    if count_gap > 0:
+        return "count_under_truth"
+    if cells_gap > 0:
+        return "cells_under_truth"
+    return "not_under_truth_count_cells"
+
+
+def _q6_cell_gap_feature_value(row: Mapping[str, Any], key: str) -> str:
+    if key == "q6_bottom_row_band":
+        return _q6_bottom_row_band(row)
+    if key == "aisha_shipwreck_deep_band":
+        return _aisha_shipwreck_deep_band(row)
+    if key == "q6_prior_gap_kind":
+        return _q6_prior_gap_kind(row)
+    if key == "q6_truth_gap_kind":
+        return _q6_truth_gap_kind(row)
+    return str(row.get(key) or "unknown")
+
+
+def _q6_cell_gap_group_key(row: Mapping[str, Any], keys: tuple[str, ...]) -> str:
+    return "|".join(
+        f"{key}={_q6_cell_gap_feature_value(row, key)}"
+        for key in keys
+    )
+
+
+def _numeric_values(rows: list[dict[str, Any]], key: str) -> list[float]:
+    values: list[float] = []
+    for row in rows:
+        value = row.get(key)
+        if value is None:
+            continue
+        values.append(float(value))
+    return values
+
+
+def _median_numeric(
+    rows: list[dict[str, Any]],
+    key: str,
+    *,
+    digits: int | None = None,
+) -> int | float | None:
+    values = _numeric_values(rows, key)
+    if not values:
+        return None
+    value = statistics.median(values)
+    return _round_float(value, digits) if digits is not None else _round(value)
+
+
+def _quantile_numeric(
+    rows: list[dict[str, Any]],
+    key: str,
+    quantile: float,
+    *,
+    digits: int | None = None,
+) -> int | float | None:
+    values = sorted(_numeric_values(rows, key))
+    if not values:
+        return None
+    if len(values) == 1:
+        value = values[0]
+    else:
+        position = (len(values) - 1) * quantile
+        lower = int(position)
+        upper = min(lower + 1, len(values) - 1)
+        fraction = position - lower
+        value = values[lower] * (1.0 - fraction) + values[upper] * fraction
+    return _round_float(value, digits) if digits is not None else _round(value)
+
+
+def _q6_cell_gap_examples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            int(row.get("v2_q6_decision_value_p90_under_by") or 0),
+            int(row.get("v2_q6_cells_p90_under_by") or 0),
+            int(row.get("v2_q6_count_p90_under_by") or 0),
+        ),
+        reverse=True,
+    )
+    return [
+        {
+            "file": row.get("file"),
+            "hero": row.get("hero"),
+            "map_family": row.get("map_family"),
+            "capture_round": row.get("capture_round"),
+            "evidence_profile_key": row.get("evidence_profile_key"),
+            "bottom_row": row.get("footprint_bottom_row"),
+            "q6_truth_count": row.get("final_q6_count"),
+            "q6_truth_cells": row.get("final_q6_cells"),
+            "q6_p90_count": row.get("v2_q6_count_p90"),
+            "q6_p90_cells": row.get("v2_q6_cells_p90"),
+            "q6_count_under_by": row.get("v2_q6_count_p90_under_by"),
+            "q6_cells_under_by": row.get("v2_q6_cells_p90_under_by"),
+            "q6_value_under_by": row.get("v2_q6_decision_value_p90_under_by"),
+        }
+        for row in ordered[:5]
+    ]
+
+
+def _q6_cell_gap_group_summary(
+    rows: list[dict[str, Any]],
+    keys: tuple[str, ...],
+    *,
+    limit: int = 12,
+) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if row.get("status", "ok") != "ok":
+            continue
+        groups[_q6_cell_gap_group_key(row, keys)].append(row)
+
+    out: list[dict[str, Any]] = []
+    for group, group_rows in groups.items():
+        q6_truth = [
+            row for row in group_rows
+            if int(row.get("final_q6_decision_value") or 0) > 0
+            and row.get("v2_q6_decision_value_p90") is not None
+        ]
+        if not q6_truth:
+            continue
+        q6_misses = [
+            row for row in q6_truth
+            if row.get("q6_plannable_p90_misses_truth")
+        ]
+        no_q6_controls = [
+            row for row in group_rows
+            if int(row.get("final_q6_decision_value") or 0) <= 0
+            and row.get("v2_q6_decision_value_p90") is not None
+        ]
+        no_q6_positive = [
+            row for row in no_q6_controls
+            if int(row.get("v2_q6_decision_value_p90") or 0) > 0
+        ]
+        q6_count_under = [
+            row for row in q6_misses
+            if float(row.get("v2_q6_count_p90_under_by") or 0.0) > 0
+        ]
+        q6_cells_under = [
+            row for row in q6_misses
+            if float(row.get("v2_q6_cells_p90_under_by") or 0.0) > 0
+        ]
+        q6_count_prior_gap = [
+            row for row in q6_misses
+            if float(row.get("v2_q6_count_p90_under_prior_by") or 0.0) > 0
+        ]
+        q6_cells_prior_gap = [
+            row for row in q6_misses
+            if float(row.get("v2_q6_cells_p90_under_prior_by") or 0.0) > 0
+        ]
+        out.append(
+            {
+                "group": group,
+                "n": len(group_rows),
+                "q6_plannable_truth_rows": len(q6_truth),
+                "q6_plannable_miss_rows": len(q6_misses),
+                "q6_plannable_coverage": (
+                    round(1.0 - len(q6_misses) / len(q6_truth), 4)
+                    if q6_truth
+                    else None
+                ),
+                "q6_count_under_rows": len(q6_count_under),
+                "q6_cells_under_rows": len(q6_cells_under),
+                "q6_count_and_cells_under_rows": sum(
+                    1 for row in q6_misses
+                    if float(row.get("v2_q6_count_p90_under_by") or 0.0) > 0
+                    and float(row.get("v2_q6_cells_p90_under_by") or 0.0) > 0
+                ),
+                "q6_count_below_prior_rows": len(q6_count_prior_gap),
+                "q6_cells_below_prior_rows": len(q6_cells_prior_gap),
+                "median_q6_under_by": _median_numeric(
+                    q6_misses,
+                    "v2_q6_decision_value_p90_under_by",
+                ),
+                "median_count_under_by": _median_numeric(
+                    q6_count_under,
+                    "v2_q6_count_p90_under_by",
+                    digits=2,
+                ),
+                "median_cells_under_by": _median_numeric(
+                    q6_cells_under,
+                    "v2_q6_cells_p90_under_by",
+                    digits=1,
+                ),
+                "median_prior_count_gap": _median_numeric(
+                    q6_count_prior_gap,
+                    "v2_q6_count_p90_under_prior_by",
+                    digits=2,
+                ),
+                "median_prior_cells_gap": _median_numeric(
+                    q6_cells_prior_gap,
+                    "v2_q6_cells_p90_under_prior_by",
+                    digits=1,
+                ),
+                "median_truth_count": _median_numeric(q6_truth, "final_q6_count"),
+                "median_truth_cells": _median_numeric(q6_truth, "final_q6_cells"),
+                "median_p90_count": _median_numeric(
+                    q6_truth,
+                    "v2_q6_count_p90",
+                    digits=2,
+                ),
+                "median_p90_cells": _median_numeric(
+                    q6_truth,
+                    "v2_q6_cells_p90",
+                    digits=1,
+                ),
+                "median_prior_expected_count": _median_numeric(
+                    q6_truth,
+                    "v2_q6_prior_expected_count",
+                    digits=2,
+                ),
+                "median_prior_expected_cells": _median_numeric(
+                    q6_truth,
+                    "v2_q6_prior_expected_cells",
+                    digits=1,
+                ),
+                "no_q6_control_rows": len(no_q6_controls),
+                "no_q6_p90_positive_rows": len(no_q6_positive),
+                "no_q6_p90_positive_rate": (
+                    round(len(no_q6_positive) / len(no_q6_controls), 4)
+                    if no_q6_controls
+                    else None
+                ),
+                "no_q6_p90_positive_median": _median_numeric(
+                    no_q6_positive,
+                    "v2_q6_decision_value_p90",
+                ),
+                "active_prior_floor_rows": sum(
+                    1 for row in group_rows
+                    if float(row.get("q6_residual_prior_floor_ratio") or 0.0) > 0
+                ),
+                "active_prior_cell_floor_rows": sum(
+                    1 for row in group_rows
+                    if float(row.get("q6_residual_prior_cell_floor_ratio") or 0.0)
+                    > 0
+                ),
+                "net_miss_minus_no_q6_positive": (
+                    len(q6_misses) - len(no_q6_positive)
+                ),
+                "examples": _q6_cell_gap_examples(q6_misses),
+            }
+        )
+    return sorted(
+        out,
+        key=lambda row: (
+            int(row["q6_plannable_miss_rows"]),
+            int(row["q6_count_and_cells_under_rows"]),
+            int(row["net_miss_minus_no_q6_positive"]),
+            int(row["median_q6_under_by"] or 0),
+            -int(row["no_q6_p90_positive_rows"]),
+        ),
+        reverse=True,
+    )[:limit]
+
+
+def _q6_cell_gap_by_feature_summary(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    ok = [row for row in rows if row.get("status", "ok") == "ok"]
+    q6_truth = [
+        row for row in ok
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    q6_misses = [
+        row for row in q6_truth
+        if row.get("q6_plannable_p90_misses_truth")
+    ]
+    no_q6_controls = [
+        row for row in ok
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    no_q6_positive = [
+        row for row in no_q6_controls
+        if int(row.get("v2_q6_decision_value_p90") or 0) > 0
+    ]
+    return {
+        "audit_only": True,
+        "formal_decision_value_unchanged": True,
+        "sampler_design_note": (
+            "Use these groups to choose conditional q6 count/cell/value "
+            "features before adding any live or formal sampler change."
+        ),
+        "q6_plannable_truth_rows": len(q6_truth),
+        "q6_plannable_miss_rows": len(q6_misses),
+        "q6_count_under_miss_rows": sum(
+            1 for row in q6_misses
+            if float(row.get("v2_q6_count_p90_under_by") or 0.0) > 0
+        ),
+        "q6_cells_under_miss_rows": sum(
+            1 for row in q6_misses
+            if float(row.get("v2_q6_cells_p90_under_by") or 0.0) > 0
+        ),
+        "q6_count_and_cells_under_miss_rows": sum(
+            1 for row in q6_misses
+            if float(row.get("v2_q6_count_p90_under_by") or 0.0) > 0
+            and float(row.get("v2_q6_cells_p90_under_by") or 0.0) > 0
+        ),
+        "q6_count_below_prior_miss_rows": sum(
+            1 for row in q6_misses
+            if float(row.get("v2_q6_count_p90_under_prior_by") or 0.0) > 0
+        ),
+        "q6_cells_below_prior_miss_rows": sum(
+            1 for row in q6_misses
+            if float(row.get("v2_q6_cells_p90_under_prior_by") or 0.0) > 0
+        ),
+        "no_q6_control_rows": len(no_q6_controls),
+        "no_q6_p90_positive_rows": len(no_q6_positive),
+        "no_q6_p90_positive_rate": (
+            round(len(no_q6_positive) / len(no_q6_controls), 4)
+            if no_q6_controls
+            else None
+        ),
+        "feature_groups": {
+            "hero_map_profile": _q6_cell_gap_group_summary(
+                ok,
+                ("hero", "map_family", "evidence_profile_key"),
+            ),
+            "hero_map_bottom_row": _q6_cell_gap_group_summary(
+                ok,
+                ("hero", "map_family", "q6_bottom_row_band"),
+            ),
+            "aisha_shipwreck_deep_band": _q6_cell_gap_group_summary(
+                [
+                    row for row in ok
+                    if str(row.get("hero") or "").lower() == "aisha"
+                    and str(row.get("map_family") or "") == "shipwreck"
+                ],
+                ("aisha_shipwreck_deep_band", "evidence_profile_key"),
+            ),
+            "hero_map_random_avg": _q6_cell_gap_group_summary(
+                ok,
+                ("hero", "map_family", "random_sample_avg_signal_band"),
+            ),
+            "hero_map_stage_density": _q6_cell_gap_group_summary(
+                ok,
+                (
+                    "hero",
+                    "map_family",
+                    "evidence_stage",
+                    "information_density_band",
+                ),
+            ),
+            "hero_map_top_size": _q6_cell_gap_group_summary(
+                ok,
+                ("hero", "map_family", "q6_top_size_band"),
+            ),
+            "hero_map_prior_gap": _q6_cell_gap_group_summary(
+                ok,
+                ("hero", "map_family", "q6_prior_gap_kind"),
+            ),
+            "hero_map_truth_gap": _q6_cell_gap_group_summary(
+                ok,
+                ("hero", "map_family", "q6_truth_gap_kind"),
+            ),
+            "hero_map_public_avg_cells": _q6_cell_gap_group_summary(
+                ok,
+                ("hero", "map_family", "public_avg_cells_solution_band"),
+            ),
+        },
+    }
+
+
+def _q6_conditional_target_row_scope(
+    rows: list[dict[str, Any]],
+    scope: str,
+) -> list[dict[str, Any]]:
+    if scope == "all":
+        return rows
+    if scope == "aisha_shipwreck":
+        return [
+            row for row in rows
+            if str(row.get("hero") or "").lower() == "aisha"
+            and str(row.get("map_family") or "") == "shipwreck"
+        ]
+    if scope == "ethan":
+        return [
+            row for row in rows
+            if str(row.get("hero") or "").lower() == "ethan"
+        ]
+    return rows
+
+
+def _q6_conditional_target_group_rows(
+    rows: list[dict[str, Any]],
+    keys: tuple[str, ...],
+) -> dict[str, list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if row.get("status", "ok") != "ok":
+            continue
+        groups[_q6_cell_gap_group_key(row, keys)].append(row)
+    return groups
+
+
+def _q6_conditional_target_value(
+    *,
+    median_value: int | float | None,
+    quantile_value: int | float | None,
+    n: int,
+    shrinkage_k: float,
+    digits: int | None = None,
+) -> int | float | None:
+    if median_value is None or quantile_value is None:
+        return None
+    weight = n / (n + shrinkage_k) if shrinkage_k > 0 else 1.0
+    value = float(median_value) + weight * (
+        float(quantile_value) - float(median_value)
+    )
+    return _round_float(value, digits) if digits is not None else _round(value)
+
+
+def _q6_conditional_target_for_group(
+    group: str,
+    group_rows: list[dict[str, Any]],
+    *,
+    target_quantile: float,
+    shrinkage_k: float,
+    min_q6_truth: int,
+    min_miss_rows: int,
+) -> dict[str, Any] | None:
+    q6_truth = [
+        row for row in group_rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    if len(q6_truth) < min_q6_truth:
+        return None
+    q6_misses = [
+        row for row in q6_truth
+        if row.get("q6_plannable_p90_misses_truth")
+    ]
+    if len(q6_misses) < min_miss_rows:
+        return None
+    count_cells_under = [
+        row for row in q6_misses
+        if float(row.get("v2_q6_count_p90_under_by") or 0.0) > 0
+        and float(row.get("v2_q6_cells_p90_under_by") or 0.0) > 0
+    ]
+    if not count_cells_under:
+        return None
+    no_q6_controls = [
+        row for row in group_rows
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    no_q6_positive = [
+        row for row in no_q6_controls
+        if int(row.get("v2_q6_decision_value_p90") or 0) > 0
+    ]
+    if len(q6_misses) <= len(no_q6_positive):
+        return None
+
+    target_count = _q6_conditional_target_value(
+        median_value=_median_numeric(q6_truth, "final_q6_count", digits=2),
+        quantile_value=_quantile_numeric(
+            q6_truth,
+            "final_q6_count",
+            target_quantile,
+            digits=2,
+        ),
+        n=len(q6_truth),
+        shrinkage_k=shrinkage_k,
+        digits=2,
+    )
+    target_cells = _q6_conditional_target_value(
+        median_value=_median_numeric(q6_truth, "final_q6_cells", digits=1),
+        quantile_value=_quantile_numeric(
+            q6_truth,
+            "final_q6_cells",
+            target_quantile,
+            digits=1,
+        ),
+        n=len(q6_truth),
+        shrinkage_k=shrinkage_k,
+        digits=1,
+    )
+    target_value = _q6_conditional_target_value(
+        median_value=_median_numeric(q6_truth, "final_q6_decision_value"),
+        quantile_value=_quantile_numeric(
+            q6_truth,
+            "final_q6_decision_value",
+            target_quantile,
+        ),
+        n=len(q6_truth),
+        shrinkage_k=shrinkage_k,
+    )
+    if target_count is None or target_cells is None or target_value is None:
+        return None
+    return {
+        "group": group,
+        "n": len(group_rows),
+        "q6_plannable_truth_rows": len(q6_truth),
+        "q6_plannable_miss_rows": len(q6_misses),
+        "q6_count_and_cells_under_rows": len(count_cells_under),
+        "no_q6_control_rows": len(no_q6_controls),
+        "no_q6_p90_positive_rows": len(no_q6_positive),
+        "target_count": target_count,
+        "target_cells": target_cells,
+        "target_value": target_value,
+        "truth_count_median": _median_numeric(q6_truth, "final_q6_count", digits=2),
+        "truth_cells_median": _median_numeric(q6_truth, "final_q6_cells", digits=1),
+        "truth_value_median": _median_numeric(q6_truth, "final_q6_decision_value"),
+        "truth_count_q": _quantile_numeric(
+            q6_truth,
+            "final_q6_count",
+            target_quantile,
+            digits=2,
+        ),
+        "truth_cells_q": _quantile_numeric(
+            q6_truth,
+            "final_q6_cells",
+            target_quantile,
+            digits=1,
+        ),
+        "truth_value_q": _quantile_numeric(
+            q6_truth,
+            "final_q6_decision_value",
+            target_quantile,
+        ),
+        "median_q6_under_by": _median_numeric(
+            q6_misses,
+            "v2_q6_decision_value_p90_under_by",
+        ),
+        "median_count_under_by": _median_numeric(
+            count_cells_under,
+            "v2_q6_count_p90_under_by",
+            digits=2,
+        ),
+        "median_cells_under_by": _median_numeric(
+            count_cells_under,
+            "v2_q6_cells_p90_under_by",
+            digits=1,
+        ),
+    }
+
+
+def _q6_conditional_target_candidate_p90(
+    row: Mapping[str, Any],
+    target: Mapping[str, Any],
+) -> int | None:
+    base_p90 = _int_or_none(row.get("v2_q6_decision_value_p90"))
+    if base_p90 is None:
+        return None
+    if row.get("public_max_quality_used"):
+        return None
+    target_count = float(target.get("target_count") or 0.0)
+    target_cells = float(target.get("target_cells") or 0.0)
+    target_value = _int_or_none(target.get("target_value"))
+    if target_count <= 0 or target_cells <= 0 or target_value is None:
+        return None
+    q6_count_p90 = float(row.get("v2_q6_count_p90") or 0.0)
+    q6_cells_p90 = float(row.get("v2_q6_cells_p90") or 0.0)
+    if q6_count_p90 >= target_count and q6_cells_p90 >= target_cells:
+        return None
+    return max(base_p90, target_value)
+
+
+def _q6_conditional_target_examples(
+    rows: list[dict[str, Any]],
+    targets: Mapping[str, Mapping[str, Any]],
+    keys: tuple[str, ...],
+    *,
+    helped: bool,
+) -> list[dict[str, Any]]:
+    examples: list[dict[str, Any]] = []
+    for row in rows:
+        group = _q6_cell_gap_group_key(row, keys)
+        target = targets.get(group)
+        if target is None:
+            continue
+        candidate_p90 = _q6_conditional_target_candidate_p90(row, target)
+        if candidate_p90 is None:
+            continue
+        base_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        final_q6 = int(row.get("final_q6_decision_value") or 0)
+        is_helped = final_q6 > 0 and base_p90 < final_q6 <= candidate_p90
+        is_no_q6_increased = final_q6 <= 0 and candidate_p90 > base_p90
+        if helped and not is_helped:
+            continue
+        if not helped and not is_no_q6_increased:
+            continue
+        examples.append(
+            {
+                "file": row.get("file"),
+                "group": group,
+                "hero": row.get("hero"),
+                "map_family": row.get("map_family"),
+                "capture_round": row.get("capture_round"),
+                "evidence_profile_key": row.get("evidence_profile_key"),
+                "bottom_row": row.get("footprint_bottom_row"),
+                "base_q6_p90": base_p90,
+                "candidate_q6_p90": candidate_p90,
+                "target_count": target.get("target_count"),
+                "target_cells": target.get("target_cells"),
+                "target_value": target.get("target_value"),
+                "truth_q6_value": row.get("final_q6_decision_value"),
+                "truth_q6_count": row.get("final_q6_count"),
+                "truth_q6_cells": row.get("final_q6_cells"),
+            }
+        )
+    return sorted(
+        examples,
+        key=lambda row: int(row["candidate_q6_p90"] or 0)
+        - int(row["base_q6_p90"] or 0),
+        reverse=True,
+    )[:5]
+
+
+def _q6_conditional_target_group_effect(
+    group_rows: list[dict[str, Any]],
+    target: Mapping[str, Any],
+) -> dict[str, Any]:
+    q6_truth = [
+        row for row in group_rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    q6_misses_before = 0
+    q6_misses_after = 0
+    helped = 0
+    active_truth = 0
+    deltas: list[int] = []
+    for row in q6_truth:
+        base_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        final_q6 = int(row.get("final_q6_decision_value") or 0)
+        candidate_p90 = _q6_conditional_target_candidate_p90(row, target)
+        if base_p90 < final_q6:
+            q6_misses_before += 1
+        if candidate_p90 is None:
+            candidate_p90 = base_p90
+        else:
+            active_truth += 1
+            if candidate_p90 > base_p90:
+                deltas.append(candidate_p90 - base_p90)
+        if candidate_p90 < final_q6:
+            q6_misses_after += 1
+        elif base_p90 < final_q6:
+            helped += 1
+
+    no_q6_controls = [
+        row for row in group_rows
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    active_no_q6 = 0
+    no_q6_increased = 0
+    no_q6_new_positive = 0
+    no_q6_deltas: list[int] = []
+    for row in no_q6_controls:
+        base_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        candidate_p90 = _q6_conditional_target_candidate_p90(row, target)
+        if candidate_p90 is None:
+            continue
+        active_no_q6 += 1
+        if candidate_p90 > base_p90:
+            no_q6_increased += 1
+            no_q6_deltas.append(candidate_p90 - base_p90)
+            if base_p90 <= 0:
+                no_q6_new_positive += 1
+
+    return {
+        "active_truth_rows": active_truth,
+        "q6_misses_before": q6_misses_before,
+        "q6_misses_after": q6_misses_after,
+        "q6_helped_rows": helped,
+        "active_no_q6_rows": active_no_q6,
+        "no_q6_increased_rows": no_q6_increased,
+        "no_q6_new_positive_rows": no_q6_new_positive,
+        "median_q6_delta": _round(statistics.median(deltas)) if deltas else None,
+        "median_no_q6_delta": (
+            _round(statistics.median(no_q6_deltas)) if no_q6_deltas else None
+        ),
+        "net_helped_minus_no_q6_increase": helped - no_q6_increased,
+    }
+
+
+def _q6_conditional_target_experiment(
+    rows: list[dict[str, Any]],
+    *,
+    name: str,
+    keys: tuple[str, ...],
+    scope: str = "all",
+    target_quantile: float = 0.75,
+    shrinkage_k: float = 8.0,
+    min_q6_truth: int = 8,
+    min_miss_rows: int = 2,
+) -> dict[str, Any]:
+    scoped_rows = _q6_conditional_target_row_scope(
+        [row for row in rows if row.get("status", "ok") == "ok"],
+        scope,
+    )
+    groups = _q6_conditional_target_group_rows(scoped_rows, keys)
+    targets: dict[str, dict[str, Any]] = {}
+    group_rows_by_key: dict[str, list[dict[str, Any]]] = {}
+    for group, group_rows in groups.items():
+        target = _q6_conditional_target_for_group(
+            group,
+            group_rows,
+            target_quantile=target_quantile,
+            shrinkage_k=shrinkage_k,
+            min_q6_truth=min_q6_truth,
+            min_miss_rows=min_miss_rows,
+        )
+        if target is None:
+            continue
+        targets[group] = target
+        group_rows_by_key[group] = group_rows
+
+    q6_truth = [
+        row for row in scoped_rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    q6_misses_before = 0
+    q6_misses_after = 0
+    active_truth = 0
+    helped = 0
+    q6_deltas: list[int] = []
+    for row in q6_truth:
+        base_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        final_q6 = int(row.get("final_q6_decision_value") or 0)
+        if base_p90 < final_q6:
+            q6_misses_before += 1
+        target = targets.get(_q6_cell_gap_group_key(row, keys))
+        candidate_p90 = (
+            _q6_conditional_target_candidate_p90(row, target)
+            if target is not None
+            else None
+        )
+        if candidate_p90 is None:
+            candidate_p90 = base_p90
+        else:
+            active_truth += 1
+            if candidate_p90 > base_p90:
+                q6_deltas.append(candidate_p90 - base_p90)
+        if candidate_p90 < final_q6:
+            q6_misses_after += 1
+        elif base_p90 < final_q6:
+            helped += 1
+
+    no_q6_controls = [
+        row for row in scoped_rows
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    active_no_q6 = 0
+    no_q6_increased = 0
+    no_q6_new_positive = 0
+    no_q6_deltas: list[int] = []
+    for row in no_q6_controls:
+        target = targets.get(_q6_cell_gap_group_key(row, keys))
+        if target is None:
+            continue
+        base_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        candidate_p90 = _q6_conditional_target_candidate_p90(row, target)
+        if candidate_p90 is None:
+            continue
+        active_no_q6 += 1
+        if candidate_p90 > base_p90:
+            no_q6_increased += 1
+            no_q6_deltas.append(candidate_p90 - base_p90)
+            if base_p90 <= 0:
+                no_q6_new_positive += 1
+
+    target_rows = []
+    for group, target in targets.items():
+        effect = _q6_conditional_target_group_effect(
+            group_rows_by_key[group],
+            target,
+        )
+        target_rows.append({**target, **effect})
+
+    target_rows = sorted(
+        target_rows,
+        key=lambda row: (
+            int(row["net_helped_minus_no_q6_increase"]),
+            int(row["q6_helped_rows"]),
+            -int(row["no_q6_increased_rows"]),
+            int(row["q6_plannable_truth_rows"]),
+        ),
+        reverse=True,
+    )
+    return {
+        "name": name,
+        "scope": scope,
+        "keys": list(keys),
+        "in_sample_upper_bound": True,
+        "target_quantile": target_quantile,
+        "shrinkage_k": shrinkage_k,
+        "min_q6_truth": min_q6_truth,
+        "min_miss_rows": min_miss_rows,
+        "candidate_groups": len(targets),
+        "q6_plannable_truth_rows": len(q6_truth),
+        "q6_misses_before": q6_misses_before,
+        "q6_misses_after": q6_misses_after,
+        "q6_helped_rows": helped,
+        "active_truth_rows": active_truth,
+        "no_q6_control_rows": len(no_q6_controls),
+        "active_no_q6_rows": active_no_q6,
+        "no_q6_increased_rows": no_q6_increased,
+        "no_q6_new_positive_rows": no_q6_new_positive,
+        "median_q6_delta": (
+            _round(statistics.median(q6_deltas)) if q6_deltas else None
+        ),
+        "median_no_q6_delta": (
+            _round(statistics.median(no_q6_deltas)) if no_q6_deltas else None
+        ),
+        "net_helped_minus_no_q6_increase": helped - no_q6_increased,
+        "groups": target_rows[:12],
+        "helped_examples": _q6_conditional_target_examples(
+            q6_truth,
+            targets,
+            keys,
+            helped=True,
+        ),
+        "no_q6_increased_examples": _q6_conditional_target_examples(
+            no_q6_controls,
+            targets,
+            keys,
+            helped=False,
+        ),
+    }
+
+
+def _q6_conditional_target_experiment_summary(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    configs = [
+        _q6_conditional_target_experiment(
+            rows,
+            name="hero_map_profile",
+            keys=("hero", "map_family", "evidence_profile_key"),
+            min_q6_truth=10,
+        ),
+        _q6_conditional_target_experiment(
+            rows,
+            name="hero_map_profile_prior_gap",
+            keys=(
+                "hero",
+                "map_family",
+                "evidence_profile_key",
+                "q6_prior_gap_kind",
+            ),
+            min_q6_truth=6,
+        ),
+        _q6_conditional_target_experiment(
+            rows,
+            name="hero_map_bottom_profile",
+            keys=("hero", "map_family", "q6_bottom_row_band", "evidence_profile_key"),
+            min_q6_truth=6,
+        ),
+        _q6_conditional_target_experiment(
+            rows,
+            name="aisha_shipwreck_deep_profile",
+            keys=("aisha_shipwreck_deep_band", "evidence_profile_key"),
+            scope="aisha_shipwreck",
+            min_q6_truth=6,
+        ),
+        _q6_conditional_target_experiment(
+            rows,
+            name="ethan_random_profile",
+            keys=(
+                "hero",
+                "map_family",
+                "random_sample_avg_signal_band",
+                "evidence_profile_key",
+            ),
+            scope="ethan",
+            min_q6_truth=4,
+        ),
+    ]
+    return {
+        "audit_only": True,
+        "formal_decision_value_unchanged": True,
+        "in_sample_upper_bound": True,
+        "sampler_design_note": (
+            "This estimates conditional q6 count/cells/value targets from "
+            "current sample groups. Treat it as an upper-bound selector for "
+            "future sampler features, not as deployable accuracy."
+        ),
+        "configs": configs,
+        "best_by_net": sorted(
+            configs,
+            key=lambda row: (
+                int(row["net_helped_minus_no_q6_increase"]),
+                int(row["q6_helped_rows"]),
+                -int(row["no_q6_increased_rows"]),
+            ),
+            reverse=True,
+        )[:3],
+    }
+
+
+def _gate_activity_summary(
+    rows: list[dict[str, Any]],
+    *,
+    gate: str,
+) -> dict[str, Any]:
+    active = [
+        row for row in rows
+        if _q6_count_cell_prior_named_gate_active(row, gate=gate)
+    ]
+    active_q6_truth = [
+        row for row in active
+        if int(row.get("final_q6_decision_value") or 0) > 0
+    ]
+    active_no_q6 = [
+        row for row in active
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+    ]
+    active_misses = [
+        row for row in active_q6_truth
+        if row.get("q6_plannable_p90_misses_truth")
+    ]
+    return {
+        "active_rows": len(active),
+        "active_q6_truth_rows": len(active_q6_truth),
+        "active_no_q6_rows": len(active_no_q6),
+        "active_q6_miss_rows": len(active_misses),
+        "active_q6_coverage": (
+            round(1.0 - len(active_misses) / len(active_q6_truth), 4)
+            if active_q6_truth
+            else None
+        ),
+    }
+
+
+def _evidence_parameter_audit_summary(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    random_bands = Counter(
+        str(row.get("random_sample_avg_signal_band") or "none")
+        for row in rows
+    )
+    random_floor_values = sorted(
+        {
+            float(row.get("random_sample_avg_profile_floor"))
+            for row in rows
+            if row.get("random_sample_avg_profile_floor") is not None
+        }
+    )
+    public_info = _public_info_semantics_summary(rows)
+    avg_cells = _public_avg_cells_uniqueness_summary(rows)
+    aisha_bottom = _aisha_bottom_row_risk_summary(rows)
+    return {
+        "audit_only": True,
+        "random_sample_avg": {
+            "profile_signal_floor": RANDOM_SAMPLE_AVG_PROFILE_SIGNAL_FLOOR,
+            "observed_profile_floor_values": random_floor_values,
+            "compiled_value_floor_signal_floor": (
+                RANDOM_SAMPLE_AVG_PROFILE_SIGNAL_FLOOR
+            ),
+            "floor_scope_note": (
+                "random_sample_avg_profile_floor controls evidence-profile "
+                "routing in this evaluator; posterior random-sample value "
+                "flooring still uses the compiled signal floor unless v2 "
+                "_random_sample_value_floor is changed."
+            ),
+            "value_floor_factor": RANDOM_SAMPLE_VALUE_FLOOR_FACTOR,
+            "hard_floor_min_matched": RANDOM_SAMPLE_HARD_FLOOR_MIN_MATCHED,
+            "hard_floor_min_rate": RANDOM_SAMPLE_HARD_FLOOR_MIN_RATE,
+            "hard_floor_max_min_matched": RANDOM_SAMPLE_HARD_FLOOR_MAX_MIN_MATCHED,
+            "hard_floor_extra_trials": RANDOM_SAMPLE_HARD_FLOOR_EXTRA_TRIALS,
+            "soft_penalty": RANDOM_SAMPLE_VALUE_FLOOR_SOFT_PENALTY,
+            "signal_band_counts": dict(sorted(random_bands.items())),
+            "signal_case": _case_metric_summary(
+                [
+                    row for row in rows
+                    if str(row.get("random_sample_avg_signal_band") or "none")
+                    == "signal"
+                ]
+            ),
+            "low_filtered_case": _case_metric_summary(
+                [
+                    row for row in rows
+                    if str(row.get("random_sample_avg_signal_band") or "none")
+                    == "low_filtered"
+                ]
+            ),
+        },
+        "public_info": {
+            "modeled_hard_ids": public_info.get("modeled_hard_ids"),
+            "modeled_soft_ids": public_info.get("modeled_soft_ids"),
+            "diagnostic_ids": public_info.get("diagnostic_ids"),
+            "partial_ids": public_info.get("partial_ids"),
+            "pending_model_ids": public_info.get("pending_model_ids"),
+            "unknown_ids": public_info.get("unknown_ids"),
+            "constraint_events": public_info.get("constraint_events"),
+        },
+        "public_avg_cells": {
+            "unique_rows": avg_cells.get("unique_rows"),
+            "ambiguous_rows": avg_cells.get("ambiguous_rows"),
+            "no_candidate_rows": avg_cells.get("no_candidate_rows"),
+            "band_counts": avg_cells.get("band_counts"),
+            "status_counts": avg_cells.get("status_counts"),
+        },
+        "aisha_q6_position": {
+            "bottom_row_risk_threshold": AISHA_BOTTOM_ROW_RISK_THRESHOLD,
+            "shipwreck_deep_row_threshold": AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD,
+            "quality_only_deep_row_threshold": (
+                AISHA_Q6_QUALITY_ONLY_DEEP_ROW_THRESHOLD
+            ),
+            "bottom_row_risk": aisha_bottom,
+        },
+        "q6_gate_activity": {
+            "aisha_shipwreck_deep_v1": _gate_activity_summary(
+                rows,
+                gate="aisha_shipwreck_deep_v1",
+            ),
+            "ethan_villa_random_avg_v1": _gate_activity_summary(
+                rows,
+                gate="ethan_villa_random_avg_v1",
+            ),
+        },
+        "change_requires_confirmation": [
+            {
+                "parameter": "RANDOM_SAMPLE_AVG_PROFILE_SIGNAL_FLOOR",
+                "reason": (
+                    "Changes evidence_profile routing and can move rows into "
+                    "random_avg q6 gates."
+                ),
+            },
+            {
+                "parameter": "RANDOM_SAMPLE_VALUE_FLOOR_*",
+                "reason": (
+                    "Changes public random sample avg hard/soft filtering and "
+                    "can affect both P50 center and P90 tail."
+                ),
+            },
+            {
+                "parameter": "PUBLIC_AVG_VALUE / PUBLIC_AVG_CELLS handling",
+                "reason": (
+                    "Avg evidence is usually not a unique inventory solver; "
+                    "hardening it needs separate uniqueness/control proof."
+                ),
+            },
+            {
+                "parameter": "AISHA_*_ROW_THRESHOLD",
+                "reason": (
+                    "Moves Aisha q6 gates and quality-only review risk; "
+                    "must be checked against no-q6 controls."
+                ),
+            },
+            {
+                "parameter": (
+                    "q6_residual_prior_floor_ratio / "
+                    "q6_residual_prior_cell_floor_ratio / value_power / "
+                    "q6_conditional_target_*"
+                ),
+                "reason": (
+                    "Can improve P90 coverage while degrading P50 MAE; "
+                    "must pass paired accuracy and no-q6 checks."
+                ),
+            },
+        ],
+    }
+
+
+def _aisha_shipwreck_tail_value_active(
+    row: Mapping[str, Any],
+    *,
+    bottom_row_threshold: int,
+) -> bool:
+    bottom_row = _int_or_none(row.get("footprint_bottom_row"))
+    return (
+        str(row.get("hero") or "").lower() == "aisha"
+        and str(row.get("map_family") or "") == "shipwreck"
+        and str(row.get("evidence_profile_key") or "")
+        in _AISHA_SHIPWRECK_TAIL_VALUE_PROFILES
+        and bottom_row is not None
+        and bottom_row >= int(bottom_row_threshold)
+        and row.get("v2_q6_decision_value_p90") is not None
+        and row.get("v2_q6_tail_replacement_decision_value_p90") is not None
+    )
+
+
+def _aisha_shipwreck_tail_value_candidate_p90(row: Mapping[str, Any]) -> int | None:
+    base = _int_or_none(row.get("v2_q6_decision_value_p90"))
+    replacement = _int_or_none(row.get("v2_q6_tail_replacement_decision_value_p90"))
+    if base is None or replacement is None:
+        return None
+    return max(base, replacement)
+
+
+def _q6_tail_value_sampler_threshold_summary(
+    rows: list[dict[str, Any]],
+    *,
+    bottom_row_threshold: int,
+) -> dict[str, Any]:
+    q6_truth = [
+        row
+        for row in rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    no_q6_controls = [
+        row
+        for row in rows
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    active_truth = [
+        row
+        for row in q6_truth
+        if _aisha_shipwreck_tail_value_active(
+            row,
+            bottom_row_threshold=bottom_row_threshold,
+        )
+    ]
+    active_no_q6 = [
+        row
+        for row in no_q6_controls
+        if _aisha_shipwreck_tail_value_active(
+            row,
+            bottom_row_threshold=bottom_row_threshold,
+        )
+    ]
+
+    helped = 0
+    still_missed = 0
+    newly_missed = 0
+    before_misses = 0
+    after_misses = 0
+    q6_deltas: list[int] = []
+    tail_truth_rows = 0
+    tail_truth_helped = 0
+    tail_truth_after_misses = 0
+    examples: list[dict[str, Any]] = []
+    for row in q6_truth:
+        final_q6 = int(row.get("final_q6_decision_value") or 0)
+        base_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        active = row in active_truth
+        candidate_p90 = (
+            _aisha_shipwreck_tail_value_candidate_p90(row) if active else base_p90
+        )
+        if candidate_p90 is None:
+            candidate_p90 = base_p90
+        base_missed = base_p90 < final_q6
+        candidate_missed = candidate_p90 < final_q6
+        if base_missed:
+            before_misses += 1
+        if candidate_missed:
+            after_misses += 1
+        if active:
+            q6_deltas.append(candidate_p90 - base_p90)
+            if base_missed and not candidate_missed:
+                helped += 1
+            if base_missed and candidate_missed:
+                still_missed += 1
+            if not base_missed and candidate_missed:
+                newly_missed += 1
+            if len(examples) < 8:
+                examples.append(
+                    {
+                        "file": row.get("file"),
+                        "final_q6_decision_value": final_q6,
+                        "base_q6_p90": base_p90,
+                        "candidate_q6_p90": candidate_p90,
+                        "bottom_row": row.get("footprint_bottom_row"),
+                        "evidence_profile_key": row.get("evidence_profile_key"),
+                    }
+                )
+
+        tail_truth = int(
+            row.get("final_q6_decision_value_with_tail_replacement") or final_q6
+        )
+        if active and tail_truth > final_q6:
+            tail_truth_rows += 1
+            if base_p90 < tail_truth <= candidate_p90:
+                tail_truth_helped += 1
+            if candidate_p90 < tail_truth:
+                tail_truth_after_misses += 1
+
+    no_q6_deltas: list[int] = []
+    no_q6_new_positive = 0
+    no_q6_positive = 0
+    for row in active_no_q6:
+        base_p90 = int(row.get("v2_q6_decision_value_p90") or 0)
+        candidate_p90 = _aisha_shipwreck_tail_value_candidate_p90(row)
+        if candidate_p90 is None:
+            continue
+        delta = candidate_p90 - base_p90
+        no_q6_deltas.append(delta)
+        if base_p90 <= 0 < candidate_p90:
+            no_q6_new_positive += 1
+        if candidate_p90 > 0:
+            no_q6_positive += 1
+
+    return {
+        "bottom_row_threshold": bottom_row_threshold,
+        "gate": "aisha_shipwreck_shape_layout_tail_replacement",
+        "q6_plannable_truth_rows": len(q6_truth),
+        "active_q6_truth_rows": len(active_truth),
+        "q6_misses_before": before_misses,
+        "q6_misses_after": after_misses,
+        "q6_helped_rows": helped,
+        "q6_still_missed_rows": still_missed,
+        "q6_newly_missed_rows": newly_missed,
+        "active_q6_p90_delta_median": _round(statistics.median(q6_deltas))
+        if q6_deltas
+        else None,
+        "tail_replacement_truth_rows": tail_truth_rows,
+        "tail_replacement_helped_rows": tail_truth_helped,
+        "tail_replacement_after_misses": tail_truth_after_misses,
+        "active_no_q6_rows": len(active_no_q6),
+        "active_no_q6_positive_rows": no_q6_positive,
+        "active_no_q6_new_positive_rows": no_q6_new_positive,
+        "active_no_q6_p90_delta_median": _round(statistics.median(no_q6_deltas))
+        if no_q6_deltas
+        else None,
+        "net_improvement": helped - no_q6_new_positive,
+        "examples": examples,
+    }
+
+
+def _q6_tail_value_sampler_experiment(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    thresholds = [
+        _q6_tail_value_sampler_threshold_summary(
+            rows,
+            bottom_row_threshold=threshold,
+        )
+        for threshold in _AISHA_SHIPWRECK_TAIL_VALUE_BOTTOM_THRESHOLDS
+    ]
+    return {
+        "enabled": True,
+        "candidate": "aisha_shipwreck_shape_layout_tail_replacement",
+        "formal_decision_value_unchanged": True,
+        "thresholds": thresholds,
+        "best_by_net": sorted(
+            thresholds,
+            key=lambda row: (
+                int(row["net_improvement"]),
+                int(row["q6_helped_rows"]),
+                -int(row["active_no_q6_rows"]),
+            ),
+            reverse=True,
+        )[:3],
+        "notes": (
+            "Candidate uses max(v2_q6_decision_value_p90, "
+            "v2_q6_tail_replacement_decision_value_p90) for diagnostics only."
+        ),
+    }
+
+
 def _aisha_bottom_row_risk_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     eligible = [
         row
@@ -2072,6 +3973,169 @@ def _q6_shadow_reference_coverage(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _decision_truth_value(row: Mapping[str, Any]) -> float | None:
+    for key in (
+        "v2_decision_value_truth",
+        "final_decision_value_with_tail_replacement",
+        "final_decision_value",
+        "final_value",
+    ):
+        value = row.get(key)
+        if value is not None:
+            return float(value)
+    p50 = row.get("v2_decision_value_p50")
+    error = row.get("v2_decision_value_p50_error")
+    if p50 is not None and error is not None:
+        return float(p50) - float(error)
+    return None
+
+
+def _quantile_pinball_loss(*, signed_error: float, quantile: float) -> float:
+    if signed_error >= 0:
+        return (1.0 - quantile) * signed_error
+    return quantile * -signed_error
+
+
+def _decision_value_accuracy_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    p50_rows = [
+        row for row in rows
+        if row.get("v2_decision_value_p50_error") is not None
+    ]
+    p50_errors = [
+        float(row["v2_decision_value_p50_error"]) for row in p50_rows
+    ]
+    p50_abs_errors = [abs(error) for error in p50_errors]
+    normalized_abs_errors: list[float] = []
+    normalized_p50_pinball_losses: list[float] = []
+    for row, error in zip(p50_rows, p50_errors):
+        truth = _decision_truth_value(row)
+        if truth is None:
+            continue
+        denominator = _normalized_error_denominator(truth)
+        normalized_abs_errors.append(abs(error) / denominator)
+        normalized_p50_pinball_losses.append(
+            _quantile_pinball_loss(signed_error=error, quantile=0.5)
+            / denominator
+        )
+
+    p90_rows: list[tuple[dict[str, Any], float, float]] = []
+    for row in rows:
+        truth = _decision_truth_value(row)
+        p90 = row.get("v2_decision_value_p90")
+        if truth is not None and p90 is not None:
+            signed_error = float(p90) - truth
+        elif row.get("v2_decision_value_p90_error") is not None:
+            signed_error = float(row["v2_decision_value_p90_error"])
+            truth = _decision_truth_value(row)
+            if truth is None:
+                truth = 0.0
+        else:
+            continue
+        p90_rows.append((row, signed_error, truth))
+
+    p90_signed_errors = [signed_error for _, signed_error, _ in p90_rows]
+    p90_pinball_losses = [
+        _quantile_pinball_loss(signed_error=signed_error, quantile=0.9)
+        for _, signed_error, _ in p90_rows
+    ]
+    p90_covered_excess_ratios: list[float] = []
+    p90_under_ratios: list[float] = []
+    normalized_p90_pinball_losses: list[float] = []
+    extreme_over_values: list[float] = []
+    for _, signed_error, truth in p90_rows:
+        denominator = _normalized_error_denominator(truth)
+        normalized_p90_pinball_losses.append(
+            _quantile_pinball_loss(signed_error=signed_error, quantile=0.9)
+            / denominator
+        )
+        if signed_error >= 0:
+            p90_covered_excess_ratios.append(signed_error / denominator)
+        else:
+            p90_under_ratios.append(-signed_error / denominator)
+        extreme_over_values.append(1.0 if signed_error > denominator else 0.0)
+
+    return {
+        "point_metric_note": (
+            "MAE is a P50 center-error metric; compare it with normalized "
+            "error and separate P90 risk metrics."
+        ),
+        "decision_rows": len(p50_rows),
+        "decision_value_mae": (
+            _round(statistics.mean(p50_abs_errors)) if p50_abs_errors else None
+        ),
+        "decision_value_median_abs_error": (
+            _round(statistics.median(p50_abs_errors))
+            if p50_abs_errors
+            else None
+        ),
+        "median_normalized_abs_p50_error": (
+            _round_float(statistics.median(normalized_abs_errors), 3)
+            if normalized_abs_errors
+            else None
+        ),
+        "p50_under_rate": (
+            _round_float(
+                statistics.mean(1.0 if error < 0 else 0.0 for error in p50_errors),
+                4,
+            )
+            if p50_errors
+            else None
+        ),
+        "p50_pinball_loss_mean": (
+            _round(statistics.mean(abs(error) * 0.5 for error in p50_errors))
+            if p50_errors
+            else None
+        ),
+        "median_normalized_p50_pinball_loss": (
+            _round_float(statistics.median(normalized_p50_pinball_losses), 3)
+            if normalized_p50_pinball_losses
+            else None
+        ),
+        "p90_rows": len(p90_rows),
+        "p90_coverage": (
+            _round_float(
+                statistics.mean(
+                    1.0 if signed_error >= 0 else 0.0
+                    for signed_error in p90_signed_errors
+                ),
+                4,
+            )
+            if p90_signed_errors
+            else None
+        ),
+        "median_p90_signed_error": (
+            _round(statistics.median(p90_signed_errors))
+            if p90_signed_errors
+            else None
+        ),
+        "median_p90_under_ratio": (
+            _round_float(statistics.median(p90_under_ratios), 3)
+            if p90_under_ratios
+            else None
+        ),
+        "median_p90_covered_excess_ratio": (
+            _round_float(statistics.median(p90_covered_excess_ratios), 3)
+            if p90_covered_excess_ratios
+            else None
+        ),
+        "p90_extreme_over_rate": (
+            _round_float(statistics.mean(extreme_over_values), 4)
+            if extreme_over_values
+            else None
+        ),
+        "p90_pinball_loss_mean": (
+            _round(statistics.mean(p90_pinball_losses))
+            if p90_pinball_losses
+            else None
+        ),
+        "median_normalized_p90_pinball_loss": (
+            _round_float(statistics.median(normalized_p90_pinball_losses), 3)
+            if normalized_p90_pinball_losses
+            else None
+        ),
+    }
+
+
 def _case_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     decision_rows = [
         row
@@ -2121,6 +4185,7 @@ def _case_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             if decision_abs_errors
             else None
         ),
+        "decision_value_accuracy": _decision_value_accuracy_summary(rows),
         "value_p90_coverage": (
             round(
                 statistics.mean(
@@ -2559,6 +4624,7 @@ def _summary(
             if tail_event_decision_valued
             else None
         ),
+        "decision_value_accuracy": _decision_value_accuracy_summary(ok),
         "value_p90_mae": (
             _round(statistics.mean(p90_abs_errors)) if p90_abs_errors else None
         ),
@@ -2760,10 +4826,28 @@ def _summary(
         "case_breakdown": _case_breakdown_summary(ok),
         "public_info_semantics": _public_info_semantics_summary(ok),
         "public_avg_cells_uniqueness": _public_avg_cells_uniqueness_summary(ok),
+        "evidence_parameter_audit": _evidence_parameter_audit_summary(ok),
         "q6_shadow_reference_coverage": _q6_shadow_reference_coverage(ok),
         "q6_residual_boost_experiment": _q6_residual_boost_summary(ok),
         "q6_residual_prior_floor_sampler_experiment": (
             _q6_residual_prior_floor_sampler_summary(ok)
+        ),
+        "q6_residual_value_sampler_experiment": (
+            _q6_residual_value_sampler_summary(ok)
+        ),
+        "q6_conditional_target_sampler_experiment": (
+            _q6_conditional_target_sampler_summary(ok)
+        ),
+        "q6_tail_value_sampler_experiment": (
+            _q6_tail_value_sampler_experiment(ok)
+        ),
+        "q6_condition_audit": _q6_condition_audit_summary(ok),
+        "q6_cell_gap_by_feature": _q6_cell_gap_by_feature_summary(ok),
+        "q6_conditional_target_experiment": (
+            _q6_conditional_target_experiment_summary(ok)
+        ),
+        "aisha_shipwreck_deep_threshold_p90_sweep": (
+            _aisha_shipwreck_deep_threshold_p90_sweep(ok)
         ),
         "q6_risk_groups": {
             "hero_map_family": _q6_group_summary(ok, ("hero", "map_family")),
@@ -3074,6 +5158,9 @@ def _summary(
         summary["q6_count_cell_prior_profile_gated_floor_experiment"] = (
             profile_gated_count_cell_experiment
         )
+    summary["q6_count_cell_prior_narrow_gate_p90_sweep"] = (
+        _q6_count_cell_prior_narrow_gate_p90_sweep(ok)
+    )
     return summary
 
 
@@ -3849,6 +5936,12 @@ def _q6_residual_prior_floor_sampler_summary(
                 for row in rows
             }
         ),
+        "cell_floor_ratios": sorted(
+            {
+                float(row.get("q6_residual_prior_cell_floor_ratio") or 0.0)
+                for row in rows
+            }
+        ),
         "gate_values": sorted(
             {
                 str(row.get("q6_residual_prior_floor_gate") or "none")
@@ -3871,6 +5964,137 @@ def _q6_residual_prior_floor_sampler_summary(
             if q6_truth
             else None
         ),
+    }
+
+
+def _q6_residual_value_sampler_summary(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    active = [
+        row for row in rows
+        if float(row.get("q6_residual_value_power") or 0.0) > 0.0
+    ]
+    active_no_q6 = [
+        row for row in active
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+    ]
+    active_no_q6_positive = [
+        row for row in active_no_q6
+        if int(row.get("v2_q6_decision_value_p90") or 0) > 0
+    ]
+    q6_truth = [
+        row for row in rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    q6_misses = [
+        row for row in q6_truth
+        if row.get("q6_plannable_p90_misses_truth")
+    ]
+    return {
+        "value_powers": sorted(
+            {
+                float(row.get("q6_residual_value_power") or 0.0)
+                for row in rows
+            }
+        ),
+        "gate_values": sorted(
+            {
+                str(row.get("q6_residual_value_gate") or "none")
+                for row in rows
+            }
+        ),
+        "active_rows": len(active),
+        "active_rate": round(len(active) / len(rows), 4) if rows else None,
+        "active_no_q6_rows": len(active_no_q6),
+        "active_no_q6_p90_positive": len(active_no_q6_positive),
+        "active_no_q6_p90_positive_rate": (
+            round(len(active_no_q6_positive) / len(active_no_q6), 4)
+            if active_no_q6
+            else None
+        ),
+        "q6_plannable_truth_rows": len(q6_truth),
+        "q6_plannable_miss_rows": len(q6_misses),
+        "q6_plannable_value_p90_coverage": (
+            round(1.0 - len(q6_misses) / len(q6_truth), 4)
+            if q6_truth
+            else None
+        ),
+    }
+
+
+def _q6_conditional_target_sampler_summary(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    active = [
+        row for row in rows
+        if float(row.get("q6_conditional_target_count") or 0.0) > 0.0
+        or float(row.get("q6_conditional_target_cells") or 0.0) > 0.0
+    ]
+    active_no_q6 = [
+        row for row in active
+        if int(row.get("final_q6_decision_value") or 0) <= 0
+    ]
+    active_no_q6_positive = [
+        row for row in active_no_q6
+        if int(row.get("v2_q6_decision_value_p90") or 0) > 0
+    ]
+    q6_truth = [
+        row for row in rows
+        if int(row.get("final_q6_decision_value") or 0) > 0
+        and row.get("v2_q6_decision_value_p90") is not None
+    ]
+    q6_misses = [
+        row for row in q6_truth
+        if row.get("q6_plannable_p90_misses_truth")
+    ]
+    return {
+        "target_counts": sorted(
+            {
+                float(row.get("q6_conditional_target_count") or 0.0)
+                for row in rows
+            }
+        ),
+        "target_cells": sorted(
+            {
+                float(row.get("q6_conditional_target_cells") or 0.0)
+                for row in rows
+            }
+        ),
+        "value_powers": sorted(
+            {
+                float(row.get("q6_conditional_value_power") or 0.0)
+                for row in rows
+            }
+        ),
+        "gate_values": sorted(
+            {
+                str(row.get("q6_conditional_target_gate") or "none")
+                for row in rows
+            }
+        ),
+        "active_rows": len(active),
+        "active_rate": round(len(active) / len(rows), 4) if rows else None,
+        "active_no_q6_rows": len(active_no_q6),
+        "active_no_q6_p90_positive": len(active_no_q6_positive),
+        "active_no_q6_p90_positive_rate": (
+            round(len(active_no_q6_positive) / len(active_no_q6), 4)
+            if active_no_q6
+            else None
+        ),
+        "q6_plannable_truth_rows": len(q6_truth),
+        "q6_plannable_miss_rows": len(q6_misses),
+        "q6_plannable_value_p90_coverage": (
+            round(1.0 - len(q6_misses) / len(q6_truth), 4)
+            if q6_truth
+            else None
+        ),
+        "groups": {
+            "hero_map_profile": _q6_plannable_group_summary(
+                active,
+                ("hero", "map_family", "evidence_profile_key"),
+            ),
+        },
     }
 
 
@@ -4201,7 +6425,10 @@ def main() -> int:
     parser.add_argument(
         "paths",
         nargs="*",
-        help="JSON files or directories. Defaults to desktop package dir + data/samples/fatbeans.",
+        help=(
+            "JSON files or directories. Defaults to repo-local "
+            "data/samples/fatbeans; pass external capture dirs explicitly."
+        ),
     )
     parser.add_argument(
         "--format",
@@ -4258,6 +6485,16 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--q6-residual-prior-cell-floor-ratio",
+        type=float,
+        default=0.0,
+        help=(
+            "Offline sampler experiment only: override the q6 prior cells "
+            "floor ratio while keeping the count floor ratio unchanged. "
+            "Default 0.0 reuses --q6-residual-prior-floor-ratio."
+        ),
+    )
+    parser.add_argument(
         "--q6-residual-prior-floor-gate",
         choices=(
             "all",
@@ -4265,12 +6502,73 @@ def main() -> int:
             "aisha_shipwreck_profile_v1",
             "aisha_shipwreck_bottom_v1",
             "aisha_shipwreck_deep_v1",
+            "aisha_shipwreck_deep12_v1",
+            "aisha_shipwreck_deep11_v1",
             "aisha_hidden_v1",
+            "aisha_villa_shape_layout_v1",
+            "ethan_villa_random_avg_v1",
             "aisha_deep_or_hidden_v1",
         ),
         default="all",
         help=(
             "Offline sampler experiment gate for --q6-residual-prior-floor-ratio."
+        ),
+    )
+    parser.add_argument(
+        "--q6-residual-value-power",
+        type=float,
+        default=0.0,
+        help=(
+            "Offline sampler experiment only: tilt q6 residual candidate "
+            "weights by value**power inside the q6 candidate set. Default 0.0."
+        ),
+    )
+    parser.add_argument(
+        "--q6-residual-value-gate",
+        choices=(
+            "all",
+            "aisha_shipwreck_profile_v1",
+            "aisha_shipwreck_deep_v1",
+            "ethan_villa_random_avg_v1",
+        ),
+        default="all",
+        help="Offline sampler experiment gate for --q6-residual-value-power.",
+    )
+    parser.add_argument(
+        "--q6-conditional-target-count",
+        type=float,
+        default=0.0,
+        help=(
+            "Offline sampler experiment only: q6 count target for conditional "
+            "count/cells sampling. Default 0.0 disables it."
+        ),
+    )
+    parser.add_argument(
+        "--q6-conditional-target-cells",
+        type=float,
+        default=0.0,
+        help=(
+            "Offline sampler experiment only: q6 cells target for conditional "
+            "count/cells sampling. Default 0.0 disables it."
+        ),
+    )
+    parser.add_argument(
+        "--q6-conditional-target-gate",
+        choices=(
+            "none",
+            "all",
+            "ethan_shipwreck_layout_v1",
+        ),
+        default="none",
+        help="Offline sampler experiment gate for q6 conditional targets.",
+    )
+    parser.add_argument(
+        "--q6-conditional-value-power",
+        type=float,
+        default=0.0,
+        help=(
+            "Offline sampler experiment only: value tilt inside q6 candidates "
+            "for conditional target sampling. Default 0.0 keeps no extra tilt."
         ),
     )
     parser.add_argument(
@@ -4315,7 +6613,16 @@ def main() -> int:
             q6_residual_boost=args.q6_residual_boost,
             q6_residual_boost_gate=args.q6_residual_boost_gate,
             q6_residual_prior_floor_ratio=args.q6_residual_prior_floor_ratio,
+            q6_residual_prior_cell_floor_ratio=(
+                args.q6_residual_prior_cell_floor_ratio
+            ),
             q6_residual_prior_floor_gate=args.q6_residual_prior_floor_gate,
+            q6_residual_value_power=args.q6_residual_value_power,
+            q6_residual_value_gate=args.q6_residual_value_gate,
+            q6_conditional_target_count=args.q6_conditional_target_count,
+            q6_conditional_target_cells=args.q6_conditional_target_cells,
+            q6_conditional_target_gate=args.q6_conditional_target_gate,
+            q6_conditional_value_power=args.q6_conditional_value_power,
             random_sample_avg_profile_floor=args.random_sample_avg_profile_floor,
         )
         for path in _iter_unique(paths)

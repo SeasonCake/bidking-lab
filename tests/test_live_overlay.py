@@ -583,7 +583,7 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert model["minimap"]["known_items"] == 2
     assert model["minimap"]["default_cells"] == 130
     assert model["minimap"]["max_cells"] == 250
-    assert model["minimap"]["capacity_text"] == "估格 108/120/140"
+    assert model["minimap"]["capacity_text"] == "当前123格"
     assert "最高" not in model["minimap"]["capacity_text"]
     assert model["title"] == "AISHA  ·  map 2501  ·  R4"
     assert model["decision"][0] == "可守不抢"
@@ -846,6 +846,43 @@ def test_overlay_model_shows_new_session_loading_for_recent_settlement() -> None
 
     assert model["decision"][0] == "新局监听中"
     assert model["subtitle"] == "监听中，已抓到新局 map 2504"
+
+
+def test_overlay_model_hides_old_live_snapshot_when_capture_session_advances() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model(
+        {
+            "created_at": time.time() - 5,
+            "phase": "bidding",
+            "map_id": 2401,
+            "round": 3,
+            "ui_contract": {
+                "context": {
+                    "phase": "bidding",
+                    "session_id": "2401:old-session",
+                },
+                "baseline": {
+                    "decision": {
+                        "action": "小幅进攻",
+                        "current_highest": "玩家A 200,000",
+                    },
+                },
+            },
+            "_capture_source_status": {
+                "ts": time.time() - 1,
+                "source": "windivert",
+                "active_flows": 1,
+                "raw_packets": 240,
+                "accepted_frames": 10,
+                "active_session_id": "2407:1295018993925150",
+            },
+        }
+    )
+
+    assert model["decision"][0] == "新局监听中"
+    assert model["subtitle"] == "监听中，已抓到新局 map 2407"
+    assert not any("小幅进攻" in str(value) for value in model.values())
 
 
 def test_overlay_model_shows_new_session_loading_after_settlement() -> None:

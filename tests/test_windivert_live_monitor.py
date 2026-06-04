@@ -437,6 +437,64 @@ def test_game_frame_gate_accepts_current_session_direct_action_response() -> Non
     assert gate.ignored_frames == 2
 
 
+def test_game_frame_gate_carries_direct_action_after_settlement_to_next_session() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    started = gate.feed_row(
+        _row("REV", _rev_state_frame(0x0021, round_no=None), sort_id=1)
+    )
+    settled = gate.feed_row(
+        _row("REV", _rev_state_frame(0x002D, round_no=3), sort_id=2)
+    )
+    late_direct = gate.feed_row(
+        _row("REV", _rev_action_response_frame(), sort_id=3)
+    )
+    next_bid = gate.feed_row(
+        _row(
+            "SEND",
+            _send_frame(0x0022, session="2501:2222222222222222"),
+            sort_id=4,
+        )
+    )
+
+    assert len(started.rows) == 1
+    assert len(settled.rows) == 1
+    assert settled.rows[0]["MessageID"] == "0x002d"
+    assert late_direct.rows == ()
+    assert "rev_tool_after_settlement" not in gate.ignored_reasons_dict()
+    assert next_bid.reset_session is True
+    assert len(next_bid.rows) == 2
+    assert next_bid.rows[0]["SortID"] == 1
+    assert next_bid.rows[0]["MessageID"] == "0x0027"
+    assert next_bid.rows[0]["SessionID"] == "2501:2222222222222222"
+    assert next_bid.rows[1]["SortID"] == 2
+    assert next_bid.rows[1]["MessageID"] == "0x0022"
+    assert next_bid.rows[1]["SessionID"] == "2501:2222222222222222"
+
+
+def test_game_frame_gate_accepts_next_session_action_send_after_settlement() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    gate.feed_row(_row("REV", _rev_state_frame(0x0021, round_no=None), sort_id=1))
+    gate.feed_row(_row("REV", _rev_state_frame(0x002D, round_no=3), sort_id=2))
+    next_action = gate.feed_row(
+        _row(
+            "SEND",
+            _send_frame(0x0026, session="2501:2222222222222222"),
+            sort_id=3,
+        )
+    )
+
+    assert next_action.reset_session is True
+    assert len(next_action.rows) == 1
+    assert next_action.rows[0]["SortID"] == 1
+    assert next_action.rows[0]["MessageID"] == "0x0026"
+    assert next_action.rows[0]["SessionID"] == "2501:2222222222222222"
+    assert gate.active_session_id == "2501:2222222222222222"
+
+
 def test_game_frame_gate_reconstructs_split_frames() -> None:
     module = _module()
     gate = module.GameFrameGate()

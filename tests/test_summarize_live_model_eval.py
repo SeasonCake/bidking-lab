@@ -44,6 +44,48 @@ def test_summarize_dedupes_latest_row_by_file() -> None:
     assert summary["decision_value_mae"] == 10
 
 
+def test_summarize_recomputes_replacement_decision_error_for_old_rows() -> None:
+    module = _summary_module()
+
+    summary = module.summarize(
+        [
+            {
+                "ts": 1,
+                "file": "tail.json",
+                "final_value": 1_000_000,
+                "final_decision_value": 600_000,
+                "final_decision_value_with_tail_replacement": 650_000,
+                "decision_value_p50": 550_000,
+                "decision_value_p90": 800_000,
+                "decision_value_p50_error": -450_000,
+            },
+        ]
+    )
+
+    assert summary["decision_value_mae"] == 100_000
+
+
+def test_summarize_recomputes_raw_decision_error_when_truth_fields_are_absent() -> None:
+    module = _summary_module()
+
+    row = {
+        "ts": 1,
+        "file": "raw-only.json",
+        "final_value": 1_000_000,
+        "decision_value_p50": 700_000,
+        "decision_value_p90": 1_100_000,
+        "decision_value_p50_error": 0,
+    }
+    derived = module._with_derived_decision_errors(row)
+    summary = module.summarize([row])
+
+    assert derived["decision_value_truth"] == 1_000_000
+    assert derived["decision_value_truth_source"] == "raw"
+    assert "decision_value_p50_error_vs_formal" not in derived
+    assert derived["decision_value_p50_error_vs_raw"] == -300_000
+    assert summary["decision_value_mae"] == 300_000
+
+
 def test_summarize_includes_monitor_error_log_summary() -> None:
     module = _summary_module()
 

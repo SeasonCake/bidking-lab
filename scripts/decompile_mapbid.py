@@ -9,9 +9,10 @@ import zlib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-EXE = REPO / "src/AuctionAnalyzer4.13.3/AuctionAnalyzer4.13.3.exe"
-EXTRACTED = REPO / "src/AuctionAnalyzer4.13.3/_extracted"
-DECOMPILED = REPO / "src/AuctionAnalyzer4.13.3/_decompiled"
+REFERENCE_DIR = REPO / "external_references" / "AuctionAnalyzer4.13.3"
+EXE = REFERENCE_DIR / "AuctionAnalyzer4.13.3.exe"
+EXTRACTED = REFERENCE_DIR / "_extracted"
+DECOMPILED = REFERENCE_DIR / "_decompiled"
 ILSPY = REPO / "tools/ilspycmd/pkg/tools/net8.0/any/ilspycmd.dll"
 
 BUNDLE_SIGNATURE = bytes(

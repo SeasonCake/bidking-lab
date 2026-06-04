@@ -1,5 +1,5 @@
 param(
-  [string]$WatchDir = "C:\Users\shenc\Desktop\bid_king_packages",
+  [string]$WatchDir = "",
   [string]$LogDir = "data\logs\live",
   [int]$NTrials = 500,
   [int]$RoiTrials = 250,
@@ -13,6 +13,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+if (-not $WatchDir) {
+  $WatchDir = Join-Path $Repo "data\samples\fatbeans"
+}
 . (Join-Path $Repo "scripts\resolve_python.ps1")
 $Python = Resolve-BidKingPython
 $PythonWindowed = Resolve-BidKingPythonw -PythonExe $Python

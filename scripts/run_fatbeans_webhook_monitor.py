@@ -685,7 +685,10 @@ class FatbeansWebhookMonitor:
             "fast",
             max(1, int(self.config.fast_n_trials)),
             0,
-            1,
+            min(
+                max(1, int(self.config.full_shadow_trials)),
+                max(1, int(self.config.fast_n_trials)),
+            ),
             False,
         )
 

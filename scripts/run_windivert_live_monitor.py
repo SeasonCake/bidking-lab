@@ -327,6 +327,8 @@ class GameFrameGate:
     def __init__(self) -> None:
         self._buffers: dict[StreamKey, bytearray] = {}
         self._current_session_id: str | None = None
+        self._current_session_settled = False
+        self._pending_next_session_frames: deque[GameFrame] = deque(maxlen=8)
         self._next_sort_id = 1
         self.dropped_bytes = 0
         self.ignored_frames = 0
@@ -412,6 +414,8 @@ class GameFrameGate:
         self.dropped_bytes = 0
         if clear_session:
             self._current_session_id = None
+            self._current_session_settled = False
+            self._pending_next_session_frames.clear()
             self._next_sort_id = 1
 
     @property
@@ -440,6 +444,8 @@ class GameFrameGate:
                 raw,
             )
             if game_frame is None:
+                if ignore_reason == "rev_tool_pending_next_session":
+                    continue
                 self._note_ignore(
                     ignore_reason or "unclassified",
                     sample=ignore_sample,
@@ -451,6 +457,9 @@ class GameFrameGate:
                 emitted.clear()
                 self._buffers.clear()
                 self._next_sort_id = 1
+                emitted.extend(
+                    self._flush_pending_next_session_frames(game_frame.session_id)
+                )
             if should_emit:
                 emitted.append(self._row_from_game_frame(game_frame))
                 self.accepted_frames += 1
@@ -688,6 +697,22 @@ class GameFrameGate:
                         message_id=message_id,
                     ),
                 )
+            if self._current_session_settled:
+                self._pending_next_session_frames.append(
+                    GameFrame(
+                        template_row=row,
+                        raw=raw,
+                        direction=direction,
+                        message_id=message_id,
+                        session_id="",
+                        is_state=True,
+                    )
+                )
+                return (
+                    None,
+                    "rev_tool_pending_next_session",
+                    None,
+                )
             return GameFrame(
                 template_row=row,
                 raw=raw,
@@ -714,6 +739,8 @@ class GameFrameGate:
                 and self._current_session_id != frame.session_id
             )
             self._current_session_id = frame.session_id
+            if reset:
+                self._current_session_settled = False
             return True, reset
         if frame.is_state:
             reset = (
@@ -721,13 +748,42 @@ class GameFrameGate:
                 and self._current_session_id != frame.session_id
             )
             self._current_session_id = frame.session_id
+            if reset:
+                self._current_session_settled = False
+            if frame.message_id == 0x002D:
+                self._current_session_settled = True
             return True, reset
         if self._current_session_id == frame.session_id:
             return True, False
-        if self._current_session_id is not None and frame.message_id == 0x0022:
+        if (
+            self._current_session_id is not None
+            and (frame.message_id == 0x0022 or self._current_session_settled)
+        ):
             self._current_session_id = frame.session_id
+            self._current_session_settled = False
             return True, True
         return False, False
+
+    def _flush_pending_next_session_frames(self, session_id: str) -> list[dict[str, Any]]:
+        if not self._pending_next_session_frames:
+            return []
+        rows: list[dict[str, Any]] = []
+        while self._pending_next_session_frames:
+            frame = self._pending_next_session_frames.popleft()
+            rows.append(
+                self._row_from_game_frame(
+                    GameFrame(
+                        template_row=frame.template_row,
+                        raw=frame.raw,
+                        direction=frame.direction,
+                        message_id=frame.message_id,
+                        session_id=session_id,
+                        is_state=frame.is_state,
+                        is_status=frame.is_status,
+                    )
+                )
+            )
+        return rows
 
     def _row_from_game_frame(self, frame: GameFrame) -> dict[str, Any]:
         row = dict(frame.template_row)

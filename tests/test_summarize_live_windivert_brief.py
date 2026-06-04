@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import scripts.summarize_live_windivert_brief as module
@@ -23,8 +24,17 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
             "decision_value_p90": 250_000,
             "decision_value_p50_error": -100_000,
             "final_q6_value": 180_000,
+            "final_q6_count": 3,
+            "final_q6_cells": 14,
             "final_q6_decision_value": 180_000,
+            "final_q6_decision_value_with_tail_replacement": 230_000,
+            "final_q6_tail_replacement_value": 50_000,
             "v2_q6_decision_value_p90": 120_000,
+            "v2_q6_tail_replacement_estimate_p90": 150_000,
+            "v2_q6_count_p90": 1,
+            "v2_q6_cells_p90": 8,
+            "v2_q6_count_p90_under_prior_by": 1.4,
+            "v2_q6_cells_p90_under_prior_by": 2.2,
             "q6_plannable_p90_misses_truth": True,
             "v2_q6_space_pressure_p90": 0.2,
             "v2_q6_space_overflow_rate": 0,
@@ -43,6 +53,8 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
             ),
             "q6_residual_boost_shadow_active": True,
             "q6_residual_boost_shadow_covered_after": True,
+            "q6_residual_boost_shadow_label": "profile_b5",
+            "q6_quality_only_deep_local_risk": True,
             "warehouse_p50_error": -45,
             "monitor_n_trials": 20,
         },
@@ -72,7 +84,7 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
     assert summary["by_action_round"]["R2"]["p50_under_rate"] == 1.0
     assert summary["by_action_round"]["R2"]["p90_coverage"] == 0.0
     assert summary["by_action_round"]["R2"]["median_n_trials"] == 20
-    assert summary["by_round"]["R4+"]["median_matched"] == 10
+    assert summary["by_round"]["R4"]["median_matched"] == 10
     assert summary["by_q6_truth"]["q6>0"]["rows"] == 1
     assert summary["by_q6_truth"]["q6=0"]["rows"] == 1
     assert summary["by_random_avg"]["signal"]["rows"] == 1
@@ -88,6 +100,13 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
     assert summary["by_diagnostic_tag"]["q6_truth"]["rows"] == 1
     assert summary["by_diagnostic_tag"]["random_avg_signal"]["rows"] == 1
     assert summary["by_diagnostic_tag"]["warehouse_under<-20"]["rows"] == 1
+    assert summary["by_diagnostic_tag"]["quality_only_deep_local_risk"]["rows"] == 1
+    assert summary["by_q6_component_tag"]["q6_value_under"]["rows"] == 1
+    assert summary["by_q6_component_tag"]["q6_count_under_truth"]["rows"] == 1
+    assert summary["by_q6_component_tag"]["q6_cells_under_truth"]["rows"] == 1
+    assert summary["by_q6_component_tag"]["q6_tail_replacement_truth"]["rows"] == 1
+    assert summary["by_q6_component_tag"]["q6_tail_estimate_under"]["rows"] == 1
+    assert summary["by_q6_component_tag"]["no_q6_truth"]["rows"] == 1
     assert summary["by_hero"]["ethan"]["rows"] == 1
     assert summary["by_evidence_profile"]["public:random_avg+layout"]["rows"] == 1
     assert summary["by_public_constraint"]["max_quality"]["rows"] == 1
@@ -95,14 +114,118 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
     assert summary["by_constraint_density"]["medium_3_5"]["rows"] == 1
     assert summary["by_sample_space"]["zero_match"]["rows"] == 1
     assert summary["by_space_pressure"]["low_space_pressure"]["rows"] == 1
-    assert summary["by_tail"]["q6_top_large"]["rows"] == 1
+    assert summary["by_tail"]["q6_tail_replacement"]["rows"] == 1
     assert summary["top_p90_misses"][0]["primary_error"] == "q6_tail_value"
+    assert (
+        "q6_count_under_truth"
+        in summary["top_p90_misses"][0]["q6_components"]
+    )
+    assert summary["top_p90_misses"][0]["q6_count_under_by"] == 2
+    assert summary["top_p90_misses"][0]["q6_cells_under_by"] == 6
+    assert summary["top_p90_misses"][0]["q6_replacement_under_by"] == 110_000
+    assert summary["top_p90_misses"][0]["q6_tail_estimate_under_by"] == 80_000
+    assert summary["top_p90_misses"][0]["q6_shadow"] == "covered"
+    assert summary["top_p90_misses"][0]["q6_shadow_covered_labels"] == "profile_b5"
+    assert summary["top_p90_misses"][0]["q6_shadow_active_labels"] == "profile_b5"
+    assert summary["top_p90_misses"][0]["q6_shadow_active_miss_labels"] == ""
 
 
 def test_summarize_live_windivert_brief_json_roundtrip() -> None:
     summary = summarize([])
     payload = json.loads(json.dumps(summary))
     assert payload["total_rows"] == 0
+    assert payload["prebid_window_audit"]["windows"] == 0
+
+
+def test_summarize_live_windivert_brief_preserves_five_prebid_rounds() -> None:
+    rows = [
+        {
+            "eval_window": "pre_bid",
+            "eval_window_round": round_no,
+            "round": round_no,
+            "action_round": round_no,
+            "decision_value_p50": 500_000,
+            "decision_value_p90": 800_000,
+            "final_value": 1_000_000,
+            "final_decision_value": 600_000,
+            "decision_value_p50_error": -500_000,
+            "window_has_prebid_state": True,
+            "window_has_estimate": True,
+            "window_action_result_ready": True,
+            "window_round_matches_artifact": True,
+            "window_ready_for_accuracy": True,
+            "session_id": "session",
+        }
+        for round_no in range(1, 6)
+    ]
+
+    summary = summarize(rows)
+
+    assert list(summary["prebid_by_round"]) == ["R1", "R2", "R3", "R4", "R5"]
+    assert summary["prebid_by_round_q6_truth"]["R5"]["unknown"]["rows"] == 1
+    assert summary["prebid_window_audit"]["five_window_sessions"] == 1
+    assert summary["prebid_window_audit"]["ready_windows"] == 5
+    assert summary["prebid_session_progression"]["transitions"] == 4
+    assert (
+        summary["prebid_session_progression"]["p50_abs_error_improved_or_equal_rate"]
+        == 1.0
+    )
+    assert summary["prebid_session_progression"]["p90_coverage_lost_transitions"] == 0
+    assert summary["prebid_overall"]["decision_value_mae"] == 100_000
+    assert summary["prebid_overall"]["median_normalized_abs_p50_error"] == 0.167
+    assert summary["prebid_overall"]["p90_coverage"] == 1.0
+    assert summary["prebid_overall"]["median_p90_covered_excess_ratio"] == 0.333
+
+
+def test_summarize_live_windivert_brief_uses_replacement_truth_when_available() -> None:
+    summary = summarize(
+        [
+            {
+                "eval_window": "pre_bid",
+                "eval_window_round": 2,
+                "round": 2,
+                "action_round": 2,
+                "decision_value_p50": 550_000,
+                "decision_value_p90": 800_000,
+                "final_value": 1_000_000,
+                "final_decision_value": 600_000,
+                "final_decision_value_with_tail_replacement": 650_000,
+                "decision_value_p50_error": -450_000,
+            },
+        ]
+    )
+
+    assert summary["prebid_overall"]["decision_value_mae"] == 100_000
+    assert summary["prebid_overall"]["p90_coverage"] == 1.0
+
+
+def test_q6_shadow_bucket_uses_ethan_villa_random_floor_shadow() -> None:
+    row = {
+        "final_q6_value": 500_000,
+        "final_q6_decision_value": 500_000,
+        "q6_residual_ethan_villa_random_floor_shadow_active": True,
+        "q6_residual_ethan_villa_random_floor_shadow_covered_after": True,
+    }
+
+    assert module._q6_shadow_bucket(row) == "covered"
+
+
+def test_q6_shadow_labels_keep_active_miss_label() -> None:
+    row = {
+        "final_q6_value": 500_000,
+        "final_q6_decision_value": 500_000,
+        "q6_residual_deep11_floor_shadow_label": "aisha_deep11_floor1",
+        "q6_residual_deep11_floor_shadow_active": True,
+        "q6_residual_deep11_floor_shadow_covered_after": False,
+    }
+
+    assert module._q6_shadow_bucket(row) == "active_miss"
+    assert module._q6_shadow_labels(row, "active") == "aisha_deep11_floor1"
+    assert (
+        module._q6_shadow_labels(row, "active_miss")
+        == "aisha_deep11_floor1"
+    )
+    assert module._q6_shadow_labels(row, "covered") == ""
 
 
 def test_load_archive_rows_replays_recent_complete_archive(
@@ -162,10 +285,13 @@ def test_load_archive_rows_can_emit_prebid_windows(
     capture = archive / "windivert_2026-06-04_complete_ethan_2401_session.json"
     capture.write_text("[]\n", encoding="utf-8")
     events = SimpleNamespace(
-        packets=(SimpleNamespace(sort_id=1), SimpleNamespace(sort_id=2)),
-        frames=(SimpleNamespace(sort_id=1), SimpleNamespace(sort_id=2)),
-        sends=(SimpleNamespace(sort_id=2, kind="bid", value=580000),),
-        states=(SimpleNamespace(sort_id=1),),
+        packets=tuple(SimpleNamespace(sort_id=sort_id) for sort_id in range(1, 5)),
+        frames=tuple(SimpleNamespace(sort_id=sort_id) for sort_id in range(1, 5)),
+        sends=(
+            SimpleNamespace(sort_id=2, kind="action", value=100136),
+            SimpleNamespace(sort_id=4, kind="bid", value=580000),
+        ),
+        states=(SimpleNamespace(sort_id=1), SimpleNamespace(sort_id=3)),
         statuses=(),
     )
 
@@ -173,13 +299,15 @@ def test_load_archive_rows_can_emit_prebid_windows(
     monkeypatch.setattr(module, "parse_fatbeans_capture", lambda path: events)
 
     def fake_build_events(events_arg, **kwargs):
-        if len(events_arg.packets) == 2:
+        if len(events_arg.packets) == 4:
             return {
                 "session_id": "2401:session",
                 "known_value_sum": 900000,
                 "inventory_cells": 121,
                 "final_q6_value": 600000,
             }
+        assert [send.kind for send in events_arg.sends] == ["action"]
+        assert [state.sort_id for state in events_arg.states] == [1, 3]
         return {
             "session_id": "2401:session",
             "round": None,
@@ -194,6 +322,8 @@ def test_load_archive_rows_can_emit_prebid_windows(
             "file": kwargs["file"],
             "round": None,
             "action_round": None,
+            "decision_value_p50": 800000,
+            "decision_value_p90": 950000,
             "decision_value_p50_error": -100000,
         }
 
@@ -215,8 +345,61 @@ def test_load_archive_rows_can_emit_prebid_windows(
     assert rows[0]["eval_window"] == "pre_bid"
     assert rows[0]["eval_window_round"] == 1
     assert rows[0]["window_bid_value"] == 580000
+    assert rows[0]["window_has_prebid_state"] is True
+    assert rows[0]["window_has_estimate"] is True
+    assert rows[0]["window_round_action_send_count"] == 1
+    assert rows[0]["window_round_last_action_sort_id"] == 2
+    assert rows[0]["window_round_last_state_sort_id"] == 3
+    assert rows[0]["window_action_result_ready"] is True
+    assert rows[0]["window_ready_for_accuracy"] is True
     assert rows[0]["round"] == 1
     assert rows[0]["action_round"] == 1
+
+
+def test_load_archive_rows_scans_reset_complete_candidates(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    complete = tmp_path / "archive" / "complete"
+    reset = tmp_path / "archive" / "reset"
+    complete.mkdir(parents=True)
+    reset.mkdir(parents=True)
+    complete_capture = (
+        complete / "windivert_2026-06-04_complete_ethan_2401_session-a.json"
+    )
+    reset_capture = reset / "windivert_live_2026-06-04_190618_2501_session-b_reset.json"
+    complete_capture.write_text("[]\n", encoding="utf-8")
+    reset_capture.write_text("[]\n", encoding="utf-8")
+
+    monkeypatch.setattr(module, "load_monitor_tables", lambda: "tables")
+
+    def fake_build(path, **kwargs):
+        return {
+            "session_id": f"session:{path.stem}",
+            "model_eval": {
+                "file": path.name,
+                "round": 3,
+                "action_round": 3,
+                "decision_value_p50_error": -42,
+            },
+        }
+
+    monkeypatch.setattr(module, "build_monitor_artifact_from_file", fake_build)
+
+    rows = module._load_archive_rows(
+        tmp_path / "archive",
+        since_ts=0,
+        n_trials=10,
+        roi_trials=0,
+        shadow_trials=1,
+        run_debug_shadows=False,
+        window="full",
+    )
+
+    assert {Path(row["archive_path"]).parent.name for row in rows} == {
+        "complete",
+        "reset",
+    }
 
 
 def test_summarize_live_windivert_brief_dedupes_archive_by_session() -> None:

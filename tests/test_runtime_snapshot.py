@@ -432,6 +432,16 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
                     "q6_cells_p90": 9,
                 },
                 {
+                    "label": "aisha_deep11_floor1",
+                    "active": True,
+                    "gate": "aisha_shipwreck_deep11_v1",
+                    "evidence_profile_key": "shape+layout",
+                    "trials": 80,
+                    "q6_decision_value_p90": 520000,
+                    "q6_count_p90": 3,
+                    "q6_cells_p90": 12,
+                },
+                {
                     "label": "aisha_hidden_floor15",
                     "active": True,
                     "gate": "aisha_hidden_v1",
@@ -450,6 +460,16 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
                     "q6_decision_value_p90": 380000,
                     "q6_count_p90": 1,
                     "q6_cells_p90": 4,
+                },
+                {
+                    "label": "ethan_shipwreck_layout_conditional_c4_cells15",
+                    "active": True,
+                    "gate": "ethan_shipwreck_layout_v1",
+                    "evidence_profile_key": "public:random_avg+layout",
+                    "trials": 80,
+                    "q6_decision_value_p90": 510000,
+                    "q6_count_p90": 4,
+                    "q6_cells_p90": 15,
                 },
             ],
             "category_grid_items": [
@@ -520,6 +540,10 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
                 "q6_residual_boost_shadow_helped": True,
                 "q6_residual_deep_floor_shadow_q6_p90_delta": 186510,
                 "q6_residual_deep_floor_shadow_helped": True,
+                "q6_residual_deep11_floor_shadow_q6_p90_delta": 220000,
+                "q6_residual_deep11_floor_shadow_helped": True,
+                "q6_residual_ethan_shipwreck_layout_conditional_shadow_q6_p90_delta": 210000,
+                "q6_residual_ethan_shipwreck_layout_conditional_shadow_helped": True,
                 "shape_target_count": 1,
                 "category_target_count": 2,
                 "category_exclusion_count": 1,
@@ -633,8 +657,10 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert [shadow["label"] for shadow in contract["shadows"]] == [
         "profile_b5",
         "aisha_deep_floor1",
+        "aisha_deep11_floor1",
         "aisha_hidden_floor15",
         "aisha_villa_floor05",
+        "ethan_shipwreck_layout_conditional_c4_cells15",
     ]
     assert contract["shadows"][0]["role"] == "diagnostic_shadow"
     assert contract["shadows"][0]["display_mode"] == "debug_only"
@@ -642,13 +668,25 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert contract["shadows"][0]["q6_p90_delta"] == 120000
     assert contract["shadows"][1]["role"] == "tail_risk_reference_candidate"
     assert contract["shadows"][1]["display_mode"] == "risk_reference_candidate"
-    assert contract["shadows"][2]["role"] == "hidden_tail_risk_shadow"
-    assert contract["shadows"][2]["display_mode"] == "shadow_only_hidden_tail_review"
-    assert contract["shadows"][3]["role"] == "villa_tail_risk_shadow"
+    assert contract["shadows"][2]["role"] == "aisha_deep11_tail_risk_shadow"
     assert (
-        contract["shadows"][3]["display_mode"]
+        contract["shadows"][2]["display_mode"]
+        == "shadow_only_aisha_deep11_review"
+    )
+    assert contract["shadows"][2]["q6_p90_delta"] == 220000
+    assert contract["shadows"][3]["role"] == "hidden_tail_risk_shadow"
+    assert contract["shadows"][3]["display_mode"] == "shadow_only_hidden_tail_review"
+    assert contract["shadows"][4]["role"] == "villa_tail_risk_shadow"
+    assert (
+        contract["shadows"][4]["display_mode"]
         == "shadow_only_pending_no_q6_controls"
     )
+    assert contract["shadows"][5]["role"] == "shipwreck_layout_q6_likelihood_shadow"
+    assert (
+        contract["shadows"][5]["display_mode"]
+        == "shadow_only_ethan_shipwreck_q6_likelihood_review"
+    )
+    assert contract["shadows"][5]["q6_p90_delta"] == 210000
     assert contract["minimap"]["status"] == "available"
     assert contract["minimap"]["known_items"] == 2
     assert contract["minimap"]["columns"] == 10
@@ -880,6 +918,25 @@ def test_ui_contract_exposes_size_bucket_diagnostics() -> None:
     assert "四格均价" in size_bucket["latest_reading_label"]
     assert "4格均价" in size_bucket["latest_target_label"]
     assert size_bucket["inference_matches_reading"] is True
+
+
+def test_ui_contract_uses_exact_input_totals_when_posterior_range_is_missing() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "inference_input_constraints": {
+                "mode": "pre_settlement_trusted_totals",
+                "warehouse_total_cells": {"value": 98},
+                "total_item_count": {"value": 38},
+            },
+        }
+    )
+
+    posterior = contract["baseline"]["posterior"]
+
+    assert posterior["total_cells_range"] == "98 / 98 / 98"
+    assert posterior["total_item_count_range"] == "38 / 38 / 38"
+    assert posterior["input_warehouse_total_cells"] == 98
+    assert posterior["input_total_item_count"] == 38
 
 
 def test_ui_contract_minimap_includes_quality_only_markers() -> None:

@@ -35,6 +35,11 @@ _Q6_HIDDEN_FLOOR_SHADOW_SAMPLING_TARGETS: tuple[tuple[str, str, int], ...] = (
 _Q6_VILLA_FLOOR_SHADOW_SAMPLING_TARGETS: tuple[tuple[str, str, int], ...] = (
     ("aisha", "villa", 20),
 )
+_Q6_ETHAN_SHIPWRECK_LAYOUT_CONDITIONAL_SHADOW_SAMPLING_TARGETS: tuple[
+    tuple[str, str, int], ...
+] = (
+    ("ethan", "shipwreck", 20),
+)
 _Q6_SHADOW_REVIEW_SPECS: dict[str, tuple[str, str]] = {
     "profile_b5": (
         "q6_residual_boost_shadow_label",
@@ -51,6 +56,10 @@ _Q6_SHADOW_REVIEW_SPECS: dict[str, tuple[str, str]] = {
     "aisha_villa_floor05": (
         "q6_residual_villa_floor_shadow_label",
         "q6_residual_villa_floor_shadow",
+    ),
+    "ethan_shipwreck_layout_conditional_c4_cells15": (
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow_label",
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow",
     ),
 }
 _Q6_SHADOW_REVIEW_FIELDS: tuple[str, ...] = (
@@ -249,6 +258,51 @@ def _numeric(row: dict[str, Any], key: str) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _with_derived_decision_errors(row: dict[str, Any]) -> dict[str, Any]:
+    decision_p50 = _numeric(row, "decision_value_p50")
+    decision_p90 = _numeric(row, "decision_value_p90")
+    final_decision_value = _numeric(row, "final_decision_value")
+    final_replacement_decision_value = _numeric(
+        row,
+        "final_decision_value_with_tail_replacement",
+    )
+    final_value = _numeric(row, "final_value")
+    decision_value_truth = final_replacement_decision_value
+    if decision_value_truth is None:
+        decision_value_truth = final_decision_value
+    if decision_value_truth is None:
+        decision_value_truth = final_value
+    updates: dict[str, Any] = {}
+    if decision_value_truth is not None:
+        updates["decision_value_truth"] = decision_value_truth
+        if final_replacement_decision_value is not None and (
+            final_decision_value is None
+            or final_replacement_decision_value != final_decision_value
+        ):
+            updates["decision_value_truth_source"] = "tail_replacement"
+        elif final_decision_value is not None:
+            updates["decision_value_truth_source"] = "formal"
+        else:
+            updates["decision_value_truth_source"] = "raw"
+    if decision_p50 is not None and decision_value_truth is not None:
+        updates["decision_value_p50_error"] = decision_p50 - decision_value_truth
+    if decision_p90 is not None and decision_value_truth is not None:
+        updates["decision_value_p90_error"] = decision_p90 - decision_value_truth
+    if decision_p50 is not None and final_decision_value is not None:
+        updates["decision_value_p50_error_vs_formal"] = (
+            decision_p50 - final_decision_value
+        )
+    if decision_p90 is not None and final_decision_value is not None:
+        updates["decision_value_p90_error_vs_formal"] = (
+            decision_p90 - final_decision_value
+        )
+    if decision_p50 is not None and final_value is not None:
+        updates["decision_value_p50_error_vs_raw"] = decision_p50 - final_value
+    if decision_p90 is not None and final_value is not None:
+        updates["decision_value_p90_error_vs_raw"] = decision_p90 - final_value
+    return {**row, **updates} if updates else row
 
 
 def _final_q6_decision_value(row: dict[str, Any]) -> int:
@@ -1209,6 +1263,17 @@ def _q6_residual_villa_floor_shadow_summary(
     )
 
 
+def _q6_residual_ethan_shipwreck_layout_conditional_shadow_summary(
+    rows: list[dict[str, Any]],
+    key: str,
+) -> list[dict[str, Any]]:
+    return _q6_shadow_summary(
+        rows,
+        key,
+        prefix="q6_residual_ethan_shipwreck_layout_conditional_shadow",
+    )
+
+
 def _collection_readiness(
     rows: list[dict[str, Any]],
     *,
@@ -1353,6 +1418,17 @@ def _q6_shadow_sampling_progress(rows: list[dict[str, Any]]) -> dict[str, Any]:
         sample_scope="live_aisha_villa_floor05_logs",
         targets_config=_Q6_VILLA_FLOOR_SHADOW_SAMPLING_TARGETS,
     )
+    ethan_shipwreck_layout_conditional = _q6_shadow_sampling_progress_for_label(
+        rows,
+        label_key=(
+            "q6_residual_ethan_shipwreck_layout_conditional_shadow_label"
+        ),
+        label="ethan_shipwreck_layout_conditional_c4_cells15",
+        sample_scope="live_ethan_shipwreck_layout_conditional_logs",
+        targets_config=(
+            _Q6_ETHAN_SHIPWRECK_LAYOUT_CONDITIONAL_SHADOW_SAMPLING_TARGETS
+        ),
+    )
     return {
         **profile_b5,
         "candidates": {
@@ -1360,6 +1436,9 @@ def _q6_shadow_sampling_progress(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "aisha_deep_floor1": aisha_deep_floor1,
             "aisha_hidden_floor15": aisha_hidden_floor15,
             "aisha_villa_floor05": aisha_villa_floor05,
+            "ethan_shipwreck_layout_conditional_c4_cells15": (
+                ethan_shipwreck_layout_conditional
+            ),
         },
     }
 
@@ -1498,6 +1577,22 @@ def _q6_shadow_candidate_readiness_summary(
             label="aisha_villa_floor05",
             progress=candidates.get("aisha_villa_floor05") or {},
         ),
+        "ethan_shipwreck_layout_conditional_c4_cells15": (
+            _q6_shadow_candidate_readiness(
+                rows,
+                prefix="q6_residual_ethan_shipwreck_layout_conditional_shadow",
+                label_key=(
+                    "q6_residual_ethan_shipwreck_layout_conditional_shadow_label"
+                ),
+                label="ethan_shipwreck_layout_conditional_c4_cells15",
+                progress=(
+                    candidates.get(
+                        "ethan_shipwreck_layout_conditional_c4_cells15"
+                    )
+                    or {}
+                ),
+            )
+        ),
     }
 
 
@@ -1570,7 +1665,9 @@ def summarize(
         rows = _dedupe_latest_by_file(rows)
     valid = [
         _with_derived_information_density(
-            _with_derived_q6_fields(_with_derived_layout_root(row))
+            _with_derived_q6_fields(
+                _with_derived_layout_root(_with_derived_decision_errors(row))
+            )
         )
         for row in rows
         if row.get("final_value") is not None or row.get("final_cells") is not None
@@ -1835,6 +1932,45 @@ def summarize(
                 if row.get("q6_residual_villa_floor_shadow_active")
             ],
             "q6_residual_villa_floor_shadow_q6_p90_delta",
+        ),
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow_active_count": sum(
+            1 for row in valid
+            if row.get(
+                "q6_residual_ethan_shipwreck_layout_conditional_shadow_active"
+            )
+        ),
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow_under_before_count": sum(
+            1 for row in valid
+            if row.get(
+                "q6_residual_ethan_shipwreck_layout_conditional_shadow_under_before"
+            )
+        ),
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow_helped_count": sum(
+            1 for row in valid
+            if row.get(
+                "q6_residual_ethan_shipwreck_layout_conditional_shadow_helped"
+            )
+        ),
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow_false_positive_proxy_count": sum(
+            1 for row in valid
+            if row.get(
+                "q6_residual_ethan_shipwreck_layout_conditional_shadow_false_positive_proxy"
+            )
+        ),
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow_zero_q6_proven_false_positive_count": sum(
+            1 for row in valid
+            if row.get(
+                "q6_residual_ethan_shipwreck_layout_conditional_shadow_zero_q6_proven_false_positive"
+            )
+        ),
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow_q6_p90_delta_median": _median_value(
+            [
+                row for row in valid
+                if row.get(
+                    "q6_residual_ethan_shipwreck_layout_conditional_shadow_active"
+                )
+            ],
+            "q6_residual_ethan_shipwreck_layout_conditional_shadow_q6_p90_delta",
         ),
         "q6_aisha_bottom_row_risk_count": sum(
             1 for row in valid if row.get("q6_aisha_bottom_row_risk")
@@ -2126,6 +2262,53 @@ def summarize(
             "information_density": _q6_residual_villa_floor_shadow_summary(
                 valid,
                 "information_density_band",
+            ),
+        },
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow": {
+            "hero": (
+                _q6_residual_ethan_shipwreck_layout_conditional_shadow_summary(
+                    valid,
+                    "hero",
+                )
+            ),
+            "hero_map_family": (
+                _q6_residual_ethan_shipwreck_layout_conditional_shadow_summary(
+                    [
+                        {
+                            **row,
+                            "hero_map_family": (
+                                f"hero={row.get('hero') or 'unknown'}|"
+                                f"map_family={_map_family(row.get('map_id'))}"
+                            ),
+                        }
+                        for row in valid
+                    ],
+                    "hero_map_family",
+                )
+            ),
+            "map_family": (
+                _q6_residual_ethan_shipwreck_layout_conditional_shadow_summary(
+                    [
+                        {
+                            **row,
+                            "map_family": _map_family(row.get("map_id")),
+                        }
+                        for row in valid
+                    ],
+                    "map_family",
+                )
+            ),
+            "evidence_stage": (
+                _q6_residual_ethan_shipwreck_layout_conditional_shadow_summary(
+                    valid,
+                    "evidence_stage",
+                )
+            ),
+            "information_density": (
+                _q6_residual_ethan_shipwreck_layout_conditional_shadow_summary(
+                    valid,
+                    "information_density_band",
+                )
             ),
         },
     }

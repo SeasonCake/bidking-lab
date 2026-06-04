@@ -577,6 +577,46 @@ def test_conditional_sampler_honors_exact_total_count_and_cells() -> None:
     assert truth.buckets[6].count == 1
 
 
+def test_conditional_sampler_honors_exact_total_cells_without_total_count() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_item(
+        RuntimeEvidence(
+            runtime_id=123,
+            item_id=1103006,
+            quality=3,
+            shape_key="21",
+            cells=2,
+            sources=("public:200022",),
+        )
+    )
+    obs = SessionObs(
+        map_id=2401,
+        hero="ethan",
+        warehouse_total_cells=18,
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+        obs=obs,
+    )
+    sampler = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+
+    truths = [
+        sampler.sample(rng=np.random.default_rng(seed))
+        for seed in range(10)
+    ]
+
+    assert all(truth.warehouse_total_cells == 18 for truth in truths)
+    assert all(
+        any(item.item_id == 1103006 for item in truth.buckets[3].items)
+        for truth in truths
+    )
+
+
 def test_estimate_posterior_v2_uses_anchor_without_rejection_dead_end() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()
@@ -777,6 +817,53 @@ def test_q6_residual_boost_only_changes_residual_sampling_weights() -> None:
     assert abs(float(boosted_probs.sum()) - 1.0) < 1e-12
 
 
+def test_q6_residual_value_tilt_preserves_q6_mass_and_prefers_high_value() -> None:
+    maps, drops, items = _tables()
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    baseline = ConditionalSampler(problem, maps=maps, drops=drops, items=items)
+    tilted = ConditionalSampler(
+        problem,
+        maps=maps,
+        drops=drops,
+        items=items,
+        q6_residual_value_power=0.5,
+    )
+    low = _item(6201, quality=6, value=120_000, shape=(2, 2))
+    high = _item(6202, quality=6, value=480_000, shape=(2, 2))
+    other = _item(5201, quality=5, value=90_000, shape=(2, 2))
+    pool = type(
+        "Pool",
+        (),
+        {
+            "items": [other, low, high],
+            "probabilities": np.asarray([1 / 3, 1 / 3, 1 / 3], dtype=np.float64),
+            "qualities": np.asarray([5, 6, 6], dtype=np.int64),
+        },
+    )()
+    q6_indexes = [1, 2]
+    low_i = 1
+    high_i = 2
+
+    base_probs = baseline._residual_probabilities(pool)
+    tilted_probs = tilted._residual_probabilities(pool)
+
+    assert (
+        abs(float(base_probs[q6_indexes].sum()) - float(tilted_probs[q6_indexes].sum()))
+        < 1e-12
+    )
+    assert (
+        tilted_probs[high_i] / tilted_probs[low_i]
+        > base_probs[high_i] / base_probs[low_i]
+    )
+    assert abs(float(tilted_probs.sum()) - 1.0) < 1e-12
+
+
 def test_q6_residual_prior_floor_sampler_adds_q6_when_enabled() -> None:
     maps, drops, items = _tables()
     problem = build_residual_problem(
@@ -792,6 +879,54 @@ def test_q6_residual_prior_floor_sampler_adds_q6_when_enabled() -> None:
         drops=drops,
         items=items,
         q6_residual_prior_floor_ratio=1000.0,
+    )
+
+    sampled = sampler.sample(np.random.default_rng(7))
+
+    assert sampled.buckets[6].count >= 1
+    assert sampled.buckets[6].total_cells >= 16
+
+
+def test_q6_residual_prior_cell_floor_can_be_tuned_separately() -> None:
+    maps, drops, items = _tables()
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(
+        problem,
+        maps=maps,
+        drops=drops,
+        items=items,
+        q6_residual_prior_floor_ratio=0.0,
+        q6_residual_prior_cell_floor_ratio=1000.0,
+    )
+
+    sampled = sampler.sample(np.random.default_rng(7))
+
+    assert sampled.buckets[6].total_cells >= 16
+
+
+def test_q6_conditional_target_sampler_adds_q6_when_enabled() -> None:
+    maps, drops, items = _tables()
+    problem = build_residual_problem(
+        2401,
+        EvidenceStoreBuilder().build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    sampler = ConditionalSampler(
+        problem,
+        maps=maps,
+        drops=drops,
+        items=items,
+        q6_conditional_target_count=1.0,
+        q6_conditional_target_cells=16.0,
+        q6_conditional_value_power=0.5,
     )
 
     sampled = sampler.sample(np.random.default_rng(7))

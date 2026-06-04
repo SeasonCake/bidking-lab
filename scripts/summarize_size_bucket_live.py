@@ -28,6 +28,22 @@ def _numeric(row: dict[str, Any], key: str) -> float | None:
         return None
 
 
+def _metric_value(row: dict[str, Any], key: str) -> float | None:
+    if key == "decision_value_p50_error":
+        decision_p50 = _numeric(row, "decision_value_p50")
+        final_replacement_decision_value = _numeric(
+            row,
+            "final_decision_value_with_tail_replacement",
+        )
+        if final_replacement_decision_value is None:
+            final_replacement_decision_value = _numeric(row, "final_decision_value")
+        if final_replacement_decision_value is None:
+            final_replacement_decision_value = _numeric(row, "final_value")
+        if decision_p50 is not None and final_replacement_decision_value is not None:
+            return decision_p50 - final_replacement_decision_value
+    return _numeric(row, key)
+
+
 def _load_rows(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -56,7 +72,7 @@ def _dedupe_latest_by_file(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _mae(rows: list[dict[str, Any]], key: str = "decision_value_p50_error") -> float | None:
-    values = [_numeric(row, key) for row in rows]
+    values = [_metric_value(row, key) for row in rows]
     abs_values = [abs(v) for v in values if v is not None]
     if not abs_values:
         return None
@@ -67,7 +83,7 @@ def _median_abs_error(
     rows: list[dict[str, Any]],
     key: str = "decision_value_p50_error",
 ) -> float | None:
-    values = [_numeric(row, key) for row in rows]
+    values = [_metric_value(row, key) for row in rows]
     abs_values = [abs(v) for v in values if v is not None]
     if not abs_values:
         return None
@@ -75,7 +91,7 @@ def _median_abs_error(
 
 
 def _bias(rows: list[dict[str, Any]], key: str = "decision_value_p50_error") -> float | None:
-    values = [_numeric(row, key) for row in rows]
+    values = [_metric_value(row, key) for row in rows]
     clean = [v for v in values if v is not None]
     if not clean:
         return None
@@ -86,7 +102,7 @@ def _summarize_group(label: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     valued = [
         row
         for row in rows
-        if _numeric(row, "decision_value_p50_error") is not None
+        if _metric_value(row, "decision_value_p50_error") is not None
         and _numeric(row, "final_value") is not None
     ]
     return {

@@ -139,6 +139,11 @@ def _constraint_value(
     return None
 
 
+def _exact_quantile_range(value: Any) -> str:
+    text = _text(value)
+    return f"{text} / {text} / {text}" if text else ""
+
+
 def _match_counts(value: Any) -> tuple[int | None, int | None]:
     text = _text(value).strip()
     if "/" not in text:
@@ -507,6 +512,11 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
         ),
     }
     posterior_matched, posterior_total = _match_counts(v2.get("匹配"))
+    exact_total_cells = _constraint_value(
+        input_constraints,
+        "warehouse_total_cells",
+    )
+    exact_total_items = _constraint_value(input_constraints, "total_item_count")
     return {
         "schema_version": 1,
         "mode": "baseline_first_shadow_reference",
@@ -561,22 +571,18 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                 "total": posterior_total,
                 "status": _posterior_status(posterior_matched, posterior_total),
                 "total_value_range": _text(warehouse.get("价值 P10/P50/P90")),
-                "total_cells_range": _text(warehouse.get("总格 P10/P50/P90")),
-                "total_item_count_range": "",
+                "total_cells_range": (
+                    _text(warehouse.get("总格 P10/P50/P90"))
+                    or _exact_quantile_range(exact_total_cells)
+                ),
+                "total_item_count_range": _exact_quantile_range(exact_total_items),
                 "total_item_count_status": (
                     "exact_input_constraint"
-                    if _constraint_value(input_constraints, "total_item_count")
-                    is not None
+                    if exact_total_items is not None
                     else "not_estimated_by_v2"
                 ),
-                "input_total_item_count": _constraint_value(
-                    input_constraints,
-                    "total_item_count",
-                ),
-                "input_warehouse_total_cells": _constraint_value(
-                    input_constraints,
-                    "warehouse_total_cells",
-                ),
+                "input_total_item_count": exact_total_items,
+                "input_warehouse_total_cells": exact_total_cells,
                 "input_warehouse_total_cells_approx": _constraint_value(
                     input_constraints,
                     "warehouse_total_cells_approx",
@@ -1315,22 +1321,41 @@ def _ui_shadow_contract(
     prefix_by_label = {
         "profile_b5": "q6_residual_boost_shadow",
         "aisha_deep_floor1": "q6_residual_deep_floor_shadow",
+        "aisha_deep11_floor1": "q6_residual_deep11_floor_shadow",
         "aisha_hidden_floor15": "q6_residual_hidden_floor_shadow",
         "aisha_villa_floor05": "q6_residual_villa_floor_shadow",
+        "ethan_villa_random_avg_floor1": (
+            "q6_residual_ethan_villa_random_floor_shadow"
+        ),
+        "ethan_shipwreck_layout_conditional_c4_cells15": (
+            "q6_residual_ethan_shipwreck_layout_conditional_shadow"
+        ),
     }
     prefix = prefix_by_label.get(label, "")
     active = bool(shadow.get("active"))
     role_by_label = {
         "profile_b5": "diagnostic_shadow",
         "aisha_deep_floor1": "tail_risk_reference_candidate",
+        "aisha_deep11_floor1": "aisha_deep11_tail_risk_shadow",
         "aisha_hidden_floor15": "hidden_tail_risk_shadow",
         "aisha_villa_floor05": "villa_tail_risk_shadow",
+        "ethan_villa_random_avg_floor1": "villa_random_avg_tail_risk_shadow",
+        "ethan_shipwreck_layout_conditional_c4_cells15": (
+            "shipwreck_layout_q6_likelihood_shadow"
+        ),
     }
     display_by_label = {
         "profile_b5": "debug_only",
         "aisha_deep_floor1": "risk_reference_candidate",
+        "aisha_deep11_floor1": "shadow_only_aisha_deep11_review",
         "aisha_hidden_floor15": "shadow_only_hidden_tail_review",
         "aisha_villa_floor05": "shadow_only_pending_no_q6_controls",
+        "ethan_villa_random_avg_floor1": (
+            "shadow_only_ethan_villa_random_avg_review"
+        ),
+        "ethan_shipwreck_layout_conditional_c4_cells15": (
+            "shadow_only_ethan_shipwreck_q6_likelihood_review"
+        ),
     }
     return {
         "label": label,

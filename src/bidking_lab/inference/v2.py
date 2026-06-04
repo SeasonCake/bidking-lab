@@ -1415,6 +1415,11 @@ class ConditionalSampler:
         items: Mapping[int, Item],
         q6_residual_boost: float = 1.0,
         q6_residual_prior_floor_ratio: float = 0.0,
+        q6_residual_prior_cell_floor_ratio: float = 0.0,
+        q6_residual_value_power: float = 0.0,
+        q6_conditional_target_count: float = 0.0,
+        q6_conditional_target_cells: float = 0.0,
+        q6_conditional_value_power: float = 0.0,
     ) -> None:
         self.problem = problem
         self.items = items
@@ -1422,6 +1427,23 @@ class ConditionalSampler:
         self.q6_residual_prior_floor_ratio = max(
             0.0,
             float(q6_residual_prior_floor_ratio),
+        )
+        self.q6_residual_prior_cell_floor_ratio = max(
+            0.0,
+            float(q6_residual_prior_cell_floor_ratio),
+        )
+        self.q6_residual_value_power = max(0.0, float(q6_residual_value_power))
+        self.q6_conditional_target_count = max(
+            0.0,
+            float(q6_conditional_target_count),
+        )
+        self.q6_conditional_target_cells = max(
+            0.0,
+            float(q6_conditional_target_cells),
+        )
+        self.q6_conditional_value_power = max(
+            0.0,
+            float(q6_conditional_value_power),
         )
         self._sampler = prepare_session_sampler(
             problem.map_id,
@@ -1610,6 +1632,7 @@ class ConditionalSampler:
         self._sample_category_targets(pool, buckets, rng)
         self._sample_bucket_targets(pool, buckets, rng)
         self._sample_q6_prior_floor(pool, buckets, rng)
+        self._sample_q6_conditional_target(pool, buckets, rng)
 
         current_count = sum(bucket.count for bucket in buckets.values())
         if (
@@ -1646,30 +1669,137 @@ class ConditionalSampler:
             if not filled_exact_cells:
                 self._sample_exact_count_residual(pool, buckets, residual_draws, rng)
         elif residual_draws:
-            residual_probs = self._residual_probabilities(pool, buckets=buckets)
-            sampled_idx = rng.choice(
-                len(residual_probs),
-                size=residual_draws,
-                replace=True,
-                p=residual_probs,
-            )
-            counts = rng.integers(
-                pool.n_min[sampled_idx],
-                pool.n_max[sampled_idx] + 1,
-            )
-            for pool_i, count in zip(sampled_idx, counts):
-                if not self._residual_bucket_delta_allowed(
-                    pool.items[int(pool_i)],
+            filled_exact_cells = False
+            if self.problem.warehouse_total_cells is not None:
+                filled_exact_cells = self._sample_exact_cells_residual(
+                    pool,
                     buckets,
-                    int(count),
-                ):
-                    continue
-                _add_item_to_buckets(
-                    buckets,
-                    pool.items[int(pool_i)],
-                    count=int(count),
+                    rng,
                 )
+            if not filled_exact_cells:
+                residual_probs = self._residual_probabilities(pool, buckets=buckets)
+                sampled_idx = rng.choice(
+                    len(residual_probs),
+                    size=residual_draws,
+                    replace=True,
+                    p=residual_probs,
+                )
+                counts = rng.integers(
+                    pool.n_min[sampled_idx],
+                    pool.n_max[sampled_idx] + 1,
+                )
+                for pool_i, count in zip(sampled_idx, counts):
+                    if not self._residual_bucket_delta_allowed(
+                        pool.items[int(pool_i)],
+                        buckets,
+                        int(count),
+                    ):
+                        continue
+                    _add_item_to_buckets(
+                        buckets,
+                        pool.items[int(pool_i)],
+                        count=int(count),
+                    )
         return self._truth_from_buckets(buckets)
+
+    @staticmethod
+    def _clone_buckets(
+        buckets: Mapping[int, BucketTruth],
+    ) -> dict[int, BucketTruth]:
+        return {
+            quality: replace(bucket, items=list(bucket.items))
+            for quality, bucket in buckets.items()
+        }
+
+    def _sample_exact_cells_residual(
+        self,
+        pool: Any,
+        buckets: dict[int, BucketTruth],
+        rng: np.random.Generator,
+    ) -> bool:
+        target_cells = self.problem.warehouse_total_cells
+        if target_cells is None:
+            return False
+        current_cells = sum(bucket.total_cells for bucket in buckets.values())
+        remaining_cells = int(target_cells) - int(current_cells)
+        if remaining_cells == 0:
+            return True
+        if remaining_cells < 0 or remaining_cells > 320:
+            return False
+
+        options: list[tuple[int, int, int, float]] = []
+        for pool_i, item in enumerate(pool.items):
+            if not self._item_allowed_by_global_constraints(item):
+                continue
+            area = int(item.shape_w * item.shape_h)
+            if area <= 0:
+                continue
+            min_count = int(pool.n_min[pool_i])
+            max_count = int(pool.n_max[pool_i])
+            weight = self._residual_candidate_weight(pool, int(pool_i))
+            if min_count <= 0 or max_count < min_count or weight <= 0:
+                continue
+            for count in range(min_count, max_count + 1):
+                added_cells = area * count
+                if added_cells <= remaining_cells:
+                    options.append((int(pool_i), count, added_cells, weight))
+        if not options:
+            return False
+
+        cells_deltas = tuple(sorted({added_cells for _, _, added_cells, _ in options}))
+
+        @lru_cache(maxsize=None)
+        def can_fill(cells_left: int) -> bool:
+            if cells_left == 0:
+                return True
+            if cells_left < 0:
+                return False
+            return any(
+                cells <= cells_left and can_fill(cells_left - cells)
+                for cells in cells_deltas
+            )
+
+        if not can_fill(remaining_cells):
+            return False
+
+        for _attempt in range(20):
+            trial_buckets = self._clone_buckets(buckets)
+            cells_left = remaining_cells
+            while cells_left:
+                feasible = [
+                    option
+                    for option in options
+                    if option[2] <= cells_left
+                    and can_fill(cells_left - option[2])
+                    and self._residual_bucket_delta_allowed(
+                        pool.items[option[0]],
+                        trial_buckets,
+                        option[1],
+                    )
+                ]
+                if not feasible:
+                    break
+                weights = np.asarray(
+                    [option[3] for option in feasible],
+                    dtype=np.float64,
+                )
+                total = float(weights.sum())
+                if total <= 0:
+                    break
+                pool_i, count, added_cells, _weight = feasible[
+                    int(rng.choice(len(feasible), p=weights / total))
+                ]
+                _add_item_to_buckets(
+                    trial_buckets,
+                    pool.items[pool_i],
+                    count=count,
+                )
+                cells_left -= added_cells
+            if cells_left == 0:
+                buckets.clear()
+                buckets.update(trial_buckets)
+                return True
+        return False
 
     def _sample_exact_count_cells_residual(
         self,
@@ -1790,6 +1920,7 @@ class ConditionalSampler:
             for footprint in masked_footprints:
                 probs[areas == footprint] = 0.0
         probs = self._apply_global_candidate_constraints(pool, probs)
+        probs = self._apply_q6_value_tilt(pool, probs)
         qualities = getattr(pool, "qualities", None)
         if self.q6_residual_boost <= 1.0 or qualities is None:
             return probs
@@ -1800,16 +1931,89 @@ class ConditionalSampler:
             return probs
         return boosted / total
 
+    def _q6_value_tilt_for_item(self, pool: Any, pool_i: int) -> float:
+        if self.q6_residual_value_power <= 0:
+            return 1.0
+        item = pool.items[int(pool_i)]
+        if int(getattr(item, "quality", 0)) != 6:
+            return 1.0
+        q6_values = [
+            max(1, int(candidate.value))
+            for candidate in pool.items
+            if int(getattr(candidate, "quality", 0)) == 6
+        ]
+        if not q6_values:
+            return 1.0
+        median_value = float(np.median(np.asarray(q6_values, dtype=np.float64)))
+        if median_value <= 0:
+            return 1.0
+        raw = (max(1.0, float(item.value)) / median_value) ** self.q6_residual_value_power
+        return float(np.clip(raw, 0.35, 4.00))
+
+    def _apply_q6_value_tilt(self, pool: Any, probs: np.ndarray) -> np.ndarray:
+        if self.q6_residual_value_power <= 0:
+            return probs
+        qualities = getattr(pool, "qualities", None)
+        if qualities is None:
+            return probs
+        q6_mask = np.asarray(qualities) == 6
+        q6_total = float(probs[q6_mask].sum())
+        if q6_total <= 0:
+            return probs
+        tilted = probs.copy()
+        q6_indexes = np.flatnonzero(q6_mask)
+        factors = np.asarray(
+            [self._q6_value_tilt_for_item(pool, int(index)) for index in q6_indexes],
+            dtype=np.float64,
+        )
+        tilted_q6 = tilted[q6_indexes] * factors
+        tilted_total = float(tilted_q6.sum())
+        if tilted_total <= 0:
+            return probs
+        tilted[q6_indexes] = tilted_q6 / tilted_total * q6_total
+        total = float(tilted.sum())
+        if total <= 0:
+            return probs
+        return tilted / total
+
+    def _q6_conditional_value_tilt_for_item(self, pool: Any, pool_i: int) -> float:
+        if self.q6_conditional_value_power <= 0:
+            return 1.0
+        item = pool.items[int(pool_i)]
+        if int(getattr(item, "quality", 0)) != 6:
+            return 1.0
+        q6_values = [
+            max(1, int(candidate.value))
+            for candidate in pool.items
+            if int(getattr(candidate, "quality", 0)) == 6
+        ]
+        if not q6_values:
+            return 1.0
+        median_value = float(np.median(np.asarray(q6_values, dtype=np.float64)))
+        if median_value <= 0:
+            return 1.0
+        raw = (max(1.0, float(item.value)) / median_value) ** (
+            self.q6_conditional_value_power
+        )
+        return float(np.clip(raw, 0.50, 3.00))
+
     def _residual_candidate_weight(self, pool: Any, pool_i: int) -> float:
         if not self._item_allowed_by_global_constraints(pool.items[int(pool_i)]):
             return 0.0
         weight = float(pool.probabilities[pool_i])
+        weight *= self._q6_value_tilt_for_item(pool, pool_i)
         if (
             self.q6_residual_boost > 1.0
             and int(getattr(pool.items[int(pool_i)], "quality", 0)) == 6
         ):
             weight *= self.q6_residual_boost
         return weight
+
+    def _q6_conditional_candidate_weight(self, pool: Any, pool_i: int) -> float:
+        weight = self._residual_candidate_weight(pool, pool_i)
+        if weight <= 0:
+            return 0.0
+        return weight * self._q6_conditional_value_tilt_for_item(pool, pool_i)
 
     def _residual_bucket_delta_allowed(
         self,
@@ -1960,7 +2164,13 @@ class ConditionalSampler:
         buckets: dict[int, BucketTruth],
         rng: np.random.Generator,
     ) -> None:
-        if self.q6_residual_prior_floor_ratio <= 0:
+        count_floor_ratio = self.q6_residual_prior_floor_ratio
+        cell_floor_ratio = (
+            self.q6_residual_prior_cell_floor_ratio
+            if self.q6_residual_prior_cell_floor_ratio > 0
+            else count_floor_ratio
+        )
+        if count_floor_ratio <= 0 and cell_floor_ratio <= 0:
             return
         if self.problem.max_quality is not None and self.problem.max_quality < 6:
             return
@@ -1974,10 +2184,10 @@ class ConditionalSampler:
         if prior is None:
             return
         target_count = int(
-            np.ceil(prior.expected_session_count * self.q6_residual_prior_floor_ratio)
+            np.ceil(prior.expected_session_count * count_floor_ratio)
         )
         target_cells = int(
-            np.ceil(prior.expected_session_cells * self.q6_residual_prior_floor_ratio)
+            np.ceil(prior.expected_session_cells * cell_floor_ratio)
         )
         if target_count <= 0 and target_cells <= 0:
             return
@@ -2044,6 +2254,97 @@ class ConditionalSampler:
             ]
             min_count = int(pool.n_min[pool_i])
             count = int(rng.integers(min_count, max_count + 1))
+            _add_item_to_buckets(buckets, pool.items[pool_i], count=count)
+
+    def _sample_q6_conditional_target(
+        self,
+        pool: Any,
+        buckets: dict[int, BucketTruth],
+        rng: np.random.Generator,
+    ) -> None:
+        target_count = int(np.ceil(self.q6_conditional_target_count))
+        target_cells = int(np.ceil(self.q6_conditional_target_cells))
+        if target_count <= 0 and target_cells <= 0:
+            return
+        if self.problem.max_quality is not None and self.problem.max_quality < 6:
+            return
+        q6_target = self.problem.bucket_targets.get(6)
+        if q6_target is not None and (
+            q6_target.count_exact is not None
+            or q6_target.total_cells_exact is not None
+        ):
+            return
+
+        attempts = 0
+        while attempts < 50:
+            attempts += 1
+            q6_bucket = buckets.get(6)
+            current_q6_count = q6_bucket.count if q6_bucket is not None else 0
+            current_q6_cells = q6_bucket.total_cells if q6_bucket is not None else 0
+            if current_q6_count >= target_count and current_q6_cells >= target_cells:
+                return
+
+            total_count = sum(bucket.count for bucket in buckets.values())
+            if self.problem.total_item_count is not None:
+                remaining_count_capacity = int(self.problem.total_item_count) - total_count
+                if remaining_count_capacity <= 0:
+                    return
+            else:
+                remaining_count_capacity = None
+
+            total_cells = sum(bucket.total_cells for bucket in buckets.values())
+            if self.problem.warehouse_total_cells is not None:
+                remaining_cell_capacity = (
+                    int(self.problem.warehouse_total_cells) - total_cells
+                )
+                if remaining_cell_capacity <= 0:
+                    return
+            else:
+                remaining_cell_capacity = None
+
+            candidates: list[tuple[int, int, float]] = []
+            for pool_i, item in enumerate(pool.items):
+                if int(item.quality) != 6:
+                    continue
+                if not self._item_allowed_by_global_constraints(item):
+                    continue
+                area = int(item.shape_w * item.shape_h)
+                if area <= 0:
+                    continue
+                min_count = int(pool.n_min[pool_i])
+                max_count = int(pool.n_max[pool_i])
+                if remaining_count_capacity is not None:
+                    max_count = min(max_count, remaining_count_capacity)
+                if remaining_cell_capacity is not None:
+                    max_count = min(max_count, remaining_cell_capacity // area)
+                if max_count < min_count or min_count <= 0:
+                    continue
+                needed_count = max(0, target_count - current_q6_count)
+                if needed_count > 0:
+                    max_count = min(max_count, max(min_count, needed_count))
+                if not self._residual_bucket_delta_allowed(item, buckets, min_count):
+                    continue
+                weight = self._q6_conditional_candidate_weight(pool, pool_i)
+                if weight > 0:
+                    candidates.append((int(pool_i), max_count, weight))
+            if not candidates:
+                return
+
+            weights = np.asarray([candidate[2] for candidate in candidates], dtype=np.float64)
+            total = float(weights.sum())
+            if total <= 0:
+                return
+            pool_i, max_count, _weight = candidates[
+                int(rng.choice(len(candidates), p=weights / total))
+            ]
+            min_count = int(pool.n_min[pool_i])
+            count = int(rng.integers(min_count, max_count + 1))
+            if not self._residual_bucket_delta_allowed(
+                pool.items[pool_i],
+                buckets,
+                count,
+            ):
+                continue
             _add_item_to_buckets(buckets, pool.items[pool_i], count=count)
 
     def _sample_shape_targets(
@@ -2794,6 +3095,11 @@ def _estimate_posterior_for_problem(
     total_item_count_tol: int = 0,
     q6_residual_boost: float = 1.0,
     q6_residual_prior_floor_ratio: float = 0.0,
+    q6_residual_prior_cell_floor_ratio: float = 0.0,
+    q6_residual_value_power: float = 0.0,
+    q6_conditional_target_count: float = 0.0,
+    q6_conditional_target_cells: float = 0.0,
+    q6_conditional_value_power: float = 0.0,
     extra_diagnostics: tuple[str, ...] = (),
 ) -> PosteriorReport:
     sampler = ConditionalSampler(
@@ -2803,6 +3109,11 @@ def _estimate_posterior_for_problem(
         items=items,
         q6_residual_boost=q6_residual_boost,
         q6_residual_prior_floor_ratio=q6_residual_prior_floor_ratio,
+        q6_residual_prior_cell_floor_ratio=q6_residual_prior_cell_floor_ratio,
+        q6_residual_value_power=q6_residual_value_power,
+        q6_conditional_target_count=q6_conditional_target_count,
+        q6_conditional_target_cells=q6_conditional_target_cells,
+        q6_conditional_value_power=q6_conditional_value_power,
     )
     session_prior = sampler.session_drop_prior()
     q6_prior = sampler.quality_drop_prior(6)
@@ -2981,6 +3292,20 @@ def _estimate_posterior_for_problem(
         diagnostics.append(
             f"q6_residual_prior_floor_ratio:{q6_residual_prior_floor_ratio:.2f}"
         )
+    if q6_residual_prior_cell_floor_ratio > 0:
+        diagnostics.append(
+            "q6_residual_prior_cell_floor_ratio:"
+            f"{q6_residual_prior_cell_floor_ratio:.2f}"
+        )
+    if q6_residual_value_power > 0:
+        diagnostics.append(f"q6_residual_value_power:{q6_residual_value_power:.2f}")
+    if q6_conditional_target_count > 0 or q6_conditional_target_cells > 0:
+        diagnostics.append(
+            "q6_conditional_target:"
+            f"count={q6_conditional_target_count:.2f}:"
+            f"cells={q6_conditional_target_cells:.1f}:"
+            f"value_power={q6_conditional_value_power:.2f}"
+        )
     q6_match_rate = _weighted_positive_rate(q6_values, weights)
     q6_drop_prior_allowed = not (
         problem.max_quality is not None and problem.max_quality < 6
@@ -3095,6 +3420,11 @@ def estimate_posterior_v2(
     total_item_count_tol: int = 0,
     q6_residual_boost: float = 1.0,
     q6_residual_prior_floor_ratio: float = 0.0,
+    q6_residual_prior_cell_floor_ratio: float = 0.0,
+    q6_residual_value_power: float = 0.0,
+    q6_conditional_target_count: float = 0.0,
+    q6_conditional_target_cells: float = 0.0,
+    q6_conditional_value_power: float = 0.0,
     size_bucket_prefill: bool = False,
     size_bucket_mask_residual_pool: bool = False,
 ) -> PosteriorReport:
@@ -3125,6 +3455,11 @@ def estimate_posterior_v2(
         total_item_count_tol=total_item_count_tol,
         q6_residual_boost=q6_residual_boost,
         q6_residual_prior_floor_ratio=q6_residual_prior_floor_ratio,
+        q6_residual_prior_cell_floor_ratio=q6_residual_prior_cell_floor_ratio,
+        q6_residual_value_power=q6_residual_value_power,
+        q6_conditional_target_count=q6_conditional_target_count,
+        q6_conditional_target_cells=q6_conditional_target_cells,
+        q6_conditional_value_power=q6_conditional_value_power,
     )
     if strict.n_matched > 0:
         return strict
@@ -3157,6 +3492,11 @@ def estimate_posterior_v2(
         total_item_count_tol=total_item_count_tol,
         q6_residual_boost=q6_residual_boost,
         q6_residual_prior_floor_ratio=q6_residual_prior_floor_ratio,
+        q6_residual_prior_cell_floor_ratio=q6_residual_prior_cell_floor_ratio,
+        q6_residual_value_power=q6_residual_value_power,
+        q6_conditional_target_count=q6_conditional_target_count,
+        q6_conditional_target_cells=q6_conditional_target_cells,
+        q6_conditional_value_power=q6_conditional_value_power,
         extra_diagnostics=diagnostics,
     )
 

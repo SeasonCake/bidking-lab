@@ -23,6 +23,7 @@ from bidking_lab.live.fatbeans import (
     parse_fatbeans_packets,
     parse_fatbeans_capture,
     parse_fatbeans_capture_payload,
+    _parse_public_info,
     _parse_inventory_items,
 )
 from bidking_lab.live import (
@@ -176,6 +177,135 @@ def test_parse_inventory_items_keeps_parent_local_index() -> None:
         (102, 1001002, 0),
     ]
     assert [item.cells for item in items] == [2, 1]
+
+
+@pytest.mark.parametrize(
+    ("info_id", "value_field", "value"),
+    [
+        (200009, 14, 98),
+        (200017, 7, 38),
+    ],
+)
+def test_parse_public_numeric_exact_value_fields(
+    info_id: int,
+    value_field: int,
+    value: int,
+) -> None:
+    block = (
+        _field_varint(1, info_id)
+        + _field_varint(3, 2403)
+        + _field_varint(value_field, value)
+    )
+
+    info = _parse_public_info(block)
+
+    assert info is not None
+    assert info.info_id == info_id
+    assert info.map_id == 2403
+    assert info.value == value
+    assert info.value_field == value_field
+
+
+@pytest.mark.parametrize(
+    ("info_id", "path", "value_field", "value"),
+    [
+        (200009, ("session", "warehouse_total_cells"), 14, 98),
+        (200010, ("bucket", "4", "total_cells"), 14, 23),
+        (200011, ("bucket", "5", "total_cells"), 14, 18),
+        (200012, ("bucket", "6", "total_cells"), 14, 0),
+        (200017, ("session", "total_item_count"), 7, 38),
+        (200018, ("bucket", "4", "count"), 7, 11),
+        (200019, ("bucket", "5", "count"), 7, 5),
+        (200020, ("bucket", "6", "count"), 7, 0),
+    ],
+)
+def test_public_numeric_exact_infos_update_inference_fields(
+    info_id: int,
+    path: tuple[str, ...],
+    value_field: int,
+    value: int,
+) -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2403,
+                round_index=1,
+                public_infos=(
+                    FatbeansPublicInfo(
+                        info_id=info_id,
+                        map_id=2403,
+                        value=value,
+                        value_field=value_field,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+
+    assert {update.path: update.value for update in batch.field_updates}[path] == value
+
+
+def test_public_q5_outline_updates_exact_bucket_without_item_quality() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2403,
+                round_index=1,
+                public_infos=(
+                    FatbeansPublicInfo(
+                        info_id=200002,
+                        map_id=2403,
+                        value=2,
+                        value_field=8,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=0,
+                                runtime_id=101,
+                                item_id=None,
+                                quality=None,
+                                value=None,
+                                shape_code=22,
+                                cells=None,
+                            ),
+                            FatbeansObservedItem(
+                                local_index=10,
+                                runtime_id=102,
+                                item_id=None,
+                                quality=None,
+                                value=None,
+                                shape_code=12,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+    updates = {update.path: update.value for update in batch.field_updates}
+
+    assert updates[("bucket", "5", "count")] == 2
+    assert updates[("bucket", "5", "total_cells")] == 6
 
 
 def test_grid_footprint_decodes_fatbeans_local_and_shape() -> None:

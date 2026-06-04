@@ -36,6 +36,7 @@ from bidking_lab.inference.observation import QualityBucketObs, SessionObs
 from bidking_lab.inference.q6_residual import (
     aisha_q6_quality_only_deep_local_risk,
     q6_quality_only_local_diagnostics,
+    q6_residual_prior_floor_ratio_for_profile,
 )
 from bidking_lab.inference.v2 import LayoutFeasibility, ResidualProblem
 
@@ -256,6 +257,59 @@ def test_q6_quality_only_local_diagnostics_is_review_only() -> None:
         evidence_profile_key="shape+layout",
         deepest_start_row=diagnostics["deepest_start_row"],
     )
+
+
+def test_ethan_villa_random_avg_prior_floor_gate_is_narrow() -> None:
+    assert (
+        q6_residual_prior_floor_ratio_for_profile(
+            hero="ethan",
+            map_family="villa",
+            evidence_profile_key="public:random_avg+layout",
+            requested_ratio=1.0,
+            gate="ethan_villa_random_avg_v1",
+        )
+        == 1.0
+    )
+    assert (
+        q6_residual_prior_floor_ratio_for_profile(
+            hero="ethan",
+            map_family="villa",
+            evidence_profile_key="layout",
+            requested_ratio=1.0,
+            gate="ethan_villa_random_avg_v1",
+        )
+        == 0.0
+    )
+    assert (
+        q6_residual_prior_floor_ratio_for_profile(
+            hero="aisha",
+            map_family="villa",
+            evidence_profile_key="public:random_avg+layout",
+            requested_ratio=1.0,
+            gate="ethan_villa_random_avg_v1",
+        )
+        == 0.0
+    )
+
+
+def test_conditional_target_shadow_summary_counts_as_active() -> None:
+    summary = monitor_module._q6_residual_boost_shadow_summary(
+        None,
+        label="ethan_shipwreck_layout_conditional_c4_cells15",
+        requested_boost=1.0,
+        active_boost=1.0,
+        gate="ethan_shipwreck_layout_v1",
+        evidence_profile_key="layout",
+        trials=10,
+        requested_conditional_target_count=4.0,
+        active_conditional_target_count=4.0,
+        requested_conditional_target_cells=15.0,
+        active_conditional_target_cells=15.0,
+    )
+
+    assert summary["active"] is True
+    assert summary["active_conditional_target_count"] == 4.0
+    assert summary["active_conditional_target_cells"] == 15.0
 
 
 def _tables() -> MonitorTables:
@@ -485,6 +539,16 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["q6_residual_deep_floor_shadow"]["trials"] == 10
     assert artifact["q6_residual_deep_floor_shadow"]["active"] is False
     assert (
+        artifact["q6_residual_deep11_floor_shadow"]["label"]
+        == "aisha_deep11_floor1"
+    )
+    assert (
+        artifact["q6_residual_deep11_floor_shadow"]["gate"]
+        == "aisha_shipwreck_deep11_v1"
+    )
+    assert artifact["q6_residual_deep11_floor_shadow"]["trials"] == 10
+    assert artifact["q6_residual_deep11_floor_shadow"]["active"] is False
+    assert (
         artifact["q6_residual_hidden_floor_shadow"]["label"]
         == "aisha_hidden_floor15"
     )
@@ -499,11 +563,40 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     )
     assert artifact["q6_residual_villa_floor_shadow"]["trials"] == 10
     assert artifact["q6_residual_villa_floor_shadow"]["active"] is False
+    assert (
+        artifact["q6_residual_ethan_villa_random_floor_shadow"]["label"]
+        == "ethan_villa_random_avg_floor1"
+    )
+    assert (
+        artifact["q6_residual_ethan_villa_random_floor_shadow"]["gate"]
+        == "ethan_villa_random_avg_v1"
+    )
+    assert artifact["q6_residual_ethan_villa_random_floor_shadow"]["trials"] == 10
+    assert artifact["q6_residual_ethan_villa_random_floor_shadow"]["active"] is False
+    assert (
+        artifact["q6_residual_ethan_shipwreck_layout_conditional_shadow"]["label"]
+        == "ethan_shipwreck_layout_conditional_c4_cells15"
+    )
+    assert (
+        artifact["q6_residual_ethan_shipwreck_layout_conditional_shadow"]["gate"]
+        == "ethan_shipwreck_layout_v1"
+    )
+    assert (
+        artifact["q6_residual_ethan_shipwreck_layout_conditional_shadow"]["trials"]
+        == 10
+    )
+    assert (
+        artifact["q6_residual_ethan_shipwreck_layout_conditional_shadow"]["active"]
+        is False
+    )
     assert [row["策略"] for row in artifact["q6_residual_boost_shadow_rows"]] == [
         "profile_b5",
         "aisha_deep_floor1",
+        "aisha_deep11_floor1",
         "aisha_hidden_floor15",
         "aisha_villa_floor05",
+        "ethan_villa_random_avg_floor1",
+        "ethan_shipwreck_layout_conditional_c4_cells15",
     ]
     assert artifact["q6_residual_boost_shadow_rows"]
     assert "q6先验缺口" in artifact["v2_posterior_rows"][0]
@@ -541,8 +634,11 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     ] == [
         "profile_b5",
         "aisha_deep_floor1",
+        "aisha_deep11_floor1",
         "aisha_hidden_floor15",
         "aisha_villa_floor05",
+        "ethan_villa_random_avg_floor1",
+        "ethan_shipwreck_layout_conditional_c4_cells15",
     ]
     assert all(
         shadow["affects_bid"] is False
@@ -586,6 +682,13 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["model_eval"]["q6_residual_deep_floor_shadow_trials"] == 10
     assert "q6_residual_deep_floor_shadow_q6_p90_delta" in artifact["model_eval"]
     assert artifact["model_eval"]["q6_residual_deep_floor_shadow_active"] is False
+    assert "q6_residual_deep11_floor_shadow_active" in artifact["model_eval"]
+    assert artifact["model_eval"]["q6_residual_deep11_floor_shadow_trials"] == 10
+    assert (
+        "q6_residual_deep11_floor_shadow_q6_p90_delta"
+        in artifact["model_eval"]
+    )
+    assert artifact["model_eval"]["q6_residual_deep11_floor_shadow_active"] is False
     assert "q6_residual_hidden_floor_shadow_active" in artifact["model_eval"]
     assert artifact["model_eval"]["q6_residual_hidden_floor_shadow_trials"] == 10
     assert (
@@ -600,6 +703,46 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
         in artifact["model_eval"]
     )
     assert artifact["model_eval"]["q6_residual_villa_floor_shadow_active"] is False
+    assert (
+        "q6_residual_ethan_villa_random_floor_shadow_active"
+        in artifact["model_eval"]
+    )
+    assert (
+        artifact["model_eval"][
+            "q6_residual_ethan_villa_random_floor_shadow_trials"
+        ]
+        == 10
+    )
+    assert (
+        "q6_residual_ethan_villa_random_floor_shadow_q6_p90_delta"
+        in artifact["model_eval"]
+    )
+    assert (
+        artifact["model_eval"][
+            "q6_residual_ethan_villa_random_floor_shadow_active"
+        ]
+        is False
+    )
+    assert (
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow_active"
+        in artifact["model_eval"]
+    )
+    assert (
+        artifact["model_eval"][
+            "q6_residual_ethan_shipwreck_layout_conditional_shadow_trials"
+        ]
+        == 10
+    )
+    assert (
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow_q6_p90_delta"
+        in artifact["model_eval"]
+    )
+    assert (
+        artifact["model_eval"][
+            "q6_residual_ethan_shipwreck_layout_conditional_shadow_active"
+        ]
+        is False
+    )
     assert "raw_minus_decision_p90" in artifact["model_eval"]
     assert "layout_conflict_root" in artifact["model_eval"]
     assert "shape_target_count" in artifact["model_eval"]
@@ -698,9 +841,49 @@ def test_model_eval_uses_v2_value_when_bid_rows_are_absent() -> None:
     assert row is not None
     assert row["decision_value_p50"] == 250
     assert row["decision_value_p90"] == 400
+    assert row["decision_value_truth"] == 300
+    assert row["decision_value_truth_source"] == "raw"
     assert row["decision_value_p50_error"] == -50
+    assert row["decision_value_p50_error_vs_formal"] is None
+    assert row["decision_value_p50_error_vs_raw"] == -50
     assert row["raw_value_p50"] == 260
     assert row["raw_value_p90"] == 420
+
+
+def test_model_eval_decision_error_uses_replacement_truth_and_keeps_comparisons() -> None:
+    row = _model_eval_row(
+        file="tail.json",
+        artifact={
+            "file": "tail.json",
+            "hero": "aisha",
+            "map_id": 2506,
+            "round": 4,
+            "bid_rows": [
+                {
+                    "决策价值 P10/P50/P90": "400000 / 550000 / 800000",
+                    "原始价值 P10/P50/P90": "500000 / 700000 / 1100000",
+                },
+            ],
+            "warehouse_rows": [{"价值 P10/P50/P90": "500000 / 700000 / 1100000"}],
+            "v2_posterior_rows": [{"诊断": ""}],
+        },
+        final_value=1_000_000,
+        final_cells=10,
+        truth_breakdown={
+            "final_decision_value": 600_000,
+            "final_decision_value_with_tail_replacement": 650_000,
+        },
+    )
+
+    assert row is not None
+    assert row["decision_value_truth"] == 650_000
+    assert row["decision_value_truth_source"] == "tail_replacement"
+    assert row["decision_value_p50_error"] == -100_000
+    assert row["decision_value_p90_error"] == 150_000
+    assert row["decision_value_p50_error_vs_formal"] == -50_000
+    assert row["decision_value_p90_error_vs_formal"] == 200_000
+    assert row["decision_value_p50_error_vs_raw"] == -450_000
+    assert row["decision_value_p90_error_vs_raw"] == -200_000
 
 
 def test_model_eval_shadow_readiness_uses_plannable_q6_truth() -> None:
@@ -1172,6 +1355,33 @@ def test_q6_risk_reference_text_is_explicitly_non_binding() -> None:
     assert "件数P90低0.41" in text
     assert "参考P90 499,973" in text
     assert "shipwreck_positive_net" in text
+    assert "未抬高正式停止价" in text
+
+
+def test_q6_reference_with_shadow_keeps_reference_non_binding() -> None:
+    merged = monitor_module._q6_reference_with_shadow(
+        {
+            "risk": True,
+            "summary": "件数P90低2.40",
+            "floor_value": 486_510,
+            "gate": "shipwreck_positive_net",
+            "practical_p90": 486_510,
+        },
+        {
+            "active": True,
+            "label": "ethan_shipwreck_layout_conditional_c4_cells15",
+            "gate": "ethan_shipwreck_layout_v1",
+            "q6_decision_value_p90": 854_210,
+        },
+    )
+    text = monitor_module._q6_risk_reference_text(merged)
+
+    assert merged["practical_p90"] == 854_210
+    assert (
+        "ethan_shipwreck_layout_conditional_c4_cells15 q6P90 854,210"
+        in merged["summary"]
+    )
+    assert "ethan_shipwreck_layout_v1" in merged["gate"]
     assert "未抬高正式停止价" in text
 
 

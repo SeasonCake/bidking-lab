@@ -31,6 +31,7 @@ from bidking_lab.inference.q6_residual import (
     aisha_bottom_row_risk,
     aisha_q6_quality_only_deep_local_risk,
     evidence_profile_key_from_problem,
+    q6_conditional_target_active_for_profile,
     q6_quality_only_local_diagnostics,
     q6_residual_boost_for_profile,
     q6_residual_prior_floor_ratio_for_profile,
@@ -271,11 +272,16 @@ def _warehouse_estimate_rows(estimate: Any) -> list[dict[str, Any]]:
     return rows
 
 
-def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
+def _v2_posterior_rows(
+    report: Any,
+    *,
+    q6_prior_gap: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     if report is None:
         return []
     diagnostics = ";".join(getattr(report, "diagnostics", ()) or ())
-    q6_prior_gap = _q6_prior_gap_summary(report)
+    if q6_prior_gap is None:
+        q6_prior_gap = _q6_prior_gap_summary(report)
     return [
         {
             "范围": f"{report.map_id} {report.map_name}",
@@ -475,6 +481,58 @@ def _q6_risk_reference_text(q6_prior_gap: Mapping[str, Any] | None) -> str:
     return "；".join(part for part in parts if part)
 
 
+def _float_or_none(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(str(value).replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _q6_reference_with_shadow(
+    q6_prior_gap: Mapping[str, Any],
+    *shadows: Mapping[str, Any],
+) -> dict[str, Any]:
+    merged = dict(q6_prior_gap)
+    summary_parts = [
+        part
+        for part in str(merged.get("summary") or "").split("；")
+        if part.strip()
+    ]
+    gate_parts = [
+        part
+        for part in str(merged.get("gate") or "").split("+")
+        if part.strip()
+    ]
+    practical_values = [
+        value
+        for value in (
+            _float_or_none(merged.get("practical_p90")),
+            _float_or_none(merged.get("floor_value")),
+        )
+        if value is not None
+    ]
+    for shadow in shadows:
+        if not shadow or not shadow.get("active"):
+            continue
+        q6_p90 = _float_or_none(shadow.get("q6_decision_value_p90"))
+        if q6_p90 is None or q6_p90 <= 0:
+            continue
+        label = str(shadow.get("label") or "").strip()
+        gate = str(shadow.get("gate") or "").strip()
+        summary = f"{label or gate or 'shadow'} q6P90 {q6_p90:,.0f}"
+        summary_parts.append(summary)
+        gate_parts.append(gate or label or "shadow")
+        practical_values.append(q6_p90)
+    merged["summary"] = "；".join(dict.fromkeys(summary_parts))
+    merged["gate"] = "+".join(dict.fromkeys(gate_parts))
+    if practical_values:
+        merged["practical_p90"] = max(practical_values)
+    merged["risk"] = bool(merged.get("risk") or practical_values)
+    return merged
+
+
 def _quantile_value(summary: Any, name: str) -> int | None:
     if summary is None:
         return None
@@ -495,7 +553,17 @@ def _q6_residual_boost_shadow_summary(
     trials: int,
     requested_prior_floor_ratio: float = 0.0,
     active_prior_floor_ratio: float = 0.0,
+    requested_conditional_target_count: float = 0.0,
+    active_conditional_target_count: float = 0.0,
+    requested_conditional_target_cells: float = 0.0,
+    active_conditional_target_cells: float = 0.0,
+    requested_conditional_value_power: float = 0.0,
+    active_conditional_value_power: float = 0.0,
 ) -> dict[str, Any]:
+    active_conditional_target = (
+        active_conditional_target_count > 0.0
+        or active_conditional_target_cells > 0.0
+    )
     return {
         "label": label,
         "gate": gate,
@@ -503,7 +571,17 @@ def _q6_residual_boost_shadow_summary(
         "active_boost": active_boost,
         "requested_prior_floor_ratio": requested_prior_floor_ratio,
         "active_prior_floor_ratio": active_prior_floor_ratio,
-        "active": active_boost > 1.0 or active_prior_floor_ratio > 0.0,
+        "requested_conditional_target_count": requested_conditional_target_count,
+        "active_conditional_target_count": active_conditional_target_count,
+        "requested_conditional_target_cells": requested_conditional_target_cells,
+        "active_conditional_target_cells": active_conditional_target_cells,
+        "requested_conditional_value_power": requested_conditional_value_power,
+        "active_conditional_value_power": active_conditional_value_power,
+        "active": (
+            active_boost > 1.0
+            or active_prior_floor_ratio > 0.0
+            or active_conditional_target
+        ),
         "trials": trials,
         "evidence_profile_key": evidence_profile_key,
         "n_matched": getattr(report, "n_matched", None),
@@ -540,6 +618,9 @@ def _q6_residual_shadow_rows(
                 "激活": "是" if shadow.get("active") else "",
                 "boost": shadow.get("active_boost"),
                 "prior floor": shadow.get("active_prior_floor_ratio"),
+                "target count": shadow.get("active_conditional_target_count"),
+                "target cells": shadow.get("active_conditional_target_cells"),
+                "value power": shadow.get("active_conditional_value_power"),
                 "trials": shadow.get("trials"),
                 "证据profile": shadow.get("evidence_profile_key") or "",
                 "匹配": (
@@ -1397,6 +1478,15 @@ def _model_eval_shadow_fields(
         f"{prefix}_active_prior_floor_ratio": _parse_float_text(
             shadow.get("active_prior_floor_ratio")
         ),
+        f"{prefix}_active_conditional_target_count": _parse_float_text(
+            shadow.get("active_conditional_target_count")
+        ),
+        f"{prefix}_active_conditional_target_cells": _parse_float_text(
+            shadow.get("active_conditional_target_cells")
+        ),
+        f"{prefix}_active_conditional_value_power": _parse_float_text(
+            shadow.get("active_conditional_value_power")
+        ),
         f"{prefix}_decision_value_p50": _parse_int_text(
             shadow.get("decision_value_p50")
         ),
@@ -1441,8 +1531,15 @@ def _model_eval_row(
     v2_rows = artifact.get("v2_posterior_rows") or []
     shadow = artifact.get("q6_residual_boost_shadow") or {}
     deep_floor_shadow = artifact.get("q6_residual_deep_floor_shadow") or {}
+    deep11_floor_shadow = artifact.get("q6_residual_deep11_floor_shadow") or {}
     hidden_floor_shadow = artifact.get("q6_residual_hidden_floor_shadow") or {}
     villa_floor_shadow = artifact.get("q6_residual_villa_floor_shadow") or {}
+    ethan_villa_random_floor_shadow = (
+        artifact.get("q6_residual_ethan_villa_random_floor_shadow") or {}
+    )
+    ethan_shipwreck_layout_conditional_shadow = (
+        artifact.get("q6_residual_ethan_shipwreck_layout_conditional_shadow") or {}
+    )
     formal_prior_floor = artifact.get("q6_formal_prior_floor") or {}
     bottom_row_risk = artifact.get("q6_aisha_bottom_row_risk") or {}
     quality_only_local_risk = artifact.get("q6_quality_only_local_risk") or {}
@@ -1681,6 +1778,13 @@ def _model_eval_row(
         final_q6_decision_value=final_q6_decision_value,
         zero_q6_proven_control=zero_q6_proven_control,
     )
+    deep11_floor_shadow_fields = _model_eval_shadow_fields(
+        "q6_residual_deep11_floor_shadow",
+        deep11_floor_shadow,
+        baseline_q6_decision_value_p90=q6_decision_value_p90,
+        final_q6_decision_value=final_q6_decision_value,
+        zero_q6_proven_control=zero_q6_proven_control,
+    )
     hidden_floor_shadow_fields = _model_eval_shadow_fields(
         "q6_residual_hidden_floor_shadow",
         hidden_floor_shadow,
@@ -1695,8 +1799,48 @@ def _model_eval_row(
         final_q6_decision_value=final_q6_decision_value,
         zero_q6_proven_control=zero_q6_proven_control,
     )
+    ethan_villa_random_floor_shadow_fields = _model_eval_shadow_fields(
+        "q6_residual_ethan_villa_random_floor_shadow",
+        ethan_villa_random_floor_shadow,
+        baseline_q6_decision_value_p90=q6_decision_value_p90,
+        final_q6_decision_value=final_q6_decision_value,
+        zero_q6_proven_control=zero_q6_proven_control,
+    )
+    ethan_shipwreck_layout_conditional_shadow_fields = _model_eval_shadow_fields(
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow",
+        ethan_shipwreck_layout_conditional_shadow,
+        baseline_q6_decision_value_p90=q6_decision_value_p90,
+        final_q6_decision_value=final_q6_decision_value,
+        zero_q6_proven_control=zero_q6_proven_control,
+    )
     eval_round = artifact.get("observed_round", artifact.get("round"))
     action_round = artifact.get("action_round", artifact.get("round"))
+    truth_breakdown = truth_breakdown or {}
+    has_formal_decision_truth = truth_breakdown.get("final_decision_value") is not None
+    has_replacement_decision_truth = (
+        truth_breakdown.get("final_decision_value_with_tail_replacement") is not None
+    )
+    final_formal_decision_value = (
+        truth_breakdown.get("final_decision_value")
+        if has_formal_decision_truth
+        else None
+    )
+    final_replacement_decision_value = (
+        truth_breakdown.get("final_decision_value_with_tail_replacement")
+        if has_replacement_decision_truth
+        else final_formal_decision_value
+        if has_formal_decision_truth
+        else final_value
+    )
+    if has_replacement_decision_truth and (
+        not has_formal_decision_truth
+        or final_replacement_decision_value != final_formal_decision_value
+    ):
+        decision_value_truth_source = "tail_replacement"
+    elif has_formal_decision_truth:
+        decision_value_truth_source = "formal"
+    else:
+        decision_value_truth_source = "raw"
     evidence_stage = _evidence_stage(eval_round)
     density_score = _live_information_density_score(
         eval_round,
@@ -1726,13 +1870,44 @@ def _model_eval_row(
         "action_round": action_round,
         "final_value": final_value,
         "final_cells": final_cells,
-        **dict(truth_breakdown or {}),
+        **dict(truth_breakdown),
         "value_p50": value_p50,
         "decision_value_p50": decision_value_p50,
         "decision_value_p90": decision_value_p90,
+        "decision_value_truth": final_replacement_decision_value,
+        "decision_value_truth_source": decision_value_truth_source,
         "decision_value_p50_error": (
+            decision_value_p50 - final_replacement_decision_value
+            if decision_value_p50 is not None
+            and final_replacement_decision_value is not None
+            else None
+        ),
+        "decision_value_p90_error": (
+            decision_value_p90 - final_replacement_decision_value
+            if decision_value_p90 is not None
+            and final_replacement_decision_value is not None
+            else None
+        ),
+        "decision_value_p50_error_vs_formal": (
+            decision_value_p50 - final_formal_decision_value
+            if decision_value_p50 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "decision_value_p90_error_vs_formal": (
+            decision_value_p90 - final_formal_decision_value
+            if decision_value_p90 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "decision_value_p50_error_vs_raw": (
             decision_value_p50 - final_value
             if decision_value_p50 is not None and final_value is not None
+            else None
+        ),
+        "decision_value_p90_error_vs_raw": (
+            decision_value_p90 - final_value
+            if decision_value_p90 is not None and final_value is not None
             else None
         ),
         "raw_value_p50": raw_value_p50,
@@ -1894,8 +2069,11 @@ def _model_eval_row(
             and (q6_shadow_q6_decision_value_p90 or 0) > 0
         ),
         **deep_floor_shadow_fields,
+        **deep11_floor_shadow_fields,
         **hidden_floor_shadow_fields,
         **villa_floor_shadow_fields,
+        **ethan_villa_random_floor_shadow_fields,
+        **ethan_shipwreck_layout_conditional_shadow_fields,
         "q6_aisha_bottom_row_risk": bool(bottom_row_risk.get("active")),
         "layout_bottom_row": _parse_int_text(bottom_row_risk.get("bottom_row")),
         "layout_bottom_row_risk_threshold": _parse_int_text(
@@ -2372,8 +2550,11 @@ def build_monitor_artifact_from_events(
     q6_residual_boost_shadow: dict[str, Any] = {}
     q6_formal_prior_floor: dict[str, Any] = {}
     q6_residual_deep_floor_shadow: dict[str, Any] = {}
+    q6_residual_deep11_floor_shadow: dict[str, Any] = {}
     q6_residual_hidden_floor_shadow: dict[str, Any] = {}
     q6_residual_villa_floor_shadow: dict[str, Any] = {}
+    q6_residual_ethan_villa_random_floor_shadow: dict[str, Any] = {}
+    q6_residual_ethan_shipwreck_layout_conditional_shadow: dict[str, Any] = {}
     q6_residual_sampler_shadows: list[dict[str, Any]] = []
     q6_residual_boost_shadow_rows: list[dict[str, Any]] = []
     q6_aisha_bottom_row_risk: dict[str, Any] = {}
@@ -2507,6 +2688,14 @@ def build_monitor_artifact_from_events(
             gate="aisha_shipwreck_deep_v1",
             bottom_row=problem.layout.bottom_row,
         )
+        active_deep11_floor_ratio = q6_residual_prior_floor_ratio_for_profile(
+            hero=inference_session.hero,
+            map_family=_map_family_from_id(inference_session.map_id),
+            evidence_profile_key=evidence_profile_key,
+            requested_ratio=1.0,
+            gate="aisha_shipwreck_deep11_v1",
+            bottom_row=problem.layout.bottom_row,
+        )
         active_hidden_floor_ratio = q6_residual_prior_floor_ratio_for_profile(
             hero=inference_session.hero,
             map_family=_map_family_from_id(inference_session.map_id),
@@ -2522,6 +2711,30 @@ def build_monitor_artifact_from_events(
             requested_ratio=0.5,
             gate="aisha_villa_shape_layout_v1",
             bottom_row=problem.layout.bottom_row,
+        )
+        active_ethan_villa_random_floor_ratio = (
+            q6_residual_prior_floor_ratio_for_profile(
+                hero=inference_session.hero,
+                map_family=_map_family_from_id(inference_session.map_id),
+                evidence_profile_key=evidence_profile_key,
+                requested_ratio=1.0,
+                gate="ethan_villa_random_avg_v1",
+                bottom_row=problem.layout.bottom_row,
+            )
+        )
+        active_ethan_shipwreck_layout_conditional = (
+            q6_conditional_target_active_for_profile(
+                hero=inference_session.hero,
+                map_family=_map_family_from_id(inference_session.map_id),
+                evidence_profile_key=evidence_profile_key,
+                gate="ethan_shipwreck_layout_v1",
+            )
+        )
+        active_ethan_shipwreck_layout_target_count = (
+            4.0 if active_ethan_shipwreck_layout_conditional else 0.0
+        )
+        active_ethan_shipwreck_layout_target_cells = (
+            15.0 if active_ethan_shipwreck_layout_conditional else 0.0
         )
         formal_prior_floor_ratio = active_deep_floor_ratio
         q6_formal_prior_floor = {
@@ -2549,7 +2762,6 @@ def build_monitor_artifact_from_events(
             count_tol=count_tol,
             **formal_prior_floor_kwargs,
         )
-        v2_posterior_rows = _v2_posterior_rows(v2_report)
         shadow_report = None
         emitted_shadow_boost = active_shadow_boost if run_debug_shadows else 1.0
         if run_debug_shadows and active_shadow_boost > 1.0:
@@ -2598,6 +2810,32 @@ def build_monitor_artifact_from_events(
             requested_prior_floor_ratio=1.0,
             active_prior_floor_ratio=active_deep_floor_ratio,
             gate="aisha_shipwreck_deep_v1",
+            evidence_profile_key=evidence_profile_key,
+            trials=resolved_shadow_trials,
+        )
+        deep11_floor_report = None
+        if active_deep11_floor_ratio > 0.0 and resolved_shadow_trials > 1:
+            deep11_floor_report = estimate_posterior_v2(
+                inference_session.map_id,
+                inference_session,
+                store,
+                maps=tables.maps,
+                drops=tables.drops,
+                items=tables.items,
+                n_trials=resolved_shadow_trials,
+                seed=seed + 2,
+                cells_tol=cells_tol,
+                count_tol=count_tol,
+                q6_residual_prior_floor_ratio=active_deep11_floor_ratio,
+            )
+        q6_residual_deep11_floor_shadow = _q6_residual_boost_shadow_summary(
+            deep11_floor_report,
+            label="aisha_deep11_floor1",
+            requested_boost=1.0,
+            active_boost=1.0,
+            requested_prior_floor_ratio=1.0,
+            active_prior_floor_ratio=active_deep11_floor_ratio,
+            gate="aisha_shipwreck_deep11_v1",
             evidence_profile_key=evidence_profile_key,
             trials=resolved_shadow_trials,
         )
@@ -2653,14 +2891,102 @@ def build_monitor_artifact_from_events(
             evidence_profile_key=evidence_profile_key,
             trials=resolved_shadow_trials,
         )
+        ethan_villa_random_floor_report = None
+        if (
+            active_ethan_villa_random_floor_ratio > 0.0
+            and resolved_shadow_trials > 1
+        ):
+            ethan_villa_random_floor_report = estimate_posterior_v2(
+                inference_session.map_id,
+                inference_session,
+                store,
+                maps=tables.maps,
+                drops=tables.drops,
+                items=tables.items,
+                n_trials=resolved_shadow_trials,
+                seed=seed + 2,
+                cells_tol=cells_tol,
+                count_tol=count_tol,
+                q6_residual_prior_floor_ratio=(
+                    active_ethan_villa_random_floor_ratio
+                ),
+            )
+        q6_residual_ethan_villa_random_floor_shadow = (
+            _q6_residual_boost_shadow_summary(
+                ethan_villa_random_floor_report,
+                label="ethan_villa_random_avg_floor1",
+                requested_boost=1.0,
+                active_boost=1.0,
+                requested_prior_floor_ratio=1.0,
+                active_prior_floor_ratio=(
+                    active_ethan_villa_random_floor_ratio
+                ),
+                gate="ethan_villa_random_avg_v1",
+                evidence_profile_key=evidence_profile_key,
+                trials=resolved_shadow_trials,
+            )
+        )
+        ethan_shipwreck_layout_conditional_report = None
+        if (
+            active_ethan_shipwreck_layout_conditional
+            and resolved_shadow_trials > 1
+        ):
+            ethan_shipwreck_layout_conditional_report = estimate_posterior_v2(
+                inference_session.map_id,
+                inference_session,
+                store,
+                maps=tables.maps,
+                drops=tables.drops,
+                items=tables.items,
+                n_trials=resolved_shadow_trials,
+                seed=seed + 2,
+                cells_tol=cells_tol,
+                count_tol=count_tol,
+                q6_conditional_target_count=(
+                    active_ethan_shipwreck_layout_target_count
+                ),
+                q6_conditional_target_cells=(
+                    active_ethan_shipwreck_layout_target_cells
+                ),
+            )
+        q6_residual_ethan_shipwreck_layout_conditional_shadow = (
+            _q6_residual_boost_shadow_summary(
+                ethan_shipwreck_layout_conditional_report,
+                label="ethan_shipwreck_layout_conditional_c4_cells15",
+                requested_boost=1.0,
+                active_boost=1.0,
+                requested_conditional_target_count=4.0,
+                active_conditional_target_count=(
+                    active_ethan_shipwreck_layout_target_count
+                ),
+                requested_conditional_target_cells=15.0,
+                active_conditional_target_cells=(
+                    active_ethan_shipwreck_layout_target_cells
+                ),
+                gate="ethan_shipwreck_layout_v1",
+                evidence_profile_key=evidence_profile_key,
+                trials=resolved_shadow_trials,
+            )
+        )
         q6_residual_sampler_shadows = [
             q6_residual_boost_shadow,
             q6_residual_deep_floor_shadow,
+            q6_residual_deep11_floor_shadow,
             q6_residual_hidden_floor_shadow,
             q6_residual_villa_floor_shadow,
+            q6_residual_ethan_villa_random_floor_shadow,
+            q6_residual_ethan_shipwreck_layout_conditional_shadow,
         ]
         q6_residual_boost_shadow_rows = _q6_residual_shadow_rows(
             q6_residual_sampler_shadows
+        )
+        q6_practical_reference = _q6_reference_with_shadow(
+            _q6_prior_gap_summary(v2_report),
+            q6_residual_ethan_shipwreck_layout_conditional_shadow,
+        )
+        v2_posterior_rows = _v2_posterior_rows(
+            v2_report,
+            q6_prior_gap=q6_practical_reference,
         )
         if roi_trials > 0:
             tool_rows = _tool_info_roi_rows(
@@ -2693,7 +3019,7 @@ def build_monitor_artifact_from_events(
                 decision_value_summary=v2_report.decision_value,
                 raw_value_summary=v2_report.total_value,
                 posterior_diagnostics=v2_report.diagnostics,
-                q6_prior_gap=_q6_prior_gap_summary(v2_report),
+                q6_prior_gap=q6_practical_reference,
             )
         if v2_report.n_matched <= 0:
             (
@@ -2767,8 +3093,15 @@ def build_monitor_artifact_from_events(
         "q6_residual_boost_shadow": q6_residual_boost_shadow,
         "q6_formal_prior_floor": q6_formal_prior_floor,
         "q6_residual_deep_floor_shadow": q6_residual_deep_floor_shadow,
+        "q6_residual_deep11_floor_shadow": q6_residual_deep11_floor_shadow,
         "q6_residual_hidden_floor_shadow": q6_residual_hidden_floor_shadow,
         "q6_residual_villa_floor_shadow": q6_residual_villa_floor_shadow,
+        "q6_residual_ethan_villa_random_floor_shadow": (
+            q6_residual_ethan_villa_random_floor_shadow
+        ),
+        "q6_residual_ethan_shipwreck_layout_conditional_shadow": (
+            q6_residual_ethan_shipwreck_layout_conditional_shadow
+        ),
         "q6_residual_sampler_shadows": q6_residual_sampler_shadows,
         "q6_residual_boost_shadow_rows": q6_residual_boost_shadow_rows,
         "q6_aisha_bottom_row_risk": q6_aisha_bottom_row_risk,

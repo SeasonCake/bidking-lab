@@ -22,6 +22,10 @@ from bidking_lab.live.monitor import (  # noqa: E402
     build_monitor_artifact_from_file,
     load_monitor_tables,
 )
+from bidking_lab.inference.q6_residual import (  # noqa: E402
+    AISHA_BOTTOM_ROW_RISK_THRESHOLD,
+    AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD,
+)
 from bidking_lab.live.fatbeans import (  # noqa: E402
     FatbeansCaptureEvents,
     parse_fatbeans_capture,
@@ -80,11 +84,10 @@ def _load_archive_rows(
     run_debug_shadows: bool,
     window: str,
 ) -> list[dict[str, Any]]:
-    complete_dir = _archive_complete_dir(archive_dir)
-    if not complete_dir.exists():
+    if not archive_dir.exists():
         return []
     paths = sorted(
-        complete_dir.glob("*.json"),
+        archive_dir.rglob("*.json"),
         key=lambda path: (path.stat().st_mtime, path.name),
     )
     selected = [
@@ -225,8 +228,29 @@ def _load_archive_prebid_rows(
     truth_breakdown = _truth_breakdown_from_artifact(full_artifact)
     rows: list[dict[str, Any]] = []
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
+    previous_bid_sort_id = 0
     for window_round, bid_send in enumerate(bid_sends, start=1):
-        prefix_events = _events_before_sort(events, int(bid_send.sort_id))
+        bid_sort_id = int(bid_send.sort_id)
+        prefix_events = _events_before_sort(events, bid_sort_id)
+        round_action_sends = [
+            send
+            for send in events.sends
+            if getattr(send, "kind", "") == "action"
+            and previous_bid_sort_id < int(send.sort_id) < bid_sort_id
+        ]
+        round_states = [
+            state
+            for state in events.states
+            if previous_bid_sort_id < int(state.sort_id) < bid_sort_id
+        ]
+        last_action_sort_id = max(
+            (int(send.sort_id) for send in round_action_sends),
+            default=None,
+        )
+        last_state_sort_id = max(
+            (int(state.sort_id) for state in round_states),
+            default=None,
+        )
         prefix_artifact = build_monitor_artifact_from_events(
             prefix_events,
             file=f"{path.name}#prebid_r{window_round}_sort{bid_send.sort_id}",
@@ -256,13 +280,40 @@ def _load_archive_prebid_rows(
         )
         row["eval_window"] = "pre_bid"
         row["eval_window_round"] = window_round
-        row["window_bid_sort_id"] = int(bid_send.sort_id)
+        row["window_bid_sort_id"] = bid_sort_id
         row["window_bid_value"] = getattr(bid_send, "value", None)
         row["artifact_round"] = eval_row.get("round")
         row["artifact_action_round"] = eval_row.get("action_round")
+        row["window_prior_state_count"] = len(prefix_events.states)
+        row["window_round_state_count"] = len(round_states)
+        row["window_round_action_send_count"] = len(round_action_sends)
+        row["window_round_last_action_sort_id"] = last_action_sort_id
+        row["window_round_last_state_sort_id"] = last_state_sort_id
+        row["window_action_result_ready"] = (
+            last_action_sort_id is None
+            or (
+                last_state_sort_id is not None
+                and last_state_sort_id > last_action_sort_id
+            )
+        )
+        row["window_has_prebid_state"] = bool(prefix_events.states)
+        row["window_has_estimate"] = (
+            _first_num(row, "decision_value_p50", "decision_value_p90") is not None
+        )
+        row["window_round_matches_artifact"] = (
+            row["artifact_action_round"] is None
+            or int(row["artifact_action_round"]) == window_round
+        )
+        row["window_ready_for_accuracy"] = (
+            row["window_has_prebid_state"]
+            and row["window_has_estimate"]
+            and row["window_action_result_ready"]
+            and row["window_round_matches_artifact"]
+        )
         row["round"] = window_round
         row["action_round"] = window_round
         rows.append(row)
+        previous_bid_sort_id = bid_sort_id
     return rows
 
 
@@ -309,13 +360,9 @@ def _round_bucket(row: dict[str, Any], key: str) -> str:
         return "?"
     if round_no <= 0:
         return "?"
-    if round_no <= 1:
-        return "R1"
-    if round_no == 2:
-        return "R2"
-    if round_no == 3:
-        return "R3"
-    return "R4+"
+    if round_no <= 5:
+        return f"R{round_no}"
+    return "R5+"
 
 
 def _q6_truth_bucket(row: dict[str, Any]) -> str:
@@ -361,6 +408,23 @@ def _random_floor_mode_bucket(row: dict[str, Any]) -> str:
 def _hero_bucket(row: dict[str, Any]) -> str:
     hero = str(row.get("hero") or row.get("local_hero") or "").strip()
     return hero or "unknown"
+
+
+def _map_family_bucket(row: dict[str, Any]) -> str:
+    family = str(row.get("map_family") or "").strip()
+    if family:
+        return family
+    map_id = _num(row, "map_id")
+    if map_id is None:
+        return "unknown"
+    map_no = int(map_id)
+    if 2400 <= map_no < 2500:
+        return "villa"
+    if 2500 <= map_no < 2600:
+        return "shipwreck"
+    if 2600 <= map_no < 2700:
+        return "hidden"
+    return "unknown"
 
 
 def _evidence_profile_bucket(row: dict[str, Any]) -> str:
@@ -461,30 +525,70 @@ def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "是"}
 
 
+_Q6_SHADOW_PREFIXES = (
+    "q6_residual_boost_shadow",
+    "q6_residual_deep_floor_shadow",
+    "q6_residual_deep11_floor_shadow",
+    "q6_residual_hidden_floor_shadow",
+    "q6_residual_villa_floor_shadow",
+    "q6_residual_ethan_villa_random_floor_shadow",
+    "q6_residual_ethan_shipwreck_layout_conditional_shadow",
+)
+
+
 def _q6_shadow_bucket(row: dict[str, Any]) -> str:
-    covered_keys = (
-        "q6_residual_boost_shadow_covered_after",
-        "q6_residual_deep_floor_shadow_covered_after",
-        "q6_residual_hidden_floor_shadow_covered_after",
-        "q6_residual_villa_floor_shadow_covered_after",
-    )
-    active_keys = (
-        "q6_residual_boost_shadow_active",
-        "q6_residual_deep_floor_shadow_active",
-        "q6_residual_hidden_floor_shadow_active",
-        "q6_residual_villa_floor_shadow_active",
-    )
-    if any(_truthy(row.get(key)) for key in covered_keys):
+    if any(
+        _truthy(row.get(f"{prefix}_covered_after"))
+        for prefix in _Q6_SHADOW_PREFIXES
+    ):
         return "covered"
-    if any(_truthy(row.get(key)) for key in active_keys):
+    if any(
+        _truthy(row.get(f"{prefix}_active"))
+        for prefix in _Q6_SHADOW_PREFIXES
+    ):
         return "active_miss"
     if _q6_truth_bucket(row) == "q6>0":
         return "inactive_q6"
     return "none"
 
 
+def _q6_shadow_labels(row: dict[str, Any], status: str) -> str:
+    labels: list[str] = []
+    for prefix in _Q6_SHADOW_PREFIXES:
+        active = _truthy(row.get(f"{prefix}_active"))
+        covered = _truthy(row.get(f"{prefix}_covered_after"))
+        if status == "covered" and not covered:
+            continue
+        if status == "active" and not active:
+            continue
+        if status == "active_miss" and not (active and not covered):
+            continue
+        label = str(row.get(f"{prefix}_label") or prefix).strip()
+        if label:
+            labels.append(label)
+    return ";".join(dict.fromkeys(labels))
+
+
 def _truth_value(row: dict[str, Any]) -> float | None:
-    return _first_num(row, "final_decision_value", "final_value")
+    return _first_num(
+        row,
+        "decision_value_truth",
+        "final_decision_value_with_tail_replacement",
+        "final_decision_value",
+        "final_value",
+    )
+
+
+def _decision_p50_error(row: dict[str, Any]) -> float | None:
+    p50 = _num(row, "decision_value_p50")
+    truth = _truth_value(row)
+    if p50 is not None and truth is not None:
+        return p50 - truth
+    return _num(row, "decision_value_p50_error")
+
+
+def _normalized_error_denominator(truth: float) -> float:
+    return max(100_000.0, abs(truth))
 
 
 def _p90_under_by(row: dict[str, Any]) -> float | None:
@@ -589,6 +693,8 @@ def _diagnostic_tags(row: dict[str, Any]) -> tuple[str, ...]:
         tags.append(f"constraints_{constraint_density}")
     if row.get("layout_conflict"):
         tags.append("layout_conflict")
+    if row.get("q6_quality_only_deep_local_risk"):
+        tags.append("quality_only_deep_local_risk")
     if row.get("size_bucket_active"):
         tags.append("size_bucket_active")
     if (_num(row, "shape_target_count") or 0) > 0:
@@ -598,6 +704,114 @@ def _diagnostic_tags(row: dict[str, Any]) -> tuple[str, ...]:
         or (_num(row, "category_exclusion_count") or 0) > 0
     ):
         tags.append("category_tool_constraint")
+    return tuple(dict.fromkeys(tags))
+
+
+def _q6_component_gaps(row: dict[str, Any]) -> dict[str, Any]:
+    q6_truth = _first_num(row, "final_q6_decision_value", "final_q6_value")
+    q6_replacement_truth = _first_num(
+        row,
+        "final_q6_decision_value_with_tail_replacement",
+        "final_q6_decision_value",
+        "final_q6_value",
+    )
+    q6_p90 = _num(row, "v2_q6_decision_value_p90")
+    q6_tail_estimate_p90 = _num(row, "v2_q6_tail_replacement_estimate_p90")
+    q6_count_truth = _num(row, "final_q6_count")
+    q6_count_p90 = _num(row, "v2_q6_count_p90")
+    q6_cells_truth = _num(row, "final_q6_cells")
+    q6_cells_p90 = _num(row, "v2_q6_cells_p90")
+    q6_tail_replacement_value = _num(row, "final_q6_tail_replacement_value") or 0.0
+    return {
+        "q6_truth": q6_truth,
+        "q6_replacement_truth": q6_replacement_truth,
+        "q6_p90": q6_p90,
+        "q6_value_under_by": (
+            max(0.0, q6_truth - q6_p90)
+            if q6_truth is not None and q6_p90 is not None
+            else None
+        ),
+        "q6_replacement_under_by": (
+            max(0.0, q6_replacement_truth - q6_p90)
+            if q6_replacement_truth is not None and q6_p90 is not None
+            else None
+        ),
+        "q6_tail_estimate_under_by": (
+            max(0.0, q6_replacement_truth - q6_tail_estimate_p90)
+            if q6_replacement_truth is not None
+            and q6_tail_estimate_p90 is not None
+            and q6_tail_replacement_value > 0
+            else None
+        ),
+        "q6_count_truth": q6_count_truth,
+        "q6_count_p90": q6_count_p90,
+        "q6_count_under_by": (
+            max(0.0, q6_count_truth - q6_count_p90)
+            if q6_count_truth is not None and q6_count_p90 is not None
+            else None
+        ),
+        "q6_cells_truth": q6_cells_truth,
+        "q6_cells_p90": q6_cells_p90,
+        "q6_cells_under_by": (
+            max(0.0, q6_cells_truth - q6_cells_p90)
+            if q6_cells_truth is not None and q6_cells_p90 is not None
+            else None
+        ),
+        "q6_tail_replacement_value": q6_tail_replacement_value,
+        "q6_tail_estimate_p90": q6_tail_estimate_p90,
+    }
+
+
+def _q6_component_tags(row: dict[str, Any]) -> tuple[str, ...]:
+    gaps = _q6_component_gaps(row)
+    q6_truth = gaps["q6_truth"]
+    q6_p90 = gaps["q6_p90"]
+    if q6_truth is None or q6_truth <= 0:
+        return ("no_q6_truth",)
+
+    tags: list[str] = ["q6_truth"]
+    if q6_p90 is None:
+        tags.append("q6_no_p90")
+    elif q6_p90 <= 0:
+        tags.append("q6_presence_zero_p90")
+
+    if (gaps["q6_value_under_by"] or 0.0) > 0:
+        tags.append("q6_value_under")
+    if (gaps["q6_count_under_by"] or 0.0) > 0:
+        tags.append("q6_count_under_truth")
+    if (gaps["q6_cells_under_by"] or 0.0) > 0:
+        tags.append("q6_cells_under_truth")
+    if (_num(row, "v2_q6_count_p90_under_prior_by") or 0.0) > 0:
+        tags.append("q6_count_below_prior")
+    if (_num(row, "v2_q6_cells_p90_under_prior_by") or 0.0) > 0:
+        tags.append("q6_cells_below_prior")
+
+    if (gaps["q6_tail_replacement_value"] or 0.0) > 0:
+        tags.append("q6_tail_replacement_truth")
+        if gaps["q6_tail_estimate_p90"] is None:
+            tags.append("q6_tail_estimate_missing")
+        elif (gaps["q6_tail_estimate_under_by"] or 0.0) > 0:
+            tags.append("q6_tail_estimate_under")
+
+    if _space_pressure_bucket(row) in {"space_overflow", "space_constrained"}:
+        tags.append(f"q6_{_space_pressure_bucket(row)}")
+    if _random_avg_bucket(row) == "signal":
+        tags.append("random_avg_signal")
+    if _q6_shadow_bucket(row) == "inactive_q6":
+        tags.append("q6_gate_inactive")
+
+    if "q6_value_under" in tags and not any(
+        tag in tags
+        for tag in (
+            "q6_count_under_truth",
+            "q6_cells_under_truth",
+            "q6_tail_replacement_truth",
+            "q6_gate_inactive",
+        )
+    ):
+        tags.append("q6_value_distribution_under")
+    if "q6_value_under" not in tags:
+        tags.append("q6_value_p90_covers_truth")
     return tuple(dict.fromkeys(tags))
 
 
@@ -622,18 +836,78 @@ def _top_p90_miss_examples(
     misses.sort(key=lambda item: item[0], reverse=True)
     examples: list[dict[str, Any]] = []
     for under, row in misses[:limit]:
+        q6_gaps = _q6_component_gaps(row)
+        layout_bottom_row = _first_num(row, "layout_bottom_row", "footprint_bottom_row")
+        aisha_deep_gap = (
+            max(0, AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD - int(layout_bottom_row))
+            if layout_bottom_row is not None and _hero_bucket(row) == "aisha"
+            else None
+        )
         examples.append(
             {
                 "under_by": int(under),
                 "primary_error": _primary_error_bucket(row),
+                "q6_components": ";".join(_q6_component_tags(row)),
                 "hero": _hero_bucket(row),
                 "map_id": row.get("map_id"),
+                "map_family": _map_family_bucket(row),
                 "round": row.get("action_round") or row.get("round"),
                 "truth": _truth_value(row),
                 "p90": _num(row, "decision_value_p90"),
-                "q6_truth": _first_num(row, "final_q6_decision_value", "final_q6_value"),
-                "q6_p90": _num(row, "v2_q6_decision_value_p90"),
+                "layout_bottom_row": layout_bottom_row,
+                "aisha_deep_threshold": (
+                    AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD
+                    if _hero_bucket(row) == "aisha"
+                    else None
+                ),
+                "aisha_deep_row_gap": aisha_deep_gap,
+                "aisha_bottom_row_risk_threshold": (
+                    AISHA_BOTTOM_ROW_RISK_THRESHOLD
+                    if _hero_bucket(row) == "aisha"
+                    else None
+                ),
+                "q6_residual_prior_floor_ratio": _num(
+                    row,
+                    "q6_residual_prior_floor_ratio",
+                )
+                or _num(
+                    row,
+                    "q6_formal_prior_floor_active_prior_floor_ratio",
+                ),
+                "q6_formal_prior_floor_active": row.get(
+                    "q6_formal_prior_floor_active"
+                ),
+                "q6_formal_prior_floor_gate": row.get(
+                    "q6_formal_prior_floor_gate"
+                ),
+                "q6_residual_boost": _num(row, "q6_residual_boost"),
+                "q6_residual_value_power": _num(row, "q6_residual_value_power"),
+                "random_sample_avg_values": row.get("random_sample_avg_values"),
+                "random_sample_avg_signal_values": row.get(
+                    "random_sample_avg_signal_values"
+                ),
+                "random_floor_mode": _random_floor_mode_bucket(row),
+                "q6_truth": q6_gaps["q6_truth"],
+                "q6_replacement_truth": q6_gaps["q6_replacement_truth"],
+                "q6_p90": q6_gaps["q6_p90"],
+                "q6_value_under_by": q6_gaps["q6_value_under_by"],
+                "q6_replacement_under_by": q6_gaps["q6_replacement_under_by"],
+                "q6_tail_estimate_under_by": q6_gaps["q6_tail_estimate_under_by"],
+                "q6_count_truth": q6_gaps["q6_count_truth"],
+                "q6_count_p90": q6_gaps["q6_count_p90"],
+                "q6_count_under_by": q6_gaps["q6_count_under_by"],
+                "q6_cells_truth": q6_gaps["q6_cells_truth"],
+                "q6_cells_p90": q6_gaps["q6_cells_p90"],
+                "q6_cells_under_by": q6_gaps["q6_cells_under_by"],
+                "q6_tail_replacement_value": q6_gaps["q6_tail_replacement_value"],
+                "q6_tail_estimate_p90": q6_gaps["q6_tail_estimate_p90"],
                 "q6_shadow": _q6_shadow_bucket(row),
+                "q6_shadow_covered_labels": _q6_shadow_labels(row, "covered"),
+                "q6_shadow_active_labels": _q6_shadow_labels(row, "active"),
+                "q6_shadow_active_miss_labels": _q6_shadow_labels(
+                    row,
+                    "active_miss",
+                ),
                 "space": _space_pressure_bucket(row),
                 "warehouse": _warehouse_error_bucket(row),
                 "sample": _sample_space_bucket(row),
@@ -646,9 +920,15 @@ def _top_p90_miss_examples(
 
 
 def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    errors = [_num(row, "decision_value_p50_error") for row in rows]
+    errors = [_decision_p50_error(row) for row in rows]
     signed = [v for v in errors if v is not None]
     clean = [abs(v) for v in signed]
+    normalized_abs_errors = [
+        abs(error) / _normalized_error_denominator(truth)
+        for row in rows
+        if (error := _decision_p50_error(row)) is not None
+        and (truth := _truth_value(row)) is not None
+    ]
     matched = [
         _first_num(row, "posterior_samples", "matched_samples", "v2_n_matched")
         for row in rows
@@ -664,16 +944,33 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         elif row.get("n_trials") is not None:
             trials.append(float(row["n_trials"]))
     p90_coverage_values: list[float] = []
+    p90_signed_errors: list[float] = []
+    p90_covered_excess_ratios: list[float] = []
+    p90_extreme_over_values: list[float] = []
     for row in rows:
         p90 = _num(row, "decision_value_p90")
-        truth = _first_num(row, "final_decision_value", "final_value")
+        truth = _truth_value(row)
         if p90 is not None and truth is not None:
-            p90_coverage_values.append(1.0 if p90 >= truth else 0.0)
+            covered = p90 >= truth
+            denominator = _normalized_error_denominator(truth)
+            signed_error = p90 - truth
+            p90_coverage_values.append(1.0 if covered else 0.0)
+            p90_signed_errors.append(signed_error)
+            if covered:
+                p90_covered_excess_ratios.append(signed_error / denominator)
+            p90_extreme_over_values.append(1.0 if signed_error > denominator else 0.0)
     return {
         "rows": len(rows),
+        "estimate_rows": len(signed),
         "median_matched": int(statistics.median(matched_clean)) if matched_clean else None,
+        "decision_value_mae": round(statistics.mean(clean), 1) if clean else None,
         "median_p50_error": round(statistics.median(signed), 1) if signed else None,
         "median_abs_p50_error": round(statistics.median(clean), 1) if clean else None,
+        "median_normalized_abs_p50_error": (
+            round(statistics.median(normalized_abs_errors), 3)
+            if normalized_abs_errors
+            else None
+        ),
         "p50_under_rate": round(
             statistics.mean(1.0 if value < 0 else 0.0 for value in signed),
             2,
@@ -683,6 +980,21 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "p90_coverage": round(statistics.mean(p90_coverage_values), 2)
         if p90_coverage_values
         else None,
+        "median_p90_signed_error": (
+            round(statistics.median(p90_signed_errors), 1)
+            if p90_signed_errors
+            else None
+        ),
+        "median_p90_covered_excess_ratio": (
+            round(statistics.median(p90_covered_excess_ratios), 3)
+            if p90_covered_excess_ratios
+            else None
+        ),
+        "p90_extreme_over_rate": (
+            round(statistics.mean(p90_extreme_over_values), 2)
+            if p90_extreme_over_values
+            else None
+        ),
         "median_n_trials": int(statistics.median(trials)) if trials else None,
         "size_bucket_active_rate": round(
             statistics.mean(1.0 if row.get("size_bucket_active") else 0.0 for row in rows),
@@ -690,6 +1002,156 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )
         if rows
         else None,
+    }
+
+
+def _prebid_window_audit(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    session_rounds: dict[str, set[int]] = defaultdict(set)
+    round_counts: Counter[str] = Counter()
+    ready_round_counts: Counter[str] = Counter()
+    for row in rows:
+        label = _round_bucket(row, "eval_window_round")
+        round_counts[label] += 1
+        if _truthy(row.get("window_ready_for_accuracy")):
+            ready_round_counts[label] += 1
+        session_key = _prebid_session_key(row)
+        try:
+            round_no = int(row.get("eval_window_round") or 0)
+        except (TypeError, ValueError):
+            round_no = 0
+        if round_no > 0:
+            session_rounds[session_key].add(round_no)
+    return {
+        "windows": len(rows),
+        "sessions": len(session_rounds),
+        "five_window_sessions": sum(
+            1 for rounds in session_rounds.values() if set(range(1, 6)).issubset(rounds)
+        ),
+        "round_counts": dict(sorted(round_counts.items())),
+        "ready_round_counts": dict(sorted(ready_round_counts.items())),
+        "ready_windows": sum(
+            1 for row in rows if _truthy(row.get("window_ready_for_accuracy"))
+        ),
+        "no_prebid_state_windows": sum(
+            1 for row in rows if not _truthy(row.get("window_has_prebid_state"))
+        ),
+        "no_estimate_windows": sum(
+            1 for row in rows if not _truthy(row.get("window_has_estimate"))
+        ),
+        "action_result_not_ready_windows": sum(
+            1 for row in rows if not _truthy(row.get("window_action_result_ready"))
+        ),
+        "round_mismatch_windows": sum(
+            1 for row in rows if not _truthy(row.get("window_round_matches_artifact"))
+        ),
+    }
+
+
+def _prebid_session_key(row: dict[str, Any]) -> str:
+    return str(
+        row.get("session_id")
+        or row.get("archive_path")
+        or row.get("file")
+        or id(row)
+    )
+
+
+def _prebid_session_progression(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    sessions: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if _decision_p50_error(row) is not None:
+            sessions[_prebid_session_key(row)].append(row)
+    transitions: list[dict[str, Any]] = []
+    for session_rows in sessions.values():
+        ordered = sorted(
+            session_rows,
+            key=lambda row: int(row.get("eval_window_round") or 0),
+        )
+        for previous, current in zip(ordered, ordered[1:]):
+            previous_round = int(previous.get("eval_window_round") or 0)
+            current_round = int(current.get("eval_window_round") or 0)
+            if previous_round <= 0 or current_round != previous_round + 1:
+                continue
+            previous_error = _decision_p50_error(previous)
+            current_error = _decision_p50_error(current)
+            if previous_error is None or current_error is None:
+                continue
+            previous_p50 = _num(previous, "decision_value_p50")
+            current_p50 = _num(current, "decision_value_p50")
+            previous_p90 = _num(previous, "decision_value_p90")
+            current_p90 = _num(current, "decision_value_p90")
+            previous_width = (
+                previous_p90 - previous_p50
+                if previous_p90 is not None and previous_p50 is not None
+                else None
+            )
+            current_width = (
+                current_p90 - current_p50
+                if current_p90 is not None and current_p50 is not None
+                else None
+            )
+            transitions.append(
+                {
+                    "label": f"R{previous_round}->R{current_round}",
+                    "p50_abs_error_delta": abs(current_error) - abs(previous_error),
+                    "p90_coverage_lost": (
+                        _p90_covers(previous) is True and _p90_covers(current) is False
+                    ),
+                    "p90_width_delta": (
+                        current_width - previous_width
+                        if current_width is not None and previous_width is not None
+                        else None
+                    ),
+                }
+            )
+
+    def summarize_transitions(group: list[dict[str, Any]]) -> dict[str, Any]:
+        error_deltas = [float(row["p50_abs_error_delta"]) for row in group]
+        width_deltas = [
+            float(row["p90_width_delta"])
+            for row in group
+            if row.get("p90_width_delta") is not None
+        ]
+        return {
+            "transitions": len(group),
+            "p50_abs_error_improved_or_equal_rate": (
+                round(
+                    statistics.mean(1.0 if delta <= 0 else 0.0 for delta in error_deltas),
+                    2,
+                )
+                if error_deltas
+                else None
+            ),
+            "p50_abs_error_worsened_transitions": sum(
+                1 for delta in error_deltas if delta > 0
+            ),
+            "median_p50_abs_error_delta": (
+                round(statistics.median(error_deltas), 1)
+                if error_deltas
+                else None
+            ),
+            "p90_coverage_lost_transitions": sum(
+                1 for row in group if row.get("p90_coverage_lost")
+            ),
+            "p90_width_shrunk_or_equal_rate": (
+                round(
+                    statistics.mean(1.0 if delta <= 0 else 0.0 for delta in width_deltas),
+                    2,
+                )
+                if width_deltas
+                else None
+            ),
+        }
+
+    by_transition: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for transition in transitions:
+        by_transition[str(transition["label"])].append(transition)
+    return {
+        **summarize_transitions(transitions),
+        "by_transition": {
+            label: summarize_transitions(group)
+            for label, group in sorted(by_transition.items())
+        },
     }
 
 
@@ -703,6 +1165,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     by_warehouse_error: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_primary_error: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_diagnostic_tag: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_q6_component_tag: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_hero: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_evidence_profile: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_public_constraint: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -722,6 +1185,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         by_primary_error[_primary_error_bucket(row)].append(row)
         for tag in _diagnostic_tags(row):
             by_diagnostic_tag[tag].append(row)
+        for tag in _q6_component_tags(row):
+            by_q6_component_tag[tag].append(row)
         by_hero[_hero_bucket(row)].append(row)
         by_evidence_profile[_evidence_profile_bucket(row)].append(row)
         by_public_constraint[_public_constraint_bucket(row)].append(row)
@@ -730,10 +1195,33 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         by_sample_space[_sample_space_bucket(row)].append(row)
         by_space_pressure[_space_pressure_bucket(row)].append(row)
         by_tail[_tail_bucket(row)].append(row)
+    prebid_rows = [row for row in rows if row.get("eval_window") == "pre_bid"]
+    prebid_by_round: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    prebid_by_round_q6_truth: dict[str, dict[str, list[dict[str, Any]]]] = (
+        defaultdict(lambda: defaultdict(list))
+    )
+    for row in prebid_rows:
+        round_label = _round_bucket(row, "eval_window_round")
+        prebid_by_round[round_label].append(row)
+        prebid_by_round_q6_truth[round_label][_q6_truth_bucket(row)].append(row)
     return {
         "total_rows": len(rows),
         "source_counts": dict(Counter(_source_label(row) for row in rows)),
         "overall": _group_stats(rows),
+        "prebid_overall": _group_stats(prebid_rows),
+        "prebid_window_audit": _prebid_window_audit(prebid_rows),
+        "prebid_session_progression": _prebid_session_progression(prebid_rows),
+        "prebid_by_round": {
+            label: _group_stats(group)
+            for label, group in sorted(prebid_by_round.items())
+        },
+        "prebid_by_round_q6_truth": {
+            round_label: {
+                q6_label: _group_stats(group)
+                for q6_label, group in sorted(q6_groups.items())
+            }
+            for round_label, q6_groups in sorted(prebid_by_round_q6_truth.items())
+        },
         "by_observed_round": {
             label: _group_stats(group)
             for label, group in sorted(by_observed_round.items())
@@ -773,6 +1261,10 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "by_diagnostic_tag": {
             label: _group_stats(group)
             for label, group in sorted(by_diagnostic_tag.items())
+        },
+        "by_q6_component_tag": {
+            label: _group_stats(group)
+            for label, group in sorted(by_q6_component_tag.items())
         },
         "by_hero": {
             label: _group_stats(group)
@@ -828,14 +1320,41 @@ def _print_report(
     overall = summary["overall"]
     print(
         "overall: "
+        f"estimate_rows={overall.get('estimate_rows')} "
         f"median_matched={overall.get('median_matched')} "
+        f"decision_mae={overall.get('decision_value_mae')} "
         f"median_p50_err={overall.get('median_p50_error')} "
         f"median_abs_p50_err={overall.get('median_abs_p50_error')} "
+        f"median_norm_abs_p50_err={overall.get('median_normalized_abs_p50_error')} "
         f"p50_under_rate={overall.get('p50_under_rate')} "
         f"p90_coverage={overall.get('p90_coverage')} "
+        f"p90_covered_excess_ratio={overall.get('median_p90_covered_excess_ratio')} "
+        f"p90_extreme_over_rate={overall.get('p90_extreme_over_rate')} "
         f"median_n_trials={overall.get('median_n_trials')} "
         f"size_bucket_rate={overall.get('size_bucket_active_rate')}"
     )
+    print()
+    prebid = summary.get("prebid_overall") or {}
+    print(
+        "prebid_overall: "
+        f"rows={prebid.get('rows')} "
+        f"estimate_rows={prebid.get('estimate_rows')} "
+        f"decision_mae={prebid.get('decision_value_mae')} "
+        f"median_abs_p50_err={prebid.get('median_abs_p50_error')} "
+        f"median_norm_abs_p50_err={prebid.get('median_normalized_abs_p50_error')} "
+        f"p50_under_rate={prebid.get('p50_under_rate')} "
+        f"p90_coverage={prebid.get('p90_coverage')} "
+        f"p90_covered_excess_ratio={prebid.get('median_p90_covered_excess_ratio')} "
+        f"p90_extreme_over_rate={prebid.get('p90_extreme_over_rate')}"
+    )
+    print()
+    _print_prebid_audit(summary.get("prebid_window_audit") or {})
+    print()
+    _print_prebid_progression(summary.get("prebid_session_progression") or {})
+    print()
+    _print_round_groups("prebid_round", summary["prebid_by_round"])
+    print()
+    _print_prebid_round_q6_groups(summary["prebid_by_round_q6_truth"])
     print()
     _print_round_groups("observed_round", summary["by_observed_round"])
     print()
@@ -852,6 +1371,8 @@ def _print_report(
     _print_round_groups("warehouse_p50_error", summary["by_warehouse_error"])
     print()
     _print_round_groups("primary_error", summary["by_primary_error"])
+    print()
+    _print_round_groups("q6_component", summary["by_q6_component_tag"])
     print()
     if detail_groups:
         _print_round_groups("diagnostic_tag_multi", summary["by_diagnostic_tag"])
@@ -877,43 +1398,120 @@ def _print_report(
 
 def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
     print(
-        f"{label},rows,median_matched,median_p50_err,"
-        "median_abs_p50_err,p50_under_rate,p90_coverage,median_n_trials,"
-        "size_bucket_rate"
+        f"{label},rows,estimate_rows,median_matched,decision_mae,median_p50_err,"
+        "median_abs_p50_err,median_norm_abs_p50_err,p50_under_rate,p90_coverage,"
+        "median_p90_signed_err,p90_covered_excess_ratio,p90_extreme_over_rate,"
+        "median_n_trials,size_bucket_rate"
     )
     for round_label, group in groups.items():
         print(
             f"{round_label},"
             f"{group['rows']},"
+            f"{group.get('estimate_rows')},"
             f"{group.get('median_matched')},"
+            f"{group.get('decision_value_mae')},"
             f"{group.get('median_p50_error')},"
             f"{group.get('median_abs_p50_error')},"
+            f"{group.get('median_normalized_abs_p50_error')},"
             f"{group.get('p50_under_rate')},"
             f"{group.get('p90_coverage')},"
+            f"{group.get('median_p90_signed_error')},"
+            f"{group.get('median_p90_covered_excess_ratio')},"
+            f"{group.get('p90_extreme_over_rate')},"
             f"{group.get('median_n_trials')},"
             f"{group.get('size_bucket_active_rate')}"
         )
 
 
+def _print_prebid_audit(audit: dict[str, Any]) -> None:
+    print(
+        "prebid_window_audit: "
+        f"sessions={audit.get('sessions')} "
+        f"five_window_sessions={audit.get('five_window_sessions')} "
+        f"windows={audit.get('windows')} "
+        f"ready={audit.get('ready_windows')} "
+        f"no_state={audit.get('no_prebid_state_windows')} "
+        f"no_estimate={audit.get('no_estimate_windows')} "
+        f"action_result_not_ready={audit.get('action_result_not_ready_windows')} "
+        f"round_mismatch={audit.get('round_mismatch_windows')} "
+        f"round_counts={audit.get('round_counts')} "
+        f"ready_round_counts={audit.get('ready_round_counts')}"
+    )
+
+
+def _print_prebid_progression(progression: dict[str, Any]) -> None:
+    print(
+        "prebid_session_progression: "
+        f"transitions={progression.get('transitions')} "
+        f"p50_improved_or_equal_rate={progression.get('p50_abs_error_improved_or_equal_rate')} "
+        f"p50_worsened={progression.get('p50_abs_error_worsened_transitions')} "
+        f"median_p50_abs_error_delta={progression.get('median_p50_abs_error_delta')} "
+        f"p90_coverage_lost={progression.get('p90_coverage_lost_transitions')} "
+        f"p90_width_shrunk_or_equal_rate={progression.get('p90_width_shrunk_or_equal_rate')} "
+        f"by_transition={progression.get('by_transition')}"
+    )
+
+
+def _print_prebid_round_q6_groups(groups: dict[str, dict[str, Any]]) -> None:
+    flat = {
+        f"{round_label}|{q6_label}": stats
+        for round_label, q6_groups in groups.items()
+        for q6_label, stats in q6_groups.items()
+    }
+    _print_round_groups("prebid_round_q6", flat)
+
+
 def _print_miss_examples(examples: list[dict[str, Any]]) -> None:
     print(
-        "top_p90_misses,under_by,primary_error,hero,map_id,round,"
-        "truth,p90,q6_truth,q6_p90,q6_shadow,space,warehouse,sample,"
-        "evidence_profile,file"
+        "top_p90_misses,under_by,primary_error,q6_components,hero,map_id,"
+        "map_family,round,"
+        "truth,p90,layout_bottom_row,aisha_deep_threshold,aisha_deep_row_gap,"
+        "q6_prior_floor_ratio,q6_formal_floor_active,q6_formal_floor_gate,"
+        "random_floor_mode,q6_truth,q6_replacement_truth,"
+        "q6_p90,q6_value_under_by,"
+        "q6_replacement_under_by,q6_tail_estimate_under_by,q6_count_truth,"
+        "q6_count_p90,q6_count_under_by,q6_cells_truth,q6_cells_p90,"
+        "q6_cells_under_by,q6_tail_replacement_value,q6_tail_estimate_p90,"
+        "q6_shadow,q6_shadow_covered_labels,q6_shadow_active_labels,"
+        "q6_shadow_active_miss_labels,space,warehouse,sample,evidence_profile,file"
     )
     for index, row in enumerate(examples, start=1):
         print(
             f"{index},"
             f"{row.get('under_by')},"
             f"{row.get('primary_error')},"
+            f"{row.get('q6_components')},"
             f"{row.get('hero')},"
             f"{row.get('map_id')},"
+            f"{row.get('map_family')},"
             f"{row.get('round')},"
             f"{row.get('truth')},"
             f"{row.get('p90')},"
+            f"{row.get('layout_bottom_row')},"
+            f"{row.get('aisha_deep_threshold')},"
+            f"{row.get('aisha_deep_row_gap')},"
+            f"{row.get('q6_residual_prior_floor_ratio')},"
+            f"{row.get('q6_formal_prior_floor_active')},"
+            f"{row.get('q6_formal_prior_floor_gate')},"
+            f"{row.get('random_floor_mode')},"
             f"{row.get('q6_truth')},"
+            f"{row.get('q6_replacement_truth')},"
             f"{row.get('q6_p90')},"
+            f"{row.get('q6_value_under_by')},"
+            f"{row.get('q6_replacement_under_by')},"
+            f"{row.get('q6_tail_estimate_under_by')},"
+            f"{row.get('q6_count_truth')},"
+            f"{row.get('q6_count_p90')},"
+            f"{row.get('q6_count_under_by')},"
+            f"{row.get('q6_cells_truth')},"
+            f"{row.get('q6_cells_p90')},"
+            f"{row.get('q6_cells_under_by')},"
+            f"{row.get('q6_tail_replacement_value')},"
+            f"{row.get('q6_tail_estimate_p90')},"
             f"{row.get('q6_shadow')},"
+            f"{row.get('q6_shadow_covered_labels')},"
+            f"{row.get('q6_shadow_active_labels')},"
+            f"{row.get('q6_shadow_active_miss_labels')},"
             f"{row.get('space')},"
             f"{row.get('warehouse')},"
             f"{row.get('sample')},"

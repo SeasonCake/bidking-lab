@@ -306,7 +306,7 @@ def test_webhook_monitor_writes_fast_snapshot_without_appending_logs(
     assert fast["snapshot_mode"] == "fast"
     assert fast["n_trials"] == 40
     assert fast["roi_trials"] == 0
-    assert fast["shadow_trials"] == 1
+    assert fast["shadow_trials"] == 20
     assert fast["run_debug_shadows"] is False
     assert calls[0]["append_logs"] is False
     assert full["snapshot_mode"] == "full"

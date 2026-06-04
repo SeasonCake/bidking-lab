@@ -117,6 +117,31 @@ _ACTION_SIZE_AVG_VALUE: dict[int, int] = {
     100172: 4,  # 四格均价
     100173: 6,  # 六格均价
 }
+_PUBLIC_INFO_INT_VALUE_FIELDS: dict[int, int] = {
+    200009: 14,  # 所有藏品总占用格数
+    200010: 14,  # 紫色品质藏品总占用格数
+    200011: 14,  # 金色品质藏品总占用格数
+    200012: 14,  # 红色品质藏品总占用格数
+    200017: 7,  # 所有藏品件数
+    200018: 7,  # 紫色品质藏品件数
+    200019: 7,  # 金色品质藏品件数
+    200020: 7,  # 红色品质藏品件数
+}
+_PUBLIC_INFO_EXACT_UPDATE_PATHS: dict[int, tuple[str, ...]] = {
+    200009: ("session", "warehouse_total_cells"),
+    200010: ("bucket", "4", "total_cells"),
+    200011: ("bucket", "5", "total_cells"),
+    200012: ("bucket", "6", "total_cells"),
+    200017: ("session", "total_item_count"),
+    200018: ("bucket", "4", "count"),
+    200019: ("bucket", "5", "count"),
+    200020: ("bucket", "6", "count"),
+}
+_PUBLIC_OUTLINE_QUALITY_BY_INFO_ID: dict[int, int] = {
+    200001: 4,
+    200002: 5,
+    200003: 6,
+}
 
 
 Direction = Literal["SEND", "REV"]
@@ -639,6 +664,17 @@ def _parse_public_info(block: bytes) -> FatbeansPublicInfo | None:
         for item in (_parse_observed_item(raw),)
         if item is not None
     )
+    int_value_field = _PUBLIC_INFO_INT_VALUE_FIELDS.get(info_id)
+    if int_value_field is not None:
+        raw = _first(fields, int_value_field)
+        if isinstance(raw, int):
+            return FatbeansPublicInfo(
+                info_id=info_id,
+                map_id=_int(_first(fields, 3)),
+                value=raw,
+                value_field=int_value_field,
+                observed_items=observed_items,
+            )
     for value_field in (11, 9):
         raw = _first(fields, value_field)
         if isinstance(raw, bytes) and len(raw) == 4:
@@ -1178,17 +1214,15 @@ def _aisha_skill_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
 def _public_outline_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
     updates: list[FieldUpdate] = []
     for info in state.public_infos:
-        # 200001 has appeared in live captures as a map public-info block that
-        # exposes all purple item outlines for this session.
-        if info.info_id != 200001 or not info.observed_items:
+        quality = _PUBLIC_OUTLINE_QUALITY_BY_INFO_ID.get(info.info_id)
+        if quality is None or not info.observed_items:
             continue
-        qualities = {
+        observed_qualities = {
             item.quality for item in info.observed_items
             if item.quality is not None
         }
-        if len(qualities) != 1:
+        if observed_qualities and observed_qualities != {quality}:
             continue
-        quality = next(iter(qualities))
         cells_by_runtime: dict[int | None, int] = {}
         anonymous_index = 0
         for item in info.observed_items:
@@ -1218,6 +1252,30 @@ def _public_outline_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
                     confidence="exact",
                     sequence=state.sort_id,
                 ),
+            )
+        )
+    return updates
+
+
+def _public_numeric_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
+    updates: list[FieldUpdate] = []
+    for info in state.public_infos:
+        path = _PUBLIC_INFO_EXACT_UPDATE_PATHS.get(info.info_id)
+        if path is None or isinstance(info.value, bool):
+            continue
+        try:
+            value = int(info.value)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if value < 0 or float(info.value) != value:
+            continue
+        updates.append(
+            FieldUpdate(
+                path=path,
+                value=value,
+                source="packet",
+                confidence="exact",
+                sequence=state.sort_id,
             )
         )
     return updates
@@ -1440,6 +1498,7 @@ def live_batches_from_fatbeans_events(
     for state in events.states:
         updates = [
             *_state_updates(state),
+            *_public_numeric_updates(state),
             *_public_outline_updates(state),
             *_aisha_skill_updates(state),
             *_full_outline_updates(state),

@@ -87,6 +87,9 @@ Fatbeans 抓包过滤仍建议锁定 `BidKing.exe`，服务器端口默认按 `1
 如果要回放历史导出的 Fatbeans JSON，再使用旧目录 watcher：
 
 ```powershell
+.\scripts\start_live_monitor_overlay.ps1
+
+# 如需监听桌面临时采集目录，显式传入：
 .\scripts\start_live_monitor_overlay.ps1 -WatchDir "C:\Users\shenc\Desktop\bid_king_packages"
 ```
 

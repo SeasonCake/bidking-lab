@@ -53,7 +53,8 @@ data/samples/fatbeans/*.json
 data/logs/
 data/review/
 
-# Local reverse-engineering scratch artifacts
+# Legacy/misplaced local reverse-engineering scratch artifacts.
+# Current local-only references belong under external_references/.
 src/AuctionAnalyzer*.zip
 src/AuctionAnalyzer*/
 src/grid_view_v1.3.7/

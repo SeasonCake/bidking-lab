@@ -16,6 +16,14 @@ Current local reference clones:
 | `external_references/bidking-booooot` | <https://github.com/nql1314/bidking-booooot> | Apache-2.0 | Automation/OCR/log parsing/grid viewer/pricing architecture |
 | `external_references/jrinky-bidking` | <https://github.com/Jrinky908/bidking> | No explicit license found in repo snapshot; README requests attribution | Monte Carlo calculator prior art, OCR notebook, merged CSVs, map priors |
 
+Current local reference bundles:
+
+| Local path | Source / status | Role |
+|---|---|---|
+| `external_references/grid_view_v1.3.7` | Local binary/data bundle, not vendored | Grid/value prior comparison data such as `map_quality_p50_out.csv` |
+| `external_references/AuctionAnalyzer4.13.3` | Local binary/decompiled reference, not vendored | OCR/parser/calculator reference and reverse-engineering notes |
+| `external_references/AuctionAnalyzer4.13.3.zip` | Local archive copy, not vendored | Original archive for the AuctionAnalyzer reference bundle |
+
 Do not commit `external_references/**`. Use it for inspection, comparison, and manually documented design notes.
 
 ---

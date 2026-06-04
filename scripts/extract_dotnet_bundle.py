@@ -5,8 +5,10 @@ import struct
 import zlib
 from pathlib import Path
 
-EXE = Path(r"C:\xiangmuyunxing\biancheng\2026\bidking-lab\src\AuctionAnalyzer4.13.3\AuctionAnalyzer4.13.3.exe")
-OUT = Path(r"C:\xiangmuyunxing\biancheng\2026\bidking-lab\src\AuctionAnalyzer4.13.3\_extracted")
+REPO = Path(__file__).resolve().parents[1]
+REFERENCE_DIR = REPO / "external_references" / "AuctionAnalyzer4.13.3"
+EXE = REFERENCE_DIR / "AuctionAnalyzer4.13.3.exe"
+OUT = REFERENCE_DIR / "_extracted"
 
 BUNDLE_SIGNATURE = bytes(
     [

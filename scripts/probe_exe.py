@@ -5,7 +5,13 @@ import re
 import struct
 from pathlib import Path
 
-EXE = Path(r"C:\xiangmuyunxing\biancheng\2026\bidking-lab\src\AuctionAnalyzer4.13.3\AuctionAnalyzer4.13.3.exe")
+REPO = Path(__file__).resolve().parents[1]
+EXE = (
+    REPO
+    / "external_references"
+    / "AuctionAnalyzer4.13.3"
+    / "AuctionAnalyzer4.13.3.exe"
+)
 
 
 def main() -> None:

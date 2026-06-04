@@ -242,7 +242,7 @@ joint / MC / Pareto
 ### 当前本地参考结论
 
 - 游戏静态表已经在 `data/raw/tables` / `data/processed` 解码；地图、物品、道具、英雄仍是当前推理的主数据源。
-- `src/AuctionAnalyzer4.13.3` 是参考计算器：核心价值在 OCR ROI、`OcrParser` 正则、均格/可达格规则和解析枚举思路；它不包含 ProtoHub 抓包 parser。
+- `external_references/AuctionAnalyzer4.13.3` 是参考计算器：核心价值在 OCR ROI、`OcrParser` 正则、均格/可达格规则和解析枚举思路；它不包含 ProtoHub 抓包 parser。
 - 用户提供的三张截图显示 ProtoHub 叠层能展示轮次、估值、品质格/件数、footprint 网格和道具揭示结果；后续应先把这些截图对应的离线输出整理成 fixture，而不是直接接实时监听。
 
 ### TODO

@@ -1,7 +1,7 @@
 """Compare local drop-derived quality priors with grid_view reference CSVs.
 
-This is a read-only diagnostic for the external grid_view_v1.3.7 bundle. It
-does not touch inference weights or live logs.
+This is a read-only diagnostic for the external grid_view_v1.3.7 bundle under
+external_references/. It does not touch inference weights or live logs.
 """
 
 from __future__ import annotations
@@ -239,7 +239,7 @@ def main() -> int:
     parser.add_argument(
         "--grid-view-dir",
         type=Path,
-        default=ROOT / "src" / "grid_view_v1.3.7",
+        default=ROOT / "external_references" / "grid_view_v1.3.7",
     )
     parser.add_argument("--map", dest="maps", type=int, action="append")
     parser.add_argument("--quality", type=int, action="append")

@@ -18,30 +18,125 @@ if str(SCRIPT_DIR) not in sys.path:
 import evaluate_fatbeans_v2_samples as evaluator
 
 
-_DEFAULT_CONFIGS: tuple[tuple[str, float, str, float, str], ...] = (
-    ("baseline", 1.0, "all", 0.0, "all"),
-    ("global_b3", 3.0, "all", 0.0, "all"),
-    ("profile_b3", 3.0, "shipwreck_profile_v1", 0.0, "all"),
-    ("profile_b5", 5.0, "shipwreck_profile_v1", 0.0, "all"),
+_Config = tuple[str, float, str, float, str, float, str]
+
+_DEFAULT_CONFIGS: tuple[_Config, ...] = (
+    ("baseline", 1.0, "all", 0.0, "all", 0.0, "all"),
+    ("global_b3", 3.0, "all", 0.0, "all", 0.0, "all"),
+    ("profile_b3", 3.0, "shipwreck_profile_v1", 0.0, "all", 0.0, "all"),
+    ("profile_b5", 5.0, "shipwreck_profile_v1", 0.0, "all", 0.0, "all"),
 )
-_EXTRA_CONFIGS: tuple[tuple[str, float, str, float, str], ...] = (
-    ("aisha_deep_b5", 5.0, "aisha_shipwreck_deep_v1", 0.0, "all"),
-    ("aisha_deep_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep_v1"),
-    ("aisha_hidden_floor1", 1.0, "all", 1.0, "aisha_hidden_v1"),
-    ("aisha_deep_hidden_floor1", 1.0, "all", 1.0, "aisha_deep_or_hidden_v1"),
-    ("aisha_hidden_floor15", 1.0, "all", 1.5, "aisha_hidden_v1"),
-    ("aisha_villa_floor05", 1.0, "all", 0.5, "aisha_villa_shape_layout_v1"),
-    ("aisha_villa_floor075", 1.0, "all", 0.75, "aisha_villa_shape_layout_v1"),
+_EXTRA_CONFIGS: tuple[_Config, ...] = (
+    ("aisha_shipwreck_profile_floor1", 1.0, "all", 1.0, "aisha_shipwreck_profile_v1", 0.0, "all"),
+    ("aisha_shipwreck_profile_value05", 1.0, "all", 0.0, "all", 0.5, "aisha_shipwreck_profile_v1"),
+    ("aisha_shipwreck_profile_floor1_value05", 1.0, "all", 1.0, "aisha_shipwreck_profile_v1", 0.5, "aisha_shipwreck_profile_v1"),
+    ("aisha_deep_b5", 5.0, "aisha_shipwreck_deep_v1", 0.0, "all", 0.0, "all"),
+    ("aisha_deep_value05", 1.0, "all", 0.0, "all", 0.5, "aisha_shipwreck_deep_v1"),
+    ("aisha_deep_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep_v1", 0.0, "all"),
+    ("aisha_deep_cell2_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep_v1", 0.0, "all"),
+    ("aisha_deep_cell3_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep_v1", 0.0, "all"),
+    ("aisha_deep12_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep12_v1", 0.0, "all"),
+    ("aisha_deep12_cell2_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep12_v1", 0.0, "all"),
+    ("aisha_deep12_cell3_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep12_v1", 0.0, "all"),
+    ("aisha_deep11_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep11_v1", 0.0, "all"),
+    ("aisha_deep11_cell2_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep11_v1", 0.0, "all"),
+    ("aisha_deep11_cell3_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep11_v1", 0.0, "all"),
+    ("aisha_deep11_cell4_floor1", 1.0, "all", 1.0, "aisha_shipwreck_deep11_v1", 0.0, "all"),
+    ("aisha_deep_floor15", 1.0, "all", 1.5, "aisha_shipwreck_deep_v1", 0.0, "all"),
+    ("aisha_deep_floor2", 1.0, "all", 2.0, "aisha_shipwreck_deep_v1", 0.0, "all"),
+    ("aisha_deep_floor1_value05", 1.0, "all", 1.0, "aisha_shipwreck_deep_v1", 0.5, "aisha_shipwreck_deep_v1"),
+    ("aisha_hidden_floor1", 1.0, "all", 1.0, "aisha_hidden_v1", 0.0, "all"),
+    ("aisha_deep_hidden_floor1", 1.0, "all", 1.0, "aisha_deep_or_hidden_v1", 0.0, "all"),
+    ("aisha_hidden_floor15", 1.0, "all", 1.5, "aisha_hidden_v1", 0.0, "all"),
+    ("aisha_villa_floor05", 1.0, "all", 0.5, "aisha_villa_shape_layout_v1", 0.0, "all"),
+    ("aisha_villa_floor075", 1.0, "all", 0.75, "aisha_villa_shape_layout_v1", 0.0, "all"),
+    ("ethan_villa_random_avg_floor1", 1.0, "all", 1.0, "ethan_villa_random_avg_v1", 0.0, "all"),
+    ("ethan_villa_random_avg_floor15", 1.0, "all", 1.5, "ethan_villa_random_avg_v1", 0.0, "all"),
+    ("ethan_villa_random_avg_floor2", 1.0, "all", 2.0, "ethan_villa_random_avg_v1", 0.0, "all"),
+    ("ethan_shipwreck_layout_conditional_c4_cells15", 1.0, "all", 0.0, "all", 0.0, "all"),
+    ("ethan_shipwreck_layout_conditional_c4_cells15_value025", 1.0, "all", 0.0, "all", 0.0, "all"),
+    ("ethan_shipwreck_layout_conditional_c4_cells15_value05", 1.0, "all", 0.0, "all", 0.0, "all"),
+    ("aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15", 1.0, "all", 1.0, "aisha_shipwreck_deep_v1", 0.0, "all"),
+    ("aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15_value025", 1.0, "all", 1.0, "aisha_shipwreck_deep_v1", 0.0, "all"),
+    ("aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15_value05", 1.0, "all", 1.0, "aisha_shipwreck_deep_v1", 0.0, "all"),
+    ("aisha_deep11_ethan_shipwreck_layout_conditional_c4_cells15", 1.0, "all", 1.0, "aisha_shipwreck_deep11_v1", 0.0, "all"),
+    ("aisha_deep11_ethan_shipwreck_layout_conditional_c4_cells15_value025", 1.0, "all", 1.0, "aisha_shipwreck_deep11_v1", 0.0, "all"),
+    ("aisha_deep11_ethan_shipwreck_layout_conditional_c4_cells15_value05", 1.0, "all", 1.0, "aisha_shipwreck_deep11_v1", 0.0, "all"),
 )
 _CONFIGS = _DEFAULT_CONFIGS + _EXTRA_CONFIGS
 _CONFIG_LABELS = tuple(
-    label for label, _boost, _gate, _floor_ratio, _floor_gate in _CONFIGS
+    label for label, *_rest in _CONFIGS
 )
+_PRIOR_CELL_FLOOR_RATIOS = {
+    "aisha_deep_cell2_floor1": 2.0,
+    "aisha_deep_cell3_floor1": 3.0,
+    "aisha_deep12_cell2_floor1": 2.0,
+    "aisha_deep12_cell3_floor1": 3.0,
+    "aisha_deep11_cell2_floor1": 2.0,
+    "aisha_deep11_cell3_floor1": 3.0,
+    "aisha_deep11_cell4_floor1": 4.0,
+}
+_CONDITIONAL_TARGETS = {
+    "ethan_shipwreck_layout_conditional_c4_cells15": (
+        "ethan_shipwreck_layout_v1",
+        4.0,
+        15.0,
+        0.0,
+    ),
+    "ethan_shipwreck_layout_conditional_c4_cells15_value025": (
+        "ethan_shipwreck_layout_v1",
+        4.0,
+        15.0,
+        0.25,
+    ),
+    "ethan_shipwreck_layout_conditional_c4_cells15_value05": (
+        "ethan_shipwreck_layout_v1",
+        4.0,
+        15.0,
+        0.5,
+    ),
+    "aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15": (
+        "ethan_shipwreck_layout_v1",
+        4.0,
+        15.0,
+        0.0,
+    ),
+    "aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15_value025": (
+        "ethan_shipwreck_layout_v1",
+        4.0,
+        15.0,
+        0.25,
+    ),
+    "aisha_deep_ethan_shipwreck_layout_conditional_c4_cells15_value05": (
+        "ethan_shipwreck_layout_v1",
+        4.0,
+        15.0,
+        0.5,
+    ),
+    "aisha_deep11_ethan_shipwreck_layout_conditional_c4_cells15": (
+        "ethan_shipwreck_layout_v1",
+        4.0,
+        15.0,
+        0.0,
+    ),
+    "aisha_deep11_ethan_shipwreck_layout_conditional_c4_cells15_value025": (
+        "ethan_shipwreck_layout_v1",
+        4.0,
+        15.0,
+        0.25,
+    ),
+    "aisha_deep11_ethan_shipwreck_layout_conditional_c4_cells15_value05": (
+        "ethan_shipwreck_layout_v1",
+        4.0,
+        15.0,
+        0.5,
+    ),
+}
 
 
 def _selected_configs(
     labels: list[str] | None,
-) -> tuple[tuple[str, float, str, float, str], ...]:
+) -> tuple[_Config, ...]:
     if not labels:
         return _DEFAULT_CONFIGS
     selected = set(labels)
@@ -61,9 +156,21 @@ def _comparison_row(
     *,
     floor_ratio: float = 0.0,
     floor_gate: str = "all",
+    value_power: float = 0.0,
+    value_gate: str = "all",
+    prior_cell_floor_ratio: float = 0.0,
+    conditional_target_gate: str = "none",
+    conditional_target_count: float = 0.0,
+    conditional_target_cells: float = 0.0,
+    conditional_value_power: float = 0.0,
 ) -> dict[str, Any]:
     boost_summary = summary.get("q6_residual_boost_experiment") or {}
     floor_summary = summary.get("q6_residual_prior_floor_sampler_experiment") or {}
+    value_summary = summary.get("q6_residual_value_sampler_experiment") or {}
+    conditional_summary = (
+        summary.get("q6_conditional_target_sampler_experiment") or {}
+    )
+    accuracy = summary.get("decision_value_accuracy") or {}
     feasibility = summary.get("sample_feasibility") or {}
     case_breakdown = summary.get("case_breakdown") or {}
     normal_case = case_breakdown.get("normal_case") or {}
@@ -79,12 +186,40 @@ def _comparison_row(
         "boost": boost,
         "gate": gate,
         "prior_floor_ratio": floor_ratio,
+        "prior_cell_floor_ratio": prior_cell_floor_ratio,
         "prior_floor_gate": floor_gate,
+        "value_power": value_power,
+        "value_gate": value_gate,
+        "conditional_target_gate": conditional_target_gate,
+        "conditional_target_count": conditional_target_count,
+        "conditional_target_cells": conditional_target_cells,
+        "conditional_value_power": conditional_value_power,
         "files": summary.get("files"),
         "ok": summary.get("ok"),
         "valued": summary.get("valued"),
         "zero_match": summary.get("zero_match"),
         "decision_value_mae": summary.get("decision_value_mae"),
+        "decision_value_median_abs_error": accuracy.get(
+            "decision_value_median_abs_error"
+        ),
+        "median_normalized_abs_p50_error": accuracy.get(
+            "median_normalized_abs_p50_error"
+        ),
+        "p50_under_rate": accuracy.get("p50_under_rate"),
+        "p50_pinball_loss_mean": accuracy.get("p50_pinball_loss_mean"),
+        "median_normalized_p50_pinball_loss": accuracy.get(
+            "median_normalized_p50_pinball_loss"
+        ),
+        "p90_coverage": accuracy.get("p90_coverage"),
+        "median_p90_under_ratio": accuracy.get("median_p90_under_ratio"),
+        "median_p90_covered_excess_ratio": accuracy.get(
+            "median_p90_covered_excess_ratio"
+        ),
+        "p90_extreme_over_rate": accuracy.get("p90_extreme_over_rate"),
+        "p90_pinball_loss_mean": accuracy.get("p90_pinball_loss_mean"),
+        "median_normalized_p90_pinball_loss": accuracy.get(
+            "median_normalized_p90_pinball_loss"
+        ),
         "calibration_decision_value_mae": feasibility.get(
             "calibration_decision_value_mae"
         ),
@@ -160,6 +295,18 @@ def _comparison_row(
         "floor_active_no_q6_p90_positive_rate": floor_summary.get(
             "active_no_q6_p90_positive_rate"
         ),
+        "value_active_rows": value_summary.get("active_rows"),
+        "value_active_no_q6_rows": value_summary.get("active_no_q6_rows"),
+        "value_active_no_q6_p90_positive_rate": value_summary.get(
+            "active_no_q6_p90_positive_rate"
+        ),
+        "conditional_active_rows": conditional_summary.get("active_rows"),
+        "conditional_active_no_q6_rows": conditional_summary.get(
+            "active_no_q6_rows"
+        ),
+        "conditional_active_no_q6_p90_positive_rate": conditional_summary.get(
+            "active_no_q6_p90_positive_rate"
+        ),
     }
 
 
@@ -179,6 +326,50 @@ def _with_baseline_deltas(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         row["delta_decision_value_mae"] = _delta(
             row.get("decision_value_mae"),
             baseline.get("decision_value_mae"),
+        )
+        row["delta_decision_value_median_abs_error"] = _delta(
+            row.get("decision_value_median_abs_error"),
+            baseline.get("decision_value_median_abs_error"),
+        )
+        row["delta_median_normalized_abs_p50_error"] = _delta(
+            row.get("median_normalized_abs_p50_error"),
+            baseline.get("median_normalized_abs_p50_error"),
+        )
+        row["delta_p50_under_rate"] = _delta(
+            row.get("p50_under_rate"),
+            baseline.get("p50_under_rate"),
+        )
+        row["delta_p50_pinball_loss_mean"] = _delta(
+            row.get("p50_pinball_loss_mean"),
+            baseline.get("p50_pinball_loss_mean"),
+        )
+        row["delta_median_normalized_p50_pinball_loss"] = _delta(
+            row.get("median_normalized_p50_pinball_loss"),
+            baseline.get("median_normalized_p50_pinball_loss"),
+        )
+        row["delta_p90_coverage"] = _delta(
+            row.get("p90_coverage"),
+            baseline.get("p90_coverage"),
+        )
+        row["delta_median_p90_under_ratio"] = _delta(
+            row.get("median_p90_under_ratio"),
+            baseline.get("median_p90_under_ratio"),
+        )
+        row["delta_median_p90_covered_excess_ratio"] = _delta(
+            row.get("median_p90_covered_excess_ratio"),
+            baseline.get("median_p90_covered_excess_ratio"),
+        )
+        row["delta_p90_extreme_over_rate"] = _delta(
+            row.get("p90_extreme_over_rate"),
+            baseline.get("p90_extreme_over_rate"),
+        )
+        row["delta_p90_pinball_loss_mean"] = _delta(
+            row.get("p90_pinball_loss_mean"),
+            baseline.get("p90_pinball_loss_mean"),
+        )
+        row["delta_median_normalized_p90_pinball_loss"] = _delta(
+            row.get("median_normalized_p90_pinball_loss"),
+            baseline.get("median_normalized_p90_pinball_loss"),
         )
         row["delta_normal_case_decision_value_mae"] = _delta(
             row.get("normal_case_decision_value_mae"),
@@ -387,6 +578,13 @@ def _evaluate_config(
     gate: str,
     floor_ratio: float,
     floor_gate: str,
+    value_power: float,
+    value_gate: str,
+    prior_cell_floor_ratio: float,
+    conditional_target_gate: str,
+    conditional_target_count: float,
+    conditional_target_cells: float,
+    conditional_value_power: float,
     tables: Any,
     combo_presolve: Any,
     trials: int,
@@ -413,7 +611,14 @@ def _evaluate_config(
                 q6_residual_boost=boost,
                 q6_residual_boost_gate=gate,
                 q6_residual_prior_floor_ratio=floor_ratio,
+                q6_residual_prior_cell_floor_ratio=prior_cell_floor_ratio,
                 q6_residual_prior_floor_gate=floor_gate,
+                q6_residual_value_power=value_power,
+                q6_residual_value_gate=value_gate,
+                q6_conditional_target_gate=conditional_target_gate,
+                q6_conditional_target_count=conditional_target_count,
+                q6_conditional_target_cells=conditional_target_cells,
+                q6_conditional_value_power=conditional_value_power,
                 random_sample_avg_profile_floor=random_sample_avg_profile_floor,
             )
         )
@@ -441,6 +646,13 @@ def _evaluate_config(
             summary,
             floor_ratio=floor_ratio,
             floor_gate=floor_gate,
+            value_power=value_power,
+            value_gate=value_gate,
+            prior_cell_floor_ratio=prior_cell_floor_ratio,
+            conditional_target_gate=conditional_target_gate,
+            conditional_target_count=conditional_target_count,
+            conditional_target_cells=conditional_target_cells,
+            conditional_value_power=conditional_value_power,
         ),
         rows,
     )
@@ -509,7 +721,7 @@ def main() -> int:
     _progress(
         "samples="
         f"{len(paths)} configs="
-        f"{','.join(label for label, _boost, _gate, _floor_ratio, _floor_gate in configs)} "
+        f"{','.join(label for label, *_rest in configs)} "
         f"trials={args.trials} "
         f"random_avg_floor={args.random_sample_avg_profile_floor:g} "
         f"posterior_trial_budget={len(paths) * len(configs) * args.trials}",
@@ -529,6 +741,25 @@ def main() -> int:
             gate=gate,
             floor_ratio=floor_ratio,
             floor_gate=floor_gate,
+            value_power=value_power,
+            value_gate=value_gate,
+            prior_cell_floor_ratio=_PRIOR_CELL_FLOOR_RATIOS.get(label, 0.0),
+            conditional_target_gate=_CONDITIONAL_TARGETS.get(
+                label,
+                ("none", 0.0, 0.0, 0.0),
+            )[0],
+            conditional_target_count=_CONDITIONAL_TARGETS.get(
+                label,
+                ("none", 0.0, 0.0, 0.0),
+            )[1],
+            conditional_target_cells=_CONDITIONAL_TARGETS.get(
+                label,
+                ("none", 0.0, 0.0, 0.0),
+            )[2],
+            conditional_value_power=_CONDITIONAL_TARGETS.get(
+                label,
+                ("none", 0.0, 0.0, 0.0),
+            )[3],
             tables=tables,
             combo_presolve=combo_presolve,
             trials=args.trials,
@@ -539,7 +770,7 @@ def main() -> int:
             progress=progress,
             progress_every=args.progress_every,
         )
-        for label, boost, gate, floor_ratio, floor_gate in configs
+        for label, boost, gate, floor_ratio, floor_gate, value_power, value_gate in configs
     ]
     sample_rows_by_label = {
         row["label"]: sample_rows for row, sample_rows in results

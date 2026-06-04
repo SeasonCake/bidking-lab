@@ -41,3 +41,37 @@ def test_summarize_size_bucket_live_groups(tmp_path: Path) -> None:
     assert groups["action_100172_used"]["rows"] == 1
     assert groups["action_100172_not_used"]["rows"] == 1
     assert groups["action_100172_used"]["decision_p50_mae"] == 100_000.0
+
+
+def test_summarize_size_bucket_live_prefers_replacement_decision_truth() -> None:
+    summary = summarize(
+        [
+            {
+                "file": "tail.json",
+                "ts": 1.0,
+                "final_value": 1_000_000,
+                "final_decision_value": 600_000,
+                "final_decision_value_with_tail_replacement": 650_000,
+                "decision_value_p50": 550_000,
+                "decision_value_p50_error": -450_000,
+            },
+        ]
+    )
+
+    assert summary["groups"][0]["decision_p50_mae"] == 100_000.0
+
+
+def test_summarize_size_bucket_live_falls_back_to_raw_truth() -> None:
+    summary = summarize(
+        [
+            {
+                "file": "raw.json",
+                "ts": 1.0,
+                "final_value": 1_000_000,
+                "decision_value_p50": 700_000,
+                "decision_value_p50_error": 0,
+            },
+        ]
+    )
+
+    assert summary["groups"][0]["decision_p50_mae"] == 300_000.0
