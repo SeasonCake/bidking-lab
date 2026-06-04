@@ -264,6 +264,24 @@ def _bucket_matches(
     return True
 
 
+def _bucket_has_constraints(bucket: BucketFeasibleSummary | None) -> bool:
+    if bucket is None:
+        return False
+    return any(
+        value is not None
+        for value in (bucket.count_exact, bucket.cells_exact, bucket.value_exact)
+    ) or any(
+        int(value) > 0
+        for value in (bucket.count_floor, bucket.cells_floor, bucket.value_floor)
+    )
+
+
+def _bucket_has_value_constraint(bucket: BucketFeasibleSummary | None) -> bool:
+    if bucket is None:
+        return False
+    return bucket.value_exact is not None or int(bucket.value_floor) > 0
+
+
 def truth_matches_feasible_summary(
     truth: SessionTruth,
     summary: FeasibleSummaryReport,
@@ -629,6 +647,16 @@ def _summary_likelihood_matches(
     return matched, tuple(float(weight) for weight in weights), ess
 
 
+def _bucket_conditioned_truths(
+    truths: Sequence[SessionTruth],
+    bucket: BucketFeasibleSummary | None,
+) -> tuple[SessionTruth, ...]:
+    if not _bucket_has_constraints(bucket):
+        return ()
+    assert bucket is not None
+    return tuple(truth for truth in truths if _bucket_matches(truth, bucket))
+
+
 def estimate_q6_posterior_from_truths(
     *,
     map_id: int,
@@ -707,6 +735,7 @@ def estimate_q6_posterior_from_truths(
     tail_replacement_decision_values: list[int] = []
     q6_formal_decision_values: list[int] = []
     q6_tail_replacement_decision_values: list[int] = []
+    q6_summary = summary.bucket(6)
     for truth in matched:
         count, cells, value = _bucket_fields(truth, 6)
         q6_counts.append(count)
@@ -728,17 +757,141 @@ def estimate_q6_posterior_from_truths(
             q6_tail_replacement_decision_values.append(
                 decision.q6_tail_replacement_decision_value
             )
+    total_cells_for_quantiles = total_cells
+    total_values_for_quantiles = total_values
+    formal_decision_values_for_quantiles = formal_decision_values
+    tail_replacement_decision_values_for_quantiles = tail_replacement_decision_values
+    q6_counts_for_quantiles = q6_counts
+    q6_cells_for_quantiles = q6_cells
+    q6_values_for_quantiles = q6_values
+    q6_formal_decision_values_for_quantiles = q6_formal_decision_values
+    q6_tail_replacement_values_for_quantiles = q6_tail_replacement_decision_values
+    total_weights_for_quantiles = matched_weights
+    q6_count_cell_weights_for_quantiles = matched_weights
+    q6_value_weights_for_quantiles = matched_weights
+    if match_scope == "summary_likelihood" and _bucket_has_constraints(q6_summary):
+        q6_conditioned = _bucket_conditioned_truths(truths, q6_summary)
+        if q6_conditioned:
+            conditioned_weights, effective_n = _anchor_likelihood_weights(
+                q6_conditioned,
+                constraints,
+            )
+            diagnostics.append(
+                f"q6_bucket_conditioned_samples={len(q6_conditioned)}"
+            )
+            if conditioned_weights is not None:
+                diagnostics.append(
+                    "q6_bucket_conditioned_anchor_likelihood_weighted"
+                )
+                diagnostics.append(
+                    f"q6_bucket_conditioned_effective_samples={effective_n:.3f}"
+                )
+            conditioned_counts: list[int] = []
+            conditioned_cells: list[int] = []
+            conditioned_values: list[int] = []
+            conditioned_q6_formal_values: list[int] = []
+            conditioned_q6_tail_values: list[int] = []
+            for truth in q6_conditioned:
+                count, cells, value = _bucket_fields(truth, 6)
+                conditioned_counts.append(count)
+                conditioned_cells.append(cells)
+                conditioned_values.append(value)
+                if constraints is not None:
+                    decision = decision_truth_from_session_truth(
+                        truth,
+                        constraints=constraints,
+                        replacement_values=replacement_values or {},
+                    )
+                    conditioned_q6_formal_values.append(
+                        decision.q6_formal_decision_value
+                    )
+                    conditioned_q6_tail_values.append(
+                        decision.q6_tail_replacement_decision_value
+                    )
+            q6_counts_for_quantiles = conditioned_counts
+            q6_cells_for_quantiles = conditioned_cells
+            conditioned_weights_for_quantiles = conditioned_weights or tuple(
+                1.0 for _ in conditioned_counts
+            )
+            q6_count_cell_weights_for_quantiles = conditioned_weights_for_quantiles
+            condition_q6_value = _bucket_has_value_constraint(q6_summary)
+            if condition_q6_value:
+                q6_values_for_quantiles = conditioned_values
+                q6_value_weights_for_quantiles = conditioned_weights_for_quantiles
+            if condition_q6_value and conditioned_q6_formal_values:
+                q6_formal_decision_values_for_quantiles = (
+                    conditioned_q6_formal_values
+                )
+                q6_tail_replacement_values_for_quantiles = conditioned_q6_tail_values
+            if (
+                condition_q6_value
+                and conditioned_values
+                and total_values
+                and len(q6_values) == len(total_values)
+            ):
+                total_cells_for_quantiles = [
+                    max(0, total - q6_total) + conditioned_cells[
+                        index % len(conditioned_cells)
+                    ]
+                    for index, (total, q6_total) in enumerate(
+                        zip(total_cells, q6_cells, strict=True)
+                    )
+                ]
+                total_values_for_quantiles = [
+                    max(0, total - q6_total) + conditioned_values[
+                        index % len(conditioned_values)
+                    ]
+                    for index, (total, q6_total) in enumerate(
+                        zip(total_values, q6_values, strict=True)
+                    )
+                ]
+            if (
+                condition_q6_value
+                and conditioned_q6_formal_values
+                and formal_decision_values
+                and len(q6_formal_decision_values) == len(formal_decision_values)
+            ):
+                diagnostics.append("q6_bucket_conditioned_formal_adjustment")
+                formal_decision_values_for_quantiles = [
+                    max(0, total - q6_total) + conditioned_q6_formal_values[
+                        index % len(conditioned_q6_formal_values)
+                    ]
+                    for index, (total, q6_total) in enumerate(
+                        zip(
+                            formal_decision_values,
+                            q6_formal_decision_values,
+                            strict=True,
+                        )
+                    )
+                ]
+                tail_replacement_decision_values_for_quantiles = [
+                    max(0, total - q6_total) + conditioned_q6_tail_values[
+                        index % len(conditioned_q6_tail_values)
+                    ]
+                    for index, (total, q6_total) in enumerate(
+                        zip(
+                            tail_replacement_decision_values,
+                            q6_tail_replacement_decision_values,
+                            strict=True,
+                        )
+                    )
+                ]
     q6_present_rate = (
-        sum(1 for count in q6_counts if count > 0) / len(q6_counts)
-        if q6_counts
+        sum(1 for count in q6_counts_for_quantiles if count > 0)
+        / len(q6_counts_for_quantiles)
+        if q6_counts_for_quantiles
         else None
     )
-    if q6_counts and matched_weights is not None:
-        weight_total = sum(matched_weights)
+    if q6_counts_for_quantiles and q6_count_cell_weights_for_quantiles is not None:
+        weight_total = sum(q6_count_cell_weights_for_quantiles)
         q6_present_rate = (
             sum(
                 weight
-                for count, weight in zip(q6_counts, matched_weights, strict=True)
+                for count, weight in zip(
+                    q6_counts_for_quantiles,
+                    q6_count_cell_weights_for_quantiles,
+                    strict=True,
+                )
                 if count > 0
             )
             / weight_total
@@ -746,7 +899,6 @@ def estimate_q6_posterior_from_truths(
             else None
         )
     tail_guard = matched_weights is not None
-    q6_summary = summary.bucket(6)
     q6_count_exact = q6_summary.count_exact if q6_summary is not None else None
     q6_cells_exact = q6_summary.cells_exact if q6_summary is not None else None
     q6_value_exact = q6_summary.value_exact if q6_summary is not None else None
@@ -766,8 +918,8 @@ def estimate_q6_posterior_from_truths(
         q6_present_rate=q6_present_rate,
         total_cells=_guard_quantiles(
             _weighted_quantiles(
-                total_cells,
-                matched_weights,
+                total_cells_for_quantiles,
+                total_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
@@ -777,8 +929,8 @@ def estimate_q6_posterior_from_truths(
         ),
         total_value=_guard_quantiles(
             _weighted_quantiles(
-                total_values,
-                matched_weights,
+                total_values_for_quantiles,
+                total_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
@@ -787,8 +939,8 @@ def estimate_q6_posterior_from_truths(
         ),
         formal_decision_value=_guard_quantiles(
             _weighted_quantiles(
-                formal_decision_values,
-                matched_weights,
+                formal_decision_values_for_quantiles,
+                total_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
@@ -797,8 +949,8 @@ def estimate_q6_posterior_from_truths(
         ),
         tail_replacement_decision_value=_guard_quantiles(
             _weighted_quantiles(
-                tail_replacement_decision_values,
-                matched_weights,
+                tail_replacement_decision_values_for_quantiles,
+                total_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
@@ -807,8 +959,8 @@ def estimate_q6_posterior_from_truths(
         ),
         q6_count=_guard_quantiles(
             _weighted_quantiles(
-                q6_counts,
-                matched_weights,
+                q6_counts_for_quantiles,
+                q6_count_cell_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
@@ -818,8 +970,8 @@ def estimate_q6_posterior_from_truths(
         ),
         q6_cells=_guard_quantiles(
             _weighted_quantiles(
-                q6_cells,
-                matched_weights,
+                q6_cells_for_quantiles,
+                q6_count_cell_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
@@ -829,8 +981,8 @@ def estimate_q6_posterior_from_truths(
         ),
         q6_value=_guard_quantiles(
             _weighted_quantiles(
-                q6_values,
-                matched_weights,
+                q6_values_for_quantiles,
+                q6_value_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
@@ -840,8 +992,8 @@ def estimate_q6_posterior_from_truths(
         ),
         q6_formal_decision_value=_guard_quantiles(
             _weighted_quantiles(
-                q6_formal_decision_values,
-                matched_weights,
+                q6_formal_decision_values_for_quantiles,
+                q6_value_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
@@ -850,8 +1002,8 @@ def estimate_q6_posterior_from_truths(
         ),
         q6_tail_replacement_decision_value=_guard_quantiles(
             _weighted_quantiles(
-                q6_tail_replacement_decision_values,
-                matched_weights,
+                q6_tail_replacement_values_for_quantiles,
+                q6_value_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
                 p50_guard_quantile=p50_guard_quantile,

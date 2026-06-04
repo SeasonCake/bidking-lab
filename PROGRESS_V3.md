@@ -834,3 +834,70 @@ C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --to
 
 - live JSONL 已具备记录 v3 shadow 的字段，后续新增实战样本可直接比较 v2 formal 与 v3 shadow。
 - 下一步仍是 q6 count/cell/value 条件 proposal，而不是继续提高 global/map guard。
+
+## 2026-06-05 checkpoint：q6 bucket-conditioned proposal
+
+问题：
+
+- 当前 v3 posterior 的 `summary_likelihood` fallback 会软匹配全局 summary。
+- 对 q6 floor/exact 证据，旧实现多半只靠输出层 floor guard；如果 prior support 中未严格命中完整 summary，q6 分布容易贴着 floor，导致 fallback 负 bias。
+
+实现：
+
+- 当 `match_scope=summary_likelihood` 且 q6 bucket 有 count/cell/value 约束时，新增 q6 bucket-conditioned subset。
+- q6 count/cells 使用满足 q6 bucket 约束的候选集。
+- 只有存在 q6 value floor/exact 时，才用 q6-conditioned value/formal 分量替换原 fallback q6 value；避免只有 count/cells 证据时过度抬高价值。
+- formal/raw 总值用“原 fallback 非 q6 分量 + conditioned q6 分量”重组。
+- diagnostics 增加：
+  - `q6_bucket_conditioned_samples=N`
+  - `q6_bucket_conditioned_formal_adjustment`
+  - anchor 权重命中时记录 `q6_bucket_conditioned_anchor_likelihood_weighted`。
+
+当前 433 canonical 样本、512 samples/map 指标：
+
+```text
+formal_p50_mae=309872.088
+formal_p50_mae_strict=315835.395
+formal_p50_mae_fallback=306875.832
+formal_p50_below_rate=0.544980
+formal_p50_over_rate=0.455020
+formal_p90_coverage=0.799870
+q6_formal_p50_mae=282939.074
+q6_formal_p50_mae_strict=289113.803
+q6_formal_p50_mae_fallback=279836.591
+q6_formal_p50_below_rate=0.462190
+q6_formal_p50_over_rate=0.535854
+```
+
+相对 map-calibrated guard：
+
+- `formal_p50_mae`：`313387.992 -> 309872.088`，下降约 `3,516`。
+- `formal_p50_below_rate`：`0.573012 -> 0.544980`。
+- `formal_p90_coverage`：`0.780965 -> 0.799870`。
+- `q6_formal_p50_mae`：`283903.670 -> 282939.074`，下降约 `965`。
+- `q6_formal_p50_below_rate`：`0.487614 -> 0.462190`，但 `over_rate` 升至 `0.535854`。
+
+分片观察：
+
+- summary-likelihood fallback：formal MAE `312158.3 -> 306875.8`，q6 MAE `281285.8 -> 279836.6`。
+- round 3-5 的 formal MAE 与 P90 coverage 均改善。
+- 2506/2501/2401 改善明显；2601 formal/q6 MAE 回退，仍是下一步重点。
+- 2507/2505/2410 over-rate 仍偏高，后续不能继续全局加 aggressive guard。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_live_monitor.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --top 14
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by v3_post_match_scope --top 10
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by round --top 10
+```
+
+结果：`40 passed`，全样本 evaluator 通过。
+
+结论：
+
+- 这是比继续调高 guard 更合理的 v3 方向：让 q6 证据决定 q6 分布移动。
+- 当前仍是 shadow calibration，不满足 formal promotion。
+- 下一步应针对 2601 与 high-over maps 做 map/evidence gate，而不是继续扩大 q6-conditioned 强度。

@@ -465,6 +465,15 @@ v3 可进入正式候选前：
 - 下一步重点是条件 proposal / count-cell-value constructor，提高 `match_scope=strict` 覆盖，并用 paired metrics 验证 formal MAE、below-q6、P90/pinball。
 - 当前 skeleton 512 samples/map 的 formal_p50_mae 约 `347,622`，q6_formal_p50_mae 约 `304,356`，只作为可复跑基线，不满足 promotion。
 
+### 2026-06-05 执行进展
+
+- Phase 4 已有第一段可跑实现：live artifact 写入 `v3_posterior_shadow`，`model_eval` 写入 `v3_post_*` / `v3_summary_*`；`ui_contract` 暂不暴露 v3，避免 UI 将 shadow 误读为正式建议。
+- Phase 3 posterior 从 summary-only fallback 进展为 q6 bucket-conditioned proposal：
+  - q6 count/cells 可由满足 q6 bucket 约束的候选集修正。
+  - 只有存在 q6 value floor/exact 时，才修正 q6 value/formal 分量。
+- 当前 433 canonical 样本指标：`formal_p50_mae=309872.088`，`q6_formal_p50_mae=282939.074`，`formal_p90_coverage=0.799870`。
+- 该实现仍为 shadow calibration；2601 和 high-over maps 需要下一轮 map/evidence gate。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

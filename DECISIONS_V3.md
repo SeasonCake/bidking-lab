@@ -307,3 +307,24 @@ v3 posterior shadow 在 live monitor 中的接入边界：
 - live artifact 构建失败时 v3 shadow 应 fail closed：记录 `error`，保持 `affects_bid=false`，不影响 v2 live baseline。
 - 后续若要展示 v3，只能作为明确标注的只读诊断/影子参考，且仍不得影响正式 bid rows。
 - promotion 前必须用 canonical archive + 新实战样本同时验证 formal MAE、below/over、P90 coverage、q6 under-by 与 pinball。
+
+## D-v3-021：q6 bucket-conditioned proposal 不把 count/cells 证据直接升级为 value 证据
+
+v3 `summary_likelihood` fallback 的 q6 条件化规则：
+
+- q6 bucket 有 count/cell/value 约束时，可以用只满足 q6 bucket 的候选集修正 q6 count/cells 分布。
+- 只有 q6 bucket 存在 `value_floor` 或 `value_exact` 时，才允许修正 q6 value、q6 formal decision value、formal/raw total value 的 q6 分量。
+- 只有 count/cells 证据时，不移动 q6 value/formal 分量。
+
+原因：
+
+- q6 count/cells floor 说明红品数量/占格下界，但不证明红品价值水平。
+- 在实测样本中，count+cells floor 但无 value floor 的窗口如果直接替换 q6 value，会产生偏高 q6 bias。
+- 带 value floor 的窗口才是这类 proposal 的主要收益来源，能降低 fallback 负 bias。
+
+边界：
+
+- 该 proposal 仍为 v3 shadow，`affects_bid=false`。
+- 该实现不生成新 hard footprint，也不改变 quality-only/宝光边界。
+- diagnostics 必须记录 q6-conditioned 样本量，后续 map/evidence gate 需要依赖这个字段。
+- 2601 与 high-over maps 后续需要单独 gate/校准；不能用这个结果证明 v3 已可 promotion。

@@ -469,3 +469,43 @@ v3_ready=True affects_bid=False scope=summary_likelihood trials=10 error=None
 - live artifact/model_eval 现在能携带 v3 shadow 字段，可用于后续实战样本 paired compare。
 - 当前接入没有污染 offline archive evaluator，也没有改变 v2 formal baseline。
 - `ui_contract` 暂不暴露 v3 shadow 是合理边界，避免实战 UI 把 shadow 误当正式建议。
+
+## O-v3-022：q6-conditioned proposal 改善 fallback，但 2601 仍需单独处理
+
+2026-06-05 在 `summary_likelihood` fallback 中加入 q6 bucket-conditioned proposal 后：
+
+整体：
+
+```text
+formal_p50_mae=309872.088
+formal_p50_below_rate=0.544980
+formal_p50_over_rate=0.455020
+formal_p90_coverage=0.799870
+q6_formal_p50_mae=282939.074
+q6_formal_p50_below_rate=0.462190
+q6_formal_p50_over_rate=0.535854
+```
+
+对比 map-calibrated guard：
+
+```text
+formal_p50_mae 313387.992 -> 309872.088
+q6_formal_p50_mae 283903.670 -> 282939.074
+formal_p90_coverage 0.780965 -> 0.799870
+```
+
+分片：
+
+```text
+scope=summary_likelihood formal_mae=306875.8 q6_mae=279836.6
+map_id=2601 formal_mae=581040.0 q6_mae=513740.1
+map_id=2506 formal_mae=451709.5 q6_mae=411316.2
+map_id=2501 formal_mae=337374.6 q6_mae=305785.5
+```
+
+结论：
+
+- q6-conditioned proposal 的方向成立：fallback 负 bias 明显下降，overall formal/q6 MAE 均改善。
+- 只有 q6 value floor/exact 时才移动 value/formal 分量是必要 gate；否则 count+cells 证据会把 q6 value 推高。
+- 2601 在该 proposal 下 MAE 回退，说明它的问题不是简单 q6 floor 残差，后续需要 map/evidence 条件 gate 或专门 proposal。
+- high-over 地图仍要跟 below-rate 一起监控，不能为了降低低估而无限提高 aggressive 程度。
