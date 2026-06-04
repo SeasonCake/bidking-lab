@@ -340,3 +340,36 @@ def test_v3_posterior_practical_p50_guard_uses_support_p60() -> None:
     assert report.ready is True
     assert report.match_scope == "summary_likelihood"
     assert report.q6_value.p50 == 340
+
+
+def test_v3_posterior_practical_p50_guard_is_map_calibrated() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=99,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=0,
+        buckets=(BucketFeasibleSummary(quality=6, count_floor=1, cells_floor=4),),
+    )
+    truths = tuple(
+        _truth_with_q6_item(item_id=1086200 + index, value=value, cells=4)
+        for index, value in enumerate((100, 200, 300, 400, 500))
+    )
+
+    high_tail = estimate_q6_posterior_from_truths(
+        map_id=2506,
+        map_name="high_tail",
+        summary=summary,
+        truths=truths,
+    )
+    low_tail = estimate_q6_posterior_from_truths(
+        map_id=2507,
+        map_name="low_tail",
+        summary=summary,
+        truths=truths,
+    )
+
+    assert high_tail.q6_value.p50 == 360
+    assert "practical_p50_guard_quantile=0.65" in high_tail.diagnostics
+    assert low_tail.q6_value.p50 == 320
+    assert "practical_p50_guard_quantile=0.55" in low_tail.diagnostics

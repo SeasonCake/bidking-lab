@@ -727,3 +727,68 @@ C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --to
 ```
 
 结果：`38 passed`，全样本 evaluator 通过。
+
+## 2026-06-05 checkpoint：map-calibrated practical guard
+
+问题：
+
+- 全局 support P60 guard 改善了低估，但 2507/2508/2505 等地图开始出现正 bias 或 over-rate 偏高。
+- 继续全局抬高不可取；需要让 guard 根据地图风险分层。
+
+修复：
+
+- v3 shadow posterior 的 practical P50 guard 改为地图校准：
+  - high-tail maps：support P65，当前 `2404/2501/2503/2506/2601`。
+  - low-tail maps：support P55，当前 `2407/2410/2505/2507/2508`。
+  - 其他地图：support P60。
+- 每个 weighted posterior 会在 diagnostics 中记录 `practical_p50_guard_quantile=...`。
+- 仍只在已有 likelihood weights 的窗口生效，`affects_bid=false`。
+
+433 canonical 样本、512 samples/map 当前指标：
+
+```text
+formal_p50_mae=313387.992
+formal_p50_bias=-122240.706
+formal_p50_below_rate=0.573012
+formal_p50_over_rate=0.426988
+formal_p90_coverage=0.780965
+q6_formal_p50_mae=283903.670
+q6_formal_p50_bias=-63074.925
+q6_formal_p50_below_rate=0.487614
+q6_formal_p50_over_rate=0.508475
+q6_formal_p90_coverage=0.828553
+```
+
+相对全局 P60 guard：
+
+- `formal_p50_mae`：`316976.209 -> 313387.992`，下降约 `3,588`。
+- `q6_formal_p50_mae`：`287225.034 -> 283903.670`，下降约 `3,321`。
+- `formal_p50_bias`：`-129378.797 -> -122240.706`。
+- `q6_formal_p50_bias`：`-70104.765 -> -63074.925`。
+
+分片：
+
+```text
+2601 n=86 mae=563274.2 bias=-379658.3 below=0.755814 over=0.244186 q6_mae=486057.4
+2506 n=71 mae=459734.9 bias=-369867.9 below=0.746479 over=0.253521 q6_mae=418095.1
+2501 n=310 mae=342930.5 bias=-171589.7 below=0.612903 over=0.387097 q6_mae=310317.5
+2507 n=74 mae=327570.1 bias=-23952.7 below=0.378378 over=0.621622 q6_mae=326468.0
+2508 n=54 mae=275920.0 bias=-6400.3 below=0.537037 over=0.462963 q6_mae=230400.0
+2505 n=39 mae=270463.7 bias=-4161.5 below=0.487179 over=0.512821 q6_mae=252458.5
+```
+
+结论：
+
+- 地图校准比全局 P60 更稳，同时继续降低 2601/2506/2501 低估。
+- 2507 仍有 high over-rate，2601/2506 仍有 high below-rate；下一步要做真正的 q6 count/cell/value 条件 proposal。
+- 该表来自当前 433 canonical 样本，是 v3 shadow calibration，不可直接作为 formal promotion 证明。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_organize_fatbeans_real_samples.py tests\test_rename_manual_fatbeans_samples.py tests\test_summarize_fatbeans_sample_manifest.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_posterior.py tests\test_inference_v3_summary.py tests\test_inference_v3_priors_truth.py tests\test_inference_v3_evidence_registry.py tests\test_live_monitor.py::test_ethan_sample37_residual_does_not_break_exact_bucket_targets tests\test_summarize_v3_metric_slices.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --top 14
+```
+
+结果：`39 passed`，全样本 evaluator 通过。

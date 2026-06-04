@@ -399,3 +399,45 @@ q6_formal_p50_bias=-114997.727
 - P60 是当前全局 practical guard 的合理上限；继续全局提高会伤害已接近平衡或偏高地图。
 - 下一步需要 map/证据条件化的 proposal，而不是全局 P65/P70。
 - over-rate 必须和 below-rate 一起报告，否则会只追求“少低估”而忽略实战过激风险。
+
+## O-v3-020：map-calibrated practical guard 优于全局 P60
+
+2026-06-05 在当前 433 canonical 样本上测试地图分层 guard：
+
+- high-tail：P65，`2404/2501/2503/2506/2601`。
+- low-tail：P55，`2407/2410/2505/2507/2508`。
+- default：P60。
+
+结果：
+
+```text
+formal_p50_mae=313387.992
+formal_p50_bias=-122240.706
+formal_p50_below_rate=0.573012
+formal_p50_over_rate=0.426988
+q6_formal_p50_mae=283903.670
+q6_formal_p50_bias=-63074.925
+q6_formal_p50_below_rate=0.487614
+q6_formal_p50_over_rate=0.508475
+```
+
+对比全局 P60：
+
+```text
+formal_p50_mae=316976.209
+formal_p50_bias=-129378.797
+q6_formal_p50_mae=287225.034
+q6_formal_p50_bias=-70104.765
+```
+
+分片观察：
+
+- 2601/2506/2501 继续改善。
+- 2507/2508/2505 的正 bias 比全局 P60 缩小。
+- 2507 的 over-rate 仍高，2601/2506 的 below-rate 仍高。
+
+结论：
+
+- 地图分层 guard 是当前 v3 shadow 的更好校准口径。
+- 但该分层来自当前真实样本，仍需要后续新样本或 holdout 复核。
+- 该策略不能替代 q6 count/cell/value 条件 proposal；它只是减少全局 practical guard 的副作用。

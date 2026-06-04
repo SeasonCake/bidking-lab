@@ -17,7 +17,11 @@ from bidking_lab.inference.v3.constraints import ConstraintSet, ItemAnchor, Shap
 from bidking_lab.inference.v3.summary import BucketFeasibleSummary, FeasibleSummaryReport
 from bidking_lab.inference.v3.truth import decision_truth_from_session_truth
 
-_PRACTICAL_P50_GUARD_QUANTILE = 0.60
+_DEFAULT_PRACTICAL_P50_GUARD_QUANTILE = 0.60
+_HIGH_TAIL_PRACTICAL_P50_GUARD_QUANTILE = 0.65
+_LOW_TAIL_PRACTICAL_P50_GUARD_QUANTILE = 0.55
+_HIGH_TAIL_MAP_IDS = frozenset((2404, 2501, 2503, 2506, 2601))
+_LOW_TAIL_MAP_IDS = frozenset((2407, 2410, 2505, 2507, 2508))
 
 
 @dataclass(frozen=True)
@@ -134,6 +138,7 @@ def _weighted_quantiles(
     *,
     p50_tail_guard: bool = False,
     p90_tail_guard: bool = False,
+    p50_guard_quantile: float = _DEFAULT_PRACTICAL_P50_GUARD_QUANTILE,
 ) -> QuantileSummary | None:
     if weights is None:
         return _quantiles(values)
@@ -162,7 +167,7 @@ def _weighted_quantiles(
     if p50_tail_guard or p90_tail_guard:
         unweighted = _quantiles(values)
         if p50_tail_guard and unweighted is not None:
-            practical_p50 = _quantile_value(values, _PRACTICAL_P50_GUARD_QUANTILE)
+            practical_p50 = _quantile_value(values, p50_guard_quantile)
             p50 = max(
                 p50,
                 practical_p50 if practical_p50 is not None else unweighted.p50,
@@ -170,6 +175,14 @@ def _weighted_quantiles(
         if p90_tail_guard and unweighted is not None:
             p90 = max(p90, unweighted.p90)
     return QuantileSummary(p10=pick(0.10), p50=p50, p90=p90)
+
+
+def _practical_p50_guard_quantile(map_id: int) -> float:
+    if int(map_id) in _HIGH_TAIL_MAP_IDS:
+        return _HIGH_TAIL_PRACTICAL_P50_GUARD_QUANTILE
+    if int(map_id) in _LOW_TAIL_MAP_IDS:
+        return _LOW_TAIL_PRACTICAL_P50_GUARD_QUANTILE
+    return _DEFAULT_PRACTICAL_P50_GUARD_QUANTILE
 
 
 def _guard_quantiles(
@@ -740,6 +753,9 @@ def estimate_q6_posterior_from_truths(
     q6_count_floor = q6_summary.count_floor if q6_summary is not None else 0
     q6_cells_floor = q6_summary.cells_floor if q6_summary is not None else 0
     q6_value_floor = q6_summary.value_floor if q6_summary is not None else 0
+    p50_guard_quantile = _practical_p50_guard_quantile(int(map_id))
+    if tail_guard:
+        diagnostics.append(f"practical_p50_guard_quantile={p50_guard_quantile:.2f}")
     return V3PosteriorReport(
         map_id=int(map_id),
         map_name=map_name,
@@ -754,6 +770,7 @@ def estimate_q6_posterior_from_truths(
                 matched_weights,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
             ),
             floor=summary.known_cells_floor,
             exact=summary.session_total_cells_exact,
@@ -764,6 +781,7 @@ def estimate_q6_posterior_from_truths(
                 matched_weights,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
             ),
             floor=summary.known_value_floor,
         ),
@@ -773,6 +791,7 @@ def estimate_q6_posterior_from_truths(
                 matched_weights,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
             ),
             floor=summary.known_value_floor,
         ),
@@ -782,6 +801,7 @@ def estimate_q6_posterior_from_truths(
                 matched_weights,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
             ),
             floor=summary.known_value_floor,
         ),
@@ -791,6 +811,7 @@ def estimate_q6_posterior_from_truths(
                 matched_weights,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
             ),
             floor=q6_count_floor,
             exact=q6_count_exact,
@@ -801,6 +822,7 @@ def estimate_q6_posterior_from_truths(
                 matched_weights,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
             ),
             floor=q6_cells_floor,
             exact=q6_cells_exact,
@@ -811,6 +833,7 @@ def estimate_q6_posterior_from_truths(
                 matched_weights,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
             ),
             floor=q6_value_floor,
             exact=q6_value_exact,
@@ -821,6 +844,7 @@ def estimate_q6_posterior_from_truths(
                 matched_weights,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
             ),
             floor=q6_value_floor,
         ),
@@ -830,6 +854,7 @@ def estimate_q6_posterior_from_truths(
                 matched_weights,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
             ),
             floor=q6_value_floor,
         ),
