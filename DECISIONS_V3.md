@@ -113,3 +113,16 @@ outline/full-outline 事件的 count/cells exact 由 compiler 根据 observed_it
 `q6_projection` 的用途是让 archive/live shadow 字段不断档，帮助定位 q6 count/cell/value 方向；它不能作为正式估值或 promotion gate 的证明。
 
 promotion 前必须显著提高 strict-ready 覆盖，或实现等价的条件 proposal，并在 metrics 中单独报告 strict 与 fallback。
+
+## D-v3-011：v3 posterior 默认指标对齐 formal decision value
+
+`V3PosteriorReport` 同时输出 raw value、formal decision value、tail-replacement decision value。后续默认准确率指标使用：
+
+- 预测：`v3_post_formal_decision_value_p50`
+- 真值：`v3_truth_formal_decision_value`
+
+其他字段只能作为显式命名的对照：
+
+- raw 对照：`v3_post_total_value_*` vs `v3_truth_raw_total_value`
+- replacement 对照：`v3_post_tail_replacement_decision_value_*` vs `v3_truth_tail_replacement_decision_value`
+- q6 对照：必须区分 raw q6 与 formal q6。

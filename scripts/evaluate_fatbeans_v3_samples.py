@@ -277,6 +277,8 @@ def _round_rows_for_events(
                 map_name=str(prior_fields.get("v3_prior_map_name") or ""),
                 summary=feasible_summary,
                 truths=posterior_truths,
+                constraints=constraints,
+                replacement_values=replacement_values,
             )
             if map_id is not None and tables is not None and posterior_trials > 0
             else None
@@ -519,6 +521,12 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_post_total_value_p10",
         "v3_post_total_value_p50",
         "v3_post_total_value_p90",
+        "v3_post_formal_decision_value_p10",
+        "v3_post_formal_decision_value_p50",
+        "v3_post_formal_decision_value_p90",
+        "v3_post_tail_replacement_decision_value_p10",
+        "v3_post_tail_replacement_decision_value_p50",
+        "v3_post_tail_replacement_decision_value_p90",
         "v3_post_q6_count_p10",
         "v3_post_q6_count_p50",
         "v3_post_q6_count_p90",
@@ -528,6 +536,12 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_post_q6_value_p10",
         "v3_post_q6_value_p50",
         "v3_post_q6_value_p90",
+        "v3_post_q6_formal_decision_value_p10",
+        "v3_post_q6_formal_decision_value_p50",
+        "v3_post_q6_formal_decision_value_p90",
+        "v3_post_q6_tail_replacement_decision_value_p10",
+        "v3_post_q6_tail_replacement_decision_value_p50",
+        "v3_post_q6_tail_replacement_decision_value_p90",
         "v3_post_diagnostics",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")

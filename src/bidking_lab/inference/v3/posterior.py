@@ -12,7 +12,9 @@ from bidking_lab.extract.drop_table import DropPool
 from bidking_lab.extract.item_table import Item
 from bidking_lab.inference.ground_truth import SessionTruth, prepare_session_sampler
 from bidking_lab.inference.map_likelihood import QuantileSummary
+from bidking_lab.inference.v3.constraints import ConstraintSet
 from bidking_lab.inference.v3.summary import BucketFeasibleSummary, FeasibleSummaryReport
+from bidking_lab.inference.v3.truth import decision_truth_from_session_truth
 
 
 @dataclass(frozen=True)
@@ -26,9 +28,13 @@ class V3PosteriorReport:
     q6_present_rate: float | None
     total_cells: QuantileSummary | None
     total_value: QuantileSummary | None
+    formal_decision_value: QuantileSummary | None
+    tail_replacement_decision_value: QuantileSummary | None
     q6_count: QuantileSummary | None
     q6_cells: QuantileSummary | None
     q6_value: QuantileSummary | None
+    q6_formal_decision_value: QuantileSummary | None
+    q6_tail_replacement_decision_value: QuantileSummary | None
     diagnostics: tuple[str, ...] = ()
 
     @property
@@ -74,9 +80,22 @@ class V3PosteriorReport:
         }
         out.update(_quantile_flat(f"{prefix}total_cells", self.total_cells))
         out.update(_quantile_flat(f"{prefix}total_value", self.total_value))
+        out.update(_quantile_flat(f"{prefix}formal_decision_value", self.formal_decision_value))
+        out.update(_quantile_flat(
+            f"{prefix}tail_replacement_decision_value",
+            self.tail_replacement_decision_value,
+        ))
         out.update(_quantile_flat(f"{prefix}q6_count", self.q6_count))
         out.update(_quantile_flat(f"{prefix}q6_cells", self.q6_cells))
         out.update(_quantile_flat(f"{prefix}q6_value", self.q6_value))
+        out.update(_quantile_flat(
+            f"{prefix}q6_formal_decision_value",
+            self.q6_formal_decision_value,
+        ))
+        out.update(_quantile_flat(
+            f"{prefix}q6_tail_replacement_decision_value",
+            self.q6_tail_replacement_decision_value,
+        ))
         return out
 
 
@@ -176,6 +195,8 @@ def estimate_q6_posterior_from_truths(
     map_name: str,
     summary: FeasibleSummaryReport,
     truths: Sequence[SessionTruth],
+    constraints: ConstraintSet | None = None,
+    replacement_values: Mapping[tuple[int, int, int], int] | None = None,
 ) -> V3PosteriorReport:
     diagnostics: list[str] = []
     n_total = len(truths)
@@ -218,6 +239,10 @@ def estimate_q6_posterior_from_truths(
     q6_values: list[int] = []
     total_cells: list[int] = []
     total_values: list[int] = []
+    formal_decision_values: list[int] = []
+    tail_replacement_decision_values: list[int] = []
+    q6_formal_decision_values: list[int] = []
+    q6_tail_replacement_decision_values: list[int] = []
     for truth in matched:
         count, cells, value = _bucket_fields(truth, 6)
         q6_counts.append(count)
@@ -225,6 +250,20 @@ def estimate_q6_posterior_from_truths(
         q6_values.append(value)
         total_cells.append(int(truth.warehouse_total_cells))
         total_values.append(int(truth.total_value()))
+        if constraints is not None:
+            decision = decision_truth_from_session_truth(
+                truth,
+                constraints=constraints,
+                replacement_values=replacement_values or {},
+            )
+            formal_decision_values.append(decision.formal_decision_value)
+            tail_replacement_decision_values.append(
+                decision.tail_replacement_decision_value
+            )
+            q6_formal_decision_values.append(decision.q6_formal_decision_value)
+            q6_tail_replacement_decision_values.append(
+                decision.q6_tail_replacement_decision_value
+            )
     q6_present_rate = (
         sum(1 for count in q6_counts if count > 0) / len(q6_counts)
         if q6_counts
@@ -240,9 +279,15 @@ def estimate_q6_posterior_from_truths(
         q6_present_rate=q6_present_rate,
         total_cells=_quantiles(total_cells),
         total_value=_quantiles(total_values),
+        formal_decision_value=_quantiles(formal_decision_values),
+        tail_replacement_decision_value=_quantiles(tail_replacement_decision_values),
         q6_count=_quantiles(q6_counts),
         q6_cells=_quantiles(q6_cells),
         q6_value=_quantiles(q6_values),
+        q6_formal_decision_value=_quantiles(q6_formal_decision_values),
+        q6_tail_replacement_decision_value=_quantiles(
+            q6_tail_replacement_decision_values
+        ),
         diagnostics=tuple(diagnostics),
     )
 
@@ -267,9 +312,13 @@ def empty_posterior_flat_dict(*, prefix: str = "v3_post_") -> dict[str, Any]:
     for name in (
         "total_cells",
         "total_value",
+        "formal_decision_value",
+        "tail_replacement_decision_value",
         "q6_count",
         "q6_cells",
         "q6_value",
+        "q6_formal_decision_value",
+        "q6_tail_replacement_decision_value",
     ):
         out.update(_quantile_flat(f"{prefix}{name}", None))
     return out

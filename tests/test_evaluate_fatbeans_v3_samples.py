@@ -191,6 +191,8 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_post_affects_bid"] is False
     assert rows[0]["v3_post_match_scope"] == "strict"
     assert rows[0]["v3_post_n_total"] == 64
+    assert rows[0]["v3_post_formal_decision_value_p50"] is not None
+    assert rows[0]["v3_post_q6_formal_decision_value_p50"] is not None
 
 
 def test_v3_prebid_rows_separate_no_state_windows() -> None:

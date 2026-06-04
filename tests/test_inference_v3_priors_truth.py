@@ -3,8 +3,10 @@ from types import SimpleNamespace
 from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropEntry, DropPool
 from bidking_lab.extract.item_table import Item
+from bidking_lab.inference.ground_truth import BucketTruth, SessionTruth
 from bidking_lab.inference.v3.constraints import ConstraintSet, ItemAnchor
 from bidking_lab.inference.v3 import (
+    decision_truth_from_session_truth,
     decision_truth_from_fatbeans,
     ordinary_shape_replacement_values,
     settlement_truth_from_fatbeans,
@@ -203,3 +205,31 @@ def test_v3_decision_truth_trims_unanchored_confusable_tail() -> None:
     assert anchored is not None
     assert anchored.formal_decision_value == 2_000_000
     assert anchored.tail_replacement_decision_value == 2_000_000
+
+
+def test_v3_session_truth_uses_same_decision_trim_rules() -> None:
+    tail = _item(1086002, quality=6, value=2_000_000, shape=(1, 1))
+    truth = SessionTruth(
+        map_id=2401,
+        map_name="test_map",
+        warehouse_total_cells=1,
+        buckets={
+            6: BucketTruth(
+                quality=6,
+                count=1,
+                total_cells=1,
+                value_sum=tail.value,
+                items=[tail],
+            )
+        },
+    )
+
+    decision = decision_truth_from_session_truth(
+        truth,
+        constraints=ConstraintSet(),
+        replacement_values={(6, 1, 1): 180_000},
+    )
+
+    assert decision.formal_decision_value == 0
+    assert decision.tail_replacement_decision_value == 180_000
+    assert decision.q6_trimmed_tail_value == 2_000_000

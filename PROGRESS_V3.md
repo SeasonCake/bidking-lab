@@ -216,6 +216,26 @@
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --posterior-trials 0 --fail-on-conflicts` 通过。
   - `C:\Python313\python.exe .\scripts\summarize_v3_constraints.py --fail-on-conflicts` 通过。
 
+### Phase 3 增量：posterior formal/replacement value fields
+
+- `src/bidking_lab/inference/v3/truth.py` 新增 `decision_truth_from_session_truth()`。
+- settlement truth 与 sampled `SessionTruth` 共用同一套 plannable/tail-replacement 规则。
+- `V3PosteriorReport` 新增 quantiles：
+  - `v3_post_formal_decision_value_*`
+  - `v3_post_tail_replacement_decision_value_*`
+  - `v3_post_q6_formal_decision_value_*`
+  - `v3_post_q6_tail_replacement_decision_value_*`
+- 当前 archive smoke 与上一阶段一致：
+  - posterior_ready `1,247`
+  - posterior_strict_ready `359`
+  - posterior_fallback `888`
+  - posterior_no_match `0`
+- 验证：
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_summary.py tests\test_inference_v3_priors_truth.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_evidence_registry.py -q`
+    为 `22 passed`。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --posterior-trials 0 --fail-on-conflicts` 通过。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：

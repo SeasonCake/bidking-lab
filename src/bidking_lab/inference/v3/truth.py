@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from bidking_lab.extract.item_table import Item
+from bidking_lab.inference.ground_truth import SessionTruth
 from bidking_lab.inference.v3.constraints import ConstraintSet
 from bidking_lab.simulation.robust_value import (
     DEFAULT_VALUE_FLOOR,
@@ -156,19 +157,12 @@ def _replacement_value(
     )
 
 
-def decision_truth_from_fatbeans(
-    events: Any,
+def _decision_truth_from_items(
+    truth_items: tuple[Item, ...],
     *,
-    items: Mapping[int, Item],
     constraints: ConstraintSet,
-    replacement_values: Mapping[tuple[int, int, int], int] | None = None,
-) -> DecisionTruthReport | None:
-    """Return formal and replacement decision truth for one pre-bid window."""
-
-    state = _latest_inventory_state(events)
-    if state is None:
-        return None
-    replacement_values = replacement_values or {}
+    replacement_values: Mapping[tuple[int, int, int], int],
+) -> DecisionTruthReport:
     exact_ids = _exact_anchor_ids(constraints)
     formal_decision_value = 0
     replacement_decision_value = 0
@@ -178,11 +172,7 @@ def decision_truth_from_fatbeans(
     q6_replacement_decision_value = 0
     q6_trimmed_tail_value = 0
     q6_trimmed_tail_count = 0
-    for inv_item in tuple(getattr(state, "inventory_items", ()) or ()):
-        item_id = getattr(inv_item, "item_id", None)
-        item = items.get(int(item_id)) if item_id is not None else None
-        if item is None:
-            continue
+    for item in truth_items:
         value = int(item.value)
         is_q6 = int(item.quality) == 6
         if _item_plannable(item, constraints=constraints, exact_anchor_ids=exact_ids):
@@ -209,6 +199,53 @@ def decision_truth_from_fatbeans(
         q6_tail_replacement_decision_value=q6_replacement_decision_value,
         q6_trimmed_tail_value=q6_trimmed_tail_value,
         q6_trimmed_tail_count=q6_trimmed_tail_count,
+    )
+
+
+def decision_truth_from_session_truth(
+    truth: SessionTruth,
+    *,
+    constraints: ConstraintSet,
+    replacement_values: Mapping[tuple[int, int, int], int] | None = None,
+) -> DecisionTruthReport:
+    """Return formal/replacement decision truth for a sampled SessionTruth."""
+
+    truth_items = tuple(
+        item
+        for bucket in truth.buckets.values()
+        for item in bucket.items
+    )
+    return _decision_truth_from_items(
+        truth_items,
+        constraints=constraints,
+        replacement_values=replacement_values or {},
+    )
+
+
+def decision_truth_from_fatbeans(
+    events: Any,
+    *,
+    items: Mapping[int, Item],
+    constraints: ConstraintSet,
+    replacement_values: Mapping[tuple[int, int, int], int] | None = None,
+) -> DecisionTruthReport | None:
+    """Return formal and replacement decision truth for one pre-bid window."""
+
+    state = _latest_inventory_state(events)
+    if state is None:
+        return None
+    replacement_values = replacement_values or {}
+    truth_items: list[Item] = []
+    for inv_item in tuple(getattr(state, "inventory_items", ()) or ()):
+        item_id = getattr(inv_item, "item_id", None)
+        item = items.get(int(item_id)) if item_id is not None else None
+        if item is None:
+            continue
+        truth_items.append(item)
+    return _decision_truth_from_items(
+        tuple(truth_items),
+        constraints=constraints,
+        replacement_values=replacement_values,
     )
 
 
@@ -302,6 +339,7 @@ __all__ = (
     "QualityTruthReport",
     "SettlementTruthReport",
     "decision_truth_from_fatbeans",
+    "decision_truth_from_session_truth",
     "empty_decision_truth_flat_dict",
     "empty_truth_flat_dict",
     "settlement_truth_from_fatbeans",
