@@ -159,3 +159,20 @@ q6_formal_p50_mae_fallback=297331.154
 - 当前 skeleton 的主要价值是让 v3 有稳定 paired metric，不是估值质量已经过关。
 - strict 样本只是 prior bank 恰好命中完整 summary，不代表条件 proposal 已经正确。
 - 下一步优化必须直接降低 formal/q6 MAE，并提高 P90 coverage；否则不能进入 live formal。
+
+## O-v3-013：样本库需要文件级 manifest，不能把窗口数当新增样本
+
+`scripts/summarize_fatbeans_sample_manifest.py` 当前 archive 结果：
+
+```text
+files=355 parsed_files=350 parse_errors=5 valid_files=335 mixed_files=15 invalid_files=5 usable_metric_files=350
+bid_windows=1262 ready_windows=1247 no_state_windows=15 constraint_conflict_windows=0
+```
+
+结论：
+
+- `355` 是真实 Fatbeans capture 文件数；`1262` 是从这些真实文件按玩家报价前边界派生的 pre-bid 窗口数，不是生成样本。
+- `335` 份文件所有 pre-bid 窗口均可用；`15` 份 mixed 文件有可用窗口，也有 no-state 采集缺口；`5` 份旧样本 parse error。
+- mixed 文件不能整局丢弃，否则浪费有效窗口；但 no-state 窗口不能进入 MAE/coverage/pinball 分母。
+- 当前 manifest 还统计 public info/action/skill 出现次数，可作为“数据里有但 pipeline 未消费”的审查入口。
+- 当前公开 exact 信息出现次数包括：`200009` 总格 `118` 次、`200017` 总件数 `74` 次、`200010/200011/200018/200019` 分品质格数/件数若干次。后续 v3 registry/UI/archive 审查应优先确认这些信息全链路消费。

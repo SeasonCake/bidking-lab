@@ -269,6 +269,35 @@
     为 `23 passed`。
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
 
+### Phase 3 增量：Fatbeans sample manifest
+
+- 新增 `scripts/summarize_fatbeans_sample_manifest.py`，输出文件级样本清单，不移动或改写原始 capture。
+- 已生成当前清单：`data/sample_manifests/fatbeans_archive_v3_2026-06-04.json`。
+- manifest 明确区分：
+  - 真实 capture 文件数。
+  - 从 `SEND 0x0022` 派生的 pre-bid 窗口数。
+  - `valid`、`mixed`、`invalid` 文件级状态。
+  - `ready`、`no_state`、`constraint_conflict` 窗口级状态。
+  - public info/action/skill 证据出现次数。
+- 当前 355 archive 分层：
+  - `parsed_files=350`
+  - `valid_files=335`
+  - `mixed_files=15`
+  - `invalid_files=5`
+  - `usable_metric_files=350`
+  - `bid_windows=1262`
+  - `ready_windows=1247`
+  - `no_state_windows=15`
+  - `constraint_conflict_windows=0`
+- `mixed` 文件保留可用 ready 窗口，但 no-state 缺口窗口不计入模型准确率。
+- 验证：
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_summarize_fatbeans_sample_manifest.py tests\test_evaluate_fatbeans_v3_samples.py -q`
+    为 `6 passed`。
+  - `C:\Python313\python.exe .\scripts\summarize_fatbeans_sample_manifest.py`
+    通过。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --posterior-trials 0 --fail-on-conflicts`
+    通过。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：

@@ -126,3 +126,18 @@ promotion 前必须显著提高 strict-ready 覆盖，或实现等价的条件 p
 - raw 对照：`v3_post_total_value_*` vs `v3_truth_raw_total_value`
 - replacement 对照：`v3_post_tail_replacement_decision_value_*` vs `v3_truth_tail_replacement_decision_value`
 - q6 对照：必须区分 raw q6 与 formal q6。
+
+## D-v3-012：archive 样本治理先用 manifest，不直接移动原始样本
+
+Fatbeans archive 默认保留 `data/samples/fatbeans` 原始文件位置，v3 通过 manifest 标记数据质量：
+
+- `valid`：所有报价前窗口均 ready，可整体用于指标。
+- `mixed`：同一文件内既有 ready 窗口，也有 no-state/冲突窗口；只使用 ready 窗口。
+- `invalid`：parse error、无可用 pre-bid 窗口或仅有不可评估窗口；不进入模型准确率。
+
+原因：
+
+- 样本文件目前是 live/archive/debug 多路径共同使用的本地资料，直接移动会制造路径断裂风险。
+- 文件数和窗口数必须长期分开报告，避免把 posterior fallback 或 pre-bid window 当作新增真实样本。
+- parse error 和 no-state 是数据质量或采集缺口，不是估值模型误差。
+- manifest 可作为后续迁移/归档依据；只有当脚本全部支持 manifest include/exclude 后，才考虑物理 quarantine。
