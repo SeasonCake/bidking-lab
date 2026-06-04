@@ -236,6 +236,39 @@
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --posterior-trials 0 --fail-on-conflicts` 通过。
 
+### Phase 3 增量：archive paired metrics
+
+- `scripts/evaluate_fatbeans_v3_samples.py` summary 新增默认 paired metrics：
+  - `formal_p50_mae`
+  - `formal_p50_bias`
+  - `formal_p50_below_rate`
+  - `formal_p50_pinball`
+  - `formal_p90_coverage`
+  - `formal_p90_pinball`
+  - `q6_formal_p50_mae`
+  - `q6_formal_p50_bias`
+  - `q6_formal_p50_below_rate`
+  - `q6_formal_p90_coverage`
+  - `q6_formal_p90_pinball`
+  - strict/fallback 分拆：`*_strict`、`*_fallback`
+- 默认 metric 口径：
+  - prediction：`v3_post_formal_decision_value_p50`
+  - truth：`v3_truth_formal_decision_value`
+- 当前 355 archive、512 samples/map：
+  - metric_rows `1,247`
+  - formal_p50_mae `347,622.463`
+  - formal_p50_mae_strict `359,635.128`
+  - formal_p50_mae_fallback `342,765.991`
+  - formal_p90_coverage `0.768244`
+  - q6_formal_p50_mae `304,356.084`
+  - q6_formal_p50_mae_strict `321,732.513`
+  - q6_formal_p50_mae_fallback `297,331.154`
+- 结论：当前 posterior skeleton 只提供可评估基线，不可 promotion；strict 命中也不是质量保证。
+- 验证：
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_summary.py tests\test_inference_v3_priors_truth.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_evidence_registry.py -q`
+    为 `23 passed`。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：
@@ -267,8 +300,8 @@ C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-ga
 
 ## 下一步
 
-1. 用条件 proposal 替换/减少 `q6_projection` fallback，让更多窗口 strict-ready。
-2. 在 v3 archive report 上新增 formal MAE / below-q6 / pinball 等 paired metrics。
+1. 实现条件 proposal / likelihood weighting，降低 formal/q6 MAE，并提高 P90 coverage。
+2. 按 hero/map/round/match_scope 拆分 v3 metrics，定位 Aisha 2506、Ethan villa 等重点 miss。
 3. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
 
 ## 不做事项

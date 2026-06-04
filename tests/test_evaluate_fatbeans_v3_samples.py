@@ -195,6 +195,57 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_post_q6_formal_decision_value_p50"] is not None
 
 
+def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
+    module = _load_module()
+    rows = [
+        {
+            "status": "ready",
+            "v3_truth_decision_available": True,
+            "v3_post_ready": True,
+            "v3_post_match_scope": "strict",
+            "v3_truth_formal_decision_value": 100,
+            "v3_post_formal_decision_value_p50": 90,
+            "v3_post_formal_decision_value_p90": 120,
+            "v3_truth_q6_formal_decision_value": 30,
+            "v3_post_q6_formal_decision_value_p50": 10,
+            "v3_post_q6_formal_decision_value_p90": 40,
+        },
+        {
+            "status": "ready",
+            "v3_truth_decision_available": True,
+            "v3_post_ready": True,
+            "v3_post_match_scope": "q6_projection",
+            "v3_truth_formal_decision_value": 200,
+            "v3_post_formal_decision_value_p50": 250,
+            "v3_post_formal_decision_value_p90": 260,
+            "v3_truth_q6_formal_decision_value": 0,
+            "v3_post_q6_formal_decision_value_p50": 0,
+            "v3_post_q6_formal_decision_value_p90": 0,
+        },
+    ]
+
+    summary = module.summarize_rows(rows, [])
+
+    assert summary["metric_rows"] == 2
+    assert summary["metric_strict_rows"] == 1
+    assert summary["metric_fallback_rows"] == 1
+    assert summary["formal_p50_mae"] == 30
+    assert summary["formal_p50_mae_strict"] == 10
+    assert summary["formal_p50_mae_fallback"] == 50
+    assert summary["formal_p50_bias"] == 20
+    assert summary["formal_p50_below_rate"] == 0.5
+    assert summary["formal_p50_pinball"] == 15
+    assert summary["formal_p90_coverage"] == 1.0
+    assert summary["formal_p90_coverage_strict"] == 1.0
+    assert summary["formal_p90_coverage_fallback"] == 1.0
+    assert summary["formal_p90_pinball"] == 4
+    assert summary["q6_formal_p50_mae"] == 10
+    assert summary["q6_formal_p50_mae_strict"] == 20
+    assert summary["q6_formal_p50_mae_fallback"] == 0
+    assert summary["q6_formal_p50_bias"] == -10
+    assert summary["q6_formal_p90_pinball"] == 0.5
+
+
 def test_v3_prebid_rows_separate_no_state_windows() -> None:
     module = _load_module()
     events = FatbeansCaptureEvents(

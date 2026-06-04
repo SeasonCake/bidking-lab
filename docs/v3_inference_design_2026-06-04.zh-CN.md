@@ -462,6 +462,7 @@ v3 可进入正式候选前：
 - 后续 sampler 必须以 `FeasibleSummaryReport` 为 hard 输入，再做条件 likelihood；不回到 v2 的“先采样再 reject 所有证据”的主路径。
 - outline/full-outline 的 count/cells exact 必须由 compiler 从 observed_items 派生，不允许 sampler 直接复用 raw payload value。
 - 下一步重点是条件 proposal / count-cell-value constructor，提高 `match_scope=strict` 覆盖，并用 paired metrics 验证 formal MAE、below-q6、P90/pinball。
+- 当前 skeleton 512 samples/map 的 formal_p50_mae 约 `347,622`，q6_formal_p50_mae 约 `304,356`，只作为可复跑基线，不满足 promotion。
 
 ## 12. 参考资料
 

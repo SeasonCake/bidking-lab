@@ -345,11 +345,166 @@ def evaluate_paths(
     return rows, errors
 
 
+def _float_or_none(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _mean(values: Iterable[float]) -> float | None:
+    seq = tuple(values)
+    if not seq:
+        return None
+    return sum(seq) / len(seq)
+
+
+def _round_metric(value: float | None, digits: int = 3) -> float | None:
+    return round(value, digits) if value is not None else None
+
+
+def _pinball_loss(truth: float, prediction: float, quantile: float) -> float:
+    delta = truth - prediction
+    if delta >= 0:
+        return quantile * delta
+    return (1.0 - quantile) * (-delta)
+
+
+def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    paired = [
+        row
+        for row in rows
+        if row.get("status") == "ready"
+        and row.get("v3_truth_decision_available")
+        and row.get("v3_post_ready")
+        and _float_or_none(row.get("v3_post_formal_decision_value_p50")) is not None
+        and _float_or_none(row.get("v3_truth_formal_decision_value")) is not None
+    ]
+
+    def pred_truth(
+        pred_key: str,
+        truth_key: str,
+        *,
+        scope: str | None = None,
+    ) -> tuple[tuple[float, float], ...]:
+        pairs: list[tuple[float, float]] = []
+        for row in paired:
+            if scope == "strict" and row.get("v3_post_match_scope") != "strict":
+                continue
+            if scope == "fallback" and row.get("v3_post_match_scope") == "strict":
+                continue
+            pred = _float_or_none(row.get(pred_key))
+            truth = _float_or_none(row.get(truth_key))
+            if pred is None or truth is None:
+                continue
+            pairs.append((pred, truth))
+        return tuple(pairs)
+
+    formal_p50 = pred_truth(
+        "v3_post_formal_decision_value_p50",
+        "v3_truth_formal_decision_value",
+    )
+    formal_p50_strict = pred_truth(
+        "v3_post_formal_decision_value_p50",
+        "v3_truth_formal_decision_value",
+        scope="strict",
+    )
+    formal_p50_fallback = pred_truth(
+        "v3_post_formal_decision_value_p50",
+        "v3_truth_formal_decision_value",
+        scope="fallback",
+    )
+    formal_p90 = pred_truth(
+        "v3_post_formal_decision_value_p90",
+        "v3_truth_formal_decision_value",
+    )
+    formal_p90_strict = pred_truth(
+        "v3_post_formal_decision_value_p90",
+        "v3_truth_formal_decision_value",
+        scope="strict",
+    )
+    formal_p90_fallback = pred_truth(
+        "v3_post_formal_decision_value_p90",
+        "v3_truth_formal_decision_value",
+        scope="fallback",
+    )
+    q6_p50 = pred_truth(
+        "v3_post_q6_formal_decision_value_p50",
+        "v3_truth_q6_formal_decision_value",
+    )
+    q6_p50_strict = pred_truth(
+        "v3_post_q6_formal_decision_value_p50",
+        "v3_truth_q6_formal_decision_value",
+        scope="strict",
+    )
+    q6_p50_fallback = pred_truth(
+        "v3_post_q6_formal_decision_value_p50",
+        "v3_truth_q6_formal_decision_value",
+        scope="fallback",
+    )
+    q6_p90 = pred_truth(
+        "v3_post_q6_formal_decision_value_p90",
+        "v3_truth_q6_formal_decision_value",
+    )
+
+    def mae(pairs: tuple[tuple[float, float], ...]) -> float | None:
+        return _mean(abs(pred - truth) for pred, truth in pairs)
+
+    def bias(pairs: tuple[tuple[float, float], ...]) -> float | None:
+        return _mean(pred - truth for pred, truth in pairs)
+
+    def below_rate(pairs: tuple[tuple[float, float], ...]) -> float | None:
+        return _mean(1.0 if pred < truth else 0.0 for pred, truth in pairs)
+
+    def coverage_rate(pairs: tuple[tuple[float, float], ...]) -> float | None:
+        return _mean(1.0 if truth <= pred else 0.0 for pred, truth in pairs)
+
+    def pinball(pairs: tuple[tuple[float, float], ...], quantile: float) -> float | None:
+        return _mean(_pinball_loss(truth, pred, quantile) for pred, truth in pairs)
+
+    return {
+        "metric_rows": len(paired),
+        "metric_strict_rows": sum(
+            1 for row in paired if row.get("v3_post_match_scope") == "strict"
+        ),
+        "metric_fallback_rows": sum(
+            1
+            for row in paired
+            if row.get("v3_post_match_scope") != "strict"
+        ),
+        "formal_p50_mae": _round_metric(mae(formal_p50)),
+        "formal_p50_mae_strict": _round_metric(mae(formal_p50_strict)),
+        "formal_p50_mae_fallback": _round_metric(mae(formal_p50_fallback)),
+        "formal_p50_bias": _round_metric(bias(formal_p50)),
+        "formal_p50_below_rate": _round_metric(below_rate(formal_p50), 6),
+        "formal_p50_pinball": _round_metric(pinball(formal_p50, 0.5)),
+        "formal_p90_coverage": _round_metric(coverage_rate(formal_p90), 6),
+        "formal_p90_coverage_strict": _round_metric(
+            coverage_rate(formal_p90_strict),
+            6,
+        ),
+        "formal_p90_coverage_fallback": _round_metric(
+            coverage_rate(formal_p90_fallback),
+            6,
+        ),
+        "formal_p90_pinball": _round_metric(pinball(formal_p90, 0.9)),
+        "q6_formal_p50_mae": _round_metric(mae(q6_p50)),
+        "q6_formal_p50_mae_strict": _round_metric(mae(q6_p50_strict)),
+        "q6_formal_p50_mae_fallback": _round_metric(mae(q6_p50_fallback)),
+        "q6_formal_p50_bias": _round_metric(bias(q6_p50)),
+        "q6_formal_p50_below_rate": _round_metric(below_rate(q6_p50), 6),
+        "q6_formal_p90_coverage": _round_metric(coverage_rate(q6_p90), 6),
+        "q6_formal_p90_pinball": _round_metric(pinball(q6_p90, 0.9)),
+    }
+
+
 def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[str, Any]:
     statuses = Counter(str(row.get("status") or "unknown") for row in rows)
     round_counts = Counter(f"R{row.get('round')}" for row in rows)
     ready_rows = [row for row in rows if row.get("status") == "ready"]
-    return {
+    summary = {
         "windows": len(rows),
         "ready": statuses.get("ready", 0),
         "no_state": statuses.get("no_state", 0),
@@ -392,6 +547,8 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         "constraint_ok": statuses.get("constraint_conflict", 0) == 0,
         "parse_ok": not errors,
     }
+    summary.update(_paired_metric_summary(rows))
+    return summary
 
 
 def _print_summary(summary: dict[str, Any]) -> None:
@@ -412,6 +569,14 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"posterior_strict_ready={summary['posterior_strict_ready']}",
                 f"posterior_fallback={summary['posterior_fallback']}",
                 f"posterior_no_match={summary['posterior_no_match']}",
+                f"metric_rows={summary['metric_rows']}",
+                f"formal_p50_mae={summary['formal_p50_mae']}",
+                f"formal_p50_mae_strict={summary['formal_p50_mae_strict']}",
+                f"formal_p50_mae_fallback={summary['formal_p50_mae_fallback']}",
+                f"formal_p90_coverage={summary['formal_p90_coverage']}",
+                f"q6_formal_p50_mae={summary['q6_formal_p50_mae']}",
+                f"q6_formal_p50_mae_strict={summary['q6_formal_p50_mae_strict']}",
+                f"q6_formal_p50_mae_fallback={summary['q6_formal_p50_mae_fallback']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",
