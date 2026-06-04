@@ -102,3 +102,14 @@ v3 后续 sampler 的 hard 输入层级为：
 outline/full-outline 事件的 count/cells exact 由 compiler 根据 observed_items 派生。posterior sampler 不再自己猜测 public/action payload value 的含义。
 
 原因：Aisha q4 outline 曾暴露 payload value 表示 count、不是 cells。如果 sampler 绕过 compiler 直接使用 raw numeric，会复现 v2 式路径分叉和 hidden input bug。
+
+## D-v3-010：v3 posterior fallback 必须显式标记且不作为 promotion 依据
+
+当前 `V3PosteriorReport` 支持：
+
+- `match_scope=strict`：完整 `FeasibleSummaryReport` 命中。
+- `match_scope=q6_projection`：strict 无命中时，只按 q6 bucket exact/floor 过滤。
+
+`q6_projection` 的用途是让 archive/live shadow 字段不断档，帮助定位 q6 count/cell/value 方向；它不能作为正式估值或 promotion gate 的证明。
+
+promotion 前必须显著提高 strict-ready 覆盖，或实现等价的条件 proposal，并在 metrics 中单独报告 strict 与 fallback。

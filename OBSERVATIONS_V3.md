@@ -121,3 +121,19 @@ summarize_v3_constraints: numeric=1908 conflicts=0
 ```
 
 结论：outline/full-outline 这类带 `shape_anchors` 的事件，count/cells exact 必须从 observed_items 派生，而不是复用 payload value。后续 sampler 只能消费派生后的 exact/floor summary。
+
+## O-v3-011：strict summary rejection 仍不足，需要条件 proposal
+
+v3 q6 posterior shadow skeleton 用 `FeasibleSummaryReport` 过滤地图先验样本。当前 archive 结果：
+
+```text
+512 samples/map:  posterior_ready=1247 posterior_strict_ready=359 posterior_fallback=888 posterior_no_match=0
+2048 samples/map: posterior_strict_ready=422
+```
+
+结论：
+
+- q6 projection fallback 让所有 ready 窗口都有 q6 count/cell/value shadow 字段，但它不是完整 posterior。
+- strict 命中从 512 到 2048 只增加 `63` 个窗口，继续盲目加 trials 收益低。
+- 下一步应该做条件 proposal / count-cell-value constructor，让样本先满足 summary exact/floor，再估 q6 分布。
+- v3 metrics 必须区分 `match_scope=strict` 与 `match_scope=q6_projection`，不能把 fallback 当作 promotion-ready。

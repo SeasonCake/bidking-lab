@@ -30,6 +30,13 @@ from bidking_lab.inference.v3.evidence_registry import (
     public_info_spec,
     skill_reveal_spec,
 )
+from bidking_lab.inference.v3.posterior import (
+    V3PosteriorReport,
+    empty_posterior_flat_dict,
+    estimate_q6_posterior_from_truths,
+    sample_truth_bank,
+    truth_matches_feasible_summary,
+)
 from bidking_lab.inference.v3.priors import (
     QualityPriorReport,
     SessionPriorReport,
@@ -72,6 +79,7 @@ __all__ = (
     "ShapeAnchor",
     "SessionPriorReport",
     "SettlementTruthReport",
+    "V3PosteriorReport",
     "action_result_spec",
     "audit_fatbeans_events",
     "audit_fatbeans_paths",
@@ -80,13 +88,17 @@ __all__ = (
     "decision_truth_from_fatbeans",
     "empty_decision_truth_flat_dict",
     "empty_feasible_summary_flat_dict",
+    "empty_posterior_flat_dict",
     "empty_truth_flat_dict",
+    "estimate_q6_posterior_from_truths",
     "events_from_fatbeans",
     "ordinary_shape_replacement_values",
     "public_info_semantic",
     "public_info_semantics_dict",
     "public_info_spec",
+    "sample_truth_bank",
     "settlement_truth_from_fatbeans",
     "skill_reveal_spec",
     "summarize_drop_prior",
+    "truth_matches_feasible_summary",
 )

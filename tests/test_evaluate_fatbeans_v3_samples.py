@@ -167,7 +167,12 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
         statuses=(),
     )
 
-    rows = module._round_rows_for_events(Path("sample.json"), events, tables=_tables())
+    rows = module._round_rows_for_events(
+        Path("sample.json"),
+        events,
+        tables=_tables(),
+        posterior_trials=64,
+    )
 
     assert len(rows) == 1
     assert rows[0]["v3_prior_available"] is True
@@ -182,6 +187,10 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_summary_available"] is True
     assert rows[0]["v3_summary_feasible"] is True
     assert rows[0]["v3_summary_known_count_floor"] == 0
+    assert rows[0]["v3_post_available"] is True
+    assert rows[0]["v3_post_affects_bid"] is False
+    assert rows[0]["v3_post_match_scope"] == "strict"
+    assert rows[0]["v3_post_n_total"] == 64
 
 
 def test_v3_prebid_rows_separate_no_state_windows() -> None:

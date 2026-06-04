@@ -181,6 +181,41 @@
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --fail-on-conflicts` 通过。
   - `C:\Python313\python.exe .\scripts\summarize_v3_constraints.py --fail-on-conflicts` 通过。
 
+### Phase 3 增量：q6 count-cell-value posterior shadow skeleton
+
+- 新增 `src/bidking_lab/inference/v3/posterior.py`：
+  - `V3PosteriorReport`
+  - `sample_truth_bank()`
+  - `truth_matches_feasible_summary()`
+  - `estimate_q6_posterior_from_truths()`
+  - `empty_posterior_flat_dict()`
+- `scripts/evaluate_fatbeans_v3_samples.py` 新增：
+  - `v3_post_*` shadow 字段。
+  - `--posterior-trials`，默认 `512`；`0` 可关闭。
+  - `--posterior-seed`。
+- 当前 sampler 是两层 shadow：
+  - `match_scope=strict`：完整 `FeasibleSummaryReport` exact/floor 全部命中。
+  - `match_scope=q6_projection`：strict 无命中时，只按 q6 bucket exact/floor 过滤，明确标记 fallback。
+  - `v3_post_affects_bid=False`。
+- 当前 355 archive 扫描，默认 `512` prior samples/map：
+  - windows `1,262`
+  - ready `1,247`
+  - posterior_ready `1,247`
+  - posterior_strict_ready `359`
+  - posterior_fallback `888`
+  - posterior_no_match `0`
+  - summary_conflict `0`
+  - constraint_conflict `0`
+- 2048 samples/map 对照：
+  - posterior_strict_ready `422`
+  - 说明 strict no-match 主要不是 trials 不足，而是需要更好的条件 proposal / feasible generator。
+- 验证：
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_summary.py tests\test_inference_v3_priors_truth.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_evidence_registry.py -q`
+    为 `21 passed`。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --posterior-trials 0 --fail-on-conflicts` 通过。
+  - `C:\Python313\python.exe .\scripts\summarize_v3_constraints.py --fail-on-conflicts` 通过。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：
@@ -212,8 +247,8 @@ C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-ga
 
 ## 下一步
 
-1. 在 ready 窗口上实现 shadow-only posterior report skeleton。
-2. 用 `FeasibleSummaryReport` 驱动 q6 条件 likelihood / count-cell-value sampler。
+1. 用条件 proposal 替换/减少 `q6_projection` fallback，让更多窗口 strict-ready。
+2. 在 v3 archive report 上新增 formal MAE / below-q6 / pinball 等 paired metrics。
 3. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
 
 ## 不做事项

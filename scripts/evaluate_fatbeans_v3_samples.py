@@ -1,9 +1,8 @@
 """Evaluate v3 pre-bid constraint coverage for Fatbeans captures.
 
-This is a shadow-only v3 scaffold. It does not estimate posterior value and it
-does not affect live/formal bidding. The first contract is to prove that every
-pre-bid window can produce an auditable ConstraintSet or a clear data-quality
-status.
+This is a shadow-only v3 scaffold. It emits auditable ConstraintSet,
+FeasibleSummary, truth, prior, and small summary-conditioned posterior fields.
+None of these fields affect live/formal bidding.
 """
 
 from __future__ import annotations
@@ -32,9 +31,12 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     decision_truth_from_fatbeans,
     empty_decision_truth_flat_dict,
     empty_feasible_summary_flat_dict,
+    empty_posterior_flat_dict,
     empty_truth_flat_dict,
+    estimate_q6_posterior_from_truths,
     events_from_fatbeans,
     ordinary_shape_replacement_values,
+    sample_truth_bank,
     settlement_truth_from_fatbeans,
     summarize_drop_prior,
 )
@@ -147,15 +149,43 @@ def _replacement_values(
     return cache[map_id]
 
 
+def _truth_bank(
+    map_id: int | None,
+    *,
+    tables: Any | None,
+    cache: dict[int, tuple[Any, ...]],
+    n_trials: int,
+    seed: int,
+) -> tuple[Any, ...]:
+    if map_id is None or tables is None or n_trials <= 0:
+        return ()
+    if map_id not in cache:
+        try:
+            cache[map_id] = sample_truth_bank(
+                int(map_id),
+                maps=tables.maps,
+                drops=tables.drops,
+                items=tables.items,
+                n_trials=n_trials,
+                seed=seed,
+            )
+        except Exception:
+            cache[map_id] = ()
+    return cache[map_id]
+
+
 def _round_rows_for_events(
     path: Path,
     events: FatbeansCaptureEvents,
     *,
     tables: Any | None = None,
+    posterior_trials: int = 512,
+    posterior_seed: int = 0,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     prior_cache: dict[int, dict[str, Any]] = {}
     replacement_cache: dict[int, dict[tuple[int, int, int], int]] = {}
+    truth_bank_cache: dict[int, tuple[Any, ...]] = {}
     truth = (
         settlement_truth_from_fatbeans(events, items=tables.items)
         if tables is not None
@@ -164,6 +194,7 @@ def _round_rows_for_events(
     truth_fields = truth.to_flat_dict() if truth is not None else empty_truth_flat_dict()
     empty_decision_truth_fields = empty_decision_truth_flat_dict()
     empty_summary_fields = empty_feasible_summary_flat_dict()
+    empty_posterior_fields = empty_posterior_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
     for window_round, bid_send in enumerate(bid_sends, start=1):
@@ -206,6 +237,7 @@ def _round_rows_for_events(
                     **truth_fields,
                     **empty_decision_truth_fields,
                     **empty_summary_fields,
+                    **empty_posterior_fields,
                 }
             )
             previous_bid_sort_id = bid_sort_id
@@ -232,6 +264,28 @@ def _round_rows_for_events(
             if decision_truth is not None
             else empty_decision_truth_fields
         )
+        posterior_truths = _truth_bank(
+            map_id,
+            tables=tables,
+            cache=truth_bank_cache,
+            n_trials=posterior_trials,
+            seed=posterior_seed,
+        )
+        posterior = (
+            estimate_q6_posterior_from_truths(
+                map_id=int(map_id),
+                map_name=str(prior_fields.get("v3_prior_map_name") or ""),
+                summary=feasible_summary,
+                truths=posterior_truths,
+            )
+            if map_id is not None and tables is not None and posterior_trials > 0
+            else None
+        )
+        posterior_fields = (
+            posterior.to_flat_dict()
+            if posterior is not None
+            else empty_posterior_fields
+        )
         rows.append(
             {
                 "file": f"{path.name}#prebid_r{window_round}_sort{bid_sort_id}",
@@ -255,6 +309,7 @@ def _round_rows_for_events(
                 **truth_fields,
                 **decision_truth_fields,
                 **feasible_summary.to_flat_dict(),
+                **posterior_fields,
             }
         )
         previous_bid_sort_id = bid_sort_id
@@ -265,6 +320,8 @@ def evaluate_paths(
     paths: Iterable[Path],
     *,
     tables: Any | None = None,
+    posterior_trials: int = 512,
+    posterior_seed: int = 0,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     rows: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
@@ -274,7 +331,15 @@ def evaluate_paths(
         except Exception as exc:
             errors.append({"file": str(path), "error": type(exc).__name__})
             continue
-        rows.extend(_round_rows_for_events(path, events, tables=tables))
+        rows.extend(
+            _round_rows_for_events(
+                path,
+                events,
+                tables=tables,
+                posterior_trials=posterior_trials,
+                posterior_seed=posterior_seed,
+            )
+        )
     return rows, errors
 
 
@@ -298,6 +363,22 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
             1
             for row in rows
             if int(row.get("v3_summary_conflict_count") or 0) > 0
+        ),
+        "posterior_ready": sum(1 for row in rows if row.get("v3_post_ready")),
+        "posterior_strict_ready": sum(
+            1 for row in rows if row.get("v3_post_strict_ready")
+        ),
+        "posterior_fallback": sum(
+            1
+            for row in rows
+            if row.get("v3_post_ready")
+            and str(row.get("v3_post_match_scope") or "") != "strict"
+        ),
+        "posterior_no_match": sum(
+            1
+            for row in rows
+            if row.get("v3_post_available")
+            and not row.get("v3_post_ready")
         ),
         "status_counts": dict(sorted(statuses.items())),
         "round_counts": dict(sorted(round_counts.items())),
@@ -325,6 +406,10 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"decision_truth_ready={summary['decision_truth_ready']}",
                 f"summary_ready={summary['summary_ready']}",
                 f"summary_conflict={summary['summary_conflict']}",
+                f"posterior_ready={summary['posterior_ready']}",
+                f"posterior_strict_ready={summary['posterior_strict_ready']}",
+                f"posterior_fallback={summary['posterior_fallback']}",
+                f"posterior_no_match={summary['posterior_no_match']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",
@@ -415,6 +500,35 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_summary_q6_residual_count_exact",
         "v3_summary_q6_residual_cells_exact",
         "v3_summary_q6_residual_value_exact",
+        "v3_post_available",
+        "v3_post_ready",
+        "v3_post_strict_ready",
+        "v3_post_affects_bid",
+        "v3_post_map_id",
+        "v3_post_map_name",
+        "v3_post_match_scope",
+        "v3_post_n_total",
+        "v3_post_n_matched",
+        "v3_post_n_strict_matched",
+        "v3_post_match_rate",
+        "v3_post_strict_match_rate",
+        "v3_post_q6_present_rate",
+        "v3_post_total_cells_p10",
+        "v3_post_total_cells_p50",
+        "v3_post_total_cells_p90",
+        "v3_post_total_value_p10",
+        "v3_post_total_value_p50",
+        "v3_post_total_value_p90",
+        "v3_post_q6_count_p10",
+        "v3_post_q6_count_p50",
+        "v3_post_q6_count_p90",
+        "v3_post_q6_cells_p10",
+        "v3_post_q6_cells_p50",
+        "v3_post_q6_cells_p90",
+        "v3_post_q6_value_p10",
+        "v3_post_q6_value_p50",
+        "v3_post_q6_value_p90",
+        "v3_post_diagnostics",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
@@ -442,12 +556,24 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip v3 prior/truth fields and only audit pre-bid constraints.",
     )
+    parser.add_argument(
+        "--posterior-trials",
+        type=int,
+        default=512,
+        help="Prior sample bank size per map for v3 shadow posterior. Use 0 to disable.",
+    )
+    parser.add_argument("--posterior-seed", type=int, default=0)
     parser.add_argument("--fail-on-conflicts", action="store_true")
     parser.add_argument("--fail-on-parse-errors", action="store_true")
     args = parser.parse_args(argv)
 
     tables = None if args.skip_table_report else load_monitor_tables()
-    rows, errors = evaluate_paths(args.paths or _default_paths(), tables=tables)
+    rows, errors = evaluate_paths(
+        args.paths or _default_paths(),
+        tables=tables,
+        posterior_trials=args.posterior_trials,
+        posterior_seed=args.posterior_seed,
+    )
     summary = summarize_rows(rows, errors)
     if args.format == "json":
         print(json.dumps({"summary": summary, "rows": rows}, ensure_ascii=False, indent=2, sort_keys=True))
