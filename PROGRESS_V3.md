@@ -112,6 +112,37 @@
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --fail-on-conflicts` 通过。
 
+### Phase 3 增量：per-window formal/replacement truth
+
+- 扩展 `src/bidking_lab/inference/v3/truth.py`：
+  - `DecisionTruthReport`
+  - `decision_truth_from_fatbeans()`
+  - `empty_decision_truth_flat_dict()`
+- 扩展 `src/bidking_lab/inference/v3/priors.py`：
+  - `ordinary_shape_replacement_values()`，按 map/drop 权重输出同品质同形状普通物品 P50 replacement。
+- 裁尾口径：
+  - confusable long tail 必须 exact item anchor 才进入 formal。
+  - 其他 `>= DEFAULT_VALUE_FLOOR` 高价值物品需要 exact item anchor 或 category evidence 支持。
+  - tail replacement 仍是 audit/helper truth，不进入 formal。
+- `scripts/evaluate_fatbeans_v3_samples.py` 现在输出：
+  - raw truth：`v3_truth_raw_total_value` 等。
+  - formal truth：`v3_truth_formal_decision_value`、`v3_truth_q6_formal_decision_value`。
+  - replacement truth：`v3_truth_tail_replacement_decision_value`、`v3_truth_q6_tail_replacement_decision_value`。
+- 当前 355 archive 扫描：
+  - windows `1,262`
+  - ready `1,247`
+  - no_state `15`
+  - prior_ready `1,247`
+  - truth_ready `1,262`
+  - decision_truth_ready `1,247`
+  - constraint_conflict `0`
+  - parse_errors `5`
+- 验证：
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_priors_truth.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_evidence_registry.py -q`
+    为 `15 passed`。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --fail-on-conflicts` 通过。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：
@@ -143,12 +174,10 @@ C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-ga
 
 ## 下一步
 
-1. 迁移 v1/v2 可复用先验：map/drop/item table、formal/raw/replacement truth、five-window evaluator。
-2. 复刻 v2 formal/replacement truth 口径，和当前 raw truth 并列输出，避免指标再次混淆。
-3. 在 `scripts/evaluate_fatbeans_v3_samples.py` 的 ready 窗口上输出 shadow-only posterior report skeleton。
-4. 实现 feasible summary generator，先在 quality bucket 层满足 hard constraints。
-5. 再实现 q6 条件 likelihood / count-cell-value sampler。
-6. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
+1. 在 `scripts/evaluate_fatbeans_v3_samples.py` 的 ready 窗口上输出 shadow-only posterior report skeleton。
+2. 实现 feasible summary generator，先在 quality bucket 层满足 hard constraints。
+3. 再实现 q6 条件 likelihood / count-cell-value sampler。
+4. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
 
 ## 不做事项
 

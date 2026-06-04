@@ -28,8 +28,11 @@ if str(SRC) not in sys.path:
 
 from bidking_lab.inference.v3 import (  # noqa: E402
     compile_hard_constraints,
+    decision_truth_from_fatbeans,
+    empty_decision_truth_flat_dict,
     empty_truth_flat_dict,
     events_from_fatbeans,
+    ordinary_shape_replacement_values,
     settlement_truth_from_fatbeans,
     summarize_drop_prior,
 )
@@ -121,6 +124,27 @@ def _prior_flat_dict(
     return row
 
 
+def _replacement_values(
+    map_id: int | None,
+    *,
+    tables: Any | None,
+    cache: dict[int, dict[tuple[int, int, int], int]],
+) -> dict[tuple[int, int, int], int]:
+    if map_id is None or tables is None:
+        return {}
+    if map_id not in cache:
+        try:
+            cache[map_id] = ordinary_shape_replacement_values(
+                int(map_id),
+                maps=tables.maps,
+                drops=tables.drops,
+                items=tables.items,
+            )
+        except Exception:
+            cache[map_id] = {}
+    return cache[map_id]
+
+
 def _round_rows_for_events(
     path: Path,
     events: FatbeansCaptureEvents,
@@ -129,12 +153,14 @@ def _round_rows_for_events(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     prior_cache: dict[int, dict[str, Any]] = {}
+    replacement_cache: dict[int, dict[tuple[int, int, int], int]] = {}
     truth = (
         settlement_truth_from_fatbeans(events, items=tables.items)
         if tables is not None
         else None
     )
     truth_fields = truth.to_flat_dict() if truth is not None else empty_truth_flat_dict()
+    empty_decision_truth_fields = empty_decision_truth_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
     for window_round, bid_send in enumerate(bid_sends, start=1):
@@ -175,11 +201,32 @@ def _round_rows_for_events(
                     "constraint_ok": False,
                     **prior_fields,
                     **truth_fields,
+                    **empty_decision_truth_fields,
                 }
             )
             previous_bid_sort_id = bid_sort_id
             continue
         constraints = compile_hard_constraints(events_from_fatbeans(prefix))
+        replacement_values = _replacement_values(
+            map_id,
+            tables=tables,
+            cache=replacement_cache,
+        )
+        decision_truth = (
+            decision_truth_from_fatbeans(
+                events,
+                items=tables.items,
+                constraints=constraints,
+                replacement_values=replacement_values,
+            )
+            if tables is not None
+            else None
+        )
+        decision_truth_fields = (
+            decision_truth.to_flat_dict()
+            if decision_truth is not None
+            else empty_decision_truth_fields
+        )
         rows.append(
             {
                 "file": f"{path.name}#prebid_r{window_round}_sort{bid_sort_id}",
@@ -201,6 +248,7 @@ def _round_rows_for_events(
                 "constraint_ok": constraints.feasible,
                 **prior_fields,
                 **truth_fields,
+                **decision_truth_fields,
             }
         )
         previous_bid_sort_id = bid_sort_id
@@ -236,6 +284,9 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         "parse_errors": len(errors),
         "prior_ready": sum(1 for row in rows if row.get("v3_prior_available")),
         "truth_ready": sum(1 for row in rows if row.get("v3_truth_available")),
+        "decision_truth_ready": sum(
+            1 for row in rows if row.get("v3_truth_decision_available")
+        ),
         "status_counts": dict(sorted(statuses.items())),
         "round_counts": dict(sorted(round_counts.items())),
         "numeric_constraints": sum(int(row.get("numeric_constraints") or 0) for row in ready_rows),
@@ -259,6 +310,7 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"parse_errors={summary['parse_errors']}",
                 f"prior_ready={summary['prior_ready']}",
                 f"truth_ready={summary['truth_ready']}",
+                f"decision_truth_ready={summary['decision_truth_ready']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",
@@ -320,6 +372,17 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_truth_q6_count",
         "v3_truth_q6_cells",
         "v3_truth_q6_raw_value",
+        "v3_truth_decision_available",
+        "v3_truth_formal_decision_value",
+        "v3_truth_tail_replacement_decision_value",
+        "v3_truth_tail_replacement_value",
+        "v3_truth_trimmed_tail_value",
+        "v3_truth_trimmed_tail_count",
+        "v3_truth_q6_formal_decision_value",
+        "v3_truth_q6_tail_replacement_decision_value",
+        "v3_truth_q6_tail_replacement_value",
+        "v3_truth_q6_trimmed_tail_value",
+        "v3_truth_q6_trimmed_tail_count",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()

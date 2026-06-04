@@ -33,11 +33,15 @@ from bidking_lab.inference.v3.evidence_registry import (
 from bidking_lab.inference.v3.priors import (
     QualityPriorReport,
     SessionPriorReport,
+    ordinary_shape_replacement_values,
     summarize_drop_prior,
 )
 from bidking_lab.inference.v3.truth import (
+    DecisionTruthReport,
     QualityTruthReport,
     SettlementTruthReport,
+    decision_truth_from_fatbeans,
+    empty_decision_truth_flat_dict,
     empty_truth_flat_dict,
     settlement_truth_from_fatbeans,
 )
@@ -46,6 +50,7 @@ __all__ = (
     "ACTION_RESULT_SPECS",
     "ConstraintConflict",
     "ConstraintSet",
+    "DecisionTruthReport",
     "PUBLIC_INFO_SPECS",
     "SKILL_REVEAL_SPECS",
     "EvidenceCoverageReport",
@@ -63,8 +68,11 @@ __all__ = (
     "audit_fatbeans_events",
     "audit_fatbeans_paths",
     "compile_hard_constraints",
+    "decision_truth_from_fatbeans",
+    "empty_decision_truth_flat_dict",
     "empty_truth_flat_dict",
     "events_from_fatbeans",
+    "ordinary_shape_replacement_values",
     "public_info_semantic",
     "public_info_semantics_dict",
     "public_info_spec",

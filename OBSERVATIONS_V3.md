@@ -89,3 +89,18 @@ windows=1262 ready=1247 no_state=15 constraint_conflict=0 parse_errors=5 prior_r
 - 当前 truth 是 raw settlement truth，不是 v2 formal decision truth，也不含 tail replacement。
 
 下一步需要把 formal/replacement truth 并列输出，之后再接 posterior，否则 raw 长尾会再次污染 P50/MAE 诊断。
+
+## O-v3-009：formal truth 已按 pre-bid 窗口和 ready 分母对齐
+
+v3 evaluator 现在同时输出 raw settlement truth、formal decision truth、tail-replacement audit truth。355 个 archive 样本扫描结果：
+
+```text
+windows=1262 ready=1247 no_state=15 prior_ready=1247 truth_ready=1262 decision_truth_ready=1247
+```
+
+结论：
+
+- raw truth 可以挂到所有有最终 inventory 的窗口，包括 no-state，用于数据质量追踪。
+- formal/replacement truth 只在 ready 窗口输出，因此 MAE/P50 的分母可以直接对齐可评估窗口。
+- tail replacement 字段已经有独立命名；后续 metrics 必须显式选择 formal、raw 或 replacement，不能混用。
+- 当前 formal truth 是 truth 口径迁移，不是 posterior；它只定义“应该比较到什么真值”。

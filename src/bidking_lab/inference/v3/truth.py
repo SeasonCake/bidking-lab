@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from bidking_lab.extract.item_table import Item
+from bidking_lab.inference.v3.constraints import ConstraintSet
+from bidking_lab.simulation.robust_value import (
+    DEFAULT_VALUE_FLOOR,
+    is_confusable_long_tail,
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +52,164 @@ class SettlementTruthReport:
             f"{prefix}q6_cells": q6.cells if q6 is not None else 0,
             f"{prefix}q6_raw_value": q6.raw_value if q6 is not None else 0,
         }
+
+
+@dataclass(frozen=True)
+class DecisionTruthReport:
+    formal_decision_value: int
+    tail_replacement_decision_value: int
+    trimmed_tail_value: int
+    trimmed_tail_count: int
+    q6_formal_decision_value: int
+    q6_tail_replacement_decision_value: int
+    q6_trimmed_tail_value: int
+    q6_trimmed_tail_count: int
+
+    @property
+    def tail_replacement_value(self) -> int:
+        return self.tail_replacement_decision_value - self.formal_decision_value
+
+    @property
+    def q6_tail_replacement_value(self) -> int:
+        return (
+            self.q6_tail_replacement_decision_value
+            - self.q6_formal_decision_value
+        )
+
+    def to_flat_dict(self, *, prefix: str = "v3_truth_") -> dict[str, Any]:
+        return {
+            f"{prefix}decision_available": True,
+            f"{prefix}formal_decision_value": self.formal_decision_value,
+            f"{prefix}tail_replacement_decision_value": (
+                self.tail_replacement_decision_value
+            ),
+            f"{prefix}tail_replacement_value": self.tail_replacement_value,
+            f"{prefix}trimmed_tail_value": self.trimmed_tail_value,
+            f"{prefix}trimmed_tail_count": self.trimmed_tail_count,
+            f"{prefix}q6_formal_decision_value": (
+                self.q6_formal_decision_value
+            ),
+            f"{prefix}q6_tail_replacement_decision_value": (
+                self.q6_tail_replacement_decision_value
+            ),
+            f"{prefix}q6_tail_replacement_value": (
+                self.q6_tail_replacement_value
+            ),
+            f"{prefix}q6_trimmed_tail_value": self.q6_trimmed_tail_value,
+            f"{prefix}q6_trimmed_tail_count": self.q6_trimmed_tail_count,
+        }
+
+
+def _latest_inventory_state(events: Any) -> Any | None:
+    for state in reversed(tuple(getattr(events, "states", ()) or ())):
+        if tuple(getattr(state, "inventory_items", ()) or ()):
+            return state
+    return None
+
+
+def _exact_anchor_ids(constraints: ConstraintSet) -> set[int]:
+    return {
+        int(anchor.item_id)
+        for anchor in constraints.item_anchors.values()
+        if anchor.item_id is not None
+    }
+
+
+def _category_supports_item(item: Item, constraints: ConstraintSet) -> bool:
+    if not item.tags:
+        return False
+    item_categories = set(int(category) for category in item.tags)
+    for anchor in constraints.item_anchors.values():
+        if any(int(category) in item_categories for category in anchor.categories):
+            return True
+    return False
+
+
+def _item_plannable(
+    item: Item,
+    *,
+    constraints: ConstraintSet,
+    exact_anchor_ids: set[int],
+) -> bool:
+    if item.item_id not in exact_anchor_ids and is_confusable_long_tail(item):
+        return False
+    if (
+        item.value >= DEFAULT_VALUE_FLOOR
+        and item.item_id not in exact_anchor_ids
+        and not _category_supports_item(item, constraints)
+    ):
+        return False
+    return True
+
+
+def _replacement_value(
+    item: Item,
+    replacement_values: Mapping[tuple[int, int, int], int],
+) -> int:
+    if item.shape_w <= 0 or item.shape_h <= 0:
+        return 0
+    return int(
+        replacement_values.get(
+            (int(item.quality), int(item.shape_w), int(item.shape_h)),
+            0,
+        )
+    )
+
+
+def decision_truth_from_fatbeans(
+    events: Any,
+    *,
+    items: Mapping[int, Item],
+    constraints: ConstraintSet,
+    replacement_values: Mapping[tuple[int, int, int], int] | None = None,
+) -> DecisionTruthReport | None:
+    """Return formal and replacement decision truth for one pre-bid window."""
+
+    state = _latest_inventory_state(events)
+    if state is None:
+        return None
+    replacement_values = replacement_values or {}
+    exact_ids = _exact_anchor_ids(constraints)
+    formal_decision_value = 0
+    replacement_decision_value = 0
+    trimmed_tail_value = 0
+    trimmed_tail_count = 0
+    q6_formal_decision_value = 0
+    q6_replacement_decision_value = 0
+    q6_trimmed_tail_value = 0
+    q6_trimmed_tail_count = 0
+    for inv_item in tuple(getattr(state, "inventory_items", ()) or ()):
+        item_id = getattr(inv_item, "item_id", None)
+        item = items.get(int(item_id)) if item_id is not None else None
+        if item is None:
+            continue
+        value = int(item.value)
+        is_q6 = int(item.quality) == 6
+        if _item_plannable(item, constraints=constraints, exact_anchor_ids=exact_ids):
+            formal_decision_value += value
+            replacement_decision_value += value
+            if is_q6:
+                q6_formal_decision_value += value
+                q6_replacement_decision_value += value
+            continue
+        trimmed_tail_value += value
+        trimmed_tail_count += 1
+        replacement = _replacement_value(item, replacement_values)
+        replacement_decision_value += replacement
+        if is_q6:
+            q6_trimmed_tail_value += value
+            q6_trimmed_tail_count += 1
+            q6_replacement_decision_value += replacement
+    return DecisionTruthReport(
+        formal_decision_value=formal_decision_value,
+        tail_replacement_decision_value=replacement_decision_value,
+        trimmed_tail_value=trimmed_tail_value,
+        trimmed_tail_count=trimmed_tail_count,
+        q6_formal_decision_value=q6_formal_decision_value,
+        q6_tail_replacement_decision_value=q6_replacement_decision_value,
+        q6_trimmed_tail_value=q6_trimmed_tail_value,
+        q6_trimmed_tail_count=q6_trimmed_tail_count,
+    )
 
 
 def settlement_truth_from_fatbeans(
@@ -118,9 +281,28 @@ def empty_truth_flat_dict(*, prefix: str = "v3_truth_") -> dict[str, Any]:
     }
 
 
+def empty_decision_truth_flat_dict(*, prefix: str = "v3_truth_") -> dict[str, Any]:
+    return {
+        f"{prefix}decision_available": False,
+        f"{prefix}formal_decision_value": None,
+        f"{prefix}tail_replacement_decision_value": None,
+        f"{prefix}tail_replacement_value": None,
+        f"{prefix}trimmed_tail_value": None,
+        f"{prefix}trimmed_tail_count": None,
+        f"{prefix}q6_formal_decision_value": None,
+        f"{prefix}q6_tail_replacement_decision_value": None,
+        f"{prefix}q6_tail_replacement_value": None,
+        f"{prefix}q6_trimmed_tail_value": None,
+        f"{prefix}q6_trimmed_tail_count": None,
+    }
+
+
 __all__ = (
+    "DecisionTruthReport",
     "QualityTruthReport",
     "SettlementTruthReport",
+    "decision_truth_from_fatbeans",
+    "empty_decision_truth_flat_dict",
     "empty_truth_flat_dict",
     "settlement_truth_from_fatbeans",
 )

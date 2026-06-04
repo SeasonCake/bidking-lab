@@ -12,6 +12,7 @@ from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropPool
 from bidking_lab.extract.item_table import Item
 from bidking_lab.inference.ground_truth import prepare_session_sampler
+from bidking_lab.simulation.robust_value import DEFAULT_VALUE_FLOOR
 
 
 @dataclass(frozen=True)
@@ -185,7 +186,71 @@ def summarize_drop_prior(
     )
 
 
+def _weighted_p50(values: list[int], weights: list[float]) -> int:
+    if not values:
+        return 0
+    pairs = sorted(zip(values, weights), key=lambda pair: pair[0])
+    total_weight = sum(max(0.0, weight) for _value, weight in pairs)
+    if total_weight <= 0:
+        return int(pairs[len(pairs) // 2][0])
+    cutoff = total_weight * 0.5
+    cumulative = 0.0
+    for value, weight in pairs:
+        cumulative += max(0.0, weight)
+        if cumulative >= cutoff:
+            return int(value)
+    return int(pairs[-1][0])
+
+
+def ordinary_shape_replacement_values(
+    map_id: int,
+    *,
+    maps: Mapping[int, BidMap],
+    drops: Mapping[int, DropPool],
+    items: Mapping[int, Item],
+) -> dict[tuple[int, int, int], int]:
+    """Return map-weighted ordinary-value P50 by ``(quality, width, height)``.
+
+    This mirrors the v2 tail-replacement audit idea without importing the v2
+    sampler. Only positive values below ``DEFAULT_VALUE_FLOOR`` are eligible,
+    so extreme tails are never used as their own replacement.
+    """
+
+    sampler = prepare_session_sampler(
+        int(map_id),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    values_by_shape: dict[tuple[int, int, int], list[int]] = defaultdict(list)
+    weights_by_shape: dict[tuple[int, int, int], list[float]] = defaultdict(list)
+    for pool, pool_weight_raw in zip(sampler.pools, sampler.pool_weights):
+        pool_weight = float(pool_weight_raw)
+        if len(pool.probabilities) == 0:
+            continue
+        mean_counts = (pool.n_min + pool.n_max) / 2
+        for item, probability, mean_count in zip(
+            pool.items,
+            pool.probabilities,
+            mean_counts,
+        ):
+            if item.shape_w <= 0 or item.shape_h <= 0:
+                continue
+            if item.value <= 0 or item.value >= DEFAULT_VALUE_FLOOR:
+                continue
+            key = (int(item.quality), int(item.shape_w), int(item.shape_h))
+            values_by_shape[key].append(int(item.value))
+            weights_by_shape[key].append(
+                pool_weight * float(probability) * float(mean_count)
+            )
+    return {
+        key: _weighted_p50(values, weights_by_shape[key])
+        for key, values in values_by_shape.items()
+    }
+
+
 __all__ = (
+    "ordinary_shape_replacement_values",
     "QualityPriorReport",
     "SessionPriorReport",
     "summarize_drop_prior",
