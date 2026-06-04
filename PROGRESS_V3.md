@@ -329,6 +329,59 @@
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py .\data\samples\fatbeans .\data\samples\fatbeans_manual_inbox --skip-table-report --posterior-trials 0 --fail-on-conflicts`
     通过。
 
+### Phase 3 增量：真实样本 canonical archive
+
+- 新增 `scripts/organize_fatbeans_real_samples.py`，统一整理真实 Fatbeans 样本。
+- 已执行 canonical 整理：
+  - `data/samples/fatbeans` 主样本库改为统一命名。
+  - `data/samples/fatbeans_manual_inbox` 的 77 份样本已并入主样本库。
+  - `data/logs/live/raw/archive/complete` 中 6 个未入库完整局已复制进主样本库。
+  - 4 个 live complete 重复 session 保留在 live 日志，不重复并入。
+  - 5 个旧 parse error 样本已移至 `data/samples/fatbeans_invalid/parse_error`。
+- 新 current manifest：
+  - `data/sample_manifests/fatbeans_archive_v3_2026-06-05.json`
+  - `data/sample_manifests/fatbeans_organize_plan_2026-06-05.json`
+- 当前默认主样本库：
+  - `files=433`
+  - `parsed_files=433`
+  - `valid_files=416`
+  - `mixed_files=17`
+  - `parse_errors=0`
+  - `ready_windows=1534`
+  - `no_state_windows=17`
+  - `constraint_conflict_windows=0`
+- v3 coverage：
+  - `events=12473`
+  - `coverage_ok=True`
+  - `unknown=none`
+  - `pending=none`
+- v3 constraints：
+  - `numeric=2172`
+  - `item_anchors=2429`
+  - `shape_anchors=11572`
+  - `quality_floor_anchors=1803`
+  - `conflicts=0`
+- 当前 512 samples/map v3 posterior skeleton：
+  - `metric_rows=1534`
+  - `posterior_strict_ready=513`
+  - `posterior_fallback=1021`
+  - `formal_p50_mae=335,384.256`
+  - `formal_p50_mae_strict=330,542.046`
+  - `formal_p50_mae_fallback=337,817.217`
+  - `formal_p90_coverage=0.767927`
+  - `q6_formal_p50_mae=295,848.365`
+- 验证：
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_organize_fatbeans_real_samples.py tests\test_rename_manual_fatbeans_samples.py tests\test_summarize_fatbeans_sample_manifest.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py::test_ethan_sample37_residual_does_not_break_exact_bucket_targets -q`
+    为 `14 passed`。
+  - `C:\Python313\python.exe .\scripts\summarize_fatbeans_sample_manifest.py .\data\samples\fatbeans`
+    通过。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts`
+    通过。
+  - `C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-gaps`
+    通过。
+  - `C:\Python313\python.exe .\scripts\summarize_v3_constraints.py --fail-on-conflicts`
+    通过。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：
@@ -346,11 +399,11 @@
 
 ## 当前数据基线
 
-- Fatbeans 本地样本：`data/samples/fatbeans`，当前 355 份 JSON。
-- v3 coverage 可解析样本：350 份。
-- Fatbeans 手动 staging 样本：`data/samples/fatbeans_manual_inbox`，当前 77 份 JSON，尚未并入默认 baseline。
-- 已知 parse error：5 份旧样本，作为数据质量问题，不计为 registry gap。
-- v3 canonical evidence events：10,164。
+- Fatbeans 本地样本：`data/samples/fatbeans`，当前 433 份 canonical JSON。
+- v3 coverage 可解析样本：433 份。
+- Fatbeans invalid 样本：`data/samples/fatbeans_invalid/parse_error`，当前 5 份旧 parse error。
+- `data/samples/fatbeans_manual_inbox` 当前为空，用于后续手动导出 staging。
+- v3 canonical evidence events：12,473。
 - 当前 coverage：`coverage_ok=True`，unknown/pending 均为 `none`。
 
 复跑命令：

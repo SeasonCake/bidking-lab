@@ -1214,15 +1214,13 @@ def test_zero_match_fallback_rows_use_relaxed_v1_reference() -> None:
 
 
 def test_ethan_sample37_residual_does_not_break_exact_bucket_targets() -> None:
-    sample = (
-        Path(__file__).resolve().parents[1]
-        / "data"
-        / "samples"
-        / "fatbeans"
-        / "ethan_shipwreck_test_sample37_5rounds.json"
+    sample_root = Path(__file__).resolve().parents[1] / "data" / "samples" / "fatbeans"
+    candidates = sorted(
+        sample_root.rglob("*2501_1295018621897985*.json")
     )
-    if not sample.exists():
+    if not candidates:
         pytest.skip("local Fatbeans sample37 capture is unavailable")
+    sample = candidates[0]
     artifact = build_monitor_artifact_from_file(
         sample,
         tables=load_monitor_tables(),

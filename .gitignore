@@ -51,6 +51,7 @@ data/samples/微信图片*.jpg
 data/samples/desktop_screenshot_roi_preview.png
 data/samples/fatbeans/*.json
 data/samples/fatbeans_manual_inbox/*.json
+data/samples/fatbeans_invalid/**/*.json
 data/logs/
 data/review/
 

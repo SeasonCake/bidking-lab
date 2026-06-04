@@ -198,3 +198,32 @@ bid_windows=264 ready_windows=264 no_state_windows=0 constraint_conflict_windows
 - 与当前主样本库无重复 session。
 - 若作为 v3 校准输入，整体 ready 窗口会从 `1247` 增至 `1511`。
 - 这批样本偏 Ethan/Aisha/Wuqilin 与 R4，适合补充 q6/tail/value sampler 诊断；但还不能替代按地图/英雄均衡采样。
+
+## O-v3-015：canonical archive 后默认样本库 parse error 清零
+
+2026-06-05 已把主库、manual inbox、未重复 live complete 统一整理为 canonical 样本库：
+
+```text
+files=433 parsed_files=433 parse_errors=0 valid_files=416 mixed_files=17
+bid_windows=1551 ready_windows=1534 no_state_windows=17 constraint_conflict_windows=0
+```
+
+5 个旧 parse error 已移到 `data/samples/fatbeans_invalid/parse_error`；默认 evaluator 不再把坏包混进主分母。
+
+当前 512 samples/map posterior skeleton：
+
+```text
+metric_rows=1534
+posterior_strict_ready=513
+posterior_fallback=1021
+formal_p50_mae=335384.256
+formal_p90_coverage=0.767927
+q6_formal_p50_mae=295848.365
+```
+
+结论：
+
+- 样本增加与清理后，formal/q6 P50 MAE 较 355 样本口径有小幅下降。
+- P90 coverage 基本仍停在 `~0.768`，说明主要瓶颈仍是 posterior proposal/sampler，不是样本数量。
+- `mixed` 文件仍有 17 个 no-state 窗口；它们只作为数据质量记录，不进入模型准确率分母。
+- 后续 v3 调参默认使用 433 canonical 样本；旧 06-04 manifest 仅作历史映射参考。
