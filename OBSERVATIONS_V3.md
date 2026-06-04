@@ -104,3 +104,20 @@ windows=1262 ready=1247 no_state=15 prior_ready=1247 truth_ready=1262 decision_t
 - formal/replacement truth 只在 ready 窗口输出，因此 MAE/P50 的分母可以直接对齐可评估窗口。
 - tail replacement 字段已经有独立命名；后续 metrics 必须显式选择 formal、raw 或 replacement，不能混用。
 - 当前 formal truth 是 truth 口径迁移，不是 posterior；它只定义“应该比较到什么真值”。
+
+## O-v3-010：outline numeric 必须从 observed_items 派生
+
+feasible summary 初跑暴露 `43` 个 `q4.cells_floor_gt_exact`，集中在 Aisha shipwreck。复核样本显示：
+
+- `public_info 200001` 的 payload value 是 q4 outline 数量。
+- registry 目标同时包含 `bucket.q4.count` 与 `bucket.q4.cells`。
+- 旧 compiler 把同一个 value 同时写入 count/cells，导致 cells exact 被错误压低。
+
+修复后：
+
+```text
+evaluate_fatbeans_v3_samples: summary_ready=1247 summary_conflict=0 numeric_constraints=4818
+summarize_v3_constraints: numeric=1908 conflicts=0
+```
+
+结论：outline/full-outline 这类带 `shape_anchors` 的事件，count/cells exact 必须从 observed_items 派生，而不是复用 payload value。后续 sampler 只能消费派生后的 exact/floor summary。

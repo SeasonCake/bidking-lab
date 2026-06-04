@@ -36,6 +36,12 @@ from bidking_lab.inference.v3.priors import (
     ordinary_shape_replacement_values,
     summarize_drop_prior,
 )
+from bidking_lab.inference.v3.summary import (
+    BucketFeasibleSummary,
+    FeasibleSummaryReport,
+    compile_feasible_summary,
+    empty_feasible_summary_flat_dict,
+)
 from bidking_lab.inference.v3.truth import (
     DecisionTruthReport,
     QualityTruthReport,
@@ -48,6 +54,7 @@ from bidking_lab.inference.v3.truth import (
 
 __all__ = (
     "ACTION_RESULT_SPECS",
+    "BucketFeasibleSummary",
     "ConstraintConflict",
     "ConstraintSet",
     "DecisionTruthReport",
@@ -56,6 +63,7 @@ __all__ = (
     "EvidenceCoverageReport",
     "EvidenceEvent",
     "EvidenceSpec",
+    "FeasibleSummaryReport",
     "HardNumericConstraint",
     "ItemAnchor",
     "QualityFloorAnchor",
@@ -68,8 +76,10 @@ __all__ = (
     "audit_fatbeans_events",
     "audit_fatbeans_paths",
     "compile_hard_constraints",
+    "compile_feasible_summary",
     "decision_truth_from_fatbeans",
     "empty_decision_truth_flat_dict",
+    "empty_feasible_summary_flat_dict",
     "empty_truth_flat_dict",
     "events_from_fatbeans",
     "ordinary_shape_replacement_values",

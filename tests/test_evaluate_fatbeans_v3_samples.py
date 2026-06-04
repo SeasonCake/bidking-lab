@@ -179,6 +179,9 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_truth_decision_available"] is True
     assert rows[0]["v3_truth_formal_decision_value"] == 201_000
     assert rows[0]["v3_truth_tail_replacement_decision_value"] == 201_000
+    assert rows[0]["v3_summary_available"] is True
+    assert rows[0]["v3_summary_feasible"] is True
+    assert rows[0]["v3_summary_known_count_floor"] == 0
 
 
 def test_v3_prebid_rows_separate_no_state_windows() -> None:

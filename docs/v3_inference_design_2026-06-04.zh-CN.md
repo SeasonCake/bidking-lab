@@ -455,10 +455,11 @@ v3 可进入正式候选前：
 ### 2026-06-04 执行进展
 
 - Phase 1/2 已有可跑实现：registry coverage、canonical `EvidenceEvent`、hard numeric/item/shape/quality-floor constraint compiler。
-- Phase 3 已起步：archive pre-bid evaluator 能按报价前窗口输出 ConstraintSet、确定性 drop prior、settlement raw truth、formal decision truth、tail-replacement audit truth。
+- Phase 3 已起步：archive pre-bid evaluator 能按报价前窗口输出 ConstraintSet、FeasibleSummaryReport、确定性 drop prior、settlement raw truth、formal decision truth、tail-replacement audit truth。
 - 当前 prior/truth 字段仅为 shadow 诊断；posterior 仍是下一步。
 - 默认准确率分母应使用 ready 窗口的 `v3_truth_formal_decision_value`；raw/replacement 只能作为明确命名的对照指标。
-- 后续 sampler 必须以 hard constraints 为输入，再做条件 likelihood；不回到 v2 的“先采样再 reject 所有证据”的主路径。
+- 后续 sampler 必须以 `FeasibleSummaryReport` 为 hard 输入，再做条件 likelihood；不回到 v2 的“先采样再 reject 所有证据”的主路径。
+- outline/full-outline 的 count/cells exact 必须由 compiler 从 observed_items 派生，不允许 sampler 直接复用 raw payload value。
 
 ## 12. 参考资料
 

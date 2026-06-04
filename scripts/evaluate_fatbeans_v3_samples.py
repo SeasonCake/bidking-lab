@@ -27,9 +27,11 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from bidking_lab.inference.v3 import (  # noqa: E402
+    compile_feasible_summary,
     compile_hard_constraints,
     decision_truth_from_fatbeans,
     empty_decision_truth_flat_dict,
+    empty_feasible_summary_flat_dict,
     empty_truth_flat_dict,
     events_from_fatbeans,
     ordinary_shape_replacement_values,
@@ -161,6 +163,7 @@ def _round_rows_for_events(
     )
     truth_fields = truth.to_flat_dict() if truth is not None else empty_truth_flat_dict()
     empty_decision_truth_fields = empty_decision_truth_flat_dict()
+    empty_summary_fields = empty_feasible_summary_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
     for window_round, bid_send in enumerate(bid_sends, start=1):
@@ -202,11 +205,13 @@ def _round_rows_for_events(
                     **prior_fields,
                     **truth_fields,
                     **empty_decision_truth_fields,
+                    **empty_summary_fields,
                 }
             )
             previous_bid_sort_id = bid_sort_id
             continue
         constraints = compile_hard_constraints(events_from_fatbeans(prefix))
+        feasible_summary = compile_feasible_summary(constraints)
         replacement_values = _replacement_values(
             map_id,
             tables=tables,
@@ -249,6 +254,7 @@ def _round_rows_for_events(
                 **prior_fields,
                 **truth_fields,
                 **decision_truth_fields,
+                **feasible_summary.to_flat_dict(),
             }
         )
         previous_bid_sort_id = bid_sort_id
@@ -287,6 +293,12 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         "decision_truth_ready": sum(
             1 for row in rows if row.get("v3_truth_decision_available")
         ),
+        "summary_ready": sum(1 for row in rows if row.get("v3_summary_available")),
+        "summary_conflict": sum(
+            1
+            for row in rows
+            if int(row.get("v3_summary_conflict_count") or 0) > 0
+        ),
         "status_counts": dict(sorted(statuses.items())),
         "round_counts": dict(sorted(round_counts.items())),
         "numeric_constraints": sum(int(row.get("numeric_constraints") or 0) for row in ready_rows),
@@ -311,6 +323,8 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"prior_ready={summary['prior_ready']}",
                 f"truth_ready={summary['truth_ready']}",
                 f"decision_truth_ready={summary['decision_truth_ready']}",
+                f"summary_ready={summary['summary_ready']}",
+                f"summary_conflict={summary['summary_conflict']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",
@@ -383,6 +397,24 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_truth_q6_tail_replacement_value",
         "v3_truth_q6_trimmed_tail_value",
         "v3_truth_q6_trimmed_tail_count",
+        "v3_summary_available",
+        "v3_summary_feasible",
+        "v3_summary_conflict_count",
+        "v3_summary_conflicts",
+        "v3_summary_session_total_count_exact",
+        "v3_summary_session_total_cells_exact",
+        "v3_summary_known_count_floor",
+        "v3_summary_known_cells_floor",
+        "v3_summary_known_value_floor",
+        "v3_summary_q6_count_exact",
+        "v3_summary_q6_cells_exact",
+        "v3_summary_q6_value_exact",
+        "v3_summary_q6_count_floor",
+        "v3_summary_q6_cells_floor",
+        "v3_summary_q6_value_floor",
+        "v3_summary_q6_residual_count_exact",
+        "v3_summary_q6_residual_cells_exact",
+        "v3_summary_q6_residual_value_exact",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()

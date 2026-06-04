@@ -89,3 +89,16 @@ raw settlement truth 和 tail-replacement truth 必须以独立字段或独立 m
 - raw：用于检查长尾和实际结算总值差异。
 - replacement：用于审计“同形状普通替代”是否可改善 P90/coverage。
 - no-state：只记数据质量，不计模型误差。
+
+## D-v3-009：posterior sampler 消费 feasible summary，不直接解释 raw numeric payload
+
+v3 后续 sampler 的 hard 输入层级为：
+
+1. `EvidenceEvent`
+2. `ConstraintSet`
+3. `FeasibleSummaryReport`
+4. posterior proposal / likelihood
+
+outline/full-outline 事件的 count/cells exact 由 compiler 根据 observed_items 派生。posterior sampler 不再自己猜测 public/action payload value 的含义。
+
+原因：Aisha q4 outline 曾暴露 payload value 表示 count、不是 cells。如果 sampler 绕过 compiler 直接使用 raw numeric，会复现 v2 式路径分叉和 hidden input bug。

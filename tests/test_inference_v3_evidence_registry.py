@@ -165,6 +165,52 @@ def test_compile_hard_constraints_records_exact_numeric_and_anchors() -> None:
     assert footprint.cells == 2
 
 
+def test_compile_hard_constraints_derives_outline_cells_from_items() -> None:
+    state = SimpleNamespace(
+        sort_id=12,
+        session_id="2401:abc",
+        round_index=1,
+        map_id=2401,
+        public_infos=(
+            SimpleNamespace(
+                info_id=200001,
+                value=99,
+                value_field=14,
+                observed_items=(
+                    SimpleNamespace(
+                        runtime_id=1,
+                        local_index=1,
+                        item_id=None,
+                        quality=4,
+                        value=None,
+                        shape_code=21,
+                        cells=None,
+                    ),
+                    SimpleNamespace(
+                        runtime_id=2,
+                        local_index=4,
+                        item_id=None,
+                        quality=4,
+                        value=None,
+                        shape_code=22,
+                        cells=None,
+                    ),
+                ),
+            ),
+        ),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+
+    constraints = compile_hard_constraints(
+        events_from_fatbeans(SimpleNamespace(states=(state,)))
+    )
+
+    assert constraints.numeric["bucket.q4.count"].value == 2
+    assert constraints.numeric["bucket.q4.cells"].value == 6
+
+
 def test_compile_hard_constraints_keeps_quality_only_out_of_footprints() -> None:
     state = SimpleNamespace(
         sort_id=20,

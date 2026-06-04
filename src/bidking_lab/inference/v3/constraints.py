@@ -109,6 +109,10 @@ def _is_numeric_target(target: str) -> bool:
     return target.startswith("session.") or target.startswith("bucket.")
 
 
+def _is_count_or_cells_target(target: str) -> bool:
+    return target.endswith(".count") or target.endswith(".cells")
+
+
 def _int_or_none(value: Any) -> int | None:
     if isinstance(value, bool) or value is None:
         return None
@@ -148,6 +152,49 @@ def _iter_payload_items(event: EvidenceEvent) -> Iterable[dict[str, Any]]:
     for raw_item in payload.get("items", ()) or ():
         if isinstance(raw_item, dict):
             yield raw_item
+
+
+def _derived_shape_numeric_values(event: EvidenceEvent) -> dict[str, int]:
+    target_set = set(event.targets)
+    if "shape_anchors" not in target_set:
+        return {}
+    items = tuple(_iter_payload_items(event))
+    if not items:
+        return {}
+    count_by_quality: dict[int, int] = {}
+    cells_by_quality: dict[int, int] = {}
+    total_cells = 0
+    all_cells_known = True
+    for item in items:
+        cells = _int_or_none(item.get("cells"))
+        if cells is None:
+            cells = _shape_cells(item.get("shape_key"))
+        if cells is None:
+            all_cells_known = False
+            cells = 0
+        total_cells += cells
+        quality = _int_or_none(item.get("quality"))
+        if quality is None:
+            continue
+        count_by_quality[quality] = count_by_quality.get(quality, 0) + 1
+        cells_by_quality[quality] = cells_by_quality.get(quality, 0) + cells
+    out: dict[str, int] = {}
+    for target in event.targets:
+        if target == "session.total_count":
+            out[target] = len(items)
+        elif target == "session.total_cells" and all_cells_known:
+            out[target] = total_cells
+        elif target.startswith("bucket.q") and target.endswith(".count"):
+            raw_quality = target.removeprefix("bucket.q").removesuffix(".count")
+            quality = _int_or_none(raw_quality)
+            if quality is not None:
+                out[target] = count_by_quality.get(quality, 0)
+        elif target.startswith("bucket.q") and target.endswith(".cells") and all_cells_known:
+            raw_quality = target.removeprefix("bucket.q").removesuffix(".cells")
+            quality = _int_or_none(raw_quality)
+            if quality is not None:
+                out[target] = cells_by_quality.get(quality, 0)
+    return out
 
 
 def _event_categories(event: EvidenceEvent) -> tuple[int, ...]:
@@ -292,11 +339,37 @@ def compile_hard_constraints(events: Iterable[EvidenceEvent]) -> ConstraintSet:
             _record_quality_floor_anchors(event, out)
         if event.strength != "hard":
             continue
+        derived_values = _derived_shape_numeric_values(event)
+        for target, value in derived_values.items():
+            constraint = HardNumericConstraint(
+                target=target,
+                value=value,
+                event_id=event.event_id,
+                source_kind=event.source_kind,
+                source_id=event.source_id,
+                sort_id=event.sort_id,
+            )
+            current = out.numeric.get(target)
+            if current is not None and current.value != value:
+                out.conflicts.append(
+                    ConstraintConflict(
+                        target=target,
+                        first=current,
+                        second=constraint,
+                    )
+                )
+                continue
+            out.numeric[target] = constraint
         value = _numeric_payload_value(event)
         if value is None:
             continue
         for target in event.targets:
             if not _is_numeric_target(target):
+                continue
+            if target in derived_values or (
+                "shape_anchors" in target_set
+                and _is_count_or_cells_target(target)
+            ):
                 continue
             constraint = HardNumericConstraint(
                 target=target,

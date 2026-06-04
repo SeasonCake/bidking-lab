@@ -143,6 +143,44 @@
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
   - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --fail-on-conflicts` 通过。
 
+### Phase 3 增量：feasible summary generator
+
+- 新增 `src/bidking_lab/inference/v3/summary.py`：
+  - `BucketFeasibleSummary`
+  - `FeasibleSummaryReport`
+  - `compile_feasible_summary()`
+  - `empty_feasible_summary_flat_dict()`
+- summary 负责把 hard numeric exact 与 deduped item/shape/quality anchors 合成 per-quality floors：
+  - exact：session total count/cells，bucket count/cells/value。
+  - floor：anchor count/cells/value。
+  - residual exact：例如 q6 exact count/cells/value 扣掉已知 floor 后的剩余。
+  - conflict：`floor > exact`、bucket exact sum 超过 session exact 等。
+- 同时修复 `compile_hard_constraints()`：
+  - 带 `shape_anchors` 且有 observed_items 的 outline/full-outline 事件，count/cells exact 从 observed_items 派生。
+  - 不再把同一个 payload value 同时套到 count 和 cells。
+- `scripts/evaluate_fatbeans_v3_samples.py` 现在输出 `v3_summary_*`。
+- 当前 355 archive 扫描：
+  - windows `1,262`
+  - ready `1,247`
+  - no_state `15`
+  - summary_ready `1,247`
+  - summary_conflict `0`
+  - constraint_conflict `0`
+  - parse_errors `5`
+  - prebid numeric constraints `4,818`
+- 全文件 constraint summary：
+  - numeric `1,908`
+  - item anchors `1,851`
+  - shape anchors `10,083`
+  - quality-floor anchors `1,384`
+  - conflicts `0`
+- 验证：
+  - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_summary.py tests\test_inference_v3_priors_truth.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_evidence_registry.py -q`
+    为 `18 passed`。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts` 通过。
+  - `C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --skip-table-report --fail-on-conflicts` 通过。
+  - `C:\Python313\python.exe .\scripts\summarize_v3_constraints.py --fail-on-conflicts` 通过。
+
 ### 记录整理
 
 - 根目录大记录已改为索引：
@@ -174,10 +212,9 @@ C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-ga
 
 ## 下一步
 
-1. 在 `scripts/evaluate_fatbeans_v3_samples.py` 的 ready 窗口上输出 shadow-only posterior report skeleton。
-2. 实现 feasible summary generator，先在 quality bucket 层满足 hard constraints。
-3. 再实现 q6 条件 likelihood / count-cell-value sampler。
-4. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
+1. 在 ready 窗口上实现 shadow-only posterior report skeleton。
+2. 用 `FeasibleSummaryReport` 驱动 q6 条件 likelihood / count-cell-value sampler。
+3. 接 live/UI/archive 的 v3 shadow 字段，默认 `affects_bid=false`。
 
 ## 不做事项
 
