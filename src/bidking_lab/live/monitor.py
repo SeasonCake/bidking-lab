@@ -23,6 +23,7 @@ from bidking_lab.extract.drop_table import DropPool, load_drop_table
 from bidking_lab.extract.item_table import Item, load_item_table
 from bidking_lab.inference.bid_strategy import recommend_bid_strategy
 from bidking_lab.inference.diagnostics import layout_conflict_root
+from bidking_lab.inference.size_avg_evidence import size_bucket_eval_fields
 from bidking_lab.inference.q6_residual import (
     AISHA_BOTTOM_ROW_RISK_THRESHOLD,
     AISHA_Q6_QUALITY_ONLY_DEEP_ROW_THRESHOLD,
@@ -59,7 +60,7 @@ from bidking_lab.live.state import (
     apply_observation_batch,
     live_state_to_session_obs,
 )
-from bidking_lab.live.types import LiveObservationBatch
+from bidking_lab.live.types import GridItemObservation, LiveObservationBatch
 from bidking_lab.live.fatbeans import live_batches_from_fatbeans_events
 from bidking_lab.runtime import (
     layout_replay_rows_from_stages,
@@ -384,16 +385,36 @@ def _q6_prior_gap_summary(report: Any) -> dict[str, Any]:
         parts.append(f"件数P90低{count_gap:.2f}")
     if cells_gap is not None and cells_gap >= 1.0:
         parts.append(f"格数P90低{cells_gap:.1f}")
-    floor_value = (
+    prior_gap_active = bool(parts)
+    random_sample_signals = actionable_random_sample_avg_values(
+        getattr(report, "random_sample_avg_values", ())
+    )
+    random_sample_floor = max(
+        (
+            int(round(float(sample_count) * float(value)))
+            for sample_count, value in random_sample_signals
+        ),
+        default=None,
+    )
+    for sample_count, value in random_sample_signals:
+        parts.append(f"随机{sample_count}件均价高{float(value):,.0f}")
+    prior_floor = (
         getattr(report, "q6_prior_expected_value", None)
-        if parts
+        if prior_gap_active
         else None
     )
-    gate = (
-        "shipwreck_positive_net"
-        if parts and _map_family_from_id(getattr(report, "map_id", None)) == "shipwreck"
-        else ""
-    )
+    floor_candidates = [
+        float(value)
+        for value in (prior_floor, random_sample_floor)
+        if value is not None
+    ]
+    floor_value = max(floor_candidates) if floor_candidates else None
+    gate_parts: list[str] = []
+    if prior_gap_active and _map_family_from_id(getattr(report, "map_id", None)) == "shipwreck":
+        gate_parts.append("shipwreck_positive_net")
+    if random_sample_signals:
+        gate_parts.append("random_avg_signal")
+    gate = "+".join(gate_parts)
     decision_p90 = _quantile_p90(getattr(report, "q6_decision_value", None))
     return {
         "risk": bool(parts),
@@ -402,10 +423,26 @@ def _q6_prior_gap_summary(report: Any) -> dict[str, Any]:
         "gate": gate,
         "practical_p90": (
             max(float(decision_p90 or 0), float(floor_value or 0))
-            if gate and floor_value is not None
+            if floor_value is not None
             else None
         ),
     }
+
+
+def _q6_risk_reference_text(q6_prior_gap: Mapping[str, Any] | None) -> str:
+    if not q6_prior_gap or not q6_prior_gap.get("risk"):
+        return ""
+    parts = [str(q6_prior_gap.get("summary") or "").strip()]
+    reference = q6_prior_gap.get("practical_p90")
+    if reference is None:
+        reference = q6_prior_gap.get("floor_value")
+    if reference is not None:
+        parts.append(f"参考P90 {float(reference):,.0f}")
+    gate = str(q6_prior_gap.get("gate") or "").strip()
+    if gate:
+        parts.append(f"门控 {gate}")
+    parts.append("仅作风险参考，未抬高正式停止价")
+    return "；".join(part for part in parts if part)
 
 
 def _quantile_value(summary: Any, name: str) -> int | None:
@@ -797,6 +834,13 @@ def _latest_map_id(events: FatbeansCaptureEvents) -> int | None:
     return None
 
 
+def _latest_session_id(events: FatbeansCaptureEvents) -> str | None:
+    for state in reversed(events.states):
+        if state.session_id:
+            return state.session_id
+    return None
+
+
 def _inventory_totals(events: FatbeansCaptureEvents) -> tuple[int | None, int | None]:
     for state in reversed(events.states):
         if state.inventory_items:
@@ -816,6 +860,7 @@ def _build_bid_rows(
     decision_value_summary: Any = None,
     raw_value_summary: Any = None,
     posterior_diagnostics: Sequence[str] = (),
+    q6_prior_gap: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     report = recommend_bid_strategy(
         latest_bids=latest_bids,
@@ -830,6 +875,7 @@ def _build_bid_rows(
     if report is None:
         return []
     thresholds = report.thresholds
+    q6_risk_reference = _q6_risk_reference_text(q6_prior_gap)
     rows = [
         {
             "证据": report.evidence_label,
@@ -845,13 +891,16 @@ def _build_bid_rows(
             ),
             "当前最高": f"{report.leader} {report.highest_bid:,}",
             "风险带": report.risk_band,
+            "秒仓倍率": f"{thresholds.warehouse_multiplier:g}x",
             "探价(P10)": f"{thresholds.probe_bid:,}",
             "防守价": f"{thresholds.defend_bid:,}",
+            "可追价(P90)": f"{thresholds.attack_bid:,}",
             "抢仓上限": f"{thresholds.attack_bid:,}",
             "停止价": f"{thresholds.stop_bid:,}",
             "依据": report.rationale,
             "补信息": report.next_info_hint,
             "后验诊断": ";".join(posterior_diagnostics),
+            "红货风险参考": q6_risk_reference,
             "建议": report.action,
         }
     ]
@@ -864,13 +913,16 @@ def _build_bid_rows(
                 "仓储": "",
                 "当前最高": f"{player.name} {player.bid:,}",
                 "风险带": player.risk_band,
+                "秒仓倍率": "",
                 "探价(P10)": "",
                 "防守价": "",
+                "可追价(P90)": "",
                 "抢仓上限": "",
                 "停止价": "",
                 "依据": "",
                 "补信息": "",
                 "建议": "",
+                "红货风险参考": "",
             }
         )
     return rows
@@ -979,6 +1031,16 @@ def _parse_range_float_value(label: str, index: int) -> float | None:
 
 def _parse_range_p50(label: str) -> int | None:
     return _parse_range_value(label, 1)
+
+
+def _parse_match_text(value: Any) -> tuple[int | None, int | None]:
+    if value is None:
+        return None, None
+    text = str(value).strip()
+    if not text or "/" not in text:
+        return None, None
+    left, right = text.split("/", 1)
+    return _parse_int_text(left), _parse_int_text(right)
 
 
 def _parse_percent_text(value: Any) -> float | None:
@@ -1381,6 +1443,8 @@ def _model_eval_row(
     q6_prior_floor_value = None
     q6_practical_gate = ""
     q6_practical_p90 = None
+    posterior_samples = None
+    posterior_total_samples = None
     q6_shadow_active = bool(shadow.get("active"))
     q6_shadow_active_boost = _parse_float_text(shadow.get("active_boost"))
     q6_shadow_decision_value_p50 = _parse_int_text(
@@ -1419,6 +1483,25 @@ def _model_eval_row(
             2,
         )
     if v2_rows:
+        posterior_samples, posterior_total_samples = _parse_match_text(
+            v2_rows[0].get("匹配")
+        )
+        if decision_value_p50 is None:
+            decision_value_p50 = _parse_range_p50(
+                str(v2_rows[0].get("决策价值 P10/P50/P90", ""))
+            )
+            decision_value_p90 = _parse_range_value(
+                str(v2_rows[0].get("决策价值 P10/P50/P90", "")),
+                2,
+            )
+        if raw_value_p50 is None:
+            raw_value_p50 = _parse_range_p50(
+                str(v2_rows[0].get("原始价值 P10/P50/P90", ""))
+            )
+            raw_value_p90 = _parse_range_value(
+                str(v2_rows[0].get("原始价值 P10/P50/P90", "")),
+                2,
+            )
         q6_match_rate = _parse_percent_text(v2_rows[0].get("q6样本率"))
         q6_prior_match_rate = _parse_percent_text(v2_rows[0].get("q6掉落先验"))
         q6_prior_expected_count = _parse_float_text(v2_rows[0].get("q6先验件数"))
@@ -1848,9 +1931,15 @@ def _model_eval_row(
         "information_density_score": density_score,
         "information_density_band": density_band,
         "hero_information_density": f"{artifact.get('hero')}|{density_band}",
+        "posterior_samples": posterior_samples,
+        "posterior_total_samples": posterior_total_samples,
         "layout_conflict": bool(layout_root),
         "layout_conflict_root": layout_root,
         "posterior_diagnostics": posterior_diagnostics,
+        **size_bucket_eval_fields(
+            posterior_diagnostics=posterior_diagnostics,
+            action_result_rows=artifact.get("action_result_rows"),
+        ),
         "stop_minus_final_value": (
             stop_bid - final_value
             if stop_bid is not None and final_value is not None
@@ -1892,6 +1981,224 @@ def _grid_item_name(
     return item.name if item is not None else ""
 
 
+def _item_names(items: Mapping[int, Item]) -> dict[int, str]:
+    return {
+        int(item_id): item.name
+        for item_id, item in items.items()
+        if item.name
+    }
+
+
+def _action_send_rows(
+    events: FatbeansCaptureEvents,
+    items: Mapping[int, Item],
+) -> list[dict[str, Any]]:
+    item_names = _item_names(items)
+    rows: list[dict[str, Any]] = []
+    for send in events.sends:
+        if send.kind != "action" or send.value is None:
+            continue
+        action_id = int(send.value)
+        rows.append(
+            {
+                "sort": send.sort_id,
+                "time": send.capture_time,
+                "action_id": action_id,
+                "tool": item_names.get(action_id, ""),
+            }
+        )
+    return list(reversed(rows))
+
+
+def _observed_action_summary(
+    observed_items: Sequence[Any],
+    item_names: Mapping[int, str],
+) -> str:
+    if not observed_items:
+        return ""
+    quality_counts = Counter(
+        int(item.quality)
+        for item in observed_items
+        if getattr(item, "quality", None) is not None
+    )
+    parts = [
+        f"Q{quality}x{count}"
+        for quality, count in sorted(quality_counts.items(), reverse=True)
+    ]
+    named = [
+        item_names.get(int(item.item_id), "")
+        for item in observed_items
+        if getattr(item, "item_id", None) is not None
+    ]
+    if named:
+        parts.append("/".join(name for name in named[:3] if name))
+    locals_ = [
+        str(item.local_index)
+        for item in observed_items
+        if getattr(item, "local_index", None) is not None
+    ]
+    if locals_:
+        parts.append("pos " + ",".join(locals_[:8]))
+    return " / ".join(part for part in parts if part)
+
+
+def _action_result_rows(
+    events: FatbeansCaptureEvents,
+    items: Mapping[int, Item],
+) -> list[dict[str, Any]]:
+    item_names = _item_names(items)
+    latest_by_action: dict[int, dict[str, Any]] = {}
+    for state in events.states:
+        for result in state.action_results:
+            action_id = int(result.action_id)
+            latest_by_action[action_id] = {
+                "sort": state.sort_id,
+                "time": state.capture_time,
+                "action_id": action_id,
+                "tool": item_names.get(action_id, ""),
+                "result": result.result,
+                "result_field": result.result_field,
+                "revealed_items": len(result.observed_items),
+                "revealed_items_detail": _observed_items_detail(
+                    result.observed_items
+                ),
+                "revealed_summary": _observed_action_summary(
+                    result.observed_items,
+                    item_names,
+                ),
+            }
+    return sorted(
+        latest_by_action.values(),
+        key=lambda row: int(row.get("sort") or 0),
+        reverse=True,
+    )
+
+
+def _observed_items_detail(
+    observed_items: Sequence[Any],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "local_index": item.local_index,
+            "runtime_id": item.runtime_id,
+            "item_id": item.item_id,
+            "quality": item.quality,
+            "value": item.value,
+            "shape_code": item.shape_code,
+            "cells": item.cells,
+        }
+        for item in observed_items
+    ]
+
+
+def _public_info_rows(
+    events: FatbeansCaptureEvents,
+    items: Mapping[int, Item],
+) -> list[dict[str, Any]]:
+    item_names = _item_names(items)
+    latest_by_info: dict[int, dict[str, Any]] = {}
+    for state in events.states:
+        for info in state.public_infos:
+            info_id = int(info.info_id)
+            latest_by_info[info_id] = {
+                "sort": state.sort_id,
+                "time": state.capture_time,
+                "info_id": info_id,
+                "map_id": info.map_id,
+                "value": info.value,
+                "value_field": info.value_field,
+                "revealed_items": len(info.observed_items),
+                "revealed_items_detail": _observed_items_detail(
+                    info.observed_items
+                ),
+                "revealed_summary": _observed_action_summary(
+                    info.observed_items,
+                    item_names,
+                ),
+            }
+    return sorted(
+        latest_by_info.values(),
+        key=lambda row: int(row.get("sort") or 0),
+        reverse=True,
+    )
+
+
+def _grid_item_table_shape_key(
+    item: GridItemObservation,
+    items: Mapping[int, Item],
+) -> str | None:
+    if item.shape_key:
+        return item.shape_key
+    if item.local_index is None or item.item_id is None:
+        return None
+    table_item = items.get(int(item.item_id))
+    if table_item is None or table_item.shape_w <= 0 or table_item.shape_h <= 0:
+        return None
+    if item.cells and table_item.shape_w * table_item.shape_h != item.cells:
+        return None
+    return f"{table_item.shape_w}{table_item.shape_h}"
+
+
+def _grid_item_table_category(
+    item: GridItemObservation,
+    items: Mapping[int, Item],
+) -> int | None:
+    if item.category is not None:
+        return item.category
+    if item.item_id is None:
+        return None
+    table_item = items.get(int(item.item_id))
+    if table_item is None:
+        return None
+    for tag in table_item.tags:
+        if int(tag) in _CATEGORY_LABELS:
+            return int(tag)
+    return None
+
+
+def _minimap_rows_from_batch(
+    batch: LiveObservationBatch,
+    items: Mapping[int, Item],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    layout_source = (
+        "settlement_inventory" if batch.phase == "settled" else "live_grid"
+    )
+    for item in batch.grid_items:
+        shape_key = _grid_item_table_shape_key(item, items)
+        category = _grid_item_table_category(item, items)
+        display_item = (
+            item
+            if shape_key == item.shape_key and category == item.category
+            else replace(item, shape_key=shape_key, category=category)
+        )
+        footprint = display_item.footprint()
+        rows.append(
+            {
+                "category": category,
+                "category_label": (
+                    _CATEGORY_LABELS.get(category, str(category))
+                    if category is not None
+                    else ""
+                ),
+                "quality": item.quality,
+                "runtime_id": item.runtime_id,
+                "item_id": item.item_id,
+                "item_name": _grid_item_name(item.item_id, items),
+                "local_index": item.local_index,
+                "cells": item.cells,
+                "shape_key": shape_key,
+                "row": footprint.row if footprint is not None else None,
+                "col": footprint.col if footprint is not None else None,
+                "width": footprint.width if footprint is not None else None,
+                "height": footprint.height if footprint is not None else None,
+                "source": item.source,
+                "layout_source": layout_source,
+            }
+        )
+    return rows
+
+
 def _category_grid_items(
     batches: Sequence[LiveObservationBatch],
     items: Mapping[int, Item],
@@ -1912,6 +2219,7 @@ def _category_grid_items(
                     str(item.category),
                 ),
                 "quality": item.quality,
+                "runtime_id": item.runtime_id,
                 "item_id": item.item_id,
                 "item_name": _grid_item_name(item.item_id, items),
                 "local_index": item.local_index,
@@ -1931,34 +2239,17 @@ def _minimap_grid_items(
     batches: Sequence[LiveObservationBatch],
     items: Mapping[int, Item],
 ) -> list[dict[str, Any]]:
+    for candidate in reversed(batches):
+        if candidate.phase != "settled" or not candidate.grid_items:
+            continue
+        rows = _minimap_rows_from_batch(candidate, items)
+        if any(row.get("row") is not None and row.get("col") is not None for row in rows):
+            return rows
+
     batch = latest_grid_batch(batches)
     if batch is None:
         return []
-    rows: list[dict[str, Any]] = []
-    for item in batch.grid_items:
-        footprint = item.footprint()
-        rows.append(
-            {
-                "category": item.category,
-                "category_label": (
-                    _CATEGORY_LABELS.get(item.category, str(item.category))
-                    if item.category is not None
-                    else ""
-                ),
-                "quality": item.quality,
-                "item_id": item.item_id,
-                "item_name": _grid_item_name(item.item_id, items),
-                "local_index": item.local_index,
-                "cells": item.cells,
-                "shape_key": item.shape_key,
-                "row": footprint.row if footprint is not None else None,
-                "col": footprint.col if footprint is not None else None,
-                "width": footprint.width if footprint is not None else None,
-                "height": footprint.height if footprint is not None else None,
-                "source": item.source,
-            }
-        )
-    return rows
+    return _minimap_rows_from_batch(batch, items)
 
 
 def _parse_int_text(value: Any) -> int | None:
@@ -2323,6 +2614,7 @@ def build_monitor_artifact_from_events(
                 decision_value_summary=v2_report.decision_value,
                 raw_value_summary=v2_report.total_value,
                 posterior_diagnostics=v2_report.diagnostics,
+                q6_prior_gap=_q6_prior_gap_summary(v2_report),
             )
         if v2_report.n_matched <= 0:
             (
@@ -2373,6 +2665,7 @@ def build_monitor_artifact_from_events(
         "frames": len(events.frames),
         "states": len(events.states),
         "batches": len(batches),
+        "session_id": _latest_session_id(events),
         "hero": base_session.hero if base_session is not None else None,
         "map_id": _latest_map_id(events),
         "round": action_round,
@@ -2402,6 +2695,9 @@ def build_monitor_artifact_from_events(
         "q6_quality_only_local_risk": q6_quality_only_local_risk,
         "evidence_profile_key": evidence_profile_key,
         "tool_rows": tool_rows,
+        "action_send_rows": _action_send_rows(events, tables.items),
+        "action_result_rows": _action_result_rows(events, tables.items),
+        "public_info_rows": _public_info_rows(events, tables.items),
         "bid_rows": bid_rows,
         "layout_replay_rows": layout_replay_rows,
         "layout_stage_rows": layout_stage_rows,
@@ -2509,11 +2805,14 @@ def write_monitor_logs(
     artifact: Mapping[str, Any],
     *,
     log_dir: str | Path | None = None,
+    append_logs: bool = True,
 ) -> None:
     """Write latest snapshot and append long-running JSONL logs."""
     root = Path(log_dir) if log_dir is not None else project_root() / "data" / "logs" / "live"
     root.mkdir(parents=True, exist_ok=True)
     _atomic_write_json(root / "latest_snapshot.json", artifact)
+    if not append_logs:
+        return
     _append_jsonl(root / "sessions.jsonl", artifact)
     eval_row = artifact.get("model_eval")
     if isinstance(eval_row, Mapping):

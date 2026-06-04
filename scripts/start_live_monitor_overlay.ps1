@@ -13,9 +13,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$Python = (Get-Command python).Source
-$PythonwCommand = Get-Command pythonw -ErrorAction SilentlyContinue
-$PythonWindowed = if ($PythonwCommand) { $PythonwCommand.Source } else { $Python }
+. (Join-Path $Repo "scripts\resolve_python.ps1")
+$Python = Resolve-BidKingPython
+$PythonWindowed = Resolve-BidKingPythonw -PythonExe $Python
 $Monitor = Join-Path $Repo "scripts\run_fatbeans_live_monitor.py"
 $Overlay = Join-Path $Repo "scripts\run_live_overlay.py"
 $LogPath = Join-Path $Repo $LogDir

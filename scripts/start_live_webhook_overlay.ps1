@@ -6,9 +6,11 @@ param(
   [string]$ProcessName = "BidKing.exe",
   [int[]]$ServerPort = @(10000),
   [int]$NTrials = 500,
-  [int]$RoiTrials = 250,
-  [double]$DebounceSeconds = 0.7,
-  [double]$MinInferenceIntervalSeconds = 1.0,
+  [int]$RoiTrials = 0,
+  [int]$FastNTrials = 10,
+  [double]$DebounceSeconds = 1.0,
+  [double]$MinInferenceIntervalSeconds = 2.0,
+  [switch]$EnableDebugShadows,
   [string]$FatbeansPath = "C:\Users\shenc\Desktop\FatbeansCreaterV1.0.3\FatbeansCreater.exe",
   [switch]$StartFatbeans,
   [switch]$KeepMonitorOnOverlayClose,
@@ -17,9 +19,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$Python = (Get-Command python).Source
-$PythonwCommand = Get-Command pythonw -ErrorAction SilentlyContinue
-$PythonWindowed = if ($PythonwCommand) { $PythonwCommand.Source } else { $Python }
+. (Join-Path $Repo "scripts\resolve_python.ps1")
+$Python = Resolve-BidKingPython
+$PythonWindowed = Resolve-BidKingPythonw -PythonExe $Python
 $Monitor = Join-Path $Repo "scripts\run_fatbeans_webhook_monitor.py"
 $Overlay = Join-Path $Repo "scripts\run_live_overlay.py"
 $LogPath = Join-Path $Repo $LogDir
@@ -36,9 +38,13 @@ $MonitorArgs = @(
   "--process-name", $ProcessName,
   "--n-trials", "$NTrials",
   "--roi-trials", "$RoiTrials",
+  "--fast-n-trials", "$FastNTrials",
   "--debounce-seconds", "$DebounceSeconds",
   "--min-inference-interval-seconds", "$MinInferenceIntervalSeconds"
 )
+if (-not $EnableDebugShadows) {
+  $MonitorArgs += "--skip-debug-shadows"
+}
 foreach ($PortValue in $ServerPort) {
   $MonitorArgs += @("--server-port", "$PortValue")
 }

@@ -6,6 +6,12 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from bidking_lab.inference.size_avg_evidence import (
+    format_size_bucket_target_label,
+    parse_size_bucket_diagnostics,
+    size_avg_readings_from_action_rows,
+)
+
 _MINIMAP_COLUMNS = 10
 _MINIMAP_DEFAULT_CELLS = 130
 _MINIMAP_MAX_CELLS = 250
@@ -508,10 +514,19 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
             "file": _text(artifact.get("file")),
             "created_at": artifact.get("created_at"),
             "processing_seconds": artifact.get("processing_seconds"),
+            "snapshot_mode": _text(artifact.get("snapshot_mode")),
             "n_trials": artifact.get("n_trials"),
+            "roi_trials": artifact.get("roi_trials"),
             "shadow_trials": artifact.get("shadow_trials"),
+            "inference_profile": (
+                artifact.get("inference_profile")
+                if isinstance(artifact.get("inference_profile"), Mapping)
+                else {}
+            ),
         },
+        "actions": _ui_actions_contract(artifact),
         "context": {
+            "session_id": artifact.get("session_id"),
             "hero": artifact.get("hero"),
             "map_id": artifact.get("map_id"),
             "round": artifact.get("round"),
@@ -529,13 +544,15 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                 "action": _text(bid.get("建议")),
                 "current_highest": _text(bid.get("当前最高")),
                 "risk_band": _text(bid.get("风险带")),
+                "warehouse_multiplier": _text(bid.get("秒仓倍率")),
                 "probe_bid": _text(bid.get("探价(P10)")),
                 "defend_bid": _text(bid.get("防守价")),
-                "attack_bid": _text(bid.get("抢仓上限")),
+                "attack_bid": _text(bid.get("可追价(P90)") or bid.get("抢仓上限")),
                 "stop_price": _text(bid.get("停止价")),
                 "evidence": _text(bid.get("证据")),
                 "round": _text(bid.get("轮次")),
                 "information_density": _text(bid.get("信息强度")),
+                "q6_risk_reference": _text(bid.get("红货风险参考")),
             },
             "posterior": {
                 "value_basis": _text(v2.get("价值口径") or "decision_value"),
@@ -600,7 +617,7 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
             minimap,
             input_constraints,
         ),
-        "diagnostics": _ui_diagnostics_contract(v2, model_eval),
+        "diagnostics": _ui_diagnostics_contract(v2, model_eval, artifact),
         "interaction": {
             "compact": {
                 "purpose": "always_on_top_core_tips",
@@ -612,6 +629,7 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                     "baseline.decision.stop_price",
                     "baseline.posterior.decision_value_range",
                     "baseline.posterior.total_cells_range",
+                    "actions.latest_result",
                     "q6_risk_reference.risk",
                     "fallback.active",
                 ),
@@ -625,6 +643,8 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                     "fallback",
                     "q6_risk_reference",
                     "constraints.summary",
+                    "actions",
+                    "diagnostics.size_bucket",
                     "minimap",
                 ),
             },
@@ -635,6 +655,7 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                     "baseline.posterior",
                     "baseline.layout",
                     "constraints",
+                    "actions",
                     "q6_risk_reference",
                     "fallback",
                     "shadows",
@@ -646,6 +667,28 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                 "renderers": (),
             },
         },
+    }
+
+
+def _ui_actions_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
+    sent = _string_rows(artifact.get("action_send_rows", ()) or (), limit=8)
+    results = _string_rows(
+        [
+            {
+                key: value
+                for key, value in row.items()
+                if key != "revealed_items_detail"
+            }
+            for row in artifact.get("action_result_rows", ()) or ()
+            if isinstance(row, Mapping)
+        ],
+        limit=8,
+    )
+    return {
+        "sent": sent,
+        "results": results,
+        "latest_sent": sent[0] if sent else {},
+        "latest_result": results[0] if results else {},
     }
 
 
@@ -862,9 +905,52 @@ def _ui_constraints_contract(
     }
 
 
+def _ui_size_bucket_contract(
+    artifact: Mapping[str, Any],
+    posterior: str,
+) -> dict[str, Any]:
+    targets = parse_size_bucket_diagnostics(posterior)
+    readings = size_avg_readings_from_action_rows(
+        artifact.get("action_result_rows")
+    )
+    target_labels = [
+        format_size_bucket_target_label(target) for target in targets
+    ]
+    reading_labels = [
+        f"{row.get('tool') or row.get('action_id')}: {row.get('avg_label')}"
+        for row in readings
+    ]
+    latest_reading = readings[0] if readings else None
+    latest_target = targets[0] if targets else None
+    return {
+        "active": bool(targets),
+        "reading_active": bool(readings),
+        "targets": targets,
+        "target_labels": target_labels,
+        "readings": readings,
+        "reading_labels": reading_labels,
+        "latest_reading": latest_reading,
+        "latest_target": latest_target,
+        "latest_reading_label": reading_labels[0] if reading_labels else "",
+        "latest_target_label": target_labels[0] if target_labels else "",
+        "inference_matches_reading": (
+            latest_target is not None
+            and latest_reading is not None
+            and int(latest_target.get("cells") or 0)
+            == int(latest_reading.get("footprint_cells") or 0)
+            and abs(
+                float(latest_target.get("avg_value") or 0)
+                - float(latest_reading.get("avg_value") or 0)
+            )
+            < 1.0
+        ),
+    }
+
+
 def _ui_diagnostics_contract(
     v2: Mapping[str, Any],
     model_eval: Mapping[str, Any],
+    artifact: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     posterior = _text(
         _first_non_empty(
@@ -874,6 +960,7 @@ def _ui_diagnostics_contract(
     )
     return {
         "posterior": posterior,
+        "size_bucket": _ui_size_bucket_contract(artifact or {}, posterior),
         "layout": {
             "conflict": bool(model_eval.get("layout_conflict")),
             "conflict_root": _text(model_eval.get("layout_conflict_root")),
@@ -947,6 +1034,77 @@ def _ui_diagnostics_contract(
     }
 
 
+def _ui_minimap_quality_markers(
+    artifact: Mapping[str, Any],
+    *,
+    known_runtime_ids: set[int],
+    known_local_indexes: set[int],
+) -> list[dict[str, Any]]:
+    markers: list[dict[str, Any]] = []
+    seen: set[tuple[int | None, int, int]] = set()
+    row_sources = (
+        ("packet", artifact.get("action_result_rows", ()) or ()),
+        ("public_info", artifact.get("public_info_rows", ()) or ()),
+    )
+    for source, rows in row_sources:
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            details = row.get("revealed_items_detail")
+            if not isinstance(details, Sequence) or isinstance(details, (str, bytes)):
+                continue
+            source_label = _text(row.get("tool"))
+            if not source_label and source == "public_info":
+                info_id = _int_or_none(row.get("info_id"))
+                source_label = f"公共信息 {info_id}" if info_id is not None else "公共信息"
+            for item in details:
+                if not isinstance(item, Mapping):
+                    continue
+                quality = _int_or_none(item.get("quality"))
+                item_id = _int_or_none(item.get("item_id"))
+                local_index = _int_or_none(item.get("local_index"))
+                runtime_id = _int_or_none(item.get("runtime_id"))
+                if quality is None or item_id is not None or local_index is None:
+                    continue
+                if runtime_id is not None and runtime_id in known_runtime_ids:
+                    continue
+                if local_index in known_local_indexes:
+                    continue
+                marker_key = (runtime_id, local_index, quality)
+                if marker_key in seen:
+                    continue
+                seen.add(marker_key)
+                row_no = local_index // _MINIMAP_COLUMNS + 1
+                col_no = local_index % _MINIMAP_COLUMNS + 1
+                markers.append(
+                    {
+                        "row": row_no,
+                        "col": col_no,
+                        "width": 1,
+                        "height": 1,
+                        "quality": quality,
+                        "category": None,
+                        "category_label": "",
+                        "item_id": None,
+                        "item_name": "",
+                        "display_label": f"Q{quality}",
+                        "tooltip": _join_nonempty(
+                            [source_label, f"Q{quality}", f"local {local_index}"],
+                            sep=" / ",
+                        ),
+                        "shape_key": "",
+                        "cells": 1,
+                        "local_index": local_index,
+                        "source": source,
+                        "render_mode": "marker",
+                    }
+                )
+                known_local_indexes.add(local_index)
+                if runtime_id is not None:
+                    known_runtime_ids.add(runtime_id)
+    return markers
+
+
 def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
     raw_items = [
         item
@@ -960,6 +1118,12 @@ def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     quality_counts: Counter[str] = Counter()
     category_counts: Counter[str] = Counter()
+    known_runtime_ids: set[int] = set()
+    known_local_indexes: set[int] = set()
+    layout_source_counts: Counter[str] = Counter()
+    drawable_items = 0
+    settlement_items = 0
+    settlement_drawable_items = 0
     max_row = 0
     for item in raw_items:
         row = _int_or_none(item.get("row"))
@@ -969,9 +1133,19 @@ def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
         if row is not None:
             max_row = max(max_row, row + height - 1)
         quality = item.get("quality")
+        runtime_id = _int_or_none(item.get("runtime_id"))
+        local_index = _int_or_none(item.get("local_index"))
         category_label = _text(item.get("category_label") or item.get("category"))
         item_name = _text(item.get("item_name") or item.get("name"))
         shape_key = _text(item.get("shape_key"))
+        layout_source = _text(item.get("layout_source")) or "live_grid"
+        layout_source_counts[layout_source] += 1
+        if layout_source == "settlement_inventory":
+            settlement_items += 1
+        if row is not None and col is not None:
+            drawable_items += 1
+            if layout_source == "settlement_inventory":
+                settlement_drawable_items += 1
         q_label = f"Q{quality}" if quality is not None else "Q?"
         tooltip = _join_nonempty(
             [
@@ -986,6 +1160,10 @@ def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
             quality_counts[f"q{quality}"] += 1
         if category_label:
             category_counts[category_label] += 1
+        if runtime_id is not None:
+            known_runtime_ids.add(runtime_id)
+        if local_index is not None:
+            known_local_indexes.add(local_index)
         items.append(
             {
                 "row": row,
@@ -1001,17 +1179,50 @@ def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
                 "tooltip": tooltip,
                 "shape_key": shape_key,
                 "cells": item.get("cells"),
-                "local_index": item.get("local_index"),
+                "local_index": local_index,
                 "source": _text(item.get("source")),
+                "layout_source": layout_source,
+                "render_mode": "footprint",
             }
         )
+    for marker in _ui_minimap_quality_markers(
+        artifact,
+        known_runtime_ids=known_runtime_ids,
+        known_local_indexes=known_local_indexes,
+    ):
+        row = _int_or_none(marker.get("row"))
+        height = _int_or_none(marker.get("height")) or 1
+        if row is not None:
+            max_row = max(max_row, row + height - 1)
+        quality = marker.get("quality")
+        if quality is not None:
+            quality_counts[f"q{quality}"] += 1
+        items.append(marker)
     rows_hint = min(
         _MINIMAP_MAX_ROWS,
         max(_MINIMAP_DEFAULT_ROWS, max_row),
     )
+    final_total_items = _int_or_none(artifact.get("inventory_count"))
+    layout_source = (
+        "settlement_inventory"
+        if layout_source_counts.get("settlement_inventory")
+        else "live_known"
+    )
+    layout_complete = bool(
+        artifact.get("phase") == "settled"
+        and final_total_items is not None
+        and final_total_items > 0
+        and settlement_drawable_items >= final_total_items
+    )
     return {
         "schema_version": 1,
         "status": "available",
+        "layout_source": layout_source,
+        "layout_complete": layout_complete,
+        "drawable_items": drawable_items,
+        "settlement_items": settlement_items,
+        "settlement_drawable_items": settlement_drawable_items,
+        "final_total_items": final_total_items,
         "columns": _MINIMAP_COLUMNS,
         "default_cells": _MINIMAP_DEFAULT_CELLS,
         "max_cells": _MINIMAP_MAX_CELLS,
@@ -1057,9 +1268,10 @@ def _ui_fallback_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
             "action": _text(bid.get("建议")),
             "current_highest": _text(bid.get("当前最高")),
             "risk_band": _text(bid.get("风险带")),
+            "warehouse_multiplier": _text(bid.get("秒仓倍率")),
             "probe_bid": _text(bid.get("探价(P10)")),
             "defend_bid": _text(bid.get("防守价")),
-            "attack_bid": _text(bid.get("抢仓上限")),
+            "attack_bid": _text(bid.get("可追价(P90)") or bid.get("抢仓上限")),
             "stop_price": _text(bid.get("停止价")),
             "evidence": _text(bid.get("证据")),
             "round": _text(bid.get("轮次")),

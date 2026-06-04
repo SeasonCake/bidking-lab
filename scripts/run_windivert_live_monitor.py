@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from collections import Counter, deque
 from dataclasses import dataclass
 import ipaddress
 import json
@@ -17,7 +18,7 @@ from pathlib import Path
 import re
 import sys
 import time
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -36,15 +37,26 @@ from bidking_lab.live.fatbeans import (  # noqa: E402
     _parse_direct_action_response,
     _parse_send_event,
     _parse_state_event,
+    _parse_status_event,
 )
 from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
 
 
 FlowKey = tuple[str, int, str, int]
+StreamKey = tuple[str, str, int, str, int]
 GAME_SEND_MESSAGE_IDS = {0x0022, 0x0026}
 GAME_STATE_MESSAGE_IDS = {0x0021, 0x0025, 0x0027, 0x002D}
 SESSION_ID_RE = re.compile(r"^\d{4}:\d+$")
 MAX_FRAME_BYTES = 1_000_000
+
+
+def _process_is_elevated() -> bool:
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _normalize_ip(value: Any) -> str:
@@ -202,6 +214,10 @@ class FlowIndex:
         self.refresh_if_due()
         return len(self._flows) // 2
 
+    def flow_signature(self) -> tuple[FlowKey, ...]:
+        self.refresh_if_due()
+        return tuple(sorted(self._flows.keys()))
+
 
 def _packet_payload(packet: Any) -> bytes:
     payload = getattr(packet, "payload", b"") or b""
@@ -270,6 +286,7 @@ class GameFrame:
     message_id: int
     session_id: str
     is_state: bool
+    is_status: bool = False
 
 
 @dataclass(frozen=True)
@@ -308,15 +325,94 @@ class GameFrameGate:
     """
 
     def __init__(self) -> None:
-        self._buffers = {
-            "SEND": bytearray(),
-            "REV": bytearray(),
-        }
+        self._buffers: dict[StreamKey, bytearray] = {}
         self._current_session_id: str | None = None
         self._next_sort_id = 1
         self.dropped_bytes = 0
         self.ignored_frames = 0
         self.accepted_frames = 0
+        self.ignored_reasons: Counter[str] = Counter()
+        self._ignored_samples: deque[dict[str, Any]] = deque(maxlen=8)
+
+    def _note_ignore(
+        self,
+        reason: str,
+        *,
+        sample: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.ignored_frames += 1
+        self.ignored_reasons[reason] += 1
+        if sample is not None:
+            stored = dict(sample)
+            stored["reason"] = reason
+            self._ignored_samples.append(stored)
+
+    def ignored_reasons_dict(self) -> dict[str, int]:
+        return dict(sorted(self.ignored_reasons.items()))
+
+    @property
+    def ignored_samples(self) -> tuple[dict[str, Any], ...]:
+        return tuple(self._ignored_samples)
+
+    def ignored_samples_dict(self) -> list[dict[str, Any]]:
+        return [dict(sample) for sample in self._ignored_samples]
+
+    @staticmethod
+    def _packet_key_from_stream_key(stream_key: StreamKey) -> FlowKey:
+        direction, local_ip, local_port, remote_ip, remote_port = stream_key
+        if direction == "SEND":
+            return (local_ip, local_port, remote_ip, remote_port)
+        return (remote_ip, remote_port, local_ip, local_port)
+
+    def _ignored_frame_sample(
+        self,
+        row: Mapping[str, Any],
+        *,
+        direction: str,
+        raw: bytes,
+        message_id: int | None,
+        frame_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        sample = {
+            "direction": direction,
+            "sort_id": int(row.get("SortID") or 0),
+            "capture_time": str(row.get("CaptureTime") or ""),
+            "src": f"{_normalize_ip(row.get('SrcIP'))}:{int(row.get('SrcPort') or 0)}",
+            "dst": f"{_normalize_ip(row.get('DstIP'))}:{int(row.get('DstPort') or 0)}",
+            "packet_tag": _frame_packet_tag(direction, raw),
+            "message_id": (
+                f"0x{message_id:04x}" if message_id is not None else None
+            ),
+            "raw_length": len(raw),
+            "raw_prefix": raw[:16].hex(),
+            "active_session_id": self._current_session_id,
+        }
+        if frame_session_id is not None:
+            sample["frame_session_id"] = frame_session_id
+        return sample
+
+    def reset_stream_buffers(
+        self,
+        *,
+        keep_flow_keys: Iterable[FlowKey] | None = None,
+        clear_session: bool = False,
+    ) -> None:
+        if keep_flow_keys is None:
+            self._buffers.clear()
+        else:
+            keep_keys = set(keep_flow_keys)
+            if keep_keys:
+                self._buffers = {
+                    stream_key: buffer
+                    for stream_key, buffer in self._buffers.items()
+                    if self._packet_key_from_stream_key(stream_key) in keep_keys
+                }
+            else:
+                self._buffers.clear()
+        self.dropped_bytes = 0
+        if clear_session:
+            self._current_session_id = None
+            self._next_sort_id = 1
 
     @property
     def active_session_id(self) -> str | None:
@@ -324,8 +420,9 @@ class GameFrameGate:
 
     def feed_row(self, row: Mapping[str, Any]) -> FrameGateEmit:
         direction = str(row.get("Direct") or "").upper()
-        if direction not in self._buffers:
+        if direction not in ("SEND", "REV"):
             return FrameGateEmit(())
+        stream_key = self._stream_key(row, direction)
         try:
             payload = base64.b64decode(row.get("Data") or "", validate=True)
         except Exception:  # noqa: BLE001 - malformed packet boundary
@@ -333,28 +430,67 @@ class GameFrameGate:
         if not payload:
             return FrameGateEmit(())
 
-        frames = self._extract_frames(direction, payload)
+        frames = self._extract_frames(stream_key, direction, payload)
         emitted: list[dict[str, Any]] = []
         reset_session = False
         for raw in frames:
-            game_frame = self._classify_frame(row, direction, raw)
+            game_frame, ignore_reason, ignore_sample = self._classify_frame(
+                row,
+                direction,
+                raw,
+            )
             if game_frame is None:
-                self.ignored_frames += 1
+                self._note_ignore(
+                    ignore_reason or "unclassified",
+                    sample=ignore_sample,
+                )
                 continue
             should_emit, should_reset = self._should_emit(game_frame)
             if should_reset:
                 reset_session = True
                 emitted.clear()
+                self._buffers.clear()
                 self._next_sort_id = 1
             if should_emit:
                 emitted.append(self._row_from_game_frame(game_frame))
                 self.accepted_frames += 1
             else:
-                self.ignored_frames += 1
+                self._note_ignore(
+                    "send_wrong_session",
+                    sample=self._ignored_frame_sample(
+                        row,
+                        direction=direction,
+                        raw=raw,
+                        message_id=game_frame.message_id,
+                        frame_session_id=game_frame.session_id,
+                    ),
+                )
         return FrameGateEmit(tuple(emitted), reset_session=reset_session)
 
-    def _extract_frames(self, direction: str, payload: bytes) -> list[bytes]:
-        buffer = self._buffers[direction]
+    def _stream_key(self, row: Mapping[str, Any], direction: str) -> StreamKey:
+        src_ip = _normalize_ip(row.get("SrcIP"))
+        dst_ip = _normalize_ip(row.get("DstIP"))
+        try:
+            src_port = int(row.get("SrcPort") or 0)
+            dst_port = int(row.get("DstPort") or 0)
+        except (TypeError, ValueError):
+            src_port = 0
+            dst_port = 0
+        if direction == "SEND":
+            local_ip, local_port = src_ip, src_port
+            remote_ip, remote_port = dst_ip, dst_port
+        else:
+            local_ip, local_port = dst_ip, dst_port
+            remote_ip, remote_port = src_ip, src_port
+        return (direction, local_ip, local_port, remote_ip, remote_port)
+
+    def _extract_frames(
+        self,
+        stream_key: StreamKey,
+        direction: str,
+        payload: bytes,
+    ) -> list[bytes]:
+        buffer = self._buffers.setdefault(stream_key, bytearray())
         buffer.extend(payload)
         frames: list[bytes] = []
         while len(buffer) >= 4:
@@ -375,10 +511,19 @@ class GameFrameGate:
         row: Mapping[str, Any],
         direction: str,
         raw: bytes,
-    ) -> GameFrame | None:
+    ) -> tuple[GameFrame | None, str | None, dict[str, Any] | None]:
         message_id = _frame_message_id(direction, raw)
         if message_id is None:
-            return None
+            return (
+                None,
+                "no_message_id",
+                self._ignored_frame_sample(
+                    row,
+                    direction=direction,
+                    raw=raw,
+                    message_id=None,
+                ),
+            )
         frame = FatbeansFrame(
             index=0,
             direction=direction,  # type: ignore[arg-type]
@@ -388,8 +533,29 @@ class GameFrameGate:
         )
         if direction == "SEND" and message_id in GAME_SEND_MESSAGE_IDS:
             event = _parse_send_event(frame)
-            if event is None or not _valid_session_id(event.session_id):
-                return None
+            if event is None:
+                return (
+                    None,
+                    "send_parse_failed",
+                    self._ignored_frame_sample(
+                        row,
+                        direction=direction,
+                        raw=raw,
+                        message_id=message_id,
+                    ),
+                )
+            if not _valid_session_id(event.session_id):
+                return (
+                    None,
+                    "send_bad_session",
+                    self._ignored_frame_sample(
+                        row,
+                        direction=direction,
+                        raw=raw,
+                        message_id=message_id,
+                        frame_session_id=event.session_id,
+                    ),
+                )
             return GameFrame(
                 template_row=row,
                 raw=raw,
@@ -397,7 +563,45 @@ class GameFrameGate:
                 message_id=message_id,
                 session_id=event.session_id or "",
                 is_state=False,
-            )
+            ), None, None
+        if (
+            direction == "REV"
+            and _frame_packet_tag(direction, raw) == 0
+            and message_id == 0x0077
+        ):
+            status = _parse_status_event(frame)
+            if status is None:
+                return (
+                    None,
+                    "rev_status_parse_failed",
+                    self._ignored_frame_sample(
+                        row,
+                        direction=direction,
+                        raw=raw,
+                        message_id=message_id,
+                    ),
+                )
+            if not _valid_session_id(status.session_id):
+                return (
+                    None,
+                    "rev_status_bad_session",
+                    self._ignored_frame_sample(
+                        row,
+                        direction=direction,
+                        raw=raw,
+                        message_id=message_id,
+                        frame_session_id=status.session_id,
+                    ),
+                )
+            return GameFrame(
+                template_row=row,
+                raw=raw,
+                direction=direction,
+                message_id=message_id,
+                session_id=status.session_id or "",
+                is_state=False,
+                is_status=True,
+            ), None, None
         if (
             direction == "REV"
             and _frame_packet_tag(direction, raw) == 0
@@ -405,8 +609,29 @@ class GameFrameGate:
             and message_id != 0x0027
         ):
             state = _parse_state_event(frame)
-            if state is None or not _valid_session_id(state.session_id):
-                return None
+            if state is None:
+                return (
+                    None,
+                    "rev_state_parse_failed",
+                    self._ignored_frame_sample(
+                        row,
+                        direction=direction,
+                        raw=raw,
+                        message_id=message_id,
+                    ),
+                )
+            if not _valid_session_id(state.session_id):
+                return (
+                    None,
+                    "rev_state_bad_session",
+                    self._ignored_frame_sample(
+                        row,
+                        direction=direction,
+                        raw=raw,
+                        message_id=message_id,
+                        frame_session_id=state.session_id,
+                    ),
+                )
             if (
                 state.map_id is None
                 and state.round_index is None
@@ -416,7 +641,17 @@ class GameFrameGate:
                 and not state.public_infos
                 and not state.skill_reveals
             ):
-                return None
+                return (
+                    None,
+                    "rev_state_empty",
+                    self._ignored_frame_sample(
+                        row,
+                        direction=direction,
+                        raw=raw,
+                        message_id=message_id,
+                        frame_session_id=state.session_id,
+                    ),
+                )
             return GameFrame(
                 template_row=row,
                 raw=raw,
@@ -424,15 +659,35 @@ class GameFrameGate:
                 message_id=message_id,
                 session_id=state.session_id or "",
                 is_state=True,
-            )
+            ), None, None
         if (
             direction == "REV"
             and _frame_packet_tag(direction, raw) == 0
             and message_id == 0x0027
         ):
             result = _parse_direct_action_response(frame)
-            if result is None or not _valid_session_id(self._current_session_id):
-                return None
+            if result is None:
+                return (
+                    None,
+                    "rev_tool_parse_failed",
+                    self._ignored_frame_sample(
+                        row,
+                        direction=direction,
+                        raw=raw,
+                        message_id=message_id,
+                    ),
+                )
+            if not _valid_session_id(self._current_session_id):
+                return (
+                    None,
+                    "rev_tool_no_active_session",
+                    self._ignored_frame_sample(
+                        row,
+                        direction=direction,
+                        raw=raw,
+                        message_id=message_id,
+                    ),
+                )
             return GameFrame(
                 template_row=row,
                 raw=raw,
@@ -440,10 +695,26 @@ class GameFrameGate:
                 message_id=message_id,
                 session_id=self._current_session_id or "",
                 is_state=True,
-            )
-        return None
+            ), None, None
+        return (
+            None,
+            "rev_not_game_frame",
+            self._ignored_frame_sample(
+                row,
+                direction=direction,
+                raw=raw,
+                message_id=message_id,
+            ),
+        )
 
     def _should_emit(self, frame: GameFrame) -> tuple[bool, bool]:
+        if frame.is_status:
+            reset = (
+                self._current_session_id is not None
+                and self._current_session_id != frame.session_id
+            )
+            self._current_session_id = frame.session_id
+            return True, reset
         if frame.is_state:
             reset = (
                 self._current_session_id is not None
@@ -453,6 +724,9 @@ class GameFrameGate:
             return True, reset
         if self._current_session_id == frame.session_id:
             return True, False
+        if self._current_session_id is not None and frame.message_id == 0x0022:
+            self._current_session_id = frame.session_id
+            return True, True
         return False, False
 
     def _row_from_game_frame(self, frame: GameFrame) -> dict[str, Any]:
@@ -465,6 +739,10 @@ class GameFrameGate:
         row["SessionID"] = frame.session_id
         self._next_sort_id += 1
         return row
+
+
+def _should_schedule_monitor_process(row: Mapping[str, Any]) -> bool:
+    return row.get("Direct") == "REV" and row.get("MessageID") != "0x0077"
 
 
 def _default_filter(server_ports: list[int], *, broad: bool) -> str:
@@ -488,6 +766,8 @@ def _write_source_status(
     raw_packets: int = 0,
     ignored_frames: int = 0,
     dropped_bytes: int = 0,
+    ignored_reasons: Mapping[str, int] | None = None,
+    ignored_samples: Iterable[Mapping[str, Any]] | None = None,
     active_session_id: str | None = None,
 ) -> None:
     path = log_dir / "capture_source_status.json"
@@ -504,6 +784,10 @@ def _write_source_status(
         "raw_packets": raw_packets,
         "ignored_frames": ignored_frames,
         "dropped_bytes": dropped_bytes,
+        "ignored_reasons": dict(ignored_reasons or ()),
+        "ignored_samples": [
+            dict(sample) for sample in (ignored_samples or ())
+        ],
         "active_session_id": active_session_id,
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -541,12 +825,36 @@ def main() -> int:
         help="Also keep BidKing.exe loopback flows. Off by default because local control flows are not game frames.",
     )
     parser.add_argument("--status-seconds", type=float, default=2.0)
-    parser.add_argument("--debounce-seconds", type=float, default=0.7)
-    parser.add_argument("--min-inference-interval-seconds", type=float, default=1.0)
+    parser.add_argument("--debounce-seconds", type=float, default=1.0)
+    parser.add_argument("--min-inference-interval-seconds", type=float, default=2.0)
     parser.add_argument("--n-trials", type=int, default=500)
     parser.add_argument("--roi-trials", type=int, default=250)
     parser.add_argument("--shadow-trials", type=int, default=None)
-    parser.add_argument("--skip-debug-shadows", action="store_true")
+    parser.add_argument(
+        "--full-shadow-trials",
+        type=int,
+        default=20,
+        help="Shadow trials for full/archive snapshots (fast uses 1).",
+    )
+    parser.add_argument(
+        "--skip-debug-shadows",
+        action="store_true",
+        help="Skip profile_b5 debug shadow (default unless --enable-debug-shadows).",
+    )
+    parser.add_argument(
+        "--fast-n-trials",
+        type=int,
+        default=10,
+        help=(
+            "Trials for non-force live snapshots. Use 0 to disable fast "
+            "snapshots and run full inference on every update."
+        ),
+    )
+    parser.add_argument(
+        "--enable-debug-shadows",
+        action="store_true",
+        help="Run profile_b5 debug shadow during live inference (off by default).",
+    )
     parser.add_argument("--seed", type=int, default=20260530)
     parser.add_argument("--no-lock", action="store_true")
     parser.add_argument("--verbose", action="store_true")
@@ -589,10 +897,13 @@ def main() -> int:
             n_trials=args.n_trials,
             roi_trials=args.roi_trials,
             shadow_trials=args.shadow_trials,
-            run_debug_shadows=not args.skip_debug_shadows,
+            full_shadow_trials=max(1, int(args.full_shadow_trials)),
+            run_debug_shadows=bool(args.enable_debug_shadows)
+            and not args.skip_debug_shadows,
             seed=args.seed,
             debounce_seconds=args.debounce_seconds,
             min_inference_interval_seconds=args.min_inference_interval_seconds,
+            fast_n_trials=args.fast_n_trials if args.fast_n_trials > 0 else None,
             file_name="windivert_live.json",
             source_name="windivert",
             packet_count_key="windivert_frames",
@@ -622,8 +933,10 @@ def main() -> int:
         ignored_frames=0,
         dropped_bytes=0,
         active_session_id=None,
+        ignored_samples=(),
     )
     print(f"[listen] Python: {sys.executable}", flush=True)
+    print(f"[listen] process_elevated={_process_is_elevated()}", flush=True)
     print(f"[listen] WinDivert filter: {filter_text}", flush=True)
     print(
         f"[listen] process={args.process_name} active_flows={flow_index.active_flow_count()} "
@@ -635,6 +948,8 @@ def main() -> int:
     sniffed_packets = 0
     raw_packets = 0
     last_status = 0.0
+    last_flow_signature: tuple[FlowKey, ...] = ()
+    last_parse_warn = 0.0
     try:
         with pydivert.WinDivert(filter_text, flags=sniff_flag) as handle:
             for packet in handle:
@@ -652,7 +967,12 @@ def main() -> int:
                     if emitted.reset_session:
                         monitor.reset_rows()
                     for game_row in emitted.rows:
-                        monitor.accept_row(game_row)
+                        monitor.accept_row(
+                            game_row,
+                            schedule_process=_should_schedule_monitor_process(
+                                game_row
+                            ),
+                        )
                         accepted += 1
                     if args.verbose:
                         print(
@@ -663,6 +983,31 @@ def main() -> int:
                         )
                 if now - last_status >= args.status_seconds:
                     active = flow_index.active_flow_count()
+                    flow_signature = flow_index.flow_signature()
+                    if flow_signature and flow_signature != last_flow_signature:
+                        frame_gate.reset_stream_buffers(
+                            keep_flow_keys=flow_signature,
+                            clear_session=False,
+                        )
+                        last_flow_signature = flow_signature
+                        print(
+                            f"[listen] bid flow changed ({active} active); "
+                            "prune stale frame buffers, keep active session",
+                            flush=True,
+                        )
+                    elif (
+                        accepted == 0
+                        and raw_packets >= 80
+                        and frame_gate.ignored_frames >= 40
+                        and now - last_parse_warn >= 15.0
+                    ):
+                        frame_gate.reset_stream_buffers(clear_session=True)
+                        last_parse_warn = now
+                        print(
+                            "[warn] raw packets seen but no game frames parsed; "
+                            f"reset buffers ignored={frame_gate.ignored_reasons_dict()}",
+                            flush=True,
+                        )
                     _write_source_status(
                         log_dir,
                         process_name=args.process_name,
@@ -673,6 +1018,8 @@ def main() -> int:
                         raw_packets=raw_packets,
                         ignored_frames=frame_gate.ignored_frames,
                         dropped_bytes=frame_gate.dropped_bytes,
+                        ignored_reasons=frame_gate.ignored_reasons_dict(),
+                        ignored_samples=frame_gate.ignored_samples_dict(),
                         active_session_id=frame_gate.active_session_id,
                     )
                     if args.verbose:
@@ -684,10 +1031,19 @@ def main() -> int:
     except KeyboardInterrupt:
         print("[stop] interrupted", flush=True)
     except PermissionError:
+        elevated = _process_is_elevated()
         print(
-            "[error] WinDivert capture requires an elevated PowerShell/admin process.",
+            "[error] WinDivert capture requires an elevated PowerShell/admin process. "
+            f"process_elevated={elevated}",
             file=sys.stderr,
         )
+        if elevated:
+            print(
+                "[error] Process is elevated but WinDivert still denied. "
+                "Try: python -m pip install -U pydivert ; reboot ; "
+                "disable other packet capture tools.",
+                file=sys.stderr,
+            )
         return 2
     finally:
         monitor.stop()

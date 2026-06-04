@@ -54,8 +54,34 @@ from bidking_lab.inference.quality_priors import (
     value_consistency_score,
 )
 
-HeroMode = Literal["aisha", "ethan"]
-"""Which hero the player has equipped; controls which fields are required."""
+HeroMode = Literal[
+    "fatima",
+    "chenmei",
+    "aisha",
+    "gabriela",
+    "tatiana",
+    "naomi",
+    "sophie",
+    "maria",
+    "helena",
+    "isabella",
+    "george",
+    "carlos",
+    "leonard",
+    "ahmed",
+    "ivan",
+    "takeda",
+    "wuqilin",
+    "ethan",
+    "victor",
+    "raven",
+]
+"""Which hero the player has equipped.
+
+Only a subset has dedicated skill semantics today. Unsupported modes still use
+the generic live inference path so packet sessions do not collapse to
+``hero=?`` while their per-hero evidence is being modeled.
+"""
 
 HugeBand = Literal["none", "1", "2-3", "4+"]
 """Discrete buckets the UI offers for huge-item count input.
@@ -156,10 +182,97 @@ AISHA_DEFAULT_LOADOUT: tuple[str, ...] = (
     "总仓储空间",
 )
 
+# 2026-06-04 live prior: deduped raw sessions show the highest recurring
+# utility/config choices are 抽检2、宝光四鉴、抽检1、良品扫描、普品扫描,
+# with 极品扫描/优品估价 as the common high-value complements. These loadouts
+# are recommendation defaults only; unsupported hero skills still need their
+# own inference fields before they become hard model evidence.
+FREQUENCY_PRIOR_LOADOUT: tuple[str, ...] = (
+    "随机抽检(2)",
+    "宝光四鉴",
+    "随机抽检(1)",
+    "良品扫描",
+    "普品扫描",
+)
+
+GENERIC_DEFAULT_LOADOUT: tuple[str, ...] = (
+    "随机抽检(2)",
+    "宝光四鉴",
+    "随机抽检(1)",
+    "良品扫描",
+    "极品扫描",
+)
+
+GABRIELA_DEFAULT_LOADOUT: tuple[str, ...] = (
+    "宝光四鉴",
+    "随机抽检(2)",
+    "随机抽检(1)",
+    "良品扫描",
+    "巨物抽样",
+)
+
+QUALITY_ONLY_DEFAULT_LOADOUT: tuple[str, ...] = (
+    "宝光四鉴",
+    "随机抽检(2)",
+    "良品扫描",
+    "至宝寻踪",
+    "巨物标识",
+)
+
+MARIA_DEFAULT_LOADOUT: tuple[str, ...] = (
+    "宝光四鉴",
+    "随机抽检(2)",
+    "良品扫描",
+    "至宝寻踪",
+    "极品扫描",
+)
+
+AHMED_DEFAULT_LOADOUT: tuple[str, ...] = (
+    "良品存量",
+    "普品扫描",
+    "普品均格",
+    "优品均格",
+    "极品扫描",
+)
+
+VICTOR_DEFAULT_LOADOUT: tuple[str, ...] = (
+    "随机抽检(2)",
+    "优品扫描",
+    "优品均格",
+    "极品扫描",
+    "极品均格",
+)
+
+RAVEN_DEFAULT_LOADOUT: tuple[str, ...] = (
+    "宝光四鉴",
+    "随机抽检(2)",
+    "随机抽检(1)",
+    "良品扫描",
+    "至宝寻踪",
+)
+
 # Catalogue keyed by hero mode for UI defaults / Phase 2 contrast MC.
 STANDARD_LOADOUTS: dict[HeroMode, tuple[str, ...]] = {
-    "ethan": ETHAN_DEFAULT_LOADOUT,
+    "fatima": GENERIC_DEFAULT_LOADOUT,
+    "chenmei": GENERIC_DEFAULT_LOADOUT,
     "aisha": AISHA_DEFAULT_LOADOUT,
+    "gabriela": GABRIELA_DEFAULT_LOADOUT,
+    "tatiana": GENERIC_DEFAULT_LOADOUT,
+    "naomi": GENERIC_DEFAULT_LOADOUT,
+    "sophie": QUALITY_ONLY_DEFAULT_LOADOUT,
+    "maria": MARIA_DEFAULT_LOADOUT,
+    "helena": GENERIC_DEFAULT_LOADOUT,
+    "isabella": GENERIC_DEFAULT_LOADOUT,
+    "george": GENERIC_DEFAULT_LOADOUT,
+    "carlos": GENERIC_DEFAULT_LOADOUT,
+    "leonard": GENERIC_DEFAULT_LOADOUT,
+    "ahmed": AHMED_DEFAULT_LOADOUT,
+    "ivan": GENERIC_DEFAULT_LOADOUT,
+    "takeda": GENERIC_DEFAULT_LOADOUT,
+    "wuqilin": GENERIC_DEFAULT_LOADOUT,
+    "ethan": ETHAN_DEFAULT_LOADOUT,
+    "victor": VICTOR_DEFAULT_LOADOUT,
+    "raven": RAVEN_DEFAULT_LOADOUT,
 }
 
 # --- Battle-item silver prices, used by Phase 2 tool-ROI math ---
@@ -1164,6 +1277,14 @@ __all__ = (
     "ETHAN_DEFAULT_LOADOUT",
     "ETHAN_ALT_LOADOUT",
     "AISHA_DEFAULT_LOADOUT",
+    "FREQUENCY_PRIOR_LOADOUT",
+    "GABRIELA_DEFAULT_LOADOUT",
+    "GENERIC_DEFAULT_LOADOUT",
+    "QUALITY_ONLY_DEFAULT_LOADOUT",
+    "MARIA_DEFAULT_LOADOUT",
+    "AHMED_DEFAULT_LOADOUT",
+    "VICTOR_DEFAULT_LOADOUT",
+    "RAVEN_DEFAULT_LOADOUT",
     "STANDARD_LOADOUTS",
     "TOOL_PRICE_BY_RARITY",
     "TOOL_PRICE_OVERRIDES",

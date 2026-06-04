@@ -13,6 +13,15 @@ python -m pip install -e ".[packet]"
 .\scripts\start_live_windivert_overlay.ps1 -Restart
 ```
 
+默认已是**低影响模式**：端口 `10000` 过滤（非 broad sniff）、不含 loopback、局内 fast
+`10 trials` / 间隔 `≥2s` / debounce `1s`、跳过 `profile_b5` debug shadow、局末 full
+`500 trials` 且 `roi=0` / `shadow=20`。抓包行增量写入 `raw/windivert_live.jsonl`，只在
+局末归档时写整份 `windivert_live.json`。VPN/UU 抓不到包时再试：
+
+```powershell
+.\scripts\start_live_windivert_overlay.ps1 -Restart -BroadSniff -IncludeLoopback
+```
+
 combined 启动脚本默认把监听进程绑定到 overlay 生命周期：关闭 overlay 窗口会停止本次启动的
 monitor，并清理 `data/logs/live/monitor.lock`。如果希望关闭 UI 后仍继续后台收数，启动时显式加：
 
@@ -24,16 +33,20 @@ monitor，并清理 `data/logs/live/monitor.lock`。如果希望关闭 UI 后仍
 `start_live_monitor_overlay.ps1` / `start_live_webhook_overlay.ps1` 默认随 overlay 退出停止 monitor，
 需要后台常驻时同样传 `-KeepMonitorOnOverlayClose`。
 
-`start_live_windivert_overlay.ps1` 默认使用 WinDivert sniff 模式抓取本机 TCP payload，
-再用 Windows TCP 连接表只保留归属于 `BidKing.exe` 的流量。默认是
-`broad-sniff + process-match`，并包含 `BidKing.exe` 的 loopback flow，适合 VPN / TUN / UU /
-system proxy 导致真实端口未知或走本地代理的场景。如果 loopback 噪声过多，可加
-`-ExcludeLoopback` 回到只看非回环流量。
-如果确认游戏直连服务器端口 `10000`，可用更轻的端口过滤模式：
+`start_live_windivert_overlay.ps1` 默认使用 **port-filter**（仅 `tcp` 端口 `10000`），
+再用 Windows TCP 连接表只保留归属于 `BidKing.exe` 的流量；**默认不含 loopback**。
+VPN / TUN / UU / 本地代理导致抓不到包时，改用 broad + loopback：
 
 ```powershell
-.\scripts\start_live_windivert_overlay.ps1 -Restart -PortOnly
+.\scripts\start_live_windivert_overlay.ps1 -Restart -BroadSniff -IncludeLoopback
 ```
+
+`-PortOnly` 仍可用（与默认等价，保留兼容）。
+
+若悬浮窗**几秒后自动关闭**，先看 `data/logs/live/monitor.stderr.log` 是否含
+`WinDivert capture requires an elevated PowerShell/admin`：这是 **monitor 因无管理员权限退出**，
+旧版 overlay 会跟着关；新版会提示「监听进程已退出」或启动脚本直接报错而不开 overlay。
+**必须用管理员 PowerShell** 运行启动脚本（脚本会自动 UAC 提权；请在弹出的管理员窗口里完成启动）。
 
 WinDivert 通常需要管理员 PowerShell。若 `monitor.stderr.log` 提示缺 `pydivert`，先运行上面的
 `python -m pip install -e ".[packet]"` 或 `python -m pip install pydivert`。
@@ -407,8 +420,11 @@ no-pool-match 数量和最有代表性的样本文件。
 - `calibration_decision_value_mae`：只统计中后期有效局的决策价值误差。
 
 `random_sample_avg_values` 会保留“随机 3/6/9/12 件藏品平均价值”这类 public info；
-它们当前不作为全库均价或品质桶均价硬过滤。低于 `20000` 的随机均价仍保留在日志中，
-但会从 q6 evidence-profile 路由降为低信号，避免几千银币的噪音让沉船 shadow gate 绕路。
+它们当前不作为全库均价或品质桶均价硬过滤。高于 `20000` 的随机均价会以
+`0.95 × N × avg` 作为全仓总值下界参与 v2 全局评分：若当前采样里通过下界的样本达到最少有效样本数，
+则按 hard floor 筛选；否则按 `0.10` 权重 soft penalty 降级，避免 live fast 的 10-trial 后验饿死。
+低于 `20000` 的随机均价仍保留在日志中，但会从 q6 evidence-profile / value-floor 路由降为低信号，
+避免几千银币的噪音让沉船 shadow gate 绕路。
 `200036` 已作为紫色品质藏品平均价值的 soft target 接入，不做硬过滤。
 
 ## 看结果时重点关注

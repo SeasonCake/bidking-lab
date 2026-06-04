@@ -1,14 +1,19 @@
 param(
   [string]$LogDir = "data\logs\live",
   [string]$ProcessName = "BidKing.exe",
-  [string]$PythonPath = "",
+  [string]$PythonPath = "C:\Python313\python.exe",
   [int[]]$ServerPort = @(10000),
   [int]$NTrials = 500,
-  [int]$RoiTrials = 250,
-  [double]$DebounceSeconds = 0.7,
-  [double]$MinInferenceIntervalSeconds = 1.0,
+  [int]$RoiTrials = 0,
+  [int]$FullShadowTrials = 20,
+  [int]$FastNTrials = 10,
+  [double]$DebounceSeconds = 1.0,
+  [double]$MinInferenceIntervalSeconds = 2.0,
+  [switch]$BroadSniff,
   [switch]$PortOnly,
+  [switch]$IncludeLoopback,
   [switch]$ExcludeLoopback,
+  [switch]$EnableDebugShadows,
   [switch]$KeepMonitorOnOverlayClose,
   [switch]$NoAutoElevate,
   [switch]$Restart
@@ -24,6 +29,13 @@ $MonitorOut = Join-Path $LogPath "monitor.stdout.log"
 $MonitorErr = Join-Path $LogPath "monitor.stderr.log"
 $OverlayOut = Join-Path $LogPath "overlay.stdout.log"
 $OverlayErr = Join-Path $LogPath "overlay.stderr.log"
+
+# Default: port-filter capture (low CPU). Use -BroadSniff for VPN/TUN/proxy diagnosis.
+$UseBroadSniff = [bool]$BroadSniff
+if ($PortOnly) {
+  $UseBroadSniff = $false
+}
+$UseLoopback = [bool]$IncludeLoopback -and -not $ExcludeLoopback
 
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
   [Security.Principal.WindowsBuiltinRole]::Administrator
@@ -57,6 +69,8 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
     "-ProcessName", $ProcessName,
     "-NTrials", "$NTrials",
     "-RoiTrials", "$RoiTrials",
+    "-FullShadowTrials", "$FullShadowTrials",
+    "-FastNTrials", "$FastNTrials",
     "-DebounceSeconds", "$DebounceSeconds",
     "-MinInferenceIntervalSeconds", "$MinInferenceIntervalSeconds",
     "-NoAutoElevate"
@@ -67,11 +81,14 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
   foreach ($PortValue in $ServerPort) {
     $ElevatedArgs += @("-ServerPort", "$PortValue")
   }
-  if ($PortOnly) {
-    $ElevatedArgs += "-PortOnly"
+  if ($UseBroadSniff) {
+    $ElevatedArgs += "-BroadSniff"
   }
-  if ($ExcludeLoopback) {
-    $ElevatedArgs += "-ExcludeLoopback"
+  if ($UseLoopback) {
+    $ElevatedArgs += "-IncludeLoopback"
+  }
+  if ($EnableDebugShadows) {
+    $ElevatedArgs += "-EnableDebugShadows"
   }
   if ($KeepMonitorOnOverlayClose) {
     $ElevatedArgs += "-KeepMonitorOnOverlayClose"
@@ -80,18 +97,9 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
     $ElevatedArgs += "-Restart"
   }
   $PowerShellPath = Get-CurrentPowerShellPath
-  Start-Process -FilePath $PowerShellPath -Verb RunAs -WorkingDirectory $Repo -ArgumentList $ElevatedArgs
-  Write-Host "WinDivert requires Administrator. Relaunched an elevated PowerShell for live monitor." -ForegroundColor Yellow
+  Start-Process -FilePath $PowerShellPath -Verb RunAs -WindowStyle Hidden -WorkingDirectory $Repo -ArgumentList $ElevatedArgs
+  Write-Host "WinDivert requires Administrator. Relaunched an elevated hidden PowerShell for live monitor." -ForegroundColor Yellow
   return
-}
-
-function Test-PythonModules {
-  param([string]$Candidate)
-  if (-not $Candidate -or -not (Test-Path $Candidate)) {
-    return $false
-  }
-  & $Candidate -c "import pydivert, psutil" *> $null
-  return $LASTEXITCODE -eq 0
 }
 
 function Get-ProcessIdValue {
@@ -108,50 +116,38 @@ function Get-ProcessIdValue {
   return $null
 }
 
-function Resolve-MonitorPython {
-  param([string]$ExplicitPython)
-  $Candidates = New-Object System.Collections.Generic.List[string]
-  if ($ExplicitPython) {
-    $Candidates.Add($ExplicitPython)
+function Get-LockProcessIdValue {
+  param([string]$Path)
+  if (-not (Test-Path $Path)) {
+    return $null
   }
-  $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
-  if ($PythonCommand) {
-    $Candidates.Add($PythonCommand.Source)
-  }
-  $PyCommand = Get-Command py -ErrorAction SilentlyContinue
-  if ($PyCommand) {
-    $PyOutput = & $PyCommand.Source -0p 2>$null
-    foreach ($Line in $PyOutput) {
-      if ($Line -match '([A-Z]:\\.*python\.exe)') {
-        $Candidates.Add($Matches[1])
-      }
+  try {
+    $Payload = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    if ($Payload.pid) {
+      return [int]$Payload.pid
     }
+  } catch {
   }
-  $Candidates.Add("C:\Users\shenc\anaconda3\python.exe")
-  $Candidates.Add("C:\Python313\python.exe")
-  $Seen = @{}
-  foreach ($Candidate in $Candidates) {
-    if (-not $Candidate -or $Seen.ContainsKey($Candidate)) {
-      continue
-    }
-    $Seen[$Candidate] = $true
-    if (Test-PythonModules $Candidate) {
-      return $Candidate
-    }
-  }
-  if ($ExplicitPython) {
-    return $ExplicitPython
-  }
-  if ($PythonCommand) {
-    return $PythonCommand.Source
-  }
-  throw "python not found"
+  return $null
 }
 
-$Python = Resolve-MonitorPython $PythonPath
-$PythonwCandidate = Join-Path (Split-Path -Parent $Python) "pythonw.exe"
-$PythonWindowed = if (Test-Path $PythonwCandidate) { $PythonwCandidate } else { $Python }
-$HasPacketDeps = Test-PythonModules $Python
+function Test-ProcessIdRunning {
+  param($ProcessId)
+  if (-not $ProcessId) {
+    return $false
+  }
+  try {
+    $null = Get-Process -Id ([int]$ProcessId) -ErrorAction Stop
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+. (Join-Path $Repo "scripts\resolve_python.ps1")
+$Python = Resolve-BidKingPython -ExplicitPython $PythonPath -RequirePacket
+$PythonWindowed = Resolve-BidKingPythonw -PythonExe $Python
+$HasPacketDeps = Test-BidKingPython -Candidate $Python -RequirePacket
 
 $MonitorArgs = @(
   $Monitor,
@@ -159,17 +155,22 @@ $MonitorArgs = @(
   "--process-name", $ProcessName,
   "--n-trials", "$NTrials",
   "--roi-trials", "$RoiTrials",
+  "--full-shadow-trials", "$FullShadowTrials",
+  "--fast-n-trials", "$FastNTrials",
   "--debounce-seconds", "$DebounceSeconds",
   "--min-inference-interval-seconds", "$MinInferenceIntervalSeconds"
 )
 foreach ($PortValue in $ServerPort) {
   $MonitorArgs += @("--server-port", "$PortValue")
 }
-if (-not $PortOnly) {
+if ($UseBroadSniff) {
   $MonitorArgs += "--broad"
 }
-if (-not $ExcludeLoopback) {
+if ($UseLoopback) {
   $MonitorArgs += "--include-loopback"
+}
+if (-not $EnableDebugShadows) {
+  $MonitorArgs += "--skip-debug-shadows"
 }
 
 New-Item -ItemType Directory -Path $LogPath -Force | Out-Null
@@ -199,6 +200,10 @@ if ($Restart) {
   foreach ($Process in @($MonitorProcesses + $OverlayProcesses)) {
     Stop-Process -Id $Process.ProcessId -Force
   }
+  $LockPid = Get-LockProcessIdValue -Path $LockPath
+  if ($LockPid -and (Test-ProcessIdRunning -ProcessId $LockPid)) {
+    Stop-Process -Id $LockPid -Force -ErrorAction SilentlyContinue
+  }
   $MonitorProcesses = @()
   $OverlayProcesses = @()
   if (Test-Path $LockPath) {
@@ -206,40 +211,169 @@ if ($Restart) {
   }
 }
 
-if ((Test-Path $LockPath) -and -not $MonitorProcesses) {
+$ExistingMonitorPidFromLock = $null
+if (-not $MonitorProcesses) {
+  $LockPid = Get-LockProcessIdValue -Path $LockPath
+  if ($LockPid -and (Test-ProcessIdRunning -ProcessId $LockPid)) {
+    $ExistingMonitorPidFromLock = $LockPid
+  }
+}
+
+if ((Test-Path $LockPath) -and -not $MonitorProcesses -and -not $ExistingMonitorPidFromLock) {
   Remove-Item -LiteralPath $LockPath -Force
 }
 
 $StartedMonitor = $null
-if (-not $MonitorProcesses) {
-  $StartedMonitor = Start-Process -FilePath $Python -WorkingDirectory $Repo -WindowStyle Hidden -PassThru -ArgumentList @(
-    $MonitorArgs
-  ) -RedirectStandardOutput $MonitorOut -RedirectStandardError $MonitorErr
-} else {
+$StartedOverlay = $null
+if (-not $MonitorProcesses -and -not $ExistingMonitorPidFromLock) {
+  "" | Set-Content -Path $MonitorOut -Encoding utf8
+  "" | Set-Content -Path $MonitorErr -Encoding utf8
+  $MonitorStartParams = @{
+    FilePath = $Python
+    WorkingDirectory = $Repo
+    WindowStyle = "Hidden"
+    PassThru = $true
+    ArgumentList = $MonitorArgs
+    RedirectStandardOutput = $MonitorOut
+    RedirectStandardError = $MonitorErr
+  }
+  if (-not $IsAdmin) {
+    $MonitorStartParams["Verb"] = "RunAs"
+  }
+  $StartedMonitor = Start-Process @MonitorStartParams
+} elseif ($MonitorProcesses) {
   $StartedMonitor = $MonitorProcesses[0]
 }
 $StartedMonitorPid = Get-ProcessIdValue $StartedMonitor
+if (-not $StartedMonitorPid -and $ExistingMonitorPidFromLock) {
+  $StartedMonitorPid = $ExistingMonitorPidFromLock
+}
+
+function Get-MonitorStderrTail {
+  param([string]$StderrLog)
+  if (-not (Test-Path $StderrLog)) {
+    return ""
+  }
+  return (Get-Content $StderrLog -Tail 40 -ErrorAction SilentlyContinue | Out-String)
+}
+
+function Test-MonitorStartupHealthy {
+  param(
+    $Process,
+    [string]$StderrLog,
+    [double]$WaitSeconds = 2.5
+  )
+  Start-Sleep -Seconds $WaitSeconds
+  $StderrText = Get-MonitorStderrTail -StderrLog $StderrLog
+  if ($StderrText -match "elevated PowerShell/admin") {
+    return @{
+      Ok = $false
+      Reason = "windivert_requires_admin"
+      Stderr = $StderrText
+    }
+  }
+  if ($StderrText -match "\[error\]") {
+    return @{
+      Ok = $false
+      Reason = "monitor_reported_error"
+      Stderr = $StderrText
+    }
+  }
+  $PidValue = Get-ProcessIdValue $Process
+  if (-not $PidValue) {
+    return @{
+      Ok = $false
+      Reason = "monitor_process_exited"
+      Stderr = $StderrText
+    }
+  }
+  try {
+    $null = Get-Process -Id $PidValue -ErrorAction Stop
+  } catch {
+    return @{
+      Ok = $false
+      Reason = "monitor_process_exited"
+      Stderr = $StderrText
+    }
+  }
+  return @{ Ok = $true; Reason = "ok"; Pid = $PidValue; Stderr = $StderrText }
+}
+
+$MonitorHealth = @{ Ok = $true }
+if ($StartedMonitor -and -not $MonitorProcesses) {
+  $MonitorHealth = Test-MonitorStartupHealthy -Process $StartedMonitor -StderrLog $MonitorErr
+  if (-not $MonitorHealth.Ok) {
+    $DeadPid = Get-ProcessIdValue $StartedMonitor
+    if ($DeadPid) {
+      Stop-Process -Id $DeadPid -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $LockPath) {
+      Remove-Item -LiteralPath $LockPath -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host ""
+    Write-Host "Monitor failed to stay running." -ForegroundColor Red
+    if ($MonitorHealth.Reason -eq "windivert_requires_admin") {
+      Write-Host "WinDivert still sees a non-elevated Python process." -ForegroundColor Red
+      Write-Host "Even in Admin PowerShell, the hidden monitor child may need a fresh UAC grant." -ForegroundColor Yellow
+      Write-Host "Try in THIS admin window with the SAME Python as monitor:" -ForegroundColor Yellow
+      Write-Host "  & `"$Python`" scripts\diagnose_windivert.py" -ForegroundColor Yellow
+      Write-Host "If diagnose shows elevated=False, close all terminals and open a new" -ForegroundColor Yellow
+      Write-Host "PowerShell via right-click -> Run as administrator, then -Restart again." -ForegroundColor Yellow
+    } else {
+      Write-Host "Check: $MonitorErr" -ForegroundColor Yellow
+    }
+    if ($MonitorHealth.Stderr) {
+      Write-Host ""
+      Write-Host "monitor.stderr.log (tail):" -ForegroundColor DarkYellow
+      Write-Host $MonitorHealth.Stderr
+    }
+    Write-Host "Overlay was not started because the monitor exited immediately." -ForegroundColor Yellow
+    exit 1
+  }
+  $StartedMonitorPid = $MonitorHealth.Pid
+}
 
 if (-not $OverlayProcesses) {
   $OverlayArgs = @(
     $Overlay,
     "--snapshot", (Join-Path $LogPath "latest_snapshot.json")
   )
+  if ($StartedMonitorPid -and -not $KeepMonitorOnOverlayClose) {
+    $OverlayArgs += @(
+      "--exit-when-pid-exits", "$StartedMonitorPid"
+    )
+  }
   if (-not $KeepMonitorOnOverlayClose -and $StartedMonitorPid) {
     $OverlayArgs += @(
       "--stop-pid-on-exit", "$StartedMonitorPid",
       "--cleanup-lock-on-exit", $LockPath
     )
   }
-  Start-Process -FilePath $PythonWindowed -WorkingDirectory $Repo -ArgumentList $OverlayArgs -RedirectStandardOutput $OverlayOut -RedirectStandardError $OverlayErr
+  # Do not redirect pythonw stdout/stderr: it can prevent the Tk window from starting.
+  $StartedOverlay = Start-Process -FilePath $PythonWindowed -WorkingDirectory $Repo -ArgumentList $OverlayArgs -PassThru
+  $OverlayPidPath = Join-Path $LogPath "overlay.pid"
+  if ($StartedOverlay -and $StartedOverlay.Id) {
+    Set-Content -Path $OverlayPidPath -Value "$($StartedOverlay.Id)" -Encoding ascii
+  }
 }
 
 Write-Host "BidKing WinDivert live monitor started." -ForegroundColor Green
 Write-Host "LogDir:     $LogPath"
+Write-Host "Python:     $Python  (monitor uses this interpreter, not plain 'python' on PATH)"
+$DriverPath = & $Python -c "import pydivert; from pathlib import Path; print((Path(pydivert.__file__).parent/'windivert_dll'/'WinDivert64.sys').resolve())" 2>$null
+if ($DriverPath) {
+  Write-Host "WinDivert:  $DriverPath"
+  if ($DriverPath -match 'anaconda3') {
+    Write-Host "Warning: WinDivert driver is from Anaconda. Pass -PythonPath C:\Python313\python.exe" -ForegroundColor Yellow
+  }
+}
+Write-Host "Verify:     & `"$Python`" scripts\diagnose_windivert.py"
 Write-Host "Process:    $ProcessName"
-Write-Host "Mode:       $(if ($PortOnly) { 'port-filter' } else { 'broad-sniff + process-match' })"
-Write-Host "Loopback:   $(if ($ExcludeLoopback) { 'excluded' } else { 'included' })"
+Write-Host "Mode:       $(if ($UseBroadSniff) { 'broad-sniff + process-match' } else { 'port-filter (default)' })"
+Write-Host "Loopback:   $(if ($UseLoopback) { 'included (-IncludeLoopback)' } else { 'excluded (use -IncludeLoopback for VPN/UU)' })"
 Write-Host "ServerPort: $($ServerPort -join ',')"
+Write-Host "Inference:  live-fast $FastNTrials trials every >=${MinInferenceIntervalSeconds}s; full $NTrials trials on stop (roi=$RoiTrials, shadow=$FullShadowTrials)"
+Write-Host "DebugShadow:$(if ($EnableDebugShadows) { 'enabled' } else { 'skipped (low-impact default)' })"
 Write-Host "Python:     $Python"
 if (-not $IsAdmin) {
   Write-Host "Warning: WinDivert usually requires an elevated/admin PowerShell." -ForegroundColor Yellow
@@ -251,10 +385,17 @@ if (-not $HasPacketDeps) {
 Write-Host "If monitor.stderr.log says pydivert is missing, run: `"$Python`" -m pip install pydivert"
 if ($MonitorProcesses) {
   Write-Host "Monitor:    already running (PID $($MonitorProcesses[0].ProcessId))"
+} elseif ($ExistingMonitorPidFromLock) {
+  Write-Host "Monitor:    already running from lock (PID $ExistingMonitorPidFromLock)"
 }
 if ($OverlayProcesses) {
   Write-Host "Overlay:    already running (PID $($OverlayProcesses[0].ProcessId))"
+} elseif ($StartedOverlay -and $StartedOverlay.Id) {
+  Write-Host "Overlay:    started (PID $($StartedOverlay.Id))"
 }
 if (-not $KeepMonitorOnOverlayClose -and $StartedMonitorPid) {
   Write-Host "Lifecycle:  closing overlay will stop monitor PID $StartedMonitorPid"
+}
+if ($UseBroadSniff) {
+  Write-Host "Tip: drop -BroadSniff for lower CPU when the game uses port 10000 directly." -ForegroundColor DarkYellow
 }

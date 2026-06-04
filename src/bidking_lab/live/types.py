@@ -158,6 +158,7 @@ class GridItemObservation:
     cells: int
     source: ObservationSource
     confidence: SourceConfidence
+    runtime_id: int | None = None
     item_id: int | None = None
     quality: int | None = None
     shape_key: str | None = None

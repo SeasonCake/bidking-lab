@@ -12,7 +12,7 @@ def _summary(p10: int = 100_000, p50: int = 200_000, p90: int = 400_000):
     return SimpleNamespace(p10=p10, p50=p50, p90=p90)
 
 
-def test_low_information_round_one_keeps_stop_at_fair_value() -> None:
+def test_low_information_round_one_uses_round_multiplier() -> None:
     report = recommend_bid_strategy(
         latest_bids={"me": 120_000, "npc": 180_000},
         value_summary=_summary(),
@@ -25,10 +25,14 @@ def test_low_information_round_one_keeps_stop_at_fair_value() -> None:
 
     assert report is not None
     assert report.info_strength == "低"
-    assert report.thresholds.defend_bid == 140_000
-    assert report.thresholds.attack_bid == 180_000
+    assert report.thresholds.warehouse_multiplier == 2.0
+    assert report.thresholds.probe_bid == 50_000
+    assert report.thresholds.defend_bid == 115_000
+    assert report.thresholds.attack_bid == 200_000
     assert report.thresholds.stop_bid == 200_000
+    assert "轻微成交溢价" in report.rationale
     assert report.action == "保守探价，不主动追高"
+    assert "估值÷倍率" in report.rationale
     assert "仓储未知" in report.rationale
     assert "宝光四鉴" in report.next_info_hint
     assert "抽检二" in report.next_info_hint
@@ -58,8 +62,11 @@ def test_medium_information_uses_p90_as_stop_not_overpay() -> None:
 
     assert report is not None
     assert report.info_strength == "中"
-    assert report.thresholds.stop_bid == 400_000
-    assert report.risk_band == "进攻区"
+    assert report.thresholds.warehouse_multiplier == 1.6
+    assert report.thresholds.defend_bid == 143_750
+    assert report.thresholds.attack_bid == 250_000
+    assert report.thresholds.stop_bid == 250_000
+    assert report.risk_band == "过热区"
     assert report.warehouse_status == "估计 110±8"
 
 
@@ -75,7 +82,7 @@ def test_high_information_allows_small_p90_premium() -> None:
         },
     )
     report = recommend_bid_strategy(
-        latest_bids={"leader": 410_000},
+        latest_bids={"leader": 370_000},
         value_summary=_summary(),
         evidence_label="live",
         session=session,
@@ -86,9 +93,10 @@ def test_high_information_allows_small_p90_premium() -> None:
 
     assert report is not None
     assert report.info_strength == "高"
-    assert report.thresholds.defend_bid == 200_000
-    assert report.thresholds.attack_bid == 400_000
-    assert report.thresholds.stop_bid == 412_000
+    assert report.thresholds.warehouse_multiplier == 1.1
+    assert report.thresholds.defend_bid == 209_091
+    assert report.thresholds.attack_bid == 363_637
+    assert report.thresholds.stop_bid == 374_546
     assert report.risk_band == "高风险抢仓"
     assert "仓储已精确锁定" in report.rationale
     assert "不再使用总仓储" in report.next_info_hint
@@ -125,6 +133,26 @@ def test_warehouse_estimate_can_improve_information_strength() -> None:
     assert report.warehouse_status == "后验 100/110/120 (高)"
     assert "抽检" in report.next_info_hint
     assert "配置已携带" in report.next_info_hint
+
+
+def test_round_two_defend_bid_adds_mild_win_premium_above_fair_bid() -> None:
+    report = recommend_bid_strategy(
+        latest_bids={"leader": 240_000},
+        value_summary=_summary(p10=120_000, p50=400_000, p90=600_000),
+        evidence_label="live",
+        session=SessionObs(map_id=2401, hero="aisha"),
+        round_no=2,
+        total_rounds=5,
+        posterior_samples=50,
+    )
+
+    assert report is not None
+    assert report.thresholds.warehouse_multiplier == 1.6
+    assert report.thresholds.probe_bid == 75_000
+    assert report.thresholds.defend_bid == 268_750
+    assert report.thresholds.defend_bid > 400_000 / 1.6
+    assert report.thresholds.attack_bid == 375_000
+    assert report.thresholds.stop_bid == 375_000
 
 
 def test_missing_value_summary_or_bids_returns_none() -> None:

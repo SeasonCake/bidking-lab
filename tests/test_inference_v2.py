@@ -17,6 +17,7 @@ from bidking_lab.inference.v2 import (
     EvidenceFact,
     EvidenceStoreBuilder,
     RuntimeEvidence,
+    actionable_size_avg_value_targets,
     build_residual_problem,
     cell_evidence_score,
     decision_value_for_truth,
@@ -30,6 +31,7 @@ from bidking_lab.inference.v2 import (
     q6_decision_value_for_truth,
     q6_tail_replacement_decision_value_for_truth,
     tail_replacement_decision_value_for_truth,
+    size_avg_value_evidence_score,
     value_evidence_score,
 )
 from bidking_lab.live.fatbeans import (
@@ -1806,6 +1808,68 @@ def test_public_total_avg_cells_scores_posterior_samples() -> None:
     assert 0 < cell_evidence_score(mismatch, problem) < 1
 
 
+def test_actionable_size_avg_value_uses_per_footprint_floors() -> None:
+    assert actionable_size_avg_value_targets(((4, 4_000.0), (4, 6_000.0))) == ((4, 6_000.0),)
+    assert actionable_size_avg_value_targets(((1, 1_500.0), (1, 2_500.0))) == ((1, 2_500.0),)
+
+
+def test_action_size_avg_value_is_soft_target_not_quality_bucket() -> None:
+    maps, drops, items = _tables()
+    builder = EvidenceStoreBuilder()
+    builder.add_fact(
+        EvidenceFact(
+            kind="action",
+            key="100172",
+            value=120_000.0,
+            source="action:100172",
+            strength="soft",
+        )
+    )
+    problem = build_residual_problem(
+        2401,
+        builder.build(),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+    expensive_4 = _item(990_004, quality=5, value=120_000, shape=(2, 2))
+    cheap_4 = _item(990_005, quality=4, value=20_000, shape=(2, 2))
+    matching = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=4,
+        buckets={
+            5: BucketTruth(
+                quality=5,
+                count=1,
+                total_cells=4,
+                value_sum=120_000,
+                items=[expensive_4],
+            ),
+        },
+    )
+    mismatch = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=4,
+        buckets={
+            4: BucketTruth(
+                quality=4,
+                count=1,
+                total_cells=4,
+                value_sum=20_000,
+                items=[cheap_4],
+            ),
+        },
+    )
+
+    assert problem.size_avg_value_targets == ((4, 120_000.0),)
+    assert any("size_bucket:4" in diag and "avg=120000" in diag for diag in problem.diagnostics)
+    assert problem.bucket_targets == {}
+    assert size_avg_value_evidence_score(matching, problem) == 1
+    assert 0 < size_avg_value_evidence_score(mismatch, problem) < 1
+
+
 def test_public_random_sample_avg_value_is_retained_but_not_bucket_target() -> None:
     maps, drops, items = _tables()
     builder = EvidenceStoreBuilder()
@@ -1838,6 +1902,35 @@ def test_public_random_sample_avg_value_is_retained_but_not_bucket_target() -> N
         (12, 88_888.0),
     )
     assert problem.bucket_targets == {}
+    assert problem.random_sample_value_floor == 1_013_323
+    matching = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=10,
+        buckets={1: BucketTruth(quality=1, count=1, total_cells=1, value_sum=1_100_000)},
+    )
+    too_low = SessionTruth(
+        map_id=2401,
+        map_name="test",
+        warehouse_total_cells=10,
+        buckets={1: BucketTruth(quality=1, count=1, total_cells=1, value_sum=900_000)},
+    )
+    assert global_evidence_score(matching, problem) == 1
+    assert global_evidence_score(too_low, problem) == 0.10
+    assert global_evidence_score(
+        too_low,
+        problem,
+        random_sample_mode="hard",
+    ) == 0
+    assert global_evidence_score(
+        too_low,
+        problem,
+        random_sample_mode="ignore",
+    ) == 1
+    assert v2_module._random_sample_hard_floor_min_matched(10) == 3
+    assert v2_module._random_sample_hard_floor_min_matched(80) == 16
+    assert v2_module._random_sample_hard_floor_min_matched(200) == 20
+    assert v2_module.RANDOM_SAMPLE_HARD_FLOOR_EXTRA_TRIALS == 40
 
 
 def test_public_highest_quality_limits_sample_quality() -> None:

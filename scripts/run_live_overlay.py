@@ -8,9 +8,10 @@ working when the monitor source becomes a true realtime feed.
 from __future__ import annotations
 
 import argparse
-import base64
 from collections import Counter
 import json
+import logging
+import math
 import os
 from pathlib import Path
 import signal
@@ -32,16 +33,16 @@ DETAIL_MAX_HEIGHT = 860
 HOVER_OFFSET = 18
 HOVER_MARGIN = 12
 HOVER_MOVE_DEADZONE = 8
-ENABLE_MATPLOTLIB_MINIMAP = False
 SLOW_PROCESSING_SECONDS = 15.0
 STALE_SNAPSHOT_SECONDS = 120
 SETTLED_RESULT_RETAIN_SECONDS = 60
+DEFAULT_SNAPSHOT_PATH = ROOT / "data" / "logs" / "live" / "latest_snapshot.json"
 ROUND_WAREHOUSE_REFERENCE_MULTIPLIERS = {
     1: 2.0,
     2: 1.6,
     3: 1.3,
     4: 1.1,
-    5: 0.0,
+    5: 1.0,
 }
 
 BG = "#09111f"
@@ -99,17 +100,18 @@ def _snapshot_file_signature(path: Path) -> tuple[str, int, int] | tuple[str]:
 def _capture_status_signature(capture: dict[str, Any] | None) -> tuple[Any, ...]:
     if not isinstance(capture, dict) or not capture:
         return ("missing",)
+    accepted_frames = (
+        capture.get("accepted_frames")
+        if capture.get("accepted_frames") is not None
+        else capture.get("accepted_packets")
+    )
     return (
         "capture",
         capture.get("source"),
         capture.get("process_name"),
         capture.get("active_flows"),
-        capture.get("raw_packets"),
-        capture.get("accepted_frames")
-        if capture.get("accepted_frames") is not None
-        else capture.get("accepted_packets"),
-        capture.get("ignored_frames"),
-        capture.get("dropped_bytes"),
+        bool(capture.get("raw_packets")),
+        bool(accepted_frames),
         capture.get("active_session_id"),
     )
 
@@ -138,6 +140,50 @@ def _terminate_pid(pid: int) -> bool:
         return False
 
 
+def _pid_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if pid == os.getpid():
+        return True
+    try:
+        import psutil
+
+        return psutil.pid_exists(pid) and psutil.Process(pid).is_running()
+    except ImportError:
+        pass
+    except Exception:
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            process_query_limited_information = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(
+                process_query_limited_information,
+                False,
+                int(pid),
+            )
+            if not handle:
+                return False
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _watched_pid_exited(
+    pids: list[int] | tuple[int, ...],
+    *,
+    running_fn: Any = _pid_running,
+) -> bool:
+    return any(not running_fn(int(pid)) for pid in pids if int(pid) > 0)
+
+
 def _cleanup_exit_targets(
     pids: list[int] | tuple[int, ...],
     lock_paths: list[Path] | tuple[Path, ...],
@@ -155,10 +201,6 @@ def _cleanup_exit_targets(
             lock_path.unlink(missing_ok=True)
         except OSError:
             pass
-
-
-def _should_cleanup_exit_targets(overlay: Any) -> bool:
-    return bool(getattr(overlay, "user_closed", False))
 
 
 def _default_window_geometry(screen_width: int, screen_height: int) -> str:
@@ -222,30 +264,6 @@ def _processing_seconds(
         if seconds is not None:
             return seconds
     return None
-
-
-def _matplotlib_minimap_enabled(model: dict[str, Any]) -> bool:
-    return _matplotlib_minimap_state(model)[0]
-
-
-def _matplotlib_minimap_state(model: dict[str, Any]) -> tuple[bool, str]:
-    interaction = _as_mapping(model.get("interaction"))
-    detail = _as_mapping(interaction.get("detail"))
-    round_no = _int_or_none(model.get("round"))
-    for renderer in detail.get("renderers", ()) or ():
-        if not isinstance(renderer, dict):
-            continue
-        if renderer.get("name") != "matplotlib_minimap":
-            continue
-        if not ENABLE_MATPLOTLIB_MINIMAP:
-            return False, "matplotlib MiniMap 已暂时关闭，使用 Tk MiniMap"
-        min_round = _int_or_none(renderer.get("min_round")) or 1
-        if round_no is None:
-            return False, f"R{min_round}+ 详情渲染，当前轮次未知"
-        if round_no < min_round:
-            return False, f"R{min_round}+ 详情渲染，当前 R{round_no} 不渲染"
-        return True, f"R{min_round}+ 详情渲染"
-    return False, ""
 
 
 def _fmt_int(value: Any) -> str:
@@ -446,6 +464,22 @@ def _capture_status_age_seconds(capture: dict[str, Any]) -> float | None:
     return max(0.0, time.time() - float(ts))
 
 
+def _capture_has_fresh_session(capture: dict[str, Any] | None) -> bool:
+    if not isinstance(capture, dict) or not capture.get("active_session_id"):
+        return False
+    age_seconds = _capture_status_age_seconds(capture)
+    return age_seconds is not None and age_seconds <= 10.0
+
+
+def _session_map_id(session: Any) -> int | None:
+    text = str(session or "")
+    prefix = text.split(":", 1)[0]
+    try:
+        return int(prefix)
+    except (TypeError, ValueError):
+        return None
+
+
 def _capture_waiting_copy(
     capture: dict[str, Any] | None,
     *,
@@ -477,11 +511,16 @@ def _capture_waiting_copy(
     except (TypeError, ValueError):
         accepted_count = 0
     session = capture.get("active_session_id")
+    map_id = _session_map_id(session)
     if not fresh:
         return fallback_subtitle, fallback_detail, []
     if session:
-        subtitle = "监听中，已有对局会话"
-        detail = "等待下一次实时推理更新"
+        if map_id is not None:
+            subtitle = f"监听中，已抓到新局 map {map_id}"
+            detail = "等待首个状态帧/推理更新"
+        else:
+            subtitle = "监听中，已有对局会话"
+            detail = "等待下一次实时推理更新"
     elif active_flow_count > 0 and raw_count > 0 and accepted_count == 0:
         subtitle = "监听中，识别对局数据"
         detail = "已抓到网络包，等待可解析状态"
@@ -502,7 +541,38 @@ def _capture_waiting_copy(
     ]
     if session:
         notes.append(("当前会话", str(session)))
+    if map_id is not None:
+        notes.append(("当前地图", str(map_id)))
     return subtitle, detail, notes
+
+
+def _overlay_standby_from_capture(
+    capture_status: dict[str, Any] | None,
+    *,
+    fallback_subtitle: str,
+    fallback_detail: str,
+    decision_text: str | None = None,
+) -> dict[str, Any]:
+    subtitle, detail, notes = _capture_waiting_copy(
+        capture_status,
+        fallback_subtitle=fallback_subtitle,
+        fallback_detail=fallback_detail,
+    )
+    if decision_text is None:
+        if "识别对局数据" in subtitle or "等待可解析状态" in detail:
+            decision_text = "解析协议帧中"
+        elif "已有对局会话" in subtitle:
+            decision_text = "等待推理更新"
+        elif _capture_has_fresh_session(capture_status):
+            decision_text = "新局监听中"
+        else:
+            decision_text = "等待对局开始"
+    return _standby_model(
+        subtitle=subtitle,
+        detail=detail,
+        notes=notes,
+        decision_text=decision_text,
+    )
 
 
 def _demo_snapshot() -> dict[str, Any]:
@@ -866,8 +936,19 @@ def _ui_contract_minimap_section(
     if not isinstance(minimap, dict) or minimap.get("status") != "available":
         return None
     known_items = minimap.get("known_items") or 0
+    drawable_items = minimap.get("drawable_items") or 0
+    final_total_items = minimap.get("final_total_items")
     quality_counts = minimap.get("quality_counts") or {}
     category_counts = minimap.get("category_counts") or {}
+    layout_complete = _flag(minimap.get("layout_complete"))
+    settlement_layout = minimap.get("layout_source") == "settlement_inventory"
+    source_label = (
+        "结算全布局"
+        if layout_complete
+        else "结算布局"
+        if settlement_layout
+        else "赛中已知"
+    )
     q_text = " / ".join(
         f"{label.upper()}×{count}"
         for label, count in list(quality_counts.items())[-3:]
@@ -876,17 +957,45 @@ def _ui_contract_minimap_section(
         f"{label}×{count}"
         for label, count in list(category_counts.items())[:4]
     )
-    grid_note = (
-        f"默认{minimap.get('default_cells', 130)}格"
-        f" / 最高{minimap.get('max_cells', 250)}格"
-    )
+    grid_note = _minimap_capacity_text(minimap, contract=contract)
     if minimap.get("scrollable"):
         grid_note += " / 需滚动"
+    if settlement_layout and final_total_items:
+        headline = f"{source_label} {drawable_items}/{final_total_items} 件"
+    else:
+        headline = f"{source_label} {known_items} 件"
     return (
         "MiniMap",
-        f"已知 {known_items} 件" + (f"  |  {q_text}" if q_text else ""),
+        headline + (f"  |  {q_text}" if q_text else ""),
         c_text or grid_note,
     )
+
+
+def _minimap_capacity_text(
+    minimap: dict[str, Any],
+    *,
+    contract: dict[str, Any] | None = None,
+) -> str:
+    contract = contract or {}
+    context = _as_mapping(contract.get("context"))
+    baseline = _as_mapping(contract.get("baseline"))
+    layout = _as_mapping(baseline.get("layout"))
+    constraints = _as_mapping(contract.get("constraints"))
+    summary = _as_mapping(constraints.get("summary"))
+    truth = _as_mapping(contract.get("truth"))
+    if minimap.get("layout_source") == "settlement_inventory":
+        cells = context.get("inventory_cells") or summary.get(
+            "input_warehouse_total_cells"
+        ) or truth.get("total_cells")
+        if cells is not None:
+            return f"当前{cells}格"
+    if layout.get("estimate"):
+        return f"估格 {layout.get('estimate')}"
+    if summary.get("input_warehouse_total_cells") is not None:
+        return f"当前{summary.get('input_warehouse_total_cells')}格"
+    if summary.get("input_warehouse_total_cells_approx") is not None:
+        return f"估格 {summary.get('input_warehouse_total_cells_approx')}"
+    return f"默认{minimap.get('default_cells', 130)}格"
 
 
 def _ui_contract_fallback_section(
@@ -901,9 +1010,14 @@ def _ui_contract_fallback_section(
     thresholds = " / ".join(
         part
         for part in (
+            f"倍率 {decision.get('warehouse_multiplier')}"
+            if decision.get("warehouse_multiplier")
+            else "",
             f"探价 {decision.get('probe_bid')}" if decision.get("probe_bid") else "",
             f"防守 {decision.get('defend_bid')}" if decision.get("defend_bid") else "",
-            f"抢仓 {decision.get('attack_bid')}" if decision.get("attack_bid") else "",
+            f"可追(P90) {decision.get('attack_bid')}"
+            if decision.get("attack_bid")
+            else "",
             f"停止 {decision.get('stop_price')}" if decision.get("stop_price") else "",
         )
         if part
@@ -1003,9 +1117,14 @@ def _ui_contract_decision_section(
             if decision.get("current_highest")
             else "",
             f"风险 {decision.get('risk_band')}" if decision.get("risk_band") else "",
+            f"倍率 {decision.get('warehouse_multiplier')}"
+            if decision.get("warehouse_multiplier")
+            else "",
             f"探价 {decision.get('probe_bid')}" if decision.get("probe_bid") else "",
             f"防守 {decision.get('defend_bid')}" if decision.get("defend_bid") else "",
-            f"抢仓 {decision.get('attack_bid')}" if decision.get("attack_bid") else "",
+            f"可追(P90) {decision.get('attack_bid')}"
+            if decision.get("attack_bid")
+            else "",
             f"停止 {decision.get('stop_price')}" if decision.get("stop_price") else "",
             str(decision.get("evidence") or ""),
         )
@@ -1028,17 +1147,11 @@ def _ui_contract_round_reference_section(
     p50 = _price_int(_range_p50(posterior.get("decision_value_range")))
     if p50 is None:
         return None
-    if multiplier <= 0:
-        return (
-            "轮次仓位参考",
-            f"R{round_no} 不按仓位倍数追价",
-            f"P50 {_fmt_int(p50)}；只作提示，不改变正式出价",
-        )
-    reference = int(p50 * multiplier)
+    reference = int(math.ceil(p50 / multiplier))
     return (
         "轮次仓位参考",
         f"R{round_no} 参考 {_fmt_int(reference)}",
-        f"P50 {_fmt_int(p50)} × {multiplier:g}；只作仓位/防守提示，不改变正式出价",
+        f"P50 {_fmt_int(p50)} ÷ {multiplier:g}；只作仓位/防守提示，不改变正式出价",
     )
 
 
@@ -1159,6 +1272,57 @@ def _ui_contract_q6_risk_section(
     return ("q6 风险参考", headline, detail)
 
 
+def _ui_contract_action_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    actions = _as_mapping(contract.get("actions"))
+    results = [
+        row
+        for row in actions.get("results", ()) or ()
+        if isinstance(row, dict)
+    ]
+    sent = [
+        row
+        for row in actions.get("sent", ()) or ()
+        if isinstance(row, dict)
+    ]
+    if not results and not sent:
+        return None
+    latest = results[0] if results else sent[0]
+    tool = str(latest.get("tool") or latest.get("action_id") or "道具")
+    result = str(latest.get("result") or "")
+    revealed = str(latest.get("revealed_items") or "")
+    revealed_summary = str(latest.get("revealed_summary") or "")
+    if result:
+        headline = f"{tool}: {result}"
+    elif revealed_summary:
+        headline = f"{tool}: {revealed_summary}"
+    elif revealed and revealed != "0":
+        headline = f"{tool}: 揭示 {revealed} 件"
+    else:
+        headline = f"{tool}: 已发送"
+    details = []
+    for row in results[:4]:
+        row_tool = str(row.get("tool") or row.get("action_id") or "道具")
+        row_result = str(row.get("result") or "")
+        row_revealed = str(row.get("revealed_items") or "")
+        row_summary = str(row.get("revealed_summary") or "")
+        if row_result:
+            details.append(f"{row_tool}={row_result}")
+        elif row_summary:
+            details.append(f"{row_tool}={row_summary}")
+        elif row_revealed and row_revealed != "0":
+            details.append(f"{row_tool}=揭示{row_revealed}件")
+        else:
+            details.append(f"{row_tool}=已返回")
+    if not details and sent:
+        details = [
+            str(row.get("tool") or row.get("action_id") or "道具")
+            for row in sent[:4]
+        ]
+    return ("最近道具", headline, "；".join(details))
+
+
 def _ui_contract_truth_section(
     contract: dict[str, Any],
 ) -> tuple[str, str, str] | None:
@@ -1203,6 +1367,39 @@ def _ui_contract_truth_section(
     return ("结算/Truth", headline or "已记录结算", detail)
 
 
+def _ui_contract_size_bucket_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    diagnostics = _as_mapping(contract.get("diagnostics"))
+    size_bucket = _as_mapping(diagnostics.get("size_bucket"))
+    if not size_bucket:
+        return None
+    if not _flag(size_bucket.get("active")) and not _flag(
+        size_bucket.get("reading_active")
+    ):
+        return None
+    headline = _join_parts(
+        (
+            str(size_bucket.get("latest_reading_label") or ""),
+            str(size_bucket.get("latest_target_label") or ""),
+        )
+    )
+    details: list[str] = []
+    for label in size_bucket.get("reading_labels", ()) or ():
+        if label:
+            details.append(f"读数 {label}")
+    for label in size_bucket.get("target_labels", ()) or ():
+        if label:
+            details.append(f"推理 {label}")
+    if _flag(size_bucket.get("inference_matches_reading")):
+        details.append("读数与后验占格证据一致")
+    elif _flag(size_bucket.get("active")) and _flag(size_bucket.get("reading_active")):
+        details.append("读数与后验占格证据不一致（检查轮廓/件数）")
+    if not headline and not details:
+        return None
+    return ("N格均价", headline or "占格均价证据", "；".join(details[:6]))
+
+
 def _ui_contract_diagnostics_section(
     contract: dict[str, Any],
 ) -> tuple[str, str, str] | None:
@@ -1212,12 +1409,14 @@ def _ui_contract_diagnostics_section(
     layout = _as_mapping(diagnostics.get("layout"))
     q6 = _as_mapping(diagnostics.get("q6"))
     sampling = _as_mapping(diagnostics.get("sampling"))
+    size_bucket = _as_mapping(diagnostics.get("size_bucket"))
     headline = _join_parts(
         (
             _short(diagnostics.get("posterior"), 74),
             "layout_conflict" if _flag(layout.get("conflict")) else "",
             "bottom_row_risk" if _flag(layout.get("bottom_row_risk")) else "",
             "q6_below_prior" if _flag(q6.get("below_drop_prior")) else "",
+            "size_bucket" if _flag(size_bucket.get("active")) else "",
         )
     )
     detail = _join_parts(
@@ -1321,13 +1520,16 @@ def _ui_contract_minimap_detail_section(
 def _ui_contract_hover_sections(contract: dict[str, Any]) -> list[tuple[str, str, str]]:
     sections: list[tuple[str, str, str]] = []
     for section in (
-        _ui_contract_minimap_section(contract),
-        _ui_contract_posterior_section(contract),
-        _ui_contract_q6_risk_section(contract),
-        _ui_contract_layout_section(contract),
-        _ui_contract_constraints_section(contract),
         _ui_contract_decision_section(contract),
+        _ui_contract_posterior_section(contract),
+        _ui_contract_truth_section(contract),
+        _ui_contract_minimap_section(contract),
         _ui_contract_round_reference_section(contract),
+        _ui_contract_action_section(contract),
+        _ui_contract_q6_risk_section(contract),
+        _ui_contract_constraints_section(contract),
+        _ui_contract_size_bucket_section(contract),
+        _ui_contract_layout_section(contract),
         _ui_contract_fallback_section(contract),
     ):
         if section is not None:
@@ -1341,13 +1543,15 @@ def _ui_contract_detail_sections(contract: dict[str, Any]) -> list[tuple[str, st
         _ui_contract_truth_section(contract),
         _ui_contract_decision_section(contract),
         _ui_contract_posterior_section(contract),
+        _ui_contract_minimap_detail_section(contract),
         _ui_contract_layout_section(contract),
         _ui_contract_constraints_section(contract),
+        _ui_contract_action_section(contract),
+        _ui_contract_size_bucket_section(contract),
         _ui_contract_q6_risk_section(contract),
         _ui_contract_fallback_section(contract),
         _ui_contract_round_reference_section(contract),
         _ui_contract_shadow_detail_section(contract),
-        _ui_contract_minimap_detail_section(contract),
         _ui_contract_diagnostics_section(contract),
     ):
         if section is not None:
@@ -1481,6 +1685,7 @@ def _standby_model(
     subtitle: str,
     detail: str = "",
     notes: list[tuple[str, str]] | None = None,
+    decision_text: str = "等待对局开始",
 ) -> dict[str, Any]:
     decision_detail = detail or "等待实时数据"
     metrics = [
@@ -1501,7 +1706,7 @@ def _standby_model(
         "subtitle": subtitle,
         "round": "?",
         "status": ("待机", "dim"),
-        "decision": ("等待对局开始", decision_detail, "dim"),
+        "decision": (decision_text, decision_detail, "dim"),
         "metrics": metrics,
         "sections": sections,
         "alerts": [],
@@ -1532,7 +1737,33 @@ def _standby_model(
     }
 
 
-def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
+def _snapshot_session_id(snapshot: dict[str, Any]) -> str | None:
+    ui_contract = _as_mapping(snapshot.get("ui_contract"))
+    context = _as_mapping(ui_contract.get("context"))
+    session_id = context.get("session_id") or snapshot.get("session_id")
+    return str(session_id) if session_id else None
+
+
+def _capture_session_ahead_of_snapshot(
+    capture_status: dict[str, Any] | None,
+    snapshot: dict[str, Any],
+) -> bool:
+    if not isinstance(capture_status, dict):
+        return False
+    capture_session = capture_status.get("active_session_id")
+    if not capture_session:
+        return False
+    snapshot_session = _snapshot_session_id(snapshot)
+    if not snapshot_session:
+        return True
+    return str(capture_session) != snapshot_session
+
+
+def _overlay_model(
+    snapshot: dict[str, Any],
+    *,
+    review_snapshot: bool = False,
+) -> dict[str, Any]:
     capture_status = _as_mapping(snapshot.get("_capture_source_status"))
     if not snapshot or snapshot.get("_no_artifact"):
         subtitle, detail, notes = _capture_waiting_copy(
@@ -1573,34 +1804,45 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     is_settled = phase == "settled" and _flag(contract_truth.get("available"))
     age_seconds = _snapshot_age_seconds(snapshot)
     if (
-        is_settled
+        not review_snapshot
+        and is_settled
+        and _capture_session_ahead_of_snapshot(capture_status, snapshot)
+        and _capture_has_fresh_session(capture_status)
+    ):
+        return _overlay_standby_from_capture(
+            capture_status,
+            fallback_subtitle="新局监听中",
+            fallback_detail="抓包会话已更新，等待本局推理快照",
+            decision_text="新局监听中",
+        )
+    if (
+        not review_snapshot
+        and is_settled
         and age_seconds is not None
         and age_seconds > SETTLED_RESULT_RETAIN_SECONDS
     ):
-        subtitle, detail, notes = _capture_waiting_copy(
+        if _capture_session_ahead_of_snapshot(capture_status, snapshot):
+            return _overlay_standby_from_capture(
+                capture_status,
+                fallback_subtitle="新局监听中",
+                fallback_detail="抓包会话已更新，等待本局推理快照",
+                decision_text="新局监听中",
+            )
+        return _overlay_standby_from_capture(
             capture_status,
             fallback_subtitle="等待下一局开始",
             fallback_detail="上一局结算已结束",
         )
-        return _standby_model(
-            subtitle=subtitle,
-            detail=detail,
-            notes=notes,
-        )
     if (
-        not is_settled
+        not review_snapshot
+        and not is_settled
         and age_seconds is not None
         and age_seconds > STALE_SNAPSHOT_SECONDS
     ):
-        subtitle, detail, notes = _capture_waiting_copy(
+        return _overlay_standby_from_capture(
             capture_status,
             fallback_subtitle="等待新的实时对局状态",
             fallback_detail="不显示过期旧局出价",
-        )
-        return _standby_model(
-            subtitle=subtitle,
-            detail=detail,
-            notes=notes,
         )
     category_items = snapshot.get("category_grid_items") or []
     layout = _first(panel.get("layout_stages"))
@@ -1714,6 +1956,17 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         decision_text = action
         decision_detail = f"最高 {current}  |  停止 {stop}  |  {risk}"
         decision_severity = _severity_for_bid(f"{action} {risk}")
+    elif contract_posterior.get("decision_value_range"):
+        decision_text = "开局估值"
+        decision_detail = _join_parts(
+            (
+                f"P50 {_range_p50(contract_posterior.get('decision_value_range')) or '?'}",
+                f"匹配 {contract_posterior.get('match_text') or '?'}",
+                "等待首个当前最高价后生成防守/停止价",
+            ),
+            sep="  |  ",
+        )
+        decision_severity = "normal"
     elif decision_row := summary.get("当前最高价是否可追"):
         decision_text = str(decision_row.get("conclusion") or "?")
         decision_detail = _short(decision_row.get("detail"), 96)
@@ -1925,6 +2178,9 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
     if category_items:
         category_summary, category_detail = _category_focus_text(category_items)
         sections.append(("鉴影命中", category_summary, _short(category_detail, 118)))
+    action_section = _ui_contract_action_section(ui_contract)
+    if action_section is not None:
+        sections.append(action_section)
     fallback_section = _ui_contract_fallback_section(ui_contract)
     if fallback_section is not None:
         sections.append(
@@ -1997,6 +2253,15 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         sections=sections,
         alerts=alerts,
     )
+    raw_minimap = ui_contract.get("minimap")
+    if isinstance(raw_minimap, dict) and raw_minimap.get("status") == "available":
+        minimap_model = dict(raw_minimap)
+        minimap_model["capacity_text"] = _minimap_capacity_text(
+            minimap_model,
+            contract=ui_contract,
+        )
+    else:
+        minimap_model = {}
 
     return {
         "empty": False,
@@ -2009,12 +2274,7 @@ def _overlay_model(snapshot: dict[str, Any]) -> dict[str, Any]:
         "sections": sections,
         "alerts": alerts,
         "interaction": interaction,
-        "minimap": (
-            ui_contract.get("minimap")
-            if isinstance(ui_contract.get("minimap"), dict)
-            and ui_contract.get("minimap", {}).get("status") == "available"
-            else {}
-        ),
+        "minimap": minimap_model,
         "footer": " / ".join(eval_parts),
     }
 
@@ -2027,11 +2287,27 @@ class Overlay:
         interval_ms: int,
         *,
         demo: bool = False,
+        review_snapshot: bool = False,
+        exit_when_pids: tuple[int, ...] = (),
     ) -> None:
         self.root = root
         self.snapshot_path = snapshot_path
         self.interval_ms = interval_ms
         self.demo = demo
+        self.review_snapshot = review_snapshot
+        self._error_log_path = snapshot_path.parent / "overlay.errors.log"
+        self._logger = logging.getLogger("bidking.overlay")
+        if not self._logger.handlers:
+            self._logger.setLevel(logging.INFO)
+            handler = logging.FileHandler(
+                self._error_log_path,
+                encoding="utf-8",
+            )
+            handler.setFormatter(
+                logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+            )
+            self._logger.addHandler(handler)
+        self.exit_when_pids = tuple(pid for pid in exit_when_pids if pid > 0)
         self._last_snapshot_signature: tuple[Any, ...] | None = None
         self._last_snapshot: dict[str, Any] | None = None
         self._last_stale_state: bool | None = None
@@ -2041,7 +2317,6 @@ class Overlay:
         self._hover_window: tk.Toplevel | None = None
         self._last_hover_position: tuple[int, int] | None = None
         self._last_click_time: int | None = None
-        self._matplotlib_minimap_cache: tuple[str, tk.PhotoImage] | None = None
         self.user_closed = False
         self._compact_geometry = _default_window_geometry(
             root.winfo_screenwidth(),
@@ -2263,11 +2538,26 @@ class Overlay:
             return
         card = tk.Frame(parent, bg=PANEL_SOFT)
         card.pack(anchor="w", fill="x", pady=(6, 2))
+        layout_complete = _flag(minimap.get("layout_complete"))
+        settlement_layout = minimap.get("layout_source") == "settlement_inventory"
+        source_label = (
+            "结算全布局"
+            if layout_complete
+            else "结算布局"
+            if settlement_layout
+            else "赛中已知"
+        )
+        if settlement_layout and minimap.get("final_total_items"):
+            count_text = (
+                f"{minimap.get('drawable_items', 0)}/"
+                f"{minimap.get('final_total_items')} 件"
+            )
+        else:
+            count_text = f"{minimap.get('known_items', 0)} 件"
         head = _join_parts(
             (
-                f"MiniMap 已知 {minimap.get('known_items', 0)} 件",
-                f"默认{minimap.get('default_cells', 130)}格",
-                f"最高{minimap.get('max_cells', 250)}格",
+                f"MiniMap {source_label} {count_text}",
+                str(minimap.get("capacity_text") or _minimap_capacity_text(minimap)),
             )
         )
         self._label(
@@ -2389,17 +2679,34 @@ class Overlay:
                 bg=PANEL_SOFT,
                 font=("Microsoft YaHei UI", 9, "bold"),
             ).pack(anchor="w")
-            if minimap:
-                self._render_hover_minimap(body, minimap)
-            if text_sections:
+            if minimap and text_sections:
+                content = tk.Frame(body, bg=PANEL_SOFT)
+                content.pack(fill="both", expand=True)
+                text_col = tk.Frame(content, bg=PANEL_SOFT)
+                text_col.pack(side="left", fill="both", expand=True)
+                minimap_col = tk.Frame(content, bg=PANEL_SOFT)
+                minimap_col.pack(side="right", anchor="ne", padx=(10, 0))
                 self._render_section_rows(
-                    body,
+                    text_col,
                     bg=PANEL_SOFT,
                     sections=text_sections,
                     limit=6,
-                    wraplength=460,
+                    wraplength=360,
                     compact=True,
                 )
+                self._render_hover_minimap(minimap_col, minimap)
+            else:
+                if text_sections:
+                    self._render_section_rows(
+                        body,
+                        bg=PANEL_SOFT,
+                        sections=text_sections,
+                        limit=6,
+                        wraplength=460,
+                        compact=True,
+                    )
+                if minimap:
+                    self._render_hover_minimap(body, minimap)
             self._hover_window = window
             self._last_hover_position = None
             window.bind("<Leave>", self._schedule_hide_hover, add="+")
@@ -2511,7 +2818,6 @@ class Overlay:
                 bg=PANEL_SOFT,
                 font=("Microsoft YaHei UI", 8),
             ).pack(side="right", anchor="e")
-        self._render_matplotlib_minimap(body, model)
         self._render_section_rows(
             body,
             sections,
@@ -2519,123 +2825,6 @@ class Overlay:
             limit=len(sections),
             wraplength=800,
         )
-
-    def _render_matplotlib_minimap(
-        self,
-        parent: tk.Widget,
-        model: dict[str, Any],
-    ) -> None:
-        minimap = _as_mapping(model.get("minimap"))
-        if minimap.get("status") != "available":
-            return
-        matplotlib_enabled, matplotlib_note = _matplotlib_minimap_state(model)
-        if not matplotlib_enabled:
-            if matplotlib_note:
-                self._render_matplotlib_status(parent, matplotlib_note)
-            return
-        signature = json.dumps(
-            {
-                "round": model.get("round"),
-                "rows_hint": minimap.get("rows_hint"),
-                "items": minimap.get("items", ()),
-            },
-            sort_keys=True,
-            ensure_ascii=False,
-        )
-        if self._matplotlib_minimap_cache and self._matplotlib_minimap_cache[0] == signature:
-            photo = self._matplotlib_minimap_cache[1]
-        else:
-            try:
-                from io import BytesIO
-
-                from matplotlib.backends.backend_agg import FigureCanvasAgg
-                from matplotlib.figure import Figure
-                from matplotlib.patches import Rectangle
-            except Exception:
-                self._render_matplotlib_status(
-                    parent,
-                    "matplotlib 不可用，已回退 Tk Canvas",
-                )
-                return
-            geometry = _minimap_canvas_geometry(minimap)
-            columns = geometry["columns"]
-            rows = geometry["rows"]
-            fig_height = max(2.4, min(5.6, rows / max(1, columns) * 3.2))
-            fig = Figure(figsize=(3.2, fig_height), dpi=96)
-            axis = fig.add_subplot(111)
-            axis.set_xlim(0, columns)
-            axis.set_ylim(rows, 0)
-            axis.set_aspect("equal")
-            axis.set_xticks(range(columns + 1))
-            axis.set_yticks(range(rows + 1))
-            axis.grid(color=BORDER, linewidth=0.45)
-            axis.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-            for spine in axis.spines.values():
-                spine.set_color(BORDER)
-            axis.set_facecolor(PANEL_SOFT)
-            fig.patch.set_facecolor(PANEL_SOFT)
-            for item in minimap.get("items", ()) or ():
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    row_i = int(item.get("row"))
-                    col_i = int(item.get("col"))
-                    width = max(1, int(item.get("width") or 1))
-                    height = max(1, int(item.get("height") or 1))
-                except (TypeError, ValueError):
-                    continue
-                style = _quality_style(item.get("quality"))
-                facecolor = "none" if style.get("unknown") else style["fill"]
-                axis.add_patch(
-                    Rectangle(
-                        (col_i - 1, row_i - 1),
-                        width,
-                        height,
-                        facecolor=facecolor,
-                        edgecolor=style["outline"],
-                        linewidth=0.8,
-                        hatch=style.get("hatch") or None,
-                    )
-                )
-            buffer = BytesIO()
-            try:
-                FigureCanvasAgg(fig).print_png(buffer)
-                encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-            except Exception:
-                self._render_matplotlib_status(
-                    parent,
-                    "渲染失败，已回退 Tk Canvas",
-                )
-                return
-            try:
-                photo = tk.PhotoImage(data=encoded, format="png")
-            except tk.TclError:
-                self._render_matplotlib_status(
-                    parent,
-                    "图片载入失败，已回退 Tk Canvas",
-                )
-                return
-            self._matplotlib_minimap_cache = (signature, photo)
-
-        frame = tk.Frame(parent, bg=PANEL_SOFT)
-        frame.pack(fill="x", pady=(8, 4))
-        self._label(
-            frame,
-            "Matplotlib MiniMap（R3+ 详情渲染）",
-            fg=ACCENT,
-            bg=PANEL_SOFT,
-            font=("Microsoft YaHei UI", 9, "bold"),
-        ).pack(anchor="w")
-        tk.Label(frame, image=photo, bg=PANEL_SOFT, bd=0).pack(anchor="w", pady=(4, 0))
-
-    def _render_matplotlib_status(self, parent: tk.Widget, text: str) -> None:
-        self._label(
-            parent,
-            f"Matplotlib MiniMap：{text}",
-            fg=MUTED,
-            bg=PANEL_SOFT,
-            font=("Microsoft YaHei UI", 8),
-        ).pack(anchor="w", pady=(4, 0))
 
     def _draw_unknown_quality_fill(
         self,
@@ -2704,28 +2893,48 @@ class Overlay:
             x1 = min(columns * cell, (col_i - 1 + item_w) * cell) - 1
             y1 = min(rows * cell, (row_i - 1 + item_h) * cell) - 1
             style = _quality_style(item.get("quality"))
-            options = {
-                "fill": style["fill"],
-                "outline": style["outline"],
-            }
-            if style.get("stipple"):
-                options["stipple"] = style["stipple"]
-            canvas.create_rectangle(
-                x0,
-                y0,
-                x1,
-                y1,
-                **options,
-            )
-            if style.get("unknown"):
-                self._draw_unknown_quality_fill(
-                    canvas,
+            render_mode = str(item.get("render_mode") or "footprint")
+            if render_mode == "marker":
+                pad = max(2, cell // 4)
+                mx0 = min(x1 - 1, x0 + pad)
+                my0 = min(y1 - 1, y0 + pad)
+                mx1 = max(mx0 + 1, x1 - pad)
+                my1 = max(my0 + 1, y1 - pad)
+                options = {
+                    "fill": style["fill"],
+                    "outline": style["outline"],
+                    "width": 1,
+                }
+                canvas.create_oval(
+                    mx0,
+                    my0,
+                    mx1,
+                    my1,
+                    **options,
+                )
+            else:
+                options = {
+                    "fill": style["fill"],
+                    "outline": style["outline"],
+                }
+                if style.get("stipple"):
+                    options["stipple"] = style["stipple"]
+                canvas.create_rectangle(
                     x0,
                     y0,
                     x1,
                     y1,
-                    color=style["outline"],
+                    **options,
                 )
+                if style.get("unknown"):
+                    self._draw_unknown_quality_fill(
+                        canvas,
+                        x0,
+                        y0,
+                        x1,
+                        y1,
+                        color=style["outline"],
+                    )
 
     def _render(self, model: dict[str, Any]) -> None:
         previous_scroll = (
@@ -2909,13 +3118,30 @@ class Overlay:
                 ).pack(anchor="w", pady=(3, 0))
 
         if show_side_panel and right is not None and model.get("minimap"):
+            minimap = model["minimap"]
+            layout_complete = _flag(minimap.get("layout_complete"))
+            settlement_layout = minimap.get("layout_source") == "settlement_inventory"
+            source_label = (
+                "结算全布局"
+                if layout_complete
+                else "结算布局"
+                if settlement_layout
+                else "赛中已知"
+            )
+            if settlement_layout and minimap.get("final_total_items"):
+                count_text = (
+                    f"{minimap.get('drawable_items', 0)}/"
+                    f"{minimap.get('final_total_items')} 件"
+                )
+            else:
+                count_text = f"{minimap.get('known_items', 0)} 件"
             minimap_card = self._card(right)
             minimap_card.pack(fill="x", pady=(0, 8))
             minimap_body = tk.Frame(minimap_card, bg=PANEL, padx=10, pady=8)
             minimap_body.pack(fill="x")
             self._label(
                 minimap_body,
-                "MiniMap",
+                f"MiniMap · {source_label}",
                 fg=ACCENT,
                 font=("Microsoft YaHei UI", 10, "bold"),
             ).pack(anchor="w")
@@ -2927,9 +3153,9 @@ class Overlay:
                 highlightthickness=0,
                 bd=0,
             )
-            minimap_geometry = _minimap_canvas_geometry(model["minimap"])
+            minimap_geometry = _minimap_canvas_geometry(minimap)
             scrollable = (
-                model["minimap"].get("scrollable")
+                minimap.get("scrollable")
                 or minimap_geometry["height"] > minimap_geometry["visible_height"]
             )
             if scrollable:
@@ -2947,12 +3173,11 @@ class Overlay:
                 )
             else:
                 canvas.pack(side="left")
-            self._draw_minimap(canvas, model["minimap"])
+            self._draw_minimap(canvas, minimap)
             self._label(
                 minimap_body,
-                f"已知 {model['minimap'].get('known_items', 0)} 件 · "
-                f"默认{model['minimap'].get('default_cells', 130)}格"
-                f" / 最高{model['minimap'].get('max_cells', 250)}格",
+                f"{count_text} · "
+                f"{minimap.get('capacity_text') or _minimap_capacity_text(minimap)}",
                 fg=MUTED,
                 font=("Microsoft YaHei UI", 8),
             ).pack(anchor="w", pady=(5, 0))
@@ -2998,7 +3223,60 @@ class Overlay:
         self._resize_for_mode()
         self._restore_canvas_scroll(previous_scroll)
 
+    def _render_overlay_error(self, exc: BaseException) -> None:
+        self._logger.exception("overlay render failed")
+        model = _standby_model(
+            subtitle="悬浮窗渲染异常",
+            detail=str(exc)[:240],
+            notes=[
+                ("说明", "窗口未关闭，将继续重试读取 snapshot"),
+                ("日志", str(self._error_log_path)),
+            ],
+            decision_text="UI 异常",
+        )
+        model["status"] = ("异常", "bad")
+        model["alerts"] = [("渲染失败，请查看 overlay.errors.log", "bad")]
+        self._render(model)
+
     def refresh(self) -> None:
+        try:
+            self._refresh_once()
+        except Exception as exc:  # noqa: BLE001 - keep Tk loop alive
+            try:
+                self._render_overlay_error(exc)
+            except Exception:  # noqa: BLE001
+                self._logger.exception("overlay error panel failed")
+        self.root.after(self.interval_ms, self.refresh)
+
+    def _refresh_once(self) -> None:
+        if self.exit_when_pids and _watched_pid_exited(self.exit_when_pids):
+            # Keep the window open with a clear error instead of vanishing when
+            # the background monitor dies (common cause: WinDivert needs admin).
+            self.exit_when_pids = ()
+            model = _standby_model(
+                subtitle="监听进程已退出",
+                detail=(
+                    "WinDivert 需要管理员 PowerShell。"
+                    "请关闭本窗口后，右键 PowerShell「以管理员身份运行」，"
+                    "再执行 .\\scripts\\start_live_windivert_overlay.ps1 -Restart"
+                ),
+                notes=[
+                    ("常见原因", "非管理员启动导致 monitor 立即退出"),
+                    (
+                        "日志",
+                        "查看 data/logs/live/monitor.stderr.log 是否含 "
+                        "elevated PowerShell/admin",
+                    ),
+                ],
+            )
+            model["status"] = ("监听已停", "bad")
+            model["alerts"] = [
+                ("后台 monitor 已退出，悬浮窗保持打开仅用于提示", "bad"),
+            ]
+            self._render(model)
+            self._last_snapshot_signature = ("monitor-exit",)
+            self.root.after(self.interval_ms, self.refresh)
+            return
         signature: tuple[Any, ...]
         if self.demo:
             signature = ("demo",)
@@ -3019,18 +3297,19 @@ class Overlay:
                 should_render = True
         if should_render:
             snapshot = snapshot or {}
-            self._render(_overlay_model(snapshot))
+            self._render(
+                _overlay_model(snapshot, review_snapshot=self.review_snapshot)
+            )
             self._last_snapshot_signature = signature
             self._last_snapshot = snapshot
             self._last_stale_state = _age(snapshot)[1]
-        self.root.after(self.interval_ms, self.refresh)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Show BidKing live overlay.")
     parser.add_argument(
         "--snapshot",
-        default=str(ROOT / "data" / "logs" / "live" / "latest_snapshot.json"),
+        default=str(DEFAULT_SNAPSHOT_PATH),
         help="Path to latest_snapshot.json",
     )
     parser.add_argument("--interval-ms", type=int, default=1000)
@@ -3038,6 +3317,11 @@ def main() -> int:
         "--demo",
         action="store_true",
         help="Show a built-in demo snapshot instead of reading latest_snapshot.json.",
+    )
+    parser.add_argument(
+        "--review-snapshot",
+        action="store_true",
+        help="Do not hide stale snapshots; useful for archived UI review files.",
     )
     parser.add_argument(
         "--stop-pid-on-exit",
@@ -3053,18 +3337,39 @@ def main() -> int:
         default=[],
         help="Remove this monitor lock file after exit cleanup.",
     )
+    parser.add_argument(
+        "--exit-when-pid-exits",
+        type=int,
+        action="append",
+        default=[],
+        help="Close the overlay when this monitor PID exits.",
+    )
     args = parser.parse_args()
+    snapshot_path = Path(args.snapshot)
+    try:
+        explicit_review_snapshot = (
+            snapshot_path.resolve() != DEFAULT_SNAPSHOT_PATH.resolve()
+        )
+    except OSError:
+        explicit_review_snapshot = snapshot_path != DEFAULT_SNAPSHOT_PATH
+    review_snapshot = args.review_snapshot or explicit_review_snapshot
 
     root = tk.Tk()
-    overlay = Overlay(root, Path(args.snapshot), max(250, args.interval_ms), demo=args.demo)
+    overlay = Overlay(
+        root,
+        snapshot_path,
+        max(250, args.interval_ms),
+        demo=args.demo,
+        review_snapshot=review_snapshot,
+        exit_when_pids=tuple(args.exit_when_pid_exits),
+    )
     try:
         root.mainloop()
     finally:
-        if _should_cleanup_exit_targets(overlay):
-            _cleanup_exit_targets(
-                tuple(args.stop_pid_on_exit),
-                tuple(args.cleanup_lock_on_exit),
-            )
+        _cleanup_exit_targets(
+            tuple(args.stop_pid_on_exit),
+            tuple(args.cleanup_lock_on_exit),
+        )
     return 0
 
 

@@ -8,7 +8,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$Python = (Get-Command python).Source
+. (Join-Path $Repo "scripts\resolve_python.ps1")
+$Python = Resolve-BidKingPython
 $StatusScript = Join-Path $Repo "scripts\live_status.py"
 $LogPath = Join-Path $Repo $LogDir
 

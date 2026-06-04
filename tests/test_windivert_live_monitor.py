@@ -285,16 +285,19 @@ def test_flow_index_can_include_loopback_flows(monkeypatch) -> None:
     )
 
 
-def test_game_frame_gate_ignores_non_auction_status_frames() -> None:
+def test_game_frame_gate_accepts_status_frame_for_session_prewarm() -> None:
     module = _module()
     gate = module.GameFrameGate()
 
     emitted = gate.feed_row(_row("REV", _rev_status_frame()))
 
-    assert emitted.rows == ()
+    assert len(emitted.rows) == 1
     assert emitted.reset_session is False
-    assert gate.active_session_id is None
-    assert gate.ignored_frames == 1
+    assert emitted.rows[0]["MessageID"] == "0x0077"
+    assert emitted.rows[0]["SessionID"] == "2401:1274127880525303"
+    assert gate.active_session_id == "2401:1274127880525303"
+    assert gate.ignored_frames == 0
+    assert not module._should_schedule_monitor_process(emitted.rows[0])
 
 
 def test_game_frame_gate_accepts_state_and_matching_session_sends() -> None:
@@ -307,7 +310,7 @@ def test_game_frame_gate_accepts_state_and_matching_session_sends() -> None:
     other_session_send = gate.feed_row(
         _row(
             "SEND",
-            _send_frame(0x0022, session="2401:9999999999999999"),
+            _send_frame(0x0026, session="2401:9999999999999999"),
             sort_id=4,
         )
     )
@@ -341,6 +344,70 @@ def test_game_frame_gate_accepts_session_started_state() -> None:
     assert gate.active_session_id == "2401:1274127880525303"
     assert len(first_send.rows) == 1
     assert first_send.rows[0]["MessageID"] == "0x0022"
+
+
+def test_game_frame_gate_resets_on_new_bid_send_session() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    first_state = gate.feed_row(
+        _row(
+            "REV",
+            _rev_state_frame(session="2401:1111111111111111"),
+            sort_id=1,
+        )
+    )
+    first_send = gate.feed_row(
+        _row(
+            "SEND",
+            _send_frame(0x0022, session="2401:1111111111111111"),
+            sort_id=2,
+        )
+    )
+    new_bid_send = gate.feed_row(
+        _row(
+            "SEND",
+            _send_frame(0x0022, session="2410:2222222222222222"),
+            sort_id=3,
+        )
+    )
+    new_action_send = gate.feed_row(
+        _row(
+            "SEND",
+            _send_frame(0x0026, session="2410:2222222222222222"),
+            sort_id=4,
+        )
+    )
+
+    assert len(first_state.rows) == 1
+    assert len(first_send.rows) == 1
+    assert new_bid_send.reset_session is True
+    assert len(new_bid_send.rows) == 1
+    assert new_bid_send.rows[0]["SortID"] == 1
+    assert new_bid_send.rows[0]["MessageID"] == "0x0022"
+    assert new_bid_send.rows[0]["SessionID"] == "2410:2222222222222222"
+    assert gate.active_session_id == "2410:2222222222222222"
+    assert len(new_action_send.rows) == 1
+    assert new_action_send.rows[0]["SortID"] == 2
+    assert new_action_send.rows[0]["SessionID"] == "2410:2222222222222222"
+
+
+def test_game_frame_gate_keeps_session_when_only_stream_buffers_reset() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    started = gate.feed_row(
+        _row("REV", _rev_state_frame(0x0021, round_no=None), sort_id=1)
+    )
+    gate.reset_stream_buffers(clear_session=False)
+    send_after_flow_change = gate.feed_row(
+        _row("SEND", _send_frame(0x0022), sort_id=2)
+    )
+
+    assert len(started.rows) == 1
+    assert gate.active_session_id == "2401:1274127880525303"
+    assert len(send_after_flow_change.rows) == 1
+    assert send_after_flow_change.rows[0]["MessageID"] == "0x0022"
 
 
 def test_game_frame_gate_accepts_current_session_direct_action_response() -> None:
@@ -383,6 +450,56 @@ def test_game_frame_gate_reconstructs_split_frames() -> None:
     assert second.rows[0]["DataLength"] == len(frame)
 
 
+def test_game_frame_gate_keeps_split_buffers_per_tcp_flow() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+    first_frame = _rev_state_frame(session="2401:1111111111111111")
+    second_frame = _rev_state_frame(session="2401:2222222222222222")
+    first_head = _row("REV", first_frame[:7], sort_id=1)
+    first_tail = _row("REV", first_frame[7:], sort_id=3)
+    second = _row("REV", second_frame, sort_id=2)
+    second["DstPort"] = 60214
+
+    assert gate.feed_row(first_head).rows == ()
+    emitted_second = gate.feed_row(second)
+    emitted_first = gate.feed_row(first_tail)
+
+    assert len(emitted_second.rows) == 1
+    assert emitted_second.rows[0]["SessionID"] == "2401:2222222222222222"
+    assert len(emitted_first.rows) == 1
+    assert emitted_first.rows[0]["SessionID"] == "2401:1111111111111111"
+    assert emitted_first.reset_session is True
+
+
+def test_game_frame_gate_prunes_stale_flow_buffers_but_keeps_active_flow() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+    first_frame = _rev_state_frame(session="2401:1111111111111111")
+    second_frame = _rev_state_frame(session="2401:2222222222222222")
+    first_head = _row("REV", first_frame[:7], sort_id=1)
+    first_tail = _row("REV", first_frame[7:], sort_id=3)
+    second_head = _row("REV", second_frame[:7], sort_id=2)
+    second_head["DstPort"] = 60214
+    second_tail = _row("REV", second_frame[7:], sort_id=4)
+    second_tail["DstPort"] = 60214
+
+    assert gate.feed_row(first_head).rows == ()
+    assert gate.feed_row(second_head).rows == ()
+    gate.reset_stream_buffers(
+        keep_flow_keys={
+            ("8.133.195.27", 10000, "198.18.0.1", 60214),
+        },
+        clear_session=False,
+    )
+
+    emitted_first = gate.feed_row(first_tail)
+    emitted_second = gate.feed_row(second_tail)
+
+    assert emitted_first.rows == ()
+    assert len(emitted_second.rows) == 1
+    assert emitted_second.rows[0]["SessionID"] == "2401:2222222222222222"
+
+
 def test_game_frame_gate_resets_on_new_state_session() -> None:
     module = _module()
     gate = module.GameFrameGate()
@@ -417,3 +534,40 @@ def test_game_frame_gate_resets_on_new_state_session() -> None:
     assert len(second_state.rows) == 1
     assert second_state.rows[0]["SortID"] == 1
     assert second_state.rows[0]["SessionID"] == "2405:2222222222222222"
+
+
+def test_game_frame_gate_resets_on_new_status_session() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    first_state = gate.feed_row(
+        _row(
+            "REV",
+            _rev_state_frame(session="2401:1111111111111111"),
+            sort_id=1,
+        )
+    )
+    next_status = gate.feed_row(
+        _row(
+            "REV",
+            _rev_status_frame(session="2407:2222222222222222"),
+            sort_id=2,
+        )
+    )
+    next_state = gate.feed_row(
+        _row(
+            "REV",
+            _rev_state_frame(session="2407:2222222222222222", map_id=2407),
+            sort_id=3,
+        )
+    )
+
+    assert len(first_state.rows) == 1
+    assert next_status.reset_session is True
+    assert len(next_status.rows) == 1
+    assert next_status.rows[0]["SortID"] == 1
+    assert next_status.rows[0]["MessageID"] == "0x0077"
+    assert gate.active_session_id == "2407:2222222222222222"
+    assert len(next_state.rows) == 1
+    assert next_state.rows[0]["SortID"] == 2
+    assert next_state.rows[0]["SessionID"] == "2407:2222222222222222"

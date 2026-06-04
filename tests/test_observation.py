@@ -7,12 +7,20 @@ import pytest
 from bidking_lab.inference.display import parse_reading
 from bidking_lab.inference.observation import (
     AISHA_DEFAULT_LOADOUT,
+    AHMED_DEFAULT_LOADOUT,
     ETHAN_ALT_LOADOUT,
     ETHAN_DEFAULT_LOADOUT,
+    FREQUENCY_PRIOR_LOADOUT,
+    GABRIELA_DEFAULT_LOADOUT,
+    GENERIC_DEFAULT_LOADOUT,
     HUGE_BAND_RANGE,
     HUGE_CELLS_PER_QUALITY,
     JOINT_CONSTRAINT_RELAX_THRESHOLD,
+    MARIA_DEFAULT_LOADOUT,
+    QUALITY_ONLY_DEFAULT_LOADOUT,
+    RAVEN_DEFAULT_LOADOUT,
     STANDARD_LOADOUTS,
+    VICTOR_DEFAULT_LOADOUT,
     QualityBucketObs,
     SessionObs,
     active_reading_constraint_count,
@@ -62,6 +70,11 @@ def test_standard_loadouts_distinct() -> None:
     assert "优品均格" in ETHAN_DEFAULT_LOADOUT
     assert "总仓储空间" in AISHA_DEFAULT_LOADOUT
     assert "随机抽检(2)" in AISHA_DEFAULT_LOADOUT
+    assert FREQUENCY_PRIOR_LOADOUT[:3] == (
+        "随机抽检(2)",
+        "宝光四鉴",
+        "随机抽检(1)",
+    )
     assert len(ETHAN_DEFAULT_LOADOUT) == 5
     assert len(AISHA_DEFAULT_LOADOUT) == 5
 
@@ -79,6 +92,68 @@ def test_ethan_alt_loadout_swaps_purple_value_for_random_reveal() -> None:
 def test_standard_loadouts_dict_indexed_by_hero_mode() -> None:
     assert STANDARD_LOADOUTS["ethan"] == ETHAN_DEFAULT_LOADOUT
     assert STANDARD_LOADOUTS["aisha"] == AISHA_DEFAULT_LOADOUT
+    assert STANDARD_LOADOUTS["gabriela"] == GABRIELA_DEFAULT_LOADOUT
+    assert STANDARD_LOADOUTS["maria"] == MARIA_DEFAULT_LOADOUT
+    assert STANDARD_LOADOUTS["ahmed"] == AHMED_DEFAULT_LOADOUT
+    assert STANDARD_LOADOUTS["fatima"] == GENERIC_DEFAULT_LOADOUT
+    assert STANDARD_LOADOUTS["sophie"] == QUALITY_ONLY_DEFAULT_LOADOUT
+    assert STANDARD_LOADOUTS["victor"] == VICTOR_DEFAULT_LOADOUT
+    assert STANDARD_LOADOUTS["raven"] == RAVEN_DEFAULT_LOADOUT
+    assert "巨物抽样" in GABRIELA_DEFAULT_LOADOUT
+    assert MARIA_DEFAULT_LOADOUT[0] == "宝光四鉴"
+    assert "至宝寻踪" in MARIA_DEFAULT_LOADOUT
+    assert "极品扫描" in MARIA_DEFAULT_LOADOUT
+    assert AHMED_DEFAULT_LOADOUT == (
+        "良品存量",
+        "普品扫描",
+        "普品均格",
+        "优品均格",
+        "极品扫描",
+    )
+    assert "优品扫描" in VICTOR_DEFAULT_LOADOUT
+    assert "优品均格" in VICTOR_DEFAULT_LOADOUT
+    assert "极品扫描" in VICTOR_DEFAULT_LOADOUT
+    assert "极品均格" in VICTOR_DEFAULT_LOADOUT
+    assert "巨物标识" in QUALITY_ONLY_DEFAULT_LOADOUT
+
+
+def test_standard_loadouts_cover_all_known_live_hero_modes() -> None:
+    expected_modes = {
+        "fatima",
+        "chenmei",
+        "aisha",
+        "gabriela",
+        "tatiana",
+        "naomi",
+        "sophie",
+        "maria",
+        "helena",
+        "isabella",
+        "george",
+        "carlos",
+        "leonard",
+        "ahmed",
+        "ivan",
+        "takeda",
+        "wuqilin",
+        "ethan",
+        "victor",
+        "raven",
+    }
+    assert set(STANDARD_LOADOUTS) == expected_modes
+    assert all(len(loadout) == 5 for loadout in STANDARD_LOADOUTS.values())
+
+
+def test_standard_loadouts_avoid_red_rarity_tools() -> None:
+    red_rarity_tools = {
+        "珍品估价",
+        "随机抽检(8)",
+        "随机抽检(10)",
+        "随机抽检（8）",
+        "随机抽检（10）",
+    }
+    for loadout in STANDARD_LOADOUTS.values():
+        assert red_rarity_tools.isdisjoint(loadout)
 
 
 def test_tool_price_by_rarity_monotonic_increasing() -> None:

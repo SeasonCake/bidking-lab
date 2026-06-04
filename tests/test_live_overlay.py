@@ -180,6 +180,11 @@ def test_capture_status_signature_ignores_timestamp_only_changes() -> None:
     assert overlay._capture_status_signature(first) == overlay._capture_status_signature(second)
 
     second["raw_packets"] = 2
+    second["ignored_frames"] = 2
+    second["dropped_bytes"] = 1
+    assert overlay._capture_status_signature(first) == overlay._capture_status_signature(second)
+
+    first["raw_packets"] = 0
     assert overlay._capture_status_signature(first) != overlay._capture_status_signature(second)
 
 
@@ -211,17 +216,39 @@ def test_overlay_exit_cleanup_terminates_unique_pids_and_removes_locks(
     assert not lock_path.exists()
 
 
-def test_overlay_exit_cleanup_only_after_user_close() -> None:
+def test_overlay_exit_cleanup_is_not_gated_on_user_close() -> None:
     overlay = _overlay_module()
 
-    class Dummy:
-        user_closed = False
+    terminated: list[int] = []
 
-    dummy = Dummy()
-    assert overlay._should_cleanup_exit_targets(dummy) is False
+    overlay._cleanup_exit_targets(
+        [321],
+        [],
+        terminate_fn=terminated.append,
+    )
 
-    dummy.user_closed = True
-    assert overlay._should_cleanup_exit_targets(dummy) is True
+    assert terminated == [321]
+
+
+def test_overlay_detects_watched_monitor_pid_exit() -> None:
+    overlay = _overlay_module()
+
+    running = {111: True, 222: False}
+
+    assert (
+        overlay._watched_pid_exited(
+            [111],
+            running_fn=lambda pid: running[pid],
+        )
+        is False
+    )
+    assert (
+        overlay._watched_pid_exited(
+            [111, 222],
+            running_fn=lambda pid: running[pid],
+        )
+        is True
+    )
 
 
 def test_overlay_section_style_classifies_key_topics() -> None:
@@ -231,6 +258,57 @@ def test_overlay_section_style_classifies_key_topics() -> None:
     assert overlay._section_style("q6 风险参考", "已触发")["tag"] == "warn"
     assert overlay._section_style("Fallback 出价参考")["badge"] == "兜底"
     assert overlay._section_style("下一步道具")["tag"] == "good"
+
+
+def test_overlay_draw_minimap_renders_quality_only_markers() -> None:
+    overlay = _overlay_module()
+    calls: list[tuple[str, tuple, dict]] = []
+
+    class DummyCanvas:
+        def configure(self, **kwargs):
+            calls.append(("configure", (), kwargs))
+
+        def create_line(self, *args, **kwargs):
+            calls.append(("line", args, kwargs))
+
+        def create_rectangle(self, *args, **kwargs):
+            calls.append(("rectangle", args, kwargs))
+
+        def create_oval(self, *args, **kwargs):
+            calls.append(("oval", args, kwargs))
+
+    instance = overlay.Overlay.__new__(overlay.Overlay)
+    overlay.Overlay._draw_minimap(
+        instance,
+        DummyCanvas(),
+        {
+            "columns": 10,
+            "viewport_rows": 13,
+            "max_rows": 25,
+            "rows_hint": 8,
+            "items": [
+                {
+                    "row": 2,
+                    "col": 5,
+                    "width": 2,
+                    "height": 2,
+                    "quality": 5,
+                    "render_mode": "footprint",
+                },
+                {
+                    "row": 8,
+                    "col": 7,
+                    "width": 1,
+                    "height": 1,
+                    "quality": 2,
+                    "render_mode": "marker",
+                },
+            ],
+        },
+    )
+
+    assert any(kind == "rectangle" for kind, *_ in calls)
+    assert any(kind == "oval" for kind, *_ in calls)
     assert overlay._section_style("正式出价", "停止追价")["tag"] == "bad"
 
 
@@ -249,33 +327,6 @@ def test_overlay_quality_style_distinguishes_white_and_unknown() -> None:
     assert white["stipple"] == ""
     assert white["fill"].lower() == "#f8fafc"
     assert white["outline"].lower() == "#cbd5e1"
-
-
-def test_overlay_matplotlib_minimap_is_temporarily_disabled() -> None:
-    overlay = _overlay_module()
-    interaction = {
-        "detail": {
-            "renderers": (
-                {
-                    "name": "matplotlib_minimap",
-                    "mode": "optional_async",
-                    "min_round": 3,
-                },
-            )
-        }
-    }
-
-    enabled, reason = overlay._matplotlib_minimap_state(
-        {"round": 2, "interaction": interaction}
-    )
-    assert enabled is False
-    assert "已暂时关闭" in reason
-
-    enabled, reason = overlay._matplotlib_minimap_state(
-        {"round": 3, "interaction": interaction}
-    )
-    assert enabled is False
-    assert "已暂时关闭" in reason
 
 
 def test_demo_snapshot_has_compact_overlay_sections() -> None:
@@ -428,6 +479,21 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
                         "value": 320000,
                     },
                 },
+                "actions": {
+                    "latest_result": {
+                        "tool": "宝光四鉴",
+                        "result": "12",
+                        "revealed_items": "0",
+                    },
+                    "results": (
+                        {
+                            "tool": "宝光四鉴",
+                            "result": "12",
+                            "revealed_items": "0",
+                        },
+                    ),
+                    "sent": (),
+                },
                 "diagnostics": {
                     "posterior": "q6_below_drop_prior:0.12<prior:0.80",
                     "layout": {
@@ -502,6 +568,10 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert "总格 123" in constraints_section[1]
     assert "紫×10" in constraints_section[2]
     assert "反排1" in constraints_section[2]
+    action_section = next(
+        section for section in model["sections"] if section[0] == "最近道具"
+    )
+    assert "宝光四鉴: 12" in action_section[1]
     geometry = overlay._minimap_canvas_geometry(model["minimap"])
     assert geometry["rows"] == 20
     assert geometry["visible_rows"] == 13
@@ -513,6 +583,8 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert model["minimap"]["known_items"] == 2
     assert model["minimap"]["default_cells"] == 130
     assert model["minimap"]["max_cells"] == 250
+    assert model["minimap"]["capacity_text"] == "估格 108/120/140"
+    assert "最高" not in model["minimap"]["capacity_text"]
     assert model["title"] == "AISHA  ·  map 2501  ·  R4"
     assert model["decision"][0] == "可守不抢"
     assert model["metrics"][0] == (
@@ -530,13 +602,15 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert interaction["mini"]["purpose"] == "always_on_top_core_tips"
     assert interaction["mini"]["metrics"][0][0] == "P50估值"
     assert interaction["hover"]["enabled"] is True
-    assert interaction["hover"]["sections"][0][0] == "MiniMap"
+    assert interaction["hover"]["sections"][0][0] == "正式出价"
+    assert any(section[0] == "MiniMap" for section in interaction["hover"]["sections"])
     assert any(section[0] == "输入约束" for section in interaction["hover"]["sections"])
     assert any(section[0] == "q6 风险参考" for section in interaction["hover"]["sections"])
     round_section = next(
         section for section in interaction["hover"]["sections"] if section[0] == "轮次仓位参考"
     )
-    assert round_section[1] == "R4 参考 550,000"
+    assert round_section[1] == "R4 参考 454,546"
+    assert "P50 500,000 ÷ 1.1" in round_section[2]
     assert "不改变正式出价" in round_section[2]
     assert interaction["detail"]["enabled"] is True
     assert interaction["detail"]["collapsible"] is True
@@ -692,6 +766,121 @@ def test_overlay_model_hides_old_settlement_after_retention_window() -> None:
     assert any(section[0] == "监听状态" for section in model["sections"])
     assert model["interaction"]["hover"]["enabled"] is False
     assert model["interaction"]["detail"]["enabled"] is False
+
+
+def test_overlay_model_review_snapshot_keeps_stale_settlement() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model(
+        {
+            "created_at": time.time() - 90,
+            "file": "settled.json",
+            "phase": "settled",
+            "ui_contract": {
+                "context": {"phase": "settled", "known_value_sum": 801824},
+                "truth": {
+                    "available": True,
+                    "total_value": 801824,
+                },
+            },
+        },
+        review_snapshot=True,
+    )
+
+    assert model["decision"][0] == "结算 801,824"
+    assert any(metric[0] == "结算总值" for metric in model["metrics"])
+    assert model["interaction"]["detail"]["enabled"] is True
+
+
+def test_overlay_model_retains_recent_settlement_when_capture_session_is_stale() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model(
+        {
+            "created_at": time.time() - 5,
+            "phase": "settled",
+            "map_id": 2409,
+            "round": 4,
+            "ui_contract": {
+                "context": {"phase": "settled", "session_id": "2409:old-session"},
+                "truth": {"available": True, "total_value": 500000},
+            },
+            "_capture_source_status": {
+                "ts": time.time() - 30,
+                "source": "windivert",
+                "active_flows": 1,
+                "raw_packets": 120,
+                "accepted_frames": 6,
+                "active_session_id": "2504:1295018884127153",
+            },
+        }
+    )
+
+    assert model["decision"][0] == "结算 500,000"
+    assert any(metric[0] == "结算总值" for metric in model["metrics"])
+
+
+def test_overlay_model_shows_new_session_loading_for_recent_settlement() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model(
+        {
+            "created_at": time.time() - 5,
+            "phase": "settled",
+            "map_id": 2409,
+            "round": 4,
+            "ui_contract": {
+                "context": {"phase": "settled", "session_id": "2409:old-session"},
+                "truth": {"available": True, "total_value": 500000},
+            },
+            "_capture_source_status": {
+                "ts": time.time() - 1,
+                "source": "windivert",
+                "active_flows": 1,
+                "raw_packets": 120,
+                "accepted_frames": 6,
+                "active_session_id": "2504:1295018884127153",
+            },
+        }
+    )
+
+    assert model["decision"][0] == "新局监听中"
+    assert model["subtitle"] == "监听中，已抓到新局 map 2504"
+
+
+def test_overlay_model_shows_new_session_loading_after_settlement() -> None:
+    overlay = _overlay_module()
+
+    model = overlay._overlay_model(
+        {
+            "created_at": time.time() - 90,
+            "file": "settled.json",
+            "phase": "settled",
+            "_capture_source_status": {
+                "ts": time.time() - 1,
+                "source": "windivert",
+                "active_flows": 1,
+                "raw_packets": 120,
+                "accepted_frames": 8,
+                "active_session_id": "2401:new-session-id",
+            },
+            "ui_contract": {
+                "context": {"phase": "settled", "known_value_sum": 801824},
+                "truth": {
+                    "available": True,
+                    "total_value": 801824,
+                },
+            },
+        }
+    )
+
+    assert model["decision"][0] == "新局监听中"
+    assert model["subtitle"] == "监听中，已抓到新局 map 2401"
+    assert any(section[0] == "当前会话" for section in model["sections"])
+    assert any(
+        section[0] == "当前地图" and section[1] == "2401"
+        for section in model["sections"]
+    )
 
 
 def test_overlay_model_hides_stale_non_settlement_snapshot() -> None:
@@ -884,7 +1073,7 @@ def test_overlay_model_uses_zero_match_fallback_reference() -> None:
     )
     assert "探价 180,000" in fallback_section[1]
     assert "防守 196,000" in fallback_section[1]
-    assert "抢仓 252,000" in fallback_section[1]
+    assert "可追(P90) 252,000" in fallback_section[1]
     assert "停止 420,000" in fallback_section[1]
     assert "对手：玩家A 500,000 过热区" in fallback_section[2]
     assert "补信息：优先补轮廓或具体物品" in fallback_section[2]
@@ -897,3 +1086,32 @@ def test_overlay_model_uses_zero_match_fallback_reference() -> None:
         section[0] == "Fallback 出价参考"
         for section in model["interaction"]["detail"]["sections"]
     )
+
+
+def test_overlay_hover_surfaces_size_bucket_section() -> None:
+    overlay = _overlay_module()
+    from bidking_lab.runtime.snapshot import ui_contract_from_artifact
+
+    contract = ui_contract_from_artifact(
+        {
+            "action_result_rows": [
+                {
+                    "action_id": 100172,
+                    "tool": "四格均价",
+                    "result": 135000,
+                    "sort": 3,
+                }
+            ],
+            "v2_posterior_rows": [
+                {
+                    "诊断": (
+                        "size_bucket:4:avg=135000:tier=rich_pool:strength=soft"
+                    ),
+                }
+            ],
+        }
+    )
+    sections = overlay._ui_contract_hover_sections(contract)
+    size_section = next(section for section in sections if section[0] == "N格均价")
+    assert "四格均价" in size_section[1]
+    assert "tier=rich_pool" in size_section[2]

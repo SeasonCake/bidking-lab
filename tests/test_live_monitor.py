@@ -16,6 +16,7 @@ from bidking_lab.live.fatbeans import (
     FatbeansInventoryItem,
     FatbeansObservedItem,
     FatbeansPlayerBid,
+    FatbeansPublicInfo,
     FatbeansStateEvent,
 )
 from bidking_lab.live.monitor import (
@@ -30,6 +31,7 @@ from bidking_lab.live.monitor import (
     load_monitor_tables,
     write_monitor_logs,
 )
+from bidking_lab.live.types import GridItemObservation, LiveObservationBatch
 from bidking_lab.inference.observation import QualityBucketObs, SessionObs
 from bidking_lab.inference.q6_residual import (
     aisha_q6_quality_only_deep_local_risk,
@@ -124,6 +126,108 @@ def _item() -> Item:
     )
 
 
+def test_action_result_rows_include_revealed_item_details() -> None:
+    rows = monitor_module._action_result_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=9,
+                    capture_time="2026-06-03 00:00:00.000",
+                    message_id=0x0027,
+                    session_id="2501:1",
+                    map_id=2501,
+                    round_index=3,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=100136,
+                            result=12,
+                            result_field=14,
+                            observed_items=(
+                                FatbeansObservedItem(
+                                    local_index=14,
+                                    runtime_id=101,
+                                    item_id=None,
+                                    quality=2,
+                                    value=None,
+                                    shape_code=None,
+                                    cells=None,
+                                ),
+                                FatbeansObservedItem(
+                                    local_index=76,
+                                    runtime_id=None,
+                                    item_id=None,
+                                    quality=3,
+                                    value=None,
+                                    shape_code=None,
+                                    cells=None,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        {100136: SimpleNamespace(name="宝光四鉴")},
+    )
+
+    assert rows[0]["revealed_items"] == 2
+    assert rows[0]["revealed_items_detail"][0]["local_index"] == 14
+    assert rows[0]["revealed_items_detail"][0]["quality"] == 2
+    assert rows[0]["revealed_items_detail"][1]["local_index"] == 76
+    assert rows[0]["revealed_items_detail"][1]["quality"] == 3
+
+
+def test_public_info_rows_include_revealed_item_details() -> None:
+    rows = monitor_module._public_info_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=11,
+                    capture_time="2026-06-04 03:44:38.710",
+                    message_id=0x0025,
+                    session_id="2401:1",
+                    map_id=2401,
+                    round_index=1,
+                    public_infos=(
+                        FatbeansPublicInfo(
+                            info_id=200027,
+                            map_id=2401,
+                            value=6,
+                            value_field=6,
+                            observed_items=(
+                                FatbeansObservedItem(
+                                    local_index=42,
+                                    runtime_id=501,
+                                    item_id=None,
+                                    quality=4,
+                                    value=None,
+                                    shape_code=None,
+                                    cells=None,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        {},
+    )
+
+    assert rows[0]["info_id"] == 200027
+    assert rows[0]["revealed_items"] == 1
+    assert rows[0]["revealed_items_detail"][0]["local_index"] == 42
+    assert rows[0]["revealed_items_detail"][0]["quality"] == 4
+    assert rows[0]["revealed_summary"] == "Q4x1 / pos 42"
+
+
 def test_q6_quality_only_local_diagnostics_is_review_only() -> None:
     store = SimpleNamespace(
         items=lambda: (
@@ -196,6 +300,33 @@ def _tables() -> MonitorTables:
         },
         items={item.item_id: item},
     )
+
+
+def test_minimap_table_shape_requires_cell_count_match() -> None:
+    rows = monitor_module._minimap_grid_items(
+        (
+            LiveObservationBatch(
+                source="packet",
+                phase="settled",
+                grid_items=(
+                    GridItemObservation(
+                        cells=3,
+                        source="packet",
+                        confidence="exact",
+                        item_id=1001,
+                        quality=4,
+                        local_index=14,
+                    ),
+                ),
+            ),
+        ),
+        _tables().items,
+    )
+
+    assert rows[0]["item_name"] == "test_item"
+    assert rows[0]["shape_key"] is None
+    assert rows[0]["row"] is None
+    assert rows[0]["col"] is None
 
 
 def _two_item_tables() -> MonitorTables:
@@ -310,6 +441,7 @@ def _events() -> FatbeansCaptureEvents:
                         item_id=1001,
                         quality=4,
                         cells=4,
+                        local_index=14,
                     ),
                 ),
             ),
@@ -331,6 +463,7 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["roi_trials"] == 0
     assert artifact["shadow_trials"] == 10
     assert artifact["processing_seconds"] >= 0
+    assert artifact["session_id"] == "s1"
     assert artifact["hero"] == "aisha"
     assert artifact["map_id"] == 2401
     assert artifact["known_value_sum"] == 20_000
@@ -381,6 +514,13 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "category_grid_items" in artifact
     assert "minimap_grid_items" in artifact
     assert artifact["minimap_grid_items"][0]["item_name"] == "test_item"
+    assert artifact["minimap_grid_items"][0]["layout_source"] == "settlement_inventory"
+    assert artifact["minimap_grid_items"][0]["row"] == 2
+    assert artifact["minimap_grid_items"][0]["col"] == 5
+    assert artifact["minimap_grid_items"][0]["shape_key"] == "22"
+    assert artifact["ui_contract"]["minimap"]["layout_source"] == "settlement_inventory"
+    assert artifact["ui_contract"]["minimap"]["layout_complete"] is True
+    assert artifact["ui_contract"]["minimap"]["drawable_items"] == 1
     assert artifact["bid_rows"]
     assert artifact["bid_rows"][0]["价值口径"] == "decision_value"
     assert artifact["bid_rows"][0]["决策价值 P10/P50/P90"]
@@ -415,6 +555,8 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["model_eval"]["final_top_item_name"] == "test_item"
     assert artifact["model_eval"]["final_top_item_value"] == 20_000
     assert artifact["model_eval"]["decision_value_p50"] == 20_000
+    assert artifact["model_eval"]["posterior_samples"] == 10
+    assert artifact["model_eval"]["posterior_total_samples"] == 10
     assert artifact["model_eval"]["monitor_n_trials"] == 10
     assert artifact["model_eval"]["monitor_roi_trials"] == 0
     assert artifact["model_eval"]["monitor_shadow_trials"] == 10
@@ -526,6 +668,39 @@ def test_model_eval_uses_problem_evidence_profile_when_available() -> None:
 
     assert row is not None
     assert row["evidence_profile_key"] == "shape+layout"
+
+
+def test_model_eval_uses_v2_value_when_bid_rows_are_absent() -> None:
+    row = _model_eval_row(
+        file="opening.json",
+        artifact={
+            "file": "opening.json",
+            "hero": "ethan",
+            "map_id": 2401,
+            "round": 1,
+            "warehouse_rows": [{"价值 P10/P50/P90": "100 / 200 / 300"}],
+            "v2_posterior_rows": [
+                {
+                    "匹配": "3/10",
+                    "决策价值 P10/P50/P90": "100 / 250 / 400",
+                    "原始价值 P10/P50/P90": "120 / 260 / 420",
+                    "q6价值 P10/P50/P90": "0 / 0 / 0",
+                    "q6决策价值 P10/P50/P90": "0 / 0 / 0",
+                    "诊断": "",
+                },
+            ],
+        },
+        final_value=300,
+        final_cells=10,
+        truth_breakdown={},
+    )
+
+    assert row is not None
+    assert row["decision_value_p50"] == 250
+    assert row["decision_value_p90"] == 400
+    assert row["decision_value_p50_error"] == -50
+    assert row["raw_value_p50"] == 260
+    assert row["raw_value_p90"] == 420
 
 
 def test_model_eval_shadow_readiness_uses_plannable_q6_truth() -> None:
@@ -981,6 +1156,44 @@ def test_shadow_trials_defaults_to_live_cap() -> None:
     assert _resolve_shadow_trials(500, 0) == 1
 
 
+def test_q6_risk_reference_text_is_explicitly_non_binding() -> None:
+    text = monitor_module._q6_risk_reference_text(
+        {
+            "risk": True,
+            "summary": "件数P90低0.41；格数P90低5.6",
+            "floor_value": 499_973,
+            "gate": "shipwreck_positive_net",
+            "practical_p90": 499_973,
+        }
+    )
+
+    assert "件数P90低0.41" in text
+    assert "参考P90 499,973" in text
+    assert "shipwreck_positive_net" in text
+    assert "未抬高正式停止价" in text
+
+
+def test_q6_prior_gap_summary_uses_random_sample_avg_signal_as_reference() -> None:
+    summary = monitor_module._q6_prior_gap_summary(
+        SimpleNamespace(
+            map_id=2401,
+            q6_count=SimpleNamespace(p90=2),
+            q6_prior_expected_count=2,
+            q6_cells=SimpleNamespace(p90=10),
+            q6_prior_expected_cells=10,
+            q6_prior_expected_value=180_000,
+            q6_decision_value=SimpleNamespace(p90=200_000),
+            random_sample_avg_values=((3, 124_892.0),),
+        )
+    )
+
+    assert summary["risk"] is True
+    assert "随机3件均价高124,892" in summary["summary"]
+    assert summary["floor_value"] == 374_676
+    assert summary["gate"] == "random_avg_signal"
+    assert summary["practical_p90"] == 374_676
+
+
 def test_write_monitor_logs_updates_latest_and_jsonl(tmp_path: Path) -> None:
     artifact = build_monitor_artifact_from_events(
         _events(),
@@ -996,6 +1209,25 @@ def test_write_monitor_logs_updates_latest_and_jsonl(tmp_path: Path) -> None:
     assert latest["file"] == "sample.json"
     assert (tmp_path / "sessions.jsonl").read_text(encoding="utf-8")
     assert (tmp_path / "model_eval.jsonl").read_text(encoding="utf-8")
+
+
+def test_write_monitor_logs_can_update_latest_without_appending_jsonl(
+    tmp_path: Path,
+) -> None:
+    artifact = build_monitor_artifact_from_events(
+        _events(),
+        file="fast.json",
+        tables=_tables(),
+        n_trials=10,
+        roi_trials=0,
+    )
+
+    write_monitor_logs(artifact, log_dir=tmp_path, append_logs=False)
+
+    latest = json.loads((tmp_path / "latest_snapshot.json").read_text(encoding="utf-8"))
+    assert latest["file"] == "fast.json"
+    assert not (tmp_path / "sessions.jsonl").exists()
+    assert not (tmp_path / "model_eval.jsonl").exists()
 
 
 def test_atomic_write_json_retries_transient_permission_error(

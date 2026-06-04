@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Sequence
 
 from bidking_lab.live.types import (
@@ -110,12 +110,21 @@ class LayoutGridView:
 def latest_grid_batch(
     batches: Sequence[LiveObservationBatch],
 ) -> LiveObservationBatch | None:
-    """Return the latest useful batch with grid items, preferring pre-settlement."""
+    """Return accumulated grid knowledge, preferring pre-settlement evidence."""
     candidates = [batch for batch in batches if batch.grid_items]
     if not candidates:
         return None
     pre_settlement = [batch for batch in candidates if batch.phase != "settled"]
-    return pre_settlement[-1] if pre_settlement else candidates[-1]
+    selected = pre_settlement[-1] if pre_settlement else candidates[-1]
+
+    from bidking_lab.live.state import LiveSessionState, apply_observation_batch
+
+    state = LiveSessionState()
+    for batch in batches:
+        state = apply_observation_batch(state, batch)
+        if batch is selected:
+            break
+    return replace(selected, grid_items=state.grid_items)
 
 
 def layout_item_from_grid_item(

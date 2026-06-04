@@ -76,6 +76,37 @@ def _text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def _session_map_id(session: Any) -> int | None:
+    text = _text(session)
+    prefix = text.split(":", 1)[0]
+    try:
+        return int(prefix)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_ignored_sample(sample: Any) -> str:
+    if not isinstance(sample, Mapping) or not sample:
+        return ""
+    message_id = sample.get("message_id")
+    packet_tag = sample.get("packet_tag")
+    sort_id = sample.get("sort_id")
+    parts = [
+        _text(sample.get("reason")),
+        f"msg={_text(message_id if message_id is not None else '-')}",
+        f"tag={_text(packet_tag if packet_tag is not None else '-')}",
+        f"sort={_text(sort_id if sort_id is not None else '-')}",
+        f"{_text(sample.get('src') or '?')}->{_text(sample.get('dst') or '?')}",
+    ]
+    frame_session = _text(sample.get("frame_session_id") or "")
+    if frame_session:
+        parts.append(f"frame_session={frame_session}")
+    active_session = _text(sample.get("active_session_id") or "")
+    if active_session:
+        parts.append(f"session={active_session}")
+    return " ".join(part for part in parts if part)
+
+
 def _status_level(messages: list[str], errors: list[str]) -> str:
     if errors:
         return "error"
@@ -194,6 +225,19 @@ def build_live_status(
         if "accepted_frames" in capture_status
         else capture_status.get("accepted_packets")
     )
+    ignored_frames = capture_status.get("ignored_frames")
+    ignored_reasons = (
+        capture_status.get("ignored_reasons")
+        if isinstance(capture_status.get("ignored_reasons"), Mapping)
+        else {}
+    )
+    ignored_samples = (
+        capture_status.get("ignored_samples")
+        if isinstance(capture_status.get("ignored_samples"), list)
+        else []
+    )
+    active_session_id = capture_status.get("active_session_id")
+    active_session_map_id = _session_map_id(active_session_id)
 
     warnings: list[str] = []
     errors: list[str] = []
@@ -361,8 +405,18 @@ def build_live_status(
             "sniffed_packets": sniffed_packets,
             "raw_packets": raw_packets,
             "accepted_frames": accepted_frames,
-            "ignored_frames": capture_status.get("ignored_frames"),
-            "active_session_id": capture_status.get("active_session_id"),
+            "ignored_frames": ignored_frames,
+            "ignored_reasons": dict(ignored_reasons),
+            "ignored_samples": tuple(
+                sample for sample in ignored_samples if isinstance(sample, Mapping)
+            ),
+            "last_ignored_sample": (
+                ignored_samples[-1]
+                if ignored_samples and isinstance(ignored_samples[-1], Mapping)
+                else {}
+            ),
+            "active_session_id": active_session_id,
+            "active_session_map_id": active_session_map_id,
         },
     }
 
@@ -463,9 +517,23 @@ def format_status_text(status: Mapping[str, Any]) -> str:
             f"sniffed={capture.get('sniffed_packets') if capture.get('sniffed_packets') is not None else '?'} "
             f"raw={capture.get('raw_packets') if capture.get('raw_packets') is not None else '?'} "
             f"accepted={capture.get('accepted_frames') if capture.get('accepted_frames') is not None else '?'} "
-            f"session={capture.get('active_session_id') or '-'}"
+            f"ignored={capture.get('ignored_frames') if capture.get('ignored_frames') is not None else '?'} "
+            f"session={capture.get('active_session_id') or '-'} "
+            f"map={capture.get('active_session_map_id') or '-'}"
         ),
     ]
+    ignored_reasons = _first_mapping(capture.get("ignored_reasons"))
+    if ignored_reasons or capture.get("last_ignored_sample"):
+        reason_text = " / ".join(
+            f"{name}×{count}"
+            for name, count in list(sorted(ignored_reasons.items()))
+        )
+        last_sample = _format_ignored_sample(capture.get("last_ignored_sample"))
+        lines.append(
+            "Ignored: "
+            f"{reason_text or '无'}"
+            + (f" | last {last_sample}" if last_sample else "")
+        )
     for error in status.get("errors") or ():
         lines.append(f"ERROR: {error}")
     for warning in status.get("warnings") or ():

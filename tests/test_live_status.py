@@ -132,6 +132,7 @@ def test_live_status_reports_healthy_log_dir(tmp_path: Path, monkeypatch) -> Non
     assert status["capture_source"]["source"] == "windivert"
     assert status["capture_source"]["sniffed_packets"] == 12
     assert status["capture_source"]["accepted_frames"] == 3
+    assert status["capture_source"]["active_session_map_id"] == 2501
     assert status["processed_files"]["status_counts"] == {"ok": 1}
 
     text = module.format_status_text(status)
@@ -141,6 +142,61 @@ def test_live_status_reports_healthy_log_dir(tmp_path: Path, monkeypatch) -> Non
     assert "Q6: risk=True affects_bid=False floor=False" in text
     assert "running=True" in text
     assert "Capture: source=windivert" in text
+    assert "session=2501:123 map=2501" in text
+
+
+def test_live_status_reports_last_ignored_capture_sample(tmp_path: Path) -> None:
+    module = _module()
+    now = 1_000.0
+    _write_json(tmp_path / "latest_snapshot.json", _healthy_snapshot(now))
+    _append_jsonl(tmp_path / "model_eval.jsonl", [{"ts": now - 4.0}])
+    _write_json(tmp_path / "monitor.lock", {"pid": 1234, "started_at": now - 60.0})
+    _write_json(
+        tmp_path / "capture_source_status.json",
+        {
+            "ts": now - 1.0,
+            "source": "windivert",
+            "process_name": "BidKing.exe",
+            "active_flows": 1,
+            "sniffed_packets": 12,
+            "raw_packets": 10,
+            "accepted_frames": 3,
+            "ignored_frames": 7,
+            "ignored_reasons": {
+                "rev_not_game_frame": 5,
+                "send_wrong_session": 2,
+            },
+            "ignored_samples": [
+                {
+                    "reason": "rev_not_game_frame",
+                    "direction": "REV",
+                    "sort_id": 18,
+                    "capture_time": "2026-06-03 00:00:01.000",
+                    "message_id": "0x0021",
+                    "packet_tag": 0,
+                    "src": "8.133.195.27:10000",
+                    "dst": "198.18.0.1:60213",
+                    "raw_length": 64,
+                    "raw_prefix": "abcd",
+                    "active_session_id": "2401:123",
+                }
+            ],
+            "active_session_id": "2401:123",
+        },
+    )
+
+    status = module.build_live_status(tmp_path, now=now)
+
+    assert status["capture_source"]["ignored_frames"] == 7
+    assert status["capture_source"]["ignored_reasons"] == {
+        "rev_not_game_frame": 5,
+        "send_wrong_session": 2,
+    }
+    assert status["capture_source"]["last_ignored_sample"]["message_id"] == "0x0021"
+    text = module.format_status_text(status)
+    assert "ignored=7" in text
+    assert "Ignored: rev_not_game_frame×5 / send_wrong_session×2" in text
+    assert "last rev_not_game_frame msg=0x0021" in text
 
 
 def test_live_status_warns_on_stale_slow_fallback_and_bid_affecting_q6(

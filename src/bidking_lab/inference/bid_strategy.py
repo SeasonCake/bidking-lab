@@ -9,9 +9,21 @@ stable enough to model.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Mapping
 
 from bidking_lab.inference.observation import SessionObs
+
+
+ROUND_WAREHOUSE_MULTIPLIERS: Mapping[int, float] = {
+    1: 2.0,
+    2: 1.6,
+    3: 1.3,
+    4: 1.1,
+    5: 1.0,
+}
+DEFEND_UPSIDE_BLEND = 0.15
+DEFEND_MAX_VALUE_PREMIUM = 1.15
 
 
 @dataclass(frozen=True)
@@ -22,6 +34,7 @@ class BidThresholds:
     defend_bid: int
     attack_bid: int
     stop_bid: int
+    warehouse_multiplier: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -169,27 +182,42 @@ def _thresholds_for_strength(
     p50: float,
     p90: float,
     info_strength: str,
+    round_no: int | None,
 ) -> BidThresholds:
-    if info_strength == "低":
-        return BidThresholds(
-            probe_bid=max(0, int(p10)),
-            defend_bid=max(0, int(p50 * 0.70)),
-            attack_bid=max(0, int(p50 * 0.90)),
-            stop_bid=max(0, int(p50)),
-        )
-    if info_strength == "中":
-        return BidThresholds(
-            probe_bid=max(0, int(p10)),
-            defend_bid=max(0, int(p50 * 0.90)),
-            attack_bid=max(0, int(p90 * 0.90)),
-            stop_bid=max(0, int(p90)),
-        )
+    multiplier = _warehouse_multiplier(round_no)
+    probe_bid = _ceil_price(p10 / multiplier)
+    defend_value = _defend_value_with_premium(p50=p50, p90=p90)
+    defend_bid = _ceil_price(defend_value / multiplier)
+    attack_bid = _ceil_price(p90 / multiplier)
+    stop_bid = attack_bid
+    if info_strength == "高":
+        stop_bid = _ceil_price((p90 / multiplier) * 1.03)
     return BidThresholds(
-        probe_bid=max(0, int(p10)),
-        defend_bid=max(0, int(p50)),
-        attack_bid=max(0, int(p90)),
-        stop_bid=max(0, int(p90 * 1.03)),
+        probe_bid=probe_bid,
+        defend_bid=defend_bid,
+        attack_bid=attack_bid,
+        stop_bid=stop_bid,
+        warehouse_multiplier=multiplier,
     )
+
+
+def _warehouse_multiplier(round_no: int | None) -> float:
+    if round_no is None:
+        return 1.0
+    return ROUND_WAREHOUSE_MULTIPLIERS.get(round_no, 1.0)
+
+
+def _ceil_price(value: float) -> int:
+    return max(0, int(math.ceil(value)))
+
+
+def _defend_value_with_premium(*, p50: float, p90: float) -> float:
+    """Use a mild P55-like premium so defend bids can actually win ties."""
+    if p90 <= p50:
+        return max(0.0, p50)
+    blended = p50 + (p90 - p50) * DEFEND_UPSIDE_BLEND
+    capped = min(blended, p50 * DEFEND_MAX_VALUE_PREMIUM)
+    return max(0.0, min(capped, p90))
 
 
 def _risk_band(bid: int, thresholds: BidThresholds) -> str:
@@ -230,14 +258,22 @@ def _rationale(
     warehouse_status: str,
     posterior_samples: int,
     round_no: int | None,
+    warehouse_multiplier: float,
 ) -> str:
     parts: list[str] = []
     if round_no == 1 or info_strength == "低":
-        parts.append("早期/低信息阶段按地图与当前后验中位数保守折价")
+        parts.append("早期/低信息阶段不主动高追")
     elif info_strength == "中":
-        parts.append("已有部分桶或仓储证据，抢仓价仍保留安全边际")
+        parts.append("已有部分桶或仓储证据，按当前后验分位给出攻防线")
     else:
-        parts.append("信息较完整，抢仓上限可接近 P90")
+        parts.append("信息较完整，抢仓上限可接近 P90 对应价")
+    if warehouse_multiplier > 1.0:
+        parts.append(
+            f"本轮秒仓倍率 {warehouse_multiplier:g}x，出价阈值按估值÷倍率反推；"
+            "防守价含轻微成交溢价"
+        )
+    else:
+        parts.append("本轮最高价直接决定归属，防守价含轻微成交溢价")
     if warehouse_status == "未知":
         parts.append("仓储未知会放大总价值不确定性")
     elif warehouse_status.startswith("精确"):
@@ -317,6 +353,7 @@ def recommend_bid_strategy(
         p50=p50,
         p90=p90,
         info_strength=strength,
+        round_no=round_no,
     )
     leader, highest_bid = max(clean_bids.items(), key=lambda item: item[1])
     player_risks = tuple(
@@ -345,6 +382,7 @@ def recommend_bid_strategy(
             warehouse_status=wh_status,
             posterior_samples=posterior_samples,
             round_no=round_no,
+            warehouse_multiplier=thresholds.warehouse_multiplier,
         ),
         next_info_hint=_next_info_hint(
             info_strength=strength,
@@ -358,6 +396,9 @@ def recommend_bid_strategy(
 __all__ = (
     "BidStrategyReport",
     "BidThresholds",
+    "DEFEND_MAX_VALUE_PREMIUM",
+    "DEFEND_UPSIDE_BLEND",
     "PlayerBidRisk",
+    "ROUND_WAREHOUSE_MULTIPLIERS",
     "recommend_bid_strategy",
 )

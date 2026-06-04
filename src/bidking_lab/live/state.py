@@ -94,6 +94,71 @@ def should_replace_field(old: ObservedField | None, new: ObservedField) -> bool:
     return new_conf > old_conf
 
 
+def _first_not_none(primary: Any, fallback: Any) -> Any:
+    return primary if primary is not None else fallback
+
+
+def _grid_item_key(item: GridItemObservation) -> tuple[Any, ...] | None:
+    if item.runtime_id is not None:
+        return ("runtime", item.runtime_id)
+    if item.shape_key is not None:
+        return ("footprint", item.local_index, item.shape_key)
+    return None
+
+
+def _merge_grid_item(
+    old: GridItemObservation,
+    new: GridItemObservation,
+) -> GridItemObservation:
+    if new.shape_key is not None:
+        shape_key = new.shape_key
+        local_index = new.local_index
+    elif old.shape_key is not None:
+        shape_key = old.shape_key
+        local_index = old.local_index
+    else:
+        shape_key = None
+        local_index = _first_not_none(new.local_index, old.local_index)
+    return GridItemObservation(
+        cells=new.cells,
+        source=new.source,
+        confidence=new.confidence,
+        runtime_id=_first_not_none(new.runtime_id, old.runtime_id),
+        item_id=_first_not_none(new.item_id, old.item_id),
+        quality=_first_not_none(new.quality, old.quality),
+        shape_key=shape_key,
+        value=_first_not_none(new.value, old.value),
+        local_index=local_index,
+        category=_first_not_none(new.category, old.category),
+        observed_at_ms=_first_not_none(new.observed_at_ms, old.observed_at_ms),
+    )
+
+
+def merge_grid_items(
+    current: tuple[GridItemObservation, ...],
+    incoming: tuple[GridItemObservation, ...],
+) -> tuple[GridItemObservation, ...]:
+    """Merge incremental reveal items without discarding earlier knowledge."""
+    if not current:
+        return tuple(incoming)
+    merged = list(current)
+    index_by_key = {
+        key: index
+        for index, item in enumerate(merged)
+        if (key := _grid_item_key(item)) is not None
+    }
+    for item in incoming:
+        key = _grid_item_key(item)
+        index = index_by_key.get(key) if key is not None else None
+        if index is None:
+            merged.append(item)
+            if key is not None:
+                index_by_key[key] = len(merged) - 1
+            continue
+        merged[index] = _merge_grid_item(merged[index], item)
+    return tuple(merged)
+
+
 def apply_observation_batch(
     state: LiveSessionState,
     batch: LiveObservationBatch,
@@ -112,8 +177,13 @@ def apply_observation_batch(
 
     grid_items = state.grid_items
     if batch.grid_items:
-        grid_items = tuple(batch.grid_items)
-        changed = True
+        grid_items = (
+            tuple(batch.grid_items)
+            if batch.phase == "settled"
+            else merge_grid_items(grid_items, tuple(batch.grid_items))
+        )
+        if grid_items != state.grid_items:
+            changed = True
 
     phase = state.phase
     if batch.phase != "unknown" and batch.phase != state.phase:

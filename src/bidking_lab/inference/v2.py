@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, replace
 from functools import lru_cache
+import math
 from typing import Any, Literal, Mapping, Sequence
 
 import numpy as np
@@ -24,12 +25,25 @@ from bidking_lab.inference.ground_truth import (
     is_huge_item,
     prepare_session_sampler,
 )
+from bidking_lab.inference.q6_residual import actionable_random_sample_avg_values
 from bidking_lab.inference.map_likelihood import (
     QuantileSummary,
     category_observation_soft_score,
     truth_matches_obs,
 )
 from bidking_lab.inference.observation import CategoryItemObservation, SessionObs
+from bidking_lab.inference.size_avg_evidence import (
+    SIZE_AVG_VALUE_SIGNAL_FLOOR,
+    SIZE_AVG_VALUE_SIGNAL_FLOORS,
+    SizeBucketEvidence,
+    actionable_size_avg_value_targets,
+    build_size_bucket_evidence,
+    footprint_count_in_buckets,
+    prefill_size_bucket_targets,
+    residual_allowed_for_footprint,
+    size_avg_value_evidence_score,
+    size_bucket_evidence_diagnostics,
+)
 from bidking_lab.simulation.robust_value import (
     DEFAULT_VALUE_FLOOR,
     is_confusable_long_tail,
@@ -56,8 +70,12 @@ _PUBLIC_AVG_CELLS_QUALITY: dict[int, int] = {
 _PUBLIC_TOTAL_AVG_CELLS_IDS: set[int] = {
     200014,  # 每件藏品平均占用的格子数量
 }
-
-
+RANDOM_SAMPLE_VALUE_FLOOR_FACTOR = 0.95
+RANDOM_SAMPLE_VALUE_FLOOR_SOFT_PENALTY = 0.10
+RANDOM_SAMPLE_HARD_FLOOR_MIN_MATCHED = 3
+RANDOM_SAMPLE_HARD_FLOOR_MIN_RATE = 0.20
+RANDOM_SAMPLE_HARD_FLOOR_MAX_MIN_MATCHED = 20
+RANDOM_SAMPLE_HARD_FLOOR_EXTRA_TRIALS = 40
 @dataclass(frozen=True)
 class EvidenceFact:
     """One non-item evidence fact retained for diagnostics."""
@@ -260,6 +278,11 @@ class ResidualProblem:
     warehouse_total_cells: int | None = None
     total_avg_cells: float | None = None
     random_sample_avg_values: tuple[tuple[int, float], ...] = ()
+    random_sample_value_floor: int | None = None
+    size_avg_value_targets: tuple[tuple[int, float], ...] = ()
+    size_bucket_evidence: tuple[SizeBucketEvidence, ...] = ()
+    size_bucket_prefill: bool = False
+    size_bucket_mask_residual_pool: bool = False
     max_quality: int | None = None
     max_item_cells: int | None = None
     diagnostics: tuple[str, ...] = ()
@@ -325,6 +348,7 @@ class PosteriorReport:
     category_target_count: int = 0
     category_exclusion_count: int = 0
     random_sample_avg_values: tuple[tuple[int, float], ...] = ()
+    size_avg_value_targets: tuple[tuple[int, float], ...] = ()
     layout_diagnostics: tuple[str, ...] = ()
     diagnostics: tuple[str, ...] = ()
 
@@ -415,6 +439,7 @@ def evidence_store_from_fatbeans_events(
     """
 
     from bidking_lab.live.fatbeans import (
+        _ACTION_SIZE_AVG_VALUE,
         _CATEGORY_OUTLINE_ACTIONS,
         _skill_reveal_category,
     )
@@ -463,6 +488,24 @@ def evidence_store_from_fatbeans_events(
                 )
         for result in getattr(state, "action_results", ()) or ():
             action_id = getattr(result, "action_id", None)
+            if action_id in _ACTION_SIZE_AVG_VALUE:
+                result_value = getattr(result, "result", None)
+                if result_value is not None:
+                    try:
+                        numeric = float(result_value)
+                    except (TypeError, ValueError):
+                        numeric = None
+                    if numeric is not None and numeric > 0:
+                        builder.add_fact(
+                            EvidenceFact(
+                                kind="action",
+                                key=str(action_id),
+                                value=numeric,
+                                source=f"action:{action_id}",
+                                strength="soft",
+                                sequence=sequence,
+                            )
+                        )
             category = _CATEGORY_OUTLINE_ACTIONS.get(action_id)
             positive_keys = {
                 key
@@ -966,6 +1009,33 @@ def _public_total_avg_cells_target(store: EvidenceStore) -> float | None:
     return target
 
 
+def _action_size_avg_value_targets(
+    store: EvidenceStore,
+) -> tuple[tuple[int, float], ...]:
+    """Per-footprint average item values from size-bucket action tools (100169-100173)."""
+    from bidking_lab.live.fatbeans import _ACTION_SIZE_AVG_VALUE
+
+    values: list[tuple[int, float]] = []
+    seen: set[tuple[int, float]] = set()
+    for fact in store.facts:
+        if fact.kind != "action":
+            continue
+        try:
+            action_id = int(fact.key)
+            value = float(fact.value)
+        except (TypeError, ValueError):
+            continue
+        cells = _ACTION_SIZE_AVG_VALUE.get(action_id)
+        if cells is None or value <= 0:
+            continue
+        key = (cells, value)
+        if key in seen:
+            continue
+        seen.add(key)
+        values.append(key)
+    return tuple(values)
+
+
 def _public_random_sample_avg_values(
     store: EvidenceStore,
 ) -> tuple[tuple[int, float], ...]:
@@ -988,6 +1058,18 @@ def _public_random_sample_avg_values(
         seen.add(key)
         values.append(key)
     return tuple(values)
+
+
+def _random_sample_value_floor(
+    values: tuple[tuple[int, float], ...],
+    *,
+    floor_factor: float = RANDOM_SAMPLE_VALUE_FLOOR_FACTOR,
+) -> int | None:
+    floors = [
+        int(float(sample_count) * float(avg_value) * floor_factor)
+        for sample_count, avg_value in actionable_random_sample_avg_values(values)
+    ]
+    return max(floors) if floors else None
 
 
 def _public_global_constraints(
@@ -1070,6 +1152,8 @@ def build_residual_problem(
     drops: Mapping[int, DropPool],
     items: Mapping[int, Item],
     obs: SessionObs | None = None,
+    size_bucket_prefill: bool = False,
+    size_bucket_mask_residual_pool: bool = False,
 ) -> ResidualProblem:
     """Create a residual problem by forcing exact known items into every sample."""
 
@@ -1238,6 +1322,25 @@ def build_residual_problem(
     max_quality, max_item_cells, global_diagnostics = _public_global_constraints(store)
     diagnostics.extend(global_diagnostics)
     random_sample_avg_values = _public_random_sample_avg_values(store)
+    random_sample_value_floor = _random_sample_value_floor(
+        random_sample_avg_values
+    )
+    if random_sample_value_floor is not None:
+        diagnostics.append(
+            f"public_random_sample_value_floor:{random_sample_value_floor}"
+        )
+    size_avg_value_targets = actionable_size_avg_value_targets(
+        _action_size_avg_value_targets(store)
+    )
+    size_bucket_evidence = build_size_bucket_evidence(
+        size_avg_value_targets,
+        store=store,
+        warehouse_total_cells=obs.warehouse_total_cells if obs is not None else None,
+        total_item_count=obs.total_item_count if obs is not None else None,
+        layout_footprint_count=layout.footprint_count,
+        trusted_footprint_count=layout.trusted_footprint_count,
+    )
+    diagnostics.extend(size_bucket_evidence_diagnostics(size_bucket_evidence))
     total_avg_cells = _public_total_avg_cells_target(store)
     if total_avg_cells is not None:
         diagnostics.append(f"public_total_avg_cells:{total_avg_cells:.4f}")
@@ -1257,6 +1360,11 @@ def build_residual_problem(
         warehouse_total_cells=obs.warehouse_total_cells if obs is not None else None,
         total_avg_cells=total_avg_cells,
         random_sample_avg_values=random_sample_avg_values,
+        random_sample_value_floor=random_sample_value_floor,
+        size_avg_value_targets=size_avg_value_targets,
+        size_bucket_evidence=size_bucket_evidence,
+        size_bucket_prefill=size_bucket_prefill,
+        size_bucket_mask_residual_pool=size_bucket_mask_residual_pool,
         max_quality=max_quality,
         max_item_cells=max_item_cells,
         diagnostics=tuple((*diagnostics, *layout.diagnostics)),
@@ -1403,6 +1511,15 @@ class ConditionalSampler:
         if len(pool.probabilities) == 0:
             return self._truth_from_buckets(buckets)
 
+        if self.problem.size_bucket_prefill:
+            prefill_size_bucket_targets(
+                pool,
+                buckets,
+                self.problem.size_bucket_evidence,
+                rng=rng,
+                item_allowed=self._item_allowed_by_global_constraints,
+                add_item=_add_item_to_buckets,
+            )
         self._sample_shape_targets(pool, buckets, rng)
         self._sample_category_targets(pool, buckets, rng)
         self._sample_bucket_targets(pool, buckets, rng)
@@ -1435,7 +1552,7 @@ class ConditionalSampler:
             if not filled_exact_cells:
                 self._sample_exact_count_residual(pool, buckets, residual_draws, rng)
         elif residual_draws:
-            residual_probs = self._residual_probabilities(pool)
+            residual_probs = self._residual_probabilities(pool, buckets=buckets)
             sampled_idx = rng.choice(
                 len(residual_probs),
                 size=residual_draws,
@@ -1559,8 +1676,25 @@ class ConditionalSampler:
             cells_left -= key[1]
         return True
 
-    def _residual_probabilities(self, pool: Any) -> np.ndarray:
+    def _residual_probabilities(
+        self,
+        pool: Any,
+        *,
+        buckets: Mapping[int, BucketTruth] | None = None,
+    ) -> np.ndarray:
         probs = pool.probabilities.astype(np.float64)
+        if self.problem.size_bucket_mask_residual_pool:
+            areas = np.asarray(
+                [item.shape_w * item.shape_h for item in pool.items],
+                dtype=np.int64,
+            )
+            masked_footprints = {
+                target.cells
+                for target in self.problem.size_bucket_evidence
+                if target.count_exact is not None
+            }
+            for footprint in masked_footprints:
+                probs[areas == footprint] = 0.0
         probs = self._apply_global_candidate_constraints(pool, probs)
         qualities = getattr(pool, "qualities", None)
         if self.q6_residual_boost <= 1.0 or qualities is None:
@@ -1589,6 +1723,13 @@ class ConditionalSampler:
         buckets: Mapping[int, BucketTruth],
         count: int,
     ) -> bool:
+        if not residual_allowed_for_footprint(
+            item,
+            buckets,
+            self.problem.size_bucket_evidence,
+            add_count=count,
+        ):
+            return False
         target = self.problem.bucket_targets.get(int(item.quality))
         if target is None:
             return True
@@ -2361,11 +2502,27 @@ def cell_evidence_score(
 def global_evidence_score(
     truth: SessionTruth,
     problem: ResidualProblem,
+    *,
+    random_sample_mode: Literal["soft", "hard", "ignore"] = "soft",
 ) -> float:
     """Apply global public-info upper bounds to one sampled truth."""
 
-    if problem.max_quality is None and problem.max_item_cells is None:
+    if (
+        problem.max_quality is None
+        and problem.max_item_cells is None
+        and problem.random_sample_value_floor is None
+    ):
         return 1.0
+    score = 1.0
+    if (
+        random_sample_mode != "ignore"
+        and
+        problem.random_sample_value_floor is not None
+        and truth.total_value() < problem.random_sample_value_floor
+    ):
+        if random_sample_mode == "hard":
+            return 0.0
+        score *= RANDOM_SAMPLE_VALUE_FLOOR_SOFT_PENALTY
     for bucket in truth.buckets.values():
         for item in bucket.items:
             if problem.max_quality is not None and item.quality > problem.max_quality:
@@ -2375,7 +2532,28 @@ def global_evidence_score(
                 and item.shape_w * item.shape_h > problem.max_item_cells
             ):
                 return 0.0
-    return 1.0
+    return score
+
+
+def _random_sample_floor_passes(
+    truth: SessionTruth,
+    problem: ResidualProblem,
+) -> bool:
+    if problem.random_sample_value_floor is None:
+        return True
+    return truth.total_value() >= problem.random_sample_value_floor
+
+
+def _random_sample_hard_floor_min_matched(candidate_count: int) -> int:
+    if candidate_count <= 0:
+        return RANDOM_SAMPLE_HARD_FLOOR_MIN_MATCHED
+    return max(
+        RANDOM_SAMPLE_HARD_FLOOR_MIN_MATCHED,
+        min(
+            RANDOM_SAMPLE_HARD_FLOOR_MAX_MIN_MATCHED,
+            int(math.ceil(candidate_count * RANDOM_SAMPLE_HARD_FLOOR_MIN_RATE)),
+        ),
+    )
 
 
 def is_tail_supported_by_evidence(item: Item, problem: ResidualProblem) -> bool:
@@ -2548,11 +2726,26 @@ def _estimate_posterior_for_problem(
     q6_space_pressures: list[float] = []
     q6_space_overflows: list[int] = []
     weights: list[float] = []
+    random_sample_floor_passes: list[bool] = []
     known_q6_anchor_cells = sum(
         anchor.cells for anchor in problem.anchors if anchor.quality == 6
     )
-    trials = max(0, int(n_trials))
-    for _ in range(trials):
+    base_trials = max(0, int(n_trials))
+    trial_limit = base_trials + (
+        RANDOM_SAMPLE_HARD_FLOOR_EXTRA_TRIALS
+        if problem.random_sample_value_floor is not None
+        else 0
+    )
+    attempts = 0
+    while attempts < trial_limit:
+        if (
+            attempts >= base_trials
+            and problem.random_sample_value_floor is not None
+            and sum(1 for passed in random_sample_floor_passes if passed)
+            >= _random_sample_hard_floor_min_matched(len(values))
+        ):
+            break
+        attempts += 1
         truth = sampler.sample(rng=rng)
         if not truth_matches_obs(
             truth,
@@ -2570,16 +2763,24 @@ def _estimate_posterior_for_problem(
         value_score = value_evidence_score(truth, problem)
         if value_score <= 0:
             continue
+        size_avg_score = size_avg_value_evidence_score(truth, problem)
+        if size_avg_score <= 0:
+            continue
         cell_score = cell_evidence_score(truth, problem)
         if cell_score <= 0:
             continue
-        global_score = global_evidence_score(truth, problem)
+        global_score = global_evidence_score(
+            truth,
+            problem,
+            random_sample_mode="ignore",
+        )
         if global_score <= 0:
             continue
         weight = (
             category_observation_soft_score(truth, obs)
             * layout_score
             * value_score
+            * size_avg_score
             * cell_score
             * global_score
         )
@@ -2623,7 +2824,62 @@ def _estimate_posterior_for_problem(
             q6_space_pressures.append(0.0)
             q6_space_overflows.append(0)
         weights.append(weight)
+        random_sample_floor_passes.append(
+            _random_sample_floor_passes(truth, problem)
+        )
     diagnostics = [*extra_diagnostics, *problem.diagnostics]
+    random_sample_floor_mode = "none"
+    random_sample_floor_hard_matches = 0
+    random_sample_floor_min_hard_matches = 0
+    if problem.random_sample_value_floor is not None and values:
+        random_sample_floor_hard_matches = sum(
+            1 for passed in random_sample_floor_passes if passed
+        )
+        random_sample_floor_min_hard_matches = _random_sample_hard_floor_min_matched(
+            len(values)
+        )
+        if random_sample_floor_hard_matches >= random_sample_floor_min_hard_matches:
+            keep = [
+                idx
+                for idx, passed in enumerate(random_sample_floor_passes)
+                if passed
+            ]
+            values = [values[idx] for idx in keep]
+            decision_values = [decision_values[idx] for idx in keep]
+            tail_replacement_decision_values = [
+                tail_replacement_decision_values[idx] for idx in keep
+            ]
+            cells = [cells[idx] for idx in keep]
+            q6_values = [q6_values[idx] for idx in keep]
+            q6_decision_values = [q6_decision_values[idx] for idx in keep]
+            q6_tail_replacement_decision_values = [
+                q6_tail_replacement_decision_values[idx] for idx in keep
+            ]
+            q6_counts = [q6_counts[idx] for idx in keep]
+            q6_cells = [q6_cells[idx] for idx in keep]
+            remaining_cells_after_layout = [
+                remaining_cells_after_layout[idx] for idx in keep
+            ]
+            q6_space_pressures = [q6_space_pressures[idx] for idx in keep]
+            q6_space_overflows = [q6_space_overflows[idx] for idx in keep]
+            weights = [weights[idx] for idx in keep]
+            random_sample_floor_mode = "hard"
+        else:
+            weights = [
+                weight
+                if passed
+                else weight * RANDOM_SAMPLE_VALUE_FLOOR_SOFT_PENALTY
+                for weight, passed in zip(weights, random_sample_floor_passes)
+            ]
+            random_sample_floor_mode = "soft"
+        diagnostics.append(
+            "public_random_sample_value_floor_mode:"
+            f"{random_sample_floor_mode}:"
+            f"pass={random_sample_floor_hard_matches}/"
+            f"{len(random_sample_floor_passes)}:"
+            f"min={random_sample_floor_min_hard_matches}:"
+            f"attempts={attempts}"
+        )
     if q6_residual_boost > 1.0:
         diagnostics.append(f"q6_residual_boost:{q6_residual_boost:.2f}")
     if q6_residual_prior_floor_ratio > 0:
@@ -2658,7 +2914,7 @@ def _estimate_posterior_for_problem(
     return PosteriorReport(
         map_id=problem.map_id,
         map_name=problem.map_name,
-        n_total=trials,
+        n_total=attempts,
         n_matched=len(values),
         total_cells=_quantiles(cells, weights),
         total_value=_quantiles(values, weights),
@@ -2702,6 +2958,7 @@ def _estimate_posterior_for_problem(
             for target in problem.category_targets
         ),
         random_sample_avg_values=problem.random_sample_avg_values,
+        size_avg_value_targets=problem.size_avg_value_targets,
         layout_diagnostics=problem.layout.diagnostics,
         diagnostics=tuple(diagnostics),
     )
@@ -2724,6 +2981,8 @@ def estimate_posterior_v2(
     total_item_count_tol: int = 0,
     q6_residual_boost: float = 1.0,
     q6_residual_prior_floor_ratio: float = 0.0,
+    size_bucket_prefill: bool = False,
+    size_bucket_mask_residual_pool: bool = False,
 ) -> PosteriorReport:
     """Estimate a posterior with exact item anchors forced into every trial."""
 
@@ -2734,6 +2993,8 @@ def estimate_posterior_v2(
         drops=drops,
         items=items,
         obs=obs,
+        size_bucket_prefill=size_bucket_prefill,
+        size_bucket_mask_residual_pool=size_bucket_mask_residual_pool,
     )
     strict = _estimate_posterior_for_problem(
         problem,
@@ -2764,6 +3025,8 @@ def estimate_posterior_v2(
         drops=drops,
         items=items,
         obs=relaxed_obs,
+        size_bucket_prefill=size_bucket_prefill,
+        size_bucket_mask_residual_pool=size_bucket_mask_residual_pool,
     )
     return _estimate_posterior_for_problem(
         relaxed_problem,
@@ -2794,6 +3057,12 @@ __all__ = (
     "LayoutFeasibility",
     "PosteriorReport",
     "QualityDropPrior",
+    "RANDOM_SAMPLE_HARD_FLOOR_MAX_MIN_MATCHED",
+    "RANDOM_SAMPLE_HARD_FLOOR_EXTRA_TRIALS",
+    "RANDOM_SAMPLE_HARD_FLOOR_MIN_MATCHED",
+    "RANDOM_SAMPLE_HARD_FLOOR_MIN_RATE",
+    "RANDOM_SAMPLE_VALUE_FLOOR_SOFT_PENALTY",
+    "RANDOM_SAMPLE_VALUE_FLOOR_FACTOR",
     "ResidualBucketTarget",
     "ResidualProblem",
     "RuntimeEvidence",
@@ -2812,5 +3081,10 @@ __all__ = (
     "layout_feasibility_score",
     "q6_decision_value_for_truth",
     "shape_targets_from_store",
+    "SizeBucketEvidence",
+    "size_avg_value_evidence_score",
+    "SIZE_AVG_VALUE_SIGNAL_FLOOR",
+    "SIZE_AVG_VALUE_SIGNAL_FLOORS",
+    "actionable_size_avg_value_targets",
     "value_evidence_score",
 )

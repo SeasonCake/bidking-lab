@@ -290,6 +290,7 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
             "processing_seconds": 1.25,
             "n_trials": 200,
             "shadow_trials": 80,
+            "session_id": "2501:session-a",
             "hero": "aisha",
             "map_id": 2501,
             "round": 4,
@@ -483,6 +484,25 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
                     "source": "packet",
                 },
             ],
+            "action_send_rows": [
+                {
+                    "sort": 65,
+                    "time": "2026-06-03 00:49:33.683",
+                    "action_id": 100136,
+                    "tool": "宝光四鉴",
+                },
+            ],
+            "action_result_rows": [
+                {
+                    "sort": 66,
+                    "time": "2026-06-03 00:49:34.620",
+                    "action_id": 100136,
+                    "tool": "宝光四鉴",
+                    "result": 12,
+                    "result_field": 14,
+                    "revealed_items": 0,
+                },
+            ],
             "model_eval": {
                 "final_value": 800000,
                 "final_cells": 108,
@@ -552,6 +572,9 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
     assert contract["schema_version"] == 1
     assert contract["mode"] == "baseline_first_shadow_reference"
     assert contract["source"]["n_trials"] == 200
+    assert contract["context"]["session_id"] == "2501:session-a"
+    assert contract["actions"]["latest_result"]["tool"] == "宝光四鉴"
+    assert contract["actions"]["latest_result"]["result"] == "12"
     assert contract["baseline"]["official"] is True
     assert contract["baseline"]["affects_bid"] is True
     assert contract["baseline"]["decision"]["action"] == "可守不抢"
@@ -828,3 +851,138 @@ def test_tactical_snapshot_from_rows_has_empty_state_defaults() -> None:
     assert snapshot.warehouse_range == "暂无后验"
     assert snapshot.next_tool_hint == "暂无建议"
     assert snapshot.layout_stages == ()
+
+
+def test_ui_contract_exposes_size_bucket_diagnostics() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "action_result_rows": [
+                {
+                    "action_id": 100172,
+                    "tool": "四格均价",
+                    "result": 120000,
+                    "sort": 5,
+                }
+            ],
+            "v2_posterior_rows": [
+                {
+                    "诊断": (
+                        "size_bucket:4:avg=120000:tier=plane_yongle_singleton:"
+                        "strength=soft"
+                    ),
+                }
+            ],
+        }
+    )
+    size_bucket = contract["diagnostics"]["size_bucket"]
+    assert size_bucket["reading_active"] is True
+    assert size_bucket["active"] is True
+    assert "四格均价" in size_bucket["latest_reading_label"]
+    assert "4格均价" in size_bucket["latest_target_label"]
+    assert size_bucket["inference_matches_reading"] is True
+
+
+def test_ui_contract_minimap_includes_quality_only_markers() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "minimap_grid_items": [
+                {
+                    "category": 106,
+                    "category_label": "古董",
+                    "quality": 5,
+                    "item_id": 1065001,
+                    "item_name": "青铜古镜",
+                    "local_index": 14,
+                    "cells": 4,
+                    "shape_key": "22",
+                    "row": 2,
+                    "col": 5,
+                    "width": 2,
+                    "height": 2,
+                    "source": "packet",
+                    "render_mode": "footprint",
+                }
+            ],
+            "action_result_rows": [
+                {
+                    "sort": 66,
+                    "time": "2026-06-03 00:49:34.620",
+                    "action_id": 100136,
+                    "tool": "宝光四鉴",
+                    "result": 12,
+                    "result_field": 14,
+                    "revealed_items": 4,
+                    "revealed_summary": "Q3x1 / Q2x3 / pos 14,76,75,43",
+                    "revealed_items_detail": [
+                        {
+                            "local_index": 14,
+                            "runtime_id": 101,
+                            "item_id": None,
+                            "quality": 2,
+                            "value": None,
+                            "shape_code": None,
+                            "cells": None,
+                        },
+                        {
+                            "local_index": 76,
+                            "runtime_id": None,
+                            "item_id": None,
+                            "quality": 3,
+                            "value": None,
+                            "shape_code": None,
+                            "cells": None,
+                        },
+                        {
+                            "local_index": 75,
+                            "runtime_id": None,
+                            "item_id": None,
+                            "quality": 2,
+                            "value": None,
+                            "shape_code": None,
+                            "cells": None,
+                        },
+                        {
+                            "local_index": 43,
+                            "runtime_id": None,
+                            "item_id": None,
+                            "quality": 2,
+                            "value": None,
+                            "shape_code": None,
+                            "cells": None,
+                        },
+                    ],
+                }
+            ],
+            "public_info_rows": [
+                {
+                    "sort": 11,
+                    "time": "2026-06-04 03:44:38.710",
+                    "info_id": 200027,
+                    "map_id": 2401,
+                    "value": 6,
+                    "value_field": 6,
+                    "revealed_items": 1,
+                    "revealed_summary": "Q4x1 / pos 44",
+                    "revealed_items_detail": [
+                        {
+                            "local_index": 44,
+                            "runtime_id": 501,
+                            "item_id": None,
+                            "quality": 4,
+                            "value": None,
+                            "shape_code": None,
+                            "cells": None,
+                        },
+                    ],
+                },
+            ],
+        }
+    )
+
+    minimap = contract["minimap"]
+    markers = [item for item in minimap["items"] if item["render_mode"] == "marker"]
+
+    assert minimap["known_items"] == 5
+    assert minimap["quality_counts"] == {"q2": 2, "q3": 1, "q4": 1, "q5": 1}
+    assert {marker["local_index"] for marker in markers} == {43, 44, 75, 76}
+    assert all(marker["width"] == 1 and marker["height"] == 1 for marker in markers)

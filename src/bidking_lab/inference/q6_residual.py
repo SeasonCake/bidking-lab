@@ -14,15 +14,27 @@ AISHA_Q6_QUALITY_ONLY_DEEP_ROW_THRESHOLD = 13
 SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_BOOST_PROFILES = frozenset(
     {
         ("aisha", "shipwreck", "shape+layout"),
+        ("aisha", "shipwreck", "public:random_avg+shape+layout"),
         ("aisha", "shipwreck", "tool:category+shape+layout"),
+        ("aisha", "shipwreck", "public:random_avg+tool:category+shape+layout"),
         ("ethan", "shipwreck", "layout"),
+        ("ethan", "shipwreck", "public:random_avg+layout"),
         ("ethan", "shipwreck", "shape+layout"),
+        ("ethan", "shipwreck", "public:random_avg+shape+layout"),
+    }
+)
+ETHAN_VILLA_RANDOM_AVG_Q6_RESIDUAL_BOOST_PROFILES = frozenset(
+    {
+        ("ethan", "villa", "public:random_avg+layout"),
+        ("ethan", "villa", "public:random_avg+shape+layout"),
     }
 )
 AISHA_SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_PROFILES = frozenset(
     {
         ("aisha", "shipwreck", "shape+layout"),
+        ("aisha", "shipwreck", "public:random_avg+shape+layout"),
         ("aisha", "shipwreck", "tool:category+shape+layout"),
+        ("aisha", "shipwreck", "public:random_avg+tool:category+shape+layout"),
     }
 )
 AISHA_HIDDEN_V1_Q6_RESIDUAL_PROFILES = frozenset(
@@ -156,6 +168,7 @@ def q6_residual_boost_for_profile(
         return (
             requested_boost
             if key in SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_BOOST_PROFILES
+            or key in ETHAN_VILLA_RANDOM_AVG_Q6_RESIDUAL_BOOST_PROFILES
             else 1.0
         )
     if gate == "aisha_shipwreck_bottom_v1":
@@ -196,6 +209,7 @@ def q6_residual_prior_floor_ratio_for_profile(
         return (
             requested_ratio
             if key in SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_BOOST_PROFILES
+            or key in ETHAN_VILLA_RANDOM_AVG_Q6_RESIDUAL_BOOST_PROFILES
             else 0.0
         )
     if gate == "aisha_shipwreck_profile_v1":
@@ -250,6 +264,7 @@ __all__ = (
     "AISHA_VILLA_V1_Q6_RESIDUAL_PROFILES",
     "AISHA_BOTTOM_ROW_RISK_THRESHOLD",
     "AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD",
+    "ETHAN_VILLA_RANDOM_AVG_Q6_RESIDUAL_BOOST_PROFILES",
     "RANDOM_SAMPLE_AVG_PROFILE_SIGNAL_FLOOR",
     "SHIPWRECK_PROFILE_V1_Q6_RESIDUAL_BOOST_PROFILES",
     "actionable_random_sample_avg_values",

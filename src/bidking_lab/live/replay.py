@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from bidking_lab.live.fatbeans import (
     FatbeansCaptureEvents,
@@ -10,6 +10,7 @@ from bidking_lab.live.fatbeans import (
     live_batches_from_fatbeans_events,
 )
 from bidking_lab.live.layout import LayoutEvidence, layout_evidence_from_batch
+from bidking_lab.live.state import LiveSessionState, apply_observation_batch
 
 
 @dataclass(frozen=True)
@@ -68,8 +69,14 @@ def layout_replay_stages(
     final_truth = final_truth_from_events(events)
     states = _state_by_sort_id(events)
     rows: list[LayoutReplayStage] = []
+    live_state = LiveSessionState()
     for batch in live_batches_from_fatbeans_events(events):
-        layout = layout_evidence_from_batch(batch)
+        live_state = apply_observation_batch(live_state, batch)
+        if not batch.grid_items:
+            continue
+        layout = layout_evidence_from_batch(
+            replace(batch, grid_items=live_state.grid_items)
+        )
         if layout is None:
             continue
         state = states.get(batch.sequence or -1)

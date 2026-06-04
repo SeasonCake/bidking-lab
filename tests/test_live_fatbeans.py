@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from collections import Counter
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from bidking_lab.live.fatbeans import (
     FatbeansCaptureEvents,
     FatbeansInventoryItem,
     FatbeansObservedItem,
+    FatbeansPlayerBid,
     FatbeansPublicInfo,
     FatbeansSkillReveal,
     FatbeansStateEvent,
@@ -18,8 +20,10 @@ from bidking_lab.live.fatbeans import (
     live_batches_from_fatbeans_events,
     live_batches_from_fatbeans_capture_payload,
     load_fatbeans_packets_from_rows,
+    parse_fatbeans_packets,
     parse_fatbeans_capture,
     parse_fatbeans_capture_payload,
+    _parse_inventory_items,
 )
 from bidking_lab.live import (
     FieldUpdate,
@@ -44,6 +48,134 @@ FATBEANS_SAMPLE_DIR = (
 )
 
 PROJECT4_CAPTURE = FATBEANS_SAMPLE_DIR / "bid_king_project4.json"
+
+
+def _varint(value: int) -> bytes:
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def _field_varint(field_no: int, value: int) -> bytes:
+    return _varint((field_no << 3) | 0) + _varint(value)
+
+
+def _field_bytes(field_no: int, value: bytes) -> bytes:
+    return _varint((field_no << 3) | 2) + _varint(len(value)) + value
+
+
+def _rev_status_frame(*, session: str, player_id: int) -> bytes:
+    body = _field_varint(1, player_id)
+    body += _field_bytes(2, session.encode("utf-8"))
+    frame_len = 16 + len(body)
+    return (
+        frame_len.to_bytes(4, "big")
+        + b"\x32\xd2\x55\x61"
+        + b"\x00\x00\x00\x00"
+        + (0x0077).to_bytes(4, "big")
+        + body
+    )
+
+
+def _send_bid_frame(*, session: str, value: int) -> bytes:
+    body = _field_varint(1, 1285603971496202)
+    body += _field_bytes(2, session.encode("utf-8"))
+    body += _field_varint(3, value)
+    frame_len = 12 + len(body)
+    return (
+        frame_len.to_bytes(4, "big")
+        + b"\x32\xd2\x55\x5f"
+        + (0x0022).to_bytes(4, "big")
+        + body
+    )
+
+
+def _player_bid_block(
+    *,
+    player_id: int,
+    name: str,
+    hero_id: int,
+    value: int,
+) -> bytes:
+    bid_value = _field_varint(2, value)
+    return (
+        _field_varint(1, player_id)
+        + _field_bytes(2, name.encode("utf-8"))
+        + _field_varint(3, hero_id)
+        + _field_bytes(5, bid_value)
+    )
+
+
+def _rev_state_with_bids_frame(
+    *,
+    session: str,
+    map_id: int,
+    round_no: int,
+    bids: tuple[bytes, ...],
+) -> bytes:
+    payload = _field_bytes(1, session.encode("utf-8"))
+    payload += _field_varint(2, map_id)
+    payload += _field_varint(3, round_no)
+    for bid in bids:
+        payload += _field_bytes(5, bid)
+    body = _field_bytes(1, payload)
+    frame_len = 16 + len(body)
+    return (
+        frame_len.to_bytes(4, "big")
+        + b"\x32\xd2\x55\x60"
+        + b"\x00\x00\x00\x00"
+        + (0x0025).to_bytes(4, "big")
+        + body
+    )
+
+
+def _fatbeans_row(direction: str, payload: bytes, *, sort_id: int) -> dict[str, object]:
+    return {
+        "SortID": sort_id,
+        "Direct": direction,
+        "Protocol": "Tcp",
+        "SrcIP": "8.133.195.27" if direction == "REV" else "198.18.0.1",
+        "SrcPort": 10000 if direction == "REV" else 60213,
+        "DstIP": "198.18.0.1" if direction == "REV" else "8.133.195.27",
+        "DstPort": 60213 if direction == "REV" else 10000,
+        "CaptureTime": "2026-06-04 12:00:00.000",
+        "Data": base64.b64encode(payload).decode("ascii"),
+        "DataLength": len(payload),
+    }
+
+
+def test_parse_inventory_items_keeps_parent_local_index() -> None:
+    first_item = (
+        _field_varint(1, 101)
+        + _field_varint(2, 1001001)
+        + _field_bytes(4, b"\x08\x01")
+        + _field_bytes(4, b"\x08\x02")
+        + _field_varint(9, 5)
+    )
+    second_item = (
+        _field_varint(1, 102)
+        + _field_varint(2, 1001002)
+        + _field_bytes(4, b"\x08\x03")
+        + _field_varint(9, 4)
+    )
+    inventory = (
+        _field_bytes(3, _field_varint(1, 41) + _field_bytes(3, first_item))
+        + _field_bytes(3, _field_bytes(3, second_item))
+    )
+
+    items = _parse_inventory_items(inventory)
+
+    assert [(item.runtime_id, item.item_id, item.local_index) for item in items] == [
+        (101, 1001001, 41),
+        (102, 1001002, 0),
+    ]
+    assert [item.cells for item in items] == [2, 1]
 
 
 def test_grid_footprint_decodes_fatbeans_local_and_shape() -> None:
@@ -301,6 +433,66 @@ def test_known_quality_grid_items_become_bucket_lower_bounds() -> None:
     assert session.unknown_outline_total_cells == 6
 
 
+def test_incremental_tool_reveal_keeps_prior_grid_items_and_enriches_runtime() -> None:
+    initial = LiveObservationBatch(
+        source="packet",
+        event_kind="session_started",
+        phase="reading",
+        sequence=1,
+        grid_items=(
+            GridItemObservation(
+                cells=4,
+                source="packet",
+                confidence="exact",
+                runtime_id=101,
+                quality=2,
+                shape_key="22",
+                local_index=10,
+            ),
+        ),
+    )
+    incremental = LiveObservationBatch(
+        source="packet",
+        event_kind="tool_revealed",
+        phase="bidding",
+        sequence=2,
+        grid_items=(
+            GridItemObservation(
+                cells=4,
+                source="packet",
+                confidence="exact",
+                runtime_id=101,
+                item_id=1103003,
+                quality=3,
+                local_index=99,
+            ),
+            GridItemObservation(
+                cells=2,
+                source="packet",
+                confidence="exact",
+                runtime_id=102,
+                item_id=1103004,
+                quality=3,
+                shape_key="21",
+                local_index=30,
+            ),
+        ),
+    )
+
+    state = apply_observation_batch(LiveSessionState(), initial)
+    state = apply_observation_batch(state, incremental)
+    latest = layout_evidence_from_batches((initial, incremental))
+
+    assert len(state.grid_items) == 2
+    enriched = next(item for item in state.grid_items if item.runtime_id == 101)
+    assert enriched.item_id == 1103003
+    assert enriched.shape_key == "22"
+    assert enriched.local_index == 10
+    assert latest is not None
+    assert latest.sequence == 2
+    assert latest.total_cells == 6
+
+
 def _session_with_bucket_fields(*updates: FieldUpdate) -> object:
     state = LiveSessionState()
     batch = LiveObservationBatch(
@@ -406,6 +598,133 @@ def test_residual_red_bucket_uses_only_explicit_non_red_cells() -> None:
     )
 
     assert session.buckets[6].total_cells == 15
+
+
+@pytest.mark.parametrize(
+    ("action_id", "path"),
+    [
+        (100107, ("bucket", "5", "total_cells")),
+        (100113, ("bucket", "5", "avg_cells")),
+        (100125, ("bucket", "5", "value_sum")),
+    ],
+)
+def test_standard_quality_action_results_update_bucket_fields(
+    action_id: int,
+    path: tuple[str, str, str],
+) -> None:
+    batches = live_batches_from_fatbeans_events(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=1,
+                    capture_time="",
+                    message_id=0x0027,
+                    session_id="s1",
+                    map_id=2408,
+                    round_index=4,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=action_id,
+                            result=12,
+                            result_field=14,
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    updates = {
+        update.path: update.value
+        for batch in batches
+        for update in batch.field_updates
+    }
+    assert updates[path] == 12
+
+
+def test_warehouse_total_action_result_updates_session_field() -> None:
+    batches = live_batches_from_fatbeans_events(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=1,
+                    capture_time="",
+                    message_id=0x0027,
+                    session_id="s1",
+                    map_id=2408,
+                    round_index=4,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=100103,
+                            result=157,
+                            result_field=14,
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    updates = {
+        update.path: update.value
+        for batch in batches
+        for update in batch.field_updates
+    }
+    assert updates[("session", "warehouse_total_cells")] == 157
+
+
+@pytest.mark.parametrize(
+    ("action_id", "path", "value"),
+    [
+        (100115, ("session", "total_item_count"), 42),
+        (100119, ("bucket", "5", "count"), 3),
+    ],
+)
+def test_count_action_results_update_inference_fields(
+    action_id: int,
+    path: tuple[str, ...],
+    value: int,
+) -> None:
+    batches = live_batches_from_fatbeans_events(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=1,
+                    capture_time="",
+                    message_id=0x0027,
+                    session_id="s1",
+                    map_id=2408,
+                    round_index=4,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=action_id,
+                            result=value,
+                            result_field=14,
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    updates = {
+        update.path: update.value
+        for batch in batches
+        for update in batch.field_updates
+    }
+    assert updates[path] == value
 
 
 @pytest.mark.parametrize(
@@ -588,6 +907,401 @@ def test_new_hero_skill_reveals_set_session_hero_and_category() -> None:
     assert session is not None
     assert session.hero == "wuqilin"
     assert session.category_items[0].category == 106
+
+
+def test_gabriela_bid_hero_id_sets_session_hero() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2510,
+                round_index=1,
+                player_id=2,
+                bids=(
+                    FatbeansPlayerBid(
+                        player_id=2,
+                        name="local",
+                        hero_id=104,
+                        values=(688999,),
+                    ),
+                    FatbeansPlayerBid(
+                        player_id=3,
+                        name="other",
+                        hero_id=208,
+                        values=(566666,),
+                    ),
+                ),
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=1001041,
+                        hero_id=104,
+                        round_index=1,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=54,
+                                runtime_id=123,
+                                item_id=None,
+                                quality=4,
+                                value=None,
+                                shape_code=11,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+    state = apply_observation_batch(LiveSessionState(), batch)
+    session = live_state_to_session_obs(state)
+
+    assert {update.path: update.value for update in batch.field_updates}[
+        ("session", "hero")
+    ] == "gabriela"
+    assert session is not None
+    assert session.hero == "gabriela"
+    assert batch.grid_items[0].quality == 4
+
+
+def test_status_player_id_does_not_bind_local_player_without_bid_send() -> None:
+    session = "2407:1295018931873899"
+    rows = [
+        _fatbeans_row(
+            "REV",
+            _rev_status_frame(session=session, player_id=3),
+            sort_id=1,
+        ),
+        _fatbeans_row(
+            "REV",
+            _rev_state_with_bids_frame(
+                session=session,
+                map_id=2407,
+                round_no=1,
+                bids=(
+                    _player_bid_block(
+                        player_id=2,
+                        name="local",
+                        hero_id=105,
+                        value=688999,
+                    ),
+                    _player_bid_block(
+                        player_id=3,
+                        name="other",
+                        hero_id=208,
+                        value=566666,
+                    ),
+                ),
+            ),
+            sort_id=2,
+        ),
+    ]
+
+    events = parse_fatbeans_packets(load_fatbeans_packets_from_rows(rows))
+    batch = live_batches_from_fatbeans_events(events)[0]
+
+    assert events.statuses[0].player_id == 3
+    assert events.states[0].player_id is None
+    assert ("session", "hero") not in {
+        update.path: update.value for update in batch.field_updates
+    }
+
+
+def test_single_skill_reveal_hero_sets_opening_hero_with_multiple_bid_heroes() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=1,
+                capture_time="",
+                message_id=0x0021,
+                session_id="s1",
+                map_id=2403,
+                round_index=None,
+                bids=(
+                    FatbeansPlayerBid(
+                        player_id=2,
+                        name="local",
+                        hero_id=105,
+                        values=(),
+                    ),
+                    FatbeansPlayerBid(
+                        player_id=3,
+                        name="other",
+                        hero_id=208,
+                        values=(),
+                    ),
+                ),
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=100105,
+                        hero_id=105,
+                        round_index=1,
+                        observed_items=(),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+
+    assert {update.path: update.value for update in batch.field_updates}[
+        ("session", "hero")
+    ] == "tatiana"
+
+
+def test_local_bid_send_binds_hero_even_after_other_status_events() -> None:
+    session = "2407:1295018931873899"
+    rows = [
+        _fatbeans_row(
+            "REV",
+            _rev_status_frame(session=session, player_id=3),
+            sort_id=1,
+        ),
+        _fatbeans_row(
+            "SEND",
+            _send_bid_frame(session=session, value=688999),
+            sort_id=2,
+        ),
+        _fatbeans_row(
+            "REV",
+            _rev_state_with_bids_frame(
+                session=session,
+                map_id=2407,
+                round_no=1,
+                bids=(
+                    _player_bid_block(
+                        player_id=2,
+                        name="local",
+                        hero_id=105,
+                        value=688999,
+                    ),
+                    _player_bid_block(
+                        player_id=3,
+                        name="other",
+                        hero_id=208,
+                        value=566666,
+                    ),
+                ),
+            ),
+            sort_id=3,
+        ),
+    ]
+
+    events = parse_fatbeans_packets(load_fatbeans_packets_from_rows(rows))
+    batch = live_batches_from_fatbeans_events(events)[0]
+
+    assert events.states[0].player_id == 2
+    assert {update.path: update.value for update in batch.field_updates}[
+        ("session", "hero")
+    ] == "tatiana"
+
+
+@pytest.mark.parametrize(
+    ("hero_id", "hero"),
+    [
+        (101, "fatima"),
+        (102, "chenmei"),
+        (103, "aisha"),
+        (104, "gabriela"),
+        (105, "tatiana"),
+        (106, "naomi"),
+        (107, "sophie"),
+        (108, "maria"),
+        (109, "helena"),
+        (110, "isabella"),
+        (201, "george"),
+        (202, "carlos"),
+        (203, "leonard"),
+        (204, "ahmed"),
+        (205, "ivan"),
+        (206, "takeda"),
+        (207, "wuqilin"),
+        (208, "ethan"),
+        (209, "victor"),
+        (301, "raven"),
+    ],
+)
+def test_known_local_bid_hero_ids_set_session_hero(
+    hero_id: int,
+    hero: str,
+) -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2510,
+                round_index=1,
+                player_id=2,
+                bids=(
+                    FatbeansPlayerBid(
+                        player_id=2,
+                        name="local",
+                        hero_id=hero_id,
+                        values=(688999,),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+
+    assert {update.path: update.value for update in batch.field_updates}[
+        ("session", "hero")
+    ] == hero
+
+
+def test_single_category_hero_skill_reveal_sets_category_evidence() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2401,
+                round_index=1,
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=100201,
+                        hero_id=201,
+                        round_index=1,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=10,
+                                runtime_id=123,
+                                item_id=None,
+                                quality=4,
+                                value=None,
+                                shape_code=21,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+    state = apply_observation_batch(LiveSessionState(), batch)
+    session = live_state_to_session_obs(state)
+
+    assert {update.path: update.value for update in batch.field_updates}[
+        ("session", "hero")
+    ] == "george"
+    assert batch.grid_items[0].category == 104
+    assert session is not None
+    assert session.category_items[0].category == 104
+
+
+def test_local_player_hero_does_not_use_first_table_bid() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2401,
+                round_index=1,
+                player_id=2,
+                bids=(
+                    FatbeansPlayerBid(
+                        player_id=1,
+                        name="other",
+                        hero_id=208,
+                        values=(450_000,),
+                    ),
+                    FatbeansPlayerBid(
+                        player_id=2,
+                        name="me",
+                        hero_id=103,
+                        values=(369_250,),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batches = live_batches_from_fatbeans_events(events)
+    updates = {
+        update.path: update.value
+        for batch in batches
+        for update in batch.field_updates
+    }
+
+    assert updates[("session", "hero")] == "aisha"
+
+
+def test_ambiguous_table_heroes_do_not_guess_without_local_player() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=7,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2401,
+                round_index=1,
+                bids=(
+                    FatbeansPlayerBid(
+                        player_id=1,
+                        name="ethan",
+                        hero_id=208,
+                        values=(450_000,),
+                    ),
+                    FatbeansPlayerBid(
+                        player_id=2,
+                        name="aisha",
+                        hero_id=103,
+                        values=(369_250,),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batches = live_batches_from_fatbeans_events(events)
+    updates = {
+        update.path: update.value
+        for batch in batches
+        for update in batch.field_updates
+    }
+
+    assert ("session", "hero") not in updates
 
 
 def test_fatbeans_loader_skips_non_tcp_rows_with_http_payload_metadata() -> None:

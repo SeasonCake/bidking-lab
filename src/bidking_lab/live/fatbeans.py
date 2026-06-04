@@ -34,16 +34,88 @@ _CATEGORY_OUTLINE_ACTIONS: dict[int, int] = {
     100160: 110,  # 书画古籍
 }
 _HERO_MODE_BY_ID: dict[int, str] = {
+    101: "fatima",
+    102: "chenmei",
     103: "aisha",
+    104: "gabriela",
+    105: "tatiana",
+    106: "naomi",
+    107: "sophie",
+    108: "maria",
+    109: "helena",
     110: "isabella",
+    201: "george",
+    202: "carlos",
+    203: "leonard",
+    204: "ahmed",
+    205: "ivan",
+    206: "takeda",
     207: "wuqilin",
     208: "ethan",
+    209: "victor",
+    301: "raven",
 }
 _SKILL_REVEAL_CATEGORIES: dict[int, int] = {
+    100101: 106,  # 法蒂玛: 文物古董轮廓/品质
+    1001011: 106,
+    1001012: 106,
+    1001013: 106,
+    1001014: 106,
+    100105: 103,  # 塔蒂安娜: 时尚潮流轮廓/品质
+    100109: 102,  # 海琳娜: 医疗药品品质/轮廓
+    1001091: 102,
+    1001092: 102,
+    1001093: 102,
+    1001094: 102,
     1001101: 105,  # 伊莎贝拉: 珠宝矿藏轮廓
+    100201: 104,  # 乔治: 兵装军火轮廓/品质
+    100206: 110,  # 武田宏志: 书画古籍轮廓/品质
+    1002062: 110,
+    1002063: 110,
+    1002064: 110,
+    1002065: 110,
     10002071: 106,  # 吴起灵: 文物古董轮廓
     10002072: 106,  # 吴起灵: 文物古董品质
     10002073: 106,  # 吴起灵: 文物古董完整信息
+}
+_ACTION_SESSION_FIELDS: dict[int, tuple[str, ...]] = {
+    100103: ("session", "warehouse_total_cells"),  # 总仓储空间
+    100115: ("session", "total_item_count"),  # 库存清点
+}
+_ACTION_TOTAL_CELLS: dict[int, int] = {
+    100104: 1,  # 普品扫描: green/white merged bucket
+    100105: 3,  # 良品扫描
+    100106: 4,  # 优品扫描
+    100107: 5,  # 极品扫描
+    100108: 6,  # 珍品扫描
+}
+_ACTION_AVG_CELLS: dict[int, int] = {
+    100110: 1,  # 普品均格: green/white merged bucket
+    100111: 3,  # 良品均格
+    100112: 4,  # 优品均格
+    100113: 5,  # 极品均格
+    100114: 6,  # 珍品均格
+}
+_ACTION_VALUE_SUM: dict[int, int] = {
+    100122: 1,  # 普品估价: green/white merged bucket
+    100123: 3,  # 良品估价
+    100124: 4,  # 优品估价
+    100125: 5,  # 极品估价
+    100126: 6,  # 珍品估价
+}
+_ACTION_COUNT: dict[int, int] = {
+    100116: 1,  # 普品存量: green/white merged bucket
+    100117: 3,  # 良品存量
+    100118: 4,  # 优品存量
+    100119: 5,  # 极品存量
+    100120: 6,  # 珍品存量
+}
+_ACTION_SIZE_AVG_VALUE: dict[int, int] = {
+    100169: 1,  # 单格均价
+    100170: 2,  # 两格均价
+    100171: 3,  # 三格均价
+    100172: 4,  # 四格均价
+    100173: 6,  # 六格均价
 }
 
 
@@ -151,6 +223,7 @@ class FatbeansInventoryItem:
     item_id: int
     quality: int | None
     cells: int
+    local_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -178,6 +251,7 @@ class FatbeansStateEvent:
     session_id: str | None
     map_id: int | None
     round_index: int | None
+    player_id: int | None = None
     bids: tuple[FatbeansPlayerBid, ...] = ()
     action_results: tuple[FatbeansActionResult, ...] = ()
     skill_reveals: tuple[FatbeansSkillReveal, ...] = ()
@@ -600,7 +674,34 @@ def _parse_inventory_items(block: Any) -> tuple[FatbeansInventoryItem, ...]:
     items: list[FatbeansInventoryItem] = []
     seen: set[tuple[int, int]] = set()
 
-    def walk(data: bytes, depth: int) -> None:
+    def is_inventory_item(ints: dict[int, list[int]]) -> bool:
+        runtime_id = ints.get(1, [None])[0]
+        item_id = ints.get(2, [None])[0]
+        return (
+            isinstance(runtime_id, int)
+            and isinstance(item_id, int)
+            and 1_000_000 <= item_id < 2_000_000
+        )
+
+    def direct_item_child_count(
+        byte_fields: dict[int, list[bytes]],
+    ) -> int:
+        count = 0
+        for values in byte_fields.values():
+            for value in values:
+                child_ints: dict[int, list[int]] = {}
+                for field_no, _wire_type, child_value in _parse_fields(value):
+                    if isinstance(child_value, int):
+                        child_ints.setdefault(field_no, []).append(child_value)
+                if is_inventory_item(child_ints):
+                    count += 1
+        return count
+
+    def walk(
+        data: bytes,
+        depth: int,
+        inherited_local_index: int | None,
+    ) -> None:
         if depth > 8:
             return
         fields = _parse_fields(data)
@@ -614,11 +715,7 @@ def _parse_inventory_items(block: Any) -> tuple[FatbeansInventoryItem, ...]:
 
         runtime_id = ints.get(1, [None])[0]
         item_id = ints.get(2, [None])[0]
-        if (
-            isinstance(runtime_id, int)
-            and isinstance(item_id, int)
-            and 1_000_000 <= item_id < 2_000_000
-        ):
+        if is_inventory_item(ints):
             key = (runtime_id, item_id)
             if key not in seen:
                 seen.add(key)
@@ -628,14 +725,25 @@ def _parse_inventory_items(block: Any) -> tuple[FatbeansInventoryItem, ...]:
                         item_id=item_id,
                         quality=ints.get(9, [None])[0],
                         cells=len(byte_fields.get(4, ())),
+                        local_index=inherited_local_index,
                     )
                 )
+            return
+
+        local_index_for_children = inherited_local_index
+        if direct_item_child_count(byte_fields) == 1:
+            raw_local_index = ints.get(1, [None])[0]
+            local_index_for_children = (
+                raw_local_index
+                if isinstance(raw_local_index, int) and 0 <= raw_local_index < 1000
+                else 0
+            )
 
         for values in byte_fields.values():
             for value in values:
-                walk(value, depth + 1)
+                walk(value, depth + 1, local_index_for_children)
 
-    walk(block, 0)
+    walk(block, 0, None)
     return tuple(items)
 
 
@@ -741,9 +849,39 @@ def parse_fatbeans_packets(
     current_session_id: str | None = None
     current_map_id: int | None = None
     current_round_index: int | None = None
+    local_player_by_session: dict[str, int] = {}
+    pending_bid_values_by_session: dict[str, list[int]] = {}
     for frame in frames:
+        status = _parse_status_event(frame)
+        if status is not None:
+            if status.session_id is not None:
+                current_session_id = status.session_id
+            continue
+        send = _parse_send_event(frame)
+        if send is not None and send.kind == "bid" and send.session_id and send.value:
+            pending_bid_values_by_session.setdefault(send.session_id, []).append(
+                int(send.value)
+            )
         state = _parse_state_event(frame)
         if state is not None:
+            if state.session_id is not None:
+                local_player_id = local_player_by_session.get(state.session_id)
+                if (
+                    local_player_id is not None
+                    and state.bids
+                    and not any(bid.player_id == local_player_id for bid in state.bids)
+                ):
+                    local_player_by_session.pop(state.session_id, None)
+                    local_player_id = None
+                if local_player_id is None:
+                    local_player_id = _infer_local_player_id_from_bid_values(
+                        state.bids,
+                        pending_bid_values_by_session.get(state.session_id, ()),
+                    )
+                    if local_player_id is not None:
+                        local_player_by_session[state.session_id] = local_player_id
+                if local_player_id is not None:
+                    state = replace(state, player_id=local_player_id)
             states_list.append(state)
             if state.session_id is not None:
                 current_session_id = state.session_id
@@ -762,6 +900,7 @@ def parse_fatbeans_packets(
                 capture_time=frame.capture_time,
                 message_id=frame.message_id,
                 session_id=current_session_id,
+                player_id=local_player_by_session.get(current_session_id),
                 map_id=current_map_id,
                 round_index=current_round_index,
                 action_results=(direct_action,),
@@ -774,6 +913,24 @@ def parse_fatbeans_packets(
         states=tuple(states_list),
         statuses=statuses,
     )
+
+
+def _infer_local_player_id_from_bid_values(
+    bids: Sequence[FatbeansPlayerBid],
+    pending_bid_values: Sequence[int],
+) -> int | None:
+    if not bids or not pending_bid_values:
+        return None
+    matched: set[int] = set()
+    for value in pending_bid_values:
+        candidates = [
+            bid.player_id
+            for bid in bids
+            if value in bid.values
+        ]
+        if len(candidates) == 1:
+            matched.add(candidates[0])
+    return next(iter(matched)) if len(matched) == 1 else None
 
 
 def _event_kind_for_state(state: FatbeansStateEvent) -> str:
@@ -824,30 +981,54 @@ def _state_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
     for result in state.action_results:
         if result.result is None:
             continue
-        if result.action_id == 100105:
+        if result.action_id in _ACTION_SESSION_FIELDS:
             updates.append(
                 FieldUpdate(
-                    path=("bucket", "3", "total_cells"),
+                    path=_ACTION_SESSION_FIELDS[result.action_id],
                     value=result.result,
                     source="packet",
                     confidence="exact",
                     sequence=state.sort_id,
                 )
             )
-        elif result.action_id == 100124:
+        elif result.action_id in _ACTION_TOTAL_CELLS:
+            quality = _ACTION_TOTAL_CELLS[result.action_id]
             updates.append(
                 FieldUpdate(
-                    path=("bucket", "4", "value_sum"),
+                    path=("bucket", str(quality), "total_cells"),
                     value=result.result,
                     source="packet",
                     confidence="exact",
                     sequence=state.sort_id,
                 )
             )
-        elif result.action_id == 100112:
+        elif result.action_id in _ACTION_VALUE_SUM:
+            quality = _ACTION_VALUE_SUM[result.action_id]
             updates.append(
                 FieldUpdate(
-                    path=("bucket", "4", "avg_cells"),
+                    path=("bucket", str(quality), "value_sum"),
+                    value=result.result,
+                    source="packet",
+                    confidence="exact",
+                    sequence=state.sort_id,
+                )
+            )
+        elif result.action_id in _ACTION_COUNT:
+            quality = _ACTION_COUNT[result.action_id]
+            updates.append(
+                FieldUpdate(
+                    path=("bucket", str(quality), "count"),
+                    value=result.result,
+                    source="packet",
+                    confidence="exact",
+                    sequence=state.sort_id,
+                )
+            )
+        elif result.action_id in _ACTION_AVG_CELLS:
+            quality = _ACTION_AVG_CELLS[result.action_id]
+            updates.append(
+                FieldUpdate(
+                    path=("bucket", str(quality), "avg_cells"),
                     value=result.result,
                     source="packet",
                     confidence="exact",
@@ -858,18 +1039,33 @@ def _state_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
 
 
 def _hero_mode_from_state(state: FatbeansStateEvent) -> str | None:
-    for reveal in state.skill_reveals:
-        if reveal.hero_id is None:
-            continue
-        hero = _HERO_MODE_BY_ID.get(reveal.hero_id)
-        if hero is not None:
-            return hero
-    for bid in state.bids:
-        if bid.hero_id is None:
-            continue
-        hero = _HERO_MODE_BY_ID.get(bid.hero_id)
-        if hero is not None:
-            return hero
+    if state.player_id is not None:
+        for bid in state.bids:
+            if bid.player_id != state.player_id or bid.hero_id is None:
+                continue
+            hero = _HERO_MODE_BY_ID.get(bid.hero_id)
+            if hero is not None:
+                return hero
+        return None
+
+    reveal_heroes = {
+        hero
+        for reveal in state.skill_reveals
+        if reveal.hero_id is not None
+        for hero in (_HERO_MODE_BY_ID.get(reveal.hero_id),)
+        if hero is not None
+    }
+    bid_heroes = {
+        hero
+        for bid in state.bids
+        if bid.hero_id is not None
+        for hero in (_HERO_MODE_BY_ID.get(bid.hero_id),)
+        if hero is not None
+    }
+    if len(reveal_heroes) == 1:
+        return next(iter(reveal_heroes))
+    if len(bid_heroes) == 1:
+        return next(iter(bid_heroes))
     return None
 
 
@@ -1122,9 +1318,10 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
                 cells=item.cells,
                 source="packet",
                 confidence="exact",
+                runtime_id=item.runtime_id,
                 item_id=item.item_id,
                 quality=item.quality,
-                local_index=None,
+                local_index=item.local_index,
             )
             for item in state.inventory_items
         )
@@ -1189,6 +1386,7 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
                 cells=cells,
                 source="packet",
                 confidence="exact",
+                runtime_id=item.runtime_id,
                 item_id=item.item_id or (metadata.item_id if metadata else None),
                 quality=item.quality or (metadata.quality if metadata else None),
                 shape_key=str(item.shape_code) if item.shape_code else None,

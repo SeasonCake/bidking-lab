@@ -909,3 +909,121 @@ flow/raw/accepted/session 等语义状态，不跟随 timestamp 或 `sniffed_pac
 `accepted_frames=0`，下一步排查 frame gate；若仍为 `sniffed_packets>0 / raw_packets≈0`，
 下一步排查代理进程归因或 tuple 关联。只有 `accepted_frames>0`、snapshot 随开局/道具/轮次/结算更新、
 且 overlay 不闪烁时，才能把 WinDivert live 链路记为闭环。
+
+## 2026-06-04 · 样本统计作为 loadout 先验，宝光位置只做软仓储线索
+
+**背景**：live 链路已开始产生可归档 raw，用户希望默认道具推荐参考历史样本中本地/对手英雄频率、
+道具使用频率和结算表现；同时指出宝光四鉴、索菲、拉文等 quality-only 位置信息虽然不能当成完整轮廓，
+但在低信息局可能是一整局唯一能估计仓库大致大小的线索。
+
+**用户决策**：先把样本统计脚本化，用频率和结算 outcome 做推荐先验；不把“对手用了什么道具”硬猜出来。
+宝光 quality-only `local_index` 不能升级为硬 footprint 或总格数下界，但也不能从仓储估计链路中移除；
+后续要以 soft/shadow 的方式消费它，尤其覆盖 Raven、Sophie、宝光类低信息局。Victor、Ahmed、Maria
+等专属技能接口放入后续 q6/英雄技能建模 TODO，不在 live 稳定期临时硬塞字段。
+
+**推荐**：新增只读统计入口，按 `session_id` 去重扫描 `data/logs/live/raw`，输出本地英雄、对手英雄、
+本地道具 SEND 频率、action-session outcome 和候选 loadout。action outcome 明确标注为描述性 proxy，
+不能当作因果收益；只有当状态包能稳定给 action/result player 归因时，才纳入“对手道具使用”统计。
+宝光 quality-only 继续进入 minimap marker 和 v2 item evidence，并设计
+`quality_only_bottom_row_soft_hint` / `bottom_row_soft_hint` 作为 shadow-only 仓储线索：可影响诊断、
+候选排序或后续仓储 posterior shadow，但不得直接写 `visible_outline_bottom_row_min`、
+`warehouse_total_cells` 或正式 baseline bid。
+
+**取舍**：统计先验能立刻把推荐从人工记忆转成可复跑证据，且不会污染 live baseline；代价是当前样本以
+Aisha/Ethan 为主，新英雄推荐只能先用全局高频道具填充。宝光位置保持 soft 可以利用“深位置质量点”带来的
+仓储大小信息，同时避免旧样本已证明的高亮点/内部格语义把布局硬约束带偏。
+
+**复查点**：`scripts/summarize_live_sample_usage.py` 当前去重后为 337 局、335 局有结算；本地英雄以
+`aisha=187`、`ethan=129` 为主，对手频率靠前为 Gabriela/Aisha/Ethan/Sophie/Wuqilin/Raven；
+本地 action-session 频率靠前为随机抽检(2)、宝光四鉴、随机抽检(1)、良品扫描、普品扫描、极品扫描。
+后续 q6/英雄技能优化时统一处理：Ahmed R2-R4 均格/数量技能、Maria 低品质总价值、Victor `q4+q5`
+合并件数、多类别集合证据，以及宝光/Sophie/Raven quality-only soft warehouse hint。
+
+**更新**：默认 loadout 已按上述统计做配置层 first cut：通用包优先抽检2、宝光四鉴、抽检1、良品扫描、
+极品扫描；Sophie/Raven 走 quality-only 低信息包（宝光、抽检2、良品扫描、至宝寻踪、巨物标识）；
+Maria 改为宝光联动包（宝光、抽检2、良品扫描、至宝寻踪、珍品估价）；Victor 使用 q4/q5 互补包；
+Ahmed 保留估价/扫描互补包。该更新只改变推荐默认配置，不表示 Maria/Ahmed/Victor 专属技能已经完整建模。
+
+**更新 2**：默认推荐进一步收紧为“不使用红色稀有度道具”。Maria 的红道具 `珍品估价` 下掉，改为
+`极品扫描`；Ahmed 按“蓝色总数 + 普品扫描 + 优品均格 + 极品扫描 + 宝光四鉴”配置；Victor 先用
+`抽检2 + 优品扫描/均格 + 极品扫描/均格`，数量类作为后续 q4/q5 合并件数建模时的替换候选。
+
+## 2026-06-04 · 0x0077 状态帧用于 live 预监听，不单独触发推理
+
+**背景**：实机连续开局时，如果上一局结算态还未完全回到待机，新局前段可能只进入非推理状态，表现为
+首轮英雄名缺失或要等首次本地出价后才识别。用户确认“等结算跳回待机再匹配”能稳定监听，说明问题集中在
+换局时序和 active session 切换，而不是 UI 渲染本身。
+
+**用户决策**：不引入 Fatbeans 会员路线，也不做 q6 调参或 UI 重写；优先把开局监听、样本归档和低影响 fast
+链路稳定住。
+
+**推荐**：接受 WinDivert `REV 0x0077` 作为 session prewarm/status 帧。该帧有合法 session_id，可提前更新
+`active_session_id`，并在 session 变化时 reset raw rows；但实测证明其 `player_id` 会轮到不同玩家，不能作为
+本地玩家绑定来源。本地玩家仍只由本地 `SEND 0x0022` 出价值与后续 bid 列表唯一匹配来锁定。
+`0x0077` 也不包含 map/bid/minimap 等完整状态，因此不得单独调度推理或写新估值 snapshot。只有后续
+`REV 0x0021/0x0025/0x0027/0x002d` 才触发 artifact 构建。开局 hero 可由首个 state 的单一
+`skill_reveal.hero_id` 暂定；若没有当前最高价，只展示 posterior 估值，不生成正式 bid 建议。
+
+**取舍**：这比用任意 TCP 点击包作为“匹配开始”更稳，因为 0x0077 有合法 session_id，可作为二重验证；代价是
+如果玩家取消匹配，只会留下 status-only 诊断 raw，不会产生估值。不能用 `0x0077.player_id` 的代价是首个
+正式出价建议仍要等本地出价或首个带当前价的 state；但 hero 和开局 P50/P90 可以在 `0x0021` 后提前显示。
+为避免中间局被下一局覆盖，monitor reset
+前会把当前 raw rows 写入 `raw/archive/reset/*_reset.json`，正式 complete/partial 归档仍由 `post_game_live` 完成。
+
+**复查点**：下一次实机必须重启 elevated monitor 才会加载新代码。重点看首轮 `hero` 是否能在本地出价前出现、
+`active_session_id` 是否在匹配/开局阶段提前切到新 session、`0x0077` 是否不增加推理耗时，以及 reset archive
+是否保留中间局 Tatiana/Sophie raw。
+
+## 2026-06-04 · 正式出价阈值改用轮次秒仓倍率反推
+
+**背景**：用户复核指出游戏攻防规则是“最高出价 × 本轮倍率”决定能否秒仓：R1=2.0、R2=1.6、R3=1.3、
+R4=1.1、R5=1.0。因此 400,000 估值仓在 R2 的防守价应约为 `400000 / 1.6 = 250000`，而不是再对
+P50 做 0.7/0.9 折价。旧策略只在 overlay 做了 `P50 × 倍率` 参考，正式 `defend/attack/stop` 仍使用信息强度
+折扣启发式，方向与游戏机制不一致。
+
+**决策**：正式 `recommend_bid_strategy` 升级为按轮次倍率反推出价阈值：`probe=P10/倍率`、
+`defend=P50/倍率`、`attack=P90/倍率`，高信息态 `stop` 可保留极小 P90 premium；R5 倍率为 1.0。
+overlay 的“轮次仓位参考”也改为 `P50 ÷ 倍率`，并在 ui contract 中显式展示 `warehouse_multiplier`。
+
+**取舍**：这只修正“估值如何换算成出价”，不改变 posterior 估值本身。若 q6/仓位输入低估，防守价仍会低；
+但现在可以明确区分估值错误、轮次识别错误和倍率公式错误。
+
+**复查点**：实机看 R2 约 40 万 P50 时防守价应接近 25 万；若价格仍异常，优先审 posterior/q6/仓位输入，
+而不是再调攻防倍率。
+
+## 2026-06-04 · pre-bid 低估主因先锁 q6/random_avg，不优先加 trials
+
+**背景**：pre-bid 估计窗口已定为每轮用户 `SEND 0x0022` 出价前。最新 25 个 WinDivert archive pre-bid
+窗口显示早轮低估严重，用户询问是否因为 live fast trials 少。
+
+**观察**：`n_trials=10/80/200` 对 P90 覆盖率没有实质改善，均约为 `0.52`。按 truth 分组后：
+`q6=0` 组 `12` 行，P90 覆盖率 `1.0`；`q6>0` 组 `13` 行，P50 全部低估，P90 覆盖率仅 `0.08`。
+公共随机均价 signal 组 `4` 行全部低估，P90 覆盖率 `0`；例如 Ethan/map 2401 局 R1 前已有
+`200031` 三件均价 `124,892` 和 Ethan 初始轮廓 reveal，但正式估值未利用该 random avg 约束，最终 q6
+价值为 `559,519`。
+
+**决策**：先不把 trials 作为主优化项，也不直接把 random sample avg 当硬 bucket target。短期先把
+`summarize_live_windivert_brief.py` 输出按 `q6_truth`、`random_avg`、`warehouse_p50_error` 分组，作为实战后
+固定诊断；下一步 q6 修正优先审 random_avg signal 与 q6 risk reference/shadow 如何安全进入正式出价。
+
+**取舍**：random sample avg 是随机样本均价，不知道抽中品质，直接硬塞会污染模型；但高均价是强 tail-risk
+信号，应先以 shadow/risk diagnostic 验证覆盖与 false-positive，再决定是否升级 baseline。
+
+**更新**：random sample avg signal 已接入 q6 风险参考，而不是正式 baseline。`_q6_prior_gap_summary`
+会在 `actionable_random_sample_avg_values` 命中时把 `随机N件均价高X` 写入 q6 缺口摘要，并把参考 P90 至少抬到
+`N × avg`；ui contract 仍标记 `affects_bid=false` / `bid_floor_applied=false`。同时 shipwreck q6 residual
+profile 白名单允许 `public:random_avg+...+layout` 变体，避免公共随机均价作为附加证据时阻断既有 shadow gate。
+
+**更新 2**：正式 v2 增加 `random_sample_value_floor`，采用“硬下界 + 最小有效样本回退”。高于 `20,000` 的
+随机均价会以 `0.95 × N × avg` 生成全仓总值下界；若通过该下界的样本数达到
+`max(3, min(20, ceil(candidate_count*0.20)))`，则 hard filter；否则低于下界的 trial 权重乘 `0.10` 作
+soft penalty。随机均价出现时，v2 最多额外采 `40` 次尝试补足 hard floor 样本。原因是 live fast 默认只有
+10 trials，纯硬过滤会让 random_avg signal 组 median matched 降到 `1`，后验过于不稳定。该约束不写入任何
+品质 bucket，也不预填具体物品或站位；后续若要锚定飞机匣、永乐、黑盒、羊脂玉等候选，必须同时具备
+形状/占格/类别或 exact count 证据。
+
+**更新 3**：`q6_shadow` 成为 pre-bid brief 的固定诊断分组，优先用来区分 `inactive_q6`、`active_miss`
+和 `covered`。实测 Ethan/map 2401 属于 `villa`，不是 `shipwreck`，所以将
+`ethan + villa + public:random_avg+layout/shape+layout` 纳入 legacy `shipwreck_profile_v1` 的
+`profile_b5` shadow gate。该扩展目前只用于 debug/offline shadow，正式 baseline posterior 与出价不因此改变。
+如果后续样本证明该 gate 净收益稳定，再单独决策是否升级为正式 q6/tail sampler。
