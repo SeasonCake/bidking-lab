@@ -1410,6 +1410,7 @@ def _model_eval_row(
     deep_floor_shadow = artifact.get("q6_residual_deep_floor_shadow") or {}
     hidden_floor_shadow = artifact.get("q6_residual_hidden_floor_shadow") or {}
     villa_floor_shadow = artifact.get("q6_residual_villa_floor_shadow") or {}
+    formal_prior_floor = artifact.get("q6_formal_prior_floor") or {}
     bottom_row_risk = artifact.get("q6_aisha_bottom_row_risk") or {}
     quality_only_local_risk = artifact.get("q6_quality_only_local_risk") or {}
     input_constraints = (
@@ -1777,6 +1778,15 @@ def _model_eval_row(
             max(0, final_q6_decision_value - q6_practical_p90)
             if q6_practical_p90 is not None
             else None
+        ),
+        "q6_formal_prior_floor_label": formal_prior_floor.get("label"),
+        "q6_formal_prior_floor_gate": formal_prior_floor.get("gate"),
+        "q6_formal_prior_floor_evidence_profile": formal_prior_floor.get(
+            "evidence_profile_key"
+        ),
+        "q6_formal_prior_floor_active": bool(formal_prior_floor.get("active")),
+        "q6_formal_prior_floor_active_prior_floor_ratio": _parse_float_text(
+            formal_prior_floor.get("active_prior_floor_ratio")
         ),
         "q6_residual_boost_shadow_label": shadow.get("label"),
         "q6_residual_boost_shadow_gate": shadow.get("gate"),
@@ -2306,6 +2316,7 @@ def build_monitor_artifact_from_events(
     warehouse_rows: list[dict[str, Any]] = []
     v2_posterior_rows: list[dict[str, Any]] = []
     q6_residual_boost_shadow: dict[str, Any] = {}
+    q6_formal_prior_floor: dict[str, Any] = {}
     q6_residual_deep_floor_shadow: dict[str, Any] = {}
     q6_residual_hidden_floor_shadow: dict[str, Any] = {}
     q6_residual_villa_floor_shadow: dict[str, Any] = {}
@@ -2458,6 +2469,19 @@ def build_monitor_artifact_from_events(
             gate="aisha_villa_shape_layout_v1",
             bottom_row=problem.layout.bottom_row,
         )
+        formal_prior_floor_ratio = active_deep_floor_ratio
+        q6_formal_prior_floor = {
+            "label": "aisha_deep_floor1",
+            "gate": "aisha_shipwreck_deep_v1",
+            "evidence_profile_key": evidence_profile_key,
+            "active": formal_prior_floor_ratio > 0.0,
+            "active_prior_floor_ratio": formal_prior_floor_ratio,
+        }
+        formal_prior_floor_kwargs = (
+            {"q6_residual_prior_floor_ratio": formal_prior_floor_ratio}
+            if formal_prior_floor_ratio > 0.0
+            else {}
+        )
         v2_report = estimate_posterior_v2(
             inference_session.map_id,
             inference_session,
@@ -2469,6 +2493,7 @@ def build_monitor_artifact_from_events(
             seed=seed + 2,
             cells_tol=cells_tol,
             count_tol=count_tol,
+            **formal_prior_floor_kwargs,
         )
         v2_posterior_rows = _v2_posterior_rows(v2_report)
         shadow_report = None
@@ -2686,6 +2711,7 @@ def build_monitor_artifact_from_events(
         "fallback_warehouse_rows": fallback_warehouse_rows,
         "fallback_bid_rows": fallback_bid_rows,
         "q6_residual_boost_shadow": q6_residual_boost_shadow,
+        "q6_formal_prior_floor": q6_formal_prior_floor,
         "q6_residual_deep_floor_shadow": q6_residual_deep_floor_shadow,
         "q6_residual_hidden_floor_shadow": q6_residual_hidden_floor_shadow,
         "q6_residual_villa_floor_shadow": q6_residual_villa_floor_shadow,

@@ -2826,3 +2826,26 @@ python scripts/demo_shipwreck_r4_inference.py           # Phase 1A 推断 demo
   - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 24 --archive-debug-shadows --archive-shadow-trials 10 --detail-groups`
     可输出完整细分矩阵。
   - JSON subprocess 捕获可解析，输出 `25 ['no_estimate', 'p90_covered', 'q6_space_constrained', 'q6_tail_value', 'q6_value_distribution']`。
+
+### 2026-06-04 追加：Aisha 深沉船 q6 prior-floor 提升为 live 正式估值
+
+- 根因复核：Aisha/map 2506 pre-bid R3/R4 不是 `100107` 漏接，也不是 trials 少。R4 prefix 中已有
+  `35` 个 q1-q4 `shape+layout` target、q5 精确 `20` 格和 `95` 个已占布局格；采样器先填这些硬目标后，
+  把无总件数场景的 residual draws 压到当前已填件数附近，导致未知 q6 几乎没有抽样空间。复现中 q6 样本率
+  从 R2 `~0.77` 降到 R4 `~0.017`，q6 决策 P90 直接掉到 `0`。
+- 全量 338 份旧样本 `--trials 20` 复核后，`aisha_deep_floor1` 仍是最窄、最干净的升级候选：
+  q6 plannable coverage `0.4505 -> 0.5408`，q6 miss `161 -> 135`，decision MAE
+  `401,660 -> 363,336`；paired no-q6 new-positive 为 `0`。`profile_b5` 虽覆盖更高
+  (`0.5734`)，但会把已有 no-q6 正报中位从约 `302k` 抬到 `453k`，所以继续只作 shadow/debug。
+- live baseline 现在只在 `aisha_shipwreck_deep_v1` 命中时正式传
+  `q6_residual_prior_floor_ratio=1.0`；Ethan villa random_avg、Aisha hidden/villa floor、profile boost
+  仍不影响正式 posterior 或出价。artifact/model_eval 新增 `q6_formal_prior_floor_*` 字段，用于区分正式生效
+  与 shadow 对照。
+- 最新 25 个 24h pre-bid 窗口重放：overall P90 覆盖 `0.52 -> 0.65`，q6>0 组 `0.08 -> 0.33`，
+  Aisha 组 `0.12 -> 0.50`，`shape+layout` profile `0.53 -> 0.73`。Aisha/map 2506 R3/R4 不再 q6 P90=0；
+  剩余 top misses 转为 R2 Aisha tail 以及 Ethan `public:random_avg+layout`。
+- 验证：
+  - `C:\Python313\python.exe -m pytest tests/test_live_monitor.py tests/test_fatbeans_webhook_monitor.py tests/test_summarize_live_windivert_brief.py -q`
+    为 `41 passed`。
+  - `C:\Python313\python.exe .\scripts\summarize_live_windivert_brief.py --since-hours 24 --archive-n-trials 20 --archive-shadow-trials 20 --archive-debug-shadows --format json`
+    输出上述覆盖率。

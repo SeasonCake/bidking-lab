@@ -1027,3 +1027,12 @@ soft penalty。随机均价出现时，v2 最多额外采 `40` 次尝试补足 h
 `ethan + villa + public:random_avg+layout/shape+layout` 纳入 legacy `shipwreck_profile_v1` 的
 `profile_b5` shadow gate。该扩展目前只用于 debug/offline shadow，正式 baseline posterior 与出价不因此改变。
 如果后续样本证明该 gate 净收益稳定，再单独决策是否升级为正式 q6/tail sampler。
+
+**更新 4**：`aisha_deep_floor1` 从 shadow 提升为 live 正式 baseline 的窄门控：仅当
+`hero=aisha`、`map_family=shipwreck`、evidence profile 属于 Aisha shipwreck shape/layout 族，且布局
+`bottom_row >= 13` 时，正式 v2 posterior 传 `q6_residual_prior_floor_ratio=1.0`。这不是全局抬 q6，也不改变
+Ethan、Aisha hidden/villa 或 `profile_b5` 的正式出价路径。升级依据是：Aisha 深沉船 high shape-target
+prefix 会把 residual draws 挤掉，造成 R3/R4 q6 样本率塌到接近 0；338 份历史样本复核显示该窄 gate 修复
+27 个 paired q6 miss、无 no-q6 new-positive，最新 25 个 pre-bid 窗口 overall P90 覆盖 `0.52 -> 0.65`。
+artifact/model_eval 写入 `q6_formal_prior_floor_*` 字段作为追踪边界。Ethan villa random_avg 仍留在
+shadow/diagnostic，下一步需单独做 random_avg likelihood 或 q6/tail sampler 校准。
