@@ -323,6 +323,7 @@ class SessionDropPrior:
     expected_session_cells: float
     expected_session_value: float
     expected_session_decision_value: float
+    expected_session_tail_replacement_decision_value: float
 
 
 @dataclass(frozen=True)
@@ -358,6 +359,7 @@ class PosteriorReport:
     prior_expected_cells: float | None = None
     prior_expected_value: float | None = None
     prior_expected_decision_value: float | None = None
+    prior_expected_tail_replacement_decision_value: float | None = None
     shape_target_count: int = 0
     category_target_count: int = 0
     category_exclusion_count: int = 0
@@ -1482,10 +1484,12 @@ class ConditionalSampler:
         expected_session_cells = 0.0
         expected_session_value = 0.0
         expected_session_decision_value = 0.0
+        expected_session_tail_replacement_decision_value = 0.0
         mean_draws = (
             self._sampler.items_per_session_min + self._sampler.items_per_session_max
         ) / 2
         exact_anchor_ids = set(self.problem.anchor_item_counts)
+        replacement_values = self.tail_replacement_values()
         for pool, pool_weight in zip(self._sampler.pools, self._sampler.pool_weights):
             if len(pool.probabilities) == 0:
                 continue
@@ -1511,11 +1515,20 @@ class ConditionalSampler:
                 expected_session_value += expected_value
                 if _is_plannable_item(item, self.problem, exact_anchor_ids):
                     expected_session_decision_value += expected_value
+                    expected_session_tail_replacement_decision_value += expected_value
+                else:
+                    expected_session_tail_replacement_decision_value += (
+                        expected_item_count
+                        * _tail_replacement_value(item, replacement_values)
+                    )
         return SessionDropPrior(
             expected_session_count=expected_session_count,
             expected_session_cells=expected_session_cells,
             expected_session_value=expected_session_value,
             expected_session_decision_value=expected_session_decision_value,
+            expected_session_tail_replacement_decision_value=(
+                expected_session_tail_replacement_decision_value
+            ),
         )
 
     def tail_replacement_values(self) -> dict[tuple[int, int, int], int]:
@@ -3044,6 +3057,11 @@ def _estimate_posterior_for_problem(
         ),
         prior_expected_decision_value=(
             session_prior.expected_session_decision_value
+            if session_prior is not None
+            else None
+        ),
+        prior_expected_tail_replacement_decision_value=(
+            session_prior.expected_session_tail_replacement_decision_value
             if session_prior is not None
             else None
         ),

@@ -945,7 +945,9 @@ def test_inventory_quality_breakdown_keeps_exact_tail_anchor_plannable() -> None
     assert unsupported["final_q6_tail_replacement_count"] == 1
     assert unsupported["final_q6_tail_replacement_source"] == "item_table_median"
     assert unsupported["final_q6_decision_value_with_tail_replacement"] == 93_000
+    assert unsupported["final_decision_value_with_tail_replacement"] == 93_000
     assert anchored["final_q6_decision_value"] == tail.value
+    assert anchored["final_decision_value_with_tail_replacement"] == tail.value
     assert anchored["final_q6_trimmed_tail_value"] == 0
     assert anchored["final_q6_tail_replacement_value"] == 0
 

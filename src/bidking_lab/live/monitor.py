@@ -306,6 +306,16 @@ def _v2_posterior_rows(report: Any) -> list[dict[str, Any]]:
                 if getattr(report, "prior_expected_decision_value", None) is not None
                 else ""
             ),
+            "先验替代决策价值": (
+                f"{report.prior_expected_tail_replacement_decision_value:,.0f}"
+                if getattr(
+                    report,
+                    "prior_expected_tail_replacement_decision_value",
+                    None,
+                )
+                is not None
+                else ""
+            ),
             "q6价值 P10/P50/P90": _format_quantile_interval(report.q6_value),
             "q6决策价值 P10/P50/P90": _format_quantile_interval(
                 getattr(report, "q6_decision_value", None)
@@ -1210,6 +1220,9 @@ def _inventory_quality_breakdown(
                 q6_decision_value + q6_tail_replacement_value
             ),
             "final_decision_value": decision_value,
+            "final_decision_value_with_tail_replacement": (
+                decision_value + q6_tail_replacement_value
+            ),
             "final_trimmed_tail_value": trimmed_value,
             "final_trimmed_tail_items": ";".join(trimmed_items),
             "final_top_item_id": top_item.get("id"),
@@ -1453,6 +1466,7 @@ def _model_eval_row(
     prior_expected_cells = None
     prior_expected_value = None
     prior_expected_decision_value = None
+    prior_expected_tail_replacement_decision_value = None
     q6_value_p90 = None
     q6_decision_value_p90 = None
     q6_tail_replacement_estimate_p90 = None
@@ -1537,6 +1551,9 @@ def _model_eval_row(
         prior_expected_value = _parse_int_text(v2_rows[0].get("先验原始价值"))
         prior_expected_decision_value = _parse_int_text(
             v2_rows[0].get("先验决策价值")
+        )
+        prior_expected_tail_replacement_decision_value = _parse_int_text(
+            v2_rows[0].get("先验替代决策价值")
         )
         shape_target_count = _parse_int_text(v2_rows[0].get("形状约束数"))
         category_target_count = _parse_int_text(v2_rows[0].get("分类约束数"))
@@ -1754,6 +1771,9 @@ def _model_eval_row(
         "v2_prior_expected_cells": prior_expected_cells,
         "v2_prior_expected_value": prior_expected_value,
         "v2_prior_expected_decision_value": prior_expected_decision_value,
+        "v2_prior_expected_tail_replacement_decision_value": (
+            prior_expected_tail_replacement_decision_value
+        ),
         "v2_q6_value_p90": q6_value_p90,
         "v2_q6_decision_value_p90": q6_decision_value_p90,
         "v2_q6_tail_replacement_estimate_p90": q6_tail_replacement_estimate_p90,

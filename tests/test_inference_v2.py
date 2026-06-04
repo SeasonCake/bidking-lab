@@ -650,6 +650,78 @@ def test_session_drop_prior_uses_drop_weights_and_count_ranges() -> None:
     assert prior.expected_session_decision_value == prior.expected_session_value
 
 
+def test_session_drop_prior_reports_tail_replacement_decision_value() -> None:
+    tail = _item(1086002, quality=6, value=1_495_000, shape=(1, 1), tags=[108])
+    ordinary = _item(1086006, quality=6, value=93_000, shape=(1, 1), tags=[108])
+    maps = {
+        2405: BidMap(
+            map_id=2405,
+            name="tail_prior_map",
+            description="",
+            category=108,
+            auction_mode="open",
+            sub_pool_weights=[],
+            rounds_total=5,
+            entry_fee_silver=0,
+            starting_budget_silver=100_000,
+            drop_pool_id=9005,
+            items_per_session_min=1,
+            items_per_session_max=1,
+            value_tier_ui="",
+            mode_flag=4,
+            bid_price_ladder=[],
+            raw_row=[],
+        )
+    }
+    drops = {
+        9005: DropPool(
+            pool_id=9005,
+            name="tail_prior_pool",
+            description="",
+            pool_type=2,
+            entries=[
+                DropEntry(
+                    category=108,
+                    item_id=tail.item_id,
+                    n_min=1,
+                    n_max=1,
+                    weight=1,
+                ),
+                DropEntry(
+                    category=108,
+                    item_id=ordinary.item_id,
+                    n_min=1,
+                    n_max=1,
+                    weight=3,
+                ),
+            ],
+        )
+    }
+    items = {tail.item_id: tail, ordinary.item_id: ordinary}
+    sampler = ConditionalSampler(
+        build_residual_problem(
+            2405,
+            EvidenceStoreBuilder().build(),
+            maps=maps,
+            drops=drops,
+            items=items,
+        ),
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
+
+    prior = sampler.session_drop_prior()
+
+    assert prior is not None
+    assert abs(prior.expected_session_value - 443_500) < 1e-12
+    assert abs(prior.expected_session_decision_value - 69_750) < 1e-12
+    assert (
+        abs(prior.expected_session_tail_replacement_decision_value - 93_000)
+        < 1e-12
+    )
+
+
 def test_q6_residual_boost_only_changes_residual_sampling_weights() -> None:
     maps, drops, items = _tables()
     problem = build_residual_problem(

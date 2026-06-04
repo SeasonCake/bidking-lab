@@ -2865,6 +2865,17 @@ python scripts/demo_shipwreck_r4_inference.py           # Phase 1A 推断 demo
   live `v2_posterior_rows` 显示为 `先验件数/先验格数/先验原始价值/先验决策价值`，`model_eval` 透传为
   `v2_prior_expected_*`。`prior_expected_decision_value` 复用现有 plannable tail 裁剪逻辑，避免未证实的
   极端尾部直接污染实战主估值。
+- 用户复核后修正 tail replacement 口径：`prior_expected_decision_value` 继续代表正式裁尾决策值；
+  新增 `prior_expected_tail_replacement_decision_value` 专门表示“未证实极端尾部按同品质同形状普通物品替代”的
+  先验审计值。live `v2_posterior_rows` 显示为 `先验替代决策价值`，`model_eval` 透传为
+  `v2_prior_expected_tail_replacement_decision_value`。结算 truth breakdown 同步新增全仓
+  `final_decision_value_with_tail_replacement`，避免只看 q6 分量时漏掉“整仓裁尾后可替代值”。
+- 复盘用户记忆中的“300 多万但 180 万附近可规划值”实战局：raw archive 仍在
+  `data/logs/live/raw/archive/complete/windivert_2026-06-04_034748_complete_aisha_2506_2506_1295018937738841.json`。
+  当前 schema 重放结果为 final `3,095,318`、最高物品 `《富春山居图》` `1,236,666`、
+  `final_decision_value=1,858,652`、`final_decision_value_with_tail_replacement=2,001,752`。这说明原始局没有丢，
+  但旧 UI 当时显示的 exact snapshot/model_eval 行没有留在 `model_eval.jsonl`，大概率已被后续 live snapshot 覆盖；
+  后续以 raw archive 重放作为可复核来源。
 - 只读实验：最近 72h 的 25 个 pre-bid rows 上，简单 early-round 全仓先验 P50 shrinkage 会把
   median abs P50 error 从约 `142,264` 推高到 `181,974-261,395`，主要因为 Gabriela 低真值局会被全仓
   先验抬高；直接用全仓先验作 P90 floor 也没有提高 q6>0 覆盖。因此“信息少时先验+后验”方向保留，

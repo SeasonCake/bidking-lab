@@ -1047,3 +1047,16 @@ shadow/diagnostic，下一步需单独做 random_avg likelihood 或 q6/tail samp
 不是当前地图的多件掉落槽位折算错误。已修复条件采样器中无精确总件数场景的 draw-slot 语义：已知 bucket
 物品按掉落池期望件数折算为已用 draw slots，layout-only footprint 只提高最低总 draw slots。该修复对当前
 `n_min=n_max=1` live 地图应为等价行为，但能防止未来多件掉落地图重新压扁 residual 空间。
+
+**更新 7**：tail replacement 与正式 `decision_value` 继续分口径。正式 `prior_expected_decision_value` 和
+baseline 出价链路仍使用裁尾 plannable value；新增
+`prior_expected_tail_replacement_decision_value` 只表示“未被证据支持的极端尾部，用同品质同形状普通物品
+按地图权重 P50 替代”的审计值。原因是 replacement 更符合实战“没有富春/超跑钥匙时仍可能有普通红”的直觉，
+但尚未证明可直接替代正式出价口径；因此 live/model_eval 记录它，UI 可作为 review/辅助信息展示，正式
+`decision_value`、停止价和抢仓上限暂不读取它。
+
+**复查点**：旧 live 的 exact overlay snapshot 可能被覆盖，不能再用 `latest_snapshot.json` 追溯当时数值。
+若 raw archive 存在，则以当前 schema 重放为准；例如
+`windivert_2026-06-04_034748_complete_aisha_2506_2506_1295018937738841.json` 可复盘出 final
+`3,095,318`、裁尾决策值 `1,858,652`、replacement 决策值 `2,001,752`。后续判断 q6/尾部问题时必须同时看
+raw final、formal decision、tail replacement 三列，避免把“记录覆盖”和“模型估计口径变化”混为一类问题。
