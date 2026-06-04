@@ -43,6 +43,16 @@ from bidking_lab.inference.v2 import (
     evidence_store_from_fatbeans_events,
     is_tail_supported_by_evidence,
 )
+from bidking_lab.inference.v3 import (
+    compile_feasible_summary,
+    compile_hard_constraints,
+    empty_feasible_summary_flat_dict,
+    empty_posterior_flat_dict,
+    estimate_q6_posterior_from_truths,
+    events_from_fatbeans,
+    ordinary_shape_replacement_values,
+    sample_truth_bank,
+)
 from bidking_lab.inference.map_likelihood import estimate_map_likelihood
 from bidking_lab.inference.tool_info_roi import estimate_tool_info_roi
 from bidking_lab.inference.warehouse_estimator import estimate_warehouse_cells
@@ -1529,6 +1539,11 @@ def _model_eval_row(
     bid_rows = artifact.get("bid_rows") or []
     layout_rows = artifact.get("layout_replay_rows") or []
     v2_rows = artifact.get("v2_posterior_rows") or []
+    v3_shadow = (
+        artifact.get("v3_posterior_shadow")
+        if isinstance(artifact.get("v3_posterior_shadow"), Mapping)
+        else {}
+    )
     shadow = artifact.get("q6_residual_boost_shadow") or {}
     deep_floor_shadow = artifact.get("q6_residual_deep_floor_shadow") or {}
     deep11_floor_shadow = artifact.get("q6_residual_deep11_floor_shadow") or {}
@@ -1579,6 +1594,51 @@ def _model_eval_row(
     q6_prior_floor_value = None
     q6_practical_gate = ""
     q6_practical_p90 = None
+    v3_post_available = bool(v3_shadow.get("v3_post_available"))
+    v3_post_ready = bool(v3_shadow.get("v3_post_ready"))
+    v3_post_strict_ready = bool(v3_shadow.get("v3_post_strict_ready"))
+    v3_post_affects_bid = bool(v3_shadow.get("v3_post_affects_bid"))
+    v3_post_match_scope = v3_shadow.get("v3_post_match_scope")
+    v3_post_n_total = _parse_int_text(v3_shadow.get("v3_post_n_total"))
+    v3_post_n_matched = _parse_int_text(v3_shadow.get("v3_post_n_matched"))
+    v3_post_n_strict_matched = _parse_int_text(
+        v3_shadow.get("v3_post_n_strict_matched")
+    )
+    v3_post_match_rate = _parse_float_text(v3_shadow.get("v3_post_match_rate"))
+    v3_post_strict_match_rate = _parse_float_text(
+        v3_shadow.get("v3_post_strict_match_rate")
+    )
+    v3_post_q6_present_rate = _parse_float_text(
+        v3_shadow.get("v3_post_q6_present_rate")
+    )
+    v3_post_formal_p50 = _parse_int_text(
+        v3_shadow.get("v3_post_formal_decision_value_p50")
+    )
+    v3_post_formal_p90 = _parse_int_text(
+        v3_shadow.get("v3_post_formal_decision_value_p90")
+    )
+    v3_post_tail_replacement_p50 = _parse_int_text(
+        v3_shadow.get("v3_post_tail_replacement_decision_value_p50")
+    )
+    v3_post_tail_replacement_p90 = _parse_int_text(
+        v3_shadow.get("v3_post_tail_replacement_decision_value_p90")
+    )
+    v3_post_q6_formal_p50 = _parse_int_text(
+        v3_shadow.get("v3_post_q6_formal_decision_value_p50")
+    )
+    v3_post_q6_formal_p90 = _parse_int_text(
+        v3_shadow.get("v3_post_q6_formal_decision_value_p90")
+    )
+    v3_post_q6_count_p50 = _parse_int_text(v3_shadow.get("v3_post_q6_count_p50"))
+    v3_post_q6_count_p90 = _parse_int_text(v3_shadow.get("v3_post_q6_count_p90"))
+    v3_post_q6_cells_p50 = _parse_int_text(v3_shadow.get("v3_post_q6_cells_p50"))
+    v3_post_q6_cells_p90 = _parse_int_text(v3_shadow.get("v3_post_q6_cells_p90"))
+    v3_post_total_cells_p50 = _parse_int_text(
+        v3_shadow.get("v3_post_total_cells_p50")
+    )
+    v3_post_total_cells_p90 = _parse_int_text(
+        v3_shadow.get("v3_post_total_cells_p90")
+    )
     posterior_samples = None
     posterior_total_samples = None
     q6_shadow_active = bool(shadow.get("active"))
@@ -2016,6 +2076,93 @@ def _model_eval_row(
         "q6_formal_prior_floor_active": bool(formal_prior_floor.get("active")),
         "q6_formal_prior_floor_active_prior_floor_ratio": _parse_float_text(
             formal_prior_floor.get("active_prior_floor_ratio")
+        ),
+        "v3_post_shadow_label": v3_shadow.get("label"),
+        "v3_post_shadow_error": v3_shadow.get("error"),
+        "v3_post_shadow_trials": _parse_int_text(v3_shadow.get("trials")),
+        "v3_post_available": v3_post_available,
+        "v3_post_ready": v3_post_ready,
+        "v3_post_strict_ready": v3_post_strict_ready,
+        "v3_post_affects_bid": v3_post_affects_bid,
+        "v3_post_match_scope": v3_post_match_scope,
+        "v3_post_n_total": v3_post_n_total,
+        "v3_post_n_matched": v3_post_n_matched,
+        "v3_post_n_strict_matched": v3_post_n_strict_matched,
+        "v3_post_match_rate": v3_post_match_rate,
+        "v3_post_strict_match_rate": v3_post_strict_match_rate,
+        "v3_post_q6_present_rate": v3_post_q6_present_rate,
+        "v3_post_numeric_constraints": _parse_int_text(
+            v3_shadow.get("numeric_constraints")
+        ),
+        "v3_post_item_anchors": _parse_int_text(v3_shadow.get("item_anchors")),
+        "v3_post_shape_anchors": _parse_int_text(v3_shadow.get("shape_anchors")),
+        "v3_post_quality_floor_anchors": _parse_int_text(
+            v3_shadow.get("quality_floor_anchors")
+        ),
+        "v3_post_conflicts": _parse_int_text(v3_shadow.get("conflicts")),
+        "v3_summary_feasible": bool(v3_shadow.get("v3_summary_feasible")),
+        "v3_summary_known_count_floor": _parse_int_text(
+            v3_shadow.get("v3_summary_known_count_floor")
+        ),
+        "v3_summary_known_cells_floor": _parse_int_text(
+            v3_shadow.get("v3_summary_known_cells_floor")
+        ),
+        "v3_summary_known_value_floor": _parse_int_text(
+            v3_shadow.get("v3_summary_known_value_floor")
+        ),
+        "v3_summary_session_total_count_exact": _parse_int_text(
+            v3_shadow.get("v3_summary_session_total_count_exact")
+        ),
+        "v3_summary_session_total_cells_exact": _parse_int_text(
+            v3_shadow.get("v3_summary_session_total_cells_exact")
+        ),
+        "v3_summary_q6_count_floor": _parse_int_text(
+            v3_shadow.get("v3_summary_q6_count_floor")
+        ),
+        "v3_summary_q6_cells_floor": _parse_int_text(
+            v3_shadow.get("v3_summary_q6_cells_floor")
+        ),
+        "v3_summary_q6_value_floor": _parse_int_text(
+            v3_shadow.get("v3_summary_q6_value_floor")
+        ),
+        "v3_post_formal_decision_value_p50": v3_post_formal_p50,
+        "v3_post_formal_decision_value_p90": v3_post_formal_p90,
+        "v3_post_tail_replacement_decision_value_p50": (
+            v3_post_tail_replacement_p50
+        ),
+        "v3_post_tail_replacement_decision_value_p90": (
+            v3_post_tail_replacement_p90
+        ),
+        "v3_post_q6_formal_decision_value_p50": v3_post_q6_formal_p50,
+        "v3_post_q6_formal_decision_value_p90": v3_post_q6_formal_p90,
+        "v3_post_q6_count_p50": v3_post_q6_count_p50,
+        "v3_post_q6_count_p90": v3_post_q6_count_p90,
+        "v3_post_q6_cells_p50": v3_post_q6_cells_p50,
+        "v3_post_q6_cells_p90": v3_post_q6_cells_p90,
+        "v3_post_total_cells_p50": v3_post_total_cells_p50,
+        "v3_post_total_cells_p90": v3_post_total_cells_p90,
+        "v3_post_diagnostics": v3_shadow.get("v3_post_diagnostics"),
+        "v3_formal_decision_value_p50_error_vs_formal": (
+            v3_post_formal_p50 - final_formal_decision_value
+            if v3_post_formal_p50 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "v3_formal_decision_value_p90_under_by": (
+            max(0, final_formal_decision_value - v3_post_formal_p90)
+            if v3_post_formal_p90 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "v3_q6_formal_decision_value_p50_error": (
+            v3_post_q6_formal_p50 - final_q6_decision_value
+            if v3_post_q6_formal_p50 is not None
+            else None
+        ),
+        "v3_q6_formal_decision_value_p90_under_by": (
+            max(0, final_q6_decision_value - v3_post_q6_formal_p90)
+            if v3_post_q6_formal_p90 is not None
+            else None
         ),
         "q6_residual_boost_shadow_label": shadow.get("label"),
         "q6_residual_boost_shadow_gate": shadow.get("gate"),
@@ -2512,6 +2659,87 @@ def _resolve_shadow_trials(n_trials: int, shadow_trials: int | None) -> int:
     return max(1, min(int(n_trials), DEFAULT_Q6_SHADOW_TRIALS_CAP))
 
 
+def _empty_v3_posterior_shadow(
+    *,
+    trials: int,
+    error: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "label": "v3_summary_likelihood",
+        "affects_bid": False,
+        "trials": max(0, int(trials)),
+        "error": error,
+        "numeric_constraints": 0,
+        "item_anchors": 0,
+        "shape_anchors": 0,
+        "quality_floor_anchors": 0,
+        "conflicts": 0,
+        **empty_feasible_summary_flat_dict(),
+        **empty_posterior_flat_dict(),
+    }
+
+
+def _v3_posterior_shadow_summary(
+    events: FatbeansCaptureEvents,
+    *,
+    map_id: int | None,
+    tables: MonitorTables,
+    trials: int,
+    seed: int,
+) -> dict[str, Any]:
+    out = _empty_v3_posterior_shadow(trials=trials)
+    if map_id is None:
+        out["error"] = "missing_map_id"
+        return out
+    bid_map = tables.maps.get(int(map_id))
+    if bid_map is None:
+        out["error"] = "unknown_map_id"
+        return out
+    if trials <= 0:
+        out["error"] = "no_trials"
+        return out
+    try:
+        constraints = compile_hard_constraints(events_from_fatbeans(events))
+        summary = compile_feasible_summary(constraints)
+        truths = sample_truth_bank(
+            int(map_id),
+            maps=tables.maps,
+            drops=tables.drops,
+            items=tables.items,
+            n_trials=trials,
+            seed=seed,
+        )
+        replacement_values = ordinary_shape_replacement_values(
+            int(map_id),
+            maps=tables.maps,
+            drops=tables.drops,
+            items=tables.items,
+        )
+        posterior = estimate_q6_posterior_from_truths(
+            map_id=int(map_id),
+            map_name=bid_map.name,
+            summary=summary,
+            truths=truths,
+            constraints=constraints,
+            replacement_values=replacement_values,
+        )
+    except Exception as exc:
+        out["error"] = type(exc).__name__
+        return out
+    out.update(
+        {
+            "numeric_constraints": len(constraints.numeric),
+            "item_anchors": len(constraints.item_anchors),
+            "shape_anchors": len(constraints.shape_anchors),
+            "quality_floor_anchors": len(constraints.quality_floor_anchors),
+            "conflicts": len(constraints.conflicts),
+        }
+    )
+    out.update(summary.to_flat_dict())
+    out.update(posterior.to_flat_dict())
+    return out
+
+
 def build_monitor_artifact_from_events(
     events: FatbeansCaptureEvents,
     *,
@@ -2567,6 +2795,9 @@ def build_monitor_artifact_from_events(
     evidence_label = "暂无"
     evidence_profile_key = ""
     resolved_shadow_trials = _resolve_shadow_trials(n_trials, shadow_trials)
+    v3_posterior_shadow: dict[str, Any] = _empty_v3_posterior_shadow(
+        trials=resolved_shadow_trials,
+    )
     inference_input_constraints: dict[str, Any] = {
         "mode": "no_inference_session",
     }
@@ -2988,6 +3219,13 @@ def build_monitor_artifact_from_events(
             v2_report,
             q6_prior_gap=q6_practical_reference,
         )
+        v3_posterior_shadow = _v3_posterior_shadow_summary(
+            events,
+            map_id=inference_session.map_id,
+            tables=tables,
+            trials=resolved_shadow_trials,
+            seed=seed + 6,
+        )
         if roi_trials > 0:
             tool_rows = _tool_info_roi_rows(
                 estimate_tool_info_roi(
@@ -3090,6 +3328,7 @@ def build_monitor_artifact_from_events(
         "fallback_map_rows": fallback_map_rows,
         "fallback_warehouse_rows": fallback_warehouse_rows,
         "fallback_bid_rows": fallback_bid_rows,
+        "v3_posterior_shadow": v3_posterior_shadow,
         "q6_residual_boost_shadow": q6_residual_boost_shadow,
         "q6_formal_prior_floor": q6_formal_prior_floor,
         "q6_residual_deep_floor_shadow": q6_residual_deep_floor_shadow,

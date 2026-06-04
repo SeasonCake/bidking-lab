@@ -792,3 +792,45 @@ C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --to
 ```
 
 结果：`39 passed`，全样本 evaluator 通过。
+
+## 2026-06-05 checkpoint：live artifact 接入 v3 posterior shadow
+
+目标：
+
+- 让实时监测产物能同步记录 v3 shadow posterior，方便后续实战样本直接做 v2/v3 对照。
+- 不改变 v2 formal baseline、停止价、抢仓价或 UI 第一屏合同。
+
+实现：
+
+- `build_monitor_artifact_from_events` 新增 `v3_posterior_shadow`。
+- shadow 使用当前 Fatbeans events 编译 v3 `ConstraintSet` / `FeasibleSummaryReport`，再用 `shadow_trials` 小样本 truth bank 生成 `V3PosteriorReport`。
+- `model_eval` 新增 `v3_post_*`、`v3_summary_*`、v3 formal/q6 p50 error 与 p90 under-by 字段。
+- `v3_post_affects_bid` 固定为 `False`；当前不进入 `ui_contract.shadows`，避免前端或实战读数误当正式建议。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_live_monitor.py -q
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_posterior.py tests\test_inference_v3_summary.py tests\test_inference_v3_priors_truth.py tests\test_inference_v3_evidence_registry.py tests\test_summarize_v3_metric_slices.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --top 14
+```
+
+结果：
+
+- `tests/test_live_monitor.py`：`26 passed`。
+- v3 核心测试：`29 passed`。
+- 全样本 evaluator 仍为 `windows=1551 ready=1534 no_state=17 constraint_conflict=0 parse_errors=0`。
+- 核心指标未因 live 接入变化：
+  - `formal_p50_mae=313387.992`
+  - `formal_p50_below_rate=0.573012`
+  - `formal_p90_coverage=0.780965`
+  - `q6_formal_p50_mae=283903.670`
+  - `q6_formal_p50_below_rate=0.487614`
+  - `q6_formal_p90_coverage=0.828553`
+- 真实 canonical sample smoke：`v3_post_ready=True`、`v3_post_affects_bid=False`、`match_scope=summary_likelihood`。
+
+后续：
+
+- live JSONL 已具备记录 v3 shadow 的字段，后续新增实战样本可直接比较 v2 formal 与 v3 shadow。
+- 下一步仍是 q6 count/cell/value 条件 proposal，而不是继续提高 global/map guard。

@@ -441,3 +441,31 @@ q6_formal_p50_bias=-70104.765
 - 地图分层 guard 是当前 v3 shadow 的更好校准口径。
 - 但该分层来自当前真实样本，仍需要后续新样本或 holdout 复核。
 - 该策略不能替代 q6 count/cell/value 条件 proposal；它只是减少全局 practical guard 的副作用。
+
+## O-v3-021：live artifact 可以安全记录 v3 shadow，且不改变 archive 指标
+
+2026-06-05 将 v3 posterior shadow 接入 live monitor artifact 后验证：
+
+- `tests/test_live_monitor.py`：`26 passed`。
+- v3 核心测试：`29 passed`。
+- 全 archive evaluator 指标与 map-calibrated guard checkpoint 一致：
+
+```text
+windows=1551 ready=1534 no_state=17 constraint_conflict=0 parse_errors=0
+posterior_ready=1534 posterior_strict_ready=513 posterior_summary_likelihood=1021 posterior_q6_projection=0
+formal_p50_mae=313387.992 formal_p50_below_rate=0.573012 formal_p90_coverage=0.780965
+q6_formal_p50_mae=283903.670 q6_formal_p50_below_rate=0.487614 q6_formal_p90_coverage=0.828553
+```
+
+真实 canonical sample smoke：
+
+```text
+fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json
+v3_ready=True affects_bid=False scope=summary_likelihood trials=10 error=None
+```
+
+结论：
+
+- live artifact/model_eval 现在能携带 v3 shadow 字段，可用于后续实战样本 paired compare。
+- 当前接入没有污染 offline archive evaluator，也没有改变 v2 formal baseline。
+- `ui_contract` 暂不暴露 v3 shadow 是合理边界，避免实战 UI 把 shadow 误当正式建议。

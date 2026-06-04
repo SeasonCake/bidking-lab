@@ -527,6 +527,11 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["latest_bids"] == {"leader": 15_000}
     assert artifact["warehouse_rows"]
     assert artifact["v2_posterior_rows"]
+    assert artifact["v3_posterior_shadow"]["label"] == "v3_summary_likelihood"
+    assert artifact["v3_posterior_shadow"]["trials"] == 10
+    assert artifact["v3_posterior_shadow"]["v3_post_available"] is True
+    assert artifact["v3_posterior_shadow"]["v3_post_affects_bid"] is False
+    assert artifact["v3_posterior_shadow"]["v3_post_ready"] is True
     assert artifact["q6_residual_boost_shadow"]["label"] == "profile_b5"
     assert artifact["q6_residual_boost_shadow"]["gate"] == "shipwreck_profile_v1"
     assert artifact["q6_residual_boost_shadow"]["trials"] == 10
@@ -674,6 +679,14 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "q6_practical_gate_covered_after" in artifact["model_eval"]
     assert "q6_practical_gate_helped" in artifact["model_eval"]
     assert "q6_practical_p90_under_by" in artifact["model_eval"]
+    assert artifact["model_eval"]["v3_post_shadow_label"] == "v3_summary_likelihood"
+    assert artifact["model_eval"]["v3_post_shadow_trials"] == 10
+    assert artifact["model_eval"]["v3_post_available"] is True
+    assert artifact["model_eval"]["v3_post_ready"] is True
+    assert artifact["model_eval"]["v3_post_affects_bid"] is False
+    assert artifact["model_eval"]["v3_post_formal_decision_value_p50"] == 20_000
+    assert "v3_formal_decision_value_p50_error_vs_formal" in artifact["model_eval"]
+    assert "v3_q6_formal_decision_value_p90_under_by" in artifact["model_eval"]
     assert "q6_residual_boost_shadow_active" in artifact["model_eval"]
     assert "q6_residual_boost_shadow_q6_p90_delta" in artifact["model_eval"]
     assert artifact["model_eval"]["q6_residual_boost_shadow_active"] is False

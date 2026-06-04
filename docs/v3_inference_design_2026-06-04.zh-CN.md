@@ -418,9 +418,10 @@ v3 可进入正式候选前：
 
 ### Phase 4：live shadow 接入
 
-- live artifact 增加 `ui_contract.v3_shadow`。
-- UI 展示 v3 诊断和风险参考，但默认 `affects_bid=false`。
-- brief 增加 v2/v3 paired rows。
+- live artifact 先增加 `v3_posterior_shadow`，`model_eval` 增加 `v3_post_*` / `v3_summary_*` 字段。
+- `ui_contract` 暂不暴露 v3 shadow，避免用户把 shadow 当作正式建议；UI 设计当前冻结。
+- 后续若需要 UI 展示，只能作为明确标注的只读诊断/影子参考，默认 `affects_bid=false`。
+- brief / live JSONL 增加 v2/v3 paired rows。
 
 ### Phase 5：正式候选与 v2 归档
 

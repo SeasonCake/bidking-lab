@@ -286,3 +286,24 @@ v3 shadow practical P50 guard 从全局 P60 改为地图分层：
 
 - 全局 P60 降低低估，但对部分地图带来正 bias。
 - 地图分层在当前样本上同时降低 formal/q6 MAE，并缓解低尾地图的过激。
+
+## D-v3-020：live v3 posterior 先进入 artifact/model_eval，不进入正式 UI contract
+
+v3 posterior shadow 在 live monitor 中的接入边界：
+
+- 写入完整 artifact：`v3_posterior_shadow`。
+- 写入评估日志：`model_eval.v3_post_*` / `model_eval.v3_summary_*`。
+- `v3_post_affects_bid=False` 必须固定输出。
+- 暂不加入 `ui_contract.shadows`，不参与第一屏 UI 推荐、停止价、抢仓价或 baseline posterior 文案。
+
+原因：
+
+- 当前 v3 仍处于 shadow calibration 阶段，尚未达到 formal promotion gate。
+- 用户已要求 UI 设计暂时冻结；把 v3 放进 UI contract 容易造成实战读数混淆。
+- `model_eval.jsonl` 已足够支撑后续实战样本的 v2/v3 paired compare。
+
+边界：
+
+- live artifact 构建失败时 v3 shadow 应 fail closed：记录 `error`，保持 `affects_bid=false`，不影响 v2 live baseline。
+- 后续若要展示 v3，只能作为明确标注的只读诊断/影子参考，且仍不得影响正式 bid rows。
+- promotion 前必须用 canonical archive + 新实战样本同时验证 formal MAE、below/over、P90 coverage、q6 under-by 与 pinball。
