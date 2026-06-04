@@ -504,3 +504,27 @@ C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conf
 ```
 
 结果：`33 passed`，全样本 evaluator 通过。
+
+### 新增诊断工具
+
+新增：
+
+```powershell
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_id --top 8
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by round --by v3_post_match_scope
+```
+
+用途：按固定字段输出 paired formal/q6 MAE、bias、below rate、P90 coverage，以及 strict / summary-likelihood
+计数，避免后续 sampler 调参只看全局均值。
+
+当前 `--by map_id --top 8` 显示：
+
+```text
+2601 n=86 mae=614055.0 bias=-467064.5 p90_cover=0.569767 q6_mae=540020.2
+2506 n=71 mae=502413.1 bias=-444963.9 p90_cover=0.605634 q6_mae=456777.5
+2509 n=40 mae=414159.0 bias=-167713.2 p90_cover=0.725000 q6_mae=373788.5
+2503 n=37 mae=372821.0 bias=-199747.8 p90_cover=0.783784 q6_mae=327518.5
+2501 n=310 mae=367176.4 bias=-274498.7 p90_cover=0.696774 q6_mae=328573.6
+```
+
+结论：下一轮不是全局调高，而是优先解释 2601、2506、2501 为什么在 formal/q6 上都系统低估。
