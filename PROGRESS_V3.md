@@ -1798,3 +1798,61 @@ v2_archive_readiness=pending
 - 当前不能切 formal，也不能 archive v2。
 - 阻塞项是 formal baseline 仍偏低、CCV 全局不稳、residual gate 仍禁用、profile 样本不足。
 - 下一步继续围绕 `2506` bounded upshift + tail/q6-tail review 做 shadow/holdout，而不是全局启用 CCV/residual/tail replacement。
+
+## 2026-06-05 checkpoint：v3 CCV session holdout 审计
+
+实现：
+
+- 新增 `scripts/summarize_v3_ccv_holdout.py`。
+- 新增 `tests/test_summarize_v3_ccv_holdout.py`。
+- holdout 口径：
+  - 按 `session_id` stable hash 分 fold。
+  - 每个 fold 只用训练折运行 `summarize_v3_ccv_profile_candidates.py`。
+  - 只把训练折中的 `watch_only_count_cell_candidate` group 应用到留出折。
+  - 输出 overall 与 candidate_only 两层指标，避免小覆盖候选被总体均值稀释。
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_ccv_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_holdout.py --posterior-trials 128 --folds 5 --by hero_map_id --top 12
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_holdout.py --posterior-trials 128 --folds 5 --by hero_map_evidence_profile --top 12
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_holdout.py --posterior-trials 128 --folds 5 --by hero_map_id --min-sessions 6 --top 12
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_pipeline.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_inference_v3_underestimate_repair.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_summarize_v3_residual_profile_candidates.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_summarize_v3_underestimate_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py tests\test_summarize_v3_tail_value_candidates.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_ccv_holdout.py tests\test_live_monitor.py -q
+```
+
+结果：
+
+- focused CCV tests：`5 passed`。
+- v3 core/live path：`90 passed`。
+- `hero_map_id` 默认阈值：
+
+```text
+rows=1534 sessions=433 candidate_rows=2 candidate_sessions=1
+count_delta=0.0 cells_delta=0.0 q6_formal_delta=0.0
+candidate_only rows=2 sessions=1 groups=ethan|2502
+```
+
+- `hero_map_evidence_profile` 默认阈值：
+
+```text
+candidate_rows=0 candidate_sessions=0
+status_counts=blocked_ccv_hurts:9,blocked_low_ccv_activity:12,blocked_low_sample:1524
+```
+
+- `hero_map_id --min-sessions 6` 灵敏度：
+
+```text
+candidate_rows=14 candidate_sessions=4
+cells_delta=+0.004 q6_formal_delta=+84.8
+candidate_only cells_delta=+0.4 q6_formal_delta=+9288.7
+groups=aisha|2504,aisha|2508,ethan|2502
+```
+
+结论：
+
+- `ethan|2502` 的全量切片候选信号在 session holdout 中没有复现改善。
+- 放宽 session 阈值会引入 `aisha|2504/aisha|2508`，candidate_only 指标反而恶化。
+- CCV 继续保持 shadow/audit，不进入 formal sampler。
+- 下一步的 count/cell/value sampler 不能继续靠固定 threshold 升级，必须改成证据条件 likelihood 的可验证候选，并先过 holdout。

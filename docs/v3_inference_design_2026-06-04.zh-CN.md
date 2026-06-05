@@ -723,6 +723,25 @@ v3_ccv_q6_cells_p50_mae=7.008 delta=+0.165
 2. `2506` 主线仍是低估修复、tail/value sampler 与证据 profile，不是 count/cell 下移。
 3. 后续结构性 sampler 应从 `ethan|2502` 这类证据充分、方向一致的切片做 holdout，而不是全局调 temperature。
 
+### 2026-06-05 CCV session holdout gate
+
+新增 `summarize_v3_ccv_holdout.py` 后，CCV promotion 需要满足跨 session 留出验证，而不能只看全量切片。
+
+当前 128-trial 结果：
+
+```text
+hero_map_id min_sessions=8 candidate_rows=2 candidate_sessions=1 count_delta=0.0 cells_delta=0.0 q6_formal_delta=0.0
+hero_map_evidence_profile min_sessions=8 candidate_rows=0 candidate_sessions=0
+hero_map_id min_sessions=6 candidate_only cells_delta=+0.4 q6_formal_delta=+9288.7
+```
+
+设计影响：
+
+1. `ethan|2502` 只能保持 watch-only，不能因为全量切片改善而进入 formal。
+2. 降低 session 阈值会引入留出恶化的候选，不能作为 promotion 通道。
+3. 当前 CCV 不再是近期 formal 候选；下一步应实现更明确的条件 likelihood / count-cell-value sampler，让证据决定 q6 count/cells/value 分布如何移动。
+4. 新 sampler 必须先进入 pipeline shadow namespace，再同时跑 candidate gate 与 session holdout。
+
 ### 2026-06-05 archive/live shared pipeline
 
 新增 `src/bidking_lab/inference/v3/pipeline.py`，把 v3 shadow 的完整报告链集中到 `estimate_shadow_pipeline()`：

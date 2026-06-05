@@ -791,3 +791,41 @@ v2_archive_readiness=pending
 
 - 每次新增样本或改 sampler 后优先跑 readiness。
 - 只有 readiness 不再存在 blocked gate，且用户确认 promotion 策略后，才讨论 v3 formal 切换和 v2 归档。
+
+## D-v3-037：CCV sampler promotion 必须通过 session holdout
+
+2026-06-05 起，`summarize_v3_ccv_holdout.py` 是 CCV/count-cell-value sampler 从 watch-only 进入 formal 前的必要审计。
+
+当前决策：
+
+- `summarize_v3_ccv_profile_candidates.py` 只能发现候选，不足以证明可推广。
+- 训练折识别出的 `watch_only_count_cell_candidate` 必须在 session 留出折上继续改善，才允许进入下一层 sampler 设计。
+- 默认 `min_sessions=8` 不通过时，不用降低阈值绕过；放宽阈值只能作为灵敏度诊断。
+- 当前 CCV 仍是 shadow/audit-only，`v3_ccv_affects_bid=false` 必须保持。
+
+当前结果：
+
+```text
+hero_map_id min_sessions=8 candidate_rows=2 candidate_sessions=1 count_delta=0.0 cells_delta=0.0 q6_formal_delta=0.0
+hero_map_evidence_profile min_sessions=8 candidate_rows=0 candidate_sessions=0
+hero_map_id min_sessions=6 candidate_only cells_delta=+0.4 q6_formal_delta=+9288.7
+```
+
+原因：
+
+- `ethan|2502` 的全量切片正向信号没有在 session holdout 中产生实际改善。
+- profile 粒度全部被样本量或低活动挡住。
+- 降低 session 门槛会引入看似候选但留出恶化的 group，说明 CCV 泛化不稳。
+
+硬边界：
+
+- 不把 CCV 接入 formal decision。
+- 不把 CCV 接入 UI 主建议。
+- 不用 `min_sessions=6` 结果做 promotion。
+- 不用全量切片替代 holdout 证据。
+
+下一步：
+
+- 保留 CCV 作为诊断字段。
+- 后续若实现条件 likelihood / count-cell-value sampler，必须先作为新 shadow namespace 或明确候选字段接入 pipeline，再跑 profile candidate 与 session holdout。
+- `2506` 低估主线继续走 bounded upshift 与 tail/q6-tail review，不能用 q6 count/cells 下移修复。

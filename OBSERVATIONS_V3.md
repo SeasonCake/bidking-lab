@@ -1235,3 +1235,41 @@ v2_archive_readiness=pending
 - 当前可推进项是 `2506` bounded upshift/tail-value shadow validation。
 - 当前禁止项是全局 CCV、residual formal、tail replacement formal。
 - profile 级 promotion 需要更多定向样本或更强证据。
+
+## O-v3-041：CCV candidate 的全量切片收益未通过 session holdout
+
+2026-06-05 使用 `summarize_v3_ccv_holdout.py` 对 128-trial archive 审计。
+
+默认 hero/map holdout：
+
+```text
+group_field=hero_map_id folds=5 min_sessions=8
+rows=1534 sessions=433 candidate_rows=2 candidate_sessions=1
+count_delta=0.0 cells_delta=0.0 q6_formal_delta=0.0
+candidate_only rows=2 sessions=1 groups=ethan|2502
+```
+
+默认 profile holdout：
+
+```text
+group_field=hero_map_evidence_profile folds=5 min_sessions=8
+candidate_rows=0 candidate_sessions=0
+status_counts=blocked_ccv_hurts:9,blocked_low_ccv_activity:12,blocked_low_sample:1524
+```
+
+放宽阈值灵敏度：
+
+```text
+group_field=hero_map_id min_sessions=6
+candidate_rows=14 candidate_sessions=4
+cells_delta=+0.004 q6_formal_delta=+84.8
+candidate_only cells_delta=+0.4 q6_formal_delta=+9288.7
+groups=aisha|2504,aisha|2508,ethan|2502
+```
+
+解读：
+
+- CCV 的全量 `ethan|2502` 候选目前只是 watch-only，holdout 没有证明实际收益。
+- 放宽 session 门槛会让 candidate_only 变差，说明样本不足不是唯一问题，候选泛化本身不稳。
+- profile 粒度仍然完全不足，不支持 profile-level CCV promotion。
+- CCV 不应作为 v3 近期 formal 化方向；下一步应研究证据条件 likelihood，让公开总格、q6 floor、value evidence 决定 q6 分布，而不是直接启用当前 CCV 后验。
