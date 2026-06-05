@@ -1530,3 +1530,41 @@ public:total+item+shape q6_count changed=10 helped=7 hurt=3 mae_delta=-0.067
 - `2503` 的错误方向足以解释 map-level holdout applied hurt。
 - “公开总格 + item + shape + layout”并不自动可靠；在当前样本里它反而是明确 blocked profile。
 - 后续 CCV 重做不能只看有无公开信息，而要看公开信息与 q6 floor、非 q6 capacity、道具证据之间是否形成同向约束。
+
+## O-v3-048：CCV 方向候选在 session holdout 上仍不够稳定
+
+2026-06-05 新增 `summarize_v3_ccv_direction_holdout.py` 后，用训练折 direction audit 选择 candidate，再在验证折应用。128-trial archive 结果：
+
+```text
+map_id:
+overall_status=blocked_holdout_directional_hurt
+candidate_rows=438
+candidate_delta=+0.168
+candidate_hurt_rate=0.086758
+candidate_directional_error=0.06621
+applied_hurts=q6_cells:2502,q6_cells:2506,q6_count:2501,q6_count:2409,q6_count:2506
+
+evidence_profile_key:
+overall_status=watch
+candidate_rows=348
+candidate_delta=-0.057
+candidate_hurt_rate=0.051724
+candidate_directional_error=0.025862
+applied_hurts=
+```
+
+分量观察：
+
+```text
+map_id q6_cells candidate_delta=+0.567
+map_id q6_count candidate_delta=+0.045
+profile q6_cells candidate_delta=-0.011
+profile q6_count candidate_delta=-0.069
+```
+
+解读：
+
+- direction audit 可以解释 CCV 风险，但不能直接生成可靠修正规则。
+- map-level 方向选择仍会在 holdout 中把 q6 cells/count 往错误方向推。
+- profile-level q6 count 有弱改善，但 q6 cells 几乎无实质收益；这不足以支撑正式估值。
+- 当前 readiness blocked 是正确的，下一步要做条件 likelihood/组件分解，而不是继续堆叠候选 gate。

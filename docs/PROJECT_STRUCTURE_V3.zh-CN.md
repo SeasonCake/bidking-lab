@@ -31,6 +31,7 @@
 | `scripts/summarize_v3_ccv_layer_audit.py` | v3 CCV 多层 holdout 稳定性审计 |
 | `scripts/summarize_v3_ccv_guard_sensitivity.py` | v3 CCV count/cell tail guard sensitivity 审计 |
 | `scripts/summarize_v3_ccv_direction_audit.py` | v3 CCV p50 移动方向性审计 |
+| `scripts/summarize_v3_ccv_direction_holdout.py` | v3 CCV 方向候选 session holdout 审计 |
 | `scripts/summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计 |
 | `scripts/summarize_v3_tail_value_candidates.py` | v3 tail/value review 候选审计 |
 | `scripts/summarize_v3_tail_value_holdout.py` | v3 tail/value review 候选 session holdout 审计 |
@@ -49,6 +50,7 @@
 | `tests/test_summarize_v3_ccv_layer_audit.py` | v3 CCV 多层 holdout 审计测试 |
 | `tests/test_summarize_v3_ccv_guard_sensitivity.py` | v3 CCV guard sensitivity 审计测试 |
 | `tests/test_summarize_v3_ccv_direction_audit.py` | v3 CCV p50 方向性审计测试 |
+| `tests/test_summarize_v3_ccv_direction_holdout.py` | v3 CCV 方向候选 session holdout 审计测试 |
 | `tests/test_summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计测试 |
 | `tests/test_summarize_v3_tail_value_candidates.py` | v3 tail/value review 候选审计测试 |
 | `tests/test_summarize_v3_tail_value_holdout.py` | v3 tail/value holdout 审计测试 |

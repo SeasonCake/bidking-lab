@@ -1053,3 +1053,44 @@ q6_cells hurt_rate=0.75 directional_error=0.333333 mae_delta=+0.505
 - CCV 的失败不是单纯“是否上调/下调太多”，而是很多窗口的移动方向本身与真实误差相反。
 - 这会解释“总体/局部 MAE 有时看起来可接受，但实战仍低估或乱跳”的现象。
 - 后续新的 CCV likelihood 必须用 directionality gate 做第一层回归，防止重新引入旧问题。
+
+## D-v3-044：directionality 通过 session holdout 前不能转成 sampler 规则
+
+2026-06-05 起，`summarize_v3_ccv_direction_holdout.py` 作为 `ccv_directionality` 之后的二级验证。它不直接评估全量 CCV 输出，而是在每个 session fold 里只把训练折状态为 `watch_directional_candidate` 的 `(component, group)` 应用到验证折，检查这些“看起来方向正确”的移动能否跨 session 泛化。
+
+当前决策：
+
+- `directionality` 和 `direction_holdout` 都是 promotion blocker，不是正式 sampler。
+- `map_id` direction holdout blocked 时，不允许把局部 map 候选接入 formal/live。
+- `evidence_profile_key` 即使为 watch，也只能作为 likelihood 重构线索；收益过小或 q6 cells 不稳时不能升级。
+- `summarize_v3_promotion_readiness.py` 的 `ccv_direction_holdout` gate blocked 时，v3 仍保持 `not_ready`。
+
+当前 128-trial 结果：
+
+```text
+map_id:
+overall_status=blocked_holdout_directional_hurt
+candidate_rows=438
+candidate_delta=+0.168
+candidate_hurt_rate=0.086758
+candidate_directional_error=0.06621
+applied_hurts=q6_cells:2502,q6_cells:2506,q6_count:2501,q6_count:2409,q6_count:2506
+component=q6_cells delta=+0.567
+component=q6_count delta=+0.045
+
+evidence_profile_key:
+overall_status=watch
+candidate_rows=348
+candidate_delta=-0.057
+candidate_hurt_rate=0.051724
+candidate_directional_error=0.025862
+applied_hurts=
+component=q6_cells delta=-0.011
+component=q6_count delta=-0.069
+```
+
+原因：
+
+- map-level 候选在训练折看起来有方向性，但验证折仍会伤害 `2502/2506/2501/2409` 等 group。
+- profile-level 候选只提供弱正向信号，不能替代真正的条件 likelihood。
+- 下一步应重做 CCV likelihood/组件分解，让公开总格、q6 floor、value evidence、non-q6 capacity 共同决定 q6 count/cells/value 分布，而不是把 direction gate 输出当固定规则。

@@ -40,6 +40,9 @@ from summarize_v3_ccv_holdout import (  # noqa: E402
 from summarize_v3_ccv_direction_audit import (  # noqa: E402
     summarize_direction as summarize_ccv_direction,
 )
+from summarize_v3_ccv_direction_holdout import (  # noqa: E402
+    summarize_holdout as summarize_ccv_direction_holdout,
+)
 from summarize_v3_residual_profile_candidates import (  # noqa: E402
     summarize_candidates as summarize_residual_candidates,
 )
@@ -195,6 +198,22 @@ def summarize_readiness(
         rows,
         group_field="evidence_profile_key",
         components=("q6_count", "q6_cells"),
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    ccv_map_direction_holdout = summarize_ccv_direction_holdout(
+        rows,
+        group_field="map_id",
+        components=("q6_count", "q6_cells"),
+        folds=folds,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    ccv_profile_direction_holdout = summarize_ccv_direction_holdout(
+        rows,
+        group_field="evidence_profile_key",
+        components=("q6_count", "q6_cells"),
+        folds=folds,
         min_windows=min_windows,
         min_sessions=min_sessions,
     )
@@ -369,6 +388,41 @@ def summarize_readiness(
             else "CCV p50 movement direction is not currently blocking",
             map_direction_hurts=ccv_direction_hurts,
             profile_direction_hurts=ccv_profile_direction_hurts,
+        )
+    )
+    ccv_direction_holdout_hurts = (
+        ccv_map_direction_holdout.get("applied_direction_hurts_groups") or []
+    )
+    ccv_profile_direction_holdout_hurts = (
+        ccv_profile_direction_holdout.get("applied_direction_hurts_groups") or []
+    )
+    ccv_direction_holdout_blocked = (
+        ccv_map_direction_holdout.get("overall_status") != "watch"
+        or ccv_profile_direction_holdout.get("overall_status") != "watch"
+    )
+    gates.append(
+        _gate(
+            "ccv_direction_holdout",
+            "blocked" if ccv_direction_holdout_blocked else "watch",
+            "directionally selected CCV movements fail session holdout"
+            if ccv_direction_holdout_blocked
+            else "directionally selected CCV movements pass current holdout but remain shadow-only",
+            map_status=ccv_map_direction_holdout.get("overall_status"),
+            map_candidate_rows=ccv_map_direction_holdout["candidate_only"].get(
+                "candidate_rows"
+            ),
+            map_candidate_delta=ccv_map_direction_holdout["candidate_only"].get(
+                "candidate_only_delta_p50_mae"
+            ),
+            map_applied_hurts_groups=ccv_direction_holdout_hurts,
+            profile_status=ccv_profile_direction_holdout.get("overall_status"),
+            profile_candidate_rows=ccv_profile_direction_holdout[
+                "candidate_only"
+            ].get("candidate_rows"),
+            profile_candidate_delta=ccv_profile_direction_holdout[
+                "candidate_only"
+            ].get("candidate_only_delta_p50_mae"),
+            profile_applied_hurts_groups=ccv_profile_direction_holdout_hurts,
         )
     )
 
@@ -551,6 +605,8 @@ def summarize_readiness(
         next_actions.append("tighten CCV map-layer guard; map holdout applies hurting groups")
     if ccv_direction_hurts or ccv_profile_direction_hurts:
         next_actions.append("redesign CCV likelihood; p50 movement direction is unstable")
+    if ccv_direction_holdout_blocked:
+        next_actions.append("keep CCV direction selection in audit; holdout is not stable")
     if ccv_counts.get("watch_only_count_cell_candidate", 0):
         next_actions.append("redesign CCV likelihood; current holdout is not promotion-ready")
 
@@ -636,6 +692,24 @@ def summarize_readiness(
                 )
             ),
         },
+        "ccv_direction_holdout": {
+            "map_status": ccv_map_direction_holdout.get("overall_status"),
+            "map_candidate_rows": ccv_map_direction_holdout["candidate_only"].get(
+                "candidate_rows"
+            ),
+            "map_candidate_delta": ccv_map_direction_holdout["candidate_only"].get(
+                "candidate_only_delta_p50_mae"
+            ),
+            "map_applied_hurts_groups": ccv_direction_holdout_hurts,
+            "profile_status": ccv_profile_direction_holdout.get("overall_status"),
+            "profile_candidate_rows": ccv_profile_direction_holdout[
+                "candidate_only"
+            ].get("candidate_rows"),
+            "profile_candidate_delta": ccv_profile_direction_holdout[
+                "candidate_only"
+            ].get("candidate_only_delta_p50_mae"),
+            "profile_applied_hurts_groups": ccv_profile_direction_holdout_hurts,
+        },
         "tail_holdout": {
             "candidate_rows": tail_holdout_rows,
             "candidate_groups": tail_candidate_only.get("candidate_groups"),
@@ -701,6 +775,8 @@ def _print_summary(result: dict[str, Any]) -> None:
                 + ",".join(result["ccv_holdout"]["map_applied_ccv_hurts_groups"]),
                 "ccv_direction_hurts="
                 + ",".join(result["ccv_directionality"]["map_direction_hurts"]),
+                "ccv_direction_holdout="
+                f"{result['ccv_direction_holdout']['map_status']}",
                 f"tail_review_candidate_rows={summary['v3_tail_review_candidate_rows']}",
                 f"tail_review_hurt_guard_rows={summary['v3_tail_review_hurt_guard_rows']}",
                 f"tail_holdout_q6_delta={result['tail_holdout']['candidate_delta_q6_tail_p50_mae']}",

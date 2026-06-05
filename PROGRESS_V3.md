@@ -2218,3 +2218,67 @@ gate=ccv_directionality status=blocked
 - 方向性审计解释了为什么不能把 `2502` 的正向结果外推：同一 CCV 机制在多个 map/profile 上会把 p50 推向错误方向。
 - `public:total+item+shape+layout` 不能被当作“公开总格 + layout 足够可靠”的放行信号；该 profile 当前方向性 hurt 非常强。
 - 下一步 CCV likelihood 必须先解决“移动方向判断”，再谈 count/cells MAE 或 formal promotion。
+
+## 2026-06-05 checkpoint：v3 CCV direction holdout
+
+实现：
+
+- 新增 `scripts/summarize_v3_ccv_direction_holdout.py`。
+  - 每个 session fold 中，用训练折运行 `summarize_v3_ccv_direction_audit.py`。
+  - 只把训练折状态为 `watch_directional_candidate` 的 `(component, group)` 应用到验证折。
+  - 输出 `candidate_only_delta_p50_mae`、hurt rate、directional error rate、`applied_direction_hurts_groups`。
+- 新增 `tests/test_summarize_v3_ccv_direction_holdout.py`。
+- `summarize_v3_promotion_readiness.py` 新增 `ccv_direction_holdout` gate。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_ccv_direction_holdout.py tests\test_summarize_v3_ccv_direction_audit.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_ccv_guard_sensitivity.py tests\test_summarize_v3_ccv_layer_audit.py tests\test_summarize_v3_ccv_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_holdout.py --posterior-trials 128 --group-field map_id --component q6_count --component q6_cells --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_holdout.py --posterior-trials 128 --group-field evidence_profile_key --component q6_count --component q6_cells --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_promotion_readiness.py --posterior-trials 128
+```
+
+结果：
+
+- 聚焦测试：`13 passed`。
+- `map_id` direction holdout：
+
+```text
+overall_status=blocked_holdout_directional_hurt
+candidate_rows=438
+candidate_delta=+0.168
+candidate_hurt_rate=0.086758
+candidate_directional_error=0.06621
+applied_hurts=q6_cells:2502,q6_cells:2506,q6_count:2501,q6_count:2409,q6_count:2506
+component=q6_cells delta=+0.567
+component=q6_count delta=+0.045
+```
+
+- `evidence_profile_key` direction holdout：
+
+```text
+overall_status=watch
+candidate_rows=348
+candidate_delta=-0.057
+candidate_hurt_rate=0.051724
+candidate_directional_error=0.025862
+applied_hurts=
+component=q6_cells delta=-0.011
+component=q6_count delta=-0.069
+```
+
+- readiness 128-trial：
+
+```text
+overall_status=not_ready blocked_gates=6
+gate=ccv_direction_holdout status=blocked
+ccv_direction_holdout=blocked_holdout_directional_hurt
+```
+
+结论：
+
+- directionality 可以作为 blocker，但不能直接作为 sampler promotion 规则。
+- map-level 方向候选在 session holdout 上仍会伤，尤其 q6 cells 对 `2502/2506` 不稳定。
+- profile-level direction holdout 虽然是 watch，但收益很小，且 q6 cells 几乎没有实质改善，不能替代 likelihood 重构。
+- 下一步仍应重做 CCV likelihood/组件分解，而不是把 direction gate 结果接进正式估值。

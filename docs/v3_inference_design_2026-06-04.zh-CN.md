@@ -990,6 +990,37 @@ gate=ccv_directionality status=blocked
 3. 下一版 CCV likelihood 要先解释“为什么移动方向正确”，再追求 count/cells MAE 改善。
 4. directionality gate 将作为防止 v2/v3 旧问题复发的 promotion 必要条件。
 
+### 2026-06-05 CCV direction holdout gate
+
+新增 `summarize_v3_ccv_direction_holdout.py` 后，directionality 不再只是同样本审计。每个 session fold 会用训练折挑选 `watch_directional_candidate`，再把这些候选应用到验证折，检查“方向正确”是否能跨 session 泛化。
+
+128-trial 结果：
+
+```text
+map_id overall_status=blocked_holdout_directional_hurt
+candidate_rows=438
+candidate_delta=+0.168
+applied_hurts=q6_cells:2502,q6_cells:2506,q6_count:2501,q6_count:2409,q6_count:2506
+
+evidence_profile_key overall_status=watch
+candidate_rows=348
+candidate_delta=-0.057
+applied_hurts=
+```
+
+readiness 新增：
+
+```text
+gate=ccv_direction_holdout status=blocked
+```
+
+设计影响：
+
+1. directionality gate 只能作为 blocker；不能把训练折 candidate 直接转成 formal sampler 规则。
+2. map-level CCV candidate 仍会在 holdout 上伤害 q6 cells/count，说明当前分层泛化不足。
+3. profile-level direction holdout 只是弱信号，尤其 q6 cells 改善接近 0。
+4. 下一步核心不再是调 `count_cell_tail_guard` 或 fixed prior multiplier，而是重做条件 likelihood/组件分解，让证据决定 q6 count/cells/value 的移动方向和幅度。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html
