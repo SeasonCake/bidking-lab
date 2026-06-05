@@ -692,6 +692,40 @@ under_candidate=1.0 under_delta=-17692.3 under_below=0.704225 under_p90_cover=0.
 2. formal/live promotion 前需要定向新增 `ethan|2506` 样本；不要盲目增加 trials 或全局放大上修。
 3. `v3_under_active=false` 和 `v3_under_affects_bid=false` 继续保持。
 
+### 2026-06-05 guarded tail/under 组合 holdout
+
+新增 `summarize_v3_tail_under_holdout.py` 后，under upshift 与 tail/value review 的组合不再只看分开的 holdout。训练折生成 under/tail candidates 和 hurt guard，验证折评估：
+
+- formal P50 MAE / below / P90 coverage / P90 extreme-over / pinball；
+- q6 formal P90 miss；
+- tail/q6-tail review delta；
+- applied candidate 内部是否仍有 hurt group。
+
+关键发现：
+
+```text
+未加 hidden guard：
+tail_under_formal_delta=-10942.999
+tail_under_applied_hurts=ethan|2601
+
+加入 weak_tail_under_context + hidden 260x guard：
+v3_under_candidate_rows=43
+under_rows=37 tail_rows=39 hurt_rows=11
+formal_delta=-616.842
+below=0.51043 -> 0.509778
+p90_cover=0.773794 -> 0.774446
+p90_extreme=0.313559 -> 0.313559
+candidate_only formal_delta=-24262.471
+tail_under_applied_hurts=
+```
+
+设计影响：
+
+1. hidden `260x` 只能作为 `watch_only_needs_evidence`，不能进入 under/tail 可应用候选；Aisha hidden 的正向观察不能外推到 Ethan hidden。
+2. `tail_under_combined_holdout` 进入 readiness；只要 applied candidate 中有 tail/q6-tail hurt group，就不能 promotion。
+3. `aisha|2506` 继续是 bounded sampler 的主要候选；`ethan|2502` 目前 delta 为 0，只保留观察。
+4. 组合 gate 为 watch 不等于 formal 可用；全局收益仍太小，formal baseline 低估和 profile sample depth 仍需继续解决。
+
 ### 2026-06-05 CCV sampler candidate gate
 
 `estimate_count_cell_value_posterior_from_truths` 已经进入 archive/live shadow，但 128-trial 全库结果显示它不是稳定全局收益项：

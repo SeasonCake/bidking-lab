@@ -909,3 +909,49 @@ ethan|2601 -> blocked_tail_estimate_hurts
 - 在 `v3_tail_review_*` 上继续做 sampler/guard 设计。
 - 若后续要展示给 UI，只能作为辅助审计提示，不能替代主估价。
 - 每次更新 entry 表后必须跑 evaluator、readiness、live monitor tests。
+
+## D-v3-040：under/tail 组合候选必须通过 hidden guard 与 applied-hurt guard
+
+2026-06-05 起，`summarize_v3_tail_under_holdout.py` 是 under upshift 与 tail/value review 进入任何 sampler 设计前的组合审计。readiness 新增 `tail_under_combined_holdout` gate。
+
+当前决策：
+
+- `260x` hidden map 不允许在 under 或 tail candidate 生成器中直接成为可应用候选。
+- hidden 切片统一降为 `watch_only_needs_evidence`，除非后续有单独 hidden holdout 证明并新增明确决策。
+- `tail_under_combined_holdout` 必须检查 applied candidate 内部是否仍有 hurt group；只看总体 delta 不够。
+- 若 holdout 中出现 tail candidate 应用后 `tail_delta` 或 `q6_tail_delta` 明显变差的 group，该组合 gate 保持 blocked。
+- tail replacement 仍然只用于审计，不覆盖 formal truth 或 formal decision。
+
+当前 128-trial 结果：
+
+```text
+v3_under_candidate_rows=43
+under_rows=37 tail_rows=39 hurt_rows=11
+candidate_only rows=39
+under_groups=aisha|2506
+tail_groups=aisha|2506,ethan|2502
+tail_under_formal_delta=-24262.471
+tail_under_p90_extreme_delta=0.0
+tail_under_applied_hurts=
+tail_under_combined_holdout=watch
+```
+
+原因：
+
+- 放宽前的组合 holdout 会把 `ethan|2601` 部分训练折误判为 tail candidate，holdout 上 `tail_delta=+12001.7`、`q6_tail_delta=+25134.7`，属于明确 applied hurt。
+- hidden `2601` 在现有样本里 Aisha/Ethan 方向不一致，不能和 shipwreck/villa 使用同一升级规则。
+- 经过 hidden guard 后，`ethan|2601` 只保留 hurt guard，`aisha|2601` 不再通过 under/tail 可应用候选。
+- `v3_underestimate_repair_shadow.json` 同步 guarded holdout 后，Ethan 2506/2509 保留记录但不再作为可应用 `watch_only_upshift_candidate`。
+
+硬边界：
+
+- 不修改 `v3_post_*`。
+- 不修改正式 live bid 或 UI 主建议。
+- 不把 hidden 2601 正向结果外推到 Ethan hidden 或其他 hidden。
+- 不因为组合 gate 为 watch 就视为 formal promotion。
+
+下一步：
+
+- `aisha|2506` 可继续作为 guarded sampler 的主要设计对象。
+- `ethan|2502` tail candidate 当前 holdout delta 为 0，应保持观察，不应因 candidate 名义进入正式策略。
+- formal baseline 低估仍需从 likelihood/profile/sample-depth 继续修，不应只靠局部 upshift。

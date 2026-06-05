@@ -1,7 +1,7 @@
 {
   "affects_bid": false,
   "generated_at": "2026-06-05",
-  "source": "archive_underestimate_repair_candidate_in_sample",
+  "source": "archive_underestimate_repair_holdout_guarded_128_trials",
   "entries": [
     {
       "hero": "aisha",
@@ -30,8 +30,8 @@
       "map_family": "shipwreck",
       "archive_windows": 28,
       "archive_sessions": 8,
-      "status": "watch_only_upshift_candidate",
-      "gate_reason": "bounded_hero_map_upshift",
+      "status": "watch_only_needs_evidence",
+      "gate_reason": "holdout_not_default_candidate",
       "scale": 1.045088,
       "formal_p50_mae": 416664.2,
       "formal_p50_bias": -249550.4,
@@ -42,8 +42,10 @@
       "scaled_delta_q6_formal_p50_mae": 292.3,
       "public_total_rate": 0.285714,
       "q6_floor_rate": 0.321429,
-      "flags": [],
-      "source": "archive_underestimate_repair_candidate_128_trials"
+      "flags": [
+        "holdout_not_default_candidate"
+      ],
+      "source": "archive_underestimate_repair_holdout_guarded_128_trials"
     },
     {
       "hero": "ethan",
@@ -51,8 +53,8 @@
       "map_family": "shipwreck",
       "archive_windows": 30,
       "archive_sessions": 8,
-      "status": "watch_only_upshift_candidate",
-      "gate_reason": "bounded_hero_map_upshift_weak_delta",
+      "status": "watch_only_needs_evidence",
+      "gate_reason": "weak_delta_not_holdout_supported",
       "scale": 1.019059,
       "formal_p50_mae": 419243.9,
       "formal_p50_bias": -152817.1,
@@ -63,8 +65,12 @@
       "scaled_delta_q6_formal_p50_mae": 465.6,
       "public_total_rate": 0.2,
       "q6_floor_rate": 0.366667,
-      "flags": [],
-      "source": "archive_underestimate_repair_candidate_128_trials"
+      "flags": [
+        "weak_delta",
+        "q6_formal_hurts",
+        "holdout_not_default_candidate"
+      ],
+      "source": "archive_underestimate_repair_holdout_guarded_128_trials"
     },
     {
       "hero": "aisha",

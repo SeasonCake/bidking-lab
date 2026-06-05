@@ -106,3 +106,32 @@ def test_underestimate_repair_candidate_blocks_high_over_group() -> None:
     assert result[0]["candidate_status"] == "blocked_not_systemic_under"
     assert "not_systemic_under" in result[0]["flags"]
     assert "high_over_rate" in result[0]["flags"]
+
+
+def test_underestimate_repair_candidate_keeps_hidden_needs_evidence() -> None:
+    module = _load_module()
+    rows = [
+        _row(
+            "aisha|2601",
+            session_id="s1",
+            truth=1_000,
+            pred=500,
+            p90=700,
+            q6_truth=600,
+            q6_pred=300,
+        ),
+        _row(
+            "aisha|2601",
+            session_id="s2",
+            truth=1_200,
+            pred=600,
+            p90=800,
+            q6_truth=700,
+            q6_pred=350,
+        ),
+    ]
+
+    result = module.summarize_candidates(rows, min_windows=2, min_sessions=2)
+
+    assert result[0]["candidate_status"] == "watch_only_needs_evidence"
+    assert "hidden_requires_separate_validation" in result[0]["flags"]

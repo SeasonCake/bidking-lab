@@ -149,6 +149,13 @@ def _proposed_scale(
     return min(float(max_upshift), 1.0 + shrink * (ratio - 1.0))
 
 
+def _map_id_from_group(value: Any) -> int | None:
+    try:
+        return int(str(value or "").split("|", 1)[-1])
+    except (TypeError, ValueError):
+        return None
+
+
 def _candidate_flags(
     row: dict[str, Any],
     *,
@@ -160,6 +167,9 @@ def _candidate_flags(
         flags.append("few_windows")
     if int(row["sessions"]) < min_sessions:
         flags.append("few_sessions")
+    map_id = _map_id_from_group(row.get("group"))
+    if map_id is not None and 2600 <= map_id < 2700:
+        flags.append("hidden_requires_separate_validation")
     formal_bias = row.get("formal_p50_bias")
     formal_mae = row.get("formal_p50_mae")
     below_rate = float(row.get("formal_p50_below_rate") or 0.0)
@@ -198,7 +208,11 @@ def _candidate_status(flags: tuple[str, ...]) -> str:
         return "blocked_high_over"
     if "repair_hurts_mae" in flags:
         return "blocked_repair_hurts"
-    if "little_public_total" in flags or "weak_q6_evidence" in flags:
+    if (
+        "hidden_requires_separate_validation" in flags
+        or "little_public_total" in flags
+        or "weak_q6_evidence" in flags
+    ):
         return "watch_only_needs_evidence"
     return "watch_only_upshift_candidate"
 

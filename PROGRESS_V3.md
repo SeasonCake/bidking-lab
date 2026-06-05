@@ -1989,3 +1989,74 @@ tail_holdout_q6_delta=-4144.4
 - `v3_tail_review_active=false`、`v3_tail_review_affects_bid=false`，不改变 formal/live 出价。
 - readiness 与 evaluator 现在都能看到 candidate/hurt 行数，避免 archive/live 字段漂移。
 - 下一步可以在该 namespace 下设计更精细的 tail/value sampler 或 guard，不需要碰 UI 主建议。
+
+## 2026-06-05 checkpoint：v3 guarded tail/under holdout gate
+
+实现：
+
+- 新增 `scripts/summarize_v3_tail_under_holdout.py`。
+- 新增 `tests/test_summarize_v3_tail_under_holdout.py`。
+- `summarize_v3_promotion_readiness.py` 接入 `tail_under_combined_holdout` gate。
+- `summarize_v3_tail_value_candidates.py`：
+  - 新增 `weak_tail_under_context` guard，避免仅凭 in-sample tail_delta 把非系统性低估切片升级为 tail candidate。
+  - `260x` hidden map 统一标记 `hidden_requires_separate_validation`，降为 `watch_only_needs_evidence`，不进入可应用 tail candidate。
+- `summarize_v3_underestimate_repair_candidates.py`：
+  - 同步 `260x` hidden guard，避免 under holdout 和 live entry 表分叉。
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_summarize_v3_underestimate_holdout.py tests\test_summarize_v3_tail_value_candidates.py tests\test_summarize_v3_tail_value_holdout.py tests\test_summarize_v3_tail_under_holdout.py tests\test_summarize_v3_promotion_readiness.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_tail_under_holdout.py --posterior-trials 128 --top 10
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_promotion_readiness.py --posterior-trials 128
+```
+
+结果：
+
+- 聚焦测试：`15 passed`。
+- guarded tail/under holdout 128-trial：
+
+```text
+rows=1534 sessions=433
+under_rows=37 tail_rows=39 hurt_rows=11
+formal_mae=312938.992 guarded_formal_mae=312322.149 formal_delta=-616.842
+below=0.51043 guarded_below=0.509778
+p90_cover=0.773794 guarded_p90_cover=0.774446
+p90_extreme=0.313559 guarded_p90_extreme=0.313559
+q6_miss=0.193611 guarded_q6_miss=0.193611
+
+candidate_only rows=39
+under_groups=aisha|2506
+tail_groups=aisha|2506,ethan|2502
+formal_delta=-24262.471
+p90_cover=0.615385 guarded_p90_cover=0.641026
+q6_tail_delta=-6133.4
+```
+
+- `ethan|2601` 现在只保留 hurt guard，不再被 tail candidate 应用：
+
+```text
+group=ethan|2601 under_rows=0 tail_rows=0 hurt_rows=9 tail_delta=0.0 q6_tail_delta=0.0
+```
+
+- readiness 128-trial：
+
+```text
+overall_status=not_ready blocked_gates=4
+v3_under_candidate_rows=43
+v3_under_delta_formal_p50_mae=-587.844
+tail_under_rows=39
+tail_under_formal_delta=-24262.471
+tail_under_p90_extreme_delta=0.0
+tail_under_applied_hurts=
+gate=tail_under_combined_holdout status=watch
+```
+
+结论：
+
+- 这一步解决的是候选安全性和评估一致性，不是正式精度大幅提升。
+- hidden `2601` 继续只作单独观察；不进入 under/tail 可应用候选。
+- `aisha|2506` 是当前最稳定的组合候选，候选切片收益明显，但全局覆盖太小。
+- `data/processed/v3_underestimate_repair_shadow.json` 已同步 guarded holdout：Ethan 2506/2509 从可应用 upshift 降为 `watch_only_needs_evidence`，live/archive shadow 不再把它们显示为 under candidate。
+- 当前 v3 仍不能正式替换：formal baseline 低估、CCV、residual gate、profile sample depth 仍卡住。

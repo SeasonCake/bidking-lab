@@ -168,3 +168,40 @@ def test_tail_value_candidates_block_tail_estimate_hurts() -> None:
     assert result[0]["candidate_status"] == "blocked_tail_estimate_hurts"
     assert "tail_estimate_hurts_total" in result[0]["flags"]
     assert "tail_estimate_hurts_q6" in result[0]["flags"]
+
+
+def test_tail_value_candidates_need_evidence_when_under_context_is_weak() -> None:
+    module = _load_module()
+    rows = [
+        _row(
+            "ethan|2601",
+            session_id="s1",
+            formal_truth=600_000,
+            tail_truth=900_000,
+            formal_pred=650_000,
+            tail_pred=880_000,
+            tail_p90=930_000,
+            q6_tail_truth=500_000,
+            q6_formal_pred=260_000,
+            q6_tail_pred=480_000,
+            q6_tail_p90=520_000,
+        ),
+        _row(
+            "ethan|2601",
+            session_id="s2",
+            formal_truth=700_000,
+            tail_truth=1_000_000,
+            formal_pred=760_000,
+            tail_pred=970_000,
+            tail_p90=1_020_000,
+            q6_tail_truth=600_000,
+            q6_formal_pred=320_000,
+            q6_tail_pred=580_000,
+            q6_tail_p90=620_000,
+        ),
+    ]
+
+    result = module.summarize_candidates(rows, min_windows=2, min_sessions=2)
+
+    assert result[0]["candidate_status"] == "watch_only_needs_evidence"
+    assert "weak_tail_under_context" in result[0]["flags"]

@@ -46,6 +46,8 @@ _Q6_TAIL_SIGNAL_RATE = 0.10
 _TAIL_VALUE_SIGNAL = 50_000.0
 _MAE_IMPROVE_THRESHOLD = 10_000.0
 _P90_MISS_RATE = 0.20
+_SYSTEMIC_UNDER_RATE = 0.50
+_STRONG_P90_MISS_RATE = 0.35
 
 
 def _mean(values: Iterable[float]) -> float | None:
@@ -136,6 +138,13 @@ def _tail_value(row: dict[str, Any], key: str) -> float:
     return float(value or 0.0)
 
 
+def _map_id_from_group(value: Any) -> int | None:
+    try:
+        return int(str(value or "").split("|", 1)[-1])
+    except (TypeError, ValueError):
+        return None
+
+
 def _candidate_flags(
     row: dict[str, Any],
     *,
@@ -147,6 +156,9 @@ def _candidate_flags(
         flags.append("few_windows")
     if int(row["sessions"]) < min_sessions:
         flags.append("few_sessions")
+    map_id = _map_id_from_group(row.get("group"))
+    if map_id is not None and 2600 <= map_id < 2700:
+        flags.append("hidden_requires_separate_validation")
     tail_rate = float(row.get("tail_replacement_value_rate") or 0.0)
     q6_tail_rate = float(row.get("q6_tail_replacement_value_rate") or 0.0)
     tail_median = float(row.get("tail_replacement_value_median") or 0.0)
@@ -161,6 +173,16 @@ def _candidate_flags(
         flags.append("little_public_total")
     if float(row.get("q6_floor_rate") or 0.0) < 0.20:
         flags.append("weak_q6_evidence")
+    formal_below = float(row.get("formal_p50_below_rate") or 0.0)
+    strongest_p90_miss = max(
+        float(row.get("tail_replacement_p90_under_rate") or 0.0),
+        float(row.get("q6_tail_replacement_p90_under_rate") or 0.0),
+    )
+    if (
+        formal_below < _SYSTEMIC_UNDER_RATE
+        and strongest_p90_miss < _STRONG_P90_MISS_RATE
+    ):
+        flags.append("weak_tail_under_context")
     tail_delta = row.get("tail_replacement_delta_mae_vs_formal_to_tail")
     q6_tail_delta = row.get("q6_tail_replacement_delta_mae_vs_formal_to_tail")
     if tail_delta is not None and float(tail_delta) > _MAE_IMPROVE_THRESHOLD:
@@ -185,7 +207,12 @@ def _candidate_status(flags: tuple[str, ...]) -> str:
         return "blocked_tail_estimate_hurts"
     if "no_tail_signal" in flags:
         return "blocked_no_tail_signal"
-    if "little_public_total" in flags or "weak_q6_evidence" in flags:
+    if (
+        "hidden_requires_separate_validation" in flags
+        or "little_public_total" in flags
+        or "weak_q6_evidence" in flags
+        or "weak_tail_under_context" in flags
+    ):
         return "watch_only_needs_evidence"
     if "tail_estimate_improves_q6" in flags or "q6_tail_p90_miss" in flags:
         return "watch_only_q6_tail_value_candidate"

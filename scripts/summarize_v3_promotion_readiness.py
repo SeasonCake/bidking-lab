@@ -46,6 +46,9 @@ from summarize_v3_tail_value_candidates import (  # noqa: E402
 from summarize_v3_tail_value_holdout import (  # noqa: E402
     summarize_holdout as summarize_tail_holdout,
 )
+from summarize_v3_tail_under_holdout import (  # noqa: E402
+    summarize_holdout as summarize_tail_under_holdout,
+)
 from summarize_v3_underestimate_holdout import (  # noqa: E402
     summarize_holdout as summarize_under_holdout,
 )
@@ -166,6 +169,13 @@ def summarize_readiness(
     tail_profile = summarize_tail_candidates(
         rows,
         group_field=profile_field,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    tail_under_holdout = summarize_tail_under_holdout(
+        rows,
+        group_field=group_field,
+        folds=folds,
         min_windows=min_windows,
         min_sessions=min_sessions,
     )
@@ -328,6 +338,74 @@ def summarize_readiness(
         )
     )
 
+    tail_under_candidate = tail_under_holdout["candidate_only"]
+    tail_under_rows = int(tail_under_candidate.get("n") or 0)
+    tail_under_delta = tail_under_candidate.get("delta_formal_p50_mae")
+    tail_under_p90_delta = tail_under_candidate.get("delta_formal_p90_coverage")
+    tail_under_extreme_delta = tail_under_candidate.get(
+        "delta_formal_p90_extreme_over_rate"
+    )
+    tail_under_q6_miss = tail_under_candidate.get(
+        "candidate_q6_formal_p90_miss_rate"
+    )
+    tail_under_hurts_groups = [
+        str(row.get("group"))
+        for row in tail_under_holdout.get("group_results", ())
+        if int(row.get("tail_candidate_rows") or 0) > 0
+        and (
+            (
+                row.get("delta_tail_p50_mae") is not None
+                and float(row["delta_tail_p50_mae"]) > 10_000.0
+            )
+            or (
+                row.get("delta_q6_tail_p50_mae") is not None
+                and float(row["delta_q6_tail_p50_mae"]) > 10_000.0
+            )
+        )
+    ][:5]
+    tail_under_improves = (
+        tail_under_rows > 0
+        and tail_under_delta is not None
+        and float(tail_under_delta) <= 0.0
+        and (
+            tail_under_p90_delta is None
+            or float(tail_under_p90_delta) >= 0.0
+        )
+        and (
+            tail_under_extreme_delta is None
+            or float(tail_under_extreme_delta) <= 0.02
+        )
+        and not tail_under_hurts_groups
+    )
+    gates.append(
+        _gate(
+            "tail_under_combined_holdout",
+            "watch" if tail_under_improves else "blocked",
+            "guarded under/tail combination improves holdout without excessive P90 over"
+            if tail_under_improves
+            else "guarded under/tail combination is not promotion-ready",
+            candidate_rows=tail_under_rows,
+            under_candidate_groups=tail_under_candidate.get(
+                "under_candidate_groups"
+            ),
+            tail_candidate_groups=tail_under_candidate.get("tail_candidate_groups"),
+            tail_hurt_guard_groups=tail_under_holdout["overall"].get(
+                "tail_hurt_guard_groups"
+            ),
+            applied_tail_hurts_groups=tail_under_hurts_groups,
+            candidate_delta_formal_p50_mae=tail_under_delta,
+            candidate_delta_formal_p50_below_rate=tail_under_candidate.get(
+                "delta_formal_p50_below_rate"
+            ),
+            candidate_delta_formal_p90_coverage=tail_under_p90_delta,
+            candidate_delta_formal_p90_extreme_over_rate=tail_under_extreme_delta,
+            candidate_q6_formal_p90_miss_rate=tail_under_q6_miss,
+            overall_delta_formal_p50_mae=tail_under_holdout["overall"].get(
+                "delta_formal_p50_mae"
+            ),
+        )
+    )
+
     residual_counts = _status_counts(residual)
     gates.append(
         _gate(
@@ -382,6 +460,10 @@ def summarize_readiness(
         next_actions.append("collect targeted profile samples before profile-level promotion")
     if tail_counts.get("blocked_tail_estimate_hurts", 0):
         next_actions.append("keep tail-hurts guard before any tail/value sampler")
+    if tail_under_hurts_groups:
+        next_actions.append("tighten tail guard; holdout still applies hurting groups")
+    if not tail_under_improves:
+        next_actions.append("keep under/tail combination in audit until holdout improves")
     if ccv_counts.get("watch_only_count_cell_candidate", 0):
         next_actions.append("redesign CCV likelihood; current holdout is not promotion-ready")
 
@@ -451,6 +533,29 @@ def summarize_readiness(
             ),
             "holdout_hurts_groups": tail_holdout_hurts,
         },
+        "tail_under_holdout": {
+            "candidate_rows": tail_under_rows,
+            "under_candidate_groups": tail_under_candidate.get(
+                "under_candidate_groups"
+            ),
+            "tail_candidate_groups": tail_under_candidate.get(
+                "tail_candidate_groups"
+            ),
+            "tail_hurt_guard_groups": tail_under_holdout["overall"].get(
+                "tail_hurt_guard_groups"
+            ),
+            "applied_tail_hurts_groups": tail_under_hurts_groups,
+            "candidate_delta_formal_p50_mae": tail_under_delta,
+            "candidate_delta_formal_p50_below_rate": tail_under_candidate.get(
+                "delta_formal_p50_below_rate"
+            ),
+            "candidate_delta_formal_p90_coverage": tail_under_p90_delta,
+            "candidate_delta_formal_p90_extreme_over_rate": tail_under_extreme_delta,
+            "candidate_q6_formal_p90_miss_rate": tail_under_q6_miss,
+            "overall_delta_formal_p50_mae": tail_under_holdout["overall"].get(
+                "delta_formal_p50_mae"
+            ),
+        },
         "ccv_status_counts": ccv_counts,
         "tail_status_counts": tail_counts,
         "residual_status_counts": residual_counts,
@@ -476,6 +581,11 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"tail_review_candidate_rows={summary['v3_tail_review_candidate_rows']}",
                 f"tail_review_hurt_guard_rows={summary['v3_tail_review_hurt_guard_rows']}",
                 f"tail_holdout_q6_delta={result['tail_holdout']['candidate_delta_q6_tail_p50_mae']}",
+                f"tail_under_rows={result['tail_under_holdout']['candidate_rows']}",
+                f"tail_under_formal_delta={result['tail_under_holdout']['candidate_delta_formal_p50_mae']}",
+                f"tail_under_p90_extreme_delta={result['tail_under_holdout']['candidate_delta_formal_p90_extreme_over_rate']}",
+                "tail_under_applied_hurts="
+                + ",".join(result["tail_under_holdout"]["applied_tail_hurts_groups"]),
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
             )
         )

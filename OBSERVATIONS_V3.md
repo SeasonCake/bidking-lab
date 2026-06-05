@@ -1355,3 +1355,52 @@ aisha|2601 marked needs_evidence, not candidate, because hidden still needs sepa
 - 这解决的是审计/诊断一致性，不是正式精度提升；formal 估值仍未切换。
 - `v3_tail_review_active_rows=0` 证明该 namespace 未进入正式出价。
 - 后续 tail sampler 可以在这个 namespace 下迭代，不必再直接挤进 `v3_post_*`。
+
+## O-v3-044：组合 holdout 证明 hidden guard 必须前置，Aisha 2506 仍是主候选
+
+2026-06-05 新增 guarded tail/under holdout 后，先跑未加 hidden guard 的版本发现：
+
+```text
+under_rows=61 tail_rows=122 hurt_rows=11
+candidate_only rows=122
+tail_under_formal_delta=-10942.999
+tail_under_applied_hurts=ethan|2601
+group=ethan|2601 tail_rows=31 hurt_rows=9 tail_delta=+13339.4 q6_tail_delta=+24471.3
+```
+
+解读：
+
+- 总体 formal delta 看起来正向，但 `ethan|2601` 仍在部分训练折被误放为 tail candidate。
+- 这说明 “总体改善” 会掩盖 applied hurt group，不能作为 promotion 依据。
+- in-sample tail candidate 表对 `ethan|2601` 会误判为正向，session holdout 才能暴露伤害。
+
+加入 `weak_tail_under_context` 与 hidden `260x` guard 后：
+
+```text
+v3_under_candidate_rows=43
+under_rows=37 tail_rows=39 hurt_rows=11
+formal_delta=-616.842
+below=0.51043 -> 0.509778
+p90_cover=0.773794 -> 0.774446
+p90_extreme=0.313559 -> 0.313559
+candidate_only rows=39
+under_groups=aisha|2506
+tail_groups=aisha|2506,ethan|2502
+candidate_only formal_delta=-24262.471
+q6_tail_delta=-6133.4
+group=ethan|2601 under_rows=0 tail_rows=0 hurt_rows=9
+```
+
+解读：
+
+- hidden guard 消除了 `ethan|2601` applied hurt，但也把全局收益压回很小。
+- 同步 under shadow entry 表后，archive/live `v3_under_candidate_rows` 从 101 降到 43；更保守，但避免 Ethan 2506/2509 这类 holdout 不稳切片误导实时审计。
+- `aisha|2506` 的局部收益仍稳定：formal/q6/tail/q6-tail 都同向改善。
+- `ethan|2502` 目前只是 tail candidate 名义，holdout delta 为 0，不足以支持升级。
+- v3 离正式可用还不是“差一个参数”：需要扩大有效覆盖并修复 formal baseline/CCV/profile depth。
+
+下一步重点：
+
+- 继续围绕 `aisha|2506` 做 bounded sampler 设计。
+- hidden 单独观察，不和 shipwreck/villa 合并升级。
+- readiness 必须继续输出 `tail_under_applied_hurts`，防止候选总体改善掩盖局部伤害。
