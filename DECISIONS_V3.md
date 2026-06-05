@@ -621,3 +621,34 @@ promotion 前置条件：
 
 - 用新增 live/manual 样本复核 `aisha|2506`、`ethan|2506`、`ethan|2509` 的 scale 是否稳定。
 - 若要 promotion，先做 holdout/paired comparison，并同时检查 MAE、below、P90 coverage、over、pinball。
+
+## D-v3-032：低估上修 promotion 前必须通过 session holdout
+
+`summarize_v3_underestimate_holdout.py` 成为 `v3_under` 从 watch-only 进入更高等级 candidate 的前置审计。
+
+当前决策：
+
+- promotion 不能再只看 in-sample archive candidate。
+- holdout 必须按 `session_id` 切分，避免同一局不同窗口同时进入 train/test。
+- 默认 gate 继续使用 `min_sessions=8`；`min_sessions=6` 只能作为敏感性分析，不作为正式晋级阈值。
+- `hero_map_evidence_profile` 当前样本不足，不允许 profile 级正式上修。
+- hidden `2601` 即使 holdout 正向，也仍需单独 hidden 样本规则，不与 shipwreck/villa 共用 promotion。
+
+原因：
+
+- 默认 `min_sessions=8` holdout 下，`aisha|2506` 稳定正向：MAE `384517.698 -> 362512.2`，delta `-22005.497`。
+- `ethan|2506` 在默认 gate 下未稳定通过；放宽到 `min_sessions=6` 才出现正向，说明当前 Ethan 2506 样本不足以升级。
+- 放宽 gate 同时会让 `ethan|2509` 进入并变差：MAE `419243.927 -> 420945.4`，证明低样本阈值会引入误判。
+- profile holdout `candidate_rows=0`，说明细粒度证据 profile 还不能承载参数晋级。
+
+硬边界：
+
+- `v3_under_active=false`。
+- `v3_under_affects_bid=false`。
+- 不覆盖 `v3_post_*`、`v3_cal_*`、UI 主建议或正式 stop/attack bid。
+- 新增样本只用于验证和候选筛选，不作为盲目扩大 trials 的替代。
+
+样本策略：
+
+- 当前 archive 足够继续 v3 架构重构、shadow 诊断和 Aisha 2506 方向判断。
+- formal/live promotion 前需要定向新增样本，优先 `ethan|2506`，目标是新增约 `10-15` 个有效 complete sessions；`aisha|2506` 可补 `5-10` 个做 holdout 确认。

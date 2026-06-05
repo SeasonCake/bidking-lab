@@ -676,6 +676,22 @@ under_candidate=1.0 under_delta=-17692.3 under_below=0.704225 under_p90_cover=0.
 2. 当前整体收益很轻微，说明它只能作为低估修复候选，不是 v3 formal replacement。
 3. `2506` 的改善明显高于全局平均，后续应围绕 hero/map/profile 做 holdout，而不是全局放大 scale。
 
+### 2026-06-05 低估上修 holdout 约束
+
+新增 `summarize_v3_underestimate_holdout.py` 后，`v3_under` promotion 前必须先通过按 `session_id` 切分的 holdout。训练折负责生成 candidate，holdout 折负责应用 scale 并计算 formal MAE、below、over、P90 coverage、pinball 和 q6 MAE，且评估时禁用默认全库 `v3_under` entry，避免泄漏。
+
+当前 5-fold 128-trial 结果：
+
+- 默认 `min_sessions=8`：`aisha|2506` holdout 正向，MAE `384517.698 -> 362512.2`；`aisha|2601` 正向但 hidden 仍单独验证。
+- `ethan|2506` 只有在 `min_sessions=6` 敏感性分析中进入候选，MAE `416664.161 -> 406262.999`；同一阈值也让 `ethan|2509` 变差，因此不能放宽成正式规则。
+- `hero_map_evidence_profile` 当前 `candidate_rows=0`，样本量不足以承载 profile 级 promotion。
+
+设计影响：
+
+1. 当前 archive 足够继续 v3 架构和 shadow 诊断，不阻塞重构。
+2. formal/live promotion 前需要定向新增 `ethan|2506` 样本；不要盲目增加 trials 或全局放大上修。
+3. `v3_under_active=false` 和 `v3_under_affects_bid=false` 继续保持。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

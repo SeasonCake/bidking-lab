@@ -1072,3 +1072,43 @@ under_p90_cover=0.704225
 
 - 新增实战样本后优先复跑 `evaluate_fatbeans_v3_samples.py` 与 map/hero slice，观察 `v3_under_delta_formal_p50_mae` 是否稳定。
 - 若 `2506` holdout 仍正向，再考虑把 entry 从 watch-only candidate 升级到更严格的 calibration candidate；promotion 前仍保持 `affects_bid=false`。
+
+## O-v3-036：当前样本足够诊断，但不足以正式推广 Ethan/profile 上修
+
+2026-06-05 用 `summarize_v3_underestimate_holdout.py` 做 5-fold session holdout：
+
+```text
+rows=1534 sessions=433
+default hero_map_id holdout candidate_rows=61 candidate_sessions=18
+mae=312938.992 -> 312068.688 delta=-870.304
+below=0.510430 -> 0.509778
+p90_cover=0.773794 -> 0.775750
+```
+
+默认 `min_sessions=8` 的候选：
+
+```text
+aisha|2506 rows=43 sessions=13 delta=-22005.497 below=0.790698 -> 0.767442 p90_cover=0.627907 -> 0.651163
+aisha|2601 rows=38 sessions=11 delta=-10231.829 below=0.684211 -> 0.684211 p90_cover=0.315789 -> 0.368421
+```
+
+敏感性分析 `min_sessions=6`：
+
+```text
+ethan|2506 rows=28 sessions=8 delta=-10401.162 below=0.678571 -> 0.642857
+ethan|2509 rows=30 sessions=8 delta=1701.474
+```
+
+profile 粒度：
+
+```text
+hero_map_evidence_profile candidate_rows=0
+status_counts=blocked_low_sample:1524,blocked_not_systemic_under:14,watch_only_needs_evidence:7
+```
+
+解读：
+
+- 当前真实样本量足够支撑 v3 设计、archive/live shadow 链路、Aisha 2506 低估修复方向判断。
+- Ethan 2506 当前只有 `28` ready windows / `8` sessions，只有放宽阈值才显正向，因此不能正式升级。
+- profile 级样本明显不足，不能用来承载正式规则；公开总格、shape/layout、q6 floor 等证据仍应进入 profile，但 promotion 需要更多样本。
+- 不建议盲目追求固定总数 `400`；更有价值的是补足高风险切片。优先新增 `ethan|2506`，其次 `aisha|2506` holdout 确认；hidden 继续单独看。

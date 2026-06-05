@@ -1518,3 +1518,51 @@ under_candidate=1.0 under_delta=-17692.3 under_below=0.704225 under_p90_cover=0.
 - 全局 MAE 改善很小，不能证明 formal promotion。
 - `2506` 的局部改善明确，支持下一步用新增实战样本/holdout 复核 hero-map scale 稳定性。
 - `v3_under_active=false`，`v3_under_affects_bid=false`；没有改 UI 主建议、正式估值或正式出价。
+
+## 2026-06-05 checkpoint：v3_under session holdout 审计
+
+实现：
+
+- 新增 `scripts/summarize_v3_underestimate_holdout.py`。
+- 新增 `tests/test_summarize_v3_underestimate_holdout.py`。
+- holdout 按 `session_id` 做 deterministic fold：训练折只用于生成低估上修 candidate，holdout 折才应用候选 scale 并计算指标。
+- evaluator 在 holdout 中显式禁用默认 `v3_under` entry 表，避免全库 entry 泄漏到验证结果。
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_underestimate_holdout.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_inference_v3_underestimate_repair.py -q
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_inference_v3_underestimate_repair.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_summarize_v3_residual_profile_candidates.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_summarize_v3_underestimate_holdout.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_underestimate_holdout.py --posterior-trials 128 --folds 5 --by hero_map_id --top 12
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_underestimate_holdout.py --posterior-trials 128 --folds 5 --by hero_map_id --min-sessions 6 --top 12
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_underestimate_holdout.py --posterior-trials 128 --folds 5 --by hero_map_evidence_profile --top 12
+```
+
+结果：
+
+- focused：`8 passed`。
+- v3 core/live path：`79 passed`。
+- 默认 `hero_map_id` holdout：全库 `1534` ready windows / `433` sessions，候选 holdout 行 `61`，整体 MAE `312938.992 -> 312068.688`，delta `-870.304`。
+- 默认 gate 下候选只剩 `aisha|2506` 与 `aisha|2601`：
+
+```text
+aisha|2506 rows=43 sessions=13 delta=-22005.497 mae=384517.698 -> 362512.2 below=0.790698 -> 0.767442 p90_cover=0.627907 -> 0.651163
+aisha|2601 rows=38 sessions=11 delta=-10231.829 mae=541556.274 -> 531324.445 below=0.684211 -> 0.684211 p90_cover=0.315789 -> 0.368421
+```
+
+- 放宽到 `min_sessions=6` 后，`ethan|2506` 出现正向 holdout 信号，但同时 `ethan|2509` 变差：
+
+```text
+ethan|2506 rows=28 sessions=8 delta=-10401.162 mae=416664.161 -> 406262.999 below=0.678571 -> 0.642857
+ethan|2509 rows=30 sessions=8 delta=1701.474 mae=419243.927 -> 420945.4
+```
+
+- `hero_map_evidence_profile` 粒度 holdout 仍无候选：`candidate_rows=0`，主要原因是 profile 级样本量不足。
+
+结论：
+
+- 当前样本足够继续 v3 架构、shadow 链路和 Aisha 2506 诊断。
+- 当前样本不足以把 Ethan 2506 或 profile 级上修正式升级。
+- 不需要盲目冲到 400+ 样本；如果新增实战样本，优先定向补 `ethan|2506`，其次补 `aisha|2506` holdout 确认。
+- `v3_under` 仍保持 `affects_bid=false`。
