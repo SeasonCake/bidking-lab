@@ -29,7 +29,18 @@ from evaluate_fatbeans_v3_samples import (  # noqa: E402
 )
 
 
-DEFAULT_SLICE_FIELDS: tuple[str, ...] = ("round", "map_id", "v3_post_match_scope")
+DEFAULT_SLICE_FIELDS: tuple[str, ...] = (
+    "round",
+    "map_id",
+    "hero",
+    "hero_map_id",
+    "evidence_stage",
+    "information_density_band",
+    "evidence_profile_key",
+    "hero_map_evidence_stage",
+    "hero_map_evidence_profile",
+    "v3_post_match_scope",
+)
 
 
 def _paired_rows(rows: Iterable[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
@@ -109,6 +120,72 @@ def summarize_slice(
             "v3_post_q6_formal_decision_value_p90",
             "v3_truth_q6_formal_decision_value",
         )
+        q6_count_p50 = _pred_truth(
+            group,
+            "v3_post_q6_count_p50",
+            "v3_truth_q6_count",
+        )
+        q6_cells_p50 = _pred_truth(
+            group,
+            "v3_post_q6_cells_p50",
+            "v3_truth_q6_cells",
+        )
+        q6_value_p50 = _pred_truth(
+            group,
+            "v3_post_q6_value_p50",
+            "v3_truth_q6_raw_value",
+        )
+        ccv_q6_count_p50 = _pred_truth(
+            group,
+            "v3_ccv_q6_count_p50",
+            "v3_truth_q6_count",
+        )
+        ccv_q6_cells_p50 = _pred_truth(
+            group,
+            "v3_ccv_q6_cells_p50",
+            "v3_truth_q6_cells",
+        )
+        resid_q6_count_p50 = _pred_truth(
+            group,
+            "v3_resid_q6_count_p50",
+            "v3_truth_q6_count",
+        )
+        resid_q6_cells_p50 = _pred_truth(
+            group,
+            "v3_resid_q6_cells_p50",
+            "v3_truth_q6_cells",
+        )
+        resid_q6_value_p50 = _pred_truth(
+            group,
+            "v3_resid_q6_value_p50",
+            "v3_truth_q6_raw_value",
+        )
+        resid_gate_q6_count_p50 = _pred_truth(
+            group,
+            "v3_resid_gate_q6_count_p50",
+            "v3_truth_q6_count",
+        )
+        resid_gate_q6_cells_p50 = _pred_truth(
+            group,
+            "v3_resid_gate_q6_cells_p50",
+            "v3_truth_q6_cells",
+        )
+        resid_gate_q6_value_p50 = _pred_truth(
+            group,
+            "v3_resid_gate_q6_value_p50",
+            "v3_truth_q6_raw_value",
+        )
+        q6_count_mae = _mae(q6_count_p50)
+        q6_cells_mae = _mae(q6_cells_p50)
+        q6_value_mae = _mae(q6_value_p50)
+        ccv_count_mae = _mae(ccv_q6_count_p50)
+        ccv_cells_mae = _mae(ccv_q6_cells_p50)
+        resid_count_mae = _mae(resid_q6_count_p50)
+        resid_cells_mae = _mae(resid_q6_cells_p50)
+        resid_value_mae = _mae(resid_q6_value_p50)
+        resid_gate_count_mae = _mae(resid_gate_q6_count_p50)
+        resid_gate_cells_mae = _mae(resid_gate_q6_cells_p50)
+        resid_gate_value_mae = _mae(resid_gate_q6_value_p50)
         out.append(
             {
                 "field": field,
@@ -127,6 +204,61 @@ def summarize_slice(
                 "q6_formal_p50_below_rate": _round_metric(_below_rate(q6_p50), 6),
                 "q6_formal_p50_over_rate": _round_metric(_over_rate(q6_p50), 6),
                 "q6_formal_p90_coverage": _round_metric(_coverage_rate(q6_p90), 6),
+                "q6_count_p50_mae": _round_metric(q6_count_mae, 2),
+                "q6_cells_p50_mae": _round_metric(q6_cells_mae, 2),
+                "q6_value_p50_mae": _round_metric(q6_value_mae, 1),
+                "v3_ccv_delta_q6_count_p50_mae": _round_metric(
+                    ccv_count_mae - q6_count_mae
+                    if ccv_count_mae is not None and q6_count_mae is not None
+                    else None,
+                    2,
+                ),
+                "v3_ccv_delta_q6_cells_p50_mae": _round_metric(
+                    ccv_cells_mae - q6_cells_mae
+                    if ccv_cells_mae is not None and q6_cells_mae is not None
+                    else None,
+                    2,
+                ),
+                "v3_resid_delta_q6_count_p50_mae": _round_metric(
+                    resid_count_mae - q6_count_mae
+                    if resid_count_mae is not None and q6_count_mae is not None
+                    else None,
+                    2,
+                ),
+                "v3_resid_delta_q6_cells_p50_mae": _round_metric(
+                    resid_cells_mae - q6_cells_mae
+                    if resid_cells_mae is not None and q6_cells_mae is not None
+                    else None,
+                    2,
+                ),
+                "v3_resid_delta_q6_value_p50_mae": _round_metric(
+                    resid_value_mae - q6_value_mae
+                    if resid_value_mae is not None and q6_value_mae is not None
+                    else None,
+                    1,
+                ),
+                "v3_resid_gate_active_rate": _round_metric(
+                    _mean(1.0 if row.get("v3_resid_gate_active") else 0.0 for row in group),
+                    6,
+                ),
+                "v3_resid_gate_delta_q6_count_p50_mae": _round_metric(
+                    resid_gate_count_mae - q6_count_mae
+                    if resid_gate_count_mae is not None and q6_count_mae is not None
+                    else None,
+                    2,
+                ),
+                "v3_resid_gate_delta_q6_cells_p50_mae": _round_metric(
+                    resid_gate_cells_mae - q6_cells_mae
+                    if resid_gate_cells_mae is not None and q6_cells_mae is not None
+                    else None,
+                    2,
+                ),
+                "v3_resid_gate_delta_q6_value_p50_mae": _round_metric(
+                    resid_gate_value_mae - q6_value_mae
+                    if resid_gate_value_mae is not None and q6_value_mae is not None
+                    else None,
+                    1,
+                ),
             }
         )
     return sorted(
@@ -151,6 +283,15 @@ def _print_table(rows: list[dict[str, Any]], *, top: int) -> None:
                     f"p90_cover={row['formal_p90_coverage']}",
                     f"q6_mae={row['q6_formal_p50_mae']}",
                     f"q6_bias={row['q6_formal_p50_bias']}",
+                    f"q6_count_mae={row['q6_count_p50_mae']}",
+                    f"q6_cells_mae={row['q6_cells_p50_mae']}",
+                    f"ccv_count_delta={row['v3_ccv_delta_q6_count_p50_mae']}",
+                    f"ccv_cells_delta={row['v3_ccv_delta_q6_cells_p50_mae']}",
+                    f"resid_count_delta={row['v3_resid_delta_q6_count_p50_mae']}",
+                    f"resid_cells_delta={row['v3_resid_delta_q6_cells_p50_mae']}",
+                    f"resid_value_delta={row['v3_resid_delta_q6_value_p50_mae']}",
+                    f"resid_gate_active={row['v3_resid_gate_active_rate']}",
+                    f"resid_gate_value_delta={row['v3_resid_gate_delta_q6_value_p50_mae']}",
                 )
             )
         )

@@ -107,6 +107,8 @@ def test_v3_prebid_rows_compile_ready_constraints() -> None:
         session_id="2401:abc",
         round_index=1,
         map_id=2401,
+        player_id=1,
+        bids=(SimpleNamespace(player_id=1, hero_id=208, current_value=0),),
         public_infos=(
             SimpleNamespace(
                 info_id=200009,
@@ -132,6 +134,12 @@ def test_v3_prebid_rows_compile_ready_constraints() -> None:
     assert len(rows) == 1
     assert rows[0]["status"] == "ready"
     assert rows[0]["map_family"] == "villa"
+    assert rows[0]["hero"] == "ethan"
+    assert rows[0]["evidence_stage"] == "early_1_2"
+    assert rows[0]["evidence_profile_key"] == "public:total"
+    assert rows[0]["information_density_band"] == "low"
+    assert rows[0]["hero_map_id"] == "ethan|2401"
+    assert rows[0]["hero_map_evidence_profile"] == "ethan|2401|public:total"
     assert rows[0]["numeric_constraints"] == 1
     assert rows[0]["constraint_ok"] is True
 
@@ -427,5 +435,8 @@ def test_v3_prebid_rows_separate_no_state_windows() -> None:
     assert len(rows) == 1
     assert rows[0]["status"] == "no_state"
     assert rows[0]["map_family"] == "unknown"
+    assert rows[0]["hero"] == "unknown"
+    assert rows[0]["evidence_stage"] == "early_1_2"
+    assert rows[0]["evidence_profile_key"] == "basic"
     assert rows[0]["numeric_constraints"] == 0
     assert rows[0]["constraint_ok"] is False

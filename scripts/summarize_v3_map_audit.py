@@ -86,6 +86,26 @@ def _round_counts(rows: Iterable[dict[str, Any]]) -> dict[str, int]:
     return {f"R{round_no}": counts[round_no] for round_no in sorted(counts)}
 
 
+def _top_counts(
+    rows: Iterable[dict[str, Any]],
+    field: str,
+    *,
+    top: int = 5,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        value = row.get(field)
+        label = str(value) if value not in (None, "") else "unknown"
+        counts[label] += 1
+    return {
+        label: count
+        for label, count in sorted(
+            counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )[:top]
+    }
+
+
 def _paired_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         row
@@ -304,6 +324,14 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             "no_state_windows": status_counts.get("no_state", 0),
             "paired_windows": len(paired),
             "rounds": _round_counts(ready),
+            "heroes": _top_counts(ready, "hero"),
+            "evidence_stages": _top_counts(ready, "evidence_stage"),
+            "information_density": _top_counts(ready, "information_density_band"),
+            "evidence_profiles": _top_counts(ready, "evidence_profile_key"),
+            "hero_map_evidence_profiles": _top_counts(
+                ready,
+                "hero_map_evidence_profile",
+            ),
             "strict_rate": _round_metric(scope_counts.get("strict", 0) / len(paired), 6),
             "summary_likelihood_rate": _round_metric(
                 scope_counts.get("summary_likelihood", 0) / len(paired),
@@ -489,6 +517,13 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 def _print_table(rows: list[dict[str, Any]], *, top: int) -> None:
     for row in rows[:top]:
         rounds = ",".join(f"{key}:{value}" for key, value in row["rounds"].items())
+        heroes = ",".join(f"{key}:{value}" for key, value in row["heroes"].items())
+        density = ",".join(
+            f"{key}:{value}" for key, value in row["information_density"].items()
+        )
+        profiles = ",".join(
+            f"{key}:{value}" for key, value in row["evidence_profiles"].items()
+        )
         flags = "+".join(row["flags"]) if row["flags"] else "normalish"
         print(
             " ".join(
@@ -500,6 +535,9 @@ def _print_table(rows: list[dict[str, Any]], *, top: int) -> None:
                     f"ready={row['ready_windows']}/{row['windows']}",
                     f"paired={row['paired_windows']}",
                     f"rounds={rounds or '-'}",
+                    f"heroes={heroes or '-'}",
+                    f"density={density or '-'}",
+                    f"profiles={profiles or '-'}",
                     f"strict={row['strict_rate']}",
                     f"mae={row['formal_p50_mae']}",
                     f"bias={row['formal_p50_bias']}",

@@ -591,6 +591,37 @@ v3 可进入正式候选前：
    - Ethan 2506：可以继续审计 residual over-value correction。
 4. 在分片指标没有证明前，`v3_resid_gate_*` 只保留 baseline source 和 delta diagnostic。
 
+### 2026-06-05 hero/profile 分片落地
+
+- archive v3 evaluator 已输出行级审计字段：
+  - `hero`
+  - `evidence_stage`
+  - `evidence_profile_key`
+  - `information_density_score`
+  - `information_density_band`
+  - `hero_map_id`
+  - `hero_map_evidence_stage`
+  - `hero_map_evidence_profile`
+- `summarize_v3_metric_slices.py` 默认加入 hero/profile 相关分片，并输出 `v3_ccv_*` / `v3_resid_*` / `v3_resid_gate_*` 相对 baseline 的 q6 count/cells/value MAE delta。
+- `summarize_v3_map_audit.py` 保持 map 为主键，但每张地图追加 `heroes`、`evidence_stages`、`information_density`、`evidence_profiles`、`hero_map_evidence_profiles` 计数。
+- 公开总格/总数现在在 profile 中记为 `public:total`，避免再出现“公开总格有用但审计字段看不见”的缺口。
+
+128-trial archive 审计结果：
+
+- 全库 `windows=1551`，`ready=1534`，`parse_errors=0`，`constraint_conflict=0`。
+- 2506 map audit：`sessions=21`，`ready=71/73`，`heroes=aisha:43,ethan:28`，`mae=397195.2`，`bias=-270368.6`，`below=0.746479`，`public_total=0.084507`，flags=`mostly_fallback+little_public_total+systemic_under`。
+- `aisha|2506`：`n=43`，`formal_mae=384517.7`，`bias=-283924.6`，`below=0.790698`，`q6_cells_mae=9.95`。
+- `ethan|2506`：`n=28`，`formal_mae=416664.2`，`bias=-249550.4`，`below=0.678571`，`q6_cells_mae=9.62`。
+- `ethan|2506` residual delta：`q6_count=-0.10`，`q6_cells=-1.49`，`q6_value=-117480.2`，说明 residual 对 q6 count/cells/value MAE 有修正信号，但该切片 formal 仍系统性低估，不能直接升级为降值 gate。
+- `aisha|2506` 与 `ethan|2506` 都显示低估，因此下一版 gate 不能只按 hero/map 判断“降 residual value”，还需要结合证据 profile、公开总格/总数、q6 floor、P90 coverage 与 formal bias。
+
+下一步 gate 要求：
+
+1. 只在 `hero_map_evidence_profile` 分片达到最小样本量后评估候选，不用单行极端样本决定。
+2. residual 只允许作为 over-value correction 候选；若当前切片 `formal_p50_bias < 0` 且 below rate 偏高，应禁止 residual 降低 formal/value 口径。
+3. 对 Aisha shipwreck tail/value，应优先做 q6 value sampler 或 formal calibration，不能用 residual q6 value 下修替代。
+4. 对 Ethan villa/shipwreck，需要区分 `public:random_avg`、`public:total`、`shape/layout` profile；公开总格很少的切片标记为 evidence-risk，不升级。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

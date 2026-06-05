@@ -50,6 +50,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
 )
 from bidking_lab.live.fatbeans import (  # noqa: E402
     FatbeansCaptureEvents,
+    hero_mode_from_state,
     parse_fatbeans_capture,
 )
 from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
@@ -103,6 +104,190 @@ def _map_family(map_id: int | None) -> str:
     if family in (26, 36, 46):
         return "hidden"
     return "other"
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _evidence_stage(round_no: int | None) -> str:
+    if round_no is None:
+        return "unknown"
+    if int(round_no) <= 2:
+        return "early_1_2"
+    if int(round_no) <= 4:
+        return "mid_3_4"
+    return "full_5"
+
+
+def _latest_hero(events: FatbeansCaptureEvents) -> str:
+    for state in reversed(events.states):
+        hero = hero_mode_from_state(state)
+        if hero:
+            return hero
+    return "unknown"
+
+
+def _event_targets(event: Any) -> set[str]:
+    return {str(target) for target in (getattr(event, "targets", ()) or ())}
+
+
+def _category_evidence_count(evidence_events: Iterable[Any]) -> int:
+    return sum(
+        1
+        for event in evidence_events
+        if "category_anchors" in _event_targets(event)
+        or str(getattr(event, "semantic", "")).startswith("category_")
+    )
+
+
+def _evidence_profile_key(
+    evidence_events: Iterable[Any],
+    *,
+    constraints: Any | None,
+    summary: Any | None,
+) -> str:
+    events = tuple(evidence_events)
+    parts: list[str] = []
+    public_flags: set[str] = set()
+    has_public_random_avg = False
+    has_category = False
+    has_item = bool(getattr(constraints, "item_anchors", {}) or {})
+    has_shape = bool(getattr(constraints, "shape_anchors", {}) or {})
+    has_layout = False
+
+    for event in events:
+        targets = _event_targets(event)
+        semantic = str(getattr(event, "semantic", ""))
+        source_kind = str(getattr(event, "source_kind", ""))
+        if source_kind == "public_info":
+            if "session.total_count" in targets or "session.total_cells" in targets:
+                public_flags.add("total")
+            if "quality_ceiling" in targets:
+                public_flags.add("max_quality")
+            if "max_item_cells" in targets:
+                public_flags.add("max_item_cells")
+            if "random_avg_value" in targets or (
+                semantic.startswith("random_") and "avg" in semantic
+            ):
+                has_public_random_avg = True
+        if "category_anchors" in targets or semantic.startswith("category_"):
+            has_category = True
+        if "item_anchors" in targets:
+            has_item = True
+        if "shape_anchors" in targets:
+            has_shape = True
+        if semantic in {"all_outlines", "full_outline_session_total", "ethan_full_outline"}:
+            has_layout = True
+        if "shape_anchors" in targets and (
+            "session.total_cells" in targets or "session.total_count" in targets
+        ):
+            has_layout = True
+
+    public_parts = [
+        label
+        for label in ("total", "max_quality", "max_item_cells")
+        if label in public_flags
+    ]
+    if public_parts:
+        parts.append("public:" + "+".join(public_parts))
+    if has_public_random_avg:
+        parts.append("public:random_avg")
+    if has_category:
+        parts.append("tool:category")
+    if has_item:
+        parts.append("item")
+    if has_shape:
+        parts.append("shape")
+    if (
+        has_layout
+        or (
+            summary is not None
+            and getattr(summary, "session_total_cells_exact", None) is not None
+            and has_shape
+        )
+    ):
+        parts.append("layout")
+    return "+".join(parts) if parts else "basic"
+
+
+def _information_density_score(
+    *,
+    round_no: int | None,
+    constraints: Any | None,
+    evidence_events: Iterable[Any],
+    evidence_profile_key: str,
+) -> int:
+    round_value = int(round_no or 0)
+    item_anchors = len(getattr(constraints, "item_anchors", {}) or {})
+    shape_anchors = len(getattr(constraints, "shape_anchors", {}) or {})
+    quality_floor_anchors = len(getattr(constraints, "quality_floor_anchors", {}) or {})
+    category_targets = _category_evidence_count(evidence_events)
+    public_bonus = 2 if "public:" in evidence_profile_key else 0
+    return (
+        round_value * 2
+        + min(item_anchors, 6) * 2
+        + min(shape_anchors + category_targets, 6) * 2
+        + min(shape_anchors, 8)
+        + min(quality_floor_anchors, 4)
+        + public_bonus
+    )
+
+
+def _information_density_band(score: int | None) -> str:
+    if score is None:
+        return "unknown"
+    if score < 18:
+        return "low"
+    if score < 34:
+        return "medium"
+    return "high"
+
+
+def _diagnostic_slice_fields(
+    *,
+    prefix: FatbeansCaptureEvents,
+    map_id: int | None,
+    map_family: str,
+    window_round: int,
+    evidence_events: Iterable[Any],
+    constraints: Any | None,
+    summary: Any | None,
+) -> dict[str, Any]:
+    events = tuple(evidence_events)
+    hero = _latest_hero(prefix)
+    stage = _evidence_stage(window_round)
+    profile = _evidence_profile_key(
+        events,
+        constraints=constraints,
+        summary=summary,
+    )
+    density_score = _information_density_score(
+        round_no=window_round,
+        constraints=constraints,
+        evidence_events=events,
+        evidence_profile_key=profile,
+    )
+    density_band = _information_density_band(density_score)
+    map_label = str(map_id) if map_id is not None else "unknown"
+    return {
+        "hero": hero,
+        "evidence_stage": stage,
+        "evidence_profile_key": profile,
+        "information_density_score": density_score,
+        "information_density_band": density_band,
+        "hero_information_density": f"{hero}|{density_band}",
+        "hero_evidence_stage": f"{hero}|{stage}",
+        "hero_map_family": f"{hero}|{map_family}",
+        "hero_map_id": f"{hero}|{map_label}",
+        "hero_map_evidence_stage": f"{hero}|{map_label}|{stage}",
+        "hero_map_evidence_profile": f"{hero}|{map_label}|{profile}",
+    }
 
 
 def _empty_prior_flat_dict() -> dict[str, Any]:
@@ -231,6 +416,7 @@ def _round_rows_for_events(
         bid_sort_id = int(bid_send.sort_id)
         prefix = _events_before_sort(events, bid_sort_id)
         map_id = _latest_map_id(prefix)
+        map_family = _map_family(map_id)
         prior_fields = _prior_flat_dict(map_id, tables=tables, cache=prior_cache)
         round_states = [
             state
@@ -244,6 +430,15 @@ def _round_rows_for_events(
             and previous_bid_sort_id < int(send.sort_id) < bid_sort_id
         ]
         if not prefix.states:
+            diagnostic_fields = _diagnostic_slice_fields(
+                prefix=prefix,
+                map_id=map_id,
+                map_family=map_family,
+                window_round=window_round,
+                evidence_events=(),
+                constraints=None,
+                summary=None,
+            )
             rows.append(
                 {
                     "file": f"{path.name}#prebid_r{window_round}_sort{bid_sort_id}",
@@ -254,7 +449,8 @@ def _round_rows_for_events(
                     "bid_sort_id": bid_sort_id,
                     "bid_value": getattr(bid_send, "value", None),
                     "map_id": map_id,
-                    "map_family": _map_family(map_id),
+                    "map_family": map_family,
+                    **diagnostic_fields,
                     "prior_state_count": 0,
                     "round_state_count": len(round_states),
                     "round_action_send_count": len(round_action_sends),
@@ -277,8 +473,18 @@ def _round_rows_for_events(
             )
             previous_bid_sort_id = bid_sort_id
             continue
-        constraints = compile_hard_constraints(events_from_fatbeans(prefix))
+        evidence_events = events_from_fatbeans(prefix)
+        constraints = compile_hard_constraints(evidence_events)
         feasible_summary = compile_feasible_summary(constraints)
+        diagnostic_fields = _diagnostic_slice_fields(
+            prefix=prefix,
+            map_id=map_id,
+            map_family=map_family,
+            window_round=window_round,
+            evidence_events=evidence_events,
+            constraints=constraints,
+            summary=feasible_summary,
+        )
         replacement_values = _replacement_values(
             map_id,
             tables=tables,
@@ -382,7 +588,8 @@ def _round_rows_for_events(
                 "bid_sort_id": bid_sort_id,
                 "bid_value": getattr(bid_send, "value", None),
                 "map_id": map_id,
-                "map_family": _map_family(map_id),
+                "map_family": map_family,
+                **diagnostic_fields,
                 "prior_state_count": len(prefix.states),
                 "round_state_count": len(round_states),
                 "round_action_send_count": len(round_action_sends),
@@ -926,6 +1133,16 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[str, Any]:
     statuses = Counter(str(row.get("status") or "unknown") for row in rows)
     round_counts = Counter(f"R{row.get('round')}" for row in rows)
+    hero_counts = Counter(str(row.get("hero") or "unknown") for row in rows)
+    evidence_stage_counts = Counter(
+        str(row.get("evidence_stage") or "unknown") for row in rows
+    )
+    information_density_counts = Counter(
+        str(row.get("information_density_band") or "unknown") for row in rows
+    )
+    evidence_profile_counts = Counter(
+        str(row.get("evidence_profile_key") or "unknown") for row in rows
+    )
     posterior_scope_counts = Counter(
         str(row.get("v3_post_match_scope") or "none")
         for row in rows
@@ -972,6 +1189,10 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         ),
         "status_counts": dict(sorted(statuses.items())),
         "round_counts": dict(sorted(round_counts.items())),
+        "hero_counts": dict(sorted(hero_counts.items())),
+        "evidence_stage_counts": dict(sorted(evidence_stage_counts.items())),
+        "information_density_counts": dict(sorted(information_density_counts.items())),
+        "evidence_profile_counts": dict(sorted(evidence_profile_counts.items())),
         "posterior_scope_counts": dict(sorted(posterior_scope_counts.items())),
         "numeric_constraints": sum(int(row.get("numeric_constraints") or 0) for row in ready_rows),
         "item_anchors": sum(int(row.get("item_anchors") or 0) for row in ready_rows),
@@ -1071,6 +1292,17 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "bid_value",
         "map_id",
         "map_family",
+        "hero",
+        "evidence_stage",
+        "evidence_profile_key",
+        "information_density_score",
+        "information_density_band",
+        "hero_information_density",
+        "hero_evidence_stage",
+        "hero_map_family",
+        "hero_map_id",
+        "hero_map_evidence_stage",
+        "hero_map_evidence_profile",
         "prior_state_count",
         "round_state_count",
         "round_action_send_count",

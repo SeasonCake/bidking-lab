@@ -18,6 +18,7 @@ def test_summarize_slice_reports_formal_and_q6_metrics() -> None:
         {
             "status": "ready",
             "round": 1,
+            "hero_map_evidence_profile": "aisha|2506|shape",
             "v3_truth_decision_available": True,
             "v3_post_ready": True,
             "v3_post_match_scope": "strict",
@@ -31,6 +32,7 @@ def test_summarize_slice_reports_formal_and_q6_metrics() -> None:
         {
             "status": "ready",
             "round": 1,
+            "hero_map_evidence_profile": "aisha|2506|shape",
             "v3_truth_decision_available": True,
             "v3_post_ready": True,
             "v3_post_match_scope": "summary_likelihood",
@@ -50,6 +52,7 @@ def test_summarize_slice_reports_formal_and_q6_metrics() -> None:
     ]
 
     result = module.summarize_slice(rows, "round")
+    profile_result = module.summarize_slice(rows, "hero_map_evidence_profile")
 
     assert result == [
         {
@@ -69,5 +72,20 @@ def test_summarize_slice_reports_formal_and_q6_metrics() -> None:
             "q6_formal_p50_below_rate": 0.5,
             "q6_formal_p50_over_rate": 0.5,
             "q6_formal_p90_coverage": 1.0,
+            "q6_count_p50_mae": None,
+            "q6_cells_p50_mae": None,
+            "q6_value_p50_mae": None,
+            "v3_ccv_delta_q6_count_p50_mae": None,
+            "v3_ccv_delta_q6_cells_p50_mae": None,
+            "v3_resid_delta_q6_count_p50_mae": None,
+            "v3_resid_delta_q6_cells_p50_mae": None,
+            "v3_resid_delta_q6_value_p50_mae": None,
+            "v3_resid_gate_active_rate": 0.0,
+            "v3_resid_gate_delta_q6_count_p50_mae": None,
+            "v3_resid_gate_delta_q6_cells_p50_mae": None,
+            "v3_resid_gate_delta_q6_value_p50_mae": None,
         }
     ]
+    assert profile_result[0]["field"] == "hero_map_evidence_profile"
+    assert profile_result[0]["value"] == "aisha|2506|shape"
+    assert profile_result[0]["n"] == 2

@@ -1075,9 +1075,12 @@ def _state_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
 
 
 def _hero_mode_from_state(state: FatbeansStateEvent) -> str | None:
-    if state.player_id is not None:
-        for bid in state.bids:
-            if bid.player_id != state.player_id or bid.hero_id is None:
+    player_id = getattr(state, "player_id", None)
+    bids = tuple(getattr(state, "bids", ()) or ())
+    skill_reveals = tuple(getattr(state, "skill_reveals", ()) or ())
+    if player_id is not None:
+        for bid in bids:
+            if bid.player_id != player_id or bid.hero_id is None:
                 continue
             hero = _HERO_MODE_BY_ID.get(bid.hero_id)
             if hero is not None:
@@ -1086,14 +1089,14 @@ def _hero_mode_from_state(state: FatbeansStateEvent) -> str | None:
 
     reveal_heroes = {
         hero
-        for reveal in state.skill_reveals
+        for reveal in skill_reveals
         if reveal.hero_id is not None
         for hero in (_HERO_MODE_BY_ID.get(reveal.hero_id),)
         if hero is not None
     }
     bid_heroes = {
         hero
-        for bid in state.bids
+        for bid in bids
         if bid.hero_id is not None
         for hero in (_HERO_MODE_BY_ID.get(bid.hero_id),)
         if hero is not None
@@ -1103,6 +1106,10 @@ def _hero_mode_from_state(state: FatbeansStateEvent) -> str | None:
     if len(bid_heroes) == 1:
         return next(iter(bid_heroes))
     return None
+
+
+def hero_mode_from_state(state: FatbeansStateEvent) -> str | None:
+    return _hero_mode_from_state(state)
 
 
 def _skill_reveal_category(skill_id: int | None) -> int | None:
@@ -1546,6 +1553,7 @@ __all__ = (
     "FatbeansSkillReveal",
     "FatbeansStateEvent",
     "FatbeansStatusEvent",
+    "hero_mode_from_state",
     "latest_player_bids",
     "live_batches_from_fatbeans_capture",
     "live_batches_from_fatbeans_capture_payload",

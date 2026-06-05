@@ -19,6 +19,11 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
             "status": "ready",
             "map_id": 2506,
             "map_family": "shipwreck",
+            "hero": "aisha",
+            "evidence_stage": "early_1_2",
+            "information_density_band": "low",
+            "evidence_profile_key": "shape",
+            "hero_map_evidence_profile": "aisha|2506|shape",
             "round": 1,
             "session_id": "s1",
             "prior_state_count": 1,
@@ -57,6 +62,11 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
             "status": "ready",
             "map_id": 2506,
             "map_family": "shipwreck",
+            "hero": "ethan",
+            "evidence_stage": "mid_3_4",
+            "information_density_band": "medium",
+            "evidence_profile_key": "public:total+shape+layout",
+            "hero_map_evidence_profile": "ethan|2506|public:total+shape+layout",
             "round": 2,
             "session_id": "s1",
             "prior_state_count": 2,
@@ -113,6 +123,13 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
     assert row["no_state_windows"] == 1
     assert row["paired_windows"] == 2
     assert row["rounds"] == {"R1": 1, "R2": 1}
+    assert row["heroes"] == {"aisha": 1, "ethan": 1}
+    assert row["evidence_stages"] == {"early_1_2": 1, "mid_3_4": 1}
+    assert row["information_density"] == {"low": 1, "medium": 1}
+    assert row["evidence_profiles"] == {
+        "public:total+shape+layout": 1,
+        "shape": 1,
+    }
     assert row["formal_p50_mae"] == 550
     assert row["formal_p50_bias"] == -550
     assert row["formal_p50_below_rate"] == 1.0
