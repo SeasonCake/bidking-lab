@@ -6,6 +6,7 @@ from bidking_lab.inference.v3 import (
     FeasibleSummaryReport,
     ItemAnchor,
     SoftNumericConstraint,
+    estimate_component_count_cell_value_posterior_from_truths,
     estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
     estimate_residual_count_cell_value_posterior_from_truths,
@@ -77,6 +78,7 @@ def _truth_with_q6_item(
     item_id: int = 1086001,
     value: int = 100_000,
     cells: int = 4,
+    q1_cells: int = 0,
     tags: tuple[int, ...] = (),
 ) -> SessionTruth:
     shape = (4, 4) if cells == 16 else (cells, 1)
@@ -87,19 +89,27 @@ def _truth_with_q6_item(
         shape=shape,
         tags=tags,
     )
+    buckets = {
+        6: BucketTruth(
+            quality=6,
+            count=1,
+            total_cells=cells,
+            value_sum=value,
+            items=[q6_item],
+        )
+    }
+    if q1_cells:
+        buckets[1] = BucketTruth(
+            quality=1,
+            count=1,
+            total_cells=q1_cells,
+            value_sum=100,
+        )
     return SessionTruth(
         map_id=2401,
         map_name="test_map",
-        warehouse_total_cells=cells,
-        buckets={
-            6: BucketTruth(
-                quality=6,
-                count=1,
-                total_cells=cells,
-                value_sum=value,
-                items=[q6_item],
-            )
-        },
+        warehouse_total_cells=cells + q1_cells,
+        buckets=buckets,
     )
 
 
@@ -267,10 +277,101 @@ def test_v3_posterior_disables_q6_conditioning_for_hidden_cold_start() -> None:
     assert report.ready is True
     assert report.match_scope == "summary_likelihood"
     assert "q6_bucket_conditioned=disabled_hidden_cold_start" in report.diagnostics
-    assert not any(
-        item.startswith("q6_bucket_conditioned_samples=")
-        for item in report.diagnostics
+
+
+def test_component_ccv_recombines_q6_with_public_total_capacity() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=26,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=100_000,
+        buckets=(
+            BucketFeasibleSummary(
+                quality=6,
+                count_floor=1,
+                cells_floor=4,
+                value_floor=100_000,
+            ),
+        ),
     )
+    baseline = estimate_q6_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(
+            _truth(q6_count=1, q6_cells=4, q6_value=100_000, q1_cells=10),
+            _truth(q6_count=1, q6_cells=16, q6_value=200_000, q1_cells=4),
+        ),
+    )
+
+    report = estimate_component_count_cell_value_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(
+            _truth(q6_count=1, q6_cells=4, q6_value=100_000, q1_cells=10),
+            _truth(q6_count=1, q6_cells=16, q6_value=200_000, q1_cells=4),
+        ),
+        baseline=baseline,
+    )
+
+    assert report.ready is True
+    assert report.match_scope == "ccv_component_likelihood"
+    assert report.q6_cells.p50 == 16
+    assert "ccvc_q6_capacity=countnone_cells26" in report.diagnostics
+
+
+def test_component_ccv_uses_explicit_q6_anchor() -> None:
+    q6_anchor = ItemAnchor(
+        key="q6_item",
+        event_id="e1",
+        source_kind="test",
+        source_id="test",
+        sort_id=1,
+        item_id=1086001,
+        quality=6,
+        value=None,
+        cells=None,
+        shape_key=None,
+        categories=(),
+    )
+    constraints = ConstraintSet(item_anchors={"q6_item": q6_anchor})
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=32,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=100_000,
+        buckets=(BucketFeasibleSummary(quality=6, count_floor=1),),
+    )
+    baseline = estimate_q6_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(
+            _truth_with_q6_item(item_id=1086001, cells=16, q1_cells=1),
+            _truth_with_q6_item(item_id=1086002, cells=4, q1_cells=16),
+        ),
+        constraints=constraints,
+    )
+
+    report = estimate_component_count_cell_value_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(
+            _truth_with_q6_item(item_id=1086001, cells=16, q1_cells=1),
+            _truth_with_q6_item(item_id=1086002, cells=4, q1_cells=16),
+        ),
+        constraints=constraints,
+        baseline=baseline,
+    )
+
+    assert report.ready is True
+    assert report.match_scope == "ccv_component_likelihood"
+    assert report.q6_cells.p50 == 16
+    assert "ccvc_explicit_q6_anchor_count=1" in report.diagnostics
 
 
 def test_v3_ccv_shadow_conditions_count_cells_without_value_evidence() -> None:

@@ -20,6 +20,8 @@ from bidking_lab.inference.v3.calibration import (
 from bidking_lab.inference.v3.constraints import ConstraintSet
 from bidking_lab.inference.v3.posterior import (
     V3PosteriorReport,
+    empty_posterior_flat_dict,
+    estimate_component_count_cell_value_posterior_from_truths,
     estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
     estimate_residual_count_cell_value_posterior_from_truths,
@@ -47,12 +49,14 @@ class V3CcvOptions:
     value_tail_guard: bool = True
     condition_temperature: float | None = None
     relative_floor: float | None = None
+    component_likelihood: bool = False
 
 
 @dataclass(frozen=True)
 class V3ShadowPipelineReport:
     posterior: V3PosteriorReport
     ccv_posterior: V3PosteriorReport
+    ccv_component_posterior: V3PosteriorReport | None
     residual_posterior: V3PosteriorReport
     residual_gate: V3ResidualGateReport
     calibration: V3PriorCalibrationReport
@@ -63,6 +67,12 @@ class V3ShadowPipelineReport:
         out: dict[str, Any] = {}
         out.update(self.posterior.to_flat_dict())
         out.update(self.ccv_posterior.to_flat_dict(prefix="v3_ccv_"))
+        if self.ccv_component_posterior is None:
+            out.update(empty_posterior_flat_dict(prefix="v3_ccvc_"))
+        else:
+            out.update(
+                self.ccv_component_posterior.to_flat_dict(prefix="v3_ccvc_")
+            )
         out.update(self.residual_posterior.to_flat_dict(prefix="v3_resid_"))
         out.update(self.residual_gate.to_flat_dict())
         out.update(self.calibration.to_flat_dict())
@@ -111,6 +121,19 @@ def estimate_shadow_pipeline(
         baseline=posterior,
         **ccv_kwargs,
     )
+    ccv_component_posterior = (
+        estimate_component_count_cell_value_posterior_from_truths(
+            map_id=int(map_id),
+            map_name=str(map_name or ""),
+            summary=summary,
+            truths=truths,
+            constraints=constraints,
+            replacement_values=replacement_values or {},
+            baseline=posterior,
+        )
+        if ccv_options is not None and ccv_options.component_likelihood
+        else None
+    )
     residual_posterior = estimate_residual_count_cell_value_posterior_from_truths(
         map_id=int(map_id),
         map_name=str(map_name or ""),
@@ -139,6 +162,7 @@ def estimate_shadow_pipeline(
     return V3ShadowPipelineReport(
         posterior=posterior,
         ccv_posterior=ccv_posterior,
+        ccv_component_posterior=ccv_component_posterior,
         residual_posterior=residual_posterior,
         residual_gate=residual_gate,
         calibration=calibration,

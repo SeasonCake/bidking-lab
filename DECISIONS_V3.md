@@ -1094,3 +1094,32 @@ component=q6_count delta=-0.069
 - map-level 候选在训练折看起来有方向性，但验证折仍会伤害 `2502/2506/2501/2409` 等 group。
 - profile-level 候选只提供弱正向信号，不能替代真正的条件 likelihood。
 - 下一步应重做 CCV likelihood/组件分解，让公开总格、q6 floor、value evidence、non-q6 capacity 共同决定 q6 count/cells/value 分布，而不是把 direction gate 输出当固定规则。
+
+## D-v3-045：component likelihood 先作为 v3_ccvc_ shadow，不进入 formal
+
+2026-06-05 起，第一版 evidence-conditioned CCV component likelihood 以 `v3_ccvc_` 前缀输出。它是 v3 core 重构候选，不替换现有 `v3_ccv_`、不进入 formal decision、不影响 live/UI 主建议。
+
+当前决策：
+
+- `v3_ccvc_` 必须通过 directionality + session holdout 后，才允许进入 readiness gate。
+- 默认 evaluator/live pipeline 不运行 component likelihood；只有 `V3CcvOptions(component_likelihood=True)` 或 CLI `--ccv-component-likelihood` 显式开启。
+- 组件后验允许用明确 `quality=6` 的 item/shape anchor 与 q6 avg soft numeric 影响 q6 component。
+- 未标明质量的 anchors 暂不硬归入 q6 component，只记录 `ccvc_unassigned_anchor_count`，避免把无质量证据误当 hard footprint。
+
+当前 128-trial 结果：
+
+```text
+v3_ccvc_component_likelihood_rows=1050
+v3_ccvc_delta_q6_count_p50_mae=-0.033
+v3_ccvc_delta_q6_cells_p50_mae=-0.168
+v3_ccvc_delta_q6_value_p50_mae=-6864.3
+
+map_id direction status_counts=blocked_directional_hurt:24,blocked_low_movement:7,watch_directional_candidate:11
+evidence_profile direction status_counts=blocked_directional_hurt:16,blocked_low_movement:1,blocked_low_sample:44,watch_directional_candidate:9
+```
+
+原因：
+
+- component likelihood 证明“q6 component + non-q6 residual capacity”的方向比旧 CCV 更接近 v3 目标。
+- 但 changed rows 中仍有大量方向性 hurt；全局 MAE 改善不能证明实战可用。
+- 下一步必须给 `v3_ccvc_` 增加 holdout candidate gate，并拆解哪些证据组合导致反向移动，尤其 `random_avg`、`item+shape`、`public:total+item+shape`。

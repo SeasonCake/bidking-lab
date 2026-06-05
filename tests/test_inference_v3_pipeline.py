@@ -2,6 +2,7 @@ from bidking_lab.inference.ground_truth import BucketTruth, SessionTruth
 from bidking_lab.inference.v3 import (
     BucketFeasibleSummary,
     FeasibleSummaryReport,
+    V3CcvOptions,
     estimate_shadow_pipeline,
 )
 
@@ -11,16 +12,17 @@ def _truth(
     q6_count: int,
     q6_cells: int,
     q6_value: int,
+    q1_cells: int = 10,
 ) -> SessionTruth:
     return SessionTruth(
         map_id=2401,
         map_name="test_map",
-        warehouse_total_cells=10 + q6_cells,
+        warehouse_total_cells=q1_cells + q6_cells,
         buckets={
             1: BucketTruth(
                 quality=1,
                 count=1,
-                total_cells=10,
+                total_cells=q1_cells,
                 value_sum=100,
             ),
             6: BucketTruth(
@@ -67,6 +69,9 @@ def test_v3_shadow_pipeline_emits_all_shadow_namespaces() -> None:
     assert flat["v3_post_affects_bid"] is False
     assert flat["v3_ccv_available"] is True
     assert flat["v3_ccv_affects_bid"] is False
+    assert report.ccv_component_posterior is None
+    assert flat["v3_ccvc_available"] is False
+    assert flat["v3_ccvc_affects_bid"] is False
     assert flat["v3_resid_available"] is True
     assert flat["v3_resid_affects_bid"] is False
     assert flat["v3_resid_gate_available"] is True
@@ -79,3 +84,39 @@ def test_v3_shadow_pipeline_emits_all_shadow_namespaces() -> None:
     assert flat["v3_tail_review_available"] is True
     assert flat["v3_tail_review_status"] == "missing_entry"
     assert flat["v3_tail_review_affects_bid"] is False
+
+
+def test_v3_shadow_pipeline_can_emit_component_ccv_shadow() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=26,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=100_000,
+        buckets=(
+            BucketFeasibleSummary(
+                quality=6,
+                count_floor=1,
+                cells_floor=4,
+                value_floor=100_000,
+            ),
+        ),
+    )
+
+    report = estimate_shadow_pipeline(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(
+            _truth(q6_count=1, q6_cells=4, q6_value=100_000, q1_cells=10),
+            _truth(q6_count=1, q6_cells=16, q6_value=200_000, q1_cells=4),
+        ),
+        hero="ethan",
+        ccv_options=V3CcvOptions(component_likelihood=True),
+    )
+    flat = report.to_flat_dict()
+
+    assert report.ccv_component_posterior is not None
+    assert flat["v3_ccvc_available"] is True
+    assert flat["v3_ccvc_affects_bid"] is False
+    assert flat["v3_ccvc_match_scope"] == "ccv_component_likelihood"

@@ -376,6 +376,13 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
             "v3_ccv_q6_count_p90": 1,
             "v3_ccv_q6_cells_p50": 4,
             "v3_ccv_q6_cells_p90": 4,
+            "v3_ccvc_ready": True,
+            "v3_ccvc_match_scope": "ccv_component_likelihood",
+            "v3_ccvc_q6_count_p50": 1,
+            "v3_ccvc_q6_count_p90": 1,
+            "v3_ccvc_q6_cells_p50": 4,
+            "v3_ccvc_q6_cells_p90": 4,
+            "v3_ccvc_q6_value_p50": 100,
             "v3_resid_ready": True,
             "v3_resid_match_scope": "residual_likelihood",
             "v3_resid_q6_count_p50": 1,
@@ -417,6 +424,13 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
             "v3_ccv_q6_count_p90": 0,
             "v3_ccv_q6_cells_p50": 0,
             "v3_ccv_q6_cells_p90": 0,
+            "v3_ccvc_ready": False,
+            "v3_ccvc_match_scope": None,
+            "v3_ccvc_q6_count_p50": None,
+            "v3_ccvc_q6_count_p90": None,
+            "v3_ccvc_q6_cells_p50": None,
+            "v3_ccvc_q6_cells_p90": None,
+            "v3_ccvc_q6_value_p50": None,
             "v3_resid_ready": True,
             "v3_resid_match_scope": "q6_projection",
             "v3_resid_q6_count_p50": 0,
@@ -470,6 +484,13 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["v3_ccv_q6_cells_p50_mae"] == 0
     assert summary["v3_ccv_delta_q6_cells_p50_mae"] == -3.5
     assert summary["q6_value_p50_mae"] == 35
+    assert summary["v3_ccvc_component_likelihood_rows"] == 1
+    assert summary["v3_ccvc_q6_count_p50_mae"] == 0
+    assert summary["v3_ccvc_delta_q6_count_p50_mae"] == -1
+    assert summary["v3_ccvc_q6_cells_p50_mae"] == 0
+    assert summary["v3_ccvc_delta_q6_cells_p50_mae"] == -3.5
+    assert summary["v3_ccvc_q6_value_p50_mae"] == 0
+    assert summary["v3_ccvc_delta_q6_value_p50_mae"] == -35
     assert summary["v3_resid_likelihood_rows"] == 1
     assert summary["v3_resid_q6_count_p50_mae"] == 0
     assert summary["v3_resid_delta_q6_count_p50_mae"] == -1

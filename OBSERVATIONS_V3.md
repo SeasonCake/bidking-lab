@@ -1568,3 +1568,44 @@ profile q6_count candidate_delta=-0.069
 - map-level 方向选择仍会在 holdout 中把 q6 cells/count 往错误方向推。
 - profile-level q6 count 有弱改善，但 q6 cells 几乎无实质收益；这不足以支撑正式估值。
 - 当前 readiness blocked 是正确的，下一步要做条件 likelihood/组件分解，而不是继续堆叠候选 gate。
+
+## O-v3-049：component likelihood 全局正向，但方向性仍不过关
+
+2026-06-05 新增可选 `v3_ccvc_` 后，128-trial archive 初步结果：
+
+```text
+v3_ccvc_component_likelihood_rows=1050
+v3_ccvc_delta_q6_count_p50_mae=-0.033
+v3_ccvc_delta_q6_cells_p50_mae=-0.168
+v3_ccvc_delta_q6_value_p50_mae=-6864.3
+```
+
+对比旧 `v3_ccv_`：
+
+```text
+v3_ccv_likelihood_rows=347
+v3_ccv_delta_q6_count_p50_mae=-0.001
+v3_ccv_delta_q6_cells_p50_mae=+0.165
+```
+
+方向性审计：
+
+```text
+map_id:
+blocked_directional_hurt=24
+blocked_low_movement=7
+watch_directional_candidate=11
+
+evidence_profile_key:
+blocked_directional_hurt=16
+blocked_low_movement=1
+blocked_low_sample=44
+watch_directional_candidate=9
+```
+
+解读：
+
+- `v3_ccvc_` 的全局 MAE 比旧 CCV 明显更合理，说明组件化是正确方向。
+- 但 map/profile 的 changed rows hurt rate 仍高；例如 `public:random_avg+...`、`item+shape`、`public:total+item+shape` 仍会把一部分窗口推向错误方向。
+- `public:total+item+shape+layout` 在 component skeleton 下 q6 cells MAE 有改善，但 q6 count 仍有方向性问题，不能简单放行。
+- 下一步重点是对 component likelihood 做 session holdout 与 evidence contribution audit，而不是把全局均值改善直接接 formal。

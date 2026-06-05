@@ -43,6 +43,7 @@ from bidking_lab.inference.v3.evidence_registry import (
 from bidking_lab.inference.v3.posterior import (
     V3PosteriorReport,
     empty_posterior_flat_dict,
+    estimate_component_count_cell_value_posterior_from_truths,
     estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
     estimate_residual_count_cell_value_posterior_from_truths,
@@ -146,6 +147,7 @@ __all__ = (
     "empty_underestimate_repair_flat_dict",
     "empty_truth_flat_dict",
     "entry_from_mapping",
+    "estimate_component_count_cell_value_posterior_from_truths",
     "estimate_count_cell_value_posterior_from_truths",
     "estimate_q6_posterior_from_truths",
     "estimate_residual_count_cell_value_posterior_from_truths",

@@ -2282,3 +2282,53 @@ ccv_direction_holdout=blocked_holdout_directional_hurt
 - map-level 方向候选在 session holdout 上仍会伤，尤其 q6 cells 对 `2502/2506` 不稳定。
 - profile-level direction holdout 虽然是 watch，但收益很小，且 q6 cells 几乎没有实质改善，不能替代 likelihood 重构。
 - 下一步仍应重做 CCV likelihood/组件分解，而不是把 direction gate 结果接进正式估值。
+
+## 2026-06-05 checkpoint：v3 CCV component likelihood skeleton
+
+实现：
+
+- 新增可选 `v3_ccvc_` shadow posterior。
+  - `estimate_component_count_cell_value_posterior_from_truths` 将 q6 component 与 non-q6 residual capacity 分开计分。
+  - public total / known floors 作用在 recombined total 上。
+  - 明确 `quality=6` 的 item/shape anchor 和 q6 avg soft numeric 作用在 q6 component 上。
+  - unqualified anchors 暂不强行归入 q6 component，会在 diagnostics 中记录 `ccvc_unassigned_anchor_count`。
+- `V3CcvOptions(component_likelihood=True)` 显式开启；默认 live/archive/UI 行为不变。
+- `evaluate_fatbeans_v3_samples.py` 新增 `--ccv-component-likelihood`，输出 `v3_ccvc_*` 字段和 summary 指标。
+- `summarize_v3_ccv_direction_audit.py` 新增 `--candidate-prefix`，可用同一方向性口径审计 `v3_ccv_` 与 `v3_ccvc_`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_pipeline.py tests\test_evaluate_fatbeans_v3_samples.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 128 --ccv-component-likelihood
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_audit.py --posterior-trials 128 --candidate-prefix v3_ccvc_ --group-field map_id --component q6_count --component q6_cells --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_audit.py --posterior-trials 128 --candidate-prefix v3_ccvc_ --group-field evidence_profile_key --component q6_count --component q6_cells --top 20
+```
+
+结果：
+
+```text
+focused tests: 27 passed
+
+v3_ccvc_component_likelihood_rows=1050
+v3_ccvc_delta_q6_count_p50_mae=-0.033
+v3_ccvc_delta_q6_cells_p50_mae=-0.168
+v3_ccvc_delta_q6_value_p50_mae=-6864.3
+
+map_id direction:
+blocked_directional_hurt=24
+blocked_low_movement=7
+watch_directional_candidate=11
+
+evidence_profile_key direction:
+blocked_directional_hurt=16
+blocked_low_movement=1
+blocked_low_sample=44
+watch_directional_candidate=9
+```
+
+结论：
+
+- `v3_ccvc_` 是比旧 `v3_ccv_` 更合理的 v3 CCV 重构骨架：覆盖更多 fallback 窗口，q6 count/cells/value 全局 MAE 都是正向。
+- 但 map/profile directionality 仍 blocked，说明“组件重组”解决了均值问题的一部分，还没有解决逐窗口移动方向问题。
+- 当前不能接 formal/live，也不能替代 readiness gate；下一步需要对 `v3_ccvc_` 做 holdout candidate gate，并拆分 random_avg、public total、q6 floor、unqualified anchors 的方向性贡献。

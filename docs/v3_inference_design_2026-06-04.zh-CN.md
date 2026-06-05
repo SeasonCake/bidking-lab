@@ -1021,6 +1021,45 @@ gate=ccv_direction_holdout status=blocked
 3. profile-level direction holdout 只是弱信号，尤其 q6 cells 改善接近 0。
 4. 下一步核心不再是调 `count_cell_tail_guard` 或 fixed prior multiplier，而是重做条件 likelihood/组件分解，让证据决定 q6 count/cells/value 的移动方向和幅度。
 
+### 2026-06-05 CCV component likelihood skeleton
+
+新增可选 `v3_ccvc_` shadow posterior，作为 v3 CCV 重构骨架：
+
+- q6 component 从 prior truth bank 中抽取。
+- non-q6 residual capacity 单独保留。
+- public total / known floors 在 q6 component + non-q6 residual recombination 后计分。
+- 明确 `quality=6` 的 item/shape anchor 与 q6 avg soft numeric 作用在 q6 component 上。
+- 未标明质量的 anchors 不强行归入 q6 component，只记录 `ccvc_unassigned_anchor_count`。
+
+默认行为：
+
+- `v3_ccvc_` 默认关闭。
+- `V3CcvOptions(component_likelihood=True)` 或 `evaluate_fatbeans_v3_samples.py --ccv-component-likelihood` 才会运行。
+- 不影响 `v3_ccv_`、`v3_resid_`、formal decision、live bid、UI 主建议。
+
+128-trial 初步结果：
+
+```text
+v3_ccvc_component_likelihood_rows=1050
+v3_ccvc_delta_q6_count_p50_mae=-0.033
+v3_ccvc_delta_q6_cells_p50_mae=-0.168
+v3_ccvc_delta_q6_value_p50_mae=-6864.3
+```
+
+方向性结果：
+
+```text
+map_id blocked_directional_hurt=24 watch_directional_candidate=11
+evidence_profile_key blocked_directional_hurt=16 watch_directional_candidate=9
+```
+
+设计影响：
+
+1. component likelihood 比旧 CCV 更接近 v3 目标，是后续重构主线。
+2. 全局 MAE 改善不足以 promotion；directionality/holdout 仍是硬门槛。
+3. 下一步要把 `random_avg`、public total、q6 floor、explicit q6 anchors、unqualified anchors 的方向贡献拆开，防止把有用证据和反向证据混在同一个权重里。
+4. `v3_ccvc_` 通过 holdout 前保持 shadow-only。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

@@ -20,6 +20,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from evaluate_fatbeans_v3_samples import (  # noqa: E402
+    V3CcvOptions,
     _default_calibration_path,
     _default_paths,
     _float_or_none,
@@ -30,28 +31,33 @@ from evaluate_fatbeans_v3_samples import (  # noqa: E402
 )
 
 
-COMPONENT_FIELDS: dict[str, tuple[str, str, str]] = {
-    "q6_count": (
-        "v3_post_q6_count_p50",
-        "v3_ccv_q6_count_p50",
-        "v3_truth_q6_count",
-    ),
-    "q6_cells": (
-        "v3_post_q6_cells_p50",
-        "v3_ccv_q6_cells_p50",
-        "v3_truth_q6_cells",
-    ),
-    "q6_value": (
-        "v3_post_q6_value_p50",
-        "v3_ccv_q6_value_p50",
-        "v3_truth_q6_raw_value",
-    ),
-    "q6_formal": (
-        "v3_post_q6_formal_decision_value_p50",
-        "v3_ccv_q6_formal_decision_value_p50",
-        "v3_truth_q6_formal_decision_value",
-    ),
-}
+def component_fields(candidate_prefix: str = "v3_ccv_") -> dict[str, tuple[str, str, str]]:
+    prefix = str(candidate_prefix)
+    return {
+        "q6_count": (
+            "v3_post_q6_count_p50",
+            f"{prefix}q6_count_p50",
+            "v3_truth_q6_count",
+        ),
+        "q6_cells": (
+            "v3_post_q6_cells_p50",
+            f"{prefix}q6_cells_p50",
+            "v3_truth_q6_cells",
+        ),
+        "q6_value": (
+            "v3_post_q6_value_p50",
+            f"{prefix}q6_value_p50",
+            "v3_truth_q6_raw_value",
+        ),
+        "q6_formal": (
+            "v3_post_q6_formal_decision_value_p50",
+            f"{prefix}q6_formal_decision_value_p50",
+            "v3_truth_q6_formal_decision_value",
+        ),
+    }
+
+
+COMPONENT_FIELDS: dict[str, tuple[str, str, str]] = component_fields()
 DEFAULT_COMPONENTS = ("q6_count", "q6_cells", "q6_formal")
 
 
@@ -66,15 +72,18 @@ def _paired_rows(
     rows: Iterable[dict[str, Any]],
     *,
     component: str,
+    fields: dict[str, tuple[str, str, str]],
+    candidate_prefix: str,
 ) -> tuple[dict[str, Any], ...]:
-    baseline_key, ccv_key, truth_key = COMPONENT_FIELDS[component]
+    baseline_key, ccv_key, truth_key = fields[component]
+    ready_key = f"{candidate_prefix}ready"
     return tuple(
         row
         for row in rows
         if row.get("status") == "ready"
         and row.get("v3_truth_available")
         and row.get("v3_post_ready")
-        and row.get("v3_ccv_ready")
+        and row.get(ready_key)
         and _float_or_none(row.get(baseline_key)) is not None
         and _float_or_none(row.get(ccv_key)) is not None
         and _float_or_none(row.get(truth_key)) is not None
@@ -90,8 +99,9 @@ def _row_direction(
     row: dict[str, Any],
     *,
     component: str,
+    fields: dict[str, tuple[str, str, str]],
 ) -> dict[str, Any] | None:
-    baseline_key, ccv_key, truth_key = COMPONENT_FIELDS[component]
+    baseline_key, ccv_key, truth_key = fields[component]
     baseline = _float_or_none(row.get(baseline_key))
     ccv = _float_or_none(row.get(ccv_key))
     truth = _float_or_none(row.get(truth_key))
@@ -183,6 +193,8 @@ def _summarize_group(
     *,
     component: str,
     group_field: str,
+    fields: dict[str, tuple[str, str, str]],
+    candidate_prefix: str,
     min_windows: int,
     min_sessions: int,
     min_changed: int,
@@ -193,7 +205,11 @@ def _summarize_group(
     directions = tuple(
         item
         for row in source_rows
-        if (item := _row_direction(row, component=component)) is not None
+        if (item := _row_direction(
+            row,
+            component=component,
+            fields=fields,
+        )) is not None
     )
     changed = tuple(row for row in directions if row["move"] != "flat")
     sessions = {
@@ -207,8 +223,12 @@ def _summarize_group(
     changed_effect_counts = Counter(str(row["effect"]) for row in changed)
     changed_move_counts = Counter(str(row["move"]) for row in changed)
     changed_directional_errors = sum(1 for row in changed if row["directional_error"])
-    ccv_likelihood_rows = sum(
-        1 for row in source_rows if row.get("v3_ccv_match_scope") == "ccv_likelihood"
+    candidate_likelihood_rows = sum(
+        1
+        for row in source_rows
+        if str(row.get(f"{candidate_prefix}match_scope") or "").endswith(
+            "likelihood"
+        )
     )
     public_total_rows = sum(
         1
@@ -235,7 +255,7 @@ def _summarize_group(
         "n": len(directions),
         "sessions": len(sessions),
         "ccv_likelihood_rate": _round_metric(
-            _rate(ccv_likelihood_rows, len(source_rows)),
+            _rate(candidate_likelihood_rows, len(source_rows)),
             6,
         ),
         "public_total_rate": _round_metric(_rate(public_total_rows, len(source_rows)), 6),
@@ -307,13 +327,20 @@ def summarize_direction(
     min_changed: int = 5,
     max_hurt_rate: float = 0.45,
     max_directional_error_rate: float = 0.35,
+    candidate_prefix: str = "v3_ccv_",
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    fields = component_fields(candidate_prefix)
     for component in components:
-        if component not in COMPONENT_FIELDS:
+        if component not in fields:
             raise ValueError(f"unknown component: {component}")
         groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for row in _paired_rows(rows, component=component):
+        for row in _paired_rows(
+            rows,
+            component=component,
+            fields=fields,
+            candidate_prefix=candidate_prefix,
+        ):
             groups[_group_value(row, group_field)].append(row)
         for group, group_rows in groups.items():
             out.append(
@@ -322,6 +349,8 @@ def summarize_direction(
                     group_rows,
                     component=component,
                     group_field=group_field,
+                    fields=fields,
+                    candidate_prefix=candidate_prefix,
                     min_windows=min_windows,
                     min_sessions=min_sessions,
                     min_changed=min_changed,
@@ -393,6 +422,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--group-field", default="map_id")
     parser.add_argument(
+        "--candidate-prefix",
+        default="v3_ccv_",
+        help="Candidate flat-field prefix, for example v3_ccv_ or v3_ccvc_.",
+    )
+    parser.add_argument(
         "--component",
         action="append",
         choices=tuple(COMPONENT_FIELDS),
@@ -417,6 +451,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,
+        ccv_options=V3CcvOptions(
+            component_likelihood=args.candidate_prefix == "v3_ccvc_",
+        ),
     )
     result = {
         "errors": errors,
@@ -431,6 +468,7 @@ def main(argv: list[str] | None = None) -> int:
             min_changed=args.min_changed,
             max_hurt_rate=args.max_hurt_rate,
             max_directional_error_rate=args.max_directional_error_rate,
+            candidate_prefix=args.candidate_prefix,
         ),
     }
     if args.format == "json":

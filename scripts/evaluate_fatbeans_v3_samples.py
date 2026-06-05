@@ -421,6 +421,7 @@ def _round_rows_for_events(
     empty_summary_fields = empty_feasible_summary_flat_dict()
     empty_posterior_fields = empty_posterior_flat_dict()
     empty_ccv_fields = empty_posterior_flat_dict(prefix="v3_ccv_")
+    empty_ccvc_fields = empty_posterior_flat_dict(prefix="v3_ccvc_")
     empty_residual_fields = empty_posterior_flat_dict(prefix="v3_resid_")
     empty_residual_gate_fields = empty_residual_gate_flat_dict()
     empty_calibration_fields = empty_prior_calibration_flat_dict()
@@ -482,6 +483,7 @@ def _round_rows_for_events(
                     **empty_summary_fields,
                     **empty_posterior_fields,
                     **empty_ccv_fields,
+                    **empty_ccvc_fields,
                     **empty_residual_fields,
                     **empty_residual_gate_fields,
                     **empty_calibration_fields,
@@ -573,6 +575,11 @@ def _round_rows_for_events(
             if pipeline is not None
             else empty_ccv_fields
         )
+        ccvc_fields = (
+            pipeline.ccv_component_posterior.to_flat_dict(prefix="v3_ccvc_")
+            if pipeline is not None and pipeline.ccv_component_posterior is not None
+            else empty_ccvc_fields
+        )
         residual_fields = (
             pipeline.residual_posterior.to_flat_dict(prefix="v3_resid_")
             if pipeline is not None
@@ -625,6 +632,7 @@ def _round_rows_for_events(
                 **feasible_summary.to_flat_dict(),
                 **posterior_fields,
                 **ccv_fields,
+                **ccvc_fields,
                 **residual_fields,
                 **residual_gate_fields,
                 **calibration_fields,
@@ -723,6 +731,13 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if row.get("status") == "ready"
         and row.get("v3_truth_available")
         and row.get("v3_ccv_ready")
+    ]
+    ccvc_ready = [
+        row
+        for row in rows
+        if row.get("status") == "ready"
+        and row.get("v3_truth_available")
+        and row.get("v3_ccvc_ready")
     ]
     residual_ready = [
         row
@@ -860,6 +875,31 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "v3_truth_q6_cells",
         source_rows=ccv_ready,
     )
+    ccvc_q6_count_p50 = pred_truth(
+        "v3_ccvc_q6_count_p50",
+        "v3_truth_q6_count",
+        source_rows=ccvc_ready,
+    )
+    ccvc_q6_count_p90 = pred_truth(
+        "v3_ccvc_q6_count_p90",
+        "v3_truth_q6_count",
+        source_rows=ccvc_ready,
+    )
+    ccvc_q6_cells_p50 = pred_truth(
+        "v3_ccvc_q6_cells_p50",
+        "v3_truth_q6_cells",
+        source_rows=ccvc_ready,
+    )
+    ccvc_q6_cells_p90 = pred_truth(
+        "v3_ccvc_q6_cells_p90",
+        "v3_truth_q6_cells",
+        source_rows=ccvc_ready,
+    )
+    ccvc_q6_value_p50 = pred_truth(
+        "v3_ccvc_q6_value_p50",
+        "v3_truth_q6_raw_value",
+        source_rows=ccvc_ready,
+    )
     residual_q6_count_p50 = pred_truth(
         "v3_resid_q6_count_p50",
         "v3_truth_q6_count",
@@ -985,6 +1025,9 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     q6_value_p50_mae = mae(q6_value_p50)
     ccv_q6_count_p50_mae = mae(ccv_q6_count_p50)
     ccv_q6_cells_p50_mae = mae(ccv_q6_cells_p50)
+    ccvc_q6_count_p50_mae = mae(ccvc_q6_count_p50)
+    ccvc_q6_cells_p50_mae = mae(ccvc_q6_cells_p50)
+    ccvc_q6_value_p50_mae = mae(ccvc_q6_value_p50)
     residual_q6_count_p50_mae = mae(residual_q6_count_p50)
     residual_q6_cells_p50_mae = mae(residual_q6_cells_p50)
     residual_q6_value_p50_mae = mae(residual_q6_value_p50)
@@ -1064,6 +1107,56 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             ccv_q6_cells_p50_mae - q6_cells_p50_mae
             if ccv_q6_cells_p50_mae is not None and q6_cells_p50_mae is not None
             else None
+        ),
+        "v3_ccvc_metric_rows": len(ccvc_ready),
+        "v3_ccvc_component_likelihood_rows": sum(
+            1
+            for row in ccvc_ready
+            if row.get("v3_ccvc_match_scope") == "ccv_component_likelihood"
+        ),
+        "v3_ccvc_q6_count_p50_mae": _round_metric(ccvc_q6_count_p50_mae),
+        "v3_ccvc_q6_count_p50_bias": _round_metric(bias(ccvc_q6_count_p50)),
+        "v3_ccvc_q6_count_p50_below_rate": _round_metric(
+            below_rate(ccvc_q6_count_p50),
+            6,
+        ),
+        "v3_ccvc_q6_count_p90_coverage": _round_metric(
+            coverage_rate(ccvc_q6_count_p90),
+            6,
+        ),
+        "v3_ccvc_delta_q6_count_p50_mae": _round_metric(
+            ccvc_q6_count_p50_mae - q6_count_p50_mae
+            if ccvc_q6_count_p50_mae is not None and q6_count_p50_mae is not None
+            else None
+        ),
+        "v3_ccvc_q6_cells_p50_mae": _round_metric(ccvc_q6_cells_p50_mae),
+        "v3_ccvc_q6_cells_p50_bias": _round_metric(bias(ccvc_q6_cells_p50)),
+        "v3_ccvc_q6_cells_p50_below_rate": _round_metric(
+            below_rate(ccvc_q6_cells_p50),
+            6,
+        ),
+        "v3_ccvc_q6_cells_p90_coverage": _round_metric(
+            coverage_rate(ccvc_q6_cells_p90),
+            6,
+        ),
+        "v3_ccvc_delta_q6_cells_p50_mae": _round_metric(
+            ccvc_q6_cells_p50_mae - q6_cells_p50_mae
+            if ccvc_q6_cells_p50_mae is not None and q6_cells_p50_mae is not None
+            else None
+        ),
+        "v3_ccvc_q6_value_p50_mae": _round_metric(
+            ccvc_q6_value_p50_mae,
+            1,
+        ),
+        "v3_ccvc_q6_value_p50_bias": _round_metric(
+            bias(ccvc_q6_value_p50),
+            1,
+        ),
+        "v3_ccvc_delta_q6_value_p50_mae": _round_metric(
+            ccvc_q6_value_p50_mae - q6_value_p50_mae
+            if ccvc_q6_value_p50_mae is not None and q6_value_p50_mae is not None
+            else None,
+            1,
         ),
         "v3_resid_metric_rows": len(residual_ready),
         "v3_resid_likelihood_rows": sum(
@@ -1367,6 +1460,13 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"v3_ccv_delta_q6_count_p50_mae={summary['v3_ccv_delta_q6_count_p50_mae']}",
                 f"v3_ccv_q6_cells_p50_mae={summary['v3_ccv_q6_cells_p50_mae']}",
                 f"v3_ccv_delta_q6_cells_p50_mae={summary['v3_ccv_delta_q6_cells_p50_mae']}",
+                f"v3_ccvc_component_likelihood_rows={summary['v3_ccvc_component_likelihood_rows']}",
+                f"v3_ccvc_q6_count_p50_mae={summary['v3_ccvc_q6_count_p50_mae']}",
+                f"v3_ccvc_delta_q6_count_p50_mae={summary['v3_ccvc_delta_q6_count_p50_mae']}",
+                f"v3_ccvc_q6_cells_p50_mae={summary['v3_ccvc_q6_cells_p50_mae']}",
+                f"v3_ccvc_delta_q6_cells_p50_mae={summary['v3_ccvc_delta_q6_cells_p50_mae']}",
+                f"v3_ccvc_q6_value_p50_mae={summary['v3_ccvc_q6_value_p50_mae']}",
+                f"v3_ccvc_delta_q6_value_p50_mae={summary['v3_ccvc_delta_q6_value_p50_mae']}",
                 f"v3_resid_likelihood_rows={summary['v3_resid_likelihood_rows']}",
                 f"v3_resid_q6_count_p50_mae={summary['v3_resid_q6_count_p50_mae']}",
                 f"v3_resid_delta_q6_count_p50_mae={summary['v3_resid_delta_q6_count_p50_mae']}",
@@ -1568,6 +1668,35 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_ccv_q6_tail_replacement_decision_value_p50",
         "v3_ccv_q6_tail_replacement_decision_value_p90",
         "v3_ccv_diagnostics",
+        "v3_ccvc_available",
+        "v3_ccvc_ready",
+        "v3_ccvc_strict_ready",
+        "v3_ccvc_affects_bid",
+        "v3_ccvc_map_id",
+        "v3_ccvc_map_name",
+        "v3_ccvc_match_scope",
+        "v3_ccvc_n_total",
+        "v3_ccvc_n_matched",
+        "v3_ccvc_n_strict_matched",
+        "v3_ccvc_match_rate",
+        "v3_ccvc_strict_match_rate",
+        "v3_ccvc_q6_present_rate",
+        "v3_ccvc_q6_count_p10",
+        "v3_ccvc_q6_count_p50",
+        "v3_ccvc_q6_count_p90",
+        "v3_ccvc_q6_cells_p10",
+        "v3_ccvc_q6_cells_p50",
+        "v3_ccvc_q6_cells_p90",
+        "v3_ccvc_q6_value_p10",
+        "v3_ccvc_q6_value_p50",
+        "v3_ccvc_q6_value_p90",
+        "v3_ccvc_q6_formal_decision_value_p10",
+        "v3_ccvc_q6_formal_decision_value_p50",
+        "v3_ccvc_q6_formal_decision_value_p90",
+        "v3_ccvc_q6_tail_replacement_decision_value_p10",
+        "v3_ccvc_q6_tail_replacement_decision_value_p50",
+        "v3_ccvc_q6_tail_replacement_decision_value_p90",
+        "v3_ccvc_diagnostics",
         "v3_resid_available",
         "v3_resid_ready",
         "v3_resid_strict_ready",
@@ -1815,6 +1944,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--posterior-seed", type=int, default=0)
     parser.add_argument(
+        "--ccv-component-likelihood",
+        action="store_true",
+        help="Emit optional v3_ccvc_ component-likelihood CCV shadow fields.",
+    )
+    parser.add_argument(
         "--calibration",
         type=Path,
         default=_default_calibration_path(),
@@ -1875,6 +2009,9 @@ def main(argv: list[str] | None = None) -> int:
         tail_value_review_entries=tail_value_review_entries,
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,
+        ccv_options=V3CcvOptions(
+            component_likelihood=args.ccv_component_likelihood,
+        ),
     )
     summary = summarize_rows(rows, errors)
     if args.format == "json":
