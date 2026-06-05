@@ -1019,3 +1019,37 @@ alternative map hurt=2502
 
 - `V3CcvOptions` 不改变 formal decision、不改变 live bid、不改变 UI 主建议。
 - readiness 仍以默认 `v3_ccv_*` 与 layer holdout 为准；sensitivity 结果只作为设计证据。
+
+## D-v3-043：CCV promotion 必须通过 p50 directionality gate
+
+2026-06-05 起，CCV 不仅要通过 session holdout 和 map-layer applied hurt 检查，还必须通过 p50 movement directionality 检查。`summarize_v3_ccv_direction_audit.py` 与 readiness 的 `ccv_directionality` gate 是正式 promotion 前的必要审计。
+
+当前决策：
+
+- 如果 CCV 在 map 层或 evidence profile 层出现 `blocked_directional_hurt`，`ccv_directionality` 保持 blocked。
+- 方向性 hurt 包括：
+  - baseline 已低估，CCV 继续下移。
+  - baseline 已高估，CCV 继续上移。
+  - CCV changed rows 中 hurt 比例过高。
+- 不允许只用 `public_total_rate`、`layout` 或 `q6_floor_rate` 放行 CCV。
+- `public:total+item+shape+layout` 当前必须视为风险 profile，不是安全 profile。
+
+当前 128-trial 结果：
+
+```text
+map_id direction status_counts=blocked_directional_hurt:20,blocked_low_movement:13,watch_directional_candidate:9
+2503 q6_count hurt_rate=0.733333 directional_error=0.466667 mae_delta=+0.127
+2503 q6_cells hurt_rate=0.55 directional_error=0.25 mae_delta=+0.438
+2502 q6_count watch hurt_rate=0.230769 mae_delta=-0.095
+2502 q6_cells watch hurt_rate=0.36 mae_delta=-0.708
+
+evidence_profile public:total+item+shape+layout:
+q6_count hurt_rate=1.0 directional_error=0.75 mae_delta=+0.152
+q6_cells hurt_rate=0.75 directional_error=0.333333 mae_delta=+0.505
+```
+
+原因：
+
+- CCV 的失败不是单纯“是否上调/下调太多”，而是很多窗口的移动方向本身与真实误差相反。
+- 这会解释“总体/局部 MAE 有时看起来可接受，但实战仍低估或乱跳”的现象。
+- 后续新的 CCV likelihood 必须用 directionality gate 做第一层回归，防止重新引入旧问题。

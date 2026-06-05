@@ -1488,3 +1488,45 @@ count_cell_tail_guard=off map_id applied_hurts=2502 candidate_rows=44 cells_delt
 
 - 不再把 `count_cell_tail_guard` 作为调参修复方向。
 - 设计新的 CCV likelihood 时，需要让证据决定 q6 cells/count 分布移动，并在 map/profile layer 同时过 holdout。
+
+## O-v3-047：CCV 的主要风险是 p50 移动方向不稳定
+
+2026-06-05 新增 `summarize_v3_ccv_direction_audit.py` 后，128-trial archive 显示：
+
+```text
+map_id:
+blocked_directional_hurt=20
+blocked_low_movement=13
+watch_directional_candidate=9
+
+evidence_profile_key:
+blocked_directional_hurt=11
+blocked_low_movement=7
+blocked_low_sample=44
+watch_directional_candidate=7
+watch_neutral=1
+```
+
+关键切片：
+
+```text
+2503 q6_count changed=15 helped=4 hurt=11 hurt_rate=0.733333 directional_error=0.466667 mae_delta=+0.127
+2503 q6_cells changed=20 helped=9 hurt=11 hurt_rate=0.55 directional_error=0.25 mae_delta=+0.438
+2502 q6_count changed=13 helped=10 hurt=3 hurt_rate=0.230769 mae_delta=-0.095
+2502 q6_cells changed=25 helped=13 hurt=9 hurt_rate=0.36 mae_delta=-0.708
+```
+
+证据 profile：
+
+```text
+public:total+item+shape+layout q6_count changed=8 helped=0 hurt=8 hurt_rate=1.0 directional_error=0.75 mae_delta=+0.152
+public:total+item+shape+layout q6_cells changed=12 helped=3 hurt=9 hurt_rate=0.75 mae_delta=+0.505
+public:total+item+shape q6_count changed=10 helped=7 hurt=3 mae_delta=-0.067
+```
+
+解读：
+
+- `2502` 的 CCV 方向性确实相对正向，但不能外推到同 family 或同 shipwreck。
+- `2503` 的错误方向足以解释 map-level holdout applied hurt。
+- “公开总格 + item + shape + layout”并不自动可靠；在当前样本里它反而是明确 blocked profile。
+- 后续 CCV 重做不能只看有无公开信息，而要看公开信息与 q6 floor、非 q6 capacity、道具证据之间是否形成同向约束。

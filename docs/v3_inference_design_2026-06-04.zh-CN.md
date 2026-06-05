@@ -956,6 +956,40 @@ alternative map hurt=2502
 3. 下一版 CCV 需要重做条件 likelihood，让公开总格、q6 floor、value evidence、non-q6 residual capacity 一起决定 q6 cells/count 分布移动。
 4. `V3CcvOptions` 只能用于 shadow/audit，不进入 formal decision、正式 bid 或 UI 主建议。
 
+### 2026-06-05 CCV p50 directionality gate
+
+新增 `summarize_v3_ccv_direction_audit.py` 后，CCV promotion 不再只看 aggregate MAE 或 session holdout。每次 CCV likelihood 改动都必须检查 p50 移动方向：
+
+- baseline 已低估时，CCV 继续下移是方向性错误。
+- baseline 已高估时，CCV 继续上移是方向性错误。
+- changed rows 中 hurt 比例过高时，即使总体 MAE 变化不大，也不能 promotion。
+
+128-trial 结果：
+
+```text
+map_id blocked_directional_hurt=20 watch_directional_candidate=9
+2503 q6_count hurt_rate=0.733333 directional_error=0.466667 mae_delta=+0.127
+2503 q6_cells hurt_rate=0.55 directional_error=0.25 mae_delta=+0.438
+2502 q6_count watch mae_delta=-0.095
+2502 q6_cells watch mae_delta=-0.708
+
+public:total+item+shape+layout q6_count hurt_rate=1.0 directional_error=0.75 mae_delta=+0.152
+public:total+item+shape+layout q6_cells hurt_rate=0.75 mae_delta=+0.505
+```
+
+readiness 新增：
+
+```text
+gate=ccv_directionality status=blocked
+```
+
+设计影响：
+
+1. `2502` 是局部可观察候选，不是 shipwreck/family 级规则。
+2. `public:total+item+shape+layout` 不能作为安全放行条件，必须先过方向性 gate。
+3. 下一版 CCV likelihood 要先解释“为什么移动方向正确”，再追求 count/cells MAE 改善。
+4. directionality gate 将作为防止 v2/v3 旧问题复发的 promotion 必要条件。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

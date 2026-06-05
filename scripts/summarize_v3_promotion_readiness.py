@@ -37,6 +37,9 @@ from summarize_v3_ccv_profile_candidates import (  # noqa: E402
 from summarize_v3_ccv_holdout import (  # noqa: E402
     summarize_holdout as summarize_ccv_holdout,
 )
+from summarize_v3_ccv_direction_audit import (  # noqa: E402
+    summarize_direction as summarize_ccv_direction,
+)
 from summarize_v3_residual_profile_candidates import (  # noqa: E402
     summarize_candidates as summarize_residual_candidates,
 )
@@ -115,6 +118,14 @@ def _ccv_applied_hurt_groups(result: dict[str, Any]) -> list[str]:
     ][:5]
 
 
+def _ccv_directional_hurts(rows: Iterable[dict[str, Any]]) -> list[str]:
+    return [
+        f"{row.get('component')}:{row.get('group')}"
+        for row in rows
+        if row.get("status") == "blocked_directional_hurt"
+    ][:8]
+
+
 def summarize_readiness(
     rows: list[dict[str, Any]],
     errors: list[dict[str, str]],
@@ -170,6 +181,20 @@ def summarize_readiness(
         rows,
         group_field="map_id",
         folds=folds,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    ccv_map_direction = summarize_ccv_direction(
+        rows,
+        group_field="map_id",
+        components=("q6_count", "q6_cells"),
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    ccv_profile_direction = summarize_ccv_direction(
+        rows,
+        group_field="evidence_profile_key",
+        components=("q6_count", "q6_cells"),
         min_windows=min_windows,
         min_sessions=min_sessions,
     )
@@ -331,6 +356,19 @@ def summarize_readiness(
                 "candidate_groups"
             ),
             map_applied_ccv_hurts_groups=ccv_map_applied_hurts_groups,
+        )
+    )
+    ccv_direction_hurts = _ccv_directional_hurts(ccv_map_direction)
+    ccv_profile_direction_hurts = _ccv_directional_hurts(ccv_profile_direction)
+    gates.append(
+        _gate(
+            "ccv_directionality",
+            "blocked" if ccv_direction_hurts or ccv_profile_direction_hurts else "watch",
+            "CCV p50 movements have map/profile directional hurt"
+            if ccv_direction_hurts or ccv_profile_direction_hurts
+            else "CCV p50 movement direction is not currently blocking",
+            map_direction_hurts=ccv_direction_hurts,
+            profile_direction_hurts=ccv_profile_direction_hurts,
         )
     )
 
@@ -511,6 +549,8 @@ def summarize_readiness(
         next_actions.append("tighten CCV guard; holdout still applies hurting groups")
     if ccv_map_applied_hurts_groups:
         next_actions.append("tighten CCV map-layer guard; map holdout applies hurting groups")
+    if ccv_direction_hurts or ccv_profile_direction_hurts:
+        next_actions.append("redesign CCV likelihood; p50 movement direction is unstable")
     if ccv_counts.get("watch_only_count_cell_candidate", 0):
         next_actions.append("redesign CCV likelihood; current holdout is not promotion-ready")
 
@@ -582,6 +622,20 @@ def summarize_readiness(
                 "delta_q6_cells_p50_mae"
             ),
         },
+        "ccv_directionality": {
+            "map_direction_hurts": ccv_direction_hurts,
+            "profile_direction_hurts": ccv_profile_direction_hurts,
+            "map_status_counts": dict(
+                sorted(Counter(str(row.get("status")) for row in ccv_map_direction).items())
+            ),
+            "profile_status_counts": dict(
+                sorted(
+                    Counter(
+                        str(row.get("status")) for row in ccv_profile_direction
+                    ).items()
+                )
+            ),
+        },
         "tail_holdout": {
             "candidate_rows": tail_holdout_rows,
             "candidate_groups": tail_candidate_only.get("candidate_groups"),
@@ -645,6 +699,8 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"ccv_map_rows={result['ccv_holdout']['map_candidate_rows']}",
                 "ccv_map_applied_hurts="
                 + ",".join(result["ccv_holdout"]["map_applied_ccv_hurts_groups"]),
+                "ccv_direction_hurts="
+                + ",".join(result["ccv_directionality"]["map_direction_hurts"]),
                 f"tail_review_candidate_rows={summary['v3_tail_review_candidate_rows']}",
                 f"tail_review_hurt_guard_rows={summary['v3_tail_review_hurt_guard_rows']}",
                 f"tail_holdout_q6_delta={result['tail_holdout']['candidate_delta_q6_tail_p50_mae']}",

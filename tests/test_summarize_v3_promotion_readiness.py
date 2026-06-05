@@ -134,12 +134,15 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert gates["formal_baseline_metrics"]["status"] == "blocked"
     assert "holdout_candidate_rows" in gates["ccv_sampler"]
     assert "applied_ccv_hurts_groups" in gates["ccv_sampler"]
+    assert "ccv_directionality" in gates
+    assert "map_direction_hurts" in gates["ccv_directionality"]
     assert "holdout_candidate_rows" in gates["tail_value_review"]
     assert "tail_under_combined_holdout" in gates
     assert gates["v2_archive_readiness"]["status"] == "pending"
     assert "ccv_holdout" in result
     assert "applied_ccv_hurts_groups" in result["ccv_holdout"]
     assert "map_applied_ccv_hurts_groups" in result["ccv_holdout"]
+    assert "ccv_directionality" in result
     assert "tail_holdout" in result
     assert "tail_under_holdout" in result
 

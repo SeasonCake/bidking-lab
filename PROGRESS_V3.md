@@ -2157,3 +2157,64 @@ overall_status=not_ready blocked_gates=4
 - 关闭 count/cell tail guard 不是修复方向；它会降低预测值，但同时提高 below-rate、降低 P90 coverage，并使 q6 count/cells MAE 变差。
 - `2503` hurt 不是由 guard 单独造成的；关闭 guard 后 hurt group 转移到 `2502`，说明 CCV likelihood/candidate layer 本身不稳。
 - 下一步应重做 CCV 条件 likelihood 或新增更严格的 map/profile layer gate，而不是把 guard 作为可调开关升级。
+
+## 2026-06-05 checkpoint：v3 CCV p50 directionality audit
+
+实现：
+
+- 新增 `scripts/summarize_v3_ccv_direction_audit.py`。
+  - 按 `map_id` / `evidence_profile_key` / 任意 group field 审计 CCV p50 移动方向。
+  - 对 `q6_count`、`q6_cells`、`q6_value`、`q6_formal` 统计：
+    - changed/helped/hurt rows。
+    - baseline under/over 后 CCV 上移/下移是否方向错误。
+    - `hurt_rate_changed`、`directional_error_rate_changed`、`mae_delta`。
+- 新增 `tests/test_summarize_v3_ccv_direction_audit.py`。
+- `summarize_v3_promotion_readiness.py` 新增 `ccv_directionality` gate：
+  - map 层或 evidence profile 层存在方向性 hurt 时保持 blocked。
+  - readiness summary 输出 `ccv_direction_hurts`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_ccv_direction_audit.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_ccv_guard_sensitivity.py tests\test_summarize_v3_ccv_layer_audit.py tests\test_summarize_v3_ccv_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_audit.py --posterior-trials 128 --group-field map_id --component q6_count --component q6_cells --top 40
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_audit.py --posterior-trials 128 --group-field evidence_profile_key --component q6_count --component q6_cells --top 40
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_promotion_readiness.py --posterior-trials 128
+```
+
+结果：
+
+- 聚焦测试：`11 passed`。
+- map-level 方向性审计：
+
+```text
+status_counts=blocked_directional_hurt:20,blocked_low_movement:13,watch_directional_candidate:9
+map_id=2503 q6_count blocked_directional_hurt changed=15 helped=4 hurt=11 hurt_rate=0.733333 directional_error=0.466667 mae_delta=+0.127
+map_id=2503 q6_cells blocked_directional_hurt changed=20 helped=9 hurt=11 hurt_rate=0.55 directional_error=0.25 mae_delta=+0.438
+map_id=2502 q6_count watch_directional_candidate changed=13 helped=10 hurt=3 hurt_rate=0.230769 mae_delta=-0.095
+map_id=2502 q6_cells watch_directional_candidate changed=25 helped=13 hurt=9 hurt_rate=0.36 mae_delta=-0.708
+```
+
+- evidence-profile 方向性审计：
+
+```text
+status_counts=blocked_directional_hurt:11,blocked_low_movement:7,blocked_low_sample:44,watch_directional_candidate:7,watch_neutral:1
+public:total+item+shape+layout q6_count blocked_directional_hurt changed=8 helped=0 hurt=8 hurt_rate=1.0 directional_error=0.75 mae_delta=+0.152
+public:total+item+shape+layout q6_cells blocked_directional_hurt changed=12 helped=3 hurt=9 hurt_rate=0.75 mae_delta=+0.505
+public:total+item+shape q6_count watch_directional_candidate changed=10 helped=7 hurt=3 mae_delta=-0.067
+```
+
+- readiness 128-trial：
+
+```text
+overall_status=not_ready blocked_gates=5
+ccv_map_applied_hurts=2503
+ccv_direction_hurts=q6_count:2404,q6_cells:2406,q6_count:2403,q6_count:2401,q6_cells:2510,q6_count:2406,q6_cells:2404,q6_count:2503
+gate=ccv_directionality status=blocked
+```
+
+结论：
+
+- 方向性审计解释了为什么不能把 `2502` 的正向结果外推：同一 CCV 机制在多个 map/profile 上会把 p50 推向错误方向。
+- `public:total+item+shape+layout` 不能被当作“公开总格 + layout 足够可靠”的放行信号；该 profile 当前方向性 hurt 非常强。
+- 下一步 CCV likelihood 必须先解决“移动方向判断”，再谈 count/cells MAE 或 formal promotion。
