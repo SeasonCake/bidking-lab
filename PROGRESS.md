@@ -9,6 +9,7 @@
 - v3 观察主记录：[`OBSERVATIONS_V3.md`](OBSERVATIONS_V3.md)
 - v3 设计文档：[`docs/v3_inference_design_2026-06-04.zh-CN.md`](docs/v3_inference_design_2026-06-04.zh-CN.md)
 - v3 结构索引：[`docs/PROJECT_STRUCTURE_V3.zh-CN.md`](docs/PROJECT_STRUCTURE_V3.zh-CN.md)
+- 最新 handoff：[`handoff_2026-06-06.zh-CN.md`](handoff_2026-06-06.zh-CN.md)
 
 ## 历史记录
 
@@ -21,9 +22,11 @@ v1/v2 以及 2026-06-04 之前的长记录已归档到：
 
 ## 当前验证基线
 
-- 最新 checkpoint commit：`4d3aa9f Checkpoint v3 inference kickoff`
-- 该 commit 前验证：`C:\Python313\python.exe -m pytest -q` 为 `882 passed`
-- v3 evidence coverage：`C:\Python313\python.exe .\scripts\summarize_v3_evidence_coverage.py --fail-on-gaps` 通过，当前可解析 archive 无 unknown/pending evidence id
+- 最新 v3 功能 checkpoint commit：`8c585e1 Add v3 prior robustness slice audit`
+- 新窗口交接入口：[`handoff_2026-06-06.zh-CN.md`](handoff_2026-06-06.zh-CN.md)
+- 当前推荐测试/分析解释器：`C:\Users\shenc\anaconda3\python.exe`
+- 最新重点验证见 `PROGRESS_V3.md` 末尾 2026-06-06 checkpoints；包括 prior/activity robustness、live/model_eval 字段对齐与 prior-stress 分片审计。
+- 普通主库当前为 441 文件、1560 ready windows；0605 252x 沉船活动 cohort 已独立到 `data/samples/fatbeans_activity_20260605_shipwreck/`。
 
 ## 维护规则
 

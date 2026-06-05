@@ -2952,3 +2952,25 @@ fallback=missing_prior_truth_only
 - prior-stressed 行不是少量噪声：它们 MAE、below-rate、P90 coverage 都明显差于弱 fallback 总体。
 - 主要压力来自 total/q6 cells 高于旧 prior，而不是 q6 count；下一步更应审计 capacity/cells/value evidence，而不是继续改 q6 count prior。
 - 252x 活动 cohort 已明确没有 posterior-ready/metric rows，不会混入普通准确率。
+
+## 2026-06-06 checkpoint：新窗口交接整理
+
+完成内容：
+
+- 新增 `handoff_2026-06-06.zh-CN.md`，作为下一窗口首读入口。
+- 根索引 `PROGRESS.md`、`DECISIONS.md`、`OBSERVATIONS.md` 已指向 0606 handoff 和当前 v3 记录。
+- `docs/PROJECT_STRUCTURE_V3.zh-CN.md` 已登记 0606 handoff。
+- handoff 中整理了：
+  - 当前 v3 主线边界；
+  - 普通样本库与 0605 沉船活动 cohort；
+  - 最新 archive/prior-stress 指标；
+  - 已确认核心问题；
+  - 下一步 prior-stressed cells/capacity/evidence 审计；
+  - formal/value sampler 第一阶段建议；
+  - 可复制的新窗口 prompt；
+  - 推荐 goal 文案。
+
+结论：
+
+- 本 checkpoint 只改变文档和交接入口，不改变 v2 formal/live/UI，也不改变 v3 shadow 推理行为。
+- 新窗口应从 `handoff_2026-06-06.zh-CN.md` 继续，不需要翻长聊天记录。

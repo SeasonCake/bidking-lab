@@ -13,6 +13,7 @@
 | `DECISIONS_V3.md` | v3 当前决策 |
 | `OBSERVATIONS.md` | 根观察索引 |
 | `OBSERVATIONS_V3.md` | v3 当前观察 |
+| `handoff_2026-06-06.zh-CN.md` | v3 新窗口交接入口、prompt 与推荐 goal |
 | `docs/v3_inference_design_2026-06-04.zh-CN.md` | v3 设计文档 |
 | `src/bidking_lab/inference/v3/` | v3 推理引擎新包 |
 | `src/bidking_lab/inference/v3/pipeline.py` | archive/live 共用 v3 shadow 推理链路 |
