@@ -2060,3 +2060,51 @@ gate=tail_under_combined_holdout status=watch
 - `aisha|2506` 是当前最稳定的组合候选，候选切片收益明显，但全局覆盖太小。
 - `data/processed/v3_underestimate_repair_shadow.json` 已同步 guarded holdout：Ethan 2506/2509 从可应用 upshift 降为 `watch_only_needs_evidence`，live/archive shadow 不再把它们显示为 under candidate。
 - 当前 v3 仍不能正式替换：formal baseline 低估、CCV、residual gate、profile sample depth 仍卡住。
+
+## 2026-06-05 checkpoint：v3 CCV layer stability audit
+
+实现：
+
+- 新增 `scripts/summarize_v3_ccv_layer_audit.py`。
+- 新增 `tests/test_summarize_v3_ccv_layer_audit.py`。
+- `summarize_v3_promotion_readiness.py` 默认接入 `map_id` 层 CCV holdout：
+  - summary 输出 `ccv_map_rows` 与 `ccv_map_applied_hurts`。
+  - `ccv_sampler` gate 输出 `map_applied_ccv_hurts_groups`。
+  - 即使默认 `hero_map_id` 没有 applied hurt，map 层出现 hurt group 也会保持 blocked。
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_ccv_layer_audit.py tests\test_summarize_v3_ccv_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py tests\test_summarize_v3_promotion_readiness.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_layer_audit.py --posterior-trials 128
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_promotion_readiness.py --posterior-trials 128
+```
+
+结果：
+
+- 聚焦测试：`8 passed`。
+- CCV layer audit 128-trial：
+
+```text
+overall_status=blocked_applied_hurt
+group_field=hero_map_id status=blocked_holdout_delta candidate_rows=2 groups=ethan|2502 count_delta=0.0 cells_delta=0.0 formal_delta=0.0 applied_hurts=
+group_field=map_id status=blocked_applied_hurt candidate_rows=64 groups=2502,2503,2504 count_delta=0.062 cells_delta=0.053 formal_delta=21205.4 applied_hurts=2503
+group_field=map_family status=sample_limited candidate_rows=0
+group_field=hero_map_evidence_profile status=sample_limited candidate_rows=0
+```
+
+- readiness 128-trial：
+
+```text
+overall_status=not_ready blocked_gates=4
+ccv_holdout_rows=2 ccv_applied_hurts=
+ccv_map_rows=64 ccv_map_applied_hurts=2503
+next_actions=... | tighten CCV map-layer guard; map holdout applies hurting groups | redesign CCV likelihood; current holdout is not promotion-ready
+```
+
+结论：
+
+- 默认 `hero_map_id` CCV holdout 会漏掉 map-level applied hurt。
+- `map_id` 层训练折会把 `2503/2504` 放入 candidate，验证折中 `2503` q6 formal 明显变差。
+- CCV 当前不是“样本不够所以可以先放”的状态，而是分层不稳定；下一步需要重做条件 likelihood 或更严格的 layer gate。

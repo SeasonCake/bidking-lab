@@ -89,6 +89,32 @@ def _blocked_count(gates: Iterable[dict[str, Any]]) -> int:
     return sum(1 for gate in gates if str(gate.get("status")) == "blocked")
 
 
+def _ccv_applied_hurt_groups(result: dict[str, Any]) -> list[str]:
+    return [
+        str(row.get("group"))
+        for row in result.get("group_results", ())
+        if int(row.get("candidate_rows") or 0) > 0
+        and (
+            (
+                row.get("delta_q6_count_p50_mae") is not None
+                and float(row["delta_q6_count_p50_mae"]) > 0.05
+            )
+            or (
+                row.get("delta_q6_cells_p50_mae") is not None
+                and float(row["delta_q6_cells_p50_mae"]) > 0.25
+            )
+            or (
+                row.get("delta_q6_value_p50_mae") is not None
+                and float(row["delta_q6_value_p50_mae"]) > 10_000.0
+            )
+            or (
+                row.get("delta_q6_formal_p50_mae") is not None
+                and float(row["delta_q6_formal_p50_mae"]) > 10_000.0
+            )
+        )
+    ][:5]
+
+
 def summarize_readiness(
     rows: list[dict[str, Any]],
     errors: list[dict[str, str]],
@@ -136,6 +162,13 @@ def summarize_readiness(
     ccv_profile_holdout = summarize_ccv_holdout(
         rows,
         group_field=profile_field,
+        folds=folds,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    ccv_map_holdout = summarize_ccv_holdout(
+        rows,
+        group_field="map_id",
         folds=folds,
         min_windows=min_windows,
         min_sessions=min_sessions,
@@ -256,6 +289,8 @@ def summarize_readiness(
     ccv_count_delta = ccv_candidate_only.get("delta_q6_count_p50_mae")
     ccv_cells_delta = ccv_candidate_only.get("delta_q6_cells_p50_mae")
     ccv_q6_formal_delta = ccv_candidate_only.get("delta_q6_formal_p50_mae")
+    ccv_applied_hurts_groups = _ccv_applied_hurt_groups(ccv_holdout)
+    ccv_map_applied_hurts_groups = _ccv_applied_hurt_groups(ccv_map_holdout)
     ccv_holdout_improves = (
         ccv_holdout_rows > 0
         and ccv_count_delta is not None
@@ -264,6 +299,8 @@ def summarize_readiness(
         and float(ccv_count_delta) <= 0.0
         and float(ccv_cells_delta) < 0.0
         and float(ccv_q6_formal_delta) <= 0.0
+        and not ccv_applied_hurts_groups
+        and not ccv_map_applied_hurts_groups
     )
     ccv_global_cells_delta = summary.get("v3_ccv_delta_q6_cells_p50_mae")
     ccv_status = (
@@ -288,6 +325,12 @@ def summarize_readiness(
             holdout_count_delta=ccv_count_delta,
             holdout_cells_delta=ccv_cells_delta,
             holdout_q6_formal_delta=ccv_q6_formal_delta,
+            applied_ccv_hurts_groups=ccv_applied_hurts_groups,
+            map_holdout_candidate_rows=ccv_map_holdout["candidate_only"].get("n"),
+            map_holdout_candidate_groups=ccv_map_holdout["candidate_only"].get(
+                "candidate_groups"
+            ),
+            map_applied_ccv_hurts_groups=ccv_map_applied_hurts_groups,
         )
     )
 
@@ -464,6 +507,10 @@ def summarize_readiness(
         next_actions.append("tighten tail guard; holdout still applies hurting groups")
     if not tail_under_improves:
         next_actions.append("keep under/tail combination in audit until holdout improves")
+    if ccv_applied_hurts_groups:
+        next_actions.append("tighten CCV guard; holdout still applies hurting groups")
+    if ccv_map_applied_hurts_groups:
+        next_actions.append("tighten CCV map-layer guard; map holdout applies hurting groups")
     if ccv_counts.get("watch_only_count_cell_candidate", 0):
         next_actions.append("redesign CCV likelihood; current holdout is not promotion-ready")
 
@@ -516,6 +563,21 @@ def summarize_readiness(
             "candidate_delta_q6_count_p50_mae": ccv_count_delta,
             "candidate_delta_q6_cells_p50_mae": ccv_cells_delta,
             "candidate_delta_q6_formal_p50_mae": ccv_q6_formal_delta,
+            "applied_ccv_hurts_groups": ccv_applied_hurts_groups,
+            "map_candidate_rows": ccv_map_holdout["candidate_only"].get("n"),
+            "map_candidate_groups": ccv_map_holdout["candidate_only"].get(
+                "candidate_groups"
+            ),
+            "map_applied_ccv_hurts_groups": ccv_map_applied_hurts_groups,
+            "map_candidate_delta_q6_count_p50_mae": ccv_map_holdout[
+                "candidate_only"
+            ].get("delta_q6_count_p50_mae"),
+            "map_candidate_delta_q6_cells_p50_mae": ccv_map_holdout[
+                "candidate_only"
+            ].get("delta_q6_cells_p50_mae"),
+            "map_candidate_delta_q6_formal_p50_mae": ccv_map_holdout[
+                "candidate_only"
+            ].get("delta_q6_formal_p50_mae"),
             "overall_delta_q6_cells_p50_mae": ccv_holdout["overall"].get(
                 "delta_q6_cells_p50_mae"
             ),
@@ -578,6 +640,11 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"under_delta={summary['v3_under_delta_formal_p50_mae']}",
                 f"ccv_cells_delta={summary['v3_ccv_delta_q6_cells_p50_mae']}",
                 f"ccv_holdout_rows={result['ccv_holdout']['candidate_rows']}",
+                "ccv_applied_hurts="
+                + ",".join(result["ccv_holdout"]["applied_ccv_hurts_groups"]),
+                f"ccv_map_rows={result['ccv_holdout']['map_candidate_rows']}",
+                "ccv_map_applied_hurts="
+                + ",".join(result["ccv_holdout"]["map_applied_ccv_hurts_groups"]),
                 f"tail_review_candidate_rows={summary['v3_tail_review_candidate_rows']}",
                 f"tail_review_hurt_guard_rows={summary['v3_tail_review_hurt_guard_rows']}",
                 f"tail_holdout_q6_delta={result['tail_holdout']['candidate_delta_q6_tail_p50_mae']}",

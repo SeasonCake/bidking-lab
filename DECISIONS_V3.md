@@ -955,3 +955,34 @@ tail_under_combined_holdout=watch
 - `aisha|2506` 可继续作为 guarded sampler 的主要设计对象。
 - `ethan|2502` tail candidate 当前 holdout delta 为 0，应保持观察，不应因 candidate 名义进入正式策略。
 - formal baseline 低估仍需从 likelihood/profile/sample-depth 继续修，不应只靠局部 upshift。
+
+## D-v3-041：CCV promotion 必须通过多层 holdout，不能只看默认 hero/map
+
+2026-06-05 起，CCV readiness 除默认 `hero_map_id` holdout 外，必须同时看 `map_id` 层 holdout。`summarize_v3_ccv_layer_audit.py` 用于并列审计 `hero_map_id`、`map_id`、`map_family`、`hero_map_evidence_profile`。
+
+当前决策：
+
+- `ccv_sampler` gate 保持 blocked，只要任一关键层级出现 applied hurt group。
+- `map_id` 层出现 q6 count/cells/value/formal 明显伤害时，即使默认 `hero_map_id` 候选为空或中性，也不能 promotion。
+- `hero_map_evidence_profile` 当前样本不足，不能作为放行层级。
+- 不允许把 `map_id=2502` 的局部正向外推到同 family 或同 shipwreck 全局。
+
+当前 128-trial 结果：
+
+```text
+hero_map_id candidate_rows=2 groups=ethan|2502 formal_delta=0.0 applied_hurts=
+map_id candidate_rows=64 groups=2502,2503,2504 formal_delta=+21205.4 applied_hurts=2503
+map_family candidate_rows=0
+hero_map_evidence_profile candidate_rows=0
+```
+
+原因：
+
+- 默认 `hero_map_id` 口径太窄，会让 CCV 看起来只是“无收益”。
+- `map_id` 口径暴露训练折会误放 `2503/2504`，其中 `2503` 在 holdout 上 q6 formal 明显变差。
+- CCV 当前问题是分层不稳定，不只是 trials 数不足。
+
+下一步：
+
+- CCV 需要重做条件 likelihood 或更强的 layer gate。
+- 继续优先把公开总格、q6 floor、value evidence 显式纳入 likelihood，而不是按当前 CCV 候选直接接 formal。

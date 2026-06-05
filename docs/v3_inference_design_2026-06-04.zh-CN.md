@@ -728,6 +728,29 @@ tail_under_applied_hurts=
 
 ### 2026-06-05 CCV sampler candidate gate
 
+新增 `summarize_v3_ccv_layer_audit.py` 后，CCV 不再只看默认 `hero_map_id` holdout。每次判断是否可进入 sampler 设计，需要并列看：
+
+- `hero_map_id`
+- `map_id`
+- `map_family`
+- `hero_map_evidence_profile`
+
+128-trial archive 结果：
+
+```text
+hero_map_id candidate_rows=2 groups=ethan|2502 formal_delta=0.0 applied_hurts=
+map_id candidate_rows=64 groups=2502,2503,2504 formal_delta=+21205.4 applied_hurts=2503
+map_family candidate_rows=0
+hero_map_evidence_profile candidate_rows=0
+```
+
+设计影响：
+
+1. `ccv_sampler` readiness gate 必须读取 `map_id` 层 applied hurt；默认 `hero_map_id` 无伤害不代表可升级。
+2. `map_id=2502` 的局部信号不能外推到 `2503/2504` 或 shipwreck family。
+3. profile 层样本不足，不能用 profile gate 放行 CCV。
+4. 下一步应重做条件 likelihood：公开总格、q6 floor、q6 value evidence 共同决定 count/cells/value 分布；当前 CCV 候选不接 formal。
+
 `estimate_count_cell_value_posterior_from_truths` 已经进入 archive/live shadow，但 128-trial 全库结果显示它不是稳定全局收益项：
 
 ```text

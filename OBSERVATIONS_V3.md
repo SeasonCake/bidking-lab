@@ -1404,3 +1404,34 @@ group=ethan|2601 under_rows=0 tail_rows=0 hurt_rows=9
 - 继续围绕 `aisha|2506` 做 bounded sampler 设计。
 - hidden 单独观察，不和 shipwreck/villa 合并升级。
 - readiness 必须继续输出 `tail_under_applied_hurts`，防止候选总体改善掩盖局部伤害。
+
+## O-v3-045：CCV 的主要问题是分层不稳定，map-level 会暴露 applied hurt
+
+2026-06-05 新增 CCV layer audit 后，128-trial archive 对比：
+
+```text
+hero_map_id:
+candidate_rows=2
+groups=ethan|2502
+count_delta=0.0 cells_delta=0.0 formal_delta=0.0
+applied_hurts=
+
+map_id:
+candidate_rows=64
+groups=2502,2503,2504
+count_delta=+0.062 cells_delta=+0.053 formal_delta=+21205.4
+applied_hurts=2503
+
+map_family:
+candidate_rows=0
+
+hero_map_evidence_profile:
+candidate_rows=0
+```
+
+解读：
+
+- 只看 `hero_map_id` 会低估 CCV 风险，因为候选太窄且几乎没有效果。
+- `map_id` 层显示 CCV 训练折会把 `2503/2504` 误放进 candidate，holdout 后 `2503` 明显 hurt。
+- `map_family` 与 profile 层没有可用 candidate，说明样本层级和泛化层级都还没准备好。
+- 当前 CCV 不能靠“先接 shadow candidate 再看”推进；需要重做 likelihood 或新增明确 layer gate。
