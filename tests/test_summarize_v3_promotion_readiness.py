@@ -132,7 +132,11 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert gates["archive_data_quality"]["status"] == "pass"
     assert gates["shared_shadow_pipeline"]["status"] == "pass"
     assert gates["formal_baseline_metrics"]["status"] == "blocked"
+    assert "holdout_candidate_rows" in gates["ccv_sampler"]
+    assert "holdout_candidate_rows" in gates["tail_value_review"]
     assert gates["v2_archive_readiness"]["status"] == "pending"
+    assert "ccv_holdout" in result
+    assert "tail_holdout" in result
 
 
 def test_readiness_blocks_archive_data_quality_on_parse_errors() -> None:

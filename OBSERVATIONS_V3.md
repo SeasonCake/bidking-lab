@@ -1273,3 +1273,48 @@ groups=aisha|2504,aisha|2508,ethan|2502
 - 放宽 session 门槛会让 candidate_only 变差，说明样本不足不是唯一问题，候选泛化本身不稳。
 - profile 粒度仍然完全不足，不支持 profile-level CCV promotion。
 - CCV 不应作为 v3 近期 formal 化方向；下一步应研究证据条件 likelihood，让公开总格、q6 floor、value evidence 决定 q6 分布，而不是直接启用当前 CCV 后验。
+
+## O-v3-042：tail/value holdout 支持 Aisha 2506 review，但暴露 Ethan 2601 hurt guard
+
+2026-06-05 使用 `summarize_v3_tail_value_holdout.py` 对 128-trial archive 审计。
+
+hero/map holdout：
+
+```text
+rows=1534 sessions=433 candidate_rows=122 candidate_sessions=36
+tail_delta=-57.1 q6_tail_delta=-329.6
+candidate_only tail_delta=-718.0 q6_tail_delta=-4144.4
+groups=aisha|2401,aisha|2506,aisha|2601,ethan|2502,ethan|2601
+```
+
+重点 group：
+
+```text
+aisha|2506 rows=43 sessions=13 tail_delta=-7935.2 q6_tail_delta=-5562.9
+aisha|2601 rows=38 sessions=11 tail_delta=-7367.3 q6_tail_delta=-32770.1
+ethan|2601 rows=40 sessions=11 tail_delta=+13339.4 q6_tail_delta=+24471.3
+```
+
+profile holdout：
+
+```text
+candidate_rows=0 candidate_sessions=0
+status_counts=blocked_low_sample:1524,blocked_no_tail_signal:15,watch_only_needs_evidence:6
+```
+
+readiness 接入后：
+
+```text
+overall_status=not_ready blocked_gates=4
+ccv_sampler=blocked
+tail_value_review=watch
+tail_holdout_q6_delta=-4144.4
+next_actions=continue 2506 bounded upshift/tail-value shadow validation | collect targeted profile samples before profile-level promotion | keep tail-hurts guard before any tail/value sampler | redesign CCV likelihood; current holdout is not promotion-ready
+```
+
+解读：
+
+- tail/q6-tail review 是当前比 CCV 更有实战解释力的低估诊断线。
+- `aisha|2506` 的正向 holdout 支持继续做 review/sampler 设计，但不能直接接 formal。
+- `ethan|2601` 必须作为 hurt guard；否则 tail/value 会把一部分 hidden/long-tail 场景带偏。
+- profile 样本仍不够，当前只能做 hero/map 级观察和 targeted sampling 建议。

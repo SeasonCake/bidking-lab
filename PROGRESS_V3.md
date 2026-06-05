@@ -1856,3 +1856,73 @@ groups=aisha|2504,aisha|2508,ethan|2502
 - 放宽 session 阈值会引入 `aisha|2504/aisha|2508`，candidate_only 指标反而恶化。
 - CCV 继续保持 shadow/audit，不进入 formal sampler。
 - 下一步的 count/cell/value sampler 不能继续靠固定 threshold 升级，必须改成证据条件 likelihood 的可验证候选，并先过 holdout。
+
+## 2026-06-05 checkpoint：v3 tail/value session holdout 与 readiness 接入
+
+实现：
+
+- 新增 `scripts/summarize_v3_tail_value_holdout.py`。
+- 新增 `tests/test_summarize_v3_tail_value_holdout.py`。
+- `scripts/summarize_v3_promotion_readiness.py` 接入：
+  - `summarize_v3_ccv_holdout.summarize_holdout`
+  - `summarize_v3_tail_value_holdout.summarize_holdout`
+- readiness 的 `ccv_sampler` gate 现在同时看全局 delta 和 session holdout。
+- readiness 的 `tail_value_review` gate 现在同时看候选切片、session holdout 和 hurt groups。
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_tail_value_holdout.py tests\test_summarize_v3_tail_value_candidates.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_tail_value_holdout.py --posterior-trials 128 --folds 5 --by hero_map_id --top 12
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_tail_value_holdout.py --posterior-trials 128 --folds 5 --by hero_map_evidence_profile --top 12
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_ccv_holdout.py tests\test_summarize_v3_tail_value_holdout.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_promotion_readiness.py --posterior-trials 128
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_pipeline.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_inference_v3_underestimate_repair.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_summarize_v3_residual_profile_candidates.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_summarize_v3_underestimate_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py tests\test_summarize_v3_ccv_holdout.py tests\test_summarize_v3_tail_value_candidates.py tests\test_summarize_v3_tail_value_holdout.py tests\test_summarize_v3_promotion_readiness.py tests\test_live_monitor.py -q
+```
+
+结果：
+
+- focused tail tests：`5 passed`。
+- readiness/holdout tests：`6 passed`。
+- v3 core/live path：`92 passed`。
+- tail/value hero/map holdout：
+
+```text
+candidate_rows=122 candidate_sessions=36
+tail_delta=-57.1 q6_tail_delta=-329.6
+candidate_only tail_delta=-718.0 q6_tail_delta=-4144.4
+groups=aisha|2401,aisha|2506,aisha|2601,ethan|2502,ethan|2601
+```
+
+- tail/value profile holdout：
+
+```text
+candidate_rows=0 candidate_sessions=0
+status_counts=blocked_low_sample:1524,blocked_no_tail_signal:15,watch_only_needs_evidence:6
+```
+
+- 重点 hero/map group：
+
+```text
+aisha|2506 tail_delta=-7935.2 q6_tail_delta=-5562.9
+aisha|2601 tail_delta=-7367.3 q6_tail_delta=-32770.1
+ethan|2601 tail_delta=+13339.4 q6_tail_delta=+24471.3
+```
+
+- readiness 128-trial：
+
+```text
+overall_status=not_ready blocked_gates=4
+ccv_holdout_rows=2
+tail_holdout_q6_delta=-4144.4
+tail_value_review=watch
+ccv_sampler=blocked
+```
+
+结论：
+
+- tail/q6-tail review 的 session holdout 方向比 CCV 更有用，特别是 `aisha|2506` 和 `aisha|2601`。
+- `ethan|2601` 是明确 hurt group，tail/value sampler 不能全局启用。
+- profile 粒度仍无可用 holdout 候选，不能按 profile promotion。
+- tail replacement 继续是 audit/helper，不进入 formal decision 或正式出价。

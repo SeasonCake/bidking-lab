@@ -32,11 +32,17 @@ from evaluate_fatbeans_v3_samples import (  # noqa: E402
 from summarize_v3_ccv_profile_candidates import (  # noqa: E402
     summarize_candidates as summarize_ccv_candidates,
 )
+from summarize_v3_ccv_holdout import (  # noqa: E402
+    summarize_holdout as summarize_ccv_holdout,
+)
 from summarize_v3_residual_profile_candidates import (  # noqa: E402
     summarize_candidates as summarize_residual_candidates,
 )
 from summarize_v3_tail_value_candidates import (  # noqa: E402
     summarize_candidates as summarize_tail_candidates,
+)
+from summarize_v3_tail_value_holdout import (  # noqa: E402
+    summarize_holdout as summarize_tail_holdout,
 )
 from summarize_v3_underestimate_holdout import (  # noqa: E402
     summarize_holdout as summarize_under_holdout,
@@ -115,6 +121,20 @@ def summarize_readiness(
         min_windows=min_windows,
         min_sessions=min_sessions,
     )
+    ccv_holdout = summarize_ccv_holdout(
+        rows,
+        group_field=group_field,
+        folds=folds,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    ccv_profile_holdout = summarize_ccv_holdout(
+        rows,
+        group_field=profile_field,
+        folds=folds,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
     residual = summarize_residual_candidates(
         rows,
         group_field=group_field,
@@ -124,6 +144,20 @@ def summarize_readiness(
     tail = summarize_tail_candidates(
         rows,
         group_field=group_field,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    tail_holdout = summarize_tail_holdout(
+        rows,
+        group_field=group_field,
+        folds=folds,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    tail_profile_holdout = summarize_tail_holdout(
+        rows,
+        group_field=profile_field,
+        folds=folds,
         min_windows=min_windows,
         min_sessions=min_sessions,
     )
@@ -205,24 +239,43 @@ def summarize_readiness(
     )
 
     ccv_counts = _status_counts(ccv)
+    ccv_candidate_only = ccv_holdout["candidate_only"]
+    ccv_holdout_rows = int(ccv_candidate_only.get("n") or 0)
+    ccv_count_delta = ccv_candidate_only.get("delta_q6_count_p50_mae")
+    ccv_cells_delta = ccv_candidate_only.get("delta_q6_cells_p50_mae")
+    ccv_q6_formal_delta = ccv_candidate_only.get("delta_q6_formal_p50_mae")
+    ccv_holdout_improves = (
+        ccv_holdout_rows > 0
+        and ccv_count_delta is not None
+        and ccv_cells_delta is not None
+        and ccv_q6_formal_delta is not None
+        and float(ccv_count_delta) <= 0.0
+        and float(ccv_cells_delta) < 0.0
+        and float(ccv_q6_formal_delta) <= 0.0
+    )
+    ccv_global_cells_delta = summary.get("v3_ccv_delta_q6_cells_p50_mae")
     ccv_status = (
         "watch"
-        if ccv_counts.get("watch_only_count_cell_candidate", 0)
+        if ccv_holdout_improves
+        and (ccv_global_cells_delta is None or float(ccv_global_cells_delta) <= 0.0)
         else "blocked"
     )
-    if (summary.get("v3_ccv_delta_q6_cells_p50_mae") or 0.0) > 0:
-        ccv_status = "blocked"
     gates.append(
         _gate(
             "ccv_sampler",
             ccv_status,
-            "CCV has local candidates but global/profile gates are not promotion-ready"
+            "CCV holdout is locally positive but remains shadow-only"
             if ccv_status == "watch"
-            else "CCV is not globally stable enough for promotion",
+            else "CCV candidate signal does not pass session holdout/global gates",
             status_counts=ccv_counts,
             watch_groups=_top_groups(ccv, "watch_only_count_cell_candidate"),
             global_count_delta=summary.get("v3_ccv_delta_q6_count_p50_mae"),
-            global_cells_delta=summary.get("v3_ccv_delta_q6_cells_p50_mae"),
+            global_cells_delta=ccv_global_cells_delta,
+            holdout_candidate_rows=ccv_holdout_rows,
+            holdout_candidate_groups=ccv_candidate_only.get("candidate_groups"),
+            holdout_count_delta=ccv_count_delta,
+            holdout_cells_delta=ccv_cells_delta,
+            holdout_q6_formal_delta=ccv_q6_formal_delta,
         )
     )
 
@@ -231,17 +284,45 @@ def summarize_readiness(
         tail_counts.get("watch_only_q6_tail_value_candidate", 0)
         + tail_counts.get("watch_only_tail_value_candidate", 0)
     )
+    tail_candidate_only = tail_holdout["candidate_only"]
+    tail_holdout_rows = int(tail_candidate_only.get("n") or 0)
+    tail_delta = tail_candidate_only.get("delta_tail_p50_mae")
+    q6_tail_delta = tail_candidate_only.get("delta_q6_tail_p50_mae")
+    tail_holdout_improves = (
+        tail_holdout_rows > 0
+        and (
+            (tail_delta is not None and float(tail_delta) < 0.0)
+            or (q6_tail_delta is not None and float(q6_tail_delta) < 0.0)
+        )
+    )
+    tail_holdout_hurts = [
+        str(row.get("group"))
+        for row in tail_holdout.get("group_results", ())
+        if (
+            row.get("delta_tail_p50_mae") is not None
+            and float(row["delta_tail_p50_mae"]) > 10_000.0
+        )
+        or (
+            row.get("delta_q6_tail_p50_mae") is not None
+            and float(row["delta_q6_tail_p50_mae"]) > 10_000.0
+        )
+    ][:5]
     gates.append(
         _gate(
             "tail_value_review",
-            "watch" if tail_watch else "blocked",
-            "tail/value review candidates exist but do not affect formal bids"
-            if tail_watch
-            else "no stable tail/value review candidates",
+            "watch" if tail_watch and tail_holdout_improves else "blocked",
+            "tail/value review has holdout signal but remains non-formal"
+            if tail_watch and tail_holdout_improves
+            else "tail/value review lacks stable holdout support",
             status_counts=tail_counts,
             q6_tail_groups=_top_groups(tail, "watch_only_q6_tail_value_candidate"),
             tail_groups=_top_groups(tail, "watch_only_tail_value_candidate"),
             tail_hurts_groups=_top_groups(tail, "blocked_tail_estimate_hurts"),
+            holdout_candidate_rows=tail_holdout_rows,
+            holdout_candidate_groups=tail_candidate_only.get("candidate_groups"),
+            holdout_tail_delta=tail_delta,
+            holdout_q6_tail_delta=q6_tail_delta,
+            holdout_hurts_groups=tail_holdout_hurts,
         )
     )
 
@@ -258,6 +339,8 @@ def summarize_readiness(
 
     profile_blocked = (
         under_profile["overall"].get("candidate_rows") == 0
+        and ccv_profile_holdout["overall"].get("candidate_rows") == 0
+        and tail_profile_holdout["overall"].get("candidate_rows") == 0
         and _status_counts(ccv_profile).get("blocked_low_sample", 0) > 0
         and _status_counts(tail_profile).get("blocked_low_sample", 0) > 0
     )
@@ -269,6 +352,12 @@ def summarize_readiness(
             if profile_blocked
             else "some profile-level candidates need review",
             under_profile_candidate_rows=under_profile["overall"].get(
+                "candidate_rows"
+            ),
+            ccv_profile_holdout_candidate_rows=ccv_profile_holdout["overall"].get(
+                "candidate_rows"
+            ),
+            tail_profile_holdout_candidate_rows=tail_profile_holdout["overall"].get(
                 "candidate_rows"
             ),
             ccv_profile_status_counts=_status_counts(ccv_profile),
@@ -292,7 +381,7 @@ def summarize_readiness(
     if tail_counts.get("blocked_tail_estimate_hurts", 0):
         next_actions.append("keep tail-hurts guard before any tail/value sampler")
     if ccv_counts.get("watch_only_count_cell_candidate", 0):
-        next_actions.append("holdout-test CCV on evidence-sufficient groups before sampler promotion")
+        next_actions.append("redesign CCV likelihood; current holdout is not promotion-ready")
 
     blocked = _blocked_count(gates)
     return {
@@ -334,6 +423,29 @@ def summarize_readiness(
                 "delta_formal_p50_mae"
             ),
         },
+        "ccv_holdout": {
+            "candidate_rows": ccv_holdout_rows,
+            "candidate_groups": ccv_candidate_only.get("candidate_groups"),
+            "candidate_delta_q6_count_p50_mae": ccv_count_delta,
+            "candidate_delta_q6_cells_p50_mae": ccv_cells_delta,
+            "candidate_delta_q6_formal_p50_mae": ccv_q6_formal_delta,
+            "overall_delta_q6_cells_p50_mae": ccv_holdout["overall"].get(
+                "delta_q6_cells_p50_mae"
+            ),
+        },
+        "tail_holdout": {
+            "candidate_rows": tail_holdout_rows,
+            "candidate_groups": tail_candidate_only.get("candidate_groups"),
+            "candidate_delta_tail_p50_mae": tail_delta,
+            "candidate_delta_q6_tail_p50_mae": q6_tail_delta,
+            "overall_delta_tail_p50_mae": tail_holdout["overall"].get(
+                "delta_tail_p50_mae"
+            ),
+            "overall_delta_q6_tail_p50_mae": tail_holdout["overall"].get(
+                "delta_q6_tail_p50_mae"
+            ),
+            "holdout_hurts_groups": tail_holdout_hurts,
+        },
         "ccv_status_counts": ccv_counts,
         "tail_status_counts": tail_counts,
         "residual_status_counts": residual_counts,
@@ -355,6 +467,8 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"formal_p90_cover={summary['formal_p90_coverage']}",
                 f"under_delta={summary['v3_under_delta_formal_p50_mae']}",
                 f"ccv_cells_delta={summary['v3_ccv_delta_q6_cells_p50_mae']}",
+                f"ccv_holdout_rows={result['ccv_holdout']['candidate_rows']}",
+                f"tail_holdout_q6_delta={result['tail_holdout']['candidate_delta_q6_tail_p50_mae']}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
             )
         )

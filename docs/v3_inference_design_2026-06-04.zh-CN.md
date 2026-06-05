@@ -789,6 +789,27 @@ ethan|2508: tail_delta=32201.7 q6_tail_delta=28270.1
 3. `ethan|2508` 作为 tail-hurts guard，防止全局 tail 上修。
 4. profile 粒度当前仍不足，tail/value sampler 若实现，必须先作为新的 pipeline shadow namespace 和 holdout candidate。
 
+### 2026-06-05 tail/value session holdout gate
+
+新增 `summarize_v3_tail_value_holdout.py` 后，tail/value review 也必须过 session 留出验证。readiness 的 `tail_value_review` gate 已接入该结果。
+
+当前 128-trial 结果：
+
+```text
+hero_map_id candidate_only tail_delta=-718.0 q6_tail_delta=-4144.4
+aisha|2506 tail_delta=-7935.2 q6_tail_delta=-5562.9
+aisha|2601 tail_delta=-7367.3 q6_tail_delta=-32770.1
+ethan|2601 tail_delta=+13339.4 q6_tail_delta=+24471.3
+hero_map_evidence_profile candidate_rows=0
+```
+
+设计影响：
+
+1. tail/q6-tail 是有效 review signal，尤其对 `aisha|2506`。
+2. `ethan|2601` 说明 tail/value sampler 必须有 hurt guard，不能全局启用。
+3. profile 粒度仍不能 promotion；后续需要 targeted samples 或更稳健的分层 shrinkage。
+4. tail replacement 继续是 audit/helper，不改变 formal MAE、formal decision 或正式出价。
+
 ### 2026-06-05 formal promotion readiness
 
 新增 `summarize_v3_promotion_readiness.py`，作为 v3 formal promotion 和 v2 archive 的总审计入口。它汇总：
@@ -797,8 +818,8 @@ ethan|2508: tail_delta=32201.7 q6_tail_delta=28270.1
 - shared shadow pipeline readiness。
 - formal baseline metrics。
 - underestimate repair holdout。
-- CCV sampler gate。
-- tail/value review gate。
+- CCV sampler gate 与 CCV session holdout。
+- tail/value review gate 与 tail/value session holdout。
 - residual gate。
 - profile sample depth。
 - v2 archive readiness。
@@ -813,6 +834,9 @@ ccv_sampler=blocked
 residual_gate=blocked
 profile_sample_depth=blocked
 v2_archive_readiness=pending
+tail_value_review=watch
+ccv_holdout_rows=2
+tail_holdout_q6_delta=-4144.4
 ```
 
 设计影响：

@@ -829,3 +829,43 @@ hero_map_id min_sessions=6 candidate_only cells_delta=+0.4 q6_formal_delta=+9288
 - 保留 CCV 作为诊断字段。
 - 后续若实现条件 likelihood / count-cell-value sampler，必须先作为新 shadow namespace 或明确候选字段接入 pipeline，再跑 profile candidate 与 session holdout。
 - `2506` 低估主线继续走 bounded upshift 与 tail/q6-tail review，不能用 q6 count/cells 下移修复。
+
+## D-v3-038：tail/value review 需要 holdout 与 hurt guard 双门槛
+
+2026-06-05 起，`summarize_v3_tail_value_holdout.py` 是 tail/value review 从候选进入任何 sampler 设计前的必要审计。readiness 的 `tail_value_review` gate 已接入该 holdout。
+
+当前决策：
+
+- tail replacement 仍只作为 audit/helper 字段，不进入 formal decision 或正式 bid。
+- tail/value candidate 不能只看全量切片，必须看 session holdout。
+- 即使 holdout aggregate 正向，也必须保留 hurt group guard。
+- profile 粒度无 holdout candidate 时，不允许 profile-level promotion。
+
+当前结果：
+
+```text
+hero_map_id candidate_only tail_delta=-718.0 q6_tail_delta=-4144.4
+aisha|2506 tail_delta=-7935.2 q6_tail_delta=-5562.9
+aisha|2601 tail_delta=-7367.3 q6_tail_delta=-32770.1
+ethan|2601 tail_delta=+13339.4 q6_tail_delta=+24471.3
+hero_map_evidence_profile candidate_rows=0
+```
+
+原因：
+
+- `2506` 低估里确实有 q6-tail audit gap，tail review 对 Aisha 方向更稳定。
+- `ethan|2601` 显示同一 tail mechanism 会严重伤害，不能全局启用。
+- profile 粒度仍受样本量限制，无法把 hurt guard 下沉到更细 profile。
+
+硬边界：
+
+- 不覆盖 `v3_post_formal_decision_value_*`。
+- 不覆盖 `v3_under_*` 或 `v3_cal_*`。
+- 不进入 UI 主建议或正式出价。
+- 不用 tail replacement truth 评估 formal MAE。
+
+下一步：
+
+- `2506` 低估主线继续并行看 bounded upshift 和 tail/q6-tail review。
+- 若设计 tail/value sampler，先创建独立 shadow namespace，并内置 `ethan|2601` 这类 hurt guard。
+- 补样应优先补 `2506` 与 `2601` 的 hero/map/profile 分层，而不是盲目增加 trials。
