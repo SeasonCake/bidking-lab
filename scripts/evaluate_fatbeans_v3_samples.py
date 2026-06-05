@@ -33,6 +33,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     decision_truth_from_fatbeans,
     empty_decision_truth_flat_dict,
     empty_feasible_summary_flat_dict,
+    empty_formal_value_sampler_flat_dict,
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
     empty_prior_flat_dict,
@@ -407,6 +408,7 @@ def _round_rows_for_events(
     empty_robust_fields = empty_prior_robustness_flat_dict()
     empty_underestimate_fields = empty_underestimate_repair_flat_dict()
     empty_tail_review_fields = empty_tail_value_review_flat_dict()
+    empty_formal_value_fields = empty_formal_value_sampler_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
     for window_round, bid_send in enumerate(bid_sends, start=1):
@@ -443,6 +445,11 @@ def _round_rows_for_events(
                 prior_fields=prior_fields,
                 posterior_fields=empty_posterior_fields,
             ).to_flat_dict()
+            capacity_fields = _capacity_flat_dict(
+                prior_fields=prior_fields,
+                truth_fields=truth_fields,
+                summary_fields=empty_summary_fields,
+            )
             rows.append(
                 {
                     "file": f"{path.name}#prebid_r{window_round}_sort{bid_sort_id}",
@@ -465,6 +472,7 @@ def _round_rows_for_events(
                     "conflicts": 0,
                     "constraint_ok": False,
                     **prior_fields,
+                    **capacity_fields,
                     **truth_fields,
                     **empty_decision_truth_fields,
                     **empty_summary_fields,
@@ -477,6 +485,7 @@ def _round_rows_for_events(
                     **robust_fields,
                     **empty_underestimate_fields,
                     **empty_tail_review_fields,
+                    **empty_formal_value_fields,
                 }
             )
             previous_bid_sort_id = bid_sort_id
@@ -484,6 +493,7 @@ def _round_rows_for_events(
         evidence_events = events_from_fatbeans(prefix)
         constraints = compile_hard_constraints(evidence_events)
         feasible_summary = compile_feasible_summary(constraints)
+        feasible_summary_fields = feasible_summary.to_flat_dict()
         diagnostic_fields = _diagnostic_slice_fields(
             prefix=prefix,
             map_id=map_id,
@@ -548,6 +558,7 @@ def _round_rows_for_events(
                 tail_review_entry=tail_review_entry,
                 hero=str(diagnostic_fields.get("hero") or "unknown"),
                 ccv_options=ccv_options,
+                prior_fields=prior_fields,
             )
             if map_id is not None and tables is not None and posterior_trials > 0
             else None
@@ -604,6 +615,16 @@ def _round_rows_for_events(
             if pipeline is not None
             else empty_tail_review_fields
         )
+        formal_value_fields = (
+            pipeline.formal_value.to_flat_dict()
+            if pipeline is not None
+            else empty_formal_value_fields
+        )
+        capacity_fields = _capacity_flat_dict(
+            prior_fields=prior_fields,
+            truth_fields=truth_fields,
+            summary_fields=feasible_summary_fields,
+        )
         rows.append(
             {
                 "file": f"{path.name}#prebid_r{window_round}_sort{bid_sort_id}",
@@ -626,9 +647,10 @@ def _round_rows_for_events(
                 "conflicts": len(constraints.conflicts),
                 "constraint_ok": constraints.feasible,
                 **prior_fields,
+                **capacity_fields,
                 **truth_fields,
                 **decision_truth_fields,
-                **feasible_summary.to_flat_dict(),
+                **feasible_summary_fields,
                 **posterior_fields,
                 **ccv_fields,
                 **ccvc_fields,
@@ -638,6 +660,7 @@ def _round_rows_for_events(
                 **robust_fields,
                 **underestimate_fields,
                 **tail_review_fields,
+                **formal_value_fields,
             }
         )
         previous_bid_sort_id = bid_sort_id
@@ -686,6 +709,128 @@ def _float_or_none(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError, OverflowError):
         return None
+
+
+def _count_source_and_target(
+    *,
+    exact: Any,
+    floor: Any,
+) -> tuple[str, float | None]:
+    exact_value = _float_or_none(exact)
+    floor_value = _float_or_none(floor)
+    if exact_value is not None and exact_value > 0.0:
+        if floor_value is not None and floor_value > exact_value:
+            return ("floor_over_exact", floor_value)
+        return ("exact", exact_value)
+    if floor_value is not None and floor_value > 0.0:
+        return ("floor", floor_value)
+    return ("none", None)
+
+
+def _numeric_delta(left: Any, right: Any) -> float | None:
+    left_value = _float_or_none(left)
+    right_value = _float_or_none(right)
+    if left_value is None or right_value is None:
+        return None
+    return left_value - right_value
+
+
+def _numeric_ratio(left: Any, right: Any) -> float | None:
+    left_value = _float_or_none(left)
+    right_value = _float_or_none(right)
+    if left_value is None or right_value is None or right_value <= 0.0:
+        return None
+    return left_value / right_value
+
+
+def _capacity_cases(
+    *,
+    total_count_source: str,
+    target_prior_max_delta: float | None,
+    truth_prior_max_delta: float | None,
+    target_truth_delta: float | None,
+) -> list[str]:
+    target_above_prior = (
+        target_prior_max_delta is not None and target_prior_max_delta > 0.0
+    )
+    truth_above_prior = (
+        truth_prior_max_delta is not None and truth_prior_max_delta > 0.0
+    )
+    target_below_truth = target_truth_delta is not None and target_truth_delta < 0.0
+    target_matches_truth = target_truth_delta is not None and target_truth_delta == 0.0
+    target_above_truth = target_truth_delta is not None and target_truth_delta > 0.0
+    cases: list[str] = []
+    if target_above_prior and truth_above_prior and target_matches_truth:
+        cases.append("direct_prior_max_conflict")
+    if truth_above_prior and target_below_truth:
+        cases.append("target_lower_bound_truth_above_prior")
+    if target_above_prior and target_below_truth:
+        cases.append("target_above_prior_but_below_truth")
+    if target_above_prior and target_above_truth:
+        cases.append("target_over_truth_capacity_risk")
+    if truth_above_prior and total_count_source == "none":
+        cases.append("truth_above_prior_without_count_target")
+    if target_above_prior and not truth_above_prior:
+        cases.append("target_above_prior_without_truth_support")
+    if truth_above_prior and not target_above_prior and not target_below_truth:
+        cases.append("truth_above_prior_without_target_prior_hit")
+    if not cases:
+        cases.append("no_capacity_prior_max_case")
+    return cases
+
+
+def _capacity_flat_dict(
+    *,
+    prior_fields: Mapping[str, Any],
+    truth_fields: Mapping[str, Any],
+    summary_fields: Mapping[str, Any],
+) -> dict[str, Any]:
+    source, target = _count_source_and_target(
+        exact=summary_fields.get("v3_summary_session_total_count_exact"),
+        floor=summary_fields.get("v3_summary_known_count_floor"),
+    )
+    truth_count = _float_or_none(truth_fields.get("v3_truth_item_count"))
+    prior_min = _float_or_none(prior_fields.get("v3_prior_items_per_session_min"))
+    prior_max = _float_or_none(prior_fields.get("v3_prior_items_per_session_max"))
+    target_prior_delta = _numeric_delta(target, prior_max)
+    truth_prior_delta = _numeric_delta(truth_count, prior_max)
+    target_truth_delta = _numeric_delta(target, truth_count)
+    flags: list[str] = []
+    if prior_max is not None and target is not None and target > prior_max:
+        flags.append("target_count_above_prior_max")
+    if prior_max is not None and truth_count is not None and truth_count > prior_max:
+        flags.append("truth_count_above_prior_max")
+    if prior_min is not None and truth_count is not None and truth_count < prior_min:
+        flags.append("truth_count_below_prior_min")
+    cases = _capacity_cases(
+        total_count_source=source,
+        target_prior_max_delta=target_prior_delta,
+        truth_prior_max_delta=truth_prior_delta,
+        target_truth_delta=target_truth_delta,
+    )
+    return {
+        "v3_capacity_total_count_source": source,
+        "v3_capacity_total_count_target": _round_metric(target, 3),
+        "v3_capacity_truth_item_count": _round_metric(truth_count, 3),
+        "v3_capacity_prior_items_per_session_min": _round_metric(prior_min, 3),
+        "v3_capacity_prior_items_per_session_max": _round_metric(prior_max, 3),
+        "v3_capacity_target_prior_max_delta": _round_metric(
+            target_prior_delta,
+            3,
+        ),
+        "v3_capacity_truth_prior_max_delta": _round_metric(truth_prior_delta, 3),
+        "v3_capacity_target_truth_delta": _round_metric(target_truth_delta, 3),
+        "v3_capacity_target_prior_max_ratio": _round_metric(
+            _numeric_ratio(target, prior_max),
+            3,
+        ),
+        "v3_capacity_truth_prior_max_ratio": _round_metric(
+            _numeric_ratio(truth_count, prior_max),
+            3,
+        ),
+        "v3_capacity_flags": "+".join(flags),
+        "v3_capacity_cases": "+".join(cases),
+    }
 
 
 def _mean(values: Iterable[float]) -> float | None:
@@ -766,6 +911,15 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         row
         for row in rows
         if row.get("status") == "ready" and row.get("v3_tail_review_ready")
+    ]
+    formal_value_ready = [
+        row
+        for row in rows
+        if row.get("status") == "ready"
+        and row.get("v3_truth_decision_available")
+        and row.get("v3_fv_ready")
+        and _float_or_none(row.get("v3_fv_formal_decision_value_p50")) is not None
+        and _float_or_none(row.get("v3_truth_formal_decision_value")) is not None
     ]
 
     def pred_truth(
@@ -990,6 +1144,26 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "v3_truth_q6_formal_decision_value",
         source_rows=underestimate_ready,
     )
+    fv_formal_p50 = pred_truth(
+        "v3_fv_formal_decision_value_p50",
+        "v3_truth_formal_decision_value",
+        source_rows=formal_value_ready,
+    )
+    fv_formal_p90 = pred_truth(
+        "v3_fv_formal_decision_value_p90",
+        "v3_truth_formal_decision_value",
+        source_rows=formal_value_ready,
+    )
+    fv_q6_p50 = pred_truth(
+        "v3_fv_q6_formal_decision_value_p50",
+        "v3_truth_q6_formal_decision_value",
+        source_rows=formal_value_ready,
+    )
+    fv_q6_p90 = pred_truth(
+        "v3_fv_q6_formal_decision_value_p90",
+        "v3_truth_q6_formal_decision_value",
+        source_rows=formal_value_ready,
+    )
 
     def mae(pairs: tuple[tuple[float, float], ...]) -> float | None:
         return _mean(abs(pred - truth) for pred, truth in pairs)
@@ -1017,9 +1191,11 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     formal_p50_mae = mae(formal_p50)
     cal_formal_p50_mae = mae(cal_formal_p50)
     under_formal_p50_mae = mae(under_formal_p50)
+    fv_formal_p50_mae = mae(fv_formal_p50)
     q6_formal_p50_mae = mae(q6_p50)
     cal_q6_formal_p50_mae = mae(cal_q6_p50)
     under_q6_formal_p50_mae = mae(under_q6_p50)
+    fv_q6_formal_p50_mae = mae(fv_q6_p50)
     q6_count_p50_mae = mae(q6_count_p50)
     q6_cells_p50_mae = mae(q6_cells_p50)
     q6_value_p50_mae = mae(q6_value_p50)
@@ -1342,6 +1518,65 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "v3_tail_review_active_rows": sum(
             1 for row in tail_review_ready if row.get("v3_tail_review_active")
         ),
+        "v3_fv_metric_rows": len(formal_value_ready),
+        "v3_fv_candidate_rows": sum(
+            1 for row in formal_value_ready if row.get("v3_fv_candidate")
+        ),
+        "v3_fv_active_rows": sum(
+            1 for row in formal_value_ready if row.get("v3_fv_active")
+        ),
+        "v3_fv_capacity_watch_rows": sum(
+            1
+            for row in formal_value_ready
+            if "capacity_cells_drift" in str(row.get("v3_fv_stress_class") or "")
+        ),
+        "v3_fv_q6_cells_watch_rows": sum(
+            1
+            for row in formal_value_ready
+            if "q6_cells_floor_stress" in str(row.get("v3_fv_stress_class") or "")
+        ),
+        "v3_fv_value_floor_candidate_rows": sum(
+            1
+            for row in formal_value_ready
+            if "value_floor_stress" in str(row.get("v3_fv_stress_class") or "")
+        ),
+        "v3_fv_formal_p50_mae": _round_metric(fv_formal_p50_mae),
+        "v3_fv_formal_p50_bias": _round_metric(bias(fv_formal_p50)),
+        "v3_fv_formal_p50_below_rate": _round_metric(
+            below_rate(fv_formal_p50),
+            6,
+        ),
+        "v3_fv_formal_p50_over_rate": _round_metric(
+            over_rate(fv_formal_p50),
+            6,
+        ),
+        "v3_fv_formal_p50_pinball": _round_metric(pinball(fv_formal_p50, 0.5)),
+        "v3_fv_formal_p90_coverage": _round_metric(
+            coverage_rate(fv_formal_p90),
+            6,
+        ),
+        "v3_fv_formal_p90_pinball": _round_metric(pinball(fv_formal_p90, 0.9)),
+        "v3_fv_q6_formal_p50_mae": _round_metric(fv_q6_formal_p50_mae),
+        "v3_fv_q6_formal_p50_bias": _round_metric(bias(fv_q6_p50)),
+        "v3_fv_q6_formal_p50_below_rate": _round_metric(
+            below_rate(fv_q6_p50),
+            6,
+        ),
+        "v3_fv_q6_formal_p90_coverage": _round_metric(
+            coverage_rate(fv_q6_p90),
+            6,
+        ),
+        "v3_fv_delta_formal_p50_mae": _round_metric(
+            fv_formal_p50_mae - formal_p50_mae
+            if fv_formal_p50_mae is not None and formal_p50_mae is not None
+            else None
+        ),
+        "v3_fv_delta_q6_formal_p50_mae": _round_metric(
+            fv_q6_formal_p50_mae - q6_formal_p50_mae
+            if fv_q6_formal_p50_mae is not None
+            and q6_formal_p50_mae is not None
+            else None
+        ),
     }
 
 
@@ -1519,6 +1754,14 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"v3_tail_review_candidate_rows={summary['v3_tail_review_candidate_rows']}",
                 f"v3_tail_review_hurt_guard_rows={summary['v3_tail_review_hurt_guard_rows']}",
                 f"v3_tail_review_active_rows={summary['v3_tail_review_active_rows']}",
+                f"v3_fv_candidate_rows={summary['v3_fv_candidate_rows']}",
+                f"v3_fv_capacity_watch_rows={summary['v3_fv_capacity_watch_rows']}",
+                f"v3_fv_value_floor_candidate_rows={summary['v3_fv_value_floor_candidate_rows']}",
+                f"v3_fv_formal_p50_mae={summary['v3_fv_formal_p50_mae']}",
+                f"v3_fv_delta_formal_p50_mae={summary['v3_fv_delta_formal_p50_mae']}",
+                f"v3_fv_formal_p50_below_rate={summary['v3_fv_formal_p50_below_rate']}",
+                f"v3_fv_formal_p50_over_rate={summary['v3_fv_formal_p50_over_rate']}",
+                f"v3_fv_formal_p90_coverage={summary['v3_fv_formal_p90_coverage']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",
@@ -1572,6 +1815,18 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_prior_map_name",
         "v3_prior_items_per_session_min",
         "v3_prior_items_per_session_max",
+        "v3_capacity_total_count_source",
+        "v3_capacity_total_count_target",
+        "v3_capacity_truth_item_count",
+        "v3_capacity_prior_items_per_session_min",
+        "v3_capacity_prior_items_per_session_max",
+        "v3_capacity_target_prior_max_delta",
+        "v3_capacity_truth_prior_max_delta",
+        "v3_capacity_target_truth_delta",
+        "v3_capacity_target_prior_max_ratio",
+        "v3_capacity_truth_prior_max_ratio",
+        "v3_capacity_flags",
+        "v3_capacity_cases",
         "v3_prior_pool_count",
         "v3_prior_expected_draws",
         "v3_prior_expected_count",
@@ -1941,6 +2196,78 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_tail_review_q6_tail_replacement_decision_value_p50",
         "v3_tail_review_q6_tail_replacement_decision_value_p90",
         "v3_tail_review_diagnostics",
+        "v3_fv_available",
+        "v3_fv_ready",
+        "v3_fv_strict_ready",
+        "v3_fv_affects_bid",
+        "v3_fv_active",
+        "v3_fv_candidate",
+        "v3_fv_status",
+        "v3_fv_gate_reason",
+        "v3_fv_source",
+        "v3_fv_stress_class",
+        "v3_fv_capacity_flags",
+        "v3_fv_map_id",
+        "v3_fv_map_name",
+        "v3_fv_match_scope",
+        "v3_fv_n_total",
+        "v3_fv_n_matched",
+        "v3_fv_n_strict_matched",
+        "v3_fv_match_rate",
+        "v3_fv_strict_match_rate",
+        "v3_fv_q6_present_rate",
+        "v3_fv_total_cells_p10",
+        "v3_fv_total_cells_p50",
+        "v3_fv_total_cells_p90",
+        "v3_fv_total_value_p10",
+        "v3_fv_total_value_p50",
+        "v3_fv_total_value_p90",
+        "v3_fv_formal_decision_value_p10",
+        "v3_fv_formal_decision_value_p50",
+        "v3_fv_formal_decision_value_p90",
+        "v3_fv_tail_replacement_decision_value_p10",
+        "v3_fv_tail_replacement_decision_value_p50",
+        "v3_fv_tail_replacement_decision_value_p90",
+        "v3_fv_q6_count_p10",
+        "v3_fv_q6_count_p50",
+        "v3_fv_q6_count_p90",
+        "v3_fv_q6_cells_p10",
+        "v3_fv_q6_cells_p50",
+        "v3_fv_q6_cells_p90",
+        "v3_fv_q6_value_p10",
+        "v3_fv_q6_value_p50",
+        "v3_fv_q6_value_p90",
+        "v3_fv_q6_formal_decision_value_p10",
+        "v3_fv_q6_formal_decision_value_p50",
+        "v3_fv_q6_formal_decision_value_p90",
+        "v3_fv_q6_tail_replacement_decision_value_p10",
+        "v3_fv_q6_tail_replacement_decision_value_p50",
+        "v3_fv_q6_tail_replacement_decision_value_p90",
+        "v3_fv_total_count_source",
+        "v3_fv_total_count_target",
+        "v3_fv_total_count_prior_expected",
+        "v3_fv_total_count_target_prior_ratio",
+        "v3_fv_total_cells_source",
+        "v3_fv_total_cells_target",
+        "v3_fv_total_cells_prior_expected",
+        "v3_fv_total_cells_target_prior_ratio",
+        "v3_fv_q6_count_source",
+        "v3_fv_q6_count_target",
+        "v3_fv_q6_count_prior_expected",
+        "v3_fv_q6_count_target_prior_ratio",
+        "v3_fv_q6_cells_source",
+        "v3_fv_q6_cells_target",
+        "v3_fv_q6_cells_prior_expected",
+        "v3_fv_q6_cells_target_prior_ratio",
+        "v3_fv_total_value_source",
+        "v3_fv_total_value_target",
+        "v3_fv_total_value_prior_expected",
+        "v3_fv_total_value_target_prior_ratio",
+        "v3_fv_q6_value_source",
+        "v3_fv_q6_value_target",
+        "v3_fv_q6_value_prior_expected",
+        "v3_fv_q6_value_target_prior_ratio",
+        "v3_fv_diagnostics",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()

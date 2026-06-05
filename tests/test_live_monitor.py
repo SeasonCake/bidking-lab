@@ -590,6 +590,11 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["v3_posterior_shadow"]["v3_tail_review_available"] is True
     assert artifact["v3_posterior_shadow"]["v3_tail_review_affects_bid"] is False
     assert artifact["v3_posterior_shadow"]["v3_tail_review_active"] is False
+    assert artifact["v3_posterior_shadow"]["v3_fv_available"] is True
+    assert artifact["v3_posterior_shadow"]["v3_fv_affects_bid"] is False
+    assert artifact["v3_posterior_shadow"]["v3_fv_active"] is False
+    assert artifact["v3_posterior_shadow"]["v3_fv_candidate"] is False
+    assert artifact["v3_posterior_shadow"]["v3_fv_status"] == "baseline_passthrough"
     assert artifact["q6_residual_boost_shadow"]["label"] == "profile_b5"
     assert artifact["q6_residual_boost_shadow"]["gate"] == "shipwreck_profile_v1"
     assert artifact["q6_residual_boost_shadow"]["trials"] == 10
@@ -800,6 +805,33 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "v3_tail_review_q6_tail_replacement_decision_value_p50" in artifact[
         "model_eval"
     ]
+    assert artifact["model_eval"]["v3_fv_available"] is True
+    assert artifact["model_eval"]["v3_fv_affects_bid"] is False
+    assert artifact["model_eval"]["v3_fv_active"] is False
+    assert artifact["model_eval"]["v3_fv_candidate"] is False
+    assert artifact["model_eval"]["v3_fv_status"] == "baseline_passthrough"
+    assert artifact["model_eval"]["v3_fv_stress_class"] == "none"
+    assert artifact["model_eval"]["v3_fv_formal_decision_value_p50"] == 20_000
+    assert "v3_fv_total_count_source" in artifact["model_eval"]
+    assert "v3_fv_total_count_target_prior_ratio" in artifact["model_eval"]
+    assert "v3_fv_total_cells_source" in artifact["model_eval"]
+    assert "v3_fv_total_cells_target" in artifact["model_eval"]
+    assert "v3_fv_total_cells_prior_expected" in artifact["model_eval"]
+    assert "v3_fv_q6_count_source" in artifact["model_eval"]
+    assert "v3_fv_q6_count_target_prior_ratio" in artifact["model_eval"]
+    assert "v3_fv_q6_cells_source" in artifact["model_eval"]
+    assert "v3_fv_q6_cells_target" in artifact["model_eval"]
+    assert "v3_fv_q6_cells_prior_expected" in artifact["model_eval"]
+    assert "v3_fv_total_value_source" in artifact["model_eval"]
+    assert "v3_fv_total_value_target_prior_ratio" in artifact["model_eval"]
+    assert "v3_fv_q6_value_source" in artifact["model_eval"]
+    assert "v3_fv_q6_value_target_prior_ratio" in artifact["model_eval"]
+    assert "v3_fv_formal_decision_value_p50_error_vs_formal" in artifact[
+        "model_eval"
+    ]
+    assert "v3_fv_q6_formal_decision_value_p90_under_by" in artifact[
+        "model_eval"
+    ]
     assert "q6_residual_boost_shadow_active" in artifact["model_eval"]
     assert "q6_residual_boost_shadow_q6_p90_delta" in artifact["model_eval"]
     assert artifact["model_eval"]["q6_residual_boost_shadow_active"] is False
@@ -974,6 +1006,50 @@ def test_model_eval_uses_v2_value_when_bid_rows_are_absent() -> None:
     assert row["decision_value_p50_error_vs_raw"] == -50
     assert row["raw_value_p50"] == 260
     assert row["raw_value_p90"] == 420
+
+
+def test_model_eval_surfaces_v3_capacity_prior_gap() -> None:
+    row = _model_eval_row(
+        file="capacity.json",
+        artifact={
+            "file": "capacity.json",
+            "hero": "ethan",
+            "map_id": 2501,
+            "round": 3,
+            "bid_rows": [
+                {
+                    "决策价值 P10/P50/P90": "100 / 200 / 300",
+                    "原始价值 P10/P50/P90": "100 / 200 / 300",
+                },
+            ],
+            "warehouse_rows": [{"价值 P10/P50/P90": "100 / 200 / 300"}],
+            "v2_posterior_rows": [{"诊断": ""}],
+            "v3_posterior_shadow": {
+                "v3_summary_known_count_floor": 6,
+                "v3_summary_session_total_count_exact": 7,
+                "v3_prior_items_per_session_min": 2,
+                "v3_prior_items_per_session_max": 5,
+            },
+        },
+        final_value=300,
+        final_cells=10,
+        truth_breakdown={"final_quality_counts": "q4=2;q6=5"},
+    )
+
+    assert row is not None
+    assert row["v3_capacity_total_count_source"] == "exact"
+    assert row["v3_capacity_total_count_target"] == 7
+    assert row["v3_capacity_truth_item_count"] == 7
+    assert row["v3_capacity_prior_items_per_session_max"] == 5
+    assert row["v3_capacity_target_prior_max_delta"] == 2
+    assert row["v3_capacity_truth_prior_max_delta"] == 2
+    assert row["v3_capacity_target_truth_delta"] == 0
+    assert row["v3_capacity_target_prior_max_ratio"] == 1.4
+    assert row["v3_capacity_truth_prior_max_ratio"] == 1.4
+    assert row["v3_capacity_flags"] == (
+        "target_count_above_prior_max+truth_count_above_prior_max"
+    )
+    assert row["v3_capacity_cases"] == "direct_prior_max_conflict"
 
 
 def test_model_eval_decision_error_uses_replacement_truth_and_keeps_comparisons() -> None:

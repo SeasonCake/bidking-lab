@@ -2020,3 +2020,428 @@ fallback=missing_prior_truth_only
 - 主要问题更像 cells/capacity/evidence-prior mismatch：`total_cells_above_prior` 和 `q6_cells_above_prior` 占主导。
 - q6 count alone 不是主因，只有 `q6_count_above_prior=1`。
 - 下一步 formal/value sampler 设计应把 prior-stressed 行单独 holdout，不应把它们当普通低估样本直接上修。
+
+## O-v3-061：prior-stress details 显示 capacity drift、q6-cells floor 与 value-floor stress 需要拆开
+
+2026-06-06 扩展 `summarize_v3_prior_robustness_audit.py --details` 后，默认 archive 64-trial 明细显示：
+
+```text
+prior_stressed:
+ready=94 post_ready=94 metric=94 trusted=0
+summary_likelihood=92 strict=2
+
+total_cells_above_prior:
+ready=48
+mae=406353.3
+below=0.75
+p90_cover=0.5
+
+q6_cells_above_prior:
+ready=32
+mae=264904.3
+below=0.625
+p90_cover=0.8125
+
+q6_value_above_prior / total_value_above_prior:
+ready=13
+mae=436218.2
+below=0.769231
+p90_cover=0.307692
+```
+
+代表性明细：
+
+```text
+ethan|2506|shape:
+total_cells floor=216 prior=91.086 truth=216 post50=216
+q6_cells floor=37 prior=10.109 truth=37 post50=48
+item_count truth=58 prior_max=44
+
+ethan|2406|public:max_item_cells+item+shape+layout:
+total_cells exact=157 prior=81.487 truth=157 post50=157
+q6_cells floor=15 prior=6.299 truth=17 post50=18.6
+item_count truth=47 prior_max=40
+
+ethan|2406|item+shape:
+total_value floor=1622990 prior=503544.083 truth=1859009 post50=1622990
+q6_value floor=1553900 prior=322041.293 truth=1729400 post50=1858600
+```
+
+解读：
+
+- 多个 `total_cells_above_prior` 明细的 exact/floor target 与 truth 一致，且 truth/target item count 超过 prior max；这是有效 hard evidence 与旧 prior/capacity 表不一致的信号，不能按普通模型误差处理。
+- `q6_cells_above_prior` 不等于“统一上修 q6 cells 就安全”：有些行 posterior 已经高于 truth，说明需要 changed-row hurt 和 high-over guard。
+- `q6_value_above_prior` / `total_value_above_prior` 是 value-floor stress，和 cells/capacity drift 的风险形态不同；后续 formal/value sampler 必须单独报告，不应与 cells 行合并校准。
+- 活动 cohort 在 `--details` 下仍为空，因为 `prior_stress_score=0` 且 `post_ready=0`，符合“不计普通准确率”的边界。
+
+## O-v3-062：`v3_fv_*` 第一阶段只形成 shadow 分母，默认 holdout 仍 sample-limited
+
+2026-06-06 新增 formal/value sampler 第一阶段后，64-trial archive 显示：
+
+```text
+v3_fv_candidate_rows=13
+v3_fv_capacity_watch_rows=126
+v3_fv_value_floor_candidate_rows=13
+v3_fv_formal_p50_mae=318635.858
+v3_fv_delta_formal_p50_mae=0.0
+v3_fv_formal_p50_below_rate=0.51859
+v3_fv_formal_p90_coverage=0.750641
+```
+
+活动 cohort 仍为：
+
+```text
+posterior_ready=0
+metric_rows=0
+v3_fv_candidate_rows=0
+v3_fv_capacity_watch_rows=0
+```
+
+新增 session holdout 默认阈值下：
+
+```text
+overall_status=sample_limited
+candidate_rows=0
+train_status_counts=blocked_low_sample:414
+```
+
+readiness 总审计：
+
+```text
+overall_status=not_ready
+gate=formal_value_sampler_holdout status=blocked
+formal_value_rows=0
+formal_value_delta=None
+```
+
+解读：
+
+- archive 中 value-floor stress 只有 13 行，进入默认 session holdout 后每个 group 的训练折样本不足，不能作为 promotion 证据。
+- `v3_fv_delta_formal_p50_mae=0.0` 表明第一阶段 floor candidate 当前没有改善全局 formal MAE；它的价值是把 value-floor stress 从 capacity/cells drift 中拆出来，形成可审计分母。
+- 126 个 capacity watch 行不应被当成 formal value 上修候选；它们更像 prior/capacity/evidence mismatch 的后续审计入口。
+- live/model_eval 已能记录 `v3_fv_*`，但 `active=false` 与 `affects_bid=false` 是关键边界。
+
+## O-v3-063：prior-stress 聚合显示 capacity/table drift 是主要一致性风险
+
+2026-06-06 新增 `--detail-summary` 后，默认 archive 64-trial 的 prior-stress 聚合：
+
+```text
+rows=94
+capacity_flags=truth_count_above_prior_max:68,target_count_above_prior_max:39
+sources_total_cells=floor:57,exact:37
+sources_q6_cells=floor:59,none:35
+ratio_total_cells avg=1.328 p90=2.126 max=2.371
+ratio_q6_cells avg=1.898 p90=2.881 max=4.001
+ratio_q6_value avg=1.917 p90=3.309 max=4.825
+```
+
+按 reason：
+
+```text
+total_cells_above_prior:
+rows=48
+truth_count_above_prior_max=44
+target_count_above_prior_max=30
+sources_total_cells=exact:32,floor:16
+
+q6_cells_above_prior:
+rows=32
+sources_q6_cells=floor:32
+ratio_q6_cells avg=2.791 p90=3.66 max=4.001
+
+total_count_above_prior:
+rows=15
+target_count_above_prior_max=15
+truth_count_above_prior_max=15
+```
+
+活动 cohort：
+
+```text
+prior_stress_detail_summary rows=0
+```
+
+解读：
+
+- 68/94 prior-stressed 行的 settlement truth item count 超过旧 prior max，39/94 的 hard target count 也超过旧 prior max；这更像 capacity/table drift 或旧 drop prior 覆盖不足，不是 formal/value sampler 可以直接修正的误差。
+- `total_cells_above_prior` 中 exact hard evidence 占 32/48，说明相当一部分不是 floor 估计噪声，而是公开/解析证据与旧 prior 直接冲突。
+- `q6_cells_above_prior` 全部是 floor source，ratio 上限 4.001；它需要单独 cells 方向性/over guard，而不是和 value-floor 候选合并。
+- 252x 活动样本继续只作为 prior-unavailable/activity 分母，未进入 prior-stress 聚合。
+
+## O-v3-064：prior-stress 热点按 map/profile 分布，风险形态不同
+
+2026-06-06 使用 `--detail-summary-by map_id --detail-summary-by hero_map_evidence_profile` 后，默认 archive 64-trial 的 top map groups：
+
+```text
+map_id=2401 rows=12 capacity_hits=9 max_cells_ratio=4.001 max_value_ratio=3.309
+map_id=2501 rows=10 capacity_hits=16 max_cells_ratio=3.36 max_value_ratio=3.194
+map_id=2404 rows=10 capacity_hits=7 max_cells_ratio=2.881 max_value_ratio=1.017
+map_id=2406 rows=10 capacity_hits=6 max_cells_ratio=2.381 max_value_ratio=4.825
+map_id=2601 rows=8 capacity_hits=16 max_cells_ratio=2.157 max_value_ratio=0.142
+```
+
+代表性差异：
+
+- `2401` 同时有高 q6 cells ratio 与 value ratio，capacity hits 中等偏高。
+- `2501` / `2601` capacity hits 很高，更像 capacity/table/prior max 口径问题。
+- `2406` max value ratio 最高，属于 value-floor stress 与 capacity/cells drift 叠加热点。
+- `2404` 以 cells ratio 为主，value ratio 不高。
+
+活动 cohort：
+
+```text
+prior_stress_detail_summary rows=0
+```
+
+解读：
+
+- prior-stressed 不应再只作为一个整体看；map/profile 的风险形态不同，后续 sampler/readiness 必须能报告这些分片。
+- capacity hits 高的 map 优先审计表与 session item count 口径；value ratio 高的 map 才进入 formal/value sampler 候选讨论。
+- 当前信息仍然支持 shadow-only，不支持 v3 promotion。
+
+## O-v3-065：readiness 已显式阻断 prior-stress capacity/table drift
+
+2026-06-06 将 detail summary 接入 `summarize_v3_promotion_readiness.py` 后，默认 archive 64-trial：
+
+```text
+gate=prior_stress_capacity_table_drift status=blocked
+prior_stress_detail_rows=94
+prior_stress_capacity_hits=107
+top_map_group=2401 rows=12 capacity_flag_hits=9
+```
+
+活动 cohort：
+
+```text
+gate=prior_stress_capacity_table_drift status=pass
+prior_stress_detail_rows=0
+prior_stress_capacity_hits=0
+```
+
+解读：
+
+- readiness 现在能把 prior-stress capacity/table drift 作为独立 blocker 暴露，不再只依赖 `prior_robustness` 的总数。
+- 主 archive blocked 是因为存在可解释的 capacity/table/evidence drift 风险；活动 cohort pass 是因为缺表活动样本没有进入 prior-stress detail 分母。
+- 这进一步支持：v3 promotion 前必须先处理 targeted map/profile drift，不允许 sampler 局部指标绕过该问题。
+
+## O-v3-066：live model_eval 需要与 archive 保持 `v3_fv_*` detail 字段一致
+
+2026-06-06 补齐 live `model_eval` 后，局后复盘可以直接读取：
+
+```text
+v3_fv_total_count_source
+v3_fv_total_count_target
+v3_fv_total_count_prior_expected
+v3_fv_total_count_target_prior_ratio
+v3_fv_total_cells_source
+v3_fv_total_cells_target
+v3_fv_total_cells_prior_expected
+v3_fv_total_cells_target_prior_ratio
+v3_fv_q6_cells_source
+v3_fv_q6_cells_target
+v3_fv_q6_cells_prior_expected
+v3_fv_q6_cells_target_prior_ratio
+v3_fv_total_value_source
+v3_fv_total_value_target
+v3_fv_q6_value_source
+v3_fv_q6_value_target
+```
+
+解读：
+
+- 如果 live 局后出现 prior/capacity drift，`model_eval.jsonl` 不需要回头重跑 archive evaluator 才能定位 source/target/prior ratio。
+- 这让 activity/prior drift 的实战样本与 archive 审计字段一致，减少 promotion 前分母不一致的风险。
+
+## O-v3-067：prior-stress cells target 未出现高于 settlement truth 的聚合信号
+
+2026-06-06 为 detail summary 增加 target-vs-truth delta 后，默认 archive 64-trial：
+
+```text
+prior_stress rows=94
+target_delta_total_cells=below=50/match=44/above=0
+target_delta_q6_cells=below=46/match=13/above=0
+
+total_cells_above_prior:
+target_delta_total_cells=below=9/match=39/above=0
+target_delta_q6_cells=below=10/match=8/above=0
+
+q6_cells_above_prior:
+target_delta_total_cells=below=25/match=7/above=0
+target_delta_q6_cells=below=24/match=8/above=0
+```
+
+活动 cohort：
+
+```text
+prior_stress_detail_summary rows=0
+```
+
+解读：
+
+- `above=0` 说明当前 prior-stressed cells target 没有系统性超过 settlement truth；问题不是 hard/floor evidence 普遍过强。
+- `match` 与 `below` 占主导，说明很多 hard/floor target 是可信下界或真实值，冲突主要来自旧 prior/capacity/table 低估或 posterior 对证据吸收不足。
+- 后续应优先检查 prior table/capacity max、drop prior 生成和 posterior evidence absorption，而不是削弱 evidence compiler。
+
+## O-v3-068：prior-stress posterior p50 未出现低于 compiled target 的聚合信号
+
+2026-06-06 为 detail summary 增加 posterior-vs-target delta 后，默认 archive 64-trial：
+
+```text
+prior_stress rows=94
+target_delta_total_cells=below=50/match=44/above=0
+target_delta_q6_cells=below=46/match=13/above=0
+post50_target_delta_total_cells=below=0/match=54/above=40
+post50_target_delta_q6_cells=below=0/match=2/above=57
+```
+
+活动 cohort：
+
+```text
+prior_stress_detail_summary rows=0
+post50_target_delta_total_cells=below=0/match=0/above=0
+post50_target_delta_q6_cells=below=0/match=0/above=0
+```
+
+解读：
+
+- prior-stressed 行中没有出现 posterior p50 低于 compiled cells target 的聚合信号；posterior evidence absorption 目前不是第一嫌疑。
+- 结合 O-v3-067 的 `target above truth=0`，当前 under-truth 风险更像 target 只是下界，或旧 prior/capacity/table 覆盖不足。
+- 后续仍应保留 posterior-vs-target absorption 指标，但 promotion blocker 的优先级应放在 prior/capacity table drift 与 map/profile target completeness 上。
+
+## O-v3-069：capacity gap 显示 truth/prior-max drift 强于 target 过约束
+
+2026-06-06 增加 `capacity_count_summary` 后，默认 archive 64-trial：
+
+```text
+prior_stress rows=94
+capacity_flags=truth_count_above_prior_max:68,target_count_above_prior_max:39
+capacity_count_sources=floor:62,exact:24,none:8
+capacity_prior_max=n=94/avg=41.872/p90=44.0/max=44.0
+capacity_target_prior_max_delta=n=86/avg=-7.419/p90=16.0/max=22.0
+capacity_truth_prior_max_delta=n=94/avg=6.032/p90=20.0/max=22.0
+capacity_target_truth_delta=n=86/avg=-13.047/p90=0.0/max=0.0
+capacity_target_prior_counts=below=47/match=0/above=39
+capacity_truth_prior_counts=below=25/match=1/above=68
+capacity_target_truth_counts=below=56/match=30/above=0
+```
+
+代表性 map group：
+
+```text
+map_id=2501 rows=10 capacity_hits=16
+capacity_prior_max=44
+capacity_target_prior_counts=below=4/match=0/above=6
+capacity_truth_prior_counts=below=0/match=0/above=10
+capacity_target_truth_counts=below=4/match=6/above=0
+
+map_id=2401 rows=12 capacity_hits=9
+capacity_target_prior_counts=below=9/match=0/above=2
+capacity_truth_prior_counts=below=4/match=1/above=7
+capacity_target_truth_counts=below=9/match=2/above=0
+```
+
+活动 cohort：
+
+```text
+prior_stress_detail_summary rows=0
+capacity_target_prior_counts=below=0/match=0/above=0
+```
+
+解读：
+
+- `truth_count_above_prior_max=68` 明显高于 `target_count_above_prior_max=39`，说明很多 capacity drift 在 settlement truth 中更强，compiled target 只是下界。
+- `capacity_target_truth_counts above=0` 再次确认当前没有 target count 高于 truth 的聚合信号。
+- 优先级应继续放在 map/profile capacity table、prior max 覆盖和 target completeness，而不是削弱 total-count evidence 或把该问题交给 formal/value sampler。
+
+## O-v3-070：capacity cases 将 direct table conflict 与 target lower-bound 分开
+
+2026-06-06 增加 `capacity_cases` 后，默认 archive 64-trial：
+
+```text
+prior_stress rows=94
+capacity_cases=target_lower_bound_truth_above_prior:31,direct_prior_max_conflict:29,no_capacity_prior_max_case:26,target_above_prior_but_below_truth:10,truth_above_prior_without_count_target:8
+
+reason=total_count_above_prior:
+capacity_cases=direct_prior_max_conflict:15
+
+map_id=2601:
+rows=8
+capacity_hits=16
+capacity_cases=direct_prior_max_conflict:8
+
+map_id=2501:
+rows=10
+capacity_hits=16
+capacity_cases=direct_prior_max_conflict:6,target_lower_bound_truth_above_prior:4
+```
+
+活动 cohort：
+
+```text
+prior_stress_detail_summary rows=0
+capacity_cases=-
+```
+
+解读：
+
+- `direct_prior_max_conflict` 是最强表容量信号：compiled target、settlement truth 都超过 prior max，且 target 匹配 truth。
+- `target_lower_bound_truth_above_prior` 说明 target 不是过约束，而是低于 truth 的下界；这类分片需要 target completeness 与 capacity table 一起查。
+- `2601` 的 8/8 direct conflict 是当前最干净的表容量审计入口；`2501` 是 mixed case，不能直接用 sampler 或统一表改动解释。
+
+## O-v3-071：direct conflict 在当前 BidMap/Drop sampler 下超过理论 item-count 上限
+
+2026-06-06 使用 `summarize_v3_capacity_table_audit.py` 对 capacity cases 追加 raw table 审计后：
+
+```text
+direct_prior_max_conflict:
+case=direct_prior_max_conflict groups=10
+map_id=2601 status=table_possible_max_below_truth rows=8 table_impossible_rows=8 bidmap_items=22-44 sampler_possible_max=44 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=65
+map_id=2501 status=table_possible_max_below_truth rows=6 table_impossible_rows=6 bidmap_items=22-44 sampler_possible_max=44 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=60
+map_id=2506 status=table_possible_max_below_truth rows=4 table_impossible_rows=4 bidmap_items=22-44 sampler_possible_max=44 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=58
+
+target_lower_bound_truth_above_prior:
+map_id=2508 status=table_possible_max_below_truth rows=6 table_impossible_rows=6 bidmap_items=22-44 sampler_possible_max=44 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=64
+map_id=2405 status=table_possible_max_below_truth rows=4 table_impossible_rows=4 bidmap_items=20-40 sampler_possible_max=40 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=60
+
+activity cohort:
+case=direct_prior_max_conflict groups=0
+```
+
+解读：
+
+- BidMap col[16] 的 `items_per_session_max` 目前被 sampler 当作抽取次数上限；这些 top groups 的 DropEntry `n_max` 全部为 1，因此 sampler 理论 item-count max 等于 BidMap max。
+- archive settlement truth 直接超过该 theoretical max，不是 evidence compiler 或 posterior absorption 能解释的问题。
+- 当前最可能的原因是 BidMap/session capacity 语义、表版本、或 settlement inventory truth 口径与 sampler 假设不一致；这必须在 promotion 前单独解释。
+
+## O-v3-072：raw settlement inventory 诊断排除 2601 parser 重复主因
+
+2026-06-06 将 raw inventory diagnostics 接入 `summarize_v3_capacity_table_audit.py` 后，默认 archive 64-trial：
+
+```text
+direct_prior_max_conflict:
+map_id=2601 rows=8 raw_inventory=verified_latest_inventory raw_files=4 raw_states=max=1.0 raw_latest_count=max=65.0 raw_truth_match_rows=8/8 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0 raw_dup_item=max=12.0 raw_msg=0x002D:4
+map_id=2501 rows=6 raw_inventory=verified_latest_inventory raw_files=2 raw_truth_match_rows=6/6 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0
+map_id=2506 rows=4 raw_inventory=verified_latest_inventory raw_files=1 raw_truth_match_rows=4/4 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0
+
+target_lower_bound_truth_above_prior:
+map_id=2508 rows=6 raw_inventory=verified_latest_inventory raw_truth_match_rows=6/6 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0
+map_id=2504 rows=4 raw_inventory=verified_latest_inventory raw_truth_match_rows=4/4 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0
+map_id=2405 rows=4 raw_inventory=verified_latest_inventory raw_truth_match_rows=4/4 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0
+```
+
+代表性 2601 raw capture 直接解析：
+
+```text
+fatbeans_valid_aisha_2601_3rounds_2601_1295018740835056_0215.json:
+inventory_states=1 truth_count=65 latest_count=65 unique_runtime=65 dup_runtime=0 unique_pair=65 dup_pair=0
+
+fatbeans_valid_aisha_2601_5rounds_2601_1295018737442914_0223.json:
+inventory_states=1 truth_count=60 latest_count=60 unique_runtime=60 dup_runtime=0 unique_pair=60 dup_pair=0
+```
+
+解读：
+
+- `settlement_truth_from_fatbeans` 与 latest inventory state item count 对齐，detail row truth count 也与 latest inventory 对齐。
+- raw latest inventory 中 runtime id 与 `(runtime_id,item_id)` 均无重复；duplicate item id 是同款物品多件，不是 parser 重复。
+- 2601 direct conflict 不是 settlement inventory 重复解析导致；当前 blocker 继续指向 BidMap/session capacity 语义、DropEntry count 语义或 raw table/archive 版本不一致。
+- 这支持继续保持 `prior_stress_capacity_table_drift` blocked，并禁止用 formal/value sampler 或 posterior 上修绕过该问题。

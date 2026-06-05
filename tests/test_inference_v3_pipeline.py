@@ -84,6 +84,10 @@ def test_v3_shadow_pipeline_emits_all_shadow_namespaces() -> None:
     assert flat["v3_tail_review_available"] is True
     assert flat["v3_tail_review_status"] == "missing_entry"
     assert flat["v3_tail_review_affects_bid"] is False
+    assert flat["v3_fv_available"] is True
+    assert flat["v3_fv_affects_bid"] is False
+    assert flat["v3_fv_active"] is False
+    assert flat["v3_fv_status"] == "prior_unavailable"
 
 
 def test_v3_shadow_pipeline_can_emit_component_ccv_shadow() -> None:
@@ -120,6 +124,47 @@ def test_v3_shadow_pipeline_can_emit_component_ccv_shadow() -> None:
     assert flat["v3_ccvc_available"] is True
     assert flat["v3_ccvc_affects_bid"] is False
     assert flat["v3_ccvc_match_scope"] == "ccv_component_likelihood"
+
+
+def test_v3_shadow_pipeline_can_emit_formal_value_candidate() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=None,
+        known_count_floor=0,
+        known_cells_floor=0,
+        known_value_floor=500_000,
+        buckets=(
+            BucketFeasibleSummary(
+                quality=6,
+                value_floor=400_000,
+            ),
+        ),
+    )
+
+    report = estimate_shadow_pipeline(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(
+            _truth(q6_count=1, q6_cells=4, q6_value=500_000),
+            _truth(q6_count=1, q6_cells=4, q6_value=600_000),
+        ),
+        hero="ethan",
+        prior_fields={
+            "v3_prior_available": True,
+            "v3_prior_expected_value": 100_000,
+            "v3_prior_q6_expected_value": 80_000,
+        },
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_fv_available"] is True
+    assert flat["v3_fv_candidate"] is True
+    assert flat["v3_fv_active"] is False
+    assert flat["v3_fv_affects_bid"] is False
+    assert flat["v3_fv_status"] == "watch_only_value_floor_candidate"
+    assert flat["v3_fv_total_value_target"] == 500_000
+    assert flat["v3_fv_q6_value_target"] == 400_000
 
 
 def test_v3_shadow_pipeline_can_freeze_component_cells() -> None:

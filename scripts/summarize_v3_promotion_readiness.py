@@ -55,6 +55,13 @@ from summarize_v3_tail_value_holdout import (  # noqa: E402
 from summarize_v3_tail_under_holdout import (  # noqa: E402
     summarize_holdout as summarize_tail_under_holdout,
 )
+from summarize_v3_formal_value_sampler_holdout import (  # noqa: E402
+    summarize_holdout as summarize_formal_value_sampler_holdout,
+)
+from summarize_v3_prior_robustness_audit import (  # noqa: E402
+    summarize_prior_stress_details,
+    summarize_prior_stress_detail_summary,
+)
 from summarize_v3_underestimate_holdout import (  # noqa: E402
     summarize_holdout as summarize_under_holdout,
 )
@@ -129,6 +136,32 @@ def _ccv_directional_hurts(rows: Iterable[dict[str, Any]]) -> list[str]:
     ][:8]
 
 
+def _top_prior_stress_groups(
+    detail_summary: dict[str, Any],
+    field: str,
+    *,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in detail_summary.get("by_group", ()):
+        if row.get("field") != field:
+            continue
+        out.append(
+            {
+                "value": row.get("value"),
+                "rows": row.get("rows"),
+                "capacity_flag_hits": row.get("capacity_flag_hits"),
+                "max_cells_ratio": row.get("max_cells_ratio"),
+                "max_value_ratio": row.get("max_value_ratio"),
+                "capacity_flag_counts": row.get("capacity_flag_counts"),
+                "capacity_count_summary": row.get("capacity_count_summary"),
+                "reason_counts": row.get("reason_counts"),
+                "source_counts": row.get("source_counts"),
+            }
+        )
+    return out[:limit]
+
+
 def summarize_readiness(
     rows: list[dict[str, Any]],
     errors: list[dict[str, str]],
@@ -140,6 +173,12 @@ def summarize_readiness(
     folds: int = 5,
 ) -> dict[str, Any]:
     summary = summarize_rows(rows, errors)
+    prior_stress_details = summarize_prior_stress_details(rows)
+    prior_stress_detail_summary = summarize_prior_stress_detail_summary(
+        prior_stress_details,
+        top=8,
+        group_fields=("map_id", "hero_map_evidence_profile"),
+    )
     under = summarize_under_holdout(
         rows,
         group_field=group_field,
@@ -256,6 +295,13 @@ def summarize_readiness(
         min_windows=min_windows,
         min_sessions=min_sessions,
     )
+    formal_value_sampler_holdout = summarize_formal_value_sampler_holdout(
+        rows,
+        group_field=group_field,
+        folds=folds,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
 
     gates: list[dict[str, Any]] = []
     data_status = "pass" if not errors and not summary.get("constraint_conflict") else "blocked"
@@ -316,6 +362,39 @@ def summarize_readiness(
             robust_activity_candidate=robust_activity_candidate,
             robust_prior_stressed=robust_prior_stressed,
             robust_status_counts=summary.get("robust_status_counts"),
+        )
+    )
+    prior_stress_overall = prior_stress_detail_summary["overall"]
+    prior_stress_capacity_flags = prior_stress_overall.get(
+        "capacity_flag_counts",
+        {},
+    )
+    prior_stress_capacity_hits = sum(prior_stress_capacity_flags.values())
+    prior_stress_group_rows = int(prior_stress_overall.get("rows") or 0)
+    prior_stress_drift_ready = (
+        prior_stress_group_rows == 0 and prior_stress_capacity_hits == 0
+    )
+    gates.append(
+        _gate(
+            "prior_stress_capacity_table_drift",
+            "pass" if prior_stress_drift_ready else "blocked",
+            "no prior-stressed capacity/table/evidence drift rows"
+            if prior_stress_drift_ready
+            else "prior-stressed capacity/table/evidence drift requires targeted map/profile audit",
+            detail_rows=prior_stress_group_rows,
+            capacity_flag_hits=prior_stress_capacity_hits,
+            capacity_flag_counts=prior_stress_capacity_flags,
+            capacity_count_summary=prior_stress_overall.get("capacity_count_summary"),
+            source_counts=prior_stress_overall.get("source_counts"),
+            ratio_summary=prior_stress_overall.get("ratio_summary"),
+            top_map_groups=_top_prior_stress_groups(
+                prior_stress_detail_summary,
+                "map_id",
+            ),
+            top_profile_groups=_top_prior_stress_groups(
+                prior_stress_detail_summary,
+                "hero_map_evidence_profile",
+            ),
         )
     )
     formal_below = float(summary.get("formal_p50_below_rate") or 0.0)
@@ -568,6 +647,52 @@ def summarize_readiness(
         )
     )
 
+    formal_value_sampler_candidate = formal_value_sampler_holdout["candidate_only"]
+    formal_value_sampler_rows = int(
+        formal_value_sampler_candidate.get("candidate_rows") or 0
+    )
+    formal_value_sampler_delta = formal_value_sampler_candidate.get(
+        "delta_formal_p50_mae"
+    )
+    formal_value_sampler_q6_delta = formal_value_sampler_candidate.get(
+        "delta_q6_formal_p50_mae"
+    )
+    formal_value_sampler_hurts = formal_value_sampler_holdout.get(
+        "applied_hurts",
+        [],
+    )
+    formal_value_sampler_watch = (
+        formal_value_sampler_holdout.get("overall_status") == "watch"
+        and formal_value_sampler_rows > 0
+        and not formal_value_sampler_hurts
+    )
+    gates.append(
+        _gate(
+            "formal_value_sampler_holdout",
+            "watch" if formal_value_sampler_watch else "blocked",
+            "formal/value sampler has holdout signal but remains shadow-only"
+            if formal_value_sampler_watch
+            else "formal/value sampler lacks enough safe holdout support",
+            overall_status=formal_value_sampler_holdout.get("overall_status"),
+            candidate_rows=formal_value_sampler_rows,
+            candidate_groups=formal_value_sampler_candidate.get(
+                "candidate_groups"
+            ),
+            candidate_delta_formal_p50_mae=formal_value_sampler_delta,
+            candidate_delta_q6_formal_p50_mae=formal_value_sampler_q6_delta,
+            candidate_formal_below_rate=formal_value_sampler_candidate.get(
+                "candidate_formal_p50_below_rate"
+            ),
+            candidate_formal_over_rate=formal_value_sampler_candidate.get(
+                "candidate_formal_p50_over_rate"
+            ),
+            candidate_formal_p90_coverage=formal_value_sampler_candidate.get(
+                "candidate_formal_p90_coverage"
+            ),
+            applied_hurts_groups=formal_value_sampler_hurts,
+        )
+    )
+
     residual_counts = _status_counts(residual)
     gates.append(
         _gate(
@@ -636,6 +761,10 @@ def summarize_readiness(
         next_actions.append("keep CCV direction selection in audit; holdout is not stable")
     if ccv_counts.get("watch_only_count_cell_candidate", 0):
         next_actions.append("redesign CCV likelihood; current holdout is not promotion-ready")
+    if not formal_value_sampler_watch:
+        next_actions.append("keep formal/value sampler shadow-only until holdout has safe support")
+    if not prior_stress_drift_ready:
+        next_actions.append("audit prior-stressed capacity/table drift by map/profile before promotion")
     if not robust_ready:
         next_actions.append("separate activity/prior-drift rows before formal promotion")
 
@@ -674,10 +803,32 @@ def summarize_readiness(
                 "v3_tail_review_candidate_rows",
                 "v3_tail_review_hurt_guard_rows",
                 "v3_tail_review_active_rows",
+                "v3_fv_candidate_rows",
+                "v3_fv_capacity_watch_rows",
+                "v3_fv_value_floor_candidate_rows",
+                "v3_fv_delta_formal_p50_mae",
                 "v3_resid_gate_active_rows",
             )
         },
         "gates": gates,
+        "prior_stress_detail_summary": {
+            "rows": prior_stress_group_rows,
+            "capacity_flag_hits": prior_stress_capacity_hits,
+            "capacity_flag_counts": prior_stress_capacity_flags,
+            "capacity_count_summary": prior_stress_overall.get(
+                "capacity_count_summary"
+            ),
+            "source_counts": prior_stress_overall.get("source_counts"),
+            "ratio_summary": prior_stress_overall.get("ratio_summary"),
+            "top_map_groups": _top_prior_stress_groups(
+                prior_stress_detail_summary,
+                "map_id",
+            ),
+            "top_profile_groups": _top_prior_stress_groups(
+                prior_stress_detail_summary,
+                "hero_map_evidence_profile",
+            ),
+        },
         "underestimate_holdout": {
             "candidate_rows": under_candidate_rows,
             "candidate_groups": under_candidate_only.get("candidate_groups"),
@@ -779,6 +930,28 @@ def summarize_readiness(
                 "delta_formal_p50_mae"
             ),
         },
+        "formal_value_sampler_holdout": {
+            "status": formal_value_sampler_holdout.get("overall_status"),
+            "candidate_rows": formal_value_sampler_rows,
+            "candidate_groups": formal_value_sampler_candidate.get(
+                "candidate_groups"
+            ),
+            "candidate_delta_formal_p50_mae": formal_value_sampler_delta,
+            "candidate_delta_q6_formal_p50_mae": formal_value_sampler_q6_delta,
+            "candidate_formal_below_rate": formal_value_sampler_candidate.get(
+                "candidate_formal_p50_below_rate"
+            ),
+            "candidate_formal_over_rate": formal_value_sampler_candidate.get(
+                "candidate_formal_p50_over_rate"
+            ),
+            "candidate_formal_p90_coverage": formal_value_sampler_candidate.get(
+                "candidate_formal_p90_coverage"
+            ),
+            "applied_hurts_groups": formal_value_sampler_hurts,
+            "train_candidate_status_counts": formal_value_sampler_holdout.get(
+                "train_candidate_status_counts"
+            ),
+        },
         "ccv_status_counts": ccv_counts,
         "tail_status_counts": tail_counts,
         "residual_status_counts": residual_counts,
@@ -818,6 +991,14 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"tail_under_p90_extreme_delta={result['tail_under_holdout']['candidate_delta_formal_p90_extreme_over_rate']}",
                 "tail_under_applied_hurts="
                 + ",".join(result["tail_under_holdout"]["applied_tail_hurts_groups"]),
+                f"formal_value_rows={result['formal_value_sampler_holdout']['candidate_rows']}",
+                f"formal_value_delta={result['formal_value_sampler_holdout']['candidate_delta_formal_p50_mae']}",
+                "formal_value_applied_hurts="
+                + ",".join(
+                    result["formal_value_sampler_holdout"]["applied_hurts_groups"]
+                ),
+                f"prior_stress_detail_rows={result['prior_stress_detail_summary']['rows']}",
+                f"prior_stress_capacity_hits={result['prior_stress_detail_summary']['capacity_flag_hits']}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
             )
         )

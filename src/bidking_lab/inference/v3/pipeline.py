@@ -18,6 +18,10 @@ from bidking_lab.inference.v3.calibration import (
     calibrate_posterior_report,
 )
 from bidking_lab.inference.v3.constraints import ConstraintSet
+from bidking_lab.inference.v3.formal_value_sampler import (
+    V3FormalValueSamplerReport,
+    sample_formal_value_report,
+)
 from bidking_lab.inference.v3.posterior import (
     V3PosteriorReport,
     empty_posterior_flat_dict,
@@ -63,6 +67,7 @@ class V3ShadowPipelineReport:
     calibration: V3PriorCalibrationReport
     underestimate: V3UnderestimateRepairReport
     tail_review: V3TailValueReviewReport
+    formal_value: V3FormalValueSamplerReport
 
     def to_flat_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -79,6 +84,7 @@ class V3ShadowPipelineReport:
         out.update(self.calibration.to_flat_dict())
         out.update(self.underestimate.to_flat_dict())
         out.update(self.tail_review.to_flat_dict())
+        out.update(self.formal_value.to_flat_dict())
         return out
 
 
@@ -95,6 +101,7 @@ def estimate_shadow_pipeline(
     tail_review_entry: TailValueReviewEntry | None = None,
     hero: str | None = None,
     ccv_options: V3CcvOptions | None = None,
+    prior_fields: Mapping[str, Any] | None = None,
 ) -> V3ShadowPipelineReport:
     posterior = estimate_q6_posterior_from_truths(
         map_id=int(map_id),
@@ -161,6 +168,11 @@ def estimate_shadow_pipeline(
         tail_review_entry,
         hero=hero,
     )
+    formal_value = sample_formal_value_report(
+        posterior,
+        summary=summary,
+        prior_fields=prior_fields,
+    )
     return V3ShadowPipelineReport(
         posterior=posterior,
         ccv_posterior=ccv_posterior,
@@ -170,6 +182,7 @@ def estimate_shadow_pipeline(
         calibration=calibration,
         underestimate=underestimate,
         tail_review=tail_review,
+        formal_value=formal_value,
     )
 
 

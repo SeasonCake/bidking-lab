@@ -144,6 +144,34 @@ def _constraint_target(row: dict[str, Any], exact_key: str, floor_key: str) -> f
     return max(values) if values else None
 
 
+def _constraint_source_and_target(
+    row: dict[str, Any],
+    exact_key: str,
+    floor_key: str,
+) -> tuple[str, float | None]:
+    exact = _float_or_none(row.get(exact_key))
+    floor = _float_or_none(row.get(floor_key))
+    if exact is not None and exact > 0.0:
+        if floor is not None and floor > exact:
+            return ("floor_over_exact", floor)
+        return ("exact", exact)
+    if floor is not None and floor > 0.0:
+        return ("floor", floor)
+    return ("none", None)
+
+
+def _ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator is None or denominator <= 0.0:
+        return None
+    return numerator / denominator
+
+
+def _delta(left: float | None, right: float | None) -> float | None:
+    if left is None or right is None:
+        return None
+    return left - right
+
+
 def _ratio_values(
     rows: Iterable[dict[str, Any]],
     *,
@@ -159,6 +187,611 @@ def _ratio_values(
             continue
         values.append(target / expected)
     return tuple(values)
+
+
+def _target_detail(
+    row: dict[str, Any],
+    *,
+    exact_key: str,
+    floor_key: str,
+    prior_key: str,
+    truth_key: str,
+    post_p50_key: str | None = None,
+    post_p90_key: str | None = None,
+) -> dict[str, Any]:
+    source, target = _constraint_source_and_target(row, exact_key, floor_key)
+    prior = _float_or_none(row.get(prior_key))
+    truth = _float_or_none(row.get(truth_key))
+    post_p50 = _float_or_none(row.get(post_p50_key)) if post_p50_key else None
+    post_p90 = _float_or_none(row.get(post_p90_key)) if post_p90_key else None
+    return {
+        "source": source,
+        "target": _round_metric(target, 3),
+        "prior_expected": _round_metric(prior, 3),
+        "truth": _round_metric(truth, 3),
+        "post_p50": _round_metric(post_p50, 3),
+        "post_p90": _round_metric(post_p90, 3),
+        "target_prior_ratio": _round_metric(_ratio(target, prior), 3),
+        "truth_prior_ratio": _round_metric(_ratio(truth, prior), 3),
+        "target_truth_delta": _round_metric(_delta(target, truth), 3),
+        "post_p50_target_delta": _round_metric(_delta(post_p50, target), 3),
+        "post_p90_target_delta": _round_metric(_delta(post_p90, target), 3),
+        "post_p50_truth_delta": _round_metric(_delta(post_p50, truth), 3),
+        "post_p90_truth_delta": _round_metric(_delta(post_p90, truth), 3),
+    }
+
+
+def _prior_capacity_detail(row: dict[str, Any]) -> dict[str, Any]:
+    total_count_source, total_count_target = _constraint_source_and_target(
+        row,
+        "v3_summary_session_total_count_exact",
+        "v3_summary_known_count_floor",
+    )
+    prior_min = _float_or_none(row.get("v3_prior_items_per_session_min"))
+    prior_max = _float_or_none(row.get("v3_prior_items_per_session_max"))
+    truth_count = _float_or_none(row.get("v3_truth_item_count"))
+    flags: list[str] = []
+    if prior_max is not None:
+        if total_count_target is not None and total_count_target > prior_max:
+            flags.append("target_count_above_prior_max")
+        if truth_count is not None and truth_count > prior_max:
+            flags.append("truth_count_above_prior_max")
+    if prior_min is not None and truth_count is not None and truth_count < prior_min:
+        flags.append("truth_count_below_prior_min")
+    target_prior_max_delta = _delta(total_count_target, prior_max)
+    truth_prior_max_delta = _delta(truth_count, prior_max)
+    target_truth_delta = _delta(total_count_target, truth_count)
+    target_prior_max_ratio = _ratio(total_count_target, prior_max)
+    truth_prior_max_ratio = _ratio(truth_count, prior_max)
+    cases = _capacity_cases(
+        total_count_source=total_count_source,
+        target_prior_max_delta=target_prior_max_delta,
+        truth_prior_max_delta=truth_prior_max_delta,
+        target_truth_delta=target_truth_delta,
+    )
+    return {
+        "total_count_source": total_count_source,
+        "total_count_target": _round_metric(total_count_target, 3),
+        "truth_item_count": _round_metric(truth_count, 3),
+        "prior_items_per_session_min": _round_metric(prior_min, 3),
+        "prior_items_per_session_max": _round_metric(prior_max, 3),
+        "target_prior_max_delta": _round_metric(target_prior_max_delta, 3),
+        "truth_prior_max_delta": _round_metric(truth_prior_max_delta, 3),
+        "target_truth_delta": _round_metric(target_truth_delta, 3),
+        "target_prior_max_ratio": _round_metric(target_prior_max_ratio, 3),
+        "truth_prior_max_ratio": _round_metric(truth_prior_max_ratio, 3),
+        "flags": flags,
+        "cases": cases,
+    }
+
+
+def _capacity_cases(
+    *,
+    total_count_source: str,
+    target_prior_max_delta: float | None,
+    truth_prior_max_delta: float | None,
+    target_truth_delta: float | None,
+) -> list[str]:
+    target_above_prior = (
+        target_prior_max_delta is not None and target_prior_max_delta > 0.0
+    )
+    truth_above_prior = (
+        truth_prior_max_delta is not None and truth_prior_max_delta > 0.0
+    )
+    target_below_truth = target_truth_delta is not None and target_truth_delta < 0.0
+    target_matches_truth = target_truth_delta is not None and target_truth_delta == 0.0
+    target_above_truth = target_truth_delta is not None and target_truth_delta > 0.0
+    cases: list[str] = []
+    if target_above_prior and truth_above_prior and target_matches_truth:
+        cases.append("direct_prior_max_conflict")
+    if truth_above_prior and target_below_truth:
+        cases.append("target_lower_bound_truth_above_prior")
+    if target_above_prior and target_below_truth:
+        cases.append("target_above_prior_but_below_truth")
+    if target_above_prior and target_above_truth:
+        cases.append("target_over_truth_capacity_risk")
+    if truth_above_prior and total_count_source == "none":
+        cases.append("truth_above_prior_without_count_target")
+    if target_above_prior and not truth_above_prior:
+        cases.append("target_above_prior_without_truth_support")
+    if truth_above_prior and not target_above_prior and not target_below_truth:
+        cases.append("truth_above_prior_without_target_prior_hit")
+    if not cases:
+        cases.append("no_capacity_prior_max_case")
+    return cases
+
+
+def _stress_detail_flags(row: dict[str, Any]) -> tuple[str, ...]:
+    flags: list[str] = []
+    total_cells = row["total_cells"]
+    q6_cells = row["q6_cells"]
+    capacity = row["item_count_capacity"]
+    if total_cells["source"] == "exact" and total_cells["target_truth_delta"] == 0:
+        flags.append("total_cells_exact_matches_truth")
+    if total_cells["source"].startswith("floor"):
+        delta_to_truth = total_cells["target_truth_delta"]
+        if delta_to_truth is not None and float(delta_to_truth) > 0.0:
+            flags.append("total_cells_floor_above_truth")
+    if q6_cells["source"].startswith("floor"):
+        delta_to_truth = q6_cells["target_truth_delta"]
+        if delta_to_truth is not None and float(delta_to_truth) > 0.0:
+            flags.append("q6_cells_floor_above_truth")
+    total_cells_post_delta = total_cells["post_p50_truth_delta"]
+    if total_cells_post_delta is not None and float(total_cells_post_delta) < 0.0:
+        flags.append("posterior_total_cells_under_truth")
+    q6_cells_post_delta = q6_cells["post_p50_truth_delta"]
+    if q6_cells_post_delta is not None and float(q6_cells_post_delta) < 0.0:
+        flags.append("posterior_q6_cells_under_truth")
+    total_cells_post_target_delta = total_cells["post_p50_target_delta"]
+    if (
+        total_cells_post_target_delta is not None
+        and float(total_cells_post_target_delta) < 0.0
+    ):
+        flags.append("posterior_total_cells_below_target")
+    q6_cells_post_target_delta = q6_cells["post_p50_target_delta"]
+    if (
+        q6_cells_post_target_delta is not None
+        and float(q6_cells_post_target_delta) < 0.0
+    ):
+        flags.append("posterior_q6_cells_below_target")
+    flags.extend(capacity["flags"])
+    return tuple(flags)
+
+
+def _counter_dict(values: Iterable[Any], *, top: int = 8) -> dict[str, int]:
+    counts: Counter[str] = Counter(
+        str(value) if value not in (None, "") else "none"
+        for value in values
+    )
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:top])
+
+
+def _numeric_values(values: Iterable[Any]) -> tuple[float, ...]:
+    out: list[float] = []
+    for value in values:
+        parsed = _float_or_none(value)
+        if parsed is not None:
+            out.append(parsed)
+    return tuple(out)
+
+
+def _numeric_summary(values: Iterable[Any], *, digits: int = 3) -> dict[str, Any]:
+    seq = _numeric_values(values)
+    if not seq:
+        return {"n": 0, "avg": None, "p90": None, "max": None}
+    ordered = sorted(seq)
+    p90_index = min(len(ordered) - 1, int(round((len(ordered) - 1) * 0.9)))
+    return {
+        "n": len(seq),
+        "avg": _round_metric(_mean(seq), digits),
+        "p90": _round_metric(ordered[p90_index], digits),
+        "max": _round_metric(max(seq), digits),
+    }
+
+
+def _detail_value(rows: Iterable[dict[str, Any]], name: str, key: str) -> tuple[Any, ...]:
+    return tuple(row.get(name, {}).get(key) for row in rows)
+
+
+def _capacity_value(rows: Iterable[dict[str, Any]], key: str) -> tuple[Any, ...]:
+    return tuple(row.get("item_count_capacity", {}).get(key) for row in rows)
+
+
+def _delta_counts(
+    values: Iterable[Any],
+    *,
+    negative_label: str = "below_truth",
+    zero_label: str = "matches_truth",
+    positive_label: str = "above_truth",
+) -> dict[str, int]:
+    counts = {negative_label: 0, zero_label: 0, positive_label: 0}
+    for value in _numeric_values(values):
+        if value < 0.0:
+            counts[negative_label] += 1
+        elif value > 0.0:
+            counts[positive_label] += 1
+        else:
+            counts[zero_label] += 1
+    return counts
+
+
+def _component_delta_counts(
+    rows: Iterable[dict[str, Any]],
+    *,
+    key: str,
+    negative_label: str = "below_truth",
+    zero_label: str = "matches_truth",
+    positive_label: str = "above_truth",
+) -> dict[str, dict[str, int]]:
+    seq = tuple(rows)
+    return {
+        "total_cells": _delta_counts(
+            _detail_value(seq, "total_cells", key),
+            negative_label=negative_label,
+            zero_label=zero_label,
+            positive_label=positive_label,
+        ),
+        "q6_cells": _delta_counts(
+            _detail_value(seq, "q6_cells", key),
+            negative_label=negative_label,
+            zero_label=zero_label,
+            positive_label=positive_label,
+        ),
+        "total_value": _delta_counts(
+            _detail_value(seq, "total_value", key),
+            negative_label=negative_label,
+            zero_label=zero_label,
+            positive_label=positive_label,
+        ),
+        "q6_value": _delta_counts(
+            _detail_value(seq, "q6_value", key),
+            negative_label=negative_label,
+            zero_label=zero_label,
+            positive_label=positive_label,
+        ),
+    }
+
+
+def _component_numeric_summary(
+    rows: Iterable[dict[str, Any]],
+    *,
+    key: str,
+) -> dict[str, dict[str, Any]]:
+    seq = tuple(rows)
+    return {
+        "total_cells": _numeric_summary(_detail_value(seq, "total_cells", key)),
+        "q6_cells": _numeric_summary(_detail_value(seq, "q6_cells", key)),
+        "total_value": _numeric_summary(_detail_value(seq, "total_value", key)),
+        "q6_value": _numeric_summary(_detail_value(seq, "q6_value", key)),
+    }
+
+
+def _capacity_count_summary(rows: Iterable[dict[str, Any]], *, top: int = 8) -> dict[str, Any]:
+    seq = tuple(rows)
+    capacity_cases = [
+        case
+        for row in seq
+        for case in row.get("item_count_capacity", {}).get("cases", ())
+    ]
+    return {
+        "case_counts": _counter_dict(capacity_cases, top=top),
+        "total_count_source_counts": _counter_dict(
+            _capacity_value(seq, "total_count_source"),
+            top=top,
+        ),
+        "target_count": _numeric_summary(_capacity_value(seq, "total_count_target")),
+        "truth_item_count": _numeric_summary(_capacity_value(seq, "truth_item_count")),
+        "prior_items_per_session_min": _numeric_summary(
+            _capacity_value(seq, "prior_items_per_session_min")
+        ),
+        "prior_items_per_session_max": _numeric_summary(
+            _capacity_value(seq, "prior_items_per_session_max")
+        ),
+        "target_prior_max_delta": _numeric_summary(
+            _capacity_value(seq, "target_prior_max_delta")
+        ),
+        "truth_prior_max_delta": _numeric_summary(
+            _capacity_value(seq, "truth_prior_max_delta")
+        ),
+        "target_truth_delta": _numeric_summary(_capacity_value(seq, "target_truth_delta")),
+        "target_prior_max_ratio": _numeric_summary(
+            _capacity_value(seq, "target_prior_max_ratio")
+        ),
+        "truth_prior_max_ratio": _numeric_summary(
+            _capacity_value(seq, "truth_prior_max_ratio")
+        ),
+        "target_prior_max_delta_counts": _delta_counts(
+            _capacity_value(seq, "target_prior_max_delta"),
+            negative_label="below_prior_max",
+            zero_label="matches_prior_max",
+            positive_label="above_prior_max",
+        ),
+        "truth_prior_max_delta_counts": _delta_counts(
+            _capacity_value(seq, "truth_prior_max_delta"),
+            negative_label="below_prior_max",
+            zero_label="matches_prior_max",
+            positive_label="above_prior_max",
+        ),
+        "target_truth_delta_counts": _delta_counts(
+            _capacity_value(seq, "target_truth_delta"),
+            negative_label="below_truth",
+            zero_label="matches_truth",
+            positive_label="above_truth",
+        ),
+    }
+
+
+def _stress_detail_summary_block(
+    rows: Iterable[dict[str, Any]],
+    *,
+    top: int = 8,
+) -> dict[str, Any]:
+    seq = tuple(rows)
+    capacity_flags = [
+        flag
+        for row in seq
+        for flag in row["item_count_capacity"].get("flags", ())
+    ]
+    detail_flags = [flag for row in seq for flag in row.get("flags", ())]
+    reason_tokens = [reason for row in seq for reason in row.get("reasons", ())]
+    evidence = tuple(row.get("evidence_counts", {}) for row in seq)
+    return {
+        "rows": len(seq),
+        "reason_counts": _counter_dict(reason_tokens, top=top),
+        "posterior_scope_counts": _counter_dict(
+            (row.get("posterior_scope") for row in seq),
+            top=top,
+        ),
+        "fallback_counts": _counter_dict(
+            (row.get("fallback_mode") for row in seq),
+            top=top,
+        ),
+        "map_counts": _counter_dict((row.get("map_id") for row in seq), top=top),
+        "hero_counts": _counter_dict((row.get("hero") for row in seq), top=top),
+        "evidence_profile_counts": _counter_dict(
+            (row.get("evidence_profile_key") for row in seq),
+            top=top,
+        ),
+        "hero_map_evidence_profile_counts": _counter_dict(
+            (row.get("hero_map_evidence_profile") for row in seq),
+            top=top,
+        ),
+        "source_counts": {
+            "total_cells": _counter_dict(_detail_value(seq, "total_cells", "source"), top=top),
+            "q6_cells": _counter_dict(_detail_value(seq, "q6_cells", "source"), top=top),
+            "total_value": _counter_dict(_detail_value(seq, "total_value", "source"), top=top),
+            "q6_value": _counter_dict(_detail_value(seq, "q6_value", "source"), top=top),
+        },
+        "capacity_flag_counts": _counter_dict(capacity_flags, top=top),
+        "capacity_count_summary": _capacity_count_summary(seq, top=top),
+        "detail_flag_counts": _counter_dict(detail_flags, top=top),
+        "target_truth_match_counts": {
+            "total_cells": sum(
+                1
+                for row in seq
+                if row["total_cells"].get("target_truth_delta") == 0
+            ),
+            "q6_cells": sum(
+                1 for row in seq if row["q6_cells"].get("target_truth_delta") == 0
+            ),
+            "total_value": sum(
+                1
+                for row in seq
+                if row["total_value"].get("target_truth_delta") == 0
+            ),
+            "q6_value": sum(
+                1 for row in seq if row["q6_value"].get("target_truth_delta") == 0
+            ),
+        },
+        "target_truth_delta_counts": _component_delta_counts(
+            seq,
+            key="target_truth_delta",
+        ),
+        "target_truth_delta_summary": _component_numeric_summary(
+            seq,
+            key="target_truth_delta",
+        ),
+        "post_p50_truth_delta_summary": _component_numeric_summary(
+            seq,
+            key="post_p50_truth_delta",
+        ),
+        "post_p50_target_delta_counts": _component_delta_counts(
+            seq,
+            key="post_p50_target_delta",
+            negative_label="below_target",
+            zero_label="matches_target",
+            positive_label="above_target",
+        ),
+        "post_p50_target_delta_summary": _component_numeric_summary(
+            seq,
+            key="post_p50_target_delta",
+        ),
+        "post_p90_target_delta_summary": _component_numeric_summary(
+            seq,
+            key="post_p90_target_delta",
+        ),
+        "ratio_summary": {
+            "total_cells": _numeric_summary(
+                _detail_value(seq, "total_cells", "target_prior_ratio")
+            ),
+            "q6_cells": _numeric_summary(
+                _detail_value(seq, "q6_cells", "target_prior_ratio")
+            ),
+            "total_value": _numeric_summary(
+                _detail_value(seq, "total_value", "target_prior_ratio")
+            ),
+            "q6_value": _numeric_summary(
+                _detail_value(seq, "q6_value", "target_prior_ratio")
+            ),
+        },
+        "evidence_count_summary": {
+            "numeric_constraints": _numeric_summary(
+                row.get("numeric_constraints") for row in evidence
+            ),
+            "item_anchors": _numeric_summary(row.get("item_anchors") for row in evidence),
+            "shape_anchors": _numeric_summary(row.get("shape_anchors") for row in evidence),
+            "quality_floor_anchors": _numeric_summary(
+                row.get("quality_floor_anchors") for row in evidence
+            ),
+        },
+    }
+
+
+def _summary_group_value(row: dict[str, Any], field: str) -> str:
+    value = row.get(field)
+    return str(value) if value not in (None, "") else "none"
+
+
+def summarize_prior_stress_detail_groups(
+    details: Iterable[dict[str, Any]],
+    group_field: str,
+    *,
+    top: int = 8,
+) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in details:
+        groups[_summary_group_value(row, group_field)].append(row)
+    out: list[dict[str, Any]] = []
+    for value, group_rows in groups.items():
+        block = _stress_detail_summary_block(group_rows, top=top)
+        capacity_hits = sum(block["capacity_flag_counts"].values())
+        q6_ratio = block["ratio_summary"]["q6_cells"]["max"] or 0.0
+        total_ratio = block["ratio_summary"]["total_cells"]["max"] or 0.0
+        value_ratio = max(
+            block["ratio_summary"]["total_value"]["max"] or 0.0,
+            block["ratio_summary"]["q6_value"]["max"] or 0.0,
+        )
+        out.append(
+            {
+                "field": group_field,
+                "value": value,
+                "capacity_flag_hits": capacity_hits,
+                "max_cells_ratio": _round_metric(max(q6_ratio, total_ratio), 3),
+                "max_value_ratio": _round_metric(value_ratio, 3),
+                **block,
+            }
+        )
+    return sorted(
+        out,
+        key=lambda row: (
+            -int(row["rows"]),
+            -int(row["capacity_flag_hits"]),
+            -float(row["max_cells_ratio"] or 0.0),
+            -float(row["max_value_ratio"] or 0.0),
+            str(row["field"]),
+            str(row["value"]),
+        ),
+    )[:top]
+
+
+def summarize_prior_stress_detail_summary(
+    details: Iterable[dict[str, Any]],
+    *,
+    top: int = 8,
+    group_fields: Iterable[str] = (),
+) -> dict[str, Any]:
+    rows = tuple(details)
+    by_reason: list[dict[str, Any]] = []
+    for reason, count in _counter_dict(
+        (reason for row in rows for reason in row.get("reasons", ())),
+        top=top,
+    ).items():
+        reason_rows = [
+            row
+            for row in rows
+            if reason in tuple(str(item) for item in row.get("reasons", ()))
+        ]
+        by_reason.append(
+            {
+                "reason": reason,
+                "ready": count,
+                **_stress_detail_summary_block(reason_rows, top=top),
+            }
+        )
+    return {
+        "overall": _stress_detail_summary_block(rows, top=top),
+        "by_reason": by_reason,
+        "by_group": [
+            row
+            for group_field in group_fields
+            for row in summarize_prior_stress_detail_groups(
+                rows,
+                group_field,
+                top=top,
+            )
+        ],
+    }
+
+
+def summarize_prior_stress_details(
+    rows: Iterable[dict[str, Any]],
+    *,
+    reason: str | None = None,
+) -> list[dict[str, Any]]:
+    details: list[dict[str, Any]] = []
+    for source_row in rows:
+        if source_row.get("status") != "ready":
+            continue
+        stress_score = int(source_row.get("v3_robust_prior_stress_score") or 0)
+        if stress_score <= 0:
+            continue
+        reasons = _reason_tokens(source_row)
+        if reason and reason not in reasons:
+            continue
+        row = {
+            "file": source_row.get("file"),
+            "session_id": source_row.get("session_id"),
+            "round": source_row.get("round"),
+            "hero": source_row.get("hero"),
+            "map_id": source_row.get("map_id"),
+            "map_family": source_row.get("map_family"),
+            "evidence_profile_key": source_row.get("evidence_profile_key"),
+            "hero_map_evidence_profile": source_row.get("hero_map_evidence_profile"),
+            "fallback_mode": source_row.get("v3_robust_fallback_mode"),
+            "posterior_scope": source_row.get("v3_post_match_scope"),
+            "stress_score": stress_score,
+            "reasons": list(reasons),
+            "evidence_counts": {
+                "numeric_constraints": source_row.get("numeric_constraints"),
+                "item_anchors": source_row.get("item_anchors"),
+                "shape_anchors": source_row.get("shape_anchors"),
+                "quality_floor_anchors": source_row.get("quality_floor_anchors"),
+            },
+            "total_cells": _target_detail(
+                source_row,
+                exact_key="v3_summary_session_total_cells_exact",
+                floor_key="v3_summary_known_cells_floor",
+                prior_key="v3_prior_expected_cells",
+                truth_key="v3_truth_total_cells",
+                post_p50_key="v3_post_total_cells_p50",
+                post_p90_key="v3_post_total_cells_p90",
+            ),
+            "q6_cells": _target_detail(
+                source_row,
+                exact_key="v3_summary_q6_cells_exact",
+                floor_key="v3_summary_q6_cells_floor",
+                prior_key="v3_prior_q6_expected_cells",
+                truth_key="v3_truth_q6_cells",
+                post_p50_key="v3_post_q6_cells_p50",
+                post_p90_key="v3_post_q6_cells_p90",
+            ),
+            "total_value": _target_detail(
+                source_row,
+                exact_key="__never_exact_total_value__",
+                floor_key="v3_summary_known_value_floor",
+                prior_key="v3_prior_expected_value",
+                truth_key="v3_truth_formal_decision_value",
+                post_p50_key="v3_post_formal_decision_value_p50",
+                post_p90_key="v3_post_formal_decision_value_p90",
+            ),
+            "q6_value": _target_detail(
+                source_row,
+                exact_key="v3_summary_q6_value_exact",
+                floor_key="v3_summary_q6_value_floor",
+                prior_key="v3_prior_q6_expected_value",
+                truth_key="v3_truth_q6_raw_value",
+                post_p50_key="v3_post_q6_value_p50",
+                post_p90_key="v3_post_q6_value_p90",
+            ),
+            "item_count_capacity": _prior_capacity_detail(source_row),
+        }
+        row["flags"] = list(_stress_detail_flags(row))
+        details.append(row)
+
+    def sort_key(row: dict[str, Any]) -> tuple[float, float, float, str]:
+        ratios = [
+            float(row[name]["target_prior_ratio"] or 0.0)
+            for name in ("total_cells", "q6_cells", "total_value", "q6_value")
+        ]
+        formal_abs = abs(float(row["total_value"]["post_p50_truth_delta"] or 0.0))
+        return (
+            -float(row["stress_score"]),
+            -max(ratios),
+            -formal_abs,
+            str(row.get("file") or ""),
+        )
+
+    return sorted(details, key=sort_key)
 
 
 def _audit_flags(row: dict[str, Any]) -> tuple[str, ...]:
@@ -354,6 +987,254 @@ def _print_table(rows: list[dict[str, Any]], *, top: int) -> None:
         )
 
 
+def _format_target_detail(label: str, detail: dict[str, Any]) -> str:
+    return (
+        f"{label}={detail['source']}:{detail['target']}"
+        f"/prior={detail['prior_expected']}"
+        f"/ratio={detail['target_prior_ratio']}"
+        f"/truth={detail['truth']}"
+        f"/post50={detail['post_p50']}"
+        f"/post90={detail['post_p90']}"
+        f"/target_truth_delta={detail['target_truth_delta']}"
+        f"/post50_target_delta={detail['post_p50_target_delta']}"
+        f"/post50_truth_delta={detail['post_p50_truth_delta']}"
+    )
+
+
+def _print_details(rows: list[dict[str, Any]], *, top: int) -> None:
+    for row in rows[:top]:
+        evidence = ",".join(
+            f"{key}:{value}" for key, value in row["evidence_counts"].items()
+        )
+        capacity = row["item_count_capacity"]
+        capacity_flags = "+".join(capacity["flags"]) if capacity["flags"] else "-"
+        flags = "+".join(row["flags"]) if row["flags"] else "-"
+        print(
+            " ".join(
+                (
+                    f"file={row['file']}",
+                    f"round={row['round']}",
+                    f"hero={row['hero']}",
+                    f"map={row['map_id']}",
+                    f"profile={row['evidence_profile_key']}",
+                    f"stress={row['stress_score']}",
+                    f"scope={row['posterior_scope']}",
+                    f"fallback={row['fallback_mode']}",
+                    f"reasons={';'.join(row['reasons'])}",
+                    _format_target_detail("total_cells", row["total_cells"]),
+                    _format_target_detail("q6_cells", row["q6_cells"]),
+                    _format_target_detail("total_value", row["total_value"]),
+                    _format_target_detail("q6_value", row["q6_value"]),
+                    (
+                        "item_count="
+                        f"{capacity['total_count_source']}:{capacity['total_count_target']}"
+                        f"/truth={capacity['truth_item_count']}"
+                        f"/prior_min={capacity['prior_items_per_session_min']}"
+                        f"/prior_max={capacity['prior_items_per_session_max']}"
+                        f"/target_prior_max_delta={capacity['target_prior_max_delta']}"
+                        f"/truth_prior_max_delta={capacity['truth_prior_max_delta']}"
+                        f"/target_truth_delta={capacity['target_truth_delta']}"
+                        f"/cases={'+'.join(capacity['cases'])}"
+                        f"/flags={capacity_flags}"
+                    ),
+                    f"evidence={evidence}",
+                    f"flags={flags}",
+                )
+            )
+        )
+
+
+def _format_counts(counts: dict[str, int]) -> str:
+    return ",".join(f"{key}:{value}" for key, value in counts.items()) or "-"
+
+
+def _format_ratio_summary(summary: dict[str, Any]) -> str:
+    return (
+        f"n={summary['n']}"
+        f"/avg={summary['avg']}"
+        f"/p90={summary['p90']}"
+        f"/max={summary['max']}"
+    )
+
+
+def _format_delta_counts(counts: dict[str, int]) -> str:
+    return (
+        f"below={counts.get('below_truth', 0)}"
+        f"/match={counts.get('matches_truth', 0)}"
+        f"/above={counts.get('above_truth', 0)}"
+    )
+
+
+def _format_target_absorption_counts(counts: dict[str, int]) -> str:
+    return (
+        f"below={counts.get('below_target', 0)}"
+        f"/match={counts.get('matches_target', 0)}"
+        f"/above={counts.get('above_target', 0)}"
+    )
+
+
+def _format_capacity_prior_counts(counts: dict[str, int]) -> str:
+    return (
+        f"below={counts.get('below_prior_max', 0)}"
+        f"/match={counts.get('matches_prior_max', 0)}"
+        f"/above={counts.get('above_prior_max', 0)}"
+    )
+
+
+def _format_capacity_count_summary(summary: dict[str, Any]) -> tuple[str, ...]:
+    return (
+        "capacity_cases=" + _format_counts(summary["case_counts"]),
+        "capacity_count_sources="
+        + _format_counts(summary["total_count_source_counts"]),
+        "capacity_prior_max="
+        + _format_ratio_summary(summary["prior_items_per_session_max"]),
+        "capacity_target_prior_max_delta="
+        + _format_ratio_summary(summary["target_prior_max_delta"]),
+        "capacity_truth_prior_max_delta="
+        + _format_ratio_summary(summary["truth_prior_max_delta"]),
+        "capacity_target_truth_delta="
+        + _format_ratio_summary(summary["target_truth_delta"]),
+        "capacity_target_prior_counts="
+        + _format_capacity_prior_counts(summary["target_prior_max_delta_counts"]),
+        "capacity_truth_prior_counts="
+        + _format_capacity_prior_counts(summary["truth_prior_max_delta_counts"]),
+        "capacity_target_truth_counts="
+        + _format_delta_counts(summary["target_truth_delta_counts"]),
+    )
+
+
+def _print_detail_summary(summary: dict[str, Any], *, top: int) -> None:
+    overall = summary["overall"]
+    print(
+        " ".join(
+            (
+                f"rows={overall['rows']}",
+                "reasons=" + _format_counts(overall["reason_counts"]),
+                "scopes=" + _format_counts(overall["posterior_scope_counts"]),
+                "maps=" + _format_counts(overall["map_counts"]),
+                "profiles=" + _format_counts(overall["evidence_profile_counts"]),
+                "capacity_flags=" + _format_counts(overall["capacity_flag_counts"]),
+                "detail_flags=" + _format_counts(overall["detail_flag_counts"]),
+                "sources_total_cells="
+                + _format_counts(overall["source_counts"]["total_cells"]),
+                "sources_q6_cells="
+                + _format_counts(overall["source_counts"]["q6_cells"]),
+                "target_delta_total_cells="
+                + _format_delta_counts(
+                    overall["target_truth_delta_counts"]["total_cells"]
+                ),
+                "target_delta_q6_cells="
+                + _format_delta_counts(
+                    overall["target_truth_delta_counts"]["q6_cells"]
+                ),
+                "post50_target_delta_total_cells="
+                + _format_target_absorption_counts(
+                    overall["post_p50_target_delta_counts"]["total_cells"]
+                ),
+                "post50_target_delta_q6_cells="
+                + _format_target_absorption_counts(
+                    overall["post_p50_target_delta_counts"]["q6_cells"]
+                ),
+                "ratio_total_cells="
+                + _format_ratio_summary(overall["ratio_summary"]["total_cells"]),
+                "ratio_q6_cells="
+                + _format_ratio_summary(overall["ratio_summary"]["q6_cells"]),
+                "ratio_total_value="
+                + _format_ratio_summary(overall["ratio_summary"]["total_value"]),
+                "ratio_q6_value="
+                + _format_ratio_summary(overall["ratio_summary"]["q6_value"]),
+                *_format_capacity_count_summary(
+                    overall["capacity_count_summary"],
+                ),
+            )
+        )
+    )
+    for row in summary["by_reason"][:top]:
+        print(
+            " ".join(
+                (
+                    f"reason={row['reason']}",
+                    f"rows={row['rows']}",
+                    "capacity_flags=" + _format_counts(row["capacity_flag_counts"]),
+                    "detail_flags=" + _format_counts(row["detail_flag_counts"]),
+                    "sources_total_cells="
+                    + _format_counts(row["source_counts"]["total_cells"]),
+                    "sources_q6_cells="
+                    + _format_counts(row["source_counts"]["q6_cells"]),
+                    "target_delta_total_cells="
+                    + _format_delta_counts(
+                        row["target_truth_delta_counts"]["total_cells"]
+                    ),
+                    "target_delta_q6_cells="
+                    + _format_delta_counts(
+                        row["target_truth_delta_counts"]["q6_cells"]
+                    ),
+                    "post50_target_delta_total_cells="
+                    + _format_target_absorption_counts(
+                        row["post_p50_target_delta_counts"]["total_cells"]
+                    ),
+                    "post50_target_delta_q6_cells="
+                    + _format_target_absorption_counts(
+                        row["post_p50_target_delta_counts"]["q6_cells"]
+                    ),
+                    "ratio_total_cells="
+                    + _format_ratio_summary(row["ratio_summary"]["total_cells"]),
+                    "ratio_q6_cells="
+                    + _format_ratio_summary(row["ratio_summary"]["q6_cells"]),
+                    "ratio_total_value="
+                    + _format_ratio_summary(row["ratio_summary"]["total_value"]),
+                    "ratio_q6_value="
+                    + _format_ratio_summary(row["ratio_summary"]["q6_value"]),
+                    *_format_capacity_count_summary(
+                        row["capacity_count_summary"],
+                    ),
+                )
+            )
+        )
+    for row in summary.get("by_group", ())[:top]:
+        print(
+            " ".join(
+                (
+                    f"group={row['field']}:{row['value']}",
+                    f"rows={row['rows']}",
+                    f"capacity_hits={row['capacity_flag_hits']}",
+                    f"max_cells_ratio={row['max_cells_ratio']}",
+                    f"max_value_ratio={row['max_value_ratio']}",
+                    "reasons=" + _format_counts(row["reason_counts"]),
+                    "capacity_flags=" + _format_counts(row["capacity_flag_counts"]),
+                    "sources_total_cells="
+                    + _format_counts(row["source_counts"]["total_cells"]),
+                    "sources_q6_cells="
+                    + _format_counts(row["source_counts"]["q6_cells"]),
+                    "target_delta_total_cells="
+                    + _format_delta_counts(
+                        row["target_truth_delta_counts"]["total_cells"]
+                    ),
+                    "target_delta_q6_cells="
+                    + _format_delta_counts(
+                        row["target_truth_delta_counts"]["q6_cells"]
+                    ),
+                    "post50_target_delta_total_cells="
+                    + _format_target_absorption_counts(
+                        row["post_p50_target_delta_counts"]["total_cells"]
+                    ),
+                    "post50_target_delta_q6_cells="
+                    + _format_target_absorption_counts(
+                        row["post_p50_target_delta_counts"]["q6_cells"]
+                    ),
+                    "ratio_total_cells="
+                    + _format_ratio_summary(row["ratio_summary"]["total_cells"]),
+                    "ratio_q6_cells="
+                    + _format_ratio_summary(row["ratio_summary"]["q6_cells"]),
+                    "profiles=" + _format_counts(row["evidence_profile_counts"]),
+                    *_format_capacity_count_summary(
+                        row["capacity_count_summary"],
+                    ),
+                )
+            )
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Audit v3 prior robustness/activity/prior-stress slices.",
@@ -374,6 +1255,37 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--format", choices=("summary", "json"), default="summary")
     parser.add_argument("--posterior-trials", type=int, default=64)
     parser.add_argument("--posterior-seed", type=int, default=0)
+    parser.add_argument(
+        "--details",
+        type=int,
+        default=0,
+        help="Print top-N prior-stressed evidence/capacity detail rows.",
+    )
+    parser.add_argument(
+        "--details-reason",
+        default=None,
+        help="Filter detail rows to a single v3_robust reason token.",
+    )
+    parser.add_argument(
+        "--detail-summary",
+        action="store_true",
+        help="Print aggregate prior-stress detail consistency summary.",
+    )
+    parser.add_argument(
+        "--detail-summary-top",
+        type=int,
+        default=8,
+        help="Top-N counts/reasons to include in detail summary.",
+    )
+    parser.add_argument(
+        "--detail-summary-by",
+        action="append",
+        default=None,
+        help=(
+            "Detail row field to group detail summary by, e.g. map_id, "
+            "evidence_profile_key, or hero_map_evidence_profile."
+        ),
+    )
     args = parser.parse_args(argv)
 
     rows, errors = evaluate_paths(
@@ -397,7 +1309,18 @@ def main(argv: list[str] | None = None) -> int:
         for field in fields
         for item in summarize_prior_robustness(rows, field)
     ]
-    result = {"errors": errors, "audits": audits}
+    details = summarize_prior_stress_details(rows, reason=args.details_reason)
+    detail_summary = summarize_prior_stress_detail_summary(
+        details,
+        top=args.detail_summary_top,
+        group_fields=tuple(args.detail_summary_by or ()),
+    )
+    result = {
+        "errors": errors,
+        "audits": audits,
+        "detail_summary": detail_summary,
+        "details": details[: args.details] if args.details else [],
+    }
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     else:
@@ -406,6 +1329,14 @@ def main(argv: list[str] | None = None) -> int:
         for field in fields:
             print(f"== {field} ==")
             _print_table([row for row in audits if row["field"] == field], top=args.top)
+        if args.details:
+            suffix = f" reason={args.details_reason}" if args.details_reason else ""
+            print(f"== prior_stress_details{suffix} ==")
+            _print_details(details, top=args.details)
+        if args.detail_summary:
+            suffix = f" reason={args.details_reason}" if args.details_reason else ""
+            print(f"== prior_stress_detail_summary{suffix} ==")
+            _print_detail_summary(detail_summary, top=args.detail_summary_top)
     return 1 if errors else 0
 
 

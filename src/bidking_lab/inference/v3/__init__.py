@@ -40,6 +40,12 @@ from bidking_lab.inference.v3.evidence_registry import (
     public_info_spec,
     skill_reveal_spec,
 )
+from bidking_lab.inference.v3.formal_value_sampler import (
+    FormalValueStressDetail,
+    V3FormalValueSamplerReport,
+    empty_formal_value_sampler_flat_dict,
+    sample_formal_value_report,
+)
 from bidking_lab.inference.v3.posterior import (
     V3PosteriorReport,
     empty_posterior_flat_dict,
@@ -118,6 +124,7 @@ __all__ = (
     "EvidenceEvent",
     "EvidenceSpec",
     "FeasibleSummaryReport",
+    "FormalValueStressDetail",
     "HardNumericConstraint",
     "ItemAnchor",
     "PriorCalibrationEntry",
@@ -134,6 +141,7 @@ __all__ = (
     "V3PriorCalibrationReport",
     "V3PriorRobustnessReport",
     "V3CcvOptions",
+    "V3FormalValueSamplerReport",
     "V3ResidualGateReport",
     "V3ShadowPipelineReport",
     "V3TailValueReviewReport",
@@ -148,6 +156,7 @@ __all__ = (
     "decision_truth_from_session_truth",
     "empty_decision_truth_flat_dict",
     "empty_feasible_summary_flat_dict",
+    "empty_formal_value_sampler_flat_dict",
     "empty_posterior_flat_dict",
     "empty_prior_calibration_flat_dict",
     "empty_prior_flat_dict",
@@ -176,6 +185,7 @@ __all__ = (
     "public_info_semantics_dict",
     "public_info_spec",
     "sample_truth_bank",
+    "sample_formal_value_report",
     "settlement_truth_from_fatbeans",
     "skill_reveal_spec",
     "summarize_drop_prior",

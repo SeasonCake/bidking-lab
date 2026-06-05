@@ -189,6 +189,10 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_prior_available"] is True
     assert rows[0]["v3_prior_expected_value"] == 201_000
     assert rows[0]["v3_prior_q6_session_probability"] == 0.75
+    assert rows[0]["v3_capacity_truth_item_count"] == 2
+    assert rows[0]["v3_capacity_prior_items_per_session_max"] == 2
+    assert rows[0]["v3_capacity_truth_prior_max_delta"] == 0
+    assert rows[0]["v3_capacity_cases"] == "no_capacity_prior_max_case"
     assert rows[0]["v3_robust_available"] is True
     assert rows[0]["v3_robust_status"] == "ok"
     assert rows[0]["v3_robust_prior_usable"] is True
@@ -203,6 +207,7 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_summary_available"] is True
     assert rows[0]["v3_summary_feasible"] is True
     assert rows[0]["v3_summary_known_count_floor"] == 0
+    assert rows[0]["v3_capacity_total_count_source"] == "none"
     assert rows[0]["v3_post_available"] is True
     assert rows[0]["v3_post_affects_bid"] is False
     assert rows[0]["v3_post_match_scope"] == "strict"
@@ -226,6 +231,40 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_under_active"] is False
     assert rows[0]["v3_under_candidate"] is False
     assert rows[0]["v3_under_status"] == "missing_entry"
+    assert rows[0]["v3_fv_available"] is True
+    assert rows[0]["v3_fv_affects_bid"] is False
+    assert rows[0]["v3_fv_active"] is False
+    assert rows[0]["v3_fv_candidate"] is False
+    assert rows[0]["v3_fv_status"] == "baseline_passthrough"
+
+
+def test_capacity_flat_dict_reports_prior_max_gap() -> None:
+    module = _load_module()
+
+    fields = module._capacity_flat_dict(
+        prior_fields={
+            "v3_prior_items_per_session_min": 2,
+            "v3_prior_items_per_session_max": 5,
+        },
+        truth_fields={"v3_truth_item_count": 7},
+        summary_fields={
+            "v3_summary_session_total_count_exact": 7,
+            "v3_summary_known_count_floor": 6,
+        },
+    )
+
+    assert fields["v3_capacity_total_count_source"] == "exact"
+    assert fields["v3_capacity_total_count_target"] == 7
+    assert fields["v3_capacity_truth_item_count"] == 7
+    assert fields["v3_capacity_target_prior_max_delta"] == 2
+    assert fields["v3_capacity_truth_prior_max_delta"] == 2
+    assert fields["v3_capacity_target_truth_delta"] == 0
+    assert fields["v3_capacity_target_prior_max_ratio"] == 1.4
+    assert fields["v3_capacity_truth_prior_max_ratio"] == 1.4
+    assert fields["v3_capacity_flags"] == (
+        "target_count_above_prior_max+truth_count_above_prior_max"
+    )
+    assert fields["v3_capacity_cases"] == "direct_prior_max_conflict"
 
 
 def test_v3_prebid_rows_mark_252x_activity_map_as_missing_prior() -> None:
@@ -465,6 +504,14 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
             "v3_resid_gate_q6_cells_p50": 4,
             "v3_resid_gate_q6_cells_p90": 4,
             "v3_resid_gate_q6_value_p50": 100,
+            "v3_fv_ready": True,
+            "v3_fv_active": False,
+            "v3_fv_candidate": True,
+            "v3_fv_stress_class": "value_floor_stress",
+            "v3_fv_formal_decision_value_p50": 95,
+            "v3_fv_formal_decision_value_p90": 120,
+            "v3_fv_q6_formal_decision_value_p50": 20,
+            "v3_fv_q6_formal_decision_value_p90": 40,
         },
         {
             "status": "ready",
@@ -519,6 +566,14 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
             "v3_cal_formal_decision_value_p90": 260,
             "v3_cal_q6_formal_decision_value_p50": 0,
             "v3_cal_q6_formal_decision_value_p90": 0,
+            "v3_fv_ready": True,
+            "v3_fv_active": False,
+            "v3_fv_candidate": False,
+            "v3_fv_stress_class": "capacity_cells_drift",
+            "v3_fv_formal_decision_value_p50": 250,
+            "v3_fv_formal_decision_value_p90": 260,
+            "v3_fv_q6_formal_decision_value_p50": 0,
+            "v3_fv_q6_formal_decision_value_p90": 0,
         },
     ]
 
@@ -580,6 +635,15 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["v3_tail_review_candidate_rows"] == 0
     assert summary["v3_tail_review_hurt_guard_rows"] == 0
     assert summary["v3_tail_review_active_rows"] == 0
+    assert summary["v3_fv_metric_rows"] == 2
+    assert summary["v3_fv_candidate_rows"] == 1
+    assert summary["v3_fv_active_rows"] == 0
+    assert summary["v3_fv_capacity_watch_rows"] == 1
+    assert summary["v3_fv_value_floor_candidate_rows"] == 1
+    assert summary["v3_fv_formal_p50_mae"] == 27.5
+    assert summary["v3_fv_delta_formal_p50_mae"] == -2.5
+    assert summary["v3_fv_formal_p50_below_rate"] == 0.5
+    assert summary["v3_fv_formal_p90_coverage"] == 1.0
 
 
 def test_v3_prebid_rows_separate_no_state_windows() -> None:

@@ -2974,3 +2974,644 @@ fallback=missing_prior_truth_only
 
 - 本 checkpoint 只改变文档和交接入口，不改变 v2 formal/live/UI，也不改变 v3 shadow 推理行为。
 - 新窗口应从 `handoff_2026-06-06.zh-CN.md` 继续，不需要翻长聊天记录。
+
+## 2026-06-06 checkpoint：prior-stress cells/capacity/evidence 明细审计
+
+完成内容：
+
+- `scripts/summarize_v3_prior_robustness_audit.py` 新增 `--details` 与 `--details-reason`。
+- details 行现在输出：
+  - total/q6 cells 的 exact/floor source、target、prior expected、truth、posterior p50/p90、target/prior ratio、target-vs-truth delta、posterior-vs-truth delta；
+  - total/q6 value floor 相对 prior/truth/posterior 的同口径明细；
+  - numeric/item/shape/quality-floor evidence 计数；
+  - item count capacity proxy：target/truth item count 是否超过 `v3_prior_items_per_session_max`。
+- `tests/test_summarize_v3_prior_robustness_audit.py` 覆盖 details 输出、reason filter、activity reason 不产生 prior-stress details。
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp')
+$env:TEMP=$env:TMP
+New-Item -ItemType Directory -Force -Path $env:TMP | Out-Null
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_summarize_v3_prior_robustness_audit.py tests\test_inference_v3_prior_robustness.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --by v3_robust_status --by v3_robust_reason --by map_id --top 6 --details 6
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --by v3_robust_status --by map_id --top 4 --details 4
+```
+
+结果：
+
+```text
+focused tests:
+14 passed
+
+main archive prior_stressed:
+ready=94 post_ready=94 metric=94 trusted=0/94
+summary_likelihood=92 strict=2
+mae=381373.9 bias=-124899.4 below=0.670213 p90_cover=0.595745
+top reasons:
+total_cells_above_prior=48
+q6_cells_above_prior=32
+total_count_above_prior=15
+q6_value_above_prior=13
+total_value_above_prior=13
+
+activity cohort:
+prior_unavailable ready=58 post_ready=0 metric=0 activity=58
+prior_stress_details: empty
+```
+
+明细审计结论：
+
+- `total_cells_above_prior` 中存在多行 hard target 与 truth 一致，并且 truth/target item count 超过 prior max，例如 `ethan|2506|shape`：`total_cells floor=216 prior=91.086 truth=216`、`q6_cells floor=37 prior=10.109 truth=37`、`item_count truth=58 prior_max=44`。这更像旧 prior/capacity 表低估或 profile-specific capacity drift，不是 q6_count 单点问题。
+- `q6_cells_above_prior` 的 target/prior ratio 可达 3-4 倍，但 posterior 有时已经高于 truth；这类行不能直接转成统一 q6 cells/value 上修。
+- `q6_value_above_prior` / `total_value_above_prior` 主要是 value floor 远高于 prior 的分片，且同时存在 posterior over 和 under；后续只能作为 formal/value sampler 的独立候选分片，并保留 high-over guard。
+- 252x 活动 cohort 没有 prior-stress details，继续只作为 activity/prior-unavailable 鲁棒性分母。
+
+下一步：
+
+- formal/value sampler 第一阶段应先把 prior-stressed 行拆成 capacity/cells drift、q6 cells floor、value floor stress 三类 shadow 分片，再做 candidate 输出和 holdout；不要把这些行混入普通 calibration，也不要直接调高 q6_count 或固定 prior。
+
+## 2026-06-06 checkpoint：shadow-only formal/value sampler 第一阶段
+
+完成内容：
+
+- 新增 `src/bidking_lab/inference/v3/formal_value_sampler.py`，输出 `v3_fv_*` shadow namespace。
+- sampler 将 prior-stress 明细拆成：
+  - `capacity_cells_drift`：total count/cells 超 prior 或 item count 超 prior max；
+  - `q6_cells_floor_stress`：q6 cells exact/floor 明显高于 q6 prior；
+  - `value_floor_stress`：total/q6 value floor 明显高于 prior。
+- `v3_fv_active=false`、`v3_fv_affects_bid=false` 固定保持；capacity/cells-only watch 不做价值上修，只有 value-floor stress 标记为 shadow candidate。
+- archive evaluator、shared v3 pipeline、live artifact/model_eval 已接入 `v3_fv_*`。
+- 新增 `scripts/summarize_v3_formal_value_sampler_holdout.py`，按 session fold 验证 `v3_fv_candidate`；训练折只选择有足够 value-floor 候选的 group，验证折只在 holdout 行本身也触发 value-floor candidate 时应用 `v3_fv_*`。
+- `scripts/summarize_v3_promotion_readiness.py` 新增 `formal_value_sampler_holdout` gate。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_inference_v3_formal_value_sampler.py tests\test_inference_v3_pipeline.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_formal_value_sampler_holdout.py --posterior-trials 64 --folds 5 --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --folds 5 --format summary
+```
+
+结果：
+
+```text
+focused tests:
+46 passed
+
+main archive:
+v3_fv_candidate_rows=13
+v3_fv_capacity_watch_rows=126
+v3_fv_value_floor_candidate_rows=13
+v3_fv_formal_p50_mae=318635.858
+v3_fv_delta_formal_p50_mae=0.0
+v3_fv_formal_p90_coverage=0.750641
+
+activity cohort:
+posterior_ready=0
+metric_rows=0
+v3_fv_candidate_rows=0
+v3_fv_capacity_watch_rows=0
+
+formal/value sampler holdout:
+overall_status=sample_limited
+candidate_rows=0
+train_status_counts=blocked_low_sample:414
+
+promotion readiness:
+overall_status=not_ready
+gate=formal_value_sampler_holdout status=blocked
+formal_value_rows=0
+formal_value_delta=None
+```
+
+结论：
+
+- `v3_fv_*` 已形成 archive/live/readiness/holdout 一致的 shadow-only 分母，但默认 session holdout 下 value-floor candidate 样本不足，不能 promotion。
+- 当前 archive 上 `v3_fv_delta_formal_p50_mae=0.0`，说明第一阶段 candidate 主要用于显式分母和诊断；baseline posterior 已经吸收这些 hard floors。
+- v2 formal/live/UI 不变；v3 promotion 与 v2 archive 仍然不讨论，直到 prior robustness、formal baseline、holdout gates 通过。
+
+## 2026-06-06 checkpoint：prior-stress detail summary 聚合一致性审计
+
+完成内容：
+
+- `scripts/summarize_v3_prior_robustness_audit.py` 新增 `--detail-summary` / `--detail-summary-top`。
+- JSON 输出新增 `detail_summary`，包含：
+  - overall 与 by-reason 聚合；
+  - total/q6 cells/value source counts；
+  - capacity flag counts；
+  - detail flag counts；
+  - target-vs-truth match counts；
+  - target/prior ratio avg/p90/max；
+  - evidence count avg/p90/max；
+  - map/profile/scope/fallback/reason counts。
+- `tests/test_summarize_v3_prior_robustness_audit.py` 覆盖 detail summary 的 source、capacity flag、detail flag、ratio 和 by-reason 聚合。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_summarize_v3_prior_robustness_audit.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 4
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --top 2 --detail-summary --detail-summary-top 4
+```
+
+结果：
+
+```text
+focused tests:
+8 passed
+
+main archive detail_summary:
+rows=94
+capacity_flags=truth_count_above_prior_max:68,target_count_above_prior_max:39
+sources_total_cells=floor:57,exact:37
+sources_q6_cells=floor:59,none:35
+ratio_total_cells avg=1.328 p90=2.126 max=2.371
+ratio_q6_cells avg=1.898 p90=2.881 max=4.001
+ratio_q6_value avg=1.917 p90=3.309 max=4.825
+
+reason=total_cells_above_prior:
+rows=48
+truth_count_above_prior_max=44
+target_count_above_prior_max=30
+sources_total_cells=exact:32,floor:16
+
+reason=q6_cells_above_prior:
+rows=32
+sources_q6_cells=floor:32
+ratio_q6_cells avg=2.791 p90=3.66 max=4.001
+
+activity cohort detail_summary:
+rows=0
+```
+
+结论：
+
+- prior-stressed 的主风险已经更明确：大量 truth/target item count 超出旧 prior max，且 total cells 有 37 行 exact hard evidence、57 行 floor evidence；这支持继续把 capacity/table/evidence drift 和 value-floor stress 分开审计。
+- q6 cells stress 是 floor 驱动，且 target/prior ratio 可到 `4.001`；但它不能直接转为 q6 value/formal 上修，仍需要 changed-row hurt 与 high-over guard。
+- 活动 cohort 仍不进入 prior-stress detail 分母，避免把缺表活动样本误计入普通校准。
+
+## 2026-06-06 checkpoint：prior-stress map/profile 热点聚合
+
+完成内容：
+
+- `scripts/summarize_v3_prior_robustness_audit.py` 新增 `--detail-summary-by`，可按 `map_id`、`evidence_profile_key`、`hero_map_evidence_profile` 等 detail 字段聚合。
+- `detail_summary.by_group` 现在输出：
+  - `field` / `value`；
+  - `rows`；
+  - `capacity_flag_hits`；
+  - `max_cells_ratio` / `max_value_ratio`；
+  - reason/source/capacity/evidence/profile counts；
+  - cells/value target-prior ratio summary。
+- `tests/test_summarize_v3_prior_robustness_audit.py` 覆盖 `by_group` 的 map/profile 聚合。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_summarize_v3_prior_robustness_audit.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 5 --detail-summary-by map_id --detail-summary-by hero_map_evidence_profile
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 3 --detail-summary-by map_id
+```
+
+结果：
+
+```text
+unit:
+1 passed
+
+top map groups:
+map_id=2401 rows=12 capacity_hits=9 max_cells_ratio=4.001 max_value_ratio=3.309
+map_id=2501 rows=10 capacity_hits=16 max_cells_ratio=3.36 max_value_ratio=3.194
+map_id=2404 rows=10 capacity_hits=7 max_cells_ratio=2.881 max_value_ratio=1.017
+map_id=2406 rows=10 capacity_hits=6 max_cells_ratio=2.381 max_value_ratio=4.825
+map_id=2601 rows=8 capacity_hits=16 max_cells_ratio=2.157 max_value_ratio=0.142
+
+activity cohort:
+prior_stress_detail_summary rows=0
+```
+
+结论：
+
+- capacity/table drift 不是单一 map 问题；2401、2501、2404、2406、2601 都进入热点，但风险形态不同。
+- `2501` 与 `2601` capacity hits 高，优先看 drop table capacity/prior max 与 session item count 口径。
+- `2406` max value ratio 高，属于 value-floor stress 与 capacity/cells drift 混合热点；仍不能直接 promotion。
+- 下一步应把这些 group 作为 targeted audit/readiness 分片，而不是继续只看全局 prior_stressed。
+
+## 2026-06-06 checkpoint：readiness 接入 prior-stress capacity/table drift gate
+
+完成内容：
+
+- `scripts/summarize_v3_promotion_readiness.py` 接入 prior-stress details summary。
+- readiness 新增 gate：`prior_stress_capacity_table_drift`。
+- readiness JSON 新增 `prior_stress_detail_summary`，包含：
+  - `rows`；
+  - `capacity_flag_hits`；
+  - capacity/source/ratio summary；
+  - top `map_id` groups；
+  - top `hero_map_evidence_profile` groups。
+- `tests/test_summarize_v3_promotion_readiness.py` 覆盖：
+  - 无 prior-stress 时该 gate 为 `pass`；
+  - prior-stressed capacity row 会触发 blocked gate；
+  - top map/profile group 进入 readiness 输出。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --folds 5 --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --folds 5 --format summary
+```
+
+结果：
+
+```text
+readiness tests:
+4 passed
+
+main archive readiness:
+gate=prior_stress_capacity_table_drift status=blocked
+prior_stress_detail_rows=94
+prior_stress_capacity_hits=107
+top_map_group=2401 rows=12 capacity_flag_hits=9
+
+activity readiness:
+gate=prior_stress_capacity_table_drift status=pass
+prior_stress_detail_rows=0
+prior_stress_capacity_hits=0
+```
+
+结论：
+
+- v3 promotion readiness 现在不再只看到 `robust_prior_stressed=94`；它能直接报告 capacity/table drift 热点。
+- 活动 cohort 不产生 prior-stress capacity drift gate，仍由 prior-unavailable/activity gate 处理。
+- 在该 gate blocked 前，不能把 v3 formal/value sampler 或其它 sampler 的局部改善用于 promotion，也不能讨论 v2 archive。
+
+## 2026-06-06 checkpoint：live model_eval 补齐 `v3_fv_*` detail 字段
+
+完成内容：
+
+- `src/bidking_lab/live/monitor.py` 的 `model_eval` 现在展开 `v3_fv_*` detail 字段：
+  - total/q6 count source、target、prior expected、target/prior ratio；
+  - total/q6 cells source、target、prior expected、target/prior ratio；
+  - total/q6 value source、target、prior expected、target/prior ratio。
+- `tests/test_live_monitor.py` 增加断言，防止 live 局后复盘丢失这些字段。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_evaluate_fatbeans_v3_samples.py
+```
+
+结果：
+
+```text
+36 passed
+```
+
+结论：
+
+- archive CSV 与 live `model_eval.jsonl` 现在都能保留 `v3_fv_*` capacity/cells/value detail 复盘口径。
+- 这仍然是 shadow-only 记录路径，不改变 v2 formal/live/UI，也不改变正式出价。
+
+## 2026-06-06 checkpoint：prior-stress target-vs-truth delta 聚合
+
+完成内容：
+
+- `scripts/summarize_v3_prior_robustness_audit.py` 的 detail summary 新增：
+  - `target_truth_delta_counts`；
+  - `target_truth_delta_summary`；
+  - `post_p50_truth_delta_summary`。
+- summary 输出现在显示 total/q6 cells 的 target delta counts：
+  - `below`：target 低于 settlement truth；
+  - `match`：target 等于 settlement truth；
+  - `above`：target 高于 settlement truth。
+- `tests/test_summarize_v3_prior_robustness_audit.py` 覆盖 target-vs-truth delta counts 和 delta summary。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_summarize_v3_prior_robustness_audit.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 3 --detail-summary-by map_id
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 3 --detail-summary-by map_id
+```
+
+结果：
+
+```text
+unit:
+1 passed
+
+main archive detail_summary:
+rows=94
+target_delta_total_cells=below=50/match=44/above=0
+target_delta_q6_cells=below=46/match=13/above=0
+
+reason=total_cells_above_prior:
+target_delta_total_cells=below=9/match=39/above=0
+target_delta_q6_cells=below=10/match=8/above=0
+
+reason=q6_cells_above_prior:
+target_delta_total_cells=below=25/match=7/above=0
+target_delta_q6_cells=below=24/match=8/above=0
+
+activity cohort:
+prior_stress_detail_summary rows=0
+```
+
+结论：
+
+- 当前 prior-stressed cells/capacity 问题不是 hard target 高于 settlement truth；聚合上 `above=0`。
+- 更像旧 prior/capacity/table 低估，或 posterior 对已经存在的 hard/floor evidence 仍然偏低。
+- 因此下一步应优先查 prior/capacity 表与 posterior evidence absorption，而不是把 floor 规则当作过强约束去削弱。
+
+## 2026-06-06 checkpoint：prior-stress posterior-vs-target absorption 聚合
+
+完成内容：
+
+- `scripts/summarize_v3_prior_robustness_audit.py` 的 detail summary 新增 posterior-vs-target delta：
+  - `post_p50_target_delta_counts`；
+  - `post_p50_target_delta_summary`；
+  - `post_p90_target_delta_summary`。
+- prior-stress detail flags 新增：
+  - `posterior_total_cells_below_target`；
+  - `posterior_q6_cells_below_target`。
+- summary 输出现在显示 total/q6 cells 的 `post50_target_delta_*` counts，用于判断 posterior 是否没有吸收到 already-compiled target。
+- `tests/test_summarize_v3_prior_robustness_audit.py` 覆盖 posterior-vs-target delta counts 与 delta summary。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_summarize_v3_prior_robustness_audit.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 3 --detail-summary-by map_id
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 3 --detail-summary-by map_id
+```
+
+结果：
+
+```text
+unit:
+1 passed
+
+main archive detail_summary:
+rows=94
+target_delta_total_cells=below=50/match=44/above=0
+target_delta_q6_cells=below=46/match=13/above=0
+post50_target_delta_total_cells=below=0/match=54/above=40
+post50_target_delta_q6_cells=below=0/match=2/above=57
+
+activity cohort:
+prior_stress_detail_summary rows=0
+post50_target_delta_total_cells=below=0/match=0/above=0
+post50_target_delta_q6_cells=below=0/match=0/above=0
+```
+
+结论：
+
+- 当前 archive 中 posterior p50 没有低于 compiled cells target 的聚合信号，说明 evidence absorption 不是第一嫌疑。
+- `target <= truth` 且 `posterior >= target` 的组合更支持：旧 prior/capacity/table 覆盖不足，或 target 只是 settlement truth 的下界。
+- 下一步优先把 prior/capacity 表、map/profile capacity max、drop prior 覆盖口径作为 blocker 审计，而不是先改正式出价或削弱 evidence compiler。
+
+## 2026-06-06 checkpoint：capacity prior-max gap archive/live/readiness 复盘口径
+
+完成内容：
+
+- `scripts/summarize_v3_prior_robustness_audit.py` 的 detail summary 新增 `capacity_count_summary`：
+  - total count source counts；
+  - target/truth/prior min/max summary；
+  - target/truth 相对 prior max 的 delta、ratio 与 counts；
+  - target-vs-truth count delta counts。
+- `scripts/evaluate_fatbeans_v3_samples.py` archive rows 新增同名 `v3_capacity_*` 字段：
+  - `v3_capacity_total_count_source`；
+  - `v3_capacity_total_count_target`；
+  - `v3_capacity_truth_item_count`；
+  - `v3_capacity_prior_items_per_session_min/max`；
+  - target/truth prior-max delta、ratio；
+  - `v3_capacity_flags`。
+- `src/bidking_lab/live/monitor.py` 的 `model_eval` 也输出同名 `v3_capacity_*` 字段，保持 archive/live 局后复盘口径一致。
+- `scripts/summarize_v3_promotion_readiness.py` 的 `prior_stress_capacity_table_drift` gate 与 `prior_stress_detail_summary` 现在携带 overall/top group 的 `capacity_count_summary`。
+- 相关测试覆盖 archive row、live model_eval、prior detail summary 与 readiness gate。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.pytest-tmp tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 3 --detail-summary-by map_id
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 3 --detail-summary-by map_id
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --folds 5 --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_formal_value_sampler_holdout.py --posterior-trials 64 --folds 5 --format summary
+```
+
+结果：
+
+```text
+focused tests:
+41 passed
+
+main archive prior_stress_detail_summary:
+rows=94
+capacity_flags=truth_count_above_prior_max:68,target_count_above_prior_max:39
+capacity_count_sources=floor:62,exact:24,none:8
+capacity_prior_max=n=94/avg=41.872/p90=44.0/max=44.0
+capacity_target_prior_max_delta=n=86/avg=-7.419/p90=16.0/max=22.0
+capacity_truth_prior_max_delta=n=94/avg=6.032/p90=20.0/max=22.0
+capacity_target_truth_delta=n=86/avg=-13.047/p90=0.0/max=0.0
+capacity_target_prior_counts=below=47/match=0/above=39
+capacity_truth_prior_counts=below=25/match=1/above=68
+capacity_target_truth_counts=below=56/match=30/above=0
+
+activity cohort:
+prior_stress_detail_summary rows=0
+capacity_target_prior_counts=below=0/match=0/above=0
+
+readiness:
+overall_status=not_ready
+gate=prior_stress_capacity_table_drift status=blocked
+prior_stress_detail_rows=94
+prior_stress_capacity_hits=107
+
+formal/value sampler holdout:
+overall_status=sample_limited
+candidate_rows=0
+```
+
+结论：
+
+- prior-stress capacity blocker 现在能直接回答“target/truth 比 prior max 高多少”，不再只靠 flag 数。
+- target count 没有高于 settlement truth；`target_truth_counts above=0`，但 truth 高于 prior max 的样本很多，支持 capacity/table drift 或 target 下界不完整。
+- archive/live/readiness 已有同名字段，后续 live 实战样本可以直接进入同一复盘口径；正式出价、v2 formal、UI 主建议未改变。
+
+## 2026-06-06 checkpoint：capacity prior-max case 分类
+
+完成内容：
+
+- `scripts/summarize_v3_prior_robustness_audit.py` 的 item-count capacity detail 新增 `cases`。
+- `capacity_count_summary` 新增 `case_counts`，并在 summary 输出中显示 `capacity_cases=`。
+- `scripts/evaluate_fatbeans_v3_samples.py` archive rows 与 `src/bidking_lab/live/monitor.py` live `model_eval` 新增同名 `v3_capacity_cases`。
+- readiness 的 `prior_stress_capacity_table_drift` gate 通过 `capacity_count_summary.case_counts` 携带 overall/top group case 分布。
+- 测试覆盖 direct prior-max conflict、archive/live `v3_capacity_cases` 与 readiness group case counts。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.pytest-tmp tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 5 --detail-summary-by map_id
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --top 1 --detail-summary --detail-summary-top 3 --detail-summary-by map_id
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --folds 5 --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_formal_value_sampler_holdout.py --posterior-trials 64 --folds 5 --format summary
+```
+
+结果：
+
+```text
+focused tests:
+41 passed
+
+main archive prior_stress_detail_summary:
+rows=94
+capacity_cases=target_lower_bound_truth_above_prior:31,direct_prior_max_conflict:29,no_capacity_prior_max_case:26,target_above_prior_but_below_truth:10,truth_above_prior_without_count_target:8
+
+reason=total_count_above_prior:
+capacity_cases=direct_prior_max_conflict:15
+
+map_id=2601:
+rows=8
+capacity_hits=16
+capacity_cases=direct_prior_max_conflict:8
+
+map_id=2501:
+rows=10
+capacity_hits=16
+capacity_cases=direct_prior_max_conflict:6,target_lower_bound_truth_above_prior:4
+
+activity cohort:
+prior_stress_detail_summary rows=0
+capacity_cases=-
+
+readiness:
+overall_status=not_ready
+gate=prior_stress_capacity_table_drift status=blocked
+
+formal/value sampler holdout:
+overall_status=sample_limited
+candidate_rows=0
+```
+
+结论：
+
+- capacity blocker 已拆成两条可执行路线：
+  - `direct_prior_max_conflict`：target/truth 同时高于 prior max 且 target 匹配 truth，优先查表容量或 prior max；
+  - `target_lower_bound_truth_above_prior`：truth 高于 prior max 但 target 是下界，优先查 target completeness 与表容量。
+- `2601` 是最干净的 direct conflict 热点，适合下一步追 BidMap/DropTable/session capacity 口径。
+- `2501` 混合 direct conflict 与 lower-bound，不能用单一 sampler 处理。
+
+## 2026-06-06 checkpoint：capacity table possible-max 审计
+
+完成内容：
+
+- 新增 `scripts/summarize_v3_capacity_table_audit.py`。
+- 该脚本把 prior-stress capacity case rows 与 raw BidMap/Drop sampler 表侧容量合并审计：
+  - BidMap `items_per_session_min/max`；
+  - sampler pool count 与 sub-pool count；
+  - DropEntry 最大 `n_max`；
+  - `sampler_possible_item_count_max = items_per_session_max * max(n_max)`；
+  - archive target/truth count 分布；
+  - `table_possible_max_below_truth` 状态。
+- 新增 `tests/test_summarize_v3_capacity_table_audit.py`，覆盖 direct conflict 的表侧 impossible 状态与 case filter。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.pytest-tmp tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --posterior-trials 64 --case direct_prior_max_conflict --top 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --posterior-trials 64 --case target_lower_bound_truth_above_prior --top 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --case direct_prior_max_conflict --top 8
+```
+
+结果：
+
+```text
+focused tests:
+7 passed
+
+direct_prior_max_conflict:
+case=direct_prior_max_conflict groups=10
+map_id=2601 status=table_possible_max_below_truth rows=8 table_impossible_rows=8 bidmap_items=22-44 sampler_possible_max=44 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=65
+map_id=2501 status=table_possible_max_below_truth rows=6 table_impossible_rows=6 bidmap_items=22-44 sampler_possible_max=44 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=60
+map_id=2506 status=table_possible_max_below_truth rows=4 table_impossible_rows=4 bidmap_items=22-44 sampler_possible_max=44 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=58
+
+target_lower_bound_truth_above_prior:
+case=target_lower_bound_truth_above_prior groups=10
+map_id=2508 status=table_possible_max_below_truth rows=6 table_impossible_rows=6 bidmap_items=22-44 sampler_possible_max=44 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=64
+map_id=2504 status=table_possible_max_below_truth rows=4 table_impossible_rows=4 bidmap_items=22-44 sampler_possible_max=44 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=64
+map_id=2405 status=table_possible_max_below_truth rows=4 table_impossible_rows=4 bidmap_items=20-40 sampler_possible_max=40 sampler_max_count_per_draw=1 sampler_nmax_gt1=0 truth_count=max=60
+
+activity cohort:
+case=direct_prior_max_conflict groups=0
+```
+
+结论：
+
+- 当前 direct conflict 不是 DropEntry `n_max>1` 造成的；top groups 的 `sampler_max_count_per_draw=1`。
+- 在当前 raw table + sampler 语义下，`2601` 这类 settlement truth item count 高于 sampler possible max，是表容量/采样语义/settlement truth 口径冲突。
+- 这进一步强化 `prior_stress_capacity_table_drift` blocker；不能把该问题交给 formal/value sampler 或 promotion holdout。
+
+## 2026-06-06 checkpoint：raw settlement inventory 去重诊断
+
+完成内容：
+
+- `scripts/summarize_v3_capacity_table_audit.py` 新增 raw capture inventory diagnostics：
+  - per-group raw capture file count；
+  - settlement inventory state count；
+  - latest inventory item/cell count；
+  - `settlement_truth_from_fatbeans` truth count 与 latest inventory count 对齐；
+  - detail row truth count 与 latest inventory count 对齐；
+  - duplicate runtime id、duplicate `(runtime_id,item_id)`、duplicate item id；
+  - latest message id、round 与 quality count 聚合。
+- `tests/test_summarize_v3_capacity_table_audit.py` 新增 raw inventory diagnostic 单元测试，覆盖同款 item 多件但 runtime/pair 不重复的口径。
+- 该诊断只服务 prior-stress capacity/table audit；不改变 v2 formal/live/UI 或正式出价。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.pytest-tmp tests\test_summarize_v3_capacity_table_audit.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --case direct_prior_max_conflict --posterior-trials 64 --top 4
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --case target_lower_bound_truth_above_prior --posterior-trials 64 --top 3
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.pytest-tmp tests\test_summarize_v3_capacity_table_audit.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+```
+
+结果：
+
+```text
+capacity audit test:
+3 passed
+
+focused archive/live/readiness/formal-value tests:
+48 passed
+
+direct_prior_max_conflict:
+case=direct_prior_max_conflict groups=10
+map_id=2601 status=table_possible_max_below_truth rows=8 table_impossible_rows=8 bidmap_items=22-44 sampler_possible_max=44 raw_inventory=verified_latest_inventory raw_files=4 raw_states=max=1.0 raw_latest_count=max=65.0 raw_truth_match_rows=8/8 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0 raw_dup_item=max=12.0 raw_msg=0x002D:4
+map_id=2501 status=table_possible_max_below_truth rows=6 table_impossible_rows=6 bidmap_items=22-44 sampler_possible_max=44 raw_inventory=verified_latest_inventory raw_files=2 raw_truth_match_rows=6/6 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0
+map_id=2506 status=table_possible_max_below_truth rows=4 table_impossible_rows=4 bidmap_items=22-44 sampler_possible_max=44 raw_inventory=verified_latest_inventory raw_files=1 raw_truth_match_rows=4/4 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0
+
+target_lower_bound_truth_above_prior:
+map_id=2508 status=table_possible_max_below_truth rows=6 raw_inventory=verified_latest_inventory raw_truth_match_rows=6/6 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0
+map_id=2504 status=table_possible_max_below_truth rows=4 raw_inventory=verified_latest_inventory raw_truth_match_rows=4/4 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0
+map_id=2405 status=table_possible_max_below_truth rows=4 raw_inventory=verified_latest_inventory raw_truth_match_rows=4/4 raw_dup_runtime=max=0.0 raw_dup_pair=max=0.0
+
+readiness:
+overall_status=not_ready
+gate=prior_stress_capacity_table_drift status=blocked
+gate=formal_value_sampler_holdout status=blocked
+gate=v2_archive_readiness status=pending
+```
+
+结论：
+
+- `2601` direct conflict 的 4 个 raw capture 文件全部只有 1 个 latest settlement inventory state，`raw_truth_match_rows=8/8`，runtime id 与 `(runtime_id,item_id)` 均无重复。
+- duplicate item id 只是同款物品多件；由于 runtime/pair 不重复，不能解释为 parser 重复。
+- lower-bound top groups 也显示 latest inventory 与 archive truth 对齐，进一步排除 settlement inventory parser 作为主要原因。
+- 下一步应继续确认 BidMap col[16] capacity 语义、DropEntry count 语义与 raw table/archive 样本版本；在解释前不调整 sampler、不推进 promotion。

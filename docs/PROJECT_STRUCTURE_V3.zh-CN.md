@@ -19,17 +19,19 @@
 | `src/bidking_lab/inference/v3/pipeline.py` | archive/live 共用 v3 shadow 推理链路 |
 | `src/bidking_lab/inference/v3/priors.py` | v3 drop-prior summary 与共享 flat fields |
 | `src/bidking_lab/inference/v3/prior_robustness.py` | v3 drop-prior 漂移、活动期、fallback 鲁棒性审计 |
+| `src/bidking_lab/inference/v3/formal_value_sampler.py` | v3 formal/value sampler 第一阶段 shadow report，拆分 capacity/cells/value-floor stress，固定不影响出价 |
 | `src/bidking_lab/inference/v3/underestimate_repair.py` | v3 低估上修 shadow report |
 | `src/bidking_lab/inference/v3/tail_value_review.py` | v3 tail/value review shadow report 与 hurt guard |
 | `data/processed/v3_underestimate_repair_shadow.json` | v3 hero/map 低估上修 shadow entry 表 |
 | `data/processed/v3_tail_value_review_shadow.json` | v3 tail/value review shadow entry 表 |
 | `scripts/summarize_v3_evidence_coverage.py` | v3 evidence coverage 检查 |
 | `scripts/summarize_v3_constraints.py` | v3 hard constraint compiler 摘要 |
-| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
+| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、`v3_capacity_*` capacity prior-max gap/cases、`v3_fv_*` formal/value sampler shadow 字段、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
 | `scripts/summarize_v3_metric_slices.py` | v3 round/map/hero/profile 分片指标 |
 | `scripts/summarize_v3_map_audit.py` | v3 map 主键审计，附 hero/profile 分布 |
-| `scripts/summarize_v3_prior_robustness_audit.py` | v3 prior/activity/prior-stress 分片审计 |
-| `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计 |
+| `scripts/summarize_v3_prior_robustness_audit.py` | v3 prior/activity/prior-stress 分片审计，支持 `--details`、`--detail-summary` 与 `--detail-summary-by` 输出 cells/capacity/evidence 明细、target-vs-truth delta、posterior-vs-target absorption、capacity prior-max gap/cases 和 map/profile 聚合一致性摘要 |
+| `scripts/summarize_v3_capacity_table_audit.py` | v3 prior-stress capacity cases 对 raw BidMap/Drop sampler 的 possible-max 审计，并输出 raw settlement inventory/latest truth 去重诊断 |
+| `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift` 与 `formal_value_sampler_holdout` gate |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
 | `scripts/summarize_v3_ccv_holdout.py` | v3 CCV/count-cell-value 候选 session holdout 审计 |
 | `scripts/summarize_v3_ccv_layer_audit.py` | v3 CCV 多层 holdout 稳定性审计 |
@@ -39,6 +41,7 @@
 | `scripts/summarize_v3_ccvc_count_policy_matrix.py` | v3 CCVC q6_count policy/group-field 矩阵审计 |
 | `scripts/summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC count/cells 证据贡献审计，支持 freeze-cells 口径 |
 | `scripts/summarize_v3_formal_value_delta_holdout.py` | v3 q6 formal delta 映射 formal decision 的 session holdout 审计 |
+| `scripts/summarize_v3_formal_value_sampler_holdout.py` | v3 formal/value sampler value-floor candidate session holdout 审计，capacity/cells-only watch 不参与价值上修 |
 | `scripts/summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计 |
 | `scripts/summarize_v3_residual_under_value_holdout.py` | v3 residual q6-value 低估上修 session holdout 审计 |
 | `scripts/summarize_v3_tail_value_candidates.py` | v3 tail/value review 候选审计 |
@@ -50,10 +53,12 @@
 | `tests/test_inference_v3_evidence_registry.py` | v3 registry/constraint 骨架测试 |
 | `tests/test_inference_v3_pipeline.py` | v3 archive/live 共享推理 pipeline 测试 |
 | `tests/test_inference_v3_prior_robustness.py` | v3 prior/activity 鲁棒性审计测试 |
+| `tests/test_inference_v3_formal_value_sampler.py` | v3 formal/value sampler shadow-only 与 stress 分流测试 |
 | `tests/test_inference_v3_underestimate_repair.py` | v3 低估上修 shadow report 测试 |
 | `tests/test_inference_v3_tail_value_review.py` | v3 tail/value review shadow report 测试 |
 | `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
 | `tests/test_summarize_v3_prior_robustness_audit.py` | v3 prior robustness 分片审计测试 |
+| `tests/test_summarize_v3_capacity_table_audit.py` | v3 capacity table possible-max 审计测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
 | `tests/test_summarize_v3_ccv_holdout.py` | v3 CCV session holdout 审计测试 |
@@ -64,6 +69,7 @@
 | `tests/test_summarize_v3_ccvc_count_policy_matrix.py` | v3 CCVC q6_count policy matrix 测试 |
 | `tests/test_summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC 证据贡献审计测试 |
 | `tests/test_summarize_v3_formal_value_delta_holdout.py` | v3 q6 formal delta 映射 holdout 测试 |
+| `tests/test_summarize_v3_formal_value_sampler_holdout.py` | v3 formal/value sampler holdout 测试 |
 | `tests/test_summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计测试 |
 | `tests/test_summarize_v3_residual_under_value_holdout.py` | v3 residual q6-value 低估 holdout 测试 |
 | `tests/test_summarize_v3_tail_value_candidates.py` | v3 tail/value review 候选审计测试 |
@@ -88,7 +94,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | 路径 | 作用 | 当前策略 |
 | --- | --- | --- |
 | `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做 |
-| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*` |
+| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases 与 `v3_fv_*` |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 后续可加 v3 shadow columns |
@@ -115,9 +121,9 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 
 当前脚本规模：
 
-- Python scripts：88
+- Python scripts：100
 - PowerShell scripts：13
-- test files：91
+- test files：105
 
 策略：
 

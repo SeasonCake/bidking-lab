@@ -1402,3 +1402,220 @@ applied_hurts=2502
 - 64-trial archive 中 `prior_stressed=94`，其中 `summary_likelihood=92`。
 - `prior_stressed` 分片 `below=0.670213`、`p90_cover=0.595745`，明显比普通 weak fallback 更差。
 - 最大压力来自 cells/count/capacity 证据，不是单纯 q6 count prior 问题。
+
+## D-v3-056：formal/value sampler 必须拆分 prior-stress 明细维度
+
+2026-06-06 的 `--details` 审计后，当前决策：
+
+- formal/value sampler 第一阶段必须把 `prior_stressed` 至少拆成：
+  - cells/capacity drift：total cells exact/floor、target/truth/posterior、item count 是否超过 prior max；
+  - q6 cells floor/exact stress：q6 cells target/prior ratio 与 posterior-vs-truth delta；
+  - value-floor stress：total/q6 value floor 相对 prior/truth/posterior 的 delta。
+- sampler candidate、readiness、holdout 和 live shadow report 不能只用一个 `prior_stressed=true` 标签；必须报告 exact/floor source、target/prior ratio、target-vs-truth delta、posterior-vs-truth delta 和 capacity flags。
+- cells/capacity drift 不得直接转成 q6 value 上修；需要先判断是旧表/capacity prior 漂移、地图/profile 特殊容量，还是 parser/window 映射异常。
+- value-floor stress 可以进入 formal/value candidate 审计，但必须单独通过 below-rate、P90、pinball、high-over、trials/seed stability 和 map/profile holdout。
+- activity/prior-unavailable cohort 仍不产生 prior-stress details，不进入普通 sampler calibration。
+
+原因：
+
+- 明细审计中存在 hard target 与 truth 一致且 item count 超出 prior max 的样本，例如 `ethan|2506|shape` 与 `ethan|2406|public:max_item_cells+item+shape+layout`。
+- `q6_cells_above_prior` 的 target/prior ratio 很高，但部分行 posterior 已经高于 truth，统一 cells 上修会复现 high-over 风险。
+- `q6_value_above_prior` / `total_value_above_prior` 的风险形态更接近 value floor 和 formal-value 建模问题，不能与 cells/capacity mismatch 混为一个 calibration 分母。
+
+## D-v3-057：`v3_fv_*` formal/value sampler 第一阶段保持 shadow-only，promotion 前必须过专用 holdout
+
+2026-06-06 起，formal/value sampler 第一阶段的当前决策：
+
+- `v3_fv_active=false` 与 `v3_fv_affects_bid=false` 固定保持；不得影响停止价、抢仓价、formal bid 或 UI 主建议。
+- sampler 输出必须同时包含：
+  - `stress_class`：`capacity_cells_drift`、`q6_cells_floor_stress`、`value_floor_stress`；
+  - exact/floor source、target、prior expected、target/prior ratio；
+  - `capacity_flags`，特别是 item count target 超过 prior max 的情形。
+- capacity/cells-only watch 行不得转成 formal value 上修；它们只能进入 evidence/capacity/prior 审计。
+- value-floor stress 可以标记为 `v3_fv_candidate=true`，但仍然只作为 shadow candidate。
+- promotion readiness 必须包含 `formal_value_sampler_holdout` gate；默认 session holdout 不通过时，不能讨论 v3 formal promotion 或 v2 archive。
+- holdout 训练折只用 value-floor candidate 选择 group，验证折也必须要求该 holdout 行本身触发 `v3_fv_candidate`，避免把 group-level 信号错误套到 capacity/cells-only 行。
+
+原因：
+
+- 当前 archive 只有 `v3_fv_value_floor_candidate_rows=13`，默认 holdout 为 `sample_limited`。
+- `v3_fv_delta_formal_p50_mae=0.0`，说明第一阶段没有可推广的 formal 改善证据。
+- prior-stressed 明细已证明 cells/capacity drift 与 value-floor stress 风险不同；混合校准会重复 v2/v3 早期的 over/under 混淆风险。
+
+## D-v3-058：capacity/table/evidence drift 必须作为独立 gate，不能由 formal/value sampler 隐式吸收
+
+2026-06-06 `--detail-summary` 聚合后，当前决策：
+
+- prior-stressed rows 中只要出现 `target_count_above_prior_max` 或 `truth_count_above_prior_max`，必须进入 capacity/table/evidence drift 审计分母。
+- 这类行不得被 `v3_fv_*`、underestimate repair、tail/value review 或 CCV sampler 当成普通 formal 低估样本隐式吸收。
+- promotion/readiness 报告必须保留 capacity flag counts、source counts 和 target/prior ratio 分布；不能只报告 MAE delta。
+- 对 `total_cells_above_prior`，必须区分 exact hard evidence 与 floor evidence；exact 与旧 prior 冲突时优先检查表、map/profile capacity 或 capture/settlement 口径。
+- 对 `q6_cells_above_prior`，必须单独检查 q6 cells directionality/over risk；不得直接推导为 q6 value 或 formal value 上修。
+- 252x activity/prior-unavailable rows 仍不得进入普通 prior-stress/detail-summary calibration 分母。
+
+原因：
+
+- 当前 detail summary 显示 `truth_count_above_prior_max=68/94`、`target_count_above_prior_max=39/94`。
+- `total_cells_above_prior` 中 `exact=32/48`，说明很多冲突来自 hard evidence 而非 sampler 随机误差。
+- `q6_cells_above_prior` 中 `source=floor:32/32` 且 ratio max `4.001`，需要独立 cells guard。
+
+## D-v3-059：capacity/table drift 后续必须按 map/profile 分片验证
+
+2026-06-06 `--detail-summary-by` 聚合后，当前决策：
+
+- prior-stressed 的 capacity/table/evidence drift 后续审计必须至少并列报告 `map_id`、`evidence_profile_key`、`hero_map_evidence_profile`。
+- `capacity_flag_hits` 高的 group 优先进入 table/capacity/prior max 口径审计，不进入 formal/value promotion 分母。
+- `max_value_ratio` 高但 capacity hits 不高的 group 可作为 formal/value sampler 候选分片，但仍需专用 holdout 和 high-over guard。
+- readiness 报告需要继续把 global prior robustness 与这些 targeted group 分片区分开；global MAE 改善不能覆盖 map/profile drift 风险。
+- activity/prior-unavailable cohort 仍保持独立，不使用旧表做 map/profile capacity 推断。
+
+原因：
+
+- 当前 top map groups 形态不同：`2501`、`2601` capacity hits 高；`2406` value ratio 高；`2404` cells ratio 高但 value ratio 不高。
+- 单一 `prior_stressed=true` 标签无法指导是修表、修 capacity prior、修 q6 cells likelihood，还是设计 value-floor sampler。
+
+## D-v3-060：`prior_stress_capacity_table_drift` 是 promotion readiness 的硬 blocker
+
+2026-06-06 起，`summarize_v3_promotion_readiness.py` 必须输出 `prior_stress_capacity_table_drift` gate。当前决策：
+
+- 只要 prior-stress detail summary 中存在 capacity/table/evidence drift rows，该 gate 为 `blocked`。
+- 该 gate blocked 时，不允许用 formal/value sampler、under/tail、CCV 或 calibration 的局部改善讨论 v3 formal promotion。
+- 该 gate 必须同时报告 total rows、capacity flag hits、top map groups、top profile groups、source counts 与 ratio summary。
+- activity/prior-unavailable rows 不进入该 gate 的 detail 分母；它们继续由 prior robustness/activity gate 阻断。
+- v2 archive 仍保持 `pending`，直到该 gate、formal baseline、holdout gates 和 live shadow consistency 全部满足。
+
+原因：
+
+- 默认 archive 当前 `prior_stress_detail_rows=94`、`prior_stress_capacity_hits=107`，不是小噪声。
+- activity cohort 当前 `prior_stress_detail_rows=0`，说明该 gate 能区分缺表活动样本和普通 archive capacity drift。
+
+## D-v3-061：live `model_eval` 必须保留 `v3_fv_*` source/target/prior 明细
+
+2026-06-06 起，live 局后 `model_eval` 的 `v3_fv_*` 字段必须和 archive evaluator 保持同一复盘口径。当前决策：
+
+- live `model_eval` 必须输出 total/q6 count、cells、value 的 source、target、prior expected、target/prior ratio。
+- 这些字段只用于 shadow audit、readiness、holdout 和局后复盘，不进入 UI 主建议或正式出价。
+- 如果后续新增 formal/value sampler detail 字段，archive CSV 和 live `model_eval` 必须同步更新测试。
+
+原因：
+
+- prior/capacity/table drift 很可能先在 live 实战样本中出现；如果 live 缺少 source/target/prior 字段，后续复盘会和 archive readiness 分母不一致。
+
+## D-v3-062：prior-stress cells/capacity 审计优先查 prior/capacity 与 evidence absorption，不先削弱 hard/floor evidence
+
+2026-06-06 target-vs-truth delta 聚合后，当前决策：
+
+- 在当前 archive 证据下，不应把 prior-stressed cells/capacity 问题优先解释为 hard/floor evidence 过强。
+- 后续优先审计：
+  - prior table 的 items-per-session min/max；
+  - map/profile capacity prior；
+  - drop prior expected cells/count；
+  - posterior 是否充分吸收 exact/floor evidence。
+- 只有出现 target 高于 settlement truth 的稳定分片时，才讨论削弱对应 evidence compiler 或 floor rule。
+- formal/value sampler 仍不得吸收这类 cells/capacity drift；它只处理 value-floor stress 的 shadow candidate。
+
+原因：
+
+- 当前 prior-stress cells target 聚合 `above=0`，total cells 为 `below=50/match=44/above=0`，q6 cells 为 `below=46/match=13/above=0`。
+
+## D-v3-063：posterior-vs-target absorption 保留为审计指标，但不作为当前首要修复方向
+
+2026-06-06 posterior-vs-target delta 聚合后，当前决策：
+
+- `scripts/summarize_v3_prior_robustness_audit.py`、readiness 与后续 live/archive 复盘继续保留 posterior-vs-target absorption 指标。
+- 在当前 archive 证据下，不把 prior-stressed cells/capacity blocker 首先解释为 posterior 没有吸收 compiled target。
+- 后续优先审计：
+  - prior/capacity table 的 item count max 与 cells max；
+  - map/profile-specific capacity prior；
+  - drop-prior 覆盖不足；
+  - compiled target 是否只是 settlement truth 的下界。
+- 只有出现 posterior p50/p90 稳定低于 compiled target 的分片，才把 evidence absorption 升级为首要修复项。
+- formal/value sampler 继续保持 shadow-only；不得用 value-floor candidate 或 capacity/cells watch 绕过该 blocker。
+
+原因：
+
+- 当前 archive prior-stressed rows=94，但 `post50_target_delta_total_cells=below=0/match=54/above=40`。
+- q6 cells 同样没有 posterior p50 低于 target 的聚合信号：`below=0/match=2/above=57`。
+- 结合 target-vs-truth 的 `above=0`，更可能的问题是旧 prior/capacity/table 漂移或 target completeness，而不是 posterior 未吸收已经编译出的 target。
+
+## D-v3-064：capacity prior-max gap 必须作为 archive/live/readiness 共同复盘口径
+
+2026-06-06 起，当前决策：
+
+- archive evaluator、live `model_eval` 与 prior-stress readiness 必须保留同名 `v3_capacity_*` / `capacity_count_summary` 字段。
+- `prior_stress_capacity_table_drift` gate blocked 时，必须能看到：
+  - total count source；
+  - compiled target count；
+  - settlement truth item count；
+  - prior items-per-session min/max；
+  - target/truth 相对 prior max 的 delta、ratio 与 flags。
+- target/truth 高于 prior max 的行优先进入 table/capacity/prior max 审计，不进入 formal/value sampler promotion 分母。
+- target 低于 truth 但 truth 高于 prior max 的行，视为 target completeness 或旧表 capacity drift 问题；不得用 sampler 的 value-floor candidate 隐式吸收。
+- 只有当 map/profile capacity gap 已解释并通过 readiness/holdout/live shadow 验证后，才重新讨论 v3 formal promotion 与 v2 归档。
+
+原因：
+
+- 当前 archive `truth_count_above_prior_max=68`、`target_count_above_prior_max=39`，且 `capacity_target_truth_counts above=0`。
+- readiness 仍为 `overall_status=not_ready`，`prior_stress_capacity_table_drift` 仍为 blocked。
+- live `model_eval` 如果不输出同名 capacity gap 字段，实战样本会与 archive/readiness 分母不一致。
+
+## D-v3-065：capacity cases 是 blocker 分流标准，不是 sampler promotion 信号
+
+2026-06-06 起，当前决策：
+
+- `v3_capacity_cases` / `capacity_count_summary.case_counts` 必须保留在 archive/live/readiness 复盘中。
+- `direct_prior_max_conflict` 优先进入 BidMap/DropTable/session capacity 口径审计；不得进入 formal/value sampler、under/tail 或 CCV promotion 分母。
+- `target_lower_bound_truth_above_prior` 优先进入 target completeness 与 capacity prior 覆盖审计；不得解释为 evidence overconstraint。
+- `target_above_prior_but_below_truth` 说明 compiled target 虽超过 prior max，但仍低于 truth；它是 capacity drift 与 target lower-bound 的混合 case。
+- 只有 `target_over_truth_capacity_risk` 出现稳定分片时，才讨论削弱 total-count evidence 或相关 floor/exact compiler。
+- readiness 在 capacity cases 未解释前继续 blocked；v3 promotion 与 v2 archive 保持 pending。
+
+原因：
+
+- 当前 archive `capacity_cases=target_lower_bound_truth_above_prior:31,direct_prior_max_conflict:29,...`。
+- `map_id=2601` 为 `direct_prior_max_conflict:8/8`，是表容量审计入口。
+- `map_id=2501` 同时有 direct conflict 与 lower-bound case，说明不能用单一 sampler 或单一全局修正处理。
+
+## D-v3-066：table possible-max 冲突解释前，不调整 sampler 或推进 promotion
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_capacity_table_audit.py` 是 prior-stress capacity/table blocker 的专用审计入口。
+- 当 `status=table_possible_max_below_truth` 时，必须优先确认：
+  - BidMap col[16] 的 `items_per_session_min/max` 是否真代表最终 item count；
+  - DropEntry `n_min/n_max` 是否已完整表达多件掉落；
+  - Fatbeans settlement inventory truth 是否包含本局以外或重复口径；
+  - raw table 版本是否与 archive 样本版本一致。
+- 在这些问题解释前，不得通过提高 posterior、formal/value sampler、under/tail、CCV 或 calibration 来绕过该 blocker。
+- 不直接把 BidMap max 改大或在 sampler 中放宽 capacity；任何表/采样语义变更必须先 shadow-only，并通过 archive/activity/readiness/live 验证。
+- v3 promotion 与 v2 archive 保持 pending。
+
+原因：
+
+- `2601` direct conflict rows 8/8 均为 `table_possible_max_below_truth`，truth count max=65，而 current sampler possible max=44。
+- top direct/lower-bound groups 的 `sampler_max_count_per_draw=1`、`sampler_nmax_gt1=0`，不是 DropEntry 多件数导致。
+- 该问题处在 table/sampler/truth 口径边界，比普通 posterior error 或 formal value low-bias 更基础。
+
+## D-v3-067：raw inventory verified 后，capacity blocker 不再优先按 parser 重复处理
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_capacity_table_audit.py` 必须保留 raw inventory diagnostics，作为 capacity/table blocker 的固定证据：
+  - latest settlement inventory state count；
+  - latest item/cell count；
+  - archive detail truth 与 latest inventory count 对齐；
+  - runtime id 与 `(runtime_id,item_id)` duplicate count；
+  - item id duplicate count 只作为同款多件信号，不单独视为 parser 重复。
+- 对 `raw_inventory=verified_latest_inventory` 且 `raw_dup_pair=0` 的 group，不再优先按 Fatbeans parser 重复修复处理。
+- 对这些 group，下一步必须优先验证：
+  - BidMap `items_per_session_min/max` 是否是最终 item count 上限；
+  - DropEntry `n_min/n_max` 是否表达一次抽中后的件数，还是另有表字段/版本控制；
+  - current raw table 是否与 archive sample 采集版本一致；
+  - settlement inventory 是否存在游戏内“额外生成/结算展开”语义。
+- 在 raw inventory 已验证且 table semantics 未解释前，不得放宽 sampler capacity、调整 posterior/formal/value sampler，或推进 v3 promotion。
+
+原因：
+
+- `2601` direct conflict：`raw_files=4`、`raw_states=max=1`、`raw_truth_match_rows=8/8`、`raw_dup_runtime=max=0`、`raw_dup_pair=max=0`，但 truth count max 仍为 65，超过 sampler possible max 44。
+- lower-bound top groups `2508/2504/2405` 同样是 `verified_latest_inventory` 且 detail truth 与 latest inventory 全匹配。
+- parser 重复不是当前主解释；promotion blocker 继续归属于 capacity table/session/drop semantics。

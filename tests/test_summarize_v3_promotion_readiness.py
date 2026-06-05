@@ -114,6 +114,15 @@ def _row(
         "v3_under_formal_decision_value_p90": p90,
         "v3_under_q6_formal_decision_value_p50": pred // 2,
         "v3_under_q6_formal_decision_value_p90": p90 // 2,
+        "v3_fv_ready": True,
+        "v3_fv_affects_bid": False,
+        "v3_fv_active": False,
+        "v3_fv_candidate": False,
+        "v3_fv_stress_class": "none",
+        "v3_fv_formal_decision_value_p50": pred,
+        "v3_fv_formal_decision_value_p90": p90,
+        "v3_fv_q6_formal_decision_value_p50": pred // 2,
+        "v3_fv_q6_formal_decision_value_p90": p90 // 2,
         "v3_post_tail_replacement_decision_value_p50": pred + 100,
         "v3_post_tail_replacement_decision_value_p90": p90 + 100,
         "v3_post_q6_tail_replacement_decision_value_p50": pred // 2 + 100,
@@ -141,6 +150,7 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert gates["archive_data_quality"]["status"] == "pass"
     assert gates["shared_shadow_pipeline"]["status"] == "pass"
     assert gates["prior_robustness"]["status"] == "pass"
+    assert gates["prior_stress_capacity_table_drift"]["status"] == "pass"
     assert gates["formal_baseline_metrics"]["status"] == "blocked"
     assert "holdout_candidate_rows" in gates["ccv_sampler"]
     assert "applied_ccv_hurts_groups" in gates["ccv_sampler"]
@@ -150,6 +160,8 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert "map_candidate_rows" in gates["ccv_direction_holdout"]
     assert "holdout_candidate_rows" in gates["tail_value_review"]
     assert "tail_under_combined_holdout" in gates
+    assert "formal_value_sampler_holdout" in gates
+    assert "candidate_rows" in gates["formal_value_sampler_holdout"]
     assert gates["v2_archive_readiness"]["status"] == "pending"
     assert "ccv_holdout" in result
     assert "applied_ccv_hurts_groups" in result["ccv_holdout"]
@@ -158,6 +170,9 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert "ccv_direction_holdout" in result
     assert "tail_holdout" in result
     assert "tail_under_holdout" in result
+    assert "formal_value_sampler_holdout" in result
+    assert "prior_stress_detail_summary" in result
+    assert result["prior_stress_detail_summary"]["rows"] == 0
 
 
 def test_readiness_blocks_prior_robustness_on_activity_candidate() -> None:
@@ -188,6 +203,89 @@ def test_readiness_blocks_prior_robustness_on_activity_candidate() -> None:
     assert gates["prior_robustness"]["robust_activity_candidate"] == 2
     assert gates["prior_robustness"]["robust_prior_trusted"] == 0
     assert "separate activity/prior-drift rows before formal promotion" in result["next_actions"]
+
+
+def test_readiness_surfaces_prior_stress_capacity_groups() -> None:
+    module = _load_module()
+    rows = [
+        {
+            **_row(
+                "ethan|2501",
+                session_id=f"s{idx}",
+                truth=1_000,
+                pred=700,
+                p90=900,
+            ),
+            "map_id": 2501,
+            "v3_robust_status": "prior_stressed",
+            "v3_robust_prior_trusted": False,
+            "v3_robust_prior_stress_score": 2,
+            "v3_robust_reasons": "total_count_above_prior;total_cells_above_prior",
+            "v3_prior_expected_count": 2,
+            "v3_prior_expected_cells": 20,
+            "v3_prior_q6_expected_cells": 4,
+            "v3_prior_items_per_session_max": 5,
+            "v3_summary_session_total_count_exact": 7,
+            "v3_summary_session_total_cells_exact": 48,
+            "v3_summary_q6_cells_floor": 8,
+            "v3_truth_item_count": 7,
+            "v3_truth_total_cells": 48,
+            "v3_post_total_cells_p50": 40,
+            "v3_post_total_cells_p90": 50,
+            "v3_truth_q6_cells": 8,
+            "v3_post_q6_cells_p50": 6,
+            "v3_post_q6_cells_p90": 10,
+        }
+        for idx in range(2)
+    ]
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    drift = gates["prior_stress_capacity_table_drift"]
+    assert drift["status"] == "blocked"
+    assert drift["detail_rows"] == 2
+    assert drift["capacity_flag_hits"] == 4
+    assert drift["capacity_flag_counts"] == {
+        "target_count_above_prior_max": 2,
+        "truth_count_above_prior_max": 2,
+    }
+    assert drift["capacity_count_summary"]["target_prior_max_delta"]["avg"] == 2
+    assert drift["capacity_count_summary"]["truth_prior_max_delta"]["avg"] == 2
+    assert drift["capacity_count_summary"]["target_truth_delta"]["avg"] == 0
+    assert drift["capacity_count_summary"]["case_counts"] == {
+        "direct_prior_max_conflict": 2
+    }
+    assert drift["top_map_groups"][0]["value"] == "2501"
+    assert drift["top_map_groups"][0]["capacity_flag_hits"] == 4
+    assert (
+        drift["top_map_groups"][0]["capacity_count_summary"][
+            "target_prior_max_delta"
+        ]["max"]
+        == 2
+    )
+    assert drift["top_map_groups"][0]["capacity_count_summary"]["case_counts"] == {
+        "direct_prior_max_conflict": 2
+    }
+    assert drift["top_profile_groups"][0]["value"] == "ethan|2501|item+shape"
+    assert result["prior_stress_detail_summary"]["rows"] == 2
+    assert result["prior_stress_detail_summary"]["top_map_groups"][0]["value"] == "2501"
+    assert (
+        result["prior_stress_detail_summary"]["capacity_count_summary"][
+            "truth_prior_max_delta"
+        ]["avg"]
+        == 2
+    )
+    assert (
+        "audit prior-stressed capacity/table drift by map/profile before promotion"
+        in result["next_actions"]
+    )
 
 
 def test_readiness_blocks_archive_data_quality_on_parse_errors() -> None:

@@ -51,13 +51,31 @@ def _ready_row(
         "v3_truth_q6_cells": 10,
         "v3_post_q6_cells_p50": 4,
         "v3_truth_q6_raw_value": 300,
+        "v3_truth_total_cells": 40,
+        "v3_truth_item_count": 6,
         "v3_post_q6_value_p50": 100,
+        "v3_post_total_cells_p50": 32,
+        "v3_post_total_cells_p90": 42,
         "v3_prior_q6_expected_count": 1,
         "v3_prior_q6_expected_cells": 4,
         "v3_prior_q6_expected_value": 100,
+        "v3_prior_expected_count": 3,
+        "v3_prior_expected_cells": 20,
+        "v3_prior_expected_value": 500,
+        "v3_prior_items_per_session_min": 2,
+        "v3_prior_items_per_session_max": 5,
+        "v3_summary_session_total_cells_exact": None,
+        "v3_summary_known_cells_floor": 30,
+        "v3_summary_session_total_count_exact": None,
+        "v3_summary_known_count_floor": 6,
+        "v3_summary_known_value_floor": 300,
         "v3_summary_q6_count_floor": 3,
         "v3_summary_q6_cells_floor": 10,
         "v3_summary_q6_value_floor": 300,
+        "numeric_constraints": 3,
+        "item_anchors": 1,
+        "shape_anchors": 4,
+        "quality_floor_anchors": 1,
         "v3_robust_status": status,
         "v3_robust_prior_usable": not activity,
         "v3_robust_prior_trusted": trusted,
@@ -158,3 +176,141 @@ def test_prior_robustness_audit_groups_stress_and_activity() -> None:
     assert q6_count_reason["ready"] == 2
     assert q6_count_reason["prior_stressed"] == 2
     assert q6_count_reason["maps"] == {"2506": 2}
+
+    details = module.summarize_prior_stress_details(rows)
+    assert len(details) == 2
+    first = next(row for row in details if row["q6_cells"]["target"] == 10)
+    assert first["map_id"] == 2506
+    assert first["total_cells"]["source"] == "floor"
+    assert first["total_cells"]["target"] == 30
+    assert first["total_cells"]["target_prior_ratio"] == 1.5
+    assert first["total_cells"]["target_truth_delta"] == -10
+    assert first["total_cells"]["post_p50_target_delta"] == 2
+    assert first["total_cells"]["post_p50_truth_delta"] == -8
+    assert first["q6_cells"]["source"] == "floor"
+    assert first["q6_cells"]["target"] == 10
+    assert first["q6_cells"]["target_prior_ratio"] == 2.5
+    assert first["q6_cells"]["post_p50_target_delta"] == -6
+    assert first["item_count_capacity"]["total_count_source"] == "floor"
+    assert first["item_count_capacity"]["total_count_target"] == 6
+    assert first["item_count_capacity"]["truth_item_count"] == 6
+    assert first["item_count_capacity"]["prior_items_per_session_max"] == 5
+    assert first["item_count_capacity"]["target_prior_max_delta"] == 1
+    assert first["item_count_capacity"]["truth_prior_max_delta"] == 1
+    assert first["item_count_capacity"]["target_truth_delta"] == 0
+    assert first["item_count_capacity"]["target_prior_max_ratio"] == 1.2
+    assert first["item_count_capacity"]["truth_prior_max_ratio"] == 1.2
+    assert first["item_count_capacity"]["cases"] == ["direct_prior_max_conflict"]
+    assert "target_count_above_prior_max" in first["item_count_capacity"]["flags"]
+    assert "truth_count_above_prior_max" in first["item_count_capacity"]["flags"]
+    assert "posterior_total_cells_under_truth" in first["flags"]
+    assert "posterior_q6_cells_under_truth" in first["flags"]
+    assert "posterior_q6_cells_below_target" in first["flags"]
+
+    q6_only_details = module.summarize_prior_stress_details(
+        rows,
+        reason="q6_cells_above_prior",
+    )
+    assert len(q6_only_details) == 2
+
+    detail_summary = module.summarize_prior_stress_detail_summary(
+        details,
+        group_fields=("map_id", "hero_map_evidence_profile"),
+    )
+    overall = detail_summary["overall"]
+    assert overall["rows"] == 2
+    assert overall["reason_counts"] == {
+        "q6_cells_above_prior": 2,
+        "q6_count_above_prior": 2,
+    }
+    assert overall["source_counts"]["total_cells"] == {"floor": 2}
+    assert overall["source_counts"]["q6_cells"] == {"floor": 2}
+    assert overall["capacity_flag_counts"] == {
+        "target_count_above_prior_max": 2,
+        "truth_count_above_prior_max": 2,
+    }
+    assert overall["capacity_count_summary"]["total_count_source_counts"] == {
+        "floor": 2
+    }
+    assert overall["capacity_count_summary"]["case_counts"] == {
+        "direct_prior_max_conflict": 2
+    }
+    assert overall["capacity_count_summary"]["prior_items_per_session_max"]["avg"] == 5
+    assert overall["capacity_count_summary"]["target_prior_max_delta"]["avg"] == 1
+    assert overall["capacity_count_summary"]["truth_prior_max_delta"]["avg"] == 1
+    assert overall["capacity_count_summary"]["target_truth_delta"]["avg"] == 0
+    assert overall["capacity_count_summary"]["target_prior_max_ratio"]["avg"] == 1.2
+    assert overall["capacity_count_summary"]["truth_prior_max_ratio"]["avg"] == 1.2
+    assert overall["capacity_count_summary"]["target_prior_max_delta_counts"] == {
+        "below_prior_max": 0,
+        "matches_prior_max": 0,
+        "above_prior_max": 2,
+    }
+    assert overall["capacity_count_summary"]["truth_prior_max_delta_counts"] == {
+        "below_prior_max": 0,
+        "matches_prior_max": 0,
+        "above_prior_max": 2,
+    }
+    assert overall["capacity_count_summary"]["target_truth_delta_counts"] == {
+        "below_truth": 0,
+        "matches_truth": 2,
+        "above_truth": 0,
+    }
+    assert overall["detail_flag_counts"]["posterior_total_cells_under_truth"] == 2
+    assert overall["detail_flag_counts"]["posterior_q6_cells_under_truth"] == 2
+    assert overall["target_truth_match_counts"]["q6_cells"] == 1
+    assert overall["target_truth_delta_counts"]["total_cells"] == {
+        "below_truth": 2,
+        "matches_truth": 0,
+        "above_truth": 0,
+    }
+    assert overall["target_truth_delta_counts"]["q6_cells"] == {
+        "below_truth": 0,
+        "matches_truth": 1,
+        "above_truth": 1,
+    }
+    assert overall["target_truth_delta_summary"]["q6_cells"]["max"] == 2
+    assert overall["post_p50_truth_delta_summary"]["total_cells"]["avg"] == -8
+    assert overall["post_p50_target_delta_counts"]["total_cells"] == {
+        "below_target": 0,
+        "matches_target": 0,
+        "above_target": 2,
+    }
+    assert overall["post_p50_target_delta_counts"]["q6_cells"] == {
+        "below_target": 2,
+        "matches_target": 0,
+        "above_target": 0,
+    }
+    assert overall["post_p50_target_delta_summary"]["q6_cells"]["avg"] == -7
+    assert overall["post_p90_target_delta_summary"]["total_cells"]["avg"] == 12
+    assert overall["ratio_summary"]["q6_cells"]["max"] == 2.5
+    assert overall["evidence_count_summary"]["shape_anchors"]["max"] == 4
+    by_reason = {row["reason"]: row for row in detail_summary["by_reason"]}
+    assert by_reason["q6_cells_above_prior"]["rows"] == 2
+    assert by_reason["q6_count_above_prior"]["ratio_summary"]["q6_cells"]["n"] == 2
+    by_group = {
+        (row["field"], row["value"]): row for row in detail_summary["by_group"]
+    }
+    map_group = by_group[("map_id", "2506")]
+    assert map_group["rows"] == 2
+    assert map_group["capacity_flag_hits"] == 4
+    assert map_group["max_cells_ratio"] == 2.5
+    assert map_group["capacity_count_summary"]["target_prior_max_delta"]["max"] == 1
+    assert map_group["capacity_count_summary"]["case_counts"] == {
+        "direct_prior_max_conflict": 2
+    }
+    assert map_group["source_counts"]["q6_cells"] == {"floor": 2}
+    assert map_group["target_truth_delta_counts"]["q6_cells"]["above_truth"] == 1
+    assert map_group["post_p50_target_delta_counts"]["q6_cells"]["below_target"] == 2
+    profile_group = by_group[("hero_map_evidence_profile", "aisha|2506|shape+layout")]
+    assert profile_group["rows"] == 2
+    assert profile_group["reason_counts"] == {
+        "q6_cells_above_prior": 2,
+        "q6_count_above_prior": 2,
+    }
+
+    activity_details = module.summarize_prior_stress_details(
+        rows,
+        reason="activity_map_id_candidate",
+    )
+    assert activity_details == []

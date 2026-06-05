@@ -48,6 +48,7 @@ from bidking_lab.inference.v3 import (
     compile_feasible_summary,
     compile_hard_constraints,
     empty_feasible_summary_flat_dict,
+    empty_formal_value_sampler_flat_dict,
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
     empty_prior_flat_dict,
@@ -1445,6 +1446,85 @@ def _format_quality_map(values: Mapping[int, int]) -> str:
     )
 
 
+def _parse_quality_count_total(value: Any) -> int | None:
+    if value is None:
+        return None
+    total = 0
+    matched = False
+    for part in str(value).split(";"):
+        if "=" not in part:
+            continue
+        _quality, raw_count = part.split("=", 1)
+        parsed = _parse_int_text(raw_count)
+        if parsed is None:
+            continue
+        total += parsed
+        matched = True
+    return total if matched else None
+
+
+def _count_source_and_target(
+    *,
+    exact: int | None,
+    floor: int | None,
+) -> tuple[str, int | None]:
+    if exact is not None and exact > 0:
+        if floor is not None and floor > exact:
+            return ("floor_over_exact", floor)
+        return ("exact", exact)
+    if floor is not None and floor > 0:
+        return ("floor", floor)
+    return ("none", None)
+
+
+def _numeric_delta(left: int | float | None, right: int | float | None) -> float | None:
+    if left is None or right is None:
+        return None
+    return float(left) - float(right)
+
+
+def _numeric_ratio(left: int | float | None, right: int | float | None) -> float | None:
+    if left is None or right is None or float(right) <= 0.0:
+        return None
+    return float(left) / float(right)
+
+
+def _capacity_cases(
+    *,
+    total_count_source: str,
+    target_prior_max_delta: float | None,
+    truth_prior_max_delta: float | None,
+    target_truth_delta: float | None,
+) -> list[str]:
+    target_above_prior = (
+        target_prior_max_delta is not None and target_prior_max_delta > 0.0
+    )
+    truth_above_prior = (
+        truth_prior_max_delta is not None and truth_prior_max_delta > 0.0
+    )
+    target_below_truth = target_truth_delta is not None and target_truth_delta < 0.0
+    target_matches_truth = target_truth_delta is not None and target_truth_delta == 0.0
+    target_above_truth = target_truth_delta is not None and target_truth_delta > 0.0
+    cases: list[str] = []
+    if target_above_prior and truth_above_prior and target_matches_truth:
+        cases.append("direct_prior_max_conflict")
+    if truth_above_prior and target_below_truth:
+        cases.append("target_lower_bound_truth_above_prior")
+    if target_above_prior and target_below_truth:
+        cases.append("target_above_prior_but_below_truth")
+    if target_above_prior and target_above_truth:
+        cases.append("target_over_truth_capacity_risk")
+    if truth_above_prior and total_count_source == "none":
+        cases.append("truth_above_prior_without_count_target")
+    if target_above_prior and not truth_above_prior:
+        cases.append("target_above_prior_without_truth_support")
+    if truth_above_prior and not target_above_prior and not target_below_truth:
+        cases.append("truth_above_prior_without_target_prior_hit")
+    if not cases:
+        cases.append("no_capacity_prior_max_case")
+    return cases
+
+
 def _q6_top_size_band(truth_breakdown: Mapping[str, Any] | None) -> str:
     if int((truth_breakdown or {}).get("final_q6_count") or 0) <= 0:
         return "no_q6"
@@ -1655,6 +1735,30 @@ def _model_eval_row(
     v3_post_total_cells_p90 = _parse_int_text(
         v3_shadow.get("v3_post_total_cells_p90")
     )
+    v3_summary_known_count_floor = _parse_int_text(
+        v3_shadow.get("v3_summary_known_count_floor")
+    )
+    v3_summary_known_cells_floor = _parse_int_text(
+        v3_shadow.get("v3_summary_known_cells_floor")
+    )
+    v3_summary_known_value_floor = _parse_int_text(
+        v3_shadow.get("v3_summary_known_value_floor")
+    )
+    v3_summary_session_total_count_exact = _parse_int_text(
+        v3_shadow.get("v3_summary_session_total_count_exact")
+    )
+    v3_summary_session_total_cells_exact = _parse_int_text(
+        v3_shadow.get("v3_summary_session_total_cells_exact")
+    )
+    v3_summary_q6_count_floor = _parse_int_text(
+        v3_shadow.get("v3_summary_q6_count_floor")
+    )
+    v3_summary_q6_cells_floor = _parse_int_text(
+        v3_shadow.get("v3_summary_q6_cells_floor")
+    )
+    v3_summary_q6_value_floor = _parse_int_text(
+        v3_shadow.get("v3_summary_q6_value_floor")
+    )
     v3_prior_available = bool(v3_shadow.get("v3_prior_available"))
     v3_prior_error = v3_shadow.get("v3_prior_error")
     v3_prior_map_id = _parse_int_text(v3_shadow.get("v3_prior_map_id"))
@@ -1692,6 +1796,52 @@ def _model_eval_row(
     )
     v3_prior_q6_expected_value = _parse_float_text(
         v3_shadow.get("v3_prior_q6_expected_value")
+    )
+    v3_capacity_total_count_source, v3_capacity_total_count_target = (
+        _count_source_and_target(
+            exact=v3_summary_session_total_count_exact,
+            floor=v3_summary_known_count_floor,
+        )
+    )
+    v3_capacity_truth_item_count = _parse_quality_count_total(
+        (truth_breakdown or {}).get("final_quality_counts")
+    )
+    v3_capacity_target_prior_max_delta = _numeric_delta(
+        v3_capacity_total_count_target,
+        v3_prior_items_per_session_max,
+    )
+    v3_capacity_truth_prior_max_delta = _numeric_delta(
+        v3_capacity_truth_item_count,
+        v3_prior_items_per_session_max,
+    )
+    v3_capacity_target_truth_delta = _numeric_delta(
+        v3_capacity_total_count_target,
+        v3_capacity_truth_item_count,
+    )
+    v3_capacity_flags: list[str] = []
+    if (
+        v3_prior_items_per_session_max is not None
+        and v3_capacity_total_count_target is not None
+        and v3_capacity_total_count_target > v3_prior_items_per_session_max
+    ):
+        v3_capacity_flags.append("target_count_above_prior_max")
+    if (
+        v3_prior_items_per_session_max is not None
+        and v3_capacity_truth_item_count is not None
+        and v3_capacity_truth_item_count > v3_prior_items_per_session_max
+    ):
+        v3_capacity_flags.append("truth_count_above_prior_max")
+    if (
+        v3_prior_items_per_session_min is not None
+        and v3_capacity_truth_item_count is not None
+        and v3_capacity_truth_item_count < v3_prior_items_per_session_min
+    ):
+        v3_capacity_flags.append("truth_count_below_prior_min")
+    v3_capacity_cases = _capacity_cases(
+        total_count_source=v3_capacity_total_count_source,
+        target_prior_max_delta=v3_capacity_target_prior_max_delta,
+        truth_prior_max_delta=v3_capacity_truth_prior_max_delta,
+        target_truth_delta=v3_capacity_target_truth_delta,
     )
     v3_robust_available = bool(v3_shadow.get("v3_robust_available"))
     v3_robust_affects_bid = bool(v3_shadow.get("v3_robust_affects_bid"))
@@ -1864,6 +2014,28 @@ def _model_eval_row(
     )
     v3_tail_review_q6_tail_p90 = _parse_int_text(
         v3_shadow.get("v3_tail_review_q6_tail_replacement_decision_value_p90")
+    )
+    v3_fv_available = bool(v3_shadow.get("v3_fv_available"))
+    v3_fv_ready = bool(v3_shadow.get("v3_fv_ready"))
+    v3_fv_active = bool(v3_shadow.get("v3_fv_active"))
+    v3_fv_candidate = bool(v3_shadow.get("v3_fv_candidate"))
+    v3_fv_affects_bid = bool(v3_shadow.get("v3_fv_affects_bid"))
+    v3_fv_status = v3_shadow.get("v3_fv_status")
+    v3_fv_gate_reason = v3_shadow.get("v3_fv_gate_reason")
+    v3_fv_source = v3_shadow.get("v3_fv_source")
+    v3_fv_stress_class = v3_shadow.get("v3_fv_stress_class")
+    v3_fv_capacity_flags = v3_shadow.get("v3_fv_capacity_flags")
+    v3_fv_formal_p50 = _parse_int_text(
+        v3_shadow.get("v3_fv_formal_decision_value_p50")
+    )
+    v3_fv_formal_p90 = _parse_int_text(
+        v3_shadow.get("v3_fv_formal_decision_value_p90")
+    )
+    v3_fv_q6_formal_p50 = _parse_int_text(
+        v3_shadow.get("v3_fv_q6_formal_decision_value_p50")
+    )
+    v3_fv_q6_formal_p90 = _parse_int_text(
+        v3_shadow.get("v3_fv_q6_formal_decision_value_p90")
     )
     posterior_samples = None
     posterior_total_samples = None
@@ -2327,30 +2499,18 @@ def _model_eval_row(
         ),
         "v3_post_conflicts": _parse_int_text(v3_shadow.get("conflicts")),
         "v3_summary_feasible": bool(v3_shadow.get("v3_summary_feasible")),
-        "v3_summary_known_count_floor": _parse_int_text(
-            v3_shadow.get("v3_summary_known_count_floor")
+        "v3_summary_known_count_floor": v3_summary_known_count_floor,
+        "v3_summary_known_cells_floor": v3_summary_known_cells_floor,
+        "v3_summary_known_value_floor": v3_summary_known_value_floor,
+        "v3_summary_session_total_count_exact": (
+            v3_summary_session_total_count_exact
         ),
-        "v3_summary_known_cells_floor": _parse_int_text(
-            v3_shadow.get("v3_summary_known_cells_floor")
+        "v3_summary_session_total_cells_exact": (
+            v3_summary_session_total_cells_exact
         ),
-        "v3_summary_known_value_floor": _parse_int_text(
-            v3_shadow.get("v3_summary_known_value_floor")
-        ),
-        "v3_summary_session_total_count_exact": _parse_int_text(
-            v3_shadow.get("v3_summary_session_total_count_exact")
-        ),
-        "v3_summary_session_total_cells_exact": _parse_int_text(
-            v3_shadow.get("v3_summary_session_total_cells_exact")
-        ),
-        "v3_summary_q6_count_floor": _parse_int_text(
-            v3_shadow.get("v3_summary_q6_count_floor")
-        ),
-        "v3_summary_q6_cells_floor": _parse_int_text(
-            v3_shadow.get("v3_summary_q6_cells_floor")
-        ),
-        "v3_summary_q6_value_floor": _parse_int_text(
-            v3_shadow.get("v3_summary_q6_value_floor")
-        ),
+        "v3_summary_q6_count_floor": v3_summary_q6_count_floor,
+        "v3_summary_q6_cells_floor": v3_summary_q6_cells_floor,
+        "v3_summary_q6_value_floor": v3_summary_q6_value_floor,
         "v3_post_formal_decision_value_p50": v3_post_formal_p50,
         "v3_post_formal_decision_value_p90": v3_post_formal_p90,
         "v3_post_tail_replacement_decision_value_p50": (
@@ -2374,6 +2534,24 @@ def _model_eval_row(
         "v3_prior_map_name": v3_prior_map_name,
         "v3_prior_items_per_session_min": v3_prior_items_per_session_min,
         "v3_prior_items_per_session_max": v3_prior_items_per_session_max,
+        "v3_capacity_total_count_source": v3_capacity_total_count_source,
+        "v3_capacity_total_count_target": v3_capacity_total_count_target,
+        "v3_capacity_truth_item_count": v3_capacity_truth_item_count,
+        "v3_capacity_prior_items_per_session_min": v3_prior_items_per_session_min,
+        "v3_capacity_prior_items_per_session_max": v3_prior_items_per_session_max,
+        "v3_capacity_target_prior_max_delta": v3_capacity_target_prior_max_delta,
+        "v3_capacity_truth_prior_max_delta": v3_capacity_truth_prior_max_delta,
+        "v3_capacity_target_truth_delta": v3_capacity_target_truth_delta,
+        "v3_capacity_target_prior_max_ratio": _numeric_ratio(
+            v3_capacity_total_count_target,
+            v3_prior_items_per_session_max,
+        ),
+        "v3_capacity_truth_prior_max_ratio": _numeric_ratio(
+            v3_capacity_truth_item_count,
+            v3_prior_items_per_session_max,
+        ),
+        "v3_capacity_flags": "+".join(v3_capacity_flags),
+        "v3_capacity_cases": "+".join(v3_capacity_cases),
         "v3_prior_pool_count": v3_prior_pool_count,
         "v3_prior_expected_draws": v3_prior_expected_draws,
         "v3_prior_expected_count": v3_prior_expected_count,
@@ -2492,6 +2670,81 @@ def _model_eval_row(
             v3_tail_review_q6_tail_p90
         ),
         "v3_tail_review_diagnostics": v3_shadow.get("v3_tail_review_diagnostics"),
+        "v3_fv_available": v3_fv_available,
+        "v3_fv_ready": v3_fv_ready,
+        "v3_fv_active": v3_fv_active,
+        "v3_fv_candidate": v3_fv_candidate,
+        "v3_fv_affects_bid": v3_fv_affects_bid,
+        "v3_fv_status": v3_fv_status,
+        "v3_fv_gate_reason": v3_fv_gate_reason,
+        "v3_fv_source": v3_fv_source,
+        "v3_fv_stress_class": v3_fv_stress_class,
+        "v3_fv_capacity_flags": v3_fv_capacity_flags,
+        "v3_fv_formal_decision_value_p50": v3_fv_formal_p50,
+        "v3_fv_formal_decision_value_p90": v3_fv_formal_p90,
+        "v3_fv_q6_formal_decision_value_p50": v3_fv_q6_formal_p50,
+        "v3_fv_q6_formal_decision_value_p90": v3_fv_q6_formal_p90,
+        "v3_fv_diagnostics": v3_shadow.get("v3_fv_diagnostics"),
+        "v3_fv_total_count_source": v3_shadow.get("v3_fv_total_count_source"),
+        "v3_fv_total_count_target": _parse_float_text(
+            v3_shadow.get("v3_fv_total_count_target")
+        ),
+        "v3_fv_total_count_prior_expected": _parse_float_text(
+            v3_shadow.get("v3_fv_total_count_prior_expected")
+        ),
+        "v3_fv_total_count_target_prior_ratio": _parse_float_text(
+            v3_shadow.get("v3_fv_total_count_target_prior_ratio")
+        ),
+        "v3_fv_total_cells_source": v3_shadow.get("v3_fv_total_cells_source"),
+        "v3_fv_total_cells_target": _parse_float_text(
+            v3_shadow.get("v3_fv_total_cells_target")
+        ),
+        "v3_fv_total_cells_prior_expected": _parse_float_text(
+            v3_shadow.get("v3_fv_total_cells_prior_expected")
+        ),
+        "v3_fv_total_cells_target_prior_ratio": _parse_float_text(
+            v3_shadow.get("v3_fv_total_cells_target_prior_ratio")
+        ),
+        "v3_fv_q6_count_source": v3_shadow.get("v3_fv_q6_count_source"),
+        "v3_fv_q6_count_target": _parse_float_text(
+            v3_shadow.get("v3_fv_q6_count_target")
+        ),
+        "v3_fv_q6_count_prior_expected": _parse_float_text(
+            v3_shadow.get("v3_fv_q6_count_prior_expected")
+        ),
+        "v3_fv_q6_count_target_prior_ratio": _parse_float_text(
+            v3_shadow.get("v3_fv_q6_count_target_prior_ratio")
+        ),
+        "v3_fv_q6_cells_source": v3_shadow.get("v3_fv_q6_cells_source"),
+        "v3_fv_q6_cells_target": _parse_float_text(
+            v3_shadow.get("v3_fv_q6_cells_target")
+        ),
+        "v3_fv_q6_cells_prior_expected": _parse_float_text(
+            v3_shadow.get("v3_fv_q6_cells_prior_expected")
+        ),
+        "v3_fv_q6_cells_target_prior_ratio": _parse_float_text(
+            v3_shadow.get("v3_fv_q6_cells_target_prior_ratio")
+        ),
+        "v3_fv_total_value_source": v3_shadow.get("v3_fv_total_value_source"),
+        "v3_fv_total_value_target": _parse_float_text(
+            v3_shadow.get("v3_fv_total_value_target")
+        ),
+        "v3_fv_total_value_prior_expected": _parse_float_text(
+            v3_shadow.get("v3_fv_total_value_prior_expected")
+        ),
+        "v3_fv_total_value_target_prior_ratio": _parse_float_text(
+            v3_shadow.get("v3_fv_total_value_target_prior_ratio")
+        ),
+        "v3_fv_q6_value_source": v3_shadow.get("v3_fv_q6_value_source"),
+        "v3_fv_q6_value_target": _parse_float_text(
+            v3_shadow.get("v3_fv_q6_value_target")
+        ),
+        "v3_fv_q6_value_prior_expected": _parse_float_text(
+            v3_shadow.get("v3_fv_q6_value_prior_expected")
+        ),
+        "v3_fv_q6_value_target_prior_ratio": _parse_float_text(
+            v3_shadow.get("v3_fv_q6_value_target_prior_ratio")
+        ),
         "v3_tail_review_tail_replacement_decision_value_p50_error": (
             v3_tail_review_tail_p50 - final_replacement_decision_value
             if v3_tail_review_tail_p50 is not None
@@ -2539,6 +2792,28 @@ def _model_eval_row(
         "v3_under_q6_formal_decision_value_p90_under_by": (
             max(0, final_q6_decision_value - v3_under_q6_formal_p90)
             if v3_under_q6_formal_p90 is not None
+            else None
+        ),
+        "v3_fv_formal_decision_value_p50_error_vs_formal": (
+            v3_fv_formal_p50 - final_formal_decision_value
+            if v3_fv_formal_p50 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "v3_fv_formal_decision_value_p90_under_by": (
+            max(0, final_formal_decision_value - v3_fv_formal_p90)
+            if v3_fv_formal_p90 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "v3_fv_q6_formal_decision_value_p50_error": (
+            v3_fv_q6_formal_p50 - final_q6_decision_value
+            if v3_fv_q6_formal_p50 is not None
+            else None
+        ),
+        "v3_fv_q6_formal_decision_value_p90_under_by": (
+            max(0, final_q6_decision_value - v3_fv_q6_formal_p90)
+            if v3_fv_q6_formal_p90 is not None
             else None
         ),
         "v3_cal_formal_decision_value_p50_error_vs_formal": (
@@ -3105,6 +3380,7 @@ def _empty_v3_posterior_shadow(
         **empty_prior_calibration_flat_dict(),
         **empty_underestimate_repair_flat_dict(),
         **empty_tail_value_review_flat_dict(),
+        **empty_formal_value_sampler_flat_dict(),
     }
 
 
@@ -3221,6 +3497,7 @@ def _v3_posterior_shadow_summary(
             underestimate_entry=underestimate_entry,
             tail_review_entry=tail_review_entry,
             hero=hero,
+            prior_fields=prior_fields,
         )
     except Exception as exc:
         out["error"] = type(exc).__name__
