@@ -1123,3 +1123,39 @@ evidence_profile direction status_counts=blocked_directional_hurt:16,blocked_low
 - component likelihood 证明“q6 component + non-q6 residual capacity”的方向比旧 CCV 更接近 v3 目标。
 - 但 changed rows 中仍有大量方向性 hurt；全局 MAE 改善不能证明实战可用。
 - 下一步必须给 `v3_ccvc_` 增加 holdout candidate gate，并拆解哪些证据组合导致反向移动，尤其 `random_avg`、`item+shape`、`public:total+item+shape`。
+
+## D-v3-046：v3_ccvc_ 通过 holdout 前不得推广，且不能靠简单收紧阈值推广
+
+2026-06-05 起，`summarize_v3_ccv_direction_holdout.py --candidate-prefix v3_ccvc_` 作为 component likelihood promotion 前置审计。当前决策：
+
+- `v3_ccvc_` q6_count/q6_cells 均保持 shadow-only。
+- q6_cells 不允许进入 formal candidate；map/profile holdout 均有明确 applied hurt。
+- q6_count 只能作为下一步 evidence contribution 分析对象，不能直接 promotion。
+- 不采用“单纯降低 max hurt rate / directional error rate”的方式推广；严格 gate 在 profile q6_count holdout 上从 `-0.012` 变为 `+0.081`。
+
+当前 128-trial 结果：
+
+```text
+map_id q6_count+q6_cells:
+overall_status=blocked_holdout_directional_hurt
+candidate_delta=+0.097
+q6_count delta=-0.017
+q6_cells delta=+0.354
+
+evidence_profile_key q6_count+q6_cells:
+overall_status=blocked_holdout_directional_hurt
+candidate_delta=-0.030
+q6_count delta=-0.012
+q6_cells delta=-0.092
+
+evidence_profile_key q6_count strict gate:
+candidate_rows=99
+candidate_delta=+0.081
+```
+
+原因：
+
+- component likelihood 的全局改善主要说明骨架方向正确，不说明各证据组合的移动方向可靠。
+- q6_cells 在 map holdout 上是主要伤害源。
+- q6_count 的收益很小，容易被少数组的 wrong-direction move 抵消。
+- 下一步必须拆 evidence contribution，而不是继续盲目调 threshold。

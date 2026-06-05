@@ -21,6 +21,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from evaluate_fatbeans_v3_samples import (  # noqa: E402
+    V3CcvOptions,
     _default_calibration_path,
     _default_paths,
     _float_or_none,
@@ -32,6 +33,7 @@ from evaluate_fatbeans_v3_samples import (  # noqa: E402
 from summarize_v3_ccv_direction_audit import (  # noqa: E402
     COMPONENT_FIELDS,
     DEFAULT_COMPONENTS,
+    component_fields,
     summarize_direction,
 )
 
@@ -75,8 +77,9 @@ def _row_eval(
     group_field: str,
     component: str,
     candidates: dict[tuple[str, str], dict[str, Any]],
+    fields: dict[str, tuple[str, str, str]],
 ) -> dict[str, Any] | None:
-    baseline_key, ccv_key, truth_key = COMPONENT_FIELDS[component]
+    baseline_key, ccv_key, truth_key = fields[component]
     baseline = _float_or_none(row.get(baseline_key))
     ccv = _float_or_none(row.get(ccv_key))
     truth = _float_or_none(row.get(truth_key))
@@ -139,14 +142,17 @@ def _row_evals(
     group_field: str,
     components: Iterable[str],
     candidates: dict[tuple[str, str], dict[str, Any]],
+    candidate_prefix: str,
+    fields: dict[str, tuple[str, str, str]],
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    ready_key = f"{candidate_prefix}ready"
     for row in rows:
         if (
             row.get("status") != "ready"
             or not row.get("v3_truth_available")
             or not row.get("v3_post_ready")
-            or not row.get("v3_ccv_ready")
+            or not row.get(ready_key)
         ):
             continue
         for component in components:
@@ -155,6 +161,7 @@ def _row_evals(
                 group_field=group_field,
                 component=component,
                 candidates=candidates,
+                fields=fields,
             )
             if item is not None:
                 out.append(item)
@@ -301,9 +308,11 @@ def summarize_holdout(
     min_changed: int = 5,
     max_hurt_rate: float = 0.45,
     max_directional_error_rate: float = 0.35,
+    candidate_prefix: str = "v3_ccv_",
 ) -> dict[str, Any]:
     source_rows = tuple(rows)
     selected_components = tuple(components)
+    fields = component_fields(candidate_prefix)
     fold_count = max(1, int(folds))
     all_evals: list[dict[str, Any]] = []
     folds_out: list[dict[str, Any]] = []
@@ -328,6 +337,7 @@ def summarize_holdout(
             min_changed=min_changed,
             max_hurt_rate=max_hurt_rate,
             max_directional_error_rate=max_directional_error_rate,
+            candidate_prefix=candidate_prefix,
         )
         candidate_status_counts.update(str(row["status"]) for row in train_candidates)
         candidates = {
@@ -340,6 +350,8 @@ def summarize_holdout(
             group_field=group_field,
             components=selected_components,
             candidates=candidates,
+            candidate_prefix=candidate_prefix,
+            fields=fields,
         )
         all_evals.extend(evals)
         fold_metrics = _metrics(evals)
@@ -389,6 +401,7 @@ def summarize_holdout(
     )
     result = {
         "group_field": group_field,
+        "candidate_prefix": candidate_prefix,
         "components": selected_components,
         "folds": fold_count,
         "min_windows": int(min_windows),
@@ -420,6 +433,7 @@ def _print_summary(result: dict[str, Any], *, top: int) -> None:
             (
                 f"overall_status={result['overall_status']}",
                 f"group_field={result['group_field']}",
+                f"candidate_prefix={result['candidate_prefix']}",
                 "components=" + ",".join(result["components"]),
                 f"folds={result['folds']}",
                 f"rows={result['overall']['n']}",
@@ -485,6 +499,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--group-field", default="map_id")
     parser.add_argument(
+        "--candidate-prefix",
+        default="v3_ccv_",
+        help="Candidate flat-field prefix, for example v3_ccv_ or v3_ccvc_.",
+    )
+    parser.add_argument(
         "--component",
         action="append",
         choices=tuple(COMPONENT_FIELDS),
@@ -510,6 +529,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,
+        ccv_options=V3CcvOptions(
+            component_likelihood=args.candidate_prefix == "v3_ccvc_",
+        ),
     )
     result = {"errors": errors, **summarize_holdout(
         rows,
@@ -521,6 +543,7 @@ def main(argv: list[str] | None = None) -> int:
         min_changed=args.min_changed,
         max_hurt_rate=args.max_hurt_rate,
         max_directional_error_rate=args.max_directional_error_rate,
+        candidate_prefix=args.candidate_prefix,
     )}
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

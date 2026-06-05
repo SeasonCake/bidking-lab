@@ -1060,6 +1060,37 @@ evidence_profile_key blocked_directional_hurt=16 watch_directional_candidate=9
 3. 下一步要把 `random_avg`、public total、q6 floor、explicit q6 anchors、unqualified anchors 的方向贡献拆开，防止把有用证据和反向证据混在同一个权重里。
 4. `v3_ccvc_` 通过 holdout 前保持 shadow-only。
 
+### 2026-06-05 CCVC direction holdout
+
+`summarize_v3_ccv_direction_holdout.py` 支持 `--candidate-prefix v3_ccvc_` 后，component likelihood 可以使用与旧 CCV 完全相同的 session holdout 口径审计。
+
+128-trial 结果：
+
+```text
+map_id q6_count+q6_cells:
+overall_status=blocked_holdout_directional_hurt
+candidate_delta=+0.097
+q6_count delta=-0.017
+q6_cells delta=+0.354
+
+evidence_profile_key q6_count+q6_cells:
+overall_status=blocked_holdout_directional_hurt
+candidate_delta=-0.030
+q6_count delta=-0.012
+q6_cells delta=-0.092
+
+evidence_profile_key q6_count strict gate:
+candidate_rows=99
+candidate_delta=+0.081
+```
+
+设计影响：
+
+1. `v3_ccvc_` 骨架有价值，但不能 promotion。
+2. q6 cells 必须先拆证据贡献；当前 map holdout 明确伤害。
+3. q6 count 不能只靠更严格阈值放行；严格 gate 反而变差。
+4. 下一步的 likelihood 设计应输出 evidence contribution 或 gating diagnostics，让 public total、random_avg、q6 floor、explicit q6 anchors、unqualified anchors 对 count/cells 的作用可审计。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

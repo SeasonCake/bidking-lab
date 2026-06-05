@@ -2332,3 +2332,54 @@ watch_directional_candidate=9
 - `v3_ccvc_` 是比旧 `v3_ccv_` 更合理的 v3 CCV 重构骨架：覆盖更多 fallback 窗口，q6 count/cells/value 全局 MAE 都是正向。
 - 但 map/profile directionality 仍 blocked，说明“组件重组”解决了均值问题的一部分，还没有解决逐窗口移动方向问题。
 - 当前不能接 formal/live，也不能替代 readiness gate；下一步需要对 `v3_ccvc_` 做 holdout candidate gate，并拆分 random_avg、public total、q6 floor、unqualified anchors 的方向性贡献。
+
+## 2026-06-05 checkpoint：v3 CCVC direction holdout
+
+实现：
+
+- `scripts/summarize_v3_ccv_direction_holdout.py` 新增 `--candidate-prefix`。
+- 默认仍审计 `v3_ccv_`；传 `--candidate-prefix v3_ccvc_` 时会自动启用 `V3CcvOptions(component_likelihood=True)` 并审计 `v3_ccvc_*` 字段。
+- 新增测试确认 holdout 确实按 candidate prefix 读取组件后验字段。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_ccv_direction_audit.py tests\test_summarize_v3_ccv_direction_holdout.py tests\test_summarize_v3_promotion_readiness.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_holdout.py --posterior-trials 128 --candidate-prefix v3_ccvc_ --group-field map_id --component q6_count --component q6_cells --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_holdout.py --posterior-trials 128 --candidate-prefix v3_ccvc_ --group-field evidence_profile_key --component q6_count --component q6_cells --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_holdout.py --posterior-trials 128 --candidate-prefix v3_ccvc_ --group-field evidence_profile_key --component q6_count --max-hurt-rate 0.25 --max-directional-error-rate 0.2 --top 20
+```
+
+结果：
+
+```text
+focused tests: 7 passed
+
+map_id q6_count+q6_cells:
+overall_status=blocked_holdout_directional_hurt
+candidate_rows=793
+candidate_delta=+0.097
+q6_count delta=-0.017
+q6_cells delta=+0.354
+applied_hurts=q6_cells:2505,q6_cells:2408,q6_cells:2508,q6_cells:2405,q6_count:2508,...
+
+evidence_profile_key q6_count+q6_cells:
+overall_status=blocked_holdout_directional_hurt
+candidate_rows=628
+candidate_delta=-0.030
+q6_count delta=-0.012
+q6_cells delta=-0.092
+applied_hurts=q6_cells:public:total+item+shape,q6_cells:public:random_avg+shape,...
+
+evidence_profile_key q6_count strict gate:
+overall_status=blocked_holdout_directional_hurt
+candidate_rows=99
+candidate_delta=+0.081
+```
+
+结论：
+
+- `v3_ccvc_` 的 q6_count 是弱正向候选，但按当前 direction candidate 放行仍会误放多个 map/profile。
+- q6_cells 是主要风险源；map holdout 下 cells delta `+0.354`，不能进入 formal。
+- 简单收紧 hurt/directional threshold 不可行，会缩小覆盖但让 q6_count holdout 变差。
+- 下一步需要拆 evidence contribution：public total、random_avg、q6 floor、explicit q6 anchor、unqualified anchor 分别如何影响 count/cells，而不是继续调候选阈值。

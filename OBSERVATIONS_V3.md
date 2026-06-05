@@ -1609,3 +1609,43 @@ watch_directional_candidate=9
 - 但 map/profile 的 changed rows hurt rate 仍高；例如 `public:random_avg+...`、`item+shape`、`public:total+item+shape` 仍会把一部分窗口推向错误方向。
 - `public:total+item+shape+layout` 在 component skeleton 下 q6 cells MAE 有改善，但 q6 count 仍有方向性问题，不能简单放行。
 - 下一步重点是对 component likelihood 做 session holdout 与 evidence contribution audit，而不是把全局均值改善直接接 formal。
+
+## O-v3-050：v3_ccvc_ holdout 显示 q6_cells 是主要风险源
+
+2026-06-05 将 direction holdout 参数化到 `v3_ccvc_` 后，128-trial archive 结果：
+
+```text
+map_id q6_count+q6_cells:
+candidate_rows=793
+candidate_delta=+0.097
+q6_count delta=-0.017
+q6_cells delta=+0.354
+
+evidence_profile_key q6_count+q6_cells:
+candidate_rows=628
+candidate_delta=-0.030
+q6_count delta=-0.012
+q6_cells delta=-0.092
+```
+
+主要 applied hurt：
+
+```text
+map q6_cells:2505,2408,2508,2405,2502,2403,2404,2410
+profile q6_cells:public:total+item+shape,public:random_avg+shape
+profile q6_count:item+shape+layout,public:total+item+shape,public:max_item_cells+item+shape
+```
+
+严格 q6_count profile gate：
+
+```text
+candidate_rows=99
+candidate_delta=+0.081
+```
+
+解读：
+
+- map 层 q6_cells 不能 promotion；它是 component likelihood 当前最明显的反向来源。
+- profile 层 q6_count 是弱正向，但不能用简单 gate 放行。
+- `public:total` 与 `random_avg` 同时出现时不自动可靠；需要拆它们分别对 count 和 cells 的贡献。
+- 下一步应做 evidence contribution audit，识别哪些证据组合应提高/降低 count，哪些应完全不动 cells。

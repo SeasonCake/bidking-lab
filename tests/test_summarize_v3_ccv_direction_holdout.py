@@ -50,6 +50,32 @@ def _row(
     }
 
 
+def _ccvc_row(
+    *,
+    session_id: str,
+    truth: int,
+    baseline: int,
+    ccvc: int,
+    group: str = "2502",
+) -> dict[str, object]:
+    row = _row(
+        session_id=session_id,
+        truth=truth,
+        baseline=baseline,
+        ccv=baseline,
+        group=group,
+    )
+    row.update(
+        {
+            "v3_ccv_ready": False,
+            "v3_ccvc_ready": True,
+            "v3_ccvc_match_scope": "ccv_component_likelihood",
+            "v3_ccvc_q6_count_p50": ccvc,
+        }
+    )
+    return row
+
+
 def test_direction_holdout_applies_training_direction_candidate() -> None:
     module = _load_module()
     fold0 = [_session_for_fold(module, 0, prefix=f"f0_{idx}") for idx in range(4)]
@@ -74,6 +100,32 @@ def test_direction_holdout_applies_training_direction_candidate() -> None:
     assert result["candidate_only"]["candidate_groups"] == ["q6_count:2502"]
     assert result["candidate_only"]["candidate_only_delta_p50_mae"] == -1
     assert result["candidate_only"]["candidate_only_hurt_rate"] == 0.0
+
+
+def test_direction_holdout_uses_candidate_prefix() -> None:
+    module = _load_module()
+    fold0 = [_session_for_fold(module, 0, prefix=f"ccvc0_{idx}") for idx in range(4)]
+    fold1 = [_session_for_fold(module, 1, prefix=f"ccvc1_{idx}") for idx in range(4)]
+    rows = [
+        _ccvc_row(session_id=session_id, truth=4, baseline=2, ccvc=3)
+        for session_id in (*fold0, *fold1)
+    ]
+
+    result = module.summarize_holdout(
+        rows,
+        group_field="map_id",
+        candidate_prefix="v3_ccvc_",
+        components=("q6_count",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+    )
+
+    assert result["candidate_prefix"] == "v3_ccvc_"
+    assert result["overall_status"] == "watch"
+    assert result["candidate_only"]["candidate_rows"] == 8
+    assert result["candidate_only"]["candidate_only_delta_p50_mae"] == -1
 
 
 def test_direction_holdout_blocks_train_candidate_that_hurts_holdout() -> None:
