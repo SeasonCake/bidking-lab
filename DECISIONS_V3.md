@@ -499,3 +499,32 @@ v3 新增 empirical prior calibration shadow，但激活条件收紧为：
   - q6 cells delta 不恶化。
   - high-over 反例不启用。
 - gate 通过后仍需 holdout 或新增实战样本验证，不能只用当前 in-sample archive。
+
+## D-v3-028：residual gate 默认为 watch-only，等待 hero/evidence profile gate
+
+`v3_resid_gate_*` 已接入 evaluator/live/map audit，但当前决策是：默认不 active。
+
+原因：
+
+- 只按 `2506` map-level systemic-under 启用 residual 会混合两种相反场景：
+  - Aisha 2506 低估：residual 降 q6 count/cells/value 会加重错误。
+  - Ethan 2506 过估：residual 降 q6 value 可能有帮助。
+- 128-trial active candidate 已经显示三类指标均轻微恶化。
+- 512-trial raw residual 也显示整体 cells/value 不稳定。
+
+当前边界：
+
+- `v3_resid_gate_active_rows=0`。
+- `v3_resid_gate_active=false`。
+- `v3_resid_gate_status=watch_only`。
+- `v3_resid_gate_gate_reason=residual_gate_unproven`。
+- `v3_resid_gate_source=baseline`。
+- delta 字段仍保留，用于审计 residual 相对 baseline 的变化。
+
+下一步必须先补：
+
+- evaluator/live 行级 `hero` 或稳定 evidence profile。
+- Aisha/Ethan 分片指标。
+- Aisha 2506 tail/value 与 Ethan over-value residual 的独立 gate。
+
+在这些完成前，不允许把 residual gate 接入 formal、calibration、UI 主建议或 v2 bid path。

@@ -1288,3 +1288,52 @@ C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_map_audit.py --top 10
 - residual 结构比 ccv 更接近 v3 目标：它确实能用 residual capacity 约束 q6 component，并在 `2506/2503` 的 q6 raw value 上给出正向信号。
 - 但默认全局激活会恶化整体 q6 cells/raw value MAE，不能 promotion，也不能接 formal。
 - 下一步应做 map/evidence gate：优先 `2506` systemic-under + fallback + residual value positive；排除 high-over、少样本和 cells 恶化切片。
+
+## 2026-06-05 checkpoint：residual gate watch-only
+
+实现：
+
+- 新增 `src/bidking_lab/inference/v3/residual_gate.py`。
+  - 输出 `v3_resid_gate_*`。
+  - 复用 `v3_cal_*` 的 map-level active/systemic-under 信息。
+  - candidate 需要 residual fallback、q6 count/cells/value P50 不高于 baseline。
+  - 当前全局 `active` 关闭，状态为 `watch_only`，原因 `residual_gate_unproven`。
+- evaluator/live/map audit 均接入 `v3_resid_gate_*`。
+- `model_eval` 增加 gate status、reason、source、q6 delta 字段。
+
+关键审计：
+
+- 128-trial 下，初版 active 11 行，但仍恶化：
+
+```text
+v3_resid_gate_active_rows=11
+v3_resid_gate_delta_q6_count_p50_mae=+0.003
+v3_resid_gate_delta_q6_cells_p50_mae=+0.009
+v3_resid_gate_delta_q6_value_p50_mae=+423.747
+```
+
+- active row 明细显示同一个 2506 gate 分裂：
+  - Ethan 2506 过估样本中，residual 降 q6 value 有帮助。
+  - Aisha 2506 低估样本中，residual 会把 q6 count/cells/value 进一步压低，例如 q6 truth `8/38/1,313,498` 的窗口被压到 `3/15/711,060`。
+- 因此当前 gate 不能按 map-level `2506` 直接启用，必须引入 hero/evidence-specific gate。
+
+最终默认 512-trial：
+
+```text
+v3_resid_gate_active_rows=0
+v3_resid_gate_delta_q6_count_p50_mae=0.0
+v3_resid_gate_delta_q6_cells_p50_mae=0.0
+v3_resid_gate_delta_q6_value_p50_mae=0.0
+```
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 128 --fail-on-conflicts
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_map_audit.py --top 10
+```
+
+结果：`68 passed`；全量 evaluator 和 map audit 通过。

@@ -55,6 +55,11 @@ from bidking_lab.inference.v3.priors import (
     ordinary_shape_replacement_values,
     summarize_drop_prior,
 )
+from bidking_lab.inference.v3.residual_gate import (
+    V3ResidualGateReport,
+    empty_residual_gate_flat_dict,
+    gate_residual_posterior_report,
+)
 from bidking_lab.inference.v3.summary import (
     BucketFeasibleSummary,
     FeasibleSummaryReport,
@@ -96,6 +101,7 @@ __all__ = (
     "SettlementTruthReport",
     "V3PosteriorReport",
     "V3PriorCalibrationReport",
+    "V3ResidualGateReport",
     "action_result_spec",
     "audit_fatbeans_events",
     "audit_fatbeans_paths",
@@ -108,12 +114,14 @@ __all__ = (
     "empty_feasible_summary_flat_dict",
     "empty_posterior_flat_dict",
     "empty_prior_calibration_flat_dict",
+    "empty_residual_gate_flat_dict",
     "empty_truth_flat_dict",
     "entry_from_mapping",
     "estimate_count_cell_value_posterior_from_truths",
     "estimate_q6_posterior_from_truths",
     "estimate_residual_count_cell_value_posterior_from_truths",
     "events_from_fatbeans",
+    "gate_residual_posterior_report",
     "load_prior_calibration_entries",
     "ordinary_shape_replacement_values",
     "propose_prior_calibration",

@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from bidking_lab.inference.map_likelihood import QuantileSummary
 from bidking_lab.inference.v3.calibration import (
     calibrate_posterior_report,
@@ -5,6 +7,7 @@ from bidking_lab.inference.v3.calibration import (
     propose_prior_calibration,
 )
 from bidking_lab.inference.v3.posterior import V3PosteriorReport
+from bidking_lab.inference.v3.residual_gate import gate_residual_posterior_report
 
 
 def _posterior() -> V3PosteriorReport:
@@ -116,3 +119,117 @@ def test_empty_prior_calibration_flat_dict_is_bid_safe() -> None:
     assert flat["v3_cal_affects_bid"] is False
     assert flat["v3_cal_active"] is False
     assert flat["v3_cal_status"] == "missing_entry"
+
+
+def test_residual_gate_keeps_unproven_candidate_watch_only() -> None:
+    entry = propose_prior_calibration(
+        map_id=2506,
+        map_family="shipwreck",
+        archive_sessions=21,
+        median_ratio=1.84,
+        p90_ratio=1.90,
+        formal_p50_over_rate=0.30,
+        baseline_formal_p50_mae=409_096.7,
+        baseline_formal_p50_bias=-246_686.8,
+    )
+    baseline = _posterior()
+    residual = replace(
+        baseline,
+        match_scope="residual_likelihood",
+        q6_cells=QuantileSummary(p10=0, p50=4, p90=10),
+        q6_value=QuantileSummary(p10=20_000, p50=40_000, p90=110_000),
+    )
+
+    report = gate_residual_posterior_report(baseline, residual, entry)
+    flat = report.to_flat_dict()
+
+    assert flat["v3_resid_gate_active"] is False
+    assert flat["v3_resid_gate_affects_bid"] is False
+    assert flat["v3_resid_gate_status"] == "watch_only"
+    assert flat["v3_resid_gate_gate_reason"] == "residual_gate_unproven"
+    assert flat["v3_resid_gate_source"] == "baseline"
+    assert flat["v3_resid_gate_q6_value_p50"] == 50_000
+    assert flat["v3_resid_gate_q6_cells_delta_p50"] == 0
+
+
+def test_residual_gate_blocks_cells_p50_increase() -> None:
+    entry = propose_prior_calibration(
+        map_id=2506,
+        map_family="shipwreck",
+        archive_sessions=21,
+        median_ratio=1.84,
+        p90_ratio=1.90,
+        formal_p50_over_rate=0.30,
+        baseline_formal_p50_mae=409_096.7,
+        baseline_formal_p50_bias=-246_686.8,
+    )
+    baseline = _posterior()
+    residual = replace(
+        baseline,
+        match_scope="residual_likelihood",
+        q6_cells=QuantileSummary(p10=0, p50=8, p90=12),
+    )
+
+    report = gate_residual_posterior_report(baseline, residual, entry)
+    flat = report.to_flat_dict()
+
+    assert flat["v3_resid_gate_active"] is False
+    assert flat["v3_resid_gate_status"] == "watch_only"
+    assert flat["v3_resid_gate_gate_reason"] == "q6_cells_p50_increase"
+    assert flat["v3_resid_gate_source"] == "baseline"
+
+
+def test_residual_gate_blocks_count_p50_increase() -> None:
+    entry = propose_prior_calibration(
+        map_id=2506,
+        map_family="shipwreck",
+        archive_sessions=21,
+        median_ratio=1.84,
+        p90_ratio=1.90,
+        formal_p50_over_rate=0.30,
+        baseline_formal_p50_mae=409_096.7,
+        baseline_formal_p50_bias=-246_686.8,
+    )
+    baseline = _posterior()
+    residual = replace(
+        baseline,
+        match_scope="residual_likelihood",
+        q6_count=QuantileSummary(p10=0, p50=2, p90=3),
+        q6_cells=QuantileSummary(p10=0, p50=4, p90=10),
+    )
+
+    report = gate_residual_posterior_report(baseline, residual, entry)
+    flat = report.to_flat_dict()
+
+    assert flat["v3_resid_gate_active"] is False
+    assert flat["v3_resid_gate_status"] == "watch_only"
+    assert flat["v3_resid_gate_gate_reason"] == "q6_count_p50_increase"
+    assert flat["v3_resid_gate_source"] == "baseline"
+
+
+def test_residual_gate_blocks_value_p50_increase() -> None:
+    entry = propose_prior_calibration(
+        map_id=2506,
+        map_family="shipwreck",
+        archive_sessions=21,
+        median_ratio=1.84,
+        p90_ratio=1.90,
+        formal_p50_over_rate=0.30,
+        baseline_formal_p50_mae=409_096.7,
+        baseline_formal_p50_bias=-246_686.8,
+    )
+    baseline = _posterior()
+    residual = replace(
+        baseline,
+        match_scope="residual_likelihood",
+        q6_cells=QuantileSummary(p10=0, p50=4, p90=10),
+        q6_value=QuantileSummary(p10=20_000, p50=60_000, p90=130_000),
+    )
+
+    report = gate_residual_posterior_report(baseline, residual, entry)
+    flat = report.to_flat_dict()
+
+    assert flat["v3_resid_gate_active"] is False
+    assert flat["v3_resid_gate_status"] == "watch_only"
+    assert flat["v3_resid_gate_gate_reason"] == "q6_value_p50_increase"
+    assert flat["v3_resid_gate_source"] == "baseline"

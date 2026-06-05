@@ -50,10 +50,12 @@ from bidking_lab.inference.v3 import (
     empty_feasible_summary_flat_dict,
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
+    empty_residual_gate_flat_dict,
     estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
     estimate_residual_count_cell_value_posterior_from_truths,
     events_from_fatbeans,
+    gate_residual_posterior_report,
     load_prior_calibration_entries,
     ordinary_shape_replacement_values,
     sample_truth_bank,
@@ -1689,6 +1691,33 @@ def _model_eval_row(
     v3_resid_q6_value_p90 = _parse_int_text(
         v3_shadow.get("v3_resid_q6_value_p90")
     )
+    v3_resid_gate_available = bool(v3_shadow.get("v3_resid_gate_available"))
+    v3_resid_gate_ready = bool(v3_shadow.get("v3_resid_gate_ready"))
+    v3_resid_gate_affects_bid = bool(
+        v3_shadow.get("v3_resid_gate_affects_bid")
+    )
+    v3_resid_gate_active = bool(v3_shadow.get("v3_resid_gate_active"))
+    v3_resid_gate_status = v3_shadow.get("v3_resid_gate_status")
+    v3_resid_gate_gate_reason = v3_shadow.get("v3_resid_gate_gate_reason")
+    v3_resid_gate_source = v3_shadow.get("v3_resid_gate_source")
+    v3_resid_gate_q6_count_p50 = _parse_int_text(
+        v3_shadow.get("v3_resid_gate_q6_count_p50")
+    )
+    v3_resid_gate_q6_cells_p50 = _parse_int_text(
+        v3_shadow.get("v3_resid_gate_q6_cells_p50")
+    )
+    v3_resid_gate_q6_value_p50 = _parse_int_text(
+        v3_shadow.get("v3_resid_gate_q6_value_p50")
+    )
+    v3_resid_gate_q6_count_delta_p50 = _parse_float_text(
+        v3_shadow.get("v3_resid_gate_q6_count_delta_p50")
+    )
+    v3_resid_gate_q6_cells_delta_p50 = _parse_float_text(
+        v3_shadow.get("v3_resid_gate_q6_cells_delta_p50")
+    )
+    v3_resid_gate_q6_value_delta_p50 = _parse_float_text(
+        v3_shadow.get("v3_resid_gate_q6_value_delta_p50")
+    )
     v3_cal_available = bool(v3_shadow.get("v3_cal_available"))
     v3_cal_ready = bool(v3_shadow.get("v3_cal_ready"))
     v3_cal_active = bool(v3_shadow.get("v3_cal_active"))
@@ -2248,6 +2277,20 @@ def _model_eval_row(
         "v3_resid_q6_value_p50": v3_resid_q6_value_p50,
         "v3_resid_q6_value_p90": v3_resid_q6_value_p90,
         "v3_resid_diagnostics": v3_shadow.get("v3_resid_diagnostics"),
+        "v3_resid_gate_available": v3_resid_gate_available,
+        "v3_resid_gate_ready": v3_resid_gate_ready,
+        "v3_resid_gate_affects_bid": v3_resid_gate_affects_bid,
+        "v3_resid_gate_active": v3_resid_gate_active,
+        "v3_resid_gate_status": v3_resid_gate_status,
+        "v3_resid_gate_gate_reason": v3_resid_gate_gate_reason,
+        "v3_resid_gate_source": v3_resid_gate_source,
+        "v3_resid_gate_q6_count_p50": v3_resid_gate_q6_count_p50,
+        "v3_resid_gate_q6_cells_p50": v3_resid_gate_q6_cells_p50,
+        "v3_resid_gate_q6_value_p50": v3_resid_gate_q6_value_p50,
+        "v3_resid_gate_q6_count_delta_p50": v3_resid_gate_q6_count_delta_p50,
+        "v3_resid_gate_q6_cells_delta_p50": v3_resid_gate_q6_cells_delta_p50,
+        "v3_resid_gate_q6_value_delta_p50": v3_resid_gate_q6_value_delta_p50,
+        "v3_resid_gate_diagnostics": v3_shadow.get("v3_resid_gate_diagnostics"),
         "v3_cal_available": v3_cal_available,
         "v3_cal_ready": v3_cal_ready,
         "v3_cal_active": v3_cal_active,
@@ -2823,6 +2866,7 @@ def _empty_v3_posterior_shadow(
         **empty_posterior_flat_dict(),
         **empty_posterior_flat_dict(prefix="v3_ccv_"),
         **empty_posterior_flat_dict(prefix="v3_resid_"),
+        **empty_residual_gate_flat_dict(),
         **empty_prior_calibration_flat_dict(),
     }
 
@@ -2898,9 +2942,15 @@ def _v3_posterior_shadow_summary(
             replacement_values=replacement_values,
             baseline=posterior,
         )
+        calibration_entry = _default_v3_prior_calibration_entries().get(int(map_id))
+        residual_gate = gate_residual_posterior_report(
+            posterior,
+            residual_posterior,
+            calibration_entry,
+        )
         calibration = calibrate_posterior_report(
             posterior,
-            _default_v3_prior_calibration_entries().get(int(map_id)),
+            calibration_entry,
         )
     except Exception as exc:
         out["error"] = type(exc).__name__
@@ -2918,6 +2968,7 @@ def _v3_posterior_shadow_summary(
     out.update(posterior.to_flat_dict())
     out.update(ccv_posterior.to_flat_dict(prefix="v3_ccv_"))
     out.update(residual_posterior.to_flat_dict(prefix="v3_resid_"))
+    out.update(residual_gate.to_flat_dict())
     out.update(calibration.to_flat_dict())
     return out
 

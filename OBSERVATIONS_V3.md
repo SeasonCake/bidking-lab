@@ -892,3 +892,46 @@ value delta=-6794.229
 - 但全局默认激活会牺牲整体 cells/value MAE；尤其 `2507` high-over 反例和 `2501` 非强系统性低估图不能无条件启用。
 - 512 与 128 方向不一致，说明该 sampler 对 truth bank 方差/组件分布敏感；后续必须增加 gate 或稳定化，而不是直接把它放进 formal。
 - 下一步应优先研究 `2506` gate：systemic-under + fallback + residual value improves + no cells degradation，再扩展到 holdout/new-live 验证。
+
+## O-v3-032：2506 residual gate 不能只按地图启用，Aisha/Ethan 方向相反
+
+2026-06-05 对 `v3_resid_gate_*` 做第一版 gated candidate：
+
+- map gate：复用 `v3_cal_*` active，即当前只会考虑 `2506`。
+- evidence gate：fallback residual。
+- safety gate：q6 count/cells/value P50 不高于 baseline。
+
+128-trial 初版 active 11 行，仍然恶化：
+
+```text
+v3_resid_gate_delta_q6_count_p50_mae=+0.003
+v3_resid_gate_delta_q6_cells_p50_mae=+0.009
+v3_resid_gate_delta_q6_value_p50_mae=+423.747
+```
+
+active row 审计：
+
+```text
+Aisha 2506: truth 8/38/1,313,498
+  baseline 5/24/1,171,789
+  residual 3/15/711,060
+  结论：进一步压低，明显错误。
+
+Ethan 2506: truth 2/8/330,562
+  baseline 3/14/729,976
+  residual 3/12/585,617
+  结论：降低过估，有一定帮助但仍偏高。
+```
+
+结论：
+
+- `2506` map-level systemic-under 与 q6 residual value 修正不是同一个问题。
+- residual 降 value 对 Ethan 过估切片可能有用，但对 Aisha 低估切片危险。
+- 没有 hero/evidence-specific gate 前，`v3_resid_gate_*` 不应 active。
+- 当前默认改为 watch-only：`v3_resid_gate_active_rows=0`，保留 delta 字段用于后续 gate 设计。
+
+下一步：
+
+- evaluator/live 需要显式带出 hero 或等价 evidence profile，避免只能按 file name 审计。
+- gate 需要区分 Aisha deep/tail-value 与 Ethan over-value/random/layout 场景。
+- 对 Aisha 2506 的主要方向仍应是 tail/value sampler 或 formal calibration，而不是 residual 降 q6 raw value。

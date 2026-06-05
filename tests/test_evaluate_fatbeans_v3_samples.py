@@ -201,6 +201,8 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_resid_available"] is True
     assert rows[0]["v3_resid_affects_bid"] is False
     assert rows[0]["v3_resid_ready"] is True
+    assert rows[0]["v3_resid_gate_available"] is True
+    assert rows[0]["v3_resid_gate_affects_bid"] is False
     assert rows[0]["v3_cal_available"] is True
     assert rows[0]["v3_cal_affects_bid"] is False
     assert rows[0]["v3_cal_active"] is False
@@ -303,6 +305,13 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
             "v3_resid_q6_cells_p50": 4,
             "v3_resid_q6_cells_p90": 4,
             "v3_resid_q6_value_p50": 100,
+            "v3_resid_gate_ready": True,
+            "v3_resid_gate_active": True,
+            "v3_resid_gate_q6_count_p50": 1,
+            "v3_resid_gate_q6_count_p90": 1,
+            "v3_resid_gate_q6_cells_p50": 4,
+            "v3_resid_gate_q6_cells_p90": 4,
+            "v3_resid_gate_q6_value_p50": 100,
         },
         {
             "status": "ready",
@@ -337,6 +346,13 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
             "v3_resid_q6_cells_p50": 0,
             "v3_resid_q6_cells_p90": 0,
             "v3_resid_q6_value_p50": 0,
+            "v3_resid_gate_ready": True,
+            "v3_resid_gate_active": False,
+            "v3_resid_gate_q6_count_p50": 1,
+            "v3_resid_gate_q6_count_p90": 1,
+            "v3_resid_gate_q6_cells_p50": 5,
+            "v3_resid_gate_q6_cells_p90": 5,
+            "v3_resid_gate_q6_value_p50": 50,
             "v3_cal_ready": True,
             "v3_cal_active": True,
             "v3_cal_formal_decision_value_p50": 220,
@@ -383,6 +399,13 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["v3_resid_delta_q6_cells_p50_mae"] == -3.5
     assert summary["v3_resid_q6_value_p50_mae"] == 0
     assert summary["v3_resid_delta_q6_value_p50_mae"] == -35
+    assert summary["v3_resid_gate_active_rows"] == 1
+    assert summary["v3_resid_gate_q6_count_p50_mae"] == 0.5
+    assert summary["v3_resid_gate_delta_q6_count_p50_mae"] == -0.5
+    assert summary["v3_resid_gate_q6_cells_p50_mae"] == 2.5
+    assert summary["v3_resid_gate_delta_q6_cells_p50_mae"] == -1
+    assert summary["v3_resid_gate_q6_value_p50_mae"] == 25
+    assert summary["v3_resid_gate_delta_q6_value_p50_mae"] == -10
     assert summary["v3_cal_metric_rows"] == 1
     assert summary["v3_cal_active_rows"] == 1
     assert summary["v3_cal_formal_p50_mae"] == 20

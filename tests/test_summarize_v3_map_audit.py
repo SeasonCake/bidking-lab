@@ -48,6 +48,10 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
             "v3_resid_q6_count_p50": 1,
             "v3_resid_q6_cells_p50": 4,
             "v3_resid_q6_value_p50": 100,
+            "v3_resid_gate_active": True,
+            "v3_resid_gate_q6_count_p50": 1,
+            "v3_resid_gate_q6_cells_p50": 4,
+            "v3_resid_gate_q6_value_p50": 100,
         },
         {
             "status": "ready",
@@ -83,6 +87,10 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
             "v3_resid_q6_count_p50": 2,
             "v3_resid_q6_cells_p50": 8,
             "v3_resid_q6_value_p50": 260,
+            "v3_resid_gate_active": False,
+            "v3_resid_gate_q6_count_p50": 1,
+            "v3_resid_gate_q6_cells_p50": 4,
+            "v3_resid_gate_q6_value_p50": 200,
         },
         {
             "status": "no_state",
@@ -125,6 +133,13 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
     assert row["v3_resid_delta_q6_cells_p50_mae"] == -3
     assert row["v3_resid_q6_value_p50_mae"] == 20
     assert row["v3_resid_delta_q6_value_p50_mae"] == -40
+    assert row["v3_resid_gate_active_rate"] == 0.5
+    assert row["v3_resid_gate_q6_count_p50_mae"] == 0.5
+    assert row["v3_resid_gate_delta_q6_count_p50_mae"] == -0.5
+    assert row["v3_resid_gate_q6_cells_p50_mae"] == 2
+    assert row["v3_resid_gate_delta_q6_cells_p50_mae"] == -1
+    assert row["v3_resid_gate_q6_value_p50_mae"] == 50
+    assert row["v3_resid_gate_delta_q6_value_p50_mae"] == -10
     assert row["public_total_rate"] == 0.5
     assert row["q6_floor_rate"] == 0.5
     assert "few_sessions" in row["flags"]

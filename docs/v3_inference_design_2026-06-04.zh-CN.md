@@ -574,6 +574,23 @@ v3 可进入正式候选前：
    - residual raw value 对当前地图切片为正向。
    - raw value shadow 仍不直接进入 formal；正式 formal 需要单独验证 value-per-cell 与 plannable/tail replacement 口径。
 
+### 2026-06-05 residual gate 反馈
+
+- 第一版 `v3_resid_gate_*` 已接入，但默认 watch-only，不 active。
+- 初版 map-level gate 只依赖 `2506` systemic-under，审计发现它会混合相反场景：
+  - Aisha 2506：本来低估，residual 降 q6 count/cells/value 会加重错误。
+  - Ethan 2506：部分过估，residual 降 q6 value 有帮助。
+- 因此 gate 不能只看地图，需要行级 `hero/evidence_profile`。
+
+架构调整：
+
+1. evaluator/live rows 必须输出稳定 `hero` 字段。
+2. residual / ccv / calibration audit 需要支持 `hero + map_id + evidence_stage` 分片。
+3. 下一版 gate 不再是 `map_id=2506`，而是：
+   - Aisha 2506：优先 tail/value sampler 与 formal calibration，不使用 residual 降 q6 raw value。
+   - Ethan 2506：可以继续审计 residual over-value correction。
+4. 在分片指标没有证明前，`v3_resid_gate_*` 只保留 baseline source 和 delta diagnostic。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

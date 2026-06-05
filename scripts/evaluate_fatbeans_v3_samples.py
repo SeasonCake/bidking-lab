@@ -35,11 +35,13 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     empty_feasible_summary_flat_dict,
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
+    empty_residual_gate_flat_dict,
     empty_truth_flat_dict,
     estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
     estimate_residual_count_cell_value_posterior_from_truths,
     events_from_fatbeans,
+    gate_residual_posterior_report,
     load_prior_calibration_entries,
     ordinary_shape_replacement_values,
     sample_truth_bank,
@@ -221,6 +223,7 @@ def _round_rows_for_events(
     empty_posterior_fields = empty_posterior_flat_dict()
     empty_ccv_fields = empty_posterior_flat_dict(prefix="v3_ccv_")
     empty_residual_fields = empty_posterior_flat_dict(prefix="v3_resid_")
+    empty_residual_gate_fields = empty_residual_gate_flat_dict()
     empty_calibration_fields = empty_prior_calibration_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
@@ -268,6 +271,7 @@ def _round_rows_for_events(
                     **empty_posterior_fields,
                     **empty_ccv_fields,
                     **empty_residual_fields,
+                    **empty_residual_gate_fields,
                     **empty_calibration_fields,
                 }
             )
@@ -360,6 +364,12 @@ def _round_rows_for_events(
             if calibration_entries is not None and map_id is not None
             else None
         )
+        residual_gate = gate_residual_posterior_report(
+            posterior,
+            residual_posterior,
+            calibration_entry,
+        )
+        residual_gate_fields = residual_gate.to_flat_dict()
         calibration = calibrate_posterior_report(posterior, calibration_entry)
         calibration_fields = calibration.to_flat_dict()
         rows.append(
@@ -389,6 +399,7 @@ def _round_rows_for_events(
                 **posterior_fields,
                 **ccv_fields,
                 **residual_fields,
+                **residual_gate_fields,
                 **calibration_fields,
             }
         )
@@ -484,6 +495,13 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if row.get("status") == "ready"
         and row.get("v3_truth_available")
         and row.get("v3_resid_ready")
+    ]
+    residual_gate_ready = [
+        row
+        for row in rows
+        if row.get("status") == "ready"
+        and row.get("v3_truth_available")
+        and row.get("v3_resid_gate_ready")
     ]
 
     def pred_truth(
@@ -618,6 +636,31 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "v3_truth_q6_raw_value",
         source_rows=residual_ready,
     )
+    residual_gate_q6_count_p50 = pred_truth(
+        "v3_resid_gate_q6_count_p50",
+        "v3_truth_q6_count",
+        source_rows=residual_gate_ready,
+    )
+    residual_gate_q6_count_p90 = pred_truth(
+        "v3_resid_gate_q6_count_p90",
+        "v3_truth_q6_count",
+        source_rows=residual_gate_ready,
+    )
+    residual_gate_q6_cells_p50 = pred_truth(
+        "v3_resid_gate_q6_cells_p50",
+        "v3_truth_q6_cells",
+        source_rows=residual_gate_ready,
+    )
+    residual_gate_q6_cells_p90 = pred_truth(
+        "v3_resid_gate_q6_cells_p90",
+        "v3_truth_q6_cells",
+        source_rows=residual_gate_ready,
+    )
+    residual_gate_q6_value_p50 = pred_truth(
+        "v3_resid_gate_q6_value_p50",
+        "v3_truth_q6_raw_value",
+        source_rows=residual_gate_ready,
+    )
     cal_formal_p50 = pred_truth(
         "v3_cal_formal_decision_value_p50",
         "v3_truth_formal_decision_value",
@@ -674,6 +717,9 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     residual_q6_count_p50_mae = mae(residual_q6_count_p50)
     residual_q6_cells_p50_mae = mae(residual_q6_cells_p50)
     residual_q6_value_p50_mae = mae(residual_q6_value_p50)
+    residual_gate_q6_count_p50_mae = mae(residual_gate_q6_count_p50)
+    residual_gate_q6_cells_p50_mae = mae(residual_gate_q6_cells_p50)
+    residual_gate_q6_value_p50_mae = mae(residual_gate_q6_value_p50)
     return {
         "metric_rows": len(paired),
         "metric_strict_rows": sum(
@@ -781,6 +827,54 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "v3_resid_delta_q6_value_p50_mae": _round_metric(
             residual_q6_value_p50_mae - q6_value_p50_mae
             if residual_q6_value_p50_mae is not None and q6_value_p50_mae is not None
+            else None
+        ),
+        "v3_resid_gate_metric_rows": len(residual_gate_ready),
+        "v3_resid_gate_active_rows": sum(
+            1 for row in residual_gate_ready if row.get("v3_resid_gate_active")
+        ),
+        "v3_resid_gate_q6_count_p50_mae": _round_metric(
+            residual_gate_q6_count_p50_mae
+        ),
+        "v3_resid_gate_q6_count_p50_bias": _round_metric(
+            bias(residual_gate_q6_count_p50)
+        ),
+        "v3_resid_gate_q6_count_p90_coverage": _round_metric(
+            coverage_rate(residual_gate_q6_count_p90),
+            6,
+        ),
+        "v3_resid_gate_delta_q6_count_p50_mae": _round_metric(
+            residual_gate_q6_count_p50_mae - q6_count_p50_mae
+            if residual_gate_q6_count_p50_mae is not None
+            and q6_count_p50_mae is not None
+            else None
+        ),
+        "v3_resid_gate_q6_cells_p50_mae": _round_metric(
+            residual_gate_q6_cells_p50_mae
+        ),
+        "v3_resid_gate_q6_cells_p50_bias": _round_metric(
+            bias(residual_gate_q6_cells_p50)
+        ),
+        "v3_resid_gate_q6_cells_p90_coverage": _round_metric(
+            coverage_rate(residual_gate_q6_cells_p90),
+            6,
+        ),
+        "v3_resid_gate_delta_q6_cells_p50_mae": _round_metric(
+            residual_gate_q6_cells_p50_mae - q6_cells_p50_mae
+            if residual_gate_q6_cells_p50_mae is not None
+            and q6_cells_p50_mae is not None
+            else None
+        ),
+        "v3_resid_gate_q6_value_p50_mae": _round_metric(
+            residual_gate_q6_value_p50_mae
+        ),
+        "v3_resid_gate_q6_value_p50_bias": _round_metric(
+            bias(residual_gate_q6_value_p50)
+        ),
+        "v3_resid_gate_delta_q6_value_p50_mae": _round_metric(
+            residual_gate_q6_value_p50_mae - q6_value_p50_mae
+            if residual_gate_q6_value_p50_mae is not None
+            and q6_value_p50_mae is not None
             else None
         ),
         "v3_cal_metric_rows": len(calibrated),
@@ -937,6 +1031,13 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"v3_resid_delta_q6_cells_p50_mae={summary['v3_resid_delta_q6_cells_p50_mae']}",
                 f"v3_resid_q6_value_p50_mae={summary['v3_resid_q6_value_p50_mae']}",
                 f"v3_resid_delta_q6_value_p50_mae={summary['v3_resid_delta_q6_value_p50_mae']}",
+                f"v3_resid_gate_active_rows={summary['v3_resid_gate_active_rows']}",
+                f"v3_resid_gate_q6_count_p50_mae={summary['v3_resid_gate_q6_count_p50_mae']}",
+                f"v3_resid_gate_delta_q6_count_p50_mae={summary['v3_resid_gate_delta_q6_count_p50_mae']}",
+                f"v3_resid_gate_q6_cells_p50_mae={summary['v3_resid_gate_q6_cells_p50_mae']}",
+                f"v3_resid_gate_delta_q6_cells_p50_mae={summary['v3_resid_gate_delta_q6_cells_p50_mae']}",
+                f"v3_resid_gate_q6_value_p50_mae={summary['v3_resid_gate_q6_value_p50_mae']}",
+                f"v3_resid_gate_delta_q6_value_p50_mae={summary['v3_resid_gate_delta_q6_value_p50_mae']}",
                 f"v3_cal_active_rows={summary['v3_cal_active_rows']}",
                 f"v3_cal_formal_p50_mae={summary['v3_cal_formal_p50_mae']}",
                 f"v3_cal_delta_formal_p50_mae={summary['v3_cal_delta_formal_p50_mae']}",
@@ -1145,6 +1246,45 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_resid_q6_tail_replacement_decision_value_p50",
         "v3_resid_q6_tail_replacement_decision_value_p90",
         "v3_resid_diagnostics",
+        "v3_resid_gate_available",
+        "v3_resid_gate_ready",
+        "v3_resid_gate_strict_ready",
+        "v3_resid_gate_affects_bid",
+        "v3_resid_gate_active",
+        "v3_resid_gate_status",
+        "v3_resid_gate_gate_reason",
+        "v3_resid_gate_source",
+        "v3_resid_gate_archive_sessions",
+        "v3_resid_gate_calibration_status",
+        "v3_resid_gate_calibration_gate_reason",
+        "v3_resid_gate_q6_count_delta_p50",
+        "v3_resid_gate_q6_cells_delta_p50",
+        "v3_resid_gate_q6_value_delta_p50",
+        "v3_resid_gate_map_id",
+        "v3_resid_gate_map_name",
+        "v3_resid_gate_match_scope",
+        "v3_resid_gate_n_total",
+        "v3_resid_gate_n_matched",
+        "v3_resid_gate_n_strict_matched",
+        "v3_resid_gate_match_rate",
+        "v3_resid_gate_strict_match_rate",
+        "v3_resid_gate_q6_present_rate",
+        "v3_resid_gate_q6_count_p10",
+        "v3_resid_gate_q6_count_p50",
+        "v3_resid_gate_q6_count_p90",
+        "v3_resid_gate_q6_cells_p10",
+        "v3_resid_gate_q6_cells_p50",
+        "v3_resid_gate_q6_cells_p90",
+        "v3_resid_gate_q6_value_p10",
+        "v3_resid_gate_q6_value_p50",
+        "v3_resid_gate_q6_value_p90",
+        "v3_resid_gate_q6_formal_decision_value_p10",
+        "v3_resid_gate_q6_formal_decision_value_p50",
+        "v3_resid_gate_q6_formal_decision_value_p90",
+        "v3_resid_gate_q6_tail_replacement_decision_value_p10",
+        "v3_resid_gate_q6_tail_replacement_decision_value_p50",
+        "v3_resid_gate_q6_tail_replacement_decision_value_p90",
+        "v3_resid_gate_diagnostics",
         "v3_cal_available",
         "v3_cal_ready",
         "v3_cal_strict_ready",
