@@ -686,3 +686,32 @@ promotion 前置条件：
 - 用 candidate gate 观察 `ethan|2502` 是否能在 holdout 或新增样本中保持正向。
 - 对 `aisha|2409` 优先补公开总格/总数覆盖审计，而不是直接调参数。
 - `2506` 主线仍是低估修复与 value/tail sampler，不是 CCV 下移。
+
+## D-v3-034：archive/live 必须复用同一个 v3 shadow pipeline
+
+从 2026-06-05 起，archive evaluator 与 live monitor 不再各自手写 posterior/CCV/residual/calibration/underestimate 链路，统一调用 `estimate_shadow_pipeline()`。
+
+当前决策：
+
+- `src/bidking_lab/inference/v3/pipeline.py` 是 v3 shadow 链路的所有权边界。
+- archive/live 只负责准备 source-specific 输入：events、constraints、summary、truth bank、replacement values、calibration entry、underestimate entry、hero。
+- 任何新增 v3 shadow report、entry 表、字段命名或 gating 逻辑，必须先接入 pipeline，再由 archive/live 展开 flat fields。
+
+原因：
+
+- v3 当前已经有 `v3_post_*`、`v3_ccv_*`、`v3_resid_*`、`v3_resid_gate_*`、`v3_cal_*`、`v3_under_*` 多个命名空间；让 archive/live 各写一遍容易遗漏字段或参数。
+- 用户实战已暴露过公开总格等输入遗漏风险，后续需要用共享入口减少路径分叉。
+- 共享 pipeline 是 v2 -> v3 formal 迁移前的基础设施，先保证 shadow 一致，再讨论 promotion。
+
+硬边界：
+
+- pipeline 仍是 shadow-only。
+- `affects_bid=false` 保持。
+- 不改 UI 主建议。
+- 不改正式 stop/attack bid。
+- 不把 `v3_under`、`v3_ccv` 或 residual gate 自动提升到 formal。
+
+下一步：
+
+- 新增 sampler 或 calibration 时，优先给 pipeline 加 report，再更新 evaluator/live tests。
+- 后续 v3 formal promotion 前，用 pipeline 作为唯一候选输出源，避免 archive 指标和 live 行为不同。

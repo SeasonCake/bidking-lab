@@ -1149,3 +1149,27 @@ status_counts=blocked_ccv_hurts:2,blocked_low_ccv_activity:3,blocked_low_sample:
 - `ethan|2506` 的 count/cells MAE 改善容易误导；它 formal 仍低估，继续下移 q6 count/cells 与用户实战低估问题方向相冲突。
 - `ethan|2502` 是目前更适合研究条件 sampler 的正向对象，因为 count/cells 同向改善且 evidence 比较充分。
 - `aisha|2409` 提示公开总格覆盖仍是关键证据缺口，不能把缺证据的改善当作结构性成功。
+
+## O-v3-038：archive/live v3 链路已统一，后续字段漂移风险下降
+
+2026-06-05 新增 `estimate_shadow_pipeline()` 后，archive evaluator 和 live monitor 均复用同一 v3 shadow 链路。
+
+验证结果：
+
+```text
+focused pipeline/archive/live tests: 33 passed
+v3 core/live tests: 83 passed
+32-trial archive smoke: windows=1551 ready=1534 constraint_conflict=0 parse_errors=0 constraint_ok=True
+```
+
+代码搜索确认：
+
+```text
+evaluate_fatbeans_v3_samples.py / live/monitor.py 不再直接调用 posterior/CCV/residual/cal/under 的单步函数链。
+```
+
+解读：
+
+- v3 后续改 sampler、gate、entry 或 flat field 时，有单一接入点可测。
+- 这不是精度提升本身，但它是避免 archive 指标和 live 实战展示不一致的必要结构改动。
+- 当前仍保持 shadow-only，formal/live 主决策未切换。

@@ -723,6 +723,29 @@ v3_ccv_q6_cells_p50_mae=7.008 delta=+0.165
 2. `2506` 主线仍是低估修复、tail/value sampler 与证据 profile，不是 count/cell 下移。
 3. 后续结构性 sampler 应从 `ethan|2502` 这类证据充分、方向一致的切片做 holdout，而不是全局调 temperature。
 
+### 2026-06-05 archive/live shared pipeline
+
+新增 `src/bidking_lab/inference/v3/pipeline.py`，把 v3 shadow 的完整报告链集中到 `estimate_shadow_pipeline()`：
+
+```text
+posterior -> CCV -> residual -> residual_gate -> calibration -> underestimate
+```
+
+archive evaluator 和 live monitor 现在只准备输入，然后调用同一 pipeline 展开：
+
+- `v3_post_*`
+- `v3_ccv_*`
+- `v3_resid_*`
+- `v3_resid_gate_*`
+- `v3_cal_*`
+- `v3_under_*`
+
+设计影响：
+
+1. 后续新增 sampler/gate/entry 表，必须先进入 pipeline，再由 archive/live 复用。
+2. archive 指标、live artifact、局后 `model_eval` 的 v3 字段应保持同源，避免再次出现输入/字段遗漏。
+3. 该 pipeline 仍是 shadow-only；它不改变 formal decision、UI 主建议或正式出价。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

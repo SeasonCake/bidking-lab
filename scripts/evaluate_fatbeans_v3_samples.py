@@ -27,7 +27,6 @@ if str(SRC) not in sys.path:
 
 from bidking_lab.inference.v3 import (  # noqa: E402
     PriorCalibrationEntry,
-    calibrate_posterior_report,
     compile_feasible_summary,
     compile_hard_constraints,
     decision_truth_from_fatbeans,
@@ -38,15 +37,11 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     empty_residual_gate_flat_dict,
     empty_underestimate_repair_flat_dict,
     empty_truth_flat_dict,
-    estimate_count_cell_value_posterior_from_truths,
-    estimate_q6_posterior_from_truths,
-    estimate_residual_count_cell_value_posterior_from_truths,
+    estimate_shadow_pipeline,
     events_from_fatbeans,
-    gate_residual_posterior_report,
     load_prior_calibration_entries,
     load_underestimate_repair_entries,
     ordinary_shape_replacement_values,
-    repair_underestimate_posterior_report,
     sample_truth_bank,
     settlement_truth_from_fatbeans,
     summarize_drop_prior,
@@ -523,83 +518,62 @@ def _round_rows_for_events(
             n_trials=posterior_trials,
             seed=posterior_seed,
         )
-        posterior = (
-            estimate_q6_posterior_from_truths(
-                map_id=int(map_id),
-                map_name=str(prior_fields.get("v3_prior_map_name") or ""),
-                summary=feasible_summary,
-                truths=posterior_truths,
-                constraints=constraints,
-                replacement_values=replacement_values,
-            )
-            if map_id is not None and tables is not None and posterior_trials > 0
-            else None
-        )
-        posterior_fields = (
-            posterior.to_flat_dict()
-            if posterior is not None
-            else empty_posterior_fields
-        )
-        ccv_posterior = (
-            estimate_count_cell_value_posterior_from_truths(
-                map_id=int(map_id),
-                map_name=str(prior_fields.get("v3_prior_map_name") or ""),
-                summary=feasible_summary,
-                truths=posterior_truths,
-                constraints=constraints,
-                replacement_values=replacement_values,
-                baseline=posterior,
-            )
-            if posterior is not None
-            else None
-        )
-        ccv_fields = (
-            ccv_posterior.to_flat_dict(prefix="v3_ccv_")
-            if ccv_posterior is not None
-            else empty_ccv_fields
-        )
-        residual_posterior = (
-            estimate_residual_count_cell_value_posterior_from_truths(
-                map_id=int(map_id),
-                map_name=str(prior_fields.get("v3_prior_map_name") or ""),
-                summary=feasible_summary,
-                truths=posterior_truths,
-                constraints=constraints,
-                replacement_values=replacement_values,
-                baseline=posterior,
-            )
-            if posterior is not None
-            else None
-        )
-        residual_fields = (
-            residual_posterior.to_flat_dict(prefix="v3_resid_")
-            if residual_posterior is not None
-            else empty_residual_fields
-        )
         calibration_entry = (
             calibration_entries.get(int(map_id))
             if calibration_entries is not None and map_id is not None
             else None
         )
-        residual_gate = gate_residual_posterior_report(
-            posterior,
-            residual_posterior,
-            calibration_entry,
-        )
-        residual_gate_fields = residual_gate.to_flat_dict()
-        calibration = calibrate_posterior_report(posterior, calibration_entry)
-        calibration_fields = calibration.to_flat_dict()
         underestimate_entry = underestimate_entry_for(
             underestimate_repair_entries,
             hero=str(diagnostic_fields.get("hero") or "unknown"),
             map_id=map_id,
         )
-        underestimate = repair_underestimate_posterior_report(
-            posterior,
-            underestimate_entry,
-            hero=str(diagnostic_fields.get("hero") or "unknown"),
+        pipeline = (
+            estimate_shadow_pipeline(
+                map_id=int(map_id),
+                map_name=str(prior_fields.get("v3_prior_map_name") or ""),
+                summary=feasible_summary,
+                truths=posterior_truths,
+                constraints=constraints,
+                replacement_values=replacement_values,
+                calibration_entry=calibration_entry,
+                underestimate_entry=underestimate_entry,
+                hero=str(diagnostic_fields.get("hero") or "unknown"),
+            )
+            if map_id is not None and tables is not None and posterior_trials > 0
+            else None
         )
-        underestimate_fields = underestimate.to_flat_dict()
+        posterior = pipeline.posterior if pipeline is not None else None
+        posterior_fields = (
+            posterior.to_flat_dict()
+            if posterior is not None
+            else empty_posterior_fields
+        )
+        ccv_fields = (
+            pipeline.ccv_posterior.to_flat_dict(prefix="v3_ccv_")
+            if pipeline is not None
+            else empty_ccv_fields
+        )
+        residual_fields = (
+            pipeline.residual_posterior.to_flat_dict(prefix="v3_resid_")
+            if pipeline is not None
+            else empty_residual_fields
+        )
+        residual_gate_fields = (
+            pipeline.residual_gate.to_flat_dict()
+            if pipeline is not None
+            else empty_residual_gate_fields
+        )
+        calibration_fields = (
+            pipeline.calibration.to_flat_dict()
+            if pipeline is not None
+            else empty_calibration_fields
+        )
+        underestimate_fields = (
+            pipeline.underestimate.to_flat_dict()
+            if pipeline is not None
+            else empty_underestimate_fields
+        )
         rows.append(
             {
                 "file": f"{path.name}#prebid_r{window_round}_sort{bid_sort_id}",

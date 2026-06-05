@@ -44,7 +44,6 @@ from bidking_lab.inference.v2 import (
     is_tail_supported_by_evidence,
 )
 from bidking_lab.inference.v3 import (
-    calibrate_posterior_report,
     compile_feasible_summary,
     compile_hard_constraints,
     empty_feasible_summary_flat_dict,
@@ -52,15 +51,11 @@ from bidking_lab.inference.v3 import (
     empty_prior_calibration_flat_dict,
     empty_residual_gate_flat_dict,
     empty_underestimate_repair_flat_dict,
-    estimate_count_cell_value_posterior_from_truths,
-    estimate_q6_posterior_from_truths,
-    estimate_residual_count_cell_value_posterior_from_truths,
+    estimate_shadow_pipeline,
     events_from_fatbeans,
-    gate_residual_posterior_report,
     load_prior_calibration_entries,
     load_underestimate_repair_entries,
     ordinary_shape_replacement_values,
-    repair_underestimate_posterior_report,
     sample_truth_bank,
     underestimate_entry_for,
 )
@@ -2998,50 +2993,21 @@ def _v3_posterior_shadow_summary(
             drops=tables.drops,
             items=tables.items,
         )
-        posterior = estimate_q6_posterior_from_truths(
-            map_id=int(map_id),
-            map_name=bid_map.name,
-            summary=summary,
-            truths=truths,
-            constraints=constraints,
-            replacement_values=replacement_values,
-        )
-        ccv_posterior = estimate_count_cell_value_posterior_from_truths(
-            map_id=int(map_id),
-            map_name=bid_map.name,
-            summary=summary,
-            truths=truths,
-            constraints=constraints,
-            replacement_values=replacement_values,
-            baseline=posterior,
-        )
-        residual_posterior = estimate_residual_count_cell_value_posterior_from_truths(
-            map_id=int(map_id),
-            map_name=bid_map.name,
-            summary=summary,
-            truths=truths,
-            constraints=constraints,
-            replacement_values=replacement_values,
-            baseline=posterior,
-        )
         calibration_entry = _default_v3_prior_calibration_entries().get(int(map_id))
-        residual_gate = gate_residual_posterior_report(
-            posterior,
-            residual_posterior,
-            calibration_entry,
-        )
-        calibration = calibrate_posterior_report(
-            posterior,
-            calibration_entry,
-        )
         underestimate_entry = underestimate_entry_for(
             _default_v3_underestimate_repair_entries(),
             hero=hero,
             map_id=map_id,
         )
-        underestimate = repair_underestimate_posterior_report(
-            posterior,
-            underestimate_entry,
+        pipeline = estimate_shadow_pipeline(
+            map_id=int(map_id),
+            map_name=bid_map.name,
+            summary=summary,
+            truths=truths,
+            constraints=constraints,
+            replacement_values=replacement_values,
+            calibration_entry=calibration_entry,
+            underestimate_entry=underestimate_entry,
             hero=hero,
         )
     except Exception as exc:
@@ -3057,12 +3023,7 @@ def _v3_posterior_shadow_summary(
         }
     )
     out.update(summary.to_flat_dict())
-    out.update(posterior.to_flat_dict())
-    out.update(ccv_posterior.to_flat_dict(prefix="v3_ccv_"))
-    out.update(residual_posterior.to_flat_dict(prefix="v3_resid_"))
-    out.update(residual_gate.to_flat_dict())
-    out.update(calibration.to_flat_dict())
-    out.update(underestimate.to_flat_dict())
+    out.update(pipeline.to_flat_dict())
     return out
 
 

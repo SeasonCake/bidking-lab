@@ -1627,3 +1627,39 @@ status_counts=blocked_ccv_hurts:2,blocked_low_ccv_activity:3,blocked_low_sample:
 - CCV 的当前实现不是全局收益项，尤其 cells MAE 全局变差。
 - Ethan 2506 虽然 q6 count/cells MAE 有改善，但 formal 仍系统性低估，且 CCV 会继续下移 count/cells，因此不能作为正式 sampler gate。
 - 下一步如果要推进结构性 sampler，应该优先研究 `ethan|2502` 这种证据较充分的正向切片，以及 Aisha 2409 缺公开总格的 needs-evidence 切片；不要把 CCV 直接推广到 2506。
+
+## 2026-06-05 checkpoint：archive/live 共用 v3 shadow pipeline
+
+实现：
+
+- 新增 `src/bidking_lab/inference/v3/pipeline.py`。
+- 新增 `tests/test_inference_v3_pipeline.py`。
+- `estimate_shadow_pipeline()` 统一生成：
+  - `v3_post_*`
+  - `v3_ccv_*`
+  - `v3_resid_*`
+  - `v3_resid_gate_*`
+  - `v3_cal_*`
+  - `v3_under_*`
+- `scripts/evaluate_fatbeans_v3_samples.py` 和 `src/bidking_lab/live/monitor.py` 改为调用同一 pipeline，不再各自手写 posterior/CCV/residual/calibration/underestimate 链路。
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_pipeline.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_pipeline.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_inference_v3_underestimate_repair.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_summarize_v3_residual_profile_candidates.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_summarize_v3_underestimate_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 32 --fail-on-conflicts
+```
+
+结果：
+
+- pipeline/archive/live focused：`33 passed`。
+- v3 core/live path：`83 passed`。
+- 32-trial archive smoke：`windows=1551 ready=1534 constraint_conflict=0 parse_errors=0 constraint_ok=True`。
+- `evaluate_fatbeans_v3_samples.py` 与 `live/monitor.py` 已无直接手写 `estimate_q6_posterior_from_truths` / `estimate_count_cell_value_posterior_from_truths` / `estimate_residual_count_cell_value_posterior_from_truths` / `calibrate_posterior_report` / `gate_residual_posterior_report` / `repair_underestimate_posterior_report` 链路调用。
+
+结论：
+
+- v3 archive/live 的 shadow 字段生成路径已收敛到同一核心函数，降低后续参数、entry、field 命名不一致风险。
+- 该改动不改变 UI 主建议、不改变 formal decision、不进入正式出价。

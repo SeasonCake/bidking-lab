@@ -49,6 +49,10 @@ from bidking_lab.inference.v3.posterior import (
     sample_truth_bank,
     truth_matches_feasible_summary,
 )
+from bidking_lab.inference.v3.pipeline import (
+    V3ShadowPipelineReport,
+    estimate_shadow_pipeline,
+)
 from bidking_lab.inference.v3.priors import (
     QualityPriorReport,
     SessionPriorReport,
@@ -111,6 +115,7 @@ __all__ = (
     "V3PosteriorReport",
     "V3PriorCalibrationReport",
     "V3ResidualGateReport",
+    "V3ShadowPipelineReport",
     "V3UnderestimateRepairReport",
     "action_result_spec",
     "audit_fatbeans_events",
@@ -131,6 +136,7 @@ __all__ = (
     "estimate_count_cell_value_posterior_from_truths",
     "estimate_q6_posterior_from_truths",
     "estimate_residual_count_cell_value_posterior_from_truths",
+    "estimate_shadow_pipeline",
     "events_from_fatbeans",
     "gate_residual_posterior_report",
     "load_prior_calibration_entries",
