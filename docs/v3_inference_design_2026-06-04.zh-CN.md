@@ -642,6 +642,40 @@ v3 可进入正式候选前：
 3. hidden `2601` 即使 in-sample 出现上修候选，也必须单独验证；不能与 shipwreck/villa 共用正式 gate。
 4. promotion 前仍需要 holdout 或新增实战样本验证，且必须保持 `affects_bid=false` 到证据充分为止。
 
+### 2026-06-05 低估上修 shadow 链路
+
+新增 `src/bidking_lab/inference/v3/underestimate_repair.py`，把低估上修候选从离线 summarize 表推进为可复用 shadow report：
+
+- 默认读取 `data/processed/v3_underestimate_repair_shadow.json`。
+- archive evaluator、metric slices、map audit、live monitor artifact、live model_eval row 均输出 `v3_under_*` 字段。
+- `watch_only_upshift_candidate` 会生成上修后的 `v3_under_formal_decision_value_*` / `v3_under_q6_formal_decision_value_*`。
+- `watch_only_needs_evidence`、hidden 或 missing entry 透传 baseline，只保留状态/诊断。
+- `v3_under_active=false`，`v3_under_affects_bid=false` 固定保持；它不覆盖 `v3_post_*`、`v3_cal_*`、UI 主建议或正式出价。
+
+128-trial archive 结果：
+
+```text
+v3_under_candidate_rows=101
+formal_p50_mae=312938.992
+v3_under_formal_p50_mae=312117.848
+v3_under_delta_formal_p50_mae=-821.144
+formal_p50_below_rate=0.510430 -> 0.508475
+formal_p90_coverage=0.773794 -> 0.777705
+```
+
+2506 map audit：
+
+```text
+mae=397195.2 bias=-270368.6 below=0.746479 p90_cover=0.619718
+under_candidate=1.0 under_delta=-17692.3 under_below=0.704225 under_p90_cover=0.704225
+```
+
+设计结论：
+
+1. `v3_under_*` 已经打通 archive/live 观测链路，可用于下一轮实战样本验证。
+2. 当前整体收益很轻微，说明它只能作为低估修复候选，不是 v3 formal replacement。
+3. `2506` 的改善明显高于全局平均，后续应围绕 hero/map/profile 做 holdout，而不是全局放大 scale。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

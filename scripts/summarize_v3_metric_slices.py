@@ -20,11 +20,13 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from evaluate_fatbeans_v3_samples import (  # noqa: E402
+    _default_underestimate_repair_path,
     _default_paths,
     _float_or_none,
     _mean,
     _round_metric,
     evaluate_paths,
+    load_underestimate_repair_entries,
     load_monitor_tables,
 )
 
@@ -120,6 +122,21 @@ def summarize_slice(
             "v3_post_q6_formal_decision_value_p90",
             "v3_truth_q6_formal_decision_value",
         )
+        under_formal_p50 = _pred_truth(
+            group,
+            "v3_under_formal_decision_value_p50",
+            "v3_truth_formal_decision_value",
+        )
+        under_formal_p90 = _pred_truth(
+            group,
+            "v3_under_formal_decision_value_p90",
+            "v3_truth_formal_decision_value",
+        )
+        under_q6_p50 = _pred_truth(
+            group,
+            "v3_under_q6_formal_decision_value_p50",
+            "v3_truth_q6_formal_decision_value",
+        )
         q6_count_p50 = _pred_truth(
             group,
             "v3_post_q6_count_p50",
@@ -178,6 +195,10 @@ def summarize_slice(
         q6_count_mae = _mae(q6_count_p50)
         q6_cells_mae = _mae(q6_cells_p50)
         q6_value_mae = _mae(q6_value_p50)
+        formal_mae = _mae(formal_p50)
+        q6_formal_mae = _mae(q6_p50)
+        under_formal_mae = _mae(under_formal_p50)
+        under_q6_formal_mae = _mae(under_q6_p50)
         ccv_count_mae = _mae(ccv_q6_count_p50)
         ccv_cells_mae = _mae(ccv_q6_cells_p50)
         resid_count_mae = _mae(resid_q6_count_p50)
@@ -194,12 +215,12 @@ def summarize_slice(
                 "strict": scope_counts.get("strict", 0),
                 "summary_likelihood": scope_counts.get("summary_likelihood", 0),
                 "q6_projection": scope_counts.get("q6_projection", 0),
-                "formal_p50_mae": _round_metric(_mae(formal_p50), 1),
+                "formal_p50_mae": _round_metric(formal_mae, 1),
                 "formal_p50_bias": _round_metric(_bias(formal_p50), 1),
                 "formal_p50_below_rate": _round_metric(_below_rate(formal_p50), 6),
                 "formal_p50_over_rate": _round_metric(_over_rate(formal_p50), 6),
                 "formal_p90_coverage": _round_metric(_coverage_rate(formal_p90), 6),
-                "q6_formal_p50_mae": _round_metric(_mae(q6_p50), 1),
+                "q6_formal_p50_mae": _round_metric(q6_formal_mae, 1),
                 "q6_formal_p50_bias": _round_metric(_bias(q6_p50), 1),
                 "q6_formal_p50_below_rate": _round_metric(_below_rate(q6_p50), 6),
                 "q6_formal_p50_over_rate": _round_metric(_over_rate(q6_p50), 6),
@@ -207,6 +228,35 @@ def summarize_slice(
                 "q6_count_p50_mae": _round_metric(q6_count_mae, 2),
                 "q6_cells_p50_mae": _round_metric(q6_cells_mae, 2),
                 "q6_value_p50_mae": _round_metric(q6_value_mae, 1),
+                "v3_under_candidate_rate": _round_metric(
+                    _mean(1.0 if row.get("v3_under_candidate") else 0.0 for row in group),
+                    6,
+                ),
+                "v3_under_delta_formal_p50_mae": _round_metric(
+                    under_formal_mae - formal_mae
+                    if under_formal_mae is not None and formal_mae is not None
+                    else None,
+                    1,
+                ),
+                "v3_under_formal_p50_below_rate": _round_metric(
+                    _below_rate(under_formal_p50),
+                    6,
+                ),
+                "v3_under_formal_p50_over_rate": _round_metric(
+                    _over_rate(under_formal_p50),
+                    6,
+                ),
+                "v3_under_formal_p90_coverage": _round_metric(
+                    _coverage_rate(under_formal_p90),
+                    6,
+                ),
+                "v3_under_delta_q6_formal_p50_mae": _round_metric(
+                    under_q6_formal_mae - q6_formal_mae
+                    if under_q6_formal_mae is not None
+                    and q6_formal_mae is not None
+                    else None,
+                    1,
+                ),
                 "v3_ccv_delta_q6_count_p50_mae": _round_metric(
                     ccv_count_mae - q6_count_mae
                     if ccv_count_mae is not None and q6_count_mae is not None
@@ -281,6 +331,10 @@ def _print_table(rows: list[dict[str, Any]], *, top: int) -> None:
                     f"formal_below={row['formal_p50_below_rate']}",
                     f"formal_over={row['formal_p50_over_rate']}",
                     f"p90_cover={row['formal_p90_coverage']}",
+                    f"under_candidate={row['v3_under_candidate_rate']}",
+                    f"under_delta_mae={row['v3_under_delta_formal_p50_mae']}",
+                    f"under_below={row['v3_under_formal_p50_below_rate']}",
+                    f"under_p90_cover={row['v3_under_formal_p90_coverage']}",
                     f"q6_mae={row['q6_formal_p50_mae']}",
                     f"q6_bias={row['q6_formal_p50_bias']}",
                     f"q6_count_mae={row['q6_count_p50_mae']}",
@@ -323,6 +377,9 @@ def main(argv: list[str] | None = None) -> int:
     rows, errors = evaluate_paths(
         args.paths or _default_paths(),
         tables=tables,
+        underestimate_repair_entries=load_underestimate_repair_entries(
+            _default_underestimate_repair_path()
+        ),
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,
     )

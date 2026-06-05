@@ -1034,3 +1034,41 @@ ethan|2509 n=30 sessions=8 scale=1.019059
 - 把 bounded upshift 保留为 shadow candidate。
 - 对新增实战样本跑相同候选表，观察 `2506` scale 是否稳定。
 - promotion 前必须同时看 MAE、below、P90 coverage、over rate 与 pinball，防止通过上修修低估但制造极端过估。
+
+## O-v3-035：v3_under shadow 全局轻微改善，2506 局部改善明显
+
+2026-06-05 将 bounded upshift 候选接入 `v3_under_*` 后，128-trial archive evaluator 显示：
+
+```text
+v3_under_candidate_rows=101
+formal_p50_mae=312938.992
+v3_under_formal_p50_mae=312117.848
+v3_under_delta_formal_p50_mae=-821.144
+formal_p50_below_rate=0.510430 -> 0.508475
+formal_p90_coverage=0.773794 -> 0.777705
+```
+
+map audit 中 `2506`：
+
+```text
+mae=397195.2
+bias=-270368.6
+below=0.746479
+p90_cover=0.619718
+under_candidate=1.0
+under_delta=-17692.3
+under_below=0.704225
+under_p90_cover=0.704225
+```
+
+解读：
+
+- 全局收益小，说明 hero/map 上修不应全局 promotion。
+- `2506` 局部收益明显，符合当前低估主问题。
+- `ethan|2509` 虽然 candidate_rate 高，但 `under_delta` 很小，应当继续 watch-only。
+- hidden `2601` 仍未生成 candidate，上修 entry 只记录 needs-evidence。
+
+下一步：
+
+- 新增实战样本后优先复跑 `evaluate_fatbeans_v3_samples.py` 与 map/hero slice，观察 `v3_under_delta_formal_p50_mae` 是否稳定。
+- 若 `2506` holdout 仍正向，再考虑把 entry 从 watch-only candidate 升级到更严格的 calibration candidate；promotion 前仍保持 `affects_bid=false`。

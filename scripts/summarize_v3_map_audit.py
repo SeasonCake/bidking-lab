@@ -21,11 +21,13 @@ if str(SCRIPTS) not in sys.path:
 
 from evaluate_fatbeans_v3_samples import (  # noqa: E402
     _default_calibration_path,
+    _default_underestimate_repair_path,
     _default_paths,
     _float_or_none,
     _round_metric,
     evaluate_paths,
     load_prior_calibration_entries,
+    load_underestimate_repair_entries,
     load_monitor_tables,
 )
 
@@ -202,6 +204,21 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             "v3_cal_formal_decision_value_p90",
             "v3_truth_formal_decision_value",
         )
+        under_p50 = _metric_pairs(
+            paired,
+            "v3_under_formal_decision_value_p50",
+            "v3_truth_formal_decision_value",
+        )
+        under_p90 = _metric_pairs(
+            paired,
+            "v3_under_formal_decision_value_p90",
+            "v3_truth_formal_decision_value",
+        )
+        under_q6_p50 = _metric_pairs(
+            paired,
+            "v3_under_q6_formal_decision_value_p50",
+            "v3_truth_q6_formal_decision_value",
+        )
         q6_p50 = _metric_pairs(
             paired,
             "v3_post_q6_formal_decision_value_p50",
@@ -279,6 +296,10 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         formal_over = _mean(1.0 if error > 0 else 0.0 for error in errors)
         cal_errors = [pred - truth for pred, truth in cal_p50]
         cal_mae = _mean(abs(error) for error in cal_errors)
+        under_errors = [pred - truth for pred, truth in under_p50]
+        under_mae = _mean(abs(error) for error in under_errors)
+        under_q6_errors = [pred - truth for pred, truth in under_q6_p50]
+        under_q6_mae = _mean(abs(error) for error in under_q6_errors)
         q6_errors = [pred - truth for pred, truth in q6_p50]
         q6_count_errors = [pred - truth for pred, truth in q6_count_p50]
         q6_cells_errors = [pred - truth for pred, truth in q6_cells_p50]
@@ -368,6 +389,40 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             "v3_cal_formal_p90_coverage": _round_metric(
                 _coverage_rate(cal_p90),
                 6,
+            ),
+            "v3_under_candidate_rate": _round_metric(
+                _rate(paired, lambda row: bool(row.get("v3_under_candidate"))),
+                6,
+            ),
+            "v3_under_scale": _round_metric(
+                _mean(
+                    _float_or_none(row.get("v3_under_scale")) or 1.0
+                    for row in paired
+                ),
+                6,
+            ),
+            "v3_under_formal_p50_mae": _round_metric(under_mae, 1),
+            "v3_under_delta_formal_p50_mae": _round_metric(
+                under_mae - formal_mae
+                if under_mae is not None and formal_mae is not None
+                else None,
+                1,
+            ),
+            "v3_under_formal_p50_bias": _round_metric(_mean(under_errors), 1),
+            "v3_under_formal_p50_below_rate": _round_metric(
+                _mean(1.0 if error < 0 else 0.0 for error in under_errors),
+                6,
+            ),
+            "v3_under_formal_p90_coverage": _round_metric(
+                _coverage_rate(under_p90),
+                6,
+            ),
+            "v3_under_q6_formal_p50_mae": _round_metric(under_q6_mae, 1),
+            "v3_under_delta_q6_formal_p50_mae": _round_metric(
+                under_q6_mae - _mean(abs(error) for error in q6_errors)
+                if under_q6_mae is not None and q6_errors
+                else None,
+                1,
             ),
             "q6_formal_p50_mae": _round_metric(_mean(abs(error) for error in q6_errors), 1),
             "q6_formal_p50_bias": _round_metric(_mean(q6_errors), 1),
@@ -546,6 +601,10 @@ def _print_table(rows: list[dict[str, Any]], *, top: int) -> None:
                     f"cal_active={row['v3_cal_active_rate']}",
                     f"cal_mae={row['v3_cal_formal_p50_mae']}",
                     f"cal_delta={row['v3_cal_delta_formal_p50_mae']}",
+                    f"under_candidate={row['v3_under_candidate_rate']}",
+                    f"under_delta={row['v3_under_delta_formal_p50_mae']}",
+                    f"under_below={row['v3_under_formal_p50_below_rate']}",
+                    f"under_p90_cover={row['v3_under_formal_p90_coverage']}",
                     f"q6_mae={row['q6_formal_p50_mae']}",
                     f"q6_count_mae={row['q6_count_p50_mae']}",
                     f"q6_cells_mae={row['q6_cells_p50_mae']}",
@@ -590,6 +649,9 @@ def main(argv: list[str] | None = None) -> int:
         tables=load_monitor_tables(),
         calibration_entries=load_prior_calibration_entries(
             _default_calibration_path()
+        ),
+        underestimate_repair_entries=load_underestimate_repair_entries(
+            _default_underestimate_repair_path()
         ),
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,

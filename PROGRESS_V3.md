@@ -1461,3 +1461,60 @@ ethan|2509 scale=1.019059 mae=419243.9 -> 419127.9 delta=-116.0
 - 该上修不能直接进入 formal/live，因为它仍是 in-sample archive 假设修复，且 profile 粒度样本不足。
 - hidden `2601` 虽然出现在候选中，但 hidden 样本少，不能和 shipwreck/villa 共用 promotion 口径。
 - 下一步应把上修候选变成独立 shadow 字段或 calibration candidate，继续使用 holdout/new-live 样本验证，而不是再调 residual 下修。
+
+## 2026-06-05 checkpoint：v3_under 低估上修 shadow 链路
+
+实现：
+
+- 新增 `src/bidking_lab/inference/v3/underestimate_repair.py`。
+- 新增 `data/processed/v3_underestimate_repair_shadow.json`，记录当前 hero/map 低估候选 entry。
+- archive evaluator 输出 `v3_under_*` 字段，并在 summary 中追加：
+  - `v3_under_candidate_rows`
+  - `v3_under_formal_p50_mae`
+  - `v3_under_delta_formal_p50_mae`
+  - `v3_under_formal_p50_below_rate`
+  - `v3_under_formal_p90_coverage`
+- `summarize_v3_metric_slices.py` 和 `summarize_v3_map_audit.py` 加入 under candidate/delta 字段。
+- live monitor artifact 和局后 `model_eval` row 输出同一组 `v3_under_*` 字段。
+- 新增 `tests/test_inference_v3_underestimate_repair.py`。
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_inference_v3_underestimate_repair.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_summarize_v3_residual_profile_candidates.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 128 --fail-on-conflicts
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_metric_slices.py --posterior-trials 128 --by hero_map_id --top 12
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_map_audit.py --posterior-trials 128 --top 12
+```
+
+结果：
+
+- `77 passed`。
+- evaluator 128-trial：
+
+```text
+v3_under_candidate_rows=101
+formal_p50_mae=312938.992
+v3_under_formal_p50_mae=312117.848
+v3_under_delta_formal_p50_mae=-821.144
+formal_p50_below_rate=0.51043
+v3_under_formal_p50_below_rate=0.508475
+formal_p90_coverage=0.773794
+v3_under_formal_p90_coverage=0.777705
+```
+
+- 2506 map audit：
+
+```text
+map_id=2506 sessions=21 ready=71/73 paired=71
+mae=397195.2 bias=-270368.6 below=0.746479 p90_cover=0.619718
+under_candidate=1.0 under_delta=-17692.3 under_below=0.704225 under_p90_cover=0.704225
+```
+
+结论：
+
+- `v3_under_*` 已经成为 archive/live 共用 shadow 链路。
+- 全局 MAE 改善很小，不能证明 formal promotion。
+- `2506` 的局部改善明确，支持下一步用新增实战样本/holdout 复核 hero-map scale 稳定性。
+- `v3_under_active=false`，`v3_under_affects_bid=false`；没有改 UI 主建议、正式估值或正式出价。

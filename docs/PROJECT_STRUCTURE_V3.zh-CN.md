@@ -15,6 +15,8 @@
 | `OBSERVATIONS_V3.md` | v3 当前观察 |
 | `docs/v3_inference_design_2026-06-04.zh-CN.md` | v3 设计文档 |
 | `src/bidking_lab/inference/v3/` | v3 推理引擎新包 |
+| `src/bidking_lab/inference/v3/underestimate_repair.py` | v3 低估上修 shadow report |
+| `data/processed/v3_underestimate_repair_shadow.json` | v3 hero/map 低估上修 shadow entry 表 |
 | `scripts/summarize_v3_evidence_coverage.py` | v3 evidence coverage 检查 |
 | `scripts/summarize_v3_constraints.py` | v3 hard constraint compiler 摘要 |
 | `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator |
@@ -25,6 +27,7 @@
 | `scripts/summarize_fatbeans_sample_manifest.py` | Fatbeans 样本 manifest/质量分层 |
 | `scripts/organize_fatbeans_real_samples.py` | 真实样本 canonical archive 整理 |
 | `tests/test_inference_v3_evidence_registry.py` | v3 registry/constraint 骨架测试 |
+| `tests/test_inference_v3_underestimate_repair.py` | v3 低估上修 shadow report 测试 |
 | `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
 | `tests/test_summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计测试 |
 | `tests/test_summarize_v3_underestimate_repair_candidates.py` | v3 低估上修候选审计测试 |
@@ -73,7 +76,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 
 - Python scripts：82
 - PowerShell scripts：13
-- test files：82
+- test files：83
 
 策略：
 

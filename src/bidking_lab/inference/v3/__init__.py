@@ -60,6 +60,14 @@ from bidking_lab.inference.v3.residual_gate import (
     empty_residual_gate_flat_dict,
     gate_residual_posterior_report,
 )
+from bidking_lab.inference.v3.underestimate_repair import (
+    UnderestimateRepairEntry,
+    V3UnderestimateRepairReport,
+    empty_underestimate_repair_flat_dict,
+    load_underestimate_repair_entries,
+    repair_underestimate_posterior_report,
+    underestimate_entry_for,
+)
 from bidking_lab.inference.v3.summary import (
     BucketFeasibleSummary,
     FeasibleSummaryReport,
@@ -99,9 +107,11 @@ __all__ = (
     "SoftNumericConstraint",
     "SessionPriorReport",
     "SettlementTruthReport",
+    "UnderestimateRepairEntry",
     "V3PosteriorReport",
     "V3PriorCalibrationReport",
     "V3ResidualGateReport",
+    "V3UnderestimateRepairReport",
     "action_result_spec",
     "audit_fatbeans_events",
     "audit_fatbeans_paths",
@@ -115,6 +125,7 @@ __all__ = (
     "empty_posterior_flat_dict",
     "empty_prior_calibration_flat_dict",
     "empty_residual_gate_flat_dict",
+    "empty_underestimate_repair_flat_dict",
     "empty_truth_flat_dict",
     "entry_from_mapping",
     "estimate_count_cell_value_posterior_from_truths",
@@ -123,8 +134,10 @@ __all__ = (
     "events_from_fatbeans",
     "gate_residual_posterior_report",
     "load_prior_calibration_entries",
+    "load_underestimate_repair_entries",
     "ordinary_shape_replacement_values",
     "propose_prior_calibration",
+    "repair_underestimate_posterior_report",
     "public_info_semantic",
     "public_info_semantics_dict",
     "public_info_spec",
@@ -133,4 +146,5 @@ __all__ = (
     "skill_reveal_spec",
     "summarize_drop_prior",
     "truth_matches_feasible_summary",
+    "underestimate_entry_for",
 )

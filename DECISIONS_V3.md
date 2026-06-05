@@ -590,3 +590,34 @@ promotion 前置条件：
 - 至少通过 paired archive/holdout 或新增实战样本验证。
 - 同时观察 MAE、below rate、P90 coverage、over rate、pinball/极端过估，不只看 MAE。
 - 公开总格/总数、q6 floor、shape/layout 等证据 profile 必须能解释上修，不允许纯 map 常数粗暴覆盖。
+
+## D-v3-031：v3_under 进入 archive/live shadow，但保持 inactive
+
+`v3_under_*` 作为 v3 低估上修候选的统一 shadow 命名空间。
+
+当前决策：
+
+- `data/processed/v3_underestimate_repair_shadow.json` 是默认 entry 表。
+- `watch_only_upshift_candidate` 可以生成上修后的 shadow quantile。
+- `watch_only_needs_evidence`、hidden、missing entry 只透传 baseline 并保留诊断。
+- `v3_under_active=false` 固定保持。
+- `v3_under_affects_bid=false` 固定保持。
+
+原因：
+
+- 128-trial 全库改善较小：formal MAE `312938.992 -> 312117.848`，delta `-821.144`。
+- 2506 局部改善明显：map-level delta `-17692.3`，below `0.746479 -> 0.704225`，P90 coverage `0.619718 -> 0.704225`。
+- 这说明它适合作为实战复核候选，但还不足以替换 formal。
+
+硬边界：
+
+- 不覆盖 `v3_post_*`。
+- 不覆盖 `v3_cal_*`。
+- 不进入 UI 主建议。
+- 不进入正式 stop/attack bid。
+- hidden 仍需单独验证，不因 entry 文件存在而上修。
+
+下一步：
+
+- 用新增 live/manual 样本复核 `aisha|2506`、`ethan|2506`、`ethan|2509` 的 scale 是否稳定。
+- 若要 promotion，先做 holdout/paired comparison，并同时检查 MAE、below、P90 coverage、over、pinball。

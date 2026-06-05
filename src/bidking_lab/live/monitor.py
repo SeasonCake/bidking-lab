@@ -51,14 +51,18 @@ from bidking_lab.inference.v3 import (
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
     empty_residual_gate_flat_dict,
+    empty_underestimate_repair_flat_dict,
     estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
     estimate_residual_count_cell_value_posterior_from_truths,
     events_from_fatbeans,
     gate_residual_posterior_report,
     load_prior_calibration_entries,
+    load_underestimate_repair_entries,
     ordinary_shape_replacement_values,
+    repair_underestimate_posterior_report,
     sample_truth_bank,
+    underestimate_entry_for,
 )
 from bidking_lab.inference.map_likelihood import estimate_map_likelihood
 from bidking_lab.inference.tool_info_roi import estimate_tool_info_roi
@@ -112,6 +116,7 @@ _SAFE_SESSION_TOTAL_FIELDS = (
     "total_item_count",
 )
 _V3_PRIOR_CALIBRATION_CACHE: dict[int, Any] | None = None
+_V3_UNDERESTIMATE_REPAIR_CACHE: dict[tuple[str, int], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -1748,6 +1753,31 @@ def _model_eval_row(
     v3_cal_q6_formal_p90 = _parse_int_text(
         v3_shadow.get("v3_cal_q6_formal_decision_value_p90")
     )
+    v3_under_available = bool(v3_shadow.get("v3_under_available"))
+    v3_under_ready = bool(v3_shadow.get("v3_under_ready"))
+    v3_under_active = bool(v3_shadow.get("v3_under_active"))
+    v3_under_candidate = bool(v3_shadow.get("v3_under_candidate"))
+    v3_under_affects_bid = bool(v3_shadow.get("v3_under_affects_bid"))
+    v3_under_status = v3_shadow.get("v3_under_status")
+    v3_under_gate_reason = v3_shadow.get("v3_under_gate_reason")
+    v3_under_scale = _parse_float_text(v3_shadow.get("v3_under_scale"))
+    v3_under_hero_map_id = v3_shadow.get("v3_under_hero_map_id")
+    v3_under_source = v3_shadow.get("v3_under_source")
+    v3_under_archive_sessions = _parse_int_text(
+        v3_shadow.get("v3_under_archive_sessions")
+    )
+    v3_under_formal_p50 = _parse_int_text(
+        v3_shadow.get("v3_under_formal_decision_value_p50")
+    )
+    v3_under_formal_p90 = _parse_int_text(
+        v3_shadow.get("v3_under_formal_decision_value_p90")
+    )
+    v3_under_q6_formal_p50 = _parse_int_text(
+        v3_shadow.get("v3_under_q6_formal_decision_value_p50")
+    )
+    v3_under_q6_formal_p90 = _parse_int_text(
+        v3_shadow.get("v3_under_q6_formal_decision_value_p90")
+    )
     posterior_samples = None
     posterior_total_samples = None
     q6_shadow_active = bool(shadow.get("active"))
@@ -2308,6 +2338,44 @@ def _model_eval_row(
         "v3_cal_q6_formal_decision_value_p50": v3_cal_q6_formal_p50,
         "v3_cal_q6_formal_decision_value_p90": v3_cal_q6_formal_p90,
         "v3_cal_diagnostics": v3_shadow.get("v3_cal_diagnostics"),
+        "v3_under_available": v3_under_available,
+        "v3_under_ready": v3_under_ready,
+        "v3_under_active": v3_under_active,
+        "v3_under_candidate": v3_under_candidate,
+        "v3_under_affects_bid": v3_under_affects_bid,
+        "v3_under_status": v3_under_status,
+        "v3_under_gate_reason": v3_under_gate_reason,
+        "v3_under_scale": v3_under_scale,
+        "v3_under_hero_map_id": v3_under_hero_map_id,
+        "v3_under_source": v3_under_source,
+        "v3_under_archive_sessions": v3_under_archive_sessions,
+        "v3_under_formal_decision_value_p50": v3_under_formal_p50,
+        "v3_under_formal_decision_value_p90": v3_under_formal_p90,
+        "v3_under_q6_formal_decision_value_p50": v3_under_q6_formal_p50,
+        "v3_under_q6_formal_decision_value_p90": v3_under_q6_formal_p90,
+        "v3_under_diagnostics": v3_shadow.get("v3_under_diagnostics"),
+        "v3_under_formal_decision_value_p50_error_vs_formal": (
+            v3_under_formal_p50 - final_formal_decision_value
+            if v3_under_formal_p50 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "v3_under_formal_decision_value_p90_under_by": (
+            max(0, final_formal_decision_value - v3_under_formal_p90)
+            if v3_under_formal_p90 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "v3_under_q6_formal_decision_value_p50_error": (
+            v3_under_q6_formal_p50 - final_q6_decision_value
+            if v3_under_q6_formal_p50 is not None
+            else None
+        ),
+        "v3_under_q6_formal_decision_value_p90_under_by": (
+            max(0, final_q6_decision_value - v3_under_q6_formal_p90)
+            if v3_under_q6_formal_p90 is not None
+            else None
+        ),
         "v3_cal_formal_decision_value_p50_error_vs_formal": (
             v3_cal_formal_p50 - final_formal_decision_value
             if v3_cal_formal_p50 is not None
@@ -2868,6 +2936,7 @@ def _empty_v3_posterior_shadow(
         **empty_posterior_flat_dict(prefix="v3_resid_"),
         **empty_residual_gate_flat_dict(),
         **empty_prior_calibration_flat_dict(),
+        **empty_underestimate_repair_flat_dict(),
     }
 
 
@@ -2880,10 +2949,23 @@ def _default_v3_prior_calibration_entries() -> dict[int, Any]:
     return _V3_PRIOR_CALIBRATION_CACHE
 
 
+def _default_v3_underestimate_repair_entries() -> dict[tuple[str, int], Any]:
+    global _V3_UNDERESTIMATE_REPAIR_CACHE
+    if _V3_UNDERESTIMATE_REPAIR_CACHE is None:
+        _V3_UNDERESTIMATE_REPAIR_CACHE = load_underestimate_repair_entries(
+            project_root()
+            / "data"
+            / "processed"
+            / "v3_underestimate_repair_shadow.json"
+        )
+    return _V3_UNDERESTIMATE_REPAIR_CACHE
+
+
 def _v3_posterior_shadow_summary(
     events: FatbeansCaptureEvents,
     *,
     map_id: int | None,
+    hero: str | None = None,
     tables: MonitorTables,
     trials: int,
     seed: int,
@@ -2952,6 +3034,16 @@ def _v3_posterior_shadow_summary(
             posterior,
             calibration_entry,
         )
+        underestimate_entry = underestimate_entry_for(
+            _default_v3_underestimate_repair_entries(),
+            hero=hero,
+            map_id=map_id,
+        )
+        underestimate = repair_underestimate_posterior_report(
+            posterior,
+            underestimate_entry,
+            hero=hero,
+        )
     except Exception as exc:
         out["error"] = type(exc).__name__
         return out
@@ -2970,6 +3062,7 @@ def _v3_posterior_shadow_summary(
     out.update(residual_posterior.to_flat_dict(prefix="v3_resid_"))
     out.update(residual_gate.to_flat_dict())
     out.update(calibration.to_flat_dict())
+    out.update(underestimate.to_flat_dict())
     return out
 
 
@@ -3455,6 +3548,7 @@ def build_monitor_artifact_from_events(
         v3_posterior_shadow = _v3_posterior_shadow_summary(
             events,
             map_id=inference_session.map_id,
+            hero=inference_session.hero,
             tables=tables,
             trials=resolved_shadow_trials,
             seed=seed + 6,

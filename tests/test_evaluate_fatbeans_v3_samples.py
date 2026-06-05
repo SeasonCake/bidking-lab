@@ -6,6 +6,7 @@ from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropEntry, DropPool
 from bidking_lab.extract.item_table import Item
 from bidking_lab.inference.v3.calibration import propose_prior_calibration
+from bidking_lab.inference.v3.underestimate_repair import UnderestimateRepairEntry
 from bidking_lab.live.fatbeans import FatbeansCaptureEvents
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -215,6 +216,11 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_cal_affects_bid"] is False
     assert rows[0]["v3_cal_active"] is False
     assert rows[0]["v3_cal_status"] == "missing_entry"
+    assert rows[0]["v3_under_available"] is True
+    assert rows[0]["v3_under_affects_bid"] is False
+    assert rows[0]["v3_under_active"] is False
+    assert rows[0]["v3_under_candidate"] is False
+    assert rows[0]["v3_under_status"] == "missing_entry"
 
 
 def test_v3_prebid_rows_apply_calibration_shadow_fields() -> None:
@@ -273,6 +279,70 @@ def test_v3_prebid_rows_apply_calibration_shadow_fields() -> None:
     assert rows[0]["v3_cal_affects_bid"] is False
     assert rows[0]["v3_cal_scale"] > 1.0
     assert rows[0]["v3_cal_formal_decision_value_p50"] >= rows[0][
+        "v3_post_formal_decision_value_p50"
+    ]
+
+
+def test_v3_prebid_rows_apply_underestimate_repair_shadow_fields() -> None:
+    module = _load_module()
+    prebid_state = SimpleNamespace(
+        sort_id=5,
+        session_id="2401:abc",
+        round_index=1,
+        map_id=2401,
+        player_id=1,
+        bids=(SimpleNamespace(player_id=1, hero_id=208, current_value=0),),
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    settlement_state = SimpleNamespace(
+        sort_id=20,
+        session_id="2401:abc",
+        round_index=5,
+        map_id=2401,
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(
+            SimpleNamespace(item_id=1011001, quality=1, cells=1),
+            SimpleNamespace(item_id=1086001, quality=6, cells=16),
+        ),
+    )
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(SimpleNamespace(sort_id=10, kind="bid", session_id="2401:abc", value=1000),),
+        states=(prebid_state, settlement_state),
+        statuses=(),
+    )
+    entry = UnderestimateRepairEntry(
+        hero="ethan",
+        map_id=2401,
+        archive_windows=110,
+        archive_sessions=29,
+        status="watch_only_upshift_candidate",
+        gate_reason="bounded_hero_map_upshift",
+        scale=1.05,
+    )
+
+    rows = module._round_rows_for_events(
+        Path("sample.json"),
+        events,
+        tables=_tables(),
+        underestimate_repair_entries={entry.key: entry},
+        posterior_trials=64,
+    )
+
+    assert rows[0]["hero"] == "ethan"
+    assert rows[0]["v3_under_available"] is True
+    assert rows[0]["v3_under_candidate"] is True
+    assert rows[0]["v3_under_active"] is False
+    assert rows[0]["v3_under_affects_bid"] is False
+    assert rows[0]["v3_under_scale"] == 1.05
+    assert rows[0]["v3_under_source"] == "bounded_upshift"
+    assert rows[0]["v3_under_formal_decision_value_p50"] >= rows[0][
         "v3_post_formal_decision_value_p50"
     ]
 
