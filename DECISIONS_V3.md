@@ -1328,3 +1328,22 @@ applied_hurts=2502
 
 - formal 低估修复不能只看 q6 component delta；必须看整体 formal MAE、below-rate、over-rate、P90 和 trials stability。
 - `2502` 例子说明轻微 MAE 改善可能来自已高过估窗口，不符合实战参考价值。
+
+## D-v3-052：0605 后 252x 沉船活动样本独立 cohort，不混入旧沉船 prior 校准
+
+2026-06-06 解析新增 manual inbox 后，当前决策：
+
+- `2026-06-05 12:00 +08:00` 之后的 252x 沉船样本标记为活动 cohort。
+- 在本地 `BidMap.txt` / `Drop.txt` 更新前，252x 活动沉船样本不得混入普通 250x 沉船 drop-prior/posterior 校准。
+- 这些样本可以用于：
+  - parser/capture 兼容验证；
+  - pre-bid window 边界验证；
+  - settlement truth / formal decision truth 审计；
+  - 后续活动映射或新表校验。
+- 24xx 别墅样本不受沉船活动影响，可作为普通真实样本使用。
+
+原因：
+
+- 新增样本中有 15 个 `2521/2522/2524/2526/2528/2529` 沉船窗口。
+- 当前 `data/processed/maps.json` 不包含这些 252x map id；`BidMap.txt` / `Drop.txt` 仍是旧表。
+- 活动说明“白色藏品有概率变成红色藏品”会改变品质分布；用旧 250x drop prior 直接解释 252x 会把活动机制误记为模型误差。

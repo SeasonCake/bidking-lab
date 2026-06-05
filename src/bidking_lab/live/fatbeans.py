@@ -142,6 +142,7 @@ _PUBLIC_OUTLINE_QUALITY_BY_INFO_ID: dict[int, int] = {
     200002: 5,
     200003: 6,
 }
+_MAX_FRAME_BYTES = 4 * 1024 * 1024
 
 
 Direction = Literal["SEND", "REV"]
@@ -362,42 +363,56 @@ def reconstruct_fatbeans_frames(
     packets: Sequence[FatbeansPacket],
     direction: Direction,
 ) -> list[FatbeansFrame]:
-    selected = [packet for packet in packets if packet.direction == direction]
-    stream = bytearray()
-    segments: list[tuple[int, int, FatbeansPacket]] = []
-    for packet in selected:
-        start = len(stream)
-        stream.extend(packet.data)
-        segments.append((start, len(stream), packet))
-
     frames: list[FatbeansFrame] = []
-    offset = 0
-    segment_index = 0
-    while offset < len(stream):
-        if offset + 4 > len(stream):
-            raise ValueError(f"{direction} stream has incomplete length at {offset}")
-        frame_len = int.from_bytes(stream[offset : offset + 4], "big")
-        if frame_len < 4 or offset + frame_len > len(stream):
-            raise ValueError(
-                f"{direction} invalid frame length {frame_len} at offset {offset}; "
-                f"remaining={len(stream) - offset}"
+    packets_by_stream: dict[tuple[str, str], list[FatbeansPacket]] = {}
+    for packet in packets:
+        if packet.direction != direction:
+            continue
+        packets_by_stream.setdefault((packet.src, packet.dst), []).append(packet)
+
+    min_frame_len = 12 if direction == "SEND" else 16
+    stream_groups = sorted(
+        packets_by_stream.values(),
+        key=lambda group: min(packet.sort_id for packet in group),
+    )
+    for selected in stream_groups:
+        selected.sort(key=lambda packet: packet.sort_id)
+        stream = bytearray()
+        segments: list[tuple[int, int, FatbeansPacket]] = []
+        for packet in selected:
+            start = len(stream)
+            stream.extend(packet.data)
+            segments.append((start, len(stream), packet))
+
+        offset = 0
+        segment_index = 0
+        while offset < len(stream):
+            if offset + 4 > len(stream):
+                break
+            frame_len = int.from_bytes(stream[offset : offset + 4], "big")
+            if (
+                frame_len < min_frame_len
+                or frame_len > _MAX_FRAME_BYTES
+                or offset + frame_len > len(stream)
+            ):
+                offset += 1
+                continue
+            while (
+                segment_index + 1 < len(segments)
+                and segments[segment_index][1] <= offset
+            ):
+                segment_index += 1
+            packet = segments[segment_index][2]
+            frames.append(
+                FatbeansFrame(
+                    index=len(frames),
+                    direction=direction,
+                    sort_id=packet.sort_id,
+                    capture_time=packet.capture_time,
+                    raw=bytes(stream[offset : offset + frame_len]),
+                )
             )
-        while (
-            segment_index + 1 < len(segments)
-            and segments[segment_index][1] <= offset
-        ):
-            segment_index += 1
-        packet = segments[segment_index][2]
-        frames.append(
-            FatbeansFrame(
-                index=len(frames),
-                direction=direction,
-                sort_id=packet.sort_id,
-                capture_time=packet.capture_time,
-                raw=bytes(stream[offset : offset + frame_len]),
-            )
-        )
-        offset += frame_len
+            offset += frame_len
     return frames
 
 

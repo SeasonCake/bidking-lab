@@ -1833,3 +1833,37 @@ applied_hurts=2502
 - `v3_ccv_` 有 q6 formal delta，但 profile 伤害、map 高过估，无法 promotion。
 - high-over guard 是必要的；否则 `2502` 会被小幅 MAE 改善误放行。
 - 下一步如果做 formal/value sampler，需要直接建模 formal candidate，而不是依赖现有 component shadow 的附带字段。
+
+## O-v3-056：0605 manual 样本可解析，但 252x 活动沉船缺少本地 drop 表
+
+2026-06-06 对 `data/samples/fatbeans_manual_inbox` 的 23 个新增样本复核：
+
+```text
+manual_files=23
+by_family: villa=8, shipwreck=15
+by_map:
+2401=2, 2404=2, 2405=1, 2407=1, 2408=1, 2410=1,
+2521=5, 2522=1, 2524=3, 2526=2, 2528=1, 2529=3
+by_hero:
+aisha=10, ethan=9, gabriela=1, sophie=1, tatiana=1, wuqilin=1
+```
+
+解析修复后：
+
+```text
+manifest archive + manual inbox:
+files=456 parsed_files=456 parse_errors=0
+valid_files=439 mixed_files=17 invalid_files=0
+ready_windows=1618
+
+manual inbox v3 evaluator:
+windows=84 ready=84
+prior_ready=26 truth_ready=84 decision_truth_ready=84
+```
+
+解读：
+
+- 旧 parser 的 parse error 不是样本废弃问题，而是 archive parser 没按 TCP flow 重建 frame。
+- 8 个别墅样本已有 prior，可进入普通样本使用。
+- 15 个沉船活动样本为 252x，当前本地 `maps.json` / `BidMap.txt` / `Drop.txt` 缺少对应地图与活动爆率。
+- 252x 样本现在能提供 window/truth 证据，但不能证明 v3 对普通沉船 prior 的准确性。

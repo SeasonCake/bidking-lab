@@ -259,18 +259,30 @@ def _dedupe_key(meta: SampleMeta) -> str:
     return f"sha256:{meta.sha256}"
 
 
-def _canonical_name(meta: SampleMeta, index: int) -> str:
+def _canonical_prefix(meta: SampleMeta) -> str:
     if meta.sample_class.startswith("invalid"):
         old_stem = _safe_token(Path(meta.source_path).stem)
-        return (
-            f"fatbeans_{meta.sample_class}_{old_stem}_{meta.sha256[:10]}_"
-            f"{index:04d}.json"
-        )
+        return f"fatbeans_{meta.sample_class}_{old_stem}_{meta.sha256[:10]}"
     return (
         f"fatbeans_{meta.sample_class}_{_safe_token(meta.hero)}_"
         f"{_safe_token(meta.map_id)}_{meta.rounds}rounds_"
-        f"{_safe_token(meta.session_token or meta.sha256[:10])}_{index:04d}.json"
+        f"{_safe_token(meta.session_token or meta.sha256[:10])}"
     )
+
+
+def _canonical_name(meta: SampleMeta, index: int) -> str:
+    return f"{_canonical_prefix(meta)}_{index:04d}.json"
+
+
+def _has_canonical_archive_name(source: Path, meta: SampleMeta) -> bool:
+    if meta.sample_class.startswith("invalid"):
+        return False
+    stem = source.stem
+    prefix = _canonical_prefix(meta)
+    if not stem.startswith(prefix + "_"):
+        return False
+    suffix = stem[len(prefix) + 1 :]
+    return len(suffix) == 4 and suffix.isdigit()
 
 
 def _destination_for(meta: SampleMeta, *, archive_dir: Path, invalid_dir: Path, index: int) -> Path:
@@ -322,7 +334,20 @@ def build_plan(
     destination_set: set[Path] = set()
     for index, meta in enumerate(chosen, start=1):
         source = path_by_rel[meta.source_path]
-        destination = _destination_for(meta, archive_dir=archive_dir, invalid_dir=invalid_dir, index=index)
+        keep_existing_archive_name = (
+            meta.source_kind == "archive"
+            and _has_canonical_archive_name(source, meta)
+        )
+        destination = (
+            source
+            if keep_existing_archive_name
+            else _destination_for(
+                meta,
+                archive_dir=archive_dir,
+                invalid_dir=invalid_dir,
+                index=index,
+            )
+        )
         if destination.resolve() in destination_set:
             raise ValueError(f"duplicate destination planned: {destination}")
         destination_set.add(destination.resolve())

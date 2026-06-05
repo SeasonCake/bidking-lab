@@ -136,19 +136,63 @@ def _rev_state_with_bids_frame(
     )
 
 
-def _fatbeans_row(direction: str, payload: bytes, *, sort_id: int) -> dict[str, object]:
+def _fatbeans_row(
+    direction: str,
+    payload: bytes,
+    *,
+    sort_id: int,
+    local_port: int = 60213,
+) -> dict[str, object]:
     return {
         "SortID": sort_id,
         "Direct": direction,
         "Protocol": "Tcp",
         "SrcIP": "8.133.195.27" if direction == "REV" else "198.18.0.1",
-        "SrcPort": 10000 if direction == "REV" else 60213,
+        "SrcPort": 10000 if direction == "REV" else local_port,
         "DstIP": "198.18.0.1" if direction == "REV" else "8.133.195.27",
-        "DstPort": 60213 if direction == "REV" else 10000,
+        "DstPort": local_port if direction == "REV" else 10000,
         "CaptureTime": "2026-06-04 12:00:00.000",
         "Data": base64.b64encode(payload).decode("ascii"),
         "DataLength": len(payload),
     }
+
+
+def test_fatbeans_parser_reconstructs_interleaved_tcp_streams() -> None:
+    first = _send_bid_frame(session="2401:stream_a", value=123456)
+    split = len(first) // 2
+    second = _send_bid_frame(session="2402:stream_b", value=234567)
+    packets = load_fatbeans_packets_from_rows(
+        [
+            _fatbeans_row("SEND", first[:split], sort_id=1, local_port=60213),
+            _fatbeans_row("SEND", second, sort_id=2, local_port=60214),
+            _fatbeans_row("SEND", first[split:], sort_id=3, local_port=60213),
+        ]
+    )
+
+    events = parse_fatbeans_packets(packets)
+
+    assert [(send.session_id, send.value) for send in events.sends] == [
+        ("2401:stream_a", 123456),
+        ("2402:stream_b", 234567),
+    ]
+
+
+def test_fatbeans_parser_resyncs_after_leading_partial_frame_bytes() -> None:
+    packets = load_fatbeans_packets_from_rows(
+        [
+            _fatbeans_row(
+                "SEND",
+                b"\x99\x88" + _send_bid_frame(session="2401:resync", value=345678),
+                sort_id=1,
+            ),
+        ]
+    )
+
+    events = parse_fatbeans_packets(packets)
+
+    assert [(send.session_id, send.value) for send in events.sends] == [
+        ("2401:resync", 345678),
+    ]
 
 
 def test_parse_inventory_items_keeps_parent_local_index() -> None:

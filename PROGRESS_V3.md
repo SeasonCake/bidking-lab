@@ -2678,3 +2678,80 @@ applied_hurts=2502
 - `v3_ccv_` 能产生 q6 formal delta，但 profile holdout 会伤害 MAE/低估，map holdout 的 `2502` 虽小幅降 MAE，却处在高过估窗口，不能推广。
 - 该 audit 证明“component delta 映射 formal”这条最小路径目前也不能 promotion。
 - 下一步若继续 formal 低估修复，不能只复用现有 q6 component shadow；需要设计新的 formal/value sampler 或校准层，并把 high-over guard 与 sampler stability 作为硬门槛。
+
+## 2026-06-06 checkpoint：0605 活动样本解析与沉船 cohort 分层
+
+背景：
+
+- 用户在 2026-06-05 晚间新增 23 个 manual inbox 样本。
+- 游戏在 2026-06-05 12:00 后更新沉船活动：白色藏品有概率变成红色藏品。
+- 该活动会改变沉船生成/品质分布，不能和旧沉船 drop prior 混作同一校准口径。
+
+修复：
+
+- `src/bidking_lab/live/fatbeans.py`
+  - `reconstruct_fatbeans_frames()` 改为按 TCP flow 分流重建 frame。
+  - 遇到无效 frame length 时按字节 resync，而不是直接让整文件 parse error。
+  - 兼容 0605 manual 导出中不同 TCP flow 交错、捕获起点含半帧/脏字节的情况。
+- `scripts/organize_fatbeans_real_samples.py`
+  - 保留已有 archive canonical 文件名，不再因新增样本插入排序而重排旧 `_0001/_0002` 后缀。
+  - 新增样本仍可通过 dry-run/apply 进入 canonical archive。
+- 新增回归测试：
+  - `test_fatbeans_parser_reconstructs_interleaved_tcp_streams`
+  - `test_fatbeans_parser_resyncs_after_leading_partial_frame_bytes`
+  - `test_plan_keeps_existing_archive_name_when_new_samples_shift_order`
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_organize_fatbeans_real_samples.py tests\test_live_fatbeans.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_fatbeans_sample_manifest.py data\samples\fatbeans data\samples\fatbeans_manual_inbox --output .tmp\sample_manifest_20260606_after_parser.json
+C:\Users\shenc\anaconda3\python.exe scripts\organize_fatbeans_real_samples.py --manifest-output .tmp\organize_20260606_stable_names.json
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py data\samples\fatbeans_manual_inbox --posterior-trials 0 --format summary
+```
+
+结果：
+
+```text
+parser/organizer focused tests:
+65 passed, 25 skipped
+
+manifest archive + manual inbox:
+files=456 parsed_files=456 parse_errors=0
+valid_files=439 mixed_files=17 invalid_files=0
+ready_windows=1618 no_state_windows=17
+
+organizer dry-run:
+input_files=466 unique_files=456 duplicates=10
+move=23 keep=433 errors=0
+valid=439 mixed=17 invalid=0
+ready_windows=1618
+
+manual inbox v3 window audit:
+windows=84 ready=84 no_state=0 constraint_conflict=0 parse_errors=0
+prior_ready=26 truth_ready=84 decision_truth_ready=84
+```
+
+0605 manual inbox 分布：
+
+```text
+files=23
+by_family: villa=8, shipwreck=15
+by_map:
+2401=2, 2404=2, 2405=1, 2407=1, 2408=1, 2410=1,
+2521=5, 2522=1, 2524=3, 2526=2, 2528=1, 2529=3
+by_hero:
+aisha=10, ethan=9, gabriela=1, sophie=1, tatiana=1, wuqilin=1
+```
+
+本地表状态：
+
+- `data/raw/tables/BidMap.txt` 与 `Drop.txt` 仍是 2026-05-26 时间戳。
+- `data/processed/maps.json` 生成于 2026-06-05 11:50，但不包含 `2521/2522/2524/2526/2528/2529`。
+- 外部参考目录未搜到这些 252x map id。
+
+当前处理策略：
+
+- 8 个 24xx 别墅样本可作为普通真实样本使用。
+- 15 个 252x 沉船样本可用于 capture/window/truth 审计。
+- 15 个 252x 沉船样本暂不进入普通沉船 prior/posterior 校准；需要等待新表，或显式建模“0605 白转红活动”映射后再纳入。

@@ -79,6 +79,54 @@ def test_plan_dedupes_sessions_and_copies_live_complete(monkeypatch, tmp_path: P
     assert plan["summary"]["skip_duplicate"] == 1
 
 
+def test_plan_keeps_existing_archive_name_when_new_samples_shift_order(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    archive = tmp_path / "archive"
+    inbox = tmp_path / "inbox"
+    live = tmp_path / "live"
+    invalid = tmp_path / "invalid"
+    archive.mkdir()
+    inbox.mkdir()
+    live.mkdir()
+    existing = (
+        archive
+        / "fatbeans_valid_ethan_2501_1rounds_2501_z_0001.json"
+    )
+    incoming = inbox / "manual_new.json"
+    existing.write_text("existing", encoding="utf-8")
+    incoming.write_text("incoming", encoding="utf-8")
+
+    def parse(path):
+        if Path(path).name == "manual_new.json":
+            return _events("2401:a", map_id=2401)
+        return _events("2501:z", map_id=2501)
+
+    def hero(events):
+        session_id = events.sends[0].session_id
+        return "aisha" if session_id == "2401:a" else "ethan"
+
+    monkeypatch.setattr(module, "parse_fatbeans_capture", parse)
+    monkeypatch.setattr(module, "_hero_from_events", hero)
+
+    plan = module.build_plan(
+        [archive, inbox],
+        archive_dir=archive,
+        inbox_dir=inbox,
+        live_dir=live,
+        invalid_dir=invalid,
+    )
+
+    existing_action = next(
+        action for action in plan["actions"] if action["source"].endswith(existing.name)
+    )
+    assert existing_action["action"] == "keep"
+    assert existing_action["destination"].endswith(existing.name)
+    assert plan["summary"]["move"] == 1
+
+
 def test_apply_moves_parse_errors_to_invalid_and_keeps_json(monkeypatch, tmp_path: Path) -> None:
     module = _load_module()
     archive = tmp_path / "archive"
