@@ -400,3 +400,35 @@ v3 `ConstraintSet` 增加 `soft_numeric`，posterior likelihood 消费以下 sof
 - 重复状态中的同一 soft source 只保留最新 sort_id，避免同一证据被重复计权。
 - diagnostics 记录 `soft_numeric_likelihood_weighted`，便于后续按证据类型切片。
 - 该实现仍为 v3 shadow，`affects_bid=false`。
+
+## D-v3-025：empirical prior calibration 必须同时满足 archive shift 与 baseline systemic-under
+
+v3 新增 empirical prior calibration shadow，但激活条件收紧为：
+
+- archive raw truth 相对表先验 median ratio 超过 neutral band。
+- map/session 样本数达到最低门槛。
+- hidden 低样本默认 watch-only。
+- high-over map 不激活。
+- 当前 v3 baseline 在该地图上必须满足 systemic-under：`formal_p50_bias <= -0.50 * formal_p50_mae`。
+
+原因：
+
+- 只看 archive/prior median ratio 会误激活 `2501/2504/2401`，导致整体 P50 MAE 恶化。
+- `2506` 同时满足 archive shift 与 baseline systemic-under，校准后单图 MAE 有明确改善。
+- `2507` 仍是 high-over 反例，不能把 shipwreck 家族整体抬高。
+
+当前 active：
+
+- `2506`：`scale=1.25`，`affects_bid=false`。
+
+当前 watch-only：
+
+- `2601`：hidden low sample。
+- `2501/2504/2401`：archive median 偏高，但 baseline 不是强系统性低估。
+- 其他少样本地图：low sample。
+
+边界：
+
+- calibration shadow 输出 `v3_cal_*` 字段，只进入 evaluator/live `model_eval` 诊断，不进入正式 `bid_rows`、停止价或抢仓上限。
+- `data/processed/v3_prior_calibration_shadow.json` 是聚合派生表，不包含原始 Fatbeans capture。
+- 后续 promotion 前必须用 holdout 或新增实战样本复核，不能用 in-sample archive 结果直接证明正式可用。

@@ -44,12 +44,15 @@ from bidking_lab.inference.v2 import (
     is_tail_supported_by_evidence,
 )
 from bidking_lab.inference.v3 import (
+    calibrate_posterior_report,
     compile_feasible_summary,
     compile_hard_constraints,
     empty_feasible_summary_flat_dict,
     empty_posterior_flat_dict,
+    empty_prior_calibration_flat_dict,
     estimate_q6_posterior_from_truths,
     events_from_fatbeans,
+    load_prior_calibration_entries,
     ordinary_shape_replacement_values,
     sample_truth_bank,
 )
@@ -104,6 +107,7 @@ _SAFE_SESSION_TOTAL_FIELDS = (
     "warehouse_total_cells_tolerance",
     "total_item_count",
 )
+_V3_PRIOR_CALIBRATION_CACHE: dict[int, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -1639,6 +1643,36 @@ def _model_eval_row(
     v3_post_total_cells_p90 = _parse_int_text(
         v3_shadow.get("v3_post_total_cells_p90")
     )
+    v3_cal_available = bool(v3_shadow.get("v3_cal_available"))
+    v3_cal_ready = bool(v3_shadow.get("v3_cal_ready"))
+    v3_cal_active = bool(v3_shadow.get("v3_cal_active"))
+    v3_cal_affects_bid = bool(v3_shadow.get("v3_cal_affects_bid"))
+    v3_cal_status = v3_shadow.get("v3_cal_status")
+    v3_cal_gate_reason = v3_shadow.get("v3_cal_gate_reason")
+    v3_cal_scale = _parse_float_text(v3_shadow.get("v3_cal_scale"))
+    v3_cal_archive_sessions = _parse_int_text(
+        v3_shadow.get("v3_cal_archive_sessions")
+    )
+    v3_cal_median_ratio = _parse_float_text(v3_shadow.get("v3_cal_median_ratio"))
+    v3_cal_p90_ratio = _parse_float_text(v3_shadow.get("v3_cal_p90_ratio"))
+    v3_cal_baseline_formal_mae = _parse_float_text(
+        v3_shadow.get("v3_cal_baseline_formal_p50_mae")
+    )
+    v3_cal_baseline_formal_bias = _parse_float_text(
+        v3_shadow.get("v3_cal_baseline_formal_p50_bias")
+    )
+    v3_cal_formal_p50 = _parse_int_text(
+        v3_shadow.get("v3_cal_formal_decision_value_p50")
+    )
+    v3_cal_formal_p90 = _parse_int_text(
+        v3_shadow.get("v3_cal_formal_decision_value_p90")
+    )
+    v3_cal_q6_formal_p50 = _parse_int_text(
+        v3_shadow.get("v3_cal_q6_formal_decision_value_p50")
+    )
+    v3_cal_q6_formal_p90 = _parse_int_text(
+        v3_shadow.get("v3_cal_q6_formal_decision_value_p90")
+    )
     posterior_samples = None
     posterior_total_samples = None
     q6_shadow_active = bool(shadow.get("active"))
@@ -2142,6 +2176,45 @@ def _model_eval_row(
         "v3_post_total_cells_p50": v3_post_total_cells_p50,
         "v3_post_total_cells_p90": v3_post_total_cells_p90,
         "v3_post_diagnostics": v3_shadow.get("v3_post_diagnostics"),
+        "v3_cal_available": v3_cal_available,
+        "v3_cal_ready": v3_cal_ready,
+        "v3_cal_active": v3_cal_active,
+        "v3_cal_affects_bid": v3_cal_affects_bid,
+        "v3_cal_status": v3_cal_status,
+        "v3_cal_gate_reason": v3_cal_gate_reason,
+        "v3_cal_scale": v3_cal_scale,
+        "v3_cal_archive_sessions": v3_cal_archive_sessions,
+        "v3_cal_median_ratio": v3_cal_median_ratio,
+        "v3_cal_p90_ratio": v3_cal_p90_ratio,
+        "v3_cal_baseline_formal_p50_mae": v3_cal_baseline_formal_mae,
+        "v3_cal_baseline_formal_p50_bias": v3_cal_baseline_formal_bias,
+        "v3_cal_formal_decision_value_p50": v3_cal_formal_p50,
+        "v3_cal_formal_decision_value_p90": v3_cal_formal_p90,
+        "v3_cal_q6_formal_decision_value_p50": v3_cal_q6_formal_p50,
+        "v3_cal_q6_formal_decision_value_p90": v3_cal_q6_formal_p90,
+        "v3_cal_diagnostics": v3_shadow.get("v3_cal_diagnostics"),
+        "v3_cal_formal_decision_value_p50_error_vs_formal": (
+            v3_cal_formal_p50 - final_formal_decision_value
+            if v3_cal_formal_p50 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "v3_cal_formal_decision_value_p90_under_by": (
+            max(0, final_formal_decision_value - v3_cal_formal_p90)
+            if v3_cal_formal_p90 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "v3_cal_q6_formal_decision_value_p50_error": (
+            v3_cal_q6_formal_p50 - final_q6_decision_value
+            if v3_cal_q6_formal_p50 is not None
+            else None
+        ),
+        "v3_cal_q6_formal_decision_value_p90_under_by": (
+            max(0, final_q6_decision_value - v3_cal_q6_formal_p90)
+            if v3_cal_q6_formal_p90 is not None
+            else None
+        ),
         "v3_formal_decision_value_p50_error_vs_formal": (
             v3_post_formal_p50 - final_formal_decision_value
             if v3_post_formal_p50 is not None
@@ -2676,7 +2749,17 @@ def _empty_v3_posterior_shadow(
         "conflicts": 0,
         **empty_feasible_summary_flat_dict(),
         **empty_posterior_flat_dict(),
+        **empty_prior_calibration_flat_dict(),
     }
+
+
+def _default_v3_prior_calibration_entries() -> dict[int, Any]:
+    global _V3_PRIOR_CALIBRATION_CACHE
+    if _V3_PRIOR_CALIBRATION_CACHE is None:
+        _V3_PRIOR_CALIBRATION_CACHE = load_prior_calibration_entries(
+            project_root() / "data" / "processed" / "v3_prior_calibration_shadow.json"
+        )
+    return _V3_PRIOR_CALIBRATION_CACHE
 
 
 def _v3_posterior_shadow_summary(
@@ -2723,6 +2806,10 @@ def _v3_posterior_shadow_summary(
             constraints=constraints,
             replacement_values=replacement_values,
         )
+        calibration = calibrate_posterior_report(
+            posterior,
+            _default_v3_prior_calibration_entries().get(int(map_id)),
+        )
     except Exception as exc:
         out["error"] = type(exc).__name__
         return out
@@ -2737,6 +2824,7 @@ def _v3_posterior_shadow_summary(
     )
     out.update(summary.to_flat_dict())
     out.update(posterior.to_flat_dict())
+    out.update(calibration.to_flat_dict())
     return out
 
 

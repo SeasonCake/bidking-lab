@@ -13,7 +13,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", newline="")
@@ -26,15 +26,19 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from bidking_lab.inference.v3 import (  # noqa: E402
+    PriorCalibrationEntry,
+    calibrate_posterior_report,
     compile_feasible_summary,
     compile_hard_constraints,
     decision_truth_from_fatbeans,
     empty_decision_truth_flat_dict,
     empty_feasible_summary_flat_dict,
     empty_posterior_flat_dict,
+    empty_prior_calibration_flat_dict,
     empty_truth_flat_dict,
     estimate_q6_posterior_from_truths,
     events_from_fatbeans,
+    load_prior_calibration_entries,
     ordinary_shape_replacement_values,
     sample_truth_bank,
     settlement_truth_from_fatbeans,
@@ -50,6 +54,10 @@ from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
 def _default_paths() -> tuple[Path, ...]:
     root = ROOT / "data" / "samples" / "fatbeans"
     return (root,) if root.exists() else ()
+
+
+def _default_calibration_path() -> Path:
+    return ROOT / "data" / "processed" / "v3_prior_calibration_shadow.json"
 
 
 def _iter_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
@@ -192,6 +200,7 @@ def _round_rows_for_events(
     events: FatbeansCaptureEvents,
     *,
     tables: Any | None = None,
+    calibration_entries: Mapping[int, PriorCalibrationEntry] | None = None,
     posterior_trials: int = 512,
     posterior_seed: int = 0,
 ) -> list[dict[str, Any]]:
@@ -208,6 +217,7 @@ def _round_rows_for_events(
     empty_decision_truth_fields = empty_decision_truth_flat_dict()
     empty_summary_fields = empty_feasible_summary_flat_dict()
     empty_posterior_fields = empty_posterior_flat_dict()
+    empty_calibration_fields = empty_prior_calibration_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
     for window_round, bid_send in enumerate(bid_sends, start=1):
@@ -252,6 +262,7 @@ def _round_rows_for_events(
                     **empty_decision_truth_fields,
                     **empty_summary_fields,
                     **empty_posterior_fields,
+                    **empty_calibration_fields,
                 }
             )
             previous_bid_sort_id = bid_sort_id
@@ -302,6 +313,13 @@ def _round_rows_for_events(
             if posterior is not None
             else empty_posterior_fields
         )
+        calibration_entry = (
+            calibration_entries.get(int(map_id))
+            if calibration_entries is not None and map_id is not None
+            else None
+        )
+        calibration = calibrate_posterior_report(posterior, calibration_entry)
+        calibration_fields = calibration.to_flat_dict()
         rows.append(
             {
                 "file": f"{path.name}#prebid_r{window_round}_sort{bid_sort_id}",
@@ -327,6 +345,7 @@ def _round_rows_for_events(
                 **decision_truth_fields,
                 **feasible_summary.to_flat_dict(),
                 **posterior_fields,
+                **calibration_fields,
             }
         )
         previous_bid_sort_id = bid_sort_id
@@ -337,6 +356,7 @@ def evaluate_paths(
     paths: Iterable[Path],
     *,
     tables: Any | None = None,
+    calibration_entries: Mapping[int, PriorCalibrationEntry] | None = None,
     posterior_trials: int = 512,
     posterior_seed: int = 0,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
@@ -353,6 +373,7 @@ def evaluate_paths(
                 path,
                 events,
                 tables=tables,
+                calibration_entries=calibration_entries,
                 posterior_trials=posterior_trials,
                 posterior_seed=posterior_seed,
             )
@@ -397,15 +418,26 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         and _float_or_none(row.get("v3_post_formal_decision_value_p50")) is not None
         and _float_or_none(row.get("v3_truth_formal_decision_value")) is not None
     ]
+    calibrated = [
+        row
+        for row in rows
+        if row.get("status") == "ready"
+        and row.get("v3_truth_decision_available")
+        and row.get("v3_cal_ready")
+        and _float_or_none(row.get("v3_cal_formal_decision_value_p50")) is not None
+        and _float_or_none(row.get("v3_truth_formal_decision_value")) is not None
+    ]
 
     def pred_truth(
         pred_key: str,
         truth_key: str,
         *,
         scope: str | None = None,
+        source_rows: Iterable[dict[str, Any]] | None = None,
     ) -> tuple[tuple[float, float], ...]:
         pairs: list[tuple[float, float]] = []
-        for row in paired:
+        iter_rows = tuple(source_rows) if source_rows is not None else paired
+        for row in iter_rows:
             if scope == "strict" and row.get("v3_post_match_scope") != "strict":
                 continue
             if scope == "fallback" and row.get("v3_post_match_scope") == "strict":
@@ -463,6 +495,26 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "v3_post_q6_formal_decision_value_p90",
         "v3_truth_q6_formal_decision_value",
     )
+    cal_formal_p50 = pred_truth(
+        "v3_cal_formal_decision_value_p50",
+        "v3_truth_formal_decision_value",
+        source_rows=calibrated,
+    )
+    cal_formal_p90 = pred_truth(
+        "v3_cal_formal_decision_value_p90",
+        "v3_truth_formal_decision_value",
+        source_rows=calibrated,
+    )
+    cal_q6_p50 = pred_truth(
+        "v3_cal_q6_formal_decision_value_p50",
+        "v3_truth_q6_formal_decision_value",
+        source_rows=calibrated,
+    )
+    cal_q6_p90 = pred_truth(
+        "v3_cal_q6_formal_decision_value_p90",
+        "v3_truth_q6_formal_decision_value",
+        source_rows=calibrated,
+    )
 
     def mae(pairs: tuple[tuple[float, float], ...]) -> float | None:
         return _mean(abs(pred - truth) for pred, truth in pairs)
@@ -487,6 +539,10 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for row in paired
         if row.get("v3_post_ready")
     )
+    formal_p50_mae = mae(formal_p50)
+    cal_formal_p50_mae = mae(cal_formal_p50)
+    q6_formal_p50_mae = mae(q6_p50)
+    cal_q6_formal_p50_mae = mae(cal_q6_p50)
     return {
         "metric_rows": len(paired),
         "metric_strict_rows": sum(
@@ -502,7 +558,7 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             for row in paired
             if row.get("v3_post_match_scope") != "strict"
         ),
-        "formal_p50_mae": _round_metric(mae(formal_p50)),
+        "formal_p50_mae": _round_metric(formal_p50_mae),
         "formal_p50_mae_strict": _round_metric(mae(formal_p50_strict)),
         "formal_p50_mae_fallback": _round_metric(mae(formal_p50_fallback)),
         "formal_p50_bias": _round_metric(bias(formal_p50)),
@@ -519,7 +575,7 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             6,
         ),
         "formal_p90_pinball": _round_metric(pinball(formal_p90, 0.9)),
-        "q6_formal_p50_mae": _round_metric(mae(q6_p50)),
+        "q6_formal_p50_mae": _round_metric(q6_formal_p50_mae),
         "q6_formal_p50_mae_strict": _round_metric(mae(q6_p50_strict)),
         "q6_formal_p50_mae_fallback": _round_metric(mae(q6_p50_fallback)),
         "q6_formal_p50_bias": _round_metric(bias(q6_p50)),
@@ -527,6 +583,49 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "q6_formal_p50_over_rate": _round_metric(over_rate(q6_p50), 6),
         "q6_formal_p90_coverage": _round_metric(coverage_rate(q6_p90), 6),
         "q6_formal_p90_pinball": _round_metric(pinball(q6_p90, 0.9)),
+        "v3_cal_metric_rows": len(calibrated),
+        "v3_cal_active_rows": sum(1 for row in calibrated if row.get("v3_cal_active")),
+        "v3_cal_formal_p50_mae": _round_metric(cal_formal_p50_mae),
+        "v3_cal_formal_p50_bias": _round_metric(bias(cal_formal_p50)),
+        "v3_cal_formal_p50_below_rate": _round_metric(
+            below_rate(cal_formal_p50),
+            6,
+        ),
+        "v3_cal_formal_p50_over_rate": _round_metric(
+            over_rate(cal_formal_p50),
+            6,
+        ),
+        "v3_cal_formal_p50_pinball": _round_metric(pinball(cal_formal_p50, 0.5)),
+        "v3_cal_formal_p90_coverage": _round_metric(
+            coverage_rate(cal_formal_p90),
+            6,
+        ),
+        "v3_cal_formal_p90_pinball": _round_metric(pinball(cal_formal_p90, 0.9)),
+        "v3_cal_q6_formal_p50_mae": _round_metric(cal_q6_formal_p50_mae),
+        "v3_cal_q6_formal_p50_bias": _round_metric(bias(cal_q6_p50)),
+        "v3_cal_q6_formal_p50_below_rate": _round_metric(
+            below_rate(cal_q6_p50),
+            6,
+        ),
+        "v3_cal_q6_formal_p50_over_rate": _round_metric(
+            over_rate(cal_q6_p50),
+            6,
+        ),
+        "v3_cal_q6_formal_p90_coverage": _round_metric(
+            coverage_rate(cal_q6_p90),
+            6,
+        ),
+        "v3_cal_delta_formal_p50_mae": _round_metric(
+            cal_formal_p50_mae - formal_p50_mae
+            if cal_formal_p50_mae is not None and formal_p50_mae is not None
+            else None
+        ),
+        "v3_cal_delta_q6_formal_p50_mae": _round_metric(
+            cal_q6_formal_p50_mae - q6_formal_p50_mae
+            if cal_q6_formal_p50_mae is not None
+            and q6_formal_p50_mae is not None
+            else None
+        ),
     }
 
 
@@ -624,6 +723,12 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"q6_formal_p50_mae_fallback={summary['q6_formal_p50_mae_fallback']}",
                 f"q6_formal_p50_below_rate={summary['q6_formal_p50_below_rate']}",
                 f"q6_formal_p50_over_rate={summary['q6_formal_p50_over_rate']}",
+                f"v3_cal_active_rows={summary['v3_cal_active_rows']}",
+                f"v3_cal_formal_p50_mae={summary['v3_cal_formal_p50_mae']}",
+                f"v3_cal_delta_formal_p50_mae={summary['v3_cal_delta_formal_p50_mae']}",
+                f"v3_cal_formal_p50_below_rate={summary['v3_cal_formal_p50_below_rate']}",
+                f"v3_cal_formal_p50_over_rate={summary['v3_cal_formal_p50_over_rate']}",
+                f"v3_cal_formal_p90_coverage={summary['v3_cal_formal_p90_coverage']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",
@@ -756,6 +861,47 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_post_q6_tail_replacement_decision_value_p50",
         "v3_post_q6_tail_replacement_decision_value_p90",
         "v3_post_diagnostics",
+        "v3_cal_available",
+        "v3_cal_ready",
+        "v3_cal_strict_ready",
+        "v3_cal_affects_bid",
+        "v3_cal_active",
+        "v3_cal_status",
+        "v3_cal_gate_reason",
+        "v3_cal_scale",
+        "v3_cal_archive_sessions",
+        "v3_cal_prior_trials",
+        "v3_cal_median_ratio",
+        "v3_cal_p90_ratio",
+        "v3_cal_formal_p50_over_rate",
+        "v3_cal_baseline_formal_p50_mae",
+        "v3_cal_baseline_formal_p50_bias",
+        "v3_cal_source",
+        "v3_cal_match_scope",
+        "v3_cal_n_total",
+        "v3_cal_n_matched",
+        "v3_cal_n_strict_matched",
+        "v3_cal_match_rate",
+        "v3_cal_strict_match_rate",
+        "v3_cal_total_value_p10",
+        "v3_cal_total_value_p50",
+        "v3_cal_total_value_p90",
+        "v3_cal_formal_decision_value_p10",
+        "v3_cal_formal_decision_value_p50",
+        "v3_cal_formal_decision_value_p90",
+        "v3_cal_tail_replacement_decision_value_p10",
+        "v3_cal_tail_replacement_decision_value_p50",
+        "v3_cal_tail_replacement_decision_value_p90",
+        "v3_cal_q6_value_p10",
+        "v3_cal_q6_value_p50",
+        "v3_cal_q6_value_p90",
+        "v3_cal_q6_formal_decision_value_p10",
+        "v3_cal_q6_formal_decision_value_p50",
+        "v3_cal_q6_formal_decision_value_p90",
+        "v3_cal_q6_tail_replacement_decision_value_p10",
+        "v3_cal_q6_tail_replacement_decision_value_p50",
+        "v3_cal_q6_tail_replacement_decision_value_p90",
+        "v3_cal_diagnostics",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
@@ -790,14 +936,31 @@ def main(argv: list[str] | None = None) -> int:
         help="Prior sample bank size per map for v3 shadow posterior. Use 0 to disable.",
     )
     parser.add_argument("--posterior-seed", type=int, default=0)
+    parser.add_argument(
+        "--calibration",
+        type=Path,
+        default=_default_calibration_path(),
+        help="Optional v3 prior calibration table. Defaults to data/processed/v3_prior_calibration_shadow.json when present.",
+    )
+    parser.add_argument(
+        "--no-calibration",
+        action="store_true",
+        help="Disable v3 prior calibration shadow fields.",
+    )
     parser.add_argument("--fail-on-conflicts", action="store_true")
     parser.add_argument("--fail-on-parse-errors", action="store_true")
     args = parser.parse_args(argv)
 
     tables = None if args.skip_table_report else load_monitor_tables()
+    calibration_entries = (
+        {}
+        if args.no_calibration or args.skip_table_report
+        else load_prior_calibration_entries(args.calibration)
+    )
     rows, errors = evaluate_paths(
         args.paths or _default_paths(),
         tables=tables,
+        calibration_entries=calibration_entries,
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,
     )

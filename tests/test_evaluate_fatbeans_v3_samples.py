@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropEntry, DropPool
 from bidking_lab.extract.item_table import Item
+from bidking_lab.inference.v3.calibration import propose_prior_calibration
 from bidking_lab.live.fatbeans import FatbeansCaptureEvents
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -194,6 +195,70 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_post_n_total"] == 64
     assert rows[0]["v3_post_formal_decision_value_p50"] is not None
     assert rows[0]["v3_post_q6_formal_decision_value_p50"] is not None
+    assert rows[0]["v3_cal_available"] is True
+    assert rows[0]["v3_cal_affects_bid"] is False
+    assert rows[0]["v3_cal_active"] is False
+    assert rows[0]["v3_cal_status"] == "missing_entry"
+
+
+def test_v3_prebid_rows_apply_calibration_shadow_fields() -> None:
+    module = _load_module()
+    prebid_state = SimpleNamespace(
+        sort_id=5,
+        session_id="2401:abc",
+        round_index=1,
+        map_id=2401,
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    settlement_state = SimpleNamespace(
+        sort_id=20,
+        session_id="2401:abc",
+        round_index=5,
+        map_id=2401,
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(
+            SimpleNamespace(item_id=1011001, quality=1, cells=1),
+            SimpleNamespace(item_id=1086001, quality=6, cells=16),
+        ),
+    )
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(SimpleNamespace(sort_id=10, kind="bid", session_id="2401:abc", value=1000),),
+        states=(prebid_state, settlement_state),
+        statuses=(),
+    )
+    entry = propose_prior_calibration(
+        map_id=2401,
+        map_family="villa",
+        archive_sessions=70,
+        median_ratio=1.5,
+        p90_ratio=1.2,
+        formal_p50_over_rate=0.4,
+        baseline_formal_p50_mae=100_000,
+        baseline_formal_p50_bias=-60_000,
+    )
+
+    rows = module._round_rows_for_events(
+        Path("sample.json"),
+        events,
+        tables=_tables(),
+        calibration_entries={2401: entry},
+        posterior_trials=64,
+    )
+
+    assert rows[0]["v3_cal_available"] is True
+    assert rows[0]["v3_cal_active"] is True
+    assert rows[0]["v3_cal_affects_bid"] is False
+    assert rows[0]["v3_cal_scale"] > 1.0
+    assert rows[0]["v3_cal_formal_decision_value_p50"] >= rows[0][
+        "v3_post_formal_decision_value_p50"
+    ]
 
 
 def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
@@ -222,6 +287,12 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
             "v3_truth_q6_formal_decision_value": 0,
             "v3_post_q6_formal_decision_value_p50": 0,
             "v3_post_q6_formal_decision_value_p90": 0,
+            "v3_cal_ready": True,
+            "v3_cal_active": True,
+            "v3_cal_formal_decision_value_p50": 220,
+            "v3_cal_formal_decision_value_p90": 260,
+            "v3_cal_q6_formal_decision_value_p50": 0,
+            "v3_cal_q6_formal_decision_value_p90": 0,
         },
     ]
 
@@ -247,6 +318,10 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["q6_formal_p50_bias"] == -10
     assert summary["q6_formal_p50_over_rate"] == 0.0
     assert summary["q6_formal_p90_pinball"] == 0.5
+    assert summary["v3_cal_metric_rows"] == 1
+    assert summary["v3_cal_active_rows"] == 1
+    assert summary["v3_cal_formal_p50_mae"] == 20
+    assert summary["v3_cal_delta_formal_p50_mae"] == -10
 
 
 def test_v3_prebid_rows_separate_no_state_windows() -> None:

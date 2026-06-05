@@ -751,3 +751,58 @@ scripts/summarize_v3_constraints.py
 - `2506` 是更明确的系统性低估：ready 窗口基本可用，但公开总格低、R4/R5 样本少、q6 exact 缺失，且 archive truth 明显高于表先验。
 - `2501/2401` 样本量相对足，更适合用来验证 empirical prior/calibration layer 是否能改善低估而不制造 high-over。
 - `2507` 仍应作为反例 guard：它不是系统性低估地图，不能把 shipwreck 家族整体无条件抬高。
+
+## O-v3-029：calibration ratio 不能单独作为 P50 放大依据
+
+2026-06-05 实现 empirical prior calibration shadow 后，先用 archive/prior median ratio + session gate 激活了 `2506/2501/2504/2401` 四张图。全量 evaluator 结果：
+
+```text
+v3_cal_active_rows=708
+formal_p50_mae=300553.241
+v3_cal_formal_p50_mae=309563.653
+v3_cal_delta_formal_p50_mae=+9010.411
+v3_cal_formal_p50_below_rate=0.438070
+v3_cal_formal_p90_coverage=0.856584
+```
+
+分图结果显示：
+
+```text
+2506 mae 409096.7 -> 366187.0 delta=-42909.7
+2501 mae 331341.2 -> 372896.4 delta=+41555.2
+2504 mae 247366.8 -> 262630.6 delta=+15263.8
+2401 mae 275890.1 -> 287102.2 delta=+11212.1
+```
+
+结论：
+
+- archive/prior ratio 能说明表先验与真实样本分布有偏差，但不能单独证明当前 posterior P50 需要放大。
+- `2501/2504/2401` 的 baseline bias 不够系统性，直接放大 P50 会转为过估。
+- P90 coverage 提升不等于实战参考变好；P50 MAE 被带偏时必须收紧 gate。
+
+修正后增加 baseline systemic-under gate，只激活 `2506`：
+
+```text
+v3_cal_active_rows=71
+formal_p50_mae=300553.241
+v3_cal_formal_p50_mae=298567.199
+v3_cal_delta_formal_p50_mae=-1986.042
+v3_cal_formal_p50_below_rate=0.510430
+v3_cal_formal_p50_over_rate=0.489570
+v3_cal_formal_p90_coverage=0.804433
+```
+
+map audit：
+
+```text
+2506 cal_active=1.0 mae=409096.7 cal_mae=366187.0 cal_delta=-42909.7
+2501 cal_active=0.0
+2507 cal_active=0.0
+2601 cal_active=0.0
+```
+
+当前判断：
+
+- `2506` calibration shadow 有实战参考价值，但仍为 in-sample shadow。
+- hidden/少样本和非系统性低估地图只保留 watch-only。
+- 下一步应做 holdout/new-live validation，并继续推进真正的 count/cell/value 条件 sampler，而不是扩大 map-level scale。

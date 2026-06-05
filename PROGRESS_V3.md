@@ -1087,3 +1087,73 @@ C:\Python313\python.exe .\scripts\summarize_v3_prior_archive_calibration.py --pr
 ```
 
 结果：`55 passed`，全样本 evaluator 通过。
+
+## 2026-06-05 checkpoint：empirical prior calibration shadow
+
+实现：
+
+- 新增 `src/bidking_lab/inference/v3/calibration.py`
+  - `PriorCalibrationEntry`
+  - `V3PriorCalibrationReport`
+  - `propose_prior_calibration()`
+  - `calibrate_posterior_report()`
+- 新增 `scripts/build_v3_prior_calibration_shadow.py`
+  - 从 canonical archive 生成聚合派生表。
+  - 输出 `data/processed/v3_prior_calibration_shadow.json`。
+- evaluator 接入：
+  - `v3_cal_*` shadow 字段。
+  - `v3_cal_formal_p50_mae / below / over / p90_coverage / delta` 指标。
+- live monitor 接入：
+  - artifact/model_eval 增加 `v3_cal_*` 字段。
+  - 保持 `v3_cal_affects_bid=false`。
+  - 不改变 `bid_rows`、停止价、抢仓上限或 UI 视觉布局。
+- map audit 接入：
+  - 输出 `cal_active / cal_mae / cal_delta`。
+
+当前 gate：
+
+```text
+active: 2506 scale=1.25
+watch-only: 2601 hidden_low_sample
+watch-only: 2501/2504/2401 not_systemic_under
+watch-only: low-sample maps
+```
+
+关键指标：
+
+```text
+baseline formal_p50_mae=300553.241
+v3_cal_active_rows=71
+v3_cal_formal_p50_mae=298567.199
+v3_cal_delta_formal_p50_mae=-1986.042
+v3_cal_formal_p50_below_rate=0.510430
+v3_cal_formal_p50_over_rate=0.489570
+v3_cal_formal_p90_coverage=0.804433
+```
+
+map audit：
+
+```text
+2506 mae=409096.7 cal_mae=366187.0 cal_delta=-42909.7
+2501 cal_active=0.0
+2507 cal_active=0.0
+2601 cal_active=0.0
+```
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_calibration.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_map_audit.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\build_v3_prior_calibration_shadow.py --prior-trials 10000 --posterior-trials 512 --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_map_audit.py --top 8
+```
+
+结果：`36 passed`；全样本 evaluator 和 map audit 通过。
+
+说明：
+
+- 本轮是在沙箱用户下运行，`C:\Python313` 缺少 `numpy/pytest`，因此验证使用 `C:\Users\shenc\anaconda3\python.exe`。
+- 初版 ratio-only calibration 会提升 P90 coverage 但恶化 P50 MAE；已收紧为 archive shift + baseline systemic-under 双 gate。
+- 当前仍是 in-sample shadow，不作为 promotion 依据。

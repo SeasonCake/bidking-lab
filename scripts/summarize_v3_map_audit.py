@@ -20,10 +20,12 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from evaluate_fatbeans_v3_samples import (  # noqa: E402
+    _default_calibration_path,
     _default_paths,
     _float_or_none,
     _round_metric,
     evaluate_paths,
+    load_prior_calibration_entries,
     load_monitor_tables,
 )
 
@@ -170,6 +172,16 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             "v3_post_formal_decision_value_p90",
             "v3_truth_formal_decision_value",
         )
+        cal_p50 = _metric_pairs(
+            paired,
+            "v3_cal_formal_decision_value_p50",
+            "v3_truth_formal_decision_value",
+        )
+        cal_p90 = _metric_pairs(
+            paired,
+            "v3_cal_formal_decision_value_p90",
+            "v3_truth_formal_decision_value",
+        )
         q6_p50 = _metric_pairs(
             paired,
             "v3_post_q6_formal_decision_value_p50",
@@ -190,6 +202,8 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         formal_bias = _mean(errors)
         formal_below = _mean(1.0 if error < 0 else 0.0 for error in errors)
         formal_over = _mean(1.0 if error > 0 else 0.0 for error in errors)
+        cal_errors = [pred - truth for pred, truth in cal_p50]
+        cal_mae = _mean(abs(error) for error in cal_errors)
         q6_errors = [pred - truth for pred, truth in q6_p50]
         result = {
             "map_id": map_id,
@@ -211,6 +225,33 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             "formal_p50_below_rate": _round_metric(formal_below, 6),
             "formal_p50_over_rate": _round_metric(formal_over, 6),
             "formal_p90_coverage": _round_metric(_coverage_rate(formal_p90), 6),
+            "v3_cal_active_rate": _round_metric(
+                _rate(paired, lambda row: bool(row.get("v3_cal_active"))),
+                6,
+            ),
+            "v3_cal_scale": _round_metric(
+                _mean(
+                    _float_or_none(row.get("v3_cal_scale")) or 1.0
+                    for row in paired
+                ),
+                6,
+            ),
+            "v3_cal_formal_p50_mae": _round_metric(cal_mae, 1),
+            "v3_cal_delta_formal_p50_mae": _round_metric(
+                cal_mae - formal_mae
+                if cal_mae is not None and formal_mae is not None
+                else None,
+                1,
+            ),
+            "v3_cal_formal_p50_bias": _round_metric(_mean(cal_errors), 1),
+            "v3_cal_formal_p50_below_rate": _round_metric(
+                _mean(1.0 if error < 0 else 0.0 for error in cal_errors),
+                6,
+            ),
+            "v3_cal_formal_p90_coverage": _round_metric(
+                _coverage_rate(cal_p90),
+                6,
+            ),
             "q6_formal_p50_mae": _round_metric(_mean(abs(error) for error in q6_errors), 1),
             "q6_formal_p50_bias": _round_metric(_mean(q6_errors), 1),
             "truth_p50": _round_metric(
@@ -288,6 +329,9 @@ def _print_table(rows: list[dict[str, Any]], *, top: int) -> None:
                     f"bias={row['formal_p50_bias']}",
                     f"below={row['formal_p50_below_rate']}",
                     f"p90_cover={row['formal_p90_coverage']}",
+                    f"cal_active={row['v3_cal_active_rate']}",
+                    f"cal_mae={row['v3_cal_formal_p50_mae']}",
+                    f"cal_delta={row['v3_cal_delta_formal_p50_mae']}",
                     f"q6_mae={row['q6_formal_p50_mae']}",
                     f"top3_abs={row['top3_abs_error_share']}",
                     f"public_total={row['public_total_rate']}",
@@ -317,6 +361,9 @@ def main(argv: list[str] | None = None) -> int:
     rows, errors = evaluate_paths(
         args.paths or _default_paths(),
         tables=load_monitor_tables(),
+        calibration_entries=load_prior_calibration_entries(
+            _default_calibration_path()
+        ),
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,
     )
