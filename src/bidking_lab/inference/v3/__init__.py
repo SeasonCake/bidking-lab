@@ -58,8 +58,10 @@ from bidking_lab.inference.v3.pipeline import (
 from bidking_lab.inference.v3.priors import (
     QualityPriorReport,
     SessionPriorReport,
+    empty_prior_flat_dict,
     ordinary_shape_replacement_values,
     summarize_drop_prior,
+    summarize_drop_prior_flat_dict,
 )
 from bidking_lab.inference.v3.prior_robustness import (
     V3PriorRobustnessReport,
@@ -148,6 +150,7 @@ __all__ = (
     "empty_feasible_summary_flat_dict",
     "empty_posterior_flat_dict",
     "empty_prior_calibration_flat_dict",
+    "empty_prior_flat_dict",
     "empty_prior_robustness_flat_dict",
     "empty_residual_gate_flat_dict",
     "empty_tail_value_review_flat_dict",
@@ -176,6 +179,7 @@ __all__ = (
     "settlement_truth_from_fatbeans",
     "skill_reveal_spec",
     "summarize_drop_prior",
+    "summarize_drop_prior_flat_dict",
     "truth_matches_feasible_summary",
     "tail_value_review_entry_for",
     "underestimate_entry_for",

@@ -44,11 +44,14 @@ from bidking_lab.inference.v2 import (
     is_tail_supported_by_evidence,
 )
 from bidking_lab.inference.v3 import (
+    assess_prior_robustness,
     compile_feasible_summary,
     compile_hard_constraints,
     empty_feasible_summary_flat_dict,
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
+    empty_prior_flat_dict,
+    empty_prior_robustness_flat_dict,
     empty_residual_gate_flat_dict,
     empty_tail_value_review_flat_dict,
     empty_underestimate_repair_flat_dict,
@@ -59,6 +62,7 @@ from bidking_lab.inference.v3 import (
     load_underestimate_repair_entries,
     ordinary_shape_replacement_values,
     sample_truth_bank,
+    summarize_drop_prior_flat_dict,
     tail_value_review_entry_for,
     underestimate_entry_for,
 )
@@ -1651,6 +1655,57 @@ def _model_eval_row(
     v3_post_total_cells_p90 = _parse_int_text(
         v3_shadow.get("v3_post_total_cells_p90")
     )
+    v3_prior_available = bool(v3_shadow.get("v3_prior_available"))
+    v3_prior_error = v3_shadow.get("v3_prior_error")
+    v3_prior_map_id = _parse_int_text(v3_shadow.get("v3_prior_map_id"))
+    v3_prior_map_name = v3_shadow.get("v3_prior_map_name")
+    v3_prior_items_per_session_min = _parse_int_text(
+        v3_shadow.get("v3_prior_items_per_session_min")
+    )
+    v3_prior_items_per_session_max = _parse_int_text(
+        v3_shadow.get("v3_prior_items_per_session_max")
+    )
+    v3_prior_pool_count = _parse_int_text(v3_shadow.get("v3_prior_pool_count"))
+    v3_prior_expected_draws = _parse_float_text(
+        v3_shadow.get("v3_prior_expected_draws")
+    )
+    v3_prior_expected_count = _parse_float_text(
+        v3_shadow.get("v3_prior_expected_count")
+    )
+    v3_prior_expected_cells = _parse_float_text(
+        v3_shadow.get("v3_prior_expected_cells")
+    )
+    v3_prior_expected_value = _parse_float_text(
+        v3_shadow.get("v3_prior_expected_value")
+    )
+    v3_prior_q6_draw_probability = _parse_float_text(
+        v3_shadow.get("v3_prior_q6_draw_probability")
+    )
+    v3_prior_q6_session_probability = _parse_float_text(
+        v3_shadow.get("v3_prior_q6_session_probability")
+    )
+    v3_prior_q6_expected_count = _parse_float_text(
+        v3_shadow.get("v3_prior_q6_expected_count")
+    )
+    v3_prior_q6_expected_cells = _parse_float_text(
+        v3_shadow.get("v3_prior_q6_expected_cells")
+    )
+    v3_prior_q6_expected_value = _parse_float_text(
+        v3_shadow.get("v3_prior_q6_expected_value")
+    )
+    v3_robust_available = bool(v3_shadow.get("v3_robust_available"))
+    v3_robust_affects_bid = bool(v3_shadow.get("v3_robust_affects_bid"))
+    v3_robust_status = v3_shadow.get("v3_robust_status")
+    v3_robust_prior_usable = bool(v3_shadow.get("v3_robust_prior_usable"))
+    v3_robust_prior_trusted = bool(v3_shadow.get("v3_robust_prior_trusted"))
+    v3_robust_fallback_mode = v3_shadow.get("v3_robust_fallback_mode")
+    v3_robust_activity_candidate = bool(
+        v3_shadow.get("v3_robust_activity_candidate")
+    )
+    v3_robust_prior_stress_score = _parse_int_text(
+        v3_shadow.get("v3_robust_prior_stress_score")
+    )
+    v3_robust_reasons = v3_shadow.get("v3_robust_reasons")
     v3_ccv_available = bool(v3_shadow.get("v3_ccv_available"))
     v3_ccv_ready = bool(v3_shadow.get("v3_ccv_ready"))
     v3_ccv_affects_bid = bool(v3_shadow.get("v3_ccv_affects_bid"))
@@ -2313,6 +2368,31 @@ def _model_eval_row(
         "v3_post_total_cells_p50": v3_post_total_cells_p50,
         "v3_post_total_cells_p90": v3_post_total_cells_p90,
         "v3_post_diagnostics": v3_shadow.get("v3_post_diagnostics"),
+        "v3_prior_available": v3_prior_available,
+        "v3_prior_error": v3_prior_error,
+        "v3_prior_map_id": v3_prior_map_id,
+        "v3_prior_map_name": v3_prior_map_name,
+        "v3_prior_items_per_session_min": v3_prior_items_per_session_min,
+        "v3_prior_items_per_session_max": v3_prior_items_per_session_max,
+        "v3_prior_pool_count": v3_prior_pool_count,
+        "v3_prior_expected_draws": v3_prior_expected_draws,
+        "v3_prior_expected_count": v3_prior_expected_count,
+        "v3_prior_expected_cells": v3_prior_expected_cells,
+        "v3_prior_expected_value": v3_prior_expected_value,
+        "v3_prior_q6_draw_probability": v3_prior_q6_draw_probability,
+        "v3_prior_q6_session_probability": v3_prior_q6_session_probability,
+        "v3_prior_q6_expected_count": v3_prior_q6_expected_count,
+        "v3_prior_q6_expected_cells": v3_prior_q6_expected_cells,
+        "v3_prior_q6_expected_value": v3_prior_q6_expected_value,
+        "v3_robust_available": v3_robust_available,
+        "v3_robust_affects_bid": v3_robust_affects_bid,
+        "v3_robust_status": v3_robust_status,
+        "v3_robust_prior_usable": v3_robust_prior_usable,
+        "v3_robust_prior_trusted": v3_robust_prior_trusted,
+        "v3_robust_fallback_mode": v3_robust_fallback_mode,
+        "v3_robust_activity_candidate": v3_robust_activity_candidate,
+        "v3_robust_prior_stress_score": v3_robust_prior_stress_score,
+        "v3_robust_reasons": v3_robust_reasons,
         "v3_ccv_available": v3_ccv_available,
         "v3_ccv_ready": v3_ccv_ready,
         "v3_ccv_affects_bid": v3_ccv_affects_bid,
@@ -3020,6 +3100,8 @@ def _empty_v3_posterior_shadow(
         **empty_posterior_flat_dict(prefix="v3_ccv_"),
         **empty_posterior_flat_dict(prefix="v3_resid_"),
         **empty_residual_gate_flat_dict(),
+        **empty_prior_flat_dict(),
+        **empty_prior_robustness_flat_dict(),
         **empty_prior_calibration_flat_dict(),
         **empty_underestimate_repair_flat_dict(),
         **empty_tail_value_review_flat_dict(),
@@ -3069,16 +3151,37 @@ def _v3_posterior_shadow_summary(
     seed: int,
 ) -> dict[str, Any]:
     out = _empty_v3_posterior_shadow(trials=trials)
+    prior_fields = summarize_drop_prior_flat_dict(
+        map_id,
+        maps=tables.maps,
+        drops=tables.drops,
+        items=tables.items,
+    )
+    out.update(prior_fields)
+
+    def finish(summary: Any | None = None) -> dict[str, Any]:
+        out.update(
+            assess_prior_robustness(
+                map_id=map_id,
+                map_family=_map_family_from_id(map_id),
+                summary=summary,
+                prior_fields=prior_fields,
+                posterior_fields=out,
+            ).to_flat_dict()
+        )
+        return out
+
     if map_id is None:
         out["error"] = "missing_map_id"
-        return out
+        return finish()
     bid_map = tables.maps.get(int(map_id))
     if bid_map is None:
         out["error"] = "unknown_map_id"
-        return out
+        return finish()
     if trials <= 0:
         out["error"] = "no_trials"
-        return out
+        return finish()
+    summary = None
     try:
         constraints = compile_hard_constraints(events_from_fatbeans(events))
         summary = compile_feasible_summary(constraints)
@@ -3121,7 +3224,7 @@ def _v3_posterior_shadow_summary(
         )
     except Exception as exc:
         out["error"] = type(exc).__name__
-        return out
+        return finish(summary)
     out.update(
         {
             "numeric_constraints": len(constraints.numeric),
@@ -3133,7 +3236,7 @@ def _v3_posterior_shadow_summary(
     )
     out.update(summary.to_flat_dict())
     out.update(pipeline.to_flat_dict())
-    return out
+    return finish(summary)
 
 
 def build_monitor_artifact_from_events(

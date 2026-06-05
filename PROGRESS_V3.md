@@ -2860,3 +2860,48 @@ formal_p90_coverage=0.750641
 - v3 现在能把“活动/新表缺失”与“普通模型误差”分开。
 - 当前普通 archive 的弱 fallback 覆盖面大，但可信 promotion 分母仍主要是 strict/非 stress 行；后续不能只看全量 fallback 指标。
 - 0605 沉船活动 cohort 可继续用于鲁棒性回归，不进入普通 prior tuning。
+
+## 2026-06-06 checkpoint：v3 prior robustness 对齐 live/model_eval
+
+完成内容：
+
+- `src/bidking_lab/inference/v3/priors.py` 新增共享 `empty_prior_flat_dict()` 与 `summarize_drop_prior_flat_dict()`。
+- `scripts/evaluate_fatbeans_v3_samples.py` 改为使用共享 prior flat helper，不再维护私有字段集合。
+- `src/bidking_lab/live/monitor.py` 的 `v3_posterior_shadow` 现在输出：
+  - `v3_prior_*`
+  - `v3_robust_*`
+- `model_eval.jsonl` 行同步展开 `v3_prior_*` 与 `v3_robust_*`，便于局后审计 activity/prior-drift。
+- 未知 252x 活动地图在 live v3 shadow 中 fail-closed：保留 `error=unknown_map_id`，同时标记 `v3_robust_activity_candidate=true` 与 `fallback_mode=missing_prior_truth_only`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_inference_v3_priors_truth.py tests\test_inference_v3_prior_robustness.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 0 --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 0 --format summary
+```
+
+结果：
+
+```text
+focused tests:
+63 passed
+
+default archive 0-trial:
+windows=1577 ready=1560 parse_errors=0
+prior_ready=1560
+robust_prior_usable=1560
+robust_activity_candidate=0
+
+activity cohort 0-trial:
+windows=58 ready=58 parse_errors=0
+prior_ready=0
+robust_prior_usable=0
+robust_prior_trusted=0
+robust_activity_candidate=58
+```
+
+结论：
+
+- archive/live/model_eval 现在使用同一套 prior flat 字段与 robustness 语义。
+- live 不会把活动期/缺表地图静默当成普通 prior；这只进入 shadow artifact 和 model_eval，不改变 v2 formal 出价或 UI 主建议。

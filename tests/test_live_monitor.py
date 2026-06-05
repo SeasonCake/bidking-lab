@@ -503,6 +503,45 @@ def _events() -> FatbeansCaptureEvents:
     )
 
 
+def test_live_v3_shadow_marks_unknown_252x_as_activity_prior_unavailable() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=1,
+                capture_time="",
+                message_id=0x0025,
+                session_id="2526:activity",
+                map_id=2526,
+                round_index=1,
+            ),
+        ),
+    )
+
+    shadow = monitor_module._v3_posterior_shadow_summary(
+        events,
+        map_id=2526,
+        hero="aisha",
+        tables=_tables(),
+        trials=10,
+        seed=0,
+    )
+
+    assert shadow["error"] == "unknown_map_id"
+    assert shadow["v3_prior_available"] is False
+    assert shadow["v3_prior_error"] == "KeyError"
+    assert shadow["v3_robust_status"] == "prior_unavailable"
+    assert shadow["v3_robust_prior_usable"] is False
+    assert shadow["v3_robust_prior_trusted"] is False
+    assert shadow["v3_robust_activity_candidate"] is True
+    assert shadow["v3_robust_fallback_mode"] == "missing_prior_truth_only"
+    assert "activity_map_id_candidate" in shadow["v3_robust_reasons"]
+    assert shadow["v3_robust_affects_bid"] is False
+
+
 def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     artifact = build_monitor_artifact_from_events(
         _events(),
@@ -532,6 +571,12 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["v3_posterior_shadow"]["v3_post_available"] is True
     assert artifact["v3_posterior_shadow"]["v3_post_affects_bid"] is False
     assert artifact["v3_posterior_shadow"]["v3_post_ready"] is True
+    assert artifact["v3_posterior_shadow"]["v3_prior_available"] is True
+    assert artifact["v3_posterior_shadow"]["v3_prior_error"] is None
+    assert artifact["v3_posterior_shadow"]["v3_robust_available"] is True
+    assert artifact["v3_posterior_shadow"]["v3_robust_affects_bid"] is False
+    assert artifact["v3_posterior_shadow"]["v3_robust_prior_usable"] is True
+    assert artifact["v3_posterior_shadow"]["v3_robust_activity_candidate"] is False
     assert artifact["v3_posterior_shadow"]["v3_ccv_available"] is True
     assert artifact["v3_posterior_shadow"]["v3_ccv_affects_bid"] is False
     assert artifact["v3_posterior_shadow"]["v3_resid_available"] is True
@@ -700,6 +745,17 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["model_eval"]["v3_post_formal_decision_value_p50"] == 20_000
     assert "v3_formal_decision_value_p50_error_vs_formal" in artifact["model_eval"]
     assert "v3_q6_formal_decision_value_p90_under_by" in artifact["model_eval"]
+    assert artifact["model_eval"]["v3_prior_available"] is True
+    assert artifact["model_eval"]["v3_prior_error"] is None
+    assert artifact["model_eval"]["v3_prior_map_id"] == 2401
+    assert artifact["model_eval"]["v3_prior_expected_value"] == 20_000
+    assert "v3_prior_q6_expected_count" in artifact["model_eval"]
+    assert artifact["model_eval"]["v3_robust_available"] is True
+    assert artifact["model_eval"]["v3_robust_affects_bid"] is False
+    assert artifact["model_eval"]["v3_robust_prior_usable"] is True
+    assert artifact["model_eval"]["v3_robust_activity_candidate"] is False
+    assert "v3_robust_status" in artifact["model_eval"]
+    assert "v3_robust_fallback_mode" in artifact["model_eval"]
     assert artifact["model_eval"]["v3_ccv_available"] is True
     assert artifact["model_eval"]["v3_ccv_affects_bid"] is False
     assert "v3_ccv_q6_count_p50" in artifact["model_eval"]

@@ -74,6 +74,53 @@ class SessionPriorReport:
         }
 
 
+def empty_prior_flat_dict(*, prefix: str = "v3_prior_") -> dict[str, Any]:
+    return {
+        f"{prefix}available": False,
+        f"{prefix}error": None,
+        f"{prefix}map_id": None,
+        f"{prefix}map_name": None,
+        f"{prefix}items_per_session_min": None,
+        f"{prefix}items_per_session_max": None,
+        f"{prefix}pool_count": None,
+        f"{prefix}expected_draws": None,
+        f"{prefix}expected_count": None,
+        f"{prefix}expected_cells": None,
+        f"{prefix}expected_value": None,
+        f"{prefix}q6_draw_probability": None,
+        f"{prefix}q6_session_probability": None,
+        f"{prefix}q6_expected_count": None,
+        f"{prefix}q6_expected_cells": None,
+        f"{prefix}q6_expected_value": None,
+    }
+
+
+def summarize_drop_prior_flat_dict(
+    map_id: int | None,
+    *,
+    maps: Mapping[int, BidMap],
+    drops: Mapping[int, DropPool],
+    items: Mapping[int, Item],
+    prefix: str = "v3_prior_",
+) -> dict[str, Any]:
+    if map_id is None:
+        return empty_prior_flat_dict(prefix=prefix)
+    try:
+        prior = summarize_drop_prior(
+            int(map_id),
+            maps=maps,
+            drops=drops,
+            items=items,
+        )
+    except Exception as exc:
+        row = empty_prior_flat_dict(prefix=prefix)
+        row[f"{prefix}error"] = type(exc).__name__
+        return row
+    row = {f"{prefix}available": True, f"{prefix}error": None}
+    row.update(prior.to_flat_dict(prefix=prefix))
+    return row
+
+
 def _session_probability_for_draw(
     draw_probability: float,
     items_per_session_min: int,
@@ -250,8 +297,10 @@ def ordinary_shape_replacement_values(
 
 
 __all__ = (
+    "empty_prior_flat_dict",
     "ordinary_shape_replacement_values",
     "QualityPriorReport",
     "SessionPriorReport",
     "summarize_drop_prior",
+    "summarize_drop_prior_flat_dict",
 )

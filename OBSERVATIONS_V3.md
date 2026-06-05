@@ -1937,3 +1937,24 @@ posterior_summary_likelihood=1199
 - 只有 359 个窗口在当前 64-trial 路径下属于强可信 prior/pipeline 分母；1199 个 `summary_likelihood` 是保守 fallback，应继续作为 shadow 观察，不应直接 promotion。
 - 94 个 `prior_stressed` 行值得后续分片审计，重点看 hard evidence 是否反映真实长尾、表漂移、活动机制或 parser 证据异常。
 - readiness 现在会把 `prior_trusted < ready`、`activity_candidate > 0` 或 `prior_stress_score > 0` 判为 `prior_robustness=blocked`，防止这些行被整体 MAE 掩盖。
+
+## O-v3-059：live/model_eval 已具备 activity/prior-drift 审计字段
+
+2026-06-06 对 live monitor 增加 `v3_robust_*` 后，测试覆盖：
+
+```text
+tests/test_live_monitor.py:
+- 正常 2401 live artifact 包含 v3_prior_* 与 v3_robust_*。
+- model_eval 展开 v3_prior_* 与 v3_robust_*。
+- 未知 2526 live v3 shadow 标记：
+  error=unknown_map_id
+  v3_prior_error=KeyError
+  v3_robust_status=prior_unavailable
+  v3_robust_activity_candidate=True
+  v3_robust_fallback_mode=missing_prior_truth_only
+```
+
+解读：
+
+- 后续实战样本如果遇到一周活动或新表缺失，live 日志会直接暴露 prior 不可信，而不是只留下“估值低/高”的结果。
+- 该实现仍是 shadow/audit-only；当前 UI 主建议和 formal bid 未改。

@@ -1367,3 +1367,18 @@ applied_hurts=2502
 - 游戏会出现持续一周的爆率/品质活动，旧先验可能临时失效。
 - 0605 后 252x 沉船活动 cohort 已证明“样本可解析但本地 drop prior 缺失”是现实状态。
 - v2/v3 之前的调参风险在于把不同数据质量、不同先验可信度混在同一指标分母里；v3 promotion 必须先隔离这种漂移。
+
+## D-v3-054：prior robustness 必须在 archive/live/model_eval 同步输出
+
+2026-06-06 起，`v3_prior_*` 与 `v3_robust_*` 是 archive/live 共享 shadow 字段：
+
+- `src/bidking_lab/inference/v3/priors.py` 负责生成 `v3_prior_*` flat fields。
+- archive evaluator 与 live monitor 不得各自维护不同的 prior field set。
+- live `v3_posterior_shadow` 必须包含 `v3_robust_*`。
+- live `model_eval.jsonl` 必须展开 `v3_prior_*` 与 `v3_robust_*`，用于实战后筛查活动、缺表、prior stress 和弱 fallback。
+- `v3_robust_*` 不进入 UI 主建议、不影响停止价、抢仓价或 v2 formal bid。
+
+原因：
+
+- v3 的 promotion gate 依赖 `prior_robustness`，如果 live 缺字段，局后实战样本会和 archive 审计分母不一致。
+- 活动爆率/品质调整通常先在实战 live 里出现；live 必须先记录 drift 信号，再决定是否纳入普通校准或单独建 activity overlay prior。

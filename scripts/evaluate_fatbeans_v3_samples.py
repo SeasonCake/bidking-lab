@@ -35,6 +35,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     empty_feasible_summary_flat_dict,
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
+    empty_prior_flat_dict,
     empty_prior_robustness_flat_dict,
     empty_residual_gate_flat_dict,
     empty_tail_value_review_flat_dict,
@@ -49,7 +50,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     sample_truth_bank,
     settlement_truth_from_fatbeans,
     assess_prior_robustness,
-    summarize_drop_prior,
+    summarize_drop_prior_flat_dict,
     tail_value_review_entry_for,
     underestimate_entry_for,
 )
@@ -304,24 +305,7 @@ def _diagnostic_slice_fields(
 
 
 def _empty_prior_flat_dict() -> dict[str, Any]:
-    return {
-        "v3_prior_available": False,
-        "v3_prior_error": None,
-        "v3_prior_map_id": None,
-        "v3_prior_map_name": None,
-        "v3_prior_items_per_session_min": None,
-        "v3_prior_items_per_session_max": None,
-        "v3_prior_pool_count": None,
-        "v3_prior_expected_draws": None,
-        "v3_prior_expected_count": None,
-        "v3_prior_expected_cells": None,
-        "v3_prior_expected_value": None,
-        "v3_prior_q6_draw_probability": None,
-        "v3_prior_q6_session_probability": None,
-        "v3_prior_q6_expected_count": None,
-        "v3_prior_q6_expected_cells": None,
-        "v3_prior_q6_expected_value": None,
-    }
+    return empty_prior_flat_dict()
 
 
 def _prior_flat_dict(
@@ -334,19 +318,12 @@ def _prior_flat_dict(
         return _empty_prior_flat_dict()
     if map_id in cache:
         return cache[map_id]
-    try:
-        prior = summarize_drop_prior(
-            int(map_id),
-            maps=tables.maps,
-            drops=tables.drops,
-            items=tables.items,
-        )
-    except Exception as exc:
-        row = _empty_prior_flat_dict()
-        row["v3_prior_error"] = type(exc).__name__
-    else:
-        row = {"v3_prior_available": True, "v3_prior_error": None}
-        row.update(prior.to_flat_dict())
+    row = summarize_drop_prior_flat_dict(
+        int(map_id),
+        maps=tables.maps,
+        drops=tables.drops,
+        items=tables.items,
+    )
     cache[map_id] = row
     return row
 

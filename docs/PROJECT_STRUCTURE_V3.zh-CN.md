@@ -16,6 +16,7 @@
 | `docs/v3_inference_design_2026-06-04.zh-CN.md` | v3 设计文档 |
 | `src/bidking_lab/inference/v3/` | v3 推理引擎新包 |
 | `src/bidking_lab/inference/v3/pipeline.py` | archive/live 共用 v3 shadow 推理链路 |
+| `src/bidking_lab/inference/v3/priors.py` | v3 drop-prior summary 与共享 flat fields |
 | `src/bidking_lab/inference/v3/prior_robustness.py` | v3 drop-prior 漂移、活动期、fallback 鲁棒性审计 |
 | `src/bidking_lab/inference/v3/underestimate_repair.py` | v3 低估上修 shadow report |
 | `src/bidking_lab/inference/v3/tail_value_review.py` | v3 tail/value review shadow report 与 hurt guard |
@@ -84,7 +85,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | 路径 | 作用 | 当前策略 |
 | --- | --- | --- |
 | `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做 |
-| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径 |
+| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*` |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 后续可加 v3 shadow columns |
