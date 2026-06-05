@@ -702,3 +702,52 @@ C:\Python313\python.exe .\scripts\summarize_v3_prior_archive_calibration.py --pr
 - `2506/2501/2601/2404` 的系统性低估不能只靠窗口证据 likelihood 解决。
 - v3 下一步需要显式 empirical prior/calibration layer，且必须按样本数和 high-over 风险 gate。
 - 该 layer 不应直接从少样本地图学习强参数；`2506/2501/2401` 的样本量更适合先做 shadow 校准，`2404/2601` 需保守。
+
+## O-v3-028：游戏源表与差地图样本审计
+
+2026-06-05 复核本机游戏源文件：
+
+- 源目录：`C:\xiangmuyunxing\steamapps\common\BidKing\BidKing_Data\StreamingAssets`
+- 推理目录：`data/raw/tables`
+- `Drop.txt / BidMap.txt / Item.txt / Hero.txt / Item_Type.txt / Constant.txt / BattleItem.txt / Cabinet.txt / Condition.txt / ItemRestock.txt / LevelUp.txt` 与本机游戏源 SHA256 全部一致。
+- 游戏源 `fileVersion=300`，本地 raw 元信息已同步；关键表内容未发现落后。
+- 用 `scripts/build_processed_data.py` 重建派生 JSON 后 git 仍干净，说明 committed processed 数据与当前 raw 表一致。
+- `grid_view_v1.3.7` 外参对 `2506/2501/2601/2401/2507` 的 Q5/Q6 概率和价格中位数与本地白盒解析基本一致，未见足以解释大低估的价格/爆率漂移。
+
+差地图样本和证据覆盖：
+
+```text
+2601 hidden sessions=22 ready=86/86 R1:22,R2:21,R3:21,R4:16,R5:6
+  public_total=0.314 q6_exact=0.093 q6_floor=0.756 raw_p50=2250424 raw_p90=3099931
+  formal_mae=471295.4 p90_cover=0.581
+
+2506 shipwreck sessions=21 ready=71/73 R1:19,R2:20,R3:18,R4:10,R5:4
+  public_total=0.085 q6_exact=0.000 q6_floor=0.282 raw_p50=1133996 raw_p90=2441715
+  formal_mae=409096.7 bias=-246686.8 p90_cover=0.620
+
+2501 shipwreck sessions=87 ready=310/311 R1:86,R2:79,R3:69,R4:54,R5:22
+  public_total=0.055 q6_exact=0.000 q6_floor=0.381 raw_p50=910535 raw_p90=1604734
+  formal_mae=331341.2 p90_cover=0.735
+
+2401 villa sessions=70 ready=248/251 R1:67,R2:66,R3:61,R4:39,R5:15
+  public_total=0.085 q6_exact=0.000 q6_floor=0.266 raw_p50=526176 raw_p90=1330116
+  formal_mae=275890.1 p90_cover=0.806
+```
+
+补充验证：
+
+```text
+scripts/summarize_v3_evidence_coverage.py
+  files=433 parsed_files=433 parse_errors=0 unknown=none pending=none
+
+scripts/summarize_v3_constraints.py
+  files=433 parsed_files=433 conflicts=0
+```
+
+结论：
+
+- 当前差地图问题不是本机游戏表未更新，也不是本地 Drop/Item 与 grid_view 外参明显不一致。
+- `2601 hidden` 样本只有 22 局，P90 coverage 很差，但不适合作为第一优先级强校准；后续按用户要求以 shipwreck/villa 为主。
+- `2506` 是更明确的系统性低估：ready 窗口基本可用，但公开总格低、R4/R5 样本少、q6 exact 缺失，且 archive truth 明显高于表先验。
+- `2501/2401` 样本量相对足，更适合用来验证 empirical prior/calibration layer 是否能改善低估而不制造 high-over。
+- `2507` 仍应作为反例 guard：它不是系统性低估地图，不能把 shipwreck 家族整体无条件抬高。
