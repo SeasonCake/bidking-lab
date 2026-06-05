@@ -2550,3 +2550,66 @@ candidate_below=0.420382
 - bare `shape` profile 对 sampler trials 不稳定：128-trial 可过，256-trial 变成 applied hurt。
 - `down_only + min_windows=30 + exclude ^q6_count:shape$` 是当前最稳的 q6_count movement-policy shadow 候选，但会把 below-rate 从 `0.401274` 提到 `0.420382`。
 - 该候选只适合继续作为审计/过高修正实验，不应进入 formal live；下一步低估修复仍应看 q6 value/cells/value sampler 与 public total/capacity consistency，而不是把 q6_count 继续下修。
+
+## 2026-06-05 checkpoint：v3 residual q6-value under holdout
+
+实现：
+
+- 新增 `scripts/summarize_v3_residual_under_value_holdout.py`。
+  - 训练侧按 group 识别系统性低估、public total/q6 floor 证据、residual q6_value 上移、count/cells/value/formal 不伤害。
+  - holdout 侧只把通过训练的 group 作为 candidate 评估。
+  - 显式输出 `formal_passthrough=True`，因为当前 residual posterior 不改变 formal decision value。
+- 新增 `tests/test_summarize_v3_residual_under_value_holdout.py`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_residual_under_value_holdout.py tests\test_summarize_v3_residual_profile_candidates.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_residual_under_value_holdout.py --posterior-trials 128 --by evidence_profile_key --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_residual_under_value_holdout.py --posterior-trials 256 --by evidence_profile_key --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_residual_under_value_holdout.py --posterior-trials 128 --posterior-seed 1 --by evidence_profile_key --min-windows 30 --top 20
+```
+
+结果：
+
+```text
+focused tests: 5 passed
+
+128-trial evidence_profile:
+overall_status=blocked_holdout_hurt
+candidate_rows=40
+candidate_groups=public:total+item+shape,public:total+shape
+formal_delta=0.0
+q6_value_delta=+15187.3
+applied_hurts=public:total+item+shape
+
+256-trial evidence_profile:
+overall_status=blocked_holdout_hurt
+candidate_rows=70
+candidate_groups=public:total+item+shape,public:total+shape
+formal_delta=0.0
+q6_value_delta=-17189.8
+applied_hurts=public:total+shape
+
+256-trial evidence_profile min_windows=30:
+overall_status=watch
+candidate_groups=public:total+item+shape
+q6_value_delta=-23608.6
+
+128-trial evidence_profile min_windows=30:
+overall_status=blocked_holdout_hurt
+candidate_groups=public:total+item+shape
+q6_value_delta=+15631.3
+
+128-trial seed=1 min_windows=30:
+overall_status=sample_limited
+candidate_rows=0
+```
+
+结论：
+
+- residual q6-value under candidate 目前不能 promotion。
+- `public:total+item+shape` 在 128/256 trials 间方向相反；seed=1 又没有候选，说明 sampler stability 未过关。
+- `public:total+shape` 在 256-trial holdout 下伤害 q6_value。
+- 当前 residual posterior 是 `resid_formal_passthrough`，所以它不能直接修复正式出价低估，只能诊断 q6 component。
+- 下一步需要真正的 formal/value sampler 设计：要把 q6 value/cells 的上修映射到 formal decision candidate，并同时过 trials stability、below-rate、P90 over 和 holdout hurt。

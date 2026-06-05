@@ -1259,3 +1259,36 @@ candidate_below=0.420382
 - `up_only` 更符合“低估修复”直觉，但 archive holdout 收益太弱且仍有 applied hurt。
 - `down_only` 的 MAE 改善来自修正 q6_count 过高；它与实战低估问题方向不同。
 - bare `shape` 在 128/256 trials 间不稳定，说明 promotion gate 必须包含 sampler stability。
+
+## D-v3-050：residual q6-value under candidate 不作为 formal 低估修复
+
+2026-06-05 新增 residual q6-value under holdout 后，当前决策：
+
+- `summarize_v3_residual_under_value_holdout.py` 只作为 audit 工具。
+- residual q6_value 上移不得接入 formal decision。
+- 当前 residual posterior 保持 `resid_formal_passthrough`，不改变正式出价口径。
+- `public:total+item+shape`、`public:total+shape` 只能继续观察，不能 promotion。
+- formal 低估修复必须另做 value/formal sampler，而不是把 residual q6_value shadow 直接当出价修复。
+
+当前结果：
+
+```text
+128-trial:
+candidate_groups=public:total+item+shape,public:total+shape
+q6_value_delta=+15187.3
+blocked by public:total+item+shape
+
+256-trial:
+candidate_groups=public:total+item+shape,public:total+shape
+q6_value_delta=-17189.8
+blocked by public:total+shape
+
+128-trial seed=1 min_windows=30:
+candidate_rows=0
+```
+
+原因：
+
+- 同一 profile 在不同 trials/seed 下 candidate 方向不稳定。
+- formal_delta 始终为 `0.0` 是预期边界：residual report 当前 formal passthrough。
+- 这条路线只能帮助定位 q6 component 问题，不能证明实战低估已修复。

@@ -1193,6 +1193,37 @@ candidate_below=0.420382
 
 这条候选只说明 v3 能识别一部分 q6_count 过高场景，不说明低估问题已经解决。下一步低估修复应优先放在 q6 value/cells 的 capacity/total consistency 与 value sampler。
 
+### 2026-06-05 residual q6-value under holdout
+
+新增 `summarize_v3_residual_under_value_holdout.py`，用于验证系统性低估 profile 中 residual q6_value 上移是否可复用。
+
+设计边界：
+
+- 当前 residual posterior 明确是 `resid_formal_passthrough`。
+- residual q6_value 只能诊断 q6 component，不改变 formal decision value。
+- 任何 formal 低估修复都必须有单独的 formal/value candidate，不得把 residual q6_value shadow 直接接 formal。
+
+当前 archive 结论：
+
+```text
+128-trial:
+public:total+item+shape q6_value hurt
+
+256-trial:
+public:total+shape q6_value hurt
+public:total+item+shape q6_value improves
+
+128-trial seed=1 min_windows=30:
+candidate_rows=0
+```
+
+设计影响：
+
+1. `public:total+item+shape` 是后续 value/formal sampler 的重点 profile，但当前不能 promotion。
+2. `public:total+shape` 需要单独 guard；不能因为 public total 出现就统一上修。
+3. promotion gate 必须加入 trials/seed stability。
+4. formal 低估修复需要同时输出 formal_delta、q6_value_delta、below-rate、P90 coverage/pinball、extreme-over 风险。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

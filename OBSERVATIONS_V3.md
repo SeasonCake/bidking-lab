@@ -1760,3 +1760,41 @@ candidate_below=0.420382
 - `down_only` 降低 MAE，但增加 below-rate，和“实战低估修复”目标相冲突。
 - `tool:category+item+shape` 与 `public:max_item_cells+item+shape` 比 bare `shape` 更稳定，但仍只能作为 shadow。
 - 下一步应转向 q6 value/cells 的公共总格、容量一致性和 value sampler，而不是继续把 q6_count 下修。
+
+## O-v3-054：residual q6-value under holdout 暴露 value sampler 不稳定
+
+2026-06-05 新增 residual q6-value under holdout 后，archive 结果：
+
+```text
+128-trial evidence_profile:
+overall_status=blocked_holdout_hurt
+candidate_groups=public:total+item+shape,public:total+shape
+q6_value_delta=+15187.3
+applied_hurts=public:total+item+shape
+
+256-trial evidence_profile:
+overall_status=blocked_holdout_hurt
+candidate_groups=public:total+item+shape,public:total+shape
+q6_value_delta=-17189.8
+applied_hurts=public:total+shape
+
+256-trial min_windows=30:
+status=watch
+candidate_groups=public:total+item+shape
+q6_value_delta=-23608.6
+
+128-trial min_windows=30:
+status=blocked_holdout_hurt
+candidate_groups=public:total+item+shape
+q6_value_delta=+15631.3
+
+128-trial seed=1 min_windows=30:
+candidate_rows=0
+```
+
+解读：
+
+- `public:total+item+shape` 是最值得继续研究的低估 profile，但当前 q6_value residual sampler 不稳定。
+- `public:total+shape` 在 256-trial holdout 下明确伤害 q6_value。
+- 当前 residual report 是 formal passthrough，所以 formal_delta=0 不能说明正式估值改善。
+- 低估修复下一步必须做 formal/value candidate：把 q6 value/cells 的上修如何影响 formal decision 作为显式候选，而不是只看 component shadow。
