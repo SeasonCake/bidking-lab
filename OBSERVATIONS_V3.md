@@ -1867,3 +1867,40 @@ prior_ready=26 truth_ready=84 decision_truth_ready=84
 - 8 个别墅样本已有 prior，可进入普通样本使用。
 - 15 个沉船活动样本为 252x，当前本地 `maps.json` / `BidMap.txt` / `Drop.txt` 缺少对应地图与活动爆率。
 - 252x 样本现在能提供 window/truth 证据，但不能证明 v3 对普通沉船 prior 的准确性。
+
+## O-v3-057：0605 样本已分层归档，默认校准与活动鲁棒性路径分离
+
+2026-06-06 已将 manual inbox 清空并分层归档：
+
+```text
+main archive:
+path=data/samples/fatbeans
+files=441 parsed_files=441 parse_errors=0
+valid_files=424 mixed_files=17
+ready_windows=1560 no_state_windows=17
+
+activity shipwreck cohort:
+path=data/samples/fatbeans_activity_20260605_shipwreck
+files=15 parsed_files=15 parse_errors=0
+valid_files=15 mixed_files=0
+ready_windows=58 no_state_windows=0
+```
+
+v3 evaluator 口径：
+
+```text
+default path:
+windows=1577 ready=1560 parse_errors=0
+prior_ready=1560 truth_ready=1577 decision_truth_ready=1560
+
+activity path:
+windows=58 ready=58 parse_errors=0
+prior_ready=0 truth_ready=58 decision_truth_ready=58
+```
+
+解读：
+
+- 8 个 24xx 别墅样本已进入默认主库，后续普通校准自动使用。
+- 15 个 252x 沉船活动样本保留在独立目录，后续需要显式传路径。
+- `prior_ready=0` 是预期结果：本地表缺少 252x 活动 drop prior，v3 不应把它们映射到旧 250x 普通沉船先验。
+- 该 cohort 后续适合做鲁棒性测试：旧表缺失/活动机制变化时，模型应暴露 prior 缺口并保持保守。

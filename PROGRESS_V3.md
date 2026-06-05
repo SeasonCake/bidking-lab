@@ -2755,3 +2755,55 @@ aisha=10, ethan=9, gabriela=1, sophie=1, tatiana=1, wuqilin=1
 - 8 个 24xx 别墅样本可作为普通真实样本使用。
 - 15 个 252x 沉船样本可用于 capture/window/truth 审计。
 - 15 个 252x 沉船样本暂不进入普通沉船 prior/posterior 校准；需要等待新表，或显式建模“0605 白转红活动”映射后再纳入。
+
+## 2026-06-06 checkpoint：0605 样本归档完成
+
+归档动作：
+
+- 8 个 24xx 别墅样本已从 `data/samples/fatbeans_manual_inbox/` 移入默认主库 `data/samples/fatbeans/`。
+- 15 个 252x 沉船活动样本已移入独立 cohort：
+  `data/samples/fatbeans_activity_20260605_shipwreck/`。
+- `data/samples/fatbeans_manual_inbox/` 当前无待处理 JSON。
+- `.gitignore` 已加入活动 cohort JSON 规则，样本本体继续保持本地 ignored。
+
+提交的 manifest：
+
+- `data/sample_manifests/fatbeans_archive_v3_2026-06-06.json`
+- `data/sample_manifests/fatbeans_activity_shipwreck_2026-06-05.json`
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_fatbeans_sample_manifest.py data\samples\fatbeans --output data\sample_manifests\fatbeans_archive_v3_2026-06-06.json
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_fatbeans_sample_manifest.py data\samples\fatbeans_activity_20260605_shipwreck --output data\sample_manifests\fatbeans_activity_shipwreck_2026-06-05.json
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 0 --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 0 --format summary
+```
+
+结果：
+
+```text
+main archive:
+files=441 parsed_files=441 parse_errors=0
+valid_files=424 mixed_files=17 invalid_files=0
+ready_windows=1560 no_state_windows=17
+
+activity shipwreck cohort:
+files=15 parsed_files=15 parse_errors=0
+valid_files=15 mixed_files=0 invalid_files=0
+ready_windows=58 no_state_windows=0
+
+default v3 evaluator:
+windows=1577 ready=1560 parse_errors=0
+prior_ready=1560 truth_ready=1577 decision_truth_ready=1560
+
+activity cohort v3 evaluator:
+windows=58 ready=58 parse_errors=0
+prior_ready=0 truth_ready=58 decision_truth_ready=58
+```
+
+结论：
+
+- 默认 archive/evaluator 现在只使用 441 份普通样本；新增别墅已纳入默认校准候选。
+- 252x 沉船活动样本被保留为独立鲁棒性 cohort；没有新 drop table 前不参与普通沉船 prior/posterior 校准。
+- 后续 v3 可用该 cohort 检查“模型遇到活动机制/旧表缺失时是否能保持保守、不误用旧先验”。

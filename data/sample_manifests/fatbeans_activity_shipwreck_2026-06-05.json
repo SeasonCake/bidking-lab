@@ -1,0 +1,954 @@
+{
+  "files": [
+    {
+      "action_result_counts": {
+        "100128": 3,
+        "100129": 4,
+        "100136": 5
+      },
+      "action_send_count": 3,
+      "bid_send_count": 4,
+      "bid_windows": 4,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {
+        "200019": 5
+      },
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_aisha_2521_4rounds_2521_1367517613542835_0001.json",
+      "filename": "fatbeans_valid_aisha_2521_4rounds_2521_1367517613542835_0001.json",
+      "frame_count": 83,
+      "hero_ids": [
+        103,
+        207,
+        301
+      ],
+      "map_ids": [
+        2521
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3
+      ],
+      "packet_count": 78,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200019": 5
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ready_windows": 4,
+      "sample_class": "valid",
+      "send_count": 7,
+      "session_ids": [
+        "2521:1367517613542835"
+      ],
+      "skill_reveal_counts": {
+        "1001031": 2,
+        "1001032": 3,
+        "1001033": 4,
+        "1001034": 5
+      },
+      "state_count": 8,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 4
+      }
+    },
+    {
+      "action_result_counts": {
+        "100107": 2,
+        "100128": 3,
+        "100129": 4,
+        "100136": 5
+      },
+      "action_send_count": 4,
+      "bid_send_count": 4,
+      "bid_windows": 4,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_aisha_2524_4rounds_2524_1367517613824375_0002.json",
+      "filename": "fatbeans_valid_aisha_2524_4rounds_2524_1367517613824375_0002.json",
+      "frame_count": 84,
+      "hero_ids": [
+        103,
+        104,
+        107,
+        301
+      ],
+      "map_ids": [
+        2524
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3
+      ],
+      "packet_count": 81,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200014": 5
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ready_windows": 4,
+      "sample_class": "valid",
+      "send_count": 8,
+      "session_ids": [
+        "2524:1367517613824375"
+      ],
+      "skill_reveal_counts": {
+        "1001031": 2,
+        "1001032": 3,
+        "1001033": 4,
+        "1001034": 5
+      },
+      "state_count": 9,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 4
+      }
+    },
+    {
+      "action_result_counts": {
+        "100125": 2,
+        "100128": 3,
+        "100129": 4,
+        "100136": 5
+      },
+      "action_send_count": 4,
+      "bid_send_count": 4,
+      "bid_windows": 4,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {
+        "200018": 5
+      },
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_aisha_2524_4rounds_2524_1367517614121214_0003.json",
+      "filename": "fatbeans_valid_aisha_2524_4rounds_2524_1367517614121214_0003.json",
+      "frame_count": 87,
+      "hero_ids": [
+        103,
+        207,
+        301
+      ],
+      "map_ids": [
+        2524
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3
+      ],
+      "packet_count": 84,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200018": 5
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ready_windows": 4,
+      "sample_class": "valid",
+      "send_count": 8,
+      "session_ids": [
+        "2524:1367517614121214"
+      ],
+      "skill_reveal_counts": {
+        "1001031": 2,
+        "1001032": 3,
+        "1001033": 4,
+        "1001034": 5
+      },
+      "state_count": 9,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 4
+      }
+    },
+    {
+      "action_result_counts": {
+        "100125": 2,
+        "100128": 3,
+        "100129": 4,
+        "100136": 5
+      },
+      "action_send_count": 4,
+      "bid_send_count": 4,
+      "bid_windows": 4,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_aisha_2526_4rounds_2526_1367517614377564_0004.json",
+      "filename": "fatbeans_valid_aisha_2526_4rounds_2526_1367517614377564_0004.json",
+      "frame_count": 90,
+      "hero_ids": [
+        103,
+        107,
+        207,
+        208
+      ],
+      "map_ids": [
+        2526
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3
+      ],
+      "packet_count": 87,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200028": 5
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ready_windows": 4,
+      "sample_class": "valid",
+      "send_count": 8,
+      "session_ids": [
+        "2526:1367517614377564"
+      ],
+      "skill_reveal_counts": {
+        "1001031": 2,
+        "1001032": 3,
+        "1001033": 4
+      },
+      "state_count": 9,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 4
+      }
+    },
+    {
+      "action_result_counts": {
+        "100125": 3,
+        "100128": 4,
+        "100129": 5,
+        "100136": 6
+      },
+      "action_send_count": 4,
+      "bid_send_count": 5,
+      "bid_windows": 5,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_aisha_2526_5rounds_2526_1367517614666519_0005.json",
+      "filename": "fatbeans_valid_aisha_2526_5rounds_2526_1367517614666519_0005.json",
+      "frame_count": 113,
+      "hero_ids": [
+        103,
+        207,
+        301
+      ],
+      "map_ids": [
+        2526
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "packet_count": 111,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200033": 6
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "ready_windows": 5,
+      "sample_class": "valid",
+      "send_count": 9,
+      "session_ids": [
+        "2526:1367517614666519"
+      ],
+      "skill_reveal_counts": {
+        "1001031": 3,
+        "1001032": 4,
+        "1001033": 5,
+        "1001034": 6
+      },
+      "state_count": 10,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 5
+      }
+    },
+    {
+      "action_result_counts": {
+        "100104": 3,
+        "100105": 4,
+        "100124": 2
+      },
+      "action_send_count": 3,
+      "bid_send_count": 3,
+      "bid_windows": 3,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {
+        "200018": 4
+      },
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_ethan_2521_3rounds_2521_1367517615728196_0006.json",
+      "filename": "fatbeans_valid_ethan_2521_3rounds_2521_1367517615728196_0006.json",
+      "frame_count": 73,
+      "hero_ids": [
+        103,
+        207,
+        208
+      ],
+      "map_ids": [
+        2521
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2
+      ],
+      "packet_count": 72,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200018": 4
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3
+      ],
+      "ready_windows": 3,
+      "sample_class": "valid",
+      "send_count": 6,
+      "session_ids": [
+        "2521:1367517615728196"
+      ],
+      "skill_reveal_counts": {
+        "1002081": 4
+      },
+      "state_count": 7,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 3
+      }
+    },
+    {
+      "action_result_counts": {
+        "100104": 3,
+        "100105": 4,
+        "100124": 2
+      },
+      "action_send_count": 3,
+      "bid_send_count": 3,
+      "bid_windows": 3,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {
+        "200011": 4
+      },
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_ethan_2521_3rounds_2521_1367517615982797_0007.json",
+      "filename": "fatbeans_valid_ethan_2521_3rounds_2521_1367517615982797_0007.json",
+      "frame_count": 70,
+      "hero_ids": [
+        107,
+        208,
+        301
+      ],
+      "map_ids": [
+        2521
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2
+      ],
+      "packet_count": 70,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200011": 4
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3
+      ],
+      "ready_windows": 3,
+      "sample_class": "valid",
+      "send_count": 6,
+      "session_ids": [
+        "2521:1367517615982797"
+      ],
+      "skill_reveal_counts": {
+        "1002081": 4
+      },
+      "state_count": 7,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 3
+      }
+    },
+    {
+      "action_result_counts": {
+        "100104": 4,
+        "100105": 5,
+        "100124": 3,
+        "100125": 2
+      },
+      "action_send_count": 4,
+      "bid_send_count": 4,
+      "bid_windows": 4,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_ethan_2521_4rounds_2521_1367517616199177_0008.json",
+      "filename": "fatbeans_valid_ethan_2521_4rounds_2521_1367517616199177_0008.json",
+      "frame_count": 93,
+      "hero_ids": [
+        101,
+        103,
+        208
+      ],
+      "map_ids": [
+        2521
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3
+      ],
+      "packet_count": 88,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200013": 5
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ready_windows": 4,
+      "sample_class": "valid",
+      "send_count": 8,
+      "session_ids": [
+        "2521:1367517616199177"
+      ],
+      "skill_reveal_counts": {
+        "1002081": 5
+      },
+      "state_count": 9,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 4
+      }
+    },
+    {
+      "action_result_counts": {
+        "100104": 5,
+        "100105": 6,
+        "100124": 4,
+        "100125": 2,
+        "100129": 3
+      },
+      "action_send_count": 5,
+      "bid_send_count": 5,
+      "bid_windows": 5,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_ethan_2528_5rounds_2528_1367517618200900_0009.json",
+      "filename": "fatbeans_valid_ethan_2528_5rounds_2528_1367517618200900_0009.json",
+      "frame_count": 104,
+      "hero_ids": [
+        103,
+        207,
+        208
+      ],
+      "map_ids": [
+        2528
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "packet_count": 98,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200031": 6
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "ready_windows": 5,
+      "sample_class": "valid",
+      "send_count": 10,
+      "session_ids": [
+        "2528:1367517618200900"
+      ],
+      "skill_reveal_counts": {
+        "1002081": 6,
+        "1002085": 2
+      },
+      "state_count": 11,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 5
+      }
+    },
+    {
+      "action_result_counts": {
+        "100104": 3,
+        "100105": 4,
+        "100124": 2
+      },
+      "action_send_count": 3,
+      "bid_send_count": 3,
+      "bid_windows": 3,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_ethan_2529_3rounds_2529_1367517617991505_0010.json",
+      "filename": "fatbeans_valid_ethan_2529_3rounds_2529_1367517617991505_0010.json",
+      "frame_count": 67,
+      "hero_ids": [
+        102,
+        204,
+        207,
+        208
+      ],
+      "map_ids": [
+        2529
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2
+      ],
+      "packet_count": 65,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200027": 4
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3
+      ],
+      "ready_windows": 3,
+      "sample_class": "valid",
+      "send_count": 6,
+      "session_ids": [
+        "2529:1367517617991505"
+      ],
+      "skill_reveal_counts": {
+        "1002081": 4,
+        "1002082": 3,
+        "1002083": 2
+      },
+      "state_count": 7,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 3
+      }
+    },
+    {
+      "action_result_counts": {
+        "100105": 3,
+        "100128": 4,
+        "100129": 5,
+        "100136": 6,
+        "100161": 2
+      },
+      "action_send_count": 5,
+      "bid_send_count": 5,
+      "bid_windows": 5,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_ethan_2529_5rounds_2529_1367517617646849_0011.json",
+      "filename": "fatbeans_valid_ethan_2529_5rounds_2529_1367517617646849_0011.json",
+      "frame_count": 113,
+      "hero_ids": [
+        201,
+        208
+      ],
+      "map_ids": [
+        2529
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "packet_count": 111,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200026": 6
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "ready_windows": 5,
+      "sample_class": "valid",
+      "send_count": 10,
+      "session_ids": [
+        "2529:1367517617646849"
+      ],
+      "skill_reveal_counts": {
+        "1002081": 6,
+        "1002082": 5,
+        "1002083": 4,
+        "1002084": 3,
+        "1002085": 2
+      },
+      "state_count": 11,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 5
+      }
+    },
+    {
+      "action_result_counts": {
+        "100105": 2,
+        "100128": 3,
+        "100129": 4,
+        "100136": 5
+      },
+      "action_send_count": 4,
+      "bid_send_count": 4,
+      "bid_windows": 4,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_gabriela_2521_4rounds_2521_1367517616756621_0012.json",
+      "filename": "fatbeans_valid_gabriela_2521_4rounds_2521_1367517616756621_0012.json",
+      "frame_count": 97,
+      "hero_ids": [
+        104,
+        107,
+        207
+      ],
+      "map_ids": [
+        2521
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3
+      ],
+      "packet_count": 94,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200033": 5
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ready_windows": 4,
+      "sample_class": "valid",
+      "send_count": 8,
+      "session_ids": [
+        "2521:1367517616756621"
+      ],
+      "skill_reveal_counts": {
+        "1001041": 5,
+        "1001042": 4,
+        "1001043": 3,
+        "1001044": 2
+      },
+      "state_count": 9,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 4
+      }
+    },
+    {
+      "action_result_counts": {
+        "100128": 2,
+        "100129": 3,
+        "100136": 4
+      },
+      "action_send_count": 3,
+      "bid_send_count": 3,
+      "bid_windows": 3,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {
+        "200017": 4
+      },
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_sophie_2522_3rounds_2522_1367517617422773_0013.json",
+      "filename": "fatbeans_valid_sophie_2522_3rounds_2522_1367517617422773_0013.json",
+      "frame_count": 70,
+      "hero_ids": [
+        103,
+        107,
+        207,
+        208
+      ],
+      "map_ids": [
+        2522
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2
+      ],
+      "packet_count": 66,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200017": 4
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3
+      ],
+      "ready_windows": 3,
+      "sample_class": "valid",
+      "send_count": 6,
+      "session_ids": [
+        "2522:1367517617422773"
+      ],
+      "skill_reveal_counts": {
+        "100107": 4,
+        "1001071": 3,
+        "1001072": 2
+      },
+      "state_count": 7,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 3
+      }
+    },
+    {
+      "action_result_counts": {
+        "100128": 2,
+        "100129": 3,
+        "100136": 4
+      },
+      "action_send_count": 3,
+      "bid_send_count": 3,
+      "bid_windows": 3,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_tatiana_2529_3rounds_2529_1367517616517356_0014.json",
+      "filename": "fatbeans_valid_tatiana_2529_3rounds_2529_1367517616517356_0014.json",
+      "frame_count": 71,
+      "hero_ids": [
+        104,
+        105,
+        208,
+        301
+      ],
+      "map_ids": [
+        2529
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2
+      ],
+      "packet_count": 69,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200015": 4
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3
+      ],
+      "ready_windows": 3,
+      "sample_class": "valid",
+      "send_count": 6,
+      "session_ids": [
+        "2529:1367517616517356"
+      ],
+      "skill_reveal_counts": {
+        "100105": 4
+      },
+      "state_count": 7,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 3
+      }
+    },
+    {
+      "action_result_counts": {
+        "100105": 2,
+        "100128": 3,
+        "100129": 4,
+        "100136": 5
+      },
+      "action_send_count": 4,
+      "bid_send_count": 4,
+      "bid_windows": 4,
+      "cleanup_action": "use_all_windows_for_metrics",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_wuqilin_2524_4rounds_2524_1367517617138264_0015.json",
+      "filename": "fatbeans_valid_wuqilin_2524_4rounds_2524_1367517617138264_0015.json",
+      "frame_count": 92,
+      "hero_ids": [
+        107,
+        207
+      ],
+      "map_ids": [
+        2524
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3
+      ],
+      "packet_count": 87,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200022": 5
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "ready_windows": 4,
+      "sample_class": "valid",
+      "send_count": 8,
+      "session_ids": [
+        "2524:1367517617138264"
+      ],
+      "skill_reveal_counts": {
+        "10002071": 4,
+        "10002072": 3,
+        "10002073": 2
+      },
+      "state_count": 9,
+      "status": "ready_only",
+      "usable_for_metrics": true,
+      "window_status_counts": {
+        "ready": 4
+      }
+    }
+  ],
+  "summary": {
+    "bid_windows": 58,
+    "capture_gap_files": [],
+    "constraint_conflict_windows": 0,
+    "exact_public_info_counts": {
+      "200011": 4,
+      "200017": 4,
+      "200018": 9,
+      "200019": 5
+    },
+    "file_status_counts": {
+      "ready_only": 15
+    },
+    "files": 15,
+    "invalid_files": 0,
+    "mixed_files": 0,
+    "no_state_windows": 0,
+    "note": "file counts are real capture JSON files; prebid windows are derived from player bid SEND 0x0022 boundaries and are not generated samples",
+    "parse_error_files": [],
+    "parse_errors": 0,
+    "parsed_files": 15,
+    "public_info_counts": {
+      "200011": 4,
+      "200013": 5,
+      "200014": 5,
+      "200015": 4,
+      "200017": 4,
+      "200018": 9,
+      "200019": 5,
+      "200022": 5,
+      "200026": 6,
+      "200027": 4,
+      "200028": 5,
+      "200031": 6,
+      "200033": 11
+    },
+    "ready_windows": 58,
+    "sample_class_counts": {
+      "valid": 15
+    },
+    "source": "fatbeans_archive_v3_manifest",
+    "usable_metric_files": 15,
+    "valid_files": 15,
+    "window_status_counts": {
+      "ready": 58
+    }
+  }
+}

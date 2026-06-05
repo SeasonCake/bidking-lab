@@ -87,7 +87,8 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 后续可加 v3 shadow columns |
 | `data/logs/live/` | 本地 live 日志 | ignored，本地运行态 |
-| `data/samples/fatbeans/` | 本地 canonical archive 样本 | 433 份 JSON，默认脚本路径 |
+| `data/samples/fatbeans/` | 本地 canonical archive 样本 | 441 份 JSON，默认脚本路径 |
+| `data/samples/fatbeans_activity_20260605_shipwreck/` | 2026-06-05 沉船白转红活动 cohort | 15 份 JSON，显式传路径用于鲁棒性审计，不进默认校准 |
 | `data/samples/fatbeans_invalid/` | 旧 parse error/无效样本 | ignored，不进默认 evaluator |
 
 ## 数据目录
@@ -100,7 +101,8 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `data/tmp/` | 临时输出 | 已移动到 ignored local archive |
 | `data/samples/synthetic_v2/` | 合成样本 | 保留 |
 | `data/samples/fatbeans/` | 实机 Fatbeans canonical archive | 默认 baseline |
-| `data/samples/fatbeans_manual_inbox/` | 手动导出样本 staging | 审查后并入 canonical archive |
+| `data/samples/fatbeans_activity_20260605_shipwreck/` | 0605 后 252x 沉船活动样本 | 后续用于鲁棒性/活动映射审计，不混入默认 baseline |
+| `data/samples/fatbeans_manual_inbox/` | 手动导出样本 staging | 审查后并入 canonical archive 或独立 cohort |
 | `data/samples/fatbeans_invalid/` | 无效真实样本隔离区 | 不计模型准确率 |
 
 ## 脚本与测试

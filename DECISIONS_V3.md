@@ -1335,6 +1335,7 @@ applied_hurts=2502
 
 - `2026-06-05 12:00 +08:00` 之后的 252x 沉船样本标记为活动 cohort。
 - 在本地 `BidMap.txt` / `Drop.txt` 更新前，252x 活动沉船样本不得混入普通 250x 沉船 drop-prior/posterior 校准。
+- 活动 cohort 归档路径为 `data/samples/fatbeans_activity_20260605_shipwreck/`；默认 evaluator 不自动扫描该路径。
 - 这些样本可以用于：
   - parser/capture 兼容验证；
   - pre-bid window 边界验证；
