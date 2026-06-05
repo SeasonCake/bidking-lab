@@ -1,22 +1,25 @@
 """Parse Tables/BidMap.txt into typed ``BidMap`` records.
 
-The 21-column row has been profiled (see ``docs/bid_map_schema.md``).
-v1 schema fields confirmed by cross-checking with Drop.txt + user:
+The historical 21-column row and current 23-column row have been profiled
+(see ``docs/bid_map_schema.md``). Current fileVersion 300 rows use the
+23-column layout. Schema fields confirmed by cross-checking with Drop.txt
+and user-provided sample evidence:
 
 - col[0]   map_id
 - col[1]   name
 - col[2]   description
 - col[7]   category (101-105 / 201; 9 distinct values)
-- col[8]   sub_pool_weights: ``[[map_id, weight], ...]`` for anthology
+- col[9]   sub_pool_weights: ``[[map_id, weight], ...]`` for anthology
            maps (the "未知" series); leaf maps store ``[[]]``
-- col[10]  rounds_total (5 distinct: 10 / 15 / 20 / 25 / 30)
-- col[11]  entry_fee: ``[1, 1, silver]`` — currency cost to play
-- col[14]  starting_budget: ``[[1, 1, silver]]`` — bidding budget granted
-- col[16]  ``[9999, drop_pool_id, items_per_session_min, items_per_session_max]``
-- col[9]   value_tier_ui: ``ui_value_{low,lower,medium,higher,high}``
-- col[17]  mode_flag: 4=normal auction, 1=training, 2=tutorial
-- col[18]  bid_price_ladder: per-round starting price tiers
-- col[19]  round_category_hints: 5-element list, one per auction round.
+- col[11]  rounds_total (5 distinct: 10 / 15 / 20 / 25 / 30)
+- col[12]  entry_fee: ``[1, 1, silver]`` — currency cost to play
+- col[14]  round-cap candidate: ``[40/50/60, ...]``; audit-only
+- col[15]  starting_budget: ``[[1, 1, silver]]`` — bidding budget granted
+- col[17]  ``[9999, drop_pool_id, items_per_session_min, items_per_session_max]``
+- col[10]  value_tier_ui: ``ui_value_{low,lower,medium,higher,high}``
+- col[18]  mode_flag: 4=normal auction, 1=training, 2=tutorial
+- col[19]  bid_price_ladder: per-round starting price tiers
+- col[20]  round_category_hints: 5-element list, one per auction round.
            Each element is an Item category code (102/103/104/105) the
            game previews to the player for that round, or ``0`` if no
            hint is given. Confirmed by ``scripts/probe_round_categories.py``:
@@ -28,10 +31,10 @@ v1 schema fields confirmed by cross-checking with Drop.txt + user:
            Only categories 102/103/104/105 ever appear as hints; the
            game never previews 101/106-110.
 
-Auction mode derived from map_id prefix + col[17]:
-  2xxx + col17∈{2,4} → "open"   (明拍: bids visible)
-  4xxx + col17=4     → "sealed" (暗拍: blind bids)
-  3xxx + col17=1     → "training"
+Auction mode derived from map_id prefix + current col[18] mode_flag:
+  2xxx + mode_flag∈{2,4} → "open"   (明拍: bids visible)
+  4xxx + mode_flag=4     → "sealed" (暗拍: blind bids)
+  3xxx + mode_flag=1     → "training"
 """
 
 from __future__ import annotations
@@ -92,10 +95,10 @@ def _parse_sub_pool_weights(blob: str) -> list[tuple[int, int]]:
 
 
 def _parse_drop_ref(blob: str) -> tuple[int, int, int]:
-    """col[16] → (drop_pool_id, items_min, items_max)."""
+    """drop_ref blob → (drop_pool_id, items_min, items_max)."""
     data = json.loads(blob)
     if len(data) < 4:
-        raise ValueError(f"col[16] drop_ref must have 4 elements, got {data!r}")
+        raise ValueError(f"drop_ref must have 4 elements, got {data!r}")
     return int(data[1]), int(data[2]), int(data[3])
 
 
@@ -151,7 +154,7 @@ def parse_bid_map_row(row: Sequence[str]) -> BidMap:
             "round_category_hints": 19,
         }
     elif len(row) == BID_MAP_TABLE_COLUMN_COUNT_V2:
-        # 2026-05-27 game data has two extra columns. Confirmed old fields
+        # Current v300 game data has two extra columns. Confirmed old fields
         # moved as follows: old col[8] -> new col[9], and old col[9+] ->
         # new col[10+]. The parser keeps the previous public schema and
         # preserves all raw columns for future mapping of the new fields.

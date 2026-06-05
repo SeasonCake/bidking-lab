@@ -1582,7 +1582,7 @@ applied_hurts=2502
 
 - `summarize_v3_capacity_table_audit.py` 是 prior-stress capacity/table blocker 的专用审计入口。
 - 当 `status=table_possible_max_below_truth` 时，必须优先确认：
-  - BidMap col[16] 的 `items_per_session_min/max` 是否真代表最终 item count；
+  - BidMap drop-ref（current v300 `col[17]`，historical `col[16]`）的 `items_per_session_min/max` 是否真代表最终 item count；
   - DropEntry `n_min/n_max` 是否已完整表达多件掉落；
   - Fatbeans settlement inventory truth 是否包含本局以外或重复口径；
   - raw table 版本是否与 archive 样本版本一致。
@@ -1619,3 +1619,23 @@ applied_hurts=2502
 - `2601` direct conflict：`raw_files=4`、`raw_states=max=1`、`raw_truth_match_rows=8/8`、`raw_dup_runtime=max=0`、`raw_dup_pair=max=0`，但 truth count max 仍为 65，超过 sampler possible max 44。
 - lower-bound top groups `2508/2504/2405` 同样是 `verified_latest_inventory` 且 detail truth 与 latest inventory 全匹配。
 - parser 重复不是当前主解释；promotion blocker 继续归属于 capacity table/session/drop semantics。
+
+## D-v3-068：current v300 BidMap drop-ref 与 activity extras 不能单独解除 capacity blocker
+
+2026-06-06 起，当前决策：
+
+- capacity/table audit 必须按 current raw `fileVersion=300` / 23-column BidMap schema 解释：
+  - current `col[17]` 是 `drop_ref=[9999,drop_pool_id,items_min,items_max]`；
+  - current `col[16]` 是空占位，不再作为当前表的 drop-ref 文档口径；
+  - current `col[14]` 作为 round-cap candidate 记录，但不得直接提升为 sampler/promotion 上限。
+- 对 prior-stressed capacity groups，reachable Drop universe 缺口必须分流 known temporary blue zodiac activity ids 与 non-zodiac missing items。
+- 如果 `raw_non_zodiac_missing=0`，不得把 blocker 首先解释为当前 Drop 表缺 item；应继续查 settlement activity/extra generation、session capacity field semantics 与 archive/table version timing。
+- `drop_ref.items_max` 继续作为 current sampler possible max 的来源，但在真实 settlement inventory count 已超过该 max 的 slices 中，不得视为最终 settlement item-count cap。
+- 在解释 `drop_ref`、`col[14]`、activity extras 与 settlement inventory 展开关系前，不调整 formal/value sampler 参数，不放宽 sampler capacity，不推进 v3 promotion 或 v2 archive。
+
+原因：
+
+- 当前 raw `data/raw/fileVersion=300`、`data/raw/tables/fileVersion=300`，`BidMap.txt` 125 行全部为 23 列。
+- 2601/2501/2508 等 prior-stressed rows 当前解析为 `drop_ref_col=17`，不是旧 `col[16]`。
+- 2601 `drop_ref.items_max=44`，`col[14] round_cap=60`，但 raw latest settlement truth 仍可到 65。
+- audited missing-from-drop item ids 全部是 known temporary blue zodiac ids `1306003..1306014`，`raw_non_zodiac_missing=max=0`；这说明 item universe gap 是活动额外项信号，但不足以解除 count-cap 冲突。

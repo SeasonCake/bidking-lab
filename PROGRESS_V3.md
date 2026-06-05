@@ -3614,4 +3614,62 @@ gate=v2_archive_readiness status=pending
 - `2601` direct conflict 的 4 个 raw capture 文件全部只有 1 个 latest settlement inventory state，`raw_truth_match_rows=8/8`，runtime id 与 `(runtime_id,item_id)` 均无重复。
 - duplicate item id 只是同款物品多件；由于 runtime/pair 不重复，不能解释为 parser 重复。
 - lower-bound top groups 也显示 latest inventory 与 archive truth 对齐，进一步排除 settlement inventory parser 作为主要原因。
-- 下一步应继续确认 BidMap col[16] capacity 语义、DropEntry count 语义与 raw table/archive 样本版本；在解释前不调整 sampler、不推进 promotion。
+- 下一步应继续确认 BidMap drop-ref / round-cap capacity 语义、DropEntry count 语义与 raw table/archive 样本版本；在解释前不调整 sampler、不推进 promotion。
+
+## 2026-06-06 checkpoint：BidMap v300 column 与 drop-universe capacity 语义审计
+
+完成内容：
+
+- `scripts/summarize_v3_capacity_table_audit.py` 追加 audit-only 字段：
+  - current raw BidMap column count；
+  - current drop-ref column index；
+  - raw drop-ref blob；
+  - raw round-cap candidate min/max；
+  - settlement truth 超过 round-cap candidate 的行数；
+  - latest settlement inventory item id 相对 reachable Drop universe 的缺口；
+  - known temporary blue zodiac activity item id 与 non-zodiac missing item 分流。
+- `docs/bid_map_schema.md` 从旧 21-column 说明更新为 current fileVersion 300 / 23-column 事实：
+  - current `col[17]` 是 `drop_ref`；
+  - current `col[16]` 是空占位；
+  - current `col[14]` 是 round-cap candidate，但仍未确认为最终 settlement item-count cap。
+- 未调整 formal/value sampler 参数，未改变 v2 formal/live/UI 或正式出价路径。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.pytest-tmp tests\test_summarize_v3_capacity_table_audit.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --case direct_prior_max_conflict --posterior-trials 64 --top 4
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --case target_lower_bound_truth_above_prior --posterior-trials 64 --top 4
+```
+
+结果摘录：
+
+```text
+capacity audit test:
+3 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+62 passed
+
+raw table:
+data/raw/fileVersion=300
+data/raw/tables/fileVersion=300
+BidMap rows=125 column_counts={23:125}
+
+direct_prior_max_conflict:
+map_id=2601 rows=8 bidmap_raw_cols=23 drop_ref_col=17 bidmap_items=22-44 round_cap=60-60 table_impossible_rows=8 round_cap_impossible_rows=3 raw_missing_drop=max=7 raw_temp_zodiac=max=7 raw_non_zodiac_missing=max=0
+map_id=2501 rows=6 bidmap_raw_cols=23 drop_ref_col=17 bidmap_items=22-44 round_cap=50-50 table_impossible_rows=6 round_cap_impossible_rows=5 raw_missing_drop=max=3 raw_temp_zodiac=max=3 raw_non_zodiac_missing=max=0
+map_id=2506 rows=4 bidmap_raw_cols=23 drop_ref_col=17 bidmap_items=22-44 round_cap=50-50 table_impossible_rows=4 round_cap_impossible_rows=4 raw_missing_drop=max=1 raw_temp_zodiac=max=1 raw_non_zodiac_missing=max=0
+
+target_lower_bound_truth_above_prior:
+map_id=2508 rows=6 bidmap_raw_cols=23 drop_ref_col=17 bidmap_items=22-44 round_cap=50-50 table_impossible_rows=6 round_cap_impossible_rows=6 raw_missing_drop=max=8 raw_temp_zodiac=max=8 raw_non_zodiac_missing=max=0
+map_id=2405 rows=4 bidmap_raw_cols=23 drop_ref_col=17 bidmap_items=20-40 round_cap=50-50 table_impossible_rows=4 round_cap_impossible_rows=4 raw_missing_drop=max=2 raw_temp_zodiac=max=2 raw_non_zodiac_missing=max=0
+```
+
+结论：
+
+- blocker 不是 current parser 仍读旧 `BidMap.col[16]`：current raw v300 的 drop-ref 在 `col[17]`，parser 已按 23-column schema 读取。
+- blocker 也不是 top prior-stressed slices 的 DropEntry 多件数遗漏：reachable Drop graph 的 leaf/container edges 当前 `n_max=1`，sampler theoretical max 仍等于 drop-ref max。
+- latest settlement inventory 相对 Drop universe 的 item-id 缺口只落在已知 temporary blue zodiac activity id `1306003..1306014`；没有 non-zodiac missing item 信号。
+- zodiac extras 与 `col[14]` round-cap candidate 能解释一部分语义差异，但不能完整解释真实 settlement item-count 超过 `drop_ref.items_max` / `round_cap` 的冲突。
+- 下一步优先查 settlement inventory 是否存在额外展开/活动生成机制，以及 archive 样本与 raw table v300 的版本时序关系；在解释前继续禁止 sampler/promotion 调参绕过。

@@ -2409,7 +2409,7 @@ case=direct_prior_max_conflict groups=0
 
 解读：
 
-- BidMap col[16] 的 `items_per_session_max` 目前被 sampler 当作抽取次数上限；这些 top groups 的 DropEntry `n_max` 全部为 1，因此 sampler 理论 item-count max 等于 BidMap max。
+- BidMap drop-ref 的 `items_per_session_max` 目前被 sampler 当作抽取次数上限；后续 v300 审计确认 current raw 表中该字段在 `col[17]`，这些 top groups 的 DropEntry `n_max` 全部为 1，因此 sampler 理论 item-count max 等于 BidMap max。
 - archive settlement truth 直接超过该 theoretical max，不是 evidence compiler 或 posterior absorption 能解释的问题。
 - 当前最可能的原因是 BidMap/session capacity 语义、表版本、或 settlement inventory truth 口径与 sampler 假设不一致；这必须在 promotion 前单独解释。
 
@@ -2445,3 +2445,38 @@ inventory_states=1 truth_count=60 latest_count=60 unique_runtime=60 dup_runtime=
 - raw latest inventory 中 runtime id 与 `(runtime_id,item_id)` 均无重复；duplicate item id 是同款物品多件，不是 parser 重复。
 - 2601 direct conflict 不是 settlement inventory 重复解析导致；当前 blocker 继续指向 BidMap/session capacity 语义、DropEntry count 语义或 raw table/archive 版本不一致。
 - 这支持继续保持 `prior_stress_capacity_table_drift` blocked，并禁止用 formal/value sampler 或 posterior 上修绕过该问题。
+
+## O-v3-073：v300 BidMap 23 列与 zodiac activity extras 只解释部分 capacity gap
+
+2026-06-06 对 current raw tables 与 prior-stressed top groups 继续审计：
+
+```text
+raw table:
+data/raw/fileVersion=300
+data/raw/tables/fileVersion=300
+filelist=Ver:300|FileCount:4299
+BidMap rows=125 column_counts={23:125}
+BidMap.txt entry=Tables/BidMap.txt|XGrDTpKIl6MsintjOgFp9yy2NmI=$62148
+Drop.txt entry=Tables/Drop.txt|GF8kBPZ3zi0zgO3mn/pNEfb5HIw=$294160
+
+representative columns:
+map 2601 col[14]=[60,60,60,60,60] col[16]=[[]] col[17]=[9999,2601,22,44]
+map 2501 col[14]=[50,50,50,50,50] col[16]=[[]] col[17]=[9999,2501,22,44]
+map 2405 col[14]=[50,50,50,50,50] col[16]=[[]] col[17]=[9999,2405,20,40]
+
+direct_prior_max_conflict:
+map_id=2601 rows=8 table_impossible_rows=8 round_cap_impossible_rows=3 raw_missing_drop=max=7 raw_temp_zodiac=max=7 raw_non_zodiac_missing=max=0
+map_id=2501 rows=6 table_impossible_rows=6 round_cap_impossible_rows=5 raw_missing_drop=max=3 raw_temp_zodiac=max=3 raw_non_zodiac_missing=max=0
+
+target_lower_bound_truth_above_prior:
+map_id=2508 rows=6 table_impossible_rows=6 round_cap_impossible_rows=6 raw_missing_drop=max=8 raw_temp_zodiac=max=8 raw_non_zodiac_missing=max=0
+map_id=2405 rows=4 table_impossible_rows=4 round_cap_impossible_rows=4 raw_missing_drop=max=2 raw_temp_zodiac=max=2 raw_non_zodiac_missing=max=0
+```
+
+解读：
+
+- 当前 raw BidMap 是 v300 23-column schema；drop-ref 已从历史 `col[16]` 移到 current `col[17]`，current `col[16]` 是空占位。
+- `col[14]` 的 `[50..]/[60..]` 与 settlement count 更接近，但仍有 rows 超过该候选 cap，因此不能直接把它当作最终 item-count cap。
+- settlement inventory 中不在 reachable Drop universe 的 item id 全部落在 known temporary blue zodiac activity id `1306003..1306014`；没有 non-zodiac missing item。
+- activity extras 能解释 item-universe 差异，但不能完整解释 24xx/25xx/2601 settlement count 超过 sampler possible max 的冲突。
+- 下一步应验证 settlement inventory 是否有额外展开/活动生成机制，以及 archive capture 与 current raw v300 table 的版本时序；formal/value sampler 与 promotion 继续暂停在该 blocker 后面。

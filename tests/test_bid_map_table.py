@@ -1,4 +1,4 @@
-"""Tests for the expanded BidMap parser (col[16] / col[8] / col[11] / col[14])."""
+"""Tests for historical 21-column and current 23-column BidMap parsing."""
 
 from __future__ import annotations
 

@@ -39,10 +39,12 @@ from summarize_v3_prior_robustness_audit import (  # noqa: E402
 from bidking_lab.inference.ground_truth import prepare_session_sampler  # noqa: E402
 from bidking_lab.inference.v3.truth import settlement_truth_from_fatbeans  # noqa: E402
 from bidking_lab.live.fatbeans import parse_fatbeans_capture  # noqa: E402
+from bidking_lab.simulation.basic_mc import flatten_pool  # noqa: E402
 
 
 DEFAULT_CASE = "direct_prior_max_conflict"
 DEFAULT_SAMPLE_ROOT = ROOT / "data" / "samples" / "fatbeans"
+_TEMPORARY_BLUE_ZODIAC_ITEM_IDS = frozenset(range(1306003, 1306015))
 
 
 def _numeric_values(values: Iterable[Any]) -> tuple[float, ...]:
@@ -88,6 +90,26 @@ def _counter_dict(values: Iterable[Any], *, top: int = 8) -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:top])
 
 
+def _int_list_from_json_blob(blob: Any) -> tuple[int, ...]:
+    if not isinstance(blob, str) or blob in ("", "[]", "[[]]"):
+        return ()
+    try:
+        parsed = json.loads(blob)
+    except (TypeError, ValueError):
+        return ()
+    if not isinstance(parsed, list):
+        return ()
+    out: list[int] = []
+    for value in parsed:
+        if isinstance(value, bool):
+            continue
+        try:
+            out.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return tuple(out)
+
+
 def _safe_int(value: Any) -> int | None:
     if isinstance(value, bool) or value is None:
         return None
@@ -117,7 +139,51 @@ def _resolve_capture_path(file_ref: Any, sample_root: Path) -> Path | None:
     return None
 
 
-def _inventory_diagnostic_for_path(path: Path, *, tables: Any) -> dict[str, Any]:
+def _reachable_drop_item_ids_for_map(
+    map_id: int | None,
+    *,
+    tables: Any,
+    cache: dict[int, frozenset[int]],
+) -> frozenset[int]:
+    if map_id is None:
+        return frozenset()
+    map_key = int(map_id)
+    if map_key in cache:
+        return cache[map_key]
+    bid_map = tables.maps.get(map_key)
+    if bid_map is None:
+        cache[map_key] = frozenset()
+        return cache[map_key]
+    item_ids: set[int] = set()
+    if getattr(bid_map, "sub_pool_weights", None):
+        for sub_map_id, _weight in bid_map.sub_pool_weights:
+            sub_map = tables.maps.get(int(sub_map_id))
+            if sub_map is None:
+                continue
+            item_ids.update(
+                flatten_pool(
+                    int(sub_map.drop_pool_id),
+                    tables.drops,
+                    tables.items,
+                ).item_ids
+            )
+    item_ids.update(
+        flatten_pool(
+            int(bid_map.drop_pool_id),
+            tables.drops,
+            tables.items,
+        ).item_ids
+    )
+    cache[map_key] = frozenset(item_ids)
+    return cache[map_key]
+
+
+def _inventory_diagnostic_for_path(
+    path: Path,
+    *,
+    tables: Any,
+    drop_universe_cache: dict[int, frozenset[int]],
+) -> dict[str, Any]:
     events = parse_fatbeans_capture(path)
     inventory_states = [
         state
@@ -147,6 +213,10 @@ def _inventory_diagnostic_for_path(path: Path, *, tables: Any) -> dict[str, Any]
             "duplicate_runtime_item_pair_count": None,
             "quality_counts": {},
             "cell_counts": {},
+            "missing_from_drop_universe_count": None,
+            "known_temp_zodiac_count": None,
+            "non_zodiac_missing_from_drop_universe_count": None,
+            "missing_from_drop_universe_examples": {},
         }
 
     latest = inventory_states[-1]
@@ -161,6 +231,20 @@ def _inventory_diagnostic_for_path(path: Path, *, tables: Any) -> dict[str, Any]
     cell_counts = Counter(str(getattr(item, "cells", None)) for item in items)
     truth_count = getattr(truth, "item_count", None)
     latest_count = len(items)
+    latest_map_id = getattr(latest, "map_id", None)
+    reachable_item_ids = _reachable_drop_item_ids_for_map(
+        _safe_int(latest_map_id),
+        tables=tables,
+        cache=drop_universe_cache,
+    )
+    missing_item_ids = [
+        int(item_id)
+        for item_id in item_ids
+        if item_id is not None and int(item_id) not in reachable_item_ids
+    ]
+    known_temp_zodiac_count = sum(
+        1 for item_id in missing_item_ids if int(item_id) in _TEMPORARY_BLUE_ZODIAC_ITEM_IDS
+    )
     return {
         "path": str(path),
         "file": path.name,
@@ -169,7 +253,7 @@ def _inventory_diagnostic_for_path(path: Path, *, tables: Any) -> dict[str, Any]
         "latest_sort_id": getattr(latest, "sort_id", None),
         "latest_message_id": getattr(latest, "message_id", None),
         "latest_round_index": getattr(latest, "round_index", None),
-        "latest_map_id": getattr(latest, "map_id", None),
+        "latest_map_id": latest_map_id,
         "latest_item_count": latest_count,
         "latest_total_cells": sum(_safe_int(getattr(item, "cells", None)) or 0 for item in items),
         "truth_item_count": truth_count,
@@ -186,6 +270,17 @@ def _inventory_diagnostic_for_path(path: Path, *, tables: Any) -> dict[str, Any]
         ),
         "quality_counts": dict(sorted(quality_counts.items())),
         "cell_counts": dict(sorted(cell_counts.items())),
+        "missing_from_drop_universe_count": len(missing_item_ids),
+        "known_temp_zodiac_count": known_temp_zodiac_count,
+        "non_zodiac_missing_from_drop_universe_count": (
+            len(missing_item_ids) - known_temp_zodiac_count
+        ),
+        "missing_from_drop_universe_examples": dict(
+            sorted(
+                Counter(str(item_id) for item_id in missing_item_ids).items(),
+                key=lambda item: (-item[1], item[0]),
+            )[:8]
+        ),
     }
 
 
@@ -206,6 +301,7 @@ def _inventory_diagnostics_for_rows(
     seq = tuple(rows)
     resolved_by_ref: dict[str, Path | None] = {}
     diagnostics_by_path: dict[Path, dict[str, Any]] = {}
+    drop_universe_cache: dict[int, frozenset[int]] = {}
     missing_refs: list[str] = []
     parse_errors: list[str] = []
 
@@ -224,6 +320,7 @@ def _inventory_diagnostics_for_rows(
             diagnostics_by_path[path] = _inventory_diagnostic_for_path(
                 path,
                 tables=tables,
+                drop_universe_cache=drop_universe_cache,
             )
         except Exception as exc:  # pragma: no cover - retained for CLI diagnostics.
             parse_errors.append(f"{path}:{exc}")
@@ -295,6 +392,16 @@ def _inventory_diagnostics_for_rows(
         "raw_duplicate_runtime_item_pair_count": _numeric_summary(
             diag.get("duplicate_runtime_item_pair_count") for diag in diagnostics
         ),
+        "raw_missing_from_drop_universe_count": _numeric_summary(
+            diag.get("missing_from_drop_universe_count") for diag in diagnostics
+        ),
+        "raw_known_temp_zodiac_count": _numeric_summary(
+            diag.get("known_temp_zodiac_count") for diag in diagnostics
+        ),
+        "raw_non_zodiac_missing_from_drop_universe_count": _numeric_summary(
+            diag.get("non_zodiac_missing_from_drop_universe_count")
+            for diag in diagnostics
+        ),
         "raw_latest_inventory_message_ids": _counter_dict(
             f"0x{int(message_id):04X}" if message_id is not None else None
             for message_id in (diag.get("latest_message_id") for diag in diagnostics)
@@ -304,6 +411,10 @@ def _inventory_diagnostics_for_rows(
         ),
         "raw_latest_inventory_quality_counts": _merge_counter_dicts(
             diag.get("quality_counts", {}) for diag in diagnostics
+        ),
+        "raw_missing_from_drop_universe_examples": _merge_counter_dicts(
+            diag.get("missing_from_drop_universe_examples", {})
+            for diag in diagnostics
         ),
         "raw_inventory_example_files": [
             str(diag.get("file")) for diag in sorted(
@@ -340,8 +451,21 @@ def _sampler_table_summary(map_id: int, tables: Any) -> dict[str, Any]:
             "sampler_max_count_per_draw": None,
             "sampler_possible_item_count_max": None,
             "sampler_entries_nmax_gt1": 0,
+            "bidmap_raw_column_count": None,
+            "bidmap_drop_ref_column_index": None,
+            "bidmap_raw_drop_ref": None,
+            "bidmap_raw_round_cap_min": None,
+            "bidmap_raw_round_cap_max": None,
             "table_status": "missing_bidmap",
         }
+    raw_column_count = len(getattr(bid_map, "raw_row", ()) or ())
+    drop_ref_index = 17 if raw_column_count == 23 else 16
+    round_cap_index = 14 if raw_column_count == 23 else 13
+    round_caps = _int_list_from_json_blob(
+        bid_map.raw_row[round_cap_index]
+        if len(bid_map.raw_row) > round_cap_index
+        else None
+    )
     sampler = prepare_session_sampler(
         int(map_id),
         maps=tables.maps,
@@ -376,6 +500,15 @@ def _sampler_table_summary(map_id: int, tables: Any) -> dict[str, Any]:
         "sampler_max_count_per_draw": max_count_per_draw or None,
         "sampler_possible_item_count_max": possible_max,
         "sampler_entries_nmax_gt1": entries_nmax_gt1,
+        "bidmap_raw_column_count": raw_column_count,
+        "bidmap_drop_ref_column_index": drop_ref_index,
+        "bidmap_raw_drop_ref": (
+            bid_map.raw_row[drop_ref_index]
+            if len(bid_map.raw_row) > drop_ref_index
+            else None
+        ),
+        "bidmap_raw_round_cap_min": min(round_caps) if round_caps else None,
+        "bidmap_raw_round_cap_max": max(round_caps) if round_caps else None,
         "table_status": "ok",
     }
 
@@ -403,6 +536,7 @@ def summarize_capacity_table_audit(
         capacity = tuple(row["item_count_capacity"] for row in rows)
         truth_counts = _numeric_values(row.get("truth_item_count") for row in capacity)
         possible_max = _float_or_none(table.get("sampler_possible_item_count_max"))
+        round_cap_max = _float_or_none(table.get("bidmap_raw_round_cap_max"))
         truth_max = max(truth_counts) if truth_counts else None
         table_impossible_rows = 0
         if possible_max is not None:
@@ -410,6 +544,13 @@ def summarize_capacity_table_audit(
                 1
                 for value in truth_counts
                 if float(value) > possible_max
+            )
+        round_cap_impossible_rows = 0
+        if round_cap_max is not None:
+            round_cap_impossible_rows = sum(
+                1
+                for value in truth_counts
+                if float(value) > round_cap_max
             )
         status = "pass"
         if table_impossible_rows:
@@ -426,6 +567,7 @@ def summarize_capacity_table_audit(
                 "rows": len(rows),
                 "status": status,
                 "table_impossible_rows": table_impossible_rows,
+                "round_cap_impossible_rows": round_cap_impossible_rows,
                 "capacity_cases": dict(
                     sorted(case_counts.items(), key=lambda item: (-item[1], item[0]))[:top]
                 ),
@@ -501,6 +643,10 @@ def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
                     f"rows={row['rows']}",
                     f"table_impossible_rows={row['table_impossible_rows']}",
                     f"bidmap_items={row['bidmap_items_per_session_min']}-{row['bidmap_items_per_session_max']}",
+                    f"bidmap_raw_cols={row['bidmap_raw_column_count']}",
+                    f"drop_ref_col={row['bidmap_drop_ref_column_index']}",
+                    f"round_cap={row['bidmap_raw_round_cap_min']}-{row['bidmap_raw_round_cap_max']}",
+                    f"round_cap_impossible_rows={row['round_cap_impossible_rows']}",
                     f"sampler_possible_max={row['sampler_possible_item_count_max']}",
                     f"sampler_max_count_per_draw={row['sampler_max_count_per_draw']}",
                     f"sampler_nmax_gt1={row['sampler_entries_nmax_gt1']}",
@@ -513,9 +659,13 @@ def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
                     f"raw_dup_runtime={_format_summary(row['raw_duplicate_runtime_id_count'])}",
                     f"raw_dup_pair={_format_summary(row['raw_duplicate_runtime_item_pair_count'])}",
                     f"raw_dup_item={_format_summary(row['raw_duplicate_item_id_count'])}",
+                    f"raw_missing_drop={_format_summary(row['raw_missing_from_drop_universe_count'])}",
+                    f"raw_temp_zodiac={_format_summary(row['raw_known_temp_zodiac_count'])}",
+                    f"raw_non_zodiac_missing={_format_summary(row['raw_non_zodiac_missing_from_drop_universe_count'])}",
                     f"raw_msg={_format_counts(row['raw_latest_inventory_message_ids'])}",
                     f"raw_rounds={_format_counts(row['raw_latest_inventory_rounds'])}",
                     f"raw_q={_format_counts(row['raw_latest_inventory_quality_counts'])}",
+                    f"raw_missing_items={_format_counts(row['raw_missing_from_drop_universe_examples'])}",
                     f"cases={_format_counts(row['capacity_cases'])}",
                     f"sources={_format_counts(row['source_counts'])}",
                     f"target_count={_format_summary(row['target_count'])}",

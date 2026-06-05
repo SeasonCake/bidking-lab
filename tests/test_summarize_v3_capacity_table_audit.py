@@ -125,6 +125,10 @@ def test_capacity_table_audit_marks_truth_above_sampler_possible_max() -> None:
     assert row["map_id"] == "2601"
     assert row["status"] == "table_possible_max_below_truth"
     assert row["table_impossible_rows"] == 1
+    assert row["round_cap_impossible_rows"] == 0
+    assert row["bidmap_raw_column_count"] == 0
+    assert row["bidmap_drop_ref_column_index"] == 16
+    assert row["bidmap_raw_round_cap_max"] is None
     assert row["bidmap_items_per_session_max"] == 44
     assert row["sampler_max_count_per_draw"] == 1
     assert row["sampler_possible_item_count_max"] == 44
@@ -197,6 +201,9 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
     assert row["raw_duplicate_runtime_id_count"]["max"] == 0
     assert row["raw_duplicate_runtime_item_pair_count"]["max"] == 0
     assert row["raw_duplicate_item_id_count"]["max"] == 1
+    assert row["raw_missing_from_drop_universe_count"]["max"] == 0
+    assert row["raw_known_temp_zodiac_count"]["max"] == 0
+    assert row["raw_non_zodiac_missing_from_drop_universe_count"]["max"] == 0
     assert row["raw_latest_inventory_message_ids"] == {"0x002D": 1}
     assert row["raw_latest_inventory_quality_counts"] == {"4": 2}
 
