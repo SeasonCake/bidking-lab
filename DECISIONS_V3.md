@@ -986,3 +986,36 @@ hero_map_evidence_profile candidate_rows=0
 
 - CCV 需要重做条件 likelihood 或更强的 layer gate。
 - 继续优先把公开总格、q6 floor、value evidence 显式纳入 likelihood，而不是按当前 CCV 候选直接接 formal。
+
+## D-v3-042：CCV count/cell tail guard 只能作为审计开关，不能作为修复升级
+
+2026-06-05 起，`count_cell_tail_guard`、`value_tail_guard`、`condition_temperature`、`relative_floor` 可以通过 `V3CcvOptions` 在 archive evaluator 中做 sensitivity 审计。默认 live/archive 调用保持原值。
+
+当前决策：
+
+- 默认 `v3_ccv_*` 不改变，仍为 shadow-only。
+- `count_cell_tail_guard=False` 只能用于审计，不作为 promotion 候选。
+- 不允许通过“关闭 count/cell guard”来规避 map-level applied hurt。
+- 若要继续推进 CCV，必须改 likelihood/candidate layer，而不是只调 guard 开关。
+
+当前 128-trial 结果：
+
+```text
+default cells_delta=+0.165 count_mae=1.44 cells_mae=7.008
+count_cell_tail_guard=off cells_delta=+0.225 count_mae=1.482 cells_mae=7.068
+count_below_delta=+0.025424 count_p90_cover_delta=-0.029335
+cells_below_delta=+0.019557 cells_p90_cover_delta=-0.02412
+default map hurt=2503
+alternative map hurt=2502
+```
+
+原因：
+
+- 关闭 guard 确实会压低 q6 count/cells 预测，但该压低并未提升准确性；它增加了 below-q6 风险并降低 P90 coverage。
+- hurt group 从 `2503` 转移到 `2502`，说明风险来自 CCV 条件匹配/候选泛化，而不是单个 tail guard。
+- 当前 CCV 修复方向应回到 evidence-conditioned likelihood：公开总格、q6 floor、value evidence、non-q6 residual capacity 需要以统一似然方式进入，而不是固定候选上修/下修。
+
+硬边界：
+
+- `V3CcvOptions` 不改变 formal decision、不改变 live bid、不改变 UI 主建议。
+- readiness 仍以默认 `v3_ccv_*` 与 layer holdout 为准；sensitivity 结果只作为设计证据。

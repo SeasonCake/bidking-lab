@@ -318,6 +318,62 @@ def test_v3_ccv_shadow_conditions_count_cells_without_value_evidence() -> None:
     assert "ccv_value_passthrough_no_q6_value_evidence" in report.diagnostics
 
 
+def test_v3_ccv_count_cell_tail_guard_can_be_disabled_for_audit() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=10,
+        known_count_floor=0,
+        known_cells_floor=0,
+        known_value_floor=0,
+        buckets=(
+            BucketFeasibleSummary(
+                quality=6,
+                count_floor=1,
+                cells_floor=4,
+            ),
+        ),
+    )
+    truths = (
+        _truth(q6_count=1, q6_cells=4, q6_value=100_000, q1_cells=5),
+        _truth(q6_count=1, q6_cells=4, q6_value=100_000, q1_cells=5),
+        _truth(q6_count=3, q6_cells=20, q6_value=300_000, q1_cells=5),
+        _truth(q6_count=3, q6_cells=20, q6_value=300_000, q1_cells=5),
+        _truth(q6_count=3, q6_cells=20, q6_value=300_000, q1_cells=5),
+    )
+    baseline = estimate_q6_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=truths,
+    )
+
+    guarded = estimate_count_cell_value_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=truths,
+        baseline=baseline,
+    )
+    unguarded = estimate_count_cell_value_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=truths,
+        baseline=baseline,
+        count_cell_tail_guard=False,
+    )
+
+    assert baseline.match_scope == "summary_likelihood"
+    assert guarded.match_scope == "ccv_likelihood"
+    assert unguarded.match_scope == "ccv_likelihood"
+    assert guarded.q6_count.p50 > unguarded.q6_count.p50
+    assert guarded.q6_cells.p50 > unguarded.q6_cells.p50
+    assert guarded.q6_value == baseline.q6_value
+    assert unguarded.q6_value == baseline.q6_value
+    assert "ccv_count_cell_tail_guard=on" in guarded.diagnostics
+    assert "ccv_count_cell_tail_guard=off" in unguarded.diagnostics
+
+
 def test_v3_ccv_shadow_stays_disabled_for_hidden_cold_start() -> None:
     summary = FeasibleSummaryReport(
         session_total_count_exact=None,

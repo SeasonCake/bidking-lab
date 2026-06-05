@@ -2108,3 +2108,52 @@ next_actions=... | tighten CCV map-layer guard; map holdout applies hurting grou
 - 默认 `hero_map_id` CCV holdout 会漏掉 map-level applied hurt。
 - `map_id` 层训练折会把 `2503/2504` 放入 candidate，验证折中 `2503` q6 formal 明显变差。
 - CCV 当前不是“样本不够所以可以先放”的状态，而是分层不稳定；下一步需要重做条件 likelihood 或更严格的 layer gate。
+
+## 2026-06-05 checkpoint：v3 CCV count/cell guard sensitivity audit
+
+实现：
+
+- `estimate_count_cell_value_posterior_from_truths()` 增加审计参数：
+  - `count_cell_tail_guard`
+  - `value_tail_guard`
+  - `condition_temperature`
+  - `relative_floor`
+- 新增 `V3CcvOptions`，由 `estimate_shadow_pipeline()` 和 archive evaluator 透传。
+- 默认值完全保持现状：live/archive 默认 `v3_ccv_*` 不变，仍是 shadow-only。
+- 新增 `scripts/summarize_v3_ccv_guard_sensitivity.py`，同一 archive 上并列比较默认 CCV 与实验 CCV。
+- 新增 `tests/test_summarize_v3_ccv_guard_sensitivity.py`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_pipeline.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_ccv_guard_sensitivity.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_guard_sensitivity.py --posterior-trials 128
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_layer_audit.py --posterior-trials 128
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_promotion_readiness.py --posterior-trials 128
+```
+
+结果：
+
+- 聚焦测试：`25 passed`。
+- count/cell tail guard sensitivity 128-trial：
+
+```text
+default count_delta=-0.001 cells_delta=0.165 count_mae=1.44 cells_mae=7.008
+alternative count_cell_tail_guard=off count_delta=0.041 cells_delta=0.225 count_mae=1.482 cells_mae=7.068
+paired_diff rows=1534 count_changed=108 count_pred_delta=-0.075 count_mae_delta=0.042 count_below_delta=0.025424 count_p90_cover_delta=-0.029335 cells_changed=146 cells_pred_delta=-0.368 cells_mae_delta=0.06 cells_below_delta=0.019557 cells_p90_cover_delta=-0.02412
+layers default_status=blocked_applied_hurt alternative_status=blocked_applied_hurt
+map_id default_hurts=2503 alternative_hurts=2502 alternative_rows=44 alternative_cells_delta=1.136
+```
+
+- 默认 layer audit 与 readiness 仍保持上一 checkpoint 结论：
+
+```text
+ccv_map_rows=64 ccv_map_applied_hurts=2503
+overall_status=not_ready blocked_gates=4
+```
+
+结论：
+
+- 关闭 count/cell tail guard 不是修复方向；它会降低预测值，但同时提高 below-rate、降低 P90 coverage，并使 q6 count/cells MAE 变差。
+- `2503` hurt 不是由 guard 单独造成的；关闭 guard 后 hurt group 转移到 `2502`，说明 CCV likelihood/candidate layer 本身不稳。
+- 下一步应重做 CCV 条件 likelihood 或新增更严格的 map/profile layer gate，而不是把 guard 作为可调开关升级。

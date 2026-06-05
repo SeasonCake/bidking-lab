@@ -1261,6 +1261,10 @@ def estimate_count_cell_value_posterior_from_truths(
     constraints: ConstraintSet | None = None,
     replacement_values: Mapping[tuple[int, int, int], int] | None = None,
     baseline: V3PosteriorReport | None = None,
+    count_cell_tail_guard: bool = True,
+    value_tail_guard: bool = True,
+    condition_temperature: float = _COUNT_CELL_VALUE_CONDITION_TEMPERATURE,
+    relative_floor: float = _COUNT_CELL_VALUE_CONDITION_RELATIVE_FLOOR,
 ) -> V3PosteriorReport:
     """Sharper q6 count/cell shadow conditioned by current v3 evidence.
 
@@ -1298,8 +1302,8 @@ def estimate_count_cell_value_posterior_from_truths(
         truths,
         summary,
         constraints,
-        relative_floor=_COUNT_CELL_VALUE_CONDITION_RELATIVE_FLOOR,
-        temperature=_COUNT_CELL_VALUE_CONDITION_TEMPERATURE,
+        relative_floor=relative_floor,
+        temperature=condition_temperature,
     )
     if not matched:
         diagnostics.append("ccv_no_conditioned_samples")
@@ -1334,12 +1338,25 @@ def estimate_count_cell_value_posterior_from_truths(
     q6_cells_floor = q6_summary.cells_floor if q6_summary is not None else 0
     q6_value_floor = q6_summary.value_floor if q6_summary is not None else 0
     p50_guard_quantile = _practical_p50_guard_quantile(int(map_id))
-    tail_guard = True
+    count_cell_tail_guard = bool(count_cell_tail_guard)
+    value_tail_guard = bool(value_tail_guard)
     diagnostics.append(f"ccv_conditioned_samples={len(matched)}")
     diagnostics.append(f"ccv_conditioned_effective_samples={effective_n:.3f}")
     diagnostics.append(
         "ccv_conditioned_temperature="
-        f"{_COUNT_CELL_VALUE_CONDITION_TEMPERATURE:.2f}"
+        f"{float(condition_temperature):.2f}"
+    )
+    diagnostics.append(
+        "ccv_conditioned_relative_floor="
+        f"{float(relative_floor):.8g}"
+    )
+    diagnostics.append(
+        "ccv_count_cell_tail_guard="
+        f"{'on' if count_cell_tail_guard else 'off'}"
+    )
+    diagnostics.append(
+        "ccv_value_tail_guard="
+        f"{'on' if value_tail_guard else 'off'}"
     )
 
     q6_value = baseline.q6_value
@@ -1351,8 +1368,8 @@ def estimate_count_cell_value_posterior_from_truths(
             _weighted_quantiles(
                 q6_values,
                 matched_weights,
-                p50_tail_guard=tail_guard,
-                p90_tail_guard=tail_guard,
+                p50_tail_guard=value_tail_guard,
+                p90_tail_guard=value_tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
             ),
             floor=q6_value_floor,
@@ -1363,8 +1380,8 @@ def estimate_count_cell_value_posterior_from_truths(
                 _weighted_quantiles(
                     q6_formal_decision_values,
                     matched_weights,
-                    p50_tail_guard=tail_guard,
-                    p90_tail_guard=tail_guard,
+                    p50_tail_guard=value_tail_guard,
+                    p90_tail_guard=value_tail_guard,
                     p50_guard_quantile=p50_guard_quantile,
                 ),
                 floor=q6_value_floor,
@@ -1373,8 +1390,8 @@ def estimate_count_cell_value_posterior_from_truths(
                 _weighted_quantiles(
                     q6_tail_replacement_decision_values,
                     matched_weights,
-                    p50_tail_guard=tail_guard,
-                    p90_tail_guard=tail_guard,
+                    p50_tail_guard=value_tail_guard,
+                    p90_tail_guard=value_tail_guard,
                     p50_guard_quantile=p50_guard_quantile,
                 ),
                 floor=q6_value_floor,
@@ -1398,8 +1415,8 @@ def estimate_count_cell_value_posterior_from_truths(
             _weighted_quantiles(
                 q6_counts,
                 matched_weights,
-                p50_tail_guard=tail_guard,
-                p90_tail_guard=tail_guard,
+                p50_tail_guard=count_cell_tail_guard,
+                p90_tail_guard=count_cell_tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
             ),
             floor=q6_count_floor,
@@ -1409,8 +1426,8 @@ def estimate_count_cell_value_posterior_from_truths(
             _weighted_quantiles(
                 q6_cells,
                 matched_weights,
-                p50_tail_guard=tail_guard,
-                p90_tail_guard=tail_guard,
+                p50_tail_guard=count_cell_tail_guard,
+                p90_tail_guard=count_cell_tail_guard,
                 p50_guard_quantile=p50_guard_quantile,
             ),
             floor=q6_cells_floor,

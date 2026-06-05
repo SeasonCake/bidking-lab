@@ -50,6 +50,7 @@ from bidking_lab.inference.v3.posterior import (
     truth_matches_feasible_summary,
 )
 from bidking_lab.inference.v3.pipeline import (
+    V3CcvOptions,
     V3ShadowPipelineReport,
     estimate_shadow_pipeline,
 )
@@ -123,6 +124,7 @@ __all__ = (
     "UnderestimateRepairEntry",
     "V3PosteriorReport",
     "V3PriorCalibrationReport",
+    "V3CcvOptions",
     "V3ResidualGateReport",
     "V3ShadowPipelineReport",
     "V3TailValueReviewReport",

@@ -934,6 +934,28 @@ tail_holdout_q6_delta=-4144.4
 2. 每次新增样本或改 sampler 后，readiness 是第一层回归检查。
 3. 在 readiness 仍为 `not_ready` 时，不切 formal，不 archive v2。
 
+### 2026-06-05 CCV guard sensitivity
+
+新增 `V3CcvOptions` 与 `summarize_v3_ccv_guard_sensitivity.py` 后，CCV 的 count/cell tail guard 可以在 archive evaluator 中做审计开关，但默认 live/archive 不变。
+
+128-trial 结果：
+
+```text
+default cells_delta=+0.165 count_mae=1.44 cells_mae=7.008
+count_cell_tail_guard=off cells_delta=+0.225 count_mae=1.482 cells_mae=7.068
+count_below_delta=+0.025424 count_p90_cover_delta=-0.029335
+cells_below_delta=+0.019557 cells_p90_cover_delta=-0.024120
+default map hurt=2503
+alternative map hurt=2502
+```
+
+设计影响：
+
+1. 关闭 count/cell guard 不是 v3 精度修复方向；它压低预测但提高 below-q6 风险。
+2. `2503` 的 map-level hurt 不是 guard 单点问题；关闭后 hurt 转移到 `2502`。
+3. 下一版 CCV 需要重做条件 likelihood，让公开总格、q6 floor、value evidence、non-q6 residual capacity 一起决定 q6 cells/count 分布移动。
+4. `V3CcvOptions` 只能用于 shadow/audit，不进入 formal decision、正式 bid 或 UI 主建议。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

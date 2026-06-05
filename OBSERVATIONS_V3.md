@@ -1435,3 +1435,56 @@ candidate_rows=0
 - `map_id` 层显示 CCV 训练折会把 `2503/2504` 误放进 candidate，holdout 后 `2503` 明显 hurt。
 - `map_family` 与 profile 层没有可用 candidate，说明样本层级和泛化层级都还没准备好。
 - 当前 CCV 不能靠“先接 shadow candidate 再看”推进；需要重做 likelihood 或新增明确 layer gate。
+
+## O-v3-046：关闭 CCV count/cell tail guard 会增加低估风险，不能修复 map-level hurt
+
+2026-06-05 新增 `summarize_v3_ccv_guard_sensitivity.py`，用同一 archive 对比默认 CCV 与 `count_cell_tail_guard=off`。
+
+128-trial 结果：
+
+```text
+default:
+ccv_likelihood_rows=347
+count_delta=-0.001
+cells_delta=+0.165
+count_mae=1.44
+cells_mae=7.008
+
+count_cell_tail_guard=off:
+ccv_likelihood_rows=347
+count_delta=+0.041
+cells_delta=+0.225
+count_mae=1.482
+cells_mae=7.068
+
+paired_diff:
+rows=1534
+count_changed=108
+count_pred_delta=-0.075
+count_mae_delta=+0.042
+count_below_delta=+0.025424
+count_p90_cover_delta=-0.029335
+cells_changed=146
+cells_pred_delta=-0.368
+cells_mae_delta=+0.060
+cells_below_delta=+0.019557
+cells_p90_cover_delta=-0.024120
+```
+
+分层结果：
+
+```text
+default map_id applied_hurts=2503 candidate_rows=64
+count_cell_tail_guard=off map_id applied_hurts=2502 candidate_rows=44 cells_delta=+1.136
+```
+
+解读：
+
+- 关闭 guard 后预测整体下移，但不是“更准确”；q6 count/cells MAE 变差，below-rate 上升，P90 coverage 下降。
+- 默认 hurt 的 `2503` 没有被真正解决，只是风险切换到 `2502`。
+- 这说明 CCV 的当前核心问题是 likelihood/candidate layer 不稳，而不是 p50 tail guard 单点参数过强。
+
+下一步重点：
+
+- 不再把 `count_cell_tail_guard` 作为调参修复方向。
+- 设计新的 CCV likelihood 时，需要让证据决定 q6 cells/count 分布移动，并在 map/profile layer 同时过 holdout。

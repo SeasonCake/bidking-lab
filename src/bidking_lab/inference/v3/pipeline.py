@@ -42,6 +42,14 @@ from bidking_lab.inference.v3.underestimate_repair import (
 
 
 @dataclass(frozen=True)
+class V3CcvOptions:
+    count_cell_tail_guard: bool = True
+    value_tail_guard: bool = True
+    condition_temperature: float | None = None
+    relative_floor: float | None = None
+
+
+@dataclass(frozen=True)
 class V3ShadowPipelineReport:
     posterior: V3PosteriorReport
     ccv_posterior: V3PosteriorReport
@@ -75,6 +83,7 @@ def estimate_shadow_pipeline(
     underestimate_entry: UnderestimateRepairEntry | None = None,
     tail_review_entry: TailValueReviewEntry | None = None,
     hero: str | None = None,
+    ccv_options: V3CcvOptions | None = None,
 ) -> V3ShadowPipelineReport:
     posterior = estimate_q6_posterior_from_truths(
         map_id=int(map_id),
@@ -84,6 +93,14 @@ def estimate_shadow_pipeline(
         constraints=constraints,
         replacement_values=replacement_values or {},
     )
+    ccv_kwargs: dict[str, Any] = {}
+    if ccv_options is not None:
+        ccv_kwargs["count_cell_tail_guard"] = ccv_options.count_cell_tail_guard
+        ccv_kwargs["value_tail_guard"] = ccv_options.value_tail_guard
+        if ccv_options.condition_temperature is not None:
+            ccv_kwargs["condition_temperature"] = ccv_options.condition_temperature
+        if ccv_options.relative_floor is not None:
+            ccv_kwargs["relative_floor"] = ccv_options.relative_floor
     ccv_posterior = estimate_count_cell_value_posterior_from_truths(
         map_id=int(map_id),
         map_name=str(map_name or ""),
@@ -92,6 +109,7 @@ def estimate_shadow_pipeline(
         constraints=constraints,
         replacement_values=replacement_values or {},
         baseline=posterior,
+        **ccv_kwargs,
     )
     residual_posterior = estimate_residual_count_cell_value_posterior_from_truths(
         map_id=int(map_id),
@@ -130,6 +148,7 @@ def estimate_shadow_pipeline(
 
 
 __all__ = (
+    "V3CcvOptions",
     "V3ShadowPipelineReport",
     "estimate_shadow_pipeline",
 )

@@ -27,6 +27,7 @@ if str(SRC) not in sys.path:
 
 from bidking_lab.inference.v3 import (  # noqa: E402
     PriorCalibrationEntry,
+    V3CcvOptions,
     compile_feasible_summary,
     compile_hard_constraints,
     decision_truth_from_fatbeans,
@@ -404,6 +405,7 @@ def _round_rows_for_events(
     tail_value_review_entries: Mapping[tuple[str, int], Any] | None = None,
     posterior_trials: int = 512,
     posterior_seed: int = 0,
+    ccv_options: V3CcvOptions | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     prior_cache: dict[int, dict[str, Any]] = {}
@@ -555,6 +557,7 @@ def _round_rows_for_events(
                 underestimate_entry=underestimate_entry,
                 tail_review_entry=tail_review_entry,
                 hero=str(diagnostic_fields.get("hero") or "unknown"),
+                ccv_options=ccv_options,
             )
             if map_id is not None and tables is not None and posterior_trials > 0
             else None
@@ -642,6 +645,7 @@ def evaluate_paths(
     tail_value_review_entries: Mapping[tuple[str, int], Any] | None = None,
     posterior_trials: int = 512,
     posterior_seed: int = 0,
+    ccv_options: V3CcvOptions | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     rows: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
@@ -661,6 +665,7 @@ def evaluate_paths(
                 tail_value_review_entries=tail_value_review_entries,
                 posterior_trials=posterior_trials,
                 posterior_seed=posterior_seed,
+                ccv_options=ccv_options,
             )
         )
     return rows, errors
