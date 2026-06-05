@@ -27,6 +27,7 @@
 | `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
 | `scripts/summarize_v3_metric_slices.py` | v3 round/map/hero/profile 分片指标 |
 | `scripts/summarize_v3_map_audit.py` | v3 map 主键审计，附 hero/profile 分布 |
+| `scripts/summarize_v3_prior_robustness_audit.py` | v3 prior/activity/prior-stress 分片审计 |
 | `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计 |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
 | `scripts/summarize_v3_ccv_holdout.py` | v3 CCV/count-cell-value 候选 session holdout 审计 |
@@ -51,6 +52,7 @@
 | `tests/test_inference_v3_underestimate_repair.py` | v3 低估上修 shadow report 测试 |
 | `tests/test_inference_v3_tail_value_review.py` | v3 tail/value review shadow report 测试 |
 | `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
+| `tests/test_summarize_v3_prior_robustness_audit.py` | v3 prior robustness 分片审计测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
 | `tests/test_summarize_v3_ccv_holdout.py` | v3 CCV session holdout 审计测试 |

@@ -2905,3 +2905,50 @@ robust_activity_candidate=58
 
 - archive/live/model_eval 现在使用同一套 prior flat 字段与 robustness 语义。
 - live 不会把活动期/缺表地图静默当成普通 prior；这只进入 shadow artifact 和 model_eval，不改变 v2 formal 出价或 UI 主建议。
+
+## 2026-06-06 checkpoint：prior-stress 分片审计
+
+完成内容：
+
+- 新增 `scripts/summarize_v3_prior_robustness_audit.py`。
+- 新增 `tests/test_summarize_v3_prior_robustness_audit.py`。
+- 审计脚本支持按 `v3_robust_status`、`v3_robust_reason`、`fallback_mode`、`map_id`、`hero_map_evidence_profile` 分组。
+- 输出 ready/posterior-ready/metric rows、trusted/activity/stressed 计数、reason/fallback/scope 分布、formal/q6 指标，以及 hard evidence target 相对 prior expected 的 ratio。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_summarize_v3_prior_robustness_audit.py tests\test_inference_v3_prior_robustness.py tests\test_evaluate_fatbeans_v3_samples.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --by v3_robust_status --by v3_robust_reason --by map_id --top 6
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --by v3_robust_status --by map_id --top 4
+```
+
+结果：
+
+```text
+focused tests:
+11 passed
+
+main archive prior_stressed:
+ready=94 post_ready=94 metric=94 trusted=0/94
+summary_likelihood=92 strict=2
+mae=381373.9 bias=-124899.4 below=0.670213 p90_cover=0.595745
+q6_count_mae=1.58 q6_cells_mae=8.01 q6_value_mae=484855.1
+top reasons:
+total_cells_above_prior=48
+q6_cells_above_prior=32
+total_count_above_prior=15
+q6_value_above_prior=13
+total_value_above_prior=13
+
+activity cohort:
+prior_unavailable ready=58 post_ready=0 metric=0
+trusted=0/58 activity=58
+fallback=missing_prior_truth_only
+```
+
+结论：
+
+- prior-stressed 行不是少量噪声：它们 MAE、below-rate、P90 coverage 都明显差于弱 fallback 总体。
+- 主要压力来自 total/q6 cells 高于旧 prior，而不是 q6 count；下一步更应审计 capacity/cells/value evidence，而不是继续改 q6 count prior。
+- 252x 活动 cohort 已明确没有 posterior-ready/metric rows，不会混入普通准确率。

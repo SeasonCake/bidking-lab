@@ -1382,3 +1382,23 @@ applied_hurts=2502
 
 - v3 的 promotion gate 依赖 `prior_robustness`，如果 live 缺字段，局后实战样本会和 archive 审计分母不一致。
 - 活动爆率/品质调整通常先在实战 live 里出现；live 必须先记录 drift 信号，再决定是否纳入普通校准或单独建 activity overlay prior。
+
+## D-v3-055：prior-stressed 行必须先分片审计，不进入普通 sampler 校准分母
+
+2026-06-06 起，`summarize_v3_prior_robustness_audit.py` 是处理 `prior_stress_score>0` 的默认入口。当前决策：
+
+- `prior_stressed` 行不得直接混入普通 formal/value sampler calibration 分母。
+- sampler/holdout 报告必须至少分开：
+  - trusted strict；
+  - weak fallback；
+  - prior-stressed；
+  - activity/prior-unavailable。
+- 如果压力原因是 `total_cells_above_prior` 或 `q6_cells_above_prior`，优先审计 evidence/capacity/cells 一致性，不直接调高 q6 value。
+- 如果压力原因是 `q6_value_above_prior` / `total_value_above_prior`，可作为 formal/value sampler 候选审计分片，但仍需 holdout 与 high-over guard。
+- activity/prior-unavailable 行只能用于鲁棒性、parser/window/truth 或 activity overlay prior 设计，不计普通模型准确率。
+
+原因：
+
+- 64-trial archive 中 `prior_stressed=94`，其中 `summary_likelihood=92`。
+- `prior_stressed` 分片 `below=0.670213`、`p90_cover=0.595745`，明显比普通 weak fallback 更差。
+- 最大压力来自 cells/count/capacity 证据，不是单纯 q6 count prior 问题。

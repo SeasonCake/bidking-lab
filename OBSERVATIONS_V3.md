@@ -1958,3 +1958,65 @@ tests/test_live_monitor.py:
 
 - 后续实战样本如果遇到一周活动或新表缺失，live 日志会直接暴露 prior 不可信，而不是只留下“估值低/高”的结果。
 - 该实现仍是 shadow/audit-only；当前 UI 主建议和 formal bid 未改。
+
+## O-v3-060：prior-stressed 分片集中在 cells/capacity mismatch
+
+2026-06-06 使用 `summarize_v3_prior_robustness_audit.py --posterior-trials 64` 审计默认 archive：
+
+```text
+prior_stressed:
+ready=94
+post_ready=94
+metric=94
+trusted=0/94
+summary_likelihood=92
+strict=2
+mae=381373.9
+bias=-124899.4
+below=0.670213
+p90_cover=0.595745
+q6_count_mae=1.58
+q6_cells_mae=8.01
+q6_value_mae=484855.1
+
+reason counts:
+total_cells_above_prior=48
+q6_cells_above_prior=32
+total_count_above_prior=15
+q6_value_above_prior=13
+total_value_above_prior=13
+q6_count_above_prior=1
+```
+
+对照：
+
+```text
+weak_prior_fallback:
+ready=1107
+mae=310604.9
+below=0.506775
+p90_cover=0.793135
+
+ok/trusted:
+ready=359
+mae=326972.7
+below=0.515320
+p90_cover=0.660167
+```
+
+活动 cohort：
+
+```text
+prior_unavailable ready=58
+post_ready=0
+metric=0
+activity=58
+fallback=missing_prior_truth_only
+```
+
+解读：
+
+- `prior_stressed` 是特殊风险分片，不是普通 fallback 行；它会同时拉高 below 与 P90 miss 风险。
+- 主要问题更像 cells/capacity/evidence-prior mismatch：`total_cells_above_prior` 和 `q6_cells_above_prior` 占主导。
+- q6 count alone 不是主因，只有 `q6_count_above_prior=1`。
+- 下一步 formal/value sampler 设计应把 prior-stressed 行单独 holdout，不应把它们当普通低估样本直接上修。
