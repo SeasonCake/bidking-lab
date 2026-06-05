@@ -30,6 +30,8 @@ data/processed/**
 !data/processed/maps.json
 !data/processed/map_fragment_fixes.json
 !data/processed/v3_prior_calibration_shadow.json
+!data/processed/v3_underestimate_repair_shadow.json
+!data/processed/v3_tail_value_review_shadow.json
 
 # Local-only upstream reference clones (not vendored)
 external_references/**

@@ -1926,3 +1926,66 @@ ccv_sampler=blocked
 - `ethan|2601` 是明确 hurt group，tail/value sampler 不能全局启用。
 - profile 粒度仍无可用 holdout 候选，不能按 profile promotion。
 - tail replacement 继续是 audit/helper，不进入 formal decision 或正式出价。
+
+## 2026-06-05 checkpoint：v3 tail/value review shadow namespace
+
+实现：
+
+- 新增 `src/bidking_lab/inference/v3/tail_value_review.py`。
+- 新增 `tests/test_inference_v3_tail_value_review.py`。
+- 新增 `data/processed/v3_tail_value_review_shadow.json`。
+- `src/bidking_lab/inference/v3/pipeline.py` 新增 `tail_review` report，并输出 `v3_tail_review_*`。
+- `scripts/evaluate_fatbeans_v3_samples.py`：
+  - 默认读取 tail review entry 表。
+  - 新增 `--tail-value-review` / `--no-tail-value-review`。
+  - summary 输出 `v3_tail_review_candidate_rows`、`v3_tail_review_hurt_guard_rows`、`v3_tail_review_active_rows`。
+- `src/bidking_lab/live/monitor.py`：
+  - live v3 shadow 读取同一 entry 表。
+  - `model_eval` 归档 tail review candidate/hurt/status 与 tail/q6-tail p50/p90 对照字段。
+- `.gitignore` 明确允许提交 `v3_underestimate_repair_shadow.json` 与 `v3_tail_value_review_shadow.json`。
+
+entry 表当前只启用保守三类：
+
+```text
+aisha|2506 status=watch_only_q6_tail_value_candidate q6_tail_delta=-5562.9
+aisha|2601 status=watch_only_needs_evidence q6_tail_delta=-32770.1 hidden_requires_separate_validation
+ethan|2601 status=blocked_tail_estimate_hurts q6_tail_delta=+24471.3
+```
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_tail_value_review.py tests\test_inference_v3_pipeline.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 128
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_promotion_readiness.py --posterior-trials 128
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_pipeline.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_inference_v3_underestimate_repair.py tests\test_inference_v3_tail_value_review.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_summarize_v3_residual_profile_candidates.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_summarize_v3_underestimate_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py tests\test_summarize_v3_ccv_holdout.py tests\test_summarize_v3_tail_value_candidates.py tests\test_summarize_v3_tail_value_holdout.py tests\test_summarize_v3_promotion_readiness.py tests\test_live_monitor.py -q
+```
+
+结果：
+
+- archive/live related tests：`37 passed`。
+- v3 core/live path：`96 passed`。
+- archive 128-trial：
+
+```text
+windows=1551 ready=1534 parse_errors=0
+v3_tail_review_candidate_rows=43
+v3_tail_review_hurt_guard_rows=40
+v3_tail_review_active_rows=0
+```
+
+- readiness 128-trial：
+
+```text
+overall_status=not_ready blocked_gates=4
+tail_review_candidate_rows=43 tail_review_hurt_guard_rows=40
+tail_holdout_q6_delta=-4144.4
+```
+
+结论：
+
+- tail/value review 已从离线审计推进到 archive/live 共享 shadow namespace。
+- `v3_tail_review_active=false`、`v3_tail_review_affects_bid=false`，不改变 formal/live 出价。
+- readiness 与 evaluator 现在都能看到 candidate/hurt 行数，避免 archive/live 字段漂移。
+- 下一步可以在该 namespace 下设计更精细的 tail/value sampler 或 guard，不需要碰 UI 主建议。

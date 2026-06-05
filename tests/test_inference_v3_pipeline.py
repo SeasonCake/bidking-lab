@@ -76,3 +76,6 @@ def test_v3_shadow_pipeline_emits_all_shadow_namespaces() -> None:
     assert flat["v3_under_available"] is True
     assert flat["v3_under_status"] == "missing_entry"
     assert flat["v3_under_affects_bid"] is False
+    assert flat["v3_tail_review_available"] is True
+    assert flat["v3_tail_review_status"] == "missing_entry"
+    assert flat["v3_tail_review_affects_bid"] is False

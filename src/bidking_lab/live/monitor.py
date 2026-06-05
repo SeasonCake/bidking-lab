@@ -50,13 +50,16 @@ from bidking_lab.inference.v3 import (
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
     empty_residual_gate_flat_dict,
+    empty_tail_value_review_flat_dict,
     empty_underestimate_repair_flat_dict,
     estimate_shadow_pipeline,
     events_from_fatbeans,
     load_prior_calibration_entries,
+    load_tail_value_review_entries,
     load_underestimate_repair_entries,
     ordinary_shape_replacement_values,
     sample_truth_bank,
+    tail_value_review_entry_for,
     underestimate_entry_for,
 )
 from bidking_lab.inference.map_likelihood import estimate_map_likelihood
@@ -112,6 +115,7 @@ _SAFE_SESSION_TOTAL_FIELDS = (
 )
 _V3_PRIOR_CALIBRATION_CACHE: dict[int, Any] | None = None
 _V3_UNDERESTIMATE_REPAIR_CACHE: dict[tuple[str, int], Any] | None = None
+_V3_TAIL_VALUE_REVIEW_CACHE: dict[tuple[str, int], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -1773,6 +1777,39 @@ def _model_eval_row(
     v3_under_q6_formal_p90 = _parse_int_text(
         v3_shadow.get("v3_under_q6_formal_decision_value_p90")
     )
+    v3_tail_review_available = bool(v3_shadow.get("v3_tail_review_available"))
+    v3_tail_review_ready = bool(v3_shadow.get("v3_tail_review_ready"))
+    v3_tail_review_active = bool(v3_shadow.get("v3_tail_review_active"))
+    v3_tail_review_candidate = bool(v3_shadow.get("v3_tail_review_candidate"))
+    v3_tail_review_hurt_guard = bool(v3_shadow.get("v3_tail_review_hurt_guard"))
+    v3_tail_review_affects_bid = bool(
+        v3_shadow.get("v3_tail_review_affects_bid")
+    )
+    v3_tail_review_status = v3_shadow.get("v3_tail_review_status")
+    v3_tail_review_gate_reason = v3_shadow.get("v3_tail_review_gate_reason")
+    v3_tail_review_hero_map_id = v3_shadow.get("v3_tail_review_hero_map_id")
+    v3_tail_review_source = v3_shadow.get("v3_tail_review_source")
+    v3_tail_review_archive_sessions = _parse_int_text(
+        v3_shadow.get("v3_tail_review_archive_sessions")
+    )
+    v3_tail_review_tail_delta = _parse_float_text(
+        v3_shadow.get("v3_tail_review_tail_delta_p50_mae")
+    )
+    v3_tail_review_q6_tail_delta = _parse_float_text(
+        v3_shadow.get("v3_tail_review_q6_tail_delta_p50_mae")
+    )
+    v3_tail_review_tail_p50 = _parse_int_text(
+        v3_shadow.get("v3_tail_review_tail_replacement_decision_value_p50")
+    )
+    v3_tail_review_tail_p90 = _parse_int_text(
+        v3_shadow.get("v3_tail_review_tail_replacement_decision_value_p90")
+    )
+    v3_tail_review_q6_tail_p50 = _parse_int_text(
+        v3_shadow.get("v3_tail_review_q6_tail_replacement_decision_value_p50")
+    )
+    v3_tail_review_q6_tail_p90 = _parse_int_text(
+        v3_shadow.get("v3_tail_review_q6_tail_replacement_decision_value_p90")
+    )
     posterior_samples = None
     posterior_total_samples = None
     q6_shadow_active = bool(shadow.get("active"))
@@ -2349,6 +2386,59 @@ def _model_eval_row(
         "v3_under_q6_formal_decision_value_p50": v3_under_q6_formal_p50,
         "v3_under_q6_formal_decision_value_p90": v3_under_q6_formal_p90,
         "v3_under_diagnostics": v3_shadow.get("v3_under_diagnostics"),
+        "v3_tail_review_available": v3_tail_review_available,
+        "v3_tail_review_ready": v3_tail_review_ready,
+        "v3_tail_review_active": v3_tail_review_active,
+        "v3_tail_review_candidate": v3_tail_review_candidate,
+        "v3_tail_review_hurt_guard": v3_tail_review_hurt_guard,
+        "v3_tail_review_affects_bid": v3_tail_review_affects_bid,
+        "v3_tail_review_status": v3_tail_review_status,
+        "v3_tail_review_gate_reason": v3_tail_review_gate_reason,
+        "v3_tail_review_hero_map_id": v3_tail_review_hero_map_id,
+        "v3_tail_review_source": v3_tail_review_source,
+        "v3_tail_review_archive_sessions": v3_tail_review_archive_sessions,
+        "v3_tail_review_tail_delta_p50_mae": v3_tail_review_tail_delta,
+        "v3_tail_review_q6_tail_delta_p50_mae": v3_tail_review_q6_tail_delta,
+        "v3_tail_review_tail_replacement_decision_value_p50": (
+            v3_tail_review_tail_p50
+        ),
+        "v3_tail_review_tail_replacement_decision_value_p90": (
+            v3_tail_review_tail_p90
+        ),
+        "v3_tail_review_q6_tail_replacement_decision_value_p50": (
+            v3_tail_review_q6_tail_p50
+        ),
+        "v3_tail_review_q6_tail_replacement_decision_value_p90": (
+            v3_tail_review_q6_tail_p90
+        ),
+        "v3_tail_review_diagnostics": v3_shadow.get("v3_tail_review_diagnostics"),
+        "v3_tail_review_tail_replacement_decision_value_p50_error": (
+            v3_tail_review_tail_p50 - final_replacement_decision_value
+            if v3_tail_review_tail_p50 is not None
+            and final_replacement_decision_value is not None
+            else None
+        ),
+        "v3_tail_review_tail_replacement_decision_value_p90_under_by": (
+            max(0, final_replacement_decision_value - v3_tail_review_tail_p90)
+            if v3_tail_review_tail_p90 is not None
+            and final_replacement_decision_value is not None
+            else None
+        ),
+        "v3_tail_review_q6_tail_replacement_decision_value_p50_error": (
+            v3_tail_review_q6_tail_p50
+            - final_q6_decision_value_with_tail_replacement
+            if v3_tail_review_q6_tail_p50 is not None
+            else None
+        ),
+        "v3_tail_review_q6_tail_replacement_decision_value_p90_under_by": (
+            max(
+                0,
+                final_q6_decision_value_with_tail_replacement
+                - v3_tail_review_q6_tail_p90,
+            )
+            if v3_tail_review_q6_tail_p90 is not None
+            else None
+        ),
         "v3_under_formal_decision_value_p50_error_vs_formal": (
             v3_under_formal_p50 - final_formal_decision_value
             if v3_under_formal_p50 is not None
@@ -2932,6 +3022,7 @@ def _empty_v3_posterior_shadow(
         **empty_residual_gate_flat_dict(),
         **empty_prior_calibration_flat_dict(),
         **empty_underestimate_repair_flat_dict(),
+        **empty_tail_value_review_flat_dict(),
     }
 
 
@@ -2954,6 +3045,18 @@ def _default_v3_underestimate_repair_entries() -> dict[tuple[str, int], Any]:
             / "v3_underestimate_repair_shadow.json"
         )
     return _V3_UNDERESTIMATE_REPAIR_CACHE
+
+
+def _default_v3_tail_value_review_entries() -> dict[tuple[str, int], Any]:
+    global _V3_TAIL_VALUE_REVIEW_CACHE
+    if _V3_TAIL_VALUE_REVIEW_CACHE is None:
+        _V3_TAIL_VALUE_REVIEW_CACHE = load_tail_value_review_entries(
+            project_root()
+            / "data"
+            / "processed"
+            / "v3_tail_value_review_shadow.json"
+        )
+    return _V3_TAIL_VALUE_REVIEW_CACHE
 
 
 def _v3_posterior_shadow_summary(
@@ -2999,6 +3102,11 @@ def _v3_posterior_shadow_summary(
             hero=hero,
             map_id=map_id,
         )
+        tail_review_entry = tail_value_review_entry_for(
+            _default_v3_tail_value_review_entries(),
+            hero=hero,
+            map_id=map_id,
+        )
         pipeline = estimate_shadow_pipeline(
             map_id=int(map_id),
             map_name=bid_map.name,
@@ -3008,6 +3116,7 @@ def _v3_posterior_shadow_summary(
             replacement_values=replacement_values,
             calibration_entry=calibration_entry,
             underestimate_entry=underestimate_entry,
+            tail_review_entry=tail_review_entry,
             hero=hero,
         )
     except Exception as exc:

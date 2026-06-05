@@ -29,6 +29,11 @@ from bidking_lab.inference.v3.residual_gate import (
     gate_residual_posterior_report,
 )
 from bidking_lab.inference.v3.summary import FeasibleSummaryReport
+from bidking_lab.inference.v3.tail_value_review import (
+    TailValueReviewEntry,
+    V3TailValueReviewReport,
+    review_tail_value_posterior_report,
+)
 from bidking_lab.inference.v3.underestimate_repair import (
     UnderestimateRepairEntry,
     V3UnderestimateRepairReport,
@@ -44,6 +49,7 @@ class V3ShadowPipelineReport:
     residual_gate: V3ResidualGateReport
     calibration: V3PriorCalibrationReport
     underestimate: V3UnderestimateRepairReport
+    tail_review: V3TailValueReviewReport
 
     def to_flat_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -53,6 +59,7 @@ class V3ShadowPipelineReport:
         out.update(self.residual_gate.to_flat_dict())
         out.update(self.calibration.to_flat_dict())
         out.update(self.underestimate.to_flat_dict())
+        out.update(self.tail_review.to_flat_dict())
         return out
 
 
@@ -66,6 +73,7 @@ def estimate_shadow_pipeline(
     replacement_values: Mapping[tuple[int, int, int], int] | None = None,
     calibration_entry: PriorCalibrationEntry | None = None,
     underestimate_entry: UnderestimateRepairEntry | None = None,
+    tail_review_entry: TailValueReviewEntry | None = None,
     hero: str | None = None,
 ) -> V3ShadowPipelineReport:
     posterior = estimate_q6_posterior_from_truths(
@@ -105,6 +113,11 @@ def estimate_shadow_pipeline(
         underestimate_entry,
         hero=hero,
     )
+    tail_review = review_tail_value_posterior_report(
+        posterior,
+        tail_review_entry,
+        hero=hero,
+    )
     return V3ShadowPipelineReport(
         posterior=posterior,
         ccv_posterior=ccv_posterior,
@@ -112,6 +125,7 @@ def estimate_shadow_pipeline(
         residual_gate=residual_gate,
         calibration=calibration,
         underestimate=underestimate,
+        tail_review=tail_review,
     )
 
 

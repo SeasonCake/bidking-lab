@@ -542,6 +542,9 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["v3_posterior_shadow"]["v3_under_affects_bid"] is False
     assert artifact["v3_posterior_shadow"]["v3_under_active"] is False
     assert artifact["v3_posterior_shadow"]["v3_under_candidate"] is False
+    assert artifact["v3_posterior_shadow"]["v3_tail_review_available"] is True
+    assert artifact["v3_posterior_shadow"]["v3_tail_review_affects_bid"] is False
+    assert artifact["v3_posterior_shadow"]["v3_tail_review_active"] is False
     assert artifact["q6_residual_boost_shadow"]["label"] == "profile_b5"
     assert artifact["q6_residual_boost_shadow"]["gate"] == "shipwreck_profile_v1"
     assert artifact["q6_residual_boost_shadow"]["trials"] == 10
@@ -727,6 +730,18 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert "v3_under_scale" in artifact["model_eval"]
     assert "v3_under_formal_decision_value_p50" in artifact["model_eval"]
     assert "v3_under_formal_decision_value_p50_error_vs_formal" in artifact[
+        "model_eval"
+    ]
+    assert artifact["model_eval"]["v3_tail_review_affects_bid"] is False
+    assert artifact["model_eval"]["v3_tail_review_active"] is False
+    assert "v3_tail_review_ready" in artifact["model_eval"]
+    assert "v3_tail_review_candidate" in artifact["model_eval"]
+    assert "v3_tail_review_hurt_guard" in artifact["model_eval"]
+    assert "v3_tail_review_status" in artifact["model_eval"]
+    assert "v3_tail_review_tail_replacement_decision_value_p50" in artifact[
+        "model_eval"
+    ]
+    assert "v3_tail_review_q6_tail_replacement_decision_value_p50" in artifact[
         "model_eval"
     ]
     assert "q6_residual_boost_shadow_active" in artifact["model_eval"]

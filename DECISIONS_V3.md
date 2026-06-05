@@ -869,3 +869,43 @@ hero_map_evidence_profile candidate_rows=0
 - `2506` 低估主线继续并行看 bounded upshift 和 tail/q6-tail review。
 - 若设计 tail/value sampler，先创建独立 shadow namespace，并内置 `ethan|2601` 这类 hurt guard。
 - 补样应优先补 `2506` 与 `2601` 的 hero/map/profile 分层，而不是盲目增加 trials。
+
+## D-v3-039：tail/value review 进入 shared pipeline，但保持 bid-safe
+
+2026-06-05 起，tail/value review 不再只停留在离线脚本；`estimate_shadow_pipeline()` 输出 `v3_tail_review_*` namespace，archive evaluator 和 live monitor 使用同一 entry 表。
+
+当前决策：
+
+- `v3_tail_review_*` 是 shadow-only。
+- `v3_tail_review_active=false` 恒成立。
+- `v3_tail_review_affects_bid=false` 恒成立。
+- `watch_only_q6_tail_value_candidate` 只表示 review candidate，不表示 formal promotion。
+- `blocked_tail_estimate_hurts` 必须在 live/archive 字段中显式保留为 hurt guard。
+
+当前 entry 表：
+
+```text
+aisha|2506 -> watch_only_q6_tail_value_candidate
+aisha|2601 -> watch_only_needs_evidence, hidden_requires_separate_validation
+ethan|2601 -> blocked_tail_estimate_hurts
+```
+
+原因：
+
+- `aisha|2506` 是当前 tail/q6-tail 低估诊断最稳定的正向切片。
+- `aisha|2601` 虽然 holdout 正向，但 hidden 仍需单独验证，不能直接标成 candidate。
+- `ethan|2601` 明确 tail hurt，必须让 live/archive 都能看见该 guard。
+
+硬边界：
+
+- 不覆盖 `v3_post_*`。
+- 不覆盖 `v3_under_*`。
+- 不进入 UI 主建议。
+- 不进入正式出价。
+- 不用 tail replacement truth 替代 formal truth。
+
+下一步：
+
+- 在 `v3_tail_review_*` 上继续做 sampler/guard 设计。
+- 若后续要展示给 UI，只能作为辅助审计提示，不能替代主估价。
+- 每次更新 entry 表后必须跑 evaluator、readiness、live monitor tests。

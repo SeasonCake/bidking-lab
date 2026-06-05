@@ -1318,3 +1318,40 @@ next_actions=continue 2506 bounded upshift/tail-value shadow validation | collec
 - `aisha|2506` 的正向 holdout 支持继续做 review/sampler 设计，但不能直接接 formal。
 - `ethan|2601` 必须作为 hurt guard；否则 tail/value 会把一部分 hidden/long-tail 场景带偏。
 - profile 样本仍不够，当前只能做 hero/map 级观察和 targeted sampling 建议。
+
+## O-v3-043：tail/value review 已进入 archive/live 共享 shadow 字段
+
+2026-06-05 新增 `v3_tail_review_*` pipeline namespace 后，archive evaluator 和 live monitor 都会输出 tail review 的 candidate/hurt/status 字段。
+
+archive 128-trial：
+
+```text
+windows=1551 ready=1534 parse_errors=0
+v3_tail_review_candidate_rows=43
+v3_tail_review_hurt_guard_rows=40
+v3_tail_review_active_rows=0
+```
+
+readiness 128-trial：
+
+```text
+overall_status=not_ready blocked_gates=4
+tail_review_candidate_rows=43
+tail_review_hurt_guard_rows=40
+tail_holdout_q6_delta=-4144.4
+```
+
+entry 表解读：
+
+```text
+aisha|2506 candidate rows=43
+ethan|2601 hurt guard rows=40
+aisha|2601 marked needs_evidence, not candidate, because hidden still needs separate validation
+```
+
+解读：
+
+- 现在 live 归档能区分 “Aisha 2506 tail review candidate” 与 “Ethan 2601 tail hurt guard”。
+- 这解决的是审计/诊断一致性，不是正式精度提升；formal 估值仍未切换。
+- `v3_tail_review_active_rows=0` 证明该 namespace 未进入正式出价。
+- 后续 tail sampler 可以在这个 namespace 下迭代，不必再直接挤进 `v3_post_*`。

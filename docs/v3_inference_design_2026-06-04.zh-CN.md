@@ -747,7 +747,7 @@ hero_map_id min_sessions=6 candidate_only cells_delta=+0.4 q6_formal_delta=+9288
 新增 `src/bidking_lab/inference/v3/pipeline.py`，把 v3 shadow 的完整报告链集中到 `estimate_shadow_pipeline()`：
 
 ```text
-posterior -> CCV -> residual -> residual_gate -> calibration -> underestimate
+posterior -> CCV -> residual -> residual_gate -> calibration -> underestimate -> tail_review
 ```
 
 archive evaluator 和 live monitor 现在只准备输入，然后调用同一 pipeline 展开：
@@ -758,6 +758,7 @@ archive evaluator 和 live monitor 现在只准备输入，然后调用同一 pi
 - `v3_resid_gate_*`
 - `v3_cal_*`
 - `v3_under_*`
+- `v3_tail_review_*`
 
 设计影响：
 
@@ -809,6 +810,37 @@ hero_map_evidence_profile candidate_rows=0
 2. `ethan|2601` 说明 tail/value sampler 必须有 hurt guard，不能全局启用。
 3. profile 粒度仍不能 promotion；后续需要 targeted samples 或更稳健的分层 shrinkage。
 4. tail replacement 继续是 audit/helper，不改变 formal MAE、formal decision 或正式出价。
+
+### 2026-06-05 tail/value review shadow namespace
+
+新增 `src/bidking_lab/inference/v3/tail_value_review.py` 后，tail/value review 进入 archive/live 共享 pipeline：
+
+```text
+posterior -> CCV -> residual -> residual_gate -> calibration -> underestimate -> tail_review
+```
+
+当前 entry 表：
+
+```text
+aisha|2506 status=watch_only_q6_tail_value_candidate q6_tail_delta=-5562.9
+aisha|2601 status=watch_only_needs_evidence hidden_requires_separate_validation
+ethan|2601 status=blocked_tail_estimate_hurts q6_tail_delta=+24471.3
+```
+
+当前 128-trial archive：
+
+```text
+v3_tail_review_candidate_rows=43
+v3_tail_review_hurt_guard_rows=40
+v3_tail_review_active_rows=0
+```
+
+设计影响：
+
+1. tail/value review 从离线审计变成可被 live/archive 共同引用的 shadow report。
+2. `v3_tail_review_active=false`、`v3_tail_review_affects_bid=false` 是硬边界。
+3. `aisha|2601` 不标为 candidate，避免 hidden 样本不足时过早推广。
+4. 后续 sampler/guard 可以围绕 `v3_tail_review_*` 迭代，而不是直接修改 `v3_post_*`。
 
 ### 2026-06-05 formal promotion readiness
 

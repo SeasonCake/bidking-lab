@@ -22,10 +22,12 @@ if str(SCRIPTS) not in sys.path:
 from evaluate_fatbeans_v3_samples import (  # noqa: E402
     _default_calibration_path,
     _default_paths,
+    _default_tail_value_review_path,
     _default_underestimate_repair_path,
     evaluate_paths,
     load_monitor_tables,
     load_prior_calibration_entries,
+    load_tail_value_review_entries,
     load_underestimate_repair_entries,
     summarize_rows,
 )
@@ -411,6 +413,9 @@ def summarize_readiness(
                 "v3_under_delta_formal_p50_mae",
                 "v3_ccv_delta_q6_count_p50_mae",
                 "v3_ccv_delta_q6_cells_p50_mae",
+                "v3_tail_review_candidate_rows",
+                "v3_tail_review_hurt_guard_rows",
+                "v3_tail_review_active_rows",
                 "v3_resid_gate_active_rows",
             )
         },
@@ -468,6 +473,8 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"under_delta={summary['v3_under_delta_formal_p50_mae']}",
                 f"ccv_cells_delta={summary['v3_ccv_delta_q6_cells_p50_mae']}",
                 f"ccv_holdout_rows={result['ccv_holdout']['candidate_rows']}",
+                f"tail_review_candidate_rows={summary['v3_tail_review_candidate_rows']}",
+                f"tail_review_hurt_guard_rows={summary['v3_tail_review_hurt_guard_rows']}",
                 f"tail_holdout_q6_delta={result['tail_holdout']['candidate_delta_q6_tail_p50_mae']}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
             )
@@ -505,6 +512,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--format", choices=("summary", "json"), default="summary")
     parser.add_argument("--posterior-trials", type=int, default=512)
     parser.add_argument("--posterior-seed", type=int, default=0)
+    parser.add_argument(
+        "--tail-value-review",
+        type=Path,
+        default=_default_tail_value_review_path(),
+    )
+    parser.add_argument("--no-tail-value-review", action="store_true")
     args = parser.parse_args(argv)
 
     rows, errors = evaluate_paths(
@@ -515,6 +528,11 @@ def main(argv: list[str] | None = None) -> int:
         ),
         underestimate_repair_entries=load_underestimate_repair_entries(
             _default_underestimate_repair_path()
+        ),
+        tail_value_review_entries=(
+            {}
+            if args.no_tail_value_review
+            else load_tail_value_review_entries(args.tail_value_review)
         ),
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,

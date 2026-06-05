@@ -17,7 +17,9 @@
 | `src/bidking_lab/inference/v3/` | v3 推理引擎新包 |
 | `src/bidking_lab/inference/v3/pipeline.py` | archive/live 共用 v3 shadow 推理链路 |
 | `src/bidking_lab/inference/v3/underestimate_repair.py` | v3 低估上修 shadow report |
+| `src/bidking_lab/inference/v3/tail_value_review.py` | v3 tail/value review shadow report 与 hurt guard |
 | `data/processed/v3_underestimate_repair_shadow.json` | v3 hero/map 低估上修 shadow entry 表 |
+| `data/processed/v3_tail_value_review_shadow.json` | v3 tail/value review shadow entry 表 |
 | `scripts/summarize_v3_evidence_coverage.py` | v3 evidence coverage 检查 |
 | `scripts/summarize_v3_constraints.py` | v3 hard constraint compiler 摘要 |
 | `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator |
@@ -36,6 +38,7 @@
 | `tests/test_inference_v3_evidence_registry.py` | v3 registry/constraint 骨架测试 |
 | `tests/test_inference_v3_pipeline.py` | v3 archive/live 共享推理 pipeline 测试 |
 | `tests/test_inference_v3_underestimate_repair.py` | v3 低估上修 shadow report 测试 |
+| `tests/test_inference_v3_tail_value_review.py` | v3 tail/value review shadow report 测试 |
 | `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
@@ -90,7 +93,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 
 - Python scripts：88
 - PowerShell scripts：13
-- test files：90
+- test files：91
 
 策略：
 

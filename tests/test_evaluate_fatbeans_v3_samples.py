@@ -488,6 +488,9 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["v3_cal_active_rows"] == 1
     assert summary["v3_cal_formal_p50_mae"] == 20
     assert summary["v3_cal_delta_formal_p50_mae"] == -10
+    assert summary["v3_tail_review_candidate_rows"] == 0
+    assert summary["v3_tail_review_hurt_guard_rows"] == 0
+    assert summary["v3_tail_review_active_rows"] == 0
 
 
 def test_v3_prebid_rows_separate_no_state_windows() -> None:

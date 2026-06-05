@@ -1,0 +1,62 @@
+{
+  "active": false,
+  "affects_bid": false,
+  "generated_at": "2026-06-05",
+  "source": "archive_tail_value_holdout_128_trials",
+  "entries": [
+    {
+      "hero": "aisha",
+      "map_id": 2506,
+      "map_family": "shipwreck",
+      "archive_windows": 43,
+      "archive_sessions": 13,
+      "status": "watch_only_q6_tail_value_candidate",
+      "gate_reason": "tail_holdout_q6_positive",
+      "tail_delta_p50_mae": -7935.2,
+      "q6_tail_delta_p50_mae": -5562.9,
+      "tail_p90_coverage": 0.627907,
+      "q6_tail_p90_coverage": 0.674419,
+      "flags": [
+        "tail_holdout_positive",
+        "q6_tail_holdout_positive"
+      ],
+      "source": "archive_tail_value_holdout_128_trials"
+    },
+    {
+      "hero": "aisha",
+      "map_id": 2601,
+      "map_family": "hidden",
+      "archive_windows": 38,
+      "archive_sessions": 11,
+      "status": "watch_only_needs_evidence",
+      "gate_reason": "hidden_requires_separate_validation",
+      "tail_delta_p50_mae": -7367.3,
+      "q6_tail_delta_p50_mae": -32770.1,
+      "tail_p90_coverage": 0.289474,
+      "q6_tail_p90_coverage": 0.421053,
+      "flags": [
+        "hidden_requires_separate_validation",
+        "q6_tail_holdout_positive"
+      ],
+      "source": "archive_tail_value_holdout_128_trials"
+    },
+    {
+      "hero": "ethan",
+      "map_id": 2601,
+      "map_family": "hidden",
+      "archive_windows": 40,
+      "archive_sessions": 11,
+      "status": "blocked_tail_estimate_hurts",
+      "gate_reason": "tail_holdout_hurts",
+      "tail_delta_p50_mae": 13339.4,
+      "q6_tail_delta_p50_mae": 24471.3,
+      "tail_p90_coverage": 0.825,
+      "q6_tail_p90_coverage": 0.7,
+      "flags": [
+        "tail_holdout_hurts_total",
+        "tail_holdout_hurts_q6"
+      ],
+      "source": "archive_tail_value_holdout_128_trials"
+    }
+  ]
+}
