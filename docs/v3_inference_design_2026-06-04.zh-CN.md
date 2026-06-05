@@ -1158,6 +1158,41 @@ profile holdout status=blocked_holdout_directional_hurt
 4. q6_cells 未来只有在 capacity/total consistency、changed-row hurt、directional error 同时通过后才允许重新打开。
 5. formal decision_value 继续使用当前正式口径；该设计不改变 live 出价。
 
+### 2026-06-05 q6_count movement-policy gate
+
+为避免继续把 CCVC 当成一个整体调权重问题，direction audit/holdout 新增 movement-policy 与复合分组：
+
+- `all`：保持原始 candidate movement。
+- `up_only`：只接受 candidate > baseline 的 q6_count 上移。
+- `down_only`：只接受 candidate < baseline 的 q6_count 下移。
+- `map_id,evidence_profile_key`：诊断 map/profile 交叉稳定性。
+- include/exclude regex：验证候选 gate 是否能用可解释 profile token 表达。
+
+当前设计结论：
+
+1. `up_only` 不能作为低估修复；收益太弱且仍有 holdout hurt。
+2. `down_only` 可形成更稳定的 over-count 修正，但会提高 below-rate。
+3. bare `shape` profile 在 128/256 trials 间不稳定，不能进入候选 gate。
+4. `tool:category+item+shape`、`public:max_item_cells+item+shape` 是可继续观察的 down-only shadow profile。
+5. 所有 q6_count policy gate 仍不影响 formal decision；正式使用前必须同时通过 trials stability、map holdout、profile holdout、below-rate 和 live shadow 一致性。
+
+256-trial 当前最稳候选：
+
+```text
+group_field=evidence_profile_key
+movement_policy=down_only
+min_windows=30
+exclude=^q6_count:shape$
+status=watch
+delta=-0.025
+hurt_rate=0.025478
+directional_error=0.006369
+baseline_below=0.401274
+candidate_below=0.420382
+```
+
+这条候选只说明 v3 能识别一部分 q6_count 过高场景，不说明低估问题已经解决。下一步低估修复应优先放在 q6 value/cells 的 capacity/total consistency 与 value sampler。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

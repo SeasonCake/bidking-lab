@@ -1225,3 +1225,37 @@ q6_count directional_error=0.048980
 - freeze-cells 消除了 q6_cells 误移动，但没有解决 q6_count 在部分 evidence profile 下的反向移动。
 - 当前收益更像“可控 shadow 基线”，不是可上线推荐。
 - v3 正式使用必须证明低估风险下降、normal absolute error 不恶化，并且 changed-row hurt 受控。
+
+## D-v3-049：q6_count movement-policy 仍为审计候选，不作为低估修复推广
+
+2026-06-05 的 movement-policy matrix 后，v3 暂不把 q6_count policy gate 接入 formal。
+
+当前决策：
+
+- `summarize_v3_ccv_direction_*` 的 `--movement-policy`、复合 group-field、candidate include/exclude 只作为 audit 工具。
+- `down_only + evidence_profile_key + min_windows=30 + exclude ^q6_count:shape$` 可以作为 q6_count over-count 修正 shadow 候选。
+- 该候选不得作为低估修复推广；它会提高 q6_count below-rate。
+- `map_id,evidence_profile_key` 硬交叉在当前样本量下过稀疏，不作为 promotion gate。
+- q6_count gate promotion 以后必须同时看 sampler stability、below-rate、map holdout 和 profile holdout。
+
+当前结果：
+
+```text
+128-trial matrix:
+all/up_only/down_only x map/profile/composite 均未整体通过。
+
+256-trial profile down_only min_windows=30 exclude bare shape:
+status=watch
+candidate_rows=157
+delta=-0.025
+hurt_rate=0.025478
+directional_error=0.006369
+baseline_below=0.401274
+candidate_below=0.420382
+```
+
+原因：
+
+- `up_only` 更符合“低估修复”直觉，但 archive holdout 收益太弱且仍有 applied hurt。
+- `down_only` 的 MAE 改善来自修正 q6_count 过高；它与实战低估问题方向不同。
+- bare `shape` 在 128/256 trials 间不稳定，说明 promotion gate 必须包含 sampler stability。

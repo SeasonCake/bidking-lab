@@ -1719,3 +1719,44 @@ q6_count directional_error=0.048980
 - q6_count 的平均改善仍然存在，但有多个 evidence profile 在 holdout 下伤害明显。
 - 这说明 v3 需要的是 profile-aware count likelihood/gate，而不是继续放宽固定 prior 或整体调权重。
 - 正式可用前至少还需要：count movement 稳定、低估风险下降、P90 over 控制、live shadow 与 archive 一致。
+
+## O-v3-053：q6_count policy matrix 显示 down_only 可控但不解决低估
+
+2026-06-05 新增 movement-policy matrix 后，128-trial 结果显示所有基础组合仍 blocked：
+
+```text
+evidence_profile_key all       delta=-0.012 blocked
+evidence_profile_key up_only   delta=-0.004 blocked
+evidence_profile_key down_only delta=-0.041 blocked by item+shape+layout
+map_id all                     delta=-0.017 blocked by 2508,2405,2506,2401
+map_id up_only                 delta=-0.020 blocked by 2508,2405
+map_id down_only               delta=+0.020 blocked by 2506,2401
+map_id,evidence_profile_key    candidate_rows low and harmful
+```
+
+提高 `min_windows=30` 后，128-trial 的 profile down_only 可过，但 256-trial 复验显示 bare `shape` 不稳定：
+
+```text
+256-trial profile down_only min_windows=30:
+status=blocked_holdout_directional_hurt
+applied_hurts=q6_count:shape
+```
+
+排除 bare `shape` 后，256-trial 可过：
+
+```text
+status=watch
+candidate_rows=157
+delta=-0.025
+hurt_rate=0.025478
+directional_error=0.006369
+baseline_below=0.401274
+candidate_below=0.420382
+```
+
+解读：
+
+- sampler trials 会改变部分 profile gate 结论；promotion 必须有 stability check。
+- `down_only` 降低 MAE，但增加 below-rate，和“实战低估修复”目标相冲突。
+- `tool:category+item+shape` 与 `public:max_item_cells+item+shape` 比 bare `shape` 更稳定，但仍只能作为 shadow。
+- 下一步应转向 q6 value/cells 的公共总格、容量一致性和 value sampler，而不是继续把 q6_count 下修。

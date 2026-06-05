@@ -2485,3 +2485,68 @@ q6_cells changed=0 delta=0.000
 - 但 q6_count 的 holdout directional hurt 仍未清除，尤其 `item+shape+layout`、`public:total+item+shape`、`public:max_item_cells+item+shape`。
 - 该路径可作为 v3 下一步 count-only shadow baseline，但不能进入 formal live 出价。
 - 距离正式使用的主要缺口不是 UI 或归档，而是 evidence profile 下 q6_count movement 的稳定性与 promotion gate。
+
+## 2026-06-05 checkpoint：v3 CCVC q6_count movement-policy matrix
+
+实现：
+
+- `summarize_v3_ccv_direction_audit.py` 新增 `--movement-policy all|up_only|down_only`。
+- `summarize_v3_ccv_direction_holdout.py` 新增：
+  - `--movement-policy`
+  - 复合 `--group-field`，例如 `map_id,evidence_profile_key`
+  - `--candidate-include-pattern` / `--candidate-exclude-pattern`
+  - 摘要输出 candidate below-rate。
+- 新增 `scripts/summarize_v3_ccvc_count_policy_matrix.py`，一次加载 archive 后批量比较 group-field x movement-policy。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_ccv_direction_audit.py tests\test_summarize_v3_ccv_direction_holdout.py tests\test_summarize_v3_ccvc_count_policy_matrix.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccvc_count_policy_matrix.py --posterior-trials 128 --ccv-component-freeze-cells
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_holdout.py --posterior-trials 256 --candidate-prefix v3_ccvc_ --ccv-component-freeze-cells --group-field evidence_profile_key --component q6_count --movement-policy down_only --min-windows 30 --candidate-exclude-pattern "^q6_count:shape$" --top 20
+```
+
+结果：
+
+```text
+tests: 11 passed
+
+128-trial policy matrix:
+evidence_profile_key all       delta=-0.012 blocked
+evidence_profile_key up_only   delta=-0.004 blocked
+evidence_profile_key down_only delta=-0.041 blocked by item+shape+layout
+map_id all                     delta=-0.017 blocked by 2508,2405,2506,2401
+map_id up_only                 delta=-0.020 blocked by 2508,2405
+map_id down_only               delta=+0.020 blocked by 2506,2401
+map_id,evidence_profile_key    sparse and harmful; not viable at current sample size
+
+128-trial profile down_only min_windows=30:
+status=watch
+candidate_rows=331
+delta=-0.045
+hurt_rate=0.003021
+directional_error=0.003021
+
+256-trial profile down_only min_windows=30:
+status=blocked_holdout_directional_hurt
+candidate_rows=214
+delta=-0.004
+applied_hurts=q6_count:shape
+
+256-trial profile down_only min_windows=30 exclude bare shape:
+status=watch
+candidate_rows=157
+delta=-0.025
+hurt_rate=0.025478
+directional_error=0.006369
+baseline_below=0.401274
+candidate_below=0.420382
+```
+
+结论：
+
+- 单纯 `up_only` 不能解决当前 q6_count；收益太弱且仍有 holdout hurt。
+- `down_only` 在 profile 维度最稳定，但它主要修正过高 q6_count，不是低估修复。
+- bare `shape` profile 对 sampler trials 不稳定：128-trial 可过，256-trial 变成 applied hurt。
+- `down_only + min_windows=30 + exclude ^q6_count:shape$` 是当前最稳的 q6_count movement-policy shadow 候选，但会把 below-rate 从 `0.401274` 提到 `0.420382`。
+- 该候选只适合继续作为审计/过高修正实验，不应进入 formal live；下一步低估修复仍应看 q6 value/cells/value sampler 与 public total/capacity consistency，而不是把 q6_count 继续下修。

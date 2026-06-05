@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -33,6 +34,8 @@ from evaluate_fatbeans_v3_samples import (  # noqa: E402
 from summarize_v3_ccv_direction_audit import (  # noqa: E402
     COMPONENT_FIELDS,
     DEFAULT_COMPONENTS,
+    MOVEMENT_POLICIES,
+    apply_movement_policy,
     component_fields,
     summarize_direction,
 )
@@ -60,6 +63,9 @@ def _session_id(row: dict[str, Any]) -> str:
 
 
 def _group_value(row: dict[str, Any], field: str) -> str:
+    parts = tuple(part.strip() for part in str(field).split(",") if part.strip())
+    if len(parts) > 1:
+        return "|".join(f"{part}={_group_value(row, part)}" for part in parts)
     value = row.get(field)
     return str(value) if value not in (None, "") else "unknown"
 
@@ -78,6 +84,7 @@ def _row_eval(
     component: str,
     candidates: dict[tuple[str, str], dict[str, Any]],
     fields: dict[str, tuple[str, str, str]],
+    movement_policy: str,
 ) -> dict[str, Any] | None:
     baseline_key, ccv_key, truth_key = fields[component]
     baseline = _float_or_none(row.get(baseline_key))
@@ -87,8 +94,16 @@ def _row_eval(
         return None
     group = _group_value(row, group_field)
     applied = (component, group) in candidates
-    candidate = ccv if applied else baseline
-    prediction_delta = ccv - baseline
+    candidate = (
+        apply_movement_policy(
+            baseline,
+            ccv,
+            movement_policy=movement_policy,
+        )
+        if applied
+        else baseline
+    )
+    prediction_delta = candidate - baseline
     baseline_error = baseline - truth
     candidate_error = candidate - truth
     baseline_abs = abs(baseline_error)
@@ -144,6 +159,7 @@ def _row_evals(
     candidates: dict[tuple[str, str], dict[str, Any]],
     candidate_prefix: str,
     fields: dict[str, tuple[str, str, str]],
+    movement_policy: str,
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     ready_key = f"{candidate_prefix}ready"
@@ -162,6 +178,7 @@ def _row_evals(
                 component=component,
                 candidates=candidates,
                 fields=fields,
+                movement_policy=movement_policy,
             )
             if item is not None:
                 out.append(item)
@@ -297,6 +314,21 @@ def _applied_hurt_groups(
     return groups
 
 
+def _candidate_allowed(
+    *,
+    component: str,
+    group: str,
+    include_pattern: str | None,
+    exclude_pattern: str | None,
+) -> bool:
+    label = f"{component}:{group}"
+    if include_pattern and re.search(include_pattern, label) is None:
+        return False
+    if exclude_pattern and re.search(exclude_pattern, label) is not None:
+        return False
+    return True
+
+
 def summarize_holdout(
     rows: Iterable[dict[str, Any]],
     *,
@@ -309,9 +341,14 @@ def summarize_holdout(
     max_hurt_rate: float = 0.45,
     max_directional_error_rate: float = 0.35,
     candidate_prefix: str = "v3_ccv_",
+    movement_policy: str = "all",
+    candidate_include_pattern: str | None = None,
+    candidate_exclude_pattern: str | None = None,
 ) -> dict[str, Any]:
     source_rows = tuple(rows)
     selected_components = tuple(components)
+    if movement_policy not in MOVEMENT_POLICIES:
+        raise ValueError(f"unknown movement_policy: {movement_policy}")
     fields = component_fields(candidate_prefix)
     fold_count = max(1, int(folds))
     all_evals: list[dict[str, Any]] = []
@@ -338,12 +375,19 @@ def summarize_holdout(
             max_hurt_rate=max_hurt_rate,
             max_directional_error_rate=max_directional_error_rate,
             candidate_prefix=candidate_prefix,
+            movement_policy=movement_policy,
         )
         candidate_status_counts.update(str(row["status"]) for row in train_candidates)
         candidates = {
             (str(row["component"]), str(row["group"])): row
             for row in train_candidates
             if row.get("status") == "watch_directional_candidate"
+            and _candidate_allowed(
+                component=str(row["component"]),
+                group=str(row["group"]),
+                include_pattern=candidate_include_pattern,
+                exclude_pattern=candidate_exclude_pattern,
+            )
         }
         evals = _row_evals(
             holdout_rows,
@@ -352,6 +396,7 @@ def summarize_holdout(
             candidates=candidates,
             candidate_prefix=candidate_prefix,
             fields=fields,
+            movement_policy=movement_policy,
         )
         all_evals.extend(evals)
         fold_metrics = _metrics(evals)
@@ -402,6 +447,9 @@ def summarize_holdout(
     result = {
         "group_field": group_field,
         "candidate_prefix": candidate_prefix,
+        "movement_policy": movement_policy,
+        "candidate_include_pattern": candidate_include_pattern,
+        "candidate_exclude_pattern": candidate_exclude_pattern,
         "components": selected_components,
         "folds": fold_count,
         "min_windows": int(min_windows),
@@ -434,6 +482,9 @@ def _print_summary(result: dict[str, Any], *, top: int) -> None:
                 f"overall_status={result['overall_status']}",
                 f"group_field={result['group_field']}",
                 f"candidate_prefix={result['candidate_prefix']}",
+                f"movement_policy={result['movement_policy']}",
+                f"include={result['candidate_include_pattern']}",
+                f"exclude={result['candidate_exclude_pattern']}",
                 "components=" + ",".join(result["components"]),
                 f"folds={result['folds']}",
                 f"rows={result['overall']['n']}",
@@ -443,6 +494,8 @@ def _print_summary(result: dict[str, Any], *, top: int) -> None:
                 f"candidate_hurt_rate={candidate['candidate_only_hurt_rate']}",
                 "candidate_directional_error="
                 f"{candidate['candidate_only_directional_error_rate']}",
+                f"candidate_baseline_below={candidate['baseline_p50_below_rate']}",
+                f"candidate_below={candidate['candidate_p50_below_rate']}",
                 "applied_hurts="
                 + ",".join(result["applied_direction_hurts_groups"]),
             )
@@ -520,6 +573,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-changed", type=int, default=5)
     parser.add_argument("--max-hurt-rate", type=float, default=0.45)
     parser.add_argument("--max-directional-error-rate", type=float, default=0.35)
+    parser.add_argument(
+        "--movement-policy",
+        choices=MOVEMENT_POLICIES,
+        default="all",
+        help="How to apply candidate p50 movement before holdout auditing.",
+    )
+    parser.add_argument(
+        "--candidate-include-pattern",
+        help="Regex over 'component:group' labels allowed into holdout candidates.",
+    )
+    parser.add_argument(
+        "--candidate-exclude-pattern",
+        help="Regex over 'component:group' labels removed from holdout candidates.",
+    )
     parser.add_argument("--top", type=int, default=20)
     parser.add_argument("--format", choices=("summary", "json"), default="summary")
     parser.add_argument("--posterior-trials", type=int, default=512)
@@ -550,6 +617,9 @@ def main(argv: list[str] | None = None) -> int:
         max_hurt_rate=args.max_hurt_rate,
         max_directional_error_rate=args.max_directional_error_rate,
         candidate_prefix=args.candidate_prefix,
+        movement_policy=args.movement_policy,
+        candidate_include_pattern=args.candidate_include_pattern,
+        candidate_exclude_pattern=args.candidate_exclude_pattern,
     )}
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

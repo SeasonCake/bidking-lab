@@ -158,3 +158,80 @@ def test_direction_holdout_blocks_train_candidate_that_hurts_holdout() -> None:
     assert result["candidate_only"]["candidate_only_delta_p50_mae"] == 1
     assert result["candidate_only"]["candidate_only_hurt_rate"] == 1.0
     assert result["candidate_only"]["candidate_only_directional_error_rate"] == 1.0
+
+
+def test_direction_holdout_can_apply_up_only_movement_policy() -> None:
+    module = _load_module()
+    fold0 = [_session_for_fold(module, 0, prefix=f"hurt_{idx}") for idx in range(4)]
+    fold1 = [_session_for_fold(module, 1, prefix=f"help_{idx}") for idx in range(4)]
+    rows = [
+        *[
+            _row(session_id=session_id, truth=4, baseline=2, ccv=1)
+            for session_id in fold0
+        ],
+        *[
+            _row(session_id=session_id, truth=4, baseline=2, ccv=3)
+            for session_id in fold1
+        ],
+    ]
+
+    result = module.summarize_holdout(
+        rows,
+        group_field="map_id",
+        components=("q6_count",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+        movement_policy="up_only",
+    )
+
+    assert result["movement_policy"] == "up_only"
+    assert result["overall_status"] == "watch"
+    assert result["candidate_only"]["candidate_rows"] == 4
+    assert result["candidate_only"]["candidate_only_delta_p50_mae"] == 0
+    assert result["candidate_only"]["candidate_only_hurt_rate"] == 0.0
+    assert result["candidate_only"]["candidate_only_directional_error_rate"] == 0.0
+
+
+def test_direction_holdout_can_exclude_candidate_groups_by_pattern() -> None:
+    module = _load_module()
+    fold0 = [_session_for_fold(module, 0, prefix=f"hurt_{idx}") for idx in range(4)]
+    fold1 = [_session_for_fold(module, 1, prefix=f"help_{idx}") for idx in range(4)]
+    rows = [
+        *[
+            _row(
+                session_id=session_id,
+                truth=4,
+                baseline=2,
+                ccv=1,
+                group="2503",
+            )
+            for session_id in fold0
+        ],
+        *[
+            _row(
+                session_id=session_id,
+                truth=4,
+                baseline=2,
+                ccv=3,
+                group="2502",
+            )
+            for session_id in fold1
+        ],
+    ]
+
+    result = module.summarize_holdout(
+        rows,
+        group_field="map_id",
+        components=("q6_count",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+        candidate_exclude_pattern="^q6_count:2502$",
+    )
+
+    assert result["candidate_exclude_pattern"] == "^q6_count:2502$"
+    assert result["candidate_only"]["candidate_rows"] == 0
+    assert result["overall_status"] == "sample_limited"

@@ -59,6 +59,23 @@ def component_fields(candidate_prefix: str = "v3_ccv_") -> dict[str, tuple[str, 
 
 COMPONENT_FIELDS: dict[str, tuple[str, str, str]] = component_fields()
 DEFAULT_COMPONENTS = ("q6_count", "q6_cells", "q6_formal")
+MOVEMENT_POLICIES = ("all", "up_only", "down_only")
+
+
+def apply_movement_policy(
+    baseline: float,
+    candidate: float,
+    *,
+    movement_policy: str = "all",
+) -> float:
+    policy = str(movement_policy)
+    if policy == "all":
+        return candidate
+    if policy == "up_only":
+        return candidate if candidate > baseline else baseline
+    if policy == "down_only":
+        return candidate if candidate < baseline else baseline
+    raise ValueError(f"unknown movement_policy: {movement_policy}")
 
 
 def _mean(values: Iterable[float]) -> float | None:
@@ -91,6 +108,9 @@ def _paired_rows(
 
 
 def _group_value(row: dict[str, Any], group_field: str) -> str:
+    parts = tuple(part.strip() for part in str(group_field).split(",") if part.strip())
+    if len(parts) > 1:
+        return "|".join(f"{part}={_group_value(row, part)}" for part in parts)
     value = row.get(group_field)
     return str(value) if value not in (None, "") else "unknown"
 
@@ -100,13 +120,19 @@ def _row_direction(
     *,
     component: str,
     fields: dict[str, tuple[str, str, str]],
+    movement_policy: str = "all",
 ) -> dict[str, Any] | None:
     baseline_key, ccv_key, truth_key = fields[component]
     baseline = _float_or_none(row.get(baseline_key))
-    ccv = _float_or_none(row.get(ccv_key))
+    raw_ccv = _float_or_none(row.get(ccv_key))
     truth = _float_or_none(row.get(truth_key))
-    if baseline is None or ccv is None or truth is None:
+    if baseline is None or raw_ccv is None or truth is None:
         return None
+    ccv = apply_movement_policy(
+        baseline,
+        raw_ccv,
+        movement_policy=movement_policy,
+    )
     prediction_delta = ccv - baseline
     baseline_error = baseline - truth
     ccv_error = ccv - truth
@@ -139,6 +165,7 @@ def _row_direction(
     return {
         "baseline": baseline,
         "ccv": ccv,
+        "raw_ccv": raw_ccv,
         "truth": truth,
         "prediction_delta": prediction_delta,
         "baseline_error": baseline_error,
@@ -195,6 +222,7 @@ def _summarize_group(
     group_field: str,
     fields: dict[str, tuple[str, str, str]],
     candidate_prefix: str,
+    movement_policy: str,
     min_windows: int,
     min_sessions: int,
     min_changed: int,
@@ -209,6 +237,7 @@ def _summarize_group(
             row,
             component=component,
             fields=fields,
+            movement_policy=movement_policy,
         )) is not None
     )
     changed = tuple(row for row in directions if row["move"] != "flat")
@@ -252,6 +281,7 @@ def _summarize_group(
         "group_field": group_field,
         "group": group,
         "component": component,
+        "movement_policy": movement_policy,
         "n": len(directions),
         "sessions": len(sessions),
         "ccv_likelihood_rate": _round_metric(
@@ -328,8 +358,11 @@ def summarize_direction(
     max_hurt_rate: float = 0.45,
     max_directional_error_rate: float = 0.35,
     candidate_prefix: str = "v3_ccv_",
+    movement_policy: str = "all",
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    if movement_policy not in MOVEMENT_POLICIES:
+        raise ValueError(f"unknown movement_policy: {movement_policy}")
     fields = component_fields(candidate_prefix)
     for component in components:
         if component not in fields:
@@ -351,6 +384,7 @@ def summarize_direction(
                     group_field=group_field,
                     fields=fields,
                     candidate_prefix=candidate_prefix,
+                    movement_policy=movement_policy,
                     min_windows=min_windows,
                     min_sessions=min_sessions,
                     min_changed=min_changed,
@@ -389,6 +423,7 @@ def _print_summary(rows: list[dict[str, Any]], *, top: int) -> None:
                 (
                     f"{row['group_field']}={row['group']}",
                     f"component={row['component']}",
+                    f"policy={row['movement_policy']}",
                     f"status={row['status']}",
                     f"n={row['n']}",
                     f"sessions={row['sessions']}",
@@ -442,6 +477,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-changed", type=int, default=5)
     parser.add_argument("--max-hurt-rate", type=float, default=0.45)
     parser.add_argument("--max-directional-error-rate", type=float, default=0.35)
+    parser.add_argument(
+        "--movement-policy",
+        choices=MOVEMENT_POLICIES,
+        default="all",
+        help="How to apply candidate p50 movement before profile auditing.",
+    )
     parser.add_argument("--top", type=int, default=30)
     parser.add_argument("--format", choices=("summary", "json"), default="summary")
     parser.add_argument("--posterior-trials", type=int, default=512)
@@ -475,6 +516,7 @@ def main(argv: list[str] | None = None) -> int:
             max_hurt_rate=args.max_hurt_rate,
             max_directional_error_rate=args.max_directional_error_rate,
             candidate_prefix=args.candidate_prefix,
+            movement_policy=args.movement_policy,
         ),
     }
     if args.format == "json":
