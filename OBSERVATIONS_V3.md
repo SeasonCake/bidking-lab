@@ -546,3 +546,80 @@ villa     n=615 formal_mae=249227.5 bias=-50832.8  q6_mae=228594.8
 - 禁用 hidden 后，overall formal/q6 MAE 均优于上一 checkpoint。
 - hidden 仍严重低估，但这是独立 cold-start 问题，不能用全局参数修。
 - 后续主线应继续解决 shipwreck `2506/2501` 低估，同时给 `2507/2508/2407` 等 high-over maps 做保护。
+
+## O-v3-024：map audit 将坏地图拆成样本问题、信息问题和系统性低估
+
+新增可复跑审计：
+
+```powershell
+C:\Python313\python.exe .\scripts\summarize_v3_map_audit.py --top 12
+```
+
+当前 433 canonical 样本观察：
+
+```text
+2601 hidden    sessions=22 ready=86  mae=563274.2 bias=-379658.3 p90_cover=0.581 top3_abs=0.085
+2506 shipwreck sessions=21 ready=71  mae=451709.5 bias=-350723.4 p90_cover=0.606 top3_abs=0.107
+2501 shipwreck sessions=87 ready=310 mae=337374.6 bias=-145110.1 p90_cover=0.735 top3_abs=0.050
+2507 shipwreck sessions=21 ready=74  mae=320540.5 bias=-15943.9  over_rate=0.622
+2408 villa     sessions=12 ready=46  mae=333065.1 bias=-115943.1 flags=few_sessions
+2503 shipwreck sessions=10 ready=37  mae=312308.2 top3_abs=0.284 flags=few_sessions+top3_heavy
+```
+
+结论：
+
+- `2601/2506/2501` 不是少数极端窗口导致的坏指标；它们是 v3 当前系统性低估的主要对象。
+- `2503/2505/2509/2408/2510` 样本少，先列 watchlist，不应据此做强 map-specific 参数。
+- `2507/2407` 是高 over-rate 风险，不能和低估地图用同一个激进策略。
+- public total 在多数差地图窗口中仍偏少，后续 sampler 不能依赖单一公开总格证据。
+
+## O-v3-025：formal-only decision guard 降低低估且不污染 q6 指标
+
+在 q6 diagnostic guard 不变的前提下，对 formal/total/tail-replacement decision value 启用 map-specific guard：
+
+- `2501`：P75。
+- `2506`：P75。
+- `2601`：P85。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_live_monitor.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_family --top 10
+C:\Python313\python.exe .\scripts\summarize_v3_map_audit.py --top 12
+```
+
+结果：
+
+```text
+43 passed
+formal_p50_mae=301000.312
+formal_p50_below_rate=0.522164
+formal_p50_over_rate=0.477836
+formal_p90_coverage=0.799218
+q6_formal_p50_mae=281387.105
+q6_formal_p50_below_rate=0.462842
+q6_formal_p50_over_rate=0.535202
+```
+
+对比上一 checkpoint：
+
+```text
+formal_p50_mae 308876.090 -> 301000.312
+q6_formal_p50_mae 281387.105 -> 281387.105
+```
+
+分片：
+
+```text
+hidden    formal_mae=473580.9 bias=-119930.6 q6_mae=486057.4
+shipwreck formal_mae=321406.5 bias=-67943.6  q6_mae=299233.0
+villa     formal_mae=249227.5 bias=-50832.8  q6_mae=228594.8
+```
+
+结论：
+
+- formal-only guard 是有效的实战参考修正：降低整体低估，不改变 q6 standalone 诊断。
+- `2506` 仍严重低估，下一步不能只靠 guard，需要 count/cell/value 条件 proposal 或更强 evidence likelihood。
+- `2601` P85 让 below/over 接近平衡，但样本仍少，后续必须用新增 hidden 样本复核。

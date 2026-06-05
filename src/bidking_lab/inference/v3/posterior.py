@@ -23,6 +23,11 @@ _LOW_TAIL_PRACTICAL_P50_GUARD_QUANTILE = 0.55
 _HIGH_TAIL_MAP_IDS = frozenset((2404, 2501, 2503, 2506, 2601))
 _LOW_TAIL_MAP_IDS = frozenset((2407, 2410, 2505, 2507, 2508))
 _Q6_BUCKET_CONDITION_DISABLED_MAP_IDS = frozenset((2601,))
+_DECISION_P50_GUARD_QUANTILE_OVERRIDES = {
+    2501: 0.75,
+    2506: 0.75,
+    2601: 0.85,
+}
 
 
 @dataclass(frozen=True)
@@ -184,6 +189,13 @@ def _practical_p50_guard_quantile(map_id: int) -> float:
     if int(map_id) in _LOW_TAIL_MAP_IDS:
         return _LOW_TAIL_PRACTICAL_P50_GUARD_QUANTILE
     return _DEFAULT_PRACTICAL_P50_GUARD_QUANTILE
+
+
+def _decision_p50_guard_quantile(map_id: int) -> float:
+    return _DECISION_P50_GUARD_QUANTILE_OVERRIDES.get(
+        int(map_id),
+        _practical_p50_guard_quantile(int(map_id)),
+    )
 
 
 def _guard_quantiles(
@@ -917,8 +929,14 @@ def estimate_q6_posterior_from_truths(
     q6_cells_floor = q6_summary.cells_floor if q6_summary is not None else 0
     q6_value_floor = q6_summary.value_floor if q6_summary is not None else 0
     p50_guard_quantile = _practical_p50_guard_quantile(int(map_id))
+    decision_p50_guard_quantile = _decision_p50_guard_quantile(int(map_id))
     if tail_guard:
         diagnostics.append(f"practical_p50_guard_quantile={p50_guard_quantile:.2f}")
+        if decision_p50_guard_quantile != p50_guard_quantile:
+            diagnostics.append(
+                "decision_p50_guard_quantile="
+                f"{decision_p50_guard_quantile:.2f}"
+            )
     return V3PosteriorReport(
         map_id=int(map_id),
         map_name=map_name,
@@ -944,7 +962,7 @@ def estimate_q6_posterior_from_truths(
                 total_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
-                p50_guard_quantile=p50_guard_quantile,
+                p50_guard_quantile=decision_p50_guard_quantile,
             ),
             floor=summary.known_value_floor,
         ),
@@ -954,7 +972,7 @@ def estimate_q6_posterior_from_truths(
                 total_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
-                p50_guard_quantile=p50_guard_quantile,
+                p50_guard_quantile=decision_p50_guard_quantile,
             ),
             floor=summary.known_value_floor,
         ),
@@ -964,7 +982,7 @@ def estimate_q6_posterior_from_truths(
                 total_weights_for_quantiles,
                 p50_tail_guard=tail_guard,
                 p90_tail_guard=tail_guard,
-                p50_guard_quantile=p50_guard_quantile,
+                p50_guard_quantile=decision_p50_guard_quantile,
             ),
             floor=summary.known_value_floor,
         ),

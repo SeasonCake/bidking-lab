@@ -964,3 +964,59 @@ C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_family 
 ```
 
 结果：`41 passed`，全样本 evaluator 通过。
+
+## 2026-06-05 checkpoint：map audit + formal-only decision guard
+
+实现：
+
+- 新增 `scripts/summarize_v3_map_audit.py`：
+  - 按 map 输出 sessions/windows/ready/no_state/rounds。
+  - 同时输出 strict/fallback、formal/q6 MAE、bias、below/over、P90 coverage。
+  - 标记 `few_sessions`、`few_windows`、`top3_heavy`、`mostly_fallback`、`little_public_total`、`systemic_under`、`high_over_rate`、`weak_q6_evidence`。
+- 新增 `tests/test_summarize_v3_map_audit.py` 固定审计口径。
+- v3 posterior 将 formal/total/tail-replacement decision guard 与 q6 diagnostic guard 分离：
+  - q6 diagnostic 仍使用 D-v3-019 的地图分层 guard。
+  - formal decision override：`2501=P75`、`2506=P75`、`2601=P85`。
+  - override 生效时输出 `decision_p50_guard_quantile=*`。
+
+当前指标：
+
+```text
+windows=1551 ready=1534 no_state=17 constraint_conflict=0 parse_errors=0
+formal_p50_mae=301000.312
+formal_p50_mae_strict=308631.749
+formal_p50_mae_fallback=297165.908
+formal_p50_below_rate=0.522164
+formal_p50_over_rate=0.477836
+formal_p90_coverage=0.799218
+q6_formal_p50_mae=281387.105
+q6_formal_p50_below_rate=0.462842
+q6_formal_p50_over_rate=0.535202
+```
+
+分片：
+
+```text
+hidden    n=86  formal_mae=473580.9 q6_mae=486057.4
+shipwreck n=833 formal_mae=321406.5 q6_mae=299233.0
+villa     n=615 formal_mae=249227.5 q6_mae=228594.8
+```
+
+关键结论：
+
+- `2601/2506/2501` 是系统性低估，不是少数极端样本问题。
+- `2503/2505/2509/2408/2510` 当前样本偏少，先列 watchlist。
+- `2507/2407` 属于 high-over 风险，后续保护 gate 要和低估地图分开。
+- formal-only guard 降低 formal MAE 且 q6 MAE 完全不变，符合“实战参考可适度激进，但 q6 诊断不能被带偏”的边界。
+- 下一步仍应做真正的 count/cell/value 条件 proposal，尤其针对 `2506` 的 mostly-fallback + little-public-total 低估。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_live_monitor.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_family --top 10
+C:\Python313\python.exe .\scripts\summarize_v3_map_audit.py --top 12
+```
+
+结果：`43 passed`，全样本 evaluator 通过。

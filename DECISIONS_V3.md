@@ -348,3 +348,29 @@ v3 `summary_likelihood` fallback 的 q6 条件化规则：
 - hidden 后续只做独立 shadow/cold-start 观察；有更多样本后再单独校准。
 - 当前 v3 主校准以 shipwreck/villa 为主，尤其 `2506/2501` 的低估。
 - `map_family` 是后续 v3 指标的正式分片字段，archive evaluator 必须输出。
+
+## D-v3-023：formal decision guard 与 q6 diagnostic guard 分离
+
+v3 shadow 的 practical P50 guard 拆成两层：
+
+- q6/count/cell/value diagnostic 继续使用地图分层 guard：
+  - high-tail：P65。
+  - low-tail：P55。
+  - default：P60。
+- formal/total/tail-replacement decision value 可使用更高的 map-specific decision guard：
+  - `2501`：P75。
+  - `2506`：P75。
+  - `2601`：P85。
+
+原因：
+
+- `2501/2506/2601` 在 map audit 中表现为稳定系统性低估，且不是少数极端窗口拉高 MAE。
+- 直接提高共同 guard 会污染 q6 standalone 指标；formal-only guard 能降低实战决策值低估，同时保持 q6 MAE 不变。
+- 用户可接受适度激进的实战参考，但不应把 P90/tail 口径混入 q6 诊断。
+
+边界：
+
+- 该改动仍为 v3 shadow，`affects_bid=false`，不进入 v2 formal bid。
+- diagnostics 必须在 override 生效时记录 `decision_p50_guard_quantile=*`。
+- `2601` 样本仍少；P85 只是 shadow calibration，不作为 hidden promotion 依据。
+- 后续如果新样本显示 high-over 上升，需要先按 map audit 回滚或下调 override，而不是继续加全局参数。

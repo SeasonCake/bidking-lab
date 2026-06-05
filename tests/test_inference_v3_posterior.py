@@ -445,3 +445,31 @@ def test_v3_posterior_practical_p50_guard_is_map_calibrated() -> None:
     assert "practical_p50_guard_quantile=0.65" in high_tail.diagnostics
     assert low_tail.q6_value.p50 == 320
     assert "practical_p50_guard_quantile=0.55" in low_tail.diagnostics
+
+
+def test_v3_posterior_separates_decision_guard_from_q6_guard() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=99,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=0,
+        buckets=(BucketFeasibleSummary(quality=6, count_floor=1, cells_floor=4),),
+    )
+    truths = tuple(
+        _truth_with_q6_item(item_id=1086300 + index, value=value, cells=4)
+        for index, value in enumerate((100, 200, 300, 400, 500))
+    )
+
+    report = estimate_q6_posterior_from_truths(
+        map_id=2506,
+        map_name="high_tail",
+        summary=summary,
+        truths=truths,
+        constraints=ConstraintSet(),
+    )
+
+    assert report.q6_value.p50 == 360
+    assert report.formal_decision_value.p50 == 400
+    assert "practical_p50_guard_quantile=0.65" in report.diagnostics
+    assert "decision_p50_guard_quantile=0.75" in report.diagnostics

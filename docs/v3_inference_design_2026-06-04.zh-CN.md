@@ -481,6 +481,17 @@ v3 可进入正式候选前：
 - 当前指标更新为：`formal_p50_mae=308876.090`，`q6_formal_p50_mae=281387.105`，`formal_p90_coverage=0.799218`。
 - 下一步重点：shipwreck `2506/2501` 低估与 high-over maps 保护 gate。
 
+### 2026-06-05 再追加进展
+
+- 新增 `summarize_v3_map_audit.py`，把差地图拆成样本量、窗口轮次、信息密度、系统性低估和 high-over 风险。
+- 确认 `2601/2506/2501` 是系统性低估主对象；`2503/2505/2509/2408/2510` 当前样本偏少，不能硬调；`2507/2407` 需要 high-over 保护。
+- v3 posterior 将 formal decision guard 与 q6 diagnostic guard 分离：
+  - q6 diagnostic 继续使用地图分层 P55/P60/P65。
+  - formal/total/tail-replacement decision value 对 `2501/2506/2601` 使用 map-specific override。
+- 当前指标更新为：`formal_p50_mae=301000.312`，`q6_formal_p50_mae=281387.105`，`formal_p90_coverage=0.799218`。
+- 该改动仍是 shadow calibration，`affects_bid=false`；它不是 v3 promotion，也不是正式出价策略。
+- 后续真正的结构性工作仍是 count/cell/value 条件 proposal：证据需要决定 q6 cells/value 分布如何移动，而不是继续堆 map 参数。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html
