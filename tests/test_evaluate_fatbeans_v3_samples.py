@@ -195,6 +195,9 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_post_n_total"] == 64
     assert rows[0]["v3_post_formal_decision_value_p50"] is not None
     assert rows[0]["v3_post_q6_formal_decision_value_p50"] is not None
+    assert rows[0]["v3_ccv_available"] is True
+    assert rows[0]["v3_ccv_affects_bid"] is False
+    assert rows[0]["v3_ccv_ready"] is True
     assert rows[0]["v3_cal_available"] is True
     assert rows[0]["v3_cal_affects_bid"] is False
     assert rows[0]["v3_cal_active"] is False
@@ -267,6 +270,7 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
         {
             "status": "ready",
             "v3_truth_decision_available": True,
+            "v3_truth_available": True,
             "v3_post_ready": True,
             "v3_post_match_scope": "strict",
             "v3_truth_formal_decision_value": 100,
@@ -275,10 +279,23 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
             "v3_truth_q6_formal_decision_value": 30,
             "v3_post_q6_formal_decision_value_p50": 10,
             "v3_post_q6_formal_decision_value_p90": 40,
+            "v3_truth_q6_count": 1,
+            "v3_truth_q6_cells": 4,
+            "v3_post_q6_count_p50": 0,
+            "v3_post_q6_count_p90": 1,
+            "v3_post_q6_cells_p50": 2,
+            "v3_post_q6_cells_p90": 4,
+            "v3_ccv_ready": True,
+            "v3_ccv_match_scope": "ccv_likelihood",
+            "v3_ccv_q6_count_p50": 1,
+            "v3_ccv_q6_count_p90": 1,
+            "v3_ccv_q6_cells_p50": 4,
+            "v3_ccv_q6_cells_p90": 4,
         },
         {
             "status": "ready",
             "v3_truth_decision_available": True,
+            "v3_truth_available": True,
             "v3_post_ready": True,
             "v3_post_match_scope": "q6_projection",
             "v3_truth_formal_decision_value": 200,
@@ -287,6 +304,18 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
             "v3_truth_q6_formal_decision_value": 0,
             "v3_post_q6_formal_decision_value_p50": 0,
             "v3_post_q6_formal_decision_value_p90": 0,
+            "v3_truth_q6_count": 0,
+            "v3_truth_q6_cells": 0,
+            "v3_post_q6_count_p50": 1,
+            "v3_post_q6_count_p90": 1,
+            "v3_post_q6_cells_p50": 5,
+            "v3_post_q6_cells_p90": 5,
+            "v3_ccv_ready": True,
+            "v3_ccv_match_scope": "q6_projection",
+            "v3_ccv_q6_count_p50": 0,
+            "v3_ccv_q6_count_p90": 0,
+            "v3_ccv_q6_cells_p50": 0,
+            "v3_ccv_q6_cells_p90": 0,
             "v3_cal_ready": True,
             "v3_cal_active": True,
             "v3_cal_formal_decision_value_p50": 220,
@@ -318,6 +347,13 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["q6_formal_p50_bias"] == -10
     assert summary["q6_formal_p50_over_rate"] == 0.0
     assert summary["q6_formal_p90_pinball"] == 0.5
+    assert summary["q6_count_p50_mae"] == 1
+    assert summary["q6_cells_p50_mae"] == 3.5
+    assert summary["v3_ccv_likelihood_rows"] == 1
+    assert summary["v3_ccv_q6_count_p50_mae"] == 0
+    assert summary["v3_ccv_delta_q6_count_p50_mae"] == -1
+    assert summary["v3_ccv_q6_cells_p50_mae"] == 0
+    assert summary["v3_ccv_delta_q6_cells_p50_mae"] == -3.5
     assert summary["v3_cal_metric_rows"] == 1
     assert summary["v3_cal_active_rows"] == 1
     assert summary["v3_cal_formal_p50_mae"] == 20

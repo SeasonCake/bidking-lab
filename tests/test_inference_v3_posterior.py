@@ -6,6 +6,7 @@ from bidking_lab.inference.v3 import (
     FeasibleSummaryReport,
     ItemAnchor,
     SoftNumericConstraint,
+    estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
     truth_matches_feasible_summary,
 )
@@ -269,6 +270,79 @@ def test_v3_posterior_disables_q6_conditioning_for_hidden_cold_start() -> None:
         item.startswith("q6_bucket_conditioned_samples=")
         for item in report.diagnostics
     )
+
+
+def test_v3_ccv_shadow_conditions_count_cells_without_value_evidence() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=99,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=0,
+        buckets=(
+            BucketFeasibleSummary(
+                quality=6,
+                count_floor=1,
+                cells_floor=4,
+            ),
+        ),
+    )
+    truths = (
+        _truth(),
+        _truth(q6_count=1, q6_cells=4, q6_value=100_000),
+        _truth(q6_count=3, q6_cells=12, q6_value=300_000),
+    )
+    baseline = estimate_q6_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=truths,
+    )
+
+    report = estimate_count_cell_value_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=truths,
+        baseline=baseline,
+    )
+
+    assert baseline.match_scope == "summary_likelihood"
+    assert report.ready is True
+    assert report.match_scope == "ccv_likelihood"
+    assert report.q6_count.p50 >= 1
+    assert report.q6_cells.p50 >= 4
+    assert report.q6_value == baseline.q6_value
+    assert report.formal_decision_value == baseline.formal_decision_value
+    assert "ccv_value_passthrough_no_q6_value_evidence" in report.diagnostics
+
+
+def test_v3_ccv_shadow_stays_disabled_for_hidden_cold_start() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=99,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=0,
+        buckets=(BucketFeasibleSummary(quality=6, count_floor=1),),
+    )
+    baseline = estimate_q6_posterior_from_truths(
+        map_id=2601,
+        map_name="hidden",
+        summary=summary,
+        truths=(_truth(), _truth(q6_count=1, q6_cells=4, q6_value=100_000)),
+    )
+
+    report = estimate_count_cell_value_posterior_from_truths(
+        map_id=2601,
+        map_name="hidden",
+        summary=summary,
+        truths=(_truth(), _truth(q6_count=1, q6_cells=4, q6_value=100_000)),
+        baseline=baseline,
+    )
+
+    assert report.match_scope == "summary_likelihood"
+    assert "ccv_conditioned=disabled_hidden_cold_start" in report.diagnostics
 
 
 def test_v3_posterior_guards_known_value_floors() -> None:

@@ -36,6 +36,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
     empty_truth_flat_dict,
+    estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
     events_from_fatbeans,
     load_prior_calibration_entries,
@@ -217,6 +218,7 @@ def _round_rows_for_events(
     empty_decision_truth_fields = empty_decision_truth_flat_dict()
     empty_summary_fields = empty_feasible_summary_flat_dict()
     empty_posterior_fields = empty_posterior_flat_dict()
+    empty_ccv_fields = empty_posterior_flat_dict(prefix="v3_ccv_")
     empty_calibration_fields = empty_prior_calibration_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
@@ -262,6 +264,7 @@ def _round_rows_for_events(
                     **empty_decision_truth_fields,
                     **empty_summary_fields,
                     **empty_posterior_fields,
+                    **empty_ccv_fields,
                     **empty_calibration_fields,
                 }
             )
@@ -313,6 +316,24 @@ def _round_rows_for_events(
             if posterior is not None
             else empty_posterior_fields
         )
+        ccv_posterior = (
+            estimate_count_cell_value_posterior_from_truths(
+                map_id=int(map_id),
+                map_name=str(prior_fields.get("v3_prior_map_name") or ""),
+                summary=feasible_summary,
+                truths=posterior_truths,
+                constraints=constraints,
+                replacement_values=replacement_values,
+                baseline=posterior,
+            )
+            if posterior is not None
+            else None
+        )
+        ccv_fields = (
+            ccv_posterior.to_flat_dict(prefix="v3_ccv_")
+            if ccv_posterior is not None
+            else empty_ccv_fields
+        )
         calibration_entry = (
             calibration_entries.get(int(map_id))
             if calibration_entries is not None and map_id is not None
@@ -345,6 +366,7 @@ def _round_rows_for_events(
                 **decision_truth_fields,
                 **feasible_summary.to_flat_dict(),
                 **posterior_fields,
+                **ccv_fields,
                 **calibration_fields,
             }
         )
@@ -427,6 +449,13 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         and _float_or_none(row.get("v3_cal_formal_decision_value_p50")) is not None
         and _float_or_none(row.get("v3_truth_formal_decision_value")) is not None
     ]
+    ccv_ready = [
+        row
+        for row in rows
+        if row.get("status") == "ready"
+        and row.get("v3_truth_available")
+        and row.get("v3_ccv_ready")
+    ]
 
     def pred_truth(
         pred_key: str,
@@ -495,6 +524,42 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "v3_post_q6_formal_decision_value_p90",
         "v3_truth_q6_formal_decision_value",
     )
+    q6_count_p50 = pred_truth(
+        "v3_post_q6_count_p50",
+        "v3_truth_q6_count",
+    )
+    q6_count_p90 = pred_truth(
+        "v3_post_q6_count_p90",
+        "v3_truth_q6_count",
+    )
+    q6_cells_p50 = pred_truth(
+        "v3_post_q6_cells_p50",
+        "v3_truth_q6_cells",
+    )
+    q6_cells_p90 = pred_truth(
+        "v3_post_q6_cells_p90",
+        "v3_truth_q6_cells",
+    )
+    ccv_q6_count_p50 = pred_truth(
+        "v3_ccv_q6_count_p50",
+        "v3_truth_q6_count",
+        source_rows=ccv_ready,
+    )
+    ccv_q6_count_p90 = pred_truth(
+        "v3_ccv_q6_count_p90",
+        "v3_truth_q6_count",
+        source_rows=ccv_ready,
+    )
+    ccv_q6_cells_p50 = pred_truth(
+        "v3_ccv_q6_cells_p50",
+        "v3_truth_q6_cells",
+        source_rows=ccv_ready,
+    )
+    ccv_q6_cells_p90 = pred_truth(
+        "v3_ccv_q6_cells_p90",
+        "v3_truth_q6_cells",
+        source_rows=ccv_ready,
+    )
     cal_formal_p50 = pred_truth(
         "v3_cal_formal_decision_value_p50",
         "v3_truth_formal_decision_value",
@@ -543,6 +608,10 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     cal_formal_p50_mae = mae(cal_formal_p50)
     q6_formal_p50_mae = mae(q6_p50)
     cal_q6_formal_p50_mae = mae(cal_q6_p50)
+    q6_count_p50_mae = mae(q6_count_p50)
+    q6_cells_p50_mae = mae(q6_cells_p50)
+    ccv_q6_count_p50_mae = mae(ccv_q6_count_p50)
+    ccv_q6_cells_p50_mae = mae(ccv_q6_cells_p50)
     return {
         "metric_rows": len(paired),
         "metric_strict_rows": sum(
@@ -583,6 +652,38 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "q6_formal_p50_over_rate": _round_metric(over_rate(q6_p50), 6),
         "q6_formal_p90_coverage": _round_metric(coverage_rate(q6_p90), 6),
         "q6_formal_p90_pinball": _round_metric(pinball(q6_p90, 0.9)),
+        "q6_count_p50_mae": _round_metric(q6_count_p50_mae),
+        "q6_count_p50_bias": _round_metric(bias(q6_count_p50)),
+        "q6_count_p90_coverage": _round_metric(coverage_rate(q6_count_p90), 6),
+        "q6_cells_p50_mae": _round_metric(q6_cells_p50_mae),
+        "q6_cells_p50_bias": _round_metric(bias(q6_cells_p50)),
+        "q6_cells_p90_coverage": _round_metric(coverage_rate(q6_cells_p90), 6),
+        "v3_ccv_metric_rows": len(ccv_ready),
+        "v3_ccv_likelihood_rows": sum(
+            1 for row in ccv_ready if row.get("v3_ccv_match_scope") == "ccv_likelihood"
+        ),
+        "v3_ccv_q6_count_p50_mae": _round_metric(ccv_q6_count_p50_mae),
+        "v3_ccv_q6_count_p50_bias": _round_metric(bias(ccv_q6_count_p50)),
+        "v3_ccv_q6_count_p90_coverage": _round_metric(
+            coverage_rate(ccv_q6_count_p90),
+            6,
+        ),
+        "v3_ccv_delta_q6_count_p50_mae": _round_metric(
+            ccv_q6_count_p50_mae - q6_count_p50_mae
+            if ccv_q6_count_p50_mae is not None and q6_count_p50_mae is not None
+            else None
+        ),
+        "v3_ccv_q6_cells_p50_mae": _round_metric(ccv_q6_cells_p50_mae),
+        "v3_ccv_q6_cells_p50_bias": _round_metric(bias(ccv_q6_cells_p50)),
+        "v3_ccv_q6_cells_p90_coverage": _round_metric(
+            coverage_rate(ccv_q6_cells_p90),
+            6,
+        ),
+        "v3_ccv_delta_q6_cells_p50_mae": _round_metric(
+            ccv_q6_cells_p50_mae - q6_cells_p50_mae
+            if ccv_q6_cells_p50_mae is not None and q6_cells_p50_mae is not None
+            else None
+        ),
         "v3_cal_metric_rows": len(calibrated),
         "v3_cal_active_rows": sum(1 for row in calibrated if row.get("v3_cal_active")),
         "v3_cal_formal_p50_mae": _round_metric(cal_formal_p50_mae),
@@ -723,6 +824,13 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"q6_formal_p50_mae_fallback={summary['q6_formal_p50_mae_fallback']}",
                 f"q6_formal_p50_below_rate={summary['q6_formal_p50_below_rate']}",
                 f"q6_formal_p50_over_rate={summary['q6_formal_p50_over_rate']}",
+                f"q6_count_p50_mae={summary['q6_count_p50_mae']}",
+                f"q6_cells_p50_mae={summary['q6_cells_p50_mae']}",
+                f"v3_ccv_likelihood_rows={summary['v3_ccv_likelihood_rows']}",
+                f"v3_ccv_q6_count_p50_mae={summary['v3_ccv_q6_count_p50_mae']}",
+                f"v3_ccv_delta_q6_count_p50_mae={summary['v3_ccv_delta_q6_count_p50_mae']}",
+                f"v3_ccv_q6_cells_p50_mae={summary['v3_ccv_q6_cells_p50_mae']}",
+                f"v3_ccv_delta_q6_cells_p50_mae={summary['v3_ccv_delta_q6_cells_p50_mae']}",
                 f"v3_cal_active_rows={summary['v3_cal_active_rows']}",
                 f"v3_cal_formal_p50_mae={summary['v3_cal_formal_p50_mae']}",
                 f"v3_cal_delta_formal_p50_mae={summary['v3_cal_delta_formal_p50_mae']}",
@@ -861,6 +969,35 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_post_q6_tail_replacement_decision_value_p50",
         "v3_post_q6_tail_replacement_decision_value_p90",
         "v3_post_diagnostics",
+        "v3_ccv_available",
+        "v3_ccv_ready",
+        "v3_ccv_strict_ready",
+        "v3_ccv_affects_bid",
+        "v3_ccv_map_id",
+        "v3_ccv_map_name",
+        "v3_ccv_match_scope",
+        "v3_ccv_n_total",
+        "v3_ccv_n_matched",
+        "v3_ccv_n_strict_matched",
+        "v3_ccv_match_rate",
+        "v3_ccv_strict_match_rate",
+        "v3_ccv_q6_present_rate",
+        "v3_ccv_q6_count_p10",
+        "v3_ccv_q6_count_p50",
+        "v3_ccv_q6_count_p90",
+        "v3_ccv_q6_cells_p10",
+        "v3_ccv_q6_cells_p50",
+        "v3_ccv_q6_cells_p90",
+        "v3_ccv_q6_value_p10",
+        "v3_ccv_q6_value_p50",
+        "v3_ccv_q6_value_p90",
+        "v3_ccv_q6_formal_decision_value_p10",
+        "v3_ccv_q6_formal_decision_value_p50",
+        "v3_ccv_q6_formal_decision_value_p90",
+        "v3_ccv_q6_tail_replacement_decision_value_p10",
+        "v3_ccv_q6_tail_replacement_decision_value_p50",
+        "v3_ccv_q6_tail_replacement_decision_value_p90",
+        "v3_ccv_diagnostics",
         "v3_cal_available",
         "v3_cal_ready",
         "v3_cal_strict_ready",

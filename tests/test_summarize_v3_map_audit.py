@@ -35,6 +35,13 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
             "v3_post_formal_decision_value_p90": 900,
             "v3_truth_q6_formal_decision_value": 400,
             "v3_post_q6_formal_decision_value_p50": 200,
+            "v3_truth_q6_count": 1,
+            "v3_truth_q6_cells": 4,
+            "v3_post_q6_count_p50": 0,
+            "v3_post_q6_cells_p50": 2,
+            "v3_ccv_match_scope": "ccv_likelihood",
+            "v3_ccv_q6_count_p50": 1,
+            "v3_ccv_q6_cells_p50": 4,
         },
         {
             "status": "ready",
@@ -57,6 +64,13 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
             "v3_post_formal_decision_value_p90": 1_400,
             "v3_truth_q6_formal_decision_value": 500,
             "v3_post_q6_formal_decision_value_p50": 300,
+            "v3_truth_q6_count": 2,
+            "v3_truth_q6_cells": 8,
+            "v3_post_q6_count_p50": 1,
+            "v3_post_q6_cells_p50": 4,
+            "v3_ccv_match_scope": "ccv_likelihood",
+            "v3_ccv_q6_count_p50": 2,
+            "v3_ccv_q6_cells_p50": 7,
         },
         {
             "status": "no_state",
@@ -84,6 +98,13 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
     assert row["formal_p50_below_rate"] == 1.0
     assert row["formal_p90_coverage"] == 0.5
     assert row["q6_formal_p50_mae"] == 200
+    assert row["q6_count_p50_mae"] == 1
+    assert row["q6_cells_p50_mae"] == 3
+    assert row["v3_ccv_likelihood_rate"] == 1.0
+    assert row["v3_ccv_q6_count_p50_mae"] == 0
+    assert row["v3_ccv_delta_q6_count_p50_mae"] == -1
+    assert row["v3_ccv_q6_cells_p50_mae"] == 0.5
+    assert row["v3_ccv_delta_q6_cells_p50_mae"] == -2.5
     assert row["public_total_rate"] == 0.5
     assert row["q6_floor_rate"] == 0.5
     assert "few_sessions" in row["flags"]

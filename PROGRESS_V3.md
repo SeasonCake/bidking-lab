@@ -1157,3 +1157,63 @@ C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_map_audit.py --top 8
 - 本轮是在沙箱用户下运行，`C:\Python313` 缺少 `numpy/pytest`，因此验证使用 `C:\Users\shenc\anaconda3\python.exe`。
 - 初版 ratio-only calibration 会提升 P90 coverage 但恶化 P50 MAE；已收紧为 archive shift + baseline systemic-under 双 gate。
 - 当前仍是 in-sample shadow，不作为 promotion 依据。
+
+## 2026-06-05 checkpoint：count/cell/value conditioned shadow sampler
+
+实现：
+
+- 新增 `estimate_count_cell_value_posterior_from_truths()`。
+  - 输出统一 `v3_ccv_*` flat fields。
+  - 只在 baseline 为 `summary_likelihood` 且存在 q6 bucket evidence 时运行强化 likelihood。
+  - `2601 hidden` 默认禁用，记录 `ccv_conditioned=disabled_hidden_cold_start`。
+  - 没有 q6 value evidence 时，q6 value/formal 和 total/formal 均透传 baseline，不用 count/cells 证据硬推 value。
+- evaluator 接入：
+  - 样本行增加 `v3_ccv_*`。
+  - 汇总增加 q6 count/cells P50 MAE、P90 coverage、`v3_ccv_delta_*`。
+- live monitor 接入：
+  - `v3_posterior_shadow` 和 `model_eval` 增加 `v3_ccv_*`。
+  - `v3_ccv_affects_bid=false`，不进入正式出价或 UI 视觉层。
+- map audit 接入：
+  - 输出 `q6_count_mae / q6_cells_mae / ccv_rate / ccv_*_delta`。
+
+全量 evaluator：
+
+```text
+windows=1551 ready=1534 no_state=17 parse_errors=0
+posterior_ready=1534 posterior_strict_ready=513 posterior_summary_likelihood=1021
+formal_p50_mae=300553.241
+q6_count_p50_mae=1.404
+q6_cells_p50_mae=6.674
+v3_ccv_likelihood_rows=329
+v3_ccv_q6_count_p50_mae=1.418
+v3_ccv_delta_q6_count_p50_mae=+0.013
+v3_ccv_q6_cells_p50_mae=6.679
+v3_ccv_delta_q6_cells_p50_mae=+0.005
+v3_cal_formal_p50_mae=298567.199
+```
+
+map audit 结论：
+
+```text
+2506 ccv_count_delta=+0.03 ccv_cells_delta=+0.13
+2501 ccv_count_delta=+0.02 ccv_cells_delta=+0.15
+2502 ccv_count_delta=-0.01 ccv_cells_delta=-0.78
+2408 ccv_count_delta=-0.07 ccv_cells_delta=-0.08
+2601 ccv_rate=0.0 disabled hidden
+```
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_map_audit.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_map_audit.py --top 10
+```
+
+结果：`46 passed`；全量 evaluator 和 map audit 通过。
+
+说明：
+
+- ccv 候选能形成可复跑审计字段，但当前默认实现对整体 q6 count/cells P50 MAE 没有收益，且对 `2506` 负向。
+- 后续不能把“强化 q6 bucket likelihood”作为 v3 主修复；下一步应做真正 residual/count-cell-value 生成模型，显式建模公共总格、已知非 q6 下界、q6 空间分布和 value per cell，而不是只调 likelihood 温度。

@@ -187,6 +187,26 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             "v3_post_q6_formal_decision_value_p50",
             "v3_truth_q6_formal_decision_value",
         )
+        q6_count_p50 = _metric_pairs(
+            paired,
+            "v3_post_q6_count_p50",
+            "v3_truth_q6_count",
+        )
+        q6_cells_p50 = _metric_pairs(
+            paired,
+            "v3_post_q6_cells_p50",
+            "v3_truth_q6_cells",
+        )
+        ccv_q6_count_p50 = _metric_pairs(
+            paired,
+            "v3_ccv_q6_count_p50",
+            "v3_truth_q6_count",
+        )
+        ccv_q6_cells_p50 = _metric_pairs(
+            paired,
+            "v3_ccv_q6_cells_p50",
+            "v3_truth_q6_cells",
+        )
         errors = [pred - truth for pred, truth in formal_p50]
         abs_errors = sorted((abs(error) for error in errors), reverse=True)
         abs_error_sum = sum(abs_errors)
@@ -205,6 +225,14 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         cal_errors = [pred - truth for pred, truth in cal_p50]
         cal_mae = _mean(abs(error) for error in cal_errors)
         q6_errors = [pred - truth for pred, truth in q6_p50]
+        q6_count_errors = [pred - truth for pred, truth in q6_count_p50]
+        q6_cells_errors = [pred - truth for pred, truth in q6_cells_p50]
+        ccv_q6_count_errors = [pred - truth for pred, truth in ccv_q6_count_p50]
+        ccv_q6_cells_errors = [pred - truth for pred, truth in ccv_q6_cells_p50]
+        q6_count_mae = _mean(abs(error) for error in q6_count_errors)
+        q6_cells_mae = _mean(abs(error) for error in q6_cells_errors)
+        ccv_q6_count_mae = _mean(abs(error) for error in ccv_q6_count_errors)
+        ccv_q6_cells_mae = _mean(abs(error) for error in ccv_q6_cells_errors)
         result = {
             "map_id": map_id,
             "map_name": _map_name(paired[0]),
@@ -254,6 +282,29 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             ),
             "q6_formal_p50_mae": _round_metric(_mean(abs(error) for error in q6_errors), 1),
             "q6_formal_p50_bias": _round_metric(_mean(q6_errors), 1),
+            "q6_count_p50_mae": _round_metric(q6_count_mae, 2),
+            "q6_cells_p50_mae": _round_metric(q6_cells_mae, 2),
+            "v3_ccv_likelihood_rate": _round_metric(
+                _rate(
+                    paired,
+                    lambda row: row.get("v3_ccv_match_scope") == "ccv_likelihood",
+                ),
+                6,
+            ),
+            "v3_ccv_q6_count_p50_mae": _round_metric(ccv_q6_count_mae, 2),
+            "v3_ccv_delta_q6_count_p50_mae": _round_metric(
+                ccv_q6_count_mae - q6_count_mae
+                if ccv_q6_count_mae is not None and q6_count_mae is not None
+                else None,
+                2,
+            ),
+            "v3_ccv_q6_cells_p50_mae": _round_metric(ccv_q6_cells_mae, 2),
+            "v3_ccv_delta_q6_cells_p50_mae": _round_metric(
+                ccv_q6_cells_mae - q6_cells_mae
+                if ccv_q6_cells_mae is not None and q6_cells_mae is not None
+                else None,
+                2,
+            ),
             "truth_p50": _round_metric(
                 _quantile((truth for _, truth in formal_p50), 0.50),
                 1,
@@ -333,6 +384,11 @@ def _print_table(rows: list[dict[str, Any]], *, top: int) -> None:
                     f"cal_mae={row['v3_cal_formal_p50_mae']}",
                     f"cal_delta={row['v3_cal_delta_formal_p50_mae']}",
                     f"q6_mae={row['q6_formal_p50_mae']}",
+                    f"q6_count_mae={row['q6_count_p50_mae']}",
+                    f"q6_cells_mae={row['q6_cells_p50_mae']}",
+                    f"ccv_rate={row['v3_ccv_likelihood_rate']}",
+                    f"ccv_count_delta={row['v3_ccv_delta_q6_count_p50_mae']}",
+                    f"ccv_cells_delta={row['v3_ccv_delta_q6_cells_p50_mae']}",
                     f"top3_abs={row['top3_abs_error_share']}",
                     f"public_total={row['public_total_rate']}",
                     f"q6_floor={row['q6_floor_rate']}",

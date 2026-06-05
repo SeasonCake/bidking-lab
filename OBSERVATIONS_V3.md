@@ -806,3 +806,45 @@ map audit：
 - `2506` calibration shadow 有实战参考价值，但仍为 in-sample shadow。
 - hidden/少样本和非系统性低估地图只保留 watch-only。
 - 下一步应做 holdout/new-live validation，并继续推进真正的 count/cell/value 条件 sampler，而不是扩大 map-level scale。
+
+## O-v3-030：强化 q6 bucket likelihood 不是 count/cell/value sampler 的主解
+
+2026-06-05 新增 `v3_ccv_*` shadow，用更低温度和更高 relative floor 对 summary-likelihood 下的 q6 bucket evidence 做 count/cell/value 条件化。默认触发收窄为：
+
+- baseline 为 `summary_likelihood`。
+- 存在 q6 bucket evidence。
+- hidden `2601` 禁用。
+- 无 q6 value evidence 时 value/formal 只透传 baseline。
+
+全量 evaluator：
+
+```text
+metric_rows=1534
+posterior_summary_likelihood=1021
+q6_count_p50_mae=1.404
+q6_cells_p50_mae=6.674
+v3_ccv_likelihood_rows=329
+v3_ccv_q6_count_p50_mae=1.418
+v3_ccv_delta_q6_count_p50_mae=+0.013
+v3_ccv_q6_cells_p50_mae=6.679
+v3_ccv_delta_q6_cells_p50_mae=+0.005
+```
+
+地图审计：
+
+```text
+2506 ccv_count_delta=+0.03 ccv_cells_delta=+0.13
+2501 ccv_count_delta=+0.02 ccv_cells_delta=+0.15
+2509 ccv_count_delta=+0.12 ccv_cells_delta=+0.70
+2503 ccv_count_delta=+0.03 ccv_cells_delta=+0.60
+2502 ccv_count_delta=-0.01 ccv_cells_delta=-0.78
+2408 ccv_count_delta=-0.07 ccv_cells_delta=-0.08
+2508 ccv_count_delta=0.00 ccv_cells_delta=-0.11
+```
+
+结论：
+
+- 该候选能改善少数地图的 cells MAE，但对整体和当前核心低估图 `2506` 都不是正收益。
+- 继续调 likelihood 温度/relative floor 大概率会重复 v2 的调参陷阱：局部切片改善、整体 MAE 或核心地图恶化。
+- 真正需要的是 residual/count-cell-value 生成模型：先由公共总格/总数、已知非 q6 下界、q6 桶证据决定 q6 count/cells 的后验，再基于 q6 count/cells 与地图/品质/形状分布估 value per cell。
+- `v3_ccv_*` 保留为审计字段，用于对照未来 residual sampler；不应作为 promotion 候选。

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 from typing import Any, Mapping, Sequence
 
@@ -23,6 +23,9 @@ _LOW_TAIL_PRACTICAL_P50_GUARD_QUANTILE = 0.55
 _HIGH_TAIL_MAP_IDS = frozenset((2404, 2501, 2503, 2506, 2601))
 _LOW_TAIL_MAP_IDS = frozenset((2407, 2410, 2505, 2507, 2508))
 _Q6_BUCKET_CONDITION_DISABLED_MAP_IDS = frozenset((2601,))
+_COUNT_CELL_VALUE_CONDITION_DISABLED_MAP_IDS = frozenset((2601,))
+_COUNT_CELL_VALUE_CONDITION_TEMPERATURE = 2.0
+_COUNT_CELL_VALUE_CONDITION_RELATIVE_FLOOR = 1e-5
 _DECISION_P50_GUARD_QUANTILE_OVERRIDES = {
     2501: 0.75,
     2506: 0.75,
@@ -772,6 +775,24 @@ def _bucket_conditioned_truths(
     return tuple(truth for truth in truths if _bucket_matches(truth, bucket))
 
 
+def _weighted_positive_rate(
+    counts: Sequence[int],
+    weights: Sequence[float] | None,
+) -> float | None:
+    if not counts:
+        return None
+    if weights is None:
+        return sum(1 for count in counts if int(count) > 0) / len(counts)
+    weight_total = sum(float(weight) for weight in weights)
+    if weight_total <= 0.0:
+        return None
+    return sum(
+        float(weight)
+        for count, weight in zip(counts, weights, strict=True)
+        if int(count) > 0
+    ) / weight_total
+
+
 def estimate_q6_posterior_from_truths(
     *,
     map_id: int,
@@ -1165,6 +1186,177 @@ def estimate_q6_posterior_from_truths(
     )
 
 
+def estimate_count_cell_value_posterior_from_truths(
+    *,
+    map_id: int,
+    map_name: str,
+    summary: FeasibleSummaryReport,
+    truths: Sequence[SessionTruth],
+    constraints: ConstraintSet | None = None,
+    replacement_values: Mapping[tuple[int, int, int], int] | None = None,
+    baseline: V3PosteriorReport | None = None,
+) -> V3PosteriorReport:
+    """Sharper q6 count/cell shadow conditioned by current v3 evidence.
+
+    This report is deliberately shadow-only. Count and cell quantiles may move
+    under summary-likelihood fallback, but q6 value/formal fields stay at the
+    baseline unless there is explicit q6 value evidence.
+    """
+
+    baseline = baseline or estimate_q6_posterior_from_truths(
+        map_id=map_id,
+        map_name=map_name,
+        summary=summary,
+        truths=truths,
+        constraints=constraints,
+        replacement_values=replacement_values,
+    )
+    diagnostics = list(baseline.diagnostics)
+    if not baseline.ready:
+        diagnostics.append("ccv_passthrough_not_ready")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    if baseline.match_scope != "summary_likelihood":
+        diagnostics.append(f"ccv_passthrough_scope={baseline.match_scope}")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    if int(map_id) in _COUNT_CELL_VALUE_CONDITION_DISABLED_MAP_IDS:
+        diagnostics.append("ccv_conditioned=disabled_hidden_cold_start")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    if not summary.feasible:
+        diagnostics.append("ccv_passthrough_summary_infeasible")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    q6_summary = summary.bucket(6)
+    if not _bucket_has_constraints(q6_summary):
+        diagnostics.append("ccv_passthrough_no_q6_bucket_evidence")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    matched, matched_weights, effective_n = _summary_likelihood_matches(
+        truths,
+        summary,
+        constraints,
+        relative_floor=_COUNT_CELL_VALUE_CONDITION_RELATIVE_FLOOR,
+        temperature=_COUNT_CELL_VALUE_CONDITION_TEMPERATURE,
+    )
+    if not matched:
+        diagnostics.append("ccv_no_conditioned_samples")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+
+    condition_q6_value = _bucket_has_value_constraint(q6_summary)
+    q6_counts: list[int] = []
+    q6_cells: list[int] = []
+    q6_values: list[int] = []
+    q6_formal_decision_values: list[int] = []
+    q6_tail_replacement_decision_values: list[int] = []
+    for truth in matched:
+        count, cells, value = _bucket_fields(truth, 6)
+        q6_counts.append(count)
+        q6_cells.append(cells)
+        q6_values.append(value)
+        if constraints is not None and condition_q6_value:
+            decision = decision_truth_from_session_truth(
+                truth,
+                constraints=constraints,
+                replacement_values=replacement_values or {},
+            )
+            q6_formal_decision_values.append(decision.q6_formal_decision_value)
+            q6_tail_replacement_decision_values.append(
+                decision.q6_tail_replacement_decision_value
+            )
+
+    q6_count_exact = q6_summary.count_exact if q6_summary is not None else None
+    q6_cells_exact = q6_summary.cells_exact if q6_summary is not None else None
+    q6_value_exact = q6_summary.value_exact if q6_summary is not None else None
+    q6_count_floor = q6_summary.count_floor if q6_summary is not None else 0
+    q6_cells_floor = q6_summary.cells_floor if q6_summary is not None else 0
+    q6_value_floor = q6_summary.value_floor if q6_summary is not None else 0
+    p50_guard_quantile = _practical_p50_guard_quantile(int(map_id))
+    tail_guard = True
+    diagnostics.append(f"ccv_conditioned_samples={len(matched)}")
+    diagnostics.append(f"ccv_conditioned_effective_samples={effective_n:.3f}")
+    diagnostics.append(
+        "ccv_conditioned_temperature="
+        f"{_COUNT_CELL_VALUE_CONDITION_TEMPERATURE:.2f}"
+    )
+
+    q6_value = baseline.q6_value
+    q6_formal_decision_value = baseline.q6_formal_decision_value
+    q6_tail_replacement_decision_value = baseline.q6_tail_replacement_decision_value
+    if condition_q6_value:
+        diagnostics.append("ccv_value_conditioned_by_q6_value_evidence")
+        q6_value = _guard_quantiles(
+            _weighted_quantiles(
+                q6_values,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
+            ),
+            floor=q6_value_floor,
+            exact=q6_value_exact,
+        )
+        if q6_formal_decision_values:
+            q6_formal_decision_value = _guard_quantiles(
+                _weighted_quantiles(
+                    q6_formal_decision_values,
+                    matched_weights,
+                    p50_tail_guard=tail_guard,
+                    p90_tail_guard=tail_guard,
+                    p50_guard_quantile=p50_guard_quantile,
+                ),
+                floor=q6_value_floor,
+            )
+            q6_tail_replacement_decision_value = _guard_quantiles(
+                _weighted_quantiles(
+                    q6_tail_replacement_decision_values,
+                    matched_weights,
+                    p50_tail_guard=tail_guard,
+                    p90_tail_guard=tail_guard,
+                    p50_guard_quantile=p50_guard_quantile,
+                ),
+                floor=q6_value_floor,
+            )
+    else:
+        diagnostics.append("ccv_value_passthrough_no_q6_value_evidence")
+
+    return V3PosteriorReport(
+        map_id=int(map_id),
+        map_name=map_name,
+        n_total=len(truths),
+        n_matched=len(matched),
+        n_strict_matched=baseline.n_strict_matched,
+        match_scope="ccv_likelihood",
+        q6_present_rate=_weighted_positive_rate(q6_counts, matched_weights),
+        total_cells=baseline.total_cells,
+        total_value=baseline.total_value,
+        formal_decision_value=baseline.formal_decision_value,
+        tail_replacement_decision_value=baseline.tail_replacement_decision_value,
+        q6_count=_guard_quantiles(
+            _weighted_quantiles(
+                q6_counts,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
+            ),
+            floor=q6_count_floor,
+            exact=q6_count_exact,
+        ),
+        q6_cells=_guard_quantiles(
+            _weighted_quantiles(
+                q6_cells,
+                matched_weights,
+                p50_tail_guard=tail_guard,
+                p90_tail_guard=tail_guard,
+                p50_guard_quantile=p50_guard_quantile,
+            ),
+            floor=q6_cells_floor,
+            exact=q6_cells_exact,
+        ),
+        q6_value=q6_value,
+        q6_formal_decision_value=q6_formal_decision_value,
+        q6_tail_replacement_decision_value=q6_tail_replacement_decision_value,
+        diagnostics=tuple(diagnostics),
+    )
+
+
 def empty_posterior_flat_dict(*, prefix: str = "v3_post_") -> dict[str, Any]:
     out = {
         f"{prefix}available": False,
@@ -1200,6 +1392,7 @@ def empty_posterior_flat_dict(*, prefix: str = "v3_post_") -> dict[str, Any]:
 __all__ = (
     "V3PosteriorReport",
     "empty_posterior_flat_dict",
+    "estimate_count_cell_value_posterior_from_truths",
     "estimate_q6_posterior_from_truths",
     "sample_truth_bank",
     "truth_matches_feasible_summary",

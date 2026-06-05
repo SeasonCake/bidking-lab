@@ -432,3 +432,37 @@ v3 新增 empirical prior calibration shadow，但激活条件收紧为：
 - calibration shadow 输出 `v3_cal_*` 字段，只进入 evaluator/live `model_eval` 诊断，不进入正式 `bid_rows`、停止价或抢仓上限。
 - `data/processed/v3_prior_calibration_shadow.json` 是聚合派生表，不包含原始 Fatbeans capture。
 - 后续 promotion 前必须用 holdout 或新增实战样本复核，不能用 in-sample archive 结果直接证明正式可用。
+
+## D-v3-026：ccv bucket-likelihood shadow 保留审计，不作为 promotion 路线
+
+`v3_ccv_*` 是 count/cell/value 条件采样的第一版审计候选，但当前决策是：不升级、不接正式出价、不替代 `v3_post_*` 或 `v3_cal_*`。
+
+原因：
+
+- 全量样本中 ccv 激活 329 个窗口，但整体 q6 count/cells P50 MAE 均小幅恶化：
+  - count delta `+0.013`
+  - cells delta `+0.005`
+- 核心低估地图 `2506` 也恶化：
+  - count delta `+0.03`
+  - cells delta `+0.13`
+- 局部受益地图如 `2502/2408` 不能证明该路线有普适 promotion 价值。
+- 单纯强化 q6 bucket likelihood 仍是在调权重；它没有显式建模公共总格、非 q6 已知下界、q6 空间压力与 value per cell 的生成关系。
+
+保留边界：
+
+- `v3_ccv_affects_bid=false`。
+- 只在 baseline 为 `summary_likelihood` 且有 q6 bucket evidence 时运行。
+- hidden `2601` 默认禁用。
+- 没有 q6 value evidence 时，不移动 q6 value/formal，也不移动 total/formal。
+- 字段只用于 evaluator/live `model_eval`/map audit 对照。
+
+下一步：
+
+- 设计 residual/count-cell-value 生成模型，而不是继续调 ccv likelihood 温度。
+- 该模型应把：
+  - session total exact/floor
+  - known non-q6 count/cells/value floor
+  - q6 bucket count/cells/value evidence
+  - item/shape/category anchors
+  - map-level prior/calibration
+  分层合成，先估 q6 count/cells，再估 value per cell。

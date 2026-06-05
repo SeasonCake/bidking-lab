@@ -507,6 +507,40 @@ v3 可进入正式候选前：
   - gate：样本少或 high-over 风险高的地图不得强校准。
   - live/UI：仍保持 v3 shadow，不改变 formal bid。
 
+### 2026-06-05 ccv shadow 与 residual sampler 设计更新
+
+- 新增 `v3_ccv_*` shadow，作为 count/cell/value 条件采样的第一版审计候选。
+- 该候选本质仍是“强化 q6 bucket likelihood”：
+  - 只在 `summary_likelihood` 且有 q6 bucket evidence 时运行。
+  - hidden `2601` 禁用。
+  - 无 q6 value evidence 时，不移动 q6 value/formal 或 total/formal。
+- 全量结果显示它不是主解：
+  - `v3_ccv_likelihood_rows=329`
+  - q6 count P50 MAE delta `+0.013`
+  - q6 cells P50 MAE delta `+0.005`
+  - `2506` count/cells 也小幅恶化。
+
+因此下一步 residual/count-cell-value sampler 不能继续只调 likelihood 温度，应改为显式生成模型：
+
+1. 输入层：
+   - `session_total_count_exact / session_total_cells_exact`
+   - `known_count_floor / known_cells_floor / known_value_floor`
+   - 非 q6 bucket floors/exacts
+   - q6 bucket count/cells/value evidence
+   - item/shape/category anchors
+   - map prior 与 `v3_cal_*` watch metadata
+2. residual 层：
+   - 先计算 `non_q6_known_*` 与 `remaining_capacity_*`。
+   - 将 q6 count/cells 作为 remaining capacity 内的随机变量，而不是固定乘 prior expected cells。
+   - 如果 evidence 只约束 count/cells，不得直接改 value；只能输出 count/cells posterior 与 value-per-cell 的独立候选。
+3. value 层：
+   - q6 value 由 q6 count/cells、地图、品质、形状/类别、value-per-cell 分布共同决定。
+   - random avg 与 size avg 只能进入对应抽样/形状桶模型，不能当成全仓均值或 q6 桶均值。
+4. 输出层：
+   - 先写 `v3_resid_*` 或下一版 shadow prefix，不覆盖 `v3_post_*`。
+   - 必须同时报告 q6 count/cells MAE、q6 formal MAE、formal P50 MAE、below/over、P90 coverage 和 pinball。
+   - promotion 前必须经过 holdout 或新增实战样本，不能用当前 in-sample archive 直接证明。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html
