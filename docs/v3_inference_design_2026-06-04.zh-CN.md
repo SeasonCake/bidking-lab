@@ -492,6 +492,21 @@ v3 可进入正式候选前：
 - 该改动仍是 shadow calibration，`affects_bid=false`；它不是 v3 promotion，也不是正式出价策略。
 - 后续真正的结构性工作仍是 count/cell/value 条件 proposal：证据需要决定 q6 cells/value 分布如何移动，而不是继续堆 map 参数。
 
+### 2026-06-05 soft likelihood 与先验校准进展
+
+- `ConstraintSet` 开始保留 soft numeric evidence，并让 posterior likelihood 消费明确语义的均值证据：
+  - 质量桶均格：`q4/q5/q6_avg_cells`。
+  - 质量桶均价：`q4/q5/q6_avg_value`。
+  - 全仓均格：`total_avg_cells`。
+- `random_*_avg_value` 和 `size_*_avg_value` 暂不进入 formal likelihood；它们需要独立抽样/形状桶模型，不能当成全仓或质量桶均值。
+- 当前指标更新为：`formal_p50_mae=300553.241`，`q6_formal_p50_mae=281273.209`。
+- 新增 prior/archive calibration 报表后，确认 `2506/2501/2601/2401/2404` 的 archive raw truth median 明显高于表先验；`2507` 不同向。
+- 下一阶段需要设计 empirical prior/calibration layer：
+  - 输入：canonical archive raw truth、表先验分布、样本数、map_family、high-over 风险。
+  - 输出：shadow-only calibration metadata。
+  - gate：样本少或 high-over 风险高的地图不得强校准。
+  - live/UI：仍保持 v3 shadow，不改变 formal bid。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

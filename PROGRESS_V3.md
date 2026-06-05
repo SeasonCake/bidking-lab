@@ -1020,3 +1020,70 @@ C:\Python313\python.exe .\scripts\summarize_v3_map_audit.py --top 12
 ```
 
 结果：`43 passed`，全样本 evaluator 通过。
+
+## 2026-06-05 checkpoint：soft numeric likelihood + prior/archive calibration
+
+实现：
+
+- `ConstraintSet` 增加 `soft_numeric`：
+  - 同一 soft source 重复出现时只保留最新 sort_id。
+  - hard exact 与 item/shape/quality floor 逻辑不变。
+- v3 posterior likelihood 消费：
+  - `q4/q5/q6_avg_cells`
+  - `q4/q5/q6_avg_value`
+  - `total_avg_cells`
+- 暂不消费：
+  - `random_*_avg_value`
+  - `size_*_avg_value`
+- 新增 `scripts/summarize_v3_prior_archive_calibration.py`：
+  - 对比 archive raw settlement truth 与表先验 `sample_truth_bank` 分布。
+  - 输出 actual/prior P50/P90 和 ratio。
+
+当前指标：
+
+```text
+windows=1551 ready=1534 no_state=17 constraint_conflict=0 parse_errors=0
+formal_p50_mae=300553.241
+formal_p50_mae_strict=307116.002
+formal_p50_mae_fallback=297255.791
+formal_p50_below_rate=0.521512
+formal_p50_over_rate=0.478488
+formal_p90_coverage=0.797914
+q6_formal_p50_mae=281273.209
+q6_formal_p50_below_rate=0.460887
+q6_formal_p50_over_rate=0.537158
+```
+
+对比上一 checkpoint：
+
+```text
+formal_p50_mae 301000.312 -> 300553.241
+q6_formal_p50_mae 281387.105 -> 281273.209
+```
+
+prior/archive calibration 发现：
+
+```text
+2506 median_ratio=1.843 p90_ratio=1.908
+2501 median_ratio=1.571 p90_ratio=1.316
+2601 median_ratio=1.626 p90_ratio=1.151
+2401 median_ratio=1.418 p90_ratio=1.554
+2507 median_ratio≈0.95
+```
+
+结论：
+
+- soft avg likelihood 是 v3 必要输入补全，但只能带来小幅收益。
+- `2506` 几乎不受 soft avg 影响，低估主因更像表先验与真实 archive 分布偏差。
+- 下一步应做 empirical prior/calibration layer 的 shadow 设计：按 map/session 样本数、median/p90 ratio、high-over 风险决定是否校准；不能直接把所有 ratio 接入 formal。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_evidence_registry.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_live_monitor.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_map_audit.py --top 8
+C:\Python313\python.exe .\scripts\summarize_v3_prior_archive_calibration.py --prior-trials 10000 --top 10
+```
+
+结果：`55 passed`，全样本 evaluator 通过。

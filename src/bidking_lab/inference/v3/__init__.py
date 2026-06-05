@@ -16,6 +16,7 @@ from bidking_lab.inference.v3.constraints import (
     ItemAnchor,
     QualityFloorAnchor,
     ShapeAnchor,
+    SoftNumericConstraint,
     compile_hard_constraints,
 )
 from bidking_lab.inference.v3.events import EvidenceEvent, events_from_fatbeans
@@ -78,6 +79,7 @@ __all__ = (
     "QualityPriorReport",
     "QualityTruthReport",
     "ShapeAnchor",
+    "SoftNumericConstraint",
     "SessionPriorReport",
     "SettlementTruthReport",
     "V3PosteriorReport",

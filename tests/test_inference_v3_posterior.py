@@ -5,6 +5,7 @@ from bidking_lab.inference.v3 import (
     ConstraintSet,
     FeasibleSummaryReport,
     ItemAnchor,
+    SoftNumericConstraint,
     estimate_q6_posterior_from_truths,
     truth_matches_feasible_summary,
 )
@@ -473,3 +474,43 @@ def test_v3_posterior_separates_decision_guard_from_q6_guard() -> None:
     assert report.formal_decision_value.p50 == 400
     assert "practical_p50_guard_quantile=0.65" in report.diagnostics
     assert "decision_p50_guard_quantile=0.75" in report.diagnostics
+
+
+def test_v3_posterior_weights_soft_avg_value_without_hard_rejecting() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=None,
+        known_count_floor=0,
+        known_cells_floor=0,
+        known_value_floor=0,
+        buckets=(),
+    )
+    low_value = _truth(q6_count=1, q6_cells=4, q6_value=100_000)
+    high_value = _truth(q6_count=1, q6_cells=4, q6_value=500_000)
+    constraints = ConstraintSet(
+        soft_numeric={
+            "q6_avg": SoftNumericConstraint(
+                key="q6_avg",
+                targets=("bucket.q6.value",),
+                value=480_000,
+                event_id="action:1",
+                source_kind="action_result",
+                source_id="100126",
+                semantic="q6_avg_value",
+                sort_id=1,
+            )
+        }
+    )
+
+    report = estimate_q6_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(low_value, high_value),
+        constraints=constraints,
+    )
+
+    assert report.ready is True
+    assert report.strict_ready is True
+    assert report.q6_value.p50 == 500_000
+    assert "soft_numeric_likelihood_weighted" in report.diagnostics

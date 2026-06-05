@@ -623,3 +623,82 @@ villa     formal_mae=249227.5 bias=-50832.8  q6_mae=228594.8
 - formal-only guard 是有效的实战参考修正：降低整体低估，不改变 q6 standalone 诊断。
 - `2506` 仍严重低估，下一步不能只靠 guard，需要 count/cell/value 条件 proposal 或更强 evidence likelihood。
 - `2601` P85 让 below/over 接近平衡，但样本仍少，后续必须用新增 hidden 样本复核。
+
+## O-v3-026：soft avg cells/value 接入后小幅改善，但不是 2506 主因
+
+2026-06-05 将 soft 均格/均价证据接入 posterior likelihood：
+
+- `q4/q5/q6_avg_cells`
+- `q4/q5/q6_avg_value`
+- `total_avg_cells`
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_evidence_registry.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_live_monitor.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_map_audit.py --top 8
+```
+
+结果：
+
+```text
+55 passed
+formal_p50_mae=300553.241
+formal_p50_below_rate=0.521512
+formal_p50_over_rate=0.478488
+formal_p90_coverage=0.797914
+q6_formal_p50_mae=281273.209
+q6_formal_p50_below_rate=0.460887
+q6_formal_p50_over_rate=0.537158
+```
+
+对比上一 checkpoint：
+
+```text
+formal_p50_mae 301000.312 -> 300553.241
+q6_formal_p50_mae 281387.105 -> 281273.209
+```
+
+分片观察：
+
+- `2501`：formal MAE `333038.8 -> 331341.2`，小幅改善。
+- `2506`：formal MAE `409121.6 -> 409096.7`，基本不动。
+- `2601`：formal MAE `473580.9 -> 471295.4`，小幅改善。
+- `2507`：formal MAE 不变，high-over 风险未加重。
+
+结论：
+
+- soft avg 接入是必要的 v3 输入补全，但收益有限。
+- `2506` 的主因不是 soft avg 缺失，而是表先验/真实样本分布偏差或更深的先验建模问题。
+- `random_*_avg_value` 暂不进入 formal 是合理的；其分组表现不稳定，后续需单独建抽样均值 likelihood。
+
+## O-v3-027：archive raw truth 显示多张差地图高于表先验
+
+新增可复跑校准报表：
+
+```powershell
+C:\Python313\python.exe .\scripts\summarize_v3_prior_archive_calibration.py --prior-trials 10000 --top 10
+```
+
+当前结果：
+
+```text
+2404 sessions=15 actual_p50=695440.0  prior_p50=356392.5 median_ratio=1.951
+2506 sessions=21 actual_p50=1133996.0 prior_p50=615435.5 median_ratio=1.843 p90_ratio=1.908
+2601 sessions=22 actual_p50=2250424.5 prior_p50=1384152.5 median_ratio=1.626
+2501 sessions=87 actual_p50=910535.0  prior_p50=579558.0 median_ratio=1.571
+2401 sessions=70 actual_p50=526176.5  prior_p50=371144.0 median_ratio=1.418
+```
+
+对照：
+
+- `2507` actual/prior median ratio 约 `0.95`，不是所有 shipwreck 都偏高。
+- 无放回抽样只能提升 median 约 `3-7%`，不能解释 `2506` 的 `1.84x` 偏差。
+- item value 与 grid_view 外参一致，未发现价格表漂移。
+
+结论：
+
+- `2506/2501/2601/2404` 的系统性低估不能只靠窗口证据 likelihood 解决。
+- v3 下一步需要显式 empirical prior/calibration layer，且必须按样本数和 high-over 风险 gate。
+- 该 layer 不应直接从少样本地图学习强参数；`2506/2501/2401` 的样本量更适合先做 shadow 校准，`2404/2601` 需保守。

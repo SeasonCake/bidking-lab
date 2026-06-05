@@ -404,6 +404,101 @@ def _bucket_log_likelihood(
     ))
 
 
+def _quality_from_targets(targets: Sequence[str]) -> int | None:
+    for target in targets:
+        if not target.startswith("bucket.q"):
+            continue
+        rest = target.removeprefix("bucket.q")
+        raw_quality = rest.split(".", 1)[0]
+        try:
+            return int(raw_quality)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _soft_average_cells_value(
+    truth: SessionTruth,
+    targets: Sequence[str],
+) -> float | None:
+    target_set = set(targets)
+    if "session.total_cells" in target_set and "session.total_count" in target_set:
+        total_count = _truth_total_count(truth)
+        if total_count <= 0:
+            return 0.0
+        return float(truth.warehouse_total_cells) / float(total_count)
+    quality = _quality_from_targets(targets)
+    if quality is None:
+        return None
+    count, cells, _ = _bucket_fields(truth, quality)
+    if count <= 0:
+        return 0.0
+    return float(cells) / float(count)
+
+
+def _soft_average_value(
+    truth: SessionTruth,
+    targets: Sequence[str],
+) -> float | None:
+    quality = _quality_from_targets(targets)
+    if quality is None:
+        return None
+    count, _, value = _bucket_fields(truth, quality)
+    if count <= 0:
+        return 0.0
+    return float(value) / float(count)
+
+
+def _soft_numeric_observation_log_likelihood(
+    truth: SessionTruth,
+    constraints: ConstraintSet | None,
+) -> float:
+    if constraints is None or not constraints.soft_numeric:
+        return 0.0
+    score = 0.0
+    for constraint in constraints.soft_numeric.values():
+        semantic = str(constraint.semantic)
+        if semantic.startswith("random_") or semantic.startswith("size_"):
+            continue
+        if semantic.endswith("_avg_cells") or "avg_cells" in semantic:
+            actual_cells = _soft_average_cells_value(truth, constraint.targets)
+            if actual_cells is None:
+                continue
+            score += _exact_log_likelihood(
+                actual_cells,
+                constraint.value,
+                base_scale=0.45,
+                ratio_scale=0.20,
+                importance=0.55,
+            )
+        elif semantic.endswith("_avg_value") or "avg_value" in semantic:
+            actual_value = _soft_average_value(truth, constraint.targets)
+            if actual_value is None:
+                continue
+            score += _exact_log_likelihood(
+                actual_value,
+                constraint.value,
+                base_scale=15_000.0,
+                ratio_scale=0.40,
+                importance=0.45,
+            )
+    return score
+
+
+def _has_usable_soft_numeric_observation(
+    constraints: ConstraintSet | None,
+) -> bool:
+    if constraints is None:
+        return False
+    for constraint in constraints.soft_numeric.values():
+        semantic = str(constraint.semantic)
+        if semantic.startswith("random_") or semantic.startswith("size_"):
+            continue
+        if "avg_cells" in semantic or "avg_value" in semantic:
+            return True
+    return False
+
+
 def _shape_dimensions(shape_key: str | int | None) -> tuple[int, int] | None:
     if shape_key in (None, ""):
         return None
@@ -537,24 +632,30 @@ def _anchor_log_likelihood(
     return -min(18.0, 0.75 * miss_weight + 3.0 * miss_ratio * miss_ratio)
 
 
-def _anchor_likelihood_weights(
+def _constraint_likelihood_weights(
     truths: Sequence[SessionTruth],
     constraints: ConstraintSet | None,
     *,
     temperature: float = 4.0,
     relative_floor: float = 1e-8,
-) -> tuple[tuple[float, ...] | None, float]:
+) -> tuple[tuple[float, ...] | None, float, bool, bool]:
     if constraints is None or not truths:
-        return None, 0.0
-    if not constraints.item_anchors and not constraints.shape_anchors:
-        return None, 0.0
+        return None, 0.0, False, False
+    used_anchor = bool(constraints.item_anchors or constraints.shape_anchors)
+    used_soft = _has_usable_soft_numeric_observation(constraints)
+    if not used_anchor and not used_soft:
+        return None, 0.0, False, False
     log_weights = np.asarray(
-        [_anchor_log_likelihood(truth, constraints) for truth in truths],
+        [
+            _anchor_log_likelihood(truth, constraints)
+            + _soft_numeric_observation_log_likelihood(truth, constraints)
+            for truth in truths
+        ],
         dtype=np.float64,
     )
     finite = np.isfinite(log_weights)
     if not finite.any():
-        return None, 0.0
+        return None, 0.0, False, False
     max_log = float(log_weights[finite].max())
     relative = np.zeros(len(log_weights), dtype=np.float64)
     relative[finite] = np.exp(
@@ -562,15 +663,15 @@ def _anchor_likelihood_weights(
     )
     keep = relative >= max(float(relative_floor), 0.0)
     if not keep.any():
-        return None, 0.0
+        return None, 0.0, False, False
     weights = relative[keep]
     if len(weights) != len(truths):
-        return None, 0.0
+        return None, 0.0, False, False
     total = float(weights.sum())
     if total <= 0.0:
-        return None, 0.0
+        return None, 0.0, False, False
     ess = float(total * total / float(np.square(weights).sum()))
-    return tuple(float(weight) for weight in weights), ess
+    return tuple(float(weight) for weight in weights), ess, used_anchor, used_soft
 
 
 def _summary_log_likelihood(
@@ -622,6 +723,7 @@ def _summary_log_likelihood(
     for bucket in summary.buckets:
         score += _bucket_log_likelihood(truth, bucket)
     score += _anchor_log_likelihood(truth, constraints)
+    score += _soft_numeric_observation_log_likelihood(truth, constraints)
     return score
 
 
@@ -692,13 +794,23 @@ def estimate_q6_posterior_from_truths(
     matched_weights: tuple[float, ...] | None = None
     match_scope = "strict"
     if strict_matched:
-        matched_weights, effective_n = _anchor_likelihood_weights(
-            strict_matched,
-            constraints,
-        )
+        (
+            matched_weights,
+            effective_n,
+            used_anchor,
+            used_soft,
+        ) = _constraint_likelihood_weights(strict_matched, constraints)
         if matched_weights is not None:
-            diagnostics.append("anchor_likelihood_weighted")
-            diagnostics.append(f"anchor_likelihood_effective_samples={effective_n:.3f}")
+            if used_anchor:
+                diagnostics.append("anchor_likelihood_weighted")
+                diagnostics.append(
+                    f"anchor_likelihood_effective_samples={effective_n:.3f}"
+                )
+            if used_soft:
+                diagnostics.append("soft_numeric_likelihood_weighted")
+                diagnostics.append(
+                    f"soft_numeric_likelihood_effective_samples={effective_n:.3f}"
+                )
     if n_total <= 0:
         diagnostics.append("no_prior_samples")
     if n_total > 0 and not strict_matched and summary.feasible:
@@ -789,7 +901,12 @@ def estimate_q6_posterior_from_truths(
     ):
         q6_conditioned = _bucket_conditioned_truths(truths, q6_summary)
         if q6_conditioned:
-            conditioned_weights, effective_n = _anchor_likelihood_weights(
+            (
+                conditioned_weights,
+                effective_n,
+                used_anchor,
+                used_soft,
+            ) = _constraint_likelihood_weights(
                 q6_conditioned,
                 constraints,
             )
@@ -797,9 +914,14 @@ def estimate_q6_posterior_from_truths(
                 f"q6_bucket_conditioned_samples={len(q6_conditioned)}"
             )
             if conditioned_weights is not None:
-                diagnostics.append(
-                    "q6_bucket_conditioned_anchor_likelihood_weighted"
-                )
+                if used_anchor:
+                    diagnostics.append(
+                        "q6_bucket_conditioned_anchor_likelihood_weighted"
+                    )
+                if used_soft:
+                    diagnostics.append(
+                        "q6_bucket_conditioned_soft_numeric_likelihood_weighted"
+                    )
                 diagnostics.append(
                     f"q6_bucket_conditioned_effective_samples={effective_n:.3f}"
                 )

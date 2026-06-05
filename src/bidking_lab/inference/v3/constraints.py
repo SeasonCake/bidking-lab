@@ -19,6 +19,18 @@ class HardNumericConstraint:
 
 
 @dataclass(frozen=True)
+class SoftNumericConstraint:
+    key: str
+    targets: tuple[str, ...]
+    value: int | float
+    event_id: str
+    source_kind: str
+    source_id: str
+    semantic: str
+    sort_id: int | None
+
+
+@dataclass(frozen=True)
 class ConstraintConflict:
     target: str
     first: HardNumericConstraint
@@ -78,6 +90,7 @@ class ConstraintSet:
     item_anchors: dict[str, ItemAnchor] = field(default_factory=dict)
     shape_anchors: dict[str, ShapeAnchor] = field(default_factory=dict)
     quality_floor_anchors: dict[str, QualityFloorAnchor] = field(default_factory=dict)
+    soft_numeric: dict[str, SoftNumericConstraint] = field(default_factory=dict)
     conflicts: list[ConstraintConflict] = field(default_factory=list)
 
     @property
@@ -316,6 +329,36 @@ def _record_quality_floor_anchors(event: EvidenceEvent, out: ConstraintSet) -> N
         )
 
 
+def _soft_numeric_key(event: EvidenceEvent) -> str:
+    targets = ",".join(sorted(event.targets))
+    return f"{event.source_kind}:{event.source_id}:{event.semantic}:{targets}"
+
+
+def _record_soft_numeric(event: EvidenceEvent, out: ConstraintSet) -> None:
+    value = _numeric_payload_value(event)
+    if value is None:
+        return
+    if not any(_is_numeric_target(target) for target in event.targets):
+        return
+    key = _soft_numeric_key(event)
+    current = out.soft_numeric.get(key)
+    if current is not None:
+        current_sort = current.sort_id if current.sort_id is not None else -1
+        event_sort = event.sort_id if event.sort_id is not None else -1
+        if event_sort < current_sort:
+            return
+    out.soft_numeric[key] = SoftNumericConstraint(
+        key=key,
+        targets=tuple(event.targets),
+        value=value,
+        event_id=event.event_id,
+        source_kind=event.source_kind,
+        source_id=event.source_id,
+        semantic=event.semantic,
+        sort_id=event.sort_id,
+    )
+
+
 def compile_hard_constraints(events: Iterable[EvidenceEvent]) -> ConstraintSet:
     """Compile hard v3 events into a first-pass constraint set.
 
@@ -337,6 +380,8 @@ def compile_hard_constraints(events: Iterable[EvidenceEvent]) -> ConstraintSet:
             _record_item_and_shape_anchors(event, out)
         if "quality_floors" in target_set:
             _record_quality_floor_anchors(event, out)
+        if event.strength == "soft":
+            _record_soft_numeric(event, out)
         if event.strength != "hard":
             continue
         derived_values = _derived_shape_numeric_values(event)
@@ -400,5 +445,6 @@ __all__ = (
     "ItemAnchor",
     "QualityFloorAnchor",
     "ShapeAnchor",
+    "SoftNumericConstraint",
     "compile_hard_constraints",
 )

@@ -374,3 +374,29 @@ v3 shadow 的 practical P50 guard 拆成两层：
 - diagnostics 必须在 override 生效时记录 `decision_p50_guard_quantile=*`。
 - `2601` 样本仍少；P85 只是 shadow calibration，不作为 hidden promotion 依据。
 - 后续如果新样本显示 high-over 上升，需要先按 map audit 回滚或下调 override，而不是继续加全局参数。
+
+## D-v3-024：soft 均值证据进入 likelihood，但 random avg 暂不进 formal
+
+v3 `ConstraintSet` 增加 `soft_numeric`，posterior likelihood 消费以下 soft 证据：
+
+- `q4/q5/q6_avg_cells`：按对应质量桶 `cells / count` 进行软权重。
+- `total_avg_cells`：按 `session.total_cells / session.total_count` 进行软权重。
+- `q4/q5/q6_avg_value`：按对应质量桶 `value / count` 进行软权重。
+
+暂不进入 formal likelihood 的证据：
+
+- `random_*_avg_value`：保留为 diagnostic/random sample signal。
+- `size_*_avg_value`：保留为 soft 事件，但本轮不用于 posterior。
+
+原因：
+
+- avg cells/value 是明确的质量桶或总量均值约束，适合作为 likelihood 权重。
+- random avg 是抽样均值，不能等同于全仓或质量桶均值；v2 曾因把这类信号硬化而出现误判。
+- size-bucket 均价需要按形状/格数桶建模，不能用质量桶均值逻辑替代。
+
+边界：
+
+- soft 证据只调整样本权重，不 hard reject。
+- 重复状态中的同一 soft source 只保留最新 sort_id，避免同一证据被重复计权。
+- diagnostics 记录 `soft_numeric_likelihood_weighted`，便于后续按证据类型切片。
+- 该实现仍为 v3 shadow，`affects_bid=false`。

@@ -165,6 +165,57 @@ def test_compile_hard_constraints_records_exact_numeric_and_anchors() -> None:
     assert footprint.cells == 2
 
 
+def test_compile_hard_constraints_records_soft_numeric_latest_value() -> None:
+    states = (
+        SimpleNamespace(
+            sort_id=10,
+            session_id="2401:abc",
+            round_index=1,
+            map_id=2401,
+            public_infos=(),
+            action_results=(
+                SimpleNamespace(
+                    action_id=100113,
+                    result=8.5,
+                    result_field=14,
+                    observed_items=(),
+                ),
+            ),
+            skill_reveals=(),
+            inventory_items=(),
+        ),
+        SimpleNamespace(
+            sort_id=20,
+            session_id="2401:abc",
+            round_index=2,
+            map_id=2401,
+            public_infos=(),
+            action_results=(
+                SimpleNamespace(
+                    action_id=100113,
+                    result=9.0,
+                    result_field=14,
+                    observed_items=(),
+                ),
+            ),
+            skill_reveals=(),
+            inventory_items=(),
+        ),
+    )
+
+    constraints = compile_hard_constraints(
+        events_from_fatbeans(SimpleNamespace(states=states))
+    )
+
+    assert constraints.numeric == {}
+    assert len(constraints.soft_numeric) == 1
+    soft = next(iter(constraints.soft_numeric.values()))
+    assert soft.semantic == "q5_avg_cells"
+    assert soft.targets == ("bucket.q5.cells", "bucket.q5.count")
+    assert soft.value == 9.0
+    assert soft.sort_id == 20
+
+
 def test_compile_hard_constraints_derives_outline_cells_from_items() -> None:
     state = SimpleNamespace(
         sort_id=12,
