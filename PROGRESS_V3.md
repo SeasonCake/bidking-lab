@@ -1566,3 +1566,64 @@ ethan|2509 rows=30 sessions=8 delta=1701.474 mae=419243.927 -> 420945.4
 - 当前样本不足以把 Ethan 2506 或 profile 级上修正式升级。
 - 不需要盲目冲到 400+ 样本；如果新增实战样本，优先定向补 `ethan|2506`，其次补 `aisha|2506` holdout 确认。
 - `v3_under` 仍保持 `affects_bid=false`。
+
+## 2026-06-05 checkpoint：CCV sampler candidate gate
+
+实现：
+
+- 新增 `scripts/summarize_v3_ccv_profile_candidates.py`。
+- 新增 `tests/test_summarize_v3_ccv_profile_candidates.py`。
+- 该脚本按 `hero_map_id` 或 `hero_map_evidence_profile` 汇总 CCV shadow 相对 baseline 的 q6 count/cells/value/formal delta。
+- candidate gate 记录：
+  - `watch_only_count_cell_candidate`
+  - `watch_only_needs_evidence`
+  - `watch_only_neutral`
+  - `blocked_under_count_cell_downshift`
+  - `blocked_ccv_hurts`
+  - `blocked_low_ccv_activity`
+  - `blocked_low_sample`
+- 缺少公开总格/总数或 q6 证据不足的正向切片只进 needs-evidence，不和证据充分候选混在一起。
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_ccv_profile_candidates.py -q
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_inference_v3_underestimate_repair.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_summarize_v3_residual_profile_candidates.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_summarize_v3_underestimate_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 128 --fail-on-conflicts
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_profile_candidates.py --posterior-trials 128 --by hero_map_id --top 16
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_profile_candidates.py --posterior-trials 128 --by hero_map_evidence_profile --top 20
+```
+
+结果：
+
+- 新增测试：`3 passed`。
+- v3 core/live path：`82 passed`。
+- 全库 evaluator 显示 CCV 不能全局 promotion：
+
+```text
+v3_ccv_likelihood_rows=347
+v3_ccv_q6_count_p50_mae=1.440 delta=-0.001
+v3_ccv_q6_cells_p50_mae=7.008 delta=+0.165
+```
+
+- `hero_map_id` candidate gate：
+
+```text
+status_counts=blocked_ccv_hurts:5,blocked_low_ccv_activity:8,blocked_low_sample:71,blocked_under_count_cell_downshift:2,watch_only_count_cell_candidate:1,watch_only_needs_evidence:1,watch_only_neutral:1
+ethan|2502 watch_only_count_cell_candidate n=36 sessions=9 ccv_rate=0.444444 count_delta=-0.11 cells_delta=-1.89 value_delta=-61348.8 formal_delta=-2991.4
+aisha|2409 watch_only_needs_evidence n=32 sessions=9 ccv_rate=0.375 count_delta=-0.06 cells_delta=+0.01 formal_delta=-36155.1 public_total=0.0
+ethan|2506 blocked_under_count_cell_downshift n=28 sessions=8 count_delta=-0.07 cells_delta=-1.22 formal_delta=-13330.6 count_pred_delta=-0.07 cells_pred_delta=-2.22
+```
+
+- `hero_map_evidence_profile` 粒度仍不足：
+
+```text
+status_counts=blocked_ccv_hurts:2,blocked_low_ccv_activity:3,blocked_low_sample:349
+```
+
+结论：
+
+- CCV 的当前实现不是全局收益项，尤其 cells MAE 全局变差。
+- Ethan 2506 虽然 q6 count/cells MAE 有改善，但 formal 仍系统性低估，且 CCV 会继续下移 count/cells，因此不能作为正式 sampler gate。
+- 下一步如果要推进结构性 sampler，应该优先研究 `ethan|2502` 这种证据较充分的正向切片，以及 Aisha 2409 缺公开总格的 needs-evidence 切片；不要把 CCV 直接推广到 2506。

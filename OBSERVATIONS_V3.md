@@ -1112,3 +1112,40 @@ status_counts=blocked_low_sample:1524,blocked_not_systemic_under:14,watch_only_n
 - Ethan 2506 当前只有 `28` ready windows / `8` sessions，只有放宽阈值才显正向，因此不能正式升级。
 - profile 级样本明显不足，不能用来承载正式规则；公开总格、shape/layout、q6 floor 等证据仍应进入 profile，但 promotion 需要更多样本。
 - 不建议盲目追求固定总数 `400`；更有价值的是补足高风险切片。优先新增 `ethan|2506`，其次 `aisha|2506` holdout 确认；hidden 继续单独看。
+
+## O-v3-037：CCV 全局不稳定，2506 不适合直接用 count/cell 下移修复
+
+2026-06-05 新增 `summarize_v3_ccv_profile_candidates.py` 后，128-trial archive 显示：
+
+```text
+v3_ccv_likelihood_rows=347
+v3_ccv_q6_count_p50_mae=1.440 delta=-0.001
+v3_ccv_q6_cells_p50_mae=7.008 delta=+0.165
+```
+
+`hero_map_id` gate：
+
+```text
+status_counts=blocked_ccv_hurts:5,blocked_low_ccv_activity:8,blocked_low_sample:71,blocked_under_count_cell_downshift:2,watch_only_count_cell_candidate:1,watch_only_needs_evidence:1,watch_only_neutral:1
+```
+
+主要切片：
+
+```text
+ethan|2502 candidate n=36 sessions=9 ccv_rate=0.444444 count_delta=-0.11 cells_delta=-1.89 value_delta=-61348.8 formal_delta=-2991.4
+aisha|2409 needs_evidence n=32 sessions=9 ccv_rate=0.375 count_delta=-0.06 cells_delta=+0.01 formal_delta=-36155.1 public_total=0.0
+ethan|2506 blocked_under_count_cell_downshift n=28 sessions=8 count_delta=-0.07 cells_delta=-1.22 count_pred_delta=-0.07 cells_pred_delta=-2.22
+```
+
+profile 粒度：
+
+```text
+status_counts=blocked_ccv_hurts:2,blocked_low_ccv_activity:3,blocked_low_sample:349
+```
+
+解读：
+
+- 当前 CCV 更像局部诊断工具，不是稳定的 formal sampler。
+- `ethan|2506` 的 count/cells MAE 改善容易误导；它 formal 仍低估，继续下移 q6 count/cells 与用户实战低估问题方向相冲突。
+- `ethan|2502` 是目前更适合研究条件 sampler 的正向对象，因为 count/cells 同向改善且 evidence 比较充分。
+- `aisha|2409` 提示公开总格覆盖仍是关键证据缺口，不能把缺证据的改善当作结构性成功。

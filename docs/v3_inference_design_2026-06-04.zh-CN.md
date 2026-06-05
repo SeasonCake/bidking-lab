@@ -692,6 +692,37 @@ under_candidate=1.0 under_delta=-17692.3 under_below=0.704225 under_p90_cover=0.
 2. formal/live promotion 前需要定向新增 `ethan|2506` 样本；不要盲目增加 trials 或全局放大上修。
 3. `v3_under_active=false` 和 `v3_under_affects_bid=false` 继续保持。
 
+### 2026-06-05 CCV sampler candidate gate
+
+`estimate_count_cell_value_posterior_from_truths` 已经进入 archive/live shadow，但 128-trial 全库结果显示它不是稳定全局收益项：
+
+```text
+v3_ccv_likelihood_rows=347
+v3_ccv_q6_count_p50_mae=1.440 delta=-0.001
+v3_ccv_q6_cells_p50_mae=7.008 delta=+0.165
+```
+
+因此新增 `summarize_v3_ccv_profile_candidates.py`，把 CCV promotion 前置为切片候选审计：
+
+- `watch_only_count_cell_candidate`：count/cells/value/formal 至少有明确改善，样本和证据达标。
+- `watch_only_needs_evidence`：指标正向但公开总格/总数或 q6 floor 不足。
+- `blocked_under_count_cell_downshift`：formal 已系统性低估，而 CCV 继续下移 q6 count/cells。
+- `blocked_ccv_hurts`：count/cells/value/formal 任一关键 MAE 明显恶化。
+- `blocked_low_ccv_activity` / `blocked_low_sample`：CCV 实际激活或样本量不足。
+
+当前 hero/map 结果显示：
+
+- `ethan|2502` 是唯一证据较充分候选：`count_delta=-0.11`，`cells_delta=-1.89`。
+- `aisha|2409` 进入 needs-evidence：`public_total=0.0`。
+- `ethan|2506` 必须 block：虽然 `count_delta=-0.07`、`cells_delta=-1.22`，但 formal 仍系统性低估，且 CCV 继续下移 count/cells。
+- profile 粒度仍然 `blocked_low_sample=349`。
+
+设计影响：
+
+1. CCV 继续作为 shadow diagnostic，不进入 formal。
+2. `2506` 主线仍是低估修复、tail/value sampler 与证据 profile，不是 count/cell 下移。
+3. 后续结构性 sampler 应从 `ethan|2502` 这类证据充分、方向一致的切片做 holdout，而不是全局调 temperature。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

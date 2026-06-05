@@ -652,3 +652,37 @@ promotion 前置条件：
 
 - 当前 archive 足够继续 v3 架构重构、shadow 诊断和 Aisha 2506 方向判断。
 - formal/live promotion 前需要定向新增样本，优先 `ethan|2506`，目标是新增约 `10-15` 个有效 complete sessions；`aisha|2506` 可补 `5-10` 个做 holdout 确认。
+
+## D-v3-033：CCV sampler promotion 必须通过候选 gate
+
+`estimate_count_cell_value_posterior_from_truths` 已接入 archive/live shadow，但它不能因为局部 count/cells 改善而进入 formal。2026-06-05 起，`summarize_v3_ccv_profile_candidates.py` 作为 CCV promotion 的前置审计。
+
+当前决策：
+
+- CCV 仍保持 shadow-only，`affects_bid=false`。
+- 全局 CCV 不 promotion。
+- `hero_map_id` 可用于发现候选，但 profile 级复核仍是 promotion 前置条件。
+- 系统性低估切片中，如果 CCV 会继续下移 q6 count/cells，必须 block。
+- 缺少公开总格/总数或 q6 floor 的正向切片只能进入 `watch_only_needs_evidence`。
+
+原因：
+
+- 128-trial 全库显示 CCV 对 count 几乎无收益，对 cells 有伤害：`count_delta=-0.001`，`cells_delta=+0.165`。
+- `ethan|2502` 是当前唯一证据相对充分的 hero/map count-cell 候选：`count_delta=-0.11`，`cells_delta=-1.89`。
+- `aisha|2409` 有局部正向信号，但 `public_total=0.0`，不能直接晋级。
+- `ethan|2506` 虽有 `count_delta=-0.07`、`cells_delta=-1.22`，但 formal 仍系统性低估，且 `count_pred_delta=-0.07`、`cells_pred_delta=-2.22`，继续下移 q6 count/cells 的方向存在实战低估风险。
+- profile 粒度仍然 `blocked_low_sample=349`，不支持细粒度正式规则。
+
+硬边界：
+
+- 不覆盖 `v3_post_*`。
+- 不进入 `v3_cal_*`。
+- 不进入 UI 主建议。
+- 不进入正式 stop/attack bid。
+- 不以 CCV count/cells 改善为理由绕过 formal MAE、below、P90 coverage、pinball 和 evidence coverage。
+
+下一步：
+
+- 用 candidate gate 观察 `ethan|2502` 是否能在 holdout 或新增样本中保持正向。
+- 对 `aisha|2409` 优先补公开总格/总数覆盖审计，而不是直接调参数。
+- `2506` 主线仍是低估修复与 value/tail sampler，不是 CCV 下移。
