@@ -328,3 +328,23 @@ v3 `summary_likelihood` fallback 的 q6 条件化规则：
 - 该实现不生成新 hard footprint，也不改变 quality-only/宝光边界。
 - diagnostics 必须记录 q6-conditioned 样本量，后续 map/evidence gate 需要依赖这个字段。
 - 2601 与 high-over maps 后续需要单独 gate/校准；不能用这个结果证明 v3 已可 promotion。
+
+## D-v3-022：hidden 作为 cold-start family，不参与当前 q6-conditioned 主校准
+
+当前 v3 shadow 中，`2601` hidden map 禁用 q6 bucket-conditioned proposal：
+
+- 仍允许 summary likelihood、anchor likelihood、hard-bound guard。
+- 不使用 q6 bucket-conditioned subset 替换 hidden 的 q6 count/cells/value/formal 分量。
+- diagnostics 记录 `q6_bucket_conditioned=disabled_hidden_cold_start`。
+
+原因：
+
+- hidden 当前只有 `86` 个 ready 窗口，样本量远少于 shipwreck/villa。
+- q6-conditioned proposal 在 hidden 上造成 MAE 回退，但在 shipwreck/villa 上仍有整体收益。
+- hidden 的 truth P50/P90 明显更高，不能和 shipwreck/villa 混成一个全局红货权重。
+
+边界：
+
+- hidden 后续只做独立 shadow/cold-start 观察；有更多样本后再单独校准。
+- 当前 v3 主校准以 shipwreck/villa 为主，尤其 `2506/2501` 的低估。
+- `map_family` 是后续 v3 指标的正式分片字段，archive evaluator 必须输出。

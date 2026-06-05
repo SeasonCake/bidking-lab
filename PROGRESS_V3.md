@@ -901,3 +901,66 @@ C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by round --top
 - 这是比继续调高 guard 更合理的 v3 方向：让 q6 证据决定 q6 分布移动。
 - 当前仍是 shadow calibration，不满足 formal promotion。
 - 下一步应针对 2601 与 high-over maps 做 map/evidence gate，而不是继续扩大 q6-conditioned 强度。
+
+## 2026-06-05 checkpoint：hidden cold-start gate + map_family slices
+
+问题：
+
+- q6 bucket-conditioned proposal 在整体和沉船上收益明确，但 hidden `2601` 样本少、truth 厚尾强，套用同一 q6-conditioned 逻辑会让 hidden MAE 回退。
+- 后续需要稳定按 `shipwreck/villa/hidden` 分片，而不是每次用临时分析脚本推断地图族。
+
+实现：
+
+- v3 posterior 对 `2601` 暂停 q6 bucket-conditioned proposal，诊断记录：
+  - `q6_bucket_conditioned=disabled_hidden_cold_start`
+- `scripts/evaluate_fatbeans_v3_samples.py` 输出 `map_family` 字段：
+  - `24xx/34xx/44xx -> villa`
+  - `25xx/35xx/45xx -> shipwreck`
+  - `26xx/36xx/46xx -> hidden`
+- `scripts/summarize_v3_metric_slices.py --by map_family` 可直接输出 family 指标。
+
+当前 433 canonical 样本、512 samples/map 指标：
+
+```text
+formal_p50_mae=308876.090
+formal_p50_mae_strict=315835.395
+formal_p50_mae_fallback=305379.397
+formal_p50_below_rate=0.546936
+formal_p50_over_rate=0.453064
+formal_p90_coverage=0.799218
+q6_formal_p50_mae=281387.105
+q6_formal_p50_mae_strict=289113.803
+q6_formal_p50_mae_fallback=277504.837
+q6_formal_p50_below_rate=0.462842
+q6_formal_p50_over_rate=0.535202
+```
+
+相对未 gate 的 q6-conditioned proposal：
+
+- `formal_p50_mae`：`309872.088 -> 308876.090`，下降约 `996`。
+- `q6_formal_p50_mae`：`282939.074 -> 281387.105`，下降约 `1,552`。
+- `formal_p90_coverage` 小幅 `0.799870 -> 0.799218`，可接受。
+
+`map_family` 分片：
+
+```text
+hidden    n=86  formal_mae=563274.2 q6_mae=486057.4
+shipwreck n=833 formal_mae=326650.0 q6_mae=299233.0
+villa     n=615 formal_mae=249227.5 q6_mae=228594.8
+```
+
+结论：
+
+- hidden 目前应保持 cold-start shadow，不参与 q6-conditioned proposal 的主校准。
+- 主要优化对象仍是 shipwreck 的低估，尤其 `2506/2501`。
+- high-over maps 仍需后续保护 gate；本 checkpoint 只处理已确认的 hidden 回退问题。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_live_monitor.py -q
+C:\Python313\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Python313\python.exe .\scripts\summarize_v3_metric_slices.py --by map_family --top 10
+```
+
+结果：`41 passed`，全样本 evaluator 通过。

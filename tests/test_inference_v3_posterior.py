@@ -233,6 +233,43 @@ def test_v3_posterior_conditions_q6_bucket_inside_summary_likelihood() -> None:
     assert report.q6_value.p50 > 100_000
 
 
+def test_v3_posterior_disables_q6_conditioning_for_hidden_cold_start() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=99,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=100_000,
+        buckets=(
+            BucketFeasibleSummary(
+                quality=6,
+                count_floor=1,
+                cells_floor=4,
+                value_floor=100_000,
+            ),
+        ),
+    )
+
+    report = estimate_q6_posterior_from_truths(
+        map_id=2601,
+        map_name="hidden",
+        summary=summary,
+        truths=(
+            _truth(),
+            _truth(q6_count=1, q6_cells=4, q6_value=100_000),
+            _truth(q6_count=3, q6_cells=12, q6_value=300_000),
+        ),
+    )
+
+    assert report.ready is True
+    assert report.match_scope == "summary_likelihood"
+    assert "q6_bucket_conditioned=disabled_hidden_cold_start" in report.diagnostics
+    assert not any(
+        item.startswith("q6_bucket_conditioned_samples=")
+        for item in report.diagnostics
+    )
+
+
 def test_v3_posterior_guards_known_value_floors() -> None:
     summary = FeasibleSummaryReport(
         session_total_count_exact=None,

@@ -22,6 +22,7 @@ _HIGH_TAIL_PRACTICAL_P50_GUARD_QUANTILE = 0.65
 _LOW_TAIL_PRACTICAL_P50_GUARD_QUANTILE = 0.55
 _HIGH_TAIL_MAP_IDS = frozenset((2404, 2501, 2503, 2506, 2601))
 _LOW_TAIL_MAP_IDS = frozenset((2407, 2410, 2505, 2507, 2508))
+_Q6_BUCKET_CONDITION_DISABLED_MAP_IDS = frozenset((2601,))
 
 
 @dataclass(frozen=True)
@@ -769,7 +770,11 @@ def estimate_q6_posterior_from_truths(
     total_weights_for_quantiles = matched_weights
     q6_count_cell_weights_for_quantiles = matched_weights
     q6_value_weights_for_quantiles = matched_weights
-    if match_scope == "summary_likelihood" and _bucket_has_constraints(q6_summary):
+    if (
+        match_scope == "summary_likelihood"
+        and _bucket_has_constraints(q6_summary)
+        and int(map_id) not in _Q6_BUCKET_CONDITION_DISABLED_MAP_IDS
+    ):
         q6_conditioned = _bucket_conditioned_truths(truths, q6_summary)
         if q6_conditioned:
             conditioned_weights, effective_n = _anchor_likelihood_weights(
@@ -876,6 +881,12 @@ def estimate_q6_posterior_from_truths(
                         )
                     )
                 ]
+    elif (
+        match_scope == "summary_likelihood"
+        and _bucket_has_constraints(q6_summary)
+        and int(map_id) in _Q6_BUCKET_CONDITION_DISABLED_MAP_IDS
+    ):
+        diagnostics.append("q6_bucket_conditioned=disabled_hidden_cold_start")
     q6_present_rate = (
         sum(1 for count in q6_counts_for_quantiles if count > 0)
         / len(q6_counts_for_quantiles)

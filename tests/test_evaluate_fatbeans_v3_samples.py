@@ -130,6 +130,7 @@ def test_v3_prebid_rows_compile_ready_constraints() -> None:
 
     assert len(rows) == 1
     assert rows[0]["status"] == "ready"
+    assert rows[0]["map_family"] == "villa"
     assert rows[0]["numeric_constraints"] == 1
     assert rows[0]["constraint_ok"] is True
 
@@ -262,5 +263,6 @@ def test_v3_prebid_rows_separate_no_state_windows() -> None:
 
     assert len(rows) == 1
     assert rows[0]["status"] == "no_state"
+    assert rows[0]["map_family"] == "unknown"
     assert rows[0]["numeric_constraints"] == 0
     assert rows[0]["constraint_ok"] is False

@@ -474,6 +474,13 @@ v3 可进入正式候选前：
 - 当前 433 canonical 样本指标：`formal_p50_mae=309872.088`，`q6_formal_p50_mae=282939.074`，`formal_p90_coverage=0.799870`。
 - 该实现仍为 shadow calibration；2601 和 high-over maps 需要下一轮 map/evidence gate。
 
+### 2026-06-05 追加进展
+
+- hidden `2601` 暂停 q6 bucket-conditioned proposal，作为 cold-start family 单独观察。
+- archive evaluator 输出 `map_family`，后续可直接按 `shipwreck/villa/hidden` 分片。
+- 当前指标更新为：`formal_p50_mae=308876.090`，`q6_formal_p50_mae=281387.105`，`formal_p90_coverage=0.799218`。
+- 下一步重点：shipwreck `2506/2501` 低估与 high-over maps 保护 gate。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

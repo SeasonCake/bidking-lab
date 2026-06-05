@@ -509,3 +509,40 @@ map_id=2501 formal_mae=337374.6 q6_mae=305785.5
 - 只有 q6 value floor/exact 时才移动 value/formal 分量是必要 gate；否则 count+cells 证据会把 q6 value 推高。
 - 2601 在该 proposal 下 MAE 回退，说明它的问题不是简单 q6 floor 残差，后续需要 map/evidence 条件 gate 或专门 proposal。
 - high-over 地图仍要跟 below-rate 一起监控，不能为了降低低估而无限提高 aggressive 程度。
+
+## O-v3-023：禁用 hidden q6-conditioned 后，整体 MAE 改善且 family 分片更清楚
+
+2026-06-05 对 hidden `2601` 禁用 q6 bucket-conditioned proposal，并为 archive evaluator 增加 `map_family` 后：
+
+整体：
+
+```text
+formal_p50_mae=308876.090
+formal_p50_below_rate=0.546936
+formal_p90_coverage=0.799218
+q6_formal_p50_mae=281387.105
+q6_formal_p50_below_rate=0.462842
+q6_formal_p50_over_rate=0.535202
+```
+
+对比未 gate 的 q6-conditioned proposal：
+
+```text
+formal_p50_mae 309872.088 -> 308876.090
+q6_formal_p50_mae 282939.074 -> 281387.105
+```
+
+`map_family` 分片：
+
+```text
+hidden    n=86  formal_mae=563274.2 bias=-379658.3 q6_mae=486057.4
+shipwreck n=833 formal_mae=326650.0 bias=-111275.0 q6_mae=299233.0
+villa     n=615 formal_mae=249227.5 bias=-50832.8  q6_mae=228594.8
+```
+
+结论：
+
+- hidden 当前不适合和 shipwreck/villa 共用 q6-conditioned 主逻辑。
+- 禁用 hidden 后，overall formal/q6 MAE 均优于上一 checkpoint。
+- hidden 仍严重低估，但这是独立 cold-start 问题，不能用全局参数修。
+- 后续主线应继续解决 shipwreck `2506/2501` 低估，同时给 `2507/2508/2407` 等 high-over maps 做保护。

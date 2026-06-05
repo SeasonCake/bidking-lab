@@ -80,6 +80,19 @@ def _latest_map_id(events: FatbeansCaptureEvents) -> int | None:
     return None
 
 
+def _map_family(map_id: int | None) -> str:
+    if map_id is None:
+        return "unknown"
+    family = int(map_id) // 100
+    if family in (24, 34, 44):
+        return "villa"
+    if family in (25, 35, 45):
+        return "shipwreck"
+    if family in (26, 36, 46):
+        return "hidden"
+    return "other"
+
+
 def _empty_prior_flat_dict() -> dict[str, Any]:
     return {
         "v3_prior_available": False,
@@ -224,6 +237,7 @@ def _round_rows_for_events(
                     "bid_sort_id": bid_sort_id,
                     "bid_value": getattr(bid_send, "value", None),
                     "map_id": map_id,
+                    "map_family": _map_family(map_id),
                     "prior_state_count": 0,
                     "round_state_count": len(round_states),
                     "round_action_send_count": len(round_action_sends),
@@ -298,6 +312,7 @@ def _round_rows_for_events(
                 "bid_sort_id": bid_sort_id,
                 "bid_value": getattr(bid_send, "value", None),
                 "map_id": map_id,
+                "map_family": _map_family(map_id),
                 "prior_state_count": len(prefix.states),
                 "round_state_count": len(round_states),
                 "round_action_send_count": len(round_action_sends),
@@ -635,6 +650,7 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "bid_sort_id",
         "bid_value",
         "map_id",
+        "map_family",
         "prior_state_count",
         "round_state_count",
         "round_action_send_count",
