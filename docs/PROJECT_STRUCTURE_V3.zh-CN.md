@@ -32,6 +32,7 @@
 | `scripts/summarize_v3_ccv_guard_sensitivity.py` | v3 CCV count/cell tail guard sensitivity 审计 |
 | `scripts/summarize_v3_ccv_direction_audit.py` | v3 CCV p50 移动方向性审计，支持 `--candidate-prefix` |
 | `scripts/summarize_v3_ccv_direction_holdout.py` | v3 CCV 方向候选 session holdout 审计，支持 `--candidate-prefix` |
+| `scripts/summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC count/cells 证据贡献审计 |
 | `scripts/summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计 |
 | `scripts/summarize_v3_tail_value_candidates.py` | v3 tail/value review 候选审计 |
 | `scripts/summarize_v3_tail_value_holdout.py` | v3 tail/value review 候选 session holdout 审计 |
@@ -51,6 +52,7 @@
 | `tests/test_summarize_v3_ccv_guard_sensitivity.py` | v3 CCV guard sensitivity 审计测试 |
 | `tests/test_summarize_v3_ccv_direction_audit.py` | v3 CCV p50 方向性审计测试 |
 | `tests/test_summarize_v3_ccv_direction_holdout.py` | v3 CCV 方向候选 session holdout 审计测试 |
+| `tests/test_summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC 证据贡献审计测试 |
 | `tests/test_summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计测试 |
 | `tests/test_summarize_v3_tail_value_candidates.py` | v3 tail/value review 候选审计测试 |
 | `tests/test_summarize_v3_tail_value_holdout.py` | v3 tail/value holdout 审计测试 |

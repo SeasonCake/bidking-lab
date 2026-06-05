@@ -1159,3 +1159,36 @@ candidate_delta=+0.081
 - q6_cells 在 map holdout 上是主要伤害源。
 - q6_count 的收益很小，容易被少数组的 wrong-direction move 抵消。
 - 下一步必须拆 evidence contribution，而不是继续盲目调 threshold。
+
+## D-v3-047：CCVC 下一步必须拆 count/cells 的证据 gate
+
+2026-06-05 的 evidence contribution audit 后，v3 CCVC 后续设计采用 count/cells 分离策略：
+
+- q6_count 可以继续作为 component likelihood 候选研究，但不能直接 promotion。
+- q6_cells 不允许随 q6_count 一起移动；必须先有更强的 capacity/total consistency 或 holdout guard。
+- `public_max_item_cells`、`tool_category`、`item_anchor` 不得作为 q6_cells 上调/下调的直接放行条件。
+- `public_total`、`layout`、`public_random_avg` 对 q6_cells 只能作为高风险线索；即使 MAE 改善，也要先过 changed-row hurt gate。
+
+当前 128-trial contribution 结果：
+
+```text
+q6_count:
+overall delta=-0.033 hurt_rate=0.443730
+unassigned_anchor delta=-0.115 present_minus_absent=-0.127
+tool_category delta=-0.093 present_minus_absent=-0.072
+q6_floor delta=-0.052 present_minus_absent=-0.030
+public_total delta=-0.040 present_minus_absent=-0.009
+
+q6_cells:
+overall delta=-0.168 hurt_rate=0.495177
+public_max_item_cells hurt_rate=0.653061 present_minus_absent=+0.129
+tool_category hurt_rate=0.600000 present_minus_absent=+0.172
+item_anchor hurt_rate=0.520803 present_minus_absent=+0.278
+public_total hurt_rate=0.447236 present_minus_absent=-0.745
+```
+
+原因：
+
+- count 和 cells 的证据方向不同，不能共用一个 CCVC movement gate。
+- q6_cells 的 MAE 改善来自一部分高信息窗口，但 hurt rate 已接近或超过 blocker 阈值。
+- 继续整体调权重会把有用的 count 信号和高风险 cells 信号混在一起，复现 v2/v3 的“局部改善但实战反向”问题。

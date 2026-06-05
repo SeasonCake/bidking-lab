@@ -1649,3 +1649,47 @@ candidate_delta=+0.081
 - profile 层 q6_count 是弱正向，但不能用简单 gate 放行。
 - `public:total` 与 `random_avg` 同时出现时不自动可靠；需要拆它们分别对 count 和 cells 的贡献。
 - 下一步应做 evidence contribution audit，识别哪些证据组合应提高/降低 count，哪些应完全不动 cells。
+
+## O-v3-051：CCVC contribution 显示 count 与 cells 不能共用 gate
+
+2026-06-05 新增 `summarize_v3_ccvc_evidence_contribution.py` 后，128-trial archive 显示：
+
+```text
+q6_count overall:
+delta=-0.033
+pred_delta=+0.139
+hurt_rate=0.443730
+directional_error=0.292605
+
+q6_cells overall:
+delta=-0.168
+pred_delta=-0.074
+hurt_rate=0.495177
+directional_error=0.428725
+```
+
+q6_count 较有用的特征：
+
+```text
+unassigned_anchor delta=-0.115 present_minus_absent=-0.127 hurt_rate=0.327485
+tool_category delta=-0.093 present_minus_absent=-0.072 hurt_rate=0.275862
+q6_floor delta=-0.052 present_minus_absent=-0.030 hurt_rate=0.438596
+public_total delta=-0.040 present_minus_absent=-0.009 hurt_rate=0.421875
+```
+
+q6_cells 风险特征：
+
+```text
+public_max_item_cells hurt_rate=0.653061 present_minus_absent=+0.129
+tool_category hurt_rate=0.600000 present_minus_absent=+0.172
+item_anchor hurt_rate=0.520803 present_minus_absent=+0.278
+public_random_avg hurt_rate=0.516129 present_minus_absent=-0.265
+public_total hurt_rate=0.447236 present_minus_absent=-0.745
+```
+
+解读：
+
+- `public_total` 对 q6_cells 的 MAE 改善很大，但 hurt rate 仍接近 blocker，不能直接放行。
+- `tool_category` 对 q6_count 有贡献，但对 q6_cells 是风险项。
+- `item_anchor`/`shape_anchor` 不能被解释为 q6 cells 可靠证据；它们更像 q6 component 候选空间约束，而不是 cells p50 移动方向。
+- 下一步应在 CCVC likelihood 中输出 count/cells 分离 diagnostics，并让 cells movement 需要更强的 total/capacity consistency。

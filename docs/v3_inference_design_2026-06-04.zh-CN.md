@@ -1091,6 +1091,47 @@ candidate_delta=+0.081
 3. q6 count 不能只靠更严格阈值放行；严格 gate 反而变差。
 4. 下一步的 likelihood 设计应输出 evidence contribution 或 gating diagnostics，让 public total、random_avg、q6 floor、explicit q6 anchors、unqualified anchors 对 count/cells 的作用可审计。
 
+### 2026-06-05 CCVC evidence contribution audit
+
+新增 `summarize_v3_ccvc_evidence_contribution.py`，用于把 `v3_ccvc_` movement 按证据特征拆开：
+
+- public total
+- public random average
+- public max item cells
+- tool category
+- item/shape anchors
+- layout
+- q6 floor
+- explicit q6 anchor
+- unassigned anchor
+
+128-trial 结果：
+
+```text
+q6_count overall delta=-0.033 hurt_rate=0.443730
+q6_cells overall delta=-0.168 hurt_rate=0.495177
+
+q6_count positives:
+unassigned_anchor delta=-0.115 present_minus_absent=-0.127
+tool_category delta=-0.093 present_minus_absent=-0.072
+q6_floor delta=-0.052 present_minus_absent=-0.030
+public_total delta=-0.040 present_minus_absent=-0.009
+
+q6_cells risks:
+public_max_item_cells hurt_rate=0.653061 present_minus_absent=+0.129
+tool_category hurt_rate=0.600000 present_minus_absent=+0.172
+item_anchor hurt_rate=0.520803 present_minus_absent=+0.278
+public_total hurt_rate=0.447236 present_minus_absent=-0.745
+```
+
+设计影响：
+
+1. q6 count 和 q6 cells 不再共用同一个 promotion gate。
+2. q6 count 可以继续研究 contribution-based movement，但仍需要 holdout guard。
+3. q6 cells 暂时必须更保守；public total/layout/random_avg 虽可降低 MAE，但 changed-row hurt rate 过高。
+4. `tool_category`、`item_anchor`、`public_max_item_cells` 不能直接推动 q6 cells p50。
+5. 下一版 likelihood 应输出 count/cells 分离 diagnostics，便于 readiness 判断具体是哪个证据项触发了移动。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

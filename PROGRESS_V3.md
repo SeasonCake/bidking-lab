@@ -2383,3 +2383,49 @@ candidate_delta=+0.081
 - q6_cells 是主要风险源；map holdout 下 cells delta `+0.354`，不能进入 formal。
 - 简单收紧 hurt/directional threshold 不可行，会缩小覆盖但让 q6_count holdout 变差。
 - 下一步需要拆 evidence contribution：public total、random_avg、q6 floor、explicit q6 anchor、unqualified anchor 分别如何影响 count/cells，而不是继续调候选阈值。
+
+## 2026-06-05 checkpoint：v3 CCVC evidence contribution audit
+
+实现：
+
+- 新增 `scripts/summarize_v3_ccvc_evidence_contribution.py`。
+  - 对 `v3_ccvc_` p50 movement 按证据特征拆分贡献。
+  - 输出每个 component/feature 的 `mae_delta`、`present_minus_absent_mae_delta`、changed hurt rate、directional error rate。
+  - 当前特征包括 `public_total`、`public_random_avg`、`public_max_item_cells`、`tool_category`、`item_anchor`、`shape_anchor`、`layout`、`q6_floor`、`explicit_q6_anchor`、`unassigned_anchor` 及常见组合。
+- 新增 `tests/test_summarize_v3_ccvc_evidence_contribution.py`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_ccvc_evidence_contribution.py tests\test_summarize_v3_ccv_direction_audit.py tests\test_summarize_v3_ccv_direction_holdout.py tests\test_evaluate_fatbeans_v3_samples.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccvc_evidence_contribution.py --posterior-trials 128 --top 40
+```
+
+结果：
+
+```text
+focused tests: 13 passed
+
+component=q6_count delta=-0.033 pred_delta=+0.139 hurt_rate=0.443730 directional_error=0.292605
+component=q6_cells delta=-0.168 pred_delta=-0.074 hurt_rate=0.495177 directional_error=0.428725
+
+q6_count positive:
+unassigned_anchor delta=-0.115 present_minus_absent=-0.127 hurt_rate=0.327485
+tool_category delta=-0.093 present_minus_absent=-0.072 hurt_rate=0.275862
+q6_floor delta=-0.052 present_minus_absent=-0.030 hurt_rate=0.438596
+public_total delta=-0.040 present_minus_absent=-0.009 hurt_rate=0.421875
+
+q6_cells blocked:
+public_max_item_cells hurt_rate=0.653061 present_minus_absent=+0.129
+tool_category hurt_rate=0.600000 present_minus_absent=+0.172
+item_anchor hurt_rate=0.520803 present_minus_absent=+0.278
+public_random_avg hurt_rate=0.516129 present_minus_absent=-0.265
+public_total hurt_rate=0.447236 present_minus_absent=-0.745
+```
+
+结论：
+
+- q6_count 的有用信号主要来自 `unassigned_anchor`、`tool_category`、`q6_floor`、`public_total`，但 hurt rate 仍不能支撑 promotion。
+- q6_cells 全局 MAE 改善主要来自 public total/layout/random_avg 等高信息窗口；但 changed-row hurt rate 太高，不能直接移动 cells p50。
+- `public_max_item_cells`、`tool_category`、`item_anchor` 对 q6_cells 是风险特征：它们 presence 下 hurt rate 高，且相对 absent 更差。
+- 下一步 likelihood 应先把 count 和 cells 拆成不同 gate：count 可以继续研究证据上移/下移，cells 暂时需要更强的 capacity/total consistency 或 holdout guard。
