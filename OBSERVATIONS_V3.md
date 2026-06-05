@@ -935,3 +935,52 @@ Ethan 2506: truth 2/8/330,562
 - evaluator/live 需要显式带出 hero 或等价 evidence profile，避免只能按 file name 审计。
 - gate 需要区分 Aisha deep/tail-value 与 Ethan over-value/random/layout 场景。
 - 对 Aisha 2506 的主要方向仍应是 tail/value sampler 或 formal calibration，而不是 residual 降 q6 raw value。
+
+## O-v3-033：hero/profile 分片显示 residual 不是当前低估主修复
+
+2026-06-05 新增 archive v3 行级 `hero/evidence_profile/information_density` 后，128-trial 分片审计显示：
+
+```text
+2506 map:
+  sessions=21 ready=71/73 heroes=aisha:43,ethan:28
+  mae=397195.2 bias=-270368.6 below=0.746479 p90_cover=0.619718
+  public_total=0.084507 q6_floor=0.28169
+
+aisha|2506:
+  n=43 formal_mae=384517.7 bias=-283924.6 below=0.790698
+  resid_count_delta=+0.13 resid_cells_delta=+0.31 resid_value_delta=+20915.1
+
+ethan|2506:
+  n=28 formal_mae=416664.2 bias=-249550.4 below=0.678571
+  resid_count_delta=-0.10 resid_cells_delta=-1.49 resid_value_delta=-117480.2
+```
+
+解读：
+
+- `ethan|2506` residual 对 q6 cells/value MAE 有正向信号，但 formal P50 仍明显低估，不能直接用 residual 作为正式 value 下修。
+- `aisha|2506` residual 对 q6 count/cells/value 都伤害，直接证实 Aisha 方向应走 tail/value 上修或 calibration。
+- 公开总格/总数证据在 2506 ready 窗口中只有约 8.45%，q6 floor 约 28.17%，说明很多低估仍是证据不足 + fallback 的组合，不是单纯 sampler 参数问题。
+
+candidate table 额外显示：
+
+```text
+profile-level status_counts:
+blocked_low_sample=349
+blocked_residual_hurts=2
+blocked_systemic_under=2
+watch_only_neutral=1
+
+hero-map status_counts:
+blocked_low_sample=71
+blocked_residual_hurts=3
+blocked_systemic_under=8
+blocked_under_value_downshift=1
+watch_only_neutral=4
+watch_only_over_correction_candidate=2
+```
+
+结论：
+
+- profile 级别样本量仍不足以直接升级 gate。
+- hero/map 级别可以用于发现候选，但必须回到 profile 和证据强度复核。
+- 当前 v3 下一步应优先补“低估保护 + value 上修模型”，而不是把 residual 下修接入 formal。

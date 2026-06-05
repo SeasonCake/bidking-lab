@@ -18,10 +18,14 @@
 | `scripts/summarize_v3_evidence_coverage.py` | v3 evidence coverage 检查 |
 | `scripts/summarize_v3_constraints.py` | v3 hard constraint compiler 摘要 |
 | `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator |
+| `scripts/summarize_v3_metric_slices.py` | v3 round/map/hero/profile 分片指标 |
+| `scripts/summarize_v3_map_audit.py` | v3 map 主键审计，附 hero/profile 分布 |
+| `scripts/summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计 |
 | `scripts/summarize_fatbeans_sample_manifest.py` | Fatbeans 样本 manifest/质量分层 |
 | `scripts/organize_fatbeans_real_samples.py` | 真实样本 canonical archive 整理 |
 | `tests/test_inference_v3_evidence_registry.py` | v3 registry/constraint 骨架测试 |
 | `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
+| `tests/test_summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计测试 |
 
 ## v2 保留路径
 
@@ -65,9 +69,9 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 
 当前脚本规模：
 
-- Python scripts：71
+- Python scripts：81
 - PowerShell scripts：13
-- test files：69
+- test files：81
 
 策略：
 

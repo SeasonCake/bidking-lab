@@ -528,3 +528,33 @@ v3 新增 empirical prior calibration shadow，但激活条件收紧为：
 - Aisha 2506 tail/value 与 Ethan over-value residual 的独立 gate。
 
 在这些完成前，不允许把 residual gate 接入 formal、calibration、UI 主建议或 v2 bid path。
+
+## D-v3-029：residual promotion 必须先通过 hero/profile candidate gate
+
+`v3_resid_*` 继续保持 shadow-only。下一版不允许按 map-level 或单行样本启用 residual，必须先通过 `hero_map_id` 或 `hero_map_evidence_profile` 候选审计。
+
+原因：
+
+- `2506` hero/map 分片显示 Aisha 与 Ethan 都仍系统性低估：
+  - `aisha|2506`：`bias=-283924.6`，`below=0.790698`。
+  - `ethan|2506`：`bias=-249550.4`，`below=0.678571`。
+- residual 在 `ethan|2506` 上改善 q6 cells/value MAE，但 formal 仍低估，不能把 q6 raw value 下修误当作正式估值修复。
+- profile 级别大多样本不足：128-trial candidate 表中 `blocked_low_sample=349`。
+- 粗粒度 hero/map 出现的 2 个 over-correction 候选仍不满足 promotion：
+  - `ethan|2601` 属 hidden，当前 residual 实际未运行。
+  - `aisha|2504` high-over，但 q6 value delta 为正，仍可能伤害 value MAE。
+
+硬边界：
+
+- `v3_resid_gate_active_rows` 保持 0，除非后续 candidate table 同时满足：
+  - 最小样本量。
+  - 非 systemic-under，或有单独的上修型 formal calibration。
+  - residual q6 count/cells/value MAE delta 不恶化。
+  - public total / q6 floor 等证据足够解释切片。
+  - hidden 单独验证，不与 shipwreck/villa 共用 gate。
+- 任何 residual gate 仍必须 `affects_bid=false`，先进入 watch-only candidate，不进入 formal decision、UI 主建议或正式 stop/attack bid。
+
+下一步：
+
+- 把 candidate table 作为 v3 gate 的前置审计，不再盲目调 temperature/trials。
+- 对 2506 的主方向改为 low-estimate repair：Aisha tail/value sampler、formal calibration、q6 value-per-cell 上修，而不是 residual 下修。

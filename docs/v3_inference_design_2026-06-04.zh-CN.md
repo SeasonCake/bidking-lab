@@ -605,6 +605,7 @@ v3 可进入正式候选前：
 - `summarize_v3_metric_slices.py` 默认加入 hero/profile 相关分片，并输出 `v3_ccv_*` / `v3_resid_*` / `v3_resid_gate_*` 相对 baseline 的 q6 count/cells/value MAE delta。
 - `summarize_v3_map_audit.py` 保持 map 为主键，但每张地图追加 `heroes`、`evidence_stages`、`information_density`、`evidence_profiles`、`hero_map_evidence_profiles` 计数。
 - 公开总格/总数现在在 profile 中记为 `public:total`，避免再出现“公开总格有用但审计字段看不见”的缺口。
+- 新增 `summarize_v3_residual_profile_candidates.py`，把 residual promotion 前置为 profile/hero-map candidate 审计，而不是继续手工挑单行样本。
 
 128-trial archive 审计结果：
 
@@ -614,6 +615,7 @@ v3 可进入正式候选前：
 - `ethan|2506`：`n=28`，`formal_mae=416664.2`，`bias=-249550.4`，`below=0.678571`，`q6_cells_mae=9.62`。
 - `ethan|2506` residual delta：`q6_count=-0.10`，`q6_cells=-1.49`，`q6_value=-117480.2`，说明 residual 对 q6 count/cells/value MAE 有修正信号，但该切片 formal 仍系统性低估，不能直接升级为降值 gate。
 - `aisha|2506` 与 `ethan|2506` 都显示低估，因此下一版 gate 不能只按 hero/map 判断“降 residual value”，还需要结合证据 profile、公开总格/总数、q6 floor、P90 coverage 与 formal bias。
+- candidate 表显示 profile-level `blocked_low_sample=349`，hero-map-level 只有 2 个 `watch_only_over_correction_candidate`，且都不能直接 promotion；这支持继续把 `v3_resid_gate_*` 保持 0 active。
 
 下一步 gate 要求：
 

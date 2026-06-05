@@ -1337,3 +1337,86 @@ C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_map_audit.py --top 10
 ```
 
 结果：`68 passed`；全量 evaluator 和 map audit 通过。
+
+## 2026-06-05 checkpoint：hero/profile audit 与 residual candidate 表
+
+实现：
+
+- `evaluate_fatbeans_v3_samples.py` 每个 archive pre-bid 窗口增加：
+  - `hero`
+  - `evidence_stage`
+  - `evidence_profile_key`
+  - `information_density_score`
+  - `information_density_band`
+  - `hero_map_id`
+  - `hero_map_evidence_stage`
+  - `hero_map_evidence_profile`
+- `fatbeans.py` 暴露 `hero_mode_from_state()`，避免 v3 evaluator 复制 hero id 映射。
+- `summarize_v3_metric_slices.py` 默认支持 hero/profile 分片，并输出 ccv/residual/gate q6 count/cells/value delta。
+- `summarize_v3_map_audit.py` map 行追加 `heroes`、`evidence_stages`、`information_density`、`evidence_profiles`、`hero_map_evidence_profiles`。
+- 新增 `summarize_v3_residual_profile_candidates.py`，按 profile 或 hero/map 输出 residual 候选状态：
+  - `watch_only_over_correction_candidate`
+  - `watch_only_neutral`
+  - `blocked_systemic_under`
+  - `blocked_under_value_downshift`
+  - `blocked_residual_hurts`
+  - `blocked_low_sample`
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_residual_profile_candidates.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 128 --fail-on-conflicts
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_metric_slices.py --posterior-trials 128 --by hero_map_id --by hero_map_evidence_profile --top 16
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_map_audit.py --posterior-trials 128 --top 12
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_residual_profile_candidates.py --posterior-trials 128 --top 30
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_residual_profile_candidates.py --posterior-trials 128 --by hero_map_id --top 24
+```
+
+结果：
+
+- `68 passed`，candidate script `2 passed`。
+- 512-trial 主审计：
+
+```text
+windows=1551 ready=1534 no_state=17 parse_errors=0 constraint_conflict=0
+formal_p50_mae=300553.241
+q6_count_p50_mae=1.404
+q6_cells_p50_mae=6.674
+v3_ccv_delta_q6_count_p50_mae=+0.013
+v3_ccv_delta_q6_cells_p50_mae=+0.005
+v3_resid_delta_q6_count_p50_mae=-0.001
+v3_resid_delta_q6_cells_p50_mae=+0.135
+v3_resid_delta_q6_value_p50_mae=+5234.929
+v3_resid_gate_active_rows=0
+v3_cal_delta_formal_p50_mae=-1986.042
+```
+
+- 128-trial 2506 map audit：
+
+```text
+map_id=2506 sessions=21 ready=71/73 heroes=aisha:43,ethan:28
+mae=397195.2 bias=-270368.6 below=0.746479 p90_cover=0.619718
+public_total=0.084507 q6_floor=0.28169
+flags=mostly_fallback+little_public_total+systemic_under
+```
+
+- 128-trial `hero_map_id` residual candidate：
+
+```text
+status_counts=blocked_low_sample:71,blocked_residual_hurts:3,blocked_systemic_under:8,blocked_under_value_downshift:1,watch_only_neutral:4,watch_only_over_correction_candidate:2
+ethan|2506 status=blocked_systemic_under n=28 bias=-249550.4 below=0.678571 q6_cells_delta=-1.49 q6_value_delta=-117480.2
+aisha|2506 status=blocked_systemic_under n=43 bias=-283924.6 below=0.790698 q6_cells_delta=+0.31 q6_value_delta=+20915.1
+```
+
+结论：
+
+- hero/profile 分片证明 `2506` 不能作为单一 gate：Aisha/Ethan 都系统性低估，但 residual 对两者 q6 cells/value 的影响不同。
+- profile 级别目前 349 个切片因样本不足 blocked，不能用过细 profile 直接 promotion。
+- hero/map 粗粒度有 2 个 over-correction 候选，但都不满足直接启用条件：
+  - `ethan|2601` 是 hidden，residual 当前没有实际 likelihood rows。
+  - `aisha|2504` high-over，但 q6 value delta 仍为正。
+- 下一步 gate 必须先有低估保护：若切片 formal bias 明显为负或 below rate 偏高，禁止 residual 降 formal/value。
