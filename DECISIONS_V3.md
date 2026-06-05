@@ -1192,3 +1192,36 @@ public_total hurt_rate=0.447236 present_minus_absent=-0.745
 - count 和 cells 的证据方向不同，不能共用一个 CCVC movement gate。
 - q6_cells 的 MAE 改善来自一部分高信息窗口，但 hurt rate 已接近或超过 blocker 阈值。
 - 继续整体调权重会把有用的 count 信号和高风险 cells 信号混在一起，复现 v2/v3 的“局部改善但实战反向”问题。
+
+## D-v3-048：CCVC freeze-cells 只能作为 count-only shadow，不进入 formal
+
+2026-06-05 新增 `--ccv-component-freeze-cells` 后，v3 CCVC 允许在审计中冻结 q6_cells，仅移动 q6_count/q6_value。
+
+当前决策：
+
+- `component_move_cells=False` 只作为 shadow/audit 口径。
+- formal live decision 不接入 freeze-cells、CCVC、tail replacement。
+- q6_cells movement 在没有更强 capacity/total consistency 和 holdout guard 前保持冻结。
+- q6_count movement 即使在 freeze-cells 下仍需要 profile holdout 通过后才可讨论 promotion。
+
+当前 128-trial 结果：
+
+```text
+archive:
+v3_ccvc_delta_q6_count_p50_mae=-0.033
+v3_ccvc_delta_q6_cells_p50_mae=0.000
+v3_ccvc_delta_q6_value_p50_mae=-6864.3
+
+evidence_profile holdout:
+overall_status=blocked_holdout_directional_hurt
+q6_cells candidate_rows=0
+q6_count delta=-0.012
+q6_count hurt_rate=0.083673
+q6_count directional_error=0.048980
+```
+
+原因：
+
+- freeze-cells 消除了 q6_cells 误移动，但没有解决 q6_count 在部分 evidence profile 下的反向移动。
+- 当前收益更像“可控 shadow 基线”，不是可上线推荐。
+- v3 正式使用必须证明低估风险下降、normal absolute error 不恶化，并且 changed-row hurt 受控。

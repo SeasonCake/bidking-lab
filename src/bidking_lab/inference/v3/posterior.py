@@ -1622,6 +1622,7 @@ def estimate_component_count_cell_value_posterior_from_truths(
     constraints: ConstraintSet | None = None,
     replacement_values: Mapping[tuple[int, int, int], int] | None = None,
     baseline: V3PosteriorReport | None = None,
+    move_cells: bool = True,
 ) -> V3PosteriorReport:
     """Component-likelihood q6 CCV shadow with separated q6/non-q6 evidence.
 
@@ -1875,6 +1876,25 @@ def estimate_component_count_cell_value_posterior_from_truths(
         f"count{q6_count_capacity if q6_count_capacity is not None else 'none'}_"
         f"cells{q6_cells_capacity if q6_cells_capacity is not None else 'none'}"
     )
+    move_cells = bool(move_cells)
+    diagnostics.append(f"ccvc_move_cells={'on' if move_cells else 'off'}")
+    q6_cells_report = (
+        _guard_quantiles(
+            _weighted_quantiles(
+                kept_q6_cells,
+                tuple(weights),
+                p50_tail_guard=True,
+                p90_tail_guard=True,
+                p50_guard_quantile=p50_guard_quantile,
+            ),
+            floor=q6_cells_floor,
+            exact=q6_cells_exact,
+        )
+        if move_cells
+        else baseline.q6_cells
+    )
+    if not move_cells:
+        diagnostics.append("ccvc_cells_passthrough")
     diagnostics.append("ccvc_formal_passthrough")
     return V3PosteriorReport(
         map_id=int(map_id),
@@ -1900,13 +1920,7 @@ def estimate_component_count_cell_value_posterior_from_truths(
             exact=q6_count_exact,
         ),
         q6_cells=_guard_quantiles(
-            _weighted_quantiles(
-                kept_q6_cells,
-                tuple(weights),
-                p50_tail_guard=True,
-                p90_tail_guard=True,
-                p50_guard_quantile=p50_guard_quantile,
-            ),
+            q6_cells_report,
             floor=q6_cells_floor,
             exact=q6_cells_exact,
         ),

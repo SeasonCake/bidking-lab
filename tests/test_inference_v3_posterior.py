@@ -322,6 +322,50 @@ def test_component_ccv_recombines_q6_with_public_total_capacity() -> None:
     assert "ccvc_q6_capacity=countnone_cells26" in report.diagnostics
 
 
+def test_component_ccv_can_freeze_cells_for_count_only_audit() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=26,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=100_000,
+        buckets=(
+            BucketFeasibleSummary(
+                quality=6,
+                count_floor=1,
+                cells_floor=4,
+                value_floor=100_000,
+            ),
+        ),
+    )
+    truths = (
+        _truth(q6_count=1, q6_cells=4, q6_value=100_000, q1_cells=10),
+        _truth(q6_count=1, q6_cells=16, q6_value=200_000, q1_cells=4),
+    )
+    baseline = estimate_q6_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=truths,
+    )
+
+    report = estimate_component_count_cell_value_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=truths,
+        baseline=baseline,
+        move_cells=False,
+    )
+
+    assert report.ready is True
+    assert report.match_scope == "ccv_component_likelihood"
+    assert report.q6_count.p50 == 1
+    assert report.q6_cells == baseline.q6_cells
+    assert "ccvc_move_cells=off" in report.diagnostics
+    assert "ccvc_cells_passthrough" in report.diagnostics
+
+
 def test_component_ccv_uses_explicit_q6_anchor() -> None:
     q6_anchor = ItemAnchor(
         key="q6_item",

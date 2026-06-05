@@ -1693,3 +1693,29 @@ public_total hurt_rate=0.447236 present_minus_absent=-0.745
 - `tool_category` 对 q6_count 有贡献，但对 q6_cells 是风险项。
 - `item_anchor`/`shape_anchor` 不能被解释为 q6 cells 可靠证据；它们更像 q6 component 候选空间约束，而不是 cells p50 移动方向。
 - 下一步应在 CCVC likelihood 中输出 count/cells 分离 diagnostics，并让 cells movement 需要更强的 total/capacity consistency。
+
+## O-v3-052：freeze-cells 能隔离 cells 风险，但 q6_count 仍未达到 promotion
+
+2026-06-05 对 `v3_ccvc_` 增加 `--ccv-component-freeze-cells` 后，128-trial archive 显示：
+
+```text
+archive:
+v3_ccvc_delta_q6_count_p50_mae=-0.033
+v3_ccvc_delta_q6_cells_p50_mae=0.000
+v3_ccvc_delta_q6_value_p50_mae=-6864.3
+
+profile holdout:
+overall_status=blocked_holdout_directional_hurt
+q6_cells candidate_rows=0
+q6_count candidate_rows=490
+q6_count delta=-0.012
+q6_count hurt_rate=0.083673
+q6_count directional_error=0.048980
+```
+
+解读：
+
+- q6_cells 已确认是可冻结的独立风险面；冻结后不会再把 cells p50 推错。
+- q6_count 的平均改善仍然存在，但有多个 evidence profile 在 holdout 下伤害明显。
+- 这说明 v3 需要的是 profile-aware count likelihood/gate，而不是继续放宽固定 prior 或整体调权重。
+- 正式可用前至少还需要：count movement 稳定、低估风险下降、P90 over 控制、live shadow 与 archive 一致。

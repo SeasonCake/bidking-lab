@@ -2429,3 +2429,59 @@ public_total hurt_rate=0.447236 present_minus_absent=-0.745
 - q6_cells 全局 MAE 改善主要来自 public total/layout/random_avg 等高信息窗口；但 changed-row hurt rate 太高，不能直接移动 cells p50。
 - `public_max_item_cells`、`tool_category`、`item_anchor` 对 q6_cells 是风险特征：它们 presence 下 hurt rate 高，且相对 absent 更差。
 - 下一步 likelihood 应先把 count 和 cells 拆成不同 gate：count 可以继续研究证据上移/下移，cells 暂时需要更强的 capacity/total consistency 或 holdout guard。
+
+## 2026-06-05 checkpoint：v3 CCVC freeze-cells count-only audit
+
+实现：
+
+- `V3CcvOptions` 新增 `component_move_cells`，默认保持旧 shadow 行为。
+- `v3_ccvc_` component likelihood 新增 `move_cells=False` 路径：
+  - q6_count 和 q6_value 继续使用 CCVC component posterior。
+  - q6_cells p50/p90 直接透传 baseline posterior cells，不再随 component likelihood 移动。
+  - diagnostics 输出 `ccvc_move_cells=off` 和 `ccvc_cells_passthrough`。
+- archive evaluator、direction audit、direction holdout、evidence contribution audit 均新增 `--ccv-component-freeze-cells`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_pipeline.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_ccv_direction_audit.py tests\test_summarize_v3_ccv_direction_holdout.py tests\test_summarize_v3_ccvc_evidence_contribution.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 128 --ccv-component-freeze-cells
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccv_direction_holdout.py --posterior-trials 128 --candidate-prefix v3_ccvc_ --ccv-component-freeze-cells --group-field evidence_profile_key --component q6_count --component q6_cells --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_ccvc_evidence_contribution.py --posterior-trials 128 --ccv-component-freeze-cells --top 40
+```
+
+结果：
+
+```text
+focused tests: 36 passed
+v3/live focused suite: 115 passed
+
+archive freeze-cells:
+q6_count_p50_mae=1.441
+q6_cells_p50_mae=6.843
+v3_ccvc_q6_count_p50_mae=1.408
+v3_ccvc_delta_q6_count_p50_mae=-0.033
+v3_ccvc_q6_cells_p50_mae=6.843
+v3_ccvc_delta_q6_cells_p50_mae=0.000
+v3_ccvc_q6_value_p50_mae=380540.4
+v3_ccvc_delta_q6_value_p50_mae=-6864.3
+
+profile holdout freeze-cells:
+overall_status=blocked_holdout_directional_hurt
+candidate_rows=490
+candidate_delta=-0.012
+q6_cells candidate_rows=0
+q6_count delta=-0.012 hurt_rate=0.083673 directional_error=0.048980
+
+contribution freeze-cells:
+q6_count changed=311 delta=-0.033 hurt_rate=0.443730 directional_error=0.292605
+q6_cells changed=0 delta=0.000
+```
+
+结论：
+
+- freeze-cells 成功隔离了 CCVC 当前最大的 q6_cells 误移动风险。
+- count/value 的全局收益仍存在：q6_count MAE `-0.033`，q6_value MAE `-6864.3`。
+- 但 q6_count 的 holdout directional hurt 仍未清除，尤其 `item+shape+layout`、`public:total+item+shape`、`public:max_item_cells+item+shape`。
+- 该路径可作为 v3 下一步 count-only shadow baseline，但不能进入 formal live 出价。
+- 距离正式使用的主要缺口不是 UI 或归档，而是 evidence profile 下 q6_count movement 的稳定性与 promotion gate。

@@ -50,6 +50,7 @@ class V3CcvOptions:
     condition_temperature: float | None = None
     relative_floor: float | None = None
     component_likelihood: bool = False
+    component_move_cells: bool = True
 
 
 @dataclass(frozen=True)
@@ -130,6 +131,7 @@ def estimate_shadow_pipeline(
             constraints=constraints,
             replacement_values=replacement_values or {},
             baseline=posterior,
+            move_cells=ccv_options.component_move_cells,
         )
         if ccv_options is not None and ccv_options.component_likelihood
         else None

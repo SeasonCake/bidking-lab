@@ -120,3 +120,41 @@ def test_v3_shadow_pipeline_can_emit_component_ccv_shadow() -> None:
     assert flat["v3_ccvc_available"] is True
     assert flat["v3_ccvc_affects_bid"] is False
     assert flat["v3_ccvc_match_scope"] == "ccv_component_likelihood"
+
+
+def test_v3_shadow_pipeline_can_freeze_component_cells() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=26,
+        known_count_floor=1,
+        known_cells_floor=4,
+        known_value_floor=100_000,
+        buckets=(
+            BucketFeasibleSummary(
+                quality=6,
+                count_floor=1,
+                cells_floor=4,
+                value_floor=100_000,
+            ),
+        ),
+    )
+
+    report = estimate_shadow_pipeline(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(
+            _truth(q6_count=1, q6_cells=4, q6_value=100_000, q1_cells=10),
+            _truth(q6_count=1, q6_cells=16, q6_value=200_000, q1_cells=4),
+        ),
+        hero="ethan",
+        ccv_options=V3CcvOptions(
+            component_likelihood=True,
+            component_move_cells=False,
+        ),
+    )
+    flat = report.to_flat_dict()
+
+    assert report.ccv_component_posterior is not None
+    assert flat["v3_ccvc_q6_cells_p50"] == flat["v3_post_q6_cells_p50"]
+    assert "ccvc_cells_passthrough" in flat["v3_ccvc_diagnostics"]

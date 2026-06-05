@@ -1949,6 +1949,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Emit optional v3_ccvc_ component-likelihood CCV shadow fields.",
     )
     parser.add_argument(
+        "--ccv-component-freeze-cells",
+        action="store_true",
+        help="Emit v3_ccvc_ with component count/value but baseline q6 cells.",
+    )
+    parser.add_argument(
         "--calibration",
         type=Path,
         default=_default_calibration_path(),
@@ -2010,7 +2015,10 @@ def main(argv: list[str] | None = None) -> int:
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,
         ccv_options=V3CcvOptions(
-            component_likelihood=args.ccv_component_likelihood,
+            component_likelihood=(
+                args.ccv_component_likelihood or args.ccv_component_freeze_cells
+            ),
+            component_move_cells=not args.ccv_component_freeze_cells,
         ),
     )
     summary = summarize_rows(rows, errors)

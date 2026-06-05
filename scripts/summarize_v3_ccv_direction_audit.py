@@ -427,6 +427,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Candidate flat-field prefix, for example v3_ccv_ or v3_ccvc_.",
     )
     parser.add_argument(
+        "--ccv-component-freeze-cells",
+        action="store_true",
+        help="When using v3_ccvc_, keep q6 cells at the baseline posterior.",
+    )
+    parser.add_argument(
         "--component",
         action="append",
         choices=tuple(COMPONENT_FIELDS),
@@ -453,6 +458,7 @@ def main(argv: list[str] | None = None) -> int:
         posterior_seed=args.posterior_seed,
         ccv_options=V3CcvOptions(
             component_likelihood=args.candidate_prefix == "v3_ccvc_",
+            component_move_cells=not args.ccv_component_freeze_cells,
         ),
     )
     result = {

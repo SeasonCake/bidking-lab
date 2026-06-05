@@ -1132,6 +1132,32 @@ public_total hurt_rate=0.447236 present_minus_absent=-0.745
 4. `tool_category`、`item_anchor`、`public_max_item_cells` 不能直接推动 q6 cells p50。
 5. 下一版 likelihood 应输出 count/cells 分离 diagnostics，便于 readiness 判断具体是哪个证据项触发了移动。
 
+### 2026-06-05 CCVC freeze-cells count-only shadow
+
+CCVC component likelihood 新增 `component_move_cells=false` 设计口径：
+
+- q6_count 继续由 component likelihood 更新。
+- q6_value 继续按 component posterior 输出 shadow 字段。
+- q6_cells 直接透传 baseline posterior cells，不随 component likelihood 移动。
+- diagnostics 必须输出 `ccvc_move_cells=off` 与 `ccvc_cells_passthrough`，方便 live/archive 对齐审计。
+
+128-trial 结果：
+
+```text
+v3_ccvc_delta_q6_count_p50_mae=-0.033
+v3_ccvc_delta_q6_cells_p50_mae=0.000
+v3_ccvc_delta_q6_value_p50_mae=-6864.3
+profile holdout status=blocked_holdout_directional_hurt
+```
+
+设计影响：
+
+1. v3 posterior 必须支持 component 级别独立移动，不能把 q6 count、cells、value 绑成一个 gate。
+2. freeze-cells 是下一步 count-only shadow baseline，可用于降低 cells 反向移动对实战评估的干扰。
+3. q6_count 仍需 profile-aware gate；`item+shape+layout`、`public:total+item+shape`、`public:max_item_cells+item+shape` 当前仍是 applied hurt。
+4. q6_cells 未来只有在 capacity/total consistency、changed-row hurt、directional error 同时通过后才允许重新打开。
+5. formal decision_value 继续使用当前正式口径；该设计不改变 live 出价。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html
