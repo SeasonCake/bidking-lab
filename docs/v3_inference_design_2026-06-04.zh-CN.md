@@ -624,6 +624,24 @@ v3 可进入正式候选前：
 3. 对 Aisha shipwreck tail/value，应优先做 q6 value sampler 或 formal calibration，不能用 residual q6 value 下修替代。
 4. 对 Ethan villa/shipwreck，需要区分 `public:random_avg`、`public:total`、`shape/layout` profile；公开总格很少的切片标记为 evidence-risk，不升级。
 
+### 2026-06-05 低估上修候选审计
+
+新增 `summarize_v3_underestimate_repair_candidates.py`，用于审计“系统性低估切片是否适合 bounded upshift”。它只读取 archive evaluator 输出并计算假设上修后的指标，不写回 `v3_post_*`，不接 formal bid，也不改变 live/UI 主建议。
+
+128-trial archive 结果：
+
+- `hero_map_id` 粒度：`watch_only_upshift_candidate=4`，`watch_only_needs_evidence=4`，`blocked_not_systemic_under=10`，`blocked_low_sample=71`。
+- `aisha|2506`：scale `1.046065`，formal MAE `384517.7 -> 363546.8`，below `0.790698 -> 0.744186`，P90 coverage `0.627907 -> 0.674419`。
+- `ethan|2506`：scale `1.045088`，formal MAE `416664.2 -> 404007.0`，below `0.678571 -> 0.642857`，P90 coverage `0.607143 -> 0.75`。
+- `hero_map_evidence_profile` 粒度仍然过稀：`blocked_low_sample=349`，没有可直接 promotion 的细粒度候选。
+
+设计结论：
+
+1. 当前可用的修复粒度是 hero/map 级 shadow calibration；profile 级只做诊断，不足以直接上线。
+2. 低估修复方向应是小幅、收缩后的上修候选，而不是 residual 下修。
+3. hidden `2601` 即使 in-sample 出现上修候选，也必须单独验证；不能与 shipwreck/villa 共用正式 gate。
+4. promotion 前仍需要 holdout 或新增实战样本验证，且必须保持 `affects_bid=false` 到证据充分为止。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

@@ -1420,3 +1420,44 @@ aisha|2506 status=blocked_systemic_under n=43 bias=-283924.6 below=0.790698 q6_c
   - `ethan|2601` 是 hidden，residual 当前没有实际 likelihood rows。
   - `aisha|2504` high-over，但 q6 value delta 仍为正。
 - 下一步 gate 必须先有低估保护：若切片 formal bias 明显为负或 below rate 偏高，禁止 residual 降 formal/value。
+
+## 2026-06-05 checkpoint：低估上修候选审计
+
+实现：
+
+- 新增 `scripts/summarize_v3_underestimate_repair_candidates.py`。
+- 新增 `tests/test_summarize_v3_underestimate_repair_candidates.py`。
+- 该脚本按 `hero_map_id` 或 `hero_map_evidence_profile` 汇总 ready 窗口，计算 formal P50 MAE/bias/below/over、formal P90 coverage、q6 formal P50 MAE，以及 bounded upshift 后的 delta。
+- 上修 scale 使用 truth/pred median ratio、session shrink 与 `max_upshift=1.25`，用于候选审计，不写回正式估值。
+- 候选状态包括：`watch_only_upshift_candidate`、`watch_only_needs_evidence`、`blocked_repair_hurts`、`blocked_high_over`、`blocked_not_systemic_under`、`blocked_low_sample`。
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_summarize_v3_residual_profile_candidates.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_underestimate_repair_candidates.py --posterior-trials 128 --by hero_map_id --top 30
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_underestimate_repair_candidates.py --posterior-trials 128 --by hero_map_evidence_profile --top 30
+```
+
+结果：
+
+- `72 passed`。
+- `hero_map_id`：`blocked_low_sample=71`，`blocked_not_systemic_under=10`，`watch_only_needs_evidence=4`，`watch_only_upshift_candidate=4`。
+- `hero_map_evidence_profile`：`blocked_low_sample=349`，`blocked_not_systemic_under=3`，`watch_only_needs_evidence=2`。
+
+主要候选：
+
+```text
+aisha|2506 scale=1.046065 mae=384517.7 -> 363546.8 delta=-20970.9 below=0.790698 -> 0.744186 p90_cover=0.627907 -> 0.674419
+ethan|2506 scale=1.045088 mae=416664.2 -> 404007.0 delta=-12657.1 below=0.678571 -> 0.642857 p90_cover=0.607143 -> 0.75
+aisha|2601 scale=1.05287 mae=541556.3 -> 507628.8 delta=-33927.5
+ethan|2509 scale=1.019059 mae=419243.9 -> 419127.9 delta=-116.0
+```
+
+结论：
+
+- `2506` Aisha/Ethan 的低估修复方向得到 shadow 候选支持：小幅上修可改善 in-sample MAE，并略改善 below/P90。
+- 该上修不能直接进入 formal/live，因为它仍是 in-sample archive 假设修复，且 profile 粒度样本不足。
+- hidden `2601` 虽然出现在候选中，但 hidden 样本少，不能和 shipwreck/villa 共用 promotion 口径。
+- 下一步应把上修候选变成独立 shadow 字段或 calibration candidate，继续使用 holdout/new-live 样本验证，而不是再调 residual 下修。

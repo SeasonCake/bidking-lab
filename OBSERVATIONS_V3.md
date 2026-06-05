@@ -984,3 +984,53 @@ watch_only_over_correction_candidate=2
 - profile 级别样本量仍不足以直接升级 gate。
 - hero/map 级别可以用于发现候选，但必须回到 profile 和证据强度复核。
 - 当前 v3 下一步应优先补“低估保护 + value 上修模型”，而不是把 residual 下修接入 formal。
+
+## O-v3-034：hero/map 低估上修有信号，profile 粒度仍不足
+
+2026-06-05 新增 `summarize_v3_underestimate_repair_candidates.py` 后，128-trial archive 审计显示：
+
+```text
+hero_map_id status_counts:
+blocked_low_sample=71
+blocked_not_systemic_under=10
+watch_only_needs_evidence=4
+watch_only_upshift_candidate=4
+
+hero_map_evidence_profile status_counts:
+blocked_low_sample=349
+blocked_not_systemic_under=3
+watch_only_needs_evidence=2
+```
+
+主要 hero/map 候选：
+
+```text
+aisha|2506 n=43 sessions=13 scale=1.046065
+  formal_mae=384517.7 -> 363546.8 delta=-20970.9
+  below=0.790698 -> 0.744186
+  p90_cover=0.627907 -> 0.674419
+
+ethan|2506 n=28 sessions=8 scale=1.045088
+  formal_mae=416664.2 -> 404007.0 delta=-12657.1
+  below=0.678571 -> 0.642857
+  p90_cover=0.607143 -> 0.75
+
+aisha|2601 n=38 sessions=11 scale=1.05287
+  formal_mae=541556.3 -> 507628.8 delta=-33927.5
+
+ethan|2509 n=30 sessions=8 scale=1.019059
+  formal_mae=419243.9 -> 419127.9 delta=-116.0
+```
+
+解读：
+
+- `2506` 的低估不是 residual 下修问题；小幅 upshift 更符合当前错误方向。
+- `aisha|2506` 和 `ethan|2506` 都显示约 4.5% 的 bounded upshift 可改善 in-sample MAE，并降低 below rate。
+- profile 级别仍太稀疏，`ethan|2506|shape`、`aisha|2506|item+shape` 等关键切片尚未达到稳定样本量。
+- `aisha|2601` 是 hidden 候选，不能用当前结果证明 hidden 正式上修；hidden 仍需单独样本和 gate。
+
+下一步：
+
+- 把 bounded upshift 保留为 shadow candidate。
+- 对新增实战样本跑相同候选表，观察 `2506` scale 是否稳定。
+- promotion 前必须同时看 MAE、below、P90 coverage、over rate 与 pinball，防止通过上修修低估但制造极端过估。

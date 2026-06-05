@@ -558,3 +558,35 @@ v3 新增 empirical prior calibration shadow，但激活条件收紧为：
 
 - 把 candidate table 作为 v3 gate 的前置审计，不再盲目调 temperature/trials。
 - 对 2506 的主方向改为 low-estimate repair：Aisha tail/value sampler、formal calibration、q6 value-per-cell 上修，而不是 residual 下修。
+
+## D-v3-030：低估修复先走 bounded upshift shadow，不进入 formal
+
+2026-06-05 起，`summarize_v3_underestimate_repair_candidates.py` 作为低估修复的候选审计入口。它只计算假设上修后的指标，不改变 evaluator/live 的正式 `v3_post_*` 字段。
+
+当前决策：
+
+- `hero_map_id` 可作为低估修复的第一层 shadow calibration 粒度。
+- `hero_map_evidence_profile` 目前样本过稀，只作为诊断与 promotion 前复核，不作为上线 gate。
+- `aisha|2506` 与 `ethan|2506` 可以进入 watch-only upshift candidate，但不得接 formal bid。
+- hidden `2601` 即使 in-sample 改善，也必须单独验证，不与 shipwreck/villa 共用正式规则。
+
+原因：
+
+- 128-trial archive 显示 `aisha|2506` 小幅上修 scale `1.046065` 可把 formal MAE 从 `384517.7` 降到 `363546.8`。
+- `ethan|2506` scale `1.045088` 可把 formal MAE 从 `416664.2` 降到 `404007.0`，并把 P90 coverage 从 `0.607143` 提到 `0.75`。
+- profile 级候选仍是 `blocked_low_sample=349`，说明当前样本不足以证明细粒度规则。
+- 这些结果仍是 in-sample archive 审计，没有 holdout/new-live 验证。
+
+硬边界：
+
+- bounded upshift 仍为 shadow/audit-only。
+- 不改 formal decision value。
+- 不改 UI 主建议。
+- 不改正式 stop/attack bid。
+- 不因为 hidden 2601 候选改善而放宽 hidden gate。
+
+promotion 前置条件：
+
+- 至少通过 paired archive/holdout 或新增实战样本验证。
+- 同时观察 MAE、below rate、P90 coverage、over rate、pinball/极端过估，不只看 MAE。
+- 公开总格/总数、q6 floor、shape/layout 等证据 profile 必须能解释上修，不允许纯 map 常数粗暴覆盖。
