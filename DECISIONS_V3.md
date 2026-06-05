@@ -749,3 +749,45 @@ promotion 前置条件：
 - 对 `2506` 保留 tail/q6-tail review，结合低估上修 holdout 继续看是否是正式低估或 tail audit gap。
 - 对 `ethan|2508` 这类伤害切片保留 high-over/tail-hurts guard。
 - 若后续做 tail/value sampler，只能先接入 pipeline 的新 shadow namespace，再通过 candidate/holdout 审计。
+
+## D-v3-036：v3 formal promotion 以 readiness 总审计为入口
+
+2026-06-05 起，`summarize_v3_promotion_readiness.py` 是判断 v3 是否可以进入 formal、以及 v2 是否可以 archive 的总入口。
+
+当前决策：
+
+- 不再用单个指标或单个候选脚本判断 promotion。
+- readiness 必须同时汇总 archive 数据质量、shared pipeline、formal metrics、under holdout、CCV、tail/value、residual gate、profile depth 和 v2 archive readiness。
+- `overall_status=not_ready` 时，不允许切换 v3 formal，也不允许 archive v2。
+
+当前结果：
+
+```text
+overall_status=not_ready
+blocked_gates=4
+formal_baseline_metrics=blocked
+ccv_sampler=blocked
+residual_gate=blocked
+profile_sample_depth=blocked
+v2_archive_readiness=pending
+```
+
+原因：
+
+- formal P50 仍偏低：`formal_below=0.51043`，P90 coverage `0.773794`。
+- bounded upshift 有 holdout 候选，但仍 inactive。
+- CCV cells 全局 delta 为正：`ccv_cells_delta=0.165`。
+- residual active rows 必须保持 0。
+- profile 粒度仍样本不足。
+
+硬边界：
+
+- readiness 脚本只审计，不改 pipeline。
+- 不改变 UI。
+- 不改变 formal bid。
+- 不触发 v2 archive。
+
+下一步：
+
+- 每次新增样本或改 sampler 后优先跑 readiness。
+- 只有 readiness 不再存在 blocked gate，且用户确认 promotion 策略后，才讨论 v3 formal 切换和 v2 归档。

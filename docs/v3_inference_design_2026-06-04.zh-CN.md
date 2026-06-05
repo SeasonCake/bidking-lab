@@ -770,6 +770,38 @@ ethan|2508: tail_delta=32201.7 q6_tail_delta=28270.1
 3. `ethan|2508` 作为 tail-hurts guard，防止全局 tail 上修。
 4. profile 粒度当前仍不足，tail/value sampler 若实现，必须先作为新的 pipeline shadow namespace 和 holdout candidate。
 
+### 2026-06-05 formal promotion readiness
+
+新增 `summarize_v3_promotion_readiness.py`，作为 v3 formal promotion 和 v2 archive 的总审计入口。它汇总：
+
+- archive data quality。
+- shared shadow pipeline readiness。
+- formal baseline metrics。
+- underestimate repair holdout。
+- CCV sampler gate。
+- tail/value review gate。
+- residual gate。
+- profile sample depth。
+- v2 archive readiness。
+
+当前 128-trial 结果：
+
+```text
+overall_status=not_ready
+blocked_gates=4
+formal_baseline_metrics=blocked
+ccv_sampler=blocked
+residual_gate=blocked
+profile_sample_depth=blocked
+v2_archive_readiness=pending
+```
+
+设计影响：
+
+1. 后续不能用单个 MAE 或单个候选脚本证明 v3 ready。
+2. 每次新增样本或改 sampler 后，readiness 是第一层回归检查。
+3. 在 readiness 仍为 `not_ready` 时，不切 formal，不 archive v2。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

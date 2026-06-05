@@ -1,0 +1,425 @@
+"""Summarize v3 readiness blockers across archive/live shadow gates."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from collections import Counter
+from pathlib import Path
+from typing import Any, Iterable
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", newline="")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", newline="")
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from evaluate_fatbeans_v3_samples import (  # noqa: E402
+    _default_calibration_path,
+    _default_paths,
+    _default_underestimate_repair_path,
+    evaluate_paths,
+    load_monitor_tables,
+    load_prior_calibration_entries,
+    load_underestimate_repair_entries,
+    summarize_rows,
+)
+from summarize_v3_ccv_profile_candidates import (  # noqa: E402
+    summarize_candidates as summarize_ccv_candidates,
+)
+from summarize_v3_residual_profile_candidates import (  # noqa: E402
+    summarize_candidates as summarize_residual_candidates,
+)
+from summarize_v3_tail_value_candidates import (  # noqa: E402
+    summarize_candidates as summarize_tail_candidates,
+)
+from summarize_v3_underestimate_holdout import (  # noqa: E402
+    summarize_holdout as summarize_under_holdout,
+)
+
+
+def _status_counts(rows: Iterable[dict[str, Any]]) -> dict[str, int]:
+    return dict(sorted(Counter(str(row.get("candidate_status")) for row in rows).items()))
+
+
+def _top_groups(
+    rows: Iterable[dict[str, Any]],
+    status: str,
+    *,
+    limit: int = 5,
+) -> list[str]:
+    return [
+        str(row.get("group"))
+        for row in rows
+        if row.get("candidate_status") == status
+    ][:limit]
+
+
+def _gate(
+    name: str,
+    status: str,
+    reason: str,
+    **fields: Any,
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "status": status,
+        "reason": reason,
+        **fields,
+    }
+
+
+def _blocked_count(gates: Iterable[dict[str, Any]]) -> int:
+    return sum(1 for gate in gates if str(gate.get("status")) == "blocked")
+
+
+def summarize_readiness(
+    rows: list[dict[str, Any]],
+    errors: list[dict[str, str]],
+    *,
+    group_field: str = "hero_map_id",
+    profile_field: str = "hero_map_evidence_profile",
+    min_windows: int = 20,
+    min_sessions: int = 8,
+    folds: int = 5,
+) -> dict[str, Any]:
+    summary = summarize_rows(rows, errors)
+    under = summarize_under_holdout(
+        rows,
+        group_field=group_field,
+        folds=folds,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    under_profile = summarize_under_holdout(
+        rows,
+        group_field=profile_field,
+        folds=folds,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    ccv = summarize_ccv_candidates(
+        rows,
+        group_field=group_field,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    ccv_profile = summarize_ccv_candidates(
+        rows,
+        group_field=profile_field,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    residual = summarize_residual_candidates(
+        rows,
+        group_field=group_field,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    tail = summarize_tail_candidates(
+        rows,
+        group_field=group_field,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+    tail_profile = summarize_tail_candidates(
+        rows,
+        group_field=profile_field,
+        min_windows=min_windows,
+        min_sessions=min_sessions,
+    )
+
+    gates: list[dict[str, Any]] = []
+    data_status = "pass" if not errors and not summary.get("constraint_conflict") else "blocked"
+    if data_status == "pass" and int(summary.get("no_state") or 0) > 0:
+        data_status = "watch"
+    gates.append(
+        _gate(
+            "archive_data_quality",
+            data_status,
+            "parse/constraint clean; no_state rows are separated from metric rows"
+            if data_status != "blocked"
+            else "parse errors or constraint conflicts remain",
+            parse_errors=summary.get("parse_errors"),
+            constraint_conflict=summary.get("constraint_conflict"),
+            no_state=summary.get("no_state"),
+            ready=summary.get("ready"),
+        )
+    )
+    pipeline_ready = (
+        int(summary.get("ready") or 0) > 0
+        and int(summary.get("posterior_ready") or 0) == int(summary.get("ready") or 0)
+        and int(summary.get("posterior_no_match") or 0) == 0
+    )
+    gates.append(
+        _gate(
+            "shared_shadow_pipeline",
+            "pass" if pipeline_ready else "blocked",
+            "archive/live v3 shadow pipeline produces ready posterior rows"
+            if pipeline_ready
+            else "posterior readiness does not cover all ready rows",
+            posterior_ready=summary.get("posterior_ready"),
+            ready=summary.get("ready"),
+            posterior_no_match=summary.get("posterior_no_match"),
+        )
+    )
+    formal_below = float(summary.get("formal_p50_below_rate") or 0.0)
+    formal_p90 = float(summary.get("formal_p90_coverage") or 0.0)
+    formal_status = "blocked" if formal_below > 0.50 or formal_p90 < 0.80 else "watch"
+    gates.append(
+        _gate(
+            "formal_baseline_metrics",
+            formal_status,
+            "formal baseline is still too low for promotion"
+            if formal_status == "blocked"
+            else "formal baseline is near promotion band but still shadow-only",
+            formal_p50_mae=summary.get("formal_p50_mae"),
+            formal_p50_below_rate=summary.get("formal_p50_below_rate"),
+            formal_p90_coverage=summary.get("formal_p90_coverage"),
+            q6_formal_p50_mae=summary.get("q6_formal_p50_mae"),
+        )
+    )
+
+    under_candidate_only = under["candidate_only"]
+    under_candidate_rows = int(under_candidate_only.get("n") or 0)
+    under_delta = under_candidate_only.get("delta_formal_p50_mae")
+    gates.append(
+        _gate(
+            "underestimate_repair_holdout",
+            "watch" if under_candidate_rows else "blocked",
+            "bounded upshift has holdout candidates but remains inactive"
+            if under_candidate_rows
+            else "no holdout candidate at current sample gate",
+            candidate_rows=under_candidate_rows,
+            candidate_groups=under_candidate_only.get("candidate_groups"),
+            candidate_delta_formal_p50_mae=under_delta,
+            overall_delta_formal_p50_mae=under["overall"].get(
+                "delta_formal_p50_mae"
+            ),
+        )
+    )
+
+    ccv_counts = _status_counts(ccv)
+    ccv_status = (
+        "watch"
+        if ccv_counts.get("watch_only_count_cell_candidate", 0)
+        else "blocked"
+    )
+    if (summary.get("v3_ccv_delta_q6_cells_p50_mae") or 0.0) > 0:
+        ccv_status = "blocked"
+    gates.append(
+        _gate(
+            "ccv_sampler",
+            ccv_status,
+            "CCV has local candidates but global/profile gates are not promotion-ready"
+            if ccv_status == "watch"
+            else "CCV is not globally stable enough for promotion",
+            status_counts=ccv_counts,
+            watch_groups=_top_groups(ccv, "watch_only_count_cell_candidate"),
+            global_count_delta=summary.get("v3_ccv_delta_q6_count_p50_mae"),
+            global_cells_delta=summary.get("v3_ccv_delta_q6_cells_p50_mae"),
+        )
+    )
+
+    tail_counts = _status_counts(tail)
+    tail_watch = (
+        tail_counts.get("watch_only_q6_tail_value_candidate", 0)
+        + tail_counts.get("watch_only_tail_value_candidate", 0)
+    )
+    gates.append(
+        _gate(
+            "tail_value_review",
+            "watch" if tail_watch else "blocked",
+            "tail/value review candidates exist but do not affect formal bids"
+            if tail_watch
+            else "no stable tail/value review candidates",
+            status_counts=tail_counts,
+            q6_tail_groups=_top_groups(tail, "watch_only_q6_tail_value_candidate"),
+            tail_groups=_top_groups(tail, "watch_only_tail_value_candidate"),
+            tail_hurts_groups=_top_groups(tail, "blocked_tail_estimate_hurts"),
+        )
+    )
+
+    residual_counts = _status_counts(residual)
+    gates.append(
+        _gate(
+            "residual_gate",
+            "blocked",
+            "residual remains watch-only; active rows must stay zero",
+            status_counts=residual_counts,
+            active_rows=summary.get("v3_resid_gate_active_rows"),
+        )
+    )
+
+    profile_blocked = (
+        under_profile["overall"].get("candidate_rows") == 0
+        and _status_counts(ccv_profile).get("blocked_low_sample", 0) > 0
+        and _status_counts(tail_profile).get("blocked_low_sample", 0) > 0
+    )
+    gates.append(
+        _gate(
+            "profile_sample_depth",
+            "blocked" if profile_blocked else "watch",
+            "profile-level promotion remains sample-limited"
+            if profile_blocked
+            else "some profile-level candidates need review",
+            under_profile_candidate_rows=under_profile["overall"].get(
+                "candidate_rows"
+            ),
+            ccv_profile_status_counts=_status_counts(ccv_profile),
+            tail_profile_status_counts=_status_counts(tail_profile),
+        )
+    )
+
+    gates.append(
+        _gate(
+            "v2_archive_readiness",
+            "pending",
+            "v2 cannot be archived until v3 formal path is promoted and verified",
+        )
+    )
+
+    next_actions = []
+    if any(gate["name"] == "formal_baseline_metrics" and gate["status"] == "blocked" for gate in gates):
+        next_actions.append("continue 2506 bounded upshift/tail-value shadow validation")
+    if profile_blocked:
+        next_actions.append("collect targeted profile samples before profile-level promotion")
+    if tail_counts.get("blocked_tail_estimate_hurts", 0):
+        next_actions.append("keep tail-hurts guard before any tail/value sampler")
+    if ccv_counts.get("watch_only_count_cell_candidate", 0):
+        next_actions.append("holdout-test CCV on evidence-sufficient groups before sampler promotion")
+
+    blocked = _blocked_count(gates)
+    return {
+        "overall_status": "not_ready" if blocked else "watch_only",
+        "blocked_gates": blocked,
+        "group_field": group_field,
+        "profile_field": profile_field,
+        "min_windows": int(min_windows),
+        "min_sessions": int(min_sessions),
+        "folds": int(folds),
+        "summary": {
+            key: summary.get(key)
+            for key in (
+                "windows",
+                "ready",
+                "no_state",
+                "constraint_conflict",
+                "parse_errors",
+                "posterior_ready",
+                "posterior_strict_ready",
+                "posterior_summary_likelihood",
+                "formal_p50_mae",
+                "formal_p50_below_rate",
+                "formal_p90_coverage",
+                "q6_formal_p50_mae",
+                "v3_cal_delta_formal_p50_mae",
+                "v3_under_delta_formal_p50_mae",
+                "v3_ccv_delta_q6_count_p50_mae",
+                "v3_ccv_delta_q6_cells_p50_mae",
+                "v3_resid_gate_active_rows",
+            )
+        },
+        "gates": gates,
+        "underestimate_holdout": {
+            "candidate_rows": under_candidate_rows,
+            "candidate_groups": under_candidate_only.get("candidate_groups"),
+            "candidate_delta_formal_p50_mae": under_delta,
+            "overall_delta_formal_p50_mae": under["overall"].get(
+                "delta_formal_p50_mae"
+            ),
+        },
+        "ccv_status_counts": ccv_counts,
+        "tail_status_counts": tail_counts,
+        "residual_status_counts": residual_counts,
+        "next_actions": next_actions,
+    }
+
+
+def _print_summary(result: dict[str, Any]) -> None:
+    summary = result["summary"]
+    print(
+        " ".join(
+            (
+                f"overall_status={result['overall_status']}",
+                f"blocked_gates={result['blocked_gates']}",
+                f"windows={summary['windows']}",
+                f"ready={summary['ready']}",
+                f"formal_mae={summary['formal_p50_mae']}",
+                f"formal_below={summary['formal_p50_below_rate']}",
+                f"formal_p90_cover={summary['formal_p90_coverage']}",
+                f"under_delta={summary['v3_under_delta_formal_p50_mae']}",
+                f"ccv_cells_delta={summary['v3_ccv_delta_q6_cells_p50_mae']}",
+                f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
+            )
+        )
+    )
+    for gate in result["gates"]:
+        print(
+            " ".join(
+                (
+                    f"gate={gate['name']}",
+                    f"status={gate['status']}",
+                    f"reason={json.dumps(gate['reason'], ensure_ascii=False)}",
+                )
+            )
+        )
+    if result["next_actions"]:
+        print("next_actions=" + " | ".join(result["next_actions"]))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Summarize v3 formal-promotion readiness blockers.",
+    )
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        type=Path,
+        help="Files or directories to scan. Defaults to data/samples/fatbeans.",
+    )
+    parser.add_argument("--by", default="hero_map_id")
+    parser.add_argument("--profile-by", default="hero_map_evidence_profile")
+    parser.add_argument("--min-windows", type=int, default=20)
+    parser.add_argument("--min-sessions", type=int, default=8)
+    parser.add_argument("--folds", type=int, default=5)
+    parser.add_argument("--format", choices=("summary", "json"), default="summary")
+    parser.add_argument("--posterior-trials", type=int, default=512)
+    parser.add_argument("--posterior-seed", type=int, default=0)
+    args = parser.parse_args(argv)
+
+    rows, errors = evaluate_paths(
+        args.paths or _default_paths(),
+        tables=load_monitor_tables(),
+        calibration_entries=load_prior_calibration_entries(
+            _default_calibration_path()
+        ),
+        underestimate_repair_entries=load_underestimate_repair_entries(
+            _default_underestimate_repair_path()
+        ),
+        posterior_trials=args.posterior_trials,
+        posterior_seed=args.posterior_seed,
+    )
+    result = summarize_readiness(
+        rows,
+        errors,
+        group_field=args.by,
+        profile_field=args.profile_by,
+        min_windows=args.min_windows,
+        min_sessions=args.min_sessions,
+        folds=args.folds,
+    )
+    if args.format == "json":
+        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        _print_summary(result)
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

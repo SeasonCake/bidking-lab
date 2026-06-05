@@ -1203,3 +1203,35 @@ status_counts=blocked_low_sample:349,blocked_no_tail_signal:4,watch_only_needs_e
 - 该信号解释“为什么 P90 可以看长尾”，但不代表要把 tail replacement 接正式出价。
 - `ethan|2508` 证明 tail estimate 也会伤害，需要 guard。
 - profile 粒度仍不足，后续不能按细 profile 直接 promotion。
+
+## O-v3-040：readiness 总审计显示 v3 仍未达到 formal 条件
+
+2026-06-05 使用 `summarize_v3_promotion_readiness.py --posterior-trials 128`：
+
+```text
+overall_status=not_ready blocked_gates=4
+windows=1551 ready=1534
+formal_mae=312938.992 formal_below=0.51043 formal_p90_cover=0.773794
+under_delta=-821.144 ccv_cells_delta=0.165 resid_gate_active=0
+```
+
+gate 结果：
+
+```text
+archive_data_quality=watch
+shared_shadow_pipeline=pass
+formal_baseline_metrics=blocked
+underestimate_repair_holdout=watch
+ccv_sampler=blocked
+tail_value_review=watch
+residual_gate=blocked
+profile_sample_depth=blocked
+v2_archive_readiness=pending
+```
+
+解读：
+
+- shared pipeline 已经可用，但 v3 formal 尚未 ready。
+- 当前可推进项是 `2506` bounded upshift/tail-value shadow validation。
+- 当前禁止项是全局 CCV、residual formal、tail replacement formal。
+- profile 级 promotion 需要更多定向样本或更强证据。

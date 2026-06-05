@@ -1727,3 +1727,74 @@ status_counts=blocked_low_sample:349,blocked_no_tail_signal:4,watch_only_needs_e
 - tail-replacement 字段仍是审计/辅助口径，不进入 formal decision 或正式出价。
 - `ethan|2508` 说明 tail estimate 可能伤害 tail truth MAE，后续不能全局启用 tail 上修。
 - profile 粒度样本不足，不能直接按 profile promotion。
+
+## 2026-06-05 checkpoint：v3 promotion readiness 总审计
+
+实现：
+
+- 新增 `scripts/summarize_v3_promotion_readiness.py`。
+- 新增 `tests/test_summarize_v3_promotion_readiness.py`。
+- readiness 脚本一次性复用：
+  - `evaluate_fatbeans_v3_samples.summarize_rows`
+  - `summarize_v3_underestimate_holdout`
+  - `summarize_v3_ccv_profile_candidates`
+  - `summarize_v3_tail_value_candidates`
+  - `summarize_v3_residual_profile_candidates`
+- 输出 gate：
+  - `archive_data_quality`
+  - `shared_shadow_pipeline`
+  - `formal_baseline_metrics`
+  - `underestimate_repair_holdout`
+  - `ccv_sampler`
+  - `tail_value_review`
+  - `residual_gate`
+  - `profile_sample_depth`
+  - `v2_archive_readiness`
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_promotion_readiness.py -q
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_pipeline.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_inference_v3_underestimate_repair.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_summarize_v3_residual_profile_candidates.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_summarize_v3_underestimate_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py tests\test_summarize_v3_tail_value_candidates.py tests\test_summarize_v3_promotion_readiness.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_promotion_readiness.py --posterior-trials 128
+```
+
+结果：
+
+- 新增测试：`2 passed`。
+- v3 core/live path：`88 passed`。
+- readiness 128-trial：
+
+```text
+overall_status=not_ready
+blocked_gates=4
+windows=1551 ready=1534
+formal_mae=312938.992
+formal_below=0.51043
+formal_p90_cover=0.773794
+under_delta=-821.144
+ccv_cells_delta=0.165
+resid_gate_active=0
+```
+
+gate 结果：
+
+```text
+archive_data_quality=watch
+shared_shadow_pipeline=pass
+formal_baseline_metrics=blocked
+underestimate_repair_holdout=watch
+ccv_sampler=blocked
+tail_value_review=watch
+residual_gate=blocked
+profile_sample_depth=blocked
+v2_archive_readiness=pending
+```
+
+结论：
+
+- v3 现在有统一的 formal promotion readiness 入口。
+- 当前不能切 formal，也不能 archive v2。
+- 阻塞项是 formal baseline 仍偏低、CCV 全局不稳、residual gate 仍禁用、profile 样本不足。
+- 下一步继续围绕 `2506` bounded upshift + tail/q6-tail review 做 shadow/holdout，而不是全局启用 CCV/residual/tail replacement。
