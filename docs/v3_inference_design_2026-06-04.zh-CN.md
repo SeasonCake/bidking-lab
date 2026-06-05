@@ -1224,6 +1224,37 @@ candidate_rows=0
 3. promotion gate 必须加入 trials/seed stability。
 4. formal 低估修复需要同时输出 formal_delta、q6_value_delta、below-rate、P90 coverage/pinball、extreme-over 风险。
 
+### 2026-06-05 formal-value delta mapping audit
+
+新增 `summarize_v3_formal_value_delta_holdout.py`，用于验证最小 formal 映射：
+
+```text
+candidate_formal = baseline_formal + (candidate_q6_formal - baseline_q6_formal)
+```
+
+设计边界：
+
+- 该公式只用于 audit，不进入 live/formal。
+- source 可为 `v3_ccv_`、`v3_ccvc_`、`v3_resid_`。
+- promotion gate 必须同时看 formal MAE、q6 formal MAE、below-rate、over-rate、P90 coverage/pinball。
+- high-over guard 是硬要求；候选 over-rate 高于 `0.60` 不放行。
+
+当前 archive 结论：
+
+```text
+v3_resid_: no candidate
+v3_ccvc_ freeze-cells: no candidate
+v3_ccv_ profile: item+shape+layout hurts
+v3_ccv_ map: 2502 has candidate_over=0.75 and is blocked
+```
+
+设计影响：
+
+1. 现有 residual/CCVC component shadow 不足以修复 formal 低估。
+2. `v3_ccv_` 的 q6 formal delta 不能直接推广；它在 profile/map holdout 上暴露伤害。
+3. 下一步 formal/value sampler 应直接输出 formal candidate 分布，而不是只输出 q6 component 后再做弱映射。
+4. readiness 必须把 “小幅 MAE 改善但处于高过估窗口” 判为不可推广。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

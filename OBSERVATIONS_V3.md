@@ -1798,3 +1798,38 @@ candidate_rows=0
 - `public:total+shape` 在 256-trial holdout 下明确伤害 q6_value。
 - 当前 residual report 是 formal passthrough，所以 formal_delta=0 不能说明正式估值改善。
 - 低估修复下一步必须做 formal/value candidate：把 q6 value/cells 的上修如何影响 formal decision 作为显式候选，而不是只看 component shadow。
+
+## O-v3-055：formal delta mapping 证明现有 component shadow 不足以修复 formal
+
+2026-06-05 新增 formal-value delta holdout 后，archive 显示：
+
+```text
+v3_resid_:
+candidate_rows=0
+
+v3_ccvc_ freeze-cells:
+candidate_rows=0
+
+v3_ccv_ evidence_profile 128-trial:
+candidate_groups=item+shape+layout
+formal_delta=+6633.5
+q6_formal_delta=+8512.5
+candidate_below=0.583333
+applied_hurts=item+shape+layout
+
+v3_ccv_ evidence_profile 256-trial:
+candidate_rows=0
+
+v3_ccv_ map_id 128-trial:
+candidate_groups=2502
+formal_delta=-1015.2
+candidate_over=0.75
+applied_hurts=2502
+```
+
+解读：
+
+- `v3_resid_` 和 `v3_ccvc_` 只动 component value/count/cells，不动 q6 formal，因此不能用 delta mapping 修 formal。
+- `v3_ccv_` 有 q6 formal delta，但 profile 伤害、map 高过估，无法 promotion。
+- high-over guard 是必要的；否则 `2502` 会被小幅 MAE 改善误放行。
+- 下一步如果做 formal/value sampler，需要直接建模 formal candidate，而不是依赖现有 component shadow 的附带字段。

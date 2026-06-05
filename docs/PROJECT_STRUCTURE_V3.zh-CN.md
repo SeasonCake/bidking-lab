@@ -34,6 +34,7 @@
 | `scripts/summarize_v3_ccv_direction_holdout.py` | v3 CCV 方向候选 session holdout 审计，支持 movement-policy、复合 group-field 与候选 include/exclude |
 | `scripts/summarize_v3_ccvc_count_policy_matrix.py` | v3 CCVC q6_count policy/group-field 矩阵审计 |
 | `scripts/summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC count/cells 证据贡献审计，支持 freeze-cells 口径 |
+| `scripts/summarize_v3_formal_value_delta_holdout.py` | v3 q6 formal delta 映射 formal decision 的 session holdout 审计 |
 | `scripts/summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计 |
 | `scripts/summarize_v3_residual_under_value_holdout.py` | v3 residual q6-value 低估上修 session holdout 审计 |
 | `scripts/summarize_v3_tail_value_candidates.py` | v3 tail/value review 候选审计 |
@@ -56,6 +57,7 @@
 | `tests/test_summarize_v3_ccv_direction_holdout.py` | v3 CCV 方向候选 session holdout 审计测试 |
 | `tests/test_summarize_v3_ccvc_count_policy_matrix.py` | v3 CCVC q6_count policy matrix 测试 |
 | `tests/test_summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC 证据贡献审计测试 |
+| `tests/test_summarize_v3_formal_value_delta_holdout.py` | v3 q6 formal delta 映射 holdout 测试 |
 | `tests/test_summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计测试 |
 | `tests/test_summarize_v3_residual_under_value_holdout.py` | v3 residual q6-value 低估 holdout 测试 |
 | `tests/test_summarize_v3_tail_value_candidates.py` | v3 tail/value review 候选审计测试 |

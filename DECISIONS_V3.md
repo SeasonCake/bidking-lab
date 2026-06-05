@@ -1292,3 +1292,39 @@ candidate_rows=0
 - 同一 profile 在不同 trials/seed 下 candidate 方向不稳定。
 - formal_delta 始终为 `0.0` 是预期边界：residual report 当前 formal passthrough。
 - 这条路线只能帮助定位 q6 component 问题，不能证明实战低估已修复。
+
+## D-v3-051：q6 formal delta mapping 不接 formal，保留为 audit
+
+2026-06-05 新增 `summarize_v3_formal_value_delta_holdout.py` 后，当前决策：
+
+- `candidate_formal = baseline_formal + (candidate_q6_formal - baseline_q6_formal)` 只作为 audit 公式。
+- `v3_ccv_`、`v3_ccvc_`、`v3_resid_` 均不得通过该公式接入 formal live decision。
+- formal-value promotion 必须加入 high-over guard；候选 over-rate 高于 `0.60` 时，即使 MAE 小幅改善也不放行。
+- `v3_resid_` / `v3_ccvc_` 当前没有 q6 formal delta，不具备 formal-value 修复能力。
+- `v3_ccv_` 的 q6 formal delta 在 archive holdout 下不稳定且会伤害，不能推广。
+
+当前结果：
+
+```text
+v3_resid_: candidate_rows=0
+v3_ccvc_ freeze-cells: candidate_rows=0
+
+v3_ccv_ profile 128-trial:
+candidate_groups=item+shape+layout
+formal_delta=+6633.5
+applied_hurts=item+shape+layout
+
+v3_ccv_ profile 256-trial:
+candidate_rows=0
+
+v3_ccv_ map 128-trial:
+candidate_groups=2502
+formal_delta=-1015.2
+candidate_over=0.75
+applied_hurts=2502
+```
+
+原因：
+
+- formal 低估修复不能只看 q6 component delta；必须看整体 formal MAE、below-rate、over-rate、P90 和 trials stability。
+- `2502` 例子说明轻微 MAE 改善可能来自已高过估窗口，不符合实战参考价值。

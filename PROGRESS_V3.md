@@ -2613,3 +2613,68 @@ candidate_rows=0
 - `public:total+shape` 在 256-trial holdout 下伤害 q6_value。
 - 当前 residual posterior 是 `resid_formal_passthrough`，所以它不能直接修复正式出价低估，只能诊断 q6 component。
 - 下一步需要真正的 formal/value sampler 设计：要把 q6 value/cells 的上修映射到 formal decision candidate，并同时过 trials stability、below-rate、P90 over 和 holdout hurt。
+
+## 2026-06-05 checkpoint：v3 formal-value delta mapping audit
+
+实现：
+
+- 新增 `scripts/summarize_v3_formal_value_delta_holdout.py`。
+  - 支持 `--candidate-prefix v3_ccv_|v3_ccvc_|v3_resid_`。
+  - 用 audit-only 公式 `candidate_formal = baseline_formal + (candidate_q6_formal - baseline_q6_formal)`。
+  - 训练侧要求系统性低估、public total/q6 floor 证据、q6 formal 上移、MAE/P90 不伤害。
+  - holdout 侧检查 formal MAE、q6 formal MAE、below-rate、over-rate、P90 coverage/pinball。
+  - 增加 high-over guard：候选过估率高于 `0.60` 不放行。
+- 新增 `tests/test_summarize_v3_formal_value_delta_holdout.py`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_formal_value_delta_holdout.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_formal_value_delta_holdout.py --posterior-trials 128 --candidate-prefix v3_ccv_ --by evidence_profile_key --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_formal_value_delta_holdout.py --posterior-trials 128 --candidate-prefix v3_ccv_ --by map_id --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_formal_value_delta_holdout.py --posterior-trials 256 --candidate-prefix v3_ccv_ --by evidence_profile_key --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_formal_value_delta_holdout.py --posterior-trials 128 --candidate-prefix v3_ccvc_ --ccv-component-freeze-cells --by evidence_profile_key --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_formal_value_delta_holdout.py --posterior-trials 128 --candidate-prefix v3_resid_ --by evidence_profile_key --top 20
+```
+
+结果：
+
+```text
+focused tests: 4 passed
+v3/live focused suite: 128 passed
+
+v3_resid_ evidence_profile:
+overall_status=sample_limited
+candidate_rows=0
+
+v3_ccvc_ freeze-cells evidence_profile:
+overall_status=sample_limited
+candidate_rows=0
+
+v3_ccv_ evidence_profile 128-trial:
+overall_status=blocked_holdout_hurt
+candidate_groups=item+shape+layout
+formal_delta=+6633.5
+q6_formal_delta=+8512.5
+candidate_below=0.583333
+applied_hurts=item+shape+layout
+
+v3_ccv_ evidence_profile 256-trial:
+overall_status=sample_limited
+candidate_rows=0
+
+v3_ccv_ map_id 128-trial:
+overall_status=blocked_holdout_hurt
+candidate_groups=2502
+formal_delta=-1015.2
+q6_formal_delta=-1015.2
+candidate_over=0.75
+applied_hurts=2502
+```
+
+结论：
+
+- `v3_resid_` 和 `v3_ccvc_` 当前没有 q6 formal delta，因此无法作为 formal-value 修复来源。
+- `v3_ccv_` 能产生 q6 formal delta，但 profile holdout 会伤害 MAE/低估，map holdout 的 `2502` 虽小幅降 MAE，却处在高过估窗口，不能推广。
+- 该 audit 证明“component delta 映射 formal”这条最小路径目前也不能 promotion。
+- 下一步若继续 formal 低估修复，不能只复用现有 q6 component shadow；需要设计新的 formal/value sampler 或校准层，并把 high-over guard 与 sampler stability 作为硬门槛。
