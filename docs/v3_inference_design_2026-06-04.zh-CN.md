@@ -746,6 +746,30 @@ archive evaluator 和 live monitor 现在只准备输入，然后调用同一 pi
 2. archive 指标、live artifact、局后 `model_eval` 的 v3 字段应保持同源，避免再次出现输入/字段遗漏。
 3. 该 pipeline 仍是 shadow-only；它不改变 formal decision、UI 主建议或正式出价。
 
+### 2026-06-05 tail/value review gate
+
+新增 `summarize_v3_tail_value_candidates.py`，专门区分 formal 口径误差和 tail-replacement 审计缺口：
+
+- formal MAE 仍只对 formal truth。
+- tail-replacement MAE 只对 tail-replacement truth。
+- P90 tail under rate 用于判断 review 风险，不回写 formal。
+- candidate 状态只进入 watch-only review。
+
+128-trial hero/map 结果：
+
+```text
+aisha|2506: tail_p90_under=0.372093 q6_tail_p90_under=0.325581
+ethan|2506: tail_p90_under=0.392857 q6_tail_p90_under=0.392857
+ethan|2508: tail_delta=32201.7 q6_tail_delta=28270.1
+```
+
+设计影响：
+
+1. `2506` 低估诊断需要同时看 bounded upshift 与 tail/q6-tail review。
+2. tail replacement 仍不能进入 formal decision 或正式 bid。
+3. `ethan|2508` 作为 tail-hurts guard，防止全局 tail 上修。
+4. profile 粒度当前仍不足，tail/value sampler 若实现，必须先作为新的 pipeline shadow namespace 和 holdout candidate。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

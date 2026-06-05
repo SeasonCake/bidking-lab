@@ -1663,3 +1663,67 @@ C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --
 
 - v3 archive/live 的 shadow 字段生成路径已收敛到同一核心函数，降低后续参数、entry、field 命名不一致风险。
 - 该改动不改变 UI 主建议、不改变 formal decision、不进入正式出价。
+
+## 2026-06-05 checkpoint：tail/value review candidate audit
+
+实现：
+
+- 新增 `scripts/summarize_v3_tail_value_candidates.py`。
+- 新增 `tests/test_summarize_v3_tail_value_candidates.py`。
+- 该脚本按 `hero_map_id` 或 `hero_map_evidence_profile` 对比：
+  - formal P50 vs formal truth。
+  - formal P50 vs tail-replacement truth。
+  - tail-replacement P50/P90 vs tail-replacement truth。
+  - q6 formal/tail-replacement 同口径指标。
+- candidate 状态包括：
+  - `watch_only_q6_tail_value_candidate`
+  - `watch_only_tail_value_candidate`
+  - `watch_only_needs_evidence`
+  - `watch_only_neutral`
+  - `blocked_tail_estimate_hurts`
+  - `blocked_no_tail_signal`
+  - `blocked_low_sample`
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_summarize_v3_tail_value_candidates.py -q
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_inference_v3_pipeline.py tests\test_inference_v3_evidence_registry.py tests\test_inference_v3_calibration.py tests\test_inference_v3_underestimate_repair.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_metric_slices.py tests\test_summarize_v3_map_audit.py tests\test_summarize_v3_prior_archive_calibration.py tests\test_summarize_v3_residual_profile_candidates.py tests\test_summarize_v3_underestimate_repair_candidates.py tests\test_summarize_v3_underestimate_holdout.py tests\test_summarize_v3_ccv_profile_candidates.py tests\test_summarize_v3_tail_value_candidates.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_tail_value_candidates.py --posterior-trials 128 --by hero_map_id --top 20
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_tail_value_candidates.py --posterior-trials 128 --by hero_map_evidence_profile --top 20
+```
+
+结果：
+
+- 新增测试：`3 passed`。
+- v3 core/live path：`86 passed`。
+- `hero_map_id` tail/value gate：
+
+```text
+status_counts=blocked_low_sample:71,blocked_no_tail_signal:9,blocked_tail_estimate_hurts:1,watch_only_needs_evidence:2,watch_only_neutral:1,watch_only_q6_tail_value_candidate:4,watch_only_tail_value_candidate:1
+aisha|2506 status=watch_only_q6_tail_value_candidate n=43 sessions=13 tail_rate=0.162791 tail_delta=-11433.7 tail_p90_under=0.372093 q6_tail_delta=-9603.3 q6_tail_p90_under=0.325581
+ethan|2506 status=watch_only_q6_tail_value_candidate n=28 sessions=8 tail_rate=0.142857 tail_delta=-2096.4 tail_p90_under=0.392857 q6_tail_delta=-8614.5 q6_tail_p90_under=0.392857
+ethan|2502 status=watch_only_tail_value_candidate n=36 sessions=9 tail_rate=0.222222 tail_delta=-418.3 tail_p90_under=0.305556
+ethan|2508 status=blocked_tail_estimate_hurts n=28 sessions=9 tail_delta=32201.7 q6_tail_delta=28270.1
+```
+
+- hidden `2601` 也出现 tail/q6-tail 候选，但仍按 hidden 单独验证：
+
+```text
+aisha|2601 q6_tail_delta=-57702.7 q6_tail_p90_under=0.578947
+ethan|2601 q6_tail_delta=-11678.5 q6_tail_p90_under=0.3
+```
+
+- `hero_map_evidence_profile` 粒度仍不足：
+
+```text
+status_counts=blocked_low_sample:349,blocked_no_tail_signal:4,watch_only_needs_evidence:1
+```
+
+结论：
+
+- `2506` 的低估确实有 tail/q6-tail review 信号，尤其 P90 tail under rate 偏高。
+- tail-replacement 字段仍是审计/辅助口径，不进入 formal decision 或正式出价。
+- `ethan|2508` 说明 tail estimate 可能伤害 tail truth MAE，后续不能全局启用 tail 上修。
+- profile 粒度样本不足，不能直接按 profile promotion。

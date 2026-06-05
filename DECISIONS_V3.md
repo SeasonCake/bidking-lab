@@ -715,3 +715,37 @@ promotion 前置条件：
 
 - 新增 sampler 或 calibration 时，优先给 pipeline 加 report，再更新 evaluator/live tests。
 - 后续 v3 formal promotion 前，用 pipeline 作为唯一候选输出源，避免 archive 指标和 live 行为不同。
+
+## D-v3-035：tail/value 只作为 review candidate，不接 formal
+
+2026-06-05 起，`summarize_v3_tail_value_candidates.py` 作为 tail/value 问题的审计入口。它比较 formal truth 与 tail-replacement truth，但不改变正式估值口径。
+
+当前决策：
+
+- formal decision value 仍使用裁尾 plannable 口径。
+- tail-replacement decision value 仍是 audit/helper 字段。
+- tail/value candidate 只能进入 watch-only review，不进入 UI 主建议或正式出价。
+- tail/value promotion 前必须同时看 formal MAE、tail-replacement MAE、P90 under、below/over、public total/q6 floor 和 profile 样本量。
+
+原因：
+
+- `aisha|2506` 与 `ethan|2506` 都出现 q6 tail/value review 信号：
+  - `aisha|2506`：`tail_p90_under=0.372093`，`q6_tail_p90_under=0.325581`。
+  - `ethan|2506`：`tail_p90_under=0.392857`，`q6_tail_p90_under=0.392857`。
+- `ethan|2508` 显示 tail estimate 会伤害：`tail_delta=32201.7`，`q6_tail_delta=28270.1`。
+- profile 粒度仍主要是 `blocked_low_sample=349`，不能把 hero/map 观察直接升级为细粒度规则。
+- hidden `2601` 虽有明显 tail 信号，但 hidden 仍需单独样本规则。
+
+硬边界：
+
+- 不覆盖 `v3_post_formal_decision_value_*`。
+- 不覆盖 `v3_cal_*` 或 `v3_under_*`。
+- 不进入 UI 主建议。
+- 不进入正式 stop/attack bid。
+- 不把 raw long tail 直接算回 formal MAE。
+
+下一步：
+
+- 对 `2506` 保留 tail/q6-tail review，结合低估上修 holdout 继续看是否是正式低估或 tail audit gap。
+- 对 `ethan|2508` 这类伤害切片保留 high-over/tail-hurts guard。
+- 若后续做 tail/value sampler，只能先接入 pipeline 的新 shadow namespace，再通过 candidate/holdout 审计。

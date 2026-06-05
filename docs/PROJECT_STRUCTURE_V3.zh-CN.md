@@ -25,6 +25,7 @@
 | `scripts/summarize_v3_map_audit.py` | v3 map 主键审计，附 hero/profile 分布 |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
 | `scripts/summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计 |
+| `scripts/summarize_v3_tail_value_candidates.py` | v3 tail/value review 候选审计 |
 | `scripts/summarize_v3_underestimate_repair_candidates.py` | v3 低估上修候选审计 |
 | `scripts/summarize_v3_underestimate_holdout.py` | v3 低估上修 session holdout 审计 |
 | `scripts/summarize_fatbeans_sample_manifest.py` | Fatbeans 样本 manifest/质量分层 |
@@ -35,6 +36,7 @@
 | `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
 | `tests/test_summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计测试 |
+| `tests/test_summarize_v3_tail_value_candidates.py` | v3 tail/value review 候选审计测试 |
 | `tests/test_summarize_v3_underestimate_repair_candidates.py` | v3 低估上修候选审计测试 |
 | `tests/test_summarize_v3_underestimate_holdout.py` | v3 低估上修 holdout 审计测试 |
 
@@ -80,9 +82,9 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 
 当前脚本规模：
 
-- Python scripts：84
+- Python scripts：85
 - PowerShell scripts：13
-- test files：86
+- test files：87
 
 策略：
 

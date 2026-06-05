@@ -1173,3 +1173,33 @@ evaluate_fatbeans_v3_samples.py / live/monitor.py 不再直接调用 posterior/C
 - v3 后续改 sampler、gate、entry 或 flat field 时，有单一接入点可测。
 - 这不是精度提升本身，但它是避免 archive 指标和 live 实战展示不一致的必要结构改动。
 - 当前仍保持 shadow-only，formal/live 主决策未切换。
+
+## O-v3-039：2506 有 tail/q6-tail review 信号，但不是 formal 口径替换
+
+2026-06-05 使用 `summarize_v3_tail_value_candidates.py` 对 128-trial archive 审计：
+
+```text
+status_counts=blocked_low_sample:71,blocked_no_tail_signal:9,blocked_tail_estimate_hurts:1,watch_only_needs_evidence:2,watch_only_neutral:1,watch_only_q6_tail_value_candidate:4,watch_only_tail_value_candidate:1
+```
+
+重点切片：
+
+```text
+aisha|2506 n=43 sessions=13 tail_rate=0.162791 tail_delta=-11433.7 tail_p90_under=0.372093 q6_tail_delta=-9603.3 q6_tail_p90_under=0.325581
+ethan|2506 n=28 sessions=8 tail_rate=0.142857 tail_delta=-2096.4 tail_p90_under=0.392857 q6_tail_delta=-8614.5 q6_tail_p90_under=0.392857
+ethan|2502 n=36 sessions=9 tail_rate=0.222222 tail_delta=-418.3 tail_p90_under=0.305556
+ethan|2508 n=28 sessions=9 tail_delta=32201.7 q6_tail_delta=28270.1
+```
+
+profile 粒度：
+
+```text
+status_counts=blocked_low_sample:349,blocked_no_tail_signal:4,watch_only_needs_evidence:1
+```
+
+解读：
+
+- `2506` 的低估里有 tail/q6-tail audit gap，P90 tail under rate 偏高。
+- 该信号解释“为什么 P90 可以看长尾”，但不代表要把 tail replacement 接正式出价。
+- `ethan|2508` 证明 tail estimate 也会伤害，需要 guard。
+- profile 粒度仍不足，后续不能按细 profile 直接 promotion。
