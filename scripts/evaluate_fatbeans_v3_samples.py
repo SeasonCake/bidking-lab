@@ -35,6 +35,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     empty_feasible_summary_flat_dict,
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
+    empty_prior_robustness_flat_dict,
     empty_residual_gate_flat_dict,
     empty_tail_value_review_flat_dict,
     empty_underestimate_repair_flat_dict,
@@ -47,6 +48,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     ordinary_shape_replacement_values,
     sample_truth_bank,
     settlement_truth_from_fatbeans,
+    assess_prior_robustness,
     summarize_drop_prior,
     tail_value_review_entry_for,
     underestimate_entry_for,
@@ -425,6 +427,7 @@ def _round_rows_for_events(
     empty_residual_fields = empty_posterior_flat_dict(prefix="v3_resid_")
     empty_residual_gate_fields = empty_residual_gate_flat_dict()
     empty_calibration_fields = empty_prior_calibration_flat_dict()
+    empty_robust_fields = empty_prior_robustness_flat_dict()
     empty_underestimate_fields = empty_underestimate_repair_flat_dict()
     empty_tail_review_fields = empty_tail_value_review_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
@@ -456,6 +459,13 @@ def _round_rows_for_events(
                 constraints=None,
                 summary=None,
             )
+            robust_fields = assess_prior_robustness(
+                map_id=map_id,
+                map_family=map_family,
+                summary=None,
+                prior_fields=prior_fields,
+                posterior_fields=empty_posterior_fields,
+            ).to_flat_dict()
             rows.append(
                 {
                     "file": f"{path.name}#prebid_r{window_round}_sort{bid_sort_id}",
@@ -487,6 +497,7 @@ def _round_rows_for_events(
                     **empty_residual_fields,
                     **empty_residual_gate_fields,
                     **empty_calibration_fields,
+                    **robust_fields,
                     **empty_underestimate_fields,
                     **empty_tail_review_fields,
                 }
@@ -595,6 +606,17 @@ def _round_rows_for_events(
             if pipeline is not None
             else empty_calibration_fields
         )
+        robust_fields = (
+            assess_prior_robustness(
+                map_id=map_id,
+                map_family=map_family,
+                summary=feasible_summary,
+                prior_fields=prior_fields,
+                posterior_fields=posterior_fields,
+            ).to_flat_dict()
+            if map_id is not None
+            else empty_robust_fields
+        )
         underestimate_fields = (
             pipeline.underestimate.to_flat_dict()
             if pipeline is not None
@@ -636,6 +658,7 @@ def _round_rows_for_events(
                 **residual_fields,
                 **residual_gate_fields,
                 **calibration_fields,
+                **robust_fields,
                 **underestimate_fields,
                 **tail_review_fields,
             }
@@ -1363,6 +1386,10 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         for row in rows
         if row.get("v3_post_ready")
     )
+    robust_status_counts = Counter(
+        str(row.get("v3_robust_status") or "none")
+        for row in rows
+    )
     ready_rows = [row for row in rows if row.get("status") == "ready"]
     summary = {
         "windows": len(rows),
@@ -1371,6 +1398,20 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         "constraint_conflict": statuses.get("constraint_conflict", 0),
         "parse_errors": len(errors),
         "prior_ready": sum(1 for row in rows if row.get("v3_prior_available")),
+        "robust_prior_usable": sum(
+            1 for row in rows if row.get("v3_robust_prior_usable")
+        ),
+        "robust_prior_trusted": sum(
+            1 for row in rows if row.get("v3_robust_prior_trusted")
+        ),
+        "robust_activity_candidate": sum(
+            1 for row in rows if row.get("v3_robust_activity_candidate")
+        ),
+        "robust_prior_stressed": sum(
+            1
+            for row in rows
+            if int(row.get("v3_robust_prior_stress_score") or 0) > 0
+        ),
         "truth_ready": sum(1 for row in rows if row.get("v3_truth_available")),
         "decision_truth_ready": sum(
             1 for row in rows if row.get("v3_truth_decision_available")
@@ -1409,6 +1450,7 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         "information_density_counts": dict(sorted(information_density_counts.items())),
         "evidence_profile_counts": dict(sorted(evidence_profile_counts.items())),
         "posterior_scope_counts": dict(sorted(posterior_scope_counts.items())),
+        "robust_status_counts": dict(sorted(robust_status_counts.items())),
         "numeric_constraints": sum(int(row.get("numeric_constraints") or 0) for row in ready_rows),
         "item_anchors": sum(int(row.get("item_anchors") or 0) for row in ready_rows),
         "shape_anchors": sum(int(row.get("shape_anchors") or 0) for row in ready_rows),
@@ -1431,6 +1473,10 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"constraint_conflict={summary['constraint_conflict']}",
                 f"parse_errors={summary['parse_errors']}",
                 f"prior_ready={summary['prior_ready']}",
+                f"robust_prior_usable={summary['robust_prior_usable']}",
+                f"robust_prior_trusted={summary['robust_prior_trusted']}",
+                f"robust_activity_candidate={summary['robust_activity_candidate']}",
+                f"robust_prior_stressed={summary['robust_prior_stressed']}",
                 f"truth_ready={summary['truth_ready']}",
                 f"decision_truth_ready={summary['decision_truth_ready']}",
                 f"summary_ready={summary['summary_ready']}",
@@ -1559,6 +1605,15 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_prior_q6_expected_count",
         "v3_prior_q6_expected_cells",
         "v3_prior_q6_expected_value",
+        "v3_robust_available",
+        "v3_robust_affects_bid",
+        "v3_robust_status",
+        "v3_robust_prior_usable",
+        "v3_robust_prior_trusted",
+        "v3_robust_fallback_mode",
+        "v3_robust_activity_candidate",
+        "v3_robust_prior_stress_score",
+        "v3_robust_reasons",
         "v3_truth_available",
         "v3_truth_session_id",
         "v3_truth_map_id",

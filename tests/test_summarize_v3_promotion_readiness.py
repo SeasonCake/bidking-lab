@@ -42,6 +42,15 @@ def _row(
         "shape_anchors": 1,
         "quality_floor_anchors": 1,
         "v3_prior_available": True,
+        "v3_robust_available": True,
+        "v3_robust_affects_bid": False,
+        "v3_robust_status": "ok",
+        "v3_robust_prior_usable": True,
+        "v3_robust_prior_trusted": True,
+        "v3_robust_fallback_mode": "normal_prior",
+        "v3_robust_activity_candidate": False,
+        "v3_robust_prior_stress_score": 0,
+        "v3_robust_reasons": "",
         "v3_truth_available": True,
         "v3_truth_decision_available": True,
         "v3_summary_available": True,
@@ -131,6 +140,7 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     gates = {row["name"]: row for row in result["gates"]}
     assert gates["archive_data_quality"]["status"] == "pass"
     assert gates["shared_shadow_pipeline"]["status"] == "pass"
+    assert gates["prior_robustness"]["status"] == "pass"
     assert gates["formal_baseline_metrics"]["status"] == "blocked"
     assert "holdout_candidate_rows" in gates["ccv_sampler"]
     assert "applied_ccv_hurts_groups" in gates["ccv_sampler"]
@@ -148,6 +158,36 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert "ccv_direction_holdout" in result
     assert "tail_holdout" in result
     assert "tail_under_holdout" in result
+
+
+def test_readiness_blocks_prior_robustness_on_activity_candidate() -> None:
+    module = _load_module()
+    rows = [
+        {
+            **_row("aisha|2526", session_id=f"s{idx}", truth=1_000, pred=1_000, p90=1_200),
+            "v3_robust_status": "prior_unavailable",
+            "v3_robust_prior_usable": False,
+            "v3_robust_prior_trusted": False,
+            "v3_robust_fallback_mode": "missing_prior_truth_only",
+            "v3_robust_activity_candidate": True,
+            "v3_robust_reasons": "activity_map_id_candidate",
+        }
+        for idx in range(2)
+    ]
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    assert gates["prior_robustness"]["status"] == "blocked"
+    assert gates["prior_robustness"]["robust_activity_candidate"] == 2
+    assert gates["prior_robustness"]["robust_prior_trusted"] == 0
+    assert "separate activity/prior-drift rows before formal promotion" in result["next_actions"]
 
 
 def test_readiness_blocks_archive_data_quality_on_parse_errors() -> None:

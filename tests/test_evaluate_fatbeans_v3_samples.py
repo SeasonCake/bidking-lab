@@ -189,6 +189,11 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_prior_available"] is True
     assert rows[0]["v3_prior_expected_value"] == 201_000
     assert rows[0]["v3_prior_q6_session_probability"] == 0.75
+    assert rows[0]["v3_robust_available"] is True
+    assert rows[0]["v3_robust_status"] == "ok"
+    assert rows[0]["v3_robust_prior_usable"] is True
+    assert rows[0]["v3_robust_prior_trusted"] is True
+    assert rows[0]["v3_robust_affects_bid"] is False
     assert rows[0]["v3_truth_available"] is True
     assert rows[0]["v3_truth_raw_total_value"] == 201_000
     assert rows[0]["v3_truth_q6_raw_value"] == 200_000
@@ -221,6 +226,69 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_under_active"] is False
     assert rows[0]["v3_under_candidate"] is False
     assert rows[0]["v3_under_status"] == "missing_entry"
+
+
+def test_v3_prebid_rows_mark_252x_activity_map_as_missing_prior() -> None:
+    module = _load_module()
+    prebid_state = SimpleNamespace(
+        sort_id=5,
+        session_id="2526:activity",
+        round_index=1,
+        map_id=2526,
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    settlement_state = SimpleNamespace(
+        sort_id=20,
+        session_id="2526:activity",
+        round_index=5,
+        map_id=2526,
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(
+            SimpleNamespace(item_id=1011001, quality=1, cells=1),
+            SimpleNamespace(item_id=1086001, quality=6, cells=16),
+        ),
+    )
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(
+            SimpleNamespace(
+                sort_id=10,
+                kind="bid",
+                session_id="2526:activity",
+                value=1000,
+            ),
+        ),
+        states=(prebid_state, settlement_state),
+        statuses=(),
+    )
+
+    rows = module._round_rows_for_events(
+        Path("activity.json"),
+        events,
+        tables=_tables(),
+        posterior_trials=64,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["map_family"] == "shipwreck"
+    assert rows[0]["v3_prior_available"] is False
+    assert rows[0]["v3_prior_error"] == "KeyError"
+    assert rows[0]["v3_robust_status"] == "prior_unavailable"
+    assert rows[0]["v3_robust_prior_usable"] is False
+    assert rows[0]["v3_robust_prior_trusted"] is False
+    assert rows[0]["v3_robust_activity_candidate"] is True
+    assert rows[0]["v3_robust_fallback_mode"] == "missing_prior_truth_only"
+    assert "activity_map_id_candidate" in rows[0]["v3_robust_reasons"]
+    assert rows[0]["v3_truth_available"] is True
+    assert rows[0]["v3_truth_decision_available"] is True
+    assert rows[0]["v3_post_available"] is True
+    assert rows[0]["v3_post_ready"] is False
 
 
 def test_v3_prebid_rows_apply_calibration_shadow_fields() -> None:

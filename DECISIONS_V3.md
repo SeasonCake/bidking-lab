@@ -1348,3 +1348,22 @@ applied_hurts=2502
 - 新增样本中有 15 个 `2521/2522/2524/2526/2528/2529` 沉船窗口。
 - 当前 `data/processed/maps.json` 不包含这些 252x map id；`BidMap.txt` / `Drop.txt` 仍是旧表。
 - 活动说明“白色藏品有概率变成红色藏品”会改变品质分布；用旧 250x drop prior 直接解释 252x 会把活动机制误记为模型误差。
+
+## D-v3-053：prior robustness gate 是 v3 promotion 的前置边界
+
+2026-06-06 起，archive evaluator 输出 `v3_robust_*` prior/activity 审计字段。当前决策：
+
+- `v3_robust_affects_bid=false` 固定保持。
+- `v3_robust_prior_trusted=true` 才能作为 formal promotion 的强证据分母。
+- `v3_robust_prior_usable=true` 只能说明可做保守 shadow 参考，不等于可 promotion。
+- `activity_candidate=true` 或 `fallback_mode=missing_prior_truth_only` 时，不得使用旧 drop prior 做普通校准。
+- `summary_likelihood_conservative` 可保留为弱 fallback，但默认 `prior_trusted=false`。
+- `q6_projection_audit_only` 不得作为 promotion 依据。
+- `prior_stress_score>0` 的行必须单独分片报告，避免把活动、表漂移或 hard evidence 异常误当普通模型误差。
+- `summarize_v3_promotion_readiness.py` 的 `prior_robustness` gate 必须通过后，才允许讨论 formal promotion。
+
+原因：
+
+- 游戏会出现持续一周的爆率/品质活动，旧先验可能临时失效。
+- 0605 后 252x 沉船活动 cohort 已证明“样本可解析但本地 drop prior 缺失”是现实状态。
+- v2/v3 之前的调参风险在于把不同数据质量、不同先验可信度混在同一指标分母里；v3 promotion 必须先隔离这种漂移。

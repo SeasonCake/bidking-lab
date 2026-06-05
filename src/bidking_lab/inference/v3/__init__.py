@@ -61,6 +61,11 @@ from bidking_lab.inference.v3.priors import (
     ordinary_shape_replacement_values,
     summarize_drop_prior,
 )
+from bidking_lab.inference.v3.prior_robustness import (
+    V3PriorRobustnessReport,
+    assess_prior_robustness,
+    empty_prior_robustness_flat_dict,
+)
 from bidking_lab.inference.v3.residual_gate import (
     V3ResidualGateReport,
     empty_residual_gate_flat_dict,
@@ -125,6 +130,7 @@ __all__ = (
     "UnderestimateRepairEntry",
     "V3PosteriorReport",
     "V3PriorCalibrationReport",
+    "V3PriorRobustnessReport",
     "V3CcvOptions",
     "V3ResidualGateReport",
     "V3ShadowPipelineReport",
@@ -142,6 +148,7 @@ __all__ = (
     "empty_feasible_summary_flat_dict",
     "empty_posterior_flat_dict",
     "empty_prior_calibration_flat_dict",
+    "empty_prior_robustness_flat_dict",
     "empty_residual_gate_flat_dict",
     "empty_tail_value_review_flat_dict",
     "empty_underestimate_repair_flat_dict",
@@ -154,6 +161,7 @@ __all__ = (
     "estimate_shadow_pipeline",
     "events_from_fatbeans",
     "gate_residual_posterior_report",
+    "assess_prior_robustness",
     "load_prior_calibration_entries",
     "load_tail_value_review_entries",
     "load_underestimate_repair_entries",

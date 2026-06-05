@@ -291,6 +291,33 @@ def summarize_readiness(
             posterior_no_match=summary.get("posterior_no_match"),
         )
     )
+    ready_count = int(summary.get("ready") or 0)
+    robust_prior_usable = int(summary.get("robust_prior_usable") or 0)
+    robust_prior_trusted = int(summary.get("robust_prior_trusted") or 0)
+    robust_activity_candidate = int(summary.get("robust_activity_candidate") or 0)
+    robust_prior_stressed = int(summary.get("robust_prior_stressed") or 0)
+    robust_ready = (
+        ready_count > 0
+        and robust_prior_usable == ready_count
+        and robust_prior_trusted == ready_count
+        and robust_activity_candidate == 0
+        and robust_prior_stressed == 0
+    )
+    gates.append(
+        _gate(
+            "prior_robustness",
+            "pass" if robust_ready else "blocked",
+            "all ready rows have trusted priors and no activity/drift signal"
+            if robust_ready
+            else "prior trust is incomplete or activity/drift candidates are present",
+            ready=ready_count,
+            robust_prior_usable=robust_prior_usable,
+            robust_prior_trusted=robust_prior_trusted,
+            robust_activity_candidate=robust_activity_candidate,
+            robust_prior_stressed=robust_prior_stressed,
+            robust_status_counts=summary.get("robust_status_counts"),
+        )
+    )
     formal_below = float(summary.get("formal_p50_below_rate") or 0.0)
     formal_p90 = float(summary.get("formal_p90_coverage") or 0.0)
     formal_status = "blocked" if formal_below > 0.50 or formal_p90 < 0.80 else "watch"
@@ -609,6 +636,8 @@ def summarize_readiness(
         next_actions.append("keep CCV direction selection in audit; holdout is not stable")
     if ccv_counts.get("watch_only_count_cell_candidate", 0):
         next_actions.append("redesign CCV likelihood; current holdout is not promotion-ready")
+    if not robust_ready:
+        next_actions.append("separate activity/prior-drift rows before formal promotion")
 
     blocked = _blocked_count(gates)
     return {
@@ -630,6 +659,10 @@ def summarize_readiness(
                 "posterior_ready",
                 "posterior_strict_ready",
                 "posterior_summary_likelihood",
+                "robust_prior_usable",
+                "robust_prior_trusted",
+                "robust_activity_candidate",
+                "robust_prior_stressed",
                 "formal_p50_mae",
                 "formal_p50_below_rate",
                 "formal_p90_coverage",

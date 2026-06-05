@@ -2807,3 +2807,56 @@ prior_ready=0 truth_ready=58 decision_truth_ready=58
 - 默认 archive/evaluator 现在只使用 441 份普通样本；新增别墅已纳入默认校准候选。
 - 252x 沉船活动样本被保留为独立鲁棒性 cohort；没有新 drop table 前不参与普通沉船 prior/posterior 校准。
 - 后续 v3 可用该 cohort 检查“模型遇到活动机制/旧表缺失时是否能保持保守、不误用旧先验”。
+
+## 2026-06-06 checkpoint：v3 prior/activity 鲁棒性审计接入
+
+完成内容：
+
+- 新增 `src/bidking_lab/inference/v3/prior_robustness.py`。
+- `scripts/evaluate_fatbeans_v3_samples.py` 输出 `v3_robust_*` 字段和 summary counters。
+- `scripts/summarize_v3_promotion_readiness.py` 新增 `prior_robustness` gate，formal promotion 前必须排除活动、缺表、prior stress 和弱 fallback。
+- `v3_robust_affects_bid=false` 固定保持；该层只用于审计和后续 promotion gate。
+- 252x 沉船活动候选在缺少本地 drop table 时标记为 `activity_candidate=true`、`prior_usable=false`、`fallback_mode=missing_prior_truth_only`。
+- 普通 archive 中 `summary_likelihood` fallback 标记为 `prior_usable=true` 但 `prior_trusted=false`，避免弱 fallback 被误当正式 promotion 证据。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_inference_v3_prior_robustness.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_pipeline.py
+C:\Users\shenc\anaconda3\python.exe -m pytest tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
+```
+
+结果：
+
+```text
+focused tests:
+16 passed
+
+activity cohort:
+windows=58 ready=58 parse_errors=0
+prior_ready=0
+robust_prior_usable=0
+robust_prior_trusted=0
+robust_activity_candidate=58
+posterior_ready=0 posterior_no_match=58
+
+main archive 64-trial:
+windows=1577 ready=1560 no_state=17 parse_errors=0
+prior_ready=1560
+robust_prior_usable=1560
+robust_prior_trusted=359
+robust_activity_candidate=0
+robust_prior_stressed=94
+posterior_ready=1560 posterior_strict_ready=361 posterior_summary_likelihood=1199
+formal_p50_mae=318635.858
+formal_p50_below_rate=0.51859
+formal_p90_coverage=0.750641
+```
+
+结论：
+
+- v3 现在能把“活动/新表缺失”与“普通模型误差”分开。
+- 当前普通 archive 的弱 fallback 覆盖面大，但可信 promotion 分母仍主要是 strict/非 stress 行；后续不能只看全量 fallback 指标。
+- 0605 沉船活动 cohort 可继续用于鲁棒性回归，不进入普通 prior tuning。

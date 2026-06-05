@@ -1255,6 +1255,25 @@ v3_ccv_ map: 2502 has candidate_over=0.75 and is blocked
 3. 下一步 formal/value sampler 应直接输出 formal candidate 分布，而不是只输出 q6 component 后再做弱映射。
 4. readiness 必须把 “小幅 MAE 改善但处于高过估窗口” 判为不可推广。
 
+### 2026-06-06 prior/activity robustness gate
+
+v3 需要显式处理持续活动、临时爆率、表缺失和旧先验漂移。新增 `v3_robust_*` 审计层，和 posterior/under/tail 一样保持 shadow-only：
+
+- `v3_robust_affects_bid=false` 固定成立。
+- `prior_usable` 表示当前先验可以作为保守参考。
+- `prior_trusted` 表示当前先验和 posterior 匹配足够强，可进入后续 promotion 分母。
+- `activity_candidate` 标记 252x 沉船这类活动/新图候选。
+- `fallback_mode` 显式区分 `normal_prior`、`summary_likelihood_conservative`、`missing_prior_truth_only`、`q6_projection_audit_only` 等路径。
+- `prior_stress_score` 记录 hard evidence 明显高于旧 prior 的次数，用于发现潜在活动或表漂移。
+
+设计边界：
+
+1. 旧表缺失、活动候选或 `q6_projection` fallback 不得进入正式 promotion。
+2. `summary_likelihood` 可作为保守可用先验，但默认不可信，不作为 formal 切换证据。
+3. 活动 cohort 可以用于 capture/window/truth 和鲁棒性测试，但没有新 drop table 或显式活动映射前，不混入普通沉船校准。
+4. v3 formal readiness 必须通过 `prior_robustness` gate，并同时报告普通样本指标与 prior robustness 分片，避免把临时活动导致的 prior drift 误判为引擎误差。
+5. 如果游戏更新改变品质分布，应优先落地 event/drop-table versioning 或 activity overlay prior，而不是盲目调高 sampler。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html

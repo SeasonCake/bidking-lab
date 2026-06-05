@@ -1904,3 +1904,36 @@ prior_ready=0 truth_ready=58 decision_truth_ready=58
 - 15 个 252x 沉船活动样本保留在独立目录，后续需要显式传路径。
 - `prior_ready=0` 是预期结果：本地表缺少 252x 活动 drop prior，v3 不应把它们映射到旧 250x 普通沉船先验。
 - 该 cohort 后续适合做鲁棒性测试：旧表缺失/活动机制变化时，模型应暴露 prior 缺口并保持保守。
+
+## O-v3-058：prior robustness 能区分普通 archive、弱 fallback 与 252x 活动 cohort
+
+2026-06-06 接入 `v3_robust_*` 后复跑：
+
+```text
+activity cohort 64-trial:
+windows=58 ready=58
+prior_ready=0
+robust_prior_usable=0
+robust_prior_trusted=0
+robust_activity_candidate=58
+posterior_ready=0 posterior_no_match=58
+
+main archive 64-trial:
+windows=1577 ready=1560 no_state=17
+prior_ready=1560
+robust_prior_usable=1560
+robust_prior_trusted=359
+robust_activity_candidate=0
+robust_prior_stressed=94
+posterior_ready=1560
+posterior_strict_ready=361
+posterior_summary_likelihood=1199
+```
+
+解读：
+
+- 252x 活动 cohort 全部被识别为活动/缺 prior 候选，没有被错误映射到普通 250x 沉船先验。
+- main archive 没有活动候选；先验可用覆盖 1560 个 ready 窗口。
+- 只有 359 个窗口在当前 64-trial 路径下属于强可信 prior/pipeline 分母；1199 个 `summary_likelihood` 是保守 fallback，应继续作为 shadow 观察，不应直接 promotion。
+- 94 个 `prior_stressed` 行值得后续分片审计，重点看 hard evidence 是否反映真实长尾、表漂移、活动机制或 parser 证据异常。
+- readiness 现在会把 `prior_trusted < ready`、`activity_candidate > 0` 或 `prior_stress_score > 0` 判为 `prior_robustness=blocked`，防止这些行被整体 MAE 掩盖。
