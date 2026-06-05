@@ -1217,3 +1217,74 @@ C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_map_audit.py --top 10
 
 - ccv 候选能形成可复跑审计字段，但当前默认实现对整体 q6 count/cells P50 MAE 没有收益，且对 `2506` 负向。
 - 后续不能把“强化 q6 bucket likelihood”作为 v3 主修复；下一步应做真正 residual/count-cell-value 生成模型，显式建模公共总格、已知非 q6 下界、q6 空间分布和 value per cell，而不是只调 likelihood 温度。
+
+## 2026-06-05 checkpoint：residual count/cell/value shadow sampler
+
+实现：
+
+- 新增 `estimate_residual_count_cell_value_posterior_from_truths()`。
+  - 输出 `v3_resid_*` shadow fields。
+  - 只在非 strict fallback 窗口运行；strict 透传 baseline。
+  - hidden `2601` 默认禁用。
+  - 将 q6 component `(count,cells,value)` 与非 q6 residual component 分开重组。
+  - 使用 session total exact/floor、known non-q6 floor、非 q6 bucket likelihood 计算 q6 component compatibility mass。
+  - 对 `session_total_*_exact - non_q6_floor` 推导出的 q6 capacity 使用硬上界。
+  - total/formal/q6 formal 仍透传 baseline，避免未验证 value-per-cell 直接进入决策口径。
+- evaluator 接入：
+  - 样本行增加 `v3_resid_*`。
+  - 汇总增加 residual q6 count/cells/raw value P50 MAE 与 delta。
+- live monitor 接入：
+  - artifact/model_eval 增加 `v3_resid_*`。
+  - `v3_resid_affects_bid=false`。
+- map audit 接入：
+  - 输出 `resid_rate / resid_count_delta / resid_cells_delta / resid_value_delta`。
+
+全量 512-trial evaluator：
+
+```text
+metric_rows=1534
+posterior_summary_likelihood=1021
+q6_count_p50_mae=1.404
+q6_cells_p50_mae=6.674
+v3_resid_likelihood_rows=976
+v3_resid_q6_count_p50_mae=1.403
+v3_resid_delta_q6_count_p50_mae=-0.001
+v3_resid_q6_cells_p50_mae=6.809
+v3_resid_delta_q6_cells_p50_mae=+0.135
+v3_resid_q6_value_p50_mae=379692.572
+v3_resid_delta_q6_value_p50_mae=+5234.929
+```
+
+128-trial smoke 曾显示正向：
+
+```text
+v3_resid_delta_q6_count_p50_mae=-0.030
+v3_resid_delta_q6_cells_p50_mae=-0.107
+v3_resid_delta_q6_value_p50_mae=-6794.229
+```
+
+512-trial map audit：
+
+```text
+2506 resid_count_delta=-0.01 resid_cells_delta=0.00 resid_value_delta=-29406.8
+2503 resid_count_delta=-0.16 resid_cells_delta=-0.55 resid_value_delta=-28308.7
+2408 resid_count_delta=-0.02 resid_cells_delta=-0.20 resid_value_delta=+31381.4
+2501 resid_count_delta=-0.01 resid_cells_delta=+0.15 resid_value_delta=+3111.5
+2507 resid_count_delta=-0.03 resid_cells_delta=+0.37 resid_value_delta=+9908.4
+```
+
+验证：
+
+```powershell
+$env:TMP=(Join-Path (Get-Location) '.tmp'); $env:TEMP=$env:TMP
+C:\Users\shenc\anaconda3\python.exe -m pytest -p no:cacheprovider tests\test_inference_v3_posterior.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_map_audit.py tests\test_live_monitor.py -q
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 128 --fail-on-conflicts
+C:\Users\shenc\anaconda3\python.exe .\scripts\evaluate_fatbeans_v3_samples.py --fail-on-conflicts
+C:\Users\shenc\anaconda3\python.exe .\scripts\summarize_v3_map_audit.py --top 10
+```
+
+当前结论：
+
+- residual 结构比 ccv 更接近 v3 目标：它确实能用 residual capacity 约束 q6 component，并在 `2506/2503` 的 q6 raw value 上给出正向信号。
+- 但默认全局激活会恶化整体 q6 cells/raw value MAE，不能 promotion，也不能接 formal。
+- 下一步应做 map/evidence gate：优先 `2506` systemic-under + fallback + residual value positive；排除 high-over、少样本和 cells 恶化切片。

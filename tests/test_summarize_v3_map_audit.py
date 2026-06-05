@@ -37,11 +37,17 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
             "v3_post_q6_formal_decision_value_p50": 200,
             "v3_truth_q6_count": 1,
             "v3_truth_q6_cells": 4,
+            "v3_truth_q6_raw_value": 100,
             "v3_post_q6_count_p50": 0,
             "v3_post_q6_cells_p50": 2,
+            "v3_post_q6_value_p50": 80,
             "v3_ccv_match_scope": "ccv_likelihood",
             "v3_ccv_q6_count_p50": 1,
             "v3_ccv_q6_cells_p50": 4,
+            "v3_resid_match_scope": "residual_likelihood",
+            "v3_resid_q6_count_p50": 1,
+            "v3_resid_q6_cells_p50": 4,
+            "v3_resid_q6_value_p50": 100,
         },
         {
             "status": "ready",
@@ -66,11 +72,17 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
             "v3_post_q6_formal_decision_value_p50": 300,
             "v3_truth_q6_count": 2,
             "v3_truth_q6_cells": 8,
+            "v3_truth_q6_raw_value": 300,
             "v3_post_q6_count_p50": 1,
             "v3_post_q6_cells_p50": 4,
+            "v3_post_q6_value_p50": 200,
             "v3_ccv_match_scope": "ccv_likelihood",
             "v3_ccv_q6_count_p50": 2,
             "v3_ccv_q6_cells_p50": 7,
+            "v3_resid_match_scope": "residual_likelihood",
+            "v3_resid_q6_count_p50": 2,
+            "v3_resid_q6_cells_p50": 8,
+            "v3_resid_q6_value_p50": 260,
         },
         {
             "status": "no_state",
@@ -105,6 +117,14 @@ def test_summarize_maps_separates_sample_and_model_risk_flags() -> None:
     assert row["v3_ccv_delta_q6_count_p50_mae"] == -1
     assert row["v3_ccv_q6_cells_p50_mae"] == 0.5
     assert row["v3_ccv_delta_q6_cells_p50_mae"] == -2.5
+    assert row["q6_value_p50_mae"] == 60
+    assert row["v3_resid_likelihood_rate"] == 1.0
+    assert row["v3_resid_q6_count_p50_mae"] == 0
+    assert row["v3_resid_delta_q6_count_p50_mae"] == -1
+    assert row["v3_resid_q6_cells_p50_mae"] == 0
+    assert row["v3_resid_delta_q6_cells_p50_mae"] == -3
+    assert row["v3_resid_q6_value_p50_mae"] == 20
+    assert row["v3_resid_delta_q6_value_p50_mae"] == -40
     assert row["public_total_rate"] == 0.5
     assert row["q6_floor_rate"] == 0.5
     assert "few_sessions" in row["flags"]

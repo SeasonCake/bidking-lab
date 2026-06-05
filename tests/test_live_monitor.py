@@ -534,6 +534,8 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["v3_posterior_shadow"]["v3_post_ready"] is True
     assert artifact["v3_posterior_shadow"]["v3_ccv_available"] is True
     assert artifact["v3_posterior_shadow"]["v3_ccv_affects_bid"] is False
+    assert artifact["v3_posterior_shadow"]["v3_resid_available"] is True
+    assert artifact["v3_posterior_shadow"]["v3_resid_affects_bid"] is False
     assert artifact["q6_residual_boost_shadow"]["label"] == "profile_b5"
     assert artifact["q6_residual_boost_shadow"]["gate"] == "shipwreck_profile_v1"
     assert artifact["q6_residual_boost_shadow"]["trials"] == 10
@@ -693,6 +695,11 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["model_eval"]["v3_ccv_affects_bid"] is False
     assert "v3_ccv_q6_count_p50" in artifact["model_eval"]
     assert "v3_ccv_q6_cells_p50" in artifact["model_eval"]
+    assert artifact["model_eval"]["v3_resid_available"] is True
+    assert artifact["model_eval"]["v3_resid_affects_bid"] is False
+    assert "v3_resid_q6_count_p50" in artifact["model_eval"]
+    assert "v3_resid_q6_cells_p50" in artifact["model_eval"]
+    assert "v3_resid_q6_value_p50" in artifact["model_eval"]
     assert artifact["model_eval"]["v3_cal_affects_bid"] is False
     assert "v3_cal_ready" in artifact["model_eval"]
     assert "v3_cal_active" in artifact["model_eval"]

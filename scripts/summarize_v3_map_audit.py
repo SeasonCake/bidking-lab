@@ -207,6 +207,26 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             "v3_ccv_q6_cells_p50",
             "v3_truth_q6_cells",
         )
+        q6_value_p50 = _metric_pairs(
+            paired,
+            "v3_post_q6_value_p50",
+            "v3_truth_q6_raw_value",
+        )
+        resid_q6_count_p50 = _metric_pairs(
+            paired,
+            "v3_resid_q6_count_p50",
+            "v3_truth_q6_count",
+        )
+        resid_q6_cells_p50 = _metric_pairs(
+            paired,
+            "v3_resid_q6_cells_p50",
+            "v3_truth_q6_cells",
+        )
+        resid_q6_value_p50 = _metric_pairs(
+            paired,
+            "v3_resid_q6_value_p50",
+            "v3_truth_q6_raw_value",
+        )
         errors = [pred - truth for pred, truth in formal_p50]
         abs_errors = sorted((abs(error) for error in errors), reverse=True)
         abs_error_sum = sum(abs_errors)
@@ -229,10 +249,18 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         q6_cells_errors = [pred - truth for pred, truth in q6_cells_p50]
         ccv_q6_count_errors = [pred - truth for pred, truth in ccv_q6_count_p50]
         ccv_q6_cells_errors = [pred - truth for pred, truth in ccv_q6_cells_p50]
+        q6_value_errors = [pred - truth for pred, truth in q6_value_p50]
+        resid_q6_count_errors = [pred - truth for pred, truth in resid_q6_count_p50]
+        resid_q6_cells_errors = [pred - truth for pred, truth in resid_q6_cells_p50]
+        resid_q6_value_errors = [pred - truth for pred, truth in resid_q6_value_p50]
         q6_count_mae = _mean(abs(error) for error in q6_count_errors)
         q6_cells_mae = _mean(abs(error) for error in q6_cells_errors)
+        q6_value_mae = _mean(abs(error) for error in q6_value_errors)
         ccv_q6_count_mae = _mean(abs(error) for error in ccv_q6_count_errors)
         ccv_q6_cells_mae = _mean(abs(error) for error in ccv_q6_cells_errors)
+        resid_q6_count_mae = _mean(abs(error) for error in resid_q6_count_errors)
+        resid_q6_cells_mae = _mean(abs(error) for error in resid_q6_cells_errors)
+        resid_q6_value_mae = _mean(abs(error) for error in resid_q6_value_errors)
         result = {
             "map_id": map_id,
             "map_name": _map_name(paired[0]),
@@ -304,6 +332,36 @@ def summarize_maps(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
                 if ccv_q6_cells_mae is not None and q6_cells_mae is not None
                 else None,
                 2,
+            ),
+            "q6_value_p50_mae": _round_metric(q6_value_mae, 1),
+            "v3_resid_likelihood_rate": _round_metric(
+                _rate(
+                    paired,
+                    lambda row: row.get("v3_resid_match_scope")
+                    == "residual_likelihood",
+                ),
+                6,
+            ),
+            "v3_resid_q6_count_p50_mae": _round_metric(resid_q6_count_mae, 2),
+            "v3_resid_delta_q6_count_p50_mae": _round_metric(
+                resid_q6_count_mae - q6_count_mae
+                if resid_q6_count_mae is not None and q6_count_mae is not None
+                else None,
+                2,
+            ),
+            "v3_resid_q6_cells_p50_mae": _round_metric(resid_q6_cells_mae, 2),
+            "v3_resid_delta_q6_cells_p50_mae": _round_metric(
+                resid_q6_cells_mae - q6_cells_mae
+                if resid_q6_cells_mae is not None and q6_cells_mae is not None
+                else None,
+                2,
+            ),
+            "v3_resid_q6_value_p50_mae": _round_metric(resid_q6_value_mae, 1),
+            "v3_resid_delta_q6_value_p50_mae": _round_metric(
+                resid_q6_value_mae - q6_value_mae
+                if resid_q6_value_mae is not None and q6_value_mae is not None
+                else None,
+                1,
             ),
             "truth_p50": _round_metric(
                 _quantile((truth for _, truth in formal_p50), 0.50),
@@ -389,6 +447,10 @@ def _print_table(rows: list[dict[str, Any]], *, top: int) -> None:
                     f"ccv_rate={row['v3_ccv_likelihood_rate']}",
                     f"ccv_count_delta={row['v3_ccv_delta_q6_count_p50_mae']}",
                     f"ccv_cells_delta={row['v3_ccv_delta_q6_cells_p50_mae']}",
+                    f"resid_rate={row['v3_resid_likelihood_rate']}",
+                    f"resid_count_delta={row['v3_resid_delta_q6_count_p50_mae']}",
+                    f"resid_cells_delta={row['v3_resid_delta_q6_cells_p50_mae']}",
+                    f"resid_value_delta={row['v3_resid_delta_q6_value_p50_mae']}",
                     f"top3_abs={row['top3_abs_error_share']}",
                     f"public_total={row['public_total_rate']}",
                     f"q6_floor={row['q6_floor_rate']}",

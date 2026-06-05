@@ -26,6 +26,9 @@ _Q6_BUCKET_CONDITION_DISABLED_MAP_IDS = frozenset((2601,))
 _COUNT_CELL_VALUE_CONDITION_DISABLED_MAP_IDS = frozenset((2601,))
 _COUNT_CELL_VALUE_CONDITION_TEMPERATURE = 2.0
 _COUNT_CELL_VALUE_CONDITION_RELATIVE_FLOOR = 1e-5
+_RESIDUAL_CONDITION_DISABLED_MAP_IDS = frozenset((2601,))
+_RESIDUAL_CONDITION_TEMPERATURE = 3.0
+_RESIDUAL_CONDITION_RELATIVE_FLOOR = 1e-6
 _DECISION_P50_GUARD_QUANTILE_OVERRIDES = {
     2501: 0.75,
     2506: 0.75,
@@ -793,6 +796,69 @@ def _weighted_positive_rate(
     ) / weight_total
 
 
+def _bucket_lower_bound(
+    bucket: BucketFeasibleSummary | None,
+    field: str,
+) -> int:
+    if bucket is None:
+        return 0
+    exact = getattr(bucket, f"{field}_exact")
+    if exact is not None:
+        return int(exact)
+    return int(getattr(bucket, f"{field}_floor"))
+
+
+def _non_q6_floor_from_summary(
+    summary: FeasibleSummaryReport,
+    q6_summary: BucketFeasibleSummary | None,
+    field: str,
+) -> int:
+    total_floor = int(getattr(summary, f"known_{field}_floor"))
+    q6_floor = _bucket_lower_bound(q6_summary, field)
+    return max(0, total_floor - q6_floor)
+
+
+def _has_residual_signal(summary: FeasibleSummaryReport) -> bool:
+    return any((
+        summary.session_total_count_exact is not None,
+        summary.session_total_cells_exact is not None,
+        int(summary.known_count_floor) > 0,
+        int(summary.known_cells_floor) > 0,
+        int(summary.known_value_floor) > 0,
+        bool(summary.buckets),
+    ))
+
+
+def _array_exact_log_likelihood(
+    values: np.ndarray,
+    target: int | float | None,
+    *,
+    base_scale: float,
+    ratio_scale: float,
+    importance: float,
+) -> np.ndarray:
+    if target is None:
+        return np.zeros_like(values, dtype=np.float64)
+    diff = np.abs(values.astype(np.float64) - float(target))
+    scale = _likelihood_scale(target, base=base_scale, ratio=ratio_scale)
+    return -float(importance) * np.square(diff / scale)
+
+
+def _array_floor_log_likelihood(
+    values: np.ndarray,
+    floor: int | float | None,
+    *,
+    base_scale: float,
+    ratio_scale: float,
+    importance: float,
+) -> np.ndarray:
+    if floor is None:
+        return np.zeros_like(values, dtype=np.float64)
+    deficit = np.maximum(0.0, float(floor) - values.astype(np.float64))
+    scale = _likelihood_scale(floor, base=base_scale, ratio=ratio_scale)
+    return -float(importance) * np.square(deficit / scale)
+
+
 def estimate_q6_posterior_from_truths(
     *,
     map_id: int,
@@ -1357,6 +1423,299 @@ def estimate_count_cell_value_posterior_from_truths(
     )
 
 
+def estimate_residual_count_cell_value_posterior_from_truths(
+    *,
+    map_id: int,
+    map_name: str,
+    summary: FeasibleSummaryReport,
+    truths: Sequence[SessionTruth],
+    constraints: ConstraintSet | None = None,
+    replacement_values: Mapping[tuple[int, int, int], int] | None = None,
+    baseline: V3PosteriorReport | None = None,
+) -> V3PosteriorReport:
+    """Residual q6 component shadow using independent non-q6 compatibility mass."""
+
+    baseline = baseline or estimate_q6_posterior_from_truths(
+        map_id=map_id,
+        map_name=map_name,
+        summary=summary,
+        truths=truths,
+        constraints=constraints,
+        replacement_values=replacement_values,
+    )
+    diagnostics = list(baseline.diagnostics)
+    if not baseline.ready:
+        diagnostics.append("resid_passthrough_not_ready")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    if baseline.match_scope == "strict":
+        diagnostics.append("resid_passthrough_scope=strict")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    if int(map_id) in _RESIDUAL_CONDITION_DISABLED_MAP_IDS:
+        diagnostics.append("resid_conditioned=disabled_hidden_cold_start")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    if not summary.feasible:
+        diagnostics.append("resid_passthrough_summary_infeasible")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    if not _has_residual_signal(summary):
+        diagnostics.append("resid_passthrough_no_residual_signal")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    if not truths:
+        diagnostics.append("resid_passthrough_no_prior_samples")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+
+    q6_summary = summary.bucket(6)
+    q6_counts: list[int] = []
+    q6_cells: list[int] = []
+    q6_values: list[int] = []
+    total_counts: list[int] = []
+    total_cells: list[int] = []
+    total_values: list[int] = []
+    non_q6_scores: list[float] = []
+    q6_scores: list[float] = []
+    for truth in truths:
+        q6_count, q6_cell, q6_value = _bucket_fields(truth, 6)
+        q6_counts.append(q6_count)
+        q6_cells.append(q6_cell)
+        q6_values.append(q6_value)
+        total_count = _truth_total_count(truth)
+        total_counts.append(total_count)
+        total_cells.append(int(truth.warehouse_total_cells))
+        total_values.append(int(truth.total_value()))
+        non_score = 0.0
+        for bucket in summary.buckets:
+            if int(bucket.quality) != 6:
+                non_score += _bucket_log_likelihood(truth, bucket)
+        non_q6_scores.append(non_score)
+        q6_scores.append(
+            _bucket_log_likelihood(truth, q6_summary)
+            if q6_summary is not None
+            else 0.0
+        )
+
+    q6_count_arr = np.asarray(q6_counts, dtype=np.float64)
+    q6_cells_arr = np.asarray(q6_cells, dtype=np.float64)
+    q6_value_arr = np.asarray(q6_values, dtype=np.float64)
+    non_count_arr = np.asarray(total_counts, dtype=np.float64) - q6_count_arr
+    non_cells_arr = np.asarray(total_cells, dtype=np.float64) - q6_cells_arr
+    non_value_arr = np.asarray(total_values, dtype=np.float64) - q6_value_arr
+    non_score_arr = np.asarray(non_q6_scores, dtype=np.float64)
+
+    non_q6_count_floor = _non_q6_floor_from_summary(summary, q6_summary, "count")
+    non_q6_cells_floor = _non_q6_floor_from_summary(summary, q6_summary, "cells")
+    non_q6_value_floor = _non_q6_floor_from_summary(summary, q6_summary, "value")
+    q6_count_capacity = (
+        int(summary.session_total_count_exact) - non_q6_count_floor
+        if summary.session_total_count_exact is not None
+        else None
+    )
+    q6_cells_capacity = (
+        int(summary.session_total_cells_exact) - non_q6_cells_floor
+        if summary.session_total_cells_exact is not None
+        else None
+    )
+    q6_component_multiplicity: dict[tuple[int, int, int], int] = {}
+    q6_component_scores: dict[tuple[int, int, int], float] = {}
+    for count, cells, value, score in zip(
+        q6_counts,
+        q6_cells,
+        q6_values,
+        q6_scores,
+        strict=True,
+    ):
+        key = (int(count), int(cells), int(value))
+        q6_component_multiplicity[key] = q6_component_multiplicity.get(key, 0) + 1
+        q6_component_scores.setdefault(key, float(score))
+    q6_component_log_weights: list[float] = []
+    q6_component_keys = tuple(q6_component_multiplicity)
+    for q6_count, q6_cell, q6_value in q6_component_keys:
+        if q6_count_capacity is not None and int(q6_count) > q6_count_capacity:
+            q6_component_log_weights.append(float("-inf"))
+            continue
+        if q6_cells_capacity is not None and int(q6_cell) > q6_cells_capacity:
+            q6_component_log_weights.append(float("-inf"))
+            continue
+        combined_count = non_count_arr + float(q6_count)
+        combined_cells = non_cells_arr + float(q6_cell)
+        combined_value = non_value_arr + float(q6_value)
+        residual_score = non_score_arr.copy()
+        residual_score += _array_exact_log_likelihood(
+            combined_count,
+            summary.session_total_count_exact,
+            base_scale=2.0,
+            ratio_scale=0.12,
+            importance=1.45,
+        )
+        residual_score += _array_exact_log_likelihood(
+            combined_cells,
+            summary.session_total_cells_exact,
+            base_scale=8.0,
+            ratio_scale=0.12,
+            importance=1.55,
+        )
+        residual_score += _array_floor_log_likelihood(
+            combined_count,
+            summary.known_count_floor,
+            base_scale=2.0,
+            ratio_scale=0.20,
+            importance=0.90,
+        )
+        residual_score += _array_floor_log_likelihood(
+            combined_cells,
+            summary.known_cells_floor,
+            base_scale=8.0,
+            ratio_scale=0.20,
+            importance=0.95,
+        )
+        residual_score += _array_floor_log_likelihood(
+            combined_value,
+            summary.known_value_floor,
+            base_scale=120_000.0,
+            ratio_scale=0.35,
+            importance=0.55,
+        )
+        residual_score += _array_floor_log_likelihood(
+            non_count_arr,
+            non_q6_count_floor,
+            base_scale=2.0,
+            ratio_scale=0.25,
+            importance=0.95,
+        )
+        residual_score += _array_floor_log_likelihood(
+            non_cells_arr,
+            non_q6_cells_floor,
+            base_scale=8.0,
+            ratio_scale=0.25,
+            importance=1.00,
+        )
+        residual_score += _array_floor_log_likelihood(
+            non_value_arr,
+            non_q6_value_floor,
+            base_scale=120_000.0,
+            ratio_scale=0.35,
+            importance=0.45,
+        )
+        finite = np.isfinite(residual_score)
+        if not finite.any():
+            q6_component_log_weights.append(float("-inf"))
+            continue
+        scaled = residual_score[finite] / _RESIDUAL_CONDITION_TEMPERATURE
+        max_scaled = float(scaled.max())
+        log_mass = max_scaled + math.log(float(np.exp(scaled - max_scaled).sum()))
+        q6_score = q6_component_scores[(q6_count, q6_cell, q6_value)]
+        multiplicity = q6_component_multiplicity[(q6_count, q6_cell, q6_value)]
+        q6_component_log_weights.append(
+            math.log(float(multiplicity))
+            + float(q6_score) / _RESIDUAL_CONDITION_TEMPERATURE
+            + log_mass
+        )
+
+    log_weights = np.asarray(q6_component_log_weights, dtype=np.float64)
+    finite = np.isfinite(log_weights)
+    if not finite.any():
+        diagnostics.append("resid_no_conditioned_samples")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    max_log = float(log_weights[finite].max())
+    relative = np.zeros(len(log_weights), dtype=np.float64)
+    relative[finite] = np.exp(log_weights[finite] - max_log)
+    keep = relative >= _RESIDUAL_CONDITION_RELATIVE_FLOOR
+    if not keep.any():
+        keep[int(np.argmax(relative))] = True
+    weights = relative[keep]
+    if not len(weights):
+        diagnostics.append("resid_no_conditioned_samples")
+        return replace(baseline, diagnostics=tuple(diagnostics))
+    total_weight = float(weights.sum())
+    effective_n = (
+        float(total_weight * total_weight / float(np.square(weights).sum()))
+        if total_weight > 0.0
+        else 0.0
+    )
+    q6_count_exact = q6_summary.count_exact if q6_summary is not None else None
+    q6_cells_exact = q6_summary.cells_exact if q6_summary is not None else None
+    q6_value_exact = q6_summary.value_exact if q6_summary is not None else None
+    q6_count_floor = q6_summary.count_floor if q6_summary is not None else 0
+    q6_cells_floor = q6_summary.cells_floor if q6_summary is not None else 0
+    q6_value_floor = q6_summary.value_floor if q6_summary is not None else 0
+    p50_guard_quantile = _practical_p50_guard_quantile(int(map_id))
+    kept_q6_counts = [
+        count for (count, _, _), use in zip(q6_component_keys, keep, strict=True) if use
+    ]
+    kept_q6_cells = [
+        cells for (_, cells, _), use in zip(q6_component_keys, keep, strict=True) if use
+    ]
+    kept_q6_values = [
+        value for (_, _, value), use in zip(q6_component_keys, keep, strict=True) if use
+    ]
+    diagnostics.append(f"resid_conditioned_samples={len(kept_q6_counts)}")
+    diagnostics.append(f"resid_conditioned_effective_samples={effective_n:.3f}")
+    diagnostics.append(
+        "resid_conditioned_temperature="
+        f"{_RESIDUAL_CONDITION_TEMPERATURE:.2f}"
+    )
+    diagnostics.append(
+        "resid_non_q6_floor="
+        f"count{non_q6_count_floor}_cells{non_q6_cells_floor}_value{non_q6_value_floor}"
+    )
+    diagnostics.append(
+        "resid_q6_capacity="
+        f"count{q6_count_capacity if q6_count_capacity is not None else 'none'}_"
+        f"cells{q6_cells_capacity if q6_cells_capacity is not None else 'none'}"
+    )
+    diagnostics.append("resid_formal_passthrough")
+    diagnostics.append("resid_value_component_prior")
+    return V3PosteriorReport(
+        map_id=int(map_id),
+        map_name=map_name,
+        n_total=len(truths),
+        n_matched=len(kept_q6_counts),
+        n_strict_matched=baseline.n_strict_matched,
+        match_scope="residual_likelihood",
+        q6_present_rate=_weighted_positive_rate(kept_q6_counts, tuple(weights)),
+        total_cells=baseline.total_cells,
+        total_value=baseline.total_value,
+        formal_decision_value=baseline.formal_decision_value,
+        tail_replacement_decision_value=baseline.tail_replacement_decision_value,
+        q6_count=_guard_quantiles(
+            _weighted_quantiles(
+                kept_q6_counts,
+                tuple(weights),
+                p50_tail_guard=True,
+                p90_tail_guard=True,
+                p50_guard_quantile=p50_guard_quantile,
+            ),
+            floor=q6_count_floor,
+            exact=q6_count_exact,
+        ),
+        q6_cells=_guard_quantiles(
+            _weighted_quantiles(
+                kept_q6_cells,
+                tuple(weights),
+                p50_tail_guard=True,
+                p90_tail_guard=True,
+                p50_guard_quantile=p50_guard_quantile,
+            ),
+            floor=q6_cells_floor,
+            exact=q6_cells_exact,
+        ),
+        q6_value=_guard_quantiles(
+            _weighted_quantiles(
+                kept_q6_values,
+                tuple(weights),
+                p50_tail_guard=True,
+                p90_tail_guard=True,
+                p50_guard_quantile=p50_guard_quantile,
+            ),
+            floor=q6_value_floor,
+            exact=q6_value_exact,
+        ),
+        q6_formal_decision_value=baseline.q6_formal_decision_value,
+        q6_tail_replacement_decision_value=(
+            baseline.q6_tail_replacement_decision_value
+        ),
+        diagnostics=tuple(diagnostics),
+    )
+
+
 def empty_posterior_flat_dict(*, prefix: str = "v3_post_") -> dict[str, Any]:
     out = {
         f"{prefix}available": False,
@@ -1394,6 +1753,7 @@ __all__ = (
     "empty_posterior_flat_dict",
     "estimate_count_cell_value_posterior_from_truths",
     "estimate_q6_posterior_from_truths",
+    "estimate_residual_count_cell_value_posterior_from_truths",
     "sample_truth_bank",
     "truth_matches_feasible_summary",
 )

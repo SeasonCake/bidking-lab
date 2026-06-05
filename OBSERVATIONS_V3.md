@@ -848,3 +848,47 @@ v3_ccv_delta_q6_cells_p50_mae=+0.005
 - 继续调 likelihood 温度/relative floor 大概率会重复 v2 的调参陷阱：局部切片改善、整体 MAE 或核心地图恶化。
 - 真正需要的是 residual/count-cell-value 生成模型：先由公共总格/总数、已知非 q6 下界、q6 桶证据决定 q6 count/cells 的后验，再基于 q6 count/cells 与地图/品质/形状分布估 value per cell。
 - `v3_ccv_*` 保留为审计字段，用于对照未来 residual sampler；不应作为 promotion 候选。
+
+## O-v3-031：residual sampler 结构有效，但默认全局激活仍会伤害 cells/value MAE
+
+2026-06-05 新增 `v3_resid_*` shadow。它不再只强化 q6 bucket likelihood，而是把 q6 component 与非 q6 residual component 分开重组：
+
+- q6 component：`q6_count/q6_cells/q6_value`。
+- non-q6 component：总量减去 q6 后的 count/cells/value。
+- residual evidence：session total exact/floor、known non-q6 floor、非 q6 bucket constraints。
+- capacity guard：`q6_capacity = session_total_exact - non_q6_floor`，超出则排除。
+
+全量 512-trial evaluator：
+
+```text
+v3_resid_likelihood_rows=976
+q6_count_p50_mae=1.404 -> 1.403 delta=-0.001
+q6_cells_p50_mae=6.674 -> 6.809 delta=+0.135
+q6_value_p50_mae=374457.643 -> 379692.572 delta=+5234.929
+```
+
+128-trial smoke 显示正向：
+
+```text
+count delta=-0.030
+cells delta=-0.107
+value delta=-6794.229
+```
+
+512-trial map audit 显示分化：
+
+```text
+2506 resid_count_delta=-0.01 resid_cells_delta=0.00 resid_value_delta=-29406.8
+2503 resid_count_delta=-0.16 resid_cells_delta=-0.55 resid_value_delta=-28308.7
+2502 resid_count_delta=-0.05 resid_cells_delta=+0.08 resid_value_delta=-7559.5
+2408 resid_count_delta=-0.02 resid_cells_delta=-0.20 resid_value_delta=+31381.4
+2501 resid_count_delta=-0.01 resid_cells_delta=+0.15 resid_value_delta=+3111.5
+2507 resid_count_delta=-0.03 resid_cells_delta=+0.37 resid_value_delta=+9908.4
+```
+
+结论：
+
+- residual factorization 能抓到 `2506` 的 q6 raw value 低估方向，是比 ccv 更有用的结构候选。
+- 但全局默认激活会牺牲整体 cells/value MAE；尤其 `2507` high-over 反例和 `2501` 非强系统性低估图不能无条件启用。
+- 512 与 128 方向不一致，说明该 sampler 对 truth bank 方差/组件分布敏感；后续必须增加 gate 或稳定化，而不是直接把它放进 formal。
+- 下一步应优先研究 `2506` gate：systemic-under + fallback + residual value improves + no cells degradation，再扩展到 holdout/new-live 验证。

@@ -45,6 +45,7 @@ from bidking_lab.inference.v3.posterior import (
     empty_posterior_flat_dict,
     estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
+    estimate_residual_count_cell_value_posterior_from_truths,
     sample_truth_bank,
     truth_matches_feasible_summary,
 )
@@ -111,6 +112,7 @@ __all__ = (
     "entry_from_mapping",
     "estimate_count_cell_value_posterior_from_truths",
     "estimate_q6_posterior_from_truths",
+    "estimate_residual_count_cell_value_posterior_from_truths",
     "events_from_fatbeans",
     "load_prior_calibration_entries",
     "ordinary_shape_replacement_values",

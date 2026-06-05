@@ -8,6 +8,7 @@ from bidking_lab.inference.v3 import (
     SoftNumericConstraint,
     estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
+    estimate_residual_count_cell_value_posterior_from_truths,
     truth_matches_feasible_summary,
 )
 
@@ -343,6 +344,78 @@ def test_v3_ccv_shadow_stays_disabled_for_hidden_cold_start() -> None:
 
     assert report.match_scope == "summary_likelihood"
     assert "ccv_conditioned=disabled_hidden_cold_start" in report.diagnostics
+
+
+def test_v3_residual_shadow_uses_non_q6_floor_capacity() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=21,
+        known_count_floor=0,
+        known_cells_floor=16,
+        known_value_floor=0,
+        buckets=(),
+    )
+    low_q6 = _truth(q6_count=1, q6_cells=4, q6_value=100_000, q1_cells=16)
+    high_q6_a = _truth(q6_count=3, q6_cells=12, q6_value=300_000, q1_cells=8)
+    high_q6_b = _truth(q6_count=3, q6_cells=12, q6_value=300_000, q1_cells=8)
+    baseline = estimate_q6_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(low_q6, high_q6_a, high_q6_b),
+    )
+
+    report = estimate_residual_count_cell_value_posterior_from_truths(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(low_q6, high_q6_a, high_q6_b),
+        baseline=baseline,
+    )
+
+    assert baseline.match_scope == "summary_likelihood"
+    assert baseline.q6_cells.p50 == 12
+    assert report.match_scope == "residual_likelihood"
+    assert report.q6_cells.p50 < baseline.q6_cells.p50
+    assert "resid_formal_passthrough" in report.diagnostics
+    assert any(
+        item.startswith("resid_non_q6_floor=count0_cells16_value0")
+        for item in report.diagnostics
+    )
+
+
+def test_v3_residual_shadow_stays_disabled_for_hidden_cold_start() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=21,
+        known_count_floor=0,
+        known_cells_floor=16,
+        known_value_floor=0,
+        buckets=(),
+    )
+    baseline = estimate_q6_posterior_from_truths(
+        map_id=2601,
+        map_name="hidden",
+        summary=summary,
+        truths=(
+            _truth(q6_count=1, q6_cells=4, q6_value=100_000, q1_cells=16),
+            _truth(q6_count=3, q6_cells=12, q6_value=300_000, q1_cells=8),
+        ),
+    )
+
+    report = estimate_residual_count_cell_value_posterior_from_truths(
+        map_id=2601,
+        map_name="hidden",
+        summary=summary,
+        truths=(
+            _truth(q6_count=1, q6_cells=4, q6_value=100_000, q1_cells=16),
+            _truth(q6_count=3, q6_cells=12, q6_value=300_000, q1_cells=8),
+        ),
+        baseline=baseline,
+    )
+
+    assert report.match_scope == baseline.match_scope
+    assert "resid_conditioned=disabled_hidden_cold_start" in report.diagnostics
 
 
 def test_v3_posterior_guards_known_value_floors() -> None:

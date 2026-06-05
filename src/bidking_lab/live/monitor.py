@@ -52,6 +52,7 @@ from bidking_lab.inference.v3 import (
     empty_prior_calibration_flat_dict,
     estimate_count_cell_value_posterior_from_truths,
     estimate_q6_posterior_from_truths,
+    estimate_residual_count_cell_value_posterior_from_truths,
     events_from_fatbeans,
     load_prior_calibration_entries,
     ordinary_shape_replacement_values,
@@ -1662,6 +1663,32 @@ def _model_eval_row(
     v3_ccv_q6_formal_p90 = _parse_int_text(
         v3_shadow.get("v3_ccv_q6_formal_decision_value_p90")
     )
+    v3_resid_available = bool(v3_shadow.get("v3_resid_available"))
+    v3_resid_ready = bool(v3_shadow.get("v3_resid_ready"))
+    v3_resid_affects_bid = bool(v3_shadow.get("v3_resid_affects_bid"))
+    v3_resid_match_scope = v3_shadow.get("v3_resid_match_scope")
+    v3_resid_n_matched = _parse_int_text(v3_shadow.get("v3_resid_n_matched"))
+    v3_resid_q6_present_rate = _parse_float_text(
+        v3_shadow.get("v3_resid_q6_present_rate")
+    )
+    v3_resid_q6_count_p50 = _parse_int_text(
+        v3_shadow.get("v3_resid_q6_count_p50")
+    )
+    v3_resid_q6_count_p90 = _parse_int_text(
+        v3_shadow.get("v3_resid_q6_count_p90")
+    )
+    v3_resid_q6_cells_p50 = _parse_int_text(
+        v3_shadow.get("v3_resid_q6_cells_p50")
+    )
+    v3_resid_q6_cells_p90 = _parse_int_text(
+        v3_shadow.get("v3_resid_q6_cells_p90")
+    )
+    v3_resid_q6_value_p50 = _parse_int_text(
+        v3_shadow.get("v3_resid_q6_value_p50")
+    )
+    v3_resid_q6_value_p90 = _parse_int_text(
+        v3_shadow.get("v3_resid_q6_value_p90")
+    )
     v3_cal_available = bool(v3_shadow.get("v3_cal_available"))
     v3_cal_ready = bool(v3_shadow.get("v3_cal_ready"))
     v3_cal_active = bool(v3_shadow.get("v3_cal_active"))
@@ -2208,6 +2235,19 @@ def _model_eval_row(
         "v3_ccv_q6_formal_decision_value_p50": v3_ccv_q6_formal_p50,
         "v3_ccv_q6_formal_decision_value_p90": v3_ccv_q6_formal_p90,
         "v3_ccv_diagnostics": v3_shadow.get("v3_ccv_diagnostics"),
+        "v3_resid_available": v3_resid_available,
+        "v3_resid_ready": v3_resid_ready,
+        "v3_resid_affects_bid": v3_resid_affects_bid,
+        "v3_resid_match_scope": v3_resid_match_scope,
+        "v3_resid_n_matched": v3_resid_n_matched,
+        "v3_resid_q6_present_rate": v3_resid_q6_present_rate,
+        "v3_resid_q6_count_p50": v3_resid_q6_count_p50,
+        "v3_resid_q6_count_p90": v3_resid_q6_count_p90,
+        "v3_resid_q6_cells_p50": v3_resid_q6_cells_p50,
+        "v3_resid_q6_cells_p90": v3_resid_q6_cells_p90,
+        "v3_resid_q6_value_p50": v3_resid_q6_value_p50,
+        "v3_resid_q6_value_p90": v3_resid_q6_value_p90,
+        "v3_resid_diagnostics": v3_shadow.get("v3_resid_diagnostics"),
         "v3_cal_available": v3_cal_available,
         "v3_cal_ready": v3_cal_ready,
         "v3_cal_active": v3_cal_active,
@@ -2782,6 +2822,7 @@ def _empty_v3_posterior_shadow(
         **empty_feasible_summary_flat_dict(),
         **empty_posterior_flat_dict(),
         **empty_posterior_flat_dict(prefix="v3_ccv_"),
+        **empty_posterior_flat_dict(prefix="v3_resid_"),
         **empty_prior_calibration_flat_dict(),
     }
 
@@ -2848,6 +2889,15 @@ def _v3_posterior_shadow_summary(
             replacement_values=replacement_values,
             baseline=posterior,
         )
+        residual_posterior = estimate_residual_count_cell_value_posterior_from_truths(
+            map_id=int(map_id),
+            map_name=bid_map.name,
+            summary=summary,
+            truths=truths,
+            constraints=constraints,
+            replacement_values=replacement_values,
+            baseline=posterior,
+        )
         calibration = calibrate_posterior_report(
             posterior,
             _default_v3_prior_calibration_entries().get(int(map_id)),
@@ -2867,6 +2917,7 @@ def _v3_posterior_shadow_summary(
     out.update(summary.to_flat_dict())
     out.update(posterior.to_flat_dict())
     out.update(ccv_posterior.to_flat_dict(prefix="v3_ccv_"))
+    out.update(residual_posterior.to_flat_dict(prefix="v3_resid_"))
     out.update(calibration.to_flat_dict())
     return out
 

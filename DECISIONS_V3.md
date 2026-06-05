@@ -466,3 +466,36 @@ v3 新增 empirical prior calibration shadow，但激活条件收紧为：
   - item/shape/category anchors
   - map-level prior/calibration
   分层合成，先估 q6 count/cells，再估 value per cell。
+
+## D-v3-027：residual sampler 进入 shadow，对 formal 保持非绑定
+
+`v3_resid_*` 是当前 v3 residual/count-cell-value 生成模型候选，但决策是：保留 shadow，不覆盖 `v3_post_*`，不接 formal bid，不接 UI 主建议。
+
+原因：
+
+- 它比 `v3_ccv_*` 更接近目标结构：q6 component 与 non-q6 residual component 分开重组，能使用公共总格/总数和非 q6 已知下界推导 q6 capacity。
+- `2506` 上出现有价值信号：q6 raw value delta `-29406.8`，count/cells 基本不恶化。
+- 但全量 512-trial 默认激活结果仍不满足 promotion：
+  - q6 count delta `-0.001`
+  - q6 cells delta `+0.135`
+  - q6 raw value delta `+5234.929`
+- `2507` high-over 和 `2501` 非强系统性低估图显示无条件启用会污染整体口径。
+
+边界：
+
+- `v3_resid_affects_bid=false`。
+- strict 窗口透传 baseline，仅 fallback 窗口运行。
+- hidden `2601` 默认禁用。
+- q6 capacity 使用硬上界：`session_total_exact - known_non_q6_floor`。
+- 当前 total/formal/q6 formal 透传 baseline；residual raw value 只作为 shadow diagnostic。
+
+下一步 promotion 前置条件：
+
+- 先做 gated residual candidate，不做全局开关。
+- 初始 gate 只考虑：
+  - `2506` 或其它已证明 systemic-under 的地图。
+  - fallback 窗口。
+  - residual value delta 正向。
+  - q6 cells delta 不恶化。
+  - high-over 反例不启用。
+- gate 通过后仍需 holdout 或新增实战样本验证，不能只用当前 in-sample archive。

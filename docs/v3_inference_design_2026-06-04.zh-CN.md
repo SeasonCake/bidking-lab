@@ -541,6 +541,39 @@ v3 可进入正式候选前：
    - 必须同时报告 q6 count/cells MAE、q6 formal MAE、formal P50 MAE、below/over、P90 coverage 和 pinball。
    - promotion 前必须经过 holdout 或新增实战样本，不能用当前 in-sample archive 直接证明。
 
+### 2026-06-05 residual sampler 实现反馈
+
+- `v3_resid_*` 已实现第一版 residual factorization：
+  - q6 component 与 non-q6 residual component 分开重组。
+  - session total exact/floor 与 known non-q6 floor 进入 compatibility mass。
+  - `session_total_exact - non_q6_floor` 作为 q6 capacity 硬上界。
+  - strict 透传 baseline，fallback 才运行。
+  - hidden `2601` 禁用。
+  - total/formal/q6 formal 暂时透传 baseline，避免未验证 raw value shadow 进入决策口径。
+- 全量 512-trial 结果：
+  - `v3_resid_likelihood_rows=976`
+  - q6 count delta `-0.001`
+  - q6 cells delta `+0.135`
+  - q6 raw value delta `+5234.929`
+- 地图分化：
+  - `2506` value delta `-29406.8`，是有价值的系统性低估信号。
+  - `2503` count/cells/value 均正向，但样本少。
+  - `2507/2501/2408` 等切片会伤害 cells 或 value，不能全局启用。
+
+下一版 residual 不应继续扩大默认激活面，而应增加 gated candidate：
+
+1. map gate：
+   - 首选 `2506` systemic-under。
+   - 排除 high-over maps，如 `2507`。
+   - hidden 低样本继续 watch-only。
+2. evidence gate：
+   - fallback 窗口。
+   - 有 session total exact 或足够 non-q6 floor。
+   - q6 cells delta 不恶化。
+3. value gate：
+   - residual raw value 对当前地图切片为正向。
+   - raw value shadow 仍不直接进入 formal；正式 formal 需要单独验证 value-per-cell 与 plannable/tail replacement 口径。
+
 ## 12. 参考资料
 
 - Pyro inference docs：说明 probabilistic inference、importance sampling、SMCFilter、ESS/resampling 等接口思想。https://docs.pyro.ai/en/stable/inference.html
