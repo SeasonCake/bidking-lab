@@ -80,6 +80,18 @@ current `hard_capacity_conflict` / `lower_bound_under_truth` rows. It
 remains a useful activity/overlay clue for the 2511-2520 and 4511-4520
 rows, not a promotion signal.
 
+The raw-column capacity candidate audit added on 2026-06-06 compares
+count-sized BidMap numeric atoms against the 441-session settlement truth.
+Among semantically plausible capacity columns, `col[14]` is still the
+closest count candidate: it covers `unique_non_temp_item_id_count` in
+420/441 rows and fails exactly the 21 `unique_round_cap_overflow_after_temp`
+rows. `col[17]` drop-ref covers only 332/441 unique-count rows and fails
+109 rows. Neither `col[14]` nor `col[17]` covers unique settlement cells
+(`col[14]` covers 7/441, `col[17]` covers 0/441). Non-capacity columns
+such as `category_id`, `entry_requirement`, and `round_category_hints`
+can be numerically larger than item count, but they are schema ids/hints,
+not settlement capacity fields, and still do not explain cells.
+
 ## Tier structure
 
 The same map theme appears at up to 3 difficulty tiers:

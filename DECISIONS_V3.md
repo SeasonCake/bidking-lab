@@ -2465,3 +2465,19 @@ applied_hurts=2502
 - 21 条 `unique_round_cap_overflow_after_temp` 的 unique non-temp item 平均 53.143、unique cells 平均 152.143、最高 206，说明仍有真实 unique item/cells 层面的 capacity conflict。
 - 这些 rows 的 unique quality 分布为 q4=298、q2=241、q3=234、q5=170、q1=101、q6=72；q6 有 tail risk，但不是主导来源。
 - `within_unique_caps_after_temp` 仍有 q6 cells max 39，和 unique round overflow 的 q6 cells max 37 重叠；因此 q6/cells tail 不能单独作为 promotion evidence。
+
+## D-v3-119：BidMap raw numeric columns 不能绕过 settlement capacity blocker
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_bidmap_raw_capacity_candidates.py` 是 BidMap raw numeric column 与 settlement unique count/cells truth 的审计入口。
+- 语义上可作为 capacity 候选的 raw columns 暂限 `rounds_total`、`round_caps_candidate` 与 `drop_ref`；其他 count-sized numeric columns 必须按 schema role 审查，不能因为数字覆盖 item count 就当作 cap。
+- 如果 count-sized non-capacity columns 是 category id、hero requirement、round category hint、sub-pool weight 或 mode flag，不得用它们修正 sampler cap、readiness 或 promotion gate。
+- `round_caps_candidate` 仍只能作为 audit-only best-known count candidate；它不是 final settlement item/cells cap，也不是 formal/value sampler promotion evidence。
+
+原因：
+
+- 真实 archive 441 rows 中，`round_caps_candidate` 覆盖 unique non-temp item count 420/441，失败的 21 rows 正是 `unique_round_cap_overflow_after_temp`。
+- `drop_ref` 只覆盖 unique non-temp item count 332/441，失败 109 rows；`rounds_total` 只覆盖 71/441。
+- 对 unique settlement cells，`round_caps_candidate` 只覆盖 7/441，`drop_ref` 覆盖 0/441，不能解释 cells/capacity stress。
+- 非 capacity 数字列中 `category_id`、`entry_requirement`、`round_category_hints` 可在数字上覆盖 item count，但它们是 schema ids/hints，不是 count/cells cap。

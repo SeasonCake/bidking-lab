@@ -5156,3 +5156,48 @@ within_unique_caps_after_temp:
 - `unique_round_cap_overflow_after_temp` 的 quality 分布以 q2-q4/q5 broad inventory 为主，q6 只是其中一部分；这不是单一 q6 value-floor 问题。
 - q6 cells tail 与 within-cap rows 有重叠，不能直接转成 formal value 上修或 promotion evidence。
 - 后续仍应先解释 settlement count/session-capacity 或 cap 字段语义，再恢复 formal/value sampler 参数设计。
+
+## O-v3-123：BidMap raw capacity columns 没有隐藏的 final count/cells cap
+
+2026-06-06 新增 `summarize_v3_bidmap_raw_capacity_candidates.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_bidmap_raw_capacity_candidates.py --top 6 --format summary
+python scripts\summarize_v3_bidmap_raw_capacity_candidates.py --include-non-capacity --top 4 --format summary
+```
+
+语义 capacity columns：
+
+```text
+col=11 role=rounds_total
+  candidate_values=30:253,25:188
+  unique_count_cover=71/441 unique_count_over=370
+  unique_cells_cover=0/441
+
+col=14 role=round_caps_candidate
+  candidate_values=50:419,60:22
+  unique_count_cover=420/441 unique_count_over=21
+  unique_count_over_modes=unique_round_cap_overflow_after_temp:21
+  unique_cells_cover=7/441 unique_cells_over=434
+
+col=17 role=drop_ref
+  candidate_values=44:253,40:188
+  unique_count_cover=332/441 unique_count_over=109
+  unique_cells_cover=0/441
+```
+
+非 capacity 的 count-sized columns：
+
+```text
+col=7  role=category_id          unique_count_cover=441/441 unique_cells_cover=270/441
+col=9  role=sub_pool_weights     unique_count_cover=181/181 unique_cells_cover=97/181
+col=13 role=entry_requirement    unique_count_cover=260/260 unique_cells_cover=168/260
+col=20 role=round_category_hints unique_count_cover=441/441 unique_cells_cover=263/441
+```
+
+解读：
+
+- `round_caps_candidate` 是目前最接近 settlement unique item count 的 BidMap raw 候选，但仍失败 21 条 unique round overflow。
+- `drop_ref` 更弱，不能解释 109 条 unique count overflow。
+- 语义 capacity columns 都不能解释 settlement cells；这与 prior-stressed cells/capacity blocker 保持一致。
+- category id、sub-pool weight、entry requirement、round category hint 等列不能被重新解释为 cap；它们数字上较大只是 schema id/weight/hint。

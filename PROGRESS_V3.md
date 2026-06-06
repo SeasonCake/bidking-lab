@@ -6628,3 +6628,53 @@ within_unique_caps_after_temp:
 - `unique_round_cap_overflow_after_temp` 是 broad inventory/cells expansion，quality 分布不支持把它简化为单一 q6 value-floor 问题。
 - q6 cells tail 与 within-cap rows 有重叠；capacity/cells watch 不能直接转为 formal value 上修。
 - formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。
+
+## 2026-06-06 checkpoint：BidMap raw capacity column coverage 下钻
+
+本轮继续排查是否存在被遗漏的 BidMap raw numeric column 可以解释 settlement unique count/cells over-cap。改动仍是 v3 audit-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- 新增 `scripts/summarize_v3_bidmap_raw_capacity_candidates.py`：
+  - 复用 settlement count-prior audit rows；
+  - 对 BidMap raw numeric atoms 做 coverage summary；
+  - 默认输出语义 capacity columns：`rounds_total`、`round_caps_candidate`、`drop_ref`；
+  - `--include-non-capacity` 可输出 count-sized 但非 capacity 的 id/category/hint/requirement 字段，防止误读。
+- 新增 `tests/test_summarize_v3_bidmap_raw_capacity_candidates.py`，覆盖 `drop_ref` 中 `9999` sentinel 与 pool id 不会被误当作 cap。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`、`docs/bid_map_schema.md`、`DECISIONS_V3.md`、`OBSERVATIONS_V3.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_bidmap_raw_capacity_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_bidmap_raw_capacity_candidates.py -q
+python scripts\summarize_v3_bidmap_raw_capacity_candidates.py --top 6 --format summary
+python -m py_compile scripts\summarize_v3_bidmap_raw_capacity_candidates.py scripts\summarize_v3_settlement_count_prior_candidates.py scripts\summarize_v3_settlement_payload_audit.py scripts\summarize_v3_capacity_table_audit.py scripts\summarize_v3_capacity_source_expansion_audit.py scripts\summarize_v3_promotion_readiness.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_bidmap_raw_capacity_candidates.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_capacity_source_expansion_audit.py tests\test_summarize_v3_promotion_readiness.py -q
+```
+
+真实 residual smoke 要点：
+
+```text
+col=14 role=round_caps_candidate:
+  candidate_values=50:419,60:22
+  unique_count_cover=420/441 unique_count_over=21
+  unique_count_over_modes=unique_round_cap_overflow_after_temp:21
+  unique_cells_cover=7/441 unique_cells_over=434
+
+col=17 role=drop_ref:
+  candidate_values=44:253,40:188
+  unique_count_cover=332/441 unique_count_over=109
+  unique_cells_cover=0/441
+
+non-capacity count-sized examples:
+  category_id and round_category_hints cover item count numerically,
+  but they are schema ids/hints and still fail many cells rows.
+```
+
+解读：
+
+- 当前 BidMap raw schema 中没有可复核的 hidden final count/cells cap。
+- `round_caps_candidate` 仍是 best-known count proxy，但失败 21 条 unique round overflow；它不能解释 cells。
+- 其他数字列不能被当作 sampler cap 或 promotion evidence。
+- formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。
