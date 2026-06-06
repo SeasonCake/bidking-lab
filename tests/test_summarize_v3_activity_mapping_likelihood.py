@@ -1,0 +1,90 @@
+import importlib.util
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+
+
+def _load_module():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "summarize_v3_activity_mapping_likelihood.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "summarize_v3_activity_mapping_likelihood",
+        path,
+    )
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _item(item_id: int, quality: int) -> SimpleNamespace:
+    return SimpleNamespace(item_id=item_id, quality=quality)
+
+
+def test_activity_mapping_likelihood_prefers_higher_quality_prior(monkeypatch, tmp_path: Path) -> None:
+    module = _load_module()
+    sample = tmp_path / "sample.json"
+    sample.write_text("[]", encoding="utf-8")
+    inventory = (_item(1001, 6), _item(1002, 6), _item(1003, 5))
+    state = SimpleNamespace(map_id=2521, inventory_items=inventory)
+    tables = SimpleNamespace(
+        maps={2511: SimpleNamespace(drop_pool_id=2111), 2501: SimpleNamespace(drop_pool_id=2101)},
+        drops={},
+        items={item.item_id: item for item in inventory},
+    )
+
+    def fake_sampler(map_id, **_kwargs):
+        if map_id == 2511:
+            pool = SimpleNamespace(
+                items=np.asarray([_item(1, 6), _item(2, 5)], dtype=object),
+                probabilities=np.asarray([0.8, 0.2], dtype=float),
+                qualities=np.asarray([6, 5], dtype=int),
+            )
+        else:
+            pool = SimpleNamespace(
+                items=np.asarray([_item(3, 6), _item(4, 5)], dtype=object),
+                probabilities=np.asarray([0.1, 0.9], dtype=float),
+                qualities=np.asarray([6, 5], dtype=int),
+            )
+        return SimpleNamespace(pools=(pool,), pool_weights=(1.0,))
+
+    monkeypatch.setattr(module, "parse_fatbeans_capture", lambda _path: SimpleNamespace(states=(state,)))
+    monkeypatch.setattr(module, "prepare_session_sampler", fake_sampler)
+
+    result = module.summarize_activity_mapping_likelihood(
+        [sample],
+        tables=tables,
+        schemes=("minus10:-10", "minus20:-20"),
+    )
+
+    assert result["files"] == 1
+    assert result["winner_counts"] == {"minus10": 1}
+    assert result["scheme_results"][0]["scheme"] == "minus10"
+    assert result["scheme_results"][0]["winner_rows"] == 1
+    assert result["map_results"][0]["winner_counts"] == {"minus10": 1}
+
+
+def test_activity_mapping_likelihood_marks_missing_candidate(monkeypatch, tmp_path: Path) -> None:
+    module = _load_module()
+    sample = tmp_path / "sample.json"
+    sample.write_text("[]", encoding="utf-8")
+    state = SimpleNamespace(map_id=2529, inventory_items=(_item(1001, 4),))
+    tables = SimpleNamespace(maps={}, drops={}, items={1001: _item(1001, 4)})
+
+    monkeypatch.setattr(module, "parse_fatbeans_capture", lambda _path: SimpleNamespace(states=(state,)))
+
+    result = module.summarize_activity_mapping_likelihood(
+        [sample],
+        tables=tables,
+        schemes=("minus10:-10",),
+    )
+
+    assert result["files"] == 1
+    assert result["winner_counts"] == {"none": 1}
+    assert result["candidate_status_counts"] == {"missing_bidmap": 1}
+    assert result["file_results"][0]["candidates"][0]["candidate_map_id"] == 2519

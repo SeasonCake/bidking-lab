@@ -3213,3 +3213,110 @@ cache_hit=True for seed 0/1
 - `stable_groups=2506` 只是交集仍包含 2506；`union_groups=2501,2506` 和 `applied_hurts=2501` 证明当前低 trial 配置不稳定。
 - `.tmp/codex/v3_scp_guarded_bridge_stability` cache 已验证可用，后续可用于 256-trial 多 seed 长跑断点复用。
 - 本轮 256-trial seeds 0/1/7 矩阵初跑超过 300 秒，尚未形成新的矩阵化证据；promotion 仍依赖后续长跑和样本扩充。
+
+## O-v3-086：256-trial stability matrix 将 2506 收敛为 stable 但 low-support
+
+2026-06-06 复跑 guarded bridge stability matrix：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 256 --posterior-seed 0 --posterior-seed 1 --posterior-seed 7 --formal-lift-cap 10000
+```
+
+结果：
+
+```text
+overall_status=blocked_low_support
+reasons=low_applied_rows
+runs=3
+watch_runs=3
+trials=256
+seeds=0,1,7
+required_groups=2506
+stable_groups=2506
+union_groups=2506
+min_applied=9
+min_required=20
+signatures=2506:2=3
+
+seed=0:
+status=watch
+selected=2506
+applied_rows=9
+delta_mae=-4602.026
+delta_p90=0.0
+bridge_over=0.222222
+applied_hurts=-
+
+seed=1:
+status=watch
+selected=2506
+applied_rows=9
+delta_mae=-5555.556
+delta_p90=0.111111
+bridge_over=0.222222
+applied_hurts=-
+
+seed=7:
+status=watch
+selected=2506
+applied_rows=9
+delta_mae=-3333.333
+delta_p90=0.0
+bridge_over=0.333333
+applied_hurts=-
+```
+
+解读：
+
+- 高 trial 多 seed 已修复 O-v3-085 的低 trial selected group drift；`2501` 不再被选中。
+- 当前 blocker 从 seed stability 转为 support depth：outer holdout applied rows 只有 9，未达到 20。
+- 该结果支持继续采集 2506 shadow support，但不支持 promotion 或 formal/value active sampler。
+
+## O-v3-087：252x activity 候选映射更偏向 251x，但证据仍不足以定表
+
+2026-06-06 运行 activity mapping likelihood 审计：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_activity_mapping_likelihood.py
+```
+
+结果：
+
+```text
+files=15
+schemes=minus10,minus20
+winners=minus10:11,minus20:4
+candidate_statuses=ok:30
+errors=0
+
+minus10:
+rows=15
+winner_rows=11
+candidate_maps=2511:5,2514:3,2519:3,2516:2,2512:1,2518:1
+ll_per_item avg=-1.676415
+missing_item_rate avg=0.0
+
+minus20:
+rows=15
+winner_rows=4
+candidate_maps=2501:5,2504:3,2509:3,2506:2,2502:1,2508:1
+ll_per_item avg=-1.691183
+missing_item_rate avg=0.0
+```
+
+按 activity map：
+
+```text
+2521: minus10 4 / minus20 1
+2522: minus10 1
+2524: minus10 2 / minus20 1
+2526: minus10 2
+2528: minus20 1
+2529: minus10 2 / minus20 1
+```
+
+解读：
+
+- `252x->251x` 的 quality likelihood 略优于 `252x->250x`，与 `2511-2520`/`2520->2150` activity/up table 线索一致。
+- 但两个候选族的 missing item rate 都是 0，说明 item universe 相同；当前 likelihood 只能比较权重，不足以证明服务端映射。
+- 252x 继续保持 missing-table/activity cohort，不进入 default prior 或 promotion 分母。

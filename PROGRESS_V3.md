@@ -4653,3 +4653,79 @@ runtime约4s
 
 - guarded bridge 的当前状态从“2506 可见候选”进一步收紧为“2506 候选必须通过 stability matrix 后才可讨论 sampler shadow design”。
 - 下一步优先用 cache 长跑 256-trial 多 seed 矩阵，或增加 2506 live/archive support 后复跑；formal/value active path 继续暂停。
+
+## 2026-06-06 checkpoint：multi-agent stability and activity mapping audit
+
+本轮按 4-agent 分工推进 v3 promotion 前置证据，保持 v2 formal/live/UI 与正式出价不变。
+
+子 agent 结果：
+
+- Agent 1 / Stability Runner：
+  - 完成 `256 trials x seeds 0/1/7` guarded bridge stability matrix；
+  - 全部 run 为 `watch`，selected group 精确为 `2506`，无 applied hurts；
+  - overall 仍为 `blocked_low_support`，因为 `min_applied=9 < min_required=20`。
+- Agent 2 / Table Activity Semantics：
+  - 确认 252x 是真实 missing-table：当前 raw v300 有 `2511-2520`，没有 `2521+`；
+  - 当前 raw Drop 包含 `2520->2150` 链，与 grid_view v1.3.7 一致；
+  - 252x settlement StockBoxes 与 final inventory 字段级一致，排除 parser duplication、full-action mirror、temp zodiac replacement。
+- Agent 3 / Mechanism Synthetic Probe：
+  - 源码/参考侧最强线索是 Drop leaf `n_max=1` 只是单次 leaf entry 数量，不是 final settlement inventory hard cap；
+  - 252x 更像 activity/table-version/overlay 缺口；
+  - 合成脚本可用于机制假设，但不能作为 promotion evidence。
+
+改动：
+
+- 新增 `scripts/summarize_v3_activity_mapping_likelihood.py`，比较 252x activity settlement 在 `252x->251x` 与 `252x->250x` 候选映射下的 quality likelihood。
+- 新增 `tests/test_summarize_v3_activity_mapping_likelihood.py`。
+- `DECISIONS_V3.md` 新增 D-v3-081、D-v3-082；`OBSERVATIONS_V3.md` 新增 O-v3-086、O-v3-087；项目结构索引更新。
+
+关键验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 256 --posterior-seed 0 --posterior-seed 1 --posterior-seed 7 --formal-lift-cap 10000
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_activity_mapping_likelihood.py
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_activity_mapping_likelihood.py
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_other_tables.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_count_prior_holdout.py tests\test_summarize_v3_activity_mapping_likelihood.py tests\test_summarize_v3_scp_formal_value_link.py tests\test_summarize_v3_scp_count_value_bridge.py tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_stability.py tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+```
+
+结果：
+
+```text
+256-trial stability:
+overall_status=blocked_low_support
+runs=3
+watch_runs=3
+stable_groups=2506
+union_groups=2506
+min_applied=9
+min_required=20
+applied_hurts=-
+
+activity mapping:
+files=15
+winners=minus10:11,minus20:4
+candidate_statuses=ok:30
+minus10 ll_per_item avg=-1.676415
+minus20 ll_per_item avg=-1.691183
+missing_item_rate avg=0.0 for both schemes
+
+new tests:
+2 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+89 passed
+
+readiness:
+overall_status=not_ready
+blocked_gates=12
+settlement_count_guarded_bridge_holdout=watch
+settlement_count_cells_value_bridge_holdout=blocked
+formal_value_sampler_holdout=blocked
+```
+
+结论：
+
+- 2506 guarded bridge 已通过 high-trial seed stability 的方向性检查，但 sample depth 仍不足，不能 promotion。
+- 252x activity 更偏向 `252x->251x` activity/up table 解释，但仍缺少 `2521+` 服务端映射强证据；继续 missing-table cohort。
+- 下一步优先采集更多 2506 archive/live support，并继续查 252x activity overlay 或 table-version 强字段；formal/value active sampler 继续暂停。

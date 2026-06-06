@@ -1862,3 +1862,35 @@ applied_hurts=2502
 - 默认 stability smoke 复现：seed 0 只选 2506 且 watch，seed 1 选择 `2501,2506` 且 2501 applied hurt。
 - 单 seed readiness 当前只覆盖 seed 0；它不能证明 posterior seed 稳定。
 - 256-trial 多 seed 的历史单跑证据方向较好，但本轮三 seed 矩阵首次运行超过 300 秒；必须依赖 cache/长跑完成矩阵化复核后才能作为 promotion 证据。
+
+## D-v3-081：2506 guarded bridge 已 seed-stable 但因 support depth 继续 blocked
+
+2026-06-06 起，当前决策：
+
+- `256 trials x seeds 0/1/7` guarded bridge stability matrix 是当前 2506 候选的主证据入口。
+- 当前三 seed 均为 `watch`、selected group 精确为 `2506`、无 applied hurt，说明 64-trial seed drift 已被高 trial 配置压下。
+- 但每个 seed 的 outer holdout `applied_rows=9`，低于当前 `min_applied_rows=20` 门槛；因此 overall 必须保持 `blocked_low_support`。
+- 该结果只能支持继续收集 2506 archive/live shadow evidence，不得进入 active sampler、live decision、正式出价或 v2 archive。
+- 下一步必须补足 2506 support 后复跑同一 stability matrix；不得用低样本三 seed watch 直接设计 promotion policy。
+
+原因：
+
+- stability matrix 输出：`runs=3`、`watch_runs=3`、`stable_groups=2506`、`union_groups=2506`、`signatures=2506:2=3`。
+- seed 0/1/7 的 `delta_mae` 分别为 `-4602.026/-5555.556/-3333.333`，`bridge_over=0.222222/0.222222/0.333333`，`applied_hurts=-`。
+- `min_applied=9` 小于 `min_required=20`，promotion evidence 仍 sample-limited。
+
+## D-v3-082：252x activity mapping likelihood 只作为语义线索，不进入 default prior
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_activity_mapping_likelihood.py` 是 252x missing-table 的 audit-only candidate mapping 审计入口。
+- 该脚本只比较真实 252x settlement inventory 在候选映射下的 quality likelihood，例如 `252x->251x` 与 `252x->250x`。
+- 当前结果支持 `252x->251x` 更像 activity/up table，但不能证明服务端正式映射；尤其 item universe 在 250x/251x 下均覆盖 100%，质量分布证据不足以单独定表。
+- 在缺少 `2521+` raw BidMap/Drop 或服务端 activity overlay 强字段前，252x 不得 fallback 到 250x default，也不得进入 default archive prior、formal/value sampler promotion 分母或正式出价。
+- 该审计可用于后续 table/activity 语义收口和 synthetic mechanism hypothesis 验证，但合成/likelihood 证据不能替代 archive/live holdout。
+
+原因：
+
+- 当前 raw v300 有 `2511-2520` 与 `2520->2150` 链，但无 `2521+` BidMap/Drop 顶层池。
+- activity 15 rows 对照：`minus10` winner 11/15，`minus20` winner 4/15；两边 candidate 均 `ok` 且 missing item rate 为 0。
+- `minus10` 平均 log likelihood per item 为 `-1.676415`，`minus20` 为 `-1.691183`，方向性存在但 margin 较小。
