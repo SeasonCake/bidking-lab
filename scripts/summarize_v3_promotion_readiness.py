@@ -1090,6 +1090,10 @@ def summarize_readiness(
         "applied_hurts",
         [],
     )
+    formal_value_sampler_mixed_watch_rows = int(
+        formal_value_sampler_holdout["overall"].get("mixed_value_floor_watch_rows")
+        or 0
+    )
     formal_value_sampler_watch = (
         formal_value_sampler_holdout.get("overall_status") == "watch"
         and formal_value_sampler_rows > 0
@@ -1118,6 +1122,7 @@ def summarize_readiness(
             candidate_formal_p90_coverage=formal_value_sampler_candidate.get(
                 "candidate_formal_p90_coverage"
             ),
+            mixed_value_floor_watch_rows=formal_value_sampler_mixed_watch_rows,
             applied_hurts_groups=formal_value_sampler_hurts,
         )
     )
@@ -1394,6 +1399,7 @@ def summarize_readiness(
             "candidate_formal_p90_coverage": formal_value_sampler_candidate.get(
                 "candidate_formal_p90_coverage"
             ),
+            "mixed_value_floor_watch_rows": formal_value_sampler_mixed_watch_rows,
             "applied_hurts_groups": formal_value_sampler_hurts,
             "train_candidate_status_counts": formal_value_sampler_holdout.get(
                 "train_candidate_status_counts"

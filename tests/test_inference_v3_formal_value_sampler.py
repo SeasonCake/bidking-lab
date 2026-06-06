@@ -99,3 +99,33 @@ def test_formal_value_sampler_capacity_drift_does_not_upshift_value() -> None:
     assert flat["v3_fv_capacity_flags"] == "target_count_above_prior_max"
     assert "capacity_cells_drift" in flat["v3_fv_stress_class"]
     assert "q6_cells_floor_stress" in flat["v3_fv_stress_class"]
+
+
+def test_formal_value_sampler_mixed_value_floor_is_guarded() -> None:
+    report = sample_formal_value_report(
+        _posterior(),
+        summary=_summary(
+            total_value_floor=1_000_000,
+            q6_cells_floor=30,
+            q6_value_floor=800_000,
+        ),
+        prior_fields={
+            "v3_prior_available": True,
+            "v3_prior_expected_count": 20,
+            "v3_prior_expected_cells": 80,
+            "v3_prior_expected_value": 400_000,
+            "v3_prior_q6_expected_cells": 6,
+            "v3_prior_q6_expected_value": 300_000,
+            "v3_prior_items_per_session_max": 40,
+        },
+    )
+    flat = report.to_flat_dict()
+
+    assert report.candidate is False
+    assert report.mixed_value_floor_watch is True
+    assert flat["v3_fv_candidate"] is False
+    assert flat["v3_fv_mixed_value_floor_watch"] is True
+    assert flat["v3_fv_status"] == "watch_mixed_value_floor_guarded"
+    assert flat["v3_fv_source"] == "baseline"
+    assert flat["v3_fv_formal_decision_value_p50"] == 700_000
+    assert flat["v3_fv_q6_formal_decision_value_p50"] == 400_000

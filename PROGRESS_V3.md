@@ -5070,3 +5070,57 @@ q6_value floor_below_truth=17 floor_matches_truth=5 target_missing=4
 - `2502` 这类 rows 已有 total cells exact matches truth，但 q6/value target 缺失，不能靠 BidMap/Drop cap 或 formal/value sampler 调参解决。
 - floor source 优先查 `item_anchors` 与 `shape_anchors`；`numeric_constraints` 是 exact 入口，不是 floor 入口。
 - 下一步应查 evidence compiler 的 anchor/floor source 与 summary-likelihood fallback；formal/value active sampler 继续暂停。
+
+## 2026-06-06 checkpoint：formal/value mixed candidate guard
+
+本轮把 formal/value sampler 的 candidate 边界从“包含 `value_floor_stress`”收紧为 pure `value_floor_stress`。同时带 `capacity_cells_drift` 或 `q6_cells_floor_stress` 的 rows 现在进入 `watch_mixed_value_floor_guarded`，只做 shadow diagnostics，不参与 candidate holdout，不改变正式出价。
+
+改动：
+
+- `src/bidking_lab/inference/v3/formal_value_sampler.py`：
+  - `v3_fv_candidate` 排除 capacity/cells stress；
+  - 新增 `v3_fv_mixed_value_floor_watch`；
+  - mixed rows 保持 `source=baseline`、`active=False`、`affects_bid=False`。
+- `scripts/summarize_v3_formal_value_sampler_holdout.py`：
+  - holdout candidate 只接受 pure value-floor；
+  - 输出 `mixed_value_floor_watch_rows`。
+- `scripts/summarize_v3_promotion_readiness.py`：
+  - formal/value sampler gate/result 暴露 `mixed_value_floor_watch_rows`。
+- 新增/更新测试覆盖 mixed row 不应用 shadow floor、holdout 不把 mixed row 计为 candidate、readiness 输出 mixed watch 字段。
+
+关键验证：
+
+```powershell
+pytest --basetemp=.tmp\codex\pytest tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_promotion_readiness.py tests\test_live_monitor.py tests\test_evaluate_fatbeans_v3_samples.py
+python -m py_compile src\bidking_lab\inference\v3\formal_value_sampler.py scripts\summarize_v3_formal_value_sampler_holdout.py scripts\summarize_v3_promotion_readiness.py
+git -c safe.directory=C:/xiangmuyunxing/biancheng/2026/bidking-lab diff --check
+```
+
+真实 64-trial 复核：
+
+```text
+formal/value archive:
+  pure_candidates=12
+  mixed_value_floor_watch=1
+  watch_only_value_floor_candidate=12
+  watch_mixed_value_floor_guarded=1
+
+holdout:
+  overall_status=sample_limited
+  candidate_rows=0
+  mixed_value_floor_watch_rows=1
+  train_candidate_status_counts={"blocked_low_sample":414}
+
+readiness:
+  overall_status=not_ready
+  blocked_gates=12
+  formal_value_sampler_holdout.status=blocked
+  formal_value_sampler_holdout.candidate_rows=0
+  formal_value_sampler_holdout.mixed_value_floor_watch_rows=1
+```
+
+结论：
+
+- 13 个 value-floor stress rows 中只有 12 个是 safe pure candidate；1 个 mixed row 必须先回到 cells/capacity/evidence blocker 语义层解释。
+- formal/value sampler 仍是 shadow-only；active sampler 与 promotion readiness 继续暂停。
+- 下一步继续查 evidence compiler floor source、q6/value target missing，以及 hard/lower-bound capacity conflict 的 table/session/source split。

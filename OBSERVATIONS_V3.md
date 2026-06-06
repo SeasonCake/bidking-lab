@@ -3679,3 +3679,63 @@ numeric_constraints -> exact only, not floor
 - `evidence_floor_only` 不是单一 value sampler 缺口；大多数是 cells/value floor 作为低界低于 final truth。
 - `2502` 形态更具体：total cells exact matches truth，但 q6/value target missing，不能用 table cap 修复。
 - 这 26 行继续保持 promotion blocker；下一步查 evidence compiler 的 floor anchor source、q6/value target 缺失与 summary-likelihood fallback。
+
+## O-v3-095：formal/value mixed guard 后 candidate 从 13 收口到 12，holdout 仍 sample-limited
+
+2026-06-06 对 formal/value sampler 增加 mixed value-floor guard 后，复跑真实 64-trial archive / holdout / readiness：
+
+```text
+archive rows:
+  paired=1560
+  formal_value_rows=1560
+  pure_candidates=12
+  mixed_value_floor_watch=1
+
+status_counts:
+  baseline_passthrough=1398
+  watch_capacity_cells_drift=126
+  watch_q6_cells_floor=23
+  watch_only_value_floor_candidate=12
+  watch_mixed_value_floor_guarded=1
+
+stress_counts:
+  none=1398
+  capacity_cells_drift=118
+  q6_cells_floor_stress=23
+  value_floor_stress=12
+  capacity_cells_drift+q6_cells_floor_stress=6
+  q6_cells_floor_stress+capacity_cells_drift=2
+  q6_cells_floor_stress+value_floor_stress=1
+```
+
+holdout 关键结果：
+
+```text
+overall_status=sample_limited
+candidate_rows=0
+mixed_value_floor_watch_rows=1
+capacity_watch_rows=150
+train_candidate_status_counts={"blocked_low_sample":414}
+```
+
+readiness 关键结果：
+
+```text
+overall_status=not_ready
+blocked_gates=12
+formal_value_sampler_holdout.status=blocked
+formal_value_sampler_holdout.reason=formal/value sampler lacks enough safe holdout support
+formal_value_sampler_holdout.candidate_rows=0
+formal_value_sampler_holdout.mixed_value_floor_watch_rows=1
+
+summary.v3_fv_candidate_rows=12
+summary.v3_fv_value_floor_candidate_rows=13
+summary.v3_fv_capacity_watch_rows=126
+summary.v3_fv_delta_formal_p50_mae=0.0
+```
+
+解读：
+
+- 以前看起来的 13 个 value-floor candidate 中，只有 12 个是 pure value-floor；另 1 个是 `q6_cells_floor_stress+value_floor_stress` mixed row。
+- mixed row 已从 candidate 分母移出，但保留 watch 计数，避免后续 promotion 误把 cells/capacity blocker 当成 formal/value sampler 样本。
+- formal/value sampler 仍缺 safe holdout support；promotion/readiness 不推进，v2 archive 也不推进。

@@ -118,3 +118,29 @@ def test_formal_value_sampler_holdout_ignores_capacity_only_watch() -> None:
     assert result["overall_status"] == "sample_limited"
     assert result["candidate_only"]["candidate_rows"] == 0
     assert result["overall"]["capacity_watch_rows"] == 2
+
+
+def test_formal_value_sampler_holdout_ignores_mixed_value_floor_watch() -> None:
+    module = _load_module()
+    fold0 = _session_for_fold(module, 0, prefix="mixed0")
+    fold1 = _session_for_fold(module, 1, prefix="mixed1")
+    rows = [
+        _row(
+            "ethan|2401",
+            session_id=session_id,
+            candidate=True,
+            stress_class="q6_cells_floor_stress+value_floor_stress",
+        )
+        for session_id in (fold0, fold1)
+    ]
+
+    result = module.summarize_holdout(
+        rows,
+        folds=2,
+        min_windows=1,
+        min_sessions=1,
+    )
+
+    assert result["overall_status"] == "sample_limited"
+    assert result["candidate_only"]["candidate_rows"] == 0
+    assert result["overall"]["mixed_value_floor_watch_rows"] == 2

@@ -2008,3 +2008,19 @@ applied_hurts=2502
 - 同一批 rows 还有 `q6_cells/q6_value/total_value target_missing=4/4/4`，对应 `2502` 这类 total cells exact 但 q6/value target 缺失的形态。
 - 这些 rows 的 capacity audit 为 `table_impossible_rows=0`、`round_impossible_rows=0`，说明它们与 hard/lower-bound capacity conflict 是不同 blocker。
 - `item_anchors` 是 value floor 的核心来源，`shape_anchors` 是 cells floor 的核心来源，`quality_floor_anchors` 只补 quality/count；因此 floor below truth 不能直接按 formal/value sampler 参数问题处理。
+
+## D-v3-090：mixed value-floor + cells/capacity stress 必须 guard，不进入 formal/value candidate
+
+2026-06-06 起，当前决策：
+
+- `v3_fv_candidate` 只允许 pure `value_floor_stress`，不得同时带有 `capacity_cells_drift` 或 `q6_cells_floor_stress`。
+- mixed `value_floor_stress + cells/capacity` rows 归入 `watch_mixed_value_floor_guarded`，并输出 `v3_fv_mixed_value_floor_watch`。
+- guarded mixed rows 继续使用 `source=baseline`，`v3_fv_active=False`、`v3_fv_affects_bid=False` 必须保持。
+- holdout/readiness 只把 pure value-floor rows 计入 formal/value candidate；mixed rows 单独统计为 `mixed_value_floor_watch_rows`。
+- 该 guard 不改变 v2 formal/live/UI，不改变正式出价，不放宽 promotion gate。
+
+原因：
+
+- 64-trial archive 复核显示 value-floor stress 共 13 行，但其中 1 行同时带 `q6_cells_floor_stress`。
+- 该 mixed row 与 prior-stressed cells/capacity/evidence blocker 相交；若继续算作 formal/value candidate，会把 table/capacity/evidence 语义问题误归因给 value sampler。
+- readiness 仍要求 archive/live/holdout 支持；当前 formal/value sampler holdout 仍为 `sample_limited`，gate 仍 blocked。

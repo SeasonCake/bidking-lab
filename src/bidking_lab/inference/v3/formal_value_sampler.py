@@ -66,7 +66,16 @@ class V3FormalValueSamplerReport:
 
     @property
     def candidate(self) -> bool:
-        return self.ready and "value_floor_stress" in self.stress_classes
+        return (
+            self.ready
+            and "value_floor_stress" in self.stress_classes
+            and "capacity_cells_drift" not in self.stress_classes
+            and "q6_cells_floor_stress" not in self.stress_classes
+        )
+
+    @property
+    def mixed_value_floor_watch(self) -> bool:
+        return self.ready and "value_floor_stress" in self.stress_classes and not self.candidate
 
     @property
     def stress_class(self) -> str:
@@ -82,10 +91,10 @@ class V3FormalValueSamplerReport:
             return "not_ready"
         if self.prior_fields is None or not _bool(self.prior_fields.get("v3_prior_available")):
             return "prior_unavailable"
-        if self.candidate and len(self.stress_classes) > 1:
-            return "watch_only_mixed_value_floor_candidate"
         if self.candidate:
             return "watch_only_value_floor_candidate"
+        if self.mixed_value_floor_watch:
+            return "watch_mixed_value_floor_guarded"
         if "capacity_cells_drift" in self.stress_classes:
             return "watch_capacity_cells_drift"
         if "q6_cells_floor_stress" in self.stress_classes:
@@ -162,6 +171,7 @@ class V3FormalValueSamplerReport:
             {
                 f"{prefix}active": self.active,
                 f"{prefix}candidate": self.candidate,
+                f"{prefix}mixed_value_floor_watch": self.mixed_value_floor_watch,
                 f"{prefix}status": self.status,
                 f"{prefix}gate_reason": self.gate_reason,
                 f"{prefix}source": self.source,

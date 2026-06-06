@@ -131,8 +131,24 @@ def _pinball(
 
 
 def _is_value_floor_candidate(row: dict[str, Any]) -> bool:
-    return _bool(row.get("v3_fv_candidate")) and "value_floor_stress" in str(
-        row.get("v3_fv_stress_class") or ""
+    stress = str(row.get("v3_fv_stress_class") or "")
+    return (
+        _bool(row.get("v3_fv_candidate"))
+        and "value_floor_stress" in stress
+        and "capacity_cells_drift" not in stress
+        and "q6_cells_floor_stress" not in stress
+    )
+
+
+def _is_mixed_value_floor_watch(row: dict[str, Any]) -> bool:
+    stress = str(row.get("v3_fv_stress_class") or "")
+    return (
+        "value_floor_stress" in stress
+        and (
+            "capacity_cells_drift" in stress
+            or "q6_cells_floor_stress" in stress
+            or str(row.get("v3_fv_status") or "") == "watch_mixed_value_floor_guarded"
+        )
     )
 
 
@@ -340,6 +356,9 @@ def _metrics(
         "candidate_rows": len(candidate_rows),
         "candidate_sessions": len(candidate_sessions),
         "capacity_watch_rows": sum(1 for row in seq if _is_capacity_watch(row)),
+        "mixed_value_floor_watch_rows": sum(
+            1 for row in seq if _is_mixed_value_floor_watch(row)
+        ),
         "baseline_formal_p50_mae": _round_metric(base_mae, 1),
         "candidate_formal_p50_mae": _round_metric(cand_mae, 1),
         "delta_formal_p50_mae": _round_metric(_delta(cand_mae, base_mae), 1),

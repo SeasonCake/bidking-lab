@@ -177,6 +177,7 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert "tail_under_combined_holdout" in gates
     assert "formal_value_sampler_holdout" in gates
     assert "candidate_rows" in gates["formal_value_sampler_holdout"]
+    assert "mixed_value_floor_watch_rows" in gates["formal_value_sampler_holdout"]
     assert gates["v2_archive_readiness"]["status"] == "pending"
     assert "ccv_holdout" in result
     assert "applied_ccv_hurts_groups" in result["ccv_holdout"]
@@ -186,6 +187,7 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert "tail_holdout" in result
     assert "tail_under_holdout" in result
     assert "formal_value_sampler_holdout" in result
+    assert "mixed_value_floor_watch_rows" in result["formal_value_sampler_holdout"]
     assert "settlement_count_formal_value_link" in result
     assert "settlement_count_cells_value_bridge" in result
     assert "settlement_count_cells_value_bridge_holdout" in result
