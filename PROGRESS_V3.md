@@ -6878,3 +6878,78 @@ readiness:
 - map_id holdout 更精确但漏 3 条单例/稀疏 map blocker，因此如果下一阶段恢复 sampler 设计，仍需要 source parser、活动/远端表 acquisition 或更细的 expansion prior。
 - activity 0605 cohort 当前没有 unique round-cap truth rows，但 15 条 non-zodiac missing 继续支持外部 overlay/source-parser 作为旁路假设。
 - readiness/promotion gate 未放宽；下一阶段建议先做 source parser/table acquisition 或追加样本，再由用户确认是否恢复 shadow-only formal/value sampler。
+
+## 2026-06-07 checkpoint：source-aware CSE holdout matrix / map-id miss audit
+
+本轮继续从 `6a9442b` 的 `v3_cse_*` broad watch prior 往可复核 source-aware expansion prior 收窄。改动仍是 v3 audit-only，只扩展 holdout 审计，不改变 CSE pipeline 默认 matching，不改变 v2 formal/live/UI，不改变正式出价，不恢复 formal/value sampler 参数调优。
+
+改动：
+
+- `scripts/summarize_v3_capacity_source_expansion_holdout.py`：
+  - 新增 composite group 支持：
+    - `map_id_capture_rounds`
+    - `map_id_round_index`
+    - `map_id_last_round_flag`
+    - `map_family_capture_rounds`
+    - `map_family_sub_pool_kind`
+    - `map_family_outer_shape`
+    - `map_family_payload_shape`
+    - `map_family_action_count`
+    - `map_id_payload_shape`
+  - 新增 `--fallback-group-by`，只在 primary group 训练折没有 source-semantics support 时尝试 fallback；
+  - summary 输出 `candidate_source_counts`，区分 `primary` 与 `fallback` candidate 来源。
+- `tests/test_summarize_v3_capacity_source_expansion_holdout.py`：
+  - 增加 fallback group 覆盖，验证 map_id 无 train support 时可以审计 fallback candidate 来源。
+- 使用多 agent 只读审查：
+  - map-id miss / false-positive 审查；
+  - payload/source parser 可用字段审查；
+  - 均未修改文件，结论由主窗口整合。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_capacity_source_expansion_holdout.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_source_expansion_holdout.py -q
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id --fallback-group-by map_family_sub_pool_kind --top 8 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id_capture_rounds --top 6 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id_last_round_flag --top 6 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_family_outer_shape --top 6 --min-train-sessions 4 --format summary
+```
+
+真实 holdout 要点：
+
+```text
+map_id baseline:
+  truth=21 covered=18 missed=3 candidate=202 fp=184
+  recall=0.857143 precision=0.089109
+
+missed map_id rows:
+  2408: fatbeans_valid_aisha_2408_5rounds_2408_1274128129457532_0081.json
+  2410: fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json
+  2509: fatbeans_valid_ethan_2509_5rounds_2509_1295018712615152_0360.json
+
+map_id -> map_family_sub_pool_kind fallback:
+  truth=21 covered=21 missed=0 candidate=347 fp=326
+  candidate_sources=primary:202,fallback:145
+  recall=1.0 precision=0.060519
+
+map_id_capture_rounds:
+  truth=21 covered=11 missed=10 candidate=85 fp=74
+  recall=0.52381 precision=0.129412
+
+map_id_last_round_flag:
+  truth=21 covered=17 missed=4 candidate=178 fp=161
+  recall=0.809524 precision=0.095506
+
+map_family_outer_shape:
+  truth=21 covered=19 missed=2 candidate=257 fp=238
+  recall=0.904762 precision=0.07393
+```
+
+解读：
+
+- 3 条 map-id miss 都是 singleton truth fold：该 map_id 只有 1 条 source-semantics truth，且 truth 落在 test fold，训练折没有 source support。
+- `map_family_sub_pool_kind` fallback 能补全 recall，但 candidate/false-positive 明显变多，不能作为“收窄 prior”的默认策略。
+- `map_id_capture_rounds`、`map_id_round_index`、`map_id_payload_shape` 等更窄 signature 能提高局部 precision，但 sample-limited 与 recall 损失太大。
+- payload/source 字段可用于 post-settlement source signature audit，但现有 payload shape、outer wrapper、action count 都与 within-cap rows 混用，不能单独解释 over-cap。
+- 当前最保守默认仍应是 exact `map_id` support；fallback/source-signature 只保留为 audit matrix。下一步若要真正提升 prior，需要 source parser/table acquisition 或更多样本，而不是把 broad fallback 接入默认 CSE。

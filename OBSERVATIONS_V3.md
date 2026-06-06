@@ -5395,3 +5395,77 @@ overall_status=not_ready
 - `map_id` 口径减少 broadness，但漏掉 3 条 blocker；说明仅靠现有 archive map_id prior 还不足以恢复 formal/value sampler。
 - activity cohort 的 non-zodiac missing 是 overlay/source-parser 线索，但不是 default 21 条 unique round-cap blocker 的 item-universe 解释。
 - `v3_cse_*` 已进入 archive/live/model_eval 的 shadow 字段，且 `active_rows=0`；v2 formal/live/UI 与正式出价保持不变。
+
+## O-v3-127：source-aware CSE signature matrix 暂未找到可同时提升 recall/precision 的 prior
+
+2026-06-07 增强 `summarize_v3_capacity_source_expansion_holdout.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id --fallback-group-by map_family_sub_pool_kind --top 8 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id_capture_rounds --top 6 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id_last_round_flag --top 6 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_family_outer_shape --top 6 --min-train-sessions 4 --format summary
+```
+
+map-id baseline 漏召回：
+
+```text
+map_id=2408
+  file=fatbeans_valid_aisha_2408_5rounds_2408_1274128129457532_0081.json
+  fold=1 train_sessions=7 train_source_semantics_rows=0
+
+map_id=2410
+  file=fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json
+  fold=0 train_sessions=16 train_source_semantics_rows=0
+
+map_id=2509
+  file=fatbeans_valid_ethan_2509_5rounds_2509_1295018712615152_0360.json
+  fold=2 train_sessions=8 train_source_semantics_rows=0
+```
+
+signature matrix：
+
+```text
+map_id:
+  covered=18/21 missed=3 candidate=202 fp=184
+  recall=0.857143 precision=0.089109
+
+map_id -> map_family_sub_pool_kind:
+  covered=21/21 missed=0 candidate=347 fp=326
+  candidate_sources=primary:202,fallback:145
+  recall=1.0 precision=0.060519
+
+map_id_capture_rounds:
+  covered=11/21 missed=10 candidate=85 fp=74 sample_limited=179
+  recall=0.52381 precision=0.129412
+
+map_id_last_round_flag:
+  covered=17/21 missed=4 candidate=178 fp=161 sample_limited=21
+  recall=0.809524 precision=0.095506
+
+map_family_outer_shape:
+  covered=19/21 missed=2 candidate=257 fp=238 sample_limited=12
+  recall=0.904762 precision=0.07393
+```
+
+payload/source parser review：
+
+```text
+18 payload-only rows by map:
+  2408:1, 2410:1, 2501:6, 2503:2, 2504:2, 2506:1, 2508:2, 2509:1, 2510:2
+
+source_evidence_class overlap:
+  TP payload-only dominates, but FP rows are also mostly settlement_payload_verified_only.
+
+payload/source field risk:
+  payload_field_shape, settlement_outer_field_shape, action count and message counts
+  all overlap with within-cap rows; exact payload_field20_values/session/item ids are high-cardinality
+  or leakage-prone and should not be prior keys.
+```
+
+解读：
+
+- map-id miss 不是 table/source parser 错，而是 holdout support gap：singleton truth row 在 test fold 中，train folds 没有同 map source support。
+- fallback 能补 recall，但会显著降低 precision；因此它是 useful audit counterfactual，不是 default prior。
+- 更窄的 source signatures 会遇到 sample-limited 与 recall collapse；当前没有 non-leaky signature 同时优于 map-id baseline。
+- 下一步要真正收窄 CSE prior，需要新增 source parser/table acquisition 或更多样本，而不是在现有 fields 上继续组合过拟合。

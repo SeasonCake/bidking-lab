@@ -37,6 +37,20 @@ from summarize_v3_settlement_count_prior_candidates import (  # noqa: E402
 )
 
 DEFAULT_GROUP_BY = "map_family"
+GROUP_BY_CHOICES = (
+    "map_id",
+    "map_family",
+    "session_token_prefix6",
+    "map_id_capture_rounds",
+    "map_id_round_index",
+    "map_id_last_round_flag",
+    "map_family_capture_rounds",
+    "map_family_sub_pool_kind",
+    "map_family_outer_shape",
+    "map_family_payload_shape",
+    "map_family_action_count",
+    "map_id_payload_shape",
+)
 SOURCE_SEMANTICS_MECHANISMS = frozenset(
     {
         "server_side_settlement_expansion",
@@ -80,6 +94,56 @@ def _session_id(row: Mapping[str, Any]) -> str:
 
 
 def _group_value(row: Mapping[str, Any], group_by: str) -> str:
+    if group_by == "map_id_capture_rounds":
+        return (
+            f"{row.get('map_id') or 'none'}"
+            f"|capture_rounds={row.get('capture_rounds') or 'none'}"
+        )
+    if group_by == "map_id_round_index":
+        return (
+            f"{row.get('map_id') or 'none'}"
+            f"|round_index={row.get('round_index') or 'none'}"
+        )
+    if group_by == "map_id_last_round_flag":
+        capture_rounds = _float_or_none(row.get("capture_rounds"))
+        round_index = _float_or_none(row.get("round_index"))
+        if capture_rounds is None or round_index is None:
+            flag = "unknown"
+        elif round_index >= capture_rounds:
+            flag = "last"
+        else:
+            flag = "not_last"
+        return f"{row.get('map_id') or 'none'}|last_round={flag}"
+    if group_by == "map_family_capture_rounds":
+        return (
+            f"{row.get('map_family') or 'none'}"
+            f"|capture_rounds={row.get('capture_rounds') or 'none'}"
+        )
+    if group_by == "map_family_sub_pool_kind":
+        return (
+            f"{row.get('map_family') or 'none'}"
+            f"|sub_pool={row.get('bidmap_sub_pool_kind') or 'none'}"
+        )
+    if group_by == "map_family_outer_shape":
+        return (
+            f"{row.get('map_family') or 'none'}"
+            f"|outer={row.get('settlement_outer_field_shape') or 'none'}"
+        )
+    if group_by == "map_family_payload_shape":
+        return (
+            f"{row.get('map_family') or 'none'}"
+            f"|payload={row.get('payload_field_shape') or 'none'}"
+        )
+    if group_by == "map_family_action_count":
+        return (
+            f"{row.get('map_family') or 'none'}"
+            f"|actions={row.get('event_action_result_count_all') or 'none'}"
+        )
+    if group_by == "map_id_payload_shape":
+        return (
+            f"{row.get('map_id') or 'none'}"
+            f"|payload={row.get('payload_field_shape') or 'none'}"
+        )
     value = row.get(group_by)
     return str(value) if value not in (None, "") else "none"
 
@@ -138,13 +202,17 @@ def _eval_rows(
     rows: Iterable[Mapping[str, Any]],
     *,
     group_by: str,
+    fallback_group_by: str | None,
     folds: int,
     min_train_sessions: int,
 ) -> tuple[dict[str, Any], ...]:
     seq = tuple(row for row in rows if row.get("status") == "ok")
     by_group: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    by_fallback_group: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in seq:
         by_group[_group_value(row, group_by)].append(row)
+        if fallback_group_by is not None:
+            by_fallback_group[_group_value(row, fallback_group_by)].append(row)
 
     out: list[dict[str, Any]] = []
     for group, group_rows in by_group.items():
@@ -159,26 +227,68 @@ def _eval_rows(
             )
             train_sessions = {_session_id(item) for item in train}
             sample_limited = len(train_sessions) < int(min_train_sessions)
-            train_source_rows = sum(1 for item in train if _source_semantics_truth(item))
-            candidate_applied = not sample_limited and train_source_rows > 0
+            train_source_rows = sum(
+                1 for item in train if _source_semantics_truth(item)
+            )
+            candidate_source = (
+                "primary"
+                if not sample_limited and train_source_rows > 0
+                else "none"
+            )
+            fallback_group = None
+            fallback_train_sessions = 0
+            fallback_train_source_rows = 0
+            fallback_sample_limited = False
+            if candidate_source == "none" and fallback_group_by is not None:
+                fallback_group = _group_value(row, fallback_group_by)
+                fallback_seq = tuple(by_fallback_group.get(fallback_group, ()))
+                fallback_train = tuple(
+                    other
+                    for other in fallback_seq
+                    if _stable_fold(_session_id(other), folds) != fold
+                )
+                fallback_sessions = {_session_id(item) for item in fallback_train}
+                fallback_train_sessions = len(fallback_sessions)
+                fallback_sample_limited = fallback_train_sessions < int(
+                    min_train_sessions
+                )
+                fallback_train_source_rows = sum(
+                    1 for item in fallback_train if _source_semantics_truth(item)
+                )
+                if (
+                    not fallback_sample_limited
+                    and fallback_train_source_rows > 0
+                ):
+                    candidate_source = "fallback"
+            candidate_applied = candidate_source != "none"
             truth_unique = _unique_round_overflow(row)
             truth_source = _source_semantics_truth(row)
             out.append(
                 {
                     "group": group,
+                    "fallback_group": fallback_group,
                     "session_id": session_id,
                     "fold": fold,
-                    "sample_limited": sample_limited,
+                    "sample_limited": (
+                        sample_limited
+                        if fallback_group_by is None
+                        else sample_limited and fallback_sample_limited
+                    ),
                     "train_sessions": len(train_sessions),
                     "train_unique_round_rows": sum(
                         1 for item in train if _unique_round_overflow(item)
                     ),
                     "train_source_semantics_rows": train_source_rows,
+                    "fallback_train_sessions": fallback_train_sessions,
+                    "fallback_train_source_semantics_rows": (
+                        fallback_train_source_rows
+                    ),
                     "train_mechanism_classes": _counter_dict(
                         (item.get("mechanism_class") for item in train),
                         top=8,
                     ),
                     "candidate_applied": candidate_applied,
+                    "candidate_source": candidate_source,
                     "truth_unique_round_overflow": truth_unique,
                     "truth_source_semantics": truth_source,
                     "covered_unique_round_overflow": candidate_applied
@@ -270,6 +380,14 @@ def _summarize_eval_rows(
             "truth_unique_round_rows": truth_unique,
             "truth_source_semantics_rows": truth_source,
             "candidate_rows": candidate_rows,
+            "candidate_source_counts": _counter_dict(
+                (
+                    item.get("candidate_source")
+                    for item in seq
+                    if item.get("candidate_applied")
+                ),
+                top=top,
+            ),
             "covered_unique_round_rows": covered_unique,
             "covered_source_semantics_rows": covered_source,
             "missed_unique_round_rows": max(0, truth_unique - covered_unique),
@@ -348,15 +466,21 @@ def summarize_holdout(
     paths: Iterable[Path] = (),
     *,
     group_by: str = DEFAULT_GROUP_BY,
+    fallback_group_by: str | None = None,
     folds: int = 5,
     min_train_sessions: int = 4,
     top: int = 12,
     rows: Iterable[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    if group_by not in GROUP_BY_CHOICES:
+        raise ValueError(f"unsupported group_by: {group_by}")
+    if fallback_group_by is not None and fallback_group_by not in GROUP_BY_CHOICES:
+        raise ValueError(f"unsupported fallback_group_by: {fallback_group_by}")
     source_rows = tuple(rows) if rows is not None else _rows_for_paths(paths)
     eval_rows = _eval_rows(
         source_rows,
         group_by=group_by,
+        fallback_group_by=fallback_group_by,
         folds=folds,
         min_train_sessions=min_train_sessions,
     )
@@ -388,6 +512,7 @@ def summarize_holdout(
     )
     return {
         "group_by": group_by,
+        "fallback_group_by": fallback_group_by,
         "folds": folds,
         "min_train_sessions": min_train_sessions,
         "sessions": len(eval_rows),
@@ -395,6 +520,14 @@ def summarize_holdout(
         "truth_unique_round_rows": truth_rows,
         "truth_source_semantics_rows": source_truth_rows,
         "candidate_rows": candidate_rows,
+        "candidate_source_counts": _counter_dict(
+            (
+                row.get("candidate_source")
+                for row in eval_rows
+                if row.get("candidate_applied")
+            ),
+            top=top,
+        ),
         "covered_unique_round_rows": covered_rows,
         "covered_source_semantics_rows": covered_source_rows,
         "missed_unique_round_rows": max(0, truth_rows - covered_rows),
@@ -451,12 +584,14 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
             (
                 f"sessions={result['sessions']}",
                 f"group_by={result['group_by']}",
+                f"fallback_group_by={result['fallback_group_by'] or '-'}",
                 f"groups={result['groups']}",
                 f"folds={result['folds']}",
                 f"min_train_sessions={result['min_train_sessions']}",
                 f"truth_unique_round_rows={result['truth_unique_round_rows']}",
                 f"truth_source_semantics_rows={result['truth_source_semantics_rows']}",
                 f"candidate_rows={result['candidate_rows']}",
+                f"candidate_sources={_format_counts(result['candidate_source_counts'])}",
                 f"covered_unique_round_rows={result['covered_unique_round_rows']}",
                 f"missed_unique_round_rows={result['missed_unique_round_rows']}",
                 f"false_positive_candidate_rows={result['false_positive_candidate_rows']}",
@@ -484,6 +619,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"sessions={row['sessions']}",
                     f"truth_unique={row['truth_unique_round_rows']}",
                     f"candidate_rows={row['candidate_rows']}",
+                    f"candidate_sources={_format_counts(row['candidate_source_counts'])}",
                     f"covered={row['covered_unique_round_rows']}",
                     f"missed={row['missed_unique_round_rows']}",
                     f"false_positive={row['false_positive_candidate_rows']}",
@@ -512,8 +648,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--group-by",
-        choices=("map_id", "map_family", "session_token_prefix6"),
+        choices=GROUP_BY_CHOICES,
         default=DEFAULT_GROUP_BY,
+    )
+    parser.add_argument(
+        "--fallback-group-by",
+        choices=GROUP_BY_CHOICES,
+        help=(
+            "Optional fallback grouping used only when the primary group has no "
+            "train source-semantics support."
+        ),
     )
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--min-train-sessions", type=int, default=4)
@@ -524,6 +668,7 @@ def main(argv: list[str] | None = None) -> int:
     result = summarize_holdout(
         args.paths,
         group_by=args.group_by,
+        fallback_group_by=args.fallback_group_by,
         folds=args.folds,
         min_train_sessions=args.min_train_sessions,
         top=args.top,

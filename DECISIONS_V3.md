@@ -2533,3 +2533,21 @@ applied_hurts=2502
 - default archive `map_id` holdout recall 为 0.857143，覆盖 18/21，漏 3 条稀疏/单例 map blocker。
 - truth rows 的 payload mismatch 与 non-zodiac missing 均为 0；当前 blocker 不是 parser/slot/unknown non-zodiac item-universe 问题。
 - archive evaluator smoke 显示 `v3_cse_ready_rows=1560`、`v3_cse_candidate_rows=752`、`v3_cse_active_rows=0`；readiness 中 `capacity_source_expansion_shadow=watch` 但 overall 仍 `not_ready`。
+
+## D-v3-123：source-aware CSE signatures / fallback 只能作为 holdout matrix，不得默认接入 CSE prior
+
+2026-06-07 起，当前决策：
+
+- `summarize_v3_capacity_source_expansion_holdout.py` 可以审计 composite source signatures 与 `--fallback-group-by`，但这些策略默认只作为 audit matrix。
+- exact `map_id` 仍是当前最保守的 CSE group-support baseline；它 recall 不满，但 precision 高于 map-family/fallback broad watch。
+- `map_family_sub_pool_kind` fallback 可以解释 map-id singleton miss，但会扩大 candidate/false-positive，不得作为默认 source-aware expansion prior。
+- `map_id_capture_rounds`、`map_id_round_index`、`map_id_last_round_flag`、`map_family_outer_shape`、`map_family_payload_shape`、`map_family_action_count`、`map_id_payload_shape` 只能用于分片审计；不能单独作为 sampler/readiness/promotion 证据。
+- `mechanism_class` 由 unique-overflow/source-semantics truth 派生，只能用于诊断与标签，不得作为 prior key 或 train-time feature。
+- 若后续要把 CSE 从 broad watch 变成更精确 prior，必须获得更强 source parser、活动/远端表 acquisition 或新增样本支持；不得用 fallback 满召回来替代 precision 证明。
+
+原因：
+
+- `map_id` holdout：21 truth 覆盖 18，miss 3，candidate 202，false positive 184，precision 0.089109。
+- 3 条 miss 分别是 2408、2410、2509 的 singleton truth fold；训练折同 map 没有 source-semantics support。
+- `map_id -> map_family_sub_pool_kind` fallback：覆盖 21/21，但 candidate 增至 347，false positive 增至 326，precision 降至 0.060519。
+- `map_id_capture_rounds` precision 升至 0.129412，但 recall 降至 0.52381；`map_family_outer_shape` recall 0.904762，但 precision 0.07393，仍比 map_id 宽。
