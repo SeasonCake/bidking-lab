@@ -6524,3 +6524,54 @@ within_drop_ref_after_temp:
 - 但 `round_cap_overflow_after_temp` 仍有 58/59 条 unique non-temp item count 超 drop-ref，21/59 条 unique non-temp item count 仍超 round cap。
 - 因此 blocker 不能简化为“重复 item_id 实例导致统计口径偏高”；仍存在 unique item 层面的 over-cap，后续应查服务端 count/session-capacity、round/category 生成机制或 cap 字段语义。
 - formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。
+
+## 2026-06-06 checkpoint：settlement category/hint residual 下钻
+
+本轮继续排查 unique item 层面的 over-cap 是否来自 BidMap `round_category_hints` 或 item primary-category 口径误读。改动仍是 v3 audit-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - 输出 `bidmap_round_category_hint_key` 与 `bidmap_round_category_hint_count`；
+  - 支持 `--group-by bidmap_round_category_hint_key`；
+  - 输出 settlement item primary-category distribution、unique non-temp category count、hinted/unhinted non-temp item count；
+  - CLI summary 同步输出 `hint_keys`、`unique_cats`、`unique_hinted`、`unique_unhinted` 与 `unique_cat_counts`。
+- `tests/test_summarize_v3_settlement_count_prior_candidates.py` 给 fixture 增加 `round_category_hints` 与 item `tags`，覆盖 category/hint 聚合。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`、`DECISIONS_V3.md` 与 `OBSERVATIONS_V3.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py -q
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py scripts\summarize_v3_settlement_payload_audit.py scripts\summarize_v3_capacity_table_audit.py scripts\summarize_v3_capacity_source_expansion_audit.py scripts\summarize_v3_promotion_readiness.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_capacity_source_expansion_audit.py tests\test_summarize_v3_promotion_readiness.py -q
+```
+
+真实 residual smoke 要点：
+
+```text
+overall:
+  files=441 settlement_rows=441 hint_keys={'103': 441}
+  unique_cats=n=441/avg=9.476/p50=10.0/p90=10.0/p95=10.0/max=10.0
+  unique_hinted=n=441/avg=4.748/p50=4.0/p90=8.0/p95=9.0/max=14.0
+  unique_unhinted=n=441/avg=32.401/p50=32.0/p90=42.0/p95=45.0/max=52.0
+
+round_cap_overflow_after_temp:
+  files=59 hint_keys={'103': 59}
+  unique_cats=n=59/avg=9.797/p50=10.0/p90=10.0/p95=10.0/max=10.0
+  unique_hinted=n=59/avg=6.051/p50=6.0/p90=8.0/p95=10.0/max=12.0
+  unique_unhinted=n=59/avg=43.780/p50=43.0/p90=48.0/p95=51.0/max=52.0
+
+within_drop_ref_after_temp:
+  files=245 hint_keys={'103': 245}
+  unique_cats=n=245/avg=9.265/p50=9.0/p90=10.0/p95=10.0/max=10.0
+  unique_unhinted=n=245/avg=27.110/p50=27.0/p90=33.0/p95=34.0/max=39.0
+```
+
+解读：
+
+- 所有真实 settlement rows 的 `bidmap_round_category_hint_key` 都是 `103`，不能区分 over-cap 与 within-cap。
+- over-cap rows 的 unique non-temp item 覆盖接近全量 primary categories，且大量 item 落在 unhinted categories。
+- 因此 `round_category_hints` 不能解释当前 unique item 层面的 after-temp over-cap；后续 blocker 仍是 settlement count/session-capacity、round/category 生成机制或 cap 字段语义。
+- formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。

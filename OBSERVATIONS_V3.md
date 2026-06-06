@@ -5067,3 +5067,41 @@ round_cap_overflow_after_temp:
 - parser/runtime 层没有重复：所有 rows 的 duplicate runtime 和 duplicate `(runtime_id,item_id)` pair 都为 0。
 - item_id 多实例化会解释部分 drop-only count overflow，但不能解释 round-cap overflow。
 - 仍有 21 条 row 在 unique non-temp item_id 层面超过 round cap，因此 capacity blocker 不是单纯“同一 item 多份实例化”的统计口径问题。
+
+## O-v3-121：BidMap round-category hint 不解释 unique item over-cap
+
+2026-06-06 增强 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑真实 archive smoke：
+
+```powershell
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 8 --format summary
+```
+
+关键结果：
+
+```text
+overall:
+  files=441 settlement_rows=441
+  hint_keys={'103': 441}
+  unique_cats=n=441/avg=9.476/p50=10.0/p90=10.0/p95=10.0/max=10.0
+  unique_hinted=n=441/avg=4.748/p50=4.0/p90=8.0/p95=9.0/max=14.0
+  unique_unhinted=n=441/avg=32.401/p50=32.0/p90=42.0/p95=45.0/max=52.0
+
+round_cap_overflow_after_temp:
+  files=59
+  hint_keys={'103': 59}
+  unique_cats=n=59/avg=9.797/p50=10.0/p90=10.0/p95=10.0/max=10.0
+  unique_hinted=n=59/avg=6.051/p50=6.0/p90=8.0/p95=10.0/max=12.0
+  unique_unhinted=n=59/avg=43.780/p50=43.0/p90=48.0/p95=51.0/max=52.0
+
+within_drop_ref_after_temp:
+  files=245
+  hint_keys={'103': 245}
+  unique_cats=n=245/avg=9.265/p50=9.0/p90=10.0/p95=10.0/max=10.0
+  unique_unhinted=n=245/avg=27.110/p50=27.0/p90=33.0/p95=34.0/max=39.0
+```
+
+解读：
+
+- 真实 archive 中所有 rows 的 BidMap round-category hint key 都是 `103`，不能区分 over-cap 与 within-cap。
+- over-cap rows 的 unique non-temp item primary-category 覆盖接近全量 10 类，且大量 item 落在 unhinted categories。
+- 因此 `round_category_hints` 不是 settlement item-count cap，也不是可直接用于 v3 sampler/readiness 的 promotion evidence。

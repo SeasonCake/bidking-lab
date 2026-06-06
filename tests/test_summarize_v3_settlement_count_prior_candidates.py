@@ -79,6 +79,7 @@ def _tables(*, include_map: bool = True) -> SimpleNamespace:
             drop_pool_id=2601,
             items_per_session_min=1,
             items_per_session_max=2,
+            round_category_hints=[103, 0, 0, 0, 0],
             raw_row=raw_row,
         )
     return SimpleNamespace(
@@ -98,8 +99,11 @@ def _tables(*, include_map: bool = True) -> SimpleNamespace:
             )
         },
         items={
-            item_id: SimpleNamespace(item_id=item_id, value=100)
-            for item_id in item_ids
+            1001: SimpleNamespace(item_id=1001, value=100, tags=(103,)),
+            1002: SimpleNamespace(item_id=1002, value=100, tags=(103,)),
+            1003: SimpleNamespace(item_id=1003, value=100, tags=(104,)),
+            1004: SimpleNamespace(item_id=1004, value=100, tags=(105,)),
+            1005: SimpleNamespace(item_id=1005, value=100, tags=(102,)),
         },
     )
 
@@ -195,12 +199,23 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         "129501": 1,
     }
     assert result["overall"]["bidmap_rounds_total_counts"] == {"25": 2}
+    assert result["overall"]["bidmap_round_category_hint_key_counts"] == {"103": 2}
+    assert result["overall"]["bidmap_round_category_hint_count"]["max"] == 1
     assert result["overall"]["unique_runtime_id_count"]["max"] == 6
     assert result["overall"]["duplicate_runtime_id_count"]["max"] == 0
     assert result["overall"]["unique_item_id_count"]["max"] == 6
     assert result["overall"]["duplicate_item_id_count"]["max"] == 0
     assert result["overall"]["unique_non_temp_item_id_count"]["max"] == 5
     assert result["overall"]["duplicate_non_temp_item_id_count"]["max"] == 0
+    assert result["overall"]["unique_non_temp_primary_category_count"]["max"] == 4
+    assert result["overall"]["unique_hinted_non_temp_item_count"]["max"] == 2
+    assert result["overall"]["unique_unhinted_non_temp_item_count"]["max"] == 3
+    assert result["overall"]["unique_non_temp_primary_category_counts"] == {
+        "102": 1,
+        "103": 4,
+        "104": 1,
+        "105": 1,
+    }
     assert result["overall"]["unique_runtime_item_pair_count"]["max"] == 6
     assert result["overall"]["duplicate_runtime_item_pair_count"]["max"] == 0
     assert result["overall"]["missing_from_drop_universe_count"]["max"] == 1
@@ -230,6 +245,8 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert row["capture_days"] == {"20260531": 1, "20260606": 1}
     assert row["session_token_prefix6_counts"] == {"127412": 1, "129501": 1}
     assert row["bidmap_rounds_total_counts"] == {"25": 2}
+    assert row["bidmap_round_category_hint_key_counts"] == {"103": 2}
+    assert row["bidmap_round_category_hint_count"]["max"] == 1
     assert row["bidmap_items_per_session_max"]["max"] == 2
     assert row["bidmap_raw_round_cap_max"]["max"] == 4
     assert row["inventory_count"]["max"] == 6
@@ -241,6 +258,15 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert row["duplicate_item_id_count"]["max"] == 0
     assert row["unique_non_temp_item_id_count"]["max"] == 5
     assert row["duplicate_non_temp_item_id_count"]["max"] == 0
+    assert row["unique_non_temp_primary_category_count"]["max"] == 4
+    assert row["unique_hinted_non_temp_item_count"]["max"] == 2
+    assert row["unique_unhinted_non_temp_item_count"]["max"] == 3
+    assert row["unique_non_temp_primary_category_counts"] == {
+        "102": 1,
+        "103": 4,
+        "104": 1,
+        "105": 1,
+    }
     assert row["unique_runtime_item_pair_count"]["max"] == 6
     assert row["duplicate_runtime_item_pair_count"]["max"] == 0
     assert row["missing_from_drop_universe_count"]["max"] == 1
@@ -307,6 +333,14 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         min_samples=1,
     )
     assert [row["group"] for row in table_round_result["rows"]] == ["25"]
+
+    hint_result = module.summarize_settlement_count_prior_candidates(
+        [tmp_path],
+        tables=_tables(),
+        group_by="bidmap_round_category_hint_key",
+        min_samples=1,
+    )
+    assert [row["group"] for row in hint_result["rows"]] == ["103"]
 
     capture_day_result = module.summarize_settlement_count_prior_candidates(
         [tmp_path],

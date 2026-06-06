@@ -2433,3 +2433,19 @@ applied_hurts=2502
 - `drop_ref_only_overflow_after_temp` 113 rows 中按 unique non-temp item id 后仍有 51 rows 超 drop-ref。
 - `round_cap_overflow_after_temp` 59 rows 中按 unique non-temp item id 后仍有 58 rows 超 drop-ref、21 rows 超 round cap。
 - 因此 item_id 多实例化只解释部分 overflow，不能解除 v3 capacity blocker。
+
+## D-v3-117：BidMap round-category hint 不能作为 capacity blocker 解释或 promotion evidence
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_candidates.py` 必须输出 BidMap `round_category_hints` key/count，并统计 settlement item primary-category、hinted/unhinted non-temp item coverage。
+- 如果真实 archive 中 over-cap 与 within-cap groups 共享同一 hint key，且 unique non-temp item 大量落在 unhinted categories 中，不能把 `round_category_hints` 解释为 settlement item-count 上限或 per-round global category filter。
+- category/hint audit 只能排除一种 cap 字段误读；不能作为 sampler cap 修正、readiness 放行或 promotion evidence。
+- formal/value sampler 参数调优继续暂停，直到 unique item 层面的 settlement count/session-capacity、round/category 生成机制或 cap 字段语义有可复核解释。
+
+原因：
+
+- 真实 archive 441 条 settlement rows 的 `bidmap_round_category_hint_key` 全部为 `103`。
+- `round_cap_overflow_after_temp` 59 rows 的 unique non-temp item 平均覆盖 9.797 个 primary categories，`unique_unhinted_non_temp_item_count` 平均 43.780、最高 52。
+- `within_drop_ref_after_temp` 同样共享 hint key `103`，且也覆盖 9-10 个 primary categories；hint key 不是 over-cap 专属 marker。
+- 因此 `round_category_hints` 不能解释当前 unique item 层面的 after-temp over-cap。

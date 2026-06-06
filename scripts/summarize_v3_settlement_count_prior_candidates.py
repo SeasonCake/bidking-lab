@@ -185,6 +185,19 @@ def _bidmap_round_caps(bid_map: Any) -> tuple[int, ...]:
     return _int_list_from_json_blob(raw_row[index] if len(raw_row) > index else None)
 
 
+def _round_category_hints(bid_map: Any) -> tuple[int, ...]:
+    return tuple(
+        int(value)
+        for value in tuple(getattr(bid_map, "round_category_hints", ()) or ())
+        if _safe_int(value) not in (None, 0)
+    )
+
+
+def _round_category_hint_key(hints: Iterable[int]) -> str:
+    values = tuple(sorted(set(int(value) for value in hints if int(value) != 0)))
+    return ",".join(str(value) for value in values) if values else "none"
+
+
 def _capture_rounds_from_name(path: Path) -> int | None:
     match = _CAPTURE_ROUNDS_RE.search(path.name)
     return _safe_int(match.group(1)) if match else None
@@ -240,6 +253,8 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
             "bidmap_raw_drop_ref": None,
             "bidmap_raw_round_cap_min": None,
             "bidmap_raw_round_cap_max": None,
+            "bidmap_round_category_hint_key": None,
+            "bidmap_round_category_hint_count": None,
         }
     bid_map = tables.maps.get(int(map_id))
     if bid_map is None:
@@ -255,11 +270,14 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
             "bidmap_raw_drop_ref": None,
             "bidmap_raw_round_cap_min": None,
             "bidmap_raw_round_cap_max": None,
+            "bidmap_round_category_hint_key": None,
+            "bidmap_round_category_hint_count": None,
         }
     raw_row = tuple(getattr(bid_map, "raw_row", ()) or ())
     raw_column_count = len(raw_row)
     drop_ref_index = _bidmap_drop_ref_column_index(raw_column_count)
     round_caps = _bidmap_round_caps(bid_map)
+    hints = _round_category_hints(bid_map)
     return {
         "table_status": "ok",
         "map_name": getattr(bid_map, "name", None),
@@ -272,7 +290,34 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
         "bidmap_raw_drop_ref": raw_row[drop_ref_index] if len(raw_row) > drop_ref_index else None,
         "bidmap_raw_round_cap_min": min(round_caps) if round_caps else None,
         "bidmap_raw_round_cap_max": max(round_caps) if round_caps else None,
+        "bidmap_round_category_hint_key": _round_category_hint_key(hints),
+        "bidmap_round_category_hint_count": len(set(hints)),
     }
+
+
+def _primary_category_for_item_id(item_id: int | None, tables: Any) -> int | None:
+    if item_id is None:
+        return None
+    item = (getattr(tables, "items", {}) or {}).get(int(item_id))
+    if item is None:
+        return None
+    for tag in tuple(getattr(item, "tags", ()) or ()):
+        category = _safe_int(tag)
+        if category is not None and 100 <= category <= 110:
+            return category
+    return None
+
+
+def _category_counts_for_item_ids(
+    item_ids: Iterable[int | None],
+    *,
+    tables: Any,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for item_id in item_ids:
+        category = _primary_category_for_item_id(item_id, tables)
+        counts[str(category) if category is not None else "none"] += 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
 def _reachable_drop_item_ids_for_map(
@@ -358,6 +403,11 @@ def _audit_file(
     capture_day = _capture_day_from_state_or_path(state, path)
     session_token = _session_token_from_state_or_path(state, path)
     table = _table_caps_for_map(map_id, tables)
+    hint_values = {
+        int(value)
+        for value in str(table.get("bidmap_round_category_hint_key") or "").split(",")
+        if value.isdigit()
+    }
     reachable_item_ids = _reachable_drop_item_ids_for_map(
         map_id,
         tables=tables,
@@ -370,6 +420,20 @@ def _audit_file(
     )
     known_temp_zodiac_missing_count = sum(
         1 for item_id in missing_item_ids if item_id in _TEMPORARY_BLUE_ZODIAC_ITEM_IDS
+    )
+    primary_category_counts = _category_counts_for_item_ids(item_ids, tables=tables)
+    unique_non_temp_item_ids = tuple(sorted(set(non_temp_item_ids)))
+    unique_non_temp_primary_category_counts = _category_counts_for_item_ids(
+        unique_non_temp_item_ids,
+        tables=tables,
+    )
+    non_temp_primary_categories = tuple(
+        _primary_category_for_item_id(item_id, tables)
+        for item_id in non_temp_item_ids
+    )
+    unique_non_temp_primary_categories = tuple(
+        _primary_category_for_item_id(item_id, tables)
+        for item_id in unique_non_temp_item_ids
     )
     drop_ref_max = _safe_int(table.get("bidmap_items_per_session_max"))
     round_cap_max = _safe_int(table.get("bidmap_raw_round_cap_max"))
@@ -430,6 +494,38 @@ def _audit_file(
         "unique_runtime_item_pair_count": len(set(runtime_item_pairs)),
         "duplicate_runtime_item_pair_count": (
             len(runtime_item_pairs) - len(set(runtime_item_pairs))
+        ),
+        "primary_category_counts": primary_category_counts,
+        "unique_non_temp_primary_category_counts": (
+            unique_non_temp_primary_category_counts
+        ),
+        "non_temp_primary_category_count": len(
+            {category for category in non_temp_primary_categories if category is not None}
+        ),
+        "unique_non_temp_primary_category_count": len(
+            {
+                category
+                for category in unique_non_temp_primary_categories
+                if category is not None
+            }
+        ),
+        "hinted_non_temp_item_count": sum(
+            1 for category in non_temp_primary_categories if category in hint_values
+        ),
+        "unhinted_non_temp_item_count": sum(
+            1
+            for category in non_temp_primary_categories
+            if category is not None and category not in hint_values
+        ),
+        "unique_hinted_non_temp_item_count": sum(
+            1
+            for category in unique_non_temp_primary_categories
+            if category in hint_values
+        ),
+        "unique_unhinted_non_temp_item_count": sum(
+            1
+            for category in unique_non_temp_primary_categories
+            if category is not None and category not in hint_values
         ),
         "missing_from_drop_universe_count": len(missing_item_ids),
         "known_temp_zodiac_missing_from_drop_universe_count": (
@@ -621,6 +717,7 @@ def summarize_settlement_count_prior_candidates(
         "session_token_prefix6",
         "session_token_prefix8",
         "bidmap_rounds_total",
+        "bidmap_round_category_hint_key",
     }:
         raise ValueError(f"unsupported group_by: {group_by}")
     tables = tables or load_monitor_tables()
@@ -672,6 +769,13 @@ def summarize_settlement_count_prior_candidates(
                     (row.get("bidmap_rounds_total") for row in seq),
                     top=top,
                 ),
+                "bidmap_round_category_hint_key_counts": _counter_dict(
+                    (row.get("bidmap_round_category_hint_key") for row in seq),
+                    top=top,
+                ),
+                "bidmap_round_category_hint_count": _numeric_summary(
+                    row.get("bidmap_round_category_hint_count") for row in seq
+                ),
                 "residual_modes": _counter_dict((row.get("residual_mode") for row in seq), top=top),
                 "table_statuses": _counter_dict((row.get("table_status") for row in seq), top=top),
                 "bidmap_items_per_session_max": _numeric_summary(
@@ -710,6 +814,35 @@ def summarize_settlement_count_prior_candidates(
                 ),
                 "duplicate_runtime_item_pair_count": _numeric_summary(
                     row.get("duplicate_runtime_item_pair_count") for row in seq
+                ),
+                "primary_category_counts": _merge_count_mappings(
+                    (row.get("primary_category_counts", {}) for row in seq),
+                    top=top,
+                ),
+                "unique_non_temp_primary_category_counts": _merge_count_mappings(
+                    (
+                        row.get("unique_non_temp_primary_category_counts", {})
+                        for row in seq
+                    ),
+                    top=top,
+                ),
+                "non_temp_primary_category_count": _numeric_summary(
+                    row.get("non_temp_primary_category_count") for row in seq
+                ),
+                "unique_non_temp_primary_category_count": _numeric_summary(
+                    row.get("unique_non_temp_primary_category_count") for row in seq
+                ),
+                "hinted_non_temp_item_count": _numeric_summary(
+                    row.get("hinted_non_temp_item_count") for row in seq
+                ),
+                "unhinted_non_temp_item_count": _numeric_summary(
+                    row.get("unhinted_non_temp_item_count") for row in seq
+                ),
+                "unique_hinted_non_temp_item_count": _numeric_summary(
+                    row.get("unique_hinted_non_temp_item_count") for row in seq
+                ),
+                "unique_unhinted_non_temp_item_count": _numeric_summary(
+                    row.get("unique_unhinted_non_temp_item_count") for row in seq
                 ),
                 "missing_from_drop_universe_count": _numeric_summary(
                     row.get("missing_from_drop_universe_count") for row in seq
@@ -949,6 +1082,35 @@ def summarize_settlement_count_prior_candidates(
             "duplicate_runtime_item_pair_count": _numeric_summary(
                 row.get("duplicate_runtime_item_pair_count") for row in ready
             ),
+            "primary_category_counts": _merge_count_mappings(
+                (row.get("primary_category_counts", {}) for row in ready),
+                top=top,
+            ),
+            "unique_non_temp_primary_category_counts": _merge_count_mappings(
+                (
+                    row.get("unique_non_temp_primary_category_counts", {})
+                    for row in ready
+                ),
+                top=top,
+            ),
+            "non_temp_primary_category_count": _numeric_summary(
+                row.get("non_temp_primary_category_count") for row in ready
+            ),
+            "unique_non_temp_primary_category_count": _numeric_summary(
+                row.get("unique_non_temp_primary_category_count") for row in ready
+            ),
+            "hinted_non_temp_item_count": _numeric_summary(
+                row.get("hinted_non_temp_item_count") for row in ready
+            ),
+            "unhinted_non_temp_item_count": _numeric_summary(
+                row.get("unhinted_non_temp_item_count") for row in ready
+            ),
+            "unique_hinted_non_temp_item_count": _numeric_summary(
+                row.get("unique_hinted_non_temp_item_count") for row in ready
+            ),
+            "unique_unhinted_non_temp_item_count": _numeric_summary(
+                row.get("unique_unhinted_non_temp_item_count") for row in ready
+            ),
             "missing_from_drop_universe_count": _numeric_summary(
                 row.get("missing_from_drop_universe_count") for row in ready
             ),
@@ -1102,6 +1264,13 @@ def summarize_settlement_count_prior_candidates(
                 (row.get("bidmap_rounds_total") for row in ready),
                 top=top,
             ),
+            "bidmap_round_category_hint_key_counts": _counter_dict(
+                (row.get("bidmap_round_category_hint_key") for row in ready),
+                top=top,
+            ),
+            "bidmap_round_category_hint_count": _numeric_summary(
+                row.get("bidmap_round_category_hint_count") for row in ready
+            ),
             "above_drop_ref_rows": _positive_rows(ready, "drop_ref_excess_item_count"),
             "above_drop_ref_after_temp_zodiac_rows": _positive_rows(
                 ready,
@@ -1183,6 +1352,10 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"dup_item={_format_summary(overall['duplicate_item_id_count'])}",
                 f"dup_runtime={_format_summary(overall['duplicate_runtime_id_count'])}",
                 f"dup_pair={_format_summary(overall['duplicate_runtime_item_pair_count'])}",
+                f"unique_cats={_format_summary(overall['unique_non_temp_primary_category_count'])}",
+                f"unique_hinted={_format_summary(overall['unique_hinted_non_temp_item_count'])}",
+                f"unique_unhinted={_format_summary(overall['unique_unhinted_non_temp_item_count'])}",
+                f"unique_cat_counts={_format_counts(overall['unique_non_temp_primary_category_counts'])}",
                 f"missing_drop={_format_summary(overall['missing_from_drop_universe_count'])}",
                 "non_zodiac_missing="
                 + _format_summary(overall["non_zodiac_missing_from_drop_universe_count"]),
@@ -1213,6 +1386,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"round_indices={_format_counts(overall['round_indices'])}",
                 f"capture_rounds={_format_counts(overall['capture_rounds'])}",
                 f"bidmap_rounds_total={_format_counts(overall['bidmap_rounds_total_counts'])}",
+                f"hint_keys={_format_counts(overall['bidmap_round_category_hint_key_counts'])}",
                 f"above_drop={overall['above_drop_ref_rows']}",
                 f"above_drop_after_temp={overall['above_drop_ref_after_temp_zodiac_rows']}",
                 f"unique_above_drop_after_temp={overall['unique_above_drop_ref_after_temp_zodiac_rows']}",
@@ -1243,6 +1417,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"capture_days={_format_counts(row['capture_days'])}",
                     f"session_p6={_format_counts(row['session_token_prefix6_counts'])}",
                     f"bidmap_rounds_total={_format_counts(row['bidmap_rounds_total_counts'])}",
+                    f"hint_keys={_format_counts(row['bidmap_round_category_hint_key_counts'])}",
                     f"residual_modes={_format_counts(row['residual_modes'])}",
                     f"table={_format_counts(row['table_statuses'])}",
                     f"bidmap_max={_format_summary(row['bidmap_items_per_session_max'])}",
@@ -1254,6 +1429,10 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"dup_item={_format_summary(row['duplicate_item_id_count'])}",
                     f"dup_runtime={_format_summary(row['duplicate_runtime_id_count'])}",
                     f"dup_pair={_format_summary(row['duplicate_runtime_item_pair_count'])}",
+                    f"unique_cats={_format_summary(row['unique_non_temp_primary_category_count'])}",
+                    f"unique_hinted={_format_summary(row['unique_hinted_non_temp_item_count'])}",
+                    f"unique_unhinted={_format_summary(row['unique_unhinted_non_temp_item_count'])}",
+                    f"unique_cat_counts={_format_counts(row['unique_non_temp_primary_category_counts'])}",
                     f"missing_drop={_format_summary(row['missing_from_drop_universe_count'])}",
                     "non_zodiac_missing="
                     + _format_summary(row["non_zodiac_missing_from_drop_universe_count"]),
@@ -1323,6 +1502,7 @@ def main(argv: list[str] | None = None) -> int:
             "session_token_prefix6",
             "session_token_prefix8",
             "bidmap_rounds_total",
+            "bidmap_round_category_hint_key",
         ),
         default="map_id",
     )
