@@ -858,6 +858,7 @@ def summarize_readiness(
             "hurt_group_counts": {},
             "min_applied_rows": 0,
             "min_applied_rows_required": None,
+            "selected_group_support_summary": [],
             "selected_group_support_gap": [],
         }
     else:
@@ -893,6 +894,9 @@ def summarize_readiness(
             ),
             "min_applied_rows_required": scp_guarded_bridge_stability.get(
                 "min_applied_rows_required"
+            ),
+            "selected_group_support_summary": scp_guarded_bridge_stability.get(
+                "selected_group_support_summary"
             ),
             "selected_group_support_gap": scp_guarded_bridge_stability.get(
                 "selected_group_support_gap"

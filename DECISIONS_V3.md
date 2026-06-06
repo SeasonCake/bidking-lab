@@ -2160,3 +2160,19 @@ applied_hurts=2502
 - 当前 64-trial matrix 显示 seed 0 单独可 watch，但 seed 1 选择了 `2501,2506`，且 `2501` 出现 applied hurt。
 - 因此 seed-0 的 `2506` bounded bridge 不能作为 promotion 支持；它只能作为后续继续收样本或重设 guard 的候选线索。
 - 将 stability 显式接入 readiness 可以防止“单 seed watch”绕过 archive/live/holdout 稳定性要求。
+
+## D-v3-100：guarded bridge stability cache/support 必须可审计
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_scp_guarded_bridge_stability.py` 的 cache key 必须包含 schema version；当输出结构新增 critical support 字段时，不得复用旧 cache。
+- stability matrix 必须输出 `selected_group_support_summary`，至少包含 selected group、run count、selected folds、min/max applied rows、hurt run count、missing support runs。
+- 如果 run 选择了多个 group 但缺少 group-level support 明细，stability 不能视为完整证据；必须标记 `selected_group_support_missing` 并保持 blocked。
+- `selected_group_support_gap` 只用于 support 不足或 support 缺失的 group，不能把 gap=0 的 group 混作 blocker。
+- 这些字段仍是 readiness/shadow 审计证据，不改变 formal/value sampler、settlement count prior、v2 formal/live/UI 或正式出价。
+
+原因：
+
+- 当前 seed drift 的关键解释不是只有 selected signature，而是 `2501` 的 hurt support 与 `2506` 的跨 seed support gap。
+- 旧 cache 缺少 `selected_group_support` 时会让 summary 漏掉多组选入的 support 细节，造成 blocker 不可审计。
+- promotion gate 需要证明稳定性证据完整；缺少 group-level support 本身就是不能 promotion 的证据缺口。

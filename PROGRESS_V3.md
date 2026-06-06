@@ -5546,3 +5546,54 @@ seed=1:
 - `2506` guarded bridge 的 seed-0 watch 不能作为 promotion 支持；seed-1 引入 `2501` 且 hurt，multi-seed matrix 当前是 blocked。
 - readiness 现在能显式表达这个 blocker：无 matrix 为 `not_evaluated` blocked，传入真实 matrix 为 `blocked_applied_hurt` blocked。
 - 本轮不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价；只是把 settlement bridge stability gate 前移到 readiness 证据链。
+
+## 2026-06-06 checkpoint：guarded bridge stability support 诊断与 cache schema
+
+本轮继续收口 guarded settlement bridge stability blocker。上一轮 readiness 已能接入 multi-seed matrix，但 stability summary 仍可能复用旧 cache，且当旧 run 缺少 `selected_group_support` 时，summary 会漏掉 seed drift 中的多组选入 support 明细。现在把 cache schema 与 support 明细固化到 stability 输出。
+
+改动：
+
+- `scripts/summarize_v3_scp_guarded_bridge_stability.py`：
+  - 新增 `CACHE_SCHEMA_VERSION=2` 并纳入 cache key，避免旧结构缓存被误用；
+  - `run_result` 写入 `cache_schema_version`；
+  - 新增 `selected_group_support_summary`，聚合每个 selected group 的 run count、fold count、min/max applied rows、hurt run count、missing support runs；
+  - `selected_group_support_gap` 只保留 support 不足或 support 缺失的 group；
+  - 旧 cache / run 缺少多组选入 support 时标记 `selected_group_support_missing`，并返回 `blocked_missing_support`；
+  - summary 文本新增 `selected_support=...`。
+- `scripts/summarize_v3_promotion_readiness.py`：
+  - `settlement_count_guarded_bridge_stability` gate 透传 `selected_group_support_summary`。
+- tests 更新：
+  - `tests/test_summarize_v3_scp_guarded_bridge_stability.py`
+  - `tests/test_summarize_v3_promotion_readiness.py`
+- `DECISIONS_V3.md` 新增 D-v3-100；`OBSERVATIONS_V3.md` 新增 O-v3-104。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_scp_guarded_bridge_stability.py scripts\summarize_v3_promotion_readiness.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_guarded_bridge_stability.py tests\test_summarize_v3_scp_guarded_bridge_holdout.py tests\test_summarize_v3_promotion_readiness.py -q
+python scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format summary
+python scripts\summarize_v3_promotion_readiness.py data\samples\fatbeans\fatbeans_valid_aisha_2502_4rounds_2502_1295018709694048_0149.json --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_schema2.json --format summary
+```
+
+真实 64-trial stability support：
+
+```text
+overall_status=blocked_applied_hurt
+reasons=applied_hurts_present,non_watch_run,selected_group_drift
+stable_groups=2506
+union_groups=2501,2506
+
+selected_support:
+  2501: runs=1 folds=1 min_applied=53 max_applied=53 hurts=1 missing_support=0
+  2506: runs=2 folds=5 min_applied=9 max_applied=20 hurts=0 missing_support=0
+
+support_gap:
+  2506 min_applied=9 required=20 gap=11
+```
+
+结论：
+
+- seed drift 现在可直接归因：`2501` 是 hurt group，且不是 support 缺失误报；`2506` 虽是 stable intersection，但跨 seed applied support 不足。
+- 当前 guarded bridge 仍不能进入 promotion 支持；下一步若继续这条线，应调整 guard/selection，避免 `2501` 进入，并提升 `2506` support 稳定性。
+- 本轮仍不改变 sampler、不改变 readiness 放行条件、不改变 v2 formal/live/UI 或正式出价。

@@ -4162,3 +4162,78 @@ gate=settlement_count_guarded_bridge_stability status=blocked reason="guarded se
 - `2506` 仍是稳定交集，但 seed 1 的 union group 引入 `2501` 且发生 hurt，说明 guard selection 尚不稳定。
 - 当前 settlement count-prior bridge 只能保持 shadow/readiness blocker；不能进入 formal/value promotion 支持。
 - readiness 已能区分“未评估 stability”与“已评估但 multi-seed failed”，减少后续误读。
+
+## O-v3-104：guarded bridge stability 的 hurt 与 support gap 可直接定位到 2501/2506
+
+2026-06-06 给 stability audit 增加 cache schema 与 selected support summary 后，重算真实 64-trial seed0/seed1 matrix：
+
+```powershell
+python scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format summary
+```
+
+结果：
+
+```text
+overall_status=blocked_applied_hurt
+reasons=applied_hurts_present,non_watch_run,selected_group_drift
+runs=2
+watch_runs=1
+required_groups=2506
+stable_groups=2506
+union_groups=2501,2506
+min_applied=20
+min_required=20
+signatures=2501:1,2506:2=1;2506:3=1
+```
+
+逐 seed：
+
+```text
+seed=0:
+  status=watch
+  selected=2506
+  selected_signature=2506:3
+  cache_hit=False
+  applied_rows=20
+  delta_mae=-6000.0
+  bridge_over=0.25
+  applied_hurts=-
+
+seed=1:
+  status=blocked_holdout_hurt
+  selected=2501,2506
+  selected_signature=2501:1,2506:2
+  cache_hit=False
+  applied_rows=62
+  delta_mae=378.95
+  bridge_over=0.580645
+  applied_hurts=2501
+```
+
+selected support：
+
+```text
+2501:
+  runs=1
+  folds=1
+  min_applied=53
+  max_applied=53
+  hurts=1
+  missing_support=0
+
+2506:
+  runs=2
+  folds=5
+  min_applied=9
+  max_applied=20
+  hurts=0
+  missing_support=0
+  support_gap=11
+```
+
+解读：
+
+- `2501` 是真实 hurt group，不是 stale cache 或缺 support 造成的假象。
+- `2506` 是 stable intersection，但跨 seed 最小 applied support 只有 9，低于当前 required 20。
+- 当前 guarded bridge blocker 分成两条：排除/解释 `2501` hurt selection，以及提升 `2506` 的多 seed applied support。
+- 该结果继续支持 shadow-only / readiness blocked，不支持 formal/value promotion。

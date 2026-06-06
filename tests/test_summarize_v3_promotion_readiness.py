@@ -244,6 +244,14 @@ def test_readiness_attaches_guarded_bridge_stability_matrix() -> None:
             "hurt_group_counts": {"2501": 1},
             "min_applied_rows": 20,
             "min_applied_rows_required": 20,
+            "selected_group_support_summary": [
+                {
+                    "group": "2501",
+                    "run_count": 1,
+                    "min_applied_rows": 53,
+                    "hurt_run_count": 1,
+                }
+            ],
             "selected_group_support_gap": [],
         },
     )
@@ -254,6 +262,7 @@ def test_readiness_attaches_guarded_bridge_stability_matrix() -> None:
     assert stability["overall_status"] == "blocked_applied_hurt"
     assert stability["status_reasons"] == ["applied_hurts_present"]
     assert stability["hurt_group_counts"] == {"2501": 1}
+    assert stability["selected_group_support_summary"][0]["group"] == "2501"
     assert result["settlement_count_guarded_bridge_stability"]["status"] == (
         "blocked_applied_hurt"
     )

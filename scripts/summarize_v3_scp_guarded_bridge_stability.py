@@ -45,6 +45,7 @@ DEFAULT_POSTERIOR_TRIALS = (64,)
 DEFAULT_POSTERIOR_SEEDS = (0, 1)
 DEFAULT_REQUIRED_GROUPS = ("2506",)
 DEFAULT_CACHE_DIR = ROOT / ".tmp" / "codex" / "v3_scp_guarded_bridge_stability"
+CACHE_SCHEMA_VERSION = 2
 
 
 def _as_int(value: Any, default: int = 0) -> int:
@@ -131,6 +132,40 @@ def _union_groups(run_rows: Iterable[Mapping[str, Any]]) -> tuple[str, ...]:
     return tuple(sorted(groups))
 
 
+def _selected_support_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
+    support_rows = list(row.get("selected_group_support") or ())
+    if support_rows:
+        return [
+            {**dict(support), "support_source": "reported"}
+            for support in support_rows
+        ]
+    selected_counts = row.get("selected_group_fold_counts") or {}
+    selected_groups = tuple(_group_set(selected_counts))
+    if not selected_groups:
+        return []
+    single_group = len(selected_groups) == 1
+    return [
+        {
+            "group": group,
+            "selected_folds": _as_int(selected_counts.get(group)),
+            "sessions": None,
+            "metric_rows": None,
+            "candidate_rows": row.get("candidate_rows") if single_group else None,
+            "applied_rows": row.get("applied_rows") if single_group else None,
+            "sample_limited_rows": None,
+            "support_source": "fallback_single_group" if single_group else "missing",
+        }
+        for group in selected_groups
+    ]
+
+
+def _has_missing_selected_support(row: Mapping[str, Any]) -> bool:
+    return any(
+        str(support.get("support_source") or "") == "missing"
+        for support in _selected_support_rows(row)
+    )
+
+
 def _status_for_runs(
     run_rows: Sequence[Mapping[str, Any]],
     *,
@@ -144,8 +179,12 @@ def _status_for_runs(
     reasons: list[str] = []
     if any(row.get("applied_hurts") for row in run_rows):
         reasons.append("applied_hurts_present")
-    if require_all_watch and any(row.get("overall_status") != "watch" for row in run_rows):
+    if require_all_watch and any(
+        row.get("overall_status") != "watch" for row in run_rows
+    ):
         reasons.append("non_watch_run")
+    if any(_has_missing_selected_support(row) for row in run_rows):
+        reasons.append("selected_group_support_missing")
 
     required_set = set(required_selected_groups)
     if required_set:
@@ -171,6 +210,8 @@ def _status_for_runs(
         return "blocked_run_status", reasons
     if "selected_group_drift" in reasons:
         return "blocked_selected_group_drift", reasons
+    if "selected_group_support_missing" in reasons:
+        return "blocked_missing_support", reasons
     if "no_applied_rows" in reasons:
         return "sample_limited", reasons
     if "low_applied_rows" in reasons:
@@ -178,47 +219,45 @@ def _status_for_runs(
     return "watch", ["all_runs_stable"]
 
 
-def _support_gap_summary(
+def _selected_group_support_summary(
     run_rows: Sequence[Mapping[str, Any]],
     *,
     min_applied_rows: int,
 ) -> list[dict[str, Any]]:
     by_group: dict[str, list[dict[str, Any]]] = {}
     for row in run_rows:
-        support_rows = list(row.get("selected_group_support") or ())
-        if not support_rows:
-            selected_groups = tuple(row.get("selected_groups") or ())
-            if len(selected_groups) == 1:
-                selected_counts = row.get("selected_group_fold_counts") or {}
-                group = str(selected_groups[0])
-                support_rows = [
-                    {
-                        "group": group,
-                        "selected_folds": _as_int(selected_counts.get(group)),
-                        "sessions": None,
-                        "metric_rows": None,
-                        "candidate_rows": row.get("candidate_rows"),
-                        "applied_rows": row.get("applied_rows"),
-                    }
-                ]
+        support_rows = _selected_support_rows(row)
+        hurt_groups = set(str(group) for group in row.get("applied_hurts") or ())
         for support in support_rows:
             group = str(support.get("group") or "unknown")
             by_group.setdefault(group, []).append(
                 {
                     "posterior_trials": row.get("posterior_trials"),
                     "posterior_seed": row.get("posterior_seed"),
+                    "run_status": row.get("overall_status"),
+                    "selected_signature": row.get("selected_signature"),
                     "selected_folds": _as_int(support.get("selected_folds")),
                     "sessions": support.get("sessions"),
                     "metric_rows": support.get("metric_rows"),
                     "candidate_rows": support.get("candidate_rows"),
-                    "applied_rows": _as_int(support.get("applied_rows")),
+                    "applied_rows": support.get("applied_rows"),
+                    "support_source": support.get("support_source"),
+                    "applied_hurt": group in hurt_groups,
                 }
             )
     out: list[dict[str, Any]] = []
     required = int(min_applied_rows)
     for group, runs in sorted(by_group.items()):
-        applied_values = [_as_int(row.get("applied_rows")) for row in runs]
-        candidate_values = [_as_int(row.get("candidate_rows")) for row in runs]
+        applied_values = [
+            _as_int(row.get("applied_rows"))
+            for row in runs
+            if row.get("applied_rows") is not None
+        ]
+        candidate_values = [
+            _as_int(row.get("candidate_rows"))
+            for row in runs
+            if row.get("candidate_rows") is not None
+        ]
         metric_values = [
             _as_int(row.get("metric_rows"))
             for row in runs
@@ -229,12 +268,14 @@ def _support_gap_summary(
             for row in runs
             if row.get("sessions") is not None
         ]
+        selected_fold_values = [_as_int(row.get("selected_folds")) for row in runs]
         min_applied = min(applied_values) if applied_values else 0
         out.append(
             {
                 "group": group,
                 "run_count": len(runs),
                 "required_applied_rows": required,
+                "selected_folds": sum(selected_fold_values),
                 "min_applied_rows": min_applied,
                 "max_applied_rows": max(applied_values) if applied_values else 0,
                 "min_applied_gap": max(0, required - min_applied),
@@ -243,10 +284,33 @@ def _support_gap_summary(
                 ),
                 "min_metric_rows": min(metric_values) if metric_values else None,
                 "min_sessions": min(session_values) if session_values else None,
+                "hurt_run_count": sum(1 for row in runs if row.get("applied_hurt")),
+                "missing_support_runs": sum(
+                    1 for row in runs if row.get("support_source") == "missing"
+                ),
+                "run_status_counts": dict(
+                    sorted(
+                        Counter(
+                            str(row.get("run_status") or "unknown")
+                            for row in runs
+                        ).items()
+                    )
+                ),
                 "runs": runs,
             }
         )
     return out
+
+
+def _support_gap_summary(
+    support_summary: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        dict(row)
+        for row in support_summary
+        if int(row.get("min_applied_gap") or 0) > 0
+        or int(row.get("missing_support_runs") or 0) > 0
+    ]
 
 
 def summarize_stability(
@@ -274,6 +338,10 @@ def summarize_stability(
         for row in run_rows
         for group in (row.get("applied_hurts") or ())
     )
+    selected_support = _selected_group_support_summary(
+        run_rows,
+        min_applied_rows=min_applied_rows,
+    )
     return {
         "overall_status": status,
         "status_reasons": reasons,
@@ -289,10 +357,8 @@ def summarize_stability(
         "min_applied_rows_required": int(min_applied_rows),
         "min_applied_rows": min(applied_values) if applied_values else 0,
         "max_applied_rows": max(applied_values) if applied_values else 0,
-        "selected_group_support_gap": _support_gap_summary(
-            run_rows,
-            min_applied_rows=min_applied_rows,
-        ),
+        "selected_group_support_summary": selected_support,
+        "selected_group_support_gap": _support_gap_summary(selected_support),
         "require_all_watch": bool(require_all_watch),
     }
 
@@ -316,6 +382,7 @@ def _cache_key(
     top: int,
 ) -> str:
     payload = {
+        "cache_schema_version": CACHE_SCHEMA_VERSION,
         "paths": [str(path) for path in paths],
         "posterior_trials": int(posterior_trials),
         "posterior_seed": int(posterior_seed),
@@ -439,6 +506,7 @@ def summarize_trial_seed_matrix(
                 for error in errors
             )
             run_result = {
+                "cache_schema_version": CACHE_SCHEMA_VERSION,
                 "posterior_trials": int(trials),
                 "posterior_seed": int(seed),
                 "cache_hit": False,
@@ -525,6 +593,21 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"bridge_over={row['bridge_formal_p50_over_rate']}",
                     f"applied_hurts={_format_groups(row['applied_hurts'])}",
                 )
+            )
+        )
+    if result.get("selected_group_support_summary"):
+        print(
+            "selected_support="
+            + ";".join(
+                (
+                    f"{row['group']}:runs={row['run_count']}"
+                    f"/folds={row['selected_folds']}"
+                    f"/min_applied={row['min_applied_rows']}"
+                    f"/max_applied={row['max_applied_rows']}"
+                    f"/hurts={row['hurt_run_count']}"
+                    f"/missing_support={row['missing_support_runs']}"
+                )
+                for row in result["selected_group_support_summary"]
             )
         )
     if result.get("selected_group_support_gap"):
