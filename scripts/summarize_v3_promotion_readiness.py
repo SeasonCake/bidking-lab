@@ -355,6 +355,12 @@ def _top_prior_stress_groups(
                 "max_value_ratio": row.get("max_value_ratio"),
                 "capacity_flag_counts": row.get("capacity_flag_counts"),
                 "capacity_count_summary": row.get("capacity_count_summary"),
+                "consistency_bucket_counts": row.get(
+                    "consistency_bucket_counts"
+                ),
+                "consistency_class_counts": row.get(
+                    "consistency_class_counts"
+                ),
                 "reason_counts": row.get("reason_counts"),
                 "source_counts": row.get("source_counts"),
             }
@@ -610,6 +616,12 @@ def summarize_readiness(
             capacity_flag_hits=prior_stress_capacity_hits,
             capacity_flag_counts=prior_stress_capacity_flags,
             capacity_count_summary=prior_stress_overall.get("capacity_count_summary"),
+            consistency_bucket_counts=prior_stress_overall.get(
+                "consistency_bucket_counts"
+            ),
+            consistency_class_counts=prior_stress_overall.get(
+                "consistency_class_counts"
+            ),
             source_counts=prior_stress_overall.get("source_counts"),
             ratio_summary=prior_stress_overall.get("ratio_summary"),
             top_map_groups=_top_prior_stress_groups(
@@ -1246,6 +1258,12 @@ def summarize_readiness(
             "capacity_flag_counts": prior_stress_capacity_flags,
             "capacity_count_summary": prior_stress_overall.get(
                 "capacity_count_summary"
+            ),
+            "consistency_bucket_counts": prior_stress_overall.get(
+                "consistency_bucket_counts"
+            ),
+            "consistency_class_counts": prior_stress_overall.get(
+                "consistency_class_counts"
             ),
             "source_counts": prior_stress_overall.get("source_counts"),
             "ratio_summary": prior_stress_overall.get("ratio_summary"),

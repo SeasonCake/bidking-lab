@@ -302,6 +302,10 @@ def test_readiness_surfaces_prior_stress_capacity_groups() -> None:
     assert drift["capacity_count_summary"]["case_counts"] == {
         "direct_prior_max_conflict": 2
     }
+    assert drift["consistency_bucket_counts"] == {
+        "hard_capacity_conflict": 2
+    }
+    assert drift["consistency_class_counts"]["capacity_direct_prior_max_conflict"] == 2
     assert drift["top_map_groups"][0]["value"] == "2501"
     assert drift["top_map_groups"][0]["capacity_flag_hits"] == 4
     assert (
@@ -322,6 +326,9 @@ def test_readiness_surfaces_prior_stress_capacity_groups() -> None:
         ]["avg"]
         == 2
     )
+    assert result["prior_stress_detail_summary"]["consistency_bucket_counts"] == {
+        "hard_capacity_conflict": 2
+    }
     assert (
         "audit prior-stressed capacity/table drift by map/profile before promotion"
         in result["next_actions"]

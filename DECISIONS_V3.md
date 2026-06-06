@@ -1959,3 +1959,19 @@ applied_hurts=2502
 - 2506 blocker 的本质是 selected outer folds 的 support depth，而不是 default archive 完全缺 2506。
 - 之前 fold 分布是手工记录，容易在多窗口/多 agent 推进时丢失；现在脚本能直接输出 `support_gap=2506:min_applied=9/required=20/gap=11`。
 - 该改动把“采集 10-15 个真实 complete 2506 sessions 后复跑 stability matrix”的下一步变成可验证闭环。
+
+## D-v3-087：prior-stress consistency bucket 是审计分流，不是 sampler 许可
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_prior_robustness_audit.py` 输出 `consistency_classes` 与互斥主类 `consistency_bucket`，用于分流 prior-stressed cells/capacity/evidence blocker。
+- 当前 bucket 包含 `hard_capacity_conflict`、`lower_bound_under_truth`、`evidence_floor_only`、`target_over_truth_risk`、`no_capacity_prior_conflict`。
+- `summarize_v3_promotion_readiness.py` 只展示 `consistency_bucket_counts` / `consistency_class_counts`，不改变 `prior_stress_capacity_table_drift` gate 判定。
+- `hard_capacity_conflict`、`lower_bound_under_truth`、`evidence_floor_only` 都不能由 formal/value sampler 吸收；它们必须继续走 table/capacity/evidence 或 count->cells/value bridge 审计。
+- formal/value sampler 仍只允许 shadow-only value-floor candidate；`v3_fv_active=False` / `v3_fv_affects_bid=False` 必须保持。
+
+原因：
+
+- 当前 `prior_stressed` 94 行并非同一种问题：有 target/truth 同时超过 prior max 的硬容量冲突，也有 truth 超 prior 但 target 只是低界，还有纯 floor evidence 不足。
+- 64-trial readiness 复核显示 bucket 为 `hard_capacity_conflict=29`、`lower_bound_under_truth=39`、`evidence_floor_only=26`。
+- 这些分类让后续 sampler 设计可以避开 capacity/cells drift，防止用 value floor 局部改善绕过 promotion blocker。

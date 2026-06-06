@@ -203,6 +203,11 @@ def test_prior_robustness_audit_groups_stress_and_activity() -> None:
     assert first["item_count_capacity"]["cases"] == ["direct_prior_max_conflict"]
     assert "target_count_above_prior_max" in first["item_count_capacity"]["flags"]
     assert "truth_count_above_prior_max" in first["item_count_capacity"]["flags"]
+    assert "capacity_direct_prior_max_conflict" in first["consistency_classes"]
+    assert "total_cells_floor_below_truth" in first["consistency_classes"]
+    assert "q6_cells_floor_matches_truth" in first["consistency_classes"]
+    assert "q6_value_floor_matches_truth" in first["consistency_classes"]
+    assert first["consistency_bucket"] == "hard_capacity_conflict"
     assert "posterior_total_cells_under_truth" in first["flags"]
     assert "posterior_q6_cells_under_truth" in first["flags"]
     assert "posterior_q6_cells_below_target" in first["flags"]
@@ -256,6 +261,15 @@ def test_prior_robustness_audit_groups_stress_and_activity() -> None:
         "matches_truth": 2,
         "above_truth": 0,
     }
+    assert overall["consistency_class_counts"] == {
+        "capacity_direct_prior_max_conflict": 2,
+        "q6_value_floor_matches_truth": 2,
+        "total_cells_floor_below_truth": 2,
+        "total_value_floor_above_truth": 2,
+        "q6_cells_floor_above_truth": 1,
+        "q6_cells_floor_matches_truth": 1,
+    }
+    assert overall["consistency_bucket_counts"] == {"hard_capacity_conflict": 2}
     assert overall["detail_flag_counts"]["posterior_total_cells_under_truth"] == 2
     assert overall["detail_flag_counts"]["posterior_q6_cells_under_truth"] == 2
     assert overall["target_truth_match_counts"]["q6_cells"] == 1
@@ -288,6 +302,12 @@ def test_prior_robustness_audit_groups_stress_and_activity() -> None:
     by_reason = {row["reason"]: row for row in detail_summary["by_reason"]}
     assert by_reason["q6_cells_above_prior"]["rows"] == 2
     assert by_reason["q6_count_above_prior"]["ratio_summary"]["q6_cells"]["n"] == 2
+    assert by_reason["q6_cells_above_prior"]["consistency_class_counts"][
+        "capacity_direct_prior_max_conflict"
+    ] == 2
+    assert by_reason["q6_cells_above_prior"]["consistency_bucket_counts"] == {
+        "hard_capacity_conflict": 2
+    }
     by_group = {
         (row["field"], row["value"]): row for row in detail_summary["by_group"]
     }
@@ -314,3 +334,62 @@ def test_prior_robustness_audit_groups_stress_and_activity() -> None:
         reason="activity_map_id_candidate",
     )
     assert activity_details == []
+
+
+def test_prior_stress_consistency_bucket_splits_main_risk_modes() -> None:
+    module = _load_module()
+
+    def row(
+        cases: list[str],
+        *,
+        total_cells: dict[str, object] | None = None,
+        q6_cells: dict[str, object] | None = None,
+        total_value: dict[str, object] | None = None,
+        q6_value: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        matched = {"source": "exact", "target_truth_delta": 0}
+        value_matched = {"source": "floor", "target_truth_delta": 0}
+        return {
+            "item_count_capacity": {"cases": cases},
+            "total_cells": total_cells or matched,
+            "q6_cells": q6_cells or matched,
+            "total_value": total_value or value_matched,
+            "q6_value": q6_value or value_matched,
+        }
+
+    assert (
+        module._consistency_bucket(
+            row(["direct_prior_max_conflict"])
+        )
+        == "hard_capacity_conflict"
+    )
+    assert (
+        module._consistency_bucket(
+            row(["target_lower_bound_truth_above_prior"])
+        )
+        == "lower_bound_under_truth"
+    )
+    assert (
+        module._consistency_bucket(
+            row(
+                ["no_capacity_prior_max_case"],
+                total_cells={"source": "floor", "target_truth_delta": -4},
+            )
+        )
+        == "evidence_floor_only"
+    )
+    assert (
+        module._consistency_bucket(
+            row(
+                ["no_capacity_prior_max_case"],
+                q6_cells={"source": "floor", "target_truth_delta": 2},
+            )
+        )
+        == "target_over_truth_risk"
+    )
+    assert (
+        module._consistency_bucket(
+            row(["no_capacity_prior_max_case"])
+        )
+        == "no_capacity_prior_conflict"
+    )

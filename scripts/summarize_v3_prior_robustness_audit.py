@@ -7,7 +7,7 @@ import json
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", newline="")
@@ -338,6 +338,116 @@ def _stress_detail_flags(row: dict[str, Any]) -> tuple[str, ...]:
     return tuple(flags)
 
 
+def _negative(value: Any) -> bool:
+    parsed = _float_or_none(value)
+    return parsed is not None and parsed < 0.0
+
+
+def _positive(value: Any) -> bool:
+    parsed = _float_or_none(value)
+    return parsed is not None and parsed > 0.0
+
+
+def _zero(value: Any) -> bool:
+    parsed = _float_or_none(value)
+    return parsed is not None and parsed == 0.0
+
+
+def _target_truth_class(
+    detail: Mapping[str, Any],
+    *,
+    component: str,
+) -> str:
+    source = str(detail.get("source") or "none")
+    delta = detail.get("target_truth_delta")
+    if source == "none":
+        return f"{component}_target_missing"
+    source_kind = "floor" if source.startswith("floor") else source
+    if _zero(delta):
+        return f"{component}_{source_kind}_matches_truth"
+    if _negative(delta):
+        return f"{component}_{source_kind}_below_truth"
+    if _positive(delta):
+        return f"{component}_{source_kind}_above_truth"
+    return f"{component}_{source_kind}_truth_unknown"
+
+
+def _capacity_consistency_classes(capacity: Mapping[str, Any]) -> tuple[str, ...]:
+    cases = {str(case) for case in capacity.get("cases", ())}
+    classes: list[str] = []
+    if "direct_prior_max_conflict" in cases:
+        classes.append("capacity_direct_prior_max_conflict")
+    if any(
+        case in cases
+        for case in (
+            "target_lower_bound_truth_above_prior",
+            "truth_above_prior_without_count_target",
+            "truth_above_prior_without_target_prior_hit",
+        )
+    ):
+        classes.append("capacity_truth_above_prior_not_targeted")
+    if "target_above_prior_but_below_truth" in cases:
+        classes.append("capacity_target_above_prior_below_truth")
+    if any(
+        case in cases
+        for case in (
+            "target_above_prior_without_truth_support",
+            "target_over_truth_capacity_risk",
+        )
+    ):
+        classes.append("capacity_target_not_truth_confirmed")
+    if not classes:
+        classes.append("capacity_no_prior_max_conflict")
+    return tuple(classes)
+
+
+def _consistency_classes(row: Mapping[str, Any]) -> tuple[str, ...]:
+    classes: list[str] = []
+    classes.extend(
+        _capacity_consistency_classes(row.get("item_count_capacity", {}))
+    )
+    classes.append(
+        _target_truth_class(row.get("total_cells", {}), component="total_cells")
+    )
+    classes.append(
+        _target_truth_class(row.get("q6_cells", {}), component="q6_cells")
+    )
+    classes.append(
+        _target_truth_class(row.get("total_value", {}), component="total_value")
+    )
+    classes.append(
+        _target_truth_class(row.get("q6_value", {}), component="q6_value")
+    )
+    return tuple(classes)
+
+
+def _consistency_bucket(row: Mapping[str, Any]) -> str:
+    classes = set(_consistency_classes(row))
+    if "capacity_direct_prior_max_conflict" in classes:
+        return "hard_capacity_conflict"
+    if any(
+        item.endswith("_above_truth")
+        for item in classes
+    ) or "capacity_target_not_truth_confirmed" in classes:
+        return "target_over_truth_risk"
+    if any(
+        item in classes
+        for item in (
+            "capacity_truth_above_prior_not_targeted",
+            "capacity_target_above_prior_below_truth",
+        )
+    ):
+        return "lower_bound_under_truth"
+    if any(
+        item.endswith("_below_truth") or item.endswith("_target_missing")
+        for item in classes
+    ):
+        return "evidence_floor_only"
+    if "capacity_no_prior_max_conflict" in classes:
+        return "no_capacity_prior_conflict"
+    return "mixed_prior_stress"
+
+
 def _counter_dict(values: Iterable[Any], *, top: int = 8) -> dict[str, int]:
     counts: Counter[str] = Counter(
         str(value) if value not in (None, "") else "none"
@@ -513,6 +623,12 @@ def _stress_detail_summary_block(
         for flag in row["item_count_capacity"].get("flags", ())
     ]
     detail_flags = [flag for row in seq for flag in row.get("flags", ())]
+    consistency_classes = [
+        item for row in seq for item in row.get("consistency_classes", ())
+    ]
+    consistency_buckets = [
+        row.get("consistency_bucket") for row in seq
+    ]
     reason_tokens = [reason for row in seq for reason in row.get("reasons", ())]
     evidence = tuple(row.get("evidence_counts", {}) for row in seq)
     return {
@@ -545,6 +661,14 @@ def _stress_detail_summary_block(
         "capacity_flag_counts": _counter_dict(capacity_flags, top=top),
         "capacity_count_summary": _capacity_count_summary(seq, top=top),
         "detail_flag_counts": _counter_dict(detail_flags, top=top),
+        "consistency_class_counts": _counter_dict(
+            consistency_classes,
+            top=top,
+        ),
+        "consistency_bucket_counts": _counter_dict(
+            consistency_buckets,
+            top=top,
+        ),
         "target_truth_match_counts": {
             "total_cells": sum(
                 1
@@ -776,6 +900,8 @@ def summarize_prior_stress_details(
             "item_count_capacity": _prior_capacity_detail(source_row),
         }
         row["flags"] = list(_stress_detail_flags(row))
+        row["consistency_classes"] = list(_consistency_classes(row))
+        row["consistency_bucket"] = _consistency_bucket(row)
         details.append(row)
 
     def sort_key(row: dict[str, Any]) -> tuple[float, float, float, str]:
@@ -1115,6 +1241,10 @@ def _print_detail_summary(summary: dict[str, Any], *, top: int) -> None:
                 "profiles=" + _format_counts(overall["evidence_profile_counts"]),
                 "capacity_flags=" + _format_counts(overall["capacity_flag_counts"]),
                 "detail_flags=" + _format_counts(overall["detail_flag_counts"]),
+                "consistency_buckets="
+                + _format_counts(overall["consistency_bucket_counts"]),
+                "consistency_classes="
+                + _format_counts(overall["consistency_class_counts"]),
                 "sources_total_cells="
                 + _format_counts(overall["source_counts"]["total_cells"]),
                 "sources_q6_cells="
@@ -1157,6 +1287,10 @@ def _print_detail_summary(summary: dict[str, Any], *, top: int) -> None:
                     f"rows={row['rows']}",
                     "capacity_flags=" + _format_counts(row["capacity_flag_counts"]),
                     "detail_flags=" + _format_counts(row["detail_flag_counts"]),
+                    "consistency_buckets="
+                    + _format_counts(row["consistency_bucket_counts"]),
+                    "consistency_classes="
+                    + _format_counts(row["consistency_class_counts"]),
                     "sources_total_cells="
                     + _format_counts(row["source_counts"]["total_cells"]),
                     "sources_q6_cells="
@@ -1202,6 +1336,10 @@ def _print_detail_summary(summary: dict[str, Any], *, top: int) -> None:
                     f"max_value_ratio={row['max_value_ratio']}",
                     "reasons=" + _format_counts(row["reason_counts"]),
                     "capacity_flags=" + _format_counts(row["capacity_flag_counts"]),
+                    "consistency_buckets="
+                    + _format_counts(row["consistency_bucket_counts"]),
+                    "consistency_classes="
+                    + _format_counts(row["consistency_class_counts"]),
                     "sources_total_cells="
                     + _format_counts(row["source_counts"]["total_cells"]),
                     "sources_q6_cells="

@@ -3498,3 +3498,58 @@ support_gap=2506:min_applied=9/required=20/gap=11
 - low-support blocker 现在可由 stability 脚本直接复核。
 - 64 单 seed support 达标不代表 high-trial 多 seed达标；promotion 仍以 high-trial matrix 为准。
 - cached 256 matrix 能输出 group-level gap；若需要具体 selected fold support，需要刷新 no-cache high-trial run。
+
+## O-v3-092：prior-stress consistency buckets 把 94 行拆成三类 blocker
+
+2026-06-06 给 prior robustness audit 增加 consistency class/bucket 后复跑：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py --detail-summary --format json
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format json
+```
+
+prior-stress detail summary：
+
+```text
+rows=94
+consistency_bucket_counts:
+  hard_capacity_conflict=29
+  lower_bound_under_truth=39
+  evidence_floor_only=26
+  target_over_truth_risk=0
+
+capacity_case_counts:
+  direct_prior_max_conflict=29
+  no_capacity_prior_max_case=26
+  target_above_prior_but_below_truth=10
+  target_lower_bound_truth_above_prior=31
+  truth_above_prior_without_count_target=8
+  truth_above_prior_without_target_prior_hit=8
+
+selected consistency classes:
+  capacity_truth_above_prior_not_targeted=39
+  total_cells_floor_below_truth=50
+  q6_cells_floor_below_truth=46
+  q6_value_floor_below_truth=42
+  total_cells_exact_matches_truth=37
+  q6_cells_target_missing=35
+  q6_value_target_missing=47
+```
+
+readiness 复核：
+
+```text
+overall_status=not_ready
+blocked_gates=12
+prior_stress_capacity_table_drift buckets:
+  hard_capacity_conflict=29
+  lower_bound_under_truth=39
+  evidence_floor_only=26
+```
+
+解读：
+
+- `hard_capacity_conflict` 是 target/truth 同时超过 prior max 的硬容量冲突，不能靠 formal/value sampler 调参关闭。
+- `lower_bound_under_truth` 表示 target 只是低界或未命中，但真实 settlement 已超过 prior max，优先查 count->cells/value bridge 与结算展开语义。
+- `evidence_floor_only` 是 floor/target evidence 不足或缺失，不是 promotion evidence。
+- 本轮只增加审计分流和 readiness 展示；gate 数不变，v3 仍是 shadow-only。

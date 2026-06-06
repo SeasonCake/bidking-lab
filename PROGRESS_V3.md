@@ -4921,3 +4921,53 @@ support_gap=2506:min_applied=9/required=20/gap=11
 - 2506 support blocker 现在可由脚本复核，下一步采集真实 complete 2506 sessions 后直接用同一 stability matrix 验证 gap 是否关闭。
 - 64 单 seed support 达标不改变 promotion 边界；high-trial 多 seed仍是 `blocked_low_support`。
 - formal/value active sampler 继续暂停；v3 仍保持 shadow-only。
+
+## 2026-06-06 checkpoint：prior-stress consistency bucket audit
+
+本轮把 `prior_stressed` 的 cells/capacity/evidence 不一致拆成可复核的 consistency classes 与互斥 bucket，方便后续多 agent 按 blocker 类型并行推进。该改动只影响审计和 readiness 展示，不改 v2 formal/live/UI、不改正式出价、不改变 promotion gate。
+
+改动：
+
+- `scripts/summarize_v3_prior_robustness_audit.py` 新增：
+  - row-level `consistency_classes`；
+  - row-level `consistency_bucket`；
+  - summary-level `consistency_class_counts` / `consistency_bucket_counts`；
+  - bucket 覆盖 `hard_capacity_conflict`、`lower_bound_under_truth`、`evidence_floor_only`、`target_over_truth_risk`、`no_capacity_prior_conflict`。
+- `scripts/summarize_v3_promotion_readiness.py` 在 `prior_stress_capacity_table_drift` gate 与 prior stress detail summary 中透传 bucket/class counts。
+- `tests/test_summarize_v3_prior_robustness_audit.py` 覆盖 bucket 主类分流与 class counts。
+- `tests/test_summarize_v3_promotion_readiness.py` 覆盖 readiness gate 中的 consistency counts。
+- `DECISIONS_V3.md` 新增 D-v3-087；`OBSERVATIONS_V3.md` 新增 O-v3-092。
+
+关键验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe -m py_compile scripts\summarize_v3_prior_robustness_audit.py scripts\summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_prior_robustness_audit.py --detail-summary --format json
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format json
+```
+
+结果：
+
+```text
+prior/readiness tests:
+6 passed
+
+real prior-stress bucket split:
+rows=94
+hard_capacity_conflict=29
+lower_bound_under_truth=39
+evidence_floor_only=26
+target_over_truth_risk=0
+
+readiness real run:
+overall_status=not_ready
+blocked_gates=12
+prior_stress_capacity_table_drift buckets=hard_capacity_conflict=29,lower_bound_under_truth=39,evidence_floor_only=26
+```
+
+结论：
+
+- prior-stress blocker 不是单一 formal/value 问题：硬容量冲突、truth 超 prior 低界、floor evidence 不足必须分开处理。
+- formal/value sampler 继续只允许 shadow-only value-floor candidate；不能用它吸收 capacity/cells drift。
+- readiness 仍是 `not_ready`，`blocked_gates=12`；下一步优先沿 table/capacity/evidence 与 count->cells/value bridge 解释三类 bucket。
