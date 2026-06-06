@@ -66,6 +66,9 @@ from summarize_v3_scp_formal_value_link import (  # noqa: E402
 from summarize_v3_scp_count_value_bridge import (  # noqa: E402
     summarize_bridge as summarize_scp_count_value_bridge,
 )
+from summarize_v3_scp_count_value_bridge_holdout import (  # noqa: E402
+    summarize_holdout as summarize_scp_count_value_bridge_holdout,
+)
 from summarize_v3_prior_robustness_audit import (  # noqa: E402
     summarize_prior_stress_details,
     summarize_prior_stress_detail_summary,
@@ -318,6 +321,12 @@ def summarize_readiness(
         rows,
         group_field="v3_scp_group",
     )
+    scp_count_value_bridge_holdout = summarize_scp_count_value_bridge_holdout(
+        rows,
+        group_field="v3_scp_group",
+        folds=folds,
+        min_train_sessions=min_sessions,
+    )
 
     gates: list[dict[str, Any]] = []
     data_status = "pass" if not errors and not summary.get("constraint_conflict") else "blocked"
@@ -544,6 +553,31 @@ def summarize_readiness(
                 }
                 for row in scp_count_value_bridge.get("rows", ())[:5]
             ],
+        )
+    )
+    scp_bridge_holdout_candidate = scp_count_value_bridge_holdout["candidate_only"]
+    scp_bridge_holdout_status = scp_count_value_bridge_holdout.get("overall_status")
+    gates.append(
+        _gate(
+            "settlement_count_cells_value_bridge_holdout",
+            "watch" if scp_bridge_holdout_status == "watch" else "blocked",
+            "settlement count->cells/value bridge passes session holdout but remains shadow-only"
+            if scp_bridge_holdout_status == "watch"
+            else "settlement count->cells/value bridge does not pass session holdout",
+            overall_status=scp_bridge_holdout_status,
+            candidate_rows=scp_bridge_holdout_candidate.get("candidate_rows"),
+            applied_rows=scp_bridge_holdout_candidate.get("applied_rows"),
+            candidate_delta_formal_p50_mae=scp_bridge_holdout_candidate.get(
+                "delta_formal_p50_mae"
+            ),
+            candidate_delta_formal_p90_coverage=scp_bridge_holdout_candidate.get(
+                "delta_formal_p90_coverage"
+            ),
+            candidate_bridge_formal_p50_over_rate=scp_bridge_holdout_candidate.get(
+                "bridge_formal_p50_over_rate"
+            ),
+            applied_hurts_groups=scp_count_value_bridge_holdout.get("applied_hurts"),
+            status_counts=scp_count_value_bridge_holdout.get("status_counts"),
         )
     )
     formal_below = float(summary.get("formal_p50_below_rate") or 0.0)
@@ -916,6 +950,8 @@ def summarize_readiness(
         next_actions.append("bridge settlement count-prior to cells/value before formal/value sampler promotion")
     if scp_bridge_rows:
         next_actions.append("hold out settlement count->cells/value bridge candidates before sampler use")
+    if scp_bridge_holdout_status != "watch":
+        next_actions.append("guard or redesign settlement count->cells/value bridge; holdout over-risk is high")
     if not prior_stress_drift_ready:
         next_actions.append("audit prior-stressed capacity/table drift by map/profile before promotion")
     if not robust_ready:
@@ -1143,6 +1179,24 @@ def summarize_readiness(
             "formal_per_item": scp_bridge_overall.get("truth_formal_per_item"),
             "status_counts": scp_count_value_bridge.get("status_counts"),
         },
+        "settlement_count_cells_value_bridge_holdout": {
+            "status": scp_bridge_holdout_status,
+            "candidate_rows": scp_bridge_holdout_candidate.get("candidate_rows"),
+            "applied_rows": scp_bridge_holdout_candidate.get("applied_rows"),
+            "candidate_delta_formal_p50_mae": scp_bridge_holdout_candidate.get(
+                "delta_formal_p50_mae"
+            ),
+            "candidate_delta_formal_p90_coverage": scp_bridge_holdout_candidate.get(
+                "delta_formal_p90_coverage"
+            ),
+            "candidate_bridge_formal_p50_over_rate": scp_bridge_holdout_candidate.get(
+                "bridge_formal_p50_over_rate"
+            ),
+            "applied_hurts_groups": scp_count_value_bridge_holdout.get(
+                "applied_hurts"
+            ),
+            "status_counts": scp_count_value_bridge_holdout.get("status_counts"),
+        },
         "ccv_status_counts": ccv_counts,
         "tail_status_counts": tail_counts,
         "residual_status_counts": residual_counts,
@@ -1194,6 +1248,9 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"scp_count_cells_value_bridge_rows={result['settlement_count_cells_value_bridge']['count_cells_value_bridge_rows']}",
                 f"scp_count_cells_bridge_rows={result['settlement_count_cells_value_bridge']['count_cells_bridge_rows']}",
                 f"scp_count_value_bridge_rows={result['settlement_count_cells_value_bridge']['count_value_bridge_rows']}",
+                f"scp_bridge_holdout_status={result['settlement_count_cells_value_bridge_holdout']['status']}",
+                f"scp_bridge_holdout_delta={result['settlement_count_cells_value_bridge_holdout']['candidate_delta_formal_p50_mae']}",
+                f"scp_bridge_holdout_over={result['settlement_count_cells_value_bridge_holdout']['candidate_bridge_formal_p50_over_rate']}",
                 f"prior_stress_detail_rows={result['prior_stress_detail_summary']['rows']}",
                 f"prior_stress_capacity_hits={result['prior_stress_detail_summary']['capacity_flag_hits']}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",

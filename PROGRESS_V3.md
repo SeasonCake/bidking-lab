@@ -4197,3 +4197,88 @@ scp_count_value_bridge_rows=315
 - 大多数 full bridge rows 当前 `v3_fv_stress_class=none`，说明现有 formal/value stress detector 不足以消费 `v3_scp` evidence。
 - 当前 bridge 是 archive-only、truth-derived 审计；promotion 前必须做 session holdout/shadow sampler，不能直接把 per-item cells/value 统计写成 sampler 参数。
 - v2 formal/live/UI 和正式出价未改；v3 promotion、v2 archive 继续 pending。
+
+## 2026-06-06 checkpoint：settlement count-prior bridge session holdout
+
+完成内容：
+
+- 新增 `scripts/summarize_v3_scp_count_value_bridge_holdout.py`：
+  - 按 session stable fold 做 holdout；
+  - 训练折估计同 group truth `cells_per_item` 与 `formal_value_per_item`；
+  - 验证折只在 `v3_scp_candidate` 且 `scp_p95 > target_count` 时应用 shadow floor；
+  - 输出 candidate/apply/sample-limited rows、formal MAE delta、p90 coverage delta、over-rate、group hurt。
+- 新增 `tests/test_summarize_v3_scp_count_value_bridge_holdout.py`：
+  - 覆盖 train-only bridge floor；
+  - 覆盖无 candidate/sample-limited 状态。
+- `scripts/summarize_v3_promotion_readiness.py` 新增 `settlement_count_cells_value_bridge_holdout` gate：
+  - holdout 失败时 blocked；
+  - readiness summary 显示 `scp_bridge_holdout_delta` 与 `scp_bridge_holdout_over`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_count_value_bridge_holdout.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py --posterior-trials 64 --top 12
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py --ratio-source bridge --posterior-trials 64 --top 12
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --top 8
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_other_tables.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_count_prior_holdout.py tests\test_summarize_v3_scp_formal_value_link.py tests\test_summarize_v3_scp_count_value_bridge.py tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+```
+
+结果：
+
+```text
+targeted holdout tests:
+2 passed
+
+targeted holdout/readiness tests:
+6 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+80 passed
+
+default ratio_source=all:
+overall_status=blocked_holdout_hurt
+candidate_rows=1276
+applied_rows=1173
+sample_limited_rows=59
+candidate_delta_mae=50956.632
+candidate_delta_p90=0.219096
+candidate_over=0.712702
+overall_delta_mae=38315.468
+overall_delta_p90=0.164744
+status_counts=blocked_holdout_hurt:18,blocked_holdout_over_risk:1,sample_limited:2
+
+default ratio_source=bridge:
+overall_status=blocked_holdout_hurt
+candidate_rows=1276
+applied_rows=1120
+sample_limited_rows=122
+candidate_delta_mae=53663.766
+candidate_delta_p90=0.225
+candidate_over=0.708036
+
+activity:
+overall_status=sample_limited
+rows=0
+candidate_rows=0
+applied_rows=0
+
+readiness:
+overall_status=not_ready
+blocked_gates=12
+gate=settlement_count_cells_value_bridge status=watch
+gate=settlement_count_cells_value_bridge_holdout status=blocked
+gate=settlement_count_formal_value_link status=blocked
+gate=formal_value_sampler_holdout status=blocked
+scp_bridge_holdout_delta=50956.632
+scp_bridge_holdout_over=0.712702
+```
+
+结论：
+
+- naive count->cells/value bridge floor 被 session holdout 否掉：它能提升 p90 coverage，但 formal p50 MAE 与 over-rate 风险不可接受。
+- `ratio_source=bridge` 仍然 blocked，说明需要 guard/redesign，而不是简单缩小训练分母。
+- 2506 是后续 guarded bridge 的优先 slice，但当前 over-rate 仍超 guard，不能作为 promotion evidence。
+- v2 formal/live/UI 和正式出价未改；v3 promotion、v2 archive 继续 pending。

@@ -2841,3 +2841,57 @@ overall_status=not_ready
 - 185/201 个 full bridge rows 当前 `v3_fv_stress_class=none`，说明现有 value-floor stress detection 没有捕捉大部分 count/cells/value bridge 信号。
 - `truth_cells_per_item` 与 `truth_formal_per_item` 是 archive truth 派生量，只能用于审计和后续 holdout 设计，不能直接作为 live/formal sampler 参数。
 - activity 252x 继续没有 metric rows，不能参与 bridge 校准。
+
+## O-v3-081：naive count->cells/value bridge holdout 提高 coverage 但造成 over-risk/MAE hurt
+
+2026-06-06 新增 `summarize_v3_scp_count_value_bridge_holdout.py`，用 session stable fold 验证 count->cells/value bridge floor：
+
+```text
+default ratio_source=all:
+overall_status=blocked_holdout_hurt
+rows=1560
+candidate_rows=1276
+applied_rows=1173
+sample_limited_rows=59
+candidate_delta_mae=50956.632
+candidate_delta_p90=0.219096
+candidate_over=0.712702
+overall_delta_mae=38315.468
+overall_delta_p90=0.164744
+status_counts=blocked_holdout_hurt:18,blocked_holdout_over_risk:1,sample_limited:2
+
+top groups:
+2501 delta_mae=33301.56 delta_p90=0.209677 bridge_over=0.654839
+2401 delta_mae=45527.445 delta_p90=0.171206 bridge_over=0.657588
+2601 delta_mae=17434.051 delta_p90=0.5 bridge_over=0.744186
+2506 delta_mae=-30309.955 delta_p90=0.323944 bridge_over=0.647887
+2504 delta_mae=2269.879 delta_p90=0.227848 bridge_over=0.683544
+
+default ratio_source=bridge:
+overall_status=blocked_holdout_hurt
+candidate_rows=1276
+applied_rows=1120
+sample_limited_rows=122
+candidate_delta_mae=53663.766
+candidate_delta_p90=0.225
+candidate_over=0.708036
+
+activity:
+overall_status=sample_limited
+rows=0
+candidate_rows=0
+applied_rows=0
+
+readiness:
+gate=settlement_count_cells_value_bridge_holdout status=blocked
+scp_bridge_holdout_delta=50956.632
+scp_bridge_holdout_over=0.712702
+overall_status=not_ready
+```
+
+解读：
+
+- naive bridge floor 能显著提高 formal p90 coverage 和 cells p90 coverage，但代价是 formal p50 MAE 上升与 over-rate 过高。
+- 2506 有 MAE 改善信号，但 over-rate 仍超过 guard；它适合作为后续 guarded/bounded bridge 的优先实验 slice，而不是直接 promotion。
+- `ratio_source=bridge` 仍无法消除 over-risk，说明问题不是单纯由训练 ratio 分母过宽造成。
+- activity 252x 仍没有 metric rows，因此 bridge holdout 不提供 activity promotion evidence。

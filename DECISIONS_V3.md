@@ -1768,3 +1768,21 @@ applied_hurts=2502
 - `v3_fv_stress_class=none` 下仍有 `count_cells_value_bridge_rows=185`，说明 bridge signal 与现有 formal/value stress class 不一致。
 - high-priority groups 中 2501/2401/2601/2506 分别有 `count_cells_value_bridge_rows=54/29/26/19`；2601、2506 仍是 prior-stressed/capacity-heavy slices。
 - readiness：`settlement_count_cells_value_bridge=watch`，但 `settlement_count_formal_value_link=blocked`、`formal_value_sampler_holdout=blocked`、overall 仍 `not_ready`。
+
+## D-v3-076：naive count->cells/value bridge floor 未通过 holdout
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_scp_count_value_bridge_holdout.py` 是 settlement count-prior bridge 进入 formal/value sampler 前的必跑 session holdout。
+- 当前 naive bridge floor 口径为：同 group 训练折估计 truth cells/formal value per item，验证折在 `scp_p95 > target_count` 时将 `scp_p95 * train_ratio` 作为 shadow floor。
+- 该口径只能用于 falsify/guard，不得写入 posterior sampler、formal/value sampler 或正式出价。
+- 因 holdout 显示 formal p50 MAE 与 over-rate 风险显著上升，当前 count->cells/value bridge 不得 promotion，也不得作为 `v3_fv` active path。
+- 后续若继续设计 shadow-only sampler，必须先加更强 guard：例如只在 bounded under slices、低 over-risk groups、tail/underestimate guard 通过、或更低 quantile/value cap 下测试。
+- readiness 新增 `settlement_count_cells_value_bridge_holdout` gate；该 gate blocked 时，v3 promotion/v2 archive 继续 pending。
+
+原因：
+
+- default `ratio_source=all` holdout：`candidate_rows=1276`、`applied_rows=1173`、`candidate_delta_mae=+50956.632`、`candidate_delta_p90=+0.219096`、`candidate_over=0.712702`、overall `blocked_holdout_hurt`。
+- strict `ratio_source=bridge` holdout：`candidate_rows=1276`、`applied_rows=1120`、`candidate_delta_mae=+53663.766`、`candidate_delta_p90=+0.225`、`candidate_over=0.708036`、overall `blocked_holdout_hurt`。
+- 2506 是少数 MAE 改善 slice（`delta_mae=-30309.955` in all-source），但 `bridge_over=0.647887` 仍超过当前 over-risk guard。
+- readiness：`settlement_count_cells_value_bridge_holdout=blocked`，`scp_bridge_holdout_delta=+50956.632`，`scp_bridge_holdout_over=0.712702`，overall 仍 `not_ready`。
