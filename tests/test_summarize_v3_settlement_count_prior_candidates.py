@@ -67,6 +67,7 @@ def _tables(*, include_map: bool = True) -> SimpleNamespace:
     raw_row = [""] * 23
     raw_row[14] = "[4,4,4]"
     raw_row[17] = "[9999,2601,1,2]"
+    item_ids = (1001, 1002, 1003, 1004, 1005)
     maps = {}
     if include_map:
         maps[2601] = SimpleNamespace(
@@ -77,7 +78,27 @@ def _tables(*, include_map: bool = True) -> SimpleNamespace:
             items_per_session_max=2,
             raw_row=raw_row,
         )
-    return SimpleNamespace(maps=maps)
+    return SimpleNamespace(
+        maps=maps,
+        drops={
+            2601: SimpleNamespace(
+                entries=tuple(
+                    SimpleNamespace(
+                        category=101,
+                        item_id=item_id,
+                        n_min=1,
+                        n_max=1,
+                        weight=1,
+                    )
+                    for item_id in item_ids
+                )
+            )
+        },
+        items={
+            item_id: SimpleNamespace(item_id=item_id, value=100)
+            for item_id in item_ids
+        },
+    )
 
 
 def _patch_parser(
@@ -169,6 +190,18 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         "129501": 1,
     }
     assert result["overall"]["bidmap_rounds_total_counts"] == {"25": 2}
+    assert result["overall"]["missing_from_drop_universe_count"]["max"] == 1
+    assert (
+        result["overall"]["known_temp_zodiac_missing_from_drop_universe_count"]["max"]
+        == 1
+    )
+    assert result["overall"]["non_zodiac_missing_from_drop_universe_count"]["max"] == 0
+    assert result["overall"]["missing_from_drop_universe_positive_rows"] == 2
+    assert result["overall"]["non_zodiac_missing_from_drop_universe_positive_rows"] == 0
+    assert result["overall"]["missing_from_drop_universe_examples"] == {
+        "1306003": 1,
+        "1306004": 1,
+    }
     assert result["overall"]["full_observed_action_rows"] == 0
     assert result["overall"]["public_total_rows"] == 0
     row = result["rows"][0]
@@ -189,6 +222,15 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert row["inventory_count"]["max"] == 6
     assert row["non_temp_inventory_count"]["max"] == 5
     assert row["known_temp_zodiac_count"]["max"] == 1
+    assert row["missing_from_drop_universe_count"]["max"] == 1
+    assert row["known_temp_zodiac_missing_from_drop_universe_count"]["max"] == 1
+    assert row["non_zodiac_missing_from_drop_universe_count"]["max"] == 0
+    assert row["missing_from_drop_universe_positive_rows"] == 2
+    assert row["non_zodiac_missing_from_drop_universe_positive_rows"] == 0
+    assert row["missing_from_drop_universe_examples"] == {
+        "1306003": 1,
+        "1306004": 1,
+    }
     assert row["payload_field_shapes"] == {"none": 2}
     assert row["payload_field8_count"]["max"] == 0
     assert row["payload_field20_present_rows"] == 0

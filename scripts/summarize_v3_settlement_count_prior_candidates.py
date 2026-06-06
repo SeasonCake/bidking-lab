@@ -22,6 +22,7 @@ if str(SCRIPTS) not in sys.path:
 
 from bidking_lab.live.fatbeans import _first, _parse_fields, parse_fatbeans_capture  # noqa: E402
 from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
+from bidking_lab.simulation.basic_mc import flatten_pool  # noqa: E402
 from summarize_v3_settlement_payload_audit import (  # noqa: E402
     _field_signature,
     _inventory_block_metrics,
@@ -274,6 +275,50 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
     }
 
 
+def _reachable_drop_item_ids_for_map(
+    map_id: int | None,
+    *,
+    tables: Any,
+    cache: dict[int, frozenset[int]],
+) -> frozenset[int]:
+    if map_id is None:
+        return frozenset()
+    map_key = int(map_id)
+    if map_key in cache:
+        return cache[map_key]
+
+    maps = getattr(tables, "maps", {}) or {}
+    drops = getattr(tables, "drops", {}) or {}
+    items = getattr(tables, "items", {}) or {}
+    bid_map = maps.get(map_key)
+    if bid_map is None or not drops or not items:
+        cache[map_key] = frozenset()
+        return cache[map_key]
+
+    item_ids: set[int] = set()
+    if getattr(bid_map, "sub_pool_weights", None):
+        for sub_map_id, _weight in bid_map.sub_pool_weights:
+            sub_map = maps.get(int(sub_map_id))
+            if sub_map is None:
+                continue
+            item_ids.update(
+                flatten_pool(
+                    int(sub_map.drop_pool_id),
+                    drops,
+                    items,
+                ).item_ids
+            )
+    item_ids.update(
+        flatten_pool(
+            int(bid_map.drop_pool_id),
+            drops,
+            items,
+        ).item_ids
+    )
+    cache[map_key] = frozenset(item_ids)
+    return cache[map_key]
+
+
 def _latest_settlement_state(events: Any) -> Any | None:
     states = [
         state
@@ -284,7 +329,12 @@ def _latest_settlement_state(events: Any) -> Any | None:
     return states[-1] if states else None
 
 
-def _audit_file(path: Path, *, tables: Any) -> dict[str, Any]:
+def _audit_file(
+    path: Path,
+    *,
+    tables: Any,
+    drop_universe_cache: dict[int, frozenset[int]],
+) -> dict[str, Any]:
     events = parse_fatbeans_capture(path)
     state = _latest_settlement_state(events)
     if state is None:
@@ -301,6 +351,19 @@ def _audit_file(path: Path, *, tables: Any) -> dict[str, Any]:
     capture_day = _capture_day_from_state_or_path(state, path)
     session_token = _session_token_from_state_or_path(state, path)
     table = _table_caps_for_map(map_id, tables)
+    reachable_item_ids = _reachable_drop_item_ids_for_map(
+        map_id,
+        tables=tables,
+        cache=drop_universe_cache,
+    )
+    missing_item_ids = tuple(
+        int(item_id)
+        for item_id in item_ids
+        if item_id is not None and int(item_id) not in reachable_item_ids
+    )
+    known_temp_zodiac_missing_count = sum(
+        1 for item_id in missing_item_ids if item_id in _TEMPORARY_BLUE_ZODIAC_ITEM_IDS
+    )
     drop_ref_max = _safe_int(table.get("bidmap_items_per_session_max"))
     round_cap_max = _safe_int(table.get("bidmap_raw_round_cap_max"))
 
@@ -349,6 +412,19 @@ def _audit_file(path: Path, *, tables: Any) -> dict[str, Any]:
         "inventory_count": inventory_count,
         "non_temp_inventory_count": non_temp_inventory_count,
         "known_temp_zodiac_count": known_temp_zodiac_count,
+        "missing_from_drop_universe_count": len(missing_item_ids),
+        "known_temp_zodiac_missing_from_drop_universe_count": (
+            known_temp_zodiac_missing_count
+        ),
+        "non_zodiac_missing_from_drop_universe_count": (
+            len(missing_item_ids) - known_temp_zodiac_missing_count
+        ),
+        "missing_from_drop_universe_examples": dict(
+            sorted(
+                Counter(str(item_id) for item_id in missing_item_ids).items(),
+                key=lambda item: (-item[1], item[0]),
+            )[:8]
+        ),
         "inventory_cells": sum(
             _safe_int(getattr(item, "cells", None)) or 0
             for item in items
@@ -521,9 +597,16 @@ def summarize_settlement_count_prior_candidates(
     tables = tables or load_monitor_tables()
     rows: list[dict[str, Any]] = []
     errors: list[str] = []
+    drop_universe_cache: dict[int, frozenset[int]] = {}
     for path in _resolve_paths(paths):
         try:
-            rows.append(_audit_file(path, tables=tables))
+            rows.append(
+                _audit_file(
+                    path,
+                    tables=tables,
+                    drop_universe_cache=drop_universe_cache,
+                )
+            )
         except Exception as exc:  # pragma: no cover - retained for CLI diagnostics.
             errors.append(f"{path}:{type(exc).__name__}:{exc}")
 
@@ -574,6 +657,31 @@ def summarize_settlement_count_prior_candidates(
                 ),
                 "known_temp_zodiac_count": _numeric_summary(
                     row.get("known_temp_zodiac_count") for row in seq
+                ),
+                "missing_from_drop_universe_count": _numeric_summary(
+                    row.get("missing_from_drop_universe_count") for row in seq
+                ),
+                "known_temp_zodiac_missing_from_drop_universe_count": _numeric_summary(
+                    row.get("known_temp_zodiac_missing_from_drop_universe_count")
+                    for row in seq
+                ),
+                "non_zodiac_missing_from_drop_universe_count": _numeric_summary(
+                    row.get("non_zodiac_missing_from_drop_universe_count") for row in seq
+                ),
+                "missing_from_drop_universe_positive_rows": _positive_rows(
+                    seq,
+                    "missing_from_drop_universe_count",
+                ),
+                "non_zodiac_missing_from_drop_universe_positive_rows": _positive_rows(
+                    seq,
+                    "non_zodiac_missing_from_drop_universe_count",
+                ),
+                "missing_from_drop_universe_examples": _merge_count_mappings(
+                    (
+                        row.get("missing_from_drop_universe_examples", {})
+                        for row in seq
+                    ),
+                    top=top,
                 ),
                 "inventory_cells": _numeric_summary(row.get("inventory_cells") for row in seq),
                 "inventory_slot_count": _counter_dict(
@@ -747,6 +855,31 @@ def summarize_settlement_count_prior_candidates(
             ),
             "known_temp_zodiac_count": _numeric_summary(
                 row.get("known_temp_zodiac_count") for row in ready
+            ),
+            "missing_from_drop_universe_count": _numeric_summary(
+                row.get("missing_from_drop_universe_count") for row in ready
+            ),
+            "known_temp_zodiac_missing_from_drop_universe_count": _numeric_summary(
+                row.get("known_temp_zodiac_missing_from_drop_universe_count")
+                for row in ready
+            ),
+            "non_zodiac_missing_from_drop_universe_count": _numeric_summary(
+                row.get("non_zodiac_missing_from_drop_universe_count") for row in ready
+            ),
+            "missing_from_drop_universe_positive_rows": _positive_rows(
+                ready,
+                "missing_from_drop_universe_count",
+            ),
+            "non_zodiac_missing_from_drop_universe_positive_rows": _positive_rows(
+                ready,
+                "non_zodiac_missing_from_drop_universe_count",
+            ),
+            "missing_from_drop_universe_examples": _merge_count_mappings(
+                (
+                    row.get("missing_from_drop_universe_examples", {})
+                    for row in ready
+                ),
+                top=top,
             ),
             "capture_days": _counter_dict((row.get("capture_day") for row in ready), top=top),
             "session_token_prefix6_counts": _counter_dict(
@@ -937,6 +1070,9 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"inventory_count={_format_summary(overall['inventory_count'])}",
                 f"non_temp_count={_format_summary(overall['non_temp_inventory_count'])}",
                 f"temp_zodiac={_format_summary(overall['known_temp_zodiac_count'])}",
+                f"missing_drop={_format_summary(overall['missing_from_drop_universe_count'])}",
+                "non_zodiac_missing="
+                + _format_summary(overall["non_zodiac_missing_from_drop_universe_count"]),
                 f"capture_days={_format_counts(overall['capture_days'])}",
                 f"session_p6={_format_counts(overall['session_token_prefix6_counts'])}",
                 f"slot_counts={_format_counts(overall['inventory_slot_count'])}",
@@ -999,6 +1135,9 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"inventory_count={_format_summary(row['inventory_count'])}",
                     f"non_temp_count={_format_summary(row['non_temp_inventory_count'])}",
                     f"temp_zodiac={_format_summary(row['known_temp_zodiac_count'])}",
+                    f"missing_drop={_format_summary(row['missing_from_drop_universe_count'])}",
+                    "non_zodiac_missing="
+                    + _format_summary(row["non_zodiac_missing_from_drop_universe_count"]),
                     f"cells={_format_summary(row['inventory_cells'])}",
                     f"slots={_format_counts(row['inventory_slot_count'])}",
                     f"outer_shapes={_format_counts(row['settlement_outer_field_shapes'])}",

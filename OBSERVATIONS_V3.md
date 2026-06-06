@@ -4973,3 +4973,51 @@ above_round_after_temp=59
 - `127412` 与 `129501` 两个主要 prefix 都有 drop/round overflow；`136751` 样本量太小，不能解释 default blocker。
 - 该证据继续削弱“简单 per-session table/version switch”解释，但仍不能证明真实 settlement expansion/source 机制。
 - 当前 blocker 仍需查 server-side settlement occupancy/source semantics 或可复核外部 overlay table；不能恢复 sampler 参数调优。
+
+## O-v3-119：after-temp settlement over-cap 不来自非生肖 Drop-universe 缺口
+
+2026-06-06 增强 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 4 --format summary
+```
+
+整体 Drop universe coverage：
+
+```text
+files=441 settlement_rows=441
+missing_drop=n=441/avg=1.658/p50=1.0/p90=4.0/p95=4.0/max=8.0
+non_zodiac_missing=n=441/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+missing_positive=337
+non_zodiac_positive=0
+```
+
+按 residual mode：
+
+```text
+drop_ref_only_overflow_after_temp:
+  files=113
+  missing_drop=n=113/avg=1.761/p50=2.0/p90=4.0/p95=4.0/max=7.0
+  non_zodiac_missing=n=113/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+
+round_cap_overflow_after_temp:
+  files=59
+  missing_drop=n=59/avg=1.78/p50=1.0/p90=3.0/p95=4.0/max=8.0
+  non_zodiac_missing=n=59/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+
+activity_extras_only_drop_ref_gap:
+  files=24
+  missing_drop=n=24/avg=2.833/p50=3.0/p90=4.0/p95=4.0/max=6.0
+  non_zodiac_missing=n=24/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+
+within_drop_ref_after_temp:
+  files=245
+  missing_drop=n=245/avg=1.465/p50=1.0/p90=4.0/p95=4.0/max=5.0
+  non_zodiac_missing=n=245/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+```
+
+解读：
+
+- 所有 after-temp over-cap rows 的非生肖 item id 都落在 current reachable Drop universe 内。
+- 唯一稳定 missing item examples 是 `1306003..1306014` 临时蓝色生肖 id；这些被扣除后仍有 172 条 drop overflow 与 59 条 round-cap overflow。
+- 因此 capacity blocker 不是 item-universe 缺表或非生肖 overlay pool 混入，而是同一 Drop universe 内的 settlement count/occupancy 扩展或服务端 session-capacity 语义。

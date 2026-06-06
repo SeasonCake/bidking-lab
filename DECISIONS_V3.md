@@ -2400,3 +2400,19 @@ applied_hurts=2502
 - `129501` 为 369 files，`above_drop_after=146`、`above_round_after=49`；`127412` 为 64 files，`above_drop_after=21`、`above_round_after=9`，两个主要 session prefix 都存在 overflow。
 - `136751` 只有 8 files，虽然 overflow-heavy，但不足以解释 default 24xx/25xx/2601 的主要 capacity blocker。
 - 因此 cohort 分组进一步排除了简单 table/capture 切换解释，但没有提供可直接用于 promotion 的生成机制。
+
+## D-v3-115：Drop item-universe coverage 不能作为 after-temp over-cap 解释或 promotion evidence
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_candidates.py` 必须在 residual/capture/session 分组中输出 reachable Drop item-universe coverage，并分开统计已知临时生肖 missing 与非生肖 missing。
+- 如果 `non_zodiac_missing_from_drop_universe_count` 在 over-cap groups 中为 0，不能再把 capacity blocker 归因于 current BidMap/Drop 之外的非生肖 item pool 缺失。
+- 临时生肖 overlay 仍应作为 activity extra 单独扣除；它不能解释 after-temp drop/round overflow，也不能进入 default sampler promotion 证据。
+- Drop item-universe coverage 只能排除 item-pool 缺表类解释；不能作为 sampler cap 修正、readiness 放行或 promotion evidence。
+- formal/value sampler 参数调优继续暂停，直到 current Drop universe 内的 settlement count/occupancy 扩展、session-capacity 或服务端 source semantics 有可复核解释。
+
+原因：
+
+- 真实 archive 441 条 settlement rows 中 `missing_drop` 平均为 1.658，但全部 missing 都是已知临时蓝色生肖 id；`non_zodiac_missing` overall max 为 0。
+- `drop_ref_only_overflow_after_temp` 113 files 与 `round_cap_overflow_after_temp` 59 files 的 `non_zodiac_missing` max 均为 0。
+- 因此 after-temp over-cap 是“同一 item universe 内的件数/占用问题”，不是未知非生肖物品池混入。

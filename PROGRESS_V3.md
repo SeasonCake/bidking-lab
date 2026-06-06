@@ -6393,3 +6393,67 @@ session_token_prefix6:
 - `127412` 与 `129501` 都存在 drop/round overflow，继续削弱“一个表版本/会话族导致全部 over-cap”的简单解释。
 - 该结果仍不能证明真实生成机制；它只排除 cohort/version 简化假设，blocker 继续集中在 server-side settlement occupancy/source semantics 或可复核外部 overlay table。
 - formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。
+
+## 2026-06-06 checkpoint：settlement Drop universe residual 下钻
+
+本轮把 reachable Drop item-universe 覆盖接入 settlement count-prior residual summary，用同一个分组面板确认 over-cap 是否来自 current BidMap/Drop 之外的未知物品。该改动仍是 v3 audit-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - 复用 `flatten_pool()` 计算每个 map 当前 reachable Drop item universe；
+  - 对每条 settlement row 输出 `missing_from_drop_universe_count`、`known_temp_zodiac_missing_from_drop_universe_count`、`non_zodiac_missing_from_drop_universe_count` 与 missing item examples；
+  - overall/group summary 和 CLI summary 同步输出上述 coverage。
+- `tests/test_summarize_v3_settlement_count_prior_candidates.py` 补最小 Drop/Item fixture，覆盖“临时生肖缺口存在、非生肖缺口为 0”的聚合语义。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py -q
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 4 --format summary
+```
+
+真实 residual smoke 要点：
+
+```text
+overall:
+  files=441 settlement_rows=441
+  missing_drop=n=441/avg=1.658/p50=1.0/p90=4.0/p95=4.0/max=8.0
+  non_zodiac_missing=n=441/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+  missing_positive=337
+  non_zodiac_positive=0
+
+drop_ref_only_overflow_after_temp:
+  files=113
+  above_drop_after=113 above_round_after=0
+  missing_drop=n=113/avg=1.761/p50=2.0/p90=4.0/p95=4.0/max=7.0
+  non_zodiac_missing=n=113/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+
+round_cap_overflow_after_temp:
+  files=59
+  above_drop_after=59 above_round_after=59
+  missing_drop=n=59/avg=1.78/p50=1.0/p90=3.0/p95=4.0/max=8.0
+  non_zodiac_missing=n=59/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+
+activity_extras_only_drop_ref_gap:
+  files=24
+  above_drop_after=0 above_round_after=0
+  missing_drop=n=24/avg=2.833/p50=3.0/p90=4.0/p95=4.0/max=6.0
+  non_zodiac_missing=n=24/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+
+within_drop_ref_after_temp:
+  files=245
+  above_drop_after=0 above_round_after=0
+  missing_drop=n=245/avg=1.465/p50=1.0/p90=4.0/p95=4.0/max=5.0
+  non_zodiac_missing=n=245/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+```
+
+解读：
+
+- 所有 residual groups、capture days 与 session token prefixes 的 `non_zodiac_missing_from_drop_universe_count` 均为 0。
+- 已知临时蓝色生肖 id 是当前唯一 item-universe gap；它解释 `activity_extras_only_drop_ref_gap` 和一部分 raw count gap，但不能解释 after-temp drop/round overflow。
+- 剩余 blocker 不再是“有未知非生肖 item 从外部 overlay pool 混入”，而是 current reachable Drop universe 内部的 settlement 件数/占用扩展、session-capacity 或服务端 source semantics。
+- 该证据仍不是 promotion evidence；它只是把后续调查从 item-universe 缺表转向 count/occupancy 生成机制。
+- formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。
