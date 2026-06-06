@@ -3996,3 +3996,50 @@ prebid_r4:
 - item anchors 与 shape anchors 都有形状/格子信息，但 `item_anchors.with_value=0`，`shape_anchors.q6_count=0`，`quality_floor_anchors=0`。
 - 事件来源集中在 Aisha q1-q5/category/shape reveal；没有 q6 或 value exact/floor payload 能支撑 `q6_cells`、`total_value`、`q6_value` target。
 - 下一步如果恢复 sampler 设计，必须先设计 shadow-only q6/value allocation target 或明确保持这些 rows out-of-scope；不能把它们作为 formal/value sampler candidate。
+
+## O-v3-101：2502 只有 r4 可由 q1-q5 cells residual 派生 q6 cells
+
+2026-06-06 给 target-missing event audit 增加 `q6_residual_target_candidate` 后，复跑真实 64-trial archive：
+
+```powershell
+python scripts\summarize_v3_target_missing_event_audit.py --posterior-trials 64 --format summary
+```
+
+结果：
+
+```text
+selected_rows=4
+audited_rows=4
+q6_residual_patterns=none:3,cells:1
+q6_residual_cells=missing_non_q6_exact:3,derived:1
+```
+
+逐行 residual status：
+
+```text
+prebid_r1:
+  cells=missing_non_q6_exact
+  missing_non_q6_qualities=2,3,4,5
+
+prebid_r2:
+  cells=missing_non_q6_exact
+  missing_non_q6_qualities=3,4,5
+
+prebid_r3:
+  cells=missing_non_q6_exact
+  missing_non_q6_qualities=4,5
+
+prebid_r4:
+  cells=derived
+  total_cells_exact=156
+  non_q6_cells_exact_sum=134
+  derived_q6_cells=22
+  truth_delta=0
+```
+
+解读：
+
+- 2502 r4 的 Aisha q1-q5 cells exact 与 session total cells exact 构成完整 cells residual，可派生 q6 cells exact candidate。
+- r1-r3 只能证明部分非 q6 buckets，不能把 remaining cells 全部归给 q6。
+- 四行都缺 session count exact，所以 q6 count 不能 residual 派生；四行都缺 session value exact/q1-q5 value exact 完整分区，所以 q6 value 与 formal value 不能 residual 派生。
+- 这支持下一步做 shadow-only q6 cells residual candidate，但不支持 formal/value promotion 或 value sampler 上调。

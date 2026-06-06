@@ -5369,3 +5369,54 @@ key_target_presence=session.total_count:0/4,session.total_cells:4/4,bucket.q6.co
 - 当前 evidence 主要来自 Aisha q1-q5/category/shape reveal；shape/item anchors 有 cells/shape，但没有 q6/value payload，`known_value_floor=0`。
 - capacity 复核确认 current BidMap 是 v300/23 列，`col[16]=[[]]`、drop ref 在 `col[17]`；Drop leaf `n_max=1`，settlement inventory 与 0x002D payload 基本匹配，remaining blocker 是 `col[17] max` / final settlement count 语义差异。
 - 下一步先不要调 formal/value sampler 参数；应先为 q6/value allocation target 设计 shadow-only 诊断，或明确这些 rows 继续 out-of-scope，然后再恢复 promotion readiness 验证。
+
+## 2026-06-06 checkpoint：q6 residual target candidate audit
+
+本轮扩展 target-missing event audit，增加 q6 residual target candidate 诊断。该改动仍保持 audit-only，不改变 `compile_feasible_summary`、posterior、formal/value sampler、readiness gate、v2 formal/live/UI 或正式出价。
+
+改动：
+
+- `scripts/summarize_v3_target_missing_event_audit.py` 新增 `q6_residual_target_candidate`：
+  - count/cells/value 分别输出 `status`、candidate value、session total exact、non-q6 exact sum、missing non-q6 qualities；
+  - 只有 session total exact 与 q1-q5 exact 完整且 residual 非负时，才标记 `derived`；
+  - 对真实 detail row 附加 q6 truth 与 truth delta，方便 archive 审计。
+- summary 文本新增：
+  - `q6_residual_patterns`；
+  - `q6_residual_cells` status counts；
+  - per-row compact `q6_residual=` 输出。
+- `tests/test_summarize_v3_target_missing_event_audit.py` 覆盖：
+  - 非 q6 exact 不完整时不派生；
+  - q1-q5 count/cells/value 与 session total 完整时可派生 q6 residual exact；
+  - Fatbeans prebid replay row 会保留 truth delta。
+- `DECISIONS_V3.md` 新增 D-v3-097；`OBSERVATIONS_V3.md` 新增 O-v3-101。
+
+关键验证：
+
+```powershell
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_target_missing_event_audit.py tests\test_summarize_v3_prior_robustness_audit.py
+pytest --basetemp=.tmp\codex\pytest tests\test_inference_v3_summary.py tests\test_inference_v3_posterior.py tests\test_inference_v3_formal_value_sampler.py tests\test_inference_v3_evidence_registry.py tests\test_summarize_v3_target_missing_event_audit.py tests\test_summarize_v3_prior_robustness_audit.py -q
+python -m py_compile src\bidking_lab\inference\v3\summary.py src\bidking_lab\inference\v3\posterior.py src\bidking_lab\inference\v3\formal_value_sampler.py scripts\summarize_v3_target_missing_event_audit.py scripts\summarize_v3_prior_robustness_audit.py
+python scripts\summarize_v3_target_missing_event_audit.py --posterior-trials 64 --format summary
+```
+
+真实 64-trial residual candidate：
+
+```text
+selected_rows=4
+audited_rows=4
+q6_residual_patterns=none:3,cells:1
+q6_residual_cells=missing_non_q6_exact:3,derived:1
+
+prebid_r4:
+  cells=derived
+  total_cells_exact=156
+  non_q6_cells_exact_sum=134
+  derived_q6_cells=22
+  truth_delta=0
+```
+
+结论：
+
+- 2502 r4 可以 shadow-only 派生 `q6_cells=22`，但 r1-r3 缺非 q6 cells exact，不能派生。
+- 2502 四行均不能派生 q6 count 或 q6 value；value/formal-value sampler 仍不能用这些 rows 做 candidate。
+- 下一步如果继续推进，应把 q6 cells residual candidate 设计成 shadow-only diagnostic/conditioning input，并继续保持 formal/value promotion blocked，直到 capacity 与 value evidence 都有真实 archive/live/holdout 支持。

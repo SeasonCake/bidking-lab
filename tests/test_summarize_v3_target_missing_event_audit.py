@@ -43,6 +43,19 @@ def _event(
     )
 
 
+def _numeric_event(event_id: str, target: str, value: int) -> EvidenceEvent:
+    return EvidenceEvent(
+        event_id=event_id,
+        source_kind="fixture",
+        source_id=event_id,
+        semantic=event_id,
+        strength="hard",
+        constraint="hard",
+        targets=(target,),
+        payload={"value": value},
+    )
+
+
 def test_event_diagnostics_exposes_disjoint_shape_and_quality_evidence() -> None:
     module = _load_module()
     events = (
@@ -106,6 +119,45 @@ def test_event_diagnostics_exposes_disjoint_shape_and_quality_evidence() -> None
     assert result["payload_item_summary"]["q6_items"] == 1
     assert result["payload_item_summary"]["q6_with_cells"] == 0
     assert result["payload_item_summary"]["q6_with_value"] == 0
+    assert result["q6_residual_target_candidate"]["count"]["status"] == (
+        "missing_non_q6_exact"
+    )
+    assert result["q6_residual_target_candidate"]["cells"]["status"] == (
+        "missing_non_q6_exact"
+    )
+    assert result["q6_residual_target_candidate"]["value"]["status"] == (
+        "missing_total_exact"
+    )
+
+
+def test_q6_residual_target_candidate_derives_exact_when_non_q6_complete() -> None:
+    module = _load_module()
+    events = [
+        _numeric_event("total-count", "session.total_count", 7),
+        _numeric_event("total-cells", "session.total_cells", 16),
+        _numeric_event("total-value", "session.total_value", 100),
+    ]
+    for quality in range(1, 6):
+        events.extend(
+            [
+                _numeric_event(f"q{quality}-count", f"bucket.q{quality}.count", 1),
+                _numeric_event(f"q{quality}-cells", f"bucket.q{quality}.cells", 2),
+                _numeric_event(f"q{quality}-value", f"bucket.q{quality}.value", 12),
+            ]
+        )
+    constraints = compile_hard_constraints(events)
+    summary = compile_feasible_summary(constraints)
+
+    result = module._event_diagnostics(events, constraints, summary)
+    candidate = result["q6_residual_target_candidate"]
+
+    assert candidate["derived_fields"] == ["count", "cells", "value"]
+    assert candidate["count"]["status"] == "derived"
+    assert candidate["count"]["value"] == 2
+    assert candidate["cells"]["status"] == "derived"
+    assert candidate["cells"]["value"] == 6
+    assert candidate["value"]["status"] == "derived"
+    assert candidate["value"]["value"] == 40
 
 
 def _stress_source_row(file_ref: str) -> dict[str, object]:
@@ -255,3 +307,7 @@ def test_target_missing_event_audit_replays_prebid_prefix(
     assert row["summary_fields"]["q6_value_exact"] is None
     assert row["constraint_anchor_summary"]["quality_floor_anchors"]["q6_count"] == 1
     assert row["payload_item_summary"]["q6_with_value"] == 0
+    assert row["q6_residual_target_candidate"]["cells"]["status"] == (
+        "missing_non_q6_exact"
+    )
+    assert row["q6_residual_target_candidate"]["cells"]["truth"] == 4

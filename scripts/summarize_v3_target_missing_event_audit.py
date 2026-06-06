@@ -61,6 +61,8 @@ KEY_TARGETS: tuple[str, ...] = (
     "bucket.q6.cells",
     "bucket.q6.value",
 )
+NON_Q6_QUALITIES: tuple[int, ...] = (1, 2, 3, 4, 5)
+Q6_RESIDUAL_FIELDS: tuple[str, ...] = ("count", "cells", "value")
 _SORT_RE = re.compile(r"#prebid_r(?P<round>\d+)_sort(?P<sort>\d+)")
 
 
@@ -287,6 +289,117 @@ def _summary_fields(summary: Any) -> dict[str, Any]:
     }
 
 
+def _bucket_exact(summary: Any, quality: int, field: str) -> int | None:
+    bucket = summary.bucket(int(quality)) if summary is not None else None
+    if bucket is None:
+        return None
+    return _safe_int(getattr(bucket, f"{field}_exact", None))
+
+
+def _q6_explicit_exact(summary: Any, field: str) -> int | None:
+    return _bucket_exact(summary, 6, field)
+
+
+def _session_total_exact(
+    numeric: Mapping[str, Any],
+    summary: Any,
+    field: str,
+) -> int | None:
+    if field == "count":
+        return _safe_int(getattr(summary, "session_total_count_exact", None))
+    if field == "cells":
+        return _safe_int(getattr(summary, "session_total_cells_exact", None))
+    if field == "value":
+        constraint = numeric.get("session.total_value")
+        return _safe_int(getattr(constraint, "value", None))
+    return None
+
+
+def _q6_residual_field_candidate(
+    numeric: Mapping[str, Any],
+    summary: Any,
+    field: str,
+) -> dict[str, Any]:
+    explicit = _q6_explicit_exact(summary, field)
+    total = _session_total_exact(numeric, summary, field)
+    exact_by_quality = {
+        quality: _bucket_exact(summary, quality, field)
+        for quality in NON_Q6_QUALITIES
+    }
+    missing_qualities = tuple(
+        quality
+        for quality, value in exact_by_quality.items()
+        if value is None
+    )
+    non_q6_sum = (
+        sum(int(value) for value in exact_by_quality.values() if value is not None)
+        if not missing_qualities
+        else None
+    )
+    out: dict[str, Any] = {
+        "status": "missing_total_exact",
+        "value": None,
+        "total_exact": total,
+        "non_q6_exact_sum": non_q6_sum,
+        "missing_non_q6_qualities": list(missing_qualities),
+        "q6_explicit_exact": explicit,
+    }
+    if explicit is not None:
+        out["status"] = "already_explicit"
+        out["value"] = explicit
+        return out
+    if total is None:
+        return out
+    if missing_qualities:
+        out["status"] = "missing_non_q6_exact"
+        return out
+    residual = int(total) - int(non_q6_sum or 0)
+    if residual < 0:
+        out["status"] = "negative_residual"
+        out["value"] = residual
+        return out
+    out["status"] = "derived"
+    out["value"] = residual
+    return out
+
+
+def _q6_residual_target_candidate(
+    numeric: Mapping[str, Any],
+    summary: Any,
+) -> dict[str, Any]:
+    fields = {
+        field: _q6_residual_field_candidate(numeric, summary, field)
+        for field in Q6_RESIDUAL_FIELDS
+    }
+    return {
+        **fields,
+        "derived_fields": [
+            field for field, row in fields.items() if row.get("status") == "derived"
+        ],
+    }
+
+
+def _with_q6_residual_truth(
+    candidate: Mapping[str, Any],
+    detail: Mapping[str, Any],
+    source_row: Mapping[str, Any],
+) -> dict[str, Any]:
+    out = {key: (dict(value) if isinstance(value, Mapping) else value) for key, value in candidate.items()}
+    truth_by_field = {
+        "count": _safe_int(source_row.get("v3_truth_q6_count")),
+        "cells": _safe_int(detail.get("q6_cells", {}).get("truth")),
+        "value": _safe_int(detail.get("q6_value", {}).get("truth")),
+    }
+    for field, truth in truth_by_field.items():
+        row = out.get(field)
+        if not isinstance(row, dict):
+            continue
+        value = _safe_int(row.get("value"))
+        row["truth"] = truth
+        row["truth_delta"] = value - truth if value is not None and truth is not None else None
+    return out
+
+
 def _event_diagnostics(events: Iterable[Any], constraints: Any, summary: Any) -> dict[str, Any]:
     seq = tuple(events)
     target_counts = Counter(target for event in seq for target in _event_targets(event))
@@ -331,6 +444,10 @@ def _event_diagnostics(events: Iterable[Any], constraints: Any, summary: Any) ->
         "key_event_details": _key_event_details(seq),
         "summary_fields": _summary_fields(summary),
         "constraint_anchor_summary": _constraint_anchor_summary(constraints),
+        "q6_residual_target_candidate": _q6_residual_target_candidate(
+            numeric,
+            summary,
+        ),
     }
 
 
@@ -383,6 +500,11 @@ def _audit_detail_row(
     summary = compile_feasible_summary(constraints)
     diagnostics = _event_diagnostics(evidence_events, constraints, summary)
     missing = _target_missing_components(detail)
+    diagnostics["q6_residual_target_candidate"] = _with_q6_residual_truth(
+        diagnostics["q6_residual_target_candidate"],
+        detail,
+        source_row,
+    )
     return {
         "file": file_ref,
         "path": str(path),
@@ -476,6 +598,28 @@ def _anchor_metric_summary(
     )
 
 
+def _q6_residual_status_counts(
+    rows: Iterable[Mapping[str, Any]],
+    field: str,
+) -> dict[str, int]:
+    return _counter_dict(
+        row.get("q6_residual_target_candidate", {})
+        .get(field, {})
+        .get("status")
+        for row in rows
+    )
+
+
+def _q6_residual_derived_pattern_counts(
+    rows: Iterable[Mapping[str, Any]],
+) -> dict[str, int]:
+    return _counter_dict(
+        "+".join(row.get("q6_residual_target_candidate", {}).get("derived_fields", ()))
+        or "none"
+        for row in rows
+    )
+
+
 def _audit_summary(
     rows: Iterable[Mapping[str, Any]],
     *,
@@ -516,6 +660,11 @@ def _audit_summary(
             (row.get("anchor_event_semantic_counts", {}) for row in seq),
             top=top,
         ),
+        "q6_residual_status_counts": {
+            field: _q6_residual_status_counts(seq, field)
+            for field in Q6_RESIDUAL_FIELDS
+        },
+        "q6_residual_derived_pattern_counts": _q6_residual_derived_pattern_counts(seq),
         "payload_item_summary": {
             "items": _numeric_summary(payload.get("items") for payload in payloads),
             "with_quality": _numeric_summary(payload.get("with_quality") for payload in payloads),
@@ -600,6 +749,25 @@ def _format_summary_value(summary: Mapping[str, Any]) -> str:
     )
 
 
+def _format_q6_residual(candidate: Mapping[str, Any]) -> str:
+    parts: list[str] = []
+    for field in Q6_RESIDUAL_FIELDS:
+        row = candidate.get(field, {})
+        if not isinstance(row, Mapping):
+            continue
+        delta = row.get("truth_delta")
+        delta_text = "" if delta is None else f"/truth_delta={delta}"
+        parts.append(
+            f"{field}:{row.get('status')}"
+            f"/value={row.get('value')}"
+            f"/total={row.get('total_exact')}"
+            f"/non_q6={row.get('non_q6_exact_sum')}"
+            f"/missing={','.join(str(item) for item in row.get('missing_non_q6_qualities', ())) or '-'}"
+            f"{delta_text}"
+        )
+    return "|".join(parts) or "-"
+
+
 def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
     summary = result["summary"]
     print(
@@ -620,6 +788,10 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 "event_targets=" + _format_counts(summary["event_target_counts"]),
                 "anchor_source_ids="
                 + _format_counts(summary["anchor_event_source_id_counts"]),
+                "q6_residual_patterns="
+                + _format_counts(summary["q6_residual_derived_pattern_counts"]),
+                "q6_residual_cells="
+                + _format_counts(summary["q6_residual_status_counts"]["cells"]),
             )
         )
     )
@@ -648,6 +820,8 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     + _format_anchor(anchors["quality_floor_anchors"]),
                     "numeric_values="
                     + _format_counts(row["numeric_target_values"]),
+                    "q6_residual="
+                    + _format_q6_residual(row["q6_residual_target_candidate"]),
                     "targets=" + _format_counts(row["event_target_counts"]),
                 )
             )

@@ -2114,3 +2114,18 @@ applied_hurts=2502
 - 真实 64-trial archive 显示 4 行 target-missing 全部是 `2502`，且 `session.total_cells` target 存在、`bucket.q6.count/cells/value` target 均不存在。
 - 这些 rows 的 shape/category evidence 很充分，但 anchor payload 没有 q6/value 字段：`item_anchors.with_value=0`、`shape_anchors.q6_count=0`、`known_value_floor=0`。
 - 因此 blocker 不是“没有 evidence”，而是现有 evidence 没有被编译成 q6/value allocation target。
+
+## D-v3-097：q6 residual exact 派生先保持 audit-only
+
+2026-06-06 起，当前决策：
+
+- q6 residual exact 只能先作为 `summarize_v3_target_missing_event_audit.py` 的诊断字段输出，不写入 `compile_feasible_summary`。
+- count/cells residual 只有在 session total exact 且 q1-q5 对应 exact 全部存在、residual 非负、summary 无冲突时，才标记为 `derived` candidate。
+- value/formal-value residual 仍保持 out-of-scope；没有 `session.total_value` hard exact 与 q1-q5 value exact 完整分区时，不得派生 q6 value。
+- residual candidate 不能改变 posterior、CCV/residual sampler、formal/value sampler、readiness gate、v2 formal/live/UI 或正式出价。
+
+原因：
+
+- `summary.bucket(6)` 会被 posterior/formal-value 直接消费，直接把 residual 写成 hard exact 会改变 v3 shadow 全链路。
+- 当前 2502 只有 r4 满足 q1-q5 cells exact 完整分区，可派生 `q6_cells=22`；r1-r3 仍缺 q2-q5/q3-q5/q4-q5 cells exact。
+- 2502 四行均没有 session count exact，也没有 session value exact，因此 q6 count/value 不能派生。
