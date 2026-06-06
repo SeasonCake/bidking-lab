@@ -4027,3 +4027,79 @@ gate=v2_archive_readiness status=pending
 - prefix 聚合能提升 sample-depth 与 coverage，但仍不能替代 BidMap 表版本、字段语义或活动 mapping 解释。
 - 252x activity cohort 仍是 missing-table evidence；不得 fallback 到 250x default prior。
 - 当前 checkpoint 不改变 formal/value sampler、不改变 posterior sampler cap、不改变正式出价；v3 promotion 与 v2 archive 继续 pending。
+
+## 2026-06-06 checkpoint：settlement count-prior 到 formal/value stress 关联审计
+
+完成内容：
+
+- 新增 `scripts/summarize_v3_scp_formal_value_link.py`：
+  - 以 `v3_scp_ready` 为 settlement count-prior evidence 分母；
+  - 只在 `v3_post_ready + v3_fv_ready + truth` 的子集上计算 formal metrics；
+  - 量化 `scp_candidate` 与 `value_floor_stress`、`capacity_cells_drift`、capacity cases、formal MAE/p90 coverage 的交集；
+  - activity/no-posterior rows 保留为 missing-table evidence，不进入 formal metric 分母。
+- 新增 `tests/test_summarize_v3_scp_formal_value_link.py`，覆盖：
+  - `scp + value_floor` / `scp + capacity` overlap；
+  - `missing_bidmap` 不进入 formal metrics。
+- `scripts/summarize_v3_promotion_readiness.py` 新增 `settlement_count_formal_value_link` gate：
+  - 如果 `scp_candidate` 不能桥接到 value-floor 且改善 formal shadow metrics，则 blocked；
+  - 该 gate 不改变正式出价，只暴露 promotion blocker。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_formal_value_link.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_formal_value_link.py --posterior-trials 64 --top 10
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_formal_value_link.py --by v3_fv_stress_class --posterior-trials 64 --top 10
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_formal_value_link.py --by v3_scp_group --posterior-trials 64 --top 12
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_formal_value_link.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --top 10
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_other_tables.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_count_prior_holdout.py tests\test_summarize_v3_scp_formal_value_link.py tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+```
+
+结果：
+
+```text
+targeted tests:
+6 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+76 passed
+
+default scp/formal link:
+scp_rows=1560 formal_rows=1560
+scp_candidate_rows=1488
+scp_candidate_formal_rows=1488
+scp_candidate_value_floor_rows=8
+scp_candidate_capacity_watch_rows=124
+fv_value_floor_rows=13
+fv_capacity_watch_rows=126
+formal_mae=318635.858
+fv_delta_mae=0.0
+formal_below=0.51859
+formal_p90_cover=0.750641
+
+activity scp/formal link:
+scp_rows=58
+formal_rows=0
+scp_candidate_rows=0
+scp_missing_table_rows=58
+status_counts=missing_table_shadow_only:1
+
+readiness:
+overall_status=not_ready
+blocked_gates=11
+gate=settlement_count_prior_shadow status=watch
+gate=settlement_count_formal_value_link status=blocked
+gate=prior_stress_capacity_table_drift status=blocked
+gate=formal_value_sampler_holdout status=blocked
+scp_value_link_rows=8
+scp_capacity_link_rows=124
+scp_value_link_delta=0.0
+```
+
+结论：
+
+- `v3_scp_candidate` 已经能作为 archive/live/readiness 可观测 evidence，但尚未形成 formal/value sampler 的可用 value bridge。
+- 现有 `v3_fv` 与 `v3_scp` 的交集太小，且 formal MAE delta 为 0；不得据此恢复 sampler tuning 或 promotion。
+- 下一步应设计 shadow-only count->cells/value bridge：先解释 `scp + capacity_only` 如何转化为 cells/value distribution，再进入 holdout。
+- v2 formal/live/UI 与正式出价路径未改；v3 promotion、v2 archive 继续 pending。

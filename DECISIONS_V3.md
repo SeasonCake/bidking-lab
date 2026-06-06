@@ -1732,3 +1732,21 @@ applied_hurts=2502
 - default `map_prefix3` holdout：441 sessions，5 groups，`candidate_rows=441`，`sample_limited_rows=0`，`holdout_p95_coverage=0.945578`，但这只是跨 exact-map 的聚合 evidence。
 - activity 252x holdout：15 sessions，`missing_table_rows=15`；`map_prefix3=252` 的 p95 holdout coverage 虽为 `0.933333`，但 table/mapping 仍缺失。
 - focused parser/archive/live/readiness/formal-value tests 74 passed；readiness 仍为 `overall_status=not_ready`。
+
+## D-v3-074：v3_scp 到 formal/value sampler 必须先建立 count->cells/value bridge
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_scp_formal_value_link.py` 是 `v3_scp_*` 与 formal/value sampler 之间的 archive 关联审计入口。
+- `v3_scp_candidate=True` 只能表示 settlement count-prior shadow evidence；不得直接等价为 `value_floor_stress`、formal/value sampler candidate 或 count cap promotion。
+- formal/value sampler 设计前必须先证明 count-prior evidence 如何映射到 cells/value：至少要区分 `scp + value_floor`、`scp + capacity_only`、`scp + no formal stress` 与 `missing_table`。
+- readiness 新增 `settlement_count_formal_value_link` gate；该 gate blocked 时，不得恢复 formal/value sampler tuning，也不得讨论 v3 promotion/v2 archive。
+- 252x activity rows 在 no posterior/formal metric 情况下仍只计入 missing-table evidence，不进入 formal MAE/p90 分母。
+- 当前 `v3_fv_active=False`、`v3_fv_affects_bid=False`、`v3_scp_active=False`、`v3_scp_affects_bid=False` 必须保持；任何 active/affects-bid 都是 regression。
+
+原因：
+
+- default archive：`v3_scp_candidate_formal_rows=1488`，但 `scp_candidate_value_floor_rows=8`，`scp_candidate_capacity_watch_rows=124`，当前 `v3_fv_delta_p50_mae=0.0`。
+- 按 `v3_fv_stress_class` 看，`value_floor_stress` 只有 12 rows，其中 7 rows 与 `v3_scp_candidate` 重叠；capacity watch overlap 明显更大。
+- 按 `map_id` 看，2401/2402/2501 有少量 `scp + value_floor` overlap；2506/2601 等 prior-stressed group 主要是 `scp + capacity_only`，formal baseline 仍偏弱。
+- readiness 新 gate `settlement_count_formal_value_link=blocked`，`overall_status=not_ready`，blocked gates 增至 11。

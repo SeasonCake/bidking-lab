@@ -2731,3 +2731,58 @@ status_counts=missing_table_shadow_only:1
 - prefix 聚合消除了 default sample-limited，但它混合了同 prefix 的 exact maps；只能作为 holdout 补充证据，不能替代 BidMap/DropEntry 字段语义确认。
 - 252x activity cohort 即便 prefix holdout coverage 较高，仍然 15/15 缺 current BidMap；activity table/mapping blocker 未解除。
 - readiness 保持 `overall_status=not_ready`，因此 formal/value sampler tuning、v3 promotion 与 v2 archive 继续暂停。
+
+## O-v3-079：v3_scp 与 formal/value stress 的交集很小，count-prior 尚未形成 value bridge
+
+2026-06-06 新增 `summarize_v3_scp_formal_value_link.py`，将 `v3_scp_*` settlement count-prior evidence 与 `v3_fv_*` formal/value stress 做 archive 关联审计：
+
+```text
+default by v3_scp_status:
+scp_rows=1560
+formal_rows=1560
+scp_candidate_rows=1488
+scp_candidate_formal_rows=1488
+scp_candidate_value_floor_rows=8
+scp_candidate_capacity_watch_rows=124
+fv_value_floor_rows=13
+fv_capacity_watch_rows=126
+formal_mae=318635.858
+fv_delta_mae=0.0
+formal_below=0.51859
+formal_p90_cover=0.750641
+status_counts=no_scp_candidate_formal_rows:1,watch_scp_value_floor_overlap:1
+
+default by v3_fv_stress_class:
+groups=7
+value_floor_stress rows=12 scp_candidate=7 p90_cover=0.25
+capacity_cells_drift rows=118 scp_candidate=117 p90_cover=0.652542
+none rows=1398 scp_candidate=1337 p90_cover=0.761803
+
+default by map_id highlights:
+2401 scp_candidate=257 scp_value_floor=3 scp_capacity=16 formal_mae=300158.618 p90_cover=0.782101
+2402 scp_candidate=34 scp_value_floor=3 scp_capacity=1 formal_mae=192657.229 p90_cover=0.794118
+2501 scp_candidate=310 scp_value_floor=2 scp_capacity=19 formal_mae=354779.263 p90_cover=0.674194
+2506 scp_candidate=71 scp_value_floor=0 scp_capacity=15 formal_mae=429762.518 p90_cover=0.56338
+2601 scp_candidate=86 scp_value_floor=0 scp_capacity=10 formal_mae=530111.384 p90_cover=0.465116
+
+activity:
+scp_rows=58
+formal_rows=0
+scp_candidate_rows=0
+scp_missing_table_rows=58
+status_counts=missing_table_shadow_only:1
+
+readiness:
+gate=settlement_count_formal_value_link status=blocked
+scp_value_link_rows=8
+scp_capacity_link_rows=124
+scp_value_link_delta=0.0
+overall_status=not_ready
+```
+
+解读：
+
+- `v3_scp_candidate` 覆盖大量 formal-ready rows，但与现有 `value_floor_stress` 的交集只有 8/1488；它更多是 capacity-only/no-value-stress evidence。
+- 2506、2601 等 prior-stressed heavy groups formal baseline 明显偏弱，但没有 value-floor overlap；直接把 count-prior 当 value-floor 会跳过 cells/value bridge。
+- 当前 `v3_fv` 对 default archive formal MAE 的 delta 仍为 0；这说明现有 formal/value sampler 不是 count-prior 的可用 promotion path。
+- 252x activity 仍没有 posterior/formal metric rows，只能留在 missing-table evidence；不能用 activity count-prior 推导 formal/value promotion。

@@ -60,6 +60,9 @@ from summarize_v3_tail_under_holdout import (  # noqa: E402
 from summarize_v3_formal_value_sampler_holdout import (  # noqa: E402
     summarize_holdout as summarize_formal_value_sampler_holdout,
 )
+from summarize_v3_scp_formal_value_link import (  # noqa: E402
+    summarize_link as summarize_scp_formal_value_link,
+)
 from summarize_v3_prior_robustness_audit import (  # noqa: E402
     summarize_prior_stress_details,
     summarize_prior_stress_detail_summary,
@@ -304,6 +307,10 @@ def summarize_readiness(
         min_windows=min_windows,
         min_sessions=min_sessions,
     )
+    scp_formal_value_link = summarize_scp_formal_value_link(
+        rows,
+        group_field="v3_scp_group",
+    )
 
     gates: list[dict[str, Any]] = []
     data_status = "pass" if not errors and not summary.get("constraint_conflict") else "blocked"
@@ -416,6 +423,68 @@ def summarize_readiness(
             missing_table_rows=scp_missing_table,
             active_rows=scp_active,
             status_counts=summary.get("v3_scp_status_counts"),
+        )
+    )
+    scp_link_overall = scp_formal_value_link["overall"]
+    scp_link_value_rows = int(
+        scp_link_overall.get("scp_candidate_value_floor_rows") or 0
+    )
+    scp_link_candidate_rows = int(
+        scp_link_overall.get("scp_candidate_formal_rows") or 0
+    )
+    scp_link_delta = scp_link_overall.get("formal_fv_delta_p50_mae")
+    scp_link_ready = (
+        scp_link_candidate_rows > 0
+        and scp_link_value_rows > 0
+        and scp_link_delta is not None
+        and float(scp_link_delta) < 0.0
+    )
+    gates.append(
+        _gate(
+            "settlement_count_formal_value_link",
+            "watch" if scp_link_ready else "blocked",
+            "settlement count-prior candidates have value-floor overlap and improve formal shadow metrics"
+            if scp_link_ready
+            else "settlement count-prior candidates are mostly capacity/no-value bridge or do not improve formal shadow metrics",
+            formal_rows=scp_link_overall.get("formal_rows"),
+            scp_candidate_formal_rows=scp_link_candidate_rows,
+            scp_candidate_value_floor_rows=scp_link_value_rows,
+            scp_candidate_capacity_watch_rows=scp_link_overall.get(
+                "scp_candidate_capacity_watch_rows"
+            ),
+            formal_fv_delta_p50_mae=scp_link_delta,
+            formal_baseline_p50_below_rate=scp_link_overall.get(
+                "formal_baseline_p50_below_rate"
+            ),
+            formal_baseline_p90_coverage=scp_link_overall.get(
+                "formal_baseline_p90_coverage"
+            ),
+            status_counts=scp_formal_value_link.get("status_counts"),
+            top_groups=[
+                {
+                    "group": row.get("group"),
+                    "link_status": row.get("link_status"),
+                    "scp_candidate_formal_rows": row.get(
+                        "scp_candidate_formal_rows"
+                    ),
+                    "scp_candidate_value_floor_rows": row.get(
+                        "scp_candidate_value_floor_rows"
+                    ),
+                    "scp_candidate_capacity_watch_rows": row.get(
+                        "scp_candidate_capacity_watch_rows"
+                    ),
+                    "formal_baseline_p50_mae": row.get(
+                        "formal_baseline_p50_mae"
+                    ),
+                    "formal_baseline_p50_below_rate": row.get(
+                        "formal_baseline_p50_below_rate"
+                    ),
+                    "formal_baseline_p90_coverage": row.get(
+                        "formal_baseline_p90_coverage"
+                    ),
+                }
+                for row in scp_formal_value_link.get("rows", ())[:5]
+            ],
         )
     )
     formal_below = float(summary.get("formal_p50_below_rate") or 0.0)
@@ -784,6 +853,8 @@ def summarize_readiness(
         next_actions.append("redesign CCV likelihood; current holdout is not promotion-ready")
     if not formal_value_sampler_watch:
         next_actions.append("keep formal/value sampler shadow-only until holdout has safe support")
+    if not scp_link_ready:
+        next_actions.append("bridge settlement count-prior to cells/value before formal/value sampler promotion")
     if not prior_stress_drift_ready:
         next_actions.append("audit prior-stressed capacity/table drift by map/profile before promotion")
     if not robust_ready:
@@ -973,6 +1044,22 @@ def summarize_readiness(
                 "train_candidate_status_counts"
             ),
         },
+        "settlement_count_formal_value_link": {
+            "formal_rows": scp_link_overall.get("formal_rows"),
+            "scp_candidate_formal_rows": scp_link_candidate_rows,
+            "scp_candidate_value_floor_rows": scp_link_value_rows,
+            "scp_candidate_capacity_watch_rows": scp_link_overall.get(
+                "scp_candidate_capacity_watch_rows"
+            ),
+            "formal_fv_delta_p50_mae": scp_link_delta,
+            "formal_baseline_p50_below_rate": scp_link_overall.get(
+                "formal_baseline_p50_below_rate"
+            ),
+            "formal_baseline_p90_coverage": scp_link_overall.get(
+                "formal_baseline_p90_coverage"
+            ),
+            "status_counts": scp_formal_value_link.get("status_counts"),
+        },
         "ccv_status_counts": ccv_counts,
         "tail_status_counts": tail_counts,
         "residual_status_counts": residual_counts,
@@ -1018,6 +1105,9 @@ def _print_summary(result: dict[str, Any]) -> None:
                 + ",".join(
                     result["formal_value_sampler_holdout"]["applied_hurts_groups"]
                 ),
+                f"scp_value_link_rows={result['settlement_count_formal_value_link']['scp_candidate_value_floor_rows']}",
+                f"scp_capacity_link_rows={result['settlement_count_formal_value_link']['scp_candidate_capacity_watch_rows']}",
+                f"scp_value_link_delta={result['settlement_count_formal_value_link']['formal_fv_delta_p50_mae']}",
                 f"prior_stress_detail_rows={result['prior_stress_detail_summary']['rows']}",
                 f"prior_stress_capacity_hits={result['prior_stress_detail_summary']['capacity_flag_hits']}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
