@@ -4432,3 +4432,78 @@ lower_bound_under_truth/within_drop_ref/shipwreck/floor/no_full_action/no_public
 - hard 2506 的 strongest cell 是 floor + full action + round-cap overflow，优先查 action mirror / settlement expansion，而不是公开总数。
 - lower bucket 的 villa/shipwreck 主要是 floor/no-action/no-public 的 drop-ref overflow，和 hard bucket 的 direct exact/public/action 证据形态不同。
 - `within_drop_ref` cell 已按 cell-level status 标为 activity watch，未再继承 map-level blocked；这避免把可解释子集误当成 promotion blocker。
+
+## O-v3-109：source/expansion 下钻确认 hard cell 的 public/action 与 latest inventory 对齐
+
+2026-06-06 新增 `summarize_v3_capacity_source_expansion_audit.py` 后，复跑 hard direct cell：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_audit.py --case direct_prior_max_conflict --bucket hard_capacity_conflict --posterior-trials 64 --top 5 --format summary
+```
+
+关键输出：
+
+```text
+2501 hard/public-total cell:
+  latest=60
+  non_temp=57
+  drop_after=13
+  round_after=7
+  public=60
+  public_delta=0
+  action_delta=-42
+  file=fatbeans_valid_aisha_2501_5rounds_2501_1295018669960456_0139.json
+
+2506 hard/full-action cell:
+  latest=58
+  non_temp=57
+  drop_after=13
+  round_after=7
+  full_actions=100134
+  action_delta=0
+  file=fatbeans_valid_ethan_2506_4rounds_2506_1274128029648919_0336.json
+
+2601 hard/drop-ref-only full-action cell:
+  latest=55/60
+  non_temp=52/53
+  drop_after=8/9
+  round_after=0
+  full_actions=100100
+  action_delta=0
+
+2601 hard/round-cap full-action cell:
+  latest=65
+  non_temp=64
+  drop_after=20
+  round_after=4
+  full_actions=100100
+  action_delta=0
+```
+
+lower bucket 对照：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_audit.py --case all --bucket lower_bound_under_truth --posterior-trials 64 --top 5 --format summary
+```
+
+关键输出：
+
+```text
+lower/drop-ref-only/villa/floor/no-public/no-full-action:
+  rows=8 files=4
+  action_delta avg=-43.25
+  public_delta none
+
+lower/round-cap/shipwreck/floor/no-public/no-full-action:
+  rows=6 files=3
+  latest avg=63
+  non_temp avg=58.33
+  round_after avg=8.33
+  action_delta avg=-56.67
+```
+
+解读：
+
+- hard 2501 public total 与 latest settlement inventory 完全一致，但扣除 zodiac 后仍超过 round-cap；这支持继续查 round-cap/session expansion semantics。
+- hard 2506/2601 的 full observed action 覆盖 latest inventory，说明 action mirror 支持 final count，不是 parser 重复或 partial action 误读。
+- lower bucket 多数 no-public/no-full-action，action max 远低于 latest inventory；它应作为 floor target completeness / expansion 分离问题，不应直接套用 hard cell 结论。

@@ -2242,3 +2242,18 @@ applied_hurts=2502
 
 - 同一 map 内可以同时存在 `drop_ref_only_overflow`、`round_cap_overflow` 和 `within_drop_ref` 子集。
 - 后续要判断 session-cap/drop-ref 语义、settlement expansion、activity overlay，应按 cell 追 evidence/source/action/public-total，而不是把 map-level blocked 当成所有子集的原因。
+
+## D-v3-105：capacity source/expansion 下钻只作为证据分流
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_capacity_source_expansion_audit.py` 用于把 capacity semantic matrix cell 下钻到 file-level examples，比较 public total、full observed action、latest settlement inventory 与 drop/round excess。
+- 当 `public_total_latest_delta=0` 或 `action_latest_delta=0` 时，只说明该 evidence source 与 final settlement inventory 同向支持 count；它不是 promotion 证据，也不能直接修正 sampler cap。
+- hard bucket 中带 public/full-action 的 after-temp overflow 优先作为 settlement/session expansion 语义证据。
+- lower bucket 中 no-public/no-full-action 的 after-temp overflow 优先作为 target completeness 与 expansion 分离证据，不应和 hard exact/action/public cell 合并调 formal/value sampler。
+- 该脚本固定 audit-only，不改变 v2 formal/live/UI、不改变正式出价、不启用 formal/value sampler。
+
+原因：
+
+- hard 2501 的 public total 与 latest inventory 对齐，hard 2506/2601 的 full action 与 latest inventory 对齐，说明 parser/truth 与这些外部 evidence source 一致。
+- lower bucket 多数缺 public/full-action，不能用 hard bucket 的强证据强行解释；它需要单独查 floor target completeness。

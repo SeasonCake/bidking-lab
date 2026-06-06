@@ -5838,3 +5838,68 @@ within_drop_ref cells:
 - hard bucket 的 highest-signal cells 分别指向 public-total exact、full-action floor、hidden-map action evidence，不应合并成单一 capacity 修正。
 - lower bucket 主要是 floor/no-action/no-public 的 drop-ref/round-cap overflow，应优先查 target completeness 与 settlement expansion 分离。
 - 下一步可以按 matrix cell 设计更窄的 shadow-only source/expansion diagnostic；formal/value sampler 参数调优继续暂停。
+
+## 2026-06-06 checkpoint：capacity source/expansion file-level 下钻
+
+本轮新增 file-level 下钻脚本，把 capacity semantic matrix cell 落到具体 capture、public total、full observed action 与 latest settlement inventory 的 delta。该改动仍是 v3 audit-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- 新增 `scripts/summarize_v3_capacity_source_expansion_audit.py`：
+  - 输入 prior-stress details 与 raw inventory diagnostics。
+  - 按 semantic matrix cell 聚合。
+  - 输出 `public_total_latest_delta`、`action_latest_delta`、drop/round after-temp excess。
+  - 输出每个 cell 的 file-level examples。
+- 新增 `tests/test_summarize_v3_capacity_source_expansion_audit.py`，覆盖 public-total cell 与 full-action cell 拆分。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_capacity_source_expansion_audit.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_source_expansion_audit.py -q
+python scripts\summarize_v3_capacity_source_expansion_audit.py --case direct_prior_max_conflict --bucket hard_capacity_conflict --posterior-trials 64 --top 5 --format summary
+python scripts\summarize_v3_capacity_source_expansion_audit.py --case all --bucket lower_bound_under_truth --posterior-trials 64 --top 5 --format summary
+```
+
+真实 hard cell 要点：
+
+```text
+2501 public-total cell:
+  latest=60
+  public=60
+  public_delta=0
+  round_after=7
+  action_delta=-42
+
+2506 full-action cell:
+  latest=58
+  full_actions=100134
+  action_delta=0
+  round_after=7
+
+2601 full-action cells:
+  action_delta=0
+  drop_ref_only latest=55/60
+  round_cap latest=65
+```
+
+真实 lower cell 要点：
+
+```text
+villa floor/no-public/no-full-action:
+  rows=8
+  action_delta avg=-43.25
+
+shipwreck round-cap floor/no-public/no-full-action:
+  rows=6
+  latest avg=63
+  round_after avg=8.33
+  action_delta avg=-56.67
+```
+
+结论：
+
+- hard bucket 的 public/action evidence 与 latest settlement inventory 一致，支持继续查 session-cap/settlement expansion 语义。
+- lower bucket 多数缺 public/full-action，不能用 hard evidence 直接解释；下一步应拆 target completeness 与 expansion。
+- formal/value sampler 参数调优继续暂停，promotion/readiness 仍 blocked。

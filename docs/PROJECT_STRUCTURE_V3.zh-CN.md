@@ -33,6 +33,7 @@
 | `scripts/summarize_v3_map_audit.py` | v3 map 主键审计，附 hero/profile 分布 |
 | `scripts/summarize_v3_prior_robustness_audit.py` | v3 prior/activity/prior-stress 分片审计，支持 `--details`、`--detail-summary` 与 `--detail-summary-by` 输出 cells/capacity/evidence 明细、target-vs-truth delta、posterior-vs-target absorption、capacity prior-max gap/cases 和 map/profile 聚合一致性摘要 |
 | `scripts/summarize_v3_capacity_table_audit.py` | v3 prior-stress capacity cases 对 raw BidMap/Drop sampler possible-max、v300 23 列 BidMap/drop-ref、round-cap 候选、leaf `n_min/n_max`、settlement slot capacity、full mirror action 与 drop-universe 覆盖审计，并输出 raw settlement inventory/latest truth 去重诊断 |
+| `scripts/summarize_v3_capacity_source_expansion_audit.py` | v3 capacity semantic matrix 的 file-level source/expansion 下钻审计，按 public total、full observed action、latest inventory、drop/round excess 与 example capture 拆解 hard/lower capacity blocker |
 | `scripts/summarize_v3_archive_table_timing.py` | v3 raw table version/filelist/BidMap/Drop metadata 与 Fatbeans archive/activity capture timing 诊断，用于区分 table-version 强证据与本地 mtime 弱线索 |
 | `scripts/summarize_v3_settlement_payload_audit.py` | v3 0x002D settlement raw payload 审计，核对 inventory block slot count、raw item candidates、dedup 后 inventory count、payload fields 与 full observed action 镜像 |
 | `scripts/summarize_v3_settlement_count_prior_candidates.py` | v3 settlement occupancy count prior shadow-only 候选审计，按 map/prefix/family 统计 final inventory count、临时生肖扣除 residual 与 current BidMap/round-cap 覆盖 |
