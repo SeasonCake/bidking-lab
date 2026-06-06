@@ -16,6 +16,7 @@ def test_capacity_source_expansion_report_is_shadow_only() -> None:
         group="2501",
         status="watch_capacity_source_expansion_shadow_only",
         archive_sessions=21,
+        source_context_classes="payload_verified_partial_action_only:6",
         unique_round_overflow_rows=7,
         server_side_expansion_rows=1,
         session_capacity_source_semantics_rows=6,
@@ -44,6 +45,10 @@ def test_capacity_source_expansion_report_is_shadow_only() -> None:
     assert flat["v3_cse_active"] is False
     assert flat["v3_cse_affects_bid"] is False
     assert flat["v3_cse_status"] == "watch_capacity_source_expansion_shadow_only"
+    assert (
+        flat["v3_cse_source_context_classes"]
+        == "payload_verified_partial_action_only:6"
+    )
     assert flat["v3_cse_target_count_source"] == "floor"
     assert flat["v3_cse_target_to_unique_non_temp_p95_delta"] == -5
     assert flat["v3_cse_prior_max_to_unique_non_temp_p95_delta"] == -13
@@ -108,6 +113,11 @@ def test_capacity_source_expansion_entry_parses_source_semantics_row() -> None:
                 "direct_action_matches_inventory": 2,
                 "public_total_matches_inventory": 1,
             },
+            "source_context_classes": {
+                "payload_verified_partial_action_only": 18,
+                "direct_action_full_confirmed": 2,
+                "public_total_confirmed": 1,
+            },
             "mechanism_classes": {
                 "session_capacity_source_semantics": 18,
                 "server_side_settlement_expansion": 3,
@@ -130,4 +140,21 @@ def test_capacity_source_expansion_entry_parses_source_semantics_row() -> None:
     assert entry.server_side_expansion_rows == 3
     assert entry.session_capacity_source_semantics_rows == 18
     assert entry.payload_verified_only_rows == 18
+    assert (
+        entry.source_context_classes
+        == "direct_action_full_confirmed:2,payload_verified_partial_action_only:18,public_total_confirmed:1"
+    )
     assert entry.unique_non_temp_max == 57
+
+    reloaded = entry_from_mapping(entry.to_dict())
+
+    assert reloaded.mechanism_classes == entry.mechanism_classes
+    assert reloaded.source_evidence_classes == entry.source_evidence_classes
+    assert reloaded.source_context_classes == entry.source_context_classes
+    assert reloaded.unique_round_overflow_rows == entry.unique_round_overflow_rows
+    assert reloaded.public_total_match_rows == entry.public_total_match_rows
+    assert reloaded.full_action_rows == entry.full_action_rows
+    assert reloaded.unique_non_temp_p95 == entry.unique_non_temp_p95
+    assert reloaded.unique_non_temp_max == entry.unique_non_temp_max
+    assert reloaded.unique_round_excess_p95 == entry.unique_round_excess_p95
+    assert reloaded.bidmap_items_per_session_max == entry.bidmap_items_per_session_max

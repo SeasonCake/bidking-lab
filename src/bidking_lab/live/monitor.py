@@ -2089,6 +2089,9 @@ def _model_eval_row(
     v3_cse_gate_reason = v3_shadow.get("v3_cse_gate_reason")
     v3_cse_scope = v3_shadow.get("v3_cse_scope")
     v3_cse_group = v3_shadow.get("v3_cse_group")
+    v3_cse_source_context_classes = v3_shadow.get(
+        "v3_cse_source_context_classes"
+    )
     v3_cse_unique_round_rows = _parse_int_text(
         v3_shadow.get("v3_cse_unique_round_overflow_rows")
     )
@@ -2862,6 +2865,7 @@ def _model_eval_row(
         "v3_cse_source_evidence_classes": v3_shadow.get(
             "v3_cse_source_evidence_classes"
         ),
+        "v3_cse_source_context_classes": v3_cse_source_context_classes,
         "v3_cse_unique_round_overflow_rows": v3_cse_unique_round_rows,
         "v3_cse_server_side_expansion_rows": v3_cse_server_rows,
         "v3_cse_session_capacity_source_semantics_rows": v3_cse_session_rows,

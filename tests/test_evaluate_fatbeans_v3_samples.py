@@ -202,6 +202,7 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
                 group="2401",
                 status="within_capacity_source_semantics_shadow_only",
                 archive_sessions=10,
+                source_context_classes="public_total_confirmed:1",
                 unique_non_temp_p95=2,
                 unique_non_temp_max=2,
             )
@@ -283,6 +284,7 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_cse_status"] == "within_capacity_source_semantics_shadow_only"
     assert rows[0]["v3_cse_scope"] == "map_id"
     assert rows[0]["v3_cse_group"] == "2401"
+    assert rows[0]["v3_cse_source_context_classes"] == "public_total_confirmed:1"
 
 
 def test_capacity_flat_dict_reports_prior_max_gap() -> None:

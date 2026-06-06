@@ -2573,3 +2573,21 @@ applied_hurts=2502
 - activity mapping likelihood 显示 `252x->251x` 比 `252x->250x` 略优，且两个候选族 missing item rate 均为 0；margin 不足以证明 official mapping。
 - prior robustness 仍为 `prior_unavailable`：ready=58、post_ready=0、metric=0、trusted=0/58、activity=58。
 - CSE activity holdout 无 unique round-cap truth rows；其 non-zodiac missing 是 overlay/source-parser 线索，不是 default 21 条 over round-cap blocker 的解释。
+
+## D-v3-125：CSE source-context 是解释维度，不是 promotion key
+
+2026-06-07 起，当前决策：
+
+- `source_context_class` 是 post-settlement audit context，用于解释 source support 强弱；不得作为 train-time prior key、sampler cap 修正、readiness 放行或 promotion evidence。
+- `v3_cse_source_context_classes` 必须和 `v3_cse_source_evidence_classes` 一起进入 archive CSV、processed artifact 与 live `model_eval`，保证实战后能复盘 payload-only、public-total、direct-action 的差异。
+- exact `map_id` 继续作为 CSE 最保守默认 support baseline；`map_family` 与 `map_family_sub_pool_kind` fallback 只作为 holdout counterfactual，不默认接入 source-aware expansion prior。
+- payload-verified rows 必须继续拆分：partial action、empty action、no external source 与 mismatch 不能混同为 external source confirmation。
+- 在 fallback precision 没有改善、payload-only rows 没有更强 source/parser/table 解释前，不恢复 formal/value sampler 参数调优，不放宽 readiness/promotion gate，不改变 v2 formal/live/UI 或正式出价。
+
+原因：
+
+- 441 个 settlement rows 的 source context 分布为 `payload_verified_partial_action_only:339`、`payload_verified_empty_action_results:55`、`public_total_confirmed:27`、`direct_action_full_confirmed:17`、`payload_unverified_or_mismatch:2`、`payload_verified_no_external_source:1`。
+- 21 条 unique round-cap truth 中，15 条是 partial action only、3 条是 empty action results、2 条 direct action full confirmed、1 条 public total confirmed。
+- map-id holdout 召回 18/21、precision 0.089109；3 条 miss 都是 train fold 无同 map source support 的 singleton/sparse blocker。
+- map-family holdout 可召回 21/21，但 precision 只有 0.050119；`map_id -> map_family_sub_pool_kind` fallback 也召回 21/21，但 candidate 增至 347、false positive 326、precision 0.060519。
+- archive/readiness 仍显示 `v3_cse_active_rows=0`、`capacity_source_expansion_shadow=watch`、overall `not_ready`；该证据只能支持 blocker 审计继续推进，不能支持 promotion。

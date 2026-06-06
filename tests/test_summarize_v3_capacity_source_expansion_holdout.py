@@ -36,6 +36,7 @@ def _row(
     unique_round_excess: int = 0,
     mechanism_class: str = "not_unique_round_cap_blocker",
     source_evidence_class: str = "settlement_payload_verified_only",
+    source_context_class: str = "payload_verified_partial_action_only",
 ) -> dict[str, object]:
     return {
         "status": "ok",
@@ -51,6 +52,7 @@ def _row(
         "occupied_slot_inventory_delta": 0,
         "mechanism_class": mechanism_class,
         "source_evidence_class": source_evidence_class,
+        "source_context_class": source_context_class,
     }
 
 
@@ -69,6 +71,7 @@ def test_capacity_source_expansion_holdout_covers_source_semantics() -> None:
             unique_round_excess=4,
             mechanism_class="server_side_settlement_expansion",
             source_evidence_class="public_total_matches_inventory",
+            source_context_class="public_total_confirmed",
         ),
         _row(session_id=fold0 + "_normal"),
     ]
@@ -86,6 +89,10 @@ def test_capacity_source_expansion_holdout_covers_source_semantics() -> None:
     assert result["unique_round_recall"] == 1.0
     assert result["candidate_precision"] == 0.666667
     assert result["status_counts"] == {"watch_capacity_source_expansion_holdout": 1}
+    assert result["truth_source_context_classes"] == {
+        "payload_verified_partial_action_only": 1,
+        "public_total_confirmed": 1,
+    }
     row = result["rows"][0]
     assert row["group"] == "shipwreck"
     assert row["truth_mechanism_classes"] == {
@@ -165,3 +172,4 @@ def test_capacity_source_expansion_holdout_can_use_fallback_group() -> None:
     assert result["unique_round_recall"] == 1.0
     assert result["candidate_precision"] == 0.666667
     assert result["candidate_source_counts"] == {"fallback": 2, "primary": 1}
+    assert result["missed_examples"] == []

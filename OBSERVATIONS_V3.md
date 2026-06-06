@@ -5539,3 +5539,98 @@ prior robustness:
 - 252x 当前不能作为 promotion evidence，是因为 Drop/source overlay 仍缺，prior robustness 明确为 prior unavailable，metric rows 为 0。
 - `252x->251x` likelihood 略优但不是强映射证据；missing item rate 为 0 只说明两个候选旧表族都能覆盖 observed item universe。
 - 当前项目内未找到“16 个 252x capture/map”的可复核来源；本轮记录使用 15 capture / 6 captured map ids / 10 v303 table-side map ids 的口径。
+
+## O-v3-129：CSE source-context 拆分后，payload-only 是主要剩余解释缺口
+
+2026-06-07 对 settlement source semantics、CSE holdout、archive evaluator 与 readiness 重新验证。
+
+source-context audit：
+
+```powershell
+python scripts\summarize_v3_settlement_source_semantics_audit.py --group-by source_context_class --top 8 --format summary
+```
+
+```text
+files=441 settlement_rows=441 groups=6
+context=payload_verified_partial_action_only:339,payload_verified_empty_action_results:55,public_total_confirmed:27,direct_action_full_confirmed:17,payload_unverified_or_mismatch:2,payload_verified_no_external_source:1
+mechanisms=not_unique_round_cap_blocker:420,session_capacity_source_semantics:18,server_side_settlement_expansion:3
+unique_round_rows=21/441 payload_mismatch=2/441 non_zodiac_missing_max=0
+
+payload_verified_partial_action_only:
+  files=339 unique_round_rows=15
+  action_max avg=4.442 p95=11 max=25
+  action_gap avg=36.31 max=62
+  action_ratio avg=0.113 max=0.417
+
+payload_verified_empty_action_results:
+  files=55 unique_round_rows=3
+  action_max=0 action_ratio=0
+
+direct_action_full_confirmed:
+  files=17 unique_round_rows=2 action_gap=0 action_ratio=1.0
+
+public_total_confirmed:
+  files=27 unique_round_rows=1 public_delta=0
+```
+
+map-id holdout：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id --top 12 --min-train-sessions 4 --format summary
+```
+
+```text
+truth_unique_round_rows=21 candidate_rows=202 covered_unique_round_rows=18 missed_unique_round_rows=3 false_positive_candidate_rows=184
+unique_round_recall=0.857143 source_semantics_recall=0.857143 candidate_precision=0.089109
+truth_source_context_classes=payload_verified_partial_action_only:15,payload_verified_empty_action_results:3,direct_action_full_confirmed:2,public_total_confirmed:1
+
+missed_example file=fatbeans_valid_ethan_2509_5rounds_2509_1295018712615152_0360.json map_id=2509 fold=2 train_source=0 context=payload_verified_empty_action_results mechanism=session_capacity_source_semantics excess=7.0
+missed_example file=fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json map_id=2410 fold=0 train_source=0 context=payload_verified_empty_action_results mechanism=session_capacity_source_semantics excess=3.0
+missed_example file=fatbeans_valid_aisha_2408_5rounds_2408_1274128129457532_0081.json map_id=2408 fold=1 train_source=0 context=payload_verified_partial_action_only mechanism=session_capacity_source_semantics excess=2.0
+```
+
+map-family / fallback counterfactual：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_family --top 12 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id --fallback-group-by map_family_sub_pool_kind --top 12 --min-train-sessions 4 --format summary
+```
+
+```text
+map_family:
+  covered=21/21 missed=0 candidate=419 fp=398
+  recall=1.0 precision=0.050119
+
+map_id -> map_family_sub_pool_kind:
+  covered=21/21 missed=0 candidate=347 fp=326
+  candidate_sources=primary:202,fallback:145
+  recall=1.0 precision=0.060519
+```
+
+archive/readiness smoke：
+
+```powershell
+python scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format summary
+```
+
+```text
+archive:
+  windows=1577 ready=1560
+  v3_cse_ready_rows=1560
+  v3_cse_candidate_rows=752
+  v3_cse_active_rows=0
+
+readiness:
+  overall_status=not_ready
+  capacity_source_expansion_shadow status=watch
+  cse_candidate_rows=752
+  cse_active_rows=0
+```
+
+解读：
+
+- `source_context_class` 让 payload-only rows 的缺口更清晰：truth rows 中 18/21 仍不是 full external source confirmation，其中 3 条甚至是 action result 存在但 observed item count 为 0。
+- 3 条 map-id miss 不是解析/slot/drop-universe 错误，而是训练折没有同 map source support；这属于 support-depth 问题。
+- map-family/fallback 能补召回但扩大 false positives，仍是 broad watch prior；默认 CSE prior 不能因 recall=1.0 自动切换。
+- processed artifact 已重建为 `generated_at=2026-06-07`、`entries=30`、`affects_bid=false`、`active=false`，map_id=2501 的 `source_context_classes` 可复核为 `direct_action_full_confirmed:2,payload_unverified_or_mismatch:1,payload_verified_empty_action_results:16,payload_verified_partial_action_only:65,public_total_confirmed:3`。

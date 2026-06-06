@@ -34,6 +34,9 @@ def test_build_capacity_source_expansion_artifact_from_source_semantics(
             "table_overlay_metadata": {"local_overlay_status": "test"},
             "overall": {
                 "source_evidence_classes": {"settlement_payload_verified_only": 1},
+                "source_context_classes": {
+                    "payload_verified_partial_action_only": 1,
+                },
                 "mechanism_classes": {"session_capacity_source_semantics": 1},
                 "unique_above_round_after_temp_zodiac_rows": 1,
             },
@@ -44,6 +47,9 @@ def test_build_capacity_source_expansion_artifact_from_source_semantics(
                     "files": 2,
                     "source_evidence_classes": {
                         "settlement_payload_verified_only": 1,
+                    },
+                    "source_context_classes": {
+                        "payload_verified_partial_action_only": 1,
                     },
                     "mechanism_classes": {
                         "session_capacity_source_semantics": 1,
@@ -81,3 +87,7 @@ def test_build_capacity_source_expansion_artifact_from_source_semantics(
     assert len(artifact["entries"]) == 2
     assert artifact["entries"][0]["status"] == "watch_capacity_source_expansion_shadow_only"
     assert artifact["entries"][0]["unique_round_overflow_rows"] == 1
+    assert (
+        artifact["entries"][0]["source_context_classes"]
+        == "payload_verified_partial_action_only:1"
+    )

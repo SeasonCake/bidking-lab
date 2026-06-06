@@ -7016,3 +7016,90 @@ CSE holdout on activity cohort:
 - `2521-2530` 在本机 v303 中是 10 个 BidMap rows，但 Drop 仍缺失；它们能指向需要 acquisition/source parser 的表侧范围。
 - `252x->251x` likelihood 略优于 `252x->250x`，但 margin 小，不能证明 official mapping。
 - 252x cohort 继续用于调参参考和 activity/source-table 审计；在 verified `2521+` Drop/source overlay 前，不进入 default archive baseline、formal/value sampler promotion、readiness 或 official bidding。
+
+## 2026-06-07 checkpoint：CSE source-context 解释与 live/model_eval 字段对齐
+
+本轮继续收窄 `v3_cse_*` capacity/source expansion shadow：把 source-semantics 从 broad evidence class 进一步拆成可复核的 `source_context_class`，并同步 archive evaluator、processed artifact 与 live `model_eval` 字段。v3 仍为 audit/shadow-only，`active=false`、`affects_bid=false` 不变。
+
+改动：
+
+- `scripts/summarize_v3_settlement_source_semantics_audit.py`：
+  - 新增 `source_context_class` 分组；
+  - 输出 action coverage gap/ratio；
+  - 区分 `public_total_confirmed`、`direct_action_full_confirmed`、`payload_verified_partial_action_only`、`payload_verified_empty_action_results`、`payload_unverified_or_mismatch`、`payload_verified_no_external_source`。
+- `scripts/summarize_v3_capacity_source_expansion_holdout.py`：
+  - holdout row/summary 输出 `source_context_class` 与 truth context 分布；
+  - 输出 `missed_examples`，直接列出 map-id 漏召回样本、fold、train support、evidence/context/mechanism。
+- `src/bidking_lab/inference/v3/capacity_source_expansion.py`：
+  - `CapacitySourceExpansionEntry` / flat dict 新增 `source_context_classes` / `v3_cse_source_context_classes`；
+  - artifact loader 兼容 compact artifact 与 source-summary row，避免 reload 后丢失 string counts 与 p95/max 数值。
+- `scripts/build_v3_capacity_source_expansion_shadow.py`：
+  - processed artifact 写入 `source_context_classes`，`generated_at=2026-06-07`。
+- `scripts/evaluate_fatbeans_v3_samples.py` 与 `src/bidking_lab/live/monitor.py`：
+  - archive CSV 与 live `model_eval` 同步输出 `v3_cse_source_context_classes`。
+- 测试覆盖 source-context 分类、artifact build、entry round-trip、archive row 与 live model_eval 字段。
+
+验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_source_semantics_audit.py scripts\summarize_v3_capacity_source_expansion_holdout.py scripts\build_v3_capacity_source_expansion_shadow.py scripts\evaluate_fatbeans_v3_samples.py src\bidking_lab\inference\v3\capacity_source_expansion.py src\bidking_lab\live\monitor.py
+pytest --basetemp=.tmp\codex\pytest tests\test_inference_v3_capacity_source_expansion.py tests\test_build_v3_capacity_source_expansion_shadow.py tests\test_summarize_v3_settlement_source_semantics_audit.py tests\test_summarize_v3_capacity_source_expansion_holdout.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py -q
+python scripts\build_v3_capacity_source_expansion_shadow.py
+python scripts\summarize_v3_settlement_source_semantics_audit.py --group-by source_context_class --top 8 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id --top 12 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_family --top 12 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id --fallback-group-by map_family_sub_pool_kind --top 12 --min-train-sessions 4 --format summary
+python scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format summary
+```
+
+关键结果：
+
+```text
+source_context overall:
+  payload_verified_partial_action_only:339
+  payload_verified_empty_action_results:55
+  public_total_confirmed:27
+  direct_action_full_confirmed:17
+  payload_unverified_or_mismatch:2
+  payload_verified_no_external_source:1
+
+truth unique-round rows by context:
+  payload_verified_partial_action_only:15
+  payload_verified_empty_action_results:3
+  direct_action_full_confirmed:2
+  public_total_confirmed:1
+
+map_id holdout:
+  truth=21 covered=18 missed=3 candidate=202 fp=184
+  recall=0.857143 precision=0.089109
+
+missed examples:
+  2509 fatbeans_valid_ethan_2509_5rounds_2509_1295018712615152_0360.json context=payload_verified_empty_action_results train_source=0 excess=7
+  2410 fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json context=payload_verified_empty_action_results train_source=0 excess=3
+  2408 fatbeans_valid_aisha_2408_5rounds_2408_1274128129457532_0081.json context=payload_verified_partial_action_only train_source=0 excess=2
+
+map_family holdout:
+  truth=21 covered=21 missed=0 candidate=419 fp=398
+  recall=1.0 precision=0.050119
+
+map_id -> map_family_sub_pool_kind fallback:
+  truth=21 covered=21 missed=0 candidate=347 fp=326
+  candidate_sources=primary:202,fallback:145
+  recall=1.0 precision=0.060519
+
+archive/readiness:
+  v3_cse_ready_rows=1560
+  v3_cse_candidate_rows=752
+  v3_cse_active_rows=0
+  readiness overall_status=not_ready
+  capacity_source_expansion_shadow=watch
+```
+
+解读：
+
+- 21 条 unique non-temp over round-cap 的最强当前解释仍是 server-side settlement expansion / session-capacity source semantics；其中 3 条已有 public/direct full source confirmation，18 条仍主要依赖 payload-verified settlement rows。
+- payload-only truth rows 不能一概视作强 external source confirmation：15 条是 partial action only，3 条 action result 存在但 observed item 为 0；这解释了为什么仍需要 source parser/table acquisition，而不是直接调 sampler。
+- 3 条 map-id miss 是 holdout support gap：test fold 中出现 singleton truth，而 train folds 没有同 map source-semantics support。
+- map-family/fallback 能补 recall，但 false positive 过宽；当前不能作为 default source-aware expansion prior 或 readiness/promotion 证据。
+- 下一步应继续补 source parser、活动/远端表 acquisition、payload-only 外部 source 解释和更精细的可证伪 prior；仍不恢复 formal/value sampler 参数调优。

@@ -35,6 +35,7 @@ GROUP_BY_CHOICES = (
     "session_token_prefix6",
     "bidmap_rounds_total",
     "source_evidence_class",
+    "source_context_class",
     "mechanism_class",
 )
 
@@ -157,6 +158,19 @@ def _public_total_deltas(
     return tuple(out)
 
 
+def _action_coverage(
+    observed_count_max: int,
+    *,
+    inventory_count: int | None,
+) -> tuple[int | None, float | None]:
+    if inventory_count is None or inventory_count <= 0:
+        return (None, None)
+    return (
+        int(inventory_count) - int(observed_count_max),
+        round(float(observed_count_max) / float(inventory_count), 6),
+    )
+
+
 def _source_diagnostic_for_path(
     path: Path,
     *,
@@ -201,6 +215,22 @@ def _source_diagnostic_for_path(
     )
     public_values = _event_public_total_values(events)
     public_deltas = _public_total_deltas(public_values, inventory_count=inventory_count)
+    action_observed_item_count_max = max(
+        (count for _action_id, count, _message_id in all_action_observed),
+        default=0,
+    )
+    direct_action_observed_item_count_max = max(
+        (count for _action_id, count, _message_id in direct_action_observed),
+        default=0,
+    )
+    action_gap_min, action_ratio_max = _action_coverage(
+        action_observed_item_count_max,
+        inventory_count=inventory_count,
+    )
+    direct_action_gap_min, direct_action_ratio_max = _action_coverage(
+        direct_action_observed_item_count_max,
+        inventory_count=inventory_count,
+    )
 
     return {
         "event_state_count": len(states),
@@ -217,14 +247,14 @@ def _source_diagnostic_for_path(
         ),
         "event_action_result_count_all": len(all_action_observed),
         "event_direct_action_state_count": len(direct_action_observed),
-        "event_action_observed_item_count_max": max(
-            (count for _action_id, count, _message_id in all_action_observed),
-            default=0,
+        "event_action_observed_item_count_max": action_observed_item_count_max,
+        "event_direct_action_observed_item_count_max": (
+            direct_action_observed_item_count_max
         ),
-        "event_direct_action_observed_item_count_max": max(
-            (count for _action_id, count, _message_id in direct_action_observed),
-            default=0,
-        ),
+        "event_action_observed_item_inventory_gap_min": action_gap_min,
+        "event_direct_action_observed_item_inventory_gap_min": direct_action_gap_min,
+        "event_action_observed_item_ratio_max": action_ratio_max,
+        "event_direct_action_observed_item_ratio_max": direct_action_ratio_max,
         "event_full_observed_action_ids": full_observed_action_ids,
         "event_direct_full_observed_action_ids": direct_full_observed_action_ids,
         "event_public_total_count_values": public_values,
@@ -250,6 +280,27 @@ def _source_evidence_class(row: Mapping[str, Any], diag: Mapping[str, Any]) -> s
     if _payload_inventory_verified(row):
         return "settlement_payload_verified_only"
     return "source_ambiguous"
+
+
+def _source_context_class(row: Mapping[str, Any], diag: Mapping[str, Any]) -> str:
+    evidence = _source_evidence_class(row, diag)
+    if evidence == "public_total_matches_inventory":
+        return "public_total_confirmed"
+    if evidence == "direct_action_matches_inventory":
+        return "direct_action_full_confirmed"
+    if evidence == "full_action_matches_inventory":
+        return "action_full_confirmed"
+    if not _payload_inventory_verified(row):
+        return "payload_unverified_or_mismatch"
+    if tuple(diag.get("event_public_total_count_values", ()) or ()):
+        return "payload_verified_public_total_nonmatch"
+    action_count = _safe_int(diag.get("event_action_result_count_all")) or 0
+    action_max = _safe_int(diag.get("event_action_observed_item_count_max")) or 0
+    if action_max > 0:
+        return "payload_verified_partial_action_only"
+    if action_count > 0:
+        return "payload_verified_empty_action_results"
+    return "payload_verified_no_external_source"
 
 
 def _mechanism_class(row: Mapping[str, Any], diag: Mapping[str, Any]) -> str:
@@ -351,6 +402,7 @@ def _examples(rows: Iterable[Mapping[str, Any]], *, top: int) -> list[dict[str, 
                 "unique_round_cap_excess_after_temp_zodiac_count"
             ),
             "source_evidence_class": row.get("source_evidence_class"),
+            "source_context_class": row.get("source_context_class"),
             "mechanism_class": row.get("mechanism_class"),
             "event_public_total_count_values": list(
                 tuple(row.get("event_public_total_count_values", ()) or ())
@@ -363,6 +415,15 @@ def _examples(rows: Iterable[Mapping[str, Any]], *, top: int) -> list[dict[str, 
             ),
             "event_direct_full_observed_action_ids": list(
                 tuple(row.get("event_direct_full_observed_action_ids", ()) or ())
+            ),
+            "event_action_observed_item_count_max": row.get(
+                "event_action_observed_item_count_max"
+            ),
+            "event_action_observed_item_inventory_gap_min": row.get(
+                "event_action_observed_item_inventory_gap_min"
+            ),
+            "event_action_observed_item_ratio_max": row.get(
+                "event_action_observed_item_ratio_max"
             ),
         }
         for row in selected
@@ -397,6 +458,10 @@ def _summarize_rows(
         ),
         "source_evidence_classes": _counter_dict(
             (row.get("source_evidence_class") for row in seq),
+            top=top,
+        ),
+        "source_context_classes": _counter_dict(
+            (row.get("source_context_class") for row in seq),
             top=top,
         ),
         "mechanism_classes": _counter_dict(
@@ -463,6 +528,12 @@ def _summarize_rows(
         "event_action_observed_item_count_max": _numeric_summary(
             row.get("event_action_observed_item_count_max") for row in seq
         ),
+        "event_action_observed_item_inventory_gap_min": _numeric_summary(
+            row.get("event_action_observed_item_inventory_gap_min") for row in seq
+        ),
+        "event_action_observed_item_ratio_max": _numeric_summary(
+            row.get("event_action_observed_item_ratio_max") for row in seq
+        ),
         "event_public_total_rows": sum(
             1 for row in seq if tuple(row.get("event_public_total_count_values", ()) or ())
         ),
@@ -503,6 +574,7 @@ def summarize_settlement_source_semantics_audit(
             continue
         enriched = {**row, **diag}
         enriched["source_evidence_class"] = _source_evidence_class(enriched, diag)
+        enriched["source_context_class"] = _source_context_class(enriched, diag)
         enriched["mechanism_class"] = _mechanism_class(enriched, diag)
         ready.append(enriched)
 
@@ -545,6 +617,7 @@ def _print_group(prefix: str, row: Mapping[str, Any]) -> None:
                 f"bidmap_rounds_total={_format_counts(row['bidmap_rounds_total_counts'])}",
                 f"sub_pool_kinds={_format_counts(row['bidmap_sub_pool_kind_counts'])}",
                 f"evidence={_format_counts(row['source_evidence_classes'])}",
+                f"context={_format_counts(row['source_context_classes'])}",
                 f"mechanisms={_format_counts(row['mechanism_classes'])}",
                 f"unique_modes={_format_counts(row['unique_residual_modes'])}",
                 f"inventory={_format_summary(row['inventory_count'])}",
@@ -566,6 +639,8 @@ def _print_group(prefix: str, row: Mapping[str, Any]) -> None:
                 f"actions={_format_summary(row['event_action_result_count_all'])}",
                 f"direct_actions={_format_summary(row['event_direct_action_state_count'])}",
                 f"action_max={_format_summary(row['event_action_observed_item_count_max'])}",
+                f"action_gap={_format_summary(row['event_action_observed_item_inventory_gap_min'])}",
+                f"action_ratio={_format_summary(row['event_action_observed_item_ratio_max'])}",
                 f"public_rows={row['event_public_total_rows']}/{row['files']}",
                 f"public_match_rows={row['event_public_total_match_rows']}/{row['files']}",
                 f"public_delta={_format_summary(row['event_public_total_inventory_delta'])}",
@@ -616,11 +691,15 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                         f"round_cap={example['round_cap_max']}",
                         f"unique_round_after={example['unique_round_excess_after_temp']}",
                         f"evidence={example['source_evidence_class']}",
+                        f"context={example['source_context_class']}",
                         f"mechanism={example['mechanism_class']}",
                         f"public={example['event_public_total_count_values']}",
                         f"public_delta={example['event_public_total_inventory_delta']}",
                         f"full_actions={example['event_full_observed_action_ids']}",
                         f"direct_full_actions={example['event_direct_full_observed_action_ids']}",
+                        f"action_max={example['event_action_observed_item_count_max']}",
+                        f"action_gap={example['event_action_observed_item_inventory_gap_min']}",
+                        f"action_ratio={example['event_action_observed_item_ratio_max']}",
                     )
                 )
             )

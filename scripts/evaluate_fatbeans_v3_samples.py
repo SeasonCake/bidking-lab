@@ -2490,6 +2490,7 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_cse_archive_sessions",
         "v3_cse_mechanism_classes",
         "v3_cse_source_evidence_classes",
+        "v3_cse_source_context_classes",
         "v3_cse_unique_round_overflow_rows",
         "v3_cse_server_side_expansion_rows",
         "v3_cse_session_capacity_source_semantics_rows",

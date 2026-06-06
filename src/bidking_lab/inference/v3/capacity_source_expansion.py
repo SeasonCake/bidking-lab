@@ -65,6 +65,28 @@ def _count_text(counts: Mapping[str, Any] | None) -> str:
     return ",".join(f"{key}:{value}" for key, value in sorted(pairs))
 
 
+def _counts_text(row: Mapping[str, Any], field: str, text_field: str) -> str:
+    text = row.get(text_field)
+    if text not in (None, ""):
+        return str(text)
+    value = row.get(field)
+    if isinstance(value, str):
+        return value
+    return _count_text(value if isinstance(value, Mapping) else None)
+
+
+def _field_or_summary(
+    row: Mapping[str, Any],
+    compact_field: str,
+    summary_field: str,
+    key: str,
+) -> float | None:
+    compact = _finite_float(row.get(compact_field))
+    if compact is not None:
+        return compact
+    return _summary_value(row, summary_field, key)
+
+
 def _source_and_target(
     *,
     exact: Any,
@@ -91,6 +113,7 @@ class CapacitySourceExpansionEntry:
     archive_sessions: int = 0
     mechanism_classes: str = ""
     source_evidence_classes: str = ""
+    source_context_classes: str = ""
     unique_round_overflow_rows: int = 0
     server_side_expansion_rows: int = 0
     session_capacity_source_semantics_rows: int = 0
@@ -133,6 +156,7 @@ class CapacitySourceExpansionEntry:
             "archive_sessions": self.archive_sessions,
             "mechanism_classes": self.mechanism_classes,
             "source_evidence_classes": self.source_evidence_classes,
+            "source_context_classes": self.source_context_classes,
             "unique_round_overflow_rows": self.unique_round_overflow_rows,
             "server_side_expansion_rows": self.server_side_expansion_rows,
             "session_capacity_source_semantics_rows": (
@@ -257,6 +281,9 @@ class V3CapacitySourceExpansionReport:
             f"{prefix}source_evidence_classes": (
                 entry.source_evidence_classes if entry is not None else None
             ),
+            f"{prefix}source_context_classes": (
+                entry.source_context_classes if entry is not None else None
+            ),
             f"{prefix}unique_round_overflow_rows": (
                 entry.unique_round_overflow_rows if entry is not None else None
             ),
@@ -371,12 +398,26 @@ def entry_from_mapping(row: Mapping[str, Any]) -> CapacitySourceExpansionEntry:
         gate_reason=str(row.get("gate_reason") or _gate_reason_for_status(status)),
         source=str(row.get("source") or "archive_capacity_source_expansion_shadow"),
         archive_sessions=_optional_int(row.get("archive_sessions", row.get("files"))),
-        mechanism_classes=str(row.get("mechanism_classes_text") or _count_text(mechanism_counts)),
-        source_evidence_classes=str(
-            row.get("source_evidence_classes_text") or _count_text(evidence_counts)
+        mechanism_classes=_counts_text(
+            row,
+            "mechanism_classes",
+            "mechanism_classes_text",
+        ),
+        source_evidence_classes=_counts_text(
+            row,
+            "source_evidence_classes",
+            "source_evidence_classes_text",
+        ),
+        source_context_classes=_counts_text(
+            row,
+            "source_context_classes",
+            "source_context_classes_text",
         ),
         unique_round_overflow_rows=_optional_int(
-            row.get("unique_above_round_after_temp_zodiac_rows")
+            row.get(
+                "unique_round_overflow_rows",
+                row.get("unique_above_round_after_temp_zodiac_rows"),
+            )
         ),
         server_side_expansion_rows=_optional_int(
             row.get(
@@ -391,11 +432,16 @@ def entry_from_mapping(row: Mapping[str, Any]) -> CapacitySourceExpansionEntry:
             )
         ),
         public_total_match_rows=_optional_int(
-            row.get("event_public_total_match_rows")
+            row.get("public_total_match_rows", row.get("event_public_total_match_rows"))
         ),
-        full_action_rows=_optional_int(row.get("event_full_action_rows")),
+        full_action_rows=_optional_int(
+            row.get("full_action_rows", row.get("event_full_action_rows"))
+        ),
         direct_full_action_rows=_optional_int(
-            row.get("event_direct_full_action_rows")
+            row.get(
+                "direct_full_action_rows",
+                row.get("event_direct_full_action_rows"),
+            )
         ),
         payload_verified_only_rows=_optional_int(
             row.get(
@@ -406,58 +452,69 @@ def entry_from_mapping(row: Mapping[str, Any]) -> CapacitySourceExpansionEntry:
         payload_inventory_mismatch_rows=_optional_int(
             row.get("payload_inventory_mismatch_rows")
         ),
-        non_zodiac_missing_max=_summary_value(
+        non_zodiac_missing_max=_field_or_summary(
             row,
+            "non_zodiac_missing_max",
             "non_zodiac_missing_from_drop_universe_count",
             "max",
         ),
-        unique_non_temp_p50=_summary_value(
+        unique_non_temp_p50=_field_or_summary(
             row,
+            "unique_non_temp_p50",
             "unique_non_temp_item_id_count",
             "p50",
         ),
-        unique_non_temp_p90=_summary_value(
+        unique_non_temp_p90=_field_or_summary(
             row,
+            "unique_non_temp_p90",
             "unique_non_temp_item_id_count",
             "p90",
         ),
-        unique_non_temp_p95=_summary_value(
+        unique_non_temp_p95=_field_or_summary(
             row,
+            "unique_non_temp_p95",
             "unique_non_temp_item_id_count",
             "p95",
         ),
-        unique_non_temp_max=_summary_value(
+        unique_non_temp_max=_field_or_summary(
             row,
+            "unique_non_temp_max",
             "unique_non_temp_item_id_count",
             "max",
         ),
-        unique_round_excess_p50=_summary_value(
+        unique_round_excess_p50=_field_or_summary(
             row,
+            "unique_round_excess_p50",
             "unique_round_cap_excess_after_temp_zodiac_count",
             "p50",
         ),
-        unique_round_excess_p90=_summary_value(
+        unique_round_excess_p90=_field_or_summary(
             row,
+            "unique_round_excess_p90",
             "unique_round_cap_excess_after_temp_zodiac_count",
             "p90",
         ),
-        unique_round_excess_p95=_summary_value(
+        unique_round_excess_p95=_field_or_summary(
             row,
+            "unique_round_excess_p95",
             "unique_round_cap_excess_after_temp_zodiac_count",
             "p95",
         ),
-        unique_round_excess_max=_summary_value(
+        unique_round_excess_max=_field_or_summary(
             row,
+            "unique_round_excess_max",
             "unique_round_cap_excess_after_temp_zodiac_count",
             "max",
         ),
-        bidmap_items_per_session_max=_summary_value(
+        bidmap_items_per_session_max=_field_or_summary(
             row,
+            "bidmap_items_per_session_max",
             "bidmap_items_per_session_max",
             "max",
         ),
-        bidmap_raw_round_cap_max=_summary_value(
+        bidmap_raw_round_cap_max=_field_or_summary(
             row,
+            "bidmap_raw_round_cap_max",
             "bidmap_raw_round_cap_max",
             "max",
         ),

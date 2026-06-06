@@ -29,6 +29,7 @@ from summarize_v3_settlement_source_semantics_audit import (  # noqa: E402
     _numeric_summary,
     _safe_int,
     _source_diagnostic_for_path,
+    _source_context_class,
     _source_evidence_class,
     load_monitor_tables,
 )
@@ -193,6 +194,7 @@ def _rows_for_paths(paths: Iterable[Path]) -> tuple[dict[str, Any], ...]:
         )
         enriched = {**row, **diag}
         enriched["source_evidence_class"] = _source_evidence_class(enriched, diag)
+        enriched["source_context_class"] = _source_context_class(enriched, diag)
         enriched["mechanism_class"] = _mechanism_class(enriched, diag)
         out.append(enriched)
     return tuple(out)
@@ -300,6 +302,7 @@ def _eval_rows(
                     "non_zodiac_missing": _non_zodiac_missing(row),
                     "mechanism_class": row.get("mechanism_class"),
                     "source_evidence_class": row.get("source_evidence_class"),
+                    "source_context_class": row.get("source_context_class"),
                     "map_id": row.get("map_id"),
                     "map_family": row.get("map_family"),
                     "unique_round_excess_after_temp": _float_or_none(
@@ -424,9 +427,21 @@ def _summarize_eval_rows(
                 (item.get("source_evidence_class") for item in seq),
                 top=top,
             ),
+            "source_context_classes": _counter_dict(
+                (item.get("source_context_class") for item in seq),
+                top=top,
+            ),
             "truth_source_evidence_classes": _counter_dict(
                 (
                     item.get("source_evidence_class")
+                    for item in seq
+                    if item.get("truth_unique_round_overflow")
+                ),
+                top=top,
+            ),
+            "truth_source_context_classes": _counter_dict(
+                (
+                    item.get("source_context_class")
                     for item in seq
                     if item.get("truth_unique_round_overflow")
                 ),
@@ -460,6 +475,49 @@ def _summarize_eval_rows(
             str(item["group"]),
         ),
     )
+
+
+def _missed_examples(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    top: int,
+) -> list[dict[str, Any]]:
+    selected = sorted(
+        (
+            row
+            for row in rows
+            if row.get("truth_unique_round_overflow")
+            and not row.get("covered_unique_round_overflow")
+        ),
+        key=lambda item: (
+            -float(item.get("unique_round_excess_after_temp") or 0.0),
+            str(item.get("map_id") or ""),
+            str(item.get("example_file") or ""),
+        ),
+    )[:top]
+    return [
+        {
+            "file": row.get("example_file"),
+            "map_id": row.get("map_id"),
+            "map_family": row.get("map_family"),
+            "group": row.get("group"),
+            "fallback_group": row.get("fallback_group"),
+            "fold": row.get("fold"),
+            "train_sessions": row.get("train_sessions"),
+            "train_source_semantics_rows": row.get("train_source_semantics_rows"),
+            "fallback_train_sessions": row.get("fallback_train_sessions"),
+            "fallback_train_source_semantics_rows": row.get(
+                "fallback_train_source_semantics_rows"
+            ),
+            "source_evidence_class": row.get("source_evidence_class"),
+            "source_context_class": row.get("source_context_class"),
+            "mechanism_class": row.get("mechanism_class"),
+            "unique_round_excess_after_temp": row.get(
+                "unique_round_excess_after_temp"
+            ),
+        }
+        for row in selected
+    ]
 
 
 def summarize_holdout(
@@ -563,6 +621,10 @@ def summarize_holdout(
             (row.get("source_evidence_class") for row in eval_rows),
             top=top,
         ),
+        "source_context_classes": _counter_dict(
+            (row.get("source_context_class") for row in eval_rows),
+            top=top,
+        ),
         "truth_source_evidence_classes": _counter_dict(
             (
                 row.get("source_evidence_class")
@@ -571,6 +633,15 @@ def summarize_holdout(
             ),
             top=top,
         ),
+        "truth_source_context_classes": _counter_dict(
+            (
+                row.get("source_context_class")
+                for row in eval_rows
+                if row.get("truth_unique_round_overflow")
+            ),
+            top=top,
+        ),
+        "missed_examples": _missed_examples(eval_rows, top=top),
         "status_counts": dict(
             sorted(Counter(row["candidate_status"] for row in groups).items())
         ),
@@ -606,6 +677,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"candidate_rate={result['candidate_rate']}",
                 f"mechanisms={_format_counts(result['truth_mechanism_classes'])}",
                 f"evidence={_format_counts(result['truth_source_evidence_classes'])}",
+                f"context={_format_counts(result['truth_source_context_classes'])}",
                 f"status_counts={_format_counts(result['status_counts'])}",
             )
         )
@@ -628,9 +700,30 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"precision={row['candidate_precision']}",
                     f"mechanisms={_format_counts(row['truth_mechanism_classes'])}",
                     f"evidence={_format_counts(row['truth_source_evidence_classes'])}",
+                    f"context={_format_counts(row['truth_source_context_classes'])}",
                     f"excess={_format_summary(row['unique_round_excess_after_temp'])}",
                     f"maps={_format_counts(row['map_ids'])}",
                     f"examples={','.join(row['examples'])}",
+                )
+            )
+        )
+    for example in result["missed_examples"][: min(top, 5)]:
+        print(
+            " ".join(
+                (
+                    "missed_example",
+                    f"file={example['file']}",
+                    f"map_id={example['map_id']}",
+                    f"group={example['group']}",
+                    f"fold={example['fold']}",
+                    f"train_sessions={example['train_sessions']}",
+                    f"train_source={example['train_source_semantics_rows']}",
+                    f"fallback_group={example['fallback_group'] or '-'}",
+                    f"fallback_train_source={example['fallback_train_source_semantics_rows']}",
+                    f"evidence={example['source_evidence_class']}",
+                    f"context={example['source_context_class']}",
+                    f"mechanism={example['mechanism_class']}",
+                    f"excess={example['unique_round_excess_after_temp']}",
                 )
             )
         )

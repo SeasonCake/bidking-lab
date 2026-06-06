@@ -95,6 +95,38 @@ def test_evidence_and_mechanism_classification_prefers_external_signals(
     )
     assert module._source_evidence_class(row, {}) == "settlement_payload_verified_only"
     assert (
+        module._source_context_class(
+            row,
+            {"event_public_total_inventory_delta": (0,)},
+        )
+        == "public_total_confirmed"
+    )
+    assert (
+        module._source_context_class(
+            row,
+            {"event_direct_full_observed_action_ids": (100100,)},
+        )
+        == "direct_action_full_confirmed"
+    )
+    assert (
+        module._source_context_class(
+            row,
+            {"event_public_total_count_values": (61,)},
+        )
+        == "payload_verified_public_total_nonmatch"
+    )
+    assert (
+        module._source_context_class(
+            row,
+            {
+                "event_action_result_count_all": 2,
+                "event_action_observed_item_count_max": 10,
+            },
+        )
+        == "payload_verified_partial_action_only"
+    )
+    assert module._source_context_class(row, {}) == "payload_verified_no_external_source"
+    assert (
         module._mechanism_class(
             row,
             {"event_public_total_inventory_delta": (0,)},
@@ -189,6 +221,10 @@ def test_settlement_source_semantics_aggregates_unique_round_blocker(
     assert result["overall"]["source_evidence_classes"] == {
         "direct_action_matches_inventory": 1,
         "public_total_matches_inventory": 1,
+    }
+    assert result["overall"]["source_context_classes"] == {
+        "direct_action_full_confirmed": 1,
+        "public_total_confirmed": 1,
     }
     assert result["overall"]["mechanism_classes"] == {
         "server_side_settlement_expansion": 2,

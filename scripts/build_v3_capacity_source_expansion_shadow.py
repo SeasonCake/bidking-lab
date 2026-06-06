@@ -92,6 +92,10 @@ def build_artifact(
                         "source_evidence_classes",
                         {},
                     ),
+                    "source_context_classes": result.get("overall", {}).get(
+                        "source_context_classes",
+                        {},
+                    ),
                     "mechanism_classes": result.get("overall", {}).get(
                         "mechanism_classes",
                         {},
@@ -104,7 +108,7 @@ def build_artifact(
     return {
         "affects_bid": False,
         "active": False,
-        "generated_at": "2026-06-06",
+        "generated_at": "2026-06-07",
         "source": "archive_settlement_source_semantics_audit",
         "group_bys": list(group_bys),
         "table_overlay_metadata": overlay_metadata or {},
