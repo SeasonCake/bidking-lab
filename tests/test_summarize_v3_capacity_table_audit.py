@@ -280,6 +280,13 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
     assert split["non_zodiac_missing_positive_files"] == 0
     assert split["full_observed_action_counts"] == {"100100": 1}
     assert split["public_total_count_values"] == {"2": 1}
+    residual = row["residual_mode_summary"]
+    assert residual["mode_counts"] == {"drop_ref_only_overflow": 1}
+    assert residual["by_mode"][0]["mode"] == "drop_ref_only_overflow"
+    assert (
+        residual["by_mode"][0]["drop_ref_excess_after_temp_zodiac_count"]["max"]
+        == 1
+    )
 
 
 def test_capacity_table_audit_filters_selected_case() -> None:
@@ -336,6 +343,64 @@ def test_capacity_table_audit_filters_selected_case() -> None:
             selected_bucket="lower_bound_under_truth",
         )
     ) == 1
+
+
+def test_capacity_table_audit_classifies_residual_modes() -> None:
+    module = _load_module()
+
+    summary = module._residual_mode_summary(
+        [
+            {
+                "status": "ok",
+                "latest_item_count": 44,
+                "drop_ref_excess_after_temp_zodiac_count": 0,
+                "round_cap_excess_after_temp_zodiac_count": 0,
+                "non_zodiac_missing_from_drop_universe_count": 0,
+            },
+            {
+                "status": "ok",
+                "latest_item_count": 50,
+                "drop_ref_excess_after_temp_zodiac_count": 6,
+                "round_cap_excess_after_temp_zodiac_count": 0,
+                "non_zodiac_missing_from_drop_universe_count": 0,
+                "full_observed_action_ids": [100100],
+            },
+            {
+                "status": "ok",
+                "latest_item_count": 60,
+                "drop_ref_excess_after_temp_zodiac_count": 16,
+                "round_cap_excess_after_temp_zodiac_count": 8,
+                "non_zodiac_missing_from_drop_universe_count": 0,
+                "public_total_count_values": [60],
+            },
+            {
+                "status": "ok",
+                "latest_item_count": 55,
+                "drop_ref_excess_after_temp_zodiac_count": 11,
+                "round_cap_excess_after_temp_zodiac_count": 0,
+                "non_zodiac_missing_from_drop_universe_count": 1,
+            },
+        ],
+        top=8,
+    )
+
+    assert summary["mode_counts"] == {
+        "drop_ref_only_overflow": 1,
+        "drop_universe_gap": 1,
+        "round_cap_overflow": 1,
+        "within_drop_ref": 1,
+    }
+    by_mode = {row["mode"]: row for row in summary["by_mode"]}
+    assert by_mode["drop_ref_only_overflow"]["full_observed_action_counts"] == {
+        "100100": 1,
+    }
+    assert by_mode["round_cap_overflow"]["public_total_count_values"] == {"60": 1}
+    assert (
+        by_mode["drop_universe_gap"]["non_zodiac_missing_from_drop_universe_count"][
+            "max"
+        ]
+        == 1
+    )
 
 
 def test_capacity_table_audit_quantifies_zodiac_adjusted_count_gap(

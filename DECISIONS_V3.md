@@ -2084,3 +2084,18 @@ applied_hurts=2502
 - 64-trial archive 显示 target-missing evidence-floor-only rows 全部集中在 `2502:4`。
 - 这 4 行同时有 numeric/item/shape anchors 且 total cells exact matches truth，但 `q6_cells`、`total_value`、`q6_value` target 仍 missing。
 - 该形态说明 evidence compiler 已能得到 total cells exact，却没有把现有 anchors 转成 q6/value allocation target。
+
+## D-v3-095：capacity residual mode classifier 只用于 session-cap 语义分流
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_capacity_table_audit.py` 输出 `residual_mode_summary`，把 raw diagnostics 分为 `within_drop_ref`、`drop_ref_only_overflow`、`round_cap_overflow`、`drop_universe_gap`。
+- residual mode 只用于定位 capacity/table/source blocker，不改变 `prior_stress_capacity_table_drift` gate、posterior sampler、formal/value sampler 或正式出价。
+- `drop_ref_only_overflow` 优先指向 `BidMap col[17]` / session-cap 语义或同 drop-universe 追加抽样；`round_cap_overflow` 才进一步指向 settlement expansion/activity overlay。
+- hard/lower bucket 仍必须保持 blocked；residual mode 不能作为 promotion evidence。
+
+原因：
+
+- 64-trial hard/lower bucket 均没有 `drop_universe_gap`，说明当前冲突不由非 drop-universe item 主导。
+- hard bucket residual modes 为 `drop_ref_only_overflow=8`、`round_cap_overflow=6`、`within_drop_ref=1`；lower bucket 为 `drop_ref_only_overflow=12`、`round_cap_overflow=6`、`within_drop_ref=2`。
+- drop-ref-only rows 多于 round-cap rows，说明下一步最小证据应先查 session-cap/drop-ref 语义，再查 settlement expansion。

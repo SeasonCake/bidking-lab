@@ -442,6 +442,94 @@ def _positive_file_count(
     )
 
 
+def _residual_mode(diag: Mapping[str, Any]) -> str:
+    status = str(diag.get("status") or "")
+    if status and status != "ok":
+        return status
+    if (
+        _float_or_none(diag.get("non_zodiac_missing_from_drop_universe_count"))
+        or 0.0
+    ) > 0.0:
+        return "drop_universe_gap"
+    if (
+        _float_or_none(diag.get("round_cap_excess_after_temp_zodiac_count"))
+        or 0.0
+    ) > 0.0:
+        return "round_cap_overflow"
+    if (
+        _float_or_none(diag.get("drop_ref_excess_after_temp_zodiac_count"))
+        or 0.0
+    ) > 0.0:
+        return "drop_ref_only_overflow"
+    return "within_drop_ref"
+
+
+def _diagnostics_by_residual_mode(
+    diagnostics: Iterable[Mapping[str, Any]],
+) -> dict[str, tuple[Mapping[str, Any], ...]]:
+    grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for diag in diagnostics:
+        grouped[_residual_mode(diag)].append(diag)
+    return {
+        key: tuple(value)
+        for key, value in sorted(grouped.items(), key=lambda item: item[0])
+    }
+
+
+def _residual_mode_summary(
+    diagnostics: Iterable[Mapping[str, Any]],
+    *,
+    top: int,
+) -> dict[str, Any]:
+    seq = tuple(diagnostics)
+    grouped = _diagnostics_by_residual_mode(seq)
+    return {
+        "file_count": len(seq),
+        "mode_counts": _counter_dict((_residual_mode(diag) for diag in seq), top=top),
+        "by_mode": [
+            {
+                "mode": mode,
+                "file_count": len(rows),
+                "latest_item_count": _numeric_summary(
+                    diag.get("latest_item_count") for diag in rows
+                ),
+                "drop_ref_excess_after_temp_zodiac_count": _numeric_summary(
+                    diag.get("drop_ref_excess_after_temp_zodiac_count")
+                    for diag in rows
+                ),
+                "round_cap_excess_after_temp_zodiac_count": _numeric_summary(
+                    diag.get("round_cap_excess_after_temp_zodiac_count")
+                    for diag in rows
+                ),
+                "non_zodiac_missing_from_drop_universe_count": _numeric_summary(
+                    diag.get("non_zodiac_missing_from_drop_universe_count")
+                    for diag in rows
+                ),
+                "latest_message_id_counts": _counter_dict(
+                    (
+                        f"0x{int(message_id):04X}" if message_id is not None else None
+                        for message_id in (
+                            diag.get("latest_message_id") for diag in rows
+                        )
+                    ),
+                    top=top,
+                ),
+                "full_observed_action_counts": _counter_dict(
+                    action_id
+                    for diag in rows
+                    for action_id in diag.get("full_observed_action_ids", ())
+                ),
+                "public_total_count_values": _counter_dict(
+                    value
+                    for diag in rows
+                    for value in diag.get("public_total_count_values", ())
+                ),
+            }
+            for mode, rows in grouped.items()
+        ],
+    }
+
+
 def _source_split_summary(
     rows: Iterable[Mapping[str, Any]],
     diagnostics: Iterable[Mapping[str, Any]],
@@ -716,6 +804,10 @@ def _inventory_diagnostics_for_rows(
             diagnostics,
             top=top,
         ),
+        "residual_mode_summary": _residual_mode_summary(
+            diagnostics,
+            top=top,
+        ),
     }
 
 
@@ -980,6 +1072,20 @@ def _format_summary(summary: Mapping[str, Any]) -> str:
     )
 
 
+def _format_residual_mode_rows(summary: Mapping[str, Any]) -> str:
+    parts = []
+    for row in summary.get("by_mode", ()):
+        parts.append(
+            (
+                f"{row['mode']}:files={row['file_count']}"
+                f"/drop={_format_summary(row['drop_ref_excess_after_temp_zodiac_count'])}"
+                f"/round={_format_summary(row['round_cap_excess_after_temp_zodiac_count'])}"
+                f"/missing={_format_summary(row['non_zodiac_missing_from_drop_universe_count'])}"
+            )
+        )
+    return "|".join(parts) or "-"
+
+
 def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
     for row in tuple(rows)[:top]:
         print(
@@ -1067,6 +1173,10 @@ def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
                             "non_zodiac_missing_from_drop_universe_count"
                         ]
                     ),
+                    "residual_modes="
+                    + _format_counts(row["residual_mode_summary"]["mode_counts"]),
+                    "residual_mode_detail="
+                    + _format_residual_mode_rows(row["residual_mode_summary"]),
                     f"cases={_format_counts(row['capacity_cases'])}",
                     f"buckets={_format_counts(row['consistency_bucket_counts'])}",
                     f"classes={_format_counts(row['consistency_class_counts'])}",

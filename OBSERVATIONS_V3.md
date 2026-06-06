@@ -3875,3 +3875,58 @@ total_value_target_missing=4
 - 这 4 行不是“没有 evidence”：numeric/item/shape anchors 都存在。
 - total cells exact 已经命中 truth，但 q6 cells、total value、q6 value 都没有 target；问题集中在 q6/value allocation target 编译，而不是 table capacity 或 formal/value sampler 参数。
 - 下一步应查 2502 相关 evidence events 的 target set 与 anchor payload：是否存在 shape anchors 无 quality/value、item anchors 无 value，或 q6 quality floor 只产生 count 不产生 value/cells。
+
+## O-v3-099：capacity residual modes 显示 drop-ref-only overflow 多于 round-cap overflow
+
+2026-06-06 给 capacity table audit 增加 `residual_mode_summary` 后，复跑真实 64-trial hard/lower buckets：
+
+```text
+hard_capacity_conflict:
+  groups=10
+  rows=29
+  table_impossible_rows=29
+  round_impossible_rows=16
+  residual_modes:
+    drop_ref_only_overflow=8
+    round_cap_overflow=6
+    within_drop_ref=1
+
+lower_bound_under_truth:
+  groups=11
+  rows=39
+  table_impossible_rows=39
+  round_impossible_rows=22
+  residual_modes:
+    drop_ref_only_overflow=12
+    round_cap_overflow=6
+    within_drop_ref=2
+```
+
+top split examples：
+
+```text
+hard map=2601:
+  drop_ref_only_overflow=3
+  round_cap_overflow=1
+  round overflow max=4
+
+hard map=2501:
+  drop_ref_only_overflow=1
+  round_cap_overflow=1
+  public_total_count=60:1 on round-cap overflow row
+
+lower map=2508:
+  drop_ref_only_overflow=1
+  round_cap_overflow=2
+  round overflow max=8
+
+lower map=2401:
+  drop_ref_only_overflow=3
+  within_drop_ref=1
+```
+
+解读：
+
+- hard/lower conflict 中可验证 raw files 多数是 `drop_ref_only_overflow`，不是全部都超过 round cap。
+- `drop_universe_gap=0` 保持，说明这些 rows 不由非 drop-universe items 主导。
+- 下一步应优先解释 `col[17] max` 与 final settlement count 的语义差异；round-cap overflow 子集再单独查 settlement expansion / activity overlay。

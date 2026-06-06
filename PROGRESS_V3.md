@@ -5279,3 +5279,50 @@ attribution_counts:
 - 2502 target-missing rows 不是 evidence 缺失；numeric/item/shape anchors 都存在。
 - evidence compiler 已能得到 total cells exact，但没有得到 q6 cells、total value、q6 value targets。
 - 下一步应查 2502 evidence event target set 与 anchor payload，尤其是 shape anchors 是否缺 quality/value、item anchors 是否缺 value，以及 q6 quality floor 是否只产生 count。
+
+## 2026-06-06 checkpoint：capacity residual mode classifier
+
+本轮把 hard/lower capacity conflict 的 residual mode 固化到 capacity table audit，继续保持 audit-only。该改动不接入 posterior sampler、不接入 formal/value sampler、不改变 readiness gate，也不触碰 v2 formal/live/UI 或正式出价。
+
+改动：
+
+- `scripts/summarize_v3_capacity_table_audit.py` 新增 `residual_mode_summary`：
+  - `within_drop_ref`；
+  - `drop_ref_only_overflow`；
+  - `round_cap_overflow`；
+  - `drop_universe_gap`。
+- 每个 residual mode 输出 file count、latest item count、drop-ref residual、round-cap residual、non-zodiac missing、0x002D message、full observed action 与 public total count。
+- summary 文本输出展示 `residual_modes` 与 compact by-mode detail。
+- `tests/test_summarize_v3_capacity_table_audit.py` 覆盖四种 residual mode，以及真实 audit group 的 drop-ref-only output。
+- `DECISIONS_V3.md` 新增 D-v3-095；`OBSERVATIONS_V3.md` 新增 O-v3-099。
+
+关键验证：
+
+```powershell
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_table_audit.py
+python -m py_compile scripts\summarize_v3_capacity_table_audit.py
+python scripts\summarize_v3_capacity_table_audit.py --case all --bucket hard_capacity_conflict --format json
+python scripts\summarize_v3_capacity_table_audit.py --case all --bucket lower_bound_under_truth --format json
+```
+
+真实 64-trial residual modes：
+
+```text
+hard_capacity_conflict:
+  rows=29
+  table_impossible_rows=29
+  round_impossible_rows=16
+  residual_modes=drop_ref_only_overflow=8,round_cap_overflow=6,within_drop_ref=1
+
+lower_bound_under_truth:
+  rows=39
+  table_impossible_rows=39
+  round_impossible_rows=22
+  residual_modes=drop_ref_only_overflow=12,round_cap_overflow=6,within_drop_ref=2
+```
+
+结论：
+
+- hard/lower conflict 中 `drop_ref_only_overflow` 多于 `round_cap_overflow`，且 `drop_universe_gap=0`。
+- 下一步优先解释 `BidMap col[17] max` / session-cap 与 final settlement count 的语义差异；round-cap overflow 子集再查 settlement expansion 或 activity overlay。
+- promotion/readiness 继续不推进，formal/value sampler 继续 shadow-only。
