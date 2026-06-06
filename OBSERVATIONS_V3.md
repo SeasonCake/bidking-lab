@@ -2673,3 +2673,61 @@ gate=formal_value_sampler_holdout status=blocked
 - default archive 的 settlement count-prior candidate 大量覆盖 ready windows，但全部 `active=False`/`affects_bid=False`，不会改变正式出价。
 - 252x activity cohort 以 `missing_table_shadow_only` 暴露，58/58 windows 均为 missing-table evidence；没有按 shipwreck family 混入 250x prior。
 - 新 gate 只说明 settlement count-prior evidence 可见且 inactive；它不解除 `prior_stress_capacity_table_drift`，也不让 formal/value sampler promotion 通过。
+
+## O-v3-078：settlement count-prior session holdout 支持 default shadow 候选，但暴露 exact-map 样本深度与 252x 表缺失
+
+2026-06-06 新增 `summarize_v3_settlement_count_prior_holdout.py`，按 session stable fold 对 settlement occupancy count prior 做 holdout：
+
+```text
+default map_id:
+sessions=441
+groups=21
+candidate_rows=389
+sample_limited_rows=52
+missing_table_rows=0
+prior_coverage=0.609977
+round_coverage=0.866213
+holdout_p95_coverage=0.907455
+holdout_max_coverage=0.948586
+status_counts=blocked_low_sample:7,watch_settlement_count_prior_candidate:14
+
+default map_prefix3:
+sessions=441
+groups=5
+candidate_rows=441
+sample_limited_rows=0
+missing_table_rows=0
+prior_coverage=0.609977
+round_coverage=0.866213
+holdout_p95_coverage=0.945578
+holdout_max_coverage=0.986395
+status_counts=watch_settlement_count_prior_candidate:5
+
+activity map_id:
+sessions=15
+groups=6
+candidate_rows=0
+missing_table_rows=15
+prior_coverage=None
+round_coverage=None
+holdout_p95_coverage=0.857143
+status_counts=missing_table_shadow_only:6
+
+activity map_prefix3:
+sessions=15
+groups=1
+candidate_rows=0
+missing_table_rows=15
+prior_coverage=None
+round_coverage=None
+holdout_p95_coverage=0.933333
+status_counts=missing_table_shadow_only:1
+```
+
+解读：
+
+- default archive 中，settlement count-prior train p95 明显提高 coverage，且仍低于 train max；这支持继续把 `v3_scp_*` 作为 shadow evidence 审计。
+- exact `map_id` 口径仍有 7 个 group 样本不足，不能仅凭 prefix 聚合推广成 sampler cap。
+- prefix 聚合消除了 default sample-limited，但它混合了同 prefix 的 exact maps；只能作为 holdout 补充证据，不能替代 BidMap/DropEntry 字段语义确认。
+- 252x activity cohort 即便 prefix holdout coverage 较高，仍然 15/15 缺 current BidMap；activity table/mapping blocker 未解除。
+- readiness 保持 `overall_status=not_ready`，因此 formal/value sampler tuning、v3 promotion 与 v2 archive 继续暂停。

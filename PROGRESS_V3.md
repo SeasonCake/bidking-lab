@@ -3955,3 +3955,75 @@ gate=v2_archive_readiness status=pending
 - default archive 中 count-prior shadow candidate 覆盖 1488/1560 ready windows；activity cohort 58/58 以 missing-table evidence 暴露，未混入 default 250x prior。
 - readiness 能看见该 evidence，但 promotion 仍为 `not_ready`；capacity/table drift、formal baseline、formal/value sampler holdout 等 gate 继续阻塞。
 - 下一步可以围绕 `v3_scp_*` 做 holdout/readiness 分片审计，评估它是否能作为后续 shadow-only formal/value sampler 的 count prior 输入；仍不得提升为 sampler cap。
+
+## 2026-06-06 checkpoint：settlement count-prior session holdout 审计
+
+完成内容：
+
+- 新增 `scripts/summarize_v3_settlement_count_prior_holdout.py`：
+  - 按 stable session fold 做 holdout；
+  - 支持 `--group-by map_id|map_prefix3`；
+  - 比较 current `BidMap.items_per_session_max`、raw round-cap candidate、train p95/max 与 validation settlement truth 的 coverage；
+  - 输出 `watch_settlement_count_prior_candidate`、`blocked_low_sample`、`missing_table_shadow_only` 等 shadow-only 状态。
+- 新增 `tests/test_summarize_v3_settlement_count_prior_holdout.py`：
+  - 覆盖 p95 under-coverage blocker；
+  - 覆盖 252x `missing_bidmap` 保持 shadow-only。
+- 项目临时验证输出继续统一使用 `.tmp\codex\`；pytest 使用 `.tmp\codex\pytest`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_holdout.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_count_prior_holdout.py --top 10 --min-train-sessions 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_count_prior_holdout.py --group-by map_prefix3 --top 10 --min-train-sessions 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_count_prior_holdout.py data\samples\fatbeans_activity_20260605_shipwreck --top 8 --min-train-sessions 2
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_count_prior_holdout.py data\samples\fatbeans_activity_20260605_shipwreck --group-by map_prefix3 --top 8 --min-train-sessions 2
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_other_tables.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_count_prior_holdout.py tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+```
+
+结果：
+
+```text
+targeted tests:
+2 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+74 passed
+
+default map_id holdout:
+sessions=441 groups=21 candidate_rows=389 sample_limited_rows=52 missing_table_rows=0
+prior_coverage=0.609977 round_coverage=0.866213
+holdout_p95_coverage=0.907455 holdout_max_coverage=0.948586
+status_counts=blocked_low_sample:7,watch_settlement_count_prior_candidate:14
+
+default map_prefix3 holdout:
+sessions=441 groups=5 candidate_rows=441 sample_limited_rows=0 missing_table_rows=0
+prior_coverage=0.609977 round_coverage=0.866213
+holdout_p95_coverage=0.945578 holdout_max_coverage=0.986395
+status_counts=watch_settlement_count_prior_candidate:5
+
+activity map_id holdout:
+sessions=15 groups=6 candidate_rows=0 missing_table_rows=15
+holdout_p95_coverage=0.857143
+status_counts=missing_table_shadow_only:6
+
+activity map_prefix3 holdout:
+sessions=15 groups=1 candidate_rows=0 missing_table_rows=15
+holdout_p95_coverage=0.933333
+status_counts=missing_table_shadow_only:1
+
+readiness:
+overall_status=not_ready
+gate=settlement_count_prior_shadow status=watch
+gate=prior_stress_capacity_table_drift status=blocked
+gate=formal_value_sampler_holdout status=blocked
+gate=v2_archive_readiness status=pending
+```
+
+结论：
+
+- session holdout 支持 default current-table cohort 的 settlement count-prior shadow 候选，但 exact-map 仍有 7 个 group 样本不足。
+- prefix 聚合能提升 sample-depth 与 coverage，但仍不能替代 BidMap 表版本、字段语义或活动 mapping 解释。
+- 252x activity cohort 仍是 missing-table evidence；不得 fallback 到 250x default prior。
+- 当前 checkpoint 不改变 formal/value sampler、不改变 posterior sampler cap、不改变正式出价；v3 promotion 与 v2 archive 继续 pending。

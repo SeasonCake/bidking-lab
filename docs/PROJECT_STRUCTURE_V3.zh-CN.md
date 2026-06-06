@@ -36,6 +36,7 @@
 | `scripts/summarize_v3_archive_table_timing.py` | v3 raw table version/filelist/BidMap/Drop metadata 与 Fatbeans archive/activity capture timing 诊断，用于区分 table-version 强证据与本地 mtime 弱线索 |
 | `scripts/summarize_v3_settlement_payload_audit.py` | v3 0x002D settlement raw payload 审计，核对 inventory block slot count、raw item candidates、dedup 后 inventory count、payload fields 与 full observed action 镜像 |
 | `scripts/summarize_v3_settlement_count_prior_candidates.py` | v3 settlement occupancy count prior shadow-only 候选审计，按 map/prefix/family 统计 final inventory count、临时生肖扣除 residual 与 current BidMap/round-cap 覆盖 |
+| `scripts/summarize_v3_settlement_count_prior_holdout.py` | v3 settlement occupancy count prior session-level holdout 审计，比较 current table cap、round-cap 与 train p95/max coverage |
 | `scripts/build_v3_settlement_count_prior_shadow.py` | 从 default archive 与 activity cohort 构建 `data/processed/v3_settlement_count_prior_shadow.json` |
 | `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift` 与 `formal_value_sampler_holdout` gate |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
@@ -69,6 +70,7 @@
 | `tests/test_summarize_v3_archive_table_timing.py` | v3 archive/table timing metadata 审计测试 |
 | `tests/test_summarize_v3_settlement_payload_audit.py` | v3 settlement payload slot/candidate 审计测试 |
 | `tests/test_summarize_v3_settlement_count_prior_candidates.py` | v3 settlement count-prior candidate 审计测试 |
+| `tests/test_summarize_v3_settlement_count_prior_holdout.py` | v3 settlement count-prior session holdout 审计测试 |
 | `tests/test_build_v3_settlement_count_prior_shadow.py` | v3 settlement count-prior processed artifact builder 测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
@@ -105,7 +107,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | 路径 | 作用 | 当前策略 |
 | --- | --- | --- |
 | `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做 |
-| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases 与 `v3_fv_*` |
+| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*` 与 `v3_scp_*` |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 后续可加 v3 shadow columns |
@@ -132,9 +134,9 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 
 当前脚本规模：
 
-- Python scripts：100
+- Python scripts：105
 - PowerShell scripts：13
-- test files：105
+- test files：111
 
 策略：
 

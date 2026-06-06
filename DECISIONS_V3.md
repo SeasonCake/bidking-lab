@@ -1714,3 +1714,21 @@ applied_hurts=2502
 - activity evaluator：`v3_scp_missing_table_rows=58/58`、`v3_scp_active_rows=0`、`posterior_ready=0`。
 - readiness：`settlement_count_prior_shadow=watch`，但 `prior_stress_capacity_table_drift=blocked`、`formal_value_sampler_holdout=blocked`、overall 仍 `not_ready`。
 - 这说明 settlement count-prior evidence 已可供 archive/live/readiness 共同审计，但还不是 promotion 证据或 sampler 参数。
+
+## D-v3-073：settlement count-prior 必须先过 session holdout，prefix 聚合不能替代表语义
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_holdout.py` 是 `v3_scp_*` 用作后续 shadow-only formal/value sampler count-prior 输入前的必跑审计之一。
+- holdout 只比较 shadow evidence 的泛化性：current `BidMap.items_per_session_max`、raw round-cap candidate、同 group train p95/max 与 validation settlement truth 的 coverage；它不修改 sampler cap。
+- `map_id` 口径保留为首要审计口径；样本不足的 exact-map group 继续标记 `blocked_low_sample`，不得用少量 session 推 sampler 参数。
+- `map_prefix3` 聚合可以作为 sample-depth/泛化性补充证据，但不能替代 BidMap 表版本、字段语义或 activity mapping 解释；尤其不能把 252x activity fallback 到 250x default prior。
+- 只要 252x activity 仍是 `missing_bidmap`，它就只能作为 missing-table/activity cohort shadow evidence；不进入 default archive count prior、formal/value sampler promotion 或 v2 archive 分母。
+- readiness 中 `settlement_count_prior_shadow=watch` 继续只代表 evidence 可见且 inactive；`prior_stress_capacity_table_drift` 和 `formal_value_sampler_holdout` blocker 不得因此降级。
+
+原因：
+
+- default `map_id` holdout：441 settlement sessions，21 groups，`candidate_rows=389`，`sample_limited_rows=52`，`prior_coverage=0.609977`，`round_coverage=0.866213`，`holdout_p95_coverage=0.907455`，status 为 `watch_settlement_count_prior_candidate=14`、`blocked_low_sample=7`。
+- default `map_prefix3` holdout：441 sessions，5 groups，`candidate_rows=441`，`sample_limited_rows=0`，`holdout_p95_coverage=0.945578`，但这只是跨 exact-map 的聚合 evidence。
+- activity 252x holdout：15 sessions，`missing_table_rows=15`；`map_prefix3=252` 的 p95 holdout coverage 虽为 `0.933333`，但 table/mapping 仍缺失。
+- focused parser/archive/live/readiness/formal-value tests 74 passed；readiness 仍为 `overall_status=not_ready`。
