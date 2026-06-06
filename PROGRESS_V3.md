@@ -5943,3 +5943,52 @@ target_truth_counts=below=31/match=0/above=0
 - lower bucket 的 31 条 count target 全部低于真实 settlement item count，且 8 条没有 count target。
 - 这进一步支持先查 table/source/settlement expansion 语义，不恢复 formal/value sampler 参数调优。
 - promotion/readiness 仍 blocked；下一步优先查 BidMap/Drop/session settlement expansion 语义与 raw 表版本。
+
+## 2026-06-06 checkpoint：table timing smoke 覆盖 BidMap col[16]/col[17] 与 Drop leaf count range
+
+本轮增强 archive/table timing 审计，让 raw table version smoke 同时回答字段口径与 DropEntry `n_min/n_max`。该改动仍是 v3 audit-only，不改变 parser 行为、不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_archive_table_timing.py`：
+  - 输出 BidMap row/column counts、col[16] value counts、col[16]/col[17] drop-ref-like counts。
+  - 输出 priority maps 的 col[14] round-cap candidate、col[16]、col[17] drop-ref pair。
+  - 输出 Drop 全局 ref/leaf `n_min/n_max` range，以及 priority maps reachable leaf range。
+- `tests/test_summarize_v3_archive_table_timing.py` 增加 23-column BidMap + two-level Drop pool 语义测试。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_archive_table_timing.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_archive_table_timing.py -q
+python scripts\summarize_v3_archive_table_timing.py --format summary
+```
+
+真实 table smoke 要点：
+
+```text
+raw_file_version=300
+raw_tables_file_version=300
+bidmap_rows=125
+bidmap_column_counts=23:125
+bidmap_col16_values=[[]]:125
+bidmap_col16_drop_ref_like=0
+bidmap_col17_drop_ref_like=125
+capture_version_like_keys=-
+```
+
+priority maps：
+
+```text
+2401/2404/2406: drop_ref_pair=20-40, round_caps=[50,50,50,50,50], col16=[[]]
+2501/2506/2508: drop_ref_pair=22-44, round_caps=[50,50,50,50,50], col16=[[]]
+2601: drop_ref_pair=22-44, round_caps=[60,60,60,60,60], col16=[[]]
+all priority reachable Drop leaf_n_ranges=1-1 only, leaf_n_max_max=1
+```
+
+结论：
+
+- 当前 blocker 不能再归因于误读 `BidMap.col[16]` 或 Drop leaf `n_max` 多件数。
+- 本地 raw v300 与 capture window 兼容，但 capture 缺 version/hash-like 字段；不能证明每条 session 的服务端表版本。
+- 下一步继续查 settlement expansion/session-capacity/server-side overlay，formal/value sampler 参数调优继续暂停。

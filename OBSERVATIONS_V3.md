@@ -4547,3 +4547,63 @@ lower_bound_target_truth_counts=below=31/match=0/above=0
 - lower bucket 不是单一 “capacity conflict”；其中 21 行的 count floor 甚至低于 prior 与 truth，10 行虽超过 prior 但仍低于 truth，8 行缺 count target。
 - 31 条有 count target 的 lower rows 全部低于 truth，因此 lower bucket 应继续查 target completeness、table/source semantics 与 settlement expansion 分离。
 - 该观察不支持恢复 formal/value sampler 参数调优，也不是 promotion evidence。
+
+## O-v3-111：table timing smoke 确认 col[17] 与 Drop leaf `n_max=1`
+
+2026-06-06 增强 `summarize_v3_archive_table_timing.py` 后，复跑：
+
+```powershell
+python -m py_compile scripts\summarize_v3_archive_table_timing.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_archive_table_timing.py -q
+python scripts\summarize_v3_archive_table_timing.py --format summary
+```
+
+测试结果：
+
+```text
+2 passed in 1.79s
+```
+
+真实 raw/table timing 关键输出：
+
+```text
+raw_file_version=300
+raw_tables_file_version=300
+bidmap_rows=125
+bidmap_column_counts=23:125
+bidmap_col16_values=[[]]:125
+bidmap_col16_drop_ref_like=0
+bidmap_col17_drop_ref_like=125
+bidmap_drop_ref_pairs=22-44:41,20-40:30,16-32:22,18-36:20,12-24:7,14-28:5
+capture_version_like_keys=-
+```
+
+priority maps：
+
+```text
+2401/2404/2406: col17=[9999,map,20,40], round_caps=[50,50,50,50,50], col16=[[]]
+2501/2506/2508: col17=[9999,map,22,44], round_caps=[50,50,50,50,50], col16=[[]]
+2601: col17=[9999,2601,22,44], round_caps=[60,60,60,60,60], col16=[[]]
+```
+
+Drop reachability：
+
+```text
+2401/2404/2406/2501/2506/2508:
+  visited_pools=68
+  leaf_entries=924
+  leaf_n_ranges=1-1:924
+  leaf_n_max_max=1
+
+2601:
+  visited_pools=14
+  leaf_entries=587
+  leaf_n_ranges=1-1:587
+  leaf_n_max_max=1
+```
+
+解读：
+
+- 当前 raw v300 字段口径确认：drop-ref 在 `BidMap.col[17]`，`col[16]` 是空占位。
+- priority maps 的 Drop leaf count range 全部 `n_max=1`，不能解释 settlement item-count 高于 `drop_ref.items_max`。
+- archive capture 没有 version/hash-like 字段，因此 table timing 仍不能证明每条 session 的服务端表版本；剩余 blocker 指向 settlement expansion/session-capacity/server-side overlay 语义。

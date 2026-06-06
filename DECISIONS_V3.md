@@ -2274,3 +2274,18 @@ applied_hurts=2502
 
 - 真实 prior-stressed detail 中 lower bucket 为 39 行：21 行 floor count target 低于 prior 与 truth，10 行 count target 已超过 prior 但仍低于 truth，8 行缺 count target 但 truth 超过 prior。
 - 31 条有 count target 的 lower rows 全部 `target_truth_delta<0`，平均为 `-25.968`；这不是“调高/调低 sampler 参数”的信号，而是 target completeness 与 settlement expansion/source semantics 的分离信号。
+
+## D-v3-107：table/version smoke 不能替代 settlement expansion 语义证明
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_archive_table_timing.py` 必须同时输出 raw table timing、BidMap 23 列/col[16]/col[17] 语义、以及 priority maps reachable Drop `n_min/n_max` 摘要。
+- 当前 raw v300 中，BidMap `col[16]` 不是 drop-ref，`col[17]` 是 drop-ref；priority maps 的 reachable Drop leaf `n_max=1` 不能解释 settlement item-count 超过 `drop_ref.items_max`。
+- archive capture 中没有 version/hash-like 字段时，raw table mtime/fileVersion 只能作为“本地表与采集窗口兼容”的证据，不能证明每条 session 的服务端表版本。
+- 该 smoke 仍是 audit-only；不能用它放宽 readiness/promotion gate，也不能恢复 formal/value sampler 参数调优。
+
+原因：
+
+- 真实 smoke 显示 `BidMap.txt` 为 125 行、全部 23 列，`col16=[[]]` 125/125，`col17_drop_ref_like=125/125`。
+- 2401/2404/2406/2501/2506/2508/2601 的 reachable Drop leaf 全部 `leaf_n_ranges=1-1`，因此 DropEntry 多件数不是当前 capacity 冲突解释。
+- 剩余 blocker 更可能在 settlement expansion/session-capacity/server-side overlay/table-version-per-session 语义层，而不是本地字段索引或 leaf count range。
