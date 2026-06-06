@@ -156,18 +156,43 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
         SimpleNamespace(runtime_id=101, item_id=1001, quality=4, cells=4),
         SimpleNamespace(runtime_id=102, item_id=1001, quality=4, cells=4),
     )
+    action = SimpleNamespace(action_id=100100, observed_items=inventory_items)
     state = SimpleNamespace(
         sort_id=10,
         message_id=0x002D,
         round_index=2,
         map_id=2601,
         inventory_items=inventory_items,
+        action_results=(action,),
+        public_infos=(SimpleNamespace(info_id=200017, value=2),),
     )
 
     monkeypatch.setattr(
         module,
         "parse_fatbeans_capture",
         lambda path: SimpleNamespace(states=(state,)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_latest_settlement_payload",
+        lambda path: (b"payload", None, {}),
+    )
+    monkeypatch.setattr(
+        module,
+        "_parse_fields",
+        lambda payload: [(4, 2, b"inventory")],
+    )
+    monkeypatch.setattr(
+        module,
+        "_inventory_block_metrics",
+        lambda block: {
+            "inventory_slot_count": 300,
+            "occupied_slot_count": 2,
+            "raw_item_candidate_count": 2,
+            "raw_duplicate_runtime_item_pair_count": 0,
+            "slot_field_shapes": {},
+            "item_field_signatures": {},
+        },
     )
     monkeypatch.setattr(
         module,
@@ -200,6 +225,12 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
     assert row["raw_inventory_status"] == "verified_latest_inventory"
     assert row["raw_inventory_file_count"] == 1
     assert row["raw_latest_inventory_item_count"]["max"] == 2
+    assert row["raw_inventory_slot_count"]["max"] == 300
+    assert row["raw_inventory_slot_headroom"]["max"] == 298
+    assert row["raw_candidate_inventory_delta"]["max"] == 0
+    assert row["raw_occupied_slot_inventory_delta"]["max"] == 0
+    assert row["raw_full_observed_actions"] == {"100100": 1}
+    assert row["raw_public_total_count_values"] == {"2": 1}
     assert row["raw_latest_inventory_truth_match_files"] == 1
     assert row["raw_detail_truth_latest_match_rows"] == 1
     assert row["raw_duplicate_runtime_id_count"]["max"] == 0

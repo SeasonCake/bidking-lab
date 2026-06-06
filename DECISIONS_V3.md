@@ -1804,3 +1804,21 @@ applied_hurts=2502
 - `formal_lift_cap=25000` 与 `50000` 虽仍为负 MAE delta，但 over-rate 升至 `0.522592`/`0.541347`，且 hurt groups 增加。
 - `floor_mode=extra` uncapped 明显恶化：`candidate_delta_mae=+344324.441`、`candidate_over=0.873459`。
 - `floor_mode=extra --formal-lift-cap=5000` 与 `ratio_source=bridge --formal-lift-cap=5000` 仍 blocked，说明简单 cap 或训练分母调整不能解决 capacity/table 语义 blocker。
+
+## D-v3-078：BidMap drop-ref max 不能再视为 final settlement inventory 硬上限
+
+2026-06-06 起，当前决策：
+
+- current raw v300 `BidMap` 的 drop-ref 仍按 `col[17]=[9999,drop_pool_id,items_per_session_min,items_per_session_max]` 解析；`col[16]` 是空占位，不参与 current drop-ref。
+- `DropEntry n_min/n_max` 在当前 sampler 中仍表示 leaf entry 被抽中后的单次数量范围；direct conflict maps 的 flattened leaf `n_max` 全为 1。
+- 因 raw 0x002D settlement inventory 已验证 final occupied slot count 可超过 `items_per_session_max`，`items_per_session_max` 不得继续被解释为 final settlement inventory 的硬上限。
+- 在 v3 审计中继续称它为 `prior_items_per_session_max` / sampler prior max，而不是 true inventory capacity。
+- 这不代表可以直接放开 formal/value sampler：在额外生成/展开机制或活动机制解释前，`prior_stress_capacity_table_drift`、`settlement_count_cells_value_bridge_holdout` 和 v3 promotion blocker 继续保持。
+- 下一步应基于 settlement occupancy count prior 与 slot-capacity evidence 设计 shadow-only count/cells/value guard，而不是调正式出价或把 `items_per_session_max` 当 hard cap 修正。
+
+原因：
+
+- direct conflict archive rows：`raw_candidate_delta=0`、`raw_occupied_delta=0`、`raw_truth_match_rows` 全匹配，排除了 parser 把工具镜像重复计入的主因。
+- top conflict maps 的 `raw_slots` 为 250 或 300，`raw_slot_headroom` 仍很大；final inventory count 超过 drop-ref max 但远低于 settlement slot capacity。
+- 2601/2501/2506 等 map 的 `raw_col16="[[]]"`、`raw_col17="[9999,map_id,min,max]"`、`sampler_leaf_nmax=max=1`，说明当前 raw table 与 sampler 解释一致，但该解释不是 final inventory hard cap。
+- 252x activity 仍是 `missing_bidmap`，不能用 250x default table 代替。

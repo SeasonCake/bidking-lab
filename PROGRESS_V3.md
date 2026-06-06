@@ -4382,3 +4382,117 @@ scp_bridge_holdout_over=0.712702
 - `floor_mode=extra` uncapped 明显过冲；加低 cap 后仍 blocked。
 - `ratio_source=bridge` 加 cap 仍 blocked，说明 blocker 不只是训练分母，而是 table/capacity/settlement item-count 语义未收口。
 - 下一步优先解释 `BidMap` capacity、`DropEntry n_min/n_max`、raw 表版本与 settlement inventory item-count 上限冲突；formal/value sampler 参数调优继续暂停。
+
+## 2026-06-06 checkpoint：BidMap/Drop capacity semantic probe
+
+本轮继续审计 prior-stressed capacity/table blocker，保持 v2 formal/live/UI 与正式出价不变。
+
+改动：
+
+- `scripts/summarize_v3_capacity_table_audit.py` 增强 direct capacity conflict 输出：
+  - raw BidMap `col[14]`/`col[16]`/`col[17]`；
+  - flattened leaf `n_min/n_max` summary；
+  - 0x002D inventory slot count、occupied slot count、raw candidate count；
+  - raw candidate/occupied slot 对 latest inventory delta；
+  - slot headroom、full observed action ids、public total-count values。
+- `tests/test_summarize_v3_capacity_table_audit.py` 覆盖 payload slot/headroom、full mirror action 与 public count 聚合。
+- `DECISIONS_V3.md` 新增 D-v3-078；`OBSERVATIONS_V3.md` 新增 O-v3-083；`docs/PROJECT_STRUCTURE_V3.zh-CN.md` 更新 capacity audit 描述。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_table_audit.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --case direct_prior_max_conflict --posterior-trials 64 --top 12
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py data\samples\fatbeans_activity_20260605_shipwreck --case all --posterior-trials 64 --top 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_payload_audit.py --top 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_archive_table_timing.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_count_prior_candidates.py --group-by map_id --top 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_count_prior_candidates.py data\samples\fatbeans_activity_20260605_shipwreck --group-by map_prefix3 --top 8
+git -c safe.directory=C:/xiangmuyunxing/biancheng/2026/bidking-lab diff --check
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_other_tables.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_count_prior_holdout.py tests\test_summarize_v3_scp_formal_value_link.py tests\test_summarize_v3_scp_count_value_bridge.py tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+```
+
+结果：
+
+```text
+capacity audit tests:
+4 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+82 passed
+
+diff --check:
+passed
+
+direct_prior_max_conflict:
+groups=10
+
+2601:
+raw_col16="[[]]"
+raw_col17="[9999,2601,22,44]"
+sampler_leaf_nmax=max=1
+raw_slots=max=300
+raw_latest_count=max=65
+raw_candidate_delta=max=0
+raw_occupied_delta=max=0
+raw_drop_excess_after_temp=max=20
+
+2501:
+raw_col16="[[]]"
+raw_col17="[9999,2501,22,44]"
+sampler_leaf_nmax=max=1
+raw_slots=max=300
+raw_latest_count=max=60
+raw_candidate_delta=max=0
+raw_occupied_delta=max=0
+raw_public_count=60:1
+
+2506:
+raw_col16="[[]]"
+raw_col17="[9999,2506,22,44]"
+sampler_leaf_nmax=max=1
+raw_slots=max=300
+raw_latest_count=max=58
+raw_candidate_delta=max=0
+raw_occupied_delta=max=0
+
+payload audit:
+files=441
+raw_candidate_match_rows=439
+occupied_slot_match_rows=439
+slot_counts=300:251,250:186,232:1,252:1,253:1,254:1
+
+settlement count prior candidates:
+above_drop_after_temp=172
+above_round_after_temp=59
+payload_mismatch_rows=2
+
+activity 252x:
+table=missing_bidmap:15
+inventory_count max=67
+slots=300:15
+payload_mismatch=0/15
+
+table timing:
+raw_file_version=300
+raw_tables_file_version=300
+filelist_header="Ver:300|FileCount:4299"
+capture_version_like_keys=-
+
+readiness:
+overall_status=not_ready
+blocked_gates=12
+prior_stress_capacity_table_drift=blocked
+settlement_count_cells_value_bridge_holdout=blocked
+formal_value_sampler_holdout=blocked
+```
+
+结论：
+
+- current raw v300 BidMap 中 `col[16]` 是空占位，drop-ref 在 `col[17]`；旧 `col[16]` 口径不能用于 current 表。
+- direct conflict maps 的 flattened Drop leaf `n_max` 全为 1；`DropEntry n_min/n_max` 不能解释 final inventory count 超过 sampler possible max。
+- 0x002D raw candidate/occupied slot 与 final inventory 基本匹配，direct conflict rows truth/latest inventory 全匹配；parser 重复不是主因。
+- final inventory 远低于 250/300 slot capacity，说明 `items_per_session_max` 更像 sampler prior max，不是 final settlement inventory hard cap。
+- 252x activity 仍是 missing table cohort；不能用 default 250x 表强行解释。
+- 下一步应基于 settlement occupancy count prior 设计 shadow-only guard，或继续查额外生成/活动机制；formal/value sampler promotion 仍暂停。

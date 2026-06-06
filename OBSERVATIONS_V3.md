@@ -2979,3 +2979,118 @@ scp_bridge_holdout_over=0.712702
 - `floor_mode=extra` uncapped 是反证：按 count gap 增量补 floor 会严重过冲；加 cap 后仍 blocked。
 - strict `ratio_source=bridge` 加 cap 仍 blocked，说明 blocker 不只是 train ratio source，而是 capacity/table/settlement item-count 语义还没有解释清楚。
 - 该结果支持继续暂停 formal/value sampler 参数调优，优先审计 BidMap/Drop/capacity 与 settlement inventory 的 item-count 上限冲突。
+
+## O-v3-083：capacity conflict 指向 sampler prior-max 语义，而不是 settlement parser 重复
+
+2026-06-06 增强 `summarize_v3_capacity_table_audit.py`，把 raw BidMap col[14]/[16]/[17]、flattened leaf `n_min/n_max`、0x002D inventory slot count、raw candidate/occupied slot delta、full observed actions 与 public total-count 一并输出。
+
+default archive `direct_prior_max_conflict`：
+
+```text
+case=direct_prior_max_conflict groups=10
+
+2601:
+rows=8 table_impossible_rows=8
+bidmap_items=22-44
+bidmap_raw_cols=23
+drop_ref_col=17
+round_cap=60-60
+raw_col14="[60,60,60,60,60]"
+raw_col16="[[]]"
+raw_col17="[9999,2601,22,44]"
+sampler_possible_max=44
+sampler_max_count_per_draw=1
+sampler_leaf_nmax=max=1
+raw_slots=max=300
+raw_latest_count=max=65
+raw_slot_headroom=max=251
+raw_candidate_delta=max=0
+raw_occupied_delta=max=0
+raw_full_actions=100100:3,100134:1
+raw_drop_excess_after_temp=max=20
+raw_round_excess_after_temp=max=4
+
+2501:
+rows=6 table_impossible_rows=6
+raw_col16="[[]]"
+raw_col17="[9999,2501,22,44]"
+sampler_leaf_nmax=max=1
+raw_slots=max=300
+raw_latest_count=max=60
+raw_slot_headroom=max=253
+raw_candidate_delta=max=0
+raw_occupied_delta=max=0
+raw_public_count=60:1
+raw_drop_excess_after_temp=max=13
+raw_round_excess_after_temp=max=7
+
+2506:
+rows=4 table_impossible_rows=4
+raw_col16="[[]]"
+raw_col17="[9999,2506,22,44]"
+sampler_leaf_nmax=max=1
+raw_slots=max=300
+raw_latest_count=max=58
+raw_slot_headroom=max=242
+raw_candidate_delta=max=0
+raw_occupied_delta=max=0
+raw_full_actions=100134:1
+raw_drop_excess_after_temp=max=13
+raw_round_excess_after_temp=max=7
+```
+
+全 archive settlement payload 复核：
+
+```text
+files=441
+settlement_rows=441
+raw_candidate_match_rows=439
+occupied_slot_match_rows=439
+slot_counts=300:251,250:186,232:1,252:1,253:1,254:1
+raw_candidate_delta=max=1
+occupied_slot_delta=max=1
+raw_dup_pair=max=1
+```
+
+settlement count prior candidates：
+
+```text
+default:
+files=441
+inventory_count max=66
+non_temp_count max=64
+above_drop_after_temp=172
+above_round_after_temp=59
+payload_mismatch_rows=2
+
+activity 252x:
+files=15
+table=missing_bidmap:15
+inventory_count max=67
+non_temp_count max=67
+temp_zodiac max=0
+slots=300:15
+payload_mismatch=0/15
+```
+
+raw table timing：
+
+```text
+raw_file_version=300
+raw_tables_file_version=300
+filelist_header="Ver:300|FileCount:4299"
+BidMap.txt entry=Tables/BidMap.txt|XGrDTpKIl6MsintjOgFp9yy2NmI=$62148
+Drop.txt entry=Tables/Drop.txt|GF8kBPZ3zi0zgO3mn/pNEfb5HIw=$294160
+capture_min=2026-05-27T22:13:58.2127532+08:00
+capture_max=2026-06-05T23:25:48.3624321+08:00
+capture_version_like_keys=-
+```
+
+解读：
+
+- current v300 BidMap 列语义已复核：`col[16]` 是空占位，`col[17]` 才是 drop-ref；旧 `col[16]` 口径不得用于 current 表。
+- Drop flattened leaf `n_max` 全为 1，不能解释超过 `items_per_session_max` 的 final inventory count。
+- 0x002D payload raw candidate 与 occupied slots 基本逐项匹配 final inventory，且 direct conflict rows 的 truth 与 latest inventory 全匹配；parser 重复不是主因。
+- final inventory count 远低于 250/300 slot capacity，说明 settlement inventory 的自然 capacity 更像 slot occupancy，而不是 BidMap drop-ref max。
+- known temp zodiac 只解释 missing drop-universe item id，不足以解释 after-temp count gap。
+- 仍缺少每个 archive capture 的表版本强字段，因此不能完全排除历史 table/version 或活动机制，但现有证据足以把 blocker 从“parser 重复”转为“sampler prior max/额外生成机制语义未解释”。
