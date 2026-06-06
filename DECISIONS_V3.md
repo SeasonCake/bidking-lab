@@ -1658,3 +1658,23 @@ applied_hurts=2502
 - `direct_prior_max_conflict` top groups 扣除 zodiac 后仍超 cap：2601 `raw_drop_excess_after_temp=max=20`、`raw_round_excess_after_temp=max=4`；2501 分别为 13/7；2506 分别为 13/7。
 - `target_lower_bound_truth_above_prior` top groups 同样仍超 cap：2508 分别为 14/8；2504 分别为 17/11；2405 分别为 18/8。
 - timing audit 显示 current raw `fileVersion=300`、filelist 包含当前 BidMap/Drop entries，默认 archive capture time 为 2026-05-27 到 2026-06-05，activity cohort 为 2026-06-05；但 capture JSON 中没有 version/hash 字段。
+
+## D-v3-070：0x002D field[4] 证明 final inventory 是 slot occupancy，不提供 base/activity source split
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_payload_audit.py` 作为 0x002D settlement raw payload 的专用审计入口。
+- 当前把 0x002D payload `field[4]` 视为 final settlement grid/slot block：
+  - top-level `field[3]` 是 slot-like records；
+  - occupied slots/raw item candidates 与 parser inventory item count 应大体一致；
+  - raw duplicate `(runtime_id,item_id)` 只作为 parser/dedup 异常诊断，不作为 capacity 放宽信号。
+- 该 payload 证明 archive truth 是最终 occupied settlement slots，但尚未提供 base Drop、temporary activity item 或额外生成机制的 source split。
+- 因此，不得把 0x002D slot_count 直接改成 sampler count cap，也不得把 full observed action（如 `100100`/`100134`）当成独立生成来源；它们目前只是最终 inventory 的镜像或阅读结果。
+- 下一步若要修 capacity prior，必须继续 shadow-only：要么找到 server generation/source 字段，要么把 session-count prior 从 raw settlement occupancy 做分 cohort 校准，并通过 archive/activity/live/readiness 验证。
+
+原因：
+
+- 默认 441-session archive：`raw_candidate_match_rows=439`、`occupied_slot_match_rows=439`，slot counts 主要为 `300:251,250:186`；activity cohort 15/15 完全匹配且 slot count 全为 300。
+- 2601：22/22 raw candidates 与 parsed inventory 匹配，slot count 全为 300，inventory count max=65。
+- 2501：86/87 匹配，唯一差异是 duplicate raw candidate pair 造成的 dedup delta=1，不是 prior-stressed top conflict 的主因。
+- full observed actions 只出现在少数 rows（默认 18/441），不能解释全局 count-cap gap。

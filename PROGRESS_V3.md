@@ -3739,3 +3739,69 @@ parse_errors=0
 - zodiac extras 不能作为 capacity gap 的完整解释；扣除后 top groups 仍明显超过 drop-ref max 与 round-cap candidate。
 - capture JSON 未携带 table version/hash 字段；当前 table timing 只能作为弱证据，不能解除 raw table/archive version blocker。
 - 下一步应查 settlement inventory 协议或额外生成/展开字段，继续保持 `prior_stress_capacity_table_drift` blocked。
+
+## 2026-06-06 checkpoint：0x002D settlement payload slot/candidate 审计
+
+完成内容：
+
+- 新增 `scripts/summarize_v3_settlement_payload_audit.py`：
+  - 直接读取 raw 0x002D frames；
+  - 审计 state payload field counts；
+  - 审计 payload `field[4]` inventory block 的 top-level slot count；
+  - 统计 occupied slots、raw item candidates、duplicate `(runtime_id,item_id)`；
+  - 对照 parser dedup 后 `inventory_items`；
+  - 统计 full observed actions 是否镜像 final inventory。
+- 新增 `tests/test_summarize_v3_settlement_payload_audit.py`，覆盖 slot/candidate/duplicate pair helper。
+- 未调整 formal/value sampler 参数，未改变 v2 formal/live/UI 或正式出价路径。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_payload_audit.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_payload_audit.py --top 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_payload_audit.py data\samples\fatbeans_activity_20260605_shipwreck --top 8
+```
+
+结果：
+
+```text
+unit:
+1 passed
+
+broader parser/archive/live/readiness/formal-value tests:
+65 passed
+
+default archive:
+files=441 settlement_rows=441
+raw_candidate_match_rows=439
+occupied_slot_match_rows=439
+slot_counts=300:251,250:186,232:1,252:1,253:1,254:1
+raw_candidate_delta=max=1
+raw_dup_pair=max=1
+full_observed_action_rows=18
+
+2601:
+files=22 inventory_count=max=65 slot_counts=300:22
+raw_candidate_match_rows=22/22 occupied_slot_match_rows=22/22
+full_actions=none:15,100100:4,100134:3
+
+2501:
+files=87 inventory_count=max=65 slot_counts=300:86,232:1
+raw_candidate_match_rows=86/87 occupied_slot_match_rows=86/87
+full_actions=none:85,100100:2
+
+activity cohort:
+files=15 settlement_rows=15
+raw_candidate_match_rows=15
+occupied_slot_match_rows=15
+slot_counts=300:15
+raw_candidate_delta=max=0
+raw_dup_pair=max=0
+```
+
+结论：
+
+- 0x002D payload `field[4]` 支持“archive truth 是最终 occupied settlement slots”，不是 parser 重复。
+- slot_count 与 map family 相关：24xx 多为 250，25xx/26xx/252x 多为 300；这不是当前 `drop_ref.items_max`。
+- 0x002D payload 尚未暴露 base Drop / activity overlay / extra generation source split，不能直接解除 capacity blocker。
+- 下一步优先继续查 server generation/source 字段；若找不到，需要设计 shadow-only settlement occupancy count prior 候选，再经 archive/activity/live/readiness 验证。

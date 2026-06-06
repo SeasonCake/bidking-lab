@@ -65,6 +65,15 @@ drop from 196 to 172 after subtracting zodiac extras, and sessions above
 `round_caps_candidate` drop from 81 to 59. The remaining gap still needs
 settlement expansion/session-capacity semantics or version timing evidence.
 
+The 2026-06-06 settlement payload audit adds one protocol-level clue:
+0x002D payload `field[4]` behaves like the final settlement grid/slot
+block. In the default archive, its top-level slot count is usually 250 for
+24xx maps and 300 for 25xx/26xx maps; occupied slots/raw item candidates
+match the parsed final inventory count in 439/441 files. That supports the
+parser/truth count as final occupied settlement slots, but it still does
+not identify which slots came from base Drop, activity overlay, or another
+server-side expansion mechanism.
+
 ## Tier structure
 
 The same map theme appears at up to 3 difficulty tiers:

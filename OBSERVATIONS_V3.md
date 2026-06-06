@@ -2533,3 +2533,45 @@ parse_errors=0
 - 默认 archive 与 activity cohort 的 capture JSON 均未发现 version/hash 字段；当前只能用 raw fileVersion/filelist 与本地 mtime 做弱时序判断。
 - BidMap/Drop 内容文件 mtime 早于所有默认 archive capture，但 fileVersion/filelist mtime 是 2026-06-03，说明不能仅凭本地 mtime 完成 table-version 证明。
 - 下一步应继续查 settlement inventory 是否有额外生成/展开字段或协议消息，而不是调整 formal/value sampler。
+
+## O-v3-075：0x002D settlement field[4] 是 final slot block，未暴露 source split
+
+2026-06-06 新增 `summarize_v3_settlement_payload_audit.py`，对 default archive 与 0605 activity cohort 的 0x002D raw payload 审计：
+
+```text
+default archive:
+files=441
+settlement_rows=441
+raw_candidate_match_rows=439
+occupied_slot_match_rows=439
+payload_f20_rows=436
+full_observed_action_rows=18
+slot_counts=300:251,250:186,232:1,252:1,253:1,254:1
+raw_candidate_delta=max=1
+occupied_slot_delta=max=1
+raw_dup_pair=max=1
+
+default top groups:
+map_id=2601 files=22 inventory_count=max=65 slot_counts=300:22 raw_candidate_match_rows=22/22 occupied_slot_match_rows=22/22 full_actions=none:15,100100:4,100134:3
+map_id=2501 files=87 inventory_count=max=65 slot_counts=300:86,232:1 raw_candidate_match_rows=86/87 occupied_slot_match_rows=86/87 full_actions=none:85,100100:2
+map_id=2508 files=17 inventory_count=max=64 slot_counts=300:17 raw_candidate_match_rows=17/17 occupied_slot_match_rows=17/17 full_actions=none:17
+map_id=2405 files=15 inventory_count=max=60 slot_counts=250:15 raw_candidate_match_rows=15/15 occupied_slot_match_rows=15/15 full_actions=none:15
+
+activity cohort:
+files=15
+settlement_rows=15
+raw_candidate_match_rows=15
+occupied_slot_match_rows=15
+slot_counts=300:15
+raw_candidate_delta=max=0
+raw_dup_pair=max=0
+map_id=2521 inventory_count=max=67 slot_counts=300:5
+```
+
+解读：
+
+- 0x002D payload `field[4]` 不是 parser 重复来源；它表现为 final settlement grid/slot block，occupied slots/raw item candidates 基本等于 parsed final inventory。
+- 24xx settlement slot count 多为 250，25xx/26xx/252x 多为 300；这更像 final grid capacity，不是 BidMap `drop_ref.items_max`。
+- 少数 full observed actions（`100100`/`100134`）会镜像整局 inventory，但只覆盖 18/441，不能作为普遍额外生成机制。
+- 当前协议层证据支持“truth count 是最终 occupied settlement slots”，但仍没找到 base Drop、activity overlay 或额外展开的 source split 字段。
+- capacity blocker 下一步应转向 server generation/source 字段继续反查，或在 shadow-only 分支做 settlement occupancy count prior 校准候选；formal/value sampler promotion 仍暂停。
