@@ -5634,3 +5634,63 @@ readiness:
 - 3 条 map-id miss 不是解析/slot/drop-universe 错误，而是训练折没有同 map source support；这属于 support-depth 问题。
 - map-family/fallback 能补召回但扩大 false positives，仍是 broad watch prior；默认 CSE prior 不能因 recall=1.0 自动切换。
 - processed artifact 已重建为 `generated_at=2026-06-07`、`entries=30`、`affects_bid=false`、`active=false`，map_id=2501 的 `source_context_classes` 可复核为 `direct_action_full_confirmed:2,payload_unverified_or_mismatch:1,payload_verified_empty_action_results:16,payload_verified_partial_action_only:65,public_total_confirmed:3`。
+
+## O-v3-130：prebid pressure guard 提高 CSE 精度但召回不足
+
+2026-06-07 新增 `summarize_v3_capacity_source_expansion_prebid_guard.py`，将 archive prebid evaluator rows 与 settlement source-semantics truth 按 capture file 合并，只评估 prebid 可见的 CSE guard。
+
+验证命令：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_prebid_guard.py --posterior-trials 64 --format summary
+python scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format summary
+```
+
+guard 结果：
+
+```text
+files=441 ready_rows=1560 truth_rows=81 truth_sessions=21 parse_errors=0
+
+cse_candidate:
+  selected_rows=752 covered_rows=81 missed_rows=0 fp_rows=671
+  row_recall=1.0 row_precision=0.107713
+  selected_sessions=214 covered_sessions=21 missed_sessions=0 fp_sessions=193
+  session_recall=1.0 session_precision=0.098131
+
+pressure_candidate:
+  selected_rows=61 covered_rows=24 missed_rows=57 fp_rows=37
+  row_recall=0.296296 row_precision=0.393443
+  selected_sessions=31 covered_sessions=11 missed_sessions=10 fp_sessions=20
+  session_recall=0.52381 session_precision=0.354839
+  rounds=1:7,2:7,3:9,4:21,5:17
+  target_sources=exact:36,floor:25
+
+target_near_source_p95_5:
+  selected_rows=56 covered_rows=23 missed_rows=58 fp_rows=33
+  row_recall=0.283951 row_precision=0.410714
+  selected_sessions=28 covered_sessions=11 missed_sessions=10 fp_sessions=17
+  session_recall=0.52381 session_precision=0.392857
+```
+
+archive/readiness：
+
+```text
+archive:
+  v3_cse_candidate_rows=752
+  v3_cse_pressure_candidate_rows=61
+  v3_cse_active_rows=0
+
+readiness:
+  overall_status=not_ready
+  capacity_source_expansion_shadow status=watch
+  cse_candidate_rows=752
+  cse_pressure_candidate_rows=61
+  cse_active_rows=0
+```
+
+解读：
+
+- pressure guard 使用 prebid target/prior max gap，不依赖 final settlement unique count 或 `source_context_class`，因此可进入 live `model_eval` 作为实战复盘字段。
+- precision 提升明显，但 session recall 只有 11/21；剩余 10 个 truth sessions 没有在 prebid 窗口触发 target-above-prior pressure。
+- 当前最合适的策略是保留 broad `v3_cse_candidate` 做 full-recall watch，同时用 `v3_cse_pressure_candidate` 做 high-precision 子分片；两者都不能接入 formal/live 出价。

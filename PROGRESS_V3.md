@@ -7103,3 +7103,71 @@ archive/readiness:
 - 3 条 map-id miss 是 holdout support gap：test fold 中出现 singleton truth，而 train folds 没有同 map source-semantics support。
 - map-family/fallback 能补 recall，但 false positive 过宽；当前不能作为 default source-aware expansion prior 或 readiness/promotion 证据。
 - 下一步应继续补 source parser、活动/远端表 acquisition、payload-only 外部 source 解释和更精细的可证伪 prior；仍不恢复 formal/value sampler 参数调优。
+
+## 2026-06-07 checkpoint：CSE prebid pressure guard 审计
+
+本轮把 CSE 从 group-level broad watch 进一步拆出一个 prebid 可见的 high-precision pressure tier：当 `v3_cse_candidate=true` 且当前窗口的 target count 已超过 table prior max 时，输出 `v3_cse_pressure_candidate=true`。该字段只用于 archive/live/readiness 审计，不改变 `active=false`、`affects_bid=false`。
+
+改动：
+
+- `src/bidking_lab/inference/v3/capacity_source_expansion.py`：
+  - 新增 `v3_cse_pressure_candidate`；
+  - 新增 `v3_cse_target_prior_max_delta`；
+  - `v3_cse_flags` 在 pressure tier 中增加 `target_count_above_prior_max`。
+- `scripts/evaluate_fatbeans_v3_samples.py`：
+  - CSV header 与 summary 增加 `v3_cse_pressure_candidate_rows`；
+  - 保留原 `v3_cse_candidate_rows` 作为 broad watch 分母。
+- `src/bidking_lab/live/monitor.py`：
+  - live `model_eval` 增加 `v3_cse_pressure_candidate`、`v3_cse_target_count_source`、`v3_cse_target_count`、`v3_cse_prior_items_per_session_max`、`v3_cse_target_prior_max_delta`、`v3_cse_target_to_unique_non_temp_p95_delta`。
+- `scripts/summarize_v3_capacity_source_expansion_prebid_guard.py`：
+  - 新增 archive prebid guard 汇总脚本；
+  - 将 prebid evaluator rows 与 settlement source-semantics truth 按 capture file 合并；
+  - 同时输出 window-level 和 session-level recall/precision。
+- `scripts/summarize_v3_promotion_readiness.py`：
+  - readiness summary 与 `capacity_source_expansion_shadow` gate 展开 `pressure_candidate_rows`，但 gate 状态不因此放宽。
+- 新增/更新测试覆盖 CSE pressure flat dict、archive row、live model_eval、readiness count 与 prebid guard summary。
+
+验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_capacity_source_expansion_prebid_guard.py scripts\evaluate_fatbeans_v3_samples.py scripts\summarize_v3_promotion_readiness.py src\bidking_lab\inference\v3\capacity_source_expansion.py src\bidking_lab\live\monitor.py
+pytest --basetemp=.tmp\codex\pytest tests\test_inference_v3_capacity_source_expansion.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_summarize_v3_capacity_source_expansion_prebid_guard.py tests\test_summarize_v3_promotion_readiness.py -q
+python scripts\summarize_v3_capacity_source_expansion_prebid_guard.py --posterior-trials 64 --format summary
+python scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format summary
+```
+
+关键结果：
+
+```text
+CSE prebid guard:
+  ready_rows=1560 truth_rows=81 truth_sessions=21
+
+cse_candidate:
+  selected_rows=752 covered_rows=81 fp_rows=671
+  row_recall=1.0 row_precision=0.107713
+  session_recall=1.0 session_precision=0.098131
+
+pressure_candidate / target_above_prior_max:
+  selected_rows=61 covered_rows=24 fp_rows=37
+  row_recall=0.296296 row_precision=0.393443
+  selected_sessions=31 covered_sessions=11 fp_sessions=20
+  session_recall=0.52381 session_precision=0.354839
+
+target_near_source_p95_5:
+  selected_rows=56 covered_rows=23 fp_rows=33
+  row_recall=0.283951 row_precision=0.410714
+  session_recall=0.52381 session_precision=0.392857
+
+archive/readiness:
+  v3_cse_candidate_rows=752
+  v3_cse_pressure_candidate_rows=61
+  v3_cse_active_rows=0
+  readiness overall_status=not_ready
+```
+
+解读：
+
+- `pressure_candidate` 能把 CSE broad watch 的 precision 从约 0.108 提到约 0.393，但只覆盖 11/21 truth sessions；它是 high-precision watch tier，不是 source-aware prior 的完整替代。
+- 这个 guard 使用 prebid 可见 target/prior max，不依赖 settlement-only `source_context_class` 或 final unique count，适合进入 live `model_eval` 做实战复盘。
+- 由于 recall 仍不足，不能恢复 formal/value sampler 调参，也不能作为 promotion/readiness 放行条件。

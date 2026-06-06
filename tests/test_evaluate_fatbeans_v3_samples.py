@@ -281,6 +281,7 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_cse_affects_bid"] is False
     assert rows[0]["v3_cse_active"] is False
     assert rows[0]["v3_cse_candidate"] is False
+    assert rows[0]["v3_cse_pressure_candidate"] is False
     assert rows[0]["v3_cse_status"] == "within_capacity_source_semantics_shadow_only"
     assert rows[0]["v3_cse_scope"] == "map_id"
     assert rows[0]["v3_cse_group"] == "2401"
@@ -693,6 +694,7 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["v3_fv_delta_formal_p50_mae"] == -2.5
     assert summary["v3_fv_formal_p50_below_rate"] == 0.5
     assert summary["v3_fv_formal_p90_coverage"] == 1.0
+    assert summary["v3_cse_pressure_candidate_rows"] == 0
 
 
 def test_v3_prebid_rows_separate_no_state_windows() -> None:

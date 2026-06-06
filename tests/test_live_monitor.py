@@ -604,6 +604,7 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["v3_posterior_shadow"]["v3_cse_available"] is True
     assert artifact["v3_posterior_shadow"]["v3_cse_affects_bid"] is False
     assert artifact["v3_posterior_shadow"]["v3_cse_active"] is False
+    assert "v3_cse_pressure_candidate" in artifact["v3_posterior_shadow"]
     assert "v3_cse_source_context_classes" in artifact["v3_posterior_shadow"]
     assert artifact["q6_residual_boost_shadow"]["label"] == "profile_b5"
     assert artifact["q6_residual_boost_shadow"]["gate"] == "shipwreck_profile_v1"
@@ -775,6 +776,12 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["model_eval"]["v3_cse_affects_bid"] is False
     assert artifact["model_eval"]["v3_cse_active"] is False
     assert "v3_cse_status" in artifact["model_eval"]
+    assert "v3_cse_pressure_candidate" in artifact["model_eval"]
+    assert "v3_cse_target_count_source" in artifact["model_eval"]
+    assert "v3_cse_target_count" in artifact["model_eval"]
+    assert "v3_cse_prior_items_per_session_max" in artifact["model_eval"]
+    assert "v3_cse_target_prior_max_delta" in artifact["model_eval"]
+    assert "v3_cse_target_to_unique_non_temp_p95_delta" in artifact["model_eval"]
     assert "v3_cse_source_context_classes" in artifact["model_eval"]
     assert artifact["model_eval"]["v3_ccv_available"] is True
     assert artifact["model_eval"]["v3_ccv_affects_bid"] is False

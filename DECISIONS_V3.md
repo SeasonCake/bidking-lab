@@ -2591,3 +2591,20 @@ applied_hurts=2502
 - map-id holdout 召回 18/21、precision 0.089109；3 条 miss 都是 train fold 无同 map source support 的 singleton/sparse blocker。
 - map-family holdout 可召回 21/21，但 precision 只有 0.050119；`map_id -> map_family_sub_pool_kind` fallback 也召回 21/21，但 candidate 增至 347、false positive 326、precision 0.060519。
 - archive/readiness 仍显示 `v3_cse_active_rows=0`、`capacity_source_expansion_shadow=watch`、overall `not_ready`；该证据只能支持 blocker 审计继续推进，不能支持 promotion。
+
+## D-v3-126：CSE pressure tier 只能作为 high-precision watch，不是默认 prior
+
+2026-06-07 起，当前决策：
+
+- `v3_cse_pressure_candidate` 定义为：`v3_cse_candidate=true` 且 prebid target count 已超过 `v3_prior_items_per_session_max`。
+- pressure tier 是 source-aware expansion 的 audit-only 子层，用于区分“group 曾出现 over-cap”与“当前窗口已出现 capacity pressure”。
+- pressure tier 必须固定 `active=false`、`affects_bid=false`，不得改变 v2 formal/live/UI、posterior sampler、formal/value sampler 或正式出价。
+- archive CSV、live `model_eval` 与 readiness summary 必须输出 pressure tier 与 target/prior delta 字段，便于实战后按 pressure/non-pressure 分片复盘。
+- pressure tier precision 虽明显高于 broad CSE candidate，但 recall 不足；不得把它作为 promotion/readiness 放行或默认 source-aware prior。
+
+原因：
+
+- archive prebid guard 显示 broad `v3_cse_candidate` 覆盖 752 rows、81 truth windows，row precision 0.107713，session precision 0.098131。
+- `v3_cse_pressure_candidate` / `target_above_prior_max` 只选 61 rows，覆盖 24 truth windows，row precision 0.393443；session 侧覆盖 11/21 truth sessions，session recall 0.52381。
+- `target_near_source_p95_5` 的 row precision 为 0.410714，但 row recall 只有 0.283951，仍不足以替代 broad candidate。
+- 因此 pressure tier 是后续提升 precision 的有效线索，但还不能解决 map-id 漏召回、payload-only rows 或 promotion blocker。

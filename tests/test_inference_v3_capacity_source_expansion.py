@@ -42,6 +42,7 @@ def test_capacity_source_expansion_report_is_shadow_only() -> None:
     assert flat["v3_cse_available"] is True
     assert flat["v3_cse_ready"] is True
     assert flat["v3_cse_candidate"] is True
+    assert flat["v3_cse_pressure_candidate"] is True
     assert flat["v3_cse_active"] is False
     assert flat["v3_cse_affects_bid"] is False
     assert flat["v3_cse_status"] == "watch_capacity_source_expansion_shadow_only"
@@ -50,9 +51,11 @@ def test_capacity_source_expansion_report_is_shadow_only() -> None:
         == "payload_verified_partial_action_only:6"
     )
     assert flat["v3_cse_target_count_source"] == "floor"
+    assert flat["v3_cse_target_prior_max_delta"] == 8
     assert flat["v3_cse_target_to_unique_non_temp_p95_delta"] == -5
     assert flat["v3_cse_prior_max_to_unique_non_temp_p95_delta"] == -13
     assert "source_expansion_candidate" in flat["v3_cse_flags"]
+    assert "target_count_above_prior_max" in flat["v3_cse_flags"]
     assert "external_source_confirmation" in flat["v3_cse_flags"]
 
 

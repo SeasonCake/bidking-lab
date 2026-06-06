@@ -236,8 +236,12 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
         return f"candidate_rows={candidates};missing_table_rows={missing}"
     if name == "capacity_source_expansion_shadow":
         candidates = int(gate.get("candidate_rows") or 0)
+        pressure = int(gate.get("pressure_candidate_rows") or 0)
         active = int(gate.get("active_rows") or 0)
-        return f"candidate_rows={candidates};active_rows={active}"
+        return (
+            f"candidate_rows={candidates};"
+            f"pressure_candidate_rows={pressure};active_rows={active}"
+        )
     if name in {
         "settlement_count_cells_value_bridge_holdout",
         "settlement_count_guarded_bridge_holdout",
@@ -673,6 +677,9 @@ def summarize_readiness(
     )
     cse_ready = int(summary.get("v3_cse_ready_rows") or 0)
     cse_candidate = int(summary.get("v3_cse_candidate_rows") or 0)
+    cse_pressure_candidate = int(
+        summary.get("v3_cse_pressure_candidate_rows") or 0
+    )
     cse_active = int(summary.get("v3_cse_active_rows") or 0)
     cse_status = "watch" if cse_ready > 0 and cse_active == 0 else "blocked"
     gates.append(
@@ -684,6 +691,7 @@ def summarize_readiness(
             else "capacity/source expansion shadow fields are missing or active",
             ready_rows=cse_ready,
             candidate_rows=cse_candidate,
+            pressure_candidate_rows=cse_pressure_candidate,
             active_rows=cse_active,
             status_counts=summary.get("v3_cse_status_counts"),
         )
@@ -1382,6 +1390,7 @@ def summarize_readiness(
                 "v3_fv_delta_formal_p50_mae",
                 "v3_cse_ready_rows",
                 "v3_cse_candidate_rows",
+                "v3_cse_pressure_candidate_rows",
                 "v3_cse_active_rows",
                 "v3_resid_gate_active_rows",
             )
@@ -1690,6 +1699,7 @@ def _print_summary(result: dict[str, Any]) -> None:
                     or []
                 ),
                 f"cse_candidate_rows={summary['v3_cse_candidate_rows']}",
+                f"cse_pressure_candidate_rows={summary['v3_cse_pressure_candidate_rows']}",
                 f"cse_active_rows={summary['v3_cse_active_rows']}",
                 f"prior_stress_detail_rows={result['prior_stress_detail_summary']['rows']}",
                 f"prior_stress_capacity_hits={result['prior_stress_detail_summary']['capacity_flag_hits']}",

@@ -1667,6 +1667,11 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             for row in capacity_source_expansion_ready
             if row.get("v3_cse_candidate")
         ),
+        "v3_cse_pressure_candidate_rows": sum(
+            1
+            for row in capacity_source_expansion_ready
+            if row.get("v3_cse_pressure_candidate")
+        ),
         "v3_cse_active_rows": sum(
             1 for row in capacity_source_expansion_ready if row.get("v3_cse_active")
         ),
@@ -1910,6 +1915,7 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"v3_scp_active_rows={summary['v3_scp_active_rows']}",
                 f"v3_cse_ready_rows={summary['v3_cse_ready_rows']}",
                 f"v3_cse_candidate_rows={summary['v3_cse_candidate_rows']}",
+                f"v3_cse_pressure_candidate_rows={summary['v3_cse_pressure_candidate_rows']}",
                 f"v3_cse_active_rows={summary['v3_cse_active_rows']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
@@ -2482,6 +2488,7 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_cse_affects_bid",
         "v3_cse_active",
         "v3_cse_candidate",
+        "v3_cse_pressure_candidate",
         "v3_cse_status",
         "v3_cse_gate_reason",
         "v3_cse_scope",
@@ -2508,6 +2515,7 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_cse_target_count_source",
         "v3_cse_target_count",
         "v3_cse_prior_items_per_session_max",
+        "v3_cse_target_prior_max_delta",
         "v3_cse_target_to_unique_non_temp_p95_delta",
         "v3_cse_prior_max_to_unique_non_temp_p95_delta",
         "v3_cse_prior_max_to_unique_non_temp_max_delta",

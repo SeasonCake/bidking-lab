@@ -2085,6 +2085,9 @@ def _model_eval_row(
     v3_cse_affects_bid = bool(v3_shadow.get("v3_cse_affects_bid"))
     v3_cse_active = bool(v3_shadow.get("v3_cse_active"))
     v3_cse_candidate = bool(v3_shadow.get("v3_cse_candidate"))
+    v3_cse_pressure_candidate = bool(
+        v3_shadow.get("v3_cse_pressure_candidate")
+    )
     v3_cse_status = v3_shadow.get("v3_cse_status")
     v3_cse_gate_reason = v3_shadow.get("v3_cse_gate_reason")
     v3_cse_scope = v3_shadow.get("v3_cse_scope")
@@ -2113,8 +2116,21 @@ def _model_eval_row(
     v3_cse_unique_max = _parse_float_text(
         v3_shadow.get("v3_cse_unique_non_temp_max")
     )
+    v3_cse_target_count_source = v3_shadow.get("v3_cse_target_count_source")
+    v3_cse_target_count = _parse_float_text(
+        v3_shadow.get("v3_cse_target_count")
+    )
+    v3_cse_prior_items_per_session_max = _parse_float_text(
+        v3_shadow.get("v3_cse_prior_items_per_session_max")
+    )
+    v3_cse_target_p95_delta = _parse_float_text(
+        v3_shadow.get("v3_cse_target_to_unique_non_temp_p95_delta")
+    )
     v3_cse_prior_p95_delta = _parse_float_text(
         v3_shadow.get("v3_cse_prior_max_to_unique_non_temp_p95_delta")
+    )
+    v3_cse_target_prior_delta = _parse_float_text(
+        v3_shadow.get("v3_cse_target_prior_max_delta")
     )
     v3_cse_prior_max_delta = _parse_float_text(
         v3_shadow.get("v3_cse_prior_max_to_unique_non_temp_max_delta")
@@ -2857,6 +2873,7 @@ def _model_eval_row(
         "v3_cse_affects_bid": v3_cse_affects_bid,
         "v3_cse_active": v3_cse_active,
         "v3_cse_candidate": v3_cse_candidate,
+        "v3_cse_pressure_candidate": v3_cse_pressure_candidate,
         "v3_cse_status": v3_cse_status,
         "v3_cse_gate_reason": v3_cse_gate_reason,
         "v3_cse_scope": v3_cse_scope,
@@ -2873,6 +2890,11 @@ def _model_eval_row(
         "v3_cse_full_action_rows": v3_cse_full_action_rows,
         "v3_cse_unique_non_temp_p95": v3_cse_unique_p95,
         "v3_cse_unique_non_temp_max": v3_cse_unique_max,
+        "v3_cse_target_count_source": v3_cse_target_count_source,
+        "v3_cse_target_count": v3_cse_target_count,
+        "v3_cse_prior_items_per_session_max": v3_cse_prior_items_per_session_max,
+        "v3_cse_target_prior_max_delta": v3_cse_target_prior_delta,
+        "v3_cse_target_to_unique_non_temp_p95_delta": v3_cse_target_p95_delta,
         "v3_cse_prior_max_to_unique_non_temp_p95_delta": (
             v3_cse_prior_p95_delta
         ),

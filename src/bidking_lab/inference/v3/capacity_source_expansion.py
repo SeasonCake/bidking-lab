@@ -240,11 +240,23 @@ class V3CapacitySourceExpansionReport:
         )
         observed_p95 = entry.unique_non_temp_p95 if entry is not None else None
         observed_max = entry.unique_non_temp_max if entry is not None else None
+        target_prior_delta = (
+            target - prior_max
+            if target is not None and prior_max is not None
+            else None
+        )
+        pressure_candidate = (
+            self.candidate
+            and target_prior_delta is not None
+            and target_prior_delta > 0.0
+        )
         flags: list[str] = []
         if entry is None:
             flags.append("missing_entry")
         elif entry.candidate:
             flags.append("source_expansion_candidate")
+        if pressure_candidate:
+            flags.append("target_count_above_prior_max")
         if entry is not None and entry.has_external_source_confirmation:
             flags.append("external_source_confirmation")
         if (
@@ -267,6 +279,7 @@ class V3CapacitySourceExpansionReport:
             f"{prefix}affects_bid": self.affects_bid,
             f"{prefix}active": self.active,
             f"{prefix}candidate": self.candidate,
+            f"{prefix}pressure_candidate": pressure_candidate,
             f"{prefix}status": self.status,
             f"{prefix}gate_reason": self.gate_reason,
             f"{prefix}scope": entry.scope if entry is not None else None,
@@ -344,6 +357,7 @@ class V3CapacitySourceExpansionReport:
             f"{prefix}target_count_source": target_source,
             f"{prefix}target_count": _round(target),
             f"{prefix}prior_items_per_session_max": _round(prior_max),
+            f"{prefix}target_prior_max_delta": _round(target_prior_delta),
             f"{prefix}target_to_unique_non_temp_p95_delta": _round(
                 target - observed_p95
                 if target is not None and observed_p95 is not None
