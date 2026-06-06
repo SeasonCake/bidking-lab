@@ -4337,3 +4337,50 @@ JSON 分类：
 - `2501` 的下一步是解释为什么 train guard watch 但外层 holdout over-risk/hurt，或给它建立 explicit exclusion/diagnostic。
 - `2506` 的下一步是增加或验证支持深度；它当前不是 hurt group。
 - 该分类使 settlement bridge blocker 可拆解，但不提供 promotion 证据。
+
+## O-v3-107：capacity semantic status 确认 2501/2506/2601 是 after-temp round-cap overflow
+
+2026-06-06 给 `summarize_v3_capacity_table_audit.py` 增加 `capacity_semantic_summary` 后，复跑真实 direct/hard capacity conflict：
+
+```powershell
+python scripts\summarize_v3_capacity_table_audit.py --case direct_prior_max_conflict --bucket hard_capacity_conflict --posterior-trials 64 --top 8 --format summary
+```
+
+关键输出：
+
+```text
+case=direct_prior_max_conflict bucket=hard_capacity_conflict groups=10
+
+2601:
+  raw_inventory=verified_latest_inventory
+  raw_truth_match_rows=8/8
+  drop_ref_col=17 raw_col16="[[]]" raw_col17="[9999,2601,22,44]"
+  sampler_nmax_gt1=0 sampler_leaf_nmax=max=1.0
+  raw_drop_excess_after_temp=max=20
+  raw_round_excess_after_temp=max=4
+  semantic_status=blocked_round_cap_overflow_after_temp
+
+2501:
+  raw_truth_match_rows=6/6
+  raw_drop_excess_after_temp=max=13
+  raw_round_excess_after_temp=max=7
+  semantic_status=blocked_round_cap_overflow_after_temp
+
+2506:
+  raw_truth_match_rows=4/4
+  raw_drop_excess_after_temp=max=13
+  raw_round_excess_after_temp=max=7
+  semantic_status=blocked_round_cap_overflow_after_temp
+
+2401:
+  raw_drop_excess_after_temp=max=0
+  raw_round_excess_after_temp=max=0
+  semantic_status=watch_activity_extras_explain_drop_ref_gap
+```
+
+解读：
+
+- `2601` / `2501` / `2506` 不是旧 `BidMap.col[16]` 误读，也不是 DropEntry `n_max>1` 遗漏；current v300 drop-ref 是 `col[17]`，leaf `n_max=1`。
+- 0x002D raw candidate count 与 occupied slot count 均匹配 parsed inventory，detail truth 也匹配 latest inventory；这支持 settlement truth count 是真实 final occupied inventory count。
+- 这些 top blocker 扣除临时 zodiac extras 后仍超过 `col[14]` round-cap candidate，因此 `items_per_session_max` 与 round-cap candidate 都不能当作 final settlement inventory hard cap。
+- `2401` 展示了另一类情况：该 map 的 drop-ref gap 可被临时 zodiac extras 解释，应作为 watch，不应和 after-temp blocker 混为一类。

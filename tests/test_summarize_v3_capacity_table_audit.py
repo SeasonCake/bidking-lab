@@ -287,6 +287,10 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
         residual["by_mode"][0]["drop_ref_excess_after_temp_zodiac_count"]["max"]
         == 1
     )
+    semantic = row["capacity_semantic_summary"]
+    assert semantic["status"] == "blocked_drop_ref_overflow_after_temp"
+    assert semantic["blockers"] == ["drop_ref_max_below_verified_inventory"]
+    assert "current_v300_drop_ref_col17" not in semantic["findings"]
 
 
 def test_capacity_table_audit_filters_selected_case() -> None:
@@ -438,6 +442,7 @@ def test_capacity_table_audit_quantifies_zodiac_adjusted_count_gap(
     raw_row = ["0"] * 23
     raw_row[8] = "1"
     raw_row[14] = "[2,2,2,2,2]"
+    raw_row[16] = "[[]]"
     raw_row[17] = "[9999,2601,1,1]"
     result = module.summarize_capacity_table_audit(
         [
@@ -477,3 +482,74 @@ def test_capacity_table_audit_quantifies_zodiac_adjusted_count_gap(
     assert split["round_cap_excess_after_temp_zodiac_count"]["max"] == 0
     assert split["round_cap_excess_after_temp_positive_files"] == 0
     assert split["non_zodiac_missing_from_drop_universe_count"]["max"] == 0
+    semantic = row["capacity_semantic_summary"]
+    assert semantic["status"] == "blocked_drop_ref_overflow_after_temp"
+    assert "current_v300_drop_ref_col17" in semantic["findings"]
+    assert "current_v300_col16_unused" in semantic["findings"]
+    assert "drop_entry_nmax_not_multi_count_driver" in semantic["findings"]
+
+
+def test_capacity_table_audit_marks_activity_extras_when_zodiac_covers_gap(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    sample = tmp_path / "sample.json"
+    sample.write_text("[]", encoding="utf-8")
+
+    inventory_items = (
+        SimpleNamespace(runtime_id=101, item_id=1001, quality=4, cells=4),
+        SimpleNamespace(runtime_id=102, item_id=1306006, quality=3, cells=4),
+        SimpleNamespace(runtime_id=103, item_id=1001, quality=4, cells=4),
+    )
+    state = SimpleNamespace(
+        sort_id=10,
+        message_id=0x002D,
+        round_index=2,
+        map_id=2601,
+        inventory_items=inventory_items,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "parse_fatbeans_capture",
+        lambda path: SimpleNamespace(states=(state,)),
+    )
+    monkeypatch.setattr(
+        module,
+        "settlement_truth_from_fatbeans",
+        lambda events, *, items: SimpleNamespace(item_count=3),
+    )
+
+    raw_row = ["0"] * 23
+    raw_row[8] = "1"
+    raw_row[14] = "[3,3,3,3,3]"
+    raw_row[16] = "[[]]"
+    raw_row[17] = "[9999,2601,1,2]"
+    result = module.summarize_capacity_table_audit(
+        [
+            {
+                "file": f"{sample}#prebid_r1",
+                "map_id": 2601,
+                "hero_map_evidence_profile": "aisha|2601|shape+layout",
+                "item_count_capacity": {
+                    "total_count_source": "exact",
+                    "total_count_target": 3,
+                    "truth_item_count": 3,
+                    "prior_items_per_session_max": 2,
+                    "truth_prior_max_delta": 1,
+                    "target_truth_delta": 0,
+                    "cases": ["direct_prior_max_conflict"],
+                },
+                "consistency_bucket": "hard_capacity_conflict",
+                "consistency_classes": ("capacity_direct_prior_max_conflict",),
+            }
+        ],
+        tables=_tables(items_per_session_max=2, raw_row=raw_row),
+        selected_case="direct_prior_max_conflict",
+    )
+
+    semantic = result[0]["capacity_semantic_summary"]
+    assert semantic["status"] == "watch_activity_extras_explain_drop_ref_gap"
+    assert semantic["blockers"] == []
+    assert "temporary_zodiac_explains_drop_ref_gap" in semantic["findings"]

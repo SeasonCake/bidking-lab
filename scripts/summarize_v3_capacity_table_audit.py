@@ -530,6 +530,100 @@ def _residual_mode_summary(
     }
 
 
+def _summary_max(summary: Any) -> float | None:
+    if not isinstance(summary, Mapping):
+        return None
+    return _float_or_none(summary.get("max"))
+
+
+def _summary_all_zero(summary: Any) -> bool:
+    if not isinstance(summary, Mapping):
+        return False
+    return _float_or_none(summary.get("max")) == 0.0 and _float_or_none(
+        summary.get("avg")
+    ) == 0.0
+
+
+def _capacity_semantic_summary(row: Mapping[str, Any]) -> dict[str, Any]:
+    findings: list[str] = []
+    blockers: list[str] = []
+
+    raw_verified = (
+        row.get("raw_inventory_status") == "verified_latest_inventory"
+        and int(row.get("raw_detail_truth_latest_match_rows") or 0)
+        == int(row.get("rows") or 0)
+        and int(row.get("raw_detail_truth_latest_mismatch_rows") or 0) == 0
+    )
+    if raw_verified:
+        findings.append("raw_latest_inventory_matches_detail_truth")
+    else:
+        blockers.append("raw_inventory_not_fully_verified")
+
+    if (
+        int(row.get("bidmap_raw_column_count") or 0) == 23
+        and int(row.get("bidmap_drop_ref_column_index") or -1) == 17
+    ):
+        findings.append("current_v300_drop_ref_col17")
+        if row.get("bidmap_raw_col16") in (None, "", "[]", "[[]]"):
+            findings.append("current_v300_col16_unused")
+
+    leaf_nmax_max = _summary_max(row.get("sampler_leaf_n_max"))
+    if int(row.get("sampler_entries_nmax_gt1") or 0) == 0 and (
+        leaf_nmax_max is None or leaf_nmax_max <= 1.0
+    ):
+        findings.append("drop_entry_nmax_not_multi_count_driver")
+
+    if _summary_all_zero(row.get("raw_candidate_inventory_delta")):
+        findings.append("raw_candidate_count_matches_parsed_inventory")
+    if _summary_all_zero(row.get("raw_occupied_slot_inventory_delta")):
+        findings.append("occupied_slot_count_matches_parsed_inventory")
+    if _summary_max(row.get("raw_non_zodiac_missing_from_drop_universe_count")) == 0.0:
+        findings.append("drop_universe_covered_after_temp_zodiac")
+
+    drop_after_temp = _summary_max(
+        row.get("raw_drop_ref_excess_after_temp_zodiac_count")
+    )
+    round_after_temp = _summary_max(
+        row.get("raw_round_cap_excess_after_temp_zodiac_count")
+    )
+    non_zodiac_missing = _summary_max(
+        row.get("raw_non_zodiac_missing_from_drop_universe_count")
+    )
+    temp_zodiac = _summary_max(row.get("raw_known_temp_zodiac_count"))
+
+    if non_zodiac_missing is not None and non_zodiac_missing > 0.0:
+        status = "blocked_drop_universe_gap_after_temp"
+        blockers.append("non_zodiac_items_missing_from_drop_universe")
+    elif round_after_temp is not None and round_after_temp > 0.0:
+        status = "blocked_round_cap_overflow_after_temp"
+        blockers.append("round_cap_candidate_below_verified_inventory")
+    elif drop_after_temp is not None and drop_after_temp > 0.0:
+        status = "blocked_drop_ref_overflow_after_temp"
+        blockers.append("drop_ref_max_below_verified_inventory")
+    elif int(row.get("table_impossible_rows") or 0) > 0 and (
+        temp_zodiac is not None and temp_zodiac > 0.0
+    ):
+        status = "watch_activity_extras_explain_drop_ref_gap"
+        findings.append("temporary_zodiac_explains_drop_ref_gap")
+    elif int(row.get("table_impossible_rows") or 0) > 0:
+        status = "blocked_sampler_possible_max_below_truth"
+        blockers.append("sampler_possible_max_below_detail_truth")
+    elif blockers:
+        status = "needs_raw_inventory_verification"
+    else:
+        status = "pass_table_caps_cover_verified_inventory"
+
+    return {
+        "status": status,
+        "blockers": blockers,
+        "findings": findings,
+        "drop_ref_excess_after_temp_zodiac_max": drop_after_temp,
+        "round_cap_excess_after_temp_zodiac_max": round_after_temp,
+        "non_zodiac_missing_from_drop_universe_max": non_zodiac_missing,
+        "known_temp_zodiac_max": temp_zodiac,
+    }
+
+
 def _source_split_summary(
     rows: Iterable[Mapping[str, Any]],
     diagnostics: Iterable[Mapping[str, Any]],
@@ -993,60 +1087,60 @@ def summarize_capacity_table_audit(
         ):
             status = "bidmap_prior_max_below_truth"
         case_counts = Counter(case for row in rows for case in _capacity_cases(row))
-        out.append(
-            {
-                "map_id": map_value,
-                "rows": len(rows),
-                "status": status,
-                "table_impossible_rows": table_impossible_rows,
-                "round_cap_impossible_rows": round_cap_impossible_rows,
-                "capacity_cases": dict(
-                    sorted(case_counts.items(), key=lambda item: (-item[1], item[0]))[:top]
-                ),
-                "consistency_bucket_counts": _counter_dict(
-                    (row.get("consistency_bucket") for row in rows),
-                    top=top,
-                ),
-                "consistency_class_counts": _consistency_class_counts(
-                    rows,
-                    top=top,
-                ),
-                "target_count": _numeric_summary(
-                    row.get("total_count_target") for row in capacity
-                ),
-                "truth_item_count": _numeric_summary(
-                    row.get("truth_item_count") for row in capacity
-                ),
-                "target_prior_max_delta": _numeric_summary(
-                    row.get("target_prior_max_delta") for row in capacity
-                ),
-                "truth_prior_max_delta": _numeric_summary(
-                    row.get("truth_prior_max_delta") for row in capacity
-                ),
-                "target_truth_delta_counts": _delta_counts(
-                    row.get("target_truth_delta") for row in capacity
-                ),
-                "source_counts": _counter_dict(
-                    (row.get("total_count_source") for row in capacity),
-                    top=top,
-                ),
-                "top_profiles": _counter_dict(
-                    (row.get("hero_map_evidence_profile") for row in rows),
-                    top=top,
-                ),
-                "example_files": [
-                    str(row.get("file"))
-                    for row in sorted(rows, key=lambda item: str(item.get("file") or ""))[:3]
-                ],
-                **_inventory_diagnostics_for_rows(
-                    rows,
-                    tables=tables,
-                    sample_root=sample_root,
-                    top=top,
-                ),
-                **table,
-            }
-        )
+        row_out = {
+            "map_id": map_value,
+            "rows": len(rows),
+            "status": status,
+            "table_impossible_rows": table_impossible_rows,
+            "round_cap_impossible_rows": round_cap_impossible_rows,
+            "capacity_cases": dict(
+                sorted(case_counts.items(), key=lambda item: (-item[1], item[0]))[:top]
+            ),
+            "consistency_bucket_counts": _counter_dict(
+                (row.get("consistency_bucket") for row in rows),
+                top=top,
+            ),
+            "consistency_class_counts": _consistency_class_counts(
+                rows,
+                top=top,
+            ),
+            "target_count": _numeric_summary(
+                row.get("total_count_target") for row in capacity
+            ),
+            "truth_item_count": _numeric_summary(
+                row.get("truth_item_count") for row in capacity
+            ),
+            "target_prior_max_delta": _numeric_summary(
+                row.get("target_prior_max_delta") for row in capacity
+            ),
+            "truth_prior_max_delta": _numeric_summary(
+                row.get("truth_prior_max_delta") for row in capacity
+            ),
+            "target_truth_delta_counts": _delta_counts(
+                row.get("target_truth_delta") for row in capacity
+            ),
+            "source_counts": _counter_dict(
+                (row.get("total_count_source") for row in capacity),
+                top=top,
+            ),
+            "top_profiles": _counter_dict(
+                (row.get("hero_map_evidence_profile") for row in rows),
+                top=top,
+            ),
+            "example_files": [
+                str(row.get("file"))
+                for row in sorted(rows, key=lambda item: str(item.get("file") or ""))[:3]
+            ],
+            **_inventory_diagnostics_for_rows(
+                rows,
+                tables=tables,
+                sample_root=sample_root,
+                top=top,
+            ),
+            **table,
+        }
+        row_out["capacity_semantic_summary"] = _capacity_semantic_summary(row_out)
+        out.append(row_out)
     return sorted(
         out,
         key=lambda row: (
@@ -1177,6 +1271,18 @@ def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
                     + _format_counts(row["residual_mode_summary"]["mode_counts"]),
                     "residual_mode_detail="
                     + _format_residual_mode_rows(row["residual_mode_summary"]),
+                    "semantic_status="
+                    + str(row["capacity_semantic_summary"]["status"]),
+                    "semantic_blockers="
+                    + (
+                        ",".join(row["capacity_semantic_summary"]["blockers"])
+                        or "-"
+                    ),
+                    "semantic_findings="
+                    + (
+                        ",".join(row["capacity_semantic_summary"]["findings"])
+                        or "-"
+                    ),
                     f"cases={_format_counts(row['capacity_cases'])}",
                     f"buckets={_format_counts(row['consistency_bucket_counts'])}",
                     f"classes={_format_counts(row['consistency_class_counts'])}",

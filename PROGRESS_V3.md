@@ -5723,3 +5723,58 @@ selected_instability:
 - `2501` 下一步应查 train/holdout selection instability 或加入 explicit exclusion diagnostic。
 - `2506` 下一步应优先补支持深度或调 stable support criterion；它当前不是 hurt group。
 - readiness 仍 blocked，v3 promotion 仍不能推进，formal/value sampler 仍保持 shadow-only。
+
+## 2026-06-06 checkpoint：capacity/table semantic status 收口
+
+本轮继续推进 prior-stressed cells/capacity/evidence 一致性审计，把 capacity table audit 的长字段归纳成机器可读 `capacity_semantic_summary`。该改动仍是 v3 audit/readiness 解释，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_capacity_table_audit.py` 新增 `capacity_semantic_summary`：
+  - `blocked_round_cap_overflow_after_temp`
+  - `blocked_drop_ref_overflow_after_temp`
+  - `blocked_drop_universe_gap_after_temp`
+  - `watch_activity_extras_explain_drop_ref_gap`
+  - `needs_raw_inventory_verification`
+  - `pass_table_caps_cover_verified_inventory`
+- summary 文本新增：
+  - `semantic_status=...`
+  - `semantic_blockers=...`
+  - `semantic_findings=...`
+- `tests/test_summarize_v3_capacity_table_audit.py` 覆盖 after-temp drop-ref blocker 与 activity-only watch 分类。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_capacity_table_audit.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_table_audit.py -q
+python scripts\summarize_v3_capacity_table_audit.py --case direct_prior_max_conflict --bucket hard_capacity_conflict --posterior-trials 64 --top 8 --format summary
+```
+
+真实 direct/hard 输出要点：
+
+```text
+2601 semantic_status=blocked_round_cap_overflow_after_temp
+2501 semantic_status=blocked_round_cap_overflow_after_temp
+2506 semantic_status=blocked_round_cap_overflow_after_temp
+2502 semantic_status=blocked_drop_ref_overflow_after_temp
+2401 semantic_status=watch_activity_extras_explain_drop_ref_gap
+```
+
+共同 findings：
+
+```text
+raw_latest_inventory_matches_detail_truth
+current_v300_drop_ref_col17
+current_v300_col16_unused
+drop_entry_nmax_not_multi_count_driver
+raw_candidate_count_matches_parsed_inventory
+occupied_slot_count_matches_parsed_inventory
+drop_universe_covered_after_temp_zodiac
+```
+
+结论：
+
+- 当前 blocker 已从“是不是 BidMap col[16] 或 DropEntry n_max 解释”推进到“server settlement expansion/session-cap semantics 或 table/version overlay 如何解释 after-temp final inventory count”。
+- 2501/2506/2601 的 direct hard conflict 不能通过调 formal/value sampler 参数解决。
+- 下一步应围绕 settlement generation/round-cap semantics 做 shadow-only 证据或合成/源码审计；promotion/readiness 仍保持 blocked。

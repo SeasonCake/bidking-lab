@@ -2208,3 +2208,23 @@ applied_hurts=2502
 - 同一个 multi-seed failure 中同时存在两种不同问题：`2501` 是 train guard watch 后外层 hurt，`2506` 是 stable intersection 但 applied support 不足。
 - 如果只输出 selected groups 或 overall status，后续容易把 support-depth 问题和 holdout-hurt 问题混在一起。
 - promotion 前需要可复核的 failure taxonomy，而不是只知道“matrix blocked”。
+
+## D-v3-103：capacity/table 冲突必须按 semantic status 拆分
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_capacity_table_audit.py` 必须输出 `capacity_semantic_summary`，把 direct capacity conflict 拆成：
+  - `blocked_round_cap_overflow_after_temp`
+  - `blocked_drop_ref_overflow_after_temp`
+  - `blocked_drop_universe_gap_after_temp`
+  - `watch_activity_extras_explain_drop_ref_gap`
+  - `needs_raw_inventory_verification`
+- `blocked_round_cap_overflow_after_temp` 说明扣除已知临时 zodiac extras 后，verified raw settlement inventory 仍超过 `BidMap.col[14]` round-cap candidate；这比单纯 drop-ref overflow 更强，不能用 `BidMap.col[17]` max 或 DropEntry `n_max` 解释。
+- `watch_activity_extras_explain_drop_ref_gap` 只能说明该 map/session 的 drop-ref gap 可被已知临时 activity item 解释；它不能解除其它 map 的 round-cap/drop-ref blocker。
+- 这些 semantic status 只用于 audit/readiness 解释，不改变 sampler、formal/value shadow、v2 formal/live/UI 或正式出价。
+
+原因：
+
+- current raw v300 中 `col[16]` 是 `[[]]`，drop-ref 是 `col[17]`；重复围绕旧 `col[16]` 口径会浪费验证时间。
+- prior-stressed top maps 的 flattened leaf `n_max=1`，不是多件 DropEntry 遗漏导致 settlement count 超过 sampler possible max。
+- 真实 0x002D settlement inventory 与 detail truth 对齐，且部分 map 扣除 zodiac 后仍超过 round-cap candidate；后续必须查 server settlement expansion/session-cap semantics 或 table/version overlay，而不是调 formal/value sampler 参数。
