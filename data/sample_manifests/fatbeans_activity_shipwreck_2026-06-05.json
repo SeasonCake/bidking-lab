@@ -7,9 +7,11 @@
         "100136": 5
       },
       "action_send_count": 3,
+      "affects_bid": false,
       "bid_send_count": 4,
       "bid_windows": 4,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {
         "200019": 5
@@ -70,9 +72,11 @@
         "100136": 5
       },
       "action_send_count": 4,
+      "affects_bid": false,
       "bid_send_count": 4,
       "bid_windows": 4,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {},
       "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_aisha_2524_4rounds_2524_1367517613824375_0002.json",
@@ -132,9 +136,11 @@
         "100136": 5
       },
       "action_send_count": 4,
+      "affects_bid": false,
       "bid_send_count": 4,
       "bid_windows": 4,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {
         "200018": 5
@@ -195,9 +201,11 @@
         "100136": 5
       },
       "action_send_count": 4,
+      "affects_bid": false,
       "bid_send_count": 4,
       "bid_windows": 4,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {},
       "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_aisha_2526_4rounds_2526_1367517614377564_0004.json",
@@ -256,9 +264,11 @@
         "100136": 6
       },
       "action_send_count": 4,
+      "affects_bid": false,
       "bid_send_count": 5,
       "bid_windows": 5,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {},
       "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_aisha_2526_5rounds_2526_1367517614666519_0005.json",
@@ -318,9 +328,11 @@
         "100124": 2
       },
       "action_send_count": 3,
+      "affects_bid": false,
       "bid_send_count": 3,
       "bid_windows": 3,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {
         "200018": 4
@@ -375,9 +387,11 @@
         "100124": 2
       },
       "action_send_count": 3,
+      "affects_bid": false,
       "bid_send_count": 3,
       "bid_windows": 3,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {
         "200011": 4
@@ -433,9 +447,11 @@
         "100125": 2
       },
       "action_send_count": 4,
+      "affects_bid": false,
       "bid_send_count": 4,
       "bid_windows": 4,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {},
       "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_ethan_2521_4rounds_2521_1367517616199177_0008.json",
@@ -492,9 +508,11 @@
         "100129": 3
       },
       "action_send_count": 5,
+      "affects_bid": false,
       "bid_send_count": 5,
       "bid_windows": 5,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {},
       "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_ethan_2528_5rounds_2528_1367517618200900_0009.json",
@@ -552,9 +570,11 @@
         "100124": 2
       },
       "action_send_count": 3,
+      "affects_bid": false,
       "bid_send_count": 3,
       "bid_windows": 3,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {},
       "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_ethan_2529_3rounds_2529_1367517617991505_0010.json",
@@ -612,9 +632,11 @@
         "100161": 2
       },
       "action_send_count": 5,
+      "affects_bid": false,
       "bid_send_count": 5,
       "bid_windows": 5,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {},
       "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_ethan_2529_5rounds_2529_1367517617646849_0011.json",
@@ -675,9 +697,11 @@
         "100136": 5
       },
       "action_send_count": 4,
+      "affects_bid": false,
       "bid_send_count": 4,
       "bid_windows": 4,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {},
       "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_gabriela_2521_4rounds_2521_1367517616756621_0012.json",
@@ -735,9 +759,11 @@
         "100136": 4
       },
       "action_send_count": 3,
+      "affects_bid": false,
       "bid_send_count": 3,
       "bid_windows": 3,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {
         "200017": 4
@@ -795,9 +821,11 @@
         "100136": 4
       },
       "action_send_count": 3,
+      "affects_bid": false,
       "bid_send_count": 3,
       "bid_windows": 3,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {},
       "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_tatiana_2529_3rounds_2529_1367517616517356_0014.json",
@@ -852,9 +880,11 @@
         "100136": 5
       },
       "action_send_count": 4,
+      "affects_bid": false,
       "bid_send_count": 4,
       "bid_windows": 4,
       "cleanup_action": "use_all_windows_for_metrics",
+      "cohort_role": "activity_tuning_reference",
       "constraint_conflict_windows": 0,
       "exact_public_info_counts": {},
       "file": "data\\samples\\fatbeans_activity_20260605_shipwreck\\fatbeans_valid_wuqilin_2524_4rounds_2524_1367517617138264_0015.json",
@@ -905,8 +935,11 @@
     }
   ],
   "summary": {
+    "affects_bid": false,
     "bid_windows": 58,
     "capture_gap_files": [],
+    "cohort_note": "252x shipwreck activity captures; excluded from default baseline, readiness, promotion, formal/live/UI, and official bidding until 2521+ Drop/source overlay is verified.",
+    "cohort_role": "activity_tuning_reference",
     "constraint_conflict_windows": 0,
     "exact_public_info_counts": {
       "200011": 4,
@@ -919,6 +952,7 @@
     },
     "files": 15,
     "invalid_files": 0,
+    "metric_scope": "source_parser_table_acquisition_and_shadow_tuning_reference_only",
     "mixed_files": 0,
     "no_state_windows": 0,
     "note": "file counts are real capture JSON files; prebid windows are derived from player bid SEND 0x0022 boundaries and are not generated samples",

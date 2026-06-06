@@ -1,6 +1,6 @@
 # BidKing Lab v3 项目结构索引
 
-日期：2026-06-06
+日期：2026-06-07
 用途：把当前主线、历史归档、脚本、样本、测试和外部参考的职责分清。
 
 ## 当前主线文件
@@ -68,7 +68,7 @@
 | `scripts/summarize_v3_tail_value_holdout.py` | v3 tail/value review 候选 session holdout 审计 |
 | `scripts/summarize_v3_underestimate_repair_candidates.py` | v3 低估上修候选审计 |
 | `scripts/summarize_v3_underestimate_holdout.py` | v3 低估上修 session holdout 审计 |
-| `scripts/summarize_fatbeans_sample_manifest.py` | Fatbeans 样本 manifest/质量分层 |
+| `scripts/summarize_fatbeans_sample_manifest.py` | Fatbeans 样本 manifest/质量分层；支持可选 `cohort_role`/`metric_scope` 元数据，用于把 activity reference cohort 与 default baseline 分开 |
 | `scripts/organize_fatbeans_real_samples.py` | 真实样本 canonical archive 整理 |
 | `tests/test_inference_v3_evidence_registry.py` | v3 registry/constraint 骨架测试 |
 | `tests/test_inference_v3_pipeline.py` | v3 archive/live 共享推理 pipeline 测试 |
@@ -136,7 +136,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 后续可加 v3 shadow columns |
 | `data/logs/live/` | 本地 live 日志 | ignored，本地运行态 |
 | `data/samples/fatbeans/` | 本地 canonical archive 样本 | 441 份 JSON，默认脚本路径 |
-| `data/samples/fatbeans_activity_20260605_shipwreck/` | 2026-06-05 沉船白转红活动 cohort | 15 份 JSON，显式传路径用于鲁棒性审计，不进默认校准 |
+| `data/samples/fatbeans_activity_20260605_shipwreck/` | 2026-06-05 沉船白转红活动 cohort | 15 份 JSON，manifest role=`activity_tuning_reference`；用于 source/table 与 shadow 调参参考，不进默认校准 |
 | `data/samples/fatbeans_invalid/` | 旧 parse error/无效样本 | ignored，不进默认 evaluator |
 
 ## 数据目录
@@ -149,7 +149,8 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `data/tmp/` | 临时输出 | 已移动到 ignored local archive |
 | `data/samples/synthetic_v2/` | 合成样本 | 保留 |
 | `data/samples/fatbeans/` | 实机 Fatbeans canonical archive | 默认 baseline |
-| `data/samples/fatbeans_activity_20260605_shipwreck/` | 0605 后 252x 沉船活动样本 | 后续用于鲁棒性/活动映射审计，不混入默认 baseline |
+| `data/sample_manifests/fatbeans_activity_shipwreck_2026-06-05.json` | 252x activity cohort manifest | `activity_tuning_reference`；scope=`source_parser_table_acquisition_and_shadow_tuning_reference_only`；`affects_bid=false` |
+| `data/samples/fatbeans_activity_20260605_shipwreck/` | 0605 后 252x 沉船活动样本 | 后续用于鲁棒性/活动映射、source parser/table acquisition 与 shadow-only 调参参考，不混入默认 baseline |
 | `data/samples/fatbeans_manual_inbox/` | 手动导出样本 staging | 审查后并入 canonical archive 或独立 cohort |
 | `data/samples/fatbeans_invalid/` | 无效真实样本隔离区 | 不计模型准确率 |
 

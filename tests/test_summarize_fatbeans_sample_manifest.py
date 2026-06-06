@@ -75,3 +75,24 @@ def test_manifest_records_parse_errors(tmp_path: Path) -> None:
     assert summary["usable_metric_files"] == 0
     assert manifest["files"][0]["status"] == "parse_error"
     assert manifest["files"][0]["cleanup_action"] == "quarantine_parse_error"
+
+
+def test_manifest_can_label_reference_cohort_metadata(tmp_path: Path) -> None:
+    module = _load_module()
+    bad = tmp_path / "bad.json"
+    bad.write_text("{", encoding="utf-8")
+
+    manifest = module.build_manifest(
+        [tmp_path],
+        cohort_role="activity_tuning_reference",
+        metric_scope="source_parser_reference_only",
+        cohort_note="excluded from default baseline",
+    )
+
+    summary = manifest["summary"]
+    assert summary["cohort_role"] == "activity_tuning_reference"
+    assert summary["metric_scope"] == "source_parser_reference_only"
+    assert summary["cohort_note"] == "excluded from default baseline"
+    assert summary["affects_bid"] is False
+    assert manifest["files"][0]["cohort_role"] == "activity_tuning_reference"
+    assert manifest["files"][0]["affects_bid"] is False

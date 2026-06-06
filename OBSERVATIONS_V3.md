@@ -5469,3 +5469,73 @@ payload/source field risk:
 - fallback 能补 recall，但会显著降低 precision；因此它是 useful audit counterfactual，不是 default prior。
 - 更窄的 source signatures 会遇到 sample-limited 与 recall collapse；当前没有 non-leaky signature 同时优于 map-id baseline。
 - 下一步要真正收窄 CSE prior，需要新增 source parser/table acquisition 或更多样本，而不是在现有 fields 上继续组合过拟合。
+
+## O-v3-128：252x activity cohort 可作为调参参考，但仍是 missing-drop/source-overlay lane
+
+2026-06-07 复核 252x activity 样本、mapping likelihood、v303 表侧状态、CSE holdout 与 prior robustness。
+
+manifest：
+
+```powershell
+python scripts\summarize_fatbeans_sample_manifest.py data\samples\fatbeans_activity_20260605_shipwreck
+```
+
+```text
+files=15 parsed_files=15 parse_errors=0 valid_files=15 mixed_files=0 invalid_files=0 usable_metric_files=15 bid_windows=58 ready_windows=58 no_state_windows=0 constraint_conflict_windows=0
+captured_maps=2521:5,2522:1,2524:3,2526:2,2528:1,2529:3
+manifest_role=activity_tuning_reference
+metric_scope=source_parser_table_acquisition_and_shadow_tuning_reference_only
+affects_bid=false
+```
+
+activity mapping likelihood：
+
+```powershell
+python scripts\summarize_v3_activity_mapping_likelihood.py
+```
+
+```text
+files=15 schemes=minus10,minus20 winners=minus10:11,minus20:4 item_winners=minus10:11,minus20:4 candidate_statuses=ok:30 errors=0
+scheme=minus10 ll_per_item_avg=-1.676415 item_ll_per_item_avg=-5.965943 missing_item_rate_avg=0.0
+scheme=minus20 ll_per_item_avg=-1.691183 item_ll_per_item_avg=-5.981787 missing_item_rate_avg=0.0
+```
+
+v303 table timing：
+
+```powershell
+python scripts\summarize_v3_archive_table_timing.py data\samples\fatbeans_activity_20260605_shipwreck --raw-root C:\xiangmuyunxing\steamapps\common\BidKing\BidKing_Data\StreamingAssets --format summary
+```
+
+```text
+raw_file_version=303
+bidmap_rows=165
+activity_range=2521-2530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+activity_range=4521-4530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+sample_files=15 capture_min=2026-06-05T23:05:05.4056732+08:00 capture_max=2026-06-05T23:56:58.9596734+08:00
+```
+
+CSE holdout / prior robustness：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_holdout.py data\samples\fatbeans_activity_20260605_shipwreck --group-by map_id --top 10 --min-train-sessions 1 --format summary
+python scripts\summarize_v3_prior_robustness_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --format summary
+```
+
+```text
+CSE activity holdout:
+  sessions=15 groups=6 truth_unique_round_rows=0 truth_source_semantics_rows=0 candidate_rows=0
+  non_zodiac_missing_rows=15 truth_non_zodiac_missing_rows=0
+  status_counts=within_capacity_source_semantics_shadow_only:6
+
+prior robustness:
+  v3_robust_status=prior_unavailable
+  ready=58 post_ready=0 metric=0 trusted=0/58 activity=58 stressed=0 avg_stress=0.0
+  reasons=activity_map_id_candidate:58,prior_error=KeyError:58
+```
+
+解读：
+
+- 252x 当前样本能作为调参参考，是因为 capture/window/truth 完整、且 v303 表侧确认 `2521-2530` BidMap 存在；它能帮助设计 source parser、activity overlay 与后续 shadow-only sampler 分片。
+- 252x 当前不能作为 promotion evidence，是因为 Drop/source overlay 仍缺，prior robustness 明确为 prior unavailable，metric rows 为 0。
+- `252x->251x` likelihood 略优但不是强映射证据；missing item rate 为 0 只说明两个候选旧表族都能覆盖 observed item universe。
+- 当前项目内未找到“16 个 252x capture/map”的可复核来源；本轮记录使用 15 capture / 6 captured map ids / 10 v303 table-side map ids 的口径。

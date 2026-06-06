@@ -6953,3 +6953,66 @@ map_family_outer_shape:
 - `map_id_capture_rounds`、`map_id_round_index`、`map_id_payload_shape` 等更窄 signature 能提高局部 precision，但 sample-limited 与 recall 损失太大。
 - payload/source 字段可用于 post-settlement source signature audit，但现有 payload shape、outer wrapper、action count 都与 within-cap rows 混用，不能单独解释 over-cap。
 - 当前最保守默认仍应是 exact `map_id` support；fallback/source-signature 只保留为 audit matrix。下一步若要真正提升 prior，需要 source parser/table acquisition 或更多样本，而不是把 broad fallback 接入默认 CSE。
+
+## 2026-06-07 checkpoint：252x activity cohort 归入调参参考 / source-table reference
+
+用户澄清“252xx 那组”后，本轮复核 0605 沉船活动样本与本机 v303 表。结论：252x activity cohort 可以作为后续 source parser、table acquisition、activity overlay 与 shadow-only tuning 的参考集，但不能替代原版沉船样本，也不能进入 default prior、readiness/promotion 或正式出价。
+
+改动：
+
+- `scripts/summarize_fatbeans_sample_manifest.py` 新增可选 manifest 元数据：
+  - `--cohort-role`
+  - `--metric-scope`
+  - `--cohort-note`
+  - 显式带 cohort 元数据时写入 `affects_bid=false`；
+  - 默认 archive manifest 输出不变。
+- `data/sample_manifests/fatbeans_activity_shipwreck_2026-06-05.json` 重新生成为：
+  - `cohort_role=activity_tuning_reference`
+  - `metric_scope=source_parser_table_acquisition_and_shadow_tuning_reference_only`
+  - `affects_bid=false`
+- `tests/test_summarize_fatbeans_sample_manifest.py` 增加 reference cohort metadata 覆盖。
+- 更新 `DECISIONS_V3.md`、`OBSERVATIONS_V3.md` 与 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+复核命令：
+
+```powershell
+python scripts\summarize_fatbeans_sample_manifest.py data\samples\fatbeans_activity_20260605_shipwreck
+python scripts\summarize_v3_activity_mapping_likelihood.py
+python scripts\summarize_v3_archive_table_timing.py data\samples\fatbeans_activity_20260605_shipwreck --raw-root C:\xiangmuyunxing\steamapps\common\BidKing\BidKing_Data\StreamingAssets --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py data\samples\fatbeans_activity_20260605_shipwreck --group-by map_id --top 10 --min-train-sessions 1 --format summary
+python scripts\summarize_v3_prior_robustness_audit.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --format summary
+```
+
+关键事实：
+
+```text
+activity captures:
+  files=15 parsed=15 valid=15 bid_windows=58 ready_windows=58
+  captured maps=2521:5,2522:1,2524:3,2526:2,2528:1,2529:3
+
+v303 table source:
+  activity_range=2521-2530 bidmap_present=10 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+  activity_range=4521-4530 bidmap_present=10 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+
+activity mapping likelihood:
+  files=15
+  winners=minus10:11,minus20:4
+  item_winners=minus10:11,minus20:4
+  missing_item_rate=0 for both schemes
+
+prior robustness:
+  v3_robust_status=prior_unavailable
+  ready=58 post_ready=0 metric=0 trusted=0/58 activity=58 stressed=0
+
+CSE holdout on activity cohort:
+  sessions=15 truth_unique_round_rows=0 candidate_rows=0
+  non_zodiac_missing_rows=15 truth_non_zodiac_missing_rows=0
+  status_counts=within_capacity_source_semantics_shadow_only:6
+```
+
+解读：
+
+- 当前仓库可复核的 252x capture 是 15 份，不是 16 份；若“16 个活动地图”来自旧窗口口径，当前项目内没有能复现该数字的 source。
+- `2521-2530` 在本机 v303 中是 10 个 BidMap rows，但 Drop 仍缺失；它们能指向需要 acquisition/source parser 的表侧范围。
+- `252x->251x` likelihood 略优于 `252x->250x`，但 margin 小，不能证明 official mapping。
+- 252x cohort 继续用于调参参考和 activity/source-table 审计；在 verified `2521+` Drop/source overlay 前，不进入 default archive baseline、formal/value sampler promotion、readiness 或 official bidding。

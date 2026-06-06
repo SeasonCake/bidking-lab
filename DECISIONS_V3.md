@@ -2551,3 +2551,25 @@ applied_hurts=2502
 - 3 条 miss 分别是 2408、2410、2509 的 singleton truth fold；训练折同 map 没有 source-semantics support。
 - `map_id -> map_family_sub_pool_kind` fallback：覆盖 21/21，但 candidate 增至 347，false positive 增至 326，precision 降至 0.060519。
 - `map_id_capture_rounds` precision 升至 0.129412，但 recall 降至 0.52381；`map_family_outer_shape` recall 0.904762，但 precision 0.07393，仍比 map_id 宽。
+
+## D-v3-124：252x activity cohort 统一作为调参参考，不作为 default/promotion evidence
+
+2026-06-07 起，当前决策：
+
+- `data/samples/fatbeans_activity_20260605_shipwreck/` 与 `data/sample_manifests/fatbeans_activity_shipwreck_2026-06-05.json` 统一标记为 `activity_tuning_reference`。
+- 该 cohort 的 metric scope 是 `source_parser_table_acquisition_and_shadow_tuning_reference_only`；只能用于：
+  - 2521+ activity/source table acquisition 目标确认；
+  - activity overlay / source parser 假设审计；
+  - 后续 shadow-only formal/value sampler 的参考分片；
+  - 验证系统能把缺表活动样本标为 prior unavailable。
+- 在 verified `2521+` Drop/source overlay 或服务端映射前，252x activity cohort 不得进入 default archive baseline、default count prior、formal/value sampler promotion、readiness 放行或正式出价。
+- `usable_metric_files=15` 只表示 capture 文件本身可解析、ready windows 可生成；不等于可用于普通沉船准确率或 promotion 分母。
+- 当前仓库可复核口径是 15 份 252x capture，覆盖 6 个 map id；本机 v303 表侧有 `2521-2530` 10 个 BidMap rows。未找到项目内可复现的“16 个 252x capture/map”口径。
+
+原因：
+
+- 15 个 activity captures 全部 valid，58 个 ready windows 可用于 parser/window/truth 和活动鲁棒性审计。
+- 本机 v303 新增 `2521-2530` / `4521-4530` BidMap，但对应 Drop pool 仍缺失；表侧证据仍是 missing-drop/source-overlay，而不是完整 prior。
+- activity mapping likelihood 显示 `252x->251x` 比 `252x->250x` 略优，且两个候选族 missing item rate 均为 0；margin 不足以证明 official mapping。
+- prior robustness 仍为 `prior_unavailable`：ready=58、post_ready=0、metric=0、trusted=0/58、activity=58。
+- CSE activity holdout 无 unique round-cap truth rows；其 non-zodiac missing 是 overlay/source-parser 线索，不是 default 21 条 over round-cap blocker 的解释。

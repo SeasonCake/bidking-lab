@@ -207,7 +207,13 @@ def _file_manifest_for_events(path: Path, events: FatbeansCaptureEvents) -> dict
     }
 
 
-def build_manifest(paths: Iterable[Path]) -> dict[str, Any]:
+def build_manifest(
+    paths: Iterable[Path],
+    *,
+    cohort_role: str | None = None,
+    metric_scope: str | None = None,
+    cohort_note: str | None = None,
+) -> dict[str, Any]:
     files: list[dict[str, Any]] = []
     expanded = _iter_paths(paths)
     for path in expanded:
@@ -217,6 +223,28 @@ def build_manifest(paths: Iterable[Path]) -> dict[str, Any]:
             files.append(_file_manifest_for_parse_error(path, exc))
             continue
         files.append(_file_manifest_for_events(path, events))
+
+    summary_cohort_metadata = {
+        key: value
+        for key, value in {
+            "cohort_role": cohort_role,
+            "metric_scope": metric_scope,
+            "cohort_note": cohort_note,
+        }.items()
+        if value
+    }
+    if summary_cohort_metadata:
+        summary_cohort_metadata["affects_bid"] = False
+        cohort_metadata = {
+            key: value
+            for key, value in {
+                "cohort_role": cohort_role,
+                "affects_bid": False,
+            }.items()
+            if value is not None
+        }
+        for row in files:
+            row.update(cohort_metadata)
 
     sample_classes = Counter(str(row["sample_class"]) for row in files)
     file_statuses = Counter(str(row["status"]) for row in files)
@@ -259,6 +287,7 @@ def build_manifest(paths: Iterable[Path]) -> dict[str, Any]:
             row["file"] for row in files if int(row["no_state_windows"]) > 0
         ],
     }
+    summary.update(summary_cohort_metadata)
     return {"summary": summary, "files": files}
 
 
@@ -304,13 +333,30 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional path to write manifest JSON.",
     )
     parser.add_argument(
+        "--cohort-role",
+        help="Optional cohort role metadata, for example activity_tuning_reference.",
+    )
+    parser.add_argument(
+        "--metric-scope",
+        help="Optional metric scope metadata for the whole manifest.",
+    )
+    parser.add_argument(
+        "--cohort-note",
+        help="Optional note explaining cohort boundaries.",
+    )
+    parser.add_argument(
         "--fail-on-invalid",
         action="store_true",
         help="Exit non-zero if any file is invalid. Mixed files do not fail.",
     )
     args = parser.parse_args(argv)
 
-    manifest = build_manifest(args.paths or _default_paths())
+    manifest = build_manifest(
+        args.paths or _default_paths(),
+        cohort_role=args.cohort_role,
+        metric_scope=args.metric_scope,
+        cohort_note=args.cohort_note,
+    )
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
