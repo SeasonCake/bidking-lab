@@ -5021,3 +5021,49 @@ within_drop_ref_after_temp:
 - 所有 after-temp over-cap rows 的非生肖 item id 都落在 current reachable Drop universe 内。
 - 唯一稳定 missing item examples 是 `1306003..1306014` 临时蓝色生肖 id；这些被扣除后仍有 172 条 drop overflow 与 59 条 round-cap overflow。
 - 因此 capacity blocker 不是 item-universe 缺表或非生肖 overlay pool 混入，而是同一 Drop universe 内的 settlement count/occupancy 扩展或服务端 session-capacity 语义。
+
+## O-v3-120：runtime/pair duplicate 不解释 over-cap，unique item 仍有残余冲突
+
+2026-06-06 增强 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 4 --format summary
+```
+
+整体 duplicate/unique 分布：
+
+```text
+files=441 settlement_rows=441
+dup_runtime=n=441/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+dup_pair=n=441/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+dup_item=n=441/avg=2.814/p50=2.0/p90=6.0/p95=7.0/max=12.0
+unique_non_temp=n=441/avg=37.15/p50=37.0/p90=48.0/p95=51.0/max=58.0
+unique_above_drop=109
+unique_above_round=21
+```
+
+按 residual mode：
+
+```text
+drop_ref_only_overflow_after_temp:
+  files=113
+  count_above_drop=113 count_above_round=0
+  unique_above_drop=51 unique_above_round=0
+  unique_non_temp=n=113/avg=43.009/p50=43.0/p90=47.0/p95=48.0/max=53.0
+  dup_item=n=113/avg=3.77/p50=4.0/p90=6.0/p95=7.0/max=12.0
+  dup_runtime=max=0.0 dup_pair=max=0.0
+
+round_cap_overflow_after_temp:
+  files=59
+  count_above_drop=59 count_above_round=59
+  unique_above_drop=58 unique_above_round=21
+  unique_non_temp=n=59/avg=49.831/p50=49.0/p90=54.0/p95=57.0/max=58.0
+  dup_item=n=59/avg=4.831/p50=5.0/p90=7.0/p95=8.0/max=10.0
+  dup_runtime=max=0.0 dup_pair=max=0.0
+```
+
+解读：
+
+- parser/runtime 层没有重复：所有 rows 的 duplicate runtime 和 duplicate `(runtime_id,item_id)` pair 都为 0。
+- item_id 多实例化会解释部分 drop-only count overflow，但不能解释 round-cap overflow。
+- 仍有 21 条 row 在 unique non-temp item_id 层面超过 round cap，因此 capacity blocker 不是单纯“同一 item 多份实例化”的统计口径问题。

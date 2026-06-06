@@ -342,6 +342,13 @@ def _audit_file(
 
     items = tuple(getattr(state, "inventory_items", ()) or ())
     item_ids = tuple(_safe_int(getattr(item, "item_id", None)) for item in items)
+    runtime_ids = tuple(
+        _safe_int(getattr(item, "runtime_id", None)) for item in items
+    )
+    runtime_item_pairs = tuple(zip(runtime_ids, item_ids))
+    non_temp_item_ids = tuple(
+        item_id for item_id in item_ids if item_id not in _TEMPORARY_BLUE_ZODIAC_ITEM_IDS
+    )
     inventory_count = len(items)
     known_temp_zodiac_count = sum(
         1 for item_id in item_ids if item_id in _TEMPORARY_BLUE_ZODIAC_ITEM_IDS
@@ -412,6 +419,18 @@ def _audit_file(
         "inventory_count": inventory_count,
         "non_temp_inventory_count": non_temp_inventory_count,
         "known_temp_zodiac_count": known_temp_zodiac_count,
+        "unique_runtime_id_count": len(set(runtime_ids)),
+        "duplicate_runtime_id_count": len(runtime_ids) - len(set(runtime_ids)),
+        "unique_item_id_count": len(set(item_ids)),
+        "duplicate_item_id_count": len(item_ids) - len(set(item_ids)),
+        "unique_non_temp_item_id_count": len(set(non_temp_item_ids)),
+        "duplicate_non_temp_item_id_count": (
+            len(non_temp_item_ids) - len(set(non_temp_item_ids))
+        ),
+        "unique_runtime_item_pair_count": len(set(runtime_item_pairs)),
+        "duplicate_runtime_item_pair_count": (
+            len(runtime_item_pairs) - len(set(runtime_item_pairs))
+        ),
         "missing_from_drop_universe_count": len(missing_item_ids),
         "known_temp_zodiac_missing_from_drop_universe_count": (
             known_temp_zodiac_missing_count
@@ -467,6 +486,11 @@ def _audit_file(
             if drop_ref_max is not None
             else None
         ),
+        "unique_drop_ref_excess_after_temp_zodiac_count": (
+            max(0, len(set(non_temp_item_ids)) - drop_ref_max)
+            if drop_ref_max is not None
+            else None
+        ),
         "round_cap_excess_item_count": (
             max(0, inventory_count - round_cap_max)
             if round_cap_max is not None
@@ -474,6 +498,11 @@ def _audit_file(
         ),
         "round_cap_excess_after_temp_zodiac_count": (
             max(0, non_temp_inventory_count - round_cap_max)
+            if round_cap_max is not None
+            else None
+        ),
+        "unique_round_cap_excess_after_temp_zodiac_count": (
+            max(0, len(set(non_temp_item_ids)) - round_cap_max)
             if round_cap_max is not None
             else None
         ),
@@ -658,6 +687,30 @@ def summarize_settlement_count_prior_candidates(
                 "known_temp_zodiac_count": _numeric_summary(
                     row.get("known_temp_zodiac_count") for row in seq
                 ),
+                "unique_runtime_id_count": _numeric_summary(
+                    row.get("unique_runtime_id_count") for row in seq
+                ),
+                "duplicate_runtime_id_count": _numeric_summary(
+                    row.get("duplicate_runtime_id_count") for row in seq
+                ),
+                "unique_item_id_count": _numeric_summary(
+                    row.get("unique_item_id_count") for row in seq
+                ),
+                "duplicate_item_id_count": _numeric_summary(
+                    row.get("duplicate_item_id_count") for row in seq
+                ),
+                "unique_non_temp_item_id_count": _numeric_summary(
+                    row.get("unique_non_temp_item_id_count") for row in seq
+                ),
+                "duplicate_non_temp_item_id_count": _numeric_summary(
+                    row.get("duplicate_non_temp_item_id_count") for row in seq
+                ),
+                "unique_runtime_item_pair_count": _numeric_summary(
+                    row.get("unique_runtime_item_pair_count") for row in seq
+                ),
+                "duplicate_runtime_item_pair_count": _numeric_summary(
+                    row.get("duplicate_runtime_item_pair_count") for row in seq
+                ),
                 "missing_from_drop_universe_count": _numeric_summary(
                     row.get("missing_from_drop_universe_count") for row in seq
                 ),
@@ -791,21 +844,37 @@ def summarize_settlement_count_prior_candidates(
                 "drop_ref_excess_after_temp_zodiac_count": _numeric_summary(
                     row.get("drop_ref_excess_after_temp_zodiac_count") for row in seq
                 ),
+                "unique_drop_ref_excess_after_temp_zodiac_count": _numeric_summary(
+                    row.get("unique_drop_ref_excess_after_temp_zodiac_count")
+                    for row in seq
+                ),
                 "round_cap_excess_item_count": _numeric_summary(
                     row.get("round_cap_excess_item_count") for row in seq
                 ),
                 "round_cap_excess_after_temp_zodiac_count": _numeric_summary(
                     row.get("round_cap_excess_after_temp_zodiac_count") for row in seq
                 ),
+                "unique_round_cap_excess_after_temp_zodiac_count": _numeric_summary(
+                    row.get("unique_round_cap_excess_after_temp_zodiac_count")
+                    for row in seq
+                ),
                 "above_drop_ref_rows": _positive_rows(seq, "drop_ref_excess_item_count"),
                 "above_drop_ref_after_temp_zodiac_rows": _positive_rows(
                     seq,
                     "drop_ref_excess_after_temp_zodiac_count",
                 ),
+                "unique_above_drop_ref_after_temp_zodiac_rows": _positive_rows(
+                    seq,
+                    "unique_drop_ref_excess_after_temp_zodiac_count",
+                ),
                 "above_round_cap_rows": _positive_rows(seq, "round_cap_excess_item_count"),
                 "above_round_cap_after_temp_zodiac_rows": _positive_rows(
                     seq,
                     "round_cap_excess_after_temp_zodiac_count",
+                ),
+                "unique_above_round_cap_after_temp_zodiac_rows": _positive_rows(
+                    seq,
+                    "unique_round_cap_excess_after_temp_zodiac_count",
                 ),
                 "payload_inventory_mismatch_rows": sum(
                     1
@@ -855,6 +924,30 @@ def summarize_settlement_count_prior_candidates(
             ),
             "known_temp_zodiac_count": _numeric_summary(
                 row.get("known_temp_zodiac_count") for row in ready
+            ),
+            "unique_runtime_id_count": _numeric_summary(
+                row.get("unique_runtime_id_count") for row in ready
+            ),
+            "duplicate_runtime_id_count": _numeric_summary(
+                row.get("duplicate_runtime_id_count") for row in ready
+            ),
+            "unique_item_id_count": _numeric_summary(
+                row.get("unique_item_id_count") for row in ready
+            ),
+            "duplicate_item_id_count": _numeric_summary(
+                row.get("duplicate_item_id_count") for row in ready
+            ),
+            "unique_non_temp_item_id_count": _numeric_summary(
+                row.get("unique_non_temp_item_id_count") for row in ready
+            ),
+            "duplicate_non_temp_item_id_count": _numeric_summary(
+                row.get("duplicate_non_temp_item_id_count") for row in ready
+            ),
+            "unique_runtime_item_pair_count": _numeric_summary(
+                row.get("unique_runtime_item_pair_count") for row in ready
+            ),
+            "duplicate_runtime_item_pair_count": _numeric_summary(
+                row.get("duplicate_runtime_item_pair_count") for row in ready
             ),
             "missing_from_drop_universe_count": _numeric_summary(
                 row.get("missing_from_drop_universe_count") for row in ready
@@ -985,6 +1078,14 @@ def summarize_settlement_count_prior_candidates(
                 )
                 for row in ready
             ),
+            "unique_drop_ref_excess_after_temp_zodiac_count": _numeric_summary(
+                row.get("unique_drop_ref_excess_after_temp_zodiac_count")
+                for row in ready
+            ),
+            "unique_round_cap_excess_after_temp_zodiac_count": _numeric_summary(
+                row.get("unique_round_cap_excess_after_temp_zodiac_count")
+                for row in ready
+            ),
             "residual_modes": _counter_dict(
                 (row.get("residual_mode") for row in ready),
                 top=top,
@@ -1006,10 +1107,18 @@ def summarize_settlement_count_prior_candidates(
                 ready,
                 "drop_ref_excess_after_temp_zodiac_count",
             ),
+            "unique_above_drop_ref_after_temp_zodiac_rows": _positive_rows(
+                ready,
+                "unique_drop_ref_excess_after_temp_zodiac_count",
+            ),
             "above_round_cap_rows": _positive_rows(ready, "round_cap_excess_item_count"),
             "above_round_cap_after_temp_zodiac_rows": _positive_rows(
                 ready,
                 "round_cap_excess_after_temp_zodiac_count",
+            ),
+            "unique_above_round_cap_after_temp_zodiac_rows": _positive_rows(
+                ready,
+                "unique_round_cap_excess_after_temp_zodiac_count",
             ),
             "missing_table_rows": sum(
                 1
@@ -1070,6 +1179,10 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"inventory_count={_format_summary(overall['inventory_count'])}",
                 f"non_temp_count={_format_summary(overall['non_temp_inventory_count'])}",
                 f"temp_zodiac={_format_summary(overall['known_temp_zodiac_count'])}",
+                f"unique_non_temp={_format_summary(overall['unique_non_temp_item_id_count'])}",
+                f"dup_item={_format_summary(overall['duplicate_item_id_count'])}",
+                f"dup_runtime={_format_summary(overall['duplicate_runtime_id_count'])}",
+                f"dup_pair={_format_summary(overall['duplicate_runtime_item_pair_count'])}",
                 f"missing_drop={_format_summary(overall['missing_from_drop_universe_count'])}",
                 "non_zodiac_missing="
                 + _format_summary(overall["non_zodiac_missing_from_drop_universe_count"]),
@@ -1102,8 +1215,10 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"bidmap_rounds_total={_format_counts(overall['bidmap_rounds_total_counts'])}",
                 f"above_drop={overall['above_drop_ref_rows']}",
                 f"above_drop_after_temp={overall['above_drop_ref_after_temp_zodiac_rows']}",
+                f"unique_above_drop_after_temp={overall['unique_above_drop_ref_after_temp_zodiac_rows']}",
                 f"above_round={overall['above_round_cap_rows']}",
                 f"above_round_after_temp={overall['above_round_cap_after_temp_zodiac_rows']}",
+                f"unique_above_round_after_temp={overall['unique_above_round_cap_after_temp_zodiac_rows']}",
                 f"missing_table_rows={overall['missing_table_rows']}",
                 f"payload_mismatch_rows={overall['payload_inventory_mismatch_rows']}",
                 f"candidate_statuses={_format_counts(overall['candidate_statuses'])}",
@@ -1135,6 +1250,10 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"inventory_count={_format_summary(row['inventory_count'])}",
                     f"non_temp_count={_format_summary(row['non_temp_inventory_count'])}",
                     f"temp_zodiac={_format_summary(row['known_temp_zodiac_count'])}",
+                    f"unique_non_temp={_format_summary(row['unique_non_temp_item_id_count'])}",
+                    f"dup_item={_format_summary(row['duplicate_item_id_count'])}",
+                    f"dup_runtime={_format_summary(row['duplicate_runtime_id_count'])}",
+                    f"dup_pair={_format_summary(row['duplicate_runtime_item_pair_count'])}",
                     f"missing_drop={_format_summary(row['missing_from_drop_universe_count'])}",
                     "non_zodiac_missing="
                     + _format_summary(row["non_zodiac_missing_from_drop_universe_count"]),
@@ -1161,9 +1280,13 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"payload_f8_child={_format_counts(row['payload_field8_child_signatures'])}",
                     f"slot_headroom_after_temp={_format_summary(row['inventory_slot_headroom_after_temp_zodiac'])}",
                     f"drop_excess_after_temp={_format_summary(row['drop_ref_excess_after_temp_zodiac_count'])}",
+                    f"unique_drop_excess_after_temp={_format_summary(row['unique_drop_ref_excess_after_temp_zodiac_count'])}",
                     f"round_excess_after_temp={_format_summary(row['round_cap_excess_after_temp_zodiac_count'])}",
+                    f"unique_round_excess_after_temp={_format_summary(row['unique_round_cap_excess_after_temp_zodiac_count'])}",
                     f"above_drop_after_temp={row['above_drop_ref_after_temp_zodiac_rows']}/{row['files']}",
+                    f"unique_above_drop_after_temp={row['unique_above_drop_ref_after_temp_zodiac_rows']}/{row['files']}",
                     f"above_round_after_temp={row['above_round_cap_after_temp_zodiac_rows']}/{row['files']}",
+                    f"unique_above_round_after_temp={row['unique_above_round_cap_after_temp_zodiac_rows']}/{row['files']}",
                     f"raw_candidate_delta={_format_summary(row['raw_candidate_inventory_delta'])}",
                     f"occupied_delta={_format_summary(row['occupied_slot_inventory_delta'])}",
                     f"payload_mismatch={row['payload_inventory_mismatch_rows']}/{row['files']}",

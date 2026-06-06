@@ -22,8 +22,8 @@ def _load_module():
     return module
 
 
-def _item(item_id: int, *, cells: int = 4) -> SimpleNamespace:
-    return SimpleNamespace(item_id=item_id, cells=cells)
+def _item(item_id: int, *, runtime_id: int, cells: int = 4) -> SimpleNamespace:
+    return SimpleNamespace(runtime_id=runtime_id, item_id=item_id, cells=cells)
 
 
 def _varint(value: int) -> bytes:
@@ -59,7 +59,10 @@ def _state(
         session_id=f"{map_id}:{session_token}",
         round_index=5,
         map_id=map_id,
-        inventory_items=tuple(_item(item_id) for item_id in item_ids),
+        inventory_items=tuple(
+            _item(item_id, runtime_id=10_000 + index)
+            for index, item_id in enumerate(item_ids)
+        ),
     )
 
 
@@ -172,8 +175,10 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert result["settlement_rows"] == 2
     assert result["overall"]["above_drop_ref_rows"] == 2
     assert result["overall"]["above_drop_ref_after_temp_zodiac_rows"] == 1
+    assert result["overall"]["unique_above_drop_ref_after_temp_zodiac_rows"] == 1
     assert result["overall"]["above_round_cap_rows"] == 1
     assert result["overall"]["above_round_cap_after_temp_zodiac_rows"] == 1
+    assert result["overall"]["unique_above_round_cap_after_temp_zodiac_rows"] == 1
     assert result["overall"]["residual_modes"] == {
         "activity_extras_only_drop_ref_gap": 1,
         "round_cap_overflow_after_temp": 1,
@@ -190,6 +195,14 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         "129501": 1,
     }
     assert result["overall"]["bidmap_rounds_total_counts"] == {"25": 2}
+    assert result["overall"]["unique_runtime_id_count"]["max"] == 6
+    assert result["overall"]["duplicate_runtime_id_count"]["max"] == 0
+    assert result["overall"]["unique_item_id_count"]["max"] == 6
+    assert result["overall"]["duplicate_item_id_count"]["max"] == 0
+    assert result["overall"]["unique_non_temp_item_id_count"]["max"] == 5
+    assert result["overall"]["duplicate_non_temp_item_id_count"]["max"] == 0
+    assert result["overall"]["unique_runtime_item_pair_count"]["max"] == 6
+    assert result["overall"]["duplicate_runtime_item_pair_count"]["max"] == 0
     assert result["overall"]["missing_from_drop_universe_count"]["max"] == 1
     assert (
         result["overall"]["known_temp_zodiac_missing_from_drop_universe_count"]["max"]
@@ -222,6 +235,14 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert row["inventory_count"]["max"] == 6
     assert row["non_temp_inventory_count"]["max"] == 5
     assert row["known_temp_zodiac_count"]["max"] == 1
+    assert row["unique_runtime_id_count"]["max"] == 6
+    assert row["duplicate_runtime_id_count"]["max"] == 0
+    assert row["unique_item_id_count"]["max"] == 6
+    assert row["duplicate_item_id_count"]["max"] == 0
+    assert row["unique_non_temp_item_id_count"]["max"] == 5
+    assert row["duplicate_non_temp_item_id_count"]["max"] == 0
+    assert row["unique_runtime_item_pair_count"]["max"] == 6
+    assert row["duplicate_runtime_item_pair_count"]["max"] == 0
     assert row["missing_from_drop_universe_count"]["max"] == 1
     assert row["known_temp_zodiac_missing_from_drop_universe_count"]["max"] == 1
     assert row["non_zodiac_missing_from_drop_universe_count"]["max"] == 0
@@ -235,7 +256,9 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert row["payload_field8_count"]["max"] == 0
     assert row["payload_field20_present_rows"] == 0
     assert row["drop_ref_excess_after_temp_zodiac_count"]["max"] == 3
+    assert row["unique_drop_ref_excess_after_temp_zodiac_count"]["max"] == 3
     assert row["round_cap_excess_after_temp_zodiac_count"]["max"] == 1
+    assert row["unique_round_cap_excess_after_temp_zodiac_count"]["max"] == 1
 
     residual_result = module.summarize_settlement_count_prior_candidates(
         [tmp_path],

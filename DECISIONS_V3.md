@@ -2416,3 +2416,20 @@ applied_hurts=2502
 - 真实 archive 441 条 settlement rows 中 `missing_drop` 平均为 1.658，但全部 missing 都是已知临时蓝色生肖 id；`non_zodiac_missing` overall max 为 0。
 - `drop_ref_only_overflow_after_temp` 113 files 与 `round_cap_overflow_after_temp` 59 files 的 `non_zodiac_missing` max 均为 0。
 - 因此 after-temp over-cap 是“同一 item universe 内的件数/占用问题”，不是未知非生肖物品池混入。
+
+## D-v3-116：runtime/item duplicate 不能作为 capacity blocker 充分解释或 promotion evidence
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_candidates.py` 必须输出 runtime/item duplicate metrics 与 unique non-temp item count cap coverage。
+- 如果 `duplicate_runtime_id_count` 和 `duplicate_runtime_item_pair_count` 为 0，不能把 over-cap 归因于 parser 或 runtime 重复。
+- 如果按 unique non-temp item id 去重后仍存在 over-cap，不能把 blocker 简化为“同一 item_id 多实例化导致 count 口径偏高”。
+- duplicate/unique audit 只能缩小 capacity 语义范围；不能作为 sampler cap 修正、readiness 放行或 promotion evidence。
+- formal/value sampler 参数调优继续暂停，直到 unique item 层面的 settlement count/session-capacity、round/category 生成机制或 cap 字段语义有可复核解释。
+
+原因：
+
+- 真实 archive 441 条 settlement rows 的 duplicate runtime 与 duplicate runtime-item pair max 都为 0。
+- `drop_ref_only_overflow_after_temp` 113 rows 中按 unique non-temp item id 后仍有 51 rows 超 drop-ref。
+- `round_cap_overflow_after_temp` 59 rows 中按 unique non-temp item id 后仍有 58 rows 超 drop-ref、21 rows 超 round cap。
+- 因此 item_id 多实例化只解释部分 overflow，不能解除 v3 capacity blocker。
