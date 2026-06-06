@@ -320,6 +320,98 @@ def _category_counts_for_item_ids(
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
+def _table_item_for_item_id(item_id: int | None, tables: Any) -> Any | None:
+    parsed = _safe_int(item_id)
+    if parsed is None:
+        return None
+    return (getattr(tables, "items", {}) or {}).get(int(parsed))
+
+
+def _quality_key(quality: int | None) -> str:
+    return f"q{quality}" if quality is not None else "none"
+
+
+def _quality_for_item_id(item_id: int | None, tables: Any) -> int | None:
+    item = _table_item_for_item_id(item_id, tables)
+    return _safe_int(getattr(item, "quality", None)) if item is not None else None
+
+
+def _cells_for_item_id(item_id: int | None, tables: Any) -> int:
+    item = _table_item_for_item_id(item_id, tables)
+    if item is None:
+        return 0
+    cells = _safe_int(getattr(item, "cells", None))
+    if cells is not None:
+        return int(cells)
+    width = _safe_int(getattr(item, "shape_w", None))
+    height = _safe_int(getattr(item, "shape_h", None))
+    if width is not None and height is not None:
+        return int(width) * int(height)
+    return 0
+
+
+def _quality_for_inventory_item(item: Any, tables: Any) -> int | None:
+    quality = _safe_int(getattr(item, "quality", None))
+    if quality is not None:
+        return quality
+    return _quality_for_item_id(_safe_int(getattr(item, "item_id", None)), tables)
+
+
+def _cells_for_inventory_item(item: Any, tables: Any) -> int:
+    cells = _safe_int(getattr(item, "cells", None))
+    if cells is not None:
+        return int(cells)
+    return _cells_for_item_id(_safe_int(getattr(item, "item_id", None)), tables)
+
+
+def _quality_counts_for_inventory_items(
+    items: Iterable[Any],
+    *,
+    tables: Any,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for item in items:
+        counts[_quality_key(_quality_for_inventory_item(item, tables))] += 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _quality_cells_for_inventory_items(
+    items: Iterable[Any],
+    *,
+    tables: Any,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for item in items:
+        counts[_quality_key(_quality_for_inventory_item(item, tables))] += (
+            _cells_for_inventory_item(item, tables)
+        )
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _quality_counts_for_item_ids(
+    item_ids: Iterable[int | None],
+    *,
+    tables: Any,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for item_id in item_ids:
+        counts[_quality_key(_quality_for_item_id(item_id, tables))] += 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _quality_cells_for_item_ids(
+    item_ids: Iterable[int | None],
+    *,
+    tables: Any,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for item_id in item_ids:
+        counts[_quality_key(_quality_for_item_id(item_id, tables))] += (
+            _cells_for_item_id(item_id, tables)
+        )
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
 def _reachable_drop_item_ids_for_map(
     map_id: int | None,
     *,
@@ -394,6 +486,11 @@ def _audit_file(
     non_temp_item_ids = tuple(
         item_id for item_id in item_ids if item_id not in _TEMPORARY_BLUE_ZODIAC_ITEM_IDS
     )
+    non_temp_items = tuple(
+        item
+        for item, item_id in zip(items, item_ids)
+        if item_id not in _TEMPORARY_BLUE_ZODIAC_ITEM_IDS
+    )
     inventory_count = len(items)
     known_temp_zodiac_count = sum(
         1 for item_id in item_ids if item_id in _TEMPORARY_BLUE_ZODIAC_ITEM_IDS
@@ -434,6 +531,22 @@ def _audit_file(
     unique_non_temp_primary_categories = tuple(
         _primary_category_for_item_id(item_id, tables)
         for item_id in unique_non_temp_item_ids
+    )
+    non_temp_quality_counts = _quality_counts_for_inventory_items(
+        non_temp_items,
+        tables=tables,
+    )
+    non_temp_quality_cells = _quality_cells_for_inventory_items(
+        non_temp_items,
+        tables=tables,
+    )
+    unique_non_temp_quality_counts = _quality_counts_for_item_ids(
+        unique_non_temp_item_ids,
+        tables=tables,
+    )
+    unique_non_temp_quality_cells = _quality_cells_for_item_ids(
+        unique_non_temp_item_ids,
+        tables=tables,
     )
     drop_ref_max = _safe_int(table.get("bidmap_items_per_session_max"))
     round_cap_max = _safe_int(table.get("bidmap_raw_round_cap_max"))
@@ -527,6 +640,22 @@ def _audit_file(
             for category in unique_non_temp_primary_categories
             if category is not None and category not in hint_values
         ),
+        "non_temp_quality_counts": non_temp_quality_counts,
+        "non_temp_quality_cells": non_temp_quality_cells,
+        "unique_non_temp_quality_counts": unique_non_temp_quality_counts,
+        "unique_non_temp_quality_cells": unique_non_temp_quality_cells,
+        "non_temp_inventory_cells": sum(
+            _cells_for_inventory_item(item, tables) for item in non_temp_items
+        ),
+        "unique_non_temp_inventory_cells": sum(
+            _cells_for_item_id(item_id, tables) for item_id in unique_non_temp_item_ids
+        ),
+        "q6_non_temp_item_count": int(non_temp_quality_counts.get("q6", 0)),
+        "unique_q6_non_temp_item_count": int(
+            unique_non_temp_quality_counts.get("q6", 0)
+        ),
+        "q6_non_temp_cells": int(non_temp_quality_cells.get("q6", 0)),
+        "unique_q6_non_temp_cells": int(unique_non_temp_quality_cells.get("q6", 0)),
         "missing_from_drop_universe_count": len(missing_item_ids),
         "known_temp_zodiac_missing_from_drop_universe_count": (
             known_temp_zodiac_missing_count
@@ -541,8 +670,7 @@ def _audit_file(
             )[:8]
         ),
         "inventory_cells": sum(
-            _safe_int(getattr(item, "cells", None)) or 0
-            for item in items
+            _cells_for_inventory_item(item, tables) for item in items
         ),
         "settlement_loss_units": loss_units,
         "payload_field_shape": _payload_shape(payload_field_counts),
@@ -647,6 +775,34 @@ def _residual_mode(row: Mapping[str, Any]) -> str:
     return "within_drop_ref_after_temp"
 
 
+def _unique_residual_mode(row: Mapping[str, Any]) -> str:
+    unique_round_after = _safe_int(
+        row.get("unique_round_cap_excess_after_temp_zodiac_count")
+    )
+    round_after = _safe_int(row.get("round_cap_excess_after_temp_zodiac_count"))
+    unique_drop_after = _safe_int(
+        row.get("unique_drop_ref_excess_after_temp_zodiac_count")
+    )
+    drop_after = _safe_int(row.get("drop_ref_excess_after_temp_zodiac_count"))
+    non_zodiac_missing = _safe_int(
+        row.get("non_zodiac_missing_from_drop_universe_count")
+    )
+    missing_drop = _safe_int(row.get("missing_from_drop_universe_count"))
+    if unique_round_after is not None and unique_round_after > 0:
+        return "unique_round_cap_overflow_after_temp"
+    if round_after is not None and round_after > 0:
+        return "instance_round_cap_overflow_after_temp"
+    if unique_drop_after is not None and unique_drop_after > 0:
+        return "unique_drop_ref_only_overflow_after_temp"
+    if drop_after is not None and drop_after > 0:
+        return "instance_drop_ref_only_overflow_after_temp"
+    if non_zodiac_missing is not None and non_zodiac_missing > 0:
+        return "non_zodiac_drop_universe_gap"
+    if missing_drop is not None and missing_drop > 0:
+        return "activity_extras_only_drop_ref_gap"
+    return "within_unique_caps_after_temp"
+
+
 def _candidate_status(rows: tuple[Mapping[str, Any], ...], *, min_samples: int) -> str:
     if any(row.get("table_status") in ("missing_map_id", "missing_bidmap") for row in rows):
         return "missing_table_shadow_only"
@@ -711,6 +867,7 @@ def summarize_settlement_count_prior_candidates(
         "map_prefix3",
         "map_family",
         "residual_mode",
+        "unique_residual_mode",
         "round_index",
         "capture_rounds",
         "capture_day",
@@ -739,6 +896,7 @@ def summarize_settlement_count_prior_candidates(
     ready = [row for row in rows if row.get("status") == "ok"]
     for row in ready:
         row["residual_mode"] = _residual_mode(row)
+        row["unique_residual_mode"] = _unique_residual_mode(row)
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in ready:
         groups[_group_key(row, group_by)].append(row)
@@ -777,6 +935,10 @@ def summarize_settlement_count_prior_candidates(
                     row.get("bidmap_round_category_hint_count") for row in seq
                 ),
                 "residual_modes": _counter_dict((row.get("residual_mode") for row in seq), top=top),
+                "unique_residual_modes": _counter_dict(
+                    (row.get("unique_residual_mode") for row in seq),
+                    top=top,
+                ),
                 "table_statuses": _counter_dict((row.get("table_status") for row in seq), top=top),
                 "bidmap_items_per_session_max": _numeric_summary(
                     row.get("bidmap_items_per_session_max") for row in seq
@@ -843,6 +1005,40 @@ def summarize_settlement_count_prior_candidates(
                 ),
                 "unique_unhinted_non_temp_item_count": _numeric_summary(
                     row.get("unique_unhinted_non_temp_item_count") for row in seq
+                ),
+                "non_temp_quality_counts": _merge_count_mappings(
+                    (row.get("non_temp_quality_counts", {}) for row in seq),
+                    top=top,
+                ),
+                "non_temp_quality_cells": _merge_count_mappings(
+                    (row.get("non_temp_quality_cells", {}) for row in seq),
+                    top=top,
+                ),
+                "unique_non_temp_quality_counts": _merge_count_mappings(
+                    (row.get("unique_non_temp_quality_counts", {}) for row in seq),
+                    top=top,
+                ),
+                "unique_non_temp_quality_cells": _merge_count_mappings(
+                    (row.get("unique_non_temp_quality_cells", {}) for row in seq),
+                    top=top,
+                ),
+                "non_temp_inventory_cells": _numeric_summary(
+                    row.get("non_temp_inventory_cells") for row in seq
+                ),
+                "unique_non_temp_inventory_cells": _numeric_summary(
+                    row.get("unique_non_temp_inventory_cells") for row in seq
+                ),
+                "q6_non_temp_item_count": _numeric_summary(
+                    row.get("q6_non_temp_item_count") for row in seq
+                ),
+                "unique_q6_non_temp_item_count": _numeric_summary(
+                    row.get("unique_q6_non_temp_item_count") for row in seq
+                ),
+                "q6_non_temp_cells": _numeric_summary(
+                    row.get("q6_non_temp_cells") for row in seq
+                ),
+                "unique_q6_non_temp_cells": _numeric_summary(
+                    row.get("unique_q6_non_temp_cells") for row in seq
                 ),
                 "missing_from_drop_universe_count": _numeric_summary(
                     row.get("missing_from_drop_universe_count") for row in seq
@@ -1111,6 +1307,40 @@ def summarize_settlement_count_prior_candidates(
             "unique_unhinted_non_temp_item_count": _numeric_summary(
                 row.get("unique_unhinted_non_temp_item_count") for row in ready
             ),
+            "non_temp_quality_counts": _merge_count_mappings(
+                (row.get("non_temp_quality_counts", {}) for row in ready),
+                top=top,
+            ),
+            "non_temp_quality_cells": _merge_count_mappings(
+                (row.get("non_temp_quality_cells", {}) for row in ready),
+                top=top,
+            ),
+            "unique_non_temp_quality_counts": _merge_count_mappings(
+                (row.get("unique_non_temp_quality_counts", {}) for row in ready),
+                top=top,
+            ),
+            "unique_non_temp_quality_cells": _merge_count_mappings(
+                (row.get("unique_non_temp_quality_cells", {}) for row in ready),
+                top=top,
+            ),
+            "non_temp_inventory_cells": _numeric_summary(
+                row.get("non_temp_inventory_cells") for row in ready
+            ),
+            "unique_non_temp_inventory_cells": _numeric_summary(
+                row.get("unique_non_temp_inventory_cells") for row in ready
+            ),
+            "q6_non_temp_item_count": _numeric_summary(
+                row.get("q6_non_temp_item_count") for row in ready
+            ),
+            "unique_q6_non_temp_item_count": _numeric_summary(
+                row.get("unique_q6_non_temp_item_count") for row in ready
+            ),
+            "q6_non_temp_cells": _numeric_summary(
+                row.get("q6_non_temp_cells") for row in ready
+            ),
+            "unique_q6_non_temp_cells": _numeric_summary(
+                row.get("unique_q6_non_temp_cells") for row in ready
+            ),
             "missing_from_drop_universe_count": _numeric_summary(
                 row.get("missing_from_drop_universe_count") for row in ready
             ),
@@ -1252,6 +1482,10 @@ def summarize_settlement_count_prior_candidates(
                 (row.get("residual_mode") for row in ready),
                 top=top,
             ),
+            "unique_residual_modes": _counter_dict(
+                (row.get("unique_residual_mode") for row in ready),
+                top=top,
+            ),
             "round_indices": _counter_dict(
                 (row.get("round_index") for row in ready),
                 top=top,
@@ -1356,6 +1590,12 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"unique_hinted={_format_summary(overall['unique_hinted_non_temp_item_count'])}",
                 f"unique_unhinted={_format_summary(overall['unique_unhinted_non_temp_item_count'])}",
                 f"unique_cat_counts={_format_counts(overall['unique_non_temp_primary_category_counts'])}",
+                f"quality_counts={_format_counts(overall['non_temp_quality_counts'])}",
+                f"unique_quality_counts={_format_counts(overall['unique_non_temp_quality_counts'])}",
+                f"non_temp_cells={_format_summary(overall['non_temp_inventory_cells'])}",
+                f"unique_non_temp_cells={_format_summary(overall['unique_non_temp_inventory_cells'])}",
+                f"unique_q6_count={_format_summary(overall['unique_q6_non_temp_item_count'])}",
+                f"unique_q6_cells={_format_summary(overall['unique_q6_non_temp_cells'])}",
                 f"missing_drop={_format_summary(overall['missing_from_drop_universe_count'])}",
                 "non_zodiac_missing="
                 + _format_summary(overall["non_zodiac_missing_from_drop_universe_count"]),
@@ -1383,6 +1623,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"payload_f8_child={_format_counts(overall['payload_field8_child_signatures'])}",
                 f"slot_headroom_after_temp={_format_summary(overall['inventory_slot_headroom_after_temp_zodiac'])}",
                 f"residual_modes={_format_counts(overall['residual_modes'])}",
+                f"unique_residual_modes={_format_counts(overall['unique_residual_modes'])}",
                 f"round_indices={_format_counts(overall['round_indices'])}",
                 f"capture_rounds={_format_counts(overall['capture_rounds'])}",
                 f"bidmap_rounds_total={_format_counts(overall['bidmap_rounds_total_counts'])}",
@@ -1419,6 +1660,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"bidmap_rounds_total={_format_counts(row['bidmap_rounds_total_counts'])}",
                     f"hint_keys={_format_counts(row['bidmap_round_category_hint_key_counts'])}",
                     f"residual_modes={_format_counts(row['residual_modes'])}",
+                    f"unique_residual_modes={_format_counts(row['unique_residual_modes'])}",
                     f"table={_format_counts(row['table_statuses'])}",
                     f"bidmap_max={_format_summary(row['bidmap_items_per_session_max'])}",
                     f"round_cap={_format_summary(row['bidmap_raw_round_cap_max'])}",
@@ -1433,6 +1675,12 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"unique_hinted={_format_summary(row['unique_hinted_non_temp_item_count'])}",
                     f"unique_unhinted={_format_summary(row['unique_unhinted_non_temp_item_count'])}",
                     f"unique_cat_counts={_format_counts(row['unique_non_temp_primary_category_counts'])}",
+                    f"quality_counts={_format_counts(row['non_temp_quality_counts'])}",
+                    f"unique_quality_counts={_format_counts(row['unique_non_temp_quality_counts'])}",
+                    f"non_temp_cells={_format_summary(row['non_temp_inventory_cells'])}",
+                    f"unique_non_temp_cells={_format_summary(row['unique_non_temp_inventory_cells'])}",
+                    f"unique_q6_count={_format_summary(row['unique_q6_non_temp_item_count'])}",
+                    f"unique_q6_cells={_format_summary(row['unique_q6_non_temp_cells'])}",
                     f"missing_drop={_format_summary(row['missing_from_drop_universe_count'])}",
                     "non_zodiac_missing="
                     + _format_summary(row["non_zodiac_missing_from_drop_universe_count"]),
@@ -1496,6 +1744,7 @@ def main(argv: list[str] | None = None) -> int:
             "map_prefix3",
             "map_family",
             "residual_mode",
+            "unique_residual_mode",
             "round_index",
             "capture_rounds",
             "capture_day",

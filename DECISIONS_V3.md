@@ -2449,3 +2449,19 @@ applied_hurts=2502
 - `round_cap_overflow_after_temp` 59 rows 的 unique non-temp item 平均覆盖 9.797 个 primary categories，`unique_unhinted_non_temp_item_count` 平均 43.780、最高 52。
 - `within_drop_ref_after_temp` 同样共享 hint key `103`，且也覆盖 9-10 个 primary categories；hint key 不是 over-cap 专属 marker。
 - 因此 `round_category_hints` 不能解释当前 unique item 层面的 after-temp over-cap。
+
+## D-v3-118：quality/cells residual 下钻不能把 capacity blocker 降级为 formal value evidence
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_candidates.py` 必须输出 `unique_residual_mode`，区分 unique round-cap overflow、instance-only round overflow、unique drop overflow、instance-only drop overflow、activity extras 与 within unique caps。
+- 同一审计必须输出 non-temp/unique non-temp 的 quality counts、quality cells、total cells、q6 count 与 q6 cells。
+- 如果 unique round-cap overflow 的 quality 分布以 q2-q4 等 broad inventory 为主，且 q6/cells tail 与 within-cap rows 有重叠，不能把该 blocker 直接解释为 q6 value-floor 或 formal value 上修证据。
+- capacity/cells watch 仍只能进入 table/capacity/evidence consistency 审计；formal/value sampler 只允许在 shadow-only value-floor 路径中继续设计与验证。
+
+原因：
+
+- `unique_residual_mode` smoke 将 441 rows 拆成：activity extras 201、within unique caps 68、instance drop overflow 62、unique drop overflow 51、instance round overflow 38、unique round overflow 21。
+- 21 条 `unique_round_cap_overflow_after_temp` 的 unique non-temp item 平均 53.143、unique cells 平均 152.143、最高 206，说明仍有真实 unique item/cells 层面的 capacity conflict。
+- 这些 rows 的 unique quality 分布为 q4=298、q2=241、q3=234、q5=170、q1=101、q6=72；q6 有 tail risk，但不是主导来源。
+- `within_unique_caps_after_temp` 仍有 q6 cells max 39，和 unique round overflow 的 q6 cells max 37 重叠；因此 q6/cells tail 不能单独作为 promotion evidence。

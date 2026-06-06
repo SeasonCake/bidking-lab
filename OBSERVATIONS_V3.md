@@ -5105,3 +5105,54 @@ within_drop_ref_after_temp:
 - 真实 archive 中所有 rows 的 BidMap round-category hint key 都是 `103`，不能区分 over-cap 与 within-cap。
 - over-cap rows 的 unique non-temp item primary-category 覆盖接近全量 10 类，且大量 item 落在 unhinted categories。
 - 因此 `round_category_hints` 不是 settlement item-count cap，也不是可直接用于 v3 sampler/readiness 的 promotion evidence。
+
+## O-v3-122：unique cap 分层后，剩余 round-cap 冲突仍是 broad inventory/cells 问题
+
+2026-06-06 增强 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by unique_residual_mode --min-samples 1 --top 6 --format summary
+```
+
+`unique_residual_mode` 分层：
+
+```text
+activity_extras_only_drop_ref_gap=201
+within_unique_caps_after_temp=68
+instance_drop_ref_only_overflow_after_temp=62
+unique_drop_ref_only_overflow_after_temp=51
+instance_round_cap_overflow_after_temp=38
+unique_round_cap_overflow_after_temp=21
+```
+
+关键 quality/cells 结果：
+
+```text
+unique_round_cap_overflow_after_temp:
+  files=21
+  unique_non_temp=n=21/avg=53.143/p50=52.0/p90=57.0/p95=57.0/max=57.0
+  unique_non_temp_cells=n=21/avg=152.143/p50=153.0/p90=175.0/p95=176.0/max=206.0
+  unique_q6_count=n=21/avg=3.429/p50=3.0/p90=5.0/p95=6.0/max=8.0
+  unique_q6_cells=n=21/avg=16.857/p50=16.0/p90=31.0/p95=34.0/max=37.0
+  unique_quality_counts=q4:298,q2:241,q3:234,q5:170,q1:101,q6:72
+
+instance_round_cap_overflow_after_temp:
+  files=38
+  unique_round_excess_after_temp=max=0.0
+  unique_drop_excess_after_temp=n=38/avg=5.158/p50=5.0/p90=9.0/p95=10.0/max=14.0
+  unique_q6_count=n=38/avg=3.658/p50=4.0/p90=6.0/p95=7.0/max=10.0
+  unique_q6_cells=n=38/avg=12.132/p50=11.0/p90=23.0/p95=24.0/max=40.0
+
+within_unique_caps_after_temp:
+  files=68
+  unique_non_temp_cells=n=68/avg=83.559/p50=84.0/p90=110.0/p95=115.0/max=126.0
+  unique_q6_count=n=68/avg=1.985/p50=2.0/p90=4.0/p95=4.0/max=6.0
+  unique_q6_cells=n=68/avg=7.279/p50=6.0/p90=15.0/p95=25.0/max=39.0
+```
+
+解读：
+
+- unique item 层面的 round-cap blocker 从 59 条 count overflow 收窄到 21 条 unique overflow，但没有消失。
+- `unique_round_cap_overflow_after_temp` 的 quality 分布以 q2-q4/q5 broad inventory 为主，q6 只是其中一部分；这不是单一 q6 value-floor 问题。
+- q6 cells tail 与 within-cap rows 有重叠，不能直接转成 formal value 上修或 promotion evidence。
+- 后续仍应先解释 settlement count/session-capacity 或 cap 字段语义，再恢复 formal/value sampler 参数设计。

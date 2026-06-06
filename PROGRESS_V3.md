@@ -6575,3 +6575,56 @@ within_drop_ref_after_temp:
 - over-cap rows 的 unique non-temp item 覆盖接近全量 primary categories，且大量 item 落在 unhinted categories。
 - 因此 `round_category_hints` 不能解释当前 unique item 层面的 after-temp over-cap；后续 blocker 仍是 settlement count/session-capacity、round/category 生成机制或 cap 字段语义。
 - formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。
+
+## 2026-06-06 checkpoint：settlement quality/cells residual 下钻
+
+本轮继续排查 unique item 层面的 over-cap 是否能降级为 quality/cells 或 q6 value 问题。改动仍是 v3 audit-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - 输出 `unique_residual_mode`，区分 unique/instance drop/round overflow 与 within unique caps；
+  - 支持 `--group-by unique_residual_mode`；
+  - 输出 non-temp 与 unique non-temp 的 quality counts、quality cells、inventory cells、q6 item count 与 q6 cells；
+  - `inventory_cells` 统一使用 settlement item cells，并在缺失时回退到 Item table shape cells。
+- `tests/test_summarize_v3_settlement_count_prior_candidates.py` 增加 item quality/shape fixture，并覆盖 quality/cells 聚合和 `unique_residual_mode` group-by。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`、`DECISIONS_V3.md` 与 `OBSERVATIONS_V3.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py -q
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by unique_residual_mode --min-samples 1 --top 6 --format summary
+```
+
+真实 residual smoke 要点：
+
+```text
+unique_residual_modes:
+  activity_extras_only_drop_ref_gap=201
+  within_unique_caps_after_temp=68
+  instance_drop_ref_only_overflow_after_temp=62
+  unique_drop_ref_only_overflow_after_temp=51
+  instance_round_cap_overflow_after_temp=38
+  unique_round_cap_overflow_after_temp=21
+
+unique_round_cap_overflow_after_temp:
+  unique_non_temp=n=21/avg=53.143/p50=52.0/p90=57.0/p95=57.0/max=57.0
+  unique_non_temp_cells=n=21/avg=152.143/p50=153.0/p90=175.0/p95=176.0/max=206.0
+  unique_q6_count=n=21/avg=3.429/p50=3.0/p90=5.0/p95=6.0/max=8.0
+  unique_q6_cells=n=21/avg=16.857/p50=16.0/p90=31.0/p95=34.0/max=37.0
+  unique_quality_counts=q4:298,q2:241,q3:234,q5:170,q1:101,q6:72
+
+within_unique_caps_after_temp:
+  unique_non_temp_cells=n=68/avg=83.559/p50=84.0/p90=110.0/p95=115.0/max=126.0
+  unique_q6_count=n=68/avg=1.985/p50=2.0/p90=4.0/p95=4.0/max=6.0
+  unique_q6_cells=n=68/avg=7.279/p50=6.0/p90=15.0/p95=25.0/max=39.0
+```
+
+解读：
+
+- unique item 层面的 round-cap blocker 从 59 条 count overflow 收窄到 21 条 unique overflow，但仍没有消失。
+- `unique_round_cap_overflow_after_temp` 是 broad inventory/cells expansion，quality 分布不支持把它简化为单一 q6 value-floor 问题。
+- q6 cells tail 与 within-cap rows 有重叠；capacity/cells watch 不能直接转为 formal value 上修。
+- formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。

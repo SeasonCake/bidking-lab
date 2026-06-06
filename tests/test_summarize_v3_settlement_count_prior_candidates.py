@@ -99,11 +99,21 @@ def _tables(*, include_map: bool = True) -> SimpleNamespace:
             )
         },
         items={
-            1001: SimpleNamespace(item_id=1001, value=100, tags=(103,)),
-            1002: SimpleNamespace(item_id=1002, value=100, tags=(103,)),
-            1003: SimpleNamespace(item_id=1003, value=100, tags=(104,)),
-            1004: SimpleNamespace(item_id=1004, value=100, tags=(105,)),
-            1005: SimpleNamespace(item_id=1005, value=100, tags=(102,)),
+            1001: SimpleNamespace(
+                item_id=1001, value=100, quality=6, shape_w=2, shape_h=2, tags=(103,)
+            ),
+            1002: SimpleNamespace(
+                item_id=1002, value=100, quality=5, shape_w=2, shape_h=2, tags=(103,)
+            ),
+            1003: SimpleNamespace(
+                item_id=1003, value=100, quality=4, shape_w=2, shape_h=2, tags=(104,)
+            ),
+            1004: SimpleNamespace(
+                item_id=1004, value=100, quality=3, shape_w=2, shape_h=2, tags=(105,)
+            ),
+            1005: SimpleNamespace(
+                item_id=1005, value=100, quality=6, shape_w=2, shape_h=2, tags=(102,)
+            ),
         },
     )
 
@@ -187,6 +197,10 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         "activity_extras_only_drop_ref_gap": 1,
         "round_cap_overflow_after_temp": 1,
     }
+    assert result["overall"]["unique_residual_modes"] == {
+        "activity_extras_only_drop_ref_gap": 1,
+        "unique_round_cap_overflow_after_temp": 1,
+    }
     assert result["overall"]["inventory_slot_headroom_after_temp_zodiac"]["n"] == 0
     assert result["overall"]["payload_field_shapes"] == {"none": 2}
     assert result["overall"]["payload_field5_count"]["max"] == 0
@@ -216,6 +230,21 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         "104": 1,
         "105": 1,
     }
+    assert result["overall"]["non_temp_quality_counts"] == {
+        "q3": 1,
+        "q4": 1,
+        "q5": 2,
+        "q6": 3,
+    }
+    assert result["overall"]["unique_non_temp_quality_counts"] == {
+        "q3": 1,
+        "q4": 1,
+        "q5": 2,
+        "q6": 3,
+    }
+    assert result["overall"]["unique_non_temp_inventory_cells"]["max"] == 20
+    assert result["overall"]["unique_q6_non_temp_item_count"]["max"] == 2
+    assert result["overall"]["unique_q6_non_temp_cells"]["max"] == 8
     assert result["overall"]["unique_runtime_item_pair_count"]["max"] == 6
     assert result["overall"]["duplicate_runtime_item_pair_count"]["max"] == 0
     assert result["overall"]["missing_from_drop_universe_count"]["max"] == 1
@@ -239,6 +268,10 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert row["residual_modes"] == {
         "activity_extras_only_drop_ref_gap": 1,
         "round_cap_overflow_after_temp": 1,
+    }
+    assert row["unique_residual_modes"] == {
+        "activity_extras_only_drop_ref_gap": 1,
+        "unique_round_cap_overflow_after_temp": 1,
     }
     assert row["round_indices"] == {"5": 2}
     assert row["capture_rounds"] == {"2": 1, "5": 1}
@@ -267,6 +300,21 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         "104": 1,
         "105": 1,
     }
+    assert row["non_temp_quality_counts"] == {
+        "q3": 1,
+        "q4": 1,
+        "q5": 2,
+        "q6": 3,
+    }
+    assert row["unique_non_temp_quality_counts"] == {
+        "q3": 1,
+        "q4": 1,
+        "q5": 2,
+        "q6": 3,
+    }
+    assert row["unique_non_temp_inventory_cells"]["max"] == 20
+    assert row["unique_q6_non_temp_item_count"]["max"] == 2
+    assert row["unique_q6_non_temp_cells"]["max"] == 8
     assert row["unique_runtime_item_pair_count"]["max"] == 6
     assert row["duplicate_runtime_item_pair_count"]["max"] == 0
     assert row["missing_from_drop_universe_count"]["max"] == 1
@@ -309,6 +357,17 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         ]
         == 0
     )
+
+    unique_residual_result = module.summarize_settlement_count_prior_candidates(
+        [tmp_path],
+        tables=_tables(),
+        group_by="unique_residual_mode",
+        min_samples=1,
+    )
+    assert {row["group"] for row in unique_residual_result["rows"]} == {
+        "activity_extras_only_drop_ref_gap",
+        "unique_round_cap_overflow_after_temp",
+    }
 
     round_result = module.summarize_settlement_count_prior_candidates(
         [tmp_path],
