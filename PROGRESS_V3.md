@@ -4574,3 +4574,82 @@ formal_value_sampler_holdout=blocked
 - 方向性已在 256-trial 多 seed 下稳定，但有效 outer holdout 只有 9 条；64-trial seed 仍会出现 2501 false selection。
 - 当前距离 promotion 的主要差距是 2506 样本深度、posterior seed/trial 稳定性、live cohort 验证与 252x missing-table 覆盖，不是继续调正式 sampler 参数。
 - v3 仍不得影响正式出价；v2 继续作为 formal/live/UI production baseline。
+
+## 2026-06-06 checkpoint：guarded bridge trial/seed stability matrix
+
+本轮继续推进 guarded count->value bridge 的 promotion 前验证，不改 v2 formal/live/UI、live decision 或正式出价。
+
+改动：
+
+- 新增 `scripts/summarize_v3_scp_guarded_bridge_stability.py`：
+  - 对多个 posterior trial/seed 组合运行 guarded bridge holdout；
+  - 汇总 `overall_status`、selected groups、applied rows、MAE delta、p90 delta、over-rate 与 applied hurts；
+  - 默认 smoke 为 `64 trials x seeds 0/1`，用于快速暴露 seed instability；
+  - promotion 前长跑可显式传 `--posterior-trials 256 --posterior-seed 0 --posterior-seed 1 --posterior-seed 7`；
+  - per-run cache 放在 `.tmp/codex/v3_scp_guarded_bridge_stability`。
+- 新增 `tests/test_summarize_v3_scp_guarded_bridge_stability.py`，覆盖 exact 2506 稳定、hurt run、low support 三类判定。
+- `docs/PROJECT_STRUCTURE_V3.zh-CN.md` 更新脚本/测试索引与数量。
+- `DECISIONS_V3.md` 新增 D-v3-080；`OBSERVATIONS_V3.md` 新增 O-v3-085。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_guarded_bridge_stability.py tests\test_summarize_v3_scp_guarded_bridge_holdout.py
+C:\Users\shenc\anaconda3\python.exe -m py_compile scripts\summarize_v3_scp_guarded_bridge_stability.py scripts\summarize_v3_scp_guarded_bridge_holdout.py
+git -c safe.directory=C:/xiangmuyunxing/biancheng/2026/bidking-lab diff --check
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --formal-lift-cap 10000
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_other_tables.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_count_prior_holdout.py tests\test_summarize_v3_scp_formal_value_link.py tests\test_summarize_v3_scp_count_value_bridge.py tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_stability.py tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+```
+
+结果：
+
+```text
+targeted tests:
+5 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+87 passed
+
+diff --check:
+passed
+
+stability smoke:
+overall_status=blocked_applied_hurt
+reasons=applied_hurts_present,non_watch_run,selected_group_drift
+runs=2
+watch_runs=1
+trials=64
+seeds=0,1
+stable_groups=2506
+union_groups=2501,2506
+min_applied=20
+
+seed0:
+status=watch
+selected=2506
+applied_rows=20
+delta_mae=-6000.0
+bridge_over=0.25
+
+seed1:
+status=blocked_holdout_hurt
+selected=2501,2506
+applied_rows=62
+delta_mae=378.95
+bridge_over=0.580645
+applied_hurts=2501
+
+cache rerun:
+cache_hit=True
+runtime约4s
+```
+
+限制：
+
+- 256-trial seeds 0/1/7 矩阵初跑超过 300 秒，本轮未形成新的完整矩阵输出；O-v3-084 的单跑结果仍是高 trial 方向性证据。
+- stability smoke 证明当前低 trial 配置不稳定；不能用 readiness 单 seed watch 解释为 promotion-ready。
+
+结论：
+
+- guarded bridge 的当前状态从“2506 可见候选”进一步收紧为“2506 候选必须通过 stability matrix 后才可讨论 sampler shadow design”。
+- 下一步优先用 cache 长跑 256-trial 多 seed 矩阵，或增加 2506 live/archive support 后复跑；formal/value active path 继续暂停。

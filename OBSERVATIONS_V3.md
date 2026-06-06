@@ -3158,3 +3158,58 @@ metric_rows=0
 - 64-trial seed 1 的 2501 false selection 是明确反例；readiness 中 64-trial seed 0 的 watch 只能表示候选可见，不能表示 seed-stable。
 - 256-trial 多 seed 已给出方向性证据，但 9 条 outer holdout support 远低于 promotion 所需样本深度。
 - 当前可进入下一阶段的只有 2506 shadow live/archive accumulation；formal/value active sampler、正式出价和 v2 归档仍无依据。
+
+## O-v3-085：64-trial stability smoke 明确捕捉 seed1 的 2501 false selection
+
+2026-06-06 运行 guarded bridge stability 矩阵默认 smoke：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --formal-lift-cap 10000
+```
+
+首次真实 archive run：
+
+```text
+overall_status=blocked_applied_hurt
+reasons=applied_hurts_present,non_watch_run,selected_group_drift
+runs=2
+watch_runs=1
+trials=64
+seeds=0,1
+required_groups=2506
+stable_groups=2506
+union_groups=2501,2506
+min_applied=20
+min_required=20
+signatures=2501:1,2506:2=1;2506:3=1
+
+seed=0:
+status=watch
+selected=2506
+applied_rows=20
+delta_mae=-6000.0
+bridge_over=0.25
+applied_hurts=-
+
+seed=1:
+status=blocked_holdout_hurt
+selected=2501,2506
+applied_rows=62
+delta_mae=378.95
+bridge_over=0.580645
+applied_hurts=2501
+```
+
+同配置 cache 复跑：
+
+```text
+runtime约4s
+cache_hit=True for seed 0/1
+```
+
+解读：
+
+- stability smoke 与 O-v3-084 的手工审计一致，能自动把 seed1 的 2501 false selection 标为 blocker。
+- `stable_groups=2506` 只是交集仍包含 2506；`union_groups=2501,2506` 和 `applied_hurts=2501` 证明当前低 trial 配置不稳定。
+- `.tmp/codex/v3_scp_guarded_bridge_stability` cache 已验证可用，后续可用于 256-trial 多 seed 长跑断点复用。
+- 本轮 256-trial seeds 0/1/7 矩阵初跑超过 300 秒，尚未形成新的矩阵化证据；promotion 仍依赖后续长跑和样本扩充。

@@ -41,6 +41,7 @@
 | `scripts/summarize_v3_scp_count_value_bridge.py` | v3 settlement count-prior count->cells/value bridge archive 审计，量化 count gap、cells p90 undercoverage 与 formal p90 undercoverage 的交集 |
 | `scripts/summarize_v3_scp_count_value_bridge_holdout.py` | v3 settlement count-prior count->cells/value bridge session holdout，验证 bridge floor 对 formal MAE/p90/over-rate 的影响，并支持 audit-only `floor_mode`/`formal_lift_cap` guard probe |
 | `scripts/summarize_v3_scp_guarded_bridge_holdout.py` | v3 settlement count-prior nested train-only guarded bridge holdout，要求 inner crossfit 各折稳定且 train over-rate 不增加，只输出 shadow readiness evidence |
+| `scripts/summarize_v3_scp_guarded_bridge_stability.py` | v3 guarded bridge posterior trial/seed stability 矩阵审计，汇总 selected group drift、applied hurt、support depth，并使用 `.tmp/codex/` per-run cache |
 | `scripts/build_v3_settlement_count_prior_shadow.py` | 从 default archive 与 activity cohort 构建 `data/processed/v3_settlement_count_prior_shadow.json` |
 | `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift`、`settlement_count_formal_value_link`、原始/guarded `settlement_count_cells_value_bridge` holdout 与 `formal_value_sampler_holdout` gate |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
@@ -79,6 +80,7 @@
 | `tests/test_summarize_v3_scp_count_value_bridge.py` | v3 settlement count-prior count->cells/value bridge 审计测试 |
 | `tests/test_summarize_v3_scp_count_value_bridge_holdout.py` | v3 settlement count-prior count->cells/value bridge holdout 测试，覆盖 train-only floor、extra floor 与 formal lift cap |
 | `tests/test_summarize_v3_scp_guarded_bridge_holdout.py` | v3 nested train-only guarded bridge holdout 测试，覆盖 inner crossfit group selection 与无指标样本分流 |
+| `tests/test_summarize_v3_scp_guarded_bridge_stability.py` | v3 guarded bridge trial/seed stability 矩阵测试，覆盖 exact group 稳定、hurt run 与 low-support blocker |
 | `tests/test_build_v3_settlement_count_prior_shadow.py` | v3 settlement count-prior processed artifact builder 测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
@@ -142,9 +144,9 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 
 当前脚本规模：
 
-- Python scripts：109
+- Python scripts：110
 - PowerShell scripts：13
-- test files：115
+- test files：116
 
 策略：
 

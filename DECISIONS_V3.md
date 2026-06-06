@@ -1841,3 +1841,24 @@ applied_hurts=2502
 - all-inner-fold + zero train over-increase + 10000 lift cap 在 64-trial seed 0 下只选择 2506，`applied_rows=20`、`delta_formal_p50_mae=-6000.0`、无 hurt group，但不同 seed 不稳定。
 - 256-trial seeds 0/1/7 均只选择 2506，`applied_rows=9`，MAE delta 分别为 `-4602.026/-5555.556/-3333.333`，无 hurt group。
 - readiness 仍为 `overall_status=not_ready`、`blocked_gates=12`；新增 guarded gate 只为 `watch` 信息，不减少 blocker。
+
+## D-v3-080：guarded bridge 必须通过 trial/seed stability 矩阵，不得用单 seed watch 代替
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_scp_guarded_bridge_stability.py` 是 guarded bridge promotion 前的显式 trial/seed stability 审计入口。
+- 默认 smoke 使用 `64 trials x seeds 0/1`，用于快速 falsify seed stability；它不是 promotion evidence。
+- promotion 前必须运行更高 trial 的多 seed 矩阵，例如 `256 trials x seeds 0/1/7`，并同时满足：
+  - 每个 run 都是 `watch`；
+  - selected group 精确保持为 2506；
+  - 无 applied hurt group；
+  - outer holdout applied support 达到最低样本门槛。
+- readiness 的 `settlement_count_guarded_bridge_holdout=watch` 只代表单 seed 可见候选；不得替代 stability 矩阵。
+- stability 矩阵使用 `.tmp/codex/v3_scp_guarded_bridge_stability` 保存 per-run cache，便于长跑断点复用；该 cache 是本地临时证据，不提交。
+- 在 64-trial seed 1 仍会误选 2501 的情况下，guarded bridge 不能进入 active sampler、live decision 或正式出价。
+
+原因：
+
+- 默认 stability smoke 复现：seed 0 只选 2506 且 watch，seed 1 选择 `2501,2506` 且 2501 applied hurt。
+- 单 seed readiness 当前只覆盖 seed 0；它不能证明 posterior seed 稳定。
+- 256-trial 多 seed 的历史单跑证据方向较好，但本轮三 seed 矩阵首次运行超过 300 秒；必须依赖 cache/长跑完成矩阵化复核后才能作为 promotion 证据。
