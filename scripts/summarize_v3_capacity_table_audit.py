@@ -530,6 +530,203 @@ def _residual_mode_summary(
     }
 
 
+_MATRIX_FIELDS = (
+    "consistency_bucket",
+    "residual_mode",
+    "map_family",
+    "total_count_source",
+    "full_action_signal",
+    "public_total_signal",
+    "capture_day",
+)
+
+
+def _matrix_signal(value: bool, *, positive: str, negative: str) -> str:
+    return positive if value else negative
+
+
+def _diag_for_row(
+    row: Mapping[str, Any],
+    *,
+    resolved_by_ref: Mapping[str, Path | None],
+    diagnostics_by_path: Mapping[Path, Mapping[str, Any]],
+) -> Mapping[str, Any] | None:
+    ref = _strip_row_file_ref(row.get("file"))
+    path = resolved_by_ref.get(ref)
+    if path is None:
+        return None
+    return diagnostics_by_path.get(path)
+
+
+def _file_label(row: Mapping[str, Any]) -> str:
+    ref = _strip_row_file_ref(row.get("file"))
+    return Path(ref).name if ref else "none"
+
+
+def _matrix_cell_status(
+    *,
+    capacity_rows: Iterable[Mapping[str, Any]],
+    diagnostics: Iterable[Mapping[str, Any]],
+) -> str:
+    capacity_seq = tuple(capacity_rows)
+    diag_seq = tuple(diagnostics)
+    if not diag_seq:
+        return "needs_raw_inventory_verification"
+    non_zodiac_missing = max(
+        (
+            _float_or_none(diag.get("non_zodiac_missing_from_drop_universe_count"))
+            or 0.0
+        )
+        for diag in diag_seq
+    )
+    if non_zodiac_missing > 0.0:
+        return "blocked_drop_universe_gap_after_temp"
+    round_after_temp = max(
+        (
+            _float_or_none(diag.get("round_cap_excess_after_temp_zodiac_count"))
+            or 0.0
+        )
+        for diag in diag_seq
+    )
+    if round_after_temp > 0.0:
+        return "blocked_round_cap_overflow_after_temp"
+    drop_after_temp = max(
+        (
+            _float_or_none(diag.get("drop_ref_excess_after_temp_zodiac_count"))
+            or 0.0
+        )
+        for diag in diag_seq
+    )
+    if drop_after_temp > 0.0:
+        return "blocked_drop_ref_overflow_after_temp"
+    temp_zodiac = max(
+        (_float_or_none(diag.get("known_temp_zodiac_count")) or 0.0)
+        for diag in diag_seq
+    )
+    has_capacity_gap = any(
+        (_float_or_none(row.get("truth_prior_max_delta")) or 0.0) > 0.0
+        for row in capacity_seq
+    )
+    if has_capacity_gap and temp_zodiac > 0.0:
+        return "watch_activity_extras_explain_drop_ref_gap"
+    return "pass_table_caps_cover_verified_inventory"
+
+
+def _capacity_semantic_matrix(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    diagnostics_by_path: Mapping[Path, Mapping[str, Any]],
+    resolved_by_ref: Mapping[str, Path | None],
+    top: int,
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, ...], list[tuple[Mapping[str, Any], Mapping[str, Any] | None]]] = (
+        defaultdict(list)
+    )
+    for row in rows:
+        capacity = row.get("item_count_capacity", {})
+        diag = _diag_for_row(
+            row,
+            resolved_by_ref=resolved_by_ref,
+            diagnostics_by_path=diagnostics_by_path,
+        )
+        residual_mode = _residual_mode(diag) if diag is not None else "not_checked"
+        full_action_signal = _matrix_signal(
+            bool(tuple((diag or {}).get("full_observed_action_ids", ()) or ())),
+            positive="has_full_action",
+            negative="no_full_action",
+        )
+        public_total_signal = _matrix_signal(
+            bool(tuple((diag or {}).get("public_total_count_values", ()) or ())),
+            positive="has_public_total",
+            negative="no_public_total",
+        )
+        key = (
+            str(row.get("consistency_bucket") or "none"),
+            residual_mode,
+            _map_family(row.get("map_id")),
+            str(capacity.get("total_count_source") or "none"),
+            full_action_signal,
+            public_total_signal,
+            _capture_day(row.get("file")) or "none",
+        )
+        grouped[key].append((row, diag))
+
+    matrix: list[dict[str, Any]] = []
+    for key, entries in grouped.items():
+        source_rows = [entry[0] for entry in entries]
+        diags = [entry[1] for entry in entries if entry[1] is not None]
+        capacity_rows = [row.get("item_count_capacity", {}) for row in source_rows]
+        unique_files = sorted({_file_label(row) for row in source_rows})
+        cell_status = _matrix_cell_status(
+            capacity_rows=capacity_rows,
+            diagnostics=diags,
+        )
+        matrix.append(
+            {
+                **dict(zip(_MATRIX_FIELDS, key)),
+                "rows": len(source_rows),
+                "files": len(unique_files),
+                "semantic_status_counts": {cell_status: len(source_rows)},
+                "map_ids": _counter_dict(
+                    (row.get("map_id") for row in source_rows),
+                    top=top,
+                ),
+                "capacity_cases": _counter_dict(
+                    case
+                    for row in source_rows
+                    for case in _capacity_cases(row)
+                ),
+                "target_truth_delta_counts": _delta_counts(
+                    row.get("target_truth_delta") for row in capacity_rows
+                ),
+                "truth_prior_max_delta": _numeric_summary(
+                    row.get("truth_prior_max_delta") for row in capacity_rows
+                ),
+                "latest_item_count": _numeric_summary(
+                    diag.get("latest_item_count") for diag in diags
+                ),
+                "drop_ref_excess_after_temp_zodiac_count": _numeric_summary(
+                    diag.get("drop_ref_excess_after_temp_zodiac_count")
+                    for diag in diags
+                ),
+                "round_cap_excess_after_temp_zodiac_count": _numeric_summary(
+                    diag.get("round_cap_excess_after_temp_zodiac_count")
+                    for diag in diags
+                ),
+                "non_zodiac_missing_from_drop_universe_count": _numeric_summary(
+                    diag.get("non_zodiac_missing_from_drop_universe_count")
+                    for diag in diags
+                ),
+                "known_temp_zodiac_count": _numeric_summary(
+                    diag.get("known_temp_zodiac_count") for diag in diags
+                ),
+                "full_observed_action_counts": _counter_dict(
+                    action_id
+                    for diag in diags
+                    for action_id in diag.get("full_observed_action_ids", ())
+                ),
+                "public_total_count_values": _counter_dict(
+                    value
+                    for diag in diags
+                    for value in diag.get("public_total_count_values", ())
+                ),
+                "example_files": unique_files[:top],
+            }
+        )
+    return sorted(
+        matrix,
+        key=lambda row: (
+            -int(row["rows"]),
+            -int(row["files"]),
+            str(row["consistency_bucket"]),
+            str(row["residual_mode"]),
+            str(row["map_family"]),
+            str(row["total_count_source"]),
+            str(row["capture_day"]),
+        ),
+    )[:top]
+
+
 def _summary_max(summary: Any) -> float | None:
     if not isinstance(summary, Mapping):
         return None
@@ -902,6 +1099,12 @@ def _inventory_diagnostics_for_rows(
             diagnostics,
             top=top,
         ),
+        "capacity_semantic_matrix": _capacity_semantic_matrix(
+            seq,
+            diagnostics_by_path=diagnostics_by_path,
+            resolved_by_ref=resolved_by_ref,
+            top=top,
+        ),
     }
 
 
@@ -1180,6 +1383,104 @@ def _format_residual_mode_rows(summary: Mapping[str, Any]) -> str:
     return "|".join(parts) or "-"
 
 
+def _merge_capacity_semantic_matrix(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    top: int,
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, ...], dict[str, Any]] = {}
+    for row in rows:
+        for item in row.get("capacity_semantic_matrix", ()):
+            key = tuple(str(item.get(field) or "none") for field in _MATRIX_FIELDS)
+            if key not in grouped:
+                grouped[key] = {
+                    **dict(zip(_MATRIX_FIELDS, key)),
+                    "rows": 0,
+                    "files": 0,
+                    "map_ids": Counter(),
+                    "capacity_cases": Counter(),
+                    "semantic_status_counts": Counter(),
+                    "example_files": [],
+                }
+            acc = grouped[key]
+            acc["rows"] += int(item.get("rows") or 0)
+            acc["files"] += int(item.get("files") or 0)
+            acc["map_ids"].update(
+                {str(key): int(value) for key, value in item.get("map_ids", {}).items()}
+            )
+            acc["capacity_cases"].update(
+                {
+                    str(key): int(value)
+                    for key, value in item.get("capacity_cases", {}).items()
+                }
+            )
+            acc["semantic_status_counts"].update(
+                {
+                    str(key): int(value)
+                    for key, value in item.get("semantic_status_counts", {}).items()
+                }
+            )
+            for example in item.get("example_files", ()):
+                if example not in acc["example_files"]:
+                    acc["example_files"].append(example)
+
+    out: list[dict[str, Any]] = []
+    for acc in grouped.values():
+        out.append(
+            {
+                **{field: acc[field] for field in _MATRIX_FIELDS},
+                "rows": acc["rows"],
+                "files": acc["files"],
+                "map_ids": dict(
+                    sorted(
+                        acc["map_ids"].items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )[:top]
+                ),
+                "capacity_cases": dict(
+                    sorted(
+                        acc["capacity_cases"].items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )[:top]
+                ),
+                "semantic_status_counts": dict(
+                    sorted(
+                        acc["semantic_status_counts"].items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )[:top]
+                ),
+                "example_files": acc["example_files"][:top],
+            }
+        )
+    return sorted(
+        out,
+        key=lambda row: (
+            -int(row["rows"]),
+            -int(row["files"]),
+            str(row["consistency_bucket"]),
+            str(row["residual_mode"]),
+            str(row["map_family"]),
+            str(row["total_count_source"]),
+            str(row["capture_day"]),
+        ),
+    )[:top]
+
+
+def _format_capacity_semantic_matrix(rows: Iterable[Mapping[str, Any]]) -> str:
+    parts = []
+    for row in rows:
+        key = "/".join(str(row.get(field) or "none") for field in _MATRIX_FIELDS)
+        parts.append(
+            (
+                f"{key}:rows={row['rows']}"
+                f"/files={row['files']}"
+                f"/maps={_format_counts(row['map_ids'])}"
+                f"/statuses={_format_counts(row['semantic_status_counts'])}"
+            )
+        )
+    return "|".join(parts) or "-"
+
+
 def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
     for row in tuple(rows)[:top]:
         print(
@@ -1283,6 +1584,10 @@ def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
                         ",".join(row["capacity_semantic_summary"]["findings"])
                         or "-"
                     ),
+                    "semantic_matrix="
+                    + _format_capacity_semantic_matrix(
+                        row["capacity_semantic_matrix"]
+                    ),
                     f"cases={_format_counts(row['capacity_cases'])}",
                     f"buckets={_format_counts(row['consistency_bucket_counts'])}",
                     f"classes={_format_counts(row['consistency_class_counts'])}",
@@ -1347,6 +1652,7 @@ def main(argv: list[str] | None = None) -> int:
         "errors": errors,
         "case": args.case,
         "bucket": args.bucket,
+        "semantic_matrix": _merge_capacity_semantic_matrix(audit, top=args.top),
         "rows": audit,
     }
     if args.format == "json":
@@ -1355,6 +1661,10 @@ def main(argv: list[str] | None = None) -> int:
         if errors:
             print(f"errors={len(errors)}")
         print(f"case={args.case} bucket={args.bucket} groups={len(audit)}")
+        print(
+            "semantic_matrix_all="
+            + _format_capacity_semantic_matrix(result["semantic_matrix"])
+        )
         _print_summary(audit, top=args.top)
     return 1 if errors else 0
 

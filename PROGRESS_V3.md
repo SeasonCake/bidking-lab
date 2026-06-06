@@ -5778,3 +5778,63 @@ drop_universe_covered_after_temp_zodiac
 - 当前 blocker 已从“是不是 BidMap col[16] 或 DropEntry n_max 解释”推进到“server settlement expansion/session-cap semantics 或 table/version overlay 如何解释 after-temp final inventory count”。
 - 2501/2506/2601 的 direct hard conflict 不能通过调 formal/value sampler 参数解决。
 - 下一步应围绕 settlement generation/round-cap semantics 做 shadow-only 证据或合成/源码审计；promotion/readiness 仍保持 blocked。
+
+## 2026-06-06 checkpoint：capacity semantic matrix 聚合
+
+本轮在 per-map `capacity_semantic_summary` 之上新增 matrix 视图，按 evidence/source/action/public-total 组合拆开 prior-stressed capacity blocker。该改动仍是 v3 audit/readiness 解释，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_capacity_table_audit.py` 新增 `capacity_semantic_matrix`：
+  - `consistency_bucket`
+  - `residual_mode`
+  - `map_family`
+  - `total_count_source`
+  - `full_action_signal`
+  - `public_total_signal`
+  - `capture_day`
+- top-level JSON 增加合并后的 `semantic_matrix`。
+- summary 输出新增 `semantic_matrix_all=...` 与 per-map `semantic_matrix=...`。
+- matrix 的 `semantic_status_counts` 改为 cell-level status，避免 `within_drop_ref` 子集继承 map-level blocked。
+- tests 更新 `tests/test_summarize_v3_capacity_table_audit.py`，覆盖 matrix key、global merge 与 activity-only watch cell。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_capacity_table_audit.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_table_audit.py -q
+python scripts\summarize_v3_capacity_table_audit.py --case direct_prior_max_conflict --bucket hard_capacity_conflict --posterior-trials 64 --top 8 --format summary
+python scripts\summarize_v3_capacity_table_audit.py --case all --bucket lower_bound_under_truth --posterior-trials 64 --top 8 --format summary
+```
+
+真实 hard matrix 要点：
+
+```text
+hard/round_cap_overflow/shipwreck/exact/no_full_action/has_public_total:
+  rows=5 maps=2501 status=blocked_round_cap_overflow_after_temp
+
+hard/round_cap_overflow/shipwreck/floor/has_full_action/no_public_total:
+  rows=4 maps=2506 status=blocked_round_cap_overflow_after_temp
+
+hard/drop_ref_only_overflow/hidden/exact/has_full_action/no_public_total:
+  rows=3 maps=2601 status=blocked_drop_ref_overflow_after_temp
+```
+
+真实 lower matrix 要点：
+
+```text
+lower/drop_ref_only_overflow/villa/floor/no_full_action/no_public_total:
+  rows=8 maps=2406:4,2401:3,2404:1 status=blocked_drop_ref_overflow_after_temp
+
+lower/round_cap_overflow/shipwreck/floor/no_full_action/no_public_total:
+  rows=6 maps=2508:5,2504:1 status=blocked_round_cap_overflow_after_temp
+
+within_drop_ref cells:
+  status=watch_activity_extras_explain_drop_ref_gap
+```
+
+结论：
+
+- hard bucket 的 highest-signal cells 分别指向 public-total exact、full-action floor、hidden-map action evidence，不应合并成单一 capacity 修正。
+- lower bucket 主要是 floor/no-action/no-public 的 drop-ref/round-cap overflow，应优先查 target completeness 与 settlement expansion 分离。
+- 下一步可以按 matrix cell 设计更窄的 shadow-only source/expansion diagnostic；formal/value sampler 参数调优继续暂停。

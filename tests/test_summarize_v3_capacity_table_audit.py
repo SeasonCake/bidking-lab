@@ -291,6 +291,30 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
     assert semantic["status"] == "blocked_drop_ref_overflow_after_temp"
     assert semantic["blockers"] == ["drop_ref_max_below_verified_inventory"]
     assert "current_v300_drop_ref_col17" not in semantic["findings"]
+    matrix = row["capacity_semantic_matrix"]
+    assert len(matrix) == 1
+    cell = matrix[0]
+    assert cell["consistency_bucket"] == "hard_capacity_conflict"
+    assert cell["residual_mode"] == "drop_ref_only_overflow"
+    assert cell["map_family"] == "hidden"
+    assert cell["total_count_source"] == "exact"
+    assert cell["full_action_signal"] == "has_full_action"
+    assert cell["public_total_signal"] == "has_public_total"
+    assert cell["capture_day"] == "20260606"
+    assert cell["rows"] == 1
+    assert cell["files"] == 1
+    assert cell["map_ids"] == {"2601": 1}
+    assert cell["capacity_cases"] == {"direct_prior_max_conflict": 1}
+    assert cell["semantic_status_counts"] == {
+        "blocked_drop_ref_overflow_after_temp": 1
+    }
+    assert cell["latest_item_count"]["max"] == 2
+    assert cell["drop_ref_excess_after_temp_zodiac_count"]["max"] == 1
+    merged = module._merge_capacity_semantic_matrix(result, top=8)
+    assert merged[0]["rows"] == 1
+    assert merged[0]["semantic_status_counts"] == {
+        "blocked_drop_ref_overflow_after_temp": 1
+    }
 
 
 def test_capacity_table_audit_filters_selected_case() -> None:
@@ -553,3 +577,8 @@ def test_capacity_table_audit_marks_activity_extras_when_zodiac_covers_gap(
     assert semantic["status"] == "watch_activity_extras_explain_drop_ref_gap"
     assert semantic["blockers"] == []
     assert "temporary_zodiac_explains_drop_ref_gap" in semantic["findings"]
+    matrix = result[0]["capacity_semantic_matrix"]
+    assert matrix[0]["residual_mode"] == "within_drop_ref"
+    assert matrix[0]["semantic_status_counts"] == {
+        "watch_activity_extras_explain_drop_ref_gap": 1
+    }

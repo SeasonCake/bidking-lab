@@ -2228,3 +2228,17 @@ applied_hurts=2502
 - current raw v300 中 `col[16]` 是 `[[]]`，drop-ref 是 `col[17]`；重复围绕旧 `col[16]` 口径会浪费验证时间。
 - prior-stressed top maps 的 flattened leaf `n_max=1`，不是多件 DropEntry 遗漏导致 settlement count 超过 sampler possible max。
 - 真实 0x002D settlement inventory 与 detail truth 对齐，且部分 map 扣除 zodiac 后仍超过 round-cap candidate；后续必须查 server settlement expansion/session-cap semantics 或 table/version overlay，而不是调 formal/value sampler 参数。
+
+## D-v3-104：capacity semantic matrix 用 cell status，不继承 map status
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_capacity_table_audit.py` 必须输出 `capacity_semantic_matrix`，按 `consistency_bucket × residual_mode × map_family × total_count_source × full_action_signal × public_total_signal × capture_day` 聚合。
+- matrix cell 的 `semantic_status_counts` 必须由该 cell 内 raw diagnostics 计算，不能继承整张 map 的 `capacity_semantic_summary.status`。
+- `within_drop_ref` cell 如果扣除临时 zodiac extras 后已被解释，只能标为 `watch_activity_extras_explain_drop_ref_gap` 或 pass；不能因为同 map 其它 session overflow 而标成 blocked。
+- top-level JSON 增加 `semantic_matrix`，summary 增加 `semantic_matrix_all=...`；这仍是 audit/readiness 解释，不改变 sampler、formal/value shadow、v2 formal/live/UI 或正式出价。
+
+原因：
+
+- 同一 map 内可以同时存在 `drop_ref_only_overflow`、`round_cap_overflow` 和 `within_drop_ref` 子集。
+- 后续要判断 session-cap/drop-ref 语义、settlement expansion、activity overlay，应按 cell 追 evidence/source/action/public-total，而不是把 map-level blocked 当成所有子集的原因。

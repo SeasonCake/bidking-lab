@@ -4384,3 +4384,51 @@ case=direct_prior_max_conflict bucket=hard_capacity_conflict groups=10
 - 0x002D raw candidate count 与 occupied slot count 均匹配 parsed inventory，detail truth 也匹配 latest inventory；这支持 settlement truth count 是真实 final occupied inventory count。
 - 这些 top blocker 扣除临时 zodiac extras 后仍超过 `col[14]` round-cap candidate，因此 `items_per_session_max` 与 round-cap candidate 都不能当作 final settlement inventory hard cap。
 - `2401` 展示了另一类情况：该 map 的 drop-ref gap 可被临时 zodiac extras 解释，应作为 watch，不应和 after-temp blocker 混为一类。
+
+## O-v3-108：capacity semantic matrix 拆出 source/action/public-total cell
+
+2026-06-06 给 `summarize_v3_capacity_table_audit.py` 增加 `capacity_semantic_matrix` 后，复跑 hard 与 lower bucket：
+
+```powershell
+python scripts\summarize_v3_capacity_table_audit.py --case direct_prior_max_conflict --bucket hard_capacity_conflict --posterior-trials 64 --top 8 --format summary
+python scripts\summarize_v3_capacity_table_audit.py --case all --bucket lower_bound_under_truth --posterior-trials 64 --top 8 --format summary
+```
+
+hard bucket 关键 matrix cells：
+
+```text
+hard_capacity_conflict/round_cap_overflow/shipwreck/exact/no_full_action/has_public_total/none:
+  rows=5 files=1 maps=2501:5 status=blocked_round_cap_overflow_after_temp
+
+hard_capacity_conflict/round_cap_overflow/shipwreck/floor/has_full_action/no_public_total/none:
+  rows=4 files=1 maps=2506:4 status=blocked_round_cap_overflow_after_temp
+
+hard_capacity_conflict/drop_ref_only_overflow/hidden/exact/has_full_action/no_public_total/none:
+  rows=3 files=2 maps=2601:3 status=blocked_drop_ref_overflow_after_temp
+
+hard_capacity_conflict/within_drop_ref/villa/exact/has_full_action/no_public_total/none:
+  rows=2 files=1 maps=2401:2 status=watch_activity_extras_explain_drop_ref_gap
+```
+
+lower bucket 关键 matrix cells：
+
+```text
+lower_bound_under_truth/drop_ref_only_overflow/villa/floor/no_full_action/no_public_total/none:
+  rows=8 files=4 maps=2406:4,2401:3,2404:1 status=blocked_drop_ref_overflow_after_temp
+
+lower_bound_under_truth/drop_ref_only_overflow/villa/none/no_full_action/no_public_total/none:
+  rows=8 files=3 maps=2404:4,2410:3,2401:1 status=blocked_drop_ref_overflow_after_temp
+
+lower_bound_under_truth/round_cap_overflow/shipwreck/floor/no_full_action/no_public_total/none:
+  rows=6 files=3 maps=2508:5,2504:1 status=blocked_round_cap_overflow_after_temp
+
+lower_bound_under_truth/within_drop_ref/shipwreck/floor/no_full_action/no_public_total/none:
+  rows=1 files=1 maps=2501:1 status=watch_activity_extras_explain_drop_ref_gap
+```
+
+解读：
+
+- hard 2501 的 strongest cell 带 `public_total` 且仍 round-cap overflow，优先查 public-total/settlement truth 与 round-cap semantics。
+- hard 2506 的 strongest cell 是 floor + full action + round-cap overflow，优先查 action mirror / settlement expansion，而不是公开总数。
+- lower bucket 的 villa/shipwreck 主要是 floor/no-action/no-public 的 drop-ref overflow，和 hard bucket 的 direct exact/public/action 证据形态不同。
+- `within_drop_ref` cell 已按 cell-level status 标为 activity watch，未再继承 map-level blocked；这避免把可解释子集误当成 promotion blocker。
