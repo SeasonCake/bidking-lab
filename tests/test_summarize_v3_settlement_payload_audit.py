@@ -77,4 +77,13 @@ def test_inventory_block_metrics_counts_slots_candidates_and_duplicates() -> Non
     assert result["occupied_slot_count"] == 2
     assert result["raw_item_candidate_count"] == 2
     assert result["raw_duplicate_runtime_item_pair_count"] == 1
+    assert result["occupied_slot_field_shapes"] == {
+        "1:0:i,2:2:b,3:2:b": 1,
+        "3:2:b": 1,
+    }
+    assert result["empty_slot_field_shapes"] == {"2:2:b": 1}
+    assert result["occupied_slot_int_field_counts"] == {"1": 1}
+    assert result["empty_slot_int_field_counts"] == {}
+    assert result["occupied_slot_int_value_counts"] == {"1=7": 1}
+    assert result["candidate_path_counts"] == {"3": 2}
     assert result["item_field_signatures"]

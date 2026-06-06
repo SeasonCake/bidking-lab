@@ -6200,3 +6200,74 @@ activity capture:
 - 本机游戏源已从项目 raw v300 变为 v303，且 v303 BidMap 新增 `2521-2530` / `4521-4530`。
 - v303 的 default priority maps `2401/2501/2506/2508/2601` drop-ref 与 round-cap 未相对 v300 变化，reachable Drop leaf `n_max` 仍为 1；因此 v303 不能直接解释 default 24xx/25xx/2601 after-temp over-cap。
 - v303 中 252x/452x BidMap 存在但 Drop pool 仍缺失，说明 activity cohort 仍应保留为独立 missing-drop/activity overlay lane，不能 fallback 到 default 250x prior，也不能进入 promotion/readiness 分母。
+
+## 2026-06-06 checkpoint：settlement slot/source shape residual 下钻
+
+本轮继续增强 settlement raw payload 与 count-prior candidate 审计，把 field[4] inventory block 内每个 slot 的 occupied/empty shape、slot 顶层 int fields、item candidate path 接入 residual-mode 聚合。该改动仍是 v3 audit-only，不改变 parser 正式路径、不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_settlement_payload_audit.py`：
+  - item candidate 增加递归 field path；
+  - inventory block metrics 增加 occupied/empty slot field shapes；
+  - inventory block metrics 增加 occupied/empty slot 顶层 int field 与 `field=value` 摘要；
+  - summary 输出聚合后的 candidate path 与 slot/source shape。
+- `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - residual-mode/round/session 分组复用上述 slot/source metrics；
+  - summary 在 payload field-shape 前输出 occupied/empty slot shape、slot int fields 与 candidate paths。
+- `tests/test_summarize_v3_settlement_payload_audit.py` 增加 occupied/empty slot shape、slot int fields、candidate path 覆盖。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_payload_audit.py scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py -q
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 4 --format summary
+```
+
+真实 residual-mode smoke 要点：
+
+```text
+files=441 settlement_rows=441
+slot_counts=300:251,250:186,232:1,252:1
+candidate_paths=3:18310
+residual_modes=within_drop_ref_after_temp:245,drop_ref_only_overflow_after_temp:113,round_cap_overflow_after_temp:59,activity_extras_only_drop_ref_gap:24
+above_drop_after_temp=172
+above_round_after_temp=59
+
+drop_ref_only_overflow_after_temp:
+  files=113
+  payload_mismatch=0/113
+  occupied_slot_shapes=1:0:i,2:2:b,3:2:b:5355,2:2:b,3:2:b:113
+  empty_slot_shapes=1:0:i,2:2:b,3:2:b:25982
+  occupied_slot_int_fields=1:5355
+  empty_slot_int_fields=1:25982
+  candidate_paths=3:5468
+
+round_cap_overflow_after_temp:
+  files=59
+  payload_mismatch=0/59
+  occupied_slot_shapes=1:0:i,2:2:b,3:2:b:3263,2:2:b,3:2:b:59
+  empty_slot_shapes=1:0:i,2:2:b,3:2:b:13728
+  occupied_slot_int_fields=1:3263
+  empty_slot_int_fields=1:13728
+  candidate_paths=3:3322
+
+within_drop_ref_after_temp:
+  files=245
+  payload_mismatch=2/245
+  occupied_slot_shapes=1:0:i,2:2:b,3:2:b:8210,2:2:b,3:2:b:244,1:0:i,2:2:b,2:0:i,3:2:b,3:2:b:1
+  empty_slot_shapes=1:0:i,2:2:b,3:2:b:59232,:2,1:0:i,2:2:b,2:0:i:1,1:0:i,2:2:b,4:2:b,6:0:i,9:0:i,3:2:b,3:2:b,3:2:b:1
+  occupied_slot_int_fields=1:8211,2:1
+  empty_slot_int_fields=1:59234,2:1,6:1,9:1
+  candidate_paths=3:8455
+```
+
+解读：
+
+- 所有 residual groups 的 item candidates 都位于 slot child path `3`；over-cap groups 没有出现不同的 candidate path。
+- over-cap groups 的 dominant occupied/empty slot shapes 与 within-cap groups 相同；slot 顶层 int field 主要是 `1`，更像 local index，不像 source/activity/expansion marker。
+- 少量额外 int fields `2/6/9` 只出现在 within-cap/overall，不出现在 over-cap groups，不能解释 over-cap。
+- 当前 field[4] slot/source shape 继续排除 parser 膨胀或 over-cap 专属 slot marker；blocker 仍在 server-side settlement occupancy/source semantics 或外部 overlay table 机制。
+- formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。

@@ -2350,3 +2350,20 @@ applied_hurts=2502
 - v303 smoke 显示 `raw_file_version=303`、`BidMap rows=165`、`col16=[[]]`、`col17_drop_ref_like=165`。
 - `2521-2530` 与 `4521-4530` 均为 `bidmap_present=10`、`drop_present=0`、`drop_ref_pairs=22-44:10`。
 - `2401/2501/2506/2508/2601` 的 v303 drop-ref/round-cap 与 v300 相同，且 Drop target leaf `n_max=1`；default over-cap 仍需查 server-side settlement occupancy/source semantics。
+
+## D-v3-112：slot/source shape 不能作为 over-cap 解释或 promotion evidence
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_payload_audit.py` 必须在 inventory block metrics 中输出 occupied/empty slot field shapes、occupied/empty slot 顶层 int fields、candidate paths，并保留 raw candidate/occupied/dedup mismatch 摘要。
+- `summarize_v3_settlement_count_prior_candidates.py` 必须把上述 slot/source metrics 接入 residual-mode/round/session 分组，和 payload field-shape、public-total、full-action evidence 一起比较。
+- 如果 over-cap groups 与 within-cap groups 共享 dominant slot shape、candidate path 与 slot int-field 形态，则不能把 capacity blocker 归因于 field[4] 内部的 over-cap 专属 source、award、activity 或 expansion marker。
+- 这些 slot/source metrics 只能排除 parser/slot marker 类解释，不能作为 sampler cap 修正、readiness 放行或 promotion evidence。
+- formal/value sampler 参数调优继续暂停，直到 server-side settlement occupancy/source semantics、per-session table version 或外部 overlay table 机制有可复核解释。
+
+原因：
+
+- 真实 residual smoke 中所有 item candidates 都位于 slot child path `3`，overall 为 `candidate_paths=3:18310`。
+- `drop_ref_only_overflow_after_temp` 与 `round_cap_overflow_after_temp` 的 occupied/empty slot dominant shapes 与 `within_drop_ref_after_temp` 相同。
+- over-cap groups 的 slot 顶层 int field 主要只有 field `1`；少量 field `2/6/9` 只在 within-cap/overall 出现，不是 over-cap 专属 marker。
+- 这说明当前 0x002D field[4] slot structure 没有暴露可直接用于 sampler/readiness 的 over-cap source 语义。

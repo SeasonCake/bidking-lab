@@ -92,7 +92,7 @@ def _field_signature(fields: Sequence[tuple[int, int, Any]]) -> str:
     return ",".join(pieces)
 
 
-def _item_candidate_from_bytes(data: bytes) -> dict[str, Any] | None:
+def _item_candidate_from_bytes(data: bytes, *, path: tuple[int, ...]) -> dict[str, Any] | None:
     fields = _parse_fields(data)
     ints: dict[int, list[int]] = defaultdict(list)
     byte_fields: dict[int, list[bytes]] = defaultdict(list)
@@ -109,19 +109,56 @@ def _item_candidate_from_bytes(data: bytes) -> dict[str, Any] | None:
         "quality": ints.get(9, [None])[0],
         "cells": len(byte_fields.get(4, ())),
         "signature": _field_signature(fields),
+        "path": ".".join(str(item) for item in path) or "root",
     }
 
 
-def _collect_item_candidates(data: bytes, *, depth: int = 0) -> list[dict[str, Any]]:
+def _int_field_counts(fields: Sequence[tuple[int, int, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter(
+        str(field_no)
+        for field_no, _wire_type, value in fields
+        if isinstance(value, int)
+    )
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:8])
+
+
+def _int_field_value_counts(fields: Sequence[tuple[int, int, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter(
+        f"{field_no}={value}"
+        for field_no, _wire_type, value in fields
+        if isinstance(value, int)
+    )
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:8])
+
+
+def _merge_count_mappings(mappings: Iterable[Mapping[str, int]], *, top: int = 8) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for mapping in mappings:
+        counts.update({str(key): int(value) for key, value in mapping.items()})
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:top])
+
+
+def _collect_item_candidates(
+    data: bytes,
+    *,
+    depth: int = 0,
+    path: tuple[int, ...] = (),
+) -> list[dict[str, Any]]:
     if depth > 8:
         return []
-    direct = _item_candidate_from_bytes(data)
+    direct = _item_candidate_from_bytes(data, path=path)
     if direct is not None:
         return [direct]
     out: list[dict[str, Any]] = []
-    for _field_no, _wire_type, value in _parse_fields(data):
+    for field_no, _wire_type, value in _parse_fields(data):
         if isinstance(value, bytes):
-            out.extend(_collect_item_candidates(value, depth=depth + 1))
+            out.extend(
+                _collect_item_candidates(
+                    value,
+                    depth=depth + 1,
+                    path=(*path, field_no),
+                )
+            )
     return out
 
 
@@ -133,6 +170,13 @@ def _inventory_block_metrics(block: Any) -> dict[str, Any]:
             "raw_item_candidate_count": None,
             "raw_duplicate_runtime_item_pair_count": None,
             "slot_field_shapes": {},
+            "occupied_slot_field_shapes": {},
+            "empty_slot_field_shapes": {},
+            "occupied_slot_int_field_counts": {},
+            "empty_slot_int_field_counts": {},
+            "occupied_slot_int_value_counts": {},
+            "empty_slot_int_value_counts": {},
+            "candidate_path_counts": {},
             "item_field_signatures": {},
         }
     fields = _parse_fields(block)
@@ -144,13 +188,27 @@ def _inventory_block_metrics(block: Any) -> dict[str, Any]:
     occupied_slots = 0
     candidates: list[dict[str, Any]] = []
     slot_shapes: Counter[str] = Counter()
+    occupied_slot_shapes: Counter[str] = Counter()
+    empty_slot_shapes: Counter[str] = Counter()
+    occupied_int_fields: Counter[str] = Counter()
+    empty_int_fields: Counter[str] = Counter()
+    occupied_int_values: Counter[str] = Counter()
+    empty_int_values: Counter[str] = Counter()
     for slot in slots:
         slot_fields = _parse_fields(slot)
-        slot_shapes[_field_signature(slot_fields)] += 1
+        slot_signature = _field_signature(slot_fields)
+        slot_shapes[slot_signature] += 1
         slot_candidates = _collect_item_candidates(slot)
         if slot_candidates:
             occupied_slots += 1
+            occupied_slot_shapes[slot_signature] += 1
+            occupied_int_fields.update(_int_field_counts(slot_fields))
+            occupied_int_values.update(_int_field_value_counts(slot_fields))
             candidates.extend(slot_candidates)
+        else:
+            empty_slot_shapes[slot_signature] += 1
+            empty_int_fields.update(_int_field_counts(slot_fields))
+            empty_int_values.update(_int_field_value_counts(slot_fields))
     pair_counts = Counter(
         (candidate["runtime_id"], candidate["item_id"])
         for candidate in candidates
@@ -162,6 +220,15 @@ def _inventory_block_metrics(block: Any) -> dict[str, Any]:
         "raw_item_candidate_count": len(candidates),
         "raw_duplicate_runtime_item_pair_count": duplicate_pairs,
         "slot_field_shapes": dict(slot_shapes.most_common(8)),
+        "occupied_slot_field_shapes": dict(occupied_slot_shapes.most_common(8)),
+        "empty_slot_field_shapes": dict(empty_slot_shapes.most_common(8)),
+        "occupied_slot_int_field_counts": dict(occupied_int_fields.most_common(8)),
+        "empty_slot_int_field_counts": dict(empty_int_fields.most_common(8)),
+        "occupied_slot_int_value_counts": dict(occupied_int_values.most_common(8)),
+        "empty_slot_int_value_counts": dict(empty_int_values.most_common(8)),
+        "candidate_path_counts": dict(
+            Counter(candidate["path"] for candidate in candidates).most_common(8)
+        ),
         "item_field_signatures": dict(
             Counter(candidate["signature"] for candidate in candidates).most_common(8)
         ),
@@ -330,6 +397,26 @@ def summarize_settlement_payload_audit(
                 "payload_field7_count": _numeric_summary(row.get("payload_field7_count") for row in seq),
                 "payload_field8_count": _numeric_summary(row.get("payload_field8_count") for row in seq),
                 "payload_field20_present_rows": sum(1 for row in seq if row.get("payload_field20_present")),
+                "occupied_slot_field_shapes": _merge_count_mappings(
+                    (row.get("occupied_slot_field_shapes", {}) for row in seq),
+                    top=top,
+                ),
+                "empty_slot_field_shapes": _merge_count_mappings(
+                    (row.get("empty_slot_field_shapes", {}) for row in seq),
+                    top=top,
+                ),
+                "occupied_slot_int_field_counts": _merge_count_mappings(
+                    (row.get("occupied_slot_int_field_counts", {}) for row in seq),
+                    top=top,
+                ),
+                "empty_slot_int_field_counts": _merge_count_mappings(
+                    (row.get("empty_slot_int_field_counts", {}) for row in seq),
+                    top=top,
+                ),
+                "candidate_path_counts": _merge_count_mappings(
+                    (row.get("candidate_path_counts", {}) for row in seq),
+                    top=top,
+                ),
                 "full_observed_actions": dict(
                     sorted(action_counts.items(), key=lambda item: (-item[1], item[0]))[:top]
                 ),
@@ -380,6 +467,26 @@ def summarize_settlement_payload_audit(
             "raw_duplicate_runtime_item_pair_count": _numeric_summary(
                 row.get("raw_duplicate_runtime_item_pair_count") for row in ready
             ),
+            "occupied_slot_field_shapes": _merge_count_mappings(
+                (row.get("occupied_slot_field_shapes", {}) for row in ready),
+                top=top,
+            ),
+            "empty_slot_field_shapes": _merge_count_mappings(
+                (row.get("empty_slot_field_shapes", {}) for row in ready),
+                top=top,
+            ),
+            "occupied_slot_int_field_counts": _merge_count_mappings(
+                (row.get("occupied_slot_int_field_counts", {}) for row in ready),
+                top=top,
+            ),
+            "empty_slot_int_field_counts": _merge_count_mappings(
+                (row.get("empty_slot_int_field_counts", {}) for row in ready),
+                top=top,
+            ),
+            "candidate_path_counts": _merge_count_mappings(
+                (row.get("candidate_path_counts", {}) for row in ready),
+                top=top,
+            ),
         },
         "rows": sorted(
             group_rows,
@@ -406,6 +513,11 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"raw_candidate_delta={_format_summary(overall['raw_candidate_inventory_delta'])}",
                 f"occupied_slot_delta={_format_summary(overall['occupied_slot_inventory_delta'])}",
                 f"raw_dup_pair={_format_summary(overall['raw_duplicate_runtime_item_pair_count'])}",
+                f"occupied_slot_shapes={_format_counts(overall['occupied_slot_field_shapes'])}",
+                f"empty_slot_shapes={_format_counts(overall['empty_slot_field_shapes'])}",
+                f"occupied_slot_int_fields={_format_counts(overall['occupied_slot_int_field_counts'])}",
+                f"empty_slot_int_fields={_format_counts(overall['empty_slot_int_field_counts'])}",
+                f"candidate_paths={_format_counts(overall['candidate_path_counts'])}",
             )
         )
     )
@@ -430,6 +542,11 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"payload_f7={_format_summary(row['payload_field7_count'])}",
                     f"payload_f8={_format_summary(row['payload_field8_count'])}",
                     f"payload_f20_rows={row['payload_field20_present_rows']}/{row['files']}",
+                    f"occupied_slot_shapes={_format_counts(row['occupied_slot_field_shapes'])}",
+                    f"empty_slot_shapes={_format_counts(row['empty_slot_field_shapes'])}",
+                    f"occupied_slot_int_fields={_format_counts(row['occupied_slot_int_field_counts'])}",
+                    f"empty_slot_int_fields={_format_counts(row['empty_slot_int_field_counts'])}",
+                    f"candidate_paths={_format_counts(row['candidate_path_counts'])}",
                     f"full_actions={_format_counts(row['full_observed_actions'])}",
                     f"examples={','.join(row['examples'])}",
                 )

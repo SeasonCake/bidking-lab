@@ -4823,3 +4823,55 @@ priority map 对比：
 - 本机游戏源已更新到 v303，项目 `data/raw` 仍是 v300；0605 晚间 activity capture 与 v303 时间相容。
 - v303 BidMap 新增 `2521-2530` / `4521-4530`，但对应 Drop pool 仍不存在；activity cohort 仍是 missing-drop/source-overlay 问题。
 - v303 对 default priority maps 的 drop-ref/round-cap 未改变，Drop reachable leaf `n_max=1` 仍不变，因此不能用 v303 table drift 解释默认 24xx/25xx/2601 settlement count overflow。
+
+## O-v3-116：field[4] slot/source shape 不显示 over-cap 专属 marker
+
+2026-06-06 增强 `summarize_v3_settlement_payload_audit.py` 与 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 4 --format summary
+```
+
+整体 slot/source shape：
+
+```text
+files=441 settlement_rows=441
+slot_counts=300:251,250:186,232:1,252:1
+candidate_paths=3:18310
+residual_modes=within_drop_ref_after_temp:245,drop_ref_only_overflow_after_temp:113,round_cap_overflow_after_temp:59,activity_extras_only_drop_ref_gap:24
+```
+
+按 residual mode：
+
+```text
+drop_ref_only_overflow_after_temp:
+  files=113
+  occupied_slot_shapes=1:0:i,2:2:b,3:2:b:5355,2:2:b,3:2:b:113
+  empty_slot_shapes=1:0:i,2:2:b,3:2:b:25982
+  occupied_slot_int_fields=1:5355
+  empty_slot_int_fields=1:25982
+  candidate_paths=3:5468
+
+round_cap_overflow_after_temp:
+  files=59
+  occupied_slot_shapes=1:0:i,2:2:b,3:2:b:3263,2:2:b,3:2:b:59
+  empty_slot_shapes=1:0:i,2:2:b,3:2:b:13728
+  occupied_slot_int_fields=1:3263
+  empty_slot_int_fields=1:13728
+  candidate_paths=3:3322
+
+within_drop_ref_after_temp:
+  files=245
+  occupied_slot_shapes=1:0:i,2:2:b,3:2:b:8210,2:2:b,3:2:b:244,1:0:i,2:2:b,2:0:i,3:2:b,3:2:b:1
+  empty_slot_shapes=1:0:i,2:2:b,3:2:b:59232,:2,1:0:i,2:2:b,2:0:i:1,1:0:i,2:2:b,4:2:b,6:0:i,9:0:i,3:2:b,3:2:b,3:2:b:1
+  occupied_slot_int_fields=1:8211,2:1
+  empty_slot_int_fields=1:59234,2:1,6:1,9:1
+  candidate_paths=3:8455
+```
+
+解读：
+
+- item candidates 在所有 residual groups 中都走 slot child path `3`，over-cap groups 没有不同的递归路径。
+- over-cap 与 within-cap 共享 dominant occupied/empty slot shapes；over-cap slot 顶层 int field 只有 field `1`，更像本地 slot index。
+- 少量额外 int fields `2/6/9` 出现在 within-cap/overall，不在 over-cap groups 中，因此不是 over-cap source/award/activity marker。
+- 当前 evidence 继续支持“final settlement inventory 解析稳定，但生成/占用机制仍未解释”；不能据此恢复 sampler 参数调优或 promotion readiness。

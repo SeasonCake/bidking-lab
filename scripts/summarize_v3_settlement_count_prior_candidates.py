@@ -534,6 +534,26 @@ def summarize_settlement_count_prior_candidates(
                     (row.get("inventory_slot_count") for row in seq),
                     top=top,
                 ),
+                "occupied_slot_field_shapes": _merge_count_mappings(
+                    (row.get("occupied_slot_field_shapes", {}) for row in seq),
+                    top=top,
+                ),
+                "empty_slot_field_shapes": _merge_count_mappings(
+                    (row.get("empty_slot_field_shapes", {}) for row in seq),
+                    top=top,
+                ),
+                "occupied_slot_int_field_counts": _merge_count_mappings(
+                    (row.get("occupied_slot_int_field_counts", {}) for row in seq),
+                    top=top,
+                ),
+                "empty_slot_int_field_counts": _merge_count_mappings(
+                    (row.get("empty_slot_int_field_counts", {}) for row in seq),
+                    top=top,
+                ),
+                "candidate_path_counts": _merge_count_mappings(
+                    (row.get("candidate_path_counts", {}) for row in seq),
+                    top=top,
+                ),
                 "payload_field_shapes": _counter_dict(
                     (row.get("payload_field_shape") for row in seq),
                     top=top,
@@ -668,6 +688,26 @@ def summarize_settlement_count_prior_candidates(
             ),
             "inventory_slot_count": _counter_dict(
                 (row.get("inventory_slot_count") for row in ready),
+                top=top,
+            ),
+            "occupied_slot_field_shapes": _merge_count_mappings(
+                (row.get("occupied_slot_field_shapes", {}) for row in ready),
+                top=top,
+            ),
+            "empty_slot_field_shapes": _merge_count_mappings(
+                (row.get("empty_slot_field_shapes", {}) for row in ready),
+                top=top,
+            ),
+            "occupied_slot_int_field_counts": _merge_count_mappings(
+                (row.get("occupied_slot_int_field_counts", {}) for row in ready),
+                top=top,
+            ),
+            "empty_slot_int_field_counts": _merge_count_mappings(
+                (row.get("empty_slot_int_field_counts", {}) for row in ready),
+                top=top,
+            ),
+            "candidate_path_counts": _merge_count_mappings(
+                (row.get("candidate_path_counts", {}) for row in ready),
                 top=top,
             ),
             "payload_field_shapes": _counter_dict(
@@ -811,6 +851,11 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"non_temp_count={_format_summary(overall['non_temp_inventory_count'])}",
                 f"temp_zodiac={_format_summary(overall['known_temp_zodiac_count'])}",
                 f"slot_counts={_format_counts(overall['inventory_slot_count'])}",
+                f"occupied_slot_shapes={_format_counts(overall['occupied_slot_field_shapes'])}",
+                f"empty_slot_shapes={_format_counts(overall['empty_slot_field_shapes'])}",
+                f"occupied_slot_int_fields={_format_counts(overall['occupied_slot_int_field_counts'])}",
+                f"empty_slot_int_fields={_format_counts(overall['empty_slot_int_field_counts'])}",
+                f"candidate_paths={_format_counts(overall['candidate_path_counts'])}",
                 f"payload_shapes={_format_counts(overall['payload_field_shapes'])}",
                 f"payload_f5={_format_summary(overall['payload_field5_count'])}",
                 f"payload_f6={_format_summary(overall['payload_field6_count'])}",
@@ -860,6 +905,11 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"temp_zodiac={_format_summary(row['known_temp_zodiac_count'])}",
                     f"cells={_format_summary(row['inventory_cells'])}",
                     f"slots={_format_counts(row['inventory_slot_count'])}",
+                    f"occupied_slot_shapes={_format_counts(row['occupied_slot_field_shapes'])}",
+                    f"empty_slot_shapes={_format_counts(row['empty_slot_field_shapes'])}",
+                    f"occupied_slot_int_fields={_format_counts(row['occupied_slot_int_field_counts'])}",
+                    f"empty_slot_int_fields={_format_counts(row['empty_slot_int_field_counts'])}",
+                    f"candidate_paths={_format_counts(row['candidate_path_counts'])}",
                     f"payload_shapes={_format_counts(row['payload_field_shapes'])}",
                     f"payload_f5={_format_summary(row['payload_field5_count'])}",
                     f"payload_f6={_format_summary(row['payload_field6_count'])}",
