@@ -45,7 +45,7 @@ DEFAULT_POSTERIOR_TRIALS = (64,)
 DEFAULT_POSTERIOR_SEEDS = (0, 1)
 DEFAULT_REQUIRED_GROUPS = ("2506",)
 DEFAULT_CACHE_DIR = ROOT / ".tmp" / "codex" / "v3_scp_guarded_bridge_stability"
-CACHE_SCHEMA_VERSION = 2
+CACHE_SCHEMA_VERSION = 3
 
 
 def _as_int(value: Any, default: int = 0) -> int:
@@ -109,6 +109,9 @@ def _run_row(run: Mapping[str, Any]) -> dict[str, Any]:
         ),
         "applied_hurts": list(run.get("applied_hurts") or ()),
         "guard_status_counts": dict(run.get("guard_status_counts") or {}),
+        "selected_group_guard_summary": list(
+            run.get("selected_group_guard_summary") or ()
+        ),
         "selected_group_fold_support": list(
             run.get("selected_group_fold_support") or ()
         ),
@@ -313,6 +316,86 @@ def _support_gap_summary(
     ]
 
 
+def _selected_group_guard_summary(
+    run_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    by_group: dict[str, list[dict[str, Any]]] = {}
+    for row in run_rows:
+        guard_rows = list(row.get("selected_group_guard_summary") or ())
+        for guard in guard_rows:
+            group = str(guard.get("group") or "unknown")
+            by_group.setdefault(group, []).append(
+                {
+                    "posterior_trials": row.get("posterior_trials"),
+                    "posterior_seed": row.get("posterior_seed"),
+                    "fold": guard.get("fold"),
+                    "guard_status": guard.get("guard_status"),
+                    "guard_applied_sessions": guard.get(
+                        "guard_applied_sessions"
+                    ),
+                    "guard_delta_formal_p50_mae": guard.get(
+                        "guard_delta_formal_p50_mae"
+                    ),
+                    "guard_delta_formal_p90_coverage": guard.get(
+                        "guard_delta_formal_p90_coverage"
+                    ),
+                    "guard_bridge_formal_p50_over_rate": guard.get(
+                        "guard_bridge_formal_p50_over_rate"
+                    ),
+                    "guard_inner_status_counts": guard.get(
+                        "guard_inner_status_counts"
+                    ),
+                    "holdout_applied_rows": guard.get("applied_rows"),
+                    "holdout_sessions": guard.get("sessions"),
+                }
+            )
+    out: list[dict[str, Any]] = []
+    for group, runs in sorted(by_group.items()):
+        guard_sessions = [
+            _as_int(row.get("guard_applied_sessions"))
+            for row in runs
+            if row.get("guard_applied_sessions") is not None
+        ]
+        guard_delta = [
+            value
+            for value in (
+                _as_float(row.get("guard_delta_formal_p50_mae"))
+                for row in runs
+            )
+            if value is not None
+        ]
+        guard_over = [
+            value
+            for value in (
+                _as_float(row.get("guard_bridge_formal_p50_over_rate"))
+                for row in runs
+            )
+            if value is not None
+        ]
+        status_counts = Counter(
+            str(row.get("guard_status") or "unknown") for row in runs
+        )
+        out.append(
+            {
+                "group": group,
+                "run_count": len({row.get("posterior_seed") for row in runs}),
+                "selected_folds": len(runs),
+                "guard_status_counts": dict(sorted(status_counts.items())),
+                "min_guard_applied_sessions": (
+                    min(guard_sessions) if guard_sessions else None
+                ),
+                "max_guard_delta_formal_p50_mae": (
+                    max(guard_delta) if guard_delta else None
+                ),
+                "max_guard_bridge_formal_p50_over_rate": (
+                    max(guard_over) if guard_over else None
+                ),
+                "runs": runs,
+            }
+        )
+    return out
+
+
 def summarize_stability(
     runs: Iterable[Mapping[str, Any]],
     *,
@@ -342,6 +425,7 @@ def summarize_stability(
         run_rows,
         min_applied_rows=min_applied_rows,
     )
+    selected_guard = _selected_group_guard_summary(run_rows)
     return {
         "overall_status": status,
         "status_reasons": reasons,
@@ -359,6 +443,7 @@ def summarize_stability(
         "max_applied_rows": max(applied_values) if applied_values else 0,
         "selected_group_support_summary": selected_support,
         "selected_group_support_gap": _support_gap_summary(selected_support),
+        "selected_group_guard_summary": selected_guard,
         "require_all_watch": bool(require_all_watch),
     }
 
@@ -608,6 +693,23 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"/missing_support={row['missing_support_runs']}"
                 )
                 for row in result["selected_group_support_summary"]
+            )
+        )
+    if result.get("selected_group_guard_summary"):
+        print(
+            "selected_guard="
+            + ";".join(
+                (
+                    f"{row['group']}:runs={row['run_count']}"
+                    f"/folds={row['selected_folds']}"
+                    f"/statuses={_format_mapping(row['guard_status_counts'])}"
+                    f"/min_guard_sessions={row['min_guard_applied_sessions']}"
+                    "/max_guard_delta="
+                    f"{_round_metric(row['max_guard_delta_formal_p50_mae'], 3)}"
+                    "/max_guard_over="
+                    f"{_round_metric(row['max_guard_bridge_formal_p50_over_rate'], 6)}"
+                )
+                for row in result["selected_group_guard_summary"]
             )
         )
     if result.get("selected_group_support_gap"):

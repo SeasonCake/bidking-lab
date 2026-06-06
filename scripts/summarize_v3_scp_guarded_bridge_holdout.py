@@ -216,6 +216,7 @@ def summarize_guarded_holdout(
     fold_count = max(2, int(folds))
     all_evals: list[dict[str, Any]] = []
     fold_results: list[dict[str, Any]] = []
+    selected_group_guard_summary: list[dict[str, Any]] = []
     selected_group_fold_support: list[dict[str, Any]] = []
     guard_status_counts: Counter[str] = Counter()
     selected_group_fold_counts: Counter[str] = Counter()
@@ -294,9 +295,35 @@ def summarize_guarded_holdout(
 
         all_evals.extend(fold_evals)
         for group in sorted(selected_groups):
+            guard = guards.get(group, {})
             group_fold_evals = [
                 row for row in fold_evals if str(row.get("group")) == group
             ]
+            inner_status_counts = Counter(
+                str(row.get("status") or "unknown")
+                for row in guard.get("inner_fold_results", ())
+            )
+            selected_group_guard_summary.append(
+                {
+                    "fold": fold,
+                    "group": group,
+                    "guard_status": guard.get("guard_status"),
+                    "guard_applied_sessions": guard.get("applied_sessions"),
+                    "guard_delta_formal_p50_mae": guard.get(
+                        "delta_formal_p50_mae"
+                    ),
+                    "guard_delta_formal_p90_coverage": guard.get(
+                        "delta_formal_p90_coverage"
+                    ),
+                    "guard_bridge_formal_p50_over_rate": guard.get(
+                        "bridge_formal_p50_over_rate"
+                    ),
+                    "guard_inner_status_counts": dict(
+                        sorted(inner_status_counts.items())
+                    ),
+                    **_support_counts(group_fold_evals),
+                }
+            )
             selected_group_fold_support.append(
                 {
                     "fold": fold,
@@ -391,6 +418,7 @@ def summarize_guarded_holdout(
         "selected_group_fold_counts": dict(
             sorted(selected_group_fold_counts.items())
         ),
+        "selected_group_guard_summary": selected_group_guard_summary,
         "selected_group_fold_support": selected_group_fold_support,
         "selected_group_support": selected_group_support,
         "fold_results": fold_results,

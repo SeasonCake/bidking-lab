@@ -5597,3 +5597,76 @@ support_gap:
 - seed drift 现在可直接归因：`2501` 是 hurt group，且不是 support 缺失误报；`2506` 虽是 stable intersection，但跨 seed applied support 不足。
 - 当前 guarded bridge 仍不能进入 promotion 支持；下一步若继续这条线，应调整 guard/selection，避免 `2501` 进入，并提升 `2506` support 稳定性。
 - 本轮仍不改变 sampler、不改变 readiness 放行条件、不改变 v2 formal/live/UI 或正式出价。
+
+## 2026-06-06 checkpoint：guarded bridge train-guard metrics 解释 2501 seed drift
+
+本轮继续解释 seed1 为什么会选入 `2501`。上一轮已经能看到 selected support 与 hurt，但还缺少“内层 train guard 当时为什么通过”的证据。现在把 selected group 的 train-guard metrics 从 guarded holdout 输出到 stability matrix。
+
+改动：
+
+- `scripts/summarize_v3_scp_guarded_bridge_holdout.py`：
+  - 新增 `selected_group_guard_summary`；
+  - 对每个外层 fold 中被选中的 group 记录：
+    - `guard_status`
+    - `guard_applied_sessions`
+    - `guard_delta_formal_p50_mae`
+    - `guard_delta_formal_p90_coverage`
+    - `guard_bridge_formal_p50_over_rate`
+    - `guard_inner_status_counts`
+    - 对应外层 holdout support counts。
+- `scripts/summarize_v3_scp_guarded_bridge_stability.py`：
+  - cache schema 升到 `CACHE_SCHEMA_VERSION=3`；
+  - 汇总 `selected_group_guard_summary`；
+  - summary 文本新增 `selected_guard=...`。
+- `scripts/summarize_v3_promotion_readiness.py`：
+  - `settlement_count_guarded_bridge_stability` gate 透传 `selected_group_guard_summary`。
+- tests 更新：
+  - `tests/test_summarize_v3_scp_guarded_bridge_holdout.py`
+  - `tests/test_summarize_v3_scp_guarded_bridge_stability.py`
+  - `tests/test_summarize_v3_promotion_readiness.py`
+- `DECISIONS_V3.md` 新增 D-v3-101；`OBSERVATIONS_V3.md` 新增 O-v3-105。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_scp_guarded_bridge_holdout.py scripts\summarize_v3_scp_guarded_bridge_stability.py scripts\summarize_v3_promotion_readiness.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_guarded_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_stability.py tests\test_summarize_v3_promotion_readiness.py -q
+python scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format summary
+python scripts\summarize_v3_promotion_readiness.py data\samples\fatbeans\fatbeans_valid_aisha_2502_4rounds_2502_1295018709694048_0149.json --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_schema3.json --format summary
+```
+
+真实 64-trial train guard 解释：
+
+```text
+selected_guard:
+  2501:
+    runs=1
+    folds=1
+    statuses=watch_train_guard=1
+    min_guard_sessions=59
+    max_guard_delta=-1707.317
+    max_guard_over=0.414634
+
+  2506:
+    runs=2
+    folds=5
+    statuses=watch_train_guard=5
+    min_guard_sessions=14
+    max_guard_delta=-3387.097
+    max_guard_over=0.370968
+
+selected_support:
+  2501:
+    min_applied=53
+    hurts=1
+
+  2506:
+    min_applied=9
+    support_gap=11
+```
+
+结论：
+
+- `2501` 不是误选或缺 support：它在内层 train guard 看起来安全，但外层 holdout 仍出现 over-risk/hurt。
+- `2506` 的 train guard 选择更稳定，但外层最小 applied support 仍不足。
+- 当前下一步应优先设计更严格的 train/holdout stability criterion 或 group exclusion diagnostics；不能把 seed0/inner-guard watch 当成 promotion 支持。

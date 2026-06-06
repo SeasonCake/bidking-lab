@@ -131,6 +131,15 @@ def test_guarded_bridge_selects_only_inner_crossfit_watch_group() -> None:
             "sample_limited_rows": 0,
         },
     ]
+    assert len(result["selected_group_guard_summary"]) == 2
+    assert result["selected_group_guard_summary"][0]["group"] == "good"
+    assert result["selected_group_guard_summary"][0]["guard_status"] == (
+        "watch_train_guard"
+    )
+    assert result["selected_group_guard_summary"][0]["guard_applied_sessions"] >= 1
+    assert result["selected_group_guard_summary"][0]["guard_inner_status_counts"] == {
+        "watch_count_value_bridge_holdout": 2
+    }
     assert result["selected_group_support"] == [
         {
             "group": "good",

@@ -4237,3 +4237,67 @@ selected support：
 - `2506` 是 stable intersection，但跨 seed 最小 applied support 只有 9，低于当前 required 20。
 - 当前 guarded bridge blocker 分成两条：排除/解释 `2501` hurt selection，以及提升 `2506` 的多 seed applied support。
 - 该结果继续支持 shadow-only / readiness blocked，不支持 formal/value promotion。
+
+## O-v3-105：2501 在 train guard 中通过，但外层 holdout 出现 over-risk/hurt
+
+2026-06-06 给 guarded bridge holdout/stability 增加 train-guard metrics 后，复跑真实 64-trial seed0/seed1 matrix：
+
+```powershell
+python scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format summary
+```
+
+结果：
+
+```text
+overall_status=blocked_applied_hurt
+reasons=applied_hurts_present,non_watch_run,selected_group_drift
+stable_groups=2506
+union_groups=2501,2506
+```
+
+selected guard：
+
+```text
+2501:
+  runs=1
+  folds=1
+  statuses=watch_train_guard=1
+  min_guard_sessions=59
+  max_guard_delta=-1707.317
+  max_guard_over=0.414634
+
+2506:
+  runs=2
+  folds=5
+  statuses=watch_train_guard=5
+  min_guard_sessions=14
+  max_guard_delta=-3387.097
+  max_guard_over=0.370968
+```
+
+selected support：
+
+```text
+2501:
+  runs=1
+  folds=1
+  min_applied=53
+  max_applied=53
+  hurts=1
+  missing_support=0
+
+2506:
+  runs=2
+  folds=5
+  min_applied=9
+  max_applied=20
+  hurts=0
+  missing_support=0
+  support_gap=11
+```
+
+解读：
+
+- `2501` 的问题不是 guard 没有跑，也不是 support 缺失；它在训练 guard 中看起来安全，但外层 holdout 仍然 hurt。
+- `2506` 的问题不是 hurt，而是跨 seed applied support 不足。
+- 因此 guarded settlement bridge 下一步应分两线：收紧/解释 `2501` train-holdout instability，继续累积或重设 `2506` support；当前不能作为 formal/value promotion evidence。

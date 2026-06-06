@@ -78,6 +78,7 @@ def test_guarded_bridge_stability_passes_exact_group_across_runs() -> None:
     assert result["min_applied_rows"] == 25
     assert result["selected_group_support_summary"][0]["group"] == "2506"
     assert result["selected_group_support_summary"][0]["missing_support_runs"] == 0
+    assert result["selected_group_guard_summary"] == []
 
 
 def test_guarded_bridge_stability_blocks_hurt_run() -> None:
@@ -175,3 +176,42 @@ def test_guarded_bridge_stability_blocks_missing_multi_group_support() -> None:
     }
     assert support["2501"]["missing_support_runs"] == 1
     assert support["2506"]["missing_support_runs"] == 1
+
+
+def test_guarded_bridge_stability_summarizes_train_guard_metrics() -> None:
+    module = _load_module()
+
+    result = module.summarize_stability(
+        [
+            {
+                **_run(trials=64, seed=1, selected={"2501": 1}),
+                "selected_group_guard_summary": [
+                    {
+                        "fold": 4,
+                        "group": "2501",
+                        "guard_status": "watch_train_guard",
+                        "guard_applied_sessions": 19,
+                        "guard_delta_formal_p50_mae": -110.256,
+                        "guard_delta_formal_p90_coverage": 0.016949,
+                        "guard_bridge_formal_p50_over_rate": 0.559322,
+                        "guard_inner_status_counts": {
+                            "watch_count_value_bridge_holdout": 4
+                        },
+                        "applied_rows": 53,
+                        "sessions": 17,
+                    }
+                ],
+            }
+        ],
+        required_selected_groups=("2501",),
+        min_applied_rows=20,
+    )
+
+    guard = result["selected_group_guard_summary"][0]
+    assert guard["group"] == "2501"
+    assert guard["run_count"] == 1
+    assert guard["selected_folds"] == 1
+    assert guard["guard_status_counts"] == {"watch_train_guard": 1}
+    assert guard["min_guard_applied_sessions"] == 19
+    assert guard["max_guard_delta_formal_p50_mae"] == -110.256
+    assert guard["max_guard_bridge_formal_p50_over_rate"] == 0.559322

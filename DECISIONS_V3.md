@@ -2176,3 +2176,19 @@ applied_hurts=2502
 - 当前 seed drift 的关键解释不是只有 selected signature，而是 `2501` 的 hurt support 与 `2506` 的跨 seed support gap。
 - 旧 cache 缺少 `selected_group_support` 时会让 summary 漏掉多组选入的 support 细节，造成 blocker 不可审计。
 - promotion gate 需要证明稳定性证据完整；缺少 group-level support 本身就是不能 promotion 的证据缺口。
+
+## D-v3-101：guarded bridge train-guard watch 不等于外层 holdout 安全
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_scp_guarded_bridge_holdout.py` 必须输出 selected group 的 train-guard metrics；只看外层 selected group 或 selected support 不足以解释 seed drift。
+- 如果某 group 在 inner train guard 中为 `watch_train_guard`，但外层 holdout 出现 hurt/over-risk，则该 group 必须视为 train/holdout instability blocker。
+- `2501` 当前属于该 blocker：inner guard watch，但外层 holdout hurt。
+- `2506` 当前属于 support-depth blocker：train guard 选择稳定，但跨 seed min applied support 低于要求。
+- 两类 blocker 都不能通过放宽 guard、降低 `min_applied_rows`、或只取 seed0 结果来变成 promotion evidence。
+
+原因：
+
+- 64-trial seed1 中 `2501` 在 fold4 的 train guard 指标为 `watch_train_guard`，训练侧 delta/over 看起来安全，但外层 53 applied rows 出现 p50 MAE hurt 与 over-risk。
+- 这说明 bridge 的 group selection 对 posterior seed / fold split 仍敏感。
+- promotion 要求 archive/live/holdout 稳定，而不是单一训练 guard 中看起来安全。
