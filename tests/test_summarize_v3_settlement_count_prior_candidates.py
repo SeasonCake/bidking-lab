@@ -43,6 +43,7 @@ def _tables(*, include_map: bool = True) -> SimpleNamespace:
     if include_map:
         maps[2601] = SimpleNamespace(
             name="count_prior_map",
+            rounds_total=25,
             drop_pool_id=2601,
             items_per_session_min=1,
             items_per_session_max=2,
@@ -69,16 +70,19 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     tmp_path: Path,
 ) -> None:
     module = _load_module()
-    first = tmp_path / "first.json"
-    second = tmp_path / "second.json"
+    first = tmp_path / "first_2rounds_case.json"
+    second = tmp_path / "second_5rounds_case.json"
     first.write_text("[]", encoding="utf-8")
     second.write_text("[]", encoding="utf-8")
     _patch_parser(
         monkeypatch,
         module,
         {
-            "first.json": _state(2601, [1001, 1002, 1306003]),
-            "second.json": _state(2601, [1001, 1002, 1003, 1004, 1005, 1306004]),
+            "first_2rounds_case.json": _state(2601, [1001, 1002, 1306003]),
+            "second_5rounds_case.json": _state(
+                2601,
+                [1001, 1002, 1003, 1004, 1005, 1306004],
+            ),
         },
     )
 
@@ -99,6 +103,9 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         "round_cap_overflow_after_temp": 1,
     }
     assert result["overall"]["inventory_slot_headroom_after_temp_zodiac"]["n"] == 0
+    assert result["overall"]["round_indices"] == {"5": 2}
+    assert result["overall"]["capture_rounds"] == {"2": 1, "5": 1}
+    assert result["overall"]["bidmap_rounds_total_counts"] == {"25": 2}
     assert result["overall"]["full_observed_action_rows"] == 0
     assert result["overall"]["public_total_rows"] == 0
     row = result["rows"][0]
@@ -109,6 +116,9 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         "activity_extras_only_drop_ref_gap": 1,
         "round_cap_overflow_after_temp": 1,
     }
+    assert row["round_indices"] == {"5": 2}
+    assert row["capture_rounds"] == {"2": 1, "5": 1}
+    assert row["bidmap_rounds_total_counts"] == {"25": 2}
     assert row["bidmap_items_per_session_max"]["max"] == 2
     assert row["bidmap_raw_round_cap_max"]["max"] == 4
     assert row["inventory_count"]["max"] == 6
@@ -140,6 +150,30 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         ]
         == 0
     )
+
+    round_result = module.summarize_settlement_count_prior_candidates(
+        [tmp_path],
+        tables=_tables(),
+        group_by="round_index",
+        min_samples=1,
+    )
+    assert [row["group"] for row in round_result["rows"]] == ["5"]
+
+    capture_result = module.summarize_settlement_count_prior_candidates(
+        [tmp_path],
+        tables=_tables(),
+        group_by="capture_rounds",
+        min_samples=1,
+    )
+    assert {row["group"] for row in capture_result["rows"]} == {"2", "5"}
+
+    table_round_result = module.summarize_settlement_count_prior_candidates(
+        [tmp_path],
+        tables=_tables(),
+        group_by="bidmap_rounds_total",
+        min_samples=1,
+    )
+    assert [row["group"] for row in table_round_result["rows"]] == ["25"]
 
 
 def test_settlement_count_prior_candidates_marks_missing_table_shadow_only(

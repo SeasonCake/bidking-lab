@@ -4672,3 +4672,66 @@ round_cap_overflow_after_temp:
 - after-temp over-cap rows 的 payload candidate/occupied 与 final inventory 对齐，且 public total 出现时也完全对齐。
 - 这证明 parser/truth 是 final settlement inventory，不支持 “payload 重复/解析膨胀”。
 - 但 full action/public total 覆盖率很低，且 payload slot headroom 是大容量 grid/slot 背景，不是生成机制；仍需查 server-side expansion/session-capacity/source semantics。
+
+## O-v3-113：round/session 分组显示 over-cap 跨早晚轮与 25/30-round map 存在
+
+2026-06-06 增强 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by round_index --min-samples 1 --top 8 --format summary
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by capture_rounds --min-samples 1 --top 8 --format summary
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by bidmap_rounds_total --min-samples 1 --top 8 --format summary
+```
+
+整体分布：
+
+```text
+round_indices=3:147,2:114,4:104,1:49,none:26,5:1
+capture_rounds=4:146,3:115,5:105,2:48,1:27
+bidmap_rounds_total=30:253,25:188
+residual_modes=within_drop_ref_after_temp:245,drop_ref_only_overflow_after_temp:113,round_cap_overflow_after_temp:59,activity_extras_only_drop_ref_gap:24
+```
+
+按 capture rounds：
+
+```text
+capture_rounds=1:
+  above_drop_after_temp=12/27
+  above_round_after_temp=8/27
+
+capture_rounds=2:
+  above_drop_after_temp=15/48
+  above_round_after_temp=4/48
+
+capture_rounds=3:
+  above_drop_after_temp=33/115
+  above_round_after_temp=7/115
+
+capture_rounds=4:
+  above_drop_after_temp=72/146
+  above_round_after_temp=24/146
+
+capture_rounds=5:
+  above_drop_after_temp=40/105
+  above_round_after_temp=16/105
+```
+
+按 BidMap `rounds_total`：
+
+```text
+bidmap_rounds_total=30:
+  files=253
+  above_drop_after_temp=110/253
+  above_round_after_temp=46/253
+
+bidmap_rounds_total=25:
+  files=188
+  above_drop_after_temp=62/188
+  above_round_after_temp=13/188
+```
+
+解读：
+
+- over-cap 并非只发生在 late-round capture；1/2-round captures 也存在扣除临时 zodiac 后的 drop-ref/round-cap overflow。
+- 30-round map 的 overflow 更重，但 25-round villa 也有稳定 overflow，因此不能把 blocker 归为 30-round map 专属容量。
+- round/session 维度目前只能排除简单解释，不能提供 promotion-ready sampler cap。

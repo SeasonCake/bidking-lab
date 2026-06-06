@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -29,6 +30,7 @@ from summarize_v3_settlement_payload_audit import (  # noqa: E402
 
 DEFAULT_SAMPLE_ROOT = ROOT / "data" / "samples" / "fatbeans"
 _TEMPORARY_BLUE_ZODIAC_ITEM_IDS = frozenset(range(1306003, 1306015))
+_CAPTURE_ROUNDS_RE = re.compile(r"_(\d+)rounds(?:_|$)")
 
 
 def _safe_int(value: Any) -> int | None:
@@ -121,6 +123,11 @@ def _bidmap_round_caps(bid_map: Any) -> tuple[int, ...]:
     return _int_list_from_json_blob(raw_row[index] if len(raw_row) > index else None)
 
 
+def _capture_rounds_from_name(path: Path) -> int | None:
+    match = _CAPTURE_ROUNDS_RE.search(path.name)
+    return _safe_int(match.group(1)) if match else None
+
+
 def _resolve_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
     seq = tuple(paths)
     if not seq:
@@ -139,6 +146,7 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
         return {
             "table_status": "missing_map_id",
             "map_name": None,
+            "bidmap_rounds_total": None,
             "drop_pool_id": None,
             "bidmap_items_per_session_min": None,
             "bidmap_items_per_session_max": None,
@@ -153,6 +161,7 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
         return {
             "table_status": "missing_bidmap",
             "map_name": None,
+            "bidmap_rounds_total": None,
             "drop_pool_id": None,
             "bidmap_items_per_session_min": None,
             "bidmap_items_per_session_max": None,
@@ -169,6 +178,7 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
     return {
         "table_status": "ok",
         "map_name": getattr(bid_map, "name", None),
+        "bidmap_rounds_total": getattr(bid_map, "rounds_total", None),
         "drop_pool_id": getattr(bid_map, "drop_pool_id", None),
         "bidmap_items_per_session_min": getattr(bid_map, "items_per_session_min", None),
         "bidmap_items_per_session_max": getattr(bid_map, "items_per_session_max", None),
@@ -239,6 +249,7 @@ def _audit_file(path: Path, *, tables: Any) -> dict[str, Any]:
         "map_id": map_id,
         "map_prefix3": int(map_id) // 10 if map_id is not None else None,
         "map_family": _map_family(map_id),
+        "capture_rounds": _capture_rounds_from_name(path),
         "round_index": getattr(state, "round_index", None),
         "message_id": getattr(state, "message_id", None),
         "inventory_count": inventory_count,
@@ -389,7 +400,15 @@ def summarize_settlement_count_prior_candidates(
     min_samples: int = 10,
     top: int = 12,
 ) -> dict[str, Any]:
-    if group_by not in {"map_id", "map_prefix3", "map_family", "residual_mode"}:
+    if group_by not in {
+        "map_id",
+        "map_prefix3",
+        "map_family",
+        "residual_mode",
+        "round_index",
+        "capture_rounds",
+        "bidmap_rounds_total",
+    }:
         raise ValueError(f"unsupported group_by: {group_by}")
     tables = tables or load_monitor_tables()
     rows: list[dict[str, Any]] = []
@@ -418,6 +437,12 @@ def summarize_settlement_count_prior_candidates(
                 "candidate_status": _candidate_status(seq, min_samples=min_samples),
                 "map_ids": _counter_dict((row.get("map_id") for row in seq), top=top),
                 "map_families": _counter_dict((row.get("map_family") for row in seq), top=top),
+                "round_indices": _counter_dict((row.get("round_index") for row in seq), top=top),
+                "capture_rounds": _counter_dict((row.get("capture_rounds") for row in seq), top=top),
+                "bidmap_rounds_total_counts": _counter_dict(
+                    (row.get("bidmap_rounds_total") for row in seq),
+                    top=top,
+                ),
                 "residual_modes": _counter_dict((row.get("residual_mode") for row in seq), top=top),
                 "table_statuses": _counter_dict((row.get("table_status") for row in seq), top=top),
                 "bidmap_items_per_session_max": _numeric_summary(
@@ -547,6 +572,18 @@ def summarize_settlement_count_prior_candidates(
                 (row.get("residual_mode") for row in ready),
                 top=top,
             ),
+            "round_indices": _counter_dict(
+                (row.get("round_index") for row in ready),
+                top=top,
+            ),
+            "capture_rounds": _counter_dict(
+                (row.get("capture_rounds") for row in ready),
+                top=top,
+            ),
+            "bidmap_rounds_total_counts": _counter_dict(
+                (row.get("bidmap_rounds_total") for row in ready),
+                top=top,
+            ),
             "above_drop_ref_rows": _positive_rows(ready, "drop_ref_excess_item_count"),
             "above_drop_ref_after_temp_zodiac_rows": _positive_rows(
                 ready,
@@ -619,6 +656,9 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"slot_counts={_format_counts(overall['inventory_slot_count'])}",
                 f"slot_headroom_after_temp={_format_summary(overall['inventory_slot_headroom_after_temp_zodiac'])}",
                 f"residual_modes={_format_counts(overall['residual_modes'])}",
+                f"round_indices={_format_counts(overall['round_indices'])}",
+                f"capture_rounds={_format_counts(overall['capture_rounds'])}",
+                f"bidmap_rounds_total={_format_counts(overall['bidmap_rounds_total_counts'])}",
                 f"above_drop={overall['above_drop_ref_rows']}",
                 f"above_drop_after_temp={overall['above_drop_ref_after_temp_zodiac_rows']}",
                 f"above_round={overall['above_round_cap_rows']}",
@@ -642,6 +682,9 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"files={row['files']}",
                     f"maps={_format_counts(row['map_ids'])}",
                     f"families={_format_counts(row['map_families'])}",
+                    f"round_indices={_format_counts(row['round_indices'])}",
+                    f"capture_rounds={_format_counts(row['capture_rounds'])}",
+                    f"bidmap_rounds_total={_format_counts(row['bidmap_rounds_total_counts'])}",
                     f"residual_modes={_format_counts(row['residual_modes'])}",
                     f"table={_format_counts(row['table_statuses'])}",
                     f"bidmap_max={_format_summary(row['bidmap_items_per_session_max'])}",
@@ -681,7 +724,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--group-by",
-        choices=("map_id", "map_prefix3", "map_family", "residual_mode"),
+        choices=(
+            "map_id",
+            "map_prefix3",
+            "map_family",
+            "residual_mode",
+            "round_index",
+            "capture_rounds",
+            "bidmap_rounds_total",
+        ),
         default="map_id",
     )
     parser.add_argument("--min-samples", type=int, default=10)

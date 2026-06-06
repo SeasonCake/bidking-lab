@@ -2304,3 +2304,17 @@ applied_hurts=2502
 - 真实 archive 中 after-temp residual modes 为 `within_drop_ref_after_temp=245`、`activity_extras_only_drop_ref_gap=24`、`drop_ref_only_overflow_after_temp=113`、`round_cap_overflow_after_temp=59`。
 - over-cap rows 的 payload raw candidate / occupied slot delta 均为 0；出现 public total 时 delta 也为 0。
 - 这些信号确认 “truth 是 final inventory”，但没有给出可用于 sampler/readiness promotion 的生成机制。
+
+## D-v3-109：round/session 维度不能单独解释 settlement over-cap
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_candidates.py` 必须支持 `--group-by round_index`、`--group-by capture_rounds` 与 `--group-by bidmap_rounds_total`，用于判断 over-cap 是否只是 late-round 或 map-session-length 问题。
+- 如果 after-temp overflow 同时出现在 1-5 capture rounds 与 `bidmap_rounds_total=25/30` 两类 map，则不能把 blocker 简化为“晚轮数容量”或“30-round map 专属容量”。
+- round/session 维度只能作为 settlement expansion/source semantics 的分流证据；不能作为 sampler cap 修正、readiness 放行或 promotion evidence。
+
+原因：
+
+- 真实 archive 中 `capture_rounds=1` 仍有 `above_drop_after_temp=12/27` 与 `above_round_after_temp=8/27`，`capture_rounds=2` 也有 `15/48` 与 `4/48`。
+- `bidmap_rounds_total=30` over-cap 更重，但 `bidmap_rounds_total=25` 也有 `above_drop_after_temp=62/188` 与 `above_round_after_temp=13/188`。
+- over-cap 跨 round/session 维度存在，说明仍需查更底层的 server-side expansion、source semantics 或 table-version-per-session 机制。

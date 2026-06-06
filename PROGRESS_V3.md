@@ -6048,3 +6048,45 @@ round_cap_overflow_after_temp:
 - over-cap rows 不是 payload 解析膨胀；0x002D raw candidates/occupied slots 与 final inventory 对齐。
 - public total 出现时也与 final inventory 对齐，但覆盖率不足，不能作为 promotion evidence。
 - 当前剩余解释仍在 settlement expansion/session-capacity/server-side overlay/source semantics；formal/value sampler 参数调优继续暂停。
+
+## 2026-06-06 checkpoint：settlement over-cap round/session 维度下钻
+
+本轮继续增强 settlement count prior candidate 审计，加入 round/session 维度分组，判断 over-cap 是否只是 late-round、capture length 或 BidMap session length 造成。该改动仍是 v3 audit-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - 新增 `capture_rounds` 文件名解析。
+  - 输出 `round_indices`、`capture_rounds`、`bidmap_rounds_total` 分布。
+  - 新增 `--group-by round_index`、`--group-by capture_rounds`、`--group-by bidmap_rounds_total`。
+- `tests/test_summarize_v3_settlement_count_prior_candidates.py` 覆盖新增 group-by。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py -q
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by round_index --min-samples 1 --top 8 --format summary
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by capture_rounds --min-samples 1 --top 8 --format summary
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by bidmap_rounds_total --min-samples 1 --top 8 --format summary
+```
+
+真实 round/session 要点：
+
+```text
+capture_rounds=1: above_drop_after_temp=12/27, above_round_after_temp=8/27
+capture_rounds=2: above_drop_after_temp=15/48, above_round_after_temp=4/48
+capture_rounds=3: above_drop_after_temp=33/115, above_round_after_temp=7/115
+capture_rounds=4: above_drop_after_temp=72/146, above_round_after_temp=24/146
+capture_rounds=5: above_drop_after_temp=40/105, above_round_after_temp=16/105
+
+bidmap_rounds_total=30: above_drop_after_temp=110/253, above_round_after_temp=46/253
+bidmap_rounds_total=25: above_drop_after_temp=62/188, above_round_after_temp=13/188
+```
+
+结论：
+
+- over-cap 不是单纯 late-round effect；1/2-round captures 也存在 after-temp overflow。
+- 30-round map 更重，但 25-round villa 同样存在 after-temp overflow。
+- 下一步仍需查 server-side expansion/source semantics 或 per-session table-version 机制；formal/value sampler 参数调优继续暂停。
