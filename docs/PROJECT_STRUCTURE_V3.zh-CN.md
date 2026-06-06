@@ -38,6 +38,7 @@
 | `scripts/summarize_v3_bidmap_raw_capacity_candidates.py` | v3 BidMap raw numeric columns 对 settlement unique count/cells truth 的 coverage 审计，区分语义 capacity columns 与非 capacity 的 count-sized id/category/hint 字段 |
 | `scripts/summarize_v3_settlement_payload_audit.py` | v3 0x002D settlement raw payload 审计，核对 outer wrapper shape、field3/4/5 presence、field6 count、inventory block slot count、occupied/empty slot shape、candidate path、slot int field/source-shape、raw item candidates、dedup 后 inventory count、payload fields 与 full observed action 镜像 |
 | `scripts/summarize_v3_settlement_count_prior_candidates.py` | v3 settlement occupancy count prior shadow-only 候选审计，按 map/prefix/family/residual-mode/unique-residual-mode/BidMap sub-pool kind/round/session/capture-day/session-token-prefix/BidMap round-category-hint 维度统计 final inventory count、临时生肖扣除 residual、runtime/item duplicate、unique non-temp item cap coverage、item primary-category/hinted coverage、quality/count/cells coverage、reachable Drop item-universe 覆盖、0x002D outer wrapper、payload field-shape、occupied/empty slot shape、candidate path、slot headroom、public-total/full-action evidence 与 current BidMap/round-cap 覆盖 |
+| `scripts/summarize_v3_settlement_source_semantics_audit.py` | v3 settlement over-cap / capacity blocker source semantics 审计，遍历 capture 全部 state，按 public total、direct/full action、0x002D payload match、local v300 filelist/Activity overlay metadata、mechanism class 汇总 unique round overflow 收口证据 |
 | `scripts/summarize_v3_settlement_count_prior_holdout.py` | v3 settlement occupancy count prior session-level holdout 审计，比较 current table cap、round-cap 与 train p95/max coverage |
 | `scripts/summarize_v3_activity_mapping_likelihood.py` | v3 252x activity missing-table 候选映射审计，比较 `252x->251x` 与 `252x->250x` 的 settlement quality likelihood，只作为 table/activity 语义证据 |
 | `scripts/summarize_v3_scp_formal_value_link.py` | v3 settlement count-prior evidence 与 formal/value stress 的 archive 关联审计，量化 `v3_scp` candidate 与 value-floor/capacity watch 的交集 |
@@ -78,6 +79,7 @@
 | `tests/test_summarize_v3_archive_table_timing.py` | v3 archive/table timing metadata 审计测试 |
 | `tests/test_summarize_v3_settlement_payload_audit.py` | v3 settlement payload slot/candidate 审计测试 |
 | `tests/test_summarize_v3_settlement_count_prior_candidates.py` | v3 settlement count-prior candidate 审计测试 |
+| `tests/test_summarize_v3_settlement_source_semantics_audit.py` | v3 settlement source semantics 审计测试，覆盖 overlay metadata、source evidence/mechanism class 与 unique round blocker 聚合 |
 | `tests/test_summarize_v3_settlement_count_prior_holdout.py` | v3 settlement count-prior session holdout 审计测试 |
 | `tests/test_summarize_v3_activity_mapping_likelihood.py` | v3 252x activity candidate mapping likelihood 审计测试 |
 | `tests/test_summarize_v3_scp_formal_value_link.py` | v3 settlement count-prior 到 formal/value stress 关联审计测试 |

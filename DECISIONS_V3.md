@@ -2497,3 +2497,21 @@ applied_hurts=2502
 - self-only 2601 有 22 rows，unique round overflow=0，但仍有 unique drop overflow=7。
 - unique round overflow 更集中于 map family：shipwreck 19、villa 2、hidden 0；这说明后续应查 map-family/session-capacity 或 server-side settlement expansion，而不是只查母图路由。
 - capture/round 分布也不是单一 cohort：capture rounds 1/2/4/5 均有 unique round overflow，round_index 1/3/4/5/none 均出现，不能解释为单一采集轮次错误。
+
+## D-v3-121：settlement over-cap blocker 收口为 server/source capacity semantics，仍不得恢复 sampler 调参
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_source_semantics_audit.py` 是 settlement over-cap / capacity blocker 的 source-semantics 收口入口。
+- 当前 local v300 BidMap `round_caps_candidate` 与 `drop_ref` 仍只能作为 audit-only candidate；不得当作 final settlement hard cap、sampler cap 修正、readiness 放行或 promotion evidence。
+- 21 条 `unique_round_cap_overflow_after_temp` 的主解释归类为 server-side settlement expansion / session-capacity source semantics。
+- per-session table version 与 external overlay table 只保留为最小不可判定假设：前者目前没有 day/session/map 集中证据，后者有 Activity table listed-but-missing 的 local metadata，但没有 non-zodiac Drop-universe gap。
+- 本阶段 goal 到 capacity blocker 收口为止；不恢复 formal/value sampler 参数调优，不接入 live/formal，不放宽 readiness/promotion gate。
+
+原因：
+
+- 21 条 unique round overflow 的 0x002D raw candidate 与 occupied slot 对 final inventory delta 均为 0，payload mismatch 为 0/21。
+- 21 条 non-zodiac missing from reachable Drop universe 均为 0；因此不是解析重复、slot 误计或未知非生肖 item pool 混入。
+- 其中 3 条有 external source confirmation：2 条 direct full action、1 条 public total；其余 18 条由 settlement payload 自证。
+- 这些 rows 横跨 `shipwreck:19/villa:2`、6 个 capture day、2 个 session prefix、8 个 map；不支持单一 per-session table version 或单一 cohort 解释。
+- local raw/table version 均为 300，filelist 列出 `Tables/Activity.txt` 而本地缺表；这只支持保留 overlay 作为件数/活动机制的未判定假设，不足以直接修正 sampler。

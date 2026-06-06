@@ -6736,3 +6736,60 @@ map_family:
 - self-only 2601 没有 unique round overflow，因此不能解释 default 25xx/24xx 的 unique round blocker。
 - 现有证据把下一步继续推向 map-family/session-capacity 或 server-side settlement expansion，而不是恢复 sampler 参数调优。
 - formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。
+
+## 2026-06-06 checkpoint：settlement source semantics / capacity blocker 收口
+
+本轮把当前阶段目标收窄到 settlement over-cap / capacity blocker 收口。改动仍是 v3 audit-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- 新增 `scripts/summarize_v3_settlement_source_semantics_audit.py`：
+  - 复用 settlement count-prior audit 的 final inventory / Drop universe / BidMap cap 口径；
+  - 遍历同一 capture 的全部 state，输出 message id、0x002D settlement state、0x0027 direct action、public total、full action 与 latest inventory delta；
+  - 输出 `source_evidence_class` 与 `mechanism_class`，把 `public_total_matches_inventory`、`direct_action_matches_inventory`、`settlement_payload_verified_only` 区分开；
+  - 输出 local raw/table version、filelist 中 `Tables/Activity.txt` 是否列出、local Activity table 是否存在。
+- 新增 `tests/test_summarize_v3_settlement_source_semantics_audit.py`，覆盖 overlay metadata、source evidence/mechanism 分类与 unique round blocker 聚合。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`、`docs/bid_map_schema.md`、`DECISIONS_V3.md` 与 `OBSERVATIONS_V3.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_source_semantics_audit.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_source_semantics_audit.py -q
+python scripts\summarize_v3_settlement_source_semantics_audit.py --group-by unique_residual_mode --top 8 --format summary
+python scripts\summarize_v3_settlement_source_semantics_audit.py --group-by mechanism_class --top 8 --format summary
+python scripts\summarize_v3_settlement_source_semantics_audit.py --group-by source_evidence_class --top 8 --format summary
+```
+
+真实 source-semantics smoke 要点：
+
+```text
+table_raw_version=300 tables_version=300
+activity_present=False activity_listed=True
+overlay_status=v300_activity_listed_missing_locally
+
+unique_round_cap_overflow_after_temp:
+  files=21
+  maps=2501:7,2503:3,2504:2,2506:2,2508:2,2510:2,2408:1,2410:1
+  families=shipwreck:19,villa:2
+  capture_days=20260601:8,20260531:6,20260530:3,20260604:2,20260529:1,20260605:1
+  session_p6=129501:17,127412:4
+  evidence=settlement_payload_verified_only:18,direct_action_matches_inventory:2,public_total_matches_inventory:1
+  mechanisms=session_capacity_source_semantics:18,server_side_settlement_expansion:3
+  unique_non_temp=max 57, round_cap=max 50
+  non_zodiac_missing=max 0
+  payload_mismatch=0/21
+  raw_candidate_delta=max 0
+  occupied_delta=max 0
+  inventory_state_delta=max 0
+  public_match_rows=1/21
+  full_action_rows=2/21
+```
+
+解读：
+
+- 21 条 unique non-temp over round-cap 的主因可复核地收口为：current local v300 BidMap `round_caps_candidate=50`/`drop_ref<=44` 不是 final settlement item-count hard cap；final 0x002D settlement inventory 由 server-side settlement expansion / session-capacity source semantics 产生，且仍落在 current reachable Drop universe 内。
+- 该解释对应机制类：`server_side_settlement_expansion`（3 条有 public total 或 direct full action 外部确认）与 `session_capacity_source_semantics`（18 条由 0x002D payload raw/occupied slot 自证）。
+- per-session table version 目前不是强解释：over-cap 跨 6 个 capture day、2 个 session prefix、8 个 map，local raw/table version 均为 300；当前无法从旧 CDN URL 取回远端 current table 验证，只保留为弱假设。
+- external overlay table 只保留为最小不可判定假设：local v300 filelist 列出 `Tables/Activity.txt` 但本地缺表；不过 21 条的 non-zodiac Drop-universe missing 为 0，因此 overlay 若存在，更像影响件数/活动机制，不是引入未知非生肖 item universe。
+- 本阶段不恢复 formal/value sampler 参数调优，不讨论 v3 promotion；下一阶段建议先补 source parser / table acquisition 或扩大样本确认 18 条 payload-only rows，再决定是否恢复 shadow-only formal/value sampler。

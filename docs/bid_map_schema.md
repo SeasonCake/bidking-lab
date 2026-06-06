@@ -99,6 +99,18 @@ parents (7 rows), while self-only 2601 has none. Therefore the remaining
 unique round overflow is not explained by an anthology parent/sub-map
 routing mistake.
 
+The source-semantics audit added on 2026-06-06 keeps `col[14]`
+(`round_caps_candidate`) and `col[17]` (`drop_ref`) in audit-only status.
+For the 21 `unique_round_cap_overflow_after_temp` rows, 0x002D payload
+raw candidates and occupied slots match final inventory in 21/21 files,
+non-zodiac Drop-universe missing count is 0/21, and the rows span multiple
+days/sessions/maps. Three rows also have external source confirmation
+(public total or direct full action). This supports server-side settlement
+expansion / session-capacity source semantics over a hard local BidMap cap.
+The local v300 filelist still lists `Tables/Activity.txt` while the local
+table is absent, so an external overlay table remains a minimal
+undecidable alternative, but not an observed non-zodiac item-universe gap.
+
 ## Tier structure
 
 The same map theme appears at up to 3 difficulty tiers:

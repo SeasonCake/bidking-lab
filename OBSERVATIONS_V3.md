@@ -5249,3 +5249,54 @@ capture_rounds:
 - unique round overflow 同时存在于 leaf 与 weighted parent maps；不是单一“未知母图 sub-pool 路由 cap 使用错误”。
 - self-only 2601 没有 unique round overflow，但仍有 unique drop overflow，说明 2601 不能解释 default shipwreck/villa 的 unique round blocker。
 - unique round overflow 主要集中在 shipwreck family，但横跨多个 capture rounds/round_index；后续应继续查 map-family/session-capacity 或 server-side settlement expansion。
+
+## O-v3-125：source semantics 审计把 21 条 unique round over-cap 收口到 settlement expansion / session-capacity
+
+2026-06-06 新增 `summarize_v3_settlement_source_semantics_audit.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_settlement_source_semantics_audit.py --group-by unique_residual_mode --top 8 --format summary
+python scripts\summarize_v3_settlement_source_semantics_audit.py --group-by mechanism_class --top 8 --format summary
+python scripts\summarize_v3_settlement_source_semantics_audit.py --group-by source_evidence_class --top 8 --format summary
+```
+
+全量 441 rows：
+
+```text
+table_raw_version=300 tables_version=300
+activity_present=False activity_listed=True
+overlay_status=v300_activity_listed_missing_locally
+evidence=settlement_payload_verified_only:395,public_total_matches_inventory:27,direct_action_matches_inventory:17,source_ambiguous:2
+mechanisms=not_unique_round_cap_blocker:420,session_capacity_source_semantics:18,server_side_settlement_expansion:3
+non_zodiac_missing=max 0
+inventory_state_delta=max 0
+```
+
+21 条 `unique_round_cap_overflow_after_temp`：
+
+```text
+files=21
+maps=2501:7,2503:3,2504:2,2506:2,2508:2,2510:2,2408:1,2410:1
+families=shipwreck:19,villa:2
+capture_days=20260601:8,20260531:6,20260530:3,20260604:2,20260529:1,20260605:1
+session_p6=129501:17,127412:4
+evidence=settlement_payload_verified_only:18,direct_action_matches_inventory:2,public_total_matches_inventory:1
+mechanisms=session_capacity_source_semantics:18,server_side_settlement_expansion:3
+unique_non_temp=max 57
+round_cap=max 50
+non_zodiac_missing=max 0
+payload_mismatch=0/21
+raw_candidate_delta=max 0
+occupied_delta=max 0
+inventory_state_delta=max 0
+public_match_rows=1/21
+full_action_rows=2/21
+```
+
+解读：
+
+- 21 条 unique non-temp over round-cap 不是 payload parser/slot 误计，也不是 duplicate runtime/item pair 导致；0x002D latest inventory 与 payload raw/occupied slot 一致。
+- 这些 rows 的 item id 均在 current reachable Drop universe 内，外部 overlay 若存在，当前证据只支持它影响件数/活动机制，而不是引入未知非生肖 item pool。
+- `server_side_settlement_expansion` 有 3 条外部确认；18 条只能判为 `session_capacity_source_semantics`，仍需要 source parser/table acquisition 才能进一步拆开。
+- per-session table version 仍是弱假设：over-cap 横跨多个 day/session/map，且本地 raw/table version 均为 300；当前旧 CDN URL 无法验证远端 current table。
+- 下一阶段不应直接恢复 formal/value sampler 参数调优；优先做 source parser、远端/活动表获取，或追加样本确认 payload-only rows 的生成机制。
