@@ -142,12 +142,15 @@ def _observed_inventory(path: Path, *, tables: Any) -> dict[str, Any]:
         }
     items = tuple(getattr(state, "inventory_items", ()) or ())
     quality_counts: Counter[str] = Counter()
+    item_counts: Counter[str] = Counter()
     item_ids: list[int] = []
     missing_quality = 0
     for item in items:
         item_id = getattr(item, "item_id", None)
         if item_id is not None:
-            item_ids.append(int(item_id))
+            parsed_item_id = int(item_id)
+            item_ids.append(parsed_item_id)
+            item_counts[str(parsed_item_id)] += 1
         quality = _quality_for_item(item, tables=tables)
         if quality is None:
             missing_quality += 1
@@ -159,6 +162,7 @@ def _observed_inventory(path: Path, *, tables: Any) -> dict[str, Any]:
         "map_id": getattr(state, "map_id", None),
         "inventory_count": len(items),
         "quality_counts": dict(sorted(quality_counts.items())),
+        "item_counts": dict(sorted(item_counts.items())),
         "item_ids": item_ids,
         "missing_quality_items": missing_quality,
     }
@@ -239,6 +243,7 @@ def _score_candidate(
     quality_probs = prior.get("quality_probabilities") or {}
     item_probs = prior.get("item_probabilities") or {}
     quality_counts = observed.get("quality_counts") or {}
+    item_counts = observed.get("item_counts") or {}
     item_ids = tuple(int(value) for value in observed.get("item_ids") or ())
     inventory_count = int(observed.get("inventory_count") or 0)
     log_likelihood = 0.0
@@ -249,7 +254,28 @@ def _score_candidate(
             zero_quality_items += int(count)
             probability = _EPSILON
         log_likelihood += int(count) * math.log(probability)
+
+    item_log_likelihood = 0.0
+    zero_item_probability_items = 0
+    observed_item_probabilities: dict[str, float] = {}
+    for item_id_text, count in item_counts.items():
+        item_id = int(item_id_text)
+        probability = float(item_probs.get(item_id, 0.0) or 0.0)
+        observed_item_probabilities[str(item_id)] = probability
+        if probability <= 0.0:
+            zero_item_probability_items += int(count)
+            probability = _EPSILON
+        item_log_likelihood += int(count) * math.log(probability)
     missing_item_count = sum(1 for item_id in item_ids if item_id not in item_probs)
+    low_probability_items = dict(
+        sorted(
+            (
+                (item_id, _round_metric(probability, 8))
+                for item_id, probability in observed_item_probabilities.items()
+            ),
+            key=lambda item: (float(item[1]), item[0]),
+        )[:8]
+    )
     return {
         "scheme": scheme,
         "actual_map_id": observed.get("map_id"),
@@ -269,35 +295,45 @@ def _score_candidate(
             if inventory_count > 0
             else None
         ),
+        "item_log_likelihood": _round_metric(item_log_likelihood, 6),
+        "item_log_likelihood_per_item": (
+            _round_metric(item_log_likelihood / inventory_count, 6)
+            if inventory_count > 0
+            else None
+        ),
         "zero_quality_items": zero_quality_items,
+        "zero_item_probability_items": zero_item_probability_items,
         "missing_item_count": missing_item_count,
         "missing_item_rate": (
             _round_metric(missing_item_count / inventory_count, 6)
             if inventory_count > 0
             else None
         ),
+        "low_probability_items": low_probability_items,
     }
 
 
-def _best_scheme(rows: Sequence[Mapping[str, Any]]) -> tuple[str | None, float | None]:
+def _best_scheme(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    score_key: str = "log_likelihood_per_item",
+) -> tuple[str | None, float | None]:
     scored = [
         row
         for row in rows
         if row.get("status") == "ok"
-        and row.get("log_likelihood_per_item") is not None
+        and row.get(score_key) is not None
     ]
     if not scored:
         return None, None
     ordered = sorted(
         scored,
-        key=lambda row: float(row["log_likelihood_per_item"]),
+        key=lambda row: float(row[score_key]),
         reverse=True,
     )
     if len(ordered) == 1:
         return str(ordered[0]["scheme"]), None
-    margin = float(ordered[0]["log_likelihood_per_item"]) - float(
-        ordered[1]["log_likelihood_per_item"]
-    )
+    margin = float(ordered[0][score_key]) - float(ordered[1][score_key])
     return str(ordered[0]["scheme"]), _round_metric(margin, 6)
 
 
@@ -344,11 +380,17 @@ def summarize_activity_mapping_likelihood(
                     )
                 )
             winner, margin = _best_scheme(candidate_rows)
+            item_winner, item_margin = _best_scheme(
+                candidate_rows,
+                score_key="item_log_likelihood_per_item",
+            )
             file_results.append(
                 {
                     **{key: value for key, value in observed.items() if key != "item_ids"},
                     "best_scheme": winner,
                     "best_margin_per_item": margin,
+                    "best_item_scheme": item_winner,
+                    "best_item_margin_per_item": item_margin,
                     "candidates": candidate_rows,
                 }
             )
@@ -377,14 +419,25 @@ def summarize_activity_mapping_likelihood(
                 "log_likelihood_per_item": _numeric_summary(
                     row.get("log_likelihood_per_item") for row in rows
                 ),
+                "item_log_likelihood_per_item": _numeric_summary(
+                    row.get("item_log_likelihood_per_item") for row in rows
+                ),
                 "zero_quality_items": _numeric_summary(
                     row.get("zero_quality_items") for row in rows
+                ),
+                "zero_item_probability_items": _numeric_summary(
+                    row.get("zero_item_probability_items") for row in rows
                 ),
                 "missing_item_rate": _numeric_summary(
                     row.get("missing_item_rate") for row in rows
                 ),
                 "winner_rows": sum(
                     1 for file_row in file_results if file_row.get("best_scheme") == scheme
+                ),
+                "item_winner_rows": sum(
+                    1
+                    for file_row in file_results
+                    if file_row.get("best_item_scheme") == scheme
                 ),
             }
         )
@@ -402,8 +455,14 @@ def summarize_activity_mapping_likelihood(
                     row.get("inventory_count") for row in rows
                 ),
                 "winner_counts": _counter_dict(row.get("best_scheme") for row in rows),
+                "item_winner_counts": _counter_dict(
+                    row.get("best_item_scheme") for row in rows
+                ),
                 "best_margin_per_item": _numeric_summary(
                     row.get("best_margin_per_item") for row in rows
+                ),
+                "best_item_margin_per_item": _numeric_summary(
+                    row.get("best_item_margin_per_item") for row in rows
                 ),
             }
         )
@@ -412,6 +471,9 @@ def summarize_activity_mapping_likelihood(
         "files": len(file_results),
         "schemes": [label for label, _delta in parsed_schemes],
         "winner_counts": _counter_dict(row.get("best_scheme") for row in file_results),
+        "item_winner_counts": _counter_dict(
+            row.get("best_item_scheme") for row in file_results
+        ),
         "candidate_status_counts": _counter_dict(
             row.get("status") for row in candidate_rows
         ),
@@ -436,6 +498,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"files={result['files']}",
                 f"schemes={','.join(result['schemes'])}",
                 f"winners={_format_counts(result['winner_counts'])}",
+                f"item_winners={_format_counts(result['item_winner_counts'])}",
                 f"candidate_statuses={_format_counts(result['candidate_status_counts'])}",
                 f"errors={len(result['errors'])}",
             )
@@ -448,11 +511,14 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"scheme={row['scheme']}",
                     f"rows={row['rows']}",
                     f"winner_rows={row['winner_rows']}",
+                    f"item_winner_rows={row['item_winner_rows']}",
                     f"status={_format_counts(row['status_counts'])}",
                     f"candidate_maps={_format_counts(row['candidate_map_ids'])}",
                     f"drop_pools={_format_counts(row['drop_pool_ids'])}",
                     f"ll_per_item={_format_summary(row['log_likelihood_per_item'])}",
+                    f"item_ll_per_item={_format_summary(row['item_log_likelihood_per_item'])}",
                     f"zero_quality={_format_summary(row['zero_quality_items'])}",
+                    f"zero_item={_format_summary(row['zero_item_probability_items'])}",
                     f"missing_item_rate={_format_summary(row['missing_item_rate'])}",
                 )
             )
@@ -464,8 +530,10 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"map={row['map_id']}",
                     f"files={row['files']}",
                     f"winners={_format_counts(row['winner_counts'])}",
+                    f"item_winners={_format_counts(row['item_winner_counts'])}",
                     f"inventory_count={_format_summary(row['inventory_count'])}",
                     f"margin={_format_summary(row['best_margin_per_item'])}",
+                    f"item_margin={_format_summary(row['best_item_margin_per_item'])}",
                 )
             )
         )

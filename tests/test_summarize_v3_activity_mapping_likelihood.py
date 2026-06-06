@@ -88,3 +88,52 @@ def test_activity_mapping_likelihood_marks_missing_candidate(monkeypatch, tmp_pa
     assert result["winner_counts"] == {"none": 1}
     assert result["candidate_status_counts"] == {"missing_bidmap": 1}
     assert result["file_results"][0]["candidates"][0]["candidate_map_id"] == 2519
+
+
+def test_activity_mapping_likelihood_tracks_exact_item_weight_winner(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    sample = tmp_path / "sample.json"
+    sample.write_text("[]", encoding="utf-8")
+    inventory = (_item(1001, 6), _item(1001, 6), _item(1002, 6))
+    state = SimpleNamespace(map_id=2521, inventory_items=inventory)
+    tables = SimpleNamespace(
+        maps={
+            2511: SimpleNamespace(drop_pool_id=2111),
+            2501: SimpleNamespace(drop_pool_id=2101),
+        },
+        drops={},
+        items={item.item_id: item for item in inventory},
+    )
+
+    def fake_sampler(map_id, **_kwargs):
+        if map_id == 2511:
+            probs = np.asarray([0.9, 0.1], dtype=float)
+        else:
+            probs = np.asarray([0.1, 0.9], dtype=float)
+        pool = SimpleNamespace(
+            items=np.asarray([_item(1001, 6), _item(1002, 6)], dtype=object),
+            probabilities=probs,
+            qualities=np.asarray([6, 6], dtype=int),
+        )
+        return SimpleNamespace(pools=(pool,), pool_weights=(1.0,))
+
+    monkeypatch.setattr(
+        module,
+        "parse_fatbeans_capture",
+        lambda _path: SimpleNamespace(states=(state,)),
+    )
+    monkeypatch.setattr(module, "prepare_session_sampler", fake_sampler)
+
+    result = module.summarize_activity_mapping_likelihood(
+        [sample],
+        tables=tables,
+        schemes=("minus10:-10", "minus20:-20"),
+    )
+
+    assert result["winner_counts"] == {"minus10": 1}
+    assert result["item_winner_counts"] == {"minus10": 1}
+    assert result["scheme_results"][0]["item_winner_rows"] == 1
+    assert result["file_results"][0]["best_item_scheme"] == "minus10"

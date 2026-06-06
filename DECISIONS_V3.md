@@ -1894,3 +1894,36 @@ applied_hurts=2502
 - 当前 raw v300 有 `2511-2520` 与 `2520->2150` 链，但无 `2521+` BidMap/Drop 顶层池。
 - activity 15 rows 对照：`minus10` winner 11/15，`minus20` winner 4/15；两边 candidate 均 `ok` 且 missing item rate 为 0。
 - `minus10` 平均 log likelihood per item 为 `-1.676415`，`minus20` 为 `-1.691183`，方向性存在但 margin 较小。
+
+## D-v3-083：2506 support blocker 来自 selected outer folds，不是本地漏样本
+
+2026-06-06 起，当前决策：
+
+- 2506 guarded bridge high-trial blocker 继续解释为 selected outer holdout support depth，不解释为 parser 漏样本或 default archive 缺少 2506。
+- 当前 default archive 有 21 个 2506 canonical sessions、71 个 metric rows、59 个 bridge candidate rows、20 个 count/cells/value bridge rows。
+- high-trial guard 只在 outer folds 0 和 4 选择 2506，因此实际 applied rows 只有 `3 + 6 = 9`。
+- 本地没有可直接纳入 default archive 的新增 2506 support；`data/logs/live/raw` 中 2506 是 canonical session 的重复/reset/complete 副本。
+- `data/samples/fatbeans_invalid/parse_error/fatbeans_invalid_parse_error_aisha_shipwreck_test_sample60_5rounds_7fc668a5b9_0438.json` 只能列为人工审查候选，不得直接纳入 promotion support。
+- 后续必须采集新的真实 complete 2506 sessions，再复跑 manifest、bridge summary 和 `256 trials x seeds 0/1/7` stability matrix。
+
+原因：
+
+- 2506 fold 分布：fold0 `sessions=1/bridge_candidates=3/selected=yes`，fold1 `8/23/no`，fold2 `5/16/no`，fold3 `4/11/no`，fold4 `3/6/yes`。
+- support 门槛当前为 `min_applied_rows=20`；现有 selected-fold support 只有 9，缺口至少 11 applied rows。
+- invalid parse_error 样本当前 parser 可读且含 5 ready rows，但历史错误为 `SEND invalid frame length`，需先确认原始包完整性和 parser 行为变化。
+
+## D-v3-084：252x exact item likelihood 不改变 missing-table 边界
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_activity_mapping_likelihood.py` 可同时输出 quality-level 与 exact item-level likelihood；`best_scheme` 继续保留 quality winner，`best_item_scheme` 只作为更细粒度审计线索。
+- exact item likelihood 可以比较同一 item 在候选映射下的权重差异，但仍不能证明 `2521+` 服务端正式映射。
+- 不增加 naive combined score；quality 是 item distribution 的边际，直接相加会双重计数。
+- value/cell bucket likelihood 可作为后续解释性 projection diagnostic，但不能作为定表或 promotion evidence。
+- 252x 继续保持 missing-table/activity cohort，不进入 default prior、formal/value sampler promotion 分母或正式出价。
+
+原因：
+
+- activity 15 rows：quality winners 与 item winners 均为 `minus10:11, minus20:4`。
+- exact item log likelihood per item 仅小幅偏向 `minus10`：`-5.965943` vs `-5.981787`。
+- 两个候选族的 missing item rate 与 zero item probability 都为 0；证据仍是权重偏好，不是 universe 区分。

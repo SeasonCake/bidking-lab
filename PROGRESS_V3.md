@@ -4729,3 +4729,85 @@ formal_value_sampler_holdout=blocked
 - 2506 guarded bridge 已通过 high-trial seed stability 的方向性检查，但 sample depth 仍不足，不能 promotion。
 - 252x activity 更偏向 `252x->251x` activity/up table 解释，但仍缺少 `2521+` 服务端映射强证据；继续 missing-table cohort。
 - 下一步优先采集更多 2506 archive/live support，并继续查 252x activity overlay 或 table-version 强字段；formal/value active sampler 继续暂停。
+
+## 2026-06-06 checkpoint：2506 support gap and item-level activity mapping
+
+本轮继续按并行审计推进 v3 promotion 前置证据，不改 v2 formal/live/UI、readiness gate 或正式出价。
+
+子 agent 结果：
+
+- Support Gap Explorer：
+  - 2506 default archive 并非总样本过少：21 sessions、71 metric rows、59 bridge candidate rows；
+  - high-trial guard 只选择 outer folds 0 和 4，实际 applied rows 为 `3+6=9`；
+  - 本地没有可直接纳入 default archive 的新增 2506 support；
+  - 仅有 1 个 invalid parse_error 2506 样本可人工审查，不能直接计入 promotion support。
+- Activity Mapping Evidence Explorer：
+  - exact item likelihood 值得加入，能比较同一 item 在候选映射下的权重；
+  - value/cell bucket 只是 projection diagnostics，不应作为定表或 promotion evidence；
+  - 不应构造 naive combined score，避免 quality 与 item 双重计数。
+
+改动：
+
+- `scripts/summarize_v3_activity_mapping_likelihood.py` 新增 exact item-level likelihood 输出：
+  - `item_log_likelihood`；
+  - `item_log_likelihood_per_item`；
+  - `best_item_scheme` / `best_item_margin_per_item`；
+  - `item_winner_counts`；
+  - zero/missing/low-probability item diagnostics。
+- `tests/test_summarize_v3_activity_mapping_likelihood.py` 新增 quality tie 但 exact item 权重分出 winner 的覆盖。
+- `DECISIONS_V3.md` 新增 D-v3-083、D-v3-084；`OBSERVATIONS_V3.md` 新增 O-v3-088、O-v3-089。
+
+关键验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_activity_mapping_likelihood.py
+C:\Users\shenc\anaconda3\python.exe -m py_compile scripts\summarize_v3_activity_mapping_likelihood.py
+git -c safe.directory=C:/xiangmuyunxing/biancheng/2026/bidking-lab diff --check
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_activity_mapping_likelihood.py
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_other_tables.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_count_prior_holdout.py tests\test_summarize_v3_activity_mapping_likelihood.py tests\test_summarize_v3_scp_formal_value_link.py tests\test_summarize_v3_scp_count_value_bridge.py tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_stability.py tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+```
+
+结果：
+
+```text
+activity mapping tests:
+3 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+90 passed
+
+activity mapping real run:
+files=15
+quality_winners=minus10:11,minus20:4
+item_winners=minus10:11,minus20:4
+candidate_statuses=ok:30
+minus10 item_ll_per_item avg=-5.965943
+minus20 item_ll_per_item avg=-5.981787
+zero_item avg=0.0 for both schemes
+missing_item_rate avg=0.0 for both schemes
+
+2506 support gap:
+canonical_sessions=21
+metric_rows=71
+bridge_candidate_rows=59
+selected_folds=0,4
+selected_fold_bridge_candidates=3+6
+applied_rows=9
+min_required=20
+directly_addable_local_samples=0
+manual_review_invalid_parse_error_candidates=1
+
+readiness:
+overall_status=not_ready
+blocked_gates=12
+settlement_count_guarded_bridge_holdout=watch
+settlement_count_cells_value_bridge_holdout=blocked
+formal_value_sampler_holdout=blocked
+```
+
+结论：
+
+- 252x mapping 的 exact item evidence 与 quality evidence 同向，但仍只是 `252x->251x` 略优的语义线索，不足以定表或进入 default prior。
+- 2506 的当前 promotion blocker 是 selected-fold support depth；下一步应采集 10-15 个真实 complete 2506 sessions，尤其补 Ethan/Aisha 2506，再复跑 high-trial stability。
+- formal/value active sampler 继续暂停；v3 仍保持 shadow-only。

@@ -3320,3 +3320,96 @@ missing_item_rate avg=0.0
 - `252x->251x` 的 quality likelihood 略优于 `252x->250x`，与 `2511-2520`/`2520->2150` activity/up table 线索一致。
 - 但两个候选族的 missing item rate 都是 0，说明 item universe 相同；当前 likelihood 只能比较权重，不足以证明服务端映射。
 - 252x 继续保持 missing-table/activity cohort，不进入 default prior 或 promotion 分母。
+
+## O-v3-088：2506 selected-fold support 只有 9 rows，本地无可直接纳入新增样本
+
+2026-06-06 只读调查 2506 support gap：
+
+```text
+default archive 2506:
+canonical_sessions=21
+metric_rows=71
+bridge_candidate_rows=59
+count_cells_value_bridge_rows=20
+
+selected outer folds:
+fold0 selected=yes sessions=1 metric_rows=3 bridge_candidates=3
+fold1 selected=no  sessions=8 metric_rows=30 bridge_candidates=23
+fold2 selected=no  sessions=5 metric_rows=18 bridge_candidates=16
+fold3 selected=no  sessions=4 metric_rows=11 bridge_candidates=11
+fold4 selected=yes sessions=3 metric_rows=9 bridge_candidates=6
+
+applied_rows=3+6=9
+min_required=20
+```
+
+本地新增候选：
+
+```text
+directly_addable=0
+manual_review=1
+manual_review_file=data/samples/fatbeans_invalid/parse_error/fatbeans_invalid_parse_error_aisha_shipwreck_test_sample60_5rounds_7fc668a5b9_0438.json
+manual_review_session=2506:1295018649037100
+manual_review_ready_rows=5
+manual_review_bridge_candidates=5
+manual_review_count_cells_value_bridge_rows=4
+reason=historical SEND invalid frame length parse_error
+```
+
+不能纳入：
+
+```text
+data/logs/live/raw: 40 个 2506 文件，但唯一 sessions 已在 canonical archive，均为重复/reset/complete 副本
+data/samples/fatbeans_manual_inbox: empty
+data/samples/fatbeans_activity_20260605_shipwreck: 0 个 2506
+data/logs/live_replay_*: replay derived output
+data/review: derived audit output
+data/samples/synthetic_v2: synthetic, not promotion support
+```
+
+解读：
+
+- 2506 low-support blocker 的主因是 guard 只选择 folds 0/4，而这两个 holdout fold 的 bridge candidate rows 少。
+- 本地没有可直接补入 default archive 的真实 2506 support。
+- 下一步应采集新的完整 2506 sessions，目标至少补足 `+11` applied rows；实际建议采集 10-15 个真实 complete sessions 后复跑 stability matrix。
+
+## O-v3-089：exact item likelihood 与 quality likelihood 同向，但仍不足以证明 252x 映射
+
+2026-06-06 增强 `summarize_v3_activity_mapping_likelihood.py`，新增 exact item likelihood：
+
+```text
+files=15
+quality_winners=minus10:11,minus20:4
+item_winners=minus10:11,minus20:4
+candidate_statuses=ok:30
+errors=0
+
+minus10:
+quality_ll_per_item_avg=-1.676415
+item_ll_per_item_avg=-5.965943
+zero_item_avg=0.0
+missing_item_rate_avg=0.0
+
+minus20:
+quality_ll_per_item_avg=-1.691183
+item_ll_per_item_avg=-5.981787
+zero_item_avg=0.0
+missing_item_rate_avg=0.0
+```
+
+按 map：
+
+```text
+2521: quality minus10 4 / minus20 1; item minus10 4 / minus20 1
+2522: quality minus10 1; item minus10 1
+2524: quality minus10 2 / minus20 1; item minus10 2 / minus20 1
+2526: quality minus10 2; item minus10 2
+2528: quality minus20 1; item minus20 1
+2529: quality minus10 2 / minus20 1; item minus10 2 / minus20 1
+```
+
+解读：
+
+- exact item likelihood 与 quality likelihood 完全同向，说明更细粒度权重没有推翻 `252x->251x` 略优的结论。
+- item-level margin 只是小幅增强，不足以把 `2521+` 定为 `2511+` official mapping。
+- 两个候选族的 item universe 仍完全覆盖 observed settlement；252x 继续作为 missing-table/activity cohort。
