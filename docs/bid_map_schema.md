@@ -21,7 +21,7 @@ audited rows.
 | 5 | `name_key_alt` | str | ☆ | duplicate of col 3 |
 | 6 | `desc_key` | str | ☆ | i18n key, `bid_map_D_{id}` |
 | 7 | `category` | int | ☆ | 9 distinct values (101–105, 201, ...); likely region/area class |
-| 8 | `v300_flag_a` | int | ☆ | observed as `1` in audited rows; parser ignores it |
+| 8 | `v300_flag_a` | int | ☆ | current v300 has `1` in 105 rows and `0` in 20 rows; `0` is concentrated in `2511-2520` and `4511-4520`. Parser ignores it. |
 | **9** | `sub_pool_weights` | list[[map_id, weight]] | ★ | only the "未知" anthology maps have entries; leaf maps store `[[]]`. Routing: pick a sub-map weighted by these, use that map's `drop_pool_id`. |
 | 10 | `value_tier_ui` | str | ☆ | `ui_value_{low,lower,medium,higher,high}` — 5 tiers |
 | 11 | `rounds_total` | int | ☆ | 10/15/20/25/30 — monotonic with tier |
@@ -73,6 +73,12 @@ match the parsed final inventory count in 439/441 files. That supports the
 parser/truth count as final occupied settlement slots, but it still does
 not identify which slots came from base Drop, activity overlay, or another
 server-side expansion mechanism.
+
+The bucketed capacity audit added on 2026-06-06 shows the prior-stressed
+94-row set all has `v300_flag_a=1`; therefore col[8] does not explain the
+current `hard_capacity_conflict` / `lower_bound_under_truth` rows. It
+remains a useful activity/overlay clue for the 2511-2520 and 4511-4520
+rows, not a promotion signal.
 
 ## Tier structure
 

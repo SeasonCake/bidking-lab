@@ -4971,3 +4971,55 @@ prior_stress_capacity_table_drift buckets=hard_capacity_conflict=29,lower_bound_
 - prior-stress blocker 不是单一 formal/value 问题：硬容量冲突、truth 超 prior 低界、floor evidence 不足必须分开处理。
 - formal/value sampler 继续只允许 shadow-only value-floor candidate；不能用它吸收 capacity/cells drift。
 - readiness 仍是 `not_ready`，`blocked_gates=12`；下一步优先沿 table/capacity/evidence 与 count->cells/value bridge 解释三类 bucket。
+
+## 2026-06-06 checkpoint：bucketed capacity table audit
+
+本轮把 capacity/table audit 接到上一轮的 `consistency_bucket`，用于按 blocker 类型直接复核 raw BidMap/Drop、sampler possible max 与 raw settlement inventory。该改动只增加 audit/readiness-adjacent diagnostics，不改 v2 formal/live/UI、不改正式出价、不改变 promotion gate。
+
+改动：
+
+- `scripts/summarize_v3_capacity_table_audit.py` 新增：
+  - `--bucket` 过滤；
+  - per-map `consistency_bucket_counts` / `consistency_class_counts`；
+  - `bidmap_raw_col8` / `bidmap_v300_flag_a` 输出；
+  - summary 行显示 bucket/class 与 col8。
+- `tests/test_summarize_v3_capacity_table_audit.py` 覆盖 bucket 过滤、bucket/class counts 与 col8 输出。
+- `docs/bid_map_schema.md` 补充 current v300 col[8] 全表分布。
+- `DECISIONS_V3.md` 新增 D-v3-088；`OBSERVATIONS_V3.md` 新增 O-v3-093。
+
+关键验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_table_audit.py
+C:\Users\shenc\anaconda3\python.exe -m py_compile scripts\summarize_v3_capacity_table_audit.py
+```
+
+真实 64-trial bucketed audit：
+
+```text
+details=94 errors=0
+
+hard_capacity_conflict:
+groups=10 rows=29 table_impossible=29 round_impossible=16 verified_rows=29 col8_rows={'1': 29}
+
+lower_bound_under_truth:
+groups=11 rows=39 table_impossible=39 round_impossible=22 verified_rows=39 col8_rows={'1': 39}
+
+evidence_floor_only:
+groups=6 rows=26 table_impossible=0 round_impossible=0 verified_rows=26 col8_rows={'1': 26}
+```
+
+BidMap col[8] 全表复核：
+
+```text
+rows=125
+col8_counts={'0': 20, '1': 105}
+col8_zero_maps=2511-2520,4511-4520
+```
+
+结论：
+
+- `hard_capacity_conflict` 与 `lower_bound_under_truth` 68 rows 全部为真实 table/sampler possible max gap，且 raw inventory 已 verified；继续查 table/session-capacity/settlement-source split。
+- `evidence_floor_only` 26 rows table cap pass，下一步查 evidence/floor 编译口径。
+- current col[16] 仍是 `[[]]` 空占位，drop-ref 在 col[17]；col[8] 不解释当前 94 行，但保留作后续 activity/overlay 表线索。
+- formal/value active sampler 继续暂停；v3 promotion/v2 archive 不推进。

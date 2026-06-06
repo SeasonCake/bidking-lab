@@ -115,6 +115,11 @@ def test_capacity_table_audit_marks_truth_above_sampler_possible_max() -> None:
                     "truth_count_above_prior_max",
                 ],
             },
+            "consistency_bucket": "hard_capacity_conflict",
+            "consistency_classes": (
+                "capacity_direct_prior_max_conflict",
+                "total_cells_floor_below_truth",
+            ),
         }
     ]
 
@@ -132,11 +137,18 @@ def test_capacity_table_audit_marks_truth_above_sampler_possible_max() -> None:
     assert row["round_cap_impossible_rows"] == 0
     assert row["bidmap_raw_column_count"] == 0
     assert row["bidmap_drop_ref_column_index"] == 16
+    assert row["bidmap_raw_col8"] is None
+    assert row["bidmap_v300_flag_a"] is None
     assert row["bidmap_raw_round_cap_max"] is None
     assert row["bidmap_items_per_session_max"] == 44
     assert row["sampler_max_count_per_draw"] == 1
     assert row["sampler_possible_item_count_max"] == 44
     assert row["capacity_cases"] == {"direct_prior_max_conflict": 1}
+    assert row["consistency_bucket_counts"] == {"hard_capacity_conflict": 1}
+    assert row["consistency_class_counts"] == {
+        "capacity_direct_prior_max_conflict": 1,
+        "total_cells_floor_below_truth": 1,
+    }
     assert row["target_truth_delta_counts"] == {
         "below": 0,
         "match": 1,
@@ -215,6 +227,8 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
                     "target_truth_delta": 0,
                     "cases": ["direct_prior_max_conflict"],
                 },
+                "consistency_bucket": "hard_capacity_conflict",
+                "consistency_classes": ("capacity_direct_prior_max_conflict",),
             }
         ],
         tables=_tables(),
@@ -264,6 +278,8 @@ def test_capacity_table_audit_filters_selected_case() -> None:
                 "target_truth_delta": -25,
                 "cases": ["target_lower_bound_truth_above_prior"],
             },
+            "consistency_bucket": "lower_bound_under_truth",
+            "consistency_classes": ("capacity_truth_above_prior_not_targeted",),
         }
     ]
 
@@ -280,6 +296,23 @@ def test_capacity_table_audit_filters_selected_case() -> None:
             details,
             tables=_tables(),
             selected_case="target_lower_bound_truth_above_prior",
+        )
+    ) == 1
+    assert (
+        module.summarize_capacity_table_audit(
+            details,
+            tables=_tables(),
+            selected_case="all",
+            selected_bucket="hard_capacity_conflict",
+        )
+        == []
+    )
+    assert len(
+        module.summarize_capacity_table_audit(
+            details,
+            tables=_tables(),
+            selected_case="all",
+            selected_bucket="lower_bound_under_truth",
         )
     ) == 1
 
@@ -317,6 +350,7 @@ def test_capacity_table_audit_quantifies_zodiac_adjusted_count_gap(
     )
 
     raw_row = ["0"] * 23
+    raw_row[8] = "1"
     raw_row[14] = "[2,2,2,2,2]"
     raw_row[17] = "[9999,2601,1,1]"
     result = module.summarize_capacity_table_audit(
@@ -334,6 +368,8 @@ def test_capacity_table_audit_quantifies_zodiac_adjusted_count_gap(
                     "target_truth_delta": 0,
                     "cases": ["direct_prior_max_conflict"],
                 },
+                "consistency_bucket": "hard_capacity_conflict",
+                "consistency_classes": ("capacity_direct_prior_max_conflict",),
             }
         ],
         tables=_tables(items_per_session_max=1, raw_row=raw_row),
@@ -341,6 +377,8 @@ def test_capacity_table_audit_quantifies_zodiac_adjusted_count_gap(
     )
 
     row = result[0]
+    assert row["bidmap_raw_col8"] == "1"
+    assert row["bidmap_v300_flag_a"] == 1
     assert row["raw_known_temp_zodiac_count"]["max"] == 1
     assert row["raw_non_zodiac_missing_from_drop_universe_count"]["max"] == 0
     assert row["raw_drop_ref_excess_item_count"]["max"] == 2

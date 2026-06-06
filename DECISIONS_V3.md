@@ -1975,3 +1975,19 @@ applied_hurts=2502
 - 当前 `prior_stressed` 94 行并非同一种问题：有 target/truth 同时超过 prior max 的硬容量冲突，也有 truth 超 prior 但 target 只是低界，还有纯 floor evidence 不足。
 - 64-trial readiness 复核显示 bucket 为 `hard_capacity_conflict=29`、`lower_bound_under_truth=39`、`evidence_floor_only=26`。
 - 这些分类让后续 sampler 设计可以避开 capacity/cells drift，防止用 value floor 局部改善绕过 promotion blocker。
+
+## D-v3-088：capacity table audit 必须按 consistency bucket 分流
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_capacity_table_audit.py` 支持 `--bucket`，按 `consistency_bucket` 过滤 prior-stress rows，并在每个 map group 输出 bucket/class counts。
+- capacity table audit 输出 `bidmap_raw_col8` / `bidmap_v300_flag_a`，但该字段只作为表语义线索，不参与 sampler、readiness gate 或正式出价。
+- 当前 94 个 prior-stressed rows 的 `v300_flag_a` 全为 `1`；因此 col[8] 不能解释本轮 hard/lower-bound capacity conflict。
+- `hard_capacity_conflict` 和 `lower_bound_under_truth` 的真实 rows 必须继续解释为 table/session-capacity/settlement-source split blocker；不得用 formal/value sampler 调参吸收。
+- `evidence_floor_only` 在 capacity table audit 中 table cap pass，应转向 evidence/floor 编译口径审计，而不是 table cap 修复。
+
+原因：
+
+- 64-trial bucketed audit 显示 `hard_capacity_conflict=29` 与 `lower_bound_under_truth=39` 全部为 `table_possible_max_below_truth` 且 `raw_inventory=verified_latest_inventory`。
+- 同一 audit 显示 `evidence_floor_only=26` 的 `table_impossible_rows=0`、`round_impossible_rows=0`。
+- current v300 全表 col[8] 分布为 `1=105`、`0=20`，`0` 集中于 `2511-2520` / `4511-4520`；当前 prior-stress 94 rows 不属于该 col[8]=0 cohort。

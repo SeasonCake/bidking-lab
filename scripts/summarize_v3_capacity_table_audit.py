@@ -47,6 +47,7 @@ from bidking_lab.simulation.basic_mc import flatten_pool  # noqa: E402
 
 
 DEFAULT_CASE = "direct_prior_max_conflict"
+DEFAULT_BUCKET = "all"
 DEFAULT_SAMPLE_ROOT = ROOT / "data" / "samples" / "fatbeans"
 _TEMPORARY_BLUE_ZODIAC_ITEM_IDS = frozenset(range(1306003, 1306015))
 
@@ -603,6 +604,29 @@ def _case_match(row: Mapping[str, Any], selected_case: str) -> bool:
     return selected_case in _capacity_cases(row)
 
 
+def _bucket_match(row: Mapping[str, Any], selected_bucket: str) -> bool:
+    if selected_bucket == "all":
+        return True
+    value = row.get("consistency_bucket")
+    bucket = str(value) if value not in (None, "") else "none"
+    return bucket == selected_bucket
+
+
+def _consistency_class_counts(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    top: int,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        classes = row.get("consistency_classes") or ()
+        if isinstance(classes, str):
+            classes = tuple(token for token in classes.split(";") if token)
+        for value in classes:
+            counts[str(value) if value not in (None, "") else "none"] += 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:top])
+
+
 def _sampler_table_summary(map_id: int, tables: Any) -> dict[str, Any]:
     bid_map = tables.maps.get(int(map_id))
     if bid_map is None:
@@ -620,6 +644,8 @@ def _sampler_table_summary(map_id: int, tables: Any) -> dict[str, Any]:
             "sampler_leaf_n_max": {"n": 0, "avg": None, "p90": None, "max": None},
             "bidmap_raw_column_count": None,
             "bidmap_drop_ref_column_index": None,
+            "bidmap_raw_col8": None,
+            "bidmap_v300_flag_a": None,
             "bidmap_raw_col14": None,
             "bidmap_raw_col16": None,
             "bidmap_raw_col17": None,
@@ -673,6 +699,12 @@ def _sampler_table_summary(map_id: int, tables: Any) -> dict[str, Any]:
         "sampler_leaf_n_max": _numeric_summary(leaf_n_max_values),
         "bidmap_raw_column_count": raw_column_count,
         "bidmap_drop_ref_column_index": drop_ref_index,
+        "bidmap_raw_col8": (
+            bid_map.raw_row[8] if len(bid_map.raw_row) > 8 else None
+        ),
+        "bidmap_v300_flag_a": (
+            _safe_int(bid_map.raw_row[8]) if raw_column_count == 23 else None
+        ),
         "bidmap_raw_col14": (
             bid_map.raw_row[14] if len(bid_map.raw_row) > 14 else None
         ),
@@ -698,12 +730,15 @@ def summarize_capacity_table_audit(
     *,
     tables: Any,
     selected_case: str = DEFAULT_CASE,
+    selected_bucket: str = DEFAULT_BUCKET,
     top: int = 8,
     sample_root: Path = DEFAULT_SAMPLE_ROOT,
 ) -> list[dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in details:
         if not _case_match(row, selected_case):
+            continue
+        if not _bucket_match(row, selected_bucket):
             continue
         groups[str(row.get("map_id") if row.get("map_id") not in (None, "") else "none")].append(row)
 
@@ -750,6 +785,14 @@ def summarize_capacity_table_audit(
                 "round_cap_impossible_rows": round_cap_impossible_rows,
                 "capacity_cases": dict(
                     sorted(case_counts.items(), key=lambda item: (-item[1], item[0]))[:top]
+                ),
+                "consistency_bucket_counts": _counter_dict(
+                    (row.get("consistency_bucket") for row in rows),
+                    top=top,
+                ),
+                "consistency_class_counts": _consistency_class_counts(
+                    rows,
+                    top=top,
                 ),
                 "target_count": _numeric_summary(
                     row.get("total_count_target") for row in capacity
@@ -825,6 +868,8 @@ def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
                     f"bidmap_items={row['bidmap_items_per_session_min']}-{row['bidmap_items_per_session_max']}",
                     f"bidmap_raw_cols={row['bidmap_raw_column_count']}",
                     f"drop_ref_col={row['bidmap_drop_ref_column_index']}",
+                    f"raw_col8={json.dumps(row['bidmap_raw_col8'], ensure_ascii=False)}",
+                    f"v300_flag_a={row['bidmap_v300_flag_a']}",
                     f"round_cap={row['bidmap_raw_round_cap_min']}-{row['bidmap_raw_round_cap_max']}",
                     f"raw_col14={json.dumps(row['bidmap_raw_col14'], ensure_ascii=False)}",
                     f"raw_col16={json.dumps(row['bidmap_raw_col16'], ensure_ascii=False)}",
@@ -864,6 +909,8 @@ def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
                     f"raw_public_count={_format_counts(row['raw_public_total_count_values'])}",
                     f"raw_missing_items={_format_counts(row['raw_missing_from_drop_universe_examples'])}",
                     f"cases={_format_counts(row['capacity_cases'])}",
+                    f"buckets={_format_counts(row['consistency_bucket_counts'])}",
+                    f"classes={_format_counts(row['consistency_class_counts'])}",
                     f"sources={_format_counts(row['source_counts'])}",
                     f"target_count={_format_summary(row['target_count'])}",
                     f"truth_count={_format_summary(row['truth_item_count'])}",
@@ -886,6 +933,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Files or directories to scan. Defaults to data/samples/fatbeans.",
     )
     parser.add_argument("--case", default=DEFAULT_CASE, help="Capacity case to audit, or all.")
+    parser.add_argument(
+        "--bucket",
+        default=DEFAULT_BUCKET,
+        help="Consistency bucket to audit, or all.",
+    )
     parser.add_argument("--top", type=int, default=12)
     parser.add_argument("--posterior-trials", type=int, default=64)
     parser.add_argument("--posterior-seed", type=int, default=0)
@@ -913,11 +965,13 @@ def main(argv: list[str] | None = None) -> int:
         details,
         tables=tables,
         selected_case=args.case,
+        selected_bucket=args.bucket,
         top=args.top,
     )
     result = {
         "errors": errors,
         "case": args.case,
+        "bucket": args.bucket,
         "rows": audit,
     }
     if args.format == "json":
@@ -925,7 +979,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         if errors:
             print(f"errors={len(errors)}")
-        print(f"case={args.case} groups={len(audit)}")
+        print(f"case={args.case} bucket={args.bucket} groups={len(audit)}")
         _print_summary(audit, top=args.top)
     return 1 if errors else 0
 

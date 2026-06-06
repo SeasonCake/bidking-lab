@@ -3553,3 +3553,55 @@ prior_stress_capacity_table_drift buckets:
 - `lower_bound_under_truth` 表示 target 只是低界或未命中，但真实 settlement 已超过 prior max，优先查 count->cells/value bridge 与结算展开语义。
 - `evidence_floor_only` 是 floor/target evidence 不足或缺失，不是 promotion evidence。
 - 本轮只增加审计分流和 readiness 展示；gate 数不变，v3 仍是 shadow-only。
+
+## O-v3-093：bucketed capacity audit 显示 hard/lower-bound 是真实 table-cap gap，evidence-only 不是
+
+2026-06-06 给 capacity table audit 增加 `--bucket` 与 `bidmap_raw_col8` 后复跑 64-trial default archive：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --case all --bucket hard_capacity_conflict
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --case all --bucket lower_bound_under_truth
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --case all --bucket evidence_floor_only
+```
+
+聚合结果：
+
+```text
+details=94 errors=0
+
+hard_capacity_conflict:
+  groups=10 rows=29 table_impossible=29 round_impossible=16 verified_rows=29 col8_rows={'1': 29}
+  top maps:
+    2601 rows=8 col16=[[]] col17=[9999,2601,22,44] bidmap_max=44 round_cap=60 sampler_max=44 truth_max=65 raw_latest_max=65 slot_max=300
+    2501 rows=6 col16=[[]] col17=[9999,2501,22,44] bidmap_max=44 round_cap=50 sampler_max=44 truth_max=60 raw_latest_max=60 slot_max=300
+    2506 rows=4 col16=[[]] col17=[9999,2506,22,44] bidmap_max=44 round_cap=50 sampler_max=44 truth_max=58 raw_latest_max=58 slot_max=300
+
+lower_bound_under_truth:
+  groups=11 rows=39 table_impossible=39 round_impossible=22 verified_rows=39 col8_rows={'1': 39}
+  top maps:
+    2508 rows=6 col16=[[]] col17=[9999,2508,22,44] bidmap_max=44 round_cap=50 sampler_max=44 truth_max=64 raw_latest_max=64 slot_max=300
+    2401 rows=5 col16=[[]] col17=[9999,2401,20,40] bidmap_max=40 round_cap=50 sampler_max=40 truth_max=53 raw_latest_max=53 slot_max=250
+    2404 rows=5 col16=[[]] col17=[9999,2404,20,40] bidmap_max=40 round_cap=50 sampler_max=40 truth_max=50 raw_latest_max=50 slot_max=250
+
+evidence_floor_only:
+  groups=6 rows=26 table_impossible=0 round_impossible=0 verified_rows=26 col8_rows={'1': 26}
+  top maps:
+    2401 rows=5 col16=[[]] col17=[9999,2401,20,40] bidmap_max=40 round_cap=50 sampler_max=40 truth_max=40 raw_latest_max=40 slot_max=250
+    2409 rows=5 col16=[[]] col17=[9999,2409,20,40] bidmap_max=40 round_cap=50 sampler_max=40 truth_max=29 raw_latest_max=29 slot_max=250
+    2406 rows=5 col16=[[]] col17=[9999,2406,20,40] bidmap_max=40 round_cap=50 sampler_max=40 truth_max=25 raw_latest_max=25 slot_max=250
+```
+
+BidMap col[8] 全表复核：
+
+```text
+rows=125
+col8_counts={'0': 20, '1': 105}
+col8_zero_maps=2511,2512,2513,2514,2515,2516,2517,2518,2519,2520,4511,4512,4513,4514,4515,4516,4517,4518,4519,4520
+```
+
+解读：
+
+- hard/lower-bound 68 rows 的 raw latest inventory 与 detail truth 对齐，且全部超过 current sampler possible max；这不是 parser 重复或 DropEntry `n_max` 多件数导致。
+- current v300 `col[16]` 在这些 rows 均为 `[[]]`，drop-ref 是 `col[17]`；`col[17]` 的 max 是 sampler draw range，不是 final settlement inventory hard cap。
+- `evidence_floor_only` 没有 table/round cap impossible，下一步应查 evidence compiler/floor source，而不是 table capacity。
+- col[8] 的 `0` cohort 是后续 activity/overlay 线索，但不解释当前 94 个 prior-stressed rows。
