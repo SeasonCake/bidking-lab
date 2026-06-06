@@ -3094,3 +3094,67 @@ capture_version_like_keys=-
 - final inventory count 远低于 250/300 slot capacity，说明 settlement inventory 的自然 capacity 更像 slot occupancy，而不是 BidMap drop-ref max。
 - known temp zodiac 只解释 missing drop-universe item id，不足以解释 after-temp count gap。
 - 仍缺少每个 archive capture 的表版本强字段，因此不能完全排除历史 table/version 或活动机制，但现有证据足以把 blocker 从“parser 重复”转为“sampler prior max/额外生成机制语义未解释”。
+
+## O-v3-084：nested guard 将候选收缩到 2506，但有效 holdout 仍只有 9 条
+
+2026-06-06 对 default 441-session archive 运行 nested train-only guarded bridge：
+
+```text
+aggregate-only / 64 trials / seed 0 / cap 5000:
+overall=blocked
+applied_rows=587
+delta_mae=-577.339
+hurts=2401,2502
+
+all-inner-fold / zero-over / 64 trials / seed 0 / cap 10000:
+overall=watch
+selected_groups=2506:3
+applied_rows=20
+delta_mae=-6000.0
+delta_p90=0
+bridge_over=0.25
+applied_hurts=-
+
+64 trials / seed 1 / cap 10000:
+overall=blocked
+selected_groups=2501:1,2506:2
+applied_rows=62
+delta_mae=+378.95
+applied_hurts=2501
+
+256 trials / seed 0 / cap 10000:
+overall=watch
+selected_groups=2506:2
+applied_rows=9
+delta_mae=-4602.026
+bridge_over=0.222222
+applied_hurts=-
+
+256 trials / seed 1 / cap 10000:
+overall=watch
+selected_groups=2506:2
+applied_rows=9
+delta_mae=-5555.556
+bridge_over=0.222222
+applied_hurts=-
+
+256 trials / seed 7 / cap 10000:
+overall=watch
+selected_groups=2506:2
+applied_rows=9
+delta_mae=-3333.333
+bridge_over=0.333333
+applied_hurts=-
+
+activity 252x:
+overall=sample_limited
+metric_rows=0
+```
+
+解读：
+
+- 简单 aggregate guard 不能排除 group-level hurt；必须使用 outer holdout + inner crossfit，并要求各 inner fold 稳定。
+- zero train over-increase 与 10000 lift cap 的组合能把高 trial 候选稳定收缩到 2506；cap 在这里同时参与 guard selection，不能被解释为可直接启用的正式参数。
+- 64-trial seed 1 的 2501 false selection 是明确反例；readiness 中 64-trial seed 0 的 watch 只能表示候选可见，不能表示 seed-stable。
+- 256-trial 多 seed 已给出方向性证据，但 9 条 outer holdout support 远低于 promotion 所需样本深度。
+- 当前可进入下一阶段的只有 2506 shadow live/archive accumulation；formal/value active sampler、正式出价和 v2 归档仍无依据。

@@ -4496,3 +4496,81 @@ formal_value_sampler_holdout=blocked
 - final inventory 远低于 250/300 slot capacity，说明 `items_per_session_max` 更像 sampler prior max，不是 final settlement inventory hard cap。
 - 252x activity 仍是 missing table cohort；不能用 default 250x 表强行解释。
 - 下一步应基于 settlement occupancy count prior 设计 shadow-only guard，或继续查额外生成/活动机制；formal/value sampler promotion 仍暂停。
+
+## 2026-06-06 checkpoint：nested train-only guarded count->value bridge
+
+本轮在不改 v2 formal/live/UI 与正式出价的前提下，把 settlement count->cells/value bridge 从手工 cap probe 收口为独立 nested train-only shadow holdout。
+
+改动：
+
+- 新增 `scripts/summarize_v3_scp_guarded_bridge_holdout.py`：
+  - outer session folds 评估未见 holdout；
+  - outer-train 内使用 salted inner session folds crossfit；
+  - group 必须通过 aggregate、全部 inner fold、最低样本数与 zero train over-rate increase guard；
+  - 未被 train guard 选中的 group 保持 baseline，不应用 bridge。
+- readiness 新增 `settlement_count_guarded_bridge_holdout` 信息 gate；原始 bridge、formal value sampler 与 prior-stress blocker 不降级。
+- 新增 guarded holdout 测试，并更新 v3 项目结构索引。
+- Codex/pytest 临时输出统一保留在 `.tmp/codex/`，项目优化完成前不逐次清理。
+
+关键验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_guarded_bridge_holdout.py tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_summarize_v3_promotion_readiness.py
+
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_holdout.py --posterior-trials 64 --posterior-seed 0 --formal-lift-cap 10000
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_holdout.py --posterior-trials 64 --posterior-seed 1 --formal-lift-cap 10000
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_holdout.py --posterior-trials 256 --posterior-seed 0 --formal-lift-cap 10000
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_holdout.py --posterior-trials 256 --posterior-seed 1 --formal-lift-cap 10000
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_holdout.py --posterior-trials 256 --posterior-seed 7 --formal-lift-cap 10000
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_other_tables.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_count_prior_holdout.py tests\test_summarize_v3_scp_formal_value_link.py tests\test_summarize_v3_scp_count_value_bridge.py tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_holdout.py tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+git -c safe.directory=C:/xiangmuyunxing/biancheng/2026/bidking-lab diff --check
+```
+
+结果：
+
+```text
+targeted tests:
+10 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+84 passed
+
+diff --check:
+passed
+
+64 trials / seed 0:
+overall=watch
+selected_groups=2506:3
+applied_rows=20
+delta_mae=-6000.0
+applied_hurts=-
+
+64 trials / seed 1:
+overall=blocked
+selected_groups=2501:1,2506:2
+applied_rows=62
+delta_mae=+378.95
+applied_hurts=2501
+
+256 trials / seeds 0,1,7:
+overall=watch
+selected_groups=2506:2
+applied_rows=9
+delta_mae=-4602.026,-5555.556,-3333.333
+applied_hurts=-
+
+readiness:
+overall_status=not_ready
+blocked_gates=12
+settlement_count_guarded_bridge_holdout=watch
+settlement_count_cells_value_bridge_holdout=blocked
+formal_value_sampler_holdout=blocked
+```
+
+结论：
+
+- nested guard 已把“全量 bridge 不可用”收缩为“2506 可继续 shadow 采样”的窄候选。
+- 方向性已在 256-trial 多 seed 下稳定，但有效 outer holdout 只有 9 条；64-trial seed 仍会出现 2501 false selection。
+- 当前距离 promotion 的主要差距是 2506 样本深度、posterior seed/trial 稳定性、live cohort 验证与 252x missing-table 覆盖，不是继续调正式 sampler 参数。
+- v3 仍不得影响正式出价；v2 继续作为 formal/live/UI production baseline。

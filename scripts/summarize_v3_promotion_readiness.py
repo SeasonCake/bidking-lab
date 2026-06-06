@@ -69,6 +69,9 @@ from summarize_v3_scp_count_value_bridge import (  # noqa: E402
 from summarize_v3_scp_count_value_bridge_holdout import (  # noqa: E402
     summarize_holdout as summarize_scp_count_value_bridge_holdout,
 )
+from summarize_v3_scp_guarded_bridge_holdout import (  # noqa: E402
+    summarize_guarded_holdout as summarize_scp_guarded_bridge_holdout,
+)
 from summarize_v3_prior_robustness_audit import (  # noqa: E402
     summarize_prior_stress_details,
     summarize_prior_stress_detail_summary,
@@ -327,6 +330,17 @@ def summarize_readiness(
         folds=folds,
         min_train_sessions=min_sessions,
     )
+    scp_guarded_bridge_holdout = summarize_scp_guarded_bridge_holdout(
+        rows,
+        group_field="v3_scp_group",
+        folds=folds,
+        inner_folds=max(2, folds - 1),
+        min_train_sessions=min_sessions,
+        min_guard_sessions=min_sessions,
+        min_guard_fold_sessions=max(1, min_sessions // 4),
+        formal_lift_cap=10_000.0,
+        max_guard_over_increase=0.0,
+    )
 
     gates: list[dict[str, Any]] = []
     data_status = "pass" if not errors and not summary.get("constraint_conflict") else "blocked"
@@ -578,6 +592,40 @@ def summarize_readiness(
             ),
             applied_hurts_groups=scp_count_value_bridge_holdout.get("applied_hurts"),
             status_counts=scp_count_value_bridge_holdout.get("status_counts"),
+        )
+    )
+    scp_guarded_candidate = scp_guarded_bridge_holdout["candidate_only"]
+    scp_guarded_status = scp_guarded_bridge_holdout.get("overall_status")
+    gates.append(
+        _gate(
+            "settlement_count_guarded_bridge_holdout",
+            "watch" if scp_guarded_status == "watch" else "blocked",
+            "nested train-only guard has a shadow holdout candidate; sample depth and seed stability remain required"
+            if scp_guarded_status == "watch"
+            else "nested train-only settlement bridge guard does not pass holdout",
+            overall_status=scp_guarded_status,
+            formal_lift_cap=scp_guarded_bridge_holdout.get("formal_lift_cap"),
+            max_guard_over_increase=scp_guarded_bridge_holdout.get(
+                "max_guard_over_increase"
+            ),
+            candidate_rows=scp_guarded_candidate.get("candidate_rows"),
+            applied_rows=scp_guarded_candidate.get("applied_rows"),
+            candidate_delta_formal_p50_mae=scp_guarded_candidate.get(
+                "delta_formal_p50_mae"
+            ),
+            candidate_delta_formal_p90_coverage=scp_guarded_candidate.get(
+                "delta_formal_p90_coverage"
+            ),
+            candidate_bridge_formal_p50_over_rate=scp_guarded_candidate.get(
+                "bridge_formal_p50_over_rate"
+            ),
+            selected_group_fold_counts=scp_guarded_bridge_holdout.get(
+                "selected_group_fold_counts"
+            ),
+            applied_hurts_groups=scp_guarded_bridge_holdout.get("applied_hurts"),
+            guard_status_counts=scp_guarded_bridge_holdout.get(
+                "guard_status_counts"
+            ),
         )
     )
     formal_below = float(summary.get("formal_p50_below_rate") or 0.0)
@@ -952,6 +1000,10 @@ def summarize_readiness(
         next_actions.append("hold out settlement count->cells/value bridge candidates before sampler use")
     if scp_bridge_holdout_status != "watch":
         next_actions.append("guard or redesign settlement count->cells/value bridge; holdout over-risk is high")
+    if scp_guarded_status == "watch":
+        next_actions.append("collect more 2506 guarded-bridge holdout support across posterior seeds")
+    else:
+        next_actions.append("keep nested settlement bridge guard in audit until holdout stabilizes")
     if not prior_stress_drift_ready:
         next_actions.append("audit prior-stressed capacity/table drift by map/profile before promotion")
     if not robust_ready:
@@ -1197,6 +1249,33 @@ def summarize_readiness(
             ),
             "status_counts": scp_count_value_bridge_holdout.get("status_counts"),
         },
+        "settlement_count_guarded_bridge_holdout": {
+            "status": scp_guarded_status,
+            "formal_lift_cap": scp_guarded_bridge_holdout.get("formal_lift_cap"),
+            "max_guard_over_increase": scp_guarded_bridge_holdout.get(
+                "max_guard_over_increase"
+            ),
+            "candidate_rows": scp_guarded_candidate.get("candidate_rows"),
+            "applied_rows": scp_guarded_candidate.get("applied_rows"),
+            "candidate_delta_formal_p50_mae": scp_guarded_candidate.get(
+                "delta_formal_p50_mae"
+            ),
+            "candidate_delta_formal_p90_coverage": scp_guarded_candidate.get(
+                "delta_formal_p90_coverage"
+            ),
+            "candidate_bridge_formal_p50_over_rate": scp_guarded_candidate.get(
+                "bridge_formal_p50_over_rate"
+            ),
+            "selected_group_fold_counts": scp_guarded_bridge_holdout.get(
+                "selected_group_fold_counts"
+            ),
+            "applied_hurts_groups": scp_guarded_bridge_holdout.get(
+                "applied_hurts"
+            ),
+            "guard_status_counts": scp_guarded_bridge_holdout.get(
+                "guard_status_counts"
+            ),
+        },
         "ccv_status_counts": ccv_counts,
         "tail_status_counts": tail_counts,
         "residual_status_counts": residual_counts,
@@ -1251,6 +1330,10 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"scp_bridge_holdout_status={result['settlement_count_cells_value_bridge_holdout']['status']}",
                 f"scp_bridge_holdout_delta={result['settlement_count_cells_value_bridge_holdout']['candidate_delta_formal_p50_mae']}",
                 f"scp_bridge_holdout_over={result['settlement_count_cells_value_bridge_holdout']['candidate_bridge_formal_p50_over_rate']}",
+                f"scp_guarded_status={result['settlement_count_guarded_bridge_holdout']['status']}",
+                f"scp_guarded_rows={result['settlement_count_guarded_bridge_holdout']['applied_rows']}",
+                f"scp_guarded_delta={result['settlement_count_guarded_bridge_holdout']['candidate_delta_formal_p50_mae']}",
+                f"scp_guarded_over={result['settlement_count_guarded_bridge_holdout']['candidate_bridge_formal_p50_over_rate']}",
                 f"prior_stress_detail_rows={result['prior_stress_detail_summary']['rows']}",
                 f"prior_stress_capacity_hits={result['prior_stress_detail_summary']['capacity_flag_hits']}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",

@@ -1822,3 +1822,22 @@ applied_hurts=2502
 - top conflict maps 的 `raw_slots` 为 250 或 300，`raw_slot_headroom` 仍很大；final inventory count 超过 drop-ref max 但远低于 settlement slot capacity。
 - 2601/2501/2506 等 map 的 `raw_col16="[[]]"`、`raw_col17="[9999,map_id,min,max]"`、`sampler_leaf_nmax=max=1`，说明当前 raw table 与 sampler 解释一致，但该解释不是 final inventory hard cap。
 - 252x activity 仍是 `missing_bidmap`，不能用 250x default table 代替。
+
+## D-v3-079：nested train-only guarded bridge 仅作为 2506 shadow watch candidate
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_scp_guarded_bridge_holdout.py` 是 count->cells/value bridge 的独立 nested holdout：outer session folds 只用于最终验证，group 是否可用必须由 outer-train 内的 inner crossfit 决定。
+- 当前 guard 要求 inner aggregate 与各 inner fold 均通过、每折有最低 applied session、且 train formal p50 over-rate increase 不得大于 0；readiness probe 使用 `formal_lift_cap=10000`。
+- 该 guard 只产生 shadow/readiness evidence，不得进入 evaluator default、posterior/formal sampler active path、live decision 或正式出价。
+- 原始 uncapped bridge gate 继续保持 blocked；guarded bridge 的 watch 不能替代 `settlement_count_cells_value_bridge_holdout`、`formal_value_sampler_holdout` 或 prior-stress blocker。
+- 当前仅把 2506 视为可继续采样的 shadow candidate。256 posterior trials 下 seeds 0/1/7 均只选择 2506，但每个 seed 的 outer holdout applied rows 只有 9，仍是 sample-limited。
+- 64 posterior trials 下 seed 1 会误选并伤害 2501，证明低 trial/seed 稳定性不足；在更多 live/archive support 与多 seed holdout 前不得 promotion。
+- activity 252x 仍无可评估 metric rows，继续作为 missing-table cohort，不进入 guarded bridge promotion 分母。
+
+原因：
+
+- aggregate-only train guard 会放行 2401/2502 等 hurt groups；只加 all-inner-fold 稳定性仍会放行 2504/2405。
+- all-inner-fold + zero train over-increase + 10000 lift cap 在 64-trial seed 0 下只选择 2506，`applied_rows=20`、`delta_formal_p50_mae=-6000.0`、无 hurt group，但不同 seed 不稳定。
+- 256-trial seeds 0/1/7 均只选择 2506，`applied_rows=9`，MAE delta 分别为 `-4602.026/-5555.556/-3333.333`，无 hurt group。
+- readiness 仍为 `overall_status=not_ready`、`blocked_gates=12`；新增 guarded gate 只为 `watch` 信息，不减少 blocker。
