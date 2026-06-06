@@ -2129,3 +2129,18 @@ applied_hurts=2502
 - `summary.bucket(6)` 会被 posterior/formal-value 直接消费，直接把 residual 写成 hard exact 会改变 v3 shadow 全链路。
 - 当前 2502 只有 r4 满足 q1-q5 cells exact 完整分区，可派生 `q6_cells=22`；r1-r3 仍缺 q2-q5/q3-q5/q4-q5 cells exact。
 - 2502 四行均没有 session count exact，也没有 session value exact，因此 q6 count/value 不能派生。
+
+## D-v3-098：q6 residual target candidate 可以进入 pipeline/evaluate，但仍不得参与 sampler
+
+2026-06-06 起，当前决策：
+
+- `assess_q6_residual_targets(summary)` 可以作为 v3 shadow pipeline 的通用诊断节点输出 `v3_rtc_*` fields。
+- `v3_rtc_*` 只能表示 q6 count/cells/value 是否存在 residual exact candidate；它不得写回 `FeasibleSummaryReport`，不得改变 posterior、residual gate、formal/value sampler、readiness gate、v2 formal/live/UI 或正式出价。
+- `v3_rtc_active` 与 `v3_rtc_affects_bid` 必须保持 false；即使 `v3_rtc_candidate=True`，也只能作为后续 shadow conditioning 设计输入。
+- promotion/readiness 仍不能把 residual candidate 当作真实 sampler improvement evidence；真实证据仍必须来自 archive/live/holdout。
+
+原因：
+
+- 前一轮 audit 已证明 2502 r4 可由 `session.total_cells=156` 与 q1-q5 cells exact 完整分区派生 `q6_cells=22`，但这只覆盖 cells，不覆盖 count/value/formal value。
+- 若直接写入 summary，会被 v3 posterior/formal-value 等消费者当作 hard exact，改变整条 shadow 链路，混淆“诊断证据”和“模型行为”。
+- 在 evaluate 输出中统一暴露 `v3_rtc_*`，可以让 archive/readiness/holdout 后续审计稳定观察 candidate 覆盖率，同时保留 promotion gate 的严格边界。

@@ -34,6 +34,10 @@ from bidking_lab.inference.v3.residual_gate import (
     V3ResidualGateReport,
     gate_residual_posterior_report,
 )
+from bidking_lab.inference.v3.residual_targets import (
+    V3ResidualTargetCandidateReport,
+    assess_q6_residual_targets,
+)
 from bidking_lab.inference.v3.settlement_count_prior import (
     SettlementCountPriorEntry,
     V3SettlementCountPriorReport,
@@ -69,6 +73,7 @@ class V3ShadowPipelineReport:
     ccv_component_posterior: V3PosteriorReport | None
     residual_posterior: V3PosteriorReport
     residual_gate: V3ResidualGateReport
+    residual_targets: V3ResidualTargetCandidateReport
     calibration: V3PriorCalibrationReport
     underestimate: V3UnderestimateRepairReport
     tail_review: V3TailValueReviewReport
@@ -87,6 +92,7 @@ class V3ShadowPipelineReport:
             )
         out.update(self.residual_posterior.to_flat_dict(prefix="v3_resid_"))
         out.update(self.residual_gate.to_flat_dict())
+        out.update(self.residual_targets.to_flat_dict())
         out.update(self.calibration.to_flat_dict())
         out.update(self.underestimate.to_flat_dict())
         out.update(self.tail_review.to_flat_dict())
@@ -165,6 +171,7 @@ def estimate_shadow_pipeline(
         residual_posterior,
         calibration_entry,
     )
+    residual_targets = assess_q6_residual_targets(summary)
     calibration = calibrate_posterior_report(posterior, calibration_entry)
     underestimate = repair_underestimate_posterior_report(
         posterior,
@@ -193,6 +200,7 @@ def estimate_shadow_pipeline(
         ccv_component_posterior=ccv_component_posterior,
         residual_posterior=residual_posterior,
         residual_gate=residual_gate,
+        residual_targets=residual_targets,
         calibration=calibration,
         underestimate=underestimate,
         tail_review=tail_review,

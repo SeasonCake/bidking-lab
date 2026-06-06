@@ -39,6 +39,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     empty_prior_flat_dict,
     empty_prior_robustness_flat_dict,
     empty_residual_gate_flat_dict,
+    empty_residual_target_candidate_flat_dict,
     empty_settlement_count_prior_flat_dict,
     empty_tail_value_review_flat_dict,
     empty_underestimate_repair_flat_dict,
@@ -412,6 +413,7 @@ def _round_rows_for_events(
     empty_ccvc_fields = empty_posterior_flat_dict(prefix="v3_ccvc_")
     empty_residual_fields = empty_posterior_flat_dict(prefix="v3_resid_")
     empty_residual_gate_fields = empty_residual_gate_flat_dict()
+    empty_residual_target_fields = empty_residual_target_candidate_flat_dict()
     empty_calibration_fields = empty_prior_calibration_flat_dict()
     empty_robust_fields = empty_prior_robustness_flat_dict()
     empty_underestimate_fields = empty_underestimate_repair_flat_dict()
@@ -490,6 +492,7 @@ def _round_rows_for_events(
                     **empty_ccvc_fields,
                     **empty_residual_fields,
                     **empty_residual_gate_fields,
+                    **empty_residual_target_fields,
                     **empty_calibration_fields,
                     **robust_fields,
                     **empty_underestimate_fields,
@@ -604,6 +607,11 @@ def _round_rows_for_events(
             if pipeline is not None
             else empty_residual_gate_fields
         )
+        residual_target_fields = (
+            pipeline.residual_targets.to_flat_dict()
+            if pipeline is not None
+            else empty_residual_target_fields
+        )
         calibration_fields = (
             pipeline.calibration.to_flat_dict()
             if pipeline is not None
@@ -676,6 +684,7 @@ def _round_rows_for_events(
                 **ccvc_fields,
                 **residual_fields,
                 **residual_gate_fields,
+                **residual_target_fields,
                 **calibration_fields,
                 **robust_fields,
                 **underestimate_fields,
@@ -1648,6 +1657,28 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         str(row.get("v3_robust_status") or "none")
         for row in rows
     )
+    residual_target_derived_field_counts: Counter[str] = Counter()
+    for row in rows:
+        if not row.get("v3_rtc_available"):
+            continue
+        for field in str(row.get("v3_rtc_derived_fields") or "").split(","):
+            if field:
+                residual_target_derived_field_counts[field] += 1
+    residual_target_count_status_counts = Counter(
+        str(row.get("v3_rtc_q6_count_status") or "none")
+        for row in rows
+        if row.get("v3_rtc_available")
+    )
+    residual_target_cells_status_counts = Counter(
+        str(row.get("v3_rtc_q6_cells_status") or "none")
+        for row in rows
+        if row.get("v3_rtc_available")
+    )
+    residual_target_value_status_counts = Counter(
+        str(row.get("v3_rtc_q6_value_status") or "none")
+        for row in rows
+        if row.get("v3_rtc_available")
+    )
     ready_rows = [row for row in rows if row.get("status") == "ready"]
     summary = {
         "windows": len(rows),
@@ -1709,6 +1740,23 @@ def summarize_rows(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> 
         "evidence_profile_counts": dict(sorted(evidence_profile_counts.items())),
         "posterior_scope_counts": dict(sorted(posterior_scope_counts.items())),
         "robust_status_counts": dict(sorted(robust_status_counts.items())),
+        "v3_rtc_ready_rows": sum(1 for row in rows if row.get("v3_rtc_ready")),
+        "v3_rtc_candidate_rows": sum(
+            1 for row in rows if row.get("v3_rtc_candidate")
+        ),
+        "v3_rtc_active_rows": sum(1 for row in rows if row.get("v3_rtc_active")),
+        "v3_rtc_derived_field_counts": dict(
+            sorted(residual_target_derived_field_counts.items())
+        ),
+        "v3_rtc_q6_count_status_counts": dict(
+            sorted(residual_target_count_status_counts.items())
+        ),
+        "v3_rtc_q6_cells_status_counts": dict(
+            sorted(residual_target_cells_status_counts.items())
+        ),
+        "v3_rtc_q6_value_status_counts": dict(
+            sorted(residual_target_value_status_counts.items())
+        ),
         "numeric_constraints": sum(int(row.get("numeric_constraints") or 0) for row in ready_rows),
         "item_anchors": sum(int(row.get("item_anchors") or 0) for row in ready_rows),
         "shape_anchors": sum(int(row.get("shape_anchors") or 0) for row in ready_rows),
@@ -1785,6 +1833,8 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"v3_resid_gate_delta_q6_cells_p50_mae={summary['v3_resid_gate_delta_q6_cells_p50_mae']}",
                 f"v3_resid_gate_q6_value_p50_mae={summary['v3_resid_gate_q6_value_p50_mae']}",
                 f"v3_resid_gate_delta_q6_value_p50_mae={summary['v3_resid_gate_delta_q6_value_p50_mae']}",
+                f"v3_rtc_candidate_rows={summary['v3_rtc_candidate_rows']}",
+                f"v3_rtc_active_rows={summary['v3_rtc_active_rows']}",
                 f"v3_cal_active_rows={summary['v3_cal_active_rows']}",
                 f"v3_cal_formal_p50_mae={summary['v3_cal_formal_p50_mae']}",
                 f"v3_cal_delta_formal_p50_mae={summary['v3_cal_delta_formal_p50_mae']}",
@@ -2114,6 +2164,37 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_resid_gate_q6_tail_replacement_decision_value_p50",
         "v3_resid_gate_q6_tail_replacement_decision_value_p90",
         "v3_resid_gate_diagnostics",
+        "v3_rtc_available",
+        "v3_rtc_ready",
+        "v3_rtc_affects_bid",
+        "v3_rtc_active",
+        "v3_rtc_candidate",
+        "v3_rtc_derived_fields",
+        "v3_rtc_diagnostics",
+        "v3_rtc_q6_count_status",
+        "v3_rtc_q6_count_candidate",
+        "v3_rtc_q6_count_value",
+        "v3_rtc_q6_count_total_exact",
+        "v3_rtc_q6_count_non_q6_exact_sum",
+        "v3_rtc_q6_count_q6_explicit_exact",
+        "v3_rtc_q6_count_q6_floor",
+        "v3_rtc_q6_count_missing_non_q6_qualities",
+        "v3_rtc_q6_cells_status",
+        "v3_rtc_q6_cells_candidate",
+        "v3_rtc_q6_cells_value",
+        "v3_rtc_q6_cells_total_exact",
+        "v3_rtc_q6_cells_non_q6_exact_sum",
+        "v3_rtc_q6_cells_q6_explicit_exact",
+        "v3_rtc_q6_cells_q6_floor",
+        "v3_rtc_q6_cells_missing_non_q6_qualities",
+        "v3_rtc_q6_value_status",
+        "v3_rtc_q6_value_candidate",
+        "v3_rtc_q6_value_value",
+        "v3_rtc_q6_value_total_exact",
+        "v3_rtc_q6_value_non_q6_exact_sum",
+        "v3_rtc_q6_value_q6_explicit_exact",
+        "v3_rtc_q6_value_q6_floor",
+        "v3_rtc_q6_value_missing_non_q6_qualities",
         "v3_cal_available",
         "v3_cal_ready",
         "v3_cal_strict_ready",

@@ -79,6 +79,12 @@ from bidking_lab.inference.v3.residual_gate import (
     empty_residual_gate_flat_dict,
     gate_residual_posterior_report,
 )
+from bidking_lab.inference.v3.residual_targets import (
+    ResidualTargetFieldReport,
+    V3ResidualTargetCandidateReport,
+    assess_q6_residual_targets,
+    empty_residual_target_candidate_flat_dict,
+)
 from bidking_lab.inference.v3.settlement_count_prior import (
     SettlementCountPriorEntry,
     V3SettlementCountPriorReport,
@@ -139,6 +145,7 @@ __all__ = (
     "QualityFloorAnchor",
     "QualityPriorReport",
     "QualityTruthReport",
+    "ResidualTargetFieldReport",
     "ShapeAnchor",
     "SoftNumericConstraint",
     "SessionPriorReport",
@@ -152,6 +159,7 @@ __all__ = (
     "V3CcvOptions",
     "V3FormalValueSamplerReport",
     "V3ResidualGateReport",
+    "V3ResidualTargetCandidateReport",
     "V3SettlementCountPriorReport",
     "V3ShadowPipelineReport",
     "V3TailValueReviewReport",
@@ -160,6 +168,7 @@ __all__ = (
     "assess_settlement_count_prior",
     "audit_fatbeans_events",
     "audit_fatbeans_paths",
+    "assess_q6_residual_targets",
     "calibrate_posterior_report",
     "compile_hard_constraints",
     "compile_feasible_summary",
@@ -173,6 +182,7 @@ __all__ = (
     "empty_prior_flat_dict",
     "empty_prior_robustness_flat_dict",
     "empty_residual_gate_flat_dict",
+    "empty_residual_target_candidate_flat_dict",
     "empty_settlement_count_prior_flat_dict",
     "empty_tail_value_review_flat_dict",
     "empty_underestimate_repair_flat_dict",

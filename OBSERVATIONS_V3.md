@@ -4043,3 +4043,57 @@ prebid_r4:
 - r1-r3 只能证明部分非 q6 buckets，不能把 remaining cells 全部归给 q6。
 - 四行都缺 session count exact，所以 q6 count 不能 residual 派生；四行都缺 session value exact/q1-q5 value exact 完整分区，所以 q6 value 与 formal value 不能 residual 派生。
 - 这支持下一步做 shadow-only q6 cells residual candidate，但不支持 formal/value promotion 或 value sampler 上调。
+
+## O-v3-102：v3 pipeline/evaluate 可稳定输出 2502 r4 的 q6 cells residual candidate
+
+2026-06-06 将 q6 residual target candidate 接入 `estimate_shadow_pipeline` 与 archive evaluate 后，复跑真实 2502 capture：
+
+```powershell
+python scripts\evaluate_fatbeans_v3_samples.py data\samples\fatbeans\fatbeans_valid_aisha_2502_4rounds_2502_1295018709694048_0149.json --posterior-trials 64 --format summary
+```
+
+summary 输出：
+
+```text
+windows=4
+ready=4
+v3_rtc_candidate_rows=1
+v3_rtc_active_rows=0
+```
+
+逐行诊断：
+
+```text
+prebid_r1:
+  candidate=False
+  active=False
+  affects_bid=False
+  count_status=missing_total_exact
+  cells_status=missing_non_q6_exact
+  value_status=missing_total_exact
+
+prebid_r2:
+  candidate=False
+  cells_status=missing_non_q6_exact
+
+prebid_r3:
+  candidate=False
+  cells_status=missing_non_q6_exact
+
+prebid_r4:
+  candidate=True
+  active=False
+  affects_bid=False
+  derived_fields=cells
+  count_status=missing_total_exact
+  cells_status=derived
+  cells_value=22
+  truth_q6_cells=22
+  value_status=missing_total_exact
+```
+
+解读：
+
+- pipeline/evaluate 与单独 target-missing audit 的结论一致：只有 r4 满足 q1-q5 cells residual 条件。
+- `v3_rtc_active_rows=0` 确认该诊断没有进入 sampler 或 bidding 行为。
+- CSV header 已包含 `v3_rtc_available`、`v3_rtc_candidate`、`v3_rtc_q6_cells_value`，后续 archive/live/readiness 统计可以直接消费这些字段。

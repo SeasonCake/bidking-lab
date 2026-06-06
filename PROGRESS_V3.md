@@ -5420,3 +5420,60 @@ prebid_r4:
 - 2502 r4 可以 shadow-only 派生 `q6_cells=22`，但 r1-r3 缺非 q6 cells exact，不能派生。
 - 2502 四行均不能派生 q6 count 或 q6 value；value/formal-value sampler 仍不能用这些 rows 做 candidate。
 - 下一步如果继续推进，应把 q6 cells residual candidate 设计成 shadow-only diagnostic/conditioning input，并继续保持 formal/value promotion blocked，直到 capacity 与 value evidence 都有真实 archive/live/holdout 支持。
+
+## 2026-06-06 checkpoint：q6 residual target candidate 接入 v3 pipeline/evaluate
+
+本轮把前一轮 target-missing audit 中确认的 q6 residual exact 候选提升为通用 v3 shadow pipeline 诊断。该改动仍然是 shadow-only/report-only，不写回 `compile_feasible_summary`，不改变 posterior、residual gate、formal/value sampler、readiness gate、v2 formal/live/UI 或正式出价。
+
+改动：
+
+- 新增 `src/bidking_lab/inference/v3/residual_targets.py`：
+  - `assess_q6_residual_targets(summary)` 输出 q6 count/cells/value 三类 residual candidate status；
+  - 仅在 summary feasible、session total exact 存在、q1-q5 exact 完整、residual 非负且不低于 q6 floor 时标记 `derived`；
+  - `active=False`、`affects_bid=False` 固定为 shadow-only 边界。
+- `src/bidking_lab/inference/v3/pipeline.py` 的 `V3ShadowPipelineReport` 增加 `residual_targets`，flat fields 使用 `v3_rtc_*` namespace。
+- `scripts/evaluate_fatbeans_v3_samples.py` 在 no-state 与 normal prebid rows 都输出 `v3_rtc_*`，CSV fieldnames 与 summary 增加 `v3_rtc_candidate_rows`、`v3_rtc_active_rows`。
+- tests 新增/更新：
+  - `tests/test_inference_v3_residual_targets.py`
+  - `tests/test_inference_v3_pipeline.py`
+  - `tests/test_evaluate_fatbeans_v3_samples.py`
+- `DECISIONS_V3.md` 新增 D-v3-098；`OBSERVATIONS_V3.md` 新增 O-v3-102。
+
+关键验证：
+
+```powershell
+python -m py_compile src\bidking_lab\inference\v3\residual_targets.py src\bidking_lab\inference\v3\pipeline.py scripts\evaluate_fatbeans_v3_samples.py
+pytest --basetemp=.tmp\codex\pytest tests\test_inference_v3_residual_targets.py tests\test_inference_v3_pipeline.py tests\test_evaluate_fatbeans_v3_samples.py -q
+pytest --basetemp=.tmp\codex\pytest tests\test_inference_v3_residual_targets.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_inference_v3_summary.py tests\test_inference_v3_posterior.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_target_missing_event_audit.py -q
+python scripts\evaluate_fatbeans_v3_samples.py data\samples\fatbeans\fatbeans_valid_aisha_2502_4rounds_2502_1295018709694048_0149.json --posterior-trials 64 --format summary
+```
+
+真实 2502 64-trial archive smoke：
+
+```text
+windows=4
+ready=4
+v3_rtc_candidate_rows=1
+v3_rtc_active_rows=0
+
+prebid_r1:
+  candidate=False
+  count_status=missing_total_exact
+  cells_status=missing_non_q6_exact
+  value_status=missing_total_exact
+
+prebid_r4:
+  candidate=True
+  active=False
+  affects_bid=False
+  derived_fields=cells
+  cells_status=derived
+  cells_value=22
+  truth_q6_cells=22
+```
+
+结论：
+
+- 2502 r4 的 `q6_cells=22` 现在可在通用 archive evaluate 输出中被稳定观测，且仍不参与任何 sampler 或 bidding 行为。
+- r1-r3 继续因为非 q6 cells exact 不完整而不能派生；count/value 继续缺少必要 exact 分区，不能派生。
+- 这一步收口了 q6 cells residual diagnostic 的 pipeline 出口；下一步仍应先围绕 capacity/table 语义与 value evidence blocker 推进，再恢复 formal/value sampler promotion readiness。

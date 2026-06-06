@@ -233,6 +233,13 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_resid_ready"] is True
     assert rows[0]["v3_resid_gate_available"] is True
     assert rows[0]["v3_resid_gate_affects_bid"] is False
+    assert rows[0]["v3_rtc_available"] is True
+    assert rows[0]["v3_rtc_affects_bid"] is False
+    assert rows[0]["v3_rtc_active"] is False
+    assert rows[0]["v3_rtc_candidate"] is False
+    assert rows[0]["v3_rtc_q6_count_status"] == "missing_total_exact"
+    assert rows[0]["v3_rtc_q6_cells_status"] == "missing_total_exact"
+    assert rows[0]["v3_rtc_q6_value_status"] == "missing_total_exact"
     assert rows[0]["v3_cal_available"] is True
     assert rows[0]["v3_cal_affects_bid"] is False
     assert rows[0]["v3_cal_active"] is False
@@ -685,3 +692,6 @@ def test_v3_prebid_rows_separate_no_state_windows() -> None:
     assert rows[0]["evidence_profile_key"] == "basic"
     assert rows[0]["numeric_constraints"] == 0
     assert rows[0]["constraint_ok"] is False
+    assert rows[0]["v3_rtc_available"] is False
+    assert rows[0]["v3_rtc_affects_bid"] is False
+    assert rows[0]["v3_rtc_active"] is False
