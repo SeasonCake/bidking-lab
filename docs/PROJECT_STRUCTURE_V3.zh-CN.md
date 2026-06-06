@@ -33,6 +33,7 @@
 | `scripts/summarize_v3_capacity_table_audit.py` | v3 prior-stress capacity cases 对 raw BidMap/Drop sampler 的 possible-max、v300 23 列 BidMap/drop-ref、round-cap 候选与 drop-universe 覆盖审计，并输出 raw settlement inventory/latest truth 去重诊断 |
 | `scripts/summarize_v3_archive_table_timing.py` | v3 raw table version/filelist/BidMap/Drop metadata 与 Fatbeans archive/activity capture timing 诊断，用于区分 table-version 强证据与本地 mtime 弱线索 |
 | `scripts/summarize_v3_settlement_payload_audit.py` | v3 0x002D settlement raw payload 审计，核对 inventory block slot count、raw item candidates、dedup 后 inventory count、payload fields 与 full observed action 镜像 |
+| `scripts/summarize_v3_settlement_count_prior_candidates.py` | v3 settlement occupancy count prior shadow-only 候选审计，按 map/prefix/family 统计 final inventory count、临时生肖扣除 residual 与 current BidMap/round-cap 覆盖 |
 | `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift` 与 `formal_value_sampler_holdout` gate |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
 | `scripts/summarize_v3_ccv_holdout.py` | v3 CCV/count-cell-value 候选 session holdout 审计 |
@@ -63,6 +64,7 @@
 | `tests/test_summarize_v3_capacity_table_audit.py` | v3 capacity table possible-max 审计测试 |
 | `tests/test_summarize_v3_archive_table_timing.py` | v3 archive/table timing metadata 审计测试 |
 | `tests/test_summarize_v3_settlement_payload_audit.py` | v3 settlement payload slot/candidate 审计测试 |
+| `tests/test_summarize_v3_settlement_count_prior_candidates.py` | v3 settlement count-prior candidate 审计测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
 | `tests/test_summarize_v3_ccv_holdout.py` | v3 CCV session holdout 审计测试 |
@@ -161,3 +163,5 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `tools/ilspycmd` | 已移动到 `archive/local_ignored/2026-06-04/tools/` |
 
 `archive/local_ignored/` 是本地 ignored 归档，不参与 git 提交。
+
+后续 Codex 临时验证输出统一放在 `.tmp/codex/`，pytest 使用 `.tmp/codex/pytest`，阶段结束后再统一清理。

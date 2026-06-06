@@ -3805,3 +3805,75 @@ raw_dup_pair=max=0
 - slot_count 与 map family 相关：24xx 多为 250，25xx/26xx/252x 多为 300；这不是当前 `drop_ref.items_max`。
 - 0x002D payload 尚未暴露 base Drop / activity overlay / extra generation source split，不能直接解除 capacity blocker。
 - 下一步优先继续查 server generation/source 字段；若找不到，需要设计 shadow-only settlement occupancy count prior 候选，再经 archive/activity/live/readiness 验证。
+
+## 2026-06-06 checkpoint：settlement occupancy count prior shadow 候选审计
+
+完成内容：
+
+- 新增 `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - 以 final settlement inventory/0x002D payload 为事实口径；
+  - 按 `map_id`、`map_prefix3` 或 `map_family` 聚合 observed inventory count；
+  - 输出 known temporary blue zodiac 扣除后的 residual count；
+  - 对照 current BidMap `items_per_session_max` 与 `col[14]` round-cap candidate；
+  - 标记 `observed_exceeds_table_caps_shadow_only`、`missing_table_shadow_only` 与 `insufficient_samples_shadow_only`。
+- 新增 `tests/test_summarize_v3_settlement_count_prior_candidates.py`，覆盖 residual gap、missing table 与 group-by 参数校验。
+- `docs/PROJECT_STRUCTURE_V3.zh-CN.md` 新增脚本/测试条目，并记录 Codex 临时文件统一使用 `.tmp/codex/`、pytest 使用 `.tmp/codex/pytest`。
+- 未生成 sampler 配置，未调整 formal/value sampler 参数，未改变 v2 formal/live/UI 或正式出价路径。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_count_prior_candidates.py --top 10 --min-samples 10
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_count_prior_candidates.py data\samples\fatbeans_activity_20260605_shipwreck --top 10 --min-samples 3
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_count_prior_candidates.py --group-by map_prefix3 --top 12 --min-samples 10
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_settlement_count_prior_candidates.py data\samples\fatbeans_activity_20260605_shipwreck --group-by map_prefix3 --top 8 --min-samples 3
+```
+
+结果：
+
+```text
+unit:
+3 passed
+
+broader parser/archive/live/readiness/formal-value tests:
+68 passed
+
+default archive:
+files=441 settlement_rows=441 groups=21
+inventory_count p50=41 p90=54 p95=57 max=66
+non_temp_count max=64 temp_zodiac max=8
+slot_counts=300:251,250:186,232:1,252:1,253:1,254:1
+above_drop=196 above_drop_after_temp=172
+above_round=81 above_round_after_temp=59
+missing_table_rows=0 payload_mismatch_rows=2
+candidate_statuses=observed_exceeds_table_caps_shadow_only:19,insufficient_samples_shadow_only:2
+
+default map highlights:
+2501 files=87 above_drop_after_temp=39/87 above_round_after_temp=19/87 non_temp_count max=62
+2601 files=22 above_drop_after_temp=11/22 above_round_after_temp=1/22 non_temp_count max=64
+2504 files=22 above_drop_after_temp=11/22 above_round_after_temp=6/22 non_temp_count max=61
+2506 files=21 above_drop_after_temp=11/21 above_round_after_temp=6/21 non_temp_count max=59
+2401 files=72 above_drop_after_temp=21/72 above_round_after_temp=3/72 non_temp_count max=54
+
+default prefix highlights:
+250 files=217 above_drop_after_temp=94/217 above_round_after_temp=42/217 non_temp_count max=62
+240 files=169 above_drop_after_temp=56/169 above_round_after_temp=11/169 non_temp_count max=58
+260 files=22 above_drop_after_temp=11/22 above_round_after_temp=1/22 non_temp_count max=64
+241 files=19 above_drop_after_temp=6/19 above_round_after_temp=2/19 non_temp_count max=56
+251 files=14 above_drop_after_temp=5/14 above_round_after_temp=3/14 non_temp_count max=60
+
+activity cohort:
+files=15 settlement_rows=15 slot_counts=300:15
+inventory_count p50=51 p90=54 p95=54 max=67
+temp_zodiac max=0 missing_table_rows=15 payload_mismatch_rows=0
+candidate_statuses=missing_table_shadow_only:6
+map_prefix3=252 files=15 status=missing_table_shadow_only maps=2521:5,2524:3,2529:3,2526:2,2522:1,2528:1
+```
+
+结论：
+
+- final settlement occupancy count 可以作为下一步 shadow-only count prior 候选的事实分布来源，但目前只允许进入审计/候选，不进入 sampler cap 或 promotion。
+- 默认 archive 的 24xx/25xx/2601 多数分片在扣除临时生肖后仍超过 current BidMap drop-ref max；该信号与前面的 capacity residual blocker 一致。
+- 252x activity cohort 全部缺 current BidMap 表项，且无临时生肖；它应先作为 missing-table/activity cohort 单独处理，不得并入默认 count prior。
+- formal/value sampler promotion、v2 archive 继续等待 capacity/table semantics 或 shadow-only count prior 的 archive/activity/live/readiness 验证。

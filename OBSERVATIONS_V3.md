@@ -2575,3 +2575,53 @@ map_id=2521 inventory_count=max=67 slot_counts=300:5
 - 少数 full observed actions（`100100`/`100134`）会镜像整局 inventory，但只覆盖 18/441，不能作为普遍额外生成机制。
 - 当前协议层证据支持“truth count 是最终 occupied settlement slots”，但仍没找到 base Drop、activity overlay 或额外展开的 source split 字段。
 - capacity blocker 下一步应转向 server generation/source 字段继续反查，或在 shadow-only 分支做 settlement occupancy count prior 校准候选；formal/value sampler promotion 仍暂停。
+
+## O-v3-076：settlement occupancy count prior 候选复现 capacity residual，252x 是 missing-table cohort
+
+2026-06-06 新增 `summarize_v3_settlement_count_prior_candidates.py`，直接从 final settlement inventory/0x002D payload 统计 count prior 候选分布：
+
+```text
+default archive:
+files=441
+settlement_rows=441
+groups=21
+inventory_count p50=41 p90=54 p95=57 max=66
+non_temp_count max=64
+temp_zodiac max=8
+slot_counts=300:251,250:186,232:1,252:1,253:1,254:1
+above_drop=196
+above_drop_after_temp=172
+above_round=81
+above_round_after_temp=59
+payload_mismatch_rows=2
+candidate_statuses=observed_exceeds_table_caps_shadow_only:19,insufficient_samples_shadow_only:2
+
+map highlights:
+2501 above_drop_after_temp=39/87 above_round_after_temp=19/87 non_temp_count max=62
+2601 above_drop_after_temp=11/22 above_round_after_temp=1/22 non_temp_count max=64
+2504 above_drop_after_temp=11/22 above_round_after_temp=6/22 non_temp_count max=61
+2506 above_drop_after_temp=11/21 above_round_after_temp=6/21 non_temp_count max=59
+2401 above_drop_after_temp=21/72 above_round_after_temp=3/72 non_temp_count max=54
+
+prefix highlights:
+250 above_drop_after_temp=94/217 above_round_after_temp=42/217 non_temp_count max=62
+240 above_drop_after_temp=56/169 above_round_after_temp=11/169 non_temp_count max=58
+260 above_drop_after_temp=11/22 above_round_after_temp=1/22 non_temp_count max=64
+241 above_drop_after_temp=6/19 above_round_after_temp=2/19 non_temp_count max=56
+251 above_drop_after_temp=5/14 above_round_after_temp=3/14 non_temp_count max=60
+
+activity cohort:
+files=15
+slot_counts=300:15
+inventory_count p50=51 p90=54 p95=54 max=67
+temp_zodiac max=0
+missing_table_rows=15
+map_prefix3=252 status=missing_table_shadow_only files=15
+```
+
+解读：
+
+- settlement occupancy count 分布与 capacity residual blocker 方向一致：默认 archive 中扣除临时生肖后仍有 172/441 超过 `drop_ref.items_max`，59/441 超过 `col[14]` round-cap candidate。
+- 这不是 parser duplicate 或 payload mismatch 主导，payload mismatch 仅 2/441，且前一轮 payload audit 已证明 final inventory 与 occupied slots 基本对齐。
+- 252x activity cohort 没有 current BidMap 表项，且 temp zodiac 为 0；它应作为 missing-table/activity cohort 单独建 shadow evidence，不能和默认 250x shipwreck 表项直接合并。
+- 当前结果支持设计 shadow-only settlement occupancy count prior，但仍不支持修改 formal sampler cap、promotion readiness 或 v2 归档。

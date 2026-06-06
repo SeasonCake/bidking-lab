@@ -1678,3 +1678,21 @@ applied_hurts=2502
 - 2601：22/22 raw candidates 与 parsed inventory 匹配，slot count 全为 300，inventory count max=65。
 - 2501：86/87 匹配，唯一差异是 duplicate raw candidate pair 造成的 dedup delta=1，不是 prior-stressed top conflict 的主因。
 - full observed actions 只出现在少数 rows（默认 18/441），不能解释全局 count-cap gap。
+
+## D-v3-071：settlement occupancy count prior 只能 shadow-only 且必须 cohort-gated
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_candidates.py` 作为 settlement occupancy count prior 的候选审计入口，只读 archive/activity final inventory 与 0x002D payload。
+- 该脚本输出的 observed count 分布、p50/p90/p95/max、temporary zodiac residual 与 table-cap excess 只能用于 shadow-only 候选和 readiness 证据，不得直接写入 live/formal sampler cap。
+- 24xx/25xx/2601 default archive 分片可作为 current-table cohort 的 count-prior 候选来源，但必须继续标记 `observed_exceeds_table_caps_shadow_only`，直到 table/session capacity 语义解释清楚并通过 holdout/live/readiness。
+- 252x activity 分片当前全部是 `missing_bidmap`，必须作为 activity/missing-table cohort 单独处理；不得把 252x settlement count 直接并入 250x BidMap prior，也不得用它推导 current v300 BidMap cap。
+- 如果后续找不到更强 server source split 字段，允许基于 settlement occupancy count 设计 shadow-only formal/value sampler，但 promotion 前必须同时通过 archive、activity、live shadow、readiness 与 holdout 验证。
+- v3 promotion 与 v2 archive 继续 pending；不得因 count-prior 候选存在而降低 `prior_stress_capacity_table_drift` gate。
+
+原因：
+
+- 默认 441-session archive：`inventory_count max=66`、`non_temp_count max=64`，扣除 temporary zodiac 后仍有 `above_drop_after_temp=172`、`above_round_after_temp=59`。
+- prefix 聚合显示 default current-table cohort 仍大面积超 cap：250 为 94/217、240 为 56/169、260 为 11/22。
+- activity cohort 15/15 为 `missing_bidmap`，map_prefix3=252，slot_count 全 300，inventory_count max=67，不能与 current 250x table cap 混用。
+- payload mismatch 仅 2/441，不支持把 observed count prior 问题重新归因于 parser/payload 重复。
