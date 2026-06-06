@@ -4735,3 +4735,91 @@ bidmap_rounds_total=25:
 - over-cap 并非只发生在 late-round capture；1/2-round captures 也存在扣除临时 zodiac 后的 drop-ref/round-cap overflow。
 - 30-round map 的 overflow 更重，但 25-round villa 也有稳定 overflow，因此不能把 blocker 归为 30-round map 专属容量。
 - round/session 维度目前只能排除简单解释，不能提供 promotion-ready sampler cap。
+
+## O-v3-114：payload field-shape 不显示 over-cap 专属展开块
+
+2026-06-06 增强 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 4 --format summary
+```
+
+整体 payload field 分布：
+
+```text
+files=441 settlement_rows=441
+payload_f5 max=4
+payload_f6 max=5
+payload_f7 max=2
+payload_f8 max=5
+payload_f20_rows=436/441
+payload_mismatch_rows=2/441
+```
+
+按 residual mode：
+
+```text
+drop_ref_only_overflow_after_temp:
+  files=113
+  payload_mismatch=0/113
+  payload_f20_rows=113/113
+  payload_f5 max=4
+  payload_f8 max=5
+
+round_cap_overflow_after_temp:
+  files=59
+  payload_mismatch=0/59
+  payload_f20_rows=59/59
+  payload_f5 max=4
+  payload_f8 max=5
+
+within_drop_ref_after_temp:
+  files=245
+  payload_mismatch=2/245
+  payload_f20_rows=240/245
+  payload_f5 max=4
+  payload_f8 max=5
+```
+
+解读：
+
+- field 5/6/7/8 count 与 field 5/8 child signatures 在 over-cap 与 within-cap rows 中共享同类结构；当前没有 over-cap 专属的 payload block 证据。
+- field20 几乎总存在，但 value 呈每局唯一/近唯一分布，不像稳定 source id、activity id 或 expansion classifier。
+- 结合 over-cap rows `raw_candidate_delta=0` 与 `occupied_delta=0`，当前更像服务端正常 final settlement occupancy 高于 BidMap drop-ref prior max，而不是 parser 把额外字段重复算进 inventory。
+
+## O-v3-115：本机 v303 新增 252x/452x BidMap 但不解释 default overflow
+
+2026-06-06 增强 `summarize_v3_archive_table_timing.py` 后，对本机游戏源复跑：
+
+```powershell
+python scripts\summarize_v3_archive_table_timing.py data\samples\fatbeans_activity_20260605_shipwreck --raw-root C:\xiangmuyunxing\steamapps\common\BidKing\BidKing_Data\StreamingAssets --format summary
+```
+
+关键输出：
+
+```text
+raw_file_version=303
+filelist_header="Ver:303|FileCount:4550"
+bidmap_rows=165
+bidmap_col16_values=[[]]:165
+bidmap_col17_drop_ref_like=165
+
+activity_range=2521-2530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+activity_range=4521-4530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+```
+
+priority map 对比：
+
+```text
+2401: v303 col17=[9999,2401,20,40], round_caps=[50,50,50,50,50]
+2501: v303 col17=[9999,2501,22,44], round_caps=[50,50,50,50,50]
+2506: v303 col17=[9999,2506,22,44], round_caps=[50,50,50,50,50]
+2508: v303 col17=[9999,2508,22,44], round_caps=[50,50,50,50,50]
+2601: v303 col17=[9999,2601,22,44], round_caps=[60,60,60,60,60]
+```
+
+解读：
+
+- 本机游戏源已更新到 v303，项目 `data/raw` 仍是 v300；0605 晚间 activity capture 与 v303 时间相容。
+- v303 BidMap 新增 `2521-2530` / `4521-4530`，但对应 Drop pool 仍不存在；activity cohort 仍是 missing-drop/source-overlay 问题。
+- v303 对 default priority maps 的 drop-ref/round-cap 未改变，Drop reachable leaf `n_max=1` 仍不变，因此不能用 v303 table drift 解释默认 24xx/25xx/2601 settlement count overflow。

@@ -26,6 +26,26 @@ def _item(item_id: int, *, cells: int = 4) -> SimpleNamespace:
     return SimpleNamespace(item_id=item_id, cells=cells)
 
 
+def _varint(value: int) -> bytes:
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def _field_varint(field_no: int, value: int) -> bytes:
+    return _varint((field_no << 3) | 0) + _varint(value)
+
+
+def _field_bytes(field_no: int, value: bytes) -> bytes:
+    return _varint((field_no << 3) | 2) + _varint(len(value)) + value
+
+
 def _state(map_id: int, item_ids: list[int]) -> SimpleNamespace:
     return SimpleNamespace(
         message_id=0x002D,
@@ -52,7 +72,8 @@ def _tables(*, include_map: bool = True) -> SimpleNamespace:
     return SimpleNamespace(maps=maps)
 
 
-def _patch_parser(monkeypatch, module, states_by_name):
+def _patch_parser(monkeypatch, module, states_by_name, payloads_by_name=None):
+    payloads_by_name = payloads_by_name or {}
     monkeypatch.setattr(
         module,
         "parse_fatbeans_capture",
@@ -61,7 +82,11 @@ def _patch_parser(monkeypatch, module, states_by_name):
     monkeypatch.setattr(
         module,
         "_latest_settlement_payload",
-        lambda path: (None, None, {"settlement_frame_count": 0}),
+        lambda path: (
+            payloads_by_name.get(Path(path).name),
+            None,
+            {"settlement_frame_count": 1 if Path(path).name in payloads_by_name else 0},
+        ),
     )
 
 
@@ -103,6 +128,9 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         "round_cap_overflow_after_temp": 1,
     }
     assert result["overall"]["inventory_slot_headroom_after_temp_zodiac"]["n"] == 0
+    assert result["overall"]["payload_field_shapes"] == {"none": 2}
+    assert result["overall"]["payload_field5_count"]["max"] == 0
+    assert result["overall"]["payload_field20_present_rows"] == 0
     assert result["overall"]["round_indices"] == {"5": 2}
     assert result["overall"]["capture_rounds"] == {"2": 1, "5": 1}
     assert result["overall"]["bidmap_rounds_total_counts"] == {"25": 2}
@@ -124,6 +152,9 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert row["inventory_count"]["max"] == 6
     assert row["non_temp_inventory_count"]["max"] == 5
     assert row["known_temp_zodiac_count"]["max"] == 1
+    assert row["payload_field_shapes"] == {"none": 2}
+    assert row["payload_field8_count"]["max"] == 0
+    assert row["payload_field20_present_rows"] == 0
     assert row["drop_ref_excess_after_temp_zodiac_count"]["max"] == 3
     assert row["round_cap_excess_after_temp_zodiac_count"]["max"] == 1
 
@@ -174,6 +205,55 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         min_samples=1,
     )
     assert [row["group"] for row in table_round_result["rows"]] == ["25"]
+
+
+def test_settlement_count_prior_candidates_profiles_payload_fields(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    sample = tmp_path / "payload_1round_case.json"
+    sample.write_text("[]", encoding="utf-8")
+    payload = b"".join(
+        (
+            _field_bytes(1, b"session"),
+            _field_varint(2, 2601),
+            _field_varint(3, 1),
+            _field_bytes(5, b"\x08\x01"),
+            _field_bytes(5, b"\x08\x02"),
+            _field_bytes(8, b"\x08\x03"),
+            _field_varint(20, 1),
+        )
+    )
+    _patch_parser(
+        monkeypatch,
+        module,
+        {"payload_1round_case.json": _state(2601, [1001, 1002])},
+        payloads_by_name={"payload_1round_case.json": payload},
+    )
+
+    result = module.summarize_settlement_count_prior_candidates(
+        [sample],
+        tables=_tables(),
+        min_samples=1,
+    )
+
+    assert result["overall"]["payload_field5_count"]["max"] == 2
+    assert result["overall"]["payload_field8_count"]["max"] == 1
+    assert result["overall"]["payload_field20_present_rows"] == 1
+    assert result["overall"]["payload_field20_values"] == {"1": 1}
+    assert result["overall"]["payload_field5_child_signatures"] == {"1:0:i": 2}
+    assert result["overall"]["payload_field8_child_signatures"] == {"1:0:i": 1}
+    row = result["rows"][0]
+    assert row["payload_field5_count"]["max"] == 2
+    assert row["payload_field8_count"]["max"] == 1
+    assert row["payload_field20_present_rows"] == 1
+    assert row["payload_field20_values"] == {"1": 1}
+    assert row["payload_field5_child_signatures"] == {"1:0:i": 2}
+    assert row["payload_field8_child_signatures"] == {"1:0:i": 1}
+    assert row["payload_field_shapes"] == {
+        "1:2x1,2:0x1,3:0x1,5:2x2,8:2x1,20:0x1": 1,
+    }
 
 
 def test_settlement_count_prior_candidates_marks_missing_table_shadow_only(

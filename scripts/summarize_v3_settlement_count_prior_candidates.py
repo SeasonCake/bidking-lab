@@ -23,8 +23,10 @@ if str(SCRIPTS) not in sys.path:
 from bidking_lab.live.fatbeans import _first, _parse_fields, parse_fatbeans_capture  # noqa: E402
 from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
 from summarize_v3_settlement_payload_audit import (  # noqa: E402
+    _field_signature,
     _inventory_block_metrics,
     _latest_settlement_payload,
+    _payload_field_counts,
 )
 
 
@@ -84,6 +86,63 @@ def _counter_dict(values: Iterable[Any], *, top: int = 8) -> dict[str, int]:
         str(value) if value not in (None, "") else "none"
         for value in values
     )
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:top])
+
+
+def _payload_count(field_counts: Mapping[str, int], field_no: int) -> int:
+    return sum(
+        int(count)
+        for key, count in field_counts.items()
+        if key.split(":", 1)[0] == str(field_no)
+    )
+
+
+def _payload_shape(field_counts: Mapping[str, int]) -> str:
+    if not field_counts:
+        return "none"
+
+    def sort_key(item: tuple[str, int]) -> tuple[int, int]:
+        field_text, _, wire_text = item[0].partition(":")
+        return (_safe_int(field_text) or 0, _safe_int(wire_text) or 0)
+
+    return ",".join(
+        f"{key}x{count}" for key, count in sorted(field_counts.items(), key=sort_key)
+    )
+
+
+def _payload_child_signatures(
+    payload_fields: Iterable[tuple[int, int, Any]],
+    field_no: int,
+    *,
+    top: int = 8,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for item_field_no, _wire_type, value in payload_fields:
+        if item_field_no != field_no or not isinstance(value, bytes):
+            continue
+        counts[_field_signature(_parse_fields(value))] += 1
+    return dict(counts.most_common(top))
+
+
+def _payload_int_values(
+    payload_fields: Iterable[tuple[int, int, Any]],
+    field_no: int,
+) -> tuple[int, ...]:
+    return tuple(
+        int(value)
+        for item_field_no, _wire_type, value in payload_fields
+        if item_field_no == field_no and isinstance(value, int)
+    )
+
+
+def _merge_count_mappings(
+    mappings: Iterable[Mapping[str, int]],
+    *,
+    top: int = 8,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for mapping in mappings:
+        counts.update({str(key): int(value) for key, value in mapping.items()})
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:top])
 
 
@@ -220,6 +279,7 @@ def _audit_file(path: Path, *, tables: Any) -> dict[str, Any]:
 
     payload, loss_units, frame_meta = _latest_settlement_payload(path)
     payload_fields = _parse_fields(payload) if isinstance(payload, bytes) else []
+    payload_field_counts = _payload_field_counts(payload)
     inventory_block = _first(payload_fields, 4) if payload_fields else None
     inventory_metrics = _inventory_block_metrics(inventory_block)
     occupied_slot_count = inventory_metrics["occupied_slot_count"]
@@ -260,6 +320,17 @@ def _audit_file(path: Path, *, tables: Any) -> dict[str, Any]:
             for item in items
         ),
         "settlement_loss_units": loss_units,
+        "payload_field_shape": _payload_shape(payload_field_counts),
+        "payload_field5_count": _payload_count(payload_field_counts, 5),
+        "payload_field6_count": _payload_count(payload_field_counts, 6),
+        "payload_field7_count": _payload_count(payload_field_counts, 7),
+        "payload_field8_count": _payload_count(payload_field_counts, 8),
+        "payload_field20_present": _payload_count(payload_field_counts, 20) > 0,
+        "payload_field5_child_signatures": _payload_child_signatures(payload_fields, 5),
+        "payload_field6_child_signatures": _payload_child_signatures(payload_fields, 6),
+        "payload_field7_child_signatures": _payload_child_signatures(payload_fields, 7),
+        "payload_field8_child_signatures": _payload_child_signatures(payload_fields, 8),
+        "payload_field20_values": _payload_int_values(payload_fields, 20),
         "action_result_count": len(action_observed_counts),
         "action_observed_item_count_max": (
             max((count for _action_id, count in action_observed_counts), default=0)
@@ -463,6 +534,49 @@ def summarize_settlement_count_prior_candidates(
                     (row.get("inventory_slot_count") for row in seq),
                     top=top,
                 ),
+                "payload_field_shapes": _counter_dict(
+                    (row.get("payload_field_shape") for row in seq),
+                    top=top,
+                ),
+                "payload_field5_count": _numeric_summary(
+                    row.get("payload_field5_count") for row in seq
+                ),
+                "payload_field6_count": _numeric_summary(
+                    row.get("payload_field6_count") for row in seq
+                ),
+                "payload_field7_count": _numeric_summary(
+                    row.get("payload_field7_count") for row in seq
+                ),
+                "payload_field8_count": _numeric_summary(
+                    row.get("payload_field8_count") for row in seq
+                ),
+                "payload_field20_present_rows": sum(
+                    1 for row in seq if row.get("payload_field20_present")
+                ),
+                "payload_field20_values": _counter_dict(
+                    (
+                        value
+                        for row in seq
+                        for value in tuple(row.get("payload_field20_values", ()) or ())
+                    ),
+                    top=top,
+                ),
+                "payload_field5_child_signatures": _merge_count_mappings(
+                    (row.get("payload_field5_child_signatures", {}) for row in seq),
+                    top=top,
+                ),
+                "payload_field6_child_signatures": _merge_count_mappings(
+                    (row.get("payload_field6_child_signatures", {}) for row in seq),
+                    top=top,
+                ),
+                "payload_field7_child_signatures": _merge_count_mappings(
+                    (row.get("payload_field7_child_signatures", {}) for row in seq),
+                    top=top,
+                ),
+                "payload_field8_child_signatures": _merge_count_mappings(
+                    (row.get("payload_field8_child_signatures", {}) for row in seq),
+                    top=top,
+                ),
                 "inventory_slot_headroom_after_temp_zodiac": _numeric_summary(
                     (
                         (
@@ -554,6 +668,49 @@ def summarize_settlement_count_prior_candidates(
             ),
             "inventory_slot_count": _counter_dict(
                 (row.get("inventory_slot_count") for row in ready),
+                top=top,
+            ),
+            "payload_field_shapes": _counter_dict(
+                (row.get("payload_field_shape") for row in ready),
+                top=top,
+            ),
+            "payload_field5_count": _numeric_summary(
+                row.get("payload_field5_count") for row in ready
+            ),
+            "payload_field6_count": _numeric_summary(
+                row.get("payload_field6_count") for row in ready
+            ),
+            "payload_field7_count": _numeric_summary(
+                row.get("payload_field7_count") for row in ready
+            ),
+            "payload_field8_count": _numeric_summary(
+                row.get("payload_field8_count") for row in ready
+            ),
+            "payload_field20_present_rows": sum(
+                1 for row in ready if row.get("payload_field20_present")
+            ),
+            "payload_field20_values": _counter_dict(
+                (
+                    value
+                    for row in ready
+                    for value in tuple(row.get("payload_field20_values", ()) or ())
+                ),
+                top=top,
+            ),
+            "payload_field5_child_signatures": _merge_count_mappings(
+                (row.get("payload_field5_child_signatures", {}) for row in ready),
+                top=top,
+            ),
+            "payload_field6_child_signatures": _merge_count_mappings(
+                (row.get("payload_field6_child_signatures", {}) for row in ready),
+                top=top,
+            ),
+            "payload_field7_child_signatures": _merge_count_mappings(
+                (row.get("payload_field7_child_signatures", {}) for row in ready),
+                top=top,
+            ),
+            "payload_field8_child_signatures": _merge_count_mappings(
+                (row.get("payload_field8_child_signatures", {}) for row in ready),
                 top=top,
             ),
             "inventory_slot_headroom_after_temp_zodiac": _numeric_summary(
@@ -654,6 +811,15 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"non_temp_count={_format_summary(overall['non_temp_inventory_count'])}",
                 f"temp_zodiac={_format_summary(overall['known_temp_zodiac_count'])}",
                 f"slot_counts={_format_counts(overall['inventory_slot_count'])}",
+                f"payload_shapes={_format_counts(overall['payload_field_shapes'])}",
+                f"payload_f5={_format_summary(overall['payload_field5_count'])}",
+                f"payload_f6={_format_summary(overall['payload_field6_count'])}",
+                f"payload_f7={_format_summary(overall['payload_field7_count'])}",
+                f"payload_f8={_format_summary(overall['payload_field8_count'])}",
+                f"payload_f20_rows={overall['payload_field20_present_rows']}",
+                f"payload_f20_values={_format_counts(overall['payload_field20_values'])}",
+                f"payload_f5_child={_format_counts(overall['payload_field5_child_signatures'])}",
+                f"payload_f8_child={_format_counts(overall['payload_field8_child_signatures'])}",
                 f"slot_headroom_after_temp={_format_summary(overall['inventory_slot_headroom_after_temp_zodiac'])}",
                 f"residual_modes={_format_counts(overall['residual_modes'])}",
                 f"round_indices={_format_counts(overall['round_indices'])}",
@@ -694,6 +860,15 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"temp_zodiac={_format_summary(row['known_temp_zodiac_count'])}",
                     f"cells={_format_summary(row['inventory_cells'])}",
                     f"slots={_format_counts(row['inventory_slot_count'])}",
+                    f"payload_shapes={_format_counts(row['payload_field_shapes'])}",
+                    f"payload_f5={_format_summary(row['payload_field5_count'])}",
+                    f"payload_f6={_format_summary(row['payload_field6_count'])}",
+                    f"payload_f7={_format_summary(row['payload_field7_count'])}",
+                    f"payload_f8={_format_summary(row['payload_field8_count'])}",
+                    f"payload_f20_rows={row['payload_field20_present_rows']}/{row['files']}",
+                    f"payload_f20_values={_format_counts(row['payload_field20_values'])}",
+                    f"payload_f5_child={_format_counts(row['payload_field5_child_signatures'])}",
+                    f"payload_f8_child={_format_counts(row['payload_field8_child_signatures'])}",
                     f"slot_headroom_after_temp={_format_summary(row['inventory_slot_headroom_after_temp_zodiac'])}",
                     f"drop_excess_after_temp={_format_summary(row['drop_ref_excess_after_temp_zodiac_count'])}",
                     f"round_excess_after_temp={_format_summary(row['round_cap_excess_after_temp_zodiac_count'])}",

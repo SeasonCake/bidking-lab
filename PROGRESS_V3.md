@@ -6090,3 +6090,113 @@ bidmap_rounds_total=25: above_drop_after_temp=62/188, above_round_after_temp=13/
 - over-cap 不是单纯 late-round effect；1/2-round captures 也存在 after-temp overflow。
 - 30-round map 更重，但 25-round villa 同样存在 after-temp overflow。
 - 下一步仍需查 server-side expansion/source semantics 或 per-session table-version 机制；formal/value sampler 参数调优继续暂停。
+
+## 2026-06-06 checkpoint：settlement payload field-shape residual 下钻
+
+本轮继续增强 settlement count prior candidate 审计，把 0x002D settlement payload 的 top-level field shape 与 semiknown child signatures 接入 residual-mode 分组。该改动仍是 v3 audit-only，不改变 parser、不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - 输出 top-level `payload_field_shape`；
+  - 输出 payload field 5/6/7/8 count、field20 presence/value；
+  - 输出 field 5/6/7/8 child signature 聚合，用于按 residual mode 比较 semiknown payload blocks。
+- `tests/test_summarize_v3_settlement_count_prior_candidates.py` 增加 payload field shape、field20 value、child signature 覆盖。
+- `tests/test_bid_map_table.py` 增加 current 23-column BidMap parser 直接测试，确认 `col[16]=[[]]` 不作为 drop-ref，`col[17]=[9999,map,min,max]` 才解析为 drop pool 与 item range。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_bid_map_table.py -q
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 4 --format summary
+```
+
+真实 payload field-shape 要点：
+
+```text
+files=441 settlement_rows=441
+payload_f5 max=4
+payload_f6 max=5
+payload_f7 max=2
+payload_f8 max=5
+payload_f20_rows=436/441
+
+drop_ref_only_overflow_after_temp:
+  files=113
+  payload_mismatch=0/113
+  payload_f20_rows=113/113
+  payload_f5 max=4
+  payload_f8 max=5
+
+round_cap_overflow_after_temp:
+  files=59
+  payload_mismatch=0/59
+  payload_f20_rows=59/59
+  payload_f5 max=4
+  payload_f8 max=5
+
+within_drop_ref_after_temp:
+  files=245
+  payload_mismatch=2/245
+  payload_f20_rows=240/245
+  payload_f5 max=4
+  payload_f8 max=5
+```
+
+解读：
+
+- over-cap rows 与 within-cap rows 共享相同类型的 settlement payload top-level shape 与 field 5/8 child signatures；没有看到只在 over-cap rows 出现的额外 payload block。
+- field20 在绝大多数 rows 出现，但 value 呈每局唯一/近唯一分布，不像稳定 source/expansion classifier。
+- 这进一步排除 “over-cap 是特殊 payload 字段或 parser 膨胀” 的简单解释；当前 blocker 仍在 server-side settlement occupancy/source semantics 或 per-session table/version overlay。
+- formal/value sampler 参数调优继续暂停，promotion/readiness 不能放宽。
+
+## 2026-06-06 checkpoint：v303 activity overlay table timing smoke
+
+本轮增强 archive/table timing 审计，让同一脚本可复核本机 v303 StreamingAssets 中 252x/452x activity map 的 BidMap/Drop presence。该改动仍是 v3 audit-only，不改变 parser 正式路径、不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_archive_table_timing.py`：
+  - 新增 `activity_overlay` summary；
+  - 输出 `2521-2530` / `4521-4530` BidMap present/missing、Drop present/missing 与 drop-ref pair 分布。
+- `tests/test_summarize_v3_archive_table_timing.py` 增加 `2521` BidMap present but Drop missing 覆盖。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_archive_table_timing.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_archive_table_timing.py -q
+python scripts\summarize_v3_archive_table_timing.py data\samples\fatbeans_activity_20260605_shipwreck --raw-root C:\xiangmuyunxing\steamapps\common\BidKing\BidKing_Data\StreamingAssets --format summary
+```
+
+真实 v303 smoke 要点：
+
+```text
+raw_file_version=303
+filelist_header="Ver:303|FileCount:4550"
+bidmap_rows=165
+bidmap_col16_values=[[]]:165
+bidmap_col17_drop_ref_like=165
+
+priority maps:
+  2401 col17=[9999,2401,20,40], round_caps=[50,50,50,50,50]
+  2501 col17=[9999,2501,22,44], round_caps=[50,50,50,50,50]
+  2506 col17=[9999,2506,22,44], round_caps=[50,50,50,50,50]
+  2508 col17=[9999,2508,22,44], round_caps=[50,50,50,50,50]
+  2601 col17=[9999,2601,22,44], round_caps=[60,60,60,60,60]
+
+activity_range=2521-2530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+activity_range=4521-4530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+
+activity capture:
+  capture_min=2026-06-05T23:05:05.4056732+08:00
+  capture_max=2026-06-05T23:56:58.9596734+08:00
+```
+
+解读：
+
+- 本机游戏源已从项目 raw v300 变为 v303，且 v303 BidMap 新增 `2521-2530` / `4521-4530`。
+- v303 的 default priority maps `2401/2501/2506/2508/2601` drop-ref 与 round-cap 未相对 v300 变化，reachable Drop leaf `n_max` 仍为 1；因此 v303 不能直接解释 default 24xx/25xx/2601 after-temp over-cap。
+- v303 中 252x/452x BidMap 存在但 Drop pool 仍缺失，说明 activity cohort 仍应保留为独立 missing-drop/activity overlay lane，不能 fallback 到 default 250x prior，也不能进入 promotion/readiness 分母。

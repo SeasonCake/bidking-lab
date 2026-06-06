@@ -30,6 +30,7 @@ _BIDMAP_COL_V300_FLAG_A = 8
 _BIDMAP_COL_UNUSED_PLACEHOLDER = 16
 _BIDMAP_COL_DROP_REF = 17
 _BIDMAP_TARGET_MAP_IDS = (2401, 2404, 2406, 2501, 2506, 2508, 2601)
+_ACTIVITY_MAP_RANGES = ((2521, 2530), (4521, 4530))
 _VERSION_KEY_TOKENS = ("version", "hash", "fileversion", "tableversion")
 
 
@@ -320,6 +321,62 @@ def _drop_semantic_summary(
     }
 
 
+def _activity_overlay_summary(tables_root: Path) -> list[dict[str, Any]]:
+    bidmap_rows, bidmap_error = _read_table_rows(tables_root / "BidMap.txt")
+    drop_rows, drop_error = _read_table_rows(tables_root / "Drop.txt")
+    bidmap_by_id = {
+        int(row[0]): row
+        for row in bidmap_rows
+        if row and str(row[0]).isdigit()
+    }
+    drop_ids = {
+        int(row[0])
+        for row in drop_rows
+        if row and str(row[0]).isdigit()
+    }
+    out: list[dict[str, Any]] = []
+    for start, end in _ACTIVITY_MAP_RANGES:
+        map_ids = tuple(range(start, end + 1))
+        present_rows = {
+            map_id: bidmap_by_id[map_id]
+            for map_id in map_ids
+            if map_id in bidmap_by_id
+        }
+        drop_ref_pool_ids = {
+            map_id: _drop_ref_pool_id(row[_BIDMAP_COL_DROP_REF])
+            for map_id, row in present_rows.items()
+            if len(row) > _BIDMAP_COL_DROP_REF
+        }
+        drop_ref_pairs = [
+            _drop_ref_pair(row[_BIDMAP_COL_DROP_REF])
+            for row in present_rows.values()
+            if len(row) > _BIDMAP_COL_DROP_REF
+        ]
+        out.append(
+            {
+                "range": f"{start}-{end}",
+                "bidmap_present_ids": sorted(present_rows),
+                "bidmap_missing_ids": [
+                    map_id for map_id in map_ids if map_id not in present_rows
+                ],
+                "drop_ref_pool_ids": dict(sorted(drop_ref_pool_ids.items())),
+                "drop_present_ids": sorted(
+                    map_id
+                    for map_id, pool_id in drop_ref_pool_ids.items()
+                    if pool_id in drop_ids
+                ),
+                "drop_missing_ids": sorted(
+                    map_id
+                    for map_id, pool_id in drop_ref_pool_ids.items()
+                    if pool_id not in drop_ids
+                ),
+                "drop_ref_pair_counts": _counter_dict(drop_ref_pairs),
+                "parse_error": bidmap_error or drop_error,
+            }
+        )
+    return out
+
+
 def _filelist_entry(filelist_text: str | None, table_path: str) -> str | None:
     if not filelist_text:
         return None
@@ -430,6 +487,7 @@ def summarize_archive_table_timing(
             tables_root,
             target_maps=bidmap_semantics["target_maps"],
         ),
+        "activity_overlay": _activity_overlay_summary(tables_root),
         **_capture_summary(paths),
     }
 
@@ -516,6 +574,21 @@ def _print_summary(result: dict[str, Any]) -> None:
                     "leaf_n_ranges="
                     + _format_counts(row.get("leaf_n_range_counts", {})),
                     f"leaf_n_max_max={row.get('leaf_n_max_max')}",
+                )
+            )
+        )
+    for row in result["activity_overlay"]:
+        print(
+            " ".join(
+                (
+                    f"activity_range={row['range']}",
+                    f"bidmap_present={len(row['bidmap_present_ids'])}",
+                    f"bidmap_missing={len(row['bidmap_missing_ids'])}",
+                    f"drop_present={len(row['drop_present_ids'])}",
+                    f"drop_missing={len(row['drop_missing_ids'])}",
+                    "drop_ref_pairs="
+                    + _format_counts(row["drop_ref_pair_counts"]),
+                    f"parse_error={json.dumps(row['parse_error'], ensure_ascii=False)}",
                 )
             )
         )

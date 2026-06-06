@@ -2318,3 +2318,35 @@ applied_hurts=2502
 - 真实 archive 中 `capture_rounds=1` 仍有 `above_drop_after_temp=12/27` 与 `above_round_after_temp=8/27`，`capture_rounds=2` 也有 `15/48` 与 `4/48`。
 - `bidmap_rounds_total=30` over-cap 更重，但 `bidmap_rounds_total=25` 也有 `above_drop_after_temp=62/188` 与 `above_round_after_temp=13/188`。
 - over-cap 跨 round/session 维度存在，说明仍需查更底层的 server-side expansion、source semantics 或 table-version-per-session 机制。
+
+## D-v3-110：payload field-shape 不能作为 over-cap 解释或 promotion evidence
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_candidates.py` 必须在 residual-mode 审计中输出 0x002D settlement payload top-level shape、field 5/6/7/8 count、field20 presence/value、以及 field 5/6/7/8 child signatures。
+- 如果 over-cap rows 与 within-cap rows 共享同类 payload field shape/child signatures，且 raw candidate/occupied slot 与 final inventory 对齐，则不能再把 blocker 归因于特殊 payload block 或 parser 膨胀。
+- field20 value 在当前 archive 中呈每局唯一/近唯一分布；在没有稳定语义映射前，不能把 field20 当作 source id、activity id、table version 或 expansion classifier。
+- payload field-shape 审计只能缩小排查范围；不能作为 sampler cap 修正、readiness 放行或 promotion evidence。
+- formal/value sampler 参数调优继续暂停，直到 server-side settlement occupancy/source semantics 或 per-session table/version overlay 有可复核解释。
+
+原因：
+
+- 真实 residual smoke 中 `drop_ref_only_overflow_after_temp` 为 113 files、`round_cap_overflow_after_temp` 为 59 files，两者 `payload_mismatch=0`。
+- over-cap 与 within-cap rows 都有 field 5/8 child signature 的同类结构，field 5 max=4、field 8 max=5；没有 over-cap 专属字段形态。
+- field20 在 over-cap rows 中 100% 出现，但 within-cap rows 也有 240/245 出现，且 value 不形成稳定分类。
+
+## D-v3-111：v303 activity table smoke 不能解除 default capacity blocker
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_archive_table_timing.py` 必须输出 `2521-2530` 与 `4521-4530` 的 BidMap/Drop presence，用于区分 raw table update、activity overlay 与 default cohort。
+- 本机 v303 StreamingAssets 可作为 activity table timing 线索，但不能自动替换项目 raw v300 或证明每条 archive session 的服务端表版本。
+- 即使 v303 BidMap 新增 `2521-2530` / `4521-4530`，只要对应 Drop pool 仍缺失，252x activity cohort 仍必须保留为 missing-drop/activity-overlay lane。
+- 252x/452x activity cohort 不得 fallback 到 default 250x prior，不得进入 default archive prior、formal/value sampler promotion 分母或正式出价。
+- v303 priority maps 的 `col[17]` drop-ref、`col[14]` round-cap 与 reachable Drop leaf `n_max=1` 未相对 v300 改变时，不能用 table drift 解释 default 24xx/25xx/2601 after-temp settlement over-cap。
+
+原因：
+
+- v303 smoke 显示 `raw_file_version=303`、`BidMap rows=165`、`col16=[[]]`、`col17_drop_ref_like=165`。
+- `2521-2530` 与 `4521-4530` 均为 `bidmap_present=10`、`drop_present=0`、`drop_ref_pairs=22-44:10`。
+- `2401/2501/2506/2508/2601` 的 v303 drop-ref/round-cap 与 v300 相同，且 Drop target leaf `n_max=1`；default over-cap 仍需查 server-side settlement occupancy/source semantics。

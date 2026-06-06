@@ -6,6 +6,7 @@ import pytest
 
 from bidking_lab.extract.bid_map_table import (
     BID_MAP_TABLE_COLUMN_COUNT,
+    BID_MAP_TABLE_COLUMN_COUNT_V2,
     parse_bid_map_row,
     parse_bid_map_table,
 )
@@ -32,6 +33,29 @@ def _make_row(**overrides: str) -> list[str]:
     return row
 
 
+def _make_v2_row(**overrides: str) -> list[str]:
+    row = ["0"] * BID_MAP_TABLE_COLUMN_COUNT_V2
+    row[0] = "2501"
+    row[1] = "沉船"
+    row[2] = "desc"
+    row[7] = "103"
+    row[9] = "[[]]"
+    row[10] = "ui_value_high"
+    row[11] = "30"
+    row[12] = "[1,1,2500]"
+    row[14] = "[50,50,50]"
+    row[15] = "[[1,1,50000]]"
+    row[16] = "[[]]"
+    row[17] = "[9999,2501,22,44]"
+    row[18] = "4"
+    row[19] = "[3000,2500,2000,1500,0]"
+    row[20] = "[103,0,103,0,0]"
+    for k, v in overrides.items():
+        idx = int(k[3:])
+        row[idx] = v
+    return row
+
+
 def test_parses_anthology_map() -> None:
     bm = parse_bid_map_row(_make_row())
     assert bm.map_id == 2101
@@ -48,6 +72,24 @@ def test_parses_anthology_map() -> None:
     assert bm.mode_flag == 4
     assert bm.bid_price_ladder == [2000, 1600, 1300, 1100, 0]
     assert bm.round_category_hints == [102, 103, 103, 104, 105]
+
+
+def test_parses_current_23_column_drop_ref_from_col17() -> None:
+    bm = parse_bid_map_row(_make_v2_row())
+
+    assert bm.map_id == 2501
+    assert bm.category == 103
+    assert bm.rounds_total == 30
+    assert bm.entry_fee_silver == 2500
+    assert bm.starting_budget_silver == 50000
+    assert bm.drop_pool_id == 2501
+    assert bm.items_per_session_min == 22
+    assert bm.items_per_session_max == 44
+    assert bm.value_tier_ui == "ui_value_high"
+    assert bm.mode_flag == 4
+    assert bm.raw_row[14] == "[50,50,50]"
+    assert bm.raw_row[16] == "[[]]"
+    assert bm.raw_row[17] == "[9999,2501,22,44]"
 
 
 def test_round_category_hints_with_zeros() -> None:

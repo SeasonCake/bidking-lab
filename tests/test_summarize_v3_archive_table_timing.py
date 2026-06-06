@@ -117,8 +117,12 @@ def test_archive_table_timing_summarizes_bidmap_and_drop_semantics(
     bidmap_row[20] = "[104,0,0,0,0]"
     bidmap_row[21] = "iconmap_2501"
     bidmap_row[22] = "0"
+    activity_row = list(bidmap_row)
+    activity_row[0] = "2521"
+    activity_row[1] = "activity"
+    activity_row[17] = "[9999,2521,22,44]"
     (tables_root / "BidMap.txt").write_text(
-        _encoded_table([bidmap_row]),
+        _encoded_table([bidmap_row, activity_row]),
         encoding="utf-8",
     )
     drop_rows = [
@@ -150,13 +154,13 @@ def test_archive_table_timing_summarizes_bidmap_and_drop_semantics(
     result = module.summarize_archive_table_timing([], raw_root=raw_root)
 
     bidmap = result["bidmap_semantics"]
-    assert bidmap["row_count"] == 1
-    assert bidmap["column_count_counts"] == {"23": 1}
-    assert bidmap["current_23_column_rows"] == 1
-    assert bidmap["col16_value_counts"] == {"[[]]": 1}
+    assert bidmap["row_count"] == 2
+    assert bidmap["column_count_counts"] == {"23": 2}
+    assert bidmap["current_23_column_rows"] == 2
+    assert bidmap["col16_value_counts"] == {"[[]]": 2}
     assert bidmap["col16_drop_ref_like_rows"] == 0
-    assert bidmap["col17_drop_ref_like_rows"] == 1
-    assert bidmap["drop_ref_pair_counts"] == {"22-44": 1}
+    assert bidmap["col17_drop_ref_like_rows"] == 2
+    assert bidmap["drop_ref_pair_counts"] == {"22-44": 2}
     target = {row["map_id"]: row for row in bidmap["target_maps"]}[2501]
     assert target["v300_flag_a"] == "1"
     assert target["col16_placeholder"] == "[[]]"
@@ -171,3 +175,10 @@ def test_archive_table_timing_summarizes_bidmap_and_drop_semantics(
     assert drop_target["visited_pool_count"] == 2
     assert drop_target["leaf_n_range_counts"] == {"1-1": 1, "1-2": 1}
     assert drop_target["leaf_n_max_max"] == 2
+
+    activity = {row["range"]: row for row in result["activity_overlay"]}
+    assert activity["2521-2530"]["bidmap_present_ids"] == [2521]
+    assert activity["2521-2530"]["drop_ref_pool_ids"] == {2521: 2521}
+    assert activity["2521-2530"]["drop_present_ids"] == []
+    assert activity["2521-2530"]["drop_missing_ids"] == [2521]
+    assert activity["2521-2530"]["drop_ref_pair_counts"] == {"22-44": 1}
