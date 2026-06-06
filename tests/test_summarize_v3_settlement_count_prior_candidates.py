@@ -72,8 +72,15 @@ def _tables(*, include_map: bool = True) -> SimpleNamespace:
     return SimpleNamespace(maps=maps)
 
 
-def _patch_parser(monkeypatch, module, states_by_name, payloads_by_name=None):
+def _patch_parser(
+    monkeypatch,
+    module,
+    states_by_name,
+    payloads_by_name=None,
+    frame_meta_by_name=None,
+):
     payloads_by_name = payloads_by_name or {}
+    frame_meta_by_name = frame_meta_by_name or {}
     monkeypatch.setattr(
         module,
         "parse_fatbeans_capture",
@@ -85,7 +92,15 @@ def _patch_parser(monkeypatch, module, states_by_name, payloads_by_name=None):
         lambda path: (
             payloads_by_name.get(Path(path).name),
             None,
-            {"settlement_frame_count": 1 if Path(path).name in payloads_by_name else 0},
+            {
+                "settlement_frame_count": (
+                    1
+                    if Path(path).name in payloads_by_name
+                    or Path(path).name in frame_meta_by_name
+                    else 0
+                ),
+                **frame_meta_by_name.get(Path(path).name, {}),
+            },
         ),
     )
 
@@ -230,6 +245,17 @@ def test_settlement_count_prior_candidates_profiles_payload_fields(
         module,
         {"payload_1round_case.json": _state(2601, [1001, 1002])},
         payloads_by_name={"payload_1round_case.json": payload},
+        frame_meta_by_name={
+            "payload_1round_case.json": {
+                "settlement_outer_field_shape": (
+                    "1:0:ix1,2:2:bx1,3:0:ix1,4:0:ix1,5:0:ix1,6:2:bx4"
+                ),
+                "settlement_outer_field3_present": True,
+                "settlement_outer_field4_present": True,
+                "settlement_outer_field5_present": True,
+                "settlement_outer_field6_count": 4,
+            },
+        },
     )
 
     result = module.summarize_settlement_count_prior_candidates(
@@ -244,6 +270,13 @@ def test_settlement_count_prior_candidates_profiles_payload_fields(
     assert result["overall"]["payload_field20_values"] == {"1": 1}
     assert result["overall"]["payload_field5_child_signatures"] == {"1:0:i": 2}
     assert result["overall"]["payload_field8_child_signatures"] == {"1:0:i": 1}
+    assert result["overall"]["settlement_outer_field_shapes"] == {
+        "1:0:ix1,2:2:bx1,3:0:ix1,4:0:ix1,5:0:ix1,6:2:bx4": 1,
+    }
+    assert result["overall"]["settlement_outer_field3_present_rows"] == 1
+    assert result["overall"]["settlement_outer_field4_present_rows"] == 1
+    assert result["overall"]["settlement_outer_field5_present_rows"] == 1
+    assert result["overall"]["settlement_outer_field6_count"]["max"] == 4
     row = result["rows"][0]
     assert row["payload_field5_count"]["max"] == 2
     assert row["payload_field8_count"]["max"] == 1
@@ -251,6 +284,13 @@ def test_settlement_count_prior_candidates_profiles_payload_fields(
     assert row["payload_field20_values"] == {"1": 1}
     assert row["payload_field5_child_signatures"] == {"1:0:i": 2}
     assert row["payload_field8_child_signatures"] == {"1:0:i": 1}
+    assert row["settlement_outer_field_shapes"] == {
+        "1:0:ix1,2:2:bx1,3:0:ix1,4:0:ix1,5:0:ix1,6:2:bx4": 1,
+    }
+    assert row["settlement_outer_field3_present_rows"] == 1
+    assert row["settlement_outer_field4_present_rows"] == 1
+    assert row["settlement_outer_field5_present_rows"] == 1
+    assert row["settlement_outer_field6_count"]["max"] == 4
     assert row["payload_field_shapes"] == {
         "1:2x1,2:0x1,3:0x1,5:2x2,8:2x1,20:0x1": 1,
     }

@@ -138,6 +138,67 @@ def _merge_count_mappings(mappings: Iterable[Mapping[str, int]], *, top: int = 8
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:top])
 
 
+def _typed_field_counts(fields: Sequence[tuple[int, int, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter(
+        f"{field_no}:{wire_type}:{'b' if isinstance(value, bytes) else 'i'}"
+        for field_no, wire_type, value in fields
+    )
+
+    def sort_key(item: tuple[str, int]) -> tuple[int, int, str]:
+        field_text, wire_text, kind = item[0].split(":", 2)
+        return (int(field_text), int(wire_text), kind)
+
+    return dict(sorted(counts.items(), key=sort_key))
+
+
+def _typed_field_shape(fields: Sequence[tuple[int, int, Any]]) -> str:
+    counts = _typed_field_counts(fields)
+    return ",".join(f"{key}x{count}" for key, count in counts.items()) or "none"
+
+
+def _int_values_for_field(
+    fields: Sequence[tuple[int, int, Any]],
+    field_no: int,
+) -> tuple[int, ...]:
+    return tuple(
+        int(value)
+        for item_field_no, _wire_type, value in fields
+        if item_field_no == field_no and isinstance(value, int)
+    )
+
+
+def _settlement_wrapper_metrics(body: bytes | None) -> dict[str, Any]:
+    if not isinstance(body, bytes):
+        return {
+            "settlement_outer_field_shape": "none",
+            "settlement_outer_field3_present": False,
+            "settlement_outer_field4_present": False,
+            "settlement_outer_field5_present": False,
+            "settlement_outer_field3_values": (),
+            "settlement_outer_field4_values": (),
+            "settlement_outer_field5_values": (),
+            "settlement_outer_field6_count": None,
+        }
+    fields = _parse_fields(body)
+    field3_values = _int_values_for_field(fields, 3)
+    field4_values = _int_values_for_field(fields, 4)
+    field5_values = _int_values_for_field(fields, 5)
+    return {
+        "settlement_outer_field_shape": _typed_field_shape(fields),
+        "settlement_outer_field3_present": bool(field3_values),
+        "settlement_outer_field4_present": bool(field4_values),
+        "settlement_outer_field5_present": bool(field5_values),
+        "settlement_outer_field3_values": field3_values,
+        "settlement_outer_field4_values": field4_values,
+        "settlement_outer_field5_values": field5_values,
+        "settlement_outer_field6_count": sum(
+            1
+            for field_no, _wire_type, value in fields
+            if field_no == 6 and isinstance(value, bytes)
+        ),
+    }
+
+
 def _collect_item_candidates(
     data: bytes,
     *,
@@ -263,6 +324,7 @@ def _latest_settlement_payload(path: Path) -> tuple[bytes | None, int | None, di
         "settlement_frame_count": len(frames),
         "settlement_sort_id": frame.sort_id,
         "settlement_frame_length": len(frame.raw),
+        **_settlement_wrapper_metrics(frame.body),
     }
 
 
@@ -397,6 +459,22 @@ def summarize_settlement_payload_audit(
                 "payload_field7_count": _numeric_summary(row.get("payload_field7_count") for row in seq),
                 "payload_field8_count": _numeric_summary(row.get("payload_field8_count") for row in seq),
                 "payload_field20_present_rows": sum(1 for row in seq if row.get("payload_field20_present")),
+                "settlement_outer_field_shapes": _counter_dict(
+                    (row.get("settlement_outer_field_shape") for row in seq),
+                    top=top,
+                ),
+                "settlement_outer_field3_present_rows": sum(
+                    1 for row in seq if row.get("settlement_outer_field3_present")
+                ),
+                "settlement_outer_field4_present_rows": sum(
+                    1 for row in seq if row.get("settlement_outer_field4_present")
+                ),
+                "settlement_outer_field5_present_rows": sum(
+                    1 for row in seq if row.get("settlement_outer_field5_present")
+                ),
+                "settlement_outer_field6_count": _numeric_summary(
+                    row.get("settlement_outer_field6_count") for row in seq
+                ),
                 "occupied_slot_field_shapes": _merge_count_mappings(
                     (row.get("occupied_slot_field_shapes", {}) for row in seq),
                     top=top,
@@ -467,6 +545,22 @@ def summarize_settlement_payload_audit(
             "raw_duplicate_runtime_item_pair_count": _numeric_summary(
                 row.get("raw_duplicate_runtime_item_pair_count") for row in ready
             ),
+            "settlement_outer_field_shapes": _counter_dict(
+                (row.get("settlement_outer_field_shape") for row in ready),
+                top=top,
+            ),
+            "settlement_outer_field3_present_rows": sum(
+                1 for row in ready if row.get("settlement_outer_field3_present")
+            ),
+            "settlement_outer_field4_present_rows": sum(
+                1 for row in ready if row.get("settlement_outer_field4_present")
+            ),
+            "settlement_outer_field5_present_rows": sum(
+                1 for row in ready if row.get("settlement_outer_field5_present")
+            ),
+            "settlement_outer_field6_count": _numeric_summary(
+                row.get("settlement_outer_field6_count") for row in ready
+            ),
             "occupied_slot_field_shapes": _merge_count_mappings(
                 (row.get("occupied_slot_field_shapes", {}) for row in ready),
                 top=top,
@@ -513,6 +607,11 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"raw_candidate_delta={_format_summary(overall['raw_candidate_inventory_delta'])}",
                 f"occupied_slot_delta={_format_summary(overall['occupied_slot_inventory_delta'])}",
                 f"raw_dup_pair={_format_summary(overall['raw_duplicate_runtime_item_pair_count'])}",
+                f"outer_shapes={_format_counts(overall['settlement_outer_field_shapes'])}",
+                f"outer_f3_rows={overall['settlement_outer_field3_present_rows']}",
+                f"outer_f4_rows={overall['settlement_outer_field4_present_rows']}",
+                f"outer_f5_rows={overall['settlement_outer_field5_present_rows']}",
+                f"outer_f6={_format_summary(overall['settlement_outer_field6_count'])}",
                 f"occupied_slot_shapes={_format_counts(overall['occupied_slot_field_shapes'])}",
                 f"empty_slot_shapes={_format_counts(overall['empty_slot_field_shapes'])}",
                 f"occupied_slot_int_fields={_format_counts(overall['occupied_slot_int_field_counts'])}",
@@ -542,6 +641,11 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"payload_f7={_format_summary(row['payload_field7_count'])}",
                     f"payload_f8={_format_summary(row['payload_field8_count'])}",
                     f"payload_f20_rows={row['payload_field20_present_rows']}/{row['files']}",
+                    f"outer_shapes={_format_counts(row['settlement_outer_field_shapes'])}",
+                    f"outer_f3_rows={row['settlement_outer_field3_present_rows']}/{row['files']}",
+                    f"outer_f4_rows={row['settlement_outer_field4_present_rows']}/{row['files']}",
+                    f"outer_f5_rows={row['settlement_outer_field5_present_rows']}/{row['files']}",
+                    f"outer_f6={_format_summary(row['settlement_outer_field6_count'])}",
                     f"occupied_slot_shapes={_format_counts(row['occupied_slot_field_shapes'])}",
                     f"empty_slot_shapes={_format_counts(row['empty_slot_field_shapes'])}",
                     f"occupied_slot_int_fields={_format_counts(row['occupied_slot_int_field_counts'])}",

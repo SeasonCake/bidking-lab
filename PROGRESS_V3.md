@@ -6271,3 +6271,69 @@ within_drop_ref_after_temp:
 - 少量额外 int fields `2/6/9` 只出现在 within-cap/overall，不出现在 over-cap groups，不能解释 over-cap。
 - 当前 field[4] slot/source shape 继续排除 parser 膨胀或 over-cap 专属 slot marker；blocker 仍在 server-side settlement occupancy/source semantics 或外部 overlay table 机制。
 - formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。
+
+## 2026-06-06 checkpoint：settlement outer wrapper residual 下钻
+
+本轮继续收窄 settlement inventory expansion/source blocker，把 0x002D frame body 的 outer wrapper shape、field3/4/5 presence 与 field6 count 接入 settlement payload audit 和 count-prior residual summary。该改动仍是 v3 audit-only，不改变 parser 正式路径、不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_settlement_payload_audit.py`：
+  - 新增 `_settlement_wrapper_metrics()`；
+  - 输出 `settlement_outer_field_shape`、field3/4/5 presence/value tuple 与 field6 count；
+  - payload summary 输出 outer wrapper shape、field3/4/5 rows 与 field6 numeric summary。
+- `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - residual-mode/round/session 分组同步输出 0x002D outer wrapper metrics。
+- `tests/test_summarize_v3_settlement_payload_audit.py` 增加 wrapper metrics parser 覆盖。
+- `tests/test_summarize_v3_settlement_count_prior_candidates.py` 增加 wrapper metrics 聚合覆盖。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_payload_audit.py scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py -q
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 4 --format summary
+python scripts\summarize_v3_settlement_payload_audit.py --top 4 --format summary
+```
+
+真实 residual-mode smoke 要点：
+
+```text
+overall:
+  files=441 settlement_rows=441
+  outer_shapes=1:0:ix1,2:2:bx1,5:0:ix1,6:2:bx4:193,1:0:ix1,2:2:bx1,6:2:bx4:109,1:0:ix1,2:2:bx1,3:0:ix1,4:0:ix1,5:0:ix1,6:2:bx4:80,1:0:ix1,2:2:bx1,3:0:ix1,4:0:ix1,6:2:bx4:53
+  outer_f3_rows=134
+  outer_f4_rows=134
+  outer_f5_rows=276
+  outer_f6=n=441/avg=3.998/p50=4.0/p90=4.0/p95=4.0/max=8.0
+
+drop_ref_only_overflow_after_temp:
+  files=113
+  outer_f3_rows=34/113
+  outer_f4_rows=34/113
+  outer_f5_rows=70/113
+  outer_f6=n=113/avg=4.009/p50=4.0/p90=4.0/p95=4.0/max=5.0
+
+round_cap_overflow_after_temp:
+  files=59
+  outer_f3_rows=20/59
+  outer_f4_rows=20/59
+  outer_f5_rows=31/59
+  outer_f6=n=59/avg=4.0/p50=4.0/p90=4.0/p95=4.0/max=4.0
+
+within_drop_ref_after_temp:
+  files=245
+  outer_f3_rows=74/245
+  outer_f4_rows=74/245
+  outer_f5_rows=162/245
+  outer_f6=n=245/avg=3.992/p50=4.0/p90=4.0/p95=4.0/max=8.0
+```
+
+解读：
+
+- over-cap groups 与 within-cap group 共享同一组 dominant 0x002D outer wrapper shapes。
+- field3/4 成对出现，且在 over-cap 与 within-cap 中都混合存在；field5/loss_units presence 也不是 over-cap 专属。
+- field6 count 基本为 4，少量异常 max=5/8 分散在 drop-only/within-cap，不形成 round-cap overflow 或 drop-only overflow 专属 marker。
+- 这继续排除“capacity 冲突来自 0x002D wrapper 专属 source/expansion marker”的简单解释；blocker 仍应放在 server-side settlement occupancy/source semantics、per-session table/version 或外部 overlay table 机制。
+- formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。

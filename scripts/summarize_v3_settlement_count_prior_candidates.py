@@ -534,6 +534,22 @@ def summarize_settlement_count_prior_candidates(
                     (row.get("inventory_slot_count") for row in seq),
                     top=top,
                 ),
+                "settlement_outer_field_shapes": _counter_dict(
+                    (row.get("settlement_outer_field_shape") for row in seq),
+                    top=top,
+                ),
+                "settlement_outer_field3_present_rows": sum(
+                    1 for row in seq if row.get("settlement_outer_field3_present")
+                ),
+                "settlement_outer_field4_present_rows": sum(
+                    1 for row in seq if row.get("settlement_outer_field4_present")
+                ),
+                "settlement_outer_field5_present_rows": sum(
+                    1 for row in seq if row.get("settlement_outer_field5_present")
+                ),
+                "settlement_outer_field6_count": _numeric_summary(
+                    row.get("settlement_outer_field6_count") for row in seq
+                ),
                 "occupied_slot_field_shapes": _merge_count_mappings(
                     (row.get("occupied_slot_field_shapes", {}) for row in seq),
                     top=top,
@@ -689,6 +705,22 @@ def summarize_settlement_count_prior_candidates(
             "inventory_slot_count": _counter_dict(
                 (row.get("inventory_slot_count") for row in ready),
                 top=top,
+            ),
+            "settlement_outer_field_shapes": _counter_dict(
+                (row.get("settlement_outer_field_shape") for row in ready),
+                top=top,
+            ),
+            "settlement_outer_field3_present_rows": sum(
+                1 for row in ready if row.get("settlement_outer_field3_present")
+            ),
+            "settlement_outer_field4_present_rows": sum(
+                1 for row in ready if row.get("settlement_outer_field4_present")
+            ),
+            "settlement_outer_field5_present_rows": sum(
+                1 for row in ready if row.get("settlement_outer_field5_present")
+            ),
+            "settlement_outer_field6_count": _numeric_summary(
+                row.get("settlement_outer_field6_count") for row in ready
             ),
             "occupied_slot_field_shapes": _merge_count_mappings(
                 (row.get("occupied_slot_field_shapes", {}) for row in ready),
@@ -851,6 +883,11 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"non_temp_count={_format_summary(overall['non_temp_inventory_count'])}",
                 f"temp_zodiac={_format_summary(overall['known_temp_zodiac_count'])}",
                 f"slot_counts={_format_counts(overall['inventory_slot_count'])}",
+                f"outer_shapes={_format_counts(overall['settlement_outer_field_shapes'])}",
+                f"outer_f3_rows={overall['settlement_outer_field3_present_rows']}",
+                f"outer_f4_rows={overall['settlement_outer_field4_present_rows']}",
+                f"outer_f5_rows={overall['settlement_outer_field5_present_rows']}",
+                f"outer_f6={_format_summary(overall['settlement_outer_field6_count'])}",
                 f"occupied_slot_shapes={_format_counts(overall['occupied_slot_field_shapes'])}",
                 f"empty_slot_shapes={_format_counts(overall['empty_slot_field_shapes'])}",
                 f"occupied_slot_int_fields={_format_counts(overall['occupied_slot_int_field_counts'])}",
@@ -905,6 +942,11 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"temp_zodiac={_format_summary(row['known_temp_zodiac_count'])}",
                     f"cells={_format_summary(row['inventory_cells'])}",
                     f"slots={_format_counts(row['inventory_slot_count'])}",
+                    f"outer_shapes={_format_counts(row['settlement_outer_field_shapes'])}",
+                    f"outer_f3_rows={row['settlement_outer_field3_present_rows']}/{row['files']}",
+                    f"outer_f4_rows={row['settlement_outer_field4_present_rows']}/{row['files']}",
+                    f"outer_f5_rows={row['settlement_outer_field5_present_rows']}/{row['files']}",
+                    f"outer_f6={_format_summary(row['settlement_outer_field6_count'])}",
                     f"occupied_slot_shapes={_format_counts(row['occupied_slot_field_shapes'])}",
                     f"empty_slot_shapes={_format_counts(row['empty_slot_field_shapes'])}",
                     f"occupied_slot_int_fields={_format_counts(row['occupied_slot_int_field_counts'])}",

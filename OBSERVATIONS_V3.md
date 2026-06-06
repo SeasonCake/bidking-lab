@@ -4875,3 +4875,55 @@ within_drop_ref_after_temp:
 - over-cap 与 within-cap 共享 dominant occupied/empty slot shapes；over-cap slot 顶层 int field 只有 field `1`，更像本地 slot index。
 - 少量额外 int fields `2/6/9` 出现在 within-cap/overall，不在 over-cap groups 中，因此不是 over-cap source/award/activity marker。
 - 当前 evidence 继续支持“final settlement inventory 解析稳定，但生成/占用机制仍未解释”；不能据此恢复 sampler 参数调优或 promotion readiness。
+
+## O-v3-117：0x002D outer wrapper 不显示 over-cap 专属 source/expansion marker
+
+2026-06-06 增强 `summarize_v3_settlement_payload_audit.py` 与 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 4 --format summary
+python scripts\summarize_v3_settlement_payload_audit.py --top 4 --format summary
+```
+
+整体 outer wrapper 分布：
+
+```text
+files=441 settlement_rows=441
+outer_shapes=1:0:ix1,2:2:bx1,5:0:ix1,6:2:bx4:193,1:0:ix1,2:2:bx1,6:2:bx4:109,1:0:ix1,2:2:bx1,3:0:ix1,4:0:ix1,5:0:ix1,6:2:bx4:80,1:0:ix1,2:2:bx1,3:0:ix1,4:0:ix1,6:2:bx4:53
+outer_f3_rows=134
+outer_f4_rows=134
+outer_f5_rows=276
+outer_f6=n=441/avg=3.998/p50=4.0/p90=4.0/p95=4.0/max=8.0
+```
+
+按 residual mode：
+
+```text
+drop_ref_only_overflow_after_temp:
+  files=113
+  outer_f3_rows=34/113
+  outer_f4_rows=34/113
+  outer_f5_rows=70/113
+  outer_f6=n=113/avg=4.009/p50=4.0/p90=4.0/p95=4.0/max=5.0
+
+round_cap_overflow_after_temp:
+  files=59
+  outer_f3_rows=20/59
+  outer_f4_rows=20/59
+  outer_f5_rows=31/59
+  outer_f6=n=59/avg=4.0/p50=4.0/p90=4.0/p95=4.0/max=4.0
+
+within_drop_ref_after_temp:
+  files=245
+  outer_f3_rows=74/245
+  outer_f4_rows=74/245
+  outer_f5_rows=162/245
+  outer_f6=n=245/avg=3.992/p50=4.0/p90=4.0/p95=4.0/max=8.0
+```
+
+解读：
+
+- dominant 0x002D outer wrapper shapes 同时出现在 over-cap 与 within-cap rows。
+- field3/4 成对出现，field5/loss_units 混合出现，均不是 over-cap 专属。
+- field6 count 基本为 4，异常值分散，不是稳定 source、activity、award 或 expansion classifier。
+- 当前 settlement wrapper/context evidence 仍只能证明 parser/truth 稳定，不能解释生成机制或支持 sampler cap promotion。

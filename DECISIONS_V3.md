@@ -2367,3 +2367,20 @@ applied_hurts=2502
 - `drop_ref_only_overflow_after_temp` 与 `round_cap_overflow_after_temp` 的 occupied/empty slot dominant shapes 与 `within_drop_ref_after_temp` 相同。
 - over-cap groups 的 slot 顶层 int field 主要只有 field `1`；少量 field `2/6/9` 只在 within-cap/overall 出现，不是 over-cap 专属 marker。
 - 这说明当前 0x002D field[4] slot structure 没有暴露可直接用于 sampler/readiness 的 over-cap source 语义。
+
+## D-v3-113：0x002D outer wrapper 不能作为 capacity blocker 解释或 promotion evidence
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_payload_audit.py` 必须输出 0x002D frame body 的 outer wrapper shape、field3/4/5 presence/value tuple 与 field6 count。
+- `summarize_v3_settlement_count_prior_candidates.py` 必须把 outer wrapper metrics 接入 residual-mode/round/session 分组，和 payload/slot/public-total/full-action evidence 一起比较。
+- 如果 over-cap groups 与 within-cap groups 共享 dominant outer wrapper shape，且 field3/4/5 presence 与 field6 count 都不形成 over-cap 专属 marker，则不能把 capacity blocker 归因于 0x002D wrapper 的 source、activity、award 或 expansion 字段。
+- outer wrapper metrics 只能排除 wrapper-marker 类解释；不能作为 sampler cap 修正、readiness 放行或 promotion evidence。
+- formal/value sampler 参数调优继续暂停，直到 server-side settlement occupancy/source semantics、per-session table version 或外部 overlay table 机制有可复核解释。
+
+原因：
+
+- 真实 residual smoke 中 `drop_ref_only_overflow_after_temp`、`round_cap_overflow_after_temp` 与 `within_drop_ref_after_temp` 共享 `1:0:i,2:2:b,5:0:i,6:2:b×4`、`1:0:i,2:2:b,6:2:b×4`、`1:0:i,2:2:b,3:0:i,4:0:i,5:0:i,6:2:b×4` 等 dominant outer shapes。
+- field3/4 在 overall 中均为 134 rows，且按 residual mode 混合分布；field5/loss_units 为 276 rows，也不是 over-cap 专属。
+- field6 count 基本为 4；少量 max=5/8 分散在 drop-only/within-cap，不形成 round-cap/drop-only 专属 source marker。
+- 因此当前 0x002D outer wrapper 没有暴露可直接用于 sampler/readiness 的 capacity expansion 语义。

@@ -87,3 +87,31 @@ def test_inventory_block_metrics_counts_slots_candidates_and_duplicates() -> Non
     assert result["occupied_slot_int_value_counts"] == {"1=7": 1}
     assert result["candidate_path_counts"] == {"3": 2}
     assert result["item_field_signatures"]
+
+
+def test_settlement_wrapper_metrics_profiles_outer_fields() -> None:
+    module = _load_module()
+    body = b"".join(
+        (
+            _field_varint(1, 123),
+            _field_bytes(2, b"payload"),
+            _field_varint(3, 456),
+            _field_varint(4, 456),
+            _field_varint(5, 99),
+            _field_bytes(6, b"left"),
+            _field_bytes(6, b"right"),
+        )
+    )
+
+    result = module._settlement_wrapper_metrics(body)
+
+    assert result["settlement_outer_field_shape"] == (
+        "1:0:ix1,2:2:bx1,3:0:ix1,4:0:ix1,5:0:ix1,6:2:bx2"
+    )
+    assert result["settlement_outer_field3_present"] is True
+    assert result["settlement_outer_field4_present"] is True
+    assert result["settlement_outer_field5_present"] is True
+    assert result["settlement_outer_field3_values"] == (456,)
+    assert result["settlement_outer_field4_values"] == (456,)
+    assert result["settlement_outer_field5_values"] == (99,)
+    assert result["settlement_outer_field6_count"] == 2
