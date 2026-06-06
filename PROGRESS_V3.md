@@ -5903,3 +5903,43 @@ shipwreck round-cap floor/no-public/no-full-action:
 - hard bucket 的 public/action evidence 与 latest settlement inventory 一致，支持继续查 session-cap/settlement expansion 语义。
 - lower bucket 多数缺 public/full-action，不能用 hard evidence 直接解释；下一步应拆 target completeness 与 expansion。
 - formal/value sampler 参数调优继续暂停，promotion/readiness 仍 blocked。
+
+## 2026-06-06 checkpoint：prior-stressed lower-bound target completeness 下钻
+
+本轮增强 prior robustness detail summary，把 `lower_bound_under_truth` 从笼统 capacity bucket 拆成可行动的 target completeness 分支。该改动仍是 v3 audit-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_prior_robustness_audit.py`：
+  - 新增 `lower_bound_target_completeness_summary`。
+  - 拆分 `floor_count_target_below_prior_and_truth`、`count_target_above_prior_but_below_truth`、`missing_count_target_truth_above_prior`。
+  - summary 输出 lower-bound 的 capacity cases、count source、target-vs-truth delta、missing/floor-below patterns。
+- `tests/test_summarize_v3_prior_robustness_audit.py` 新增三类 lower-bound target completeness 单测。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_prior_robustness_audit.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_prior_robustness_audit.py -q
+python scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --detail-summary --detail-summary-top 8 --detail-summary-by consistency_bucket --format summary
+```
+
+真实 lower-bound 要点：
+
+```text
+lower_bound_rows=39
+target completeness:
+  floor_count_target_below_prior_and_truth=21
+  count_target_above_prior_but_below_truth=10
+  missing_count_target_truth_above_prior=8
+count_sources=floor:31,none:8
+target_truth_delta=n=31/avg=-25.968/p90=-9.0/max=-8.0
+target_truth_counts=below=31/match=0/above=0
+```
+
+结论：
+
+- lower bucket 的 31 条 count target 全部低于真实 settlement item count，且 8 条没有 count target。
+- 这进一步支持先查 table/source/settlement expansion 语义，不恢复 formal/value sampler 参数调优。
+- promotion/readiness 仍 blocked；下一步优先查 BidMap/Drop/session settlement expansion 语义与 raw 表版本。

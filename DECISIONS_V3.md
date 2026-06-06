@@ -2257,3 +2257,20 @@ applied_hurts=2502
 
 - hard 2501 的 public total 与 latest inventory 对齐，hard 2506/2601 的 full action 与 latest inventory 对齐，说明 parser/truth 与这些外部 evidence source 一致。
 - lower bucket 多数缺 public/full-action，不能用 hard bucket 的强证据强行解释；它需要单独查 floor target completeness。
+
+## D-v3-106：lower-bound bucket 必须单独拆 target completeness
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_prior_robustness_audit.py --detail-summary` 必须输出 `lower_bound_target_completeness_summary`，只聚焦 `consistency_bucket=lower_bound_under_truth`。
+- lower-bound rows 必须拆成：
+  - `floor_count_target_below_prior_and_truth`
+  - `count_target_above_prior_but_below_truth`
+  - `missing_count_target_truth_above_prior`
+- `lower_bound_under_truth` 中 `target_truth_delta<0` 的 count target 不能当作 sampler cap truth；它说明当前 target 是 floor/incomplete evidence，必须与 hard bucket 的 exact/public/full-action evidence 分开解释。
+- lower-bound target completeness 仍是 audit/readiness 解释，不改变 formal/value sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+原因：
+
+- 真实 prior-stressed detail 中 lower bucket 为 39 行：21 行 floor count target 低于 prior 与 truth，10 行 count target 已超过 prior 但仍低于 truth，8 行缺 count target 但 truth 超过 prior。
+- 31 条有 count target 的 lower rows 全部 `target_truth_delta<0`，平均为 `-25.968`；这不是“调高/调低 sampler 参数”的信号，而是 target completeness 与 settlement expansion/source semantics 的分离信号。

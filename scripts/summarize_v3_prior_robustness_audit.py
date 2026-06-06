@@ -815,6 +815,78 @@ def _evidence_floor_only_summary(
     }
 
 
+def _lower_bound_target_completeness_label(row: Mapping[str, Any]) -> str:
+    capacity = row.get("item_count_capacity", {})
+    count_source = str(capacity.get("total_count_source") or "none")
+    target_prior_delta = _float_or_none(capacity.get("target_prior_max_delta"))
+    target_truth_delta = _float_or_none(capacity.get("target_truth_delta"))
+    truth_prior_delta = _float_or_none(capacity.get("truth_prior_max_delta"))
+
+    if truth_prior_delta is None or truth_prior_delta <= 0.0:
+        return "truth_not_above_prior"
+    if count_source == "none":
+        return "missing_count_target_truth_above_prior"
+    if target_truth_delta is not None and target_truth_delta < 0.0:
+        if target_prior_delta is not None and target_prior_delta > 0.0:
+            return "count_target_above_prior_but_below_truth"
+        if target_prior_delta is not None and target_prior_delta == 0.0:
+            return "count_target_matches_prior_but_below_truth"
+        return f"{count_source}_count_target_below_prior_and_truth"
+    if target_truth_delta is not None and target_truth_delta == 0.0:
+        return "count_target_matches_truth"
+    if target_truth_delta is not None and target_truth_delta > 0.0:
+        return "count_target_above_truth"
+    return "count_target_truth_delta_missing"
+
+
+def _lower_bound_target_completeness_summary(
+    rows: Iterable[dict[str, Any]],
+    *,
+    top: int = 8,
+) -> dict[str, Any]:
+    seq = tuple(
+        row
+        for row in rows
+        if row.get("consistency_bucket") == "lower_bound_under_truth"
+    )
+    return {
+        "rows": len(seq),
+        "reason_counts": _counter_dict(
+            (reason for row in seq for reason in row.get("reasons", ())),
+            top=top,
+        ),
+        "map_counts": _counter_dict((row.get("map_id") for row in seq), top=top),
+        "hero_map_evidence_profile_counts": _counter_dict(
+            (row.get("hero_map_evidence_profile") for row in seq),
+            top=top,
+        ),
+        "target_completeness_class_counts": _counter_dict(
+            (_lower_bound_target_completeness_label(row) for row in seq),
+            top=top,
+        ),
+        "source_counts": _source_counts(seq, top=top),
+        "component_issue_counts": _component_issue_counts(seq, top=top),
+        "target_missing_pattern_counts": _target_missing_pattern_counts(
+            seq,
+            top=top,
+        ),
+        "floor_below_truth_pattern_counts": _floor_below_truth_pattern_counts(
+            seq,
+            top=top,
+        ),
+        "capacity_count_summary": _capacity_count_summary(seq, top=top),
+        "target_truth_delta_counts": _component_delta_counts(
+            seq,
+            key="target_truth_delta",
+        ),
+        "target_truth_delta_summary": _component_numeric_summary(
+            seq,
+            key="target_truth_delta",
+        ),
+        "evidence_count_summary": _evidence_count_summary(seq),
+    }
+
+
 def _capacity_count_summary(rows: Iterable[dict[str, Any]], *, top: int = 8) -> dict[str, Any]:
     seq = tuple(rows)
     capacity_cases = [
@@ -925,6 +997,12 @@ def _stress_detail_summary_block(
         "evidence_floor_only_summary": _evidence_floor_only_summary(
             seq,
             top=top,
+        ),
+        "lower_bound_target_completeness_summary": (
+            _lower_bound_target_completeness_summary(
+                seq,
+                top=top,
+            )
         ),
         "target_truth_match_counts": {
             "total_cells": sum(
@@ -1494,6 +1572,29 @@ def _format_evidence_floor_only_summary(summary: dict[str, Any]) -> tuple[str, .
     )
 
 
+def _format_lower_bound_target_completeness_summary(
+    summary: dict[str, Any],
+) -> tuple[str, ...]:
+    capacity = summary["capacity_count_summary"]
+    return (
+        f"lower_bound_rows={summary['rows']}",
+        "lower_bound_target_completeness="
+        + _format_counts(summary["target_completeness_class_counts"]),
+        "lower_bound_capacity_cases="
+        + _format_counts(capacity["case_counts"]),
+        "lower_bound_count_sources="
+        + _format_counts(capacity["total_count_source_counts"]),
+        "lower_bound_target_truth_delta="
+        + _format_ratio_summary(capacity["target_truth_delta"]),
+        "lower_bound_target_truth_counts="
+        + _format_delta_counts(capacity["target_truth_delta_counts"]),
+        "lower_bound_missing_patterns="
+        + _format_counts(summary["target_missing_pattern_counts"]),
+        "lower_bound_floor_below_patterns="
+        + _format_counts(summary["floor_below_truth_pattern_counts"]),
+    )
+
+
 def _print_detail_summary(summary: dict[str, Any], *, top: int) -> None:
     overall = summary["overall"]
     print(
@@ -1543,6 +1644,9 @@ def _print_detail_summary(summary: dict[str, Any], *, top: int) -> None:
                 ),
                 *_format_evidence_floor_only_summary(
                     overall["evidence_floor_only_summary"],
+                ),
+                *_format_lower_bound_target_completeness_summary(
+                    overall["lower_bound_target_completeness_summary"],
                 ),
             )
         )

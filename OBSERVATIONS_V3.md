@@ -4507,3 +4507,43 @@ lower/round-cap/shipwreck/floor/no-public/no-full-action:
 - hard 2501 public total 与 latest settlement inventory 完全一致，但扣除 zodiac 后仍超过 round-cap；这支持继续查 round-cap/session expansion semantics。
 - hard 2506/2601 的 full observed action 覆盖 latest inventory，说明 action mirror 支持 final count，不是 parser 重复或 partial action 误读。
 - lower bucket 多数 no-public/no-full-action，action max 远低于 latest inventory；它应作为 floor target completeness / expansion 分离问题，不应直接套用 hard cell 结论。
+
+## O-v3-110：lower-bound target completeness summary 将 39 行拆成 21/10/8
+
+2026-06-06 增强 `summarize_v3_prior_robustness_audit.py --detail-summary` 后，复跑：
+
+```powershell
+python -m py_compile scripts\summarize_v3_prior_robustness_audit.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_prior_robustness_audit.py -q
+python scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --detail-summary --detail-summary-top 8 --detail-summary-by consistency_bucket --format summary
+```
+
+测试结果：
+
+```text
+4 passed in 0.90s
+```
+
+真实 lower-bound summary 关键输出：
+
+```text
+lower_bound_rows=39
+lower_bound_target_completeness=
+  floor_count_target_below_prior_and_truth:21
+  count_target_above_prior_but_below_truth:10
+  missing_count_target_truth_above_prior:8
+lower_bound_capacity_cases=
+  target_lower_bound_truth_above_prior:31
+  target_above_prior_but_below_truth:10
+  truth_above_prior_without_count_target:8
+  truth_above_prior_without_target_prior_hit:8
+lower_bound_count_sources=floor:31,none:8
+lower_bound_target_truth_delta=n=31/avg=-25.968/p90=-9.0/max=-8.0
+lower_bound_target_truth_counts=below=31/match=0/above=0
+```
+
+解读：
+
+- lower bucket 不是单一 “capacity conflict”；其中 21 行的 count floor 甚至低于 prior 与 truth，10 行虽超过 prior 但仍低于 truth，8 行缺 count target。
+- 31 条有 count target 的 lower rows 全部低于 truth，因此 lower bucket 应继续查 target completeness、table/source semantics 与 settlement expansion 分离。
+- 该观察不支持恢复 formal/value sampler 参数调优，也不是 promotion evidence。

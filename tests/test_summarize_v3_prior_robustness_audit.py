@@ -395,6 +395,107 @@ def test_prior_stress_consistency_bucket_splits_main_risk_modes() -> None:
     )
 
 
+def test_prior_stress_detail_summary_exposes_lower_bound_target_completeness() -> None:
+    module = _load_module()
+    rows = [
+        {
+            **_ready_row(
+                map_id=2506,
+                pred=800,
+                truth=1000,
+                p90=1100,
+                stress_score=1,
+                reasons="total_cells_above_prior",
+                scope="summary_likelihood",
+            ),
+            "v3_truth_item_count": 8,
+            "v3_summary_known_count_floor": 4,
+            "v3_robust_fallback_mode": "summary_likelihood_conservative",
+        },
+        {
+            **_ready_row(
+                map_id=2601,
+                pred=800,
+                truth=1000,
+                p90=1100,
+                stress_score=1,
+                reasons="total_cells_above_prior",
+                scope="summary_likelihood",
+            ),
+            "v3_truth_item_count": 8,
+            "v3_summary_known_count_floor": None,
+            "v3_robust_fallback_mode": "summary_likelihood_conservative",
+        },
+        {
+            **_ready_row(
+                map_id=2501,
+                pred=800,
+                truth=1000,
+                p90=1100,
+                stress_score=1,
+                reasons="total_count_above_prior",
+                scope="summary_likelihood",
+            ),
+            "v3_truth_item_count": 8,
+            "v3_summary_known_count_floor": 6,
+            "v3_robust_fallback_mode": "summary_likelihood_conservative",
+        },
+    ]
+
+    details = module.summarize_prior_stress_details(rows)
+
+    assert [row["consistency_bucket"] for row in details] == [
+        "lower_bound_under_truth",
+        "lower_bound_under_truth",
+        "lower_bound_under_truth",
+    ]
+    summary = module.summarize_prior_stress_detail_summary(details)
+    lower_summary = summary["overall"]["lower_bound_target_completeness_summary"]
+    assert lower_summary["rows"] == 3
+    assert lower_summary["reason_counts"] == {
+        "total_cells_above_prior": 2,
+        "total_count_above_prior": 1,
+    }
+    assert lower_summary["target_completeness_class_counts"] == {
+        "count_target_above_prior_but_below_truth": 1,
+        "floor_count_target_below_prior_and_truth": 1,
+        "missing_count_target_truth_above_prior": 1,
+    }
+    assert lower_summary["capacity_count_summary"]["case_counts"] == {
+        "target_lower_bound_truth_above_prior": 2,
+        "target_above_prior_but_below_truth": 1,
+        "truth_above_prior_without_count_target": 1,
+        "truth_above_prior_without_target_prior_hit": 1,
+    }
+    assert lower_summary["capacity_count_summary"]["total_count_source_counts"] == {
+        "floor": 2,
+        "none": 1,
+    }
+    assert lower_summary["capacity_count_summary"]["target_prior_max_delta_counts"] == {
+        "below_prior_max": 1,
+        "matches_prior_max": 0,
+        "above_prior_max": 1,
+    }
+    assert lower_summary["capacity_count_summary"]["truth_prior_max_delta_counts"] == {
+        "below_prior_max": 0,
+        "matches_prior_max": 0,
+        "above_prior_max": 3,
+    }
+    assert lower_summary["capacity_count_summary"]["target_truth_delta_counts"] == {
+        "below_truth": 2,
+        "matches_truth": 0,
+        "above_truth": 0,
+    }
+    assert lower_summary["capacity_count_summary"]["target_truth_delta"]["avg"] == -3
+    assert lower_summary["target_missing_pattern_counts"] == {"none": 3}
+    assert lower_summary["floor_below_truth_pattern_counts"] == {
+        "total_cells+total_value": 3,
+    }
+    assert lower_summary["component_issue_counts"]["total_cells"] == {
+        "floor_below_truth": 3,
+    }
+
+
 def test_prior_stress_detail_summary_exposes_evidence_floor_only_modes() -> None:
     module = _load_module()
     rows = [
