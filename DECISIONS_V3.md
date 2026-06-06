@@ -2144,3 +2144,19 @@ applied_hurts=2502
 - 前一轮 audit 已证明 2502 r4 可由 `session.total_cells=156` 与 q1-q5 cells exact 完整分区派生 `q6_cells=22`，但这只覆盖 cells，不覆盖 count/value/formal value。
 - 若直接写入 summary，会被 v3 posterior/formal-value 等消费者当作 hard exact，改变整条 shadow 链路，混淆“诊断证据”和“模型行为”。
 - 在 evaluate 输出中统一暴露 `v3_rtc_*`，可以让 archive/readiness/holdout 后续审计稳定观察 candidate 覆盖率，同时保留 promotion gate 的严格边界。
+
+## D-v3-099：guarded settlement bridge 需要独立 multi-seed stability gate
+
+2026-06-06 起，当前决策：
+
+- `settlement_count_guarded_bridge_holdout` 只证明单 posterior seed / 单 run 的 nested train-only holdout，不足以作为 promotion 支持。
+- `summarize_v3_promotion_readiness.py` 必须单独输出 `settlement_count_guarded_bridge_stability` gate，用于承载 `summarize_v3_scp_guarded_bridge_stability.py` 的多 seed 结果。
+- 没有 stability matrix 时，该 gate 必须 blocked，`overall_status=not_evaluated`；传入 matrix 后，只有 matrix `overall_status=watch` 才能进入 watch。
+- seed drift、selected group drift、applied hurt、low applied support 任一存在时，该 gate 必须 blocked。
+- 该 gate 仍是 shadow/readiness 证据，不改变 settlement count prior、formal/value sampler、v2 formal/live/UI 或正式出价。
+
+原因：
+
+- 当前 64-trial matrix 显示 seed 0 单独可 watch，但 seed 1 选择了 `2501,2506`，且 `2501` 出现 applied hurt。
+- 因此 seed-0 的 `2506` bounded bridge 不能作为 promotion 支持；它只能作为后续继续收样本或重设 guard 的候选线索。
+- 将 stability 显式接入 readiness 可以防止“单 seed watch”绕过 archive/live/holdout 稳定性要求。

@@ -166,6 +166,10 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert gates["settlement_count_cells_value_bridge_holdout"]["applied_rows"] == 0
     assert gates["settlement_count_guarded_bridge_holdout"]["status"] == "blocked"
     assert gates["settlement_count_guarded_bridge_holdout"]["applied_rows"] == 0
+    assert gates["settlement_count_guarded_bridge_stability"]["status"] == "blocked"
+    assert gates["settlement_count_guarded_bridge_stability"]["overall_status"] == (
+        "not_evaluated"
+    )
     assert gates["formal_baseline_metrics"]["status"] == "blocked"
     assert "holdout_candidate_rows" in gates["ccv_sampler"]
     assert "applied_ccv_hurts_groups" in gates["ccv_sampler"]
@@ -192,6 +196,7 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert "settlement_count_cells_value_bridge" in result
     assert "settlement_count_cells_value_bridge_holdout" in result
     assert "settlement_count_guarded_bridge_holdout" in result
+    assert "settlement_count_guarded_bridge_stability" in result
     assert "gate_dependencies" in result
     dependencies = result["gate_dependencies"]
     assert "formal_value_shadow_sampler" in dependencies["blocked_or_pending_lanes"]
@@ -206,9 +211,52 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert dependency_gates["settlement_count_guarded_bridge_holdout"]["lane"] == (
         "settlement_bridge_support"
     )
+    assert dependency_gates["settlement_count_guarded_bridge_stability"]["lane"] == (
+        "settlement_bridge_support"
+    )
     assert dependency_gates["v2_archive_readiness"]["status"] == "pending"
     assert "prior_stress_detail_summary" in result
     assert result["prior_stress_detail_summary"]["rows"] == 0
+
+
+def test_readiness_attaches_guarded_bridge_stability_matrix() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        scp_guarded_bridge_stability={
+            "overall_status": "blocked_applied_hurt",
+            "status_reasons": ["applied_hurts_present"],
+            "run_count": 2,
+            "watch_runs": 1,
+            "required_selected_groups": ["2506"],
+            "stable_selected_groups": ["2506"],
+            "union_selected_groups": ["2501", "2506"],
+            "selected_signature_counts": {"2506:2": 1, "2501:1,2506:1": 1},
+            "hurt_group_counts": {"2501": 1},
+            "min_applied_rows": 20,
+            "min_applied_rows_required": 20,
+            "selected_group_support_gap": [],
+        },
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    stability = gates["settlement_count_guarded_bridge_stability"]
+    assert stability["status"] == "blocked"
+    assert stability["overall_status"] == "blocked_applied_hurt"
+    assert stability["status_reasons"] == ["applied_hurts_present"]
+    assert stability["hurt_group_counts"] == {"2501": 1}
+    assert result["settlement_count_guarded_bridge_stability"]["status"] == (
+        "blocked_applied_hurt"
+    )
 
 
 def test_readiness_blocks_prior_robustness_on_activity_candidate() -> None:

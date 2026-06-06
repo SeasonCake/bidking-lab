@@ -5477,3 +5477,72 @@ prebid_r4:
 - 2502 r4 的 `q6_cells=22` 现在可在通用 archive evaluate 输出中被稳定观测，且仍不参与任何 sampler 或 bidding 行为。
 - r1-r3 继续因为非 q6 cells exact 不完整而不能派生；count/value 继续缺少必要 exact 分区，不能派生。
 - 这一步收口了 q6 cells residual diagnostic 的 pipeline 出口；下一步仍应先围绕 capacity/table 语义与 value evidence blocker 推进，再恢复 formal/value sampler promotion readiness。
+
+## 2026-06-06 checkpoint：guarded settlement bridge stability 纳入 readiness blocker
+
+本轮修正 promotion readiness 的 settlement bridge 证据出口：此前 `settlement_count_guarded_bridge_holdout` 只表达单 posterior seed 的 nested holdout 结果，summary 文本虽然提示“seed stability remain required”，但 readiness gates 没有独立承载 multi-seed 稳定性证据。现在新增独立 stability gate，使 seed-0 watch 不会被误读为 promotion 支持。
+
+改动：
+
+- `scripts/summarize_v3_promotion_readiness.py` 新增 gate：
+  - `settlement_count_guarded_bridge_stability`
+  - lane 归属 `settlement_bridge_support`
+  - 没有 stability matrix 时固定 blocked，`overall_status=not_evaluated`
+  - 传入 stability JSON 后，只有 `overall_status=watch` 才进入 watch；其余状态保持 blocked。
+- readiness CLI 新增：
+  - `--guarded-bridge-stability-json`
+  - 用于消费 `scripts/summarize_v3_scp_guarded_bridge_stability.py --format json` 的结果。
+- summary 文本新增：
+  - `scp_guarded_stability`
+  - `scp_guarded_stable_groups`
+- `tests/test_summarize_v3_promotion_readiness.py` 覆盖：
+  - 默认未传 stability matrix 时 gate blocked；
+  - 传入 `blocked_applied_hurt` matrix 时 gate blocked，并保留 hurt group 证据。
+- `DECISIONS_V3.md` 新增 D-v3-099；`OBSERVATIONS_V3.md` 新增 O-v3-103。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_promotion_readiness.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_scp_guarded_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_stability.py -q
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_scp_guarded_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_stability.py tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_summarize_v3_scp_count_value_bridge.py -q
+python scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format summary
+python scripts\summarize_v3_promotion_readiness.py data\samples\fatbeans\fatbeans_valid_aisha_2502_4rounds_2502_1295018709694048_0149.json --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1.json --format summary
+```
+
+真实 64-trial guarded bridge stability：
+
+```text
+overall_status=blocked_applied_hurt
+reasons=applied_hurts_present,non_watch_run,selected_group_drift
+runs=2
+watch_runs=1
+required_groups=2506
+stable_groups=2506
+union_groups=2501,2506
+min_applied=20
+min_required=20
+signatures=2501:1,2506:2=1;2506:3=1
+
+seed=0:
+  status=watch
+  selected=2506
+  applied_rows=20
+  delta_mae=-6000.0
+  bridge_over=0.25
+  applied_hurts=-
+
+seed=1:
+  status=blocked_holdout_hurt
+  selected=2501,2506
+  applied_rows=62
+  delta_mae=378.95
+  bridge_over=0.580645
+  applied_hurts=2501
+```
+
+结论：
+
+- `2506` guarded bridge 的 seed-0 watch 不能作为 promotion 支持；seed-1 引入 `2501` 且 hurt，multi-seed matrix 当前是 blocked。
+- readiness 现在能显式表达这个 blocker：无 matrix 为 `not_evaluated` blocked，传入真实 matrix 为 `blocked_applied_hurt` blocked。
+- 本轮不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价；只是把 settlement bridge stability gate 前移到 readiness 证据链。

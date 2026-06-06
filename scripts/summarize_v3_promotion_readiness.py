@@ -153,6 +153,10 @@ _GATE_DEPENDENCY_META: dict[str, tuple[str, str]] = {
         "settlement_bridge_support",
         "collect support and seed-stability for guarded settlement bridge",
     ),
+    "settlement_count_guarded_bridge_stability": (
+        "settlement_bridge_support",
+        "prove guarded settlement bridge selection is stable across posterior seeds",
+    ),
     "formal_baseline_metrics": (
         "formal_value_shadow_sampler",
         "formal baseline must enter promotion band or be safely bridged",
@@ -227,9 +231,12 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
     if name in {
         "settlement_count_cells_value_bridge_holdout",
         "settlement_count_guarded_bridge_holdout",
+        "settlement_count_guarded_bridge_stability",
     }:
         applied = gate.get("applied_rows")
         selected = gate.get("selected_group_fold_counts") or {}
+        if not selected:
+            selected = gate.get("selected_signature_counts") or {}
         parts = [f"applied_rows={applied}"]
         if selected:
             parts.append(
@@ -377,6 +384,7 @@ def summarize_readiness(
     min_windows: int = 20,
     min_sessions: int = 8,
     folds: int = 5,
+    scp_guarded_bridge_stability: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = summarize_rows(rows, errors)
     prior_stress_details = summarize_prior_stress_details(rows)
@@ -826,6 +834,78 @@ def summarize_readiness(
             ),
         )
     )
+    stability_status = (
+        str(scp_guarded_bridge_stability.get("overall_status") or "unknown")
+        if scp_guarded_bridge_stability is not None
+        else "not_evaluated"
+    )
+    stability_gate_status = "watch" if stability_status == "watch" else "blocked"
+    if scp_guarded_bridge_stability is None:
+        stability_reason = (
+            "guarded settlement bridge seed stability has not been evaluated"
+            if scp_guarded_status == "watch"
+            else "guarded settlement bridge holdout must pass before seed stability can promote"
+        )
+        stability_fields: dict[str, Any] = {
+            "overall_status": stability_status,
+            "status_reasons": ["missing_stability_matrix"],
+            "run_count": 0,
+            "watch_runs": 0,
+            "required_selected_groups": [],
+            "stable_selected_groups": [],
+            "union_selected_groups": [],
+            "selected_signature_counts": {},
+            "hurt_group_counts": {},
+            "min_applied_rows": 0,
+            "min_applied_rows_required": None,
+            "selected_group_support_gap": [],
+        }
+    else:
+        stability_reason = (
+            "guarded settlement bridge is stable across posterior seeds"
+            if stability_gate_status == "watch"
+            else "guarded settlement bridge is not stable across posterior seeds"
+        )
+        stability_fields = {
+            "overall_status": stability_status,
+            "status_reasons": scp_guarded_bridge_stability.get(
+                "status_reasons"
+            ),
+            "run_count": scp_guarded_bridge_stability.get("run_count"),
+            "watch_runs": scp_guarded_bridge_stability.get("watch_runs"),
+            "required_selected_groups": scp_guarded_bridge_stability.get(
+                "required_selected_groups"
+            ),
+            "stable_selected_groups": scp_guarded_bridge_stability.get(
+                "stable_selected_groups"
+            ),
+            "union_selected_groups": scp_guarded_bridge_stability.get(
+                "union_selected_groups"
+            ),
+            "selected_signature_counts": scp_guarded_bridge_stability.get(
+                "selected_signature_counts"
+            ),
+            "hurt_group_counts": scp_guarded_bridge_stability.get(
+                "hurt_group_counts"
+            ),
+            "min_applied_rows": scp_guarded_bridge_stability.get(
+                "min_applied_rows"
+            ),
+            "min_applied_rows_required": scp_guarded_bridge_stability.get(
+                "min_applied_rows_required"
+            ),
+            "selected_group_support_gap": scp_guarded_bridge_stability.get(
+                "selected_group_support_gap"
+            ),
+        }
+    gates.append(
+        _gate(
+            "settlement_count_guarded_bridge_stability",
+            stability_gate_status,
+            stability_reason,
+            **stability_fields,
+        )
+    )
     formal_below = float(summary.get("formal_p50_below_rate") or 0.0)
     formal_p90 = float(summary.get("formal_p90_coverage") or 0.0)
     formal_status = "blocked" if formal_below > 0.50 or formal_p90 < 0.80 else "watch"
@@ -1207,6 +1287,15 @@ def summarize_readiness(
         next_actions.append("collect more 2506 guarded-bridge holdout support across posterior seeds")
     else:
         next_actions.append("keep nested settlement bridge guard in audit until holdout stabilizes")
+    if stability_gate_status != "watch":
+        if stability_status == "not_evaluated":
+            next_actions.append(
+                "run guarded settlement bridge stability matrix before treating seed-0 watch as support"
+            )
+        else:
+            next_actions.append(
+                "keep guarded settlement bridge out of promotion; multi-seed stability failed"
+            )
     if not prior_stress_drift_ready:
         next_actions.append("audit prior-stressed capacity/table drift by map/profile before promotion")
     if not robust_ready:
@@ -1488,6 +1577,10 @@ def summarize_readiness(
                 "guard_status_counts"
             ),
         },
+        "settlement_count_guarded_bridge_stability": {
+            "status": stability_status,
+            **stability_fields,
+        },
         "ccv_status_counts": ccv_counts,
         "tail_status_counts": tail_counts,
         "residual_status_counts": residual_counts,
@@ -1546,6 +1639,14 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"scp_guarded_rows={result['settlement_count_guarded_bridge_holdout']['applied_rows']}",
                 f"scp_guarded_delta={result['settlement_count_guarded_bridge_holdout']['candidate_delta_formal_p50_mae']}",
                 f"scp_guarded_over={result['settlement_count_guarded_bridge_holdout']['candidate_bridge_formal_p50_over_rate']}",
+                f"scp_guarded_stability={result['settlement_count_guarded_bridge_stability']['status']}",
+                "scp_guarded_stable_groups="
+                + ",".join(
+                    result["settlement_count_guarded_bridge_stability"].get(
+                        "stable_selected_groups"
+                    )
+                    or []
+                ),
                 f"prior_stress_detail_rows={result['prior_stress_detail_summary']['rows']}",
                 f"prior_stress_capacity_hits={result['prior_stress_detail_summary']['capacity_flag_hits']}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
@@ -1602,6 +1703,14 @@ def main(argv: list[str] | None = None) -> int:
         default=_default_settlement_count_prior_path(),
     )
     parser.add_argument("--no-settlement-count-prior", action="store_true")
+    parser.add_argument(
+        "--guarded-bridge-stability-json",
+        type=Path,
+        help=(
+            "Optional JSON output from summarize_v3_scp_guarded_bridge_stability.py "
+            "to attach multi-seed stability evidence to readiness."
+        ),
+    )
     args = parser.parse_args(argv)
 
     rows, errors = evaluate_paths(
@@ -1626,6 +1735,10 @@ def main(argv: list[str] | None = None) -> int:
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,
     )
+    guarded_bridge_stability = None
+    if args.guarded_bridge_stability_json is not None:
+        with args.guarded_bridge_stability_json.open("r", encoding="utf-8") as handle:
+            guarded_bridge_stability = json.load(handle)
     result = summarize_readiness(
         rows,
         errors,
@@ -1634,6 +1747,7 @@ def main(argv: list[str] | None = None) -> int:
         min_windows=args.min_windows,
         min_sessions=args.min_sessions,
         folds=args.folds,
+        scp_guarded_bridge_stability=guarded_bridge_stability,
     )
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

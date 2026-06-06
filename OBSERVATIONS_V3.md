@@ -4097,3 +4097,68 @@ prebid_r4:
 - pipeline/evaluate 与单独 target-missing audit 的结论一致：只有 r4 满足 q1-q5 cells residual 条件。
 - `v3_rtc_active_rows=0` 确认该诊断没有进入 sampler 或 bidding 行为。
 - CSV header 已包含 `v3_rtc_available`、`v3_rtc_candidate`、`v3_rtc_q6_cells_value`，后续 archive/live/readiness 统计可以直接消费这些字段。
+
+## O-v3-103：guarded settlement bridge seed-0 watch 不具备多 seed 稳定性
+
+2026-06-06 复跑 guarded settlement bridge stability matrix：
+
+```powershell
+python scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format summary
+```
+
+结果：
+
+```text
+overall_status=blocked_applied_hurt
+reasons=applied_hurts_present,non_watch_run,selected_group_drift
+runs=2
+watch_runs=1
+required_groups=2506
+stable_groups=2506
+union_groups=2501,2506
+min_applied=20
+min_required=20
+signatures=2501:1,2506:2=1;2506:3=1
+```
+
+逐 seed：
+
+```text
+seed=0:
+  status=watch
+  selected=2506
+  applied_rows=20
+  delta_mae=-6000.0
+  delta_p90=0.0
+  bridge_over=0.25
+  applied_hurts=-
+
+seed=1:
+  status=blocked_holdout_hurt
+  selected=2501,2506
+  applied_rows=62
+  delta_mae=378.95
+  delta_p90=0.016129
+  bridge_over=0.580645
+  applied_hurts=2501
+```
+
+readiness 接入验证：
+
+```powershell
+python scripts\summarize_v3_promotion_readiness.py data\samples\fatbeans\fatbeans_valid_aisha_2502_4rounds_2502_1295018709694048_0149.json --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1.json --format summary
+```
+
+关键输出：
+
+```text
+scp_guarded_stability=blocked_applied_hurt
+scp_guarded_stable_groups=2506
+gate=settlement_count_guarded_bridge_stability status=blocked reason="guarded settlement bridge is not stable across posterior seeds"
+```
+
+解读：
+
+- `2506` 仍是稳定交集，但 seed 1 的 union group 引入 `2501` 且发生 hurt，说明 guard selection 尚不稳定。
+- 当前 settlement count-prior bridge 只能保持 shadow/readiness blocker；不能进入 formal/value promotion 支持。
+- readiness 已能区分“未评估 stability”与“已评估但 multi-seed failed”，减少后续误读。
