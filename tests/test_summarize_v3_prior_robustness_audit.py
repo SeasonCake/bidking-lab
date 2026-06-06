@@ -393,3 +393,80 @@ def test_prior_stress_consistency_bucket_splits_main_risk_modes() -> None:
         )
         == "no_capacity_prior_conflict"
     )
+
+
+def test_prior_stress_detail_summary_exposes_evidence_floor_only_modes() -> None:
+    module = _load_module()
+    rows = [
+        {
+            **_ready_row(
+                map_id=2401,
+                pred=800,
+                truth=1000,
+                p90=1100,
+                stress_score=1,
+                reasons="q6_cells_above_prior",
+                scope="summary_likelihood",
+            ),
+            "v3_prior_items_per_session_max": 10,
+            "v3_robust_fallback_mode": "summary_likelihood_conservative",
+        },
+        {
+            **_ready_row(
+                map_id=2502,
+                pred=900,
+                truth=1000,
+                p90=1100,
+                stress_score=1,
+                reasons="total_cells_above_prior",
+                scope="summary_likelihood",
+            ),
+            "v3_prior_items_per_session_max": 10,
+            "v3_summary_session_total_cells_exact": 40,
+            "v3_summary_known_cells_floor": 30,
+            "v3_summary_q6_cells_floor": 0,
+            "v3_summary_q6_value_floor": 0,
+            "v3_summary_known_value_floor": 0,
+            "v3_robust_fallback_mode": "summary_likelihood_conservative",
+        },
+    ]
+
+    details = module.summarize_prior_stress_details(rows)
+
+    assert [row["consistency_bucket"] for row in details] == [
+        "evidence_floor_only",
+        "evidence_floor_only",
+    ]
+    summary = module.summarize_prior_stress_detail_summary(details)
+    floor_summary = summary["overall"]["evidence_floor_only_summary"]
+    assert floor_summary["rows"] == 2
+    assert floor_summary["reason_counts"] == {
+        "q6_cells_above_prior": 1,
+        "total_cells_above_prior": 1,
+    }
+    assert floor_summary["source_counts"]["total_cells"] == {
+        "exact": 1,
+        "floor": 1,
+    }
+    assert floor_summary["source_counts"]["q6_cells"] == {
+        "floor": 1,
+        "none": 1,
+    }
+    assert floor_summary["component_issue_counts"]["total_cells"] == {
+        "exact_matches_truth": 1,
+        "floor_below_truth": 1,
+    }
+    assert floor_summary["component_issue_counts"]["q6_cells"] == {
+        "floor_matches_truth": 1,
+        "target_missing": 1,
+    }
+    assert floor_summary["component_issue_counts"]["total_value"] == {
+        "floor_below_truth": 1,
+        "target_missing": 1,
+    }
+    assert floor_summary["target_truth_delta_counts"]["total_cells"] == {
+        "below_truth": 1,
+        "matches_truth": 1,
+        "above_truth": 0,
+    }
+    assert floor_summary["evidence_count_summary"]["shape_anchors"]["n"] == 2

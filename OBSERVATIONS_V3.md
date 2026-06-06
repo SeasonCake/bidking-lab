@@ -3605,3 +3605,77 @@ col8_zero_maps=2511,2512,2513,2514,2515,2516,2517,2518,2519,2520,4511,4512,4513,
 - current v300 `col[16]` 在这些 rows 均为 `[[]]`，drop-ref 是 `col[17]`；`col[17]` 的 max 是 sampler draw range，不是 final settlement inventory hard cap。
 - `evidence_floor_only` 没有 table/round cap impossible，下一步应查 evidence compiler/floor source，而不是 table capacity。
 - col[8] 的 `0` cohort 是后续 activity/overlay 线索，但不解释当前 94 个 prior-stressed rows。
+
+## O-v3-094：evidence-floor-only 主要是 floor below truth 与 q6/value target missing
+
+2026-06-06 给 prior robustness detail summary 增加 `evidence_floor_only_summary` 后复跑 64-trial default archive：
+
+```text
+details=94
+bucket_counts:
+  hard_capacity_conflict=29
+  lower_bound_under_truth=39
+  evidence_floor_only=26
+
+evidence_floor_only rows=26
+map_counts:
+  2401=5
+  2406=5
+  2409=5
+  2404=4
+  2502=4
+  2402=3
+
+reason_counts:
+  summary_likelihood_fallback=26
+  q6_cells_above_prior=12
+  q6_value_above_prior=11
+  total_value_above_prior=11
+  total_cells_above_prior=4
+```
+
+component issue counts：
+
+```text
+total_cells:
+  floor_below_truth=21
+  exact_matches_truth=5
+
+total_value:
+  floor_below_truth=22
+  target_missing=4
+
+q6_cells:
+  floor_below_truth=17
+  floor_matches_truth=5
+  target_missing=4
+
+q6_value:
+  floor_below_truth=17
+  floor_matches_truth=5
+  target_missing=4
+```
+
+evidence count summary：
+
+```text
+numeric_constraints n=26 avg=5.346 p90=9 max=10
+item_anchors n=26 avg=7.423 p90=10 max=20
+shape_anchors n=26 avg=23.077 p90=33 max=39
+quality_floor_anchors n=26 avg=2.077 p90=4 max=6
+```
+
+floor source 口径：
+
+```text
+item_anchors -> value/cells/quality floor
+shape_anchors -> cells floor, optional quality
+quality_floor_anchors -> quality/count only
+numeric_constraints -> exact only, not floor
+```
+
+解读：
+
+- `evidence_floor_only` 不是单一 value sampler 缺口；大多数是 cells/value floor 作为低界低于 final truth。
+- `2502` 形态更具体：total cells exact matches truth，但 q6/value target missing，不能用 table cap 修复。
+- 这 26 行继续保持 promotion blocker；下一步查 evidence compiler 的 floor anchor source、q6/value target 缺失与 summary-likelihood fallback。

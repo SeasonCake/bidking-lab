@@ -1991,3 +1991,20 @@ applied_hurts=2502
 - 64-trial bucketed audit 显示 `hard_capacity_conflict=29` 与 `lower_bound_under_truth=39` 全部为 `table_possible_max_below_truth` 且 `raw_inventory=verified_latest_inventory`。
 - 同一 audit 显示 `evidence_floor_only=26` 的 `table_impossible_rows=0`、`round_impossible_rows=0`。
 - current v300 全表 col[8] 分布为 `1=105`、`0=20`，`0` 集中于 `2511-2520` / `4511-4520`；当前 prior-stress 94 rows 不属于该 col[8]=0 cohort。
+
+## D-v3-089：evidence-floor-only 是 evidence/floor 编译审计，不是 capacity 修复或 sampler 许可
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_prior_robustness_audit.py` 输出 `evidence_floor_only_summary`，只用于解释 `evidence_floor_only` bucket 的 component source 与 target/truth gap。
+- 该 summary 不改变 `prior_robustness`、`prior_stress_capacity_table_drift`、readiness gate、posterior sampler、formal/value sampler 或正式出价。
+- `evidence_floor_only` rows table cap 已 pass，后续优先查 evidence compiler 的 floor/missing target 口径，而不是 BidMap/Drop capacity。
+- `evidence_floor_only` 不得进入 formal/value sampler promotion 分母；它只能作为 shadow-only formal/value sampler 设计前的 blocker 分流证据。
+- floor source 审计优先级为 `item_anchors` -> `shape_anchors` -> `quality_floor_anchors` -> `numeric_constraints`；其中 numeric constraints 只产 exact，不产 floor。
+
+原因：
+
+- 64-trial default archive 复核显示 `evidence_floor_only=26`，其中 `total_cells floor_below_truth=21`、`total_value floor_below_truth=22`、`q6_cells/q6_value floor_below_truth=17/17`。
+- 同一批 rows 还有 `q6_cells/q6_value/total_value target_missing=4/4/4`，对应 `2502` 这类 total cells exact 但 q6/value target 缺失的形态。
+- 这些 rows 的 capacity audit 为 `table_impossible_rows=0`、`round_impossible_rows=0`，说明它们与 hard/lower-bound capacity conflict 是不同 blocker。
+- `item_anchors` 是 value floor 的核心来源，`shape_anchors` 是 cells floor 的核心来源，`quality_floor_anchors` 只补 quality/count；因此 floor below truth 不能直接按 formal/value sampler 参数问题处理。

@@ -5023,3 +5023,50 @@ col8_zero_maps=2511-2520,4511-4520
 - `evidence_floor_only` 26 rows table cap pass，下一步查 evidence/floor 编译口径。
 - current col[16] 仍是 `[[]]` 空占位，drop-ref 在 col[17]；col[8] 不解释当前 94 行，但保留作后续 activity/overlay 表线索。
 - formal/value active sampler 继续暂停；v3 promotion/v2 archive 不推进。
+
+## 2026-06-06 checkpoint：evidence-floor-only component summary
+
+本轮把 `evidence_floor_only` bucket 的 source/target/truth 形态固化到 prior robustness detail summary，继续保持 audit-only。该改动不接入 posterior sampler、不接入 formal/value sampler、不改变 readiness gate，也不触碰 v2 formal/live/UI 或正式出价。
+
+改动：
+
+- `scripts/summarize_v3_prior_robustness_audit.py` 新增：
+  - `evidence_floor_only_summary`；
+  - per-component `component_issue_counts`；
+  - floor-only subset 的 source counts、target/truth delta counts、evidence count summary。
+- `tests/test_summarize_v3_prior_robustness_audit.py` 覆盖：
+  - floor below truth；
+  - exact matches truth；
+  - q6/value target missing；
+  - floor-only summary row count 与 evidence count summary。
+- `DECISIONS_V3.md` 新增 D-v3-089；`OBSERVATIONS_V3.md` 新增 O-v3-094。
+
+关键验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_prior_robustness_audit.py
+C:\Users\shenc\anaconda3\python.exe -m py_compile scripts\summarize_v3_prior_robustness_audit.py
+```
+
+真实 64-trial evidence-floor summary：
+
+```text
+details=94 errors=0
+bucket_counts=hard_capacity_conflict=29,lower_bound_under_truth=39,evidence_floor_only=26
+
+evidence_floor_only rows=26
+maps=2401:5,2406:5,2409:5,2404:4,2502:4,2402:3
+
+component_issue_counts:
+total_cells floor_below_truth=21 exact_matches_truth=5
+total_value floor_below_truth=22 target_missing=4
+q6_cells floor_below_truth=17 floor_matches_truth=5 target_missing=4
+q6_value floor_below_truth=17 floor_matches_truth=5 target_missing=4
+```
+
+结论：
+
+- `evidence_floor_only` 不是 table capacity blocker；它的主因是 cells/value floor 低界低于 final truth，以及 q6/value target missing。
+- `2502` 这类 rows 已有 total cells exact matches truth，但 q6/value target 缺失，不能靠 BidMap/Drop cap 或 formal/value sampler 调参解决。
+- floor source 优先查 `item_anchors` 与 `shape_anchors`；`numeric_constraints` 是 exact 入口，不是 floor 入口。
+- 下一步应查 evidence compiler 的 anchor/floor source 与 summary-likelihood fallback；formal/value active sampler 继续暂停。

@@ -556,6 +556,101 @@ def _component_numeric_summary(
     }
 
 
+def _component_issue_label(detail: Mapping[str, Any]) -> str:
+    source = str(detail.get("source") or "none")
+    delta = detail.get("target_truth_delta")
+    if source == "none":
+        return "target_missing"
+    source_kind = "floor" if source.startswith("floor") else source
+    if _zero(delta):
+        return f"{source_kind}_matches_truth"
+    if _negative(delta):
+        return f"{source_kind}_below_truth"
+    if _positive(delta):
+        return f"{source_kind}_above_truth"
+    return f"{source_kind}_truth_unknown"
+
+
+def _component_issue_counts(
+    rows: Iterable[dict[str, Any]],
+    *,
+    top: int = 8,
+) -> dict[str, dict[str, int]]:
+    seq = tuple(rows)
+    return {
+        component: _counter_dict(
+            (_component_issue_label(row.get(component, {})) for row in seq),
+            top=top,
+        )
+        for component in ("total_cells", "q6_cells", "total_value", "q6_value")
+    }
+
+
+def _evidence_count_summary(
+    rows: Iterable[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    evidence = tuple(row.get("evidence_counts", {}) for row in rows)
+    return {
+        "numeric_constraints": _numeric_summary(
+            row.get("numeric_constraints") for row in evidence
+        ),
+        "item_anchors": _numeric_summary(row.get("item_anchors") for row in evidence),
+        "shape_anchors": _numeric_summary(row.get("shape_anchors") for row in evidence),
+        "quality_floor_anchors": _numeric_summary(
+            row.get("quality_floor_anchors") for row in evidence
+        ),
+    }
+
+
+def _source_counts(
+    rows: Iterable[dict[str, Any]],
+    *,
+    top: int = 8,
+) -> dict[str, dict[str, int]]:
+    seq = tuple(rows)
+    return {
+        "total_cells": _counter_dict(_detail_value(seq, "total_cells", "source"), top=top),
+        "q6_cells": _counter_dict(_detail_value(seq, "q6_cells", "source"), top=top),
+        "total_value": _counter_dict(_detail_value(seq, "total_value", "source"), top=top),
+        "q6_value": _counter_dict(_detail_value(seq, "q6_value", "source"), top=top),
+    }
+
+
+def _evidence_floor_only_summary(
+    rows: Iterable[dict[str, Any]],
+    *,
+    top: int = 8,
+) -> dict[str, Any]:
+    seq = tuple(
+        row
+        for row in rows
+        if row.get("consistency_bucket") == "evidence_floor_only"
+    )
+    return {
+        "rows": len(seq),
+        "reason_counts": _counter_dict(
+            (reason for row in seq for reason in row.get("reasons", ())),
+            top=top,
+        ),
+        "map_counts": _counter_dict((row.get("map_id") for row in seq), top=top),
+        "hero_map_evidence_profile_counts": _counter_dict(
+            (row.get("hero_map_evidence_profile") for row in seq),
+            top=top,
+        ),
+        "source_counts": _source_counts(seq, top=top),
+        "component_issue_counts": _component_issue_counts(seq, top=top),
+        "target_truth_delta_counts": _component_delta_counts(
+            seq,
+            key="target_truth_delta",
+        ),
+        "target_truth_delta_summary": _component_numeric_summary(
+            seq,
+            key="target_truth_delta",
+        ),
+        "evidence_count_summary": _evidence_count_summary(seq),
+    }
+
+
 def _capacity_count_summary(rows: Iterable[dict[str, Any]], *, top: int = 8) -> dict[str, Any]:
     seq = tuple(rows)
     capacity_cases = [
@@ -630,7 +725,6 @@ def _stress_detail_summary_block(
         row.get("consistency_bucket") for row in seq
     ]
     reason_tokens = [reason for row in seq for reason in row.get("reasons", ())]
-    evidence = tuple(row.get("evidence_counts", {}) for row in seq)
     return {
         "rows": len(seq),
         "reason_counts": _counter_dict(reason_tokens, top=top),
@@ -652,12 +746,7 @@ def _stress_detail_summary_block(
             (row.get("hero_map_evidence_profile") for row in seq),
             top=top,
         ),
-        "source_counts": {
-            "total_cells": _counter_dict(_detail_value(seq, "total_cells", "source"), top=top),
-            "q6_cells": _counter_dict(_detail_value(seq, "q6_cells", "source"), top=top),
-            "total_value": _counter_dict(_detail_value(seq, "total_value", "source"), top=top),
-            "q6_value": _counter_dict(_detail_value(seq, "q6_value", "source"), top=top),
-        },
+        "source_counts": _source_counts(seq, top=top),
         "capacity_flag_counts": _counter_dict(capacity_flags, top=top),
         "capacity_count_summary": _capacity_count_summary(seq, top=top),
         "detail_flag_counts": _counter_dict(detail_flags, top=top),
@@ -667,6 +756,10 @@ def _stress_detail_summary_block(
         ),
         "consistency_bucket_counts": _counter_dict(
             consistency_buckets,
+            top=top,
+        ),
+        "evidence_floor_only_summary": _evidence_floor_only_summary(
+            seq,
             top=top,
         ),
         "target_truth_match_counts": {
@@ -728,16 +821,7 @@ def _stress_detail_summary_block(
                 _detail_value(seq, "q6_value", "target_prior_ratio")
             ),
         },
-        "evidence_count_summary": {
-            "numeric_constraints": _numeric_summary(
-                row.get("numeric_constraints") for row in evidence
-            ),
-            "item_anchors": _numeric_summary(row.get("item_anchors") for row in evidence),
-            "shape_anchors": _numeric_summary(row.get("shape_anchors") for row in evidence),
-            "quality_floor_anchors": _numeric_summary(
-                row.get("quality_floor_anchors") for row in evidence
-            ),
-        },
+        "evidence_count_summary": _evidence_count_summary(seq),
     }
 
 
