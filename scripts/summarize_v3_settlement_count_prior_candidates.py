@@ -33,6 +33,8 @@ from summarize_v3_settlement_payload_audit import (  # noqa: E402
 DEFAULT_SAMPLE_ROOT = ROOT / "data" / "samples" / "fatbeans"
 _TEMPORARY_BLUE_ZODIAC_ITEM_IDS = frozenset(range(1306003, 1306015))
 _CAPTURE_ROUNDS_RE = re.compile(r"_(\d+)rounds(?:_|$)")
+_DATE_TOKEN_RE = re.compile(r"(20\d{2})[-_]?(\d{2})[-_]?(\d{2})")
+_SESSION_TOKEN_RE = re.compile(r"_(\d{12,})(?=_|\.)")
 
 
 def _safe_int(value: Any) -> int | None:
@@ -187,6 +189,29 @@ def _capture_rounds_from_name(path: Path) -> int | None:
     return _safe_int(match.group(1)) if match else None
 
 
+def _capture_day_from_state_or_path(state: Any, path: Path) -> str | None:
+    for raw in (
+        getattr(state, "capture_time", None),
+        str(path),
+    ):
+        if raw in (None, ""):
+            continue
+        match = _DATE_TOKEN_RE.search(str(raw))
+        if match is not None:
+            return "".join(match.groups())
+    return None
+
+
+def _session_token_from_state_or_path(state: Any, path: Path) -> str | None:
+    session_id = str(getattr(state, "session_id", "") or "")
+    if ":" in session_id:
+        token = session_id.rsplit(":", 1)[1]
+        if token.isdigit():
+            return token
+    match = _SESSION_TOKEN_RE.search(path.name)
+    return match.group(1) if match is not None else None
+
+
 def _resolve_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
     seq = tuple(paths)
     if not seq:
@@ -273,6 +298,8 @@ def _audit_file(path: Path, *, tables: Any) -> dict[str, Any]:
     )
     non_temp_inventory_count = inventory_count - known_temp_zodiac_count
     map_id = _safe_int(getattr(state, "map_id", None))
+    capture_day = _capture_day_from_state_or_path(state, path)
+    session_token = _session_token_from_state_or_path(state, path)
     table = _table_caps_for_map(map_id, tables)
     drop_ref_max = _safe_int(table.get("bidmap_items_per_session_max"))
     round_cap_max = _safe_int(table.get("bidmap_raw_round_cap_max"))
@@ -310,6 +337,13 @@ def _audit_file(path: Path, *, tables: Any) -> dict[str, Any]:
         "map_prefix3": int(map_id) // 10 if map_id is not None else None,
         "map_family": _map_family(map_id),
         "capture_rounds": _capture_rounds_from_name(path),
+        "capture_day": capture_day,
+        "session_token_prefix6": (
+            session_token[:6] if session_token is not None and len(session_token) >= 6 else None
+        ),
+        "session_token_prefix8": (
+            session_token[:8] if session_token is not None and len(session_token) >= 8 else None
+        ),
         "round_index": getattr(state, "round_index", None),
         "message_id": getattr(state, "message_id", None),
         "inventory_count": inventory_count,
@@ -478,6 +512,9 @@ def summarize_settlement_count_prior_candidates(
         "residual_mode",
         "round_index",
         "capture_rounds",
+        "capture_day",
+        "session_token_prefix6",
+        "session_token_prefix8",
         "bidmap_rounds_total",
     }:
         raise ValueError(f"unsupported group_by: {group_by}")
@@ -510,6 +547,15 @@ def summarize_settlement_count_prior_candidates(
                 "map_families": _counter_dict((row.get("map_family") for row in seq), top=top),
                 "round_indices": _counter_dict((row.get("round_index") for row in seq), top=top),
                 "capture_rounds": _counter_dict((row.get("capture_rounds") for row in seq), top=top),
+                "capture_days": _counter_dict((row.get("capture_day") for row in seq), top=top),
+                "session_token_prefix6_counts": _counter_dict(
+                    (row.get("session_token_prefix6") for row in seq),
+                    top=top,
+                ),
+                "session_token_prefix8_counts": _counter_dict(
+                    (row.get("session_token_prefix8") for row in seq),
+                    top=top,
+                ),
                 "bidmap_rounds_total_counts": _counter_dict(
                     (row.get("bidmap_rounds_total") for row in seq),
                     top=top,
@@ -702,6 +748,15 @@ def summarize_settlement_count_prior_candidates(
             "known_temp_zodiac_count": _numeric_summary(
                 row.get("known_temp_zodiac_count") for row in ready
             ),
+            "capture_days": _counter_dict((row.get("capture_day") for row in ready), top=top),
+            "session_token_prefix6_counts": _counter_dict(
+                (row.get("session_token_prefix6") for row in ready),
+                top=top,
+            ),
+            "session_token_prefix8_counts": _counter_dict(
+                (row.get("session_token_prefix8") for row in ready),
+                top=top,
+            ),
             "inventory_slot_count": _counter_dict(
                 (row.get("inventory_slot_count") for row in ready),
                 top=top,
@@ -882,6 +937,8 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"inventory_count={_format_summary(overall['inventory_count'])}",
                 f"non_temp_count={_format_summary(overall['non_temp_inventory_count'])}",
                 f"temp_zodiac={_format_summary(overall['known_temp_zodiac_count'])}",
+                f"capture_days={_format_counts(overall['capture_days'])}",
+                f"session_p6={_format_counts(overall['session_token_prefix6_counts'])}",
                 f"slot_counts={_format_counts(overall['inventory_slot_count'])}",
                 f"outer_shapes={_format_counts(overall['settlement_outer_field_shapes'])}",
                 f"outer_f3_rows={overall['settlement_outer_field3_present_rows']}",
@@ -932,6 +989,8 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"families={_format_counts(row['map_families'])}",
                     f"round_indices={_format_counts(row['round_indices'])}",
                     f"capture_rounds={_format_counts(row['capture_rounds'])}",
+                    f"capture_days={_format_counts(row['capture_days'])}",
+                    f"session_p6={_format_counts(row['session_token_prefix6_counts'])}",
                     f"bidmap_rounds_total={_format_counts(row['bidmap_rounds_total_counts'])}",
                     f"residual_modes={_format_counts(row['residual_modes'])}",
                     f"table={_format_counts(row['table_statuses'])}",
@@ -998,6 +1057,9 @@ def main(argv: list[str] | None = None) -> int:
             "residual_mode",
             "round_index",
             "capture_rounds",
+            "capture_day",
+            "session_token_prefix6",
+            "session_token_prefix8",
             "bidmap_rounds_total",
         ),
         default="map_id",

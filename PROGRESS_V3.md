@@ -6337,3 +6337,59 @@ within_drop_ref_after_temp:
 - field6 count 基本为 4，少量异常 max=5/8 分散在 drop-only/within-cap，不形成 round-cap overflow 或 drop-only overflow 专属 marker。
 - 这继续排除“capacity 冲突来自 0x002D wrapper 专属 source/expansion marker”的简单解释；blocker 仍应放在 server-side settlement occupancy/source semantics、per-session table/version 或外部 overlay table 机制。
 - formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。
+
+## 2026-06-06 checkpoint：settlement capture/session cohort residual 下钻
+
+本轮继续排查剩余 capacity blocker 中的 per-session table/version 或 capture cohort 假设，把 `capture_day`、`session_token_prefix6` 与 `session_token_prefix8` 接入 settlement count-prior residual summary。该改动仍是 v3 audit-only，不改变 parser 正式路径、不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - 从 `state.capture_time` 或路径提取 `capture_day`；
+  - 从 `state.session_id` 或文件名提取 session token，并输出 prefix6/prefix8；
+  - 支持 `--group-by capture_day`、`--group-by session_token_prefix6`、`--group-by session_token_prefix8`；
+  - overall 与 group rows 同步输出 capture/session cohort 分布。
+- `tests/test_summarize_v3_settlement_count_prior_candidates.py` 增加 capture/session cohort 聚合与 group-by 覆盖。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py -q
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by capture_day --min-samples 1 --top 8 --format summary
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by session_token_prefix6 --min-samples 1 --top 8 --format summary
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by session_token_prefix8 --min-samples 1 --top 8 --format summary
+```
+
+真实 cohort smoke 要点：
+
+```text
+overall:
+  files=441 settlement_rows=441
+  capture_days=20260531:165,20260601:91,20260605:75,20260530:55,20260604:33,20260528:8,20260529:6,20260602:6
+  session_p6=129501:369,127412:64,136751:8
+  residual_modes=within_drop_ref_after_temp:245,drop_ref_only_overflow_after_temp:113,round_cap_overflow_after_temp:59,activity_extras_only_drop_ref_gap:24
+  above_drop_after_temp=172
+  above_round_after_temp=59
+
+capture_day:
+  20260531 files=165 above_drop_after=65 above_round_after=22 session_p6=129501:165
+  20260601 files=91 above_drop_after=41 above_round_after=14 session_p6=129501:91
+  20260605 files=75 above_drop_after=30 above_round_after=10 session_p6=129501:67,136751:8
+  20260530 files=55 above_drop_after=19 above_round_after=6 session_p6=127412:48,129501:7
+  20260604 files=33 above_drop_after=11 above_round_after=4 session_p6=129501:33
+
+session_token_prefix6:
+  129501 files=369 above_drop_after=146 above_round_after=49 capture_days=20260531:165,20260601:91,20260605:67,20260604:33,20260530:7,20260602:6
+  127412 files=64 above_drop_after=21 above_round_after=9 capture_days=20260530:48,20260528:8,20260529:6,20260527:2
+  136751 files=8 above_drop_after=5 above_round_after=1 capture_days=20260605:8
+```
+
+解读：
+
+- after-temp over-cap 横跨多个 capture days 与 session token families；不是单一采集日、单一 session token family 或一次性 cohort switch。
+- `136751` prefix 样本少且 overflow 较重，但只有 8 条 villa rows，不能解释 default 24xx/25xx/2601 的主要 blocker。
+- `127412` 与 `129501` 都存在 drop/round overflow，继续削弱“一个表版本/会话族导致全部 over-cap”的简单解释。
+- 该结果仍不能证明真实生成机制；它只排除 cohort/version 简化假设，blocker 继续集中在 server-side settlement occupancy/source semantics 或可复核外部 overlay table。
+- formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。

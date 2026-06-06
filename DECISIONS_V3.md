@@ -2384,3 +2384,19 @@ applied_hurts=2502
 - field3/4 在 overall 中均为 134 rows，且按 residual mode 混合分布；field5/loss_units 为 276 rows，也不是 over-cap 专属。
 - field6 count 基本为 4；少量 max=5/8 分散在 drop-only/within-cap，不形成 round-cap/drop-only 专属 source marker。
 - 因此当前 0x002D outer wrapper 没有暴露可直接用于 sampler/readiness 的 capacity expansion 语义。
+
+## D-v3-114：capture/session cohort 分组不能作为 capacity blocker 解释或 promotion evidence
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_candidates.py` 必须输出 `capture_day`、`session_token_prefix6` 与 `session_token_prefix8`，并支持按这些 cohort 维度分组。
+- 如果 over-cap 横跨多个 capture days 与 session token prefixes，不能把 capacity blocker 简化为一个采集日、一个 session family 或一次性 table-version switch。
+- capture/session cohort summary 只能用于排除或分流 table/version 假设；不能作为 sampler cap 修正、readiness 放行或 promotion evidence。
+- formal/value sampler 参数调优继续暂停，直到 server-side settlement occupancy/source semantics、per-session table version 或外部 overlay table 机制有可复核解释。
+
+原因：
+
+- 真实 archive 中 after-temp over-cap 横跨 `20260531/20260601/20260605/20260530/20260604` 等多个 capture days。
+- `129501` 为 369 files，`above_drop_after=146`、`above_round_after=49`；`127412` 为 64 files，`above_drop_after=21`、`above_round_after=9`，两个主要 session prefix 都存在 overflow。
+- `136751` 只有 8 files，虽然 overflow-heavy，但不足以解释 default 24xx/25xx/2601 的主要 capacity blocker。
+- 因此 cohort 分组进一步排除了简单 table/capture 切换解释，但没有提供可直接用于 promotion 的生成机制。

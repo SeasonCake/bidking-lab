@@ -46,9 +46,17 @@ def _field_bytes(field_no: int, value: bytes) -> bytes:
     return _varint((field_no << 3) | 2) + _varint(len(value)) + value
 
 
-def _state(map_id: int, item_ids: list[int]) -> SimpleNamespace:
+def _state(
+    map_id: int,
+    item_ids: list[int],
+    *,
+    capture_time: str = "2026-06-06T12:00:00+08:00",
+    session_token: str = "1295010000000000",
+) -> SimpleNamespace:
     return SimpleNamespace(
         message_id=0x002D,
+        capture_time=capture_time,
+        session_id=f"{map_id}:{session_token}",
         round_index=5,
         map_id=map_id,
         inventory_items=tuple(_item(item_id) for item_id in item_ids),
@@ -118,10 +126,17 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         monkeypatch,
         module,
         {
-            "first_2rounds_case.json": _state(2601, [1001, 1002, 1306003]),
+            "first_2rounds_case.json": _state(
+                2601,
+                [1001, 1002, 1306003],
+                capture_time="2026-05-31T12:00:00+08:00",
+                session_token="1274120000000000",
+            ),
             "second_5rounds_case.json": _state(
                 2601,
                 [1001, 1002, 1003, 1004, 1005, 1306004],
+                capture_time="2026-06-06T12:00:00+08:00",
+                session_token="1295010000000000",
             ),
         },
     )
@@ -148,6 +163,11 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert result["overall"]["payload_field20_present_rows"] == 0
     assert result["overall"]["round_indices"] == {"5": 2}
     assert result["overall"]["capture_rounds"] == {"2": 1, "5": 1}
+    assert result["overall"]["capture_days"] == {"20260531": 1, "20260606": 1}
+    assert result["overall"]["session_token_prefix6_counts"] == {
+        "127412": 1,
+        "129501": 1,
+    }
     assert result["overall"]["bidmap_rounds_total_counts"] == {"25": 2}
     assert result["overall"]["full_observed_action_rows"] == 0
     assert result["overall"]["public_total_rows"] == 0
@@ -161,6 +181,8 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     }
     assert row["round_indices"] == {"5": 2}
     assert row["capture_rounds"] == {"2": 1, "5": 1}
+    assert row["capture_days"] == {"20260531": 1, "20260606": 1}
+    assert row["session_token_prefix6_counts"] == {"127412": 1, "129501": 1}
     assert row["bidmap_rounds_total_counts"] == {"25": 2}
     assert row["bidmap_items_per_session_max"]["max"] == 2
     assert row["bidmap_raw_round_cap_max"]["max"] == 4
@@ -220,6 +242,28 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         min_samples=1,
     )
     assert [row["group"] for row in table_round_result["rows"]] == ["25"]
+
+    capture_day_result = module.summarize_settlement_count_prior_candidates(
+        [tmp_path],
+        tables=_tables(),
+        group_by="capture_day",
+        min_samples=1,
+    )
+    assert {row["group"] for row in capture_day_result["rows"]} == {
+        "20260531",
+        "20260606",
+    }
+
+    session_prefix_result = module.summarize_settlement_count_prior_candidates(
+        [tmp_path],
+        tables=_tables(),
+        group_by="session_token_prefix6",
+        min_samples=1,
+    )
+    assert {row["group"] for row in session_prefix_result["rows"]} == {
+        "127412",
+        "129501",
+    }
 
 
 def test_settlement_count_prior_candidates_profiles_payload_fields(

@@ -4927,3 +4927,49 @@ within_drop_ref_after_temp:
 - field3/4 成对出现，field5/loss_units 混合出现，均不是 over-cap 专属。
 - field6 count 基本为 4，异常值分散，不是稳定 source、activity、award 或 expansion classifier。
 - 当前 settlement wrapper/context evidence 仍只能证明 parser/truth 稳定，不能解释生成机制或支持 sampler cap promotion。
+
+## O-v3-118：capture day/session prefix 不能单独解释 settlement over-cap
+
+2026-06-06 增强 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by capture_day --min-samples 1 --top 8 --format summary
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by session_token_prefix6 --min-samples 1 --top 8 --format summary
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by session_token_prefix8 --min-samples 1 --top 8 --format summary
+```
+
+整体 cohort 分布：
+
+```text
+files=441 settlement_rows=441
+capture_days=20260531:165,20260601:91,20260605:75,20260530:55,20260604:33,20260528:8,20260529:6,20260602:6
+session_p6=129501:369,127412:64,136751:8
+residual_modes=within_drop_ref_after_temp:245,drop_ref_only_overflow_after_temp:113,round_cap_overflow_after_temp:59,activity_extras_only_drop_ref_gap:24
+above_drop_after_temp=172
+above_round_after_temp=59
+```
+
+按 capture day：
+
+```text
+20260531 files=165 above_drop_after=65 above_round_after=22 session_p6=129501:165
+20260601 files=91 above_drop_after=41 above_round_after=14 session_p6=129501:91
+20260605 files=75 above_drop_after=30 above_round_after=10 session_p6=129501:67,136751:8
+20260530 files=55 above_drop_after=19 above_round_after=6 session_p6=127412:48,129501:7
+20260604 files=33 above_drop_after=11 above_round_after=4 session_p6=129501:33
+```
+
+按 session token prefix6：
+
+```text
+129501 files=369 above_drop_after=146 above_round_after=49 capture_days=20260531:165,20260601:91,20260605:67,20260604:33,20260530:7,20260602:6
+127412 files=64 above_drop_after=21 above_round_after=9 capture_days=20260530:48,20260528:8,20260529:6,20260527:2
+136751 files=8 above_drop_after=5 above_round_after=1 capture_days=20260605:8
+```
+
+解读：
+
+- after-temp over-cap 分布在多个 capture days 和 session token prefix families 中，不是单一 capture cohort 或单一 session family 的现象。
+- `127412` 与 `129501` 两个主要 prefix 都有 drop/round overflow；`136751` 样本量太小，不能解释 default blocker。
+- 该证据继续削弱“简单 per-session table/version switch”解释，但仍不能证明真实 settlement expansion/source 机制。
+- 当前 blocker 仍需查 server-side settlement occupancy/source semantics 或可复核外部 overlay table；不能恢复 sampler 参数调优。
