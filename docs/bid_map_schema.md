@@ -59,7 +59,11 @@ Drop universe except for known temporary blue zodiac activity ids
 `1306003..1306014` in the audited slices. These activity extras explain a
 small item-universe gap but not the full count gap, because settlement
 truth still exceeds both `drop_ref.items_max` and sometimes the
-`round_caps_candidate`.
+`round_caps_candidate`. The 2026-06-06 after-zodiac audit confirms this:
+in the default 441-session archive, sessions above `drop_ref.items_max`
+drop from 196 to 172 after subtracting zodiac extras, and sessions above
+`round_caps_candidate` drop from 81 to 59. The remaining gap still needs
+settlement expansion/session-capacity semantics or version timing evidence.
 
 ## Tier structure
 

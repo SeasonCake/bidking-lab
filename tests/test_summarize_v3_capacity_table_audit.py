@@ -44,7 +44,11 @@ def _item(item_id: int = 1001) -> Item:
     )
 
 
-def _tables() -> SimpleNamespace:
+def _tables(
+    *,
+    items_per_session_max: int = 44,
+    raw_row: list[str] | None = None,
+) -> SimpleNamespace:
     item = _item()
     return SimpleNamespace(
         maps={
@@ -60,12 +64,12 @@ def _tables() -> SimpleNamespace:
                 starting_budget_silver=100_000,
                 drop_pool_id=9001,
                 items_per_session_min=22,
-                items_per_session_max=44,
+                items_per_session_max=items_per_session_max,
                 value_tier_ui="",
                 mode_flag=4,
                 bid_price_ladder=[],
                 round_category_hints=[],
-                raw_row=[],
+                raw_row=raw_row or [],
             )
         },
         drops={
@@ -204,6 +208,10 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
     assert row["raw_missing_from_drop_universe_count"]["max"] == 0
     assert row["raw_known_temp_zodiac_count"]["max"] == 0
     assert row["raw_non_zodiac_missing_from_drop_universe_count"]["max"] == 0
+    assert row["raw_drop_ref_excess_item_count"]["max"] == 0
+    assert row["raw_drop_ref_excess_after_temp_zodiac_count"]["max"] == 0
+    assert row["raw_round_cap_excess_item_count"]["max"] is None
+    assert row["raw_round_cap_excess_after_temp_zodiac_count"]["max"] is None
     assert row["raw_latest_inventory_message_ids"] == {"0x002D": 1}
     assert row["raw_latest_inventory_quality_counts"] == {"4": 2}
 
@@ -243,3 +251,68 @@ def test_capacity_table_audit_filters_selected_case() -> None:
             selected_case="target_lower_bound_truth_above_prior",
         )
     ) == 1
+
+
+def test_capacity_table_audit_quantifies_zodiac_adjusted_count_gap(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    sample = tmp_path / "sample.json"
+    sample.write_text("[]", encoding="utf-8")
+
+    inventory_items = (
+        SimpleNamespace(runtime_id=101, item_id=1001, quality=4, cells=4),
+        SimpleNamespace(runtime_id=102, item_id=1306006, quality=3, cells=4),
+        SimpleNamespace(runtime_id=103, item_id=1001, quality=4, cells=4),
+    )
+    state = SimpleNamespace(
+        sort_id=10,
+        message_id=0x002D,
+        round_index=2,
+        map_id=2601,
+        inventory_items=inventory_items,
+    )
+
+    monkeypatch.setattr(
+        module,
+        "parse_fatbeans_capture",
+        lambda path: SimpleNamespace(states=(state,)),
+    )
+    monkeypatch.setattr(
+        module,
+        "settlement_truth_from_fatbeans",
+        lambda events, *, items: SimpleNamespace(item_count=3),
+    )
+
+    raw_row = ["0"] * 23
+    raw_row[14] = "[2,2,2,2,2]"
+    raw_row[17] = "[9999,2601,1,1]"
+    result = module.summarize_capacity_table_audit(
+        [
+            {
+                "file": f"{sample}#prebid_r1",
+                "map_id": 2601,
+                "hero_map_evidence_profile": "aisha|2601|shape+layout",
+                "item_count_capacity": {
+                    "total_count_source": "exact",
+                    "total_count_target": 3,
+                    "truth_item_count": 3,
+                    "prior_items_per_session_max": 1,
+                    "truth_prior_max_delta": 2,
+                    "target_truth_delta": 0,
+                    "cases": ["direct_prior_max_conflict"],
+                },
+            }
+        ],
+        tables=_tables(items_per_session_max=1, raw_row=raw_row),
+        selected_case="direct_prior_max_conflict",
+    )
+
+    row = result[0]
+    assert row["raw_known_temp_zodiac_count"]["max"] == 1
+    assert row["raw_non_zodiac_missing_from_drop_universe_count"]["max"] == 0
+    assert row["raw_drop_ref_excess_item_count"]["max"] == 2
+    assert row["raw_drop_ref_excess_after_temp_zodiac_count"]["max"] == 1
+    assert row["raw_round_cap_excess_item_count"]["max"] == 1
+    assert row["raw_round_cap_excess_after_temp_zodiac_count"]["max"] == 0

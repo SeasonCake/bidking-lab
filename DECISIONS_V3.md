@@ -1639,3 +1639,22 @@ applied_hurts=2502
 - 2601/2501/2508 等 prior-stressed rows 当前解析为 `drop_ref_col=17`，不是旧 `col[16]`。
 - 2601 `drop_ref.items_max=44`，`col[14] round_cap=60`，但 raw latest settlement truth 仍可到 65。
 - audited missing-from-drop item ids 全部是 known temporary blue zodiac ids `1306003..1306014`，`raw_non_zodiac_missing=max=0`；这说明 item universe gap 是活动额外项信号，但不足以解除 count-cap 冲突。
+
+## D-v3-069：zodiac extras 与本地 table timing 线索不足以解除 capacity blocker
+
+2026-06-06 起，当前决策：
+
+- `raw_known_temp_zodiac_count` 只能解释 reachable Drop universe 的 activity item-id 缺口，不得直接解释为 item-count cap 放宽。
+- capacity/table audit 必须继续保留扣除 zodiac 后的 residual gap：
+  - `raw_drop_ref_excess_after_temp_zodiac_count`；
+  - `raw_round_cap_excess_after_temp_zodiac_count`。
+- 如果扣除 zodiac 后 residual gap 仍大于 0，继续把该 slice 归入 settlement expansion/session capacity/table semantics blocker，不进入 formal/value sampler promotion 分母。
+- `summarize_v3_archive_table_timing.py` 用于记录 raw `fileVersion`、filelist BidMap/Drop entries、table file metadata 与 capture time range，但 capture JSON 没有 table version/hash 字段时，只能作为弱时序线索，不能单独证明 archive 与 raw table version 完全一致。
+- 在拿到更强 table-version 证据或 settlement extra-generation 机制前，不调整 sampler capacity、不恢复 formal/value sampler tuning、不推进 v3 promotion/v2 archive。
+
+原因：
+
+- 默认 441-session archive：超过 `drop_ref.items_max` 的 sessions 为 196；扣除 zodiac 后仍有 172。超过 `round_caps_candidate` 的 sessions 为 81；扣除 zodiac 后仍有 59。
+- `direct_prior_max_conflict` top groups 扣除 zodiac 后仍超 cap：2601 `raw_drop_excess_after_temp=max=20`、`raw_round_excess_after_temp=max=4`；2501 分别为 13/7；2506 分别为 13/7。
+- `target_lower_bound_truth_above_prior` top groups 同样仍超 cap：2508 分别为 14/8；2504 分别为 17/11；2405 分别为 18/8。
+- timing audit 显示 current raw `fileVersion=300`、filelist 包含当前 BidMap/Drop entries，默认 archive capture time 为 2026-05-27 到 2026-06-05，activity cohort 为 2026-06-05；但 capture JSON 中没有 version/hash 字段。

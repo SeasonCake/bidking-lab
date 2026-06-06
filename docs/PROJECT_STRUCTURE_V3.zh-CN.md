@@ -31,6 +31,7 @@
 | `scripts/summarize_v3_map_audit.py` | v3 map 主键审计，附 hero/profile 分布 |
 | `scripts/summarize_v3_prior_robustness_audit.py` | v3 prior/activity/prior-stress 分片审计，支持 `--details`、`--detail-summary` 与 `--detail-summary-by` 输出 cells/capacity/evidence 明细、target-vs-truth delta、posterior-vs-target absorption、capacity prior-max gap/cases 和 map/profile 聚合一致性摘要 |
 | `scripts/summarize_v3_capacity_table_audit.py` | v3 prior-stress capacity cases 对 raw BidMap/Drop sampler 的 possible-max、v300 23 列 BidMap/drop-ref、round-cap 候选与 drop-universe 覆盖审计，并输出 raw settlement inventory/latest truth 去重诊断 |
+| `scripts/summarize_v3_archive_table_timing.py` | v3 raw table version/filelist/BidMap/Drop metadata 与 Fatbeans archive/activity capture timing 诊断，用于区分 table-version 强证据与本地 mtime 弱线索 |
 | `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift` 与 `formal_value_sampler_holdout` gate |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
 | `scripts/summarize_v3_ccv_holdout.py` | v3 CCV/count-cell-value 候选 session holdout 审计 |
@@ -59,6 +60,7 @@
 | `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
 | `tests/test_summarize_v3_prior_robustness_audit.py` | v3 prior robustness 分片审计测试 |
 | `tests/test_summarize_v3_capacity_table_audit.py` | v3 capacity table possible-max 审计测试 |
+| `tests/test_summarize_v3_archive_table_timing.py` | v3 archive/table timing metadata 审计测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
 | `tests/test_summarize_v3_ccv_holdout.py` | v3 CCV session holdout 审计测试 |

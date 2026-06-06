@@ -3673,3 +3673,69 @@ map_id=2405 rows=4 bidmap_raw_cols=23 drop_ref_col=17 bidmap_items=20-40 round_c
 - latest settlement inventory 相对 Drop universe 的 item-id 缺口只落在已知 temporary blue zodiac activity id `1306003..1306014`；没有 non-zodiac missing item 信号。
 - zodiac extras 与 `col[14]` round-cap candidate 能解释一部分语义差异，但不能完整解释真实 settlement item-count 超过 `drop_ref.items_max` / `round_cap` 的冲突。
 - 下一步优先查 settlement inventory 是否存在额外展开/活动生成机制，以及 archive 样本与 raw table v300 的版本时序关系；在解释前继续禁止 sampler/promotion 调参绕过。
+
+## 2026-06-06 checkpoint：zodiac residual gap 与 archive/table timing 审计
+
+完成内容：
+
+- `scripts/summarize_v3_capacity_table_audit.py` 新增 raw inventory residual gap 字段：
+  - `raw_drop_ref_excess_item_count`；
+  - `raw_drop_ref_excess_after_temp_zodiac_count`；
+  - `raw_round_cap_excess_item_count`；
+  - `raw_round_cap_excess_after_temp_zodiac_count`。
+- `tests/test_summarize_v3_capacity_table_audit.py` 新增扣除 zodiac 后 residual gap 单元测试。
+- 新增 `scripts/summarize_v3_archive_table_timing.py`，输出 raw `fileVersion`、filelist BidMap/Drop entry、raw file metadata、archive/activity capture time range 与 capture JSON version/hash key 探测。
+- 新增 `tests/test_summarize_v3_archive_table_timing.py`。
+- 未调整 formal/value sampler 参数，未改变 v2 formal/live/UI 或正式出价路径。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.pytest-tmp tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --case direct_prior_max_conflict --posterior-trials 64 --top 4
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_capacity_table_audit.py --case target_lower_bound_truth_above_prior --posterior-trials 64 --top 4
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_archive_table_timing.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_archive_table_timing.py data\samples\fatbeans_activity_20260605_shipwreck
+```
+
+结果：
+
+```text
+focused tests:
+5 passed
+
+broader parser/archive/live/readiness/formal-value tests:
+64 passed
+
+direct_prior_max_conflict:
+2601 raw_drop_excess_after_temp=max=20 raw_round_excess_after_temp=max=4
+2501 raw_drop_excess_after_temp=max=13 raw_round_excess_after_temp=max=7
+2506 raw_drop_excess_after_temp=max=13 raw_round_excess_after_temp=max=7
+
+target_lower_bound_truth_above_prior:
+2508 raw_drop_excess_after_temp=max=14 raw_round_excess_after_temp=max=8
+2504 raw_drop_excess_after_temp=max=17 raw_round_excess_after_temp=max=11
+2405 raw_drop_excess_after_temp=max=18 raw_round_excess_after_temp=max=8
+
+all default archive sessions:
+above_drop_sessions=196
+above_drop_after_temp_sessions=172
+above_round_sessions=81
+above_round_after_temp_sessions=59
+
+timing:
+raw_file_version=300 raw_tables_file_version=300
+filelist_header=Ver:300|FileCount:4299
+default_capture_min=2026-05-27T22:13:58+08:00
+default_capture_max=2026-06-05T23:25:48+08:00
+activity_capture_min=2026-06-05T23:05:05+08:00
+activity_capture_max=2026-06-05T23:56:58+08:00
+capture_version_like_keys=-
+parse_errors=0
+```
+
+结论：
+
+- zodiac extras 不能作为 capacity gap 的完整解释；扣除后 top groups 仍明显超过 drop-ref max 与 round-cap candidate。
+- capture JSON 未携带 table version/hash 字段；当前 table timing 只能作为弱证据，不能解除 raw table/archive version blocker。
+- 下一步应查 settlement inventory 协议或额外生成/展开字段，继续保持 `prior_stress_capacity_table_drift` blocked。

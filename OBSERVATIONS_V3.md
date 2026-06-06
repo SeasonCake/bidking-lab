@@ -2480,3 +2480,56 @@ map_id=2405 rows=4 table_impossible_rows=4 round_cap_impossible_rows=4 raw_missi
 - settlement inventory 中不在 reachable Drop universe 的 item id 全部落在 known temporary blue zodiac activity id `1306003..1306014`；没有 non-zodiac missing item。
 - activity extras 能解释 item-universe 差异，但不能完整解释 24xx/25xx/2601 settlement count 超过 sampler possible max 的冲突。
 - 下一步应验证 settlement inventory 是否有额外展开/活动生成机制，以及 archive capture 与 current raw v300 table 的版本时序；formal/value sampler 与 promotion 继续暂停在该 blocker 后面。
+
+## O-v3-074：扣除 zodiac extras 后 capacity gap 仍存在，capture 缺少 table version/hash
+
+2026-06-06 扩展 `summarize_v3_capacity_table_audit.py`，新增扣除 zodiac 后的 residual gap 字段，并新增 `summarize_v3_archive_table_timing.py`：
+
+```text
+default archive direct_prior_max_conflict:
+map_id=2601 raw_drop_excess=max=21 raw_drop_excess_after_temp=max=20 raw_round_excess=max=5 raw_round_excess_after_temp=max=4
+map_id=2501 raw_drop_excess=max=16 raw_drop_excess_after_temp=max=13 raw_round_excess=max=10 raw_round_excess_after_temp=max=7
+map_id=2506 raw_drop_excess=max=14 raw_drop_excess_after_temp=max=13 raw_round_excess=max=8 raw_round_excess_after_temp=max=7
+
+default archive target_lower_bound_truth_above_prior:
+map_id=2508 raw_drop_excess=max=20 raw_drop_excess_after_temp=max=14 raw_round_excess=max=14 raw_round_excess_after_temp=max=8
+map_id=2504 raw_drop_excess=max=20 raw_drop_excess_after_temp=max=17 raw_round_excess=max=14 raw_round_excess_after_temp=max=11
+map_id=2405 raw_drop_excess=max=20 raw_drop_excess_after_temp=max=18 raw_round_excess=max=10 raw_round_excess_after_temp=max=8
+
+default archive all sessions:
+sessions=441
+above_drop_sessions=196
+above_drop_after_temp_sessions=172
+above_round_sessions=81
+above_round_after_temp_sessions=59
+temp_sessions=337
+temp_max=8
+
+timing/default archive:
+raw_file_version=300
+raw_tables_file_version=300
+filelist_header=Ver:300|FileCount:4299
+BidMap.txt entry=Tables/BidMap.txt|XGrDTpKIl6MsintjOgFp9yy2NmI=$62148
+Drop.txt entry=Tables/Drop.txt|GF8kBPZ3zi0zgO3mn/pNEfb5HIw=$294160
+BidMap mtime=2026-05-26T11:08:52+08:00
+Drop mtime=2026-05-26T11:03:53+08:00
+fileVersion/filelist mtime=2026-06-03T20:02+08:00
+capture_min=2026-05-27T22:13:58+08:00
+capture_max=2026-06-05T23:25:48+08:00
+capture_version_like_keys=-
+parse_errors=0
+
+timing/activity cohort:
+sample_files=15
+capture_min=2026-06-05T23:05:05+08:00
+capture_max=2026-06-05T23:56:58+08:00
+capture_version_like_keys=-
+parse_errors=0
+```
+
+解读：
+
+- zodiac extras 大量存在，但扣除后仍保留明显 residual item-count gap；它不能单独解释 drop-ref max 或 round-cap candidate 冲突。
+- 默认 archive 与 activity cohort 的 capture JSON 均未发现 version/hash 字段；当前只能用 raw fileVersion/filelist 与本地 mtime 做弱时序判断。
+- BidMap/Drop 内容文件 mtime 早于所有默认 archive capture，但 fileVersion/filelist mtime 是 2026-06-03，说明不能仅凭本地 mtime 完成 table-version 证明。
+- 下一步应继续查 settlement inventory 是否有额外生成/展开字段或协议消息，而不是调整 formal/value sampler。

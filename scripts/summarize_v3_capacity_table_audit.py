@@ -110,6 +110,22 @@ def _int_list_from_json_blob(blob: Any) -> tuple[int, ...]:
     return tuple(out)
 
 
+def _bidmap_drop_ref_column_index(raw_column_count: int) -> int:
+    return 17 if raw_column_count == 23 else 16
+
+
+def _bidmap_round_cap_column_index(raw_column_count: int) -> int:
+    return 14 if raw_column_count == 23 else 13
+
+
+def _bidmap_round_caps(bid_map: Any) -> tuple[int, ...]:
+    raw_row = tuple(getattr(bid_map, "raw_row", ()) or ())
+    if not raw_row:
+        return ()
+    index = _bidmap_round_cap_column_index(len(raw_row))
+    return _int_list_from_json_blob(raw_row[index] if len(raw_row) > index else None)
+
+
 def _safe_int(value: Any) -> int | None:
     if isinstance(value, bool) or value is None:
         return None
@@ -217,6 +233,10 @@ def _inventory_diagnostic_for_path(
             "known_temp_zodiac_count": None,
             "non_zodiac_missing_from_drop_universe_count": None,
             "missing_from_drop_universe_examples": {},
+            "drop_ref_excess_item_count": None,
+            "drop_ref_excess_after_temp_zodiac_count": None,
+            "round_cap_excess_item_count": None,
+            "round_cap_excess_after_temp_zodiac_count": None,
         }
 
     latest = inventory_states[-1]
@@ -245,6 +265,11 @@ def _inventory_diagnostic_for_path(
     known_temp_zodiac_count = sum(
         1 for item_id in missing_item_ids if int(item_id) in _TEMPORARY_BLUE_ZODIAC_ITEM_IDS
     )
+    bid_map = tables.maps.get(_safe_int(latest_map_id)) if latest_map_id is not None else None
+    drop_ref_max = _safe_int(getattr(bid_map, "items_per_session_max", None))
+    round_caps = _bidmap_round_caps(bid_map) if bid_map is not None else ()
+    round_cap_max = max(round_caps) if round_caps else None
+    non_temp_latest_count = latest_count - known_temp_zodiac_count
     return {
         "path": str(path),
         "file": path.name,
@@ -280,6 +305,26 @@ def _inventory_diagnostic_for_path(
                 Counter(str(item_id) for item_id in missing_item_ids).items(),
                 key=lambda item: (-item[1], item[0]),
             )[:8]
+        ),
+        "drop_ref_excess_item_count": (
+            max(0, latest_count - drop_ref_max)
+            if drop_ref_max is not None
+            else None
+        ),
+        "drop_ref_excess_after_temp_zodiac_count": (
+            max(0, non_temp_latest_count - drop_ref_max)
+            if drop_ref_max is not None
+            else None
+        ),
+        "round_cap_excess_item_count": (
+            max(0, latest_count - round_cap_max)
+            if round_cap_max is not None
+            else None
+        ),
+        "round_cap_excess_after_temp_zodiac_count": (
+            max(0, non_temp_latest_count - round_cap_max)
+            if round_cap_max is not None
+            else None
         ),
     }
 
@@ -402,6 +447,20 @@ def _inventory_diagnostics_for_rows(
             diag.get("non_zodiac_missing_from_drop_universe_count")
             for diag in diagnostics
         ),
+        "raw_drop_ref_excess_item_count": _numeric_summary(
+            diag.get("drop_ref_excess_item_count") for diag in diagnostics
+        ),
+        "raw_drop_ref_excess_after_temp_zodiac_count": _numeric_summary(
+            diag.get("drop_ref_excess_after_temp_zodiac_count")
+            for diag in diagnostics
+        ),
+        "raw_round_cap_excess_item_count": _numeric_summary(
+            diag.get("round_cap_excess_item_count") for diag in diagnostics
+        ),
+        "raw_round_cap_excess_after_temp_zodiac_count": _numeric_summary(
+            diag.get("round_cap_excess_after_temp_zodiac_count")
+            for diag in diagnostics
+        ),
         "raw_latest_inventory_message_ids": _counter_dict(
             f"0x{int(message_id):04X}" if message_id is not None else None
             for message_id in (diag.get("latest_message_id") for diag in diagnostics)
@@ -459,13 +518,8 @@ def _sampler_table_summary(map_id: int, tables: Any) -> dict[str, Any]:
             "table_status": "missing_bidmap",
         }
     raw_column_count = len(getattr(bid_map, "raw_row", ()) or ())
-    drop_ref_index = 17 if raw_column_count == 23 else 16
-    round_cap_index = 14 if raw_column_count == 23 else 13
-    round_caps = _int_list_from_json_blob(
-        bid_map.raw_row[round_cap_index]
-        if len(bid_map.raw_row) > round_cap_index
-        else None
-    )
+    drop_ref_index = _bidmap_drop_ref_column_index(raw_column_count)
+    round_caps = _bidmap_round_caps(bid_map)
     sampler = prepare_session_sampler(
         int(map_id),
         maps=tables.maps,
@@ -662,6 +716,10 @@ def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
                     f"raw_missing_drop={_format_summary(row['raw_missing_from_drop_universe_count'])}",
                     f"raw_temp_zodiac={_format_summary(row['raw_known_temp_zodiac_count'])}",
                     f"raw_non_zodiac_missing={_format_summary(row['raw_non_zodiac_missing_from_drop_universe_count'])}",
+                    f"raw_drop_excess={_format_summary(row['raw_drop_ref_excess_item_count'])}",
+                    f"raw_drop_excess_after_temp={_format_summary(row['raw_drop_ref_excess_after_temp_zodiac_count'])}",
+                    f"raw_round_excess={_format_summary(row['raw_round_cap_excess_item_count'])}",
+                    f"raw_round_excess_after_temp={_format_summary(row['raw_round_cap_excess_after_temp_zodiac_count'])}",
                     f"raw_msg={_format_counts(row['raw_latest_inventory_message_ids'])}",
                     f"raw_rounds={_format_counts(row['raw_latest_inventory_rounds'])}",
                     f"raw_q={_format_counts(row['raw_latest_inventory_quality_counts'])}",
