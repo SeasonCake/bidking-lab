@@ -21,6 +21,7 @@ if str(SCRIPTS) not in sys.path:
 
 from evaluate_fatbeans_v3_samples import (  # noqa: E402
     _default_calibration_path,
+    _default_capacity_source_expansion_path,
     _default_paths,
     _default_settlement_count_prior_path,
     _default_tail_value_review_path,
@@ -28,6 +29,7 @@ from evaluate_fatbeans_v3_samples import (  # noqa: E402
     evaluate_paths,
     load_monitor_tables,
     load_prior_calibration_entries,
+    load_capacity_source_expansion_entries,
     load_settlement_count_prior_entries,
     load_tail_value_review_entries,
     load_underestimate_repair_entries,
@@ -137,6 +139,10 @@ _GATE_DEPENDENCY_META: dict[str, tuple[str, str]] = {
         "table_activity_capacity",
         "keep settlement count prior visible and inactive while table gaps remain",
     ),
+    "capacity_source_expansion_shadow": (
+        "table_activity_capacity",
+        "keep capacity/source expansion evidence visible and inactive until the capacity blocker is fully closed",
+    ),
     "settlement_count_formal_value_link": (
         "formal_value_shadow_sampler",
         "prove settlement count candidates overlap value/formal stress",
@@ -228,6 +234,10 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
         missing = int(gate.get("missing_table_rows") or 0)
         candidates = int(gate.get("candidate_rows") or 0)
         return f"candidate_rows={candidates};missing_table_rows={missing}"
+    if name == "capacity_source_expansion_shadow":
+        candidates = int(gate.get("candidate_rows") or 0)
+        active = int(gate.get("active_rows") or 0)
+        return f"candidate_rows={candidates};active_rows={active}"
     if name in {
         "settlement_count_cells_value_bridge_holdout",
         "settlement_count_guarded_bridge_holdout",
@@ -659,6 +669,23 @@ def summarize_readiness(
             missing_table_rows=scp_missing_table,
             active_rows=scp_active,
             status_counts=summary.get("v3_scp_status_counts"),
+        )
+    )
+    cse_ready = int(summary.get("v3_cse_ready_rows") or 0)
+    cse_candidate = int(summary.get("v3_cse_candidate_rows") or 0)
+    cse_active = int(summary.get("v3_cse_active_rows") or 0)
+    cse_status = "watch" if cse_ready > 0 and cse_active == 0 else "blocked"
+    gates.append(
+        _gate(
+            "capacity_source_expansion_shadow",
+            cse_status,
+            "capacity/source expansion evidence is visible and inactive"
+            if cse_status == "watch"
+            else "capacity/source expansion shadow fields are missing or active",
+            ready_rows=cse_ready,
+            candidate_rows=cse_candidate,
+            active_rows=cse_active,
+            status_counts=summary.get("v3_cse_status_counts"),
         )
     )
     scp_link_overall = scp_formal_value_link["overall"]
@@ -1353,6 +1380,9 @@ def summarize_readiness(
                 "v3_fv_capacity_watch_rows",
                 "v3_fv_value_floor_candidate_rows",
                 "v3_fv_delta_formal_p50_mae",
+                "v3_cse_ready_rows",
+                "v3_cse_candidate_rows",
+                "v3_cse_active_rows",
                 "v3_resid_gate_active_rows",
             )
         },
@@ -1659,6 +1689,8 @@ def _print_summary(result: dict[str, Any]) -> None:
                     )
                     or []
                 ),
+                f"cse_candidate_rows={summary['v3_cse_candidate_rows']}",
+                f"cse_active_rows={summary['v3_cse_active_rows']}",
                 f"prior_stress_detail_rows={result['prior_stress_detail_summary']['rows']}",
                 f"prior_stress_capacity_hits={result['prior_stress_detail_summary']['capacity_flag_hits']}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
@@ -1716,6 +1748,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--no-settlement-count-prior", action="store_true")
     parser.add_argument(
+        "--capacity-source-expansion",
+        type=Path,
+        default=_default_capacity_source_expansion_path(),
+    )
+    parser.add_argument("--no-capacity-source-expansion", action="store_true")
+    parser.add_argument(
         "--guarded-bridge-stability-json",
         type=Path,
         help=(
@@ -1743,6 +1781,11 @@ def main(argv: list[str] | None = None) -> int:
             {}
             if args.no_settlement_count_prior
             else load_settlement_count_prior_entries(args.settlement_count_prior)
+        ),
+        capacity_source_expansion_entries=(
+            {}
+            if args.no_capacity_source_expansion
+            else load_capacity_source_expansion_entries(args.capacity_source_expansion)
         ),
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,

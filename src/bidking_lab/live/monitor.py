@@ -47,6 +47,8 @@ from bidking_lab.inference.v3 import (
     assess_prior_robustness,
     compile_feasible_summary,
     compile_hard_constraints,
+    capacity_source_expansion_entry_for,
+    empty_capacity_source_expansion_flat_dict,
     empty_feasible_summary_flat_dict,
     empty_formal_value_sampler_flat_dict,
     empty_posterior_flat_dict,
@@ -59,6 +61,7 @@ from bidking_lab.inference.v3 import (
     empty_underestimate_repair_flat_dict,
     estimate_shadow_pipeline,
     events_from_fatbeans,
+    load_capacity_source_expansion_entries,
     load_prior_calibration_entries,
     load_settlement_count_prior_entries,
     load_tail_value_review_entries,
@@ -125,6 +128,7 @@ _V3_PRIOR_CALIBRATION_CACHE: dict[int, Any] | None = None
 _V3_UNDERESTIMATE_REPAIR_CACHE: dict[tuple[str, int], Any] | None = None
 _V3_TAIL_VALUE_REVIEW_CACHE: dict[tuple[str, int], Any] | None = None
 _V3_SETTLEMENT_COUNT_PRIOR_CACHE: dict[tuple[str, str], Any] | None = None
+_V3_CAPACITY_SOURCE_EXPANSION_CACHE: dict[tuple[str, str], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -2076,6 +2080,43 @@ def _model_eval_row(
         v3_shadow.get("v3_scp_prior_max_to_observed_max_delta")
     )
     v3_scp_flags = v3_shadow.get("v3_scp_flags")
+    v3_cse_available = bool(v3_shadow.get("v3_cse_available"))
+    v3_cse_ready = bool(v3_shadow.get("v3_cse_ready"))
+    v3_cse_affects_bid = bool(v3_shadow.get("v3_cse_affects_bid"))
+    v3_cse_active = bool(v3_shadow.get("v3_cse_active"))
+    v3_cse_candidate = bool(v3_shadow.get("v3_cse_candidate"))
+    v3_cse_status = v3_shadow.get("v3_cse_status")
+    v3_cse_gate_reason = v3_shadow.get("v3_cse_gate_reason")
+    v3_cse_scope = v3_shadow.get("v3_cse_scope")
+    v3_cse_group = v3_shadow.get("v3_cse_group")
+    v3_cse_unique_round_rows = _parse_int_text(
+        v3_shadow.get("v3_cse_unique_round_overflow_rows")
+    )
+    v3_cse_server_rows = _parse_int_text(
+        v3_shadow.get("v3_cse_server_side_expansion_rows")
+    )
+    v3_cse_session_rows = _parse_int_text(
+        v3_shadow.get("v3_cse_session_capacity_source_semantics_rows")
+    )
+    v3_cse_public_rows = _parse_int_text(
+        v3_shadow.get("v3_cse_public_total_match_rows")
+    )
+    v3_cse_full_action_rows = _parse_int_text(
+        v3_shadow.get("v3_cse_full_action_rows")
+    )
+    v3_cse_unique_p95 = _parse_float_text(
+        v3_shadow.get("v3_cse_unique_non_temp_p95")
+    )
+    v3_cse_unique_max = _parse_float_text(
+        v3_shadow.get("v3_cse_unique_non_temp_max")
+    )
+    v3_cse_prior_p95_delta = _parse_float_text(
+        v3_shadow.get("v3_cse_prior_max_to_unique_non_temp_p95_delta")
+    )
+    v3_cse_prior_max_delta = _parse_float_text(
+        v3_shadow.get("v3_cse_prior_max_to_unique_non_temp_max_delta")
+    )
+    v3_cse_flags = v3_shadow.get("v3_cse_flags")
     posterior_samples = None
     posterior_total_samples = None
     q6_shadow_active = bool(shadow.get("active"))
@@ -2808,6 +2849,32 @@ def _model_eval_row(
         "v3_scp_prior_max_to_observed_max_delta": v3_scp_prior_max_delta,
         "v3_scp_flags": v3_scp_flags,
         "v3_scp_diagnostics": v3_shadow.get("v3_scp_diagnostics"),
+        "v3_cse_available": v3_cse_available,
+        "v3_cse_ready": v3_cse_ready,
+        "v3_cse_affects_bid": v3_cse_affects_bid,
+        "v3_cse_active": v3_cse_active,
+        "v3_cse_candidate": v3_cse_candidate,
+        "v3_cse_status": v3_cse_status,
+        "v3_cse_gate_reason": v3_cse_gate_reason,
+        "v3_cse_scope": v3_cse_scope,
+        "v3_cse_group": v3_cse_group,
+        "v3_cse_mechanism_classes": v3_shadow.get("v3_cse_mechanism_classes"),
+        "v3_cse_source_evidence_classes": v3_shadow.get(
+            "v3_cse_source_evidence_classes"
+        ),
+        "v3_cse_unique_round_overflow_rows": v3_cse_unique_round_rows,
+        "v3_cse_server_side_expansion_rows": v3_cse_server_rows,
+        "v3_cse_session_capacity_source_semantics_rows": v3_cse_session_rows,
+        "v3_cse_public_total_match_rows": v3_cse_public_rows,
+        "v3_cse_full_action_rows": v3_cse_full_action_rows,
+        "v3_cse_unique_non_temp_p95": v3_cse_unique_p95,
+        "v3_cse_unique_non_temp_max": v3_cse_unique_max,
+        "v3_cse_prior_max_to_unique_non_temp_p95_delta": (
+            v3_cse_prior_p95_delta
+        ),
+        "v3_cse_prior_max_to_unique_non_temp_max_delta": v3_cse_prior_max_delta,
+        "v3_cse_flags": v3_cse_flags,
+        "v3_cse_diagnostics": v3_shadow.get("v3_cse_diagnostics"),
         "v3_tail_review_tail_replacement_decision_value_p50_error": (
             v3_tail_review_tail_p50 - final_replacement_decision_value
             if v3_tail_review_tail_p50 is not None
@@ -3445,6 +3512,7 @@ def _empty_v3_posterior_shadow(
         **empty_tail_value_review_flat_dict(),
         **empty_formal_value_sampler_flat_dict(),
         **empty_settlement_count_prior_flat_dict(),
+        **empty_capacity_source_expansion_flat_dict(),
     }
 
 
@@ -3491,6 +3559,18 @@ def _default_v3_settlement_count_prior_entries() -> dict[tuple[str, str], Any]:
             / "v3_settlement_count_prior_shadow.json"
         )
     return _V3_SETTLEMENT_COUNT_PRIOR_CACHE
+
+
+def _default_v3_capacity_source_expansion_entries() -> dict[tuple[str, str], Any]:
+    global _V3_CAPACITY_SOURCE_EXPANSION_CACHE
+    if _V3_CAPACITY_SOURCE_EXPANSION_CACHE is None:
+        _V3_CAPACITY_SOURCE_EXPANSION_CACHE = load_capacity_source_expansion_entries(
+            project_root()
+            / "data"
+            / "processed"
+            / "v3_capacity_source_expansion_shadow.json"
+        )
+    return _V3_CAPACITY_SOURCE_EXPANSION_CACHE
 
 
 def _v3_posterior_shadow_summary(
@@ -3566,6 +3646,11 @@ def _v3_posterior_shadow_summary(
             _default_v3_settlement_count_prior_entries(),
             map_id=map_id,
         )
+        capacity_source_expansion_entry = capacity_source_expansion_entry_for(
+            _default_v3_capacity_source_expansion_entries(),
+            map_id=map_id,
+            map_family=_map_family_from_id(map_id),
+        )
         pipeline = estimate_shadow_pipeline(
             map_id=int(map_id),
             map_name=bid_map.name,
@@ -3577,6 +3662,7 @@ def _v3_posterior_shadow_summary(
             underestimate_entry=underestimate_entry,
             tail_review_entry=tail_review_entry,
             settlement_count_prior_entry=settlement_count_prior_entry,
+            capacity_source_expansion_entry=capacity_source_expansion_entry,
             hero=hero,
             prior_fields=prior_fields,
         )

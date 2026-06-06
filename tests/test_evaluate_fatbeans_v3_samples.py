@@ -6,6 +6,9 @@ from bidking_lab.extract.bid_map_table import BidMap
 from bidking_lab.extract.drop_table import DropEntry, DropPool
 from bidking_lab.extract.item_table import Item
 from bidking_lab.inference.v3.calibration import propose_prior_calibration
+from bidking_lab.inference.v3.capacity_source_expansion import (
+    CapacitySourceExpansionEntry,
+)
 from bidking_lab.inference.v3.settlement_count_prior import SettlementCountPriorEntry
 from bidking_lab.inference.v3.underestimate_repair import UnderestimateRepairEntry
 from bidking_lab.live.fatbeans import FatbeansCaptureEvents
@@ -193,6 +196,16 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
                 non_temp_inventory_count_max=2,
             )
         },
+        capacity_source_expansion_entries={
+            ("map_id", "2401"): CapacitySourceExpansionEntry(
+                scope="map_id",
+                group="2401",
+                status="within_capacity_source_semantics_shadow_only",
+                archive_sessions=10,
+                unique_non_temp_p95=2,
+                unique_non_temp_max=2,
+            )
+        },
         posterior_trials=64,
     )
 
@@ -262,6 +275,14 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_scp_status"] == "table_caps_cover_observed_shadow_only"
     assert rows[0]["v3_scp_scope"] == "map_id"
     assert rows[0]["v3_scp_group"] == "2401"
+    assert rows[0]["v3_cse_available"] is True
+    assert rows[0]["v3_cse_ready"] is True
+    assert rows[0]["v3_cse_affects_bid"] is False
+    assert rows[0]["v3_cse_active"] is False
+    assert rows[0]["v3_cse_candidate"] is False
+    assert rows[0]["v3_cse_status"] == "within_capacity_source_semantics_shadow_only"
+    assert rows[0]["v3_cse_scope"] == "map_id"
+    assert rows[0]["v3_cse_group"] == "2401"
 
 
 def test_capacity_flat_dict_reports_prior_max_gap() -> None:

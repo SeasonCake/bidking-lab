@@ -21,14 +21,16 @@
 | `src/bidking_lab/inference/v3/prior_robustness.py` | v3 drop-prior 漂移、活动期、fallback 鲁棒性审计 |
 | `src/bidking_lab/inference/v3/formal_value_sampler.py` | v3 formal/value sampler 第一阶段 shadow report，拆分 capacity/cells/value-floor stress，固定不影响出价 |
 | `src/bidking_lab/inference/v3/settlement_count_prior.py` | v3 settlement occupancy count-prior shadow evidence，输出 `v3_scp_*`，固定 inactive/不影响出价 |
+| `src/bidking_lab/inference/v3/capacity_source_expansion.py` | v3 capacity/source expansion shadow evidence，输出 `v3_cse_*`，固定 inactive/不影响出价 |
 | `src/bidking_lab/inference/v3/underestimate_repair.py` | v3 低估上修 shadow report |
 | `src/bidking_lab/inference/v3/tail_value_review.py` | v3 tail/value review shadow report 与 hurt guard |
 | `data/processed/v3_settlement_count_prior_shadow.json` | v3 settlement count-prior shadow entry 表，合并 default archive 与 0605 activity cohort |
+| `data/processed/v3_capacity_source_expansion_shadow.json` | v3 capacity/source expansion shadow entry 表，合并 default archive 与 0605 activity cohort |
 | `data/processed/v3_underestimate_repair_shadow.json` | v3 hero/map 低估上修 shadow entry 表 |
 | `data/processed/v3_tail_value_review_shadow.json` | v3 tail/value review shadow entry 表 |
 | `scripts/summarize_v3_evidence_coverage.py` | v3 evidence coverage 检查 |
 | `scripts/summarize_v3_constraints.py` | v3 hard constraint compiler 摘要 |
-| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、`v3_capacity_*` capacity prior-max gap/cases、`v3_fv_*` formal/value sampler shadow 字段、`v3_scp_*` settlement count-prior shadow evidence、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
+| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、`v3_capacity_*` capacity prior-max gap/cases、`v3_fv_*` formal/value sampler shadow 字段、`v3_scp_*` settlement count-prior shadow evidence、`v3_cse_*` capacity/source expansion shadow evidence、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
 | `scripts/summarize_v3_metric_slices.py` | v3 round/map/hero/profile 分片指标 |
 | `scripts/summarize_v3_map_audit.py` | v3 map 主键审计，附 hero/profile 分布 |
 | `scripts/summarize_v3_prior_robustness_audit.py` | v3 prior/activity/prior-stress 分片审计，支持 `--details`、`--detail-summary` 与 `--detail-summary-by` 输出 cells/capacity/evidence 明细、target-vs-truth delta、posterior-vs-target absorption、capacity prior-max gap/cases、lower-bound target completeness 和 map/profile 聚合一致性摘要 |
@@ -40,6 +42,7 @@
 | `scripts/summarize_v3_settlement_count_prior_candidates.py` | v3 settlement occupancy count prior shadow-only 候选审计，按 map/prefix/family/residual-mode/unique-residual-mode/BidMap sub-pool kind/round/session/capture-day/session-token-prefix/BidMap round-category-hint 维度统计 final inventory count、临时生肖扣除 residual、runtime/item duplicate、unique non-temp item cap coverage、item primary-category/hinted coverage、quality/count/cells coverage、reachable Drop item-universe 覆盖、0x002D outer wrapper、payload field-shape、occupied/empty slot shape、candidate path、slot headroom、public-total/full-action evidence 与 current BidMap/round-cap 覆盖 |
 | `scripts/summarize_v3_settlement_source_semantics_audit.py` | v3 settlement over-cap / capacity blocker source semantics 审计，遍历 capture 全部 state，按 public total、direct/full action、0x002D payload match、local v300 filelist/Activity overlay metadata、mechanism class 汇总 unique round overflow 收口证据 |
 | `scripts/summarize_v3_settlement_count_prior_holdout.py` | v3 settlement occupancy count prior session-level holdout 审计，比较 current table cap、round-cap 与 train p95/max coverage |
+| `scripts/summarize_v3_capacity_source_expansion_holdout.py` | v3 capacity/source expansion session-level holdout 审计，验证 map-family/map_id source-semantics candidate 对 unique round-cap blocker 的 recall、precision、false positive 与 truth-row payload/overlay blocker |
 | `scripts/summarize_v3_activity_mapping_likelihood.py` | v3 252x activity missing-table 候选映射审计，比较 `252x->251x` 与 `252x->250x` 的 settlement quality likelihood，只作为 table/activity 语义证据 |
 | `scripts/summarize_v3_scp_formal_value_link.py` | v3 settlement count-prior evidence 与 formal/value stress 的 archive 关联审计，量化 `v3_scp` candidate 与 value-floor/capacity watch 的交集 |
 | `scripts/summarize_v3_scp_count_value_bridge.py` | v3 settlement count-prior count->cells/value bridge archive 审计，量化 count gap、cells p90 undercoverage 与 formal p90 undercoverage 的交集 |
@@ -47,7 +50,8 @@
 | `scripts/summarize_v3_scp_guarded_bridge_holdout.py` | v3 settlement count-prior nested train-only guarded bridge holdout，要求 inner crossfit 各折稳定且 train over-rate 不增加，只输出 shadow readiness evidence |
 | `scripts/summarize_v3_scp_guarded_bridge_stability.py` | v3 guarded bridge posterior trial/seed stability 矩阵审计，汇总 selected group drift、applied hurt、support depth，并使用 `.tmp/codex/` per-run cache |
 | `scripts/build_v3_settlement_count_prior_shadow.py` | 从 default archive 与 activity cohort 构建 `data/processed/v3_settlement_count_prior_shadow.json` |
-| `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift`、`settlement_count_formal_value_link`、原始/guarded `settlement_count_cells_value_bridge` holdout 与 `formal_value_sampler_holdout` gate |
+| `scripts/build_v3_capacity_source_expansion_shadow.py` | 从 settlement source-semantics 审计构建 `data/processed/v3_capacity_source_expansion_shadow.json` |
+| `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift`、`settlement_count_formal_value_link`、`capacity_source_expansion_shadow`、原始/guarded `settlement_count_cells_value_bridge` holdout 与 `formal_value_sampler_holdout` gate |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
 | `scripts/summarize_v3_ccv_holdout.py` | v3 CCV/count-cell-value 候选 session holdout 审计 |
 | `scripts/summarize_v3_ccv_layer_audit.py` | v3 CCV 多层 holdout 稳定性审计 |
@@ -71,6 +75,7 @@
 | `tests/test_inference_v3_prior_robustness.py` | v3 prior/activity 鲁棒性审计测试 |
 | `tests/test_inference_v3_formal_value_sampler.py` | v3 formal/value sampler shadow-only 与 stress 分流测试 |
 | `tests/test_inference_v3_settlement_count_prior.py` | v3 settlement count-prior shadow report/entry/matching 测试 |
+| `tests/test_inference_v3_capacity_source_expansion.py` | v3 capacity/source expansion shadow report/entry/matching 测试 |
 | `tests/test_inference_v3_underestimate_repair.py` | v3 低估上修 shadow report 测试 |
 | `tests/test_inference_v3_tail_value_review.py` | v3 tail/value review shadow report 测试 |
 | `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
@@ -81,6 +86,7 @@
 | `tests/test_summarize_v3_settlement_count_prior_candidates.py` | v3 settlement count-prior candidate 审计测试 |
 | `tests/test_summarize_v3_settlement_source_semantics_audit.py` | v3 settlement source semantics 审计测试，覆盖 overlay metadata、source evidence/mechanism class 与 unique round blocker 聚合 |
 | `tests/test_summarize_v3_settlement_count_prior_holdout.py` | v3 settlement count-prior session holdout 审计测试 |
+| `tests/test_summarize_v3_capacity_source_expansion_holdout.py` | v3 capacity/source expansion session holdout 审计测试，覆盖 source-semantics recall 与低样本 blocker |
 | `tests/test_summarize_v3_activity_mapping_likelihood.py` | v3 252x activity candidate mapping likelihood 审计测试 |
 | `tests/test_summarize_v3_scp_formal_value_link.py` | v3 settlement count-prior 到 formal/value stress 关联审计测试 |
 | `tests/test_summarize_v3_scp_count_value_bridge.py` | v3 settlement count-prior count->cells/value bridge 审计测试 |
@@ -88,6 +94,7 @@
 | `tests/test_summarize_v3_scp_guarded_bridge_holdout.py` | v3 nested train-only guarded bridge holdout 测试，覆盖 inner crossfit group selection 与无指标样本分流 |
 | `tests/test_summarize_v3_scp_guarded_bridge_stability.py` | v3 guarded bridge trial/seed stability 矩阵测试，覆盖 exact group 稳定、hurt run 与 low-support blocker |
 | `tests/test_build_v3_settlement_count_prior_shadow.py` | v3 settlement count-prior processed artifact builder 测试 |
+| `tests/test_build_v3_capacity_source_expansion_shadow.py` | v3 capacity/source expansion processed artifact builder 测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
 | `tests/test_summarize_v3_ccv_holdout.py` | v3 CCV session holdout 审计测试 |
@@ -123,7 +130,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | 路径 | 作用 | 当前策略 |
 | --- | --- | --- |
 | `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做 |
-| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*` 与 `v3_scp_*` |
+| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*` 与 `v3_cse_*` |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 后续可加 v3 shadow columns |

@@ -91,6 +91,10 @@ def test_v3_shadow_pipeline_emits_all_shadow_namespaces() -> None:
     assert flat["v3_fv_affects_bid"] is False
     assert flat["v3_fv_active"] is False
     assert flat["v3_fv_status"] == "prior_unavailable"
+    assert flat["v3_cse_available"] is True
+    assert flat["v3_cse_affects_bid"] is False
+    assert flat["v3_cse_active"] is False
+    assert flat["v3_cse_status"] == "missing_entry"
 
 
 def test_v3_shadow_pipeline_can_emit_component_ccv_shadow() -> None:

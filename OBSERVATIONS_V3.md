@@ -5300,3 +5300,98 @@ full_action_rows=2/21
 - `server_side_settlement_expansion` 有 3 条外部确认；18 条只能判为 `session_capacity_source_semantics`，仍需要 source parser/table acquisition 才能进一步拆开。
 - per-session table version 仍是弱假设：over-cap 横跨多个 day/session/map，且本地 raw/table version 均为 300；当前旧 CDN URL 无法验证远端 current table。
 - 下一阶段不应直接恢复 formal/value sampler 参数调优；优先做 source parser、远端/活动表获取，或追加样本确认 payload-only rows 的生成机制。
+
+## O-v3-126：capacity/source expansion shadow holdout 覆盖 21 条 blocker，但只能作为 broad watch
+
+2026-06-06 新增 `capacity_source_expansion.py`、`build_v3_capacity_source_expansion_shadow.py` 与 `summarize_v3_capacity_source_expansion_holdout.py` 后，复跑：
+
+```powershell
+python scripts\build_v3_capacity_source_expansion_shadow.py
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_family --top 8 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id --top 8 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py data\samples\fatbeans_activity_20260605_shipwreck --group-by map_family --top 8 --min-train-sessions 2 --format summary
+python scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format summary
+```
+
+artifact：
+
+```text
+output=data/processed/v3_capacity_source_expansion_shadow.json
+entries=30
+cohorts=4
+group_bys=map_id,map_family
+affects_bid=False
+active=False
+```
+
+default archive，`group_by=map_family`：
+
+```text
+sessions=441
+truth_unique_round_rows=21
+truth_source_semantics_rows=21
+candidate_rows=419
+covered_unique_round_rows=21
+missed_unique_round_rows=0
+false_positive_candidate_rows=398
+sample_limited_rows=0
+payload_mismatch_rows=2
+truth_payload_mismatch_rows=0
+non_zodiac_missing_rows=0
+truth_non_zodiac_missing_rows=0
+unique_round_recall=1.0
+source_semantics_recall=1.0
+candidate_precision=0.050119
+status_counts=watch_capacity_source_expansion_holdout:2,within_capacity_source_semantics_shadow_only:1
+```
+
+default archive，`group_by=map_id`：
+
+```text
+sessions=441
+truth_unique_round_rows=21
+truth_source_semantics_rows=21
+candidate_rows=202
+covered_unique_round_rows=18
+missed_unique_round_rows=3
+false_positive_candidate_rows=184
+sample_limited_rows=0
+truth_payload_mismatch_rows=0
+truth_non_zodiac_missing_rows=0
+unique_round_recall=0.857143
+source_semantics_recall=0.857143
+candidate_precision=0.089109
+status_counts=blocked_holdout_under_recall:3,watch_capacity_source_expansion_holdout:6,within_capacity_source_semantics_shadow_only:12
+```
+
+activity 20260605 shipwreck：
+
+```text
+sessions=15
+truth_unique_round_rows=0
+truth_source_semantics_rows=0
+candidate_rows=0
+non_zodiac_missing_rows=15
+truth_non_zodiac_missing_rows=0
+status_counts=within_capacity_source_semantics_shadow_only:1
+```
+
+archive evaluator / readiness：
+
+```text
+v3_cse_ready_rows=1560
+v3_cse_candidate_rows=752
+v3_cse_active_rows=0
+
+gate=capacity_source_expansion_shadow status=watch
+overall_status=not_ready
+```
+
+解读：
+
+- 21 条 unique non-temp over round-cap 的主因已经可复核解释为 final settlement/source semantics：`server_side_settlement_expansion` 3 条，`session_capacity_source_semantics` 18 条。
+- `map_family` 口径能覆盖全部 blocker，但把 398 个非 blocker windows 一起标成 candidate；它只适合 broad watch，不适合 sampler/promotion。
+- `map_id` 口径减少 broadness，但漏掉 3 条 blocker；说明仅靠现有 archive map_id prior 还不足以恢复 formal/value sampler。
+- activity cohort 的 non-zodiac missing 是 overlay/source-parser 线索，但不是 default 21 条 unique round-cap blocker 的 item-universe 解释。
+- `v3_cse_*` 已进入 archive/live/model_eval 的 shadow 字段，且 `active_rows=0`；v2 formal/live/UI 与正式出价保持不变。

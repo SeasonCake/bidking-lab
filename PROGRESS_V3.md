@@ -6793,3 +6793,88 @@ unique_round_cap_overflow_after_temp:
 - per-session table version 目前不是强解释：over-cap 跨 6 个 capture day、2 个 session prefix、8 个 map，local raw/table version 均为 300；当前无法从旧 CDN URL 取回远端 current table 验证，只保留为弱假设。
 - external overlay table 只保留为最小不可判定假设：local v300 filelist 列出 `Tables/Activity.txt` 但本地缺表；不过 21 条的 non-zodiac Drop-universe missing 为 0，因此 overlay 若存在，更像影响件数/活动机制，不是引入未知非生肖 item universe。
 - 本阶段不恢复 formal/value sampler 参数调优，不讨论 v3 promotion；下一阶段建议先补 source parser / table acquisition 或扩大样本确认 18 条 payload-only rows，再决定是否恢复 shadow-only formal/value sampler。
+
+## 2026-06-06 checkpoint：capacity/source expansion shadow 层与 session holdout
+
+本轮把 settlement source-semantics 结论固化为 v3 audit-only shadow 层，并用 session holdout 验证其覆盖边界。改动仍不改变 v2 formal/live/UI，不改变正式出价，不恢复 formal/value sampler 参数调优。
+
+改动：
+
+- 新增 `src/bidking_lab/inference/v3/capacity_source_expansion.py`：
+  - 输出 `v3_cse_*` flat fields；
+  - 固定 `affects_bid=False`、`active=False`；
+  - 只表达 capacity/source expansion evidence 是否可见、是否 candidate、对应机制/evidence/source group。
+- `src/bidking_lab/inference/v3/pipeline.py`、`scripts/evaluate_fatbeans_v3_samples.py` 与 `src/bidking_lab/live/monitor.py` 接入同一 shadow report：
+  - archive rows 输出 `v3_cse_*`；
+  - live `model_eval` 输出核心 `v3_cse_*`；
+  - 不参与 posterior/formal/live bid decision。
+- 新增 `scripts/build_v3_capacity_source_expansion_shadow.py`，生成 `data/processed/v3_capacity_source_expansion_shadow.json`，合并 default archive 与 0605 activity cohort 的 map_id/map_family entries。
+- 新增 `scripts/summarize_v3_capacity_source_expansion_holdout.py`：
+  - 按 session/file stable fold 验证 source-semantics 候选；
+  - 分开输出 recall、precision、false positive、payload mismatch 与 non-zodiac overlay rows；
+  - payload/overlay blocker 状态只按 truth rows 判定，避免 broad group 中非 blocker 行误阻塞。
+- `scripts/summarize_v3_promotion_readiness.py` 新增 `capacity_source_expansion_shadow` gate：
+  - 只证明 `v3_cse_*` 可见且 inactive；
+  - 不放宽 `prior_stress_capacity_table_drift`、formal baseline、formal/value sampler 或 promotion gates。
+- 更新 `.gitignore` 允许提交 `data/processed/v3_capacity_source_expansion_shadow.json`。
+
+关键验证：
+
+```powershell
+python -m py_compile src\bidking_lab\inference\v3\capacity_source_expansion.py src\bidking_lab\inference\v3\pipeline.py src\bidking_lab\inference\v3\__init__.py scripts\build_v3_capacity_source_expansion_shadow.py scripts\evaluate_fatbeans_v3_samples.py src\bidking_lab\live\monitor.py
+pytest --basetemp=.tmp\codex\pytest tests\test_inference_v3_capacity_source_expansion.py tests\test_build_v3_capacity_source_expansion_shadow.py tests\test_inference_v3_pipeline.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py -q
+python scripts\build_v3_capacity_source_expansion_shadow.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_source_expansion_holdout.py tests\test_summarize_v3_promotion_readiness.py -q
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_family --top 8 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py --group-by map_id --top 8 --min-train-sessions 4 --format summary
+python scripts\summarize_v3_capacity_source_expansion_holdout.py data\samples\fatbeans_activity_20260605_shipwreck --group-by map_family --top 8 --min-train-sessions 2 --format summary
+python scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format summary
+```
+
+真实 holdout / readiness 要点：
+
+```text
+default archive, group_by=map_family:
+  sessions=441
+  truth_unique_round_rows=21
+  truth_source_semantics_rows=21
+  covered_unique_round_rows=21
+  missed_unique_round_rows=0
+  unique_round_recall=1.0
+  candidate_precision=0.050119
+  false_positive_candidate_rows=398
+  truth_payload_mismatch_rows=0
+  truth_non_zodiac_missing_rows=0
+  status_counts=watch_capacity_source_expansion_holdout:2,within_capacity_source_semantics_shadow_only:1
+
+default archive, group_by=map_id:
+  truth_unique_round_rows=21
+  covered_unique_round_rows=18
+  missed_unique_round_rows=3
+  unique_round_recall=0.857143
+  candidate_precision=0.089109
+  status_counts=blocked_holdout_under_recall:3,watch_capacity_source_expansion_holdout:6,within_capacity_source_semantics_shadow_only:12
+
+activity_20260605_shipwreck, group_by=map_family:
+  truth_unique_round_rows=0
+  non_zodiac_missing_rows=15
+  status_counts=within_capacity_source_semantics_shadow_only:1
+
+archive evaluator:
+  v3_cse_ready_rows=1560
+  v3_cse_candidate_rows=752
+  v3_cse_active_rows=0
+
+readiness:
+  capacity_source_expansion_shadow=watch
+  overall_status=not_ready
+```
+
+解读：
+
+- 对 21 条 unique non-temp over round-cap 的可复核解释已收口：它们是 server-side settlement expansion / session-capacity source semantics 下的 final settlement inventory，不是 parser/slot/duplicate/item-universe 错误。
+- map-family holdout 能覆盖全部 21 条 blocker，但 precision 极低，说明它只能作为 broad watch prior，不能作为 formal/value sampler 或 promotion evidence。
+- map_id holdout 更精确但漏 3 条单例/稀疏 map blocker，因此如果下一阶段恢复 sampler 设计，仍需要 source parser、活动/远端表 acquisition 或更细的 expansion prior。
+- activity 0605 cohort 当前没有 unique round-cap truth rows，但 15 条 non-zodiac missing 继续支持外部 overlay/source-parser 作为旁路假设。
+- readiness/promotion gate 未放宽；下一阶段建议先做 source parser/table acquisition 或追加样本，再由用户确认是否恢复 shadow-only formal/value sampler。

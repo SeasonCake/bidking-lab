@@ -33,6 +33,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     decision_truth_from_fatbeans,
     empty_decision_truth_flat_dict,
     empty_feasible_summary_flat_dict,
+    empty_capacity_source_expansion_flat_dict,
     empty_formal_value_sampler_flat_dict,
     empty_posterior_flat_dict,
     empty_prior_calibration_flat_dict,
@@ -46,6 +47,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     empty_truth_flat_dict,
     estimate_shadow_pipeline,
     events_from_fatbeans,
+    load_capacity_source_expansion_entries,
     load_prior_calibration_entries,
     load_settlement_count_prior_entries,
     load_tail_value_review_entries,
@@ -56,6 +58,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     assess_prior_robustness,
     summarize_drop_prior_flat_dict,
     settlement_count_prior_entry_for,
+    capacity_source_expansion_entry_for,
     tail_value_review_entry_for,
     underestimate_entry_for,
 )
@@ -86,6 +89,10 @@ def _default_tail_value_review_path() -> Path:
 
 def _default_settlement_count_prior_path() -> Path:
     return ROOT / "data" / "processed" / "v3_settlement_count_prior_shadow.json"
+
+
+def _default_capacity_source_expansion_path() -> Path:
+    return ROOT / "data" / "processed" / "v3_capacity_source_expansion_shadow.json"
 
 
 def _iter_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
@@ -392,6 +399,7 @@ def _round_rows_for_events(
     underestimate_repair_entries: Mapping[tuple[str, int], Any] | None = None,
     tail_value_review_entries: Mapping[tuple[str, int], Any] | None = None,
     settlement_count_prior_entries: Mapping[tuple[str, str], Any] | None = None,
+    capacity_source_expansion_entries: Mapping[tuple[str, str], Any] | None = None,
     posterior_trials: int = 512,
     posterior_seed: int = 0,
     ccv_options: V3CcvOptions | None = None,
@@ -420,6 +428,7 @@ def _round_rows_for_events(
     empty_tail_review_fields = empty_tail_value_review_flat_dict()
     empty_formal_value_fields = empty_formal_value_sampler_flat_dict()
     empty_settlement_count_prior_fields = empty_settlement_count_prior_flat_dict()
+    empty_capacity_source_expansion_fields = empty_capacity_source_expansion_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
     for window_round, bid_send in enumerate(bid_sends, start=1):
@@ -499,6 +508,7 @@ def _round_rows_for_events(
                     **empty_tail_review_fields,
                     **empty_formal_value_fields,
                     **empty_settlement_count_prior_fields,
+                    **empty_capacity_source_expansion_fields,
                 }
             )
             previous_bid_sort_id = bid_sort_id
@@ -562,6 +572,11 @@ def _round_rows_for_events(
             settlement_count_prior_entries,
             map_id=map_id,
         )
+        capacity_source_expansion_entry = capacity_source_expansion_entry_for(
+            capacity_source_expansion_entries,
+            map_id=map_id,
+            map_family=map_family,
+        )
         pipeline = (
             estimate_shadow_pipeline(
                 map_id=int(map_id),
@@ -574,6 +589,7 @@ def _round_rows_for_events(
                 underestimate_entry=underestimate_entry,
                 tail_review_entry=tail_review_entry,
                 settlement_count_prior_entry=settlement_count_prior_entry,
+                capacity_source_expansion_entry=capacity_source_expansion_entry,
                 hero=str(diagnostic_fields.get("hero") or "unknown"),
                 ccv_options=ccv_options,
                 prior_fields=prior_fields,
@@ -648,6 +664,11 @@ def _round_rows_for_events(
             if pipeline is not None
             else empty_settlement_count_prior_fields
         )
+        capacity_source_expansion_fields = (
+            pipeline.capacity_source_expansion.to_flat_dict()
+            if pipeline is not None
+            else empty_capacity_source_expansion_fields
+        )
         capacity_fields = _capacity_flat_dict(
             prior_fields=prior_fields,
             truth_fields=truth_fields,
@@ -691,6 +712,7 @@ def _round_rows_for_events(
                 **tail_review_fields,
                 **formal_value_fields,
                 **settlement_count_prior_fields,
+                **capacity_source_expansion_fields,
             }
         )
         previous_bid_sort_id = bid_sort_id
@@ -705,6 +727,7 @@ def evaluate_paths(
     underestimate_repair_entries: Mapping[tuple[str, int], Any] | None = None,
     tail_value_review_entries: Mapping[tuple[str, int], Any] | None = None,
     settlement_count_prior_entries: Mapping[tuple[str, str], Any] | None = None,
+    capacity_source_expansion_entries: Mapping[tuple[str, str], Any] | None = None,
     posterior_trials: int = 512,
     posterior_seed: int = 0,
     ccv_options: V3CcvOptions | None = None,
@@ -726,6 +749,7 @@ def evaluate_paths(
                 underestimate_repair_entries=underestimate_repair_entries,
                 tail_value_review_entries=tail_value_review_entries,
                 settlement_count_prior_entries=settlement_count_prior_entries,
+                capacity_source_expansion_entries=capacity_source_expansion_entries,
                 posterior_trials=posterior_trials,
                 posterior_seed=posterior_seed,
                 ccv_options=ccv_options,
@@ -957,6 +981,11 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         row
         for row in rows
         if row.get("status") == "ready" and row.get("v3_scp_ready")
+    ]
+    capacity_source_expansion_ready = [
+        row
+        for row in rows
+        if row.get("status") == "ready" and row.get("v3_cse_ready")
     ]
 
     def pred_truth(
@@ -1632,6 +1661,23 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 ).items()
             )
         ),
+        "v3_cse_ready_rows": len(capacity_source_expansion_ready),
+        "v3_cse_candidate_rows": sum(
+            1
+            for row in capacity_source_expansion_ready
+            if row.get("v3_cse_candidate")
+        ),
+        "v3_cse_active_rows": sum(
+            1 for row in capacity_source_expansion_ready if row.get("v3_cse_active")
+        ),
+        "v3_cse_status_counts": dict(
+            sorted(
+                Counter(
+                    str(row.get("v3_cse_status") or "none")
+                    for row in rows
+                ).items()
+            )
+        ),
     }
 
 
@@ -1862,6 +1908,9 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"v3_scp_candidate_rows={summary['v3_scp_candidate_rows']}",
                 f"v3_scp_missing_table_rows={summary['v3_scp_missing_table_rows']}",
                 f"v3_scp_active_rows={summary['v3_scp_active_rows']}",
+                f"v3_cse_ready_rows={summary['v3_cse_ready_rows']}",
+                f"v3_cse_candidate_rows={summary['v3_cse_candidate_rows']}",
+                f"v3_cse_active_rows={summary['v3_cse_active_rows']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",
@@ -2428,6 +2477,41 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_scp_prior_max_to_observed_max_delta",
         "v3_scp_flags",
         "v3_scp_diagnostics",
+        "v3_cse_available",
+        "v3_cse_ready",
+        "v3_cse_affects_bid",
+        "v3_cse_active",
+        "v3_cse_candidate",
+        "v3_cse_status",
+        "v3_cse_gate_reason",
+        "v3_cse_scope",
+        "v3_cse_group",
+        "v3_cse_source",
+        "v3_cse_archive_sessions",
+        "v3_cse_mechanism_classes",
+        "v3_cse_source_evidence_classes",
+        "v3_cse_unique_round_overflow_rows",
+        "v3_cse_server_side_expansion_rows",
+        "v3_cse_session_capacity_source_semantics_rows",
+        "v3_cse_public_total_match_rows",
+        "v3_cse_full_action_rows",
+        "v3_cse_payload_verified_only_rows",
+        "v3_cse_payload_inventory_mismatch_rows",
+        "v3_cse_non_zodiac_missing_max",
+        "v3_cse_unique_non_temp_p95",
+        "v3_cse_unique_non_temp_max",
+        "v3_cse_unique_round_excess_p95",
+        "v3_cse_unique_round_excess_max",
+        "v3_cse_bidmap_items_per_session_max",
+        "v3_cse_bidmap_raw_round_cap_max",
+        "v3_cse_target_count_source",
+        "v3_cse_target_count",
+        "v3_cse_prior_items_per_session_max",
+        "v3_cse_target_to_unique_non_temp_p95_delta",
+        "v3_cse_prior_max_to_unique_non_temp_p95_delta",
+        "v3_cse_prior_max_to_unique_non_temp_max_delta",
+        "v3_cse_flags",
+        "v3_cse_diagnostics",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
@@ -2516,6 +2600,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Disable v3 settlement count prior shadow fields.",
     )
+    parser.add_argument(
+        "--capacity-source-expansion",
+        type=Path,
+        default=_default_capacity_source_expansion_path(),
+        help="Optional v3 capacity/source expansion shadow table.",
+    )
+    parser.add_argument(
+        "--no-capacity-source-expansion",
+        action="store_true",
+        help="Disable v3 capacity/source expansion shadow fields.",
+    )
     parser.add_argument("--fail-on-conflicts", action="store_true")
     parser.add_argument("--fail-on-parse-errors", action="store_true")
     args = parser.parse_args(argv)
@@ -2541,6 +2636,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.no_settlement_count_prior or args.skip_table_report
         else load_settlement_count_prior_entries(args.settlement_count_prior)
     )
+    capacity_source_expansion_entries = (
+        {}
+        if args.no_capacity_source_expansion or args.skip_table_report
+        else load_capacity_source_expansion_entries(args.capacity_source_expansion)
+    )
     rows, errors = evaluate_paths(
         args.paths or _default_paths(),
         tables=tables,
@@ -2548,6 +2648,7 @@ def main(argv: list[str] | None = None) -> int:
         underestimate_repair_entries=underestimate_repair_entries,
         tail_value_review_entries=tail_value_review_entries,
         settlement_count_prior_entries=settlement_count_prior_entries,
+        capacity_source_expansion_entries=capacity_source_expansion_entries,
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,
         ccv_options=V3CcvOptions(

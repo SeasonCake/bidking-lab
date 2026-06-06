@@ -17,6 +17,11 @@ from bidking_lab.inference.v3.calibration import (
     V3PriorCalibrationReport,
     calibrate_posterior_report,
 )
+from bidking_lab.inference.v3.capacity_source_expansion import (
+    CapacitySourceExpansionEntry,
+    V3CapacitySourceExpansionReport,
+    assess_capacity_source_expansion,
+)
 from bidking_lab.inference.v3.constraints import ConstraintSet
 from bidking_lab.inference.v3.formal_value_sampler import (
     V3FormalValueSamplerReport,
@@ -79,6 +84,7 @@ class V3ShadowPipelineReport:
     tail_review: V3TailValueReviewReport
     formal_value: V3FormalValueSamplerReport
     settlement_count_prior: V3SettlementCountPriorReport
+    capacity_source_expansion: V3CapacitySourceExpansionReport
 
     def to_flat_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -98,6 +104,7 @@ class V3ShadowPipelineReport:
         out.update(self.tail_review.to_flat_dict())
         out.update(self.formal_value.to_flat_dict())
         out.update(self.settlement_count_prior.to_flat_dict())
+        out.update(self.capacity_source_expansion.to_flat_dict())
         return out
 
 
@@ -113,6 +120,7 @@ def estimate_shadow_pipeline(
     underestimate_entry: UnderestimateRepairEntry | None = None,
     tail_review_entry: TailValueReviewEntry | None = None,
     settlement_count_prior_entry: SettlementCountPriorEntry | None = None,
+    capacity_source_expansion_entry: CapacitySourceExpansionEntry | None = None,
     hero: str | None = None,
     ccv_options: V3CcvOptions | None = None,
     prior_fields: Mapping[str, Any] | None = None,
@@ -194,6 +202,13 @@ def estimate_shadow_pipeline(
         summary=summary,
         prior_fields=prior_fields,
     )
+    capacity_source_expansion = assess_capacity_source_expansion(
+        entry=capacity_source_expansion_entry,
+        map_id=int(map_id),
+        map_family=_map_family(map_id),
+        summary=summary,
+        prior_fields=prior_fields,
+    )
     return V3ShadowPipelineReport(
         posterior=posterior,
         ccv_posterior=ccv_posterior,
@@ -206,7 +221,21 @@ def estimate_shadow_pipeline(
         tail_review=tail_review,
         formal_value=formal_value,
         settlement_count_prior=settlement_count_prior,
+        capacity_source_expansion=capacity_source_expansion,
     )
+
+
+def _map_family(map_id: int | None) -> str:
+    if map_id is None:
+        return "unknown"
+    family = int(map_id) // 100
+    if family in (24, 34, 44):
+        return "villa"
+    if family in (25, 35, 45):
+        return "shipwreck"
+    if family in (26, 36, 46):
+        return "hidden"
+    return "other"
 
 
 __all__ = (

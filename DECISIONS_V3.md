@@ -2515,3 +2515,21 @@ applied_hurts=2502
 - 其中 3 条有 external source confirmation：2 条 direct full action、1 条 public total；其余 18 条由 settlement payload 自证。
 - 这些 rows 横跨 `shipwreck:19/villa:2`、6 个 capture day、2 个 session prefix、8 个 map；不支持单一 per-session table version 或单一 cohort 解释。
 - local raw/table version 均为 300，filelist 列出 `Tables/Activity.txt` 而本地缺表；这只支持保留 overlay 作为件数/活动机制的未判定假设，不足以直接修正 sampler。
+
+## D-v3-122：capacity/source expansion 只能作为 shadow-only audit layer，不得作为 promotion 放行
+
+2026-06-06 起，当前决策：
+
+- `src/bidking_lab/inference/v3/capacity_source_expansion.py` 是 settlement capacity/source expansion 的 v3 shadow-only 层，字段族为 `v3_cse_*`。
+- `v3_cse_*` 必须固定 `affects_bid=False`、`active=False`；不得改变 v2 formal/live/UI、posterior sampling、formal decision value 或正式出价。
+- `data/processed/v3_capacity_source_expansion_shadow.json` 可提交，作为 archive/live/model_eval 的可复核 evidence artifact；它的存在只表示 source/capacity blocker 解释可见。
+- `capacity_source_expansion_shadow` readiness gate 只能证明 CSE evidence 可见且 inactive；不得把该 gate 的 `watch` 解释为 v3 promotion ready。
+- map-family source expansion prior 因 false positive 过宽，只能用于 audit/watch；map_id prior 虽更精确但漏掉单例/稀疏 blocker，不能单独恢复 formal/value sampler。
+- 下一阶段如需恢复 shadow-only formal/value sampler，必须先补 source parser、活动/远端表 acquisition、更多样本，或设计能同时解释 map-family recall 与 map_id precision 缺口的可证伪 expansion prior。
+
+原因：
+
+- default archive `map_family` session holdout 对 21 条 unique round-cap blocker 的 recall 为 1.0，但 candidate precision 只有 0.050119，false positive 为 398 rows。
+- default archive `map_id` holdout recall 为 0.857143，覆盖 18/21，漏 3 条稀疏/单例 map blocker。
+- truth rows 的 payload mismatch 与 non-zodiac missing 均为 0；当前 blocker 不是 parser/slot/unknown non-zodiac item-universe 问题。
+- archive evaluator smoke 显示 `v3_cse_ready_rows=1560`、`v3_cse_candidate_rows=752`、`v3_cse_active_rows=0`；readiness 中 `capacity_source_expansion_shadow=watch` 但 overall 仍 `not_ready`。

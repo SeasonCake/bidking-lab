@@ -128,6 +128,11 @@ def _row(
         "v3_scp_candidate": False,
         "v3_scp_missing_table": False,
         "v3_scp_status": "table_caps_cover_observed_shadow_only",
+        "v3_cse_ready": True,
+        "v3_cse_affects_bid": False,
+        "v3_cse_active": False,
+        "v3_cse_candidate": False,
+        "v3_cse_status": "within_capacity_source_semantics_shadow_only",
         "v3_post_tail_replacement_decision_value_p50": pred + 100,
         "v3_post_tail_replacement_decision_value_p90": p90 + 100,
         "v3_post_q6_tail_replacement_decision_value_p50": pred // 2 + 100,
@@ -158,6 +163,8 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert gates["prior_stress_capacity_table_drift"]["status"] == "pass"
     assert gates["settlement_count_prior_shadow"]["status"] == "watch"
     assert gates["settlement_count_prior_shadow"]["active_rows"] == 0
+    assert gates["capacity_source_expansion_shadow"]["status"] == "watch"
+    assert gates["capacity_source_expansion_shadow"]["active_rows"] == 0
     assert gates["settlement_count_formal_value_link"]["status"] == "blocked"
     assert gates["settlement_count_formal_value_link"]["scp_candidate_formal_rows"] == 0
     assert gates["settlement_count_cells_value_bridge"]["status"] == "blocked"
