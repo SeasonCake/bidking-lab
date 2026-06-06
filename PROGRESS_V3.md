@@ -4103,3 +4103,97 @@ scp_value_link_delta=0.0
 - 现有 `v3_fv` 与 `v3_scp` 的交集太小，且 formal MAE delta 为 0；不得据此恢复 sampler tuning 或 promotion。
 - 下一步应设计 shadow-only count->cells/value bridge：先解释 `scp + capacity_only` 如何转化为 cells/value distribution，再进入 holdout。
 - v2 formal/live/UI 与正式出价路径未改；v3 promotion、v2 archive 继续 pending。
+
+## 2026-06-06 checkpoint：settlement count-prior count->cells/value bridge 审计
+
+完成内容：
+
+- 新增 `scripts/summarize_v3_scp_count_value_bridge.py`：
+  - 以 `v3_scp_ready` 为 evidence 分母；
+  - 只在 posterior/truth metric-ready rows 上审计；
+  - 量化 `scp_p95 > target_count`、truth/target/prior count gap、cells p90 undercoverage、formal p90 undercoverage；
+  - 输出 `watch_count_cells_value_bridge`、`watch_count_cells_only_bridge`、`missing_table_shadow_only` 等状态。
+- 新增 `tests/test_summarize_v3_scp_count_value_bridge.py`，覆盖：
+  - count gap + cells/formal undercoverage 的 bridge candidate；
+  - activity/missing-table 不进入 metric 分母。
+- `scripts/summarize_v3_promotion_readiness.py` 新增 `settlement_count_cells_value_bridge` gate：
+  - archive bridge candidate 存在时为 `watch`；
+  - 明确 holdout 仍是后续 required step；
+  - 不改变 posterior、formal/value sampler 或正式出价。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_count_value_bridge.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge.py --posterior-trials 64 --top 12
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge.py --by v3_fv_stress_class --posterior-trials 64 --top 10
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64 --top 8
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_count_value_bridge.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_other_tables.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_count_prior_holdout.py tests\test_summarize_v3_scp_formal_value_link.py tests\test_summarize_v3_scp_count_value_bridge.py tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+```
+
+结果：
+
+```text
+targeted bridge tests:
+2 passed
+
+targeted bridge/readiness tests:
+6 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+78 passed
+
+default bridge:
+scp_rows=1560
+metric_rows=1560
+scp_candidate_rows=1488
+scp_candidate_metric_rows=1488
+scp_p95_above_target_rows=1276
+truth_above_prior_rows=711
+target_below_truth_rows=1225
+cells_p90_under_rows=635
+formal_p90_under_rows=389
+count_cells_bridge_rows=516
+count_value_bridge_rows=315
+count_cells_value_bridge_rows=201
+cells_per_item p50=2.658 p90=3.14 p95=3.34
+formal_per_item p50=16850.545 p90=32231.194 p95=41419.737
+
+bridge top groups:
+2501 count_cells_value=54
+2401 count_cells_value=29
+2601 count_cells_value=26
+2506 count_cells_value=19
+2504 count_cells_value=15
+
+by v3_fv_stress_class:
+none count_cells_value=185
+capacity_cells_drift count_cells_value=15
+value_floor_stress count_cells_value=1
+
+activity bridge:
+scp_rows=58
+metric_rows=0
+missing_table_rows=58
+status_counts=missing_table_shadow_only:6
+
+readiness:
+overall_status=not_ready
+blocked_gates=11
+gate=settlement_count_prior_shadow status=watch
+gate=settlement_count_formal_value_link status=blocked
+gate=settlement_count_cells_value_bridge status=watch
+gate=formal_value_sampler_holdout status=blocked
+scp_count_cells_value_bridge_rows=201
+scp_count_cells_bridge_rows=516
+scp_count_value_bridge_rows=315
+```
+
+结论：
+
+- count->cells/value bridge 候选存在，且 2601/2506 等 prior-stressed slices 有明确 bridge rows；这为下一步 shadow-only sampler 设计提供了候选分母。
+- 大多数 full bridge rows 当前 `v3_fv_stress_class=none`，说明现有 formal/value stress detector 不足以消费 `v3_scp` evidence。
+- 当前 bridge 是 archive-only、truth-derived 审计；promotion 前必须做 session holdout/shadow sampler，不能直接把 per-item cells/value 统计写成 sampler 参数。
+- v2 formal/live/UI 和正式出价未改；v3 promotion、v2 archive 继续 pending。

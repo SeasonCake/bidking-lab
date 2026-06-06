@@ -160,6 +160,8 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert gates["settlement_count_prior_shadow"]["active_rows"] == 0
     assert gates["settlement_count_formal_value_link"]["status"] == "blocked"
     assert gates["settlement_count_formal_value_link"]["scp_candidate_formal_rows"] == 0
+    assert gates["settlement_count_cells_value_bridge"]["status"] == "blocked"
+    assert gates["settlement_count_cells_value_bridge"]["count_cells_value_bridge_rows"] == 0
     assert gates["formal_baseline_metrics"]["status"] == "blocked"
     assert "holdout_candidate_rows" in gates["ccv_sampler"]
     assert "applied_ccv_hurts_groups" in gates["ccv_sampler"]
@@ -181,6 +183,7 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert "tail_under_holdout" in result
     assert "formal_value_sampler_holdout" in result
     assert "settlement_count_formal_value_link" in result
+    assert "settlement_count_cells_value_bridge" in result
     assert "prior_stress_detail_summary" in result
     assert result["prior_stress_detail_summary"]["rows"] == 0
 

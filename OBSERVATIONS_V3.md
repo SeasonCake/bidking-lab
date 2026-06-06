@@ -2786,3 +2786,58 @@ overall_status=not_ready
 - 2506、2601 等 prior-stressed heavy groups formal baseline 明显偏弱，但没有 value-floor overlap；直接把 count-prior 当 value-floor 会跳过 cells/value bridge。
 - 当前 `v3_fv` 对 default archive formal MAE 的 delta 仍为 0；这说明现有 formal/value sampler 不是 count-prior 的可用 promotion path。
 - 252x activity 仍没有 posterior/formal metric rows，只能留在 missing-table evidence；不能用 activity count-prior 推导 formal/value promotion。
+
+## O-v3-080：count->cells/value bridge 候选存在，但与现有 v3_fv stress class 不一致
+
+2026-06-06 新增 `summarize_v3_scp_count_value_bridge.py`，量化 `v3_scp` count gap 与 total cells/formal value undercoverage 的 bridge 候选：
+
+```text
+default by v3_scp_group:
+scp_rows=1560
+metric_rows=1560
+scp_candidate_rows=1488
+scp_candidate_metric_rows=1488
+scp_p95_above_target_rows=1276
+truth_above_prior_rows=711
+target_below_truth_rows=1225
+cells_p90_under_rows=635
+formal_p90_under_rows=389
+count_cells_bridge_rows=516
+count_value_bridge_rows=315
+count_cells_value_bridge_rows=201
+cells_per_item avg=2.668 p50=2.658 p90=3.14 p95=3.34 max=3.957
+formal_per_item avg=18712.836 p50=16850.545 p90=32231.194 p95=41419.737 max=74360.36
+status_counts=no_scp_candidate_metric_rows:2,watch_count_cells_only_bridge:2,watch_count_cells_value_bridge:17
+
+map highlights:
+2501 count_cells_value=54 cells_under=151 formal_under=101 cells_per_item_p95=3.34 formal_per_item_p95=33378.123
+2401 count_cells_value=29 cells_under=84 formal_under=56 cells_per_item_p95=3.204 formal_per_item_p95=33516.188
+2601 count_cells_value=26 cells_under=34 formal_under=46 cells_per_item_p95=3.362 formal_per_item_p95=56041.8
+2506 count_cells_value=19 cells_under=32 formal_under=31 cells_per_item_p95=3.421 formal_per_item_p95=36444.157
+2504 count_cells_value=15 cells_under=32 formal_under=21 cells_per_item_p95=2.828 formal_per_item_p95=24758.17
+
+by v3_fv_stress_class:
+none count_cells_value=185 count_cells=460 count_value=280
+capacity_cells_drift count_cells_value=15 count_cells=45 count_value=28
+value_floor_stress count_cells_value=1 count_cells=1 count_value=4
+
+activity:
+scp_rows=58
+metric_rows=0
+missing_table_rows=58
+status_counts=missing_table_shadow_only:6
+
+readiness:
+gate=settlement_count_cells_value_bridge status=watch
+scp_count_cells_value_bridge_rows=201
+scp_count_cells_bridge_rows=516
+scp_count_value_bridge_rows=315
+overall_status=not_ready
+```
+
+解读：
+
+- count->cells/value bridge 候选在 default archive 中真实存在，尤其 2501、2401、2601、2506 是后续 holdout/sampler design 的优先 slice。
+- 185/201 个 full bridge rows 当前 `v3_fv_stress_class=none`，说明现有 value-floor stress detection 没有捕捉大部分 count/cells/value bridge 信号。
+- `truth_cells_per_item` 与 `truth_formal_per_item` 是 archive truth 派生量，只能用于审计和后续 holdout 设计，不能直接作为 live/formal sampler 参数。
+- activity 252x 继续没有 metric rows，不能参与 bridge 校准。

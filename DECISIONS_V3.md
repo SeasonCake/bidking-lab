@@ -1750,3 +1750,21 @@ applied_hurts=2502
 - 按 `v3_fv_stress_class` 看，`value_floor_stress` 只有 12 rows，其中 7 rows 与 `v3_scp_candidate` 重叠；capacity watch overlap 明显更大。
 - 按 `map_id` 看，2401/2402/2501 有少量 `scp + value_floor` overlap；2506/2601 等 prior-stressed group 主要是 `scp + capacity_only`，formal baseline 仍偏弱。
 - readiness 新 gate `settlement_count_formal_value_link=blocked`，`overall_status=not_ready`，blocked gates 增至 11。
+
+## D-v3-075：count->cells/value bridge 是 archive 候选，不是 sampler 参数
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_scp_count_value_bridge.py` 是 settlement count-prior 到 cells/value 的 archive-only bridge 审计入口。
+- 该脚本只量化 `scp_p95 > target_count`、total cells p90 undercoverage、formal value p90 undercoverage 的交集；不得把 `truth_cells_per_item` 或 `truth_formal_per_item` 直接写入 sampler。
+- `settlement_count_cells_value_bridge` readiness gate 只说明 bridge candidate 可见；它的 `watch` 不代表 promotion-ready。
+- 在进入 formal/value sampler 前，必须新增 session-level holdout 或 shadow sampler，验证 count->cells/value bridge 不造成 formal MAE、below-rate、p90 coverage、over-rate regression。
+- `v3_scp + v3_fv_stress_class=none` 出现 bridge candidates 时，只能视为“当前 value stress 检测漏掉了 count/cells/value 桥信号”的审计线索，不能直接启用 value floor。
+- activity 252x 继续 missing-table/no-posterior 分流；没有 formal metric rows 时不得参与 bridge 校准。
+
+原因：
+
+- default archive bridge 审计：`scp_candidate_metric_rows=1488`、`scp_p95_above_target_rows=1276`、`cells_p90_under_rows=635`、`formal_p90_under_rows=389`、`count_cells_value_bridge_rows=201`。
+- `v3_fv_stress_class=none` 下仍有 `count_cells_value_bridge_rows=185`，说明 bridge signal 与现有 formal/value stress class 不一致。
+- high-priority groups 中 2501/2401/2601/2506 分别有 `count_cells_value_bridge_rows=54/29/26/19`；2601、2506 仍是 prior-stressed/capacity-heavy slices。
+- readiness：`settlement_count_cells_value_bridge=watch`，但 `settlement_count_formal_value_link=blocked`、`formal_value_sampler_holdout=blocked`、overall 仍 `not_ready`。

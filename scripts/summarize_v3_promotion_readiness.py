@@ -63,6 +63,9 @@ from summarize_v3_formal_value_sampler_holdout import (  # noqa: E402
 from summarize_v3_scp_formal_value_link import (  # noqa: E402
     summarize_link as summarize_scp_formal_value_link,
 )
+from summarize_v3_scp_count_value_bridge import (  # noqa: E402
+    summarize_bridge as summarize_scp_count_value_bridge,
+)
 from summarize_v3_prior_robustness_audit import (  # noqa: E402
     summarize_prior_stress_details,
     summarize_prior_stress_detail_summary,
@@ -311,6 +314,10 @@ def summarize_readiness(
         rows,
         group_field="v3_scp_group",
     )
+    scp_count_value_bridge = summarize_scp_count_value_bridge(
+        rows,
+        group_field="v3_scp_group",
+    )
 
     gates: list[dict[str, Any]] = []
     data_status = "pass" if not errors and not summary.get("constraint_conflict") else "blocked"
@@ -484,6 +491,58 @@ def summarize_readiness(
                     ),
                 }
                 for row in scp_formal_value_link.get("rows", ())[:5]
+            ],
+        )
+    )
+    scp_bridge_overall = scp_count_value_bridge["overall"]
+    scp_bridge_rows = int(
+        scp_bridge_overall.get("count_cells_value_bridge_rows") or 0
+    )
+    scp_bridge_status = (
+        "watch"
+        if scp_bridge_rows > 0
+        and int(scp_bridge_overall.get("scp_active_rows") or 0) == 0
+        else "blocked"
+    )
+    gates.append(
+        _gate(
+            "settlement_count_cells_value_bridge",
+            scp_bridge_status,
+            "settlement count-prior has archive count->cells/value bridge candidates; holdout is still required"
+            if scp_bridge_status == "watch"
+            else "settlement count-prior lacks a usable count->cells/value bridge or has active rows",
+            metric_rows=scp_bridge_overall.get("metric_rows"),
+            scp_candidate_metric_rows=scp_bridge_overall.get(
+                "scp_candidate_metric_rows"
+            ),
+            scp_p95_above_target_rows=scp_bridge_overall.get(
+                "scp_p95_above_target_rows"
+            ),
+            cells_p90_under_rows=scp_bridge_overall.get("cells_p90_under_rows"),
+            formal_p90_under_rows=scp_bridge_overall.get("formal_p90_under_rows"),
+            count_cells_bridge_rows=scp_bridge_overall.get(
+                "count_cells_bridge_rows"
+            ),
+            count_value_bridge_rows=scp_bridge_overall.get(
+                "count_value_bridge_rows"
+            ),
+            count_cells_value_bridge_rows=scp_bridge_rows,
+            cells_per_item=scp_bridge_overall.get("truth_cells_per_item"),
+            formal_per_item=scp_bridge_overall.get("truth_formal_per_item"),
+            status_counts=scp_count_value_bridge.get("status_counts"),
+            top_groups=[
+                {
+                    "group": row.get("group"),
+                    "bridge_status": row.get("bridge_status"),
+                    "count_cells_value_bridge_rows": row.get(
+                        "count_cells_value_bridge_rows"
+                    ),
+                    "count_cells_bridge_rows": row.get("count_cells_bridge_rows"),
+                    "count_value_bridge_rows": row.get("count_value_bridge_rows"),
+                    "truth_cells_per_item": row.get("truth_cells_per_item"),
+                    "truth_formal_per_item": row.get("truth_formal_per_item"),
+                }
+                for row in scp_count_value_bridge.get("rows", ())[:5]
             ],
         )
     )
@@ -855,6 +914,8 @@ def summarize_readiness(
         next_actions.append("keep formal/value sampler shadow-only until holdout has safe support")
     if not scp_link_ready:
         next_actions.append("bridge settlement count-prior to cells/value before formal/value sampler promotion")
+    if scp_bridge_rows:
+        next_actions.append("hold out settlement count->cells/value bridge candidates before sampler use")
     if not prior_stress_drift_ready:
         next_actions.append("audit prior-stressed capacity/table drift by map/profile before promotion")
     if not robust_ready:
@@ -1060,6 +1121,28 @@ def summarize_readiness(
             ),
             "status_counts": scp_formal_value_link.get("status_counts"),
         },
+        "settlement_count_cells_value_bridge": {
+            "status": scp_bridge_status,
+            "metric_rows": scp_bridge_overall.get("metric_rows"),
+            "scp_candidate_metric_rows": scp_bridge_overall.get(
+                "scp_candidate_metric_rows"
+            ),
+            "scp_p95_above_target_rows": scp_bridge_overall.get(
+                "scp_p95_above_target_rows"
+            ),
+            "cells_p90_under_rows": scp_bridge_overall.get("cells_p90_under_rows"),
+            "formal_p90_under_rows": scp_bridge_overall.get("formal_p90_under_rows"),
+            "count_cells_bridge_rows": scp_bridge_overall.get(
+                "count_cells_bridge_rows"
+            ),
+            "count_value_bridge_rows": scp_bridge_overall.get(
+                "count_value_bridge_rows"
+            ),
+            "count_cells_value_bridge_rows": scp_bridge_rows,
+            "cells_per_item": scp_bridge_overall.get("truth_cells_per_item"),
+            "formal_per_item": scp_bridge_overall.get("truth_formal_per_item"),
+            "status_counts": scp_count_value_bridge.get("status_counts"),
+        },
         "ccv_status_counts": ccv_counts,
         "tail_status_counts": tail_counts,
         "residual_status_counts": residual_counts,
@@ -1108,6 +1191,9 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"scp_value_link_rows={result['settlement_count_formal_value_link']['scp_candidate_value_floor_rows']}",
                 f"scp_capacity_link_rows={result['settlement_count_formal_value_link']['scp_candidate_capacity_watch_rows']}",
                 f"scp_value_link_delta={result['settlement_count_formal_value_link']['formal_fv_delta_p50_mae']}",
+                f"scp_count_cells_value_bridge_rows={result['settlement_count_cells_value_bridge']['count_cells_value_bridge_rows']}",
+                f"scp_count_cells_bridge_rows={result['settlement_count_cells_value_bridge']['count_cells_bridge_rows']}",
+                f"scp_count_value_bridge_rows={result['settlement_count_cells_value_bridge']['count_value_bridge_rows']}",
                 f"prior_stress_detail_rows={result['prior_stress_detail_summary']['rows']}",
                 f"prior_stress_capacity_hits={result['prior_stress_detail_summary']['capacity_flag_hits']}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
