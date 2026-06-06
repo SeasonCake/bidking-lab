@@ -5178,3 +5178,53 @@ exact_with_target_missing_pattern_counts:
 - `evidence_floor_only` 需要继续拆成两条线：22 行 floor below truth 主体、4 行 `total_cells exact + q6/value target missing`。
 - `2502` 形态不是 table capacity 问题，也不是 formal/value sampler 参数问题；下一步查 q6/value allocation target 缺失。
 - hard/lower-bound capacity conflict 仍等待 table/session/source split 审计；promotion/readiness 继续不推进。
+
+## 2026-06-06 checkpoint：capacity conflict source split summary
+
+本轮把 hard/lower capacity conflict 的 source split 固化到 capacity table audit，继续保持 audit-only。该改动不接入 posterior sampler、不接入 formal/value sampler、不改变 readiness gate，也不触碰 v2 formal/live/UI 或正式出价。
+
+改动：
+
+- `scripts/summarize_v3_capacity_table_audit.py` 新增 `source_split_summary`：
+  - map prefix3 / map family；
+  - capture day；
+  - total count target source；
+  - target/truth delta 与 truth/prior max delta；
+  - raw 0x002D message counts；
+  - drop-ref / round-cap residual after temp zodiac；
+  - non-zodiac drop-universe residual；
+  - full observed action 与 public total count。
+- summary 文本输出展示 source split 关键字段。
+- `tests/test_summarize_v3_capacity_table_audit.py` 覆盖 source split 聚合、date token、0x002D message、drop/round residual 与 full action/public count。
+- `DECISIONS_V3.md` 新增 D-v3-093；`OBSERVATIONS_V3.md` 新增 O-v3-097。
+
+关键验证：
+
+```powershell
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_table_audit.py
+python -m py_compile scripts\summarize_v3_capacity_table_audit.py
+python scripts\summarize_v3_capacity_table_audit.py --case all --bucket hard_capacity_conflict --format json
+python scripts\summarize_v3_capacity_table_audit.py --case all --bucket lower_bound_under_truth --format json
+```
+
+真实 64-trial source split：
+
+```text
+hard_capacity_conflict:
+  groups=10 rows=29 table_impossible_rows=29 round_impossible_rows=16
+  drop_after_temp_positive_files=14
+  round_after_temp_positive_files=6
+  non_zodiac_missing_positive_files=0
+
+lower_bound_under_truth:
+  groups=11 rows=39 table_impossible_rows=39 round_impossible_rows=22
+  drop_after_temp_positive_files=18
+  round_after_temp_positive_files=6
+  non_zodiac_missing_positive_files=0
+```
+
+结论：
+
+- 当前 hard/lower conflict 的 final items 仍在 drop universe 内；不是非 drop-universe item 或临时生肖完全解释。
+- drop-ref / round-cap residual after temp 仍存在，说明 blocker 仍在 session capacity、activity overlay 或 settlement expansion 机制层。
+- 下一步可按 map family、target source、full observed action/public total count 分线审计；formal/value sampler 与 promotion readiness 继续暂停。

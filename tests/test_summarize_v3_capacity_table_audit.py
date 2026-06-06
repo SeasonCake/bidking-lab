@@ -154,6 +154,18 @@ def test_capacity_table_audit_marks_truth_above_sampler_possible_max() -> None:
         "match": 1,
         "above": 0,
     }
+    split = row["source_split_summary"]
+    assert split["rows"] == 1
+    assert split["map_prefix3_counts"] == {"260": 1}
+    assert split["map_family_counts"] == {"hidden": 1}
+    assert split["capture_day_counts"] == {"none": 1}
+    assert split["total_count_source_counts"] == {"exact": 1}
+    assert split["target_truth_delta_counts"] == {
+        "below": 0,
+        "match": 1,
+        "above": 0,
+    }
+    assert split["inventory_status_counts"] == {}
 
 
 def test_capacity_table_audit_adds_raw_inventory_diagnostics(
@@ -161,7 +173,7 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
     tmp_path: Path,
 ) -> None:
     module = _load_module()
-    sample = tmp_path / "sample.json"
+    sample = tmp_path / "fatbeans_20260606_sample.json"
     sample.write_text("[]", encoding="utf-8")
 
     inventory_items = (
@@ -231,7 +243,7 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
                 "consistency_classes": ("capacity_direct_prior_max_conflict",),
             }
         ],
-        tables=_tables(),
+        tables=_tables(items_per_session_max=1),
         selected_case="direct_prior_max_conflict",
     )
 
@@ -253,12 +265,21 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
     assert row["raw_missing_from_drop_universe_count"]["max"] == 0
     assert row["raw_known_temp_zodiac_count"]["max"] == 0
     assert row["raw_non_zodiac_missing_from_drop_universe_count"]["max"] == 0
-    assert row["raw_drop_ref_excess_item_count"]["max"] == 0
-    assert row["raw_drop_ref_excess_after_temp_zodiac_count"]["max"] == 0
+    assert row["raw_drop_ref_excess_item_count"]["max"] == 1
+    assert row["raw_drop_ref_excess_after_temp_zodiac_count"]["max"] == 1
     assert row["raw_round_cap_excess_item_count"]["max"] is None
     assert row["raw_round_cap_excess_after_temp_zodiac_count"]["max"] is None
     assert row["raw_latest_inventory_message_ids"] == {"0x002D": 1}
     assert row["raw_latest_inventory_quality_counts"] == {"4": 2}
+    split = row["source_split_summary"]
+    assert split["capture_day_counts"] == {"20260606": 1}
+    assert split["inventory_status_counts"] == {"ok": 1}
+    assert split["latest_message_id_counts"] == {"0x002D": 1}
+    assert split["drop_ref_excess_after_temp_positive_files"] == 1
+    assert split["round_cap_excess_after_temp_positive_files"] == 0
+    assert split["non_zodiac_missing_positive_files"] == 0
+    assert split["full_observed_action_counts"] == {"100100": 1}
+    assert split["public_total_count_values"] == {"2": 1}
 
 
 def test_capacity_table_audit_filters_selected_case() -> None:
@@ -385,3 +406,9 @@ def test_capacity_table_audit_quantifies_zodiac_adjusted_count_gap(
     assert row["raw_drop_ref_excess_after_temp_zodiac_count"]["max"] == 1
     assert row["raw_round_cap_excess_item_count"]["max"] == 1
     assert row["raw_round_cap_excess_after_temp_zodiac_count"]["max"] == 0
+    split = row["source_split_summary"]
+    assert split["drop_ref_excess_after_temp_zodiac_count"]["max"] == 1
+    assert split["drop_ref_excess_after_temp_positive_files"] == 1
+    assert split["round_cap_excess_after_temp_zodiac_count"]["max"] == 0
+    assert split["round_cap_excess_after_temp_positive_files"] == 0
+    assert split["non_zodiac_missing_from_drop_universe_count"]["max"] == 0

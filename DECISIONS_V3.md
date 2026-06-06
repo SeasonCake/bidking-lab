@@ -2054,3 +2054,18 @@ applied_hurts=2502
 - 当前仓库没有能从游戏源码或 raw 表权威推导 final settlement inventory 的服务端机制。
 - 现有 table sampler、`sample_session_truth`、`basic_mc` 都不是服务端最终结算复刻；`0x002D` 只能证明 final inventory 真实存在，不能解释其生成机制。
 - synthetic probe 的价值在于缩小假设空间和生成诊断 fixture，风险在于误把拟合当作机制证明，因此必须隔离。
+
+## D-v3-093：capacity source split summary 是 table/source 审计，不是 blocker 降级条件
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_capacity_table_audit.py` 输出 `source_split_summary`，聚合 map prefix/family、target source、capture day、0x002D message、drop/round residual、drop-universe residual、full observed action 与 public total count。
+- 该 summary 只解释 hard/lower capacity conflict 的 source split，不改变 `prior_stress_capacity_table_drift` gate、posterior sampler、formal/value sampler 或正式出价。
+- `source_split_summary.non_zodiac_missing_positive_files=0` 只能说明当前超 cap rows 的 final items 仍在 drop universe 内，不能证明服务端结算机制已复刻。
+- hard/lower bucket 仍必须保持 blocked，直到 table/session/source split 有真实 archive/live/holdout 证据闭环。
+
+原因：
+
+- 64-trial hard/lower bucket 仍分别为 `table_impossible_rows=29/39`，且 raw latest inventory verified。
+- 扣除临时生肖后仍有 drop-ref residual 与 round-cap residual；这排除“非 drop-universe item 或临时生肖完全解释冲突”，但不解释额外 occupied slots 的生成机制。
+- 该字段让后续审计可以按 map family、target source 与 raw residual 分线推进，避免继续围绕 BidMap col[16]/DropEntry `n_max` 重复排查。

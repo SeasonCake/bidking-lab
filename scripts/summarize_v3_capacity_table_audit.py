@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -50,6 +51,7 @@ DEFAULT_CASE = "direct_prior_max_conflict"
 DEFAULT_BUCKET = "all"
 DEFAULT_SAMPLE_ROOT = ROOT / "data" / "samples" / "fatbeans"
 _TEMPORARY_BLUE_ZODIAC_ITEM_IDS = frozenset(range(1306003, 1306015))
+_DATE_TOKEN_RE = re.compile(r"(20\d{6})")
 
 
 def _numeric_values(values: Iterable[Any]) -> tuple[float, ...]:
@@ -140,8 +142,32 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
+def _map_prefix3(map_id: Any) -> int | None:
+    parsed = _safe_int(map_id)
+    return int(parsed) // 10 if parsed is not None else None
+
+
+def _map_family(map_id: Any) -> str:
+    parsed = _safe_int(map_id)
+    if parsed is None:
+        return "unknown"
+    family = int(parsed) // 100
+    if family in (24, 34, 44):
+        return "villa"
+    if family in (25, 35, 45):
+        return "shipwreck"
+    if family in (26, 36, 46):
+        return "hidden"
+    return "other"
+
+
 def _strip_row_file_ref(file_ref: Any) -> str:
     return str(file_ref or "").split("#", 1)[0]
+
+
+def _capture_day(file_ref: Any) -> str | None:
+    match = _DATE_TOKEN_RE.search(Path(_strip_row_file_ref(file_ref)).name)
+    return match.group(1) if match is not None else None
 
 
 def _resolve_capture_path(file_ref: Any, sample_root: Path) -> Path | None:
@@ -405,6 +431,100 @@ def _merge_counter_dicts(values: Iterable[Mapping[str, int]]) -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda item: item[0]))
 
 
+def _positive_file_count(
+    diagnostics: Iterable[Mapping[str, Any]],
+    field: str,
+) -> int:
+    return sum(
+        1
+        for diag in diagnostics
+        if (_float_or_none(diag.get(field)) or 0.0) > 0.0
+    )
+
+
+def _source_split_summary(
+    rows: Iterable[Mapping[str, Any]],
+    diagnostics: Iterable[Mapping[str, Any]],
+    *,
+    top: int,
+) -> dict[str, Any]:
+    seq = tuple(rows)
+    diag_seq = tuple(diagnostics)
+    capacity = tuple(row.get("item_count_capacity", {}) for row in seq)
+    return {
+        "rows": len(seq),
+        "map_prefix3_counts": _counter_dict(
+            (_map_prefix3(row.get("map_id")) for row in seq),
+            top=top,
+        ),
+        "map_family_counts": _counter_dict(
+            (_map_family(row.get("map_id")) for row in seq),
+            top=top,
+        ),
+        "capture_day_counts": _counter_dict(
+            (_capture_day(row.get("file")) for row in seq),
+            top=top,
+        ),
+        "total_count_source_counts": _counter_dict(
+            (row.get("total_count_source") for row in capacity),
+            top=top,
+        ),
+        "target_truth_delta_counts": _delta_counts(
+            row.get("target_truth_delta") for row in capacity
+        ),
+        "truth_prior_max_delta": _numeric_summary(
+            row.get("truth_prior_max_delta") for row in capacity
+        ),
+        "inventory_status_counts": _counter_dict(
+            (diag.get("status") for diag in diag_seq),
+            top=top,
+        ),
+        "latest_message_id_counts": _counter_dict(
+            (
+                f"0x{int(message_id):04X}" if message_id is not None else None
+                for message_id in (
+                    diag.get("latest_message_id") for diag in diag_seq
+                )
+            ),
+            top=top,
+        ),
+        "drop_ref_excess_after_temp_zodiac_count": _numeric_summary(
+            diag.get("drop_ref_excess_after_temp_zodiac_count")
+            for diag in diag_seq
+        ),
+        "drop_ref_excess_after_temp_positive_files": _positive_file_count(
+            diag_seq,
+            "drop_ref_excess_after_temp_zodiac_count",
+        ),
+        "round_cap_excess_after_temp_zodiac_count": _numeric_summary(
+            diag.get("round_cap_excess_after_temp_zodiac_count")
+            for diag in diag_seq
+        ),
+        "round_cap_excess_after_temp_positive_files": _positive_file_count(
+            diag_seq,
+            "round_cap_excess_after_temp_zodiac_count",
+        ),
+        "non_zodiac_missing_from_drop_universe_count": _numeric_summary(
+            diag.get("non_zodiac_missing_from_drop_universe_count")
+            for diag in diag_seq
+        ),
+        "non_zodiac_missing_positive_files": _positive_file_count(
+            diag_seq,
+            "non_zodiac_missing_from_drop_universe_count",
+        ),
+        "full_observed_action_counts": _counter_dict(
+            action_id
+            for diag in diag_seq
+            for action_id in diag.get("full_observed_action_ids", ())
+        ),
+        "public_total_count_values": _counter_dict(
+            value
+            for diag in diag_seq
+            for value in diag.get("public_total_count_values", ())
+        ),
+    }
+
+
 def _inventory_diagnostics_for_rows(
     rows: Iterable[Mapping[str, Any]],
     *,
@@ -590,6 +710,11 @@ def _inventory_diagnostics_for_rows(
         ],
         "raw_inventory_error_examples": (
             [*missing_refs[:top], *parse_errors[:top]][:top]
+        ),
+        "source_split_summary": _source_split_summary(
+            seq,
+            diagnostics,
+            top=top,
         ),
     }
 
@@ -908,6 +1033,40 @@ def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
                     f"raw_full_actions={_format_counts(row['raw_full_observed_actions'])}",
                     f"raw_public_count={_format_counts(row['raw_public_total_count_values'])}",
                     f"raw_missing_items={_format_counts(row['raw_missing_from_drop_universe_examples'])}",
+                    "source_split_prefix3="
+                    + _format_counts(
+                        row["source_split_summary"]["map_prefix3_counts"]
+                    ),
+                    "source_split_family="
+                    + _format_counts(
+                        row["source_split_summary"]["map_family_counts"]
+                    ),
+                    "source_split_days="
+                    + _format_counts(
+                        row["source_split_summary"]["capture_day_counts"]
+                    ),
+                    "source_split_target_source="
+                    + _format_counts(
+                        row["source_split_summary"]["total_count_source_counts"]
+                    ),
+                    "source_split_drop_after_temp="
+                    + _format_summary(
+                        row["source_split_summary"][
+                            "drop_ref_excess_after_temp_zodiac_count"
+                        ]
+                    ),
+                    "source_split_round_after_temp="
+                    + _format_summary(
+                        row["source_split_summary"][
+                            "round_cap_excess_after_temp_zodiac_count"
+                        ]
+                    ),
+                    "source_split_non_zodiac_missing="
+                    + _format_summary(
+                        row["source_split_summary"][
+                            "non_zodiac_missing_from_drop_universe_count"
+                        ]
+                    ),
                     f"cases={_format_counts(row['capacity_cases'])}",
                     f"buckets={_format_counts(row['consistency_bucket_counts'])}",
                     f"classes={_format_counts(row['consistency_class_counts'])}",

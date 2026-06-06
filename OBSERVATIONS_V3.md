@@ -3787,3 +3787,57 @@ q6_value:
 - `evidence_floor_only` 的主体是 22 行 floor below truth，不是 target missing。
 - 4 行 target missing 的模式完全一致：`q6_cells+total_value+q6_value` missing，并且同时有 total cells exact matches truth；这是 `2502` 形态。
 - 后续应把 q6/value allocation target 缺失与 item/shape floor below truth 分线审计；这仍不改变 readiness、sampler 或正式出价。
+
+## O-v3-097：capacity source split 显示 hard/lower 超 cap items 仍在 drop universe 内
+
+2026-06-06 给 capacity table audit 增加 `source_split_summary` 后，复跑真实 64-trial hard/lower buckets：
+
+```text
+hard_capacity_conflict:
+  groups=10
+  rows=29
+  table_impossible_rows=29
+  round_impossible_rows=16
+  drop_after_temp_positive_files=14
+  round_after_temp_positive_files=6
+  non_zodiac_missing_positive_files=0
+
+lower_bound_under_truth:
+  groups=11
+  rows=39
+  table_impossible_rows=39
+  round_impossible_rows=22
+  drop_after_temp_positive_files=18
+  round_after_temp_positive_files=6
+  non_zodiac_missing_positive_files=0
+```
+
+top split examples：
+
+```text
+hard map=2601 rows=8 table_impossible=8 round_impossible=3
+  family=hidden prefix3=260 target_source=exact:6,floor:2
+  drop_after_temp n=4 avg=9.75 p90=20 max=20
+  round_after_temp n=4 avg=1 p90=4 max=4
+  non_zodiac_missing max=0
+  full_actions=100100:3,100134:1
+
+hard map=2501 rows=6 table_impossible=6 round_impossible=5
+  family=shipwreck prefix3=250 target_source=exact:6
+  drop_after_temp n=2 avg=7 p90=13 max=13
+  round_after_temp n=2 avg=3.5 p90=7 max=7
+  non_zodiac_missing max=0
+  public_total_count=60:1
+
+lower map=2508 rows=6 table_impossible=6 round_impossible=6
+  family=shipwreck prefix3=250 target_source=floor:6
+  drop_after_temp n=3 avg=10.667 p90=14 max=14
+  round_after_temp n=3 avg=4.667 p90=8 max=8
+  non_zodiac_missing max=0
+```
+
+解读：
+
+- hard/lower capacity conflict 不是 BidMap `col[16]` 读错，也不是 DropEntry `n_max>1`，也不是非 drop-universe item 或临时生肖完全解释。
+- `non_zodiac_missing_positive_files=0` 表示 observed final items 属于 current drop universe；剩余 blocker 更像 session capacity / activity overlay / settlement expansion 机制，而不是 item universe 错配。
+- `target_source` 在 hard bucket 中 exact/floor 均存在，在 lower bucket 中以 floor/none 为主；下一步继续按 map family 与 target source 拆 session/source split。
