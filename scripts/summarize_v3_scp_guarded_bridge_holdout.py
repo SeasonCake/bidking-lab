@@ -185,6 +185,17 @@ def _disable_candidate(
     }
 
 
+def _support_counts(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    seq = tuple(rows)
+    return {
+        "metric_rows": len(seq),
+        "sessions": len({_session_id(row) for row in seq}),
+        "candidate_rows": sum(1 for row in seq if row.get("candidate_eligible")),
+        "applied_rows": sum(1 for row in seq if row.get("candidate_applied")),
+        "sample_limited_rows": sum(1 for row in seq if row.get("sample_limited")),
+    }
+
+
 def summarize_guarded_holdout(
     rows: Iterable[Mapping[str, Any]],
     *,
@@ -205,6 +216,7 @@ def summarize_guarded_holdout(
     fold_count = max(2, int(folds))
     all_evals: list[dict[str, Any]] = []
     fold_results: list[dict[str, Any]] = []
+    selected_group_fold_support: list[dict[str, Any]] = []
     guard_status_counts: Counter[str] = Counter()
     selected_group_fold_counts: Counter[str] = Counter()
 
@@ -281,6 +293,17 @@ def summarize_guarded_holdout(
             fold_evals.append(evaluated)
 
         all_evals.extend(fold_evals)
+        for group in sorted(selected_groups):
+            group_fold_evals = [
+                row for row in fold_evals if str(row.get("group")) == group
+            ]
+            selected_group_fold_support.append(
+                {
+                    "fold": fold,
+                    "group": group,
+                    **_support_counts(group_fold_evals),
+                }
+            )
         fold_candidate = _metrics(
             row for row in fold_evals if row.get("candidate_applied")
         )
@@ -299,6 +322,19 @@ def summarize_guarded_holdout(
     for row in all_evals:
         if row.get("candidate_applied"):
             group_evals[str(row.get("group") or "unknown")].append(row)
+    selected_support_evals: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in all_evals:
+        group = str(row.get("group") or "unknown")
+        if group in selected_group_fold_counts:
+            selected_support_evals[group].append(row)
+    selected_group_support = [
+        {
+            "group": group,
+            "selected_folds": selected_group_fold_counts[group],
+            **_support_counts(group_rows),
+        }
+        for group, group_rows in sorted(selected_support_evals.items())
+    ]
     group_results: list[dict[str, Any]] = []
     for group, group_rows in sorted(group_evals.items()):
         metrics = _metrics(group_rows)
@@ -355,6 +391,8 @@ def summarize_guarded_holdout(
         "selected_group_fold_counts": dict(
             sorted(selected_group_fold_counts.items())
         ),
+        "selected_group_fold_support": selected_group_fold_support,
+        "selected_group_support": selected_group_support,
         "fold_results": fold_results,
         "group_results": group_results,
         "applied_hurts": applied_hurts,

@@ -3454,3 +3454,47 @@ v2_archive_readiness=pending
 - table/activity/capacity lane 仍由 prior robustness 与 prior-stress drift 阻塞，252x missing-table 仍不能进入 default prior。
 - formal/value shadow sampler lane 三个 gate 全 blocked，因此 formal/value active sampler 参数调优仍应暂停。
 - v2 archive 继续 pending，必须等 v3 formal path promoted and verified 后再讨论。
+
+## O-v3-091：guarded stability 现在可直接输出 2506 support gap
+
+2026-06-06 给 guarded bridge holdout/stability 增加 selected support 审计后复跑：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --no-cache
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 256 --posterior-seed 0 --posterior-seed 1 --posterior-seed 7
+```
+
+64-trial seed 0 no-cache：
+
+```text
+overall_status=watch
+selected_signature=2506:3
+applied_rows=20
+support_gap=2506:min_applied=20/required=20/gap=0
+
+fold_support:
+fold0 sessions=1 metric_rows=3 candidate_rows=3 applied_rows=3
+fold3 sessions=4 metric_rows=11 candidate_rows=11 applied_rows=11
+fold4 sessions=3 metric_rows=9 candidate_rows=6 applied_rows=6
+```
+
+256-trial seeds 0/1/7 cached matrix：
+
+```text
+overall_status=blocked_low_support
+reasons=low_applied_rows
+runs=3
+watch_runs=3
+stable_groups=2506
+union_groups=2506
+signatures=2506:2=3
+min_applied=9
+min_required=20
+support_gap=2506:min_applied=9/required=20/gap=11
+```
+
+解读：
+
+- low-support blocker 现在可由 stability 脚本直接复核。
+- 64 单 seed support 达标不代表 high-trial 多 seed达标；promotion 仍以 high-trial matrix 为准。
+- cached 256 matrix 能输出 group-level gap；若需要具体 selected fold support，需要刷新 no-cache high-trial run。

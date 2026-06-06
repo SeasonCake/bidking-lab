@@ -4865,3 +4865,59 @@ v2_archive_after_promotion pending=1
 - readiness dependency lanes 只作为调度/审计视图，不减少 `blocked_gates`，也不改变 promotion readiness。
 - 下一步并行推进应按 lane 拆分：table/activity/capacity 审计、2506 settlement bridge support、formal/value shadow sampler 设计、sampler safety/profile depth 验证。
 - formal/value active sampler 继续暂停；v3 promotion 和 v2 archive 仍未满足。
+
+## 2026-06-06 checkpoint：scripted 2506 guarded support gap audit
+
+本轮把 2506 selected-fold support gap 从手工记录固化为 guarded bridge 脚本输出，不改 v2 formal/live/UI、不改正式出价、不改变 readiness gate。
+
+改动：
+
+- `scripts/summarize_v3_scp_guarded_bridge_holdout.py` 新增：
+  - `selected_group_fold_support`；
+  - `selected_group_support`。
+- `scripts/summarize_v3_scp_guarded_bridge_stability.py` 新增：
+  - per-run selected support passthrough；
+  - `selected_group_support_gap`；
+  - summary 行 `support_gap=group:min_applied=.../required=.../gap=...`。
+- `tests/test_summarize_v3_scp_guarded_bridge_holdout.py` 覆盖 selected fold support 明细。
+- `tests/test_summarize_v3_scp_guarded_bridge_stability.py` 覆盖 low-support gap。
+- `DECISIONS_V3.md` 新增 D-v3-086；`OBSERVATIONS_V3.md` 新增 O-v3-091。
+
+关键验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_guarded_bridge_holdout.py tests\test_summarize_v3_scp_guarded_bridge_stability.py
+C:\Users\shenc\anaconda3\python.exe -m py_compile scripts\summarize_v3_scp_guarded_bridge_holdout.py scripts\summarize_v3_scp_guarded_bridge_stability.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --no-cache
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 256 --posterior-seed 0 --posterior-seed 1 --posterior-seed 7
+```
+
+结果：
+
+```text
+guarded bridge tests:
+5 passed
+
+64-trial seed0 no-cache:
+overall_status=watch
+support_gap=2506:min_applied=20/required=20/gap=0
+fold0 sessions=1 metric_rows=3 candidate_rows=3 applied_rows=3
+fold3 sessions=4 metric_rows=11 candidate_rows=11 applied_rows=11
+fold4 sessions=3 metric_rows=9 candidate_rows=6 applied_rows=6
+
+256-trial seeds 0/1/7 cached:
+overall_status=blocked_low_support
+runs=3
+watch_runs=3
+stable_groups=2506
+union_groups=2506
+min_applied=9
+min_required=20
+support_gap=2506:min_applied=9/required=20/gap=11
+```
+
+结论：
+
+- 2506 support blocker 现在可由脚本复核，下一步采集真实 complete 2506 sessions 后直接用同一 stability matrix 验证 gap 是否关闭。
+- 64 单 seed support 达标不改变 promotion 边界；high-trial 多 seed仍是 `blocked_low_support`。
+- formal/value active sampler 继续暂停；v3 仍保持 shadow-only。

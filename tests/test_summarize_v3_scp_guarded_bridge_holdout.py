@@ -111,6 +111,37 @@ def test_guarded_bridge_selects_only_inner_crossfit_watch_group() -> None:
     assert result["candidate_only"]["applied_rows"] == 4
     assert result["candidate_only"]["delta_formal_p50_mae"] == -30
     assert result["candidate_only"]["bridge_formal_p50_over_rate"] == 0
+    assert result["selected_group_fold_support"] == [
+        {
+            "fold": 0,
+            "group": "good",
+            "metric_rows": 2,
+            "sessions": 2,
+            "candidate_rows": 2,
+            "applied_rows": 2,
+            "sample_limited_rows": 0,
+        },
+        {
+            "fold": 1,
+            "group": "good",
+            "metric_rows": 2,
+            "sessions": 2,
+            "candidate_rows": 2,
+            "applied_rows": 2,
+            "sample_limited_rows": 0,
+        },
+    ]
+    assert result["selected_group_support"] == [
+        {
+            "group": "good",
+            "selected_folds": 2,
+            "metric_rows": 4,
+            "sessions": 4,
+            "candidate_rows": 4,
+            "applied_rows": 4,
+            "sample_limited_rows": 0,
+        }
+    ]
     assert [row["group"] for row in result["group_results"]] == ["good"]
     assert result["applied_hurts"] == []
 

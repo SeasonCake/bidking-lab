@@ -1943,3 +1943,19 @@ applied_hurts=2502
 - 当前 readiness 已有 20 个 gate，`blocked_gates=12`，但 next action 混合了 table/activity、bridge support、formal sampler、CCV/tail/profile 等不同 blocker。
 - 多 agent 并行时需要稳定的 gate->lane 映射，避免把 2506 support depth 当作 formal/value sampler 已可调参，或把 252x likelihood 当作 default prior 证据。
 - 新字段只从既有 gate 派生，单测覆盖 blocked/pending lane、activity candidate focus 与 capacity drift focus。
+
+## D-v3-086：2506 selected-fold support gap 必须由 guarded stability 输出复核
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_scp_guarded_bridge_holdout.py` 输出 `selected_group_fold_support` 与 `selected_group_support`，用于复核每个 selected outer fold 的 holdout sessions、metric rows、bridge candidate rows 与 applied rows。
+- `summarize_v3_scp_guarded_bridge_stability.py` 输出 `selected_group_support_gap`，按 required applied rows 汇总多 seed/run 的最小 support 缺口。
+- 这些字段只用于 support-depth 审计，不改变 guarded bridge 的 `overall_status`、selected group 判定、readiness gate 或 formal/live 行为。
+- 64-trial seed 0 可显示 `2506` applied rows 达到 20，但 promotion 仍必须看 high-trial 多 seed matrix；当前 `256 trials x seeds 0/1/7` 仍是 `support_gap=11`。
+- cached matrix 允许用旧 run summary fallback 计算 group-level gap；若要看 selected fold 的具体 sessions/metric/candidate 分布，必须重新跑 no-cache 或刷新对应 cache。
+
+原因：
+
+- 2506 blocker 的本质是 selected outer folds 的 support depth，而不是 default archive 完全缺 2506。
+- 之前 fold 分布是手工记录，容易在多窗口/多 agent 推进时丢失；现在脚本能直接输出 `support_gap=2506:min_applied=9/required=20/gap=11`。
+- 该改动把“采集 10-15 个真实 complete 2506 sessions 后复跑 stability matrix”的下一步变成可验证闭环。

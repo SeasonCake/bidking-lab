@@ -28,11 +28,24 @@ def _run(
     applied_rows: int = 25,
     applied_hurts: list[str] | None = None,
 ) -> dict[str, object]:
+    selected_counts = selected or {"2506": 2}
     return {
         "posterior_trials": trials,
         "posterior_seed": seed,
         "overall_status": status,
-        "selected_group_fold_counts": selected or {"2506": 2},
+        "selected_group_fold_counts": selected_counts,
+        "selected_group_support": [
+            {
+                "group": group,
+                "selected_folds": selected_folds,
+                "sessions": max(1, applied_rows // max(1, selected_folds)),
+                "metric_rows": applied_rows,
+                "candidate_rows": applied_rows,
+                "applied_rows": applied_rows,
+                "sample_limited_rows": 0,
+            }
+            for group, selected_folds in selected_counts.items()
+        ],
         "candidate_only": {
             "candidate_rows": applied_rows,
             "applied_rows": applied_rows,
@@ -108,3 +121,45 @@ def test_guarded_bridge_stability_blocks_low_support() -> None:
     assert result["status_reasons"] == ["low_applied_rows"]
     assert result["min_applied_rows"] == 9
     assert result["max_applied_rows"] == 9
+    assert result["selected_group_support_gap"] == [
+        {
+            "group": "2506",
+            "run_count": 3,
+            "required_applied_rows": 20,
+            "min_applied_rows": 9,
+            "max_applied_rows": 9,
+            "min_applied_gap": 11,
+            "min_candidate_rows": 9,
+            "min_metric_rows": 9,
+            "min_sessions": 4,
+            "runs": [
+                {
+                    "posterior_trials": 256,
+                    "posterior_seed": 0,
+                    "selected_folds": 2,
+                    "sessions": 4,
+                    "metric_rows": 9,
+                    "candidate_rows": 9,
+                    "applied_rows": 9,
+                },
+                {
+                    "posterior_trials": 256,
+                    "posterior_seed": 1,
+                    "selected_folds": 2,
+                    "sessions": 4,
+                    "metric_rows": 9,
+                    "candidate_rows": 9,
+                    "applied_rows": 9,
+                },
+                {
+                    "posterior_trials": 256,
+                    "posterior_seed": 7,
+                    "selected_folds": 2,
+                    "sessions": 4,
+                    "metric_rows": 9,
+                    "candidate_rows": 9,
+                    "applied_rows": 9,
+                },
+            ],
+        }
+    ]
