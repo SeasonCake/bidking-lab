@@ -2289,3 +2289,18 @@ applied_hurts=2502
 - 真实 smoke 显示 `BidMap.txt` 为 125 行、全部 23 列，`col16=[[]]` 125/125，`col17_drop_ref_like=125/125`。
 - 2401/2404/2406/2501/2506/2508/2601 的 reachable Drop leaf 全部 `leaf_n_ranges=1-1`，因此 DropEntry 多件数不是当前 capacity 冲突解释。
 - 剩余 blocker 更可能在 settlement expansion/session-capacity/server-side overlay/table-version-per-session 语义层，而不是本地字段索引或 leaf count range。
+
+## D-v3-108：settlement residual-mode 只能证明 final inventory，不证明 expansion 机制
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_candidates.py` 必须支持 `--group-by residual_mode`，把 settlement count 相对 current table caps 拆为 `within_drop_ref_after_temp`、`activity_extras_only_drop_ref_gap`、`drop_ref_only_overflow_after_temp`、`round_cap_overflow_after_temp`。
+- residual-mode summary 必须同时输出 payload slot headroom、payload candidate/occupied mismatch、full observed action rows、public total rows 与 public-total delta。
+- 0x002D payload candidate/occupied 与 public total 匹配 final inventory 时，只能证明 final settlement inventory 解析稳定；不能说明 items 来自 BidMap/Drop base sampler、server-side expansion、activity overlay 或 per-session table version。
+- 因此 residual-mode smoke 不能作为 v3 promotion evidence，也不能恢复 formal/value sampler 参数调优；它只把下一步集中到 settlement expansion/session-capacity/source semantics。
+
+原因：
+
+- 真实 archive 中 after-temp residual modes 为 `within_drop_ref_after_temp=245`、`activity_extras_only_drop_ref_gap=24`、`drop_ref_only_overflow_after_temp=113`、`round_cap_overflow_after_temp=59`。
+- over-cap rows 的 payload raw candidate / occupied slot delta 均为 0；出现 public total 时 delta 也为 0。
+- 这些信号确认 “truth 是 final inventory”，但没有给出可用于 sampler/readiness promotion 的生成机制。

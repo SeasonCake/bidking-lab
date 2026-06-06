@@ -4607,3 +4607,68 @@ Drop reachability：
 - 当前 raw v300 字段口径确认：drop-ref 在 `BidMap.col[17]`，`col[16]` 是空占位。
 - priority maps 的 Drop leaf count range 全部 `n_max=1`，不能解释 settlement item-count 高于 `drop_ref.items_max`。
 - archive capture 没有 version/hash-like 字段，因此 table timing 仍不能证明每条 session 的服务端表版本；剩余 blocker 指向 settlement expansion/session-capacity/server-side overlay 语义。
+
+## O-v3-112：settlement residual-mode smoke 证明 final inventory 稳定但不解释 expansion 来源
+
+2026-06-06 增强 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py -q
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 8 --format summary
+```
+
+测试结果：
+
+```text
+3 passed in 0.58s
+```
+
+真实 residual-mode 输出：
+
+```text
+files=441
+settlement_rows=441
+slot_counts=300:251,250:186,232:1,252:1,253:1,254:1
+slot_headroom_after_temp=n=441/avg=238.58/p50=247.0/p90=268.0/p95=271.0/max=277.0
+residual_modes=
+  within_drop_ref_after_temp:245
+  drop_ref_only_overflow_after_temp:113
+  round_cap_overflow_after_temp:59
+  activity_extras_only_drop_ref_gap:24
+above_drop_after_temp=172
+above_round_after_temp=59
+payload_mismatch_rows=2
+full_action_rows=18
+public_total_rows=26
+public_total_match_rows=26
+public_total_delta=n=26/avg=0.0/p50=0.0/p90=0.0/p95=0.0/max=0.0
+```
+
+Over-cap residual groups：
+
+```text
+drop_ref_only_overflow_after_temp:
+  files=113
+  drop_excess_after_temp avg=4.363 p90=8 max=12
+  round_excess_after_temp max=0
+  payload_mismatch=0/113
+  full_action_rows=7/113
+  public_total_rows=11/113
+  public_total_match_rows=11/113
+
+round_cap_overflow_after_temp:
+  files=59
+  drop_excess_after_temp avg=11.407 p90=16 max=20
+  round_excess_after_temp avg=4.356 p90=9 max=12
+  payload_mismatch=0/59
+  full_action_rows=3/59
+  public_total_rows=4/59
+  public_total_match_rows=4/59
+```
+
+解读：
+
+- after-temp over-cap rows 的 payload candidate/occupied 与 final inventory 对齐，且 public total 出现时也完全对齐。
+- 这证明 parser/truth 是 final settlement inventory，不支持 “payload 重复/解析膨胀”。
+- 但 full action/public total 覆盖率很低，且 payload slot headroom 是大容量 grid/slot 背景，不是生成机制；仍需查 server-side expansion/session-capacity/source semantics。

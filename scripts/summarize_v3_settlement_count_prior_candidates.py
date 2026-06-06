@@ -214,6 +214,23 @@ def _audit_file(path: Path, *, tables: Any) -> dict[str, Any]:
     inventory_metrics = _inventory_block_metrics(inventory_block)
     occupied_slot_count = inventory_metrics["occupied_slot_count"]
     raw_candidate_count = inventory_metrics["raw_item_candidate_count"]
+    action_observed_counts = [
+        (
+            _safe_int(getattr(action, "action_id", None)),
+            len(tuple(getattr(action, "observed_items", ()) or ())),
+        )
+        for action in tuple(getattr(state, "action_results", ()) or ())
+    ]
+    full_observed_action_ids = [
+        action_id
+        for action_id, observed_count in action_observed_counts
+        if action_id is not None and inventory_count > 0 and observed_count == inventory_count
+    ]
+    public_total_count_values = [
+        getattr(info, "value", None)
+        for info in tuple(getattr(state, "public_infos", ()) or ())
+        if getattr(info, "info_id", None) == 200017
+    ]
 
     return {
         "file": path.name,
@@ -232,6 +249,12 @@ def _audit_file(path: Path, *, tables: Any) -> dict[str, Any]:
             for item in items
         ),
         "settlement_loss_units": loss_units,
+        "action_result_count": len(action_observed_counts),
+        "action_observed_item_count_max": (
+            max((count for _action_id, count in action_observed_counts), default=0)
+        ),
+        "full_observed_action_ids": full_observed_action_ids,
+        "public_total_count_values": public_total_count_values,
         "raw_candidate_inventory_delta": (
             raw_candidate_count - inventory_count
             if raw_candidate_count is not None
@@ -295,6 +318,18 @@ def _positive_rows(rows: Iterable[Mapping[str, Any]], field: str) -> int:
     return count
 
 
+def _residual_mode(row: Mapping[str, Any]) -> str:
+    round_after = _safe_int(row.get("round_cap_excess_after_temp_zodiac_count"))
+    drop_after = _safe_int(row.get("drop_ref_excess_after_temp_zodiac_count"))
+    if round_after is not None and round_after > 0:
+        return "round_cap_overflow_after_temp"
+    if drop_after is not None and drop_after > 0:
+        return "drop_ref_only_overflow_after_temp"
+    if _safe_int(row.get("drop_ref_excess_item_count")):
+        return "activity_extras_only_drop_ref_gap"
+    return "within_drop_ref_after_temp"
+
+
 def _candidate_status(rows: tuple[Mapping[str, Any], ...], *, min_samples: int) -> str:
     if any(row.get("table_status") in ("missing_map_id", "missing_bidmap") for row in rows):
         return "missing_table_shadow_only"
@@ -321,6 +356,31 @@ def _examples(rows: Iterable[Mapping[str, Any]], *, top: int) -> list[str]:
     ]
 
 
+def _public_total_deltas(rows: Iterable[Mapping[str, Any]]) -> tuple[int, ...]:
+    out: list[int] = []
+    for row in rows:
+        inventory_count = _safe_int(row.get("inventory_count"))
+        if inventory_count is None:
+            continue
+        for value in tuple(row.get("public_total_count_values", ()) or ()):
+            parsed = _safe_int(value)
+            if parsed is not None:
+                out.append(parsed - inventory_count)
+    return tuple(out)
+
+
+def _public_total_match_rows(rows: Iterable[Mapping[str, Any]]) -> int:
+    count = 0
+    for row in rows:
+        inventory_count = _safe_int(row.get("inventory_count"))
+        values = tuple(row.get("public_total_count_values", ()) or ())
+        if inventory_count is not None and any(
+            _safe_int(value) == inventory_count for value in values
+        ):
+            count += 1
+    return count
+
+
 def summarize_settlement_count_prior_candidates(
     paths: Iterable[Path] = (),
     *,
@@ -329,7 +389,7 @@ def summarize_settlement_count_prior_candidates(
     min_samples: int = 10,
     top: int = 12,
 ) -> dict[str, Any]:
-    if group_by not in {"map_id", "map_prefix3", "map_family"}:
+    if group_by not in {"map_id", "map_prefix3", "map_family", "residual_mode"}:
         raise ValueError(f"unsupported group_by: {group_by}")
     tables = tables or load_monitor_tables()
     rows: list[dict[str, Any]] = []
@@ -341,6 +401,8 @@ def summarize_settlement_count_prior_candidates(
             errors.append(f"{path}:{type(exc).__name__}:{exc}")
 
     ready = [row for row in rows if row.get("status") == "ok"]
+    for row in ready:
+        row["residual_mode"] = _residual_mode(row)
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in ready:
         groups[_group_key(row, group_by)].append(row)
@@ -356,6 +418,7 @@ def summarize_settlement_count_prior_candidates(
                 "candidate_status": _candidate_status(seq, min_samples=min_samples),
                 "map_ids": _counter_dict((row.get("map_id") for row in seq), top=top),
                 "map_families": _counter_dict((row.get("map_family") for row in seq), top=top),
+                "residual_modes": _counter_dict((row.get("residual_mode") for row in seq), top=top),
                 "table_statuses": _counter_dict((row.get("table_status") for row in seq), top=top),
                 "bidmap_items_per_session_max": _numeric_summary(
                     row.get("bidmap_items_per_session_max") for row in seq
@@ -374,6 +437,18 @@ def summarize_settlement_count_prior_candidates(
                 "inventory_slot_count": _counter_dict(
                     (row.get("inventory_slot_count") for row in seq),
                     top=top,
+                ),
+                "inventory_slot_headroom_after_temp_zodiac": _numeric_summary(
+                    (
+                        (
+                            _safe_int(row.get("inventory_slot_count"))
+                            - _safe_int(row.get("non_temp_inventory_count"))
+                        )
+                        if _safe_int(row.get("inventory_slot_count")) is not None
+                        and _safe_int(row.get("non_temp_inventory_count")) is not None
+                        else None
+                    )
+                    for row in seq
                 ),
                 "raw_candidate_inventory_delta": _numeric_summary(
                     row.get("raw_candidate_inventory_delta") for row in seq
@@ -411,6 +486,16 @@ def summarize_settlement_count_prior_candidates(
                         or row.get("occupied_slot_inventory_delta") not in (0, None)
                     )
                 ),
+                "full_observed_action_rows": sum(
+                    1 for row in seq if row.get("full_observed_action_ids")
+                ),
+                "public_total_rows": sum(
+                    1 for row in seq if row.get("public_total_count_values")
+                ),
+                "public_total_match_rows": _public_total_match_rows(seq),
+                "public_total_inventory_delta": _numeric_summary(
+                    _public_total_deltas(seq)
+                ),
                 "examples": _examples(seq, top=3),
             }
         )
@@ -446,6 +531,22 @@ def summarize_settlement_count_prior_candidates(
                 (row.get("inventory_slot_count") for row in ready),
                 top=top,
             ),
+            "inventory_slot_headroom_after_temp_zodiac": _numeric_summary(
+                (
+                    (
+                        _safe_int(row.get("inventory_slot_count"))
+                        - _safe_int(row.get("non_temp_inventory_count"))
+                    )
+                    if _safe_int(row.get("inventory_slot_count")) is not None
+                    and _safe_int(row.get("non_temp_inventory_count")) is not None
+                    else None
+                )
+                for row in ready
+            ),
+            "residual_modes": _counter_dict(
+                (row.get("residual_mode") for row in ready),
+                top=top,
+            ),
             "above_drop_ref_rows": _positive_rows(ready, "drop_ref_excess_item_count"),
             "above_drop_ref_after_temp_zodiac_rows": _positive_rows(
                 ready,
@@ -471,6 +572,16 @@ def summarize_settlement_count_prior_candidates(
             ),
             "candidate_statuses": dict(
                 sorted(status_counts.items(), key=lambda item: (-item[1], item[0]))
+            ),
+            "full_observed_action_rows": sum(
+                1 for row in ready if row.get("full_observed_action_ids")
+            ),
+            "public_total_rows": sum(
+                1 for row in ready if row.get("public_total_count_values")
+            ),
+            "public_total_match_rows": _public_total_match_rows(ready),
+            "public_total_inventory_delta": _numeric_summary(
+                _public_total_deltas(ready)
             ),
         },
         "rows": group_rows,
@@ -506,6 +617,8 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"non_temp_count={_format_summary(overall['non_temp_inventory_count'])}",
                 f"temp_zodiac={_format_summary(overall['known_temp_zodiac_count'])}",
                 f"slot_counts={_format_counts(overall['inventory_slot_count'])}",
+                f"slot_headroom_after_temp={_format_summary(overall['inventory_slot_headroom_after_temp_zodiac'])}",
+                f"residual_modes={_format_counts(overall['residual_modes'])}",
                 f"above_drop={overall['above_drop_ref_rows']}",
                 f"above_drop_after_temp={overall['above_drop_ref_after_temp_zodiac_rows']}",
                 f"above_round={overall['above_round_cap_rows']}",
@@ -513,6 +626,10 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"missing_table_rows={overall['missing_table_rows']}",
                 f"payload_mismatch_rows={overall['payload_inventory_mismatch_rows']}",
                 f"candidate_statuses={_format_counts(overall['candidate_statuses'])}",
+                f"full_action_rows={overall['full_observed_action_rows']}",
+                f"public_total_rows={overall['public_total_rows']}",
+                f"public_total_match_rows={overall['public_total_match_rows']}",
+                f"public_total_delta={_format_summary(overall['public_total_inventory_delta'])}",
             )
         )
     )
@@ -525,6 +642,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"files={row['files']}",
                     f"maps={_format_counts(row['map_ids'])}",
                     f"families={_format_counts(row['map_families'])}",
+                    f"residual_modes={_format_counts(row['residual_modes'])}",
                     f"table={_format_counts(row['table_statuses'])}",
                     f"bidmap_max={_format_summary(row['bidmap_items_per_session_max'])}",
                     f"round_cap={_format_summary(row['bidmap_raw_round_cap_max'])}",
@@ -533,6 +651,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"temp_zodiac={_format_summary(row['known_temp_zodiac_count'])}",
                     f"cells={_format_summary(row['inventory_cells'])}",
                     f"slots={_format_counts(row['inventory_slot_count'])}",
+                    f"slot_headroom_after_temp={_format_summary(row['inventory_slot_headroom_after_temp_zodiac'])}",
                     f"drop_excess_after_temp={_format_summary(row['drop_ref_excess_after_temp_zodiac_count'])}",
                     f"round_excess_after_temp={_format_summary(row['round_cap_excess_after_temp_zodiac_count'])}",
                     f"above_drop_after_temp={row['above_drop_ref_after_temp_zodiac_rows']}/{row['files']}",
@@ -540,6 +659,10 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"raw_candidate_delta={_format_summary(row['raw_candidate_inventory_delta'])}",
                     f"occupied_delta={_format_summary(row['occupied_slot_inventory_delta'])}",
                     f"payload_mismatch={row['payload_inventory_mismatch_rows']}/{row['files']}",
+                    f"full_action_rows={row['full_observed_action_rows']}/{row['files']}",
+                    f"public_total_rows={row['public_total_rows']}/{row['files']}",
+                    f"public_total_match_rows={row['public_total_match_rows']}/{row['files']}",
+                    f"public_total_delta={_format_summary(row['public_total_inventory_delta'])}",
                     f"examples={','.join(row['examples'])}",
                 )
             )
@@ -558,7 +681,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--group-by",
-        choices=("map_id", "map_prefix3", "map_family"),
+        choices=("map_id", "map_prefix3", "map_family", "residual_mode"),
         default="map_id",
     )
     parser.add_argument("--min-samples", type=int, default=10)

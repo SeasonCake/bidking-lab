@@ -5992,3 +5992,59 @@ all priority reachable Drop leaf_n_ranges=1-1 only, leaf_n_max_max=1
 - 当前 blocker 不能再归因于误读 `BidMap.col[16]` 或 Drop leaf `n_max` 多件数。
 - 本地 raw v300 与 capture window 兼容，但 capture 缺 version/hash-like 字段；不能证明每条 session 的服务端表版本。
 - 下一步继续查 settlement expansion/session-capacity/server-side overlay，formal/value sampler 参数调优继续暂停。
+
+## 2026-06-06 checkpoint：settlement residual-mode payload/evidence 下钻
+
+本轮增强 settlement count prior candidate 审计，把 final inventory 相对 current table cap 的 residual 拆成可复核模式，并把 payload slot headroom、full observed action、public total evidence 合并到同一输出。该改动仍是 v3 audit-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - 新增 `--group-by residual_mode`。
+  - residual mode 拆为 `within_drop_ref_after_temp`、`activity_extras_only_drop_ref_gap`、`drop_ref_only_overflow_after_temp`、`round_cap_overflow_after_temp`。
+  - 输出 `slot_headroom_after_temp`、`full_action_rows`、`public_total_rows`、`public_total_match_rows` 与 `public_total_delta`。
+- `tests/test_summarize_v3_settlement_count_prior_candidates.py` 增加 residual-mode 覆盖。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py -q
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by residual_mode --min-samples 1 --top 8 --format summary
+```
+
+真实 residual-mode 要点：
+
+```text
+residual_modes:
+  within_drop_ref_after_temp=245
+  activity_extras_only_drop_ref_gap=24
+  drop_ref_only_overflow_after_temp=113
+  round_cap_overflow_after_temp=59
+payload_mismatch_rows=2/441
+full_action_rows=18/441
+public_total_rows=26/441
+public_total_match_rows=26/26
+public_total_delta=0 throughout when present
+```
+
+Over-cap rows：
+
+```text
+drop_ref_only_overflow_after_temp:
+  files=113
+  payload_mismatch=0/113
+  public_total_match=11/11 when present
+
+round_cap_overflow_after_temp:
+  files=59
+  payload_mismatch=0/59
+  public_total_match=4/4 when present
+```
+
+结论：
+
+- over-cap rows 不是 payload 解析膨胀；0x002D raw candidates/occupied slots 与 final inventory 对齐。
+- public total 出现时也与 final inventory 对齐，但覆盖率不足，不能作为 promotion evidence。
+- 当前剩余解释仍在 settlement expansion/session-capacity/server-side overlay/source semantics；formal/value sampler 参数调优继续暂停。

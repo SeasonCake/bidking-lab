@@ -94,10 +94,21 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert result["overall"]["above_drop_ref_after_temp_zodiac_rows"] == 1
     assert result["overall"]["above_round_cap_rows"] == 1
     assert result["overall"]["above_round_cap_after_temp_zodiac_rows"] == 1
+    assert result["overall"]["residual_modes"] == {
+        "activity_extras_only_drop_ref_gap": 1,
+        "round_cap_overflow_after_temp": 1,
+    }
+    assert result["overall"]["inventory_slot_headroom_after_temp_zodiac"]["n"] == 0
+    assert result["overall"]["full_observed_action_rows"] == 0
+    assert result["overall"]["public_total_rows"] == 0
     row = result["rows"][0]
     assert row["group"] == "2601"
     assert row["candidate_status"] == "observed_exceeds_table_caps_shadow_only"
     assert row["files"] == 2
+    assert row["residual_modes"] == {
+        "activity_extras_only_drop_ref_gap": 1,
+        "round_cap_overflow_after_temp": 1,
+    }
     assert row["bidmap_items_per_session_max"]["max"] == 2
     assert row["bidmap_raw_round_cap_max"]["max"] == 4
     assert row["inventory_count"]["max"] == 6
@@ -105,6 +116,30 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert row["known_temp_zodiac_count"]["max"] == 1
     assert row["drop_ref_excess_after_temp_zodiac_count"]["max"] == 3
     assert row["round_cap_excess_after_temp_zodiac_count"]["max"] == 1
+
+    residual_result = module.summarize_settlement_count_prior_candidates(
+        [tmp_path],
+        tables=_tables(),
+        group_by="residual_mode",
+        min_samples=1,
+    )
+    residual_rows = {row["group"]: row for row in residual_result["rows"]}
+    assert set(residual_rows) == {
+        "activity_extras_only_drop_ref_gap",
+        "round_cap_overflow_after_temp",
+    }
+    assert (
+        residual_rows["round_cap_overflow_after_temp"][
+            "above_round_cap_after_temp_zodiac_rows"
+        ]
+        == 1
+    )
+    assert (
+        residual_rows["activity_extras_only_drop_ref_gap"][
+            "above_drop_ref_after_temp_zodiac_rows"
+        ]
+        == 0
+    )
 
 
 def test_settlement_count_prior_candidates_marks_missing_table_shadow_only(

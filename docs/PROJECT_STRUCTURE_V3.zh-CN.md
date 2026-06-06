@@ -36,7 +36,7 @@
 | `scripts/summarize_v3_capacity_source_expansion_audit.py` | v3 capacity semantic matrix 的 file-level source/expansion 下钻审计，按 public total、full observed action、latest inventory、drop/round excess 与 example capture 拆解 hard/lower capacity blocker |
 | `scripts/summarize_v3_archive_table_timing.py` | v3 raw table version/filelist/BidMap/Drop metadata、BidMap col[16]/col[17] 语义、priority maps reachable Drop `n_min/n_max` 与 Fatbeans archive/activity capture timing 诊断，用于区分 table-version 强证据与本地 mtime 弱线索 |
 | `scripts/summarize_v3_settlement_payload_audit.py` | v3 0x002D settlement raw payload 审计，核对 inventory block slot count、raw item candidates、dedup 后 inventory count、payload fields 与 full observed action 镜像 |
-| `scripts/summarize_v3_settlement_count_prior_candidates.py` | v3 settlement occupancy count prior shadow-only 候选审计，按 map/prefix/family 统计 final inventory count、临时生肖扣除 residual 与 current BidMap/round-cap 覆盖 |
+| `scripts/summarize_v3_settlement_count_prior_candidates.py` | v3 settlement occupancy count prior shadow-only 候选审计，按 map/prefix/family/residual-mode 统计 final inventory count、临时生肖扣除 residual、payload slot headroom、public-total/full-action evidence 与 current BidMap/round-cap 覆盖 |
 | `scripts/summarize_v3_settlement_count_prior_holdout.py` | v3 settlement occupancy count prior session-level holdout 审计，比较 current table cap、round-cap 与 train p95/max coverage |
 | `scripts/summarize_v3_activity_mapping_likelihood.py` | v3 252x activity missing-table 候选映射审计，比较 `252x->251x` 与 `252x->250x` 的 settlement quality likelihood，只作为 table/activity 语义证据 |
 | `scripts/summarize_v3_scp_formal_value_link.py` | v3 settlement count-prior evidence 与 formal/value stress 的 archive 关联审计，量化 `v3_scp` candidate 与 value-floor/capacity watch 的交集 |
