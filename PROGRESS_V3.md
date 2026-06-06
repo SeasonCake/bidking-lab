@@ -5326,3 +5326,46 @@ lower_bound_under_truth:
 - hard/lower conflict 中 `drop_ref_only_overflow` 多于 `round_cap_overflow`，且 `drop_universe_gap=0`。
 - 下一步优先解释 `BidMap col[17] max` / session-cap 与 final settlement count 的语义差异；round-cap overflow 子集再查 settlement expansion 或 activity overlay。
 - promotion/readiness 继续不推进，formal/value sampler 继续 shadow-only。
+
+## 2026-06-06 checkpoint：target-missing event audit
+
+本轮新增独立 target-missing event audit，用于回放 prior-stressed detail 中 target-missing rows 的 Fatbeans prebid prefix，并解释 2502 q6/value target 缺口。该改动保持 audit-only，不改变 v2 formal/live/UI、不改变正式出价、不接入 sampler 或 readiness gate。
+
+改动：
+
+- 新增 `scripts/summarize_v3_target_missing_event_audit.py`：
+  - 复用 `evaluate_paths` 和 `summarize_prior_stress_details` 筛选 target-missing rows；
+  - 对选中行重新解析 capture，按 `< bid_sort_id` 回放 prebid prefix；
+  - 输出 event target counts、numeric target values、anchor source ids、payload completeness、constraint anchors 与 summary exact/floor；
+  - 支持 `--map-id`、`--consistency-bucket`、`--sample-root`、`--format summary/json`。
+- 新增 `tests/test_summarize_v3_target_missing_event_audit.py`：
+  - 覆盖 disjoint shape + quality evidence 不会自动生成 q6/value target；
+  - 覆盖从 prior-stress source row 到 prebid prefix replay 的端到端诊断。
+- `DECISIONS_V3.md` 新增 D-v3-096；`OBSERVATIONS_V3.md` 新增 O-v3-100。
+
+关键验证：
+
+```powershell
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_target_missing_event_audit.py tests\test_summarize_v3_prior_robustness_audit.py
+python -m py_compile scripts\summarize_v3_target_missing_event_audit.py scripts\summarize_v3_prior_robustness_audit.py
+python scripts\summarize_v3_target_missing_event_audit.py --posterior-trials 64 --format summary
+python scripts\summarize_v3_capacity_table_audit.py --case all --bucket hard_capacity_conflict --posterior-trials 64 --format summary
+```
+
+真实 64-trial target-missing event audit：
+
+```text
+selected_rows=4
+audited_rows=4
+errors=0
+maps=2502:4
+missing_patterns=q6_cells+total_value+q6_value:4
+key_target_presence=session.total_count:0/4,session.total_cells:4/4,bucket.q6.count:0/4,bucket.q6.cells:0/4,bucket.q6.value:0/4
+```
+
+结论：
+
+- 2502 target-missing rows 均有 `session.total_cells=156` exact，但没有任何 `bucket.q6.*` target。
+- 当前 evidence 主要来自 Aisha q1-q5/category/shape reveal；shape/item anchors 有 cells/shape，但没有 q6/value payload，`known_value_floor=0`。
+- capacity 复核确认 current BidMap 是 v300/23 列，`col[16]=[[]]`、drop ref 在 `col[17]`；Drop leaf `n_max=1`，settlement inventory 与 0x002D payload 基本匹配，remaining blocker 是 `col[17] max` / final settlement count 语义差异。
+- 下一步先不要调 formal/value sampler 参数；应先为 q6/value allocation target 设计 shadow-only 诊断，或明确这些 rows 继续 out-of-scope，然后再恢复 promotion readiness 验证。

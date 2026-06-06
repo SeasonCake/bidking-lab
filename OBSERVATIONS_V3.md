@@ -3930,3 +3930,69 @@ lower map=2401:
 - hard/lower conflict 中可验证 raw files 多数是 `drop_ref_only_overflow`，不是全部都超过 round cap。
 - `drop_universe_gap=0` 保持，说明这些 rows 不由非 drop-universe items 主导。
 - 下一步应优先解释 `col[17] max` 与 final settlement count 的语义差异；round-cap overflow 子集再单独查 settlement expansion / activity overlay。
+
+## O-v3-100：2502 target-missing event audit 显示 q6/value targets 未进入 prebid constraints
+
+2026-06-06 新增 target-missing event audit 后，复跑真实 64-trial archive：
+
+```powershell
+python scripts\summarize_v3_target_missing_event_audit.py --posterior-trials 64 --format summary
+```
+
+结果：
+
+```text
+selected_rows=4
+audited_rows=4
+errors=0
+maps=2502:4
+missing_patterns=q6_cells+total_value+q6_value:4
+key_target_presence:
+  session.total_count=0/4
+  session.total_cells=4/4
+  bucket.q6.count=0/4
+  bucket.q6.cells=0/4
+  bucket.q6.value=0/4
+anchor_source_ids:
+  action_result:100153=10
+  skill_reveal:1001034=10
+  action_result:100158=6
+  skill_reveal:1001033=6
+  action_result:100154=3
+  skill_reveal:1001032=3
+  skill_reveal:1001031=1
+```
+
+逐行解读：
+
+```text
+prebid_r1:
+  total_cells_exact=156
+  known_count_floor=6
+  known_cells_floor=14
+  known_value_floor=0
+  q6_count/cells/value exact=None
+  q6_count/cells/value floor=0
+
+prebid_r2:
+  known_count_floor=8
+  known_cells_floor=18
+  q6_count/cells/value floor=0
+
+prebid_r3:
+  known_count_floor=25
+  known_cells_floor=83
+  q6_count/cells/value floor=0
+
+prebid_r4:
+  known_count_floor=36
+  known_cells_floor=115
+  q6_count/cells/value floor=0
+```
+
+解读：
+
+- 2502 target-missing rows 均有 `session.total_cells=156` exact，但没有 `bucket.q6.*` target。
+- item anchors 与 shape anchors 都有形状/格子信息，但 `item_anchors.with_value=0`，`shape_anchors.q6_count=0`，`quality_floor_anchors=0`。
+- 事件来源集中在 Aisha q1-q5/category/shape reveal；没有 q6 或 value exact/floor payload 能支撑 `q6_cells`、`total_value`、`q6_value` target。
+- 下一步如果恢复 sampler 设计，必须先设计 shadow-only q6/value allocation target 或明确保持这些 rows out-of-scope；不能把它们作为 formal/value sampler candidate。

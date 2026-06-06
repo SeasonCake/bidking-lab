@@ -2099,3 +2099,18 @@ applied_hurts=2502
 - 64-trial hard/lower bucket 均没有 `drop_universe_gap`，说明当前冲突不由非 drop-universe item 主导。
 - hard bucket residual modes 为 `drop_ref_only_overflow=8`、`round_cap_overflow=6`、`within_drop_ref=1`；lower bucket 为 `drop_ref_only_overflow=12`、`round_cap_overflow=6`、`within_drop_ref=2`。
 - drop-ref-only rows 多于 round-cap rows，说明下一步最小证据应先查 session-cap/drop-ref 语义，再查 settlement expansion。
+
+## D-v3-096：target-missing event audit 只用于 q6/value compiler 分流
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_target_missing_event_audit.py` 只重放 target-missing prior-stress rows 的 prebid prefix，输出 event target、numeric exact、anchor payload 与 feasible summary 诊断。
+- 该脚本不得改变 `events_from_fatbeans`、`compile_hard_constraints`、posterior sampler、formal/value sampler、readiness gate、v2 formal/live/UI 或正式出价。
+- 2502 target-missing rows 在修复前继续视为 evidence compiler / allocation target blocker；不得用 formal/value sampler 参数吸收。
+- event audit 的 JSON/summary 输出可作为下一步设计 q6/value allocation target 的输入，但不能作为 promotion evidence。
+
+原因：
+
+- 真实 64-trial archive 显示 4 行 target-missing 全部是 `2502`，且 `session.total_cells` target 存在、`bucket.q6.count/cells/value` target 均不存在。
+- 这些 rows 的 shape/category evidence 很充分，但 anchor payload 没有 q6/value 字段：`item_anchors.with_value=0`、`shape_anchors.q6_count=0`、`known_value_floor=0`。
+- 因此 blocker 不是“没有 evidence”，而是现有 evidence 没有被编译成 q6/value allocation target。
