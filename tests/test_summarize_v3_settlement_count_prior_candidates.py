@@ -74,11 +74,13 @@ def _tables(*, include_map: bool = True) -> SimpleNamespace:
     maps = {}
     if include_map:
         maps[2601] = SimpleNamespace(
+            map_id=2601,
             name="count_prior_map",
             rounds_total=25,
             drop_pool_id=2601,
             items_per_session_min=1,
             items_per_session_max=2,
+            sub_pool_weights=[],
             round_category_hints=[103, 0, 0, 0, 0],
             raw_row=raw_row,
         )
@@ -212,6 +214,8 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         "127412": 1,
         "129501": 1,
     }
+    assert result["overall"]["bidmap_sub_pool_kind_counts"] == {"leaf": 2}
+    assert result["overall"]["bidmap_sub_pool_count"]["max"] == 0
     assert result["overall"]["bidmap_rounds_total_counts"] == {"25": 2}
     assert result["overall"]["bidmap_round_category_hint_key_counts"] == {"103": 2}
     assert result["overall"]["bidmap_round_category_hint_count"]["max"] == 1
@@ -277,6 +281,8 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
     assert row["capture_rounds"] == {"2": 1, "5": 1}
     assert row["capture_days"] == {"20260531": 1, "20260606": 1}
     assert row["session_token_prefix6_counts"] == {"127412": 1, "129501": 1}
+    assert row["bidmap_sub_pool_kind_counts"] == {"leaf": 2}
+    assert row["bidmap_sub_pool_count"]["max"] == 0
     assert row["bidmap_rounds_total_counts"] == {"25": 2}
     assert row["bidmap_round_category_hint_key_counts"] == {"103": 2}
     assert row["bidmap_round_category_hint_count"]["max"] == 1
@@ -400,6 +406,22 @@ def test_settlement_count_prior_candidates_quantifies_table_residuals(
         min_samples=1,
     )
     assert [row["group"] for row in hint_result["rows"]] == ["103"]
+
+    sub_pool_result = module.summarize_settlement_count_prior_candidates(
+        [tmp_path],
+        tables=_tables(),
+        group_by="bidmap_sub_pool_kind",
+        min_samples=1,
+    )
+    assert [row["group"] for row in sub_pool_result["rows"]] == ["leaf"]
+
+    sub_pool_count_result = module.summarize_settlement_count_prior_candidates(
+        [tmp_path],
+        tables=_tables(),
+        group_by="bidmap_sub_pool_count",
+        min_samples=1,
+    )
+    assert [row["group"] for row in sub_pool_count_result["rows"]] == ["0"]
 
     capture_day_result = module.summarize_settlement_count_prior_candidates(
         [tmp_path],

@@ -92,6 +92,13 @@ such as `category_id`, `entry_requirement`, and `round_category_hints`
 can be numerically larger than item count, but they are schema ids/hints,
 not settlement capacity fields, and still do not explain cells.
 
+The sub-pool cohort audit added on 2026-06-06 classifies maps as
+`leaf`, `weighted_parent`, or `self_only` from `sub_pool_weights`. Unique
+round-cap overflow appears in both leaf maps (14 rows) and weighted
+parents (7 rows), while self-only 2601 has none. Therefore the remaining
+unique round overflow is not explained by an anthology parent/sub-map
+routing mistake.
+
 ## Tier structure
 
 The same map theme appears at up to 3 difficulty tiers:

@@ -5201,3 +5201,51 @@ col=20 role=round_category_hints unique_count_cover=441/441 unique_cells_cover=2
 - `drop_ref` 更弱，不能解释 109 条 unique count overflow。
 - 语义 capacity columns 都不能解释 settlement cells；这与 prior-stressed cells/capacity blocker 保持一致。
 - category id、sub-pool weight、entry requirement、round category hint 等列不能被重新解释为 cap；它们数字上较大只是 schema id/weight/hint。
+
+## O-v3-124：unique round overflow 不来自单一 BidMap sub-pool 路由或 capture cohort
+
+2026-06-06 增强 `summarize_v3_settlement_count_prior_candidates.py` 后，复跑：
+
+```powershell
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by bidmap_sub_pool_kind --min-samples 1 --top 6 --format summary
+```
+
+Sub-pool 分层：
+
+```text
+leaf:
+  files=260
+  unique_residual_modes={activity_extras_only_drop_ref_gap:117, within_unique_caps_after_temp:42, instance_drop_ref_only_overflow_after_temp:41, unique_drop_ref_only_overflow_after_temp:24, instance_round_cap_overflow_after_temp:22, unique_round_cap_overflow_after_temp:14}
+  unique_above_round=14 unique_above_drop=59
+
+weighted_parent:
+  files=159
+  unique_residual_modes={activity_extras_only_drop_ref_gap:73, within_unique_caps_after_temp:26, unique_drop_ref_only_overflow_after_temp:21, instance_drop_ref_only_overflow_after_temp:17, instance_round_cap_overflow_after_temp:15, unique_round_cap_overflow_after_temp:7}
+  unique_above_round=7 unique_above_drop=43
+
+self_only:
+  files=22
+  unique_residual_modes={activity_extras_only_drop_ref_gap:11, unique_drop_ref_only_overflow_after_temp:6, instance_drop_ref_only_overflow_after_temp:4, instance_round_cap_overflow_after_temp:1}
+  unique_above_round=0 unique_above_drop=7
+```
+
+补充 cohort 分布：
+
+```text
+map_family:
+  shipwreck unique_round=19 unique_drop=64
+  villa     unique_round=2  unique_drop=38
+  hidden    unique_round=0  unique_drop=7
+
+capture_rounds:
+  4 unique_round=9
+  5 unique_round=8
+  2 unique_round=1
+  1 unique_round=3
+```
+
+解读：
+
+- unique round overflow 同时存在于 leaf 与 weighted parent maps；不是单一“未知母图 sub-pool 路由 cap 使用错误”。
+- self-only 2601 没有 unique round overflow，但仍有 unique drop overflow，说明 2601 不能解释 default shipwreck/villa 的 unique round blocker。
+- unique round overflow 主要集中在 shipwreck family，但横跨多个 capture rounds/round_index；后续应继续查 map-family/session-capacity 或 server-side settlement expansion。

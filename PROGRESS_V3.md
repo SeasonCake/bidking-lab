@@ -6678,3 +6678,61 @@ non-capacity count-sized examples:
 - `round_caps_candidate` 仍是 best-known count proxy，但失败 21 条 unique round overflow；它不能解释 cells。
 - 其他数字列不能被当作 sampler cap 或 promotion evidence。
 - formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。
+
+## 2026-06-06 checkpoint：BidMap sub-pool / cohort residual 下钻
+
+本轮继续排查 unique round overflow 是否来自未知母图、子池路由或单一 capture cohort。改动仍是 v3 audit-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_settlement_count_prior_candidates.py`：
+  - 输出 `bidmap_sub_pool_kind`：`leaf`、`weighted_parent`、`self_only`；
+  - 输出 `bidmap_sub_pool_count` 与 `bidmap_sub_pool_weight_total`；
+  - 支持 `--group-by bidmap_sub_pool_kind` 与 `--group-by bidmap_sub_pool_count`；
+  - CLI summary 输出 sub-pool kind/count。
+- `tests/test_summarize_v3_settlement_count_prior_candidates.py` 覆盖 sub-pool kind/count 聚合与 group-by。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`、`docs/bid_map_schema.md`、`DECISIONS_V3.md` 与 `OBSERVATIONS_V3.md`。
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py -q
+python scripts\summarize_v3_settlement_count_prior_candidates.py --group-by bidmap_sub_pool_kind --min-samples 1 --top 6 --format summary
+python -m py_compile scripts\summarize_v3_settlement_count_prior_candidates.py scripts\summarize_v3_bidmap_raw_capacity_candidates.py scripts\summarize_v3_settlement_payload_audit.py scripts\summarize_v3_capacity_table_audit.py scripts\summarize_v3_capacity_source_expansion_audit.py scripts\summarize_v3_promotion_readiness.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_bidmap_raw_capacity_candidates.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_capacity_source_expansion_audit.py tests\test_summarize_v3_promotion_readiness.py -q
+```
+
+真实 residual smoke 要点：
+
+```text
+leaf:
+  files=260
+  unique_round_cap_overflow_after_temp=14
+  unique_drop_ref_only_overflow_after_temp=24
+  instance_round_cap_overflow_after_temp=22
+
+weighted_parent:
+  files=159
+  unique_round_cap_overflow_after_temp=7
+  unique_drop_ref_only_overflow_after_temp=21
+  instance_round_cap_overflow_after_temp=15
+
+self_only:
+  files=22
+  unique_round_cap_overflow_after_temp=0
+  unique_drop_ref_only_overflow_after_temp=6
+  instance_round_cap_overflow_after_temp=1
+
+map_family:
+  shipwreck unique_round=19
+  villa unique_round=2
+  hidden unique_round=0
+```
+
+解读：
+
+- unique round overflow 同时存在于 leaf 和 weighted_parent maps，不能归因于单一母图/子池路由错误。
+- self-only 2601 没有 unique round overflow，因此不能解释 default 25xx/24xx 的 unique round blocker。
+- 现有证据把下一步继续推向 map-family/session-capacity 或 server-side settlement expansion，而不是恢复 sampler 参数调优。
+- formal/value sampler 参数调优继续暂停，readiness/promotion gate 不放宽。

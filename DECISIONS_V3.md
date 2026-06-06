@@ -2481,3 +2481,19 @@ applied_hurts=2502
 - `drop_ref` 只覆盖 unique non-temp item count 332/441，失败 109 rows；`rounds_total` 只覆盖 71/441。
 - 对 unique settlement cells，`round_caps_candidate` 只覆盖 7/441，`drop_ref` 覆盖 0/441，不能解释 cells/capacity stress。
 - 非 capacity 数字列中 `category_id`、`entry_requirement`、`round_category_hints` 可在数字上覆盖 item count，但它们是 schema ids/hints，不是 count/cells cap。
+
+## D-v3-120：BidMap sub-pool routing 不能作为 capacity blocker 充分解释或 promotion evidence
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_settlement_count_prior_candidates.py` 必须输出 `bidmap_sub_pool_kind`、`bidmap_sub_pool_count` 与 `bidmap_sub_pool_weight_total`，并支持按 sub-pool kind/count 分组。
+- 如果 unique round overflow 同时出现在 leaf maps 与 weighted parent maps，则不能把 blocker 简化为“未知母图/子图路由导致 cap 使用错误”。
+- 如果 self-only 2601 没有 unique round overflow，只能把 2601 作为 drop-ref/instance overflow 线索，不能用它解释 default shipwreck/villa unique round blocker。
+- sub-pool/cohort audit 只能排除 routing 类解释；不能作为 sampler cap 修正、readiness 放行或 promotion evidence。
+
+原因：
+
+- 真实 archive 中 leaf maps 有 260 rows，其中 `unique_round_cap_overflow_after_temp=14`；weighted parents 有 159 rows，其中 unique round overflow=7。
+- self-only 2601 有 22 rows，unique round overflow=0，但仍有 unique drop overflow=7。
+- unique round overflow 更集中于 map family：shipwreck 19、villa 2、hidden 0；这说明后续应查 map-family/session-capacity 或 server-side settlement expansion，而不是只查母图路由。
+- capture/round 分布也不是单一 cohort：capture rounds 1/2/4/5 均有 unique round overflow，round_index 1/3/4/5/none 均出现，不能解释为单一采集轮次错误。

@@ -244,6 +244,9 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
         return {
             "table_status": "missing_map_id",
             "map_name": None,
+            "bidmap_sub_pool_kind": None,
+            "bidmap_sub_pool_count": None,
+            "bidmap_sub_pool_weight_total": None,
             "bidmap_rounds_total": None,
             "drop_pool_id": None,
             "bidmap_items_per_session_min": None,
@@ -261,6 +264,9 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
         return {
             "table_status": "missing_bidmap",
             "map_name": None,
+            "bidmap_sub_pool_kind": None,
+            "bidmap_sub_pool_count": None,
+            "bidmap_sub_pool_weight_total": None,
             "bidmap_rounds_total": None,
             "drop_pool_id": None,
             "bidmap_items_per_session_min": None,
@@ -278,9 +284,15 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
     drop_ref_index = _bidmap_drop_ref_column_index(raw_column_count)
     round_caps = _bidmap_round_caps(bid_map)
     hints = _round_category_hints(bid_map)
+    sub_pool_weights = tuple(getattr(bid_map, "sub_pool_weights", ()) or ())
     return {
         "table_status": "ok",
         "map_name": getattr(bid_map, "name", None),
+        "bidmap_sub_pool_kind": _bidmap_sub_pool_kind(bid_map),
+        "bidmap_sub_pool_count": len(sub_pool_weights),
+        "bidmap_sub_pool_weight_total": sum(
+            int(weight) for _map_id, weight in sub_pool_weights
+        ),
         "bidmap_rounds_total": getattr(bid_map, "rounds_total", None),
         "drop_pool_id": getattr(bid_map, "drop_pool_id", None),
         "bidmap_items_per_session_min": getattr(bid_map, "items_per_session_min", None),
@@ -293,6 +305,20 @@ def _table_caps_for_map(map_id: int | None, tables: Any) -> dict[str, Any]:
         "bidmap_round_category_hint_key": _round_category_hint_key(hints),
         "bidmap_round_category_hint_count": len(set(hints)),
     }
+
+
+def _bidmap_sub_pool_kind(bid_map: Any) -> str:
+    weights = tuple(getattr(bid_map, "sub_pool_weights", ()) or ())
+    if not weights:
+        return "leaf"
+    map_id = _safe_int(getattr(bid_map, "map_id", None))
+    if (
+        len(weights) == 1
+        and map_id is not None
+        and _safe_int(weights[0][0]) == map_id
+    ):
+        return "self_only"
+    return "weighted_parent"
 
 
 def _primary_category_for_item_id(item_id: int | None, tables: Any) -> int | None:
@@ -868,6 +894,8 @@ def summarize_settlement_count_prior_candidates(
         "map_family",
         "residual_mode",
         "unique_residual_mode",
+        "bidmap_sub_pool_kind",
+        "bidmap_sub_pool_count",
         "round_index",
         "capture_rounds",
         "capture_day",
@@ -912,6 +940,16 @@ def summarize_settlement_count_prior_candidates(
                 "candidate_status": _candidate_status(seq, min_samples=min_samples),
                 "map_ids": _counter_dict((row.get("map_id") for row in seq), top=top),
                 "map_families": _counter_dict((row.get("map_family") for row in seq), top=top),
+                "bidmap_sub_pool_kind_counts": _counter_dict(
+                    (row.get("bidmap_sub_pool_kind") for row in seq),
+                    top=top,
+                ),
+                "bidmap_sub_pool_count": _numeric_summary(
+                    row.get("bidmap_sub_pool_count") for row in seq
+                ),
+                "bidmap_sub_pool_weight_total": _numeric_summary(
+                    row.get("bidmap_sub_pool_weight_total") for row in seq
+                ),
                 "round_indices": _counter_dict((row.get("round_index") for row in seq), top=top),
                 "capture_rounds": _counter_dict((row.get("capture_rounds") for row in seq), top=top),
                 "capture_days": _counter_dict((row.get("capture_day") for row in seq), top=top),
@@ -1367,6 +1405,16 @@ def summarize_settlement_count_prior_candidates(
                 top=top,
             ),
             "capture_days": _counter_dict((row.get("capture_day") for row in ready), top=top),
+            "bidmap_sub_pool_kind_counts": _counter_dict(
+                (row.get("bidmap_sub_pool_kind") for row in ready),
+                top=top,
+            ),
+            "bidmap_sub_pool_count": _numeric_summary(
+                row.get("bidmap_sub_pool_count") for row in ready
+            ),
+            "bidmap_sub_pool_weight_total": _numeric_summary(
+                row.get("bidmap_sub_pool_weight_total") for row in ready
+            ),
             "session_token_prefix6_counts": _counter_dict(
                 (row.get("session_token_prefix6") for row in ready),
                 top=top,
@@ -1600,6 +1648,8 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 "non_zodiac_missing="
                 + _format_summary(overall["non_zodiac_missing_from_drop_universe_count"]),
                 f"capture_days={_format_counts(overall['capture_days'])}",
+                f"sub_pool_kinds={_format_counts(overall['bidmap_sub_pool_kind_counts'])}",
+                f"sub_pool_count={_format_summary(overall['bidmap_sub_pool_count'])}",
                 f"session_p6={_format_counts(overall['session_token_prefix6_counts'])}",
                 f"slot_counts={_format_counts(overall['inventory_slot_count'])}",
                 f"outer_shapes={_format_counts(overall['settlement_outer_field_shapes'])}",
@@ -1653,6 +1703,8 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"files={row['files']}",
                     f"maps={_format_counts(row['map_ids'])}",
                     f"families={_format_counts(row['map_families'])}",
+                    f"sub_pool_kinds={_format_counts(row['bidmap_sub_pool_kind_counts'])}",
+                    f"sub_pool_count={_format_summary(row['bidmap_sub_pool_count'])}",
                     f"round_indices={_format_counts(row['round_indices'])}",
                     f"capture_rounds={_format_counts(row['capture_rounds'])}",
                     f"capture_days={_format_counts(row['capture_days'])}",
@@ -1745,6 +1797,8 @@ def main(argv: list[str] | None = None) -> int:
             "map_family",
             "residual_mode",
             "unique_residual_mode",
+            "bidmap_sub_pool_kind",
+            "bidmap_sub_pool_count",
             "round_index",
             "capture_rounds",
             "capture_day",
