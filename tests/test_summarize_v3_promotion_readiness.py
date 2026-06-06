@@ -123,6 +123,11 @@ def _row(
         "v3_fv_formal_decision_value_p90": p90,
         "v3_fv_q6_formal_decision_value_p50": pred // 2,
         "v3_fv_q6_formal_decision_value_p90": p90 // 2,
+        "v3_scp_ready": True,
+        "v3_scp_active": False,
+        "v3_scp_candidate": False,
+        "v3_scp_missing_table": False,
+        "v3_scp_status": "table_caps_cover_observed_shadow_only",
         "v3_post_tail_replacement_decision_value_p50": pred + 100,
         "v3_post_tail_replacement_decision_value_p90": p90 + 100,
         "v3_post_q6_tail_replacement_decision_value_p50": pred // 2 + 100,
@@ -151,6 +156,8 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert gates["shared_shadow_pipeline"]["status"] == "pass"
     assert gates["prior_robustness"]["status"] == "pass"
     assert gates["prior_stress_capacity_table_drift"]["status"] == "pass"
+    assert gates["settlement_count_prior_shadow"]["status"] == "watch"
+    assert gates["settlement_count_prior_shadow"]["active_rows"] == 0
     assert gates["formal_baseline_metrics"]["status"] == "blocked"
     assert "holdout_candidate_rows" in gates["ccv_sampler"]
     assert "applied_ccv_hurts_groups" in gates["ccv_sampler"]

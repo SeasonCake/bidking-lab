@@ -39,12 +39,14 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     empty_prior_flat_dict,
     empty_prior_robustness_flat_dict,
     empty_residual_gate_flat_dict,
+    empty_settlement_count_prior_flat_dict,
     empty_tail_value_review_flat_dict,
     empty_underestimate_repair_flat_dict,
     empty_truth_flat_dict,
     estimate_shadow_pipeline,
     events_from_fatbeans,
     load_prior_calibration_entries,
+    load_settlement_count_prior_entries,
     load_tail_value_review_entries,
     load_underestimate_repair_entries,
     ordinary_shape_replacement_values,
@@ -52,6 +54,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     settlement_truth_from_fatbeans,
     assess_prior_robustness,
     summarize_drop_prior_flat_dict,
+    settlement_count_prior_entry_for,
     tail_value_review_entry_for,
     underestimate_entry_for,
 )
@@ -78,6 +81,10 @@ def _default_underestimate_repair_path() -> Path:
 
 def _default_tail_value_review_path() -> Path:
     return ROOT / "data" / "processed" / "v3_tail_value_review_shadow.json"
+
+
+def _default_settlement_count_prior_path() -> Path:
+    return ROOT / "data" / "processed" / "v3_settlement_count_prior_shadow.json"
 
 
 def _iter_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
@@ -383,6 +390,7 @@ def _round_rows_for_events(
     calibration_entries: Mapping[int, PriorCalibrationEntry] | None = None,
     underestimate_repair_entries: Mapping[tuple[str, int], Any] | None = None,
     tail_value_review_entries: Mapping[tuple[str, int], Any] | None = None,
+    settlement_count_prior_entries: Mapping[tuple[str, str], Any] | None = None,
     posterior_trials: int = 512,
     posterior_seed: int = 0,
     ccv_options: V3CcvOptions | None = None,
@@ -409,6 +417,7 @@ def _round_rows_for_events(
     empty_underestimate_fields = empty_underestimate_repair_flat_dict()
     empty_tail_review_fields = empty_tail_value_review_flat_dict()
     empty_formal_value_fields = empty_formal_value_sampler_flat_dict()
+    empty_settlement_count_prior_fields = empty_settlement_count_prior_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
     for window_round, bid_send in enumerate(bid_sends, start=1):
@@ -486,6 +495,7 @@ def _round_rows_for_events(
                     **empty_underestimate_fields,
                     **empty_tail_review_fields,
                     **empty_formal_value_fields,
+                    **empty_settlement_count_prior_fields,
                 }
             )
             previous_bid_sort_id = bid_sort_id
@@ -545,6 +555,10 @@ def _round_rows_for_events(
             hero=str(diagnostic_fields.get("hero") or "unknown"),
             map_id=map_id,
         )
+        settlement_count_prior_entry = settlement_count_prior_entry_for(
+            settlement_count_prior_entries,
+            map_id=map_id,
+        )
         pipeline = (
             estimate_shadow_pipeline(
                 map_id=int(map_id),
@@ -556,6 +570,7 @@ def _round_rows_for_events(
                 calibration_entry=calibration_entry,
                 underestimate_entry=underestimate_entry,
                 tail_review_entry=tail_review_entry,
+                settlement_count_prior_entry=settlement_count_prior_entry,
                 hero=str(diagnostic_fields.get("hero") or "unknown"),
                 ccv_options=ccv_options,
                 prior_fields=prior_fields,
@@ -620,6 +635,11 @@ def _round_rows_for_events(
             if pipeline is not None
             else empty_formal_value_fields
         )
+        settlement_count_prior_fields = (
+            pipeline.settlement_count_prior.to_flat_dict()
+            if pipeline is not None
+            else empty_settlement_count_prior_fields
+        )
         capacity_fields = _capacity_flat_dict(
             prior_fields=prior_fields,
             truth_fields=truth_fields,
@@ -661,6 +681,7 @@ def _round_rows_for_events(
                 **underestimate_fields,
                 **tail_review_fields,
                 **formal_value_fields,
+                **settlement_count_prior_fields,
             }
         )
         previous_bid_sort_id = bid_sort_id
@@ -674,6 +695,7 @@ def evaluate_paths(
     calibration_entries: Mapping[int, PriorCalibrationEntry] | None = None,
     underestimate_repair_entries: Mapping[tuple[str, int], Any] | None = None,
     tail_value_review_entries: Mapping[tuple[str, int], Any] | None = None,
+    settlement_count_prior_entries: Mapping[tuple[str, str], Any] | None = None,
     posterior_trials: int = 512,
     posterior_seed: int = 0,
     ccv_options: V3CcvOptions | None = None,
@@ -694,6 +716,7 @@ def evaluate_paths(
                 calibration_entries=calibration_entries,
                 underestimate_repair_entries=underestimate_repair_entries,
                 tail_value_review_entries=tail_value_review_entries,
+                settlement_count_prior_entries=settlement_count_prior_entries,
                 posterior_trials=posterior_trials,
                 posterior_seed=posterior_seed,
                 ccv_options=ccv_options,
@@ -920,6 +943,11 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         and row.get("v3_fv_ready")
         and _float_or_none(row.get("v3_fv_formal_decision_value_p50")) is not None
         and _float_or_none(row.get("v3_truth_formal_decision_value")) is not None
+    ]
+    settlement_count_prior_ready = [
+        row
+        for row in rows
+        if row.get("status") == "ready" and row.get("v3_scp_ready")
     ]
 
     def pred_truth(
@@ -1577,6 +1605,24 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             and q6_formal_p50_mae is not None
             else None
         ),
+        "v3_scp_ready_rows": len(settlement_count_prior_ready),
+        "v3_scp_candidate_rows": sum(
+            1 for row in settlement_count_prior_ready if row.get("v3_scp_candidate")
+        ),
+        "v3_scp_missing_table_rows": sum(
+            1 for row in settlement_count_prior_ready if row.get("v3_scp_missing_table")
+        ),
+        "v3_scp_active_rows": sum(
+            1 for row in settlement_count_prior_ready if row.get("v3_scp_active")
+        ),
+        "v3_scp_status_counts": dict(
+            sorted(
+                Counter(
+                    str(row.get("v3_scp_status") or "none")
+                    for row in rows
+                ).items()
+            )
+        ),
     }
 
 
@@ -1762,6 +1808,10 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"v3_fv_formal_p50_below_rate={summary['v3_fv_formal_p50_below_rate']}",
                 f"v3_fv_formal_p50_over_rate={summary['v3_fv_formal_p50_over_rate']}",
                 f"v3_fv_formal_p90_coverage={summary['v3_fv_formal_p90_coverage']}",
+                f"v3_scp_ready_rows={summary['v3_scp_ready_rows']}",
+                f"v3_scp_candidate_rows={summary['v3_scp_candidate_rows']}",
+                f"v3_scp_missing_table_rows={summary['v3_scp_missing_table_rows']}",
+                f"v3_scp_active_rows={summary['v3_scp_active_rows']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",
@@ -2268,6 +2318,35 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_fv_q6_value_prior_expected",
         "v3_fv_q6_value_target_prior_ratio",
         "v3_fv_diagnostics",
+        "v3_scp_available",
+        "v3_scp_ready",
+        "v3_scp_affects_bid",
+        "v3_scp_active",
+        "v3_scp_candidate",
+        "v3_scp_missing_table",
+        "v3_scp_status",
+        "v3_scp_gate_reason",
+        "v3_scp_scope",
+        "v3_scp_group",
+        "v3_scp_source",
+        "v3_scp_archive_sessions",
+        "v3_scp_inventory_count_p95",
+        "v3_scp_inventory_count_max",
+        "v3_scp_non_temp_inventory_count_p95",
+        "v3_scp_non_temp_inventory_count_max",
+        "v3_scp_known_temp_zodiac_count_max",
+        "v3_scp_above_drop_after_temp_zodiac_rows",
+        "v3_scp_above_round_after_temp_zodiac_rows",
+        "v3_scp_payload_inventory_mismatch_rows",
+        "v3_scp_missing_table_rows",
+        "v3_scp_target_count_source",
+        "v3_scp_target_count",
+        "v3_scp_prior_items_per_session_max",
+        "v3_scp_target_to_observed_p95_delta",
+        "v3_scp_prior_max_to_observed_p95_delta",
+        "v3_scp_prior_max_to_observed_max_delta",
+        "v3_scp_flags",
+        "v3_scp_diagnostics",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
@@ -2345,6 +2424,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Disable v3 tail-value review shadow fields.",
     )
+    parser.add_argument(
+        "--settlement-count-prior",
+        type=Path,
+        default=_default_settlement_count_prior_path(),
+        help="Optional v3 settlement count prior shadow table.",
+    )
+    parser.add_argument(
+        "--no-settlement-count-prior",
+        action="store_true",
+        help="Disable v3 settlement count prior shadow fields.",
+    )
     parser.add_argument("--fail-on-conflicts", action="store_true")
     parser.add_argument("--fail-on-parse-errors", action="store_true")
     args = parser.parse_args(argv)
@@ -2365,12 +2455,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.no_tail_value_review or args.skip_table_report
         else load_tail_value_review_entries(args.tail_value_review)
     )
+    settlement_count_prior_entries = (
+        {}
+        if args.no_settlement_count_prior or args.skip_table_report
+        else load_settlement_count_prior_entries(args.settlement_count_prior)
+    )
     rows, errors = evaluate_paths(
         args.paths or _default_paths(),
         tables=tables,
         calibration_entries=calibration_entries,
         underestimate_repair_entries=underestimate_repair_entries,
         tail_value_review_entries=tail_value_review_entries,
+        settlement_count_prior_entries=settlement_count_prior_entries,
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,
         ccv_options=V3CcvOptions(

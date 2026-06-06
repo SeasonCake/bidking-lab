@@ -3877,3 +3877,81 @@ map_prefix3=252 files=15 status=missing_table_shadow_only maps=2521:5,2524:3,252
 - 默认 archive 的 24xx/25xx/2601 多数分片在扣除临时生肖后仍超过 current BidMap drop-ref max；该信号与前面的 capacity residual blocker 一致。
 - 252x activity cohort 全部缺 current BidMap 表项，且无临时生肖；它应先作为 missing-table/activity cohort 单独处理，不得并入默认 count prior。
 - formal/value sampler promotion、v2 archive 继续等待 capacity/table semantics 或 shadow-only count prior 的 archive/activity/live/readiness 验证。
+
+## 2026-06-06 checkpoint：settlement count-prior shadow artifact 接入 archive/live/readiness
+
+完成内容：
+
+- 新增 `src/bidking_lab/inference/v3/settlement_count_prior.py`：
+  - 定义 `SettlementCountPriorEntry` 与 `V3SettlementCountPriorReport`；
+  - 输出 `v3_scp_*` flat fields；
+  - 只按 exact `map_id` 或 `map_prefix3` 匹配，不做 `map_family` fallback；
+  - `active=False`、`affects_bid=False`，不改变 posterior、formal/value sampler 或正式出价。
+- `src/bidking_lab/inference/v3/pipeline.py` 接入 `settlement_count_prior` report，使 archive/live 共用同一 shadow pipeline 字段。
+- `scripts/evaluate_fatbeans_v3_samples.py` 默认读取 `data/processed/v3_settlement_count_prior_shadow.json`，输出 `v3_scp_*` 并汇总 `v3_scp_ready_rows`、`candidate_rows`、`missing_table_rows`、`active_rows`。
+- `src/bidking_lab/live/monitor.py` 默认读取同一 processed artifact，并在 `v3_posterior_shadow` 与 `model_eval` 输出关键 `v3_scp_*` 字段。
+- `scripts/summarize_v3_promotion_readiness.py` 新增 `settlement_count_prior_shadow` gate：
+  - fields 可见且 inactive 时为 `watch`；
+  - 不替代、不降低 `prior_stress_capacity_table_drift` gate。
+- 新增 `scripts/build_v3_settlement_count_prior_shadow.py`，生成 `data/processed/v3_settlement_count_prior_shadow.json`。
+- 新增测试：
+  - `tests/test_inference_v3_settlement_count_prior.py`；
+  - `tests/test_build_v3_settlement_count_prior_shadow.py`。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_summarize_v3_promotion_readiness.py tests\test_live_monitor.py
+C:\Users\shenc\anaconda3\python.exe scripts\build_v3_settlement_count_prior_shadow.py
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py data\samples\fatbeans_activity_20260605_shipwreck --posterior-trials 64
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+```
+
+结果：
+
+```text
+targeted tests:
+44 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+72 passed
+
+artifact:
+entries=27 cohorts=2 affects_bid=False active=False
+default_archive candidate_statuses:
+observed_exceeds_table_caps_shadow_only=19
+insufficient_samples_shadow_only=2
+activity_20260605_shipwreck candidate_statuses:
+missing_table_shadow_only=6
+
+default archive evaluator:
+windows=1577 ready=1560
+v3_scp_ready_rows=1560
+v3_scp_candidate_rows=1488
+v3_scp_missing_table_rows=0
+v3_scp_active_rows=0
+
+activity evaluator:
+windows=58 ready=58
+posterior_ready=0
+robust_activity_candidate=58
+v3_scp_ready_rows=58
+v3_scp_candidate_rows=0
+v3_scp_missing_table_rows=58
+v3_scp_active_rows=0
+
+readiness:
+overall_status=not_ready
+gate=settlement_count_prior_shadow status=watch
+gate=prior_stress_capacity_table_drift status=blocked
+gate=formal_value_sampler_holdout status=blocked
+gate=v2_archive_readiness status=pending
+```
+
+结论：
+
+- settlement occupancy count prior 已经进入 archive/live/readiness 共同观测面，且 `active_rows=0`，不影响正式出价。
+- default archive 中 count-prior shadow candidate 覆盖 1488/1560 ready windows；activity cohort 58/58 以 missing-table evidence 暴露，未混入 default 250x prior。
+- readiness 能看见该 evidence，但 promotion 仍为 `not_ready`；capacity/table drift、formal baseline、formal/value sampler holdout 等 gate 继续阻塞。
+- 下一步可以围绕 `v3_scp_*` 做 holdout/readiness 分片审计，评估它是否能作为后续 shadow-only formal/value sampler 的 count prior 输入；仍不得提升为 sampler cap。

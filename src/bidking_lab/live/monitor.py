@@ -54,16 +54,19 @@ from bidking_lab.inference.v3 import (
     empty_prior_flat_dict,
     empty_prior_robustness_flat_dict,
     empty_residual_gate_flat_dict,
+    empty_settlement_count_prior_flat_dict,
     empty_tail_value_review_flat_dict,
     empty_underestimate_repair_flat_dict,
     estimate_shadow_pipeline,
     events_from_fatbeans,
     load_prior_calibration_entries,
+    load_settlement_count_prior_entries,
     load_tail_value_review_entries,
     load_underestimate_repair_entries,
     ordinary_shape_replacement_values,
     sample_truth_bank,
     summarize_drop_prior_flat_dict,
+    settlement_count_prior_entry_for,
     tail_value_review_entry_for,
     underestimate_entry_for,
 )
@@ -121,6 +124,7 @@ _SAFE_SESSION_TOTAL_FIELDS = (
 _V3_PRIOR_CALIBRATION_CACHE: dict[int, Any] | None = None
 _V3_UNDERESTIMATE_REPAIR_CACHE: dict[tuple[str, int], Any] | None = None
 _V3_TAIL_VALUE_REVIEW_CACHE: dict[tuple[str, int], Any] | None = None
+_V3_SETTLEMENT_COUNT_PRIOR_CACHE: dict[tuple[str, str], Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -2037,6 +2041,41 @@ def _model_eval_row(
     v3_fv_q6_formal_p90 = _parse_int_text(
         v3_shadow.get("v3_fv_q6_formal_decision_value_p90")
     )
+    v3_scp_available = bool(v3_shadow.get("v3_scp_available"))
+    v3_scp_ready = bool(v3_shadow.get("v3_scp_ready"))
+    v3_scp_affects_bid = bool(v3_shadow.get("v3_scp_affects_bid"))
+    v3_scp_active = bool(v3_shadow.get("v3_scp_active"))
+    v3_scp_candidate = bool(v3_shadow.get("v3_scp_candidate"))
+    v3_scp_missing_table = bool(v3_shadow.get("v3_scp_missing_table"))
+    v3_scp_status = v3_shadow.get("v3_scp_status")
+    v3_scp_gate_reason = v3_shadow.get("v3_scp_gate_reason")
+    v3_scp_scope = v3_shadow.get("v3_scp_scope")
+    v3_scp_group = v3_shadow.get("v3_scp_group")
+    v3_scp_inventory_p95 = _parse_float_text(
+        v3_shadow.get("v3_scp_inventory_count_p95")
+    )
+    v3_scp_inventory_max = _parse_float_text(
+        v3_shadow.get("v3_scp_inventory_count_max")
+    )
+    v3_scp_non_temp_p95 = _parse_float_text(
+        v3_shadow.get("v3_scp_non_temp_inventory_count_p95")
+    )
+    v3_scp_non_temp_max = _parse_float_text(
+        v3_shadow.get("v3_scp_non_temp_inventory_count_max")
+    )
+    v3_scp_above_drop_after_temp = _parse_int_text(
+        v3_shadow.get("v3_scp_above_drop_after_temp_zodiac_rows")
+    )
+    v3_scp_above_round_after_temp = _parse_int_text(
+        v3_shadow.get("v3_scp_above_round_after_temp_zodiac_rows")
+    )
+    v3_scp_prior_p95_delta = _parse_float_text(
+        v3_shadow.get("v3_scp_prior_max_to_observed_p95_delta")
+    )
+    v3_scp_prior_max_delta = _parse_float_text(
+        v3_shadow.get("v3_scp_prior_max_to_observed_max_delta")
+    )
+    v3_scp_flags = v3_shadow.get("v3_scp_flags")
     posterior_samples = None
     posterior_total_samples = None
     q6_shadow_active = bool(shadow.get("active"))
@@ -2745,6 +2784,30 @@ def _model_eval_row(
         "v3_fv_q6_value_target_prior_ratio": _parse_float_text(
             v3_shadow.get("v3_fv_q6_value_target_prior_ratio")
         ),
+        "v3_scp_available": v3_scp_available,
+        "v3_scp_ready": v3_scp_ready,
+        "v3_scp_affects_bid": v3_scp_affects_bid,
+        "v3_scp_active": v3_scp_active,
+        "v3_scp_candidate": v3_scp_candidate,
+        "v3_scp_missing_table": v3_scp_missing_table,
+        "v3_scp_status": v3_scp_status,
+        "v3_scp_gate_reason": v3_scp_gate_reason,
+        "v3_scp_scope": v3_scp_scope,
+        "v3_scp_group": v3_scp_group,
+        "v3_scp_inventory_count_p95": v3_scp_inventory_p95,
+        "v3_scp_inventory_count_max": v3_scp_inventory_max,
+        "v3_scp_non_temp_inventory_count_p95": v3_scp_non_temp_p95,
+        "v3_scp_non_temp_inventory_count_max": v3_scp_non_temp_max,
+        "v3_scp_above_drop_after_temp_zodiac_rows": (
+            v3_scp_above_drop_after_temp
+        ),
+        "v3_scp_above_round_after_temp_zodiac_rows": (
+            v3_scp_above_round_after_temp
+        ),
+        "v3_scp_prior_max_to_observed_p95_delta": v3_scp_prior_p95_delta,
+        "v3_scp_prior_max_to_observed_max_delta": v3_scp_prior_max_delta,
+        "v3_scp_flags": v3_scp_flags,
+        "v3_scp_diagnostics": v3_shadow.get("v3_scp_diagnostics"),
         "v3_tail_review_tail_replacement_decision_value_p50_error": (
             v3_tail_review_tail_p50 - final_replacement_decision_value
             if v3_tail_review_tail_p50 is not None
@@ -3381,6 +3444,7 @@ def _empty_v3_posterior_shadow(
         **empty_underestimate_repair_flat_dict(),
         **empty_tail_value_review_flat_dict(),
         **empty_formal_value_sampler_flat_dict(),
+        **empty_settlement_count_prior_flat_dict(),
     }
 
 
@@ -3415,6 +3479,18 @@ def _default_v3_tail_value_review_entries() -> dict[tuple[str, int], Any]:
             / "v3_tail_value_review_shadow.json"
         )
     return _V3_TAIL_VALUE_REVIEW_CACHE
+
+
+def _default_v3_settlement_count_prior_entries() -> dict[tuple[str, str], Any]:
+    global _V3_SETTLEMENT_COUNT_PRIOR_CACHE
+    if _V3_SETTLEMENT_COUNT_PRIOR_CACHE is None:
+        _V3_SETTLEMENT_COUNT_PRIOR_CACHE = load_settlement_count_prior_entries(
+            project_root()
+            / "data"
+            / "processed"
+            / "v3_settlement_count_prior_shadow.json"
+        )
+    return _V3_SETTLEMENT_COUNT_PRIOR_CACHE
 
 
 def _v3_posterior_shadow_summary(
@@ -3486,6 +3562,10 @@ def _v3_posterior_shadow_summary(
             hero=hero,
             map_id=map_id,
         )
+        settlement_count_prior_entry = settlement_count_prior_entry_for(
+            _default_v3_settlement_count_prior_entries(),
+            map_id=map_id,
+        )
         pipeline = estimate_shadow_pipeline(
             map_id=int(map_id),
             map_name=bid_map.name,
@@ -3496,6 +3576,7 @@ def _v3_posterior_shadow_summary(
             calibration_entry=calibration_entry,
             underestimate_entry=underestimate_entry,
             tail_review_entry=tail_review_entry,
+            settlement_count_prior_entry=settlement_count_prior_entry,
             hero=hero,
             prior_fields=prior_fields,
         )

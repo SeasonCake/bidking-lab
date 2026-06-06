@@ -34,6 +34,11 @@ from bidking_lab.inference.v3.residual_gate import (
     V3ResidualGateReport,
     gate_residual_posterior_report,
 )
+from bidking_lab.inference.v3.settlement_count_prior import (
+    SettlementCountPriorEntry,
+    V3SettlementCountPriorReport,
+    assess_settlement_count_prior,
+)
 from bidking_lab.inference.v3.summary import FeasibleSummaryReport
 from bidking_lab.inference.v3.tail_value_review import (
     TailValueReviewEntry,
@@ -68,6 +73,7 @@ class V3ShadowPipelineReport:
     underestimate: V3UnderestimateRepairReport
     tail_review: V3TailValueReviewReport
     formal_value: V3FormalValueSamplerReport
+    settlement_count_prior: V3SettlementCountPriorReport
 
     def to_flat_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -85,6 +91,7 @@ class V3ShadowPipelineReport:
         out.update(self.underestimate.to_flat_dict())
         out.update(self.tail_review.to_flat_dict())
         out.update(self.formal_value.to_flat_dict())
+        out.update(self.settlement_count_prior.to_flat_dict())
         return out
 
 
@@ -99,6 +106,7 @@ def estimate_shadow_pipeline(
     calibration_entry: PriorCalibrationEntry | None = None,
     underestimate_entry: UnderestimateRepairEntry | None = None,
     tail_review_entry: TailValueReviewEntry | None = None,
+    settlement_count_prior_entry: SettlementCountPriorEntry | None = None,
     hero: str | None = None,
     ccv_options: V3CcvOptions | None = None,
     prior_fields: Mapping[str, Any] | None = None,
@@ -173,6 +181,12 @@ def estimate_shadow_pipeline(
         summary=summary,
         prior_fields=prior_fields,
     )
+    settlement_count_prior = assess_settlement_count_prior(
+        entry=settlement_count_prior_entry,
+        map_id=int(map_id),
+        summary=summary,
+        prior_fields=prior_fields,
+    )
     return V3ShadowPipelineReport(
         posterior=posterior,
         ccv_posterior=ccv_posterior,
@@ -183,6 +197,7 @@ def estimate_shadow_pipeline(
         underestimate=underestimate,
         tail_review=tail_review,
         formal_value=formal_value,
+        settlement_count_prior=settlement_count_prior,
     )
 
 

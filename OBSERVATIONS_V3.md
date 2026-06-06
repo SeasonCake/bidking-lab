@@ -2625,3 +2625,51 @@ map_prefix3=252 status=missing_table_shadow_only files=15
 - 这不是 parser duplicate 或 payload mismatch 主导，payload mismatch 仅 2/441，且前一轮 payload audit 已证明 final inventory 与 occupied slots 基本对齐。
 - 252x activity cohort 没有 current BidMap 表项，且 temp zodiac 为 0；它应作为 missing-table/activity cohort 单独建 shadow evidence，不能和默认 250x shipwreck 表项直接合并。
 - 当前结果支持设计 shadow-only settlement occupancy count prior，但仍不支持修改 formal sampler cap、promotion readiness 或 v2 归档。
+
+## O-v3-077：v3_scp settlement count-prior evidence 已进入 archive/live/readiness，且保持 inactive
+
+2026-06-06 新增 `settlement_count_prior.py` 与 `v3_scp_*` 字段族，并生成 `data/processed/v3_settlement_count_prior_shadow.json`：
+
+```text
+artifact:
+entries=27
+cohorts=2
+affects_bid=False
+active=False
+default_archive:
+  observed_exceeds_table_caps_shadow_only=19
+  insufficient_samples_shadow_only=2
+activity_20260605_shipwreck:
+  missing_table_shadow_only=6
+
+default archive evaluator:
+windows=1577
+ready=1560
+v3_scp_ready_rows=1560
+v3_scp_candidate_rows=1488
+v3_scp_missing_table_rows=0
+v3_scp_active_rows=0
+
+activity evaluator:
+windows=58
+ready=58
+posterior_ready=0
+robust_activity_candidate=58
+v3_scp_ready_rows=58
+v3_scp_candidate_rows=0
+v3_scp_missing_table_rows=58
+v3_scp_active_rows=0
+
+readiness:
+overall_status=not_ready
+gate=settlement_count_prior_shadow status=watch
+gate=prior_stress_capacity_table_drift status=blocked
+gate=formal_value_sampler_holdout status=blocked
+```
+
+解读：
+
+- `v3_scp_*` 已经进入 archive evaluator、live monitor `v3_posterior_shadow`/`model_eval` 与 readiness gate，archive/live 字段来源一致。
+- default archive 的 settlement count-prior candidate 大量覆盖 ready windows，但全部 `active=False`/`affects_bid=False`，不会改变正式出价。
+- 252x activity cohort 以 `missing_table_shadow_only` 暴露，58/58 windows 均为 missing-table evidence；没有按 shipwreck family 混入 250x prior。
+- 新 gate 只说明 settlement count-prior evidence 可见且 inactive；它不解除 `prior_stress_capacity_table_drift`，也不让 formal/value sampler promotion 通过。

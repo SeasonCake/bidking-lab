@@ -22,11 +22,13 @@ if str(SCRIPTS) not in sys.path:
 from evaluate_fatbeans_v3_samples import (  # noqa: E402
     _default_calibration_path,
     _default_paths,
+    _default_settlement_count_prior_path,
     _default_tail_value_review_path,
     _default_underestimate_repair_path,
     evaluate_paths,
     load_monitor_tables,
     load_prior_calibration_entries,
+    load_settlement_count_prior_entries,
     load_tail_value_review_entries,
     load_underestimate_repair_entries,
     summarize_rows,
@@ -395,6 +397,25 @@ def summarize_readiness(
                 prior_stress_detail_summary,
                 "hero_map_evidence_profile",
             ),
+        )
+    )
+    scp_ready = int(summary.get("v3_scp_ready_rows") or 0)
+    scp_candidate = int(summary.get("v3_scp_candidate_rows") or 0)
+    scp_missing_table = int(summary.get("v3_scp_missing_table_rows") or 0)
+    scp_active = int(summary.get("v3_scp_active_rows") or 0)
+    scp_status = "watch" if scp_ready > 0 and scp_active == 0 else "blocked"
+    gates.append(
+        _gate(
+            "settlement_count_prior_shadow",
+            scp_status,
+            "settlement count prior evidence is visible and inactive"
+            if scp_status == "watch"
+            else "settlement count prior shadow fields are missing or active",
+            ready_rows=scp_ready,
+            candidate_rows=scp_candidate,
+            missing_table_rows=scp_missing_table,
+            active_rows=scp_active,
+            status_counts=summary.get("v3_scp_status_counts"),
         )
     )
     formal_below = float(summary.get("formal_p50_below_rate") or 0.0)
@@ -1041,6 +1062,12 @@ def main(argv: list[str] | None = None) -> int:
         default=_default_tail_value_review_path(),
     )
     parser.add_argument("--no-tail-value-review", action="store_true")
+    parser.add_argument(
+        "--settlement-count-prior",
+        type=Path,
+        default=_default_settlement_count_prior_path(),
+    )
+    parser.add_argument("--no-settlement-count-prior", action="store_true")
     args = parser.parse_args(argv)
 
     rows, errors = evaluate_paths(
@@ -1056,6 +1083,11 @@ def main(argv: list[str] | None = None) -> int:
             {}
             if args.no_tail_value_review
             else load_tail_value_review_entries(args.tail_value_review)
+        ),
+        settlement_count_prior_entries=(
+            {}
+            if args.no_settlement_count_prior
+            else load_settlement_count_prior_entries(args.settlement_count_prior)
         ),
         posterior_trials=args.posterior_trials,
         posterior_seed=args.posterior_seed,

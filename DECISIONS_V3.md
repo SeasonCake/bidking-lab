@@ -1696,3 +1696,21 @@ applied_hurts=2502
 - prefix 聚合显示 default current-table cohort 仍大面积超 cap：250 为 94/217、240 为 56/169、260 为 11/22。
 - activity cohort 15/15 为 `missing_bidmap`，map_prefix3=252，slot_count 全 300，inventory_count max=67，不能与 current 250x table cap 混用。
 - payload mismatch 仅 2/441，不支持把 observed count prior 问题重新归因于 parser/payload 重复。
+
+## D-v3-072：v3_scp 是可观测 shadow evidence，不是 sampler cap 或 promotion bypass
+
+2026-06-06 起，当前决策：
+
+- `v3_scp_*` 字段族表示 settlement occupancy count-prior shadow evidence，来源为 `data/processed/v3_settlement_count_prior_shadow.json`。
+- `SettlementCountPriorEntry` 只允许 exact `map_id` 与 `map_prefix3` 匹配；禁止按 `map_family` fallback 混用 250x 与 252x activity cohort。
+- `v3_scp_active` 必须保持 `False`，`v3_scp_affects_bid` 必须保持 `False`；任何 active 或 affects-bid 行都应视为 regression。
+- `settlement_count_prior_shadow` readiness gate 只能证明 evidence 可见且 inactive；不得把该 gate 的 `watch` 解释为 capacity blocker 解除。
+- `v3_scp_candidate=True` 表示 observed settlement count 超过 current table caps 的 shadow 候选，不得直接改写 `drop_ref.items_max`、posterior sampler count cap、formal/value sampler 或正式出价。
+- 252x activity rows 必须继续以 `missing_table_shadow_only` 分流；在补齐活动表项或 mapping 前，不进入 default archive count prior 或 formal promotion 分母。
+
+原因：
+
+- default archive evaluator：`v3_scp_candidate_rows=1488/1560`、`v3_scp_active_rows=0`。
+- activity evaluator：`v3_scp_missing_table_rows=58/58`、`v3_scp_active_rows=0`、`posterior_ready=0`。
+- readiness：`settlement_count_prior_shadow=watch`，但 `prior_stress_capacity_table_drift=blocked`、`formal_value_sampler_holdout=blocked`、overall 仍 `not_ready`。
+- 这说明 settlement count-prior evidence 已可供 archive/live/readiness 共同审计，但还不是 promotion 证据或 sampler 参数。

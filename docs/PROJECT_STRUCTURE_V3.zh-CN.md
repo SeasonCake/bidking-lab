@@ -20,13 +20,15 @@
 | `src/bidking_lab/inference/v3/priors.py` | v3 drop-prior summary 与共享 flat fields |
 | `src/bidking_lab/inference/v3/prior_robustness.py` | v3 drop-prior 漂移、活动期、fallback 鲁棒性审计 |
 | `src/bidking_lab/inference/v3/formal_value_sampler.py` | v3 formal/value sampler 第一阶段 shadow report，拆分 capacity/cells/value-floor stress，固定不影响出价 |
+| `src/bidking_lab/inference/v3/settlement_count_prior.py` | v3 settlement occupancy count-prior shadow evidence，输出 `v3_scp_*`，固定 inactive/不影响出价 |
 | `src/bidking_lab/inference/v3/underestimate_repair.py` | v3 低估上修 shadow report |
 | `src/bidking_lab/inference/v3/tail_value_review.py` | v3 tail/value review shadow report 与 hurt guard |
+| `data/processed/v3_settlement_count_prior_shadow.json` | v3 settlement count-prior shadow entry 表，合并 default archive 与 0605 activity cohort |
 | `data/processed/v3_underestimate_repair_shadow.json` | v3 hero/map 低估上修 shadow entry 表 |
 | `data/processed/v3_tail_value_review_shadow.json` | v3 tail/value review shadow entry 表 |
 | `scripts/summarize_v3_evidence_coverage.py` | v3 evidence coverage 检查 |
 | `scripts/summarize_v3_constraints.py` | v3 hard constraint compiler 摘要 |
-| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、`v3_capacity_*` capacity prior-max gap/cases、`v3_fv_*` formal/value sampler shadow 字段、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
+| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、`v3_capacity_*` capacity prior-max gap/cases、`v3_fv_*` formal/value sampler shadow 字段、`v3_scp_*` settlement count-prior shadow evidence、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
 | `scripts/summarize_v3_metric_slices.py` | v3 round/map/hero/profile 分片指标 |
 | `scripts/summarize_v3_map_audit.py` | v3 map 主键审计，附 hero/profile 分布 |
 | `scripts/summarize_v3_prior_robustness_audit.py` | v3 prior/activity/prior-stress 分片审计，支持 `--details`、`--detail-summary` 与 `--detail-summary-by` 输出 cells/capacity/evidence 明细、target-vs-truth delta、posterior-vs-target absorption、capacity prior-max gap/cases 和 map/profile 聚合一致性摘要 |
@@ -34,6 +36,7 @@
 | `scripts/summarize_v3_archive_table_timing.py` | v3 raw table version/filelist/BidMap/Drop metadata 与 Fatbeans archive/activity capture timing 诊断，用于区分 table-version 强证据与本地 mtime 弱线索 |
 | `scripts/summarize_v3_settlement_payload_audit.py` | v3 0x002D settlement raw payload 审计，核对 inventory block slot count、raw item candidates、dedup 后 inventory count、payload fields 与 full observed action 镜像 |
 | `scripts/summarize_v3_settlement_count_prior_candidates.py` | v3 settlement occupancy count prior shadow-only 候选审计，按 map/prefix/family 统计 final inventory count、临时生肖扣除 residual 与 current BidMap/round-cap 覆盖 |
+| `scripts/build_v3_settlement_count_prior_shadow.py` | 从 default archive 与 activity cohort 构建 `data/processed/v3_settlement_count_prior_shadow.json` |
 | `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift` 与 `formal_value_sampler_holdout` gate |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
 | `scripts/summarize_v3_ccv_holdout.py` | v3 CCV/count-cell-value 候选 session holdout 审计 |
@@ -57,6 +60,7 @@
 | `tests/test_inference_v3_pipeline.py` | v3 archive/live 共享推理 pipeline 测试 |
 | `tests/test_inference_v3_prior_robustness.py` | v3 prior/activity 鲁棒性审计测试 |
 | `tests/test_inference_v3_formal_value_sampler.py` | v3 formal/value sampler shadow-only 与 stress 分流测试 |
+| `tests/test_inference_v3_settlement_count_prior.py` | v3 settlement count-prior shadow report/entry/matching 测试 |
 | `tests/test_inference_v3_underestimate_repair.py` | v3 低估上修 shadow report 测试 |
 | `tests/test_inference_v3_tail_value_review.py` | v3 tail/value review shadow report 测试 |
 | `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
@@ -65,6 +69,7 @@
 | `tests/test_summarize_v3_archive_table_timing.py` | v3 archive/table timing metadata 审计测试 |
 | `tests/test_summarize_v3_settlement_payload_audit.py` | v3 settlement payload slot/candidate 审计测试 |
 | `tests/test_summarize_v3_settlement_count_prior_candidates.py` | v3 settlement count-prior candidate 审计测试 |
+| `tests/test_build_v3_settlement_count_prior_shadow.py` | v3 settlement count-prior processed artifact builder 测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
 | `tests/test_summarize_v3_ccv_holdout.py` | v3 CCV session holdout 审计测试 |
