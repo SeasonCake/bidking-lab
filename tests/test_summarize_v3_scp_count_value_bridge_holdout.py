@@ -104,6 +104,54 @@ def test_scp_count_value_bridge_holdout_applies_train_only_floor() -> None:
     assert group["train_formal_per_item_p90"]["p50"] == 10
 
 
+def test_scp_count_value_bridge_holdout_extra_mode_adds_only_count_gap() -> None:
+    module = _load_module()
+    fold0 = _session_for_fold(module, 0, prefix="extra0")
+    fold1 = _session_for_fold(module, 1, prefix="extra1")
+    rows = [
+        _row(session_id=fold0, truth_formal=120, post_formal_p50=60),
+        _row(session_id=fold1, truth_formal=120, post_formal_p50=60),
+    ]
+
+    result = module.summarize_holdout(
+        rows,
+        group_field="v3_scp_group",
+        folds=2,
+        min_train_sessions=1,
+        floor_mode="extra",
+    )
+
+    assert result["overall_status"] == "watch"
+    assert result["candidate_only"]["applied_rows"] == 2
+    assert result["candidate_only"]["bridge_formal_p50_bias"] == 0
+    assert result["candidate_only"]["delta_formal_p50_mae"] == -60
+
+
+def test_scp_count_value_bridge_holdout_caps_formal_lift() -> None:
+    module = _load_module()
+    fold0 = _session_for_fold(module, 0, prefix="cap0")
+    fold1 = _session_for_fold(module, 1, prefix="cap1")
+    rows = [
+        _row(session_id=fold0, truth_formal=200, post_formal_p50=100),
+        _row(session_id=fold1, truth_formal=200, post_formal_p50=100),
+    ]
+
+    result = module.summarize_holdout(
+        rows,
+        group_field="v3_scp_group",
+        folds=2,
+        min_train_sessions=1,
+        formal_lift_cap=30,
+    )
+
+    assert result["formal_lift_cap"] == 30.0
+    assert result["overall_status"] == "watch"
+    assert result["candidate_only"]["applied_rows"] == 2
+    assert result["candidate_only"]["bridge_formal_p50_mae"] == 70
+    assert result["candidate_only"]["delta_formal_p50_mae"] == -30
+    assert result["candidate_only"]["bridge_formal_p50_bias"] == -70
+
+
 def test_scp_count_value_bridge_holdout_marks_low_sample_candidates() -> None:
     module = _load_module()
     rows = [

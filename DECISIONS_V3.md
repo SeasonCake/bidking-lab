@@ -1786,3 +1786,21 @@ applied_hurts=2502
 - strict `ratio_source=bridge` holdout：`candidate_rows=1276`、`applied_rows=1120`、`candidate_delta_mae=+53663.766`、`candidate_delta_p90=+0.225`、`candidate_over=0.708036`、overall `blocked_holdout_hurt`。
 - 2506 是少数 MAE 改善 slice（`delta_mae=-30309.955` in all-source），但 `bridge_over=0.647887` 仍超过当前 over-risk guard。
 - readiness：`settlement_count_cells_value_bridge_holdout=blocked`，`scp_bridge_holdout_delta=+50956.632`，`scp_bridge_holdout_over=0.712702`，overall 仍 `not_ready`。
+
+## D-v3-077：formal lift cap 只能作为 bridge holdout guard probe
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_scp_count_value_bridge_holdout.py --formal-lift-cap` 只限制 audit holdout 中 shadow formal value floor 相对 baseline 的抬升幅度。
+- `--floor-mode extra` 只用于验证“只补 scp count gap 增量”的假设；它不是 sampler policy。
+- 上述参数不得进入 evaluator default、posterior sampler、formal/value sampler active path、live monitor active path 或正式出价。
+- readiness 默认继续使用 uncapped total-floor holdout；`settlement_count_cells_value_bridge_holdout=blocked` 不得因 capped probe 的局部改善降级。
+- capped probe 可作为后续 guard 设计输入，但在 applied hurt groups 未消失前，不能作为 promotion readiness 或 v2 archive evidence。
+- 下一步优先回到 table/capacity 语义审计：解释 `BidMap` capacity、`DropEntry n_min/n_max` 与 settlement inventory item-count 上限冲突，再恢复 shadow-only formal/value sampler 设计。
+
+原因：
+
+- `formal_lift_cap=5000` 把 candidate MAE delta 从 uncapped `+50956.632` 降到 `-288.656`，但 overall 仍 `blocked_holdout_hurt`，applied hurt groups 仍包含 `2507,2407,2409`。
+- `formal_lift_cap=25000` 与 `50000` 虽仍为负 MAE delta，但 over-rate 升至 `0.522592`/`0.541347`，且 hurt groups 增加。
+- `floor_mode=extra` uncapped 明显恶化：`candidate_delta_mae=+344324.441`、`candidate_over=0.873459`。
+- `floor_mode=extra --formal-lift-cap=5000` 与 `ratio_source=bridge --formal-lift-cap=5000` 仍 blocked，说明简单 cap 或训练分母调整不能解决 capacity/table 语义 blocker。

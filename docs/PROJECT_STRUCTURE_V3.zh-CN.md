@@ -39,7 +39,7 @@
 | `scripts/summarize_v3_settlement_count_prior_holdout.py` | v3 settlement occupancy count prior session-level holdout 审计，比较 current table cap、round-cap 与 train p95/max coverage |
 | `scripts/summarize_v3_scp_formal_value_link.py` | v3 settlement count-prior evidence 与 formal/value stress 的 archive 关联审计，量化 `v3_scp` candidate 与 value-floor/capacity watch 的交集 |
 | `scripts/summarize_v3_scp_count_value_bridge.py` | v3 settlement count-prior count->cells/value bridge archive 审计，量化 count gap、cells p90 undercoverage 与 formal p90 undercoverage 的交集 |
-| `scripts/summarize_v3_scp_count_value_bridge_holdout.py` | v3 settlement count-prior count->cells/value bridge session holdout，验证 bridge floor 对 formal MAE/p90/over-rate 的影响 |
+| `scripts/summarize_v3_scp_count_value_bridge_holdout.py` | v3 settlement count-prior count->cells/value bridge session holdout，验证 bridge floor 对 formal MAE/p90/over-rate 的影响，并支持 audit-only `floor_mode`/`formal_lift_cap` guard probe |
 | `scripts/build_v3_settlement_count_prior_shadow.py` | 从 default archive 与 activity cohort 构建 `data/processed/v3_settlement_count_prior_shadow.json` |
 | `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift`、`settlement_count_formal_value_link`、`settlement_count_cells_value_bridge(_holdout)` 与 `formal_value_sampler_holdout` gate |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
@@ -76,7 +76,7 @@
 | `tests/test_summarize_v3_settlement_count_prior_holdout.py` | v3 settlement count-prior session holdout 审计测试 |
 | `tests/test_summarize_v3_scp_formal_value_link.py` | v3 settlement count-prior 到 formal/value stress 关联审计测试 |
 | `tests/test_summarize_v3_scp_count_value_bridge.py` | v3 settlement count-prior count->cells/value bridge 审计测试 |
-| `tests/test_summarize_v3_scp_count_value_bridge_holdout.py` | v3 settlement count-prior count->cells/value bridge holdout 测试 |
+| `tests/test_summarize_v3_scp_count_value_bridge_holdout.py` | v3 settlement count-prior count->cells/value bridge holdout 测试，覆盖 train-only floor、extra floor 与 formal lift cap |
 | `tests/test_build_v3_settlement_count_prior_shadow.py` | v3 settlement count-prior processed artifact builder 测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |

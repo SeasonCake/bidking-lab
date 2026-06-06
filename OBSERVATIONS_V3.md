@@ -2895,3 +2895,87 @@ overall_status=not_ready
 - 2506 有 MAE 改善信号，但 over-rate 仍超过 guard；它适合作为后续 guarded/bounded bridge 的优先实验 slice，而不是直接 promotion。
 - `ratio_source=bridge` 仍无法消除 over-risk，说明问题不是单纯由训练 ratio 分母过宽造成。
 - activity 252x 仍没有 metric rows，因此 bridge holdout 不提供 activity promotion evidence。
+
+## O-v3-082：guarded count->value cap 缓解 MAE 但没有解除 holdout blocker
+
+2026-06-06 在 `summarize_v3_scp_count_value_bridge_holdout.py` 增加 audit-only `floor_mode` 与 `formal_lift_cap` probe 后，archive 64 posterior trials 实测：
+
+```text
+total floor + formal_lift_cap=5000:
+overall_status=blocked_holdout_hurt
+candidate_rows=1276
+applied_rows=1173
+sample_limited_rows=59
+candidate_delta_mae=-288.656
+candidate_delta_p90=0.00341
+candidate_over=0.495311
+applied_hurts=2507,2407,2409
+
+total floor + formal_lift_cap=10000:
+overall_status=blocked_holdout_hurt
+candidate_delta_mae=-516.888
+candidate_delta_p90=0.004263
+candidate_over=0.501279
+applied_hurts=2507,2410,2407,2409
+
+total floor + formal_lift_cap=25000:
+overall_status=blocked_holdout_hurt
+candidate_delta_mae=-890.956
+candidate_delta_p90=0.018755
+candidate_over=0.522592
+applied_hurts=2507,2410,2403,2407,2409
+
+total floor + formal_lift_cap=50000:
+overall_status=blocked_holdout_hurt
+candidate_delta_mae=-921.456
+candidate_delta_p90=0.032396
+candidate_over=0.541347
+applied_hurts=2507,2502,2410,2509,2403,2407,2409
+
+extra floor uncapped:
+overall_status=blocked_holdout_hurt
+candidate_delta_mae=344324.441
+candidate_delta_p90=0.234182
+candidate_over=0.873459
+
+extra floor + formal_lift_cap=5000:
+overall_status=blocked_holdout_hurt
+candidate_delta_mae=-63.063
+candidate_delta_p90=0.003287
+candidate_over=0.497124
+applied_hurts=2507,2407,2409
+
+ratio_source=bridge + formal_lift_cap=5000:
+overall_status=blocked_holdout_hurt
+candidate_rows=1276
+applied_rows=1120
+sample_limited_rows=122
+candidate_delta_mae=-368.818
+candidate_delta_p90=0.003571
+candidate_over=0.490179
+applied_hurts=2507,2407,2409
+
+activity + formal_lift_cap=5000:
+overall_status=sample_limited
+rows=0
+candidate_rows=0
+applied_rows=0
+```
+
+Readiness 默认口径未改：
+
+```text
+overall_status=not_ready
+blocked_gates=12
+gate=settlement_count_cells_value_bridge_holdout status=blocked
+scp_bridge_holdout_delta=50956.632
+scp_bridge_holdout_over=0.712702
+```
+
+解读：
+
+- formal lift cap 能把 naive bridge 的 formal p50 MAE hurt 压成小幅改善，但不能消除 applied hurt groups。
+- cap 越高，formal p90 coverage 改善更大，但 over-rate 与 hurt groups 随之上升。
+- `floor_mode=extra` uncapped 是反证：按 count gap 增量补 floor 会严重过冲；加 cap 后仍 blocked。
+- strict `ratio_source=bridge` 加 cap 仍 blocked，说明 blocker 不只是 train ratio source，而是 capacity/table/settlement item-count 语义还没有解释清楚。
+- 该结果支持继续暂停 formal/value sampler 参数调优，优先审计 BidMap/Drop/capacity 与 settlement inventory 的 item-count 上限冲突。

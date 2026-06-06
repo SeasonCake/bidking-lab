@@ -204,6 +204,22 @@ def _bridge_floor(count: Any, per_item: Any) -> float | None:
     return count_value * per_item_value
 
 
+def _extra_bridge_floor(
+    baseline: Any,
+    *,
+    count_gap: Any,
+    per_item: Any,
+) -> float | None:
+    baseline_value = _float_or_none(baseline)
+    gap_value = _float_or_none(count_gap)
+    per_item_value = _float_or_none(per_item)
+    if baseline_value is None:
+        return None
+    if gap_value is None or per_item_value is None or gap_value <= 0.0:
+        return baseline_value
+    return baseline_value + gap_value * per_item_value
+
+
 def _max_or_baseline(baseline: Any, floor: Any) -> float | None:
     baseline_value = _float_or_none(baseline)
     floor_value = _float_or_none(floor)
@@ -214,50 +230,110 @@ def _max_or_baseline(baseline: Any, floor: Any) -> float | None:
     return max(baseline_value, floor_value)
 
 
+def _capped_max_or_baseline(
+    baseline: Any,
+    floor: Any,
+    *,
+    lift_cap: float | None,
+) -> float | None:
+    value = _max_or_baseline(baseline, floor)
+    baseline_value = _float_or_none(baseline)
+    cap_value = _float_or_none(lift_cap)
+    if (
+        value is None
+        or baseline_value is None
+        or cap_value is None
+        or cap_value <= 0.0
+    ):
+        return value
+    return min(value, baseline_value + cap_value)
+
+
 def _eval_row(
     row: Mapping[str, Any],
     *,
     group: str,
     fold: int,
     stats: Mapping[str, Any],
+    floor_mode: str,
+    formal_lift_cap: float | None,
 ) -> dict[str, Any]:
     candidate = _is_bridge_candidate(row)
     sample_limited = candidate and not _bool(stats.get("ready"))
     scp_p95 = _float_or_none(row.get("scp_p95"))
-    cells_p50_floor = (
-        _bridge_floor(scp_p95, stats.get("cells_per_item_p50"))
-        if candidate and not sample_limited
-        else None
-    )
-    cells_p90_floor = (
-        _bridge_floor(scp_p95, stats.get("cells_per_item_p90"))
-        if candidate and not sample_limited
-        else None
-    )
-    formal_p50_floor = (
-        _bridge_floor(scp_p95, stats.get("formal_per_item_p50"))
-        if candidate and not sample_limited
-        else None
-    )
-    formal_p90_floor = (
-        _bridge_floor(scp_p95, stats.get("formal_per_item_p90"))
-        if candidate and not sample_limited
-        else None
-    )
+    count_gap = _float_or_none(row.get("scp_p95_minus_target"))
     baseline_cells_p50 = _float_or_none(row.get("v3_post_total_cells_p50"))
     baseline_cells_p90 = _float_or_none(row.get("v3_post_total_cells_p90"))
     baseline_formal_p50 = _float_or_none(row.get("v3_post_formal_decision_value_p50"))
     baseline_formal_p90 = _float_or_none(row.get("v3_post_formal_decision_value_p90"))
+    if candidate and not sample_limited and floor_mode == "extra":
+        cells_p50_floor = _extra_bridge_floor(
+            baseline_cells_p50,
+            count_gap=count_gap,
+            per_item=stats.get("cells_per_item_p50"),
+        )
+        cells_p90_floor = _extra_bridge_floor(
+            baseline_cells_p90,
+            count_gap=count_gap,
+            per_item=stats.get("cells_per_item_p90"),
+        )
+        formal_p50_floor = _extra_bridge_floor(
+            baseline_formal_p50,
+            count_gap=count_gap,
+            per_item=stats.get("formal_per_item_p50"),
+        )
+        formal_p90_floor = _extra_bridge_floor(
+            baseline_formal_p90,
+            count_gap=count_gap,
+            per_item=stats.get("formal_per_item_p90"),
+        )
+    else:
+        cells_p50_floor = (
+            _bridge_floor(scp_p95, stats.get("cells_per_item_p50"))
+            if candidate and not sample_limited
+            else None
+        )
+        cells_p90_floor = (
+            _bridge_floor(scp_p95, stats.get("cells_per_item_p90"))
+            if candidate and not sample_limited
+            else None
+        )
+        formal_p50_floor = (
+            _bridge_floor(scp_p95, stats.get("formal_per_item_p50"))
+            if candidate and not sample_limited
+            else None
+        )
+        formal_p90_floor = (
+            _bridge_floor(scp_p95, stats.get("formal_per_item_p90"))
+            if candidate and not sample_limited
+            else None
+        )
     bridge_cells_p50 = _max_or_baseline(baseline_cells_p50, cells_p50_floor)
     bridge_cells_p90 = _max_or_baseline(baseline_cells_p90, cells_p90_floor)
-    bridge_formal_p50 = _max_or_baseline(baseline_formal_p50, formal_p50_floor)
-    bridge_formal_p90 = _max_or_baseline(baseline_formal_p90, formal_p90_floor)
+    bridge_formal_p50 = _capped_max_or_baseline(
+        baseline_formal_p50,
+        formal_p50_floor,
+        lift_cap=formal_lift_cap,
+    )
+    bridge_formal_p90 = _capped_max_or_baseline(
+        baseline_formal_p90,
+        formal_p90_floor,
+        lift_cap=formal_lift_cap,
+    )
     applied = (
         candidate
         and not sample_limited
         and (
-            (bridge_formal_p50 is not None and baseline_formal_p50 is not None and bridge_formal_p50 > baseline_formal_p50)
-            or (bridge_formal_p90 is not None and baseline_formal_p90 is not None and bridge_formal_p90 > baseline_formal_p90)
+            (
+                bridge_formal_p50 is not None
+                and baseline_formal_p50 is not None
+                and bridge_formal_p50 > baseline_formal_p50
+            )
+            or (
+                bridge_formal_p90 is not None
+                and baseline_formal_p90 is not None
+                and bridge_formal_p90 > baseline_formal_p90
+            )
         )
     )
     return {
@@ -291,6 +367,8 @@ def _eval_rows(
     folds: int,
     min_train_sessions: int,
     ratio_source: str,
+    floor_mode: str,
+    formal_lift_cap: float | None,
 ) -> tuple[dict[str, Any], ...]:
     metric_rows = _metric_rows(rows)
     by_group: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -313,7 +391,16 @@ def _eval_rows(
                 min_train_sessions=min_train_sessions,
                 ratio_source=ratio_source,
             )
-            out.append(_eval_row(row, group=group, fold=fold, stats=stats))
+            out.append(
+                _eval_row(
+                    row,
+                    group=group,
+                    fold=fold,
+                    stats=stats,
+                    floor_mode=floor_mode,
+                    formal_lift_cap=formal_lift_cap,
+                )
+            )
     return tuple(out)
 
 
@@ -394,6 +481,8 @@ def summarize_holdout(
     folds: int = 5,
     min_train_sessions: int = 8,
     ratio_source: str = "all",
+    floor_mode: str = "total",
+    formal_lift_cap: float | None = None,
     top: int = 12,
 ) -> dict[str, Any]:
     eval_rows = _eval_rows(
@@ -402,6 +491,8 @@ def summarize_holdout(
         folds=folds,
         min_train_sessions=min_train_sessions,
         ratio_source=ratio_source,
+        floor_mode=floor_mode,
+        formal_lift_cap=formal_lift_cap,
     )
     by_group: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for row in eval_rows:
@@ -447,6 +538,8 @@ def summarize_holdout(
         "folds": int(folds),
         "min_train_sessions": int(min_train_sessions),
         "ratio_source": ratio_source,
+        "floor_mode": floor_mode,
+        "formal_lift_cap": _round_metric(_float_or_none(formal_lift_cap), 3),
         "overall": overall,
         "candidate_only": candidate_only,
         "group_results": group_results,
@@ -501,6 +594,8 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"folds={result['folds']}",
                 f"min_train_sessions={result['min_train_sessions']}",
                 f"ratio_source={result['ratio_source']}",
+                f"floor_mode={result['floor_mode']}",
+                f"formal_lift_cap={result['formal_lift_cap']}",
                 f"rows={overall['rows']}",
                 f"candidate_rows={overall['candidate_rows']}",
                 f"applied_rows={candidate['applied_rows']}",
@@ -551,6 +646,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--min-train-sessions", type=int, default=8)
     parser.add_argument("--ratio-source", choices=("all", "bridge"), default="all")
+    parser.add_argument("--floor-mode", choices=("total", "extra"), default="total")
+    parser.add_argument("--formal-lift-cap", type=float, default=None)
     parser.add_argument("--posterior-trials", type=int, default=64)
     parser.add_argument("--posterior-seed", type=int, default=0)
     parser.add_argument("--top", type=int, default=12)
@@ -581,6 +678,8 @@ def main(argv: list[str] | None = None) -> int:
             folds=args.folds,
             min_train_sessions=args.min_train_sessions,
             ratio_source=args.ratio_source,
+            floor_mode=args.floor_mode,
+            formal_lift_cap=args.formal_lift_cap,
             top=args.top,
         ),
     }

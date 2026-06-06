@@ -4282,3 +4282,103 @@ scp_bridge_holdout_over=0.712702
 - `ratio_source=bridge` 仍然 blocked，说明需要 guard/redesign，而不是简单缩小训练分母。
 - 2506 是后续 guarded bridge 的优先 slice，但当前 over-rate 仍超 guard，不能作为 promotion evidence。
 - v2 formal/live/UI 和正式出价未改；v3 promotion、v2 archive 继续 pending。
+
+## 2026-06-06 checkpoint：guarded settlement count->value bridge probe
+
+本轮继续收口 `v3_scp` count->cells/value bridge blocker，保持 v2 formal/live/UI 与正式出价不变。
+
+改动：
+
+- `scripts/summarize_v3_scp_count_value_bridge_holdout.py`：
+  - 新增 audit-only `--floor-mode total|extra`；
+  - 新增 audit-only `--formal-lift-cap`，只 cap shadow formal p50/p90 floor 相对 baseline 的抬升；
+  - summary 输出 `floor_mode` 与 `formal_lift_cap`。
+- `tests/test_summarize_v3_scp_count_value_bridge_holdout.py`：
+  - 覆盖 `floor_mode=extra` 只补 `scp_p95-target_count` count gap；
+  - 覆盖 `formal_lift_cap` 限制 formal value lift。
+- `DECISIONS_V3.md` 新增 D-v3-077；`OBSERVATIONS_V3.md` 新增 O-v3-082；`docs/PROJECT_STRUCTURE_V3.zh-CN.md` 更新脚本/测试职责。
+
+验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py --formal-lift-cap 5000 --posterior-trials 64 --top 6
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py --formal-lift-cap 10000 --posterior-trials 64 --top 6
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py --formal-lift-cap 15000 --posterior-trials 64 --top 6
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py --formal-lift-cap 25000 --posterior-trials 64 --top 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py --formal-lift-cap 50000 --posterior-trials 64 --top 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py --floor-mode extra --posterior-trials 64 --top 6
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py --floor-mode extra --formal-lift-cap 5000 --posterior-trials 64 --top 6
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py --ratio-source bridge --formal-lift-cap 5000 --posterior-trials 64 --top 6
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_count_value_bridge_holdout.py data\processed\fatbeans_v3_activity_evaluation.jsonl --formal-lift-cap 5000 --posterior-trials 64 --top 8
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+git -c safe.directory=C:/xiangmuyunxing/biancheng/2026/bidking-lab diff --check
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_other_tables.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_payload_audit.py tests\test_summarize_v3_settlement_count_prior_candidates.py tests\test_summarize_v3_settlement_count_prior_holdout.py tests\test_summarize_v3_scp_formal_value_link.py tests\test_summarize_v3_scp_count_value_bridge.py tests\test_summarize_v3_scp_count_value_bridge_holdout.py tests\test_inference_v3_settlement_count_prior.py tests\test_build_v3_settlement_count_prior_shadow.py tests\test_evaluate_fatbeans_v3_samples.py tests\test_live_monitor.py tests\test_inference_v3_formal_value_sampler.py tests\test_summarize_v3_formal_value_sampler_holdout.py tests\test_summarize_v3_prior_robustness_audit.py tests\test_summarize_v3_promotion_readiness.py
+```
+
+结果：
+
+```text
+targeted holdout/readiness tests:
+8 passed
+
+focused parser/archive/live/readiness/formal-value tests:
+82 passed
+
+diff --check:
+passed
+
+total floor + formal_lift_cap=5000:
+overall_status=blocked_holdout_hurt
+candidate_delta_mae=-288.656
+candidate_delta_p90=0.00341
+candidate_over=0.495311
+applied_hurts=2507,2407,2409
+
+total floor + formal_lift_cap=25000:
+overall_status=blocked_holdout_hurt
+candidate_delta_mae=-890.956
+candidate_delta_p90=0.018755
+candidate_over=0.522592
+applied_hurts=2507,2410,2403,2407,2409
+
+extra floor uncapped:
+overall_status=blocked_holdout_hurt
+candidate_delta_mae=344324.441
+candidate_delta_p90=0.234182
+candidate_over=0.873459
+
+extra floor + formal_lift_cap=5000:
+overall_status=blocked_holdout_hurt
+candidate_delta_mae=-63.063
+candidate_delta_p90=0.003287
+candidate_over=0.497124
+applied_hurts=2507,2407,2409
+
+ratio_source=bridge + formal_lift_cap=5000:
+overall_status=blocked_holdout_hurt
+candidate_delta_mae=-368.818
+candidate_delta_p90=0.003571
+candidate_over=0.490179
+applied_hurts=2507,2407,2409
+
+activity + formal_lift_cap=5000:
+overall_status=sample_limited
+rows=0
+candidate_rows=0
+applied_rows=0
+
+readiness default:
+overall_status=not_ready
+blocked_gates=12
+settlement_count_cells_value_bridge_holdout=blocked
+scp_bridge_holdout_delta=50956.632
+scp_bridge_holdout_over=0.712702
+```
+
+结论：
+
+- `formal_lift_cap` 能缓解 naive bridge 的 formal MAE hurt，但不能解除 applied hurt groups；仍只能作为 audit guard probe。
+- `floor_mode=extra` uncapped 明显过冲；加低 cap 后仍 blocked。
+- `ratio_source=bridge` 加 cap 仍 blocked，说明 blocker 不只是训练分母，而是 table/capacity/settlement item-count 语义未收口。
+- 下一步优先解释 `BidMap` capacity、`DropEntry n_min/n_max`、raw 表版本与 settlement inventory item-count 上限冲突；formal/value sampler 参数调优继续暂停。
