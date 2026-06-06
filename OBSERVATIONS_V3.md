@@ -3841,3 +3841,37 @@ lower map=2508 rows=6 table_impossible=6 round_impossible=6
 - hard/lower capacity conflict 不是 BidMap `col[16]` 读错，也不是 DropEntry `n_max>1`，也不是非 drop-universe item 或临时生肖完全解释。
 - `non_zodiac_missing_positive_files=0` 表示 observed final items 属于 current drop universe；剩余 blocker 更像 session capacity / activity overlay / settlement expansion 机制，而不是 item universe 错配。
 - `target_source` 在 hard bucket 中 exact/floor 均存在，在 lower bucket 中以 floor/none 为主；下一步继续按 map family 与 target source 拆 session/source split。
+
+## O-v3-098：q6/value target missing 全部集中于 2502 且有 numeric/item/shape evidence
+
+2026-06-06 给 `evidence_floor_only_summary` 增加 `target_missing_attribution_summary` 后，复跑真实 64-trial prior robustness detail summary：
+
+```text
+evidence_target_missing_rows=4
+evidence_target_missing_maps=2502:4
+evidence_floor_only_missing_patterns:
+  none=22
+  q6_cells+total_value+q6_value=4
+```
+
+target-missing attribution：
+
+```text
+item_anchors_present=4
+item_anchors_present_value_targets_missing=4
+numeric_constraints_present=4
+q6_and_value_targets_missing=4
+q6_cells_target_missing=4
+q6_value_target_missing=4
+shape_anchors_present=4
+shape_anchors_present_q6_cells_target_missing=4
+total_cells_exact_matches_truth=4
+total_cells_exact_q6_value_targets_missing=4
+total_value_target_missing=4
+```
+
+解读：
+
+- 这 4 行不是“没有 evidence”：numeric/item/shape anchors 都存在。
+- total cells exact 已经命中 truth，但 q6 cells、total value、q6 value 都没有 target；问题集中在 q6/value allocation target 编译，而不是 table capacity 或 formal/value sampler 参数。
+- 下一步应查 2502 相关 evidence events 的 target set 与 anchor payload：是否存在 shape anchors 无 quality/value、item anchors 无 value，或 q6 quality floor 只产生 count 不产生 value/cells。

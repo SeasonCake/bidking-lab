@@ -646,6 +646,96 @@ def _exact_with_target_missing_pattern_counts(
     return _component_issue_pattern_counts(rows, predicate=predicate, top=top)
 
 
+def _target_missing_components(row: Mapping[str, Any]) -> tuple[str, ...]:
+    return tuple(
+        component
+        for component in SUMMARY_COMPONENTS
+        if _component_issue_label(row.get(component, {})) == "target_missing"
+    )
+
+
+def _evidence_count(row: Mapping[str, Any], field: str) -> float:
+    return _float_or_none(row.get("evidence_counts", {}).get(field)) or 0.0
+
+
+def _target_missing_attribution_tokens(row: Mapping[str, Any]) -> tuple[str, ...]:
+    missing = set(_target_missing_components(row))
+    tokens: list[str] = []
+    if not missing:
+        return ()
+    for component in SUMMARY_COMPONENTS:
+        if component in missing:
+            tokens.append(f"{component}_target_missing")
+    total_cells_issue = _component_issue_label(row.get("total_cells", {}))
+    if total_cells_issue == "exact_matches_truth":
+        tokens.append("total_cells_exact_matches_truth")
+    elif total_cells_issue == "floor_below_truth":
+        tokens.append("total_cells_floor_below_truth")
+    if _evidence_count(row, "numeric_constraints") > 0:
+        tokens.append("numeric_constraints_present")
+    if _evidence_count(row, "item_anchors") > 0:
+        tokens.append("item_anchors_present")
+    if _evidence_count(row, "shape_anchors") > 0:
+        tokens.append("shape_anchors_present")
+    if _evidence_count(row, "quality_floor_anchors") > 0:
+        tokens.append("quality_floor_anchors_present")
+    if {"q6_cells", "total_value", "q6_value"} <= missing:
+        tokens.append("q6_and_value_targets_missing")
+    if (
+        total_cells_issue == "exact_matches_truth"
+        and {"q6_cells", "total_value", "q6_value"} <= missing
+    ):
+        tokens.append("total_cells_exact_q6_value_targets_missing")
+    if _evidence_count(row, "shape_anchors") > 0 and "q6_cells" in missing:
+        tokens.append("shape_anchors_present_q6_cells_target_missing")
+    if _evidence_count(row, "item_anchors") > 0 and (
+        "total_value" in missing or "q6_value" in missing
+    ):
+        tokens.append("item_anchors_present_value_targets_missing")
+    if _evidence_count(row, "quality_floor_anchors") > 0 and (
+        "total_value" in missing or "q6_value" in missing
+    ):
+        tokens.append("quality_floor_present_value_targets_missing")
+    return tuple(tokens)
+
+
+def _multi_label_counts(
+    values: Iterable[Iterable[str]],
+    *,
+    top: int = 8,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for tokens in values:
+        counts.update(tokens)
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:top])
+
+
+def _target_missing_attribution_summary(
+    rows: Iterable[dict[str, Any]],
+    *,
+    top: int = 8,
+) -> dict[str, Any]:
+    seq = tuple(row for row in rows if _target_missing_components(row))
+    return {
+        "rows": len(seq),
+        "map_counts": _counter_dict((row.get("map_id") for row in seq), top=top),
+        "hero_map_evidence_profile_counts": _counter_dict(
+            (row.get("hero_map_evidence_profile") for row in seq),
+            top=top,
+        ),
+        "missing_component_pattern_counts": _target_missing_pattern_counts(
+            seq,
+            top=top,
+        ),
+        "attribution_counts": _multi_label_counts(
+            (_target_missing_attribution_tokens(row) for row in seq),
+            top=top,
+        ),
+        "evidence_count_summary": _evidence_count_summary(seq),
+        "source_counts": _source_counts(seq, top=top),
+    }
+
+
 def _evidence_count_summary(
     rows: Iterable[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
@@ -709,6 +799,9 @@ def _evidence_floor_only_summary(
         ),
         "exact_with_target_missing_pattern_counts": (
             _exact_with_target_missing_pattern_counts(seq, top=top)
+        ),
+        "target_missing_attribution_summary": (
+            _target_missing_attribution_summary(seq, top=top)
         ),
         "target_truth_delta_counts": _component_delta_counts(
             seq,
@@ -1385,6 +1478,7 @@ def _format_capacity_count_summary(summary: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _format_evidence_floor_only_summary(summary: dict[str, Any]) -> tuple[str, ...]:
+    missing = summary["target_missing_attribution_summary"]
     return (
         f"evidence_floor_only_rows={summary['rows']}",
         "evidence_floor_only_missing_patterns="
@@ -1393,6 +1487,10 @@ def _format_evidence_floor_only_summary(summary: dict[str, Any]) -> tuple[str, .
         + _format_counts(summary["floor_below_truth_pattern_counts"]),
         "evidence_floor_only_exact_missing_patterns="
         + _format_counts(summary["exact_with_target_missing_pattern_counts"]),
+        f"evidence_target_missing_rows={missing['rows']}",
+        "evidence_target_missing_maps=" + _format_counts(missing["map_counts"]),
+        "evidence_target_missing_attribution="
+        + _format_counts(missing["attribution_counts"]),
     )
 
 

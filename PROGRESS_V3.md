@@ -5228,3 +5228,54 @@ lower_bound_under_truth:
 - 当前 hard/lower conflict 的 final items 仍在 drop universe 内；不是非 drop-universe item 或临时生肖完全解释。
 - drop-ref / round-cap residual after temp 仍存在，说明 blocker 仍在 session capacity、activity overlay 或 settlement expansion 机制层。
 - 下一步可按 map family、target source、full observed action/public total count 分线审计；formal/value sampler 与 promotion readiness 继续暂停。
+
+## 2026-06-06 checkpoint：q6/value target-missing attribution
+
+本轮把 `evidence_floor_only` 中 target-missing rows 的 attribution 固化到 prior robustness detail summary，继续保持 audit-only。该改动不接入 posterior sampler、不接入 formal/value sampler、不改变 readiness gate，也不触碰 v2 formal/live/UI 或正式出价。
+
+改动：
+
+- `scripts/summarize_v3_prior_robustness_audit.py` 新增：
+  - `target_missing_attribution_summary`；
+  - target-missing rows 的 map/profile counts；
+  - missing component pattern；
+  - evidence count summary；
+  - source counts；
+  - 多标签 attribution counts。
+- summary 文本输出展示 `evidence_target_missing_rows/maps/attribution`。
+- `tests/test_summarize_v3_prior_robustness_audit.py` 覆盖 `total_cells exact + q6/value targets missing` 的 attribution。
+- `DECISIONS_V3.md` 新增 D-v3-094；`OBSERVATIONS_V3.md` 新增 O-v3-098。
+
+关键验证：
+
+```powershell
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_prior_robustness_audit.py
+python -m py_compile scripts\summarize_v3_prior_robustness_audit.py
+python scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --detail-summary --detail-summary-top 20 --format summary
+```
+
+真实 64-trial attribution：
+
+```text
+evidence_target_missing_rows=4
+evidence_target_missing_maps=2502:4
+
+attribution_counts:
+  item_anchors_present=4
+  item_anchors_present_value_targets_missing=4
+  numeric_constraints_present=4
+  q6_and_value_targets_missing=4
+  q6_cells_target_missing=4
+  q6_value_target_missing=4
+  shape_anchors_present=4
+  shape_anchors_present_q6_cells_target_missing=4
+  total_cells_exact_matches_truth=4
+  total_cells_exact_q6_value_targets_missing=4
+  total_value_target_missing=4
+```
+
+结论：
+
+- 2502 target-missing rows 不是 evidence 缺失；numeric/item/shape anchors 都存在。
+- evidence compiler 已能得到 total cells exact，但没有得到 q6 cells、total value、q6 value targets。
+- 下一步应查 2502 evidence event target set 与 anchor payload，尤其是 shape anchors 是否缺 quality/value、item anchors 是否缺 value，以及 q6 quality floor 是否只产生 count。

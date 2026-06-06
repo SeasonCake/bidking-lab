@@ -2069,3 +2069,18 @@ applied_hurts=2502
 - 64-trial hard/lower bucket 仍分别为 `table_impossible_rows=29/39`，且 raw latest inventory verified。
 - 扣除临时生肖后仍有 drop-ref residual 与 round-cap residual；这排除“非 drop-universe item 或临时生肖完全解释冲突”，但不解释额外 occupied slots 的生成机制。
 - 该字段让后续审计可以按 map family、target source 与 raw residual 分线推进，避免继续围绕 BidMap col[16]/DropEntry `n_max` 重复排查。
+
+## D-v3-094：q6/value target-missing attribution 只定位 evidence compiler 缺口
+
+2026-06-06 起，当前决策：
+
+- `evidence_floor_only_summary.target_missing_attribution_summary` 输出 target-missing rows 的 map/profile、missing component pattern、evidence counts、source counts 与多标签 attribution。
+- attribution 只表示已有 evidence 与 missing targets 的共现关系，不证明因果，不改变 `prior_robustness`、readiness gate、posterior sampler、formal/value sampler 或正式出价。
+- `total_cells_exact_q6_value_targets_missing` rows 必须走 q6/value allocation target 审计；不能交给 capacity table 修复或 formal/value sampler 参数吸收。
+- promotion evidence 仍必须来自真实 archive/live/holdout/readiness；target-missing attribution 只是 blocker 分流证据。
+
+原因：
+
+- 64-trial archive 显示 target-missing evidence-floor-only rows 全部集中在 `2502:4`。
+- 这 4 行同时有 numeric/item/shape anchors 且 total cells exact matches truth，但 `q6_cells`、`total_value`、`q6_value` target 仍 missing。
+- 该形态说明 evidence compiler 已能得到 total cells exact，却没有把现有 anchors 转成 q6/value allocation target。
