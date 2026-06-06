@@ -143,6 +143,10 @@ def test_guarded_bridge_stability_blocks_low_support() -> None:
     assert gap["min_sessions"] == 4
     assert gap["missing_support_runs"] == 0
     assert [row["posterior_seed"] for row in gap["runs"]] == [0, 1, 7]
+    instability = result["selected_group_instability_summary"][0]
+    assert instability["group"] == "2506"
+    assert instability["status"] == "blocked_support_depth_gap"
+    assert instability["reasons"] == ["min_applied_rows_below_required"]
 
 
 def test_guarded_bridge_stability_blocks_missing_multi_group_support() -> None:
@@ -215,3 +219,50 @@ def test_guarded_bridge_stability_summarizes_train_guard_metrics() -> None:
     assert guard["min_guard_applied_sessions"] == 19
     assert guard["max_guard_delta_formal_p50_mae"] == -110.256
     assert guard["max_guard_bridge_formal_p50_over_rate"] == 0.559322
+    instability = result["selected_group_instability_summary"][0]
+    assert instability["group"] == "2501"
+    assert instability["status"] == "watch_train_guard_stable"
+
+
+def test_guarded_bridge_stability_classifies_train_holdout_instability() -> None:
+    module = _load_module()
+
+    result = module.summarize_stability(
+        [
+            {
+                **_run(
+                    trials=64,
+                    seed=1,
+                    status="blocked_holdout_hurt",
+                    selected={"2501": 1},
+                    applied_rows=53,
+                    applied_hurts=["2501"],
+                ),
+                "selected_group_guard_summary": [
+                    {
+                        "fold": 4,
+                        "group": "2501",
+                        "guard_status": "watch_train_guard",
+                        "guard_applied_sessions": 59,
+                        "guard_delta_formal_p50_mae": -1707.317,
+                        "guard_delta_formal_p90_coverage": 0.0,
+                        "guard_bridge_formal_p50_over_rate": 0.414634,
+                        "guard_inner_status_counts": {
+                            "watch_count_value_bridge_holdout": 4
+                        },
+                        "applied_rows": 53,
+                        "sessions": 17,
+                    }
+                ],
+            }
+        ],
+        required_selected_groups=("2501",),
+        min_applied_rows=20,
+    )
+
+    instability = result["selected_group_instability_summary"][0]
+    assert instability["group"] == "2501"
+    assert instability["status"] == "blocked_train_holdout_instability"
+    assert instability["reasons"] == ["train_guard_watch_but_holdout_hurt"]
+    assert instability["support_hurt_run_count"] == 1
+    assert instability["guard_status_counts"] == {"watch_train_guard": 1}

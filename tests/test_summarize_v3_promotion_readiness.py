@@ -260,6 +260,12 @@ def test_readiness_attaches_guarded_bridge_stability_matrix() -> None:
                     "guard_status_counts": {"watch_train_guard": 1},
                 }
             ],
+            "selected_group_instability_summary": [
+                {
+                    "group": "2501",
+                    "status": "blocked_train_holdout_instability",
+                }
+            ],
         },
     )
 
@@ -271,6 +277,9 @@ def test_readiness_attaches_guarded_bridge_stability_matrix() -> None:
     assert stability["hurt_group_counts"] == {"2501": 1}
     assert stability["selected_group_support_summary"][0]["group"] == "2501"
     assert stability["selected_group_guard_summary"][0]["group"] == "2501"
+    assert stability["selected_group_instability_summary"][0]["status"] == (
+        "blocked_train_holdout_instability"
+    )
     assert result["settlement_count_guarded_bridge_stability"]["status"] == (
         "blocked_applied_hurt"
     )

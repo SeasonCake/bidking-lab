@@ -396,6 +396,77 @@ def _selected_group_guard_summary(
     return out
 
 
+def _selected_group_instability_summary(
+    *,
+    support_summary: Iterable[Mapping[str, Any]],
+    guard_summary: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    support_by_group = {
+        str(row.get("group") or "unknown"): row for row in support_summary
+    }
+    guard_by_group = {
+        str(row.get("group") or "unknown"): row for row in guard_summary
+    }
+    groups = sorted(set(support_by_group) | set(guard_by_group))
+    out: list[dict[str, Any]] = []
+    for group in groups:
+        support = support_by_group.get(group, {})
+        guard = guard_by_group.get(group, {})
+        hurt_rows = _as_int(support.get("hurt_run_count"))
+        missing_support = _as_int(support.get("missing_support_runs"))
+        support_gap = _as_int(support.get("min_applied_gap"))
+        guard_status_counts = guard.get("guard_status_counts") or {}
+        watch_guard_folds = _as_int(guard_status_counts.get("watch_train_guard"))
+        reasons: list[str] = []
+        if missing_support > 0:
+            status = "blocked_missing_support"
+            reasons.append("selected_group_support_missing")
+        elif hurt_rows > 0 and watch_guard_folds > 0:
+            status = "blocked_train_holdout_instability"
+            reasons.append("train_guard_watch_but_holdout_hurt")
+        elif hurt_rows > 0:
+            status = "blocked_holdout_hurt"
+            reasons.append("holdout_hurt")
+        elif support_gap > 0:
+            status = "blocked_support_depth_gap"
+            reasons.append("min_applied_rows_below_required")
+        elif watch_guard_folds > 0:
+            status = "watch_train_guard_stable"
+            reasons.append("train_guard_watch_no_hurt_or_gap")
+        else:
+            status = "watch_support_only"
+            reasons.append("support_ok_without_train_guard_metrics")
+        out.append(
+            {
+                "group": group,
+                "status": status,
+                "reasons": reasons,
+                "support_run_count": support.get("run_count"),
+                "support_selected_folds": support.get("selected_folds"),
+                "support_min_applied_rows": support.get("min_applied_rows"),
+                "support_required_applied_rows": support.get(
+                    "required_applied_rows"
+                ),
+                "support_min_applied_gap": support_gap,
+                "support_hurt_run_count": hurt_rows,
+                "support_missing_runs": missing_support,
+                "guard_run_count": guard.get("run_count"),
+                "guard_selected_folds": guard.get("selected_folds"),
+                "guard_status_counts": dict(guard_status_counts),
+                "guard_min_applied_sessions": guard.get(
+                    "min_guard_applied_sessions"
+                ),
+                "guard_max_delta_formal_p50_mae": guard.get(
+                    "max_guard_delta_formal_p50_mae"
+                ),
+                "guard_max_bridge_formal_p50_over_rate": guard.get(
+                    "max_guard_bridge_formal_p50_over_rate"
+                ),
+            }
+        )
+    return out
+
+
 def summarize_stability(
     runs: Iterable[Mapping[str, Any]],
     *,
@@ -426,6 +497,10 @@ def summarize_stability(
         min_applied_rows=min_applied_rows,
     )
     selected_guard = _selected_group_guard_summary(run_rows)
+    selected_instability = _selected_group_instability_summary(
+        support_summary=selected_support,
+        guard_summary=selected_guard,
+    )
     return {
         "overall_status": status,
         "status_reasons": reasons,
@@ -444,6 +519,7 @@ def summarize_stability(
         "selected_group_support_summary": selected_support,
         "selected_group_support_gap": _support_gap_summary(selected_support),
         "selected_group_guard_summary": selected_guard,
+        "selected_group_instability_summary": selected_instability,
         "require_all_watch": bool(require_all_watch),
     }
 
@@ -710,6 +786,19 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"{_round_metric(row['max_guard_bridge_formal_p50_over_rate'], 6)}"
                 )
                 for row in result["selected_group_guard_summary"]
+            )
+        )
+    if result.get("selected_group_instability_summary"):
+        print(
+            "selected_instability="
+            + ";".join(
+                (
+                    f"{row['group']}:{row['status']}"
+                    f"/gap={row['support_min_applied_gap']}"
+                    f"/hurts={row['support_hurt_run_count']}"
+                    f"/watch_guard={_as_int((row.get('guard_status_counts') or {}).get('watch_train_guard'))}"
+                )
+                for row in result["selected_group_instability_summary"]
             )
         )
     if result.get("selected_group_support_gap"):

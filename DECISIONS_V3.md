@@ -2192,3 +2192,19 @@ applied_hurts=2502
 - 64-trial seed1 中 `2501` 在 fold4 的 train guard 指标为 `watch_train_guard`，训练侧 delta/over 看起来安全，但外层 53 applied rows 出现 p50 MAE hurt 与 over-risk。
 - 这说明 bridge 的 group selection 对 posterior seed / fold split 仍敏感。
 - promotion 要求 archive/live/holdout 稳定，而不是单一训练 guard 中看起来安全。
+
+## D-v3-102：guarded bridge selected group 必须分类后再讨论下一步
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_scp_guarded_bridge_stability.py` 必须输出 `selected_group_instability_summary`，把 selected groups 分成 train/holdout instability、holdout hurt、support depth gap、missing support 或 stable watch。
+- `2501` 当前分类为 `blocked_train_holdout_instability`，不能通过降低 over/hurt 门槛或只看 train guard 放行。
+- `2506` 当前分类为 `blocked_support_depth_gap`，不能和 `2501` hurt 混为同一类失败。
+- readiness 可以展示这些分类，但不能用它们放宽 gate；分类只是为了明确下一步修复/审计路径。
+- selected instability 分类不改变 formal/value sampler、settlement count prior、v2 formal/live/UI 或正式出价。
+
+原因：
+
+- 同一个 multi-seed failure 中同时存在两种不同问题：`2501` 是 train guard watch 后外层 hurt，`2506` 是 stable intersection 但 applied support 不足。
+- 如果只输出 selected groups 或 overall status，后续容易把 support-depth 问题和 holdout-hurt 问题混在一起。
+- promotion 前需要可复核的 failure taxonomy，而不是只知道“matrix blocked”。

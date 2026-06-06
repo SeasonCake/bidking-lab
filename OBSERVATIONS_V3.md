@@ -4301,3 +4301,39 @@ selected support：
 - `2501` 的问题不是 guard 没有跑，也不是 support 缺失；它在训练 guard 中看起来安全，但外层 holdout 仍然 hurt。
 - `2506` 的问题不是 hurt，而是跨 seed applied support 不足。
 - 因此 guarded settlement bridge 下一步应分两线：收紧/解释 `2501` train-holdout instability，继续累积或重设 `2506` support；当前不能作为 formal/value promotion evidence。
+
+## O-v3-106：selected instability 将 2501 hurt 与 2506 support gap 分开
+
+2026-06-06 给 guarded bridge stability 增加 `selected_group_instability_summary` 后，复跑真实 64-trial seed0/seed1 matrix：
+
+```powershell
+python scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format summary
+```
+
+关键输出：
+
+```text
+overall_status=blocked_applied_hurt
+stable_groups=2506
+union_groups=2501,2506
+
+selected_instability=2501:blocked_train_holdout_instability/gap=0/hurts=1/watch_guard=1;2506:blocked_support_depth_gap/gap=11/hurts=0/watch_guard=5
+```
+
+JSON 分类：
+
+```text
+2501:
+  status=blocked_train_holdout_instability
+  reasons=train_guard_watch_but_holdout_hurt
+
+2506:
+  status=blocked_support_depth_gap
+  reasons=min_applied_rows_below_required
+```
+
+解读：
+
+- `2501` 的下一步是解释为什么 train guard watch 但外层 holdout over-risk/hurt，或给它建立 explicit exclusion/diagnostic。
+- `2506` 的下一步是增加或验证支持深度；它当前不是 hurt group。
+- 该分类使 settlement bridge blocker 可拆解，但不提供 promotion 证据。

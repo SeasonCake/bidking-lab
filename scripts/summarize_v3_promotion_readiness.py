@@ -861,6 +861,7 @@ def summarize_readiness(
             "selected_group_support_summary": [],
             "selected_group_support_gap": [],
             "selected_group_guard_summary": [],
+            "selected_group_instability_summary": [],
         }
     else:
         stability_reason = (
@@ -904,6 +905,9 @@ def summarize_readiness(
             ),
             "selected_group_guard_summary": scp_guarded_bridge_stability.get(
                 "selected_group_guard_summary"
+            ),
+            "selected_group_instability_summary": scp_guarded_bridge_stability.get(
+                "selected_group_instability_summary"
             ),
         }
     gates.append(

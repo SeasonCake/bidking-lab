@@ -5670,3 +5670,56 @@ selected_support:
 - `2501` 不是误选或缺 support：它在内层 train guard 看起来安全，但外层 holdout 仍出现 over-risk/hurt。
 - `2506` 的 train guard 选择更稳定，但外层最小 applied support 仍不足。
 - 当前下一步应优先设计更严格的 train/holdout stability criterion 或 group exclusion diagnostics；不能把 seed0/inner-guard watch 当成 promotion 支持。
+
+## 2026-06-06 checkpoint：guarded bridge selected-group instability 分类
+
+本轮把 guarded settlement bridge 的 selected group 风险从人工解读转为机器可读分类。该改动仍保持 readiness/shadow-only，不改变 sampler、不改变 v2 formal/live/UI、不改变正式出价。
+
+改动：
+
+- `scripts/summarize_v3_scp_guarded_bridge_stability.py` 新增 `selected_group_instability_summary`：
+  - `blocked_train_holdout_instability`
+  - `blocked_holdout_hurt`
+  - `blocked_support_depth_gap`
+  - `blocked_missing_support`
+  - `watch_train_guard_stable`
+  - `watch_support_only`
+- summary 文本新增 `selected_instability=...`。
+- `scripts/summarize_v3_promotion_readiness.py` 的 `settlement_count_guarded_bridge_stability` gate 透传该分类。
+- tests 更新：
+  - `tests/test_summarize_v3_scp_guarded_bridge_stability.py`
+  - `tests/test_summarize_v3_promotion_readiness.py`
+
+关键验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_scp_guarded_bridge_stability.py scripts\summarize_v3_promotion_readiness.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_scp_guarded_bridge_stability.py tests\test_summarize_v3_promotion_readiness.py -q
+python scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format summary
+python scripts\summarize_v3_promotion_readiness.py data\samples\fatbeans\fatbeans_valid_aisha_2502_4rounds_2502_1295018709694048_0149.json --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_instability.json --format summary
+```
+
+真实 64-trial selected instability：
+
+```text
+selected_instability:
+  2501:
+    status=blocked_train_holdout_instability
+    reason=train_guard_watch_but_holdout_hurt
+    gap=0
+    hurts=1
+    watch_guard=1
+
+  2506:
+    status=blocked_support_depth_gap
+    reason=min_applied_rows_below_required
+    gap=11
+    hurts=0
+    watch_guard=5
+```
+
+结论：
+
+- `2501` 下一步应查 train/holdout selection instability 或加入 explicit exclusion diagnostic。
+- `2506` 下一步应优先补支持深度或调 stable support criterion；它当前不是 hurt group。
+- readiness 仍 blocked，v3 promotion 仍不能推进，formal/value sampler 仍保持 shadow-only。
