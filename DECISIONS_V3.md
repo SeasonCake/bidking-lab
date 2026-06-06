@@ -2024,3 +2024,33 @@ applied_hurts=2502
 - 64-trial archive 复核显示 value-floor stress 共 13 行，但其中 1 行同时带 `q6_cells_floor_stress`。
 - 该 mixed row 与 prior-stressed cells/capacity/evidence blocker 相交；若继续算作 formal/value candidate，会把 table/capacity/evidence 语义问题误归因给 value sampler。
 - readiness 仍要求 archive/live/holdout 支持；当前 formal/value sampler holdout 仍为 `sample_limited`，gate 仍 blocked。
+
+## D-v3-091：evidence-floor-only pattern summary 只用于 evidence compiler 分流
+
+2026-06-06 起，当前决策：
+
+- `evidence_floor_only_summary` 输出 target-missing、floor-below-truth、exact-with-missing 的 component pattern counts。
+- 这些 pattern 只用于解释 evidence compiler 的 floor/target 缺口，不改变 `prior_robustness`、readiness gate、posterior sampler、formal/value sampler 或正式出价。
+- `total_cells exact + q6/value target missing` 形态必须与“全组件 floor below truth”分开处理；前者优先查 q6/value allocation target，后者优先查 item/shape floor source。
+- pattern summary 不能作为 promotion evidence，也不能让 `evidence_floor_only` 进入 formal/value sampler candidate 分母。
+
+原因：
+
+- 64-trial archive 中 `evidence_floor_only=26`，但不是单一故障：22 行没有 target missing，4 行是 `q6_cells+total_value+q6_value` missing。
+- 这 4 行同时满足 total cells exact matches truth，对应 `2502` 形态；它不是 BidMap/Drop capacity blocker，也不能靠 value sampler 参数修复。
+- 固化 pattern counts 后，多 agent 可以分别审计 q6/value target 缺失和 floor below truth，而不会把两类 evidence compiler 问题混在一起。
+
+## D-v3-092：synthetic settlement probe 只能作为 diagnostics-only falsifier
+
+2026-06-06 起，当前决策：
+
+- 可以投入小型 synthetic/simulator probe 来排除明显不可能的 settlement mechanism 假设，但必须标记 `diagnostics_only`，不得写入 readiness/promotion/v2 archive 输入。
+- synthetic probe 不得伪造 raw `0x002D` payload、runtime id、sort id、capture timestamp、public/action event source 或 raw table version evidence。
+- 若需要缓存，只能放在 `.tmp/codex/`；不得生成 `data/samples` 或 `data/processed` promotion artifacts。
+- promotion 仍必须依赖真实 archive/live/holdout/readiness/stability；synthetic 拟合不能替代 table/capacity/source split 证据。
+
+原因：
+
+- 当前仓库没有能从游戏源码或 raw 表权威推导 final settlement inventory 的服务端机制。
+- 现有 table sampler、`sample_session_truth`、`basic_mc` 都不是服务端最终结算复刻；`0x002D` 只能证明 final inventory 真实存在，不能解释其生成机制。
+- synthetic probe 的价值在于缩小假设空间和生成诊断 fixture，风险在于误把拟合当作机制证明，因此必须隔离。

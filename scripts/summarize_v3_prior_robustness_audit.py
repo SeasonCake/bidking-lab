@@ -7,7 +7,7 @@ import json
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", newline="")
@@ -41,6 +41,12 @@ DEFAULT_GROUP_FIELDS: tuple[str, ...] = (
     "v3_robust_fallback_mode",
     "map_id",
     "hero_map_evidence_profile",
+)
+SUMMARY_COMPONENTS: tuple[str, ...] = (
+    "total_cells",
+    "q6_cells",
+    "total_value",
+    "q6_value",
 )
 
 
@@ -582,8 +588,62 @@ def _component_issue_counts(
             (_component_issue_label(row.get(component, {})) for row in seq),
             top=top,
         )
-        for component in ("total_cells", "q6_cells", "total_value", "q6_value")
+        for component in SUMMARY_COMPONENTS
     }
+
+
+def _component_issue_pattern_counts(
+    rows: Iterable[dict[str, Any]],
+    *,
+    predicate: Callable[[str, str], bool],
+    top: int = 8,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        components = tuple(
+            component
+            for component in SUMMARY_COMPONENTS
+            if predicate(component, _component_issue_label(row.get(component, {})))
+        )
+        counts["+".join(components) if components else "none"] += 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:top])
+
+
+def _target_missing_pattern_counts(
+    rows: Iterable[dict[str, Any]],
+    *,
+    top: int = 8,
+) -> dict[str, int]:
+    return _component_issue_pattern_counts(
+        rows,
+        predicate=lambda _component, issue: issue == "target_missing",
+        top=top,
+    )
+
+
+def _floor_below_truth_pattern_counts(
+    rows: Iterable[dict[str, Any]],
+    *,
+    top: int = 8,
+) -> dict[str, int]:
+    return _component_issue_pattern_counts(
+        rows,
+        predicate=lambda _component, issue: issue == "floor_below_truth",
+        top=top,
+    )
+
+
+def _exact_with_target_missing_pattern_counts(
+    rows: Iterable[dict[str, Any]],
+    *,
+    top: int = 8,
+) -> dict[str, int]:
+    def predicate(component: str, issue: str) -> bool:
+        return issue == "target_missing" or (
+            component == "total_cells" and issue == "exact_matches_truth"
+        )
+
+    return _component_issue_pattern_counts(rows, predicate=predicate, top=top)
 
 
 def _evidence_count_summary(
@@ -639,6 +699,17 @@ def _evidence_floor_only_summary(
         ),
         "source_counts": _source_counts(seq, top=top),
         "component_issue_counts": _component_issue_counts(seq, top=top),
+        "target_missing_pattern_counts": _target_missing_pattern_counts(
+            seq,
+            top=top,
+        ),
+        "floor_below_truth_pattern_counts": _floor_below_truth_pattern_counts(
+            seq,
+            top=top,
+        ),
+        "exact_with_target_missing_pattern_counts": (
+            _exact_with_target_missing_pattern_counts(seq, top=top)
+        ),
         "target_truth_delta_counts": _component_delta_counts(
             seq,
             key="target_truth_delta",
@@ -1313,6 +1384,18 @@ def _format_capacity_count_summary(summary: dict[str, Any]) -> tuple[str, ...]:
     )
 
 
+def _format_evidence_floor_only_summary(summary: dict[str, Any]) -> tuple[str, ...]:
+    return (
+        f"evidence_floor_only_rows={summary['rows']}",
+        "evidence_floor_only_missing_patterns="
+        + _format_counts(summary["target_missing_pattern_counts"]),
+        "evidence_floor_only_floor_below_patterns="
+        + _format_counts(summary["floor_below_truth_pattern_counts"]),
+        "evidence_floor_only_exact_missing_patterns="
+        + _format_counts(summary["exact_with_target_missing_pattern_counts"]),
+    )
+
+
 def _print_detail_summary(summary: dict[str, Any], *, top: int) -> None:
     overall = summary["overall"]
     print(
@@ -1359,6 +1442,9 @@ def _print_detail_summary(summary: dict[str, Any], *, top: int) -> None:
                 + _format_ratio_summary(overall["ratio_summary"]["q6_value"]),
                 *_format_capacity_count_summary(
                     overall["capacity_count_summary"],
+                ),
+                *_format_evidence_floor_only_summary(
+                    overall["evidence_floor_only_summary"],
                 ),
             )
         )

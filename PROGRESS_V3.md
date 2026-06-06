@@ -5124,3 +5124,57 @@ readiness:
 - 13 个 value-floor stress rows 中只有 12 个是 safe pure candidate；1 个 mixed row 必须先回到 cells/capacity/evidence blocker 语义层解释。
 - formal/value sampler 仍是 shadow-only；active sampler 与 promotion readiness 继续暂停。
 - 下一步继续查 evidence compiler floor source、q6/value target missing，以及 hard/lower-bound capacity conflict 的 table/session/source split。
+
+## 2026-06-06 checkpoint：evidence-floor target-missing pattern summary
+
+本轮把 `evidence_floor_only` bucket 的 component pattern 固化为 audit-only summary，继续只用于解释 evidence compiler blocker。该改动不接入 posterior sampler、不接入 formal/value sampler、不改变 readiness gate，也不触碰 v2 formal/live/UI 或正式出价。
+
+改动：
+
+- `scripts/summarize_v3_prior_robustness_audit.py`：
+  - 新增 `target_missing_pattern_counts`；
+  - 新增 `floor_below_truth_pattern_counts`；
+  - 新增 `exact_with_target_missing_pattern_counts`；
+  - summary 文本输出展示 evidence-floor-only pattern。
+- `tests/test_summarize_v3_prior_robustness_audit.py` 覆盖 `total_cells exact + q6/value target missing` 形态。
+- `DECISIONS_V3.md` 新增 D-v3-091 / D-v3-092；`OBSERVATIONS_V3.md` 新增 O-v3-096。
+
+关键验证：
+
+```powershell
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_prior_robustness_audit.py
+python -m py_compile scripts\summarize_v3_prior_robustness_audit.py
+python scripts\summarize_v3_prior_robustness_audit.py --posterior-trials 64 --detail-summary --format json
+```
+
+真实 64-trial pattern summary：
+
+```text
+evidence_floor_only rows=26
+
+target_missing_pattern_counts:
+  none=22
+  q6_cells+total_value+q6_value=4
+
+floor_below_truth_pattern_counts:
+  total_cells+q6_cells+total_value+q6_value=16
+  total_cells+total_value=5
+  none=4
+  q6_cells+total_value+q6_value=1
+
+exact_with_target_missing_pattern_counts:
+  none=21
+  total_cells+q6_cells+total_value+q6_value=4
+  total_cells=1
+```
+
+合成样本结论：
+
+- 可以后续做一个 diagnostics-only synthetic settlement mechanism probe，用来 falsify 明显不可能的 settlement 假设。
+- 该 probe 不能写入 promotion/readiness/v2 archive 输入，不能伪造 raw `0x002D` 或真实 capture/source/table evidence，缓存只放 `.tmp/codex/`。
+
+结论：
+
+- `evidence_floor_only` 需要继续拆成两条线：22 行 floor below truth 主体、4 行 `total_cells exact + q6/value target missing`。
+- `2502` 形态不是 table capacity 问题，也不是 formal/value sampler 参数问题；下一步查 q6/value allocation target 缺失。
+- hard/lower-bound capacity conflict 仍等待 table/session/source split 审计；promotion/readiness 继续不推进。

@@ -3739,3 +3739,51 @@ summary.v3_fv_delta_formal_p50_mae=0.0
 - 以前看起来的 13 个 value-floor candidate 中，只有 12 个是 pure value-floor；另 1 个是 `q6_cells_floor_stress+value_floor_stress` mixed row。
 - mixed row 已从 candidate 分母移出，但保留 watch 计数，避免后续 promotion 误把 cells/capacity blocker 当成 formal/value sampler 样本。
 - formal/value sampler 仍缺 safe holdout support；promotion/readiness 不推进，v2 archive 也不推进。
+
+## O-v3-096：evidence-floor-only pattern 拆出 22 个 floor 主体和 4 个 total-exact/missing-target rows
+
+2026-06-06 给 `evidence_floor_only_summary` 增加 component pattern counts 后，复跑真实 64-trial prior robustness detail summary：
+
+```text
+evidence_floor_only rows=26
+
+target_missing_pattern_counts:
+  none=22
+  q6_cells+total_value+q6_value=4
+
+floor_below_truth_pattern_counts:
+  total_cells+q6_cells+total_value+q6_value=16
+  total_cells+total_value=5
+  none=4
+  q6_cells+total_value+q6_value=1
+
+exact_with_target_missing_pattern_counts:
+  none=21
+  total_cells+q6_cells+total_value+q6_value=4
+  total_cells=1
+```
+
+component issue counts 保持：
+
+```text
+total_cells:
+  floor_below_truth=21
+  exact_matches_truth=5
+q6_cells:
+  floor_below_truth=17
+  floor_matches_truth=5
+  target_missing=4
+total_value:
+  floor_below_truth=22
+  target_missing=4
+q6_value:
+  floor_below_truth=17
+  floor_matches_truth=5
+  target_missing=4
+```
+
+解读：
+
+- `evidence_floor_only` 的主体是 22 行 floor below truth，不是 target missing。
+- 4 行 target missing 的模式完全一致：`q6_cells+total_value+q6_value` missing，并且同时有 total cells exact matches truth；这是 `2502` 形态。
+- 后续应把 q6/value allocation target 缺失与 item/shape floor below truth 分线审计；这仍不改变 readiness、sampler 或正式出价。

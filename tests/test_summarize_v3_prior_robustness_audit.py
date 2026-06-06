@@ -464,6 +464,18 @@ def test_prior_stress_detail_summary_exposes_evidence_floor_only_modes() -> None
         "floor_below_truth": 1,
         "target_missing": 1,
     }
+    assert floor_summary["target_missing_pattern_counts"] == {
+        "q6_cells+total_value+q6_value": 1,
+        "none": 1,
+    }
+    assert floor_summary["floor_below_truth_pattern_counts"] == {
+        "total_cells+total_value": 1,
+        "none": 1,
+    }
+    assert floor_summary["exact_with_target_missing_pattern_counts"] == {
+        "total_cells+q6_cells+total_value+q6_value": 1,
+        "none": 1,
+    }
     assert floor_summary["target_truth_delta_counts"]["total_cells"] == {
         "below_truth": 1,
         "matches_truth": 1,
