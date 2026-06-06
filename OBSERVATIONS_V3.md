@@ -3413,3 +3413,44 @@ missing_item_rate_avg=0.0
 - exact item likelihood 与 quality likelihood 完全同向，说明更细粒度权重没有推翻 `252x->251x` 略优的结论。
 - item-level margin 只是小幅增强，不足以把 `2521+` 定为 `2511+` official mapping。
 - 两个候选族的 item universe 仍完全覆盖 observed settlement；252x 继续作为 missing-table/activity cohort。
+
+## O-v3-090：readiness blocker lanes 显示当前仍是多维阻塞，不是单一 2506 问题
+
+2026-06-06 对 `summarize_v3_promotion_readiness.py --posterior-trials 64` 增加 dependency lanes 后复跑：
+
+```text
+overall_status=not_ready
+blocked_gates=12
+blocked_or_pending_lanes=formal_value_shadow_sampler,profile_sample_depth,sampler_safety_holdout,settlement_bridge_support,table_activity_capacity,v2_archive_after_promotion
+```
+
+lane status counts：
+
+```text
+archive_pipeline_quality: pass=1 watch=1
+table_activity_capacity: blocked=2 watch=1
+settlement_bridge_support: blocked=1 watch=2
+formal_value_shadow_sampler: blocked=3
+sampler_safety_holdout: blocked=5 watch=2
+profile_sample_depth: blocked=1
+v2_archive_after_promotion: pending=1
+```
+
+重点 gate：
+
+```text
+prior_robustness=blocked
+prior_stress_capacity_table_drift=blocked
+settlement_count_cells_value_bridge_holdout=blocked
+settlement_count_guarded_bridge_holdout=watch
+formal_baseline_metrics=blocked
+formal_value_sampler_holdout=blocked
+v2_archive_readiness=pending
+```
+
+解读：
+
+- 当前不是单一 2506 support blocker；2506 只对应 settlement bridge support lane 的 guarded candidate。
+- table/activity/capacity lane 仍由 prior robustness 与 prior-stress drift 阻塞，252x missing-table 仍不能进入 default prior。
+- formal/value shadow sampler lane 三个 gate 全 blocked，因此 formal/value active sampler 参数调优仍应暂停。
+- v2 archive 继续 pending，必须等 v3 formal path promoted and verified 后再讨论。

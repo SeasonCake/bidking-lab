@@ -4811,3 +4811,57 @@ formal_value_sampler_holdout=blocked
 - 252x mapping 的 exact item evidence 与 quality evidence 同向，但仍只是 `252x->251x` 略优的语义线索，不足以定表或进入 default prior。
 - 2506 的当前 promotion blocker 是 selected-fold support depth；下一步应采集 10-15 个真实 complete 2506 sessions，尤其补 Ethan/Aisha 2506，再复跑 high-trial stability。
 - formal/value active sampler 继续暂停；v3 仍保持 shadow-only。
+
+## 2026-06-06 checkpoint：readiness dependency lanes for parallel v3 work
+
+本轮为后续多 agent 并行推进增加 readiness blocker dependency view，不改任何 gate 判定、不改 v2 formal/live/UI、不改正式出价。
+
+改动：
+
+- `scripts/summarize_v3_promotion_readiness.py` 新增 `gate_dependencies`：
+  - `lane_status_counts`；
+  - `blocked_or_pending_lanes`；
+  - `blocked_or_pending_gates`；
+  - `watch_gates`。
+- summary 输出新增 `gate_dependency_lanes=...`。
+- `tests/test_summarize_v3_promotion_readiness.py` 覆盖：
+  - formal baseline / guarded bridge / v2 archive 的 lane 分类；
+  - 252x activity candidate 进入 `table_activity_capacity`；
+  - prior-stress capacity drift focus 保留 `detail_rows` 与 `capacity_flag_hits`。
+- `DECISIONS_V3.md` 新增 D-v3-085；`OBSERVATIONS_V3.md` 新增 O-v3-090。
+
+关键验证：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe -m py_compile scripts\summarize_v3_promotion_readiness.py
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format json
+```
+
+结果：
+
+```text
+readiness tests:
+4 passed
+
+readiness real run:
+overall_status=not_ready
+blocked_gates=12
+gate_dependency_lanes=formal_value_shadow_sampler,profile_sample_depth,sampler_safety_holdout,settlement_bridge_support,table_activity_capacity,v2_archive_after_promotion
+
+lane_status_counts:
+archive_pipeline_quality pass=1 watch=1
+table_activity_capacity blocked=2 watch=1
+settlement_bridge_support blocked=1 watch=2
+formal_value_shadow_sampler blocked=3
+sampler_safety_holdout blocked=5 watch=2
+profile_sample_depth blocked=1
+v2_archive_after_promotion pending=1
+```
+
+结论：
+
+- readiness dependency lanes 只作为调度/审计视图，不减少 `blocked_gates`，也不改变 promotion readiness。
+- 下一步并行推进应按 lane 拆分：table/activity/capacity 审计、2506 settlement bridge support、formal/value shadow sampler 设计、sampler safety/profile depth 验证。
+- formal/value active sampler 继续暂停；v3 promotion 和 v2 archive 仍未满足。

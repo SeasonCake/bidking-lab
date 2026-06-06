@@ -190,6 +190,21 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert "settlement_count_cells_value_bridge" in result
     assert "settlement_count_cells_value_bridge_holdout" in result
     assert "settlement_count_guarded_bridge_holdout" in result
+    assert "gate_dependencies" in result
+    dependencies = result["gate_dependencies"]
+    assert "formal_value_shadow_sampler" in dependencies["blocked_or_pending_lanes"]
+    assert "settlement_bridge_support" in dependencies["blocked_or_pending_lanes"]
+    assert "v2_archive_after_promotion" in dependencies["blocked_or_pending_lanes"]
+    dependency_gates = {
+        row["gate"]: row for row in dependencies["blocked_or_pending_gates"]
+    }
+    assert dependency_gates["formal_baseline_metrics"]["lane"] == (
+        "formal_value_shadow_sampler"
+    )
+    assert dependency_gates["settlement_count_guarded_bridge_holdout"]["lane"] == (
+        "settlement_bridge_support"
+    )
+    assert dependency_gates["v2_archive_readiness"]["status"] == "pending"
     assert "prior_stress_detail_summary" in result
     assert result["prior_stress_detail_summary"]["rows"] == 0
 
@@ -221,6 +236,12 @@ def test_readiness_blocks_prior_robustness_on_activity_candidate() -> None:
     assert gates["prior_robustness"]["status"] == "blocked"
     assert gates["prior_robustness"]["robust_activity_candidate"] == 2
     assert gates["prior_robustness"]["robust_prior_trusted"] == 0
+    dependency_gates = {
+        row["gate"]: row
+        for row in result["gate_dependencies"]["blocked_or_pending_gates"]
+    }
+    assert dependency_gates["prior_robustness"]["lane"] == "table_activity_capacity"
+    assert "activity_candidate_rows=2" in dependency_gates["prior_robustness"]["focus"]
     assert "separate activity/prior-drift rows before formal promotion" in result["next_actions"]
 
 
@@ -305,6 +326,13 @@ def test_readiness_surfaces_prior_stress_capacity_groups() -> None:
         "audit prior-stressed capacity/table drift by map/profile before promotion"
         in result["next_actions"]
     )
+    dependency_gates = {
+        row["gate"]: row
+        for row in result["gate_dependencies"]["blocked_or_pending_gates"]
+    }
+    drift_dependency = dependency_gates["prior_stress_capacity_table_drift"]
+    assert drift_dependency["lane"] == "table_activity_capacity"
+    assert drift_dependency["focus"] == "detail_rows=2;capacity_flag_hits=4"
 
 
 def test_readiness_blocks_archive_data_quality_on_parse_errors() -> None:

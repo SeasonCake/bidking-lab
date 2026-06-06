@@ -7,7 +7,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", newline="")
@@ -114,6 +114,192 @@ def _gate(
 
 def _blocked_count(gates: Iterable[dict[str, Any]]) -> int:
     return sum(1 for gate in gates if str(gate.get("status")) == "blocked")
+
+
+_GATE_DEPENDENCY_META: dict[str, tuple[str, str]] = {
+    "archive_data_quality": (
+        "archive_pipeline_quality",
+        "fix parse/constraint issues before trusting archive metrics",
+    ),
+    "shared_shadow_pipeline": (
+        "archive_pipeline_quality",
+        "keep v3 posterior shadow coverage complete and inactive",
+    ),
+    "prior_robustness": (
+        "table_activity_capacity",
+        "resolve missing/activity/prior-drift rows before default prior use",
+    ),
+    "prior_stress_capacity_table_drift": (
+        "table_activity_capacity",
+        "audit cells/capacity/evidence semantics by map/profile",
+    ),
+    "settlement_count_prior_shadow": (
+        "table_activity_capacity",
+        "keep settlement count prior visible and inactive while table gaps remain",
+    ),
+    "settlement_count_formal_value_link": (
+        "formal_value_shadow_sampler",
+        "prove settlement count candidates overlap value/formal stress",
+    ),
+    "settlement_count_cells_value_bridge": (
+        "settlement_bridge_support",
+        "find count->cells/value bridge candidates before holdout",
+    ),
+    "settlement_count_cells_value_bridge_holdout": (
+        "settlement_bridge_support",
+        "hold out count->cells/value bridge before sampler use",
+    ),
+    "settlement_count_guarded_bridge_holdout": (
+        "settlement_bridge_support",
+        "collect support and seed-stability for guarded settlement bridge",
+    ),
+    "formal_baseline_metrics": (
+        "formal_value_shadow_sampler",
+        "formal baseline must enter promotion band or be safely bridged",
+    ),
+    "underestimate_repair_holdout": (
+        "sampler_safety_holdout",
+        "keep bounded upshift inactive until holdout remains safe",
+    ),
+    "ccv_sampler": (
+        "sampler_safety_holdout",
+        "prove CCV candidate signal without global/map-layer hurt",
+    ),
+    "ccv_directionality": (
+        "sampler_safety_holdout",
+        "remove directional p50 hurt before CCV promotion",
+    ),
+    "ccv_direction_holdout": (
+        "sampler_safety_holdout",
+        "hold out directionally selected CCV movements",
+    ),
+    "tail_value_review": (
+        "sampler_safety_holdout",
+        "keep tail/value review non-formal until holdout is stable",
+    ),
+    "tail_under_combined_holdout": (
+        "sampler_safety_holdout",
+        "hold out combined under/tail policy before formal use",
+    ),
+    "formal_value_sampler_holdout": (
+        "formal_value_shadow_sampler",
+        "prove formal/value sampler support without over/under regressions",
+    ),
+    "residual_gate": (
+        "sampler_safety_holdout",
+        "residual remains watch-only with active rows at zero",
+    ),
+    "profile_sample_depth": (
+        "profile_sample_depth",
+        "collect enough profile-level samples before profile promotion",
+    ),
+    "v2_archive_readiness": (
+        "v2_archive_after_promotion",
+        "archive v2 only after v3 formal path is promoted and verified",
+    ),
+}
+
+
+def _gate_focus(gate: Mapping[str, Any]) -> str:
+    name = str(gate.get("name") or "")
+    if name == "prior_robustness":
+        activity = int(gate.get("robust_activity_candidate") or 0)
+        stressed = int(gate.get("robust_prior_stressed") or 0)
+        untrusted = int(gate.get("ready") or 0) - int(
+            gate.get("robust_prior_trusted") or 0
+        )
+        parts = []
+        if activity:
+            parts.append(f"activity_candidate_rows={activity}")
+        if stressed:
+            parts.append(f"prior_stressed_rows={stressed}")
+        if untrusted > 0:
+            parts.append(f"untrusted_ready_rows={untrusted}")
+        return ";".join(parts)
+    if name == "prior_stress_capacity_table_drift":
+        hits = int(gate.get("capacity_flag_hits") or 0)
+        rows = int(gate.get("detail_rows") or 0)
+        return f"detail_rows={rows};capacity_flag_hits={hits}"
+    if name == "settlement_count_prior_shadow":
+        missing = int(gate.get("missing_table_rows") or 0)
+        candidates = int(gate.get("candidate_rows") or 0)
+        return f"candidate_rows={candidates};missing_table_rows={missing}"
+    if name in {
+        "settlement_count_cells_value_bridge_holdout",
+        "settlement_count_guarded_bridge_holdout",
+    }:
+        applied = gate.get("applied_rows")
+        selected = gate.get("selected_group_fold_counts") or {}
+        parts = [f"applied_rows={applied}"]
+        if selected:
+            parts.append(
+                "selected_groups="
+                + ",".join(
+                    f"{key}:{selected[key]}"
+                    for key in sorted(selected)
+                )
+            )
+        return ";".join(parts)
+    if name == "settlement_count_formal_value_link":
+        return (
+            f"formal_rows={gate.get('scp_candidate_formal_rows')};"
+            f"value_floor_rows={gate.get('scp_candidate_value_floor_rows')};"
+            f"capacity_watch_rows={gate.get('scp_candidate_capacity_watch_rows')}"
+        )
+    if name == "formal_value_sampler_holdout":
+        return (
+            f"candidate_rows={gate.get('candidate_rows')};"
+            f"candidate_groups={','.join(gate.get('candidate_groups') or [])}"
+        )
+    if name == "formal_baseline_metrics":
+        return (
+            f"below_rate={gate.get('formal_p50_below_rate')};"
+            f"p90_coverage={gate.get('formal_p90_coverage')}"
+        )
+    if name == "profile_sample_depth":
+        return (
+            f"ccv_profile_rows={gate.get('ccv_profile_holdout_candidate_rows')};"
+            f"tail_profile_rows={gate.get('tail_profile_holdout_candidate_rows')}"
+        )
+    return ""
+
+
+def summarize_gate_dependencies(gates: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    lane_status_counts: dict[str, Counter[str]] = {}
+    for gate in gates:
+        name = str(gate.get("name") or "")
+        lane, action = _GATE_DEPENDENCY_META.get(
+            name,
+            ("other", "review gate-specific evidence"),
+        )
+        status = str(gate.get("status") or "unknown")
+        lane_status_counts.setdefault(lane, Counter())[status] += 1
+        rows.append(
+            {
+                "gate": name,
+                "status": status,
+                "lane": lane,
+                "blocking": status in {"blocked", "pending"},
+                "focus": _gate_focus(gate),
+                "action": action,
+            }
+        )
+    blocked_or_pending = [
+        row for row in rows if row["status"] in {"blocked", "pending"}
+    ]
+    watch = [row for row in rows if row["status"] == "watch"]
+    return {
+        "lane_status_counts": {
+            lane: dict(sorted(counts.items()))
+            for lane, counts in sorted(lane_status_counts.items())
+        },
+        "blocked_or_pending_lanes": sorted(
+            {row["lane"] for row in blocked_or_pending}
+        ),
+        "blocked_or_pending_gates": blocked_or_pending,
+        "watch_gates": watch,
+    }
 
 
 def _ccv_applied_hurt_groups(result: dict[str, Any]) -> list[str]:
@@ -1010,6 +1196,7 @@ def summarize_readiness(
         next_actions.append("separate activity/prior-drift rows before formal promotion")
 
     blocked = _blocked_count(gates)
+    gate_dependencies = summarize_gate_dependencies(gates)
     return {
         "overall_status": "not_ready" if blocked else "watch_only",
         "blocked_gates": blocked,
@@ -1052,6 +1239,7 @@ def summarize_readiness(
             )
         },
         "gates": gates,
+        "gate_dependencies": gate_dependencies,
         "prior_stress_detail_summary": {
             "rows": prior_stress_group_rows,
             "capacity_flag_hits": prior_stress_capacity_hits,
@@ -1349,6 +1537,12 @@ def _print_summary(result: dict[str, Any]) -> None:
                     f"reason={json.dumps(gate['reason'], ensure_ascii=False)}",
                 )
             )
+        )
+    dependencies = result["gate_dependencies"]
+    if dependencies["blocked_or_pending_lanes"]:
+        print(
+            "gate_dependency_lanes="
+            + ",".join(dependencies["blocked_or_pending_lanes"])
         )
     if result["next_actions"]:
         print("next_actions=" + " | ".join(result["next_actions"]))

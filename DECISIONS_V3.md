@@ -1927,3 +1927,19 @@ applied_hurts=2502
 - activity 15 rows：quality winners 与 item winners 均为 `minus10:11, minus20:4`。
 - exact item log likelihood per item 仅小幅偏向 `minus10`：`-5.965943` vs `-5.981787`。
 - 两个候选族的 missing item rate 与 zero item probability 都为 0；证据仍是权重偏好，不是 universe 区分。
+
+## D-v3-085：readiness dependency lanes 只用于调度，不改变 promotion gate
+
+2026-06-06 起，当前决策：
+
+- `summarize_v3_promotion_readiness.py` 输出 `gate_dependencies`，把 gate 映射到推进 lane，便于多 agent 并行拆分 blocker。
+- lane 只解释当前 gate 依赖，不参与 `status`、`blocked_gates`、`overall_status` 或 `next_actions` 判定。
+- `pending` 的 `v2_archive_readiness` 在 dependency view 中仍算 blocker/pending lane，但不计入原有 `blocked_gates`。
+- 2506 support、252x table/activity/capacity、formal/value shadow sampler、sampler safety/profile depth 必须继续分开推进；任一 lane 的 watch 都不能替代其它 lane 的 blocked evidence。
+- 该输出不得作为 promotion evidence；promotion 仍必须依赖 archive/live/readiness/holdout/stability 的原 gate。
+
+原因：
+
+- 当前 readiness 已有 20 个 gate，`blocked_gates=12`，但 next action 混合了 table/activity、bridge support、formal sampler、CCV/tail/profile 等不同 blocker。
+- 多 agent 并行时需要稳定的 gate->lane 映射，避免把 2506 support depth 当作 formal/value sampler 已可调参，或把 252x likelihood 当作 default prior 证据。
+- 新字段只从既有 gate 派生，单测覆盖 blocked/pending lane、activity candidate focus 与 capacity drift focus。
