@@ -424,6 +424,8 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
                     "max_rows": 25,
                     "scrollable": False,
                     "quality_counts": {"q5": 1, "q6": 1},
+                    "quality_reveal_counts": {"q2": 3, "q3": 3, "q4": 1, "q5": 1, "q6": 1},
+                    "quality_reveal_unplaced_counts": {"q6": 1},
                     "category_counts": {"能源": 1, "古董": 1},
                     "columns": 10,
                     "rows_hint": 20,
@@ -562,6 +564,8 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     minimap_section = next(section for section in model["sections"] if section[0] == "MiniMap")
     assert "已知 2 件" in minimap_section[1]
     assert "能源×1" in minimap_section[2]
+    assert "公共品质 Q2×3 / Q3×3 / Q4×1 / Q5×1 / Q6×1" in minimap_section[2]
+    assert "未定位 Q6×1" in minimap_section[2]
     constraints_section = next(
         section for section in model["sections"] if section[0] == "输入约束"
     )

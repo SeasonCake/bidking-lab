@@ -1237,6 +1237,71 @@ def _ui_minimap_quality_markers(
     return markers
 
 
+def _ui_minimap_quality_reveal_summary(
+    artifact: Mapping[str, Any],
+    *,
+    known_runtime_ids: set[int],
+    known_local_indexes: set[int],
+) -> dict[str, Any]:
+    counts: Counter[str] = Counter()
+    unplaced_counts: Counter[str] = Counter()
+    source_counts: Counter[str] = Counter()
+    covered_count = 0
+    placeable_count = 0
+    row_sources = (
+        ("packet", artifact.get("action_result_rows", ()) or ()),
+        ("public_info", artifact.get("public_info_rows", ()) or ()),
+    )
+    for source, rows in row_sources:
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            details = row.get("revealed_items_detail")
+            if not isinstance(details, Sequence) or isinstance(details, (str, bytes)):
+                continue
+            source_label = _text(row.get("tool"))
+            if not source_label and source == "public_info":
+                info_id = _int_or_none(row.get("info_id"))
+                source_label = (
+                    f"公共信息 {info_id}" if info_id is not None else "公共信息"
+                )
+            source_label = source_label or source
+            for item in details:
+                if not isinstance(item, Mapping):
+                    continue
+                quality = _int_or_none(item.get("quality"))
+                item_id = _int_or_none(item.get("item_id"))
+                if quality is None or item_id is not None:
+                    continue
+                local_index = _int_or_none(item.get("local_index"))
+                runtime_id = _int_or_none(item.get("runtime_id"))
+                label = f"q{quality}"
+                counts[label] += 1
+                source_counts[source_label] += 1
+                known_runtime = (
+                    runtime_id is not None and runtime_id in known_runtime_ids
+                )
+                known_local = local_index is not None and local_index in known_local_indexes
+                if known_runtime or known_local:
+                    covered_count += 1
+                elif local_index is None:
+                    unplaced_counts[label] += 1
+                else:
+                    placeable_count += 1
+    total = sum(counts.values())
+    if not total:
+        return {}
+    return {
+        "quality_reveal_count": total,
+        "quality_reveal_counts": dict(sorted(counts.items())),
+        "quality_reveal_unplaced_count": sum(unplaced_counts.values()),
+        "quality_reveal_unplaced_counts": dict(sorted(unplaced_counts.items())),
+        "quality_reveal_covered_count": covered_count,
+        "quality_reveal_placeable_count": placeable_count,
+        "quality_reveal_sources": dict(sorted(source_counts.items())),
+    }
+
+
 def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
     raw_items = [
         item
@@ -1317,11 +1382,17 @@ def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
                 "render_mode": "footprint",
             }
         )
-    for marker in _ui_minimap_quality_markers(
+    quality_reveal_summary = _ui_minimap_quality_reveal_summary(
+        artifact,
+        known_runtime_ids=set(known_runtime_ids),
+        known_local_indexes=set(known_local_indexes),
+    )
+    quality_markers = _ui_minimap_quality_markers(
         artifact,
         known_runtime_ids=known_runtime_ids,
         known_local_indexes=known_local_indexes,
-    ):
+    )
+    for marker in quality_markers:
         row = _int_or_none(marker.get("row"))
         height = _int_or_none(marker.get("height")) or 1
         if row is not None:
@@ -1330,6 +1401,8 @@ def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
         if quality is not None:
             quality_counts[f"q{quality}"] += 1
         items.append(marker)
+    if quality_reveal_summary:
+        quality_reveal_summary["quality_reveal_marker_count"] = len(quality_markers)
     rows_hint = min(
         _MINIMAP_MAX_ROWS,
         max(_MINIMAP_DEFAULT_ROWS, max_row),
@@ -1365,6 +1438,7 @@ def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
         "known_items": len(items),
         "quality_counts": dict(sorted(quality_counts.items())),
         "category_counts": dict(category_counts.most_common()),
+        **quality_reveal_summary,
         "items": items,
     }
 

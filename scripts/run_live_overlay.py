@@ -943,6 +943,23 @@ def _ui_contract_shadow_section(
     )
 
 
+def _quality_count_text(counts: Any) -> str:
+    mapping = _as_mapping(counts)
+    if not mapping:
+        return ""
+
+    def sort_key(item: tuple[Any, Any]) -> tuple[int, str]:
+        label = str(item[0])
+        digits = "".join(ch for ch in label if ch.isdigit())
+        return (int(digits) if digits else 99, label)
+
+    return " / ".join(
+        f"{str(label).upper()}×{count}"
+        for label, count in sorted(mapping.items(), key=sort_key)
+        if count
+    )
+
+
 def _ui_contract_minimap_section(
     contract: dict[str, Any],
 ) -> tuple[str, str, str] | None:
@@ -964,12 +981,15 @@ def _ui_contract_minimap_section(
         else "赛中已知"
     )
     q_text = " / ".join(
-        f"{label.upper()}×{count}"
-        for label, count in list(quality_counts.items())[-3:]
+        f"{label.upper()}×{count}" for label, count in list(quality_counts.items())[-3:]
     )
     c_text = " / ".join(
         f"{label}×{count}"
         for label, count in list(category_counts.items())[:4]
+    )
+    reveal_text = _quality_count_text(minimap.get("quality_reveal_counts"))
+    unplaced_text = _quality_count_text(
+        minimap.get("quality_reveal_unplaced_counts")
     )
     grid_note = _minimap_capacity_text(minimap, contract=contract)
     if minimap.get("scrollable"):
@@ -981,7 +1001,14 @@ def _ui_contract_minimap_section(
     return (
         "MiniMap",
         headline + (f"  |  {q_text}" if q_text else ""),
-        c_text or grid_note,
+        _join_parts(
+            (
+                c_text,
+                f"公共品质 {reveal_text}" if reveal_text else "",
+                f"未定位 {unplaced_text}" if unplaced_text else "",
+                grid_note,
+            )
+        ),
     )
 
 

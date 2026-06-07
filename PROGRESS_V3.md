@@ -8862,3 +8862,36 @@ v2_reference=True
 - 实战 UI/正式建议现在会按 v3 practical 重算防守价、可追价和停止价。
 - 如果实战表现不好，可用 `.\scripts\start_live_windivert_overlay.ps1 -Restart -FormalMode v2 -PortOnly -PythonPath C:\Python313\python.exe` 回退。
 - 由于 readiness 仍 not_ready，本阶段后续重点是实战观察和局后复盘，而不是宣称 v3 已可 archive v2。
+
+## 2026-06-07 checkpoint：公共随机品质 reveal 显示补齐
+
+实战反馈：
+
+- map 2404 / Gabriela 局中公共信息给出 `随机显示9件藏品的品质`，用户在小地图上没有看到对应信息。
+
+复核结论：
+
+- 最新 snapshot 中 `public_info_rows` 已解析 `info_id=200028`，包含 9 个 quality-only item：
+  - `Q6x1 / Q5x1 / Q4x1 / Q3x3 / Q2x3`。
+- v3 约束已利用该输入：
+  - `quality_floor_anchors=12`；
+  - `v3_summary_q6_count_floor=1`。
+- UI 问题不是模型漏用，而是小地图只显示可定位 marker/footprint；已被完整物品覆盖的品质项不再单独画 marker，无坐标项也不能硬画到格子。
+
+修复：
+
+- `ui_contract.minimap` 新增 quality-only reveal 汇总：
+  - `quality_reveal_counts`；
+  - `quality_reveal_unplaced_counts`；
+  - marker/covered/placeable 计数。
+- overlay MiniMap 文案显示 `公共品质 ...`；如存在无坐标红货，会显示 `未定位 Q6×N`。
+
+验证：
+
+```text
+pytest tests/test_runtime_snapshot.py tests/test_live_overlay.py -q
+51 passed
+
+pytest tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py tests/test_live_status.py -q
+92 passed
+```

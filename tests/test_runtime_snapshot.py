@@ -1148,6 +1148,15 @@ def test_ui_contract_minimap_includes_quality_only_markers() -> None:
                             "shape_code": None,
                             "cells": None,
                         },
+                        {
+                            "local_index": None,
+                            "runtime_id": 502,
+                            "item_id": None,
+                            "quality": 6,
+                            "value": None,
+                            "shape_code": None,
+                            "cells": None,
+                        },
                     ],
                 },
             ],
@@ -1159,5 +1168,15 @@ def test_ui_contract_minimap_includes_quality_only_markers() -> None:
 
     assert minimap["known_items"] == 5
     assert minimap["quality_counts"] == {"q2": 2, "q3": 1, "q4": 1, "q5": 1}
+    assert minimap["quality_reveal_count"] == 6
+    assert minimap["quality_reveal_counts"] == {
+        "q2": 3,
+        "q3": 1,
+        "q4": 1,
+        "q6": 1,
+    }
+    assert minimap["quality_reveal_marker_count"] == 4
+    assert minimap["quality_reveal_unplaced_count"] == 1
+    assert minimap["quality_reveal_unplaced_counts"] == {"q6": 1}
     assert {marker["local_index"] for marker in markers} == {43, 44, 75, 76}
     assert all(marker["width"] == 1 and marker["height"] == 1 for marker in markers)

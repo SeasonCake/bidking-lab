@@ -6697,3 +6697,14 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 - 如果实战出现明显过高或误导，优先用 `-FormalMode v2` 回退，而不是现场继续加参数。
 - post-game 需要重点看 `formal_mode`、`decision_value_p50_error`、`v3_practical_*`、P90 coverage、extreme-over/misleading 行。
 - 由于 readiness 仍 not_ready，不能据此 archive v2，也不能删除 v2 fallback/reference。
+
+## O-v3-165：随机 9 件公共品质已进入推理，但此前 UI 没有汇总展示
+
+2026-06-07 实战局复核：
+
+- `info_id=200028` 对应 `random_9_quality_reveal`，解析到了 9 个 quality-only item。
+- v3 summary 中 `quality_floor_anchors=12`，`v3_summary_q6_count_floor=1`，说明该输入已经参与约束/后验。
+- 小地图 marker 只适合有 `local_index` 的 quality-only item；同 runtime 后续被完整物品覆盖时应显示 footprint，不重复画旧 marker。
+- 没有 local_index 的红货不能硬落点，但应该在 UI 中显示为未定位公共品质。
+
+对应修复：MiniMap 区域新增 `公共品质 ...` 与 `未定位 Q6×N` 文案。
