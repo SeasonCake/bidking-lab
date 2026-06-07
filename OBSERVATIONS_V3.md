@@ -6656,3 +6656,15 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 
 - 新增 `main()` 端到端测试，临时构造 model_eval/error log，验证 `--brief --since-hours` 的完整输出。
 - 这让 post-game 复盘链路的窗口过滤和 v3 practical 行级复盘更可复核。
+
+## O-v3-163：post_game 默认 24h 与当前 v3 practical 72h 复盘口径不一致
+
+2026-06-07 检查 post-game 使用方式后：
+
+- 用户和 v3 practical 记录中长期使用 `--since-hours 72` 作为短期 live/实战复盘口径。
+- `post_game_live.ps1` 原默认仍是 `24.0`，如果局后直接运行脚本，会得到更窄窗口。
+
+修复后：
+
+- post-game 默认改为 72h，仍允许显式 `-SinceHours` 覆盖。
+- 该变化只影响操作默认值，不改变任何估值或正式出价路径。

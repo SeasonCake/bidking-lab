@@ -3116,3 +3116,16 @@ applied_hurts=2502
 
 - 当前实战链路依赖 PowerShell 调 CLI；helper 通过不代表 argparse、默认 error log、窗口过滤和 JSON 输出都正确。
 - 该测试覆盖能防止后续维护时再次出现 post-game 两个 brief 窗口不一致。
+
+## D-v3-154：post_game 默认复盘窗口采用 72h
+
+2026-06-07 起，当前决策：
+
+- `scripts/post_game_live.ps1` 默认 `$SinceHours=72.0`。
+- 该默认值只影响 post-game 聚合命令；单独运行 `summarize_live_windivert_brief.py` 或 `summarize_live_model_eval.py` 时仍可显式指定窗口。
+- 显式传入 `-SinceHours` 必须继续覆盖默认值。
+
+原因：
+
+- 当前 v3 practical 落地判断一直以 72h live/实战窗口作为主要短期复盘口径。
+- post-game 默认 24h 容易让用户局后看到的窗口和我们讨论/记录的 72h 指标不一致。

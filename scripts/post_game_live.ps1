@@ -1,7 +1,7 @@
 # Quick post-game checks after WinDivert live sessions.
 param(
   [string]$LogDir = "data\logs\live",
-  [double]$SinceHours = 24.0
+  [double]$SinceHours = 72.0
 )
 
 $ErrorActionPreference = "Stop"

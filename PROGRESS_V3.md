@@ -8785,3 +8785,20 @@ v3_practical.status=no_evaluable_rows
 
 - 这是实战复盘脚本入口的防回归测试，不改变任何运行时估值或 UI。
 - 后续如果修改 argparse、默认 log path、error log 或 post_game 参数，这个测试能更早发现窗口过滤断层。
+
+## 2026-06-07 checkpoint：post_game 默认复盘窗口改为 72h
+
+目标：
+
+- 与当前 v3 practical 验证口径保持一致：archive + 72h live/实战样本。
+- 减少局后忘记手动传 `-SinceHours 72` 导致复盘窗口变窄的风险。
+
+本轮动作：
+
+- `scripts/post_game_live.ps1` 默认 `$SinceHours` 从 `24.0` 改为 `72.0`。
+- 显式传参仍然可覆盖，例如 `.\scripts\post_game_live.ps1 -SinceHours 24`。
+
+当前解读：
+
+- 这是操作默认值调整，不改变任何 Python summarizer 默认、估值、UI 或正式出价。
+- post-game 现在默认与当前 v3 practical readiness/live review 口径一致。
