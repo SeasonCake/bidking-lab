@@ -8213,3 +8213,74 @@ overall v3_practical_p90_extreme_over_rate=0.19
 - 该规则是第一个落到 shared pipeline 的 source-profile practical sampler：收益不大但非常干净，整体 P90 coverage 提升且 extreme-over 不恶化。
 - 它没有改善 72h live brief，因为最近 live top miss 不包含这个具体 archive profile；这说明规则足够窄，不会在无关局里乱抬。
 - 下一步可按同样方式处理 `Aisha 2506 item+shape/shape` 或 `Ethan 2401 item+shape/layout`，但必须逐个 profile 用 coverage/extreme/misleading 评估，避免 broad 规则回潮。
+
+## 2026-06-07 checkpoint：v3 practical Ethan 2506 shape source-profile ceiling
+
+目标：
+
+- 继续按单 profile 方式推进 source-aware practical sampler，避免回到 broad q6 multiplier。
+- 复核 `Aisha 2506` 与 `Ethan 2401` 后，只接入当前更干净的 `ethan|2506|shape`；Aisha 2506/Ethan 2401 暂不接入。
+
+候选复核：
+
+- `Aisha 2506 item+shape`：20 行、9 miss，raw/q6 gap 明显，但 false/misleading 随 P90 delta 明显上升，不适合直接做 raise-watch。
+- `Aisha 2506 shape`：4 行、2 miss，只有一个 raw-gap 严格条件下的干净补点，样本太少，收益太小，暂不接入。
+- `Ethan 2401 item+shape`：27 行、8 miss，under 很大，但 raw/q6 gap 多数为 0；用 P90 delta 硬抬会制造大量 false/misleading，说明它更需要 q6 count/cells 条件化，不适合 source-profile ceiling。
+- `Ethan 2506 shape`：13 行、8 miss；条件 `raw_total_gap >= 100,000` 且 `q6_present_rate >= 0.85` 命中 8 行，覆盖约 7 个 miss，false 约 1，整体 extreme-over 不增加。
+
+本轮动作：
+
+- 在 `source_profile_q6_tail_ceiling_watch` 规则表新增：
+  - key=`ethan|2506|shape`；
+  - `q6_present_rate >= 0.85`；
+  - `total_value.p90 - formal_decision_value.p90 >= 100,000`；
+  - practical P90 delta=`500,000`；
+  - 只抬 practical total/formal/tail/q6 formal P90，不抬 P50，不改变 raw q6 value；
+  - `active=false`、`affects_bid=false`。
+- 新增测试覆盖该 source profile 的 500,000 P90 delta 与 P50/正式状态不变。
+
+验证结果：
+
+```text
+py_compile: passed
+pytest tests/test_inference_v3_pipeline.py tests/test_live_overlay.py -q:
+54 passed
+
+archive smoke (--posterior-trials 64):
+v3_practical_candidate_rows=413
+v3_practical_raise_watch_rows=105
+v3_practical_raise_watch_hit_rate=0.666667
+v3_practical_raise_watch_miss_rate=0.161905
+v3_practical_raise_watch_false_alarm_rate=0.171429
+v3_practical_raise_watch_extreme_over_rate=0.209524
+v3_practical_raise_watch_misleading_rate=0.104762
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.807051
+v3_practical_formal_p90_extreme_over_rate=0.325641
+
+live brief (--since-hours 72):
+overall v3_practical_p90_coverage=0.67
+overall v3_practical_p90_extreme_over_rate=0.19
+```
+
+对比上一 checkpoint：
+
+- `candidate_rows`: 409 -> 413。
+- `raise_watch_rows`: 97 -> 105。
+- `raise_watch_hit_rate`: 0.649485 -> 0.666667。
+- `raise_watch_miss_rate`: 0.175258 -> 0.161905。
+- `false_alarm_rate`: 0.175258 -> 0.171429。
+- `raise_watch_extreme_over_rate`: 0.226804 -> 0.209524。
+- `misleading_rate`: 0.113402 -> 0.104762。
+- `P50 MAE`: 316904.870 -> 316904.870。
+- `P90 coverage`: 0.802564 -> 0.807051。
+- `P90 extreme-over`: 保持 `0.325641`。
+
+解读：
+
+- 该规则是更实用的 source-profile 补漏：小幅提升 coverage，同时 raise-watch 质量整体改善。
+- live 72h 仍未变化，说明当前新增 profile 没有命中最近 live 样本；后续实战遇到 Ethan 2506 shape 时应观察 v3 practical 上沿是否有帮助。
+- Aisha 2506/Ethan 2401 暂不落规则本身也是结论：它们需要更真实的 q6 count/cells/value 条件 sampler，而不是继续 P90 delta 硬补。

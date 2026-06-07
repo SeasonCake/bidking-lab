@@ -615,6 +615,35 @@ def test_v3_practical_marks_source_profile_q6_tail_ceiling() -> None:
     assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 400_000.0
 
 
+def test_v3_practical_marks_ethan_shipwreck_shape_source_profile_ceiling() -> None:
+    baseline = _posterior_report(
+        map_id=2506,
+        q6_present_rate=0.9,
+        formal=_q(100_000, 300_000, 1_100_000),
+        total_value=_q(100_000, 300_000, 1_350_000),
+        q6_value=_q(0, 100_000, 800_000),
+        q6_formal=_q(0, 100_000, 300_000),
+    )
+
+    report = advise_practical_report(
+        baseline,
+        hero="ethan",
+        evidence_profile_key="shape",
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_source_profile_q6_tail_ceiling"
+    assert flat["v3_practical_mode"] == "source_profile_q6_tail_ceiling_watch"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert "source_profile_q6_tail_ceiling" in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 500_000.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 500_000.0
+
+
 def test_v3_practical_keeps_source_profile_q6_tail_ceiling_profile_scoped() -> None:
     baseline = _posterior_report(
         map_id=2501,

@@ -6411,3 +6411,55 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 
 - 下一个 profile 候选不应直接 broad 化。优先单独审查 `Aisha 2506 item+shape/shape` 与 `Ethan 2401 item+shape/layout`。
 - 若新增实战样本，优先补别墅正常样本；沉船 0605 后活动样本只作为 prior-drift/activity 鲁棒性参考。
+
+## O-v3-150：Aisha 2506 与 Ethan 2401 不能用 broad P90 delta 硬补
+
+2026-06-07 复核当前 archive 后：
+
+- `Aisha 2506 item+shape`：
+  - 20 行、9 miss；
+  - raw total gap 与 q6 raw gap 明显；
+  - 但 false/misleading 随 delta 明显上升，直接接入 raise-watch 会噪音过大。
+- `Aisha 2506 shape`：
+  - 4 行、2 miss；
+  - 只有 raw-gap 严格门槛下一个干净补点；
+  - 样本太少，暂不接入。
+- `Ethan 2401 item+shape`：
+  - 27 行、8 miss；
+  - under 很大，但多数窗口 raw total/q6 gap 为 0；
+  - 加固定 P90 delta 会制造大量 false/misleading。
+
+结论：
+
+- Aisha 2506 需要更细的条件：round、action source、raw gap、q6 present、existing underestimate mode 必须一起看，不能只凭 hero/map/profile。
+- Ethan 2401 更像 q6 count/cells gate 或 evidence likelihood 问题，不适合 tail ceiling；后续应做 q6 component sampler，而不是硬加上限。
+
+## O-v3-151：Ethan 2506 shape 是第二个干净 source-profile practical 补漏
+
+2026-06-07 全局搜索单 profile 后，`ethan|2506|shape` 表现最干净：
+
+- 13 行、8 miss；
+- 条件 `raw_total_gap >= 100,000` 且 `q6_present_rate >= 0.85` 命中 8 行；
+- 接入 `500,000` P90-only ceiling 后，约覆盖 7 个 miss；
+- false 约 1，整体 P90 extreme-over 不增加。
+
+接入后 64-trial archive smoke：
+
+```text
+v3_practical_candidate_rows=413
+v3_practical_raise_watch_rows=105
+v3_practical_raise_watch_hit_rate=0.666667
+v3_practical_raise_watch_miss_rate=0.161905
+v3_practical_raise_watch_false_alarm_rate=0.171429
+v3_practical_raise_watch_extreme_over_rate=0.209524
+v3_practical_raise_watch_misleading_rate=0.104762
+v3_practical_formal_p50_mae=316904.870
+v3_practical_formal_p90_coverage=0.807051
+v3_practical_formal_p90_extreme_over_rate=0.325641
+```
+
+观察：
+
+- 相比上一 checkpoint，coverage 提升且 raise-watch 的 hit/miss/false/extreme/misleading 都改善。
+- 这支持继续“单 profile、强门槛、小步 shadow”的落地方向。
+- 72h live brief 未变化，说明最近 live 未命中该 profile；不需要立刻新增实战样本。

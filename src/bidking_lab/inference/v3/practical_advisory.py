@@ -58,6 +58,11 @@ _SOURCE_PROFILE_Q6_TAIL_CEILING_RULES = {
         "min_raw_total_p90_gap": 100_000.0,
         "p90_delta": 400_000.0,
     },
+    ("ethan", 2506, "shape"): {
+        "min_q6_present_rate": 0.85,
+        "min_raw_total_p90_gap": 100_000.0,
+        "p90_delta": 500_000.0,
+    },
 }
 
 
