@@ -6337,3 +6337,39 @@ P90 extreme-over unchanged 0.319231
 
 - UI 已能显示 raw 上限差距，实战可先观察“formal P90 偏低但 raw/q6 raw gap 很大”的局。
 - 真正的 sampler 仍应做 source-aware q6 count/cells/value posterior，而不是把 raw ceiling 无条件加到 formal。
+
+## O-v3-148：q6 prior tail ceiling 显著减少 raise-watch miss，但会加宽上限
+
+2026-06-07 将 `q6_prior_tail_ceiling_watch` 接入 `q6_prior_floor_watch` 后，64-trial archive smoke：
+
+```text
+v3_practical_candidate_rows=397
+v3_practical_raise_watch_rows=82
+v3_practical_raise_watch_hit_rate=0.646341
+v3_practical_raise_watch_miss_rate=0.170732
+v3_practical_raise_watch_false_alarm_rate=0.182927
+v3_practical_raise_watch_extreme_over_rate=0.268293
+v3_practical_raise_watch_misleading_rate=0.134146
+v3_practical_formal_p50_mae=316904.870
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.796154
+v3_practical_formal_p90_extreme_over_rate=0.325641
+```
+
+live brief 72h：
+
+```text
+v3_practical_p90_coverage=0.67
+v3_practical_p90_extreme_over_rate=0.19
+```
+
+观察：
+
+- 该规则不增加 practical candidate/raise-watch 行数，而是在已有 q6 prior floor 强提醒里补 P90 上沿。
+- 对实战低估更有帮助：raise-watch hit 明显提升、miss 明显下降，P50 MAE 不变。
+- 代价明确：raise-watch extreme-over 与 misleading 上升，live 上限也更宽；因此 UI 上应解释为“q6 先验尾部风险/偏保守上限”，不能显示成正式估值或推荐报价。
+
+剩余问题：
+
+- top miss 中 Ethan 2501 layout 与 Aisha/Ethan villa q6 inactive 仍存在，说明 q6 count/cells gate 本身仍要做条件化。
+- 后续 sampler 应优先利用 `hero + map + round + evidence_profile`，特别是 layout/random_avg/shape 的组合，而不是继续提高全局 multiplier。

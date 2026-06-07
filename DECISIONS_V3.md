@@ -2906,3 +2906,25 @@ applied_hurts=2502
 - 受限 value-stress ceiling 在 archive smoke 中把 `v3_practical_raise_watch_hit_rate` 从 `0.353659` 提到 `0.451220`，`miss_rate` 从 `0.463415` 降到 `0.365854`，P50 MAE 与 P90 extreme-over 不变。
 - 直接把 raw/total P90 当 formal P90 的模拟虽然能覆盖部分 severe miss，但 false/extreme 过高，不适合伪装为实战推荐价。
 - 用户实战需要“不要只看到明显偏低的裁尾值”；正确落点是把 raw 上限显示出来，并清楚标注不影响正式出价。
+
+## D-v3-143：q6 prior tail ceiling 只允许作为强 q6 证据下的 practical P90 上限
+
+2026-06-07 起，当前决策：
+
+- 当 `q6_prior_floor_watch` 已触发，且窗口满足以下条件时，v3 practical 可以追加 `q6_prior_tail_ceiling`：
+  - map family 为 `villa` 或 `shipwreck`；
+  - `q6_present_rate >= 0.90`；
+  - `v3_prior_q6_expected_value` 可用；
+  - target=`v3_prior_q6_expected_value * 2.5`；
+  - target 相对当前 formal q6 P90 的 gap 至少 `100,000`；
+  - 单次 practical P90 delta cap=`500,000`。
+- 该规则只抬 practical total/formal/tail/q6 formal 的 P90，不抬 P50，不改变 raw q6 value。
+- 该规则只组合在已有 `q6_prior_floor_watch` 内，不新增独立 raise-watch 行。
+- 继续固定 `active=false`、`affects_bid=false`；不得进入 v2 formal、正式 bid 或正式出价。
+- hidden/非目标地图不触发该规则，避免在样本不足地图上放大长尾。
+
+原因：
+
+- archive smoke 中该规则把 `raise_watch_hit_rate` 从 `0.451220` 提到 `0.646341`，`miss_rate` 从 `0.365854` 降到 `0.170732`，P50 MAE 不变。
+- 代价是 `raise_watch_extreme_over_rate` 从 `0.146341` 升到 `0.268293`，`misleading_rate` 从 `0.097561` 升到 `0.134146`，整体 practical P90 extreme-over 从 `0.319231` 升到 `0.325641`。
+- 因此它符合“实战可以看偏保守上限，但不能当正式报价”的定位；下一步正式 sampler 仍应做 source-aware q6 count/cells/value posterior，而不是继续叠加 broad P90 delta。

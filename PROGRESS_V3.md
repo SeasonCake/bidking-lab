@@ -8079,3 +8079,68 @@ overall v3_practical_p90_extreme_over_rate=0.06
 - 该规则是一个小而实用的补漏：改善强提醒命中和 P90 coverage，不带偏 P50，也不新增正式出价风险。
 - 更激进地把 raw/total P90 直接作为 formal P90 的模拟能多覆盖部分 severe miss，但 false/extreme 过高；因此本轮只把 raw 上限作为 UI 可见参考，不把它包装成推荐价。
 - 当前最大剩余问题仍是 `q6_gate_inactive`、`q6_tail_value`、summary-likelihood 下 q6 count/cells/value 偏低；下一步应推进 source-aware q6 component sampler，而不是继续调宽 broad capacity/raw 上限。
+
+## 2026-06-07 checkpoint：v3 practical q6 prior tail ceiling
+
+目标：
+
+- 针对 `q6_prior_floor_watch` 已经说明 formal q6 P90 低于先验期望、且别墅/沉船 q6 present 证据很强的窗口，补一个 P90-only tail ceiling。
+- 继续不改 P50、不改 v2 formal、不改正式出价；该输出仅作为 `v3_practical_*` 实战风险上限。
+
+本轮动作：
+
+- `src/bidking_lab/inference/v3/practical_advisory.py` 新增 `q6_prior_tail_ceiling_watch` 组合规则：
+  - 只在已有 `q6_prior_floor_watch` 后组合；
+  - map family 限定为 `villa` / `shipwreck`；
+  - 要求 `q6_present_rate >= 0.90`；
+  - target=`v3_prior_q6_expected_value * 2.5`；
+  - formal q6 P90 gap 至少 `100,000`；
+  - practical P90 delta cap=`500,000`；
+  - 只抬 total/formal/tail/q6 formal 的 P90，不抬 P50，不改变 raw q6 value。
+- 测试补充：
+  - 沉船/别墅 q6 prior floor 可组合 tail ceiling；
+  - hidden/非目标地图不触发该 tail ceiling；
+  - `active=false`、`affects_bid=false` 不变。
+
+验证结果：
+
+```text
+py_compile: passed
+pytest tests/test_inference_v3_pipeline.py tests/test_live_overlay.py -q:
+51 passed
+
+archive smoke (--posterior-trials 64):
+v3_practical_candidate_rows=397
+v3_practical_raise_watch_rows=82
+v3_practical_raise_watch_hit_rate=0.646341
+v3_practical_raise_watch_miss_rate=0.170732
+v3_practical_raise_watch_false_alarm_rate=0.182927
+v3_practical_raise_watch_extreme_over_rate=0.268293
+v3_practical_raise_watch_misleading_rate=0.134146
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.796154
+v3_practical_formal_p90_extreme_over_rate=0.325641
+
+live brief (--since-hours 72):
+overall v3_practical_p90_coverage=0.67
+overall v3_practical_p90_extreme_over_rate=0.19
+```
+
+对比上一 checkpoint：
+
+- `raise_watch_hit_rate`: 0.451220 -> 0.646341。
+- `raise_watch_miss_rate`: 0.365854 -> 0.170732。
+- `false_alarm_rate`: 保持 `0.182927`。
+- `misleading_rate`: 0.097561 -> 0.134146。
+- `P50 MAE`: 316904.870 -> 316904.870。
+- `P90 coverage`: 0.785897 -> 0.796154。
+- `P90 extreme-over`: 0.319231 -> 0.325641。
+
+解读：
+
+- 这是目前最直接改善“实战持续低估”的 P90-only 补漏：强提醒命中明显上升，miss rate 明显下降，P50 不被带偏。
+- 代价是 raise-watch extreme-over 与 misleading 上升，尤其 live brief 的 practical extreme-over 从上一轮低位上升；因此它只能作为 UI/审计上的偏保守上限提示，不能 promotion 到正式出价。
+- 下一步仍应推进 source-aware q6 count/cells/value sampler：让 layout/random_avg/shape/round 证据决定 q6 分布移动，而不是继续叠加 broad P90 delta。

@@ -143,7 +143,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | 路径 | 作用 | 当前策略 |
 | --- | --- | --- |
 | `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做；hover/detail/alert 显示 shadow-only `v3_practical_*` 实战参考，compact 主决策仍用 baseline/fallback；v3 实战参考区显示 `ΔP50/ΔP90/Δq6/Δq6P90` 与 `rawΔP90/q6rawΔP90`，detail 显示 `rawP90/q6rawP90`，便于 P90-only ceiling 与尾部/仓库上限在实战中可见 |
-| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 diagnostics-only `v3_practical_*`；canonical evidence events 会传入 practical 层用于 random avg 等 source-aware reference；random avg high-signal P90 ceiling、low-support/value-stress q6 raw-tail ceiling 与 residual q6 value ceiling 只进入 practical shadow |
+| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 diagnostics-only `v3_practical_*`；canonical evidence events 会传入 practical 层用于 random avg 等 source-aware reference；random avg high-signal P90 ceiling、low-support/value-stress q6 raw-tail ceiling、q6 prior tail ceiling 与 residual q6 value ceiling 只进入 practical shadow |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate、practical P90 coverage/extreme-over，以及 raise-watch hit/miss/false-alarm/extreme-over/misleading rate，便于局后复盘 `v3_practical_*`；`raise_watch` 仅代表强低估提醒，`ceiling_watch`/`risk_watch` 代表只读上沿或风险提示 |

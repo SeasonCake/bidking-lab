@@ -30,6 +30,10 @@ from bidking_lab.inference.v3.underestimate_repair import (
 )
 
 _Q6_PRIOR_FLOOR_MIN_VALUE_GAP = 100_000.0
+_Q6_PRIOR_TAIL_CEILING_MIN_PRESENT_RATE = 0.90
+_Q6_PRIOR_TAIL_CEILING_MULTIPLIER = 2.5
+_Q6_PRIOR_TAIL_CEILING_MIN_P90_GAP = 100_000.0
+_Q6_PRIOR_TAIL_CEILING_MAX_DELTA = 500_000.0
 _TAIL_REPLACEMENT_MIN_P90_GAP = 50_000.0
 _RANDOM_AVG_VALUE_SIGNAL_FLOOR = 20_000.0
 _RANDOM_AVG_VALUE_MIN_P50_GAP = 100_000.0
@@ -395,6 +399,19 @@ def advise_practical_report(
         )
     if q6_prior_floor is not None:
         advisory, _reason = q6_prior_floor
+        combined_q6_prior_tail = _q6_prior_tail_ceiling_watch(
+            advisory,
+            formal_value=formal_value,
+        )
+        if combined_q6_prior_tail is not None:
+            advisory, q6_prior_tail_reason = combined_q6_prior_tail
+            lanes.append("prior_q6_tail")
+            risks.append("q6_prior_tail_ceiling")
+            _replace_reason_prefix(
+                reasons,
+                "q6_prior_tail_ceiling_shadow_only:",
+                q6_prior_tail_reason,
+            )
         combined_random_avg = _random_avg_value_floor_watch(
             advisory,
             evidence_events=evidence_events,
@@ -776,6 +793,17 @@ def _float_or_none(value: Any) -> float | None:
     return parsed
 
 
+def _map_family_from_id(map_id: int) -> str:
+    prefix = int(map_id) // 100
+    if prefix in {24, 34, 44}:
+        return "villa"
+    if prefix in {25, 35, 45}:
+        return "shipwreck"
+    if prefix in {26, 36, 46}:
+        return "hidden"
+    return "other"
+
+
 def _raise_p90_by_delta(
     summary: QuantileSummary | None,
     delta: float,
@@ -883,6 +911,73 @@ def _q6_prior_floor_watch(
     reason = (
         "q6_prior_floor_shadow_only:"
         f"expected={prior_q6_value:.0f}:p90_gap={q6_gap:.0f}"
+    )
+    return advisory, reason
+
+
+def _q6_prior_tail_ceiling_watch(
+    posterior: V3PosteriorReport,
+    formal_value: V3FormalValueSamplerReport | None,
+) -> tuple[V3PosteriorReport, str] | None:
+    prior_fields = formal_value.prior_fields if formal_value is not None else None
+    if not prior_fields:
+        return None
+    if _map_family_from_id(posterior.map_id) not in {"shipwreck", "villa"}:
+        return None
+    present_rate = _float_or_none(posterior.q6_present_rate)
+    if (
+        present_rate is None
+        or present_rate < _Q6_PRIOR_TAIL_CEILING_MIN_PRESENT_RATE
+    ):
+        return None
+    prior_q6_value = _float_or_none(prior_fields.get("v3_prior_q6_expected_value"))
+    formal = posterior.formal_decision_value
+    q6_formal = posterior.q6_formal_decision_value
+    if prior_q6_value is None or formal is None or q6_formal is None:
+        return None
+    tail_target = prior_q6_value * _Q6_PRIOR_TAIL_CEILING_MULTIPLIER
+    raw_gap = max(0.0, tail_target - float(q6_formal.p90))
+    if raw_gap < _Q6_PRIOR_TAIL_CEILING_MIN_P90_GAP:
+        return None
+    p90_delta = min(raw_gap, _Q6_PRIOR_TAIL_CEILING_MAX_DELTA)
+    diagnostics = tuple(posterior.diagnostics) + (
+        "practical_q6_prior_tail_ceiling_watch",
+        f"practical_q6_prior_tail_present_rate={present_rate:.6f}",
+        f"practical_q6_prior_tail_expected_value={prior_q6_value:.6f}",
+        f"practical_q6_prior_tail_target={tail_target:.6f}",
+        f"practical_q6_prior_tail_p90_gap={raw_gap:.6f}",
+        f"practical_q6_prior_tail_p90_delta={p90_delta:.6f}",
+    )
+    advisory = V3PosteriorReport(
+        map_id=posterior.map_id,
+        map_name=posterior.map_name,
+        n_total=posterior.n_total,
+        n_matched=posterior.n_matched,
+        n_strict_matched=posterior.n_strict_matched,
+        match_scope=posterior.match_scope,
+        q6_present_rate=posterior.q6_present_rate,
+        total_cells=posterior.total_cells,
+        total_value=_raise_p90_by_delta(posterior.total_value, p90_delta),
+        formal_decision_value=_raise_p90_by_delta(formal, p90_delta),
+        tail_replacement_decision_value=_raise_p90_by_delta(
+            posterior.tail_replacement_decision_value,
+            p90_delta,
+        ),
+        q6_count=posterior.q6_count,
+        q6_cells=posterior.q6_cells,
+        q6_value=posterior.q6_value,
+        q6_formal_decision_value=_raise_p90_by_delta(q6_formal, p90_delta),
+        q6_tail_replacement_decision_value=_raise_p90_by_delta(
+            posterior.q6_tail_replacement_decision_value,
+            p90_delta,
+        ),
+        diagnostics=diagnostics,
+    )
+    reason = (
+        "q6_prior_tail_ceiling_shadow_only:"
+        f"present_rate={present_rate:.3f}:expected={prior_q6_value:.0f}:"
+        f"target={tail_target:.0f}:raw_gap={raw_gap:.0f}:"
+        f"p90_delta={p90_delta:.0f}"
     )
     return advisory, reason
 

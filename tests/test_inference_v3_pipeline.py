@@ -82,8 +82,10 @@ def _q(p10: int, p50: int, p90: int) -> QuantileSummary:
 
 def _posterior_report(
     *,
+    map_id: int = 2401,
     match_scope: str = "summary_likelihood",
     n_matched: int = 2,
+    q6_present_rate: float | None = 1.0,
     q6_value: QuantileSummary | None = None,
     q6_formal: QuantileSummary | None = None,
     formal: QuantileSummary | None = None,
@@ -94,13 +96,13 @@ def _posterior_report(
     formal = formal or _q(100_000, 300_000, 420_000)
     tail_replacement = tail_replacement or formal
     return V3PosteriorReport(
-        map_id=2401,
+        map_id=map_id,
         map_name="test_map",
         n_total=2,
         n_matched=n_matched,
         n_strict_matched=n_matched if match_scope == "strict" else 0,
         match_scope=match_scope,
-        q6_present_rate=1.0,
+        q6_present_rate=q6_present_rate,
         total_cells=_q(20, 30, 40),
         total_value=formal,
         formal_decision_value=formal,
@@ -342,9 +344,92 @@ def test_v3_shadow_pipeline_marks_q6_prior_floor_as_practical_p90_watch() -> Non
     assert flat["v3_practical_affects_bid"] is False
     assert flat["v3_practical_active"] is False
     assert "q6_prior_floor_watch" in flat["v3_practical_risk_flags"]
+    assert "q6_prior_tail_ceiling" in flat["v3_practical_risk_flags"]
     assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
     assert flat["v3_practical_delta_formal_decision_value_p90"] > 0
-    assert flat["v3_practical_q6_formal_decision_value_p90"] == 420_000
+    assert flat["v3_practical_q6_formal_decision_value_p90"] == 920_000
+
+
+def test_v3_practical_combines_q6_prior_floor_with_tail_ceiling() -> None:
+    baseline = _posterior_report(
+        map_id=2501,
+        formal=_q(100_000, 400_000, 550_000),
+        q6_value=_q(0, 100_000, 100_000),
+        q6_formal=_q(0, 100_000, 100_000),
+    )
+    empty = FormalValueStressDetail(
+        source="none",
+        target=None,
+        prior_expected=None,
+    )
+    formal_value = V3FormalValueSamplerReport(
+        baseline=baseline,
+        summary=None,
+        prior_fields={
+            "v3_prior_available": True,
+            "v3_prior_q6_expected_value": 300_000,
+        },
+        total_count=empty,
+        total_cells=empty,
+        q6_count=empty,
+        q6_cells=empty,
+        total_value=empty,
+        q6_value=empty,
+    )
+
+    report = advise_practical_report(baseline, formal_value=formal_value)
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_q6_prior_floor"
+    assert flat["v3_practical_mode"] == "q6_prior_floor_watch"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert "q6_prior_floor_watch" in flat["v3_practical_risk_flags"]
+    assert "q6_prior_tail_ceiling" in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 650_000.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 650_000.0
+    assert flat["v3_practical_q6_formal_decision_value_p90"] == 750_000.0
+    assert flat["v3_practical_q6_value_p90"] == 300_000.0
+
+
+def test_v3_practical_keeps_q6_prior_tail_ceiling_outside_shipwreck_villa() -> None:
+    baseline = _posterior_report(
+        map_id=2601,
+        formal=_q(100_000, 400_000, 550_000),
+        q6_value=_q(0, 100_000, 100_000),
+        q6_formal=_q(0, 100_000, 100_000),
+    )
+    empty = FormalValueStressDetail(
+        source="none",
+        target=None,
+        prior_expected=None,
+    )
+    formal_value = V3FormalValueSamplerReport(
+        baseline=baseline,
+        summary=None,
+        prior_fields={
+            "v3_prior_available": True,
+            "v3_prior_q6_expected_value": 300_000,
+        },
+        total_count=empty,
+        total_cells=empty,
+        q6_count=empty,
+        q6_cells=empty,
+        total_value=empty,
+        q6_value=empty,
+    )
+
+    report = advise_practical_report(baseline, formal_value=formal_value)
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_q6_prior_floor"
+    assert "q6_prior_tail_ceiling" not in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 200_000.0
+    assert flat["v3_practical_q6_formal_decision_value_p90"] == 300_000.0
 
 
 def test_v3_shadow_pipeline_marks_tail_replacement_as_practical_p90_watch() -> None:
