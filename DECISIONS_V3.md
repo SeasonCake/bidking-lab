@@ -2679,3 +2679,25 @@ applied_hurts=2502
 - `map_id -> map_family all:all`：`min_source=1` recall 1.0 / precision 0.050119；`min_source=3` recall 0.904762 / precision 0.082251。
 - `external:external min_source=1` 也得到 recall 0.904762 / precision 0.082251，但仍漏 2410 numeric-only 与 2408 partial-action。
 - 该矩阵说明 support-depth 有助于限制 broad fallback false positives，但还没有达到可推广 source-aware prior 的证据强度。
+
+## D-v3-131：停止继续扩张 CSE 审计，转入 formal/value promotion workbench
+
+2026-06-07 起，当前决策：
+
+- CSE/source-depth/source-shape 审计已达到 stop-loss 点；除非有新 source parser、活动/远端表或新增实战样本，不再继续盲目添加 CSE key 组合。
+- `v3_cse_*` 继续作为 `watch` / support lane，固定 `active=false`、`affects_bid=false`。
+- `settlement_count_guarded_bridge_stability` 已通过 `data/processed/v3_scp_guarded_bridge_stability_shadow.json` 固化为已评估状态；当前结论是 `blocked_applied_hurt`，不得作为近期 promotion path。
+- 下一阶段主线改为 v3 formal/value promotion workbench：
+  - 汇总 CSE、SCP bridge、guarded bridge、tail/under、CCV、residual 等 shadow lanes；
+  - 为每条 lane 明确 candidate scope、support depth、holdout status、seed stability、MAE/below/P90/pinball/high-over；
+  - 只允许设计 shadow-only formal/value interface 和评估口径；
+  - 不恢复正式参数调优、不接入 live/formal、不讨论 promotion。
+- 如果 workbench 显示所有候选都 blocked 或 sample-limited，则后续应转向补 targeted samples / source parser / table acquisition，而不是继续参数搜索。
+
+原因：
+
+- CSE `map_family` recall=1.0 但 precision=0.050119，过宽。
+- CSE `map_id` recall=0.857143，漏 3 条稀疏/单例。
+- support-depth fallback 最好只到 recall=0.904762、precision=0.082251，仍不足以接 sampler。
+- Guarded bridge stability 在 seeds 0/1/7 下为 `blocked_applied_hurt`：seed 1 选入 `2501` 并 hurt，seed 7 的 `2506` support 只有 9 applied rows。
+- 继续 CSE 微分组不太可能解锁 v3 formal readiness；需要切到候选 lane 组合、stop-loss 和 formal/value shadow interface。

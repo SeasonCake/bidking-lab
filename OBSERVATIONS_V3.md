@@ -5955,3 +5955,51 @@ remaining misses：
 - 对 map-id primary 加 source-depth 阈值是负结果；它会漏掉大量已有 truth。
 - 对 fallback 加 source-depth 阈值有正向价值；它能把 full-recall map-family fallback 的 false positives 从 398 降到 212，但仍不是 promotion-ready。
 - 2410/2408 的剩余缺口不是阈值问题，而是 fallback group 内 source support 不足；需要 source/table acquisition 或新增样本。
+
+## O-v3-135：guarded bridge stability 失败，CSE 与 SCP bridge 都应进入 stop-loss
+
+2026-06-07 复跑 guarded settlement bridge seed stability：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --posterior-seed 7 --format summary
+```
+
+结果：
+
+```text
+overall_status=blocked_applied_hurt
+reasons=applied_hurts_present,non_watch_run,selected_group_drift,low_applied_rows
+runs=3
+watch_runs=2
+required_groups=2506
+stable_groups=2506
+union_groups=2501,2506
+min_applied=9
+min_required=20
+
+seed=0:
+  status=watch selected=2506 applied_rows=20 delta_mae=-6000.0 over=0.25
+
+seed=1:
+  status=blocked_holdout_hurt selected=2501,2506 applied_rows=62 delta_mae=378.95 over=0.580645 applied_hurts=2501
+
+seed=7:
+  status=watch selected=2506 applied_rows=9 delta_mae=-3333.333 over=0.333333
+```
+
+带稳定性 JSON 复跑 readiness：
+
+```text
+overall_status=not_ready
+settlement_count_guarded_bridge_stability=blocked
+scp_guarded_stability=blocked_applied_hurt
+formal_value_sampler_holdout=blocked
+cse_active_rows=0
+```
+
+解读：
+
+- 单 seed 下的 guarded bridge watch 不是可推广信号；seed 1 会引入 hurt group，seed 7 support 不足。
+- 该 lane 不应继续作为近期 promotion path，也不应继续围绕 `2506` 做窄调参。
+- CSE 已解释 blocker 但 precision/recall 不足；SCP guarded bridge 已评估且 seed stability 失败。两条线都应进入 stop-loss。
+- 下一步应建立 formal/value promotion workbench，用同一报告收束所有 shadow lane 的 support、holdout、seed stability 与风险，而不是继续单 lane 深挖。

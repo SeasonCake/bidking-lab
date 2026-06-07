@@ -7420,3 +7420,62 @@ missed examples for support-depth candidate：
 - 对 pure `map_id` candidate 提高 train source 阈值会显著降低 recall，且 precision 不升；不能作为默认收窄策略。
 - 对 fallback 限流有价值：`map_id -> map_family` 且 `min_source>=3` 将 broad fallback precision 从 `0.050119` 提到 `0.082251`，仍覆盖 19/21。
 - 该 support-depth fallback 仍低于 pure `map_id` precision，且继续漏 2410/2408；只能作为下一轮 source-aware prior candidate 审计，不得接入 formal/live。
+
+## 2026-06-07 checkpoint：策略切换与 guarded bridge stability 固化
+
+背景：
+
+- CSE/support-depth 已经验证很久，最新 `f659d64` 仍显示 CSE 只能作为 watch prior。
+- 用户明确要求避免继续耗在同一类审计，策略应转向更实质的 v3 formal/value 工作台。
+
+本轮动作：
+
+- 新增 `docs/v3_strategy_pivot_2026-06-07.zh-CN.md`，记录新目标、stop-loss 和下一阶段允许/禁止事项。
+- 生成并提交 `data/processed/v3_scp_guarded_bridge_stability_shadow.json`。
+- 用该 JSON 复跑 readiness，确认 `settlement_count_guarded_bridge_stability` 不再是 `not_evaluated`，而是已评估且 blocked。
+- 新增 `scripts/summarize_v3_promotion_workbench.py`，消费 readiness JSON 并输出 lane-level `blocked/watch/stop_loss` 与 `next_mode`，不重新跑模型。
+
+验证命令：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --posterior-seed 7 --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --format summary
+C:\Users\shenc\anaconda3\python.exe scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_with_stability.json --format summary
+```
+
+结果：
+
+```text
+guarded bridge stability:
+overall_status=blocked_applied_hurt
+reasons=applied_hurts_present,non_watch_run,selected_group_drift,low_applied_rows
+watch_runs=2/3
+stable_groups=2506
+union_groups=2501,2506
+min_applied=9
+required=20
+seed=1 applied_hurts=2501
+seed=7 selected=2506 applied_rows=9
+
+readiness with stability json:
+overall_status=not_ready
+settlement_count_guarded_bridge_stability=blocked
+scp_guarded_stability=blocked_applied_hurt
+cse_candidate_rows=752
+cse_pressure_candidate_rows=61
+cse_active_rows=0
+formal_value_sampler_holdout=blocked
+
+promotion workbench:
+overall_status=not_ready
+blocked_gates=13
+verdicts=blocked:2,stop_loss:4,usable_watch:1
+next_mode=build_shadow_formal_value_workbench
+```
+
+新策略：
+
+- CSE 继续保留为 watch/support lane，不再继续无限新增 key/support-depth 审计。
+- Guarded bridge lane 由于 seed stability 失败，近期不得作为 promotion path。
+- 下一步转入 v3 formal/value promotion workbench：先统一候选 lane、分母、support、holdout、seed stability、MAE/below/P90/pinball/high-over 和 `affects_bid=false`，再选择最小 shadow-only interface slice。
+- v2 formal/live/UI 与正式出价仍不改；v3 promotion 仍不讨论。
