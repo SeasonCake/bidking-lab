@@ -44,6 +44,24 @@ def test_summarize_dedupes_latest_row_by_file() -> None:
     assert summary["decision_value_mae"] == 10
 
 
+def test_filter_rows_since_uses_selected_time_window() -> None:
+    module = _summary_module()
+
+    rows, cutoff = module._filter_rows_since(
+        [
+            {"ts": 10, "file": "old.json"},
+            {"ts": 100, "file": "edge.json"},
+            {"ts": 101, "file": "new.json"},
+            {"file": "missing-ts.json"},
+        ],
+        since_hours=1,
+        now=3700,
+    )
+
+    assert cutoff == 100
+    assert [row["file"] for row in rows] == ["edge.json", "new.json"]
+
+
 def test_summarize_recomputes_replacement_decision_error_for_old_rows() -> None:
     module = _summary_module()
 
@@ -416,6 +434,10 @@ def test_brief_summary_keeps_live_review_signals_compact() -> None:
     module = _summary_module()
 
     summary = {
+        "window": {
+            "since_hours": 24.0,
+            "selected_rows": 303,
+        },
         "rows": 303,
         "raw_rows": 422,
         "deduped_rows": 119,
@@ -502,6 +524,10 @@ def test_brief_summary_keeps_live_review_signals_compact() -> None:
     brief = module.brief_summary(summary)
 
     assert brief["rows"] == 303
+    assert brief["window"] == {
+        "since_hours": 24.0,
+        "selected_rows": 303,
+    }
     assert brief["performance"] == {
         "processing_seconds_median": 6.982,
         "processing_seconds_p75": 13.803,
@@ -560,6 +586,18 @@ def test_brief_summary_keeps_empty_v3_practical_compact() -> None:
         "active_rows": 0,
         "affects_bid_rows": 0,
     }
+
+
+def test_summarize_v3_practical_distinguishes_empty_window_from_old_fields() -> None:
+    module = _summary_module()
+
+    empty = module.summarize([])
+    old_fields = module.summarize([{"ts": 1, "file": "old.json", "final_value": 1}])
+
+    assert empty["v3_practical"]["status"] == "no_evaluable_rows"
+    assert "没有可评估" in empty["v3_practical"]["note"]
+    assert old_fields["v3_practical"]["status"] == "no_v3_practical_fields"
+    assert "没有 v3_practical_* 字段" in old_fields["v3_practical"]["note"]
 
 
 def test_summarize_and_brief_include_v3_practical_shadow_review() -> None:

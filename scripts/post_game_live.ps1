@@ -33,5 +33,5 @@ Write-Host "-- summarize_live_windivert_brief --" -ForegroundColor DarkCyan
 & $Python (Join-Path $Repo "scripts\summarize_live_windivert_brief.py") --since-hours $SinceHours
 Write-Host ""
 
-Write-Host "-- summarize_live_model_eval --brief --" -ForegroundColor DarkCyan
-& $Python (Join-Path $Repo "scripts\summarize_live_model_eval.py") --brief
+Write-Host "-- summarize_live_model_eval --brief --since-hours $SinceHours --" -ForegroundColor DarkCyan
+& $Python (Join-Path $Repo "scripts\summarize_live_model_eval.py") --brief --since-hours $SinceHours

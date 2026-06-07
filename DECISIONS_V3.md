@@ -3069,3 +3069,19 @@ applied_hurts=2502
 
 - 当前目标是实战可用性；`confidence low_medium`、`rawΔP90` 这类内部标签会降低用户判断速度。
 - v3 practical 是 shadow-only 上沿参考，显示层必须更清楚地区分证据来源、置信度、仓库上限和只读边界。
+
+## D-v3-151：post-game model_eval brief 必须支持 SinceHours 窗口
+
+2026-06-07 起，当前决策：
+
+- `summarize_live_model_eval.py --brief` 必须支持 `--since-hours`，并在 brief 中输出窗口元数据。
+- `post_game_live.ps1` 调用 model_eval brief 时必须传入同一个 `$SinceHours`，与 windivert brief 保持同一复盘窗口。
+- v3 practical brief 必须区分：
+  - `no_evaluable_rows`：当前窗口没有可评估 model_eval 行；
+  - `no_v3_practical_fields`：当前窗口有行，但日志字段集旧或缺少 `v3_practical_*`；
+  - `fields_present`：可以聚合 v3 practical。
+
+原因：
+
+- 只对 windivert brief 使用时间窗口、model_eval brief 却读全量日志，会让 post-game 复盘混入旧日志。
+- 当前阶段重点是实战链路稳定；窗口不一致会直接干扰“新局是否已进入 v3 practical model_eval 链路”的判断。

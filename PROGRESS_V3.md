@@ -8690,3 +8690,35 @@ pytest tests/test_live_overlay.py tests/test_runtime_snapshot.py -q:
 
 - 这是纯展示语义修复，目标是让实战用户更快分清：正式 baseline、v3 上沿、低估风险、证据来源、置信度、仓库上限和只读边界。
 - 后续如果新增 practical 字段，应同步检查“字段是否贯通”和“展示标签是否能被非开发视角理解”。
+
+## 2026-06-07 checkpoint：post_game model_eval brief 使用同一时间窗口
+
+目标：
+
+- 保持 v2 formal、正式出价、UI 基线和 v3 practical 数值不变。
+- 让 post-game 复盘的 windivert brief 与 model_eval brief 使用相同 `SinceHours`，避免全量旧日志干扰新局判断。
+
+本轮动作：
+
+- `summarize_live_model_eval.py` 新增 `--since-hours`：
+  - 同时过滤 `model_eval.jsonl` 与 `monitor_errors.jsonl`；
+  - brief 输出 `window.since_hours`、输入行数、选中行数；
+  - v3 practical 状态区分 `no_evaluable_rows` 与 `no_v3_practical_fields`。
+- `post_game_live.ps1` 将同一个 `$SinceHours` 传给 `summarize_live_model_eval.py --brief --since-hours`。
+
+验证结果：
+
+```text
+py_compile scripts/summarize_live_model_eval.py tests/test_summarize_live_model_eval.py: passed
+pytest tests/test_summarize_live_model_eval.py -q:
+22 passed
+
+summarize_live_model_eval.py --brief --since-hours 72: passed
+window.selected_rows=0
+v3_practical.status=no_evaluable_rows
+```
+
+当前解读：
+
+- 这是实战复盘口径修复，不改变任何估值结果。
+- 当前 72h model_eval 窗口没有可评估行，所以 post-game 输出会明确提示 `no_evaluable_rows`；等最新 live monitor 采集新局后，该窗口才会反映新局的 v3 practical 字段。

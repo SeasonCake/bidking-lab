@@ -6618,3 +6618,16 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 
 - hover/detail 显示为 `置信 中低`、`证据 ...`、`风险 ...`、`仓库上限ΔP90`、`q6上限ΔP90`、`仓库上限P90`、`q6上限P90`。
 - 该变化不影响任何数值或出价路径，但能减少实战中把 raw upper / practical upper 误读成正式报价的概率。
+
+## O-v3-160：post-game 两个 brief 曾使用不同时间窗口
+
+2026-06-07 检查 `post_game_live.ps1` 后：
+
+- `summarize_live_windivert_brief.py` 已使用 `$SinceHours`。
+- `summarize_live_model_eval.py --brief` 原本没有 `--since-hours`，因此读取全量 `model_eval.jsonl`。
+- 这会让局后复盘难以判断最新 live monitor 是否已经写入 v3 practical 字段，尤其是旧日志仍在文件中时。
+
+修复后：
+
+- model_eval brief 支持同一 `--since-hours` 窗口，并输出 `window.selected_rows`。
+- 当前真实 72h model_eval 窗口为 `selected_rows=0`，v3 practical 状态为 `no_evaluable_rows`，说明不是 v3 practical 失效，而是当前窗口没有可评估 model_eval 行。

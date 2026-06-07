@@ -7,6 +7,7 @@ import csv
 import json
 import statistics
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -319,6 +320,22 @@ def _numeric(row: dict[str, Any], key: str) -> float | None:
         return None
 
 
+def _filter_rows_since(
+    rows: list[dict[str, Any]],
+    *,
+    since_hours: float | None,
+    now: float | None = None,
+) -> tuple[list[dict[str, Any]], float | None]:
+    if since_hours is None:
+        return list(rows), None
+    cutoff = (time.time() if now is None else now) - max(0.0, since_hours) * 3600.0
+    return [
+        row
+        for row in rows
+        if (ts := _numeric(row, "ts")) is not None and ts >= cutoff
+    ], cutoff
+
+
 def _with_derived_decision_errors(row: dict[str, Any]) -> dict[str, Any]:
     decision_p50 = _numeric(row, "decision_value_p50")
     decision_p90 = _numeric(row, "decision_value_p90")
@@ -628,16 +645,21 @@ def _v3_practical_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if _truthy_value(row.get("v3_practical_candidate"))
     ]
     scoped_rows = ready_rows or practical_rows
+    if practical_rows:
+        status = "fields_present"
+        note = None
+    elif rows:
+        status = "no_v3_practical_fields"
+        note = (
+            "当前选中的 model_eval 行没有 v3_practical_* 字段；"
+            "需要用最新 live monitor 采集的新日志生成该汇总。"
+        )
+    else:
+        status = "no_evaluable_rows"
+        note = "当前时间窗口没有可评估 model_eval 行。"
     return {
-        "status": "fields_present" if practical_rows else "no_v3_practical_fields",
-        "note": (
-            None
-            if practical_rows
-            else (
-                "当前选中的 model_eval 行没有 v3_practical_* 字段；"
-                "需要用最新 live monitor 采集的新日志生成该汇总。"
-            )
-        ),
+        "status": status,
+        "note": note,
         "rows": len(practical_rows),
         "available_rows": _truthy_count(practical_rows, "v3_practical_available"),
         "ready_rows": len(ready_rows),
@@ -813,6 +835,7 @@ def brief_summary(summary: dict[str, Any]) -> dict[str, Any]:
     """Return the high-signal subset used for live calibration check-ins."""
 
     return {
+        "window": summary.get("window"),
         "rows": summary.get("rows"),
         "raw_rows": summary.get("raw_rows"),
         "deduped_rows": summary.get("deduped_rows"),
@@ -2740,6 +2763,12 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--since-hours",
+        type=float,
+        default=None,
+        help="Only include model_eval and monitor error rows newer than this many hours.",
+    )
+    parser.add_argument(
         "--format",
         choices=("full", "brief"),
         default="full",
@@ -2764,11 +2793,22 @@ def main() -> int:
     )
     args = parser.parse_args()
     path = Path(args.path)
-    rows = _read_jsonl(path)
+    raw_rows = _read_jsonl(path)
     error_log = Path(args.error_log) if args.error_log else path.with_name(
         "monitor_errors.jsonl"
     )
-    monitor_errors = _read_jsonl(error_log)
+    raw_monitor_errors = _read_jsonl(error_log)
+    filter_now = time.time() if args.since_hours is not None else None
+    rows, since_ts = _filter_rows_since(
+        raw_rows,
+        since_hours=args.since_hours,
+        now=filter_now,
+    )
+    monitor_errors, _ = _filter_rows_since(
+        raw_monitor_errors,
+        since_hours=args.since_hours,
+        now=filter_now,
+    )
     summary = summarize(
         rows,
         dedupe=not args.no_dedupe,
@@ -2780,6 +2820,15 @@ def main() -> int:
         },
         monitor_error_rows=monitor_errors,
     )
+    if args.since_hours is not None:
+        summary["window"] = {
+            "since_hours": args.since_hours,
+            "since_ts": since_ts,
+            "input_rows": len(raw_rows),
+            "selected_rows": len(rows),
+            "input_monitor_error_rows": len(raw_monitor_errors),
+            "selected_monitor_error_rows": len(monitor_errors),
+        }
     shadow_review_export = None
     if args.export_shadow_review_dir:
         shadow_review_export = export_shadow_candidate_reviews(
