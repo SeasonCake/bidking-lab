@@ -1304,6 +1304,10 @@ def _ui_contract_v3_practical_section(
 
     if recommendation == "raise_watch":
         headline = "低估风险：参考上沿/谨慎加价"
+    elif recommendation == "ceiling_watch":
+        headline = "参考上沿：防低估但不建议直接加价"
+    elif recommendation == "risk_watch":
+        headline = "风险提示：证据/容量异常，谨慎参考"
     elif _flag(practical.get("candidate")):
         headline = "候选观察：未进入正式出价"
     else:
@@ -1742,11 +1746,17 @@ def _ui_contract_alerts(contract: dict[str, Any]) -> list[tuple[str, str]]:
             )
         elif (
             _flag(practical.get("available"))
-            and practical.get("recommendation") == "raise_watch"
+            and practical.get("recommendation")
+            in {"raise_watch", "ceiling_watch", "risk_watch"}
         ):
+            recommendation_label = {
+                "raise_watch": "提示低估风险",
+                "ceiling_watch": "给出参考上沿",
+                "risk_watch": "提示证据/容量风险",
+            }.get(str(practical.get("recommendation")), "提示风险")
             alerts.append(
                 (
-                    "v3 实战参考提示低估风险："
+                    f"v3 实战参考{recommendation_label}："
                     f"P90 {_fmt_int(practical.get('formal_decision_value_p90'))}，"
                     f"来源 {practical.get('source_lanes') or practical.get('source') or '?'}，"
                     "不改正式出价",

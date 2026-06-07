@@ -218,6 +218,9 @@ def estimate_shadow_pipeline(
     )
     practical_advisory = advise_practical_report(
         posterior,
+        ccv_posterior=ccv_posterior,
+        ccv_component_posterior=ccv_component_posterior,
+        residual_posterior=residual_posterior,
         formal_value=formal_value,
         underestimate=underestimate,
         tail_review=tail_review,

@@ -34,6 +34,11 @@ _TAIL_REPLACEMENT_MIN_P90_GAP = 50_000.0
 _RANDOM_AVG_VALUE_SIGNAL_FLOOR = 20_000.0
 _RANDOM_AVG_VALUE_MIN_P50_GAP = 100_000.0
 _RANDOM_AVG_VALUE_MIN_P90_GAP = 50_000.0
+_Q6_VALUE_CEILING_MIN_P50_GAP = 100_000.0
+_Q6_VALUE_CEILING_MIN_P90_GAP = 100_000.0
+_Q6_VALUE_RAISE_MIN_P50_GAP = 200_000.0
+_Q6_VALUE_RAISE_MIN_P90_GAP = 200_000.0
+_Q6_VALUE_CEILING_MAX_DELTA = 400_000.0
 
 
 @dataclass(frozen=True)
@@ -141,6 +146,9 @@ class V3PracticalAdvisoryReport:
 def advise_practical_report(
     posterior: V3PosteriorReport | None,
     *,
+    ccv_posterior: V3PosteriorReport | None = None,
+    ccv_component_posterior: V3PosteriorReport | None = None,
+    residual_posterior: V3PosteriorReport | None = None,
     formal_value: V3FormalValueSamplerReport | None = None,
     underestimate: V3UnderestimateRepairReport | None = None,
     tail_review: V3TailValueReviewReport | None = None,
@@ -205,6 +213,17 @@ def advise_practical_report(
         risks.append("random_avg_value_floor_watch")
         reasons.append(random_avg_watch[1])
 
+    q6_value_ceiling_watch = _q6_value_ceiling_watch(
+        posterior,
+        ccv_posterior=ccv_posterior,
+        ccv_component_posterior=ccv_component_posterior,
+        residual_posterior=residual_posterior,
+    )
+    if q6_value_ceiling_watch is not None:
+        lanes.append(q6_value_ceiling_watch[3])
+        risks.append("q6_value_ceiling_watch")
+        reasons.append(q6_value_ceiling_watch[1])
+
     if underestimate is not None and underestimate.candidate:
         lanes.append("underestimate")
         risks.append("underestimate_repair_candidate")
@@ -266,8 +285,8 @@ def advise_practical_report(
             source="underestimate",
             mode="bounded_underestimate_repair",
             status="watch_raise_candidate",
-            recommendation="raise_watch",
-            confidence="medium_low",
+            recommendation="ceiling_watch",
+            confidence="low_medium",
             source_lanes=_dedupe(lanes),
             risk_flags=_dedupe(risks),
             reason=_join_reasons(reasons),
@@ -282,6 +301,18 @@ def advise_practical_report(
             advisory, random_reason, _random_raise_watch = combined_random_avg
             if random_reason not in reasons:
                 reasons.append(random_reason)
+        combined_q6_value = _q6_value_ceiling_watch(
+            advisory,
+            ccv_posterior=ccv_posterior,
+            ccv_component_posterior=ccv_component_posterior,
+            residual_posterior=residual_posterior,
+        )
+        if combined_q6_value is not None:
+            advisory, q6_value_reason, _q6_value_raise_watch, _source = (
+                combined_q6_value
+            )
+            if q6_value_reason not in reasons:
+                reasons.append(q6_value_reason)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -296,6 +327,19 @@ def advise_practical_report(
         )
     if random_avg_watch is not None:
         advisory, _reason, random_raise_watch = random_avg_watch
+        combined_q6_value = _q6_value_ceiling_watch(
+            advisory,
+            ccv_posterior=ccv_posterior,
+            ccv_component_posterior=ccv_component_posterior,
+            residual_posterior=residual_posterior,
+        )
+        if combined_q6_value is not None:
+            advisory, q6_value_reason, q6_value_raise_watch, _source = (
+                combined_q6_value
+            )
+            random_raise_watch = random_raise_watch or q6_value_raise_watch
+            if q6_value_reason not in reasons:
+                reasons.append(q6_value_reason)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -312,6 +356,26 @@ def advise_practical_report(
             risk_flags=_dedupe(risks),
             reason=_join_reasons(reasons),
         )
+    if q6_value_ceiling_watch is not None:
+        advisory, _reason, q6_value_raise_watch, q6_value_source = (
+            q6_value_ceiling_watch
+        )
+        return V3PracticalAdvisoryReport(
+            baseline=posterior,
+            advisory=advisory,
+            source=q6_value_source,
+            mode="q6_value_ceiling_watch",
+            status=(
+                "watch_q6_value_raise"
+                if q6_value_raise_watch
+                else "watch_q6_value_ceiling"
+            ),
+            recommendation="raise_watch" if q6_value_raise_watch else "ceiling_watch",
+            confidence="medium_low" if q6_value_raise_watch else "low_medium",
+            source_lanes=_dedupe(lanes),
+            risk_flags=_dedupe(risks),
+            reason=_join_reasons(reasons),
+        )
     if tail_replacement_watch is not None:
         advisory, _reason = tail_replacement_watch
         return V3PracticalAdvisoryReport(
@@ -320,7 +384,7 @@ def advise_practical_report(
             source="tail_replacement",
             mode="tail_replacement_p90_watch",
             status="watch_tail_replacement_p90",
-            recommendation="raise_watch",
+            recommendation="ceiling_watch",
             confidence="low",
             source_lanes=_dedupe(lanes),
             risk_flags=_dedupe(risks),
@@ -341,7 +405,7 @@ def advise_practical_report(
             source="risk_watch",
             mode="capacity_or_value_guard",
             status="watch_risk_no_numeric_shift",
-            recommendation="raise_watch",
+            recommendation="risk_watch",
             confidence="low",
             source_lanes=_dedupe(lanes),
             risk_flags=_dedupe(risks),
@@ -465,6 +529,25 @@ def _floor_p50_p90(
         p10=float(summary.p10),
         p50=max(float(summary.p50), floor_value),
         p90=max(float(summary.p90), floor_value),
+    )
+
+
+def _raise_p50_p90_by_delta(
+    summary: QuantileSummary | None,
+    *,
+    p50_delta: float,
+    p90_delta: float,
+) -> QuantileSummary | None:
+    if summary is None:
+        return None
+    p50_delta = max(0.0, float(p50_delta))
+    p90_delta = max(0.0, float(p90_delta))
+    if p50_delta <= 0.0 and p90_delta <= 0.0:
+        return summary
+    return QuantileSummary(
+        p10=float(summary.p10),
+        p50=float(summary.p50) + p50_delta,
+        p90=float(summary.p90) + p90_delta,
     )
 
 
@@ -601,6 +684,112 @@ def _random_avg_value_floor_watch(
         f"p90_gap={p90_gap:.0f}:samples={labels}"
     )
     return advisory, reason, raise_watch
+
+
+def _q6_value_ceiling_watch(
+    posterior: V3PosteriorReport,
+    *,
+    ccv_posterior: V3PosteriorReport | None = None,
+    ccv_component_posterior: V3PosteriorReport | None = None,
+    residual_posterior: V3PosteriorReport | None = None,
+) -> tuple[V3PosteriorReport, str, bool, str] | None:
+    del ccv_posterior
+    formal = posterior.formal_decision_value
+    q6_value = posterior.q6_value
+    if formal is None or q6_value is None:
+        return None
+    candidates: list[tuple[str, V3PosteriorReport, float, float]] = []
+    for source, report, scope in (
+        (
+            "q6_value_component",
+            ccv_component_posterior,
+            "ccv_component_likelihood",
+        ),
+        ("q6_value_residual", residual_posterior, "residual_likelihood"),
+    ):
+        if report is None or not report.ready or report.match_scope != scope:
+            continue
+        report_q6_value = report.q6_value
+        if report_q6_value is None:
+            continue
+        p50_gap = max(0.0, float(report_q6_value.p50) - float(q6_value.p50))
+        p90_gap = max(0.0, float(report_q6_value.p90) - float(q6_value.p90))
+        if (
+            p50_gap < _Q6_VALUE_CEILING_MIN_P50_GAP
+            or p90_gap < _Q6_VALUE_CEILING_MIN_P90_GAP
+        ):
+            continue
+        candidates.append((source, report, p50_gap, p90_gap))
+    if not candidates:
+        return None
+    source, report, raw_p50_gap, raw_p90_gap = max(
+        candidates,
+        key=lambda item: (item[2] + item[3], item[2], item[3]),
+    )
+    p50_delta = min(raw_p50_gap, _Q6_VALUE_CEILING_MAX_DELTA)
+    p90_delta = min(raw_p90_gap, _Q6_VALUE_CEILING_MAX_DELTA)
+    raise_watch = (
+        raw_p50_gap >= _Q6_VALUE_RAISE_MIN_P50_GAP
+        and raw_p90_gap >= _Q6_VALUE_RAISE_MIN_P90_GAP
+    )
+    diagnostics = tuple(posterior.diagnostics) + (
+        "practical_q6_value_ceiling_watch",
+        f"practical_q6_value_ceiling_source={source}",
+        f"practical_q6_value_p50_gap={raw_p50_gap:.6f}",
+        f"practical_q6_value_p90_gap={raw_p90_gap:.6f}",
+        f"practical_q6_value_p50_delta={p50_delta:.6f}",
+        f"practical_q6_value_p90_delta={p90_delta:.6f}",
+    )
+    advisory = V3PosteriorReport(
+        map_id=posterior.map_id,
+        map_name=posterior.map_name,
+        n_total=posterior.n_total,
+        n_matched=posterior.n_matched,
+        n_strict_matched=posterior.n_strict_matched,
+        match_scope=posterior.match_scope,
+        q6_present_rate=posterior.q6_present_rate,
+        total_cells=posterior.total_cells,
+        total_value=_raise_p50_p90_by_delta(
+            posterior.total_value,
+            p50_delta=p50_delta,
+            p90_delta=p90_delta,
+        ),
+        formal_decision_value=_raise_p50_p90_by_delta(
+            formal,
+            p50_delta=p50_delta,
+            p90_delta=p90_delta,
+        ),
+        tail_replacement_decision_value=_raise_p50_p90_by_delta(
+            posterior.tail_replacement_decision_value,
+            p50_delta=p50_delta,
+            p90_delta=p90_delta,
+        ),
+        q6_count=posterior.q6_count,
+        q6_cells=posterior.q6_cells,
+        q6_value=_raise_p50_p90_by_delta(
+            q6_value,
+            p50_delta=p50_delta,
+            p90_delta=p90_delta,
+        ),
+        q6_formal_decision_value=_raise_p50_p90_by_delta(
+            posterior.q6_formal_decision_value,
+            p50_delta=p50_delta,
+            p90_delta=p90_delta,
+        ),
+        q6_tail_replacement_decision_value=_raise_p50_p90_by_delta(
+            posterior.q6_tail_replacement_decision_value,
+            p50_delta=p50_delta,
+            p90_delta=p90_delta,
+        ),
+        diagnostics=diagnostics,
+    )
+    reason = (
+        "q6_value_ceiling_shadow_only:"
+        f"source={source}:p50_gap={raw_p50_gap:.0f}:"
+        f"p90_gap={raw_p90_gap:.0f}:p50_delta={p50_delta:.0f}:"
+        f"p90_delta={p90_delta:.0f}:source_matched={report.n_matched}"
+    )
+    return advisory, reason, raise_watch, source
 
 
 def _tail_replacement_p90_watch(

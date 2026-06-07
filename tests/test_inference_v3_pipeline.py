@@ -1,3 +1,4 @@
+from bidking_lab.inference.map_likelihood import QuantileSummary
 from bidking_lab.extract.item_table import Item
 from bidking_lab.inference.ground_truth import BucketTruth, SessionTruth
 from bidking_lab.inference.v3 import (
@@ -7,6 +8,8 @@ from bidking_lab.inference.v3 import (
     EvidenceEvent,
     FeasibleSummaryReport,
     V3CcvOptions,
+    V3PosteriorReport,
+    advise_practical_report,
     estimate_shadow_pipeline,
 )
 
@@ -68,6 +71,39 @@ def _truth(
                 items=q6_items,
             ),
         },
+    )
+
+
+def _q(p10: int, p50: int, p90: int) -> QuantileSummary:
+    return QuantileSummary(p10=float(p10), p50=float(p50), p90=float(p90))
+
+
+def _posterior_report(
+    *,
+    match_scope: str = "summary_likelihood",
+    q6_value: QuantileSummary | None = None,
+    formal: QuantileSummary | None = None,
+) -> V3PosteriorReport:
+    q6_value = q6_value or _q(0, 100_000, 150_000)
+    formal = formal or _q(100_000, 300_000, 420_000)
+    return V3PosteriorReport(
+        map_id=2401,
+        map_name="test_map",
+        n_total=2,
+        n_matched=2,
+        n_strict_matched=0,
+        match_scope=match_scope,
+        q6_present_rate=1.0,
+        total_cells=_q(20, 30, 40),
+        total_value=formal,
+        formal_decision_value=formal,
+        tail_replacement_decision_value=formal,
+        q6_count=_q(1, 1, 2),
+        q6_cells=_q(4, 4, 8),
+        q6_value=q6_value,
+        q6_formal_decision_value=q6_value,
+        q6_tail_replacement_decision_value=q6_value,
+        diagnostics=(),
     )
 
 
@@ -257,7 +293,7 @@ def test_v3_shadow_pipeline_marks_cse_as_practical_risk_watch() -> None:
 
     assert flat["v3_cse_pressure_candidate"] is True
     assert flat["v3_practical_status"] == "watch_risk_no_numeric_shift"
-    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_recommendation"] == "risk_watch"
     assert flat["v3_practical_confidence"] == "low"
     assert "capacity_source_expansion" in flat["v3_practical_source_lanes"]
     assert "capacity_source_pressure" in flat["v3_practical_risk_flags"]
@@ -330,7 +366,7 @@ def test_v3_shadow_pipeline_marks_tail_replacement_as_practical_p90_watch() -> N
 
     assert flat["v3_practical_status"] == "watch_tail_replacement_p90"
     assert flat["v3_practical_mode"] == "tail_replacement_p90_watch"
-    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_recommendation"] == "ceiling_watch"
     assert flat["v3_practical_affects_bid"] is False
     assert flat["v3_practical_active"] is False
     assert "tail_replacement_p90_watch" in flat["v3_practical_risk_flags"]
@@ -420,6 +456,49 @@ def test_v3_shadow_pipeline_marks_random_avg_value_p50_floor_without_alert() -> 
     assert flat["v3_practical_active"] is False
     assert flat["v3_practical_formal_decision_value_p50"] == 450_000
     assert flat["v3_practical_delta_formal_decision_value_p90"] == 0.0
+
+
+def test_v3_practical_marks_residual_q6_value_raise_watch() -> None:
+    baseline = _posterior_report()
+    residual = _posterior_report(
+        match_scope="residual_likelihood",
+        q6_value=_q(0, 360_000, 390_000),
+    )
+
+    report = advise_practical_report(
+        baseline,
+        residual_posterior=residual,
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_q6_value_raise"
+    assert flat["v3_practical_mode"] == "q6_value_ceiling_watch"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert flat["v3_practical_source"] == "q6_value_residual"
+    assert "q6_value_ceiling_watch" in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 260_000
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 240_000
+
+
+def test_v3_practical_marks_residual_q6_value_ceiling_watch() -> None:
+    baseline = _posterior_report()
+    residual = _posterior_report(
+        match_scope="residual_likelihood",
+        q6_value=_q(0, 220_000, 280_000),
+    )
+
+    report = advise_practical_report(
+        baseline,
+        residual_posterior=residual,
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_q6_value_ceiling"
+    assert flat["v3_practical_recommendation"] == "ceiling_watch"
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 120_000
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 130_000
 
 
 def test_v3_shadow_pipeline_can_freeze_component_cells() -> None:

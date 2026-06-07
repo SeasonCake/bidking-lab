@@ -6169,3 +6169,30 @@ v3_practical_formal_p90_coverage=0.76859
 - P50 MAE 只改善约 318，说明默认样本中 random avg floor 大多与已有 q6 prior-floor 重叠或不是主误差来源。
 - 该改动的主要价值是补齐 v3 practical 输入链路：公开 random avg 后续可在 live 样本中被明确复盘，不再只在 v2/diagnostics 里出现。
 - 严重低估仍需 q6 tail-value / count-cell-value 条件 sampler 才可能有实质改善。
+
+## O-v3-142：q6 residual ceiling 分层改善强提醒质量
+
+2026-06-07 将 residual q6 value ceiling 接入 practical，并把 weak tail/risk 降级后，64-trial archive smoke：
+
+```text
+v3_practical_candidate_rows=389
+v3_practical_raise_watch_rows=82
+v3_practical_raise_watch_hit_rate=0.280488
+v3_practical_raise_watch_miss_rate=0.536585
+v3_practical_raise_watch_false_alarm_rate=0.182927
+v3_practical_raise_watch_extreme_over_rate=0.146341
+v3_practical_raise_watch_misleading_rate=0.097561
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.772436
+```
+
+观察：
+
+- 指标提升主要来自两部分：
+  - weak tail/risk/underestimate 不再计入强 `raise_watch`，显著降低 false-alarm/misleading；
+  - residual q6 value 在 P50/P90 双 gap 明显时提供 practical 上沿，小幅改善 P50 MAE 和 below-rate。
+- `raise_watch_miss_rate` 仍有 `0.536585`，说明强提醒仍漏掉不少真实低估，不能 promotion。
+- `q6_tail_value`、`q6_gate_inactive`、random_avg+layout 仍是主要低估来源；下一步需要 source-aware tail/value sampler，而不是继续扩大 broad watch。
+- overlay 已能区分“低估风险”“参考上沿”“风险提示”，这比单一 `raise_watch` 更适合实战使用。

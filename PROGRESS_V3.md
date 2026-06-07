@@ -7790,3 +7790,66 @@ v3_practical_formal_p90_coverage=0.76859
 - 该改动主要修复“公开 random avg 证据未进入 v3 practical”的输入遗漏，不是强 sampler。
 - 默认 archive 中该信号大多与 q6 prior-floor 重叠，所以全局收益小；但它让后续 live 样本中 random avg 低估局有可见 practical P50/P90 下界。
 - 下一步仍需更实质的 q6 tail-value / count-cell-value practical sampler，才能明显降低严重低估。
+
+## 2026-06-07 checkpoint：v3 practical q6 residual ceiling/raise 分层
+
+目标：
+
+- 把现有 residual count-cell-value shadow 中较有价值的 q6 value 上抬信号接入 `v3_practical_*`，形成可见实战参考。
+- 同时降低 weak watch 的告警等级，避免把 tail/risk broad signal 伪装成强 `raise_watch`。
+- 继续保持 v2 formal、正式 bid、正式出价不变。
+
+本轮动作：
+
+- `advise_practical_report` 新增接收 `residual_posterior` / `ccv_component_posterior`。
+- 新增 `q6_value_ceiling_watch`：
+  - 默认用 residual/component 相对 baseline 的 q6 value P50/P90 差额；
+  - `P50 gap >= 100,000` 且 `P90 gap >= 100,000` 时给 practical 数值上沿；
+  - `P50 gap >= 200,000` 且 `P90 gap >= 200,000` 时才作为强 `raise_watch`；
+  - practical delta cap 为 `400,000`，避免单个长尾把 UI 上沿拉飞；
+  - 固定 `active=false`、`affects_bid=false`。
+- 将 tail replacement P90 watch 从 `raise_watch` 降为 `ceiling_watch`。
+- 将 capacity/value 无数值 broad risk 从 `raise_watch` 降为 `risk_watch`。
+- 将 archive-learned underestimate repair 从 `raise_watch` 降为 `ceiling_watch`。
+- overlay 文案区分：
+  - `raise_watch`: “低估风险”；
+  - `ceiling_watch`: “参考上沿”；
+  - `risk_watch`: “证据/容量风险”。
+
+验证结果：
+
+```text
+py_compile: passed
+focused tests: 66 passed
+archive smoke (--posterior-trials 64):
+v3_practical_candidate_rows=389
+v3_practical_raise_watch_rows=82
+v3_practical_raise_watch_evaluable_rows=82
+v3_practical_raise_watch_hit_rate=0.280488
+v3_practical_raise_watch_miss_rate=0.536585
+v3_practical_raise_watch_false_alarm_rate=0.182927
+v3_practical_raise_watch_extreme_over_rate=0.146341
+v3_practical_raise_watch_misleading_rate=0.097561
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.772436
+```
+
+对比 random_avg checkpoint：
+
+- `candidate_rows`: 348 -> 389。
+- `raise_watch_rows`: 347 -> 82，强提醒显著收窄。
+- `raise_watch_hit_rate`: 0.080692 -> 0.280488。
+- `raise_watch_false_alarm_rate`: 0.602305 -> 0.182927。
+- `raise_watch_misleading_rate`: 0.230548 -> 0.097561。
+- `P50 MAE`: 317899.874 -> 316904.870。
+- `P50 below-rate`: 0.517949 -> 0.502564。
+- `P90 coverage`: 0.768590 -> 0.772436。
+
+解读：
+
+- 这是 v3 practical 第一轮实质性“实战落地”改进：不是提高所有 alert，而是把强提醒和参考上沿分开。
+- residual q6 value 对全局 MAE/低估率有小幅正收益，但还不能进入 formal；false/miss 仍高，必须继续 shadow-only。
+- 下一步应围绕 `q6_tail_value`、`q6_gate_inactive`、Ethan villa random_avg/layout 与 Aisha shipwreck deep/tail 做更具体的 source-aware sampler，不再扩大 weak broad watch。

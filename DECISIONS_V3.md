@@ -2806,3 +2806,23 @@ applied_hurts=2502
 - 用户实战反馈显示使用部分公开/道具信息后估值会严重偏低；审查发现 random avg 在 v3 evidence registry 中是 diagnostic，原 practical 层没有显式消费。
 - archive smoke 显示 random avg floor 当前只带来小幅 P50 MAE 改善，不足以 promotion，但不会增加 `raise_watch` 数量。
 - 后续所有 source-aware sampler 都应走显式 context 参数或 typed evidence event，不应从 UI 文案或 diagnostics 字符串反推。
+
+## D-v3-138：v3 practical recommendation 必须区分强提醒、上沿和风险
+
+2026-06-07 起，当前决策：
+
+- `raise_watch` 只用于较具体、可给出数值上抬且补漏质量相对更高的实战信号。
+- `ceiling_watch` 用于“可显示上沿但不建议直接加价”的 shadow reference，例如 tail replacement P90、archive-learned underestimate repair、random avg P50-only floor、普通 q6 residual value ceiling。
+- `risk_watch` 用于无数值移动的 broad risk，例如 capacity/source pressure 或 missing table/value guard；它只能提示证据/容量风险，不应计入强低估提醒。
+- `q6_value_ceiling_watch` 可使用 residual/component q6 value 相对 baseline 的差额：
+  - 普通阈值：P50/P90 gap 均至少 `100,000`；
+  - 强提醒阈值：P50/P90 gap 均至少 `200,000`；
+  - practical delta cap 为 `400,000`。
+- 以上全部固定 `active=false`、`affects_bid=false`；不得进入 v2 formal、正式 bid 或正式出价。
+- 该决策覆盖 D-v3-132/D-v3-135 中把 broad tail/risk 直接标为 `raise_watch` 的早期语义；历史段落保留为演进记录。
+
+原因：
+
+- raise-watch 质量复盘显示旧语义下 `raise_watch_rows=347`，但 hit-rate 只有 `0.080692`，false-alarm rate `0.602305`，misleading rate `0.230548`。
+- 新分层后 64-trial archive smoke 显示 `raise_watch_rows=82`，hit-rate `0.280488`，false-alarm rate `0.182927`，misleading rate `0.097561`。
+- practical P50 MAE 与 below-rate 同时小幅改善，说明该分层更符合实战：让用户看到上沿和风险，但不把弱证据包装成强加价建议。

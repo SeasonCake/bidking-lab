@@ -1227,6 +1227,39 @@ def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> 
     assert any("v3 实战参考提示低估风险" in alert[0] for alert in model["alerts"])
 
 
+def test_overlay_labels_v3_practical_ceiling_watch() -> None:
+    overlay = _overlay_module()
+    contract = {
+        "diagnostics": {
+            "v3_practical": {
+                "available": True,
+                "ready": True,
+                "affects_bid": False,
+                "active": False,
+                "candidate": True,
+                "source": "q6_value_residual",
+                "mode": "q6_value_ceiling_watch",
+                "status": "watch_q6_value_ceiling",
+                "recommendation": "ceiling_watch",
+                "confidence": "low_medium",
+                "source_lanes": "q6_value_residual",
+                "risk_flags": "q6_value_ceiling_watch",
+                "formal_decision_value_p50": 520000,
+                "formal_decision_value_p90": 820000,
+                "baseline_formal_decision_value_p50": 420000,
+                "delta_formal_decision_value_p50": 100000,
+            }
+        },
+    }
+
+    sections = overlay._ui_contract_hover_sections(contract)
+    practical = next(section for section in sections if section[0] == "v3 实战参考")
+
+    assert "参考上沿" in practical[1]
+    assert "P90 820,000" in practical[1]
+    assert "不影响正式出价" in practical[2]
+
+
 def test_overlay_v3_practical_passthrough_stays_read_only() -> None:
     overlay = _overlay_module()
     contract = {
