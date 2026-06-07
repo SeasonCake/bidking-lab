@@ -2608,3 +2608,23 @@ applied_hurts=2502
 - `v3_cse_pressure_candidate` / `target_above_prior_max` 只选 61 rows，覆盖 24 truth windows，row precision 0.393443；session 侧覆盖 11/21 truth sessions，session recall 0.52381。
 - `target_near_source_p95_5` 的 row precision 为 0.410714，但 row recall 只有 0.283951，仍不足以替代 broad candidate。
 - 因此 pressure tier 是后续提升 precision 的有效线索，但还不能解决 map-id 漏召回、payload-only rows 或 promotion blocker。
+
+## D-v3-127：payload-only CSE truth 必须拆成 empty-action 与 partial-action 两条审计路径
+
+2026-06-07 起，当前决策：
+
+- payload-only CSE truth 不能再作为单一证据桶处理；至少拆成：
+  - `payload_verified_empty_action_results`：action result 存在，但 observed item max 为 0；
+  - `payload_verified_partial_action_only`：有部分 action observed items，但远低于 settlement inventory。
+- empty-action rows 是 source parser / action-result decode / table acquisition 的优先目标；不能用 sampler 调参解释。
+- partial-action rows 可以作为 session-capacity source semantics 的较弱支持，但仍不等同于 full external source confirmation。
+- exact map-id miss 全部落在 payload-only 内；在补齐 empty-action/partial-action parser 或新增 support-depth 前，不得把 broad fallback 或 pressure tier接入默认 prior。
+- `v3_cse_pressure_candidate` 可用于区分当前 prebid window 是否已有 capacity pressure，但不能替代 payload-only source 解释。
+
+原因：
+
+- 21 条 CSE truth 中有 18 条 payload-only，3 条 full external confirmation。
+- 18 条 payload-only 中，15 条是 partial-action，3 条是 empty-action。
+- map-id holdout 的 3 条 miss 全在 payload-only：2509/2410 是 empty-action，2408 是 partial-action。
+- 18 条 payload-only 全部有 broad prebid CSE candidate window，但只有 8 条有 pressure window；pressure 对 recall 不足。
+- empty-action 3 条 action max 全为 0、action gap 平均 60；partial-action 15 条 action max 平均 5.867、action gap 平均 53.467，二者都仍需要 source parser/table evidence。

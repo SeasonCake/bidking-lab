@@ -7171,3 +7171,65 @@ archive/readiness:
 - `pressure_candidate` 能把 CSE broad watch 的 precision 从约 0.108 提到约 0.393，但只覆盖 11/21 truth sessions；它是 high-precision watch tier，不是 source-aware prior 的完整替代。
 - 这个 guard 使用 prebid 可见 target/prior max，不依赖 settlement-only `source_context_class` 或 final unique count，适合进入 live `model_eval` 做实战复盘。
 - 由于 recall 仍不足，不能恢复 formal/value sampler 调参，也不能作为 promotion/readiness 放行条件。
+
+## 2026-06-07 checkpoint：payload-only CSE truth/miss/pressure 交叉审计
+
+本轮新增 payload-only 专项审计，把 settlement source-semantics truth rows 与 map-id holdout 覆盖、prebid CSE pressure windows 合并，避免继续把 18 条 payload-only truth 混成同一种证据。
+
+改动：
+
+- `scripts/summarize_v3_capacity_source_expansion_payload_only_audit.py`：
+  - 聚焦 `source_context_class` 为 `payload_verified_*` / `payload_unverified_*` 且满足 source-semantics truth 的 rows；
+  - 按 capture file join map-id holdout eval rows，输出是否被 exact map-id train support 覆盖；
+  - 按 capture file join archive prebid evaluator rows，输出 `v3_cse_candidate` / `v3_cse_pressure_candidate` window 覆盖；
+  - 汇总 action observed max、inventory gap、ratio、unique round excess 和 example rows。
+- `tests/test_summarize_v3_capacity_source_expansion_payload_only_audit.py` 覆盖 payload truth、external truth、holdout miss 与 prebid pressure join。
+
+验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_capacity_source_expansion_payload_only_audit.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_source_expansion_payload_only_audit.py -q
+python scripts\summarize_v3_capacity_source_expansion_payload_only_audit.py --posterior-trials 64 --top 8 --format summary
+```
+
+真实结果：
+
+```text
+settlement_rows=441 truth_rows=21 payload_truth_rows=18 external_truth_rows=3
+payload_contexts=payload_verified_partial_action_only:15,payload_verified_empty_action_results:3
+payload_map_id_missed_rows=3
+payload_prebid_candidate_rows=18
+payload_prebid_pressure_rows=8
+
+payload_verified_empty_action_results:
+  rows=3 maps=2410:1,2501:1,2509:1
+  missed=2 prebid_candidate=3 prebid_pressure=1
+  action_max=0 action_gap avg=60 max=66
+
+payload_verified_partial_action_only:
+  rows=15 maps=2501:5,2503:2,2504:2,2508:2,2510:2,2408:1,2506:1
+  missed=1 prebid_candidate=15 prebid_pressure=7
+  action_max avg=5.867 max=25
+  action_gap avg=53.467 max=62
+```
+
+关键 examples：
+
+```text
+empty-action miss:
+  2509 fatbeans_valid_ethan_2509_5rounds_2509_1295018712615152_0360.json
+    covered=False train_source=0 pressure=1 action_max=0 action_gap=66 excess=7
+  2410 fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json
+    covered=False train_source=0 pressure=0 action_max=0 action_gap=57 excess=3
+
+partial-action miss:
+  2408 fatbeans_valid_aisha_2408_5rounds_2408_1274128129457532_0081.json
+    covered=False train_source=0 pressure=2 action_max=4 action_gap=52 excess=2
+```
+
+解读：
+
+- 18 条 payload-only truth 全部至少被 broad `v3_cse_candidate` prebid windows 看到，但只有 8 条进入 pressure tier；pressure 有复盘价值，但不能作为完整召回 prior。
+- 3 条 exact map-id miss 全在 payload-only：2 条 empty-action、1 条 partial-action；这更支持下一步优先查 action-result parser/source acquisition 与 support-depth，而不是调 formal/value sampler。
+- empty-action rows 的 action observed max 全为 0、action gap 很大，是最强的 source parser/table acquisition 目标；partial-action rows 至少有少量 action observed items，但仍存在大 gap。

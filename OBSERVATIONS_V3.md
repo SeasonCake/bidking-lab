@@ -5694,3 +5694,65 @@ readiness:
 - pressure guard 使用 prebid target/prior max gap，不依赖 final settlement unique count 或 `source_context_class`，因此可进入 live `model_eval` 作为实战复盘字段。
 - precision 提升明显，但 session recall 只有 11/21；剩余 10 个 truth sessions 没有在 prebid 窗口触发 target-above-prior pressure。
 - 当前最合适的策略是保留 broad `v3_cse_candidate` 做 full-recall watch，同时用 `v3_cse_pressure_candidate` 做 high-precision 子分片；两者都不能接入 formal/live 出价。
+
+## O-v3-131：payload-only CSE truth 的剩余缺口集中在 empty-action 与 no-train-support
+
+2026-06-07 新增 payload-only 专项审计。
+
+验证命令：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_payload_only_audit.py --posterior-trials 64 --top 8 --format summary
+```
+
+总体：
+
+```text
+settlement_rows=441 truth_rows=21 payload_truth_rows=18 external_truth_rows=3
+payload_contexts=payload_verified_partial_action_only:15,payload_verified_empty_action_results:3
+payload_map_id_missed_rows=3
+payload_prebid_candidate_rows=18
+payload_prebid_pressure_rows=8
+parse_errors=0
+```
+
+按 context：
+
+```text
+payload_verified_empty_action_results:
+  rows=3 maps=2410:1,2501:1,2509:1
+  missed=2 prebid_candidate=3 prebid_pressure=1
+  action_max=n=3/avg=0/max=0
+  action_gap=n=3/avg=60/max=66
+  excess=n=3/avg=3.667/max=7
+
+payload_verified_partial_action_only:
+  rows=15 maps=2501:5,2503:2,2504:2,2508:2,2510:2,2408:1,2506:1
+  missed=1 prebid_candidate=15 prebid_pressure=7
+  action_max=n=15/avg=5.867/max=25
+  action_gap=n=15/avg=53.467/max=62
+  action_ratio=n=15/avg=0.098/max=0.417
+  excess=n=15/avg=3.2/max=7
+```
+
+map-id miss examples：
+
+```text
+2509 empty-action:
+  file=fatbeans_valid_ethan_2509_5rounds_2509_1295018712615152_0360.json
+  covered=False train_source=0 pressure=1 action_max=0 action_gap=66 excess=7
+
+2410 empty-action:
+  file=fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json
+  covered=False train_source=0 pressure=0 action_max=0 action_gap=57 excess=3
+
+2408 partial-action:
+  file=fatbeans_valid_aisha_2408_5rounds_2408_1274128129457532_0081.json
+  covered=False train_source=0 pressure=2 action_max=4 action_gap=52 excess=2
+```
+
+解读：
+
+- payload-only 不再是单一 blocker：empty-action 更像 source parser/action-result decode 问题，partial-action 更像 session-capacity source semantics 的弱外部线索。
+- 3 条 exact map-id miss 全部是 `train_source=0` 的 support-depth 问题；pressure 能覆盖 2509/2408，但覆盖不了 2410。
+- 下一步要优先拆 action-result payload / source parser，而不是在现有 fields 上继续组合 fallback。
