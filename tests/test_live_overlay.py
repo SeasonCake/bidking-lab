@@ -467,6 +467,9 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
                         "category_exclusion_count": 1,
                         "public_constraint_key": "max_item_cells",
                     },
+                    "public_info": {
+                        "public_numeric_summary": "紫均格 2.90 / 随机9均价 15,296.33",
+                    },
                 },
                 "truth": {
                     "available": True,
@@ -573,6 +576,7 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert "总格 123" in constraints_section[1]
     assert "紫×10" in constraints_section[2]
     assert "反排1" in constraints_section[2]
+    assert "紫均格 2.90" in constraints_section[2]
     action_section = next(
         section for section in model["sections"] if section[0] == "最近道具"
     )

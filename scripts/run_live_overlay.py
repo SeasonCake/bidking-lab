@@ -1136,6 +1136,12 @@ def _ui_contract_constraints_section(
             detail_parts.append(f"{label}{count}")
     if summary.get("public_constraint_key"):
         detail_parts.append(str(summary.get("public_constraint_key")))
+    public_info = _as_mapping(constraints.get("public_info"))
+    public_numeric_summary = str(
+        public_info.get("public_numeric_summary") or ""
+    ).strip()
+    if public_numeric_summary:
+        detail_parts.append(_short(public_numeric_summary, 96))
 
     if not headline_parts and not quality_parts and not detail_parts:
         return None

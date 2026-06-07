@@ -18,6 +18,25 @@ _MINIMAP_MAX_CELLS = 250
 _MINIMAP_DEFAULT_ROWS = _MINIMAP_DEFAULT_CELLS // _MINIMAP_COLUMNS
 _MINIMAP_MAX_ROWS = _MINIMAP_MAX_CELLS // _MINIMAP_COLUMNS
 
+_PUBLIC_AVG_CELLS_INFO: dict[int, tuple[str, int | None, str]] = {
+    200013: ("q4_avg_cells", 4, "紫均格"),
+    200014: ("total_avg_cells", None, "全均格"),
+    200015: ("q5_avg_cells", 5, "金均格"),
+    200016: ("q6_avg_cells", 6, "红均格"),
+}
+_PUBLIC_AVG_VALUE_INFO: dict[int, tuple[str, int | None, str]] = {
+    200035: ("total_avg_value", None, "全均价"),
+    200036: ("q4_avg_value", 4, "紫均价"),
+    200037: ("q5_avg_value", 5, "金均价"),
+    200038: ("q6_avg_value", 6, "红均价"),
+}
+_PUBLIC_RANDOM_AVG_VALUE_INFO: dict[int, tuple[str, int, str]] = {
+    200031: ("random_3_avg_value", 3, "随机3均价"),
+    200032: ("random_6_avg_value", 6, "随机6均价"),
+    200033: ("random_9_avg_value", 9, "随机9均价"),
+    200034: ("random_12_avg_value", 12, "随机12均价"),
+}
+
 
 @dataclass(frozen=True)
 class LayoutStageSnapshot:
@@ -89,6 +108,27 @@ def _text(value: Any) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_public_avg_cells(value: float) -> str:
+    # In-game avg-cells readings are displayed with two decimal truncation.
+    truncated = int(value * 100) / 100
+    return f"{truncated:.2f}"
+
+
+def _format_public_avg_value(value: float) -> str:
+    if abs(value - round(value)) < 0.005:
+        return f"{int(round(value)):,}"
+    return f"{value:,.2f}"
 
 
 def _field(obj: Any, name: str, default: Any = None) -> Any:
@@ -666,6 +706,7 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
             model_eval,
             minimap,
             input_constraints,
+            artifact.get("public_info_rows", ()) or (),
         ),
         "diagnostics": _ui_diagnostics_contract(v2, model_eval, artifact),
         "interaction": {
@@ -845,11 +886,79 @@ def _ui_truth_contract(
     }
 
 
+def _ui_public_numeric_contract(
+    public_info_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    facts: list[dict[str, Any]] = []
+    avg_cells: list[dict[str, Any]] = []
+    avg_values: list[dict[str, Any]] = []
+    random_avg_values: list[dict[str, Any]] = []
+    for row in public_info_rows:
+        if not isinstance(row, Mapping):
+            continue
+        info_id = _int_or_none(row.get("info_id"))
+        value = _float_or_none(row.get("value"))
+        if info_id is None or value is None:
+            continue
+        if info_id in _PUBLIC_AVG_CELLS_INFO:
+            semantic, quality, label = _PUBLIC_AVG_CELLS_INFO[info_id]
+            fact = {
+                "info_id": info_id,
+                "semantic": semantic,
+                "kind": "avg_cells",
+                "quality": quality,
+                "label": label,
+                "value": value,
+                "display_value": _format_public_avg_cells(value),
+            }
+            fact["text"] = f"{label} {fact['display_value']}"
+            avg_cells.append(fact)
+        elif info_id in _PUBLIC_AVG_VALUE_INFO:
+            semantic, quality, label = _PUBLIC_AVG_VALUE_INFO[info_id]
+            fact = {
+                "info_id": info_id,
+                "semantic": semantic,
+                "kind": "avg_value",
+                "quality": quality,
+                "label": label,
+                "value": value,
+                "display_value": _format_public_avg_value(value),
+            }
+            fact["text"] = f"{label} {fact['display_value']}"
+            avg_values.append(fact)
+        elif info_id in _PUBLIC_RANDOM_AVG_VALUE_INFO:
+            semantic, sample_count, label = _PUBLIC_RANDOM_AVG_VALUE_INFO[info_id]
+            fact = {
+                "info_id": info_id,
+                "semantic": semantic,
+                "kind": "random_avg_value",
+                "sample_count": sample_count,
+                "label": label,
+                "value": value,
+                "display_value": _format_public_avg_value(value),
+            }
+            fact["text"] = f"{label} {fact['display_value']}"
+            random_avg_values.append(fact)
+        else:
+            continue
+        facts.append(fact)
+    return {
+        "public_numeric_facts": facts,
+        "public_avg_cells": avg_cells,
+        "public_avg_values": avg_values,
+        "public_random_avg_values": random_avg_values,
+        "public_numeric_summary": " / ".join(
+            str(fact.get("text") or "") for fact in facts if fact.get("text")
+        ),
+    }
+
+
 def _ui_constraints_contract(
     v2: Mapping[str, Any],
     model_eval: Mapping[str, Any],
     minimap: Mapping[str, Any],
     input_constraints: Mapping[str, Any],
+    public_info_rows: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     quality_counts = (
         minimap.get("quality_counts")
@@ -886,6 +995,7 @@ def _ui_constraints_contract(
             v2.get("随机样本均价信号"),
         )
     )
+    public_numeric = _ui_public_numeric_contract(public_info_rows or ())
     summary = {
         "anchor_count": anchor_count,
         "shape_target_count": shape_target_count,
@@ -944,6 +1054,7 @@ def _ui_constraints_contract(
             ),
             "random_sample_avg_values": random_sample_avg_values,
             "random_sample_avg_signal_values": random_sample_avg_signal_values,
+            **public_numeric,
         },
         "exclusions": {
             "category_exclusion_count": category_exclusion_count,

@@ -1057,6 +1057,39 @@ def test_ui_contract_uses_exact_input_totals_when_posterior_range_is_missing() -
     assert posterior["input_total_item_count"] == 38
 
 
+def test_ui_contract_exposes_public_numeric_soft_facts() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "public_info_rows": [
+                {
+                    "info_id": 200013,
+                    "value": 2.909090995788574,
+                },
+                {
+                    "info_id": 200037,
+                    "value": 32507.6,
+                },
+                {
+                    "info_id": 200033,
+                    "value": 15296.33,
+                },
+            ],
+        }
+    )
+
+    public_info = contract["constraints"]["public_info"]
+
+    assert public_info["public_avg_cells"][0]["semantic"] == "q4_avg_cells"
+    assert public_info["public_avg_cells"][0]["display_value"] == "2.90"
+    assert public_info["public_avg_values"][0]["text"] == "金均价 32,507.60"
+    assert public_info["public_random_avg_values"][0]["text"] == (
+        "随机9均价 15,296.33"
+    )
+    assert public_info["public_numeric_summary"] == (
+        "紫均格 2.90 / 金均价 32,507.60 / 随机9均价 15,296.33"
+    )
+
+
 def test_ui_contract_minimap_includes_quality_only_markers() -> None:
     contract = ui_contract_from_artifact(
         {
