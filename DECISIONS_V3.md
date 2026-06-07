@@ -2719,3 +2719,19 @@ applied_hurts=2502
 - 真实 archive smoke 显示 broad SCP candidate 若直接触发 recommendation，会让 1495/1560 ready rows 都变成 `raise_watch`，实战不可用。
 - 收窄后 `v3_practical_candidate_rows=175`、`active_rows=0`，整体 MAE 小幅改善 `-418.757`，below-rate 与 P90 coverage 也微幅正向。
 - 该层的价值不是当前立即大幅提精度，而是建立统一实战参考和复盘入口，让后续样本能直接回答“v3 是否真的帮用户避开低估局”。
+
+## D-v3-133：overlay 可显示 v3 practical，但不得替代正式出价卡
+
+2026-06-07 起，当前决策：
+
+- `v3_practical_*` 可以在 live overlay 的 hover/detail 和 alert 中显示，作为“v3 实战参考/低估风险/证据利用”入口。
+- compact 主决策卡仍只展示正式 baseline decision 或既有 fallback 低置信参考；不得用 `v3_practical_formal_decision_value_*` 改写正式建议、停止价、防守价或可追价。
+- `raise_watch` 可以触发 warning alert，但 alert 文案必须包含“不改正式出价/不影响正式出价”的边界。
+- `baseline_passthrough` 状态也应可见，用来说明当前 v3 practical 未触发，而不是字段缺失或 UI 漏显示。
+- 若未来要把 v3 practical 从 hover/detail 前置到 compact metrics，仍必须保持 `active=false`、`affects_bid=false`，并单独验证误导率。
+
+原因：
+
+- 用户需要实战可见的低估风险提示，但目前 v3 还没有通过 promotion/readiness gate。
+- overlay 是用户实战第一入口；如果 practical 只停留在 `model_eval.jsonl`，无法改善实战决策体验。
+- 同时，低估风险提示不能伪装成正式估值，否则会破坏 v2 formal/live/UI 稳定边界，也会让后续指标归因混乱。

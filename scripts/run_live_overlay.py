@@ -345,6 +345,9 @@ def _section_style(
 ) -> dict[str, str]:
     title_text = str(title or "")
     text = f"{title_text} {value or ''} {detail or ''}"
+    if "v3 实战" in title_text or "V3 实战" in title_text:
+        tag = "warn" if any(token in text for token in ("低估", "加价", "风险")) else "dim"
+        return {"badge": "V3", "tag": tag, "color": WARN if tag == "warn" else PURPLE}
     if any(token in text for token in ("后验无匹配", "过热", "停止追价", "冲突")):
         return {"badge": "风险", "tag": "bad", "color": BAD}
     if any(token in text for token in ("风险", "q6", "红货", "漏", "低置信")):
@@ -1272,6 +1275,67 @@ def _ui_contract_q6_risk_section(
     return ("q6 风险参考", headline, detail)
 
 
+def _ui_contract_v3_practical_section(
+    contract: dict[str, Any],
+    *,
+    detail: bool = False,
+) -> tuple[str, str, str] | None:
+    diagnostics = _as_mapping(contract.get("diagnostics"))
+    practical = _as_mapping(diagnostics.get("v3_practical"))
+    if not practical or not _flag(practical.get("available")):
+        return None
+
+    recommendation = str(practical.get("recommendation") or "")
+    status = str(practical.get("status") or "")
+    mode = str(practical.get("mode") or "")
+    confidence = str(practical.get("confidence") or "")
+    p50 = practical.get("formal_decision_value_p50")
+    p90 = practical.get("formal_decision_value_p90")
+    baseline_p50 = practical.get("baseline_formal_decision_value_p50")
+    delta_p50 = practical.get("delta_formal_decision_value_p50")
+    q6_p50 = practical.get("q6_formal_decision_value_p50")
+    q6_p90 = practical.get("q6_formal_decision_value_p90")
+    delta_q6 = practical.get("delta_q6_formal_decision_value_p50")
+    read_only = (
+        "只读参考，不影响正式出价"
+        if not _flag(practical.get("affects_bid")) and not _flag(practical.get("active"))
+        else "警告：v3 practical 不应进入正式出价"
+    )
+
+    if recommendation == "raise_watch":
+        headline = "低估风险：参考上沿/谨慎加价"
+    elif _flag(practical.get("candidate")):
+        headline = "候选观察：未进入正式出价"
+    else:
+        headline = "未触发：baseline passthrough"
+    value_parts = [
+        f"P50 {_fmt_int(p50)}" if p50 is not None else "",
+        f"P90 {_fmt_int(p90)}" if p90 is not None else "",
+        f"base {_fmt_int(baseline_p50)}" if baseline_p50 is not None and detail else "",
+        f"ΔP50 {_fmt_int(delta_p50)}" if delta_p50 is not None else "",
+    ]
+    q6_parts = [
+        f"q6P50 {_fmt_int(q6_p50)}" if q6_p50 is not None else "",
+        f"q6P90 {_fmt_int(q6_p90)}" if q6_p90 is not None else "",
+        f"Δq6 {_fmt_int(delta_q6)}" if delta_q6 is not None else "",
+    ]
+    value_text = _join_parts([*value_parts, *q6_parts])
+    if value_text:
+        headline = f"{headline} | {value_text}"
+
+    source_parts = [
+        str(practical.get("source_lanes") or ""),
+        str(practical.get("risk_flags") or ""),
+        f"mode {mode}" if mode else "",
+        f"status {status}" if status and detail else "",
+        f"confidence {confidence}" if confidence else "",
+        read_only,
+    ]
+    if detail and practical.get("reason"):
+        source_parts.append(str(practical.get("reason") or ""))
+    return ("v3 实战参考", headline, _join_parts(source_parts))
+
+
 def _ui_contract_action_section(
     contract: dict[str, Any],
 ) -> tuple[str, str, str] | None:
@@ -1522,6 +1586,7 @@ def _ui_contract_hover_sections(contract: dict[str, Any]) -> list[tuple[str, str
     for section in (
         _ui_contract_decision_section(contract),
         _ui_contract_posterior_section(contract),
+        _ui_contract_v3_practical_section(contract),
         _ui_contract_truth_section(contract),
         _ui_contract_minimap_section(contract),
         _ui_contract_round_reference_section(contract),
@@ -1543,6 +1608,7 @@ def _ui_contract_detail_sections(contract: dict[str, Any]) -> list[tuple[str, st
         _ui_contract_truth_section(contract),
         _ui_contract_decision_section(contract),
         _ui_contract_posterior_section(contract),
+        _ui_contract_v3_practical_section(contract, detail=True),
         _ui_contract_minimap_detail_section(contract),
         _ui_contract_layout_section(contract),
         _ui_contract_constraints_section(contract),
@@ -1665,6 +1731,28 @@ def _ui_contract_alerts(contract: dict[str, Any]) -> list[tuple[str, str]]:
                 "bad",
             )
         )
+    practical = _as_mapping(_as_mapping(contract.get("diagnostics")).get("v3_practical"))
+    if practical:
+        if _flag(practical.get("affects_bid")) or _flag(practical.get("active")):
+            alerts.append(
+                (
+                    "v3 practical 应保持 shadow-only：检查 active/affects_bid",
+                    "bad",
+                )
+            )
+        elif (
+            _flag(practical.get("available"))
+            and practical.get("recommendation") == "raise_watch"
+        ):
+            alerts.append(
+                (
+                    "v3 实战参考提示低估风险："
+                    f"P90 {_fmt_int(practical.get('formal_decision_value_p90'))}，"
+                    f"来源 {practical.get('source_lanes') or practical.get('source') or '?'}，"
+                    "不改正式出价",
+                    "warn",
+                )
+            )
     for shadow in contract.get("shadows", ()) or ():
         if not isinstance(shadow, dict) or not _flag(shadow.get("active")):
             continue
@@ -2207,6 +2295,15 @@ def _overlay_model(
     constraints_section = _ui_contract_constraints_section(ui_contract)
     if constraints_section is not None:
         sections.append(constraints_section)
+    practical_section = _ui_contract_v3_practical_section(ui_contract)
+    if practical_section is not None and "低估风险" in practical_section[1]:
+        sections.append(
+            (
+                practical_section[0],
+                _short(practical_section[1], 118),
+                _short(practical_section[2], 168),
+            )
+        )
     shadow_section = _ui_contract_shadow_section(ui_contract)
     if shadow_section is not None:
         sections.append(shadow_section)

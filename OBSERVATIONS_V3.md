@@ -6031,3 +6031,27 @@ v3_practical_formal_p90_coverage=0.751282
 - 当前 practical 数值收益主要来自 underestimate candidate；formal value / CSE pressure / tail 等更多体现为实战解释和风险分层。
 - 整体 MAE 与低估率仅小幅改善，说明该 slice 不是最终 sampler，但它已经提供统一的 live/archive/model_eval/UI-contract 复盘入口。
 - 下一步评估重点应从“全局 MAE 是否大幅提升”转为“实战低估局是否被 `v3_practical_*` 识别、提示是否过载、是否误导用户加价”。
+
+## O-v3-137：overlay v3 practical 显示接线不改变 archive 指标和正式出价
+
+2026-06-07 将 `v3_practical_*` 接入 overlay hover/detail/alert 后复跑轻量验证：
+
+```text
+overlay/runtime snapshot tests: 47 passed
+live brief/live monitor focused tests: 11 passed
+archive smoke:
+windows=1577 ready=1560 parse_errors=0
+v3_practical_candidate_rows=175
+v3_practical_raise_watch_rows=175
+v3_practical_active_rows=0
+v3_practical_delta_formal_p50_mae=-418.757
+v3_practical_formal_p50_below_rate=0.517949
+v3_practical_formal_p90_coverage=0.751282
+```
+
+观察：
+
+- UI 接线后 `v3_practical_active_rows=0`，仍是 shadow-only。
+- archive 指标与上一 checkpoint 一致，说明本轮没有改变 sampler、formal value 或正式出价逻辑。
+- overlay 模型测试确认：正式 decision 仍来自 `baseline.decision`；`v3 实战参考` 只进入 hover/detail/alert。
+- 该显示层可以支撑下一轮实战样本复盘：重点看用户感知“明显低估”局是否出现 `raise_watch`，以及 alert 是否过载或误导。

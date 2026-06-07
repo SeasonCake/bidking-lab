@@ -256,6 +256,7 @@ def test_overlay_section_style_classifies_key_topics() -> None:
 
     assert overlay._section_style("MiniMap")["badge"] == "地图"
     assert overlay._section_style("q6 风险参考", "已触发")["tag"] == "warn"
+    assert overlay._section_style("v3 实战参考", "低估风险")["badge"] == "V3"
     assert overlay._section_style("Fallback 出价参考")["badge"] == "兜底"
     assert overlay._section_style("下一步道具")["tag"] == "good"
 
@@ -1152,3 +1153,109 @@ def test_overlay_hover_surfaces_size_bucket_section() -> None:
     size_section = next(section for section in sections if section[0] == "N格均价")
     assert "四格均价" in size_section[1]
     assert "tier=rich_pool" in size_section[2]
+
+
+def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> None:
+    overlay = _overlay_module()
+    contract = {
+        "context": {"hero": "ethan", "map_id": 2401, "round": 2},
+        "baseline": {
+            "decision": {
+                "action": "可守不抢",
+                "current_highest": "玩家A 320,000",
+                "risk_band": "防守区",
+                "defend_bid": "380,000",
+                "stop_price": "520,000",
+            },
+            "posterior": {
+                "decision_value_range": "200,000 / 420,000 / 650,000",
+                "match_text": "18/80",
+                "status": "matched",
+            },
+            "layout": {},
+        },
+        "diagnostics": {
+            "v3_practical": {
+                "available": True,
+                "ready": False,
+                "affects_bid": False,
+                "active": False,
+                "candidate": True,
+                "source": "formal_value",
+                "mode": "value_floor_watch",
+                "status": "watch_raise_candidate",
+                "recommendation": "raise_watch",
+                "confidence": "medium",
+                "source_lanes": "formal_value,underestimate_repair",
+                "risk_flags": "value_floor_candidate,q6_under_candidate",
+                "reason": "formal value floor lifts underestimation watch",
+                "formal_decision_value_p50": 480000,
+                "formal_decision_value_p90": 780000,
+                "baseline_formal_decision_value_p50": 420000,
+                "delta_formal_decision_value_p50": 60000,
+                "q6_formal_decision_value_p50": 120000,
+                "q6_formal_decision_value_p90": 260000,
+                "delta_q6_formal_decision_value_p50": 40000,
+            }
+        },
+    }
+
+    model = overlay._overlay_model(
+        {
+            "hero": "ethan",
+            "map_id": 2401,
+            "round": 2,
+            "ui_contract": contract,
+        }
+    )
+
+    assert model["decision"][0] == "可守不抢"
+    assert any(section[0] == "v3 实战参考" for section in model["sections"])
+    assert any(
+        section[0] == "v3 实战参考"
+        and "低估风险" in section[1]
+        and "P90 780,000" in section[1]
+        and "不影响正式出价" in section[2]
+        for section in model["interaction"]["hover"]["sections"]
+    )
+    assert any(
+        section[0] == "v3 实战参考"
+        and "base 420,000" in section[1]
+        and "formal value floor" in section[2]
+        for section in model["interaction"]["detail"]["sections"]
+    )
+    assert any("v3 实战参考提示低估风险" in alert[0] for alert in model["alerts"])
+
+
+def test_overlay_v3_practical_passthrough_stays_read_only() -> None:
+    overlay = _overlay_module()
+    contract = {
+        "baseline": {
+            "decision": {"action": "开局观察"},
+            "posterior": {"decision_value_range": "100,000 / 240,000 / 380,000"},
+        },
+        "diagnostics": {
+            "v3_practical": {
+                "available": True,
+                "ready": False,
+                "affects_bid": False,
+                "active": False,
+                "candidate": False,
+                "status": "baseline_passthrough",
+                "recommendation": "baseline",
+                "confidence": "low",
+                "formal_decision_value_p50": 240000,
+                "formal_decision_value_p90": 380000,
+                "baseline_formal_decision_value_p50": 240000,
+                "delta_formal_decision_value_p50": 0,
+            }
+        },
+    }
+
+    sections = overlay._ui_contract_hover_sections(contract)
+    practical = next(section for section in sections if section[0] == "v3 实战参考")
+
+    assert "未触发" in practical[1]
+    assert "P50 240,000" in practical[1]
+    assert "只读参考，不影响正式出价" in practical[2]
+    assert overlay._ui_contract_alerts(contract) == []

@@ -7542,3 +7542,55 @@ v3_practical_formal_p90_coverage=0.751282
 - 当前 archive 整体提升很小，但方向是正的，且不会破坏正式出价。
 - 后续优先用实战样本检查 `v3_practical_recommendation/mode/risk_flags` 是否命中用户感知低估局；若有效，再考虑把 UI 显示进一步前置或做更强 sampler。
 - 若后续继续优化，应以 practical candidate 的实战命中率和 low-estimate 修复为主，不再回到 CSE/SCP 单 lane 无限审计。
+
+## 2026-06-07 checkpoint：overlay 显示 v3 practical 实战参考
+
+目标：
+
+- 将已接入 UI contract/model_eval 的 `v3_practical_*` 从“后台字段”推进到实战 overlay 可见层。
+- 继续保持正式 baseline 出价卡不变，避免把 shadow-only 参考误认为正式推荐。
+
+本轮动作：
+
+- `scripts/run_live_overlay.py` 新增 `v3 实战参考` section：
+  - hover/detail 中显示 recommendation、P50/P90、baseline P50、ΔP50、q6 P50/P90、source lanes、risk flags、confidence 与 reason；
+  - `raise_watch` 时进入 alert，提示“低估风险/参考上沿”，但明确“不改正式出价”；
+  - `baseline_passthrough` 也保留只读状态，便于确认 v3 当前未触发。
+- compact 主决策卡仍只使用 `baseline.decision` 或 fallback 低置信参考，不使用 `v3_practical_*`。
+- 补充 overlay/runtime snapshot 单元测试，确保 `active=false`、`affects_bid=false` 的 shadow-only 语义不被 UI 误用。
+
+验证命令：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m py_compile scripts\run_live_overlay.py scripts\summarize_live_windivert_brief.py scripts\evaluate_fatbeans_v3_samples.py src\bidking_lab\runtime\snapshot.py src\bidking_lab\live\monitor.py
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_live_overlay.py tests\test_runtime_snapshot.py -q
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_live_windivert_brief.py tests\test_live_monitor.py::test_build_monitor_artifact_includes_panel_and_eval -q
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
+```
+
+验证结果：
+
+```text
+py_compile: passed
+overlay/runtime snapshot tests: 47 passed
+live brief/live monitor focused tests: 11 passed
+
+archive smoke:
+windows=1577 ready=1560 parse_errors=0
+formal_p50_mae=318635.858
+formal_p50_below_rate=0.51859
+formal_p90_coverage=0.750641
+v3_practical_candidate_rows=175
+v3_practical_raise_watch_rows=175
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=318217.101
+v3_practical_delta_formal_p50_mae=-418.757
+v3_practical_formal_p50_below_rate=0.517949
+v3_practical_formal_p90_coverage=0.751282
+```
+
+解读：
+
+- 本 checkpoint 是实战 UI 可见性推进，不是 sampler promotion。
+- 现在实战时可以在 overlay hover/detail 和 alert 中看到 v3 practical 的低估风险提示、证据来源和只读边界。
+- 下一步应围绕用户新增实战样本核对 `raise_watch` 的命中率/误导率，并决定是否把更强 sampler 接入 `v3_practical_*`，而不是继续做无落地的边缘审计。

@@ -920,6 +920,45 @@ def test_ui_contract_exposes_size_bucket_diagnostics() -> None:
     assert size_bucket["inference_matches_reading"] is True
 
 
+def test_ui_contract_exposes_v3_practical_diagnostics_shadow_only() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "model_eval": {
+                "v3_practical_available": True,
+                "v3_practical_ready": False,
+                "v3_practical_affects_bid": False,
+                "v3_practical_active": False,
+                "v3_practical_candidate": True,
+                "v3_practical_source": "formal_value",
+                "v3_practical_mode": "value_floor_watch",
+                "v3_practical_status": "watch_raise_candidate",
+                "v3_practical_recommendation": "raise_watch",
+                "v3_practical_confidence": "medium",
+                "v3_practical_source_lanes": "formal_value,underestimate_repair",
+                "v3_practical_risk_flags": "value_floor_candidate,q6_under_candidate",
+                "v3_practical_reason": "formal value floor lifts underestimation watch",
+                "v3_practical_formal_decision_value_p50": 480000,
+                "v3_practical_formal_decision_value_p90": 780000,
+                "v3_practical_baseline_formal_decision_value_p50": 420000,
+                "v3_practical_delta_formal_decision_value_p50": 60000,
+                "v3_practical_q6_formal_decision_value_p50": 120000,
+                "v3_practical_q6_formal_decision_value_p90": 260000,
+                "v3_practical_delta_q6_formal_decision_value_p50": 40000,
+            }
+        }
+    )
+
+    practical = contract["diagnostics"]["v3_practical"]
+
+    assert practical["available"] is True
+    assert practical["affects_bid"] is False
+    assert practical["active"] is False
+    assert practical["recommendation"] == "raise_watch"
+    assert practical["formal_decision_value_p90"] == 780000
+    assert practical["delta_formal_decision_value_p50"] == 60000
+    assert "diagnostics.v3_practical" in contract["interaction"]["hover"]["fields"]
+
+
 def test_ui_contract_uses_exact_input_totals_when_posterior_range_is_missing() -> None:
     contract = ui_contract_from_artifact(
         {
