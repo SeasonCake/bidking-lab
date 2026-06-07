@@ -6271,3 +6271,31 @@ v3_practical_formal_p90_extreme_over_rate=0.319231
 
 - `q6_tail_value` 和 `q6_gate_inactive` 仍是 live/top miss 主因；高 random avg 只能说明尾部价值压力，不足以决定 q6 count/cells/value 的分布移动。
 - 下一步应落到条件化 sampler：在 hero/map/round/evidence profile 下，用 random_avg/layout/q6 component likelihood 等证据决定 q6 posterior 是否上移。
+
+## O-v3-146：low-support raw-tail ceiling 改善强提醒覆盖但仍需 q6 gate sampler
+
+2026-06-07 将 `q6_raw_tail_low_support_ceiling_watch` 接入 v3 practical 后，64-trial archive smoke：
+
+```text
+v3_practical_candidate_rows=397
+v3_practical_raise_watch_rows=82
+v3_practical_raise_watch_hit_rate=0.353659
+v3_practical_raise_watch_miss_rate=0.463415
+v3_practical_raise_watch_false_alarm_rate=0.182927
+v3_practical_raise_watch_extreme_over_rate=0.146341
+v3_practical_raise_watch_misleading_rate=0.097561
+v3_practical_formal_p50_mae=316904.870
+v3_practical_formal_p90_coverage=0.780769
+v3_practical_formal_p90_extreme_over_rate=0.319231
+```
+
+观察：
+
+- 与 high random_avg checkpoint 相比，candidate/raise-watch 行数不变，但已有 raise-watch 的覆盖质量提升。
+- P50 MAE、below-rate、P90 extreme-over 未变，说明该 sampler 主要补 P90 severe miss，没有把主估值带偏。
+- 该规则比 strict low-support q6 prior multiplier 更可控；后者在模拟中 false/misleading 明显偏高。
+
+剩余问题：
+
+- live top miss 仍有 `q6_gate_inactive` 与 layout/random_avg 场景，说明只补 raw tail 不够。
+- 下一步应实现 q6 count/cells 条件 likelihood：当 layout/random_avg/shape 信息显示 q6 gate 可能被误关时，调整 q6 count/cells/value 的 posterior，而不是只加 P90 数值 delta。

@@ -7948,3 +7948,65 @@ overall v3_practical_p90_extreme_over_rate=0.06
 - 该候选是小幅但干净的实战参考改进：覆盖率提升，没有增加 P50 MAE、强提醒数量或 extreme-over。
 - 由于新增覆盖只有 8 个窗口，不能作为 promotion 依据；但可以作为 UI 里的“参考上沿/低估风险”来源。
 - 后续核心仍应推进条件化 q6 tail/value sampler：让 random_avg、layout、hero/map/round 与 q6 component likelihood 共同决定是否上移 q6 分布，而不是继续扩大 broad prior。
+
+## 2026-06-07 checkpoint：v3 practical low-support q6 raw-tail ceiling
+
+目标：
+
+- 针对 strict 匹配样本数过少时 q6 formal P90 被单个近邻压低的问题，增加一个受限的 q6 tail/value practical 上沿。
+- 继续保持 P90-only、shadow-only，不改变 v2 formal、正式出价或 P50 MAE。
+
+本轮动作：
+
+- `src/bidking_lab/inference/v3/practical_advisory.py` 新增 `q6_raw_tail_low_support_ceiling_watch`：
+  - 仅在 `match_scope == strict` 且 `n_matched <= 2` 时触发；
+  - 必须已有 tail/value 支持：tail replacement P90 gap 或 formal value floor stress；
+  - 使用 raw `q6_value.p90 - q6_formal_decision_value.p90` 作为 tail gap；
+  - 最小 gap `200,000`，单次 P90 delta cap `600,000`；
+  - 只抬 practical total/formal/tail/q6 formal 的 P90，不抬 P50。
+- 与 q6 prior floor、random_avg floor/high-signal、q6 value ceiling 可组合；自身只输出 `ceiling_watch`。
+- `scripts/run_live_overlay.py` 的 v3 实战参考区补充显示 `ΔP90` 与 `Δq6P90`，让 P90-only ceiling 在实战 UI 上可见。
+- 新增/更新 focused tests，覆盖：
+  - low-support raw q6 tail 触发；
+  - broad/summary posterior 不触发；
+  - overlay ceiling_watch 显示 `ΔP90`。
+
+验证结果：
+
+```text
+py_compile: passed
+focused tests: 19 passed
+archive smoke (--posterior-trials 64):
+v3_practical_candidate_rows=397
+v3_practical_raise_watch_rows=82
+v3_practical_raise_watch_hit_rate=0.353659
+v3_practical_raise_watch_miss_rate=0.463415
+v3_practical_raise_watch_false_alarm_rate=0.182927
+v3_practical_raise_watch_extreme_over_rate=0.146341
+v3_practical_raise_watch_misleading_rate=0.097561
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.780769
+v3_practical_formal_p90_extreme_over_rate=0.319231
+
+live brief (--since-hours 72): passed
+overall v3_practical_p90_coverage=0.5
+overall v3_practical_p90_extreme_over_rate=0.06
+```
+
+对比上一 checkpoint：
+
+- `candidate_rows`: 397 -> 397。
+- `raise_watch_rows`: 82 -> 82。
+- `raise_watch_hit_rate`: 0.280488 -> 0.353659。
+- `raise_watch_miss_rate`: 0.536585 -> 0.463415。
+- `P50 MAE`: 316904.870 -> 316904.870。
+- `P90 coverage`: 0.776282 -> 0.780769。
+- `P90 extreme-over`: 0.319231 -> 0.319231。
+
+解读：
+
+- 这是比 broad q6 multiplier 更实用的 sampler：只在 low-support strict posterior 且已有 tail/value 证据时补 P90，不增加强提醒数量或 extreme-over。
+- 它不能解决全部 `q6_tail_value` / `q6_gate_inactive` top miss；live brief 仍有 Ethan 2501 layout 与 villa q6 inactive severe miss。
+- 下一步应继续把 q6 count/cells 的条件 likelihood 做成 source-aware sampler，重点处理 layout/random_avg 证据下 q6 gate inactive，而不是提升全局 q6 prior。

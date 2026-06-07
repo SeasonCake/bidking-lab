@@ -2864,3 +2864,23 @@ applied_hurts=2502
 - archive 对照显示该候选带来小幅干净收益：`v3_practical_formal_p90_coverage` 从 `0.772436` 到 `0.776282`，`v3_practical_formal_p90_extreme_over_rate` 保持 `0.319231`，P50 MAE 不变。
 - 高 random avg 证明“当前窗口存在更高价值尾部风险”，但不能证明该风险一定来自 q6，不能直接当作正式出价或 q6 分布移动。
 - 该规则服务实战 UI 的参考上沿，避免道具后仍严重低估；promotion 仍需要后续 source-aware sampler 和 holdout 复核。
+
+## D-v3-141：low-support q6 raw-tail ceiling 可进入 v3 practical shadow
+
+2026-06-07 起，当前决策：
+
+- 当 strict posterior 的支持行数过少时，允许 v3 practical 使用 raw q6 value tail 作为 P90-only ceiling：
+  - `match_scope == strict`；
+  - `n_matched <= 2`；
+  - 已存在 tail/value 支持：tail replacement P90 gap 或 formal value floor stress；
+  - `q6_value.p90 - q6_formal_decision_value.p90 >= 200,000`；
+  - 单次 practical P90 delta cap=`600,000`。
+- 该候选可抬 practical total/formal/tail/q6 formal 的 P90，但不得抬 P50。
+- recommendation 固定为 `ceiling_watch`，除非它组合在已有 `raise_watch` 来源后；它自身不得新增强提醒行。
+- 继续固定 `active=false`、`affects_bid=false`；不得进入 v2 formal、正式 bid 或正式出价。
+
+原因：
+
+- broad q6 pressure/prior multiplier 的 false/extreme 过高，不适合作为实战 sampler。
+- low-support raw-tail 条件更贴近真实问题：严格匹配只有 1-2 行时，formal q6 P90 可能被局部近邻裁得过低，而 raw q6 value P90 已经暴露 tail 风险。
+- archive 对照显示该候选把 `raise_watch_hit_rate` 从 `0.280488` 提到 `0.353659`，`raise_watch_miss_rate` 从 `0.536585` 降到 `0.463415`，同时 P50 MAE 与 P90 extreme-over 不变。

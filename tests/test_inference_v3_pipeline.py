@@ -81,27 +81,32 @@ def _q(p10: int, p50: int, p90: int) -> QuantileSummary:
 def _posterior_report(
     *,
     match_scope: str = "summary_likelihood",
+    n_matched: int = 2,
     q6_value: QuantileSummary | None = None,
+    q6_formal: QuantileSummary | None = None,
     formal: QuantileSummary | None = None,
+    tail_replacement: QuantileSummary | None = None,
 ) -> V3PosteriorReport:
     q6_value = q6_value or _q(0, 100_000, 150_000)
+    q6_formal = q6_formal or q6_value
     formal = formal or _q(100_000, 300_000, 420_000)
+    tail_replacement = tail_replacement or formal
     return V3PosteriorReport(
         map_id=2401,
         map_name="test_map",
         n_total=2,
-        n_matched=2,
-        n_strict_matched=0,
+        n_matched=n_matched,
+        n_strict_matched=n_matched if match_scope == "strict" else 0,
         match_scope=match_scope,
         q6_present_rate=1.0,
         total_cells=_q(20, 30, 40),
         total_value=formal,
         formal_decision_value=formal,
-        tail_replacement_decision_value=formal,
+        tail_replacement_decision_value=tail_replacement,
         q6_count=_q(1, 1, 2),
         q6_cells=_q(4, 4, 8),
         q6_value=q6_value,
-        q6_formal_decision_value=q6_value,
+        q6_formal_decision_value=q6_formal,
         q6_tail_replacement_decision_value=q6_value,
         diagnostics=(),
     )
@@ -231,6 +236,7 @@ def test_v3_shadow_pipeline_can_emit_formal_value_candidate() -> None:
         truths=(
             _truth(q6_count=1, q6_cells=4, q6_value=1_500_000),
             _truth(q6_count=1, q6_cells=4, q6_value=1_600_000),
+            _truth(q6_count=1, q6_cells=4, q6_value=1_700_000),
         ),
         hero="ethan",
         prior_fields={
@@ -356,6 +362,7 @@ def test_v3_shadow_pipeline_marks_tail_replacement_as_practical_p90_watch() -> N
         truths=(
             _truth(q6_count=1, q6_cells=4, q6_value=1_500_000),
             _truth(q6_count=1, q6_cells=4, q6_value=1_600_000),
+            _truth(q6_count=1, q6_cells=4, q6_value=1_700_000),
         ),
         hero="ethan",
         constraints=ConstraintSet(),
@@ -488,6 +495,49 @@ def test_v3_practical_marks_random_avg_high_signal_as_p90_ceiling() -> None:
     assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
     assert flat["v3_practical_delta_formal_decision_value_p90"] == 155_000.0
     assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 0.0
+
+
+def test_v3_practical_marks_low_support_q6_raw_tail_as_ceiling() -> None:
+    baseline = _posterior_report(
+        match_scope="strict",
+        n_matched=1,
+        formal=_q(100_000, 500_000, 650_000),
+        tail_replacement=_q(100_000, 500_000, 760_000),
+        q6_value=_q(0, 500_000, 1_300_000),
+        q6_formal=_q(0, 400_000, 500_000),
+    )
+
+    report = advise_practical_report(baseline)
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_q6_raw_tail_low_support_ceiling"
+    assert flat["v3_practical_mode"] == "q6_raw_tail_low_support_ceiling_watch"
+    assert flat["v3_practical_recommendation"] == "ceiling_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert "q6_raw_tail_low_support_ceiling" in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 600_000.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 600_000.0
+
+
+def test_v3_practical_does_not_mark_broad_q6_raw_tail_without_low_support() -> None:
+    baseline = _posterior_report(
+        match_scope="summary_likelihood",
+        n_matched=64,
+        formal=_q(100_000, 500_000, 650_000),
+        tail_replacement=_q(100_000, 500_000, 760_000),
+        q6_value=_q(0, 500_000, 1_300_000),
+        q6_formal=_q(0, 400_000, 500_000),
+    )
+
+    report = advise_practical_report(baseline)
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_tail_replacement_p90"
+    assert "q6_raw_tail_low_support_ceiling" not in flat[
+        "v3_practical_risk_flags"
+    ]
 
 
 def test_v3_practical_marks_residual_q6_value_raise_watch() -> None:

@@ -1293,9 +1293,11 @@ def _ui_contract_v3_practical_section(
     p90 = practical.get("formal_decision_value_p90")
     baseline_p50 = practical.get("baseline_formal_decision_value_p50")
     delta_p50 = practical.get("delta_formal_decision_value_p50")
+    delta_p90 = practical.get("delta_formal_decision_value_p90")
     q6_p50 = practical.get("q6_formal_decision_value_p50")
     q6_p90 = practical.get("q6_formal_decision_value_p90")
     delta_q6 = practical.get("delta_q6_formal_decision_value_p50")
+    delta_q6_p90 = practical.get("delta_q6_formal_decision_value_p90")
     read_only = (
         "只读参考，不影响正式出价"
         if not _flag(practical.get("affects_bid")) and not _flag(practical.get("active"))
@@ -1317,11 +1319,13 @@ def _ui_contract_v3_practical_section(
         f"P90 {_fmt_int(p90)}" if p90 is not None else "",
         f"base {_fmt_int(baseline_p50)}" if baseline_p50 is not None and detail else "",
         f"ΔP50 {_fmt_int(delta_p50)}" if delta_p50 is not None else "",
+        f"ΔP90 {_fmt_int(delta_p90)}" if delta_p90 is not None else "",
     ]
     q6_parts = [
         f"q6P50 {_fmt_int(q6_p50)}" if q6_p50 is not None else "",
         f"q6P90 {_fmt_int(q6_p90)}" if q6_p90 is not None else "",
         f"Δq6 {_fmt_int(delta_q6)}" if delta_q6 is not None else "",
+        f"Δq6P90 {_fmt_int(delta_q6_p90)}" if delta_q6_p90 is not None else "",
     ]
     value_text = _join_parts([*value_parts, *q6_parts])
     if value_text:

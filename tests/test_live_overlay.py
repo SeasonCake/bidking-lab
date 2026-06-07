@@ -1248,6 +1248,7 @@ def test_overlay_labels_v3_practical_ceiling_watch() -> None:
                 "formal_decision_value_p90": 820000,
                 "baseline_formal_decision_value_p50": 420000,
                 "delta_formal_decision_value_p50": 100000,
+                "delta_formal_decision_value_p90": 220000,
             }
         },
     }
@@ -1257,6 +1258,7 @@ def test_overlay_labels_v3_practical_ceiling_watch() -> None:
 
     assert "参考上沿" in practical[1]
     assert "P90 820,000" in practical[1]
+    assert "ΔP90 220,000" in practical[1]
     assert "不影响正式出价" in practical[2]
 
 
