@@ -2977,3 +2977,24 @@ applied_hurts=2502
 - `run_live_overlay.py` 已支持显示 `ΔP90`、`rawΔP90`、`q6rawΔP90`、detail hover 的 `rawP90/q6rawP90`，但 runtime snapshot 之前只透传了部分字段。
 - 这会造成“模型已经算出上沿，但实战 UI 看不到”的断层，违背 v3 practical 的落地目标。
 - 本决策只修字段贯通，不改变 v2 formal、正式出价或 practical 数值。
+
+## D-v3-146：top miss 诊断必须并排报告 baseline 与 v3 practical P90
+
+2026-06-07 起，当前决策：
+
+- `summarize_live_windivert_brief.py` 的 `top_p90_misses` 必须同时输出：
+  - 正式 baseline `decision_value_p90`；
+  - `v3_practical_formal_decision_value_p90`；
+  - practical 相对 truth 的残余 under；
+  - practical P90 delta、recommendation、source/risk flags。
+- 后续调参或复盘不得用 baseline-only top miss 作为“v3 practical 完全失败”的证据；必须区分：
+  - formal baseline severe miss；
+  - practical 已覆盖；
+  - practical 已改善但仍有残余 under；
+  - practical 未触发。
+- 该口径只影响诊断输出，不改变 v2 formal、正式出价、v3 practical 数值或 promotion gate。
+
+原因：
+
+- 当前 practical shadow 已经会抬高部分严重低估行，但旧 brief 只显示 baseline P90，导致实战复盘时难以判断 practical 的真实贡献。
+- 对实战落地更有用的下一步不是重复修已经覆盖的 baseline miss，而是收敛 practical 残余 under、误导率和 extreme-over。

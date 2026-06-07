@@ -623,6 +623,14 @@ def _p90_under_by(row: dict[str, Any]) -> float | None:
     return max(0.0, truth - p90)
 
 
+def _practical_p90_under_by(row: dict[str, Any]) -> float | None:
+    p90 = _num(row, "v3_practical_formal_decision_value_p90")
+    truth = _practical_truth_value(row)
+    if p90 is None or truth is None:
+        return None
+    return max(0.0, truth - p90)
+
+
 def _p90_covers(row: dict[str, Any]) -> bool | None:
     under = _p90_under_by(row)
     if under is None:
@@ -893,6 +901,18 @@ def _top_p90_miss_examples(
     for under, row in misses[:limit]:
         q6_gaps = _q6_component_gaps(row)
         layout_bottom_row = _first_num(row, "layout_bottom_row", "footprint_bottom_row")
+        baseline_p90 = _num(row, "decision_value_p90")
+        practical_p90 = _num(row, "v3_practical_formal_decision_value_p90")
+        practical_delta_p90 = _num(
+            row,
+            "v3_practical_delta_formal_decision_value_p90",
+        )
+        if (
+            practical_delta_p90 is None
+            and practical_p90 is not None
+            and baseline_p90 is not None
+        ):
+            practical_delta_p90 = practical_p90 - baseline_p90
         aisha_deep_gap = (
             max(0, AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD - int(layout_bottom_row))
             if layout_bottom_row is not None and _hero_bucket(row) == "aisha"
@@ -908,7 +928,18 @@ def _top_p90_miss_examples(
                 "map_family": _map_family_bucket(row),
                 "round": row.get("action_round") or row.get("round"),
                 "truth": _truth_value(row),
-                "p90": _num(row, "decision_value_p90"),
+                "p90": baseline_p90,
+                "v3_practical_p90": practical_p90,
+                "v3_practical_under_by": _practical_p90_under_by(row),
+                "v3_practical_delta_p90": practical_delta_p90,
+                "v3_practical_recommendation": row.get(
+                    "v3_practical_recommendation"
+                ),
+                "v3_practical_source": (
+                    row.get("v3_practical_source_lanes")
+                    or row.get("v3_practical_source")
+                ),
+                "v3_practical_risk_flags": row.get("v3_practical_risk_flags"),
                 "layout_bottom_row": layout_bottom_row,
                 "aisha_deep_threshold": (
                     AISHA_SHIPWRECK_DEEP_ROW_THRESHOLD
@@ -1664,7 +1695,10 @@ def _print_miss_examples(examples: list[dict[str, Any]]) -> None:
     print(
         "top_p90_misses,under_by,primary_error,q6_components,hero,map_id,"
         "map_family,round,"
-        "truth,p90,layout_bottom_row,aisha_deep_threshold,aisha_deep_row_gap,"
+        "truth,p90,v3_practical_p90,v3_practical_under_by,"
+        "v3_practical_delta_p90,v3_practical_recommendation,"
+        "v3_practical_source,v3_practical_risk_flags,"
+        "layout_bottom_row,aisha_deep_threshold,aisha_deep_row_gap,"
         "q6_prior_floor_ratio,q6_formal_floor_active,q6_formal_floor_gate,"
         "random_floor_mode,q6_truth,q6_replacement_truth,"
         "q6_p90,q6_value_under_by,"
@@ -1686,6 +1720,12 @@ def _print_miss_examples(examples: list[dict[str, Any]]) -> None:
             f"{row.get('round')},"
             f"{row.get('truth')},"
             f"{row.get('p90')},"
+            f"{row.get('v3_practical_p90')},"
+            f"{row.get('v3_practical_under_by')},"
+            f"{row.get('v3_practical_delta_p90')},"
+            f"{row.get('v3_practical_recommendation')},"
+            f"{row.get('v3_practical_source')},"
+            f"{row.get('v3_practical_risk_flags')},"
             f"{row.get('layout_bottom_row')},"
             f"{row.get('aisha_deep_threshold')},"
             f"{row.get('aisha_deep_row_gap')},"

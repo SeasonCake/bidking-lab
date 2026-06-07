@@ -8493,3 +8493,44 @@ overall v3_practical_p90_extreme_over_rate=0.19
 - 这是实战落地层面的修复：不改变任何 formal/v2/正式出价，也不改变 practical 数值，只保证 UI contract 能完整携带 practical 上沿信息。
 - overlay 已有 shadow-only 文案和 `active/affects_bid` 检查；补齐字段后，用户能同时看到正式 baseline 与 v3 上沿/仓库风险。
 - 后续新增 practical sampler 时，必须同步检查 `to_flat_dict()`、`model_eval`、`runtime snapshot`、overlay section 四段字段是否贯通。
+
+## 2026-06-07 checkpoint：live brief top miss 区分 baseline 与 v3 practical P90
+
+目标：
+
+- 修正 `top_p90_misses` 的诊断口径，避免只看正式 baseline P90 而误判 v3 practical 没有生效。
+- 保持 v2 formal、正式出价、v3 practical 数值和 UI 行为不变，只增强评估/brief 输出。
+
+发现：
+
+- live 72h top miss 中，部分行的正式 baseline P90 极低，但 v3 practical 已经把 P90 抬高到接近真实值。
+- 原 brief 只输出 `decision_value_p90`，没有并排输出 `v3_practical_formal_decision_value_p90`，容易把“practical 已修但仍有残余 under”误读成“practical 完全没覆盖”。
+
+本轮动作：
+
+- `top_p90_misses` 新增：
+  - `v3_practical_p90`
+  - `v3_practical_under_by`
+  - `v3_practical_delta_p90`
+  - `v3_practical_recommendation`
+  - `v3_practical_source`
+  - `v3_practical_risk_flags`
+- 文本 brief 的 top miss CSV 也同步输出这些字段。
+- 测试覆盖 baseline P90 miss 但 practical P90 已覆盖的样例。
+
+验证结果：
+
+```text
+py_compile: passed
+pytest tests/test_summarize_live_windivert_brief.py -q:
+10 passed
+
+live brief --since-hours 72 --format json: passed
+live brief --since-hours 72: passed
+```
+
+当前解读：
+
+- 72h live top miss 的 Ethan 2501 layout 行，baseline P90 约 19-21 万，但 v3 practical P90 已抬到约 116.9 万；真实仍约 133.8 万，残余 under 约 16.9 万。
+- Aisha 2404 / Ethan 2401 的若干 top miss 也从“baseline severe miss”变成“practical 已抬高但仍有 9-19 万残余 under”。
+- 下一步 sampler 不应只继续加 broad fixed delta；更有价值的是针对 practical 残余缺口做 q6 tail/value 的 source-aware 小幅上沿，或把这类残余以 UI 低估风险提示表达。

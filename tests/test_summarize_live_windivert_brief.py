@@ -136,6 +136,14 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
     assert summary["by_space_pressure"]["low_space_pressure"]["rows"] == 1
     assert summary["by_tail"]["q6_tail_replacement"]["rows"] == 1
     assert summary["top_p90_misses"][0]["primary_error"] == "q6_tail_value"
+    assert summary["top_p90_misses"][0]["p90"] == 250_000
+    assert summary["top_p90_misses"][0]["v3_practical_p90"] == 330_000
+    assert summary["top_p90_misses"][0]["v3_practical_under_by"] == 0
+    assert summary["top_p90_misses"][0]["v3_practical_delta_p90"] == 80_000
+    assert (
+        summary["top_p90_misses"][0]["v3_practical_recommendation"]
+        == "raise_watch"
+    )
     assert (
         "q6_count_under_truth"
         in summary["top_p90_misses"][0]["q6_components"]

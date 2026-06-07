@@ -6543,3 +6543,17 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 - runtime snapshot contract 会保留 practical 的 baseline P90、delta P90、raw total P90、q6 raw P90、raw gap 与 q6 raw gap。
 - overlay 不需要视觉重做即可显示更多实战参考信息。
 - 该问题说明后续 v3 sampler 落地时，不能只看模型 evaluator；必须检查 `flat_dict -> model_eval -> UI contract -> overlay` 全链路。
+
+## O-v3-155：live top miss 的 baseline-only 口径会高估 practical 失败程度
+
+2026-06-07 检查 72h live brief 后：
+
+- 原 `top_p90_misses` 只输出正式 baseline `decision_value_p90`，没有输出 v3 practical P90。
+- Ethan 2501 layout top miss 中，baseline P90 约 19-21 万，truth 约 133.8 万；但 v3 practical P90 已经抬到约 116.9 万，残余 under 约 16.9 万。
+- Aisha 2404 / Ethan 2401 也存在类似情况：baseline 看起来是严重低估，但 practical 已经显著缩小缺口。
+
+观察：
+
+- v3 practical 当前的主要问题不再只是“完全没抬”，而是若干高风险窗口仍有 9-19 万的 residual under。
+- 后续实战优化应优先看 `v3_practical_under_by`、raise-watch 命中率、误导率和 P90 extreme-over，而不是只看 baseline top miss。
+- 这支持下一步转向 source-aware q6 tail/value 残余上沿或 UI 风险提示，而不是继续扩大 broad fixed delta。
