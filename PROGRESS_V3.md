@@ -7743,3 +7743,50 @@ v3_practical_raise_watch_extreme_over_rate=0.0
 - 当前 practical P90 watch 能提高覆盖，但补漏命中率偏低，false alarm 和 misleading rate 过高，不能 promotion 到正式出价。
 - live 最近样本显示 formal 仍严重偏低，尤其 p50 under-rate 高；下一步应做 source-aware / random_avg / q6 tail-value practical sampler，而不是继续扩大 weak watch。
 - 新指标将作为后续 sampler 的 stop-loss：实战可用候选必须降低 miss，并控制 false_alarm/misleading，不能只提高 P90 coverage。
+
+## 2026-06-07 checkpoint：v3 practical random-avg value floor
+
+目标：
+
+- 把此前只作为 diagnostic 的 `public random_n_avg_value` 证据接入 v3 practical，而不是继续遗漏有用公开信息。
+- 只作为 practical reference；不改 v2 formal、不改正式出价。
+
+本轮动作：
+
+- `estimate_shadow_pipeline(..., evidence_events=...)` 新增可选 evidence events 输入，只传给 practical advisory。
+- `v3_practical` 新增 `random_avg_value_floor_watch`：
+  - 从 `random_n_avg_value` 读取样本数和均价；
+  - 计算样本总值下界 `n * avg`；
+  - 若超过 practical P90 50,000 以上，触发 `raise_watch`；
+  - 若只超过 practical P50 100,000 以上，只给 `ceiling_watch`，不制造 alert。
+- live monitor 和 archive evaluator 都传入同一 canonical evidence events。
+- 增加 pipeline 单测，覆盖 P90 alert 与 P50-only ceiling 两条路径。
+
+验证结果：
+
+```text
+py_compile: passed
+focused pipeline tests: 4 passed
+archive smoke:
+v3_practical_candidate_rows=348
+v3_practical_raise_watch_rows=347
+v3_practical_raise_watch_hit_rate=0.080692
+v3_practical_raise_watch_false_alarm_rate=0.602305
+v3_practical_formal_p50_mae=317899.874
+v3_practical_delta_formal_p50_mae=-735.984
+v3_practical_formal_p50_below_rate=0.517949
+v3_practical_formal_p90_coverage=0.76859
+```
+
+对比上一 checkpoint：
+
+- `candidate_rows`: 347 -> 348。
+- `raise_watch_rows`: 347 -> 347，未增加 alert 负担。
+- `P50 MAE`: 318217.101 -> 317899.874，小幅改善。
+- `P90 coverage`: 0.768590 不变。
+
+解读：
+
+- 该改动主要修复“公开 random avg 证据未进入 v3 practical”的输入遗漏，不是强 sampler。
+- 默认 archive 中该信号大多与 q6 prior-floor 重叠，所以全局收益小；但它让后续 live 样本中 random avg 低估局有可见 practical P50/P90 下界。
+- 下一步仍需更实质的 q6 tail-value / count-cell-value practical sampler，才能明显降低严重低估。

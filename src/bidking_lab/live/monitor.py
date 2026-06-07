@@ -3721,7 +3721,8 @@ def _v3_posterior_shadow_summary(
         return finish()
     summary = None
     try:
-        constraints = compile_hard_constraints(events_from_fatbeans(events))
+        evidence_events = events_from_fatbeans(events)
+        constraints = compile_hard_constraints(evidence_events)
         summary = compile_feasible_summary(constraints)
         truths = sample_truth_bank(
             int(map_id),
@@ -3771,6 +3772,7 @@ def _v3_posterior_shadow_summary(
             capacity_source_expansion_entry=capacity_source_expansion_entry,
             hero=hero,
             prior_fields=prior_fields,
+            evidence_events=evidence_events,
         )
     except Exception as exc:
         out["error"] = type(exc).__name__

@@ -143,7 +143,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | 路径 | 作用 | 当前策略 |
 | --- | --- | --- |
 | `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做；hover/detail/alert 显示 shadow-only `v3_practical_*` 实战参考，compact 主决策仍用 baseline/fallback |
-| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 diagnostics-only `v3_practical_*` |
+| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 diagnostics-only `v3_practical_*`；canonical evidence events 会传入 practical 层用于 random avg 等 source-aware reference |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate，以及 raise-watch hit/miss/false-alarm/extreme-over/misleading rate，便于局后复盘 `v3_practical_*` |

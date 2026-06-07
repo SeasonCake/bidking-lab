@@ -6145,3 +6145,27 @@ v3_practical_raise_watch_extreme_over_rate=0.0
 - live 近样本没有极端高估，但仍有大量 miss，说明“低估识别”比“简单拉 P90 上沿”更重要。
 - `random_avg=signal`、`q6_tail_value`、`q6_gate_inactive`、`q6_cells/count under truth` 仍是主要低估来源；后续应做条件 sampler 或 source-aware upshift。
 - 该指标口径可作为后续实战落地 stop-loss：新增候选如果只增加 false alarm 或 misleading，不应继续推进到 UI 前台或 formal。
+
+## O-v3-141：random avg 输入接入后只小幅改善 P50
+
+2026-06-07 将 `public random_n_avg_value` 接入 v3 practical 后，默认 archive smoke：
+
+```text
+v3_practical_candidate_rows=348
+v3_practical_raise_watch_rows=347
+v3_practical_raise_watch_hit_rate=0.080692
+v3_practical_raise_watch_miss_rate=0.317003
+v3_practical_raise_watch_false_alarm_rate=0.602305
+v3_practical_raise_watch_misleading_rate=0.230548
+v3_practical_formal_p50_mae=317899.874
+v3_practical_delta_formal_p50_mae=-735.984
+v3_practical_formal_p50_below_rate=0.517949
+v3_practical_formal_p90_coverage=0.76859
+```
+
+观察：
+
+- `raise_watch_rows` 没变，说明 P50-only random avg floor 没有增加 alert 过载。
+- P50 MAE 只改善约 318，说明默认样本中 random avg floor 大多与已有 q6 prior-floor 重叠或不是主误差来源。
+- 该改动的主要价值是补齐 v3 practical 输入链路：公开 random avg 后续可在 live 样本中被明确复盘，不再只在 v2/diagnostics 里出现。
+- 严重低估仍需 q6 tail-value / count-cell-value 条件 sampler 才可能有实质改善。

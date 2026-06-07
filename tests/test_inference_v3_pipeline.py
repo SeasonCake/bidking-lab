@@ -4,6 +4,7 @@ from bidking_lab.inference.v3 import (
     BucketFeasibleSummary,
     CapacitySourceExpansionEntry,
     ConstraintSet,
+    EvidenceEvent,
     FeasibleSummaryReport,
     V3CcvOptions,
     estimate_shadow_pipeline,
@@ -335,6 +336,90 @@ def test_v3_shadow_pipeline_marks_tail_replacement_as_practical_p90_watch() -> N
     assert "tail_replacement_p90_watch" in flat["v3_practical_risk_flags"]
     assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
     assert flat["v3_practical_delta_formal_decision_value_p90"] >= 50_000
+
+
+def test_v3_shadow_pipeline_marks_random_avg_value_as_practical_floor() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=None,
+        known_count_floor=0,
+        known_cells_floor=0,
+        known_value_floor=0,
+        buckets=(),
+    )
+    random_avg_event = EvidenceEvent(
+        event_id="public:1:200031:0",
+        source_kind="public_info",
+        source_id="200031",
+        semantic="random_3_avg_value",
+        strength="diagnostic",
+        constraint="diagnostic_random_avg_signal",
+        targets=("random_avg_value",),
+        payload={"value": 150_000},
+    )
+
+    report = estimate_shadow_pipeline(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(_truth(q6_count=0, q6_cells=0, q6_value=0),),
+        constraints=ConstraintSet(),
+        evidence_events=(random_avg_event,),
+    )
+
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_random_avg_value_floor"
+    assert flat["v3_practical_mode"] == "random_avg_value_floor_watch"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert "random_avg_value_floor_watch" in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_formal_decision_value_p50"] == 450_000
+    assert flat["v3_practical_formal_decision_value_p90"] == 450_000
+
+
+def test_v3_shadow_pipeline_marks_random_avg_value_p50_floor_without_alert() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=None,
+        known_count_floor=0,
+        known_cells_floor=0,
+        known_value_floor=0,
+        buckets=(),
+    )
+    random_avg_event = EvidenceEvent(
+        event_id="public:1:200031:0",
+        source_kind="public_info",
+        source_id="200031",
+        semantic="random_3_avg_value",
+        strength="diagnostic",
+        constraint="diagnostic_random_avg_signal",
+        targets=("random_avg_value",),
+        payload={"value": 150_000},
+    )
+
+    report = estimate_shadow_pipeline(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(
+            _truth(q6_count=0, q6_cells=0, q6_value=0),
+            _truth(q6_count=0, q6_cells=0, q6_value=0),
+            _truth(q6_count=1, q6_cells=4, q6_value=900_000),
+        ),
+        constraints=ConstraintSet(),
+        evidence_events=(random_avg_event,),
+    )
+
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_random_avg_value_p50_floor"
+    assert flat["v3_practical_recommendation"] == "ceiling_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert flat["v3_practical_formal_decision_value_p50"] == 450_000
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 0.0
 
 
 def test_v3_shadow_pipeline_can_freeze_component_cells() -> None:

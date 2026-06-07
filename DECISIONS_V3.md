@@ -2790,3 +2790,19 @@ applied_hurts=2502
   - `misleading_rate=0.230548`。
 - 最近 72 小时 live brief 也显示 p50 under-rate 仍高，`raise_watch` 有补漏但不够稳定。
 - 因此下一步应转向更具体的 source-aware / random_avg / q6 tail-value practical sampler，而不是扩大 weak watch 或提前 promotion。
+
+## D-v3-137：公开 random avg 作为 v3 practical 下界输入，不进入 formal
+
+2026-06-07 起，当前决策：
+
+- `public random_n_avg_value` 这类公开随机样本均价不能只停留在 diagnostic/UI 字符串；v3 practical 必须能显式读取 canonical evidence event。
+- 该信息可用于 practical lower-bound reference：
+  - 若 `n * avg` 超过 practical P90 明显阈值，可触发 `raise_watch`；
+  - 若只超过 practical P50，则只输出 `ceiling_watch`，不触发 alert。
+- 该信号不得改 v2 formal、正式 bid、正式出价，也不得绕过 promotion gate。
+
+原因：
+
+- 用户实战反馈显示使用部分公开/道具信息后估值会严重偏低；审查发现 random avg 在 v3 evidence registry 中是 diagnostic，原 practical 层没有显式消费。
+- archive smoke 显示 random avg floor 当前只带来小幅 P50 MAE 改善，不足以 promotion，但不会增加 `raise_watch` 数量。
+- 后续所有 source-aware sampler 都应走显式 context 参数或 typed evidence event，不应从 UI 文案或 diagnostics 字符串反推。

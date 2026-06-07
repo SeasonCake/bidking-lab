@@ -31,6 +31,9 @@ from bidking_lab.inference.v3.underestimate_repair import (
 
 _Q6_PRIOR_FLOOR_MIN_VALUE_GAP = 100_000.0
 _TAIL_REPLACEMENT_MIN_P90_GAP = 50_000.0
+_RANDOM_AVG_VALUE_SIGNAL_FLOOR = 20_000.0
+_RANDOM_AVG_VALUE_MIN_P50_GAP = 100_000.0
+_RANDOM_AVG_VALUE_MIN_P90_GAP = 50_000.0
 
 
 @dataclass(frozen=True)
@@ -143,6 +146,7 @@ def advise_practical_report(
     tail_review: V3TailValueReviewReport | None = None,
     settlement_count_prior: V3SettlementCountPriorReport | None = None,
     capacity_source_expansion: V3CapacitySourceExpansionReport | None = None,
+    evidence_events: tuple[Any, ...] = (),
 ) -> V3PracticalAdvisoryReport:
     if posterior is None or not posterior.ready:
         return V3PracticalAdvisoryReport(
@@ -191,6 +195,15 @@ def advise_practical_report(
         lanes.append("tail_replacement")
         risks.append("tail_replacement_p90_watch")
         reasons.append(tail_replacement_watch[1])
+
+    random_avg_watch = _random_avg_value_floor_watch(
+        posterior,
+        evidence_events=evidence_events,
+    )
+    if random_avg_watch is not None:
+        lanes.append("random_avg_value")
+        risks.append("random_avg_value_floor_watch")
+        reasons.append(random_avg_watch[1])
 
     if underestimate is not None and underestimate.candidate:
         lanes.append("underestimate")
@@ -261,6 +274,14 @@ def advise_practical_report(
         )
     if q6_prior_floor is not None:
         advisory, _reason = q6_prior_floor
+        combined_random_avg = _random_avg_value_floor_watch(
+            advisory,
+            evidence_events=evidence_events,
+        )
+        if combined_random_avg is not None:
+            advisory, random_reason, _random_raise_watch = combined_random_avg
+            if random_reason not in reasons:
+                reasons.append(random_reason)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -269,6 +290,24 @@ def advise_practical_report(
             status="watch_q6_prior_floor",
             recommendation="raise_watch",
             confidence="low_medium",
+            source_lanes=_dedupe(lanes),
+            risk_flags=_dedupe(risks),
+            reason=_join_reasons(reasons),
+        )
+    if random_avg_watch is not None:
+        advisory, _reason, random_raise_watch = random_avg_watch
+        return V3PracticalAdvisoryReport(
+            baseline=posterior,
+            advisory=advisory,
+            source="random_avg_value",
+            mode="random_avg_value_floor_watch",
+            status=(
+                "watch_random_avg_value_floor"
+                if random_raise_watch
+                else "watch_random_avg_value_p50_floor"
+            ),
+            recommendation="raise_watch" if random_raise_watch else "ceiling_watch",
+            confidence="medium_low",
             source_lanes=_dedupe(lanes),
             risk_flags=_dedupe(risks),
             reason=_join_reasons(reasons),
@@ -415,6 +454,20 @@ def _floor_p90(
     )
 
 
+def _floor_p50_p90(
+    summary: QuantileSummary | None,
+    floor: float,
+) -> QuantileSummary | None:
+    if summary is None or floor <= 0.0:
+        return summary
+    floor_value = float(floor)
+    return QuantileSummary(
+        p10=float(summary.p10),
+        p50=max(float(summary.p50), floor_value),
+        p90=max(float(summary.p90), floor_value),
+    )
+
+
 def _q6_prior_floor_watch(
     posterior: V3PosteriorReport,
     formal_value: V3FormalValueSamplerReport | None,
@@ -465,6 +518,89 @@ def _q6_prior_floor_watch(
         f"expected={prior_q6_value:.0f}:p90_gap={q6_gap:.0f}"
     )
     return advisory, reason
+
+
+def _random_avg_value_observations(
+    evidence_events: tuple[Any, ...],
+) -> tuple[tuple[int, float], ...]:
+    observations: list[tuple[int, float]] = []
+    for event in evidence_events:
+        targets = set(getattr(event, "targets", ()) or ())
+        semantic = str(getattr(event, "semantic", "") or "")
+        if "random_avg_value" not in targets and not (
+            semantic.startswith("random_") and semantic.endswith("_avg_value")
+        ):
+            continue
+        raw_count = semantic.removeprefix("random_").split("_", 1)[0]
+        try:
+            sample_count = int(raw_count)
+        except (TypeError, ValueError):
+            continue
+        payload = getattr(event, "payload", None) or {}
+        value = _float_or_none(payload.get("value", payload.get("result")))
+        if value is None or value < _RANDOM_AVG_VALUE_SIGNAL_FLOOR:
+            continue
+        observations.append((sample_count, float(value)))
+    return tuple(observations)
+
+
+def _random_avg_value_floor_watch(
+    posterior: V3PosteriorReport,
+    *,
+    evidence_events: tuple[Any, ...],
+) -> tuple[V3PosteriorReport, str, bool] | None:
+    observations = _random_avg_value_observations(evidence_events)
+    if not observations:
+        return None
+    formal = posterior.formal_decision_value
+    if formal is None:
+        return None
+    floor = max(float(count) * value for count, value in observations)
+    p50_gap = max(0.0, floor - float(formal.p50))
+    p90_gap = max(0.0, floor - float(formal.p90))
+    if (
+        p50_gap < _RANDOM_AVG_VALUE_MIN_P50_GAP
+        and p90_gap < _RANDOM_AVG_VALUE_MIN_P90_GAP
+    ):
+        return None
+    raise_watch = p90_gap >= _RANDOM_AVG_VALUE_MIN_P90_GAP
+    diagnostics = tuple(posterior.diagnostics) + (
+        "practical_random_avg_value_floor_watch",
+        f"practical_random_avg_value_floor={floor:.6f}",
+        f"practical_random_avg_value_p50_gap={p50_gap:.6f}",
+        f"practical_random_avg_value_p90_gap={p90_gap:.6f}",
+    )
+    advisory = V3PosteriorReport(
+        map_id=posterior.map_id,
+        map_name=posterior.map_name,
+        n_total=posterior.n_total,
+        n_matched=posterior.n_matched,
+        n_strict_matched=posterior.n_strict_matched,
+        match_scope=posterior.match_scope,
+        q6_present_rate=posterior.q6_present_rate,
+        total_cells=posterior.total_cells,
+        total_value=_floor_p50_p90(posterior.total_value, floor),
+        formal_decision_value=_floor_p50_p90(formal, floor),
+        tail_replacement_decision_value=_floor_p50_p90(
+            posterior.tail_replacement_decision_value,
+            floor,
+        ),
+        q6_count=posterior.q6_count,
+        q6_cells=posterior.q6_cells,
+        q6_value=posterior.q6_value,
+        q6_formal_decision_value=posterior.q6_formal_decision_value,
+        q6_tail_replacement_decision_value=(
+            posterior.q6_tail_replacement_decision_value
+        ),
+        diagnostics=diagnostics,
+    )
+    labels = ",".join(f"n={count}:avg={value:.0f}" for count, value in observations)
+    reason = (
+        "random_avg_value_floor_shadow_only:"
+        f"floor={floor:.0f}:p50_gap={p50_gap:.0f}:"
+        f"p90_gap={p90_gap:.0f}:samples={labels}"
+    )
+    return advisory, reason, raise_watch
 
 
 def _tail_replacement_p90_watch(

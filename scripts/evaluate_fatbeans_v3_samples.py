@@ -596,6 +596,7 @@ def _round_rows_for_events(
                 hero=str(diagnostic_fields.get("hero") or "unknown"),
                 ccv_options=ccv_options,
                 prior_fields=prior_fields,
+                evidence_events=evidence_events,
             )
             if map_id is not None and tables is not None and posterior_trials > 0
             else None
