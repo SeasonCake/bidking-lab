@@ -6601,4 +6601,5 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 
 - `model_eval --brief` 会输出 `v3_practical` 聚合；如果日志本身没有 v3 practical 字段，则 rows 显示为 0。
 - 当前真实 `model_eval.jsonl` 去重有效行仍是旧字段集，`v3_practical.rows=0`；同一时间 72h windivert/prebid brief 仍显示 practical 指标，说明 archive/prebid 路径正常。
+- 空 v3 practical brief 已压缩为 rows / boundary 字段，避免实战 post-game 输出被无意义空结构淹没。
 - 后续最新 monitor 采样应同时检查 `model_eval --brief` 与 `summarize_live_windivert_brief.py --since-hours 72`，避免 UI/复盘路径再次出现字段断层。

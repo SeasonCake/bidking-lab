@@ -3045,6 +3045,7 @@ applied_hurts=2502
   - raise_watch 的 hit / miss / false_alarm / extreme_over / misleading。
 - 该 brief 只服务 post-game 复盘和实战可读性，不改变 v2 formal、正式出价、v3 practical 数值或 promotion gate。
 - 如果当前 `model_eval.jsonl` 是旧字段集，`v3_practical.rows=0` 只表示该日志没有对应字段，不得据此判断 v3 practical 失效。
+- 旧字段集或空数据时，brief 应保持紧凑，只显示 rows / available / ready / candidate / active / affects_bid，不打印大段空 P90 子结构。
 
 原因：
 

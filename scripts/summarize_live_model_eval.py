@@ -768,6 +768,36 @@ def _candidate_readiness_brief(candidates: Any) -> dict[str, dict[str, Any]]:
     return brief
 
 
+def _v3_practical_brief(practical: Any) -> dict[str, Any]:
+    if not isinstance(practical, dict):
+        return {}
+    rows = int(practical.get("rows") or 0)
+    brief: dict[str, Any] = {
+        "rows": rows,
+        "available_rows": practical.get("available_rows"),
+        "ready_rows": practical.get("ready_rows"),
+        "candidate_rows": practical.get("candidate_rows"),
+        "active_rows": practical.get("active_rows"),
+        "affects_bid_rows": practical.get("affects_bid_rows"),
+    }
+    if rows <= 0:
+        return brief
+    brief.update(
+        {
+            "recommendation_counts": practical.get("recommendation_counts"),
+            "confidence_counts": practical.get("confidence_counts"),
+            "source_lane_counts": practical.get("source_lane_counts"),
+            "risk_flag_counts": practical.get("risk_flag_counts"),
+            "formal_p90": practical.get("formal_p90"),
+            "q6_formal_p90": practical.get("q6_formal_p90"),
+            "formal_p50": practical.get("formal_p50"),
+            "q6_formal_p50": practical.get("q6_formal_p50"),
+            "raise_watch_review": practical.get("raise_watch_review"),
+        }
+    )
+    return brief
+
+
 def brief_summary(summary: dict[str, Any]) -> dict[str, Any]:
     """Return the high-signal subset used for live calibration check-ins."""
 
@@ -803,7 +833,7 @@ def brief_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "q6_shadow_candidate_readiness": _candidate_readiness_brief(
             summary.get("q6_shadow_candidate_readiness")
         ),
-        "v3_practical": summary.get("v3_practical"),
+        "v3_practical": _v3_practical_brief(summary.get("v3_practical")),
         "next_sampling_targets": _limit_rows(
             summary.get("next_sampling_targets"),
             limit=8,

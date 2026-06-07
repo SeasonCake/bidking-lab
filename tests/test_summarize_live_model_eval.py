@@ -526,7 +526,36 @@ def test_brief_summary_keeps_live_review_signals_compact() -> None:
     assert brief["layout"]["top_conflict_root_causes"] == [
         {"cause": "footprint_overlap", "n": 62}
     ]
+    assert brief["v3_practical"] == {}
     assert "groups" not in brief
+
+
+def test_brief_summary_keeps_empty_v3_practical_compact() -> None:
+    module = _summary_module()
+
+    brief = module.brief_summary(
+        {
+            "v3_practical": {
+                "rows": 0,
+                "available_rows": 0,
+                "ready_rows": 0,
+                "candidate_rows": 0,
+                "active_rows": 0,
+                "affects_bid_rows": 0,
+                "formal_p90": {"practical_p90_median": None},
+                "raise_watch_review": {"rows": 0},
+            }
+        }
+    )
+
+    assert brief["v3_practical"] == {
+        "rows": 0,
+        "available_rows": 0,
+        "ready_rows": 0,
+        "candidate_rows": 0,
+        "active_rows": 0,
+        "affects_bid_rows": 0,
+    }
 
 
 def test_summarize_and_brief_include_v3_practical_shadow_review() -> None:
