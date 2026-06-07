@@ -3017,3 +3017,18 @@ applied_hurts=2502
 - archive 64-trial smoke 显示：P50 MAE 不变，P90 coverage 小幅提升，raise-watch miss 降低，false_alarm/misleading 不变，extreme-over 只小幅上升。
 - 72h live brief 显示：v3 practical P90 coverage 从 `0.67` 提到 `0.75`，extreme-over 保持 `0.19`；Ethan 2501 layout 的 residual under 被覆盖。
 - 该改动符合用户当前目标：实战中宁可给出可解释的偏保守上限，也不要长期严重低估；但仍不能把该上限当正式报价。
+
+## D-v3-148：overlay 必须并排展示 formal baseline 与 v3 practical 上沿
+
+2026-06-07 起，当前决策：
+
+- overlay 的 `v3 实战参考` 区块必须用并排口径展示 `正式P90 -> v3P90`，不能只显示 v3 practical P90。
+- detail/hover 可以继续显示 `ΔP50/ΔP90/q6P90/rawΔP90/q6rawΔP90`，但必须保留“只读参考，不影响正式出价”。
+- alert 中如果出现 v3 practical 低估风险或参考上沿，也必须明确它不改正式出价。
+- 后续新增 practical 字段时，至少需要一条链路测试覆盖 `model_eval -> ui_contract -> overlay`。
+
+原因：
+
+- 当前阶段目标是实战可用性，而不是继续细调参数；用户需要快速分清正式出价依据和 v3 practical 风险参考。
+- 只显示 v3 practical P90 会放大误读风险：它是上沿/低估风险参考，不是 defend/attack/stop price。
+- 并排显示 formal baseline 与 v3 上沿，可以让实战中“模型正式建议偏低，但 v3 提醒低估风险”的场景更可解释。

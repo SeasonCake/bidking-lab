@@ -1292,10 +1292,12 @@ def _ui_contract_v3_practical_section(
     p50 = practical.get("formal_decision_value_p50")
     p90 = practical.get("formal_decision_value_p90")
     baseline_p50 = practical.get("baseline_formal_decision_value_p50")
+    baseline_p90 = practical.get("baseline_formal_decision_value_p90")
     delta_p50 = practical.get("delta_formal_decision_value_p50")
     delta_p90 = practical.get("delta_formal_decision_value_p90")
     q6_p50 = practical.get("q6_formal_decision_value_p50")
     q6_p90 = practical.get("q6_formal_decision_value_p90")
+    baseline_q6_p90 = practical.get("baseline_q6_formal_decision_value_p90")
     delta_q6 = practical.get("delta_q6_formal_decision_value_p50")
     delta_q6_p90 = practical.get("delta_q6_formal_decision_value_p90")
     total_p90 = practical.get("total_value_p90")
@@ -1318,16 +1320,29 @@ def _ui_contract_v3_practical_section(
         headline = "候选观察：未进入正式出价"
     else:
         headline = "未触发：baseline passthrough"
+    if baseline_p90 is not None and p90 is not None:
+        p90_text = f"正式P90 {_fmt_int(baseline_p90)} -> v3P90 {_fmt_int(p90)}"
+    else:
+        p90_text = f"v3P90 {_fmt_int(p90)}" if p90 is not None else ""
     value_parts = [
-        f"P50 {_fmt_int(p50)}" if p50 is not None else "",
-        f"P90 {_fmt_int(p90)}" if p90 is not None else "",
-        f"base {_fmt_int(baseline_p50)}" if baseline_p50 is not None and detail else "",
+        f"v3P50 {_fmt_int(p50)}" if p50 is not None else "",
+        p90_text,
+        (
+            f"正式P50 {_fmt_int(baseline_p50)}"
+            if baseline_p50 is not None and detail
+            else ""
+        ),
         f"ΔP50 {_fmt_int(delta_p50)}" if delta_p50 is not None else "",
         f"ΔP90 {_fmt_int(delta_p90)}" if delta_p90 is not None else "",
     ]
     q6_parts = [
         f"q6P50 {_fmt_int(q6_p50)}" if q6_p50 is not None else "",
         f"q6P90 {_fmt_int(q6_p90)}" if q6_p90 is not None else "",
+        (
+            f"正式q6P90 {_fmt_int(baseline_q6_p90)}"
+            if baseline_q6_p90 is not None and detail
+            else ""
+        ),
         f"Δq6 {_fmt_int(delta_q6)}" if delta_q6 is not None else "",
         f"Δq6P90 {_fmt_int(delta_q6_p90)}" if delta_q6_p90 is not None else "",
     ]
@@ -1342,7 +1357,11 @@ def _ui_contract_v3_practical_section(
             if q6_raw_gap_p90 is not None and q6_raw_gap_p90 > 0
             else ""
         ),
-        f"rawP90 {_fmt_int(total_p90)}" if detail and total_p90 is not None else "",
+        (
+            f"仓库rawP90 {_fmt_int(total_p90)}"
+            if detail and total_p90 is not None
+            else ""
+        ),
         (
             f"q6rawP90 {_fmt_int(q6_value_p90)}"
             if detail and q6_value_p90 is not None
@@ -1780,10 +1799,17 @@ def _ui_contract_alerts(contract: dict[str, Any]) -> list[tuple[str, str]]:
                 "ceiling_watch": "给出参考上沿",
                 "risk_watch": "提示证据/容量风险",
             }.get(str(practical.get("recommendation")), "提示风险")
+            baseline_p90 = practical.get("baseline_formal_decision_value_p90")
+            practical_p90 = practical.get("formal_decision_value_p90")
+            p90_text = (
+                f"正式P90 {_fmt_int(baseline_p90)} -> v3P90 {_fmt_int(practical_p90)}"
+                if baseline_p90 is not None and practical_p90 is not None
+                else f"P90 {_fmt_int(practical_p90)}"
+            )
             alerts.append(
                 (
                     f"v3 实战参考{recommendation_label}："
-                    f"P90 {_fmt_int(practical.get('formal_decision_value_p90'))}，"
+                    f"{p90_text}，"
                     f"来源 {practical.get('source_lanes') or practical.get('source') or '?'}，"
                     "不改正式出价",
                     "warn",

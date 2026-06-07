@@ -6571,3 +6571,16 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 - 该结果支持把 `750,000` 作为当前实战 practical cap，但不支持继续在 `650,000/700,000/800,000` 之间细搜。
 - 剩余低估更像 q6 gate / cells/value source semantics 问题，继续靠单一 cap 调整会快速遇到样本误差和 misleading 风险。
 - 当前阶段应转向逐步落地：UI 清晰展示 formal baseline、v3 practical 上沿、低估风险和 shadow-only 状态；新增样本只用于检查是否出现系统性漂移。
+
+## O-v3-157：overlay 可读性需要显式 baseline/practical 对照
+
+2026-06-07 检查 overlay 后：
+
+- UI contract 已经透传 `v3_practical_baseline_formal_decision_value_p90`，但 overlay hover 原本主要显示 v3 practical P90 与 delta。
+- 对实战用户来说，仅显示 `P90` 容易被理解成正式估价；当前 v3 practical 实际是 shadow-only 上沿参考。
+- 将文案改成 `正式P90 -> v3P90` 后，用户可以直接看到正式 baseline 与 practical 上沿之间的差距。
+
+观察：
+
+- 这类 UI 链路问题不会改变 MAE/P90 coverage，但会直接影响实战可用性。
+- 后续落地优先级应包含“字段是否可读、是否有正式/参考边界”，不能只看 evaluator 指标。

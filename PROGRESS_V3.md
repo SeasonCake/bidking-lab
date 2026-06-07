@@ -8586,3 +8586,38 @@ overall v3_practical_p90_extreme_over_rate=0.19
 - 这不是 promotion，也不是正式估价重写；它只是让实战 UI 的 v3 practical 上沿更少持续低估。
 - Ethan 2501 layout 的 4 个 top miss 从 residual under 约 `168,754` 变为 practical P90 覆盖。
 - 剩余 top miss 主要是 Aisha 2404 / Ethan 2401 的 q6 gate / q6 undercovered 残余，不建议继续盲目 broad delta；后续优先通过 UI 风险表达和实战观察决定是否再加窄口径规则。
+
+## 2026-06-07 checkpoint：overlay 明确并排显示 formal baseline 与 v3 practical P90
+
+目标：
+
+- 推进实战落地，不继续细调 sampler 参数。
+- 让用户在 overlay 中直接看到“正式 baseline P90”和“v3 practical 上沿 P90”的区别，避免把 v3 practical 误认为正式出价。
+
+本轮动作：
+
+- `v3 实战参考` hover/detail 文案改为并排展示：
+  - `正式P90 ... -> v3P90 ...`
+  - `ΔP90 ...`
+  - `rawΔP90` / `q6rawΔP90`
+  - detail 中的 `正式P50`、`正式q6P90`、`仓库rawP90`、`q6rawP90`
+- v3 practical alert 也同步显示 `正式P90 -> v3P90`。
+- 新增集成测试，覆盖 `model_eval.v3_practical_* -> ui_contract -> overlay`，确保不是只测手写 UI contract。
+
+验证结果：
+
+```text
+py_compile: passed
+pytest tests/test_live_overlay.py tests/test_runtime_snapshot.py tests/test_summarize_live_windivert_brief.py -q:
+59 passed
+
+live brief --since-hours 72 --format json: passed
+overall v3_practical_p90_coverage=0.75
+overall v3_practical_p90_extreme_over_rate=0.19
+```
+
+当前解读：
+
+- 这是纯 UI/contract 可读性改动，不改变 v2 formal、正式出价或 v3 practical 数值。
+- 实战面板现在更符合当前阶段目标：第一屏/hover 可以同时看正式 baseline、v3 practical 上沿、delta、来源和只读状态。
+- 后续优先继续做链路稳定和用户可读提示；除非新增实战样本显示系统性偏差，不再围绕小参数做连续细搜。

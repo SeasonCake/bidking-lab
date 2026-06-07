@@ -1193,12 +1193,16 @@ def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> 
                 "formal_decision_value_p90": 780000,
                 "total_value_p90": 980000,
                 "baseline_formal_decision_value_p50": 420000,
+                "baseline_formal_decision_value_p90": 650000,
                 "delta_formal_decision_value_p50": 60000,
+                "delta_formal_decision_value_p90": 130000,
                 "raw_total_gap_to_formal_p90": 200000,
                 "q6_formal_decision_value_p50": 120000,
                 "q6_formal_decision_value_p90": 260000,
+                "baseline_q6_formal_decision_value_p90": 180000,
                 "q6_value_p90": 420000,
                 "delta_q6_formal_decision_value_p50": 40000,
+                "delta_q6_formal_decision_value_p90": 80000,
                 "q6_raw_gap_to_formal_p90": 160000,
             }
         },
@@ -1218,7 +1222,9 @@ def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> 
     assert any(
         section[0] == "v3 实战参考"
         and "低估风险" in section[1]
+        and "正式P90 650,000 -> v3P90 780,000" in section[1]
         and "P90 780,000" in section[1]
+        and "ΔP90 130,000" in section[1]
         and "rawΔP90 200,000" in section[1]
         and "q6rawΔP90 160,000" in section[1]
         and "不影响正式出价" in section[2]
@@ -1226,13 +1232,62 @@ def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> 
     )
     assert any(
         section[0] == "v3 实战参考"
-        and "base 420,000" in section[1]
+        and "正式P50 420,000" in section[1]
+        and "正式q6P90 180,000" in section[1]
         and "rawP90 980,000" in section[1]
         and "q6rawP90 420,000" in section[1]
         and "formal value floor" in section[2]
         for section in model["interaction"]["detail"]["sections"]
     )
     assert any("v3 实战参考提示低估风险" in alert[0] for alert in model["alerts"])
+    assert any("正式P90 650,000 -> v3P90 780,000" in alert[0] for alert in model["alerts"])
+
+
+def test_overlay_v3_practical_model_eval_contract_chain_labels_baseline_p90() -> None:
+    overlay = _overlay_module()
+    from bidking_lab.runtime.snapshot import ui_contract_from_artifact
+
+    contract = ui_contract_from_artifact(
+        {
+            "model_eval": {
+                "v3_practical_available": True,
+                "v3_practical_ready": True,
+                "v3_practical_affects_bid": False,
+                "v3_practical_active": False,
+                "v3_practical_candidate": True,
+                "v3_practical_source": "q6_prior_floor",
+                "v3_practical_mode": "q6_prior_floor_watch",
+                "v3_practical_status": "watch_q6_prior_floor",
+                "v3_practical_recommendation": "raise_watch",
+                "v3_practical_confidence": "low_medium",
+                "v3_practical_source_lanes": "formal_value+prior_q6_floor",
+                "v3_practical_risk_flags": "q6_prior_floor_watch",
+                "v3_practical_formal_decision_value_p50": 420000,
+                "v3_practical_formal_decision_value_p90": 1399123,
+                "v3_practical_baseline_formal_decision_value_p50": 210231,
+                "v3_practical_baseline_formal_decision_value_p90": 504178,
+                "v3_practical_delta_formal_decision_value_p50": 0,
+                "v3_practical_delta_formal_decision_value_p90": 894945,
+                "v3_practical_q6_formal_decision_value_p90": 1050000,
+                "v3_practical_baseline_q6_formal_decision_value_p90": 300000,
+                "v3_practical_delta_q6_formal_decision_value_p90": 750000,
+                "v3_practical_total_value_p90": 1510000,
+                "v3_practical_q6_value_p90": 1200000,
+                "v3_practical_raw_total_gap_to_formal_p90": 110877,
+                "v3_practical_q6_raw_gap_to_formal_p90": 150000,
+            }
+        }
+    )
+
+    hover = overlay._ui_contract_hover_sections(contract)
+    practical = next(section for section in hover if section[0] == "v3 实战参考")
+
+    assert "正式P90 504,178 -> v3P90 1,399,123" in practical[1]
+    assert "ΔP90 894,945" in practical[1]
+    assert "rawΔP90 110,877" in practical[1]
+    assert "q6rawΔP90 150,000" in practical[1]
+    assert "formal_value+prior_q6_floor" in practical[2]
+    assert "只读参考，不影响正式出价" in practical[2]
 
 
 def test_overlay_labels_v3_practical_ceiling_watch() -> None:
@@ -1255,6 +1310,7 @@ def test_overlay_labels_v3_practical_ceiling_watch() -> None:
                 "formal_decision_value_p50": 520000,
                 "formal_decision_value_p90": 820000,
                 "baseline_formal_decision_value_p50": 420000,
+                "baseline_formal_decision_value_p90": 600000,
                 "delta_formal_decision_value_p50": 100000,
                 "delta_formal_decision_value_p90": 220000,
             }
@@ -1265,6 +1321,7 @@ def test_overlay_labels_v3_practical_ceiling_watch() -> None:
     practical = next(section for section in sections if section[0] == "v3 实战参考")
 
     assert "参考上沿" in practical[1]
+    assert "正式P90 600,000 -> v3P90 820,000" in practical[1]
     assert "P90 820,000" in practical[1]
     assert "ΔP90 220,000" in practical[1]
     assert "不影响正式出价" in practical[2]
@@ -1290,6 +1347,7 @@ def test_overlay_v3_practical_passthrough_stays_read_only() -> None:
                 "formal_decision_value_p50": 240000,
                 "formal_decision_value_p90": 380000,
                 "baseline_formal_decision_value_p50": 240000,
+                "baseline_formal_decision_value_p90": 380000,
                 "delta_formal_decision_value_p50": 0,
             }
         },
@@ -1300,5 +1358,6 @@ def test_overlay_v3_practical_passthrough_stays_read_only() -> None:
 
     assert "未触发" in practical[1]
     assert "P50 240,000" in practical[1]
+    assert "正式P90 380,000 -> v3P90 380,000" in practical[1]
     assert "只读参考，不影响正式出价" in practical[2]
     assert overlay._ui_contract_alerts(contract) == []
