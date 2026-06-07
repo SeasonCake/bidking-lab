@@ -2826,3 +2826,22 @@ applied_hurts=2502
 - raise-watch 质量复盘显示旧语义下 `raise_watch_rows=347`，但 hit-rate 只有 `0.080692`，false-alarm rate `0.602305`，misleading rate `0.230548`。
 - 新分层后 64-trial archive smoke 显示 `raise_watch_rows=82`，hit-rate `0.280488`，false-alarm rate `0.182927`，misleading rate `0.097561`。
 - practical P50 MAE 与 below-rate 同时小幅改善，说明该分层更符合实战：让用户看到上沿和风险，但不把弱证据包装成强加价建议。
+
+## D-v3-139：所有 practical 上沿候选必须报告整体 P90 extreme-over
+
+2026-06-07 起，当前决策：
+
+- 后续任何 `ceiling_watch`、tail/value sampler、q6 prior/tail upshift，都必须同时复盘：
+  - `v3_practical_formal_p90_coverage`
+  - `v3_practical_formal_p90_extreme_over_rate`
+  - `v3_practical_formal_p50_mae`
+  - `v3_practical_formal_p50_below_rate`
+  - `v3_practical_raise_watch_hit/miss/false_alarm/misleading_rate`
+- 若候选只提升 P90 coverage，但显著提高 practical P90 extreme-over，默认不得接入 UI 前台，也不得 promotion。
+- q6 pressure multiplier / global q6 tail prior 这类 broad upshift 只能在 source-aware 子集证明收益后再实现；不得全局接入。
+- 该规则不影响 v2 formal 或正式出价；它是 v3 practical/shadow 的 stop-loss。
+
+原因：
+
+- 当前 archive smoke 显示 practical P90 coverage 从 formal `0.750641` 提升到 `0.772436`，但 practical P90 extreme-over 也从 `0.305128` 升到 `0.319231`。
+- 用户接受合理偏激进上沿，但不能被过宽 P90 持续误导；因此必须把 coverage 和 extreme-over 绑定评估。

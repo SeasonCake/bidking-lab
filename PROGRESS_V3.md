@@ -7853,3 +7853,44 @@ v3_practical_formal_p90_coverage=0.772436
 - 这是 v3 practical 第一轮实质性“实战落地”改进：不是提高所有 alert，而是把强提醒和参考上沿分开。
 - residual q6 value 对全局 MAE/低估率有小幅正收益，但还不能进入 formal；false/miss 仍高，必须继续 shadow-only。
 - 下一步应围绕 `q6_tail_value`、`q6_gate_inactive`、Ethan villa random_avg/layout 与 Aisha shipwreck deep/tail 做更具体的 source-aware sampler，不再扩大 weak broad watch。
+
+## 2026-06-07 checkpoint：v3 practical P90 extreme-over stop-loss
+
+目标：
+
+- 给 `ceiling_watch` / risk reference 增加整体 P90 过宽监控，避免后续只看 coverage 上升。
+- 保持 v2 formal、正式出价、UI baseline 不变。
+
+本轮动作：
+
+- `scripts/evaluate_fatbeans_v3_samples.py` 新增：
+  - `formal_p90_extreme_over_rate`
+  - `q6_formal_p90_extreme_over_rate`
+  - `v3_practical_formal_p90_extreme_over_rate`
+  - `v3_practical_q6_formal_p90_extreme_over_rate`
+- `scripts/summarize_live_windivert_brief.py` 新增分组输出：
+  - `v3_practical_p90_coverage`
+  - `v3_practical_p90_extreme_over_rate`
+- focused tests 覆盖 archive 与 live brief 新字段。
+
+验证结果：
+
+```text
+py_compile: passed
+focused tests: 3 passed
+archive smoke (--posterior-trials 64):
+formal_p90_coverage=0.750641
+formal_p90_extreme_over_rate=0.305128
+v3_practical_formal_p90_coverage=0.772436
+v3_practical_formal_p90_extreme_over_rate=0.319231
+
+live brief (--since-hours 72):
+overall v3_practical_p90_coverage=0.5
+overall v3_practical_p90_extreme_over_rate=0.06
+```
+
+解读：
+
+- 当前 v3 practical 提高了 P90 coverage，但 archive practical P90 extreme-over 也从 formal 的 0.305128 升到 0.319231。
+- 这说明后续 q6 tail/value ceiling 必须先看 extreme-over，不得只因为 coverage 上升就接入 UI 或 promotion。
+- 同步模拟的 q6 pressure multiplier 候选 hit 低且 false/extreme 偏高，暂不实装；下一步应做更具体的 source-aware 条件 sampler。

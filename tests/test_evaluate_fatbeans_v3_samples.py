@@ -645,6 +645,7 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["formal_p50_over_rate"] == 0.5
     assert summary["formal_p50_pinball"] == 15
     assert summary["formal_p90_coverage"] == 1.0
+    assert summary["formal_p90_extreme_over_rate"] == 0.0
     assert summary["formal_p90_coverage_strict"] == 1.0
     assert summary["formal_p90_coverage_fallback"] == 1.0
     assert summary["formal_p90_pinball"] == 4
@@ -653,6 +654,7 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["q6_formal_p50_mae_fallback"] == 0
     assert summary["q6_formal_p50_bias"] == -10
     assert summary["q6_formal_p50_over_rate"] == 0.0
+    assert summary["q6_formal_p90_extreme_over_rate"] == 0.0
     assert summary["q6_formal_p90_pinball"] == 0.5
     assert summary["q6_count_p50_mae"] == 1
     assert summary["q6_cells_p50_mae"] == 3.5
@@ -755,6 +757,7 @@ def test_v3_summary_reports_practical_raise_watch_quality() -> None:
     assert summary["v3_practical_raise_watch_false_alarm_rate"] == 0.333333
     assert summary["v3_practical_raise_watch_extreme_over_rate"] == 0.333333
     assert summary["v3_practical_raise_watch_misleading_rate"] == 0.333333
+    assert summary["v3_practical_formal_p90_extreme_over_rate"] == 0.333333
 
 
 def test_v3_prebid_rows_separate_no_state_windows() -> None:

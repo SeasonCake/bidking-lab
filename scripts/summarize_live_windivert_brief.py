@@ -601,6 +601,16 @@ def _practical_p50_error(row: dict[str, Any]) -> float | None:
     return _num(row, "v3_practical_formal_decision_value_p50_error_vs_formal")
 
 
+def _practical_truth_value(row: dict[str, Any]) -> float | None:
+    return _first_num(
+        row,
+        "final_formal_decision_value",
+        "decision_value_truth",
+        "final_decision_value",
+        "final_value",
+    )
+
+
 def _normalized_error_denominator(truth: float) -> float:
     return max(100_000.0, abs(truth))
 
@@ -1007,6 +1017,10 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
     p90_signed_errors: list[float] = []
     p90_covered_excess_ratios: list[float] = []
     p90_extreme_over_values: list[float] = []
+    practical_p90_coverage_values: list[float] = []
+    practical_p90_signed_errors: list[float] = []
+    practical_p90_covered_excess_ratios: list[float] = []
+    practical_p90_extreme_over_values: list[float] = []
     for row in rows:
         p90 = _num(row, "decision_value_p90")
         truth = _truth_value(row)
@@ -1019,6 +1033,23 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
             if covered:
                 p90_covered_excess_ratios.append(signed_error / denominator)
             p90_extreme_over_values.append(1.0 if signed_error > denominator else 0.0)
+        practical_p90 = _num(row, "v3_practical_formal_decision_value_p90")
+        practical_truth = _practical_truth_value(row)
+        if practical_p90 is not None and practical_truth is not None:
+            practical_covered = practical_p90 >= practical_truth
+            practical_denominator = _normalized_error_denominator(practical_truth)
+            practical_signed_error = practical_p90 - practical_truth
+            practical_p90_coverage_values.append(
+                1.0 if practical_covered else 0.0
+            )
+            practical_p90_signed_errors.append(practical_signed_error)
+            if practical_covered:
+                practical_p90_covered_excess_ratios.append(
+                    practical_signed_error / practical_denominator
+                )
+            practical_p90_extreme_over_values.append(
+                1.0 if practical_signed_error > practical_denominator else 0.0
+            )
     return {
         "rows": len(rows),
         "estimate_rows": len(signed),
@@ -1096,6 +1127,26 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )
         if practical_signed
         else None,
+        "v3_practical_p90_coverage": (
+            round(statistics.mean(practical_p90_coverage_values), 2)
+            if practical_p90_coverage_values
+            else None
+        ),
+        "v3_practical_median_p90_signed_error": (
+            round(statistics.median(practical_p90_signed_errors), 1)
+            if practical_p90_signed_errors
+            else None
+        ),
+        "v3_practical_p90_covered_excess_ratio": (
+            round(statistics.median(practical_p90_covered_excess_ratios), 3)
+            if practical_p90_covered_excess_ratios
+            else None
+        ),
+        "v3_practical_p90_extreme_over_rate": (
+            round(statistics.mean(practical_p90_extreme_over_values), 2)
+            if practical_p90_extreme_over_values
+            else None
+        ),
         "v3_practical_raise_watch_evaluable_rows": len(practical_watch_eval),
         "v3_practical_raise_watch_hit_rate": (
             round(rate, 2)
@@ -1451,7 +1502,10 @@ def _print_report(
         f"p90_covered_excess_ratio={overall.get('median_p90_covered_excess_ratio')} "
         f"p90_extreme_over_rate={overall.get('p90_extreme_over_rate')} "
         f"median_n_trials={overall.get('median_n_trials')} "
-        f"size_bucket_rate={overall.get('size_bucket_active_rate')}"
+        f"size_bucket_rate={overall.get('size_bucket_active_rate')} "
+        f"v3_practical_p90_coverage={overall.get('v3_practical_p90_coverage')} "
+        "v3_practical_p90_extreme_over_rate="
+        f"{overall.get('v3_practical_p90_extreme_over_rate')}"
     )
     print()
     prebid = summary.get("prebid_overall") or {}
@@ -1465,7 +1519,10 @@ def _print_report(
         f"p50_under_rate={prebid.get('p50_under_rate')} "
         f"p90_coverage={prebid.get('p90_coverage')} "
         f"p90_covered_excess_ratio={prebid.get('median_p90_covered_excess_ratio')} "
-        f"p90_extreme_over_rate={prebid.get('p90_extreme_over_rate')}"
+        f"p90_extreme_over_rate={prebid.get('p90_extreme_over_rate')} "
+        f"v3_practical_p90_coverage={prebid.get('v3_practical_p90_coverage')} "
+        "v3_practical_p90_extreme_over_rate="
+        f"{prebid.get('v3_practical_p90_extreme_over_rate')}"
     )
     print()
     _print_prebid_audit(summary.get("prebid_window_audit") or {})
@@ -1524,6 +1581,7 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
         "median_n_trials,size_bucket_rate,v3_practical_candidate_rate,"
         "v3_practical_raise_watch_rate,v3_practical_mae,"
         "v3_practical_delta_mae,v3_practical_under_rate,"
+        "v3_practical_p90_coverage,v3_practical_p90_extreme_over_rate,"
         "v3_practical_raise_watch_evaluable_rows,"
         "v3_practical_raise_watch_hit_rate,"
         "v3_practical_raise_watch_miss_rate,"
@@ -1553,6 +1611,8 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
             f"{group.get('v3_practical_mae')},"
             f"{group.get('v3_practical_delta_mae')},"
             f"{group.get('v3_practical_under_rate')},"
+            f"{group.get('v3_practical_p90_coverage')},"
+            f"{group.get('v3_practical_p90_extreme_over_rate')},"
             f"{group.get('v3_practical_raise_watch_evaluable_rows')},"
             f"{group.get('v3_practical_raise_watch_hit_rate')},"
             f"{group.get('v3_practical_raise_watch_miss_rate')},"

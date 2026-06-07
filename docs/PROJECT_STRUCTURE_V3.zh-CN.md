@@ -17,7 +17,7 @@
 | `docs/v3_inference_design_2026-06-04.zh-CN.md` | v3 设计文档 |
 | `src/bidking_lab/inference/v3/` | v3 推理引擎新包 |
 | `src/bidking_lab/inference/v3/pipeline.py` | archive/live 共用 v3 shadow 推理链路 |
-| `src/bidking_lab/inference/v3/practical_advisory.py` | v3 practical advisory 聚合层，输出 `v3_practical_*` 实战参考字段；含 q6 prior-floor / tail-replacement P90 watch，固定 inactive/不影响出价 |
+| `src/bidking_lab/inference/v3/practical_advisory.py` | v3 practical advisory 聚合层，输出 `v3_practical_*` 实战参考字段；含 q6 prior-floor、random avg floor、q6 residual value ceiling、tail-replacement P90 watch，固定 inactive/不影响出价 |
 | `src/bidking_lab/inference/v3/priors.py` | v3 drop-prior summary 与共享 flat fields |
 | `src/bidking_lab/inference/v3/prior_robustness.py` | v3 drop-prior 漂移、活动期、fallback 鲁棒性审计 |
 | `src/bidking_lab/inference/v3/formal_value_sampler.py` | v3 formal/value sampler 第一阶段 shadow report，拆分 capacity/cells/value-floor stress，固定不影响出价 |
@@ -33,7 +33,7 @@
 | `docs/v3_strategy_pivot_2026-06-07.zh-CN.md` | 2026-06-07 策略切换：冻结 CSE 继续扩张，转入 formal/value promotion workbench |
 | `scripts/summarize_v3_evidence_coverage.py` | v3 evidence coverage 检查 |
 | `scripts/summarize_v3_constraints.py` | v3 hard constraint compiler 摘要 |
-| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、`v3_capacity_*` capacity prior-max gap/cases、`v3_fv_*` formal/value sampler shadow 字段、`v3_scp_*` settlement count-prior shadow evidence、含 source context/pressure tier 的 `v3_cse_*` capacity/source expansion shadow evidence、`v3_practical_*` practical advisory 实战参考字段、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
+| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、`v3_capacity_*` capacity prior-max gap/cases、`v3_fv_*` formal/value sampler shadow 字段、`v3_scp_*` settlement count-prior shadow evidence、含 source context/pressure tier 的 `v3_cse_*` capacity/source expansion shadow evidence、`v3_practical_*` practical advisory 实战参考字段与 P90 extreme-over stop-loss、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
 | `scripts/summarize_v3_metric_slices.py` | v3 round/map/hero/profile 分片指标 |
 | `scripts/summarize_v3_map_audit.py` | v3 map 主键审计，附 hero/profile 分布 |
 | `scripts/summarize_v3_prior_robustness_audit.py` | v3 prior/activity/prior-stress 分片审计，支持 `--details`、`--detail-summary` 与 `--detail-summary-by` 输出 cells/capacity/evidence 明细、target-vs-truth delta、posterior-vs-target absorption、capacity prior-max gap/cases、lower-bound target completeness 和 map/profile 聚合一致性摘要 |
@@ -146,7 +146,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 diagnostics-only `v3_practical_*`；canonical evidence events 会传入 practical 层用于 random avg 等 source-aware reference；residual q6 value ceiling 只进入 practical shadow |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
-| `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate，以及 raise-watch hit/miss/false-alarm/extreme-over/misleading rate，便于局后复盘 `v3_practical_*`；`raise_watch` 仅代表强低估提醒，`ceiling_watch`/`risk_watch` 代表只读上沿或风险提示 |
+| `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate、practical P90 coverage/extreme-over，以及 raise-watch hit/miss/false-alarm/extreme-over/misleading rate，便于局后复盘 `v3_practical_*`；`raise_watch` 仅代表强低估提醒，`ceiling_watch`/`risk_watch` 代表只读上沿或风险提示 |
 | `data/logs/live/` | 本地 live 日志 | ignored，本地运行态 |
 | `data/samples/fatbeans/` | 本地 canonical archive 样本 | 441 份 JSON，默认脚本路径 |
 | `data/samples/fatbeans_activity_20260605_shipwreck/` | 2026-06-05 沉船白转红活动 cohort | 15 份 JSON，manifest role=`activity_tuning_reference`；用于 source/table 与 shadow 调参参考，不进默认校准 |

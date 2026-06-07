@@ -1290,6 +1290,14 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     def coverage_rate(pairs: tuple[tuple[float, float], ...]) -> float | None:
         return _mean(1.0 if truth <= pred else 0.0 for pred, truth in pairs)
 
+    def extreme_over_rate(pairs: tuple[tuple[float, float], ...]) -> float | None:
+        return _mean(
+            1.0
+            if pred - truth > _normalized_error_denominator(truth)
+            else 0.0
+            for pred, truth in pairs
+        )
+
     def pinball(pairs: tuple[tuple[float, float], ...], quantile: float) -> float | None:
         return _mean(_pinball_loss(truth, pred, quantile) for pred, truth in pairs)
 
@@ -1376,6 +1384,10 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "formal_p50_over_rate": _round_metric(over_rate(formal_p50), 6),
         "formal_p50_pinball": _round_metric(pinball(formal_p50, 0.5)),
         "formal_p90_coverage": _round_metric(coverage_rate(formal_p90), 6),
+        "formal_p90_extreme_over_rate": _round_metric(
+            extreme_over_rate(formal_p90),
+            6,
+        ),
         "formal_p90_coverage_strict": _round_metric(
             coverage_rate(formal_p90_strict),
             6,
@@ -1392,6 +1404,10 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "q6_formal_p50_below_rate": _round_metric(below_rate(q6_p50), 6),
         "q6_formal_p50_over_rate": _round_metric(over_rate(q6_p50), 6),
         "q6_formal_p90_coverage": _round_metric(coverage_rate(q6_p90), 6),
+        "q6_formal_p90_extreme_over_rate": _round_metric(
+            extreme_over_rate(q6_p90),
+            6,
+        ),
         "q6_formal_p90_pinball": _round_metric(pinball(q6_p90, 0.9)),
         "q6_count_p50_mae": _round_metric(q6_count_p50_mae),
         "q6_count_p50_bias": _round_metric(bias(q6_count_p50)),
@@ -1847,6 +1863,10 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             coverage_rate(practical_formal_p90),
             6,
         ),
+        "v3_practical_formal_p90_extreme_over_rate": _round_metric(
+            extreme_over_rate(practical_formal_p90),
+            6,
+        ),
         "v3_practical_formal_p90_pinball": _round_metric(
             pinball(practical_formal_p90, 0.9)
         ),
@@ -1862,6 +1882,10 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "v3_practical_q6_formal_p90_coverage": _round_metric(
             coverage_rate(practical_q6_p90),
+            6,
+        ),
+        "v3_practical_q6_formal_p90_extreme_over_rate": _round_metric(
+            extreme_over_rate(practical_q6_p90),
             6,
         ),
         "v3_practical_delta_formal_p50_mae": _round_metric(
@@ -2043,11 +2067,13 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"formal_p50_below_rate={summary['formal_p50_below_rate']}",
                 f"formal_p50_over_rate={summary['formal_p50_over_rate']}",
                 f"formal_p90_coverage={summary['formal_p90_coverage']}",
+                f"formal_p90_extreme_over_rate={summary['formal_p90_extreme_over_rate']}",
                 f"q6_formal_p50_mae={summary['q6_formal_p50_mae']}",
                 f"q6_formal_p50_mae_strict={summary['q6_formal_p50_mae_strict']}",
                 f"q6_formal_p50_mae_fallback={summary['q6_formal_p50_mae_fallback']}",
                 f"q6_formal_p50_below_rate={summary['q6_formal_p50_below_rate']}",
                 f"q6_formal_p50_over_rate={summary['q6_formal_p50_over_rate']}",
+                f"q6_formal_p90_extreme_over_rate={summary['q6_formal_p90_extreme_over_rate']}",
                 f"q6_count_p50_mae={summary['q6_count_p50_mae']}",
                 f"q6_cells_p50_mae={summary['q6_cells_p50_mae']}",
                 f"v3_ccv_likelihood_rows={summary['v3_ccv_likelihood_rows']}",
@@ -2122,6 +2148,7 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"v3_practical_delta_formal_p50_mae={summary['v3_practical_delta_formal_p50_mae']}",
                 f"v3_practical_formal_p50_below_rate={summary['v3_practical_formal_p50_below_rate']}",
                 f"v3_practical_formal_p90_coverage={summary['v3_practical_formal_p90_coverage']}",
+                f"v3_practical_formal_p90_extreme_over_rate={summary['v3_practical_formal_p90_extreme_over_rate']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",

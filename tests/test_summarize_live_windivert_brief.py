@@ -93,6 +93,8 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
     assert summary["by_action_round"]["R2"]["p90_coverage"] == 0.0
     assert summary["by_action_round"]["R2"]["median_n_trials"] == 20
     assert summary["by_action_round"]["R2"]["v3_practical_raise_watch_evaluable_rows"] == 1
+    assert summary["by_action_round"]["R2"]["v3_practical_p90_coverage"] == 1.0
+    assert summary["by_action_round"]["R2"]["v3_practical_p90_extreme_over_rate"] == 0.0
     assert summary["by_action_round"]["R2"]["v3_practical_raise_watch_hit_rate"] == 1.0
     assert summary["by_action_round"]["R2"]["v3_practical_raise_watch_miss_rate"] == 0.0
     assert (
@@ -100,6 +102,8 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
         == 0.0
     )
     assert summary["by_round"]["R4"]["v3_practical_raise_watch_false_alarm_rate"] == 1.0
+    assert summary["by_round"]["R4"]["v3_practical_p90_coverage"] == 1.0
+    assert summary["by_round"]["R4"]["v3_practical_p90_extreme_over_rate"] == 0.0
     assert summary["by_round"]["R4"]["median_matched"] == 10
     assert summary["by_q6_truth"]["q6>0"]["rows"] == 1
     assert summary["by_q6_truth"]["q6=0"]["rows"] == 1

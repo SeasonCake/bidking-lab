@@ -6222,3 +6222,25 @@ remaining miss top modes: baseline=246, q6_prior_floor=33, risk_watch=30
 - 不应把全局 q6 tail prior 高分位直接接入 live/practical。
 - 下一步更合理的是 source-aware tail/value sampler：结合 map family、hero、round、layout/random_avg、q6 count/cell under signal、活动 cohort，判断是否需要 q6 tail upshift。
 - 如果需要实战增量验证，应优先采 villa 正常样本；0605 后 shipwreck 活动样本继续作为 prior-drift 鲁棒性 cohort，不混入默认 baseline。
+
+## O-v3-144：q6 pressure multiplier 候选暂不实装
+
+2026-06-07 用现有 row 字段模拟 `q6 expected count/cells/value` 对当前 practical q6 P90 的压力上抬：
+
+```text
+factor=1.35 gap>=100k cap=300k pressure>=1.25:
+n=61 hit=0.098 miss=0.295 false=0.607 extreme=0.328
+
+factor=1.50 gap>=150k cap=400k pressure>=1.50:
+n=44 hit=0.114 miss=0.318 false=0.568 extreme=0.295
+
+factor=1.65 gap>=200k cap=500k pressure>=1.75:
+n=26 hit=0.115 miss=0.269 false=0.615 extreme=0.308
+```
+
+观察：
+
+- q6 pressure signal 能解释部分 top miss，但 false/extreme 仍偏高。
+- baseline-only 收窄后样本数太少，且 false/extreme 更差。
+- 该候选暂不进入 `v3_practical_*`，避免把 q6 expected count/cells 当成可靠 tail sampler。
+- 下一步应改成条件化 sampler：结合 hero/map/round/evidence profile 和可验证的 q6 component likelihood，而不是固定 multiplier。
