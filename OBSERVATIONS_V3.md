@@ -6527,3 +6527,19 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 - 该规则主要把已有 `bounded_underestimate_repair` ceiling 中的 dense evidence 行升级为 `raise_watch`，不是改变正式估值。
 - 它的 tradeoff 很明确：false alarm rate 小幅上升，但 miss、extreme-over、misleading 均下降，适合实战参考上沿。
 - 继续固定 delta 的收益已经很小；后续更高价值方向是把 item/shape density 显式进入 q6 count/cells/value likelihood。
+
+## O-v3-154：practical 计算和 UI contract 之间存在字段断层
+
+2026-06-07 检查 live overlay 后：
+
+- `V3PracticalAdvisoryReport.to_flat_dict()` 已输出较完整的 practical 字段，包括 baseline gap、delta P90、raw total gap、q6 raw gap。
+- `scripts/run_live_overlay.py` 已经具备显示这些字段的逻辑：
+  - compact 行显示 `P50/P90/ΔP50/ΔP90/q6P50/q6P90/Δq6/Δq6P90/rawΔP90/q6rawΔP90`；
+  - hover detail 可显示 `rawP90/q6rawP90/reason`。
+- 但 `runtime.snapshot.ui_contract_from_artifact()` 之前只透传了部分字段，导致真实 UI contract 中缺失上沿信息。
+
+修复后：
+
+- runtime snapshot contract 会保留 practical 的 baseline P90、delta P90、raw total P90、q6 raw P90、raw gap 与 q6 raw gap。
+- overlay 不需要视觉重做即可显示更多实战参考信息。
+- 该问题说明后续 v3 sampler 落地时，不能只看模型 evaluator；必须检查 `flat_dict -> model_eval -> UI contract -> overlay` 全链路。

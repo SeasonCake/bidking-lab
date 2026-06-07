@@ -8434,3 +8434,62 @@ overall v3_practical_p90_extreme_over_rate=0.19
 - 这条规则的收益是小而实用：coverage 继续提升，miss/extreme/misleading 降低，但 false alarm 率小幅上升。
 - 因为它会把部分 underestimate-only ceiling 升级为 raise-watch，所以只适合 v3 practical shadow，不适合 formal 或正式出价。
 - 下一个主线仍应是 q6 count/cells/value 条件 sampler；继续加固定 delta 的边际收益正在下降。
+
+## 2026-06-07 checkpoint：v3 practical UI contract 上沿字段补齐
+
+目标：
+
+- 让 live overlay 实际看到 v3 practical 已经计算出的上沿和 gap 字段。
+- 明确区分正式 baseline 与 v3 practical shadow 参考，避免用户只看到正式裁尾值而错过低估风险/仓库上沿。
+
+发现：
+
+- `run_live_overlay.py` 的 v3 practical section 已经会显示：
+  - `ΔP90`
+  - `rawΔP90`
+  - `q6rawΔP90`
+  - detail hover 中的 `rawP90` / `q6rawP90`
+- 但 `runtime.snapshot.ui_contract_from_artifact()` 只透传了部分 `v3_practical_*` 字段：
+  - 有 `formal_decision_value_p90`、`delta_formal_decision_value_p50`；
+  - 缺少 `delta_formal_decision_value_p90`、raw/total/q6 raw gap、baseline P90、q6 baseline/delta P90 等。
+- 结果是 archive/live 已经算出的 practical 上沿无法完整进入 overlay UI contract。
+
+本轮动作：
+
+- `diagnostics.v3_practical` 新增透传：
+  - formal baseline P90 与 delta P90；
+  - total raw P90、baseline raw P90、delta raw P90；
+  - raw total gap 相对 formal P90；
+  - q6 formal baseline P50/P90 与 delta P90；
+  - q6 raw value P90、baseline q6 raw P90、delta q6 raw P90；
+  - q6 raw gap 相对 q6 formal P90。
+- 更新 runtime snapshot 测试，确保这些字段不会再被 UI contract 丢弃。
+
+验证结果：
+
+```text
+py_compile: passed
+pytest tests/test_runtime_snapshot.py tests/test_live_overlay.py -q:
+48 passed
+
+archive smoke (--posterior-trials 64):
+v3_practical_raise_watch_rows=115
+v3_practical_raise_watch_hit_rate=0.686957
+v3_practical_raise_watch_miss_rate=0.147826
+v3_practical_raise_watch_false_alarm_rate=0.165217
+v3_practical_raise_watch_extreme_over_rate=0.191304
+v3_practical_raise_watch_misleading_rate=0.095652
+v3_practical_formal_p50_mae=316904.870
+v3_practical_formal_p90_coverage=0.812821
+v3_practical_formal_p90_extreme_over_rate=0.325641
+
+live brief (--since-hours 72):
+overall v3_practical_p90_coverage=0.67
+overall v3_practical_p90_extreme_over_rate=0.19
+```
+
+解读：
+
+- 这是实战落地层面的修复：不改变任何 formal/v2/正式出价，也不改变 practical 数值，只保证 UI contract 能完整携带 practical 上沿信息。
+- overlay 已有 shadow-only 文案和 `active/affects_bid` 检查；补齐字段后，用户能同时看到正式 baseline 与 v3 上沿/仓库风险。
+- 后续新增 practical sampler 时，必须同步检查 `to_flat_dict()`、`model_eval`、`runtime snapshot`、overlay section 四段字段是否贯通。

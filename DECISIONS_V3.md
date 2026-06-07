@@ -2952,3 +2952,28 @@ applied_hurts=2502
 - `ethan|2506|shape` 追加后，archive smoke 的 practical P90 coverage 继续从 `0.802564` 提到 `0.807051`，P50 MAE 不变，整体 practical P90 extreme-over 仍保持 `0.325641`；raise-watch hit/miss/false/extreme/misleading 均改善。
 - `ethan|2401|item+shape` 的 broad 规则会制造 false/misleading，但 `shape_anchors >= 33` 只命中 6 行且全部是 miss；接入后 archive smoke 的 practical P90 coverage 从 `0.807051` 提到 `0.810897`，P50 MAE 不变，整体 practical P90 extreme-over 仍保持 `0.325641`，raise-watch hit/miss/false/extreme/misleading 继续改善。
 - `aisha|2506|item+shape` 的 dense gate 接入后，archive smoke 的 practical P90 coverage 从 `0.810897` 提到 `0.812821`，P50 MAE 不变，整体 practical P90 extreme-over 仍保持 `0.325641`；代价是 `raise_watch_false_alarm_rate` 从 `0.162162` 小幅升到 `0.165217`，但 miss/extreme/misleading 均下降。
+
+## D-v3-145：v3 practical 上沿字段必须贯通 UI contract
+
+2026-06-07 起，当前决策：
+
+- `v3_practical_*` 只要在 model_eval 中计算出来，UI contract 必须保留用于实战判断的上沿字段：
+  - baseline/formal `p50/p90` 与 `delta_formal_decision_value_p50/p90`；
+  - total raw `p90`、baseline raw `p90`、`delta_total_value_p90`；
+  - `raw_total_gap_to_formal_p90` 与 baseline gap；
+  - q6 formal `p50/p90`、baseline q6 formal `p50/p90`、q6 formal delta；
+  - q6 raw value `p90`、baseline q6 raw `p90`、q6 raw delta；
+  - `q6_raw_gap_to_formal_p90` 与 baseline gap。
+- overlay 可以显示这些字段为“v3 实战参考 / 低估风险 / 仓库上限”，但必须继续显示 `只读参考，不影响正式出价`。
+- `active=true` 或 `affects_bid=true` 仍应在 overlay 中被标为异常；不得因为 UI 展示字段变多而接入正式出价。
+- 后续新增 practical sampler 或 flat field 时，必须同步检查：
+  - `V3PracticalAdvisoryReport.to_flat_dict()`
+  - live/archive `model_eval`
+  - `runtime.snapshot.ui_contract_from_artifact()`
+  - `scripts/run_live_overlay.py`
+
+原因：
+
+- `run_live_overlay.py` 已支持显示 `ΔP90`、`rawΔP90`、`q6rawΔP90`、detail hover 的 `rawP90/q6rawP90`，但 runtime snapshot 之前只透传了部分字段。
+- 这会造成“模型已经算出上沿，但实战 UI 看不到”的断层，违背 v3 practical 的落地目标。
+- 本决策只修字段贯通，不改变 v2 formal、正式出价或 practical 数值。

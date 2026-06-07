@@ -940,10 +940,25 @@ def test_ui_contract_exposes_v3_practical_diagnostics_shadow_only() -> None:
                 "v3_practical_formal_decision_value_p50": 480000,
                 "v3_practical_formal_decision_value_p90": 780000,
                 "v3_practical_baseline_formal_decision_value_p50": 420000,
+                "v3_practical_baseline_formal_decision_value_p90": 650000,
                 "v3_practical_delta_formal_decision_value_p50": 60000,
+                "v3_practical_delta_formal_decision_value_p90": 130000,
+                "v3_practical_total_value_p90": 980000,
+                "v3_practical_baseline_total_value_p90": 860000,
+                "v3_practical_delta_total_value_p90": 120000,
+                "v3_practical_raw_total_gap_to_formal_p90": 200000,
+                "v3_practical_baseline_raw_total_gap_to_formal_p90": 210000,
                 "v3_practical_q6_formal_decision_value_p50": 120000,
                 "v3_practical_q6_formal_decision_value_p90": 260000,
+                "v3_practical_baseline_q6_formal_decision_value_p50": 80000,
+                "v3_practical_baseline_q6_formal_decision_value_p90": 210000,
                 "v3_practical_delta_q6_formal_decision_value_p50": 40000,
+                "v3_practical_delta_q6_formal_decision_value_p90": 50000,
+                "v3_practical_q6_value_p90": 420000,
+                "v3_practical_baseline_q6_value_p90": 360000,
+                "v3_practical_delta_q6_value_p90": 60000,
+                "v3_practical_q6_raw_gap_to_formal_p90": 160000,
+                "v3_practical_baseline_q6_raw_gap_to_formal_p90": 150000,
             }
         }
     )
@@ -955,7 +970,16 @@ def test_ui_contract_exposes_v3_practical_diagnostics_shadow_only() -> None:
     assert practical["active"] is False
     assert practical["recommendation"] == "raise_watch"
     assert practical["formal_decision_value_p90"] == 780000
+    assert practical["baseline_formal_decision_value_p90"] == 650000
     assert practical["delta_formal_decision_value_p50"] == 60000
+    assert practical["delta_formal_decision_value_p90"] == 130000
+    assert practical["total_value_p90"] == 980000
+    assert practical["raw_total_gap_to_formal_p90"] == 200000
+    assert practical["q6_formal_decision_value_p90"] == 260000
+    assert practical["baseline_q6_formal_decision_value_p90"] == 210000
+    assert practical["delta_q6_formal_decision_value_p90"] == 50000
+    assert practical["q6_value_p90"] == 420000
+    assert practical["q6_raw_gap_to_formal_p90"] == 160000
     assert "diagnostics.v3_practical" in contract["interaction"]["hover"]["fields"]
 
 

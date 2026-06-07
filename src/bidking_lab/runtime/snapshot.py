@@ -1054,8 +1054,29 @@ def _ui_diagnostics_contract(
             "baseline_formal_decision_value_p50": model_eval.get(
                 "v3_practical_baseline_formal_decision_value_p50"
             ),
+            "baseline_formal_decision_value_p90": model_eval.get(
+                "v3_practical_baseline_formal_decision_value_p90"
+            ),
             "delta_formal_decision_value_p50": model_eval.get(
                 "v3_practical_delta_formal_decision_value_p50"
+            ),
+            "delta_formal_decision_value_p90": model_eval.get(
+                "v3_practical_delta_formal_decision_value_p90"
+            ),
+            "total_value_p90": model_eval.get(
+                "v3_practical_total_value_p90"
+            ),
+            "baseline_total_value_p90": model_eval.get(
+                "v3_practical_baseline_total_value_p90"
+            ),
+            "delta_total_value_p90": model_eval.get(
+                "v3_practical_delta_total_value_p90"
+            ),
+            "raw_total_gap_to_formal_p90": model_eval.get(
+                "v3_practical_raw_total_gap_to_formal_p90"
+            ),
+            "baseline_raw_total_gap_to_formal_p90": model_eval.get(
+                "v3_practical_baseline_raw_total_gap_to_formal_p90"
             ),
             "q6_formal_decision_value_p50": model_eval.get(
                 "v3_practical_q6_formal_decision_value_p50"
@@ -1063,8 +1084,30 @@ def _ui_diagnostics_contract(
             "q6_formal_decision_value_p90": model_eval.get(
                 "v3_practical_q6_formal_decision_value_p90"
             ),
+            "baseline_q6_formal_decision_value_p50": model_eval.get(
+                "v3_practical_baseline_q6_formal_decision_value_p50"
+            ),
+            "baseline_q6_formal_decision_value_p90": model_eval.get(
+                "v3_practical_baseline_q6_formal_decision_value_p90"
+            ),
             "delta_q6_formal_decision_value_p50": model_eval.get(
                 "v3_practical_delta_q6_formal_decision_value_p50"
+            ),
+            "delta_q6_formal_decision_value_p90": model_eval.get(
+                "v3_practical_delta_q6_formal_decision_value_p90"
+            ),
+            "q6_value_p90": model_eval.get("v3_practical_q6_value_p90"),
+            "baseline_q6_value_p90": model_eval.get(
+                "v3_practical_baseline_q6_value_p90"
+            ),
+            "delta_q6_value_p90": model_eval.get(
+                "v3_practical_delta_q6_value_p90"
+            ),
+            "q6_raw_gap_to_formal_p90": model_eval.get(
+                "v3_practical_q6_raw_gap_to_formal_p90"
+            ),
+            "baseline_q6_raw_gap_to_formal_p90": model_eval.get(
+                "v3_practical_baseline_q6_raw_gap_to_formal_p90"
             ),
         },
         "sampling": {
