@@ -702,6 +702,8 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["ui_contract"]["minimap"]["drawable_items"] == 1
     assert artifact["bid_rows"]
     assert artifact["bid_rows"][0]["价值口径"] == "decision_value"
+    assert artifact["formal_mode"] == "v2"
+    assert artifact["bid_rows"][0]["formal_mode"] == "v2"
     assert artifact["bid_rows"][0]["决策价值 P10/P50/P90"]
     assert artifact["bid_rows"][0]["原始价值 P10/P50/P90"]
     assert "上界风险" in artifact["bid_rows"][0]
@@ -730,6 +732,7 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
         shadow["affects_bid"] is False
         for shadow in artifact["ui_contract"]["shadows"]
     )
+
     assert artifact["model_eval"]["final_value"] == 20_000
     assert artifact["model_eval"]["final_cells"] == 4
     assert artifact["model_eval"]["hero"] == "aisha"
@@ -986,6 +989,104 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     }
     assert "hero_information_density" in artifact["model_eval"]
     assert artifact["model_eval"]["relaxed_exact_used"] is False
+
+
+def test_live_formal_mode_v3_practical_rebuilds_bid_rows(monkeypatch) -> None:
+    def fake_v3_shadow(*_args, **kwargs):
+        return {
+            **monitor_module._empty_v3_posterior_shadow(
+                trials=int(kwargs.get("trials") or 1),
+            ),
+            "v3_practical_available": True,
+            "v3_practical_ready": True,
+            "v3_practical_candidate": True,
+            "v3_practical_recommendation": "raise_watch",
+            "v3_practical_confidence": "medium",
+            "v3_practical_source_lanes": "formal_value+prior_q6_floor",
+            "v3_practical_risk_flags": "q6_prior_floor_watch",
+            "v3_practical_reason": "test v3 formal override",
+            "v3_practical_formal_decision_value_p10": 30_000,
+            "v3_practical_formal_decision_value_p50": 80_000,
+            "v3_practical_formal_decision_value_p90": 160_000,
+            "v3_practical_total_value_p10": 40_000,
+            "v3_practical_total_value_p50": 100_000,
+            "v3_practical_total_value_p90": 220_000,
+        }
+
+    monkeypatch.setattr(
+        monitor_module,
+        "_v3_posterior_shadow_summary",
+        fake_v3_shadow,
+    )
+
+    artifact = build_monitor_artifact_from_events(
+        _events(),
+        file="sample.json",
+        tables=_tables(),
+        n_trials=10,
+        roi_trials=0,
+        formal_mode="v3_practical",
+    )
+
+    row = artifact["bid_rows"][0]
+    assert artifact["formal_mode_requested"] == "v3_practical"
+    assert artifact["formal_mode"] == "v3_practical"
+    assert artifact["formal_mode_reason"] == "v3_practical_ready"
+    assert row["证据"] == "v3 practical formal"
+    assert row["formal_override"] == "是"
+    assert row["决策价值 P10/P50/P90"] == "30,000 / 80,000 / 160,000"
+    assert row["原始价值 P10/P50/P90"] == "40,000 / 100,000 / 220,000"
+    assert artifact["v2_bid_rows"][0]["证据"] == "v2 decision_value"
+    assert artifact["v2_bid_rows"][0]["formal_mode"] == "v2"
+    assert artifact["v3_practical_bid_rows"][0]["证据"] == "v3 practical formal"
+    assert artifact["model_eval"]["formal_mode"] == "v3_practical"
+    assert artifact["ui_contract"]["mode"] == "v3_practical_formal_with_v2_reference"
+    assert artifact["ui_contract"]["baseline"]["source"] == "v3_practical"
+    assert (
+        artifact["ui_contract"]["baseline"]["posterior"]["decision_value_range"]
+        == "30,000 / 80,000 / 160,000"
+    )
+    assert (
+        artifact["ui_contract"]["baseline"]["posterior"]["raw_value_range"]
+        == "40,000 / 100,000 / 220,000"
+    )
+    assert artifact["ui_contract"]["v2_reference"]["available"] is True
+    assert artifact["ui_contract"]["v2_reference"]["affects_bid"] is False
+
+
+def test_live_formal_mode_v2_keeps_v2_bid_rows_even_when_v3_available(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        monitor_module,
+        "_v3_posterior_shadow_summary",
+        lambda *_args, **kwargs: {
+            **monitor_module._empty_v3_posterior_shadow(
+                trials=int(kwargs.get("trials") or 1),
+            ),
+            "v3_practical_available": True,
+            "v3_practical_ready": True,
+            "v3_practical_formal_decision_value_p10": 30_000,
+            "v3_practical_formal_decision_value_p50": 80_000,
+            "v3_practical_formal_decision_value_p90": 160_000,
+        },
+    )
+
+    artifact = build_monitor_artifact_from_events(
+        _events(),
+        file="sample.json",
+        tables=_tables(),
+        n_trials=10,
+        roi_trials=0,
+        formal_mode="v2",
+    )
+
+    assert artifact["formal_mode"] == "v2"
+    assert artifact["formal_mode_reason"] == "v2_mode_requested"
+    assert artifact["bid_rows"][0]["证据"] == "v2 decision_value"
+    assert artifact["bid_rows"][0]["formal_override"] == "否"
+    assert artifact["v3_practical_bid_rows"] == []
+    assert artifact["ui_contract"]["mode"] == "baseline_first_shadow_reference"
 
 
 def test_model_eval_uses_problem_evidence_profile_when_available() -> None:
@@ -1606,7 +1707,7 @@ def test_q6_risk_reference_text_is_explicitly_non_binding() -> None:
     assert "件数P90低0.41" in text
     assert "参考P90 499,973" in text
     assert "shipwreck_positive_net" in text
-    assert "未抬高正式停止价" in text
+    assert "正式停止价由当前 formal_mode 统一重算" in text
 
 
 def test_q6_reference_with_shadow_keeps_reference_non_binding() -> None:
@@ -1633,7 +1734,7 @@ def test_q6_reference_with_shadow_keeps_reference_non_binding() -> None:
         in merged["summary"]
     )
     assert "ethan_shipwreck_layout_v1" in merged["gate"]
-    assert "未抬高正式停止价" in text
+    assert "正式停止价由当前 formal_mode 统一重算" in text
 
 
 def test_q6_prior_gap_summary_uses_random_sample_avg_signal_as_reference() -> None:

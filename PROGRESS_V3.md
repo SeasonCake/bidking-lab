@@ -8802,3 +8802,63 @@ v3_practical.status=no_evaluable_rows
 
 - 这是操作默认值调整，不改变任何 Python summarizer 默认、估值、UI 或正式出价。
 - post-game 现在默认与当前 v3 practical readiness/live review 口径一致。
+
+## 2026-06-07 checkpoint：live formal 进入 v3 practical 实战试用
+
+目标：
+
+- 用户明确要求先把 UI/正式建议接到 v3 practical，实战观察具体效果；不继续消耗在非必要细粒度审计。
+- 保留 v2 回退能力，避免 v3 practical 在实战中出现 misleading/extreme-over 时无法快速回滚。
+
+对照结论：
+
+- `summarize_live_windivert_brief.py --since-hours 72 --archive-n-trials 10 --archive-shadow-trials 1 --format text` 的最新 24 个 72h prebid 窗口中：
+  - v2 formal `estimate_rows=21`，`decision_value_mae=392789.3`；
+  - v3 practical `v3_practical_mae=338340.5`，MAE 改善约 54,449；
+  - v2 P90 coverage `0.29`，v3 practical P90 coverage `0.62`；
+  - P90 extreme-over 从 `0.05` 升到 `0.14`；
+  - raise-watch misleading rate `0.11`。
+- `summarize_v3_promotion_readiness.py --posterior-trials 64 --format summary` 仍为 `overall_status=not_ready`，所以这不是 v3 全量 promotion。
+
+本轮动作：
+
+- live runner 默认 formal mode 改为 `v3_practical`：
+  - `scripts/run_fatbeans_live_monitor.py`
+  - `scripts/run_fatbeans_webhook_monitor.py`
+  - `scripts/run_windivert_live_monitor.py`
+  - `scripts/start_live_windivert_overlay.ps1`
+- 底层 `build_monitor_artifact_from_*` 默认仍保持 v2，避免 archive/brief 离线对照口径被污染；live runner 会显式传 `formal_mode=v3_practical`。
+- `artifact["bid_rows"]` 现在表示当前正式 UI/建议使用的行：
+  - v3 实战试用时来自 `v3 practical formal`；
+  - v2 原建议保留在 `artifact["v2_bid_rows"]`；
+  - v3 生成行保留在 `artifact["v3_practical_bid_rows"]`。
+- `ui_contract` 新增/暴露：
+  - `mode=v3_practical_formal_with_v2_reference`；
+  - `baseline.source=v3_practical`；
+  - `v2_reference` 对照区。
+- overlay hover/detail 显示 `正式出价 v3` 与 `v2 对照`；`live_status` 输出 baseline source/formal mode。
+
+验证结果：
+
+```text
+py_compile live/runtime/overlay/status runners: passed
+pytest tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py tests/test_live_status.py -q:
+92 passed
+
+真实 2401 raw capture smoke:
+formal_mode=v3_practical
+formal_mode_reason=v3_practical_ready
+bid_evidence=v3 practical formal
+decision_range=214,470 / 396,895 / 886,701
+stop=682,078
+v2_rows=5
+v3_rows=5
+contract_mode=v3_practical_formal_with_v2_reference
+v2_reference=True
+```
+
+当前解读：
+
+- 实战 UI/正式建议现在会按 v3 practical 重算防守价、可追价和停止价。
+- 如果实战表现不好，可用 `.\scripts\start_live_windivert_overlay.ps1 -Restart -FormalMode v2 -PortOnly -PythonPath C:\Python313\python.exe` 回退。
+- 由于 readiness 仍 not_ready，本阶段后续重点是实战观察和局后复盘，而不是宣称 v3 已可 archive v2。

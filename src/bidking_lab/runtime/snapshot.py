@@ -476,6 +476,9 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
     references, not as formal bid inputs.
     """
     bid = _first_mapping(artifact.get("bid_rows"))
+    v2_bid = _first_mapping(artifact.get("v2_bid_rows")) or (
+        bid if _text(artifact.get("formal_mode")) == "v2" else {}
+    )
     v2 = _first_mapping(artifact.get("v2_posterior_rows"))
     warehouse = _first_mapping(artifact.get("warehouse_rows"))
     panel = artifact.get("panel") if isinstance(artifact.get("panel"), Mapping) else {}
@@ -507,8 +510,8 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
         "bid_floor_applied": False,
         "minimum_bid_floor": "",
         "note": (
-            "q6 risk is displayed as a reference only; baseline bid thresholds "
-            "are still based on decision_value."
+            "q6 risk is displayed as a reference only; formal bid thresholds "
+            "are recomputed from the current formal_mode."
         ),
     }
     posterior_matched, posterior_total = _match_counts(v2.get("匹配"))
@@ -517,9 +520,15 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
         "warehouse_total_cells",
     )
     exact_total_items = _constraint_value(input_constraints, "total_item_count")
+    formal_mode = _text(artifact.get("formal_mode") or "v2")
+    contract_mode = (
+        "v3_practical_formal_with_v2_reference"
+        if formal_mode == "v3_practical"
+        else "baseline_first_shadow_reference"
+    )
     return {
         "schema_version": 1,
-        "mode": "baseline_first_shadow_reference",
+        "mode": contract_mode,
         "source": {
             "file": _text(artifact.get("file")),
             "created_at": artifact.get("created_at"),
@@ -528,6 +537,14 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
             "n_trials": artifact.get("n_trials"),
             "roi_trials": artifact.get("roi_trials"),
             "shadow_trials": artifact.get("shadow_trials"),
+            "formal_mode_requested": _text(
+                artifact.get("formal_mode_requested") or formal_mode
+            ),
+            "formal_mode": formal_mode,
+            "formal_mode_reason": _text(artifact.get("formal_mode_reason")),
+            "formal_baseline_source": _text(
+                artifact.get("formal_baseline_source") or formal_mode
+            ),
             "inference_profile": (
                 artifact.get("inference_profile")
                 if isinstance(artifact.get("inference_profile"), Mapping)
@@ -550,6 +567,8 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
         "baseline": {
             "official": True,
             "affects_bid": True,
+            "source": formal_mode,
+            "mode_reason": _text(artifact.get("formal_mode_reason")),
             "decision": {
                 "action": _text(bid.get("建议")),
                 "current_highest": _text(bid.get("当前最高")),
@@ -565,7 +584,9 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                 "q6_risk_reference": _text(bid.get("红货风险参考")),
             },
             "posterior": {
-                "value_basis": _text(v2.get("价值口径") or "decision_value"),
+                "value_basis": _text(
+                    bid.get("价值口径") or v2.get("价值口径") or "decision_value"
+                ),
                 "match_text": _text(v2.get("匹配")),
                 "matched": posterior_matched,
                 "total": posterior_total,
@@ -587,8 +608,14 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                     input_constraints,
                     "warehouse_total_cells_approx",
                 ),
-                "decision_value_range": _text(v2.get("决策价值 P10/P50/P90")),
-                "raw_value_range": _text(v2.get("原始价值 P10/P50/P90")),
+                "decision_value_range": _text(
+                    bid.get("决策价值 P10/P50/P90")
+                    or v2.get("决策价值 P10/P50/P90")
+                ),
+                "raw_value_range": _text(
+                    bid.get("原始价值 P10/P50/P90")
+                    or v2.get("原始价值 P10/P50/P90")
+                ),
                 "q6_sample_rate": _text(v2.get("q6样本率")),
                 "q6_prior_rate": _text(v2.get("q6掉落先验")),
                 "q6_prior_expected_count": _text(v2.get("q6先验件数")),
@@ -610,6 +637,23 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                 "estimate": _text(layout.get("estimate")),
                 "confidence": _text(layout.get("confidence")),
                 "risk": _text(layout.get("risk")),
+            },
+        },
+        "v2_reference": {
+            "available": bool(v2_bid),
+            "affects_bid": formal_mode == "v2",
+            "decision": {
+                "action": _text(v2_bid.get("建议")),
+                "current_highest": _text(v2_bid.get("当前最高")),
+                "risk_band": _text(v2_bid.get("风险带")),
+                "warehouse_multiplier": _text(v2_bid.get("秒仓倍率")),
+                "probe_bid": _text(v2_bid.get("探价(P10)")),
+                "defend_bid": _text(v2_bid.get("防守价")),
+                "attack_bid": _text(v2_bid.get("可追价(P90)") or v2_bid.get("抢仓上限")),
+                "stop_price": _text(v2_bid.get("停止价")),
+                "evidence": _text(v2_bid.get("证据")),
+                "round": _text(v2_bid.get("轮次")),
+                "information_density": _text(v2_bid.get("信息强度")),
             },
         },
         "q6_risk_reference": q6_risk,

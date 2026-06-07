@@ -1140,10 +1140,47 @@ def _ui_contract_decision_section(
             if decision.get("attack_bid")
             else "",
             f"停止 {decision.get('stop_price')}" if decision.get("stop_price") else "",
+            (
+                "来源 v3 practical"
+                if baseline.get("source") == "v3_practical"
+                else ""
+            ),
             str(decision.get("evidence") or ""),
         )
     )
-    return ("正式出价", headline, detail)
+    title = "正式出价"
+    if baseline.get("source") == "v3_practical":
+        title = "正式出价 v3"
+    return (title, headline, detail)
+
+
+def _ui_contract_v2_reference_section(
+    contract: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    reference = _as_mapping(contract.get("v2_reference"))
+    if not _flag(reference.get("available")):
+        return None
+    decision = _as_mapping(reference.get("decision"))
+    if not decision:
+        return None
+    headline = str(decision.get("action") or "暂无 v2 建议")
+    detail = _join_parts(
+        (
+            f"最高 {decision.get('current_highest')}"
+            if decision.get("current_highest")
+            else "",
+            f"风险 {decision.get('risk_band')}" if decision.get("risk_band") else "",
+            f"防守 {decision.get('defend_bid')}" if decision.get("defend_bid") else "",
+            f"停止 {decision.get('stop_price')}" if decision.get("stop_price") else "",
+            str(decision.get("evidence") or "v2 reference"),
+            (
+                "当前不影响正式出价"
+                if reference.get("affects_bid") is False
+                else "当前为正式出价来源"
+            ),
+        )
+    )
+    return ("v2 对照", headline, detail)
 
 
 def _ui_contract_round_reference_section(
@@ -1645,6 +1682,7 @@ def _ui_contract_hover_sections(contract: dict[str, Any]) -> list[tuple[str, str
     sections: list[tuple[str, str, str]] = []
     for section in (
         _ui_contract_decision_section(contract),
+        _ui_contract_v2_reference_section(contract),
         _ui_contract_posterior_section(contract),
         _ui_contract_v3_practical_section(contract),
         _ui_contract_truth_section(contract),
@@ -1667,6 +1705,7 @@ def _ui_contract_detail_sections(contract: dict[str, Any]) -> list[tuple[str, st
     for section in (
         _ui_contract_truth_section(contract),
         _ui_contract_decision_section(contract),
+        _ui_contract_v2_reference_section(contract),
         _ui_contract_posterior_section(contract),
         _ui_contract_v3_practical_section(contract, detail=True),
         _ui_contract_minimap_detail_section(contract),

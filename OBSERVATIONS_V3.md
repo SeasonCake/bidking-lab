@@ -6668,3 +6668,32 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 
 - post-game 默认改为 72h，仍允许显式 `-SinceHours` 覆盖。
 - 该变化只影响操作默认值，不改变任何估值或正式出价路径。
+
+## O-v3-164：v3 practical 已具备 live formal 实战试用价值，但仍非 promotion-ready
+
+2026-06-07 对照后：
+
+- v2 formal 在最新 72h prebid 窗口仍明显低估：
+  - `estimate_rows=21`；
+  - `decision_value_mae=392789.3`；
+  - `p50_under_rate=1.00`；
+  - `p90_coverage=0.29`。
+- v3 practical 在同一窗口有可见改善：
+  - `v3_practical_mae=338340.5`；
+  - `v3_practical_delta_mae=-54448.8`；
+  - `v3_practical_p90_coverage=0.62`。
+- 代价也明确存在：
+  - `v3_practical_p90_extreme_over_rate=0.14`；
+  - `v3_practical_raise_watch_misleading_rate=0.11`。
+
+修复后：
+
+- live monitor 默认 formal mode 为 `v3_practical`，实战 UI 会显示 v3 重算后的建议/防守/停止。
+- artifact/UI contract/model_eval 会记录 formal source，避免把 v3 实战试用误读为 v3 全量 promotion。
+- archive/brief 离线对照仍可保持 v2 baseline 口径，因为底层 builder 默认不强行切 v3。
+
+风险与观察点：
+
+- 如果实战出现明显过高或误导，优先用 `-FormalMode v2` 回退，而不是现场继续加参数。
+- post-game 需要重点看 `formal_mode`、`decision_value_p50_error`、`v3_practical_*`、P90 coverage、extreme-over/misleading 行。
+- 由于 readiness 仍 not_ready，不能据此 archive v2，也不能删除 v2 fallback/reference。

@@ -7,6 +7,8 @@ param(
   [int]$RoiTrials = 0,
   [int]$FullShadowTrials = 20,
   [int]$FastNTrials = 10,
+  [ValidateSet("v3_practical", "v2")]
+  [string]$FormalMode = "v3_practical",
   [double]$DebounceSeconds = 1.0,
   [double]$MinInferenceIntervalSeconds = 2.0,
   [switch]$BroadSniff,
@@ -71,6 +73,7 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
     "-RoiTrials", "$RoiTrials",
     "-FullShadowTrials", "$FullShadowTrials",
     "-FastNTrials", "$FastNTrials",
+    "-FormalMode", "$FormalMode",
     "-DebounceSeconds", "$DebounceSeconds",
     "-MinInferenceIntervalSeconds", "$MinInferenceIntervalSeconds",
     "-NoAutoElevate"
@@ -157,6 +160,7 @@ $MonitorArgs = @(
   "--roi-trials", "$RoiTrials",
   "--full-shadow-trials", "$FullShadowTrials",
   "--fast-n-trials", "$FastNTrials",
+  "--formal-mode", "$FormalMode",
   "--debounce-seconds", "$DebounceSeconds",
   "--min-inference-interval-seconds", "$MinInferenceIntervalSeconds"
 )
@@ -372,6 +376,7 @@ Write-Host "Process:    $ProcessName"
 Write-Host "Mode:       $(if ($UseBroadSniff) { 'broad-sniff + process-match' } else { 'port-filter (default)' })"
 Write-Host "Loopback:   $(if ($UseLoopback) { 'included (-IncludeLoopback)' } else { 'excluded (use -IncludeLoopback for VPN/UU)' })"
 Write-Host "ServerPort: $($ServerPort -join ',')"
+Write-Host "Formal:    $FormalMode (set -FormalMode v2 to roll back live bids)"
 Write-Host "Inference:  live-fast $FastNTrials trials every >=${MinInferenceIntervalSeconds}s; full $NTrials trials on stop (roi=$RoiTrials, shadow=$FullShadowTrials)"
 Write-Host "DebugShadow:$(if ($EnableDebugShadows) { 'enabled' } else { 'skipped (low-impact default)' })"
 Write-Host "Python:     $Python"

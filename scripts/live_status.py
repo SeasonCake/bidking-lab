@@ -320,6 +320,8 @@ def build_live_status(
             "age_seconds": _round_float(snapshot_age),
             "file_age_seconds": _round_float(snapshot_file_age),
             "source_file": artifact.get("file"),
+            "formal_mode": artifact.get("formal_mode"),
+            "formal_mode_reason": artifact.get("formal_mode_reason"),
             "hero": artifact.get("hero"),
             "map_id": artifact.get("map_id"),
             "round": artifact.get("round"),
@@ -328,6 +330,7 @@ def build_live_status(
             "shadow_trials": artifact.get("shadow_trials"),
         },
         "baseline": {
+            "source": _text(baseline.get("source")),
             "action": _text(baseline_decision.get("action")),
             "current_highest": _text(baseline_decision.get("current_highest")),
             "risk_band": _text(baseline_decision.get("risk_band")),
@@ -460,6 +463,7 @@ def format_status_text(status: Mapping[str, Any]) -> str:
         ),
         (
             "Baseline: "
+            f"source={baseline.get('source') or snapshot.get('formal_mode') or '?'} | "
             f"{baseline.get('action') or 'no action'} | "
             f"{baseline.get('current_highest') or 'no bid'} | "
             f"risk={baseline.get('risk_band') or '?'} | "

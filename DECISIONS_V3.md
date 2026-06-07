@@ -3129,3 +3129,23 @@ applied_hurts=2502
 
 - 当前 v3 practical 落地判断一直以 72h live/实战窗口作为主要短期复盘口径。
 - post-game 默认 24h 容易让用户局后看到的窗口和我们讨论/记录的 72h 指标不一致。
+
+## D-v3-155：live formal 默认进入 v3 practical 实战试用，但不等同 v3 promotion
+
+2026-06-07 起，当前决策：
+
+- live/UI 的正式建议展示默认使用 `formal_mode=v3_practical`。
+- v3 practical 通过现有 `recommend_bid_strategy` 统一重算探价、防守价、可追价和停止价，不直接把 tail/risk 单项字段塞进停止价。
+- `artifact["bid_rows"]` 表示当前正式建议；v2 原建议必须保留在 `artifact["v2_bid_rows"]`，v3 生成行保留在 `artifact["v3_practical_bid_rows"]`。
+- UI contract 必须标明来源：
+  - `baseline.source=v3_practical`；
+  - `mode=v3_practical_formal_with_v2_reference`；
+  - `v2_reference` 可见且 `affects_bid=false`。
+- 底层 `build_monitor_artifact_from_*` 默认仍保持 v2，只有 live runner / env / 显式参数才切 v3，避免 archive/brief 离线 paired 对照被默认行为污染。
+- 回退方式必须保持简单：`-FormalMode v2` 或 `BIDKING_LIVE_FORMAL_MODE=v2`。
+
+原因：
+
+- 最新 72h prebid 对照显示 v3 practical 改善当前 v2 低估问题：MAE 约 `393k -> 338k`，P90 coverage `0.29 -> 0.62`。
+- v3 practical 仍有 over-risk：P90 extreme-over `0.05 -> 0.14`，raise-watch misleading rate `0.11`。
+- `summarize_v3_promotion_readiness.py` 仍为 `overall_status=not_ready`，因此只能作为实战试用切换，不能视为 v3 全量 promotion 或 v2 archive 条件满足。

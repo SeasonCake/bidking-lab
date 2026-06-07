@@ -648,12 +648,12 @@ def test_ui_contract_separates_baseline_and_shadow_references() -> None:
         "display_mode": "risk_reference",
         "affects_bid": False,
         "bid_floor_applied": False,
-        "minimum_bid_floor": "",
-        "note": (
-            "q6 risk is displayed as a reference only; baseline bid thresholds "
-            "are still based on decision_value."
-        ),
-    }
+            "minimum_bid_floor": "",
+            "note": (
+                "q6 risk is displayed as a reference only; formal bid thresholds "
+                "are recomputed from the current formal_mode."
+            ),
+        }
     assert [shadow["label"] for shadow in contract["shadows"]] == [
         "profile_b5",
         "aisha_deep_floor1",
@@ -981,6 +981,61 @@ def test_ui_contract_exposes_v3_practical_diagnostics_shadow_only() -> None:
     assert practical["q6_value_p90"] == 420000
     assert practical["q6_raw_gap_to_formal_p90"] == 160000
     assert "diagnostics.v3_practical" in contract["interaction"]["hover"]["fields"]
+
+
+def test_ui_contract_marks_v3_formal_mode_and_keeps_v2_reference() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "formal_mode_requested": "v3_practical",
+            "formal_mode": "v3_practical",
+            "formal_mode_reason": "v3_practical_ready",
+            "bid_rows": [
+                {
+                    "建议": "小幅进攻",
+                    "当前最高": "玩家A 500,000",
+                    "风险带": "进攻区",
+                    "探价(P10)": "300,000",
+                    "防守价": "560,000",
+                    "抢仓上限": "900,000",
+                    "停止价": "900,000",
+                    "证据": "v3 practical formal",
+                    "价值口径": "decision_value",
+                    "决策价值 P10/P50/P90": "300,000 / 640,000 / 900,000",
+                    "原始价值 P10/P50/P90": "340,000 / 700,000 / 1,050,000",
+                }
+            ],
+            "v2_bid_rows": [
+                {
+                    "建议": "可守不抢",
+                    "当前最高": "玩家A 500,000",
+                    "风险带": "防守区",
+                    "探价(P10)": "220,000",
+                    "防守价": "420,000",
+                    "抢仓上限": "650,000",
+                    "停止价": "650,000",
+                    "证据": "v2 decision_value",
+                }
+            ],
+        }
+    )
+
+    assert contract["mode"] == "v3_practical_formal_with_v2_reference"
+    assert contract["source"]["formal_mode"] == "v3_practical"
+    assert contract["baseline"]["source"] == "v3_practical"
+    assert contract["baseline"]["decision"]["action"] == "小幅进攻"
+    assert contract["baseline"]["decision"]["stop_price"] == "900,000"
+    assert (
+        contract["baseline"]["posterior"]["decision_value_range"]
+        == "300,000 / 640,000 / 900,000"
+    )
+    assert (
+        contract["baseline"]["posterior"]["raw_value_range"]
+        == "340,000 / 700,000 / 1,050,000"
+    )
+    assert contract["v2_reference"]["available"] is True
+    assert contract["v2_reference"]["affects_bid"] is False
+    assert contract["v2_reference"]["decision"]["action"] == "可守不抢"
+    assert contract["v2_reference"]["decision"]["stop_price"] == "650,000"
 
 
 def test_ui_contract_uses_exact_input_totals_when_posterior_range_is_missing() -> None:

@@ -449,6 +449,7 @@ class WebhookMonitorConfig:
     full_shadow_trials: int
     run_debug_shadows: bool
     seed: int
+    formal_mode: str | None
     debounce_seconds: float
     min_inference_interval_seconds: float
     fast_n_trials: int | None = 20
@@ -780,6 +781,7 @@ class FatbeansWebhookMonitor:
                 shadow_trials=shadow_trials,
                 run_debug_shadows=run_debug_shadows,
                 seed=self.config.seed,
+                formal_mode=self.config.formal_mode,
             )
             artifact["snapshot_mode"] = snapshot_mode
             artifact["inference_profile"] = {
@@ -983,6 +985,15 @@ def main() -> int:
         ),
     )
     parser.add_argument("--seed", type=int, default=20260530)
+    parser.add_argument(
+        "--formal-mode",
+        default=os.environ.get("BIDKING_LIVE_FORMAL_MODE", "v3_practical"),
+        choices=("v3_practical", "v2"),
+        help=(
+            "Formal live bid source. Defaults to BIDKING_LIVE_FORMAL_MODE "
+            "or v3_practical."
+        ),
+    )
     parser.add_argument("--no-lock", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
@@ -1012,6 +1023,7 @@ def main() -> int:
             run_debug_shadows=bool(args.enable_debug_shadows)
             and not args.skip_debug_shadows,
             seed=args.seed,
+            formal_mode=args.formal_mode,
             debounce_seconds=args.debounce_seconds,
             min_inference_interval_seconds=args.min_inference_interval_seconds,
             fast_n_trials=args.fast_n_trials if args.fast_n_trials > 0 else None,

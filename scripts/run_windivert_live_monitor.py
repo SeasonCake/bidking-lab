@@ -14,6 +14,7 @@ from collections import Counter, deque
 from dataclasses import dataclass
 import ipaddress
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -912,6 +913,15 @@ def main() -> int:
         help="Run profile_b5 debug shadow during live inference (off by default).",
     )
     parser.add_argument("--seed", type=int, default=20260530)
+    parser.add_argument(
+        "--formal-mode",
+        default=os.environ.get("BIDKING_LIVE_FORMAL_MODE", "v3_practical"),
+        choices=("v3_practical", "v2"),
+        help=(
+            "Formal live bid source. Defaults to BIDKING_LIVE_FORMAL_MODE "
+            "or v3_practical."
+        ),
+    )
     parser.add_argument("--no-lock", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
@@ -957,6 +967,7 @@ def main() -> int:
             run_debug_shadows=bool(args.enable_debug_shadows)
             and not args.skip_debug_shadows,
             seed=args.seed,
+            formal_mode=args.formal_mode,
             debounce_seconds=args.debounce_seconds,
             min_inference_interval_seconds=args.min_inference_interval_seconds,
             fast_n_trials=args.fast_n_trials if args.fast_n_trials > 0 else None,

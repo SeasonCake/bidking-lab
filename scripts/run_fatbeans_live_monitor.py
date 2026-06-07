@@ -164,6 +164,7 @@ def _process_file(
     shadow_trials: int | None,
     run_debug_shadows: bool,
     seed: int,
+    formal_mode: str | None,
     archive_dir: Path | None = None,
 ) -> None:
     artifact = build_monitor_artifact_from_file(
@@ -174,6 +175,7 @@ def _process_file(
         shadow_trials=shadow_trials,
         run_debug_shadows=run_debug_shadows,
         seed=seed,
+        formal_mode=formal_mode,
     )
     if archive_dir is not None:
         archived = _archive_raw_file(path, archive_dir)
@@ -283,6 +285,15 @@ def main() -> int:
         ),
     )
     parser.add_argument("--seed", type=int, default=20260530)
+    parser.add_argument(
+        "--formal-mode",
+        default=os.environ.get("BIDKING_LIVE_FORMAL_MODE", "v3_practical"),
+        choices=("v3_practical", "v2"),
+        help=(
+            "Formal live bid source. Defaults to BIDKING_LIVE_FORMAL_MODE "
+            "or v3_practical."
+        ),
+    )
     args = parser.parse_args()
 
     log_dir = Path(args.log_dir)
@@ -305,6 +316,7 @@ def main() -> int:
             shadow_trials=args.shadow_trials,
             run_debug_shadows=not args.skip_debug_shadows,
             seed=args.seed,
+            formal_mode=args.formal_mode,
         )
         write_monitor_logs(artifact, log_dir=log_dir)
         print("[ok] stdin payload processed")
@@ -320,6 +332,7 @@ def main() -> int:
             shadow_trials=args.shadow_trials,
             run_debug_shadows=not args.skip_debug_shadows,
             seed=args.seed,
+            formal_mode=args.formal_mode,
             archive_dir=archive_dir,
         )
         return 0
@@ -371,6 +384,7 @@ def main() -> int:
                     shadow_trials=args.shadow_trials,
                     run_debug_shadows=not args.skip_debug_shadows,
                     seed=args.seed,
+                    formal_mode=args.formal_mode,
                     archive_dir=archive_dir,
                 )
                 latest = _fingerprint(path)

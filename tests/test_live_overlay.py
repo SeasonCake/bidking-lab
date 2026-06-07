@@ -1246,6 +1246,61 @@ def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> 
     assert any("正式P90 650,000 -> v3P90 780,000" in alert[0] for alert in model["alerts"])
 
 
+def test_overlay_uses_v3_formal_decision_with_v2_reference_section() -> None:
+    overlay = _overlay_module()
+    contract = {
+        "context": {"hero": "ethan", "map_id": 2401, "round": 3},
+        "baseline": {
+            "official": True,
+            "affects_bid": True,
+            "source": "v3_practical",
+            "decision": {
+                "action": "小幅进攻",
+                "current_highest": "玩家A 500,000",
+                "risk_band": "进攻区",
+                "defend_bid": "560,000",
+                "stop_price": "900,000",
+                "evidence": "v3 practical formal",
+            },
+            "posterior": {
+                "decision_value_range": "300,000 / 640,000 / 900,000",
+                "match_text": "18/80",
+                "status": "matched",
+            },
+        },
+        "v2_reference": {
+            "available": True,
+            "affects_bid": False,
+            "decision": {
+                "action": "可守不抢",
+                "current_highest": "玩家A 500,000",
+                "risk_band": "防守区",
+                "defend_bid": "420,000",
+                "stop_price": "650,000",
+                "evidence": "v2 decision_value",
+            },
+        },
+    }
+
+    model = overlay._overlay_model(
+        {
+            "hero": "ethan",
+            "map_id": 2401,
+            "round": 3,
+            "ui_contract": contract,
+        }
+    )
+
+    assert model["decision"][0] == "小幅进攻"
+    hover_sections = model["interaction"]["hover"]["sections"]
+    assert hover_sections[0][0] == "正式出价 v3"
+    assert "来源 v3 practical" in hover_sections[0][2]
+    v2_section = next(section for section in hover_sections if section[0] == "v2 对照")
+    assert v2_section[1] == "可守不抢"
+    assert "停止 650,000" in v2_section[2]
+    assert "当前不影响正式出价" in v2_section[2]
+
+
 def test_overlay_v3_practical_model_eval_contract_chain_labels_baseline_p90() -> None:
     overlay = _overlay_module()
     from bidking_lab.runtime.snapshot import ui_contract_from_artifact

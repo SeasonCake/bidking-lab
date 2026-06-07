@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, replace
 import json
+import os
 from pathlib import Path
 import re
 import statistics
@@ -74,7 +75,10 @@ from bidking_lab.inference.v3 import (
     tail_value_review_entry_for,
     underestimate_entry_for,
 )
-from bidking_lab.inference.map_likelihood import estimate_map_likelihood
+from bidking_lab.inference.map_likelihood import (
+    QuantileSummary,
+    estimate_map_likelihood,
+)
 from bidking_lab.inference.tool_info_roi import estimate_tool_info_roi
 from bidking_lab.inference.warehouse_estimator import estimate_warehouse_cells
 from bidking_lab.live.evaluation import evaluate_fatbeans_layout_events
@@ -118,6 +122,18 @@ _CATEGORY_LABELS = {
     110: "书画",
 }
 DEFAULT_Q6_SHADOW_TRIALS_CAP = 80
+LIVE_FORMAL_MODE_ENV = "BIDKING_LIVE_FORMAL_MODE"
+LIVE_FORMAL_MODE_V2 = "v2"
+LIVE_FORMAL_MODE_V3_PRACTICAL = "v3_practical"
+_LIVE_FORMAL_MODE_ALIASES = {
+    "v2": LIVE_FORMAL_MODE_V2,
+    "baseline": LIVE_FORMAL_MODE_V2,
+    "baseline_v2": LIVE_FORMAL_MODE_V2,
+    "v3": LIVE_FORMAL_MODE_V3_PRACTICAL,
+    "v3_practical": LIVE_FORMAL_MODE_V3_PRACTICAL,
+    "v3-practical": LIVE_FORMAL_MODE_V3_PRACTICAL,
+    "practical": LIVE_FORMAL_MODE_V3_PRACTICAL,
+}
 _TRUSTED_SESSION_TOTAL_CONFIDENCES = {"high", "exact"}
 _SAFE_SESSION_TOTAL_FIELDS = (
     "warehouse_total_cells",
@@ -513,7 +529,7 @@ def _q6_risk_reference_text(q6_prior_gap: Mapping[str, Any] | None) -> str:
     gate = str(q6_prior_gap.get("gate") or "").strip()
     if gate:
         parts.append(f"门控 {gate}")
-    parts.append("仅作风险参考，未抬高正式停止价")
+    parts.append("q6单项风险只作参考；正式停止价由当前 formal_mode 统一重算")
     return "；".join(part for part in parts if part)
 
 
@@ -993,6 +1009,89 @@ def _inventory_totals(events: FatbeansCaptureEvents) -> tuple[int | None, int | 
         if state.inventory_items:
             return len(state.inventory_items), sum(item.cells for item in state.inventory_items)
     return None, None
+
+
+def _resolve_live_formal_mode(value: str | None = None) -> str:
+    raw = value if value is not None else os.environ.get(
+        LIVE_FORMAL_MODE_ENV,
+        LIVE_FORMAL_MODE_V2,
+    )
+    text = str(raw or LIVE_FORMAL_MODE_V2).strip().casefold()
+    text = text.replace("-", "_")
+    return _LIVE_FORMAL_MODE_ALIASES.get(text, LIVE_FORMAL_MODE_V3_PRACTICAL)
+
+
+def _summary_from_flat_quantiles(
+    row: Mapping[str, Any],
+    prefix: str,
+) -> QuantileSummary | None:
+    p10 = _parse_float_text(row.get(f"{prefix}_p10"))
+    p50 = _parse_float_text(row.get(f"{prefix}_p50"))
+    p90 = _parse_float_text(row.get(f"{prefix}_p90"))
+    if p10 is None or p50 is None or p90 is None:
+        return None
+    return QuantileSummary(p10=float(p10), p50=float(p50), p90=float(p90))
+
+
+def _build_v3_practical_bid_rows(
+    *,
+    latest_bids: Mapping[str, int],
+    v3_shadow: Mapping[str, Any],
+    session: Any,
+    round_no: int | None,
+    posterior_samples: int,
+    warehouse_estimate: Any,
+    q6_prior_gap: Mapping[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    if not v3_shadow.get("v3_practical_available"):
+        return [], "v3_practical_unavailable"
+    value_summary = _summary_from_flat_quantiles(
+        v3_shadow,
+        "v3_practical_formal_decision_value",
+    )
+    if value_summary is None:
+        return [], "v3_practical_missing_formal_value"
+    raw_value_summary = _summary_from_flat_quantiles(
+        v3_shadow,
+        "v3_practical_total_value",
+    )
+    rows = _build_bid_rows(
+        latest_bids=latest_bids,
+        value_summary=value_summary,
+        evidence_label="v3 practical formal",
+        session=session,
+        round_no=round_no,
+        posterior_samples=posterior_samples,
+        warehouse_estimate=warehouse_estimate,
+        decision_value_summary=value_summary,
+        raw_value_summary=raw_value_summary,
+        posterior_diagnostics=(
+            str(v3_shadow.get("v3_practical_diagnostics") or ""),
+        ),
+        q6_prior_gap=q6_prior_gap,
+    )
+    if not rows:
+        return [], "v3_practical_no_bid_rows"
+    recommendation = str(v3_shadow.get("v3_practical_recommendation") or "")
+    for row in rows:
+        row["formal_mode"] = LIVE_FORMAL_MODE_V3_PRACTICAL
+        row["formal_mode_reason"] = "v3_practical_ready"
+        row["formal_baseline_source"] = LIVE_FORMAL_MODE_V3_PRACTICAL
+        row["formal_override"] = "是"
+        row["v3_practical_recommendation"] = recommendation
+        row["v3_practical_confidence"] = str(
+            v3_shadow.get("v3_practical_confidence") or ""
+        )
+        row["v3_practical_source_lanes"] = str(
+            v3_shadow.get("v3_practical_source_lanes") or ""
+        )
+        row["v3_practical_risk_flags"] = str(
+            v3_shadow.get("v3_practical_risk_flags") or ""
+        )
+        row["v3_practical_reason"] = str(
+            v3_shadow.get("v3_practical_reason") or ""
+        )
+    return rows, "v3_practical_ready"
 
 
 def _build_bid_rows(
@@ -2438,6 +2537,10 @@ def _model_eval_row(
         "map_id": artifact.get("map_id"),
         "round": eval_round,
         "action_round": action_round,
+        "formal_mode_requested": artifact.get("formal_mode_requested"),
+        "formal_mode": artifact.get("formal_mode"),
+        "formal_mode_reason": artifact.get("formal_mode_reason"),
+        "formal_baseline_source": artifact.get("formal_baseline_source"),
         "final_value": final_value,
         "final_cells": final_cells,
         **dict(truth_breakdown),
@@ -3801,9 +3904,13 @@ def build_monitor_artifact_from_events(
     shadow_trials: int | None = None,
     run_debug_shadows: bool = True,
     seed: int = 20260530,
+    formal_mode: str | None = None,
 ) -> dict[str, Any]:
     """Build a JSON-serializable live monitor artifact from parsed events."""
     started_at = time.perf_counter()
+    formal_mode_requested = _resolve_live_formal_mode(formal_mode)
+    formal_mode_applied = LIVE_FORMAL_MODE_V2
+    formal_mode_reason = "no_inference_session"
     batches = live_batches_from_fatbeans_events(events)
     (
         base_session,
@@ -3840,6 +3947,8 @@ def build_monitor_artifact_from_events(
     q6_quality_only_local_risk: dict[str, Any] = {}
     tool_rows: list[dict[str, Any]] = []
     bid_rows: list[dict[str, Any]] = []
+    v2_bid_rows: list[dict[str, Any]] = []
+    v3_practical_bid_rows: list[dict[str, Any]] = []
     fallback_map_rows: list[dict[str, Any]] = []
     fallback_warehouse_rows: list[dict[str, Any]] = []
     fallback_bid_rows: list[dict[str, Any]] = []
@@ -4311,6 +4420,26 @@ def build_monitor_artifact_from_events(
                 posterior_diagnostics=v2_report.diagnostics,
                 q6_prior_gap=q6_practical_reference,
             )
+        v2_bid_rows = [dict(row) for row in bid_rows]
+        if formal_mode_requested == LIVE_FORMAL_MODE_V3_PRACTICAL:
+            v3_practical_bid_rows, formal_mode_reason = _build_v3_practical_bid_rows(
+                latest_bids=latest_bids,
+                v3_shadow=v3_posterior_shadow,
+                session=inference_session,
+                round_no=action_round,
+                posterior_samples=v2_report.n_matched,
+                warehouse_estimate=warehouse_estimate,
+                q6_prior_gap=q6_practical_reference,
+            )
+            if v3_practical_bid_rows:
+                bid_rows = v3_practical_bid_rows
+                formal_mode_applied = LIVE_FORMAL_MODE_V3_PRACTICAL
+            else:
+                formal_mode_applied = LIVE_FORMAL_MODE_V2
+                formal_mode_reason = f"{formal_mode_reason}_fallback_v2"
+        else:
+            formal_mode_applied = LIVE_FORMAL_MODE_V2
+            formal_mode_reason = "v2_mode_requested"
         if v2_report.n_matched <= 0:
             (
                 fallback_map_rows,
@@ -4329,6 +4458,22 @@ def build_monitor_artifact_from_events(
                 cells_tol=cells_tol,
                 count_tol=count_tol,
             )
+
+    if bid_rows:
+        for row in bid_rows:
+            row.setdefault("formal_mode", formal_mode_applied)
+            row.setdefault("formal_mode_reason", formal_mode_reason)
+            row.setdefault("formal_baseline_source", formal_mode_applied)
+            row.setdefault(
+                "formal_override",
+                "是" if formal_mode_applied == LIVE_FORMAL_MODE_V3_PRACTICAL else "否",
+            )
+    if v2_bid_rows:
+        for row in v2_bid_rows:
+            row.setdefault("formal_mode", LIVE_FORMAL_MODE_V2)
+            row.setdefault("formal_mode_reason", "v2_reference")
+            row.setdefault("formal_baseline_source", LIVE_FORMAL_MODE_V2)
+            row.setdefault("formal_override", "否")
 
     panel = tactical_panel_from_rows(
         bid_rows=bid_rows,
@@ -4372,11 +4517,17 @@ def build_monitor_artifact_from_events(
         "known_value_sum": final_value,
         **truth_breakdown,
         "inference_input_constraints": inference_input_constraints,
+        "formal_mode_requested": formal_mode_requested,
+        "formal_mode": formal_mode_applied,
+        "formal_mode_reason": formal_mode_reason,
+        "formal_baseline_source": formal_mode_applied,
         "latest_bids": dict(latest_bids),
         "evidence_label": evidence_label,
         "map_rows": map_rows,
         "warehouse_rows": warehouse_rows,
         "v2_posterior_rows": v2_posterior_rows,
+        "v2_bid_rows": v2_bid_rows,
+        "v3_practical_bid_rows": v3_practical_bid_rows,
         "fallback_map_rows": fallback_map_rows,
         "fallback_warehouse_rows": fallback_warehouse_rows,
         "fallback_bid_rows": fallback_bid_rows,
@@ -4435,6 +4586,7 @@ def build_monitor_artifact_from_file(
     shadow_trials: int | None = None,
     run_debug_shadows: bool = True,
     seed: int = 20260530,
+    formal_mode: str | None = None,
 ) -> dict[str, Any]:
     path = Path(path)
     return build_monitor_artifact_from_events(
@@ -4446,6 +4598,7 @@ def build_monitor_artifact_from_file(
         shadow_trials=shadow_trials,
         run_debug_shadows=run_debug_shadows,
         seed=seed,
+        formal_mode=formal_mode,
     )
 
 
@@ -4459,6 +4612,7 @@ def build_monitor_artifact_from_payload(
     shadow_trials: int | None = None,
     run_debug_shadows: bool = True,
     seed: int = 20260530,
+    formal_mode: str | None = None,
 ) -> dict[str, Any]:
     return build_monitor_artifact_from_events(
         parse_fatbeans_capture_payload(payload),
@@ -4469,6 +4623,7 @@ def build_monitor_artifact_from_payload(
         shadow_trials=shadow_trials,
         run_debug_shadows=run_debug_shadows,
         seed=seed,
+        formal_mode=formal_mode,
     )
 
 

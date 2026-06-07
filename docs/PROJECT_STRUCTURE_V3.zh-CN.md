@@ -182,6 +182,21 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 - v2 脚本保留 `*_v2_*` 命名，作为 paired compare。
 - 大规模脚本目录重组必须先加 alias/wrapper，再跑测试。
 
+## Live formal mode
+
+| 路径/参数 | 当前作用 |
+| --- | --- |
+| `scripts/start_live_windivert_overlay.ps1 -FormalMode v3_practical` | 默认 live/UI 正式建议来源，按 v3 practical 重算出价线 |
+| `scripts/start_live_windivert_overlay.ps1 -FormalMode v2` | 实战回退 v2 formal |
+| `BIDKING_LIVE_FORMAL_MODE` | live runner 默认 formal mode 环境变量 |
+| `artifact.bid_rows` | 当前 UI/正式建议实际使用的 bid rows |
+| `artifact.v2_bid_rows` | v2 formal 对照与回退引用 |
+| `artifact.v3_practical_bid_rows` | v3 practical 生成的正式试用 bid rows |
+| `ui_contract.baseline.source` | 当前 baseline/正式建议来源 |
+| `ui_contract.v2_reference` | v3 formal 试用时的 v2 对照区 |
+
+注意：底层 `build_monitor_artifact_from_*` 默认仍保持 v2，以免离线 archive/brief paired 对照被 live 默认值污染；live runner 会显式传 `v3_practical`。
+
 ## 外部参考
 
 外部参考只读存放：
