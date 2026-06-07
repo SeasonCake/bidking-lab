@@ -7689,3 +7689,57 @@ v3_practical_formal_p90_coverage=0.76859
 - tail replacement watch 的收益小于 q6 prior-floor，但能覆盖一批非 prior-gap 的 tail/value 低估风险。
 - 当前 practical 仍是实战提示层：P90 更可见，P50 不被长尾带偏。
 - 下一步更有价值的方向是 random_avg floor / warehouse under / source-aware sampler，而不是继续扩大所有 weak risk trigger。
+
+## 2026-06-07 checkpoint：v3 practical raise-watch 复盘指标
+
+目标：
+
+- 让 archive 和 live brief 能直接回答 `raise_watch` 是否真的补到低估，而不是只统计触发数量。
+- 继续保持 v2 formal、正式出价和 UI baseline 不变。
+
+本轮动作：
+
+- `scripts/evaluate_fatbeans_v3_samples.py` 新增 practical raise-watch 质量指标：
+  - `hit`: baseline P90 漏真值，practical P90 覆盖真值；
+  - `miss`: baseline P90 漏真值，practical P90 仍漏；
+  - `false_alarm`: baseline P90 本来已覆盖，但 practical 仍触发；
+  - `extreme_over`: practical P90 超过真值一个 normalized denominator；
+  - `misleading`: false alarm 且 extreme over。
+- `scripts/summarize_live_windivert_brief.py` 在所有分组表输出同一组 hit/miss/false-alarm/extreme-over/misleading rate。
+- 增加 focused 单测，覆盖 hit、miss、false alarm、misleading 场景。
+
+验证结果：
+
+```text
+py_compile: passed
+focused tests: 12 passed
+archive smoke:
+v3_practical_raise_watch_rows=347
+v3_practical_raise_watch_evaluable_rows=347
+v3_practical_raise_watch_hit_rate=0.080692
+v3_practical_raise_watch_miss_rate=0.317003
+v3_practical_raise_watch_false_alarm_rate=0.602305
+v3_practical_raise_watch_extreme_over_rate=0.242075
+v3_practical_raise_watch_misleading_rate=0.230548
+v3_practical_formal_p90_coverage=0.76859
+```
+
+最近 72 小时 live brief：
+
+```text
+windivert_rows=59
+prebid ready=52 no_state=7
+p50_under_rate=0.92
+p90_coverage=0.38
+v3_practical_raise_watch_evaluable_rows=39
+v3_practical_raise_watch_hit_rate=0.15
+v3_practical_raise_watch_miss_rate=0.41
+v3_practical_raise_watch_false_alarm_rate=0.44
+v3_practical_raise_watch_extreme_over_rate=0.0
+```
+
+解读：
+
+- 当前 practical P90 watch 能提高覆盖，但补漏命中率偏低，false alarm 和 misleading rate 过高，不能 promotion 到正式出价。
+- live 最近样本显示 formal 仍严重偏低，尤其 p50 under-rate 高；下一步应做 source-aware / random_avg / q6 tail-value practical sampler，而不是继续扩大 weak watch。
+- 新指标将作为后续 sampler 的 stop-loss：实战可用候选必须降低 miss，并控制 false_alarm/misleading，不能只提高 P90 coverage。

@@ -702,6 +702,61 @@ def test_v3_summary_metrics_use_formal_truth_and_prediction() -> None:
     assert summary["v3_cse_pressure_candidate_rows"] == 0
 
 
+def test_v3_summary_reports_practical_raise_watch_quality() -> None:
+    module = _load_module()
+    rows = [
+        {
+            "status": "ready",
+            "v3_truth_decision_available": True,
+            "v3_truth_formal_decision_value": 200_000,
+            "v3_post_formal_decision_value_p90": 150_000,
+            "v3_practical_ready": True,
+            "v3_practical_candidate": True,
+            "v3_practical_recommendation": "raise_watch",
+            "v3_practical_formal_decision_value_p50": 190_000,
+            "v3_practical_formal_decision_value_p90": 220_000,
+        },
+        {
+            "status": "ready",
+            "v3_truth_decision_available": True,
+            "v3_truth_formal_decision_value": 200_000,
+            "v3_post_formal_decision_value_p90": 150_000,
+            "v3_practical_ready": True,
+            "v3_practical_candidate": True,
+            "v3_practical_recommendation": "raise_watch",
+            "v3_practical_formal_decision_value_p50": 190_000,
+            "v3_practical_formal_decision_value_p90": 180_000,
+        },
+        {
+            "status": "ready",
+            "v3_truth_decision_available": True,
+            "v3_truth_formal_decision_value": 200_000,
+            "v3_post_formal_decision_value_p90": 220_000,
+            "v3_practical_ready": True,
+            "v3_practical_candidate": True,
+            "v3_practical_recommendation": "raise_watch",
+            "v3_practical_formal_decision_value_p50": 220_000,
+            "v3_practical_formal_decision_value_p90": 450_001,
+        },
+    ]
+
+    summary = module.summarize_rows(rows, [])
+
+    assert summary["v3_practical_metric_rows"] == 3
+    assert summary["v3_practical_raise_watch_rows"] == 3
+    assert summary["v3_practical_raise_watch_evaluable_rows"] == 3
+    assert summary["v3_practical_raise_watch_hit_rows"] == 1
+    assert summary["v3_practical_raise_watch_miss_rows"] == 1
+    assert summary["v3_practical_raise_watch_false_alarm_rows"] == 1
+    assert summary["v3_practical_raise_watch_extreme_over_rows"] == 1
+    assert summary["v3_practical_raise_watch_misleading_rows"] == 1
+    assert summary["v3_practical_raise_watch_hit_rate"] == 0.333333
+    assert summary["v3_practical_raise_watch_miss_rate"] == 0.333333
+    assert summary["v3_practical_raise_watch_false_alarm_rate"] == 0.333333
+    assert summary["v3_practical_raise_watch_extreme_over_rate"] == 0.333333
+    assert summary["v3_practical_raise_watch_misleading_rate"] == 0.333333
+
+
 def test_v3_prebid_rows_separate_no_state_windows() -> None:
     module = _load_module()
     events = FatbeansCaptureEvents(

@@ -2766,3 +2766,27 @@ applied_hurts=2502
 
 - archive smoke 显示加入 tail replacement P90 watch 后，practical P90 coverage 从 0.764103 提升到 0.768590，P50 MAE 不变。
 - 这符合此前边界：formal decision_value 仍是裁尾 plannable 口径，tail replacement 是审计/辅助字段。
+
+## D-v3-136：raise-watch 必须用 hit/miss/false-alarm/misleading 作为落地门槛
+
+2026-06-07 起，当前决策：
+
+- `v3_practical_raise_watch_*` 不能只用触发数或 P90 coverage 判断价值。
+- 后续所有 practical sampler / watch 候选至少要报告：
+  - `hit`: baseline P90 漏，practical P90 覆盖；
+  - `miss`: baseline P90 漏，practical P90 仍漏；
+  - `false_alarm`: baseline P90 已覆盖但 practical 仍提醒；
+  - `extreme_over`: practical P90 相对真值过宽；
+  - `misleading`: false alarm 且 extreme over。
+- 当前 q6 prior-floor + tail replacement P90 watch 仍只能作为 advisory/reference；不得接入正式出价。
+- promotion 讨论必须同时看 MAE、below-rate、P90 coverage、pinball、高估/误导率和 live 样本复盘，不能只看 P90 coverage。
+
+原因：
+
+- 默认 archive smoke 显示当前 practical `raise_watch_rows=347`，P90 coverage 提升到 `0.768590`，但：
+  - `hit_rate=0.080692`；
+  - `miss_rate=0.317003`；
+  - `false_alarm_rate=0.602305`；
+  - `misleading_rate=0.230548`。
+- 最近 72 小时 live brief 也显示 p50 under-rate 仍高，`raise_watch` 有补漏但不够稳定。
+- 因此下一步应转向更具体的 source-aware / random_avg / q6 tail-value practical sampler，而不是扩大 weak watch 或提前 promotion。

@@ -620,6 +620,37 @@ def _p90_covers(row: dict[str, Any]) -> bool | None:
     return under <= 0
 
 
+def _practical_raise_watch_eval(rows: list[dict[str, Any]]) -> list[dict[str, bool]]:
+    events: list[dict[str, bool]] = []
+    for row in rows:
+        if row.get("v3_practical_recommendation") != "raise_watch":
+            continue
+        truth = _truth_value(row)
+        baseline_p90 = _first_num(
+            row,
+            "decision_value_p90",
+            "v3_practical_baseline_formal_decision_value_p90",
+            "v3_post_formal_decision_value_p90",
+        )
+        practical_p90 = _num(row, "v3_practical_formal_decision_value_p90")
+        if truth is None or baseline_p90 is None or practical_p90 is None:
+            continue
+        baseline_missed = baseline_p90 < truth
+        practical_covered = practical_p90 >= truth
+        false_alarm = not baseline_missed
+        extreme_over = practical_p90 - truth > _normalized_error_denominator(truth)
+        events.append(
+            {
+                "hit": baseline_missed and practical_covered,
+                "miss": baseline_missed and not practical_covered,
+                "false_alarm": false_alarm,
+                "extreme_over": extreme_over,
+                "misleading": false_alarm and extreme_over,
+            }
+        )
+    return events
+
+
 def _q6_p90_under(row: dict[str, Any]) -> bool:
     if _truthy(row.get("q6_plannable_p90_misses_truth")):
         return True
@@ -942,6 +973,16 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
     practical_clean = [abs(v) for v in practical_signed]
     baseline_mae = statistics.mean(clean) if clean else None
     practical_mae = statistics.mean(practical_clean) if practical_clean else None
+    practical_watch_eval = _practical_raise_watch_eval(rows)
+
+    def practical_watch_rate(key: str) -> float | None:
+        if not practical_watch_eval:
+            return None
+        return statistics.mean(
+            1.0 if event[key] else 0.0
+            for event in practical_watch_eval
+        )
+
     normalized_abs_errors = [
         abs(error) / _normalized_error_denominator(truth)
         for row in rows
@@ -1055,6 +1096,32 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )
         if practical_signed
         else None,
+        "v3_practical_raise_watch_evaluable_rows": len(practical_watch_eval),
+        "v3_practical_raise_watch_hit_rate": (
+            round(rate, 2)
+            if (rate := practical_watch_rate("hit")) is not None
+            else None
+        ),
+        "v3_practical_raise_watch_miss_rate": (
+            round(rate, 2)
+            if (rate := practical_watch_rate("miss")) is not None
+            else None
+        ),
+        "v3_practical_raise_watch_false_alarm_rate": (
+            round(rate, 2)
+            if (rate := practical_watch_rate("false_alarm")) is not None
+            else None
+        ),
+        "v3_practical_raise_watch_extreme_over_rate": (
+            round(rate, 2)
+            if (rate := practical_watch_rate("extreme_over")) is not None
+            else None
+        ),
+        "v3_practical_raise_watch_misleading_rate": (
+            round(rate, 2)
+            if (rate := practical_watch_rate("misleading")) is not None
+            else None
+        ),
     }
 
 
@@ -1456,7 +1523,13 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
         "median_p90_signed_err,p90_covered_excess_ratio,p90_extreme_over_rate,"
         "median_n_trials,size_bucket_rate,v3_practical_candidate_rate,"
         "v3_practical_raise_watch_rate,v3_practical_mae,"
-        "v3_practical_delta_mae,v3_practical_under_rate"
+        "v3_practical_delta_mae,v3_practical_under_rate,"
+        "v3_practical_raise_watch_evaluable_rows,"
+        "v3_practical_raise_watch_hit_rate,"
+        "v3_practical_raise_watch_miss_rate,"
+        "v3_practical_raise_watch_false_alarm_rate,"
+        "v3_practical_raise_watch_extreme_over_rate,"
+        "v3_practical_raise_watch_misleading_rate"
     )
     for round_label, group in groups.items():
         print(
@@ -1479,7 +1552,13 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
             f"{group.get('v3_practical_raise_watch_rate')},"
             f"{group.get('v3_practical_mae')},"
             f"{group.get('v3_practical_delta_mae')},"
-            f"{group.get('v3_practical_under_rate')}"
+            f"{group.get('v3_practical_under_rate')},"
+            f"{group.get('v3_practical_raise_watch_evaluable_rows')},"
+            f"{group.get('v3_practical_raise_watch_hit_rate')},"
+            f"{group.get('v3_practical_raise_watch_miss_rate')},"
+            f"{group.get('v3_practical_raise_watch_false_alarm_rate')},"
+            f"{group.get('v3_practical_raise_watch_extreme_over_rate')},"
+            f"{group.get('v3_practical_raise_watch_misleading_rate')}"
         )
 
 

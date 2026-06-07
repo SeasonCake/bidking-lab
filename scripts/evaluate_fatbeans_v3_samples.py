@@ -916,6 +916,10 @@ def _pinball_loss(truth: float, prediction: float, quantile: float) -> float:
     return (1.0 - quantile) * (-delta)
 
 
+def _normalized_error_denominator(truth: float) -> float:
+    return max(100_000.0, abs(truth))
+
+
 def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     paired = [
         row
@@ -1287,6 +1291,37 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
     def pinball(pairs: tuple[tuple[float, float], ...], quantile: float) -> float | None:
         return _mean(_pinball_loss(truth, pred, quantile) for pred, truth in pairs)
+
+    practical_raise_watch_eval: list[dict[str, bool]] = []
+    for row in practical_ready:
+        if row.get("v3_practical_recommendation") != "raise_watch":
+            continue
+        truth = _float_or_none(row.get("v3_truth_formal_decision_value"))
+        baseline_p90 = _float_or_none(row.get("v3_post_formal_decision_value_p90"))
+        practical_p90 = _float_or_none(
+            row.get("v3_practical_formal_decision_value_p90")
+        )
+        if truth is None or baseline_p90 is None or practical_p90 is None:
+            continue
+        baseline_missed = baseline_p90 < truth
+        practical_covered = practical_p90 >= truth
+        false_alarm = not baseline_missed
+        extreme_over = practical_p90 - truth > _normalized_error_denominator(truth)
+        practical_raise_watch_eval.append(
+            {
+                "hit": baseline_missed and practical_covered,
+                "miss": baseline_missed and not practical_covered,
+                "false_alarm": false_alarm,
+                "extreme_over": extreme_over,
+                "misleading": false_alarm and extreme_over,
+            }
+        )
+
+    def practical_raise_watch_rate(key: str) -> float | None:
+        return _mean(
+            1.0 if event[key] else 0.0
+            for event in practical_raise_watch_eval
+        )
 
     metric_scope_counts = Counter(
         str(row.get("v3_post_match_scope") or "none")
@@ -1736,6 +1771,44 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             for row in practical_ready
             if row.get("v3_practical_recommendation") == "raise_watch"
         ),
+        "v3_practical_raise_watch_evaluable_rows": len(
+            practical_raise_watch_eval
+        ),
+        "v3_practical_raise_watch_hit_rows": sum(
+            1 for event in practical_raise_watch_eval if event["hit"]
+        ),
+        "v3_practical_raise_watch_miss_rows": sum(
+            1 for event in practical_raise_watch_eval if event["miss"]
+        ),
+        "v3_practical_raise_watch_false_alarm_rows": sum(
+            1 for event in practical_raise_watch_eval if event["false_alarm"]
+        ),
+        "v3_practical_raise_watch_extreme_over_rows": sum(
+            1 for event in practical_raise_watch_eval if event["extreme_over"]
+        ),
+        "v3_practical_raise_watch_misleading_rows": sum(
+            1 for event in practical_raise_watch_eval if event["misleading"]
+        ),
+        "v3_practical_raise_watch_hit_rate": _round_metric(
+            practical_raise_watch_rate("hit"),
+            6,
+        ),
+        "v3_practical_raise_watch_miss_rate": _round_metric(
+            practical_raise_watch_rate("miss"),
+            6,
+        ),
+        "v3_practical_raise_watch_false_alarm_rate": _round_metric(
+            practical_raise_watch_rate("false_alarm"),
+            6,
+        ),
+        "v3_practical_raise_watch_extreme_over_rate": _round_metric(
+            practical_raise_watch_rate("extreme_over"),
+            6,
+        ),
+        "v3_practical_raise_watch_misleading_rate": _round_metric(
+            practical_raise_watch_rate("misleading"),
+            6,
+        ),
         "v3_practical_status_counts": dict(
             sorted(
                 Counter(
@@ -2037,6 +2110,12 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"v3_cse_active_rows={summary['v3_cse_active_rows']}",
                 f"v3_practical_candidate_rows={summary['v3_practical_candidate_rows']}",
                 f"v3_practical_raise_watch_rows={summary['v3_practical_raise_watch_rows']}",
+                f"v3_practical_raise_watch_evaluable_rows={summary['v3_practical_raise_watch_evaluable_rows']}",
+                f"v3_practical_raise_watch_hit_rate={summary['v3_practical_raise_watch_hit_rate']}",
+                f"v3_practical_raise_watch_miss_rate={summary['v3_practical_raise_watch_miss_rate']}",
+                f"v3_practical_raise_watch_false_alarm_rate={summary['v3_practical_raise_watch_false_alarm_rate']}",
+                f"v3_practical_raise_watch_extreme_over_rate={summary['v3_practical_raise_watch_extreme_over_rate']}",
+                f"v3_practical_raise_watch_misleading_rate={summary['v3_practical_raise_watch_misleading_rate']}",
                 f"v3_practical_active_rows={summary['v3_practical_active_rows']}",
                 f"v3_practical_formal_p50_mae={summary['v3_practical_formal_p50_mae']}",
                 f"v3_practical_delta_formal_p50_mae={summary['v3_practical_delta_formal_p50_mae']}",

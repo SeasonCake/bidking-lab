@@ -6106,3 +6106,42 @@ v3_practical_formal_p90_coverage=0.76859
 - candidate/raise-watch rows 从 238 增至 347，约占 ready rows 22%。
 - P50 MAE 与 below-rate 不变，说明该 watch 没有把 tail replacement 带入 P50。
 - 该层适合作为实战上沿提示；后续是否继续扩大触发，应以 live 样本误导率为准。
+
+## O-v3-140：raise-watch 当前补漏不足，不能作为正式策略
+
+2026-06-07 新增 practical raise-watch 复盘指标后，默认 archive smoke：
+
+```text
+ready=1560
+formal_p90_coverage=0.750641
+v3_practical_formal_p90_coverage=0.76859
+v3_practical_raise_watch_rows=347
+v3_practical_raise_watch_evaluable_rows=347
+v3_practical_raise_watch_hit_rate=0.080692
+v3_practical_raise_watch_miss_rate=0.317003
+v3_practical_raise_watch_false_alarm_rate=0.602305
+v3_practical_raise_watch_extreme_over_rate=0.242075
+v3_practical_raise_watch_misleading_rate=0.230548
+```
+
+最近 72 小时 live/prebid brief：
+
+```text
+windivert_rows=59
+ready=52
+no_state=7
+p50_under_rate=0.92
+p90_coverage=0.38
+v3_practical_raise_watch_evaluable_rows=39
+v3_practical_raise_watch_hit_rate=0.15
+v3_practical_raise_watch_miss_rate=0.41
+v3_practical_raise_watch_false_alarm_rate=0.44
+v3_practical_raise_watch_extreme_over_rate=0.0
+```
+
+观察：
+
+- practical P90 watch 对 archive coverage 有正收益，但 hit-rate 太低，false-alarm/misleading 太高。
+- live 近样本没有极端高估，但仍有大量 miss，说明“低估识别”比“简单拉 P90 上沿”更重要。
+- `random_avg=signal`、`q6_tail_value`、`q6_gate_inactive`、`q6_cells/count under truth` 仍是主要低估来源；后续应做条件 sampler 或 source-aware upshift。
+- 该指标口径可作为后续实战落地 stop-loss：新增候选如果只增加 false alarm 或 misleading，不应继续推进到 UI 前台或 formal。
