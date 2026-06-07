@@ -8946,3 +8946,48 @@ pytest tests/test_live_monitor.py -q
 pytest tests/test_runtime_snapshot.py tests/test_live_overlay.py -q
 52 passed
 ```
+
+## 2026-06-07 checkpoint：活动沉船缺表按旧沉船显式别名估值
+
+实战反馈：
+
+- 0607 后几天暂时只有新活动沉船图，本地 BidMap 缺少 `2527` 等新图。
+- 只输出 `unsupported_map` 虽然不会崩溃，但实战上会完全没有估值参考；用户希望默认按对应旧 shipwreck 估，不至于空白。
+
+依据：
+
+- `summarize_v3_activity_mapping_likelihood.py --format summary` 对当前活动样本显示 `minus10` 胜出更多：
+  - `minus10: 11`；
+  - `minus20: 4`。
+- 因此活动 `2521-2530` 优先映射到 `2511-2520`；如果本地没有对应 `251x`，再尝试 `2501-2510`。
+- `4521-4530` 同理优先映射到 `4511-4520`，再尝试 `4501-4510`。
+
+修复：
+
+- live artifact 构建阶段新增 temporary activity alias：
+  - 原始 `map_id` 保留为新图，例如 `2527`；
+  - 推理 `model_map_id` 使用旧沉船表，例如 `2517`；
+  - `map_alias.mode=activity_shipwreck_minus10`；
+  - `inference_input_constraints.map_alias` 记录 source/model/reason。
+- UI contract/overlay “输入约束”行显示：
+  - `活动图 2527->旧沉船 2517`。
+- 直接调用 v3 shadow 传入未知图仍保持 `prior_unavailable`，避免审计口径把别名隐式当成正式表。
+
+边界：
+
+- 这是 live 实战 fallback，不代表已经拿到活动图真实远端表。
+- 一般未知地图仍保持 `unsupported_map`，不自动借非同族地图估。
+- 后续拿到 `Tables/Activity.txt` 或远端 BidMap 后，应优先替换为真实表口径。
+
+验证：
+
+```text
+pytest tests/test_live_monitor.py::test_build_monitor_artifact_does_not_crash_on_unknown_map \
+       tests/test_live_monitor.py::test_build_monitor_artifact_uses_activity_shipwreck_alias \
+       tests/test_runtime_snapshot.py::test_ui_contract_exposes_activity_map_alias \
+       tests/test_live_overlay.py::test_overlay_constraints_section_shows_activity_map_alias -q
+4 passed
+
+pytest tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py tests/test_live_status.py -q
+98 passed
+```

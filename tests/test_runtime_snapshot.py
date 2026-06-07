@@ -1057,6 +1057,35 @@ def test_ui_contract_uses_exact_input_totals_when_posterior_range_is_missing() -
     assert posterior["input_total_item_count"] == 38
 
 
+def test_ui_contract_exposes_activity_map_alias() -> None:
+    alias = {
+        "mode": "activity_shipwreck_minus10",
+        "source_map_id": 2527,
+        "model_map_id": 2517,
+        "family": "shipwreck",
+    }
+    contract = ui_contract_from_artifact(
+        {
+            "map_id": 2527,
+            "model_map_id": 2517,
+            "map_alias": alias,
+            "map_alias_mode": "activity_shipwreck_minus10",
+            "inference_input_constraints": {
+                "mode": "pre_settlement",
+                "map_alias": alias,
+            },
+        }
+    )
+
+    assert contract["source"]["model_map_id"] == 2517
+    assert contract["source"]["map_alias_mode"] == "activity_shipwreck_minus10"
+    assert contract["context"]["map_id"] == 2527
+    assert contract["context"]["model_map_id"] == 2517
+    assert contract["constraints"]["summary"]["map_alias_label"] == (
+        "活动图 2527->旧沉船 2517"
+    )
+
+
 def test_ui_contract_exposes_public_numeric_soft_facts() -> None:
     contract = ui_contract_from_artifact(
         {

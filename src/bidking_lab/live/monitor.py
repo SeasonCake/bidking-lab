@@ -243,6 +243,41 @@ def _candidate_map_ids_for_likelihood(
     return (map_id,)
 
 
+def _activity_shipwreck_alias(
+    map_id: Any,
+    maps: Mapping[int, BidMap],
+) -> dict[str, Any]:
+    try:
+        source_map_id = int(map_id)
+    except (TypeError, ValueError):
+        return {}
+    if source_map_id in maps:
+        return {}
+    candidates: list[tuple[str, int]] = []
+    if 2521 <= source_map_id <= 2530:
+        candidates.append(("activity_shipwreck_minus10", source_map_id - 10))
+        candidates.append(("activity_shipwreck_minus20", source_map_id - 20))
+    elif 4521 <= source_map_id <= 4530:
+        candidates.append(("activity_shipwreck_45xx_minus10", source_map_id - 10))
+        candidates.append(("activity_shipwreck_45xx_minus20", source_map_id - 20))
+    for mode, model_map_id in candidates:
+        if model_map_id in maps and _map_family_from_id(model_map_id) == "shipwreck":
+            return {
+                "mode": mode,
+                "source_map_id": source_map_id,
+                "model_map_id": model_map_id,
+                "family": "shipwreck",
+                "confidence": "temporary_activity_alias",
+                "reason": "missing_activity_bidmap_use_corresponding_old_shipwreck",
+                "candidate_model_map_ids": [
+                    candidate
+                    for _candidate_mode, candidate in candidates
+                    if candidate in maps
+                ],
+            }
+    return {}
+
+
 def _relax_exact_bucket_constraints(obs: Any) -> Any:
     buckets = {}
     changed = False
@@ -4046,7 +4081,15 @@ def build_monitor_artifact_from_events(
         "mode": "no_inference_session",
     }
     problem: ResidualProblem | None = None
-    if base_session is not None and base_session.map_id not in tables.maps:
+    model_map_id: int | None = None
+    activity_map_alias: dict[str, Any] = {}
+    if base_session is not None:
+        activity_map_alias = _activity_shipwreck_alias(base_session.map_id, tables.maps)
+    if (
+        base_session is not None
+        and base_session.map_id not in tables.maps
+        and not activity_map_alias
+    ):
         evidence_label = f"unsupported_map:{base_session.map_id}"
         formal_mode_reason = "unsupported_map"
         inference_input_constraints = {
@@ -4054,19 +4097,40 @@ def build_monitor_artifact_from_events(
             "map_id": base_session.map_id,
         }
     elif base_session is not None:
+        inference_base_session = base_session
+        if activity_map_alias:
+            model_map_id = int(activity_map_alias["model_map_id"])
+            inference_base_session = replace(base_session, map_id=model_map_id)
+        else:
+            model_map_id = base_session.map_id
         candidate_map_ids = _candidate_map_ids_for_likelihood(
-            base_session.map_id,
+            inference_base_session.map_id,
             tables.maps,
         )
         evidence_label = "结算前最后状态"
+        if activity_map_alias:
+            evidence_label = (
+                f"结算前最后状态（活动图按旧沉船 {model_map_id} 估）"
+            )
         cells_tol = 8
         count_tol = 3
         inference_session, inference_input_constraints = (
             _inference_session_with_safe_totals(
-                base_session,
+                inference_base_session,
                 pre_settlement_state,
             )
         )
+        if activity_map_alias:
+            inference_input_constraints = dict(inference_input_constraints)
+            inference_input_constraints.update(
+                {
+                    "source_map_id": activity_map_alias["source_map_id"],
+                    "model_map_id": activity_map_alias["model_map_id"],
+                    "map_alias_mode": activity_map_alias["mode"],
+                    "map_alias_reason": activity_map_alias["reason"],
+                    "map_alias": activity_map_alias,
+                }
+            )
         base_results = estimate_map_likelihood(
             candidate_map_ids,
             inference_session,
@@ -4118,7 +4182,7 @@ def build_monitor_artifact_from_events(
                     inference_session = relaxed_session
                     base_results = relaxed_results
                     warehouse_estimate = relaxed_warehouse_estimate
-                    evidence_label = "结算前最后状态（放宽精确桶约束）"
+                    evidence_label = f"{evidence_label}（放宽精确桶约束）"
         map_rows = _map_likelihood_result_rows(base_results, evidence_label)
         warehouse_rows = _warehouse_estimate_rows(warehouse_estimate)
         store = evidence_store_from_fatbeans_events(events)
@@ -4581,7 +4645,15 @@ def build_monitor_artifact_from_events(
         problem=problem,
         maps=tables.maps,
         drops=tables.drops,
-        map_id=base_session.map_id if base_session is not None else None,
+        map_id=(
+            problem.map_id
+            if problem is not None
+            else (
+                model_map_id
+                if model_map_id is not None
+                else (base_session.map_id if base_session is not None else None)
+            )
+        ),
     )
     processing_seconds = round(time.perf_counter() - started_at, 4)
     artifact: dict[str, Any] = {
@@ -4599,6 +4671,9 @@ def build_monitor_artifact_from_events(
         "session_id": _latest_session_id(events),
         "hero": base_session.hero if base_session is not None else None,
         "map_id": _latest_map_id(events),
+        "model_map_id": model_map_id,
+        "map_alias": activity_map_alias,
+        "map_alias_mode": activity_map_alias.get("mode", ""),
         "round": action_round,
         "action_round": action_round,
         "observed_round": observed_round,

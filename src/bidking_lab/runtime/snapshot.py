@@ -533,6 +533,11 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(artifact.get("inference_input_constraints"), Mapping)
         else {}
     )
+    map_alias = (
+        artifact.get("map_alias")
+        if isinstance(artifact.get("map_alias"), Mapping)
+        else {}
+    )
     minimap = _ui_minimap_contract(artifact)
     shadows = [
         _ui_shadow_contract(shadow, model_eval)
@@ -585,6 +590,9 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
             "formal_baseline_source": _text(
                 artifact.get("formal_baseline_source") or formal_mode
             ),
+            "model_map_id": artifact.get("model_map_id"),
+            "map_alias": map_alias,
+            "map_alias_mode": _text(artifact.get("map_alias_mode")),
             "inference_profile": (
                 artifact.get("inference_profile")
                 if isinstance(artifact.get("inference_profile"), Mapping)
@@ -596,6 +604,9 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
             "session_id": artifact.get("session_id"),
             "hero": artifact.get("hero"),
             "map_id": artifact.get("map_id"),
+            "model_map_id": artifact.get("model_map_id"),
+            "map_alias": map_alias,
+            "map_alias_mode": _text(artifact.get("map_alias_mode")),
             "round": artifact.get("round"),
             "action_round": artifact.get("action_round", artifact.get("round")),
             "observed_round": artifact.get("observed_round"),
@@ -953,6 +964,26 @@ def _ui_public_numeric_contract(
     }
 
 
+def _ui_map_alias_label(input_constraints: Mapping[str, Any]) -> str:
+    alias = (
+        input_constraints.get("map_alias")
+        if isinstance(input_constraints.get("map_alias"), Mapping)
+        else {}
+    )
+    source_map_id = _int_or_none(
+        alias.get("source_map_id") if alias else input_constraints.get("source_map_id")
+    )
+    model_map_id = _int_or_none(
+        alias.get("model_map_id") if alias else input_constraints.get("model_map_id")
+    )
+    if source_map_id is None or model_map_id is None:
+        return ""
+    family = _text(alias.get("family") if alias else "")
+    if family == "shipwreck":
+        return f"活动图 {source_map_id}->旧沉船 {model_map_id}"
+    return f"活动图 {source_map_id}->旧图 {model_map_id}"
+
+
 def _ui_constraints_contract(
     v2: Mapping[str, Any],
     model_eval: Mapping[str, Any],
@@ -1018,6 +1049,7 @@ def _ui_constraints_contract(
         "known_gold_item_count": quality_counts.get("q5", 0),
         "known_red_item_count": quality_counts.get("q6", 0),
         "public_constraint_key": public_constraint_key,
+        "map_alias_label": _ui_map_alias_label(input_constraints),
         "evidence_profile_key": evidence_profile_key,
         "information_density_band": _text(
             model_eval.get("information_density_band")

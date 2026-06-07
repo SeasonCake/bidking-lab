@@ -3188,3 +3188,27 @@ applied_hurts=2502
 
 - 0607 实战遇到 map `2527`，本地表缺失导致连续 `KeyError: 2527`，snapshot 退成空白。
 - 活动图/新版本地图可能临时出现；缺表时应给出明确状态，而不是打断后续跨局 live 链路。
+
+## D-v3-158：缺表活动沉船可显式借对应旧 shipwreck 表做 live fallback
+
+2026-06-07 起，当前决策：
+
+- 一般未知地图仍按 D-v3-157 输出 `unsupported_map`，不生成估值。
+- 对可对齐到旧沉船的活动地图，live 可以使用 explicit temporary alias：
+  - `2521-2530 -> 2511-2520` 优先；
+  - 如对应 `251x` 本地缺表，再尝试 `2501-2510`；
+  - `4521-4530 -> 4511-4520` 优先；
+  - 如对应 `451x` 本地缺表，再尝试 `4501-4510`。
+- artifact 必须保留原始 `map_id`，并新增：
+  - `model_map_id`；
+  - `map_alias`；
+  - `map_alias_mode`；
+  - `inference_input_constraints.map_alias`。
+- UI 必须显示映射标签，例如 `活动图 2527->旧沉船 2517`。
+- 该 alias 只用于 live artifact 构建；直接 v3 shadow/audit 传入未知 map_id 时仍应报告 prior unavailable。
+
+原因：
+
+- 当前活动样本 likelihood 对比显示 `minus10` 更符合现有观测，且用户实战需要在活动期间有可用参考。
+- 直接空白会降低实战价值；但把别名藏在内部又会污染后续调参和审计。
+- 显式记录 source/model map 可以让局后复盘区分“真实新表估值”和“借旧沉船表估值”。

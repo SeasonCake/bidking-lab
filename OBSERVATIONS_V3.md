@@ -6760,3 +6760,22 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 
 - 未知地图现在输出 `unsupported_map` artifact，不崩溃、不生成出价。
 - 活动/新地图仍需要后续补表或远端表获取；在补表前，不应使用旧地图先验硬估。
+
+## O-v3-169：252x 活动沉船更像 251x 旧沉船别名而不是完全未知图
+
+2026-06-07 对活动样本快速对照：
+
+- `summarize_v3_activity_mapping_likelihood.py --format summary`：
+  - `files=15`；
+  - `minus10` winner `11`；
+  - `minus20` winner `4`。
+- 对当前 `2527` 这类缺表活动图，`minus10` 表示用 `2517` 作模型图；`minus20` 表示用 `2507`。
+- 当前证据不足以确认远端真实表，但足够支持一个显式、可审计的 live fallback。
+
+对应修复：
+
+- live artifact 现在可以对缺表 `2521-2530` 使用旧沉船模型图：
+  - 优先 `252x -> 251x`；
+  - 备选 `252x -> 250x`。
+- UI “输入约束”会显示 `活动图 source->旧沉船 model`。
+- 该路径不改变原始 `map_id`，也不把缺表活动图伪装成真实本地表。

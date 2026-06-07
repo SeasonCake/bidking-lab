@@ -356,6 +356,30 @@ def _tables() -> MonitorTables:
     )
 
 
+def _activity_alias_tables() -> MonitorTables:
+    tables = _tables()
+    maps = dict(tables.maps)
+    maps[2517] = BidMap(
+        map_id=2517,
+        name="activity_alias_shipwreck",
+        description="",
+        category=101,
+        auction_mode="open",
+        sub_pool_weights=[],
+        rounds_total=5,
+        entry_fee_silver=0,
+        starting_budget_silver=100_000,
+        drop_pool_id=9001,
+        items_per_session_min=1,
+        items_per_session_max=1,
+        value_tier_ui="",
+        mode_flag=4,
+        bid_price_ladder=[],
+        raw_row=[],
+    )
+    return MonitorTables(maps=maps, drops=tables.drops, items=tables.items)
+
+
 def test_minimap_table_shape_requires_cell_count_match() -> None:
     rows = monitor_module._minimap_grid_items(
         (
@@ -587,6 +611,62 @@ def test_build_monitor_artifact_does_not_crash_on_unknown_map() -> None:
     }
     assert artifact["bid_rows"] == []
     assert artifact["v3_practical_bid_rows"] == []
+
+
+def test_build_monitor_artifact_uses_activity_shipwreck_alias() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=1,
+                capture_time="",
+                message_id=0x0025,
+                session_id="2527:activity",
+                map_id=2527,
+                round_index=1,
+                bids=(
+                    FatbeansPlayerBid(
+                        player_id=1,
+                        name="leader",
+                        hero_id=103,
+                        values=(12_000,),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    artifact = build_monitor_artifact_from_events(
+        events,
+        file="activity_map.json",
+        tables=_activity_alias_tables(),
+        n_trials=10,
+        roi_trials=0,
+        formal_mode="v3_practical",
+    )
+
+    assert artifact["map_id"] == 2527
+    assert artifact["model_map_id"] == 2517
+    assert artifact["map_alias_mode"] == "activity_shipwreck_minus10"
+    assert artifact["map_alias"]["source_map_id"] == 2527
+    assert artifact["map_alias"]["model_map_id"] == 2517
+    assert "unsupported_map" not in artifact["formal_mode_reason"]
+    assert artifact["inference_input_constraints"]["source_map_id"] == 2527
+    assert artifact["inference_input_constraints"]["model_map_id"] == 2517
+    assert artifact["inference_input_constraints"]["map_alias"]["mode"] == (
+        "activity_shipwreck_minus10"
+    )
+    assert artifact["bid_rows"]
+
+    contract = artifact["ui_contract"]
+    assert contract["context"]["map_id"] == 2527
+    assert contract["context"]["model_map_id"] == 2517
+    assert contract["constraints"]["summary"]["map_alias_label"] == (
+        "活动图 2527->旧沉船 2517"
+    )
 
 
 def test_build_monitor_artifact_includes_panel_and_eval() -> None:
