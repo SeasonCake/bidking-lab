@@ -6603,3 +6603,18 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 - 当前真实 `model_eval.jsonl` 去重有效行仍是旧字段集，`v3_practical.rows=0`；同一时间 72h windivert/prebid brief 仍显示 practical 指标，说明 archive/prebid 路径正常。
 - 空 v3 practical brief 已压缩为 rows / boundary 字段，避免实战 post-game 输出被无意义空结构淹没。
 - 后续最新 monitor 采样应同时检查 `model_eval --brief` 与 `summarize_live_windivert_brief.py --since-hours 72`，避免 UI/复盘路径再次出现字段断层。
+
+## O-v3-159：overlay 的 v3 practical 内部标签影响实战可读性
+
+2026-06-07 检查 overlay 文案后：
+
+- UI contract 已经有 `confidence`、source lanes、risk flags、raw total gap、q6 raw gap 等字段。
+- overlay 原文案仍偏开发视角：
+  - `confidence low_medium`；
+  - `rawΔP90` / `q6rawΔP90`；
+  - detail 的 `rawP90` / `q6rawP90`。
+
+修复后：
+
+- hover/detail 显示为 `置信 中低`、`证据 ...`、`风险 ...`、`仓库上限ΔP90`、`q6上限ΔP90`、`仓库上限P90`、`q6上限P90`。
+- 该变化不影响任何数值或出价路径，但能减少实战中把 raw upper / practical upper 误读成正式报价的概率。

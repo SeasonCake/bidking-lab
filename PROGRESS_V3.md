@@ -8660,3 +8660,33 @@ overall v3_practical_p90_extreme_over_rate=0.07
 - 这是 post-game 可读性和 contract 汇总改动，不是 sampler 调参，也不接入正式出价。
 - 当前 `model_eval.jsonl` 去重有效行没有 v3 practical 字段，所以新 brief 块为空；72h windivert/prebid archive 路径仍能看到 practical 指标。
 - 后续用最新 monitor 采集的新局会自然进入 `model_eval --brief` 的 v3 practical 汇总，便于实战后快速判断：正式 baseline 是否低估、v3 practical 是否覆盖、是否有 misleading/extreme-over 风险。
+
+## 2026-06-07 checkpoint：overlay v3 practical 标签改为实战可读口径
+
+目标：
+
+- 保持 v2 formal、正式出价、UI 布局和 v3 practical 数值不变。
+- 让 overlay 的 v3 practical 提示更容易在实战中扫读，避免内部字段名影响理解。
+
+本轮动作：
+
+- `v3 实战参考` 区块将内部标签改为中文语义：
+  - `confidence low_medium` -> `置信 中低`；
+  - `rawΔP90` -> `仓库上限ΔP90`；
+  - `q6rawΔP90` -> `q6上限ΔP90`；
+  - detail 中的 `rawP90/q6rawP90` -> `仓库上限P90/q6上限P90`；
+  - source/risk 增加 `证据` / `风险` 前缀。
+- 不修改 UI contract 字段名，不改变 model_eval、sampler、formal 或 bid path。
+
+验证结果：
+
+```text
+py_compile scripts/run_live_overlay.py tests/test_live_overlay.py: passed
+pytest tests/test_live_overlay.py tests/test_runtime_snapshot.py -q:
+49 passed
+```
+
+当前解读：
+
+- 这是纯展示语义修复，目标是让实战用户更快分清：正式 baseline、v3 上沿、低估风险、证据来源、置信度、仓库上限和只读边界。
+- 后续如果新增 practical 字段，应同步检查“字段是否贯通”和“展示标签是否能被非开发视角理解”。

@@ -1225,8 +1225,11 @@ def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> 
         and "正式P90 650,000 -> v3P90 780,000" in section[1]
         and "P90 780,000" in section[1]
         and "ΔP90 130,000" in section[1]
-        and "rawΔP90 200,000" in section[1]
-        and "q6rawΔP90 160,000" in section[1]
+        and "仓库上限ΔP90 200,000" in section[1]
+        and "q6上限ΔP90 160,000" in section[1]
+        and "证据 formal_value,underestimate_repair" in section[2]
+        and "风险 value_floor_candidate,q6_under_candidate" in section[2]
+        and "置信 中" in section[2]
         and "不影响正式出价" in section[2]
         for section in model["interaction"]["hover"]["sections"]
     )
@@ -1234,8 +1237,8 @@ def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> 
         section[0] == "v3 实战参考"
         and "正式P50 420,000" in section[1]
         and "正式q6P90 180,000" in section[1]
-        and "rawP90 980,000" in section[1]
-        and "q6rawP90 420,000" in section[1]
+        and "仓库上限P90 980,000" in section[1]
+        and "q6上限P90 420,000" in section[1]
         and "formal value floor" in section[2]
         for section in model["interaction"]["detail"]["sections"]
     )
@@ -1284,9 +1287,11 @@ def test_overlay_v3_practical_model_eval_contract_chain_labels_baseline_p90() ->
 
     assert "正式P90 504,178 -> v3P90 1,399,123" in practical[1]
     assert "ΔP90 894,945" in practical[1]
-    assert "rawΔP90 110,877" in practical[1]
-    assert "q6rawΔP90 150,000" in practical[1]
-    assert "formal_value+prior_q6_floor" in practical[2]
+    assert "仓库上限ΔP90 110,877" in practical[1]
+    assert "q6上限ΔP90 150,000" in practical[1]
+    assert "证据 formal_value+prior_q6_floor" in practical[2]
+    assert "风险 q6_prior_floor_watch" in practical[2]
+    assert "置信 中低" in practical[2]
     assert "只读参考，不影响正式出价" in practical[2]
 
 

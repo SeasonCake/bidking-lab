@@ -318,6 +318,17 @@ def _join_parts(parts: tuple[Any, ...] | list[Any], *, sep: str = " / ") -> str:
     return sep.join(str(part) for part in parts if str(part or "").strip())
 
 
+def _v3_confidence_label(value: Any) -> str:
+    text = str(value or "").strip()
+    return {
+        "high": "高",
+        "medium": "中",
+        "low": "低",
+        "low_medium": "中低",
+        "medium_low": "中低",
+    }.get(text.lower(), text)
+
+
 def _clamp_scroll_fraction(value: Any) -> float:
     try:
         fraction = float(value)
@@ -1288,7 +1299,7 @@ def _ui_contract_v3_practical_section(
     recommendation = str(practical.get("recommendation") or "")
     status = str(practical.get("status") or "")
     mode = str(practical.get("mode") or "")
-    confidence = str(practical.get("confidence") or "")
+    confidence = _v3_confidence_label(practical.get("confidence"))
     p50 = practical.get("formal_decision_value_p50")
     p90 = practical.get("formal_decision_value_p90")
     baseline_p50 = practical.get("baseline_formal_decision_value_p50")
@@ -1348,22 +1359,22 @@ def _ui_contract_v3_practical_section(
     ]
     upper_parts = [
         (
-            f"rawΔP90 {_fmt_int(raw_total_gap_p90)}"
+            f"仓库上限ΔP90 {_fmt_int(raw_total_gap_p90)}"
             if raw_total_gap_p90 is not None and raw_total_gap_p90 > 0
             else ""
         ),
         (
-            f"q6rawΔP90 {_fmt_int(q6_raw_gap_p90)}"
+            f"q6上限ΔP90 {_fmt_int(q6_raw_gap_p90)}"
             if q6_raw_gap_p90 is not None and q6_raw_gap_p90 > 0
             else ""
         ),
         (
-            f"仓库rawP90 {_fmt_int(total_p90)}"
+            f"仓库上限P90 {_fmt_int(total_p90)}"
             if detail and total_p90 is not None
             else ""
         ),
         (
-            f"q6rawP90 {_fmt_int(q6_value_p90)}"
+            f"q6上限P90 {_fmt_int(q6_value_p90)}"
             if detail and q6_value_p90 is not None
             else ""
         ),
@@ -1373,11 +1384,11 @@ def _ui_contract_v3_practical_section(
         headline = f"{headline} | {value_text}"
 
     source_parts = [
-        str(practical.get("source_lanes") or ""),
-        str(practical.get("risk_flags") or ""),
-        f"mode {mode}" if mode else "",
-        f"status {status}" if status and detail else "",
-        f"confidence {confidence}" if confidence else "",
+        f"证据 {practical.get('source_lanes')}" if practical.get("source_lanes") else "",
+        f"风险 {practical.get('risk_flags')}" if practical.get("risk_flags") else "",
+        f"模式 {mode}" if mode else "",
+        f"状态 {status}" if status and detail else "",
+        f"置信 {confidence}" if confidence else "",
         read_only,
     ]
     if detail and practical.get("reason"):

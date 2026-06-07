@@ -3052,3 +3052,20 @@ applied_hurts=2502
 - `post_game_live.ps1` 已调用 `summarize_live_model_eval.py --brief`，但旧 brief 只突出 q6 shadow 旧候选，缺少 v3 practical 的正式 baseline vs 上沿对照。
 - 当前阶段重点是实战可用性和链路稳定：每局后应能快速看出 practical 是否仍为 shadow-only、是否减少低估、是否引入 misleading/extreme-over。
 - 这与 overlay 并排显示 formal baseline / v3 practical 的决策保持一致。
+
+## D-v3-150：overlay v3 practical 字段必须使用实战可读标签
+
+2026-06-07 起，当前决策：
+
+- overlay 可以保留 `v3_practical_*` 内部字段名和 UI contract 结构，但展示文案必须面向实战扫读：
+  - confidence 显示为 `置信 高/中/中低/低`；
+  - raw total upper gap 显示为 `仓库上限ΔP90`；
+  - q6 raw upper gap 显示为 `q6上限ΔP90`；
+  - detail 中 raw upper P90 显示为 `仓库上限P90` / `q6上限P90`；
+  - source/risk 必须有 `证据` / `风险` 前缀。
+- 该决策只改变展示标签，不改变 model_eval、UI contract 字段名、v2 formal、v3 practical 数值或正式出价。
+
+原因：
+
+- 当前目标是实战可用性；`confidence low_medium`、`rawΔP90` 这类内部标签会降低用户判断速度。
+- v3 practical 是 shadow-only 上沿参考，显示层必须更清楚地区分证据来源、置信度、仓库上限和只读边界。
