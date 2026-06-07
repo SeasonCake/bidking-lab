@@ -146,7 +146,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 diagnostics-only `v3_practical_*` |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
-| `scripts/summarize_live_windivert_brief.py` | live/archive brief | 后续可加 v3 shadow columns |
+| `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate，便于局后复盘 `v3_practical_*` |
 | `data/logs/live/` | 本地 live 日志 | ignored，本地运行态 |
 | `data/samples/fatbeans/` | 本地 canonical archive 样本 | 441 份 JSON，默认脚本路径 |
 | `data/samples/fatbeans_activity_20260605_shipwreck/` | 2026-06-05 沉船白转红活动 cohort | 15 份 JSON，manifest role=`activity_tuning_reference`；用于 source/table 与 shadow 调参参考，不进默认校准 |

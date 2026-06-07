@@ -587,6 +587,20 @@ def _decision_p50_error(row: dict[str, Any]) -> float | None:
     return _num(row, "decision_value_p50_error")
 
 
+def _practical_p50_error(row: dict[str, Any]) -> float | None:
+    p50 = _num(row, "v3_practical_formal_decision_value_p50")
+    truth = _first_num(
+        row,
+        "final_formal_decision_value",
+        "decision_value_truth",
+        "final_decision_value",
+        "final_value",
+    )
+    if p50 is not None and truth is not None:
+        return p50 - truth
+    return _num(row, "v3_practical_formal_decision_value_p50_error_vs_formal")
+
+
 def _normalized_error_denominator(truth: float) -> float:
     return max(100_000.0, abs(truth))
 
@@ -923,6 +937,11 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
     errors = [_decision_p50_error(row) for row in rows]
     signed = [v for v in errors if v is not None]
     clean = [abs(v) for v in signed]
+    practical_errors = [_practical_p50_error(row) for row in rows]
+    practical_signed = [v for v in practical_errors if v is not None]
+    practical_clean = [abs(v) for v in practical_signed]
+    baseline_mae = statistics.mean(clean) if clean else None
+    practical_mae = statistics.mean(practical_clean) if practical_clean else None
     normalized_abs_errors = [
         abs(error) / _normalized_error_denominator(truth)
         for row in rows
@@ -963,7 +982,7 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "rows": len(rows),
         "estimate_rows": len(signed),
         "median_matched": int(statistics.median(matched_clean)) if matched_clean else None,
-        "decision_value_mae": round(statistics.mean(clean), 1) if clean else None,
+        "decision_value_mae": round(baseline_mae, 1) if baseline_mae is not None else None,
         "median_p50_error": round(statistics.median(signed), 1) if signed else None,
         "median_abs_p50_error": round(statistics.median(clean), 1) if clean else None,
         "median_normalized_abs_p50_error": (
@@ -1001,6 +1020,40 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
             2,
         )
         if rows
+        else None,
+        "v3_practical_candidate_rate": round(
+            statistics.mean(
+                1.0 if row.get("v3_practical_candidate") else 0.0
+                for row in rows
+            ),
+            2,
+        )
+        if rows
+        else None,
+        "v3_practical_raise_watch_rate": round(
+            statistics.mean(
+                1.0
+                if row.get("v3_practical_recommendation") == "raise_watch"
+                else 0.0
+                for row in rows
+            ),
+            2,
+        )
+        if rows
+        else None,
+        "v3_practical_mae": (
+            round(practical_mae, 1) if practical_mae is not None else None
+        ),
+        "v3_practical_delta_mae": (
+            round(practical_mae - baseline_mae, 1)
+            if practical_mae is not None and baseline_mae is not None
+            else None
+        ),
+        "v3_practical_under_rate": round(
+            statistics.mean(1.0 if value < 0 else 0.0 for value in practical_signed),
+            2,
+        )
+        if practical_signed
         else None,
     }
 
@@ -1401,7 +1454,9 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
         f"{label},rows,estimate_rows,median_matched,decision_mae,median_p50_err,"
         "median_abs_p50_err,median_norm_abs_p50_err,p50_under_rate,p90_coverage,"
         "median_p90_signed_err,p90_covered_excess_ratio,p90_extreme_over_rate,"
-        "median_n_trials,size_bucket_rate"
+        "median_n_trials,size_bucket_rate,v3_practical_candidate_rate,"
+        "v3_practical_raise_watch_rate,v3_practical_mae,"
+        "v3_practical_delta_mae,v3_practical_under_rate"
     )
     for round_label, group in groups.items():
         print(
@@ -1419,7 +1474,12 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
             f"{group.get('median_p90_covered_excess_ratio')},"
             f"{group.get('p90_extreme_over_rate')},"
             f"{group.get('median_n_trials')},"
-            f"{group.get('size_bucket_active_rate')}"
+            f"{group.get('size_bucket_active_rate')},"
+            f"{group.get('v3_practical_candidate_rate')},"
+            f"{group.get('v3_practical_raise_watch_rate')},"
+            f"{group.get('v3_practical_mae')},"
+            f"{group.get('v3_practical_delta_mae')},"
+            f"{group.get('v3_practical_under_rate')}"
         )
 
 

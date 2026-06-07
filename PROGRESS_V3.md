@@ -7504,12 +7504,14 @@ next_mode=build_shadow_formal_value_workbench
   - `v3_practical_formal_p50_below_rate`
   - `v3_practical_formal_p90_coverage`
 - 修正早期 broad risk 误用：首次 smoke 显示 SCP broad candidate 会导致 1495/1560 ready rows 都变成 `raise_watch`，已收窄为 risk-only 记录。
+- `scripts/summarize_live_windivert_brief.py` group 表尾部新增 practical candidate/raise-watch rate、practical MAE、delta MAE 与 under-rate，便于局后快速看实战参考效果。
 
 验证命令：
 
 ```powershell
 C:\Users\shenc\anaconda3\python.exe -m py_compile src\bidking_lab\inference\v3\practical_advisory.py src\bidking_lab\inference\v3\pipeline.py scripts\evaluate_fatbeans_v3_samples.py src\bidking_lab\live\monitor.py src\bidking_lab\runtime\snapshot.py
 C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_inference_v3_pipeline.py tests\test_evaluate_fatbeans_v3_samples.py::test_v3_prebid_rows_include_prior_and_truth_shadow_fields tests\test_evaluate_fatbeans_v3_samples.py::test_v3_summary_metrics_use_formal_truth_and_prediction tests\test_live_monitor.py::test_build_monitor_artifact_includes_panel_and_eval tests\test_runtime_snapshot.py -q
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_live_windivert_brief.py -q
 C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
 ```
 
@@ -7518,6 +7520,7 @@ C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py --po
 ```text
 py_compile: passed
 focused tests: 21 passed
+live brief tests: 10 passed
 
 archive smoke:
 windows=1577 ready=1560 parse_errors=0
