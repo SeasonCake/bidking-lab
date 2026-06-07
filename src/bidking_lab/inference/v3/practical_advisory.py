@@ -52,6 +52,13 @@ _Q6_RAW_TAIL_LOW_SUPPORT_MIN_P90_GAP = 200_000.0
 _Q6_RAW_TAIL_LOW_SUPPORT_MAX_DELTA = 600_000.0
 _Q6_RAW_TAIL_VALUE_STRESS_MIN_P90_GAP = 300_000.0
 _Q6_RAW_TAIL_VALUE_STRESS_MAX_DELTA = 300_000.0
+_SOURCE_PROFILE_Q6_TAIL_CEILING_RULES = {
+    ("ethan", 2501, "public:random_avg+shape"): {
+        "min_q6_present_rate": 0.85,
+        "min_raw_total_p90_gap": 100_000.0,
+        "p90_delta": 400_000.0,
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -210,6 +217,8 @@ def advise_practical_report(
     settlement_count_prior: V3SettlementCountPriorReport | None = None,
     capacity_source_expansion: V3CapacitySourceExpansionReport | None = None,
     evidence_events: tuple[Any, ...] = (),
+    hero: str | None = None,
+    evidence_profile_key: str | None = None,
 ) -> V3PracticalAdvisoryReport:
     if posterior is None or not posterior.ready:
         return V3PracticalAdvisoryReport(
@@ -226,6 +235,30 @@ def advise_practical_report(
     lanes: list[str] = []
     risks: list[str] = []
     reasons: list[str] = []
+    source_profile = _normalized_evidence_profile_key(
+        evidence_profile_key,
+        evidence_events=evidence_events,
+    )
+
+    def apply_source_profile_ceiling(
+        advisory: V3PosteriorReport,
+    ) -> V3PosteriorReport:
+        combined = _source_profile_q6_tail_ceiling_watch(
+            advisory,
+            hero=hero,
+            evidence_profile_key=source_profile,
+        )
+        if combined is None:
+            return advisory
+        next_advisory, source_profile_reason = combined
+        lanes.append("source_profile")
+        risks.append("source_profile_q6_tail_ceiling")
+        _replace_reason_prefix(
+            reasons,
+            "source_profile_q6_tail_ceiling_shadow_only:",
+            source_profile_reason,
+        )
+        return next_advisory
 
     if formal_value is not None and formal_value.candidate:
         lanes.append("formal_value")
@@ -372,6 +405,7 @@ def advise_practical_report(
                     "q6_raw_tail_value_stress_ceiling_shadow_only:",
                     q6_value_stress_reason,
                 )
+            advisory = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -465,6 +499,7 @@ def advise_practical_report(
                 "q6_raw_tail_value_stress_ceiling_shadow_only:",
                 q6_value_stress_reason,
             )
+        advisory = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -525,6 +560,7 @@ def advise_practical_report(
                 "q6_raw_tail_value_stress_ceiling_shadow_only:",
                 q6_value_stress_reason,
             )
+        advisory = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -578,6 +614,7 @@ def advise_practical_report(
                 "q6_raw_tail_value_stress_ceiling_shadow_only:",
                 q6_value_stress_reason,
             )
+        advisory = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -618,6 +655,7 @@ def advise_practical_report(
                 "q6_raw_tail_value_stress_ceiling_shadow_only:",
                 q6_value_stress_reason,
             )
+        advisory = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -643,6 +681,7 @@ def advise_practical_report(
                 "random_avg_high_signal_ceiling_shadow_only:",
                 random_high_reason,
             )
+        advisory = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -650,6 +689,28 @@ def advise_practical_report(
             mode="q6_raw_tail_value_stress_ceiling_watch",
             status="watch_q6_raw_tail_value_stress_ceiling",
             recommendation="ceiling_watch",
+            confidence="low_medium",
+            source_lanes=_dedupe(lanes),
+            risk_flags=_dedupe(risks),
+            reason=_join_reasons(reasons),
+        )
+    source_profile_watch = _source_profile_q6_tail_ceiling_watch(
+        posterior,
+        hero=hero,
+        evidence_profile_key=source_profile,
+    )
+    if source_profile_watch is not None:
+        advisory, source_profile_reason = source_profile_watch
+        lanes.append("source_profile")
+        risks.append("source_profile_q6_tail_ceiling")
+        reasons.append(source_profile_reason)
+        return V3PracticalAdvisoryReport(
+            baseline=posterior,
+            advisory=advisory,
+            source="source_profile",
+            mode="source_profile_q6_tail_ceiling_watch",
+            status="watch_source_profile_q6_tail_ceiling",
+            recommendation="raise_watch",
             confidence="low_medium",
             source_lanes=_dedupe(lanes),
             risk_flags=_dedupe(risks),
@@ -802,6 +863,81 @@ def _map_family_from_id(map_id: int) -> str:
     if prefix in {26, 36, 46}:
         return "hidden"
     return "other"
+
+
+def _normal_hero(value: Any) -> str:
+    hero = str(value or "").strip().lower()
+    return hero or "unknown"
+
+
+def _event_targets(event: Any) -> set[str]:
+    return {str(target) for target in (getattr(event, "targets", ()) or ())}
+
+
+def _evidence_profile_key_from_events(evidence_events: tuple[Any, ...]) -> str:
+    parts: list[str] = []
+    public_flags: set[str] = set()
+    has_public_random_avg = False
+    has_category = False
+    has_item = False
+    has_shape = False
+    has_layout = False
+    for event in evidence_events:
+        targets = _event_targets(event)
+        semantic = str(getattr(event, "semantic", "") or "")
+        source_kind = str(getattr(event, "source_kind", "") or "")
+        if source_kind == "public_info":
+            if "session.total_count" in targets or "session.total_cells" in targets:
+                public_flags.add("total")
+            if "quality_ceiling" in targets:
+                public_flags.add("max_quality")
+            if "max_item_cells" in targets:
+                public_flags.add("max_item_cells")
+            if "random_avg_value" in targets or (
+                semantic.startswith("random_") and "avg" in semantic
+            ):
+                has_public_random_avg = True
+        if "category_anchors" in targets or semantic.startswith("category_"):
+            has_category = True
+        if "item_anchors" in targets:
+            has_item = True
+        if "shape_anchors" in targets:
+            has_shape = True
+        if semantic in {"all_outlines", "full_outline_session_total", "ethan_full_outline"}:
+            has_layout = True
+        if "shape_anchors" in targets and (
+            "session.total_cells" in targets or "session.total_count" in targets
+        ):
+            has_layout = True
+    public_parts = [
+        label
+        for label in ("total", "max_quality", "max_item_cells")
+        if label in public_flags
+    ]
+    if public_parts:
+        parts.append("public:" + "+".join(public_parts))
+    if has_public_random_avg:
+        parts.append("public:random_avg")
+    if has_category:
+        parts.append("tool:category")
+    if has_item:
+        parts.append("item")
+    if has_shape:
+        parts.append("shape")
+    if has_layout:
+        parts.append("layout")
+    return "+".join(parts) if parts else "basic"
+
+
+def _normalized_evidence_profile_key(
+    evidence_profile_key: str | None,
+    *,
+    evidence_events: tuple[Any, ...],
+) -> str:
+    profile = str(evidence_profile_key or "").strip()
+    if profile:
+        return profile
+    return _evidence_profile_key_from_events(evidence_events)
 
 
 def _raise_p90_by_delta(
@@ -978,6 +1114,73 @@ def _q6_prior_tail_ceiling_watch(
         f"present_rate={present_rate:.3f}:expected={prior_q6_value:.0f}:"
         f"target={tail_target:.0f}:raw_gap={raw_gap:.0f}:"
         f"p90_delta={p90_delta:.0f}"
+    )
+    return advisory, reason
+
+
+def _source_profile_q6_tail_ceiling_watch(
+    posterior: V3PosteriorReport,
+    *,
+    hero: str | None,
+    evidence_profile_key: str,
+) -> tuple[V3PosteriorReport, str] | None:
+    rule = _SOURCE_PROFILE_Q6_TAIL_CEILING_RULES.get(
+        (_normal_hero(hero), int(posterior.map_id), evidence_profile_key)
+    )
+    if rule is None:
+        return None
+    formal = posterior.formal_decision_value
+    total = posterior.total_value
+    q6_formal = posterior.q6_formal_decision_value
+    if formal is None or total is None or q6_formal is None:
+        return None
+    present_rate = _float_or_none(posterior.q6_present_rate)
+    min_present_rate = float(rule["min_q6_present_rate"])
+    if present_rate is None or present_rate < min_present_rate:
+        return None
+    raw_total_gap = max(0.0, float(total.p90) - float(formal.p90))
+    min_raw_total_gap = float(rule["min_raw_total_p90_gap"])
+    if raw_total_gap < min_raw_total_gap:
+        return None
+    p90_delta = float(rule["p90_delta"])
+    diagnostics = tuple(posterior.diagnostics) + (
+        "practical_source_profile_q6_tail_ceiling_watch",
+        f"practical_source_profile_hero={_normal_hero(hero)}",
+        f"practical_source_profile_key={evidence_profile_key}",
+        f"practical_source_profile_q6_present_rate={present_rate:.6f}",
+        f"practical_source_profile_raw_total_gap={raw_total_gap:.6f}",
+        f"practical_source_profile_p90_delta={p90_delta:.6f}",
+    )
+    advisory = V3PosteriorReport(
+        map_id=posterior.map_id,
+        map_name=posterior.map_name,
+        n_total=posterior.n_total,
+        n_matched=posterior.n_matched,
+        n_strict_matched=posterior.n_strict_matched,
+        match_scope=posterior.match_scope,
+        q6_present_rate=posterior.q6_present_rate,
+        total_cells=posterior.total_cells,
+        total_value=_raise_p90_by_delta(posterior.total_value, p90_delta),
+        formal_decision_value=_raise_p90_by_delta(formal, p90_delta),
+        tail_replacement_decision_value=_raise_p90_by_delta(
+            posterior.tail_replacement_decision_value,
+            p90_delta,
+        ),
+        q6_count=posterior.q6_count,
+        q6_cells=posterior.q6_cells,
+        q6_value=posterior.q6_value,
+        q6_formal_decision_value=_raise_p90_by_delta(q6_formal, p90_delta),
+        q6_tail_replacement_decision_value=_raise_p90_by_delta(
+            posterior.q6_tail_replacement_decision_value,
+            p90_delta,
+        ),
+        diagnostics=diagnostics,
+    )
+    reason = (
+        "source_profile_q6_tail_ceiling_shadow_only:"
+        f"hero={_normal_hero(hero)}:map_id={posterior.map_id}:"
+        f"profile={evidence_profile_key}:present_rate={present_rate:.3f}:"
+        f"raw_total_gap={raw_total_gap:.0f}:p90_delta={p90_delta:.0f}"
     )
     return advisory, reason
 

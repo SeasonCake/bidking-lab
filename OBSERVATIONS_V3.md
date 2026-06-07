@@ -6373,3 +6373,41 @@ v3_practical_p90_extreme_over_rate=0.19
 
 - top miss 中 Ethan 2501 layout 与 Aisha/Ethan villa q6 inactive 仍存在，说明 q6 count/cells gate 本身仍要做条件化。
 - 后续 sampler 应优先利用 `hero + map + round + evidence_profile`，特别是 layout/random_avg/shape 的组合，而不是继续提高全局 multiplier。
+
+## O-v3-149：Ethan 2501 random_avg+shape 是干净的 source-profile practical 补漏
+
+2026-06-07 archive 分组显示：
+
+- `ethan|2501|public:random_avg+shape` 共 18 个 ready 窗口，15 个 practical P90 miss。
+- 该 profile 的 miss median under 约 `342,574`，max under 约 `866,826`。
+- 加 `400,000` P90-only ceiling，且要求 raw total P90 gap 至少 `100,000` 后：
+  - 命中 15 个窗口中的 15 个候选行；
+  - 覆盖约 10 个原 practical P90 miss；
+  - false 行约 2 个；
+  - 按项目 normalized denominator 口径不增加整体 P90 extreme-over。
+
+接入后 64-trial archive smoke：
+
+```text
+v3_practical_candidate_rows=409
+v3_practical_raise_watch_rows=97
+v3_practical_raise_watch_hit_rate=0.649485
+v3_practical_raise_watch_miss_rate=0.175258
+v3_practical_raise_watch_false_alarm_rate=0.175258
+v3_practical_raise_watch_extreme_over_rate=0.226804
+v3_practical_raise_watch_misleading_rate=0.113402
+v3_practical_formal_p50_mae=316904.870
+v3_practical_formal_p90_coverage=0.802564
+v3_practical_formal_p90_extreme_over_rate=0.325641
+```
+
+观察：
+
+- 这是比 broad q6 multiplier 更健康的方向：命中一个已知高 miss profile，但不扩大所有沉船/别墅窗口。
+- 该规则提升 coverage，且降低 raise-watch false/extreme/misleading rate；miss rate 小幅回升是因为新增 raise-watch 分母更大。
+- 72h live brief 没变化，说明最近 live 没有命中该 profile；后续实战遇到 Ethan 2501 random_avg+shape 时应重点观察 UI 是否给出更合理的上沿。
+
+后续重点：
+
+- 下一个 profile 候选不应直接 broad 化。优先单独审查 `Aisha 2506 item+shape/shape` 与 `Ethan 2401 item+shape/layout`。
+- 若新增实战样本，优先补别墅正常样本；沉船 0605 后活动样本只作为 prior-drift/activity 鲁棒性参考。

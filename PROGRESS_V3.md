@@ -8144,3 +8144,72 @@ overall v3_practical_p90_extreme_over_rate=0.19
 - 这是目前最直接改善“实战持续低估”的 P90-only 补漏：强提醒命中明显上升，miss rate 明显下降，P50 不被带偏。
 - 代价是 raise-watch extreme-over 与 misleading 上升，尤其 live brief 的 practical extreme-over 从上一轮低位上升；因此它只能作为 UI/审计上的偏保守上限提示，不能 promotion 到正式出价。
 - 下一步仍应推进 source-aware q6 count/cells/value sampler：让 layout/random_avg/shape/round 证据决定 q6 分布移动，而不是继续叠加 broad P90 delta。
+
+## 2026-06-07 checkpoint：v3 practical source-profile q6 tail ceiling
+
+目标：
+
+- 从当前 archive top miss 中选一个最窄、可复核且不提高整体 extreme-over 的 source-aware profile，推进到 live/archive 共享 practical 层。
+- 本轮只处理 `ethan|2501|public:random_avg+shape`，不做 broad hero/map multiplier。
+
+本轮动作：
+
+- `advise_practical_report()` 增加只读 source context：
+  - `hero`
+  - `evidence_profile_key`
+  - 若未传 profile，则从 canonical evidence events 重建 profile。
+- `estimate_shadow_pipeline()` 透传 `hero` 与 `evidence_profile_key`。
+- archive evaluator 将已计算的 `evidence_profile_key` 传入 pipeline。
+- 新增 `source_profile_q6_tail_ceiling_watch`：
+  - rule=`ethan|2501|public:random_avg+shape`；
+  - `q6_present_rate >= 0.85`；
+  - `total_value.p90 - formal_decision_value.p90 >= 100,000`；
+  - practical P90 delta=`400,000`；
+  - 只抬 total/formal/tail/q6 formal P90，不抬 P50，不改变 raw q6 value；
+  - `active=false`、`affects_bid=false`。
+
+验证结果：
+
+```text
+py_compile: passed
+pytest tests/test_inference_v3_pipeline.py tests/test_live_overlay.py -q:
+53 passed
+
+archive smoke (--posterior-trials 64):
+v3_practical_candidate_rows=409
+v3_practical_raise_watch_rows=97
+v3_practical_raise_watch_hit_rate=0.649485
+v3_practical_raise_watch_miss_rate=0.175258
+v3_practical_raise_watch_false_alarm_rate=0.175258
+v3_practical_raise_watch_extreme_over_rate=0.226804
+v3_practical_raise_watch_misleading_rate=0.113402
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.802564
+v3_practical_formal_p90_extreme_over_rate=0.325641
+
+live brief (--since-hours 72):
+overall v3_practical_p90_coverage=0.67
+overall v3_practical_p90_extreme_over_rate=0.19
+```
+
+对比上一 checkpoint：
+
+- `candidate_rows`: 397 -> 409。
+- `raise_watch_rows`: 82 -> 97。
+- `raise_watch_hit_rate`: 0.646341 -> 0.649485。
+- `raise_watch_miss_rate`: 0.170732 -> 0.175258，因新增 raise-watch 分母扩大而小幅回升。
+- `false_alarm_rate`: 0.182927 -> 0.175258。
+- `raise_watch_extreme_over_rate`: 0.268293 -> 0.226804。
+- `misleading_rate`: 0.134146 -> 0.113402。
+- `P50 MAE`: 316904.870 -> 316904.870。
+- `P90 coverage`: 0.796154 -> 0.802564。
+- `P90 extreme-over`: 保持 `0.325641`。
+
+解读：
+
+- 该规则是第一个落到 shared pipeline 的 source-profile practical sampler：收益不大但非常干净，整体 P90 coverage 提升且 extreme-over 不恶化。
+- 它没有改善 72h live brief，因为最近 live top miss 不包含这个具体 archive profile；这说明规则足够窄，不会在无关局里乱抬。
+- 下一步可按同样方式处理 `Aisha 2506 item+shape/shape` 或 `Ethan 2401 item+shape/layout`，但必须逐个 profile 用 coverage/extreme/misleading 评估，避免 broad 规则回潮。

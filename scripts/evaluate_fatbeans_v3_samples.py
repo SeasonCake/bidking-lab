@@ -597,6 +597,9 @@ def _round_rows_for_events(
                 ccv_options=ccv_options,
                 prior_fields=prior_fields,
                 evidence_events=evidence_events,
+                evidence_profile_key=str(
+                    diagnostic_fields.get("evidence_profile_key") or ""
+                ),
             )
             if map_id is not None and tables is not None and posterior_trials > 0
             else None

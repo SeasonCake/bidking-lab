@@ -131,6 +131,7 @@ def estimate_shadow_pipeline(
     ccv_options: V3CcvOptions | None = None,
     prior_fields: Mapping[str, Any] | None = None,
     evidence_events: Sequence[Any] = (),
+    evidence_profile_key: str | None = None,
 ) -> V3ShadowPipelineReport:
     posterior = estimate_q6_posterior_from_truths(
         map_id=int(map_id),
@@ -227,6 +228,8 @@ def estimate_shadow_pipeline(
         settlement_count_prior=settlement_count_prior,
         capacity_source_expansion=capacity_source_expansion,
         evidence_events=tuple(evidence_events),
+        hero=hero,
+        evidence_profile_key=evidence_profile_key,
     )
     return V3ShadowPipelineReport(
         posterior=posterior,

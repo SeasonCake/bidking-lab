@@ -89,11 +89,13 @@ def _posterior_report(
     q6_value: QuantileSummary | None = None,
     q6_formal: QuantileSummary | None = None,
     formal: QuantileSummary | None = None,
+    total_value: QuantileSummary | None = None,
     tail_replacement: QuantileSummary | None = None,
 ) -> V3PosteriorReport:
     q6_value = q6_value or _q(0, 100_000, 150_000)
     q6_formal = q6_formal or q6_value
     formal = formal or _q(100_000, 300_000, 420_000)
+    total_value = total_value or formal
     tail_replacement = tail_replacement or formal
     return V3PosteriorReport(
         map_id=map_id,
@@ -104,7 +106,7 @@ def _posterior_report(
         match_scope=match_scope,
         q6_present_rate=q6_present_rate,
         total_cells=_q(20, 30, 40),
-        total_value=formal,
+        total_value=total_value,
         formal_decision_value=formal,
         tail_replacement_decision_value=tail_replacement,
         q6_count=_q(1, 1, 2),
@@ -582,6 +584,57 @@ def test_v3_practical_marks_random_avg_high_signal_as_p90_ceiling() -> None:
     assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
     assert flat["v3_practical_delta_formal_decision_value_p90"] == 155_000.0
     assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 0.0
+
+
+def test_v3_practical_marks_source_profile_q6_tail_ceiling() -> None:
+    baseline = _posterior_report(
+        map_id=2501,
+        q6_present_rate=0.9,
+        formal=_q(100_000, 300_000, 500_000),
+        total_value=_q(100_000, 300_000, 650_000),
+        q6_value=_q(0, 100_000, 180_000),
+        q6_formal=_q(0, 100_000, 180_000),
+    )
+
+    report = advise_practical_report(
+        baseline,
+        hero="ethan",
+        evidence_profile_key="public:random_avg+shape",
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_source_profile_q6_tail_ceiling"
+    assert flat["v3_practical_mode"] == "source_profile_q6_tail_ceiling_watch"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert "source_profile_q6_tail_ceiling" in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 400_000.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 400_000.0
+
+
+def test_v3_practical_keeps_source_profile_q6_tail_ceiling_profile_scoped() -> None:
+    baseline = _posterior_report(
+        map_id=2501,
+        q6_present_rate=0.9,
+        formal=_q(100_000, 300_000, 500_000),
+        total_value=_q(100_000, 300_000, 650_000),
+        q6_value=_q(0, 100_000, 180_000),
+        q6_formal=_q(0, 100_000, 180_000),
+    )
+
+    report = advise_practical_report(
+        baseline,
+        hero="ethan",
+        evidence_profile_key="item+shape",
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "baseline_passthrough"
+    assert "source_profile_q6_tail_ceiling" not in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 0.0
 
 
 def test_v3_practical_marks_low_support_q6_raw_tail_as_ceiling() -> None:
