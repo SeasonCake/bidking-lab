@@ -8355,3 +8355,82 @@ overall v3_practical_p90_extreme_over_rate=0.19
 - 这是第一个 evidence-density source-profile ceiling：它利用 shape anchor 数量，而不是只看 hero/map/profile。
 - 指标表现符合实战目标：P90 coverage 提升，raise-watch 各项质量改善，P50 MAE 不变，整体 P90 extreme-over 不变。
 - 该规则仍然只是 practical shadow 上沿；真正 v3 sampler 仍应把 q6 count/cells/value posterior 条件化，而不是继续叠加固定 delta。
+
+## 2026-06-07 checkpoint：v3 practical Aisha 2506 dense item+shape ceiling
+
+目标：
+
+- 针对当前非 hidden 剩余低估簇继续落地 practical 上沿，优先处理 `Aisha 2506 item+shape`。
+- 避免接入噪音更大的 `Aisha 2501 item+shape` broad 规则；先选择 false/misleading 更可控的沉船 profile。
+
+候选复核：
+
+- 当前 practical 后剩余 top clusters 中，非 hidden 主要包括：
+  - `Aisha 2501 item+shape`：75 行、22 miss，但 broad delta 会带来 misleading；
+  - `Aisha 2506 item+shape`：20 行、9 miss，其中 dense item+shape 子集更干净；
+  - hidden `Aisha 2601` 暂不作为主优化目标。
+- 对 `Aisha 2506 item+shape` 扫描后，条件 `shape_anchors >= 28` 且 `item_anchors >= 4` 命中 4 行：
+  - 3 行是 practical P90 miss；
+  - `500,000` P90 delta 覆盖这 3 行；
+  - 1 行 false alarm；
+  - 0 个新增 extreme-over，0 个 misleading。
+
+本轮动作：
+
+- 在 `source_profile_q6_tail_ceiling_watch` 规则表新增：
+  - key=`aisha|2506|item+shape`；
+  - `shape_anchors >= 28`；
+  - `item_anchors >= 4`；
+  - 不要求 `q6_present_rate` 或 raw total gap；
+  - practical P90 delta=`500,000`；
+  - 只抬 practical total/formal/tail/q6 formal P90，不抬 P50，不改变 raw q6 value；
+  - `active=false`、`affects_bid=false`。
+- shared v3 pipeline 新增透传 `item_anchor_count`。
+- `bounded_underestimate_repair` 分支现在可以组合 source-profile ceiling；命中 source-profile 时 recommendation 升级为 `raise_watch`，否则保持原 `ceiling_watch`。
+- 新增测试覆盖 Aisha 2506 dense item+shape 命中、item anchors 不足不命中、underestimate 分支叠加 source-profile。
+
+验证结果：
+
+```text
+py_compile: passed
+pytest tests/test_inference_v3_pipeline.py tests/test_live_overlay.py -q:
+58 passed
+
+archive smoke (--posterior-trials 64):
+v3_practical_candidate_rows=419
+v3_practical_raise_watch_rows=115
+v3_practical_raise_watch_hit_rate=0.686957
+v3_practical_raise_watch_miss_rate=0.147826
+v3_practical_raise_watch_false_alarm_rate=0.165217
+v3_practical_raise_watch_extreme_over_rate=0.191304
+v3_practical_raise_watch_misleading_rate=0.095652
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.812821
+v3_practical_formal_p90_extreme_over_rate=0.325641
+
+live brief (--since-hours 72):
+overall v3_practical_p90_coverage=0.67
+overall v3_practical_p90_extreme_over_rate=0.19
+```
+
+对比上一 checkpoint：
+
+- `candidate_rows`: 419 -> 419。
+- `raise_watch_rows`: 111 -> 115。
+- `raise_watch_hit_rate`: 0.684685 -> 0.686957。
+- `raise_watch_miss_rate`: 0.153153 -> 0.147826。
+- `false_alarm_rate`: 0.162162 -> 0.165217。
+- `raise_watch_extreme_over_rate`: 0.198198 -> 0.191304。
+- `misleading_rate`: 0.099099 -> 0.095652。
+- `P50 MAE`: 316904.870 -> 316904.870。
+- `P90 coverage`: 0.810897 -> 0.812821。
+- `P90 extreme-over`: 保持 `0.325641`。
+
+解读：
+
+- 这条规则的收益是小而实用：coverage 继续提升，miss/extreme/misleading 降低，但 false alarm 率小幅上升。
+- 因为它会把部分 underestimate-only ceiling 升级为 raise-watch，所以只适合 v3 practical shadow，不适合 formal 或正式出价。
+- 下一个主线仍应是 q6 count/cells/value 条件 sampler；继续加固定 delta 的边际收益正在下降。

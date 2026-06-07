@@ -230,6 +230,9 @@ def estimate_shadow_pipeline(
         evidence_events=tuple(evidence_events),
         hero=hero,
         evidence_profile_key=evidence_profile_key,
+        item_anchor_count=(
+            len(constraints.item_anchors) if constraints is not None else None
+        ),
         shape_anchor_count=(
             len(constraints.shape_anchors) if constraints is not None else None
         ),

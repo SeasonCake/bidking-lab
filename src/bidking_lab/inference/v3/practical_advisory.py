@@ -69,6 +69,13 @@ _SOURCE_PROFILE_Q6_TAIL_CEILING_RULES = {
         "min_shape_anchors": 33,
         "p90_delta": 1_000_000.0,
     },
+    ("aisha", 2506, "item+shape"): {
+        "min_q6_present_rate": 0.0,
+        "min_raw_total_p90_gap": 0.0,
+        "min_shape_anchors": 28,
+        "min_item_anchors": 4,
+        "p90_delta": 500_000.0,
+    },
 }
 
 
@@ -230,6 +237,7 @@ def advise_practical_report(
     evidence_events: tuple[Any, ...] = (),
     hero: str | None = None,
     evidence_profile_key: str | None = None,
+    item_anchor_count: int | None = None,
     shape_anchor_count: int | None = None,
 ) -> V3PracticalAdvisoryReport:
     if posterior is None or not posterior.ready:
@@ -254,15 +262,16 @@ def advise_practical_report(
 
     def apply_source_profile_ceiling(
         advisory: V3PosteriorReport,
-    ) -> V3PosteriorReport:
+    ) -> tuple[V3PosteriorReport, bool]:
         combined = _source_profile_q6_tail_ceiling_watch(
             advisory,
             hero=hero,
             evidence_profile_key=source_profile,
+            item_anchor_count=item_anchor_count,
             shape_anchor_count=shape_anchor_count,
         )
         if combined is None:
-            return advisory
+            return advisory, False
         next_advisory, source_profile_reason = combined
         lanes.append("source_profile")
         risks.append("source_profile_q6_tail_ceiling")
@@ -271,7 +280,7 @@ def advise_practical_report(
             "source_profile_q6_tail_ceiling_shadow_only:",
             source_profile_reason,
         )
-        return next_advisory
+        return next_advisory, True
 
     if formal_value is not None and formal_value.candidate:
         lanes.append("formal_value")
@@ -418,7 +427,7 @@ def advise_practical_report(
                     "q6_raw_tail_value_stress_ceiling_shadow_only:",
                     q6_value_stress_reason,
                 )
-            advisory = apply_source_profile_ceiling(advisory)
+            advisory, _source_profile_applied = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -432,14 +441,18 @@ def advise_practical_report(
             reason=_join_reasons(reasons),
         )
     if underestimate is not None and underestimate.candidate:
+        advisory = underestimate.posterior
+        source_profile_applied = False
+        if advisory is not None:
+            advisory, source_profile_applied = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
-            advisory=underestimate.posterior,
+            advisory=advisory,
             source="underestimate",
             mode="bounded_underestimate_repair",
             status="watch_raise_candidate",
-            recommendation="ceiling_watch",
-            confidence="low_medium",
+            recommendation="raise_watch" if source_profile_applied else "ceiling_watch",
+            confidence="medium_low" if source_profile_applied else "low_medium",
             source_lanes=_dedupe(lanes),
             risk_flags=_dedupe(risks),
             reason=_join_reasons(reasons),
@@ -512,7 +525,7 @@ def advise_practical_report(
                 "q6_raw_tail_value_stress_ceiling_shadow_only:",
                 q6_value_stress_reason,
             )
-        advisory = apply_source_profile_ceiling(advisory)
+        advisory, _source_profile_applied = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -573,7 +586,7 @@ def advise_practical_report(
                 "q6_raw_tail_value_stress_ceiling_shadow_only:",
                 q6_value_stress_reason,
             )
-        advisory = apply_source_profile_ceiling(advisory)
+        advisory, _source_profile_applied = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -627,7 +640,7 @@ def advise_practical_report(
                 "q6_raw_tail_value_stress_ceiling_shadow_only:",
                 q6_value_stress_reason,
             )
-        advisory = apply_source_profile_ceiling(advisory)
+        advisory, _source_profile_applied = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -668,7 +681,7 @@ def advise_practical_report(
                 "q6_raw_tail_value_stress_ceiling_shadow_only:",
                 q6_value_stress_reason,
             )
-        advisory = apply_source_profile_ceiling(advisory)
+        advisory, _source_profile_applied = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -694,7 +707,7 @@ def advise_practical_report(
                 "random_avg_high_signal_ceiling_shadow_only:",
                 random_high_reason,
             )
-        advisory = apply_source_profile_ceiling(advisory)
+        advisory, _source_profile_applied = apply_source_profile_ceiling(advisory)
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -711,6 +724,7 @@ def advise_practical_report(
         posterior,
         hero=hero,
         evidence_profile_key=source_profile,
+        item_anchor_count=item_anchor_count,
         shape_anchor_count=shape_anchor_count,
     )
     if source_profile_watch is not None:
@@ -1137,6 +1151,7 @@ def _source_profile_q6_tail_ceiling_watch(
     *,
     hero: str | None,
     evidence_profile_key: str,
+    item_anchor_count: int | None,
     shape_anchor_count: int | None,
 ) -> tuple[V3PosteriorReport, str] | None:
     rule = _SOURCE_PROFILE_Q6_TAIL_CEILING_RULES.get(
@@ -1157,6 +1172,10 @@ def _source_profile_q6_tail_ceiling_watch(
     if min_shape_anchors is not None:
         if shape_anchor_count is None or int(shape_anchor_count) < int(min_shape_anchors):
             return None
+    min_item_anchors = rule.get("min_item_anchors")
+    if min_item_anchors is not None:
+        if item_anchor_count is None or int(item_anchor_count) < int(min_item_anchors):
+            return None
     raw_total_gap = max(0.0, float(total.p90) - float(formal.p90))
     min_raw_total_gap = float(rule["min_raw_total_p90_gap"])
     if raw_total_gap < min_raw_total_gap:
@@ -1167,6 +1186,7 @@ def _source_profile_q6_tail_ceiling_watch(
         f"practical_source_profile_hero={_normal_hero(hero)}",
         f"practical_source_profile_key={evidence_profile_key}",
         f"practical_source_profile_q6_present_rate={present_rate:.6f}",
+        f"practical_source_profile_item_anchors={item_anchor_count}",
         f"practical_source_profile_shape_anchors={shape_anchor_count}",
         f"practical_source_profile_raw_total_gap={raw_total_gap:.6f}",
         f"practical_source_profile_p90_delta={p90_delta:.6f}",
@@ -1200,6 +1220,7 @@ def _source_profile_q6_tail_ceiling_watch(
         "source_profile_q6_tail_ceiling_shadow_only:"
         f"hero={_normal_hero(hero)}:map_id={posterior.map_id}:"
         f"profile={evidence_profile_key}:present_rate={present_rate:.3f}:"
+        f"item_anchors={item_anchor_count}:"
         f"shape_anchors={shape_anchor_count}:"
         f"raw_total_gap={raw_total_gap:.0f}:p90_delta={p90_delta:.0f}"
     )

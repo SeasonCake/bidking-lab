@@ -8,8 +8,10 @@ from bidking_lab.inference.v3 import (
     EvidenceEvent,
     FeasibleSummaryReport,
     FormalValueStressDetail,
+    UnderestimateRepairEntry,
     V3CcvOptions,
     V3FormalValueSamplerReport,
+    V3UnderestimateRepairReport,
     V3PosteriorReport,
     advise_practical_report,
     estimate_shadow_pipeline,
@@ -689,6 +691,73 @@ def test_v3_practical_keeps_ethan_villa_dense_shape_ceiling_shape_scoped() -> No
         hero="ethan",
         evidence_profile_key="item+shape",
         shape_anchor_count=32,
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "baseline_passthrough"
+    assert "source_profile_q6_tail_ceiling" not in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 0.0
+
+
+def test_v3_practical_marks_aisha_shipwreck_dense_item_shape_ceiling() -> None:
+    baseline = _posterior_report(
+        map_id=2506,
+        q6_present_rate=0.3,
+        formal=_q(100_000, 700_000, 1_120_000),
+        total_value=_q(100_000, 700_000, 1_120_000),
+        q6_value=_q(0, 250_000, 700_000),
+        q6_formal=_q(0, 250_000, 700_000),
+    )
+    underestimate = V3UnderestimateRepairReport(
+        baseline=baseline,
+        hero="aisha",
+        entry=UnderestimateRepairEntry(
+            hero="aisha",
+            map_id=2506,
+            status="watch_only_upshift_candidate",
+            gate_reason="bounded_hero_map_upshift",
+            scale=1.02,
+        ),
+    )
+
+    report = advise_practical_report(
+        baseline,
+        underestimate=underestimate,
+        hero="aisha",
+        evidence_profile_key="item+shape",
+        item_anchor_count=4,
+        shape_anchor_count=28,
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_raise_candidate"
+    assert flat["v3_practical_mode"] == "bounded_underestimate_repair"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert "underestimate_repair_candidate" in flat["v3_practical_risk_flags"]
+    assert "source_profile_q6_tail_ceiling" in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 14_000.0
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 522_400.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 514_000.0
+
+
+def test_v3_practical_keeps_aisha_shipwreck_dense_item_shape_item_scoped() -> None:
+    baseline = _posterior_report(
+        map_id=2506,
+        q6_present_rate=0.3,
+        formal=_q(100_000, 700_000, 1_120_000),
+        total_value=_q(100_000, 700_000, 1_120_000),
+        q6_value=_q(0, 250_000, 700_000),
+        q6_formal=_q(0, 250_000, 700_000),
+    )
+
+    report = advise_practical_report(
+        baseline,
+        hero="aisha",
+        evidence_profile_key="item+shape",
+        item_anchor_count=3,
+        shape_anchor_count=28,
     )
     flat = report.to_flat_dict()
 

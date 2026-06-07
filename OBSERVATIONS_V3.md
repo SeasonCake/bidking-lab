@@ -6493,3 +6493,37 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 - `Ethan 2401 item+shape` 不是“不该补”，而是不能用 broad 补；shape anchor 密度是当前可落地的区分条件。
 - 该规则改善 P90 coverage 和 raise-watch 质量，且不动 P50、不增加整体 extreme-over，适合进入 v3 practical shadow。
 - 后续正式 v3 sampler 应把 shape anchors 作为 q6 count/cells/value likelihood 的输入，而不是长期依赖固定 delta。
+
+## O-v3-153：Aisha 2506 item+shape 的 clean 子集需要 item+shape 双密度门槛
+
+2026-06-07 复盘当前 practical 后剩余低估：
+
+- 非 hidden 最大簇仍包括 `Aisha 2501 item+shape` 和 `Aisha 2506 item+shape`。
+- `Aisha 2501 item+shape` 行数更多、miss 更多，但 broad delta 和简单 shape/item/round 门槛容易带来 misleading，不适合本轮落地。
+- `Aisha 2506 item+shape` 中，`shape_anchors >= 28` 且 `item_anchors >= 4` 是当前更干净的子集：
+  - 选中 4 行；
+  - 3 行原本 practical P90 miss；
+  - `500,000` P90 delta 覆盖 3 行；
+  - 1 行 false alarm；
+  - 0 个新增 extreme-over，0 个 misleading。
+
+接入后 64-trial archive smoke：
+
+```text
+v3_practical_candidate_rows=419
+v3_practical_raise_watch_rows=115
+v3_practical_raise_watch_hit_rate=0.686957
+v3_practical_raise_watch_miss_rate=0.147826
+v3_practical_raise_watch_false_alarm_rate=0.165217
+v3_practical_raise_watch_extreme_over_rate=0.191304
+v3_practical_raise_watch_misleading_rate=0.095652
+v3_practical_formal_p50_mae=316904.870
+v3_practical_formal_p90_coverage=0.812821
+v3_practical_formal_p90_extreme_over_rate=0.325641
+```
+
+观察：
+
+- 该规则主要把已有 `bounded_underestimate_repair` ceiling 中的 dense evidence 行升级为 `raise_watch`，不是改变正式估值。
+- 它的 tradeoff 很明确：false alarm rate 小幅上升，但 miss、extreme-over、misleading 均下降，适合实战参考上沿。
+- 继续固定 delta 的收益已经很小；后续更高价值方向是把 item/shape density 显式进入 q6 count/cells/value likelihood。
