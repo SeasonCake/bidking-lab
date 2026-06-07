@@ -46,6 +46,7 @@
 | `scripts/summarize_v3_capacity_source_expansion_prebid_guard.py` | v3 capacity/source expansion prebid guard 审计，将 archive prebid rows 与 settlement source-semantics truth 按 capture file 合并，验证 pressure tier 的 window/session recall、precision 与 false positive |
 | `scripts/summarize_v3_capacity_source_expansion_payload_only_audit.py` | v3 capacity/source expansion payload-only truth 审计，将 settlement source context、map-id holdout miss、prebid pressure windows 与 action payload shape 按 capture file 合并，拆分 empty-action numeric-only 与 partial-action item reveal 缺口 |
 | `scripts/summarize_v3_capacity_source_expansion_source_key_holdout.py` | v3 capacity/source expansion source-key holdout 审计，比较 map_id/map_family/action payload shape/numeric signature 作为 source-aware prior key 的 recall、precision 与 missed examples |
+| `scripts/summarize_v3_capacity_source_expansion_support_depth_holdout.py` | v3 capacity/source expansion support-depth holdout 审计，比较 primary/fallback group 的 train source support 阈值、source evidence 类型、recall、precision 与 missed examples |
 | `scripts/summarize_v3_activity_mapping_likelihood.py` | v3 252x activity missing-table 候选映射审计，比较 `252x->251x` 与 `252x->250x` 的 settlement quality likelihood，只作为 table/activity 语义证据 |
 | `scripts/summarize_v3_scp_formal_value_link.py` | v3 settlement count-prior evidence 与 formal/value stress 的 archive 关联审计，量化 `v3_scp` candidate 与 value-floor/capacity watch 的交集 |
 | `scripts/summarize_v3_scp_count_value_bridge.py` | v3 settlement count-prior count->cells/value bridge archive 审计，量化 count gap、cells p90 undercoverage 与 formal p90 undercoverage 的交集 |
@@ -93,6 +94,7 @@
 | `tests/test_summarize_v3_capacity_source_expansion_prebid_guard.py` | v3 capacity/source expansion prebid guard 测试，覆盖 pressure tier 的 row/session recall 与 precision |
 | `tests/test_summarize_v3_capacity_source_expansion_payload_only_audit.py` | v3 capacity/source expansion payload-only 审计测试，覆盖 holdout miss、prebid pressure、action payload shape 与 context 分组 |
 | `tests/test_summarize_v3_capacity_source_expansion_source_key_holdout.py` | v3 capacity/source expansion source-key holdout 测试，覆盖 action shape 注入、fold train support、candidate precision 与 singleton map-id miss |
+| `tests/test_summarize_v3_capacity_source_expansion_support_depth_holdout.py` | v3 capacity/source expansion support-depth holdout 测试，覆盖 fallback support 阈值、fold train exclusion 与 external filter |
 | `tests/test_summarize_v3_activity_mapping_likelihood.py` | v3 252x activity candidate mapping likelihood 审计测试 |
 | `tests/test_summarize_v3_scp_formal_value_link.py` | v3 settlement count-prior 到 formal/value stress 关联审计测试 |
 | `tests/test_summarize_v3_scp_count_value_bridge.py` | v3 settlement count-prior count->cells/value bridge 审计测试 |
@@ -164,9 +166,9 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 
 当前脚本规模：
 
-- Python scripts：120
+- Python scripts：121
 - PowerShell scripts：13
-- test files：128
+- test files：129
 
 策略：
 

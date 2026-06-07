@@ -5892,3 +5892,66 @@ miss examples 仍集中在 support-depth：
 - action shape/signature 是解释字段，不是当前可推广的 prior key。
 - `map_id+shape/signature` 的 precision 提升来自减少 candidate rows，但代价是漏掉更多 truth rows。
 - 要继续提升 CSE prior，需要获得同 map/source support、活动/远端表或 prebid 可见 source-pressure 信号，而不是直接把 post-settlement action shape 接入 prior。
+
+## O-v3-134：support-depth holdout 显示 fallback 可限流但 primary map-id 不宜加阈值
+
+2026-06-07 新增 CSE support-depth holdout 审计。
+
+验证命令：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_support_depth_holdout.py --top 12 --format summary
+python scripts\summarize_v3_capacity_source_expansion_support_depth_holdout.py --fallback-group-by none --source-filter-pair all --min-train-source-rows 1 --min-train-source-rows 2 --min-train-source-rows 3 --top 8 --format summary
+```
+
+pure map-id：
+
+```text
+min_source=1:
+  candidate_rows=202 covered=18 missed=3 fp=184
+  recall=0.857143 precision=0.089109
+
+min_source=2:
+  candidate_rows=139 covered=10 missed=11 fp=129
+  recall=0.47619 precision=0.071942
+
+min_source=3:
+  candidate_rows=90 covered=7 missed=14 fp=83
+  recall=0.333333 precision=0.077778
+```
+
+map-id primary + map-family fallback：
+
+```text
+all:all min_source=1:
+  candidate_rows=419 covered=21 missed=0 fp=398
+  recall=1.0 precision=0.050119
+
+all:all min_source=3:
+  candidate_rows=231 covered=19 missed=2 fp=212
+  recall=0.904762 precision=0.082251
+
+external:external min_source=1:
+  candidate_rows=231 covered=19 missed=2 fp=212
+  recall=0.904762 precision=0.082251
+```
+
+remaining misses：
+
+```text
+2410 numeric-only:
+  primary_group=2410 primary_train_source=0
+  fallback_group=villa fallback_train_source=1
+  excess=3
+
+2408 partial-action:
+  primary_group=2408 primary_train_source=0
+  fallback_group=villa fallback_train_source=1
+  excess=2
+```
+
+解读：
+
+- 对 map-id primary 加 source-depth 阈值是负结果；它会漏掉大量已有 truth。
+- 对 fallback 加 source-depth 阈值有正向价值；它能把 full-recall map-family fallback 的 false positives 从 398 降到 212，但仍不是 promotion-ready。
+- 2410/2408 的剩余缺口不是阈值问题，而是 fallback group 内 source support 不足；需要 source/table acquisition 或新增样本。

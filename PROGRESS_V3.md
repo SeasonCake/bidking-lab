@@ -7349,3 +7349,74 @@ readiness:
 - `map_id_source_shape` / `map_id_source_shape_signature` 只有小幅 precision 改善，但召回从 18/21 降到 17/21，并引入更多 sample-limited groups。
 - 2509、2410、2408 仍是 train source support=0 的漏召回样本；shape/signature 不能解决 singleton/support-depth blocker。
 - 当前不能把 action payload shape 或 numeric signature 接入默认 source-aware prior；下一步仍需要 source/table acquisition、更多同 source support 样本，或更强的 prebid 可见 pressure/source signal。
+
+## 2026-06-07 checkpoint：CSE support-depth fallback holdout 矩阵
+
+本轮新增 support-depth holdout 审计，验证“训练折 source-semantics 支持条数”和“source evidence 类型”是否能让 map-id/fallback CSE candidate 更接近可复核 source-aware prior。
+
+改动：
+
+- `scripts/summarize_v3_capacity_source_expansion_support_depth_holdout.py`：
+  - 以 `map_id` 为 primary group，支持可选 fallback group（默认 `none,map_family`）；
+  - 支持 source filter pairs：`all:all`、`external:external`、`payload:payload`、`partial_payload:partial_payload`、`all:external`、`external:all`；
+  - 对 `min_train_source_rows=1..5` 做 session holdout，输出 primary/fallback candidate rows、covered/missed/false-positive、recall、precision、train source depth 与 missed examples。
+- `tests/test_summarize_v3_capacity_source_expansion_support_depth_holdout.py` 覆盖 fallback support 阈值、fold train exclusion 与 external filter 不计 payload source。
+
+验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_capacity_source_expansion_support_depth_holdout.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_source_expansion_support_depth_holdout.py -q
+python scripts\summarize_v3_capacity_source_expansion_support_depth_holdout.py --top 12 --format summary
+python scripts\summarize_v3_capacity_source_expansion_support_depth_holdout.py --fallback-group-by none --source-filter-pair all --min-train-source-rows 1 --min-train-source-rows 2 --min-train-source-rows 3 --top 8 --format summary
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format summary
+```
+
+真实结果：
+
+```text
+pure map_id / all source:
+  min_source=1 candidate_rows=202 covered=18 missed=3 fp=184
+  recall=0.857143 precision=0.089109
+  min_source=2 candidate_rows=139 covered=10 missed=11 fp=129
+  recall=0.47619 precision=0.071942
+  min_source=3 candidate_rows=90 covered=7 missed=14 fp=83
+  recall=0.333333 precision=0.077778
+
+map_id primary + map_family fallback / all:all:
+  min_source=1 candidate_rows=419 covered=21 missed=0 fp=398
+  recall=1.0 precision=0.050119
+  min_source=3 candidate_rows=231 covered=19 missed=2 fp=212
+  recall=0.904762 precision=0.082251
+
+map_id primary + map_family fallback / external:external:
+  min_source=1 candidate_rows=231 covered=19 missed=2 fp=212
+  recall=0.904762 precision=0.082251
+
+readiness:
+  overall_status=not_ready
+  capacity_source_expansion_shadow=watch
+  cse_candidate_rows=752
+  cse_pressure_candidate_rows=61
+  cse_active_rows=0
+```
+
+missed examples for support-depth candidate：
+
+```text
+2410 numeric-only:
+  primary_group=2410 primary_train_source=0
+  fallback_group=villa fallback_train_source=1
+  excess=3
+
+2408 partial-action:
+  primary_group=2408 primary_train_source=0
+  fallback_group=villa fallback_train_source=1
+  excess=2
+```
+
+解读：
+
+- 对 pure `map_id` candidate 提高 train source 阈值会显著降低 recall，且 precision 不升；不能作为默认收窄策略。
+- 对 fallback 限流有价值：`map_id -> map_family` 且 `min_source>=3` 将 broad fallback precision 从 `0.050119` 提到 `0.082251`，仍覆盖 19/21。
+- 该 support-depth fallback 仍低于 pure `map_id` precision，且继续漏 2410/2408；只能作为下一轮 source-aware prior candidate 审计，不得接入 formal/live。

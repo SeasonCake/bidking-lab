@@ -2663,3 +2663,19 @@ applied_hurts=2502
 - `map_id_source_shape_signature` precision 提到 0.111842，但 recall 降至 0.809524，miss 从 3 增至 4。
 - 2509、2410、2408 仍是 train source support=0 的漏召回样本；shape/signature 不解决 singleton/support-depth blocker。
 - 因此当前 blocker 的下一步仍是 source/table acquisition、同 source support 补样或 prebid pressure/source signal，而不是 shape/signature prior 化。
+
+## D-v3-130：CSE support-depth 只能用于 fallback 限流审计，不能直接作为默认 prior
+
+2026-06-07 起，当前决策：
+
+- 对 pure `map_id` CSE candidate，不得简单提高 `min_train_source_rows` 作为默认收窄策略；真实 holdout 显示这会大幅降低 recall 且不提升 precision。
+- `map_id -> map_family` fallback 可以增加 support-depth 阈值做 audit-only candidate；当前最有价值的候选是 `all:all min_source>=3` 或 `external:external min_source=1`，覆盖 19/21，precision 0.082251。
+- 该候选仍不得接入 `v3_cse_*` 默认 artifact、sampler cap、readiness/promotion gate 或正式出价；后续若要推进，必须先结合 prebid 可见 signal/live model_eval 与更多 support 样本验证。
+- 2410 与 2408 仍是 fallback support-depth miss；它们需要新增 source/table acquisition 或同 source support 样本，而不是继续调阈值。
+
+原因：
+
+- pure `map_id all`：`min_source=1` recall 0.857143 / precision 0.089109；`min_source=2` recall 0.47619 / precision 0.071942；`min_source=3` recall 0.333333 / precision 0.077778。
+- `map_id -> map_family all:all`：`min_source=1` recall 1.0 / precision 0.050119；`min_source=3` recall 0.904762 / precision 0.082251。
+- `external:external min_source=1` 也得到 recall 0.904762 / precision 0.082251，但仍漏 2410 numeric-only 与 2408 partial-action。
+- 该矩阵说明 support-depth 有助于限制 broad fallback false positives，但还没有达到可推广 source-aware prior 的证据强度。
