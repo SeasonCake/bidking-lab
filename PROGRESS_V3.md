@@ -7233,3 +7233,55 @@ partial-action miss:
 - 18 条 payload-only truth 全部至少被 broad `v3_cse_candidate` prebid windows 看到，但只有 8 条进入 pressure tier；pressure 有复盘价值，但不能作为完整召回 prior。
 - 3 条 exact map-id miss 全在 payload-only：2 条 empty-action、1 条 partial-action；这更支持下一步优先查 action-result parser/source acquisition 与 support-depth，而不是调 formal/value sampler。
 - empty-action rows 的 action observed max 全为 0、action gap 很大，是最强的 source parser/table acquisition 目标；partial-action rows 至少有少量 action observed items，但仍存在大 gap。
+
+## 2026-06-07 checkpoint：payload-only action payload shape 审计
+
+本轮在 payload-only CSE 审计中加入 action-result raw payload shape 分类，确认 empty-action 与 partial-action 的真实差异，避免把 numeric source 误判成 item parser 漏解。
+
+改动：
+
+- `scripts/summarize_v3_capacity_source_expansion_payload_only_audit.py`：
+  - 对 payload-only truth rows 对应 capture 解析 action-result raw blocks；
+  - 新增 `source_action_payload_shape_class`，区分 `numeric_only_result`、`item_reveal_payload`、`unparsed_item_payload` 等；
+  - 输出 action ids、result fields、item payload block 数、单 action block 最大 item 数与 observed item max；
+  - 保持 audit-only，不改变 CSE artifact、archive evaluator、live `model_eval` 的出价语义。
+- `tests/test_summarize_v3_capacity_source_expansion_payload_only_audit.py`：
+  - 覆盖 source shape 注入、context 分组与 numeric/item payload 汇总。
+
+验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_capacity_source_expansion_payload_only_audit.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_source_expansion_payload_only_audit.py -q
+python scripts\summarize_v3_capacity_source_expansion_payload_only_audit.py --posterior-trials 64 --top 8 --format summary
+```
+
+真实结果：
+
+```text
+payload_truth_rows=18
+payload_source_shapes=item_reveal_payload:15,numeric_only_result:3
+parse_errors=0 source_shape_parse_errors=0
+
+payload_verified_empty_action_results:
+  rows=3 maps=2410:1,2501:1,2509:1
+  source_shapes=numeric_only_result:3
+  source_action_ids=100105:13,100104:9,100124:6,100107:3
+  source_result_fields=14:25,12:6
+  source_item_payload_block_max=0
+  source_observed_item_max=0
+
+payload_verified_partial_action_only:
+  rows=15 maps=2501:5,2503:2,2504:2,2508:2,2510:2,2408:1,2506:1
+  source_shapes=item_reveal_payload:15
+  source_action_ids=100136:43,100129:42,100128:24,100107:17,100158:13,100105:13,100104:10,100152:9
+  source_item_payload_block_max avg=5.867 max=25
+  source_observed_item_max avg=5.867 max=25
+```
+
+解读：
+
+- 3 条 empty-action truth 不是 item reveal parser 漏解；它们的 direct action payload 只有 numeric result fields，没有 field 8 item list。
+- empty-action 的 blocker 应改写为 numeric action source semantics / table support-depth / server-side settlement expansion 解释，而不是继续找 item payload parser。
+- 15 条 partial-action truth 均为 item reveal payload，但 observed item max 仍远低于 settlement inventory；这支持 session-capacity/source semantics 的弱线索，仍不能作为 full external confirmation。
+- exact map-id miss 中的 2509、2410 属于 numeric-only support-depth 缺口，2408 属于 item-reveal partial support-depth 缺口；下一步仍应做 source/table acquisition 或更细 source semantics，不恢复 formal/value sampler 调参。

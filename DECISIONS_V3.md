@@ -2628,3 +2628,21 @@ applied_hurts=2502
 - map-id holdout 的 3 条 miss 全在 payload-only：2509/2410 是 empty-action，2408 是 partial-action。
 - 18 条 payload-only 全部有 broad prebid CSE candidate window，但只有 8 条有 pressure window；pressure 对 recall 不足。
 - empty-action 3 条 action max 全为 0、action gap 平均 60；partial-action 15 条 action max 平均 5.867、action gap 平均 53.467，二者都仍需要 source parser/table evidence。
+
+## D-v3-128：empty-action CSE truth 归类为 numeric-only source semantics，不再优先按 item parser 漏解处理
+
+2026-06-07 起，当前决策：
+
+- `payload_verified_empty_action_results` 的 3 条 CSE truth 归类为 `numeric_only_result` action source。
+- 这些 rows 的 action result payload 没有 field 8 item list；不得继续把它们描述成 item reveal parser 未解码。
+- empty-action 后续检查重点改为 numeric action source semantics、table/support-depth、server-side settlement expansion 或 per-session/external overlay 机制。
+- `payload_verified_partial_action_only` 仍作为 item reveal payload 的弱外部线索；它能证明部分 item 被 action/source 暴露，但不能证明完整 inventory。
+- 该分类只用于 audit/readiness 解释，不得作为 formal/value sampler 参数、默认 CSE prior、promotion gate 或正式出价输入。
+
+原因：
+
+- payload-only action shape 审计显示 18 条 payload-only truth 中 `item_reveal_payload:15`、`numeric_only_result:3`。
+- 3 条 empty-action rows 全部 `source_item_payload_block_max=0`、`source_observed_item_max=0`，action ids 为 `100105/100104/100124/100107` 等 numeric cells/value result。
+- 15 条 partial-action rows 全部 `item_reveal_payload`，其 `source_observed_item_max` 与既有 `action_max` 一致，平均 5.867、最大 25，仍显著低于 settlement inventory。
+- exact map-id miss 的 2509、2410 是 numeric-only support-depth 缺口；2408 是 item-reveal partial support-depth 缺口。
+- 因此当前 blocker 仍未达到恢复 formal/value sampler 调参或 v3 promotion 的条件。

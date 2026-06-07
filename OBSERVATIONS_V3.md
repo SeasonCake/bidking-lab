@@ -5756,3 +5756,74 @@ map-id miss examples：
 - payload-only 不再是单一 blocker：empty-action 更像 source parser/action-result decode 问题，partial-action 更像 session-capacity source semantics 的弱外部线索。
 - 3 条 exact map-id miss 全部是 `train_source=0` 的 support-depth 问题；pressure 能覆盖 2509/2408，但覆盖不了 2410。
 - 下一步要优先拆 action-result payload / source parser，而不是在现有 fields 上继续组合 fallback。
+
+## O-v3-132：payload-only action shape 显示 empty-action 是 numeric-only，不是 item payload 缺解
+
+2026-06-07 对 payload-only CSE truth rows 增加 action-result payload shape 审计。
+
+验证命令：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_payload_only_audit.py --posterior-trials 64 --top 8 --format summary
+```
+
+总体：
+
+```text
+payload_truth_rows=18
+payload_source_shapes=item_reveal_payload:15,numeric_only_result:3
+parse_errors=0
+source_shape_parse_errors=0
+```
+
+empty-action：
+
+```text
+payload_verified_empty_action_results:
+  rows=3 maps=2410:1,2501:1,2509:1
+  missed=2 prebid_candidate=3 prebid_pressure=1
+  source_shapes=numeric_only_result:3
+  source_action_ids=100105:13,100104:9,100124:6,100107:3
+  source_result_fields=14:25,12:6
+  source_item_payload_block_max=0
+  source_observed_item_max=0
+```
+
+partial-action：
+
+```text
+payload_verified_partial_action_only:
+  rows=15 maps=2501:5,2503:2,2504:2,2508:2,2510:2,2408:1,2506:1
+  missed=1 prebid_candidate=15 prebid_pressure=7
+  source_shapes=item_reveal_payload:15
+  source_item_payload_block_max avg=5.867 max=25
+  source_observed_item_max avg=5.867 max=25
+```
+
+复核样本：
+
+```text
+2509 empty-action miss:
+  source_shape=numeric_only_result
+  source_action_ids=100105:6,100104:5,100124:4,100107:3
+  source_item_payload_block_max=0
+  source_observed_item_max=0
+
+2410 empty-action miss:
+  source_shape=numeric_only_result
+  source_action_ids=100105:2
+  source_item_payload_block_max=0
+  source_observed_item_max=0
+
+2408 partial-action miss:
+  source_shape=item_reveal_payload
+  source_action_ids=100136:6,100129:5,100128:4,100107:3
+  source_item_payload_block_max=4
+  source_observed_item_max=4
+```
+
+解读：
+
+- empty-action rows 的 raw action payload 没有 item list，因此不是当前 Fatbeans item parser 漏掉 field 8。
+- 这些 rows 的核心冲突是 numeric action source 与 settlement inventory/drop-cap 的语义关系，仍需 table/support-depth、server expansion 或 per-session overlay 解释。
+- partial-action rows 的 item parser 路径可工作，但最多只解释部分 inventory；不能作为 full source confirmation。
