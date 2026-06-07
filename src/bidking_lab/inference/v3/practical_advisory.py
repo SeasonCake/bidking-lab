@@ -29,6 +29,8 @@ from bidking_lab.inference.v3.underestimate_repair import (
     V3UnderestimateRepairReport,
 )
 
+_Q6_PRIOR_FLOOR_MIN_VALUE_GAP = 100_000.0
+
 
 @dataclass(frozen=True)
 class V3PracticalAdvisoryReport:
@@ -173,6 +175,16 @@ def advise_practical_report(
         risks.append("capacity_cells_drift")
         reasons.append(formal_value.gate_reason)
 
+    q6_prior_floor = _q6_prior_floor_watch(
+        posterior,
+        formal_value,
+    )
+    if q6_prior_floor is not None:
+        lanes.append("formal_value")
+        lanes.append("prior_q6_floor")
+        risks.append("q6_prior_floor_watch")
+        reasons.append(q6_prior_floor[1])
+
     if underestimate is not None and underestimate.candidate:
         lanes.append("underestimate")
         risks.append("underestimate_repair_candidate")
@@ -236,6 +248,20 @@ def advise_practical_report(
             status="watch_raise_candidate",
             recommendation="raise_watch",
             confidence="medium_low",
+            source_lanes=_dedupe(lanes),
+            risk_flags=_dedupe(risks),
+            reason=_join_reasons(reasons),
+        )
+    if q6_prior_floor is not None:
+        advisory, _reason = q6_prior_floor
+        return V3PracticalAdvisoryReport(
+            baseline=posterior,
+            advisory=advisory,
+            source="q6_prior_floor",
+            mode="q6_prior_floor_watch",
+            status="watch_q6_prior_floor",
+            recommendation="raise_watch",
+            confidence="low_medium",
             source_lanes=_dedupe(lanes),
             risk_flags=_dedupe(risks),
             reason=_join_reasons(reasons),
@@ -330,6 +356,94 @@ def _delta(
     if advisory is None or baseline is None:
         return None
     return round(float(getattr(advisory, attr)) - float(getattr(baseline, attr)), 6)
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed
+
+
+def _raise_p90_by_delta(
+    summary: QuantileSummary | None,
+    delta: float,
+) -> QuantileSummary | None:
+    if summary is None or delta <= 0.0:
+        return summary
+    return QuantileSummary(
+        p10=float(summary.p10),
+        p50=float(summary.p50),
+        p90=float(summary.p90) + float(delta),
+    )
+
+
+def _floor_p90(
+    summary: QuantileSummary | None,
+    floor: float,
+) -> QuantileSummary | None:
+    if summary is None or floor <= 0.0:
+        return summary
+    return QuantileSummary(
+        p10=float(summary.p10),
+        p50=float(summary.p50),
+        p90=max(float(summary.p90), float(floor)),
+    )
+
+
+def _q6_prior_floor_watch(
+    posterior: V3PosteriorReport,
+    formal_value: V3FormalValueSamplerReport | None,
+) -> tuple[V3PosteriorReport, str] | None:
+    prior_fields = formal_value.prior_fields if formal_value is not None else None
+    if not prior_fields:
+        return None
+    prior_q6_value = _float_or_none(prior_fields.get("v3_prior_q6_expected_value"))
+    q6_formal = posterior.q6_formal_decision_value
+    formal = posterior.formal_decision_value
+    if prior_q6_value is None or q6_formal is None or formal is None:
+        return None
+    q6_gap = max(0.0, float(prior_q6_value) - float(q6_formal.p90))
+    if q6_gap < _Q6_PRIOR_FLOOR_MIN_VALUE_GAP:
+        return None
+    diagnostics = tuple(posterior.diagnostics) + (
+        "practical_q6_prior_floor_watch",
+        f"practical_q6_prior_expected_value={prior_q6_value:.6f}",
+        f"practical_q6_prior_p90_gap={q6_gap:.6f}",
+    )
+    advisory = V3PosteriorReport(
+        map_id=posterior.map_id,
+        map_name=posterior.map_name,
+        n_total=posterior.n_total,
+        n_matched=posterior.n_matched,
+        n_strict_matched=posterior.n_strict_matched,
+        match_scope=posterior.match_scope,
+        q6_present_rate=posterior.q6_present_rate,
+        total_cells=posterior.total_cells,
+        total_value=_raise_p90_by_delta(posterior.total_value, q6_gap),
+        formal_decision_value=_raise_p90_by_delta(formal, q6_gap),
+        tail_replacement_decision_value=_raise_p90_by_delta(
+            posterior.tail_replacement_decision_value,
+            q6_gap,
+        ),
+        q6_count=posterior.q6_count,
+        q6_cells=posterior.q6_cells,
+        q6_value=_floor_p90(posterior.q6_value, prior_q6_value),
+        q6_formal_decision_value=_floor_p90(q6_formal, prior_q6_value),
+        q6_tail_replacement_decision_value=_floor_p90(
+            posterior.q6_tail_replacement_decision_value,
+            prior_q6_value,
+        ),
+        diagnostics=diagnostics,
+    )
+    reason = (
+        "q6_prior_floor_shadow_only:"
+        f"expected={prior_q6_value:.0f}:p90_gap={q6_gap:.0f}"
+    )
+    return advisory, reason
 
 
 def _dedupe(values: list[str]) -> tuple[str, ...]:

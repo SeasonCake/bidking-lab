@@ -2735,3 +2735,19 @@ applied_hurts=2502
 - 用户需要实战可见的低估风险提示，但目前 v3 还没有通过 promotion/readiness gate。
 - overlay 是用户实战第一入口；如果 practical 只停留在 `model_eval.jsonl`，无法改善实战决策体验。
 - 同时，低估风险提示不能伪装成正式估值，否则会破坏 v2 formal/live/UI 稳定边界，也会让后续指标归因混乱。
+
+## D-v3-134：q6 prior-floor 只能作为 v3 practical P90 上沿 watch
+
+2026-06-07 起，当前决策：
+
+- 当 `v3_prior_q6_expected_value` 显著高于 baseline q6 formal P90 时，可以触发 `v3_practical` 的 `q6_prior_floor_watch`。
+- 该 watch 只允许提升 practical P90 / q6 practical P90，不得提升 practical P50，不得影响 formal decision_value，不得影响正式 bid。
+- 默认触发阈值为 `prior_q6_expected_value - q6_formal_P90 >= 100,000`。
+- 输出必须保持 `active=false`、`affects_bid=false`，recommendation 可为 `raise_watch`，语义是“低估风险/参考上沿”，不是正式加价命令。
+- 若未来要把 q6 prior-floor 用作 P50 或正式策略，必须重新做 holdout、误导率、P90 over、实战样本复盘和 promotion gate。
+
+原因：
+
+- archive 对照显示 P90-only prior-floor 能把 practical P90 coverage 从 0.751282 提升到 0.764103，同时 P50 MAE 不变。
+- 该信号专门覆盖 q6 gate inactive / q6 prior-low 类低估风险，符合“P90 可承接长尾，但不能带偏整体 MAE”的原则。
+- 它也会轻微增加极端上沿风险，因此必须停留在 practical/shadow 显示层。

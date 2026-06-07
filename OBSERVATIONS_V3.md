@@ -6055,3 +6055,33 @@ v3_practical_formal_p90_coverage=0.751282
 - archive 指标与上一 checkpoint 一致，说明本轮没有改变 sampler、formal value 或正式出价逻辑。
 - overlay 模型测试确认：正式 decision 仍来自 `baseline.decision`；`v3 实战参考` 只进入 hover/detail/alert。
 - 该显示层可以支撑下一轮实战样本复盘：重点看用户感知“明显低估”局是否出现 `raise_watch`，以及 alert 是否过载或误导。
+
+## O-v3-138：q6 prior-floor P90 watch 提升覆盖且不带偏 P50 MAE
+
+2026-06-07 对 q6 prior-floor practical watch 复跑默认 archive smoke：
+
+```text
+formal_p50_mae=318635.858
+formal_p90_coverage=0.750641
+v3_practical_candidate_rows=238
+v3_practical_raise_watch_rows=238
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=318217.101
+v3_practical_delta_formal_p50_mae=-418.757
+v3_practical_formal_p50_below_rate=0.517949
+v3_practical_formal_p90_coverage=0.764103
+```
+
+对比上一轮 practical：
+
+- `candidate_rows/raise_watch_rows`: 175 -> 238。
+- `P90 coverage`: 0.751282 -> 0.764103。
+- `P50 MAE`: 318217.101 -> 318217.101，未恶化。
+- `active_rows`: 0 -> 0，正式出价未改。
+
+行级预审结论：
+
+- 阈值 `q6_prior_expected_value - q6_formal_P90 >= 100,000` 在 archive 中新增约 63 个非重叠 practical watch。
+- 该候选组 baseline P90 coverage 约 15%，新上沿 coverage 约 48%，说明主要抓到原本严重低估的 q6-prior gap 局。
+- 因为只抬 P90、不抬 P50，所以不会直接改善 P50 below-rate；它的价值是实战上沿和低估提示。
+- 剩余低估仍集中在 q6 tail value、random_avg floor insufficient、warehouse underestimated 等类别，需要后续 practical sampler/上沿继续补。

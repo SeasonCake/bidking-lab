@@ -7594,3 +7594,52 @@ v3_practical_formal_p90_coverage=0.751282
 - 本 checkpoint 是实战 UI 可见性推进，不是 sampler promotion。
 - 现在实战时可以在 overlay hover/detail 和 alert 中看到 v3 practical 的低估风险提示、证据来源和只读边界。
 - 下一步应围绕用户新增实战样本核对 `raise_watch` 的命中率/误导率，并决定是否把更强 sampler 接入 `v3_practical_*`，而不是继续做无落地的边缘审计。
+
+## 2026-06-07 checkpoint：v3 practical q6 prior-floor 上沿 watch
+
+目标：
+
+- 针对 live brief 暴露的持续低估问题，先做一个可落地的 shadow-only 上沿修复：P50 不动，P90 用 q6 先验期望值补一条低估风险上沿。
+- 对应实战诉求：不能继续大面积严重低估；但也不能把长尾/先验直接带偏正式 MAE 或正式出价。
+
+本轮动作：
+
+- `src/bidking_lab/inference/v3/practical_advisory.py` 新增 `q6_prior_floor_watch`：
+  - 当 `v3_prior_q6_expected_value - baseline q6 formal P90 >= 100,000` 时触发；
+  - practical `formal_decision_value_p50` 保持 baseline，不改 MAE；
+  - practical `formal_decision_value_p90` 增加 q6 prior gap；
+  - practical `q6_formal_decision_value_p90` floor 到 `v3_prior_q6_expected_value`；
+  - 固定 `active=false`、`affects_bid=false`，只输出 `raise_watch`/上沿参考。
+- 补充 pipeline 单测，覆盖 q6 prior-floor 只抬 P90、不动 P50、不影响正式出价。
+
+验证结果：
+
+```text
+pipeline tests: 6 passed
+archive/evaluator/live/UI focused tests: 50 passed
+
+archive smoke:
+formal_p50_mae=318635.858
+formal_p50_below_rate=0.51859
+formal_p90_coverage=0.750641
+v3_practical_candidate_rows=238
+v3_practical_raise_watch_rows=238
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=318217.101
+v3_practical_delta_formal_p50_mae=-418.757
+v3_practical_formal_p50_below_rate=0.517949
+v3_practical_formal_p90_coverage=0.764103
+```
+
+对比上一 checkpoint：
+
+- `raise_watch_rows`: 175 -> 238。
+- `formal P90 coverage`: 0.751282 -> 0.764103。
+- `formal P50 MAE`: 318217.101 不变。
+- `active_rows`: 0 不变。
+
+解读：
+
+- 这是一个低风险 practical 上沿补强，不是正式 promotion。
+- 它明显增加了对 q6 gate inactive / q6 prior-low 一类低估局的提示覆盖，同时避免 P50 MAE 被长尾带偏。
+- 仍不足以解决全部实战低估；下一步应继续把 “random_avg floor insufficient / q6 tail value / warehouse underestimated” 这几类转成 practical-only 上沿或 sampler，而不是只改 UI。
