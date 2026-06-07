@@ -8722,3 +8722,35 @@ v3_practical.status=no_evaluable_rows
 
 - 这是实战复盘口径修复，不改变任何估值结果。
 - 当前 72h model_eval 窗口没有可评估行，所以 post-game 输出会明确提示 `no_evaluable_rows`；等最新 live monitor 采集新局后，该窗口才会反映新局的 v3 practical 字段。
+
+## 2026-06-07 checkpoint：model_eval brief 增加 v3 practical 具体行复盘
+
+目标：
+
+- 保持 v2 formal、正式出价、UI 基线和 v3 practical 数值不变。
+- 让 post-game model_eval brief 在有 v3 practical 数据时，不只显示聚合率，也能定位到具体窗口。
+
+本轮动作：
+
+- `v3_practical` 聚合新增：
+  - `latest_rows`：最近 v3 practical 行；
+  - `top_under_rows`：v3 practical P90 仍低于 formal truth 的最大残余 under 行。
+- 每行包含 file、hero、map_id、round、recommendation、confidence、source/risk、baseline P90、practical P90、delta、残余 under、q6 P90/under、active/affects_bid。
+- brief 中保留最多 5 条，避免 post-game 输出过载。
+
+验证结果：
+
+```text
+py_compile scripts/summarize_live_model_eval.py tests/test_summarize_live_model_eval.py: passed
+pytest tests/test_summarize_live_model_eval.py -q:
+22 passed
+
+summarize_live_model_eval.py --brief --since-hours 72: passed
+window.selected_rows=0
+v3_practical.status=no_evaluable_rows
+```
+
+当前解读：
+
+- 当前真实 72h 窗口仍没有 model_eval 行，所以实测不会显示 latest/top rows；synthetic test 覆盖了有数据时的行级复盘。
+- 这能让下一批实战样本采完后，post-game 直接回答“哪一轮触发了 v3 practical，抬了多少，还剩多少低估”，不需要再手动翻 JSONL。

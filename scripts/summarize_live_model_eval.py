@@ -628,6 +628,52 @@ def _v3_practical_raise_watch_review(rows: list[dict[str, Any]]) -> dict[str, An
     }
 
 
+def _v3_practical_review_row(row: dict[str, Any]) -> dict[str, Any]:
+    truth = _v3_practical_truth_value(row)
+    baseline_p90 = _numeric(row, "v3_practical_baseline_formal_decision_value_p90")
+    practical_p90 = _numeric(row, "v3_practical_formal_decision_value_p90")
+    q6_truth = _v3_practical_q6_truth_value(row)
+    baseline_q6_p90 = _numeric(
+        row,
+        "v3_practical_baseline_q6_formal_decision_value_p90",
+    )
+    practical_q6_p90 = _numeric(row, "v3_practical_q6_formal_decision_value_p90")
+    return {
+        "ts": row.get("ts"),
+        "file": row.get("file"),
+        "hero": row.get("hero"),
+        "map_id": row.get("map_id"),
+        "round": row.get("observed_round", row.get("round")),
+        "action_round": row.get("action_round"),
+        "recommendation": row.get("v3_practical_recommendation"),
+        "confidence": row.get("v3_practical_confidence"),
+        "source_lanes": row.get("v3_practical_source_lanes")
+        or row.get("v3_practical_source"),
+        "risk_flags": row.get("v3_practical_risk_flags"),
+        "active": bool(row.get("v3_practical_active")),
+        "affects_bid": bool(row.get("v3_practical_affects_bid")),
+        "truth": _round(truth),
+        "baseline_p90": _round(baseline_p90),
+        "practical_p90": _round(practical_p90),
+        "delta_p90": _round(
+            practical_p90 - baseline_p90
+            if practical_p90 is not None and baseline_p90 is not None
+            else None
+        ),
+        "baseline_under_by": _round(_under_by(truth, baseline_p90)),
+        "practical_under_by": _round(_under_by(truth, practical_p90)),
+        "q6_truth": _round(q6_truth),
+        "baseline_q6_p90": _round(baseline_q6_p90),
+        "practical_q6_p90": _round(practical_q6_p90),
+        "delta_q6_p90": _round(
+            practical_q6_p90 - baseline_q6_p90
+            if practical_q6_p90 is not None and baseline_q6_p90 is not None
+            else None
+        ),
+        "q6_under_by": _round(_under_by(q6_truth, practical_q6_p90)),
+    }
+
+
 def _v3_practical_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     practical_rows = [
         row
@@ -645,6 +691,37 @@ def _v3_practical_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if _truthy_value(row.get("v3_practical_candidate"))
     ]
     scoped_rows = ready_rows or practical_rows
+    latest_rows = [
+        _v3_practical_review_row(row)
+        for row in sorted(
+            practical_rows,
+            key=lambda row: float(row.get("ts") or 0),
+            reverse=True,
+        )[:8]
+    ]
+    top_under_rows = [
+        _v3_practical_review_row(row)
+        for row in sorted(
+            [
+                row
+                for row in practical_rows
+                if (
+                    _under_by(
+                        _v3_practical_truth_value(row),
+                        _numeric(row, "v3_practical_formal_decision_value_p90"),
+                    )
+                    or 0
+                )
+                > 0
+            ],
+            key=lambda row: _under_by(
+                _v3_practical_truth_value(row),
+                _numeric(row, "v3_practical_formal_decision_value_p90"),
+            )
+            or 0,
+            reverse=True,
+        )[:8]
+    ]
     if practical_rows:
         status = "fields_present"
         note = None
@@ -730,6 +807,8 @@ def _v3_practical_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             ),
         },
         "raise_watch_review": _v3_practical_raise_watch_review(scoped_rows),
+        "latest_rows": latest_rows,
+        "top_under_rows": top_under_rows,
     }
 
 
@@ -826,6 +905,11 @@ def _v3_practical_brief(practical: Any) -> dict[str, Any]:
             "formal_p50": practical.get("formal_p50"),
             "q6_formal_p50": practical.get("q6_formal_p50"),
             "raise_watch_review": practical.get("raise_watch_review"),
+            "latest_rows": _limit_rows(practical.get("latest_rows"), limit=5),
+            "top_under_rows": _limit_rows(
+                practical.get("top_under_rows"),
+                limit=5,
+            ),
         }
     )
     return brief

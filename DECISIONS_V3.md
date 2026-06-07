@@ -3085,3 +3085,18 @@ applied_hurts=2502
 
 - 只对 windivert brief 使用时间窗口、model_eval brief 却读全量日志，会让 post-game 复盘混入旧日志。
 - 当前阶段重点是实战链路稳定；窗口不一致会直接干扰“新局是否已进入 v3 practical model_eval 链路”的判断。
+
+## D-v3-152：model_eval brief 必须能定位 v3 practical 具体窗口
+
+2026-06-07 起，当前决策：
+
+- 当 `v3_practical.status=fields_present` 时，brief 除聚合指标外必须保留少量行级复盘：
+  - 最近 v3 practical 行；
+  - v3 practical P90 仍低估最多的行。
+- 行级字段必须包含足够复盘信息：file / hero / map_id / round、recommendation、confidence、source/risk、baseline P90、practical P90、delta、残余 under、q6 P90/under、active/affects_bid。
+- 该输出只用于 post-game 诊断，不改变 sampler、formal、UI contract 或正式出价。
+
+原因：
+
+- 聚合指标能说明整体方向，但实战落地需要快速定位“哪一局哪一轮触发、抬了多少、是否仍低估”。
+- 这能减少手动翻 `model_eval.jsonl` 的成本，也能更早发现 UI/brief/model_eval 字段断层。

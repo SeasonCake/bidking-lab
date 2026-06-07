@@ -705,6 +705,43 @@ def test_summarize_and_brief_include_v3_practical_shadow_review() -> None:
     assert practical["source_lane_counts"]["formal_value"] == 3
     assert practical["risk_flag_counts"]["q6_prior_floor_watch"] == 1
     assert practical["risk_flag_counts"]["underestimate_repair_candidate"] == 1
+    assert [row["file"] for row in practical["latest_rows"]] == [
+        "still-missed.json",
+        "false-alarm.json",
+        "hit.json",
+    ]
+    assert practical["latest_rows"][0]["recommendation"] == "ceiling_watch"
+    assert practical["latest_rows"][0]["baseline_p90"] == 700_000
+    assert practical["latest_rows"][0]["practical_p90"] == 800_000
+    assert practical["latest_rows"][0]["practical_under_by"] == 100_000
+    assert practical["latest_rows"][0]["q6_under_by"] == 50_000
+    assert practical["top_under_rows"] == [
+        {
+            "ts": 3,
+            "file": "still-missed.json",
+            "hero": None,
+            "map_id": None,
+            "round": None,
+            "action_round": None,
+            "recommendation": "ceiling_watch",
+            "confidence": "medium",
+            "source_lanes": "formal_value+q6_value_residual",
+            "risk_flags": "q6_value_ceiling_watch",
+            "active": False,
+            "affects_bid": False,
+            "truth": 900_000,
+            "baseline_p90": 700_000,
+            "practical_p90": 800_000,
+            "delta_p90": 100_000,
+            "baseline_under_by": 200_000,
+            "practical_under_by": 100_000,
+            "q6_truth": 300_000,
+            "baseline_q6_p90": 200_000,
+            "practical_q6_p90": 250_000,
+            "delta_q6_p90": 50_000,
+            "q6_under_by": 50_000,
+        }
+    ]
 
     formal_p90 = practical["formal_p90"]
     assert formal_p90["baseline_p90_median"] == 700_000
@@ -741,6 +778,8 @@ def test_summarize_and_brief_include_v3_practical_shadow_review() -> None:
     assert brief["v3_practical"]["status"] == "fields_present"
     assert brief["v3_practical"]["formal_p90"]["helped_rows"] == 1
     assert brief["v3_practical"]["affects_bid_rows"] == 0
+    assert brief["v3_practical"]["latest_rows"][0]["file"] == "still-missed.json"
+    assert brief["v3_practical"]["top_under_rows"][0]["practical_under_by"] == 100_000
 
 
 def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> None:

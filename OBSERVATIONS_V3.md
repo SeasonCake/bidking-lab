@@ -6631,3 +6631,16 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 
 - model_eval brief 支持同一 `--since-hours` 窗口，并输出 `window.selected_rows`。
 - 当前真实 72h model_eval 窗口为 `selected_rows=0`，v3 practical 状态为 `no_evaluable_rows`，说明不是 v3 practical 失效，而是当前窗口没有可评估 model_eval 行。
+
+## O-v3-161：model_eval brief 聚合指标不足以定位具体 practical 触发行
+
+2026-06-07 检查 model_eval brief 后：
+
+- brief 已有 v3 practical 的 coverage / under / raise_watch 聚合。
+- 但如果用户局后看到 practical 指标异常，仍需要手动翻 `model_eval.jsonl` 才能定位具体 file/round/source。
+
+修复后：
+
+- brief 增加 `latest_rows` 与 `top_under_rows`。
+- 当前真实 72h 窗口没有可评估 model_eval 行，所以该能力等待下一批 live 样本验证；synthetic test 已覆盖有数据时的行级摘要。
+- 该变化是复盘链路增强，不代表 v3 practical 数值或正式估价发生变化。
