@@ -17,7 +17,7 @@
 | `docs/v3_inference_design_2026-06-04.zh-CN.md` | v3 设计文档 |
 | `src/bidking_lab/inference/v3/` | v3 推理引擎新包 |
 | `src/bidking_lab/inference/v3/pipeline.py` | archive/live 共用 v3 shadow 推理链路 |
-| `src/bidking_lab/inference/v3/practical_advisory.py` | v3 practical advisory 聚合层，输出 `v3_practical_*` 实战参考字段；含 q6 prior-floor P90 watch，固定 inactive/不影响出价 |
+| `src/bidking_lab/inference/v3/practical_advisory.py` | v3 practical advisory 聚合层，输出 `v3_practical_*` 实战参考字段；含 q6 prior-floor / tail-replacement P90 watch，固定 inactive/不影响出价 |
 | `src/bidking_lab/inference/v3/priors.py` | v3 drop-prior summary 与共享 flat fields |
 | `src/bidking_lab/inference/v3/prior_robustness.py` | v3 drop-prior 漂移、活动期、fallback 鲁棒性审计 |
 | `src/bidking_lab/inference/v3/formal_value_sampler.py` | v3 formal/value sampler 第一阶段 shadow report，拆分 capacity/cells/value-floor stress，固定不影响出价 |

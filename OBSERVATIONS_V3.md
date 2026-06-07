@@ -6085,3 +6085,24 @@ v3_practical_formal_p90_coverage=0.764103
 - 该候选组 baseline P90 coverage 约 15%，新上沿 coverage 约 48%，说明主要抓到原本严重低估的 q6-prior gap 局。
 - 因为只抬 P90、不抬 P50，所以不会直接改善 P50 below-rate；它的价值是实战上沿和低估提示。
 - 剩余低估仍集中在 q6 tail value、random_avg floor insufficient、warehouse underestimated 等类别，需要后续 practical sampler/上沿继续补。
+
+## O-v3-139：tail replacement P90 watch 小幅提高 practical 覆盖
+
+2026-06-07 在 q6 prior-floor watch 基础上加入 tail replacement P90 watch 后复跑 archive smoke：
+
+```text
+v3_practical_candidate_rows=347
+v3_practical_raise_watch_rows=347
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=318217.101
+v3_practical_delta_formal_p50_mae=-418.757
+v3_practical_formal_p50_below_rate=0.517949
+v3_practical_formal_p90_coverage=0.76859
+```
+
+观察：
+
+- 相比 q6 prior-floor only，P90 coverage 从 0.764103 提升到 0.768590。
+- candidate/raise-watch rows 从 238 增至 347，约占 ready rows 22%。
+- P50 MAE 与 below-rate 不变，说明该 watch 没有把 tail replacement 带入 P50。
+- 该层适合作为实战上沿提示；后续是否继续扩大触发，应以 live 样本误导率为准。

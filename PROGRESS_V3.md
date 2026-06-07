@@ -7643,3 +7643,49 @@ v3_practical_formal_p90_coverage=0.764103
 - 这是一个低风险 practical 上沿补强，不是正式 promotion。
 - 它明显增加了对 q6 gate inactive / q6 prior-low 一类低估局的提示覆盖，同时避免 P50 MAE 被长尾带偏。
 - 仍不足以解决全部实战低估；下一步应继续把 “random_avg floor insufficient / q6 tail value / warehouse underestimated” 这几类转成 practical-only 上沿或 sampler，而不是只改 UI。
+
+## 2026-06-07 checkpoint：v3 practical tail-replacement P90 watch
+
+目标：
+
+- 延续 P90-only practical 策略，把 formal 裁尾后的 `tail_replacement_decision_value_p90` 用作实战上沿参考。
+- 继续保持 P50 不动、正式出价不动。
+
+本轮动作：
+
+- `src/bidking_lab/inference/v3/practical_advisory.py` 新增 `tail_replacement_p90_watch`：
+  - 当 `tail_replacement_decision_value_p90 - formal_decision_value_p90 >= 50,000` 时触发；
+  - practical `formal_decision_value_p90` floor 到 tail replacement P90；
+  - practical P50 保持 baseline；
+  - 输出 `risk_flags=tail_replacement_p90_watch`，固定 `active=false`、`affects_bid=false`。
+- 补充 pipeline 单测，用 confusable q6 long-tail + replacement value 验证该 watch 只抬 P90。
+
+验证结果：
+
+```text
+pipeline tests: 7 passed
+
+archive smoke:
+formal_p50_mae=318635.858
+formal_p90_coverage=0.750641
+v3_practical_candidate_rows=347
+v3_practical_raise_watch_rows=347
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=318217.101
+v3_practical_delta_formal_p50_mae=-418.757
+v3_practical_formal_p50_below_rate=0.517949
+v3_practical_formal_p90_coverage=0.76859
+```
+
+对比 q6 prior-floor checkpoint：
+
+- `raise_watch_rows`: 238 -> 347。
+- `formal P90 coverage`: 0.764103 -> 0.768590。
+- `formal P50 MAE`: 318217.101 不变。
+- `active_rows`: 0 不变。
+
+解读：
+
+- tail replacement watch 的收益小于 q6 prior-floor，但能覆盖一批非 prior-gap 的 tail/value 低估风险。
+- 当前 practical 仍是实战提示层：P90 更可见，P50 不被长尾带偏。
+- 下一步更有价值的方向是 random_avg floor / warehouse under / source-aware sampler，而不是继续扩大所有 weak risk trigger。

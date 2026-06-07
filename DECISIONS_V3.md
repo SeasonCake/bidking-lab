@@ -2751,3 +2751,18 @@ applied_hurts=2502
 - archive 对照显示 P90-only prior-floor 能把 practical P90 coverage 从 0.751282 提升到 0.764103，同时 P50 MAE 不变。
 - 该信号专门覆盖 q6 gate inactive / q6 prior-low 类低估风险，符合“P90 可承接长尾，但不能带偏整体 MAE”的原则。
 - 它也会轻微增加极端上沿风险，因此必须停留在 practical/shadow 显示层。
+
+## D-v3-135：tail replacement 只能作为 practical P90 上沿，不得进入 formal
+
+2026-06-07 起，当前决策：
+
+- `tail_replacement_decision_value_p90` 可以用于 `v3_practical` 的 P90 上沿 watch。
+- 默认触发阈值为 `tail_replacement_decision_value_p90 - formal_decision_value_p90 >= 50,000`。
+- 该 watch 只允许提升 practical P90，不得提升 practical P50，不得改 formal decision_value，不得进入正式 bid。
+- 输出必须保持 `active=false`、`affects_bid=false`；recommendation 可为 `raise_watch`，语义是“长尾替换上沿/低估风险提示”。
+- 若后续要使用 tail replacement 影响正式估值，必须另开 promotion gate，并重新验证 MAE、below-rate、P90 over、pinball 和实战误导率。
+
+原因：
+
+- archive smoke 显示加入 tail replacement P90 watch 后，practical P90 coverage 从 0.764103 提升到 0.768590，P50 MAE 不变。
+- 这符合此前边界：formal decision_value 仍是裁尾 plannable 口径，tail replacement 是审计/辅助字段。

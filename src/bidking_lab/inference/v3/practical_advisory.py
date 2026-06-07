@@ -30,6 +30,7 @@ from bidking_lab.inference.v3.underestimate_repair import (
 )
 
 _Q6_PRIOR_FLOOR_MIN_VALUE_GAP = 100_000.0
+_TAIL_REPLACEMENT_MIN_P90_GAP = 50_000.0
 
 
 @dataclass(frozen=True)
@@ -185,6 +186,12 @@ def advise_practical_report(
         risks.append("q6_prior_floor_watch")
         reasons.append(q6_prior_floor[1])
 
+    tail_replacement_watch = _tail_replacement_p90_watch(posterior)
+    if tail_replacement_watch is not None:
+        lanes.append("tail_replacement")
+        risks.append("tail_replacement_p90_watch")
+        reasons.append(tail_replacement_watch[1])
+
     if underestimate is not None and underestimate.candidate:
         lanes.append("underestimate")
         risks.append("underestimate_repair_candidate")
@@ -262,6 +269,20 @@ def advise_practical_report(
             status="watch_q6_prior_floor",
             recommendation="raise_watch",
             confidence="low_medium",
+            source_lanes=_dedupe(lanes),
+            risk_flags=_dedupe(risks),
+            reason=_join_reasons(reasons),
+        )
+    if tail_replacement_watch is not None:
+        advisory, _reason = tail_replacement_watch
+        return V3PracticalAdvisoryReport(
+            baseline=posterior,
+            advisory=advisory,
+            source="tail_replacement",
+            mode="tail_replacement_p90_watch",
+            status="watch_tail_replacement_p90",
+            recommendation="raise_watch",
+            confidence="low",
             source_lanes=_dedupe(lanes),
             risk_flags=_dedupe(risks),
             reason=_join_reasons(reasons),
@@ -443,6 +464,45 @@ def _q6_prior_floor_watch(
         "q6_prior_floor_shadow_only:"
         f"expected={prior_q6_value:.0f}:p90_gap={q6_gap:.0f}"
     )
+    return advisory, reason
+
+
+def _tail_replacement_p90_watch(
+    posterior: V3PosteriorReport,
+) -> tuple[V3PosteriorReport, str] | None:
+    formal = posterior.formal_decision_value
+    replacement = posterior.tail_replacement_decision_value
+    if formal is None or replacement is None:
+        return None
+    gap = max(0.0, float(replacement.p90) - float(formal.p90))
+    if gap < _TAIL_REPLACEMENT_MIN_P90_GAP:
+        return None
+    diagnostics = tuple(posterior.diagnostics) + (
+        "practical_tail_replacement_p90_watch",
+        f"practical_tail_replacement_p90_gap={gap:.6f}",
+    )
+    advisory = V3PosteriorReport(
+        map_id=posterior.map_id,
+        map_name=posterior.map_name,
+        n_total=posterior.n_total,
+        n_matched=posterior.n_matched,
+        n_strict_matched=posterior.n_strict_matched,
+        match_scope=posterior.match_scope,
+        q6_present_rate=posterior.q6_present_rate,
+        total_cells=posterior.total_cells,
+        total_value=posterior.total_value,
+        formal_decision_value=_floor_p90(formal, float(replacement.p90)),
+        tail_replacement_decision_value=replacement,
+        q6_count=posterior.q6_count,
+        q6_cells=posterior.q6_cells,
+        q6_value=posterior.q6_value,
+        q6_formal_decision_value=posterior.q6_formal_decision_value,
+        q6_tail_replacement_decision_value=(
+            posterior.q6_tail_replacement_decision_value
+        ),
+        diagnostics=diagnostics,
+    )
+    reason = f"tail_replacement_p90_shadow_only:p90_gap={gap:.0f}"
     return advisory, reason
 
 

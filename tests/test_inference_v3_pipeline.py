@@ -192,8 +192,8 @@ def test_v3_shadow_pipeline_can_emit_formal_value_candidate() -> None:
         map_name="test_map",
         summary=summary,
         truths=(
-            _truth(q6_count=1, q6_cells=4, q6_value=500_000),
-            _truth(q6_count=1, q6_cells=4, q6_value=600_000),
+            _truth(q6_count=1, q6_cells=4, q6_value=1_500_000),
+            _truth(q6_count=1, q6_cells=4, q6_value=1_600_000),
         ),
         hero="ethan",
         prior_fields={
@@ -300,6 +300,41 @@ def test_v3_shadow_pipeline_marks_q6_prior_floor_as_practical_p90_watch() -> Non
     assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
     assert flat["v3_practical_delta_formal_decision_value_p90"] > 0
     assert flat["v3_practical_q6_formal_decision_value_p90"] == 420_000
+
+
+def test_v3_shadow_pipeline_marks_tail_replacement_as_practical_p90_watch() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=None,
+        known_count_floor=0,
+        known_cells_floor=0,
+        known_value_floor=0,
+        buckets=(),
+    )
+
+    report = estimate_shadow_pipeline(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(
+            _truth(q6_count=1, q6_cells=4, q6_value=1_500_000),
+            _truth(q6_count=1, q6_cells=4, q6_value=1_600_000),
+        ),
+        hero="ethan",
+        constraints=ConstraintSet(),
+        replacement_values={(6, 1, 1): 120_000},
+        prior_fields={"v3_prior_available": True},
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_tail_replacement_p90"
+    assert flat["v3_practical_mode"] == "tail_replacement_p90_watch"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert "tail_replacement_p90_watch" in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_formal_decision_value_p90"] >= 50_000
 
 
 def test_v3_shadow_pipeline_can_freeze_component_cells() -> None:
