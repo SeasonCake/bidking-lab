@@ -5827,3 +5827,68 @@ payload_verified_partial_action_only:
 - empty-action rows 的 raw action payload 没有 item list，因此不是当前 Fatbeans item parser 漏掉 field 8。
 - 这些 rows 的核心冲突是 numeric action source 与 settlement inventory/drop-cap 的语义关系，仍需 table/support-depth、server expansion 或 per-session overlay 解释。
 - partial-action rows 的 item parser 路径可工作，但最多只解释部分 inventory；不能作为 full source confirmation。
+
+## O-v3-133：source-key holdout 否定直接用 action shape/signature 收窄 CSE prior
+
+2026-06-07 新增 source-key holdout 审计。
+
+验证命令：
+
+```powershell
+python scripts\summarize_v3_capacity_source_expansion_source_key_holdout.py --top 8 --format summary
+```
+
+总体：
+
+```text
+sessions=441 folds=5 min_train_sessions=4
+source_shapes=item_reveal_payload:384,numeric_only_result:56,no_action_results:1
+truth_source_shapes=item_reveal_payload:18,numeric_only_result:3
+source_shape_parse_errors=0
+```
+
+key matrix：
+
+```text
+map_family:
+  candidate_rows=419 covered=21 missed=0 fp=398
+  recall=1.0 precision=0.050119
+
+source_shape:
+  candidate_rows=440 covered=21 missed=0 fp=419
+  recall=1.0 precision=0.047727
+
+map_family_source_shape:
+  candidate_rows=378 covered=19 missed=2 fp=359
+  recall=0.904762 precision=0.050265
+
+map_id:
+  candidate_rows=202 covered=18 missed=3 fp=184
+  recall=0.857143 precision=0.089109
+
+map_id_source_shape_signature:
+  candidate_rows=152 covered=17 missed=4 fp=135
+  recall=0.809524 precision=0.111842
+```
+
+miss examples 仍集中在 support-depth：
+
+```text
+2509 numeric-only:
+  group=2509|sig=100104+100105+100107+100124
+  train_sessions=0 train_source=0 excess=7
+
+2410 numeric-only:
+  group=2410|sig=100105
+  train_sessions=1 train_source=0 excess=3
+
+2408 item reveal:
+  group=2408|sig=item_reveal_payload
+  train_sessions=7 train_source=0 excess=2
+```
+
+解读：
+
+- action shape/signature 是解释字段，不是当前可推广的 prior key。
+- `map_id+shape/signature` 的 precision 提升来自减少 candidate rows，但代价是漏掉更多 truth rows。
+- 要继续提升 CSE prior，需要获得同 map/source support、活动/远端表或 prebid 可见 source-pressure 信号，而不是直接把 post-settlement action shape 接入 prior。

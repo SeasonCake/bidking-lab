@@ -2646,3 +2646,20 @@ applied_hurts=2502
 - 15 条 partial-action rows 全部 `item_reveal_payload`，其 `source_observed_item_max` 与既有 `action_max` 一致，平均 5.867、最大 25，仍显著低于 settlement inventory。
 - exact map-id miss 的 2509、2410 是 numeric-only support-depth 缺口；2408 是 item-reveal partial support-depth 缺口。
 - 因此当前 blocker 仍未达到恢复 formal/value sampler 调参或 v3 promotion 的条件。
+
+## D-v3-129：action payload shape/signature 不能作为默认 CSE source-aware prior key
+
+2026-06-07 起，当前决策：
+
+- `source_action_payload_shape_class` 与 numeric action id signature 只能用于 audit matrix，不得接入默认 `v3_cse_*` prior、sampler cap、readiness gate、promotion gate 或正式出价。
+- `map_id` 仍是当前最保守的 default support baseline；shape/signature 只能作为后续 source/parser/table acquisition 的解释字段。
+- 若后续要把 shape/signature 用成 live/prebid source key，必须先证明它来自 prebid 可见 action/source state，并在 archive/live `model_eval` 中同时提升 recall 与 precision。
+- 当前不要为了 shape/signature 小幅 precision 改善牺牲 CSE truth recall，也不要把 post-settlement shape 当作 train-time prior key。
+
+原因：
+
+- source-key holdout 显示 `source_shape` recall 1.0、precision 0.047727，低于 `map_family` precision 0.050119。
+- `map_family_source_shape` precision 0.050265，几乎无改善，且 recall 降至 0.904762。
+- `map_id_source_shape_signature` precision 提到 0.111842，但 recall 降至 0.809524，miss 从 3 增至 4。
+- 2509、2410、2408 仍是 train source support=0 的漏召回样本；shape/signature 不解决 singleton/support-depth blocker。
+- 因此当前 blocker 的下一步仍是 source/table acquisition、同 source support 补样或 prebid pressure/source signal，而不是 shape/signature prior 化。

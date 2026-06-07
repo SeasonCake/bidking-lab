@@ -7285,3 +7285,67 @@ payload_verified_partial_action_only:
 - empty-action 的 blocker 应改写为 numeric action source semantics / table support-depth / server-side settlement expansion 解释，而不是继续找 item payload parser。
 - 15 条 partial-action truth 均为 item reveal payload，但 observed item max 仍远低于 settlement inventory；这支持 session-capacity/source semantics 的弱线索，仍不能作为 full external confirmation。
 - exact map-id miss 中的 2509、2410 属于 numeric-only support-depth 缺口，2408 属于 item-reveal partial support-depth 缺口；下一步仍应做 source/table acquisition 或更细 source semantics，不恢复 formal/value sampler 调参。
+
+## 2026-06-07 checkpoint：CSE source-key holdout 矩阵
+
+本轮新增 source-key holdout 审计，验证 action payload shape / numeric action signature 是否能把 broad CSE watch 收窄成更高质量 source-aware prior key。
+
+改动：
+
+- `scripts/summarize_v3_capacity_source_expansion_source_key_holdout.py`：
+  - 复用 settlement source-semantics rows 与 action payload shape 解析；
+  - 对 `map_id`、`map_family`、`source_shape`、`map_family_source_shape`、`map_id_source_shape`、`source_shape_signature`、`map_family_source_shape_signature`、`map_id_source_shape_signature` 做 session holdout；
+  - 输出每个 key 的 candidate rows、covered rows、missed rows、false positives、recall、precision 与 missed examples。
+- `tests/test_summarize_v3_capacity_source_expansion_source_key_holdout.py` 覆盖 source shape 注入、fold train support、candidate precision 与 map-id singleton 不覆盖场景。
+
+验证：
+
+```powershell
+python -m py_compile scripts\summarize_v3_capacity_source_expansion_source_key_holdout.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_capacity_source_expansion_source_key_holdout.py -q
+python scripts\summarize_v3_capacity_source_expansion_source_key_holdout.py --top 8 --format summary
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format summary
+```
+
+真实结果：
+
+```text
+sessions=441 folds=5 min_train_sessions=4
+source_shapes=item_reveal_payload:384,numeric_only_result:56,no_action_results:1
+truth_source_shapes=item_reveal_payload:18,numeric_only_result:3
+source_shape_parse_errors=0
+
+map_family:
+  candidate_rows=419 covered=21 missed=0 fp=398
+  recall=1.0 precision=0.050119
+
+source_shape:
+  candidate_rows=440 covered=21 missed=0 fp=419
+  recall=1.0 precision=0.047727
+
+map_family_source_shape:
+  candidate_rows=378 covered=19 missed=2 fp=359
+  recall=0.904762 precision=0.050265
+
+map_id:
+  candidate_rows=202 covered=18 missed=3 fp=184
+  recall=0.857143 precision=0.089109
+
+map_id_source_shape_signature:
+  candidate_rows=152 covered=17 missed=4 fp=135
+  recall=0.809524 precision=0.111842
+
+readiness:
+  overall_status=not_ready
+  capacity_source_expansion_shadow=watch
+  cse_candidate_rows=752
+  cse_pressure_candidate_rows=61
+  cse_active_rows=0
+```
+
+解读：
+
+- `source_shape` 单独不能提升 precision，甚至低于 `map_family`。
+- `map_id_source_shape` / `map_id_source_shape_signature` 只有小幅 precision 改善，但召回从 18/21 降到 17/21，并引入更多 sample-limited groups。
+- 2509、2410、2408 仍是 train source support=0 的漏召回样本；shape/signature 不能解决 singleton/support-depth blocker。
+- 当前不能把 action payload shape 或 numeric signature 接入默认 source-aware prior；下一步仍需要 source/table acquisition、更多同 source support 样本，或更强的 prebid 可见 pressure/source signal。
