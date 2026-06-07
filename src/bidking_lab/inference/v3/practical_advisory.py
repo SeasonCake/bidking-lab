@@ -34,6 +34,10 @@ _TAIL_REPLACEMENT_MIN_P90_GAP = 50_000.0
 _RANDOM_AVG_VALUE_SIGNAL_FLOOR = 20_000.0
 _RANDOM_AVG_VALUE_MIN_P50_GAP = 100_000.0
 _RANDOM_AVG_VALUE_MIN_P90_GAP = 50_000.0
+_RANDOM_AVG_HIGH_SIGNAL_AVG_FLOOR = 80_000.0
+_RANDOM_AVG_HIGH_SIGNAL_MULTIPLIER = 2.5
+_RANDOM_AVG_HIGH_SIGNAL_MIN_P90_GAP = 100_000.0
+_RANDOM_AVG_HIGH_SIGNAL_MAX_DELTA = 400_000.0
 _Q6_VALUE_CEILING_MIN_P50_GAP = 100_000.0
 _Q6_VALUE_CEILING_MIN_P90_GAP = 100_000.0
 _Q6_VALUE_RAISE_MIN_P50_GAP = 200_000.0
@@ -213,6 +217,15 @@ def advise_practical_report(
         risks.append("random_avg_value_floor_watch")
         reasons.append(random_avg_watch[1])
 
+    random_avg_high_signal_watch = _random_avg_high_signal_ceiling_watch(
+        posterior,
+        evidence_events=evidence_events,
+    )
+    if random_avg_high_signal_watch is not None:
+        lanes.append("random_avg_value")
+        risks.append("random_avg_high_signal_ceiling")
+        reasons.append(random_avg_high_signal_watch[1])
+
     q6_value_ceiling_watch = _q6_value_ceiling_watch(
         posterior,
         ccv_posterior=ccv_posterior,
@@ -301,6 +314,17 @@ def advise_practical_report(
             advisory, random_reason, _random_raise_watch = combined_random_avg
             if random_reason not in reasons:
                 reasons.append(random_reason)
+        combined_random_avg_high_signal = _random_avg_high_signal_ceiling_watch(
+            advisory,
+            evidence_events=evidence_events,
+        )
+        if combined_random_avg_high_signal is not None:
+            advisory, random_high_reason = combined_random_avg_high_signal
+            _replace_reason_prefix(
+                reasons,
+                "random_avg_high_signal_ceiling_shadow_only:",
+                random_high_reason,
+            )
         combined_q6_value = _q6_value_ceiling_watch(
             advisory,
             ccv_posterior=ccv_posterior,
@@ -340,6 +364,17 @@ def advise_practical_report(
             random_raise_watch = random_raise_watch or q6_value_raise_watch
             if q6_value_reason not in reasons:
                 reasons.append(q6_value_reason)
+        combined_random_avg_high_signal = _random_avg_high_signal_ceiling_watch(
+            advisory,
+            evidence_events=evidence_events,
+        )
+        if combined_random_avg_high_signal is not None:
+            advisory, random_high_reason = combined_random_avg_high_signal
+            _replace_reason_prefix(
+                reasons,
+                "random_avg_high_signal_ceiling_shadow_only:",
+                random_high_reason,
+            )
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -360,6 +395,17 @@ def advise_practical_report(
         advisory, _reason, q6_value_raise_watch, q6_value_source = (
             q6_value_ceiling_watch
         )
+        combined_random_avg_high_signal = _random_avg_high_signal_ceiling_watch(
+            advisory,
+            evidence_events=evidence_events,
+        )
+        if combined_random_avg_high_signal is not None:
+            advisory, random_high_reason = combined_random_avg_high_signal
+            _replace_reason_prefix(
+                reasons,
+                "random_avg_high_signal_ceiling_shadow_only:",
+                random_high_reason,
+            )
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -372,6 +418,20 @@ def advise_practical_report(
             ),
             recommendation="raise_watch" if q6_value_raise_watch else "ceiling_watch",
             confidence="medium_low" if q6_value_raise_watch else "low_medium",
+            source_lanes=_dedupe(lanes),
+            risk_flags=_dedupe(risks),
+            reason=_join_reasons(reasons),
+        )
+    if random_avg_high_signal_watch is not None:
+        advisory, _reason = random_avg_high_signal_watch
+        return V3PracticalAdvisoryReport(
+            baseline=posterior,
+            advisory=advisory,
+            source="random_avg_value",
+            mode="random_avg_high_signal_ceiling_watch",
+            status="watch_random_avg_high_signal_ceiling",
+            recommendation="ceiling_watch",
+            confidence="medium_low",
             source_lanes=_dedupe(lanes),
             risk_flags=_dedupe(risks),
             reason=_join_reasons(reasons),
@@ -686,6 +746,78 @@ def _random_avg_value_floor_watch(
     return advisory, reason, raise_watch
 
 
+def _random_avg_high_signal_ceiling_watch(
+    posterior: V3PosteriorReport,
+    *,
+    evidence_events: tuple[Any, ...],
+) -> tuple[V3PosteriorReport, str] | None:
+    observations = _random_avg_value_observations(evidence_events)
+    if not observations:
+        return None
+    formal = posterior.formal_decision_value
+    if formal is None:
+        return None
+    candidates: list[tuple[int, float, float]] = []
+    for sample_count, average_value in observations:
+        if average_value < _RANDOM_AVG_HIGH_SIGNAL_AVG_FLOOR:
+            continue
+        target = (
+            float(sample_count)
+            * average_value
+            * _RANDOM_AVG_HIGH_SIGNAL_MULTIPLIER
+        )
+        candidates.append((sample_count, average_value, target))
+    if not candidates:
+        return None
+    sample_count, average_value, target = max(
+        candidates,
+        key=lambda item: (item[2], item[1], item[0]),
+    )
+    p90_gap = max(0.0, target - float(formal.p90))
+    if p90_gap < _RANDOM_AVG_HIGH_SIGNAL_MIN_P90_GAP:
+        return None
+    p90_delta = min(p90_gap, _RANDOM_AVG_HIGH_SIGNAL_MAX_DELTA)
+    diagnostics = tuple(posterior.diagnostics) + (
+        "practical_random_avg_high_signal_ceiling_watch",
+        f"practical_random_avg_high_signal_count={sample_count}",
+        f"practical_random_avg_high_signal_avg={average_value:.6f}",
+        f"practical_random_avg_high_signal_target={target:.6f}",
+        f"practical_random_avg_high_signal_p90_gap={p90_gap:.6f}",
+        f"practical_random_avg_high_signal_p90_delta={p90_delta:.6f}",
+    )
+    advisory = V3PosteriorReport(
+        map_id=posterior.map_id,
+        map_name=posterior.map_name,
+        n_total=posterior.n_total,
+        n_matched=posterior.n_matched,
+        n_strict_matched=posterior.n_strict_matched,
+        match_scope=posterior.match_scope,
+        q6_present_rate=posterior.q6_present_rate,
+        total_cells=posterior.total_cells,
+        total_value=_raise_p90_by_delta(posterior.total_value, p90_delta),
+        formal_decision_value=_raise_p90_by_delta(formal, p90_delta),
+        tail_replacement_decision_value=_raise_p90_by_delta(
+            posterior.tail_replacement_decision_value,
+            p90_delta,
+        ),
+        q6_count=posterior.q6_count,
+        q6_cells=posterior.q6_cells,
+        q6_value=posterior.q6_value,
+        q6_formal_decision_value=posterior.q6_formal_decision_value,
+        q6_tail_replacement_decision_value=(
+            posterior.q6_tail_replacement_decision_value
+        ),
+        diagnostics=diagnostics,
+    )
+    reason = (
+        "random_avg_high_signal_ceiling_shadow_only:"
+        f"n={sample_count}:avg={average_value:.0f}:"
+        f"target={target:.0f}:p90_gap={p90_gap:.0f}:"
+        f"p90_delta={p90_delta:.0f}"
+    )
+    return advisory, reason
+
+
 def _q6_value_ceiling_watch(
     posterior: V3PosteriorReport,
     *,
@@ -843,6 +975,11 @@ def _dedupe(values: list[str]) -> tuple[str, ...]:
 
 def _join_reasons(reasons: list[str]) -> str:
     return ";".join(_dedupe([reason for reason in reasons if reason]))
+
+
+def _replace_reason_prefix(reasons: list[str], prefix: str, replacement: str) -> None:
+    reasons[:] = [reason for reason in reasons if not reason.startswith(prefix)]
+    reasons.append(replacement)
 
 
 __all__ = (

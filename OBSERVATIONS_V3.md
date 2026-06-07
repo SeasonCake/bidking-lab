@@ -6244,3 +6244,30 @@ n=26 hit=0.115 miss=0.269 false=0.615 extreme=0.308
 - baseline-only 收窄后样本数太少，且 false/extreme 更差。
 - 该候选暂不进入 `v3_practical_*`，避免把 q6 expected count/cells 当成可靠 tail sampler。
 - 下一步应改成条件化 sampler：结合 hero/map/round/evidence profile 和可验证的 q6 component likelihood，而不是固定 multiplier。
+
+## O-v3-145：高 random avg P90 ceiling 是小幅干净补漏，不是 promotion 证据
+
+2026-06-07 将 `random_avg_high_signal_ceiling_watch` 接入 v3 practical 后，64-trial archive smoke：
+
+```text
+v3_practical_candidate_rows=397
+v3_practical_raise_watch_rows=82
+v3_practical_raise_watch_hit_rate=0.280488
+v3_practical_raise_watch_misleading_rate=0.097561
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.776282
+v3_practical_formal_p90_extreme_over_rate=0.319231
+```
+
+对比上一 checkpoint：
+
+- practical candidate 增加 8 行，P90 coverage 提升约 0.38 个百分点。
+- P50 MAE、P50 below-rate、raise-watch rows、raise-watch misleading rate、P90 extreme-over 均未变。
+- 说明该信号适合作为 UI 参考上沿：能补一小部分低估风险，但不会制造新的强提醒噪音。
+
+剩余问题：
+
+- `q6_tail_value` 和 `q6_gate_inactive` 仍是 live/top miss 主因；高 random avg 只能说明尾部价值压力，不足以决定 q6 count/cells/value 的分布移动。
+- 下一步应落到条件化 sampler：在 hero/map/round/evidence profile 下，用 random_avg/layout/q6 component likelihood 等证据决定 q6 posterior 是否上移。

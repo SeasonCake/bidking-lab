@@ -7894,3 +7894,57 @@ overall v3_practical_p90_extreme_over_rate=0.06
 - 当前 v3 practical 提高了 P90 coverage，但 archive practical P90 extreme-over 也从 formal 的 0.305128 升到 0.319231。
 - 这说明后续 q6 tail/value ceiling 必须先看 extreme-over，不得只因为 coverage 上升就接入 UI 或 promotion。
 - 同步模拟的 q6 pressure multiplier 候选 hit 低且 false/extreme 偏高，暂不实装；下一步应做更具体的 source-aware 条件 sampler。
+
+## 2026-06-07 checkpoint：v3 practical random_avg high-signal P90 ceiling
+
+目标：
+
+- 利用已验证较干净的公开 `random_n_avg_value` 高均值信号，减少实战中使用普品/随机均值信息后 practical P90 仍严重低估的问题。
+- 只作为 v3 practical shadow-only 上沿提示，不改变 P50、v2 formal、正式出价或 q6 字段归因。
+
+本轮动作：
+
+- `src/bidking_lab/inference/v3/practical_advisory.py` 新增 `random_avg_high_signal_ceiling_watch`：
+  - 触发条件：公开 random avg 单次均值至少 `80,000`；
+  - 目标上沿：`n * avg * 2.5`；
+  - 最小 P90 gap：`100,000`；
+  - 单次 P90 delta cap：`400,000`；
+  - 只抬 `total/formal/tail_replacement` 的 practical P90，不抬 P50，不抬 q6 子字段。
+- 该信号可与 q6 prior floor、random_avg floor、q6 value ceiling 组合，但自身只输出 `ceiling_watch`，不新增强 `raise_watch`。
+- 新增 focused test，锁住 `active=false`、`affects_bid=false`、P50 delta 为 0、q6 delta 为 0。
+
+验证结果：
+
+```text
+py_compile: passed
+focused tests: 16 passed
+archive smoke (--posterior-trials 64):
+v3_practical_candidate_rows=397
+v3_practical_raise_watch_rows=82
+v3_practical_raise_watch_hit_rate=0.280488
+v3_practical_raise_watch_misleading_rate=0.097561
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.776282
+v3_practical_formal_p90_extreme_over_rate=0.319231
+
+live brief (--since-hours 72): passed
+overall v3_practical_p90_coverage=0.5
+overall v3_practical_p90_extreme_over_rate=0.06
+```
+
+对比上一 checkpoint：
+
+- `candidate_rows`: 389 -> 397。
+- `raise_watch_rows`: 82 -> 82。
+- `P50 MAE`: 316904.870 -> 316904.870。
+- `P50 below-rate`: 0.502564 -> 0.502564。
+- `P90 coverage`: 0.772436 -> 0.776282。
+- `P90 extreme-over`: 0.319231 -> 0.319231。
+
+解读：
+
+- 该候选是小幅但干净的实战参考改进：覆盖率提升，没有增加 P50 MAE、强提醒数量或 extreme-over。
+- 由于新增覆盖只有 8 个窗口，不能作为 promotion 依据；但可以作为 UI 里的“参考上沿/低估风险”来源。
+- 后续核心仍应推进条件化 q6 tail/value sampler：让 random_avg、layout、hero/map/round 与 q6 component likelihood 共同决定是否上移 q6 分布，而不是继续扩大 broad prior。

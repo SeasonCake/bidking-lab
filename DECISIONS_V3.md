@@ -2845,3 +2845,22 @@ applied_hurts=2502
 
 - 当前 archive smoke 显示 practical P90 coverage 从 formal `0.750641` 提升到 `0.772436`，但 practical P90 extreme-over 也从 `0.305128` 升到 `0.319231`。
 - 用户接受合理偏激进上沿，但不能被过宽 P90 持续误导；因此必须把 coverage 和 extreme-over 绑定评估。
+
+## D-v3-140：公开 random avg 高均值只作为 P90 上沿提示
+
+2026-06-07 起，当前决策：
+
+- 当公开 `random_n_avg_value` 的单次均值达到高信号阈值时，v3 practical 可以给出 P90-only ceiling：
+  - `avg >= 80,000`；
+  - target=`n * avg * 2.5`；
+  - formal P90 gap 至少 `100,000`；
+  - 单次 practical P90 delta cap=`400,000`。
+- 该信号只抬 practical 的 `total_value`、`formal_decision_value`、`tail_replacement_decision_value` P90。
+- 不抬 P50，不抬 q6 子字段，不新增 `raise_watch`，不进入 v2 formal、正式 bid 或正式出价。
+- 若与 q6 prior floor、random_avg floor、q6 value ceiling 同时出现，可以组合成同一个 practical advisory，但 recommendation 仍按更强的来源决定；高 random avg 自身保持 `ceiling_watch`。
+
+原因：
+
+- archive 对照显示该候选带来小幅干净收益：`v3_practical_formal_p90_coverage` 从 `0.772436` 到 `0.776282`，`v3_practical_formal_p90_extreme_over_rate` 保持 `0.319231`，P50 MAE 不变。
+- 高 random avg 证明“当前窗口存在更高价值尾部风险”，但不能证明该风险一定来自 q6，不能直接当作正式出价或 q6 分布移动。
+- 该规则服务实战 UI 的参考上沿，避免道具后仍严重低估；promotion 仍需要后续 source-aware sampler 和 holdout 复核。
