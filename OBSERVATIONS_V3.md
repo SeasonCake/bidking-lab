@@ -6557,3 +6557,17 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 - v3 practical 当前的主要问题不再只是“完全没抬”，而是若干高风险窗口仍有 9-19 万的 residual under。
 - 后续实战优化应优先看 `v3_practical_under_by`、raise-watch 命中率、误导率和 P90 extreme-over，而不是只看 baseline top miss。
 - 这支持下一步转向 source-aware q6 tail/value 残余上沿或 UI 风险提示，而不是继续扩大 broad fixed delta。
+
+## O-v3-156：q6 prior tail cap 是 live Ethan 2501 residual under 的主要限制
+
+2026-06-07 对照 `q6_prior_tail_ceiling` 参数后：
+
+- 提高 multiplier 到 `2.8` 但保留 `500,000` cap，archive 指标不变；说明当前瓶颈不是 multiplier，而是 delta cap。
+- 将 cap 提到 `750,000` 后，archive 只小幅提升，但 live 72h 的 practical coverage 明显改善。
+- Ethan 2501 layout 4 个窗口从 `v3_practical_under_by ~= 168,754` 变为 covered，且 live practical extreme-over 没有上升。
+
+观察：
+
+- 该结果支持把 `750,000` 作为当前实战 practical cap，但不支持继续在 `650,000/700,000/800,000` 之间细搜。
+- 剩余低估更像 q6 gate / cells/value source semantics 问题，继续靠单一 cap 调整会快速遇到样本误差和 misleading 风险。
+- 当前阶段应转向逐步落地：UI 清晰展示 formal baseline、v3 practical 上沿、低估风险和 shadow-only 状态；新增样本只用于检查是否出现系统性漂移。

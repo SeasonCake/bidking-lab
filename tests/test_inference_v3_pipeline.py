@@ -351,7 +351,7 @@ def test_v3_shadow_pipeline_marks_q6_prior_floor_as_practical_p90_watch() -> Non
     assert "q6_prior_tail_ceiling" in flat["v3_practical_risk_flags"]
     assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
     assert flat["v3_practical_delta_formal_decision_value_p90"] > 0
-    assert flat["v3_practical_q6_formal_decision_value_p90"] == 920_000
+    assert flat["v3_practical_q6_formal_decision_value_p90"] == 1_050_000
 
 
 def test_v3_practical_combines_q6_prior_floor_with_tail_ceiling() -> None:

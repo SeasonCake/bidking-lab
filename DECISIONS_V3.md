@@ -2998,3 +2998,22 @@ applied_hurts=2502
 
 - 当前 practical shadow 已经会抬高部分严重低估行，但旧 brief 只显示 baseline P90，导致实战复盘时难以判断 practical 的真实贡献。
 - 对实战落地更有用的下一步不是重复修已经覆盖的 baseline miss，而是收敛 practical 残余 under、误导率和 extreme-over。
+
+## D-v3-147：q6 prior tail ceiling 采用 75 万 practical P90 delta cap
+
+2026-06-07 起，当前决策：
+
+- `q6_prior_tail_ceiling` 的 shadow-only P90 delta cap 从 `500,000` 调整为 `750,000`。
+- 不放宽触发条件：
+  - map family 仍必须是 `villa` 或 `shipwreck`；
+  - q6 present rate 仍必须达到既有门槛；
+  - prior q6 expected value 与 P90 gap 仍必须可用且达标；
+  - 仍只抬 v3 practical P90，不抬 P50。
+- 该字段只用于 `v3_practical_*` 实战参考，不得接入 v2 formal、正式 bid、defend/attack/stop price 或正式出价。
+- 后续不再围绕该 cap 做连续小步精调；除非新增实战样本暴露系统性严重高估或低估，否则把精力转向 UI 信息表达、链路稳定性和更结构化的 source-aware sampler。
+
+原因：
+
+- archive 64-trial smoke 显示：P50 MAE 不变，P90 coverage 小幅提升，raise-watch miss 降低，false_alarm/misleading 不变，extreme-over 只小幅上升。
+- 72h live brief 显示：v3 practical P90 coverage 从 `0.67` 提到 `0.75`，extreme-over 保持 `0.19`；Ethan 2501 layout 的 residual under 被覆盖。
+- 该改动符合用户当前目标：实战中宁可给出可解释的偏保守上限，也不要长期严重低估；但仍不能把该上限当正式报价。

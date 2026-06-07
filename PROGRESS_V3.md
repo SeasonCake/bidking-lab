@@ -8534,3 +8534,55 @@ live brief --since-hours 72: passed
 - 72h live top miss 的 Ethan 2501 layout 行，baseline P90 约 19-21 万，但 v3 practical P90 已抬到约 116.9 万；真实仍约 133.8 万，残余 under 约 16.9 万。
 - Aisha 2404 / Ethan 2401 的若干 top miss 也从“baseline severe miss”变成“practical 已抬高但仍有 9-19 万残余 under”。
 - 下一步 sampler 不应只继续加 broad fixed delta；更有价值的是针对 practical 残余缺口做 q6 tail/value 的 source-aware 小幅上沿，或把这类残余以 UI 低估风险提示表达。
+
+## 2026-06-07 checkpoint：q6 prior tail practical 上限收口到实战可用
+
+目标：
+
+- 不再继续做过细参数搜索；只落地一个对实战低估有明确收益、仍保持 shadow-only 的 practical 改动。
+- 解决 live 72h 中 Ethan 2501 layout 已被 practical 抬高但仍残余 under 的问题。
+
+本轮动作：
+
+- 将 `q6_prior_tail_ceiling` 的单次 P90 delta cap 从 `500,000` 提高到 `750,000`。
+- 触发条件不放宽：
+  - 仍要求 `q6_prior_floor_watch` 已触发；
+  - 仍只限 villa / shipwreck；
+  - 仍要求 q6 present rate 达到门槛；
+  - 仍然 `active=false`、`affects_bid=false`，不进入 formal 或正式出价。
+
+验证结果：
+
+```text
+pytest tests/test_inference_v3_pipeline.py -q:
+24 passed
+
+archive smoke (--posterior-trials 64):
+v3_practical_raise_watch_hit_rate=0.704348
+v3_practical_raise_watch_miss_rate=0.130435
+v3_practical_raise_watch_false_alarm_rate=0.165217
+v3_practical_raise_watch_extreme_over_rate=0.200000
+v3_practical_raise_watch_misleading_rate=0.095652
+v3_practical_formal_p50_mae=316904.870
+v3_practical_formal_p90_coverage=0.814103
+v3_practical_formal_p90_extreme_over_rate=0.326282
+
+live brief (--since-hours 72):
+overall v3_practical_p90_coverage=0.75
+overall v3_practical_p90_extreme_over_rate=0.19
+```
+
+对比上一 checkpoint：
+
+- archive `raise_watch_miss_rate`: `0.147826` -> `0.130435`。
+- archive `P90 coverage`: `0.812821` -> `0.814103`。
+- archive `P50 MAE`: 不变。
+- archive `false_alarm_rate` 与 `misleading_rate`: 不变。
+- archive `raise_watch_extreme_over_rate`: `0.191304` -> `0.200000`，小幅上升。
+- live 72h `v3_practical_p90_coverage`: `0.67` -> `0.75`，`v3_practical_p90_extreme_over_rate` 保持 `0.19`。
+
+当前解读：
+
+- 这不是 promotion，也不是正式估价重写；它只是让实战 UI 的 v3 practical 上沿更少持续低估。
+- Ethan 2501 layout 的 4 个 top miss 从 residual under 约 `168,754` 变为 practical P90 覆盖。
+- 剩余 top miss 主要是 Aisha 2404 / Ethan 2401 的 q6 gate / q6 undercovered 残余，不建议继续盲目 broad delta；后续优先通过 UI 风险表达和实战观察决定是否再加窄口径规则。
