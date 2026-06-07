@@ -8284,3 +8284,74 @@ overall v3_practical_p90_extreme_over_rate=0.19
 - 该规则是更实用的 source-profile 补漏：小幅提升 coverage，同时 raise-watch 质量整体改善。
 - live 72h 仍未变化，说明当前新增 profile 没有命中最近 live 样本；后续实战遇到 Ethan 2506 shape 时应观察 v3 practical 上沿是否有帮助。
 - Aisha 2506/Ethan 2401 暂不落规则本身也是结论：它们需要更真实的 q6 count/cells/value 条件 sampler，而不是继续 P90 delta 硬补。
+
+## 2026-06-07 checkpoint：v3 practical Ethan 2401 dense-shape source-profile ceiling
+
+目标：
+
+- 继续处理别墅 `Ethan 2401 item+shape` 的严重低估，但不做 broad `Ethan 2401` 或 broad q6 multiplier。
+- 先用可解释的 shape evidence density 作为 shadow-only practical 上沿，验证是否能改善 miss 而不放大误导。
+
+候选复核：
+
+- 现有 `v3_ccv`、`v3_resid`、`v3_cal`、`v3_under`、`v3_tail_review`、`v3_fv` 对当前 `Ethan 2401 item+shape` top miss 基本没有帮助，P90 仍维持低位。
+- 该 profile 共 27 行、8 个 practical P90 miss；多数 raw total gap 与 q6 raw gap 为 0，所以不适合继续用 raw-gap ceiling。
+- 条件 `shape_anchors >= 33` 命中 6 行，6 行全部是 miss，0 个非 miss；这说明问题更像 dense shape evidence 下 q6 count/cells/value posterior 被压低，而不是通用 tail gap。
+
+本轮动作：
+
+- 在 `source_profile_q6_tail_ceiling_watch` 规则表新增：
+  - key=`ethan|2401|item+shape`；
+  - `shape_anchors >= 33`；
+  - 不要求 `q6_present_rate` 或 raw total gap；
+  - practical P90 delta=`1,000,000`；
+  - 只抬 practical total/formal/tail/q6 formal P90，不抬 P50，不改变 raw q6 value；
+  - `active=false`、`affects_bid=false`。
+- shared v3 pipeline 透传 `shape_anchor_count`，archive/live 共用同一 practical 层。
+- 新增测试覆盖 `shape_anchors=33` 命中和 `shape_anchors=32` 不命中，防止规则退化成 broad profile。
+
+验证结果：
+
+```text
+py_compile: passed
+pytest tests/test_inference_v3_pipeline.py tests/test_live_overlay.py -q:
+56 passed
+
+archive smoke (--posterior-trials 64):
+v3_practical_candidate_rows=419
+v3_practical_raise_watch_rows=111
+v3_practical_raise_watch_hit_rate=0.684685
+v3_practical_raise_watch_miss_rate=0.153153
+v3_practical_raise_watch_false_alarm_rate=0.162162
+v3_practical_raise_watch_extreme_over_rate=0.198198
+v3_practical_raise_watch_misleading_rate=0.099099
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.810897
+v3_practical_formal_p90_extreme_over_rate=0.325641
+
+live brief (--since-hours 72):
+overall v3_practical_p90_coverage=0.67
+overall v3_practical_p90_extreme_over_rate=0.19
+```
+
+对比上一 checkpoint：
+
+- `candidate_rows`: 413 -> 419。
+- `raise_watch_rows`: 105 -> 111。
+- `raise_watch_hit_rate`: 0.666667 -> 0.684685。
+- `raise_watch_miss_rate`: 0.161905 -> 0.153153。
+- `false_alarm_rate`: 0.171429 -> 0.162162。
+- `raise_watch_extreme_over_rate`: 0.209524 -> 0.198198。
+- `misleading_rate`: 0.104762 -> 0.099099。
+- `P50 MAE`: 316904.870 -> 316904.870。
+- `P90 coverage`: 0.807051 -> 0.810897。
+- `P90 extreme-over`: 保持 `0.325641`。
+
+解读：
+
+- 这是第一个 evidence-density source-profile ceiling：它利用 shape anchor 数量，而不是只看 hero/map/profile。
+- 指标表现符合实战目标：P90 coverage 提升，raise-watch 各项质量改善，P50 MAE 不变，整体 P90 extreme-over 不变。
+- 该规则仍然只是 practical shadow 上沿；真正 v3 sampler 仍应把 q6 count/cells/value posterior 条件化，而不是继续叠加固定 delta。

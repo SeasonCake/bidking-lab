@@ -230,6 +230,9 @@ def estimate_shadow_pipeline(
         evidence_events=tuple(evidence_events),
         hero=hero,
         evidence_profile_key=evidence_profile_key,
+        shape_anchor_count=(
+            len(constraints.shape_anchors) if constraints is not None else None
+        ),
     )
     return V3ShadowPipelineReport(
         posterior=posterior,

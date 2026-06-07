@@ -6463,3 +6463,33 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 - 相比上一 checkpoint，coverage 提升且 raise-watch 的 hit/miss/false/extreme/misleading 都改善。
 - 这支持继续“单 profile、强门槛、小步 shadow”的落地方向。
 - 72h live brief 未变化，说明最近 live 未命中该 profile；不需要立刻新增实战样本。
+
+## O-v3-152：Ethan 2401 item+shape 的可用信号是 dense shape evidence，不是 broad profile
+
+2026-06-07 继续复核 `Ethan 2401 item+shape` 后：
+
+- 该 profile 共 27 行、8 个 practical P90 miss，部分 under 接近或超过 90 万。
+- 直接对整个 `ethan|2401|item+shape` 加固定 P90 delta 会产生 false/misleading，因此不能作为 broad source-profile ceiling。
+- 现有 `v3_ccv`、`v3_resid`、`v3_cal`、`v3_under`、`v3_tail_review`、`v3_fv` 对这些 top miss 基本不改变 P90，说明当前 sampler 没有从 dense shape evidence 推出足够的 q6 count/cells/value 上沿。
+- 条件 `shape_anchors >= 33` 命中 6 行，6 行全部是 miss，0 个非 miss；这是目前最干净的 practical gate。
+
+接入 `shape_anchors >= 33`、`1,000,000` P90-only ceiling 后 64-trial archive smoke：
+
+```text
+v3_practical_candidate_rows=419
+v3_practical_raise_watch_rows=111
+v3_practical_raise_watch_hit_rate=0.684685
+v3_practical_raise_watch_miss_rate=0.153153
+v3_practical_raise_watch_false_alarm_rate=0.162162
+v3_practical_raise_watch_extreme_over_rate=0.198198
+v3_practical_raise_watch_misleading_rate=0.099099
+v3_practical_formal_p50_mae=316904.870
+v3_practical_formal_p90_coverage=0.810897
+v3_practical_formal_p90_extreme_over_rate=0.325641
+```
+
+结论：
+
+- `Ethan 2401 item+shape` 不是“不该补”，而是不能用 broad 补；shape anchor 密度是当前可落地的区分条件。
+- 该规则改善 P90 coverage 和 raise-watch 质量，且不动 P50、不增加整体 extreme-over，适合进入 v3 practical shadow。
+- 后续正式 v3 sampler 应把 shape anchors 作为 q6 count/cells/value likelihood 的输入，而不是长期依赖固定 delta。

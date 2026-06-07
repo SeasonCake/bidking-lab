@@ -644,6 +644,59 @@ def test_v3_practical_marks_ethan_shipwreck_shape_source_profile_ceiling() -> No
     assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 500_000.0
 
 
+def test_v3_practical_marks_ethan_villa_dense_shape_source_profile_ceiling() -> None:
+    baseline = _posterior_report(
+        map_id=2401,
+        q6_present_rate=0.8,
+        formal=_q(100_000, 450_000, 780_000),
+        total_value=_q(100_000, 450_000, 780_000),
+        q6_value=_q(0, 200_000, 630_000),
+        q6_formal=_q(0, 200_000, 630_000),
+    )
+
+    report = advise_practical_report(
+        baseline,
+        hero="ethan",
+        evidence_profile_key="item+shape",
+        shape_anchor_count=33,
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_source_profile_q6_tail_ceiling"
+    assert flat["v3_practical_mode"] == "source_profile_q6_tail_ceiling_watch"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert "source_profile_q6_tail_ceiling" in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 1_000_000.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 1_000_000.0
+
+
+def test_v3_practical_keeps_ethan_villa_dense_shape_ceiling_shape_scoped() -> None:
+    baseline = _posterior_report(
+        map_id=2401,
+        q6_present_rate=0.8,
+        formal=_q(100_000, 450_000, 780_000),
+        total_value=_q(100_000, 450_000, 780_000),
+        q6_value=_q(0, 200_000, 630_000),
+        q6_formal=_q(0, 200_000, 630_000),
+    )
+
+    report = advise_practical_report(
+        baseline,
+        hero="ethan",
+        evidence_profile_key="item+shape",
+        shape_anchor_count=32,
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "baseline_passthrough"
+    assert "source_profile_q6_tail_ceiling" not in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 0.0
+
+
 def test_v3_practical_keeps_source_profile_q6_tail_ceiling_profile_scoped() -> None:
     baseline = _posterior_report(
         map_id=2501,

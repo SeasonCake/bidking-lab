@@ -63,6 +63,12 @@ _SOURCE_PROFILE_Q6_TAIL_CEILING_RULES = {
         "min_raw_total_p90_gap": 100_000.0,
         "p90_delta": 500_000.0,
     },
+    ("ethan", 2401, "item+shape"): {
+        "min_q6_present_rate": 0.0,
+        "min_raw_total_p90_gap": 0.0,
+        "min_shape_anchors": 33,
+        "p90_delta": 1_000_000.0,
+    },
 }
 
 
@@ -224,6 +230,7 @@ def advise_practical_report(
     evidence_events: tuple[Any, ...] = (),
     hero: str | None = None,
     evidence_profile_key: str | None = None,
+    shape_anchor_count: int | None = None,
 ) -> V3PracticalAdvisoryReport:
     if posterior is None or not posterior.ready:
         return V3PracticalAdvisoryReport(
@@ -252,6 +259,7 @@ def advise_practical_report(
             advisory,
             hero=hero,
             evidence_profile_key=source_profile,
+            shape_anchor_count=shape_anchor_count,
         )
         if combined is None:
             return advisory
@@ -703,6 +711,7 @@ def advise_practical_report(
         posterior,
         hero=hero,
         evidence_profile_key=source_profile,
+        shape_anchor_count=shape_anchor_count,
     )
     if source_profile_watch is not None:
         advisory, source_profile_reason = source_profile_watch
@@ -1128,6 +1137,7 @@ def _source_profile_q6_tail_ceiling_watch(
     *,
     hero: str | None,
     evidence_profile_key: str,
+    shape_anchor_count: int | None,
 ) -> tuple[V3PosteriorReport, str] | None:
     rule = _SOURCE_PROFILE_Q6_TAIL_CEILING_RULES.get(
         (_normal_hero(hero), int(posterior.map_id), evidence_profile_key)
@@ -1143,6 +1153,10 @@ def _source_profile_q6_tail_ceiling_watch(
     min_present_rate = float(rule["min_q6_present_rate"])
     if present_rate is None or present_rate < min_present_rate:
         return None
+    min_shape_anchors = rule.get("min_shape_anchors")
+    if min_shape_anchors is not None:
+        if shape_anchor_count is None or int(shape_anchor_count) < int(min_shape_anchors):
+            return None
     raw_total_gap = max(0.0, float(total.p90) - float(formal.p90))
     min_raw_total_gap = float(rule["min_raw_total_p90_gap"])
     if raw_total_gap < min_raw_total_gap:
@@ -1153,6 +1167,7 @@ def _source_profile_q6_tail_ceiling_watch(
         f"practical_source_profile_hero={_normal_hero(hero)}",
         f"practical_source_profile_key={evidence_profile_key}",
         f"practical_source_profile_q6_present_rate={present_rate:.6f}",
+        f"practical_source_profile_shape_anchors={shape_anchor_count}",
         f"practical_source_profile_raw_total_gap={raw_total_gap:.6f}",
         f"practical_source_profile_p90_delta={p90_delta:.6f}",
     )
@@ -1185,6 +1200,7 @@ def _source_profile_q6_tail_ceiling_watch(
         "source_profile_q6_tail_ceiling_shadow_only:"
         f"hero={_normal_hero(hero)}:map_id={posterior.map_id}:"
         f"profile={evidence_profile_key}:present_rate={present_rate:.3f}:"
+        f"shape_anchors={shape_anchor_count}:"
         f"raw_total_gap={raw_total_gap:.0f}:p90_delta={p90_delta:.0f}"
     )
     return advisory, reason

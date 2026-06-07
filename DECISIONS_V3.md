@@ -2937,6 +2937,7 @@ applied_hurts=2502
 - 当前允许规则：
   - key=`ethan|2501|public:random_avg+shape`；`q6_present_rate >= 0.85`；`total_value.p90 - formal_decision_value.p90 >= 100,000`；practical P90 delta=`400,000`。
   - key=`ethan|2506|shape`；`q6_present_rate >= 0.85`；`total_value.p90 - formal_decision_value.p90 >= 100,000`；practical P90 delta=`500,000`。
+  - key=`ethan|2401|item+shape`；`shape_anchors >= 33`；practical P90 delta=`1,000,000`；该规则不要求 raw gap 或 q6 present gate，因为当前问题表现为 dense shape evidence 下 q6 posterior 被压低。
 - source-profile rule 只抬 practical total/formal/tail/q6 formal P90，不抬 P50，不改变 raw q6 value。
 - `estimate_shadow_pipeline()` 负责透传 source context，archive/live 不能各自绕过 practical 层实现 profile 规则。
 - 所有 source-profile rule 继续固定 `active=false`、`affects_bid=false`，不得进入 v2 formal、正式 bid 或正式出价。
@@ -2947,3 +2948,4 @@ applied_hurts=2502
 - 规则命中范围窄，72h live brief 不变，说明不会在无关 live 窗口里乱抬。
 - 更宽的 profile 集合虽然能覆盖更多 miss，但会引入更多 misleading；因此后续必须按单 profile promotion 到 practical shadow，而不是一次性 broad hero/map multiplier。
 - `ethan|2506|shape` 追加后，archive smoke 的 practical P90 coverage 继续从 `0.802564` 提到 `0.807051`，P50 MAE 不变，整体 practical P90 extreme-over 仍保持 `0.325641`；raise-watch hit/miss/false/extreme/misleading 均改善。
+- `ethan|2401|item+shape` 的 broad 规则会制造 false/misleading，但 `shape_anchors >= 33` 只命中 6 行且全部是 miss；接入后 archive smoke 的 practical P90 coverage 从 `0.807051` 提到 `0.810897`，P50 MAE 不变，整体 practical P90 extreme-over 仍保持 `0.325641`，raise-watch hit/miss/false/extreme/misleading 继续改善。
