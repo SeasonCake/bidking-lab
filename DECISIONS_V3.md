@@ -3032,3 +3032,22 @@ applied_hurts=2502
 - 当前阶段目标是实战可用性，而不是继续细调参数；用户需要快速分清正式出价依据和 v3 practical 风险参考。
 - 只显示 v3 practical P90 会放大误读风险：它是上沿/低估风险参考，不是 defend/attack/stop price。
 - 并排显示 formal baseline 与 v3 上沿，可以让实战中“模型正式建议偏低，但 v3 提醒低估风险”的场景更可解释。
+
+## D-v3-149：post-game model_eval brief 必须报告 v3 practical shadow 边界与收益
+
+2026-06-07 起，当前决策：
+
+- `summarize_live_model_eval.py --brief` 必须保留 `v3_practical` 聚合块，至少包含：
+  - practical rows / available / ready / candidate；
+  - `active_rows` 与 `affects_bid_rows`；
+  - recommendation、source lane、risk flag 计数；
+  - formal P90 与 q6 formal P90 的 baseline vs practical 覆盖变化；
+  - raise_watch 的 hit / miss / false_alarm / extreme_over / misleading。
+- 该 brief 只服务 post-game 复盘和实战可读性，不改变 v2 formal、正式出价、v3 practical 数值或 promotion gate。
+- 如果当前 `model_eval.jsonl` 是旧字段集，`v3_practical.rows=0` 只表示该日志没有对应字段，不得据此判断 v3 practical 失效。
+
+原因：
+
+- `post_game_live.ps1` 已调用 `summarize_live_model_eval.py --brief`，但旧 brief 只突出 q6 shadow 旧候选，缺少 v3 practical 的正式 baseline vs 上沿对照。
+- 当前阶段重点是实战可用性和链路稳定：每局后应能快速看出 practical 是否仍为 shadow-only、是否减少低估、是否引入 misleading/extreme-over。
+- 这与 overlay 并排显示 formal baseline / v3 practical 的决策保持一致。

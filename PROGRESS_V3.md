@@ -8621,3 +8621,42 @@ overall v3_practical_p90_extreme_over_rate=0.19
 - 这是纯 UI/contract 可读性改动，不改变 v2 formal、正式出价或 v3 practical 数值。
 - 实战面板现在更符合当前阶段目标：第一屏/hover 可以同时看正式 baseline、v3 practical 上沿、delta、来源和只读状态。
 - 后续优先继续做链路稳定和用户可读提示；除非新增实战样本显示系统性偏差，不再围绕小参数做连续细搜。
+
+## 2026-06-07 checkpoint：post_game brief 增加 v3 practical shadow 汇总
+
+目标：
+
+- 继续推进实战落地，不改变 v2 formal、正式出价或 v3 practical 数值。
+- 让 `post_game_live.ps1` 调用的 `summarize_live_model_eval.py --brief` 能直接显示 v3 practical 的实战参考价值和边界。
+
+本轮动作：
+
+- `summarize_live_model_eval.py` 新增 `v3_practical` 聚合块：
+  - rows / available / ready / candidate；
+  - active_rows / affects_bid_rows，用于确认 shadow-only 边界；
+  - recommendation / confidence / source / source_lanes / risk_flags 计数；
+  - formal P90 与 q6 formal P90 的 baseline vs practical 覆盖、残余 under、helped/still_missed、extreme-over；
+  - raise_watch 的 hit / miss / false_alarm / extreme_over / misleading。
+- `brief_summary()` 保留该聚合块，方便每局 post-game 复盘。
+- 新增单元测试覆盖 synthetic `raise_watch` hit、false alarm、misleading、q6 residual under 与 `brief_summary` 透传。
+
+验证结果：
+
+```text
+py_compile scripts/summarize_live_model_eval.py tests/test_summarize_live_model_eval.py: passed
+pytest tests/test_summarize_live_model_eval.py -q:
+19 passed
+
+summarize_live_model_eval.py --brief: passed
+current model_eval v3_practical.rows=0  (当前日志为旧字段集，没有 v3_practical)
+
+summarize_live_windivert_brief.py --since-hours 72 --format json: passed
+overall v3_practical_p90_coverage=0.69
+overall v3_practical_p90_extreme_over_rate=0.07
+```
+
+当前解读：
+
+- 这是 post-game 可读性和 contract 汇总改动，不是 sampler 调参，也不接入正式出价。
+- 当前 `model_eval.jsonl` 去重有效行没有 v3 practical 字段，所以新 brief 块为空；72h windivert/prebid archive 路径仍能看到 practical 指标。
+- 后续用最新 monitor 采集的新局会自然进入 `model_eval --brief` 的 v3 practical 汇总，便于实战后快速判断：正式 baseline 是否低估、v3 practical 是否覆盖、是否有 misleading/extreme-over 风险。

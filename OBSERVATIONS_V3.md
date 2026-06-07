@@ -6584,3 +6584,21 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 
 - 这类 UI 链路问题不会改变 MAE/P90 coverage，但会直接影响实战可用性。
 - 后续落地优先级应包含“字段是否可读、是否有正式/参考边界”，不能只看 evaluator 指标。
+
+## O-v3-158：post-game brief 曾缺少 v3 practical 聚合视角
+
+2026-06-07 检查 `post_game_live.ps1` 后：
+
+- post-game 脚本会调用 `summarize_live_model_eval.py --brief`。
+- 该 brief 原先已经包含 q6 shadow sampling / candidate readiness，但没有 v3 practical 的聚合块。
+- 因此实战局后只能从 overlay 或 windivert brief 间接判断 practical 的贡献，不能直接在 model_eval brief 中看到：
+  - formal baseline P90 与 v3 practical P90 覆盖差异；
+  - raise_watch 是否命中、误报或 misleading；
+  - source lane / risk flag 分布；
+  - `active=false`、`affects_bid=false` 边界是否仍成立。
+
+修复后：
+
+- `model_eval --brief` 会输出 `v3_practical` 聚合；如果日志本身没有 v3 practical 字段，则 rows 显示为 0。
+- 当前真实 `model_eval.jsonl` 去重有效行仍是旧字段集，`v3_practical.rows=0`；同一时间 72h windivert/prebid brief 仍显示 practical 指标，说明 archive/prebid 路径正常。
+- 后续最新 monitor 采样应同时检查 `model_eval --brief` 与 `summarize_live_windivert_brief.py --since-hours 72`，避免 UI/复盘路径再次出现字段断层。

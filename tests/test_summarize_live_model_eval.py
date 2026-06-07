@@ -529,6 +529,146 @@ def test_brief_summary_keeps_live_review_signals_compact() -> None:
     assert "groups" not in brief
 
 
+def test_summarize_and_brief_include_v3_practical_shadow_review() -> None:
+    module = _summary_module()
+
+    rows = [
+        {
+            "ts": 1,
+            "file": "hit.json",
+            "final_value": 500_000,
+            "final_decision_value": 500_000,
+            "final_q6_decision_value": 200_000,
+            "v3_practical_available": True,
+            "v3_practical_ready": True,
+            "v3_practical_candidate": True,
+            "v3_practical_active": False,
+            "v3_practical_affects_bid": False,
+            "v3_practical_recommendation": "raise_watch",
+            "v3_practical_confidence": "medium",
+            "v3_practical_source": "q6_prior_floor",
+            "v3_practical_source_lanes": "formal_value+prior_q6_floor",
+            "v3_practical_risk_flags": "q6_prior_floor_watch,value_floor_candidate",
+            "v3_practical_baseline_formal_decision_value_p50": 300_000,
+            "v3_practical_formal_decision_value_p50": 300_000,
+            "v3_practical_delta_formal_decision_value_p50": 0,
+            "v3_practical_baseline_formal_decision_value_p90": 300_000,
+            "v3_practical_formal_decision_value_p90": 600_000,
+            "v3_practical_baseline_q6_formal_decision_value_p50": 100_000,
+            "v3_practical_q6_formal_decision_value_p50": 100_000,
+            "v3_practical_delta_q6_formal_decision_value_p50": 0,
+            "v3_practical_baseline_q6_formal_decision_value_p90": 100_000,
+            "v3_practical_q6_formal_decision_value_p90": 250_000,
+        },
+        {
+            "ts": 2,
+            "file": "false-alarm.json",
+            "final_value": 600_000,
+            "final_decision_value": 600_000,
+            "final_q6_decision_value": 0,
+            "v3_practical_available": True,
+            "v3_practical_ready": True,
+            "v3_practical_candidate": True,
+            "v3_practical_active": False,
+            "v3_practical_affects_bid": False,
+            "v3_practical_recommendation": "raise_watch",
+            "v3_practical_confidence": "low",
+            "v3_practical_source": "formal_value",
+            "v3_practical_source_lanes": "formal_value,underestimate_repair",
+            "v3_practical_risk_flags": "underestimate_repair_candidate",
+            "v3_practical_baseline_formal_decision_value_p50": 600_000,
+            "v3_practical_formal_decision_value_p50": 620_000,
+            "v3_practical_delta_formal_decision_value_p50": 20_000,
+            "v3_practical_baseline_formal_decision_value_p90": 800_000,
+            "v3_practical_formal_decision_value_p90": 1_300_000,
+            "v3_practical_baseline_q6_formal_decision_value_p50": 0,
+            "v3_practical_q6_formal_decision_value_p50": 0,
+            "v3_practical_delta_q6_formal_decision_value_p50": 0,
+            "v3_practical_baseline_q6_formal_decision_value_p90": 0,
+            "v3_practical_q6_formal_decision_value_p90": 0,
+        },
+        {
+            "ts": 3,
+            "file": "still-missed.json",
+            "final_value": 900_000,
+            "final_decision_value": 900_000,
+            "final_q6_decision_value": 300_000,
+            "v3_practical_available": True,
+            "v3_practical_ready": True,
+            "v3_practical_candidate": True,
+            "v3_practical_active": False,
+            "v3_practical_affects_bid": False,
+            "v3_practical_recommendation": "ceiling_watch",
+            "v3_practical_confidence": "medium",
+            "v3_practical_source": "q6_value_residual",
+            "v3_practical_source_lanes": "formal_value+q6_value_residual",
+            "v3_practical_risk_flags": "q6_value_ceiling_watch",
+            "v3_practical_baseline_formal_decision_value_p50": 700_000,
+            "v3_practical_formal_decision_value_p50": 700_000,
+            "v3_practical_delta_formal_decision_value_p50": 0,
+            "v3_practical_baseline_formal_decision_value_p90": 700_000,
+            "v3_practical_formal_decision_value_p90": 800_000,
+            "v3_practical_baseline_q6_formal_decision_value_p50": 200_000,
+            "v3_practical_q6_formal_decision_value_p50": 220_000,
+            "v3_practical_delta_q6_formal_decision_value_p50": 20_000,
+            "v3_practical_baseline_q6_formal_decision_value_p90": 200_000,
+            "v3_practical_q6_formal_decision_value_p90": 250_000,
+        },
+    ]
+
+    summary = module.summarize(rows)
+    practical = summary["v3_practical"]
+
+    assert practical["rows"] == 3
+    assert practical["available_rows"] == 3
+    assert practical["ready_rows"] == 3
+    assert practical["candidate_rows"] == 3
+    assert practical["active_rows"] == 0
+    assert practical["affects_bid_rows"] == 0
+    assert practical["recommendation_counts"] == {
+        "raise_watch": 2,
+        "ceiling_watch": 1,
+    }
+    assert practical["source_lane_counts"]["formal_value"] == 3
+    assert practical["risk_flag_counts"]["q6_prior_floor_watch"] == 1
+    assert practical["risk_flag_counts"]["underestimate_repair_candidate"] == 1
+
+    formal_p90 = practical["formal_p90"]
+    assert formal_p90["baseline_p90_median"] == 700_000
+    assert formal_p90["practical_p90_median"] == 800_000
+    assert formal_p90["delta_p90_median"] == 300_000
+    assert formal_p90["baseline_under_rows"] == 2
+    assert formal_p90["baseline_coverage_rate"] == 0.3333
+    assert formal_p90["baseline_under_by_median"] == 200_000
+    assert formal_p90["practical_under_rows"] == 1
+    assert formal_p90["practical_coverage_rate"] == 0.6667
+    assert formal_p90["practical_under_by_median"] == 100_000
+    assert formal_p90["helped_rows"] == 1
+    assert formal_p90["still_missed_rows"] == 1
+    assert formal_p90["worsened_rows"] == 0
+    assert formal_p90["under_by_reduction_median"] == 100_000
+    assert formal_p90["practical_extreme_over_rate"] == 0.3333
+
+    q6_p90 = practical["q6_formal_p90"]
+    assert q6_p90["baseline_under_rows"] == 2
+    assert q6_p90["practical_under_rows"] == 1
+    assert q6_p90["helped_rows"] == 1
+    assert q6_p90["still_missed_rows"] == 1
+
+    raise_watch = practical["raise_watch_review"]
+    assert raise_watch["rows"] == 2
+    assert raise_watch["evaluated_rows"] == 2
+    assert raise_watch["hit_rows"] == 1
+    assert raise_watch["false_alarm_rows"] == 1
+    assert raise_watch["extreme_over_rows"] == 1
+    assert raise_watch["misleading_rows"] == 1
+    assert raise_watch["misleading_rate"] == 0.5
+
+    brief = module.brief_summary(summary)
+    assert brief["v3_practical"]["formal_p90"]["helped_rows"] == 1
+    assert brief["v3_practical"]["affects_bid_rows"] == 0
+
+
 def test_export_shadow_candidate_reviews_writes_active_rows(tmp_path: Path) -> None:
     module = _summary_module()
     rows = [

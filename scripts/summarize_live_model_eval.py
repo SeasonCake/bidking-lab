@@ -250,6 +250,65 @@ def _rate(rows: list[dict[str, Any]], key: str) -> float | None:
     return round(statistics.mean(1.0 if value else 0.0 for value in values), 4)
 
 
+def _truthy_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def _truthy_count(rows: list[dict[str, Any]], key: str) -> int:
+    return sum(1 for row in rows if _truthy_value(row.get(key)))
+
+
+def _first_numeric(row: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = _numeric(row, key)
+        if value is not None:
+            return value
+    return None
+
+
+def _split_tokens(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        tokens: list[str] = []
+        for item in value:
+            tokens.extend(_split_tokens(item))
+        return tokens
+    text = str(value)
+    for sep in ("+", ",", ";", "|"):
+        text = text.replace(sep, " ")
+    return [part.strip() for part in text.split() if part.strip()]
+
+
+def _text_counts(
+    rows: list[dict[str, Any]],
+    key: str,
+    *,
+    split_tokens: bool = False,
+    limit: int = 8,
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        value = row.get(key)
+        if split_tokens:
+            values = _split_tokens(value)
+        elif value is None or str(value).strip() == "":
+            values = []
+        else:
+            values = [str(value).strip()]
+        counts.update(values)
+    return {
+        label: count
+        for label, count in counts.most_common(limit)
+    }
+
+
 def _numeric(row: dict[str, Any], key: str) -> float | None:
     value = row.get(key)
     if value is None:
@@ -367,6 +426,282 @@ def _q6_under_gap_band(value: int | None) -> str:
     return "large_>300k"
 
 
+def _v3_practical_truth_value(row: dict[str, Any]) -> float | None:
+    return _first_numeric(
+        row,
+        "final_formal_decision_value",
+        "final_decision_value",
+        "decision_value_truth",
+        "final_value",
+    )
+
+
+def _v3_practical_q6_truth_value(row: dict[str, Any]) -> float | None:
+    if (
+        row.get("final_q6_decision_value") is None
+        and row.get("final_q6_value") is None
+    ):
+        return None
+    return float(_final_q6_decision_value(row))
+
+
+def _under_by(truth: float | None, prediction: float | None) -> float | None:
+    if truth is None or prediction is None:
+        return None
+    return max(0.0, truth - prediction)
+
+
+def _normalized_error_denominator(truth: float) -> float:
+    return max(100_000.0, abs(truth))
+
+
+def _coverage_rate(under_by_values: list[float]) -> float | None:
+    if not under_by_values:
+        return None
+    return round(
+        statistics.mean(1.0 if value <= 0 else 0.0 for value in under_by_values),
+        4,
+    )
+
+
+def _median_number(values: list[float]) -> int | None:
+    return _round(statistics.median(values)) if values else None
+
+
+def _v3_practical_p90_summary(
+    rows: list[dict[str, Any]],
+    *,
+    truth_func: Any,
+    baseline_key: str,
+    practical_key: str,
+) -> dict[str, Any]:
+    baseline_under: list[float] = []
+    practical_under: list[float] = []
+    paired_reduction: list[float] = []
+    baseline_missed = 0
+    practical_missed = 0
+    helped = 0
+    still_missed = 0
+    worsened = 0
+    extreme_over_values: list[float] = []
+
+    for row in rows:
+        truth = truth_func(row)
+        baseline = _numeric(row, baseline_key)
+        practical = _numeric(row, practical_key)
+        baseline_gap = _under_by(truth, baseline)
+        practical_gap = _under_by(truth, practical)
+        if baseline_gap is not None:
+            baseline_under.append(baseline_gap)
+            if baseline_gap > 0:
+                baseline_missed += 1
+        if practical_gap is not None:
+            practical_under.append(practical_gap)
+            if practical_gap > 0:
+                practical_missed += 1
+        if baseline_gap is not None and practical_gap is not None:
+            paired_reduction.append(baseline_gap - practical_gap)
+            if baseline_gap > 0 and practical_gap <= 0:
+                helped += 1
+            if baseline_gap > 0 and practical_gap > 0:
+                still_missed += 1
+            if practical_gap > baseline_gap:
+                worsened += 1
+            if truth is not None and practical is not None:
+                extreme_over_values.append(
+                    1.0
+                    if practical - truth > _normalized_error_denominator(truth)
+                    else 0.0
+                )
+
+    return {
+        "baseline_p90_median": _median_value(rows, baseline_key),
+        "practical_p90_median": _median_value(rows, practical_key),
+        "delta_p90_median": _median_number(
+            [
+                practical - baseline
+                for row in rows
+                if (baseline := _numeric(row, baseline_key)) is not None
+                and (practical := _numeric(row, practical_key)) is not None
+            ]
+        ),
+        "truth_rows": len(
+            [
+                row
+                for row in rows
+                if truth_func(row) is not None
+                and (
+                    _numeric(row, baseline_key) is not None
+                    or _numeric(row, practical_key) is not None
+                )
+            ]
+        ),
+        "baseline_under_rows": baseline_missed,
+        "baseline_coverage_rate": _coverage_rate(baseline_under),
+        "baseline_under_by_median": _median_number(
+            [value for value in baseline_under if value > 0]
+        ),
+        "practical_under_rows": practical_missed,
+        "practical_coverage_rate": _coverage_rate(practical_under),
+        "practical_under_by_median": _median_number(
+            [value for value in practical_under if value > 0]
+        ),
+        "helped_rows": helped,
+        "still_missed_rows": still_missed,
+        "worsened_rows": worsened,
+        "under_by_reduction_median": _median_number(paired_reduction),
+        "practical_extreme_over_rate": (
+            round(statistics.mean(extreme_over_values), 4)
+            if extreme_over_values
+            else None
+        ),
+    }
+
+
+def _v3_practical_raise_watch_review(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    watch_rows = [
+        row
+        for row in rows
+        if row.get("v3_practical_recommendation") == "raise_watch"
+    ]
+    hit = 0
+    miss = 0
+    false_alarm = 0
+    extreme_over = 0
+    misleading = 0
+    evaluated = 0
+    for row in watch_rows:
+        truth = _v3_practical_truth_value(row)
+        baseline = _numeric(row, "v3_practical_baseline_formal_decision_value_p90")
+        practical = _numeric(row, "v3_practical_formal_decision_value_p90")
+        if truth is None or baseline is None or practical is None:
+            continue
+        evaluated += 1
+        baseline_missed = baseline < truth
+        practical_covered = practical >= truth
+        is_false_alarm = not baseline_missed
+        is_extreme_over = practical - truth > _normalized_error_denominator(truth)
+        if baseline_missed and practical_covered:
+            hit += 1
+        if baseline_missed and not practical_covered:
+            miss += 1
+        if is_false_alarm:
+            false_alarm += 1
+        if is_extreme_over:
+            extreme_over += 1
+        if is_false_alarm and is_extreme_over:
+            misleading += 1
+    return {
+        "rows": len(watch_rows),
+        "evaluated_rows": evaluated,
+        "hit_rows": hit,
+        "miss_rows": miss,
+        "false_alarm_rows": false_alarm,
+        "extreme_over_rows": extreme_over,
+        "misleading_rows": misleading,
+        "hit_rate": round(hit / evaluated, 4) if evaluated else None,
+        "miss_rate": round(miss / evaluated, 4) if evaluated else None,
+        "false_alarm_rate": (
+            round(false_alarm / evaluated, 4) if evaluated else None
+        ),
+        "extreme_over_rate": (
+            round(extreme_over / evaluated, 4) if evaluated else None
+        ),
+        "misleading_rate": round(misleading / evaluated, 4) if evaluated else None,
+    }
+
+
+def _v3_practical_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    practical_rows = [
+        row
+        for row in rows
+        if row.get("v3_practical_available") is not None
+        or row.get("v3_practical_formal_decision_value_p90") is not None
+        or row.get("v3_practical_recommendation") is not None
+    ]
+    ready_rows = [
+        row for row in practical_rows if _truthy_value(row.get("v3_practical_ready"))
+    ]
+    candidate_rows = [
+        row
+        for row in practical_rows
+        if _truthy_value(row.get("v3_practical_candidate"))
+    ]
+    scoped_rows = ready_rows or practical_rows
+    return {
+        "rows": len(practical_rows),
+        "available_rows": _truthy_count(practical_rows, "v3_practical_available"),
+        "ready_rows": len(ready_rows),
+        "candidate_rows": len(candidate_rows),
+        "active_rows": _truthy_count(practical_rows, "v3_practical_active"),
+        "affects_bid_rows": _truthy_count(
+            practical_rows,
+            "v3_practical_affects_bid",
+        ),
+        "recommendation_counts": _text_counts(
+            practical_rows,
+            "v3_practical_recommendation",
+        ),
+        "confidence_counts": _text_counts(
+            practical_rows,
+            "v3_practical_confidence",
+        ),
+        "source_counts": _text_counts(practical_rows, "v3_practical_source"),
+        "source_lane_counts": _text_counts(
+            practical_rows,
+            "v3_practical_source_lanes",
+            split_tokens=True,
+        ),
+        "risk_flag_counts": _text_counts(
+            practical_rows,
+            "v3_practical_risk_flags",
+            split_tokens=True,
+            limit=12,
+        ),
+        "formal_p90": _v3_practical_p90_summary(
+            scoped_rows,
+            truth_func=_v3_practical_truth_value,
+            baseline_key="v3_practical_baseline_formal_decision_value_p90",
+            practical_key="v3_practical_formal_decision_value_p90",
+        ),
+        "q6_formal_p90": _v3_practical_p90_summary(
+            scoped_rows,
+            truth_func=_v3_practical_q6_truth_value,
+            baseline_key="v3_practical_baseline_q6_formal_decision_value_p90",
+            practical_key="v3_practical_q6_formal_decision_value_p90",
+        ),
+        "formal_p50": {
+            "baseline_p50_median": _median_value(
+                scoped_rows,
+                "v3_practical_baseline_formal_decision_value_p50",
+            ),
+            "practical_p50_median": _median_value(
+                scoped_rows,
+                "v3_practical_formal_decision_value_p50",
+            ),
+            "delta_p50_median": _median_value(
+                scoped_rows,
+                "v3_practical_delta_formal_decision_value_p50",
+            ),
+        },
+        "q6_formal_p50": {
+            "baseline_p50_median": _median_value(
+                scoped_rows,
+                "v3_practical_baseline_q6_formal_decision_value_p50",
+            ),
+            "practical_p50_median": _median_value(
+                scoped_rows,
+                "v3_practical_q6_formal_decision_value_p50",
+            ),
+            "delta_p50_median": _median_value(
+                scoped_rows,
+                "v3_practical_delta_q6_formal_decision_value_p50",
+            ),
+        },
+        "raise_watch_review": _v3_practical_raise_watch_review(scoped_rows),
+    }
+
+
 def _limit_rows(rows: Any, limit: int = 5) -> list[dict[str, Any]]:
     if not isinstance(rows, list):
         return []
@@ -468,6 +803,7 @@ def brief_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "q6_shadow_candidate_readiness": _candidate_readiness_brief(
             summary.get("q6_shadow_candidate_readiness")
         ),
+        "v3_practical": summary.get("v3_practical"),
         "next_sampling_targets": _limit_rows(
             summary.get("next_sampling_targets"),
             limit=8,
@@ -1777,6 +2113,7 @@ def summarize(
             valid,
             q6_shadow_sampling_progress,
         ),
+        "v3_practical": _v3_practical_summary(valid),
         "next_sampling_targets": _next_sampling_targets(collection_readiness),
         "q6_false_low_count": sum(
             1 for row in valid if row.get("q6_false_low_risk") is True
