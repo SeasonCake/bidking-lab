@@ -6644,3 +6644,15 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 - brief 增加 `latest_rows` 与 `top_under_rows`。
 - 当前真实 72h 窗口没有可评估 model_eval 行，所以该能力等待下一批 live 样本验证；synthetic test 已覆盖有数据时的行级摘要。
 - 该变化是复盘链路增强，不代表 v3 practical 数值或正式估价发生变化。
+
+## O-v3-162：helper 级测试不足以保护 post-game CLI 链路
+
+2026-06-07 检查测试覆盖后：
+
+- `summarize_live_model_eval.py` 已有 helper / summary 级测试。
+- 但 `post_game_live.ps1` 实际调用的是 CLI，涉及 argparse、默认 error log、时间窗口和 JSON 输出。
+
+修复后：
+
+- 新增 `main()` 端到端测试，临时构造 model_eval/error log，验证 `--brief --since-hours` 的完整输出。
+- 这让 post-game 复盘链路的窗口过滤和 v3 practical 行级复盘更可复核。

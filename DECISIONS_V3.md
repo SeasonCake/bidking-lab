@@ -3100,3 +3100,19 @@ applied_hurts=2502
 
 - 聚合指标能说明整体方向，但实战落地需要快速定位“哪一局哪一轮触发、抬了多少、是否仍低估”。
 - 这能减少手动翻 `model_eval.jsonl` 的成本，也能更早发现 UI/brief/model_eval 字段断层。
+
+## D-v3-153：post-game CLI 行为必须有端到端测试覆盖
+
+2026-06-07 起，当前决策：
+
+- 对 `post_game_live.ps1` 依赖的 CLI 行为，不能只测试内部 helper。
+- `summarize_live_model_eval.py --brief --since-hours` 至少需要测试覆盖：
+  - model_eval 行过滤；
+  - monitor error 行过滤；
+  - window 元数据；
+  - v3 practical 行级复盘是否来自选中窗口。
+
+原因：
+
+- 当前实战链路依赖 PowerShell 调 CLI；helper 通过不代表 argparse、默认 error log、窗口过滤和 JSON 输出都正确。
+- 该测试覆盖能防止后续维护时再次出现 post-game 两个 brief 窗口不一致。

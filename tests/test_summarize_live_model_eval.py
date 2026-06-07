@@ -62,6 +62,87 @@ def test_filter_rows_since_uses_selected_time_window() -> None:
     assert [row["file"] for row in rows] == ["edge.json", "new.json"]
 
 
+def test_main_brief_since_hours_filters_model_eval_and_error_logs(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    module = _summary_module()
+    model_eval = tmp_path / "model_eval.jsonl"
+    error_log = tmp_path / "monitor_errors.jsonl"
+    rows = [
+        {
+            "ts": 10,
+            "file": "old.json",
+            "final_value": 1,
+            "v3_practical_available": True,
+        },
+        {
+            "ts": 100,
+            "file": "edge.json",
+            "final_value": 500_000,
+            "final_decision_value": 500_000,
+        },
+        {
+            "ts": 101,
+            "file": "new.json",
+            "final_value": 700_000,
+            "final_decision_value": 700_000,
+            "final_q6_decision_value": 200_000,
+            "v3_practical_available": True,
+            "v3_practical_ready": True,
+            "v3_practical_candidate": True,
+            "v3_practical_affects_bid": False,
+            "v3_practical_active": False,
+            "v3_practical_recommendation": "raise_watch",
+            "v3_practical_confidence": "medium",
+            "v3_practical_source_lanes": "formal_value+prior_q6_floor",
+            "v3_practical_risk_flags": "q6_prior_floor_watch",
+            "v3_practical_baseline_formal_decision_value_p90": 500_000,
+            "v3_practical_formal_decision_value_p90": 800_000,
+            "v3_practical_baseline_q6_formal_decision_value_p90": 100_000,
+            "v3_practical_q6_formal_decision_value_p90": 250_000,
+        },
+    ]
+    errors = [
+        {"ts": 50, "name": "old_error.json", "error_type": "ValueError"},
+        {"ts": 100, "name": "edge_error.json", "error_type": "RuntimeError"},
+    ]
+    model_eval.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    error_log.write_text(
+        "\n".join(json.dumps(row) for row in errors) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module.time, "time", lambda: 3700.0)
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "summarize_live_model_eval.py",
+            str(model_eval),
+            "--brief",
+            "--since-hours",
+            "1",
+        ],
+    )
+
+    assert module.main() == 0
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["window"]["input_rows"] == 3
+    assert out["window"]["selected_rows"] == 2
+    assert out["window"]["input_monitor_error_rows"] == 2
+    assert out["window"]["selected_monitor_error_rows"] == 1
+    assert out["rows"] == 2
+    assert out["v3_practical"]["status"] == "fields_present"
+    assert out["v3_practical"]["rows"] == 1
+    assert out["v3_practical"]["latest_rows"][0]["file"] == "new.json"
+    assert out["v3_practical"]["latest_rows"][0]["delta_p90"] == 300_000
+
+
 def test_summarize_recomputes_replacement_decision_error_for_old_rows() -> None:
     module = _summary_module()
 

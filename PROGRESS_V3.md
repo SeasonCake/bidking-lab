@@ -8754,3 +8754,34 @@ v3_practical.status=no_evaluable_rows
 
 - 当前真实 72h 窗口仍没有 model_eval 行，所以实测不会显示 latest/top rows；synthetic test 覆盖了有数据时的行级复盘。
 - 这能让下一批实战样本采完后，post-game 直接回答“哪一轮触发了 v3 practical，抬了多少，还剩多少低估”，不需要再手动翻 JSONL。
+
+## 2026-06-07 checkpoint：model_eval brief CLI 窗口过滤纳入端到端测试
+
+目标：
+
+- 确认 `post_game_live.ps1` 实际调用的 CLI 路径可以正确应用 `--since-hours`，而不只是在 helper 层通过测试。
+
+本轮动作：
+
+- 新增测试使用临时 `model_eval.jsonl` 与 `monitor_errors.jsonl`：
+  - 通过 `main()` 运行 `--brief --since-hours 1`；
+  - 固定当前时间，验证边界行、新行、旧行过滤；
+  - 验证 monitor error 也使用同一窗口；
+  - 验证输出的 `v3_practical.latest_rows` 能落到选中的新行。
+
+验证结果：
+
+```text
+py_compile tests/test_summarize_live_model_eval.py scripts/summarize_live_model_eval.py: passed
+pytest tests/test_summarize_live_model_eval.py -q:
+23 passed
+
+summarize_live_model_eval.py --brief --since-hours 72: passed
+window.selected_rows=0
+v3_practical.status=no_evaluable_rows
+```
+
+当前解读：
+
+- 这是实战复盘脚本入口的防回归测试，不改变任何运行时估值或 UI。
+- 后续如果修改 argparse、默认 log path、error log 或 post_game 参数，这个测试能更早发现窗口过滤断层。
