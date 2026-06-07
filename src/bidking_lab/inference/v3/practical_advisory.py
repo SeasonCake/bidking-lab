@@ -46,6 +46,8 @@ _Q6_VALUE_CEILING_MAX_DELTA = 400_000.0
 _Q6_RAW_TAIL_LOW_SUPPORT_MAX_MATCHED = 2
 _Q6_RAW_TAIL_LOW_SUPPORT_MIN_P90_GAP = 200_000.0
 _Q6_RAW_TAIL_LOW_SUPPORT_MAX_DELTA = 600_000.0
+_Q6_RAW_TAIL_VALUE_STRESS_MIN_P90_GAP = 300_000.0
+_Q6_RAW_TAIL_VALUE_STRESS_MAX_DELTA = 300_000.0
 
 
 @dataclass(frozen=True)
@@ -92,6 +94,10 @@ class V3PracticalAdvisoryReport:
         )
         baseline_formal = _formal(self.baseline)
         advisory_formal = _formal(self.advisory)
+        baseline_total = _total_value(self.baseline)
+        advisory_total = _total_value(self.advisory)
+        baseline_q6_value = _q6_value(self.baseline)
+        advisory_q6_value = _q6_value(self.advisory)
         baseline_q6_formal = _q6_formal(self.baseline)
         advisory_q6_formal = _q6_formal(self.advisory)
         out.update(
@@ -127,6 +133,25 @@ class V3PracticalAdvisoryReport:
                     baseline_formal,
                     "p90",
                 ),
+                f"{prefix}baseline_total_value_p90": _q(
+                    baseline_total,
+                    "p90",
+                ),
+                f"{prefix}delta_total_value_p90": _delta(
+                    advisory_total,
+                    baseline_total,
+                    "p90",
+                ),
+                f"{prefix}raw_total_gap_to_formal_p90": _delta(
+                    advisory_total,
+                    advisory_formal,
+                    "p90",
+                ),
+                f"{prefix}baseline_raw_total_gap_to_formal_p90": _delta(
+                    baseline_total,
+                    baseline_formal,
+                    "p90",
+                ),
                 f"{prefix}baseline_q6_formal_decision_value_p50": _q(
                     baseline_q6_formal,
                     "p50",
@@ -142,6 +167,25 @@ class V3PracticalAdvisoryReport:
                 ),
                 f"{prefix}delta_q6_formal_decision_value_p90": _delta(
                     advisory_q6_formal,
+                    baseline_q6_formal,
+                    "p90",
+                ),
+                f"{prefix}baseline_q6_value_p90": _q(
+                    baseline_q6_value,
+                    "p90",
+                ),
+                f"{prefix}delta_q6_value_p90": _delta(
+                    advisory_q6_value,
+                    baseline_q6_value,
+                    "p90",
+                ),
+                f"{prefix}q6_raw_gap_to_formal_p90": _delta(
+                    advisory_q6_value,
+                    advisory_q6_formal,
+                    "p90",
+                ),
+                f"{prefix}baseline_q6_raw_gap_to_formal_p90": _delta(
+                    baseline_q6_value,
                     baseline_q6_formal,
                     "p90",
                 ),
@@ -249,6 +293,15 @@ def advise_practical_report(
         risks.append("q6_raw_tail_low_support_ceiling")
         reasons.append(q6_raw_tail_ceiling_watch[1])
 
+    q6_raw_tail_value_stress_watch = _q6_raw_tail_value_stress_ceiling_watch(
+        posterior,
+        formal_value=formal_value,
+    )
+    if q6_raw_tail_value_stress_watch is not None:
+        lanes.append("q6_raw_tail_value")
+        risks.append("q6_raw_tail_value_stress_ceiling")
+        reasons.append(q6_raw_tail_value_stress_watch[1])
+
     if underestimate is not None and underestimate.candidate:
         lanes.append("underestimate")
         risks.append("underestimate_repair_candidate")
@@ -291,9 +344,33 @@ def advise_practical_report(
         reasons.append(capacity_source_expansion.gate_reason)
 
     if formal_value is not None and formal_value.candidate:
+        advisory = formal_value.posterior
+        if advisory is not None:
+            combined_q6_raw_tail = _q6_raw_tail_low_support_ceiling_watch(
+                advisory,
+                formal_value=formal_value,
+            )
+            if combined_q6_raw_tail is not None:
+                advisory, q6_raw_tail_reason = combined_q6_raw_tail
+                _replace_reason_prefix(
+                    reasons,
+                    "q6_raw_tail_low_support_ceiling_shadow_only:",
+                    q6_raw_tail_reason,
+                )
+            combined_q6_value_stress = _q6_raw_tail_value_stress_ceiling_watch(
+                advisory,
+                formal_value=formal_value,
+            )
+            if combined_q6_value_stress is not None:
+                advisory, q6_value_stress_reason = combined_q6_value_stress
+                _replace_reason_prefix(
+                    reasons,
+                    "q6_raw_tail_value_stress_ceiling_shadow_only:",
+                    q6_value_stress_reason,
+                )
         return V3PracticalAdvisoryReport(
             baseline=posterior,
-            advisory=formal_value.posterior,
+            advisory=advisory,
             source="formal_value",
             mode="value_floor_watch",
             status="watch_raise_candidate",
@@ -360,6 +437,17 @@ def advise_practical_report(
                 "q6_raw_tail_low_support_ceiling_shadow_only:",
                 q6_raw_tail_reason,
             )
+        combined_q6_value_stress = _q6_raw_tail_value_stress_ceiling_watch(
+            advisory,
+            formal_value=formal_value,
+        )
+        if combined_q6_value_stress is not None:
+            advisory, q6_value_stress_reason = combined_q6_value_stress
+            _replace_reason_prefix(
+                reasons,
+                "q6_raw_tail_value_stress_ceiling_shadow_only:",
+                q6_value_stress_reason,
+            )
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -409,6 +497,17 @@ def advise_practical_report(
                 "q6_raw_tail_low_support_ceiling_shadow_only:",
                 q6_raw_tail_reason,
             )
+        combined_q6_value_stress = _q6_raw_tail_value_stress_ceiling_watch(
+            advisory,
+            formal_value=formal_value,
+        )
+        if combined_q6_value_stress is not None:
+            advisory, q6_value_stress_reason = combined_q6_value_stress
+            _replace_reason_prefix(
+                reasons,
+                "q6_raw_tail_value_stress_ceiling_shadow_only:",
+                q6_value_stress_reason,
+            )
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -451,6 +550,17 @@ def advise_practical_report(
                 "q6_raw_tail_low_support_ceiling_shadow_only:",
                 q6_raw_tail_reason,
             )
+        combined_q6_value_stress = _q6_raw_tail_value_stress_ceiling_watch(
+            advisory,
+            formal_value=formal_value,
+        )
+        if combined_q6_value_stress is not None:
+            advisory, q6_value_stress_reason = combined_q6_value_stress
+            _replace_reason_prefix(
+                reasons,
+                "q6_raw_tail_value_stress_ceiling_shadow_only:",
+                q6_value_stress_reason,
+            )
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
@@ -480,12 +590,48 @@ def advise_practical_report(
                 "random_avg_high_signal_ceiling_shadow_only:",
                 random_high_reason,
             )
+        combined_q6_value_stress = _q6_raw_tail_value_stress_ceiling_watch(
+            advisory,
+            formal_value=formal_value,
+        )
+        if combined_q6_value_stress is not None:
+            advisory, q6_value_stress_reason = combined_q6_value_stress
+            _replace_reason_prefix(
+                reasons,
+                "q6_raw_tail_value_stress_ceiling_shadow_only:",
+                q6_value_stress_reason,
+            )
         return V3PracticalAdvisoryReport(
             baseline=posterior,
             advisory=advisory,
             source="q6_raw_tail_value",
             mode="q6_raw_tail_low_support_ceiling_watch",
             status="watch_q6_raw_tail_low_support_ceiling",
+            recommendation="ceiling_watch",
+            confidence="low_medium",
+            source_lanes=_dedupe(lanes),
+            risk_flags=_dedupe(risks),
+            reason=_join_reasons(reasons),
+        )
+    if q6_raw_tail_value_stress_watch is not None:
+        advisory, _reason = q6_raw_tail_value_stress_watch
+        combined_random_avg_high_signal = _random_avg_high_signal_ceiling_watch(
+            advisory,
+            evidence_events=evidence_events,
+        )
+        if combined_random_avg_high_signal is not None:
+            advisory, random_high_reason = combined_random_avg_high_signal
+            _replace_reason_prefix(
+                reasons,
+                "random_avg_high_signal_ceiling_shadow_only:",
+                random_high_reason,
+            )
+        return V3PracticalAdvisoryReport(
+            baseline=posterior,
+            advisory=advisory,
+            source="q6_raw_tail_value",
+            mode="q6_raw_tail_value_stress_ceiling_watch",
+            status="watch_q6_raw_tail_value_stress_ceiling",
             recommendation="ceiling_watch",
             confidence="low_medium",
             source_lanes=_dedupe(lanes),
@@ -590,6 +736,14 @@ def empty_practical_advisory_flat_dict(
 
 def _formal(report: V3PosteriorReport | None) -> QuantileSummary | None:
     return report.formal_decision_value if report is not None else None
+
+
+def _total_value(report: V3PosteriorReport | None) -> QuantileSummary | None:
+    return report.total_value if report is not None else None
+
+
+def _q6_value(report: V3PosteriorReport | None) -> QuantileSummary | None:
+    return report.q6_value if report is not None else None
 
 
 def _q6_formal(report: V3PosteriorReport | None) -> QuantileSummary | None:
@@ -1051,6 +1205,62 @@ def _q6_raw_tail_low_support_ceiling_watch(
     reason = (
         "q6_raw_tail_low_support_ceiling_shadow_only:"
         f"n_matched={posterior.n_matched}:"
+        f"raw_gap={raw_gap:.0f}:p90_delta={p90_delta:.0f}"
+    )
+    return advisory, reason
+
+
+def _q6_raw_tail_value_stress_ceiling_watch(
+    posterior: V3PosteriorReport,
+    *,
+    formal_value: V3FormalValueSamplerReport | None,
+) -> tuple[V3PosteriorReport, str] | None:
+    if formal_value is None or "value_floor_stress" not in formal_value.stress_classes:
+        return None
+    formal = posterior.formal_decision_value
+    q6_value = posterior.q6_value
+    q6_formal = posterior.q6_formal_decision_value
+    if formal is None or q6_value is None or q6_formal is None:
+        return None
+    raw_gap = max(0.0, float(q6_value.p90) - float(q6_formal.p90))
+    if raw_gap < _Q6_RAW_TAIL_VALUE_STRESS_MIN_P90_GAP:
+        return None
+    p90_delta = min(raw_gap, _Q6_RAW_TAIL_VALUE_STRESS_MAX_DELTA)
+    diagnostics = tuple(posterior.diagnostics) + (
+        "practical_q6_raw_tail_value_stress_ceiling_watch",
+        f"practical_q6_raw_tail_value_stress_p90_gap={raw_gap:.6f}",
+        f"practical_q6_raw_tail_value_stress_p90_delta={p90_delta:.6f}",
+    )
+    advisory = V3PosteriorReport(
+        map_id=posterior.map_id,
+        map_name=posterior.map_name,
+        n_total=posterior.n_total,
+        n_matched=posterior.n_matched,
+        n_strict_matched=posterior.n_strict_matched,
+        match_scope=posterior.match_scope,
+        q6_present_rate=posterior.q6_present_rate,
+        total_cells=posterior.total_cells,
+        total_value=_raise_p90_by_delta(posterior.total_value, p90_delta),
+        formal_decision_value=_raise_p90_by_delta(formal, p90_delta),
+        tail_replacement_decision_value=_raise_p90_by_delta(
+            posterior.tail_replacement_decision_value,
+            p90_delta,
+        ),
+        q6_count=posterior.q6_count,
+        q6_cells=posterior.q6_cells,
+        q6_value=posterior.q6_value,
+        q6_formal_decision_value=_raise_p90_by_delta(
+            posterior.q6_formal_decision_value,
+            p90_delta,
+        ),
+        q6_tail_replacement_decision_value=_raise_p90_by_delta(
+            posterior.q6_tail_replacement_decision_value,
+            p90_delta,
+        ),
+        diagnostics=diagnostics,
+    )
+    reason = (
+        "q6_raw_tail_value_stress_ceiling_shadow_only:"
         f"raw_gap={raw_gap:.0f}:p90_delta={p90_delta:.0f}"
     )
     return advisory, reason

@@ -8010,3 +8010,72 @@ overall v3_practical_p90_extreme_over_rate=0.06
 - 这是比 broad q6 multiplier 更实用的 sampler：只在 low-support strict posterior 且已有 tail/value 证据时补 P90，不增加强提醒数量或 extreme-over。
 - 它不能解决全部 `q6_tail_value` / `q6_gate_inactive` top miss；live brief 仍有 Ethan 2501 layout 与 villa q6 inactive severe miss。
 - 下一步应继续把 q6 count/cells 的条件 likelihood 做成 source-aware sampler，重点处理 layout/random_avg 证据下 q6 gate inactive，而不是提升全局 q6 prior。
+
+## 2026-06-07 checkpoint：v3 practical value-stress q6 raw-tail ceiling 与 raw 上限显示
+
+目标：
+
+- 针对 `value_floor_stress` 下 raw q6 value P90 明显高于 formal q6 P90 的窗口，补一个更明确的 P90-only 上沿。
+- 同时把 raw total / q6 raw 相对 formal 的 P90 gap 暴露到 `v3_practical_*` 与 overlay，避免实战只看到被裁尾口径压低的 formal P90。
+- 继续保持 v2 formal、正式出价、compact 主决策不变。
+
+本轮动作：
+
+- `src/bidking_lab/inference/v3/practical_advisory.py` 新增 `q6_raw_tail_value_stress_ceiling_watch`：
+  - 仅在 `formal_value.stress_classes` 含 `value_floor_stress` 时触发；
+  - 要求 `q6_value.p90 - q6_formal_decision_value.p90 >= 300,000`；
+  - practical P90 delta cap=`300,000`；
+  - 只抬 total/formal/tail/q6 formal 的 P90，不抬 P50，不改变 raw q6 value。
+- `v3_practical_*` flat contract 新增 raw 上限差值字段：
+  - `raw_total_gap_to_formal_p90`
+  - `baseline_raw_total_gap_to_formal_p90`
+  - `q6_raw_gap_to_formal_p90`
+  - `baseline_q6_raw_gap_to_formal_p90`
+  - 同步补出 baseline/delta total/q6 raw P90 字段。
+- `scripts/run_live_overlay.py` 的 `v3 实战参考` 区增加：
+  - hover：`rawΔP90`、`q6rawΔP90`
+  - detail：`rawP90`、`q6rawP90`
+  - 仍明确显示“只读参考，不影响正式出价”。
+
+验证结果：
+
+```text
+py_compile: passed
+focused tests: 3 passed
+broader focused tests: 21 passed
+archive smoke (--posterior-trials 64):
+v3_practical_candidate_rows=397
+v3_practical_raise_watch_rows=82
+v3_practical_raise_watch_hit_rate=0.45122
+v3_practical_raise_watch_miss_rate=0.365854
+v3_practical_raise_watch_false_alarm_rate=0.182927
+v3_practical_raise_watch_extreme_over_rate=0.146341
+v3_practical_raise_watch_misleading_rate=0.097561
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=316904.870
+v3_practical_delta_formal_p50_mae=-1730.988
+v3_practical_formal_p50_below_rate=0.502564
+v3_practical_formal_p90_coverage=0.785897
+v3_practical_formal_p90_extreme_over_rate=0.319231
+
+live brief (--since-hours 72): passed
+overall v3_practical_p90_coverage=0.5
+overall v3_practical_p90_extreme_over_rate=0.06
+```
+
+对比上一 checkpoint：
+
+- `candidate_rows`: 397 -> 397。
+- `raise_watch_rows`: 82 -> 82。
+- `raise_watch_hit_rate`: 0.353659 -> 0.451220。
+- `raise_watch_miss_rate`: 0.463415 -> 0.365854。
+- `false_alarm/misleading`: 保持 `0.182927` / `0.097561`。
+- `P50 MAE`: 316904.870 -> 316904.870。
+- `P90 coverage`: 0.780769 -> 0.785897。
+- `P90 extreme-over`: 0.319231 -> 0.319231。
+
+解读：
+
+- 该规则是一个小而实用的补漏：改善强提醒命中和 P90 coverage，不带偏 P50，也不新增正式出价风险。
+- 更激进地把 raw/total P90 直接作为 formal P90 的模拟能多覆盖部分 severe miss，但 false/extreme 过高；因此本轮只把 raw 上限作为 UI 可见参考，不把它包装成推荐价。
+- 当前最大剩余问题仍是 `q6_gate_inactive`、`q6_tail_value`、summary-likelihood 下 q6 count/cells/value 偏低；下一步应推进 source-aware q6 component sampler，而不是继续调宽 broad capacity/raw 上限。

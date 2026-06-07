@@ -1298,6 +1298,10 @@ def _ui_contract_v3_practical_section(
     q6_p90 = practical.get("q6_formal_decision_value_p90")
     delta_q6 = practical.get("delta_q6_formal_decision_value_p50")
     delta_q6_p90 = practical.get("delta_q6_formal_decision_value_p90")
+    total_p90 = practical.get("total_value_p90")
+    q6_value_p90 = practical.get("q6_value_p90")
+    raw_total_gap_p90 = _price_int(practical.get("raw_total_gap_to_formal_p90"))
+    q6_raw_gap_p90 = _price_int(practical.get("q6_raw_gap_to_formal_p90"))
     read_only = (
         "只读参考，不影响正式出价"
         if not _flag(practical.get("affects_bid")) and not _flag(practical.get("active"))
@@ -1327,7 +1331,25 @@ def _ui_contract_v3_practical_section(
         f"Δq6 {_fmt_int(delta_q6)}" if delta_q6 is not None else "",
         f"Δq6P90 {_fmt_int(delta_q6_p90)}" if delta_q6_p90 is not None else "",
     ]
-    value_text = _join_parts([*value_parts, *q6_parts])
+    upper_parts = [
+        (
+            f"rawΔP90 {_fmt_int(raw_total_gap_p90)}"
+            if raw_total_gap_p90 is not None and raw_total_gap_p90 > 0
+            else ""
+        ),
+        (
+            f"q6rawΔP90 {_fmt_int(q6_raw_gap_p90)}"
+            if q6_raw_gap_p90 is not None and q6_raw_gap_p90 > 0
+            else ""
+        ),
+        f"rawP90 {_fmt_int(total_p90)}" if detail and total_p90 is not None else "",
+        (
+            f"q6rawP90 {_fmt_int(q6_value_p90)}"
+            if detail and q6_value_p90 is not None
+            else ""
+        ),
+    ]
+    value_text = _join_parts([*value_parts, *q6_parts, *upper_parts])
     if value_text:
         headline = f"{headline} | {value_text}"
 

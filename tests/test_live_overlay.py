@@ -1191,11 +1191,15 @@ def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> 
                 "reason": "formal value floor lifts underestimation watch",
                 "formal_decision_value_p50": 480000,
                 "formal_decision_value_p90": 780000,
+                "total_value_p90": 980000,
                 "baseline_formal_decision_value_p50": 420000,
                 "delta_formal_decision_value_p50": 60000,
+                "raw_total_gap_to_formal_p90": 200000,
                 "q6_formal_decision_value_p50": 120000,
                 "q6_formal_decision_value_p90": 260000,
+                "q6_value_p90": 420000,
                 "delta_q6_formal_decision_value_p50": 40000,
+                "q6_raw_gap_to_formal_p90": 160000,
             }
         },
     }
@@ -1215,12 +1219,16 @@ def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> 
         section[0] == "v3 实战参考"
         and "低估风险" in section[1]
         and "P90 780,000" in section[1]
+        and "rawΔP90 200,000" in section[1]
+        and "q6rawΔP90 160,000" in section[1]
         and "不影响正式出价" in section[2]
         for section in model["interaction"]["hover"]["sections"]
     )
     assert any(
         section[0] == "v3 实战参考"
         and "base 420,000" in section[1]
+        and "rawP90 980,000" in section[1]
+        and "q6rawP90 420,000" in section[1]
         and "formal value floor" in section[2]
         for section in model["interaction"]["detail"]["sections"]
     )

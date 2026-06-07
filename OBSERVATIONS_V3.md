@@ -6299,3 +6299,41 @@ v3_practical_formal_p90_extreme_over_rate=0.319231
 
 - live top miss 仍有 `q6_gate_inactive` 与 layout/random_avg 场景，说明只补 raw tail 不够。
 - 下一步应实现 q6 count/cells 条件 likelihood：当 layout/random_avg/shape 信息显示 q6 gate 可能被误关时，调整 q6 count/cells/value 的 posterior，而不是只加 P90 数值 delta。
+
+## O-v3-147：value-stress raw q6 tail ceiling 可用，broad raw/total promotion 不可用
+
+2026-06-07 用当前 canonical archive 重新审查 top miss：
+
+- 当前 practical 后仍有 334 个 P90 miss；top miss 主要集中在：
+  - Aisha 2501/2502 shipwreck 的 value/capacity stress；
+  - Ethan 2401 villa；
+  - Aisha/Ethan shipwreck 低支持或 summary-likelihood q6 count/cells/value under；
+  - hidden 2601 样本也有大漏，但样本优先级低于 shipwreck/villa。
+- 一些 severe miss 不是完全没看到 raw value，而是 formal/tail-replacement 口径把 raw total/q6 tail 裁掉。例如 Aisha 2501 的 raw q6 value P90 已明显高于 formal q6 P90。
+
+受限候选验证：
+
+```text
+q6_raw_tail_value_stress_ceiling_watch:
+condition=value_floor_stress and raw_q6_p90_gap>=300k
+cap=300k
+archive result:
+raise_watch_hit_rate 0.353659 -> 0.451220
+raise_watch_miss_rate 0.463415 -> 0.365854
+false_alarm_rate unchanged 0.182927
+misleading_rate unchanged 0.097561
+P50 MAE unchanged 316904.870
+P90 coverage 0.780769 -> 0.785897
+P90 extreme-over unchanged 0.319231
+```
+
+排除项：
+
+- `capacity_cells_drift` broad upshift 在模拟中 false/extreme 过高，不适合直接接入 practical recommendation。
+- 将 raw/total P90 直接替代 formal P90 能覆盖少数 severe miss，但会制造大量已覆盖窗口的过宽上沿；应只显示为 `rawΔP90` / `q6rawΔP90`。
+- generic q6 raw gap 条件太宽，false/misleading 明显过高；后续必须结合 hero/map/round/evidence profile、layout/random_avg 与 q6 component likelihood。
+
+后续重点：
+
+- UI 已能显示 raw 上限差距，实战可先观察“formal P90 偏低但 raw/q6 raw gap 很大”的局。
+- 真正的 sampler 仍应做 source-aware q6 count/cells/value posterior，而不是把 raw ceiling 无条件加到 formal。

@@ -7,7 +7,9 @@ from bidking_lab.inference.v3 import (
     ConstraintSet,
     EvidenceEvent,
     FeasibleSummaryReport,
+    FormalValueStressDetail,
     V3CcvOptions,
+    V3FormalValueSamplerReport,
     V3PosteriorReport,
     advise_practical_report,
     estimate_shadow_pipeline,
@@ -519,6 +521,48 @@ def test_v3_practical_marks_low_support_q6_raw_tail_as_ceiling() -> None:
     assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
     assert flat["v3_practical_delta_formal_decision_value_p90"] == 600_000.0
     assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 600_000.0
+
+
+def test_v3_practical_combines_value_stress_with_q6_raw_tail_ceiling() -> None:
+    baseline = _posterior_report(
+        formal=_q(100_000, 500_000, 650_000),
+        q6_value=_q(0, 500_000, 1_300_000),
+        q6_formal=_q(0, 400_000, 500_000),
+    )
+    empty = FormalValueStressDetail(
+        source="none",
+        target=None,
+        prior_expected=None,
+    )
+    formal_value = V3FormalValueSamplerReport(
+        baseline=baseline,
+        summary=None,
+        prior_fields={},
+        total_count=empty,
+        total_cells=empty,
+        q6_count=empty,
+        q6_cells=empty,
+        total_value=empty,
+        q6_value=empty,
+        stress_classes=("value_floor_stress",),
+    )
+
+    report = advise_practical_report(baseline, formal_value=formal_value)
+    flat = report.to_flat_dict()
+
+    assert flat["v3_practical_status"] == "watch_raise_candidate"
+    assert flat["v3_practical_mode"] == "value_floor_watch"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert "q6_raw_tail_value_stress_ceiling" in flat[
+        "v3_practical_risk_flags"
+    ]
+    assert flat["v3_practical_delta_formal_decision_value_p50"] == 0.0
+    assert flat["v3_practical_delta_formal_decision_value_p90"] == 300_000.0
+    assert flat["v3_practical_delta_q6_formal_decision_value_p90"] == 300_000.0
+    assert flat["v3_practical_baseline_q6_value_p90"] == 1_300_000.0
+    assert flat["v3_practical_delta_q6_value_p90"] == 0.0
+    assert flat["v3_practical_baseline_q6_raw_gap_to_formal_p90"] == 800_000.0
+    assert flat["v3_practical_q6_raw_gap_to_formal_p90"] == 500_000.0
 
 
 def test_v3_practical_does_not_mark_broad_q6_raw_tail_without_low_support() -> None:

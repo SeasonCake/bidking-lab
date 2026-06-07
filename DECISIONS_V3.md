@@ -2884,3 +2884,25 @@ applied_hurts=2502
 - broad q6 pressure/prior multiplier 的 false/extreme 过高，不适合作为实战 sampler。
 - low-support raw-tail 条件更贴近真实问题：严格匹配只有 1-2 行时，formal q6 P90 可能被局部近邻裁得过低，而 raw q6 value P90 已经暴露 tail 风险。
 - archive 对照显示该候选把 `raise_watch_hit_rate` 从 `0.280488` 提到 `0.353659`，`raise_watch_miss_rate` 从 `0.536585` 降到 `0.463415`，同时 P50 MAE 与 P90 extreme-over 不变。
+
+## D-v3-142：value-stress raw q6 tail 只做受限 P90 ceiling，raw/total 上限只做 UI 参考
+
+2026-06-07 起，当前决策：
+
+- 当 `formal_value` 已判定 `value_floor_stress`，且 raw q6 value P90 明显高于 formal q6 P90 时，允许 v3 practical 追加受限 P90-only ceiling：
+  - `q6_value.p90 - q6_formal_decision_value.p90 >= 300,000`；
+  - practical P90 delta cap=`300,000`；
+  - 只抬 practical total/formal/tail/q6 formal 的 P90；
+  - 不抬 P50，不改变 raw q6 value，不进入 v2 formal、正式 bid 或正式出价。
+- `v3_practical_*` 必须显式输出 raw/total 上限相对 formal 的差值：
+  - `raw_total_gap_to_formal_p90`
+  - `q6_raw_gap_to_formal_p90`
+  - 对应 baseline gap 与 delta 字段。
+- overlay 可以显示 `rawΔP90` / `q6rawΔP90` / `rawP90` / `q6rawP90`，但这些字段只能作为“尾部/仓库上限参考”，不得替换 compact 主决策、defend bid、stop price 或 attack bid。
+- 不得把 broad capacity drift、generic raw total P90、generic q6 raw P90 直接 promotion 成 formal recommendation；除非后续 source-aware holdout 同时证明 hit 提升、false/misleading 可控、P90 extreme-over 不恶化。
+
+原因：
+
+- 受限 value-stress ceiling 在 archive smoke 中把 `v3_practical_raise_watch_hit_rate` 从 `0.353659` 提到 `0.451220`，`miss_rate` 从 `0.463415` 降到 `0.365854`，P50 MAE 与 P90 extreme-over 不变。
+- 直接把 raw/total P90 当 formal P90 的模拟虽然能覆盖部分 severe miss，但 false/extreme 过高，不适合伪装为实战推荐价。
+- 用户实战需要“不要只看到明显偏低的裁尾值”；正确落点是把 raw 上限显示出来，并清楚标注不影响正式出价。
