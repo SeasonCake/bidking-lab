@@ -6196,3 +6196,29 @@ v3_practical_formal_p90_coverage=0.772436
 - `raise_watch_miss_rate` 仍有 `0.536585`，说明强提醒仍漏掉不少真实低估，不能 promotion。
 - `q6_tail_value`、`q6_gate_inactive`、random_avg+layout 仍是主要低估来源；下一步需要 source-aware tail/value sampler，而不是继续扩大 broad watch。
 - overlay 已能区分“低估风险”“参考上沿”“风险提示”，这比单一 `raise_watch` 更适合实战使用。
+
+## O-v3-143：全局 q6 tail prior 高分位不适合直接接入 practical
+
+2026-06-07 在 residual ceiling checkpoint 后，对剩余 practical P90 miss 做轻量归因：
+
+```text
+metric_rows=1560
+baseline_p90_miss=389
+practical_p90_miss=355
+remaining miss top maps: 2501, 2401, 2601, 2506, 2504
+remaining miss top modes: baseline=246, q6_prior_floor=33, risk_watch=30
+```
+
+抽查 top miss：
+
+- 2501/2502/2401/2506/2601 的严重 miss 多数是 q6 count/cells/value 高尾；当前 q6 count/cells P90 明显低于 truth。
+- 以 512 prior truth bank 粗估，map-level q6 formal P90/P95 确实比部分 baseline q6 P90 高，但仍覆盖不了最极端真值。
+- 直接把 map q6 prior P95/P98 作为 practical P90 floor 会太宽：
+  - P95 gap>=100k：候选约 905 行，false/extreme 偏高；
+  - P95 gap>=400k 且 baseline-only：候选约 59 行，hit 约 0.356，但 extreme/misleading 仍约 0.22。
+
+结论：
+
+- 不应把全局 q6 tail prior 高分位直接接入 live/practical。
+- 下一步更合理的是 source-aware tail/value sampler：结合 map family、hero、round、layout/random_avg、q6 count/cell under signal、活动 cohort，判断是否需要 q6 tail upshift。
+- 如果需要实战增量验证，应优先采 villa 正常样本；0605 后 shipwreck 活动样本继续作为 prior-drift 鲁棒性 cohort，不混入默认 baseline。
