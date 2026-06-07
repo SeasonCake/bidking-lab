@@ -649,6 +649,7 @@ def ui_contract_from_artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
                     "fallback",
                     "q6_risk_reference",
                     "constraints.summary",
+                    "diagnostics.v3_practical",
                     "actions",
                     "diagnostics.size_bucket",
                     "minimap",
@@ -1026,6 +1027,44 @@ def _ui_diagnostics_contract(
             ),
             "quality_only_deep_row_threshold": model_eval.get(
                 "q6_quality_only_deep_row_threshold"
+            ),
+        },
+        "v3_practical": {
+            "available": bool(model_eval.get("v3_practical_available")),
+            "ready": bool(model_eval.get("v3_practical_ready")),
+            "affects_bid": bool(model_eval.get("v3_practical_affects_bid")),
+            "active": bool(model_eval.get("v3_practical_active")),
+            "candidate": bool(model_eval.get("v3_practical_candidate")),
+            "source": _text(model_eval.get("v3_practical_source")),
+            "mode": _text(model_eval.get("v3_practical_mode")),
+            "status": _text(model_eval.get("v3_practical_status")),
+            "recommendation": _text(
+                model_eval.get("v3_practical_recommendation")
+            ),
+            "confidence": _text(model_eval.get("v3_practical_confidence")),
+            "source_lanes": _text(model_eval.get("v3_practical_source_lanes")),
+            "risk_flags": _text(model_eval.get("v3_practical_risk_flags")),
+            "reason": _text(model_eval.get("v3_practical_reason")),
+            "formal_decision_value_p50": model_eval.get(
+                "v3_practical_formal_decision_value_p50"
+            ),
+            "formal_decision_value_p90": model_eval.get(
+                "v3_practical_formal_decision_value_p90"
+            ),
+            "baseline_formal_decision_value_p50": model_eval.get(
+                "v3_practical_baseline_formal_decision_value_p50"
+            ),
+            "delta_formal_decision_value_p50": model_eval.get(
+                "v3_practical_delta_formal_decision_value_p50"
+            ),
+            "q6_formal_decision_value_p50": model_eval.get(
+                "v3_practical_q6_formal_decision_value_p50"
+            ),
+            "q6_formal_decision_value_p90": model_eval.get(
+                "v3_practical_q6_formal_decision_value_p90"
+            ),
+            "delta_q6_formal_decision_value_p50": model_eval.get(
+                "v3_practical_delta_q6_formal_decision_value_p50"
             ),
         },
         "sampling": {

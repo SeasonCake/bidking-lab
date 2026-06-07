@@ -52,6 +52,7 @@ from bidking_lab.inference.v3 import (
     empty_feasible_summary_flat_dict,
     empty_formal_value_sampler_flat_dict,
     empty_posterior_flat_dict,
+    empty_practical_advisory_flat_dict,
     empty_prior_calibration_flat_dict,
     empty_prior_flat_dict,
     empty_prior_robustness_flat_dict,
@@ -2136,6 +2137,18 @@ def _model_eval_row(
         v3_shadow.get("v3_cse_prior_max_to_unique_non_temp_max_delta")
     )
     v3_cse_flags = v3_shadow.get("v3_cse_flags")
+    v3_practical_formal_p50 = _parse_int_text(
+        v3_shadow.get("v3_practical_formal_decision_value_p50")
+    )
+    v3_practical_formal_p90 = _parse_int_text(
+        v3_shadow.get("v3_practical_formal_decision_value_p90")
+    )
+    v3_practical_q6_formal_p50 = _parse_int_text(
+        v3_shadow.get("v3_practical_q6_formal_decision_value_p50")
+    )
+    v3_practical_q6_formal_p90 = _parse_int_text(
+        v3_shadow.get("v3_practical_q6_formal_decision_value_p90")
+    )
     posterior_samples = None
     posterior_total_samples = None
     q6_shadow_active = bool(shadow.get("active"))
@@ -2901,6 +2914,50 @@ def _model_eval_row(
         "v3_cse_prior_max_to_unique_non_temp_max_delta": v3_cse_prior_max_delta,
         "v3_cse_flags": v3_cse_flags,
         "v3_cse_diagnostics": v3_shadow.get("v3_cse_diagnostics"),
+        "v3_practical_available": bool(v3_shadow.get("v3_practical_available")),
+        "v3_practical_ready": bool(v3_shadow.get("v3_practical_ready")),
+        "v3_practical_affects_bid": bool(
+            v3_shadow.get("v3_practical_affects_bid")
+        ),
+        "v3_practical_active": bool(v3_shadow.get("v3_practical_active")),
+        "v3_practical_candidate": bool(v3_shadow.get("v3_practical_candidate")),
+        "v3_practical_source": v3_shadow.get("v3_practical_source"),
+        "v3_practical_mode": v3_shadow.get("v3_practical_mode"),
+        "v3_practical_status": v3_shadow.get("v3_practical_status"),
+        "v3_practical_recommendation": v3_shadow.get(
+            "v3_practical_recommendation"
+        ),
+        "v3_practical_confidence": v3_shadow.get("v3_practical_confidence"),
+        "v3_practical_source_lanes": v3_shadow.get("v3_practical_source_lanes"),
+        "v3_practical_risk_flags": v3_shadow.get("v3_practical_risk_flags"),
+        "v3_practical_reason": v3_shadow.get("v3_practical_reason"),
+        "v3_practical_formal_decision_value_p50": v3_practical_formal_p50,
+        "v3_practical_formal_decision_value_p90": v3_practical_formal_p90,
+        "v3_practical_q6_formal_decision_value_p50": (
+            v3_practical_q6_formal_p50
+        ),
+        "v3_practical_q6_formal_decision_value_p90": (
+            v3_practical_q6_formal_p90
+        ),
+        "v3_practical_baseline_formal_decision_value_p50": _parse_int_text(
+            v3_shadow.get("v3_practical_baseline_formal_decision_value_p50")
+        ),
+        "v3_practical_baseline_formal_decision_value_p90": _parse_int_text(
+            v3_shadow.get("v3_practical_baseline_formal_decision_value_p90")
+        ),
+        "v3_practical_delta_formal_decision_value_p50": _parse_int_text(
+            v3_shadow.get("v3_practical_delta_formal_decision_value_p50")
+        ),
+        "v3_practical_delta_formal_decision_value_p90": _parse_int_text(
+            v3_shadow.get("v3_practical_delta_formal_decision_value_p90")
+        ),
+        "v3_practical_delta_q6_formal_decision_value_p50": _parse_int_text(
+            v3_shadow.get("v3_practical_delta_q6_formal_decision_value_p50")
+        ),
+        "v3_practical_delta_q6_formal_decision_value_p90": _parse_int_text(
+            v3_shadow.get("v3_practical_delta_q6_formal_decision_value_p90")
+        ),
+        "v3_practical_diagnostics": v3_shadow.get("v3_practical_diagnostics"),
         "v3_tail_review_tail_replacement_decision_value_p50_error": (
             v3_tail_review_tail_p50 - final_replacement_decision_value
             if v3_tail_review_tail_p50 is not None
@@ -2970,6 +3027,28 @@ def _model_eval_row(
         "v3_fv_q6_formal_decision_value_p90_under_by": (
             max(0, final_q6_decision_value - v3_fv_q6_formal_p90)
             if v3_fv_q6_formal_p90 is not None
+            else None
+        ),
+        "v3_practical_formal_decision_value_p50_error_vs_formal": (
+            v3_practical_formal_p50 - final_formal_decision_value
+            if v3_practical_formal_p50 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "v3_practical_formal_decision_value_p90_under_by": (
+            max(0, final_formal_decision_value - v3_practical_formal_p90)
+            if v3_practical_formal_p90 is not None
+            and final_formal_decision_value is not None
+            else None
+        ),
+        "v3_practical_q6_formal_decision_value_p50_error": (
+            v3_practical_q6_formal_p50 - final_q6_decision_value
+            if v3_practical_q6_formal_p50 is not None
+            else None
+        ),
+        "v3_practical_q6_formal_decision_value_p90_under_by": (
+            max(0, final_q6_decision_value - v3_practical_q6_formal_p90)
+            if v3_practical_q6_formal_p90 is not None
             else None
         ),
         "v3_cal_formal_decision_value_p50_error_vs_formal": (
@@ -3539,6 +3618,7 @@ def _empty_v3_posterior_shadow(
         **empty_formal_value_sampler_flat_dict(),
         **empty_settlement_count_prior_flat_dict(),
         **empty_capacity_source_expansion_flat_dict(),
+        **empty_practical_advisory_flat_dict(),
     }
 
 

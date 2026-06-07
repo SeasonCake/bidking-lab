@@ -7479,3 +7479,63 @@ next_mode=build_shadow_formal_value_workbench
 - Guarded bridge lane 由于 seed stability 失败，近期不得作为 promotion path。
 - 下一步转入 v3 formal/value promotion workbench：先统一候选 lane、分母、support、holdout、seed stability、MAE/below/P90/pinball/high-over 和 `affects_bid=false`，再选择最小 shadow-only interface slice。
 - v2 formal/live/UI 与正式出价仍不改；v3 promotion 仍不讨论。
+
+## 2026-06-07 checkpoint：v3 practical advisory 实战入口落地
+
+背景：
+
+- 用户明确要求停止继续围绕 CSE/SCP 边缘审计空转，优先形成有实战意义、可在 live/archive 中复盘的 v3 落地入口。
+- 当前仍不能把 v3 lane 接入正式出价；但可以把已有 formal/value、underestimate、tail、SCP、CSE 信号汇成 shadow-only advisory，先服务实战观察和局后归因。
+
+本轮动作：
+
+- 新增 `src/bidking_lab/inference/v3/practical_advisory.py`：
+  - 输出 `v3_practical_*` 字段；
+  - 固定 `affects_bid=false`、`active=false`；
+  - formal value / underestimate 候选可以提供 advisory posterior；
+  - CSE/SCP broad candidate 只记录 risk，不单独触发 raise-watch；
+  - CSE pressure、value/capacity guard、tail candidate 才触发 watch recommendation。
+- 将 practical advisory 接入共享 `estimate_shadow_pipeline()`，archive evaluator、live `v3_posterior_shadow`、live `model_eval.jsonl` 与 UI contract diagnostics。
+- archive summary 新增：
+  - `v3_practical_candidate_rows`
+  - `v3_practical_raise_watch_rows`
+  - `v3_practical_formal_p50_mae`
+  - `v3_practical_delta_formal_p50_mae`
+  - `v3_practical_formal_p50_below_rate`
+  - `v3_practical_formal_p90_coverage`
+- 修正早期 broad risk 误用：首次 smoke 显示 SCP broad candidate 会导致 1495/1560 ready rows 都变成 `raise_watch`，已收窄为 risk-only 记录。
+
+验证命令：
+
+```powershell
+C:\Users\shenc\anaconda3\python.exe -m py_compile src\bidking_lab\inference\v3\practical_advisory.py src\bidking_lab\inference\v3\pipeline.py scripts\evaluate_fatbeans_v3_samples.py src\bidking_lab\live\monitor.py src\bidking_lab\runtime\snapshot.py
+C:\Users\shenc\anaconda3\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_inference_v3_pipeline.py tests\test_evaluate_fatbeans_v3_samples.py::test_v3_prebid_rows_include_prior_and_truth_shadow_fields tests\test_evaluate_fatbeans_v3_samples.py::test_v3_summary_metrics_use_formal_truth_and_prediction tests\test_live_monitor.py::test_build_monitor_artifact_includes_panel_and_eval tests\test_runtime_snapshot.py -q
+C:\Users\shenc\anaconda3\python.exe scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 64 --format summary
+```
+
+验证结果：
+
+```text
+py_compile: passed
+focused tests: 21 passed
+
+archive smoke:
+windows=1577 ready=1560 parse_errors=0
+formal_p50_mae=318635.858
+formal_p50_below_rate=0.51859
+formal_p90_coverage=0.750641
+v3_practical_candidate_rows=175
+v3_practical_raise_watch_rows=175
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=318217.101
+v3_practical_delta_formal_p50_mae=-418.757
+v3_practical_formal_p50_below_rate=0.517949
+v3_practical_formal_p90_coverage=0.751282
+```
+
+解读：
+
+- 这是 practical landing slice，不是 promotion；它已经让 v3 在 live/archive/UI contract 中形成可见实战参考。
+- 当前 archive 整体提升很小，但方向是正的，且不会破坏正式出价。
+- 后续优先用实战样本检查 `v3_practical_recommendation/mode/risk_flags` 是否命中用户感知低估局；若有效，再考虑把 UI 显示进一步前置或做更强 sampler。
+- 若后续继续优化，应以 practical candidate 的实战命中率和 low-estimate 修复为主，不再回到 CSE/SCP 单 lane 无限审计。

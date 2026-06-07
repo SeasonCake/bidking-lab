@@ -2701,3 +2701,21 @@ applied_hurts=2502
 - support-depth fallback 最好只到 recall=0.904762、precision=0.082251，仍不足以接 sampler。
 - Guarded bridge stability 在 seeds 0/1/7 下为 `blocked_applied_hurt`：seed 1 选入 `2501` 并 hurt，seed 7 的 `2506` support 只有 9 applied rows。
 - 继续 CSE 微分组不太可能解锁 v3 formal readiness；需要切到候选 lane 组合、stop-loss 和 formal/value shadow interface。
+
+## D-v3-132：v3 practical advisory 作为实战落地入口，先于 formal promotion
+
+2026-06-07 起，当前决策：
+
+- 新增 `v3_practical_*` 作为 v3 的第一层实战落地接口；它必须固定 `active=false`、`affects_bid=false`。
+- `v3_practical_*` 只能输出 advisory/reference，不得改变 v2 formal、live UI baseline、正式 bid 或正式出价。
+- formal value / underestimate lane 可以在 practical advisory 中提供数值候选 posterior；CSE/SCP broad candidate 只能记录 risk，不得单独触发 `raise_watch`。
+- `raise_watch` 只允许由更具体的实战信号触发：formal value candidate、underestimate candidate、CSE pressure、value/capacity guard 或其他明确 guarded candidate。
+- UI contract 只能把 `v3_practical` 放在 diagnostics/shadow reference 区域，不能放入 baseline decision 或 official bid 区域。
+- 后续 v3 推进先看 practical advisory 在实战样本中的命中/误导情况，再决定是否做更强 sampler 或 promotion readiness；不再继续围绕 CSE/SCP 单 lane 扩审计。
+
+原因：
+
+- 用户已明确要求减少边缘审计，把工作推进到实战可见和可复盘。
+- 真实 archive smoke 显示 broad SCP candidate 若直接触发 recommendation，会让 1495/1560 ready rows 都变成 `raise_watch`，实战不可用。
+- 收窄后 `v3_practical_candidate_rows=175`、`active_rows=0`，整体 MAE 小幅改善 `-418.757`，below-rate 与 P90 coverage 也微幅正向。
+- 该层的价值不是当前立即大幅提精度，而是建立统一实战参考和复盘入口，让后续样本能直接回答“v3 是否真的帮用户避开低估局”。

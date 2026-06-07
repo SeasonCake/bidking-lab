@@ -35,6 +35,10 @@ from bidking_lab.inference.v3.posterior import (
     estimate_q6_posterior_from_truths,
     estimate_residual_count_cell_value_posterior_from_truths,
 )
+from bidking_lab.inference.v3.practical_advisory import (
+    V3PracticalAdvisoryReport,
+    advise_practical_report,
+)
 from bidking_lab.inference.v3.residual_gate import (
     V3ResidualGateReport,
     gate_residual_posterior_report,
@@ -85,6 +89,7 @@ class V3ShadowPipelineReport:
     formal_value: V3FormalValueSamplerReport
     settlement_count_prior: V3SettlementCountPriorReport
     capacity_source_expansion: V3CapacitySourceExpansionReport
+    practical_advisory: V3PracticalAdvisoryReport
 
     def to_flat_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -105,6 +110,7 @@ class V3ShadowPipelineReport:
         out.update(self.formal_value.to_flat_dict())
         out.update(self.settlement_count_prior.to_flat_dict())
         out.update(self.capacity_source_expansion.to_flat_dict())
+        out.update(self.practical_advisory.to_flat_dict())
         return out
 
 
@@ -209,6 +215,14 @@ def estimate_shadow_pipeline(
         summary=summary,
         prior_fields=prior_fields,
     )
+    practical_advisory = advise_practical_report(
+        posterior,
+        formal_value=formal_value,
+        underestimate=underestimate,
+        tail_review=tail_review,
+        settlement_count_prior=settlement_count_prior,
+        capacity_source_expansion=capacity_source_expansion,
+    )
     return V3ShadowPipelineReport(
         posterior=posterior,
         ccv_posterior=ccv_posterior,
@@ -222,6 +236,7 @@ def estimate_shadow_pipeline(
         formal_value=formal_value,
         settlement_count_prior=settlement_count_prior,
         capacity_source_expansion=capacity_source_expansion,
+        practical_advisory=practical_advisory,
     )
 
 

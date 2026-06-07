@@ -36,6 +36,7 @@ from bidking_lab.inference.v3 import (  # noqa: E402
     empty_capacity_source_expansion_flat_dict,
     empty_formal_value_sampler_flat_dict,
     empty_posterior_flat_dict,
+    empty_practical_advisory_flat_dict,
     empty_prior_calibration_flat_dict,
     empty_prior_flat_dict,
     empty_prior_robustness_flat_dict,
@@ -429,6 +430,7 @@ def _round_rows_for_events(
     empty_formal_value_fields = empty_formal_value_sampler_flat_dict()
     empty_settlement_count_prior_fields = empty_settlement_count_prior_flat_dict()
     empty_capacity_source_expansion_fields = empty_capacity_source_expansion_flat_dict()
+    empty_practical_advisory_fields = empty_practical_advisory_flat_dict()
     bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
     previous_bid_sort_id = 0
     for window_round, bid_send in enumerate(bid_sends, start=1):
@@ -509,6 +511,7 @@ def _round_rows_for_events(
                     **empty_formal_value_fields,
                     **empty_settlement_count_prior_fields,
                     **empty_capacity_source_expansion_fields,
+                    **empty_practical_advisory_fields,
                 }
             )
             previous_bid_sort_id = bid_sort_id
@@ -669,6 +672,11 @@ def _round_rows_for_events(
             if pipeline is not None
             else empty_capacity_source_expansion_fields
         )
+        practical_advisory_fields = (
+            pipeline.practical_advisory.to_flat_dict()
+            if pipeline is not None
+            else empty_practical_advisory_fields
+        )
         capacity_fields = _capacity_flat_dict(
             prior_fields=prior_fields,
             truth_fields=truth_fields,
@@ -713,6 +721,7 @@ def _round_rows_for_events(
                 **formal_value_fields,
                 **settlement_count_prior_fields,
                 **capacity_source_expansion_fields,
+                **practical_advisory_fields,
             }
         )
         previous_bid_sort_id = bid_sort_id
@@ -987,6 +996,16 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for row in rows
         if row.get("status") == "ready" and row.get("v3_cse_ready")
     ]
+    practical_ready = [
+        row
+        for row in rows
+        if row.get("status") == "ready"
+        and row.get("v3_truth_decision_available")
+        and row.get("v3_practical_ready")
+        and _float_or_none(row.get("v3_practical_formal_decision_value_p50"))
+        is not None
+        and _float_or_none(row.get("v3_truth_formal_decision_value")) is not None
+    ]
 
     def pred_truth(
         pred_key: str,
@@ -1230,6 +1249,26 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "v3_truth_q6_formal_decision_value",
         source_rows=formal_value_ready,
     )
+    practical_formal_p50 = pred_truth(
+        "v3_practical_formal_decision_value_p50",
+        "v3_truth_formal_decision_value",
+        source_rows=practical_ready,
+    )
+    practical_formal_p90 = pred_truth(
+        "v3_practical_formal_decision_value_p90",
+        "v3_truth_formal_decision_value",
+        source_rows=practical_ready,
+    )
+    practical_q6_p50 = pred_truth(
+        "v3_practical_q6_formal_decision_value_p50",
+        "v3_truth_q6_formal_decision_value",
+        source_rows=practical_ready,
+    )
+    practical_q6_p90 = pred_truth(
+        "v3_practical_q6_formal_decision_value_p90",
+        "v3_truth_q6_formal_decision_value",
+        source_rows=practical_ready,
+    )
 
     def mae(pairs: tuple[tuple[float, float], ...]) -> float | None:
         return _mean(abs(pred - truth) for pred, truth in pairs)
@@ -1258,10 +1297,12 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     cal_formal_p50_mae = mae(cal_formal_p50)
     under_formal_p50_mae = mae(under_formal_p50)
     fv_formal_p50_mae = mae(fv_formal_p50)
+    practical_formal_p50_mae = mae(practical_formal_p50)
     q6_formal_p50_mae = mae(q6_p50)
     cal_q6_formal_p50_mae = mae(cal_q6_p50)
     under_q6_formal_p50_mae = mae(under_q6_p50)
     fv_q6_formal_p50_mae = mae(fv_q6_p50)
+    practical_q6_formal_p50_mae = mae(practical_q6_p50)
     q6_count_p50_mae = mae(q6_count_p50)
     q6_cells_p50_mae = mae(q6_cells_p50)
     q6_value_p50_mae = mae(q6_value_p50)
@@ -1683,6 +1724,83 @@ def _paired_metric_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 ).items()
             )
         ),
+        "v3_practical_metric_rows": len(practical_ready),
+        "v3_practical_candidate_rows": sum(
+            1 for row in practical_ready if row.get("v3_practical_candidate")
+        ),
+        "v3_practical_active_rows": sum(
+            1 for row in practical_ready if row.get("v3_practical_active")
+        ),
+        "v3_practical_raise_watch_rows": sum(
+            1
+            for row in practical_ready
+            if row.get("v3_practical_recommendation") == "raise_watch"
+        ),
+        "v3_practical_status_counts": dict(
+            sorted(
+                Counter(
+                    str(row.get("v3_practical_status") or "none")
+                    for row in rows
+                ).items()
+            )
+        ),
+        "v3_practical_mode_counts": dict(
+            sorted(
+                Counter(
+                    str(row.get("v3_practical_mode") or "none")
+                    for row in practical_ready
+                ).items()
+            )
+        ),
+        "v3_practical_formal_p50_mae": _round_metric(
+            practical_formal_p50_mae
+        ),
+        "v3_practical_formal_p50_bias": _round_metric(
+            bias(practical_formal_p50)
+        ),
+        "v3_practical_formal_p50_below_rate": _round_metric(
+            below_rate(practical_formal_p50),
+            6,
+        ),
+        "v3_practical_formal_p50_over_rate": _round_metric(
+            over_rate(practical_formal_p50),
+            6,
+        ),
+        "v3_practical_formal_p50_pinball": _round_metric(
+            pinball(practical_formal_p50, 0.5)
+        ),
+        "v3_practical_formal_p90_coverage": _round_metric(
+            coverage_rate(practical_formal_p90),
+            6,
+        ),
+        "v3_practical_formal_p90_pinball": _round_metric(
+            pinball(practical_formal_p90, 0.9)
+        ),
+        "v3_practical_q6_formal_p50_mae": _round_metric(
+            practical_q6_formal_p50_mae
+        ),
+        "v3_practical_q6_formal_p50_bias": _round_metric(
+            bias(practical_q6_p50)
+        ),
+        "v3_practical_q6_formal_p50_below_rate": _round_metric(
+            below_rate(practical_q6_p50),
+            6,
+        ),
+        "v3_practical_q6_formal_p90_coverage": _round_metric(
+            coverage_rate(practical_q6_p90),
+            6,
+        ),
+        "v3_practical_delta_formal_p50_mae": _round_metric(
+            practical_formal_p50_mae - formal_p50_mae
+            if practical_formal_p50_mae is not None and formal_p50_mae is not None
+            else None
+        ),
+        "v3_practical_delta_q6_formal_p50_mae": _round_metric(
+            practical_q6_formal_p50_mae - q6_formal_p50_mae
+            if practical_q6_formal_p50_mae is not None
+            and q6_formal_p50_mae is not None
+            else None
+        ),
     }
 
 
@@ -1917,6 +2035,13 @@ def _print_summary(summary: dict[str, Any]) -> None:
                 f"v3_cse_candidate_rows={summary['v3_cse_candidate_rows']}",
                 f"v3_cse_pressure_candidate_rows={summary['v3_cse_pressure_candidate_rows']}",
                 f"v3_cse_active_rows={summary['v3_cse_active_rows']}",
+                f"v3_practical_candidate_rows={summary['v3_practical_candidate_rows']}",
+                f"v3_practical_raise_watch_rows={summary['v3_practical_raise_watch_rows']}",
+                f"v3_practical_active_rows={summary['v3_practical_active_rows']}",
+                f"v3_practical_formal_p50_mae={summary['v3_practical_formal_p50_mae']}",
+                f"v3_practical_delta_formal_p50_mae={summary['v3_practical_delta_formal_p50_mae']}",
+                f"v3_practical_formal_p50_below_rate={summary['v3_practical_formal_p50_below_rate']}",
+                f"v3_practical_formal_p90_coverage={summary['v3_practical_formal_p90_coverage']}",
                 f"numeric_constraints={summary['numeric_constraints']}",
                 f"item_anchors={summary['item_anchors']}",
                 f"shape_anchors={summary['shape_anchors']}",
@@ -2521,6 +2646,43 @@ def _write_csv(rows: list[dict[str, Any]]) -> None:
         "v3_cse_prior_max_to_unique_non_temp_max_delta",
         "v3_cse_flags",
         "v3_cse_diagnostics",
+        "v3_practical_available",
+        "v3_practical_ready",
+        "v3_practical_strict_ready",
+        "v3_practical_affects_bid",
+        "v3_practical_active",
+        "v3_practical_candidate",
+        "v3_practical_source",
+        "v3_practical_mode",
+        "v3_practical_status",
+        "v3_practical_recommendation",
+        "v3_practical_confidence",
+        "v3_practical_source_lanes",
+        "v3_practical_risk_flags",
+        "v3_practical_reason",
+        "v3_practical_map_id",
+        "v3_practical_map_name",
+        "v3_practical_match_scope",
+        "v3_practical_n_total",
+        "v3_practical_n_matched",
+        "v3_practical_n_strict_matched",
+        "v3_practical_match_rate",
+        "v3_practical_strict_match_rate",
+        "v3_practical_formal_decision_value_p10",
+        "v3_practical_formal_decision_value_p50",
+        "v3_practical_formal_decision_value_p90",
+        "v3_practical_q6_formal_decision_value_p10",
+        "v3_practical_q6_formal_decision_value_p50",
+        "v3_practical_q6_formal_decision_value_p90",
+        "v3_practical_baseline_formal_decision_value_p50",
+        "v3_practical_baseline_formal_decision_value_p90",
+        "v3_practical_delta_formal_decision_value_p50",
+        "v3_practical_delta_formal_decision_value_p90",
+        "v3_practical_baseline_q6_formal_decision_value_p50",
+        "v3_practical_baseline_q6_formal_decision_value_p90",
+        "v3_practical_delta_q6_formal_decision_value_p50",
+        "v3_practical_delta_q6_formal_decision_value_p90",
+        "v3_practical_diagnostics",
     )
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()

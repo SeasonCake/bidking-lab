@@ -17,6 +17,7 @@
 | `docs/v3_inference_design_2026-06-04.zh-CN.md` | v3 设计文档 |
 | `src/bidking_lab/inference/v3/` | v3 推理引擎新包 |
 | `src/bidking_lab/inference/v3/pipeline.py` | archive/live 共用 v3 shadow 推理链路 |
+| `src/bidking_lab/inference/v3/practical_advisory.py` | v3 practical advisory 聚合层，输出 `v3_practical_*` 实战参考字段，固定 inactive/不影响出价 |
 | `src/bidking_lab/inference/v3/priors.py` | v3 drop-prior summary 与共享 flat fields |
 | `src/bidking_lab/inference/v3/prior_robustness.py` | v3 drop-prior 漂移、活动期、fallback 鲁棒性审计 |
 | `src/bidking_lab/inference/v3/formal_value_sampler.py` | v3 formal/value sampler 第一阶段 shadow report，拆分 capacity/cells/value-floor stress，固定不影响出价 |
@@ -32,7 +33,7 @@
 | `docs/v3_strategy_pivot_2026-06-07.zh-CN.md` | 2026-06-07 策略切换：冻结 CSE 继续扩张，转入 formal/value promotion workbench |
 | `scripts/summarize_v3_evidence_coverage.py` | v3 evidence coverage 检查 |
 | `scripts/summarize_v3_constraints.py` | v3 hard constraint compiler 摘要 |
-| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、`v3_capacity_*` capacity prior-max gap/cases、`v3_fv_*` formal/value sampler shadow 字段、`v3_scp_*` settlement count-prior shadow evidence、含 source context/pressure tier 的 `v3_cse_*` capacity/source expansion shadow evidence、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
+| `scripts/evaluate_fatbeans_v3_samples.py` | v3 archive pre-bid ConstraintSet evaluator，支持 `v3_robust_*` prior/activity 审计、`v3_capacity_*` capacity prior-max gap/cases、`v3_fv_*` formal/value sampler shadow 字段、`v3_scp_*` settlement count-prior shadow evidence、含 source context/pressure tier 的 `v3_cse_*` capacity/source expansion shadow evidence、`v3_practical_*` practical advisory 实战参考字段、可选 `v3_ccvc_` component likelihood 与 freeze-cells audit |
 | `scripts/summarize_v3_metric_slices.py` | v3 round/map/hero/profile 分片指标 |
 | `scripts/summarize_v3_map_audit.py` | v3 map 主键审计，附 hero/profile 分布 |
 | `scripts/summarize_v3_prior_robustness_audit.py` | v3 prior/activity/prior-stress 分片审计，支持 `--details`、`--detail-summary` 与 `--detail-summary-by` 输出 cells/capacity/evidence 明细、target-vs-truth delta、posterior-vs-target absorption、capacity prior-max gap/cases、lower-bound target completeness 和 map/profile 聚合一致性摘要 |
@@ -78,14 +79,14 @@
 | `scripts/summarize_fatbeans_sample_manifest.py` | Fatbeans 样本 manifest/质量分层；支持可选 `cohort_role`/`metric_scope` 元数据，用于把 activity reference cohort 与 default baseline 分开 |
 | `scripts/organize_fatbeans_real_samples.py` | 真实样本 canonical archive 整理 |
 | `tests/test_inference_v3_evidence_registry.py` | v3 registry/constraint 骨架测试 |
-| `tests/test_inference_v3_pipeline.py` | v3 archive/live 共享推理 pipeline 测试 |
+| `tests/test_inference_v3_pipeline.py` | v3 archive/live 共享推理 pipeline 测试，覆盖 `v3_practical_*` advisory 合同 |
 | `tests/test_inference_v3_prior_robustness.py` | v3 prior/activity 鲁棒性审计测试 |
 | `tests/test_inference_v3_formal_value_sampler.py` | v3 formal/value sampler shadow-only 与 stress 分流测试 |
 | `tests/test_inference_v3_settlement_count_prior.py` | v3 settlement count-prior shadow report/entry/matching 测试 |
 | `tests/test_inference_v3_capacity_source_expansion.py` | v3 capacity/source expansion shadow report/entry/matching 测试 |
 | `tests/test_inference_v3_underestimate_repair.py` | v3 低估上修 shadow report 测试 |
 | `tests/test_inference_v3_tail_value_review.py` | v3 tail/value review shadow report 测试 |
-| `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试 |
+| `tests/test_evaluate_fatbeans_v3_samples.py` | v3 evaluator skeleton 测试，覆盖 archive 行输出 practical advisory 字段 |
 | `tests/test_summarize_v3_prior_robustness_audit.py` | v3 prior robustness 分片审计测试 |
 | `tests/test_summarize_v3_capacity_table_audit.py` | v3 capacity table possible-max 审计测试 |
 | `tests/test_summarize_v3_archive_table_timing.py` | v3 archive/table timing metadata 审计测试 |
@@ -142,7 +143,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | 路径 | 作用 | 当前策略 |
 | --- | --- | --- |
 | `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做 |
-| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*` 与含 source context/pressure tier 的 `v3_cse_*` |
+| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 diagnostics-only `v3_practical_*` |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 后续可加 v3 shadow columns |

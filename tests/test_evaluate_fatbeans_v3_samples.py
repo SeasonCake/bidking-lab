@@ -286,6 +286,11 @@ def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:
     assert rows[0]["v3_cse_scope"] == "map_id"
     assert rows[0]["v3_cse_group"] == "2401"
     assert rows[0]["v3_cse_source_context_classes"] == "public_total_confirmed:1"
+    assert rows[0]["v3_practical_available"] is True
+    assert rows[0]["v3_practical_affects_bid"] is False
+    assert rows[0]["v3_practical_active"] is False
+    assert rows[0]["v3_practical_status"] == "baseline_passthrough"
+    assert rows[0]["v3_practical_formal_decision_value_p50"] is not None
 
 
 def test_capacity_flat_dict_reports_prior_max_gap() -> None:

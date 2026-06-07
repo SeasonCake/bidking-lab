@@ -606,6 +606,13 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     assert artifact["v3_posterior_shadow"]["v3_cse_active"] is False
     assert "v3_cse_pressure_candidate" in artifact["v3_posterior_shadow"]
     assert "v3_cse_source_context_classes" in artifact["v3_posterior_shadow"]
+    assert artifact["v3_posterior_shadow"]["v3_practical_available"] is True
+    assert artifact["v3_posterior_shadow"]["v3_practical_affects_bid"] is False
+    assert artifact["v3_posterior_shadow"]["v3_practical_active"] is False
+    assert "v3_practical_status" in artifact["v3_posterior_shadow"]
+    assert "v3_practical_formal_decision_value_p50" in artifact[
+        "v3_posterior_shadow"
+    ]
     assert artifact["q6_residual_boost_shadow"]["label"] == "profile_b5"
     assert artifact["q6_residual_boost_shadow"]["gate"] == "shipwreck_profile_v1"
     assert artifact["q6_residual_boost_shadow"]["trials"] == 10
@@ -861,6 +868,21 @@ def test_build_monitor_artifact_includes_panel_and_eval() -> None:
         "observed_exceeds_table_caps_shadow_only"
     )
     assert "v3_scp_prior_max_to_observed_p95_delta" in artifact["model_eval"]
+    assert artifact["model_eval"]["v3_practical_available"] is True
+    assert artifact["model_eval"]["v3_practical_affects_bid"] is False
+    assert artifact["model_eval"]["v3_practical_active"] is False
+    assert "v3_practical_status" in artifact["model_eval"]
+    assert "v3_practical_recommendation" in artifact["model_eval"]
+    assert "v3_practical_formal_decision_value_p50" in artifact["model_eval"]
+    assert "v3_practical_formal_decision_value_p50_error_vs_formal" in artifact[
+        "model_eval"
+    ]
+    assert artifact["ui_contract"]["diagnostics"]["v3_practical"][
+        "affects_bid"
+    ] is False
+    assert "recommendation" in artifact["ui_contract"]["diagnostics"][
+        "v3_practical"
+    ]
     assert "q6_residual_boost_shadow_active" in artifact["model_eval"]
     assert "q6_residual_boost_shadow_q6_p90_delta" in artifact["model_eval"]
     assert artifact["model_eval"]["q6_residual_boost_shadow_active"] is False

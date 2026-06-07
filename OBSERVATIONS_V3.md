@@ -6003,3 +6003,31 @@ cse_active_rows=0
 - 该 lane 不应继续作为近期 promotion path，也不应继续围绕 `2506` 做窄调参。
 - CSE 已解释 blocker 但 precision/recall 不足；SCP guarded bridge 已评估且 seed stability 失败。两条线都应进入 stop-loss。
 - 下一步应建立 formal/value promotion workbench，用同一报告收束所有 shadow lane 的 support、holdout、seed stability 与风险，而不是继续单 lane 深挖。
+
+## O-v3-136：v3 practical advisory 首轮落地 smoke 显示 broad SCP 不能触发实战 raise-watch
+
+2026-06-07 接入 `v3_practical_*` 后，对默认 archive 轻量复跑：
+
+```text
+windows=1577
+ready=1560
+parse_errors=0
+formal_p50_mae=318635.858
+formal_p50_below_rate=0.51859
+formal_p90_coverage=0.750641
+v3_practical_candidate_rows=175
+v3_practical_raise_watch_rows=175
+v3_practical_active_rows=0
+v3_practical_formal_p50_mae=318217.101
+v3_practical_delta_formal_p50_mae=-418.757
+v3_practical_formal_p50_below_rate=0.517949
+v3_practical_formal_p90_coverage=0.751282
+```
+
+关键观察：
+
+- 初版把 SCP broad candidate 当作实战 risk trigger 时，`v3_practical_raise_watch_rows=1495`，几乎覆盖所有 ready rows，属于实战提示过载。
+- 收窄后 broad SCP/CSE 只保留在 `risk_flags/source_lanes`，不再单独触发 `raise_watch`；`raise_watch` 降到 175 rows。
+- 当前 practical 数值收益主要来自 underestimate candidate；formal value / CSE pressure / tail 等更多体现为实战解释和风险分层。
+- 整体 MAE 与低估率仅小幅改善，说明该 slice 不是最终 sampler，但它已经提供统一的 live/archive/model_eval/UI-contract 复盘入口。
+- 下一步评估重点应从“全局 MAE 是否大幅提升”转为“实战低估局是否被 `v3_practical_*` 识别、提示是否过载、是否误导用户加价”。

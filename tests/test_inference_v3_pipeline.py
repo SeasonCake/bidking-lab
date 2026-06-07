@@ -1,6 +1,7 @@
 from bidking_lab.inference.ground_truth import BucketTruth, SessionTruth
 from bidking_lab.inference.v3 import (
     BucketFeasibleSummary,
+    CapacitySourceExpansionEntry,
     FeasibleSummaryReport,
     V3CcvOptions,
     estimate_shadow_pipeline,
@@ -95,6 +96,10 @@ def test_v3_shadow_pipeline_emits_all_shadow_namespaces() -> None:
     assert flat["v3_cse_affects_bid"] is False
     assert flat["v3_cse_active"] is False
     assert flat["v3_cse_status"] == "missing_entry"
+    assert flat["v3_practical_available"] is True
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert flat["v3_practical_status"] == "baseline_passthrough"
 
 
 def test_v3_shadow_pipeline_can_emit_component_ccv_shadow() -> None:
@@ -172,6 +177,56 @@ def test_v3_shadow_pipeline_can_emit_formal_value_candidate() -> None:
     assert flat["v3_fv_status"] == "watch_only_value_floor_candidate"
     assert flat["v3_fv_total_value_target"] == 500_000
     assert flat["v3_fv_q6_value_target"] == 400_000
+    assert flat["v3_practical_status"] == "watch_raise_candidate"
+    assert flat["v3_practical_mode"] == "value_floor_watch"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_affects_bid"] is False
+    assert flat["v3_practical_active"] is False
+    assert "formal_value" in flat["v3_practical_source_lanes"]
+    assert "value_floor_candidate" in flat["v3_practical_risk_flags"]
+
+
+def test_v3_shadow_pipeline_marks_cse_as_practical_risk_watch() -> None:
+    summary = FeasibleSummaryReport(
+        session_total_count_exact=None,
+        session_total_cells_exact=None,
+        known_count_floor=18,
+        known_cells_floor=0,
+        known_value_floor=0,
+        buckets=(),
+    )
+
+    report = estimate_shadow_pipeline(
+        map_id=2401,
+        map_name="test_map",
+        summary=summary,
+        truths=(
+            _truth(q6_count=0, q6_cells=0, q6_value=0),
+            _truth(q6_count=0, q6_cells=0, q6_value=0, q1_cells=12),
+        ),
+        hero="ethan",
+        prior_fields={
+            "v3_prior_available": True,
+            "v3_prior_items_per_session_max": 10,
+        },
+        capacity_source_expansion_entry=CapacitySourceExpansionEntry(
+            scope="map_id",
+            group="2401",
+            status="watch_capacity_source_expansion_shadow_only",
+            unique_non_temp_p95=16,
+            unique_non_temp_max=20,
+            public_total_match_rows=1,
+        ),
+    )
+    flat = report.to_flat_dict()
+
+    assert flat["v3_cse_pressure_candidate"] is True
+    assert flat["v3_practical_status"] == "watch_risk_no_numeric_shift"
+    assert flat["v3_practical_recommendation"] == "raise_watch"
+    assert flat["v3_practical_confidence"] == "low"
+    assert "capacity_source_expansion" in flat["v3_practical_source_lanes"]
+    assert "capacity_source_pressure" in flat["v3_practical_risk_flags"]
+    assert flat["v3_practical_source"] == "risk_watch"
 
 
 def test_v3_shadow_pipeline_can_freeze_component_cells() -> None:

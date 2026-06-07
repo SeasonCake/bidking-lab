@@ -64,6 +64,11 @@ from bidking_lab.inference.v3.posterior import (
     sample_truth_bank,
     truth_matches_feasible_summary,
 )
+from bidking_lab.inference.v3.practical_advisory import (
+    V3PracticalAdvisoryReport,
+    advise_practical_report,
+    empty_practical_advisory_flat_dict,
+)
 from bidking_lab.inference.v3.pipeline import (
     V3CcvOptions,
     V3ShadowPipelineReport,
@@ -163,6 +168,7 @@ __all__ = (
     "TailValueReviewEntry",
     "UnderestimateRepairEntry",
     "V3PosteriorReport",
+    "V3PracticalAdvisoryReport",
     "V3PriorCalibrationReport",
     "V3PriorRobustnessReport",
     "V3CcvOptions",
@@ -179,6 +185,7 @@ __all__ = (
     "assess_settlement_count_prior",
     "audit_fatbeans_events",
     "audit_fatbeans_paths",
+    "advise_practical_report",
     "assess_q6_residual_targets",
     "calibrate_posterior_report",
     "capacity_source_expansion_entry_for",
@@ -191,6 +198,7 @@ __all__ = (
     "empty_capacity_source_expansion_flat_dict",
     "empty_formal_value_sampler_flat_dict",
     "empty_posterior_flat_dict",
+    "empty_practical_advisory_flat_dict",
     "empty_prior_calibration_flat_dict",
     "empty_prior_flat_dict",
     "empty_prior_robustness_flat_dict",
