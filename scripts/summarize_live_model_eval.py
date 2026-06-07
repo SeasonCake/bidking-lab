@@ -629,6 +629,15 @@ def _v3_practical_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     scoped_rows = ready_rows or practical_rows
     return {
+        "status": "fields_present" if practical_rows else "no_v3_practical_fields",
+        "note": (
+            None
+            if practical_rows
+            else (
+                "当前选中的 model_eval 行没有 v3_practical_* 字段；"
+                "需要用最新 live monitor 采集的新日志生成该汇总。"
+            )
+        ),
         "rows": len(practical_rows),
         "available_rows": _truthy_count(practical_rows, "v3_practical_available"),
         "ready_rows": len(ready_rows),
@@ -773,6 +782,8 @@ def _v3_practical_brief(practical: Any) -> dict[str, Any]:
         return {}
     rows = int(practical.get("rows") or 0)
     brief: dict[str, Any] = {
+        "status": practical.get("status"),
+        "note": practical.get("note"),
         "rows": rows,
         "available_rows": practical.get("available_rows"),
         "ready_rows": practical.get("ready_rows"),

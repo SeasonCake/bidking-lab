@@ -536,6 +536,8 @@ def test_brief_summary_keeps_empty_v3_practical_compact() -> None:
     brief = module.brief_summary(
         {
             "v3_practical": {
+                "status": "no_v3_practical_fields",
+                "note": "当前选中的 model_eval 行没有 v3_practical_* 字段",
                 "rows": 0,
                 "available_rows": 0,
                 "ready_rows": 0,
@@ -549,6 +551,8 @@ def test_brief_summary_keeps_empty_v3_practical_compact() -> None:
     )
 
     assert brief["v3_practical"] == {
+        "status": "no_v3_practical_fields",
+        "note": "当前选中的 model_eval 行没有 v3_practical_* 字段",
         "rows": 0,
         "available_rows": 0,
         "ready_rows": 0,
@@ -649,6 +653,8 @@ def test_summarize_and_brief_include_v3_practical_shadow_review() -> None:
     practical = summary["v3_practical"]
 
     assert practical["rows"] == 3
+    assert practical["status"] == "fields_present"
+    assert practical["note"] is None
     assert practical["available_rows"] == 3
     assert practical["ready_rows"] == 3
     assert practical["candidate_rows"] == 3
@@ -694,6 +700,7 @@ def test_summarize_and_brief_include_v3_practical_shadow_review() -> None:
     assert raise_watch["misleading_rate"] == 0.5
 
     brief = module.brief_summary(summary)
+    assert brief["v3_practical"]["status"] == "fields_present"
     assert brief["v3_practical"]["formal_p90"]["helped_rows"] == 1
     assert brief["v3_practical"]["affects_bid_rows"] == 0
 

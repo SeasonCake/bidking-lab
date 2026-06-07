@@ -8637,7 +8637,7 @@ overall v3_practical_p90_extreme_over_rate=0.19
   - recommendation / confidence / source / source_lanes / risk_flags 计数；
   - formal P90 与 q6 formal P90 的 baseline vs practical 覆盖、残余 under、helped/still_missed、extreme-over；
   - raise_watch 的 hit / miss / false_alarm / extreme_over / misleading。
-- `brief_summary()` 保留该聚合块；当当前日志没有 v3 practical 字段时，只输出 rows 与 shadow 边界，避免 post-game brief 被空子结构刷屏。
+- `brief_summary()` 保留该聚合块；当当前日志没有 v3 practical 字段时，输出 `status=no_v3_practical_fields` 与中文 note，并只保留 rows 与 shadow 边界，避免 post-game brief 被空子结构刷屏。
 - 新增单元测试覆盖 synthetic `raise_watch` hit、false alarm、misleading、q6 residual under 与 `brief_summary` 透传。
 
 验证结果：
