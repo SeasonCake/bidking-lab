@@ -134,6 +134,25 @@ _LIVE_FORMAL_MODE_ALIASES = {
     "v3-practical": LIVE_FORMAL_MODE_V3_PRACTICAL,
     "practical": LIVE_FORMAL_MODE_V3_PRACTICAL,
 }
+_LIVE_V3_PRIOR_ONLY_RAISE_GUARD_CONFIDENCES = {"low", "low_medium"}
+_LIVE_V3_PRIOR_ONLY_RAISE_GUARD_FLAGS = {
+    "q6_prior_floor_watch",
+    "q6_prior_tail_ceiling",
+    "settlement_count_prior_candidate",
+    "capacity_source_candidate",
+}
+_LIVE_V3_STRONG_RAISE_EVIDENCE_FLAGS = {
+    "value_floor_candidate",
+    "underestimate_repair_candidate",
+    "tail_value_candidate",
+    "random_avg_value_floor_watch",
+    "random_avg_high_signal_ceiling",
+    "q6_value_ceiling_watch",
+    "source_profile_q6_tail_ceiling",
+}
+_LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MIN_GAP = 100_000.0
+_LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MAX_P50_MULTIPLIER = 1.25
+_LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MIN_HEADROOM = 75_000.0
 _TRUSTED_SESSION_TOTAL_CONFIDENCES = {"high", "exact"}
 _SAFE_SESSION_TOTAL_FIELDS = (
     "warehouse_total_cells",
@@ -1033,6 +1052,51 @@ def _summary_from_flat_quantiles(
     return QuantileSummary(p10=float(p10), p50=float(p50), p90=float(p90))
 
 
+def _v3_flag_set(value: Any) -> set[str]:
+    text = str(value or "").strip()
+    if not text:
+        return set()
+    return {part for part in re.split(r"[+;,/\s]+", text) if part}
+
+
+def _live_guard_v3_practical_value_summary(
+    v3_shadow: Mapping[str, Any],
+    value_summary: QuantileSummary,
+) -> tuple[QuantileSummary, str]:
+    if str(v3_shadow.get("v3_practical_recommendation") or "") != "raise_watch":
+        return value_summary, ""
+    confidence = str(v3_shadow.get("v3_practical_confidence") or "")
+    if confidence not in _LIVE_V3_PRIOR_ONLY_RAISE_GUARD_CONFIDENCES:
+        return value_summary, ""
+    risk_flags = _v3_flag_set(v3_shadow.get("v3_practical_risk_flags"))
+    if not risk_flags.intersection(_LIVE_V3_PRIOR_ONLY_RAISE_GUARD_FLAGS):
+        return value_summary, ""
+    if risk_flags.intersection(_LIVE_V3_STRONG_RAISE_EVIDENCE_FLAGS):
+        return value_summary, ""
+    p90_gap = float(value_summary.p90) - float(value_summary.p50)
+    if p90_gap < _LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MIN_GAP:
+        return value_summary, ""
+    p50 = float(value_summary.p50)
+    cap = p50 + max(
+        _LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MIN_HEADROOM,
+        p50 * (_LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MAX_P50_MULTIPLIER - 1.0),
+    )
+    guarded_p90 = max(p50, min(float(value_summary.p90), cap))
+    if guarded_p90 >= float(value_summary.p90):
+        return value_summary, ""
+    guarded = QuantileSummary(
+        p10=float(value_summary.p10),
+        p50=p50,
+        p90=guarded_p90,
+    )
+    return (
+        guarded,
+        "live_prior_only_raise_guard:"
+        f"p90 {float(value_summary.p90):.0f}->{guarded_p90:.0f};"
+        f"confidence={confidence};flags={'+'.join(sorted(risk_flags))}",
+    )
+
+
 def _build_v3_practical_bid_rows(
     *,
     latest_bids: Mapping[str, int],
@@ -1051,22 +1115,27 @@ def _build_v3_practical_bid_rows(
     )
     if value_summary is None:
         return [], "v3_practical_missing_formal_value"
+    guarded_value_summary, live_guard_reason = _live_guard_v3_practical_value_summary(
+        v3_shadow,
+        value_summary,
+    )
     raw_value_summary = _summary_from_flat_quantiles(
         v3_shadow,
         "v3_practical_total_value",
     )
     rows = _build_bid_rows(
         latest_bids=latest_bids,
-        value_summary=value_summary,
+        value_summary=guarded_value_summary,
         evidence_label="v3 practical formal",
         session=session,
         round_no=round_no,
         posterior_samples=posterior_samples,
         warehouse_estimate=warehouse_estimate,
-        decision_value_summary=value_summary,
+        decision_value_summary=guarded_value_summary,
         raw_value_summary=raw_value_summary,
         posterior_diagnostics=(
             str(v3_shadow.get("v3_practical_diagnostics") or ""),
+            live_guard_reason,
         ),
         q6_prior_gap=q6_prior_gap,
     )
@@ -1075,9 +1144,19 @@ def _build_v3_practical_bid_rows(
     recommendation = str(v3_shadow.get("v3_practical_recommendation") or "")
     for row in rows:
         row["formal_mode"] = LIVE_FORMAL_MODE_V3_PRACTICAL
-        row["formal_mode_reason"] = "v3_practical_ready"
+        row["formal_mode_reason"] = (
+            "v3_practical_ready_live_guarded"
+            if live_guard_reason
+            else "v3_practical_ready"
+        )
         row["formal_baseline_source"] = LIVE_FORMAL_MODE_V3_PRACTICAL
         row["formal_override"] = "是"
+        row["v3_practical_live_guard"] = "是" if live_guard_reason else "否"
+        row["v3_practical_live_guard_reason"] = live_guard_reason
+        if live_guard_reason:
+            row["v3_practical_unguarded_decision_value"] = (
+                _format_quantile_interval(value_summary)
+            )
         row["v3_practical_recommendation"] = recommendation
         row["v3_practical_confidence"] = str(
             v3_shadow.get("v3_practical_confidence") or ""
@@ -1091,7 +1170,12 @@ def _build_v3_practical_bid_rows(
         row["v3_practical_reason"] = str(
             v3_shadow.get("v3_practical_reason") or ""
         )
-    return rows, "v3_practical_ready"
+    return (
+        rows,
+        "v3_practical_ready_live_guarded"
+        if live_guard_reason
+        else "v3_practical_ready",
+    )
 
 
 def _build_bid_rows(
@@ -3962,7 +4046,14 @@ def build_monitor_artifact_from_events(
         "mode": "no_inference_session",
     }
     problem: ResidualProblem | None = None
-    if base_session is not None:
+    if base_session is not None and base_session.map_id not in tables.maps:
+        evidence_label = f"unsupported_map:{base_session.map_id}"
+        formal_mode_reason = "unsupported_map"
+        inference_input_constraints = {
+            "mode": "unsupported_map",
+            "map_id": base_session.map_id,
+        }
+    elif base_session is not None:
         candidate_map_ids = _candidate_map_ids_for_likelihood(
             base_session.map_id,
             tables.maps,

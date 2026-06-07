@@ -3149,3 +3149,42 @@ applied_hurts=2502
 - 最新 72h prebid 对照显示 v3 practical 改善当前 v2 低估问题：MAE 约 `393k -> 338k`，P90 coverage `0.29 -> 0.62`。
 - v3 practical 仍有 over-risk：P90 extreme-over `0.05 -> 0.14`，raise-watch misleading rate `0.11`。
 - `summarize_v3_promotion_readiness.py` 仍为 `overall_status=not_ready`，因此只能作为实战试用切换，不能视为 v3 全量 promotion 或 v2 archive 条件满足。
+
+## D-v3-156：live v3 practical 必须对低置信 prior-only raise-watch 做出价 guard
+
+2026-06-07 起，当前决策：
+
+- v3 practical 的 audit 原始字段继续保留，不因 live guard 改写。
+- live formal bid row 使用 v3 practical 时，若满足以下条件，必须限制正式 P90/停止价：
+  - `recommendation=raise_watch`；
+  - `confidence in {low, low_medium}`；
+  - 风险旗标来自 `q6_prior_floor_watch`、`q6_prior_tail_ceiling`、`settlement_count_prior_candidate` 或 `capacity_source_candidate`；
+  - 没有 `value_floor_candidate`、`random_avg_value_floor_watch`、`q6_value_ceiling_watch`、`source_profile_q6_tail_ceiling` 等更强证据；
+  - `P90-P50 >= 100k`。
+- guard 后的 row 必须显式记录：
+  - `formal_mode_reason=v3_practical_ready_live_guarded`；
+  - `v3_practical_live_guard=是`；
+  - `v3_practical_unguarded_decision_value`；
+  - `v3_practical_live_guard_reason`。
+
+原因：
+
+- 实战发现 Gabriela 2407 低信息局仅由 `q6_prior_floor + settlement_count_prior` 触发时，未保护 P90 会明显过冲。
+- 该路径是为减少低估设计的，但在低置信、无强证据场景下不应直接推高正式停止价。
+- 保留 audit 原字段可以继续分析低估风险；live guard 只保护用户实战出价。
+
+## D-v3-157：未知/活动地图缺表时 live 不能崩溃
+
+2026-06-07 起，当前决策：
+
+- 当当前 `map_id` 不在本地 BidMap 表中时，live monitor 不进入估值，也不抛出 `KeyError`。
+- artifact 必须保留当前状态并标注：
+  - `evidence_label=unsupported_map:<map_id>`；
+  - `formal_mode_reason=unsupported_map`；
+  - `inference_input_constraints.mode=unsupported_map`。
+- 不生成正式 bid row，避免未知图表误用旧先验。
+
+原因：
+
+- 0607 实战遇到 map `2527`，本地表缺失导致连续 `KeyError: 2527`，snapshot 退成空白。
+- 活动图/新版本地图可能临时出现；缺表时应给出明确状态，而不是打断后续跨局 live 链路。

@@ -8895,3 +8895,54 @@ pytest tests/test_runtime_snapshot.py tests/test_live_overlay.py -q
 pytest tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py tests/test_live_status.py -q
 92 passed
 ```
+
+## 2026-06-07 checkpoint：public numeric UI 与 live v3 guard
+
+实战反馈：
+
+- Aisha 开局公共信息给出 `紫色品质藏品平均占用格数 2.90`，UI 未展示。
+- Gabriela 2407 一局结算约 `226,486`，但 live v3 practical 低置信 raise-watch 曾把 P90 拉到 `495,084`、停止价 `380,835`。
+- 当前会话进入 map `2527` 时，本地 BidMap 缺表导致 live monitor 连续 `KeyError: 2527`，snapshot 退成空白。
+
+修复：
+
+- `ui_contract.constraints.public_info` 新增 public numeric soft facts：
+  - `public_avg_cells`；
+  - `public_avg_values`；
+  - `public_random_avg_values`；
+  - `public_numeric_summary`。
+- overlay “输入约束”行现在显示 `紫均格 2.90`、`金均价 ...`、`随机9均价 ...` 等摘要。
+- live monitor 对未知地图改为不中断：
+  - `formal_mode_reason=unsupported_map`；
+  - `inference_input_constraints.mode=unsupported_map`；
+  - 保留 hero/map/session/公开信息等状态，但不生成估值。
+- live formal v3 practical 增加低置信 prior-only raise guard：
+  - 只在 `raise_watch + low/low_medium + q6_prior/settlement_count/capacity_source 风险 + P90-P50 >= 100k` 且没有强证据旗标时触发；
+  - 不改变 v3 audit 原始 practical 字段，只限制 live bid row 的正式 `decision_value P90/stop`；
+  - 行内保留 `v3_practical_unguarded_decision_value` 和 `v3_practical_live_guard_reason`。
+
+真实复算：
+
+```text
+Gabriela 2407 reset/settled:
+truth known_value_sum=226,486
+before guard: decision P90=495,084, stop=380,835
+after guard:  decision P90=283,240, stop=217,877
+formal_mode_reason=v3_practical_ready_live_guarded
+```
+
+样本归档：
+
+- `fatbeans_valid_aisha_2405_4rounds_2405_1367517775504199_0002.json`
+- `fatbeans_valid_aisha_2410_4rounds_2410_1367517775778076_0003.json`
+- `fatbeans_mixed_gabriela_2407_4rounds_2407_1367517776000836_0001.json`
+
+验证：
+
+```text
+pytest tests/test_live_monitor.py -q
+32 passed
+
+pytest tests/test_runtime_snapshot.py tests/test_live_overlay.py -q
+52 passed
+```

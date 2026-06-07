@@ -542,6 +542,53 @@ def test_live_v3_shadow_marks_unknown_252x_as_activity_prior_unavailable() -> No
     assert shadow["v3_robust_affects_bid"] is False
 
 
+def test_build_monitor_artifact_does_not_crash_on_unknown_map() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=1,
+                capture_time="",
+                message_id=0x0025,
+                session_id="2527:activity",
+                map_id=2527,
+                round_index=1,
+                bids=(
+                    FatbeansPlayerBid(
+                        player_id=1,
+                        name="leader",
+                        hero_id=103,
+                        values=(12_000,),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    artifact = build_monitor_artifact_from_events(
+        events,
+        file="unknown_map.json",
+        tables=_tables(),
+        n_trials=10,
+        roi_trials=0,
+        formal_mode="v3_practical",
+    )
+
+    assert artifact["map_id"] == 2527
+    assert artifact["evidence_label"] == "unsupported_map:2527"
+    assert artifact["formal_mode_reason"] == "unsupported_map"
+    assert artifact["formal_mode"] == "v2"
+    assert artifact["inference_input_constraints"] == {
+        "mode": "unsupported_map",
+        "map_id": 2527,
+    }
+    assert artifact["bid_rows"] == []
+    assert artifact["v3_practical_bid_rows"] == []
+
+
 def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     artifact = build_monitor_artifact_from_events(
         _events(),
@@ -1052,6 +1099,66 @@ def test_live_formal_mode_v3_practical_rebuilds_bid_rows(monkeypatch) -> None:
     )
     assert artifact["ui_contract"]["v2_reference"]["available"] is True
     assert artifact["ui_contract"]["v2_reference"]["affects_bid"] is False
+
+
+def test_live_formal_mode_v3_practical_guards_low_confidence_prior_only_raise(
+    monkeypatch,
+) -> None:
+    def fake_v3_shadow(*_args, **kwargs):
+        return {
+            **monitor_module._empty_v3_posterior_shadow(
+                trials=int(kwargs.get("trials") or 1),
+            ),
+            "v3_practical_available": True,
+            "v3_practical_ready": True,
+            "v3_practical_candidate": True,
+            "v3_practical_recommendation": "raise_watch",
+            "v3_practical_confidence": "low_medium",
+            "v3_practical_source_lanes": (
+                "formal_value+prior_q6_floor+settlement_count_prior"
+            ),
+            "v3_practical_risk_flags": (
+                "q6_prior_floor_watch+settlement_count_prior_candidate"
+            ),
+            "v3_practical_reason": "prior-only raise",
+            "v3_practical_formal_decision_value_p10": 30_000,
+            "v3_practical_formal_decision_value_p50": 80_000,
+            "v3_practical_formal_decision_value_p90": 300_000,
+            "v3_practical_total_value_p10": 30_000,
+            "v3_practical_total_value_p50": 80_000,
+            "v3_practical_total_value_p90": 300_000,
+        }
+
+    monkeypatch.setattr(
+        monitor_module,
+        "_v3_posterior_shadow_summary",
+        fake_v3_shadow,
+    )
+
+    artifact = build_monitor_artifact_from_events(
+        _events(),
+        file="sample.json",
+        tables=_tables(),
+        n_trials=10,
+        roi_trials=0,
+        formal_mode="v3_practical",
+    )
+
+    row = artifact["bid_rows"][0]
+
+    assert artifact["formal_mode"] == "v3_practical"
+    assert artifact["formal_mode_reason"] == "v3_practical_ready_live_guarded"
+    assert row["formal_mode_reason"] == "v3_practical_ready_live_guarded"
+    assert row["决策价值 P10/P50/P90"] == "30,000 / 80,000 / 155,000"
+    assert row["v3_practical_unguarded_decision_value"] == (
+        "30,000 / 80,000 / 300,000"
+    )
+    assert row["v3_practical_live_guard"] == "是"
+    assert "live_prior_only_raise_guard" in row["后验诊断"]
+    assert (
+        artifact["ui_contract"]["baseline"]["posterior"]["decision_value_range"]
+        == "30,000 / 80,000 / 155,000"
+    )
 
 
 def test_live_formal_mode_v2_keeps_v2_bid_rows_even_when_v3_available(

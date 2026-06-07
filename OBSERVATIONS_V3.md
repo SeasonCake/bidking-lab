@@ -6708,3 +6708,55 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 - 没有 local_index 的红货不能硬落点，但应该在 UI 中显示为未定位公共品质。
 
 对应修复：MiniMap 区域新增 `公共品质 ...` 与 `未定位 Q6×N` 文案。
+
+## O-v3-166：public avg-cells / avg-value 已解析但此前 UI 未展示
+
+2026-06-07 实战局复核：
+
+- Aisha 2401 snapshot 中存在：
+  - `info_id=200013`；
+  - `value=2.909090995788574`；
+  - 语义为 `q4_avg_cells`，即紫色平均占用格数。
+- v2/v3 evidence registry 已识别该输入，问题不在解析/推理层，而是 UI contract 没有把 public numeric soft facts 暴露给 overlay。
+
+对应修复：
+
+- `constraints.public_info.public_numeric_summary` 会显示 `紫均格 2.90`。
+- 同类 public numeric 信息统一暴露：
+  - `q4/q5/q6/total avg_cells`；
+  - `q4/q5/q6/total avg_value`；
+  - `random 3/6/9/12 avg_value`。
+- 均格显示按游戏读数截断到两位小数，避免把 `2.90909` 显示成 `2.91`。
+
+## O-v3-167：0607 Gabriela 2407 过高估值来自低置信 prior-only raise-watch
+
+2026-06-07 实战局复核：
+
+- `fatbeans_mixed_gabriela_2407_4rounds_2407_1367517776000836_0001.json`：
+  - final known value `226,486`；
+  - 未保护 v3 practical formal range `208,240 / 208,240 / 495,084`；
+  - 停止价曾为 `380,835`；
+  - source lanes 为 `formal_value+prior_q6_floor+settlement_count_prior`；
+  - risk flags 为 `q6_prior_floor_watch+settlement_count_prior_candidate`。
+- 未发现异常物品价值混入；主要原因是低信息局中 prior-only 的 q6 floor / settlement-count candidate 被当作正式 P90 抬价。
+
+对应修复：
+
+- live bid row 对这类低置信 prior-only raise-watch 增加 guard。
+- 同一局复算后：
+  - guarded range `208,240 / 208,240 / 283,240`；
+  - stop `217,877`；
+  - `formal_mode_reason=v3_practical_ready_live_guarded`。
+
+## O-v3-168：map 2527 缺表会导致 live monitor 连续 KeyError
+
+2026-06-07 实战局复核：
+
+- capture source 显示当前 session 为 `2527:1367517776234233`。
+- 本地 BidMap 不包含 `2527`，`build_residual_problem()` 读取 `maps[2527]` 导致连续 `KeyError: 2527`。
+- 这会让最新 snapshot 退成 `hero=? map=?`，并解释部分“第三局需要等道具或报价后 UI 才动”的现象。
+
+对应修复：
+
+- 未知地图现在输出 `unsupported_map` artifact，不崩溃、不生成出价。
+- 活动/新地图仍需要后续补表或远端表获取；在补表前，不应使用旧地图先验硬估。
