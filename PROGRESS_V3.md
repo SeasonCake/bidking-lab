@@ -10449,3 +10449,69 @@ pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_promotion_workbench.
 - q6_cells 与 q6_value 不是 sample-limited，而是明确存在 holdout hurt；
 - q6_count 仍是 seed instability + low-support blocker；
 - 这进一步支持继续 shadow/audit/source-parser 追查，而不是 sampler/formal 参数调优。
+
+## 2026-06-08 checkpoint：sampler prototype applied hurt metrics exposed
+
+背景：
+
+- 更新后的 `AGENTS.md` 要求长审计循环有实际停止点，并在证据足够时转向可观察、可回滚的试运行路径；
+- 对本窗口而言，实际落地点仍限定在 shadow/audit/readiness/promotion 工具链内，不触碰 live/UI/正式出价；
+- 上一轮 full `q6_count/q6_cells/q6_value` prototype 只能说明 component blocked，但还不够直接支持 guard/freeze 设计。
+
+完成：
+
+- `scripts/summarize_v3_ccvc_count_policy_matrix.py`
+  - 新增 `applied_hurt_group_results`；
+  - 与 `candidate_group_results` 使用同一 group metric row contract；
+  - applied holdout hurt 现在带 rows、sessions、candidate rows/sessions、hurt rate、directional error、baseline/candidate below rate。
+- `scripts/summarize_v3_shadow_sampler_prototype.py`
+  - seed result 新增 `applied_hurt_metrics`；
+  - component status 新增 `applied_hurt_metrics_by_seed` 与 `top_applied_hurt_metrics`；
+  - summary 输出新增 `top_hurts=label@seed:rows/sessions/hurt=rate`，用于直接定位伤害最大的 map/profile/policy 组合。
+- `tests/test_summarize_v3_ccvc_count_policy_matrix.py`
+  - 覆盖 blocked holdout directional hurt 时的 group metrics contract。
+- `tests/test_summarize_v3_shadow_sampler_prototype.py`
+  - 覆盖 component-level applied hurt metrics 与 per-seed 输出。
+- `docs/PROJECT_STRUCTURE_V3.zh-CN.md`
+  - 更新脚本/测试索引，标明 applied hurt metrics 已进入 prototype audit surface。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_ccvc_count_policy_matrix.py scripts\summarize_v3_shadow_sampler_prototype.py tests\test_summarize_v3_ccvc_count_policy_matrix.py tests\test_summarize_v3_shadow_sampler_prototype.py
+
+python -m pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_ccvc_count_policy_matrix.py tests/test_summarize_v3_shadow_sampler_prototype.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+26 passed
+
+python scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --component q6_cells --component q6_value --top 4 --format summary
+```
+
+真实 archive smoke 结果：
+
+```text
+status=blocked_seed_instability
+seed_status_counts=watch_with_hurt_alternatives:2
+
+q6_cells status=blocked_holdout_hurt support_gate=no_watch
+top_hurts=q6_cells|map_id,evidence_profile_key|up_only:q6_cells:map_id=2508|evidence_profile_key=item+shape@seed0:4/1/hurt=1.0,
+          q6_cells|map_id|all:q6_cells:2408@seed1:14/4/hurt=0.928571,
+          q6_cells|map_id|up_only:q6_cells:2408@seed1:14/4/hurt=0.928571,
+          q6_cells|evidence_profile_key|all:q6_cells:item+shape+layout@seed1:9/9/hurt=0.888889
+
+q6_count status=blocked_seed_instability support_gate=watch_low_support
+low_support includes q6_count|map_id,evidence_profile_key|down_only:q6_count:map_id=2501|evidence_profile_key=tool:category+item+shape@seed1:8/3
+top_hurts include q6_count|map_id|all:q6_count:2405@seed0:5/2/hurt=1.0
+
+q6_value status=blocked_holdout_hurt support_gate=no_watch
+top_hurts=q6_value|map_id,evidence_profile_key|all:q6_value:map_id=2508|evidence_profile_key=item+shape@seed0:4/1/hurt=1.0,
+          q6_value|map_id,evidence_profile_key|up_only:q6_value:map_id=2508|evidence_profile_key=item+shape@seed0:4/1/hurt=1.0,
+          q6_value|map_id|all:q6_value:2408@seed0:14/4/hurt=0.928571,
+          q6_value|map_id|up_only:q6_value:2408@seed0:14/4/hurt=0.928571
+```
+
+结论：
+
+- blocker 已从“full prototype blocked”推进到“可定位的 hurt/support 组合”；
+- q6_cells/q6_value 的下一步不是继续调参，而是设计 shadow-only freeze/guard contract，优先围绕 2508 `item+shape` 与 2408 map hurt 组合做可证伪排除；
+- q6_count 的下一步是补 source/evidence support gate 或 profile/source parser 检查，不能把 seed1 8 rows / 3 sessions 低支持候选当作 promotion 支持；
+- 本轮仍不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。

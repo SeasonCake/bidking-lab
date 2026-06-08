@@ -37,6 +37,35 @@ DEFAULT_GROUP_FIELDS = (
 DEFAULT_POLICIES = ("all", "up_only", "down_only")
 
 
+def _group_metric_row(row: dict[str, Any]) -> dict[str, Any]:
+    label = f"{row.get('component')}:{row.get('group')}"
+    return {
+        "label": label,
+        "component": row.get("component"),
+        "group": row.get("group"),
+        "rows": row.get("n"),
+        "sessions": row.get("sessions"),
+        "candidate_rows": row.get("candidate_rows"),
+        "candidate_sessions": row.get("candidate_sessions"),
+        "candidate_delta_p50_mae": row.get(
+            "candidate_only_delta_p50_mae"
+        ),
+        "candidate_hurt_rate": row.get("candidate_only_hurt_rate"),
+        "candidate_hurt_rows": row.get("candidate_only_hurt_rows"),
+        "candidate_helped_rows": row.get("candidate_only_helped_rows"),
+        "candidate_directional_error_rate": row.get(
+            "candidate_only_directional_error_rate"
+        ),
+        "candidate_directional_error_rows": row.get(
+            "candidate_only_directional_error_rows"
+        ),
+        "candidate_baseline_below_rate": row.get(
+            "baseline_p50_below_rate"
+        ),
+        "candidate_below_rate": row.get("candidate_p50_below_rate"),
+    }
+
+
 def _candidate_group_results(result: dict[str, Any]) -> list[dict[str, Any]]:
     candidate_groups = set(result["candidate_only"].get("candidate_groups") or ())
     out: list[dict[str, Any]] = []
@@ -44,33 +73,17 @@ def _candidate_group_results(result: dict[str, Any]) -> list[dict[str, Any]]:
         label = f"{row.get('component')}:{row.get('group')}"
         if label not in candidate_groups:
             continue
-        out.append(
-            {
-                "label": label,
-                "component": row.get("component"),
-                "group": row.get("group"),
-                "rows": row.get("n"),
-                "sessions": row.get("sessions"),
-                "candidate_rows": row.get("candidate_rows"),
-                "candidate_sessions": row.get("candidate_sessions"),
-                "candidate_delta_p50_mae": row.get(
-                    "candidate_only_delta_p50_mae"
-                ),
-                "candidate_hurt_rate": row.get("candidate_only_hurt_rate"),
-                "candidate_hurt_rows": row.get("candidate_only_hurt_rows"),
-                "candidate_helped_rows": row.get("candidate_only_helped_rows"),
-                "candidate_directional_error_rate": row.get(
-                    "candidate_only_directional_error_rate"
-                ),
-                "candidate_directional_error_rows": row.get(
-                    "candidate_only_directional_error_rows"
-                ),
-                "candidate_baseline_below_rate": row.get(
-                    "baseline_p50_below_rate"
-                ),
-                "candidate_below_rate": row.get("candidate_p50_below_rate"),
-            }
-        )
+        out.append(_group_metric_row(row))
+    return out
+
+
+def _applied_hurt_group_results(result: dict[str, Any]) -> list[dict[str, Any]]:
+    hurt_groups = set(result.get("applied_direction_hurts_groups") or ())
+    out: list[dict[str, Any]] = []
+    for row in result.get("group_results") or ():
+        label = f"{row.get('component')}:{row.get('group')}"
+        if label in hurt_groups:
+            out.append(_group_metric_row(row))
     return out
 
 
@@ -121,6 +134,9 @@ def summarize_matrix(
                     "candidate_rows": candidate["candidate_rows"],
                     "candidate_groups": candidate["candidate_groups"],
                     "candidate_group_results": _candidate_group_results(result),
+                    "applied_hurt_group_results": _applied_hurt_group_results(
+                        result
+                    ),
                     "candidate_delta_p50_mae": candidate[
                         "candidate_only_delta_p50_mae"
                     ],

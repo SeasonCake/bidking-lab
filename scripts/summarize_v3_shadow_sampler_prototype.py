@@ -165,6 +165,10 @@ def _watch_candidates(
             "candidate_rows": row.get("candidate_rows"),
             "candidate_groups": row.get("candidate_groups") or [],
             "candidate_group_results": row.get("candidate_group_results") or [],
+            "applied_hurt_group_results": row.get(
+                "applied_hurt_group_results"
+            )
+            or [],
             "candidate_delta_p50_mae": row.get("candidate_delta_p50_mae"),
             "candidate_hurt_rate": row.get("candidate_hurt_rate"),
             "candidate_directional_error_rate": row.get(
@@ -185,6 +189,37 @@ def _applied_hurt_labels(matrix_rows: Iterable[Mapping[str, Any]]) -> list[str]:
         for group in row.get("applied_hurts") or ():
             out.append(f"{_candidate_label(row)}:{group}")
     return sorted(set(out))
+
+
+def _applied_hurt_metric_rows(
+    matrix_rows: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in matrix_rows:
+        label = _candidate_label(row)
+        for item in row.get("applied_hurt_group_results") or ():
+            if not isinstance(item, Mapping):
+                continue
+            group_label = str(item.get("label") or "")
+            out.append(
+                {
+                    "watch_label": f"{label}:{group_label}",
+                    "matrix_label": label,
+                    "component": row.get("component"),
+                    "group_field": row.get("group_field"),
+                    "movement_policy": row.get("movement_policy"),
+                    **dict(item),
+                }
+            )
+    out.sort(
+        key=lambda item: (
+            str(item.get("component") or ""),
+            -float(item.get("candidate_hurt_rate") or 0.0),
+            -int(item.get("candidate_hurt_rows") or 0),
+            str(item.get("watch_label") or ""),
+        )
+    )
+    return out
 
 
 def _seed_status(
@@ -271,6 +306,7 @@ def summarize_seed_run(
         "matrix_status_counts": _matrix_status_counts(matrix_rows),
         "watch_candidates": watch,
         "applied_hurts": applied_hurts,
+        "applied_hurt_metrics": _applied_hurt_metric_rows(matrix_rows),
         "matrix": matrix_rows,
         "evidence_contribution": {
             "status_counts": contribution["status_counts"],
@@ -349,6 +385,52 @@ def _component_applied_hurts(
             if text.startswith(prefix):
                 out.append(text)
     return sorted(set(out))
+
+
+def _component_applied_hurt_metrics(
+    seed_results: Iterable[Mapping[str, Any]],
+    *,
+    component: str,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for result in seed_results:
+        seed = result.get("posterior_seed")
+        for row in result.get("applied_hurt_metrics") or ():
+            if not isinstance(row, Mapping):
+                continue
+            if str(row.get("component") or "") != component:
+                continue
+            item = dict(row)
+            item["posterior_seed"] = seed
+            out.append(item)
+    out.sort(
+        key=lambda item: (
+            -float(item.get("candidate_hurt_rate") or 0.0),
+            -int(item.get("candidate_hurt_rows") or 0),
+            str(item.get("watch_label") or ""),
+            str(item.get("posterior_seed") or ""),
+        )
+    )
+    return out
+
+
+def _applied_hurt_metrics_by_seed(
+    seed_results: Iterable[Mapping[str, Any]],
+    *,
+    component: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "posterior_seed": result.get("posterior_seed"),
+            "applied_hurt_metrics": [
+                dict(row)
+                for row in result.get("applied_hurt_metrics") or ()
+                if isinstance(row, Mapping)
+                and str(row.get("component") or "") == component
+            ],
+        }
+        for result in seed_results
+    ]
 
 
 def _component_matrix_status_counts(
@@ -636,6 +718,10 @@ def _component_statuses(
         has_watch = any(_watch_label_set(result, component=component) for result in results)
         labels_by_seed = _watch_labels_by_seed(results, component=component)
         metrics_by_seed = _watch_label_metrics_by_seed(results, component=component)
+        applied_hurt_metrics = _component_applied_hurt_metrics(
+            results,
+            component=component,
+        )
         support_gate = _watch_support_gate(
             metrics_by_seed,
             stable=stable,
@@ -675,6 +761,11 @@ def _component_statuses(
                 ),
                 "support_gate": support_gate,
                 "applied_hurts": hurts,
+                "applied_hurt_metrics_by_seed": _applied_hurt_metrics_by_seed(
+                    results,
+                    component=component,
+                ),
+                "top_applied_hurt_metrics": applied_hurt_metrics[:12],
                 "matrix_status_counts": _component_matrix_status_counts(
                     results,
                     component=component,
@@ -803,6 +894,14 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
             )
             for item in (support_gate.get("low_support_watch_metrics") or ())[:top]
         ]
+        top_hurts = [
+            (
+                f"{item.get('watch_label')}@seed{item.get('posterior_seed')}:"
+                f"{item.get('candidate_rows')}/{item.get('candidate_sessions')}"
+                f"/hurt={item.get('candidate_hurt_rate')}"
+            )
+            for item in (row.get("top_applied_hurt_metrics") or ())[:top]
+        ]
         print(
             " ".join(
                 (
@@ -815,6 +914,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     + ",".join((row.get("unstable_watch_candidate_labels") or ())[:top]),
                     "unstable_support=" + ",".join(unstable_support),
                     "low_support=" + ",".join(low_support),
+                    "top_hurts=" + ",".join(top_hurts),
                     "applied_hurts="
                     + ",".join((row.get("applied_hurts") or ())[:top]),
                     f"next_action=\"{row.get('next_action')}\"",

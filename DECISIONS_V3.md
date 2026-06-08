@@ -3832,3 +3832,39 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - full artifact 进一步证明 cells/value components 仍有 holdout hurt；
 - 这说明当前 sampler prototype 问题不是单一 count filter 可解决，必须继续 source/profile/map 分歧与 cells/value hurt 分流；
 - 该结论仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-185：sampler prototype 的 holdout hurt blocker 必须携带 group metrics，并转向 guard/freeze trial contract 设计
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_ccvc_count_policy_matrix.py` 的 matrix row 必须输出 `applied_hurt_group_results`；
+- `summarize_v3_shadow_sampler_prototype.py` 的 seed/component 输出必须保留：
+  - `applied_hurt_metrics`；
+  - `applied_hurt_metrics_by_seed`；
+  - `top_applied_hurt_metrics`；
+  - summary `top_hurts=...`。
+- applied hurt metric contract 必须至少包含：
+  - component；
+  - group field / movement policy；
+  - group label；
+  - rows / sessions；
+  - candidate rows / sessions；
+  - candidate hurt rate / hurt rows / helped rows；
+  - directional error rate / rows；
+  - baseline 与 candidate below rate。
+- full prototype blocked 后，不能只记录 overall/component blocker；必须暴露具体 hurt/support 组合，作为下一步 shadow-only guard/freeze 设计输入；
+- 当前真实 archive smoke 指向的优先组合包括：
+  - q6_cells / q6_value 的 2508 `item+shape` 与 2408 map hurt；
+  - q6_count seed1 `map_id=2501|evidence_profile_key=tool:category+item+shape` 8 rows / 3 sessions 低支持；
+  - q6_count `map_id=2405` seed0 applied hurt。
+- 后续策略从“继续泛化审计或 formal/value 参数调优”调整为：
+  - cells/value 先设计 shadow-only freeze/guard contract；
+  - count 先补 source/evidence support gate 或 source/profile parser 检查；
+  - 只有 guard/freeze contract 在 archive/session/map-family/map-id/evidence-profile/seed holdout 中可复核通过，才重新讨论 shadow sampler 参数与 readiness。
+
+原因：
+
+- 更新后的工程指引要求长审计循环有停止点，并把证据转成可观察、可回滚的试运行路径；
+- 在本窗口职责范围内，“试运行”只能落在 shadow/audit/readiness/promotion 工具链，不能直接改变 live/UI/正式出价；
+- applied hurt group metrics 能把 blocker 从抽象 blocked 状态转成具体可证伪机制，避免继续在相同数据上循环调参或过拟合；
+- 该决策不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。

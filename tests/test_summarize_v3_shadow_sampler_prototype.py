@@ -331,3 +331,85 @@ def test_shadow_sampler_prototype_blocks_stable_low_support() -> None:
         (0, "q6_count|map_id|all:q6_count:2502", 8, 8, ["rows"]),
         (1, "q6_count|map_id|all:q6_count:2502", 8, 8, ["rows"]),
     ]
+
+
+def test_shadow_sampler_prototype_reports_applied_hurt_metrics() -> None:
+    module = _load_module()
+    fold0 = [_session_for_fold(0, prefix=f"hurt_{idx}") for idx in range(4)]
+    fold1 = [_session_for_fold(1, prefix=f"help_{idx}") for idx in range(4)]
+    rows = [
+        *[
+            _row(session_id=session_id, truth=1, baseline=2, ccvc=3)
+            for session_id in fold0
+        ],
+        *[
+            _row(session_id=session_id, truth=4, baseline=2, ccvc=3)
+            for session_id in fold1
+        ],
+    ]
+    seed0 = module.summarize_seed_run(
+        rows,
+        posterior_seed=0,
+        components=("q6_count",),
+        group_fields=("map_id",),
+        movement_policies=("all",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+    )
+
+    result = module.summarize_prototype_runs(
+        (seed0,),
+        posterior_trials=64,
+        component_move_cells=True,
+        min_watch_support_rows=2,
+        min_watch_support_sessions=2,
+    )
+
+    assert result["status"] == "blocked_holdout_hurt"
+    component = result["component_statuses"][0]
+    assert component["status"] == "blocked_holdout_hurt"
+    assert component["applied_hurts"] == [
+        "q6_count|map_id|all:q6_count:2502"
+    ]
+    assert [
+        (
+            row["posterior_seed"],
+            row["watch_label"],
+            row["candidate_rows"],
+            row["candidate_sessions"],
+            row["candidate_hurt_rate"],
+        )
+        for row in component["top_applied_hurt_metrics"]
+    ] == [
+        (0, "q6_count|map_id|all:q6_count:2502", 4, 4, 1.0),
+    ]
+    assert component["applied_hurt_metrics_by_seed"] == [
+        {
+            "posterior_seed": 0,
+            "applied_hurt_metrics": [
+                {
+                    "watch_label": "q6_count|map_id|all:q6_count:2502",
+                    "matrix_label": "q6_count|map_id|all",
+                    "component": "q6_count",
+                    "group_field": "map_id",
+                    "movement_policy": "all",
+                    "label": "q6_count:2502",
+                    "group": "2502",
+                    "rows": 4,
+                    "sessions": 4,
+                    "candidate_rows": 4,
+                    "candidate_sessions": 4,
+                    "candidate_delta_p50_mae": 1,
+                    "candidate_hurt_rate": 1.0,
+                    "candidate_hurt_rows": 4,
+                    "candidate_helped_rows": 0,
+                    "candidate_directional_error_rate": 1.0,
+                    "candidate_directional_error_rows": 4,
+                    "candidate_baseline_below_rate": 0.0,
+                    "candidate_below_rate": 0.0,
+                }
+            ],
+        }
+    ]
