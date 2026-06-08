@@ -10081,3 +10081,51 @@ candidate=q6_count|map_id|all rows=424 delta=-0.057 hurt_rate=0.110849 direction
 - `v3_ccvc_` prototype 当前已可一键审计，但仍不是 promotion candidate；
 - 主要 blocker 是 seed 0 没有稳定 watch candidate，且 q6_cells 在多个 map_id 上存在 holdout hurt；
 - 下一步 sampler 设计应优先分离 q6_count 与 q6_cells：count movement 可以继续诊断，cells movement 需要更强 guard 或 freeze-cells policy；仍不得接 live/formal。
+
+## 2026-06-08 checkpoint：CCVC prototype component blockers split
+
+背景：
+
+- 上一轮 `summarize_v3_shadow_sampler_prototype.py` 输出 overall status，但 q6_count 与 q6_cells 的 blocker 不同；
+- 若只看 overall `blocked_seed_instability`，后续容易误以为 freeze-cells 已足以恢复 sampler 调参；
+- 当前 goal 要设计 shadow-only sampler prototype，因此需要把 component-level blocker 和 next action 显式输出。
+
+完成：
+
+- `scripts/summarize_v3_shadow_sampler_prototype.py`
+  - 新增 `component_statuses`；
+  - 按 component 输出 stable watch candidate、applied hurts、matrix status counts 与 next action；
+  - summary 输出新增 `component=... status=... next_action=...`；
+  - stable watch 继续要求 selected candidate group 跨 seed 一致。
+- `tests/test_summarize_v3_shadow_sampler_prototype.py`
+  - 增加 component status 断言，覆盖 stable candidate 与 seed instability；
+- 真实 smoke 增加 q6_count-only 与 freeze-cells 对照。
+
+验证：
+
+```text
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_shadow_sampler_prototype.py
+
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_shadow_sampler_prototype.py -q
+4 passed
+
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --group-field map_family --group-field map_id --movement-policy all --movement-policy up_only --top 6 --format summary
+status=blocked_seed_instability
+component=q6_count status=blocked_seed_instability
+next_action="do not tune; collect support or add source/evidence filters before retesting"
+
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --component q6_cells --group-field map_family --group-field map_id --movement-policy all --movement-policy up_only --top 6 --format summary
+component=q6_cells status=blocked_holdout_hurt
+component=q6_count status=blocked_seed_instability
+
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --ccv-component-freeze-cells --component q6_count --component q6_cells --group-field map_family --group-field map_id --movement-policy all --movement-policy up_only --top 6 --format summary
+status=blocked_seed_instability
+component=q6_cells status=sample_limited
+component=q6_count status=blocked_seed_instability
+```
+
+结论：
+
+- freeze-cells 是有效隔离 q6_cells hurt 的诊断开关，但不是 promotion 解锁；
+- q6_count 自身仍在 64-trial seed 0/1 之间不稳定，不能进入 sampler policy 或 formal/live；
+- 下一步应对 q6_count 做更窄的 source/evidence filters、support threshold 或 profile-level candidate，再跑同一 prototype audit。

@@ -273,21 +273,139 @@ def summarize_seed_run(
 def _stable_watch_labels(seed_results: Iterable[Mapping[str, Any]]) -> list[str]:
     label_sets: list[set[str]] = []
     for result in seed_results:
-        labels: set[str] = set()
-        for row in result.get("watch_candidates") or ():
-            if not isinstance(row, Mapping):
-                continue
-            label = str(row.get("label"))
-            groups = tuple(row.get("candidate_groups") or ())
-            if groups:
-                labels.update(f"{label}:{group}" for group in groups)
-            else:
-                labels.add(label)
-        label_sets.append(labels)
+        label_sets.append(_watch_label_set(result))
     if not label_sets or any(not labels for labels in label_sets):
         return []
     stable = set.intersection(*label_sets)
     return sorted(stable)
+
+
+def _watch_label_set(
+    result: Mapping[str, Any],
+    *,
+    component: str | None = None,
+) -> set[str]:
+    labels: set[str] = set()
+    for row in result.get("watch_candidates") or ():
+        if not isinstance(row, Mapping):
+            continue
+        if component is not None and str(row.get("component") or "") != component:
+            continue
+        label = str(row.get("label"))
+        groups = tuple(row.get("candidate_groups") or ())
+        if groups:
+            labels.update(f"{label}:{group}" for group in groups)
+        else:
+            labels.add(label)
+    return labels
+
+
+def _stable_watch_labels_for_component(
+    seed_results: Iterable[Mapping[str, Any]],
+    *,
+    component: str,
+) -> list[str]:
+    label_sets = [
+        _watch_label_set(result, component=component)
+        for result in seed_results
+    ]
+    if not label_sets or any(not labels for labels in label_sets):
+        return []
+    return sorted(set.intersection(*label_sets))
+
+
+def _component_names(seed_results: Iterable[Mapping[str, Any]]) -> tuple[str, ...]:
+    names: set[str] = set()
+    for result in seed_results:
+        for row in result.get("matrix") or ():
+            if isinstance(row, Mapping) and row.get("component"):
+                names.add(str(row["component"]))
+        for row in result.get("watch_candidates") or ():
+            if isinstance(row, Mapping) and row.get("component"):
+                names.add(str(row["component"]))
+    return tuple(sorted(names))
+
+
+def _component_applied_hurts(
+    seed_results: Iterable[Mapping[str, Any]],
+    *,
+    component: str,
+) -> list[str]:
+    prefix = f"{component}|"
+    out: list[str] = []
+    for result in seed_results:
+        for label in result.get("applied_hurts") or ():
+            text = str(label)
+            if text.startswith(prefix):
+                out.append(text)
+    return sorted(set(out))
+
+
+def _component_matrix_status_counts(
+    seed_results: Iterable[Mapping[str, Any]],
+    *,
+    component: str,
+) -> dict[str, int]:
+    statuses: list[str] = []
+    for result in seed_results:
+        for row in result.get("matrix") or ():
+            if isinstance(row, Mapping) and str(row.get("component") or "") == component:
+                statuses.append(str(row.get("overall_status") or "unknown"))
+    return _counter_dict(statuses)
+
+
+def _component_next_action(status: str, component: str) -> str:
+    if status == "watch_shadow_candidate":
+        return "keep as diagnostic candidate; require readiness and live replay before promotion"
+    if status == "watch_with_hurt_alternatives":
+        return "narrow candidate groups and exclude hurt alternatives before more tuning"
+    if status == "blocked_seed_instability":
+        return "do not tune; collect support or add source/evidence filters before retesting"
+    if status == "blocked_holdout_hurt" and component == "q6_cells":
+        return "freeze q6 cells or add a stronger cells guard before retesting"
+    if status == "blocked_holdout_hurt":
+        return "keep component inactive and isolate hurt groups before retesting"
+    if status.startswith("blocked_shadow"):
+        return "fix shadow safety before any sampler work"
+    return "keep inactive until movement/support appears"
+
+
+def _component_statuses(seed_results: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    results = tuple(seed_results)
+    statuses = {str(row.get("status") or "") for row in results}
+    out: list[dict[str, Any]] = []
+    for component in _component_names(results):
+        stable = _stable_watch_labels_for_component(results, component=component)
+        hurts = _component_applied_hurts(results, component=component)
+        has_watch = any(_watch_label_set(result, component=component) for result in results)
+        if "blocked_shadow_affects_bid" in statuses:
+            status = "blocked_shadow_affects_bid"
+        elif "blocked_shadow_active" in statuses:
+            status = "blocked_shadow_active"
+        elif len(results) > 1 and has_watch and not stable:
+            status = "blocked_seed_instability"
+        elif stable and hurts:
+            status = "watch_with_hurt_alternatives"
+        elif stable:
+            status = "watch_shadow_candidate"
+        elif hurts:
+            status = "blocked_holdout_hurt"
+        else:
+            status = "sample_limited"
+        out.append(
+            {
+                "component": component,
+                "status": status,
+                "stable_watch_candidate_labels": stable,
+                "applied_hurts": hurts,
+                "matrix_status_counts": _component_matrix_status_counts(
+                    results,
+                    component=component,
+                ),
+                "next_action": _component_next_action(status, component),
+            }
+        )
+    return out
 
 
 def _overall_status(
@@ -333,6 +451,7 @@ def summarize_prototype_runs(
         "status": _overall_status(results, stable_labels),
         "seed_status_counts": _counter_dict(row.get("status") for row in results),
         "stable_watch_candidate_labels": stable_labels,
+        "component_statuses": _component_statuses(results),
         "required_holdouts": [
             "archive",
             "session",
@@ -371,6 +490,20 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
             )
         )
     )
+    for row in result.get("component_statuses") or ():
+        print(
+            " ".join(
+                (
+                    f"component={row.get('component')}",
+                    f"status={row.get('status')}",
+                    "stable_watch="
+                    + ",".join(row.get("stable_watch_candidate_labels") or ()),
+                    "applied_hurts="
+                    + ",".join((row.get("applied_hurts") or ())[:top]),
+                    f"next_action=\"{row.get('next_action')}\"",
+                )
+            )
+        )
     for seed_result in result.get("seed_results") or ():
         contract = seed_result.get("row_contract") or {}
         print(

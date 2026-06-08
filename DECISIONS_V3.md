@@ -3633,3 +3633,23 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 当前真实 smoke 显示 seed 1 有 `q6_count|map_id|all` watch candidate，但 seed 0 没有稳定 watch，且 q6_cells 在多个 map_id 上有 holdout hurt；
 - 因此当前结论是 prototype 可继续用于设计和诊断，但仍 blocked by seed instability / holdout hurt；
 - 该脚本只跑 audit，不改变 `posterior.py`、pipeline 默认、live/UI、v2 fallback 或正式出价。
+
+## D-v3-177：CCVC prototype blocker 必须按 component 分流，freeze-cells 不能解锁 q6_count
+
+2026-06-08 起，当前决策：
+
+- `scripts/summarize_v3_shadow_sampler_prototype.py` 必须输出 `component_statuses`；
+- `q6_count`、`q6_cells`、`q6_value` 的 blocker 不得只合并成一个 overall status；
+- 当前真实 archive smoke 结论：
+  - `q6_count` 是 `blocked_seed_instability`；
+  - `q6_cells` 在 move-cells 模式是 `blocked_holdout_hurt`；
+  - `--ccv-component-freeze-cells` 可把 `q6_cells` 变成 `sample_limited`/inactive，但 overall 仍因 `q6_count` 不稳而 `blocked_seed_instability`。
+- 因此下一步不能把 freeze-cells 当作 promotion 解锁；只能把它作为隔离 cells hurt 的诊断开关；
+- `q6_count` 继续需要更多 support、source/evidence filters 或更窄候选，再跑 multi-seed prototype audit。
+
+原因：
+
+- 上一轮 prototype audit 已证明 policy label 与 candidate group 都必须跨 seed 稳定；
+- 本轮 q6_count-only smoke 仍显示 seed 0 holdout hurt、seed 1 才出现 watch candidate；
+- freeze-cells 只阻断 q6_cells movement，不改变 q6_count component likelihood 的 seed instability；
+- 该结论继续保持 shadow-only，不改变 sampler 默认、live/UI、v2 fallback 或正式出价。
