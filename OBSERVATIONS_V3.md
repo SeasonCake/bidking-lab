@@ -7389,3 +7389,44 @@ prebid paired=75
 - paired rows 为 75，guarded/unguarded MAE 相同，但 guarded P90 coverage 比 unguarded 低 0.49，同时 P90 extreme-over 低 0.37；
 - 这说明 guard tradeoff 可以被统一口径复核，但只是 readiness `watch`，不构成 promotion 或 v2 archive 条件；
 - 下一步仍应按 lane 继续收口 prior/activity/table drift 与 sampler holdout，而不是把 practical guard brief 当作 formal/value 调参依据。
+
+## O-v3-185：SCP guarded bridge stability artifact 结构可审计，但结论仍 blocked
+
+2026-06-08 给 readiness 增加 stability artifact contract 后，跑：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --format summary
+```
+
+关键结果：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+scp_guarded_stability=blocked_applied_hurt
+scp_guarded_stability_contract=watch
+scp_guarded_stability_trials=64
+scp_guarded_stability_seeds=0,1,7
+scp_guarded_stable_groups=2506
+```
+
+JSON 复核：
+
+```text
+stability_status=blocked_applied_hurt
+contract=watch
+trials=[64]
+seeds=[0,1,7]
+status_reasons=applied_hurts_present,non_watch_run,selected_group_drift,low_applied_rows
+hurt_group_counts={"2501":1}
+min_applied_rows=9
+min_applied_rows_required=20
+instability=2501:blocked_train_holdout_instability,2506:blocked_support_depth_gap
+```
+
+解读：
+
+- readiness 现在能证明 SCP guarded bridge 是“已评估但失败”，不是 missing matrix；
+- `2501` 的问题是 train guard watch 后 holdout hurt；
+- `2506` 的问题是 multi-seed support depth 不足，最小 applied rows 只有 9，低于 required 20；
+- 因此 SCP guarded bridge 仍必须留在 shadow/readiness blocker，不得作为 formal/value sampler 或 promotion support。

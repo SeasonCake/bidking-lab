@@ -3519,3 +3519,26 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 只看 overall paired rows 会掩盖 prebid replay contract 缺失；
 - formal mode counts 是确认 v2 fallback / v3 practical guarded path 共用同一 brief 口径的最低证据；
 - readiness/promotion gate 仍不得因 brief 可用而放宽。
+
+## D-v3-172：SCP guarded bridge stability JSON 必须先通过 artifact contract，才能作为 readiness 证据
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_readiness.py --guarded-bridge-stability-json` 对传入 stability JSON 增加 `contract_check`；
+- contract 至少要求：
+  - `overall_status` / `status_reasons`；
+  - `posterior_trials` 与 `posterior_seeds`；
+  - `run_count` / `watch_runs`；
+  - required/stable/union selected groups；
+  - selected signature、hurt group、min applied rows；
+  - support summary/gap、guard summary、instability summary。
+- `posterior_trials` 允许单值或列表；`posterior_seeds` 必须允许 seed `0`；
+- 结构不完整时，即使 `overall_status` 字符串看起来是 `watch`，readiness 也必须 blocked；
+- 结构完整但 matrix 为 `blocked_applied_hurt` 时，只能证明 lane 已评估且 blocked，不能作为 promotion support。
+
+原因：
+
+- SCP guarded bridge 曾出现 seed-0 watch 被误读为支持的风险；
+- 当前 promotion hardening 需要把“未评估”和“已评估但失败”清晰分开；
+- processed artifact 是跨窗口承接的重要证据，必须能说明 trials/seeds、选中 group、hurt/support gap 的来源；
+- stability contract 是 readiness 证据完整性检查，不改变 sampler、live/UI 或正式出价。

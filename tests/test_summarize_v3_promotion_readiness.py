@@ -426,6 +426,8 @@ def test_readiness_attaches_guarded_bridge_stability_matrix() -> None:
         scp_guarded_bridge_stability={
             "overall_status": "blocked_applied_hurt",
             "status_reasons": ["applied_hurts_present"],
+            "posterior_trials": 64,
+            "posterior_seeds": [0, 1],
             "run_count": 2,
             "watch_runs": 1,
             "required_selected_groups": ["2506"],
@@ -464,6 +466,9 @@ def test_readiness_attaches_guarded_bridge_stability_matrix() -> None:
     stability = gates["settlement_count_guarded_bridge_stability"]
     assert stability["status"] == "blocked"
     assert stability["overall_status"] == "blocked_applied_hurt"
+    assert stability["contract_check"]["status"] == "watch"
+    assert stability["posterior_trials"] == 64
+    assert stability["posterior_seeds"] == [0, 1]
     assert stability["status_reasons"] == ["applied_hurts_present"]
     assert stability["hurt_group_counts"] == {"2501": 1}
     assert stability["selected_group_support_summary"][0]["group"] == "2501"
@@ -474,6 +479,46 @@ def test_readiness_attaches_guarded_bridge_stability_matrix() -> None:
     assert result["settlement_count_guarded_bridge_stability"]["status"] == (
         "blocked_applied_hurt"
     )
+
+
+def test_readiness_blocks_malformed_guarded_bridge_stability_matrix() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        scp_guarded_bridge_stability={
+            "overall_status": "watch",
+            "run_count": 1,
+            "watch_runs": 1,
+            "required_selected_groups": ["2506"],
+            "stable_selected_groups": [],
+            "union_selected_groups": ["2506"],
+            "selected_signature_counts": {"2506:1": 1},
+            "hurt_group_counts": {},
+            "min_applied_rows": 20,
+            "min_applied_rows_required": 20,
+            "selected_group_support_summary": [],
+            "selected_group_support_gap": [],
+            "selected_group_guard_summary": [],
+            "selected_group_instability_summary": [],
+        },
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    stability = gates["settlement_count_guarded_bridge_stability"]
+    assert stability["status"] == "blocked"
+    assert stability["contract_check"]["status"] == "blocked"
+    assert "posterior_trials" in stability["contract_check"]["missing_keys"]
+    assert "posterior_seeds" in stability["contract_check"]["missing_keys"]
+    assert "watch stability must cover all required selected groups" in stability["reason"]
 
 
 def test_readiness_blocks_prior_robustness_on_activity_candidate() -> None:

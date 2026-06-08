@@ -443,6 +443,25 @@ _LIVE_PRACTICAL_GUARD_TRADEOFF_KEYS = (
     "v3_practical_unguarded_p90_extreme_over_on_comparison",
     "v3_practical_guarded_minus_unguarded_p90_extreme_over",
 )
+_SCP_GUARDED_STABILITY_CONTRACT_KEYS = (
+    "overall_status",
+    "status_reasons",
+    "posterior_trials",
+    "posterior_seeds",
+    "run_count",
+    "watch_runs",
+    "required_selected_groups",
+    "stable_selected_groups",
+    "union_selected_groups",
+    "selected_signature_counts",
+    "hurt_group_counts",
+    "min_applied_rows",
+    "min_applied_rows_required",
+    "selected_group_support_summary",
+    "selected_group_support_gap",
+    "selected_group_guard_summary",
+    "selected_group_instability_summary",
+)
 
 
 def _live_practical_guard_slice(
@@ -551,6 +570,111 @@ def summarize_live_practical_guard_brief(
         "overall": overall,
         "prebid_overall": prebid,
         "contract_checks": contract_checks,
+    }
+
+
+def summarize_scp_guarded_bridge_stability_contract(
+    stability: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if stability is None:
+        return {
+            "status": "not_supplied",
+            "reason": "guarded bridge stability JSON was not supplied",
+            "missing_keys": list(_SCP_GUARDED_STABILITY_CONTRACT_KEYS),
+            "overall_status": "not_evaluated",
+            "posterior_trials": None,
+            "posterior_seeds": [],
+            "run_count": 0,
+        }
+    if not isinstance(stability, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "guarded bridge stability JSON must be an object",
+            "missing_keys": list(_SCP_GUARDED_STABILITY_CONTRACT_KEYS),
+            "overall_status": "unknown",
+            "posterior_trials": None,
+            "posterior_seeds": [],
+            "run_count": 0,
+        }
+    missing_keys = [
+        key for key in _SCP_GUARDED_STABILITY_CONTRACT_KEYS if key not in stability
+    ]
+    overall_status = str(stability.get("overall_status") or "unknown")
+    def int_values(value: Any, *, min_value: int) -> list[int]:
+        values = value if isinstance(value, list) else [value]
+        out: list[int] = []
+        for item in values:
+            try:
+                parsed = int(item)
+            except (TypeError, ValueError):
+                continue
+            if parsed >= min_value:
+                out.append(parsed)
+        return out
+
+    posterior_trials = int_values(stability.get("posterior_trials"), min_value=1)
+    seeds_value = stability.get("posterior_seeds")
+    posterior_seeds = (
+        int_values(seeds_value, min_value=0) if isinstance(seeds_value, list) else []
+    )
+    try:
+        run_count = int(stability.get("run_count") or 0)
+    except (TypeError, ValueError):
+        run_count = 0
+    required_selected_groups = stability.get("required_selected_groups")
+    stable_selected_groups = stability.get("stable_selected_groups")
+    union_selected_groups = stability.get("union_selected_groups")
+    status_reasons = stability.get("status_reasons")
+    instability_summary = stability.get("selected_group_instability_summary")
+
+    blockers: list[str] = []
+    if missing_keys:
+        blockers.append("missing stability contract fields")
+    if overall_status == "unknown":
+        blockers.append("overall_status is missing")
+    if not posterior_trials:
+        blockers.append("posterior_trials must be positive")
+    if not posterior_seeds:
+        blockers.append("posterior_seeds are missing")
+    if run_count <= 0:
+        blockers.append("run_count must be positive")
+    if not isinstance(required_selected_groups, list):
+        blockers.append("required_selected_groups must be a list")
+    if not isinstance(stable_selected_groups, list):
+        blockers.append("stable_selected_groups must be a list")
+    if not isinstance(union_selected_groups, list):
+        blockers.append("union_selected_groups must be a list")
+    if not isinstance(status_reasons, list):
+        blockers.append("status_reasons must be a list")
+    if not isinstance(instability_summary, list):
+        blockers.append("selected_group_instability_summary must be a list")
+    if overall_status == "watch":
+        required = set(required_selected_groups or [])
+        stable = set(stable_selected_groups or [])
+        if not required.issubset(stable):
+            blockers.append("watch stability must cover all required selected groups")
+    elif overall_status != "unknown" and not status_reasons:
+        blockers.append("blocked stability must include status_reasons")
+    if overall_status != "watch" and union_selected_groups and not instability_summary:
+        blockers.append("blocked stability must include group instability summary")
+
+    return {
+        "status": "blocked" if blockers else "watch",
+        "reason": "; ".join(blockers) if blockers else "guarded bridge stability contract is evaluable",
+        "missing_keys": missing_keys,
+        "overall_status": overall_status,
+        "posterior_trials": posterior_trials,
+        "posterior_seeds": posterior_seeds,
+        "run_count": run_count,
+        "required_selected_groups": required_selected_groups
+        if isinstance(required_selected_groups, list)
+        else [],
+        "stable_selected_groups": stable_selected_groups
+        if isinstance(stable_selected_groups, list)
+        else [],
+        "union_selected_groups": union_selected_groups
+        if isinstance(union_selected_groups, list)
+        else [],
     }
 
 
@@ -1056,7 +1180,15 @@ def summarize_readiness(
         if scp_guarded_bridge_stability is not None
         else "not_evaluated"
     )
-    stability_gate_status = "watch" if stability_status == "watch" else "blocked"
+    stability_contract = summarize_scp_guarded_bridge_stability_contract(
+        scp_guarded_bridge_stability
+    )
+    stability_contract_status = str(stability_contract.get("status") or "blocked")
+    stability_gate_status = (
+        "watch"
+        if stability_contract_status == "watch" and stability_status == "watch"
+        else "blocked"
+    )
     if scp_guarded_bridge_stability is None:
         stability_reason = (
             "guarded settlement bridge seed stability has not been evaluated"
@@ -1079,17 +1211,31 @@ def summarize_readiness(
             "selected_group_support_gap": [],
             "selected_group_guard_summary": [],
             "selected_group_instability_summary": [],
+            "contract_check": stability_contract,
         }
     else:
-        stability_reason = (
-            "guarded settlement bridge is stable across posterior seeds"
-            if stability_gate_status == "watch"
-            else "guarded settlement bridge is not stable across posterior seeds"
-        )
+        if stability_contract_status != "watch":
+            stability_reason = (
+                "guarded settlement bridge stability JSON is not audit-ready: "
+                f"{stability_contract.get('reason')}"
+            )
+        else:
+            stability_reason = (
+                "guarded settlement bridge is stable across posterior seeds"
+                if stability_gate_status == "watch"
+                else "guarded settlement bridge is not stable across posterior seeds"
+            )
         stability_fields = {
             "overall_status": stability_status,
+            "contract_check": stability_contract,
             "status_reasons": scp_guarded_bridge_stability.get(
                 "status_reasons"
+            ),
+            "posterior_trials": scp_guarded_bridge_stability.get(
+                "posterior_trials"
+            ),
+            "posterior_seeds": scp_guarded_bridge_stability.get(
+                "posterior_seeds"
             ),
             "run_count": scp_guarded_bridge_stability.get("run_count"),
             "watch_runs": scp_guarded_bridge_stability.get("watch_runs"),
@@ -1839,6 +1985,10 @@ def _print_summary(result: dict[str, Any]) -> None:
     live_guard = result["v3_practical_archive_live_guard_metrics"]
     live_guard_overall = live_guard.get("overall") or {}
     live_guard_prebid = live_guard.get("prebid_overall") or {}
+    scp_stability = result["settlement_count_guarded_bridge_stability"]
+    scp_stability_contract = scp_stability.get("contract_check") or {}
+    scp_stability_trials = scp_stability_contract.get("posterior_trials") or []
+    scp_stability_seeds = scp_stability_contract.get("posterior_seeds") or []
     print(
         " ".join(
             (
@@ -1903,12 +2053,16 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"scp_guarded_rows={result['settlement_count_guarded_bridge_holdout']['applied_rows']}",
                 f"scp_guarded_delta={result['settlement_count_guarded_bridge_holdout']['candidate_delta_formal_p50_mae']}",
                 f"scp_guarded_over={result['settlement_count_guarded_bridge_holdout']['candidate_bridge_formal_p50_over_rate']}",
-                f"scp_guarded_stability={result['settlement_count_guarded_bridge_stability']['status']}",
+                f"scp_guarded_stability={scp_stability['status']}",
+                "scp_guarded_stability_contract="
+                f"{scp_stability_contract.get('status')}",
+                "scp_guarded_stability_trials="
+                f"{','.join(str(trial) for trial in scp_stability_trials)}",
+                "scp_guarded_stability_seeds="
+                f"{','.join(str(seed) for seed in scp_stability_seeds)}",
                 "scp_guarded_stable_groups="
                 + ",".join(
-                    result["settlement_count_guarded_bridge_stability"].get(
-                        "stable_selected_groups"
-                    )
+                    scp_stability.get("stable_selected_groups")
                     or []
                 ),
                 f"cse_candidate_rows={summary['v3_cse_candidate_rows']}",

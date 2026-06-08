@@ -9780,3 +9780,59 @@ v3_practical_guard_delta_p90_extreme_over=-0.37
 - 当前 archive/live brief 已能同时证明 v2 fallback counts 与 v3 practical guarded/unguarded paired comparison；
 - guard 的 P90 coverage 下降与 extreme-over 降低可以被同一 contract 复核，不再依赖散落字段；
 - readiness 总状态仍为 `not_ready`，该 gate 只是 `watch`，不支持 v3 promotion、v2 archive 或 sampler 参数调优。
+
+## 2026-06-08 checkpoint：SCP guarded bridge stability artifact contract hardened
+
+背景：
+
+- `data/processed/v3_scp_guarded_bridge_stability_shadow.json` 已经是当前 SCP guarded bridge multi-seed evidence；
+- 但 readiness 接口此前直接信任传入 JSON 结构，无法区分“完整 artifact 证明 blocked”和“半截 JSON 字段缺失”；
+- 当前 goal 要收口 CSE/SCP bridge stability，必须先把 stability artifact 作为可复核 contract 接入 readiness。
+
+完成：
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `summarize_scp_guarded_bridge_stability_contract()`；
+  - 对 stability JSON 检查 `overall_status`、`status_reasons`、`posterior_trials`、`posterior_seeds`、run/watch counts、selected groups、signature/hurt/support/guard/instability summary；
+  - `posterior_trials` 支持单值或列表，`posterior_seeds` 保留 seed `0`；
+  - summary 输出 `scp_guarded_stability_contract`、`scp_guarded_stability_trials`、`scp_guarded_stability_seeds`。
+- `tests/test_summarize_v3_promotion_readiness.py`
+  - 扩展 stability matrix fixture；
+  - 新增 malformed stability JSON blocker 测试。
+
+验证：
+
+```text
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_scp_guarded_bridge_stability.py -q
+15 passed
+
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_scp_guarded_bridge_stability.py
+
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --format summary
+overall_status=not_ready
+blocked_gates=13
+scp_guarded_stability=blocked_applied_hurt
+scp_guarded_stability_contract=watch
+scp_guarded_stability_trials=64
+scp_guarded_stability_seeds=0,1,7
+```
+
+JSON 复核：
+
+```text
+stability_status=blocked_applied_hurt
+contract=watch
+trials=[64]
+seeds=[0,1,7]
+status_reasons=applied_hurts_present,non_watch_run,selected_group_drift,low_applied_rows
+hurt_group_counts={"2501":1}
+min_applied_rows=9
+min_applied_rows_required=20
+instability=2501:blocked_train_holdout_instability,2506:blocked_support_depth_gap
+```
+
+结论：
+
+- processed stability artifact 结构可审计，readiness 不再把它当作 `not_evaluated`；
+- 但 artifact 明确证明 SCP guarded bridge 仍 blocked：`2501` 是 train-guard watch 但 holdout hurt，`2506` 是 support depth gap；
+- 当前只能继续 shadow/audit 或重新设计 bridge/sampler，不能把 SCP guarded bridge 作为 promotion support。
