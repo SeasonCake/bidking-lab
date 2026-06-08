@@ -3905,3 +3905,37 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 对当前窗口而言，可回滚试运行必须先在 artifact/readiness/workbench 层完成，不能直接影响 live/UI/正式出价；
 - guard trial contract 让 q6_cells freeze、q6_value hurt-group inactive/exclude、q6_count source/support parser 三条路径机器可读，减少后续重复审计循环；
 - 当前 readiness 仍为 `not_ready`，workbench 仍为 `shadow_design_only`，promotion gate 不放宽。
+
+## D-v3-187：guard trial runner 可以执行 freeze/exclude/source-support contract，但 blocked trial 只能收窄下一步
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_shadow_sampler_guard_trial.py` 是 sampler `guard_trial_contract` 的 shadow-only 执行入口；
+- runner 只能做 archive/audit/readiness 研究，不得改变 evaluator default、posterior sampler active path、formal/live/UI 或正式出价；
+- runner 必须把 contract action 转成显式 trial options：
+  - `freeze_component` -> `component_move_cells=false`，并排除该 component candidate；
+  - `require_source_support_gate` -> 排除该 component candidate，直到 source/support gate 或 source parser 通过；
+  - `guard_hurt_groups_keep_component_inactive` / `guard_hurt_groups` -> 精确排除对应 hurt labels；
+  - 所有 trial 输出必须继续 `shadow_only=true`、`affects_bid=false`、`active=false`、`can_promote=false`。
+- guarded trial 必须至少支持 archive/session/map-family/map-id/evidence-profile/posterior-seed 复核；
+- 当前真实 guarded trial 结果：
+  - `status=blocked_guarded_shadow_trial`；
+  - `sampler_status=blocked_seed_instability`；
+  - `component_move_cells=false`；
+  - `excluded_components=q6_cells,q6_count`；
+  - q6_cells 与 q6_count 均变为 `sample_limited/no_watch`；
+  - q6_value 仍为 `blocked_seed_instability/support_gate=pass`；
+  - q6_value 剩余 top hurt/unstable labels 指向 `2510` 与 `public:total+item+shape`。
+- 因此当前 guarded trial 不能作为 promotion/readiness 支持；它只能证明：
+  - cells freeze 与 count source-support gate 已按 contract 生效；
+  - 下一步 blocker 已收窄到 q6_value 二阶 guard/source/profile 问题。
+- 后续优先级：
+  - 扩展 q6_value hurt-group guard 或 source/profile parser；
+  - 重新运行 guarded trial；
+  - 只有 q6_value seed/hurt blocker 消失，且 archive/session/map-family/map-id/evidence-profile/seed holdout 可复核通过，才讨论 sampler 参数与 readiness。
+
+原因：
+
+- 这是从“设计 contract”到“可执行 shadow trial”的实际落地，但结果仍 blocked；
+- blocked trial 是收窄下一步的证据，不是放宽 gate 的依据；
+- 该路径减少重复泛审计，同时保持 live/UI/v2 fallback/正式出价稳定。

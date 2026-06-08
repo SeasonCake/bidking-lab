@@ -10596,3 +10596,77 @@ blocked_gates=14
 - sampler prototype blocker 现在已经转成可执行的 shadow-only guard trial contract；
 - 下一步可直接实现/验证一个 guarded shadow trial：cells 先 freeze，value 对 hurt groups 保持 inactive/exclude，count 先走 source/support gate 或 source parser 检查；
 - 当前 readiness 仍 `not_ready`，workbench 仍 `shadow_design_only`，未放宽 promotion gate，也未改变 live/UI/正式出价。
+
+## 2026-06-08 checkpoint：shadow sampler guarded trial runner
+
+背景：
+
+- 上一轮已在 prototype artifact 中生成 `guard_trial_contract`；
+- 当前需要把 contract 真正变成可执行的 shadow-only trial，而不是继续停在设计文本；
+- trial 必须继续使用 archive/session/map-family/map-id/evidence-profile/seed holdout，不改变 live/UI/正式出价。
+
+完成：
+
+- 新增 `scripts/summarize_v3_shadow_sampler_guard_trial.py`
+  - 输入 `--prototype-json`，读取 `guard_trial_contract`；
+  - 自动构造 guarded trial options：
+    - `freeze_component` -> `component_move_cells=false`，并排除对应 component candidate；
+    - `require_source_support_gate` -> 排除对应 component candidate，等待 source/support parser；
+    - `guard_hurt_groups_keep_component_inactive` / `guard_hurt_groups` -> 精确排除 contract 中的 hurt labels；
+  - 复用 `summarize_v3_shadow_sampler_prototype.py` 的 seed/component/support/hurt 聚合；
+  - 输出固定 `shadow_only=true`、`affects_bid=false`、`active=false`、`can_promote=false`。
+- 新增 `tests/test_summarize_v3_shadow_sampler_guard_trial.py`
+  - 覆盖 contract 到 freeze/exclude/source-support 参数的转换；
+  - 覆盖 guarded trial rows 使 q6_count/q6_cells sample-limited，仅保留未被排除的 q6_value watch candidate。
+- `docs/PROJECT_STRUCTURE_V3.zh-CN.md`
+  - 加入 guarded trial runner 与测试索引。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_shadow_sampler_guard_trial.py tests\test_summarize_v3_shadow_sampler_guard_trial.py
+
+python -m pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_shadow_sampler_guard_trial.py tests/test_summarize_v3_shadow_sampler_prototype.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_ccvc_count_policy_matrix.py
+29 passed
+```
+
+真实 archive guarded trial：
+
+```text
+python scripts\summarize_v3_shadow_sampler_guard_trial.py --prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --component q6_cells --component q6_value --group-field map_family --group-field map_id --group-field evidence_profile_key --top 4 --format summary
+
+python scripts\summarize_v3_shadow_sampler_guard_trial.py --prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --component q6_cells --component q6_value --group-field map_family --group-field map_id --group-field evidence_profile_key --format json > .tmp\codex\v3_shadow_sampler_guard_trial_full_latest.json
+```
+
+关键结果：
+
+```text
+status=blocked_guarded_shadow_trial
+sampler_status=blocked_seed_instability
+component_move_cells=False
+excluded_components=q6_cells,q6_count
+exclude_labels=q6_value:map_id=2508|evidence_profile_key=item+shape,
+               q6_value:2408,
+               q6_value:public:random_avg+tool:category+item+shape,
+               q6_value:2410
+
+component_statuses=blocked_seed_instability:1,sample_limited:2
+support_gates=no_watch:2,pass:1
+
+q6_cells -> sample_limited / no_watch
+q6_count -> sample_limited / no_watch
+q6_value -> blocked_seed_instability / pass
+q6_value remaining top_hurts include:
+  q6_value|map_id|up_only:q6_value:2510
+  q6_value|map_id|all:q6_value:2510
+  q6_value|evidence_profile_key|all:q6_value:public:total+item+shape
+  q6_value|map_id|down_only:q6_value:2510
+```
+
+结论：
+
+- guard trial runner 已证明 contract 能实际控制 shadow candidate surface；
+- q6_cells freeze 与 q6_count source-support gate 生效，两个 component 在 guarded trial 中不再贡献候选；
+- 剩余 blocker 已收敛到 q6_value 的二阶 seed/hurt 分组，优先是 `2510` 与 `public:total+item+shape`；
+- 下一步不应恢复 formal/value 参数调优，而应扩展 q6_value hurt-group guard 或 source/profile parser 后再次运行 guarded trial；
+- readiness/promotion gate 仍不放宽，live/UI/正式出价不变。
