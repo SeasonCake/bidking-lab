@@ -4037,3 +4037,41 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - q6_value 风险在 map_id 与 evidence_profile_key 间迁移，说明手工 label 排除会在当前 archive 上过拟合；
 - source/profile parser 可以把问题转回可证伪机制，而不是无限扩展 blacklist；
 - 该结论仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-191：q6_value source/profile audit 必须进入 readiness/workbench sampler safety gate
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_readiness.py` 必须支持 `--shadow-sampler-value-source-profile-json`；
+- 提供 q6_value source/profile audit artifact 时，readiness 必须新增 gate `shadow_sampler_value_source_profile_audit`；
+- 该 gate 的 lane 必须是 `sampler_safety_holdout`；
+- artifact contract 必须校验：
+  - `shadow_only=true`；
+  - `affects_bid=false`；
+  - `active=false`；
+  - `can_promote=false`；
+  - `component=q6_value`；
+  - `runs`、`migration`、`next_action` 等关键复核字段存在。
+- 以下 audit status 必须让 gate blocked：
+  - `blocked_risk_migration`；
+  - `requires_source_profile_parser`；
+  - `blocked_q6_value_component`。
+- `watch_diagnostic_only` 最多只能成为 watch gate，不得成为 promotion support；
+- `summarize_v3_promotion_workbench.py` 必须在 `shadow_sampler_contract.value_source_profile_contract` 中展示：
+  - audit status；
+  - component；
+  - run count；
+  - risk migration flag；
+  - introduced/removed hurt labels；
+  - run summaries。
+- 当前真实 readiness/workbench smoke 中：
+  - `shadow_sampler_value_source_profile_audit` 已进入 `sampler_safety_holdout`；
+  - gate status 为 blocked；
+  - `value_source_profile_audit=blocked_risk_migration`；
+  - `value_source_profile_migration=True`。
+
+原因：
+
+- q6_value residual blocker 已被 audit artifact 证明存在风险迁移，继续只在人工 progress 里记录会让 promotion 视图遗漏该 blocker；
+- readiness/workbench gate 能把“不要继续手工 label exclude、不要恢复参数调优”的结论转成机器可复核的阻断条件；
+- 该决策仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。

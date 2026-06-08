@@ -10890,3 +10890,69 @@ q6_value|map_id|up_only:q6_value:2509
 - 继续追加 label exclude 不适合作为 promotion/readiness 方向；
 - 下一步应设计 q6_value source/profile parser 或更高层 value guard，并将该 audit artifact 接入 readiness/workbench；
 - live/UI/正式出价、v2 fallback 与 promotion gate 仍不改变。
+
+## 2026-06-08 checkpoint：q6_value source/profile audit 接入 readiness/workbench
+
+背景：
+
+- 上一轮 q6_value source/profile audit 已输出 `blocked_risk_migration`；
+- 按更新后的 AGENTS 策略，已足以改变 promotion 判定的 audit 结论不再继续停留在人工阅读层；
+- 本步骤将该 artifact 接入 promotion readiness 与 workbench，使 blocker 进入统一 gate/dependency 视图。
+
+完成：
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `--shadow-sampler-value-source-profile-json`；
+  - 新增 `shadow_sampler_value_source_profile_audit` gate；
+  - gate lane 固定为 `sampler_safety_holdout`；
+  - contract 验证 `shadow_only=true`、`affects_bid=false`、`active=false`、`can_promote=false`；
+  - `blocked_risk_migration`、`requires_source_profile_parser`、`blocked_q6_value_component` 均使 readiness blocked；
+  - summary 输出新增 value-source-profile status 与 migration 标记。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract` 新增 `value_source_profile_contract`；
+  - workbench summary 输出 value source/profile audit status、component、risk migration 与 run count；
+  - 若 readiness 只附加该 audit artifact 且无其他 blocker，contract 会进入 `shadow_value_source_profile_blocked`，阻止 sampler 参数调优。
+- `tests/test_summarize_v3_promotion_readiness.py`
+  - 覆盖 q6_value source/profile audit gate、contract 与 dependency lane。
+- `tests/test_summarize_v3_promotion_workbench.py`
+  - 覆盖 attached value-source-profile audit 对 sampler contract 的阻断。
+- `docs/PROJECT_STRUCTURE_V3.zh-CN.md`
+  - 更新 readiness/workbench 与测试索引。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_shadow_sampler_value_source_profile_audit.py tests/test_summarize_v3_shadow_sampler_guard_trial.py
+27 passed
+```
+
+真实 readiness/workbench smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_schema3.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --shadow-sampler-prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --shadow-sampler-guard-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_full_latest.json --shadow-sampler-value-source-profile-json .tmp\codex\v3_shadow_sampler_q6_value_source_profile_audit_latest.json --format json > .tmp\codex\v3_readiness_with_value_source_profile_latest.json
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_with_value_source_profile_latest.json --format summary
+```
+
+关键结果：
+
+```text
+lane=sampler_safety_holdout verdict=stop_loss statuses=blocked:8,watch:2
+blocked=...,shadow_sampler_guard_trial,shadow_sampler_value_source_profile_audit,...
+
+shadow_sampler_contract ...
+value_source_profile_status=blocked
+value_source_profile_audit=blocked_risk_migration
+value_source_profile_component=q6_value
+value_source_profile_migration=True
+value_source_profile_runs=2
+```
+
+结论：
+
+- q6_value source/profile residual blocker 已进入 readiness/workbench 统一阻断链路；
+- 当前仍不得恢复 formal/value sampler 参数调优；
+- 下一步应做 q6_value source/profile parser、evidence-profile semantics 审计或高层 value guard 的最小可证伪设计；
+- live/UI/正式出价、v2 fallback 与 promotion gate 仍不改变。

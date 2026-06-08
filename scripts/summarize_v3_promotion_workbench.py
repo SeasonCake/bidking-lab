@@ -36,6 +36,7 @@ SHADOW_SAMPLER_WATCH_GATES = {
     "ccv_directionality",
     "ccv_direction_holdout",
     "shadow_sampler_guard_trial",
+    "shadow_sampler_value_source_profile_audit",
     "tail_value_review",
     "tail_under_combined_holdout",
     "formal_value_sampler_holdout",
@@ -91,6 +92,12 @@ SHADOW_SAMPLER_GUARD_TRIAL_KEYS = (
     "ccvc_shadow_sampler_guard_trial",
     "v3_shadow_sampler_guard_trial",
 )
+SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_KEYS = (
+    "shadow_sampler_value_source_profile_audit",
+    "shadow_sampler_q6_value_source_profile_audit",
+    "q6_value_source_profile_audit",
+    "v3_shadow_sampler_q6_value_source_profile_audit",
+)
 
 SHADOW_SAMPLER_PROTOTYPE_REQUIRED_FIELDS = (
     "interface",
@@ -131,6 +138,24 @@ SHADOW_SAMPLER_GUARD_TRIAL_BLOCKING_STATUSES = {
     "blocked_guarded_shadow_trial",
     "sample_limited_guarded_shadow_trial",
 }
+SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_REQUIRED_FIELDS = (
+    "interface",
+    "shadow_only",
+    "affects_bid",
+    "active",
+    "can_promote",
+    "status",
+    "component",
+    "run_count",
+    "runs",
+    "migration",
+    "next_action",
+)
+SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_BLOCKING_STATUSES = {
+    "blocked_risk_migration",
+    "requires_source_profile_parser",
+    "blocked_q6_value_component",
+}
 
 SHADOW_SAMPLER_REQUIRED_COMPONENT_GATES = (
     "shadow safety: affects_bid=false and active=false",
@@ -170,6 +195,16 @@ def _prototype_from_readiness(readiness: Mapping[str, Any]) -> Mapping[str, Any]
 
 def _guard_trial_from_readiness(readiness: Mapping[str, Any]) -> Mapping[str, Any]:
     for key in SHADOW_SAMPLER_GUARD_TRIAL_KEYS:
+        value = readiness.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return {}
+
+
+def _value_source_profile_from_readiness(
+    readiness: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    for key in SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_KEYS:
         value = readiness.get(key)
         if isinstance(value, Mapping):
             return value
@@ -385,6 +420,108 @@ def _shadow_sampler_guard_trial_contract(
     }
 
 
+def _value_source_profile_run_summaries(
+    audit: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    runs = audit.get("runs")
+    if not isinstance(runs, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in runs:
+        if not isinstance(row, Mapping):
+            continue
+        out.append(
+            {
+                "label": row.get("label"),
+                "audit_probe": row.get("audit_probe"),
+                "component_status": row.get("component_status"),
+                "sampler_status": row.get("sampler_status"),
+                "support_gate": row.get("support_gate"),
+                "source_profile_parser_required": row.get(
+                    "source_profile_parser_required"
+                ),
+                "hurt_label_count": row.get("hurt_label_count"),
+                "hurt_map_ids": list(row.get("hurt_map_ids") or []),
+                "hurt_evidence_profiles": list(
+                    row.get("hurt_evidence_profiles") or []
+                ),
+                "hurt_group_field_counts": dict(
+                    row.get("hurt_group_field_counts") or {}
+                ),
+            }
+        )
+    return out
+
+
+def _shadow_sampler_value_source_profile_contract(
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    audit = _value_source_profile_from_readiness(readiness)
+    if not audit:
+        return {
+            "status": "missing",
+            "attached": False,
+            "accepted_keys": list(SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_KEYS),
+            "required_fields": list(
+                SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_REQUIRED_FIELDS
+            ),
+            "blocking_statuses": sorted(
+                SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_BLOCKING_STATUSES
+            ),
+        }
+
+    missing = [
+        field
+        for field in SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_REQUIRED_FIELDS
+        if field not in audit
+    ]
+    audit_status = str(audit.get("status") or "unknown")
+    shadow_safe = (
+        audit.get("shadow_only") is True
+        and audit.get("affects_bid") is False
+        and audit.get("active") is False
+        and audit.get("can_promote") is False
+    )
+    migration = audit.get("migration")
+    if not isinstance(migration, Mapping):
+        migration = {}
+    component = str(audit.get("component") or "")
+    if missing or not shadow_safe or component != "q6_value":
+        status = "malformed"
+    elif audit_status in SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_BLOCKING_STATUSES:
+        status = "blocked"
+    elif audit_status == "watch_diagnostic_only":
+        status = "watch_only"
+    else:
+        status = "blocked"
+    return {
+        "status": status,
+        "attached": True,
+        "interface": audit.get("interface"),
+        "audit_status": audit_status,
+        "shadow_safe": shadow_safe,
+        "missing_fields": missing,
+        "component": component,
+        "run_count": audit.get("run_count"),
+        "risk_migration_detected": bool(
+            migration.get("risk_migration_detected")
+        ),
+        "introduced_hurt_labels": list(
+            migration.get("introduced_hurt_labels") or []
+        ),
+        "removed_hurt_labels": list(migration.get("removed_hurt_labels") or []),
+        "run_summaries": _value_source_profile_run_summaries(audit),
+        "next_action": audit.get("next_action"),
+        "blocked_actions": list(audit.get("blocked_actions") or []),
+        "required_fields": list(
+            SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_REQUIRED_FIELDS
+        ),
+        "blocking_statuses": sorted(
+            SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_BLOCKING_STATUSES
+        ),
+    }
+
+
 def _lane_verdict(
     *,
     lane: str,
@@ -488,6 +625,14 @@ def summarize_shadow_sampler_contract(
         and status == "ready_for_shadow_prototype"
     ):
         status = "shadow_guarded_trial_blocked"
+    value_source_profile_contract = (
+        _shadow_sampler_value_source_profile_contract(readiness)
+    )
+    if (
+        value_source_profile_contract.get("status") in {"blocked", "malformed"}
+        and status == "ready_for_shadow_prototype"
+    ):
+        status = "shadow_value_source_profile_blocked"
     lane_verdicts = {
         str(row.get("lane")): str(row.get("verdict"))
         for row in lanes
@@ -520,6 +665,7 @@ def summarize_shadow_sampler_contract(
         "required_component_gates": list(SHADOW_SAMPLER_REQUIRED_COMPONENT_GATES),
         "prototype_contract": prototype_contract,
         "guarded_trial_contract": guarded_trial_contract,
+        "value_source_profile_contract": value_source_profile_contract,
         "allowed_actions": [
             "define sampler interface",
             "emit shadow-only fields",
@@ -553,6 +699,8 @@ def _sampler_next_action(status: str, stop_loss_lanes: Iterable[str]) -> str:
         return "keep sampler shadow-only; resolve prototype seed/support blockers"
     if status == "shadow_guarded_trial_blocked":
         return "keep guarded sampler trial shadow-only; resolve remaining holdout blockers"
+    if status == "shadow_value_source_profile_blocked":
+        return "stop sampler tuning; resolve q6_value source/profile semantics or value guard"
     if status == "shadow_watch_only":
         return "emit prototype fields only; keep watch gates inactive"
     return "run the shadow prototype through required holdouts"
@@ -664,6 +812,9 @@ def _print_summary(result: Mapping[str, Any]) -> None:
     if isinstance(contract, Mapping):
         prototype = contract.get("prototype_contract") or {}
         guarded_trial = contract.get("guarded_trial_contract") or {}
+        value_source_profile = (
+            contract.get("value_source_profile_contract") or {}
+        )
         prototype_component_counts = ",".join(
             f"{key}:{value}"
             for key, value in (
@@ -724,6 +875,16 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"guarded_trial_sampler={guarded_trial.get('sampler_status')}",
                     f"guarded_trial_components={guarded_trial_component_counts}",
                     f"guarded_trial_support_gates={guarded_trial_support_counts}",
+                    "value_source_profile_status="
+                    f"{value_source_profile.get('status')}",
+                    "value_source_profile_audit="
+                    f"{value_source_profile.get('audit_status')}",
+                    "value_source_profile_component="
+                    f"{value_source_profile.get('component')}",
+                    "value_source_profile_migration="
+                    f"{value_source_profile.get('risk_migration_detected')}",
+                    "value_source_profile_runs="
+                    f"{value_source_profile.get('run_count')}",
                     f"next_action=\"{contract.get('next_action')}\"",
                 ]
             )

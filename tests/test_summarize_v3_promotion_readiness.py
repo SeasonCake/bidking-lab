@@ -413,6 +413,96 @@ def test_readiness_attaches_shadow_sampler_guard_trial_contract() -> None:
     )
 
 
+def test_readiness_attaches_shadow_sampler_value_source_profile_audit() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+    audit = {
+        "interface": "v3_ccvc_q6_value_source_profile_audit",
+        "status": "blocked_risk_migration",
+        "shadow_only": True,
+        "affects_bid": False,
+        "active": False,
+        "can_promote": False,
+        "component": "q6_value",
+        "run_count": 2,
+        "runs": [
+            {
+                "label": "baseline",
+                "audit_probe": False,
+                "component_status": "blocked_seed_instability",
+                "sampler_status": "blocked_seed_instability",
+                "support_gate": "pass",
+                "source_profile_parser_required": True,
+                "hurt_label_count": 2,
+                "hurt_map_ids": ["2510"],
+                "hurt_evidence_profiles": ["public:total+item+shape"],
+                "hurt_group_field_counts": {"map_id": 1},
+            },
+            {
+                "label": "probe",
+                "audit_probe": True,
+                "component_status": "blocked_seed_instability",
+                "sampler_status": "blocked_seed_instability",
+                "support_gate": "watch_low_support",
+                "source_profile_parser_required": True,
+                "hurt_label_count": 2,
+                "hurt_map_ids": ["2405"],
+                "hurt_evidence_profiles": ["public:max_item_cells+item+shape"],
+                "hurt_group_field_counts": {"evidence_profile_key": 1},
+            },
+        ],
+        "migration": {
+            "status": "evaluated",
+            "risk_migration_detected": True,
+            "introduced_hurt_labels": [
+                "q6_value|map_id|up_only:q6_value:2405"
+            ],
+            "removed_hurt_labels": [
+                "q6_value|map_id|up_only:q6_value:2510"
+            ],
+        },
+        "next_action": (
+            "stop adding manual q6_value excludes; design source/profile "
+            "parser or higher-level value guard"
+        ),
+    }
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        shadow_sampler_value_source_profile_audit=audit,
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    gate = gates["shadow_sampler_value_source_profile_audit"]
+    assert gate["status"] == "blocked"
+    assert gate["contract_status"] == "blocked"
+    assert gate["audit_status"] == "blocked_risk_migration"
+    assert gate["component"] == "q6_value"
+    assert gate["risk_migration_detected"] is True
+    assert gate["introduced_hurt_labels"] == [
+        "q6_value|map_id|up_only:q6_value:2405"
+    ]
+    contract = result["shadow_sampler_value_source_profile_contract"]
+    assert contract["status"] == "blocked"
+    assert contract["shadow_safe"] is True
+    assert contract["run_summaries"][1]["support_gate"] == "watch_low_support"
+    assert result["shadow_sampler_value_source_profile_audit"] == audit
+    dependency_gates = {
+        row["gate"]: row
+        for row in result["gate_dependencies"]["blocked_or_pending_gates"]
+    }
+    assert dependency_gates["shadow_sampler_value_source_profile_audit"]["lane"] == (
+        "sampler_safety_holdout"
+    )
+
+
 def test_readiness_attaches_live_practical_guard_brief() -> None:
     module = _load_module()
     rows = [
