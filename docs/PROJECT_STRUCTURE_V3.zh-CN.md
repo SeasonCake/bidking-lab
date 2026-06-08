@@ -1,6 +1,6 @@
 # BidKing Lab v3 项目结构索引
 
-日期：2026-06-07
+日期：2026-06-08
 用途：把当前主线、历史归档、脚本、样本、测试和外部参考的职责分清。
 
 ## 当前主线文件
@@ -13,11 +13,12 @@
 | `DECISIONS_V3.md` | v3 当前决策 |
 | `OBSERVATIONS.md` | 根观察索引 |
 | `OBSERVATIONS_V3.md` | v3 当前观察 |
-| `handoff_2026-06-06.zh-CN.md` | v3 新窗口交接入口、prompt 与推荐 goal |
+| `handoff_2026-06-08.zh-CN.md` | v3 promotion hardening / sampler 重构最新交接入口、prompt 与推荐 goal |
+| `handoff_2026-06-06.zh-CN.md` | v3 重构早期交接入口，保留历史上下文 |
 | `docs/v3_inference_design_2026-06-04.zh-CN.md` | v3 设计文档 |
 | `src/bidking_lab/inference/v3/` | v3 推理引擎新包 |
 | `src/bidking_lab/inference/v3/pipeline.py` | archive/live 共用 v3 shadow 推理链路 |
-| `src/bidking_lab/inference/v3/practical_advisory.py` | v3 practical advisory 聚合层，输出 `v3_practical_*` 实战参考字段；含 q6 prior-floor、random avg floor、q6 residual value ceiling、tail-replacement P90 watch、low-support/value-stress raw q6 tail P90 ceiling，以及 raw/total 对 formal 的 P90 gap 字段；固定 inactive/不影响出价 |
+| `src/bidking_lab/inference/v3/practical_advisory.py` | v3 practical advisory 聚合层，输出 `v3_practical_*` 字段；底层 report 仍固定 inactive/不改写 sampler，但 live/UI 可显式选择 guarded `v3_practical` bid rows 作为当前正式试用路径 |
 | `src/bidking_lab/inference/v3/priors.py` | v3 drop-prior summary 与共享 flat fields |
 | `src/bidking_lab/inference/v3/prior_robustness.py` | v3 drop-prior 漂移、活动期、fallback 鲁棒性审计 |
 | `src/bidking_lab/inference/v3/formal_value_sampler.py` | v3 formal/value sampler 第一阶段 shadow report，拆分 capacity/cells/value-floor stress，固定不影响出价 |
@@ -142,13 +143,13 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 
 | 路径 | 作用 | 当前策略 |
 | --- | --- | --- |
-| `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做；hover/detail/alert 显示 shadow-only `v3_practical_*` 实战参考，compact 主决策仍用 baseline/fallback；v3 实战参考区显示 `ΔP50/ΔP90/Δq6/Δq6P90` 与 `rawΔP90/q6rawΔP90`，detail 显示 `rawP90/q6rawP90`，便于 P90-only ceiling 与尾部/仓库上限在实战中可见 |
-| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 diagnostics-only `v3_practical_*`；canonical evidence events 与只读 `hero/evidence_profile` source context 会传入 practical 层用于 source-aware reference；random avg high-signal P90 ceiling、low-support/value-stress q6 raw-tail ceiling、q6 prior tail ceiling、source-profile q6 tail ceiling 与 residual q6 value ceiling 只进入 practical shadow |
+| `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做；当前 baseline/正式建议可来自 guarded `v3_practical`，同时保留 v2 reference、guard 原因、activity alias、公开/道具 numeric facts 与 v3 diagnostic detail |
+| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；live runner 默认 `formal_mode=v3_practical`，但底层 artifact builder 默认仍是 v2；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 `v3_practical_*`；live bid row 对低置信 prior-only raise 与低支持 baseline passthrough 有 guard |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
-| `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate、practical P90 coverage/extreme-over，以及 raise-watch hit/miss/false-alarm/extreme-over/misleading rate，便于局后复盘 `v3_practical_*`；`raise_watch` 仅代表强低估提醒，`ceiling_watch`/`risk_watch` 代表只读上沿或风险提示 |
+| `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate、practical P90 coverage/extreme-over，以及 raise-watch hit/miss/false-alarm/extreme-over/misleading rate；注意 archive replay 默认 formal mode 仍可能是 v2，后续应补显式 `formal_mode=v3_practical` 与 guarded/unguarded 分组 |
 | `data/logs/live/` | 本地 live 日志 | ignored，本地运行态 |
-| `data/samples/fatbeans/` | 本地 canonical archive 样本 | 441 份 JSON，默认脚本路径 |
+| `data/samples/fatbeans/` | 本地 canonical archive 样本 | 453 个 unique 文件，435 valid / 18 mixed，默认脚本路径 |
 | `data/samples/fatbeans_activity_20260605_shipwreck/` | 2026-06-05 沉船白转红活动 cohort | 15 份 JSON，manifest role=`activity_tuning_reference`；用于 source/table 与 shadow 调参参考，不进默认校准 |
 | `data/samples/fatbeans_invalid/` | 旧 parse error/无效样本 | ignored，不进默认 evaluator |
 

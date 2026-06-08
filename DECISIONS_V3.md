@@ -3241,3 +3241,31 @@ applied_hurts=2502
 - 这类过冲不是 prior-only `raise_watch`，此前 D-v3-156 的 guard 不会触发。
 - 实战目标是减少长期 below，但不能让低支持 baseline 在无强证据时直接支配停止价。
 - 72h complete archive v3-practical replay 显示该 guard 降低 MAE 与极端 P90 高估率，且 P90 coverage 不变。
+
+## D-v3-160：v3 promotion 不以小样本拟合为目标，sampler 重构必须先 shadow-only
+
+2026-06-08 起，当前决策：
+
+- 当前真实样本规模只有几百局、约一千多 ready windows；不得把目标变成“拟合当前 archive 指标最好看”。
+- promotion 前必须分层评估：
+  - hero；
+  - map family / map id；
+  - round；
+  - information density；
+  - ordinary vs activity cohort；
+  - prior-stress；
+  - guarded vs unguarded；
+  - formal decision truth vs raw settlement truth。
+- 参数、lane 或 sampler 若只改善少数稀疏样本，同时伤害 holdout、directionality 或 extreme-over，必须降级为 watch/audit-only。
+- 后续 count/cell/value sampler 重构可以开始，但只能 shadow-only：
+  - 让 evidence likelihood 决定 count/cells/value 分布移动；
+  - 不使用固定 q6 prior 乘数或简单 floor 作为 formal 替代；
+  - P50 与 P90 分开建模，P90 可以承载长尾风险，P50 不得被未验证长尾带偏；
+  - 通过 archive/session/map-family/seed holdout 前，不得替换正式出价。
+- live 当前 guarded `v3_practical` 可继续作为实战试用路径；它不等于 v3 全量 promotion。
+
+原因：
+
+- 0608 实战显示 v3 practical 已比 v2 更有参考价值，但也暴露了低支持 baseline 过冲，需要 guard。
+- 单纯按已采样局调参容易过拟合，尤其是活动地图、缺表 fallback、Aisha villa 与 Gabriela activity 等小 cohort。
+- v3 的长期价值应来自证据结构、鲁棒性和可解释 sampler，而不是对当前几百局样本的局部拟合。

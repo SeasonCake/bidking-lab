@@ -9095,3 +9095,55 @@ python -m py_compile src\bidking_lab\live\monitor.py
 pytest tests\test_live_monitor.py -q
 34 passed
 ```
+
+## 2026-06-08 checkpoint：promotion hardening handoff 与长期路线
+
+背景：
+
+- 用户暂停继续实战采样，希望先整理交接、长期项目项、goal 与 prompt，让另一个审计窗口继续推进。
+- 当前 v3 practical 已接 live/UI 实战试用，但 readiness 仍 `overall_status=not_ready`。
+- 继续实战反馈可以延后；离线可推进评估口径、promotion hardening、CSE/SCP 稳定性与 shadow-only sampler 重构。
+
+新增：
+
+- 新增 `handoff_2026-06-08.zh-CN.md`：
+  - 最新读取顺序；
+  - 当前 live/UI/v3 practical/v2 fallback 状态；
+  - 0608 实战修复；
+  - readiness snapshot；
+  - 样本状态；
+  - 防过拟合原则；
+  - 长期项目项；
+  - 推荐 goal；
+  - 给审计窗口的续接 prompt；
+  - 实战恢复命令。
+- 更新 `docs/PROJECT_STRUCTURE_V3.zh-CN.md`：
+  - 主入口改为 0608 handoff；
+  - 更新 fatbeans 样本数；
+  - 修正 `v3_practical` 仍是 shadow report 但 live/UI 可显式使用 guarded bid rows 的描述；
+  - 标注 brief 后续需要显式 formal mode 与 guarded/unguarded 分组。
+- 新增 D-v3-160：
+  - promotion 不以小样本拟合为目标；
+  - sampler 重构必须先 shadow-only；
+  - 未过 archive/session/map-family/seed holdout 前不替换正式出价。
+
+最新 readiness 复跑：
+
+```text
+overall_status=not_ready
+blocked_gates=14
+windows=1616
+ready=1598
+formal_mae=317199.529
+formal_below=0.51221
+formal_p90_cover=0.753914
+```
+
+下一阶段长期顺序：
+
+1. 统一 v3 practical guarded/unguarded/v2 评估合同。
+2. 补 live guard 结构化指标和 readiness 分组。
+3. 收口 prior/activity/table drift。
+4. 收口 CSE/SCP settlement bridge seed/session stability。
+5. 设计并实现 evidence-driven count/cell/value sampler shadow-only 原型。
+6. 通过 holdout/readiness 后再讨论 promotion 与 v2 archive。
