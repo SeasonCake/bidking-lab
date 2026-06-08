@@ -543,6 +543,18 @@ def _print_summary(result: Mapping[str, Any]) -> None:
     contract = result.get("shadow_sampler_contract") or {}
     if isinstance(contract, Mapping):
         prototype = contract.get("prototype_contract") or {}
+        prototype_component_counts = ",".join(
+            f"{key}:{value}"
+            for key, value in (
+                prototype.get("component_status_counts") or {}
+            ).items()
+        ) or "-"
+        prototype_support_counts = ",".join(
+            f"{key}:{value}"
+            for key, value in (
+                prototype.get("support_gate_status_counts") or {}
+            ).items()
+        ) or "-"
         frozen = ",".join(
             str(row.get("gate"))
             for row in contract.get("frozen_gates") or ()
@@ -564,6 +576,8 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"blockers={blockers}",
                     f"prototype_status={prototype.get('status')}",
                     f"prototype_overall={prototype.get('prototype_status')}",
+                    f"prototype_components={prototype_component_counts}",
+                    f"prototype_support_gates={prototype_support_counts}",
                     f"next_action=\"{contract.get('next_action')}\"",
                 ]
             )

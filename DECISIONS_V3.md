@@ -3807,3 +3807,28 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - q6_count 的分歧仍是 seed/profile/support 问题，不是稳定的 count/cell/value sampler signal；
 - 在 `sampler_safety_holdout` lane 中显式阻断，能防止后续只看单 seed zero-hurt 低支持候选；
 - 所有 artifact 均在 `.tmp/codex/`，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-184：full count/cells/value prototype 同时受 q6_count seed/support 与 q6_cells/q6_value holdout hurt 阻断
+
+2026-06-08 起，当前决策：
+
+- full `q6_count/q6_cells/q6_value` prototype artifact 必须使用同一 readiness/workbench contract 审计；
+- 当前 smoke artifact：
+  - `.tmp/codex/v3_shadow_sampler_prototype_full_ccv_latest.json`；
+  - `.tmp/codex/v3_readiness_with_full_sampler_prototype_latest.json`。
+- 当前 full prototype 结论：
+  - overall=`blocked_seed_instability`；
+  - `q6_count`=`blocked_seed_instability`，support gate=`watch_low_support`；
+  - `q6_cells`=`blocked_holdout_hurt`；
+  - `q6_value`=`blocked_holdout_hurt`；
+  - component status counts=`blocked_holdout_hurt:2, blocked_seed_instability:1`；
+  - support gate counts=`no_watch:2, watch_low_support:1`。
+- workbench summary 必须展示 prototype component/support gate counts，避免只看到 overall 而忽略 q6_cells/q6_value hurt；
+- 因此当前 full count/cells/value prototype 不能用于 formal/value sampler 参数调优、promotion readiness 支持或 live/formal 接入。
+
+原因：
+
+- q6_count-only artifact 只能证明 count lane 的 seed/support blocker；
+- full artifact 进一步证明 cells/value components 仍有 holdout hurt；
+- 这说明当前 sampler prototype 问题不是单一 count filter 可解决，必须继续 source/profile/map 分歧与 cells/value hurt 分流；
+- 该结论仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。

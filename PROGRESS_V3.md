@@ -10395,3 +10395,57 @@ shadow_sampler_contract prototype_status=blocked prototype_overall=blocked_seed_
 - q6_count prototype blocker 已从单独脚本输出进入 `sampler_safety_holdout` lane；
 - blocked gate 增至 14，workbench 继续 `shadow_design_only`，不允许 promotion/readiness gate 放宽；
 - 当前下一步不是调参，而是继续查 q6_count source/profile/map 分歧，或把 full count/cells/value prototype 也生成同类 artifact 后再比较。
+
+## 2026-06-08 checkpoint：full count/cells/value prototype artifact smoke
+
+背景：
+
+- q6_count-only prototype 已进入 readiness/workbench；
+- 当前 goal 是 evidence-driven count/cell/value sampler shadow-only 原型，因此需要确认 full `q6_count/q6_cells/q6_value` artifact 是否也能被同一 contract 表达；
+- 该 smoke 不恢复 formal/value sampler 调参，也不改变 live/UI/正式出价。
+
+执行：
+
+```text
+python scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --component q6_cells --component q6_value --format json > .tmp\codex\v3_shadow_sampler_prototype_full_ccv_latest.json
+
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_schema3.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --shadow-sampler-prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_ccv_latest.json --format json > .tmp\codex\v3_readiness_with_full_sampler_prototype_latest.json
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_with_full_sampler_prototype_latest.json --format summary
+```
+
+验证结果：
+
+```text
+prototype overall=blocked_seed_instability
+seed_status_counts=watch_with_hurt_alternatives:2
+component q6_cells status=blocked_holdout_hurt support_gate=no_watch hurts=43
+component q6_count status=blocked_seed_instability support_gate=watch_low_support unstable_count=13 hurts=31
+component q6_value status=blocked_holdout_hurt support_gate=no_watch hurts=37
+
+readiness shadow_sampler_prototype gate status=blocked
+component_status_counts={'blocked_holdout_hurt': 2, 'blocked_seed_instability': 1}
+support_gate_status_counts={'no_watch': 2, 'watch_low_support': 1}
+
+workbench shadow_sampler_contract ... prototype_components=blocked_holdout_hurt:2,blocked_seed_instability:1 prototype_support_gates=no_watch:2,watch_low_support:1
+```
+
+额外完成：
+
+- `scripts/summarize_v3_promotion_workbench.py` summary 输出新增：
+  - `prototype_components=...`；
+  - `prototype_support_gates=...`。
+- focused 验证：
+
+```text
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_promotion_workbench.py
+pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_shadow_sampler_prototype.py tests/test_summarize_v3_ccvc_count_policy_matrix.py
+24 passed
+```
+
+结论：
+
+- full count/cells/value prototype 也被 readiness/workbench 正确识别为 blocked；
+- q6_cells 与 q6_value 不是 sample-limited，而是明确存在 holdout hurt；
+- q6_count 仍是 seed instability + low-support blocker；
+- 这进一步支持继续 shadow/audit/source-parser 追查，而不是 sampler/formal 参数调优。
