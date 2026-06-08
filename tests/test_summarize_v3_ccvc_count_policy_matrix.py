@@ -75,6 +75,14 @@ def test_ccvc_count_policy_matrix_compares_group_and_policy() -> None:
     assert all(row["overall_status"] == "watch" for row in result)
     assert all(row["candidate_delta_p50_mae"] == -1 for row in result)
     assert all(row["candidate_groups"] for row in result)
+    assert all(row["candidate_group_results"] for row in result)
+    for row in result:
+        group_results = {
+            item["label"]: item for item in row["candidate_group_results"]
+        }
+        assert set(group_results) == set(row["candidate_groups"])
+        assert all(item["candidate_rows"] == 8 for item in group_results.values())
+        assert all(item["candidate_sessions"] == 8 for item in group_results.values())
 
 
 def test_ccvc_count_policy_matrix_passes_candidate_exclude_pattern() -> None:
@@ -97,4 +105,5 @@ def test_ccvc_count_policy_matrix_passes_candidate_exclude_pattern() -> None:
     assert result[0]["candidate_exclude_pattern"] == "^q6_count:2502$"
     assert result[0]["candidate_rows"] == 0
     assert result[0]["candidate_groups"] == []
+    assert result[0]["candidate_group_results"] == []
     assert result[0]["overall_status"] == "sample_limited"

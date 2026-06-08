@@ -155,6 +155,7 @@ def _watch_candidates(
             "movement_policy": row.get("movement_policy"),
             "candidate_rows": row.get("candidate_rows"),
             "candidate_groups": row.get("candidate_groups") or [],
+            "candidate_group_results": row.get("candidate_group_results") or [],
             "candidate_delta_p50_mae": row.get("candidate_delta_p50_mae"),
             "candidate_hurt_rate": row.get("candidate_hurt_rate"),
             "candidate_directional_error_rate": row.get(
@@ -368,6 +369,112 @@ def _watch_labels_by_seed(
     ]
 
 
+def _metric_value(
+    group_result: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    group_key: str,
+    candidate_key: str,
+) -> Any:
+    value = group_result.get(group_key)
+    return candidate.get(candidate_key) if value is None else value
+
+
+def _watch_label_metric_rows(
+    result: Mapping[str, Any],
+    *,
+    component: str,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seed = result.get("posterior_seed")
+    for row in result.get("watch_candidates") or ():
+        if not isinstance(row, Mapping):
+            continue
+        if str(row.get("component") or "") != component:
+            continue
+        base_label = str(row.get("label"))
+        group_metrics = {
+            str(item.get("label")): item
+            for item in row.get("candidate_group_results") or ()
+            if isinstance(item, Mapping)
+        }
+        groups = tuple(row.get("candidate_groups") or ())
+        if not groups:
+            groups = ("",)
+        for group in groups:
+            metrics = group_metrics.get(str(group), {})
+            watch_label = f"{base_label}:{group}" if group else base_label
+            out.append(
+                {
+                    "posterior_seed": seed,
+                    "watch_label": watch_label,
+                    "component": row.get("component"),
+                    "group_field": row.get("group_field"),
+                    "movement_policy": row.get("movement_policy"),
+                    "group": group or None,
+                    "support_rows": _metric_value(
+                        metrics,
+                        row,
+                        "candidate_rows",
+                        "candidate_rows",
+                    ),
+                    "support_sessions": metrics.get("candidate_sessions"),
+                    "delta_p50_mae": _metric_value(
+                        metrics,
+                        row,
+                        "candidate_delta_p50_mae",
+                        "candidate_delta_p50_mae",
+                    ),
+                    "hurt_rate": _metric_value(
+                        metrics,
+                        row,
+                        "candidate_hurt_rate",
+                        "candidate_hurt_rate",
+                    ),
+                    "hurt_rows": metrics.get("candidate_hurt_rows"),
+                    "helped_rows": metrics.get("candidate_helped_rows"),
+                    "directional_error_rate": _metric_value(
+                        metrics,
+                        row,
+                        "candidate_directional_error_rate",
+                        "candidate_directional_error_rate",
+                    ),
+                    "directional_error_rows": metrics.get(
+                        "candidate_directional_error_rows"
+                    ),
+                    "baseline_below_rate": _metric_value(
+                        metrics,
+                        row,
+                        "candidate_baseline_below_rate",
+                        "candidate_baseline_below_rate",
+                    ),
+                    "candidate_below_rate": _metric_value(
+                        metrics,
+                        row,
+                        "candidate_below_rate",
+                        "candidate_below_rate",
+                    ),
+                }
+            )
+    return out
+
+
+def _watch_label_metrics_by_seed(
+    seed_results: Iterable[Mapping[str, Any]],
+    *,
+    component: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "posterior_seed": result.get("posterior_seed"),
+            "watch_label_metrics": _watch_label_metric_rows(
+                result,
+                component=component,
+            ),
+        }
+        for result in seed_results
+    ]
+
+
 def _unstable_watch_labels(
     labels_by_seed: Iterable[Mapping[str, Any]],
     *,
@@ -383,6 +490,30 @@ def _unstable_watch_labels(
         return []
     union = set.union(*label_sets) if label_sets else set()
     return sorted(union - stable_set)
+
+
+def _unstable_watch_metrics(
+    metrics_by_seed: Iterable[Mapping[str, Any]],
+    *,
+    stable: Iterable[str],
+) -> list[dict[str, Any]]:
+    stable_set = set(stable)
+    out: list[dict[str, Any]] = []
+    for row in metrics_by_seed:
+        if not isinstance(row, Mapping):
+            continue
+        for item in row.get("watch_label_metrics") or ():
+            if not isinstance(item, Mapping):
+                continue
+            if str(item.get("watch_label") or "") not in stable_set:
+                out.append(dict(item))
+    out.sort(
+        key=lambda item: (
+            str(item.get("watch_label") or ""),
+            str(item.get("posterior_seed") or ""),
+        )
+    )
+    return out
 
 
 def _component_next_action(status: str, component: str) -> str:
@@ -410,6 +541,7 @@ def _component_statuses(seed_results: Iterable[Mapping[str, Any]]) -> list[dict[
         hurts = _component_applied_hurts(results, component=component)
         has_watch = any(_watch_label_set(result, component=component) for result in results)
         labels_by_seed = _watch_labels_by_seed(results, component=component)
+        metrics_by_seed = _watch_label_metrics_by_seed(results, component=component)
         if "blocked_shadow_affects_bid" in statuses:
             status = "blocked_shadow_affects_bid"
         elif "blocked_shadow_active" in statuses:
@@ -434,6 +566,11 @@ def _component_statuses(seed_results: Iterable[Mapping[str, Any]]) -> list[dict[
                     stable=stable,
                 ),
                 "watch_labels_by_seed": labels_by_seed,
+                "watch_label_metrics_by_seed": metrics_by_seed,
+                "unstable_watch_candidate_metrics": _unstable_watch_metrics(
+                    metrics_by_seed,
+                    stable=stable,
+                ),
                 "applied_hurts": hurts,
                 "matrix_status_counts": _component_matrix_status_counts(
                     results,
@@ -528,6 +665,13 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
         )
     )
     for row in result.get("component_statuses") or ():
+        unstable_support = [
+            (
+                f"{item.get('watch_label')}@seed{item.get('posterior_seed')}:"
+                f"{item.get('support_rows')}/{item.get('support_sessions')}"
+            )
+            for item in (row.get("unstable_watch_candidate_metrics") or ())[:top]
+        ]
         print(
             " ".join(
                 (
@@ -537,6 +681,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     + ",".join(row.get("stable_watch_candidate_labels") or ()),
                     "unstable_watch="
                     + ",".join((row.get("unstable_watch_candidate_labels") or ())[:top]),
+                    "unstable_support=" + ",".join(unstable_support),
                     "applied_hurts="
                     + ",".join((row.get("applied_hurts") or ())[:top]),
                     f"next_action=\"{row.get('next_action')}\"",

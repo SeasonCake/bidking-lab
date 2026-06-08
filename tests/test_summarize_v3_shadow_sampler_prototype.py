@@ -168,6 +168,20 @@ def test_shadow_sampler_prototype_marks_seed_instability() -> None:
             "watch_labels": ["q6_count|map_id|all:q6_count:2502"],
         },
     ]
+    assert stable_component["unstable_watch_candidate_metrics"] == []
+    stable_support = stable_component["watch_label_metrics_by_seed"]
+    assert [
+        (
+            row["posterior_seed"],
+            row["watch_label_metrics"][0]["watch_label"],
+            row["watch_label_metrics"][0]["support_rows"],
+            row["watch_label_metrics"][0]["support_sessions"],
+        )
+        for row in stable_support
+    ] == [
+        (0, "q6_count|map_id|all:q6_count:2502", 8, 8),
+        (1, "q6_count|map_id|all:q6_count:2502", 8, 8),
+    ]
     assert stable_component["applied_hurts"] == []
     assert stable_component["matrix_status_counts"] == {"watch": 2}
     assert stable_component["next_action"] == (
@@ -200,6 +214,18 @@ def test_shadow_sampler_prototype_marks_seed_instability() -> None:
             "posterior_seed": 1,
             "watch_labels": ["q6_count|map_id|all:q6_count:2503"],
         },
+    ]
+    assert [
+        (
+            row["posterior_seed"],
+            row["watch_label"],
+            row["support_rows"],
+            row["support_sessions"],
+        )
+        for row in unstable_component["unstable_watch_candidate_metrics"]
+    ] == [
+        (0, "q6_count|map_id|all:q6_count:2502", 8, 8),
+        (1, "q6_count|map_id|all:q6_count:2503", 8, 8),
     ]
 
 
@@ -243,4 +269,15 @@ def test_shadow_sampler_prototype_requires_candidate_on_every_seed() -> None:
             "posterior_seed": 1,
             "watch_labels": [],
         },
+    ]
+    assert [
+        (
+            row["posterior_seed"],
+            row["watch_label"],
+            row["support_rows"],
+            row["support_sessions"],
+        )
+        for row in component["unstable_watch_candidate_metrics"]
+    ] == [
+        (0, "q6_count|map_id|all:q6_count:2502", 8, 8),
     ]

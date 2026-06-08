@@ -10181,3 +10181,47 @@ groups=q6_count:map_id=2501|evidence_profile_key=tool:category+item+shape
 - 更窄的 evidence/profile filters 仍没有产生跨 seed 稳定候选；
 - seed0 的 profile-level down-only candidate 与 seed1 的 map/profile down-only candidate 不一致，且两边仍有 holdout hurt alternatives；
 - 当前不能恢复 formal/value sampler 调参，也不能把 q6_count filter 当作 promotion 支持；下一步应转向 source/parser/table acquisition、support threshold 或更多样本，而不是在现有字段组合上继续过拟合。
+
+## 2026-06-08 checkpoint：CCVC prototype watch support metrics exposed
+
+背景：
+
+- 上一轮已能输出 unstable watch label，但还不能直接判断分歧来自低支持偶然候选还是高支持但语义冲突的候选；
+- q6_count evidence/profile smoke 中，seed1 的 map/profile watch 看起来无 hurt，但实际可能只是低样本支撑；
+- 当前 sampler prototype 需要把 support rows/sessions 与 watch label 绑定，避免把低支持 group 当作调参入口。
+
+完成：
+
+- `scripts/summarize_v3_ccvc_count_policy_matrix.py`
+  - matrix row 新增 `candidate_group_results`；
+  - 对每个 selected candidate group 保留 rows/sessions、candidate rows/sessions、delta、hurt、directional error、below-rate 等指标。
+- `scripts/summarize_v3_shadow_sampler_prototype.py`
+  - watch candidate 透传 `candidate_group_results`；
+  - `component_statuses` 新增 `watch_label_metrics_by_seed`；
+  - `component_statuses` 新增 `unstable_watch_candidate_metrics`；
+  - summary 输出新增 `unstable_support=label@seed:rows/sessions`。
+- 测试覆盖：
+  - count policy matrix 的 per-group support 输出；
+  - stable watch label 的 support metrics；
+  - unstable watch label 的 per-seed support metrics；
+  - 任一 seed 缺 candidate 时，另一个 seed 的 support 仍只作为 unstable 证据。
+
+验证：
+
+```text
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_ccvc_count_policy_matrix.py scripts\summarize_v3_shadow_sampler_prototype.py tests\test_summarize_v3_ccvc_count_policy_matrix.py tests\test_summarize_v3_shadow_sampler_prototype.py
+
+pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_ccvc_count_policy_matrix.py tests/test_summarize_v3_shadow_sampler_prototype.py
+6 passed
+
+python scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --group-field evidence_profile_key --group-field map_id,evidence_profile_key --movement-policy all --movement-policy up_only --movement-policy down_only --top 10 --format summary
+status=blocked_seed_instability
+component=q6_count status=blocked_seed_instability
+unstable_support=q6_count|evidence_profile_key|down_only:q6_count:item+shape@seed0:226/81,q6_count|evidence_profile_key|down_only:q6_count:public:max_item_cells+item+shape@seed0:35/13,q6_count|evidence_profile_key|down_only:q6_count:tool:category+item+shape@seed0:105/37,q6_count|map_id,evidence_profile_key|down_only:q6_count:map_id=2501|evidence_profile_key=tool:category+item+shape@seed1:8/3
+```
+
+结论：
+
+- seed0 的 profile-level unstable candidates 有一定支持度，但 seed1 的 map/profile candidate 只有 8 rows / 3 sessions；
+- 该差异更像 seed/profile/support 问题，不是可直接进入 formal/value sampler 参数调优的稳定信号；
+- 下一步应把 q6_count prototype audit 加上更明确的 minimum support / session support gate，或转向 source parser/table acquisition 解释 profile/map 分歧。

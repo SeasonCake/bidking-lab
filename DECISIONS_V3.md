@@ -3677,3 +3677,27 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - q6_count 的 blocker 已从“是否有局部候选”收敛为“候选是否跨 posterior seed 与 holdout 分片稳定”；
 - per-seed watch label 是后续 sampler prototype、readiness gate 与跨窗口 handoff 的必要审计字段；
 - 该改动只增强 shadow audit 输出，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-179：CCVC prototype watch label 必须携带 support metrics，低支持 map/profile 候选不能用于调参
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_ccvc_count_policy_matrix.py` 必须在 matrix row 保留 `candidate_group_results`；
+- `summarize_v3_shadow_sampler_prototype.py` 必须在 component status 输出：
+  - `watch_label_metrics_by_seed`；
+  - `unstable_watch_candidate_metrics`；
+  - summary `unstable_support=label@seed:rows/sessions`。
+- watch label 的稳定性判断仍以 selected candidate group 跨 seed 一致为准；support metrics 是解释和后续 gate 输入，不得单独解锁 promotion；
+- 若 watch label 只在单 seed 出现，且 support rows/sessions 明显偏低，应归类为 source/profile/support blocker，而不是 formal/value sampler 参数入口；
+- 当前 q6_count evidence/profile smoke 的关键事实：
+  - seed0 `evidence_profile_key|down_only` unstable groups support 为 226/81、35/13、105/37；
+  - seed1 `map_id,evidence_profile_key|down_only` unstable group support 只有 8/3；
+  - overall 仍是 `blocked_seed_instability`，且仍有 holdout hurt alternatives。
+- 下一步可以设计 minimum support/session support gate，或用 source parser/table acquisition 解释 profile/map 分歧；不得因 seed1 low-support zero-hurt candidate 恢复调参。
+
+原因：
+
+- 仅输出 unstable label 仍不足以区分“高支持语义冲突”和“低支持偶然候选”；
+- seed1 的 8 rows / 3 sessions map/profile candidate 是典型过拟合风险；
+- support metrics 是 sampler prototype 和 readiness gate 的必要审计输入；
+- 该改动只增强 audit/reporting，不改变 candidate selection、posterior、formal path、live/UI、v2 fallback 或正式出价。
