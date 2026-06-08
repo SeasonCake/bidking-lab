@@ -10814,3 +10814,79 @@ python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_with_
 - 这说明继续堆 exclude label 很可能是在同一批 archive 上过拟合；
 - 下一步应转向 q6_value source/profile parser、evidence-profile semantics 或更高层 value guard，而不是继续扩大手工排除列表；
 - audit probe 已进入 readiness/workbench 后仍 blocked，不改变 promotion gate、live/UI 或正式出价。
+
+## 2026-06-08 checkpoint：q6_value source/profile residual audit
+
+背景：
+
+- q6_value 二阶 audit probe 已证明手工排除 `2510` 与 `public:total+item+shape` 后风险继续迁移；
+- 当前需要把该结论从人工阅读 summary 转成可复核 artifact；
+- 该步骤仍是 shadow/audit-only，不改变 live/UI/正式出价。
+
+完成：
+
+- 新增 `scripts/summarize_v3_shadow_sampler_value_source_profile_audit.py`
+  - 输入一个或多个 guarded trial JSON；
+  - 解析 q6_value `top_applied_hurt_metrics` 的 watch label；
+  - 按 `group_field`、movement policy、map_id、evidence_profile_key 聚合；
+  - 比较 baseline guarded trial 与 audit-probe guarded trial 的 top hurt label 变化；
+  - 输出 `blocked_risk_migration`、`source_profile_parser_required` 与下一步建议。
+- 新增 `tests/test_summarize_v3_shadow_sampler_value_source_profile_audit.py`
+  - 覆盖 `map_id,evidence_profile_key` 复合 label 解析；
+  - 覆盖 baseline/probe 之间 risk migration；
+  - 覆盖 source-profile parser required 判定。
+- `docs/PROJECT_STRUCTURE_V3.zh-CN.md`
+  - 加入 q6_value source/profile residual audit 脚本与测试索引。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_shadow_sampler_value_source_profile_audit.py tests\test_summarize_v3_shadow_sampler_value_source_profile_audit.py
+
+python -m pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_shadow_sampler_value_source_profile_audit.py tests/test_summarize_v3_shadow_sampler_guard_trial.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+25 passed
+```
+
+真实 source/profile audit：
+
+```text
+python scripts\summarize_v3_shadow_sampler_value_source_profile_audit.py --guarded-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_full_latest.json --guarded-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_q6_value_probe_latest.json --top 8 --format summary
+
+python scripts\summarize_v3_shadow_sampler_value_source_profile_audit.py --guarded-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_full_latest.json --guarded-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_q6_value_probe_latest.json --top 12 --format json > .tmp\codex\v3_shadow_sampler_q6_value_source_profile_audit_latest.json
+```
+
+关键结果：
+
+```text
+status=blocked_risk_migration
+component=q6_value
+runs=2
+migration=True
+next_action="stop adding manual q6_value excludes; design source/profile parser or higher-level value guard"
+
+baseline run:
+trial=blocked_guarded_shadow_trial
+component_status=blocked_seed_instability
+support_gate=pass
+map_ids=2405,2502,2509,2510
+profiles=public:max_item_cells+item+shape,public:total+item+shape,public:total+shape+layout
+
+probe run:
+trial=audit_probe_guarded_shadow_trial
+component_status=blocked_seed_instability
+support_gate=watch_low_support
+map_ids=2404,2405,2502,2504,2509
+profiles=public:max_item_cells+item+shape,public:total+shape,public:total+shape+layout
+
+introduced hurt labels include:
+q6_value|map_id|all:q6_value:2502
+q6_value|map_id|up_only:q6_value:2502
+q6_value|map_id|up_only:q6_value:2509
+```
+
+结论：
+
+- q6_value 残余风险横跨 map_id 与 evidence_profile_key，且二阶手工排除后继续迁移；
+- 继续追加 label exclude 不适合作为 promotion/readiness 方向；
+- 下一步应设计 q6_value source/profile parser 或更高层 value guard，并将该 audit artifact 接入 readiness/workbench；
+- live/UI/正式出价、v2 fallback 与 promotion gate 仍不改变。

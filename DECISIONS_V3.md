@@ -4006,3 +4006,34 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 该 probe 的价值是证明 q6_value 风险会迁移，提示需要 source/profile parser 或更高层 value guard；
 - 后续不应继续无限堆 label exclude，而应解释 q6_value profile/source 语义或引入可复核的 source parser；
 - 该决策不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-190：q6_value residual blocker 需要 source/profile parser 或高层 value guard，不再继续堆手工 exclude
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_shadow_sampler_value_source_profile_audit.py` 是 q6_value guarded trial 残余 blocker 的 source/profile 审计入口；
+- 该脚本必须消费 guarded trial JSON，解析 q6_value `top_applied_hurt_metrics`，并按以下维度汇总：
+  - `group_field`；
+  - movement policy；
+  - map_id；
+  - evidence_profile_key；
+  - low-support watch metrics；
+  - baseline/probe hurt label 迁移。
+- 若 baseline guarded trial 与 audit-probe guarded trial 之间出现新的 q6_value hurt labels，且 q6_value component 仍 blocked，则 audit status 必须为 `blocked_risk_migration`；
+- 当前真实 audit 结论：
+  - baseline guarded trial 风险覆盖 `2405/2502/2509/2510` 与多个 evidence profiles；
+  - 二阶 probe 后风险继续迁移到 `2502/2509` 等 map labels；
+  - probe run 的 support gate 退化为 `watch_low_support`；
+  - 因此 q6_value blocker 不是少量 label 可排除问题。
+- 后续不得把继续追加 `--extra-exclude-label` 当作 promotion path；
+- 下一步必须转向：
+  - q6_value source/profile parser；
+  - evidence-profile semantics 审计；
+  - 或更高层 value guard；
+  - 并把该 source/profile audit artifact 接入 readiness/workbench 后再复核。
+
+原因：
+
+- q6_value 风险在 map_id 与 evidence_profile_key 间迁移，说明手工 label 排除会在当前 archive 上过拟合；
+- source/profile parser 可以把问题转回可证伪机制，而不是无限扩展 blacklist；
+- 该结论仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
