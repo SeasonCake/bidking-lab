@@ -9512,3 +9512,58 @@ v3_practical_guard_delta_p90_extreme_over=-0.48
 - 该 evidence 只是 promotion review 输入，不会放宽 canonical readiness gates；
 - 当前 `blocked_gates=13` 不变，v3 promotion 仍 `not_ready`；
 - 下一步仍应继续 CSE/SCP bridge stability 和 prior/activity/table drift 收口，再恢复 shadow-only sampler 设计。
+
+## 2026-06-08 checkpoint：SCP guarded bridge seed stability fails
+
+背景：
+
+- readiness 当前显示 `settlement_count_guarded_bridge_holdout=watch`，但 `settlement_count_guarded_bridge_stability` 仍未评估；
+- 该 lane 若不做 seed stability，容易把 seed-0 的单次 watch 误读为可用桥；
+- 当前窗口职责只允许 audit/readiness/promotion research，不能把 bridge 接入正式出价或 sampler。
+
+验证：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-seed 0 --posterior-seed 1 --posterior-seed 7 --format summary
+overall_status=blocked_applied_hurt
+reasons=applied_hurts_present,non_watch_run,selected_group_drift,low_applied_rows
+runs=3
+watch_runs=2
+trials=64
+seeds=0,1,7
+required_groups=2506
+stable_groups=2506
+union_groups=2501,2506
+min_applied=9
+min_required=20
+signatures=2501:1,2506:2=1;2506:2=1;2506:3=1
+```
+
+分 seed：
+
+```text
+seed=0 status=watch selected=2506 selected_signature=2506:3 applied_rows=20 delta_mae=-6000.0 bridge_over=0.25 applied_hurts=-
+seed=1 status=blocked_holdout_hurt selected=2501,2506 selected_signature=2501:1,2506:2 applied_rows=62 delta_mae=378.95 bridge_over=0.580645 applied_hurts=2501
+seed=7 status=watch selected=2506 selected_signature=2506:2 applied_rows=9 delta_mae=-3333.333 bridge_over=0.333333 applied_hurts=-
+```
+
+Readiness 接入该 stability JSON 与 72h v3 practical guard brief 后：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+scp_guarded_status=watch
+scp_guarded_rows=20
+scp_guarded_delta=-6000.0
+scp_guarded_over=0.25
+scp_guarded_stability=blocked_applied_hurt
+gate=settlement_count_guarded_bridge_stability status=blocked reason="guarded settlement bridge is not stable across posterior seeds"
+```
+
+结论：
+
+- guarded SCP bridge 不是稳定候选；
+- seed 1 引入 `2501` 并出现 holdout hurt；
+- seed 7 虽仍选 `2506`，但 selected support 只有 9 applied rows，低于 20；
+- 该 lane 必须继续 audit-only，不得作为 shadow-only formal/value sampler 的输入假设，更不能进入 live/formal；
+- 下一步应回到 blocker 根因：为什么 count->cells/value bridge 在 2501/2506 support 与 over-risk 上不稳定，而不是调高/调低 bridge 参数。

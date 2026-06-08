@@ -7110,3 +7110,51 @@ formal_p90_cover=0.753442
 - `v3_practical_archive_live_guard_metrics=watch` 只表示 paired evidence 可见；
 - blocked gates 没减少，promotion/readiness gate 没放宽；
 - 下一步 blocker 仍是 prior/activity/table drift、CSE/SCP bridge stability、CCV/formal-value sampler holdout，而不是 live guard 指标本身。
+
+## O-v3-179：guarded SCP bridge 在 seeds 0/1/7 上表现为 selected drift + applied hurt + support gap
+
+2026-06-08 跑：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_scp_guarded_bridge_stability.py --posterior-seed 0 --posterior-seed 1 --posterior-seed 7 --format summary
+```
+
+整体：
+
+```text
+overall_status=blocked_applied_hurt
+status_reasons=applied_hurts_present,non_watch_run,selected_group_drift,low_applied_rows
+run_count=3
+watch_runs=2
+posterior_trials=[64]
+posterior_seeds=[0, 1, 7]
+required_selected_groups=['2506']
+stable_selected_groups=['2506']
+union_selected_groups=['2501', '2506']
+selected_signature_counts={'2501:1,2506:2': 1, '2506:2': 1, '2506:3': 1}
+hurt_group_counts={'2501': 1}
+min_applied_rows=9
+min_applied_rows_required=20
+```
+
+分 seed：
+
+```text
+seed=0 status=watch selected=2506 folds=3 applied_rows=20 delta_mae=-6000.0 bridge_over=0.25
+seed=1 status=blocked_holdout_hurt selected=2501,2506 folds=2501:1/2506:2 applied_rows=62 delta_mae=378.95 bridge_over=0.580645 applied_hurts=2501
+seed=7 status=watch selected=2506 folds=2 applied_rows=9 delta_mae=-3333.333 bridge_over=0.333333
+```
+
+instability summary：
+
+```text
+2501: blocked_train_holdout_instability, train_guard_watch_but_holdout_hurt
+2506: blocked_support_depth_gap, min_applied_rows=9, required=20, gap=11
+```
+
+解读：
+
+- `2506` 是 stable group，但 support depth 不够；
+- `2501` 是 seed-dependent drift group，并且 hurt；
+- 该 lane 不是“多采样就能直接升 formal”的状态，至少要先解释 selected drift 与 over-risk；
+- 当前最合理处理是继续 audit-only，并从 source/capacity/table semantics 和 group support 分片查原因。

@@ -3389,3 +3389,26 @@ applied_hurts=2502
 - 当前 v3 practical guard 的 paired rows 显示 MAE/P50 不变、P90 over-risk 下降、P90 coverage 同时下降；
 - 这属于实战稳定性/风险偏好 tradeoff，不是结构化模型质量提升；
 - readiness 需要记录这类 evidence，但 canonical promotion gates 仍以 archive shadow lanes、holdout、stability、activity/table drift 和 sampler safety 为准。
+
+## D-v3-166：guarded SCP bridge 未通过 seed stability，继续 audit-only
+
+2026-06-08 起，当前决策：
+
+- `settlement_count_guarded_bridge_holdout` 的 seed-0 `watch` 不得作为 sampler/promotion 支持；
+- 以 seeds `0/1/7`、64 trials 的 stability matrix 为当前证据，`settlement_count_guarded_bridge_stability` 判定为 blocked；
+- guarded SCP bridge 不得进入：
+  - formal/live 出价；
+  - shadow-only formal/value sampler 的默认输入假设；
+  - v3 promotion readiness 的 pass 条件。
+- 后续如果继续研究，只能作为 audit-only bridge lane，必须先解决：
+  - selected group drift；
+  - applied hurt；
+  - selected support depth 不足；
+  - bridge over-risk。
+
+原因：
+
+- 三 seed matrix 显示 `overall_status=blocked_applied_hurt`；
+- seed 1 选出 `2501+2506`，`2501` 出现 applied hurt；
+- `2506` 虽是 stable group，但 seed 1/7 的 applied rows 最小只有 9，低于 20；
+- 当前 evidence 说明该 bridge 对 posterior seed 和 group selection 敏感，不能作为实装依据。
