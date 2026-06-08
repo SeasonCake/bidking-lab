@@ -49,6 +49,8 @@ from summarize_v3_ccvc_evidence_contribution import (  # noqa: E402
 
 DEFAULT_COMPONENTS = ("q6_count", "q6_cells", "q6_value")
 SHADOW_SAFETY_PREFIXES = ("v3_ccvc_", "v3_fv_", "v3_scp_", "v3_cse_")
+DEFAULT_MIN_WATCH_SUPPORT_ROWS = 20
+DEFAULT_MIN_WATCH_SUPPORT_SESSIONS = 8
 
 
 def _bool(value: Any) -> bool:
@@ -61,6 +63,13 @@ def _bool(value: Any) -> bool:
 
 def _counter_dict(values: Iterable[Any]) -> dict[str, int]:
     return dict(sorted(Counter(str(value) for value in values).items()))
+
+
+def _int_value(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _shadow_safety_counts(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
@@ -516,11 +525,91 @@ def _unstable_watch_metrics(
     return out
 
 
+def _support_fail_reasons(
+    row: Mapping[str, Any],
+    *,
+    min_rows: int,
+    min_sessions: int,
+) -> list[str]:
+    reasons: list[str] = []
+    if int(min_rows) > 0 and _int_value(row.get("support_rows")) < int(min_rows):
+        reasons.append("rows")
+    if int(min_sessions) > 0 and _int_value(row.get("support_sessions")) < int(
+        min_sessions
+    ):
+        reasons.append("sessions")
+    return reasons
+
+
+def _watch_support_gate(
+    metrics_by_seed: Iterable[Mapping[str, Any]],
+    *,
+    stable: Iterable[str],
+    min_rows: int,
+    min_sessions: int,
+) -> dict[str, Any]:
+    stable_set = set(stable)
+    low_support: list[dict[str, Any]] = []
+    stable_low_support: list[dict[str, Any]] = []
+    metric_count = 0
+    for row in metrics_by_seed:
+        if not isinstance(row, Mapping):
+            continue
+        for item in row.get("watch_label_metrics") or ():
+            if not isinstance(item, Mapping):
+                continue
+            metric_count += 1
+            reasons = _support_fail_reasons(
+                item,
+                min_rows=min_rows,
+                min_sessions=min_sessions,
+            )
+            if not reasons:
+                continue
+            enriched = dict(item)
+            enriched["support_fail_reasons"] = reasons
+            enriched["min_support_rows"] = int(min_rows)
+            enriched["min_support_sessions"] = int(min_sessions)
+            low_support.append(enriched)
+            if str(item.get("watch_label") or "") in stable_set:
+                stable_low_support.append(enriched)
+    low_support.sort(
+        key=lambda item: (
+            str(item.get("watch_label") or ""),
+            str(item.get("posterior_seed") or ""),
+        )
+    )
+    stable_low_support.sort(
+        key=lambda item: (
+            str(item.get("watch_label") or ""),
+            str(item.get("posterior_seed") or ""),
+        )
+    )
+    if stable_low_support:
+        status = "blocked_low_support"
+    elif low_support:
+        status = "watch_low_support"
+    elif metric_count <= 0:
+        status = "no_watch"
+    else:
+        status = "pass"
+    return {
+        "status": status,
+        "min_support_rows": int(min_rows),
+        "min_support_sessions": int(min_sessions),
+        "watch_metric_count": metric_count,
+        "low_support_watch_metrics": low_support,
+        "stable_low_support_watch_metrics": stable_low_support,
+    }
+
+
 def _component_next_action(status: str, component: str) -> str:
     if status == "watch_shadow_candidate":
         return "keep as diagnostic candidate; require readiness and live replay before promotion"
     if status == "watch_with_hurt_alternatives":
         return "narrow candidate groups and exclude hurt alternatives before more tuning"
+    if status == "blocked_low_support":
+        return "do not tune; require minimum support on every seed before retesting"
     if status == "blocked_seed_instability":
         return "do not tune; collect support or add source/evidence filters before retesting"
     if status == "blocked_holdout_hurt" and component == "q6_cells":
@@ -532,7 +621,12 @@ def _component_next_action(status: str, component: str) -> str:
     return "keep inactive until movement/support appears"
 
 
-def _component_statuses(seed_results: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _component_statuses(
+    seed_results: Iterable[Mapping[str, Any]],
+    *,
+    min_watch_support_rows: int,
+    min_watch_support_sessions: int,
+) -> list[dict[str, Any]]:
     results = tuple(seed_results)
     statuses = {str(row.get("status") or "") for row in results}
     out: list[dict[str, Any]] = []
@@ -542,12 +636,20 @@ def _component_statuses(seed_results: Iterable[Mapping[str, Any]]) -> list[dict[
         has_watch = any(_watch_label_set(result, component=component) for result in results)
         labels_by_seed = _watch_labels_by_seed(results, component=component)
         metrics_by_seed = _watch_label_metrics_by_seed(results, component=component)
+        support_gate = _watch_support_gate(
+            metrics_by_seed,
+            stable=stable,
+            min_rows=min_watch_support_rows,
+            min_sessions=min_watch_support_sessions,
+        )
         if "blocked_shadow_affects_bid" in statuses:
             status = "blocked_shadow_affects_bid"
         elif "blocked_shadow_active" in statuses:
             status = "blocked_shadow_active"
         elif len(results) > 1 and has_watch and not stable:
             status = "blocked_seed_instability"
+        elif stable and support_gate["stable_low_support_watch_metrics"]:
+            status = "blocked_low_support"
         elif stable and hurts:
             status = "watch_with_hurt_alternatives"
         elif stable:
@@ -571,6 +673,7 @@ def _component_statuses(seed_results: Iterable[Mapping[str, Any]]) -> list[dict[
                     metrics_by_seed,
                     stable=stable,
                 ),
+                "support_gate": support_gate,
                 "applied_hurts": hurts,
                 "matrix_status_counts": _component_matrix_status_counts(
                     results,
@@ -585,6 +688,8 @@ def _component_statuses(seed_results: Iterable[Mapping[str, Any]]) -> list[dict[
 def _overall_status(
     seed_results: Iterable[Mapping[str, Any]],
     stable_labels: Iterable[str],
+    *,
+    component_statuses: Iterable[Mapping[str, Any]],
 ) -> str:
     results = tuple(seed_results)
     statuses = {str(row.get("status") or "") for row in results}
@@ -594,6 +699,11 @@ def _overall_status(
         return "blocked_shadow_active"
     if "blocked_no_component_likelihood" in statuses:
         return "blocked_no_component_likelihood"
+    if any(
+        str(row.get("status") or "") == "blocked_low_support"
+        for row in component_statuses
+    ):
+        return "blocked_low_support"
     if len(results) > 1 and not tuple(stable_labels):
         return "blocked_seed_instability"
     if any(status.startswith("watch") for status in statuses):
@@ -610,9 +720,16 @@ def summarize_prototype_runs(
     *,
     posterior_trials: int,
     component_move_cells: bool,
+    min_watch_support_rows: int = DEFAULT_MIN_WATCH_SUPPORT_ROWS,
+    min_watch_support_sessions: int = DEFAULT_MIN_WATCH_SUPPORT_SESSIONS,
 ) -> dict[str, Any]:
     results = tuple(seed_results)
     stable_labels = _stable_watch_labels(results)
+    component_statuses = _component_statuses(
+        results,
+        min_watch_support_rows=min_watch_support_rows,
+        min_watch_support_sessions=min_watch_support_sessions,
+    )
     return {
         "interface": "v3_ccvc_evidence_driven_count_cell_value_sampler",
         "shadow_only": True,
@@ -621,11 +738,17 @@ def summarize_prototype_runs(
         "can_promote": False,
         "posterior_trials": int(posterior_trials),
         "component_move_cells": bool(component_move_cells),
+        "min_watch_support_rows": int(min_watch_support_rows),
+        "min_watch_support_sessions": int(min_watch_support_sessions),
         "posterior_seeds": [row.get("posterior_seed") for row in results],
-        "status": _overall_status(results, stable_labels),
+        "status": _overall_status(
+            results,
+            stable_labels,
+            component_statuses=component_statuses,
+        ),
         "seed_status_counts": _counter_dict(row.get("status") for row in results),
         "stable_watch_candidate_labels": stable_labels,
-        "component_statuses": _component_statuses(results),
+        "component_statuses": component_statuses,
         "required_holdouts": [
             "archive",
             "session",
@@ -665,6 +788,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
         )
     )
     for row in result.get("component_statuses") or ():
+        support_gate = row.get("support_gate") or {}
         unstable_support = [
             (
                 f"{item.get('watch_label')}@seed{item.get('posterior_seed')}:"
@@ -672,16 +796,25 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
             )
             for item in (row.get("unstable_watch_candidate_metrics") or ())[:top]
         ]
+        low_support = [
+            (
+                f"{item.get('watch_label')}@seed{item.get('posterior_seed')}:"
+                f"{item.get('support_rows')}/{item.get('support_sessions')}"
+            )
+            for item in (support_gate.get("low_support_watch_metrics") or ())[:top]
+        ]
         print(
             " ".join(
                 (
                     f"component={row.get('component')}",
                     f"status={row.get('status')}",
+                    f"support_gate={support_gate.get('status')}",
                     "stable_watch="
                     + ",".join(row.get("stable_watch_candidate_labels") or ()),
                     "unstable_watch="
                     + ",".join((row.get("unstable_watch_candidate_labels") or ())[:top]),
                     "unstable_support=" + ",".join(unstable_support),
+                    "low_support=" + ",".join(low_support),
                     "applied_hurts="
                     + ",".join((row.get("applied_hurts") or ())[:top]),
                     f"next_action=\"{row.get('next_action')}\"",
@@ -785,6 +918,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Keep q6 cells at baseline when emitting v3_ccvc_ fields.",
     )
+    parser.add_argument(
+        "--min-watch-support-rows",
+        type=int,
+        default=DEFAULT_MIN_WATCH_SUPPORT_ROWS,
+        help="Minimum candidate rows required for a watch label support gate.",
+    )
+    parser.add_argument(
+        "--min-watch-support-sessions",
+        type=int,
+        default=DEFAULT_MIN_WATCH_SUPPORT_SESSIONS,
+        help="Minimum candidate sessions required for a watch label support gate.",
+    )
     parser.add_argument("--top", type=int, default=8)
     parser.add_argument("--format", choices=("summary", "json"), default="summary")
     args = parser.parse_args(argv)
@@ -833,6 +978,8 @@ def main(argv: list[str] | None = None) -> int:
             seed_results,
             posterior_trials=args.posterior_trials,
             component_move_cells=not args.ccv_component_freeze_cells,
+            min_watch_support_rows=args.min_watch_support_rows,
+            min_watch_support_sessions=args.min_watch_support_sessions,
         ),
     }
     if args.format == "json":

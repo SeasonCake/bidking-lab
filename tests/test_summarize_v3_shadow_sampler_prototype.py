@@ -145,6 +145,8 @@ def test_shadow_sampler_prototype_marks_seed_instability() -> None:
         (seed0, dict(seed0, posterior_seed=1)),
         posterior_trials=64,
         component_move_cells=True,
+        min_watch_support_rows=2,
+        min_watch_support_sessions=2,
     )
 
     assert stable["status"] == "watch_shadow_candidate"
@@ -154,6 +156,7 @@ def test_shadow_sampler_prototype_marks_seed_instability() -> None:
     stable_component = stable["component_statuses"][0]
     assert stable_component["component"] == "q6_count"
     assert stable_component["status"] == "watch_shadow_candidate"
+    assert stable_component["support_gate"]["status"] == "pass"
     assert stable_component["stable_watch_candidate_labels"] == [
         "q6_count|map_id|all:q6_count:2502"
     ]
@@ -193,6 +196,8 @@ def test_shadow_sampler_prototype_marks_seed_instability() -> None:
         (seed0, seed1),
         posterior_trials=64,
         component_move_cells=True,
+        min_watch_support_rows=2,
+        min_watch_support_sessions=2,
     )
 
     assert result["stable_watch_candidate_labels"] == []
@@ -200,6 +205,7 @@ def test_shadow_sampler_prototype_marks_seed_instability() -> None:
     unstable_component = result["component_statuses"][0]
     assert unstable_component["component"] == "q6_count"
     assert unstable_component["status"] == "blocked_seed_instability"
+    assert unstable_component["support_gate"]["status"] == "pass"
     assert unstable_component["stable_watch_candidate_labels"] == []
     assert unstable_component["unstable_watch_candidate_labels"] == [
         "q6_count|map_id|all:q6_count:2502",
@@ -251,6 +257,8 @@ def test_shadow_sampler_prototype_requires_candidate_on_every_seed() -> None:
         (seed0, seed1),
         posterior_trials=64,
         component_move_cells=True,
+        min_watch_support_rows=2,
+        min_watch_support_sessions=2,
     )
 
     assert result["stable_watch_candidate_labels"] == []
@@ -280,4 +288,46 @@ def test_shadow_sampler_prototype_requires_candidate_on_every_seed() -> None:
         for row in component["unstable_watch_candidate_metrics"]
     ] == [
         (0, "q6_count|map_id|all:q6_count:2502", 8, 8),
+    ]
+
+
+def test_shadow_sampler_prototype_blocks_stable_low_support() -> None:
+    module = _load_module()
+    seed0 = module.summarize_seed_run(
+        _watch_rows(),
+        posterior_seed=0,
+        components=("q6_count",),
+        group_fields=("map_id",),
+        movement_policies=("all",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+    )
+
+    result = module.summarize_prototype_runs(
+        (seed0, dict(seed0, posterior_seed=1)),
+        posterior_trials=64,
+        component_move_cells=True,
+        min_watch_support_rows=20,
+        min_watch_support_sessions=2,
+    )
+
+    assert result["status"] == "blocked_low_support"
+    component = result["component_statuses"][0]
+    assert component["status"] == "blocked_low_support"
+    assert component["support_gate"]["status"] == "blocked_low_support"
+    assert component["support_gate"]["min_support_rows"] == 20
+    assert [
+        (
+            row["posterior_seed"],
+            row["watch_label"],
+            row["support_rows"],
+            row["support_sessions"],
+            row["support_fail_reasons"],
+        )
+        for row in component["support_gate"]["stable_low_support_watch_metrics"]
+    ] == [
+        (0, "q6_count|map_id|all:q6_count:2502", 8, 8, ["rows"]),
+        (1, "q6_count|map_id|all:q6_count:2502", 8, 8, ["rows"]),
     ]

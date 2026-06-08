@@ -10225,3 +10225,47 @@ unstable_support=q6_count|evidence_profile_key|down_only:q6_count:item+shape@see
 - seed0 的 profile-level unstable candidates 有一定支持度，但 seed1 的 map/profile candidate 只有 8 rows / 3 sessions；
 - 该差异更像 seed/profile/support 问题，不是可直接进入 formal/value sampler 参数调优的稳定信号；
 - 下一步应把 q6_count prototype audit 加上更明确的 minimum support / session support gate，或转向 source parser/table acquisition 解释 profile/map 分歧。
+
+## 2026-06-08 checkpoint：CCVC prototype support gate added
+
+背景：
+
+- 上一轮已把 watch label 的 rows/sessions support 暴露出来；
+- 但 prototype 还没有机器可读 gate 来阻断“稳定但低支持”的 watch label；
+- 当前 q6_count evidence/profile smoke 也需要明确标出 seed1 的 8/3 map/profile candidate 是 low-support，而不是可调参入口。
+
+完成：
+
+- `scripts/summarize_v3_shadow_sampler_prototype.py`
+  - 新增默认 `min_watch_support_rows=20`、`min_watch_support_sessions=8`；
+  - CLI 新增 `--min-watch-support-rows` 与 `--min-watch-support-sessions`；
+  - `component_statuses[*].support_gate` 输出：
+    - `status=pass|no_watch|watch_low_support|blocked_low_support`；
+    - threshold；
+    - low-support watch metrics；
+    - stable low-support watch metrics。
+  - 若 stable watch label 低于 support gate，component/overall status 变为 `blocked_low_support`；
+  - 若 label 本身不稳定，overall 仍保持 `blocked_seed_instability`，但 component support gate 会输出 `watch_low_support`。
+- `tests/test_summarize_v3_shadow_sampler_prototype.py`
+  - 原有小样本测试显式使用低 support threshold；
+  - 新增 stable low-support blocker 测试。
+
+验证：
+
+```text
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_shadow_sampler_prototype.py tests\test_summarize_v3_shadow_sampler_prototype.py
+
+pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_shadow_sampler_prototype.py tests/test_summarize_v3_ccvc_count_policy_matrix.py
+7 passed
+
+python scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --group-field evidence_profile_key --group-field map_id,evidence_profile_key --movement-policy all --movement-policy up_only --movement-policy down_only --top 10 --format summary
+status=blocked_seed_instability
+component=q6_count status=blocked_seed_instability support_gate=watch_low_support
+low_support=q6_count|map_id,evidence_profile_key|down_only:q6_count:map_id=2501|evidence_profile_key=tool:category+item+shape@seed1:8/3
+```
+
+结论：
+
+- 当前真实 archive 下，q6_count blocker 仍以 seed instability 为主；
+- support gate 明确把 seed1 的 8 rows / 3 sessions zero-hurt candidate 标为 low-support；
+- 这进一步支持“不恢复 formal/value sampler 调参”的结论；下一步更适合查 source/profile/map 分歧，或在 prototype/readiness 里继续扩展 support-aware holdout contract。

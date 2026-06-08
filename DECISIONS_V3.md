@@ -3701,3 +3701,27 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - seed1 的 8 rows / 3 sessions map/profile candidate 是典型过拟合风险；
 - support metrics 是 sampler prototype 和 readiness gate 的必要审计输入；
 - 该改动只增强 audit/reporting，不改变 candidate selection、posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-180：CCVC prototype 必须有 support gate，稳定但低支持的 watch label 仍然 blocked
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_shadow_sampler_prototype.py` 必须提供 watch support gate；
+- 默认 gate 为：
+  - `min_watch_support_rows=20`；
+  - `min_watch_support_sessions=8`。
+- CLI 必须允许通过 `--min-watch-support-rows` 与 `--min-watch-support-sessions` 显式覆盖；
+- `component_statuses[*].support_gate` 必须输出 gate status、threshold、low-support watch metrics 与 stable low-support watch metrics；
+- 若 watch label 跨 seed 稳定但任一 seed 的 support 未过 gate，component/overall status 必须是 `blocked_low_support`，不能是 `watch_shadow_candidate`；
+- 若 watch label 本身跨 seed 不稳定，overall 仍保持 `blocked_seed_instability`，但 component support gate 必须暴露 `watch_low_support`；
+- 当前 q6_count evidence/profile smoke 的 gate 结果：
+  - overall 仍是 `blocked_seed_instability`；
+  - q6_count component `support_gate=watch_low_support`；
+  - seed1 `map_id=2501|evidence_profile_key=tool:category+item+shape` 只有 8 rows / 3 sessions，被标为 low-support。
+- 因此当前仍不能恢复 formal/value sampler 参数调优，不能把 seed1 low-support zero-hurt candidate 作为 promotion 支持。
+
+原因：
+
+- promotion hardening 需要防止“低支持且碰巧无 hurt”的 group 被解释为可调参方向；
+- support gate 把 seed instability 与低支持风险分开表达，便于后续 source/profile/map 分歧追查；
+- 该 gate 只作用于 shadow prototype audit/reporting，不改变 holdout candidate selection、posterior、formal path、live/UI、v2 fallback 或正式出价。
