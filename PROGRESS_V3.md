@@ -8959,18 +8959,18 @@ pytest tests/test_runtime_snapshot.py tests/test_live_overlay.py -q
 - `summarize_v3_activity_mapping_likelihood.py --format summary` 对当前活动样本显示 `minus10` 胜出更多：
   - `minus10: 11`；
   - `minus20: 4`。
-- 因此活动 `2521-2530` 优先映射到 `2511-2520`；如果本地没有对应 `251x`，再尝试 `2501-2510`。
-- `4521-4530` 同理优先映射到 `4511-4520`，再尝试 `4501-4510`。
+- 但 0607 实战 valuation replay 显示 `252x->251x` 在 Gabriela 2521/2524 明显过高；live fallback 改为优先 `252x->250x`，再尝试 `251x`。
+- `4521-4530` 同理优先映射到 `4501-4510`，再尝试 `4511-4520`。
 
 修复：
 
 - live artifact 构建阶段新增 temporary activity alias：
   - 原始 `map_id` 保留为新图，例如 `2527`；
-  - 推理 `model_map_id` 使用旧沉船表，例如 `2517`；
-  - `map_alias.mode=activity_shipwreck_minus10`；
+  - 推理 `model_map_id` 使用旧沉船表，例如 `2507`；
+  - `map_alias.mode=activity_shipwreck_minus20`；
   - `inference_input_constraints.map_alias` 记录 source/model/reason。
 - UI contract/overlay “输入约束”行显示：
-  - `活动图 2527->旧沉船 2517`。
+  - `活动图 2527->旧沉船 2507`。
 - 直接调用 v3 shadow 传入未知图仍保持 `prior_unavailable`，避免审计口径把别名隐式当成正式表。
 
 边界：
@@ -8990,4 +8990,52 @@ pytest tests/test_live_monitor.py::test_build_monitor_artifact_does_not_crash_on
 
 pytest tests/test_live_monitor.py tests/test_runtime_snapshot.py tests/test_live_overlay.py tests/test_live_status.py -q
 98 passed
+```
+
+## 2026-06-08 checkpoint：v3 数值下界与活动沉船别名修正
+
+实战反馈：
+
+- `极品估价` 后 UI 价格看起来没有按金色总价变化。
+- 活动 Gabriela 2521/2524 在只看到很小仓位时出现 100w+ 估价。
+
+诊断：
+
+- `极品估价` 为 `action_id=100125`，语义是 `q5_value_sum`；live/v2 已能读到这个 exact bucket value。
+- v3 feasible summary 之前只把 item-anchor value floor 计入 `known_value_floor`，没有把 hard numeric `bucket.q5.value` / `bucket.q6.value` 的 exact value 计入全局价值下界。
+- 这导致 v3 practical 可能给出低于已知 q5 总价的 P50/P90。
+- 活动图别名 `252x->251x` 虽有轻微 likelihood 优势，但 valuation replay 明显过高：
+  - 2521 R1 `minus10` P50 `1,248,068`，`minus20` P50 `598,804`，truth `462,218`；
+  - 2524 R1 `minus10` P50 `1,074,637`，`minus20` P50 `631,348`，truth `457,128`。
+
+修复：
+
+- v3 summary 将 bucket value exact 计入 `known_value_floor`。
+- live activity shipwreck alias 改为优先 `252x->250x` / `452x->450x`，再尝试 `251x` / `451x`。
+
+真实复算：
+
+```text
+Aisha 2406 R4 after 极品估价:
+before: v3 known_floor=4,934, P50=114,279, P90=436,320
+after:  v3 known_floor=157,331, P50=157,331, P90=479,372
+truth=471,410; q5_value=152,397
+```
+
+72h archive brief 复跑：
+
+```text
+before this checkpoint:
+decision_mae=210,846.9
+median_abs_p50_err=162,814
+p90_extreme_over_rate=0.34
+v3_practical_p90_coverage=0.73
+v3_practical_p90_extreme_over_rate=0.49
+
+after:
+decision_mae=167,907.4
+median_abs_p50_err=126,963
+p90_extreme_over_rate=0.27
+v3_practical_p90_coverage=0.76
+v3_practical_p90_extreme_over_rate=0.37
 ```

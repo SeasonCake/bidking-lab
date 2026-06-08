@@ -359,8 +359,8 @@ def _tables() -> MonitorTables:
 def _activity_alias_tables() -> MonitorTables:
     tables = _tables()
     maps = dict(tables.maps)
-    maps[2517] = BidMap(
-        map_id=2517,
+    maps[2507] = BidMap(
+        map_id=2507,
         name="activity_alias_shipwreck",
         description="",
         category=101,
@@ -649,23 +649,23 @@ def test_build_monitor_artifact_uses_activity_shipwreck_alias() -> None:
     )
 
     assert artifact["map_id"] == 2527
-    assert artifact["model_map_id"] == 2517
-    assert artifact["map_alias_mode"] == "activity_shipwreck_minus10"
+    assert artifact["model_map_id"] == 2507
+    assert artifact["map_alias_mode"] == "activity_shipwreck_minus20"
     assert artifact["map_alias"]["source_map_id"] == 2527
-    assert artifact["map_alias"]["model_map_id"] == 2517
+    assert artifact["map_alias"]["model_map_id"] == 2507
     assert "unsupported_map" not in artifact["formal_mode_reason"]
     assert artifact["inference_input_constraints"]["source_map_id"] == 2527
-    assert artifact["inference_input_constraints"]["model_map_id"] == 2517
+    assert artifact["inference_input_constraints"]["model_map_id"] == 2507
     assert artifact["inference_input_constraints"]["map_alias"]["mode"] == (
-        "activity_shipwreck_minus10"
+        "activity_shipwreck_minus20"
     )
     assert artifact["bid_rows"]
 
     contract = artifact["ui_contract"]
     assert contract["context"]["map_id"] == 2527
-    assert contract["context"]["model_map_id"] == 2517
+    assert contract["context"]["model_map_id"] == 2507
     assert contract["constraints"]["summary"]["map_alias_label"] == (
-        "活动图 2527->旧沉船 2517"
+        "活动图 2527->旧沉船 2507"
     )
 
 

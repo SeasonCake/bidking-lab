@@ -3195,20 +3195,20 @@ applied_hurts=2502
 
 - 一般未知地图仍按 D-v3-157 输出 `unsupported_map`，不生成估值。
 - 对可对齐到旧沉船的活动地图，live 可以使用 explicit temporary alias：
-  - `2521-2530 -> 2511-2520` 优先；
-  - 如对应 `251x` 本地缺表，再尝试 `2501-2510`；
-  - `4521-4530 -> 4511-4520` 优先；
-  - 如对应 `451x` 本地缺表，再尝试 `4501-4510`。
+  - `2521-2530 -> 2501-2510` 优先；
+  - 如对应 `250x` 本地缺表，再尝试 `2511-2520`；
+  - `4521-4530 -> 4501-4510` 优先；
+  - 如对应 `450x` 本地缺表，再尝试 `4511-4520`。
 - artifact 必须保留原始 `map_id`，并新增：
   - `model_map_id`；
   - `map_alias`；
   - `map_alias_mode`；
   - `inference_input_constraints.map_alias`。
-- UI 必须显示映射标签，例如 `活动图 2527->旧沉船 2517`。
+- UI 必须显示映射标签，例如 `活动图 2527->旧沉船 2507`。
 - 该 alias 只用于 live artifact 构建；直接 v3 shadow/audit 传入未知 map_id 时仍应报告 prior unavailable。
 
 原因：
 
-- 当前活动样本 likelihood 对比显示 `minus10` 更符合现有观测，且用户实战需要在活动期间有可用参考。
+- 当前活动样本 likelihood 对比略偏 `minus10`，但 0607 实战 valuation replay 显示 `minus10` 对 Gabriela 2521/2524 明显过高，`minus20` 更适合作为 live fallback。
 - 直接空白会降低实战价值；但把别名藏在内部又会污染后续调参和审计。
 - 显式记录 source/model map 可以让局后复盘区分“真实新表估值”和“借旧沉船表估值”。

@@ -6775,7 +6775,40 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 对应修复：
 
 - live artifact 现在可以对缺表 `2521-2530` 使用旧沉船模型图：
-  - 优先 `252x -> 251x`；
-  - 备选 `252x -> 250x`。
+  - 优先 `252x -> 250x`；
+  - 备选 `252x -> 251x`。
 - UI “输入约束”会显示 `活动图 source->旧沉船 model`。
 - 该路径不改变原始 `map_id`，也不把缺表活动图伪装成真实本地表。
+
+## O-v3-170：0607 实战显示活动沉船 minus10 likelihood 优势不等于估值优势
+
+2026-06-08 复核 0607 Gabriela 活动图：
+
+- 2521 R1：
+  - `2521->2511`：P50 `1,248,068`，P90 `2,083,305`；
+  - `2521->2501`：P50 `598,804`，P90 `1,049,256`；
+  - truth `462,218`。
+- 2524 R1：
+  - `2524->2514`：P50 `1,074,637`，P90 `1,707,652`；
+  - `2524->2504`：P50 `631,348`，P90 `770,700`；
+  - truth `457,128`。
+
+解读：
+
+- 之前 `minus10` 的 item/quality likelihood 略优，只说明局部 item 分布更像 `251x`。
+- 对 live 出价更关键的是 valuation；当前实战样本里 `251x` prior 明显过高。
+- 因此活动沉船 live fallback 改为优先 `minus20`，直到拿到真实 activity Drop/overlay 表。
+
+## O-v3-171：极品估价进入 v2 但此前 v3 practical 没把 q5 exact value 计入已知价值下界
+
+2026-06-08 复核 Aisha 2406：
+
+- `action_id=100125` 是 `极品估价`，result `152,397`，语义为 q5 value sum。
+- final q5 value 也为 `152,397`，说明该道具读数准确。
+- v2 在 R4 后确实受到影响：R3 `457,346 / 609,898`，R4 `286,586 / 296,486`。
+- v3 practical 修复前 `known_floor=4,934`，P50 `114,279`，低于已知 q5 总价，说明 v3 summary 漏计 hard numeric bucket value exact。
+
+对应修复：
+
+- `compile_feasible_summary()` 现在将 bucket value exact 计入 `known_value_floor`。
+- 同一窗口修复后 `known_floor=157,331`，P50 `157,331`，P90 `479,372`。

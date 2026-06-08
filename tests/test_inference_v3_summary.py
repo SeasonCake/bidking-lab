@@ -122,3 +122,20 @@ def test_v3_feasible_summary_reports_floor_exact_conflicts() -> None:
 
     assert report.feasible is False
     assert report.conflicts == ("q6.count_floor_gt_exact",)
+
+
+def test_v3_feasible_summary_counts_bucket_value_exact_as_known_floor() -> None:
+    constraints = ConstraintSet(
+        numeric={
+            "bucket.q5.value": _numeric("bucket.q5.value", 152_397),
+        },
+    )
+
+    report = compile_feasible_summary(constraints)
+    q5 = report.bucket(5)
+
+    assert report.feasible is True
+    assert report.known_value_floor == 152_397
+    assert q5 is not None
+    assert q5.value_exact == 152_397
+    assert q5.value_floor == 0

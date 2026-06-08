@@ -1059,17 +1059,17 @@ def test_ui_contract_uses_exact_input_totals_when_posterior_range_is_missing() -
 
 def test_ui_contract_exposes_activity_map_alias() -> None:
     alias = {
-        "mode": "activity_shipwreck_minus10",
+        "mode": "activity_shipwreck_minus20",
         "source_map_id": 2527,
-        "model_map_id": 2517,
+        "model_map_id": 2507,
         "family": "shipwreck",
     }
     contract = ui_contract_from_artifact(
         {
             "map_id": 2527,
-            "model_map_id": 2517,
+            "model_map_id": 2507,
             "map_alias": alias,
-            "map_alias_mode": "activity_shipwreck_minus10",
+            "map_alias_mode": "activity_shipwreck_minus20",
             "inference_input_constraints": {
                 "mode": "pre_settlement",
                 "map_alias": alias,
@@ -1077,12 +1077,12 @@ def test_ui_contract_exposes_activity_map_alias() -> None:
         }
     )
 
-    assert contract["source"]["model_map_id"] == 2517
-    assert contract["source"]["map_alias_mode"] == "activity_shipwreck_minus10"
+    assert contract["source"]["model_map_id"] == 2507
+    assert contract["source"]["map_alias_mode"] == "activity_shipwreck_minus20"
     assert contract["context"]["map_id"] == 2527
-    assert contract["context"]["model_map_id"] == 2517
+    assert contract["context"]["model_map_id"] == 2507
     assert contract["constraints"]["summary"]["map_alias_label"] == (
-        "活动图 2527->旧沉船 2517"
+        "活动图 2527->旧沉船 2507"
     )
 
 

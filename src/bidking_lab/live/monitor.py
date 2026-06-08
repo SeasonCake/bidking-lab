@@ -255,11 +255,11 @@ def _activity_shipwreck_alias(
         return {}
     candidates: list[tuple[str, int]] = []
     if 2521 <= source_map_id <= 2530:
-        candidates.append(("activity_shipwreck_minus10", source_map_id - 10))
         candidates.append(("activity_shipwreck_minus20", source_map_id - 20))
+        candidates.append(("activity_shipwreck_minus10", source_map_id - 10))
     elif 4521 <= source_map_id <= 4530:
-        candidates.append(("activity_shipwreck_45xx_minus10", source_map_id - 10))
         candidates.append(("activity_shipwreck_45xx_minus20", source_map_id - 20))
+        candidates.append(("activity_shipwreck_45xx_minus10", source_map_id - 10))
     for mode, model_map_id in candidates:
         if model_map_id in maps and _map_family_from_id(model_map_id) == "shipwreck":
             return {

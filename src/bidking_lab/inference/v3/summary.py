@@ -202,7 +202,10 @@ def compile_feasible_summary(constraints: ConstraintSet) -> FeasibleSummaryRepor
 
     known_count = sum(bucket.count_floor for bucket in buckets)
     known_cells = sum(bucket.cells_floor for bucket in buckets)
-    known_value = sum(bucket.value_floor for bucket in buckets)
+    known_value = sum(
+        max(bucket.value_floor, bucket.value_exact or 0)
+        for bucket in buckets
+    )
     session_total_count_exact = session_exact.get("count")
     session_total_cells_exact = session_exact.get("cells")
     if (

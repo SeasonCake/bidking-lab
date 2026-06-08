@@ -1171,7 +1171,7 @@ def test_overlay_constraints_section_shows_activity_map_alias() -> None:
             "constraints": {
                 "summary": {
                     "known_grid_items": 2,
-                    "map_alias_label": "活动图 2527->旧沉船 2517",
+                    "map_alias_label": "活动图 2527->旧沉船 2507",
                 }
             }
         }
@@ -1180,7 +1180,7 @@ def test_overlay_constraints_section_shows_activity_map_alias() -> None:
     assert section is not None
     assert section[0] == "输入约束"
     assert "已知 2 件" in section[1]
-    assert "活动图 2527->旧沉船 2517" in section[2]
+    assert "活动图 2527->旧沉船 2507" in section[2]
 
 
 def test_overlay_surfaces_v3_practical_reference_without_changing_decision() -> None:
