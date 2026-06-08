@@ -3412,3 +3412,27 @@ applied_hurts=2502
 - seed 1 选出 `2501+2506`，`2501` 出现 applied hurt；
 - `2506` 虽是 stable group，但 seed 1/7 的 applied rows 最小只有 9，低于 20；
 - 当前 evidence 说明该 bridge 对 posterior seed 和 group selection 敏感，不能作为实装依据。
+
+## D-v3-167：21 条 unique round-cap overflow 不再归因于 BidMap col[16]/DropEntry n_max
+
+2026-06-08 起，当前决策：
+
+- 对 `unique_non_temp` 扣除 temporary zodiac 后仍超过 raw round-cap 的 21 条 rows，当前主因拆分为：
+  - `session_capacity_source_semantics`：18 条；
+  - `server_side_settlement_expansion`：3 条。
+- 不再把该 blocker 主要归因于：
+  - `BidMap.col[16]`；
+  - `DropEntry.n_min/n_max`；
+  - Drop 表缺普通 non-zodiac item。
+- `BidMap.items_per_session_max` 与 raw round-cap 不能视为 final settlement unique non-temp item 的硬上限。
+- 但该结论只解除“字段错读”这一假设，不等于可以放宽 sampler capacity 或 promotion gate。
+- 后续 formal/value sampler 若要使用 settlement count/cells/value evidence，必须把 source semantics/expansion 作为 shadow-only feature，并通过 archive/activity/live/readiness/holdout 验证。
+
+原因：
+
+- v303 raw table audit 显示 `BidMap.col[17]` 是 drop-ref，`col[16]` 为空/unused；
+- prior-stressed top maps 的 flattened leaf `n_max=1`，不是多件 DropEntry 驱动；
+- latest settlement inventory、0x002D payload 与 parsed truth 匹配；
+- 扣除 temporary zodiac 后普通 Drop universe 覆盖，`raw_non_zodiac_missing=0`；
+- 3 条有 public total 或 full direct action 直接确认 final inventory 超过 raw round cap，说明存在 server-side settlement expansion 或等价机制；
+- 18 条只有 payload verified，仍需 source parser/table acquisition 才能区分 server expansion 与 session-capacity/source semantics。

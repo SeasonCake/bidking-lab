@@ -9567,3 +9567,69 @@ gate=settlement_count_guarded_bridge_stability status=blocked reason="guarded se
 - seed 7 虽仍选 `2506`，但 selected support 只有 9 applied rows，低于 20；
 - 该 lane 必须继续 audit-only，不得作为 shadow-only formal/value sampler 的输入假设，更不能进入 live/formal；
 - 下一步应回到 blocker 根因：为什么 count->cells/value bridge 在 2501/2506 support 与 over-risk 上不稳定，而不是调高/调低 bridge 参数。
+
+## 2026-06-08 checkpoint：settlement unique round-cap overflow mechanism split
+
+背景：
+
+- 早期 blocker 中最关键的一组是 `unique_non_temp` 扣除 known temporary zodiac 后仍超过 raw BidMap round-cap 的 rows；
+- 这些 rows 如果无法解释，就不能把 settlement count/cells/value bridge 或 formal/value sampler 作为 promotion 依据；
+- 当前 raw/table version 为 v303，`Activity.txt` 本地存在，但它是 activity entry/UI 配置，不是 Drop overlay；252x/452x Drop overlay 仍缺。
+
+验证：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_capacity_table_audit.py --posterior-trials 64 --format summary --top 12
+
+C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.py --group-by mechanism_class --format summary --top 12
+```
+
+source semantics 总体：
+
+```text
+table_raw_version=303
+tables_version=303
+activity_present=True
+activity_listed=True
+overlay_status=activity_table_available_locally
+files=453
+settlement_rows=453
+mechanisms=not_unique_round_cap_blocker:432,session_capacity_source_semantics:18,server_side_settlement_expansion:3
+unique_modes=activity_extras_only_drop_ref_gap:201,within_unique_caps_after_temp:73,instance_drop_ref_only_overflow_after_temp:65,unique_drop_ref_only_overflow_after_temp:53,instance_round_cap_overflow_after_temp:39,unique_round_cap_overflow_after_temp:21,non_zodiac_drop_universe_gap:1
+unique_round_rows=21/453
+```
+
+21 条 `unique_round_cap_overflow_after_temp`：
+
+```text
+mechanism_class=session_capacity_source_semantics
+files=18
+maps=2501:6,2503:2,2504:2,2508:2,2510:2,2408:1,2410:1,2506:1,2509:1
+evidence=settlement_payload_verified_only:18
+context=payload_verified_partial_action_only:15,payload_verified_empty_action_results:3
+unique_round_after avg=3.278 p90=7 max=7
+
+mechanism_class=server_side_settlement_expansion
+files=3
+maps=2501:1,2503:1,2506:1
+evidence=direct_action_matches_inventory:2,public_total_matches_inventory:1
+context=direct_action_full_confirmed:2,public_total_confirmed:1
+unique_round_after avg=2.333 p90=4 max=4
+```
+
+capacity table audit 对这些 blocker 的共同结论：
+
+- current v303/v300-style `BidMap.col[17]` 是 drop-ref，`col[16]` 仍为空占位/unused；
+- `DropEntry.n_min/n_max` 不是多件掉落解释，prior-stressed top maps 的 leaf `n_max=1`；
+- settlement 0x002D/latest inventory 与 parsed truth 匹配，raw candidate / occupied slot delta 基本为 0；
+- drop universe 在扣除 temporary zodiac 后覆盖，`raw_non_zodiac_missing=0`，因此不是 Drop 表缺普通 item；
+- 剩余 over-cap 主要是 session-capacity/source semantics 或 server-side settlement expansion，而不是 simple table max 字段错读。
+
+结论：
+
+- 21 条 unique round-cap overflow 的主因已从“未知 BidMap/Drop 冲突”收窄为两类可复核机制：
+  - `session_capacity_source_semantics`：18 条，只有 payload verified，缺 full action/public source split；
+  - `server_side_settlement_expansion`：3 条，有 full action 或 public total 直接确认 final settlement inventory。
+- 这解释了为什么不能把 `BidMap.items_per_session_max` / raw round cap 当成 final unique non-temp item 硬上限；
+- 但这不是 sampler promotion 通过证据：prior-stressed 仍有 94 detail rows，activity/drop overlay 仍缺，CSE/SCP bridge stability 仍 blocked；
+- 下一步应把 source parser/table acquisition 聚焦在 18 条 payload-only semantics rows，以及 252x/452x activity Drop/overlay 机制。

@@ -7158,3 +7158,65 @@ instability summary：
 - `2501` 是 seed-dependent drift group，并且 hurt；
 - 该 lane 不是“多采样就能直接升 formal”的状态，至少要先解释 selected drift 与 over-risk；
 - 当前最合理处理是继续 audit-only，并从 source/capacity/table semantics 和 group support 分片查原因。
+
+## O-v3-180：21 条 unique round-cap overflow 拆成 18 条 source semantics 与 3 条 server expansion
+
+2026-06-08 settlement source semantics audit：
+
+```text
+table_raw_version=303
+tables_version=303
+activity_present=True
+activity_listed=True
+overlay_status=activity_table_available_locally
+files=453
+settlement_rows=453
+unique_round_rows=21/453
+```
+
+总体 residual mode：
+
+```text
+activity_extras_only_drop_ref_gap=201
+within_unique_caps_after_temp=73
+instance_drop_ref_only_overflow_after_temp=65
+unique_drop_ref_only_overflow_after_temp=53
+instance_round_cap_overflow_after_temp=39
+unique_round_cap_overflow_after_temp=21
+non_zodiac_drop_universe_gap=1
+```
+
+机制拆分：
+
+```text
+not_unique_round_cap_blocker=432
+session_capacity_source_semantics=18
+server_side_settlement_expansion=3
+```
+
+`session_capacity_source_semantics` 分片：
+
+```text
+files=18
+maps=2501:6,2503:2,2504:2,2508:2,2510:2,2408:1,2410:1,2506:1,2509:1
+evidence=settlement_payload_verified_only:18
+context=payload_verified_partial_action_only:15,payload_verified_empty_action_results:3
+unique_round_after avg=3.278 p90=7 max=7
+```
+
+`server_side_settlement_expansion` 分片：
+
+```text
+files=3
+maps=2501:1,2503:1,2506:1
+evidence=direct_action_matches_inventory:2,public_total_matches_inventory:1
+context=direct_action_full_confirmed:2,public_total_confirmed:1
+unique_round_after avg=2.333 p90=4 max=4
+```
+
+解读：
+
+- 21 条 over round-cap 的主因不再是 raw Drop universe 缺普通 item；
+- 也不是 DropEntry `n_max>1` 未解析，因为 leaf `n_max` 当前为 1；
+- 3 条 server expansion 是强证据；18 条 source semantics 是仍需 source parser/table acquisition 的最小不可判定集合；
+- readiness 的 `prior_stress_capacity_table_drift` 仍应 blocked，因为该解释尚未变成可泛化 sampler/bridge 规则。
