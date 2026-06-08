@@ -71,7 +71,7 @@
 | `scripts/summarize_v3_ccv_direction_holdout.py` | v3 CCV 方向候选 session holdout 审计，支持 movement-policy、复合 group-field 与候选 include/exclude |
 | `scripts/summarize_v3_ccvc_count_policy_matrix.py` | v3 CCVC q6_count policy/group-field 矩阵审计 |
 | `scripts/summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC count/cells 证据贡献审计，支持 freeze-cells 口径 |
-| `scripts/summarize_v3_shadow_sampler_prototype.py` | v3 `v3_ccvc_` evidence-driven count/cell/value shadow sampler prototype 聚合审计，合并 row contract、shadow safety、policy/direction holdout、evidence contribution、component-level blocker 与 multi-seed stability |
+| `scripts/summarize_v3_shadow_sampler_prototype.py` | v3 `v3_ccvc_` evidence-driven count/cell/value shadow sampler prototype 聚合审计，合并 row contract、shadow safety、policy/direction holdout、evidence contribution、component-level blocker、per-seed watch label 与 multi-seed stability |
 | `scripts/summarize_v3_formal_value_delta_holdout.py` | v3 q6 formal delta 映射 formal decision 的 session holdout 审计 |
 | `scripts/summarize_v3_formal_value_sampler_holdout.py` | v3 formal/value sampler value-floor candidate session holdout 审计，capacity/cells-only watch 不参与价值上修 |
 | `scripts/summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计 |
@@ -121,7 +121,7 @@
 | `tests/test_summarize_v3_ccv_direction_holdout.py` | v3 CCV 方向候选 session holdout 审计测试 |
 | `tests/test_summarize_v3_ccvc_count_policy_matrix.py` | v3 CCVC q6_count policy matrix 测试 |
 | `tests/test_summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC 证据贡献审计测试 |
-| `tests/test_summarize_v3_shadow_sampler_prototype.py` | v3 CCVC shadow sampler prototype 聚合审计测试，覆盖 watch candidate、shadow safety、component status 与 seed stability |
+| `tests/test_summarize_v3_shadow_sampler_prototype.py` | v3 CCVC shadow sampler prototype 聚合审计测试，覆盖 watch candidate、shadow safety、component status、per-seed watch label 与 seed stability |
 | `tests/test_summarize_v3_formal_value_delta_holdout.py` | v3 q6 formal delta 映射 holdout 测试 |
 | `tests/test_summarize_v3_formal_value_sampler_holdout.py` | v3 formal/value sampler holdout 测试 |
 | `tests/test_summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计测试 |

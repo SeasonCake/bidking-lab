@@ -354,6 +354,37 @@ def _component_matrix_status_counts(
     return _counter_dict(statuses)
 
 
+def _watch_labels_by_seed(
+    seed_results: Iterable[Mapping[str, Any]],
+    *,
+    component: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "posterior_seed": result.get("posterior_seed"),
+            "watch_labels": sorted(_watch_label_set(result, component=component)),
+        }
+        for result in seed_results
+    ]
+
+
+def _unstable_watch_labels(
+    labels_by_seed: Iterable[Mapping[str, Any]],
+    *,
+    stable: Iterable[str],
+) -> list[str]:
+    stable_set = set(stable)
+    label_sets = [
+        set(row.get("watch_labels") or ())
+        for row in labels_by_seed
+        if isinstance(row, Mapping)
+    ]
+    if not label_sets:
+        return []
+    union = set.union(*label_sets) if label_sets else set()
+    return sorted(union - stable_set)
+
+
 def _component_next_action(status: str, component: str) -> str:
     if status == "watch_shadow_candidate":
         return "keep as diagnostic candidate; require readiness and live replay before promotion"
@@ -378,6 +409,7 @@ def _component_statuses(seed_results: Iterable[Mapping[str, Any]]) -> list[dict[
         stable = _stable_watch_labels_for_component(results, component=component)
         hurts = _component_applied_hurts(results, component=component)
         has_watch = any(_watch_label_set(result, component=component) for result in results)
+        labels_by_seed = _watch_labels_by_seed(results, component=component)
         if "blocked_shadow_affects_bid" in statuses:
             status = "blocked_shadow_affects_bid"
         elif "blocked_shadow_active" in statuses:
@@ -397,6 +429,11 @@ def _component_statuses(seed_results: Iterable[Mapping[str, Any]]) -> list[dict[
                 "component": component,
                 "status": status,
                 "stable_watch_candidate_labels": stable,
+                "unstable_watch_candidate_labels": _unstable_watch_labels(
+                    labels_by_seed,
+                    stable=stable,
+                ),
+                "watch_labels_by_seed": labels_by_seed,
                 "applied_hurts": hurts,
                 "matrix_status_counts": _component_matrix_status_counts(
                     results,
@@ -498,6 +535,8 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"status={row.get('status')}",
                     "stable_watch="
                     + ",".join(row.get("stable_watch_candidate_labels") or ()),
+                    "unstable_watch="
+                    + ",".join((row.get("unstable_watch_candidate_labels") or ())[:top]),
                     "applied_hurts="
                     + ",".join((row.get("applied_hurts") or ())[:top]),
                     f"next_action=\"{row.get('next_action')}\"",

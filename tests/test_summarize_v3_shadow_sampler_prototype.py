@@ -151,21 +151,29 @@ def test_shadow_sampler_prototype_marks_seed_instability() -> None:
     assert stable["stable_watch_candidate_labels"] == [
         "q6_count|map_id|all:q6_count:2502"
     ]
-    assert stable["component_statuses"] == [
-        {
-            "component": "q6_count",
-            "status": "watch_shadow_candidate",
-            "stable_watch_candidate_labels": [
-                "q6_count|map_id|all:q6_count:2502"
-            ],
-            "applied_hurts": [],
-            "matrix_status_counts": {"watch": 2},
-            "next_action": (
-                "keep as diagnostic candidate; require readiness and live replay "
-                "before promotion"
-            ),
-        }
+    stable_component = stable["component_statuses"][0]
+    assert stable_component["component"] == "q6_count"
+    assert stable_component["status"] == "watch_shadow_candidate"
+    assert stable_component["stable_watch_candidate_labels"] == [
+        "q6_count|map_id|all:q6_count:2502"
     ]
+    assert stable_component["unstable_watch_candidate_labels"] == []
+    assert stable_component["watch_labels_by_seed"] == [
+        {
+            "posterior_seed": 0,
+            "watch_labels": ["q6_count|map_id|all:q6_count:2502"],
+        },
+        {
+            "posterior_seed": 1,
+            "watch_labels": ["q6_count|map_id|all:q6_count:2502"],
+        },
+    ]
+    assert stable_component["applied_hurts"] == []
+    assert stable_component["matrix_status_counts"] == {"watch": 2}
+    assert stable_component["next_action"] == (
+        "keep as diagnostic candidate; require readiness and live replay "
+        "before promotion"
+    )
 
     result = module.summarize_prototype_runs(
         (seed0, seed1),
@@ -175,8 +183,24 @@ def test_shadow_sampler_prototype_marks_seed_instability() -> None:
 
     assert result["stable_watch_candidate_labels"] == []
     assert result["status"] == "blocked_seed_instability"
-    assert result["component_statuses"][0]["component"] == "q6_count"
-    assert result["component_statuses"][0]["status"] == "blocked_seed_instability"
+    unstable_component = result["component_statuses"][0]
+    assert unstable_component["component"] == "q6_count"
+    assert unstable_component["status"] == "blocked_seed_instability"
+    assert unstable_component["stable_watch_candidate_labels"] == []
+    assert unstable_component["unstable_watch_candidate_labels"] == [
+        "q6_count|map_id|all:q6_count:2502",
+        "q6_count|map_id|all:q6_count:2503",
+    ]
+    assert unstable_component["watch_labels_by_seed"] == [
+        {
+            "posterior_seed": 0,
+            "watch_labels": ["q6_count|map_id|all:q6_count:2502"],
+        },
+        {
+            "posterior_seed": 1,
+            "watch_labels": ["q6_count|map_id|all:q6_count:2503"],
+        },
+    ]
 
 
 def test_shadow_sampler_prototype_requires_candidate_on_every_seed() -> None:
@@ -205,4 +229,18 @@ def test_shadow_sampler_prototype_requires_candidate_on_every_seed() -> None:
 
     assert result["stable_watch_candidate_labels"] == []
     assert result["status"] == "blocked_seed_instability"
-    assert result["component_statuses"][0]["status"] == "blocked_seed_instability"
+    component = result["component_statuses"][0]
+    assert component["status"] == "blocked_seed_instability"
+    assert component["unstable_watch_candidate_labels"] == [
+        "q6_count|map_id|all:q6_count:2502"
+    ]
+    assert component["watch_labels_by_seed"] == [
+        {
+            "posterior_seed": 0,
+            "watch_labels": ["q6_count|map_id|all:q6_count:2502"],
+        },
+        {
+            "posterior_seed": 1,
+            "watch_labels": [],
+        },
+    ]

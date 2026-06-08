@@ -10129,3 +10129,55 @@ component=q6_count status=blocked_seed_instability
 - freeze-cells 是有效隔离 q6_cells hurt 的诊断开关，但不是 promotion 解锁；
 - q6_count 自身仍在 64-trial seed 0/1 之间不稳定，不能进入 sampler policy 或 formal/live；
 - 下一步应对 q6_count 做更窄的 source/evidence filters、support threshold 或 profile-level candidate，再跑同一 prototype audit。
+
+## 2026-06-08 checkpoint：CCVC prototype watch label instability exposed
+
+背景：
+
+- q6_count-only smoke 显示 map-level 与 evidence/profile-level filters 都可能在单个 seed 内出现 watch candidate；
+- 但 seed 0 与 seed 1 的 selected candidate group 不一致，容易被误读成“已有可调参候选”；
+- 当前 promotion hardening 需要把 seed 间分歧直接输出，而不是只输出 overall `blocked_seed_instability`。
+
+完成：
+
+- `scripts/summarize_v3_shadow_sampler_prototype.py`
+  - `component_statuses` 新增 `watch_labels_by_seed`；
+  - `component_statuses` 新增 `unstable_watch_candidate_labels`；
+  - summary 输出新增 `unstable_watch=...`，便于直接定位跨 seed 不稳定的 watch group。
+- `tests/test_summarize_v3_shadow_sampler_prototype.py`
+  - 覆盖稳定 watch candidate 时 unstable labels 为空；
+  - 覆盖不同 seed 选中不同 watch group 时的 unstable label 列表；
+  - 覆盖任一 seed 缺 watch candidate 时，另一个 seed 的候选仍只能记为 unstable。
+
+验证：
+
+```text
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_shadow_sampler_prototype.py tests\test_summarize_v3_shadow_sampler_prototype.py
+
+C:\Python313\python.exe -m pytest tests\test_summarize_v3_shadow_sampler_prototype.py tests\test_summarize_v3_ccvc_count_policy_matrix.py
+6 passed
+
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --group-field evidence_profile_key --group-field map_id,evidence_profile_key --movement-policy all --movement-policy up_only --movement-policy down_only --top 10 --format summary
+status=blocked_seed_instability
+seed_status_counts=watch_with_hurt_alternatives:2
+component=q6_count status=blocked_seed_instability stable_watch=
+unstable_watch=q6_count|evidence_profile_key|down_only:q6_count:item+shape,q6_count|evidence_profile_key|down_only:q6_count:public:max_item_cells+item+shape,q6_count|evidence_profile_key|down_only:q6_count:tool:category+item+shape,q6_count|map_id,evidence_profile_key|down_only:q6_count:map_id=2501|evidence_profile_key=tool:category+item+shape
+```
+
+真实 smoke 复核：
+
+```text
+seed=0 status=watch_with_hurt_alternatives rows=1627 component_rows=1177
+candidate=q6_count|evidence_profile_key|down_only
+groups=q6_count:item+shape,q6_count:public:max_item_cells+item+shape,q6_count:tool:category+item+shape
+
+seed=1 status=watch_with_hurt_alternatives rows=1627 component_rows=1164
+candidate=q6_count|map_id,evidence_profile_key|down_only
+groups=q6_count:map_id=2501|evidence_profile_key=tool:category+item+shape
+```
+
+结论：
+
+- 更窄的 evidence/profile filters 仍没有产生跨 seed 稳定候选；
+- seed0 的 profile-level down-only candidate 与 seed1 的 map/profile down-only candidate 不一致，且两边仍有 holdout hurt alternatives；
+- 当前不能恢复 formal/value sampler 调参，也不能把 q6_count filter 当作 promotion 支持；下一步应转向 source/parser/table acquisition、support threshold 或更多样本，而不是在现有字段组合上继续过拟合。

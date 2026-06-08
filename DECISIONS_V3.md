@@ -3653,3 +3653,27 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 本轮 q6_count-only smoke 仍显示 seed 0 holdout hurt、seed 1 才出现 watch candidate；
 - freeze-cells 只阻断 q6_cells movement，不改变 q6_count component likelihood 的 seed instability；
 - 该结论继续保持 shadow-only，不改变 sampler 默认、live/UI、v2 fallback 或正式出价。
+
+## D-v3-178：CCVC prototype watch group 必须暴露 per-seed 分歧，不能把 profile filter 误判成可调参入口
+
+2026-06-08 起，当前决策：
+
+- `scripts/summarize_v3_shadow_sampler_prototype.py` 的 `component_statuses` 必须输出：
+  - `watch_labels_by_seed`；
+  - `unstable_watch_candidate_labels`。
+- summary 输出必须显示 `unstable_watch=...`，让 q6_count/q6_cells/q6_value 的跨 seed watch group 分歧可直接复核；
+- stable watch candidate 仍必须满足 policy label 与 selected candidate group 都跨 seed 一致；
+- 若不同 seed 只是在各自分片内出现不同 watch group，即使单 seed delta/hurt rate 看起来可接受，也只能归类为 `blocked_seed_instability`；
+- 当前 q6_count evidence/profile-level smoke 结果仍是：
+  - seed0 watch：`q6_count|evidence_profile_key|down_only`，groups 为 `item+shape`、`public:max_item_cells+item+shape`、`tool:category+item+shape`；
+  - seed1 watch：`q6_count|map_id,evidence_profile_key|down_only`，group 为 `map_id=2501|evidence_profile_key=tool:category+item+shape`；
+  - 两者没有 stable watch overlap，且仍存在 holdout hurt alternatives。
+- 因此当前不能恢复 formal/value sampler 参数调优，也不能把 profile filter 作为 promotion/readiness 支持；
+- 下一步优先级应转向 source/parser/table acquisition、support threshold、样本扩充或可证伪的表/活动机制解释。
+
+原因：
+
+- 只看单 seed watch candidate 会鼓励在现有字段上组合过拟合；
+- q6_count 的 blocker 已从“是否有局部候选”收敛为“候选是否跨 posterior seed 与 holdout 分片稳定”；
+- per-seed watch label 是后续 sampler prototype、readiness gate 与跨窗口 handoff 的必要审计字段；
+- 该改动只增强 shadow audit 输出，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
