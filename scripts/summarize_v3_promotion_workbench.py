@@ -485,6 +485,9 @@ def _shadow_sampler_value_source_profile_contract(
     migration = audit.get("migration")
     if not isinstance(migration, Mapping):
         migration = {}
+    parser = audit.get("source_profile_parser")
+    if not isinstance(parser, Mapping):
+        parser = {}
     component = str(audit.get("component") or "")
     if missing or not shadow_safe or component != "q6_value":
         status = "malformed"
@@ -505,6 +508,16 @@ def _shadow_sampler_value_source_profile_contract(
         "run_count": audit.get("run_count"),
         "risk_migration_detected": bool(
             migration.get("risk_migration_detected")
+        ),
+        "source_profile_parser_status": parser.get("status"),
+        "profile_semantic_migration_detected": parser.get(
+            "profile_semantic_migration_detected"
+        ),
+        "latest_map_only_hurt_label_count": parser.get(
+            "latest_map_only_hurt_label_count"
+        ),
+        "latest_profile_hurt_label_count": parser.get(
+            "latest_profile_hurt_label_count"
         ),
         "introduced_hurt_labels": list(
             migration.get("introduced_hurt_labels") or []
@@ -883,6 +896,10 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"{value_source_profile.get('component')}",
                     "value_source_profile_migration="
                     f"{value_source_profile.get('risk_migration_detected')}",
+                    "value_source_profile_parser="
+                    f"{value_source_profile.get('source_profile_parser_status')}",
+                    "value_source_profile_map_only_hurts="
+                    f"{value_source_profile.get('latest_map_only_hurt_label_count')}",
                     "value_source_profile_runs="
                     f"{value_source_profile.get('run_count')}",
                     f"next_action=\"{contract.get('next_action')}\"",

@@ -4075,3 +4075,38 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - q6_value residual blocker 已被 audit artifact 证明存在风险迁移，继续只在人工 progress 里记录会让 promotion 视图遗漏该 blocker；
 - readiness/workbench gate 能把“不要继续手工 label exclude、不要恢复参数调优”的结论转成机器可复核的阻断条件；
 - 该决策仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-192：q6_value value guard 前必须先回填 map-only hurt labels 到 row-level source/profile
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_shadow_sampler_value_source_profile_audit.py` 必须输出 `source_profile_parser`；
+- 该 parser 至少要把 `evidence_profile_key` 拆成：
+  - public source tokens；
+  - anchor tokens；
+  - source class；
+  - anchor class；
+  - semantic class。
+- run 级必须输出：
+  - `profile_token_counts`；
+  - `profile_public_source_counts`；
+  - `profile_anchor_counts`；
+  - `profile_semantic_class_counts`；
+  - `profile_hurt_label_count`；
+  - `map_only_hurt_label_count`。
+- readiness/workbench 必须透传 parser status 与 map-only/profile hurt counts；
+- 若 latest run 同时存在 map-only hurt labels 与 profile hurt labels，且 q6_value 仍 blocked，则 parser status 必须保持 blocked；
+- 当前真实 artifact 结论：
+  - `source_profile_parser.status=blocked_mixed_map_profile_risk`；
+  - `profile_semantic_migration_detected=True`；
+  - latest `map_only_hurt_label_count=8`；
+  - baseline semantic classes 包括 `public:max_item_cells|item+shape`、`public:total|item+shape`、`public:total|shape+layout`；
+  - probe semantic classes 包括 `public:max_item_cells|item+shape`、`public:total|shape`、`public:total|shape+layout`。
+- 在 map-only q6_value hurt labels 回填到 row-level `evidence_profile_key`、source/context、session/file/round details 前，不得设计或讨论 q6_value value guard 的 promotion path；
+- 下一步应生成 q6_value map-only hurt label details artifact，而不是继续调 sampler 参数。
+
+原因：
+
+- 当前 q6_value risk 已不是单纯 evidence profile class 问题，map-only labels 仍占主要残余风险；
+- 如果不把 `map_id` hurt 回填到 row-level profile/source，任何 value guard 都会把 map-level 风险误当成 profile-level 规则，继续过拟合当前 archive；
+- 该决策仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。

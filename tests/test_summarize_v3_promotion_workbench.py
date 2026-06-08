@@ -368,6 +368,12 @@ def test_shadow_sampler_contract_blocks_attached_value_source_profile_audit() ->
                         "q6_value|map_id|up_only:q6_value:2510"
                     ],
                 },
+                "source_profile_parser": {
+                    "status": "blocked_mixed_map_profile_risk",
+                    "profile_semantic_migration_detected": True,
+                    "latest_map_only_hurt_label_count": 1,
+                    "latest_profile_hurt_label_count": 1,
+                },
                 "next_action": (
                     "stop adding manual q6_value excludes; design "
                     "source/profile parser or higher-level value guard"
@@ -383,6 +389,10 @@ def test_shadow_sampler_contract_blocks_attached_value_source_profile_audit() ->
     assert value_source_profile["status"] == "blocked"
     assert value_source_profile["audit_status"] == "blocked_risk_migration"
     assert value_source_profile["risk_migration_detected"] is True
+    assert value_source_profile["source_profile_parser_status"] == (
+        "blocked_mixed_map_profile_risk"
+    )
+    assert value_source_profile["latest_map_only_hurt_label_count"] == 1
     assert value_source_profile["run_summaries"][1]["support_gate"] == (
         "watch_low_support"
     )

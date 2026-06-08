@@ -464,6 +464,12 @@ def test_readiness_attaches_shadow_sampler_value_source_profile_audit() -> None:
                 "q6_value|map_id|up_only:q6_value:2510"
             ],
         },
+        "source_profile_parser": {
+            "status": "blocked_mixed_map_profile_risk",
+            "profile_semantic_migration_detected": True,
+            "latest_map_only_hurt_label_count": 1,
+            "latest_profile_hurt_label_count": 1,
+        },
         "next_action": (
             "stop adding manual q6_value excludes; design source/profile "
             "parser or higher-level value guard"
@@ -486,12 +492,17 @@ def test_readiness_attaches_shadow_sampler_value_source_profile_audit() -> None:
     assert gate["audit_status"] == "blocked_risk_migration"
     assert gate["component"] == "q6_value"
     assert gate["risk_migration_detected"] is True
+    assert gate["source_profile_parser_status"] == (
+        "blocked_mixed_map_profile_risk"
+    )
+    assert gate["latest_map_only_hurt_label_count"] == 1
     assert gate["introduced_hurt_labels"] == [
         "q6_value|map_id|up_only:q6_value:2405"
     ]
     contract = result["shadow_sampler_value_source_profile_contract"]
     assert contract["status"] == "blocked"
     assert contract["shadow_safe"] is True
+    assert contract["profile_semantic_migration_detected"] is True
     assert contract["run_summaries"][1]["support_gate"] == "watch_low_support"
     assert result["shadow_sampler_value_source_profile_audit"] == audit
     dependency_gates = {

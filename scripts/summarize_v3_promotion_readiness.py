@@ -325,6 +325,7 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
             f"contract={gate.get('contract_status')};"
             f"component={gate.get('component')};"
             f"risk_migration={gate.get('risk_migration_detected')};"
+            f"parser={gate.get('source_profile_parser_status')};"
             f"run_count={gate.get('run_count')}"
         )
     if name == "formal_baseline_metrics":
@@ -1310,6 +1311,9 @@ def summarize_shadow_sampler_value_source_profile_contract(
     migration = audit.get("migration")
     if not isinstance(migration, Mapping):
         migration = {}
+    parser = audit.get("source_profile_parser")
+    if not isinstance(parser, Mapping):
+        parser = {}
     risk_migration = bool(migration.get("risk_migration_detected"))
     component = str(audit.get("component") or "")
     if missing:
@@ -1343,6 +1347,16 @@ def summarize_shadow_sampler_value_source_profile_contract(
         "component": component,
         "run_count": audit.get("run_count"),
         "risk_migration_detected": risk_migration,
+        "source_profile_parser_status": parser.get("status"),
+        "profile_semantic_migration_detected": parser.get(
+            "profile_semantic_migration_detected"
+        ),
+        "latest_map_only_hurt_label_count": parser.get(
+            "latest_map_only_hurt_label_count"
+        ),
+        "latest_profile_hurt_label_count": parser.get(
+            "latest_profile_hurt_label_count"
+        ),
         "introduced_hurt_labels": list(
             migration.get("introduced_hurt_labels") or []
         ),
@@ -2258,6 +2272,26 @@ def summarize_readiness(
                         "risk_migration_detected"
                     )
                 ),
+                source_profile_parser_status=(
+                    shadow_sampler_value_source_profile_contract.get(
+                        "source_profile_parser_status"
+                    )
+                ),
+                profile_semantic_migration_detected=(
+                    shadow_sampler_value_source_profile_contract.get(
+                        "profile_semantic_migration_detected"
+                    )
+                ),
+                latest_map_only_hurt_label_count=(
+                    shadow_sampler_value_source_profile_contract.get(
+                        "latest_map_only_hurt_label_count"
+                    )
+                ),
+                latest_profile_hurt_label_count=(
+                    shadow_sampler_value_source_profile_contract.get(
+                        "latest_profile_hurt_label_count"
+                    )
+                ),
                 introduced_hurt_labels=(
                     shadow_sampler_value_source_profile_contract.get(
                         "introduced_hurt_labels"
@@ -2994,6 +3028,8 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"{shadow_sampler_value_source_profile_contract.get('audit_status')}",
                 "shadow_sampler_value_source_profile_migration="
                 f"{shadow_sampler_value_source_profile_contract.get('risk_migration_detected')}",
+                "shadow_sampler_value_source_profile_parser="
+                f"{shadow_sampler_value_source_profile_contract.get('source_profile_parser_status')}",
                 f"cse_candidate_rows={summary['v3_cse_candidate_rows']}",
                 f"cse_pressure_candidate_rows={summary['v3_cse_pressure_candidate_rows']}",
                 f"cse_active_rows={summary['v3_cse_active_rows']}",

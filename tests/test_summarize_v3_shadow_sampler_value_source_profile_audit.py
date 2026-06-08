@@ -74,6 +74,14 @@ def test_value_source_profile_audit_parses_composite_labels() -> None:
     assert parsed["map_id"] == "2508"
     assert parsed["evidence_profile_key"] == "item+shape"
 
+    profile = module._parse_evidence_profile_key(
+        "public:total+item+shape+layout"
+    )
+    assert profile["tokens"] == ["public:total", "item", "shape", "layout"]
+    assert profile["public_sources"] == ["public:total"]
+    assert profile["anchors"] == ["item", "shape", "layout"]
+    assert profile["semantic_class"] == "public:total|item+shape+layout"
+
 
 def test_value_source_profile_audit_reports_risk_migration() -> None:
     module = _load_module()
@@ -114,3 +122,19 @@ def test_value_source_profile_audit_reports_risk_migration() -> None:
     assert latest["hurt_evidence_profiles"] == [
         "public:max_item_cells+item+shape"
     ]
+    assert latest["profile_public_source_counts"] == {
+        "public:max_item_cells": 1
+    }
+    assert latest["profile_anchor_counts"] == {"item": 1, "shape": 1}
+    assert latest["profile_semantic_class_counts"] == {
+        "public:max_item_cells|item+shape": 1
+    }
+    parser = result["source_profile_parser"]
+    assert parser["status"] == "blocked_mixed_map_profile_risk"
+    assert parser["profile_semantic_migration_detected"] is True
+    assert parser["latest_map_only_hurt_label_count"] == 1
+    assert parser["latest_profile_hurt_label_count"] == 1
+    assert parser["introduced_profile_semantic_classes"] == [
+        "public:max_item_cells|item+shape"
+    ]
+    assert "evidence_profile_key" in parser["minimum_required_inputs"]
