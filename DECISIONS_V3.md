@@ -3725,3 +3725,34 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - promotion hardening 需要防止“低支持且碰巧无 hurt”的 group 被解释为可调参方向；
 - support gate 把 seed instability 与低支持风险分开表达，便于后续 source/profile/map 分歧追查；
 - 该 gate 只作用于 shadow prototype audit/reporting，不改变 holdout candidate selection、posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-181：promotion workbench 必须能消费 support-aware sampler prototype，但缺失 prototype 只显示 missing
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_workbench.py` 的 `shadow_sampler_contract` 必须包含 support-aware prototype requirements；
+- required metrics 必须包含：
+  - component status；
+  - watch support rows/sessions；
+  - support gate status；
+  - stable low-support watch metrics；
+  - unstable watch candidate metrics。
+- contract 必须列出 required component gates：
+  - shadow safety；
+  - component status；
+  - selected watch label seed stability；
+  - watch support rows/sessions gate；
+  - holdout hurt alternatives；
+  - archive/session/map-family/map-id/evidence-profile coverage。
+- workbench 可以读取 readiness JSON 中的 `shadow_sampler_prototype`、`ccvc_shadow_sampler_prototype` 或 `v3_shadow_sampler_prototype`；
+- 若 prototype 缺失，`prototype_contract.status=missing`，但不改变旧 readiness artifact 的 lane/workbench 状态；
+- 若 prototype 已附带且存在 `blocked_seed_instability`、`blocked_low_support`、`blocked_holdout_hurt`、`watch_with_hurt_alternatives` 或 shadow safety blocker，`prototype_contract.status=blocked`；
+- 若没有其他 readiness blocker 但附带 prototype blocked，`shadow_sampler_contract.status` 必须变为 `shadow_prototype_blocked`，不能是 `ready_for_shadow_prototype`；
+- summary 必须显示 `prototype_status` 与 `prototype_overall`，方便命令行复核。
+
+原因：
+
+- sampler prototype 的 seed/support gate 已经成为 promotion hardening 的机器可读证据；
+- workbench 需要在 readiness 接入 prototype 后直接阻断 promotion 误读；
+- 但现有 readiness artifacts 还没有附带 prototype，缺失时只显示 missing，避免破坏旧审计工件；
+- 该改动只增强 workbench contract/reporting，不改变 readiness gate 计算、posterior、formal path、live/UI、v2 fallback 或正式出价。

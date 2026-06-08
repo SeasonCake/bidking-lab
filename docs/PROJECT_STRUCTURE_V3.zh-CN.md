@@ -62,7 +62,7 @@
 | `scripts/build_v3_settlement_count_prior_shadow.py` | 从 default archive 与 activity cohort 构建 `data/processed/v3_settlement_count_prior_shadow.json` |
 | `scripts/build_v3_capacity_source_expansion_shadow.py` | 从 settlement source-semantics 审计构建 `data/processed/v3_capacity_source_expansion_shadow.json` |
 | `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `detail_contract`/`capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift`、`settlement_count_formal_value_link`、带 artifact contract/pressure count 的 `capacity_source_expansion_shadow`、原始/guarded `settlement_count_cells_value_bridge` holdout 与 `formal_value_sampler_holdout` gate；可通过 `--live-practical-brief-json` 附加带 `contract_checks` 的 v3 practical archive-live guarded/unguarded paired evidence，通过 `--guarded-bridge-stability-json` 附加带 `contract_check` 的 guarded SCP bridge multi-seed stability evidence，但不放宽 promotion gate |
-| `scripts/summarize_v3_promotion_workbench.py` | 从 readiness JSON 汇总 lane-level promotion workbench，标记 blocked/watch/stop-loss、下一步模式与 `shadow_sampler_contract`；合同固定 shadow-only/affects_bid=false，并列出 sampler watch inputs、frozen gates、required holdouts/metrics |
+| `scripts/summarize_v3_promotion_workbench.py` | 从 readiness JSON 汇总 lane-level promotion workbench，标记 blocked/watch/stop-loss、下一步模式与 `shadow_sampler_contract`；合同固定 shadow-only/affects_bid=false，并列出 sampler watch inputs、frozen gates、required holdouts/metrics、required component gates 与可选 support-aware prototype contract |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
 | `scripts/summarize_v3_ccv_holdout.py` | v3 CCV/count-cell-value 候选 session holdout 审计 |
 | `scripts/summarize_v3_ccv_layer_audit.py` | v3 CCV 多层 holdout 稳定性审计 |
@@ -112,7 +112,7 @@
 | `tests/test_build_v3_settlement_count_prior_shadow.py` | v3 settlement count-prior processed artifact builder 测试 |
 | `tests/test_build_v3_capacity_source_expansion_shadow.py` | v3 capacity/source expansion processed artifact builder 测试 |
 | `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试，覆盖 prior-stress detail contract、v3 practical archive-live guard brief contract checks、CSE shadow artifact contract 与 SCP guarded bridge stability artifact contract |
-| `tests/test_summarize_v3_promotion_workbench.py` | v3 lane-level promotion workbench 测试，覆盖 stop-loss lane、archive quality watch 与 shadow sampler contract 边界 |
+| `tests/test_summarize_v3_promotion_workbench.py` | v3 lane-level promotion workbench 测试，覆盖 stop-loss lane、archive quality watch、shadow sampler contract 边界与 support-aware prototype blocker |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
 | `tests/test_summarize_v3_ccv_holdout.py` | v3 CCV session holdout 审计测试 |
 | `tests/test_summarize_v3_ccv_layer_audit.py` | v3 CCV 多层 holdout 审计测试 |

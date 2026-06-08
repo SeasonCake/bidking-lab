@@ -10269,3 +10269,45 @@ low_support=q6_count|map_id,evidence_profile_key|down_only:q6_count:map_id=2501|
 - 当前真实 archive 下，q6_count blocker 仍以 seed instability 为主；
 - support gate 明确把 seed1 的 8 rows / 3 sessions zero-hurt candidate 标为 low-support；
 - 这进一步支持“不恢复 formal/value sampler 调参”的结论；下一步更适合查 source/profile/map 分歧，或在 prototype/readiness 里继续扩展 support-aware holdout contract。
+
+## 2026-06-08 checkpoint：shadow sampler support-aware workbench contract added
+
+背景：
+
+- `summarize_v3_shadow_sampler_prototype.py` 已能输出 seed stability、component blocker 与 support gate；
+- 但 promotion workbench 的 `shadow_sampler_contract` 仍只列静态 holdout/metric 要求；
+- 后续 readiness 若附带 prototype JSON，workbench 需要直接显示 prototype 的 seed/support blocker，避免跨窗口误读为 ready。
+
+完成：
+
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract.required_metrics` 新增 component status、watch support rows/sessions、support gate、stable/unstable watch metrics；
+  - 新增 `required_component_gates`，明确 shadow safety、component status、seed stability、support gate、hurt alternatives 与 coverage；
+  - 新增 `prototype_contract`：
+    - 支持读取 readiness JSON 中的 `shadow_sampler_prototype`、`ccvc_shadow_sampler_prototype` 或 `v3_shadow_sampler_prototype`；
+    - 缺失时 status=`missing`，不破坏旧 readiness/workbench 兼容性；
+    - 若附带 prototype 且状态为 `blocked_seed_instability`、`blocked_low_support`、`blocked_holdout_hurt`、`watch_with_hurt_alternatives` 等，contract status=`blocked`；
+    - 若旧 readiness 没有其他 blocker 但 prototype blocked，sampler contract status 变为 `shadow_prototype_blocked`；
+    - summary 输出新增 `prototype_status=... prototype_overall=...`。
+- `tests/test_summarize_v3_promotion_workbench.py`
+  - 覆盖缺 prototype 时兼容旧状态；
+  - 覆盖附带 blocked prototype 时 contract 变为 `shadow_prototype_blocked`；
+  - 覆盖 low-support watch metrics 透传。
+
+验证：
+
+```text
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_promotion_workbench.py
+
+pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_shadow_sampler_prototype.py tests/test_summarize_v3_ccvc_count_policy_matrix.py
+11 passed
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_practical_guard_scp_stability_contract_latest.json --format summary
+shadow_sampler_contract status=shadow_design_only ... prototype_status=missing prototype_overall=None
+```
+
+结论：
+
+- workbench 现在可以消费 support-aware sampler prototype audit；
+- 当前现有 readiness artifact 还没有附带 prototype，因此保持兼容并显示 `prototype_status=missing`；
+- 下一步可以选择把 shadow sampler prototype JSON 接入 readiness 输出，或继续查 q6_count source/profile/map 分歧；仍不改变 live/UI/正式出价。

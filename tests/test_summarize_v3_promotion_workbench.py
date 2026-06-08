@@ -82,6 +82,9 @@ def test_workbench_marks_stop_loss_lanes() -> None:
         "capacity_source_expansion_shadow",
     ]
     assert "posterior seed stability" in contract["required_holdouts"]
+    assert "support_gate_status" in contract["required_metrics"]
+    assert "watch support rows/sessions gate" in contract["required_component_gates"]
+    assert contract["prototype_contract"]["status"] == "missing"
     assert "change formal bid path" in contract["blocked_actions"]
 
 
@@ -114,6 +117,7 @@ def test_workbench_keeps_archive_quality_as_usable_watch() -> None:
         result["shadow_sampler_contract"]["status"]
         == "ready_for_shadow_prototype"
     )
+    assert result["shadow_sampler_contract"]["prototype_contract"]["status"] == "missing"
 
 
 def test_shadow_sampler_contract_blocks_pending_prerequisites() -> None:
@@ -151,3 +155,69 @@ def test_shadow_sampler_contract_blocks_pending_prerequisites() -> None:
             "focus": "low_sample_profiles=7",
         }
     ]
+
+
+def test_shadow_sampler_contract_blocks_attached_prototype_blockers() -> None:
+    module = _load_module()
+
+    result = module.summarize_workbench(
+        {
+            "overall_status": "not_ready",
+            "blocked_gates": 0,
+            "gate_dependencies": {
+                "lane_status_counts": {},
+                "blocked_or_pending_gates": [],
+                "watch_gates": [],
+            },
+            "shadow_sampler_prototype": {
+                "interface": "v3_ccvc_evidence_driven_count_cell_value_sampler",
+                "shadow_only": True,
+                "affects_bid": False,
+                "active": False,
+                "status": "blocked_seed_instability",
+                "posterior_seeds": [0, 1],
+                "stable_watch_candidate_labels": [],
+                "min_watch_support_rows": 20,
+                "min_watch_support_sessions": 8,
+                "component_statuses": [
+                    {
+                        "component": "q6_count",
+                        "status": "blocked_seed_instability",
+                        "support_gate": {
+                            "status": "watch_low_support",
+                            "low_support_watch_metrics": [
+                                {
+                                    "posterior_seed": 1,
+                                    "watch_label": (
+                                        "q6_count|map_id,evidence_profile_key|"
+                                        "down_only:q6_count:map_id=2501|"
+                                        "evidence_profile_key=tool:category+item+shape"
+                                    ),
+                                    "support_rows": 8,
+                                    "support_sessions": 3,
+                                }
+                            ],
+                            "stable_low_support_watch_metrics": [],
+                        },
+                    }
+                ],
+            },
+        }
+    )
+
+    contract = result["shadow_sampler_contract"]
+    prototype = contract["prototype_contract"]
+    assert contract["status"] == "shadow_prototype_blocked"
+    assert contract["can_start_shadow_prototype"] is False
+    assert prototype["status"] == "blocked"
+    assert prototype["prototype_status"] == "blocked_seed_instability"
+    assert prototype["component_status_counts"] == {"blocked_seed_instability": 1}
+    assert prototype["support_gate_status_counts"] == {"watch_low_support": 1}
+    assert prototype["blocking_component_statuses"] == [
+        {
+            "component": "q6_count",
+            "status": "blocked_seed_instability",
+            "support_gate": "watch_low_support",
+        }
+    ]
+    assert prototype["low_support_watch_metrics"][0]["support_rows"] == 8

@@ -71,6 +71,50 @@ SHADOW_SAMPLER_REQUIRED_METRICS = (
     "q6_cells_p50_mae",
     "q6_value_p50_mae",
     "directional_hurt_groups",
+    "component_statuses",
+    "watch_labels_by_seed",
+    "watch_support_rows",
+    "watch_support_sessions",
+    "support_gate_status",
+    "stable_low_support_watch_metrics",
+    "unstable_watch_candidate_metrics",
+)
+
+SHADOW_SAMPLER_PROTOTYPE_KEYS = (
+    "shadow_sampler_prototype",
+    "ccvc_shadow_sampler_prototype",
+    "v3_shadow_sampler_prototype",
+)
+
+SHADOW_SAMPLER_PROTOTYPE_REQUIRED_FIELDS = (
+    "interface",
+    "shadow_only",
+    "affects_bid",
+    "status",
+    "posterior_seeds",
+    "stable_watch_candidate_labels",
+    "component_statuses",
+    "min_watch_support_rows",
+    "min_watch_support_sessions",
+)
+
+SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES = {
+    "blocked_shadow_affects_bid",
+    "blocked_shadow_active",
+    "blocked_no_component_likelihood",
+    "blocked_seed_instability",
+    "blocked_low_support",
+    "blocked_holdout_hurt",
+    "watch_with_hurt_alternatives",
+}
+
+SHADOW_SAMPLER_REQUIRED_COMPONENT_GATES = (
+    "shadow safety: affects_bid=false and active=false",
+    "component status per q6_count/q6_cells/q6_value",
+    "selected watch label seed stability",
+    "watch support rows/sessions gate",
+    "holdout hurt alternatives",
+    "archive/session/map-family/map-id/evidence-profile coverage",
 )
 
 
@@ -90,6 +134,144 @@ def _as_list(value: Any) -> list[Mapping[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, Mapping)]
+
+
+def _prototype_from_readiness(readiness: Mapping[str, Any]) -> Mapping[str, Any]:
+    for key in SHADOW_SAMPLER_PROTOTYPE_KEYS:
+        value = readiness.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return {}
+
+
+def _counter_from_rows(rows: Iterable[Mapping[str, Any]], key: str) -> dict[str, int]:
+    return dict(
+        sorted(Counter(str(row.get(key) or "unknown") for row in rows).items())
+    )
+
+
+def _support_gate_status(row: Mapping[str, Any]) -> str:
+    gate = row.get("support_gate")
+    if not isinstance(gate, Mapping):
+        return "missing"
+    return str(gate.get("status") or "unknown")
+
+
+def _low_support_watch_metrics(
+    component_statuses: Iterable[Mapping[str, Any]],
+    *,
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in component_statuses:
+        gate = row.get("support_gate")
+        if not isinstance(gate, Mapping):
+            continue
+        for item in gate.get("low_support_watch_metrics") or ():
+            if isinstance(item, Mapping):
+                out.append(dict(item))
+    out.sort(
+        key=lambda item: (
+            str(item.get("watch_label") or ""),
+            str(item.get("posterior_seed") or ""),
+        )
+    )
+    return out[:limit]
+
+
+def _stable_low_support_watch_metrics(
+    component_statuses: Iterable[Mapping[str, Any]],
+    *,
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in component_statuses:
+        gate = row.get("support_gate")
+        if not isinstance(gate, Mapping):
+            continue
+        for item in gate.get("stable_low_support_watch_metrics") or ():
+            if isinstance(item, Mapping):
+                out.append(dict(item))
+    out.sort(
+        key=lambda item: (
+            str(item.get("watch_label") or ""),
+            str(item.get("posterior_seed") or ""),
+        )
+    )
+    return out[:limit]
+
+
+def _shadow_sampler_prototype_contract(
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    prototype = _prototype_from_readiness(readiness)
+    if not prototype:
+        return {
+            "status": "missing",
+            "attached": False,
+            "accepted_keys": list(SHADOW_SAMPLER_PROTOTYPE_KEYS),
+            "required_fields": list(SHADOW_SAMPLER_PROTOTYPE_REQUIRED_FIELDS),
+            "blocking_statuses": sorted(SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES),
+        }
+
+    missing = [
+        field
+        for field in SHADOW_SAMPLER_PROTOTYPE_REQUIRED_FIELDS
+        if field not in prototype
+    ]
+    component_statuses = _as_list(prototype.get("component_statuses"))
+    component_status_counts = _counter_from_rows(component_statuses, "status")
+    support_gate_status_counts = dict(
+        sorted(Counter(_support_gate_status(row) for row in component_statuses).items())
+    )
+    blocking_component_statuses = [
+        {
+            "component": row.get("component"),
+            "status": row.get("status"),
+            "support_gate": _support_gate_status(row),
+        }
+        for row in component_statuses
+        if str(row.get("status") or "") in SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES
+    ]
+    prototype_status = str(prototype.get("status") or "unknown")
+    shadow_safe = (
+        prototype.get("shadow_only") is True
+        and prototype.get("affects_bid") is False
+        and prototype.get("active") is False
+    )
+    if missing or not shadow_safe:
+        status = "malformed"
+    elif (
+        prototype_status in SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES
+        or blocking_component_statuses
+    ):
+        status = "blocked"
+    else:
+        status = "watch_only"
+    return {
+        "status": status,
+        "attached": True,
+        "interface": prototype.get("interface"),
+        "prototype_status": prototype_status,
+        "shadow_safe": shadow_safe,
+        "missing_fields": missing,
+        "posterior_seeds": prototype.get("posterior_seeds") or [],
+        "stable_watch_candidate_labels": prototype.get(
+            "stable_watch_candidate_labels"
+        )
+        or [],
+        "min_watch_support_rows": prototype.get("min_watch_support_rows"),
+        "min_watch_support_sessions": prototype.get("min_watch_support_sessions"),
+        "component_status_counts": component_status_counts,
+        "support_gate_status_counts": support_gate_status_counts,
+        "blocking_component_statuses": blocking_component_statuses,
+        "low_support_watch_metrics": _low_support_watch_metrics(component_statuses),
+        "stable_low_support_watch_metrics": _stable_low_support_watch_metrics(
+            component_statuses
+        ),
+        "required_fields": list(SHADOW_SAMPLER_PROTOTYPE_REQUIRED_FIELDS),
+        "blocking_statuses": sorted(SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES),
+    }
 
 
 def _lane_verdict(
@@ -183,6 +365,12 @@ def summarize_shadow_sampler_contract(
         blocking_gates=blocking_gates,
         frozen_gates=frozen_gates,
     )
+    prototype_contract = _shadow_sampler_prototype_contract(readiness)
+    if (
+        prototype_contract.get("status") in {"blocked", "malformed"}
+        and status == "ready_for_shadow_prototype"
+    ):
+        status = "shadow_prototype_blocked"
     lane_verdicts = {
         str(row.get("lane")): str(row.get("verdict"))
         for row in lanes
@@ -212,10 +400,13 @@ def summarize_shadow_sampler_contract(
         "required_evidence": list(SHADOW_SAMPLER_REQUIRED_EVIDENCE),
         "required_holdouts": list(SHADOW_SAMPLER_REQUIRED_HOLDOUTS),
         "required_metrics": list(SHADOW_SAMPLER_REQUIRED_METRICS),
+        "required_component_gates": list(SHADOW_SAMPLER_REQUIRED_COMPONENT_GATES),
+        "prototype_contract": prototype_contract,
         "allowed_actions": [
             "define sampler interface",
             "emit shadow-only fields",
             "run archive/session/map-family/seed holdout",
+            "attach support-aware prototype audit to readiness/workbench",
             "record candidate/watch/frozen gates",
         ],
         "blocked_actions": [
@@ -240,6 +431,8 @@ def _sampler_next_action(status: str, stop_loss_lanes: Iterable[str]) -> str:
         return "define the shadow sampler interface before any parameter tuning"
     if status == "blocked_pending_prerequisites":
         return "resolve blocked readiness prerequisites before sampler tuning"
+    if status == "shadow_prototype_blocked":
+        return "keep sampler shadow-only; resolve prototype seed/support blockers"
     if status == "shadow_watch_only":
         return "emit prototype fields only; keep watch gates inactive"
     return "run the shadow prototype through required holdouts"
@@ -349,6 +542,7 @@ def _print_summary(result: Mapping[str, Any]) -> None:
         )
     contract = result.get("shadow_sampler_contract") or {}
     if isinstance(contract, Mapping):
+        prototype = contract.get("prototype_contract") or {}
         frozen = ",".join(
             str(row.get("gate"))
             for row in contract.get("frozen_gates") or ()
@@ -368,6 +562,8 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"affects_bid={contract.get('affects_bid')}",
                     f"frozen={frozen}",
                     f"blockers={blockers}",
+                    f"prototype_status={prototype.get('status')}",
+                    f"prototype_overall={prototype.get('prototype_status')}",
                     f"next_action=\"{contract.get('next_action')}\"",
                 ]
             )
