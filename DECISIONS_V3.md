@@ -3295,3 +3295,30 @@ applied_hurts=2502
   - `2521-2530`：BidMap present 10/10，Drop present 0/10；
   - `4521-4530`：BidMap present 10/10，Drop present 0/10。
 - 这能解释为什么 UI 能出现新活动图，但不能解释“白色藏品概率变红色藏品”的真实生成机制。
+
+## D-v3-162：archive/live formal-mode 评估必须显式标注口径
+
+2026-06-08 起，当前决策：
+
+- `summarize_live_windivert_brief.py` 的 archive replay 必须支持显式 formal mode；
+- 默认 replay 仍保持 builder 默认 v2，用于 paired 对照与历史兼容；
+- 分析当前 UI/v3 practical 实战值时，必须显式使用：
+
+```text
+--archive-formal-mode v3_practical
+```
+
+- brief summary 必须输出 formal-mode 与 live-guard 结构化计数，至少包括：
+  - `formal_mode_counts`；
+  - `formal_mode_reason_counts`；
+  - `v3_practical_formal_rows`；
+  - `v3_practical_live_guard_rows`；
+  - `v3_practical_live_guard_rate`；
+  - `v3_practical_live_guard_reason_counts`。
+- 如果 archive replay 被 table/schema parser 阻断，只能记录为 readiness blocker 或 table/schema follow-up；不得用 no-archive、v2 replay 或旧表口径替代当前 live v3 practical 指标。
+
+原因：
+
+- live runner 当前默认显式传 `formal_mode=v3_practical`，但底层 artifact builder 默认是 v2；
+- 不显式标注 replay formal mode 会把 v2 archive brief 误读为当前 UI/v3 practical 实战效果；
+- 当前 v303 `BidMap.txt` 已导致旧 parser 在 2501 行 `category` 空值处失败，真实 archive replay 需要先解决 table/schema 口径，不能回到 sampler 参数调优。

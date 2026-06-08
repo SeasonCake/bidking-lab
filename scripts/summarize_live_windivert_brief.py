@@ -83,6 +83,7 @@ def _load_archive_rows(
     shadow_trials: int | None,
     run_debug_shadows: bool,
     window: str,
+    formal_mode: str | None = None,
 ) -> list[dict[str, Any]]:
     if not archive_dir.exists():
         return []
@@ -111,6 +112,7 @@ def _load_archive_rows(
                     roi_trials=roi_trials,
                     shadow_trials=shadow_trials,
                     run_debug_shadows=run_debug_shadows,
+                    formal_mode=formal_mode,
                 )
             )
         else:
@@ -122,6 +124,7 @@ def _load_archive_rows(
                     roi_trials=roi_trials,
                     shadow_trials=shadow_trials,
                     run_debug_shadows=run_debug_shadows,
+                    formal_mode=formal_mode,
                 )
             )
     return rows
@@ -132,6 +135,7 @@ def _annotate_archive_row(
     *,
     path: Path,
     artifact: dict[str, Any],
+    session_id: str | None = None,
     n_trials: int,
     roi_trials: int,
     shadow_trials: int | None,
@@ -140,11 +144,20 @@ def _annotate_archive_row(
     row["ts"] = path.stat().st_mtime
     row["source"] = row.get("source") or source
     row["archive_path"] = str(path)
-    row["session_id"] = artifact.get("session_id")
+    row["session_id"] = row.get("session_id") or session_id or artifact.get("session_id")
     row["snapshot_mode"] = row.get("snapshot_mode") or "archive_fast"
     row["replay_n_trials"] = n_trials
     row["replay_roi_trials"] = roi_trials
     row["replay_shadow_trials"] = shadow_trials
+    row["replay_formal_mode_requested"] = artifact.get("formal_mode_requested")
+    row["replay_formal_mode"] = artifact.get("formal_mode")
+    row["replay_formal_mode_reason"] = artifact.get("formal_mode_reason")
+    if row.get("formal_mode_requested") is None:
+        row["formal_mode_requested"] = artifact.get("formal_mode_requested")
+    if row.get("formal_mode") is None:
+        row["formal_mode"] = artifact.get("formal_mode")
+    if row.get("formal_mode_reason") is None:
+        row["formal_mode_reason"] = artifact.get("formal_mode_reason")
     return row
 
 
@@ -156,6 +169,7 @@ def _load_archive_full_rows(
     roi_trials: int,
     shadow_trials: int | None,
     run_debug_shadows: bool,
+    formal_mode: str | None = None,
 ) -> list[dict[str, Any]]:
     artifact = build_monitor_artifact_from_file(
         path,
@@ -164,6 +178,7 @@ def _load_archive_full_rows(
         roi_trials=roi_trials,
         shadow_trials=shadow_trials,
         run_debug_shadows=run_debug_shadows,
+        formal_mode=formal_mode,
     )
     eval_row = artifact.get("model_eval")
     if not isinstance(eval_row, dict):
@@ -210,6 +225,7 @@ def _load_archive_prebid_rows(
     roi_trials: int,
     shadow_trials: int | None,
     run_debug_shadows: bool,
+    formal_mode: str | None = None,
 ) -> list[dict[str, Any]]:
     events = parse_fatbeans_capture(path)
     full_artifact = build_monitor_artifact_from_events(
@@ -220,6 +236,7 @@ def _load_archive_prebid_rows(
         roi_trials=roi_trials,
         shadow_trials=shadow_trials,
         run_debug_shadows=run_debug_shadows,
+        formal_mode=formal_mode,
     )
     final_value = full_artifact.get("known_value_sum")
     final_cells = full_artifact.get("inventory_cells")
@@ -259,6 +276,7 @@ def _load_archive_prebid_rows(
             roi_trials=roi_trials,
             shadow_trials=shadow_trials,
             run_debug_shadows=run_debug_shadows,
+            formal_mode=formal_mode,
         )
         eval_row = _model_eval_row(
             file=f"{path.name}#prebid_r{window_round}_sort{bid_send.sort_id}",
@@ -272,7 +290,8 @@ def _load_archive_prebid_rows(
         row = _annotate_archive_row(
             dict(eval_row),
             path=path,
-            artifact=full_artifact,
+            artifact=prefix_artifact,
+            session_id=full_artifact.get("session_id"),
             n_trials=n_trials,
             roi_trials=roi_trials,
             shadow_trials=shadow_trials,
@@ -351,6 +370,27 @@ def _source_label(row: dict[str, Any]) -> str:
     if row.get("archive_path"):
         return "windivert_archive"
     return "model_eval"
+
+
+def _formal_mode_label(row: dict[str, Any]) -> str:
+    value = row.get("formal_mode")
+    if value is None:
+        value = row.get("replay_formal_mode")
+    text = str(value or "").strip()
+    return text or "unknown"
+
+
+def _formal_mode_reason_label(row: dict[str, Any]) -> str:
+    value = row.get("formal_mode_reason")
+    if value is None:
+        value = row.get("replay_formal_mode_reason")
+    text = str(value or "").strip()
+    return text or "unknown"
+
+
+def _v3_practical_guard_reason_label(row: dict[str, Any]) -> str:
+    text = str(row.get("v3_practical_live_guard_reason") or "").strip()
+    return text or "unknown"
 
 
 def _round_bucket(row: dict[str, Any], key: str) -> str:
@@ -1081,9 +1121,34 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
             practical_p90_extreme_over_values.append(
                 1.0 if practical_signed_error > practical_denominator else 0.0
             )
+    formal_mode_counts = Counter(_formal_mode_label(row) for row in rows)
+    formal_mode_reason_counts = Counter(
+        _formal_mode_reason_label(row) for row in rows
+    )
+    v3_formal_rows = [
+        row for row in rows if _formal_mode_label(row) == "v3_practical"
+    ]
+    v3_live_guard_rows = [
+        row for row in v3_formal_rows if _truthy(row.get("v3_practical_live_guard"))
+    ]
+    v3_live_guard_reason_counts = Counter(
+        _v3_practical_guard_reason_label(row) for row in v3_live_guard_rows
+    )
     return {
         "rows": len(rows),
         "estimate_rows": len(signed),
+        "formal_mode_counts": dict(sorted(formal_mode_counts.items())),
+        "formal_mode_reason_counts": dict(sorted(formal_mode_reason_counts.items())),
+        "v3_practical_formal_rows": len(v3_formal_rows),
+        "v3_practical_live_guard_rows": len(v3_live_guard_rows),
+        "v3_practical_live_guard_rate": (
+            round(len(v3_live_guard_rows) / len(v3_formal_rows), 2)
+            if v3_formal_rows
+            else None
+        ),
+        "v3_practical_live_guard_reason_counts": dict(
+            sorted(v3_live_guard_reason_counts.items())
+        ),
         "median_matched": int(statistics.median(matched_clean)) if matched_clean else None,
         "decision_value_mae": round(baseline_mae, 1) if baseline_mae is not None else None,
         "median_p50_error": round(statistics.median(signed), 1) if signed else None,
@@ -1533,6 +1598,10 @@ def _print_report(
         f"p90_covered_excess_ratio={overall.get('median_p90_covered_excess_ratio')} "
         f"p90_extreme_over_rate={overall.get('p90_extreme_over_rate')} "
         f"median_n_trials={overall.get('median_n_trials')} "
+        f"formal_modes={overall.get('formal_mode_counts')} "
+        f"v3_practical_formal_rows={overall.get('v3_practical_formal_rows')} "
+        f"v3_practical_live_guard_rows={overall.get('v3_practical_live_guard_rows')} "
+        f"v3_practical_live_guard_rate={overall.get('v3_practical_live_guard_rate')} "
         f"size_bucket_rate={overall.get('size_bucket_active_rate')} "
         f"v3_practical_p90_coverage={overall.get('v3_practical_p90_coverage')} "
         "v3_practical_p90_extreme_over_rate="
@@ -1551,6 +1620,10 @@ def _print_report(
         f"p90_coverage={prebid.get('p90_coverage')} "
         f"p90_covered_excess_ratio={prebid.get('median_p90_covered_excess_ratio')} "
         f"p90_extreme_over_rate={prebid.get('p90_extreme_over_rate')} "
+        f"formal_modes={prebid.get('formal_mode_counts')} "
+        f"v3_practical_formal_rows={prebid.get('v3_practical_formal_rows')} "
+        f"v3_practical_live_guard_rows={prebid.get('v3_practical_live_guard_rows')} "
+        f"v3_practical_live_guard_rate={prebid.get('v3_practical_live_guard_rate')} "
         f"v3_practical_p90_coverage={prebid.get('v3_practical_p90_coverage')} "
         "v3_practical_p90_extreme_over_rate="
         f"{prebid.get('v3_practical_p90_extreme_over_rate')}"
@@ -1609,7 +1682,8 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
         f"{label},rows,estimate_rows,median_matched,decision_mae,median_p50_err,"
         "median_abs_p50_err,median_norm_abs_p50_err,p50_under_rate,p90_coverage,"
         "median_p90_signed_err,p90_covered_excess_ratio,p90_extreme_over_rate,"
-        "median_n_trials,size_bucket_rate,v3_practical_candidate_rate,"
+        "median_n_trials,v3_practical_formal_rows,v3_practical_live_guard_rows,"
+        "v3_practical_live_guard_rate,size_bucket_rate,v3_practical_candidate_rate,"
         "v3_practical_raise_watch_rate,v3_practical_mae,"
         "v3_practical_delta_mae,v3_practical_under_rate,"
         "v3_practical_p90_coverage,v3_practical_p90_extreme_over_rate,"
@@ -1636,6 +1710,9 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
             f"{group.get('median_p90_covered_excess_ratio')},"
             f"{group.get('p90_extreme_over_rate')},"
             f"{group.get('median_n_trials')},"
+            f"{group.get('v3_practical_formal_rows')},"
+            f"{group.get('v3_practical_live_guard_rows')},"
+            f"{group.get('v3_practical_live_guard_rate')},"
             f"{group.get('size_bucket_active_rate')},"
             f"{group.get('v3_practical_candidate_rate')},"
             f"{group.get('v3_practical_raise_watch_rate')},"
@@ -1801,6 +1878,15 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--archive-formal-mode",
+        choices=("v2", "v3_practical"),
+        default=None,
+        help=(
+            "Formal mode used when replaying archives. Default keeps the artifact "
+            "builder default (v2); use v3_practical to match current live runner."
+        ),
+    )
+    parser.add_argument(
         "--detail-groups",
         action="store_true",
         help=(
@@ -1825,6 +1911,7 @@ def main() -> int:
                 shadow_trials=max(1, int(args.archive_shadow_trials)),
                 run_debug_shadows=bool(args.archive_debug_shadows),
                 window=args.archive_window,
+                formal_mode=args.archive_formal_mode,
             )
         )
     rows = _dedupe_rows(rows)

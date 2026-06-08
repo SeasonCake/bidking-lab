@@ -57,6 +57,10 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
             "q6_quality_only_deep_local_risk": True,
             "warehouse_p50_error": -45,
             "monitor_n_trials": 20,
+            "formal_mode": "v3_practical",
+            "formal_mode_reason": "v3_practical_ready_live_guarded",
+            "v3_practical_live_guard": "是",
+            "v3_practical_live_guard_reason": "low_support_baseline",
             "v3_practical_candidate": True,
             "v3_practical_recommendation": "raise_watch",
             "v3_practical_formal_decision_value_p50": 280_000,
@@ -77,6 +81,8 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
             "final_q6_value": 0,
             "warehouse_p50_error": 8,
             "inference_profile": {"n_trials": 10},
+            "formal_mode": "v2",
+            "formal_mode_reason": "v2_mode_requested",
             "size_bucket_active": True,
             "v3_practical_candidate": True,
             "v3_practical_recommendation": "raise_watch",
@@ -87,8 +93,24 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
     summary = summarize(rows)
     assert summary["total_rows"] == 2
     assert summary["source_counts"] == {"windivert": 2}
+    assert summary["overall"]["formal_mode_counts"] == {
+        "v2": 1,
+        "v3_practical": 1,
+    }
+    assert summary["overall"]["formal_mode_reason_counts"] == {
+        "v2_mode_requested": 1,
+        "v3_practical_ready_live_guarded": 1,
+    }
+    assert summary["overall"]["v3_practical_formal_rows"] == 1
+    assert summary["overall"]["v3_practical_live_guard_rows"] == 1
+    assert summary["overall"]["v3_practical_live_guard_rate"] == 1.0
+    assert summary["overall"]["v3_practical_live_guard_reason_counts"] == {
+        "low_support_baseline": 1,
+    }
     assert summary["by_observed_round"]["R1"]["rows"] == 1
     assert summary["by_action_round"]["R2"]["rows"] == 1
+    assert summary["by_action_round"]["R2"]["v3_practical_formal_rows"] == 1
+    assert summary["by_action_round"]["R2"]["v3_practical_live_guard_rate"] == 1.0
     assert summary["by_action_round"]["R2"]["p50_under_rate"] == 1.0
     assert summary["by_action_round"]["R2"]["p90_coverage"] == 0.0
     assert summary["by_action_round"]["R2"]["median_n_trials"] == 20
@@ -274,8 +296,12 @@ def test_load_archive_rows_replays_recent_complete_archive(
         assert kwargs["roi_trials"] == 0
         assert kwargs["shadow_trials"] == 1
         assert kwargs["run_debug_shadows"] is False
+        assert kwargs["formal_mode"] == "v3_practical"
         return {
             "session_id": "2401:session",
+            "formal_mode_requested": "v3_practical",
+            "formal_mode": "v3_practical",
+            "formal_mode_reason": "v3_practical_ready",
             "model_eval": {
                 "file": str(path.name),
                 "round": 3,
@@ -295,6 +321,7 @@ def test_load_archive_rows_replays_recent_complete_archive(
         shadow_trials=1,
         run_debug_shadows=False,
         window="full",
+        formal_mode="v3_practical",
     )
 
     assert len(rows) == 1
@@ -302,6 +329,10 @@ def test_load_archive_rows_replays_recent_complete_archive(
     assert rows[0]["session_id"] == "2401:session"
     assert rows[0]["archive_path"] == str(capture)
     assert rows[0]["snapshot_mode"] == "archive_fast"
+    assert rows[0]["formal_mode_requested"] == "v3_practical"
+    assert rows[0]["formal_mode"] == "v3_practical"
+    assert rows[0]["formal_mode_reason"] == "v3_practical_ready"
+    assert rows[0]["replay_formal_mode"] == "v3_practical"
 
 
 def test_load_archive_rows_can_emit_prebid_windows(
@@ -327,12 +358,16 @@ def test_load_archive_rows_can_emit_prebid_windows(
     monkeypatch.setattr(module, "parse_fatbeans_capture", lambda path: events)
 
     def fake_build_events(events_arg, **kwargs):
+        assert kwargs["formal_mode"] == "v3_practical"
         if len(events_arg.packets) == 4:
             return {
                 "session_id": "2401:session",
                 "known_value_sum": 900000,
                 "inventory_cells": 121,
                 "final_q6_value": 600000,
+                "formal_mode_requested": "v3_practical",
+                "formal_mode": "v3_practical",
+                "formal_mode_reason": "v3_practical_ready",
             }
         assert [send.kind for send in events_arg.sends] == ["action"]
         assert [state.sort_id for state in events_arg.states] == [1, 3]
@@ -340,6 +375,9 @@ def test_load_archive_rows_can_emit_prebid_windows(
             "session_id": "2401:session",
             "round": None,
             "action_round": None,
+            "formal_mode_requested": "v3_practical",
+            "formal_mode": "v3_practical",
+            "formal_mode_reason": "v3_practical_ready_live_guarded",
         }
 
     def fake_model_eval_row(**kwargs):
@@ -366,6 +404,7 @@ def test_load_archive_rows_can_emit_prebid_windows(
         shadow_trials=1,
         run_debug_shadows=False,
         window="prebid",
+        formal_mode="v3_practical",
     )
 
     assert len(rows) == 1
@@ -382,6 +421,10 @@ def test_load_archive_rows_can_emit_prebid_windows(
     assert rows[0]["window_ready_for_accuracy"] is True
     assert rows[0]["round"] == 1
     assert rows[0]["action_round"] == 1
+    assert rows[0]["formal_mode_requested"] == "v3_practical"
+    assert rows[0]["formal_mode"] == "v3_practical"
+    assert rows[0]["formal_mode_reason"] == "v3_practical_ready_live_guarded"
+    assert rows[0]["replay_formal_mode"] == "v3_practical"
 
 
 def test_load_archive_rows_scans_reset_complete_candidates(

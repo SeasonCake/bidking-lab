@@ -6898,3 +6898,55 @@ activity_range=4521-4530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_
 - 活动沉船不是完全找不到表：入口表与地图表都已拿到，且不需要新解密方法，现有 base64 table decoder 可处理。
 - 真正缺的是活动红转/drop overlay 机制；这可能在服务端、远端 overlay 表、代码逻辑或尚未同步的资源中。
 - 后续 prior drift 分离应把 252x/452x 标成 `bidmap_present_drop_missing`，而不是旧的纯 `missing_bidmap`。
+
+## O-v3-175：archive formal-mode contract 已补，但真实 replay 被 v303 BidMap parser 漂移阻断
+
+2026-06-08 复核 `summarize_live_windivert_brief.py`：
+
+- 脚本已支持 `--archive-formal-mode v3_practical`，并在 archive replay 行记录：
+  - `replay_formal_mode_requested`；
+  - `replay_formal_mode`；
+  - `replay_formal_mode_reason`。
+- summary/group stats 已输出 formal-mode 与 guard 计数：
+  - `formal_mode_counts`；
+  - `formal_mode_reason_counts`；
+  - `v3_practical_formal_rows`；
+  - `v3_practical_live_guard_rows`；
+  - `v3_practical_live_guard_rate`；
+  - `v3_practical_live_guard_reason_counts`。
+
+聚焦测试通过：
+
+```text
+python -m py_compile scripts\summarize_live_windivert_brief.py
+python -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_live_windivert_brief.py -q
+10 passed
+```
+
+真实 archive replay smoke：
+
+```text
+python scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-n-trials 10 --archive-shadow-trials 1 --archive-formal-mode v3_practical --format json
+```
+
+失败点：
+
+```text
+ValueError: failed to parse bid map row index 32: invalid literal for int() with base 10: ''
+```
+
+直接解码 `data/raw/tables/BidMap.txt`：
+
+```text
+rows 165 cols [23]
+idx 32 map 2501 c7='' c17='[9999,2501,22,44]'
+idx 33 map 2502 c7='' c17='[9999,2502,22,44]'
+idx 145 map 2521 c7='105' c17='[9999,2521,22,44]'
+```
+
+解读：
+
+- 这是 v303 `BidMap` 表 schema/字段语义漂移或 category 空值语义问题；
+- 旧 parser 仍把 23 列 `col[7]` 当 required category，导致 2501 旧沉船行加载失败；
+- 因为 `load_monitor_tables()` 被 live/archive 多路径共用，本窗口不直接修 parser 以免影响 live/正式出价；
+- 在 table/schema 口径修复或提供可解析 v300 table root 之前，不能用当前 raw v303 跑 archive v3 practical replay，也不能恢复 sampler 调参或 promotion 判断。

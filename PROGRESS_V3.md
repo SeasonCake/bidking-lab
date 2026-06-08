@@ -9203,3 +9203,67 @@ pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_archive_table_timing
 C:\Python313\python.exe scripts\decode_all_tables.py --rows 0 --col-width 40
 C:\Python313\python.exe scripts\summarize_v3_archive_table_timing.py --format summary
 ```
+
+## 2026-06-08 checkpoint：archive/live formal-mode evaluation contract 补齐
+
+背景：
+
+- live runner 当前显式使用 `formal_mode=v3_practical` 作为 guarded practical trial；
+- 但 `summarize_live_windivert_brief.py` 的 archive replay 仍走底层 builder 默认值，即 v2 formal；
+- 因此局后 brief 的 `decision_value_p50/p90` 可能被误读为当前 UI/v3 practical 实战值。
+
+完成：
+
+- `scripts/summarize_live_windivert_brief.py` 新增 `--archive-formal-mode {v2,v3_practical}`：
+  - 默认仍不传 formal mode，保持 builder 默认 v2 paired 对照口径；
+  - 显式传 `v3_practical` 时，archive full/prebid replay 都会把该 formal mode 传入 `build_monitor_artifact_from_file()` / `build_monitor_artifact_from_events()`。
+- archive replay 行新增/补齐：
+  - `replay_formal_mode_requested`；
+  - `replay_formal_mode`；
+  - `replay_formal_mode_reason`；
+  - 若 `model_eval` 行缺少 `formal_mode*`，用 replay artifact 的 formal-mode 字段补齐。
+- summary/group stats 新增：
+  - `formal_mode_counts`；
+  - `formal_mode_reason_counts`；
+  - `v3_practical_formal_rows`；
+  - `v3_practical_live_guard_rows`；
+  - `v3_practical_live_guard_rate`；
+  - `v3_practical_live_guard_reason_counts`。
+- 文本 brief 的 overall/prebid/group 表同步输出 v3 practical formal 行数与 guard rate。
+- `tests/test_summarize_live_windivert_brief.py` 覆盖：
+  - summary formal-mode / guard counts；
+  - archive full replay formal-mode 传参与行字段；
+  - archive prebid replay formal-mode 传参与行字段。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_live_windivert_brief.py
+python -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_live_windivert_brief.py -q
+10 passed
+
+python scripts\summarize_live_windivert_brief.py --since-hours 72 --no-archive --format json
+passed; 输出新增 formal_mode / guard 字段，当前 72h model_eval rows=0
+```
+
+真实 archive replay 仍被当前 v303 `BidMap.txt` parser/schema drift 阻断：
+
+```text
+python scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-n-trials 10 --archive-shadow-trials 1 --archive-formal-mode v3_practical --format json
+failed: ValueError: failed to parse bid map row index 32: invalid literal for int() with base 10: ''
+```
+
+解码审计显示：
+
+```text
+BidMap rows=165 cols=[23]
+idx=32 map=2501 col[7]='' col[17]='[9999,2501,22,44]'
+idx=145 map=2521 col[7]='105' col[17]='[9999,2521,22,44]'
+```
+
+结论：
+
+- archive/live formal-mode evaluation contract 已补齐；
+- 当前无法用 v303 raw table 跑真实 archive replay，不应回到 sampler 调参；
+- 下一步应先由 table/schema 或 live/app 侧确认 v303 `BidMap.col[7]` 空值语义、category fallback/推断规则，或提供可解析的 v300 table root；
+- readiness/promotion gate 不放宽，v3 仍是 audit/shadow/guarded practical trial，不是 promotion。
