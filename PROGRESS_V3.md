@@ -10021,3 +10021,63 @@ required_holdouts=archive,session,map_family,map_id/profile when sample depth is
 - 当前可以继续做 evidence-driven count/cell/value sampler 的 shadow-only interface/prototype；
 - 但 workbench 现在会 fail-visible 地说明该阶段仍是 `shadow_design_only`，CSE/SCP/CCV/formal-value stop-loss lane 只能作为 risk/watch/frozen evidence；
 - 不得把 sampler prototype 接入 live/formal，不得调正式出价参数，不得 archive v2，也不得放宽 readiness/promotion gate。
+
+## 2026-06-08 checkpoint：CCVC shadow sampler prototype audit added
+
+背景：
+
+- `v3_ccvc_` component likelihood 已是当前 evidence-driven count/cell/value sampler 的第一版 shadow prototype；
+- 但它的审计此前分散在 direction holdout、policy matrix、evidence contribution 等脚本里；
+- 当前 promotion hardening 需要一个聚合入口，明确 prototype 是否通过 archive/session/map-family/map-id/seed holdout，而不是只挑单个有利分片。
+
+完成：
+
+- 新增 `scripts/summarize_v3_shadow_sampler_prototype.py`：
+  - 显式开启 `V3CcvOptions(component_likelihood=True)`；
+  - 对 `v3_ccvc_` 输出 row contract；
+  - 检查 `v3_ccvc_`、`v3_fv_`、`v3_scp_`、`v3_cse_` 的 `affects_bid/active` safety；
+  - 聚合 CCVC policy matrix、direction holdout、evidence contribution；
+  - 支持多个 `--posterior-seed`，并要求 stable watch candidate 及其 selected candidate group 必须出现在所有 seed；
+  - 输出 `shadow_only=true`、`affects_bid=false`、`can_promote=false`。
+- 新增 `tests/test_summarize_v3_shadow_sampler_prototype.py`：
+  - watch candidate；
+  - shadow affects-bid blocker；
+  - seed stability；
+  - 任一 seed 缺 watch candidate 时 blocked。
+
+验证：
+
+```text
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_shadow_sampler_prototype.py
+
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_shadow_sampler_prototype.py -q
+4 passed
+
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --component q6_cells --group-field map_family --group-field map_id --movement-policy all --movement-policy up_only --top 5 --format summary
+status=blocked_seed_instability
+interface=v3_ccvc_evidence_driven_count_cell_value_sampler
+shadow_only=True
+affects_bid=False
+trials=64
+seeds=0,1
+stable_watch=
+seed_status_counts=blocked_holdout_hurt:1,watch_with_hurt_alternatives:1
+```
+
+真实 smoke 复核：
+
+```text
+seed=0 status=blocked_holdout_hurt rows=1627 component_rows=1177
+matrix_status_counts=blocked_holdout_directional_hurt:6,sample_limited:2
+applied_hurts=q6_cells|map_id|all:q6_cells:2408,q6_cells|map_id|all:q6_cells:2410,q6_cells|map_id|all:q6_cells:2502,q6_cells|map_id|all:q6_cells:2503,q6_cells|map_id|all:q6_cells:2504
+
+seed=1 status=watch_with_hurt_alternatives rows=1627 component_rows=1164
+matrix_status_counts=blocked_holdout_directional_hurt:3,sample_limited:4,watch:1
+candidate=q6_count|map_id|all rows=424 delta=-0.057 hurt_rate=0.110849 directional_error=0.082547
+```
+
+结论：
+
+- `v3_ccvc_` prototype 当前已可一键审计，但仍不是 promotion candidate；
+- 主要 blocker 是 seed 0 没有稳定 watch candidate，且 q6_cells 在多个 map_id 上存在 holdout hurt；
+- 下一步 sampler 设计应优先分离 q6_count 与 q6_cells：count movement 可以继续诊断，cells movement 需要更强 guard 或 freeze-cells policy；仍不得接 live/formal。

@@ -1,0 +1,190 @@
+import hashlib
+import importlib.util
+from pathlib import Path
+
+
+def _load_module():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "summarize_v3_shadow_sampler_prototype.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "summarize_v3_shadow_sampler_prototype",
+        path,
+    )
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _stable_fold(value: str, folds: int) -> int:
+    digest = hashlib.sha1(value.encode("utf-8")).hexdigest()
+    return int(digest[:12], 16) % int(folds)
+
+
+def _session_for_fold(fold: int, *, prefix: str) -> str:
+    for idx in range(1000):
+        session_id = f"{prefix}_{idx}"
+        if _stable_fold(session_id, 2) == fold:
+            return session_id
+    raise AssertionError(f"no session for fold {fold}")
+
+
+def _row(
+    *,
+    session_id: str,
+    truth: int = 4,
+    baseline: int = 2,
+    ccvc: int = 3,
+    map_id: str = "2502",
+    map_family: str = "shipwreck",
+    affects_bid: bool = False,
+) -> dict[str, object]:
+    return {
+        "file": f"{session_id}#r1",
+        "status": "ready",
+        "session_id": session_id,
+        "map_id": map_id,
+        "map_family": map_family,
+        "evidence_profile_key": "public:total+shape",
+        "v3_truth_available": True,
+        "v3_post_ready": True,
+        "v3_ccvc_ready": True,
+        "v3_ccvc_affects_bid": affects_bid,
+        "v3_ccvc_match_scope": "ccv_component_likelihood",
+        "v3_ccvc_diagnostics": (
+            "ccvc_explicit_q6_anchor_count=1;"
+            "ccvc_unassigned_anchor_count=0"
+        ),
+        "v3_summary_session_total_count_exact": 20,
+        "v3_summary_q6_count_floor": 1,
+        "v3_post_q6_count_p50": baseline,
+        "v3_ccvc_q6_count_p50": ccvc,
+        "v3_truth_q6_count": truth,
+    }
+
+
+def _watch_rows() -> list[dict[str, object]]:
+    fold0 = [_session_for_fold(0, prefix=f"f0_{idx}") for idx in range(4)]
+    fold1 = [_session_for_fold(1, prefix=f"f1_{idx}") for idx in range(4)]
+    return [_row(session_id=session_id) for session_id in (*fold0, *fold1)]
+
+
+def test_shadow_sampler_prototype_finds_watch_candidate() -> None:
+    module = _load_module()
+
+    result = module.summarize_seed_run(
+        _watch_rows(),
+        posterior_seed=0,
+        components=("q6_count",),
+        group_fields=("map_id",),
+        movement_policies=("all",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+    )
+
+    assert result["status"] == "watch_shadow_candidate"
+    assert result["row_contract"]["ccvc_component_likelihood_rows"] == 8
+    assert result["watch_candidates"][0]["label"] == "q6_count|map_id|all"
+    assert result["watch_candidates"][0]["candidate_groups"] == ["q6_count:2502"]
+    assert result["watch_candidates"][0]["candidate_delta_p50_mae"] == -1
+
+
+def test_shadow_sampler_prototype_blocks_affects_bid_rows() -> None:
+    module = _load_module()
+    rows = _watch_rows()
+    rows[0]["v3_ccvc_affects_bid"] = True
+
+    result = module.summarize_seed_run(
+        rows,
+        posterior_seed=0,
+        components=("q6_count",),
+        group_fields=("map_id",),
+        movement_policies=("all",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+    )
+
+    assert result["status"] == "blocked_shadow_affects_bid"
+    assert result["row_contract"]["shadow_affects_bid_rows"] == 1
+
+
+def test_shadow_sampler_prototype_marks_seed_instability() -> None:
+    module = _load_module()
+    seed0 = module.summarize_seed_run(
+        _watch_rows(),
+        posterior_seed=0,
+        components=("q6_count",),
+        group_fields=("map_id",),
+        movement_policies=("all",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+    )
+    seed1 = module.summarize_seed_run(
+        [_row(session_id=row["session_id"], map_id="2503") for row in _watch_rows()],
+        posterior_seed=1,
+        components=("q6_count",),
+        group_fields=("map_id",),
+        movement_policies=("all",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+    )
+
+    stable = module.summarize_prototype_runs(
+        (seed0, dict(seed0, posterior_seed=1)),
+        posterior_trials=64,
+        component_move_cells=True,
+    )
+
+    assert stable["status"] == "watch_shadow_candidate"
+    assert stable["stable_watch_candidate_labels"] == [
+        "q6_count|map_id|all:q6_count:2502"
+    ]
+
+    result = module.summarize_prototype_runs(
+        (seed0, seed1),
+        posterior_trials=64,
+        component_move_cells=True,
+    )
+
+    assert result["stable_watch_candidate_labels"] == []
+    assert result["status"] == "blocked_seed_instability"
+
+
+def test_shadow_sampler_prototype_requires_candidate_on_every_seed() -> None:
+    module = _load_module()
+    seed0 = module.summarize_seed_run(
+        _watch_rows(),
+        posterior_seed=0,
+        components=("q6_count",),
+        group_fields=("map_id",),
+        movement_policies=("all",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+    )
+    seed1 = dict(seed0)
+    seed1["posterior_seed"] = 1
+    seed1["watch_candidates"] = []
+    seed1["status"] = "blocked_holdout_hurt"
+
+    result = module.summarize_prototype_runs(
+        (seed0, seed1),
+        posterior_trials=64,
+        component_move_cells=True,
+    )
+
+    assert result["stable_watch_candidate_labels"] == []
+    assert result["status"] == "blocked_seed_instability"

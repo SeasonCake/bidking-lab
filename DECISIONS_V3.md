@@ -3608,3 +3608,28 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 如果 workbench 只说 `next_mode=build_shadow_formal_value_workbench`，后续窗口容易误读为可以恢复参数调优；
 - 机器可读 contract 能明确下一步是 shadow-only sampler interface/prototype，而不是 live/formal 替换；
 - 该改动只增强审计和承接边界，不改变 evaluator、pipeline、live/UI 或正式出价。
+
+## D-v3-176：CCVC component likelihood 是当前 sampler prototype，但必须过 multi-seed prototype audit
+
+2026-06-08 起，当前决策：
+
+- `v3_ccvc_` component likelihood 暂作为 evidence-driven count/cell/value sampler 的当前 shadow-only prototype；
+- prototype audit 必须同时检查：
+  - `v3_ccvc_` row contract；
+  - `affects_bid=false` 与相关 shadow lane inactive；
+  - archive/session holdout；
+  - `map_family` / `map_id` / evidence profile 分组；
+  - movement policy；
+  - evidence contribution；
+  - posterior seed stability。
+- 新增 `scripts/summarize_v3_shadow_sampler_prototype.py` 作为该聚合审计入口；
+- 任一 seed 没有 watch candidate 时，不得把其他 seed 的候选视为 stable；
+- stable watch 必须包含实际 selected candidate group，不只比较 component/group-field/policy 标签；
+- q6_cells / q6_value / q6_count 任一关键 component 出现 applied hurt 或 seed instability 时，prototype 只能保持 shadow/design，不得进入 readiness promotion 或 live/formal。
+
+原因：
+
+- 之前 `v3_ccvc_` 的验证分散在 direction holdout、policy matrix 和 evidence contribution 脚本里，跨窗口容易只引用其中一个有利结果；
+- 当前真实 smoke 显示 seed 1 有 `q6_count|map_id|all` watch candidate，但 seed 0 没有稳定 watch，且 q6_cells 在多个 map_id 上有 holdout hurt；
+- 因此当前结论是 prototype 可继续用于设计和诊断，但仍 blocked by seed instability / holdout hurt；
+- 该脚本只跑 audit，不改变 `posterior.py`、pipeline 默认、live/UI、v2 fallback 或正式出价。

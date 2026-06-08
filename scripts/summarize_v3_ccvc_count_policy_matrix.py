@@ -82,6 +82,7 @@ def summarize_matrix(
                     "overall_status": result["overall_status"],
                     "rows": result["overall"]["n"],
                     "candidate_rows": candidate["candidate_rows"],
+                    "candidate_groups": candidate["candidate_groups"],
                     "candidate_delta_p50_mae": candidate[
                         "candidate_only_delta_p50_mae"
                     ],
@@ -124,6 +125,7 @@ def _print_summary(rows: Iterable[dict[str, Any]]) -> None:
                     f"status={row['overall_status']}",
                     f"rows={row['rows']}",
                     f"candidate_rows={row['candidate_rows']}",
+                    "candidate_groups=" + ",".join(row["candidate_groups"]),
                     f"delta={row['candidate_delta_p50_mae']}",
                     f"hurt_rate={row['candidate_hurt_rate']}",
                     "directional_error="
