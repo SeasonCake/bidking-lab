@@ -462,6 +462,35 @@ _SCP_GUARDED_STABILITY_CONTRACT_KEYS = (
     "selected_group_guard_summary",
     "selected_group_instability_summary",
 )
+_CSE_ARTIFACT_CONTRACT_KEYS = (
+    "affects_bid",
+    "active",
+    "generated_at",
+    "source",
+    "group_bys",
+    "table_overlay_metadata",
+    "cohorts",
+    "entries",
+)
+_CSE_ENTRY_CONTRACT_KEYS = (
+    "scope",
+    "group",
+    "status",
+    "gate_reason",
+    "source",
+    "archive_sessions",
+    "mechanism_classes",
+    "source_evidence_classes",
+    "source_context_classes",
+    "unique_round_overflow_rows",
+    "server_side_expansion_rows",
+    "session_capacity_source_semantics_rows",
+    "public_total_match_rows",
+    "full_action_rows",
+    "payload_verified_only_rows",
+    "payload_inventory_mismatch_rows",
+    "non_zodiac_missing_max",
+)
 
 
 def _live_practical_guard_slice(
@@ -678,6 +707,91 @@ def summarize_scp_guarded_bridge_stability_contract(
     }
 
 
+def summarize_capacity_source_expansion_artifact_contract(
+    artifact: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if artifact is None:
+        return {
+            "status": "not_supplied",
+            "reason": "capacity/source expansion artifact was not supplied",
+            "missing_keys": list(_CSE_ARTIFACT_CONTRACT_KEYS),
+            "entry_missing_key_counts": {},
+            "entries": 0,
+            "group_bys": [],
+            "cohorts": 0,
+            "candidate_entries": 0,
+            "active": None,
+            "affects_bid": None,
+        }
+    if not isinstance(artifact, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "capacity/source expansion artifact must be an object",
+            "missing_keys": list(_CSE_ARTIFACT_CONTRACT_KEYS),
+            "entry_missing_key_counts": {},
+            "entries": 0,
+            "group_bys": [],
+            "cohorts": 0,
+            "candidate_entries": 0,
+            "active": None,
+            "affects_bid": None,
+        }
+    missing_keys = [
+        key for key in _CSE_ARTIFACT_CONTRACT_KEYS if key not in artifact
+    ]
+    entries_value = artifact.get("entries")
+    entries = entries_value if isinstance(entries_value, list) else []
+    group_bys_value = artifact.get("group_bys")
+    group_bys = [str(value) for value in group_bys_value] if isinstance(group_bys_value, list) else []
+    cohorts_value = artifact.get("cohorts")
+    cohorts = cohorts_value if isinstance(cohorts_value, list) else []
+    entry_missing_key_counts: Counter[str] = Counter()
+    candidate_entries = 0
+    blocked_entries = 0
+    for row in entries:
+        if not isinstance(row, Mapping):
+            entry_missing_key_counts["non_object_entry"] += 1
+            continue
+        for key in _CSE_ENTRY_CONTRACT_KEYS:
+            if key not in row:
+                entry_missing_key_counts[key] += 1
+        status = str(row.get("status") or "")
+        if status == "watch_capacity_source_expansion_shadow_only":
+            candidate_entries += 1
+        if status.startswith("blocked_"):
+            blocked_entries += 1
+    blockers: list[str] = []
+    if missing_keys:
+        blockers.append("missing CSE artifact contract fields")
+    if artifact.get("affects_bid") is not False:
+        blockers.append("artifact affects_bid must be false")
+    if artifact.get("active") is not False:
+        blockers.append("artifact active must be false")
+    if not entries:
+        blockers.append("artifact has no entries")
+    if not group_bys:
+        blockers.append("artifact group_bys are missing")
+    if not cohorts:
+        blockers.append("artifact cohorts are missing")
+    if entry_missing_key_counts:
+        blockers.append("artifact entries are missing CSE evidence fields")
+    return {
+        "status": "blocked" if blockers else "watch",
+        "reason": "; ".join(blockers) if blockers else "capacity/source expansion artifact contract is evaluable",
+        "missing_keys": missing_keys,
+        "entry_missing_key_counts": dict(sorted(entry_missing_key_counts.items())),
+        "entries": len(entries),
+        "group_bys": group_bys,
+        "cohorts": len(cohorts),
+        "candidate_entries": candidate_entries,
+        "blocked_entries": blocked_entries,
+        "active": artifact.get("active"),
+        "affects_bid": artifact.get("affects_bid"),
+        "generated_at": artifact.get("generated_at"),
+        "source": artifact.get("source"),
+    }
+
+
 def summarize_readiness(
     rows: list[dict[str, Any]],
     errors: list[dict[str, str]],
@@ -688,11 +802,15 @@ def summarize_readiness(
     min_sessions: int = 8,
     folds: int = 5,
     scp_guarded_bridge_stability: Mapping[str, Any] | None = None,
+    capacity_source_expansion_artifact: Mapping[str, Any] | None = None,
     live_practical_guard_brief: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = summarize_rows(rows, errors)
     live_guard_brief = summarize_live_practical_guard_brief(
         live_practical_guard_brief
+    )
+    cse_artifact_contract = summarize_capacity_source_expansion_artifact_contract(
+        capacity_source_expansion_artifact
     )
     prior_stress_details = summarize_prior_stress_details(rows)
     prior_stress_detail_summary = summarize_prior_stress_detail_summary(
@@ -987,19 +1105,33 @@ def summarize_readiness(
         summary.get("v3_cse_pressure_candidate_rows") or 0
     )
     cse_active = int(summary.get("v3_cse_active_rows") or 0)
-    cse_status = "watch" if cse_ready > 0 and cse_active == 0 else "blocked"
+    cse_contract_status = str(cse_artifact_contract.get("status") or "blocked")
+    cse_row_status = "watch" if cse_ready > 0 and cse_active == 0 else "blocked"
+    cse_status = (
+        "watch"
+        if cse_row_status == "watch" and cse_contract_status != "blocked"
+        else "blocked"
+    )
+    if cse_contract_status == "blocked":
+        cse_reason = (
+            "capacity/source expansion artifact is not audit-ready: "
+            f"{cse_artifact_contract.get('reason')}"
+        )
+    elif cse_row_status == "watch":
+        cse_reason = "capacity/source expansion evidence is visible, inactive, and artifact contract is evaluable"
+    else:
+        cse_reason = "capacity/source expansion shadow fields are missing or active"
     gates.append(
         _gate(
             "capacity_source_expansion_shadow",
             cse_status,
-            "capacity/source expansion evidence is visible and inactive"
-            if cse_status == "watch"
-            else "capacity/source expansion shadow fields are missing or active",
+            cse_reason,
             ready_rows=cse_ready,
             candidate_rows=cse_candidate,
             pressure_candidate_rows=cse_pressure_candidate,
             active_rows=cse_active,
             status_counts=summary.get("v3_cse_status_counts"),
+            artifact_contract=cse_artifact_contract,
         )
     )
     scp_link_overall = scp_formal_value_link["overall"]
@@ -1762,6 +1894,7 @@ def summarize_readiness(
             ),
         },
         "v3_practical_archive_live_guard_metrics": live_guard_brief,
+        "capacity_source_expansion_artifact_contract": cse_artifact_contract,
         "underestimate_holdout": {
             "candidate_rows": under_candidate_rows,
             "candidate_groups": under_candidate_only.get("candidate_groups"),
@@ -1985,6 +2118,7 @@ def _print_summary(result: dict[str, Any]) -> None:
     live_guard = result["v3_practical_archive_live_guard_metrics"]
     live_guard_overall = live_guard.get("overall") or {}
     live_guard_prebid = live_guard.get("prebid_overall") or {}
+    cse_artifact_contract = result["capacity_source_expansion_artifact_contract"]
     scp_stability = result["settlement_count_guarded_bridge_stability"]
     scp_stability_contract = scp_stability.get("contract_check") or {}
     scp_stability_trials = scp_stability_contract.get("posterior_trials") or []
@@ -2065,6 +2199,14 @@ def _print_summary(result: dict[str, Any]) -> None:
                     scp_stability.get("stable_selected_groups")
                     or []
                 ),
+                "cse_artifact_contract="
+                f"{cse_artifact_contract.get('status')}",
+                "cse_artifact_entries="
+                f"{cse_artifact_contract.get('entries')}",
+                "cse_artifact_candidates="
+                f"{cse_artifact_contract.get('candidate_entries')}",
+                "cse_artifact_group_bys="
+                f"{','.join(cse_artifact_contract.get('group_bys') or [])}",
                 f"cse_candidate_rows={summary['v3_cse_candidate_rows']}",
                 f"cse_pressure_candidate_rows={summary['v3_cse_pressure_candidate_rows']}",
                 f"cse_active_rows={summary['v3_cse_active_rows']}",
@@ -2149,6 +2291,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    capacity_source_expansion_artifact = None
+    if not args.no_capacity_source_expansion:
+        if args.capacity_source_expansion.exists():
+            with args.capacity_source_expansion.open("r", encoding="utf-8") as handle:
+                capacity_source_expansion_artifact = json.load(handle)
+        else:
+            capacity_source_expansion_artifact = {}
     rows, errors = evaluate_paths(
         args.paths or _default_paths(),
         tables=load_monitor_tables(),
@@ -2193,6 +2342,7 @@ def main(argv: list[str] | None = None) -> int:
         min_sessions=args.min_sessions,
         folds=args.folds,
         scp_guarded_bridge_stability=guarded_bridge_stability,
+        capacity_source_expansion_artifact=capacity_source_expansion_artifact,
         live_practical_guard_brief=live_practical_guard_brief,
     )
     if args.format == "json":

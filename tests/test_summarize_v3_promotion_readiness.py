@@ -521,6 +521,97 @@ def test_readiness_blocks_malformed_guarded_bridge_stability_matrix() -> None:
     assert "watch stability must cover all required selected groups" in stability["reason"]
 
 
+def _cse_artifact(*, active: bool = False) -> dict[str, object]:
+    return {
+        "affects_bid": False,
+        "active": active,
+        "generated_at": "2026-06-08",
+        "source": "archive_settlement_source_semantics_audit",
+        "group_bys": ["map_id", "map_family"],
+        "table_overlay_metadata": {"raw_file_version": 303},
+        "cohorts": [{"label": "default_archive", "status": "ok"}],
+        "entries": [
+            {
+                "scope": "map_id",
+                "group": "2506",
+                "status": "watch_capacity_source_expansion_shadow_only",
+                "gate_reason": "observed_unique_round_over_cap_source_expansion",
+                "source": "archive_capacity_source_expansion_shadow:default_archive",
+                "archive_sessions": 21,
+                "mechanism_classes": "session_capacity_source_semantics:1",
+                "source_evidence_classes": "settlement_payload_verified_only:1",
+                "source_context_classes": "payload_verified_partial_action_only:1",
+                "unique_round_overflow_rows": 1,
+                "server_side_expansion_rows": 0,
+                "session_capacity_source_semantics_rows": 1,
+                "public_total_match_rows": 0,
+                "full_action_rows": 0,
+                "payload_verified_only_rows": 1,
+                "payload_inventory_mismatch_rows": 0,
+                "non_zodiac_missing_max": 0,
+            }
+        ],
+    }
+
+
+def test_readiness_attaches_capacity_source_expansion_artifact_contract() -> None:
+    module = _load_module()
+    rows = [
+        {
+            **_row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700),
+            "v3_cse_candidate": True,
+            "v3_cse_pressure_candidate": True,
+            "v3_cse_status": "watch_capacity_source_expansion_shadow_only",
+        }
+        for idx in range(4)
+    ]
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        capacity_source_expansion_artifact=_cse_artifact(),
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    cse = gates["capacity_source_expansion_shadow"]
+    assert cse["status"] == "watch"
+    assert cse["artifact_contract"]["status"] == "watch"
+    assert cse["artifact_contract"]["entries"] == 1
+    assert cse["artifact_contract"]["candidate_entries"] == 1
+    assert cse["artifact_contract"]["group_bys"] == ["map_id", "map_family"]
+    assert result["capacity_source_expansion_artifact_contract"]["cohorts"] == 1
+
+
+def test_readiness_blocks_malformed_capacity_source_expansion_artifact() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        capacity_source_expansion_artifact={
+            **_cse_artifact(active=True),
+            "entries": [{"scope": "map_id", "group": "2506"}],
+        },
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    cse = gates["capacity_source_expansion_shadow"]
+    assert cse["status"] == "blocked"
+    assert cse["artifact_contract"]["status"] == "blocked"
+    assert "artifact active must be false" in cse["reason"]
+    assert "status" in cse["artifact_contract"]["entry_missing_key_counts"]
+
+
 def test_readiness_blocks_prior_robustness_on_activity_candidate() -> None:
     module = _load_module()
     rows = [

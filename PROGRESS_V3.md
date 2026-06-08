@@ -9836,3 +9836,69 @@ instability=2501:blocked_train_holdout_instability,2506:blocked_support_depth_ga
 - processed stability artifact 结构可审计，readiness 不再把它当作 `not_evaluated`；
 - 但 artifact 明确证明 SCP guarded bridge 仍 blocked：`2501` 是 train-guard watch 但 holdout hurt，`2506` 是 support depth gap；
 - 当前只能继续 shadow/audit 或重新设计 bridge/sampler，不能把 SCP guarded bridge 作为 promotion support。
+
+## 2026-06-08 checkpoint：CSE shadow artifact contract attached to readiness
+
+背景：
+
+- `data/processed/v3_capacity_source_expansion_shadow.json` 是 CSE/source-expansion 的 processed evidence artifact；
+- readiness 此前只看 archive rows 的 `v3_cse_ready/candidate/active` 计数，不能证明 artifact 本身仍是 shadow-only 且 evidence 字段完整；
+- 当前 CSE 已处于 stop-loss/watch lane，contract 的目的只是让 readiness 能区分 artifact malformed 与 artifact 可审计。
+
+完成：
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `summarize_capacity_source_expansion_artifact_contract()`；
+  - CLI 默认读取 `--capacity-source-expansion` JSON metadata，并传入 readiness；
+  - `capacity_source_expansion_shadow` gate 现在携带 `artifact_contract`；
+  - artifact malformed、`active/affects_bid` 不是 false、entries 为空或 entry 缺 source/context/mechanism/capacity 字段时 gate blocked；
+  - summary 输出新增 `cse_artifact_contract`、`cse_artifact_entries`、`cse_artifact_candidates`、`cse_artifact_group_bys`。
+- `tests/test_summarize_v3_promotion_readiness.py`
+  - 新增完整 CSE artifact contract watch 测试；
+  - 新增 malformed/active CSE artifact blocker 测试。
+
+验证：
+
+```text
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_promotion_readiness.py tests\test_build_v3_capacity_source_expansion_shadow.py tests\test_inference_v3_capacity_source_expansion.py -q
+15 passed
+
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_promotion_readiness.py scripts\build_v3_capacity_source_expansion_shadow.py src\bidking_lab\inference\v3\capacity_source_expansion.py
+
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --format summary
+overall_status=not_ready
+blocked_gates=13
+cse_artifact_contract=watch
+cse_artifact_entries=30
+cse_artifact_candidates=11
+cse_artifact_group_bys=map_id,map_family
+cse_candidate_rows=759
+cse_pressure_candidate_rows=61
+cse_active_rows=0
+```
+
+JSON 复核：
+
+```text
+gate_status=watch
+ready_rows=1609
+candidate_rows=759
+pressure_candidate_rows=61
+active_rows=0
+contract_status=watch
+entries=30
+candidate_entries=11
+blocked_entries=7
+cohorts=4
+group_bys=map_id,map_family
+active=false
+affects_bid=false
+missing_keys=[]
+entry_missing_key_counts={}
+```
+
+结论：
+
+- CSE artifact 现在作为 readiness 可复核 contract，而不是隐式依赖 loader 成功；
+- artifact 与 row-level smoke 均证明 CSE 保持 inactive/不影响出价；
+- 该 gate 仍只是 `watch`，CSE 仍不得作为 formal/value sampler 或 promotion 支持。

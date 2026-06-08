@@ -3542,3 +3542,23 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 当前 promotion hardening 需要把“未评估”和“已评估但失败”清晰分开；
 - processed artifact 是跨窗口承接的重要证据，必须能说明 trials/seeds、选中 group、hurt/support gap 的来源；
 - stability contract 是 readiness 证据完整性检查，不改变 sampler、live/UI 或正式出价。
+
+## D-v3-173：CSE shadow artifact 必须以 artifact contract 证明 inactive/evidence 字段完整
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_readiness.py` 默认读取 `--capacity-source-expansion` 指向的 JSON，并对 artifact 做 `capacity_source_expansion_artifact_contract`；
+- contract 至少要求：
+  - top-level `affects_bid=false`、`active=false`；
+  - `generated_at`、`source`、`group_bys`、`cohorts`、`table_overlay_metadata`、`entries`；
+  - entry 级 `scope/group/status/gate_reason/source`；
+  - source evidence/context/mechanism classes；
+  - unique round overflow、server-side expansion、session-capacity/source semantics、public/full-action/payload rows 等字段。
+- artifact malformed、active/affects_bid 不为 false、entries 缺 evidence 字段时，`capacity_source_expansion_shadow` gate 必须 blocked；
+- artifact 完整只能证明 CSE shadow evidence 可复核且 inactive，不得解释为 CSE prior/promotion 支持。
+
+原因：
+
+- CSE 过去已进入 stop-loss，当前价值是解释 prior/activity/table drift 与 source-semantics blocker；
+- readiness 之前只看 row-level `v3_cse_*` 计数，不能证明 processed artifact 是否仍是 shadow-only、是否保留 source/context/mechanism 证据；
+- 当前 goal 要保持 live/UI/v2 fallback 稳定，因此 CSE artifact contract 只增强审计，不改变 sampler、formal path 或正式出价。

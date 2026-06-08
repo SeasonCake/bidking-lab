@@ -7430,3 +7430,44 @@ instability=2501:blocked_train_holdout_instability,2506:blocked_support_depth_ga
 - `2501` 的问题是 train guard watch 后 holdout hurt；
 - `2506` 的问题是 multi-seed support depth 不足，最小 applied rows 只有 9，低于 required 20；
 - 因此 SCP guarded bridge 仍必须留在 shadow/readiness blocker，不得作为 formal/value sampler 或 promotion support。
+
+## O-v3-186：CSE artifact contract 可证明 shadow-only/inactive，但不是 promotion support
+
+2026-06-08 给 readiness 增加 CSE artifact contract 后，跑：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --format summary
+```
+
+关键结果：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+cse_artifact_contract=watch
+cse_artifact_entries=30
+cse_artifact_candidates=11
+cse_artifact_group_bys=map_id,map_family
+cse_candidate_rows=759
+cse_pressure_candidate_rows=61
+cse_active_rows=0
+```
+
+JSON 复核：
+
+```text
+gate_status=watch
+ready_rows=1609
+candidate_rows=759
+pressure_candidate_rows=61
+active_rows=0
+contract_status=watch
+entries=30
+candidate_entries=11
+blocked_entries=7
+cohorts=4
+active=false
+affects_bid=false
+missing_keys=[]
+entry_missing_key_counts={}
+```
