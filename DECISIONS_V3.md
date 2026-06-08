@@ -3976,3 +3976,33 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 当前 trial 仍 blocked，因此接入后的正确行为是增加 blocker，而不是给 promotion 提供支持；
 - 这能防止后续只看 q6_cells/q6_count 已收口而忽略 q6_value 剩余 seed instability；
 - 该决策不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-189：q6_value 二阶手工排除只能作为 audit probe，不能作为 promotion guard
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_shadow_sampler_guard_trial.py` 可以接受：
+  - `--extra-exclude-label`；
+  - `--extra-exclude-component`。
+- 这些参数只能用于 audit-only probe；
+- 只要使用任一手工二阶 exclude，trial output 必须：
+  - `audit_probe=true`；
+  - `status=audit_probe_guarded_shadow_trial`；
+  - `shadow_only=true`；
+  - `affects_bid=false`；
+  - `active=false`；
+  - `can_promote=false`。
+- 即使底层 sampler result 在手工 exclude 后变成 watch，也不得输出 `watch_guarded_shadow_trial`；
+- readiness/workbench 必须把 `audit_probe_guarded_shadow_trial` 当作 blocked guarded trial；
+- 当前 q6_value 二阶 probe：
+  - 手工排除 `q6_value:2510` 与 `q6_value:public:total+item+shape`；
+  - 结果仍为 `sampler_status=blocked_seed_instability`；
+  - 剩余风险迁移到 `q6_value:2405`、`q6_value:public:total+shape+layout`、`q6_value:public:max_item_cells+item+shape`；
+  - readiness/workbench 继续 blocked，不能作为 promotion evidence。
+
+原因：
+
+- 二阶 exclude 使用的是当前 archive/holdout 暴露出的 residual labels，直接把它作为 promotion guard 会放大同样本过拟合风险；
+- 该 probe 的价值是证明 q6_value 风险会迁移，提示需要 source/profile parser 或更高层 value guard；
+- 后续不应继续无限堆 label exclude，而应解释 q6_value profile/source 语义或引入可复核的 source parser；
+- 该决策不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。

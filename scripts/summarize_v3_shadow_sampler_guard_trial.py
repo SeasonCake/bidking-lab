@@ -88,7 +88,12 @@ def _dedupe(seq: Iterable[str]) -> list[str]:
     return out
 
 
-def build_trial_options(prototype: Mapping[str, Any]) -> dict[str, Any]:
+def build_trial_options(
+    prototype: Mapping[str, Any],
+    *,
+    extra_exclude_labels: Iterable[str] = (),
+    extra_exclude_components: Iterable[str] = (),
+) -> dict[str, Any]:
     contract = _guard_trial_contract(prototype)
     actions = _component_actions(contract)
     exclude_patterns: list[str] = []
@@ -129,7 +134,21 @@ def build_trial_options(prototype: Mapping[str, Any]) -> dict[str, Any]:
             elif trial_action == "guard_hurt_groups_keep_component_inactive":
                 excluded_components.append(component)
                 exclude_patterns.append(_component_exclude_pattern(component))
+    manual_exclude_labels = [str(label) for label in extra_exclude_labels if label]
+    manual_exclude_components = [
+        str(component) for component in extra_exclude_components if component
+    ]
+    exclude_labels.extend(manual_exclude_labels)
+    excluded_components.extend(manual_exclude_components)
+    exclude_patterns.extend(
+        _label_exclude_pattern(label) for label in manual_exclude_labels
+    )
+    exclude_patterns.extend(
+        _component_exclude_pattern(component)
+        for component in manual_exclude_components
+    )
     exclude_patterns = _dedupe(exclude_patterns)
+    audit_probe = bool(manual_exclude_labels or manual_exclude_components)
     return {
         "source_guard_trial_status": contract.get("status"),
         "source_action_counts": dict(contract.get("action_counts") or {}),
@@ -137,12 +156,22 @@ def build_trial_options(prototype: Mapping[str, Any]) -> dict[str, Any]:
         "candidate_exclude_pattern": "|".join(exclude_patterns) or None,
         "candidate_exclude_labels": _dedupe(exclude_labels),
         "excluded_components": _dedupe(excluded_components),
+        "manual_exclude_labels": _dedupe(manual_exclude_labels),
+        "manual_exclude_components": _dedupe(manual_exclude_components),
+        "audit_probe": audit_probe,
+        "audit_probe_reason": (
+            "manual extra exclusions were applied; result is diagnostic only"
+            if audit_probe
+            else None
+        ),
         "requires_source_parser": bool(contract.get("requires_source_parser")),
         "source_component_actions": [dict(row) for row in actions],
     }
 
 
-def _trial_status(sampler_status: str) -> str:
+def _trial_status(sampler_status: str, *, audit_probe: bool = False) -> str:
+    if audit_probe:
+        return "audit_probe_guarded_shadow_trial"
     if sampler_status == "watch_shadow_candidate":
         return "watch_guarded_shadow_trial"
     if sampler_status == "sample_limited":
@@ -159,9 +188,10 @@ def _wrap_trial_result(
     trial_options: Mapping[str, Any],
 ) -> dict[str, Any]:
     sampler_status = str(sampler_result.get("status") or "unknown")
+    audit_probe = bool(trial_options.get("audit_probe"))
     return {
         "interface": "v3_ccvc_shadow_sampler_guarded_trial",
-        "status": _trial_status(sampler_status),
+        "status": _trial_status(sampler_status, audit_probe=audit_probe),
         "sampler_status": sampler_status,
         "shadow_only": True,
         "affects_bid": False,
@@ -172,6 +202,8 @@ def _wrap_trial_result(
             "source_guard_trial_status"
         ),
         "trial_options": dict(trial_options),
+        "audit_probe": audit_probe,
+        "audit_probe_reason": trial_options.get("audit_probe_reason"),
         "component_status_counts": _counter_dict(
             row.get("status")
             for row in sampler_result.get("component_statuses") or ()
@@ -222,8 +254,14 @@ def summarize_guard_trial_rows(
     max_directional_error_rate: float = 0.35,
     min_watch_support_rows: int = DEFAULT_MIN_WATCH_SUPPORT_ROWS,
     min_watch_support_sessions: int = DEFAULT_MIN_WATCH_SUPPORT_SESSIONS,
+    extra_exclude_labels: Iterable[str] = (),
+    extra_exclude_components: Iterable[str] = (),
 ) -> dict[str, Any]:
-    trial_options = build_trial_options(prototype)
+    trial_options = build_trial_options(
+        prototype,
+        extra_exclude_labels=extra_exclude_labels,
+        extra_exclude_components=extra_exclude_components,
+    )
     seed_results = [
         summarize_seed_run(
             rows,
@@ -267,10 +305,15 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 f"shadow_only={result.get('shadow_only')}",
                 f"affects_bid={result.get('affects_bid')}",
                 f"component_move_cells={options.get('component_move_cells')}",
+                f"audit_probe={options.get('audit_probe')}",
                 "excluded_components="
                 + ",".join(options.get("excluded_components") or ()),
+                "manual_exclude_components="
+                + ",".join(options.get("manual_exclude_components") or ()),
                 "exclude_labels="
                 + ",".join((options.get("candidate_exclude_labels") or ())[:top]),
+                "manual_exclude_labels="
+                + ",".join((options.get("manual_exclude_labels") or ())[:top]),
                 "component_statuses="
                 + ",".join(
                     f"{status}:{count}"
@@ -344,6 +387,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--posterior-trials", type=int, default=64)
     parser.add_argument("--posterior-seed", action="append", type=int)
     parser.add_argument(
+        "--extra-exclude-label",
+        action="append",
+        help=(
+            "Additional exact 'component:group' label to exclude as an "
+            "audit-only probe. Can be passed more than once."
+        ),
+    )
+    parser.add_argument(
+        "--extra-exclude-component",
+        action="append",
+        help=(
+            "Additional component to exclude as an audit-only probe. "
+            "Can be passed more than once."
+        ),
+    )
+    parser.add_argument(
         "--min-watch-support-rows",
         type=int,
         default=DEFAULT_MIN_WATCH_SUPPORT_ROWS,
@@ -359,7 +418,11 @@ def main(argv: list[str] | None = None) -> int:
 
     with args.prototype_json.open("r", encoding="utf-8-sig") as handle:
         prototype = json.load(handle)
-    trial_options = build_trial_options(prototype)
+    trial_options = build_trial_options(
+        prototype,
+        extra_exclude_labels=args.extra_exclude_label or (),
+        extra_exclude_components=args.extra_exclude_component or (),
+    )
     tables = load_monitor_tables()
     calibration_entries = load_prior_calibration_entries(
         _default_calibration_path()
@@ -399,6 +462,8 @@ def main(argv: list[str] | None = None) -> int:
             max_directional_error_rate=args.max_directional_error_rate,
             min_watch_support_rows=args.min_watch_support_rows,
             min_watch_support_sessions=args.min_watch_support_sessions,
+            extra_exclude_labels=args.extra_exclude_label or (),
+            extra_exclude_components=args.extra_exclude_component or (),
         ),
     }
     if args.format == "json":

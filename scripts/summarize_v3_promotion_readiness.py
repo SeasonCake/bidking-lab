@@ -664,6 +664,7 @@ _SHADOW_SAMPLER_GUARD_TRIAL_CONTRACT_KEYS = (
     "guarded_sampler_result",
 )
 _SHADOW_SAMPLER_GUARD_TRIAL_BLOCKING_STATUSES = {
+    "audit_probe_guarded_shadow_trial",
     "blocked_guarded_shadow_trial",
     "sample_limited_guarded_shadow_trial",
 }

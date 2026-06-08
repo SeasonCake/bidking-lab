@@ -116,6 +116,25 @@ def test_guard_trial_options_from_contract() -> None:
     assert "^q6_cells:.*" in options["candidate_exclude_pattern"]
     assert "^q6_count:.*" in options["candidate_exclude_pattern"]
     assert "^q6_value:2502$" in options["candidate_exclude_pattern"]
+    assert options["audit_probe"] is False
+
+
+def test_guard_trial_options_mark_manual_excludes_as_audit_probe() -> None:
+    module = _load_module()
+
+    options = module.build_trial_options(
+        _prototype(),
+        extra_exclude_labels=("q6_value:2510",),
+        extra_exclude_components=("q6_value",),
+    )
+
+    assert options["audit_probe"] is True
+    assert options["manual_exclude_labels"] == ["q6_value:2510"]
+    assert options["manual_exclude_components"] == ["q6_value"]
+    assert "q6_value:2510" in options["candidate_exclude_labels"]
+    assert "q6_value" in options["excluded_components"]
+    assert "^q6_value:2510$" in options["candidate_exclude_pattern"]
+    assert "^q6_value:.*" in options["candidate_exclude_pattern"]
 
 
 def test_guard_trial_rows_applies_freeze_and_exclude_contract() -> None:
@@ -176,3 +195,41 @@ def test_guard_trial_rows_applies_freeze_and_exclude_contract() -> None:
     assert components["q6_value"]["stable_watch_candidate_labels"] == [
         "q6_value|map_id|all:q6_value:2503"
     ]
+
+
+def test_guard_trial_rows_keeps_manual_probe_out_of_watch_status() -> None:
+    module = _load_module()
+    fold0 = [_session_for_fold(0, prefix=f"p0_{idx}") for idx in range(4)]
+    fold1 = [_session_for_fold(1, prefix=f"p1_{idx}") for idx in range(4)]
+    rows = [
+        _row(
+            session_id=session_id,
+            map_id="2503",
+            value_truth=400,
+            value_baseline=200,
+            value_candidate=300,
+        )
+        for session_id in (*fold0, *fold1)
+    ]
+
+    result = module.summarize_guard_trial_rows(
+        {0: rows},
+        prototype=_prototype(),
+        posterior_trials=64,
+        components=("q6_count", "q6_cells", "q6_value"),
+        group_fields=("map_id",),
+        movement_policies=("all",),
+        features=(),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+        min_watch_support_rows=2,
+        min_watch_support_sessions=2,
+        extra_exclude_labels=("q6_value:2510",),
+    )
+
+    assert result["sampler_status"] == "watch_shadow_candidate"
+    assert result["status"] == "audit_probe_guarded_shadow_trial"
+    assert result["audit_probe"] is True
+    assert result["trial_options"]["manual_exclude_labels"] == ["q6_value:2510"]

@@ -10737,3 +10737,80 @@ guarded_trial_support_gates=no_watch:2,pass:1
 - q6_cells/q6_count 已通过 trial contract 收口为 inactive/sample-limited，但 q6_value 仍有 seed instability；
 - 下一步继续扩展 q6_value 二阶 guard/source/profile parser，并重新运行 guarded trial；
 - live/UI/正式出价、v2 fallback 与 readiness/promotion gate 均未改变。
+
+## 2026-06-08 checkpoint：q6_value second-order audit probe
+
+背景：
+
+- guarded trial 接入 readiness 后，剩余 blocker 集中到 q6_value；
+- 上一轮真实 guarded trial 的 q6_value top hurt/unstable labels 包括 `q6_value:2510` 与 `q6_value:public:total+item+shape`；
+- 直接把这些 label 当作 promotion guard 会有同样本过拟合风险，因此需要显式标记为 audit-only probe。
+
+完成：
+
+- `scripts/summarize_v3_shadow_sampler_guard_trial.py`
+  - 新增 `--extra-exclude-label`；
+  - 新增 `--extra-exclude-component`；
+  - 任何手工二阶 exclude 都会使 trial options 标记：
+    - `audit_probe=true`；
+    - `audit_probe_reason=manual extra exclusions were applied; result is diagnostic only`；
+  - 即使 sampler result 为 watch，trial status 也降级为 `audit_probe_guarded_shadow_trial`，不得作为 readiness/promotion 支持。
+- `scripts/summarize_v3_promotion_readiness.py` 与 `scripts/summarize_v3_promotion_workbench.py`
+  - 将 `audit_probe_guarded_shadow_trial` 明确列入 guarded trial blocking statuses。
+- `tests/test_summarize_v3_shadow_sampler_guard_trial.py`
+  - 覆盖手工 extra exclude 会生成 audit-probe；
+  - 覆盖 sampler watch 时也不会输出 `watch_guarded_shadow_trial`。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_shadow_sampler_guard_trial.py scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_shadow_sampler_guard_trial.py
+
+python -m pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_shadow_sampler_guard_trial.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_shadow_sampler_prototype.py tests/test_summarize_v3_ccvc_count_policy_matrix.py
+33 passed
+```
+
+真实 q6_value 二阶 probe：
+
+```text
+python scripts\summarize_v3_shadow_sampler_guard_trial.py --prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --component q6_cells --component q6_value --group-field map_family --group-field map_id --group-field evidence_profile_key --extra-exclude-label q6_value:2510 --extra-exclude-label q6_value:public:total+item+shape --top 4 --format summary
+
+python scripts\summarize_v3_shadow_sampler_guard_trial.py --prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --component q6_cells --component q6_value --group-field map_family --group-field map_id --group-field evidence_profile_key --extra-exclude-label q6_value:2510 --extra-exclude-label q6_value:public:total+item+shape --format json > .tmp\codex\v3_shadow_sampler_guard_trial_q6_value_probe_latest.json
+```
+
+结果：
+
+```text
+status=audit_probe_guarded_shadow_trial
+sampler_status=blocked_seed_instability
+audit_probe=True
+component_move_cells=False
+excluded_components=q6_cells,q6_count
+manual_exclude_labels=q6_value:2510,q6_value:public:total+item+shape
+component_statuses=blocked_seed_instability:1,sample_limited:2
+support_gates=no_watch:2,watch_low_support:1
+
+q6_cells -> sample_limited / no_watch
+q6_count -> sample_limited / no_watch
+q6_value -> blocked_seed_instability / watch_low_support
+q6_value remaining top_hurts include:
+  q6_value|map_id|up_only:q6_value:2405
+  q6_value|evidence_profile_key|up_only:q6_value:public:total+shape+layout
+  q6_value|evidence_profile_key|down_only:q6_value:public:total+shape+layout
+  q6_value|evidence_profile_key|all:q6_value:public:max_item_cells+item+shape
+```
+
+readiness/workbench probe smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_schema3.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --shadow-sampler-prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --shadow-sampler-guard-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_q6_value_probe_latest.json --format json > .tmp\codex\v3_readiness_with_q6_value_probe_latest.json
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_with_q6_value_probe_latest.json --format summary
+```
+
+结论：
+
+- q6_value 手工二阶排除后，risk 没有消失，而是迁移到 2405、`public:total+shape+layout`、`public:max_item_cells+item+shape`；
+- 这说明继续堆 exclude label 很可能是在同一批 archive 上过拟合；
+- 下一步应转向 q6_value source/profile parser、evidence-profile semantics 或更高层 value guard，而不是继续扩大手工排除列表；
+- audit probe 已进入 readiness/workbench 后仍 blocked，不改变 promotion gate、live/UI 或正式出价。
