@@ -3783,3 +3783,27 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - blocker 需要出现在 `sampler_safety_holdout` lane，避免被误读为可直接进入 formal/value tuning；
 - 未附加 artifact 时不新增 gate，保证历史 readiness JSON 和现有 smoke 兼容；
 - 该改动让下一步可以生成真实 prototype JSON 并附加到 readiness/workbench，而不是把 prototype 结果散落在单独脚本输出中。
+
+## D-v3-183：真实 prototype artifact 进入 readiness/workbench 后，q6_count seed/support blocker 仍是 sampler safety blocker
+
+2026-06-08 起，当前决策：
+
+- 真实 q6_count evidence/profile prototype JSON 必须可以作为 readiness/workbench artifact 使用；
+- 当前 smoke artifact：
+  - `.tmp/codex/v3_shadow_sampler_prototype_q6_count_support_latest.json`；
+  - `.tmp/codex/v3_readiness_with_sampler_prototype_latest.json`。
+- 该 artifact 的核心状态为：
+  - prototype overall=`blocked_seed_instability`；
+  - component `q6_count`=`blocked_seed_instability`；
+  - support gate=`watch_low_support`；
+  - seed1 map/profile watch label support=8 rows / 3 sessions。
+- readiness 附加该 artifact 后，必须新增 `shadow_sampler_prototype` gate，lane=`sampler_safety_holdout`，status=`blocked`；
+- workbench 必须把 `shadow_sampler_prototype` 列入 sampler safety blocked gates，并在 `shadow_sampler_contract` 中显示 prototype blocked / `blocked_seed_instability`；
+- 该结果只能作为 blocker 和设计证据，不能作为 formal/value sampler 参数调优或 promotion 支持。
+
+原因：
+
+- 真实 artifact 已证明 readiness/workbench contract 可以端到端消费 prototype seed/support blocker；
+- q6_count 的分歧仍是 seed/profile/support 问题，不是稳定的 count/cell/value sampler signal；
+- 在 `sampler_safety_holdout` lane 中显式阻断，能防止后续只看单 seed zero-hurt 低支持候选；
+- 所有 artifact 均在 `.tmp/codex/`，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。

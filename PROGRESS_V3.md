@@ -10354,3 +10354,44 @@ python scripts\summarize_v3_promotion_readiness.py --help | Select-String -Patte
 - readiness 现在可以承接 shadow sampler prototype 的 seed/support blocker；
 - 这把 prototype audit 从独立脚本提升为 readiness/workbench 可消费证据；
 - 仍不改变 live/UI/正式出价，也不放宽 readiness/promotion gate；下一步可生成真实 prototype JSON 并附加到 readiness artifact，再让 workbench 汇总。
+
+## 2026-06-08 checkpoint：real prototype attached readiness/workbench smoke
+
+背景：
+
+- 上一轮已把 `--shadow-sampler-prototype-json` 接入 readiness；
+- 当前需要证明真实 archive prototype JSON 能被 readiness/workbench 消费，而不是只靠单元测试；
+- 该 smoke 仍使用 q6_count evidence/profile support blocker 口径，不恢复 formal/value sampler 调参。
+
+执行：
+
+```text
+python scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --group-field evidence_profile_key --group-field map_id,evidence_profile_key --movement-policy all --movement-policy up_only --movement-policy down_only --format json > .tmp\codex\v3_shadow_sampler_prototype_q6_count_support_latest.json
+
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_schema3.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --shadow-sampler-prototype-json .tmp\codex\v3_shadow_sampler_prototype_q6_count_support_latest.json --format json > .tmp\codex\v3_readiness_with_sampler_prototype_latest.json
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_with_sampler_prototype_latest.json --format summary
+```
+
+验证结果：
+
+```text
+prototype status=blocked_seed_instability
+prototype component=q6_count status=blocked_seed_instability support_gate=watch_low_support
+prototype low_support=q6_count|map_id,evidence_profile_key|down_only:q6_count:map_id=2501|evidence_profile_key=tool:category+item+shape@seed1:8/3
+
+readiness overall=not_ready blocked_gates=14
+readiness shadow_sampler_prototype gate status=blocked
+readiness shadow_sampler_prototype contract_status=blocked
+readiness lane=sampler_safety_holdout
+
+workbench sampler_safety_holdout blocked=ccv_sampler,ccv_directionality,ccv_direction_holdout,shadow_sampler_prototype,tail_under_combined_holdout,residual_gate
+shadow_sampler_contract prototype_status=blocked prototype_overall=blocked_seed_instability
+```
+
+结论：
+
+- 真实 prototype JSON 已能被 readiness/workbench 端到端消费；
+- q6_count prototype blocker 已从单独脚本输出进入 `sampler_safety_holdout` lane；
+- blocked gate 增至 14，workbench 继续 `shadow_design_only`，不允许 promotion/readiness gate 放宽；
+- 当前下一步不是调参，而是继续查 q6_count source/profile/map 分歧，或把 full count/cells/value prototype 也生成同类 artifact 后再比较。
