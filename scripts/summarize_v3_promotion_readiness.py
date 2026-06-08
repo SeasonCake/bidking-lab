@@ -203,6 +203,10 @@ _GATE_DEPENDENCY_META: dict[str, tuple[str, str]] = {
         "sampler_safety_holdout",
         "review q6_value map-only row/source clusters before value guard design",
     ),
+    "shadow_sampler_value_profile_guardability": (
+        "sampler_safety_holdout",
+        "keep q6_value inactive unless source/profile guardability passes holdout",
+    ),
     "tail_value_review": (
         "sampler_safety_holdout",
         "keep tail/value review non-formal until holdout is stable",
@@ -339,6 +343,14 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
             f"labels={gate.get('label_count')};"
             f"candidate_rows={gate.get('candidate_rows')};"
             f"mismatches={len(gate.get('labels_with_row_count_mismatch') or [])}"
+        )
+    if name == "shadow_sampler_value_profile_guardability":
+        return (
+            f"guardability_status={gate.get('guardability_status')};"
+            f"contract={gate.get('contract_status')};"
+            f"clusters={gate.get('cluster_count')};"
+            f"candidates={gate.get('candidate_cluster_count')};"
+            f"rows={gate.get('detail_rows')}"
         )
     if name == "formal_baseline_metrics":
         return (
@@ -729,6 +741,24 @@ _SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_CONTRACT_KEYS = (
 _SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_BLOCKING_STATUSES = {
     "blocked_map_only_details_ready",
     "blocked_no_map_only_details",
+}
+_SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_CONTRACT_KEYS = (
+    "interface",
+    "shadow_only",
+    "affects_bid",
+    "active",
+    "can_promote",
+    "status",
+    "component",
+    "source_details_status",
+    "detail_rows",
+    "cluster_count",
+    "candidate_cluster_count",
+    "next_action",
+)
+_SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_BLOCKING_STATUSES = {
+    "blocked_no_stable_profile_guard",
+    "blocked_profile_guard_candidates_need_holdout",
 }
 
 
@@ -1480,6 +1510,82 @@ def summarize_shadow_sampler_value_map_profile_details_contract(
     }
 
 
+def summarize_shadow_sampler_value_profile_guardability_contract(
+    audit: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if audit is None:
+        return {
+            "status": "not_supplied",
+            "reason": "q6_value profile guardability JSON was not supplied",
+            "missing_keys": [],
+            "required_keys": list(
+                _SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_CONTRACT_KEYS
+            ),
+        }
+    if not isinstance(audit, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "q6_value profile guardability JSON must be an object",
+            "missing_keys": list(
+                _SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_CONTRACT_KEYS
+            ),
+            "required_keys": list(
+                _SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_CONTRACT_KEYS
+            ),
+        }
+    missing = [
+        key
+        for key in _SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_CONTRACT_KEYS
+        if key not in audit
+    ]
+    shadow_safe = (
+        audit.get("shadow_only") is True
+        and audit.get("affects_bid") is False
+        and audit.get("active") is False
+        and audit.get("can_promote") is False
+    )
+    guardability_status = str(audit.get("status") or "unknown")
+    component = str(audit.get("component") or "")
+    if missing:
+        status = "blocked"
+        reason = "q6_value profile guardability is missing contract fields"
+    elif not shadow_safe:
+        status = "blocked"
+        reason = "q6_value profile guardability is not shadow-safe"
+    elif component != "q6_value":
+        status = "blocked"
+        reason = "q6_value profile guardability component mismatch"
+    elif guardability_status in _SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_BLOCKING_STATUSES:
+        status = "blocked"
+        reason = "q6_value profile guardability still blocks value guard design"
+    elif guardability_status == "watch_diagnostic_only":
+        status = "watch"
+        reason = "q6_value profile guardability is attached as shadow diagnostic"
+    else:
+        status = "blocked"
+        reason = "q6_value profile guardability has unknown status"
+    return {
+        "status": status,
+        "reason": reason,
+        "missing_keys": missing,
+        "required_keys": list(
+            _SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_CONTRACT_KEYS
+        ),
+        "interface": audit.get("interface"),
+        "guardability_status": guardability_status,
+        "shadow_safe": shadow_safe,
+        "component": component,
+        "source_details_status": audit.get("source_details_status"),
+        "detail_rows": audit.get("detail_rows"),
+        "cluster_count": audit.get("cluster_count"),
+        "candidate_cluster_count": audit.get("candidate_cluster_count"),
+        "overfit_risk_cluster_count": audit.get("overfit_risk_cluster_count"),
+        "mixed_cluster_count": audit.get("mixed_cluster_count"),
+        "next_action": audit.get("next_action"),
+        "blocked_actions": list(audit.get("blocked_actions") or []),
+    }
+
+
 def summarize_readiness(
     rows: list[dict[str, Any]],
     errors: list[dict[str, str]],
@@ -1496,6 +1602,7 @@ def summarize_readiness(
     shadow_sampler_guard_trial: Mapping[str, Any] | None = None,
     shadow_sampler_value_source_profile_audit: Mapping[str, Any] | None = None,
     shadow_sampler_value_map_profile_details: Mapping[str, Any] | None = None,
+    shadow_sampler_value_profile_guardability: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = summarize_rows(rows, errors)
     live_guard_brief = summarize_live_practical_guard_brief(
@@ -1518,6 +1625,11 @@ def summarize_readiness(
     shadow_sampler_value_map_profile_details_contract = (
         summarize_shadow_sampler_value_map_profile_details_contract(
             shadow_sampler_value_map_profile_details
+        )
+    )
+    shadow_sampler_value_profile_guardability_contract = (
+        summarize_shadow_sampler_value_profile_guardability_contract(
+            shadow_sampler_value_profile_guardability
         )
     )
     prior_stress_details = summarize_prior_stress_details(rows)
@@ -2483,6 +2595,60 @@ def summarize_readiness(
                 ),
             )
         )
+    if shadow_sampler_value_profile_guardability is not None:
+        guardability_contract_status = str(
+            shadow_sampler_value_profile_guardability_contract.get("status")
+            or "blocked"
+        )
+        gates.append(
+            _gate(
+                "shadow_sampler_value_profile_guardability",
+                "watch" if guardability_contract_status == "watch" else "blocked",
+                str(
+                    shadow_sampler_value_profile_guardability_contract.get("reason")
+                    or ""
+                ),
+                contract_status=guardability_contract_status,
+                contract_check=shadow_sampler_value_profile_guardability_contract,
+                guardability_status=(
+                    shadow_sampler_value_profile_guardability_contract.get(
+                        "guardability_status"
+                    )
+                ),
+                component=shadow_sampler_value_profile_guardability_contract.get(
+                    "component"
+                ),
+                source_details_status=(
+                    shadow_sampler_value_profile_guardability_contract.get(
+                        "source_details_status"
+                    )
+                ),
+                detail_rows=shadow_sampler_value_profile_guardability_contract.get(
+                    "detail_rows"
+                ),
+                cluster_count=shadow_sampler_value_profile_guardability_contract.get(
+                    "cluster_count"
+                ),
+                candidate_cluster_count=(
+                    shadow_sampler_value_profile_guardability_contract.get(
+                        "candidate_cluster_count"
+                    )
+                ),
+                overfit_risk_cluster_count=(
+                    shadow_sampler_value_profile_guardability_contract.get(
+                        "overfit_risk_cluster_count"
+                    )
+                ),
+                mixed_cluster_count=(
+                    shadow_sampler_value_profile_guardability_contract.get(
+                        "mixed_cluster_count"
+                    )
+                ),
+                next_action=shadow_sampler_value_profile_guardability_contract.get(
+                    "next_action"
+                ),
+            )
+        )
 
     tail_counts = _status_counts(tail)
     tail_watch = (
@@ -2849,6 +3015,12 @@ def summarize_readiness(
         "shadow_sampler_value_map_profile_details": (
             shadow_sampler_value_map_profile_details or {}
         ),
+        "shadow_sampler_value_profile_guardability_contract": (
+            shadow_sampler_value_profile_guardability_contract
+        ),
+        "shadow_sampler_value_profile_guardability": (
+            shadow_sampler_value_profile_guardability or {}
+        ),
         "underestimate_holdout": {
             "candidate_rows": under_candidate_rows,
             "candidate_groups": under_candidate_only.get("candidate_groups"),
@@ -3083,6 +3255,9 @@ def _print_summary(result: dict[str, Any]) -> None:
     shadow_sampler_value_map_profile_details_contract = result[
         "shadow_sampler_value_map_profile_details_contract"
     ]
+    shadow_sampler_value_profile_guardability_contract = result[
+        "shadow_sampler_value_profile_guardability_contract"
+    ]
     scp_stability = result["settlement_count_guarded_bridge_stability"]
     scp_stability_contract = scp_stability.get("contract_check") or {}
     scp_stability_trials = scp_stability_contract.get("posterior_trials") or []
@@ -3218,6 +3393,12 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"{shadow_sampler_value_map_profile_details_contract.get('details_status')}",
                 "shadow_sampler_value_map_profile_details_rows="
                 f"{shadow_sampler_value_map_profile_details_contract.get('candidate_rows')}",
+                "shadow_sampler_value_profile_guardability="
+                f"{shadow_sampler_value_profile_guardability_contract.get('status')}",
+                "shadow_sampler_value_profile_guardability_status="
+                f"{shadow_sampler_value_profile_guardability_contract.get('guardability_status')}",
+                "shadow_sampler_value_profile_guardability_candidates="
+                f"{shadow_sampler_value_profile_guardability_contract.get('candidate_cluster_count')}",
                 f"cse_candidate_rows={summary['v3_cse_candidate_rows']}",
                 f"cse_pressure_candidate_rows={summary['v3_cse_pressure_candidate_rows']}",
                 f"cse_active_rows={summary['v3_cse_active_rows']}",
@@ -3341,6 +3522,16 @@ def main(argv: list[str] | None = None) -> int:
             "details to readiness."
         ),
     )
+    parser.add_argument(
+        "--shadow-sampler-value-profile-guardability-json",
+        type=Path,
+        help=(
+            "Optional JSON output from "
+            "summarize_v3_shadow_sampler_value_profile_guardability.py "
+            "--format json. This attaches q6_value source/profile guardability "
+            "evidence to readiness."
+        ),
+    )
     args = parser.parse_args(argv)
 
     capacity_source_expansion_artifact = None
@@ -3407,6 +3598,13 @@ def main(argv: list[str] | None = None) -> int:
             encoding="utf-8",
         ) as handle:
             shadow_sampler_value_map_profile_details = json.load(handle)
+    shadow_sampler_value_profile_guardability = None
+    if args.shadow_sampler_value_profile_guardability_json is not None:
+        with args.shadow_sampler_value_profile_guardability_json.open(
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            shadow_sampler_value_profile_guardability = json.load(handle)
     result = summarize_readiness(
         rows,
         errors,
@@ -3425,6 +3623,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         shadow_sampler_value_map_profile_details=(
             shadow_sampler_value_map_profile_details
+        ),
+        shadow_sampler_value_profile_guardability=(
+            shadow_sampler_value_profile_guardability
         ),
     )
     if args.format == "json":

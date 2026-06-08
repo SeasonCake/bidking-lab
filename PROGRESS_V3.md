@@ -11188,3 +11188,81 @@ value_map_profile_details_mismatches=0
 - 当前仍不能设计 promotion guard：168 rows 横跨多 profile/source classes，且 hurt/helped 混合；
 - 下一步应分析 details artifact 的 profile/source 聚类，寻找是否存在可证伪的 source/profile guard；若不能稳定分离 hurt/helped，则 q6_value 必须继续 inactive；
 - live/UI/正式出价、v2 fallback 与 promotion gate 仍不改变。
+
+### 2026-06-08 checkpoint：q6_value profile guardability artifact 接入 readiness/workbench
+
+本轮收口内容：
+
+- `scripts/summarize_v3_shadow_sampler_value_map_profile_details.py`
+  - `detail_rows` 现在输出完整 row-level details，不再只依赖截断的 `example_rows`；
+  - 每行新增 `profile_source_class` 与 `profile_anchor_class`，用于后续 source/profile guardability 聚类。
+- 新增 `scripts/summarize_v3_shadow_sampler_value_profile_guardability.py`
+  - 输入 q6_value map/profile details artifact；
+  - 按以下维度聚类：
+    - `evidence_profile_key`；
+    - `profile_semantic_class`；
+    - `profile_source_class`；
+    - `profile_anchor_class`；
+    - `map_id,evidence_profile_key`；
+    - `map_id,profile_semantic_class`。
+  - 输出每个 cluster 的 row/session/label/map/seed 覆盖、hurt/helped rate 与方向误差；
+  - 将 cluster 标记为：
+    - `profile_guard_candidate_needs_holdout`；
+    - `overfit_risk_single_label_or_map`；
+    - `mixed_hurt_helped`；
+    - `not_hurt_dominant`；
+    - `sample_limited`。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `--shadow-sampler-value-profile-guardability-json`；
+  - 新增 gate `shadow_sampler_value_profile_guardability`；
+  - lane 固定为 `sampler_safety_holdout`；
+  - `blocked_no_stable_profile_guard` 与 `blocked_profile_guard_candidates_need_holdout` 均保持 blocked。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract` 新增 `value_profile_guardability_contract`；
+  - summary 输出 guardability status、detail rows、cluster count、candidate cluster count。
+- 新增 `tests/test_summarize_v3_shadow_sampler_value_profile_guardability.py`；
+- 更新 readiness/workbench 与 map details 测试，覆盖完整 `detail_rows` 与 guardability gate/contract。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_shadow_sampler_value_map_profile_details.py scripts\summarize_v3_shadow_sampler_value_profile_guardability.py scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_shadow_sampler_value_map_profile_details.py tests\test_summarize_v3_shadow_sampler_value_profile_guardability.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_shadow_sampler_value_map_profile_details.py tests/test_summarize_v3_shadow_sampler_value_profile_guardability.py tests/test_summarize_v3_shadow_sampler_value_source_profile_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_shadow_sampler_guard_trial.py
+37 passed
+```
+
+真实 guardability artifact：
+
+```text
+status=blocked_no_stable_profile_guard
+component=q6_value
+detail_rows=168
+cluster_count=120
+candidate_cluster_count=0
+overfit_risk_cluster_count=0
+mixed_cluster_count=0
+next_action="keep q6_value inactive; current source/profile clusters do not separate hurt from helped rows"
+```
+
+真实 readiness/workbench smoke：
+
+```text
+overall_status=not_ready
+blocked_gates=18
+sampler_safety_holdout statuses=blocked:10,watch:2
+blocked includes shadow_sampler_value_profile_guardability
+value_profile_guardability_status=blocked
+value_profile_guardability_overall=blocked_no_stable_profile_guard
+value_profile_guardability_rows=168
+value_profile_guardability_clusters=120
+value_profile_guardability_candidates=0
+```
+
+结论：
+
+- q6_value map/profile details 的 168 行已可完整聚类复核；
+- 当前 source/profile class 不能稳定区分 hurt 与 helped rows，候选 guard 数为 0；
+- q6_value 继续 inactive，不能恢复 formal/value sampler 参数调优；
+- 下一步若要继续推进，优先方向是新增 source parser/table acquisition 或更多真实样本分片，而不是在现有 fields 上继续组合过拟合；
+- live/UI/正式出价、v2 fallback 与 promotion gate 仍不改变。

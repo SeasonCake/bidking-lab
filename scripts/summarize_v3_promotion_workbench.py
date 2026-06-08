@@ -38,6 +38,7 @@ SHADOW_SAMPLER_WATCH_GATES = {
     "shadow_sampler_guard_trial",
     "shadow_sampler_value_source_profile_audit",
     "shadow_sampler_value_map_profile_details",
+    "shadow_sampler_value_profile_guardability",
     "tail_value_review",
     "tail_under_combined_holdout",
     "formal_value_sampler_holdout",
@@ -104,6 +105,12 @@ SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_KEYS = (
     "shadow_sampler_q6_value_map_profile_details",
     "q6_value_map_profile_details",
     "v3_shadow_sampler_q6_value_map_profile_details",
+)
+SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_KEYS = (
+    "shadow_sampler_value_profile_guardability",
+    "shadow_sampler_q6_value_profile_guardability",
+    "q6_value_profile_guardability",
+    "v3_shadow_sampler_q6_value_profile_guardability",
 )
 
 SHADOW_SAMPLER_PROTOTYPE_REQUIRED_FIELDS = (
@@ -182,6 +189,24 @@ SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_BLOCKING_STATUSES = {
     "blocked_map_only_details_ready",
     "blocked_no_map_only_details",
 }
+SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_REQUIRED_FIELDS = (
+    "interface",
+    "shadow_only",
+    "affects_bid",
+    "active",
+    "can_promote",
+    "status",
+    "component",
+    "source_details_status",
+    "detail_rows",
+    "cluster_count",
+    "candidate_cluster_count",
+    "next_action",
+)
+SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_BLOCKING_STATUSES = {
+    "blocked_no_stable_profile_guard",
+    "blocked_profile_guard_candidates_need_holdout",
+}
 
 SHADOW_SAMPLER_REQUIRED_COMPONENT_GATES = (
     "shadow safety: affects_bid=false and active=false",
@@ -241,6 +266,16 @@ def _value_map_profile_details_from_readiness(
     readiness: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     for key in SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_KEYS:
+        value = readiness.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return {}
+
+
+def _value_profile_guardability_from_readiness(
+    readiness: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    for key in SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_KEYS:
         value = readiness.get(key)
         if isinstance(value, Mapping):
             return value
@@ -638,6 +673,69 @@ def _shadow_sampler_value_map_profile_details_contract(
     }
 
 
+def _shadow_sampler_value_profile_guardability_contract(
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    audit = _value_profile_guardability_from_readiness(readiness)
+    if not audit:
+        return {
+            "status": "missing",
+            "attached": False,
+            "accepted_keys": list(SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_KEYS),
+            "required_fields": list(
+                SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_REQUIRED_FIELDS
+            ),
+            "blocking_statuses": sorted(
+                SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_BLOCKING_STATUSES
+            ),
+        }
+
+    missing = [
+        field
+        for field in SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_REQUIRED_FIELDS
+        if field not in audit
+    ]
+    guardability_status = str(audit.get("status") or "unknown")
+    shadow_safe = (
+        audit.get("shadow_only") is True
+        and audit.get("affects_bid") is False
+        and audit.get("active") is False
+        and audit.get("can_promote") is False
+    )
+    component = str(audit.get("component") or "")
+    if missing or not shadow_safe or component != "q6_value":
+        status = "malformed"
+    elif guardability_status in SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_BLOCKING_STATUSES:
+        status = "blocked"
+    elif guardability_status == "watch_diagnostic_only":
+        status = "watch_only"
+    else:
+        status = "blocked"
+    return {
+        "status": status,
+        "attached": True,
+        "interface": audit.get("interface"),
+        "guardability_status": guardability_status,
+        "shadow_safe": shadow_safe,
+        "missing_fields": missing,
+        "component": component,
+        "source_details_status": audit.get("source_details_status"),
+        "detail_rows": audit.get("detail_rows"),
+        "cluster_count": audit.get("cluster_count"),
+        "candidate_cluster_count": audit.get("candidate_cluster_count"),
+        "overfit_risk_cluster_count": audit.get("overfit_risk_cluster_count"),
+        "mixed_cluster_count": audit.get("mixed_cluster_count"),
+        "next_action": audit.get("next_action"),
+        "blocked_actions": list(audit.get("blocked_actions") or []),
+        "required_fields": list(
+            SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_REQUIRED_FIELDS
+        ),
+        "blocking_statuses": sorted(
+            SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_BLOCKING_STATUSES
+        ),
+    }
+
+
 def _lane_verdict(
     *,
     lane: str,
@@ -757,6 +855,14 @@ def summarize_shadow_sampler_contract(
         and status == "ready_for_shadow_prototype"
     ):
         status = "shadow_value_map_profile_details_blocked"
+    value_profile_guardability_contract = (
+        _shadow_sampler_value_profile_guardability_contract(readiness)
+    )
+    if (
+        value_profile_guardability_contract.get("status") in {"blocked", "malformed"}
+        and status == "ready_for_shadow_prototype"
+    ):
+        status = "shadow_value_profile_guardability_blocked"
     lane_verdicts = {
         str(row.get("lane")): str(row.get("verdict"))
         for row in lanes
@@ -791,6 +897,7 @@ def summarize_shadow_sampler_contract(
         "guarded_trial_contract": guarded_trial_contract,
         "value_source_profile_contract": value_source_profile_contract,
         "value_map_profile_details_contract": value_map_profile_details_contract,
+        "value_profile_guardability_contract": value_profile_guardability_contract,
         "allowed_actions": [
             "define sampler interface",
             "emit shadow-only fields",
@@ -828,6 +935,8 @@ def _sampler_next_action(status: str, stop_loss_lanes: Iterable[str]) -> str:
         return "stop sampler tuning; resolve q6_value source/profile semantics or value guard"
     if status == "shadow_value_map_profile_details_blocked":
         return "review q6_value map-only row/source clusters before value guard design"
+    if status == "shadow_value_profile_guardability_blocked":
+        return "keep q6_value inactive; no stable source/profile guard has passed holdout"
     if status == "shadow_watch_only":
         return "emit prototype fields only; keep watch gates inactive"
     return "run the shadow prototype through required holdouts"
@@ -945,6 +1054,9 @@ def _print_summary(result: Mapping[str, Any]) -> None:
         value_map_profile_details = (
             contract.get("value_map_profile_details_contract") or {}
         )
+        value_profile_guardability = (
+            contract.get("value_profile_guardability_contract") or {}
+        )
         prototype_component_counts = ",".join(
             f"{key}:{value}"
             for key, value in (
@@ -1029,6 +1141,16 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"{value_map_profile_details.get('candidate_rows')}",
                     "value_map_profile_details_mismatches="
                     f"{len(value_map_profile_details.get('labels_with_row_count_mismatch') or [])}",
+                    "value_profile_guardability_status="
+                    f"{value_profile_guardability.get('status')}",
+                    "value_profile_guardability_overall="
+                    f"{value_profile_guardability.get('guardability_status')}",
+                    "value_profile_guardability_rows="
+                    f"{value_profile_guardability.get('detail_rows')}",
+                    "value_profile_guardability_clusters="
+                    f"{value_profile_guardability.get('cluster_count')}",
+                    "value_profile_guardability_candidates="
+                    f"{value_profile_guardability.get('candidate_cluster_count')}",
                     f"next_action=\"{contract.get('next_action')}\"",
                 ]
             )

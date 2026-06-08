@@ -185,6 +185,8 @@ def _candidate_row_detail(
         "evidence_profile_key": profile_key,
         "hero_map_evidence_profile": row.get("hero_map_evidence_profile"),
         "profile_semantic_class": profile["semantic_class"],
+        "profile_source_class": profile["source_class"],
+        "profile_anchor_class": profile["anchor_class"],
         "profile_public_sources": profile["public_sources"],
         "profile_anchors": profile["anchors"],
         "truth": _round(truth),
@@ -346,6 +348,7 @@ def summarize_label_details(
         "train_candidate_status_counts": dict(sorted(train_candidate_status_counts.items())),
         "fold_candidate_statuses": fold_candidate_statuses,
         **_profile_counts(details),
+        "detail_rows": details,
         "example_rows": details[:example_limit],
     }
     return out

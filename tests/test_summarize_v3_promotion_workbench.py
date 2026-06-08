@@ -446,3 +446,49 @@ def test_shadow_sampler_contract_blocks_attached_value_map_profile_details() -> 
     )
     assert details["candidate_rows"] == 16
     assert details["labels_with_row_count_mismatch"] == []
+
+
+def test_shadow_sampler_contract_blocks_attached_value_profile_guardability() -> None:
+    module = _load_module()
+
+    result = module.summarize_workbench(
+        {
+            "overall_status": "not_ready",
+            "blocked_gates": 0,
+            "gate_dependencies": {
+                "lane_status_counts": {},
+                "blocked_or_pending_gates": [],
+                "watch_gates": [],
+            },
+            "shadow_sampler_value_profile_guardability": {
+                "interface": "v3_ccvc_q6_value_profile_guardability",
+                "status": "blocked_no_stable_profile_guard",
+                "shadow_only": True,
+                "affects_bid": False,
+                "active": False,
+                "can_promote": False,
+                "component": "q6_value",
+                "source_details_status": "blocked_map_only_details_ready",
+                "detail_rows": 168,
+                "cluster_count": 120,
+                "candidate_cluster_count": 0,
+                "overfit_risk_cluster_count": 0,
+                "mixed_cluster_count": 0,
+                "next_action": (
+                    "keep q6_value inactive; current source/profile clusters "
+                    "do not separate hurt from helped rows"
+                ),
+            },
+        }
+    )
+
+    contract = result["shadow_sampler_contract"]
+    guardability = contract["value_profile_guardability_contract"]
+    assert contract["status"] == "shadow_value_profile_guardability_blocked"
+    assert contract["can_start_shadow_prototype"] is False
+    assert guardability["status"] == "blocked"
+    assert guardability["guardability_status"] == "blocked_no_stable_profile_guard"
+    assert guardability["source_details_status"] == "blocked_map_only_details_ready"
+    assert guardability["detail_rows"] == 168
+    assert guardability["cluster_count"] == 120
+    assert guardability["candidate_cluster_count"] == 0

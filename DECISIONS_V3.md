@@ -4145,3 +4145,49 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 当前 168 rows 横跨多个 `evidence_profile_key` 与 semantic classes，且 hurt/helped 混合；
 - 在未证明 source/profile class 可以稳定分离 hurt/helped 前，q6_value value guard 仍不得恢复调参或接入 formal/live；
 - 该决策仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-194：q6_value profile guardability 为 value guard 前置阻断，不可当作 promotion evidence
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_shadow_sampler_value_map_profile_details.py` 必须输出完整 `detail_rows`，不能只依赖截断的 `example_rows` 判断 source/profile guardability；
+- row-level details 必须包含：
+  - `profile_semantic_class`；
+  - `profile_source_class`；
+  - `profile_anchor_class`；
+  - `evidence_profile_key`；
+  - `map_id` / `map_family`；
+  - effect 与 directional error。
+- `summarize_v3_shadow_sampler_value_profile_guardability.py` 是 q6_value value guard 前的 source/profile 聚类审计入口；
+- 该 artifact 必须保持：
+  - `shadow_only=true`；
+  - `affects_bid=false`；
+  - `active=false`；
+  - `can_promote=false`。
+- readiness 必须支持 `--shadow-sampler-value-profile-guardability-json`；
+- 提供 artifact 时，readiness 必须新增 gate `shadow_sampler_value_profile_guardability`；
+- 该 gate 的 lane 必须是 `sampler_safety_holdout`；
+- 以下 status 必须 blocked：
+  - `blocked_no_stable_profile_guard`；
+  - `blocked_profile_guard_candidates_need_holdout`。
+- workbench 必须在 `shadow_sampler_contract.value_profile_guardability_contract` 中展示：
+  - guardability status；
+  - source details status；
+  - detail rows；
+  - cluster count；
+  - candidate cluster count；
+  - overfit/mixed cluster count。
+- 当前真实 artifact：
+  - `detail_rows=168`；
+  - `cluster_count=120`；
+  - `candidate_cluster_count=0`；
+  - `status=blocked_no_stable_profile_guard`；
+  - readiness/workbench 中 `shadow_sampler_value_profile_guardability` 为 blocked。
+
+原因：
+
+- 现有 source/profile 聚类无法稳定分离 hurt rows 与 helped rows；
+- 候选 guard 数为 0，说明当前字段组合不足以支撑 q6_value value guard promotion；
+- 继续在当前 fields 上追加组合规则会把 archive 噪声固化为过拟合规则；
+- 下一步应转向 source parser/table acquisition 或更多样本分片验证，而不是恢复 formal/value sampler 参数调优；
+- 该决策仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。

@@ -126,6 +126,11 @@ def test_map_profile_details_replays_rows_and_profiles() -> None:
     assert result["profile_semantic_class_counts"] == {
         "public:max_item_cells|shape": 1
     }
+    assert len(result["detail_rows"]) == 1
+    assert result["detail_rows"][0]["profile_source_class"] == (
+        "public:max_item_cells"
+    )
+    assert result["detail_rows"][0]["profile_anchor_class"] == "shape"
     assert result["example_rows"][0]["effect"] == "hurt"
     assert result["example_rows"][0]["hero_map_evidence_profile"] == (
         "ethan|2502|public:max_item_cells+shape"
