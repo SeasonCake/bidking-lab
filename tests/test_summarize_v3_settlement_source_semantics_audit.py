@@ -234,3 +234,22 @@ def test_settlement_source_semantics_aggregates_unique_round_blocker(
     assert result["overall"]["payload_inventory_mismatch_rows"] == 0
     assert result["rows"][0]["group"] == "unique_round_cap_overflow_after_temp"
     assert result["rows"][0]["event_message_id_counts"] == {"0x002D": 3, "0x0027": 1}
+    assert "detail_rows" not in result
+
+    detailed = module.summarize_settlement_source_semantics_audit(
+        [tmp_path],
+        tables=SimpleNamespace(),
+        group_by="unique_residual_mode",
+        top=8,
+        details=1,
+    )
+
+    assert len(detailed["detail_rows"]) == 1
+    detail = detailed["detail_rows"][0]
+    assert detail["file"] == first.name
+    assert detail["map_id"] == 2501
+    assert detail["unique_round_cap_excess_after_temp_zodiac_count"] == 5
+    assert detail["source_evidence_class"] == "direct_action_matches_inventory"
+    assert detail["mechanism_class"] == "server_side_settlement_expansion"
+    assert detail["event_message_id_counts"] == {"0x002D": 2, "0x0027": 1}
+    assert detail["event_full_observed_action_ids"] == [100100]

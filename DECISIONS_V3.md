@@ -3436,3 +3436,43 @@ applied_hurts=2502
 - 扣除 temporary zodiac 后普通 Drop universe 覆盖，`raw_non_zodiac_missing=0`；
 - 3 条有 public total 或 full direct action 直接确认 final inventory 超过 raw round cap，说明存在 server-side settlement expansion 或等价机制；
 - 18 条只有 payload verified，仍需 source parser/table acquisition 才能区分 server expansion 与 session-capacity/source semantics。
+
+## D-v3-168：source-semantics blocker 明细必须用脚本复核，不能再靠 one-off 片段
+
+2026-06-08 起，当前决策：
+
+- 对 settlement over-cap / capacity blocker 的文件级复核，优先使用：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.py --group-by mechanism_class --format json --details 64
+```
+
+- `--details` 输出的 `detail_rows` 是 21 条 unique round-cap over-cap 主集合的当前复核入口；
+- 默认调用不输出 `detail_rows`，避免影响 `build_v3_capacity_source_expansion_shadow.py` 等下游聚合；
+- 18 条 `session_capacity_source_semantics` 仍视为最小不可判定集合，不得通过字段组合或 sampler 参数把它们强行解释成可推广规则；
+- 这项改动只增强 audit reproducibility，不构成 sampler promotion 或 capacity gate 通过。
+
+原因：
+
+- 之前 18 条 payload-only rows 的文件级特征需要私有 one-off 片段复现，跨窗口容易丢上下文；
+- 当前 evidence 已经足够排除 BidMap col[16] / DropEntry n_max 这类简单表字段错读，但不足以区分 server-side expansion 与 session-capacity/source semantics；
+- 后续应优先补 source parser/table acquisition，而不是在现有 fields 上过拟合参数。
+
+## D-v3-169：RankMap 活动权重只能作为 shadow/source-parser 线索，不能替代 activity Drop
+
+2026-06-08 起，当前决策：
+
+- `RankMap.txt` 中 `2521-2530` / `4521-4530` 的活动行可作为 activity source parser 与 shadow-only overlay prior 研究线索；
+- 其标签 `白色DOWN红色UP` 和 category/value profile counts 可以用于解释 252xx 活动 cohort 的调参参考边界；
+- 但在对应 `Drop.txt` pools、远端 overlay 表或服务端 source/rule 字段未获得前：
+  - RankMap 不得被当作 item-level Drop pool；
+  - 不得用 RankMap 直接生成正式出价 prior；
+  - 不得把 252x/452x 并入默认 250x/450x prior calibration；
+  - 不得据此放宽 `prior_stress_capacity_table_drift`、activity/table drift 或 promotion gates。
+
+原因：
+
+- v303 本地表显示 `BidMap` 和 `RankMap` 都包含 2521-2530 / 4521-4530；
+- 同时 `Drop.txt` 仍缺对应 2521-2530 pools，`activity_range` 审计显示 drop_present=0 / drop_missing=10；
+- RankMap 给的是活动级权重/展示线索，不是可直接展平到 item odds 的 Drop graph；
+- 该线索有助于后续 source parser 或合成/模拟参考，但仍必须 shadow-only。

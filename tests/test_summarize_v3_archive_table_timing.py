@@ -152,6 +152,30 @@ def test_archive_table_timing_summarizes_bidmap_and_drop_semantics(
         _encoded_table(drop_rows),
         encoding="utf-8",
     )
+    rankmap_rows = [
+        [
+            "2521",
+            "activity open",
+            "白色DOWN红色UP",
+            "[[11,15,1000],[16,20,1000]]",
+            "[[101,50],[106,500]]",
+            "[[50001,100000,50],[100001,200000,300]]",
+            "[10,1,100,1]",
+        ],
+        [
+            "4521",
+            "activity sealed",
+            "白色DOWN红色UP",
+            "[[11,15,1000],[16,20,1000]]",
+            "[[101,50],[106,500]]",
+            "[[50001,100000,50],[100001,200000,300]]",
+            "[10,1,100,1]",
+        ],
+    ]
+    (tables_root / "RankMap.txt").write_text(
+        _encoded_table(rankmap_rows),
+        encoding="utf-8",
+    )
 
     result = module.summarize_archive_table_timing([], raw_root=raw_root)
 
@@ -184,3 +208,12 @@ def test_archive_table_timing_summarizes_bidmap_and_drop_semantics(
     assert activity["2521-2530"]["drop_present_ids"] == []
     assert activity["2521-2530"]["drop_missing_ids"] == [2521]
     assert activity["2521-2530"]["drop_ref_pair_counts"] == {"22-44": 1}
+
+    rankmap = {row["range"]: row for row in result["activity_rankmap"]}
+    assert rankmap["2521-2530"]["rankmap_present_ids"] == [2521]
+    assert rankmap["2521-2530"]["label_counts"] == {"白色DOWN红色UP": 1}
+    assert rankmap["2521-2530"]["category_weight_profile_counts"] == {
+        "[[101,50],[106,500]]": 1,
+    }
+    assert rankmap["4521-4530"]["rankmap_present_ids"] == [4521]
+    assert rankmap["4521-4530"]["label_counts"] == {"白色DOWN红色UP": 1}

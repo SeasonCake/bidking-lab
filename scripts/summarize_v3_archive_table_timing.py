@@ -31,6 +31,11 @@ _BIDMAP_COL_UNUSED_PLACEHOLDER = 16
 _BIDMAP_COL_DROP_REF = 17
 _BIDMAP_TARGET_MAP_IDS = (2401, 2404, 2406, 2501, 2506, 2508, 2601)
 _ACTIVITY_MAP_RANGES = ((2521, 2530), (4521, 4530))
+_RANKMAP_COL_LABEL = 2
+_RANKMAP_COL_ROUND_BUCKET_WEIGHTS = 3
+_RANKMAP_COL_CATEGORY_WEIGHTS = 4
+_RANKMAP_COL_VALUE_WEIGHTS = 5
+_RANKMAP_COL_BID_LADDER = 6
 _VERSION_KEY_TOKENS = ("version", "hash", "fileversion", "tableversion")
 
 
@@ -102,6 +107,18 @@ def _drop_ref_pool_id(value: Any) -> int | None:
         return int(parsed[1])
     except (TypeError, ValueError):
         return None
+
+
+def _canonical_json_cell(value: Any) -> str:
+    parsed = _parse_json_list(value)
+    if parsed is None:
+        return str(value) if value not in (None, "") else "none"
+    return json.dumps(
+        parsed,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
 
 
 def _read_table_rows(path: Path) -> tuple[list[list[str]], str | None]:
@@ -377,6 +394,69 @@ def _activity_overlay_summary(tables_root: Path) -> list[dict[str, Any]]:
     return out
 
 
+def _activity_rankmap_summary(tables_root: Path) -> list[dict[str, Any]]:
+    rankmap_rows, rankmap_error = _read_table_rows(tables_root / "RankMap.txt")
+    rankmap_by_id = {
+        int(row[0]): row
+        for row in rankmap_rows
+        if row and str(row[0]).isdigit()
+    }
+    out: list[dict[str, Any]] = []
+    for start, end in _ACTIVITY_MAP_RANGES:
+        map_ids = tuple(range(start, end + 1))
+        present_rows = {
+            map_id: rankmap_by_id[map_id]
+            for map_id in map_ids
+            if map_id in rankmap_by_id
+        }
+        out.append(
+            {
+                "range": f"{start}-{end}",
+                "rankmap_present_ids": sorted(present_rows),
+                "rankmap_missing_ids": [
+                    map_id for map_id in map_ids if map_id not in present_rows
+                ],
+                "label_counts": _counter_dict(
+                    (
+                        row[_RANKMAP_COL_LABEL]
+                        for row in present_rows.values()
+                        if len(row) > _RANKMAP_COL_LABEL
+                    )
+                ),
+                "round_bucket_profile_counts": _counter_dict(
+                    (
+                        _canonical_json_cell(row[_RANKMAP_COL_ROUND_BUCKET_WEIGHTS])
+                        for row in present_rows.values()
+                        if len(row) > _RANKMAP_COL_ROUND_BUCKET_WEIGHTS
+                    )
+                ),
+                "category_weight_profile_counts": _counter_dict(
+                    (
+                        _canonical_json_cell(row[_RANKMAP_COL_CATEGORY_WEIGHTS])
+                        for row in present_rows.values()
+                        if len(row) > _RANKMAP_COL_CATEGORY_WEIGHTS
+                    )
+                ),
+                "value_weight_profile_counts": _counter_dict(
+                    (
+                        _canonical_json_cell(row[_RANKMAP_COL_VALUE_WEIGHTS])
+                        for row in present_rows.values()
+                        if len(row) > _RANKMAP_COL_VALUE_WEIGHTS
+                    )
+                ),
+                "bid_ladder_profile_counts": _counter_dict(
+                    (
+                        _canonical_json_cell(row[_RANKMAP_COL_BID_LADDER])
+                        for row in present_rows.values()
+                        if len(row) > _RANKMAP_COL_BID_LADDER
+                    )
+                ),
+                "parse_error": rankmap_error,
+            }
+        )
+    return out
+
+
 def _filelist_entry(filelist_text: str | None, table_path: str) -> str | None:
     if not filelist_text:
         return None
@@ -498,6 +578,7 @@ def summarize_archive_table_timing(
             target_maps=bidmap_semantics["target_maps"],
         ),
         "activity_overlay": _activity_overlay_summary(tables_root),
+        "activity_rankmap": _activity_rankmap_summary(tables_root),
         **_capture_summary(paths),
     }
 
@@ -599,6 +680,22 @@ def _print_summary(result: dict[str, Any]) -> None:
                     f"drop_missing={len(row['drop_missing_ids'])}",
                     "drop_ref_pairs="
                     + _format_counts(row["drop_ref_pair_counts"]),
+                    f"parse_error={json.dumps(row['parse_error'], ensure_ascii=False)}",
+                )
+            )
+        )
+    for row in result["activity_rankmap"]:
+        print(
+            " ".join(
+                (
+                    f"rankmap_activity_range={row['range']}",
+                    f"rankmap_present={len(row['rankmap_present_ids'])}",
+                    f"rankmap_missing={len(row['rankmap_missing_ids'])}",
+                    "labels=" + _format_counts(row["label_counts"]),
+                    f"round_bucket_profiles={len(row['round_bucket_profile_counts'])}",
+                    f"category_weight_profiles={len(row['category_weight_profile_counts'])}",
+                    f"value_weight_profiles={len(row['value_weight_profile_counts'])}",
+                    f"bid_ladder_profiles={len(row['bid_ladder_profile_counts'])}",
                     f"parse_error={json.dumps(row['parse_error'], ensure_ascii=False)}",
                 )
             )

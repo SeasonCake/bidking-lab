@@ -9633,3 +9633,58 @@ capacity table audit 对这些 blocker 的共同结论：
 - 这解释了为什么不能把 `BidMap.items_per_session_max` / raw round cap 当成 final unique non-temp item 硬上限；
 - 但这不是 sampler promotion 通过证据：prior-stressed 仍有 94 detail rows，activity/drop overlay 仍缺，CSE/SCP bridge stability 仍 blocked；
 - 下一步应把 source parser/table acquisition 聚焦在 18 条 payload-only semantics rows，以及 252x/452x activity Drop/overlay 机制。
+
+## 2026-06-08 checkpoint：source-semantics details and activity RankMap overlay clue
+
+背景：
+
+- 上一个 checkpoint 已把 21 条 `unique_round_cap_overflow_after_temp` 拆成 18 条 payload-only source semantics 与 3 条 server-side expansion；
+- 但文件级明细此前需要私有 one-off 片段复现，不利于后续 source parser/table acquisition；
+- 252x/452x 活动沉船仍缺 Drop overlay，需要继续区分 “有 activity clue” 与 “有可采样 Drop pool”。
+
+完成：
+
+- `scripts/summarize_v3_settlement_source_semantics_audit.py`
+  - 新增 `--details N`；
+  - JSON 输出在显式传参时包含 `detail_rows`；
+  - detail 排序优先覆盖 unique round-cap over-cap rows，避免被 432 条非 blocker rows 淹没；
+  - 默认 summary/json 不输出 `detail_rows`，避免影响下游 artifact builder。
+- `scripts/summarize_v3_archive_table_timing.py`
+  - 新增 `activity_rankmap`；
+  - summary 输出 2521-2530 / 4521-4530 的 RankMap present/missing、activity label 与 profile 去重数；
+  - JSON 保留 round bucket/category/value/bid ladder profile counts，供 source parser 或 shadow-only activity overlay prior 研究。
+
+验证：
+
+```text
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_archive_table_timing.py tests\test_summarize_v3_settlement_source_semantics_audit.py -q
+5 passed
+
+C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.py --group-by mechanism_class --format json --details 64 | Set-Content -Path .tmp\codex\v3_settlement_source_semantics_details_latest.json -Encoding UTF8
+
+errors=0 files=453 settlement_rows=453 detail_rows=64
+mechanisms={"not_unique_round_cap_blocker":432,"server_side_settlement_expansion":3,"session_capacity_source_semantics":18}
+unique_overcap_details=21
+server_side_settlement_expansion=3
+session_capacity_source_semantics=18
+session_capacity_maps=2501:6,2503:2,2504:2,2508:2,2510:2,2408:1,2410:1,2506:1,2509:1
+```
+
+activity table timing / RankMap 结果：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_archive_table_timing.py --format summary
+
+raw_file_version=303 raw_tables_file_version=303
+activity_range=2521-2530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+activity_range=4521-4530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+rankmap_activity_range=2521-2530 rankmap_present=10 rankmap_missing=0 labels=白色DOWN红色UP:10 round_bucket_profiles=1 category_weight_profiles=10 value_weight_profiles=1 bid_ladder_profiles=1
+rankmap_activity_range=4521-4530 rankmap_present=10 rankmap_missing=0 labels=白色DOWN红色UP:10 round_bucket_profiles=1 category_weight_profiles=10 value_weight_profiles=1 bid_ladder_profiles=1
+```
+
+结论：
+
+- 18 条 `session_capacity_source_semantics` 已有可复核文件级 detail 输出，但仍是最小不可判定集合；
+- 252x/452x 的 RankMap 明确给出 “白色DOWN红色UP” 与 category profile 线索，适合作为 source parser / shadow-only activity overlay prior 的研究输入；
+- `Drop.txt` 对应 2521-2530 pools 仍缺，RankMap 不是 Drop pool，也不能直接替代 item-level odds；
+- readiness/promotion gate 不放宽，activity cohort 仍只做调参参考和表源审计，不进入默认 prior calibration 或正式出价依据。

@@ -7220,3 +7220,88 @@ unique_round_after avg=2.333 p90=4 max=4
 - 也不是 DropEntry `n_max>1` 未解析，因为 leaf `n_max` 当前为 1；
 - 3 条 server expansion 是强证据；18 条 source semantics 是仍需 source parser/table acquisition 的最小不可判定集合；
 - readiness 的 `prior_stress_capacity_table_drift` 仍应 blocked，因为该解释尚未变成可泛化 sampler/bridge 规则。
+
+## O-v3-181：source-semantics `--details` 可复核 21 条 over-cap 主集合
+
+2026-06-08 新增文件级 detail 输出后运行：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.py --group-by mechanism_class --format json --details 64 | Set-Content -Path .tmp\codex\v3_settlement_source_semantics_details_latest.json -Encoding UTF8
+```
+
+结果：
+
+```text
+errors=0
+files=453
+settlement_rows=453
+detail_rows=64
+mechanisms={"not_unique_round_cap_blocker":432,"server_side_settlement_expansion":3,"session_capacity_source_semantics":18}
+unique_overcap_details=21
+server_side_settlement_expansion=3
+session_capacity_source_semantics=18
+```
+
+18 条 `session_capacity_source_semantics` map 分布：
+
+```text
+2501:6
+2503:2
+2504:2
+2508:2
+2510:2
+2408:1
+2410:1
+2506:1
+2509:1
+```
+
+解读：
+
+- `--details 64` 当前会优先包含全部 21 条 unique round-cap over-cap rows；
+- 这 21 条可以直接从 JSON 的 `detail_rows` 复核 source evidence/context、action coverage、public total、payload inventory delta；
+- 18 条 payload-only rows 没有新增 full action/public source split，因此仍不可判定为泛化 server expansion 规则；
+- 这支持继续做 source parser/table acquisition，而不是恢复 formal/value sampler 参数调优。
+
+## O-v3-182：v303 RankMap 提供 252x/452x 活动权重线索，但 Drop overlay 仍缺
+
+2026-06-08 跑：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_archive_table_timing.py --format summary
+```
+
+活动 BidMap/Drop 状态：
+
+```text
+raw_file_version=303
+raw_tables_file_version=303
+activity_range=2521-2530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+activity_range=4521-4530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+```
+
+新增 RankMap 活动线索：
+
+```text
+rankmap_activity_range=2521-2530 rankmap_present=10 rankmap_missing=0 labels=白色DOWN红色UP:10 round_bucket_profiles=1 category_weight_profiles=10 value_weight_profiles=1 bid_ladder_profiles=1
+rankmap_activity_range=4521-4530 rankmap_present=10 rankmap_missing=0 labels=白色DOWN红色UP:10 round_bucket_profiles=1 category_weight_profiles=10 value_weight_profiles=1 bid_ladder_profiles=1
+```
+
+解读：
+
+- RankMap 确认 252x/452x 是活动图，并给出 “白色DOWN红色UP” 的活动方向；
+- 10 个 category weight profile 说明每个活动图存在不同类别权重配置，可作为 source parser / shadow-only overlay prior 的输入线索；
+- 但 `Drop.txt` 对应 activity drop pools 仍全缺，RankMap 不能直接展平为 item-level odds；
+- 活动 cohort 仍保持 `activity_tuning_reference`，可用于调参参考、表源审计和 source parser，不进入默认 baseline 或 promotion evidence。
+
+## O-v3-181：AuctionAnalyzer/Ahmad 输入通道可局部复用，不应整套替换 v3
+
+2026-06-08 对 `external_references/AuctionAnalyzer4.13.3` 与 `bidking-booooot` raw pricing 进行 Ahmad 相关审查：
+
+- AuctionAnalyzer 是通用 count/cell/value calculator，不是 Ahmad 专用引擎；
+- 可复用点是 count + avg-cells + grid reachability 的组合枚举与可达性判断；
+- 不建议整套接入正式出价，因为其 WPF/OCR/safety-factor 价格模型会绕开当前 v3 posterior、live/advisory、readiness/guard 口径；
+- 本轮先补 Ahmad 数值 skill 通道：`100204 -> total_count`、`1002041/2/3 -> q5/q4/q3 avg_cells`、`1002044 -> q1 merged count`；
+- v3 registry/constraints 已能消费这些数值；但真实样本库暂未找到 `100204x` capture，后续实机 Ahmad 样本仍需确认字段号。
+
+详见 `docs/auction_analyzer_ahmad_reference_2026-06-08.zh-CN.md`。

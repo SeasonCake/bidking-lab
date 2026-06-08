@@ -38,6 +38,49 @@ GROUP_BY_CHOICES = (
     "source_context_class",
     "mechanism_class",
 )
+DETAIL_FIELDS = (
+    "file",
+    "path",
+    "map_id",
+    "map_family",
+    "capture_day",
+    "session_token_prefix6",
+    "bidmap_rounds_total",
+    "bidmap_sub_pool_kind",
+    "inventory_count",
+    "non_temp_inventory_count",
+    "unique_non_temp_item_id_count",
+    "bidmap_items_per_session_max",
+    "bidmap_raw_round_cap_max",
+    "non_zodiac_missing_from_drop_universe_count",
+    "unique_drop_ref_excess_after_temp_zodiac_count",
+    "unique_round_cap_excess_after_temp_zodiac_count",
+    "raw_candidate_inventory_delta",
+    "occupied_slot_inventory_delta",
+    "unique_residual_mode",
+    "source_evidence_class",
+    "source_context_class",
+    "mechanism_class",
+    "event_state_count",
+    "event_message_id_counts",
+    "event_settlement_state_count",
+    "event_inventory_state_count",
+    "event_latest_inventory_count",
+    "event_latest_inventory_count_delta",
+    "event_action_result_count_all",
+    "event_direct_action_state_count",
+    "event_action_observed_item_count_max",
+    "event_direct_action_observed_item_count_max",
+    "event_action_observed_item_inventory_gap_min",
+    "event_direct_action_observed_item_inventory_gap_min",
+    "event_action_observed_item_ratio_max",
+    "event_direct_action_observed_item_ratio_max",
+    "event_full_observed_action_ids",
+    "event_direct_full_observed_action_ids",
+    "event_public_total_count_values",
+    "event_public_total_inventory_delta",
+    "event_public_total_match",
+)
 
 
 def _safe_int(value: Any) -> int | None:
@@ -430,6 +473,42 @@ def _examples(rows: Iterable[Mapping[str, Any]], *, top: int) -> list[dict[str, 
     ]
 
 
+def _jsonable_detail_value(value: Any) -> Any:
+    if isinstance(value, tuple):
+        return [_jsonable_detail_value(item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable_detail_value(item) for key, item in value.items()}
+    return value
+
+
+def _detail_rows(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    selected = sorted(
+        rows,
+        key=lambda row: (
+            -int(row.get("unique_round_cap_excess_after_temp_zodiac_count") or 0),
+            -int(row.get("unique_non_temp_item_id_count") or 0),
+            str(row.get("mechanism_class") or ""),
+            str(row.get("unique_residual_mode") or ""),
+            str(row.get("map_id") or ""),
+            str(row.get("file") or ""),
+        ),
+    )[:limit]
+    return [
+        {
+            field: _jsonable_detail_value(row.get(field))
+            for field in DETAIL_FIELDS
+            if field in row
+        }
+        for row in selected
+    ]
+
+
 def _summarize_rows(
     rows: Iterable[Mapping[str, Any]],
     *,
@@ -555,6 +634,7 @@ def summarize_settlement_source_semantics_audit(
     tables: Any | None = None,
     group_by: str = DEFAULT_GROUP_BY,
     top: int = 8,
+    details: int = 0,
 ) -> dict[str, Any]:
     if group_by not in GROUP_BY_CHOICES:
         raise ValueError(f"unsupported group_by: {group_by}")
@@ -593,7 +673,7 @@ def summarize_settlement_source_semantics_audit(
             str(row["group"]),
         )
     )
-    return {
+    result = {
         "errors": errors,
         "files": len(rows),
         "settlement_rows": len(ready),
@@ -602,6 +682,9 @@ def summarize_settlement_source_semantics_audit(
         "overall": _summarize_rows(ready, group_by="overall", top=top),
         "rows": group_rows,
     }
+    if details > 0:
+        result["detail_rows"] = _detail_rows(ready, limit=details)
+    return result
 
 
 def _print_group(prefix: str, row: Mapping[str, Any]) -> None:
@@ -717,6 +800,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--group-by", choices=GROUP_BY_CHOICES, default=DEFAULT_GROUP_BY)
     parser.add_argument("--top", type=int, default=8)
+    parser.add_argument(
+        "--details",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Include up to N file-level diagnostic detail rows in JSON output.",
+    )
     parser.add_argument("--format", choices=("summary", "json"), default="summary")
     args = parser.parse_args(argv)
 
@@ -724,6 +814,7 @@ def main(argv: list[str] | None = None) -> int:
         args.paths,
         group_by=args.group_by,
         top=args.top,
+        details=args.details,
     )
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
