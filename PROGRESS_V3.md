@@ -9267,3 +9267,93 @@ idx=145 map=2521 col[7]='105' col[17]='[9999,2521,22,44]'
 - 当前无法用 v303 raw table 跑真实 archive replay，不应回到 sampler 调参；
 - 下一步应先由 table/schema 或 live/app 侧确认 v303 `BidMap.col[7]` 空值语义、category fallback/推断规则，或提供可解析的 v300 table root；
 - readiness/promotion gate 不放宽，v3 仍是 audit/shadow/guarded practical trial，不是 promotion。
+
+## 2026-06-08 checkpoint：v303 BidMap parser drift 与 activity missing-drop alias 收口
+
+背景：
+
+- 上一 checkpoint 已补齐 archive/live formal-mode contract，但真实 `--archive-formal-mode v3_practical` replay 被 v303 `BidMap.col[7]` 空值阻断。
+- 修复 category parser 后，archive replay 又暴露 `2521-2530` / `4521-4530` missing Drop pool 被临时 zodiac 1% mass 注入导致概率和为 `0.01`。
+- 这说明 v303 的 activity BidMap present 不能等价于 activity Drop prior 可用。
+
+完成：
+
+- `src/bidking_lab/extract/bid_map_table.py`
+  - 对 v303 旧沉船 `2501-2520` blank category 推断为 `105`；
+  - 对 v303 旧暗拍沉船 `4501-4520` blank category 推断为 `305`；
+  - 其他 blank category 仍报错。
+- `src/bidking_lab/live/monitor.py`
+  - activity alias 不再只看 “BidMap missing”；
+  - 当 `252x/452x` BidMap present 但对应 `drop_pool_id` 缺失时，仍显式 alias 到旧沉船 `minus20` 优先；
+  - alias reason 区分为 `missing_activity_drop_use_corresponding_old_shipwreck`。
+- `src/bidking_lab/inference/ground_truth.py`
+  - 临时蓝生肖 pool 补丁不再注入到空 Drop pool；
+  - missing-drop raw map 直接保持 empty pool，避免概率和不为 1 的崩溃，也避免把 zodiac 当成 activity prior。
+- `src/bidking_lab/live/monitor.py` 的 `model_eval` 行新增：
+  - `v3_practical_live_guard`；
+  - `v3_practical_live_guard_reason`；
+  - `v3_practical_unguarded_decision_value`。
+- `scripts/summarize_live_windivert_brief.py`
+  - archive replay 行从 artifact bid row 补齐 guard 字段；
+  - 旧日志中 `formal_mode_reason=v3_practical_ready_live_guarded` 也计为 guarded。
+
+验证：
+
+```text
+python -m pytest --basetemp=.tmp\codex\pytest tests\test_bid_map_table.py tests\test_ground_truth.py tests\test_live_monitor.py::test_build_monitor_artifact_uses_activity_shipwreck_alias tests\test_live_monitor.py::test_build_monitor_artifact_aliases_activity_bidmap_with_missing_drop tests\test_live_monitor.py::test_live_formal_mode_v3_practical_guards_low_confidence_prior_only_raise tests\test_live_monitor.py::test_live_formal_mode_v3_practical_guards_low_support_baseline tests\test_summarize_live_windivert_brief.py -q
+42 passed
+
+python -m py_compile src\bidking_lab\extract\bid_map_table.py src\bidking_lab\inference\ground_truth.py src\bidking_lab\live\monitor.py scripts\summarize_live_windivert_brief.py
+
+load_monitor_tables smoke:
+maps=165 drops=629 items=1187
+2501 category=105 drop=2501 min=22 max=44
+2521 category=105 drop=2521 min=22 max=44
+4501 category=305 drop=2501 min=22 max=44
+4521 category=305 drop=2521 min=22 max=44
+prepared sampler bad_probability_pools=0
+```
+
+72h archive v3-practical replay smoke：
+
+```text
+total_rows=49
+source_counts={'windivert_archive_prebid': 49}
+estimate_rows=47
+formal_mode_counts={'v2': 15, 'v3_practical': 34}
+formal_mode_reason_counts={
+  'no_inference_session': 2,
+  'v3_practical_no_bid_rows_fallback_v2': 13,
+  'v3_practical_ready': 11,
+  'v3_practical_ready_live_guarded': 23
+}
+v3_practical_formal_rows=34
+v3_practical_live_guard_rows=23
+v3_practical_live_guard_rate=0.68
+decision_value_mae=182623.0
+v3_practical_mae=176490.1
+v3_practical_delta_mae=-6132.9
+v3_practical_p90_coverage=0.79
+v3_practical_p90_extreme_over_rate=0.38
+prebid_windows=49 ready_windows=47 sessions=15
+```
+
+Readiness smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --format summary
+overall_status=not_ready
+blocked_gates=13
+windows=1616
+ready=1598
+formal_mae=317290.279
+formal_below=0.512516
+formal_p90_cover=0.753442
+```
+
+结论：
+
+- archive/live formal-mode 和 guard metric 合同现在能在当前 v303 raw table 状态下跑通；
+- activity `252x/452x` 仍是 `BidMap present / Drop missing`，只允许显式 alias/live fallback，不进入 default prior、sampler promotion 或 v2 archive 分母；
+- readiness 仍是 `not_ready`，promotion/readiness gate 未放宽；
+- 下一步可以继续做 guarded/unguarded/v2 archive-live 分组对照和 CSE/SCP bridge stability，而不是回到 formal/value sampler 参数调优。

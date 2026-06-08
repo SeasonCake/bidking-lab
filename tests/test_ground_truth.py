@@ -293,6 +293,25 @@ def test_prepared_sampler_temporarily_includes_blue_zodiac_candidates() -> None:
     assert 1306001 not in pool_item_ids
 
 
+def test_prepared_sampler_does_not_add_zodiac_to_empty_pool() -> None:
+    items = {
+        1306006: _make_item(1306006, value=8_888, quality=3, shape=(2, 2)),
+    }
+    bmap = _make_map(2527, 2527, min_items=1, max_items=1)
+
+    sampler = prepare_session_sampler(
+        2527,
+        maps={2527: bmap},
+        drops={},
+        items=items,
+    )
+
+    assert len(sampler.pools) == 1
+    assert len(sampler.pools[0].probabilities) == 0
+    truth = sampler.sample(rng=np.random.default_rng(1))
+    assert truth.buckets == {}
+
+
 def test_prepared_sampler_matches_anthology_sample_for_same_seed() -> None:
     """Prepared sampler preserves anthology sub-pool routing RNG order."""
     items = {

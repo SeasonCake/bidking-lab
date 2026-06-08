@@ -187,6 +187,26 @@ def test_summarize_live_windivert_brief_json_roundtrip() -> None:
     assert payload["prebid_window_audit"]["windows"] == 0
 
 
+def test_summarize_live_windivert_brief_counts_guarded_reason_without_bid_field() -> None:
+    summary = summarize(
+        [
+            {
+                "formal_mode": "v3_practical",
+                "formal_mode_reason": "v3_practical_ready_live_guarded",
+                "decision_value_p50": 100_000,
+                "decision_value_p90": 200_000,
+                "final_decision_value": 120_000,
+            }
+        ]
+    )
+
+    assert summary["overall"]["v3_practical_formal_rows"] == 1
+    assert summary["overall"]["v3_practical_live_guard_rows"] == 1
+    assert summary["overall"]["v3_practical_live_guard_reason_counts"] == {
+        "v3_practical_ready_live_guarded": 1,
+    }
+
+
 def test_summarize_live_windivert_brief_preserves_five_prebid_rounds() -> None:
     rows = [
         {
@@ -302,6 +322,13 @@ def test_load_archive_rows_replays_recent_complete_archive(
             "formal_mode_requested": "v3_practical",
             "formal_mode": "v3_practical",
             "formal_mode_reason": "v3_practical_ready",
+            "bid_rows": [
+                {
+                    "v3_practical_live_guard": "是",
+                    "v3_practical_live_guard_reason": "guard_from_bid_row",
+                    "v3_practical_unguarded_decision_value": "1 / 2 / 3",
+                }
+            ],
             "model_eval": {
                 "file": str(path.name),
                 "round": 3,
@@ -333,6 +360,9 @@ def test_load_archive_rows_replays_recent_complete_archive(
     assert rows[0]["formal_mode"] == "v3_practical"
     assert rows[0]["formal_mode_reason"] == "v3_practical_ready"
     assert rows[0]["replay_formal_mode"] == "v3_practical"
+    assert rows[0]["v3_practical_live_guard"] == "是"
+    assert rows[0]["v3_practical_live_guard_reason"] == "guard_from_bid_row"
+    assert rows[0]["v3_practical_unguarded_decision_value"] == "1 / 2 / 3"
 
 
 def test_load_archive_rows_can_emit_prebid_windows(
@@ -378,6 +408,13 @@ def test_load_archive_rows_can_emit_prebid_windows(
             "formal_mode_requested": "v3_practical",
             "formal_mode": "v3_practical",
             "formal_mode_reason": "v3_practical_ready_live_guarded",
+            "bid_rows": [
+                {
+                    "v3_practical_live_guard": "是",
+                    "v3_practical_live_guard_reason": "prebid_guard",
+                    "v3_practical_unguarded_decision_value": "4 / 5 / 6",
+                }
+            ],
         }
 
     def fake_model_eval_row(**kwargs):
@@ -425,6 +462,9 @@ def test_load_archive_rows_can_emit_prebid_windows(
     assert rows[0]["formal_mode"] == "v3_practical"
     assert rows[0]["formal_mode_reason"] == "v3_practical_ready_live_guarded"
     assert rows[0]["replay_formal_mode"] == "v3_practical"
+    assert rows[0]["v3_practical_live_guard"] == "是"
+    assert rows[0]["v3_practical_live_guard_reason"] == "prebid_guard"
+    assert rows[0]["v3_practical_unguarded_decision_value"] == "4 / 5 / 6"
 
 
 def test_load_archive_rows_scans_reset_complete_candidates(

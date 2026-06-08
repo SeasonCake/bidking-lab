@@ -669,6 +669,72 @@ def test_build_monitor_artifact_uses_activity_shipwreck_alias() -> None:
     )
 
 
+def test_build_monitor_artifact_aliases_activity_bidmap_with_missing_drop() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=1,
+                capture_time="",
+                message_id=0x0025,
+                session_id="2527:activity",
+                map_id=2527,
+                round_index=1,
+                bids=(
+                    FatbeansPlayerBid(
+                        player_id=1,
+                        name="leader",
+                        hero_id=103,
+                        values=(12_000,),
+                    ),
+                ),
+            ),
+        ),
+    )
+    tables = _activity_alias_tables()
+    maps = dict(tables.maps)
+    maps[2527] = BidMap(
+        map_id=2527,
+        name="activity_shipwreck_drop_missing",
+        description="",
+        category=105,
+        auction_mode="open",
+        sub_pool_weights=[],
+        rounds_total=5,
+        entry_fee_silver=0,
+        starting_budget_silver=100_000,
+        drop_pool_id=2527,
+        items_per_session_min=1,
+        items_per_session_max=1,
+        value_tier_ui="",
+        mode_flag=4,
+        bid_price_ladder=[],
+        raw_row=[],
+    )
+
+    artifact = build_monitor_artifact_from_events(
+        events,
+        file="activity_drop_missing.json",
+        tables=MonitorTables(maps=maps, drops=tables.drops, items=tables.items),
+        n_trials=10,
+        roi_trials=0,
+        formal_mode="v3_practical",
+    )
+
+    assert artifact["map_id"] == 2527
+    assert artifact["model_map_id"] == 2507
+    assert artifact["map_alias"]["reason"] == (
+        "missing_activity_drop_use_corresponding_old_shipwreck"
+    )
+    assert artifact["inference_input_constraints"]["map_alias_reason"] == (
+        "missing_activity_drop_use_corresponding_old_shipwreck"
+    )
+    assert artifact["bid_rows"]
+
+
 def test_build_monitor_artifact_includes_panel_and_eval() -> None:
     artifact = build_monitor_artifact_from_events(
         _events(),
@@ -1235,6 +1301,14 @@ def test_live_formal_mode_v3_practical_guards_low_confidence_prior_only_raise(
     )
     assert row["v3_practical_live_guard"] == "是"
     assert "live_prior_only_raise_guard" in row["后验诊断"]
+    assert artifact["model_eval"]["v3_practical_live_guard"] == "是"
+    assert (
+        artifact["model_eval"]["v3_practical_live_guard_reason"]
+        == row["v3_practical_live_guard_reason"]
+    )
+    assert artifact["model_eval"]["v3_practical_unguarded_decision_value"] == (
+        "30,000 / 80,000 / 300,000"
+    )
     assert (
         artifact["ui_contract"]["baseline"]["posterior"]["decision_value_range"]
         == "30,000 / 80,000 / 155,000"
@@ -1303,6 +1377,14 @@ def test_live_formal_mode_v3_practical_guards_low_support_baseline(
     )
     assert row["v3_practical_live_guard"] == "是"
     assert "live_low_support_baseline_guard" in row["后验诊断"]
+    assert artifact["model_eval"]["v3_practical_live_guard"] == "是"
+    assert (
+        artifact["model_eval"]["v3_practical_live_guard_reason"]
+        == row["v3_practical_live_guard_reason"]
+    )
+    assert artifact["model_eval"]["v3_practical_unguarded_decision_value"] == (
+        "200,000 / 500,000 / 700,000"
+    )
     assert (
         artifact["ui_contract"]["baseline"]["posterior"]["decision_value_range"]
         == "200,000 / 350,000 / 500,000"

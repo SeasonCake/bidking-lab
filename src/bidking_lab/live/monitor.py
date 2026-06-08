@@ -252,12 +252,14 @@ def _candidate_map_ids_for_likelihood(
 def _activity_shipwreck_alias(
     map_id: Any,
     maps: Mapping[int, BidMap],
+    drops: Mapping[int, DropPool],
 ) -> dict[str, Any]:
     try:
         source_map_id = int(map_id)
     except (TypeError, ValueError):
         return {}
-    if source_map_id in maps:
+    source_map = maps.get(source_map_id)
+    if source_map is not None and source_map.drop_pool_id in drops:
         return {}
     candidates: list[tuple[str, int]] = []
     if 2521 <= source_map_id <= 2530:
@@ -274,7 +276,11 @@ def _activity_shipwreck_alias(
                 "model_map_id": model_map_id,
                 "family": "shipwreck",
                 "confidence": "temporary_activity_alias",
-                "reason": "missing_activity_bidmap_use_corresponding_old_shipwreck",
+                "reason": (
+                    "missing_activity_drop_use_corresponding_old_shipwreck"
+                    if source_map is not None
+                    else "missing_activity_bidmap_use_corresponding_old_shipwreck"
+                ),
                 "candidate_model_map_ids": [
                     candidate
                     for _candidate_mode, candidate in candidates
@@ -1945,6 +1951,7 @@ def _model_eval_row(
         return None
     warehouse_rows = artifact.get("warehouse_rows") or []
     bid_rows = artifact.get("bid_rows") or []
+    bid_row = next((row for row in bid_rows if isinstance(row, Mapping)), {})
     layout_rows = artifact.get("layout_replay_rows") or []
     v2_rows = artifact.get("v2_posterior_rows") or []
     v3_shadow = (
@@ -2745,6 +2752,13 @@ def _model_eval_row(
         "formal_mode": artifact.get("formal_mode"),
         "formal_mode_reason": artifact.get("formal_mode_reason"),
         "formal_baseline_source": artifact.get("formal_baseline_source"),
+        "v3_practical_live_guard": bid_row.get("v3_practical_live_guard"),
+        "v3_practical_live_guard_reason": bid_row.get(
+            "v3_practical_live_guard_reason"
+        ),
+        "v3_practical_unguarded_decision_value": bid_row.get(
+            "v3_practical_unguarded_decision_value"
+        ),
         "final_value": final_value,
         "final_cells": final_cells,
         **dict(truth_breakdown),
@@ -4169,7 +4183,11 @@ def build_monitor_artifact_from_events(
     model_map_id: int | None = None
     activity_map_alias: dict[str, Any] = {}
     if base_session is not None:
-        activity_map_alias = _activity_shipwreck_alias(base_session.map_id, tables.maps)
+        activity_map_alias = _activity_shipwreck_alias(
+            base_session.map_id,
+            tables.maps,
+            tables.drops,
+        )
     if (
         base_session is not None
         and base_session.map_id not in tables.maps

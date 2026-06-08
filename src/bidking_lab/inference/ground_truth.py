@@ -126,6 +126,10 @@ def _with_temporary_blue_zodiac_pool_items(
         if not extras:
             pools.append(pool)
             continue
+        existing_total = float(pool.probabilities.sum())
+        if existing_total <= 0:
+            pools.append(pool)
+            continue
 
         existing_probabilities = pool.probabilities.astype(np.float64) * (
             1.0 - _TEMPORARY_BLUE_ZODIAC_POOL_MASS

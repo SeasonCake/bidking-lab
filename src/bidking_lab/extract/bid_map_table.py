@@ -64,6 +64,17 @@ def _infer_auction_mode(map_id: int, mode_flag: int) -> AuctionMode:
     return "open"
 
 
+def _parse_category(value: str, map_id: int) -> int:
+    text = str(value or "").strip()
+    if text:
+        return int(text)
+    if 2501 <= map_id <= 2520:
+        return 105
+    if 4501 <= map_id <= 4520:
+        return 305
+    raise ValueError(f"missing category for map_id={map_id}")
+
+
 def _silver_amount(blob: str) -> int:
     """Parse `[1, 1, N]` or `[[1, 1, N]]`. Return 0 for empty / missing."""
     if blob in ("", "[]", "[[]]"):
@@ -187,7 +198,7 @@ def parse_bid_map_row(row: Sequence[str]) -> BidMap:
         map_id=map_id,
         name=row[1],
         description=row[2],
-        category=int(row[idx["category"]]),
+        category=_parse_category(row[idx["category"]], map_id),
         auction_mode=_infer_auction_mode(map_id, mode_flag),
         sub_pool_weights=_parse_sub_pool_weights(row[idx["sub_pool_weights"]]),
         rounds_total=int(row[idx["rounds_total"]]),

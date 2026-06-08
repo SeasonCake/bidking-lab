@@ -21,7 +21,7 @@ audited rows.
 | 4 | `area_icon_key` | str | ☆ | `ui_map_icon_area_{nn}` (43 distinct) |
 | 5 | `name_key_alt` | str | ☆ | duplicate of col 3 |
 | 6 | `desc_key` | str | ☆ | i18n key, `bid_map_D_{id}` |
-| 7 | `category` | int | ☆ | 9 distinct values (101–105, 201, ...); likely region/area class |
+| 7 | `category` | int | ☆ | region/area class. v303 leaves this blank for old shipwreck `2501-2520` and old sealed shipwreck `4501-4520`; parser infers only those blanks as `105` / `305` from map family and still rejects other blank categories. |
 | 8 | `v300_flag_a` | int | ☆ | current v300 has `1` in 105 rows and `0` in 20 rows; `0` is concentrated in `2511-2520` and `4511-4520`. Parser ignores it. |
 | **9** | `sub_pool_weights` | list[[map_id, weight]] | ★ | only the "未知" anthology maps have entries; leaf maps store `[[]]`. Routing: pick a sub-map weighted by these, use that map's `drop_pool_id`. |
 | 10 | `value_tier_ui` | str | ☆ | `ui_value_{low,lower,medium,higher,high}` — 5 tiers |
@@ -137,6 +137,14 @@ uncertainty, but it does not provide the activity drop/overlay mechanism.
 Until the corresponding `Drop` pools, remote overlay table, or server
 source rule is recovered, 252x/452x activity rows must stay separated from
 default prior calibration and formal promotion evidence.
+
+Additional parser note: v303 old shipwreck rows `2501-2520` and old sealed
+shipwreck rows `4501-4520` have blank `col[7]`, while corresponding new
+activity rows `2521-2530` / `4521-4530` carry `105` / `305`. The parser
+therefore applies a narrow family fallback for those old blank rows only.
+It does not treat activity `drop_ref=252x` as usable, because `Drop.txt`
+still lacks those pools; live replay keeps using the explicit old-shipwreck
+activity alias when BidMap is present but Drop is missing.
 
 ## Tier structure
 

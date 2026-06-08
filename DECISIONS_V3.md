@@ -3322,3 +3322,25 @@ applied_hurts=2502
 - live runner 当前默认显式传 `formal_mode=v3_practical`，但底层 artifact builder 默认是 v2；
 - 不显式标注 replay formal mode 会把 v2 archive brief 误读为当前 UI/v3 practical 实战效果；
 - 当前 v303 `BidMap.txt` 已导致旧 parser 在 2501 行 `category` 空值处失败，真实 archive replay 需要先解决 table/schema 口径，不能回到 sampler 参数调优。
+
+## D-v3-163：v303 BidMap category 空值只做窄 schema fallback，activity Drop missing 仍走显式 alias
+
+2026-06-08 起，当前决策：
+
+- v303 `BidMap.col[7]` blank category 只允许以下窄推断：
+  - `2501-2520 -> 105`；
+  - `4501-4520 -> 305`。
+- 其他 blank category 仍必须报错，不做宽泛 map-id/category 猜测。
+- `2521-2530` / `4521-4530` 虽然已在 v303 BidMap present，但对应 Drop pools 仍缺失；因此：
+  - live/archive artifact 构建遇到这些 activity source maps 时，必须继续显式 alias 到旧沉船 model map，`minus20` 优先；
+  - alias reason 应区分 `missing_activity_drop_use_corresponding_old_shipwreck`；
+  - missing-drop raw activity map 不得作为 default prior 或 formal/value sampler promotion 分母。
+- ground-truth 临时 zodiac pool 补丁不得注入空 Drop pool；空 Drop pool 应保持 empty prior，避免把 zodiac mass 伪装成 activity Drop prior。
+- `model_eval` 与 archive brief 必须携带/汇总 live guard 字段，guarded 既可由 bid row 字段识别，也可由 `formal_mode_reason=v3_practical_ready_live_guarded` 识别。
+
+原因：
+
+- v303 解码显示 `2501-2520` / `4501-4520` 旧沉船行 blank category，但 `2521-2530` / `4521-4530` 新活动行分别有 `105/305`。
+- category fallback 只是恢复表加载和 paired replay；它不提供活动红转概率。
+- 在未拿到 activity Drop/overlay/source rule 前，把 activity BidMap present 当作可采样 prior 会产生空池、概率异常或过拟合风险。
+- archive `v3_practical` replay 已可跑通并显示 guard metrics，但 readiness 仍为 `not_ready`，不能据此 promotion。

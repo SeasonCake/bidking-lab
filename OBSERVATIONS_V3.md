@@ -6950,3 +6950,90 @@ idx 145 map 2521 c7='105' c17='[9999,2521,22,44]'
 - 旧 parser 仍把 23 列 `col[7]` 当 required category，导致 2501 旧沉船行加载失败；
 - 因为 `load_monitor_tables()` 被 live/archive 多路径共用，本窗口不直接修 parser 以免影响 live/正式出价；
 - 在 table/schema 口径修复或提供可解析 v300 table root 之前，不能用当前 raw v303 跑 archive v3 practical replay，也不能恢复 sampler 调参或 promotion 判断。
+
+## O-v3-176：v303 parser fallback 与 activity missing-drop alias 后 archive v3-practical replay 可跑通
+
+2026-06-08 继续复核 O-v3-175：
+
+v303 `BidMap.col[7]` 空值分布：
+
+```text
+rows=165 cols=[23]
+empty_count=40
+empty_prefix_counts={25: 20, 45: 20}
+nonempty_counts={'101': 7, '102': 5, '103': 10, '104': 10, '105': 10, '106': 1, '201': 42, '304': 10, '305': 10, '401': 10, '402': 10}
+```
+
+空值全部落在旧沉船：
+
+```text
+2501-2520 col[7]=''
+4501-4520 col[7]=''
+2521 col[7]='105' drop_ref='[9999,2521,22,44]'
+4521 col[7]='305' drop_ref='[9999,2521,22,44]'
+```
+
+修复后表加载：
+
+```text
+maps=165 drops=629 items=1187
+2501 category=105 drop=2501 min=22 max=44
+2521 category=105 drop=2521 min=22 max=44
+4501 category=305 drop=2501 min=22 max=44
+4521 category=305 drop=2521 min=22 max=44
+```
+
+第二个连续失败点：
+
+- category fallback 后，archive replay 进入 MC sampling；
+- 但 252x/452x missing Drop pool 被临时蓝生肖补丁注入了 1% mass；
+- prepared sampler 概率和为 `0.01` 的 bad pools 全部是 `2521-2530` / `4521-4530`；
+- 修复为 empty Drop pool 不注入 zodiac 后，`bad_probability_pools=0`。
+
+activity alias 复核：
+
+- v303 使 `252x/452x` 从 `missing BidMap` 变为 `BidMap present / Drop missing`；
+- live monitor 现在对 `source map present but drop_pool_id missing` 也继续 alias 到旧沉船 model map；
+- `2527 -> 2507` 仍走 `activity_shipwreck_minus20`，reason 为 `missing_activity_drop_use_corresponding_old_shipwreck`。
+
+72h archive v3 practical replay：
+
+```text
+total_rows=49
+estimate_rows=47
+formal_mode_counts={'v2': 15, 'v3_practical': 34}
+formal_mode_reason_counts={
+  'no_inference_session': 2,
+  'v3_practical_no_bid_rows_fallback_v2': 13,
+  'v3_practical_ready': 11,
+  'v3_practical_ready_live_guarded': 23
+}
+v3_practical_formal_rows=34
+v3_practical_live_guard_rows=23
+v3_practical_live_guard_rate=0.68
+decision_value_mae=182623.0
+v3_practical_mae=176490.1
+v3_practical_delta_mae=-6132.9
+v3_practical_p90_coverage=0.79
+v3_practical_p90_extreme_over_rate=0.38
+prebid_windows=49 ready_windows=47 sessions=15
+```
+
+Readiness smoke：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+windows=1616
+ready=1598
+formal_mae=317290.279
+formal_below=0.512516
+formal_p90_cover=0.753442
+```
+
+解读：
+
+- O-v3-175 的 archive replay parser blocker 已收口；
+- activity missing-drop/source overlay blocker 未解除；
+- v3 practical guard metrics 现在可复盘，但当前 replay 显示 P90 extreme-over 仍高，不能用于 promotion；
+- 下一阶段仍应继续 guarded/unguarded/v2 分组和 CSE/SCP bridge stability，而不是参数调优。

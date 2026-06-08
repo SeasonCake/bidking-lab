@@ -26,6 +26,7 @@
 | `src/bidking_lab/inference/v3/capacity_source_expansion.py` | v3 capacity/source expansion shadow evidence，输出含 `v3_cse_source_context_classes` 与 pressure tier 的 `v3_cse_*`，固定 inactive/不影响出价 |
 | `src/bidking_lab/inference/v3/underestimate_repair.py` | v3 低估上修 shadow report |
 | `src/bidking_lab/inference/v3/tail_value_review.py` | v3 tail/value review shadow report 与 hurt guard |
+| `src/bidking_lab/extract/bid_map_table.py` | BidMap parser | 支持 21/23 列 BidMap；v303 旧沉船 `2501-2520` blank category 窄推断为 `105`、旧暗拍沉船 `4501-4520` 窄推断为 `305`，其他 blank category 仍报错 |
 | `data/processed/v3_settlement_count_prior_shadow.json` | v3 settlement count-prior shadow entry 表，合并 default archive 与 0605 activity cohort |
 | `data/processed/v3_capacity_source_expansion_shadow.json` | v3 capacity/source expansion shadow entry 表，合并 default archive 与 0605 activity cohort，并保留 source evidence/context/mechanism counts |
 | `data/processed/v3_scp_guarded_bridge_stability_shadow.json` | v3 guarded settlement bridge trial/seed stability shadow evidence，当前用于 readiness 证明该 lane 已评估且 blocked |
@@ -145,10 +146,10 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | 路径 | 作用 | 当前策略 |
 | --- | --- | --- |
 | `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做；当前 baseline/正式建议可来自 guarded `v3_practical`，同时保留 v2 reference、guard 原因、activity alias、公开/道具 numeric facts 与 v3 diagnostic detail |
-| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；live runner 默认 `formal_mode=v3_practical`，但底层 artifact builder 默认仍是 v2；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 `v3_practical_*`；live bid row 对低置信 prior-only raise 与低支持 baseline passthrough 有 guard |
+| `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；live runner 默认 `formal_mode=v3_practical`，但底层 artifact builder 默认仍是 v2；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 `v3_practical_*`；live bid row 对低置信 prior-only raise 与低支持 baseline passthrough 有 guard；252x/452x activity map 即使 BidMap present，只要 Drop missing 仍显式 alias 到旧沉船 model map |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
-| `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate、practical P90 coverage/extreme-over，以及 raise-watch hit/miss/false-alarm/extreme-over/misleading rate；archive replay 支持 `--archive-formal-mode v2|v3_practical`，默认保持 builder v2 对照口径；summary/group stats 输出 formal-mode counts 与 v3 practical live guard rows/rate；当前真实 archive replay 仍受 v303 `BidMap.col[7]` category 空值/parser schema drift 阻断 |
+| `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate、practical P90 coverage/extreme-over，以及 raise-watch hit/miss/false-alarm/extreme-over/misleading rate；archive replay 支持 `--archive-formal-mode v2|v3_practical`，默认保持 builder v2 对照口径；summary/group stats 输出 formal-mode counts 与 v3 practical live guard rows/rate；v303 BidMap parser fallback 与 activity missing-drop alias 后，72h archive `v3_practical` replay 可跑通 |
 | `data/logs/live/` | 本地 live 日志 | ignored，本地运行态 |
 | `data/samples/fatbeans/` | 本地 canonical archive 样本 | 453 个 unique 文件，435 valid / 18 mixed，默认脚本路径 |
 | `data/samples/fatbeans_activity_20260605_shipwreck/` | 2026-06-05 沉船白转红活动 cohort | 15 份 JSON，manifest role=`activity_tuning_reference`；用于 source/table 与 shadow 调参参考，不进默认校准 |

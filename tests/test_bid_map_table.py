@@ -92,6 +92,34 @@ def test_parses_current_23_column_drop_ref_from_col17() -> None:
     assert bm.raw_row[17] == "[9999,2501,22,44]"
 
 
+def test_v303_shipwreck_blank_category_is_inferred() -> None:
+    bm = parse_bid_map_row(_make_v2_row(**{"col7": ""}))
+
+    assert bm.map_id == 2501
+    assert bm.category == 105
+
+
+def test_v303_sealed_shipwreck_blank_category_is_inferred() -> None:
+    bm = parse_bid_map_row(
+        _make_v2_row(
+            **{
+                "col0": "4501",
+                "col7": "",
+                "col17": "[9999,2501,22,44]",
+            }
+        )
+    )
+
+    assert bm.map_id == 4501
+    assert bm.category == 305
+    assert bm.auction_mode == "sealed"
+
+
+def test_unknown_blank_category_still_rejected() -> None:
+    with pytest.raises(ValueError, match="missing category"):
+        parse_bid_map_row(_make_v2_row(**{"col0": "2401", "col7": ""}))
+
+
 def test_round_category_hints_with_zeros() -> None:
     """Mansion-style maps only hint R1 and R3 (zeros for other rounds)."""
     bm = parse_bid_map_row(_make_row(**{"col19": "[103,0,103,0,0]"}))

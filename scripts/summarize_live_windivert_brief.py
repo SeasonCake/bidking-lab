@@ -152,6 +152,21 @@ def _annotate_archive_row(
     row["replay_formal_mode_requested"] = artifact.get("formal_mode_requested")
     row["replay_formal_mode"] = artifact.get("formal_mode")
     row["replay_formal_mode_reason"] = artifact.get("formal_mode_reason")
+    bid_row = next(
+        (
+            item
+            for item in artifact.get("bid_rows", [])
+            if isinstance(item, dict)
+        ),
+        {},
+    )
+    for key in (
+        "v3_practical_live_guard",
+        "v3_practical_live_guard_reason",
+        "v3_practical_unguarded_decision_value",
+    ):
+        if row.get(key) is None:
+            row[key] = bid_row.get(key)
     if row.get("formal_mode_requested") is None:
         row["formal_mode_requested"] = artifact.get("formal_mode_requested")
     if row.get("formal_mode") is None:
@@ -390,7 +405,15 @@ def _formal_mode_reason_label(row: dict[str, Any]) -> str:
 
 def _v3_practical_guard_reason_label(row: dict[str, Any]) -> str:
     text = str(row.get("v3_practical_live_guard_reason") or "").strip()
+    if not text and _formal_mode_reason_label(row) == "v3_practical_ready_live_guarded":
+        text = "v3_practical_ready_live_guarded"
     return text or "unknown"
+
+
+def _is_v3_practical_live_guarded(row: dict[str, Any]) -> bool:
+    if _truthy(row.get("v3_practical_live_guard")):
+        return True
+    return _formal_mode_reason_label(row) == "v3_practical_ready_live_guarded"
 
 
 def _round_bucket(row: dict[str, Any], key: str) -> str:
@@ -1129,7 +1152,7 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         row for row in rows if _formal_mode_label(row) == "v3_practical"
     ]
     v3_live_guard_rows = [
-        row for row in v3_formal_rows if _truthy(row.get("v3_practical_live_guard"))
+        row for row in v3_formal_rows if _is_v3_practical_live_guarded(row)
     ]
     v3_live_guard_reason_counts = Counter(
         _v3_practical_guard_reason_label(row) for row in v3_live_guard_rows
