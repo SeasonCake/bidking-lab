@@ -9965,3 +9965,59 @@ top_profiles=aisha|2501|public:total+tool:category+item+shape,ethan|2404|public:
 - prior-stress blocker 已可按 case taxonomy 复核，但仍是 readiness blocked；
 - 当前主要 blocker 类型是 lower-bound truth under-target、direct prior-max conflict、无 capacity prior max；
 - 这说明下一步应继续做 source/table/parser 或 shadow-only sampler 设计，不能靠放宽现有 capacity 参数进入 promotion。
+
+## 2026-06-08 checkpoint：promotion workbench shadow sampler contract added
+
+背景：
+
+- readiness 已能合同化 practical guard、CSE artifact、SCP guarded stability 和 prior-stress taxonomy；
+- 但 `summarize_v3_promotion_workbench.py` 之前只输出 lane-level verdict，无法明确 shadow sampler 原型哪些输入可用、哪些 lane 必须 frozen、哪些动作仍禁止；
+- 当前 goal 已进入 promotion hardening 与 shadow-only sampler 重构，必须避免把 `next_mode=build_shadow_formal_value_workbench` 误读为可恢复正式调参。
+
+完成：
+
+- `scripts/summarize_v3_promotion_workbench.py`
+  - 新增 `summarize_shadow_sampler_contract()`；
+  - workbench 输出新增 `shadow_sampler_contract`；
+  - contract 固定 `shadow_only=true`、`affects_bid=false`、`can_change_live_or_formal=false`、`can_archive_v2=false`、`can_promote=false`；
+  - contract 展开 `watch_inputs`、`frozen_gates`、`blocking_gates`、`required_evidence`、`required_holdouts`、`required_metrics`、allowed/blocked actions；
+  - summary 输出新增 `shadow_sampler_contract status=... frozen=... blockers=...`。
+- `tests/test_summarize_v3_promotion_workbench.py`
+  - 扩展 stop-loss lane 测试，确认 shadow sampler contract 是 design-only 且不影响出价；
+  - 新增 pending prerequisite blocker 测试；
+  - archive quality watch 场景确认可进入 shadow prototype，但仍不 promotion。
+
+验证：
+
+```text
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_promotion_workbench.py
+
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_promotion_workbench.py -q
+3 passed
+
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --format json > .tmp\codex\v3_readiness_workbench_contract_probe.json
+
+C:\Python313\python.exe scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_workbench_contract_probe.json --format summary
+overall_status=not_ready
+blocked_gates=13
+lane_count=8
+verdicts=blocked:2,stop_loss:4,usable_watch:1,watch_only:1
+next_mode=build_shadow_formal_value_workbench
+shadow_sampler_contract status=shadow_design_only shadow_only=True affects_bid=False
+```
+
+JSON 复核：
+
+```text
+status=shadow_design_only
+stop_loss_lanes=formal_value_shadow_sampler,sampler_safety_holdout,settlement_bridge_support,table_activity_capacity
+frozen=prior_stress_capacity_table_drift,settlement_count_formal_value_link,settlement_count_guarded_bridge_stability,ccv_sampler,ccv_directionality,ccv_direction_holdout,tail_under_combined_holdout,formal_value_sampler_holdout,capacity_source_expansion_shadow
+watch_inputs=14
+required_holdouts=archive,session,map_family,map_id/profile when sample depth is sufficient,posterior seed stability,live model_eval replay
+```
+
+结论：
+
+- 当前可以继续做 evidence-driven count/cell/value sampler 的 shadow-only interface/prototype；
+- 但 workbench 现在会 fail-visible 地说明该阶段仍是 `shadow_design_only`，CSE/SCP/CCV/formal-value stop-loss lane 只能作为 risk/watch/frozen evidence；
+- 不得把 sampler prototype 接入 live/formal，不得调正式出价参数，不得 archive v2，也不得放宽 readiness/promotion gate。

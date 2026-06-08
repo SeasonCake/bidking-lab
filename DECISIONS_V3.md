@@ -3585,3 +3585,26 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 当前 blocker 同时包含 direct prior-max conflict、lower-bound under truth、target missing/no capacity prior max 等不同机制；
 - promotion hardening 需要区分“证据已分类但仍 blocked”和“证据结构不可审计”；
 - 该 contract 只增强 readiness 证据，不改变 prior sampler、formal/value sampler、live/UI 或正式出价。
+
+## D-v3-175：promotion workbench 必须输出 shadow sampler contract，且当前只能 design-only
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_workbench.py` 不再只输出 lane verdict，还必须输出 `shadow_sampler_contract`；
+- contract 固定声明：
+  - `interface=evidence_driven_count_cell_value_sampler`；
+  - `shadow_only=true`；
+  - `affects_bid=false`；
+  - `can_change_live_or_formal=false`；
+  - `can_archive_v2=false`；
+  - `can_promote=false`。
+- contract 必须列出 sampler 原型可消费的 evidence、required holdouts、required metrics、watch inputs、frozen gates、blocking gates、allowed actions 与 blocked actions；
+- 当前 readiness/workbench 仍有 stop-loss lanes，因此 contract 状态为 `shadow_design_only`，允许继续设计/输出 shadow-only fields，但不允许正式调参、接 live/formal 或放宽 promotion gate；
+- CSE/SCP/CCV/formal-value 等 stop-loss lane 只能作为 risk/watch/frozen evidence 输入，不能作为 sampler promotion 支持。
+
+原因：
+
+- 当前目标已经从单个 blocker 收口进入 promotion hardening 与 sampler 重构，但正式出价路径仍必须稳定；
+- 如果 workbench 只说 `next_mode=build_shadow_formal_value_workbench`，后续窗口容易误读为可以恢复参数调优；
+- 机器可读 contract 能明确下一步是 shadow-only sampler interface/prototype，而不是 live/formal 替换；
+- 该改动只增强审计和承接边界，不改变 evaluator、pipeline、live/UI 或正式出价。
