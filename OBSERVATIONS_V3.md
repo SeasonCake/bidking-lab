@@ -7294,6 +7294,48 @@ rankmap_activity_range=4521-4530 rankmap_present=10 rankmap_missing=0 labels=白
 - 但 `Drop.txt` 对应 activity drop pools 仍全缺，RankMap 不能直接展平为 item-level odds；
 - 活动 cohort 仍保持 `activity_tuning_reference`，可用于调参参考、表源审计和 source parser，不进入默认 baseline 或 promotion evidence。
 
+## O-v3-183：0605 activity mapping likelihood 显示 minus10 多数胜出但非稳定单一 alias
+
+2026-06-08 扩展 `summarize_v3_activity_mapping_likelihood.py` 后跑：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_activity_mapping_likelihood.py --format summary --top 8
+```
+
+整体：
+
+```text
+files=15
+schemes=minus10,minus20
+winners=minus10:11,minus20:4
+item_winners=minus10:11,minus20:4
+candidate_statuses=ok:30
+errors=0
+rankmap_present=6
+rankmap_missing=0
+rankmap_labels=白色DOWN红色UP:6
+rankmap_category_profiles=6
+rankmap_parse_error=null
+```
+
+分 map：
+
+```text
+2521 files=5 winners=minus10:4,minus20:1 item_winners=minus10:4,minus20:1
+2522 files=1 winners=minus10:1 item_winners=minus10:1
+2524 files=3 winners=minus10:2,minus20:1 item_winners=minus10:2,minus20:1
+2526 files=2 winners=minus10:2 item_winners=minus10:2
+2528 files=1 winners=minus20:1 item_winners=minus20:1
+2529 files=3 winners=minus10:2,minus20:1 item_winners=minus10:2,minus20:1
+```
+
+解读：
+
+- `minus10` 候选整体更接近活动 settlement quality/item distribution，但不是稳定规则；
+- `minus20` 在 4/15 样本胜出，且覆盖多个 observed map，因此不能把 252x 活动直接固定 alias 为 251x 或 250x；
+- RankMap profile attach 后，所有 observed activity maps 都能关联到 `白色DOWN红色UP` 与各自 category profile；
+- 这支持 activity cohort 作为 source parser / shadow overlay prior 参考，不支持 promotion gate 放宽或 formal sampler 默认接入。
+
 ## O-v3-181：AuctionAnalyzer/Ahmad 输入通道可局部复用，不应整套替换 v3
 
 2026-06-08 对 `external_references/AuctionAnalyzer4.13.3` 与 `bidking-booooot` raw pricing 进行 Ahmad 相关审查：

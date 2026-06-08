@@ -9688,3 +9688,50 @@ rankmap_activity_range=4521-4530 rankmap_present=10 rankmap_missing=0 labels=白
 - 252x/452x 的 RankMap 明确给出 “白色DOWN红色UP” 与 category profile 线索，适合作为 source parser / shadow-only activity overlay prior 的研究输入；
 - `Drop.txt` 对应 2521-2530 pools 仍缺，RankMap 不是 Drop pool，也不能直接替代 item-level odds；
 - readiness/promotion gate 不放宽，activity cohort 仍只做调参参考和表源审计，不进入默认 prior calibration 或正式出价依据。
+
+## 2026-06-08 checkpoint：activity mapping likelihood attaches RankMap profile
+
+背景：
+
+- 0605 活动沉船 cohort 已标记为 `activity_tuning_reference`，但此前 mapping likelihood 只比较 `252x->251x` 与 `252x->250x` 的质量/物品 likelihood；
+- v303 `RankMap.txt` 现在提供了 252x/452x 的活动标签和 profile 线索，需要和 activity cohort 的 likelihood 结果放到同一份 audit 中；
+- 该工作仍只服务 prior/activity/table drift 收口，不接入 live/formal 出价。
+
+完成：
+
+- `scripts/summarize_v3_activity_mapping_likelihood.py`
+  - 新增 `--tables-root`；
+  - JSON 输出新增 `activity_rankmap`；
+  - file/map results 增加 `rankmap_profile` / `rankmap_labels`；
+  - summary 输出 RankMap present/missing、label counts、category profile 数量。
+- `tests/test_summarize_v3_activity_mapping_likelihood.py`
+  - 新增临时 `RankMap.txt` fixture，覆盖 activity profile attach。
+
+验证：
+
+```text
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_activity_mapping_likelihood.py -q
+4 passed
+
+C:\Python313\python.exe scripts\summarize_v3_activity_mapping_likelihood.py --format summary --top 8
+files=15 schemes=minus10,minus20 winners=minus10:11,minus20:4 item_winners=minus10:11,minus20:4 candidate_statuses=ok:30 errors=0
+rankmap_present=6 rankmap_missing=0 rankmap_labels=白色DOWN红色UP:6 rankmap_category_profiles=6 rankmap_parse_error=null
+```
+
+分 map 结果：
+
+```text
+map=2521 files=5 winners=minus10:4,minus20:1 item_winners=minus10:4,minus20:1
+map=2522 files=1 winners=minus10:1 item_winners=minus10:1
+map=2524 files=3 winners=minus10:2,minus20:1 item_winners=minus10:2,minus20:1
+map=2526 files=2 winners=minus10:2 item_winners=minus10:2
+map=2528 files=1 winners=minus20:1 item_winners=minus20:1
+map=2529 files=3 winners=minus10:2,minus20:1 item_winners=minus10:2,minus20:1
+```
+
+结论：
+
+- 0605 activity cohort 可作为 activity/source parser 与 shadow-only 调参参考；
+- `minus10` 整体更常胜出，但 2521/2524/2528/2529 都存在 `minus20` 胜出的样本或地图，不能把活动映射简化为稳定单一 alias；
+- RankMap 已确认所有 observed activity maps 都是 `白色DOWN红色UP`，且 observed 6 个 map 有 6 个 category profiles；
+- 这支持后续做 source parser / activity overlay prior 草案，但仍不能替代缺失的 Drop pools，也不能作为 promotion/readiness 放宽依据。

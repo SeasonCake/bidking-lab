@@ -22,12 +22,19 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from evaluate_fatbeans_v3_samples import _round_metric  # noqa: E402
+from bidking_lab.extract.tables import load_table_rows  # noqa: E402
 from bidking_lab.inference.ground_truth import prepare_session_sampler  # noqa: E402
 from bidking_lab.live.fatbeans import parse_fatbeans_capture  # noqa: E402
 from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
 
 DEFAULT_SAMPLE_ROOT = ROOT / "data" / "samples" / "fatbeans_activity_20260605_shipwreck"
+DEFAULT_TABLES_ROOT = ROOT / "data" / "raw" / "tables"
 DEFAULT_SCHEMES = ("minus10:-10", "minus20:-20")
+_RANKMAP_COL_LABEL = 2
+_RANKMAP_COL_ROUND_BUCKET_WEIGHTS = 3
+_RANKMAP_COL_CATEGORY_WEIGHTS = 4
+_RANKMAP_COL_VALUE_WEIGHTS = 5
+_RANKMAP_COL_BID_LADDER = 6
 _EPSILON = 1e-12
 
 
@@ -80,6 +87,26 @@ def _format_summary(summary: Mapping[str, Any]) -> str:
     )
 
 
+def _parse_json_list(value: Any) -> list[Any] | None:
+    try:
+        parsed = json.loads(str(value))
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, list) else None
+
+
+def _canonical_json_cell(value: Any) -> str:
+    parsed = _parse_json_list(value)
+    if parsed is None:
+        return str(value) if value not in (None, "") else "none"
+    return json.dumps(
+        parsed,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
 def _resolve_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
     seq = tuple(paths) or (DEFAULT_SAMPLE_ROOT,)
     out: list[Path] = []
@@ -89,6 +116,85 @@ def _resolve_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
         elif path.exists():
             out.append(path)
     return tuple(out)
+
+
+def _rankmap_profiles(
+    map_ids: Iterable[Any],
+    *,
+    tables_root: Path = DEFAULT_TABLES_ROOT,
+) -> dict[str, Any]:
+    observed_ids = sorted(
+        {
+            int(value)
+            for value in map_ids
+            if value not in (None, "")
+        }
+    )
+    try:
+        rows = load_table_rows(tables_root / "RankMap.txt")
+        parse_error = None
+    except Exception as exc:  # pragma: no cover - retained for CLI diagnostics.
+        rows = []
+        parse_error = f"{tables_root / 'RankMap.txt'}:{exc}"
+    by_id = {
+        int(row[0]): row
+        for row in rows
+        if row and str(row[0]).isdigit()
+    }
+    profiles_by_map: dict[str, dict[str, Any]] = {}
+    for map_id in observed_ids:
+        row = by_id.get(map_id)
+        if row is None:
+            continue
+        profiles_by_map[str(map_id)] = {
+            "map_id": map_id,
+            "label": row[_RANKMAP_COL_LABEL] if len(row) > _RANKMAP_COL_LABEL else None,
+            "round_bucket_profile": (
+                _canonical_json_cell(row[_RANKMAP_COL_ROUND_BUCKET_WEIGHTS])
+                if len(row) > _RANKMAP_COL_ROUND_BUCKET_WEIGHTS
+                else None
+            ),
+            "category_weight_profile": (
+                _canonical_json_cell(row[_RANKMAP_COL_CATEGORY_WEIGHTS])
+                if len(row) > _RANKMAP_COL_CATEGORY_WEIGHTS
+                else None
+            ),
+            "value_weight_profile": (
+                _canonical_json_cell(row[_RANKMAP_COL_VALUE_WEIGHTS])
+                if len(row) > _RANKMAP_COL_VALUE_WEIGHTS
+                else None
+            ),
+            "bid_ladder_profile": (
+                _canonical_json_cell(row[_RANKMAP_COL_BID_LADDER])
+                if len(row) > _RANKMAP_COL_BID_LADDER
+                else None
+            ),
+        }
+    return {
+        "tables_root": str(tables_root),
+        "parse_error": parse_error,
+        "observed_map_ids": observed_ids,
+        "rankmap_present_ids": sorted(int(key) for key in profiles_by_map),
+        "rankmap_missing_ids": [
+            map_id for map_id in observed_ids if str(map_id) not in profiles_by_map
+        ],
+        "label_counts": _counter_dict(
+            profile.get("label") for profile in profiles_by_map.values()
+        ),
+        "round_bucket_profile_counts": _counter_dict(
+            profile.get("round_bucket_profile") for profile in profiles_by_map.values()
+        ),
+        "category_weight_profile_counts": _counter_dict(
+            profile.get("category_weight_profile") for profile in profiles_by_map.values()
+        ),
+        "value_weight_profile_counts": _counter_dict(
+            profile.get("value_weight_profile") for profile in profiles_by_map.values()
+        ),
+        "bid_ladder_profile_counts": _counter_dict(
+            profile.get("bid_ladder_profile") for profile in profiles_by_map.values()
+        ),
+        "profiles_by_map": profiles_by_map,
+    }
 
 
 def _parse_schemes(values: Iterable[str]) -> tuple[tuple[str, int], ...]:
@@ -342,6 +448,7 @@ def summarize_activity_mapping_likelihood(
     *,
     tables: Any | None = None,
     schemes: Iterable[str] = DEFAULT_SCHEMES,
+    tables_root: Path = DEFAULT_TABLES_ROOT,
     top: int = 12,
 ) -> dict[str, Any]:
     tables = tables or load_monitor_tables()
@@ -352,6 +459,10 @@ def summarize_activity_mapping_likelihood(
     for path in _resolve_paths(paths):
         try:
             observed = _observed_inventory(path, tables=tables)
+            rankmap_profile = _rankmap_profiles(
+                (observed.get("map_id"),),
+                tables_root=tables_root,
+            ).get("profiles_by_map", {}).get(str(observed.get("map_id")))
             candidate_rows = []
             actual_map = observed.get("map_id")
             for scheme, delta in parsed_schemes:
@@ -387,6 +498,7 @@ def summarize_activity_mapping_likelihood(
             file_results.append(
                 {
                     **{key: value for key, value in observed.items() if key != "item_ids"},
+                    "rankmap_profile": rankmap_profile,
                     "best_scheme": winner,
                     "best_margin_per_item": margin,
                     "best_item_scheme": item_winner,
@@ -447,6 +559,11 @@ def summarize_activity_mapping_likelihood(
     for row in file_results:
         by_map[str(row.get("map_id"))].append(row)
     for map_id, rows in sorted(by_map.items()):
+        rankmap_profiles = [
+            row.get("rankmap_profile")
+            for row in rows
+            if isinstance(row.get("rankmap_profile"), Mapping)
+        ]
         map_rows.append(
             {
                 "map_id": map_id,
@@ -464,12 +581,23 @@ def summarize_activity_mapping_likelihood(
                 "best_item_margin_per_item": _numeric_summary(
                     row.get("best_item_margin_per_item") for row in rows
                 ),
+                "rankmap_labels": _counter_dict(
+                    profile.get("label") for profile in rankmap_profiles
+                ),
+                "rankmap_category_weight_profiles": _counter_dict(
+                    profile.get("category_weight_profile") for profile in rankmap_profiles
+                ),
             }
         )
+    rankmap_summary = _rankmap_profiles(
+        (row.get("map_id") for row in file_results),
+        tables_root=tables_root,
+    )
     return {
         "errors": errors,
         "files": len(file_results),
         "schemes": [label for label, _delta in parsed_schemes],
+        "activity_rankmap": rankmap_summary,
         "winner_counts": _counter_dict(row.get("best_scheme") for row in file_results),
         "item_winner_counts": _counter_dict(
             row.get("best_item_scheme") for row in file_results
@@ -504,6 +632,18 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
             )
         )
     )
+    rankmap = result.get("activity_rankmap", {})
+    print(
+        " ".join(
+            (
+                f"rankmap_present={len(rankmap.get('rankmap_present_ids', ()))}",
+                f"rankmap_missing={len(rankmap.get('rankmap_missing_ids', ()))}",
+                f"rankmap_labels={_format_counts(rankmap.get('label_counts', {}))}",
+                f"rankmap_category_profiles={len(rankmap.get('category_weight_profile_counts', {}))}",
+                f"rankmap_parse_error={json.dumps(rankmap.get('parse_error'), ensure_ascii=False)}",
+            )
+        )
+    )
     for row in result["scheme_results"]:
         print(
             " ".join(
@@ -534,6 +674,7 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                     f"inventory_count={_format_summary(row['inventory_count'])}",
                     f"margin={_format_summary(row['best_margin_per_item'])}",
                     f"item_margin={_format_summary(row['best_item_margin_per_item'])}",
+                    f"rankmap_labels={_format_counts(row.get('rankmap_labels', {}))}",
                 )
             )
         )
@@ -555,12 +696,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Candidate mapping as label:delta. Defaults to minus10:-10 and minus20:-20.",
     )
     parser.add_argument("--top", type=int, default=12)
+    parser.add_argument(
+        "--tables-root",
+        type=Path,
+        default=DEFAULT_TABLES_ROOT,
+        help="Directory containing RankMap.txt for activity profile audit.",
+    )
     parser.add_argument("--format", choices=("summary", "json"), default="summary")
     args = parser.parse_args(argv)
 
     result = summarize_activity_mapping_likelihood(
         args.paths,
         schemes=args.scheme or DEFAULT_SCHEMES,
+        tables_root=args.tables_root,
         top=args.top,
     )
     if args.format == "json":

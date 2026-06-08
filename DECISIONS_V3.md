@@ -3476,3 +3476,25 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 同时 `Drop.txt` 仍缺对应 2521-2530 pools，`activity_range` 审计显示 drop_present=0 / drop_missing=10；
 - RankMap 给的是活动级权重/展示线索，不是可直接展平到 item odds 的 Drop graph；
 - 该线索有助于后续 source parser 或合成/模拟参考，但仍必须 shadow-only。
+
+## D-v3-170：0605 activity cohort 可用于 shadow 参考，但不能作为稳定 alias 或 promotion 分母
+
+2026-06-08 起，当前决策：
+
+- 0605 `fatbeans_activity_20260605_shipwreck` cohort 可以用于：
+  - activity/source parser table acquisition；
+  - RankMap profile 与旧沉船 candidate mapping 的审计；
+  - shadow-only activity overlay prior 或合成样本假设的参考。
+- 但该 cohort 不能用于：
+  - default 250x/450x prior calibration；
+  - formal/value sampler promotion；
+  - v2 archive 或 v3 readiness pass 分母；
+  - 静默证明 `252x->251x` 或 `252x->250x` 的单一稳定 alias。
+- 若后续要把 RankMap/旧沉船映射用于 sampler，必须作为显式 source feature，并通过 activity/session/map holdout 与 extreme-over 检查。
+
+原因：
+
+- activity mapping likelihood 显示 15 个样本中 `minus10` 赢 11、`minus20` 赢 4，整体有偏向但不是稳定单一映射；
+- 2521/2524/2528/2529 均存在 `minus20` 胜出样本或地图，说明活动机制不是简单固定 alias；
+- observed 6 个 activity maps 全部有 RankMap `白色DOWN红色UP`，但 `Drop.txt` 仍缺 item-level activity pools；
+- 这类 evidence 适合作为 shadow/source-parser 输入，不适合作为 formal 出价依据。
