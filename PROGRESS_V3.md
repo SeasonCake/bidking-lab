@@ -9902,3 +9902,66 @@ entry_missing_key_counts={}
 - CSE artifact 现在作为 readiness 可复核 contract，而不是隐式依赖 loader 成功；
 - artifact 与 row-level smoke 均证明 CSE 保持 inactive/不影响出价；
 - 该 gate 仍只是 `watch`，CSE 仍不得作为 formal/value sampler 或 promotion 支持。
+
+## 2026-06-08 checkpoint：prior-stress table/activity drift detail contract attached
+
+背景：
+
+- `prior_stress_capacity_table_drift` 是当前 table/activity/capacity blocker 的主 gate；
+- readiness 此前输出 detail rows、capacity hits 和 top groups，但没有显式区分“detail 已分类但 blocked”和“detail summary 缺结构字段”；
+- 当前目标是收口 blocker 与 readiness contract，不恢复 sampler 参数调优。
+
+完成：
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `summarize_prior_stress_detail_contract()`；
+  - `prior_stress_capacity_table_drift` gate 新增 `detail_contract`；
+  - contract 校验 rows、capacity flags、case counts、consistency bucket/class、source counts、ratio summary、top map/profile groups；
+  - summary 输出新增 `prior_stress_contract` 与 `prior_stress_top_cases`；
+  - gate dependency focus 增加 top case taxonomy。
+- `tests/test_summarize_v3_promotion_readiness.py`
+  - 扩展 prior-stress drift blocker 测试；
+  - 新增 malformed detail contract blocker 测试。
+
+验证：
+
+```text
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_prior_robustness_audit.py -q
+16 passed
+
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_prior_robustness_audit.py
+
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --format summary
+overall_status=not_ready
+blocked_gates=13
+prior_stress_detail_rows=94
+prior_stress_capacity_hits=107
+prior_stress_contract=watch
+prior_stress_top_cases=target_lower_bound_truth_above_prior:31,direct_prior_max_conflict:29,no_capacity_prior_max_case:26
+```
+
+JSON 复核：
+
+```text
+gate=blocked
+contract=watch
+rows=94
+capacity_flag_hits=107
+case_counts={
+  direct_prior_max_conflict:29,
+  no_capacity_prior_max_case:26,
+  target_above_prior_but_below_truth:10,
+  target_lower_bound_truth_above_prior:31,
+  truth_above_prior_without_count_target:8,
+  truth_above_prior_without_target_prior_hit:8
+}
+bucket_counts={evidence_floor_only:26,hard_capacity_conflict:29,lower_bound_under_truth:39}
+top_maps=2401,2501,2404
+top_profiles=aisha|2501|public:total+tool:category+item+shape,ethan|2404|public:total+shape+layout,aisha|2409|public:max_item_cells+tool:category+item+shape
+```
+
+结论：
+
+- prior-stress blocker 已可按 case taxonomy 复核，但仍是 readiness blocked；
+- 当前主要 blocker 类型是 lower-bound truth under-target、direct prior-max conflict、无 capacity prior max；
+- 这说明下一步应继续做 source/table/parser 或 shadow-only sampler 设计，不能靠放宽现有 capacity 参数进入 promotion。

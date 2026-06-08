@@ -3562,3 +3562,26 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - CSE 过去已进入 stop-loss，当前价值是解释 prior/activity/table drift 与 source-semantics blocker；
 - readiness 之前只看 row-level `v3_cse_*` 计数，不能证明 processed artifact 是否仍是 shadow-only、是否保留 source/context/mechanism 证据；
 - 当前 goal 要保持 live/UI/v2 fallback 稳定，因此 CSE artifact contract 只增强审计，不改变 sampler、formal path 或正式出价。
+
+## D-v3-174：prior-stress capacity/table drift blocker 必须输出 detail contract 与 case taxonomy
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_readiness.py` 的 `prior_stress_capacity_table_drift` gate 必须携带 `detail_contract`；
+- contract 至少证明：
+  - detail rows / capacity flag hits；
+  - capacity flag counts；
+  - `capacity_count_summary.case_counts`；
+  - consistency bucket/class counts；
+  - source counts / ratio summary；
+  - top map/profile groups。
+- detail rows 为 0 且 capacity hits 为 0 时 contract pass；
+- detail rows > 0 且字段完整时 contract watch，但 gate 仍 blocked；
+- 字段缺失、非空 detail 缺 top group 或缺 case/bucket summary 时 contract blocked；
+- gate dependency focus 必须展示 top case taxonomy，避免只看 `detail_rows` / `capacity_flag_hits`。
+
+原因：
+
+- 当前 blocker 同时包含 direct prior-max conflict、lower-bound under truth、target missing/no capacity prior max 等不同机制；
+- promotion hardening 需要区分“证据已分类但仍 blocked”和“证据结构不可审计”；
+- 该 contract 只增强 readiness 证据，不改变 prior sampler、formal/value sampler、live/UI 或正式出价。

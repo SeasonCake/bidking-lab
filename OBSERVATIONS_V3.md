@@ -7471,3 +7471,56 @@ affects_bid=false
 missing_keys=[]
 entry_missing_key_counts={}
 ```
+
+解读：
+
+- readiness 现在能验证 CSE artifact 本身保留 source/context/mechanism/capacity 字段；
+- artifact 级 `active=false` / `affects_bid=false` 与 row-level `v3_cse_active_rows=0` 一致；
+- CSE pressure 子集仍只有 61 rows，适合复盘 high-precision watch，不足以作为 prior/promotion；
+- CSE 仍留在 shadow-only readiness watch lane，不进入 formal/value sampler 或正式出价。
+
+## O-v3-187：prior-stress blocker 已有 case taxonomy，但仍 blocked
+
+2026-06-08 给 readiness 增加 prior-stress detail contract 后，跑：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --format summary
+```
+
+关键结果：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+prior_stress_detail_rows=94
+prior_stress_capacity_hits=107
+prior_stress_contract=watch
+prior_stress_top_cases=target_lower_bound_truth_above_prior:31,direct_prior_max_conflict:29,no_capacity_prior_max_case:26
+```
+
+JSON 复核：
+
+```text
+gate=blocked
+contract=watch
+rows=94
+capacity_flag_hits=107
+case_counts={
+  direct_prior_max_conflict:29,
+  no_capacity_prior_max_case:26,
+  target_above_prior_but_below_truth:10,
+  target_lower_bound_truth_above_prior:31,
+  truth_above_prior_without_count_target:8,
+  truth_above_prior_without_target_prior_hit:8
+}
+bucket_counts={evidence_floor_only:26,hard_capacity_conflict:29,lower_bound_under_truth:39}
+top_maps=2401,2501,2404
+top_profiles=aisha|2501|public:total+tool:category+item+shape,ethan|2404|public:total+shape+layout,aisha|2409|public:max_item_cells+tool:category+item+shape
+```
+
+解读：
+
+- readiness 现在能区分 prior-stress detail 已分类与 detail summary malformed；
+- 主要 blocker 不是单一 raw cap 字段，而是 lower-bound under truth、direct prior-max conflict、无 capacity prior max 混合；
+- activity/prior-unavailable 仍由 prior robustness/activity gate 分流，不进入这个 detail contract；
+- 当前仍不能通过 capacity 放宽或 sampler 参数调优解除 promotion blocker。

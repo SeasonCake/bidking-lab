@@ -705,6 +705,13 @@ def test_readiness_surfaces_prior_stress_capacity_groups() -> None:
     assert drift["capacity_count_summary"]["case_counts"] == {
         "direct_prior_max_conflict": 2
     }
+    assert drift["detail_contract"]["status"] == "watch"
+    assert drift["detail_contract"]["rows"] == 2
+    assert drift["detail_contract"]["capacity_flag_hits"] == 4
+    assert drift["detail_contract"]["case_counts"] == {
+        "direct_prior_max_conflict": 2
+    }
+    assert drift["detail_contract"]["top_map_groups"][0]["value"] == "2501"
     assert drift["consistency_bucket_counts"] == {
         "hard_capacity_conflict": 2
     }
@@ -742,7 +749,29 @@ def test_readiness_surfaces_prior_stress_capacity_groups() -> None:
     }
     drift_dependency = dependency_gates["prior_stress_capacity_table_drift"]
     assert drift_dependency["lane"] == "table_activity_capacity"
-    assert drift_dependency["focus"] == "detail_rows=2;capacity_flag_hits=4"
+    assert drift_dependency["focus"] == (
+        "detail_rows=2;capacity_flag_hits=4;"
+        "top_cases=direct_prior_max_conflict:2"
+    )
+
+
+def test_prior_stress_detail_contract_blocks_malformed_summary() -> None:
+    module = _load_module()
+    result = module.summarize_prior_stress_detail_contract(
+        {
+            "overall": {
+                "rows": 1,
+                "capacity_flag_counts": {"truth_count_above_prior_max": 1},
+            },
+            "by_group": [],
+        },
+        top_map_groups=[],
+        top_profile_groups=[],
+    )
+
+    assert result["status"] == "blocked"
+    assert "capacity_count_summary" in result["missing_keys"]
+    assert "top map groups are missing" in result["reason"]
 
 
 def test_readiness_blocks_archive_data_quality_on_parse_errors() -> None:

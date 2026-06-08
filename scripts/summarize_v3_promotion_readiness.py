@@ -233,7 +233,23 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
     if name == "prior_stress_capacity_table_drift":
         hits = int(gate.get("capacity_flag_hits") or 0)
         rows = int(gate.get("detail_rows") or 0)
-        return f"detail_rows={rows};capacity_flag_hits={hits}"
+        contract = gate.get("detail_contract")
+        case_counts = (
+            contract.get("case_counts")
+            if isinstance(contract, Mapping)
+            else None
+        )
+        parts = [f"detail_rows={rows}", f"capacity_flag_hits={hits}"]
+        if isinstance(case_counts, Mapping) and case_counts:
+            top_cases = ",".join(
+                f"{key}:{value}"
+                for key, value in sorted(
+                    case_counts.items(),
+                    key=lambda item: (-int(item[1] or 0), str(item[0])),
+                )[:3]
+            )
+            parts.append(f"top_cases={top_cases}")
+        return ";".join(parts)
     if name == "settlement_count_prior_shadow":
         missing = int(gate.get("missing_table_rows") or 0)
         candidates = int(gate.get("candidate_rows") or 0)
@@ -391,6 +407,105 @@ def _top_prior_stress_groups(
             }
         )
     return out[:limit]
+
+
+def summarize_prior_stress_detail_contract(
+    detail_summary: Mapping[str, Any],
+    *,
+    top_map_groups: list[dict[str, Any]] | None = None,
+    top_profile_groups: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    overall = detail_summary.get("overall")
+    if not isinstance(overall, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "prior-stress detail summary is missing overall block",
+            "missing_keys": ["overall"],
+            "rows": 0,
+            "capacity_flag_hits": 0,
+            "case_counts": {},
+            "consistency_bucket_counts": {},
+            "top_map_groups": [],
+            "top_profile_groups": [],
+        }
+    required_keys = (
+        "rows",
+        "capacity_flag_counts",
+        "capacity_count_summary",
+        "consistency_bucket_counts",
+        "consistency_class_counts",
+        "source_counts",
+        "ratio_summary",
+    )
+    missing_keys = [key for key in required_keys if key not in overall]
+    capacity_count_summary = overall.get("capacity_count_summary")
+    case_counts = (
+        capacity_count_summary.get("case_counts")
+        if isinstance(capacity_count_summary, Mapping)
+        else {}
+    )
+    consistency_bucket_counts = overall.get("consistency_bucket_counts")
+    capacity_flag_counts = overall.get("capacity_flag_counts")
+    rows = int(overall.get("rows") or 0)
+    capacity_flag_hits = (
+        sum(int(value or 0) for value in capacity_flag_counts.values())
+        if isinstance(capacity_flag_counts, Mapping)
+        else 0
+    )
+    blockers: list[str] = []
+    if missing_keys:
+        blockers.append("missing prior-stress detail fields")
+    if rows > 0 and not isinstance(case_counts, Mapping):
+        blockers.append("capacity_count_summary.case_counts is missing")
+    if rows > 0 and not isinstance(consistency_bucket_counts, Mapping):
+        blockers.append("consistency_bucket_counts is missing")
+    if rows > 0 and not top_map_groups:
+        blockers.append("top map groups are missing for non-empty detail summary")
+    if rows > 0 and not top_profile_groups:
+        blockers.append("top profile groups are missing for non-empty detail summary")
+    if blockers:
+        status = "blocked"
+        reason = "; ".join(blockers)
+    elif rows > 0 or capacity_flag_hits > 0:
+        status = "watch"
+        reason = "prior-stress drift evidence is classified but still blocks promotion"
+    else:
+        status = "pass"
+        reason = "no prior-stress drift detail rows"
+    return {
+        "status": status,
+        "reason": reason,
+        "missing_keys": missing_keys,
+        "rows": rows,
+        "capacity_flag_hits": capacity_flag_hits,
+        "case_counts": dict(case_counts) if isinstance(case_counts, Mapping) else {},
+        "consistency_bucket_counts": (
+            dict(consistency_bucket_counts)
+            if isinstance(consistency_bucket_counts, Mapping)
+            else {}
+        ),
+        "capacity_flag_counts": (
+            dict(capacity_flag_counts)
+            if isinstance(capacity_flag_counts, Mapping)
+            else {}
+        ),
+        "top_map_groups": [
+            {
+                "value": row.get("value"),
+                "rows": row.get("rows"),
+                "capacity_flag_hits": row.get("capacity_flag_hits"),
+            }
+            for row in (top_map_groups or [])[:5]
+        ],
+        "top_profile_groups": [
+            {
+                "value": row.get("value"),
+                "rows": row.get("rows"),
+                "capacity_flag_hits": row.get("capacity_flag_hits"),
+            }
+            for row in (top_profile_groups or [])[:5]
+        ],
+    }
 
 
 _LIVE_PRACTICAL_GUARD_KEYS = (
@@ -1051,6 +1166,19 @@ def summarize_readiness(
     prior_stress_drift_ready = (
         prior_stress_group_rows == 0 and prior_stress_capacity_hits == 0
     )
+    prior_stress_top_map_groups = _top_prior_stress_groups(
+        prior_stress_detail_summary,
+        "map_id",
+    )
+    prior_stress_top_profile_groups = _top_prior_stress_groups(
+        prior_stress_detail_summary,
+        "hero_map_evidence_profile",
+    )
+    prior_stress_detail_contract = summarize_prior_stress_detail_contract(
+        prior_stress_detail_summary,
+        top_map_groups=prior_stress_top_map_groups,
+        top_profile_groups=prior_stress_top_profile_groups,
+    )
     gates.append(
         _gate(
             "prior_stress_capacity_table_drift",
@@ -1070,14 +1198,9 @@ def summarize_readiness(
             ),
             source_counts=prior_stress_overall.get("source_counts"),
             ratio_summary=prior_stress_overall.get("ratio_summary"),
-            top_map_groups=_top_prior_stress_groups(
-                prior_stress_detail_summary,
-                "map_id",
-            ),
-            top_profile_groups=_top_prior_stress_groups(
-                prior_stress_detail_summary,
-                "hero_map_evidence_profile",
-            ),
+            detail_contract=prior_stress_detail_contract,
+            top_map_groups=prior_stress_top_map_groups,
+            top_profile_groups=prior_stress_top_profile_groups,
         )
     )
     scp_ready = int(summary.get("v3_scp_ready_rows") or 0)
@@ -1872,6 +1995,7 @@ def summarize_readiness(
         "prior_stress_detail_summary": {
             "rows": prior_stress_group_rows,
             "capacity_flag_hits": prior_stress_capacity_hits,
+            "detail_contract": prior_stress_detail_contract,
             "capacity_flag_counts": prior_stress_capacity_flags,
             "capacity_count_summary": prior_stress_overall.get(
                 "capacity_count_summary"
@@ -1884,14 +2008,8 @@ def summarize_readiness(
             ),
             "source_counts": prior_stress_overall.get("source_counts"),
             "ratio_summary": prior_stress_overall.get("ratio_summary"),
-            "top_map_groups": _top_prior_stress_groups(
-                prior_stress_detail_summary,
-                "map_id",
-            ),
-            "top_profile_groups": _top_prior_stress_groups(
-                prior_stress_detail_summary,
-                "hero_map_evidence_profile",
-            ),
+            "top_map_groups": prior_stress_top_map_groups,
+            "top_profile_groups": prior_stress_top_profile_groups,
         },
         "v3_practical_archive_live_guard_metrics": live_guard_brief,
         "capacity_source_expansion_artifact_contract": cse_artifact_contract,
@@ -2123,6 +2241,17 @@ def _print_summary(result: dict[str, Any]) -> None:
     scp_stability_contract = scp_stability.get("contract_check") or {}
     scp_stability_trials = scp_stability_contract.get("posterior_trials") or []
     scp_stability_seeds = scp_stability_contract.get("posterior_seeds") or []
+    prior_stress_contract = (
+        result["prior_stress_detail_summary"].get("detail_contract") or {}
+    )
+    prior_stress_case_counts = prior_stress_contract.get("case_counts") or {}
+    prior_stress_top_cases = ",".join(
+        f"{key}:{value}"
+        for key, value in sorted(
+            prior_stress_case_counts.items(),
+            key=lambda item: (-int(item[1] or 0), str(item[0])),
+        )[:3]
+    )
     print(
         " ".join(
             (
@@ -2212,6 +2341,9 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"cse_active_rows={summary['v3_cse_active_rows']}",
                 f"prior_stress_detail_rows={result['prior_stress_detail_summary']['rows']}",
                 f"prior_stress_capacity_hits={result['prior_stress_detail_summary']['capacity_flag_hits']}",
+                "prior_stress_contract="
+                f"{prior_stress_contract.get('status')}",
+                f"prior_stress_top_cases={prior_stress_top_cases}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
             )
         )
