@@ -42,6 +42,16 @@ def _num(row: dict[str, Any], key: str) -> float | None:
         return None
 
 
+def _range_num(value: Any, index: int) -> float | None:
+    parts = [part.strip().replace(",", "") for part in str(value or "").split("/")]
+    if len(parts) <= index or parts[index] in ("", "?"):
+        return None
+    try:
+        return float(parts[index])
+    except (TypeError, ValueError):
+        return None
+
+
 def _is_windivert_row(row: dict[str, Any]) -> bool:
     if str(row.get("source") or "").lower() == "windivert":
         return True
@@ -674,6 +684,14 @@ def _practical_truth_value(row: dict[str, Any]) -> float | None:
     )
 
 
+def _practical_unguarded_value(row: dict[str, Any], quantile: str) -> float | None:
+    index = {"p10": 0, "p50": 1, "p90": 2}[quantile]
+    value = _num(row, f"v3_practical_unguarded_decision_value_{quantile}")
+    if value is not None:
+        return value
+    return _range_num(row.get("v3_practical_unguarded_decision_value"), index)
+
+
 def _normalized_error_denominator(truth: float) -> float:
     return max(100_000.0, abs(truth))
 
@@ -1115,6 +1133,19 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
     practical_p90_signed_errors: list[float] = []
     practical_p90_covered_excess_ratios: list[float] = []
     practical_p90_extreme_over_values: list[float] = []
+    unguarded_p50_errors: list[float] = []
+    unguarded_p90_coverage_values: list[float] = []
+    unguarded_p90_signed_errors: list[float] = []
+    unguarded_p90_covered_excess_ratios: list[float] = []
+    unguarded_p90_extreme_over_values: list[float] = []
+    guard_compare_guarded_p50_errors: list[float] = []
+    guard_compare_unguarded_p50_errors: list[float] = []
+    guard_compare_p50_deltas: list[float] = []
+    guard_compare_guarded_p90_coverage_values: list[float] = []
+    guard_compare_unguarded_p90_coverage_values: list[float] = []
+    guard_compare_guarded_p90_extreme_over_values: list[float] = []
+    guard_compare_unguarded_p90_extreme_over_values: list[float] = []
+    guard_compare_p90_deltas: list[float] = []
     for row in rows:
         p90 = _num(row, "decision_value_p90")
         truth = _truth_value(row)
@@ -1144,6 +1175,60 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
             practical_p90_extreme_over_values.append(
                 1.0 if practical_signed_error > practical_denominator else 0.0
             )
+        unguarded_p50 = _practical_unguarded_value(row, "p50")
+        unguarded_p90 = _practical_unguarded_value(row, "p90")
+        guarded_p50 = _num(row, "decision_value_p50")
+        guarded_p90 = _num(row, "decision_value_p90")
+        if unguarded_p50 is not None and practical_truth is not None:
+            unguarded_p50_errors.append(unguarded_p50 - practical_truth)
+        if unguarded_p90 is not None and practical_truth is not None:
+            unguarded_covered = unguarded_p90 >= practical_truth
+            unguarded_denominator = _normalized_error_denominator(practical_truth)
+            unguarded_signed_error = unguarded_p90 - practical_truth
+            unguarded_p90_coverage_values.append(
+                1.0 if unguarded_covered else 0.0
+            )
+            unguarded_p90_signed_errors.append(unguarded_signed_error)
+            if unguarded_covered:
+                unguarded_p90_covered_excess_ratios.append(
+                    unguarded_signed_error / unguarded_denominator
+                )
+            unguarded_p90_extreme_over_values.append(
+                1.0 if unguarded_signed_error > unguarded_denominator else 0.0
+            )
+        if (
+            unguarded_p50 is not None
+            and guarded_p50 is not None
+            and practical_truth is not None
+        ):
+            guard_compare_guarded_p50_errors.append(
+                guarded_p50 - practical_truth
+            )
+            guard_compare_unguarded_p50_errors.append(
+                unguarded_p50 - practical_truth
+            )
+            guard_compare_p50_deltas.append(guarded_p50 - unguarded_p50)
+        if (
+            unguarded_p90 is not None
+            and guarded_p90 is not None
+            and practical_truth is not None
+        ):
+            guarded_p90_signed_error = guarded_p90 - practical_truth
+            unguarded_p90_signed_error = unguarded_p90 - practical_truth
+            guard_compare_guarded_p90_coverage_values.append(
+                1.0 if guarded_p90_signed_error >= 0 else 0.0
+            )
+            guard_compare_unguarded_p90_coverage_values.append(
+                1.0 if unguarded_p90_signed_error >= 0 else 0.0
+            )
+            denominator = _normalized_error_denominator(practical_truth)
+            guard_compare_guarded_p90_extreme_over_values.append(
+                1.0 if guarded_p90_signed_error > denominator else 0.0
+            )
+            guard_compare_unguarded_p90_extreme_over_values.append(
+                1.0 if unguarded_p90_signed_error > denominator else 0.0
+            )
+            guard_compare_p90_deltas.append(guarded_p90 - unguarded_p90)
     formal_mode_counts = Counter(_formal_mode_label(row) for row in rows)
     formal_mode_reason_counts = Counter(
         _formal_mode_reason_label(row) for row in rows
@@ -1156,6 +1241,23 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     v3_live_guard_reason_counts = Counter(
         _v3_practical_guard_reason_label(row) for row in v3_live_guard_rows
+    )
+    unguarded_p50_abs_errors = [abs(value) for value in unguarded_p50_errors]
+    guard_compare_guarded_abs_errors = [
+        abs(value) for value in guard_compare_guarded_p50_errors
+    ]
+    guard_compare_unguarded_abs_errors = [
+        abs(value) for value in guard_compare_unguarded_p50_errors
+    ]
+    guard_compare_guarded_mae = (
+        statistics.mean(guard_compare_guarded_abs_errors)
+        if guard_compare_guarded_abs_errors
+        else None
+    )
+    guard_compare_unguarded_mae = (
+        statistics.mean(guard_compare_unguarded_abs_errors)
+        if guard_compare_unguarded_abs_errors
+        else None
     )
     return {
         "rows": len(rows),
@@ -1171,6 +1273,107 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "v3_practical_live_guard_reason_counts": dict(
             sorted(v3_live_guard_reason_counts.items())
+        ),
+        "v3_practical_unguarded_rows": len(unguarded_p50_errors),
+        "v3_practical_unguarded_mae": (
+            round(statistics.mean(unguarded_p50_abs_errors), 1)
+            if unguarded_p50_abs_errors
+            else None
+        ),
+        "v3_practical_unguarded_under_rate": (
+            round(
+                statistics.mean(
+                    1.0 if value < 0 else 0.0 for value in unguarded_p50_errors
+                ),
+                2,
+            )
+            if unguarded_p50_errors
+            else None
+        ),
+        "v3_practical_unguarded_p90_coverage": (
+            round(statistics.mean(unguarded_p90_coverage_values), 2)
+            if unguarded_p90_coverage_values
+            else None
+        ),
+        "v3_practical_unguarded_p90_extreme_over_rate": (
+            round(statistics.mean(unguarded_p90_extreme_over_values), 2)
+            if unguarded_p90_extreme_over_values
+            else None
+        ),
+        "v3_practical_guard_comparison_rows": len(
+            guard_compare_guarded_p50_errors
+        ),
+        "v3_practical_guarded_mae_on_comparison": (
+            round(guard_compare_guarded_mae, 1)
+            if guard_compare_guarded_mae is not None
+            else None
+        ),
+        "v3_practical_unguarded_mae_on_comparison": (
+            round(guard_compare_unguarded_mae, 1)
+            if guard_compare_unguarded_mae is not None
+            else None
+        ),
+        "v3_practical_guarded_minus_unguarded_mae": (
+            round(guard_compare_guarded_mae - guard_compare_unguarded_mae, 1)
+            if guard_compare_guarded_mae is not None
+            and guard_compare_unguarded_mae is not None
+            else None
+        ),
+        "v3_practical_guarded_minus_unguarded_median_p50": (
+            round(statistics.median(guard_compare_p50_deltas), 1)
+            if guard_compare_p50_deltas
+            else None
+        ),
+        "v3_practical_guarded_minus_unguarded_median_p90": (
+            round(statistics.median(guard_compare_p90_deltas), 1)
+            if guard_compare_p90_deltas
+            else None
+        ),
+        "v3_practical_guarded_p90_coverage_on_comparison": (
+            round(statistics.mean(guard_compare_guarded_p90_coverage_values), 2)
+            if guard_compare_guarded_p90_coverage_values
+            else None
+        ),
+        "v3_practical_unguarded_p90_coverage_on_comparison": (
+            round(statistics.mean(guard_compare_unguarded_p90_coverage_values), 2)
+            if guard_compare_unguarded_p90_coverage_values
+            else None
+        ),
+        "v3_practical_guarded_minus_unguarded_p90_coverage": (
+            round(
+                statistics.mean(guard_compare_guarded_p90_coverage_values)
+                - statistics.mean(guard_compare_unguarded_p90_coverage_values),
+                2,
+            )
+            if guard_compare_guarded_p90_coverage_values
+            and guard_compare_unguarded_p90_coverage_values
+            else None
+        ),
+        "v3_practical_guarded_p90_extreme_over_on_comparison": (
+            round(
+                statistics.mean(guard_compare_guarded_p90_extreme_over_values),
+                2,
+            )
+            if guard_compare_guarded_p90_extreme_over_values
+            else None
+        ),
+        "v3_practical_unguarded_p90_extreme_over_on_comparison": (
+            round(
+                statistics.mean(guard_compare_unguarded_p90_extreme_over_values),
+                2,
+            )
+            if guard_compare_unguarded_p90_extreme_over_values
+            else None
+        ),
+        "v3_practical_guarded_minus_unguarded_p90_extreme_over": (
+            round(
+                statistics.mean(guard_compare_guarded_p90_extreme_over_values)
+                - statistics.mean(guard_compare_unguarded_p90_extreme_over_values),
+                2,
+            )
+            if guard_compare_guarded_p90_extreme_over_values
+            and guard_compare_unguarded_p90_extreme_over_values
+            else None
         ),
         "median_matched": int(statistics.median(matched_clean)) if matched_clean else None,
         "decision_value_mae": round(baseline_mae, 1) if baseline_mae is not None else None,
@@ -1625,6 +1828,13 @@ def _print_report(
         f"v3_practical_formal_rows={overall.get('v3_practical_formal_rows')} "
         f"v3_practical_live_guard_rows={overall.get('v3_practical_live_guard_rows')} "
         f"v3_practical_live_guard_rate={overall.get('v3_practical_live_guard_rate')} "
+        f"v3_practical_unguarded_rows={overall.get('v3_practical_unguarded_rows')} "
+        "v3_practical_guarded_minus_unguarded_mae="
+        f"{overall.get('v3_practical_guarded_minus_unguarded_mae')} "
+        "v3_practical_guarded_minus_unguarded_p90_coverage="
+        f"{overall.get('v3_practical_guarded_minus_unguarded_p90_coverage')} "
+        "v3_practical_guarded_minus_unguarded_p90_extreme_over="
+        f"{overall.get('v3_practical_guarded_minus_unguarded_p90_extreme_over')} "
         f"size_bucket_rate={overall.get('size_bucket_active_rate')} "
         f"v3_practical_p90_coverage={overall.get('v3_practical_p90_coverage')} "
         "v3_practical_p90_extreme_over_rate="
@@ -1647,6 +1857,13 @@ def _print_report(
         f"v3_practical_formal_rows={prebid.get('v3_practical_formal_rows')} "
         f"v3_practical_live_guard_rows={prebid.get('v3_practical_live_guard_rows')} "
         f"v3_practical_live_guard_rate={prebid.get('v3_practical_live_guard_rate')} "
+        f"v3_practical_unguarded_rows={prebid.get('v3_practical_unguarded_rows')} "
+        "v3_practical_guarded_minus_unguarded_mae="
+        f"{prebid.get('v3_practical_guarded_minus_unguarded_mae')} "
+        "v3_practical_guarded_minus_unguarded_p90_coverage="
+        f"{prebid.get('v3_practical_guarded_minus_unguarded_p90_coverage')} "
+        "v3_practical_guarded_minus_unguarded_p90_extreme_over="
+        f"{prebid.get('v3_practical_guarded_minus_unguarded_p90_extreme_over')} "
         f"v3_practical_p90_coverage={prebid.get('v3_practical_p90_coverage')} "
         "v3_practical_p90_extreme_over_rate="
         f"{prebid.get('v3_practical_p90_extreme_over_rate')}"
@@ -1706,7 +1923,13 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
         "median_abs_p50_err,median_norm_abs_p50_err,p50_under_rate,p90_coverage,"
         "median_p90_signed_err,p90_covered_excess_ratio,p90_extreme_over_rate,"
         "median_n_trials,v3_practical_formal_rows,v3_practical_live_guard_rows,"
-        "v3_practical_live_guard_rate,size_bucket_rate,v3_practical_candidate_rate,"
+        "v3_practical_live_guard_rate,v3_practical_unguarded_rows,"
+        "v3_practical_guarded_minus_unguarded_mae,"
+        "v3_practical_guarded_minus_unguarded_median_p50,"
+        "v3_practical_guarded_minus_unguarded_median_p90,"
+        "v3_practical_guarded_minus_unguarded_p90_coverage,"
+        "v3_practical_guarded_minus_unguarded_p90_extreme_over,"
+        "size_bucket_rate,v3_practical_candidate_rate,"
         "v3_practical_raise_watch_rate,v3_practical_mae,"
         "v3_practical_delta_mae,v3_practical_under_rate,"
         "v3_practical_p90_coverage,v3_practical_p90_extreme_over_rate,"
@@ -1736,6 +1959,12 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
             f"{group.get('v3_practical_formal_rows')},"
             f"{group.get('v3_practical_live_guard_rows')},"
             f"{group.get('v3_practical_live_guard_rate')},"
+            f"{group.get('v3_practical_unguarded_rows')},"
+            f"{group.get('v3_practical_guarded_minus_unguarded_mae')},"
+            f"{group.get('v3_practical_guarded_minus_unguarded_median_p50')},"
+            f"{group.get('v3_practical_guarded_minus_unguarded_median_p90')},"
+            f"{group.get('v3_practical_guarded_minus_unguarded_p90_coverage')},"
+            f"{group.get('v3_practical_guarded_minus_unguarded_p90_extreme_over')},"
             f"{group.get('size_bucket_active_rate')},"
             f"{group.get('v3_practical_candidate_rate')},"
             f"{group.get('v3_practical_raise_watch_rate')},"

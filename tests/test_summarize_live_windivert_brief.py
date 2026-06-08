@@ -21,6 +21,7 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
             "posterior_samples": 0,
             "posterior_total_samples": 20,
             "final_decision_value": 300_000,
+            "decision_value_p50": 200_000,
             "decision_value_p90": 250_000,
             "decision_value_p50_error": -100_000,
             "final_q6_value": 180_000,
@@ -61,6 +62,7 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
             "formal_mode_reason": "v3_practical_ready_live_guarded",
             "v3_practical_live_guard": "是",
             "v3_practical_live_guard_reason": "low_support_baseline",
+            "v3_practical_unguarded_decision_value": "100,000 / 280,000 / 500,000",
             "v3_practical_candidate": True,
             "v3_practical_recommendation": "raise_watch",
             "v3_practical_formal_decision_value_p50": 280_000,
@@ -107,6 +109,27 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
     assert summary["overall"]["v3_practical_live_guard_reason_counts"] == {
         "low_support_baseline": 1,
     }
+    assert summary["overall"]["v3_practical_unguarded_rows"] == 1
+    assert summary["overall"]["v3_practical_unguarded_mae"] == 20_000
+    assert summary["overall"]["v3_practical_guard_comparison_rows"] == 1
+    assert summary["overall"]["v3_practical_guarded_mae_on_comparison"] == 100_000
+    assert summary["overall"]["v3_practical_unguarded_mae_on_comparison"] == 20_000
+    assert (
+        summary["overall"]["v3_practical_guarded_minus_unguarded_mae"]
+        == 80_000
+    )
+    assert (
+        summary["overall"]["v3_practical_guarded_minus_unguarded_median_p50"]
+        == -80_000
+    )
+    assert (
+        summary["overall"]["v3_practical_guarded_minus_unguarded_median_p90"]
+        == -250_000
+    )
+    assert (
+        summary["overall"]["v3_practical_guarded_minus_unguarded_p90_coverage"]
+        == -1.0
+    )
     assert summary["by_observed_round"]["R1"]["rows"] == 1
     assert summary["by_action_round"]["R2"]["rows"] == 1
     assert summary["by_action_round"]["R2"]["v3_practical_formal_rows"] == 1

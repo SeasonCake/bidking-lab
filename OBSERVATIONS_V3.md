@@ -7037,3 +7037,38 @@ formal_p90_cover=0.753442
 - activity missing-drop/source overlay blocker 未解除；
 - v3 practical guard metrics 现在可复盘，但当前 replay 显示 P90 extreme-over 仍高，不能用于 promotion；
 - 下一阶段仍应继续 guarded/unguarded/v2 分组和 CSE/SCP bridge stability，而不是参数调优。
+
+## O-v3-177：0608 72h replay 显示 guard 主要压 P90，P50/MAE 不变但 coverage 明显下降
+
+2026-06-08 在 `--archive-formal-mode v3_practical` 口径下新增 paired guarded/unguarded metrics：
+
+```text
+v3_practical_formal_rows=34
+v3_practical_live_guard_rows=23
+v3_practical_live_guard_rate=0.68
+v3_practical_unguarded_rows=23
+v3_practical_guard_comparison_rows=23
+```
+
+paired rows 指标：
+
+```text
+v3_practical_guarded_mae_on_comparison=121571.7
+v3_practical_unguarded_mae_on_comparison=121571.7
+v3_practical_guarded_minus_unguarded_mae=0.0
+v3_practical_guarded_minus_unguarded_median_p50=0.0
+v3_practical_guarded_minus_unguarded_median_p90=-388962.0
+v3_practical_guarded_p90_coverage_on_comparison=0.48
+v3_practical_unguarded_p90_coverage_on_comparison=0.91
+v3_practical_guarded_minus_unguarded_p90_coverage=-0.43
+v3_practical_guarded_p90_extreme_over_on_comparison=0.0
+v3_practical_unguarded_p90_extreme_over_on_comparison=0.48
+v3_practical_guarded_minus_unguarded_p90_extreme_over=-0.48
+```
+
+解读：
+
+- 当前 live guard 主要是 prior-only raise guard，压 P90，不压 P50；
+- 因此 paired MAE 不变，但 P90 上界风险显著下降；
+- 同时 P90 coverage 下降，说明 guard 不是单向改善，而是降低极端高估风险、换取更保守的上界；
+- 后续 readiness/promotion 不能只看 P90 extreme-over 下降，也必须同时看 coverage、miss rate 与分片。

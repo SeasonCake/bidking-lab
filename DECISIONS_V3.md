@@ -3344,3 +3344,29 @@ applied_hurts=2502
 - category fallback 只是恢复表加载和 paired replay；它不提供活动红转概率。
 - 在未拿到 activity Drop/overlay/source rule 前，把 activity BidMap present 当作可采样 prior 会产生空池、概率异常或过拟合风险。
 - archive `v3_practical` replay 已可跑通并显示 guard metrics，但 readiness 仍为 `not_ready`，不能据此 promotion。
+
+## D-v3-164：v3 practical guard 评估必须使用 paired guarded/unguarded rows
+
+2026-06-08 起，当前决策：
+
+- `v3_practical_ready_live_guarded` 的效果评估必须在同一批 rows 上比较 guarded 与 unguarded；
+- 不得把 v2 fallback、`no_inference_session`、无 bid rows 或未触发 guard 的 rows 混入 guard effect denominator；
+- `model_eval` 必须保留结构化 unguarded 字段：
+  - `v3_practical_unguarded_decision_value_p10`；
+  - `v3_practical_unguarded_decision_value_p50`；
+  - `v3_practical_unguarded_decision_value_p90`。
+- brief/readiness 后续应优先使用 paired deltas：
+  - guarded vs unguarded MAE；
+  - P50/P90 median delta；
+  - P90 coverage delta；
+  - P90 extreme-over delta。
+- 如果 guard 降低 extreme-over 但显著降低 P90 coverage，应记录为实战稳定性 tradeoff，不得当作 promotion-ready 证据。
+
+原因：
+
+- 0608 72h archive replay 中 23 条 guarded rows 显示：
+  - guarded/unguarded P50 相同，MAE delta 为 0；
+  - guarded P90 median 相对 unguarded 降低约 389k；
+  - P90 extreme-over 从 0.48 降到 0.0；
+  - P90 coverage 从 0.91 降到 0.48。
+- 这类 guard 能限制过冲，但也会牺牲 coverage；只有 paired 指标能正确表达这个 tradeoff。

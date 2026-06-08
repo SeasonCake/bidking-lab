@@ -9357,3 +9357,91 @@ formal_p90_cover=0.753442
 - activity `252x/452x` 仍是 `BidMap present / Drop missing`，只允许显式 alias/live fallback，不进入 default prior、sampler promotion 或 v2 archive 分母；
 - readiness 仍是 `not_ready`，promotion/readiness gate 未放宽；
 - 下一步可以继续做 guarded/unguarded/v2 archive-live 分组对照和 CSE/SCP bridge stability，而不是回到 formal/value sampler 参数调优。
+
+## 2026-06-08 checkpoint：v3 practical guarded vs unguarded brief metrics
+
+背景：
+
+- archive/live formal-mode 口径已能在 v303 表状态下跑通；
+- 但 `v3_practical_ready_live_guarded` 只在 bid row 中保留 `v3_practical_unguarded_decision_value` 字符串，`model_eval`/brief 缺少结构化 guard 前后对照；
+- promotion/readiness 需要在同一批 guarded rows 上比较 guarded 与 unguarded，而不是混入 v2 fallback 或无 bid rows。
+
+完成：
+
+- `src/bidking_lab/live/monitor.py`
+  - `model_eval` 新增 `v3_practical_unguarded_decision_value_p10/p50/p90`；
+  - 继续保留 `v3_practical_unguarded_decision_value` 原始区间字符串。
+- `scripts/summarize_live_windivert_brief.py`
+  - 对已有字符串字段做 fallback parse；
+  - summary/group stats 新增：
+    - `v3_practical_unguarded_rows`；
+    - `v3_practical_unguarded_mae`；
+    - `v3_practical_unguarded_under_rate`；
+    - `v3_practical_unguarded_p90_coverage`；
+    - `v3_practical_unguarded_p90_extreme_over_rate`；
+    - `v3_practical_guard_comparison_rows`；
+    - `v3_practical_guarded_mae_on_comparison`；
+    - `v3_practical_unguarded_mae_on_comparison`；
+    - `v3_practical_guarded_minus_unguarded_mae`；
+    - `v3_practical_guarded_minus_unguarded_median_p50`；
+    - `v3_practical_guarded_minus_unguarded_median_p90`；
+    - guarded/unguarded P90 coverage 与 P90 extreme-over paired deltas。
+- 文本 brief 的 overall/prebid/group 表也输出核心 guard deltas。
+
+验证：
+
+```text
+python -m pytest --basetemp=.tmp\codex\pytest tests\test_live_monitor.py tests\test_summarize_live_windivert_brief.py -q
+46 passed
+
+python -m py_compile src\bidking_lab\live\monitor.py scripts\summarize_live_windivert_brief.py
+python -m pytest --basetemp=.tmp\codex\pytest tests\test_live_monitor.py::test_live_formal_mode_v3_practical_guards_low_confidence_prior_only_raise tests\test_live_monitor.py::test_live_formal_mode_v3_practical_guards_low_support_baseline tests\test_summarize_live_windivert_brief.py -q
+13 passed
+```
+
+72h archive v3-practical replay 新指标：
+
+```text
+rows=49
+estimate_rows=47
+formal_mode_counts={'v2': 15, 'v3_practical': 34}
+v3_practical_formal_rows=34
+v3_practical_live_guard_rows=23
+v3_practical_live_guard_rate=0.68
+v3_practical_unguarded_rows=23
+v3_practical_unguarded_mae=121571.7
+v3_practical_unguarded_under_rate=0.74
+v3_practical_unguarded_p90_coverage=0.91
+v3_practical_unguarded_p90_extreme_over_rate=0.48
+v3_practical_guard_comparison_rows=23
+v3_practical_guarded_mae_on_comparison=121571.7
+v3_practical_unguarded_mae_on_comparison=121571.7
+v3_practical_guarded_minus_unguarded_mae=0.0
+v3_practical_guarded_minus_unguarded_median_p50=0.0
+v3_practical_guarded_minus_unguarded_median_p90=-388962.0
+v3_practical_guarded_p90_coverage_on_comparison=0.48
+v3_practical_unguarded_p90_coverage_on_comparison=0.91
+v3_practical_guarded_minus_unguarded_p90_coverage=-0.43
+v3_practical_guarded_p90_extreme_over_on_comparison=0.0
+v3_practical_unguarded_p90_extreme_over_on_comparison=0.48
+v3_practical_guarded_minus_unguarded_p90_extreme_over=-0.48
+```
+
+Readiness smoke 未放宽：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+windows=1616
+ready=1598
+formal_mae=317290.279
+formal_below=0.512516
+formal_p90_cover=0.753442
+```
+
+结论：
+
+- 这批 live guard 主要压 P90，不改 P50；paired comparison 的 MAE delta 为 0；
+- guard 将 extreme-over 从 0.48 压到 0.0，但 P90 coverage 从 0.91 降到 0.48；
+- 该 tradeoff 说明 v3 practical guard 是实战稳定性保护，不是 promotion 证据；
+- 下一步应继续把这些 paired guard metrics 纳入 archive/live 分组与 CSE/SCP stability 判断。

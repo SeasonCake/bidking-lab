@@ -1952,6 +1952,21 @@ def _model_eval_row(
     warehouse_rows = artifact.get("warehouse_rows") or []
     bid_rows = artifact.get("bid_rows") or []
     bid_row = next((row for row in bid_rows if isinstance(row, Mapping)), {})
+    v3_practical_unguarded_decision_value = bid_row.get(
+        "v3_practical_unguarded_decision_value"
+    )
+    v3_practical_unguarded_p10 = _parse_range_value(
+        str(v3_practical_unguarded_decision_value or ""),
+        0,
+    )
+    v3_practical_unguarded_p50 = _parse_range_value(
+        str(v3_practical_unguarded_decision_value or ""),
+        1,
+    )
+    v3_practical_unguarded_p90 = _parse_range_value(
+        str(v3_practical_unguarded_decision_value or ""),
+        2,
+    )
     layout_rows = artifact.get("layout_replay_rows") or []
     v2_rows = artifact.get("v2_posterior_rows") or []
     v3_shadow = (
@@ -2758,6 +2773,15 @@ def _model_eval_row(
         ),
         "v3_practical_unguarded_decision_value": bid_row.get(
             "v3_practical_unguarded_decision_value"
+        ),
+        "v3_practical_unguarded_decision_value_p10": (
+            v3_practical_unguarded_p10
+        ),
+        "v3_practical_unguarded_decision_value_p50": (
+            v3_practical_unguarded_p50
+        ),
+        "v3_practical_unguarded_decision_value_p90": (
+            v3_practical_unguarded_p90
         ),
         "final_value": final_value,
         "final_cells": final_cells,

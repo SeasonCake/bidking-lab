@@ -1309,6 +1309,9 @@ def test_live_formal_mode_v3_practical_guards_low_confidence_prior_only_raise(
     assert artifact["model_eval"]["v3_practical_unguarded_decision_value"] == (
         "30,000 / 80,000 / 300,000"
     )
+    assert artifact["model_eval"]["v3_practical_unguarded_decision_value_p10"] == 30_000
+    assert artifact["model_eval"]["v3_practical_unguarded_decision_value_p50"] == 80_000
+    assert artifact["model_eval"]["v3_practical_unguarded_decision_value_p90"] == 300_000
     assert (
         artifact["ui_contract"]["baseline"]["posterior"]["decision_value_range"]
         == "30,000 / 80,000 / 155,000"
@@ -1385,6 +1388,9 @@ def test_live_formal_mode_v3_practical_guards_low_support_baseline(
     assert artifact["model_eval"]["v3_practical_unguarded_decision_value"] == (
         "200,000 / 500,000 / 700,000"
     )
+    assert artifact["model_eval"]["v3_practical_unguarded_decision_value_p10"] == 200_000
+    assert artifact["model_eval"]["v3_practical_unguarded_decision_value_p50"] == 500_000
+    assert artifact["model_eval"]["v3_practical_unguarded_decision_value_p90"] == 700_000
     assert (
         artifact["ui_contract"]["baseline"]["posterior"]["decision_value_range"]
         == "200,000 / 350,000 / 500,000"
