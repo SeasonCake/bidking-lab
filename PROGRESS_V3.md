@@ -10670,3 +10670,70 @@ q6_value remaining top_hurts include:
 - 剩余 blocker 已收敛到 q6_value 的二阶 seed/hurt 分组，优先是 `2510` 与 `public:total+item+shape`；
 - 下一步不应恢复 formal/value 参数调优，而应扩展 q6_value hurt-group guard 或 source/profile parser 后再次运行 guarded trial；
 - readiness/promotion gate 仍不放宽，live/UI/正式出价不变。
+
+## 2026-06-08 checkpoint：guarded trial artifact attached to readiness/workbench
+
+背景：
+
+- `summarize_v3_shadow_sampler_guard_trial.py` 已能执行 guarded trial 并输出 JSON；
+- 但 promotion hardening 需要 readiness/workbench 直接消费该 artifact，否则仍容易把 trial 结果停留在单独脚本输出里；
+- 当前 artifact 仍 blocked，因此接入后必须增加 blocker，而不是放宽 gate。
+
+完成：
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `--shadow-sampler-guard-trial-json`；
+  - 新增 `summarize_shadow_sampler_guard_trial_contract()`；
+  - 提供 artifact 时新增 gate `shadow_sampler_guard_trial`；
+  - gate lane=`sampler_safety_holdout`；
+  - contract 校验 required keys、shadow safety、trial status、sampler status、component/support gate counts 与 blocking component statuses。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - 新增 guarded trial artifact parser；
+  - `shadow_sampler_contract` 输出 `guarded_trial_contract`；
+  - summary 输出 guarded trial status、sampler status、component/support gate counts；
+  - `shadow_sampler_guard_trial` 进入 sampler watch/frozen gate 视图。
+- 测试：
+  - readiness 覆盖 blocked guarded trial gate 与 dependency lane；
+  - workbench 覆盖 attached blocked guarded trial 会使 sampler contract 进入 `shadow_guarded_trial_blocked`。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_shadow_sampler_guard_trial.py tests/test_summarize_v3_shadow_sampler_prototype.py tests/test_summarize_v3_ccvc_count_policy_matrix.py
+31 passed
+```
+
+真实 artifact 接入 smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_schema3.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --shadow-sampler-prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --shadow-sampler-guard-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_full_latest.json --format json > .tmp\codex\v3_readiness_with_guarded_trial_latest.json
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_with_guarded_trial_latest.json --format summary
+```
+
+关键结果：
+
+```text
+overall_status=not_ready
+blocked_gates=15
+sampler_safety_holdout blocked includes shadow_sampler_guard_trial
+
+shadow_sampler_contract ...
+prototype_status=blocked
+prototype_overall=blocked_seed_instability
+guarded_trial_status=blocked
+guarded_trial_overall=blocked_guarded_shadow_trial
+guarded_trial_sampler=blocked_seed_instability
+guarded_trial_components=blocked_seed_instability:1,sample_limited:2
+guarded_trial_support_gates=no_watch:2,pass:1
+```
+
+结论：
+
+- guarded trial artifact 已进入 readiness/workbench 统一 promotion 视图；
+- 当前真实 guarded trial 会把 blocked gates 从 14 增加到 15，明确阻断 promotion；
+- q6_cells/q6_count 已通过 trial contract 收口为 inactive/sample-limited，但 q6_value 仍有 seed instability；
+- 下一步继续扩展 q6_value 二阶 guard/source/profile parser，并重新运行 guarded trial；
+- live/UI/正式出价、v2 fallback 与 readiness/promotion gate 均未改变。

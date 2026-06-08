@@ -191,6 +191,10 @@ _GATE_DEPENDENCY_META: dict[str, tuple[str, str]] = {
         "sampler_safety_holdout",
         "attach support-aware CCVC shadow sampler prototype evidence",
     ),
+    "shadow_sampler_guard_trial": (
+        "sampler_safety_holdout",
+        "attach guarded CCVC shadow sampler trial holdout evidence",
+    ),
     "tail_value_review": (
         "sampler_safety_holdout",
         "keep tail/value review non-formal until holdout is stable",
@@ -300,6 +304,14 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
         return (
             f"prototype_status={gate.get('prototype_status')};"
             f"contract={gate.get('contract_status')};"
+            f"component_statuses={gate.get('component_status_counts')};"
+            f"support_gates={gate.get('support_gate_status_counts')}"
+        )
+    if name == "shadow_sampler_guard_trial":
+        return (
+            f"trial_status={gate.get('trial_status')};"
+            f"contract={gate.get('contract_status')};"
+            f"sampler_status={gate.get('sampler_status')};"
             f"component_statuses={gate.get('component_status_counts')};"
             f"support_gates={gate.get('support_gate_status_counts')}"
         )
@@ -637,6 +649,23 @@ _SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES = {
     "blocked_low_support",
     "blocked_holdout_hurt",
     "watch_with_hurt_alternatives",
+}
+_SHADOW_SAMPLER_GUARD_TRIAL_CONTRACT_KEYS = (
+    "interface",
+    "shadow_only",
+    "affects_bid",
+    "active",
+    "can_promote",
+    "status",
+    "sampler_status",
+    "trial_options",
+    "component_status_counts",
+    "support_gate_status_counts",
+    "guarded_sampler_result",
+)
+_SHADOW_SAMPLER_GUARD_TRIAL_BLOCKING_STATUSES = {
+    "blocked_guarded_shadow_trial",
+    "sample_limited_guarded_shadow_trial",
 }
 
 
@@ -1088,6 +1117,97 @@ def summarize_shadow_sampler_prototype_contract(
     }
 
 
+def _shadow_sampler_guard_trial_component_statuses(
+    trial: Mapping[str, Any],
+) -> list[Mapping[str, Any]]:
+    sampler = trial.get("guarded_sampler_result")
+    if not isinstance(sampler, Mapping):
+        return []
+    value = sampler.get("component_statuses")
+    if not isinstance(value, list):
+        return []
+    return [row for row in value if isinstance(row, Mapping)]
+
+
+def summarize_shadow_sampler_guard_trial_contract(
+    trial: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if trial is None:
+        return {
+            "status": "not_supplied",
+            "reason": "shadow sampler guarded trial JSON was not supplied",
+            "missing_keys": [],
+            "required_keys": list(_SHADOW_SAMPLER_GUARD_TRIAL_CONTRACT_KEYS),
+        }
+    if not isinstance(trial, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "shadow sampler guarded trial JSON must be an object",
+            "missing_keys": list(_SHADOW_SAMPLER_GUARD_TRIAL_CONTRACT_KEYS),
+            "required_keys": list(_SHADOW_SAMPLER_GUARD_TRIAL_CONTRACT_KEYS),
+        }
+    missing = [
+        key for key in _SHADOW_SAMPLER_GUARD_TRIAL_CONTRACT_KEYS if key not in trial
+    ]
+    component_statuses = _shadow_sampler_guard_trial_component_statuses(trial)
+    blocking_components = [
+        {
+            "component": row.get("component"),
+            "status": row.get("status"),
+            "support_gate": _shadow_sampler_support_gate_status(row),
+        }
+        for row in component_statuses
+        if str(row.get("status") or "")
+        in _SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES
+    ]
+    shadow_safe = (
+        trial.get("shadow_only") is True
+        and trial.get("affects_bid") is False
+        and trial.get("active") is False
+        and trial.get("can_promote") is False
+    )
+    trial_status = str(trial.get("status") or "unknown")
+    if missing:
+        status = "blocked"
+        reason = "shadow sampler guarded trial is missing contract fields"
+    elif not shadow_safe:
+        status = "blocked"
+        reason = "shadow sampler guarded trial is not shadow-safe"
+    elif trial_status in _SHADOW_SAMPLER_GUARD_TRIAL_BLOCKING_STATUSES:
+        status = "blocked"
+        reason = "shadow sampler guarded trial still has holdout blockers"
+    elif trial_status == "watch_guarded_shadow_trial":
+        status = "watch"
+        reason = "shadow sampler guarded trial is attached and shadow-only"
+    else:
+        status = "blocked"
+        reason = "shadow sampler guarded trial has unknown status"
+    trial_options = trial.get("trial_options")
+    if not isinstance(trial_options, Mapping):
+        trial_options = {}
+    return {
+        "status": status,
+        "reason": reason,
+        "missing_keys": missing,
+        "required_keys": list(_SHADOW_SAMPLER_GUARD_TRIAL_CONTRACT_KEYS),
+        "interface": trial.get("interface"),
+        "trial_status": trial_status,
+        "sampler_status": trial.get("sampler_status"),
+        "shadow_safe": shadow_safe,
+        "source_prototype_status": trial.get("source_prototype_status"),
+        "source_guard_trial_status": trial.get("source_guard_trial_status"),
+        "trial_options": dict(trial_options),
+        "component_status_counts": dict(
+            trial.get("component_status_counts") or {}
+        ),
+        "support_gate_status_counts": dict(
+            trial.get("support_gate_status_counts") or {}
+        ),
+        "blocking_component_statuses": blocking_components,
+        "required_verification": list(trial.get("required_verification") or []),
+    }
+
+
 def summarize_readiness(
     rows: list[dict[str, Any]],
     errors: list[dict[str, str]],
@@ -1101,6 +1221,7 @@ def summarize_readiness(
     capacity_source_expansion_artifact: Mapping[str, Any] | None = None,
     live_practical_guard_brief: Mapping[str, Any] | None = None,
     shadow_sampler_prototype: Mapping[str, Any] | None = None,
+    shadow_sampler_guard_trial: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = summarize_rows(rows, errors)
     live_guard_brief = summarize_live_practical_guard_brief(
@@ -1111,6 +1232,9 @@ def summarize_readiness(
     )
     shadow_sampler_prototype_contract = summarize_shadow_sampler_prototype_contract(
         shadow_sampler_prototype
+    )
+    shadow_sampler_guard_trial_contract = (
+        summarize_shadow_sampler_guard_trial_contract(shadow_sampler_guard_trial)
     )
     prior_stress_details = summarize_prior_stress_details(rows)
     prior_stress_detail_summary = summarize_prior_stress_detail_summary(
@@ -1906,6 +2030,48 @@ def summarize_readiness(
                 ),
             )
         )
+    if shadow_sampler_guard_trial is not None:
+        guard_trial_contract_status = str(
+            shadow_sampler_guard_trial_contract.get("status") or "blocked"
+        )
+        gates.append(
+            _gate(
+                "shadow_sampler_guard_trial",
+                "watch" if guard_trial_contract_status == "watch" else "blocked",
+                str(shadow_sampler_guard_trial_contract.get("reason") or ""),
+                contract_status=guard_trial_contract_status,
+                contract_check=shadow_sampler_guard_trial_contract,
+                trial_status=shadow_sampler_guard_trial_contract.get(
+                    "trial_status"
+                ),
+                sampler_status=shadow_sampler_guard_trial_contract.get(
+                    "sampler_status"
+                ),
+                source_prototype_status=shadow_sampler_guard_trial_contract.get(
+                    "source_prototype_status"
+                ),
+                source_guard_trial_status=shadow_sampler_guard_trial_contract.get(
+                    "source_guard_trial_status"
+                ),
+                trial_options=shadow_sampler_guard_trial_contract.get(
+                    "trial_options"
+                ),
+                component_status_counts=shadow_sampler_guard_trial_contract.get(
+                    "component_status_counts"
+                ),
+                support_gate_status_counts=shadow_sampler_guard_trial_contract.get(
+                    "support_gate_status_counts"
+                ),
+                blocking_component_statuses=(
+                    shadow_sampler_guard_trial_contract.get(
+                        "blocking_component_statuses"
+                    )
+                ),
+                required_verification=shadow_sampler_guard_trial_contract.get(
+                    "required_verification"
+                ),
+            )
+        )
 
     tail_counts = _status_counts(tail)
     tail_watch = (
@@ -2141,6 +2307,13 @@ def summarize_readiness(
         next_actions.append("keep CCV direction selection in audit; holdout is not stable")
     if ccv_counts.get("watch_only_count_cell_candidate", 0):
         next_actions.append("redesign CCV likelihood; current holdout is not promotion-ready")
+    if (
+        shadow_sampler_guard_trial is not None
+        and shadow_sampler_guard_trial_contract.get("status") != "watch"
+    ):
+        next_actions.append(
+            "keep guarded shadow sampler trial blocked; resolve remaining q6 value/source guard"
+        )
     if not formal_value_sampler_watch:
         next_actions.append("keep formal/value sampler shadow-only until holdout has safe support")
     if not scp_link_ready:
@@ -2251,6 +2424,8 @@ def summarize_readiness(
         "capacity_source_expansion_artifact_contract": cse_artifact_contract,
         "shadow_sampler_prototype_contract": shadow_sampler_prototype_contract,
         "shadow_sampler_prototype": shadow_sampler_prototype or {},
+        "shadow_sampler_guard_trial_contract": shadow_sampler_guard_trial_contract,
+        "shadow_sampler_guard_trial": shadow_sampler_guard_trial or {},
         "underestimate_holdout": {
             "candidate_rows": under_candidate_rows,
             "candidate_groups": under_candidate_only.get("candidate_groups"),
@@ -2476,6 +2651,9 @@ def _print_summary(result: dict[str, Any]) -> None:
     live_guard_prebid = live_guard.get("prebid_overall") or {}
     cse_artifact_contract = result["capacity_source_expansion_artifact_contract"]
     shadow_sampler_prototype_contract = result["shadow_sampler_prototype_contract"]
+    shadow_sampler_guard_trial_contract = result[
+        "shadow_sampler_guard_trial_contract"
+    ]
     scp_stability = result["settlement_count_guarded_bridge_stability"]
     scp_stability_contract = scp_stability.get("contract_check") or {}
     scp_stability_trials = scp_stability_contract.get("posterior_trials") or []
@@ -2591,6 +2769,12 @@ def _print_summary(result: dict[str, Any]) -> None:
                         or {}
                     ).items()
                 ),
+                "shadow_sampler_guarded_trial="
+                f"{shadow_sampler_guard_trial_contract.get('status')}",
+                "shadow_sampler_guarded_trial_status="
+                f"{shadow_sampler_guard_trial_contract.get('trial_status')}",
+                "shadow_sampler_guarded_trial_sampler="
+                f"{shadow_sampler_guard_trial_contract.get('sampler_status')}",
                 f"cse_candidate_rows={summary['v3_cse_candidate_rows']}",
                 f"cse_pressure_candidate_rows={summary['v3_cse_pressure_candidate_rows']}",
                 f"cse_active_rows={summary['v3_cse_active_rows']}",
@@ -2685,6 +2869,15 @@ def main(argv: list[str] | None = None) -> int:
             "seed/support/holdout evidence to readiness."
         ),
     )
+    parser.add_argument(
+        "--shadow-sampler-guard-trial-json",
+        type=Path,
+        help=(
+            "Optional JSON output from summarize_v3_shadow_sampler_guard_trial.py "
+            "--format json. This attaches guarded sampler trial holdout "
+            "evidence to readiness."
+        ),
+    )
     args = parser.parse_args(argv)
 
     capacity_source_expansion_artifact = None
@@ -2733,6 +2926,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.shadow_sampler_prototype_json is not None:
         with args.shadow_sampler_prototype_json.open("r", encoding="utf-8") as handle:
             shadow_sampler_prototype = json.load(handle)
+    shadow_sampler_guard_trial = None
+    if args.shadow_sampler_guard_trial_json is not None:
+        with args.shadow_sampler_guard_trial_json.open("r", encoding="utf-8") as handle:
+            shadow_sampler_guard_trial = json.load(handle)
     result = summarize_readiness(
         rows,
         errors,
@@ -2745,6 +2942,7 @@ def main(argv: list[str] | None = None) -> int:
         capacity_source_expansion_artifact=capacity_source_expansion_artifact,
         live_practical_guard_brief=live_practical_guard_brief,
         shadow_sampler_prototype=shadow_sampler_prototype,
+        shadow_sampler_guard_trial=shadow_sampler_guard_trial,
     )
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

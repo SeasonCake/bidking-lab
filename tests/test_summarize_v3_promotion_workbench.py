@@ -244,3 +244,66 @@ def test_shadow_sampler_contract_blocks_attached_prototype_blockers() -> None:
         }
     ]
     assert prototype["low_support_watch_metrics"][0]["support_rows"] == 8
+
+
+def test_shadow_sampler_contract_blocks_attached_guarded_trial() -> None:
+    module = _load_module()
+
+    result = module.summarize_workbench(
+        {
+            "overall_status": "not_ready",
+            "blocked_gates": 0,
+            "gate_dependencies": {
+                "lane_status_counts": {},
+                "blocked_or_pending_gates": [],
+                "watch_gates": [],
+            },
+            "shadow_sampler_guard_trial": {
+                "interface": "v3_ccvc_shadow_sampler_guarded_trial",
+                "status": "blocked_guarded_shadow_trial",
+                "sampler_status": "blocked_seed_instability",
+                "shadow_only": True,
+                "affects_bid": False,
+                "active": False,
+                "can_promote": False,
+                "source_prototype_status": "blocked_seed_instability",
+                "source_guard_trial_status": "shadow_guard_trial_design",
+                "trial_options": {
+                    "component_move_cells": False,
+                    "excluded_components": ["q6_cells", "q6_count"],
+                    "candidate_exclude_labels": ["q6_value:2510"],
+                },
+                "component_status_counts": {
+                    "blocked_seed_instability": 1,
+                    "sample_limited": 2,
+                },
+                "support_gate_status_counts": {"no_watch": 2, "pass": 1},
+                "guarded_sampler_result": {
+                    "component_statuses": [
+                        {
+                            "component": "q6_value",
+                            "status": "blocked_seed_instability",
+                            "support_gate": {"status": "pass"},
+                        }
+                    ]
+                },
+            },
+        }
+    )
+
+    contract = result["shadow_sampler_contract"]
+    trial = contract["guarded_trial_contract"]
+    assert contract["status"] == "shadow_guarded_trial_blocked"
+    assert contract["can_start_shadow_prototype"] is False
+    assert trial["status"] == "blocked"
+    assert trial["trial_status"] == "blocked_guarded_shadow_trial"
+    assert trial["sampler_status"] == "blocked_seed_instability"
+    assert trial["component_status_counts"] == {
+        "blocked_seed_instability": 1,
+        "sample_limited": 2,
+    }
+    assert trial["support_gate_status_counts"] == {"no_watch": 2, "pass": 1}
+    assert trial["trial_options"]["excluded_components"] == [
+        "q6_cells",
+        "q6_count",
+    ]

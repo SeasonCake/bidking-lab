@@ -337,6 +337,82 @@ def test_readiness_attaches_shadow_sampler_prototype_contract() -> None:
     )
 
 
+def test_readiness_attaches_shadow_sampler_guard_trial_contract() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+    trial = {
+        "interface": "v3_ccvc_shadow_sampler_guarded_trial",
+        "status": "blocked_guarded_shadow_trial",
+        "sampler_status": "blocked_seed_instability",
+        "shadow_only": True,
+        "affects_bid": False,
+        "active": False,
+        "can_promote": False,
+        "source_prototype_status": "blocked_seed_instability",
+        "source_guard_trial_status": "shadow_guard_trial_design",
+        "trial_options": {
+            "component_move_cells": False,
+            "excluded_components": ["q6_cells", "q6_count"],
+            "candidate_exclude_labels": ["q6_value:2510"],
+        },
+        "component_status_counts": {
+            "blocked_seed_instability": 1,
+            "sample_limited": 2,
+        },
+        "support_gate_status_counts": {"no_watch": 2, "pass": 1},
+        "guarded_sampler_result": {
+            "component_statuses": [
+                {
+                    "component": "q6_value",
+                    "status": "blocked_seed_instability",
+                    "support_gate": {"status": "pass"},
+                }
+            ]
+        },
+        "required_verification": ["archive", "posterior_seed"],
+    }
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        shadow_sampler_guard_trial=trial,
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    gate = gates["shadow_sampler_guard_trial"]
+    assert gate["status"] == "blocked"
+    assert gate["contract_status"] == "blocked"
+    assert gate["trial_status"] == "blocked_guarded_shadow_trial"
+    assert gate["sampler_status"] == "blocked_seed_instability"
+    assert gate["component_status_counts"] == {
+        "blocked_seed_instability": 1,
+        "sample_limited": 2,
+    }
+    contract = result["shadow_sampler_guard_trial_contract"]
+    assert contract["status"] == "blocked"
+    assert contract["trial_options"]["component_move_cells"] is False
+    assert contract["blocking_component_statuses"] == [
+        {
+            "component": "q6_value",
+            "status": "blocked_seed_instability",
+            "support_gate": "pass",
+        }
+    ]
+    dependency_gates = {
+        row["gate"]: row
+        for row in result["gate_dependencies"]["blocked_or_pending_gates"]
+    }
+    assert dependency_gates["shadow_sampler_guard_trial"]["lane"] == (
+        "sampler_safety_holdout"
+    )
+
+
 def test_readiness_attaches_live_practical_guard_brief() -> None:
     module = _load_module()
     rows = [

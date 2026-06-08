@@ -35,6 +35,7 @@ SHADOW_SAMPLER_WATCH_GATES = {
     "ccv_sampler",
     "ccv_directionality",
     "ccv_direction_holdout",
+    "shadow_sampler_guard_trial",
     "tail_value_review",
     "tail_under_combined_holdout",
     "formal_value_sampler_holdout",
@@ -85,6 +86,11 @@ SHADOW_SAMPLER_PROTOTYPE_KEYS = (
     "ccvc_shadow_sampler_prototype",
     "v3_shadow_sampler_prototype",
 )
+SHADOW_SAMPLER_GUARD_TRIAL_KEYS = (
+    "shadow_sampler_guard_trial",
+    "ccvc_shadow_sampler_guard_trial",
+    "v3_shadow_sampler_guard_trial",
+)
 
 SHADOW_SAMPLER_PROTOTYPE_REQUIRED_FIELDS = (
     "interface",
@@ -106,6 +112,23 @@ SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES = {
     "blocked_low_support",
     "blocked_holdout_hurt",
     "watch_with_hurt_alternatives",
+}
+SHADOW_SAMPLER_GUARD_TRIAL_REQUIRED_FIELDS = (
+    "interface",
+    "shadow_only",
+    "affects_bid",
+    "active",
+    "can_promote",
+    "status",
+    "sampler_status",
+    "trial_options",
+    "component_status_counts",
+    "support_gate_status_counts",
+    "guarded_sampler_result",
+)
+SHADOW_SAMPLER_GUARD_TRIAL_BLOCKING_STATUSES = {
+    "blocked_guarded_shadow_trial",
+    "sample_limited_guarded_shadow_trial",
 }
 
 SHADOW_SAMPLER_REQUIRED_COMPONENT_GATES = (
@@ -138,6 +161,14 @@ def _as_list(value: Any) -> list[Mapping[str, Any]]:
 
 def _prototype_from_readiness(readiness: Mapping[str, Any]) -> Mapping[str, Any]:
     for key in SHADOW_SAMPLER_PROTOTYPE_KEYS:
+        value = readiness.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return {}
+
+
+def _guard_trial_from_readiness(readiness: Mapping[str, Any]) -> Mapping[str, Any]:
+    for key in SHADOW_SAMPLER_GUARD_TRIAL_KEYS:
         value = readiness.get(key)
         if isinstance(value, Mapping):
             return value
@@ -282,6 +313,77 @@ def _shadow_sampler_prototype_contract(
     }
 
 
+def _shadow_sampler_guard_trial_contract(
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    trial = _guard_trial_from_readiness(readiness)
+    if not trial:
+        return {
+            "status": "missing",
+            "attached": False,
+            "accepted_keys": list(SHADOW_SAMPLER_GUARD_TRIAL_KEYS),
+            "required_fields": list(SHADOW_SAMPLER_GUARD_TRIAL_REQUIRED_FIELDS),
+            "blocking_statuses": sorted(SHADOW_SAMPLER_GUARD_TRIAL_BLOCKING_STATUSES),
+        }
+
+    missing = [
+        field
+        for field in SHADOW_SAMPLER_GUARD_TRIAL_REQUIRED_FIELDS
+        if field not in trial
+    ]
+    trial_status = str(trial.get("status") or "unknown")
+    shadow_safe = (
+        trial.get("shadow_only") is True
+        and trial.get("affects_bid") is False
+        and trial.get("active") is False
+        and trial.get("can_promote") is False
+    )
+    if missing or not shadow_safe:
+        status = "malformed"
+    elif trial_status in SHADOW_SAMPLER_GUARD_TRIAL_BLOCKING_STATUSES:
+        status = "blocked"
+    elif trial_status == "watch_guarded_shadow_trial":
+        status = "watch_only"
+    else:
+        status = "blocked"
+    sampler = trial.get("guarded_sampler_result")
+    if not isinstance(sampler, Mapping):
+        sampler = {}
+    component_statuses = _as_list(sampler.get("component_statuses"))
+    trial_options = trial.get("trial_options")
+    if not isinstance(trial_options, Mapping):
+        trial_options = {}
+    return {
+        "status": status,
+        "attached": True,
+        "interface": trial.get("interface"),
+        "trial_status": trial_status,
+        "sampler_status": trial.get("sampler_status"),
+        "shadow_safe": shadow_safe,
+        "missing_fields": missing,
+        "source_prototype_status": trial.get("source_prototype_status"),
+        "source_guard_trial_status": trial.get("source_guard_trial_status"),
+        "trial_options": dict(trial_options),
+        "component_status_counts": dict(
+            trial.get("component_status_counts") or {}
+        ),
+        "support_gate_status_counts": dict(
+            trial.get("support_gate_status_counts") or {}
+        ),
+        "blocking_component_statuses": [
+            {
+                "component": row.get("component"),
+                "status": row.get("status"),
+                "support_gate": _support_gate_status(row),
+            }
+            for row in component_statuses
+            if str(row.get("status") or "") in SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES
+        ],
+        "required_fields": list(SHADOW_SAMPLER_GUARD_TRIAL_REQUIRED_FIELDS),
+        "blocking_statuses": sorted(SHADOW_SAMPLER_GUARD_TRIAL_BLOCKING_STATUSES),
+    }
+
+
 def _lane_verdict(
     *,
     lane: str,
@@ -379,6 +481,12 @@ def summarize_shadow_sampler_contract(
         and status == "ready_for_shadow_prototype"
     ):
         status = "shadow_prototype_blocked"
+    guarded_trial_contract = _shadow_sampler_guard_trial_contract(readiness)
+    if (
+        guarded_trial_contract.get("status") in {"blocked", "malformed"}
+        and status == "ready_for_shadow_prototype"
+    ):
+        status = "shadow_guarded_trial_blocked"
     lane_verdicts = {
         str(row.get("lane")): str(row.get("verdict"))
         for row in lanes
@@ -410,6 +518,7 @@ def summarize_shadow_sampler_contract(
         "required_metrics": list(SHADOW_SAMPLER_REQUIRED_METRICS),
         "required_component_gates": list(SHADOW_SAMPLER_REQUIRED_COMPONENT_GATES),
         "prototype_contract": prototype_contract,
+        "guarded_trial_contract": guarded_trial_contract,
         "allowed_actions": [
             "define sampler interface",
             "emit shadow-only fields",
@@ -441,6 +550,8 @@ def _sampler_next_action(status: str, stop_loss_lanes: Iterable[str]) -> str:
         return "resolve blocked readiness prerequisites before sampler tuning"
     if status == "shadow_prototype_blocked":
         return "keep sampler shadow-only; resolve prototype seed/support blockers"
+    if status == "shadow_guarded_trial_blocked":
+        return "keep guarded sampler trial shadow-only; resolve remaining holdout blockers"
     if status == "shadow_watch_only":
         return "emit prototype fields only; keep watch gates inactive"
     return "run the shadow prototype through required holdouts"
@@ -551,6 +662,7 @@ def _print_summary(result: Mapping[str, Any]) -> None:
     contract = result.get("shadow_sampler_contract") or {}
     if isinstance(contract, Mapping):
         prototype = contract.get("prototype_contract") or {}
+        guarded_trial = contract.get("guarded_trial_contract") or {}
         prototype_component_counts = ",".join(
             f"{key}:{value}"
             for key, value in (
@@ -567,6 +679,18 @@ def _print_summary(result: Mapping[str, Any]) -> None:
             f"{key}:{value}"
             for key, value in (
                 prototype.get("guard_trial_action_counts") or {}
+            ).items()
+        ) or "-"
+        guarded_trial_component_counts = ",".join(
+            f"{key}:{value}"
+            for key, value in (
+                guarded_trial.get("component_status_counts") or {}
+            ).items()
+        ) or "-"
+        guarded_trial_support_counts = ",".join(
+            f"{key}:{value}"
+            for key, value in (
+                guarded_trial.get("support_gate_status_counts") or {}
             ).items()
         ) or "-"
         frozen = ",".join(
@@ -594,6 +718,11 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"prototype_support_gates={prototype_support_counts}",
                     f"prototype_guard_trial={prototype.get('guard_trial_status')}",
                     f"prototype_guard_actions={guard_action_counts}",
+                    f"guarded_trial_status={guarded_trial.get('status')}",
+                    f"guarded_trial_overall={guarded_trial.get('trial_status')}",
+                    f"guarded_trial_sampler={guarded_trial.get('sampler_status')}",
+                    f"guarded_trial_components={guarded_trial_component_counts}",
+                    f"guarded_trial_support_gates={guarded_trial_support_counts}",
                     f"next_action=\"{contract.get('next_action')}\"",
                 ]
             )

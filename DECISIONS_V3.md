@@ -3939,3 +3939,40 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 这是从“设计 contract”到“可执行 shadow trial”的实际落地，但结果仍 blocked；
 - blocked trial 是收窄下一步的证据，不是放宽 gate 的依据；
 - 该路径减少重复泛审计，同时保持 live/UI/v2 fallback/正式出价稳定。
+
+## D-v3-188：guarded sampler trial artifact 必须进入 readiness/workbench 的 sampler safety lane
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_readiness.py` 必须支持 `--shadow-sampler-guard-trial-json`；
+- 该参数读取 `summarize_v3_shadow_sampler_guard_trial.py --format json` 的输出；
+- 提供 artifact 时，readiness 必须新增 gate `shadow_sampler_guard_trial`；
+- `shadow_sampler_guard_trial` 的 lane 必须是 `sampler_safety_holdout`；
+- contract 必须校验：
+  - required keys；
+  - `shadow_only=true`；
+  - `affects_bid=false`；
+  - `active=false`；
+  - `can_promote=false`；
+  - trial status；
+  - sampler status；
+  - component status counts；
+  - support gate status counts；
+  - blocking component statuses；
+  - required verification list。
+- 只有 `trial_status=watch_guarded_shadow_trial` 时，该 gate 才可为 `watch`；
+- `blocked_guarded_shadow_trial` 或 `sample_limited_guarded_shadow_trial` 必须使 gate blocked；
+- `summarize_v3_promotion_workbench.py` 必须在 `shadow_sampler_contract.guarded_trial_contract` 与 summary 中展示 guarded trial status、sampler status、component/support gate counts；
+- 当前真实 guarded trial artifact 接入后：
+  - readiness `blocked_gates=15`；
+  - sampler safety lane 新增 blocked gate `shadow_sampler_guard_trial`；
+  - workbench 显示 `guarded_trial_overall=blocked_guarded_shadow_trial`；
+  - `guarded_trial_components=blocked_seed_instability:1,sample_limited:2`；
+  - `guarded_trial_support_gates=no_watch:2,pass:1`。
+
+原因：
+
+- guarded trial 已从设计变成可执行 artifact，必须纳入 promotion hardening 的统一 gate 依赖视图；
+- 当前 trial 仍 blocked，因此接入后的正确行为是增加 blocker，而不是给 promotion 提供支持；
+- 这能防止后续只看 q6_cells/q6_count 已收口而忽略 q6_value 剩余 seed instability；
+- 该决策不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
