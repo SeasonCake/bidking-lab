@@ -6812,3 +6812,44 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 
 - `compile_feasible_summary()` 现在将 bucket value exact 计入 `known_value_floor`。
 - 同一窗口修复后 `known_floor=157,331`，P50 `157,331`，P90 `479,372`。
+
+## O-v3-172：0608 Aisha villa 过冲来自低 ESS summary_likelihood baseline passthrough
+
+2026-06-08 最新两局实战复核：
+
+- Aisha 2401 R3：
+  - final formal truth `190,143`；
+  - v3 practical before guard `266,601 / 484,763 / 632,296`；
+  - `summary_likelihood_effective_samples=2.156`；
+  - `v3_practical_status=baseline_passthrough`。
+- Aisha 2402 R3：
+  - final formal truth `341,687`；
+  - v3 practical before guard `239,873 / 526,121 / 678,393`；
+  - `summary_likelihood_effective_samples=2.737`；
+  - R3 有低随机均价 `n=6:avg=2057.67`，但它没有形成 high-signal value floor；当前过冲主要仍是弱匹配 baseline passthrough。
+
+解读：
+
+- below 改善后，下一类主风险变成“低 ESS baseline P50 过激进”，不是公开/道具解析异常。
+- `settlement_count_prior_candidate` 作为 broad risk 记录有价值，但不能在低支持且无强证据时直接让 P50/停止价继承宽分布中位数。
+- q6 present rate 在这些窗口接近 1，但 no-q6 truth 也会出现；因此不能用 q6 present rate 单独判断是否该抬价。
+
+对应修复：
+
+- live v3 practical 增加 `live_low_support_baseline_guard`。
+- 最新两局复算后：
+  - Aisha 2401 R3 guarded `266,601 / 341,601 / 491,601`；
+  - Aisha 2402 R3 guarded `239,873 / 368,285 / 526,121`。
+
+## O-v3-173：archive brief 默认 v2 formal，不能直接代表当前 v3 UI
+
+2026-06-08 复核时发现：
+
+- `build_monitor_artifact_from_events()` 默认 `formal_mode=None` 会解析为 v2。
+- `summarize_live_windivert_brief.py` 当前 archive replay 未显式传 `formal_mode=v3_practical`。
+- 因此 brief 输出的 `decision_value_p50/p90` 可能是 v2 formal，而 live UI 当前启动脚本默认是 `v3_practical`。
+
+后续要求：
+
+- 分析当前 UI/实战估价时，应显式用 `formal_mode=v3_practical` 重放，或扩展 brief 参数支持 formal mode。
+- v2/v3 对照仍保留默认 v2 口径的价值，但结论必须标注口径，避免把 v2 指标误当 v3 实战指标。

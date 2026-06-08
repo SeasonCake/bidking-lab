@@ -153,6 +153,12 @@ _LIVE_V3_STRONG_RAISE_EVIDENCE_FLAGS = {
 _LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MIN_GAP = 100_000.0
 _LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MAX_P50_MULTIPLIER = 1.25
 _LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MIN_HEADROOM = 75_000.0
+_LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_MAX_ESS = 5.0
+_LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_MIN_P50_GAP = 180_000.0
+_LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_P50_KEEP_RATIO = 0.70
+_LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_MIN_HEADROOM = 75_000.0
+_LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_P90_MULTIPLIER = 1.35
+_LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_P90_HEADROOM = 150_000.0
 _TRUSTED_SESSION_TOTAL_CONFIDENCES = {"high", "exact"}
 _SAFE_SESSION_TOTAL_FIELDS = (
     "warehouse_total_cells",
@@ -1094,10 +1100,82 @@ def _v3_flag_set(value: Any) -> set[str]:
     return {part for part in re.split(r"[+;,/\s]+", text) if part}
 
 
+def _diagnostic_float_value(diagnostics: Any, key: str) -> float | None:
+    pattern = rf"(?:^|;){re.escape(key)}=([-+]?\d+(?:\.\d+)?)"
+    match = re.search(pattern, str(diagnostics or ""))
+    if match is None:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def _live_guard_v3_low_support_baseline_summary(
+    v3_shadow: Mapping[str, Any],
+    value_summary: QuantileSummary,
+) -> tuple[QuantileSummary, str]:
+    if str(v3_shadow.get("v3_practical_status") or "") != "baseline_passthrough":
+        return value_summary, ""
+    if str(v3_shadow.get("v3_practical_recommendation") or "") != "baseline_reference":
+        return value_summary, ""
+    if str(v3_shadow.get("v3_post_match_scope") or "") != "summary_likelihood":
+        return value_summary, ""
+    if bool(v3_shadow.get("v3_post_strict_ready")):
+        return value_summary, ""
+    risk_flags = _v3_flag_set(v3_shadow.get("v3_practical_risk_flags"))
+    if risk_flags.intersection(_LIVE_V3_STRONG_RAISE_EVIDENCE_FLAGS):
+        return value_summary, ""
+    effective_samples = _diagnostic_float_value(
+        v3_shadow.get("v3_post_diagnostics"),
+        "summary_likelihood_effective_samples",
+    )
+    if (
+        effective_samples is None
+        or effective_samples > _LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_MAX_ESS
+    ):
+        return value_summary, ""
+    p10 = float(value_summary.p10)
+    p50 = float(value_summary.p50)
+    p90 = float(value_summary.p90)
+    if p50 - p10 < _LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_MIN_P50_GAP:
+        return value_summary, ""
+    guarded_p50_cap = max(
+        p10 + _LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_MIN_HEADROOM,
+        p50 * _LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_P50_KEEP_RATIO,
+    )
+    guarded_p50 = max(p10, min(p50, guarded_p50_cap))
+    if guarded_p50 >= p50:
+        return value_summary, ""
+    guarded_p90_cap = max(
+        p50,
+        guarded_p50 + _LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_P90_HEADROOM,
+        guarded_p50 * _LIVE_V3_LOW_SUPPORT_BASELINE_GUARD_P90_MULTIPLIER,
+    )
+    guarded_p90 = max(guarded_p50, min(p90, guarded_p90_cap))
+    guarded = QuantileSummary(
+        p10=p10,
+        p50=guarded_p50,
+        p90=guarded_p90,
+    )
+    return (
+        guarded,
+        "live_low_support_baseline_guard:"
+        f"ess={effective_samples:.3f};"
+        f"p50 {p50:.0f}->{guarded_p50:.0f};"
+        f"p90 {p90:.0f}->{guarded_p90:.0f}",
+    )
+
+
 def _live_guard_v3_practical_value_summary(
     v3_shadow: Mapping[str, Any],
     value_summary: QuantileSummary,
 ) -> tuple[QuantileSummary, str]:
+    baseline_guarded, baseline_guard_reason = (
+        _live_guard_v3_low_support_baseline_summary(v3_shadow, value_summary)
+    )
+    if baseline_guard_reason:
+        return baseline_guarded, baseline_guard_reason
     if str(v3_shadow.get("v3_practical_recommendation") or "") != "raise_watch":
         return value_summary, ""
     confidence = str(v3_shadow.get("v3_practical_confidence") or "")
@@ -1112,11 +1190,18 @@ def _live_guard_v3_practical_value_summary(
     if p90_gap < _LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MIN_GAP:
         return value_summary, ""
     p50 = float(value_summary.p50)
+    baseline_p90 = _parse_float_text(
+        v3_shadow.get("v3_practical_baseline_formal_decision_value_p90")
+    )
     cap = p50 + max(
         _LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MIN_HEADROOM,
         p50 * (_LIVE_V3_PRIOR_ONLY_RAISE_GUARD_MAX_P50_MULTIPLIER - 1.0),
     )
-    guarded_p90 = max(p50, min(float(value_summary.p90), cap))
+    guarded_p90 = max(
+        p50,
+        baseline_p90 if baseline_p90 is not None else p50,
+        min(float(value_summary.p90), cap),
+    )
     if guarded_p90 >= float(value_summary.p90):
         return value_summary, ""
     guarded = QuantileSummary(

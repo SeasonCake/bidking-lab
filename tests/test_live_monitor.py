@@ -1241,6 +1241,74 @@ def test_live_formal_mode_v3_practical_guards_low_confidence_prior_only_raise(
     )
 
 
+def test_live_formal_mode_v3_practical_guards_low_support_baseline(
+    monkeypatch,
+) -> None:
+    def fake_v3_shadow(*_args, **kwargs):
+        return {
+            **monitor_module._empty_v3_posterior_shadow(
+                trials=int(kwargs.get("trials") or 1),
+            ),
+            "v3_post_available": True,
+            "v3_post_ready": True,
+            "v3_post_strict_ready": False,
+            "v3_post_match_scope": "summary_likelihood",
+            "v3_post_diagnostics": (
+                "no_strict_summary_matched_samples;"
+                "summary_likelihood_fallback;"
+                "summary_likelihood_effective_samples=2.500;"
+                "practical_p50_guard_quantile=0.60"
+            ),
+            "v3_practical_available": True,
+            "v3_practical_ready": True,
+            "v3_practical_candidate": False,
+            "v3_practical_source": "baseline",
+            "v3_practical_status": "baseline_passthrough",
+            "v3_practical_recommendation": "baseline_reference",
+            "v3_practical_confidence": "baseline",
+            "v3_practical_source_lanes": "settlement_count_prior",
+            "v3_practical_risk_flags": "settlement_count_prior_candidate",
+            "v3_practical_reason": "broad_risk_recorded_no_action",
+            "v3_practical_formal_decision_value_p10": 200_000,
+            "v3_practical_formal_decision_value_p50": 500_000,
+            "v3_practical_formal_decision_value_p90": 700_000,
+            "v3_practical_total_value_p10": 200_000,
+            "v3_practical_total_value_p50": 500_000,
+            "v3_practical_total_value_p90": 700_000,
+        }
+
+    monkeypatch.setattr(
+        monitor_module,
+        "_v3_posterior_shadow_summary",
+        fake_v3_shadow,
+    )
+
+    artifact = build_monitor_artifact_from_events(
+        _events(),
+        file="sample.json",
+        tables=_tables(),
+        n_trials=10,
+        roi_trials=0,
+        formal_mode="v3_practical",
+    )
+
+    row = artifact["bid_rows"][0]
+
+    assert artifact["formal_mode"] == "v3_practical"
+    assert artifact["formal_mode_reason"] == "v3_practical_ready_live_guarded"
+    assert row["formal_mode_reason"] == "v3_practical_ready_live_guarded"
+    assert row["决策价值 P10/P50/P90"] == "200,000 / 350,000 / 500,000"
+    assert row["v3_practical_unguarded_decision_value"] == (
+        "200,000 / 500,000 / 700,000"
+    )
+    assert row["v3_practical_live_guard"] == "是"
+    assert "live_low_support_baseline_guard" in row["后验诊断"]
+    assert (
+        artifact["ui_contract"]["baseline"]["posterior"]["decision_value_range"]
+        == "200,000 / 350,000 / 500,000"
+    )
+
+
 def test_live_formal_mode_v2_keeps_v2_bid_rows_even_when_v3_available(
     monkeypatch,
 ) -> None:

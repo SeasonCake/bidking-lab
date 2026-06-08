@@ -9039,3 +9039,59 @@ p90_extreme_over_rate=0.27
 v3_practical_p90_coverage=0.76
 v3_practical_p90_extreme_over_rate=0.37
 ```
+
+## 2026-06-08 checkpoint：v3 practical 低支持 baseline 实战 guard
+
+实战反馈：
+
+- 最新两局 live v3 practical 低估明显减少，但 Aisha villa 出现 P50/停止价过冲。
+- 代表窗口：
+  - Aisha 2401 R3：truth `190,143`，v3 practical `266,601 / 484,763 / 632,296`，stop `486,382`；
+  - Aisha 2402 R3：truth `341,687`，v3 practical `239,873 / 526,121 / 678,393`，stop `521,841`。
+
+诊断：
+
+- 两局都不是 public/action value floor 直接异常，而是 `summary_likelihood` 低有效样本 baseline passthrough：
+  - 2401 R3 ESS `2.156`；
+  - 2402 R3 ESS `2.737`。
+- `v3_practical_status=baseline_passthrough`，因此此前 live guard 没触发；已有 guard 只覆盖低置信 `raise_watch` prior-only P90。
+- archive brief 默认未显式传 `formal_mode=v3_practical` 时仍会按 v2 formal 重放，不能直接代表当前 UI 实战值；复盘 v3 实战需显式使用 `formal_mode=v3_practical`。
+
+修复：
+
+- live v3 practical bid row 新增低支持 baseline guard：
+  - 仅在 `baseline_passthrough + baseline_reference + summary_likelihood + strict_ready=false` 时考虑；
+  - `summary_likelihood_effective_samples <= 5`；
+  - 无 `value_floor_candidate`、`underestimate_repair_candidate`、`random_avg_high_signal_ceiling` 等强证据；
+  - `P50-P10 >= 180k`；
+  - P50 cap 为 `max(P10+75k, P50*0.70)`；
+  - P90 cap 为 `max(original P50, guarded P50+150k, guarded P50*1.35)`。
+- 保留 v3 audit 原字段；只保护 live/UI 正式 bid row 的决策区间和停止价。
+- prior-only raise-watch P90 guard 同时补充“不低于 baseline P90”的保护，避免小幅 q6 prior watch 反向压窄 baseline P90。
+
+最新两局复算：
+
+```text
+Aisha 2401 R3:
+before 266,601 / 484,763 / 632,296, stop 486,382
+after  266,601 / 341,601 / 491,601, stop 378,155
+
+Aisha 2402 R3:
+before 239,873 / 526,121 / 678,393, stop 521,841
+after  239,873 / 368,285 / 526,121, stop 404,709
+```
+
+72h complete archive v3-practical replay（shadow=20，formal_mode=v3_practical）：
+
+```text
+no_guard: rows=34 mae=186,031.3 median_abs=184,195.5 bias=11,818.1 p90_coverage=0.765 p90_extreme_over_rate=0.588
+guard:    rows=34 mae=164,325.7 median_abs=132,609.0 bias=-9,887.4 p90_coverage=0.765 p90_extreme_over_rate=0.500
+```
+
+验证：
+
+```text
+python -m py_compile src\bidking_lab\live\monitor.py
+pytest tests\test_live_monitor.py -q
+34 passed
+```

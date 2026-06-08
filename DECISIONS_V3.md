@@ -3212,3 +3212,32 @@ applied_hurts=2502
 - 当前活动样本 likelihood 对比略偏 `minus10`，但 0607 实战 valuation replay 显示 `minus10` 对 Gabriela 2521/2524 明显过高，`minus20` 更适合作为 live fallback。
 - 直接空白会降低实战价值；但把别名藏在内部又会污染后续调参和审计。
 - 显式记录 source/model map 可以让局后复盘区分“真实新表估值”和“借旧沉船表估值”。
+
+## D-v3-159：live v3 practical 低支持 baseline passthrough 必须有 P50/P90 guard
+
+2026-06-08 起，当前决策：
+
+- v3 posterior / practical audit 原始字段继续保留，不因 live guard 改写。
+- live formal bid row 使用 `v3_practical` 时，若低支持 baseline passthrough 满足以下条件，必须保护正式 P50/P90 与停止价：
+  - `v3_practical_status=baseline_passthrough`；
+  - `v3_practical_recommendation=baseline_reference`；
+  - `v3_post_match_scope=summary_likelihood`；
+  - `v3_post_strict_ready=false`；
+  - `summary_likelihood_effective_samples <= 5`；
+  - 无 `value_floor_candidate`、`underestimate_repair_candidate`、`tail_value_candidate`、`random_avg_value_floor_watch`、`random_avg_high_signal_ceiling`、`q6_value_ceiling_watch`、`source_profile_q6_tail_ceiling` 等强证据；
+  - `P50-P10 >= 180k`。
+- guard 公式：
+  - guarded P50 cap = `max(P10+75k, P50*0.70)`；
+  - guarded P90 cap = `max(original P50, guarded P50+150k, guarded P50*1.35)`。
+- bid row 必须继续记录：
+  - `formal_mode_reason=v3_practical_ready_live_guarded`；
+  - `v3_practical_live_guard=是`；
+  - `v3_practical_unguarded_decision_value`；
+  - `v3_practical_live_guard_reason=live_low_support_baseline_guard:...`。
+
+原因：
+
+- 0608 Aisha 2401/2402 实战显示，低 ESS `summary_likelihood` baseline passthrough 会把单一/少数弱匹配样本的高价值中位数直接进入正式出价。
+- 这类过冲不是 prior-only `raise_watch`，此前 D-v3-156 的 guard 不会触发。
+- 实战目标是减少长期 below，但不能让低支持 baseline 在无强证据时直接支配停止价。
+- 72h complete archive v3-practical replay 显示该 guard 降低 MAE 与极端 P90 高估率，且 P90 coverage 不变。
