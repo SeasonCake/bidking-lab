@@ -9735,3 +9735,48 @@ map=2529 files=3 winners=minus10:2,minus20:1 item_winners=minus10:2,minus20:1
 - `minus10` 整体更常胜出，但 2521/2524/2528/2529 都存在 `minus20` 胜出的样本或地图，不能把活动映射简化为稳定单一 alias；
 - RankMap 已确认所有 observed activity maps 都是 `白色DOWN红色UP`，且 observed 6 个 map 有 6 个 category profiles；
 - 这支持后续做 source parser / activity overlay prior 草案，但仍不能替代缺失的 Drop pools，也不能作为 promotion/readiness 放宽依据。
+
+## 2026-06-08 checkpoint：v3 practical archive-live guard contract hardened
+
+背景：
+
+- 当前 v3 promotion hardening 首要任务是统一 `v3_practical` guarded/unguarded/v2 的 archive-live eval 口径；
+- `summarize_live_windivert_brief.py --archive-formal-mode v3_practical` 已能输出 paired guarded/unguarded tradeoff；
+- readiness 此前只检查 overall formal rows 与 paired rows，未把 `prebid_overall` 作为同等 contract 要求。
+
+完成：
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `contract_checks`；
+  - 对 `overall` 与 `prebid_overall` 同时检查 formal mode counts、formal mode reasons、v3 practical rows、live guard rows、unguarded rows、paired comparison rows；
+  - 对 paired rows 额外要求 guarded/unguarded MAE、median P50/P90 delta、P90 coverage 与 P90 extreme-over tradeoff 指标非空；
+  - summary 输出新增 contract slice keys 与 prebid paired rows，便于 smoke 直接复核。
+- `tests/test_summarize_v3_promotion_readiness.py`
+  - 扩展 watch fixture 覆盖完整 overall/prebid contract；
+  - 新增 prebid contract 缺失 blocker 测试。
+
+验证：
+
+```text
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_promotion_readiness.py -q
+8 passed
+
+C:\Python313\python.exe scripts\summarize_live_windivert_brief.py --since-hours 168 --archive-n-trials 10 --archive-shadow-trials 1 --archive-formal-mode v3_practical --format json > .tmp\codex\v3_practical_guard_brief_probe.json
+
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --format summary
+overall_status=not_ready
+blocked_gates=13
+v3_practical_guard_status=watch
+v3_practical_guard_contract_checks=overall,prebid_overall
+v3_practical_guard_formal_rows=115
+v3_practical_guard_comparison_rows=75
+v3_practical_guard_prebid_comparison_rows=75
+v3_practical_guard_delta_p90_coverage=-0.49
+v3_practical_guard_delta_p90_extreme_over=-0.37
+```
+
+结论：
+
+- 当前 archive/live brief 已能同时证明 v2 fallback counts 与 v3 practical guarded/unguarded paired comparison；
+- guard 的 P90 coverage 下降与 extreme-over 降低可以被同一 contract 复核，不再依赖散落字段；
+- readiness 总状态仍为 `not_ready`，该 gate 只是 `watch`，不支持 v3 promotion、v2 archive 或 sampler 参数调优。

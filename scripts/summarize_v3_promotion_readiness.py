@@ -420,6 +420,29 @@ _LIVE_PRACTICAL_GUARD_KEYS = (
     "v3_practical_unguarded_p90_extreme_over_on_comparison",
     "v3_practical_guarded_minus_unguarded_p90_extreme_over",
 )
+_LIVE_PRACTICAL_GUARD_CONTRACT_KEYS = (
+    "rows",
+    "formal_mode_counts",
+    "formal_mode_reason_counts",
+    "v3_practical_formal_rows",
+    "v3_practical_live_guard_rows",
+    "v3_practical_live_guard_reason_counts",
+    "v3_practical_unguarded_rows",
+    "v3_practical_guard_comparison_rows",
+)
+_LIVE_PRACTICAL_GUARD_TRADEOFF_KEYS = (
+    "v3_practical_guarded_mae_on_comparison",
+    "v3_practical_unguarded_mae_on_comparison",
+    "v3_practical_guarded_minus_unguarded_mae",
+    "v3_practical_guarded_minus_unguarded_median_p50",
+    "v3_practical_guarded_minus_unguarded_median_p90",
+    "v3_practical_guarded_p90_coverage_on_comparison",
+    "v3_practical_unguarded_p90_coverage_on_comparison",
+    "v3_practical_guarded_minus_unguarded_p90_coverage",
+    "v3_practical_guarded_p90_extreme_over_on_comparison",
+    "v3_practical_unguarded_p90_extreme_over_on_comparison",
+    "v3_practical_guarded_minus_unguarded_p90_extreme_over",
+)
 
 
 def _live_practical_guard_slice(
@@ -428,6 +451,56 @@ def _live_practical_guard_slice(
     if not isinstance(stats, Mapping):
         return {}
     return {key: stats.get(key) for key in _LIVE_PRACTICAL_GUARD_KEYS}
+
+
+def _live_practical_guard_contract_slice(
+    name: str,
+    stats: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(stats, Mapping):
+        return {
+            "status": "blocked",
+            "reason": f"{name} guard metrics are missing",
+            "missing_keys": list(_LIVE_PRACTICAL_GUARD_CONTRACT_KEYS),
+            "null_tradeoff_keys": list(_LIVE_PRACTICAL_GUARD_TRADEOFF_KEYS),
+            "formal_rows": 0,
+            "comparison_rows": 0,
+        }
+    missing_keys = [
+        key for key in _LIVE_PRACTICAL_GUARD_CONTRACT_KEYS if key not in stats
+    ]
+    formal_rows = int(stats.get("v3_practical_formal_rows") or 0)
+    comparison_rows = int(stats.get("v3_practical_guard_comparison_rows") or 0)
+    null_tradeoff_keys = [
+        key
+        for key in _LIVE_PRACTICAL_GUARD_TRADEOFF_KEYS
+        if comparison_rows > 0 and stats.get(key) is None
+    ]
+    if missing_keys:
+        status = "blocked"
+        reason = f"{name} is missing guard contract fields"
+    elif formal_rows <= 0:
+        status = "blocked"
+        reason = f"{name} has no v3_practical formal rows"
+    elif comparison_rows <= 0:
+        status = "blocked"
+        reason = f"{name} has no paired guarded/unguarded comparison rows"
+    elif null_tradeoff_keys:
+        status = "blocked"
+        reason = f"{name} has paired rows but missing guard tradeoff metrics"
+    else:
+        status = "watch"
+        reason = f"{name} guard contract is evaluable"
+    return {
+        "status": status,
+        "reason": reason,
+        "missing_keys": missing_keys,
+        "null_tradeoff_keys": null_tradeoff_keys,
+        "formal_rows": formal_rows,
+        "comparison_rows": comparison_rows,
+        "formal_mode_counts": stats.get("formal_mode_counts"),
+        "formal_mode_reason_counts": stats.get("formal_mode_reason_counts"),
+    }
 
 
 def summarize_live_practical_guard_brief(
@@ -439,6 +512,7 @@ def summarize_live_practical_guard_brief(
             "reason": "live/archive v3 practical brief JSON was not supplied",
             "overall": {},
             "prebid_overall": {},
+            "contract_checks": {},
         }
     if not isinstance(brief, Mapping):
         return {
@@ -446,20 +520,29 @@ def summarize_live_practical_guard_brief(
             "reason": "live/archive v3 practical brief JSON must be an object",
             "overall": {},
             "prebid_overall": {},
+            "contract_checks": {},
         }
     overall = _live_practical_guard_slice(brief.get("overall"))
     prebid = _live_practical_guard_slice(brief.get("prebid_overall"))
-    formal_rows = int(overall.get("v3_practical_formal_rows") or 0)
-    comparison_rows = int(overall.get("v3_practical_guard_comparison_rows") or 0)
-    if formal_rows <= 0:
+    contract_checks = {
+        "overall": _live_practical_guard_contract_slice(
+            "overall",
+            brief.get("overall"),
+        ),
+        "prebid_overall": _live_practical_guard_contract_slice(
+            "prebid_overall",
+            brief.get("prebid_overall"),
+        ),
+    }
+    blocked_checks = [
+        check for check in contract_checks.values() if check.get("status") == "blocked"
+    ]
+    if blocked_checks:
         status = "blocked"
-        reason = "brief has no v3_practical formal rows"
-    elif comparison_rows <= 0:
-        status = "blocked"
-        reason = "brief has no paired guarded/unguarded comparison rows"
+        reason = "; ".join(str(check.get("reason")) for check in blocked_checks)
     else:
         status = "watch"
-        reason = "paired v3 practical guard tradeoff is available for review"
+        reason = "paired v3 practical guard tradeoff is available for overall and prebid review"
     return {
         "status": status,
         "reason": reason,
@@ -467,6 +550,7 @@ def summarize_live_practical_guard_brief(
         "source_counts": brief.get("source_counts"),
         "overall": overall,
         "prebid_overall": prebid,
+        "contract_checks": contract_checks,
     }
 
 
@@ -685,6 +769,7 @@ def summarize_readiness(
             source_counts=live_guard_brief.get("source_counts"),
             overall=live_guard_brief.get("overall"),
             prebid_overall=live_guard_brief.get("prebid_overall"),
+            contract_checks=live_guard_brief.get("contract_checks"),
         )
     )
     ready_count = int(summary.get("ready") or 0)
@@ -1753,6 +1838,7 @@ def _print_summary(result: dict[str, Any]) -> None:
     summary = result["summary"]
     live_guard = result["v3_practical_archive_live_guard_metrics"]
     live_guard_overall = live_guard.get("overall") or {}
+    live_guard_prebid = live_guard.get("prebid_overall") or {}
     print(
         " ".join(
             (
@@ -1764,10 +1850,14 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"formal_below={summary['formal_p50_below_rate']}",
                 f"formal_p90_cover={summary['formal_p90_coverage']}",
                 f"v3_practical_guard_status={live_guard['status']}",
+                "v3_practical_guard_contract_checks="
+                f"{','.join(sorted((live_guard.get('contract_checks') or {}).keys()))}",
                 "v3_practical_guard_formal_rows="
                 f"{live_guard_overall.get('v3_practical_formal_rows')}",
                 "v3_practical_guard_comparison_rows="
                 f"{live_guard_overall.get('v3_practical_guard_comparison_rows')}",
+                "v3_practical_guard_prebid_comparison_rows="
+                f"{live_guard_prebid.get('v3_practical_guard_comparison_rows')}",
                 "v3_practical_guard_delta_mae="
                 f"{live_guard_overall.get('v3_practical_guarded_minus_unguarded_mae')}",
                 "v3_practical_guard_delta_p90_coverage="

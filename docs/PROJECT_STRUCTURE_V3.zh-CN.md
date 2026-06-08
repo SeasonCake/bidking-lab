@@ -61,7 +61,7 @@
 | `scripts/summarize_v3_scp_guarded_bridge_stability.py` | v3 guarded bridge posterior trial/seed stability 矩阵审计，汇总 selected group drift、applied hurt、support depth，并使用 `.tmp/codex/` per-run cache |
 | `scripts/build_v3_settlement_count_prior_shadow.py` | 从 default archive 与 activity cohort 构建 `data/processed/v3_settlement_count_prior_shadow.json` |
 | `scripts/build_v3_capacity_source_expansion_shadow.py` | 从 settlement source-semantics 审计构建 `data/processed/v3_capacity_source_expansion_shadow.json` |
-| `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift`、`settlement_count_formal_value_link`、带 pressure count 的 `capacity_source_expansion_shadow`、原始/guarded `settlement_count_cells_value_bridge` holdout 与 `formal_value_sampler_holdout` gate；可通过 `--live-practical-brief-json` 附加 v3 practical archive-live guarded/unguarded paired evidence，通过 `--guarded-bridge-stability-json` 附加 guarded SCP bridge multi-seed stability evidence，但不放宽 promotion gate |
+| `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift`、`settlement_count_formal_value_link`、带 pressure count 的 `capacity_source_expansion_shadow`、原始/guarded `settlement_count_cells_value_bridge` holdout 与 `formal_value_sampler_holdout` gate；可通过 `--live-practical-brief-json` 附加带 `contract_checks` 的 v3 practical archive-live guarded/unguarded paired evidence，通过 `--guarded-bridge-stability-json` 附加 guarded SCP bridge multi-seed stability evidence，但不放宽 promotion gate |
 | `scripts/summarize_v3_promotion_workbench.py` | 从 readiness JSON 汇总 lane-level promotion workbench，标记 blocked/watch/stop-loss 与下一步模式，不重新跑模型 |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
 | `scripts/summarize_v3_ccv_holdout.py` | v3 CCV/count-cell-value 候选 session holdout 审计 |
@@ -110,7 +110,7 @@
 | `tests/test_summarize_v3_scp_guarded_bridge_stability.py` | v3 guarded bridge trial/seed stability 矩阵测试，覆盖 exact group 稳定、hurt run 与 low-support blocker |
 | `tests/test_build_v3_settlement_count_prior_shadow.py` | v3 settlement count-prior processed artifact builder 测试 |
 | `tests/test_build_v3_capacity_source_expansion_shadow.py` | v3 capacity/source expansion processed artifact builder 测试 |
-| `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试 |
+| `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试，覆盖 v3 practical archive-live guard brief contract checks |
 | `tests/test_summarize_v3_promotion_workbench.py` | v3 lane-level promotion workbench 测试，覆盖 stop-loss lane 与 archive quality watch |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
 | `tests/test_summarize_v3_ccv_holdout.py` | v3 CCV session holdout 审计测试 |

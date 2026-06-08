@@ -246,18 +246,55 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
         "overall": {
             "rows": 49,
             "formal_mode_counts": {"v2": 15, "v3_practical": 34},
+            "formal_mode_reason_counts": {
+                "v2_mode_requested": 15,
+                "v3_practical_ready_live_guarded": 34,
+            },
             "v3_practical_formal_rows": 34,
             "v3_practical_live_guard_rows": 23,
             "v3_practical_live_guard_rate": 0.68,
+            "v3_practical_live_guard_reason_counts": {
+                "live_prior_only_raise_guard": 23,
+            },
+            "v3_practical_unguarded_rows": 23,
             "v3_practical_guard_comparison_rows": 23,
+            "v3_practical_guarded_mae_on_comparison": 120_000,
+            "v3_practical_unguarded_mae_on_comparison": 120_000,
             "v3_practical_guarded_minus_unguarded_mae": 0.0,
+            "v3_practical_guarded_minus_unguarded_median_p50": 0.0,
+            "v3_practical_guarded_minus_unguarded_median_p90": -30_000,
+            "v3_practical_guarded_p90_coverage_on_comparison": 0.57,
+            "v3_practical_unguarded_p90_coverage_on_comparison": 1.0,
             "v3_practical_guarded_minus_unguarded_p90_coverage": -0.43,
+            "v3_practical_guarded_p90_extreme_over_on_comparison": 0.09,
+            "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.57,
             "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.48,
         },
         "prebid_overall": {
             "rows": 49,
+            "formal_mode_counts": {"v2": 15, "v3_practical": 34},
+            "formal_mode_reason_counts": {
+                "v2_mode_requested": 15,
+                "v3_practical_ready_live_guarded": 34,
+            },
             "v3_practical_formal_rows": 34,
+            "v3_practical_live_guard_rows": 23,
+            "v3_practical_live_guard_reason_counts": {
+                "live_prior_only_raise_guard": 23,
+            },
+            "v3_practical_unguarded_rows": 23,
             "v3_practical_guard_comparison_rows": 23,
+            "v3_practical_guarded_mae_on_comparison": 120_000,
+            "v3_practical_unguarded_mae_on_comparison": 120_000,
+            "v3_practical_guarded_minus_unguarded_mae": 0.0,
+            "v3_practical_guarded_minus_unguarded_median_p50": 0.0,
+            "v3_practical_guarded_minus_unguarded_median_p90": -30_000,
+            "v3_practical_guarded_p90_coverage_on_comparison": 0.57,
+            "v3_practical_unguarded_p90_coverage_on_comparison": 1.0,
+            "v3_practical_guarded_minus_unguarded_p90_coverage": -0.43,
+            "v3_practical_guarded_p90_extreme_over_on_comparison": 0.09,
+            "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.57,
+            "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.48,
         },
     }
 
@@ -281,6 +318,8 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
         metrics["overall"]["v3_practical_guarded_minus_unguarded_p90_coverage"]
         == -0.43
     )
+    assert metrics["contract_checks"]["overall"]["status"] == "watch"
+    assert metrics["contract_checks"]["prebid_overall"]["status"] == "watch"
     assert (
         "review v3 practical guard coverage/extreme-over tradeoff by slice before promotion"
         in result["next_actions"]
@@ -314,6 +353,60 @@ def test_readiness_blocks_malformed_live_practical_guard_brief() -> None:
     assert (
         "regenerate v3 practical brief with paired guarded/unguarded rows"
         in result["next_actions"]
+    )
+
+
+def test_readiness_blocks_live_practical_guard_brief_without_prebid_contract() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+    brief = {
+        "overall": {
+            "rows": 4,
+            "formal_mode_counts": {"v3_practical": 4},
+            "formal_mode_reason_counts": {"v3_practical_ready_live_guarded": 4},
+            "v3_practical_formal_rows": 4,
+            "v3_practical_live_guard_rows": 4,
+            "v3_practical_live_guard_reason_counts": {"guard": 4},
+            "v3_practical_unguarded_rows": 4,
+            "v3_practical_guard_comparison_rows": 4,
+            "v3_practical_guarded_mae_on_comparison": 1.0,
+            "v3_practical_unguarded_mae_on_comparison": 1.0,
+            "v3_practical_guarded_minus_unguarded_mae": 0.0,
+            "v3_practical_guarded_minus_unguarded_median_p50": 0.0,
+            "v3_practical_guarded_minus_unguarded_median_p90": -10.0,
+            "v3_practical_guarded_p90_coverage_on_comparison": 0.5,
+            "v3_practical_unguarded_p90_coverage_on_comparison": 1.0,
+            "v3_practical_guarded_minus_unguarded_p90_coverage": -0.5,
+            "v3_practical_guarded_p90_extreme_over_on_comparison": 0.0,
+            "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.5,
+            "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.5,
+        },
+        "prebid_overall": {
+            "rows": 4,
+            "v3_practical_formal_rows": 4,
+            "v3_practical_guard_comparison_rows": 0,
+        },
+    }
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        live_practical_guard_brief=brief,
+    )
+
+    metrics = result["v3_practical_archive_live_guard_metrics"]
+    assert metrics["status"] == "blocked"
+    assert metrics["contract_checks"]["overall"]["status"] == "watch"
+    assert metrics["contract_checks"]["prebid_overall"]["status"] == "blocked"
+    assert (
+        "formal_mode_counts"
+        in metrics["contract_checks"]["prebid_overall"]["missing_keys"]
     )
 
 

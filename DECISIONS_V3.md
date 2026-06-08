@@ -3498,3 +3498,24 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 2521/2524/2528/2529 均存在 `minus20` 胜出样本或地图，说明活动机制不是简单固定 alias；
 - observed 6 个 activity maps 全部有 RankMap `白色DOWN红色UP`，但 `Drop.txt` 仍缺 item-level activity pools；
 - 这类 evidence 适合作为 shadow/source-parser 输入，不适合作为 formal 出价依据。
+
+## D-v3-171：v3 practical archive-live guard brief 必须同时证明 overall/prebid paired contract
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_readiness.py --live-practical-brief-json` 不再只检查 overall 是否有 paired rows；
+- brief 必须同时提供：
+  - `overall` 与 `prebid_overall`；
+  - `formal_mode_counts` / `formal_mode_reason_counts`；
+  - `v3_practical_formal_rows`、live guard rows、unguarded rows；
+  - guarded/unguarded paired comparison rows；
+  - MAE、median P50/P90 delta、P90 coverage delta、P90 extreme-over delta 等 tradeoff 指标。
+- 任一 slice 缺字段、缺 v3 practical rows、缺 paired comparison rows，或 paired rows 存在但 tradeoff 指标为空，都保持 readiness blocked；
+- 当前该 gate 即使为 `watch`，也只表示 archive-live guard tradeoff 已可复核，不表示 practical path 可 promotion。
+
+原因：
+
+- 当前 goal 需要统一 v3 practical guarded/unguarded/v2 的 archive-live 评估口径和 guard 指标；
+- 只看 overall paired rows 会掩盖 prebid replay contract 缺失；
+- formal mode counts 是确认 v2 fallback / v3 practical guarded path 共用同一 brief 口径的最低证据；
+- readiness/promotion gate 仍不得因 brief 可用而放宽。

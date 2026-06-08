@@ -7347,3 +7347,45 @@ rankmap_parse_error=null
 - v3 registry/constraints 已能消费这些数值；但真实样本库暂未找到 `100204x` capture，后续实机 Ahmad 样本仍需确认字段号。
 
 详见 `docs/auction_analyzer_ahmad_reference_2026-06-08.zh-CN.md`。
+
+## O-v3-184：archive-live practical guard brief 已可合同化复核，但仍是 watch
+
+2026-06-08 基于实际 archive/live brief 跑：
+
+```text
+C:\Python313\python.exe scripts\summarize_live_windivert_brief.py --since-hours 168 --archive-n-trials 10 --archive-shadow-trials 1 --archive-formal-mode v3_practical --format json > .tmp\codex\v3_practical_guard_brief_probe.json
+
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --format summary
+```
+
+关键结果：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+v3_practical_guard_status=watch
+v3_practical_guard_contract_checks=overall,prebid_overall
+v3_practical_guard_formal_rows=115
+v3_practical_guard_comparison_rows=75
+v3_practical_guard_prebid_comparison_rows=75
+v3_practical_guard_delta_mae=0.0
+v3_practical_guard_delta_p90_coverage=-0.49
+v3_practical_guard_delta_p90_extreme_over=-0.37
+```
+
+JSON 复核：
+
+```text
+contract={'overall':'watch','prebid_overall':'watch'}
+overall modes={'unknown':1,'v2':46,'v3_practical':115}
+prebid modes={'v2':46,'v3_practical':115}
+overall paired=75
+prebid paired=75
+```
+
+解读：
+
+- 当前 brief 已覆盖 overall 与 prebid 两个 slice，且 formal mode counts 同时出现 v2 fallback 与 v3 practical；
+- paired rows 为 75，guarded/unguarded MAE 相同，但 guarded P90 coverage 比 unguarded 低 0.49，同时 P90 extreme-over 低 0.37；
+- 这说明 guard tradeoff 可以被统一口径复核，但只是 readiness `watch`，不构成 promotion 或 v2 archive 条件；
+- 下一步仍应按 lane 继续收口 prior/activity/table drift 与 sampler holdout，而不是把 practical guard brief 当作 formal/value 调参依据。
