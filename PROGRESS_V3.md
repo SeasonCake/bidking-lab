@@ -9445,3 +9445,70 @@ formal_p90_cover=0.753442
 - guard 将 extreme-over 从 0.48 压到 0.0，但 P90 coverage 从 0.91 降到 0.48；
 - 该 tradeoff 说明 v3 practical guard 是实战稳定性保护，不是 promotion 证据；
 - 下一步应继续把这些 paired guard metrics 纳入 archive/live 分组与 CSE/SCP stability 判断。
+
+## 2026-06-08 checkpoint：readiness attaches v3 practical archive-live guard evidence
+
+背景：
+
+- `summarize_live_windivert_brief.py --archive-formal-mode v3_practical --format json` 已能输出 guarded/unguarded paired deltas；
+- `summarize_v3_promotion_readiness.py` 之前仍只看 canonical archive v3 shadow lanes，不知道当前 live-practical guard 的 archive-live tradeoff；
+- readiness 需要吸收这份 evidence，但不能因为 guard 降低 extreme-over 就放宽 promotion gate。
+
+完成：
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增可选参数 `--live-practical-brief-json`；
+  - 新增 `summarize_live_practical_guard_brief()`；
+  - readiness result 新增 `v3_practical_archive_live_guard_metrics`；
+  - gates 新增 `v3_practical_archive_live_guard_metrics`：
+    - 未传 brief JSON：`pending`，不增加 blocked count；
+    - brief 缺 `v3_practical_formal_rows` 或 paired comparison rows：`blocked`；
+    - 有 paired rows：`watch`。
+- summary 输出新增：
+  - `v3_practical_guard_status`；
+  - `v3_practical_guard_formal_rows`；
+  - `v3_practical_guard_comparison_rows`；
+  - `v3_practical_guard_delta_mae`；
+  - `v3_practical_guard_delta_p90_coverage`；
+  - `v3_practical_guard_delta_p90_extreme_over`。
+- `tests/test_summarize_v3_promotion_readiness.py`
+  - 覆盖未传 brief JSON 时的 pending/not_supplied；
+  - 覆盖 supplied paired rows -> watch；
+  - 覆盖 malformed/no paired rows -> blocked。
+
+验证：
+
+```text
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_promotion_readiness.py -q
+7 passed
+
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_promotion_readiness.py
+```
+
+实际 72h archive-live brief 接入 readiness：
+
+```text
+C:\Python313\python.exe scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-formal-mode v3_practical --format json | Set-Content -Path .tmp\codex\v3_practical_brief_72h.json -Encoding UTF8
+
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --live-practical-brief-json .tmp\codex\v3_practical_brief_72h.json --format summary
+overall_status=not_ready
+blocked_gates=13
+windows=1616
+ready=1598
+formal_mae=317290.279
+formal_below=0.512516
+formal_p90_cover=0.753442
+v3_practical_guard_status=watch
+v3_practical_guard_formal_rows=34
+v3_practical_guard_comparison_rows=23
+v3_practical_guard_delta_mae=0.0
+v3_practical_guard_delta_p90_coverage=-0.43
+v3_practical_guard_delta_p90_extreme_over=-0.48
+```
+
+结论：
+
+- readiness 现在能显式看到当前 UI/v3-practical 实战 guard 的 paired tradeoff；
+- 该 evidence 只是 promotion review 输入，不会放宽 canonical readiness gates；
+- 当前 `blocked_gates=13` 不变，v3 promotion 仍 `not_ready`；
+- 下一步仍应继续 CSE/SCP bridge stability 和 prior/activity/table drift 收口，再恢复 shadow-only sampler 设计。

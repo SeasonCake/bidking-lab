@@ -3370,3 +3370,22 @@ applied_hurts=2502
   - P90 extreme-over 从 0.48 降到 0.0；
   - P90 coverage 从 0.91 降到 0.48。
 - 这类 guard 能限制过冲，但也会牺牲 coverage；只有 paired 指标能正确表达这个 tradeoff。
+
+## D-v3-165：readiness 可附加 v3 practical archive-live guard brief，但不得据此放宽 gate
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_readiness.py` 可以通过 `--live-practical-brief-json` 附加 `summarize_live_windivert_brief.py --archive-formal-mode v3_practical --format json` 的输出；
+- 附加内容只作为 archive-live guard evidence，输出在 `v3_practical_archive_live_guard_metrics`；
+- readiness gate `v3_practical_archive_live_guard_metrics` 的状态语义为：
+  - 未传 JSON：`pending`，不计入 blocked count；
+  - 传入但无 `v3_practical_formal_rows` 或 paired comparison rows：`blocked`；
+  - 有 paired guarded/unguarded rows：`watch`。
+- `watch` 不代表 promotion-ready；它只代表 guard tradeoff 可被 readiness/review 看到。
+- 即使 guard 显著降低 P90 extreme-over，也必须同时检查 P90 coverage、under/miss rate 和分片；不得把 live guard 当成 formal sampler 或 v3 promotion 通过证据。
+
+原因：
+
+- 当前 v3 practical guard 的 paired rows 显示 MAE/P50 不变、P90 over-risk 下降、P90 coverage 同时下降；
+- 这属于实战稳定性/风险偏好 tradeoff，不是结构化模型质量提升；
+- readiness 需要记录这类 evidence，但 canonical promotion gates 仍以 archive shadow lanes、holdout、stability、activity/table drift 和 sampler safety 为准。

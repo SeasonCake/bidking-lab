@@ -127,6 +127,10 @@ _GATE_DEPENDENCY_META: dict[str, tuple[str, str]] = {
         "archive_pipeline_quality",
         "keep v3 posterior shadow coverage complete and inactive",
     ),
+    "v3_practical_archive_live_guard_metrics": (
+        "archive_live_guard_metrics",
+        "attach paired guarded/unguarded v3 practical archive-live evidence",
+    ),
     "prior_robustness": (
         "table_activity_capacity",
         "resolve missing/activity/prior-drift rows before default prior use",
@@ -389,6 +393,83 @@ def _top_prior_stress_groups(
     return out[:limit]
 
 
+_LIVE_PRACTICAL_GUARD_KEYS = (
+    "rows",
+    "estimate_rows",
+    "formal_mode_counts",
+    "formal_mode_reason_counts",
+    "v3_practical_formal_rows",
+    "v3_practical_live_guard_rows",
+    "v3_practical_live_guard_rate",
+    "v3_practical_live_guard_reason_counts",
+    "v3_practical_unguarded_rows",
+    "v3_practical_unguarded_mae",
+    "v3_practical_unguarded_under_rate",
+    "v3_practical_unguarded_p90_coverage",
+    "v3_practical_unguarded_p90_extreme_over_rate",
+    "v3_practical_guard_comparison_rows",
+    "v3_practical_guarded_mae_on_comparison",
+    "v3_practical_unguarded_mae_on_comparison",
+    "v3_practical_guarded_minus_unguarded_mae",
+    "v3_practical_guarded_minus_unguarded_median_p50",
+    "v3_practical_guarded_minus_unguarded_median_p90",
+    "v3_practical_guarded_p90_coverage_on_comparison",
+    "v3_practical_unguarded_p90_coverage_on_comparison",
+    "v3_practical_guarded_minus_unguarded_p90_coverage",
+    "v3_practical_guarded_p90_extreme_over_on_comparison",
+    "v3_practical_unguarded_p90_extreme_over_on_comparison",
+    "v3_practical_guarded_minus_unguarded_p90_extreme_over",
+)
+
+
+def _live_practical_guard_slice(
+    stats: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(stats, Mapping):
+        return {}
+    return {key: stats.get(key) for key in _LIVE_PRACTICAL_GUARD_KEYS}
+
+
+def summarize_live_practical_guard_brief(
+    brief: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if brief is None:
+        return {
+            "status": "not_supplied",
+            "reason": "live/archive v3 practical brief JSON was not supplied",
+            "overall": {},
+            "prebid_overall": {},
+        }
+    if not isinstance(brief, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "live/archive v3 practical brief JSON must be an object",
+            "overall": {},
+            "prebid_overall": {},
+        }
+    overall = _live_practical_guard_slice(brief.get("overall"))
+    prebid = _live_practical_guard_slice(brief.get("prebid_overall"))
+    formal_rows = int(overall.get("v3_practical_formal_rows") or 0)
+    comparison_rows = int(overall.get("v3_practical_guard_comparison_rows") or 0)
+    if formal_rows <= 0:
+        status = "blocked"
+        reason = "brief has no v3_practical formal rows"
+    elif comparison_rows <= 0:
+        status = "blocked"
+        reason = "brief has no paired guarded/unguarded comparison rows"
+    else:
+        status = "watch"
+        reason = "paired v3 practical guard tradeoff is available for review"
+    return {
+        "status": status,
+        "reason": reason,
+        "total_rows": brief.get("total_rows"),
+        "source_counts": brief.get("source_counts"),
+        "overall": overall,
+        "prebid_overall": prebid,
+    }
+
+
 def summarize_readiness(
     rows: list[dict[str, Any]],
     errors: list[dict[str, str]],
@@ -399,8 +480,12 @@ def summarize_readiness(
     min_sessions: int = 8,
     folds: int = 5,
     scp_guarded_bridge_stability: Mapping[str, Any] | None = None,
+    live_practical_guard_brief: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = summarize_rows(rows, errors)
+    live_guard_brief = summarize_live_practical_guard_brief(
+        live_practical_guard_brief
+    )
     prior_stress_details = summarize_prior_stress_details(rows)
     prior_stress_detail_summary = summarize_prior_stress_detail_summary(
         prior_stress_details,
@@ -588,6 +673,18 @@ def summarize_readiness(
             posterior_ready=summary.get("posterior_ready"),
             ready=summary.get("ready"),
             posterior_no_match=summary.get("posterior_no_match"),
+        )
+    )
+    live_guard_status = str(live_guard_brief.get("status") or "not_supplied")
+    gates.append(
+        _gate(
+            "v3_practical_archive_live_guard_metrics",
+            "pending" if live_guard_status == "not_supplied" else live_guard_status,
+            str(live_guard_brief.get("reason") or ""),
+            total_rows=live_guard_brief.get("total_rows"),
+            source_counts=live_guard_brief.get("source_counts"),
+            overall=live_guard_brief.get("overall"),
+            prebid_overall=live_guard_brief.get("prebid_overall"),
         )
     )
     ready_count = int(summary.get("ready") or 0)
@@ -1347,6 +1444,18 @@ def summarize_readiness(
         next_actions.append("audit prior-stressed capacity/table drift by map/profile before promotion")
     if not robust_ready:
         next_actions.append("separate activity/prior-drift rows before formal promotion")
+    if live_guard_status == "not_supplied":
+        next_actions.append(
+            "attach v3 practical archive-live guard brief JSON before promotion review"
+        )
+    elif live_guard_status == "blocked":
+        next_actions.append(
+            "regenerate v3 practical brief with paired guarded/unguarded rows"
+        )
+    else:
+        next_actions.append(
+            "review v3 practical guard coverage/extreme-over tradeoff by slice before promotion"
+        )
 
     blocked = _blocked_count(gates)
     gate_dependencies = summarize_gate_dependencies(gates)
@@ -1421,6 +1530,7 @@ def summarize_readiness(
                 "hero_map_evidence_profile",
             ),
         },
+        "v3_practical_archive_live_guard_metrics": live_guard_brief,
         "underestimate_holdout": {
             "candidate_rows": under_candidate_rows,
             "candidate_groups": under_candidate_only.get("candidate_groups"),
@@ -1641,6 +1751,8 @@ def summarize_readiness(
 
 def _print_summary(result: dict[str, Any]) -> None:
     summary = result["summary"]
+    live_guard = result["v3_practical_archive_live_guard_metrics"]
+    live_guard_overall = live_guard.get("overall") or {}
     print(
         " ".join(
             (
@@ -1651,6 +1763,17 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"formal_mae={summary['formal_p50_mae']}",
                 f"formal_below={summary['formal_p50_below_rate']}",
                 f"formal_p90_cover={summary['formal_p90_coverage']}",
+                f"v3_practical_guard_status={live_guard['status']}",
+                "v3_practical_guard_formal_rows="
+                f"{live_guard_overall.get('v3_practical_formal_rows')}",
+                "v3_practical_guard_comparison_rows="
+                f"{live_guard_overall.get('v3_practical_guard_comparison_rows')}",
+                "v3_practical_guard_delta_mae="
+                f"{live_guard_overall.get('v3_practical_guarded_minus_unguarded_mae')}",
+                "v3_practical_guard_delta_p90_coverage="
+                f"{live_guard_overall.get('v3_practical_guarded_minus_unguarded_p90_coverage')}",
+                "v3_practical_guard_delta_p90_extreme_over="
+                f"{live_guard_overall.get('v3_practical_guarded_minus_unguarded_p90_extreme_over')}",
                 f"under_delta={summary['v3_under_delta_formal_p50_mae']}",
                 f"ccv_cells_delta={summary['v3_ccv_delta_q6_cells_p50_mae']}",
                 f"ccv_holdout_rows={result['ccv_holdout']['candidate_rows']}",
@@ -1771,6 +1894,15 @@ def main(argv: list[str] | None = None) -> int:
             "to attach multi-seed stability evidence to readiness."
         ),
     )
+    parser.add_argument(
+        "--live-practical-brief-json",
+        type=Path,
+        help=(
+            "Optional JSON output from summarize_live_windivert_brief.py "
+            "--archive-formal-mode v3_practical --format json. This attaches "
+            "paired guarded/unguarded live-practical guard evidence to readiness."
+        ),
+    )
     args = parser.parse_args(argv)
 
     rows, errors = evaluate_paths(
@@ -1804,6 +1936,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.guarded_bridge_stability_json is not None:
         with args.guarded_bridge_stability_json.open("r", encoding="utf-8") as handle:
             guarded_bridge_stability = json.load(handle)
+    live_practical_guard_brief = None
+    if args.live_practical_brief_json is not None:
+        with args.live_practical_brief_json.open("r", encoding="utf-8") as handle:
+            live_practical_guard_brief = json.load(handle)
     result = summarize_readiness(
         rows,
         errors,
@@ -1813,6 +1949,7 @@ def main(argv: list[str] | None = None) -> int:
         min_sessions=args.min_sessions,
         folds=args.folds,
         scp_guarded_bridge_stability=guarded_bridge_stability,
+        live_practical_guard_brief=live_practical_guard_brief,
     )
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

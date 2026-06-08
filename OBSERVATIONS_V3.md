@@ -7072,3 +7072,41 @@ v3_practical_guarded_minus_unguarded_p90_extreme_over=-0.48
 - 因此 paired MAE 不变，但 P90 上界风险显著下降；
 - 同时 P90 coverage 下降，说明 guard 不是单向改善，而是降低极端高估风险、换取更保守的上界；
 - 后续 readiness/promotion 不能只看 P90 extreme-over 下降，也必须同时看 coverage、miss rate 与分片。
+
+## O-v3-178：readiness 接入 72h v3 practical guard brief 后仍 not_ready，blocked gates 不变
+
+2026-06-08 生成 72h v3 practical archive-live brief JSON 后传入 readiness：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --live-practical-brief-json .tmp\codex\v3_practical_brief_72h.json --format summary
+```
+
+新增 summary fields：
+
+```text
+v3_practical_guard_status=watch
+v3_practical_guard_formal_rows=34
+v3_practical_guard_comparison_rows=23
+v3_practical_guard_delta_mae=0.0
+v3_practical_guard_delta_p90_coverage=-0.43
+v3_practical_guard_delta_p90_extreme_over=-0.48
+```
+
+readiness 主状态：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+windows=1616
+ready=1598
+formal_mae=317290.279
+formal_below=0.512516
+formal_p90_cover=0.753442
+```
+
+解读：
+
+- guard brief 已进入 readiness evidence plane；
+- `v3_practical_archive_live_guard_metrics=watch` 只表示 paired evidence 可见；
+- blocked gates 没减少，promotion/readiness gate 没放宽；
+- 下一步 blocker 仍是 prior/activity/table drift、CSE/SCP bridge stability、CCV/formal-value sampler holdout，而不是 live guard 指标本身。

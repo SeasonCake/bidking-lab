@@ -160,6 +160,7 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     gates = {row["name"]: row for row in result["gates"]}
     assert gates["archive_data_quality"]["status"] == "pass"
     assert gates["shared_shadow_pipeline"]["status"] == "pass"
+    assert gates["v3_practical_archive_live_guard_metrics"]["status"] == "pending"
     assert gates["prior_robustness"]["status"] == "pass"
     assert gates["prior_stress_capacity_table_drift"]["status"] == "pass"
     assert gates["settlement_count_prior_shadow"]["status"] == "watch"
@@ -226,6 +227,94 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert dependency_gates["v2_archive_readiness"]["status"] == "pending"
     assert "prior_stress_detail_summary" in result
     assert result["prior_stress_detail_summary"]["rows"] == 0
+    assert result["v3_practical_archive_live_guard_metrics"]["status"] == "not_supplied"
+    assert (
+        "attach v3 practical archive-live guard brief JSON before promotion review"
+        in result["next_actions"]
+    )
+
+
+def test_readiness_attaches_live_practical_guard_brief() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+    brief = {
+        "total_rows": 49,
+        "source_counts": {"windivert_archive": 49},
+        "overall": {
+            "rows": 49,
+            "formal_mode_counts": {"v2": 15, "v3_practical": 34},
+            "v3_practical_formal_rows": 34,
+            "v3_practical_live_guard_rows": 23,
+            "v3_practical_live_guard_rate": 0.68,
+            "v3_practical_guard_comparison_rows": 23,
+            "v3_practical_guarded_minus_unguarded_mae": 0.0,
+            "v3_practical_guarded_minus_unguarded_p90_coverage": -0.43,
+            "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.48,
+        },
+        "prebid_overall": {
+            "rows": 49,
+            "v3_practical_formal_rows": 34,
+            "v3_practical_guard_comparison_rows": 23,
+        },
+    }
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        live_practical_guard_brief=brief,
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    guard_gate = gates["v3_practical_archive_live_guard_metrics"]
+    assert guard_gate["status"] == "watch"
+    assert guard_gate["overall"]["v3_practical_guard_comparison_rows"] == 23
+    metrics = result["v3_practical_archive_live_guard_metrics"]
+    assert metrics["status"] == "watch"
+    assert metrics["overall"]["v3_practical_formal_rows"] == 34
+    assert (
+        metrics["overall"]["v3_practical_guarded_minus_unguarded_p90_coverage"]
+        == -0.43
+    )
+    assert (
+        "review v3 practical guard coverage/extreme-over tradeoff by slice before promotion"
+        in result["next_actions"]
+    )
+
+
+def test_readiness_blocks_malformed_live_practical_guard_brief() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        live_practical_guard_brief={
+            "overall": {
+                "v3_practical_formal_rows": 34,
+                "v3_practical_guard_comparison_rows": 0,
+            }
+        },
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    assert gates["v3_practical_archive_live_guard_metrics"]["status"] == "blocked"
+    assert result["v3_practical_archive_live_guard_metrics"]["status"] == "blocked"
+    assert (
+        "regenerate v3 practical brief with paired guarded/unguarded rows"
+        in result["next_actions"]
+    )
 
 
 def test_readiness_attaches_guarded_bridge_stability_matrix() -> None:
