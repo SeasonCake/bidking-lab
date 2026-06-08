@@ -976,6 +976,13 @@ def test_readiness_attaches_guarded_bridge_stability_matrix() -> None:
     assert result["settlement_count_guarded_bridge_stability"]["status"] == (
         "blocked_applied_hurt"
     )
+    dependency_gates = {
+        row["gate"]: row
+        for row in result["gate_dependencies"]["blocked_or_pending_gates"]
+    }
+    assert "2501:blocked_train_holdout_instability" in dependency_gates[
+        "settlement_count_guarded_bridge_stability"
+    ]["focus"]
 
 
 def test_readiness_blocks_malformed_guarded_bridge_stability_matrix() -> None:

@@ -234,6 +234,19 @@ _GATE_DEPENDENCY_META: dict[str, tuple[str, str]] = {
 }
 
 
+def _selected_group_instability_text(value: Any) -> str:
+    if not isinstance(value, list):
+        return ""
+    parts: list[str] = []
+    for row in value:
+        if not isinstance(row, Mapping):
+            continue
+        group = str(row.get("group") or "unknown")
+        status = str(row.get("status") or "unknown")
+        parts.append(f"{group}:{status}")
+    return ",".join(parts)
+
+
 def _gate_focus(gate: Mapping[str, Any]) -> str:
     name = str(gate.get("name") or "")
     if name == "prior_robustness":
@@ -300,6 +313,12 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
                     for key in sorted(selected)
                 )
             )
+        if name == "settlement_count_guarded_bridge_stability":
+            instability = _selected_group_instability_text(
+                gate.get("selected_group_instability_summary")
+            )
+            if instability:
+                parts.append(f"instability={instability}")
         return ";".join(parts)
     if name == "settlement_count_formal_value_link":
         return (
@@ -3282,6 +3301,9 @@ def _print_summary(result: dict[str, Any]) -> None:
     scp_stability_contract = scp_stability.get("contract_check") or {}
     scp_stability_trials = scp_stability_contract.get("posterior_trials") or []
     scp_stability_seeds = scp_stability_contract.get("posterior_seeds") or []
+    scp_stability_instability = _selected_group_instability_text(
+        scp_stability.get("selected_group_instability_summary")
+    )
     prior_stress_contract = (
         result["prior_stress_detail_summary"].get("detail_contract") or {}
     )
@@ -3373,6 +3395,7 @@ def _print_summary(result: dict[str, Any]) -> None:
                     scp_stability.get("stable_selected_groups")
                     or []
                 ),
+                f"scp_guarded_instability={scp_stability_instability}",
                 "cse_artifact_contract="
                 f"{cse_artifact_contract.get('status')}",
                 "cse_artifact_entries="

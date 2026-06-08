@@ -11339,3 +11339,79 @@ overall_status=not_ready
 - 当前 guarded path 相对 unguarded 明显降低 extreme-over，但牺牲 coverage；相对 v2 则 coverage 提升且 extreme-over 未增加；
 - 这只证明 guarded practical path 的实战 tradeoff 可复核，不构成 v3 promotion；
 - readiness/promotion gate 仍不放宽，v2 fallback 不归档，formal/live replacement 不推进。
+
+### 2026-06-08 checkpoint：SCP guarded bridge stability blocker 澄清为真实 instability
+
+本轮收口内容：
+
+- 核对 `.tmp\codex\v3_readiness` 中 SCP stability artifacts：
+  - `scp_guarded_stability_64_s0_s1_schema3.json` 缺 `selected_group_instability_summary`，readiness contract 会 blocked；
+  - `scp_guarded_stability_64_s0_s1_instability.json` 已包含 instability summary，contract 可 watch，但结论仍 blocked。
+- 核对 canonical processed artifact：
+  - `data/processed/v3_scp_guarded_bridge_stability_shadow.json` 已包含 `selected_group_instability_summary`；
+  - readiness 使用该 artifact 时 `scp_guarded_stability_contract=watch`；
+  - `settlement_count_guarded_bridge_stability` 仍为 blocked，原因是真实 multi-seed instability，不是 schema/contract 缺失。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `scp_guarded_instability` summary 输出；
+  - `gate_dependencies` focus 对 `settlement_count_guarded_bridge_stability` 追加 instability class。
+- 更新 `tests/test_summarize_v3_promotion_readiness.py` 覆盖 focus 中的 instability class。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_readiness.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_scp_stability_focus tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_scp_guarded_bridge_stability.py tests/test_summarize_v3_promotion_workbench.py
+32 passed
+```
+
+真实 canonical readiness/workbench smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_policy_matrix_latest.json --shadow-sampler-prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --shadow-sampler-guard-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_full_latest.json --shadow-sampler-value-source-profile-json .tmp\codex\v3_shadow_sampler_q6_value_source_profile_audit_latest.json --shadow-sampler-value-map-profile-details-json .tmp\codex\v3_shadow_sampler_q6_value_map_profile_details_latest.json --shadow-sampler-value-profile-guardability-json .tmp\codex\v3_shadow_sampler_q6_value_profile_guardability_latest.json --format summary
+```
+
+关键结果：
+
+```text
+scp_guarded_stability=blocked_applied_hurt
+scp_guarded_stability_contract=watch
+scp_guarded_stability_trials=64
+scp_guarded_stability_seeds=0,1,7
+scp_guarded_stable_groups=2506
+scp_guarded_instability=2501:blocked_train_holdout_instability,2506:blocked_support_depth_gap
+```
+
+artifact 明细：
+
+```text
+overall=blocked_applied_hurt
+status_reasons=['applied_hurts_present', 'non_watch_run', 'selected_group_drift', 'low_applied_rows']
+run_count=3
+watch_runs=2
+stable_selected_groups=['2506']
+union_selected_groups=['2501', '2506']
+hurt_group_counts={'2501': 1}
+min_applied_rows=9
+min_applied_rows_required=20
+```
+
+instability 分类：
+
+```text
+2501 -> blocked_train_holdout_instability
+  reason: train_guard_watch_but_holdout_hurt
+
+2506 -> blocked_support_depth_gap
+  reason: min_applied_rows_below_required
+  support_min_applied_rows=9
+  support_required_applied_rows=20
+```
+
+结论：
+
+- SCP guarded bridge 已评估，且 contract 完整；
+- 当前 blocker 主因是真实 seed/group instability 与 support depth gap；
+- 后续不得再用旧 `.tmp/...schema3.json` 作为 readiness 主证据；
+- canonical readiness 应使用 `data/processed/v3_scp_guarded_bridge_stability_shadow.json`；
+- guarded SCP bridge 仍 audit-only，不进入 sampler、formal/live 或 promotion support。

@@ -4246,3 +4246,31 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 仅有 formal mode counts 与 guarded/unguarded paired delta 仍不能证明 v2 fallback 与 v3 practical path 在同一分母上可比较；
 - 三路 matrix 可以把“unguarded 覆盖率更高但 extreme-over 更高、guarded 更保守”的 tradeoff 固化为 readiness evidence；
 - 该决策仍不改变 live/UI、正式出价、formal sampler、v2 fallback 或 promotion gate。
+
+## D-v3-196：SCP guarded bridge stability 使用 canonical artifact，contract watch 不等于 promotion support
+
+2026-06-08 起，当前决策：
+
+- readiness/promotion review 中 guarded SCP bridge stability 主证据使用 `data/processed/v3_scp_guarded_bridge_stability_shadow.json`；
+- 可作为临时复核的 `.tmp` artifact 必须包含 `selected_group_instability_summary`；
+- 旧 `.tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_schema3.json` 缺 instability summary，只能说明旧 schema 不完整，不得作为当前 readiness 主证据；
+- `scp_guarded_stability_contract=watch` 只表示 artifact 结构可评估，不表示该 lane 可 promotion；
+- 当前 canonical artifact 的真实状态仍是：
+  - `overall=blocked_applied_hurt`；
+  - `status_reasons=['applied_hurts_present', 'non_watch_run', 'selected_group_drift', 'low_applied_rows']`；
+  - `posterior_seeds=[0, 1, 7]`；
+  - `stable_selected_groups=['2506']`；
+  - `union_selected_groups=['2501', '2506']`；
+  - `hurt_group_counts={'2501': 1}`；
+  - `min_applied_rows=9`，低于 `min_applied_rows_required=20`。
+- readiness summary 与 gate focus 必须暴露 selected group instability class：
+  - `2501:blocked_train_holdout_instability`，原因是 train guard watch 但 holdout hurt；
+  - `2506:blocked_support_depth_gap`，原因是 support depth 不足。
+- `settlement_count_guarded_bridge_stability` 因真实 seed/group instability 保持 blocked；
+- guarded SCP bridge 仍为 audit-only，不进入 sampler、formal/live、v2 fallback 归档或 promotion support。
+
+原因：
+
+- 之前使用旧 `.tmp` schema artifact 会把问题误判成 contract 缺字段；
+- canonical artifact 证明 contract 已完整，剩余 blocker 是可复核的 multi-seed instability 与 support depth gap；
+- 后续应把精力转到 prior/activity/table drift、CSE/SCP source semantics、source parser/table acquisition 或更强分片验证，而不是继续重复 schema 排查或恢复 formal/value sampler 参数调优。
