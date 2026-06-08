@@ -396,3 +396,53 @@ def test_shadow_sampler_contract_blocks_attached_value_source_profile_audit() ->
     assert value_source_profile["run_summaries"][1]["support_gate"] == (
         "watch_low_support"
     )
+
+
+def test_shadow_sampler_contract_blocks_attached_value_map_profile_details() -> None:
+    module = _load_module()
+
+    result = module.summarize_workbench(
+        {
+            "overall_status": "not_ready",
+            "blocked_gates": 0,
+            "gate_dependencies": {
+                "lane_status_counts": {},
+                "blocked_or_pending_gates": [],
+                "watch_gates": [],
+            },
+            "shadow_sampler_value_map_profile_details": {
+                "interface": "v3_ccvc_q6_value_map_profile_details",
+                "status": "blocked_map_only_details_ready",
+                "shadow_only": True,
+                "affects_bid": False,
+                "active": False,
+                "can_promote": False,
+                "component": "q6_value",
+                "source_audit_status": "blocked_risk_migration",
+                "source_profile_parser_status": "blocked_mixed_map_profile_risk",
+                "label_count": 1,
+                "candidate_rows": 16,
+                "candidate_sessions_sum": 5,
+                "labels_with_row_count_mismatch": [],
+                "labels": [
+                    {
+                        "watch_label": "q6_value|map_id|up_only:q6_value:2502",
+                        "candidate_rows": 16,
+                    }
+                ],
+                "next_action": "review q6_value map-only row/source clusters",
+            },
+        }
+    )
+
+    contract = result["shadow_sampler_contract"]
+    details = contract["value_map_profile_details_contract"]
+    assert contract["status"] == "shadow_value_map_profile_details_blocked"
+    assert contract["can_start_shadow_prototype"] is False
+    assert details["status"] == "blocked"
+    assert details["details_status"] == "blocked_map_only_details_ready"
+    assert details["source_profile_parser_status"] == (
+        "blocked_mixed_map_profile_risk"
+    )
+    assert details["candidate_rows"] == 16
+    assert details["labels_with_row_count_mismatch"] == []

@@ -514,6 +514,65 @@ def test_readiness_attaches_shadow_sampler_value_source_profile_audit() -> None:
     )
 
 
+def test_readiness_attaches_shadow_sampler_value_map_profile_details() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+    details = {
+        "interface": "v3_ccvc_q6_value_map_profile_details",
+        "status": "blocked_map_only_details_ready",
+        "shadow_only": True,
+        "affects_bid": False,
+        "active": False,
+        "can_promote": False,
+        "component": "q6_value",
+        "source_audit_status": "blocked_risk_migration",
+        "source_profile_parser_status": "blocked_mixed_map_profile_risk",
+        "label_count": 1,
+        "candidate_rows": 16,
+        "candidate_sessions_sum": 5,
+        "labels_with_row_count_mismatch": [],
+        "labels": [
+            {
+                "watch_label": "q6_value|map_id|up_only:q6_value:2502",
+                "candidate_rows": 16,
+            }
+        ],
+        "next_action": "review q6_value map-only row/source clusters",
+    }
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        shadow_sampler_value_map_profile_details=details,
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    gate = gates["shadow_sampler_value_map_profile_details"]
+    assert gate["status"] == "blocked"
+    assert gate["contract_status"] == "blocked"
+    assert gate["details_status"] == "blocked_map_only_details_ready"
+    assert gate["label_count"] == 1
+    assert gate["candidate_rows"] == 16
+    contract = result["shadow_sampler_value_map_profile_details_contract"]
+    assert contract["status"] == "blocked"
+    assert contract["shadow_safe"] is True
+    assert contract["labels_with_row_count_mismatch"] == []
+    assert result["shadow_sampler_value_map_profile_details"] == details
+    dependency_gates = {
+        row["gate"]: row
+        for row in result["gate_dependencies"]["blocked_or_pending_gates"]
+    }
+    assert dependency_gates["shadow_sampler_value_map_profile_details"]["lane"] == (
+        "sampler_safety_holdout"
+    )
+
+
 def test_readiness_attaches_live_practical_guard_brief() -> None:
     module = _load_module()
     rows = [

@@ -37,6 +37,7 @@ SHADOW_SAMPLER_WATCH_GATES = {
     "ccv_direction_holdout",
     "shadow_sampler_guard_trial",
     "shadow_sampler_value_source_profile_audit",
+    "shadow_sampler_value_map_profile_details",
     "tail_value_review",
     "tail_under_combined_holdout",
     "formal_value_sampler_holdout",
@@ -98,6 +99,12 @@ SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_KEYS = (
     "q6_value_source_profile_audit",
     "v3_shadow_sampler_q6_value_source_profile_audit",
 )
+SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_KEYS = (
+    "shadow_sampler_value_map_profile_details",
+    "shadow_sampler_q6_value_map_profile_details",
+    "q6_value_map_profile_details",
+    "v3_shadow_sampler_q6_value_map_profile_details",
+)
 
 SHADOW_SAMPLER_PROTOTYPE_REQUIRED_FIELDS = (
     "interface",
@@ -156,6 +163,25 @@ SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_BLOCKING_STATUSES = {
     "requires_source_profile_parser",
     "blocked_q6_value_component",
 }
+SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_REQUIRED_FIELDS = (
+    "interface",
+    "shadow_only",
+    "affects_bid",
+    "active",
+    "can_promote",
+    "status",
+    "component",
+    "source_audit_status",
+    "source_profile_parser_status",
+    "label_count",
+    "candidate_rows",
+    "labels",
+    "next_action",
+)
+SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_BLOCKING_STATUSES = {
+    "blocked_map_only_details_ready",
+    "blocked_no_map_only_details",
+}
 
 SHADOW_SAMPLER_REQUIRED_COMPONENT_GATES = (
     "shadow safety: affects_bid=false and active=false",
@@ -205,6 +231,16 @@ def _value_source_profile_from_readiness(
     readiness: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     for key in SHADOW_SAMPLER_VALUE_SOURCE_PROFILE_KEYS:
+        value = readiness.get(key)
+        if isinstance(value, Mapping):
+            return value
+    return {}
+
+
+def _value_map_profile_details_from_readiness(
+    readiness: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    for key in SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_KEYS:
         value = readiness.get(key)
         if isinstance(value, Mapping):
             return value
@@ -535,6 +571,73 @@ def _shadow_sampler_value_source_profile_contract(
     }
 
 
+def _shadow_sampler_value_map_profile_details_contract(
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    details = _value_map_profile_details_from_readiness(readiness)
+    if not details:
+        return {
+            "status": "missing",
+            "attached": False,
+            "accepted_keys": list(SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_KEYS),
+            "required_fields": list(
+                SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_REQUIRED_FIELDS
+            ),
+            "blocking_statuses": sorted(
+                SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_BLOCKING_STATUSES
+            ),
+        }
+
+    missing = [
+        field
+        for field in SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_REQUIRED_FIELDS
+        if field not in details
+    ]
+    details_status = str(details.get("status") or "unknown")
+    shadow_safe = (
+        details.get("shadow_only") is True
+        and details.get("affects_bid") is False
+        and details.get("active") is False
+        and details.get("can_promote") is False
+    )
+    component = str(details.get("component") or "")
+    if missing or not shadow_safe or component != "q6_value":
+        status = "malformed"
+    elif details_status in SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_BLOCKING_STATUSES:
+        status = "blocked"
+    elif details_status == "watch_diagnostic_only":
+        status = "watch_only"
+    else:
+        status = "blocked"
+    return {
+        "status": status,
+        "attached": True,
+        "interface": details.get("interface"),
+        "details_status": details_status,
+        "shadow_safe": shadow_safe,
+        "missing_fields": missing,
+        "component": component,
+        "source_audit_status": details.get("source_audit_status"),
+        "source_profile_parser_status": details.get(
+            "source_profile_parser_status"
+        ),
+        "label_count": details.get("label_count"),
+        "candidate_rows": details.get("candidate_rows"),
+        "candidate_sessions_sum": details.get("candidate_sessions_sum"),
+        "labels_with_row_count_mismatch": list(
+            details.get("labels_with_row_count_mismatch") or []
+        ),
+        "next_action": details.get("next_action"),
+        "blocked_actions": list(details.get("blocked_actions") or []),
+        "required_fields": list(
+            SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_REQUIRED_FIELDS
+        ),
+        "blocking_statuses": sorted(
+            SHADOW_SAMPLER_VALUE_MAP_PROFILE_DETAILS_BLOCKING_STATUSES
+        ),
+    }
+
+
 def _lane_verdict(
     *,
     lane: str,
@@ -646,6 +749,14 @@ def summarize_shadow_sampler_contract(
         and status == "ready_for_shadow_prototype"
     ):
         status = "shadow_value_source_profile_blocked"
+    value_map_profile_details_contract = (
+        _shadow_sampler_value_map_profile_details_contract(readiness)
+    )
+    if (
+        value_map_profile_details_contract.get("status") in {"blocked", "malformed"}
+        and status == "ready_for_shadow_prototype"
+    ):
+        status = "shadow_value_map_profile_details_blocked"
     lane_verdicts = {
         str(row.get("lane")): str(row.get("verdict"))
         for row in lanes
@@ -679,6 +790,7 @@ def summarize_shadow_sampler_contract(
         "prototype_contract": prototype_contract,
         "guarded_trial_contract": guarded_trial_contract,
         "value_source_profile_contract": value_source_profile_contract,
+        "value_map_profile_details_contract": value_map_profile_details_contract,
         "allowed_actions": [
             "define sampler interface",
             "emit shadow-only fields",
@@ -714,6 +826,8 @@ def _sampler_next_action(status: str, stop_loss_lanes: Iterable[str]) -> str:
         return "keep guarded sampler trial shadow-only; resolve remaining holdout blockers"
     if status == "shadow_value_source_profile_blocked":
         return "stop sampler tuning; resolve q6_value source/profile semantics or value guard"
+    if status == "shadow_value_map_profile_details_blocked":
+        return "review q6_value map-only row/source clusters before value guard design"
     if status == "shadow_watch_only":
         return "emit prototype fields only; keep watch gates inactive"
     return "run the shadow prototype through required holdouts"
@@ -828,6 +942,9 @@ def _print_summary(result: Mapping[str, Any]) -> None:
         value_source_profile = (
             contract.get("value_source_profile_contract") or {}
         )
+        value_map_profile_details = (
+            contract.get("value_map_profile_details_contract") or {}
+        )
         prototype_component_counts = ",".join(
             f"{key}:{value}"
             for key, value in (
@@ -902,6 +1019,16 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"{value_source_profile.get('latest_map_only_hurt_label_count')}",
                     "value_source_profile_runs="
                     f"{value_source_profile.get('run_count')}",
+                    "value_map_profile_details_status="
+                    f"{value_map_profile_details.get('status')}",
+                    "value_map_profile_details_overall="
+                    f"{value_map_profile_details.get('details_status')}",
+                    "value_map_profile_details_labels="
+                    f"{value_map_profile_details.get('label_count')}",
+                    "value_map_profile_details_rows="
+                    f"{value_map_profile_details.get('candidate_rows')}",
+                    "value_map_profile_details_mismatches="
+                    f"{len(value_map_profile_details.get('labels_with_row_count_mismatch') or [])}",
                     f"next_action=\"{contract.get('next_action')}\"",
                 ]
             )

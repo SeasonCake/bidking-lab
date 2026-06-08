@@ -11057,3 +11057,134 @@ value_source_profile_map_only_hurts=8
 - 当前不是设计 value guard 的时点，因为 latest hurt labels 中仍有 8 个 map-only risk，需要先回填到 row-level evidence profile/source；
 - 下一步应做 q6_value map-only hurt label 的 row/session/profile/source details artifact；
 - live/UI/正式出价、v2 fallback 与 promotion gate 仍不改变。
+
+## 2026-06-08 checkpoint：q6_value map-only row/source details artifact
+
+背景：
+
+- 上一轮 parser artifact 把 q6_value blocker 收窄到 `blocked_mixed_map_profile_risk`；
+- latest run 仍有 8 个 map-only hurt labels，不能直接把 map-level 风险当成 profile guard；
+- 本步骤重放 guarded trial 的 q6_value map-only hurt labels，回填 row/session/profile/source 细节，并接入 readiness/workbench。
+
+完成：
+
+- 新增 `scripts/summarize_v3_shadow_sampler_value_map_profile_details.py`
+  - 输入 q6_value source/profile audit JSON；
+  - 可选输入 guarded trial JSON 以读取 `trial_options.component_move_cells`；
+  - 从 latest run 提取 q6_value `map_id` map-only hurt labels；
+  - 按 posterior seed 重跑 archive rows；
+  - 使用 `v3_ccvc_`、`component_likelihood=True`、guarded trial 的 `component_move_cells` 口径；
+  - 复用 session fold 与 movement policy；
+  - 输出每个 map-only label 的 row-level details：
+    - `file`；
+    - `session_id`；
+    - `hero`；
+    - `map_id` / `map_family`；
+    - `evidence_profile_key`；
+    - `hero_map_evidence_profile`；
+    - profile semantic class；
+    - public source tokens；
+    - anchor tokens；
+    - truth/baseline/candidate/raw candidate；
+    - prediction delta；
+    - effect；
+    - directional error。
+  - 输出 label 级聚合：
+    - profile counts；
+    - semantic class counts；
+    - public source counts；
+    - anchor counts；
+    - train candidate status counts；
+    - row count vs source metric match。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `--shadow-sampler-value-map-profile-details-json`；
+  - 新增 gate `shadow_sampler_value_map_profile_details`；
+  - lane 固定为 `sampler_safety_holdout`；
+  - details artifact shadow-safe 且 `blocked_map_only_details_ready` 时仍 blocked。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract` 新增 `value_map_profile_details_contract`；
+  - summary 输出 details status、label count、candidate rows 与 mismatch count。
+- 新增 `tests/test_summarize_v3_shadow_sampler_value_map_profile_details.py`
+  - 覆盖 map-only label 提取；
+  - 覆盖 row/profile/source replay；
+  - 覆盖 shadow-only artifact 合同。
+- 更新 readiness/workbench 测试，覆盖 details artifact gate/contract。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_shadow_sampler_value_map_profile_details.py scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_shadow_sampler_value_map_profile_details.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_shadow_sampler_value_map_profile_details.py tests/test_summarize_v3_shadow_sampler_value_source_profile_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_shadow_sampler_guard_trial.py
+32 passed
+```
+
+真实 details artifact：
+
+```text
+python scripts\summarize_v3_shadow_sampler_value_map_profile_details.py --audit-json .tmp\codex\v3_shadow_sampler_q6_value_source_profile_audit_latest.json --guarded-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_q6_value_probe_latest.json --posterior-trials 64 --format json > .tmp\codex\v3_shadow_sampler_q6_value_map_profile_details_latest.json
+
+python scripts\summarize_v3_shadow_sampler_value_map_profile_details.py --audit-json .tmp\codex\v3_shadow_sampler_q6_value_source_profile_audit_latest.json --guarded-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_q6_value_probe_latest.json --posterior-trials 64 --format summary --top 10
+```
+
+关键结果：
+
+```text
+status=blocked_map_only_details_ready
+component=q6_value
+labels=8
+candidate_rows=168
+source_parser=blocked_mixed_map_profile_risk
+mismatch=
+```
+
+代表性 label：
+
+```text
+q6_value|map_id|up_only:q6_value:2405 seed=0 rows=28 sessions=8 hurt=14 helped=5
+profiles include:
+item+shape
+public:max_item_cells+item+shape
+public:max_quality+item+shape
+public:total+item+shape
+public:total+item+shape+layout
+public:total+shape
+tool:category+item+shape
+
+q6_value|map_id|all:q6_value:2502 seed=1 rows=29 sessions=8 hurt=12 helped=5
+profiles include:
+item+shape
+item+shape+layout
+public:max_item_cells+item
+public:max_item_cells+item+shape
+public:random_avg+item+shape
+shape
+tool:category+item+shape
+```
+
+真实 readiness/workbench smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_schema3.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --shadow-sampler-prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --shadow-sampler-guard-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_full_latest.json --shadow-sampler-value-source-profile-json .tmp\codex\v3_shadow_sampler_q6_value_source_profile_audit_latest.json --shadow-sampler-value-map-profile-details-json .tmp\codex\v3_shadow_sampler_q6_value_map_profile_details_latest.json --format json > .tmp\codex\v3_readiness_with_value_map_profile_details_latest.json
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_with_value_map_profile_details_latest.json --format summary
+```
+
+关键结果：
+
+```text
+sampler_safety_holdout statuses=blocked:9,watch:2
+blocked includes shadow_sampler_value_map_profile_details
+value_map_profile_details_status=blocked
+value_map_profile_details_overall=blocked_map_only_details_ready
+value_map_profile_details_labels=8
+value_map_profile_details_rows=168
+value_map_profile_details_mismatches=0
+```
+
+结论：
+
+- q6_value map-only blocker 已有 row-level profile/source details artifact，且与 source metric candidate row count 对齐；
+- 当前仍不能设计 promotion guard：168 rows 横跨多 profile/source classes，且 hurt/helped 混合；
+- 下一步应分析 details artifact 的 profile/source 聚类，寻找是否存在可证伪的 source/profile guard；若不能稳定分离 hurt/helped，则 q6_value 必须继续 inactive；
+- live/UI/正式出价、v2 fallback 与 promotion gate 仍不改变。

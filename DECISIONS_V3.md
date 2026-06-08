@@ -4110,3 +4110,38 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 当前 q6_value risk 已不是单纯 evidence profile class 问题，map-only labels 仍占主要残余风险；
 - 如果不把 `map_id` hurt 回填到 row-level profile/source，任何 value guard 都会把 map-level 风险误当成 profile-level 规则，继续过拟合当前 archive；
 - 该决策仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-193：q6_value map-only details artifact 是 value guard 前置 gate，不是 promotion evidence
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_shadow_sampler_value_map_profile_details.py` 是 q6_value map-only hurt labels 的 row-level replay 入口；
+- 该脚本必须：
+  - 消费 q6_value source/profile audit JSON；
+  - 可选读取 guarded trial JSON 的 `trial_options.component_move_cells`；
+  - 使用 `v3_ccvc_` component-likelihood 口径；
+  - 按 posterior seed 重放 archive rows；
+  - 对 map-only hurt label 输出 row/session/profile/source details；
+  - 校验 details row count 与 source metric `candidate_rows` 是否一致。
+- details artifact 必须保持：
+  - `shadow_only=true`；
+  - `affects_bid=false`；
+  - `active=false`；
+  - `can_promote=false`。
+- `summarize_v3_promotion_readiness.py` 必须支持 `--shadow-sampler-value-map-profile-details-json`；
+- 提供 artifact 时，readiness 必须新增 gate `shadow_sampler_value_map_profile_details`；
+- 该 gate 的 lane 必须是 `sampler_safety_holdout`；
+- `blocked_map_only_details_ready` 仍必须使 gate blocked；
+- `summarize_v3_promotion_workbench.py` 必须展示 details status、label count、candidate rows 与 row-count mismatch count；
+- 当前真实 artifact：
+  - `labels=8`；
+  - `candidate_rows=168`；
+  - `labels_with_row_count_mismatch=[]`；
+  - readiness/workbench 中 `shadow_sampler_value_map_profile_details` 为 blocked。
+
+原因：
+
+- details artifact 只证明 map-only q6_value risk 已可复核，不证明可 promotion；
+- 当前 168 rows 横跨多个 `evidence_profile_key` 与 semantic classes，且 hurt/helped 混合；
+- 在未证明 source/profile class 可以稳定分离 hurt/helped 前，q6_value value guard 仍不得恢复调参或接入 formal/live；
+- 该决策仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
