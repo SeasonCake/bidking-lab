@@ -3756,3 +3756,30 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - workbench 需要在 readiness 接入 prototype 后直接阻断 promotion 误读；
 - 但现有 readiness artifacts 还没有附带 prototype，缺失时只显示 missing，避免破坏旧审计工件；
 - 该改动只增强 workbench contract/reporting，不改变 readiness gate 计算、posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-182：readiness 必须可附加 shadow sampler prototype artifact，并把 seed/support blocker 放入 sampler safety lane
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_readiness.py` 必须支持 `--shadow-sampler-prototype-json`；
+- 该参数读取 `summarize_v3_shadow_sampler_prototype.py --format json` 的输出；
+- readiness result 必须输出：
+  - `shadow_sampler_prototype_contract`；
+  - `shadow_sampler_prototype`。
+- 未提供 prototype JSON 时：
+  - contract status=`not_supplied`；
+  - 不新增 readiness gate；
+  - 保持旧 readiness artifact 兼容。
+- 提供 prototype JSON 时：
+  - 新增 gate `shadow_sampler_prototype`；
+  - lane=`sampler_safety_holdout`；
+  - gate 必须携带 contract check、prototype status、posterior seeds、stable watch labels、component status counts、support gate status counts、blocking component statuses 与 low-support metrics。
+- 若 prototype 缺 required keys、非 shadow-safe，或状态为 `blocked_seed_instability`、`blocked_low_support`、`blocked_holdout_hurt`、`watch_with_hurt_alternatives` 等，readiness gate 必须 blocked；
+- 附加 prototype 只作为 readiness/workbench 证据，不得改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+原因：
+
+- shadow sampler prototype 已经有 seed stability 与 support gate，必须进入 promotion hardening 的统一 gate 依赖视图；
+- blocker 需要出现在 `sampler_safety_holdout` lane，避免被误读为可直接进入 formal/value tuning；
+- 未附加 artifact 时不新增 gate，保证历史 readiness JSON 和现有 smoke 兼容；
+- 该改动让下一步可以生成真实 prototype JSON 并附加到 readiness/workbench，而不是把 prototype 结果散落在单独脚本输出中。

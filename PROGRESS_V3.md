@@ -10311,3 +10311,46 @@ shadow_sampler_contract status=shadow_design_only ... prototype_status=missing p
 - workbench 现在可以消费 support-aware sampler prototype audit；
 - 当前现有 readiness artifact 还没有附带 prototype，因此保持兼容并显示 `prototype_status=missing`；
 - 下一步可以选择把 shadow sampler prototype JSON 接入 readiness 输出，或继续查 q6_count source/profile/map 分歧；仍不改变 live/UI/正式出价。
+
+## 2026-06-08 checkpoint：shadow sampler prototype attached to readiness
+
+背景：
+
+- workbench 已能读取 readiness JSON 中的 support-aware sampler prototype；
+- 但 `summarize_v3_promotion_readiness.py` 还没有正式的 prototype artifact 接入口；
+- 当前 promotion hardening 需要把 seed/support/holdout blocker 放进 readiness gate 依赖，而不只是单独跑 prototype 脚本。
+
+完成：
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `summarize_shadow_sampler_prototype_contract()`；
+  - 新增 CLI `--shadow-sampler-prototype-json`，读取 `summarize_v3_shadow_sampler_prototype.py --format json` 输出；
+  - 结果 JSON 新增：
+    - `shadow_sampler_prototype_contract`；
+    - `shadow_sampler_prototype`。
+  - 若传入 prototype，新增 gate `shadow_sampler_prototype`，lane=`sampler_safety_holdout`；
+  - contract 会校验 required keys、shadow safety、prototype overall status、component status、support gate status、low-support metrics；
+  - `blocked_seed_instability`、`blocked_low_support`、`blocked_holdout_hurt`、`watch_with_hurt_alternatives` 等都会使 readiness gate blocked；
+  - 未传 prototype 时 contract status=`not_supplied`，且不新增 gate，保持旧 readiness artifact 兼容。
+- `tests/test_summarize_v3_promotion_readiness.py`
+  - 覆盖未传 prototype 时不新增 gate；
+  - 覆盖传入 blocked prototype 时新增 `shadow_sampler_prototype` gate；
+  - 覆盖 low-support metrics 与 gate dependency lane 透传。
+
+验证：
+
+```text
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py scripts\summarize_v3_shadow_sampler_prototype.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py tests\test_summarize_v3_shadow_sampler_prototype.py
+
+pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_shadow_sampler_prototype.py tests/test_summarize_v3_ccvc_count_policy_matrix.py
+24 passed
+
+python scripts\summarize_v3_promotion_readiness.py --help | Select-String -Pattern "shadow-sampler-prototype"
+--shadow-sampler-prototype-json SHADOW_SAMPLER_PROTOTYPE_JSON
+```
+
+结论：
+
+- readiness 现在可以承接 shadow sampler prototype 的 seed/support blocker；
+- 这把 prototype audit 从独立脚本提升为 readiness/workbench 可消费证据；
+- 仍不改变 live/UI/正式出价，也不放宽 readiness/promotion gate；下一步可生成真实 prototype JSON 并附加到 readiness artifact，再让 workbench 汇总。

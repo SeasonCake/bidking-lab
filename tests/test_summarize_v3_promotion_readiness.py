@@ -187,6 +187,7 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert "map_direction_hurts" in gates["ccv_directionality"]
     assert "ccv_direction_holdout" in gates
     assert "map_candidate_rows" in gates["ccv_direction_holdout"]
+    assert "shadow_sampler_prototype" not in gates
     assert "holdout_candidate_rows" in gates["tail_value_review"]
     assert "tail_under_combined_holdout" in gates
     assert "formal_value_sampler_holdout" in gates
@@ -228,9 +229,87 @@ def test_readiness_blocks_formal_when_below_rate_is_high() -> None:
     assert "prior_stress_detail_summary" in result
     assert result["prior_stress_detail_summary"]["rows"] == 0
     assert result["v3_practical_archive_live_guard_metrics"]["status"] == "not_supplied"
+    assert result["shadow_sampler_prototype_contract"]["status"] == "not_supplied"
     assert (
         "attach v3 practical archive-live guard brief JSON before promotion review"
         in result["next_actions"]
+    )
+
+
+def test_readiness_attaches_shadow_sampler_prototype_contract() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+    prototype = {
+        "interface": "v3_ccvc_evidence_driven_count_cell_value_sampler",
+        "shadow_only": True,
+        "affects_bid": False,
+        "active": False,
+        "status": "blocked_seed_instability",
+        "posterior_seeds": [0, 1],
+        "stable_watch_candidate_labels": [],
+        "min_watch_support_rows": 20,
+        "min_watch_support_sessions": 8,
+        "component_statuses": [
+            {
+                "component": "q6_count",
+                "status": "blocked_seed_instability",
+                "support_gate": {
+                    "status": "watch_low_support",
+                    "low_support_watch_metrics": [
+                        {
+                            "posterior_seed": 1,
+                            "watch_label": (
+                                "q6_count|map_id,evidence_profile_key|down_only:"
+                                "q6_count:map_id=2501|"
+                                "evidence_profile_key=tool:category+item+shape"
+                            ),
+                            "support_rows": 8,
+                            "support_sessions": 3,
+                        }
+                    ],
+                    "stable_low_support_watch_metrics": [],
+                },
+            }
+        ],
+    }
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        shadow_sampler_prototype=prototype,
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    gate = gates["shadow_sampler_prototype"]
+    assert gate["status"] == "blocked"
+    assert gate["contract_status"] == "blocked"
+    assert gate["prototype_status"] == "blocked_seed_instability"
+    assert gate["component_status_counts"] == {"blocked_seed_instability": 1}
+    assert gate["support_gate_status_counts"] == {"watch_low_support": 1}
+    assert gate["low_support_watch_metrics"][0]["support_rows"] == 8
+    contract = result["shadow_sampler_prototype_contract"]
+    assert contract["status"] == "blocked"
+    assert contract["shadow_safe"] is True
+    assert contract["blocking_component_statuses"] == [
+        {
+            "component": "q6_count",
+            "status": "blocked_seed_instability",
+            "support_gate": "watch_low_support",
+        }
+    ]
+    assert result["shadow_sampler_prototype"] == prototype
+    dependency_gates = {
+        row["gate"]: row
+        for row in result["gate_dependencies"]["blocked_or_pending_gates"]
+    }
+    assert dependency_gates["shadow_sampler_prototype"]["lane"] == (
+        "sampler_safety_holdout"
     )
 
 

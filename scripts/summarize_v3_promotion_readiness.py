@@ -187,6 +187,10 @@ _GATE_DEPENDENCY_META: dict[str, tuple[str, str]] = {
         "sampler_safety_holdout",
         "hold out directionally selected CCV movements",
     ),
+    "shadow_sampler_prototype": (
+        "sampler_safety_holdout",
+        "attach support-aware CCVC shadow sampler prototype evidence",
+    ),
     "tail_value_review": (
         "sampler_safety_holdout",
         "keep tail/value review non-formal until holdout is stable",
@@ -291,6 +295,13 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
         return (
             f"candidate_rows={gate.get('candidate_rows')};"
             f"candidate_groups={','.join(gate.get('candidate_groups') or [])}"
+        )
+    if name == "shadow_sampler_prototype":
+        return (
+            f"prototype_status={gate.get('prototype_status')};"
+            f"contract={gate.get('contract_status')};"
+            f"component_statuses={gate.get('component_status_counts')};"
+            f"support_gates={gate.get('support_gate_status_counts')}"
         )
     if name == "formal_baseline_metrics":
         return (
@@ -606,6 +617,27 @@ _CSE_ENTRY_CONTRACT_KEYS = (
     "payload_inventory_mismatch_rows",
     "non_zodiac_missing_max",
 )
+_SHADOW_SAMPLER_PROTOTYPE_CONTRACT_KEYS = (
+    "interface",
+    "shadow_only",
+    "affects_bid",
+    "active",
+    "status",
+    "posterior_seeds",
+    "stable_watch_candidate_labels",
+    "component_statuses",
+    "min_watch_support_rows",
+    "min_watch_support_sessions",
+)
+_SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES = {
+    "blocked_shadow_affects_bid",
+    "blocked_shadow_active",
+    "blocked_no_component_likelihood",
+    "blocked_seed_instability",
+    "blocked_low_support",
+    "blocked_holdout_hurt",
+    "watch_with_hurt_alternatives",
+}
 
 
 def _live_practical_guard_slice(
@@ -907,6 +939,147 @@ def summarize_capacity_source_expansion_artifact_contract(
     }
 
 
+def _shadow_sampler_component_statuses(
+    prototype: Mapping[str, Any],
+) -> list[Mapping[str, Any]]:
+    value = prototype.get("component_statuses")
+    if not isinstance(value, list):
+        return []
+    return [row for row in value if isinstance(row, Mapping)]
+
+
+def _shadow_sampler_support_gate_status(row: Mapping[str, Any]) -> str:
+    gate = row.get("support_gate")
+    if not isinstance(gate, Mapping):
+        return "missing"
+    return str(gate.get("status") or "unknown")
+
+
+def _shadow_sampler_low_support_metrics(
+    component_statuses: Iterable[Mapping[str, Any]],
+    *,
+    stable_only: bool,
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    key = (
+        "stable_low_support_watch_metrics"
+        if stable_only
+        else "low_support_watch_metrics"
+    )
+    out: list[dict[str, Any]] = []
+    for row in component_statuses:
+        gate = row.get("support_gate")
+        if not isinstance(gate, Mapping):
+            continue
+        for item in gate.get(key) or ():
+            if isinstance(item, Mapping):
+                out.append(dict(item))
+    out.sort(
+        key=lambda item: (
+            str(item.get("watch_label") or ""),
+            str(item.get("posterior_seed") or ""),
+        )
+    )
+    return out[:limit]
+
+
+def summarize_shadow_sampler_prototype_contract(
+    prototype: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if prototype is None:
+        return {
+            "status": "not_supplied",
+            "reason": "shadow sampler prototype JSON was not supplied",
+            "missing_keys": [],
+            "required_keys": list(_SHADOW_SAMPLER_PROTOTYPE_CONTRACT_KEYS),
+        }
+    if not isinstance(prototype, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "shadow sampler prototype JSON must be an object",
+            "missing_keys": list(_SHADOW_SAMPLER_PROTOTYPE_CONTRACT_KEYS),
+            "required_keys": list(_SHADOW_SAMPLER_PROTOTYPE_CONTRACT_KEYS),
+        }
+    missing = [
+        key for key in _SHADOW_SAMPLER_PROTOTYPE_CONTRACT_KEYS if key not in prototype
+    ]
+    component_statuses = _shadow_sampler_component_statuses(prototype)
+    component_status_counts = dict(
+        sorted(
+            Counter(
+                str(row.get("status") or "unknown")
+                for row in component_statuses
+            ).items()
+        )
+    )
+    support_gate_status_counts = dict(
+        sorted(
+            Counter(
+                _shadow_sampler_support_gate_status(row)
+                for row in component_statuses
+            ).items()
+        )
+    )
+    blocking_components = [
+        {
+            "component": row.get("component"),
+            "status": row.get("status"),
+            "support_gate": _shadow_sampler_support_gate_status(row),
+        }
+        for row in component_statuses
+        if str(row.get("status") or "")
+        in _SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES
+    ]
+    shadow_safe = (
+        prototype.get("shadow_only") is True
+        and prototype.get("affects_bid") is False
+        and prototype.get("active") is False
+    )
+    prototype_status = str(prototype.get("status") or "unknown")
+    if missing:
+        status = "blocked"
+        reason = "shadow sampler prototype is missing contract fields"
+    elif not shadow_safe:
+        status = "blocked"
+        reason = "shadow sampler prototype is not shadow-safe"
+    elif (
+        prototype_status in _SHADOW_SAMPLER_PROTOTYPE_BLOCKING_STATUSES
+        or blocking_components
+    ):
+        status = "blocked"
+        reason = "shadow sampler prototype still has seed/support/holdout blockers"
+    else:
+        status = "watch"
+        reason = "shadow sampler prototype contract is attached and shadow-only"
+    return {
+        "status": status,
+        "reason": reason,
+        "missing_keys": missing,
+        "required_keys": list(_SHADOW_SAMPLER_PROTOTYPE_CONTRACT_KEYS),
+        "interface": prototype.get("interface"),
+        "prototype_status": prototype_status,
+        "shadow_safe": shadow_safe,
+        "posterior_seeds": prototype.get("posterior_seeds") or [],
+        "stable_watch_candidate_labels": prototype.get(
+            "stable_watch_candidate_labels"
+        )
+        or [],
+        "min_watch_support_rows": prototype.get("min_watch_support_rows"),
+        "min_watch_support_sessions": prototype.get("min_watch_support_sessions"),
+        "component_status_counts": component_status_counts,
+        "support_gate_status_counts": support_gate_status_counts,
+        "blocking_component_statuses": blocking_components,
+        "low_support_watch_metrics": _shadow_sampler_low_support_metrics(
+            component_statuses,
+            stable_only=False,
+        ),
+        "stable_low_support_watch_metrics": _shadow_sampler_low_support_metrics(
+            component_statuses,
+            stable_only=True,
+        ),
+    }
+
+
 def summarize_readiness(
     rows: list[dict[str, Any]],
     errors: list[dict[str, str]],
@@ -919,6 +1092,7 @@ def summarize_readiness(
     scp_guarded_bridge_stability: Mapping[str, Any] | None = None,
     capacity_source_expansion_artifact: Mapping[str, Any] | None = None,
     live_practical_guard_brief: Mapping[str, Any] | None = None,
+    shadow_sampler_prototype: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = summarize_rows(rows, errors)
     live_guard_brief = summarize_live_practical_guard_brief(
@@ -926,6 +1100,9 @@ def summarize_readiness(
     )
     cse_artifact_contract = summarize_capacity_source_expansion_artifact_contract(
         capacity_source_expansion_artifact
+    )
+    shadow_sampler_prototype_contract = summarize_shadow_sampler_prototype_contract(
+        shadow_sampler_prototype
     )
     prior_stress_details = summarize_prior_stress_details(rows)
     prior_stress_detail_summary = summarize_prior_stress_detail_summary(
@@ -1670,6 +1847,51 @@ def summarize_readiness(
             profile_applied_hurts_groups=ccv_profile_direction_holdout_hurts,
         )
     )
+    if shadow_sampler_prototype is not None:
+        sampler_contract_status = str(
+            shadow_sampler_prototype_contract.get("status") or "blocked"
+        )
+        gates.append(
+            _gate(
+                "shadow_sampler_prototype",
+                "watch" if sampler_contract_status == "watch" else "blocked",
+                str(shadow_sampler_prototype_contract.get("reason") or ""),
+                contract_status=sampler_contract_status,
+                contract_check=shadow_sampler_prototype_contract,
+                prototype_status=shadow_sampler_prototype_contract.get(
+                    "prototype_status"
+                ),
+                posterior_seeds=shadow_sampler_prototype_contract.get(
+                    "posterior_seeds"
+                ),
+                stable_watch_candidate_labels=shadow_sampler_prototype_contract.get(
+                    "stable_watch_candidate_labels"
+                ),
+                min_watch_support_rows=shadow_sampler_prototype_contract.get(
+                    "min_watch_support_rows"
+                ),
+                min_watch_support_sessions=shadow_sampler_prototype_contract.get(
+                    "min_watch_support_sessions"
+                ),
+                component_status_counts=shadow_sampler_prototype_contract.get(
+                    "component_status_counts"
+                ),
+                support_gate_status_counts=shadow_sampler_prototype_contract.get(
+                    "support_gate_status_counts"
+                ),
+                blocking_component_statuses=shadow_sampler_prototype_contract.get(
+                    "blocking_component_statuses"
+                ),
+                low_support_watch_metrics=shadow_sampler_prototype_contract.get(
+                    "low_support_watch_metrics"
+                ),
+                stable_low_support_watch_metrics=(
+                    shadow_sampler_prototype_contract.get(
+                        "stable_low_support_watch_metrics"
+                    )
+                ),
+            )
+        )
 
     tail_counts = _status_counts(tail)
     tail_watch = (
@@ -2013,6 +2235,8 @@ def summarize_readiness(
         },
         "v3_practical_archive_live_guard_metrics": live_guard_brief,
         "capacity_source_expansion_artifact_contract": cse_artifact_contract,
+        "shadow_sampler_prototype_contract": shadow_sampler_prototype_contract,
+        "shadow_sampler_prototype": shadow_sampler_prototype or {},
         "underestimate_holdout": {
             "candidate_rows": under_candidate_rows,
             "candidate_groups": under_candidate_only.get("candidate_groups"),
@@ -2237,6 +2461,7 @@ def _print_summary(result: dict[str, Any]) -> None:
     live_guard_overall = live_guard.get("overall") or {}
     live_guard_prebid = live_guard.get("prebid_overall") or {}
     cse_artifact_contract = result["capacity_source_expansion_artifact_contract"]
+    shadow_sampler_prototype_contract = result["shadow_sampler_prototype_contract"]
     scp_stability = result["settlement_count_guarded_bridge_stability"]
     scp_stability_contract = scp_stability.get("contract_check") or {}
     scp_stability_trials = scp_stability_contract.get("posterior_trials") or []
@@ -2336,6 +2561,10 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"{cse_artifact_contract.get('candidate_entries')}",
                 "cse_artifact_group_bys="
                 f"{','.join(cse_artifact_contract.get('group_bys') or [])}",
+                "shadow_sampler_prototype_contract="
+                f"{shadow_sampler_prototype_contract.get('status')}",
+                "shadow_sampler_prototype_status="
+                f"{shadow_sampler_prototype_contract.get('prototype_status')}",
                 f"cse_candidate_rows={summary['v3_cse_candidate_rows']}",
                 f"cse_pressure_candidate_rows={summary['v3_cse_pressure_candidate_rows']}",
                 f"cse_active_rows={summary['v3_cse_active_rows']}",
@@ -2421,6 +2650,15 @@ def main(argv: list[str] | None = None) -> int:
             "paired guarded/unguarded live-practical guard evidence to readiness."
         ),
     )
+    parser.add_argument(
+        "--shadow-sampler-prototype-json",
+        type=Path,
+        help=(
+            "Optional JSON output from summarize_v3_shadow_sampler_prototype.py "
+            "--format json. This attaches support-aware sampler prototype "
+            "seed/support/holdout evidence to readiness."
+        ),
+    )
     args = parser.parse_args(argv)
 
     capacity_source_expansion_artifact = None
@@ -2465,6 +2703,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.live_practical_brief_json is not None:
         with args.live_practical_brief_json.open("r", encoding="utf-8") as handle:
             live_practical_guard_brief = json.load(handle)
+    shadow_sampler_prototype = None
+    if args.shadow_sampler_prototype_json is not None:
+        with args.shadow_sampler_prototype_json.open("r", encoding="utf-8") as handle:
+            shadow_sampler_prototype = json.load(handle)
     result = summarize_readiness(
         rows,
         errors,
@@ -2476,6 +2718,7 @@ def main(argv: list[str] | None = None) -> int:
         scp_guarded_bridge_stability=guarded_bridge_stability,
         capacity_source_expansion_artifact=capacity_source_expansion_artifact,
         live_practical_guard_brief=live_practical_guard_brief,
+        shadow_sampler_prototype=shadow_sampler_prototype,
     )
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
