@@ -32,6 +32,7 @@ def test_archive_table_timing_summarizes_versions_and_capture_range(tmp_path: Pa
         "\n".join(
             (
                 "Ver:300|FileCount:2",
+                "Tables/Activity.txt|act=$5",
                 "Tables/BidMap.txt|abc=$10",
                 "Tables/Drop.txt|def=$20",
             )
@@ -64,6 +65,7 @@ def test_archive_table_timing_summarizes_versions_and_capture_range(tmp_path: Pa
     assert result["raw_file_version"] == "300"
     assert result["raw_tables_file_version"] == "300"
     assert result["raw_filelist_header"] == "Ver:300|FileCount:2"
+    assert result["raw_filelist_activity_entry"] == "Tables/Activity.txt|act=$5"
     assert result["raw_filelist_bidmap_entry"] == "Tables/BidMap.txt|abc=$10"
     assert result["raw_filelist_drop_entry"] == "Tables/Drop.txt|def=$20"
     assert result["sample_file_count"] == 1

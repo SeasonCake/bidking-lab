@@ -6853,3 +6853,48 @@ v3_practical_formal_p90_extreme_over_rate=0.325641
 
 - 分析当前 UI/实战估价时，应显式用 `formal_mode=v3_practical` 重放，或扩展 brief 参数支持 formal mode。
 - v2/v3 对照仍保留默认 v2 口径的价值，但结论必须标注口径，避免把 v2 指标误当 v3 实战指标。
+
+## O-v3-174：本机 v303 拿到 Activity 与活动 BidMap，但未拿到活动 Drop/红转概率
+
+2026-06-08 本地审查：
+
+```text
+C:\xiangmuyunxing\steamapps\common\BidKing\BidKing_Data\StreamingAssets\Tables\Activity.txt
+LastWriteTime=2026-06-05 22:37:13
+raw_fileVersion=303
+filelist_header=Ver:303|FileCount:4550
+```
+
+解码结果：
+
+```text
+Activity.txt rows=6 cols=16
+Map.txt rows=9 cols=21
+RankMap.txt rows=103 cols=7
+BidMap.txt rows=165 cols=23
+Drop.txt rows=629 cols=5
+```
+
+活动区间 smoke：
+
+```text
+activity_range=2521-2530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+activity_range=4521-4530 bidmap_present=10 bidmap_missing=0 drop_present=0 drop_missing=10 drop_ref_pairs=22-44:10
+```
+
+细节：
+
+- `Activity.txt` 示例行包含 `activity_name_*`、`banner_*`、`ActivityPanel_*`、`page_*` 等字段，符合入口/UI 配置。
+- v303 `BidMap.txt` 新增 40 行，包括：
+  - `2521-2530`；
+  - `4521-4530`；
+  - 以及 `5501-5510` / `5601-5610` 这类活动/入口候选行。
+- `2521-2530` 的 `drop_ref` 指向 `[9999,252x,22,44]`；`4521-4530` 的 `drop_ref` 指向 `[9999,252x,22,44]`。
+- `Drop.txt` 仍只有旧 `2501-2520`，没有 `2521-2530` drop pool。
+- `fileDiff.txt` 指向 CDN `http://cdna.bidking.cn/bidking/StandaloneWindows64/...`，说明远端更新机制存在；但当前本机表已足够确认 “Activity/BidMap 已同步，Drop/overlay 未恢复”。
+
+解读：
+
+- 活动沉船不是完全找不到表：入口表与地图表都已拿到，且不需要新解密方法，现有 base64 table decoder 可处理。
+- 真正缺的是活动红转/drop overlay 机制；这可能在服务端、远端 overlay 表、代码逻辑或尚未同步的资源中。
+- 后续 prior drift 分离应把 252x/452x 标成 `bidmap_present_drop_missing`，而不是旧的纯 `missing_bidmap`。

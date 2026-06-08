@@ -1,8 +1,9 @@
 # `BidMap.txt` column schema
 
-Reverse-engineered from `Tables/BidMap.txt`. Current raw game data
-(`fileVersion=300`, checked 2026-06-06) uses 23-column rows; the parser
-still accepts the historical 21-column form. Confidence labels: ★ =
+Reverse-engineered from `Tables/BidMap.txt`. The current schema uses
+23-column rows in both the v300 table audited on 2026-06-06 and the local
+v303 table synced on 2026-06-08; the parser still accepts the historical
+21-column form. Confidence labels: ★ =
 confirmed by cross-reference with another table; ☆ = inferred from row
 patterns, not yet cross-checked.
 
@@ -107,9 +108,35 @@ non-zodiac Drop-universe missing count is 0/21, and the rows span multiple
 days/sessions/maps. Three rows also have external source confirmation
 (public total or direct full action). This supports server-side settlement
 expansion / session-capacity source semantics over a hard local BidMap cap.
-The local v300 filelist still lists `Tables/Activity.txt` while the local
-table is absent, so an external overlay table remains a minimal
-undecidable alternative, but not an observed non-zodiac item-universe gap.
+At that time the local v300 filelist listed `Tables/Activity.txt` while
+the local table was absent, so an external overlay table remained a
+minimal undecidable alternative, but not an observed non-zodiac
+item-universe gap.
+
+## 2026-06-08 v303 activity-table note
+
+After rerunning `scripts/copy_game_tables.ps1` against the local game
+install, raw local tables report `fileVersion=303`. `Activity.txt`,
+`Map.txt`, and `RankMap.txt` are available and decode with the same
+base64 table decoder. `Activity.txt` has 6 rows / 16 columns and appears
+to describe activity entry/UI metadata, not the shipwreck red-conversion
+drop odds.
+
+The v303 `BidMap.txt` has 165 rows. It adds 40 rows, including
+`2521-2530` and `4521-4530`. Those activity maps are present in BidMap and
+use `drop_ref` pairs `22-44`, but their referenced `Drop` pools are still
+missing from the unchanged `Drop.txt`:
+
+```text
+activity_range=2521-2530 bidmap_present=10 drop_present=0 drop_missing=10
+activity_range=4521-4530 bidmap_present=10 drop_present=0 drop_missing=10
+```
+
+Therefore v303 removes the "missing BidMap" part of the activity-lane
+uncertainty, but it does not provide the activity drop/overlay mechanism.
+Until the corresponding `Drop` pools, remote overlay table, or server
+source rule is recovered, 252x/452x activity rows must stay separated from
+default prior calibration and formal promotion evidence.
 
 ## Tier structure
 

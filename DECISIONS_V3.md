@@ -3269,3 +3269,29 @@ applied_hurts=2502
 - 0608 实战显示 v3 practical 已比 v2 更有参考价值，但也暴露了低支持 baseline 过冲，需要 guard。
 - 单纯按已采样局调参容易过拟合，尤其是活动地图、缺表 fallback、Aisha villa 与 Gabriela activity 等小 cohort。
 - v3 的长期价值应来自证据结构、鲁棒性和可解释 sampler，而不是对当前几百局样本的局部拟合。
+
+## D-v3-161：v303 Activity/BidMap 可获取，但 252x/452x 仍不得进入默认 prior promotion
+
+2026-06-08 起，当前决策：
+
+- `scripts/copy_game_tables.ps1` 必须同步 `Activity.txt`、`Map.txt`、`RankMap.txt`，避免活动入口和地图入口表长期漏拷。
+- 本机 v303 `Activity.txt` 可以解码，但当前只视为活动入口/UI 元数据，不视为活动爆率或红转概率表。
+- 本机 v303 `BidMap.txt` 已包含 `2521-2530` 与 `4521-4530`，但 `Drop.txt` 仍缺少对应 `2521-2530` drop pools。
+- 因此：
+  - 可以把 252x/452x 从 “missing BidMap” 升级为 “BidMap present / Drop overlay missing”；
+  - 不能把 252x/452x 直接纳入 default 250x/450x prior calibration；
+  - 不能把 252x/452x 作为 formal/value sampler promotion 或 v2 archive 的默认分母；
+  - live fallback 仍必须显式标记 `map_alias` / `model_map_id`，不得伪装成真实 activity Drop prior。
+- 后续若要解除 activity/prior-drift blocker，需要至少获得一项强证据：
+  - 对应 `Drop` pools；
+  - 远端/活动 overlay 表；
+  - 服务端 source/rule 字段；
+  - 或足够稳定、分层 holdout 通过的 shadow-only activity overlay prior。
+
+原因：
+
+- `Activity.txt` 只有 6 行 / 16 列，内容是活动入口、banner、panel/page 等配置。
+- v303 `BidMap` 活动区间 smoke：
+  - `2521-2530`：BidMap present 10/10，Drop present 0/10；
+  - `4521-4530`：BidMap present 10/10，Drop present 0/10。
+- 这能解释为什么 UI 能出现新活动图，但不能解释“白色藏品概率变红色藏品”的真实生成机制。

@@ -9147,3 +9147,59 @@ formal_p90_cover=0.753914
 4. 收口 CSE/SCP settlement bridge seed/session stability。
 5. 设计并实现 evidence-driven count/cell/value sampler shadow-only 原型。
 6. 通过 holdout/readiness 后再讨论 promotion 与 v2 archive。
+
+## 2026-06-08 checkpoint：v303 activity table acquisition 与 prior-drift 分流收口
+
+背景：
+
+- 用户询问 0605 后沉船活动表是否能找到，还是需要额外解码/远端获取。
+- 此前 v3 记录停留在 local v300 filelist 列出 `Tables/Activity.txt` 但项目 raw 缺表；活动沉船只能走 live fallback / prior-drift lane。
+
+完成：
+
+- 查到本机游戏安装目录已包含：
+  - `BidKing_Data\StreamingAssets\Tables\Activity.txt`；
+  - `Tables\BidMap.txt`；
+  - `Tables\Drop.txt`；
+  - root `fileVersion=303` / `filelist.txt`。
+- 使用现有 `bidking_lab.extract.tables.decode_table_text()` 解码成功：
+  - `Activity.txt`：6 rows / 16 cols；
+  - `BidMap.txt`：165 rows / 23 cols；
+  - `Drop.txt`：629 rows / 5 cols；
+  - `Map.txt`：9 rows / 21 cols；
+  - `RankMap.txt`：103 rows / 7 cols。
+- 更新 `scripts/copy_game_tables.ps1`，同步 key tables 时新增：
+  - `Tables\Activity.txt`；
+  - `Tables\Map.txt`；
+  - `Tables\RankMap.txt`。
+- 更新 `scripts/summarize_v3_archive_table_timing.py`：
+  - summary 输出 `Activity.txt` filelist entry；
+  - raw file metadata 增加 `activity` / `map` / `rankmap`。
+- 本地 ignored raw 已用新版脚本同步到 v303；未重建/提交 `data/processed/maps.json`。
+
+关键结论：
+
+```text
+raw_file_version=303
+raw_tables_file_version=303
+BidMap.txt rows=165
+Drop.txt rows=629
+activity_range=2521-2530 bidmap_present=10 drop_present=0 drop_missing=10
+activity_range=4521-4530 bidmap_present=10 drop_present=0 drop_missing=10
+```
+
+- `Activity.txt` 是活动入口/UI 配置表，不是“白品概率变红品”的 drop odds 表。
+- v303 `BidMap.txt` 已新增 `2521-2530` / `4521-4530`，所以活动图不再是纯 missing BidMap。
+- 但 `Drop.txt` 没有新增 `2521-2530` 对应 drop pools，活动红转机制仍未从普通表恢复。
+- 因此 252x/452x 仍必须作为 activity/prior-drift lane 分流；不能直接进入 default prior calibration、formal/value sampler promotion 或 v2 archive 依据。
+
+验证：
+
+```text
+C:\Python313\python.exe -m py_compile scripts\summarize_v3_archive_table_timing.py
+pytest --basetemp=.tmp\codex\pytest tests\test_summarize_v3_archive_table_timing.py -q
+2 passed
+
+C:\Python313\python.exe scripts\decode_all_tables.py --rows 0 --col-width 40
+C:\Python313\python.exe scripts\summarize_v3_archive_table_timing.py --format summary
+```

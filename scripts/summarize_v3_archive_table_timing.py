@@ -463,8 +463,11 @@ def summarize_archive_table_timing(
     tables_root = raw_root / "tables"
     filelist_text = _read_text(raw_root / "filelist.txt")
     table_files = {
+        "activity": tables_root / "Activity.txt",
         "bidmap": tables_root / "BidMap.txt",
         "drop": tables_root / "Drop.txt",
+        "map": tables_root / "Map.txt",
+        "rankmap": tables_root / "RankMap.txt",
     }
     bidmap_semantics = _bidmap_semantic_summary(tables_root)
     return {
@@ -473,14 +476,21 @@ def summarize_archive_table_timing(
         "raw_filelist_header": (
             filelist_text.splitlines()[0] if filelist_text else None
         ),
+        "raw_filelist_activity_entry": _filelist_entry(
+            filelist_text,
+            "Tables/Activity.txt",
+        ),
         "raw_filelist_bidmap_entry": _filelist_entry(filelist_text, "Tables/BidMap.txt"),
         "raw_filelist_drop_entry": _filelist_entry(filelist_text, "Tables/Drop.txt"),
         "raw_files": {
             "file_version": _file_info(raw_root / "fileVersion"),
             "tables_file_version": _file_info(tables_root / "fileVersion"),
             "filelist": _file_info(raw_root / "filelist.txt"),
+            "activity": _file_info(table_files["activity"]),
             "bidmap": _file_info(table_files["bidmap"]),
             "drop": _file_info(table_files["drop"]),
+            "map": _file_info(table_files["map"]),
+            "rankmap": _file_info(table_files["rankmap"]),
         },
         "bidmap_semantics": bidmap_semantics,
         "drop_semantics": _drop_semantic_summary(
@@ -499,6 +509,7 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"raw_file_version={result['raw_file_version']}",
                 f"raw_tables_file_version={result['raw_tables_file_version']}",
                 f"filelist_header={json.dumps(result['raw_filelist_header'], ensure_ascii=False)}",
+                f"activity_entry={json.dumps(result['raw_filelist_activity_entry'], ensure_ascii=False)}",
                 f"bidmap_entry={json.dumps(result['raw_filelist_bidmap_entry'], ensure_ascii=False)}",
                 f"drop_entry={json.dumps(result['raw_filelist_drop_entry'], ensure_ascii=False)}",
             )
