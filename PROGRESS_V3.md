@@ -11266,3 +11266,76 @@ value_profile_guardability_candidates=0
 - q6_value 继续 inactive，不能恢复 formal/value sampler 参数调优；
 - 下一步若要继续推进，优先方向是新增 source parser/table acquisition 或更多真实样本分片，而不是在现有 fields 上继续组合过拟合；
 - live/UI/正式出价、v2 fallback 与 promotion gate 仍不改变。
+
+### 2026-06-08 checkpoint：archive-live v2/guarded/unguarded policy matrix
+
+本轮收口内容：
+
+- `scripts/summarize_live_windivert_brief.py`
+  - 新增 `formal_policy_comparison`；
+  - 在同一批 comparable rows 上同时比较：
+    - `v2`：`v3_practical_baseline_formal_decision_value_p50/p90`，兼容 `v2_decision_value_*`；
+    - `v3_guarded`：当前 official/guarded `decision_value_p50/p90`；
+    - `v3_unguarded`：`v3_practical_unguarded_decision_value_p50/p90` 或 range fallback。
+  - 输出每个 policy 的：
+    - rows；
+    - P50 MAE；
+    - P50 under rate；
+    - P90 coverage；
+    - P90 extreme-over rate；
+    - median P50/P90 error。
+  - 输出 `v3_guarded` / `v3_unguarded` 相对 `v2` 的 MAE、under-rate、coverage、extreme-over 与 median P50/P90 delta。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - `v3_practical_archive_live_guard_metrics` contract 现在要求 `formal_policy_comparison`；
+  - `overall` 与 `prebid_overall` 必须同时具备 v2/guarded/unguarded 三路 comparable rows；
+  - readiness summary 输出 `v3_practical_policy_rows` 与 `v3_practical_policy_prebid_rows`。
+- 更新 `tests/test_summarize_live_windivert_brief.py` 与 `tests/test_summarize_v3_promotion_readiness.py`：
+  - 覆盖 policy matrix 数值；
+  - 覆盖旧 brief 缺 `formal_policy_comparison` 时 readiness blocked。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_live_windivert_brief.py scripts\summarize_v3_promotion_readiness.py tests\test_summarize_live_windivert_brief.py tests\test_summarize_v3_promotion_readiness.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_live_policy_matrix tests/test_summarize_live_windivert_brief.py tests/test_summarize_v3_promotion_readiness.py
+29 passed
+```
+
+说明：第一次使用 `.tmp\codex\pytest` 重跑时遇到 Windows `PermissionError`，原因是 pytest 试图删除被占用的旧 basetemp；已改用新的 `.tmp\codex\pytest_live_policy_matrix`，不清理既有临时目录。
+
+真实 72h archive/live brief：
+
+```text
+python scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-formal-mode v3_practical --archive-window prebid --format json > .tmp\codex\v3_practical_guard_brief_policy_matrix_latest.json
+```
+
+关键结果：
+
+```text
+overall rows=76 formal=54 guard_cmp=41 policy_rows=41 policy_status=watch
+prebid_overall rows=76 formal=54 guard_cmp=41 policy_rows=41 policy_status=watch
+formal_mode_counts={'v2': 22, 'v3_practical': 54}
+guarded_minus_unguarded: mae=0.0 coverage=-0.27 extreme_over=-0.49
+v3_guarded_vs_v2: mae_delta=0.0 coverage_delta=0.20 extreme_over_delta=0.00 median_p90_delta=75000.0
+v3_unguarded_vs_v2: mae_delta=0.0 coverage_delta=0.47 extreme_over_delta=0.49 median_p90_delta=463962.0
+```
+
+真实 readiness/workbench smoke：
+
+```text
+v3_practical_guard_status=watch
+v3_practical_guard_comparison_rows=41
+v3_practical_guard_prebid_comparison_rows=41
+v3_practical_policy_rows=41
+v3_practical_policy_prebid_rows=41
+blocked_gates=18
+overall_status=not_ready
+```
+
+结论：
+
+- archive-live brief 现在能在同一分母上同时比较 v2 fallback、v3 practical guarded 与 v3 practical unguarded；
+- 当前 guarded path 相对 unguarded 明显降低 extreme-over，但牺牲 coverage；相对 v2 则 coverage 提升且 extreme-over 未增加；
+- 这只证明 guarded practical path 的实战 tradeoff 可复核，不构成 v3 promotion；
+- readiness/promotion gate 仍不放宽，v2 fallback 不归档，formal/live replacement 不推进。

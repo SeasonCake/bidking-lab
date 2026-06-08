@@ -594,6 +594,7 @@ _LIVE_PRACTICAL_GUARD_KEYS = (
     "v3_practical_guarded_p90_extreme_over_on_comparison",
     "v3_practical_unguarded_p90_extreme_over_on_comparison",
     "v3_practical_guarded_minus_unguarded_p90_extreme_over",
+    "formal_policy_comparison",
 )
 _LIVE_PRACTICAL_GUARD_CONTRACT_KEYS = (
     "rows",
@@ -604,6 +605,7 @@ _LIVE_PRACTICAL_GUARD_CONTRACT_KEYS = (
     "v3_practical_live_guard_reason_counts",
     "v3_practical_unguarded_rows",
     "v3_practical_guard_comparison_rows",
+    "formal_policy_comparison",
 )
 _LIVE_PRACTICAL_GUARD_TRADEOFF_KEYS = (
     "v3_practical_guarded_mae_on_comparison",
@@ -788,6 +790,15 @@ def _live_practical_guard_contract_slice(
     ]
     formal_rows = int(stats.get("v3_practical_formal_rows") or 0)
     comparison_rows = int(stats.get("v3_practical_guard_comparison_rows") or 0)
+    policy_matrix = stats.get("formal_policy_comparison")
+    if not isinstance(policy_matrix, Mapping):
+        policy_matrix = {}
+    policy_matrix_rows = int(policy_matrix.get("comparison_rows") or 0)
+    policy_matrix_policies = policy_matrix.get("policies")
+    if not isinstance(policy_matrix_policies, Mapping):
+        policy_matrix_policies = {}
+    required_policy_keys = {"v2", "v3_guarded", "v3_unguarded"}
+    missing_policy_keys = sorted(required_policy_keys - set(policy_matrix_policies))
     null_tradeoff_keys = [
         key
         for key in _LIVE_PRACTICAL_GUARD_TRADEOFF_KEYS
@@ -802,6 +813,12 @@ def _live_practical_guard_contract_slice(
     elif comparison_rows <= 0:
         status = "blocked"
         reason = f"{name} has no paired guarded/unguarded comparison rows"
+    elif policy_matrix_rows <= 0:
+        status = "blocked"
+        reason = f"{name} has no comparable v2/guarded/unguarded policy rows"
+    elif missing_policy_keys:
+        status = "blocked"
+        reason = f"{name} formal policy comparison is missing policies"
     elif null_tradeoff_keys:
         status = "blocked"
         reason = f"{name} has paired rows but missing guard tradeoff metrics"
@@ -815,6 +832,9 @@ def _live_practical_guard_contract_slice(
         "null_tradeoff_keys": null_tradeoff_keys,
         "formal_rows": formal_rows,
         "comparison_rows": comparison_rows,
+        "formal_policy_comparison_status": policy_matrix.get("status"),
+        "formal_policy_comparison_rows": policy_matrix_rows,
+        "formal_policy_comparison_missing_policies": missing_policy_keys,
         "formal_mode_counts": stats.get("formal_mode_counts"),
         "formal_mode_reason_counts": stats.get("formal_mode_reason_counts"),
     }
@@ -3292,6 +3312,10 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"{live_guard_overall.get('v3_practical_guard_comparison_rows')}",
                 "v3_practical_guard_prebid_comparison_rows="
                 f"{live_guard_prebid.get('v3_practical_guard_comparison_rows')}",
+                "v3_practical_policy_rows="
+                f"{(live_guard_overall.get('formal_policy_comparison') or {}).get('comparison_rows')}",
+                "v3_practical_policy_prebid_rows="
+                f"{(live_guard_prebid.get('formal_policy_comparison') or {}).get('comparison_rows')}",
                 "v3_practical_guard_delta_mae="
                 f"{live_guard_overall.get('v3_practical_guarded_minus_unguarded_mae')}",
                 "v3_practical_guard_delta_p90_coverage="

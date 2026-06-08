@@ -636,6 +636,45 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
         _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
         for idx in range(4)
     ]
+    policy_matrix = {
+        "status": "watch",
+        "comparison_rows": 23,
+        "policies": {
+            "v2": {
+                "rows": 23,
+                "p50_mae": 130_000,
+                "p50_under_rate": 0.6,
+                "p90_coverage": 0.8,
+                "p90_extreme_over_rate": 0.2,
+            },
+            "v3_guarded": {
+                "rows": 23,
+                "p50_mae": 120_000,
+                "p50_under_rate": 0.6,
+                "p90_coverage": 0.57,
+                "p90_extreme_over_rate": 0.09,
+            },
+            "v3_unguarded": {
+                "rows": 23,
+                "p50_mae": 120_000,
+                "p50_under_rate": 0.6,
+                "p90_coverage": 1.0,
+                "p90_extreme_over_rate": 0.57,
+            },
+        },
+        "deltas_vs_v2": {
+            "v3_guarded": {
+                "p50_mae_delta": -10_000,
+                "p90_coverage_delta": -0.23,
+                "p90_extreme_over_delta": -0.11,
+            },
+            "v3_unguarded": {
+                "p50_mae_delta": -10_000,
+                "p90_coverage_delta": 0.2,
+                "p90_extreme_over_delta": 0.37,
+            },
+        },
+    }
     brief = {
         "total_rows": 49,
         "source_counts": {"windivert_archive": 49},
@@ -665,6 +704,7 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
             "v3_practical_guarded_p90_extreme_over_on_comparison": 0.09,
             "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.57,
             "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.48,
+            "formal_policy_comparison": policy_matrix,
         },
         "prebid_overall": {
             "rows": 49,
@@ -691,6 +731,7 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
             "v3_practical_guarded_p90_extreme_over_on_comparison": 0.09,
             "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.57,
             "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.48,
+            "formal_policy_comparison": policy_matrix,
         },
     }
 
@@ -716,6 +757,8 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
     )
     assert metrics["contract_checks"]["overall"]["status"] == "watch"
     assert metrics["contract_checks"]["prebid_overall"]["status"] == "watch"
+    assert metrics["contract_checks"]["overall"]["formal_policy_comparison_rows"] == 23
+    assert metrics["overall"]["formal_policy_comparison"]["comparison_rows"] == 23
     assert (
         "review v3 practical guard coverage/extreme-over tradeoff by slice before promotion"
         in result["next_actions"]
@@ -752,6 +795,58 @@ def test_readiness_blocks_malformed_live_practical_guard_brief() -> None:
     )
 
 
+def test_readiness_blocks_live_practical_guard_brief_without_policy_matrix() -> None:
+    module = _load_module()
+    rows = [
+        _row("aisha|2506", session_id=f"s{idx}", truth=1_000, pred=500, p90=700)
+        for idx in range(4)
+    ]
+    stats = {
+        "rows": 4,
+        "formal_mode_counts": {"v2": 1, "v3_practical": 3},
+        "formal_mode_reason_counts": {
+            "v2_mode_requested": 1,
+            "v3_practical_ready_live_guarded": 3,
+        },
+        "v3_practical_formal_rows": 3,
+        "v3_practical_live_guard_rows": 2,
+        "v3_practical_live_guard_reason_counts": {"guard": 2},
+        "v3_practical_unguarded_rows": 2,
+        "v3_practical_guard_comparison_rows": 2,
+        "v3_practical_guarded_mae_on_comparison": 100.0,
+        "v3_practical_unguarded_mae_on_comparison": 90.0,
+        "v3_practical_guarded_minus_unguarded_mae": 10.0,
+        "v3_practical_guarded_minus_unguarded_median_p50": -20.0,
+        "v3_practical_guarded_minus_unguarded_median_p90": -50.0,
+        "v3_practical_guarded_p90_coverage_on_comparison": 0.5,
+        "v3_practical_unguarded_p90_coverage_on_comparison": 1.0,
+        "v3_practical_guarded_minus_unguarded_p90_coverage": -0.5,
+        "v3_practical_guarded_p90_extreme_over_on_comparison": 0.0,
+        "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.5,
+        "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.5,
+    }
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        live_practical_guard_brief={
+            "overall": dict(stats),
+            "prebid_overall": dict(stats),
+        },
+    )
+
+    metrics = result["v3_practical_archive_live_guard_metrics"]
+    assert metrics["status"] == "blocked"
+    assert metrics["contract_checks"]["overall"]["status"] == "blocked"
+    assert (
+        "formal_policy_comparison"
+        in metrics["contract_checks"]["overall"]["missing_keys"]
+    )
+
+
 def test_readiness_blocks_live_practical_guard_brief_without_prebid_contract() -> None:
     module = _load_module()
     rows = [
@@ -779,6 +874,12 @@ def test_readiness_blocks_live_practical_guard_brief_without_prebid_contract() -
             "v3_practical_guarded_p90_extreme_over_on_comparison": 0.0,
             "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.5,
             "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.5,
+            "formal_policy_comparison": {
+                "status": "watch",
+                "comparison_rows": 4,
+                "policies": {"v2": {}, "v3_guarded": {}, "v3_unguarded": {}},
+                "deltas_vs_v2": {},
+            },
         },
         "prebid_overall": {
             "rows": 4,

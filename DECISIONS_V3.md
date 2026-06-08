@@ -4191,3 +4191,58 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 继续在当前 fields 上追加组合规则会把 archive 噪声固化为过拟合规则；
 - 下一步应转向 source parser/table acquisition 或更多样本分片验证，而不是恢复 formal/value sampler 参数调优；
 - 该决策仍是 shadow/audit-only，不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-195：archive-live guard brief 必须携带 v2/guarded/unguarded 同分母 policy matrix
+
+2026-06-08 起，当前决策：
+
+- `summarize_live_windivert_brief.py` 的 `overall`、`prebid_overall` 与 group stats 必须输出 `formal_policy_comparison`；
+- `formal_policy_comparison` 必须在同一批 comparable rows 上同时比较：
+  - `v2`；
+  - `v3_guarded`；
+  - `v3_unguarded`。
+- v2 口径优先使用：
+  - `v3_practical_baseline_formal_decision_value_p50`；
+  - `v3_practical_baseline_formal_decision_value_p90`。
+- guarded 口径使用当前 official/guarded：
+  - `decision_value_p50`；
+  - `decision_value_p90`。
+- unguarded 口径使用：
+  - `v3_practical_unguarded_decision_value_p50`；
+  - `v3_practical_unguarded_decision_value_p90`；
+  - 或 `v3_practical_unguarded_decision_value` range fallback。
+- matrix 必须至少输出：
+  - comparable row count；
+  - policy-level P50 MAE；
+  - P50 under rate；
+  - P90 coverage；
+  - P90 extreme-over rate；
+  - median P50/P90 error；
+  - `v3_guarded` / `v3_unguarded` 相对 `v2` 的 MAE、under-rate、coverage、extreme-over 与 median P50/P90 delta。
+- `summarize_v3_promotion_readiness.py --live-practical-brief-json` 必须把缺少 `formal_policy_comparison` 的 brief 判为 blocked；
+- `overall` 与 `prebid_overall` 任一 slice 缺少 comparable policy rows 或缺少三类 policy key，均 blocked；
+- `v3_practical_archive_live_guard_metrics=watch` 只表示 archive-live guard tradeoff 已可复核，不表示 promotion-ready。
+
+当前真实 72h brief 结论：
+
+- `overall/prebid policy_rows=41`；
+- `formal_mode_counts={'v2': 22, 'v3_practical': 54}`；
+- guarded vs unguarded：
+  - `mae_delta=0.0`；
+  - `coverage_delta=-0.27`；
+  - `extreme_over_delta=-0.49`。
+- guarded vs v2：
+  - `mae_delta=0.0`；
+  - `coverage_delta=0.20`；
+  - `extreme_over_delta=0.00`。
+- unguarded vs v2：
+  - `mae_delta=0.0`；
+  - `coverage_delta=0.47`；
+  - `extreme_over_delta=0.49`。
+
+原因：
+
+- 当前 goal 明确要求统一 v3 practical guarded/unguarded/v2 的 archive-live 评估口径和 guard 指标；
+- 仅有 formal mode counts 与 guarded/unguarded paired delta 仍不能证明 v2 fallback 与 v3 practical path 在同一分母上可比较；
+- 三路 matrix 可以把“unguarded 覆盖率更高但 extreme-over 更高、guarded 更保守”的 tradeoff 固化为 readiness evidence；
+- 该决策仍不改变 live/UI、正式出价、formal sampler、v2 fallback 或 promotion gate。

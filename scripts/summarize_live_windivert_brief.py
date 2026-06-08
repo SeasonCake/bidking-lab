@@ -692,6 +692,175 @@ def _practical_unguarded_value(row: dict[str, Any], quantile: str) -> float | No
     return _range_num(row.get("v3_practical_unguarded_decision_value"), index)
 
 
+def _v2_reference_value(row: dict[str, Any], quantile: str) -> float | None:
+    value = _num(row, f"v3_practical_baseline_formal_decision_value_{quantile}")
+    if value is not None:
+        return value
+    value = _num(row, f"v2_decision_value_{quantile}")
+    if value is not None:
+        return value
+    if _formal_mode_label(row) == "v2":
+        return _num(row, f"decision_value_{quantile}")
+    return None
+
+
+def _policy_metric_block(
+    *,
+    p50_values: list[float],
+    p90_values: list[float],
+    truths: list[float],
+) -> dict[str, Any]:
+    p50_errors = [p50 - truth for p50, truth in zip(p50_values, truths)]
+    p90_errors = [p90 - truth for p90, truth in zip(p90_values, truths)]
+    return {
+        "rows": len(truths),
+        "p50_mae": (
+            round(statistics.mean(abs(value) for value in p50_errors), 1)
+            if p50_errors
+            else None
+        ),
+        "p50_under_rate": (
+            round(
+                statistics.mean(1.0 if value < 0 else 0.0 for value in p50_errors),
+                2,
+            )
+            if p50_errors
+            else None
+        ),
+        "median_p50_error": (
+            round(statistics.median(p50_errors), 1) if p50_errors else None
+        ),
+        "p90_coverage": (
+            round(statistics.mean(1.0 if value >= 0 else 0.0 for value in p90_errors), 2)
+            if p90_errors
+            else None
+        ),
+        "p90_extreme_over_rate": (
+            round(
+                statistics.mean(
+                    1.0 if error > _normalized_error_denominator(truth) else 0.0
+                    for error, truth in zip(p90_errors, truths)
+                ),
+                2,
+            )
+            if p90_errors
+            else None
+        ),
+        "median_p90_error": (
+            round(statistics.median(p90_errors), 1) if p90_errors else None
+        ),
+    }
+
+
+def _formal_policy_comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    policies = ("v2", "v3_guarded", "v3_unguarded")
+    p50_values: dict[str, list[float]] = {policy: [] for policy in policies}
+    p90_values: dict[str, list[float]] = {policy: [] for policy in policies}
+    truths: list[float] = []
+    for row in rows:
+        truth = _practical_truth_value(row)
+        v2_p50 = _v2_reference_value(row, "p50")
+        v2_p90 = _v2_reference_value(row, "p90")
+        guarded_p50 = _num(row, "decision_value_p50")
+        guarded_p90 = _num(row, "decision_value_p90")
+        unguarded_p50 = _practical_unguarded_value(row, "p50")
+        unguarded_p90 = _practical_unguarded_value(row, "p90")
+        if None in (
+            truth,
+            v2_p50,
+            v2_p90,
+            guarded_p50,
+            guarded_p90,
+            unguarded_p50,
+            unguarded_p90,
+        ):
+            continue
+        truths.append(float(truth))
+        p50_values["v2"].append(float(v2_p50))
+        p90_values["v2"].append(float(v2_p90))
+        p50_values["v3_guarded"].append(float(guarded_p50))
+        p90_values["v3_guarded"].append(float(guarded_p90))
+        p50_values["v3_unguarded"].append(float(unguarded_p50))
+        p90_values["v3_unguarded"].append(float(unguarded_p90))
+
+    policy_metrics = {
+        policy: _policy_metric_block(
+            p50_values=p50_values[policy],
+            p90_values=p90_values[policy],
+            truths=truths,
+        )
+        for policy in policies
+    }
+    deltas_vs_v2: dict[str, dict[str, Any]] = {}
+    for policy in ("v3_guarded", "v3_unguarded"):
+        deltas_vs_v2[policy] = {
+            "p50_mae_delta": (
+                round(policy_metrics[policy]["p50_mae"] - policy_metrics["v2"]["p50_mae"], 1)
+                if policy_metrics[policy]["p50_mae"] is not None
+                and policy_metrics["v2"]["p50_mae"] is not None
+                else None
+            ),
+            "p50_under_rate_delta": (
+                round(
+                    policy_metrics[policy]["p50_under_rate"]
+                    - policy_metrics["v2"]["p50_under_rate"],
+                    2,
+                )
+                if policy_metrics[policy]["p50_under_rate"] is not None
+                and policy_metrics["v2"]["p50_under_rate"] is not None
+                else None
+            ),
+            "p90_coverage_delta": (
+                round(
+                    policy_metrics[policy]["p90_coverage"]
+                    - policy_metrics["v2"]["p90_coverage"],
+                    2,
+                )
+                if policy_metrics[policy]["p90_coverage"] is not None
+                and policy_metrics["v2"]["p90_coverage"] is not None
+                else None
+            ),
+            "p90_extreme_over_delta": (
+                round(
+                    policy_metrics[policy]["p90_extreme_over_rate"]
+                    - policy_metrics["v2"]["p90_extreme_over_rate"],
+                    2,
+                )
+                if policy_metrics[policy]["p90_extreme_over_rate"] is not None
+                and policy_metrics["v2"]["p90_extreme_over_rate"] is not None
+                else None
+            ),
+            "median_p50_delta": (
+                round(
+                    statistics.median(
+                        value - base
+                        for value, base in zip(p50_values[policy], p50_values["v2"])
+                    ),
+                    1,
+                )
+                if p50_values[policy] and p50_values["v2"]
+                else None
+            ),
+            "median_p90_delta": (
+                round(
+                    statistics.median(
+                        value - base
+                        for value, base in zip(p90_values[policy], p90_values["v2"])
+                    ),
+                    1,
+                )
+                if p90_values[policy] and p90_values["v2"]
+                else None
+            ),
+        }
+    return {
+        "status": "watch" if truths else "missing_comparable_rows",
+        "comparison_rows": len(truths),
+        "policies": policy_metrics,
+        "deltas_vs_v2": deltas_vs_v2,
+    }
+
+
 def _normalized_error_denominator(truth: float) -> float:
     return max(100_000.0, abs(truth))
 
@@ -1096,6 +1265,7 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
     baseline_mae = statistics.mean(clean) if clean else None
     practical_mae = statistics.mean(practical_clean) if practical_clean else None
     practical_watch_eval = _practical_raise_watch_eval(rows)
+    formal_policy_comparison = _formal_policy_comparison(rows)
 
     def practical_watch_rate(key: str) -> float | None:
         if not practical_watch_eval:
@@ -1375,6 +1545,7 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
             and guard_compare_unguarded_p90_extreme_over_values
             else None
         ),
+        "formal_policy_comparison": formal_policy_comparison,
         "median_matched": int(statistics.median(matched_clean)) if matched_clean else None,
         "decision_value_mae": round(baseline_mae, 1) if baseline_mae is not None else None,
         "median_p50_error": round(statistics.median(signed), 1) if signed else None,
@@ -1811,6 +1982,10 @@ def _print_report(
             )
         )
     overall = summary["overall"]
+    overall_policy = overall.get("formal_policy_comparison") or {}
+    overall_policy_deltas = overall_policy.get("deltas_vs_v2") or {}
+    overall_guarded_delta = overall_policy_deltas.get("v3_guarded") or {}
+    overall_unguarded_delta = overall_policy_deltas.get("v3_unguarded") or {}
     print(
         "overall: "
         f"estimate_rows={overall.get('estimate_rows')} "
@@ -1835,6 +2010,13 @@ def _print_report(
         f"{overall.get('v3_practical_guarded_minus_unguarded_p90_coverage')} "
         "v3_practical_guarded_minus_unguarded_p90_extreme_over="
         f"{overall.get('v3_practical_guarded_minus_unguarded_p90_extreme_over')} "
+        f"formal_policy_rows={overall_policy.get('comparison_rows')} "
+        f"v3_guarded_vs_v2_mae_delta={overall_guarded_delta.get('p50_mae_delta')} "
+        "v3_guarded_vs_v2_p90_coverage_delta="
+        f"{overall_guarded_delta.get('p90_coverage_delta')} "
+        f"v3_unguarded_vs_v2_mae_delta={overall_unguarded_delta.get('p50_mae_delta')} "
+        "v3_unguarded_vs_v2_p90_coverage_delta="
+        f"{overall_unguarded_delta.get('p90_coverage_delta')} "
         f"size_bucket_rate={overall.get('size_bucket_active_rate')} "
         f"v3_practical_p90_coverage={overall.get('v3_practical_p90_coverage')} "
         "v3_practical_p90_extreme_over_rate="
@@ -1842,6 +2024,10 @@ def _print_report(
     )
     print()
     prebid = summary.get("prebid_overall") or {}
+    prebid_policy = prebid.get("formal_policy_comparison") or {}
+    prebid_policy_deltas = prebid_policy.get("deltas_vs_v2") or {}
+    prebid_guarded_delta = prebid_policy_deltas.get("v3_guarded") or {}
+    prebid_unguarded_delta = prebid_policy_deltas.get("v3_unguarded") or {}
     print(
         "prebid_overall: "
         f"rows={prebid.get('rows')} "
@@ -1864,6 +2050,13 @@ def _print_report(
         f"{prebid.get('v3_practical_guarded_minus_unguarded_p90_coverage')} "
         "v3_practical_guarded_minus_unguarded_p90_extreme_over="
         f"{prebid.get('v3_practical_guarded_minus_unguarded_p90_extreme_over')} "
+        f"formal_policy_rows={prebid_policy.get('comparison_rows')} "
+        f"v3_guarded_vs_v2_mae_delta={prebid_guarded_delta.get('p50_mae_delta')} "
+        "v3_guarded_vs_v2_p90_coverage_delta="
+        f"{prebid_guarded_delta.get('p90_coverage_delta')} "
+        f"v3_unguarded_vs_v2_mae_delta={prebid_unguarded_delta.get('p50_mae_delta')} "
+        "v3_unguarded_vs_v2_p90_coverage_delta="
+        f"{prebid_unguarded_delta.get('p90_coverage_delta')} "
         f"v3_practical_p90_coverage={prebid.get('v3_practical_p90_coverage')} "
         "v3_practical_p90_extreme_over_rate="
         f"{prebid.get('v3_practical_p90_extreme_over_rate')}"

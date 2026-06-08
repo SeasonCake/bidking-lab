@@ -63,6 +63,8 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
             "v3_practical_live_guard": "是",
             "v3_practical_live_guard_reason": "low_support_baseline",
             "v3_practical_unguarded_decision_value": "100,000 / 280,000 / 500,000",
+            "v3_practical_baseline_formal_decision_value_p50": 210_000,
+            "v3_practical_baseline_formal_decision_value_p90": 260_000,
             "v3_practical_candidate": True,
             "v3_practical_recommendation": "raise_watch",
             "v3_practical_formal_decision_value_p50": 280_000,
@@ -130,6 +132,14 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
         summary["overall"]["v3_practical_guarded_minus_unguarded_p90_coverage"]
         == -1.0
     )
+    matrix = summary["overall"]["formal_policy_comparison"]
+    assert matrix["status"] == "watch"
+    assert matrix["comparison_rows"] == 1
+    assert matrix["policies"]["v2"]["p50_mae"] == 90_000
+    assert matrix["policies"]["v3_guarded"]["p50_mae"] == 100_000
+    assert matrix["policies"]["v3_unguarded"]["p50_mae"] == 20_000
+    assert matrix["deltas_vs_v2"]["v3_guarded"]["p50_mae_delta"] == 10_000
+    assert matrix["deltas_vs_v2"]["v3_unguarded"]["p90_coverage_delta"] == 1.0
     assert summary["by_observed_round"]["R1"]["rows"] == 1
     assert summary["by_action_round"]["R2"]["rows"] == 1
     assert summary["by_action_round"]["R2"]["v3_practical_formal_rows"] == 1
