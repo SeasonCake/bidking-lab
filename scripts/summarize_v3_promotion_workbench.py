@@ -239,6 +239,9 @@ def _shadow_sampler_prototype_contract(
         and prototype.get("affects_bid") is False
         and prototype.get("active") is False
     )
+    guard_trial_contract = prototype.get("guard_trial_contract")
+    if not isinstance(guard_trial_contract, Mapping):
+        guard_trial_contract = {}
     if missing or not shadow_safe:
         status = "malformed"
     elif (
@@ -265,6 +268,11 @@ def _shadow_sampler_prototype_contract(
         "component_status_counts": component_status_counts,
         "support_gate_status_counts": support_gate_status_counts,
         "blocking_component_statuses": blocking_component_statuses,
+        "guard_trial_status": guard_trial_contract.get("status"),
+        "guard_trial_action_counts": dict(
+            guard_trial_contract.get("action_counts") or {}
+        ),
+        "guard_trial_contract": dict(guard_trial_contract),
         "low_support_watch_metrics": _low_support_watch_metrics(component_statuses),
         "stable_low_support_watch_metrics": _stable_low_support_watch_metrics(
             component_statuses
@@ -555,6 +563,12 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                 prototype.get("support_gate_status_counts") or {}
             ).items()
         ) or "-"
+        guard_action_counts = ",".join(
+            f"{key}:{value}"
+            for key, value in (
+                prototype.get("guard_trial_action_counts") or {}
+            ).items()
+        ) or "-"
         frozen = ",".join(
             str(row.get("gate"))
             for row in contract.get("frozen_gates") or ()
@@ -578,6 +592,8 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"prototype_overall={prototype.get('prototype_status')}",
                     f"prototype_components={prototype_component_counts}",
                     f"prototype_support_gates={prototype_support_counts}",
+                    f"prototype_guard_trial={prototype.get('guard_trial_status')}",
+                    f"prototype_guard_actions={guard_action_counts}",
                     f"next_action=\"{contract.get('next_action')}\"",
                 ]
             )

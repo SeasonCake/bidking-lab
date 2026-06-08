@@ -1036,6 +1036,9 @@ def summarize_shadow_sampler_prototype_contract(
         and prototype.get("active") is False
     )
     prototype_status = str(prototype.get("status") or "unknown")
+    guard_trial_contract = prototype.get("guard_trial_contract")
+    if not isinstance(guard_trial_contract, Mapping):
+        guard_trial_contract = {}
     if missing:
         status = "blocked"
         reason = "shadow sampler prototype is missing contract fields"
@@ -1069,6 +1072,11 @@ def summarize_shadow_sampler_prototype_contract(
         "component_status_counts": component_status_counts,
         "support_gate_status_counts": support_gate_status_counts,
         "blocking_component_statuses": blocking_components,
+        "guard_trial_status": guard_trial_contract.get("status"),
+        "guard_trial_action_counts": dict(
+            guard_trial_contract.get("action_counts") or {}
+        ),
+        "guard_trial_contract": dict(guard_trial_contract),
         "low_support_watch_metrics": _shadow_sampler_low_support_metrics(
             component_statuses,
             stable_only=False,
@@ -1882,6 +1890,12 @@ def summarize_readiness(
                 blocking_component_statuses=shadow_sampler_prototype_contract.get(
                     "blocking_component_statuses"
                 ),
+                guard_trial_status=shadow_sampler_prototype_contract.get(
+                    "guard_trial_status"
+                ),
+                guard_trial_action_counts=shadow_sampler_prototype_contract.get(
+                    "guard_trial_action_counts"
+                ),
                 low_support_watch_metrics=shadow_sampler_prototype_contract.get(
                     "low_support_watch_metrics"
                 ),
@@ -2565,6 +2579,18 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"{shadow_sampler_prototype_contract.get('status')}",
                 "shadow_sampler_prototype_status="
                 f"{shadow_sampler_prototype_contract.get('prototype_status')}",
+                "shadow_sampler_guard_trial="
+                f"{shadow_sampler_prototype_contract.get('guard_trial_status')}",
+                "shadow_sampler_guard_actions="
+                + ",".join(
+                    f"{key}:{value}"
+                    for key, value in (
+                        shadow_sampler_prototype_contract.get(
+                            "guard_trial_action_counts"
+                        )
+                        or {}
+                    ).items()
+                ),
                 f"cse_candidate_rows={summary['v3_cse_candidate_rows']}",
                 f"cse_pressure_candidate_rows={summary['v3_cse_pressure_candidate_rows']}",
                 f"cse_active_rows={summary['v3_cse_active_rows']}",

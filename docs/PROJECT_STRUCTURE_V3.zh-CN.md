@@ -61,8 +61,8 @@
 | `scripts/summarize_v3_scp_guarded_bridge_stability.py` | v3 guarded bridge posterior trial/seed stability 矩阵审计，汇总 selected group drift、applied hurt、support depth，并使用 `.tmp/codex/` per-run cache |
 | `scripts/build_v3_settlement_count_prior_shadow.py` | 从 default archive 与 activity cohort 构建 `data/processed/v3_settlement_count_prior_shadow.json` |
 | `scripts/build_v3_capacity_source_expansion_shadow.py` | 从 settlement source-semantics 审计构建 `data/processed/v3_capacity_source_expansion_shadow.json` |
-| `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `detail_contract`/`capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift`、`settlement_count_formal_value_link`、带 artifact contract/pressure count 的 `capacity_source_expansion_shadow`、原始/guarded `settlement_count_cells_value_bridge` holdout 与 `formal_value_sampler_holdout` gate；可通过 `--live-practical-brief-json` 附加带 `contract_checks` 的 v3 practical archive-live guarded/unguarded paired evidence，通过 `--guarded-bridge-stability-json` 附加带 `contract_check` 的 guarded SCP bridge multi-seed stability evidence，通过 `--shadow-sampler-prototype-json` 附加 support-aware sampler prototype seed/support blocker，但不放宽 promotion gate |
-| `scripts/summarize_v3_promotion_workbench.py` | 从 readiness JSON 汇总 lane-level promotion workbench，标记 blocked/watch/stop-loss、下一步模式与 `shadow_sampler_contract`；合同固定 shadow-only/affects_bid=false，并列出 sampler watch inputs、frozen gates、required holdouts/metrics、required component gates 与可选 support-aware prototype contract |
+| `scripts/summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计，包含携带 `detail_contract`/`capacity_count_summary`/case counts 的 `prior_stress_capacity_table_drift`、`settlement_count_formal_value_link`、带 artifact contract/pressure count 的 `capacity_source_expansion_shadow`、原始/guarded `settlement_count_cells_value_bridge` holdout 与 `formal_value_sampler_holdout` gate；可通过 `--live-practical-brief-json` 附加带 `contract_checks` 的 v3 practical archive-live guarded/unguarded paired evidence，通过 `--guarded-bridge-stability-json` 附加带 `contract_check` 的 guarded SCP bridge multi-seed stability evidence，通过 `--shadow-sampler-prototype-json` 附加 support-aware sampler prototype seed/support blocker 与 guard trial contract，但不放宽 promotion gate |
+| `scripts/summarize_v3_promotion_workbench.py` | 从 readiness JSON 汇总 lane-level promotion workbench，标记 blocked/watch/stop-loss、下一步模式与 `shadow_sampler_contract`；合同固定 shadow-only/affects_bid=false，并列出 sampler watch inputs、frozen gates、required holdouts/metrics、required component gates 与可选 support-aware prototype/guard-trial contract |
 | `scripts/summarize_v3_ccv_profile_candidates.py` | v3 count/cell/value sampler 候选审计 |
 | `scripts/summarize_v3_ccv_holdout.py` | v3 CCV/count-cell-value 候选 session holdout 审计 |
 | `scripts/summarize_v3_ccv_layer_audit.py` | v3 CCV 多层 holdout 稳定性审计 |
@@ -71,7 +71,7 @@
 | `scripts/summarize_v3_ccv_direction_holdout.py` | v3 CCV 方向候选 session holdout 审计，支持 movement-policy、复合 group-field 与候选 include/exclude |
 | `scripts/summarize_v3_ccvc_count_policy_matrix.py` | v3 CCVC q6_count policy/group-field 矩阵审计，并输出 selected candidate 与 applied hurt group metrics |
 | `scripts/summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC count/cells 证据贡献审计，支持 freeze-cells 口径 |
-| `scripts/summarize_v3_shadow_sampler_prototype.py` | v3 `v3_ccvc_` evidence-driven count/cell/value shadow sampler prototype 聚合审计，合并 row contract、shadow safety、policy/direction holdout、evidence contribution、component-level blocker、per-seed watch label/support metrics、applied hurt metrics、support gate 与 multi-seed stability |
+| `scripts/summarize_v3_shadow_sampler_prototype.py` | v3 `v3_ccvc_` evidence-driven count/cell/value shadow sampler prototype 聚合审计，合并 row contract、shadow safety、policy/direction holdout、evidence contribution、component-level blocker、per-seed watch label/support metrics、applied hurt metrics、guard trial contract、support gate 与 multi-seed stability |
 | `scripts/summarize_v3_formal_value_delta_holdout.py` | v3 q6 formal delta 映射 formal decision 的 session holdout 审计 |
 | `scripts/summarize_v3_formal_value_sampler_holdout.py` | v3 formal/value sampler value-floor candidate session holdout 审计，capacity/cells-only watch 不参与价值上修 |
 | `scripts/summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计 |
@@ -111,8 +111,8 @@
 | `tests/test_summarize_v3_scp_guarded_bridge_stability.py` | v3 guarded bridge trial/seed stability 矩阵测试，覆盖 exact group 稳定、hurt run 与 low-support blocker |
 | `tests/test_build_v3_settlement_count_prior_shadow.py` | v3 settlement count-prior processed artifact builder 测试 |
 | `tests/test_build_v3_capacity_source_expansion_shadow.py` | v3 capacity/source expansion processed artifact builder 测试 |
-| `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试，覆盖 prior-stress detail contract、v3 practical archive-live guard brief contract checks、CSE shadow artifact contract、SCP guarded bridge stability artifact contract 与 shadow sampler prototype contract |
-| `tests/test_summarize_v3_promotion_workbench.py` | v3 lane-level promotion workbench 测试，覆盖 stop-loss lane、archive quality watch、shadow sampler contract 边界与 support-aware prototype blocker |
+| `tests/test_summarize_v3_promotion_readiness.py` | v3 formal promotion readiness 总审计测试，覆盖 prior-stress detail contract、v3 practical archive-live guard brief contract checks、CSE shadow artifact contract、SCP guarded bridge stability artifact contract 与 shadow sampler prototype/guard-trial contract |
+| `tests/test_summarize_v3_promotion_workbench.py` | v3 lane-level promotion workbench 测试，覆盖 stop-loss lane、archive quality watch、shadow sampler contract 边界与 support-aware prototype/guard-trial blocker |
 | `tests/test_summarize_v3_ccv_profile_candidates.py` | v3 CCV 候选审计测试 |
 | `tests/test_summarize_v3_ccv_holdout.py` | v3 CCV session holdout 审计测试 |
 | `tests/test_summarize_v3_ccv_layer_audit.py` | v3 CCV 多层 holdout 审计测试 |
@@ -121,7 +121,7 @@
 | `tests/test_summarize_v3_ccv_direction_holdout.py` | v3 CCV 方向候选 session holdout 审计测试 |
 | `tests/test_summarize_v3_ccvc_count_policy_matrix.py` | v3 CCVC q6_count policy matrix 测试，覆盖 candidate group support metrics 与 applied hurt group metrics |
 | `tests/test_summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC 证据贡献审计测试 |
-| `tests/test_summarize_v3_shadow_sampler_prototype.py` | v3 CCVC shadow sampler prototype 聚合审计测试，覆盖 watch candidate、shadow safety、component status、per-seed watch label/support metrics、applied hurt metrics、support gate 与 seed stability |
+| `tests/test_summarize_v3_shadow_sampler_prototype.py` | v3 CCVC shadow sampler prototype 聚合审计测试，覆盖 watch candidate、shadow safety、component status、per-seed watch label/support metrics、applied hurt metrics、guard trial contract、support gate 与 seed stability |
 | `tests/test_summarize_v3_formal_value_delta_holdout.py` | v3 q6 formal delta 映射 holdout 测试 |
 | `tests/test_summarize_v3_formal_value_sampler_holdout.py` | v3 formal/value sampler holdout 测试 |
 | `tests/test_summarize_v3_residual_profile_candidates.py` | v3 residual profile 候选审计测试 |

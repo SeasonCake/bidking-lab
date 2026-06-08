@@ -10515,3 +10515,84 @@ top_hurts=q6_value|map_id,evidence_profile_key|all:q6_value:map_id=2508|evidence
 - q6_cells/q6_value 的下一步不是继续调参，而是设计 shadow-only freeze/guard contract，优先围绕 2508 `item+shape` 与 2408 map hurt 组合做可证伪排除；
 - q6_count 的下一步是补 source/evidence support gate 或 profile/source parser 检查，不能把 seed1 8 rows / 3 sessions 低支持候选当作 promotion 支持；
 - 本轮仍不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## 2026-06-08 checkpoint：shadow sampler guard trial contract
+
+背景：
+
+- 上一轮已把 full sampler prototype blocker 具体化为 applied hurt/support metrics；
+- 为了避免继续停在“blocked 但不可执行”的状态，需要把这些 metrics 转成下一轮 shadow-only guard/freeze trial 设计；
+- 本窗口职责仍限定在 shadow/audit/readiness/promotion，不直接修改 live/UI/正式出价路径。
+
+完成：
+
+- `scripts/summarize_v3_shadow_sampler_prototype.py`
+  - prototype artifact 新增 `guard_trial_contract`；
+  - contract 固定 `shadow_only=true`、`affects_bid=false`、`active=false`、`can_promote=false`；
+  - component action 会把 blocker 分类为：
+    - `freeze_component`；
+    - `guard_hurt_groups_keep_component_inactive`；
+    - `require_source_support_gate`；
+    - 以及 shadow safety / sample-limited 等非 trial 状态；
+  - summary 顶部新增 `guard_trial=...` 与 `guard_actions=...`。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - attached prototype contract 透传 `guard_trial_status`、`guard_trial_action_counts` 与完整 `guard_trial_contract`；
+  - `shadow_sampler_prototype` gate 同步带出 guard trial 摘要；
+  - summary 输出新增 `shadow_sampler_guard_trial=...` 与 `shadow_sampler_guard_actions=...`。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract.prototype_contract` 透传 guard trial contract；
+  - summary 输出新增 `prototype_guard_trial=...` 与 `prototype_guard_actions=...`。
+- 测试覆盖：
+  - sampler prototype guard trial action 分类；
+  - readiness attach guard trial fields；
+  - workbench prototype contract 透传 guard trial fields。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_shadow_sampler_prototype.py scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_shadow_sampler_prototype.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest tests/test_summarize_v3_shadow_sampler_prototype.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_ccvc_count_policy_matrix.py
+27 passed
+```
+
+真实 artifact / readiness / workbench smoke：
+
+```text
+python scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --component q6_count --component q6_cells --component q6_value --format json > .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json
+
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json .tmp\codex\v3_readiness\scp_guarded_stability_64_s0_s1_schema3.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_probe.json --shadow-sampler-prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --format json > .tmp\codex\v3_readiness_with_full_guard_trial_latest.json
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_with_full_guard_trial_latest.json --format summary
+```
+
+关键结果：
+
+```text
+prototype status=blocked_seed_instability
+guard_trial=shadow_guard_trial_design
+guard_actions={'freeze_component': 1, 'guard_hurt_groups_keep_component_inactive': 1, 'require_source_support_gate': 1}
+requires_source_parser=True
+can_run_shadow_trial_components=['q6_cells', 'q6_value']
+
+q6_cells blocked_holdout_hurt/no_watch -> freeze_component
+top hurts include 2508 item+shape and 2408
+
+q6_value blocked_holdout_hurt/no_watch -> guard_hurt_groups_keep_component_inactive
+top hurts include 2508 item+shape and 2408
+
+q6_count blocked_seed_instability/watch_low_support -> require_source_support_gate
+low support includes seed1 2501 tool:category+item+shape 8 rows / 3 sessions
+
+workbench:
+prototype_guard_trial=shadow_guard_trial_design
+prototype_guard_actions=freeze_component:1,guard_hurt_groups_keep_component_inactive:1,require_source_support_gate:1
+overall_status=not_ready
+blocked_gates=14
+```
+
+结论：
+
+- sampler prototype blocker 现在已经转成可执行的 shadow-only guard trial contract；
+- 下一步可直接实现/验证一个 guarded shadow trial：cells 先 freeze，value 对 hurt groups 保持 inactive/exclude，count 先走 source/support gate 或 source parser 检查；
+- 当前 readiness 仍 `not_ready`，workbench 仍 `shadow_design_only`，未放宽 promotion gate，也未改变 live/UI/正式出价。

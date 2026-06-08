@@ -703,6 +703,178 @@ def _component_next_action(status: str, component: str) -> str:
     return "keep inactive until movement/support appears"
 
 
+def _limited_metric_rows(
+    rows: Iterable[Any],
+    *,
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, Mapping):
+            out.append(dict(row))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _component_guard_trial_action(row: Mapping[str, Any]) -> dict[str, Any]:
+    component = str(row.get("component") or "unknown")
+    status = str(row.get("status") or "unknown")
+    support_gate = row.get("support_gate")
+    support_status = (
+        str(support_gate.get("status") or "unknown")
+        if isinstance(support_gate, Mapping)
+        else "missing"
+    )
+    top_hurts = _limited_metric_rows(
+        row.get("top_applied_hurt_metrics") or (),
+    )
+    low_support = (
+        support_gate.get("low_support_watch_metrics") or ()
+        if isinstance(support_gate, Mapping)
+        else ()
+    )
+    low_support_metrics = _limited_metric_rows(low_support)
+    stable_watch = list(row.get("stable_watch_candidate_labels") or ())
+    unstable_watch = list(row.get("unstable_watch_candidate_labels") or ())
+
+    if status.startswith("blocked_shadow"):
+        trial_action = "fix_shadow_safety"
+        rationale = "shadow rows must remain inactive and affects_bid=false"
+        can_run_shadow_trial = False
+        requires_source_parser = False
+    elif status == "blocked_no_component_likelihood":
+        trial_action = "fix_component_likelihood_contract"
+        rationale = "component likelihood rows are missing"
+        can_run_shadow_trial = False
+        requires_source_parser = False
+    elif component == "q6_cells" and top_hurts:
+        trial_action = "freeze_component"
+        rationale = "q6_cells has holdout hurt; freeze cells before retesting"
+        can_run_shadow_trial = True
+        requires_source_parser = False
+    elif component == "q6_value" and top_hurts:
+        trial_action = "guard_hurt_groups_keep_component_inactive"
+        rationale = "q6_value has holdout hurt; isolate hurt groups first"
+        can_run_shadow_trial = True
+        requires_source_parser = False
+    elif component == "q6_count" and (
+        status in {"blocked_seed_instability", "blocked_low_support"}
+        or support_status in {"watch_low_support", "blocked_low_support"}
+    ):
+        trial_action = "require_source_support_gate"
+        rationale = "q6_count watch labels are seed-unstable or under-supported"
+        can_run_shadow_trial = False
+        requires_source_parser = True
+    elif top_hurts:
+        trial_action = "guard_hurt_groups"
+        rationale = "component has holdout hurt groups that must be excluded"
+        can_run_shadow_trial = True
+        requires_source_parser = False
+    elif stable_watch and support_status == "pass":
+        trial_action = "watch_only_candidate_holdout"
+        rationale = "stable supported watch labels can be held out as diagnostics"
+        can_run_shadow_trial = True
+        requires_source_parser = False
+    elif low_support_metrics:
+        trial_action = "collect_support_before_trial"
+        rationale = "watch labels exist but fail support requirements"
+        can_run_shadow_trial = False
+        requires_source_parser = component == "q6_count"
+    else:
+        trial_action = "keep_inactive_sample_limited"
+        rationale = "no supported movement candidate is available"
+        can_run_shadow_trial = False
+        requires_source_parser = False
+
+    return {
+        "component": component,
+        "component_status": status,
+        "support_gate": support_status,
+        "trial_action": trial_action,
+        "rationale": rationale,
+        "can_run_shadow_trial": can_run_shadow_trial,
+        "requires_source_parser": requires_source_parser,
+        "stable_watch_candidate_labels": stable_watch[:8],
+        "unstable_watch_candidate_labels": unstable_watch[:8],
+        "top_hurt_labels": [
+            str(item.get("watch_label") or "")
+            for item in top_hurts
+            if item.get("watch_label")
+        ],
+        "candidate_exclude_labels": [
+            str(item.get("label") or "")
+            for item in top_hurts
+            if item.get("label")
+        ],
+        "top_applied_hurt_metrics": top_hurts,
+        "low_support_watch_metrics": low_support_metrics,
+    }
+
+
+def _guard_trial_contract(
+    component_statuses: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    actions = [
+        _component_guard_trial_action(row)
+        for row in component_statuses
+        if isinstance(row, Mapping)
+    ]
+    fix_actions = {
+        "fix_shadow_safety",
+        "fix_component_likelihood_contract",
+    }
+    design_actions = {
+        "freeze_component",
+        "guard_hurt_groups_keep_component_inactive",
+        "guard_hurt_groups",
+        "watch_only_candidate_holdout",
+    }
+    if any(row["trial_action"] in fix_actions for row in actions):
+        status = "blocked_shadow_prerequisite"
+    elif any(row["trial_action"] in design_actions for row in actions):
+        status = "shadow_guard_trial_design"
+    elif any(row["trial_action"] == "require_source_support_gate" for row in actions):
+        status = "requires_source_support_gate"
+    elif actions:
+        status = "sample_limited"
+    else:
+        status = "missing_component_statuses"
+    return {
+        "interface": "v3_ccvc_shadow_sampler_guard_trial_contract",
+        "status": status,
+        "shadow_only": True,
+        "affects_bid": False,
+        "active": False,
+        "can_promote": False,
+        "component_actions": actions,
+        "action_counts": _counter_dict(row["trial_action"] for row in actions),
+        "requires_source_parser": any(
+            row.get("requires_source_parser") for row in actions
+        ),
+        "can_run_shadow_trial_components": [
+            row["component"]
+            for row in actions
+            if row.get("can_run_shadow_trial")
+        ],
+        "required_verification": [
+            "archive",
+            "session",
+            "map_family",
+            "map_id",
+            "evidence_profile",
+            "posterior_seed",
+            "readiness_attachment",
+        ],
+        "blocked_actions": [
+            "change formal bid path",
+            "wire guard trial into live decisions",
+            "archive v2 fallback",
+            "relax readiness or promotion gates",
+        ],
+    }
+
+
 def _component_statuses(
     seed_results: Iterable[Mapping[str, Any]],
     *,
@@ -821,6 +993,7 @@ def summarize_prototype_runs(
         min_watch_support_rows=min_watch_support_rows,
         min_watch_support_sessions=min_watch_support_sessions,
     )
+    guard_trial_contract = _guard_trial_contract(component_statuses)
     return {
         "interface": "v3_ccvc_evidence_driven_count_cell_value_sampler",
         "shadow_only": True,
@@ -840,6 +1013,7 @@ def summarize_prototype_runs(
         "seed_status_counts": _counter_dict(row.get("status") for row in results),
         "stable_watch_candidate_labels": stable_labels,
         "component_statuses": component_statuses,
+        "guard_trial_contract": guard_trial_contract,
         "required_holdouts": [
             "archive",
             "session",
@@ -859,6 +1033,12 @@ def summarize_prototype_runs(
 
 
 def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
+    guard_contract = result.get("guard_trial_contract") or {}
+    guard_actions = (
+        guard_contract.get("action_counts")
+        if isinstance(guard_contract, Mapping)
+        else {}
+    ) or {}
     print(
         " ".join(
             (
@@ -874,6 +1054,12 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 + ",".join(
                     f"{status}:{count}"
                     for status, count in (result.get("seed_status_counts") or {}).items()
+                ),
+                f"guard_trial={guard_contract.get('status') if isinstance(guard_contract, Mapping) else None}",
+                "guard_actions="
+                + ",".join(
+                    f"{action}:{count}"
+                    for action, count in guard_actions.items()
                 ),
             )
         )

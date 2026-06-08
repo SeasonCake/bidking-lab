@@ -201,6 +201,22 @@ def test_shadow_sampler_contract_blocks_attached_prototype_blockers() -> None:
                         },
                     }
                 ],
+                "guard_trial_contract": {
+                    "interface": "v3_ccvc_shadow_sampler_guard_trial_contract",
+                    "status": "requires_source_support_gate",
+                    "shadow_only": True,
+                    "affects_bid": False,
+                    "active": False,
+                    "can_promote": False,
+                    "action_counts": {"require_source_support_gate": 1},
+                    "component_actions": [
+                        {
+                            "component": "q6_count",
+                            "trial_action": "require_source_support_gate",
+                            "requires_source_parser": True,
+                        }
+                    ],
+                },
             },
         }
     )
@@ -213,6 +229,13 @@ def test_shadow_sampler_contract_blocks_attached_prototype_blockers() -> None:
     assert prototype["prototype_status"] == "blocked_seed_instability"
     assert prototype["component_status_counts"] == {"blocked_seed_instability": 1}
     assert prototype["support_gate_status_counts"] == {"watch_low_support": 1}
+    assert prototype["guard_trial_status"] == "requires_source_support_gate"
+    assert prototype["guard_trial_action_counts"] == {
+        "require_source_support_gate": 1
+    }
+    assert prototype["guard_trial_contract"]["component_actions"][0][
+        "requires_source_parser"
+    ] is True
     assert prototype["blocking_component_statuses"] == [
         {
             "component": "q6_count",

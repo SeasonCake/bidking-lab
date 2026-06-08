@@ -3868,3 +3868,40 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 在本窗口职责范围内，“试运行”只能落在 shadow/audit/readiness/promotion 工具链，不能直接改变 live/UI/正式出价；
 - applied hurt group metrics 能把 blocker 从抽象 blocked 状态转成具体可证伪机制，避免继续在相同数据上循环调参或过拟合；
 - 该决策不改变 posterior、formal path、live/UI、v2 fallback 或正式出价。
+
+## D-v3-186：shadow sampler prototype 必须输出 guard trial contract，但 contract 不等于 promotion evidence
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_shadow_sampler_prototype.py` 必须在 prototype artifact 中输出 `guard_trial_contract`；
+- contract 必须固定：
+  - `shadow_only=true`；
+  - `affects_bid=false`；
+  - `active=false`；
+  - `can_promote=false`。
+- component action 必须把 blocker 转成下一轮 shadow trial 设计输入：
+  - q6_cells holdout hurt -> `freeze_component`；
+  - q6_value holdout hurt -> `guard_hurt_groups_keep_component_inactive`；
+  - q6_count seed/support blocker -> `require_source_support_gate`；
+  - shadow safety 或 component-likelihood contract 缺失 -> 不允许 trial，先修 contract；
+  - sample-limited -> 继续 inactive，不得调参。
+- `summarize_v3_promotion_readiness.py` 附加 sampler prototype 时必须透传：
+  - `guard_trial_status`；
+  - `guard_trial_action_counts`；
+  - 完整 `guard_trial_contract`。
+- `summarize_v3_promotion_workbench.py` 必须在 `shadow_sampler_contract.prototype_contract` 与 summary 中显示 guard trial 状态和 action counts；
+- 当前真实 artifact 的 guard trial 结论是：
+  - `shadow_guard_trial_design`；
+  - `freeze_component:1`；
+  - `guard_hurt_groups_keep_component_inactive:1`；
+  - `require_source_support_gate:1`；
+  - `requires_source_parser=true`；
+  - 可 shadow trial 的 component 只有 `q6_cells` 与 `q6_value`，`q6_count` 仍需 source/support gate。
+- 该 contract 只能驱动 shadow-only 试运行设计，不得作为 readiness promotion evidence、formal/value 参数调优依据、live/formal 接入依据或 v2 archive 依据。
+
+原因：
+
+- 更新后的工程指引要求把长审计结果转成可观察、可回滚的实际试运行路径；
+- 对当前窗口而言，可回滚试运行必须先在 artifact/readiness/workbench 层完成，不能直接影响 live/UI/正式出价；
+- guard trial contract 让 q6_cells freeze、q6_value hurt-group inactive/exclude、q6_count source/support parser 三条路径机器可读，减少后续重复审计循环；
+- 当前 readiness 仍为 `not_ready`，workbench 仍为 `shadow_design_only`，promotion gate 不放宽。

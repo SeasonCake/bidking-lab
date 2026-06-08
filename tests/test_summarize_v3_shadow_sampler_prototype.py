@@ -413,3 +413,110 @@ def test_shadow_sampler_prototype_reports_applied_hurt_metrics() -> None:
             ],
         }
     ]
+    guard_contract = result["guard_trial_contract"]
+    assert guard_contract["status"] == "shadow_guard_trial_design"
+    assert guard_contract["shadow_only"] is True
+    assert guard_contract["affects_bid"] is False
+    assert guard_contract["action_counts"] == {"guard_hurt_groups": 1}
+    assert guard_contract["component_actions"][0]["trial_action"] == (
+        "guard_hurt_groups"
+    )
+    assert guard_contract["component_actions"][0]["candidate_exclude_labels"] == [
+        "q6_count:2502"
+    ]
+
+
+def test_shadow_sampler_prototype_guard_trial_contract_classifies_actions() -> None:
+    module = _load_module()
+
+    contract = module._guard_trial_contract(
+        [
+            {
+                "component": "q6_cells",
+                "status": "blocked_holdout_hurt",
+                "support_gate": {"status": "no_watch"},
+                "top_applied_hurt_metrics": [
+                    {
+                        "watch_label": (
+                            "q6_cells|map_id|all:q6_cells:2408"
+                        ),
+                        "label": "q6_cells:2408",
+                        "candidate_rows": 14,
+                        "candidate_sessions": 4,
+                        "candidate_hurt_rate": 0.928571,
+                    }
+                ],
+            },
+            {
+                "component": "q6_value",
+                "status": "blocked_holdout_hurt",
+                "support_gate": {"status": "no_watch"},
+                "top_applied_hurt_metrics": [
+                    {
+                        "watch_label": (
+                            "q6_value|map_id,evidence_profile_key|all:"
+                            "q6_value:map_id=2508|"
+                            "evidence_profile_key=item+shape"
+                        ),
+                        "label": (
+                            "q6_value:map_id=2508|"
+                            "evidence_profile_key=item+shape"
+                        ),
+                        "candidate_rows": 4,
+                        "candidate_sessions": 1,
+                        "candidate_hurt_rate": 1.0,
+                    }
+                ],
+            },
+            {
+                "component": "q6_count",
+                "status": "blocked_seed_instability",
+                "support_gate": {
+                    "status": "watch_low_support",
+                    "low_support_watch_metrics": [
+                        {
+                            "watch_label": (
+                                "q6_count|map_id,evidence_profile_key|"
+                                "down_only:q6_count:map_id=2501|"
+                                "evidence_profile_key="
+                                "tool:category+item+shape"
+                            ),
+                            "posterior_seed": 1,
+                            "support_rows": 8,
+                            "support_sessions": 3,
+                        }
+                    ],
+                },
+            },
+        ]
+    )
+
+    assert contract["status"] == "shadow_guard_trial_design"
+    assert contract["can_promote"] is False
+    assert contract["requires_source_parser"] is True
+    assert contract["can_run_shadow_trial_components"] == [
+        "q6_cells",
+        "q6_value",
+    ]
+    assert contract["action_counts"] == {
+        "freeze_component": 1,
+        "guard_hurt_groups_keep_component_inactive": 1,
+        "require_source_support_gate": 1,
+    }
+    actions = {
+        row["component"]: row for row in contract["component_actions"]
+    }
+    assert actions["q6_cells"]["trial_action"] == "freeze_component"
+    assert actions["q6_cells"]["candidate_exclude_labels"] == [
+        "q6_cells:2408"
+    ]
+    assert actions["q6_value"]["trial_action"] == (
+        "guard_hurt_groups_keep_component_inactive"
+    )
+    assert actions["q6_count"]["trial_action"] == (
+        "require_source_support_gate"
+    )
+    assert actions["q6_count"]["requires_source_parser"] is True
+    assert actions["q6_count"]["low_support_watch_metrics"][0][
+        "support_rows"
+    ] == 8

@@ -274,6 +274,22 @@ def test_readiness_attaches_shadow_sampler_prototype_contract() -> None:
                 },
             }
         ],
+        "guard_trial_contract": {
+            "interface": "v3_ccvc_shadow_sampler_guard_trial_contract",
+            "status": "requires_source_support_gate",
+            "shadow_only": True,
+            "affects_bid": False,
+            "active": False,
+            "can_promote": False,
+            "action_counts": {"require_source_support_gate": 1},
+            "component_actions": [
+                {
+                    "component": "q6_count",
+                    "trial_action": "require_source_support_gate",
+                    "requires_source_parser": True,
+                }
+            ],
+        },
     }
 
     result = module.summarize_readiness(
@@ -292,6 +308,10 @@ def test_readiness_attaches_shadow_sampler_prototype_contract() -> None:
     assert gate["prototype_status"] == "blocked_seed_instability"
     assert gate["component_status_counts"] == {"blocked_seed_instability": 1}
     assert gate["support_gate_status_counts"] == {"watch_low_support": 1}
+    assert gate["guard_trial_status"] == "requires_source_support_gate"
+    assert gate["guard_trial_action_counts"] == {
+        "require_source_support_gate": 1
+    }
     assert gate["low_support_watch_metrics"][0]["support_rows"] == 8
     contract = result["shadow_sampler_prototype_contract"]
     assert contract["status"] == "blocked"
@@ -303,6 +323,10 @@ def test_readiness_attaches_shadow_sampler_prototype_contract() -> None:
             "support_gate": "watch_low_support",
         }
     ]
+    assert contract["guard_trial_status"] == "requires_source_support_gate"
+    assert contract["guard_trial_contract"]["component_actions"][0][
+        "requires_source_parser"
+    ] is True
     assert result["shadow_sampler_prototype"] == prototype
     dependency_gates = {
         row["gate"]: row
