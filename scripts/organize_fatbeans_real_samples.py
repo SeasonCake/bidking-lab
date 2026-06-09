@@ -48,6 +48,7 @@ DEFAULT_ARCHIVE = ROOT / "data" / "samples" / "fatbeans"
 DEFAULT_INBOX = ROOT / "data" / "samples" / "fatbeans_manual_inbox"
 DEFAULT_LIVE_COMPLETE = ROOT / "data" / "logs" / "live" / "raw" / "archive" / "complete"
 DEFAULT_INVALID = ROOT / "data" / "samples" / "fatbeans_invalid"
+DEFAULT_ACTIVITY = ROOT / "data" / "samples" / "fatbeans_activity_20260605_shipwreck"
 
 
 @dataclass(frozen=True)
@@ -154,12 +155,22 @@ def _rounds(events: FatbeansCaptureEvents) -> int:
     return max([bid_windows, *observed_rounds], default=0)
 
 
-def _source_kind(path: Path, *, archive_dir: Path, inbox_dir: Path, live_dir: Path) -> str:
+def _source_kind(
+    path: Path,
+    *,
+    archive_dir: Path,
+    inbox_dir: Path,
+    live_dir: Path,
+    activity_dir: Path = DEFAULT_ACTIVITY,
+    invalid_dir: Path = DEFAULT_INVALID,
+) -> str:
     resolved = path.resolve()
     for name, root in (
         ("archive", archive_dir),
+        ("activity", activity_dir),
         ("manual", inbox_dir),
         ("live_complete", live_dir),
+        ("invalid", invalid_dir),
     ):
         try:
             resolved.relative_to(root.resolve())
@@ -183,10 +194,12 @@ def _iter_json(paths: Iterable[Path]) -> list[Path]:
 
 def _source_priority(source_kind: str) -> int:
     return {
-        "archive": 0,
-        "manual": 1,
-        "live_complete": 2,
-        "external": 3,
+        "activity": 0,
+        "archive": 1,
+        "invalid": 2,
+        "manual": 3,
+        "live_complete": 4,
+        "external": 5,
     }.get(source_kind, 9)
 
 
@@ -228,9 +241,18 @@ def sample_meta(
     archive_dir: Path = DEFAULT_ARCHIVE,
     inbox_dir: Path = DEFAULT_INBOX,
     live_dir: Path = DEFAULT_LIVE_COMPLETE,
+    activity_dir: Path = DEFAULT_ACTIVITY,
+    invalid_dir: Path = DEFAULT_INVALID,
 ) -> SampleMeta:
     file_hash = _sha256(path)
-    source_kind = _source_kind(path, archive_dir=archive_dir, inbox_dir=inbox_dir, live_dir=live_dir)
+    source_kind = _source_kind(
+        path,
+        archive_dir=archive_dir,
+        inbox_dir=inbox_dir,
+        live_dir=live_dir,
+        activity_dir=activity_dir,
+        invalid_dir=invalid_dir,
+    )
     path_parts = {part.lower() for part in path.parts}
     name = path.name.lower()
     force_quarantine = "fatbeans_invalid" in path_parts or name.startswith("fatbeans_invalid_")
@@ -328,10 +350,18 @@ def build_plan(
     inbox_dir: Path = DEFAULT_INBOX,
     live_dir: Path = DEFAULT_LIVE_COMPLETE,
     invalid_dir: Path = DEFAULT_INVALID,
+    activity_dir: Path = DEFAULT_ACTIVITY,
 ) -> dict[str, Any]:
     source_paths = _iter_json(paths)
     metas = [
-        sample_meta(path, archive_dir=archive_dir, inbox_dir=inbox_dir, live_dir=live_dir)
+        sample_meta(
+            path,
+            archive_dir=archive_dir,
+            inbox_dir=inbox_dir,
+            live_dir=live_dir,
+            activity_dir=activity_dir,
+            invalid_dir=invalid_dir,
+        )
         for path in source_paths
     ]
     metas.sort(key=lambda meta: (_source_priority(meta.source_kind), meta.source_path))
@@ -367,20 +397,27 @@ def build_plan(
             meta.source_kind == "archive"
             and _has_canonical_archive_name(source, meta)
         )
-        destination = (
-            source
-            if keep_existing_archive_name
-            else _destination_for(
+        if meta.source_kind in {"activity", "invalid"}:
+            destination = source
+        elif keep_existing_archive_name:
+            destination = source
+        else:
+            destination = _destination_for(
                 meta,
                 archive_dir=archive_dir,
                 invalid_dir=invalid_dir,
                 index=index,
             )
-        )
         if destination.resolve() in destination_set:
             raise ValueError(f"duplicate destination planned: {destination}")
         destination_set.add(destination.resolve())
-        if source.resolve() == destination.resolve():
+        if meta.source_kind == "activity":
+            action = "keep"
+            reason = "already_activity_reference"
+        elif meta.source_kind == "invalid":
+            action = "keep"
+            reason = "already_quarantined_invalid"
+        elif source.resolve() == destination.resolve():
             action = "keep"
             reason = "already_canonical"
         elif meta.source_kind == "live_complete":
@@ -535,18 +572,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manual-inbox", type=Path, default=DEFAULT_INBOX)
     parser.add_argument("--live-complete-dir", type=Path, default=DEFAULT_LIVE_COMPLETE)
     parser.add_argument("--invalid-dir", type=Path, default=DEFAULT_INVALID)
+    parser.add_argument("--activity-dir", type=Path, default=DEFAULT_ACTIVITY)
     parser.add_argument("--manifest-output", type=Path)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
 
-    paths = args.paths or [args.archive_dir, args.manual_inbox, args.live_complete_dir]
+    paths = args.paths or [args.archive_dir, args.activity_dir, args.manual_inbox, args.live_complete_dir]
     plan = build_plan(
         paths,
         archive_dir=args.archive_dir,
         inbox_dir=args.manual_inbox,
         live_dir=args.live_complete_dir,
         invalid_dir=args.invalid_dir,
+        activity_dir=args.activity_dir,
     )
     if args.apply and plan["summary"]["errors"]:
         print("Refusing to apply plan with errors.", file=sys.stderr)

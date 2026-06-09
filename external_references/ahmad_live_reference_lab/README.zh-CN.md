@@ -23,15 +23,19 @@
 - 字段只汇总 settlement 前 live batch updates，不写 formal，不改正式出价；
 - 本支线 Tk overlay 直接读取 `latest_snapshot.json` root 的结构化输入；
 - 有 `100204` 总件数或等价公开/手填总件时显示外援参考价；
-- 缺总件或 Victor 关键件数组合时会进入带标记的 `ref_prior/count_prior` 兜底，UI 必须保留 `总件估计`、`缺紫金红件数` 等标识；
+- 缺总件或 Victor 关键件数组合时会进入带标记的 `ref_prior/count_prior` 兜底，UI 必须保留 `总件估计`、`缺紫金红件数` 等标识；若总件已知但品质分裂过于稀疏，会进入 `sparse_exact_prior` 快路径并标记 `宽约束快速`，这不是截断结果；
 - Victor 已按实战文本修正 `100209`：紫色 + 金色 + 红色件数之和，显示为 `紫金红件 N`，桥接字段为 `count_sums.q4q5q6`；
 - 旧 `count_sums.q4q5` 只作为历史样本/旧手填兼容，不再作为当前 live 语义；
 - action/skill 结果解析支持 `field7`，覆盖 Ahmad `100204` 总件数和普通道具件数结果；
 - `100113` 等均格类 action 支持 `0` 作为合法结果；若已发送数值道具、后续同局状态继续推进但缺对应结果包，会生成带 `inferred_zero` 标记的 0 值兜底，真实结果包优先；
 - 手动面板支持 `紫金红件` 输入，对应 Victor 的 q4+q5+q6 件数和 `count_sums.q4q5q6`；件数字段只接受整数，`总格/均格` 字段可填小数；
-- `均格 + 件数` 会校验能否对应整数总格，例如 `紫均格=1.8` 时 `4/5/6` 件分别对应 `7/9/11` 格，不再把小数乘积直接当格数。
+- `均格 + 件数` 会校验 `均格 * 件数` 能否直接对应整数总格；如果 `均格 + 格数` 已经唯一，也会自动回填件数并参与约束，例如 `紫均格=1.8` 时只有 `5件 -> 9格` 合法，`4件 -> 7.2格` 与 `6件 -> 10.8格` 会被拒绝；
+- `全总格` fitting 优先使用整数可达格数分配给未直接约束的品质，找不到精确整数解时才退回比例缩放。
+- 未直接观测格数/均格的品质，UI 格数范围按可组成形状的 top-3 候选显示，并用总格可行性过滤；不要把该字段理解为唯一真实格数。
 - 手填英雄支持 `ahmed/ahmad/ahamed/艾哈/艾哈迈德` 与 `victor/维克/维克托` 别名。
-- 手填宽约束使用 `manual_prior` 快速先验枚举：保留用户总件硬约束，避免完整组合枚举卡住 UI；会明确标记 `手动先验`。
+- Aisha 已作为 Hero Ref 参考层接入：`aisha/艾莎` 支持运行 ref_v0；白/绿技能证据用 `split_counts/split_quality_cells/split_avg_cells` 保留原始分桶，只有白+绿两边都齐全且一致时才折叠为 `q1` 白绿合并 exact。
+- 手填面板支持白、绿、白绿合并三套输入；white-only 只作为 q1 件数和格子下界，white+green 齐全且 q1 合计栏未被用户手填时才自动填入白绿合计；白/绿 split 与白绿合并 exact 冲突时会返回约束冲突，不静默猜测。
+- 手填宽约束使用 `manual_prior` 快速先验枚举：保留用户总件硬约束，避免完整组合枚举卡住 UI；会明确标记 `手动先验`。总件已知但其余证据稀疏时，live 也会走 `sparse_exact_prior` 概率先验快路径，而不是依赖 `max_combos` 截断。
 - Tk overlay 已接入主线 `ui_contract.minimap` 只读小地图：有公开轮廓/小地图/结算轮廓时显示品质分布；没有轮廓时显示待机占位。
 - 旧 `latest_snapshot.json` 会进入待机：普通快照或已结算快照超过 60 秒，均不再显示旧价格。
 - 本目录已从“纯 ignored 外部参考”调整为可版本化支线代码：源码、脚本、文档应提交；`build/`、`dist/`、`__pycache__` 和打包 exe 仍保持 ignored。
@@ -133,6 +137,10 @@ UI-only exe 打包：
 ```powershell
 C:\Python313\python.exe external_references\ahmad_live_reference_lab\tools\smoke_ahmed_ref_samples.py
 ```
+
+样本校准默认使用 `data/samples/fatbeans/fatbeans_valid_*` 或 manifest/evaluator strict 口径。`data/logs/live/raw/archive/complete` 只表示结算归档完整，不代表语义可用于正常回归；`fatbeans_mixed_*` 以及同 session 语义矛盾的 raw complete 只作隔离负例。
+
+新增实战样本入库时，先运行主 organizer 补齐 raw/manual unique session，再运行 `scripts/organize_fatbeans_activity_samples.py --apply` 把 2521-2530 / 4521-4530 活动沉船样本移入 `data/samples/fatbeans_activity_20260605_shipwreck`。默认 baseline 应保持无活动图。
 
 当前结论：
 

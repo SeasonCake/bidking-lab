@@ -4980,3 +4980,40 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 因此继续从 payload outer fields 寻找 count cap 会转为过拟合；
 - blocker 已进一步收敛到 table/overlay/server-side 机制；
 - 当前 readiness 仍为 `overall_status=not_ready`、`blocked_gates=13`，workbench 仍为 `table_activity_capacity=stop_loss` 与 `shadow_sampler_contract=shadow_design_only`。
+
+## D-v3-218：均格/格数证据口径收紧，主线不得复用 Hero Ref 旧宽松假设
+
+2026-06-09 起，当前决策：
+
+- 均格证据的硬约束口径是 `abs(avg * count - integer_cells) <= float_tolerance`；
+- 不再允许 `abs(integer_cells / count - avg) <= 0.05` 的一位小数显示容差作为 hard candidate；
+- `0` 均格是合法证据，且当 `avg_cells.qX=0` 时该品质件数固定为 0；
+- 同一证据在 live、manual、archive replay、UI contract 中必须保持一致；
+- 件数证据与格数/形状证据分层：
+  - `fixed_counts` / `count_sums` 只约束件数；
+  - `quality_cells` / `avg_cells` 才能约束格数；
+  - 没有直接格数/均格证据时，不得把默认均格或 fitting 后 top1 当成唯一格数 truth。
+
+对 v3 sampler/readiness 的要求：
+
+- sampler 应把 count likelihood、cell/shape likelihood、value likelihood 分开建模；
+- 若只知道红件数，不知道红格数，红格必须保留候选分布或 top-k/range；
+- readiness 或 promotion 指标中，不得把 top-k/display candidate 当成 settlement truth；
+- UI 可展示 top-k candidate range，但必须避免表达成“唯一真实格数”；
+- 未来从 Hero Ref 支线迁移逻辑时，只能迁移修正后的 exact avg-product 与 top-k/candidate-range 口径，不得迁移旧 `0.05` 容差或 top1 fitting。
+
+原因：
+
+- 有效/complete Fatbeans 样本复核未发现一位小数 alias 证据；
+- 项目旧显示口径已证明游戏均格最多两位小数截断；
+- Victor `100209=6 + q4_avg=1.8 + q5_avg=0` 能确定 `q4=5/q5=0/q6=1`，但不能唯一确定 `q6_cells`；
+- 把格数固定成 top1 会让 UI 和后续 sampler 误以为证据比实际更强，导致过拟合和错误 confidence。
+
+## D-v3-219：稀疏总件快路径应由概率先验承担，不得再用 cap 截断冒充优化
+
+2026-06-09 起，当前决策：
+
+- 当 `total_count` 已知、但品质分裂证据稀疏时，Hero Ref 可以进入 `sparse_exact_prior` 快路径；
+- 该快路径仍保留总件硬约束，但把剩余品质拆分交给概率先验，而不是靠 `max_combos` 截断；
+- `combo_cap_hit` 只能作为风险标记，不得当作默认加速手段或更保守的真值结果；
+- 这条决策主要服务于 live/manual 响应性，不等于主线 v3 promotion，后续 sampler 仍需按 count/cell/value 分层建模。

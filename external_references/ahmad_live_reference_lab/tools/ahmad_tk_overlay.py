@@ -40,6 +40,7 @@ FONT_UI = "Microsoft YaHei UI"
 FONT_NUMERIC = "Segoe UI Semibold"
 MINIMAP_DEFAULT_COLUMNS = 10
 MINIMAP_DEFAULT_ROWS = 13
+MANUAL_FORM_COLUMNS = 6
 QUALITY_LABELS = {
     "q1": "白绿",
     "q3": "蓝",
@@ -47,7 +48,15 @@ QUALITY_LABELS = {
     "q5": "金",
     "q6": "红",
 }
+QUALITY_INPUT_KEYS = ("q1", "q3", "q4", "q5", "q6")
+SPLIT_QUALITY_LABELS = {
+    "white": "白",
+    "green": "绿",
+}
+SPLIT_QUALITY_INPUT_KEYS = ("white", "green")
 HERO_ALIASES = {
+    "aisha": "aisha",
+    "艾莎": "aisha",
     "ahmad": "ahmed",
     "ahmed": "ahmed",
     "ahamed": "ahmed",
@@ -354,6 +363,14 @@ def _normalize_manual_hero(value: Any) -> str:
     return HERO_ALIASES.get(text.lower(), HERO_ALIASES.get(text, text))
 
 
+def _supported_manual_hero_display(*values: Any) -> Any:
+    for value in values:
+        normalized = _normalize_manual_hero(value)
+        if normalized in {"aisha", "ahmed", "victor"}:
+            return value
+    return None
+
+
 def _minimap_quality_key(value: Any) -> str:
     if value in (None, ""):
         return "unknown"
@@ -384,6 +401,10 @@ def _format_manual_number(value: Any) -> str:
     return f"{parsed:.4f}".rstrip("0").rstrip(".")
 
 
+def _manual_quality_label(key: str) -> str:
+    return SPLIT_QUALITY_LABELS.get(key, QUALITY_LABELS.get(key, key))
+
+
 def _manual_avg_grid_options(count: int, avg: float) -> list[int]:
     if can_compose_grid_total is None:
         return []
@@ -394,7 +415,7 @@ def _manual_avg_grid_options(count: int, avg: float) -> list[int]:
     low = count
     high = 18 * count
     target = avg * count
-    tolerance = 0.0500001
+    tolerance = 0.0001
     candidates = {
         int(math.floor(target)),
         int(round(target)),
@@ -404,7 +425,7 @@ def _manual_avg_grid_options(count: int, avg: float) -> list[int]:
         grid
         for grid in sorted(candidates)
         if low <= grid <= high
-        and abs(grid / count - avg) <= tolerance
+        and abs(grid - target) <= tolerance
         and can_compose_grid_total(count, grid)
     ]
     if options:
@@ -412,9 +433,123 @@ def _manual_avg_grid_options(count: int, avg: float) -> list[int]:
     return [
         grid
         for grid in range(low, high + 1)
-        if abs(grid / count - avg) <= tolerance
+        if abs(grid - target) <= tolerance
         and can_compose_grid_total(count, grid)
     ]
+
+
+def _decimal_places(text: str) -> int:
+    value = str(text or "").strip().replace(",", "")
+    if not value:
+        return 0
+    if "e" in value.lower():
+        return 6
+    if "." not in value:
+        return 0
+    return max(0, len(value.split(".", 1)[1].rstrip()))
+
+
+def _manual_avg_product_tolerance(avg_text: str, count: int) -> float:
+    decimals = _decimal_places(avg_text)
+    if decimals < 2:
+        return 0.0001
+    return max(0.0001, (0.5 * (10 ** -decimals) * max(1, int(count))) + 1e-9)
+
+
+def _manual_avg_matches_cells(
+    avg: float | None,
+    *,
+    avg_text: str,
+    count: int,
+    cells: int,
+) -> bool:
+    if avg is None:
+        return True
+    return abs(float(avg) * int(count) - int(cells)) <= _manual_avg_product_tolerance(
+        avg_text,
+        count,
+    )
+
+
+def _manual_avg_grid_options_from_text(count: int, avg: float, avg_text: str) -> list[int]:
+    if can_compose_grid_total is None:
+        return []
+    if count < 0:
+        return []
+    if count == 0:
+        return [0] if avg == 0 else []
+    low = count
+    high = 18 * count
+    target = avg * count
+    tolerance = _manual_avg_product_tolerance(avg_text, count)
+    candidates = {
+        int(math.floor(target)),
+        int(round(target)),
+        int(math.ceil(target)),
+    }
+    options = [
+        grid
+        for grid in sorted(candidates)
+        if low <= grid <= high
+        and abs(grid - target) <= tolerance
+        and can_compose_grid_total(count, grid)
+    ]
+    if options:
+        return options
+    return [
+        grid
+        for grid in range(low, high + 1)
+        if abs(grid - target) <= tolerance
+        and can_compose_grid_total(count, grid)
+    ]
+
+
+def _manual_avg_count_from_cells(avg: float | None, cells: Any) -> int | None:
+    if can_compose_grid_total is None or avg is None or cells in (None, ""):
+        return None
+    try:
+        cells_value = float(str(cells).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+    if cells_value < 0:
+        return None
+    cells_int = int(round(cells_value))
+    if abs(cells_value - cells_int) > 0.0001:
+        return None
+    if avg == 0:
+        return 0 if cells_int == 0 else None
+    count = int(round(cells_int / avg))
+    if count <= 0:
+        return None
+    if abs(avg * count - cells_int) > 0.0001:
+        return None
+    if not can_compose_grid_total(count, cells_int):
+        return None
+    return count
+
+
+def _manual_avg_count_from_cells_text(avg: float | None, cells: Any, avg_text: str) -> int | None:
+    if can_compose_grid_total is None or avg is None or cells in (None, ""):
+        return None
+    try:
+        cells_value = float(str(cells).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+    if cells_value < 0:
+        return None
+    cells_int = int(round(cells_value))
+    if abs(cells_value - cells_int) > 0.0001:
+        return None
+    if avg == 0:
+        return 0 if cells_int == 0 else None
+    count = int(round(cells_int / avg))
+    if count <= 0:
+        return None
+    if not _manual_avg_matches_cells(avg, avg_text=avg_text, count=count, cells=cells_int):
+        return None
+    if not can_compose_grid_total(count, cells_int):
+        return None
+    return count
 
 
 def _money(value: Any, fallback: str = "-") -> str:
@@ -734,6 +869,7 @@ class AhmadTkOverlay:
         self._manual_snapshot: dict[str, Any] = {}
         self._manual_summary: dict[str, Any] = {}
         self._manual_active = False
+        self._manual_live_session_id = ""
         self._manual_programmatic_update = False
         self._manual_dirty_fields: set[str] = set()
         self._manual_autofill_values: dict[str, str] = {}
@@ -1147,9 +1283,9 @@ class AhmadTkOverlay:
         requested_w = self.shell.winfo_reqwidth() if hasattr(self, "shell") else 0
         requested_h = self.shell.winfo_reqheight() if hasattr(self, "shell") else 0
         width = min(760, max(700, requested_w + 28, int(work_w * 0.44)))
-        height = max(720, requested_h + 16)
+        height = max(700, requested_h + 8)
         width = min(width, max(430, work_w - 40))
-        height = min(height, max(320, work_h - 40))
+        height = min(height, max(320, work_h - 72))
         return f"{width}x{height}"
 
     def _mini_geometry(self) -> str:
@@ -1461,16 +1597,22 @@ class AhmadTkOverlay:
             ("total_count", "总件", ""),
             ("total_cells", "总格", ""),
             ("total_avg", "全均格", ""),
+            ("white_avg", "白均格", ""),
+            ("green_avg", "绿均格", ""),
             ("q1_avg", "白绿均格", ""),
             ("q3_avg", "蓝均格", ""),
             ("q4_avg", "紫均格", ""),
             ("q5_avg", "金均格", ""),
             ("q6_avg", "红均格", ""),
+            ("white_count", "白件", ""),
+            ("green_count", "绿件", ""),
             ("q1_count", "白绿件", ""),
             ("q3_count", "蓝件", ""),
             ("q4_count", "紫件", ""),
             ("q5_count", "金件", ""),
             ("q6_count", "红件", ""),
+            ("white_cells", "白格", ""),
+            ("green_cells", "绿格", ""),
             ("q1_cells", "白绿格", ""),
             ("q3_cells", "蓝格", ""),
             ("q4_cells", "紫格", ""),
@@ -1479,8 +1621,8 @@ class AhmadTkOverlay:
             ("q4q5_count", "紫金红件", ""),
         )
         for idx, (key, label, default) in enumerate(fields):
-            row = idx // 5
-            col = idx % 5
+            row = idx // MANUAL_FORM_COLUMNS
+            col = idx % MANUAL_FORM_COLUMNS
             cell = tk.Frame(form, bg=manual_bg)
             cell.grid(row=row, column=col, sticky="ew", padx=(0, 5), pady=(0, 3))
             form.columnconfigure(col, weight=1)
@@ -1531,7 +1673,75 @@ class AhmadTkOverlay:
         if self._manual_programmatic_update:
             return
         self._manual_dirty_fields.add(field)
+        self._sync_manual_derived_fields()
         self._mark_manual_pending()
+
+    def _can_autofill_manual_field(self, key: str) -> bool:
+        current = self._manual_entry_text(key)
+        last_auto = self._manual_autofill_values.get(key)
+        if not current:
+            return True
+        return last_auto is not None and current == last_auto
+
+    def _set_manual_derived_entry(self, key: str, value: Any) -> None:
+        if value in (None, "") or not self._can_autofill_manual_field(key):
+            return
+        self._set_manual_entry(key, _format_manual_number(value), track_auto=True)
+
+    def _sync_manual_derived_fields(self) -> None:
+        if not hasattr(self, "manual_entries") or self._manual_programmatic_update:
+            return
+        total_count = _to_optional_int(self._manual_entry_text("total_count"))
+        total_cells = _to_optional_float(self._manual_entry_text("total_cells"))
+        total_avg = _to_optional_float(self._manual_entry_text("total_avg"))
+        if total_count is not None and total_count > 0:
+            if total_cells is None and total_avg is not None:
+                self._set_manual_derived_entry("total_cells", total_count * total_avg)
+            elif total_avg is None and total_cells is not None:
+                self._set_manual_derived_entry("total_avg", total_cells / total_count)
+
+        for key in (*SPLIT_QUALITY_INPUT_KEYS, *QUALITY_INPUT_KEYS):
+            count = _to_optional_int(self._manual_entry_text(f"{key}_count"))
+            cells = _to_optional_int(self._manual_entry_text(f"{key}_cells"))
+            avg_text = self._manual_entry_text(f"{key}_avg")
+            avg = _to_optional_float(avg_text)
+            if count is not None and cells is not None and avg is None:
+                if count == 0:
+                    if cells == 0:
+                        self._set_manual_derived_entry(f"{key}_avg", 0)
+                else:
+                    self._set_manual_derived_entry(f"{key}_avg", cells / count)
+            elif count is not None and avg is not None and cells is None:
+                grid_options = _manual_avg_grid_options_from_text(count, avg, avg_text)
+                if len(grid_options) == 1:
+                    self._set_manual_derived_entry(f"{key}_cells", grid_options[0])
+            elif count is None and avg is not None and cells is not None:
+                derived_count = _manual_avg_count_from_cells_text(avg, cells, avg_text)
+                if derived_count is not None:
+                    self._set_manual_derived_entry(f"{key}_count", derived_count)
+        q1_has_user_value = False
+        for field in ("q1_avg", "q1_count", "q1_cells"):
+            value = self._manual_entry_text(field)
+            if value and self._manual_autofill_values.get(field) != value:
+                q1_has_user_value = True
+                break
+        if not q1_has_user_value:
+            white_count = _to_optional_int(self._manual_entry_text("white_count"))
+            green_count = _to_optional_int(self._manual_entry_text("green_count"))
+            white_cells = _to_optional_int(self._manual_entry_text("white_cells"))
+            green_cells = _to_optional_int(self._manual_entry_text("green_cells"))
+            merged_count = None
+            merged_cells = None
+            if white_count is not None and green_count is not None:
+                merged_count = white_count + green_count
+                self._set_manual_derived_entry("q1_count", merged_count)
+            if white_cells is not None and green_cells is not None:
+                merged_cells = white_cells + green_cells
+                self._set_manual_derived_entry("q1_cells", merged_cells)
+            if merged_count is not None and merged_count > 0 and merged_cells is not None:
+                self._set_manual_derived_entry("q1_avg", merged_cells / merged_count)
+            elif merged_count == 0 and merged_cells == 0:
+                self._set_manual_derived_entry("q1_avg", 0)
 
     def _mark_manual_pending(
         self,
@@ -1678,12 +1888,55 @@ class AhmadTkOverlay:
             self._manual_autofill_values[key] = text
             self._manual_dirty_fields.discard(key)
 
+    def _summary_phase(self, data: dict[str, Any]) -> str:
+        context = data.get("context") if isinstance(data.get("context"), dict) else {}
+        return _text(context.get("phase") or data.get("phase"), "")
+
+    def _summary_session_id(self, data: dict[str, Any]) -> str:
+        context = data.get("context") if isinstance(data.get("context"), dict) else {}
+        return _text(context.get("session_id") or data.get("session_id"), "").strip()
+
+    def _should_reset_manual_for_summary(self, data: dict[str, Any]) -> bool:
+        if not hasattr(self, "manual_entries"):
+            return False
+        has_manual_state = (
+            self._manual_active
+            or self._has_manual_inputs()
+            or bool(_text(getattr(self, "_manual_live_session_id", ""), "").strip())
+            or bool(getattr(self, "_manual_snapshot", {}))
+        )
+        if not has_manual_state:
+            return False
+        stale = data.get("stale") if isinstance(data.get("stale"), dict) else {}
+        reason = _text(stale.get("reason"), "")
+        if reason in {"session_ahead", "settled_stale", "monitor_restarted"}:
+            return True
+        if self._summary_phase(data) == "settled":
+            return True
+        current_session_id = self._summary_session_id(data)
+        previous_session_id = _text(getattr(self, "_manual_live_session_id", ""), "").strip()
+        return bool(current_session_id and previous_session_id and current_session_id != previous_session_id)
+
+    def _reset_manual_state(self, status_text: str = "已清空，回到实时", *, status_fg: str = DIM) -> None:
+        self._manual_active = False
+        self._manual_snapshot = {}
+        self._manual_summary = {}
+        for key in tuple(getattr(self, "manual_entries", {})):
+            self._set_manual_entry(key, "", track_auto=False)
+        self._manual_dirty_fields.clear()
+        self._manual_autofill_values.clear()
+        self._manual_live_session_id = ""
+        if hasattr(self, "manual_status"):
+            self.manual_status.configure(text=status_text, fg=status_fg)
+        if hasattr(self, "manual_buttons"):
+            self._set_manual_button_state()
+
     def _manual_values_from_summary(self, data: dict[str, Any]) -> dict[str, Any]:
         context = data.get("context") if isinstance(data.get("context"), dict) else {}
         ahmed_ref = data.get("ahmed_ref") if isinstance(data.get("ahmed_ref"), dict) else {}
         evidence = ahmed_ref.get("evidence") if isinstance(ahmed_ref.get("evidence"), dict) else {}
         values: dict[str, Any] = {}
-        hero = context.get("hero") or evidence.get("hero")
+        hero = _supported_manual_hero_display(context.get("hero"), evidence.get("hero"))
         if hero not in (None, ""):
             values["hero"] = hero
         map_id = context.get("map_id") or evidence.get("map_id")
@@ -1698,9 +1951,19 @@ class AhmadTkOverlay:
             if total_count is not None and total_count > 0 and total_cells is not None:
                 values["total_avg"] = _format_manual_number(total_cells / total_count)
         avg_cells = evidence.get("avg_cells") if isinstance(evidence.get("avg_cells"), dict) else {}
+        split_avg_cells = (
+            evidence.get("split_avg_cells")
+            if isinstance(evidence.get("split_avg_cells"), dict)
+            else {}
+        )
         quality_cells = (
             evidence.get("quality_cells")
             if isinstance(evidence.get("quality_cells"), dict)
+            else {}
+        )
+        split_quality_cells = (
+            evidence.get("split_quality_cells")
+            if isinstance(evidence.get("split_quality_cells"), dict)
             else {}
         )
         quality_cell_ranges = (
@@ -1709,12 +1972,28 @@ class AhmadTkOverlay:
             else {}
         )
         fixed_counts = evidence.get("fixed_counts") if isinstance(evidence.get("fixed_counts"), dict) else {}
+        split_counts = evidence.get("split_counts") if isinstance(evidence.get("split_counts"), dict) else {}
         count_sums = evidence.get("count_sums") if isinstance(evidence.get("count_sums"), dict) else {}
-        for quality in ("q1", "q3", "q4", "q5", "q6"):
-            if avg_cells.get(quality) not in (None, ""):
-                values[f"{quality}_avg"] = _format_manual_number(avg_cells.get(quality))
-            if fixed_counts.get(quality) not in (None, ""):
-                values[f"{quality}_count"] = fixed_counts.get(quality)
+        for split_key in SPLIT_QUALITY_INPUT_KEYS:
+            avg_value = _to_optional_float(split_avg_cells.get(split_key))
+            if avg_value not in (None, ""):
+                values[f"{split_key}_avg"] = _format_manual_number(avg_value)
+            cell_value = split_quality_cells.get(split_key)
+            count_value = _to_optional_int(split_counts.get(split_key))
+            if count_value is None and cell_value not in (None, "") and avg_value is not None:
+                count_value = _manual_avg_count_from_cells(avg_value, cell_value)
+            if count_value is not None:
+                values[f"{split_key}_count"] = count_value
+            if cell_value in (None, "") and count_value is not None and avg_value is not None:
+                grid_options = _manual_avg_grid_options(count_value, avg_value)
+                if len(grid_options) == 1:
+                    cell_value = grid_options[0]
+            if cell_value not in (None, ""):
+                values[f"{split_key}_cells"] = _format_manual_number(cell_value)
+        for quality in QUALITY_INPUT_KEYS:
+            avg_value = _to_optional_float(avg_cells.get(quality))
+            if avg_value not in (None, ""):
+                values[f"{quality}_avg"] = _format_manual_number(avg_value)
             cell_value = quality_cells.get(quality)
             if cell_value in (None, ""):
                 raw_range = quality_cell_ranges.get(quality)
@@ -1722,13 +2001,15 @@ class AhmadTkOverlay:
                     first, middle, last = raw_range[0], raw_range[1], raw_range[2]
                     if first not in (None, "") and first == middle == last:
                         cell_value = middle
-            if cell_value in (None, ""):
-                count_value = _to_optional_int(fixed_counts.get(quality))
-                avg_value = _to_optional_float(avg_cells.get(quality))
-                if count_value is not None and avg_value is not None:
-                    grid_options = _manual_avg_grid_options(count_value, avg_value)
-                    if len(grid_options) == 1:
-                        cell_value = grid_options[0]
+            count_value = _to_optional_int(fixed_counts.get(quality))
+            if count_value is None and cell_value not in (None, "") and avg_value is not None:
+                count_value = _manual_avg_count_from_cells(avg_value, cell_value)
+            if count_value is not None:
+                values[f"{quality}_count"] = count_value
+            if cell_value in (None, "") and count_value is not None and avg_value is not None:
+                grid_options = _manual_avg_grid_options(count_value, avg_value)
+                if len(grid_options) == 1:
+                    cell_value = grid_options[0]
             if cell_value not in (None, ""):
                 values[f"{quality}_cells"] = _format_manual_number(cell_value)
         count_sum_value = count_sums.get("q4q5q6")
@@ -1740,6 +2021,8 @@ class AhmadTkOverlay:
 
     def _auto_sync_manual_inputs(self, data: dict[str, Any]) -> None:
         if not hasattr(self, "manual_entries") or self._manual_active:
+            return
+        if data.get("status") == "stale_snapshot" or self._summary_phase(data) == "settled":
             return
         values = self._manual_values_from_summary(data)
         for key, value in values.items():
@@ -1754,6 +2037,7 @@ class AhmadTkOverlay:
                 continue
             self._set_manual_entry(key, value, track_auto=True)
         if self._has_manual_inputs() and not self._manual_active:
+            self._manual_live_session_id = self._summary_session_id(data)
             self.manual_status.configure(text="实时已填入，可修改", fg=ACCENT)
 
     def _manual_inputs_snapshot(self) -> tuple[dict[str, Any] | None, str]:
@@ -1773,54 +2057,91 @@ class AhmadTkOverlay:
         avg_cells: dict[str, float] = {}
         quality_cells: dict[str, int] = {}
         fixed_counts: dict[str, int] = {}
+        split_avg_cells: dict[str, float] = {}
+        split_quality_cells: dict[str, int] = {}
+        split_counts: dict[str, int] = {}
         count_sums: dict[str, int] = {}
-        for key in ("q1", "q3", "q4", "q5", "q6"):
-            avg = _to_optional_float(self._manual_entry_text(f"{key}_avg"))
+        for key in (*SPLIT_QUALITY_INPUT_KEYS, *QUALITY_INPUT_KEYS):
+            label = _manual_quality_label(key)
+            avg_text = self._manual_entry_text(f"{key}_avg")
+            avg = _to_optional_float(avg_text)
             count, error = _to_manual_count(
                 self._manual_entry_text(f"{key}_count"),
-                f"{QUALITY_LABELS[key]}件",
+                f"{label}件",
             )
             if error:
                 return None, error
             cells, error = _to_manual_count(
                 self._manual_entry_text(f"{key}_cells"),
-                f"{QUALITY_LABELS[key]}格",
+                f"{label}格",
             )
             if error:
                 return None, error
+            if count is None and avg is not None and cells is not None:
+                derived_count = _manual_avg_count_from_cells_text(avg, cells, avg_text)
+                if derived_count is None:
+                    return None, (
+                        f"{label}均格与{label}格"
+                        "无法对应到整数件数"
+                    )
+                count = derived_count
             if count is not None:
-                fixed_counts[key] = count
+                if key in SPLIT_QUALITY_INPUT_KEYS:
+                    split_counts[key] = count
+                else:
+                    fixed_counts[key] = count
                 if avg is not None and cells is None:
-                    grid_options = _manual_avg_grid_options(count, avg)
+                    grid_options = _manual_avg_grid_options_from_text(count, avg, avg_text)
                     if not grid_options:
                         return None, (
-                            f"{QUALITY_LABELS[key]}均格与{QUALITY_LABELS[key]}件"
+                            f"{label}均格与{label}件"
                             "无法对应到整数格数"
                         )
             if cells is not None:
-                quality_cells[key] = cells
+                if key in SPLIT_QUALITY_INPUT_KEYS:
+                    split_quality_cells[key] = cells
+                else:
+                    quality_cells[key] = cells
                 if count is not None:
                     if count <= 0:
                         if cells != 0:
-                            return None, f"{QUALITY_LABELS[key]}件为0时格数也必须为0"
+                            return None, f"{label}件为0时格数也必须为0"
                         derived_avg = 0.0
                     else:
                         derived_avg = cells / count
                     if avg is None:
                         avg = derived_avg
-                    elif abs(avg - derived_avg) > 0.05:
+                    elif _manual_avg_matches_cells(
+                        avg,
+                        avg_text=avg_text,
+                        count=count,
+                        cells=cells,
+                    ):
+                        avg = derived_avg
+                    else:
                         return None, (
-                            f"{QUALITY_LABELS[key]}均格与{QUALITY_LABELS[key]}格/"
-                            f"{QUALITY_LABELS[key]}件不一致"
+                            f"{label}均格与{label}格/"
+                            f"{label}件不一致"
                         )
             if avg is not None:
-                avg_cells[key] = avg
+                if key in SPLIT_QUALITY_INPUT_KEYS:
+                    split_avg_cells[key] = avg
+                else:
+                    avg_cells[key] = avg
         q4q5_count, error = _to_manual_count(self._manual_entry_text("q4q5_count"), "紫金红件")
         if error:
             return None, error
         if q4q5_count is not None:
             count_sums["q4q5q6"] = q4q5_count
-        if not avg_cells and not fixed_counts and not count_sums and not quality_cells:
+        if (
+            not avg_cells
+            and not fixed_counts
+            and not count_sums
+            and not quality_cells
+            and not split_avg_cells
+            and not split_counts
+            and not split_quality_cells
+        ):
             return None, "需补品质均格/件数/格数"
         ref_inputs: dict[str, Any] = {
             "total_count": total_count,
@@ -1829,6 +2150,12 @@ class AhmadTkOverlay:
         }
         if quality_cells:
             ref_inputs["quality_cells"] = quality_cells
+        if split_avg_cells:
+            ref_inputs["split_avg_cells"] = split_avg_cells
+        if split_quality_cells:
+            ref_inputs["split_quality_cells"] = split_quality_cells
+        if split_counts:
+            ref_inputs["split_counts"] = split_counts
         if count_sums:
             ref_inputs["count_sums"] = count_sums
         if total_cells is not None:
@@ -1876,27 +2203,68 @@ class AhmadTkOverlay:
                 parts.append(f"全均格 {_format_manual_number(total_cells / total_count)}")
         avg_cells = evidence.get("avg_cells")
         quality_cells = evidence.get("quality_cells")
+        split_avg_cells = evidence.get("split_avg_cells")
+        split_quality_cells = evidence.get("split_quality_cells")
+        split_counts = evidence.get("split_counts")
+        if isinstance(split_avg_cells, dict):
+            for key in SPLIT_QUALITY_INPUT_KEYS:
+                if split_avg_cells.get(key) not in (None, ""):
+                    parts.append(
+                        f"{SPLIT_QUALITY_LABELS[key]}均格 "
+                        f"{_format_manual_number(split_avg_cells[key])}"
+                    )
         if isinstance(avg_cells, dict):
-            for key in ("q1", "q3", "q4", "q5", "q6"):
+            for key in QUALITY_INPUT_KEYS:
                 if avg_cells.get(key) not in (None, ""):
                     parts.append(f"{QUALITY_LABELS[key]}均格 {_format_manual_number(avg_cells[key])}")
+        if isinstance(split_quality_cells, dict):
+            split_cell_parts = [
+                f"{SPLIT_QUALITY_LABELS[key]}格 {_format_manual_number(split_quality_cells[key])}"
+                for key in SPLIT_QUALITY_INPUT_KEYS
+                if split_quality_cells.get(key) not in (None, "")
+            ]
+            if split_cell_parts:
+                parts.append("分格 " + "，".join(split_cell_parts))
         if isinstance(quality_cells, dict):
             cell_parts = [
                 f"{QUALITY_LABELS[key]}格 {_format_manual_number(quality_cells[key])}"
-                for key in ("q1", "q3", "q4", "q5", "q6")
+                for key in QUALITY_INPUT_KEYS
                 if quality_cells.get(key) not in (None, "")
             ]
             if cell_parts:
                 parts.append("格数 " + "，".join(cell_parts))
         fixed_counts = evidence.get("fixed_counts")
+        if isinstance(split_counts, dict):
+            split_count_parts = [
+                f"{SPLIT_QUALITY_LABELS[key]}件 {split_counts[key]}"
+                for key in SPLIT_QUALITY_INPUT_KEYS
+                if split_counts.get(key) not in (None, "")
+            ]
+            if split_count_parts:
+                parts.append("分件 " + "，".join(split_count_parts))
         if isinstance(fixed_counts, dict):
             count_parts = [
                 f"{QUALITY_LABELS[key]}件 {fixed_counts[key]}"
-                for key in ("q1", "q3", "q4", "q5", "q6")
+                for key in QUALITY_INPUT_KEYS
                 if fixed_counts.get(key) not in (None, "")
             ]
             if count_parts:
                 parts.append("件数 " + "，".join(count_parts))
+        min_counts = evidence.get("min_counts")
+        if isinstance(min_counts, dict):
+            floor_parts = []
+            for key in QUALITY_INPUT_KEYS:
+                value = _to_optional_int(min_counts.get(key))
+                fixed_value = (
+                    _to_optional_int(fixed_counts.get(key))
+                    if isinstance(fixed_counts, dict)
+                    else None
+                )
+                if value is None or value <= 0 or fixed_value is not None and fixed_value >= value:
+                    continue
+                floor_parts.append(f"{QUALITY_LABELS[key]}≥{value}")
+            if floor_parts:
+                parts.append("下界 " + "，".join(floor_parts))
         count_sums = evidence.get("count_sums")
         if isinstance(count_sums, dict):
             if count_sums.get("q4q5q6") not in (None, ""):
@@ -2026,6 +2394,9 @@ class AhmadTkOverlay:
             snapshot.get("hero_ref_inputs"),
             uc.get("hero_ref_inputs"),
             constraints.get("hero_ref_inputs"),
+            snapshot.get("aisha_ref_inputs"),
+            uc.get("aisha_ref_inputs"),
+            constraints.get("aisha_ref_inputs"),
             snapshot.get("ahmad_ref_inputs"),
             uc.get("ahmad_ref_inputs"),
             constraints.get("ahmad_ref_inputs"),
@@ -2148,6 +2519,7 @@ class AhmadTkOverlay:
         self._manual_snapshot = snapshot
         self._manual_summary = summary
         self._last_summary = summary
+        self._manual_live_session_id = self._summary_session_id(self._last_live_summary) or "manual"
         self.manual_status.configure(text="手动叠加，实时继续", fg=WARM)
         self._set_manual_button_state()
         if summary.get("status") == "stale_snapshot":
@@ -2169,15 +2541,7 @@ class AhmadTkOverlay:
         return " · ".join(parts) if parts else "-"
 
     def clear_manual_inputs(self) -> None:
-        self._manual_active = False
-        self._manual_snapshot = {}
-        self._manual_summary = {}
-        for key in tuple(getattr(self, "manual_entries", {})):
-            self._set_manual_entry(key, "", track_auto=False)
-        self._manual_dirty_fields.clear()
-        self._manual_autofill_values.clear()
-        self.manual_status.configure(text="已清空，回到实时", fg=DIM)
-        self._set_manual_button_state()
+        self._reset_manual_state("已清空，回到实时", status_fg=DIM)
         if self._last_live_summary:
             self._last_summary = self._last_live_summary
             if self._last_live_summary.get("status") == "stale_snapshot":
@@ -2191,17 +2555,12 @@ class AhmadTkOverlay:
     def prefill_manual_inputs(self) -> None:
         data = self._last_live_summary or self._last_summary or {}
         values = self._manual_values_from_summary(data)
-        context = data.get("context") if isinstance(data.get("context"), dict) else {}
-        ahmed_ref = data.get("ahmed_ref") if isinstance(data.get("ahmed_ref"), dict) else {}
-        evidence = ahmed_ref.get("evidence") if isinstance(ahmed_ref.get("evidence"), dict) else {}
-        self._set_manual_entry("hero", values.get("hero") or context.get("hero") or evidence.get("hero") or "", track_auto=True)
+        self._set_manual_entry("hero", values.get("hero") or "", track_auto=True)
         self._set_manual_entry("map_id", values.get("map_id") if values.get("map_id") is not None else "", track_auto=True)
         self._set_manual_entry("total_count", values.get("total_count") if values.get("total_count") is not None else "", track_auto=True)
         self._set_manual_entry("total_cells", values.get("total_cells") if values.get("total_cells") is not None else "", track_auto=True)
         self._set_manual_entry("total_avg", values.get("total_avg") if values.get("total_avg") is not None else "", track_auto=True)
-        fixed_counts = evidence.get("fixed_counts") if isinstance(evidence.get("fixed_counts"), dict) else {}
-        count_sums = evidence.get("count_sums") if isinstance(evidence.get("count_sums"), dict) else {}
-        for key in ("q1", "q3", "q4", "q5", "q6"):
+        for key in (*SPLIT_QUALITY_INPUT_KEYS, *QUALITY_INPUT_KEYS):
             self._set_manual_entry(
                 f"{key}_avg",
                 values.get(f"{key}_avg") if values.get(f"{key}_avg") is not None else "",
@@ -2209,7 +2568,7 @@ class AhmadTkOverlay:
             )
             self._set_manual_entry(
                 f"{key}_count",
-                fixed_counts.get(key) if fixed_counts.get(key) is not None else "",
+                values.get(f"{key}_count") if values.get(f"{key}_count") is not None else "",
                 track_auto=True,
             )
             self._set_manual_entry(
@@ -2219,13 +2578,10 @@ class AhmadTkOverlay:
             )
         self._set_manual_entry(
             "q4q5_count",
-            count_sums.get("q4q5q6")
-            if count_sums.get("q4q5q6") is not None
-            else count_sums.get("q4q5")
-            if count_sums.get("q4q5") is not None
-            else "",
+            values.get("q4q5_count") if values.get("q4q5_count") is not None else "",
             track_auto=True,
         )
+        self._manual_live_session_id = self._summary_session_id(data)
         self.manual_status.configure(text="已填入当前，待应用", fg=ACCENT)
 
     def _clear_values(self) -> None:
@@ -2860,6 +3216,8 @@ class AhmadTkOverlay:
                     summary = summarize_snapshot(snapshot, snapshot_path=self.snapshot_path)
                     self._last_live_snapshot = snapshot
                     self._last_live_summary = summary
+                    if self._should_reset_manual_for_summary(summary):
+                        self._reset_manual_state("已自动清空，等待新局", status_fg=DIM)
                     if self._manual_active:
                         self.manual_status.configure(text="手动叠加，实时继续", fg=WARM)
                         if summary.get("status") == "stale_snapshot":

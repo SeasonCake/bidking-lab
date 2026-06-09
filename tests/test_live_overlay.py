@@ -29,6 +29,16 @@ def _ahmad_overlay_module():
     return module
 
 
+def _ahmad_server_module():
+    path = ROOT / "external_references" / "ahmad_live_reference_lab" / "tools" / "ahmad_live_panel_server.py"
+    spec = importlib.util.spec_from_file_location("ahmad_live_panel_server", path)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_overlay_summary_lines_include_q6_and_diagnostics() -> None:
     overlay = _overlay_module()
     lines = overlay._summary_lines(
@@ -1567,6 +1577,552 @@ def test_ahmad_manual_values_from_live_summary_keep_victor_zero_and_total_avg() 
     assert values["q4q5_count"] == 6
 
 
+def test_ahmad_manual_values_from_live_summary_derives_counts_from_avg_and_cells() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    data = {
+        "context": {"hero": "维克托", "map_id": 2404},
+        "ahmed_ref": {
+            "evidence": {
+                "hero": "victor",
+                "map_id": 2404,
+                "total_count": 21,
+                "avg_cells": {
+                    "q1": 1.1428571428571428,
+                    "q3": 2.0,
+                    "q5": 6.0,
+                },
+                "quality_cells": {
+                    "q1": 8,
+                    "q3": 16,
+                    "q5": 24,
+                },
+                "fixed_counts": {},
+            }
+        },
+    }
+
+    values = module.AhmadTkOverlay._manual_values_from_summary(overlay, data)
+
+    assert values["hero"] == "维克托"
+    assert values["q1_count"] == 7
+    assert values["q3_count"] == 8
+    assert values["q5_count"] == 4
+    assert values["q1_cells"] == "8"
+    assert values["q3_cells"] == "16"
+    assert values["q5_cells"] == "24"
+
+
+def test_ahmad_manual_values_from_live_summary_does_not_fill_lower_bounds_as_exact_counts() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    data = {
+        "context": {"hero": "victor", "map_id": 2404},
+        "ahmed_ref": {
+            "evidence": {
+                "hero": "victor",
+                "map_id": 2404,
+                "total_count": 21,
+                "min_counts": {"q4": 2, "q5": 1},
+                "fixed_counts": {},
+            }
+        },
+    }
+
+    values = module.AhmadTkOverlay._manual_values_from_summary(overlay, data)
+
+    assert values["hero"] == "victor"
+    assert "q4_count" not in values
+    assert "q5_count" not in values
+
+
+def test_ahmad_manual_values_from_live_summary_does_not_fill_split_lower_bound_as_exact_q1() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    data = {
+        "context": {"hero": "aisha", "map_id": 2404},
+        "ahmed_ref": {
+            "evidence": {
+                "hero": "aisha",
+                "map_id": 2404,
+                "total_count": 21,
+                "min_counts": {"q1": 3},
+                "fixed_counts": {},
+                "split_counts": {"white": 3},
+                "split_quality_cells": {"white": 5},
+                "split_avg_cells": {"white": 5 / 3},
+            }
+        },
+    }
+
+    values = module.AhmadTkOverlay._manual_values_from_summary(overlay, data)
+
+    assert values["hero"] == "aisha"
+    assert values["white_count"] == 3
+    assert values["white_cells"] == "5"
+    assert "green_count" not in values
+    assert "q1_count" not in values
+    assert "q1_cells" not in values
+
+
+def test_ahmad_manual_values_from_live_summary_prefills_aisha_split_low_quality() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    data = {
+        "context": {"hero": "aisha", "map_id": 2401},
+        "ahmed_ref": {
+            "evidence": {
+                "hero": "aisha",
+                "map_id": 2401,
+                "total_count": 33,
+                "split_avg_cells": {"white": 1.6666666667, "green": 2.0},
+                "split_quality_cells": {"white": 5, "green": 8},
+                "split_counts": {"white": 3, "green": 4},
+                "fixed_counts": {"q1": 7},
+                "quality_cells": {"q1": 13},
+            }
+        },
+    }
+
+    values = module.AhmadTkOverlay._manual_values_from_summary(overlay, data)
+
+    assert values["hero"] == "aisha"
+    assert values["white_avg"] == "1.6667"
+    assert values["white_count"] == 3
+    assert values["white_cells"] == "5"
+    assert values["green_avg"] == "2"
+    assert values["green_count"] == 4
+    assert values["green_cells"] == "8"
+    assert values["q1_count"] == 7
+    assert values["q1_cells"] == "13"
+
+
+def test_ahmad_manual_values_from_live_summary_prefers_supported_evidence_hero() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    data = {
+        "context": {"hero": "?", "map_id": 2404},
+        "ahmed_ref": {
+            "evidence": {
+                "hero": "victor",
+                "map_id": 2404,
+            }
+        },
+    }
+
+    values = module.AhmadTkOverlay._manual_values_from_summary(overlay, data)
+
+    assert values["hero"] == "victor"
+
+
+def test_ahmad_server_summary_prefers_ref_evidence_hero_when_context_unknown(tmp_path: Path) -> None:
+    module = _ahmad_server_module()
+    snapshot = {
+        "created_at": time.time(),
+        "ui_contract": {
+            "context": {
+                "hero": "?",
+                "map_id": 2404,
+                "phase": "bidding",
+                "session_id": "2404:test",
+            }
+        },
+        "structured_ref_inputs": {
+            "hero": "victor",
+            "total_count": 6,
+            "count_sums": {"q4q5q6": 2},
+            "fixed_counts": {"q4": 1, "q5": 0, "q6": 1},
+            "avg_cells": {"q4": 1.0, "q5": 0.0, "q6": 3.0},
+            "quality_cells": {"q4": 1, "q5": 0, "q6": 3},
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert result["context"]["hero"] == "victor"
+    assert result["context"]["is_supported_ref_hero"] is True
+
+
+def test_ahmad_ref_input_summary_shows_quality_lower_bounds() -> None:
+    module = _ahmad_server_module()
+    summary = module._ref_input_summary(  # type: ignore[attr-defined]
+        {
+            "evidence": {
+                "total_count": 21,
+                "fixed_counts": {"q4": 7},
+                "min_counts": {"q1": 4, "q3": 2, "q4": 7, "q5": 1},
+            }
+        }
+    )
+
+    assert "下界 白绿≥4，蓝≥2，金≥1" in summary
+    assert "紫≥7" not in summary
+
+
+def test_ahmad_ref_input_summary_shows_aisha_split_low_quality() -> None:
+    module = _ahmad_server_module()
+    summary = module._ref_input_summary(  # type: ignore[attr-defined]
+        {
+            "evidence": {
+                "total_count": 33,
+                "split_avg_cells": {"white": 1.6666666667, "green": 2.0},
+                "split_quality_cells": {"white": 5, "green": 8},
+                "split_counts": {"white": 3, "green": 4},
+                "fixed_counts": {"q1": 7},
+                "quality_cells": {"q1": 13},
+            }
+        }
+    )
+
+    assert "白均格 1.67" in summary
+    assert "绿均格 2.00" in summary
+    assert "分格 白格 5，绿格 8" in summary
+    assert "分件 白件 3，绿件 4" in summary
+    assert "件数 白绿件 7" in summary
+
+
+def test_ahmad_manual_inline_derivation_covers_all_qualities_and_totals() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str = "") -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_vars = {}
+    overlay._manual_dirty_fields = set()
+    overlay._manual_autofill_values = {}
+    overlay._manual_programmatic_update = False
+    overlay.manual_entries = {
+        "total_count": Entry("20"),
+        "total_cells": Entry(""),
+        "total_avg": Entry("2.5"),
+        "white_avg": Entry("1.5"),
+        "white_count": Entry(""),
+        "white_cells": Entry("3"),
+        "green_avg": Entry("2"),
+        "green_count": Entry(""),
+        "green_cells": Entry("4"),
+        "q1_avg": Entry("2"),
+        "q1_count": Entry(""),
+        "q1_cells": Entry("4"),
+        "q3_avg": Entry("2"),
+        "q3_count": Entry(""),
+        "q3_cells": Entry("6"),
+        "q4_avg": Entry("1.8"),
+        "q4_count": Entry(""),
+        "q4_cells": Entry("9"),
+        "q5_avg": Entry("6"),
+        "q5_count": Entry(""),
+        "q5_cells": Entry("24"),
+        "q6_avg": Entry("3"),
+        "q6_count": Entry(""),
+        "q6_cells": Entry("6"),
+    }
+
+    module.AhmadTkOverlay._sync_manual_derived_fields(overlay)
+
+    assert overlay.manual_entries["total_cells"].get() == "50"
+    assert overlay.manual_entries["white_count"].get() == "2"
+    assert overlay.manual_entries["green_count"].get() == "2"
+    assert overlay.manual_entries["q1_count"].get() == "2"
+    assert overlay.manual_entries["q3_count"].get() == "3"
+    assert overlay.manual_entries["q4_count"].get() == "5"
+    assert overlay.manual_entries["q5_count"].get() == "4"
+    assert overlay.manual_entries["q6_count"].get() == "2"
+
+
+def test_ahmad_manual_inline_derivation_merges_white_green_only_when_q1_is_empty() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str = "") -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_vars = {}
+    overlay._manual_dirty_fields = set()
+    overlay._manual_autofill_values = {}
+    overlay._manual_programmatic_update = False
+    overlay.manual_entries = {
+        "white_count": Entry("3"),
+        "white_cells": Entry("5"),
+        "green_count": Entry("4"),
+        "green_cells": Entry("8"),
+        "q1_avg": Entry(""),
+        "q1_count": Entry(""),
+        "q1_cells": Entry(""),
+    }
+
+    module.AhmadTkOverlay._sync_manual_derived_fields(overlay)
+
+    assert overlay.manual_entries["q1_count"].get() == "7"
+    assert overlay.manual_entries["q1_cells"].get() == "13"
+    assert overlay.manual_entries["q1_avg"].get() == "1.8571"
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_vars = {}
+    overlay._manual_dirty_fields = set()
+    overlay._manual_autofill_values = {}
+    overlay._manual_programmatic_update = False
+    overlay.manual_entries = {
+        "white_count": Entry("3"),
+        "white_cells": Entry("5"),
+        "green_count": Entry("4"),
+        "green_cells": Entry("8"),
+        "q1_avg": Entry("2"),
+        "q1_count": Entry(""),
+        "q1_cells": Entry(""),
+    }
+
+    module.AhmadTkOverlay._sync_manual_derived_fields(overlay)
+
+    assert overlay.manual_entries["q1_avg"].get() == "2"
+    assert overlay.manual_entries["q1_count"].get() == ""
+    assert overlay.manual_entries["q1_cells"].get() == ""
+
+
+def test_ahmad_manual_inline_derivation_derives_avg_and_cells_without_overwriting_user_values() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str = "") -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_vars = {}
+    overlay._manual_dirty_fields = {"q4_cells"}
+    overlay._manual_autofill_values = {}
+    overlay._manual_programmatic_update = False
+    overlay.manual_entries = {
+        "q1_avg": Entry(""),
+        "q1_count": Entry("4"),
+        "q1_cells": Entry("8"),
+        "q4_avg": Entry("1.8"),
+        "q4_count": Entry("5"),
+        "q4_cells": Entry("99"),
+    }
+
+    module.AhmadTkOverlay._sync_manual_derived_fields(overlay)
+
+    assert overlay.manual_entries["q1_avg"].get() == "2"
+    assert overlay.manual_entries["q4_cells"].get() == "99"
+
+
+def test_ahmad_manual_inline_derivation_accepts_display_rounded_avg() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str = "") -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_vars = {}
+    overlay._manual_dirty_fields = set()
+    overlay._manual_autofill_values = {}
+    overlay._manual_programmatic_update = False
+    overlay.manual_entries = {
+        "q3_avg": Entry("1.8462"),
+        "q3_count": Entry("13"),
+        "q3_cells": Entry(""),
+        "q4_avg": Entry("5.3333"),
+        "q4_count": Entry(""),
+        "q4_cells": Entry("16"),
+        "q5_avg": Entry("1.8"),
+        "q5_count": Entry("6"),
+        "q5_cells": Entry(""),
+    }
+
+    module.AhmadTkOverlay._sync_manual_derived_fields(overlay)
+
+    assert overlay.manual_entries["q3_cells"].get() == "24"
+    assert overlay.manual_entries["q4_count"].get() == "3"
+    assert overlay.manual_entries["q5_cells"].get() == ""
+
+
+def test_ahmad_manual_state_auto_resets_on_settlement_and_session_change() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str = "") -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    class Status:
+        def __init__(self) -> None:
+            self.kwargs = {}
+
+        def configure(self, **kwargs) -> None:
+            self.kwargs.update(kwargs)
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("victor"),
+        "map_id": Entry("2404"),
+        "q5_count": Entry("4"),
+    }
+    overlay.manual_vars = {}
+    overlay.manual_buttons = {}
+    overlay.manual_status = Status()
+    overlay._manual_active = True
+    overlay._manual_snapshot = {"hero": "victor"}
+    overlay._manual_summary = {"status": "ok"}
+    overlay._manual_dirty_fields = {"q5_count"}
+    overlay._manual_autofill_values = {"hero": "victor", "map_id": "2404"}
+    overlay._manual_live_session_id = "2404:old"
+    overlay._manual_programmatic_update = False
+
+    assert module.AhmadTkOverlay._should_reset_manual_for_summary(
+        overlay,
+        {"status": "ok", "context": {"phase": "settled", "session_id": "2404:old"}},
+    )
+    module.AhmadTkOverlay._reset_manual_state(overlay, "auto")
+
+    assert overlay._manual_active is False
+    assert overlay._manual_snapshot == {}
+    assert overlay._manual_live_session_id == ""
+    assert overlay.manual_entries["hero"].get() == ""
+    assert overlay.manual_entries["q5_count"].get() == ""
+    assert overlay._manual_dirty_fields == set()
+    assert overlay._manual_autofill_values == {}
+
+    overlay.manual_entries["hero"].insert(0, "victor")
+    overlay._manual_live_session_id = "2404:old"
+
+    assert module.AhmadTkOverlay._should_reset_manual_for_summary(
+        overlay,
+        {"status": "ok", "context": {"phase": "bidding", "session_id": "2404:new"}},
+    )
+
+
+def test_ahmad_prefill_manual_inputs_uses_derived_quality_counts() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str = "") -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    class Status:
+        def __init__(self) -> None:
+            self.kwargs = {}
+
+        def configure(self, **kwargs) -> None:
+            self.kwargs.update(kwargs)
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry(),
+        "map_id": Entry(),
+        "total_count": Entry(),
+        "total_cells": Entry(),
+        "total_avg": Entry(),
+        "q5_avg": Entry(),
+        "q5_count": Entry(),
+        "q5_cells": Entry(),
+        "q4q5_count": Entry(),
+    }
+    overlay.manual_vars = {}
+    overlay.manual_status = Status()
+    overlay._manual_dirty_fields = set()
+    overlay._manual_autofill_values = {}
+    overlay._manual_programmatic_update = False
+    overlay._last_summary = {}
+    overlay._last_live_summary = {
+        "status": "ok",
+        "context": {"hero": "victor", "map_id": 2404, "phase": "bidding", "session_id": "2404:live"},
+        "ahmed_ref": {
+            "evidence": {
+                "hero": "victor",
+                "map_id": 2404,
+                "total_count": 21,
+                "avg_cells": {"q5": 6.0},
+                "quality_cells": {"q5": 24},
+                "fixed_counts": {},
+                "count_sums": {"q4q5q6": 6},
+            }
+        },
+    }
+
+    module.AhmadTkOverlay.prefill_manual_inputs(overlay)
+
+    assert overlay.manual_entries["hero"].get() == "victor"
+    assert overlay.manual_entries["q5_avg"].get() == "6"
+    assert overlay.manual_entries["q5_cells"].get() == "24"
+    assert overlay.manual_entries["q5_count"].get() == "4"
+    assert overlay.manual_entries["q4q5_count"].get() == "6"
+    assert overlay._manual_live_session_id == "2404:live"
+
+
+def test_ahmad_manual_input_summary_shows_quality_lower_bounds() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+
+    summary = module.AhmadTkOverlay._manual_input_summary(
+        overlay,
+        {
+            "total_count": 21,
+            "fixed_counts": {"q4": 7},
+            "min_counts": {"q1": 4, "q3": 2, "q4": 7, "q6": 1},
+        },
+    )
+
+    assert "下界 白绿≥4，蓝≥2，红≥1" in summary
+    assert "紫≥7" not in summary
+
+
 def test_ahmad_manual_snapshot_allows_total_avg_and_zero_gold() -> None:
     module = _ahmad_overlay_module()
 
@@ -1599,6 +2155,168 @@ def test_ahmad_manual_snapshot_allows_total_avg_and_zero_gold() -> None:
     assert ref_inputs["count_sums"] == {"q4q5q6": 6}
 
 
+def test_ahmad_manual_snapshot_derives_counts_from_avg_and_cells_and_normalizes_hero() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("维克托"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("21"),
+        "q1_avg": Entry("1.1428571428571428"),
+        "q1_cells": Entry("8"),
+        "q3_avg": Entry("2"),
+        "q3_cells": Entry("16"),
+        "q5_avg": Entry("6"),
+        "q5_cells": Entry("24"),
+    }
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert error == ""
+    assert snapshot is not None
+    assert snapshot["hero"] == "victor"
+    ref_inputs = snapshot["structured_ref_inputs"]
+    assert ref_inputs["fixed_counts"] == {"q1": 7, "q3": 8, "q5": 4}
+    assert ref_inputs["quality_cells"] == {"q1": 8, "q3": 16, "q5": 24}
+    assert ref_inputs["avg_cells"] == {"q1": 1.1428571428571428, "q3": 2.0, "q5": 6.0}
+
+
+def test_ahmad_manual_snapshot_accepts_display_rounded_avg_when_count_and_cells_match() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("ahmed"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("24"),
+        "q3_avg": Entry("1.8462"),
+        "q3_count": Entry("13"),
+        "q3_cells": Entry("24"),
+    }
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert error == ""
+    assert snapshot is not None
+    ref_inputs = snapshot["structured_ref_inputs"]
+    assert ref_inputs["fixed_counts"] == {"q3": 13}
+    assert ref_inputs["quality_cells"] == {"q3": 24}
+    assert ref_inputs["avg_cells"] == {"q3": 24 / 13}
+
+
+def test_ahmad_manual_snapshot_rejects_over_rounded_one_decimal_avg() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("victor"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("21"),
+        "q4_avg": Entry("1.8"),
+        "q4_count": Entry("6"),
+        "q4_cells": Entry("11"),
+    }
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert snapshot is None
+    assert "紫均格" in error
+    assert "不一致" in error
+
+
+def test_ahmad_manual_snapshot_accepts_aisha_split_and_merged_low_quality() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("艾莎"),
+        "map_id": Entry("2401"),
+        "total_count": Entry("33"),
+        "white_count": Entry("3"),
+        "white_cells": Entry("5"),
+        "green_avg": Entry("2"),
+        "green_cells": Entry("8"),
+        "q1_count": Entry("7"),
+        "q1_cells": Entry("13"),
+        "q3_count": Entry("6"),
+        "q3_cells": Entry("12"),
+    }
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert error == ""
+    assert snapshot is not None
+    assert snapshot["hero"] == "aisha"
+    ref_inputs = snapshot["structured_ref_inputs"]
+    assert ref_inputs["split_counts"] == {"white": 3, "green": 4}
+    assert ref_inputs["split_quality_cells"] == {"white": 5, "green": 8}
+    assert ref_inputs["split_avg_cells"] == {"white": 5 / 3, "green": 2.0}
+    assert ref_inputs["fixed_counts"] == {"q1": 7, "q3": 6}
+    assert ref_inputs["quality_cells"] == {"q1": 13, "q3": 12}
+
+
+def test_ahmad_manual_snapshot_keeps_white_only_split_separate_from_q1_avg() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("aisha"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("21"),
+        "white_count": Entry("3"),
+        "white_cells": Entry("5"),
+        "q1_avg": Entry("2"),
+    }
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert error == ""
+    assert snapshot is not None
+    ref_inputs = snapshot["structured_ref_inputs"]
+    assert ref_inputs["split_counts"] == {"white": 3}
+    assert ref_inputs["split_quality_cells"] == {"white": 5}
+    assert ref_inputs["split_avg_cells"] == {"white": 5 / 3}
+    assert ref_inputs["avg_cells"] == {"q1": 2.0}
+    assert ref_inputs["fixed_counts"] == {}
+    assert "quality_cells" not in ref_inputs
+
+
 def test_ahmad_manual_snapshot_rejects_impossible_avg_count_pair() -> None:
     module = _ahmad_overlay_module()
 
@@ -1623,6 +2341,58 @@ def test_ahmad_manual_snapshot_rejects_impossible_avg_count_pair() -> None:
     assert snapshot is None
     assert "紫均格" in error
     assert "整数格数" in error
+
+
+def test_ahmad_manual_snapshot_rejects_fractional_avg_count_product() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("victor"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("21"),
+        "q4_count": Entry("4"),
+        "q4_avg": Entry("1.8"),
+    }
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert snapshot is None
+    assert "紫均格" in error
+    assert "整数格数" in error
+
+
+def test_ahmad_manual_snapshot_rejects_impossible_avg_cells_pair_without_count() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("维克托"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("21"),
+        "q4_avg": Entry("1.8"),
+        "q4_cells": Entry("8"),
+    }
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert snapshot is None
+    assert "紫均格与紫格" in error
+    assert "整数件数" in error
 
 
 def test_ahmad_manual_overlay_keeps_live_context_and_merges_inputs() -> None:
@@ -1676,6 +2446,36 @@ def test_ahmad_manual_overlay_keeps_live_context_and_merges_inputs() -> None:
     assert ref_inputs["avg_cells"] == {"q5": 4.6667, "q3": 1.55}
     assert ref_inputs["fixed_counts"] == {"q5": 2}
     assert overlaid["ui_contract"]["constraints"]["structured_ref_inputs"] == ref_inputs
+
+
+def test_ahmad_server_marks_sparse_exact_total_prior_as_fast_path(tmp_path: Path) -> None:
+    module = _ahmad_server_module()
+    snapshot = {
+        "created_at": time.time(),
+        "hero": "ahmed",
+        "map_id": 2401,
+        "phase": "bidding",
+        "session_id": "2401:live",
+        "structured_ref_inputs": {"total_count": 33},
+        "ui_contract": {
+            "context": {
+                "hero": "ahmed",
+                "map_id": 2401,
+                "phase": "bidding",
+                "session_id": "2401:live",
+            },
+            "constraints": {"public_info": {}},
+            "baseline": {"decision": {}, "posterior": {}},
+            "source": {"created_at": time.time()},
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert result["reference"]["readiness"] == "sparse_exact_prior"
+    assert result["reference"]["source"] == "ref_prior"
+    assert any(flag["label"] == "宽约束快速" for flag in result["flags"])
+    assert not any(flag["label"] == "总件估计" for flag in result["flags"])
 
 
 def test_ahmad_overlay_user_close_runs_exit_cleanup_once(monkeypatch, tmp_path: Path) -> None:

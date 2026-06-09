@@ -366,6 +366,8 @@
   - 仍保留用户填写的 `total_count` 硬约束；
   - 仍使用用户填写的均格、件数和 `q4q5q6` 约束；
   - 状态显示为 `manual_prior`，flags 显示 `手动输入 / 手动先验`。
+- 现在 live 侧如果只有总件数、但没有非零品质件数/品质总格/count-sum 等硬分割证据，会进入 `sparse_exact_prior`，仍是概率先验分裂，不是 `combo_cap_hit` 截断。
+- 当前一次基准里，`total_count=33` 约 `0.66s`、`total_count=38 + q5_avg=9.0` 约 `1.12s`、再加 `q3=13` 约 `0.03s`；`manual total_count=21 + total_cells=34 + q4_avg=1.8` 约 `0.08s`，已回到可交互范围。
 - 代表验证：
   - 输入 `map=2527, total_count=33, q5_avg=5.75`；
   - 输出 `balanced=577,102`，红件 `1/2/4`；
@@ -374,8 +376,8 @@
 
 仍需注意：
 
-- `ref_prior/count_prior/manual_prior` 是实战参考，不是完整原版 MapBidCalculator promotion；
-- 若用户只填很少信息，UI 应显示 `手动先验` 或 `总件估计`，不能暗示结果已经完全确定；
+- `ref_prior/count_prior/manual_prior/sparse_exact_prior` 是实战参考，不是完整原版 MapBidCalculator promotion；
+- 若用户只填很少信息，UI 应显示 `手动先验`、`总件估计` 或 `宽约束快速`，不能暗示结果已经完全确定；
 - 外援支线文件仍在 `external_references/**` 下，被 `.gitignore` 忽略，后续正式留版本需要 `git add -f` 或迁移到 tracked 目录。
 
 ## 2026-06-09 活动沉船映射与报价复核
@@ -603,7 +605,7 @@
 后续防线：
 
 - 不应简单降低 `max_combos`，实测低 cap 会因枚举顺序偏置把 R1 价格拉到 100 万以上；
-- 如果后续仍遇到 sparse evidence 导致 UI 卡顿，应做 Tk 后台线程/异步 summary，而不是砍组合数。
+- 现在优先使用 `manual_prior` / `sparse_exact_prior` 这类可解释的概率先验快路径；如果仍然卡顿，再做 Tk 后台线程/异步 summary，而不是砍组合数。
 
 ## 2026-06-09 Victor 100209 与 0 均格口径修正
 
@@ -638,18 +640,17 @@
 
 - 均格对应规则收紧为“必须对应到可组成的整数总格”，不能再把 `件数 * 均格` 的小数结果直接当作格数；
 - 例如 `紫均格=1.8`：
-  - `4件` 只允许 `7格`；
   - `5件` 只允许 `9格`；
-  - `6件` 只允许 `11格`；
-- ref engine 在 count-prior 和 exact-total 两条枚举路径都改为选择最接近均格的合法整数格数，不再使用多个候选的平均值；
+  - `4件` / `6件` 不合法，因为 `4 × 1.8 = 7.2`、`6 × 1.8 = 10.8` 不是整数格；
+- ref engine 在 count-prior 和 exact-total 两条枚举路径都改为要求 `avg × count` 直接接近整数格，不再接受“一位小数看起来像 1.8”的宽松候选；
 - 手填预填只在均格+件数能唯一对应整数格数时才填 `*格`，多解或不确定时保留空格数；手填应用时会拒绝无法对应整数格数的 `均格+件数` 组合；
 - ref summary 的均格/件数/格数显示顺序统一为 `白绿 -> 蓝 -> 紫 -> 金 -> 红`。
 
 复验：
 
 - 当前 raw `2404:1388889423239322` 前缀重放到 sort 17：
-  - 紫件范围 `4 / 5 / 6`；
-  - 紫格范围 `7 / 9 / 11`；
+  - 紫件范围 `5 / 5 / 5`；
+  - 紫格范围 `9 / 9 / 9`；
   - 金件/金格固定 `0 / 0 / 0`；
   - 总格范围固定 `34 / 34 / 34`；
 - focused tests 更新后：`163 passed, 25 skipped`。
@@ -736,7 +737,7 @@ Hero Ref 当前可用状态：
 
 仍需注意：
 
-- Tk overlay 仍在主线程内运行 ref summary；如果后续再复现 sparse evidence 卡 UI，应做后台 worker/summary cache，不应简单降低 `max_combos`；
+- Tk overlay 仍在主线程内运行 ref summary；如果后续再复现 sparse evidence 卡 UI，应做后台 worker/summary cache，或把总件已知但品质分裂稀疏的场景路由到 `sparse_exact_prior`，不应简单降低 `max_combos`；
 - `ref_v0/ref_prior/manual_prior` 是 Hero Ref 实战参考，不是主线 v3 promotion；
 - 若准备推广 exe，先做依赖冻结、UAC/WinDivert/pydivert 打包、版本署名和全流程 smoke。
 
@@ -752,3 +753,256 @@ Hero Ref 当前可用状态：
 - 下一步主线应查 per-session table version、external overlay table 或 server-side settlement expansion/source transform；
 - 不应把这些 audit-only artifact 当成 sampler 参数或 promotion support；
 - 本支线提交时可包含这些记录整理，但不要在 Hero Ref 目标里继续展开主线 v3 promotion。
+
+## 2026-06-09 Victor 0 均格与整数格二次复核
+
+本轮针对实战反馈复核：
+
+- Victor `100209` 当前源码语义仍为 `q4+q5+q6`，进入 `count_sums.q4q5q6`；
+- `100113` 极品/金均格为 `0` 时会通过 `ui_contract.actions.results` 进入 ref engine，带 `inferred_zero` 的来源标记；
+- ref engine 会把 `q5_avg=0` 转成 `fixed_counts.q5=0`，因此金件/金格输出为 `0/0/0`；
+- `紫均格=1.8` 当前按精确 `avg × count -> 整数格` 处理，只有 `5件 -> 9格` 合法；`4件` 和 `6件` 会被拒绝；
+- `均格 + 格数` 如果能唯一对应整数件数，也会自动回填件数到手填面板并进入 `fixed_counts`；白绿、蓝、紫、金、红都适用；
+- 修正 `_fit_grids_to_total_target`：总格 fitting 现在优先用整数可达格数分配给未直接约束的品质；只有找不到精确整数解时才退回旧比例缩放；
+- 未直接观测格数/均格的品质，显示用可组成形状 top-3 候选展开，并用总格可行性过滤，避免把 top1 当唯一真实格数；
+- 端到端烟测确认 `100209=6 + q4_avg=1.8 + q5_avg=0 + total=21/34` 输出：
+  - 紫件 `5/5/5`、紫格 `9/9/9`；
+  - 金件/金格 `0/0/0`；
+  - 红件 `1/1/1`、红格 top-3 `2/3/4`；
+  - 总格 `34/34/34`。
+
+注意：旧 `latest_snapshot.json` 的写入时间早于本轮源码修复，仍可看到历史 `q4q5` 字段和缺 actions contract 的状态。实战前需要重启 monitor 与 Hero Ref overlay，不能用旧运行态判断当前版本。
+
+## 2026-06-09 手动面板跨局清理修复
+
+实战反馈显示，主面板进入结算/待机后手动面板仍保留上一局值，下一局 Victor 开局可能被旧手填或旧自动填充值污染。本轮修复：
+
+- 进入 `settled`、`settled_stale`、`session_ahead`、`monitor_restarted`，或检测到 live `session_id` 变化时，自动取消 manual overlay 并清空手动面板；
+- 同一局内不因单条包缺少字段就清空用户手填，避免 live 抖动时丢输入；
+- `填入当前` 统一使用 `_manual_values_from_summary`，因此 `均格 + 格数 -> 件数` 推导出的白绿/蓝/紫/金/红件数也会自动填入；
+- `context.hero=?` 但 structured/ref evidence 已有 `victor/ahmed` 时，ref engine 和 summary context 都会回填对应英雄，避免首页标题和英雄专属约束走 `?`。
+
+## 2026-06-09 公开品质轮廓约束
+
+复核 post-game 后的当前 `latest_snapshot.json`：顶层 `public_info_rows` 只看到 `200028` 随机 9 件品质 reveal 和 `200009`；其中 `200028` 给出 `Q4x5/Q3x2/Q2x2`，但不带 shape，因此只能作为品质件数下界，不能算紫色总格。
+
+扩大到 raw/archive 后确认用户判断正确：真实样本里确实有 `200001` 全紫轮廓，且带 `shape/local`：
+
+- `20260530_231725_aisha_villa_test_sample21_2rounds_reveal_all_purpleitemscontour.json`：`200001` 全紫 18 件，q4 total cells 46；
+- `windivert_2026-06-09_001253_complete_victor_2409_2409_1388889394594492.json`：`200001` 全紫 7 件，q4 total cells 16。
+
+主 live parser 已会把这些 public outline 转成 `field_updates bucket.4.count/total_cells`；本轮 Hero Ref 额外补 `public_info_rows` 兜底，防止支线独立回放或缺 field_updates 时漏用。
+
+冲突处理规则已固定：
+
+- `field_updates` / structured exact 输入优先；
+- `public_info_rows` 全桶轮廓只在 exact count/cells 缺失或一致时补充；
+- 如果 public outline 与 structured exact count/cells 不一致，只记录 `public_bucket_outline_q*_count_conflict` / `cells_conflict`，不覆盖 exact 值，也不把下界抬到超过 exact 件数；
+- `200001/200002/200003` 不再走随机品质 reveal 下界路径，避免同一全桶轮廓被重复解释。
+
+本轮补上全桶轮廓解析边界：
+
+- `200001` 全紫轮廓 -> `fixed_counts.q4`、`min_counts.q4`、`quality_cells.q4`；
+- `200002` 全金轮廓 -> `fixed_counts.q5`、`min_counts.q5`、`quality_cells.q5`；
+- `200003` 全红轮廓 -> `fixed_counts.q6`、`min_counts.q6`、`quality_cells.q6`；
+- 只有全桶轮廓会把 shape/cells 汇总成品质总格；`200026-200029` 随机品质 reveal 即使未来带 shape，也不当作该品质总格，只作为 reveal 下界。
+- 随机品质 reveal 的 `min_counts` 已进入 ref evidence，并在输入摘要显示为“下界 白绿≥x，蓝≥x，紫≥x，金≥x，红≥x”；已有 exact 件数的品质不重复显示下界。
+
+这样 UI 手填/自动填入可以拿到对应品质的件数和格数，ref engine 也会把 `quality_cells + fixed_counts` 推导出均格并进入组合约束。
+
+## 2026-06-09 品质件数/总格/均格冲突防护
+
+继续复核“已有紫色 bucket，又收到紫色均格、件数或总格”时发现：手填路径已经会拒绝 `件数 + 总格 + 均格` 不一致，但 ref engine 枚举层在 exact total cells 存在时没有同时校验 avg cells，可能导致冲突证据被静默忽略。
+
+本轮修复为严格交集口径：
+
+- 同一品质如果同时有 `fixed_counts`、`quality_cells`、`avg_cells`，必须满足 `avg * count == total_cells`，且 total cells 必须是可组成格数；
+- 同一品质如果只有 `quality_cells + avg_cells`，必须能唯一推出整数件数，否则不再继续给价；
+- 冲突会进入 `no_reachable_combo`，并记录 `quality_cells_q*_avg_count_conflict` 或 `quality_cells_q*_avg_cells_conflict`；
+- 正常路径不受影响：`count + cells -> avg`、`avg + cells -> count`、`avg + count -> cells` 仍按唯一整数/可达格数推导；
+- UI 手填路径仍先在 `_manual_inputs_snapshot` 拒绝冲突，不会把下界 `min_counts` 填成 exact 件数，也不会覆盖用户已手改字段。
+
+语义烟测结果：
+
+- `q4 count=7, cells=14, avg=2.0` -> ok，紫件/紫格固定 `7/14`；
+- `q4 count=7, cells=15, avg=2.0` -> `no_reachable_combo`；
+- `q4 cells=14, avg=2.0` -> 自动推导 `q4 count=7`；
+- `q4 cells=15, avg=2.0` -> `no_reachable_combo`。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_live_fatbeans.py tests\test_live_monitor.py tests\test_live_overlay.py tests\test_ahmad_ref_engine_public_info.py -q
+```
+
+最近一次结果：`188 passed, 25 skipped`。
+
+## 2026-06-09 Aisha 白/绿 split 接入
+
+本轮按实战备用工具方向把 Aisha 接入 Hero Ref，但保持估值核心仍为外援 `q1/q3/q4/q5/q6` 五桶模型，不改主线 v3 promotion。
+
+关键口径：
+
+- Aisha 技能 `1001034/1001033/1001032/1001031` 分别对应白、绿、蓝、紫的轮廓+品质；
+- 主线 Fatbeans 仍保留原 `bucket.1/2/3/4 count/total_cells` 更新给现有 live state 使用；
+- 额外新增 `bucket_split.white/green count/total_cells` 只作为 Hero Ref split 输入，避免 `bucket 1` 在普通道具里表示“白绿合并”、在 Aisha 技能里表示“白色单桶”的语义混淆；
+- monitor structured bridge 支持 `hero=aisha/艾莎`，读取 `bucket_split` 到 `split_counts/split_quality_cells/split_avg_cells`；
+- white-only 只提升 `q1` 下界，不生成白绿合并 exact；
+- white+green 两边都已知时，才折叠成 `fixed_counts.q1` 和 `quality_cells.q1`；
+- 如果 split 白/绿与手填或 live 的白绿合并 exact 冲突，进入 `hard_conflict` / `no_reachable_combo`，不继续给价；
+- 手填面板新增白/绿均格、件数、格数，同时保留白绿合并字段；白/绿和白绿合并都可填写，冲突由 engine 拒绝；
+- `aisha_ref_inputs` 作为 structured 输入别名保留，推荐新路径仍是 `structured_ref_inputs`。
+
+验证覆盖：
+
+- Fatbeans synthetic Aisha 技能输出 `bucket_split.white`；
+- monitor bridge 不把同批 Aisha `bucket.1` 重复当作白绿合并 exact；
+- ref engine：white-only 为 q1 lower bound；white+green 折叠为 q1 exact；split/merged 冲突为 hard conflict；
+- Tk 手填：live summary 可回填白/绿；手填提交会生成 `split_*` 字段；6 列 5 行布局 smoke 字段齐全。
+
+最近一次支线 broad suite：`196 passed, 25 skipped`。
+
+## 2026-06-09 Aisha split floor 与手填合并收口
+
+继续按用户实战反馈复核 Aisha 白/绿拆分输入，重点排查“只知道白色时又填白绿均格”“白绿都已知时是否自动填白绿合计”“旧下界是否干扰新增 split 字段”。
+
+最新口径：
+
+- `bucket_split.white/green` 仍是 Hero Ref 专用 split 输入，不改变主线 `bucket.1` 的白绿合并语义；
+- white-only / green-only 不折叠为 `q1` exact，只形成 `q1` 件数下界；
+- split 已知格数也会形成 q1 总格下界：如果白色已知 3 件 5 格，而白绿总件数候选为 `C`，则 q1 总格至少是 `5 + (C - 3)`，也就是 `C + 2`；
+- 因此 `white_count=3, white_cells=5, q1_avg=1.0` 应为无解，不允许出现白绿总格小于已知白格的组合；
+- `white_count=3, white_cells=5, q1_avg=2.0` 可继续走稀疏先验枚举，q1 格数候选会被 split floor 过滤；
+- split 自身 `count + cells` 也必须是可组成格数，例如 3 件 2 格直接 hard conflict；
+- white+green 两边的 count/cells 都齐全时，engine 才折叠成 `fixed_counts.q1` / `quality_cells.q1` / `avg_cells.q1`；
+- 手填 UI 中，如果 q1 合计栏为空或仍是自动填入值，white+green 会自动合并填入 q1 件/格/均格；如果用户已经手填 q1 任一字段，则不覆盖用户输入，冲突交给 engine 在应用时拒绝；
+- 下界 `min_counts.q1` 不会被 UI 回填成 q1 exact，也不会填成 white/green exact；只有实际 `split_counts` / `split_quality_cells` 会填入白/绿栏。
+
+Aisha 无总件/总格时保持轻量策略：不把支线 UI 扩成 v3 级别复杂界面，只用 ref engine 现有 `total_count_from_ref_count_prior` 简单先验枚举，作为实战参考并在状态中标记 `count_prior`。
+
+详情窗口做了轻微高度收口：自动详情高度从 `requested_h + 16 / work_h - 40` 调整到 `requested_h + 8 / work_h - 72`，本机 smoke 从 `760x1038` 降到 `760x1030`，不改变布局结构。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py src\bidking_lab\live\fatbeans.py src\bidking_lab\live\monitor.py
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_ahmad_ref_engine_public_info.py tests\test_live_overlay.py -q
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_live_fatbeans.py tests\test_live_monitor.py tests\test_live_overlay.py tests\test_ahmad_ref_engine_public_info.py -q
+```
+
+最近一次结果：focused `87 passed`；支线 broad suite `203 passed, 25 skipped`。Tk 可见窗口 smoke：mini `440x397`，detail `760x1030`，手填字段 27 个，关键字段无缺失。
+
+## 2026-06-09 真实样本回放与 mixed 隔离
+
+继续按 source -> transform -> output 复核 Hero Ref 三英雄路径，并修正一个手填显示精度问题。
+
+新增口径：
+
+- `data/logs/live/raw/archive/complete` 只表示抓包局结算完整，不等于该局可作为正常回归样本；
+- 样本校准与正常回归以 `data/samples/fatbeans/fatbeans_valid_*` 或 manifest strict 口径为准；
+- `fatbeans_mixed_*` 和已知语义矛盾的 raw complete 同 session 只作为隔离负例，不能拿来调参或证明 Hero Ref 估值错误；
+- 手填 UI 与提交路径统一“显示精度容差”：例如真实样本中 `24/13` 显示成 `1.8462`，当同时有 `count=13, cells=24` 时会归一成精确 `24/13`；但一位小数过度四舍五入的 `1.8 * 6 -> 11` 仍会被拒绝，不会静默凑整；
+- 该容差同时作用于手填提交和手填栏位的即时自动推导，避免 UI 显示值能提交但不能自动补格/件。
+
+真实回放分层：
+
+- Victor 正例：
+  - `fatbeans_valid_victor_2401_4rounds_2401_1388889392145087_0450.json` -> ref ok，manual roundtrip ok；
+  - `windivert_2026-06-08_234125_complete_victor_2401_2401_1388889392145087.json` -> ref ok，manual roundtrip ok；
+  - `windivert_2026-06-09_142811_complete_victor_2403_2403_1388889432555869.json` -> ref ok，manual roundtrip ok；
+  - `windivert_2026-06-09_150827_complete_victor_2404_2404_1388889435016810.json` -> ref ok，manual roundtrip ok。
+- Victor 隔离负例：
+  - `fatbeans_mixed_victor_2409_3rounds_2409_1388889394594492_0451.json` -> ref `no_reachable_combo`；
+  - 同 session raw complete `windivert_2026-06-09_001253_complete_victor_2409_2409_1388889394594492.json` -> ref `no_reachable_combo`；
+  - 这局公开/技能路径给出 `q4 count/cells` 与 `q4q5q6 count`，但 settlement truth 不一致，应按 mixed 隔离。
+- Ahmad 正例：
+  - `windivert_2026-06-09_150304_complete_ahmed_2403_2403_1388889434708260.json` -> ref ok，manual roundtrip ok；
+  - `windivert_2026-06-09_143505_complete_ahmed_2404_2404_1388889432974563.json` -> ref ok，manual roundtrip ok；
+  - `fatbeans_valid_ahmed_2401_4rounds_2401_1388889378674485_0001.json` -> ref ok，manual roundtrip ok。
+- Aisha 正例：
+  - `fatbeans_valid_aisha_2404_3rounds_2404_1295018992793264_0056.json` -> split 白/绿、q1 合并、manual roundtrip ok。
+- Aisha 隔离提醒：
+  - `windivert_2026-06-08_114032_complete_aisha_2401_2401_1367586310770395.json` 对应样本库中的 `fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json`，回放为 `no_reachable_combo`，不能按 raw complete 正例使用。
+
+样本库总览（已在 2026-06-09 从 `data/logs/live/raw` 补齐漏网 unique session 后刷新）：
+
+```text
+canonical baseline:
+  data/samples/fatbeans
+  files=491 parsed_files=491 parse_errors=0 valid_files=461 mixed_files=30 invalid_files=0 usable_metric_files=479 bid_windows=1754 ready_windows=1734 no_state_windows=20 constraint_conflict_windows=0
+  activity_range_files=0
+
+canonical + activity reference:
+  data/samples/fatbeans + data/samples/fatbeans_activity_20260605_shipwreck
+  files=509 parsed_files=509 parse_errors=0 valid_files=479 mixed_files=30 invalid_files=0 usable_metric_files=497 bid_windows=1823 ready_windows=1803 no_state_windows=20 constraint_conflict_windows=0
+```
+
+对应 manifest：
+
+- `data/sample_manifests/fatbeans_archive_v3_2026-06-09.json`
+- `data/sample_manifests/fatbeans_all_usable_with_activity_2026-06-09.json`
+- `data/sample_manifests/fatbeans_organize_plan_2026-06-09.json`
+- `data/sample_manifests/fatbeans_activity_organize_plan_2026-06-09.json`
+- `data/sample_manifests/fatbeans_activity_shipwreck_2026-06-09.json`
+- `data/sample_manifests/fatbeans_discovery_all_sources_2026-06-09.json`
+
+后续新增样本整理顺序：
+
+1. 先运行 `scripts/organize_fatbeans_real_samples.py` 补齐 raw/manual unique session；
+2. 再运行 `scripts/organize_fatbeans_activity_samples.py --apply`，把 2521-2530 / 4521-4530 活动图移入 activity cohort；
+3. 最后复跑 manifest，确认 default baseline 的 `activity_range_files=0` 或 evaluator 的 `robust_activity_candidate=0`。
+
+strict evaluator 分层烟测：
+
+- 默认 strict：Victor valid + mixed 两文件只进入 `4` 个 ready 窗口；
+- 加 `--include-mixed-samples` 后进入 `7` 个 ready 窗口；
+- 因此工具层已有 valid/mixed 隔离能力，后续 Hero Ref 回归应默认沿用 strict。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py src\bidking_lab\live\monitor.py src\bidking_lab\live\fatbeans.py
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_live_overlay.py tests\test_ahmad_ref_engine_public_info.py -q
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_live_fatbeans.py tests\test_live_monitor.py tests\test_live_overlay.py tests\test_ahmad_ref_engine_public_info.py -q
+C:\Python313\python.exe scripts\summarize_fatbeans_sample_manifest.py
+```
+
+最近一次结果：focused `90 passed`；支线 broad suite `206 passed, 25 skipped`。
+
+## 2026-06-09 全量 Hero Ref valid 样本映射审查
+
+在整理后的 `fatbeans_all_usable_with_activity_2026-06-09.json` 上，针对 Hero Ref 支持的三类英雄重新做 source -> transform -> output 回放审查。口径仍是：默认只把 `fatbeans_valid_*` 当正常回归；`fatbeans_mixed_*` 和同 session 语义矛盾 raw complete 只作隔离负例。
+
+真实样本覆盖：
+
+- valid 支持英雄样本合计 `249`：Ahmad `20`、Aisha `225`、Victor `4`；
+- ref 状态：
+  - Ahmad：`ok=18`，`no_reachable_combo=2`；
+  - Aisha：`ok=224`，`count_prior=1`；
+  - Victor：`ok=3`，`no_reachable_combo=1`；
+- 3 个 `no_reachable_combo` 都来自 settlement review 后的矛盾约束，不能作为 live 手填/估值失败；Aisha 的 `count_prior=1` 是缺总件数，只能作为缺总件参考态。
+
+字段映射覆盖：
+
+- Ahmad `20/20` 覆盖 `total_count`、`total_grid_target`、`avg_cells`、`quality_cells`、`fixed_counts`、`min_counts`；
+- Aisha `224/225` 覆盖 `total_count`、`total_grid_target`、`split_counts`、`split_quality_cells`、`split_avg_cells`；第 `225` 个是缺总件的 `count_prior`；
+- Victor `4/4` 覆盖 `total_count`、`total_grid_target`、`avg_cells`、`quality_cells`、`fixed_counts`、`min_counts`、`count_sums.q4q5q6`；
+- 当前 valid 支持英雄样本未命中 `200001/200002/200003` 全桶轮廓公开信息，公开轮廓与随机品质 reveal 仍以 focused tests 覆盖，不能声称已被真实支线样本充分覆盖。
+
+手填/UI 状态审查：
+
+- 对所有 `ok` valid 样本，`_manual_values_from_summary -> _sync_manual_derived_fields -> _manual_inputs_snapshot` roundtrip 通过；
+- Victor `q5_avg=0` 可正确回填为金件 `0`、金格 `0`，`100209` 正确显示为 `紫金红件`；
+- Aisha `bucket_split.white/green` 可回填白/绿分栏；white+green 两边齐全时会自动合并到 q1，但用户已手填 q1 时不覆盖；
+- 同一 live `session_id` 的刷新不会覆盖用户 dirty 字段；新 `session_id`、`settled`、`session_ahead`、`settled_stale`、`monitor_restarted` 都会清空 manual overlay 与手填栏；
+- context hero 为 `?` 时，server summary 与手填预填都可从 ref evidence 恢复 `victor/aisha/ahmed`。
+
+验证命令：
+
+```powershell
+C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py src\bidking_lab\live\fatbeans.py src\bidking_lab\live\monitor.py
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_ahmad_ref_engine_public_info.py tests\test_live_fatbeans.py::test_victor_numeric_skill_reveal_updates_q4_q5_q6_count_sum tests\test_live_fatbeans.py::test_fatbeans_aisha_skill_emits_split_low_quality_updates tests\test_live_monitor.py::test_structured_ref_inputs_bridge_supports_aisha_split_low_quality tests\test_live_monitor.py::test_structured_ref_inputs_bridge_supports_victor_count_sum tests\test_live_overlay.py::test_ahmad_manual_values_from_live_summary_keep_victor_zero_and_total_avg tests\test_live_overlay.py::test_ahmad_manual_values_from_live_summary_prefills_aisha_split_low_quality tests\test_live_overlay.py::test_ahmad_manual_values_from_live_summary_prefers_supported_evidence_hero tests\test_live_overlay.py::test_ahmad_server_summary_prefers_ref_evidence_hero_when_context_unknown tests\test_live_overlay.py::test_ahmad_manual_inline_derivation_covers_all_qualities_and_totals tests\test_live_overlay.py::test_ahmad_manual_inline_derivation_merges_white_green_only_when_q1_is_empty tests\test_live_overlay.py::test_ahmad_manual_inline_derivation_accepts_display_rounded_avg tests\test_live_overlay.py::test_ahmad_manual_state_auto_resets_on_settlement_and_session_change tests\test_live_overlay.py::test_ahmad_prefill_manual_inputs_uses_derived_quality_counts tests\test_live_overlay.py::test_ahmad_manual_snapshot_allows_total_avg_and_zero_gold tests\test_live_overlay.py::test_ahmad_manual_snapshot_derives_counts_from_avg_and_cells_and_normalizes_hero tests\test_live_overlay.py::test_ahmad_manual_snapshot_accepts_display_rounded_avg_when_count_and_cells_match tests\test_live_overlay.py::test_ahmad_manual_snapshot_rejects_over_rounded_one_decimal_avg tests\test_live_overlay.py::test_ahmad_manual_snapshot_accepts_aisha_split_and_merged_low_quality tests\test_live_overlay.py::test_ahmad_manual_snapshot_keeps_white_only_split_separate_from_q1_avg tests\test_live_overlay.py::test_ahmad_manual_snapshot_rejects_impossible_avg_count_pair tests\test_live_overlay.py::test_ahmad_manual_snapshot_rejects_fractional_avg_count_product tests\test_live_overlay.py::test_ahmad_manual_snapshot_rejects_impossible_avg_cells_pair_without_count tests\test_live_overlay.py::test_ahmad_manual_overlay_keeps_live_context_and_merges_inputs -q
+```
+
+结果：focused `46 passed`；全量 valid 支持英雄样本回放无异常，单个样本构建没有超过 2 秒的慢例。未做新的可见 Tk 截图，因为本轮没有修改布局或样式。

@@ -801,10 +801,79 @@ def test_ahmad_ref_inputs_bridge_keeps_pre_settlement_fields_only() -> None:
     assert bridge["avg_cells"] == {"q5": 3.2}
     assert bridge["counts"] == {}
     assert all(row["phase"] != "settled" for row in bridge["field_updates"])
-    assert (
-        monitor_module._ahmad_ref_inputs_from_batches((), hero="aisha")
-        == {}
+    assert monitor_module._ahmad_ref_inputs_from_batches((), hero="ethan") == {}
+
+
+def test_structured_ref_inputs_bridge_supports_aisha_split_low_quality() -> None:
+    bridge = monitor_module._ahmad_ref_inputs_from_batches(
+        (
+            LiveObservationBatch(
+                source="packet",
+                event_kind="tool_revealed",
+                phase="bidding",
+                sequence=4,
+                field_updates=(
+                    FieldUpdate(
+                        path=("bucket", "1", "total_cells"),
+                        value=5,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                    FieldUpdate(
+                        path=("bucket", "1", "count"),
+                        value=3,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                    FieldUpdate(
+                        path=("bucket_split", "white", "total_cells"),
+                        value=5,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                    FieldUpdate(
+                        path=("bucket_split", "white", "count"),
+                        value=3,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                    FieldUpdate(
+                        path=("bucket_split", "green", "total_cells"),
+                        value=8,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                    FieldUpdate(
+                        path=("bucket_split", "green", "count"),
+                        value=4,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                    FieldUpdate(
+                        path=("bucket", "3", "total_cells"),
+                        value=12,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                    FieldUpdate(
+                        path=("bucket", "3", "count"),
+                        value=6,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                ),
+            ),
+        ),
+        hero="aisha",
     )
+
+    assert bridge["split_quality_cells"] == {"green": 8, "white": 5}
+    assert bridge["split_counts"] == {"green": 4, "white": 3}
+    assert bridge["quality_cells"] == {"q3": 12}
+    assert bridge["counts"] == {"q3": 6}
+    assert "q1" not in bridge["quality_cells"]
+    assert "q1" not in bridge["counts"]
+    assert any(row["path"] == ["bucket_split", "white", "count"] for row in bridge["field_updates"])
 
 
 def test_structured_ref_inputs_bridge_supports_victor_count_sum() -> None:

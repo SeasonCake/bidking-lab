@@ -12955,3 +12955,136 @@ python -m pytest --basetemp=.tmp\codex\pytest_outer_contract tests/test_summariz
 - `decode_payload_outer_fields_as_metadata_not_capacity` 对该 blocker 已基本收口；
 - 下一步应集中检查 per-session table version、external overlay table 或 server-side settlement expansion/source transform；
 - 仍不得恢复 formal/value sampler 调参，不得放宽 readiness/promotion gate。
+
+### 2026-06-09 checkpoint：Hero Ref 支线发现已反哺主线证据口径
+
+范围：
+
+- 复核 Ahmad/Victor Hero Ref 支线的 Victor `100209`、`q5_avg=0`、`q4_avg=1.8`、总格 fitting、手填校验；
+- 用 valid/complete Fatbeans 与 live complete archives 扫描均格记录；
+- 将结论同步到：
+  - `OBSERVATIONS_V3.md`：`O-v3-188`；
+  - `DECISIONS_V3.md`：`D-v3-218`；
+  - `external_references/ahmad_live_reference_lab/README.zh-CN.md`；
+  - `external_references/ahmad_live_reference_lab/HANDOFF_2026-06-09.zh-CN.md`；
+  - `external_references/ahmad_live_reference_lab/EXECUTION_NOTES_2026-06-09.zh-CN.md`。
+
+关键收口：
+
+```text
+valid_or_complete_files=500
+relevant_avg_records=95
+one_decimal_alias_within_0_05=0
+```
+
+当前主线证据口径：
+
+- 均格 hard candidate 必须满足 `avg * count ~= integer_cells`；
+- 不再使用 `abs(grid/count - avg) <= 0.05` 的一位小数容差；
+- `q5_avg=0` 等 0 均格合法，并会把对应品质件数固定为 0；
+- `count_sums` 只能约束件数，不约束格数；
+- 没有直接格数/均格证据时，格数必须保留候选分布或 top-k/range，不得固定为默认均格 top1。
+
+Victor 2404 ref 复核：
+
+```text
+input:
+  total_count=21
+  total_cells=34
+  q4_avg=1.8
+  q5_avg=0
+  q4q5q6=6
+
+deduced:
+  q4_count=5, q4_cells=9
+  q5_count=0, q5_cells=0
+  q6_count=1
+  q6_cells remains candidate range, not unique truth
+
+Hero Ref display:
+  q6_cells_top3=2/3/4
+```
+
+验证：
+
+```text
+C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest_victor_ref tests\test_ahmad_ref_engine_public_info.py tests\test_live_overlay.py tests\test_live_fatbeans.py tests\test_live_monitor.py tests\test_runtime_snapshot.py -q
+183 passed, 25 skipped
+```
+
+结论：
+
+- 这不是 promotion gate 通过，也不是 v3 formal/value sampler 恢复；
+- 这是主线 v3 sampler 设计必须遵守的证据映射约束；
+- 后续若实现 likelihood/count-cell-value sampler，应把 count、cells/shape、value 分开建模，避免把轻量 ref 的 top1 fitting 当成 truth。
+
+## 2026-06-09 Hero Ref sparse_exact_prior 快路径收口
+
+补充 checkpoint：
+
+- Hero Ref live/manual 入口新增 `sparse_exact_prior` 快路径，用概率先验分裂“总件已知但品质证据稀疏”的局面，而不是依赖 `max_combos` 截断；
+- 当前基准：`total_count=33` 约 `0.66s`，`total_count=38 + q5_avg=9.0` 约 `1.12s`，再加 `q3=13` 约 `0.03s`，`manual total_count=21 + total_cells=34 + q4_avg=1.8` 约 `0.08s`；
+- Victor 完整 exact path 仍保持 `q4=5/q5=0/q6=1`、`q6_cells_top3=2/3/4`，没有被快路径误伤；
+- 这条快路径用于保持 live/manual 响应，不是主线 v3 promotion 或 sampler gate 的替代品。
+
+## 2026-06-09 样本库补归档与全量索引
+
+用户指出 `443 valid / 28 mixed` 不是全量样本，因为很多早期/手工/raw 样本没有进入 `data/samples/fatbeans`。本轮按现有 organizer 重新扫描：
+
+```text
+input roots:
+  data/samples/fatbeans
+  data/logs/live/raw
+
+dry-run before apply:
+  input_files=1247 unique_files=496 duplicates=751
+  move=1 copy=25 keep=470
+  valid=464 mixed=30 invalid=2
+```
+
+已应用整理并补做 activity 分流：
+
+- 从 `data/logs/live/raw` 复制 25 个漏网 unique session 到 canonical archive；
+- 将 `fatbeans_valid_unknown_2410_3rounds_2410_1388889388969363_0002.json` 规范重命名为 Victor canonical 文件名；
+- 2 个无效 raw 样本复制到 `data/samples/fatbeans_invalid/` 隔离区；
+- 发现 canonical baseline 中混入 3 个 252x 活动沉船样本，已移入 `data/samples/fatbeans_activity_20260605_shipwreck` 并重命名为 0016-0018；
+- 新增 `scripts/organize_fatbeans_activity_samples.py`，后续每次 raw organizer 后可检查/迁移 2521-2530 / 4521-4530 活动图，避免活动样本再次混入默认 baseline；
+- 原 raw 文件全部保留，未移动/删除。
+
+整理后当前口径：
+
+```text
+canonical baseline:
+  data/samples/fatbeans
+  files=491 parsed=491 valid=461 mixed=30 invalid=0
+  bid_windows=1754 ready_windows=1734 no_state_windows=20
+  activity_range_files=0
+
+canonical + activity reference:
+  data/samples/fatbeans
+  data/samples/fatbeans_activity_20260605_shipwreck
+  files=509 parsed=509 valid=479 mixed=30 invalid=0
+  bid_windows=1823 ready_windows=1803 no_state_windows=20
+
+invalid quarantine:
+  data/samples/fatbeans_invalid
+  files=7 invalid=7
+```
+
+新增/刷新 manifest：
+
+- `data/sample_manifests/fatbeans_organize_plan_2026-06-09.json`
+- `data/sample_manifests/fatbeans_archive_v3_2026-06-09.json`
+- `data/sample_manifests/fatbeans_all_usable_with_activity_2026-06-09.json`
+- `data/sample_manifests/fatbeans_activity_organize_plan_2026-06-09.json`
+- `data/sample_manifests/fatbeans_activity_shipwreck_2026-06-09.json`
+- `data/sample_manifests/fatbeans_invalid_2026-06-09.json`
+- `data/sample_manifests/fatbeans_discovery_all_sources_2026-06-09.json`
+
+注意：
+
+- `data/logs/live/raw` 包含大量重复 session/hash，不能直接把 raw 文件数当 unique 样本数；
+- 默认 baseline/evaluator 仍用 `data/samples/fatbeans`；
+- 0605 及后续 252x/452x 活动沉船 cohort 保留在 `data/samples/fatbeans_activity_20260605_shipwreck`，用于鲁棒性/source-table 活动参考，不混入默认 baseline；
+- `evaluate_fatbeans_v3_samples.py --posterior-trials 0 data/samples/fatbeans` 当前输出 `robust_activity_candidate=0`，说明 default baseline 已不含活动图。

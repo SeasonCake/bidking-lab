@@ -1378,6 +1378,26 @@ def _aisha_skill_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
                     confidence="exact",
                     sequence=state.sort_id,
                 ),
+                *(
+                    (
+                        FieldUpdate(
+                            path=("bucket_split", "white" if quality == 1 else "green", "total_cells"),
+                            value=sum(cells_by_runtime.values()),
+                            source="packet",
+                            confidence="exact",
+                            sequence=state.sort_id,
+                        ),
+                        FieldUpdate(
+                            path=("bucket_split", "white" if quality == 1 else "green", "count"),
+                            value=len(cells_by_runtime),
+                            source="packet",
+                            confidence="exact",
+                            sequence=state.sort_id,
+                        ),
+                    )
+                    if quality in {1, 2}
+                    else ()
+                ),
             )
         )
     return updates

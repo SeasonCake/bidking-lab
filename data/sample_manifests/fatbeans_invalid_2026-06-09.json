@@ -1,0 +1,507 @@
+{
+  "files": [
+    {
+      "action_result_counts": {
+        "100128": 1,
+        "100129": 1,
+        "100136": 1
+      },
+      "action_send_count": 0,
+      "bid_send_count": 0,
+      "bid_windows": 0,
+      "cleanup_action": "quarantine_prior_invalid_sample",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_invalid\\no_bid\\fatbeans_invalid_no_bid_windivert_2026_06_03_003330_partial_2401_1295018839903133_d835c24634_0495.json",
+      "filename": "fatbeans_invalid_no_bid_windivert_2026_06_03_003330_partial_2401_1295018839903133_d835c24634_0495.json",
+      "frame_count": 1,
+      "hero_ids": [
+        101,
+        103,
+        104,
+        301
+      ],
+      "map_ids": [
+        2401
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        4
+      ],
+      "observed_settlement_hard_items": 0,
+      "observed_settlement_missing_examples": [],
+      "observed_settlement_missing_items": 0,
+      "observed_settlement_quality_mismatch_examples": [],
+      "observed_settlement_quality_mismatch_items": 0,
+      "packet_count": 1,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200027": 1,
+        "200028": 1
+      },
+      "ready_rounds": [],
+      "ready_windows": 0,
+      "recovered_first_prebid_sources": {},
+      "recovered_first_prebid_windows": 0,
+      "sample_class": "invalid",
+      "send_count": 0,
+      "session_count": 1,
+      "session_ids": [
+        "2401:1295018839903133"
+      ],
+      "skill_reveal_counts": {
+        "1001031": 1,
+        "1001032": 1,
+        "1001033": 1,
+        "1001034": 1
+      },
+      "state_count": 1,
+      "status": "quarantined_sample",
+      "usable_for_metrics": false,
+      "window_status_counts": {}
+    },
+    {
+      "action_result_counts": {
+        "100117": 1
+      },
+      "action_send_count": 1,
+      "bid_send_count": 1,
+      "bid_windows": 1,
+      "cleanup_action": "quarantine_prior_invalid_sample",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {
+        "200018": 1
+      },
+      "file": "data\\samples\\fatbeans_invalid\\no_state\\fatbeans_invalid_no_state_windivert_2026_06_08_223833_partial_ahmed_2521_2521_1388889386364757_21ab3d2038_0496.json",
+      "filename": "fatbeans_invalid_no_state_windivert_2026_06_08_223833_partial_ahmed_2521_2521_1388889386364757_21ab3d2038_0496.json",
+      "frame_count": 7,
+      "hero_ids": [
+        103,
+        104,
+        204
+      ],
+      "map_ids": [
+        2521
+      ],
+      "no_state_windows": 1,
+      "observed_rounds": [
+        1
+      ],
+      "observed_settlement_hard_items": 0,
+      "observed_settlement_missing_examples": [],
+      "observed_settlement_missing_items": 0,
+      "observed_settlement_quality_mismatch_examples": [],
+      "observed_settlement_quality_mismatch_items": 0,
+      "packet_count": 7,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200018": 1
+      },
+      "ready_rounds": [],
+      "ready_windows": 0,
+      "recovered_first_prebid_sources": {},
+      "recovered_first_prebid_windows": 0,
+      "sample_class": "invalid",
+      "send_count": 2,
+      "session_count": 1,
+      "session_ids": [
+        "2521:1388889386364757"
+      ],
+      "skill_reveal_counts": {
+        "100204": 1,
+        "1002041": 1
+      },
+      "state_count": 1,
+      "status": "quarantined_sample",
+      "usable_for_metrics": false,
+      "window_status_counts": {
+        "no_state": 1
+      }
+    },
+    {
+      "action_result_counts": {
+        "100128": 4,
+        "100129": 5,
+        "100136": 6
+      },
+      "action_send_count": 3,
+      "bid_send_count": 5,
+      "bid_windows": 5,
+      "cleanup_action": "quarantine_prior_invalid_sample",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_invalid\\parse_error\\fatbeans_invalid_parse_error_aisha_shipwreck_test_sample60_5rounds_7fc668a5b9_0438.json",
+      "filename": "fatbeans_invalid_parse_error_aisha_shipwreck_test_sample60_5rounds_7fc668a5b9_0438.json",
+      "frame_count": 102,
+      "hero_ids": [
+        103,
+        107,
+        208
+      ],
+      "map_ids": [
+        2506
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "observed_settlement_hard_items": 189,
+      "observed_settlement_missing_examples": [],
+      "observed_settlement_missing_items": 0,
+      "observed_settlement_quality_mismatch_examples": [],
+      "observed_settlement_quality_mismatch_items": 0,
+      "packet_count": 114,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200032": 6
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "ready_windows": 5,
+      "recovered_first_prebid_sources": {},
+      "recovered_first_prebid_windows": 0,
+      "sample_class": "invalid",
+      "send_count": 8,
+      "session_count": 1,
+      "session_ids": [
+        "2506:1295018649037100"
+      ],
+      "skill_reveal_counts": {
+        "1001031": 3,
+        "1001032": 4,
+        "1001033": 5,
+        "1001034": 6
+      },
+      "state_count": 9,
+      "status": "quarantined_sample",
+      "usable_for_metrics": false,
+      "window_status_counts": {
+        "ready": 5
+      }
+    },
+    {
+      "action_result_counts": {
+        "100129": 2,
+        "100136": 3
+      },
+      "action_send_count": 2,
+      "bid_send_count": 2,
+      "bid_windows": 2,
+      "cleanup_action": "quarantine_prior_invalid_sample",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_invalid\\parse_error\\fatbeans_invalid_parse_error_aisha_villa_test_sample26_2rounds_398865dd3d_0435.json",
+      "filename": "fatbeans_invalid_parse_error_aisha_villa_test_sample26_2rounds_398865dd3d_0435.json",
+      "frame_count": 50,
+      "hero_ids": [
+        103,
+        104,
+        107
+      ],
+      "map_ids": [
+        2401
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1
+      ],
+      "observed_settlement_hard_items": 33,
+      "observed_settlement_missing_examples": [],
+      "observed_settlement_missing_items": 0,
+      "observed_settlement_quality_mismatch_examples": [],
+      "observed_settlement_quality_mismatch_items": 0,
+      "packet_count": 52,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200036": 3
+      },
+      "ready_rounds": [
+        1,
+        2
+      ],
+      "ready_windows": 2,
+      "recovered_first_prebid_sources": {},
+      "recovered_first_prebid_windows": 0,
+      "sample_class": "invalid",
+      "send_count": 4,
+      "session_count": 1,
+      "session_ids": [
+        "2401:1295018567173766"
+      ],
+      "skill_reveal_counts": {
+        "1001033": 2,
+        "1001034": 3
+      },
+      "state_count": 5,
+      "status": "quarantined_sample",
+      "usable_for_metrics": false,
+      "window_status_counts": {
+        "ready": 2
+      }
+    },
+    {
+      "action_result_counts": {
+        "100128": 3,
+        "100129": 4,
+        "100136": 2
+      },
+      "action_send_count": 3,
+      "bid_send_count": 3,
+      "bid_windows": 3,
+      "cleanup_action": "quarantine_prior_invalid_sample",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_invalid\\parse_error\\fatbeans_invalid_parse_error_aisha_villa_test_sample27_3rounds_761bbffff9_0437.json",
+      "filename": "fatbeans_invalid_parse_error_aisha_villa_test_sample27_3rounds_761bbffff9_0437.json",
+      "frame_count": 67,
+      "hero_ids": [
+        103,
+        107,
+        207
+      ],
+      "map_ids": [
+        2403
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2
+      ],
+      "observed_settlement_hard_items": 42,
+      "observed_settlement_missing_examples": [],
+      "observed_settlement_missing_items": 0,
+      "observed_settlement_quality_mismatch_examples": [],
+      "observed_settlement_quality_mismatch_items": 0,
+      "packet_count": 65,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200027": 4,
+        "200031": 2
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3
+      ],
+      "ready_windows": 3,
+      "recovered_first_prebid_sources": {},
+      "recovered_first_prebid_windows": 0,
+      "sample_class": "invalid",
+      "send_count": 6,
+      "session_count": 1,
+      "session_ids": [
+        "2403:1295018567435036"
+      ],
+      "skill_reveal_counts": {
+        "1001032": 2,
+        "1001033": 3,
+        "1001034": 4
+      },
+      "state_count": 7,
+      "status": "quarantined_sample",
+      "usable_for_metrics": false,
+      "window_status_counts": {
+        "ready": 3
+      }
+    },
+    {
+      "action_result_counts": {
+        "100128": 2,
+        "100129": 3,
+        "100136": 4
+      },
+      "action_send_count": 3,
+      "bid_send_count": 3,
+      "bid_windows": 3,
+      "cleanup_action": "quarantine_prior_invalid_sample",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {},
+      "file": "data\\samples\\fatbeans_invalid\\parse_error\\fatbeans_invalid_parse_error_aisha_villa_test_sample28_3rounds_3e3bbdd9ec_0436.json",
+      "filename": "fatbeans_invalid_parse_error_aisha_villa_test_sample28_3rounds_3e3bbdd9ec_0436.json",
+      "frame_count": 58,
+      "hero_ids": [
+        103,
+        105,
+        207,
+        208
+      ],
+      "map_ids": [
+        2409
+      ],
+      "no_state_windows": 0,
+      "observed_rounds": [
+        1,
+        2
+      ],
+      "observed_settlement_hard_items": 46,
+      "observed_settlement_missing_examples": [],
+      "observed_settlement_missing_items": 0,
+      "observed_settlement_quality_mismatch_examples": [],
+      "observed_settlement_quality_mismatch_items": 0,
+      "packet_count": 60,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200023": 2,
+        "200031": 4
+      },
+      "ready_rounds": [
+        1,
+        2,
+        3
+      ],
+      "ready_windows": 3,
+      "recovered_first_prebid_sources": {},
+      "recovered_first_prebid_windows": 0,
+      "sample_class": "invalid",
+      "send_count": 6,
+      "session_count": 1,
+      "session_ids": [
+        "2409:1295018567660367"
+      ],
+      "skill_reveal_counts": {
+        "1001032": 2,
+        "1001033": 3,
+        "1001034": 4
+      },
+      "state_count": 7,
+      "status": "quarantined_sample",
+      "usable_for_metrics": false,
+      "window_status_counts": {
+        "ready": 3
+      }
+    },
+    {
+      "action_result_counts": {
+        "100128": 2,
+        "100129": 3,
+        "100136": 3
+      },
+      "action_send_count": 3,
+      "bid_send_count": 3,
+      "bid_windows": 3,
+      "cleanup_action": "quarantine_prior_invalid_sample",
+      "constraint_conflict_windows": 0,
+      "exact_public_info_counts": {
+        "200009": 2,
+        "200017": 3
+      },
+      "file": "data\\samples\\fatbeans_invalid\\parse_error\\fatbeans_invalid_parse_error_aisha_villa_test_sample29_3rounds_332c263a23_0434.json",
+      "filename": "fatbeans_invalid_parse_error_aisha_villa_test_sample29_3rounds_332c263a23_0434.json",
+      "frame_count": 63,
+      "hero_ids": [
+        103,
+        104,
+        208
+      ],
+      "map_ids": [
+        2410
+      ],
+      "no_state_windows": 1,
+      "observed_rounds": [
+        1,
+        2
+      ],
+      "observed_settlement_hard_items": 61,
+      "observed_settlement_missing_examples": [],
+      "observed_settlement_missing_items": 0,
+      "observed_settlement_quality_mismatch_examples": [],
+      "observed_settlement_quality_mismatch_items": 0,
+      "packet_count": 64,
+      "parse_error": null,
+      "parsed": true,
+      "public_info_counts": {
+        "200009": 2,
+        "200017": 3
+      },
+      "ready_rounds": [
+        2,
+        3
+      ],
+      "ready_windows": 2,
+      "recovered_first_prebid_sources": {},
+      "recovered_first_prebid_windows": 0,
+      "sample_class": "invalid",
+      "send_count": 6,
+      "session_count": 1,
+      "session_ids": [
+        "2410:1295018567821574"
+      ],
+      "skill_reveal_counts": {
+        "1001032": 2,
+        "1001033": 3,
+        "1001034": 3
+      },
+      "state_count": 5,
+      "status": "quarantined_sample",
+      "usable_for_metrics": false,
+      "window_status_counts": {
+        "no_state": 1,
+        "ready": 2
+      }
+    }
+  ],
+  "summary": {
+    "bid_windows": 17,
+    "capture_gap_files": [
+      "data\\samples\\fatbeans_invalid\\no_state\\fatbeans_invalid_no_state_windivert_2026_06_08_223833_partial_ahmed_2521_2521_1388889386364757_21ab3d2038_0496.json",
+      "data\\samples\\fatbeans_invalid\\parse_error\\fatbeans_invalid_parse_error_aisha_villa_test_sample29_3rounds_332c263a23_0434.json"
+    ],
+    "constraint_conflict_windows": 0,
+    "exact_public_info_counts": {
+      "200009": 2,
+      "200017": 3,
+      "200018": 1
+    },
+    "file_status_counts": {
+      "quarantined_sample": 7
+    },
+    "files": 7,
+    "invalid_files": 7,
+    "mixed_files": 0,
+    "multi_session_capture_files": [],
+    "multi_session_files": 0,
+    "no_state_windows": 2,
+    "note": "file counts are real capture JSON files; prebid windows are derived from player bid SEND 0x0022 boundaries and are not generated samples",
+    "parse_error_files": [],
+    "parse_errors": 0,
+    "parsed_files": 7,
+    "public_info_counts": {
+      "200009": 2,
+      "200017": 3,
+      "200018": 1,
+      "200023": 2,
+      "200027": 5,
+      "200028": 1,
+      "200031": 6,
+      "200032": 6,
+      "200036": 3
+    },
+    "ready_windows": 15,
+    "recovered_first_prebid_sources": {},
+    "recovered_first_prebid_windows": 0,
+    "sample_class_counts": {
+      "invalid": 7
+    },
+    "source": "fatbeans_archive_v3_manifest",
+    "usable_metric_files": 0,
+    "valid_files": 0,
+    "window_status_counts": {
+      "no_state": 2,
+      "ready": 15
+    }
+  }
+}

@@ -178,9 +178,9 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate、practical P90 coverage/extreme-over，以及 raise-watch hit/miss/false-alarm/extreme-over/misleading rate；archive replay 支持 `--archive-formal-mode v2|v3_practical`，默认保持 builder v2 对照口径；summary/group stats 输出 formal-mode counts、v3 practical live guard rows/rate、paired guarded-vs-unguarded MAE/P50/P90/P90-coverage/P90-extreme-over deltas、case-level guard summary、coverage-loss source-context、map_id/map_family guard-loss slice，以及 v2/guarded/unguarded 同分母 `formal_policy_comparison`；v303 BidMap parser fallback 与 activity missing-drop alias 后，72h archive `v3_practical` replay 可跑通 |
 | `data/logs/live/` | 本地 live 日志 | ignored，本地运行态 |
-| `data/samples/fatbeans/` | 本地 canonical archive 样本 | 453 个 unique 文件，435 valid / 18 mixed，默认脚本路径 |
-| `data/samples/fatbeans_activity_20260605_shipwreck/` | 2026-06-05 沉船白转红活动 cohort | 15 份 JSON，manifest role=`activity_tuning_reference`；用于 source/table 与 shadow 调参参考，不进默认校准 |
-| `data/samples/fatbeans_invalid/` | 旧 parse error/无效样本 | ignored，不进默认 evaluator |
+| `data/samples/fatbeans/` | 本地 canonical archive 样本 | 491 个 canonical 文件，461 valid / 30 mixed，默认脚本路径；2026-06-09 已从 `data/logs/live/raw` 补齐漏网 unique session，并移出 252x/452x 活动图 |
+| `data/samples/fatbeans_activity_20260605_shipwreck/` | 2026-06-05 沉船白转红活动 cohort | 18 份 JSON，manifest role=`activity_tuning_reference`；用于 source/table 与 shadow 调参参考，不进默认校准 |
+| `data/samples/fatbeans_invalid/` | 旧 parse error/无效样本 | 7 份隔离样本，ignored，不进默认 evaluator |
 
 ## 数据目录
 
@@ -192,10 +192,18 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `data/tmp/` | 临时输出 | 已移动到 ignored local archive |
 | `data/samples/synthetic_v2/` | 合成样本 | 保留 |
 | `data/samples/fatbeans/` | 实机 Fatbeans canonical archive | 默认 baseline |
+| `data/sample_manifests/fatbeans_archive_v3_2026-06-09.json` | 当前 canonical archive manifest | 491 files / 461 valid / 30 mixed；default baseline 中 252x/452x activity files=0 |
+| `data/sample_manifests/fatbeans_all_usable_with_activity_2026-06-09.json` | canonical + activity reference manifest | 509 files / 479 valid / 30 mixed；活动沉船只作 reference，不混入默认 baseline |
+| `data/sample_manifests/fatbeans_discovery_all_sources_2026-06-09.json` | raw + canonical + activity discovery manifest | 仅用于发现/去重核对，包含 raw 重复来源，不代表 unique 样本数 |
+| `data/sample_manifests/fatbeans_organize_plan_2026-06-09.json` | 0609 raw 补归档计划 | 记录本次 25 copy、1 rename、751 duplicate |
+| `data/sample_manifests/fatbeans_activity_organize_plan_2026-06-09.json` | 0609 activity 分流检查计划 | 当前 move=0，activity_files=18；后续 organizer 后应保持 default baseline 无 252x/452x |
+| `data/sample_manifests/fatbeans_activity_shipwreck_2026-06-09.json` | 当前 activity cohort manifest | 18 files / 18 valid / 69 ready windows；`affects_bid=false` |
+| `data/sample_manifests/fatbeans_invalid_2026-06-09.json` | invalid quarantine manifest | 7 invalid，默认评估排除 |
 | `data/sample_manifests/fatbeans_activity_shipwreck_2026-06-05.json` | 252x activity cohort manifest | `activity_tuning_reference`；scope=`source_parser_table_acquisition_and_shadow_tuning_reference_only`；`affects_bid=false` |
 | `data/samples/fatbeans_activity_20260605_shipwreck/` | 0605 后 252x 沉船活动样本 | 后续用于鲁棒性/活动映射、source parser/table acquisition 与 shadow-only 调参参考，不混入默认 baseline |
 | `data/samples/fatbeans_manual_inbox/` | 手动导出样本 staging | 审查后并入 canonical archive 或独立 cohort |
 | `data/samples/fatbeans_invalid/` | 无效真实样本隔离区 | 不计模型准确率 |
+| `scripts/organize_fatbeans_activity_samples.py` | 活动图样本分流检查 | 识别 2521-2530 / 4521-4530，避免活动沉船混入默认 baseline |
 
 ## 脚本与测试
 

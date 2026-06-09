@@ -2106,6 +2106,61 @@ def test_fatbeans_package6_aisha_reveals_pin_bucket_cells_and_counts() -> None:
     assert third_updates[("bucket", "4", "count")] == 9
 
 
+def test_fatbeans_aisha_skill_emits_split_low_quality_updates() -> None:
+    batches = live_batches_from_fatbeans_events(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=7,
+                    capture_time="2026-06-09T00:00:00",
+                    message_id=0x0021,
+                    session_id="s1",
+                    map_id=2401,
+                    round_index=1,
+                    skill_reveals=(
+                        FatbeansSkillReveal(
+                            skill_id=1001034,
+                            hero_id=103,
+                            round_index=1,
+                            observed_items=(
+                                FatbeansObservedItem(
+                                    local_index=0,
+                                    runtime_id=101,
+                                    item_id=1001001,
+                                    quality=1,
+                                    value=None,
+                                    shape_code=12,
+                                    cells=None,
+                                ),
+                                FatbeansObservedItem(
+                                    local_index=2,
+                                    runtime_id=102,
+                                    item_id=1001002,
+                                    quality=1,
+                                    value=None,
+                                    shape_code=11,
+                                    cells=None,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    updates = {update.path: update.value for update in batches[0].field_updates}
+
+    assert updates[("bucket", "1", "total_cells")] == 3
+    assert updates[("bucket", "1", "count")] == 2
+    assert updates[("bucket_split", "white", "total_cells")] == 3
+    assert updates[("bucket_split", "white", "count")] == 2
+
+
 PACKAGE7_CAPTURE = FATBEANS_SAMPLE_DIR / "bid_king_packages7.json"
 PACKAGE8_CAPTURE = FATBEANS_SAMPLE_DIR / "bidking_package8.json"
 PACKAGE9_CAPTURE = FATBEANS_SAMPLE_DIR / "bidking_package_9_with_whole_bucket_perspective.json"

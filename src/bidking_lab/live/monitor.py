@@ -3872,6 +3872,8 @@ def _ahmad_ref_inputs_from_batches(
     """Compact pre-settlement bridge for the isolated structured reference overlay."""
 
     if str(hero or "").lower() not in {
+        "aisha",
+        "艾莎",
         "ahmed",
         "ahmad",
         "艾哈迈德",
@@ -3884,9 +3886,25 @@ def _ahmad_ref_inputs_from_batches(
     for batch in batches:
         if batch.phase == "settled" or batch.event_kind == "session_settled":
             continue
+        split_paths_in_batch = {
+            (str(update.path[1]), str(update.path[2]))
+            for update in batch.field_updates
+            if len(update.path) >= 3 and tuple(update.path[:1]) == ("bucket_split",)
+        }
         for update in batch.field_updates:
             path = tuple(str(part) for part in update.path)
             if not path:
+                continue
+            if (
+                path[0] == "bucket"
+                and len(path) >= 3
+                and path[1] in {"1", "2"}
+                and (
+                    ("white" if path[1] == "1" else "green"),
+                    path[2],
+                )
+                in split_paths_in_batch
+            ):
                 continue
             if path[0] == "session":
                 relevant = path[1:] in {
@@ -3898,7 +3916,9 @@ def _ahmad_ref_inputs_from_batches(
             elif path[0] == "bucket_group" and len(path) >= 3:
                 relevant = path[2] == "count"
             elif path[0] == "bucket" and len(path) >= 3:
-                relevant = path[2] in {"avg_cells", "count"}
+                relevant = path[2] in {"avg_cells", "count", "cells", "total_cells"}
+            elif path[0] == "bucket_split" and len(path) >= 3:
+                relevant = path[2] in {"avg_cells", "count", "cells", "total_cells"}
             else:
                 relevant = False
             if not relevant:
@@ -3918,7 +3938,11 @@ def _ahmad_ref_inputs_from_batches(
 
     avg_cells: dict[str, Any] = {}
     counts: dict[str, Any] = {}
+    quality_cells: dict[str, Any] = {}
     count_sums: dict[str, Any] = {}
+    split_avg_cells: dict[str, Any] = {}
+    split_counts: dict[str, Any] = {}
+    split_quality_cells: dict[str, Any] = {}
     for path, value in sorted(latest_values.items()):
         if path[:1] == ("session",):
             continue
@@ -3926,14 +3950,27 @@ def _ahmad_ref_inputs_from_batches(
             if path[2] == "count":
                 count_sums[str(path[1])] = value
             continue
+        if len(path) >= 3 and path[0] == "bucket_split":
+            split_key = str(path[1])
+            if path[2] == "avg_cells":
+                split_avg_cells[split_key] = value
+            elif path[2] == "count":
+                split_counts[split_key] = value
+            elif path[2] in {"cells", "total_cells"}:
+                split_quality_cells[split_key] = value
+            continue
         if len(path) < 3 or path[0] != "bucket":
             continue
         quality = str(path[1])
-        key = "q1" if quality in {"1", "2"} else f"q{quality}"
+        if quality == "2":
+            continue
+        key = "q1" if quality == "1" else f"q{quality}"
         if path[2] == "avg_cells":
             avg_cells[key] = value
         elif path[2] == "count":
             counts[key] = value
+        elif path[2] in {"cells", "total_cells"}:
+            quality_cells[key] = value
 
     total_count = latest_values.get(("session", "total_item_count"))
     if total_count is None:
@@ -3947,7 +3984,11 @@ def _ahmad_ref_inputs_from_batches(
         "total_cells": total_cells,
         "avg_cells": avg_cells,
         "counts": counts,
+        "quality_cells": quality_cells,
         "count_sums": count_sums,
+        "split_avg_cells": split_avg_cells,
+        "split_counts": split_counts,
+        "split_quality_cells": split_quality_cells,
         "field_updates": field_updates,
     }
 

@@ -27,6 +27,11 @@ QUALITY_LABELS = {
     "q6": "红",
 }
 QUALITY_DISPLAY_ORDER = ("q1", "q3", "q4", "q5", "q6")
+SPLIT_QUALITY_LABELS = {
+    "white": "白",
+    "green": "绿",
+}
+SPLIT_QUALITY_DISPLAY_ORDER = ("white", "green")
 
 try:
     from ahmad_ref_engine import run_reference_engine
@@ -101,6 +106,7 @@ def _parse_int(value: Any) -> int | None:
 
 
 HERO_BY_ID = {
+    103: "aisha",
     204: "ahmed",
     209: "victor",
 }
@@ -115,6 +121,10 @@ def _hero_from_context(hero: Any, *hero_id_candidates: Any) -> str:
         if hero_id in HERO_BY_ID:
             return HERO_BY_ID[hero_id]
     return text or "?"
+
+
+def _is_unknown_hero(value: Any) -> bool:
+    return _text(value, "").strip().lower() in {"", "?", "unknown", "none", "null"}
 
 
 def _clean_range_text(value: Any) -> str:
@@ -267,6 +277,16 @@ def _ref_input_summary(ref_result: dict[str, Any]) -> str:
         if parsed_count and parsed_grid is not None:
             parts.append(f"全均格 {parsed_grid / parsed_count:.2f}")
     avg_cells = evidence.get("avg_cells")
+    split_avg_cells = evidence.get("split_avg_cells")
+    if isinstance(split_avg_cells, dict):
+        for key in SPLIT_QUALITY_DISPLAY_ORDER:
+            value = split_avg_cells.get(key)
+            if value in (None, ""):
+                continue
+            try:
+                parts.append(f"{SPLIT_QUALITY_LABELS.get(key, key)}均格 {float(value):.2f}")
+            except (TypeError, ValueError):
+                parts.append(f"{SPLIT_QUALITY_LABELS.get(key, key)}均格 {value}")
     if isinstance(avg_cells, dict):
         for key in QUALITY_DISPLAY_ORDER:
             value = avg_cells.get(key)
@@ -277,6 +297,15 @@ def _ref_input_summary(ref_result: dict[str, Any]) -> str:
             except (TypeError, ValueError):
                 parts.append(f"{QUALITY_LABELS.get(key, key)}均格 {value}")
     quality_cells = evidence.get("quality_cells")
+    split_quality_cells = evidence.get("split_quality_cells")
+    if isinstance(split_quality_cells, dict):
+        split_cell_parts = [
+            f"{SPLIT_QUALITY_LABELS.get(key, key)}格 {split_quality_cells[key]}"
+            for key in SPLIT_QUALITY_DISPLAY_ORDER
+            if split_quality_cells.get(key) not in (None, "")
+        ]
+        if split_cell_parts:
+            parts.append("分格 " + "，".join(split_cell_parts))
     if isinstance(quality_cells, dict):
         cell_parts = [
             f"{QUALITY_LABELS.get(key, key)}格 {quality_cells[key]}"
@@ -286,6 +315,15 @@ def _ref_input_summary(ref_result: dict[str, Any]) -> str:
         if cell_parts:
             parts.append("格数 " + "，".join(cell_parts))
     fixed_counts = evidence.get("fixed_counts")
+    split_counts = evidence.get("split_counts")
+    if isinstance(split_counts, dict):
+        split_count_parts = [
+            f"{SPLIT_QUALITY_LABELS.get(key, key)}件 {split_counts[key]}"
+            for key in SPLIT_QUALITY_DISPLAY_ORDER
+            if split_counts.get(key) not in (None, "")
+        ]
+        if split_count_parts:
+            parts.append("分件 " + "，".join(split_count_parts))
     if isinstance(fixed_counts, dict):
         count_parts = [
             f"{QUALITY_LABELS.get(key, key)}件 {fixed_counts[key]}"
@@ -294,6 +332,17 @@ def _ref_input_summary(ref_result: dict[str, Any]) -> str:
         ]
         if count_parts:
             parts.append("件数 " + "，".join(count_parts))
+    min_counts = evidence.get("min_counts")
+    if isinstance(min_counts, dict):
+        floor_parts = []
+        for key in QUALITY_DISPLAY_ORDER:
+            value = _parse_int(min_counts.get(key))
+            fixed_value = _parse_int(fixed_counts.get(key)) if isinstance(fixed_counts, dict) else None
+            if value is None or value <= 0 or fixed_value is not None and fixed_value >= value:
+                continue
+            floor_parts.append(f"{QUALITY_LABELS.get(key, key)}≥{value}")
+        if floor_parts:
+            parts.append("下界 " + "，".join(floor_parts))
     count_sums = evidence.get("count_sums")
     if isinstance(count_sums, dict):
         if count_sums.get("q4q5q6") not in (None, ""):
@@ -797,6 +846,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
             }
     else:
         ref_result = {"status": "unavailable", "source": "ref_v0", "notes": []}
+    ref_evidence = ref_result.get("evidence") if isinstance(ref_result.get("evidence"), dict) else {}
 
     hero = _hero_from_context(
         context.get("hero") or snapshot.get("hero"),
@@ -807,8 +857,14 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         snapshot.get("player_hero_id"),
         snapshot.get("current_player_hero_id"),
     )
+    if _is_unknown_hero(hero):
+        evidence_hero = _hero_from_context(ref_evidence.get("hero"))
+        if not _is_unknown_hero(evidence_hero):
+            hero = evidence_hero
     hero_key = hero.lower()
     is_supported_ref_hero = hero_key in {
+        "aisha",
+        "艾莎",
         "ahmed",
         "ahmad",
         "艾哈迈德",
@@ -850,7 +906,8 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         flags.append(_flag("证据低", "watch"))
     ref_ok = ref_result.get("status") in {"ok", "count_prior"}
     ref_notes = tuple(str(item) for item in ref_result.get("notes") or ())
-    ref_evidence = ref_result.get("evidence") if isinstance(ref_result.get("evidence"), dict) else {}
+    ref_sparse_exact_prior = "sparse_exact_total_prior_enumeration" in ref_notes
+    ref_combo_cap_hit = "combo_cap_hit" in ref_notes
     ref_count_sums = ref_evidence.get("count_sums") if isinstance(ref_evidence.get("count_sums"), dict) else {}
     victor_missing_q456 = (
         hero_key in {"victor", "维克托"}
@@ -863,6 +920,8 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         ref_readiness = "review_only"
     elif ref_ok and victor_missing_q456:
         ref_readiness = "victor_q456_prior"
+    elif ref_result.get("status") == "count_prior" and ref_sparse_exact_prior:
+        ref_readiness = "sparse_exact_prior"
     elif ref_result.get("status") == "count_prior":
         ref_readiness = "count_prior"
     elif ref_ok:
@@ -878,7 +937,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     v3_balanced = _parse_money(decision.get("attack_bid"))
     display_source = (
         "ref_prior"
-        if ref_readiness in {"count_prior", "victor_q456_prior"}
+        if ref_readiness in {"count_prior", "sparse_exact_prior", "victor_q456_prior"}
         else "ref_v0"
         if ref_display_ready
         else "ref_waiting"
@@ -894,8 +953,12 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         flags.append(_flag("等待外援输入", "neutral"))
     if victor_missing_q456:
         flags.append(_flag("缺紫金红件数", "watch", "Victor 100209 not captured; using prior"))
+    if ref_readiness == "sparse_exact_prior":
+        flags.append(_flag("宽约束快速", "watch", "exact total count with probability-prior quality split"))
     if ref_readiness == "count_prior":
         flags.append(_flag("总件估计", "watch", "ref count prior; no exact total count"))
+    if ref_combo_cap_hit:
+        flags.append(_flag("组合截断", "watch", f"ref combos={_text(ref_result.get('combo_count'), '?')}"))
     if ref_review_only:
         flags.append(_flag("回放口径", "watch", "ref_v0 used settlement review fields"))
     if ref_ok:
@@ -961,6 +1024,8 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     )
     if ref_display_ready and ref_readiness == "count_prior":
         display_red_risk_reference = "总件先验"
+    elif ref_display_ready and ref_readiness == "sparse_exact_prior":
+        display_red_risk_reference = "总件已知，品质先验"
     elif ref_display_ready and ref_readiness == "victor_q456_prior":
         display_red_risk_reference = "紫金红先验"
     elif ref_display_ready:
@@ -1036,7 +1101,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     )
     main_action = (
         "估计参考"
-        if ref_readiness in {"count_prior", "victor_q456_prior"} and ref_display_ready
+        if ref_readiness in {"count_prior", "sparse_exact_prior", "victor_q456_prior"} and ref_display_ready
         else "参考可用"
         if ref_display_ready
         else "等待外援输入"
@@ -1050,6 +1115,8 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     reference_note = (
         "External ref_v0 count/cells/value engine; total count estimated from ref prior."
         if ref_readiness == "count_prior"
+        else "External ref_v0 count/cells/value engine; exact total count with probability-prior quality split."
+        if ref_readiness == "sparse_exact_prior"
         else "External ref_v0 count/cells/value engine; Victor q4+q5+q6 count missing, using prior."
         if ref_readiness == "victor_q456_prior"
         else "External ref_v0 count/cells/value engine; not promoted."

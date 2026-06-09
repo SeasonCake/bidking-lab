@@ -7553,3 +7553,70 @@ top_profiles=aisha|2501|public:total+tool:category+item+shape,ethan|2404|public:
 - 主要 blocker 不是单一 raw cap 字段，而是 lower-bound under truth、direct prior-max conflict、无 capacity prior max 混合；
 - activity/prior-unavailable 仍由 prior robustness/activity gate 分流，不进入这个 detail contract；
 - 当前仍不能通过 capacity 放宽或 sampler 参数调优解除 promotion blocker。
+
+## O-v3-188：均格不是一位小数容差；count 确定不代表 cells 唯一
+
+2026-06-09 Ahmad/Victor Hero Ref 支线复核暴露出两个会影响主线 v3 sampler 的口径问题：
+
+1. 均格证据不应按 `abs(grid/count - avg) <= 0.05` 的一位小数容差处理。
+2. 品质件数即使被硬约束住，品质格数在没有直接格数/均格证据时仍然是分布，不应固定为默认均格 top1。
+
+样本复核：
+
+```text
+scope=valid/complete fatbeans + live complete archives
+files_scanned=500
+relevant_avg_records=95
+one_decimal_alias_within_0_05=0
+```
+
+复核重点：
+
+- 项目旧 `format_value`/`parse_reading` 口径已经记录：游戏均格显示最多两位小数并截断，不是一位小数四舍五入；
+- Fatbeans packet 中公开均格常见为多位 float，例如 `2.965517`、`2.307692`；
+- 有效样本里未发现 `1.75` 或 `1.833...` 被 packet/公开信息当成 `1.8` 的证据；
+- 因此 `avg=1.8` 应约束为 `avg * count` 接近整数格，`4件 -> 7.2格` 与 `6件 -> 10.8格` 应拒绝，只有 `5件 -> 9格` 合法。
+
+Victor 2404 实战复核：
+
+```text
+evidence:
+  total_count=21
+  total_cells=34
+  q4_avg=1.8
+  q5_avg=0
+  q4q5q6_count=6
+
+deduced:
+  q4_count=5, q4_cells=9
+  q5_count=0, q5_cells=0
+  q6_count=1
+  q6_cells is not uniquely observed
+```
+
+修正后 Hero Ref 显示：
+
+```text
+q4_count_range=5/5/5
+q4_cells_range=9/9/9
+q5_count_range=0/0/0
+q5_cells_range=0/0/0
+q6_count_range=1/1/1
+q6_cells_top3_range=2/3/4
+```
+
+主线含义：
+
+- v3 evidence registry、sampler、readiness、UI bridge 不得复用 `0.05 avg tolerance` 作为硬约束；
+- 件数 likelihood 与 cell/shape likelihood 必须分离；
+- 没有直接格数/均格证据时，不能把 `count * DEFAULT_GRID_MEAN` 或 fitting 后的单个格数当 truth；
+- 若为 UI 或 lightweight ref 展示，需要标成 top-k / candidate range；若进入 sampler，则应由 shape/cell distribution 采样或 likelihood 加权。
+
+## O-v3-189：Hero Ref 稀疏总件应走概率先验快路径，而不是 cap 截断
+
+2026-06-09 复核发现：
+
+- `total_count` 已知但品质分裂稀疏时，继续完整枚举的收益很低，UI 也会被拖慢；
+- 这种场景更适合 `sparse_exact_prior`：保留总件硬约束，但用概率先验分裂剩余品质；
+- 不应把 `combo_cap_hit` 当成正常快路径，更不能把它的输出当成更保守或更真实的结果；
+- 实测基准显示：`total_count=33` 约 `0.66s`，`total_count=38 + q5_avg=9.0` 约 `1.12s`，`total_count=38 + q5_avg=9.0 + q3=13` 约 `0.03s`，`manual total_count=21 + total_cells=34 + q4_avg=1.8` 约 `0.08s`。
