@@ -315,18 +315,37 @@ def test_game_frame_gate_accepts_state_and_matching_session_sends() -> None:
         )
     )
 
-    assert early_send.rows == ()
+    assert len(early_send.rows) == 1
+    assert early_send.rows[0]["MessageID"] == "0x0022"
+    assert early_send.rows[0]["SessionID"] == "2401:1274127880525303"
     assert len(state.rows) == 1
     assert state.rows[0]["MessageID"] == "0x0025"
     assert state.rows[0]["SessionID"] == "2401:1274127880525303"
     assert state.rows[0]["Source"] == "WinDivertFrameGate"
-    assert state.rows[0]["SortID"] == 1
+    assert state.rows[0]["SortID"] == 2
     assert gate.active_session_id == "2401:1274127880525303"
     assert len(matching_send.rows) == 1
     assert matching_send.rows[0]["MessageID"] == "0x0026"
-    assert matching_send.rows[0]["SortID"] == 2
+    assert matching_send.rows[0]["SortID"] == 3
     assert other_session_send.rows == ()
-    assert gate.ignored_frames == 2
+    assert gate.ignored_frames == 1
+
+
+def test_game_frame_gate_uses_first_send_to_prewarm_direct_action_session() -> None:
+    module = _module()
+    gate = module.GameFrameGate()
+
+    first_send = gate.feed_row(_row("SEND", _send_frame(0x0026), sort_id=1))
+    action_response = gate.feed_row(
+        _row("REV", _rev_action_response_frame(), sort_id=2)
+    )
+
+    assert len(first_send.rows) == 1
+    assert first_send.rows[0]["MessageID"] == "0x0026"
+    assert gate.active_session_id == "2401:1274127880525303"
+    assert len(action_response.rows) == 1
+    assert action_response.rows[0]["MessageID"] == "0x0027"
+    assert action_response.rows[0]["SessionID"] == "2401:1274127880525303"
 
 
 def test_game_frame_gate_accepts_session_started_state() -> None:

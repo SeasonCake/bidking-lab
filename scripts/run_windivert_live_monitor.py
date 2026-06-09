@@ -754,6 +754,10 @@ class GameFrameGate:
             if frame.message_id == 0x002D:
                 self._current_session_settled = True
             return True, reset
+        if self._current_session_id is None:
+            self._current_session_id = frame.session_id
+            self._current_session_settled = False
+            return True, False
         if self._current_session_id == frame.session_id:
             return True, False
         if (

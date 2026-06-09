@@ -215,6 +215,37 @@ def test_capture_status_signature_ignores_timestamp_only_changes() -> None:
     assert overlay._capture_status_signature(first) != overlay._capture_status_signature(second)
 
 
+def test_ahmad_overlay_waiting_diagnostics_use_capture_status() -> None:
+    overlay = _ahmad_overlay_module()
+    status = {
+        "ts": time.time(),
+        "source": "windivert",
+        "process_name": "BidKing.exe",
+        "active_flows": 1,
+        "sniffed_packets": 211,
+        "raw_packets": 211,
+        "accepted_frames": 0,
+        "ignored_frames": 66,
+        "ignored_reasons": {"rev_not_game_frame": 63},
+        "active_session_id": "",
+    }
+
+    diagnostics = overlay._capture_wait_diagnostics(status)
+
+    assert diagnostics["subtitle"] == "已抓到流量，但未解析到对局状态帧"
+    assert diagnostics["action"] == "等待状态帧"
+    assert diagnostics["recent"] == "rev_not_game_frame x63"
+    assert "备用启动" in diagnostics["note"]
+
+    status["accepted_frames"] = 3
+    status["active_session_id"] = "2405:1402770697021587"
+    diagnostics = overlay._capture_wait_diagnostics(status)
+
+    assert diagnostics["subtitle"] == "已识别会话，等待估价状态帧"
+    assert diagnostics["state"] == "session_waiting_snapshot"
+    assert diagnostics["session"] == "2405:1402770697021587"
+
+
 def test_overlay_scroll_fraction_is_clamped() -> None:
     overlay = _overlay_module()
 

@@ -329,6 +329,105 @@ def _short(value: Any, limit: int = 36) -> str:
     return f"{text[: limit - 1]}..."
 
 
+def _status_int(payload: dict[str, Any], key: str) -> int:
+    try:
+        return int(payload.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _capture_status_signature(status: dict[str, Any]) -> tuple[Any, ...]:
+    if not status:
+        return ()
+    ignored = status.get("ignored_reasons")
+    ignored_items: tuple[tuple[str, int], ...] = ()
+    if isinstance(ignored, dict):
+        ignored_items = tuple(
+            sorted((str(key), _to_int(value, 0)) for key, value in ignored.items())
+        )
+    return (
+        _text(status.get("source"), ""),
+        _text(status.get("process_name"), ""),
+        _text(status.get("filter"), ""),
+        _status_int(status, "active_flows"),
+        _status_int(status, "sniffed_packets"),
+        _status_int(status, "raw_packets"),
+        _status_int(status, "accepted_frames"),
+        _status_int(status, "ignored_frames"),
+        _status_int(status, "dropped_bytes"),
+        _text(status.get("active_session_id"), ""),
+        ignored_items,
+    )
+
+
+def _top_ignored_reason(status: dict[str, Any]) -> str:
+    ignored = status.get("ignored_reasons")
+    if not isinstance(ignored, dict) or not ignored:
+        return "-"
+    reason, count = max(
+        ignored.items(),
+        key=lambda item: _to_int(item[1], 0),
+    )
+    return f"{reason} x{_to_int(count, 0)}"
+
+
+def _capture_wait_diagnostics(status: dict[str, Any]) -> dict[str, Any]:
+    if not status:
+        return {
+            "subtitle": "等待 monitor 状态",
+            "flags": [{"label": "无实时数据", "level": "watch", "detail": ""}],
+            "action": "等待启动",
+            "state": "no_capture_status",
+            "recent": "-",
+            "source": "-",
+            "detail": "未看到 capture_source_status.json",
+            "note": "确认已用管理员权限启动 Hero Ref",
+        }
+    active = _status_int(status, "active_flows")
+    raw = _status_int(status, "raw_packets")
+    accepted = _status_int(status, "accepted_frames")
+    sniffed = _status_int(status, "sniffed_packets")
+    session = _text(status.get("active_session_id"), "")
+    source = _text(status.get("source"), "windivert")
+    top_reason = _top_ignored_reason(status)
+    detail = f"flow {active} / raw {raw} / accepted {accepted}"
+    if active <= 0:
+        subtitle = "monitor 已启动，等待 BidKing.exe 网络流"
+        action = "等待游戏连接"
+        state = "no_active_flow"
+        note = "先进入对局；若 VPN/UU 开启，尝试备用启动"
+        flags = [{"label": "等待连接", "level": "neutral", "detail": detail}]
+    elif raw <= 0:
+        subtitle = "已连接游戏流，等待对局包"
+        action = "等待对局包"
+        state = "no_raw_packets"
+        note = "保持 UI 开启后进入新局或使用道具"
+        flags = [{"label": "已连接", "level": "neutral", "detail": detail}]
+    elif accepted <= 0:
+        subtitle = "已抓到流量，但未解析到对局状态帧"
+        action = "等待状态帧"
+        state = "raw_no_game_frame"
+        note = "若一直如此，使用 VPN/UU 备用启动"
+        flags = [{"label": "抓包未成帧", "level": "watch", "detail": top_reason}]
+    else:
+        subtitle = "已识别会话，等待估价状态帧"
+        action = "等待估价帧"
+        state = "session_waiting_snapshot"
+        note = "开局状态可能已错过；下一次状态/道具结果会刷新"
+        flags = [{"label": "会话已识别", "level": "neutral", "detail": session or detail}]
+    return {
+        "subtitle": subtitle,
+        "flags": flags,
+        "action": action,
+        "state": state,
+        "recent": top_reason,
+        "source": source,
+        "detail": f"{detail} / sniffed {sniffed}",
+        "note": note,
+        "session": session,
+    }
+
+
 def _to_int(value: Any, default: int) -> int:
     try:
         return int(float(str(value)))
@@ -866,6 +965,7 @@ class AhmadTkOverlay:
         self._cleanup_lock_paths = tuple(cleanup_lock_paths)
         self._exit_cleanup_done = False
         self._last_signature: tuple[int, int] | None = None
+        self._last_capture_status_signature: tuple[Any, ...] | None = None
         self._last_summary: dict[str, Any] = {}
         self._last_live_snapshot: dict[str, Any] = {}
         self._last_live_summary: dict[str, Any] = {}
@@ -3225,6 +3325,9 @@ class AhmadTkOverlay:
         except OSError:
             return None
 
+    def _capture_status(self) -> dict[str, Any]:
+        return _read_json(self.snapshot_path.parent / "capture_source_status.json")
+
     def _needs_stale_refresh(self) -> bool:
         summary = self._last_live_summary if self._manual_active else self._last_summary
         if not summary or summary.get("status") == "stale_snapshot":
@@ -3241,10 +3344,20 @@ class AhmadTkOverlay:
                 self.root.destroy()
                 return
             signature = self._snapshot_signature()
-            if signature != self._last_signature or self._needs_stale_refresh():
+            capture_status: dict[str, Any] = {}
+            capture_signature: tuple[Any, ...] = ()
+            if signature == (0, 0):
+                capture_status = self._capture_status()
+                capture_signature = _capture_status_signature(capture_status)
+            if (
+                signature != self._last_signature
+                or capture_signature != self._last_capture_status_signature
+                or self._needs_stale_refresh()
+            ):
                 self._last_signature = signature
                 snapshot = _read_json(self.snapshot_path)
                 if snapshot:
+                    self._last_capture_status_signature = None
                     summary = summarize_snapshot(snapshot, snapshot_path=self.snapshot_path)
                     self._last_live_snapshot = snapshot
                     self._last_live_summary = summary
@@ -3278,17 +3391,29 @@ class AhmadTkOverlay:
                         else:
                             self.render(summary)
                 else:
+                    self._last_capture_status_signature = capture_signature
                     if not self._manual_active:
                         self.render_missing("等待 latest_snapshot.json")
         finally:
             self.root.after(self.interval_ms, self.refresh)
 
     def render_missing(self, message: str) -> None:
+        capture_status = self._capture_status()
+        diagnostics = _capture_wait_diagnostics(capture_status)
         self.title.configure(text="Hero Ref")
-        self.subtitle.configure(text=message)
+        self.subtitle.configure(text=diagnostics.get("subtitle") or message)
         self.status.configure(text=time.strftime("%H:%M:%S"))
-        self._render_flags([{"label": "无实时数据", "level": "watch", "detail": ""}])
+        self._render_flags(diagnostics.get("flags") or [{"label": "无实时数据", "level": "watch", "detail": ""}])
         self._clear_values()
+        self._set_label(self.action_rows["动作"], diagnostics.get("action"), limit=18)
+        self._set_label(self.action_rows["最近"], diagnostics.get("recent"), limit=20)
+        self._set_label(self.action_rows["来源"], diagnostics.get("source"), limit=18)
+        self._set_label(self.action_rows["状态"], diagnostics.get("state"), limit=18)
+        self._set_label(self.evidence_rows["匹配"], diagnostics.get("state"), limit=28)
+        self._set_label(self.evidence_rows["密度"], diagnostics.get("detail"), limit=34)
+        self._set_label(self.evidence_rows["诊断"], diagnostics.get("recent"), limit=28)
+        self._set_label(self.detail_rows["外援"], "waiting", limit=18)
+        self._set_label(self.detail_rows["备注"], diagnostics.get("note"), limit=42)
         self._render_minimap({})
 
     def render_standby(self, data: dict[str, Any]) -> None:
