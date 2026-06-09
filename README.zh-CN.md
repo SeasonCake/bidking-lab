@@ -2,7 +2,7 @@
 
 # bidking-lab
 
-> **一个把游戏《竞拍之王》当成概率推断 / 蒙特卡洛模拟实验室的本地工具链——把英雄技能、道具读数、地图先验全部量化成可执行的出价建议。**
+> **一个把游戏《竞拍之王》当成概率推断 / 实时参考实验室的本地工具链——把英雄技能、道具读数、地图先验量化成可执行的实战估价参考。**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -14,21 +14,17 @@
 
 ## 演示 · Demo
 
-https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
+https://github.com/user-attachments/assets/b4ce74ee-69a5-422a-921b-c55deb82ae14
 
-> 30 秒走查：选地图 → 手填或侧栏 OCR 抓屏填入读数 → 切到「出价推荐」看价值分布、各品质后验与分析估算。
+> 当前实战演示：WinDivert/Fatbeans 抓包输入 Hero Ref Tk 小窗，实时显示结算复核、参考估值、红品信息、手填兜底和小地图。
 
 ### 截图
 
-<table>
-<tr>
-<td width="50%" align="center"><strong>1. 读数输入 + OCR 侧栏 + 实时候选预览</strong><br/><img src="./docs/assets/01-inputs.png" alt="读数输入" /></td>
-<td width="50%" align="center"><strong>2. 出价推荐 — MC 直方图 + 各品质后验表</strong><br/><img src="./docs/assets/02-bidding.png" alt="出价建议" /></td>
-</tr>
-</table>
+<p align="center">
+  <img src="./docs/assets/hero-ref-aisha-settlement-2026-06-09.png" alt="Hero Ref 实时小窗结算复核" />
+</p>
 
-> **左**：三个主 tab（读数输入 / 出价推荐 / 道具 ROI）。读数页各字段旁标注作用域（MC / 枚举 / 仅分析估算）；侧栏可 OCR 抓屏预填；下方候选预览即使显示 ⚠️ **无合法候选**，也不阻断上方 MC 推理（硬字段仍在 `state` 里）。
-> **右**：默认 **3000** 次 MC（滑块 500–5000），条件分布直方图 + P25/P50/P75/P90、各品质 bucket 后验卡片与分析估算区间。秒仓/放仓仍为**实验功能且默认隐藏**。
+Hero Ref 支线源码和文档在 [`external_references/ahmad_live_reference_lab/`](external_references/ahmad_live_reference_lab/)，主线索引见 [`docs/hero_ref_branch_2026-06-09.zh-CN.md`](docs/hero_ref_branch_2026-06-09.zh-CN.md)。旧 Streamlit 截图仍留在 `docs/assets/` 作为历史 UI 参考。
 
 ---
 
@@ -41,7 +37,7 @@ https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
 - **数据层**：解码游戏的 `Tables/*.txt`（base64 + TSV）→ 1132 件藏品 / 64 件道具 / 105 张地图 / 20 个英雄 全部入 schema
 - **推断层**：玩家输入观测 → 联合后验推断每个品质 bucket 的 `(总格数, 件数)` top-3 候选；条件 MC 输出出价分布 P25/P50/P75/P90 + 秒仓 / 放仓推荐
 - **价值评估层**：Leave-one-out 量化每件道具的"每银币挽回价值"，给出指定地图 / 英雄下的道具性价比榜
-- **交付层**：Streamlit 中文 UI + 5 册 Jupyter notebook + 端到端 CLI 脚本
+- **交付层**：Hero Ref 实时 Tk 小窗 + 历史 Streamlit 分析 UI + Jupyter notebook + 端到端 CLI 脚本
 
 非官方爱好项目，**不附带任何游戏资源**——只解码玩家本地安装的数据，并产出*推导后的 JSON*。
 

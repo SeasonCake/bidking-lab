@@ -2,7 +2,7 @@
 
 # bidking-lab
 
-> **A probabilistic inference engine + Streamlit dashboard for the sealed-bid auction game *The Bid King* (竞拍之王) — quantifying the value of hero skills, scanner tools, and map hints, and turning them into actionable bid recommendations.**
+> **A probabilistic inference engine + live Hero Ref overlay for the sealed-bid auction game *The Bid King* (竞拍之王) — quantifying hero skills, scanner tools, and map hints into actionable bid references.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -14,21 +14,17 @@
 
 ## Demo
 
-https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
+https://github.com/user-attachments/assets/b4ce74ee-69a5-422a-921b-c55deb82ae14
 
-> 30-second walkthrough: pick a map → fill readings (manual or OCR sidebar) → switch to the bidding tab for the value distribution, bucket posteriors, and analytical estimate.
+> Current live-facing demo: WinDivert/Fatbeans packet capture feeds the Hero Ref Tk overlay, which shows settlement review, reference value bands, red-item summaries, manual fallback fields, and the live minimap.
 
 ### Snapshots
 
-<table>
-<tr>
-<td width="50%" align="center"><strong>1. Readings tab + OCR sidebar + live candidate preview</strong><br/><img src="./docs/assets/01-inputs.png" alt="inputs panel" /></td>
-<td width="50%" align="center"><strong>2. Bidding tab — MC histogram + bucket posterior table</strong><br/><img src="./docs/assets/02-bidding.png" alt="bidding hint panel" /></td>
-</tr>
-</table>
+<p align="center">
+  <img src="./docs/assets/hero-ref-aisha-settlement-2026-06-09.png" alt="Hero Ref live overlay settlement review" />
+</p>
 
-> **Left**: three main tabs (Readings / Bidding / Tool ROI). The readings tab shows per-field scope captions (MC vs enumeration vs analytical only), OCR capture in the sidebar, and bottom candidate previews that can show ⚠️ *no legal candidates* without blocking inference above.
-> **Right**: conditional Monte Carlo (default **3,000** samples, slider 500–5,000), histogram with P25/P50/P75/P90, per-bucket posterior cards, and the analytical estimate band. Snipe / walk-away cards remain **experimental and hidden** (`_ENABLE_SNIPE_PASS_HINTS=False`).
+The Hero Ref branch is tracked under [`external_references/ahmad_live_reference_lab/`](external_references/ahmad_live_reference_lab/) with the main index at [`docs/hero_ref_branch_2026-06-09.zh-CN.md`](docs/hero_ref_branch_2026-06-09.zh-CN.md). The legacy Streamlit screenshots remain in `docs/assets/` as historical UI references.
 
 ---
 
@@ -41,11 +37,13 @@ https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
 - **Data layer**: decodes the game's `Tables/*.txt` (base64 + TSV) into typed JSON — 1,132 collectibles, 64 tools, 105 maps, 20 heroes, all schema-validated
 - **Inference layer**: takes the player's observations → joint posterior over each quality bucket's `(total_cells, count)` top-3 candidates; conditional Monte-Carlo for bid distribution P25/P50/P75/P90 + snipe / walk-away recommendations
 - **Tool valuation**: leave-one-out ROI quantifying how much value a tool recovers per silver spent, given the chosen map and hero
-- **Surface**: Chinese-localized Streamlit UI + 5 analysis notebooks + end-to-end CLI scripts
+- **Surface**: live Hero Ref Tk overlay + legacy Chinese Streamlit analysis UI + notebooks + end-to-end CLI scripts
 
 This is an unaffiliated hobby project. It **ships no game assets** — it decodes the player's locally-installed copy and outputs *derived* JSON.
 
 Current optimization roadmap: [`docs/optimization_roadmap.zh-CN.md`](docs/optimization_roadmap.zh-CN.md).
+
+Current live-facing Hero Ref branch: [`external_references/ahmad_live_reference_lab/`](external_references/ahmad_live_reference_lab/), with a closeout/index at [`docs/hero_ref_branch_2026-06-09.zh-CN.md`](docs/hero_ref_branch_2026-06-09.zh-CN.md).
 
 ---
 
