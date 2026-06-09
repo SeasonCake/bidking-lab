@@ -136,7 +136,19 @@ $RawTablesOut = Join-Path $OutputFull "data\raw\tables"
 New-Item -ItemType Directory -Path $RawTablesOut -Force | Out-Null
 if ($PublicSafe) {
     @"
-Put local game table files here before running Hero Ref:
+This public-safe package does not include raw game tables.
+
+Before running Hero Ref, use the package root script:
+
+  导入本机游戏表.bat
+
+Choose one of these local folders:
+
+- BidKing game root, e.g. ...\steamapps\common\BidKing
+- BidKing_Data\StreamingAssets
+- BidKing_Data\StreamingAssets\Tables
+
+The importer will copy at least:
 
 - BidMap.txt
 - Drop.txt
@@ -216,7 +228,7 @@ Write-Host "Start with:" -ForegroundColor Cyan
 Write-Host "  $OutputFull\Start-HeroRef.bat"
 Write-Host ""
 if ($PublicSafe) {
-    Write-Host "PublicSafe mode: raw tables are excluded; user must provide data\raw\tables." -ForegroundColor Yellow
+    Write-Host "PublicSafe mode: raw tables are excluded; users can run 导入本机游戏表.bat after unzip." -ForegroundColor Yellow
 } else {
     Write-Host "Local package includes data\raw\tables. Do not publish those files without permission." -ForegroundColor Yellow
 }

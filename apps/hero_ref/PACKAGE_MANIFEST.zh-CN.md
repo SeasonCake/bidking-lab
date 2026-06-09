@@ -9,6 +9,7 @@
 - Hero Ref UI exe；
 - WinDivert live monitor exe；
 - 一键启动 / 停止脚本；
+- public-safe 本机表导入脚本；
 - WinDivert live monitor 诊断/回退脚本；
 - `src/bidking_lab` 运行代码；
 - `data/processed/*.json`；
@@ -27,7 +28,7 @@
 
 ## Public-safe 模式
 
-如果使用构建脚本的 `-PublicSafe`，会排除 `data/raw/tables`。这种包更适合公开传输，但用户需要自行补齐本地表文件，否则 monitor 无法运行。
+如果使用构建脚本的 `-PublicSafe`，会排除 `data/raw/tables`。这种包更适合公开传输；用户第一次运行前可以执行 `导入本机游戏表.bat`，从自己本机的 BidKing 游戏目录导入 `BidMap.txt`、`Drop.txt`、`Item.txt` 等表文件，否则 monitor 无法运行。
 
 ## 运行时依赖
 

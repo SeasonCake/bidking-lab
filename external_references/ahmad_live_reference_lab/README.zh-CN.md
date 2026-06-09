@@ -157,7 +157,7 @@ Portable 应用包：
 .\external_references\ahmad_live_reference_lab\build_hero_ref_portable.ps1 -PythonPath C:\Python313\python.exe
 ```
 
-默认输出到 `external_references\ahmad_live_reference_lab\dist\BidKingHeroRefPortable`，其中包含 Hero Ref UI exe、WinDivert monitor exe、一键启动脚本、运行代码、processed JSON 和本机 raw tables。普通用户不需要安装 Python、`pydivert` 或 `psutil`。该目录用于本机测试；公开传输前请先阅读包内 `TRUST_AND_SECURITY.zh-CN.md`，并谨慎处理 `data\raw\tables`、`data\logs`、样本和截图。若要生成不含 raw tables 的公开安全骨架，可加 `-PublicSafe`，但用户需要自行补齐本地表文件。
+默认输出到 `external_references\ahmad_live_reference_lab\dist\BidKingHeroRefPortable`，其中包含 Hero Ref UI exe、WinDivert monitor exe、一键启动脚本、运行代码、processed JSON 和本机 raw tables。普通用户不需要安装 Python、`pydivert` 或 `psutil`。该目录用于本机测试；公开传输前请先阅读包内 `TRUST_AND_SECURITY.zh-CN.md`，并谨慎处理 `data\raw\tables`、`data\logs`、样本和截图。若要生成不含 raw tables 的公开安全包，可加 `-PublicSafe`；用户第一次运行前执行包内 `导入本机游戏表.bat`，选择自己的 BidKing 游戏目录即可导入所需表文件。
 
 真实样本 smoke：
 
