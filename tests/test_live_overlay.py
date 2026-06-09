@@ -340,6 +340,74 @@ def test_overlay_draw_minimap_renders_quality_only_markers() -> None:
     assert overlay._section_style("正式出价", "停止追价")["tag"] == "bad"
 
 
+def test_ahmad_tk_minimap_draws_explicit_marker_as_oval_even_with_shape() -> None:
+    module = _ahmad_overlay_module()
+    calls: list[tuple[str, tuple, dict]] = []
+
+    class DummyCanvas:
+        def delete(self, *args, **kwargs):
+            calls.append(("delete", args, kwargs))
+
+        def winfo_width(self):
+            return 300
+
+        def winfo_height(self):
+            return 140
+
+        def configure(self, **kwargs):
+            calls.append(("configure", (), kwargs))
+
+        def create_line(self, *args, **kwargs):
+            calls.append(("line", args, kwargs))
+
+        def create_rectangle(self, *args, **kwargs):
+            calls.append(("rectangle", args, kwargs))
+
+        def create_oval(self, *args, **kwargs):
+            calls.append(("oval", args, kwargs))
+
+        def create_text(self, *args, **kwargs):
+            calls.append(("text", args, kwargs))
+
+        def tag_bind(self, *args, **kwargs):
+            calls.append(("tag_bind", args, kwargs))
+
+    instance = module.AhmadTkOverlay.__new__(module.AhmadTkOverlay)
+    module.AhmadTkOverlay._draw_minimap(
+        instance,
+        DummyCanvas(),
+        {
+            "status": "available",
+            "columns": 10,
+            "viewport_rows": 13,
+            "items": [
+                {
+                    "row": 2,
+                    "col": 5,
+                    "width": 2,
+                    "height": 2,
+                    "quality": "q6",
+                    "source": "public_info",
+                    "layout_source": "public_info",
+                    "render_mode": "marker",
+                    "shape_key": "22",
+                    "cells": 4,
+                }
+            ],
+        },
+        None,
+    )
+
+    assert any(
+        kind == "oval" and kwargs.get("tags") == ("item_0",)
+        for kind, _args, kwargs in calls
+    )
+    assert not any(
+        kind == "rectangle" and kwargs.get("tags") == ("item_0",)
+        for kind, _args, kwargs in calls
+    )
+
+
 def test_overlay_quality_style_distinguishes_white_and_unknown() -> None:
     overlay = _overlay_module()
 
@@ -1745,6 +1813,45 @@ def test_ahmad_server_summary_prefers_ref_evidence_hero_when_context_unknown(tmp
 
     assert result["context"]["hero"] == "victor"
     assert result["context"]["is_supported_ref_hero"] is True
+
+
+def test_ahmad_server_summary_keeps_public_info_marker_soft(tmp_path: Path) -> None:
+    module = _ahmad_server_module()
+    snapshot = {
+        "created_at": time.time(),
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "map_id": 2408,
+                "phase": "bidding",
+                "session_id": "2408:test",
+            },
+            "minimap": {
+                "status": "available",
+                "columns": 10,
+                "viewport_rows": 13,
+                "items": [
+                    {
+                        "row": 3,
+                        "col": 4,
+                        "width": 2,
+                        "height": 2,
+                        "quality": "q6",
+                        "source": "public_info",
+                        "layout_source": "public_info",
+                        "render_mode": "marker",
+                        "shape_key": "22",
+                    }
+                ],
+            },
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert result["minimap"]["items"][0]["render_mode"] == "marker"
+    assert result["minimap"]["items"][0]["source"] == "public_info"
+    assert result["minimap"]["items"][0]["shape_key"] == "22"
 
 
 def test_ahmad_server_summary_keeps_old_settlement_review_until_next_session(tmp_path: Path) -> None:

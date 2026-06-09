@@ -440,8 +440,6 @@ def _minimap_summary(snapshot: dict[str, Any], uc: dict[str, Any]) -> dict[str, 
                 height = max(1, _parse_int(raw.get("height")) or 1)
             source_text = _text(raw.get("source") or raw.get("layout_source"), "")
             render_mode = _text(raw.get("render_mode") or "")
-            if dims is not None and source_text == "public_info" and render_mode == "marker":
-                render_mode = "footprint"
             quality_key = _quality_key(raw.get("quality"))
             observed_quality_counts[quality_key] = observed_quality_counts.get(quality_key, 0) + 1
             max_row = max(max_row, row + height - 1)

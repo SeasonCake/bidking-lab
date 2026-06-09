@@ -1006,3 +1006,57 @@ C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest tests\test_ahmad_
 ```
 
 结果：focused `46 passed`；全量 valid 支持英雄样本回放无异常，单个样本构建没有超过 2 秒的慢例。未做新的可见 Tk 截图，因为本轮没有修改布局或样式。
+
+## 2026-06-09 收尾：最新实战样本、公开品质 marker 与生命周期检查
+
+最新实战样本已按 strict manifest 口径归并到 `data/samples/fatbeans`：
+
+- `fatbeans_valid_ahmed_2401_3rounds_2401_1402770679435098_0033.json`
+- `fatbeans_valid_aisha_2408_4rounds_2408_1402770680577927_0127.json`
+- `fatbeans_valid_aisha_2401_5rounds_2401_1402770682839152_0084.json`
+- `fatbeans_valid_ahmed_2403_5rounds_2403_1402770683094022_0040.json`
+- `fatbeans_valid_victor_2401_5rounds_2401_1402770683332914_0488.json`
+
+定向 manifest：
+
+```text
+files=5 parsed_files=5 parse_errors=0 valid_files=5 mixed_files=0 invalid_files=0 usable_metric_files=5
+ready_windows=22 no_state_windows=0 constraint_conflict_windows=0 multi_session_files=0
+```
+
+当前 `data/samples/fatbeans` 汇总：
+
+```text
+files=496 parsed_files=496 parse_errors=0 valid_files=466 mixed_files=30 invalid_files=0 usable_metric_files=484
+ready_windows=1756 no_state_windows=20 constraint_conflict_windows=0
+```
+
+公开品质 / 宝光软线索小地图口径：
+
+- `public_info + render_mode=marker` 不再因为带有 `shape_key` 被 server 改成 `footprint`；
+- Tk 绘制层以显式 `render_mode=marker` 为优先级，画圆点；
+- 真实结算、packet item、settlement inventory 仍按 hard footprint 画方块；
+- 用最新 Victor 样本 `2401 R3 bidding` 回放确认：`6` 个 `public_info marker`，小地图弹窗显示圆点，不是方块。
+
+生命周期检查：
+
+- 正常 live 启动链路仍是：
+
+```powershell
+.\scripts\start_live_windivert_overlay.ps1 -Restart -PortOnly -NoOverlay -PythonPath C:\Python313\python.exe
+.\external_references\ahmad_live_reference_lab\start_ahmad_overlay.ps1 -Restart -PythonPath C:\Python313\python.exe
+```
+
+- 只有用 `-KeepMonitorOnClose` 启动 Hero Ref 时，关闭 Hero Ref 不会停止 WinDivert monitor；这适合回放/调试，不适合用户正常联动关闭路径；
+- 本轮回放窗口使用了 `-KeepMonitorOnClose`，因此不会联动 monitor；
+- 收尾检查时 `monitor.lock` 不存在，WinDivert/live monitor 进程不存在，`ahmad_overlay.pid` 是 stale 文件并已清理；`live_status` 仍显示旧 `capture_source_status.json`，只是最后一次状态残留，不代表 monitor 正在运行。
+
+验证：
+
+```powershell
+C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py
+C:\Python313\python.exe -m pytest --basetemp=.tmp\codex\pytest_hero_ref_overlay_full tests\test_live_overlay.py tests\test_ahmad_ref_engine_public_info.py -q
+C:\Python313\python.exe scripts\summarize_fatbeans_sample_manifest.py data\samples\fatbeans\fatbeans_valid_aisha_2401_5rounds_2401_1402770682839152_0084.json data\samples\fatbeans\fatbeans_valid_ahmed_2403_5rounds_2403_1402770683094022_0040.json data\samples\fatbeans\fatbeans_valid_victor_2401_5rounds_2401_1402770683332914_0488.json data\samples\fatbeans\fatbeans_valid_aisha_2408_4rounds_2408_1402770680577927_0127.json data\samples\fatbeans\fatbeans_valid_ahmed_2401_3rounds_2401_1402770679435098_0033.json --json
+```
+
+结果：Hero Ref overlay/public-info focused suite `96 passed`；最新五局 manifest 全部 `ready_only`、`valid`。

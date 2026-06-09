@@ -2835,26 +2835,34 @@ class AhmadTkOverlay:
             item_id = item.get("item_id")
             has_item_identity = item_id not in (None, "", 0, "0")
             cells_value = _to_int(item.get("cells"), 0)
+            explicit_marker = render_mode == "marker"
             has_hard_footprint = (
                 render_mode == "footprint"
-                or bool(shape_key)
-                or has_item_identity
-                or source_text in {"packet", "settlement_inventory", "settlement"}
+                or (
+                    not explicit_marker
+                    and (
+                        bool(shape_key)
+                        or has_item_identity
+                        or source_text in {"packet", "settlement_inventory", "settlement"}
+                    )
+                )
             )
-            marker_only = not has_hard_footprint and (
-                render_mode == "marker"
-                or source_text in {
-                "quality_only",
-                "quality_reveal",
-                "public_quality",
-                "quality_marker",
-                }
-                or item_layout_source in {
-                    "quality_only",
-                    "quality_reveal",
-                    "public_quality",
-                }
-                or cells_value <= 0
+            marker_only = explicit_marker or (
+                not has_hard_footprint
+                and (
+                    source_text in {
+                        "quality_only",
+                        "quality_reveal",
+                        "public_quality",
+                        "quality_marker",
+                    }
+                    or item_layout_source in {
+                        "quality_only",
+                        "quality_reveal",
+                        "public_quality",
+                    }
+                    or cells_value <= 0
+                )
             )
             if marker_only:
                 marker_size = max(5, min(9, int(round(cell * 0.50))))
