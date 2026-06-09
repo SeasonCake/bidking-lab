@@ -16,6 +16,23 @@
 - OCR 只保留为第三级高级/人工补录入口，不参与默认实时推荐；
 - 所有新增代码、文档和临时记录先留在本目录，后续经样本验证再决定是否迁移到主线。
 
+## 演示 · Demo
+
+https://github.com/user-attachments/assets/b4ce74ee-69a5-422a-921b-c55deb82ae14
+
+> 当前实战演示：WinDivert/Fatbeans 抓包输入 Hero Ref Tk 小窗，实时显示结算复核、参考估值、红品信息、手填兜底和小地图。
+
+### 截图
+
+<table>
+<tr>
+<td width="50%" align="center"><strong>1. Hero Ref 实时小窗 — 结算复核 + 小地图</strong><br/><img src="./assets/2026-06-09-closeout/hero_ref_aisha_2402_settlement_review.png" alt="Hero Ref 实时小窗结算复核" /></td>
+<td width="50%" align="center"><strong>2. Aisha R4 参考态 — 手填栏 + live minimap</strong><br/><img src="./assets/2026-06-09-closeout/aisha_2408_r4_count_prior_detail.png" alt="Aisha R4 count prior detail" /></td>
+</tr>
+</table>
+
+更多阶段收口记录见 `CLOSEOUT_2026-06-09.zh-CN.md`。本支线源码和文档路径是 `external_references/ahmad_live_reference_lab/`；主线索引见 `docs/hero_ref_branch_2026-06-09.zh-CN.md`。
+
 2026-06-09 当前可用状态：
 
 - 主线 monitor artifact root 已新增 `ahmad_ref_inputs` 辅助字段；
