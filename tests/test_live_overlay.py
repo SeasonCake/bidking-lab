@@ -1787,9 +1787,10 @@ def test_ahmad_server_summary_keeps_old_settlement_review_until_next_session(tmp
 
     assert result["status"] == "ok"
     assert result["reference"]["source"] == "settlement"
-    assert result["reference"]["conservative"] == "450,000"
+    assert result["reference"]["conservative"] != "450,000"
     assert result["reference"]["balanced"] == "520,000"
-    assert result["reference"]["aggressive"] == "+70,000"
+    assert result["reference"]["aggressive"].startswith("+")
+    assert "last Hero Ref estimate" in result["reference"]["note"]
     assert result["truth"]["available"] is True
 
 

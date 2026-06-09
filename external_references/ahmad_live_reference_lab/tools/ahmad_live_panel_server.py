@@ -66,6 +66,32 @@ def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+def _clone_as_pre_settlement_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    cloned = json.loads(json.dumps(snapshot, ensure_ascii=False))
+    cloned["phase"] = "bidding"
+    uc = cloned.get("ui_contract") if isinstance(cloned.get("ui_contract"), dict) else {}
+    cloned["ui_contract"] = uc
+    context = uc.get("context") if isinstance(uc.get("context"), dict) else {}
+    uc["context"] = context
+    context["phase"] = "bidding"
+    truth = uc.get("truth") if isinstance(uc.get("truth"), dict) else {}
+    uc["truth"] = truth
+    truth["available"] = False
+    return cloned
+
+
+def _pre_settlement_ref_result(snapshot: dict[str, Any]) -> dict[str, Any]:
+    if run_reference_engine is None:
+        return {}
+    try:
+        result = run_reference_engine(_clone_as_pre_settlement_snapshot(snapshot)).as_dict()
+    except Exception:
+        return {}
+    if result.get("status") not in {"ok", "count_prior"}:
+        return {}
+    return result
+
+
 def _flag(label: str, level: str = "watch", detail: str = "") -> dict[str, str]:
     return {"label": label, "level": level, "detail": detail}
 
@@ -1122,6 +1148,12 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     )
     truth_available = bool(truth.get("available"))
     settlement_total = _parse_money(truth.get("total_value"))
+    settlement_ref_result = (
+        _pre_settlement_ref_result(snapshot)
+        if phase == "settled" and truth_available
+        else {}
+    )
+    settlement_ref_estimate = _parse_money(settlement_ref_result.get("balanced"))
     posterior_decision_values = _parse_range_numbers(posterior.get("decision_value_range"))
     posterior_decision_p90 = (
         posterior_decision_values[2]
@@ -1129,7 +1161,8 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         else None
     )
     settlement_estimate = (
-        _parse_money(decision.get("attack_bid"))
+        settlement_ref_estimate
+        or _parse_money(decision.get("attack_bid"))
         or posterior_decision_p90
         or ref_balanced
     )
@@ -1174,20 +1207,26 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         )
         main_action = "结算完成"
         main_current_highest = f"总值 {_money(settlement_total)}"
-        reference_note = "Settlement review: top cards show last formal estimate, final total, and final-minus-estimate delta."
+        reference_note = (
+            "Settlement review: top cards show last Hero Ref estimate, final total, and final-minus-estimate delta."
+            if settlement_ref_estimate is not None
+            else "Settlement review: top cards show last formal estimate, final total, and final-minus-estimate delta."
+        )
 
+    range_ref_result = settlement_ref_result or ref_result
+    range_ref_ok = range_ref_result.get("status") in {"ok", "count_prior"}
     ref_decision_range = (
-        f"{_money(ref_result.get('conservative'))} / "
-        f"{_money(ref_result.get('balanced'))} / "
-        f"{_money(ref_result.get('aggressive'))}"
-        if ref_ok
+        f"{_money(range_ref_result.get('conservative'))} / "
+        f"{_money(range_ref_result.get('balanced'))} / "
+        f"{_money(range_ref_result.get('aggressive'))}"
+        if range_ref_ok
         else "-"
     )
     ref_total_value_range = (
-        f"{_money(ref_result.get('value_p25'))} / "
-        f"{_money(ref_result.get('value_p50'))} / "
-        f"{_money(ref_result.get('value_p75'))}"
-        if ref_ok
+        f"{_money(range_ref_result.get('value_p25'))} / "
+        f"{_money(range_ref_result.get('value_p50'))} / "
+        f"{_money(range_ref_result.get('value_p75'))}"
+        if range_ref_ok
         else "-"
     )
 

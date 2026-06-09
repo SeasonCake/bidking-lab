@@ -1773,6 +1773,15 @@ def _prior_count_values(
     }
     values = {value for value in range(lower, upper + 1)}
     values.update(value for value in anchors if minimum <= value <= maximum)
+    avg = evidence.avg_cells.get(key)
+    if avg is not None and avg > 0:
+        avg_valid = [
+            value
+            for value in range(minimum, maximum + 1)
+            if _avg_grid_options(value, avg)
+        ]
+        if avg_valid:
+            values.update(avg_valid)
     if exact_cells is not None:
         valid = [
             value

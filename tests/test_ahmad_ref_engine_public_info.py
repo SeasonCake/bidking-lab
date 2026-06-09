@@ -560,6 +560,26 @@ def test_ref_engine_victor_inferred_zero_action_constrains_gold_avg() -> None:
     assert "action_100113_q5_avg_cells_inferred_zero" in result["notes"]
 
 
+def test_ref_engine_victor_decimal_q4_avg_keeps_reachable_counts() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="victor",
+            map_id=2401,
+            structured_ref_inputs={
+                "avg_cells": {"q4": 1.8666666746139526},
+                "count_sums": {"q4q5q6": 18},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert result["combo_count"] > 0
+    assert result["quality_count_ranges"]["q4"][1] == 15
+    assert result["quality_cells_ranges"]["q4"][1] == 28
+    assert result["red_count_range"][1] is not None
+
+
 def test_ref_engine_avg_cells_map_to_integer_grid_options() -> None:
     assert _avg_grid_options(4, 1.8) == []
     assert _avg_grid_options(5, 1.8) == [9]
