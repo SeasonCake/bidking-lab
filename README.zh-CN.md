@@ -47,6 +47,8 @@ https://github.com/user-attachments/assets/9fb463dc-ca85-4fc0-b10e-56b81091a5a8
 
 当前优化路线见 [`docs/optimization_roadmap.zh-CN.md`](docs/optimization_roadmap.zh-CN.md)。
 
+2026-06-09 的 Hero Ref 实战支线已阶段收口：它是基于 Ahmad/Victor/Aisha 实时 packet 输入的独立 Tk 小窗，不替换主线 v3 推断。索引见 [`docs/hero_ref_branch_2026-06-09.zh-CN.md`](docs/hero_ref_branch_2026-06-09.zh-CN.md)。
+
 ---
 
 ## 为什么做这个 · Why

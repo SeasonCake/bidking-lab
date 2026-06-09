@@ -75,6 +75,7 @@
 - `HANDOFF_2026-06-08.zh-CN.md`：给后续窗口/合并阶段使用的交接记录。
 - `EXECUTION_NOTES_2026-06-09.zh-CN.md`：最近实战、UI 调试、轮次语义、样本质量和 v3 promotion 铺垫归纳。
 - `HANDOFF_2026-06-09.zh-CN.md`：当前窗口收口交接、最新映射口径、验证结果和新窗口 prompt。
+- `CLOSEOUT_2026-06-09.zh-CN.md`：支线阶段收口，包含实战视频链接、截图、已修问题、边界和下一阶段打包事项。
 
 ## 当前 prototype
 

@@ -46,6 +46,9 @@ external_references/**
 !external_references/ahmad_live_reference_lab/src/*.py
 !external_references/ahmad_live_reference_lab/tools/
 !external_references/ahmad_live_reference_lab/tools/*.py
+!external_references/ahmad_live_reference_lab/assets/
+!external_references/ahmad_live_reference_lab/assets/2026-06-09-closeout/
+!external_references/ahmad_live_reference_lab/assets/2026-06-09-closeout/*.png
 external_references/ahmad_live_reference_lab/build/
 external_references/ahmad_live_reference_lab/dist/
 external_references/ahmad_live_reference_lab/**/__pycache__/

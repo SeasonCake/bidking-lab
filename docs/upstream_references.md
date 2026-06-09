@@ -26,7 +26,7 @@ Current local reference bundles:
 
 Do not commit raw upstream bundles under `external_references/**`. Use them for inspection, comparison, and manually documented design notes.
 
-Exception: `external_references/ahmad_live_reference_lab/` is local BidKing Lab code that wraps the Ahmad/Victor reference route. Its source, scripts, and docs are versioned; generated `build/`, `dist/`, `__pycache__`, and packaged binaries remain ignored.
+Exception: `external_references/ahmad_live_reference_lab/` is local BidKing Lab code that wraps the Ahmad/Victor/Aisha Hero Ref route. Its source, scripts, and docs are versioned; generated `build/`, `dist/`, `__pycache__`, and packaged binaries remain ignored. The 2026-06-09 closeout is tracked at [`docs/hero_ref_branch_2026-06-09.zh-CN.md`](hero_ref_branch_2026-06-09.zh-CN.md) and [`external_references/ahmad_live_reference_lab/CLOSEOUT_2026-06-09.zh-CN.md`](../external_references/ahmad_live_reference_lab/CLOSEOUT_2026-06-09.zh-CN.md).
 
 ---
 
