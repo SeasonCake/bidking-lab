@@ -2,7 +2,7 @@
 
 # bidking-lab
 
-> **一个把游戏《竞拍之王》当成概率推断 / 实时参考实验室的本地工具链——把英雄技能、道具读数、地图先验量化成可执行的实战估价参考。**
+> **一个把游戏《竞拍之王》当成概率推断 / 实时参考 / 分析界面的本地工具链——把英雄技能、道具读数、地图先验量化成可执行的实战估价参考。**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -20,11 +20,14 @@ https://github.com/user-attachments/assets/b4ce74ee-69a5-422a-921b-c55deb82ae14
 
 ### 截图
 
-<p align="center">
-  <img src="./docs/assets/hero-ref-aisha-settlement-2026-06-09.png" alt="Hero Ref 实时小窗结算复核" />
-</p>
+<table>
+<tr>
+<td width="50%" align="center"><strong>1. Hero Ref 实时小窗 — 结算复核 + 小地图</strong><br/><img src="./docs/assets/hero-ref-aisha-settlement-2026-06-09.png" alt="Hero Ref 实时小窗结算复核" /></td>
+<td width="50%" align="center"><strong>2. 历史分析 UI — 出价分布 + 各品质后验</strong><br/><img src="./docs/assets/02-bidding.png" alt="历史出价分析界面" /></td>
+</tr>
+</table>
 
-Hero Ref 支线源码和文档在 [`external_references/ahmad_live_reference_lab/`](external_references/ahmad_live_reference_lab/)，主线索引见 [`docs/hero_ref_branch_2026-06-09.zh-CN.md`](docs/hero_ref_branch_2026-06-09.zh-CN.md)。旧 Streamlit 截图仍留在 `docs/assets/` 作为历史 UI 参考。
+Hero Ref 支线源码和文档在 [`external_references/ahmad_live_reference_lab/`](external_references/ahmad_live_reference_lab/)，主线索引见 [`docs/hero_ref_branch_2026-06-09.zh-CN.md`](docs/hero_ref_branch_2026-06-09.zh-CN.md)。主路线尚未完全替换为 Hero Ref，因此保留一张历史 Streamlit 分析界面作为当前分析路线参考。
 
 ---
 

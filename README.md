@@ -2,7 +2,7 @@
 
 # bidking-lab
 
-> **A probabilistic inference engine + live Hero Ref overlay for the sealed-bid auction game *The Bid King* (竞拍之王) — quantifying hero skills, scanner tools, and map hints into actionable bid references.**
+> **A probabilistic inference engine with live and analytical surfaces for the sealed-bid auction game *The Bid King* (竞拍之王) — quantifying hero skills, scanner tools, and map hints into actionable bid references.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -20,11 +20,14 @@ https://github.com/user-attachments/assets/b4ce74ee-69a5-422a-921b-c55deb82ae14
 
 ### Snapshots
 
-<p align="center">
-  <img src="./docs/assets/hero-ref-aisha-settlement-2026-06-09.png" alt="Hero Ref live overlay settlement review" />
-</p>
+<table>
+<tr>
+<td width="50%" align="center"><strong>1. Hero Ref live overlay — settlement review + minimap</strong><br/><img src="./docs/assets/hero-ref-aisha-settlement-2026-06-09.png" alt="Hero Ref live overlay settlement review" /></td>
+<td width="50%" align="center"><strong>2. Legacy analysis UI — bidding distribution + posteriors</strong><br/><img src="./docs/assets/02-bidding.png" alt="legacy bidding analysis panel" /></td>
+</tr>
+</table>
 
-The Hero Ref branch is tracked under [`external_references/ahmad_live_reference_lab/`](external_references/ahmad_live_reference_lab/) with the main index at [`docs/hero_ref_branch_2026-06-09.zh-CN.md`](docs/hero_ref_branch_2026-06-09.zh-CN.md). The legacy Streamlit screenshots remain in `docs/assets/` as historical UI references.
+The Hero Ref branch is tracked under [`external_references/ahmad_live_reference_lab/`](external_references/ahmad_live_reference_lab/) with the main index at [`docs/hero_ref_branch_2026-06-09.zh-CN.md`](docs/hero_ref_branch_2026-06-09.zh-CN.md). The main analytical route has not been fully replaced, so the legacy Streamlit UI remains documented as the analysis surface.
 
 ---
 
