@@ -149,7 +149,7 @@ UI-only exe 打包：
 .\external_references\ahmad_live_reference_lab\build_ahmad_ref_ui_exe.ps1 -InstallPyInstaller
 ```
 
-输出位置默认是 `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef\BidKingHeroRef.exe`。这一版 exe 只负责 Hero Ref UI，读取已有 `data\logs\live\latest_snapshot.json`；开发/实战仍推荐用 `start_ahmad_live.ps1` 同时启动后台抓包。完整推广版还需要把 WinDivert monitor、pydivert/psutil 依赖、表文件和 UAC 启动器打进同一个 portable 包。
+输出位置默认是 `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef\BidKingHeroRef.exe`。这一版 exe 只负责 Hero Ref UI，读取已有 `data\logs\live\latest_snapshot.json`；开发/实战仍推荐用 `start_ahmad_live.ps1` 或 portable 包同时启动后台抓包。
 
 Portable 应用包：
 
@@ -157,7 +157,7 @@ Portable 应用包：
 .\external_references\ahmad_live_reference_lab\build_hero_ref_portable.ps1 -PythonPath C:\Python313\python.exe
 ```
 
-默认输出到 `external_references\ahmad_live_reference_lab\dist\BidKingHeroRefPortable`，其中包含 Hero Ref UI exe、一键启动脚本、WinDivert monitor 脚本、运行代码、processed JSON 和本机 raw tables。该目录用于本机测试；公开传输前请先阅读包内 `TRUST_AND_SECURITY.zh-CN.md`，并谨慎处理 `data\raw\tables`、`data\logs`、样本和截图。若要生成不含 raw tables 的公开安全骨架，可加 `-PublicSafe`，但用户需要自行补齐本地表文件。
+默认输出到 `external_references\ahmad_live_reference_lab\dist\BidKingHeroRefPortable`，其中包含 Hero Ref UI exe、WinDivert monitor exe、一键启动脚本、运行代码、processed JSON 和本机 raw tables。普通用户不需要安装 Python、`pydivert` 或 `psutil`。该目录用于本机测试；公开传输前请先阅读包内 `TRUST_AND_SECURITY.zh-CN.md`，并谨慎处理 `data\raw\tables`、`data\logs`、样本和截图。若要生成不含 raw tables 的公开安全骨架，可加 `-PublicSafe`，但用户需要自行补齐本地表文件。
 
 真实样本 smoke：
 

@@ -1,0 +1,21 @@
+火绒 / 安全软件拦截说明
+
+本工具的实时监测使用 WinDivert。
+WinDivert 是开源的 Windows 抓包 / 过滤驱动，加载驱动时必须使用管理员权限。
+
+安全软件可能拦截这些行为：
+
+- 加载 WinDivert 驱动
+- 后台 monitor exe 读取本机网络包
+- PowerShell 以管理员权限启动后台进程
+- 首次运行 PyInstaller 打包的 exe
+
+如果确认包来源可信，建议把整个 BidKingHeroRefPortable 文件夹加入信任区。
+不要只信任单个 exe，因为 UI、monitor、WinDivert 驱动资源和日志目录都会参与运行。
+
+本工具不会主动上传数据。
+本地运行时会写入：
+
+data\logs\live
+
+如果要发给别人或公开上传，请先删除日志、样本、截图、录屏和任何个人信息。

@@ -4,7 +4,8 @@ param(
     [switch]$InstallPyInstaller,
     [switch]$SkipExeBuild,
     [switch]$PublicSafe,
-    [switch]$NoClean
+    [switch]$NoClean,
+    [switch]$Zip
 )
 
 $ErrorActionPreference = "Stop"
@@ -80,12 +81,21 @@ if (-not $SkipExeBuild) {
     if ($LASTEXITCODE) {
         exit $LASTEXITCODE
     }
+    & (Join-Path $LabRoot "build_windivert_monitor_exe.ps1") @BuildArgs
+    if ($LASTEXITCODE) {
+        exit $LASTEXITCODE
+    }
 }
 
 $UiDist = Join-Path $LabRoot "dist\BidKingHeroRef"
 $UiExe = Join-Path $UiDist "BidKingHeroRef.exe"
 if (-not (Test-Path -LiteralPath $UiExe)) {
     throw "Hero Ref UI exe not found. Build first or run without -SkipExeBuild: $UiExe"
+}
+$MonitorDist = Join-Path $LabRoot "dist\BidKingHeroMonitor"
+$MonitorExe = Join-Path $MonitorDist "BidKingHeroMonitor.exe"
+if (-not (Test-Path -LiteralPath $MonitorExe)) {
+    throw "Hero Ref monitor exe not found. Build first or run without -SkipExeBuild: $MonitorExe"
 }
 
 Assert-PathUnder -Path $OutputFull -Root $DistFull -Label "OutputDir"
@@ -96,6 +106,7 @@ New-Item -ItemType Directory -Path $OutputFull -Force | Out-Null
 
 Copy-Tree -Source $TemplateRoot -Destination $OutputFull
 Copy-Tree -Source $UiDist -Destination (Join-Path $OutputFull "BidKingHeroRef")
+Copy-Tree -Source $MonitorDist -Destination (Join-Path $OutputFull "BidKingHeroMonitor")
 Copy-Tree -Source (Join-Path $RepoRoot "src") -Destination (Join-Path $OutputFull "src")
 
 $ScriptsOut = Join-Path $OutputFull "scripts"
@@ -164,7 +175,9 @@ SourceCommit: $Commit
 PublicSafe: $([bool]$PublicSafe)
 IncludesRawTables: $(-not [bool]$PublicSafe)
 UI: BidKingHeroRef\BidKingHeroRef.exe
+Monitor: BidKingHeroMonitor\BidKingHeroMonitor.exe
 Launcher: Start-HeroRef.bat / Start-HeroRef.ps1
+RequiresExternalPython: False
 
 Before public release, review README.zh-CN.md and TRUST_AND_SECURITY.zh-CN.md.
 "@ | Set-Content -Path $ManifestPath -Encoding utf8
@@ -206,4 +219,16 @@ if ($PublicSafe) {
     Write-Host "PublicSafe mode: raw tables are excluded; user must provide data\raw\tables." -ForegroundColor Yellow
 } else {
     Write-Host "Local package includes data\raw\tables. Do not publish those files without permission." -ForegroundColor Yellow
+}
+
+if ($Zip) {
+    $ZipPath = "$OutputFull.zip"
+    Assert-PathUnder -Path $ZipPath -Root $DistFull -Label "Zip output"
+    if (Test-Path -LiteralPath $ZipPath) {
+        Remove-Item -LiteralPath $ZipPath -Force
+    }
+    Compress-Archive -Path (Join-Path $OutputFull "*") -DestinationPath $ZipPath -Force
+    Write-Host ""
+    Write-Host "Built zip:" -ForegroundColor Green
+    Write-Host "  $ZipPath"
 }

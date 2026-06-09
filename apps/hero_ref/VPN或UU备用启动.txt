@@ -1,0 +1,17 @@
+VPN / UU 用户备用启动方式
+
+普通情况请直接右键管理员运行：
+右键管理员运行_启动HeroRef.bat
+
+如果开 VPN、UU 或其他代理后，开局不刷新、跨局不刷新、一直等待外援输入，可以尝试：
+
+1. 右键文件夹空白处，打开 PowerShell。
+2. 运行：
+
+.\Start-HeroRef.ps1 -BroadSniff -IncludeLoopback
+
+说明：
+
+- BroadSniff 会扩大抓包范围，CPU 占用可能更高。
+- IncludeLoopback 会包含本机回环流量。
+- 如果不开 VPN/UU，不建议默认使用这个模式。

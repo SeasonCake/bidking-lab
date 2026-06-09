@@ -18,6 +18,7 @@ $LockPath = Join-Path $LogDir "monitor.lock"
 $OverlayPidPath = Join-Path $LogDir "ahmad_overlay.pid"
 $SnapshotPath = Join-Path $LogDir "latest_snapshot.json"
 $HeroExe = Join-Path $AppRoot "BidKingHeroRef\BidKingHeroRef.exe"
+$MonitorExe = Join-Path $AppRoot "BidKingHeroMonitor\BidKingHeroMonitor.exe"
 $MonitorStart = Join-Path $ScriptsDir "start_live_windivert_overlay.ps1"
 $ResolvePython = Join-Path $ScriptsDir "resolve_python.ps1"
 
@@ -61,13 +62,57 @@ function Test-PacketPython {
     return $LASTEXITCODE -eq 0
 }
 
+function Test-ProcessIdRunning {
+    param($ProcessId)
+    if (-not $ProcessId) {
+        return $false
+    }
+    try {
+        $null = Get-Process -Id ([int]$ProcessId) -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Stop-MonitorFromLock {
+    param([string]$Path)
+    $LockPayload = Get-MonitorLockPayload -Path $Path
+    if ($LockPayload -and $LockPayload.pid) {
+        try {
+            Stop-Process -Id ([int]$LockPayload.pid) -Force -ErrorAction SilentlyContinue
+        } catch {
+        }
+    }
+    if (Test-Path -LiteralPath $Path) {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Stop-PackagedMonitorProcesses {
+    param([string]$ExePath)
+    try {
+        $FullExePath = [System.IO.Path]::GetFullPath($ExePath)
+        Get-CimInstance Win32_Process |
+            Where-Object {
+                $_.ExecutablePath -and
+                ([System.IO.Path]::GetFullPath($_.ExecutablePath)).Equals($FullExePath, [System.StringComparison]::OrdinalIgnoreCase)
+            } |
+            ForEach-Object {
+                Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+    } catch {
+    }
+}
+
 if (-not (Test-Path -LiteralPath $HeroExe)) {
     throw "Hero Ref UI exe not found: $HeroExe"
 }
-if (-not (Test-Path -LiteralPath $MonitorStart)) {
+$HasPackagedMonitor = Test-Path -LiteralPath $MonitorExe
+if (-not $HasPackagedMonitor -and -not (Test-Path -LiteralPath $MonitorStart)) {
     throw "Monitor starter not found: $MonitorStart"
 }
-if (-not (Test-Path -LiteralPath $ResolvePython)) {
+if (-not $HasPackagedMonitor -and -not (Test-Path -LiteralPath $ResolvePython)) {
     throw "Python resolver not found: $ResolvePython"
 }
 
@@ -123,54 +168,96 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
     return
 }
 
-. $ResolvePython
-$Python = Resolve-BidKingPython -ExplicitPython $PythonPath -RequirePacket
-if (-not (Test-PacketPython -Path $Python)) {
-    Write-Host "Python packet dependencies are missing for: $Python" -ForegroundColor Red
-    Write-Host "Install once:" -ForegroundColor Yellow
-    Write-Host "  `"$Python`" -m pip install pydivert psutil" -ForegroundColor Yellow
-    exit 1
-}
-
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
-
-$MonitorParams = @{
-    LogDir = "data\logs\live"
-    ProcessName = $ProcessName
-    PythonPath = $Python
-    ServerPort = $ServerPort
-    NTrials = 500
-    RoiTrials = 0
-    FullShadowTrials = 20
-    FastNTrials = 10
-    FormalMode = "v3_practical"
-    NoOverlay = $true
-    NoAutoElevate = $true
-}
-if (-not $NoRestart) {
-    $MonitorParams["Restart"] = $true
-}
-if ($BroadSniff) {
-    $MonitorParams["BroadSniff"] = $true
-} else {
-    $MonitorParams["PortOnly"] = $true
-}
-if ($IncludeLoopback) {
-    $MonitorParams["IncludeLoopback"] = $true
-}
-if ($KeepMonitorOnClose) {
-    $MonitorParams["KeepMonitorOnOverlayClose"] = $true
-}
 
 Write-Host "== BidKing Hero Ref ==" -ForegroundColor Cyan
 Write-Host "App:     $AppRoot"
-Write-Host "Python:  $Python"
-Write-Host "Mode:    WinDivert monitor + Hero Ref UI"
+if ($HasPackagedMonitor) {
+    Write-Host "Monitor: $MonitorExe"
+    Write-Host "Mode:    packaged WinDivert monitor exe + Hero Ref UI"
+} else {
+    . $ResolvePython
+    $Python = Resolve-BidKingPython -ExplicitPython $PythonPath -RequirePacket
+    if (-not (Test-PacketPython -Path $Python)) {
+        Write-Host "Python packet dependencies are missing for: $Python" -ForegroundColor Red
+        Write-Host "Install once:" -ForegroundColor Yellow
+        Write-Host "  `"$Python`" -m pip install pydivert psutil" -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Host "Python:  $Python"
+    Write-Host "Mode:    Python WinDivert monitor fallback + Hero Ref UI"
+}
 Write-Host ""
 
-& $MonitorStart @MonitorParams
-if ($LASTEXITCODE) {
-    exit $LASTEXITCODE
+if ($HasPackagedMonitor) {
+    if (-not $NoRestart) {
+        Stop-MonitorFromLock -Path $LockPath
+        Stop-PackagedMonitorProcesses -ExePath $MonitorExe
+    }
+    $LockPayload = Get-MonitorLockPayload -Path $LockPath
+    if ($NoRestart -and $LockPayload -and $LockPayload.pid -and (Test-ProcessIdRunning -ProcessId $LockPayload.pid)) {
+        Write-Host "Monitor: reuse existing PID $($LockPayload.pid)"
+    } else {
+        $env:BIDKING_PROJECT_ROOT = $AppRoot
+        $MonitorOut = Join-Path $LogDir "monitor.stdout.log"
+        $MonitorErr = Join-Path $LogDir "monitor.stderr.log"
+        $MonitorArgs = @(
+            "--log-dir", $LogDir,
+            "--tables-dir", $TablesDir,
+            "--process-name", $ProcessName,
+            "--n-trials", "500",
+            "--roi-trials", "0",
+            "--full-shadow-trials", "20",
+            "--fast-n-trials", "10",
+            "--formal-mode", "v3_practical",
+            "--debounce-seconds", "1.0",
+            "--min-inference-interval-seconds", "2.0",
+            "--skip-debug-shadows"
+        )
+        foreach ($PortValue in $ServerPort) {
+            $MonitorArgs += @("--server-port", "$PortValue")
+        }
+        if ($BroadSniff) {
+            $MonitorArgs += "--broad"
+        }
+        if ($IncludeLoopback) {
+            $MonitorArgs += "--include-loopback"
+        }
+        $StartedMonitor = Start-Process -FilePath $MonitorExe -WorkingDirectory $AppRoot -ArgumentList $MonitorArgs -RedirectStandardOutput $MonitorOut -RedirectStandardError $MonitorErr -WindowStyle Hidden -PassThru
+        Write-Host "Monitor: started packaged exe (PID $($StartedMonitor.Id))"
+    }
+} else {
+    $MonitorParams = @{
+        LogDir = "data\logs\live"
+        ProcessName = $ProcessName
+        PythonPath = $Python
+        ServerPort = $ServerPort
+        NTrials = 500
+        RoiTrials = 0
+        FullShadowTrials = 20
+        FastNTrials = 10
+        FormalMode = "v3_practical"
+        NoOverlay = $true
+        NoAutoElevate = $true
+    }
+    if (-not $NoRestart) {
+        $MonitorParams["Restart"] = $true
+    }
+    if ($BroadSniff) {
+        $MonitorParams["BroadSniff"] = $true
+    } else {
+        $MonitorParams["PortOnly"] = $true
+    }
+    if ($IncludeLoopback) {
+        $MonitorParams["IncludeLoopback"] = $true
+    }
+    if ($KeepMonitorOnClose) {
+        $MonitorParams["KeepMonitorOnOverlayClose"] = $true
+    }
+    & $MonitorStart @MonitorParams
+    if ($LASTEXITCODE) {
+        exit $LASTEXITCODE
+    }
 }
 
 $MonitorPid = $null
@@ -182,6 +269,11 @@ while (-not $MonitorPid -and (Get-Date) -lt $Deadline) {
         break
     }
     Start-Sleep -Milliseconds 250
+}
+if ($HasPackagedMonitor -and -not $MonitorPid -and $StartedMonitor -and $StartedMonitor.HasExited) {
+    Write-Host "Monitor exited before lock was created. See:" -ForegroundColor Red
+    Write-Host "  $MonitorErr" -ForegroundColor Yellow
+    exit $StartedMonitor.ExitCode
 }
 
 $HeroArgs = @("--snapshot", $SnapshotPath, "--load-existing")

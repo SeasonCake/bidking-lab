@@ -4,9 +4,11 @@
 
 ## 启动
 
-1. 右键 `Start-HeroRef.bat`，选择以管理员身份运行。
-2. 正常场景使用默认端口抓包，不开 VPN/UU 时优先保持默认。
-3. VPN/UU 场景可在 PowerShell 里运行：
+1. 优先阅读 `使用说明.txt`。
+2. 右键 `右键管理员运行_启动HeroRef.bat`，选择以管理员身份运行。
+   `Start-HeroRef.bat` 是等价英文入口。
+3. 正常场景使用默认端口抓包，不开 VPN/UU 时优先保持默认。
+4. VPN/UU 场景可在 PowerShell 里运行：
 
 ```powershell
 .\Start-HeroRef.ps1 -BroadSniff -IncludeLoopback
@@ -17,21 +19,21 @@
 ## 运行前检查
 
 - 需要 Windows 管理员权限，因为 WinDivert 需要加载内核驱动。
-- 当前 portable 版本仍需要本机 Python 3.13，并安装 `pydivert`、`psutil`：
-
-```powershell
-C:\Python313\python.exe -m pip install pydivert psutil
-```
-
+- 当前 portable 版本内置 Hero Ref UI exe 和 WinDivert monitor exe；普通用户不需要安装 Python、`pydivert` 或 `psutil`。
+- 火绒、Windows Defender 或其他安全软件可能拦截 WinDivert 驱动加载或 PyInstaller EXE。确认来源可信后，可以把整个 `BidKingHeroRefPortable` 文件夹加入信任区。
 - 需要本包内存在 `data\raw\tables\BidMap.txt`、`Drop.txt`、`Item.txt`。这些是本地游戏表，不建议公开发布。
 - 已兼容快递/仓库、集装箱、别墅、沉船/活动沉船和 hidden 的基础地图族。快递/仓库/集装箱会读取外援 StaticData 的 tier 与 nest price；hidden 当前若本地表缺专属价格，会在诊断里显示 `fallback_default_price`，只作为保底参考。
 
 ## 目录说明
 
 - `BidKingHeroRef\BidKingHeroRef.exe`：Hero Ref Tk UI。
+- `BidKingHeroMonitor\BidKingHeroMonitor.exe`：包内 WinDivert live monitor。
 - `Start-HeroRef.ps1` / `Start-HeroRef.bat`：一键启动 monitor + Hero Ref UI。
+- `右键管理员运行_启动HeroRef.bat`：给普通用户看的中文启动入口。
 - `Stop-HeroRef.ps1`：强制停止本包启动的 UI 和 monitor。
-- `scripts\`：WinDivert monitor 启动和运行脚本。
+- `停止HeroRef.bat`：给普通用户看的中文停止入口。
+- `使用说明.txt` / `火绒拦截说明.txt` / `VPN或UU备用启动.txt`：普通用户优先阅读的短说明。
+- `scripts\`：开发/诊断脚本，正式启动优先使用包内 monitor exe。
 - `src\`：monitor 所需的 `bidking_lab` 运行代码。
 - `data\processed\`：已处理的模型辅助 JSON。
 - `data\raw\tables\`：本地游戏表，仅用于本机运行，不建议公开传播。

@@ -1,0 +1,40 @@
+BidKing Hero Ref 使用说明
+
+1. 先打开游戏并进入可以对局的状态。
+
+2. 右键这个文件运行：
+   右键管理员运行_启动HeroRef.bat
+
+3. 正常情况下会自动启动两个程序：
+   - BidKingHeroMonitor：后台抓包和解析
+   - BidKingHeroRef：前台估价小窗
+
+4. 关闭前台 Hero Ref 小窗时，后台 monitor 会自动停止。
+   如果需要强制关闭，运行：
+   停止HeroRef.bat
+
+5. 普通用户不需要安装 Python、pydivert、psutil。
+   本包已经内置 UI exe 和 monitor exe。
+
+6. 仍然需要管理员权限。
+   原因是实时监测使用 WinDivert 抓本机游戏网络包，WinDivert 需要加载驱动。
+
+7. 如果火绒、Windows Defender 或其他安全软件拦截：
+   请确认包来源可信后，把整个 BidKingHeroRefPortable 文件夹加入信任区。
+   不建议只信任单个 exe。
+
+8. 如果开了 VPN/UU 导致不刷新，可以用 PowerShell 运行：
+   .\Start-HeroRef.ps1 -BroadSniff -IncludeLoopback
+
+9. 运行日志和最新状态在：
+   data\logs\live
+
+10. 不要公开上传这些内容：
+   - data\logs
+   - data\samples
+   - 个人截图或录屏
+   - data\raw\tables，除非确认可以公开传播本地游戏表
+
+详细说明见：
+README.zh-CN.md
+TRUST_AND_SECURITY.zh-CN.md

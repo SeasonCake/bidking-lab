@@ -7,11 +7,13 @@
 ## 默认包含
 
 - Hero Ref UI exe；
+- WinDivert live monitor exe；
 - 一键启动 / 停止脚本；
-- WinDivert live monitor 必要脚本；
+- WinDivert live monitor 诊断/回退脚本；
 - `src/bidking_lab` 运行代码；
 - `data/processed/*.json`；
 - 本机运行需要的 `data/raw/tables` 表文件；
+- `使用说明.txt`、`火绒拦截说明.txt`、`VPN或UU备用启动.txt`；
 - 用户 README、安全说明、署名和边界说明。
 
 ## 默认排除
@@ -26,3 +28,7 @@
 ## Public-safe 模式
 
 如果使用构建脚本的 `-PublicSafe`，会排除 `data/raw/tables`。这种包更适合公开传输，但用户需要自行补齐本地表文件，否则 monitor 无法运行。
+
+## 运行时依赖
+
+默认 portable 包不要求用户安装 Python、`pydivert` 或 `psutil`。WinDivert 抓包仍需要管理员权限，并可能需要在火绒、Windows Defender 等安全软件中信任整个应用文件夹。

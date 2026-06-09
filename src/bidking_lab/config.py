@@ -14,6 +14,7 @@ _DEFAULT_CANDIDATES: tuple[str, ...] = (
 
 _ENV_GAME_ROOT = "BIDKING_GAME_ROOT"
 _ENV_STEAM_LIBRARY = "STEAM_LIBRARY_PATH"
+_ENV_PROJECT_ROOT = "BIDKING_PROJECT_ROOT"
 
 
 def get_game_root() -> Path | None:
@@ -46,6 +47,11 @@ def streaming_assets_dir(game_root: Path | None = None) -> Path | None:
 
 def project_root() -> Path:
     """Repo root (directory containing pyproject.toml)."""
+    if p := os.environ.get(_ENV_PROJECT_ROOT):
+        path = Path(p).expanduser()
+        if path.is_dir():
+            return path
+
     here = Path(__file__).resolve().parent
     for parent in [here, *here.parents]:
         if (parent / "pyproject.toml").is_file():
