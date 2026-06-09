@@ -810,14 +810,9 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     is_age_stale = (
         age_seconds is not None
         and age_seconds >= STALE_SNAPSHOT_SECONDS
-        and not (phase == "settled" and capture_session_id == snapshot_session_id)
+        and phase != "settled"
     )
-    is_settled_stale = (
-        phase == "settled"
-        and age_seconds is not None
-        and age_seconds >= SETTLED_STALE_SECONDS
-    )
-    if capture_session_ahead or monitor_restarted or is_age_stale or is_settled_stale:
+    if capture_session_ahead or monitor_restarted or is_age_stale:
         return _stale_snapshot_payload(
             snapshot_path=snapshot_path,
             age_seconds=age_seconds,
@@ -831,8 +826,6 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
                 else "monitor_restarted"
                 if monitor_restarted
                 else "stale_snapshot"
-                if not is_settled_stale
-                else "settled_stale"
             ),
         )
     if run_reference_engine is not None:
@@ -1129,7 +1122,17 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     )
     truth_available = bool(truth.get("available"))
     settlement_total = _parse_money(truth.get("total_value"))
-    settlement_estimate = ref_balanced
+    posterior_decision_values = _parse_range_numbers(posterior.get("decision_value_range"))
+    posterior_decision_p90 = (
+        posterior_decision_values[2]
+        if len(posterior_decision_values) >= 3
+        else None
+    )
+    settlement_estimate = (
+        _parse_money(decision.get("attack_bid"))
+        or posterior_decision_p90
+        or ref_balanced
+    )
     if phase == "settled" and truth_available:
         truth_q6 = truth.get("q6") if isinstance(truth.get("q6"), dict) else {}
         display_red_count_range = f"{_text(truth_q6.get('count'), '?')} 件"
@@ -1171,7 +1174,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         )
         main_action = "结算完成"
         main_current_highest = f"总值 {_money(settlement_total)}"
-        reference_note = "Settlement review: top cards show ref replay estimate, final total, and final-minus-estimate delta."
+        reference_note = "Settlement review: top cards show last formal estimate, final total, and final-minus-estimate delta."
 
     ref_decision_range = (
         f"{_money(ref_result.get('conservative'))} / "

@@ -1576,6 +1576,25 @@ def _quality_exact_cells(key: str, evidence: RefEvidence) -> int | None:
     return max(0, parsed)
 
 
+def _hard_total_grid_target_int(evidence: RefEvidence) -> int | None:
+    if evidence.total_grid_target is None:
+        return None
+    if "public_total_avg_cells_target" in evidence.source_notes:
+        exact_notes = {
+            "structured_ref_bridge_total_cells",
+            "field_update_total_cells",
+            "public_total_cells",
+            "action_100103_total_cells",
+            "settlement_review_total_grid",
+        }
+        if not any(note in exact_notes for note in evidence.source_notes):
+            return None
+    rounded = int(round(float(evidence.total_grid_target)))
+    if abs(float(evidence.total_grid_target) - rounded) > 0.25:
+        return None
+    return max(0, rounded)
+
+
 def _split_low_quality_q1_floor_parts_from_maps(
     split_counts: dict[str, int],
     split_quality_cells: dict[str, float],
@@ -1711,7 +1730,7 @@ def _total_count_candidates(evidence: RefEvidence, notes: list[str]) -> tuple[li
         return [], None
     center = max(_default_total_count(evidence.map_id), _known_count_floor(evidence))
     if evidence.total_grid_target is not None and evidence.total_grid_target > 0:
-        center = max(1, int(round(evidence.total_grid_target / 3.0)))
+        center = max(center, int(round(evidence.total_grid_target / 3.0)), 1)
     lower = max(_known_count_floor(evidence), center - 4, 1)
     upper = max(lower, center + 4)
     upper = min(60, upper)
@@ -1989,6 +2008,9 @@ def _grids_for_counts(
         evidence.total_grid_target,
         fixed_grid_keys=set(evidence.quality_cells),
     )
+    hard_total = _hard_total_grid_target_int(evidence)
+    if hard_total is not None and abs(sum(fitted.values()) - hard_total) > 0.0001:
+        return None
     if not _split_low_quality_q1_grid_matches(counts.get("q1", 0), fitted.get("q1", 0.0), evidence):
         return None
     return fitted

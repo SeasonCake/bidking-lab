@@ -453,6 +453,52 @@ def test_ref_engine_aisha_split_conflict_with_merged_q1_is_hard_conflict() -> No
     assert "constraints_conflict_or_too_strict" in result["notes"]
 
 
+def test_ref_engine_total_grid_prior_does_not_collapse_to_known_count_floor() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="aisha",
+            map_id=2410,
+            structured_ref_inputs={
+                "total_cells": 70,
+                "fixed_counts": {"q3": 13, "q4": 9, "q5": 3},
+                "quality_cells": {"q3": 19, "q4": 29, "q5": 3},
+                "split_counts": {"white": 2, "green": 6},
+                "split_quality_cells": {"white": 3, "green": 8},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert result["red_count_range"][1] >= 1
+    assert result["red_cells_range"][1] >= 1
+    assert result["total_grid_range"] == [70, 70, 70]
+    assert "total_count_from_ref_count_prior" in result["notes"]
+
+
+def test_ref_engine_total_grid_hard_when_gold_count_unknown() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="aisha",
+            map_id=2410,
+            structured_ref_inputs={
+                "total_cells": 70,
+                "counts": {"q3": 13, "q4": 9},
+                "quality_cells": {"q3": 19, "q4": 29, "q5": 3},
+                "split_counts": {"white": 2, "green": 6},
+                "split_quality_cells": {"white": 3, "green": 8},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert result["red_count_range"][1] >= 1
+    assert result["red_cells_range"][1] >= 1
+    assert result["total_grid_range"] == [70, 70, 70]
+    assert "structured_ref_bridge_total_cells" in result["notes"]
+
+
 def test_ref_engine_victor_q4_q5_q6_count_sum_and_zero_gold_avg() -> None:
     result = run_reference_engine(
         _snapshot(

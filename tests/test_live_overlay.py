@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 import time
 
@@ -15,6 +16,7 @@ def _overlay_module():
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -25,6 +27,7 @@ def _ahmad_overlay_module():
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -35,6 +38,7 @@ def _ahmad_server_module():
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -1741,6 +1745,52 @@ def test_ahmad_server_summary_prefers_ref_evidence_hero_when_context_unknown(tmp
 
     assert result["context"]["hero"] == "victor"
     assert result["context"]["is_supported_ref_hero"] is True
+
+
+def test_ahmad_server_summary_keeps_old_settlement_review_until_next_session(tmp_path: Path) -> None:
+    module = _ahmad_server_module()
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    snapshot = {
+        "created_at": time.time() - 600,
+        "phase": "settled",
+        "ui_contract": {
+            "context": {
+                "hero": "victor",
+                "map_id": 2404,
+                "phase": "settled",
+                "session_id": "2404:done",
+            },
+            "baseline": {
+                "decision": {"attack_bid": "450000"},
+                "posterior": {},
+            },
+            "source": {"created_at": time.time() - 600},
+            "truth": {
+                "available": True,
+                "total_value": 520000,
+                "total_items": 21,
+                "total_cells": 34,
+                "q6": {"count": 1, "cells": 3, "value": 160000},
+                "top_item": {"name": "test", "value": 160000},
+            },
+        },
+        "structured_ref_inputs": {
+            "hero": "victor",
+            "total_count": 21,
+            "total_cells": 34,
+            "avg_cells": {"q4": 1.8, "q5": 0.0},
+            "count_sums": {"q4q5q6": 6},
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=snapshot_path)
+
+    assert result["status"] == "ok"
+    assert result["reference"]["source"] == "settlement"
+    assert result["reference"]["conservative"] == "450,000"
+    assert result["reference"]["balanced"] == "520,000"
+    assert result["reference"]["aggressive"] == "+70,000"
+    assert result["truth"]["available"] is True
 
 
 def test_ahmad_ref_input_summary_shows_quality_lower_bounds() -> None:
