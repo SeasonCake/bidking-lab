@@ -1464,6 +1464,7 @@ INDEX_HTML = r"""<!doctype html>
       justify-content: space-between;
       gap: 12px;
     }
+    footer a { color: var(--accent); }
     code { color: #d8e6ef; }
     @media (max-width: 640px) {
       .grid, .section { grid-template-columns: 1fr; }
@@ -1527,7 +1528,7 @@ INDEX_HTML = r"""<!doctype html>
       </div>
     </div>
     <footer>
-      <span>原作：猫饭团子uu · UI/计算优化：加菲_barista · 不接正式出价。</span>
+      <span>原作：猫饭团子uu · UI/计算优化：加菲_barista · <a href="https://github.com/SeasonCake/bidking-lab" target="_blank" rel="noreferrer">GitHub</a> · 不接正式出价。</span>
       <span><code id="path"></code></span>
     </footer>
   </div>

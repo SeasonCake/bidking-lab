@@ -408,6 +408,22 @@ def test_ahmad_tk_minimap_draws_explicit_marker_as_oval_even_with_shape() -> Non
     )
 
 
+def test_ahmad_footer_github_opens_project_link(monkeypatch) -> None:
+    module = _ahmad_overlay_module()
+    opened: list[tuple[str, int, bool]] = []
+
+    def fake_open(url: str, *, new: int = 0, autoraise: bool = True) -> bool:
+        opened.append((url, new, autoraise))
+        return True
+
+    monkeypatch.setattr(module.webbrowser, "open", fake_open)
+    instance = module.AhmadTkOverlay.__new__(module.AhmadTkOverlay)
+
+    module.AhmadTkOverlay._open_credit_github(instance)
+
+    assert opened == [(module.CREDIT_GITHUB_URL, 2, True)]
+
+
 def test_overlay_quality_style_distinguishes_white_and_unknown() -> None:
     overlay = _overlay_module()
 

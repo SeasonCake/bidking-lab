@@ -14,6 +14,7 @@ import time
 import tkinter as tk
 from tkinter import ttk
 from typing import Any
+import webbrowser
 
 
 TOOLS_DIR = Path(__file__).resolve().parent
@@ -35,6 +36,8 @@ except Exception:  # noqa: BLE001 - keep overlay usable if ref core is unavailab
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SNAPSHOT = ROOT / "data" / "logs" / "live" / "latest_snapshot.json"
+CREDIT_TEXT = "原作: 猫饭团子uu · UI/计算引擎优化: 加菲_barista"
+CREDIT_GITHUB_URL = "https://github.com/SeasonCake/bidking-lab"
 
 FONT_UI = "Microsoft YaHei UI"
 FONT_NUMERIC = "Segoe UI Semibold"
@@ -956,13 +959,13 @@ class AhmadTkOverlay:
         self.subtitle.pack(fill="x")
         self.credit_top = tk.Label(
             title_box,
-            text="原作: 猫饭团子uu · UI/计算引擎优化: 加菲_barista",
+            text=CREDIT_TEXT,
             bg=BG,
             fg=DIM,
             font=(FONT_UI, 7),
             anchor="w",
         )
-        self.title_tip = HoverTip(self.title, "原作: 猫饭团子uu · UI/计算引擎优化: 加菲_barista")
+        self.title_tip = HoverTip(self.title, CREDIT_TEXT)
         header_actions = tk.Frame(top_row, bg=BG)
         header_actions.pack(side="right", padx=(6, 0))
         title_box.pack(side="left", fill="x", expand=True)
@@ -1230,13 +1233,30 @@ class AhmadTkOverlay:
         self.footer_row.pack(fill="x", pady=(1, 0))
         self.footer = tk.Label(
             self.footer_row,
-            text="原作: 猫饭团子uu · UI/计算引擎优化: 加菲_barista",
+            text=f"{CREDIT_TEXT} · ",
             bg=BG,
             fg=DIM,
             font=(FONT_UI, 6),
             anchor="w",
         )
-        self.footer.pack(side="left", fill="x", expand=True)
+        self.footer.pack(side="left")
+        self.footer_github = tk.Label(
+            self.footer_row,
+            text="GitHub",
+            bg=BG,
+            fg=ACCENT,
+            activeforeground=WARM,
+            font=(FONT_UI, 6, "underline"),
+            anchor="w",
+            padx=0,
+        )
+        try:
+            self.footer_github.configure(cursor="hand2")
+        except tk.TclError:
+            pass
+        self.footer_github.pack(side="left", fill="x", expand=True)
+        self.footer_github.bind("<Button-1>", self._open_credit_github, add="+")
+        self.footer_github_tip = HoverTip(self.footer_github, CREDIT_GITHUB_URL)
         self.resize_grip = tk.Label(
             self.footer_row,
             text="◢",
@@ -1264,6 +1284,7 @@ class AhmadTkOverlay:
                 self.map_button,
                 self.top_resize_grip,
                 self.resize_grip,
+                self.footer_github,
             },
         )
         self._set_details_mode(False)
@@ -1457,6 +1478,9 @@ class AhmadTkOverlay:
         self._hide_pinned_minimap()
         self._run_exit_cleanup()
         self.root.destroy()
+
+    def _open_credit_github(self, _event: tk.Event[Any] | None = None) -> None:
+        webbrowser.open(CREDIT_GITHUB_URL, new=2, autoraise=True)
 
     def _run_exit_cleanup(self) -> None:
         if self._exit_cleanup_done:
