@@ -262,6 +262,7 @@ if ($HasPackagedMonitor) {
 }
 
 $MonitorPid = $null
+$MonitorLaunchFailed = $false
 $Deadline = (Get-Date).AddSeconds(5)
 while (-not $MonitorPid -and (Get-Date) -lt $Deadline) {
     $LockPayload = Get-MonitorLockPayload -Path $LockPath
@@ -274,11 +275,26 @@ while (-not $MonitorPid -and (Get-Date) -lt $Deadline) {
 if ($HasPackagedMonitor -and -not $MonitorPid -and $StartedMonitor -and $StartedMonitor.HasExited) {
     Write-Host "Monitor exited before lock was created. See:" -ForegroundColor Red
     Write-Host "  $MonitorErr" -ForegroundColor Yellow
-    exit $StartedMonitor.ExitCode
+    $MonitorLaunchFailed = $true
+}
+if ($HasPackagedMonitor -and $StartedMonitor -and $MonitorPid) {
+    Start-Sleep -Milliseconds 900
+    try {
+        $StartedMonitor.Refresh()
+    } catch {
+    }
+    if ($StartedMonitor.HasExited) {
+        Write-Host "Monitor exited immediately after startup. Hero Ref UI will stay open for diagnosis." -ForegroundColor Yellow
+        Write-Host "See:" -ForegroundColor Yellow
+        Write-Host "  $MonitorErr" -ForegroundColor Yellow
+        $MonitorLaunchFailed = $true
+        $MonitorPid = $null
+        Remove-Item -LiteralPath $LockPath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $HeroArgs = @("--snapshot", $SnapshotPath, "--load-existing")
-if ($MonitorPid -and -not $KeepMonitorOnClose) {
+if ($MonitorPid -and -not $KeepMonitorOnClose -and -not $MonitorLaunchFailed) {
     $HeroArgs += @(
         "--stop-pid-on-exit", "$MonitorPid",
         "--exit-when-pid-exits", "$MonitorPid",
