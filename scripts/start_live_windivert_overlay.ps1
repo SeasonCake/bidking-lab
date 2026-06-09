@@ -17,6 +17,7 @@ param(
   [switch]$ExcludeLoopback,
   [switch]$EnableDebugShadows,
   [switch]$KeepMonitorOnOverlayClose,
+  [switch]$NoOverlay,
   [switch]$NoAutoElevate,
   [switch]$Restart
 )
@@ -31,6 +32,7 @@ $MonitorOut = Join-Path $LogPath "monitor.stdout.log"
 $MonitorErr = Join-Path $LogPath "monitor.stderr.log"
 $OverlayOut = Join-Path $LogPath "overlay.stdout.log"
 $OverlayErr = Join-Path $LogPath "overlay.stderr.log"
+$OverlayPidPath = Join-Path $LogPath "overlay.pid"
 
 # Default: port-filter capture (low CPU). Use -BroadSniff for VPN/TUN/proxy diagnosis.
 $UseBroadSniff = [bool]$BroadSniff
@@ -95,6 +97,9 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
   }
   if ($KeepMonitorOnOverlayClose) {
     $ElevatedArgs += "-KeepMonitorOnOverlayClose"
+  }
+  if ($NoOverlay) {
+    $ElevatedArgs += "-NoOverlay"
   }
   if ($Restart) {
     $ElevatedArgs += "-Restart"
@@ -204,6 +209,26 @@ if ($Restart) {
   foreach ($Process in @($MonitorProcesses + $OverlayProcesses)) {
     Stop-Process -Id $Process.ProcessId -Force
   }
+  $OverlayPidFromFile = $null
+  if (Test-Path $OverlayPidPath) {
+    try {
+      $OverlayPidFromFile = [int]((Get-Content -LiteralPath $OverlayPidPath -Raw).Trim())
+    } catch {
+    }
+  }
+  if (
+    $OverlayPidFromFile -and
+    -not ($OverlayProcesses | Where-Object { $_.ProcessId -eq $OverlayPidFromFile }) -and
+    (Test-ProcessIdRunning -ProcessId $OverlayPidFromFile)
+  ) {
+    try {
+      $OverlayProcessFromFile = Get-CimInstance Win32_Process -Filter "ProcessId=$OverlayPidFromFile" -ErrorAction Stop
+      if ($OverlayProcessFromFile.Name -like "python*") {
+        Stop-Process -Id $OverlayPidFromFile -Force -ErrorAction SilentlyContinue
+      }
+    } catch {
+    }
+  }
   $LockPid = Get-LockProcessIdValue -Path $LockPath
   if ($LockPid -and (Test-ProcessIdRunning -ProcessId $LockPid)) {
     Stop-Process -Id $LockPid -Force -ErrorAction SilentlyContinue
@@ -212,6 +237,9 @@ if ($Restart) {
   $OverlayProcesses = @()
   if (Test-Path $LockPath) {
     Remove-Item -LiteralPath $LockPath -Force
+  }
+  if (Test-Path $OverlayPidPath) {
+    Remove-Item -LiteralPath $OverlayPidPath -Force
   }
 }
 
@@ -337,7 +365,7 @@ if ($StartedMonitor -and -not $MonitorProcesses) {
   $StartedMonitorPid = $MonitorHealth.Pid
 }
 
-if (-not $OverlayProcesses) {
+if (-not $NoOverlay -and -not $OverlayProcesses) {
   $OverlayArgs = @(
     $Overlay,
     "--snapshot", (Join-Path $LogPath "latest_snapshot.json")
@@ -355,7 +383,6 @@ if (-not $OverlayProcesses) {
   }
   # Do not redirect pythonw stdout/stderr: it can prevent the Tk window from starting.
   $StartedOverlay = Start-Process -FilePath $PythonWindowed -WorkingDirectory $Repo -ArgumentList $OverlayArgs -PassThru
-  $OverlayPidPath = Join-Path $LogPath "overlay.pid"
   if ($StartedOverlay -and $StartedOverlay.Id) {
     Set-Content -Path $OverlayPidPath -Value "$($StartedOverlay.Id)" -Encoding ascii
   }
@@ -397,8 +424,10 @@ if ($OverlayProcesses) {
   Write-Host "Overlay:    already running (PID $($OverlayProcesses[0].ProcessId))"
 } elseif ($StartedOverlay -and $StartedOverlay.Id) {
   Write-Host "Overlay:    started (PID $($StartedOverlay.Id))"
+} elseif ($NoOverlay) {
+  Write-Host "Overlay:    skipped (-NoOverlay)"
 }
-if (-not $KeepMonitorOnOverlayClose -and $StartedMonitorPid) {
+if (-not $NoOverlay -and -not $KeepMonitorOnOverlayClose -and $StartedMonitorPid) {
   Write-Host "Lifecycle:  closing overlay will stop monitor PID $StartedMonitorPid"
 }
 if ($UseBroadSniff) {

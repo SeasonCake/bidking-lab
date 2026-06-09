@@ -1048,11 +1048,18 @@ def _action_round(events: FatbeansCaptureEvents) -> int | None:
     if state is None:
         return None
     if state.message_id == 0x002D or state.inventory_items:
-        return state.round_no
+        sent_bid_count = sum(1 for send in events.sends if send.kind == "bid")
+        candidates = [
+            candidate
+            for candidate in (state.round_no, sent_bid_count or None)
+            if candidate is not None
+        ]
+        return max(candidates) if candidates else None
     if state.message_id == 0x0021:
         return 1
     if state.round_no is None:
-        return None
+        sent_bid_count = sum(1 for send in events.sends if send.kind == "bid")
+        return sent_bid_count + 1
     return state.round_no + 1
 
 
@@ -3712,28 +3719,97 @@ def _action_result_rows(
     items: Mapping[int, Item],
 ) -> list[dict[str, Any]]:
     item_names = _item_names(items)
-    latest_by_action: dict[int, dict[str, Any]] = {}
+    latest_by_action: dict[int, tuple[int, dict[str, Any]]] = {}
+    zero_implied_action_ids = {
+        100104,
+        100105,
+        100106,
+        100107,
+        100108,
+        100110,
+        100111,
+        100112,
+        100113,
+        100114,
+        100116,
+        100117,
+        100118,
+        100119,
+        100120,
+        100122,
+        100123,
+        100124,
+        100125,
+        100126,
+    }
     for state in events.states:
+        if state.message_id == 0x002D or state.inventory_items:
+            continue
+        priority = 2 if state.message_id == 0x0027 else 1
         for result in state.action_results:
             action_id = int(result.action_id)
-            latest_by_action[action_id] = {
-                "sort": state.sort_id,
-                "time": state.capture_time,
+            existing = latest_by_action.get(action_id)
+            if existing is not None:
+                existing_priority, existing_row = existing
+                existing_sort = int(existing_row.get("sort") or 0)
+                if priority < existing_priority:
+                    continue
+                if priority == existing_priority and state.sort_id < existing_sort:
+                    continue
+            latest_by_action[action_id] = (
+                priority,
+                {
+                    "sort": state.sort_id,
+                    "time": state.capture_time,
+                    "action_id": action_id,
+                    "tool": item_names.get(action_id, ""),
+                    "result": result.result,
+                    "result_field": result.result_field,
+                    "revealed_items": len(result.observed_items),
+                    "revealed_items_detail": _observed_items_detail(
+                        result.observed_items
+                    ),
+                    "revealed_summary": _observed_action_summary(
+                        result.observed_items,
+                        item_names,
+                    ),
+                },
+            )
+    for send in sorted(events.sends, key=lambda item: item.sort_id, reverse=True):
+        if send.kind != "action" or send.value is None:
+            continue
+        action_id = int(send.value)
+        if action_id not in zero_implied_action_ids or action_id in latest_by_action:
+            continue
+        has_later_state = any(
+            state.sort_id > send.sort_id
+            and (
+                send.session_id is None
+                or state.session_id is None
+                or state.session_id == send.session_id
+            )
+            for state in events.states
+        )
+        if not has_later_state:
+            continue
+        latest_by_action[action_id] = (
+            0,
+            {
+                "sort": send.sort_id,
+                "time": send.capture_time,
                 "action_id": action_id,
                 "tool": item_names.get(action_id, ""),
-                "result": result.result,
-                "result_field": result.result_field,
-                "revealed_items": len(result.observed_items),
-                "revealed_items_detail": _observed_items_detail(
-                    result.observed_items
-                ),
-                "revealed_summary": _observed_action_summary(
-                    result.observed_items,
-                    item_names,
-                ),
-            }
+                "result": 0,
+                "result_field": None,
+                "inferred_zero": True,
+                "result_inference": "sent_action_without_result_after_later_state",
+                "revealed_items": 0,
+                "revealed_items_detail": [],
+                "revealed_summary": "",
+            },
+        )
     return sorted(
-        latest_by_action.values(),
+        (row for _priority, row in latest_by_action.values()),
         key=lambda row: int(row.get("sort") or 0),
         reverse=True,
     )
@@ -3786,6 +3862,94 @@ def _public_info_rows(
         key=lambda row: int(row.get("sort") or 0),
         reverse=True,
     )
+
+
+def _ahmad_ref_inputs_from_batches(
+    batches: Sequence[LiveObservationBatch],
+    *,
+    hero: str | None,
+) -> dict[str, Any]:
+    """Compact pre-settlement bridge for the isolated structured reference overlay."""
+
+    if str(hero or "").lower() not in {
+        "ahmed",
+        "ahmad",
+        "艾哈迈德",
+        "victor",
+        "维克托",
+    }:
+        return {}
+    field_updates: list[dict[str, Any]] = []
+    latest_values: dict[tuple[str, ...], Any] = {}
+    for batch in batches:
+        if batch.phase == "settled" or batch.event_kind == "session_settled":
+            continue
+        for update in batch.field_updates:
+            path = tuple(str(part) for part in update.path)
+            if not path:
+                continue
+            if path[0] == "session":
+                relevant = path[1:] in {
+                    ("total_item_count",),
+                    ("total_count",),
+                    ("total_cells",),
+                    ("warehouse_total_cells",),
+                }
+            elif path[0] == "bucket_group" and len(path) >= 3:
+                relevant = path[2] == "count"
+            elif path[0] == "bucket" and len(path) >= 3:
+                relevant = path[2] in {"avg_cells", "count"}
+            else:
+                relevant = False
+            if not relevant:
+                continue
+            latest_values[path] = update.value
+            field_updates.append(
+                {
+                    "path": list(path),
+                    "value": update.value,
+                    "source": update.source,
+                    "confidence": update.confidence,
+                    "sequence": update.sequence or batch.sequence,
+                    "event_kind": batch.event_kind,
+                    "phase": batch.phase,
+                }
+            )
+
+    avg_cells: dict[str, Any] = {}
+    counts: dict[str, Any] = {}
+    count_sums: dict[str, Any] = {}
+    for path, value in sorted(latest_values.items()):
+        if path[:1] == ("session",):
+            continue
+        if len(path) >= 3 and path[0] == "bucket_group":
+            if path[2] == "count":
+                count_sums[str(path[1])] = value
+            continue
+        if len(path) < 3 or path[0] != "bucket":
+            continue
+        quality = str(path[1])
+        key = "q1" if quality in {"1", "2"} else f"q{quality}"
+        if path[2] == "avg_cells":
+            avg_cells[key] = value
+        elif path[2] == "count":
+            counts[key] = value
+
+    total_count = latest_values.get(("session", "total_item_count"))
+    if total_count is None:
+        total_count = latest_values.get(("session", "total_count"))
+    total_cells = latest_values.get(("session", "total_cells"))
+    if total_cells is None:
+        total_cells = latest_values.get(("session", "warehouse_total_cells"))
+    return {
+        "source": "monitor_pre_settlement_field_updates",
+        "total_count": total_count,
+        "total_cells": total_cells,
+        "avg_cells": avg_cells,
+        "counts": counts,
+        "count_sums": count_sums,
+        "field_updates": field_updates,
+    }
 
 
 def _grid_item_table_shape_key(
@@ -4783,6 +4947,10 @@ def build_monitor_artifact_from_events(
         ),
     )
     processing_seconds = round(time.perf_counter() - started_at, 4)
+    structured_ref_inputs = _ahmad_ref_inputs_from_batches(
+        batches,
+        hero=base_session.hero if base_session is not None else None,
+    )
     artifact: dict[str, Any] = {
         "schema_version": 1,
         "created_at": time.time(),
@@ -4843,6 +5011,8 @@ def build_monitor_artifact_from_events(
         "q6_quality_only_local_risk": q6_quality_only_local_risk,
         "evidence_profile_key": evidence_profile_key,
         "tool_rows": tool_rows,
+        "structured_ref_inputs": structured_ref_inputs,
+        "ahmad_ref_inputs": structured_ref_inputs,
         "action_send_rows": _action_send_rows(events, tables.items),
         "action_result_rows": _action_result_rows(events, tables.items),
         "public_info_rows": _public_info_rows(events, tables.items),
@@ -4906,9 +5076,13 @@ def build_monitor_artifact_from_payload(
     run_debug_shadows: bool = True,
     seed: int = 20260530,
     formal_mode: str | None = None,
+    local_player_id_hint: int | None = None,
 ) -> dict[str, Any]:
     return build_monitor_artifact_from_events(
-        parse_fatbeans_capture_payload(payload),
+        parse_fatbeans_capture_payload(
+            payload,
+            local_player_id_hint=local_player_id_hint,
+        ),
         file=file,
         tables=tables,
         n_trials=n_trials,

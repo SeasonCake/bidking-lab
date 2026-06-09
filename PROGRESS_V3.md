@@ -11415,3 +11415,1543 @@ instability 分类：
 - 后续不得再用旧 `.tmp/...schema3.json` 作为 readiness 主证据；
 - canonical readiness 应使用 `data/processed/v3_scp_guarded_bridge_stability_shadow.json`；
 - guarded SCP bridge 仍 audit-only，不进入 sampler、formal/live 或 promotion support。
+
+### 2026-06-08 checkpoint：CSE source split digest 进入 readiness/workbench
+
+本轮收口内容：
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 从 `data/processed/v3_capacity_source_expansion_shadow.json` 的 canonical `map_id` scope 汇总 CSE source split；
+  - `capacity_source_expansion_artifact_contract` 新增：
+    - `digest_scope`；
+    - `mechanism_classes`；
+    - `source_evidence_classes`；
+    - `source_context_classes`；
+    - `source_split_status`；
+    - `unique_round_overflow_rows`；
+    - `session_capacity_source_semantics_rows`；
+    - `server_side_expansion_rows`；
+    - payload/public/full-action count summaries。
+  - `capacity_source_expansion_shadow` gate focus 追加 source split digest。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract.capacity_source_expansion_contract` 透传同一 digest；
+  - summary 输出 `cse_source_split`、`cse_unique_round_overflow`、`cse_session_capacity_semantics`、`cse_server_side_expansion` 与 `cse_mechanisms`。
+- 更新 readiness/workbench 测试，覆盖 CSE digest 与 sampler contract 透传。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_cse_source_split_focus tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_build_v3_capacity_source_expansion_shadow.py tests/test_summarize_v3_settlement_source_semantics_audit.py tests/test_summarize_v3_scp_guarded_bridge_stability.py
+36 passed
+```
+
+真实 readiness/workbench smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_policy_matrix_latest.json --shadow-sampler-prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --shadow-sampler-guard-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_full_latest.json --shadow-sampler-value-source-profile-json .tmp\codex\v3_shadow_sampler_q6_value_source_profile_audit_latest.json --shadow-sampler-value-map-profile-details-json .tmp\codex\v3_shadow_sampler_q6_value_map_profile_details_latest.json --shadow-sampler-value-profile-guardability-json .tmp\codex\v3_shadow_sampler_q6_value_profile_guardability_latest.json --format summary
+```
+
+关键结果：
+
+```text
+cse_artifact_contract=watch
+cse_artifact_entries=30
+cse_artifact_candidates=11
+cse_artifact_group_bys=map_id,map_family
+cse_source_split=blocked_payload_only_source_split_unresolved
+cse_unique_round_overflow=21
+cse_session_capacity_semantics=18
+cse_server_side_expansion=3
+cse_mechanisms=not_unique_round_cap_blocker:435,session_capacity_source_semantics:18,server_side_settlement_expansion:3
+cse_candidate_rows=759
+cse_pressure_candidate_rows=61
+cse_active_rows=0
+```
+
+workbench 结论：
+
+```text
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract ... cse_source_split=blocked_payload_only_source_split_unresolved cse_unique_round_overflow=21 cse_session_capacity_semantics=18 cse_server_side_expansion=3 ...
+next_action="freeze settlement bridge inputs and define a sampler interface that treats CSE/SCP as risk flags only"
+```
+
+结论：
+
+- CSE artifact contract 已可评估，但 `watch` 只表示 shadow evidence 可见、inactive、结构完整；
+- 21 条 unique round overflow 中，18 条仍是 payload-only/session-capacity source semantics，3 条是 external/public/full-action 可确认的 server-side settlement expansion；
+- source split unresolved 仍是 promotion/sampler blocker；
+- CSE/SCP 只能作为 shadow sampler 的 risk flags，不得进入 formal/live 出价、不放宽 readiness、不 archive v2。
+
+### 2026-06-08 checkpoint：prior-stress capacity table semantic focus 进入 readiness/workbench
+
+本轮收口内容：
+
+- 生成真实 capacity table audit artifact：
+
+```text
+python scripts\summarize_v3_capacity_table_audit.py --posterior-trials 64 --top 12 --format json > .tmp\codex\v3_capacity_table_audit_top12_latest.json
+```
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `--capacity-table-audit-json`；
+  - 新增 `capacity_table_audit_contract`；
+  - 从 `rows` / `semantic_matrix` 读取：
+    - `semantic_status_counts`；
+    - `residual_mode_counts`；
+    - `top_blocked_maps`；
+    - `top_semantic_matrix_cells`。
+  - `prior_stress_capacity_table_drift` gate focus 从 case taxonomy 扩展为：
+    - top cases；
+    - semantic status；
+    - residual modes；
+    - top maps。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract.capacity_table_audit_contract` 透传同一 digest；
+  - summary 输出 `capacity_table_status`、`capacity_table_semantic_status`、`capacity_table_residual_modes`、`capacity_table_top_maps`。
+- 更新 readiness/workbench 测试，覆盖 capacity table semantic residual focus。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_table_cse_focus tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_capacity_table_audit.py tests/test_build_v3_capacity_source_expansion_shadow.py tests/test_summarize_v3_settlement_source_semantics_audit.py tests/test_summarize_v3_scp_guarded_bridge_stability.py
+43 passed
+```
+
+真实 readiness/workbench smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_top12_latest.json --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --live-practical-brief-json .tmp\codex\v3_practical_guard_brief_policy_matrix_latest.json --shadow-sampler-prototype-json .tmp\codex\v3_shadow_sampler_prototype_full_guard_trial_latest.json --shadow-sampler-guard-trial-json .tmp\codex\v3_shadow_sampler_guard_trial_full_latest.json --shadow-sampler-value-source-profile-json .tmp\codex\v3_shadow_sampler_q6_value_source_profile_audit_latest.json --shadow-sampler-value-map-profile-details-json .tmp\codex\v3_shadow_sampler_q6_value_map_profile_details_latest.json --shadow-sampler-value-profile-guardability-json .tmp\codex\v3_shadow_sampler_q6_value_profile_guardability_latest.json --format summary
+```
+
+关键结果：
+
+```text
+capacity_table_audit_contract=watch
+capacity_table_semantic_status=blocked_round_cap_overflow_after_temp:14,blocked_drop_ref_overflow_after_temp:12,watch_activity_extras_explain_drop_ref_gap:2
+capacity_table_residual_modes=round_cap_overflow:14,drop_ref_only_overflow:12,within_drop_ref:2
+capacity_table_top_maps=2601,2501,2503,2506,2401
+```
+
+gate dependency focus：
+
+```text
+detail_rows=94;capacity_flag_hits=107;top_cases=target_lower_bound_truth_above_prior:31,direct_prior_max_conflict:29,no_capacity_prior_max_case:26;semantic_status=blocked_round_cap_overflow_after_temp:14,blocked_drop_ref_overflow_after_temp:12,watch_activity_extras_explain_drop_ref_gap:2;residual_modes=round_cap_overflow:14,drop_ref_only_overflow:12,within_drop_ref:2;top_maps=2601,2501,2503
+```
+
+top blocked maps 示例：
+
+```text
+2601 -> rows=8, semantic_status=blocked_round_cap_overflow_after_temp, residual_modes=drop_ref_only_overflow:3,round_cap_overflow:1, truth_prior_max_delta_max=21
+2501 -> rows=6, semantic_status=blocked_round_cap_overflow_after_temp, residual_modes=drop_ref_only_overflow:1,round_cap_overflow:1, truth_prior_max_delta_max=16
+2503 -> rows=4, semantic_status=blocked_round_cap_overflow_after_temp, residual_modes=drop_ref_only_overflow:1,round_cap_overflow:1, truth_prior_max_delta_max=13
+```
+
+结论：
+
+- `prior_stress_capacity_table_drift` 仍 blocked；
+- blocker 现在不再只显示 top cases，而是能直接指向 residual mode 与 top map；
+- `2601/2501/2503/2506/2401` 是下一轮 source parser/table acquisition 或 semantic residual holdout 的优先复核对象；
+- 这些信息仍只用于 audit/readiness/workbench，不改变 live/UI、正式出价、v2 fallback 或 promotion gate。
+
+### 2026-06-08 checkpoint：capacity table file-level residual details 可复核输出
+
+本轮收口内容：
+
+- `scripts/summarize_v3_capacity_table_audit.py`
+  - 新增 `--details N`；
+  - 在 JSON 顶层输出 `detail_rows`；
+  - summary 输出 `detail_rows=...`；
+  - 每条 detail 暴露 file/map/source/residual/semantic/status/message/capacity delta：
+    - `file` / `file_ref`；
+    - `map_id` / `map_family` / `capture_day`；
+    - `total_count_source` / `truth_item_count` / `prior_items_per_session_max`；
+    - `residual_mode` / `semantic_status`；
+    - `latest_message_id`；
+    - `known_temp_zodiac_count`；
+    - `drop_ref_excess_after_temp_zodiac_count`；
+    - `round_cap_excess_after_temp_zodiac_count`；
+    - `non_zodiac_missing_from_drop_universe_count`；
+    - `full_observed_action_ids` / `public_total_count_values`。
+- `tests/test_summarize_v3_capacity_table_audit.py`
+  - 覆盖 `raw_detail_rows`；
+  - 覆盖顶层 `_collect_capacity_detail_rows()`；
+  - 覆盖 detail summary formatter 的 residual 输出。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_capacity_table_audit.py tests\test_summarize_v3_capacity_table_audit.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_capacity_table_details tests/test_summarize_v3_capacity_table_audit.py
+6 passed
+
+python -m pytest --basetemp=.tmp\codex\pytest_capacity_table_details_broad tests/test_summarize_v3_capacity_table_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+33 passed
+```
+
+真实样本 smoke：
+
+```text
+python scripts\summarize_v3_capacity_table_audit.py --posterior-trials 64 --top 12 --details 8 --format summary
+
+python scripts\summarize_v3_capacity_table_audit.py --posterior-trials 64 --top 12 --details 20 --format json > .tmp\codex\v3_capacity_table_audit_details_latest.json
+```
+
+关键结果：
+
+```text
+groups=10
+detail_rows=20
+semantic=blocked_drop_ref_overflow_after_temp:12,blocked_round_cap_overflow_after_temp:14,watch_activity_extras_explain_drop_ref_gap:2
+residual=drop_ref_only_overflow:12,round_cap_overflow:14,within_drop_ref:2
+top_detail=2601:fatbeans_valid_aisha_2601_3rounds_2601_1295018740835056_0215.json:round_cap_overflow:blocked_round_cap_overflow_after_temp
+```
+
+结论：
+
+- capacity/table blocker 仍未解除；
+- `--details` 让 blocker 从 map-level digest 下钻到 file-level residual evidence；
+- 下一步可以直接按 detail 行复核 source parser/table acquisition、per-session table version 或 external overlay table，而不是继续在 formal/value sampler 参数上循环；
+- v3 改动仍限定在 audit/readiness/workbench，未改变 live/UI、正式出价、v2 fallback 或 promotion gate。
+
+### 2026-06-08 checkpoint：capacity table detail summary 进入 readiness/workbench
+
+本轮收口内容：
+
+- `scripts/summarize_v3_capacity_table_audit.py`
+  - 新增顶层 `detail_summary`；
+  - 对 `detail_rows` 按 `file_ref/map_id/residual_mode/semantic_status` 去重；
+  - 输出：
+    - `mechanism_candidate_counts`；
+    - `next_check_counts`；
+    - `source_signal_counts`；
+    - `map_counts`；
+    - `top_examples`。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - `capacity_table_audit_contract` 透传：
+    - `detail_mechanism_candidate_counts`；
+    - `detail_next_check_counts`；
+    - `detail_source_signal_counts`；
+    - `detail_unique_file_map_residual_rows`；
+    - `top_detail_examples`。
+  - `prior_stress_capacity_table_drift` gate dependency focus 增加 `detail_mechanisms` 与 `detail_next_checks`。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract.capacity_table_audit_contract` 透传同一 detail summary；
+  - summary 输出 capacity-table detail mechanisms 与 next-checks。
+- 更新 focused tests，覆盖 detail 去重、readiness contract 与 workbench sampler contract 透传。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_capacity_table_audit.py scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_capacity_table_audit.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_capacity_detail_contract tests/test_summarize_v3_capacity_table_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+34 passed
+```
+
+真实样本 smoke：
+
+```text
+python scripts\summarize_v3_capacity_table_audit.py --posterior-trials 64 --top 12 --details 40 --format json > .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json
+
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --format summary
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_capacity_detail_summary_latest.json --format summary
+```
+
+关键结果：
+
+```text
+detail_summary rows=29 unique=15 unique_files=15
+mechanisms=activity_extras_candidate:1,drop_ref_candidate_gap:8,round_cap_candidate_gap:6
+next_checks=check_drop_ref_source_semantics_or_activity_overlay:8,check_per_session_table_version_or_external_overlay:6,verify_activity_extras_table:1
+source_signals=has_full_action/has_public_total:1,has_full_action/no_public_total:7,no_full_action/has_public_total:1,no_full_action/no_public_total:6
+maps=2401:1,2404:1,2406:1,2408:1,2501:2,2502:1,2503:2,2506:1,2509:1,2601:4
+```
+
+readiness/workbench 结论：
+
+```text
+capacity_table_detail_mechanisms=drop_ref_candidate_gap:8,round_cap_candidate_gap:6,activity_extras_candidate:1
+capacity_table_detail_next_checks=check_drop_ref_source_semantics_or_activity_overlay:8,check_per_session_table_version_or_external_overlay:6,verify_activity_extras_table:1
+shadow_sampler_contract status=shadow_design_only ... capacity_table_detail_next_checks=...
+```
+
+结论：
+
+- capacity/table blocker 仍未解除；
+- 当前最小下一步清单已经收敛为 15 个唯一 file-level 复核点；
+- 其中 8 个优先查 drop-ref source semantics/activity overlay，6 个优先查 per-session table version 或 external overlay table，1 个复核 activity extras table；
+- sampler 仍只能进入 shadow-design/audit-only，不得把这些 detail summary 用作 formal/live 参数调优依据。
+
+### 2026-06-08 checkpoint：capacity table acquisition audit 固化 source/table 获取路径
+
+本轮收口内容：
+
+- 新增 `scripts/summarize_v3_capacity_table_acquisition_audit.py`
+  - 消费 `capacity_table_audit` JSON 的 `detail_rows`；
+  - 按 `file_ref/map_id/residual_mode/semantic_status` 去重；
+  - 连接 map-level raw BidMap/Drop context；
+  - 读取 CSE artifact 的 `table_overlay_metadata`；
+  - 输出 `acquisition_route_counts`、`source_strength_counts`、`top_examples`。
+- 新增 `tests/test_summarize_v3_capacity_table_acquisition_audit.py`
+  - 覆盖 detail 去重；
+  - 覆盖 round-cap/table-version route；
+  - 覆盖 drop-ref payload-only/source semantics route；
+  - 覆盖 missing activity overlay route。
+
+验证：
+
+```text
+python -m pytest --basetemp=.tmp\codex\pytest_capacity_table_acquisition tests/test_summarize_v3_capacity_table_acquisition_audit.py
+2 passed
+
+python -m pytest --basetemp=.tmp\codex\pytest_capacity_table_acquisition_broad tests/test_summarize_v3_capacity_table_acquisition_audit.py tests/test_summarize_v3_capacity_table_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+36 passed
+
+python -m py_compile scripts\summarize_v3_capacity_table_acquisition_audit.py tests\test_summarize_v3_capacity_table_acquisition_audit.py
+```
+
+真实样本 smoke：
+
+```text
+python scripts\summarize_v3_capacity_table_acquisition_audit.py --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --format summary
+
+python scripts\summarize_v3_capacity_table_acquisition_audit.py --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --format json > .tmp\codex\v3_capacity_table_acquisition_audit_latest.json
+```
+
+关键结果：
+
+```text
+status=blocked_acquisition_required
+unique_detail_rows=15
+overlay=v300_activity_listed_missing_locally
+routes=table_version_or_external_overlay_required:6,drop_ref_overlay_or_source_semantics_required:4,payload_only_drop_ref_source_semantics_required:4,missing_activity_table_overlay_required:1
+sources=full_action_confirmed:7,payload_only_or_unconfirmed:6,public_total_confirmed:2
+maps=2401:1,2404:1,2406:1,2408:1,2501:2,2502:1,2503:2,2506:1,2509:1,2601:4
+```
+
+结论：
+
+- capacity/table blocker 仍未解除；
+- 当前 15 个唯一 file-level blocker 已分成可执行 acquisition 路径：
+  - 6 个 `table_version_or_external_overlay_required`；
+  - 4 个 `drop_ref_overlay_or_source_semantics_required`；
+  - 4 个 `payload_only_drop_ref_source_semantics_required`；
+  - 1 个 `missing_activity_table_overlay_required`。
+- CSE artifact 已证明 v300 filelist 里列出 `Tables/Activity.txt`，但本地 `data/raw/tables/Activity.txt` 缺失；
+- 下一步应优先获取或解析 Activity/overlay/table-version 线索，并对 payload-only drop-ref rows 做 source parser，而不是调 formal/value sampler 参数。
+
+### 2026-06-08 checkpoint：capacity acquisition contract 接入 readiness/workbench
+
+本轮收口内容：
+
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增 `--capacity-table-acquisition-json`；
+  - 新增 `capacity_table_acquisition_contract`；
+  - 将 acquisition route/source/overlay digest 挂入：
+    - `prior_stress_capacity_table_drift` gate；
+    - `prior_stress_detail_summary`；
+    - 顶层 readiness result；
+    - gate dependency focus。
+  - summary 输出：
+    - `capacity_table_acquisition_contract`；
+    - `capacity_table_acquisition_routes`；
+    - `capacity_table_acquisition_sources`；
+    - `capacity_table_overlay`。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract.capacity_table_acquisition_contract` 透传 acquisition digest；
+  - summary 输出同一 routes/source/overlay 状态。
+- 更新 focused tests，覆盖 readiness gate/focus 与 workbench sampler contract 透传。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_capacity_acquisition_contract tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py tests/test_summarize_v3_capacity_table_acquisition_audit.py
+29 passed
+
+python -m pytest --basetemp=.tmp\codex\pytest_capacity_acquisition_contract_broad tests/test_summarize_v3_capacity_table_acquisition_audit.py tests/test_summarize_v3_capacity_table_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+36 passed
+```
+
+真实 readiness/workbench smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --capacity-table-acquisition-json .tmp\codex\v3_capacity_table_acquisition_audit_latest.json --format summary
+
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --capacity-table-acquisition-json .tmp\codex\v3_capacity_table_acquisition_audit_latest.json --format json > .tmp\codex\v3_readiness_capacity_acquisition_latest.json
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_capacity_acquisition_latest.json --format summary
+```
+
+关键结果：
+
+```text
+capacity_table_acquisition_contract=blocked
+capacity_table_acquisition_routes=table_version_or_external_overlay_required:6,drop_ref_overlay_or_source_semantics_required:4,payload_only_drop_ref_source_semantics_required:4,missing_activity_table_overlay_required:1
+capacity_table_acquisition_sources=full_action_confirmed:7,payload_only_or_unconfirmed:6,public_total_confirmed:2
+capacity_table_overlay=v300_activity_listed_missing_locally
+shadow_sampler_contract status=shadow_design_only ... capacity_table_acquisition_status=blocked ...
+```
+
+结论：
+
+- acquisition artifact 已进入 promotion readiness/workbench；
+- `prior_stress_capacity_table_drift` 仍 blocked；
+- `shadow_sampler_contract` 仍 `shadow_design_only`；
+- 下一步仍是 table/source acquisition 或 source parser，不得恢复 formal/value sampler 参数调优；
+- live/UI、正式出价、v2 fallback、promotion gate 均未改变。
+
+### 2026-06-08 checkpoint：capacity acquisition 使用当前 v303 table overlay 元数据纠偏
+
+本轮收口内容：
+
+- `scripts/summarize_v3_capacity_table_acquisition_audit.py`
+  - 不再只信 CSE artifact 内的历史 `table_overlay_metadata`；
+  - 新增 current raw table overlay metadata 读取：
+    - `data/raw/fileVersion`；
+    - `data/raw/tables/fileVersion`；
+    - root/tables `filelist.txt` header；
+    - `data/raw/tables/Activity.txt` 是否存在；
+    - `Activity.txt` 是否可解码、行数、列数、前几个 activity id。
+  - 输出：
+    - `table_overlay_metadata` / `current_table_overlay_metadata`；
+    - `artifact_table_overlay_metadata`；
+    - `table_overlay_metadata_stale`；
+    - `table_overlay_metadata_delta`。
+  - acquisition route 改用当前 table overlay metadata 判断 Activity 是否仍缺失。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - `capacity_table_acquisition_contract` 透传 current/artifact/stale/delta；
+  - 缺表状态兼容旧 `v300_activity_listed_missing_locally` 与当前 `activity_listed_missing_locally`；
+  - stale artifact 作为 contract blocker reason 展示，但不新增 promotion gate。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract.capacity_table_acquisition_contract` 透传 current/artifact/stale/delta；
+  - summary 新增 `capacity_table_artifact_overlay` 与 `capacity_table_metadata_stale`。
+- 更新 focused tests，覆盖：
+  - stale CSE artifact；
+  - current Activity table available；
+  - readiness/workbench contract 透传。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_capacity_table_acquisition_audit.py scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_capacity_table_acquisition_audit.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_capacity_acquisition_current_overlay tests/test_summarize_v3_capacity_table_acquisition_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+30 passed
+```
+
+真实 acquisition smoke：
+
+```text
+python scripts\summarize_v3_capacity_table_acquisition_audit.py --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --format summary
+```
+
+关键结果：
+
+```text
+status=blocked_acquisition_required
+detail_rows=29
+unique_detail_rows=15
+overlay_status=activity_table_available_locally
+artifact_overlay_status=v300_activity_listed_missing_locally
+metadata_stale=True
+activity_table_present=True
+activity_parse=ok
+activity_rows=6
+activity_cols=16
+routes=table_version_or_external_overlay_required:6,drop_ref_overlay_or_source_semantics_required:4,payload_only_drop_ref_source_semantics_required:4,activity_extras_table_verification_required:1
+source_strength=full_action_confirmed:7,payload_only_or_unconfirmed:6,public_total_confirmed:2
+maps=2601:4,2501:2,2503:2,2401:1,2404:1,2406:1,2408:1,2502:1,2506:1,2509:1
+```
+
+真实 readiness/workbench smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --capacity-table-acquisition-json .tmp\codex\v3_capacity_table_acquisition_audit_latest.json --format summary
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_capacity_acquisition_latest.json --format summary
+```
+
+关键结果：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+capacity_table_acquisition_contract=blocked
+capacity_table_acquisition_routes=table_version_or_external_overlay_required:6,drop_ref_overlay_or_source_semantics_required:4,payload_only_drop_ref_source_semantics_required:4,activity_extras_table_verification_required:1
+capacity_table_overlay=activity_table_available_locally
+
+shadow_sampler_contract status=shadow_design_only
+capacity_table_acquisition_status=blocked
+capacity_table_overlay=activity_table_available_locally
+capacity_table_artifact_overlay=v300_activity_listed_missing_locally
+capacity_table_metadata_stale=True
+```
+
+结论：
+
+- 旧 CSE artifact 的 `v300_activity_listed_missing_locally` 已过期；当前 raw/table version 为 v303，`Activity.txt` 本地存在且可解码；
+- 该纠偏只移除了“Activity 表缺失”作为当前 blocker，不解除 capacity/table blocker；
+- 15 个唯一 file-level blocker 当前收口为：
+  - 6 个 `table_version_or_external_overlay_required`；
+  - 4 个 `drop_ref_overlay_or_source_semantics_required`；
+  - 4 个 `payload_only_drop_ref_source_semantics_required`；
+  - 1 个 `activity_extras_table_verification_required`。
+- 这说明下一步应继续查 per-session table version、external overlay table、drop-ref source semantics 或 payload-only source parser；
+- 不得据此恢复 formal/value sampler 参数调优；
+- v3 仍 audit-only；live/UI、正式出价、v2 fallback、promotion gate 均未改变。
+
+### 2026-06-08 checkpoint: v3 practical guard case summary 接入 readiness/workbench
+
+目标：
+
+- 统一 v3 practical guarded/unguarded/v2 archive-live 评估口径时，不只看平均 delta；
+- 增加 case-level guard 诊断，直接回答 guard 在 paired rows 上是改善、变差、丢覆盖还是新增 extreme-over；
+- 保持该证据 watch-only，不放宽 promotion gate。
+
+变更：
+
+- `scripts/summarize_live_windivert_brief.py`
+  - group stats 新增 `v3_practical_guard_case_summary`；
+  - 按 paired guarded/unguarded rows 汇总：
+    - P50 abs-error improved/worsened/unchanged；
+    - P90 coverage gained/lost/unchanged；
+    - P90 extreme-over reduced/added/unchanged；
+    - top P50 hurts、top P90 coverage losses、top P90 extreme-over added examples。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - `v3_practical_archive_live_guard_metrics` contract 必须携带 case summary；
+  - case summary rows 必须覆盖 paired comparison rows；
+  - summary 输出 guard case rows、P50 worsened rows、P90 coverage lost rows 与 P90 extreme-over added rows。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_live_windivert_brief.py scripts\summarize_v3_promotion_readiness.py tests\test_summarize_live_windivert_brief.py tests\test_summarize_v3_promotion_readiness.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_practical_guard_case_summary tests/test_summarize_live_windivert_brief.py tests/test_summarize_v3_promotion_readiness.py
+30 passed
+```
+
+真实 72h archive smoke：
+
+```text
+python scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-formal-mode v3_practical --archive-window prebid --format json > .tmp\codex\v3_practical_guard_case_brief_latest.json
+```
+
+关键结果：
+
+```text
+total_rows=90
+formal_rows=64
+paired_rows=49
+policy_rows=49
+case_rows=49
+p50_worsened_rows=0
+p90_coverage_lost_rows=17
+p90_extreme_over_added_rows=0
+```
+
+真实 readiness/workbench smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --live-practical-brief-json .tmp\codex\v3_practical_guard_case_brief_latest.json --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --capacity-table-acquisition-json .tmp\codex\v3_capacity_table_acquisition_audit_latest.json --format summary
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_practical_guard_case_latest.json --format summary
+```
+
+关键结果：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+v3_practical_guard_status=watch
+v3_practical_guard_comparison_rows=49
+v3_practical_guard_case_rows=49
+v3_practical_guard_p50_worsened_rows=0
+v3_practical_guard_p90_coverage_lost_rows=17
+v3_practical_guard_p90_extreme_over_added_rows=0
+
+lane=archive_live_guard_metrics verdict=watch_only
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract status=shadow_design_only
+```
+
+结论：
+
+- 当前 guard case 证据支持“guard 没有在 paired rows 上造成 P50 abs-error 变差，也没有新增 P90 extreme-over”；
+- 但 guard 使 17 条 paired rows 丢失 P90 coverage，仍必须作为 coverage tradeoff 继续按 slice 审计；
+- 该 checkpoint 只增强 readiness/brief 的诊断合同，不证明 v3 ready；
+- v3 practical guarded 路径保持稳定，v2 fallback、live/UI 与正式出价路径未在本 checkpoint 中修改；
+- 下一步仍应继续收口 prior/activity/table drift 与 CSE/SCP settlement bridge 稳定性，再恢复 shadow-only sampler 原型设计。
+
+### 2026-06-08 checkpoint: guard coverage loss map slice 与 SCP stability artifact 接入
+
+目标：
+
+- 继续收口 v3 practical guard 的 coverage tradeoff，不把 17 条 P90 coverage loss 停留在整体数字；
+- 将既有 SCP guarded bridge stability artifact 接入同一 readiness/workbench smoke，区分“未提供证据”和“证据明确阻断”。
+
+变更：
+
+- `scripts/summarize_live_windivert_brief.py`
+  - JSON summary 新增 `by_map_id` 与 `by_map_family`；
+  - `--detail-groups` 文本输出新增 map_id/map_family group；
+  - group CSV 追加：
+    - `v3_practical_guard_p50_worsened_rows`；
+    - `v3_practical_guard_p90_coverage_lost_rows`；
+    - `v3_practical_guard_p90_extreme_over_added_rows`。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - `v3_practical_archive_live_guard_metrics` 透传 `by_map_id` 与 `by_map_family`；
+  - 这两个 slice 仅作为 audit detail，不参与 contract pass/block，不放宽 promotion gate。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_live_windivert_brief.py scripts\summarize_v3_promotion_readiness.py tests\test_summarize_live_windivert_brief.py tests\test_summarize_v3_promotion_readiness.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_guard_map_slice_readiness tests/test_summarize_live_windivert_brief.py tests/test_summarize_v3_promotion_readiness.py
+30 passed
+```
+
+真实 72h archive guard slice：
+
+```text
+python scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-formal-mode v3_practical --archive-window prebid --format json > .tmp\codex\v3_practical_guard_map_case_brief_latest.json
+```
+
+关键结果：
+
+```text
+overall guard cases=49
+p90_coverage_lost_rows=17
+p50_worsened_rows=0
+p90_extreme_over_added_rows=0
+
+by_map_id:
+2410 lost=8/paired=8
+2524 lost=4/paired=4
+2401 lost=3/paired=13
+2406 lost=1/paired=7
+2407 lost=1/paired=8
+
+by_map_family:
+villa lost=13/paired=45
+shipwreck lost=4/paired=4
+```
+
+真实 readiness/workbench smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --live-practical-brief-json .tmp\codex\v3_practical_guard_map_case_brief_latest.json --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --capacity-table-acquisition-json .tmp\codex\v3_capacity_table_acquisition_audit_latest.json --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --format json > .tmp\codex\v3_readiness_guard_map_case_scp_stability_latest.json
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_guard_map_case_scp_stability_latest.json --format summary
+```
+
+关键结果：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+v3_practical_guard_status=watch
+settlement_count_guarded_bridge_stability=blocked_applied_hurt
+posterior_trials=64
+posterior_seeds=0,1,7
+stable_selected_groups=2506
+selected_group_instability=2501:blocked_train_holdout_instability,2506:blocked_support_depth_gap
+lane=settlement_bridge_support verdict=stop_loss
+```
+
+结论：
+
+- v3 practical guard 的 17 条 P90 coverage loss 全部来自 q6>0/p90_under 场景；
+- loss 不是随机分散：2410 与 2524 是最集中来源，其中 2524 shipwreck 为 4/4；
+- guard 仍没有造成 paired P50 worse，也没有新增 P90 extreme-over；
+- 因此当前 guard 是 risk-reduction/watch-only 支撑，不能作为 promotion readiness；
+- SCP guarded bridge stability 已有证据，但证据结论是 blocked，不是缺 artifact；
+- settlement bridge 输入继续冻结为 sampler risk flags，不得进入 formal/value sampler promotion；
+- 下一步优先检查 2410/2524/2401 的 coverage-loss source context，并继续收口 capacity/table/source semantics 与 SCP support-depth/holdout instability。
+
+### 2026-06-08 checkpoint: guard coverage loss source-context 审计
+
+目标：
+
+- 解释 17 条 P90 coverage loss 不是只停留在 map slice；
+- 按 guard kind、guard flags、evidence_profile 与 P90 压缩幅度复核 source context；
+- 判断是否可以调 guard，或必须回到 CSE/SCP/source semantics。
+
+变更：
+
+- `scripts/summarize_live_windivert_brief.py`
+  - `v3_practical_guard_case_summary` 新增 `p90_coverage_loss_context`；
+  - context 包含：
+    - `by_guard_kind`；
+    - `by_guard_flag`；
+    - `by_evidence_profile`；
+    - `median_guarded_p90_shortfall`；
+    - `median_unguarded_p90_excess`；
+    - `median_p90_guard_cut`。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 继续透传完整 `v3_practical_guard_case_summary`；
+  - context 只作为 audit evidence，不参与 promotion gate。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_live_windivert_brief.py tests\test_summarize_live_windivert_brief.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_guard_loss_context tests/test_summarize_live_windivert_brief.py
+11 passed
+```
+
+真实 72h archive context：
+
+```text
+python scripts\summarize_live_windivert_brief.py --since-hours 72 --archive-formal-mode v3_practical --archive-window prebid --format json > .tmp\codex\v3_practical_guard_loss_context_brief_latest.json
+
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --live-practical-brief-json .tmp\codex\v3_practical_guard_loss_context_brief_latest.json --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --capacity-table-acquisition-json .tmp\codex\v3_capacity_table_acquisition_audit_latest.json --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --format json > .tmp\codex\v3_readiness_guard_loss_context_scp_stability_latest.json
+```
+
+关键结果：
+
+```text
+overall p90_coverage_loss_context rows=17
+by_guard_kind=live_prior_only_raise_guard:17
+by_guard_flag=q6_prior_floor_watch:17,settlement_count_prior_candidate:16,capacity_source_candidate:12,q6_prior_tail_ceiling:3
+by_evidence_profile=shape+layout:9,basic:4,public:max_item_cells+layout:3,public:random_avg+shape+layout:1
+median_guarded_p90_shortfall=158113
+median_unguarded_p90_excess=185569
+median_p90_guard_cut=214694
+
+map_2410 flags=capacity_source_candidate:8,q6_prior_floor_watch:8,settlement_count_prior_candidate:8
+map_2524 flags=capacity_source_candidate:4,q6_prior_floor_watch:4,settlement_count_prior_candidate:4
+map_2401 flags=q6_prior_floor_watch:3,q6_prior_tail_ceiling:3,settlement_count_prior_candidate:3
+```
+
+真实 workbench 结论仍不变：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+lane=archive_live_guard_metrics verdict=watch_only
+lane=settlement_bridge_support verdict=stop_loss
+lane=table_activity_capacity verdict=stop_loss
+```
+
+结论：
+
+- 17 条 coverage loss 全部是 `live_prior_only_raise_guard` 压低 P90；
+- coverage loss 与 `q6_prior_floor_watch`、`settlement_count_prior_candidate`、`capacity_source_candidate` 高度重叠；
+- 这说明当前问题不是简单 guard 参数过紧，而是 CSE/SCP/source semantics 未稳定时 guard 在压制高风险 raise；
+- 不能据此放宽 guard、恢复 sampler 调参或接入 formal promotion；
+- 下一步应优先查 2410/2524/2401 的 CSE source semantics、settlement bridge truth/source split 与 table/capacity blocker 交集。
+
+### 2026-06-08 checkpoint: guard loss 与 CSE/source/capacity map-level 交叉审计
+
+目标：
+
+- 把 coverage-loss source-context 继续推进到可复核的 map-level blocker；
+- 交叉读取 v3 practical guard loss、settlement source semantics detail、CSE shadow entry、capacity table detail 与 acquisition examples；
+- 明确哪些 map 是 CSE/source semantics blocker，哪些是 activity/drop-universe/table acquisition blocker，哪些只是 watch 型 source-context 交集。
+
+变更：
+
+- 新增 `scripts/summarize_v3_practical_guard_loss_source_context.py`
+  - 输入：
+    - readiness/brief guard metrics；
+    - `v3_settlement_source_semantics_details_latest.json`；
+    - `data/processed/v3_capacity_source_expansion_shadow.json`；
+    - capacity table detail summary；
+    - capacity acquisition artifact。
+  - 输出每个 focus map 的：
+    - guard loss rows/context；
+    - exact map CSE entry 与 family CSE entry；
+    - source semantics mechanism/source-context/source-evidence/residual counts；
+    - capacity table semantic/residual counts；
+    - acquisition route/next-check/source-strength counts；
+    - map-level status 与 reasons。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增可选 `--guard-loss-source-context-json`；
+  - 透传 `v3_practical_guard_loss_source_context_contract` 与 artifact；
+  - summary 输出 `guard_loss_source_context_*`；
+  - 不新增 gate、不改变 blocked gate count。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract.guard_loss_source_context_contract` 透传该 audit；
+  - summary 输出 guard-loss source-context status；
+  - sampler contract 仍固定 shadow-only。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_practical_guard_loss_source_context.py scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_practical_guard_loss_source_context.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_guard_loss_source_context_readiness tests/test_summarize_v3_practical_guard_loss_source_context.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+28 passed
+```
+
+真实交叉审计：
+
+```text
+python scripts\summarize_v3_practical_guard_loss_source_context.py --readiness-json .tmp\codex\v3_readiness_guard_loss_context_scp_stability_latest.json --source-semantics-json .tmp\codex\v3_settlement_source_semantics_details_latest.json --capacity-source-expansion-json data\processed\v3_capacity_source_expansion_shadow.json --capacity-table-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --capacity-acquisition-json .tmp\codex\v3_capacity_table_acquisition_audit_latest.json --format json > .tmp\codex\v3_guard_loss_source_context_latest.json
+
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --live-practical-brief-json .tmp\codex\v3_practical_guard_loss_context_brief_latest.json --guard-loss-source-context-json .tmp\codex\v3_guard_loss_source_context_latest.json --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --capacity-table-acquisition-json .tmp\codex\v3_capacity_table_acquisition_audit_latest.json --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --format json > .tmp\codex\v3_readiness_guard_loss_source_context_latest.json
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_guard_loss_source_context_latest.json --format summary
+```
+
+关键结果：
+
+```text
+guard_loss_source_context audit=blocked_source_semantics_required
+maps=5
+guard_loss_rows=17
+status_counts=watch_source_context_intersection:3,blocked_cse_source_semantics_intersection:1,blocked_drop_universe_or_activity_overlay:1
+
+map=2410 status=blocked_cse_source_semantics_intersection
+  loss=8/8
+  cse_status=watch_capacity_source_expansion_shadow_only
+  cse_mechanisms=not_unique_round_cap_blocker:18,session_capacity_source_semantics:1
+  source_mechanisms=not_unique_round_cap_blocker:1,session_capacity_source_semantics:1
+  reasons=cse_exact_session_capacity_source_semantics,source_semantics_unique_round_overflow,source_semantics_drop_ref_only_overflow
+
+map=2524 status=blocked_drop_universe_or_activity_overlay
+  loss=4/4
+  cse_status=blocked_drop_universe_gap_shadow_only
+  cse_gate=non_zodiac_drop_universe_gap
+  reasons=cse_exact_drop_universe_gap,cse_non_zodiac_drop_universe_gap
+
+map=2401 status=watch_source_context_intersection
+  loss=3/13
+  capacity_semantic=watch_activity_extras_explain_drop_ref_gap:2
+  acquisition_routes=activity_extras_table_verification_required:1
+
+map=2406 status=watch_source_context_intersection
+  loss=1/7
+  capacity_semantic=blocked_drop_ref_overflow_after_temp:1
+  acquisition_routes=payload_only_drop_ref_source_semantics_required:1
+
+map=2407 status=watch_source_context_intersection
+  loss=1/8
+  source_mechanisms=not_unique_round_cap_blocker:1
+```
+
+readiness/workbench 结论：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+guard_loss_source_context=watch
+guard_loss_source_context_audit=blocked_source_semantics_required
+lane=settlement_bridge_support verdict=stop_loss
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract status=shadow_design_only
+```
+
+结论：
+
+- 2410 是当前最强 CSE/session-capacity/source-semantics 交叉 blocker；
+- 2524 是 activity/drop-universe overlay blocker，不能用旧沉船 source-semantics 明细解释；
+- 2401/2406/2407 是 watch 型 source/capacity 交集，仍不能作为 guard 调参依据；
+- 该交叉审计把 sampler 输入进一步限制为 risk flags：CSE/SCP/capacity evidence 仍不得进入 formal/value sampler promotion；
+- 下一步优先处理：
+  - 2410：source-semantics unique round overflow 与 drop-ref-only overflow 的 source parser；
+  - 2524：activity/drop-universe overlay 或 activity source parser；
+  - 2401/2406：activity extras/drop-ref source semantics acquisition。
+
+### 2026-06-08 checkpoint: 2524 activity mapping 接入 guard-loss source-context
+
+目标：
+
+- 对上一 checkpoint 的 `2524 blocked_drop_universe_or_activity_overlay` 继续下钻；
+- 判断 2524 是否可以用单一旧沉船映射解释，还是仍需要 activity/drop-universe overlay 或 source parser；
+- 保持该证据 audit-only，不接 live/formal、不调 guard。
+
+变更：
+
+- `scripts/summarize_v3_practical_guard_loss_source_context.py`
+  - 新增可选 `--activity-mapping-json`，默认读取 `.tmp/codex/v3_activity_mapping_rankmap_latest.json`；
+  - 交叉输出 `activity_mapping`：
+    - map-level `winner_counts` / `item_winner_counts`；
+    - candidate status / candidate map id / drop pool id；
+    - RankMap label/category profile；
+    - `missing_item_rate_max`；
+    - `watch_single_activity_mapping`、`watch_mixed_activity_mapping` 或 candidate blocked status；
+  - 修正 stdout/stderr 为 UTF-8，避免包含中文 RankMap label 时重定向 JSON 变成非 UTF-8。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_practical_guard_loss_source_context.py tests\test_summarize_v3_practical_guard_loss_source_context.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_guard_loss_activity_mapping tests/test_summarize_v3_practical_guard_loss_source_context.py
+1 passed
+```
+
+真实 2524 activity mapping 结果：
+
+```text
+map=2524
+status=blocked_drop_universe_or_activity_overlay
+reasons=cse_exact_drop_universe_gap,cse_non_zodiac_drop_universe_gap,activity_mapping_mixed_winner
+activity_mapping=watch_mixed_activity_mapping
+files=3
+candidate_status_counts=ok:6
+candidate_map_ids=2504:3,2514:3
+drop_pool_ids=2504:3,2514:3
+winner_counts=minus10:2,minus20:1
+item_winner_counts=minus10:2,minus20:1
+missing_item_rate_max=0
+rankmap_labels=白色DOWN红色UP:3
+```
+
+readiness/workbench smoke：
+
+```text
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --live-practical-brief-json .tmp\codex\v3_practical_guard_loss_context_brief_latest.json --guard-loss-source-context-json .tmp\codex\v3_guard_loss_source_context_latest.json --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --capacity-table-acquisition-json .tmp\codex\v3_capacity_table_acquisition_audit_latest.json --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --format summary
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_guard_loss_source_context_latest.json --format summary
+```
+
+关键结果仍不变：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+guard_loss_source_context=watch
+guard_loss_source_context_audit=blocked_source_semantics_required
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract status=shadow_design_only
+```
+
+结论：
+
+- 2524 并非“旧沉船表完全不可用”：2504/2514 candidate 均 `ok` 且 missing item rate 为 0；
+- 但 3 个 2524 activity files 的 quality/item winner 为 `minus10:2,minus20:1`，说明不是稳定单一映射；
+- 因此 2524 仍是 activity/drop-universe overlay 或 activity source parser blocker；
+- 不得用 `2524 -> 2514` 或 `2524 -> 2504` 直接替换 live/formal/sampler table；
+- 下一步若继续 2524，应检查 RankMap activity category/value/round profile 是否能解释 mixed winner，或实现 activity source parser 的 shadow-only 证据。
+
+### 2026-06-08 checkpoint: guard-loss source-context 增加 examples/next_checks
+
+目标：
+
+- 把 guard-loss source-context 从 map-level 分类推进到可复核样本与后续最小检查；
+- 让 2410/2524/2401/2406/2407 的 blocker 后续可直接交给 source parser/table acquisition 继续；
+- 保持 artifact audit-only，不改变 readiness gate、不恢复 formal/value sampler 调参。
+
+变更：
+
+- `scripts/summarize_v3_practical_guard_loss_source_context.py`
+  - 每个 map row 新增 `next_checks`，把 `reasons`/capacity/acquisition/activity mapping 映射为后续检查；
+  - 每个 map row 新增 `evidence_examples`：
+    - `source_semantics`：file、source context/evidence、residual mode、round/drop excess、event action/public total 摘要；
+    - `capacity_table`：semantic status、residual mode、truth/prior/latest count 与 drop/round residual；
+    - `capacity_acquisition`：acquisition route、next_check、source strength/table context；
+    - `activity_mapping`：逐文件 best scheme、candidate map/drop pool、missing rate 与 likelihood per item；
+  - summary 输出追加 `next_checks=`，便于命令行直接看到后续路径。
+- `tests/test_summarize_v3_practical_guard_loss_source_context.py`
+  - 覆盖 2410 source parser next_check；
+  - 覆盖 2524 activity/drop-universe overlay next_check 与 mixed mapping file example；
+  - 覆盖 2401 activity extras/source semantics next_check 与 acquisition example。
+
+验证：
+
+```text
+python -m py_compile scripts/summarize_v3_practical_guard_loss_source_context.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_v3_guard_loss_source_context_examples tests/test_summarize_v3_practical_guard_loss_source_context.py
+1 passed
+
+python scripts\summarize_v3_practical_guard_loss_source_context.py --format json | Set-Content -Path .tmp\codex\v3_guard_loss_source_context_latest.json -Encoding UTF8
+
+python scripts\summarize_v3_promotion_readiness.py --posterior-trials 64 --live-practical-brief-json .tmp\codex\v3_practical_guard_loss_context_brief_latest.json --guard-loss-source-context-json .tmp\codex\v3_guard_loss_source_context_latest.json --capacity-table-audit-json .tmp\codex\v3_capacity_table_audit_detail_summary_latest.json --capacity-table-acquisition-json .tmp\codex\v3_capacity_table_acquisition_audit_latest.json --guarded-bridge-stability-json data\processed\v3_scp_guarded_bridge_stability_shadow.json --format summary
+
+python scripts\summarize_v3_promotion_workbench.py .tmp\codex\v3_readiness_guard_loss_source_context_latest.json --format summary
+```
+
+真实结果：
+
+```text
+guard_loss_source_context_audit=blocked_source_semantics_required
+guard_loss_source_context_maps=5
+guard_loss_source_context_rows=17
+status_counts=watch_source_context_intersection:3,blocked_cse_source_semantics_intersection:1,blocked_drop_universe_or_activity_overlay:1
+
+map=2410 next_checks=build_source_parser_for_session_capacity_or_round_cap_semantics,inspect_drop_ref_payload_source_semantics
+map=2524 next_checks=build_activity_drop_universe_overlay_or_activity_source_parser,treat_activity_mapping_as_reference_not_single_truth_table
+map=2401 next_checks=inspect_instance_round_source_semantics_detail,verify_activity_extras_table_against_current_raw_version,verify_activity_extras_table
+map=2406 next_checks=resolve_drop_ref_capacity_source_or_overlay,check_drop_ref_source_semantics_or_activity_overlay
+map=2407 next_checks=inspect_instance_round_source_semantics_detail
+
+overall_status=not_ready
+blocked_gates=13
+lane=settlement_bridge_support verdict=stop_loss
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract status=shadow_design_only
+```
+
+结论：
+
+- 2410 的下一步是 source parser/session-capacity/drop-ref semantics，而不是调 guard；
+- 2524 的下一步是 activity/drop-universe overlay 或 activity source parser，activity mapping 只能作为参考证据；
+- 2401/2406/2407 仍是 watch/intersection rows，需要 targeted source/table acquisition；
+- readiness/workbench 未放宽，v3 sampler 仍只能做 shadow-only design/audit。
+
+### 2026-06-08 checkpoint: activity/drop-universe overlay audit contract
+
+目标：
+
+- 把 2524 的 `build_activity_drop_universe_overlay_or_activity_source_parser` next_check 落成 audit-only artifact；
+- 区分“候选旧图/drop pool 覆盖观测 item universe”和“是否允许 hard-map/接 sampler”；
+- 将证据接入 readiness/workbench，但不新增 gate、不放宽 promotion。
+
+变更：
+
+- 新增 `scripts/summarize_v3_activity_drop_universe_overlay_audit.py`
+  - 输入 `.tmp/codex/v3_activity_mapping_rankmap_latest.json`；
+  - 可选读取 `.tmp/codex/v3_guard_loss_source_context_latest.json`；
+  - 默认只审计 activity mapping 中存在的 252x maps，避免把非 activity guard-loss maps 误计为 overlay blocker；
+  - 输出：
+    - `candidate_item_universe_covered_maps`；
+    - `guard_loss_overlap_maps`；
+    - `hard_map_blocked_maps`；
+    - per-map `status/reasons`；
+    - per-file candidate examples。
+- 新增 `tests/test_summarize_v3_activity_drop_universe_overlay_audit.py`
+  - 覆盖 2524 mixed winner + guard-loss overlap 时 `blocked_mixed_overlay_source_required`；
+  - 覆盖 single winner 仍只作为 `watch_overlay_reference_only`，不允许 hard-map。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增可选 `--activity-drop-universe-overlay-json`；
+  - 新增 `activity_drop_universe_overlay_contract` 与 artifact 透传；
+  - summary 输出 `activity_drop_overlay_*`；
+  - 不新增 gate，不改变 `blocked_gates`。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract` 透传 `activity_drop_universe_overlay_contract`；
+  - summary 输出 `activity_drop_overlay_*`。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_activity_drop_universe_overlay_audit.py scripts\summarize_v3_activity_mapping_likelihood.py scripts\summarize_v3_practical_guard_loss_source_context.py scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_activity_drop_universe_overlay_audit.py tests\test_summarize_v3_activity_mapping_likelihood.py tests\test_summarize_v3_practical_guard_loss_source_context.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_activity_overlay_combined tests/test_summarize_v3_activity_drop_universe_overlay_audit.py tests/test_summarize_v3_activity_mapping_likelihood.py tests/test_summarize_v3_practical_guard_loss_source_context.py tests/test_summarize_v3_capacity_table_acquisition_audit.py tests/test_summarize_live_windivert_brief.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+48 passed
+```
+
+真实 activity overlay 结果：
+
+```text
+status=blocked_activity_overlay_source_required
+maps=6
+files=15
+guard_overlap_maps=1
+covered_maps=6
+hard_map_blocked_maps=6
+status_counts=watch_overlay_reference_only:3,watch_mixed_overlay_reference_only:2,blocked_mixed_overlay_source_required:1
+
+map=2524
+status=blocked_mixed_overlay_source_required
+guard_status=blocked_drop_universe_or_activity_overlay
+loss=4/4
+winners=minus10:2,minus20:1
+item_winners=minus10:2,minus20:1
+candidate_maps=2504:3,2514:3
+drop_pools=2504:3,2514:3
+missing_item_rate_max=0.0
+reasons=guard_loss_drop_universe_overlap,candidate_item_universe_covered,activity_mapping_mixed_winner
+```
+
+readiness/workbench 结果：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+activity_drop_overlay=watch
+activity_drop_overlay_audit=blocked_activity_overlay_source_required
+activity_drop_overlay_maps=6
+activity_drop_overlay_guard_maps=1
+activity_drop_overlay_covered_maps=6
+activity_drop_overlay_hard_map_blocked=6
+activity_drop_overlay_statuses=watch_overlay_reference_only:3,watch_mixed_overlay_reference_only:2,blocked_mixed_overlay_source_required:1
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract status=shadow_design_only
+```
+
+结论：
+
+- 252x activity samples 的旧图/drop pool 对观测 item universe 有参考性：6 个 activity maps 全部 `missing_item_rate_max=0.0`；
+- 但 `2521/2524/2529` 出现 mixed winner，其中 2524 又与 guard-loss blocker 重叠；
+- 因此 activity overlay 不能 hard-map、不能接 sampler/formal/live，只能作为 source parser/table acquisition 的参考证据；
+- 当前仍不应恢复 formal/value sampler 参数调优。
+
+### 2026-06-08 checkpoint: 2410 source-parser requirements audit
+
+目标：
+
+- 把 2410 的 `build_source_parser_for_session_capacity_or_round_cap_semantics` next_check 落成 audit-only artifact；
+- 区分 session-capacity、drop-ref residual、activity extras 与 guard-loss overlap；
+- 将 parser requirement 接入 readiness/workbench，但不新增 gate、不放宽 promotion。
+
+变更：
+
+- 新增 `scripts/summarize_v3_source_parser_requirements_audit.py`
+  - 输入 source semantics detail JSON，默认优先读取 `.tmp/codex/v3_settlement_source_semantics_details_1000_latest.json`；
+  - 可选读取 guard-loss source-context、CSE artifact、payload-only source-shape artifact；
+  - 输出：
+    - per-map `status/reasons/requirements`；
+    - `source_semantics` residual/mechanism/context summary；
+    - `payload_only` numeric/item payload shape summary；
+    - source/payload evidence examples。
+- 新增 `tests/test_summarize_v3_source_parser_requirements_audit.py`
+  - 覆盖 2410 型 session-capacity + drop-ref + activity-extras 混合 blocker；
+  - 确认 artifact `shadow_only=True`、`affects_bid=False`。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - 新增可选 `--source-parser-requirements-json`；
+  - 新增 `source_parser_requirements_contract` 与 artifact 透传；
+  - summary 输出 `source_parser_*`；
+  - 不新增 gate，不改变 `blocked_gates`。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract` 透传 `source_parser_requirements_contract`；
+  - summary 输出 `source_parser_*`。
+
+验证：
+
+```text
+python -m py_compile scripts\summarize_v3_source_parser_requirements_audit.py scripts\summarize_v3_promotion_readiness.py scripts\summarize_v3_promotion_workbench.py tests\test_summarize_v3_source_parser_requirements_audit.py tests\test_summarize_v3_promotion_readiness.py tests\test_summarize_v3_promotion_workbench.py
+
+python -m pytest --basetemp=.tmp\codex\pytest_source_parser_readiness tests/test_summarize_v3_source_parser_requirements_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+28 passed
+```
+
+真实 source parser requirement 结果：
+
+```text
+status=blocked_source_parser_required
+maps=1
+blocked_maps=1
+guard_maps=1
+session_capacity_maps=1
+drop_ref_maps=1
+activity_extras_maps=1
+statuses=blocked_session_capacity_source_parser_required:1
+
+map=2410
+status=blocked_session_capacity_source_parser_required
+guard_loss=8/8
+source_rows=22
+session_capacity_rows=1
+drop_ref_unique=4
+drop_ref_instance=1
+activity_extras=9
+payload_shapes=numeric_only_result:1
+payload_numeric=1
+```
+
+2410 requirements：
+
+```text
+parse_numeric_action_result_for_session_capacity_semantics
+decode_numeric_only_action_result_fields
+inspect_drop_ref_source_semantics_or_overlay
+inspect_instance_round_source_semantics_detail
+separate_activity_extras_from_capacity_overflow
+link_parser_result_back_to_guard_loss_cases
+```
+
+readiness/workbench 结果：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+source_parser_requirements=watch
+source_parser_requirements_audit=blocked_source_parser_required
+source_parser_maps=1
+source_parser_blocked_maps=1
+source_parser_session_maps=1
+source_parser_drop_ref_maps=1
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract status=shadow_design_only
+```
+
+结论：
+
+- 2410 不是一个单纯 guard 参数问题：22 条 source detail 中同时存在 session-capacity、drop-ref residual 与 activity-extras residual；
+- 唯一 unique round overflow row 是 payload-verified + numeric-only action result，缺 public total/full-action confirmation；
+- 因此下一步应解码 numeric-only action result fields/action ids，并将 parser 结果回连到 2410 guard-loss rows；
+- 在 parser 解释前，不应恢复 formal/value sampler 调参或放宽 v3 practical guard。
+
+### 2026-06-08 checkpoint：2410 numeric action result 已证伪为非 session-capacity 信号
+
+范围：
+
+- 新增 `scripts/summarize_v3_numeric_action_result_semantics_audit.py`
+  - 解析 Fatbeans numeric action results；
+  - 匹配同 session/map 最近 settlement inventory；
+  - 比较 session total item count、warehouse total cells、各 bucket count/total_cells；
+  - 输出 `shadow_only=True`、`affects_bid=False` 的 audit artifact。
+- 新增 `tests/test_summarize_v3_numeric_action_result_semantics_audit.py`
+  - 覆盖 `100105 -> bucket/3/total_cells`；
+  - 覆盖 `100115 -> session/total_item_count`；
+  - 覆盖 2410 source-required 但 session signal 为 0 时保持 blocker。
+- `scripts/summarize_v3_source_parser_requirements_audit.py`
+  - 新增可选 `--numeric-action-semantics-json`；
+  - 将 numeric action 语义回连到 2410 source parser requirements；
+  - 新增 requirement `find_session_capacity_source_beyond_numeric_bucket_cells`。
+- `scripts/summarize_v3_promotion_readiness.py`
+  - `source_parser_requirements_contract` 透传 numeric action rows/session/non-session counts；
+  - 不新增 gate，不改变 `blocked_gates`。
+- `scripts/summarize_v3_promotion_workbench.py`
+  - `shadow_sampler_contract.source_parser_requirements_contract` 透传同一 numeric action digest；
+  - summary 输出 `source_parser_numeric_*`。
+
+真实 2410 结果：
+
+```text
+status=blocked_session_capacity_still_unexplained
+rows=2
+maps=1
+files=1
+source_required_rows=2
+session_signals=0
+non_session_expected=2
+actions=100105:2
+semantics=bucket_total_cells:2
+
+file=fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json
+direct/state action_id=100105
+result_field=14
+result=56
+semantic=bucket_total_cells
+expected=56
+inventory_items=57
+inventory_cells=176
+```
+
+回连后的 source parser requirement：
+
+```text
+status=blocked_source_parser_required
+maps=1
+blocked_maps=1
+session_capacity_maps=1
+drop_ref_maps=1
+activity_extras_maps=1
+numeric_action_rows=2
+numeric_session_signals=0
+numeric_non_session=2
+requirements=parse_numeric_action_result_for_session_capacity_semantics,
+decode_numeric_only_action_result_fields,
+find_session_capacity_source_beyond_numeric_bucket_cells,
+inspect_drop_ref_source_semantics_or_overlay,
+inspect_instance_round_source_semantics_detail,
+separate_activity_extras_from_capacity_overflow,
+link_parser_result_back_to_guard_loss_cases
+```
+
+readiness/workbench：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+source_parser_numeric_action_rows=2
+source_parser_numeric_session_signals=0
+source_parser_numeric_non_session=2
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract status=shadow_design_only
+```
+
+验证：
+
+```text
+python -m pytest --basetemp=.tmp\codex\pytest_numeric_final tests/test_summarize_v3_numeric_action_result_semantics_audit.py tests/test_summarize_v3_source_parser_requirements_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+31 passed
+
+git -c safe.directory=C:/xiangmuyunxing/biancheng/2026/bidking-lab diff --check
+pass（仅 LF/CRLF warning）
+```
+
+结论：
+
+- `100105 field14=56` 已可复核解释为 q3 bucket total_cells；
+- 它不是 session total item count，也不是 warehouse total cells；
+- 因此 2410 的 unique round-cap/session-capacity blocker 未解除；
+- 下一步仍应继续 source parser/table acquisition：查找 numeric bucket cells 之外的 session-capacity source、per-session table version、external overlay 或 server-side expansion 机制；
+- 当前不应恢复 formal/value sampler 调参，不应放宽 readiness/promotion gate。
+
+### 2026-06-08 checkpoint：2410 session-capacity source gap 已从 event fields 排除
+
+范围：
+
+- 新增 `scripts/summarize_v3_session_capacity_source_gap_audit.py`
+  - 消费 settlement source-semantics `detail_rows`；
+  - 重放对应 Fatbeans capture state events；
+  - 汇总 action/public/skill exact `session.total_item_count`、`session.warehouse_total_cells`、bucket sources 与 partial/full observed action payload；
+  - 输出 `shadow_only=True`、`affects_bid=False`。
+- 新增 `tests/test_summarize_v3_session_capacity_source_gap_audit.py`
+  - 覆盖唯一 2410 session-capacity blocker 为 bucket-only source gap；
+  - 覆盖同 map public total count rows 不等于该 blocker 的解释。
+- `scripts/summarize_v3_source_parser_requirements_audit.py`
+  - 新增可选 `--session-capacity-source-gap-json`；
+  - 回连 `session_capacity_source_gap` summary 与 evidence examples；
+  - 新增 requirement `resolve_session_capacity_without_exact_event_source`。
+- readiness/workbench：
+  - 透传 `source_parser_session_gap_*`；
+  - 不新增 gate，不改变 `blocked_gates`。
+
+真实 2410 source-gap 结果：
+
+```text
+status=blocked_session_capacity_source_gap
+rows=22
+files=22
+maps=1
+session_capacity_rows=1
+exact_session_count_rows=2
+warehouse_only_rows=3
+bucket_only_blocked=1
+unresolved_session_rows=1
+
+blocked file=fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json
+status=blocked_session_capacity_source_gap_bucket_only
+residual=unique_round_cap_overflow_after_temp
+mechanism=session_capacity_source_semantics
+inventory={total_item_count:57, warehouse_total_cells:176}
+session_count_sources=0
+warehouse_sources=0
+bucket_sources=2
+actions=100105:2
+public=200015:2
+```
+
+回连后的 source parser requirements：
+
+```text
+resolve_session_capacity_without_exact_event_source:1
+find_session_capacity_source_beyond_numeric_bucket_cells:1
+numeric_action_rows=2
+numeric_session_signals=0
+numeric_non_session=2
+session_gap_rows=22
+session_gap_bucket_blocked=1
+session_gap_unresolved=1
+```
+
+readiness/workbench：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+source_parser_session_gap_rows=22
+source_parser_session_gap_bucket_blocked=1
+source_parser_session_gap_unresolved=1
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract status=shadow_design_only
+```
+
+验证：
+
+```text
+python -m pytest --basetemp=.tmp\codex\pytest_session_gap_contract tests/test_summarize_v3_session_capacity_source_gap_audit.py tests/test_summarize_v3_source_parser_requirements_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+30 passed
+```
+
+结论：
+
+- 2410 blocker 已从 current parsed event fields 方向基本排除：没有 exact session total-count source，也没有 warehouse cells source；
+- 同 map 里 public total count source 的存在说明 parser 能识别该类 source，但它不属于唯一 session-capacity blocker；
+- 下一步不应继续在 action/public/skill event fields 上组合过拟合；
+- 应转向 per-session table version、external overlay table、settlement payload/source expansion 或 server-side settlement expansion。
+
+### 2026-06-09 checkpoint：2410 payload/table gap 已确认，payload 只证明库存不证明 capacity source
+
+范围：
+
+- 新增 `scripts/summarize_v3_session_capacity_payload_table_gap_audit.py`
+  - 消费 session-capacity source-gap artifact；
+  - 重放 0x002D settlement payload；
+  - 比较 raw candidate、occupied slot、parsed inventory；
+  - 统计 action/skill/public full payload source；
+  - 输出 table cap delta 与 next checks。
+- 新增 `tests/test_summarize_v3_session_capacity_payload_table_gap_audit.py`
+  - 覆盖 2410 payload verified + table cap gap + no full event source；
+  - 覆盖非 blocked source-gap rows 不进入该审计。
+- `scripts/summarize_v3_source_parser_requirements_audit.py`
+  - 新增可选 `--payload-table-gap-json`；
+  - 回连 `payload_table_gap` summary 与 evidence examples；
+  - 新增 requirement `resolve_payload_verified_table_cap_gap_without_full_source`。
+- readiness/workbench：
+  - 透传 `source_parser_payload_table_gap_*`；
+  - 不新增 gate，不改变 `blocked_gates`。
+
+真实 2410 payload/table gap：
+
+```text
+status=blocked_payload_table_gap_required
+rows=1
+files=1
+maps=1
+blocked=1
+payload_verified=1
+no_full_event=1
+
+file=fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json
+status=blocked_payload_verified_table_cap_gap_without_full_source
+inventory=57
+unique_non_temp=53
+bidmap_session=40
+bidmap_round=50
+unique_minus_round=3
+slots=250
+occupied=57
+raw_candidates=57
+raw_delta=0
+occupied_delta=0
+full_action=0
+full_skill=0
+skill_max=35
+next_checks=check_per_session_table_version_or_external_overlay,
+inspect_server_side_settlement_expansion_or_source_transform,
+decode_payload_outer_fields_as_metadata_not_capacity
+```
+
+回连后的 source parser requirements：
+
+```text
+resolve_payload_verified_table_cap_gap_without_full_source:1
+resolve_session_capacity_without_exact_event_source:1
+find_session_capacity_source_beyond_numeric_bucket_cells:1
+payload_table_gap_rows=1
+payload_table_gap_blocked_rows=1
+payload_table_gap_payload_verified_rows=1
+payload_table_gap_no_full_event_payload_rows=1
+```
+
+readiness/workbench：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+source_parser_payload_table_gap_rows=1
+source_parser_payload_table_gap_blocked=1
+source_parser_payload_table_gap_verified=1
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract status=shadow_design_only
+```
+
+验证：
+
+```text
+python -m pytest --basetemp=.tmp\codex\pytest_payload_table_contract tests/test_summarize_v3_session_capacity_payload_table_gap_audit.py tests/test_summarize_v3_source_parser_requirements_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+30 passed
+```
+
+结论：
+
+- 0x002D payload 已验证最终库存 list 真实存在，且 raw candidate/occupied slot 与 parsed inventory 完全一致；
+- 该 payload 不解释为什么 inventory count 可以超过 BidMap session/round cap；
+- 250 slot envelope 是 payload/grid 容器容量，不应当作 item-count cap；
+- `1002081` skill 只揭示 35 件，不是 full source；
+- 下一步应查 per-session table version、external overlay 或 server-side settlement expansion/source transform；
+- 当前仍不得恢复 formal/value sampler 调参，不得放宽 readiness/promotion gate。
+
+### 2026-06-09 checkpoint：2410 payload outer fields 已解释为 metadata-only
+
+范围：
+
+- 新增 `scripts/summarize_v3_payload_outer_field_semantics_audit.py`
+  - 消费 session-capacity payload/table gap artifact；
+  - 解析 0x002D payload inner numeric fields 与 wrapper outer numeric fields；
+  - 对比 inventory count、unique non-temp、BidMap session cap、BidMap round cap、slot envelope、occupied/raw candidate counts；
+  - 识别 map id、timestamp、loss units 与 opaque id 元数据。
+- 新增 `tests/test_summarize_v3_payload_outer_field_semantics_audit.py`
+  - 覆盖 2410 outer fields metadata-only；
+  - 覆盖 7 位小数 ISO capture time 的 timestamp parser。
+- `scripts/summarize_v3_source_parser_requirements_audit.py`
+  - 新增可选 `--payload-outer-fields-json`；
+  - 回连 `payload_outer_fields` summary 与 evidence examples；
+  - 新增 requirement `check_table_overlay_or_server_side_after_outer_fields_metadata_only`。
+- readiness/workbench：
+  - 透传 `source_parser_payload_outer_*`；
+  - 不新增 gate，不改变 `blocked_gates`。
+
+真实 2410 outer field 结果：
+
+```text
+status=watch_payload_outer_fields_metadata_only
+rows=1
+metadata_only=1
+capacity_candidates=0
+target_matches=0
+
+file=fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json
+loss=4107
+field20_delta=0
+target_matches=0
+next_checks=check_per_session_table_version_or_external_overlay,
+inspect_server_side_settlement_expansion_or_source_transform
+```
+
+字段解释：
+
+```text
+payload field2 -> map_id=2410
+payload field20 -> settlement capture timestamp
+wrapper field5 -> settlement_loss_units=4107
+wrapper field3 == wrapper field4 -> opaque id
+```
+
+未发现匹配以下 count/capacity target 的 outer/payload numeric field：
+
+```text
+inventory_count=57
+unique_non_temp_item_id_count=53
+bidmap_items_per_session_max=40
+bidmap_raw_round_cap_max=50
+inventory_slot_count=250
+occupied_slot_count=57
+raw_item_candidate_count=57
+```
+
+回连后的 source parser requirements：
+
+```text
+check_table_overlay_or_server_side_after_outer_fields_metadata_only:1
+resolve_payload_verified_table_cap_gap_without_full_source:1
+resolve_session_capacity_without_exact_event_source:1
+payload_outer_field_rows=1
+payload_outer_field_metadata_only_rows=1
+payload_outer_field_capacity_candidate_rows=0
+```
+
+readiness/workbench：
+
+```text
+overall_status=not_ready
+blocked_gates=13
+source_parser_payload_outer_rows=1
+source_parser_payload_outer_metadata=1
+source_parser_payload_outer_capacity_candidates=0
+lane=table_activity_capacity verdict=stop_loss
+shadow_sampler_contract status=shadow_design_only
+```
+
+验证：
+
+```text
+python -m pytest --basetemp=.tmp\codex\pytest_outer_contract tests/test_summarize_v3_payload_outer_field_semantics_audit.py tests/test_summarize_v3_source_parser_requirements_audit.py tests/test_summarize_v3_promotion_readiness.py tests/test_summarize_v3_promotion_workbench.py
+30 passed
+```
+
+结论：
+
+- 2410 的 payload outer fields 不再是优先 source-parser 方向；
+- `decode_payload_outer_fields_as_metadata_not_capacity` 对该 blocker 已基本收口；
+- 下一步应集中检查 per-session table version、external overlay table 或 server-side settlement expansion/source transform；
+- 仍不得恢复 formal/value sampler 调参，不得放宽 readiness/promotion gate。

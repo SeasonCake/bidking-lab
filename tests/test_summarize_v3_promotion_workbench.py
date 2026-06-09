@@ -51,6 +51,191 @@ def test_workbench_marks_stop_loss_lanes() -> None:
                     },
                 ],
             },
+            "capacity_source_expansion_artifact_contract": {
+                "status": "watch",
+                "source_split_status": "blocked_payload_only_source_split_unresolved",
+                "digest_scope": "map_id",
+                "unique_round_overflow_rows": 21,
+                "session_capacity_source_semantics_rows": 18,
+                "server_side_expansion_rows": 3,
+                "payload_verified_only_rows": 409,
+                "mechanism_classes": {
+                    "not_unique_round_cap_blocker": 435,
+                    "session_capacity_source_semantics": 18,
+                    "server_side_settlement_expansion": 3,
+                },
+                "source_evidence_classes": {
+                    "settlement_payload_verified_only": 409,
+                    "direct_action_matches_inventory": 18,
+                },
+                "source_context_classes": {
+                    "payload_verified_partial_action_only": 349,
+                    "direct_action_full_confirmed": 18,
+                },
+            },
+            "capacity_table_audit_contract": {
+                "status": "watch",
+                "map_rows": 10,
+                "semantic_matrix_cells": 12,
+                "semantic_status_counts": {
+                    "blocked_round_cap_overflow_after_temp": 14,
+                    "blocked_drop_ref_overflow_after_temp": 12,
+                },
+                "residual_mode_counts": {
+                    "round_cap_overflow": 14,
+                    "drop_ref_only_overflow": 12,
+                },
+                "detail_mechanism_candidate_counts": {
+                    "round_cap_candidate_gap": 6,
+                    "drop_ref_candidate_gap": 8,
+                },
+                "detail_next_check_counts": {
+                    "check_per_session_table_version_or_external_overlay": 6,
+                    "check_drop_ref_source_semantics_or_activity_overlay": 8,
+                },
+                "detail_source_signal_counts": {
+                    "has_full_action/no_public_total": 7,
+                },
+                "detail_unique_file_map_residual_rows": 15,
+                "top_blocked_maps": [
+                    {"map_id": "2601", "rows": 8},
+                    {"map_id": "2501", "rows": 6},
+                ],
+                "top_detail_examples": [
+                    {
+                        "file": "fatbeans_valid_aisha_2601.json",
+                        "map_id": "2601",
+                        "next_check": (
+                            "check_per_session_table_version_or_external_overlay"
+                        ),
+                    }
+                ],
+            },
+            "capacity_table_acquisition_contract": {
+                "status": "blocked",
+                "acquisition_status": "blocked_acquisition_required",
+                "detail_rows": 29,
+                "unique_detail_rows": 15,
+                "unique_files": 15,
+                "route_counts": {
+                    "table_version_or_external_overlay_required": 6,
+                    "drop_ref_overlay_or_source_semantics_required": 4,
+                },
+                "source_strength_counts": {
+                    "full_action_confirmed": 7,
+                    "payload_only_or_unconfirmed": 6,
+                },
+                "map_counts": {"2601": 4},
+                "table_overlay_metadata": {
+                    "local_overlay_status": "activity_table_available_locally",
+                    "activity_table_present": True,
+                    "activity_table_parse_status": "ok",
+                    "activity_table_rows": 6,
+                    "activity_table_columns": 16,
+                },
+                "current_table_overlay_metadata": {
+                    "local_overlay_status": "activity_table_available_locally",
+                    "activity_table_present": True,
+                },
+                "artifact_table_overlay_metadata": {
+                    "local_overlay_status": "v300_activity_listed_missing_locally",
+                    "activity_table_present": False,
+                },
+                "table_overlay_metadata_stale": True,
+                "table_overlay_metadata_delta": [
+                    {
+                        "key": "local_overlay_status",
+                        "artifact": "v300_activity_listed_missing_locally",
+                        "current": "activity_table_available_locally",
+                    }
+                ],
+                "top_examples": [
+                    {
+                        "file": "fatbeans_valid_aisha_2601.json",
+                        "map_id": "2601",
+                        "acquisition_route": (
+                            "table_version_or_external_overlay_required"
+                        ),
+                    }
+                ],
+            },
+            "v3_practical_guard_loss_source_context_contract": {
+                "status": "watch",
+                "audit_status": "blocked_source_semantics_required",
+                "maps": 5,
+                "guard_loss_rows": 17,
+                "status_counts": {
+                    "blocked_cse_source_semantics_intersection": 1,
+                    "blocked_drop_universe_or_activity_overlay": 1,
+                    "watch_source_context_intersection": 3,
+                },
+                "cse_exact_overlap_maps": 5,
+                "source_semantics_detail_maps": 3,
+                "capacity_table_detail_maps": 2,
+                "capacity_acquisition_example_maps": 2,
+            },
+            "activity_drop_universe_overlay_contract": {
+                "status": "watch",
+                "audit_status": "blocked_activity_overlay_source_required",
+                "maps": 1,
+                "files": 3,
+                "guard_loss_overlap_maps": 1,
+                "candidate_item_universe_covered_maps": 1,
+                "hard_map_allowed": False,
+                "hard_map_blocked_maps": 1,
+                "status_counts": {
+                    "blocked_mixed_overlay_source_required": 1,
+                },
+            },
+            "source_parser_requirements_contract": {
+                "status": "watch",
+                "audit_status": "blocked_source_parser_required",
+                "parser_required": True,
+                "maps": 1,
+                "blocked_maps": 1,
+                "guard_loss_overlap_maps": 1,
+                "session_capacity_maps": 1,
+                "drop_ref_residual_maps": 1,
+                "activity_extras_maps": 1,
+                "numeric_action_semantics_maps": 1,
+                "numeric_action_rows": 2,
+                "numeric_session_capacity_signal_rows": 0,
+                "numeric_non_session_expected_rows": 2,
+                "numeric_unknown_semantic_rows": 0,
+                "session_capacity_source_gap_maps": 1,
+                "session_capacity_source_gap_rows": 22,
+                "session_gap_exact_session_count_source_rows": 2,
+                "session_gap_bucket_only_blocked_rows": 1,
+                "session_gap_unresolved_session_capacity_rows": 1,
+                "payload_table_gap_maps": 1,
+                "payload_table_gap_rows": 1,
+                "payload_table_gap_blocked_rows": 1,
+                "payload_table_gap_payload_verified_rows": 1,
+                "payload_table_gap_no_full_event_payload_rows": 1,
+                "payload_outer_field_maps": 1,
+                "payload_outer_field_rows": 1,
+                "payload_outer_field_metadata_only_rows": 1,
+                "payload_outer_field_capacity_candidate_rows": 0,
+                "table_overlay_residual_maps": 1,
+                "table_overlay_residual_rows": 1,
+                "table_overlay_residual_blocked_rows": 1,
+                "table_overlay_residual_local_cap_gap_rows": 1,
+                "table_overlay_residual_current_table_match_rows": 1,
+                "table_overlay_residual_activity_direct_rows": 0,
+                "table_overlay_residual_server_transform_open_rows": 1,
+                "requirement_counts": {
+                    "parse_numeric_action_result_for_session_capacity_semantics": 1,
+                    "find_session_capacity_source_beyond_numeric_bucket_cells": 1,
+                    "resolve_session_capacity_without_exact_event_source": 1,
+                    "resolve_payload_verified_table_cap_gap_without_full_source": 1,
+                    "check_table_overlay_or_server_side_after_outer_fields_metadata_only": 1,
+                    "resolve_current_raw_table_overlay_or_server_transform_residual": 1,
+                    "inspect_drop_ref_source_semantics_or_overlay": 1,
+                },
+                "status_counts": {
+                    "blocked_session_capacity_source_parser_required": 1,
+                },
+            },
         }
     )
 
@@ -84,6 +269,94 @@ def test_workbench_marks_stop_loss_lanes() -> None:
     assert "posterior seed stability" in contract["required_holdouts"]
     assert "support_gate_status" in contract["required_metrics"]
     assert "watch support rows/sessions gate" in contract["required_component_gates"]
+    assert contract["capacity_source_expansion_contract"]["source_split_status"] == (
+        "blocked_payload_only_source_split_unresolved"
+    )
+    assert contract["capacity_source_expansion_contract"][
+        "session_capacity_source_semantics_rows"
+    ] == 18
+    assert contract["capacity_table_audit_contract"]["semantic_status_counts"][
+        "blocked_round_cap_overflow_after_temp"
+    ] == 14
+    assert contract["capacity_table_audit_contract"]["top_blocked_maps"][0][
+        "map_id"
+    ] == "2601"
+    assert contract["capacity_table_audit_contract"][
+        "detail_next_check_counts"
+    ]["check_drop_ref_source_semantics_or_activity_overlay"] == 8
+    assert contract["capacity_table_audit_contract"][
+        "detail_unique_file_map_residual_rows"
+    ] == 15
+    assert contract["capacity_table_audit_contract"]["top_detail_examples"][0][
+        "file"
+    ] == "fatbeans_valid_aisha_2601.json"
+    acquisition = contract["capacity_table_acquisition_contract"]
+    assert acquisition["status"] == "blocked"
+    assert acquisition["route_counts"][
+        "table_version_or_external_overlay_required"
+    ] == 6
+    assert acquisition["unique_detail_rows"] == 15
+    assert acquisition["table_overlay_metadata"]["local_overlay_status"] == (
+        "activity_table_available_locally"
+    )
+    assert acquisition["artifact_table_overlay_metadata"]["local_overlay_status"] == (
+        "v300_activity_listed_missing_locally"
+    )
+    assert acquisition["table_overlay_metadata_stale"] is True
+    guard_loss_context = contract["guard_loss_source_context_contract"]
+    assert guard_loss_context["status"] == "watch"
+    assert guard_loss_context["audit_status"] == "blocked_source_semantics_required"
+    assert guard_loss_context["guard_loss_rows"] == 17
+    assert guard_loss_context["status_counts"][
+        "watch_source_context_intersection"
+    ] == 3
+    overlay = contract["activity_drop_universe_overlay_contract"]
+    assert overlay["status"] == "watch"
+    assert overlay["audit_status"] == "blocked_activity_overlay_source_required"
+    assert overlay["candidate_item_universe_covered_maps"] == 1
+    assert overlay["hard_map_blocked_maps"] == 1
+    assert overlay["hard_map_allowed"] is False
+    source_parser = contract["source_parser_requirements_contract"]
+    assert source_parser["status"] == "watch"
+    assert source_parser["audit_status"] == "blocked_source_parser_required"
+    assert source_parser["session_capacity_maps"] == 1
+    assert source_parser["drop_ref_residual_maps"] == 1
+    assert source_parser["requirement_counts"][
+        "parse_numeric_action_result_for_session_capacity_semantics"
+    ] == 1
+    assert source_parser["requirement_counts"][
+        "find_session_capacity_source_beyond_numeric_bucket_cells"
+    ] == 1
+    assert source_parser["requirement_counts"][
+        "resolve_session_capacity_without_exact_event_source"
+    ] == 1
+    assert source_parser["requirement_counts"][
+        "resolve_payload_verified_table_cap_gap_without_full_source"
+    ] == 1
+    assert source_parser["requirement_counts"][
+        "check_table_overlay_or_server_side_after_outer_fields_metadata_only"
+    ] == 1
+    assert source_parser["requirement_counts"][
+        "resolve_current_raw_table_overlay_or_server_transform_residual"
+    ] == 1
+    assert source_parser["numeric_action_rows"] == 2
+    assert source_parser["numeric_session_capacity_signal_rows"] == 0
+    assert source_parser["numeric_non_session_expected_rows"] == 2
+    assert source_parser["session_capacity_source_gap_rows"] == 22
+    assert source_parser["session_gap_bucket_only_blocked_rows"] == 1
+    assert source_parser["session_gap_unresolved_session_capacity_rows"] == 1
+    assert source_parser["payload_table_gap_rows"] == 1
+    assert source_parser["payload_table_gap_blocked_rows"] == 1
+    assert source_parser["payload_table_gap_payload_verified_rows"] == 1
+    assert source_parser["payload_outer_field_rows"] == 1
+    assert source_parser["payload_outer_field_metadata_only_rows"] == 1
+    assert source_parser["payload_outer_field_capacity_candidate_rows"] == 0
+    assert source_parser["table_overlay_residual_rows"] == 1
+    assert source_parser["table_overlay_residual_blocked_rows"] == 1
+    assert source_parser["table_overlay_residual_local_cap_gap_rows"] == 1
+    assert source_parser["table_overlay_residual_current_table_match_rows"] == 1
+    assert source_parser["table_overlay_residual_activity_direct_rows"] == 0
+    assert source_parser["table_overlay_residual_server_transform_open_rows"] == 1
     assert contract["prototype_contract"]["status"] == "missing"
     assert "change formal bid path" in contract["blocked_actions"]
 

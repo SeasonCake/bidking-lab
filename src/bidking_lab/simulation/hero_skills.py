@@ -220,7 +220,7 @@ HERO_SKILLS: dict[int, HeroSkillProfile] = {
         _e(InfoType.OUTLINE, at_round=5),
     )),
     209: HeroSkillProfile(209, "维克托", 2, (
-        _e(InfoType.COUNT_HINT, quals=frozenset({4, 5}), at_round=1),
+        _e(InfoType.COUNT_HINT, quals=frozenset({4, 5, 6}), at_round=1),
     )),
     301: HeroSkillProfile(301, "拉文", 0, (
         _e(InfoType.QUALITY, at_round=5),  # R5 only: all quality (very late!)

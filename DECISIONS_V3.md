@@ -4274,3 +4274,709 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 之前使用旧 `.tmp` schema artifact 会把问题误判成 contract 缺字段；
 - canonical artifact 证明 contract 已完整，剩余 blocker 是可复核的 multi-seed instability 与 support depth gap；
 - 后续应把精力转到 prior/activity/table drift、CSE/SCP source semantics、source parser/table acquisition 或更强分片验证，而不是继续重复 schema 排查或恢复 formal/value sampler 参数调优。
+
+## D-v3-197：CSE readiness 必须暴露 source split digest，但 contract watch 不解除 blocker
+
+2026-06-08 起，当前决策：
+
+- `capacity_source_expansion_artifact_contract=watch` 只表示 CSE artifact 可评估、inactive、`affects_bid=false`；
+- readiness/workbench 必须暴露 CSE source split digest：
+  - `digest_scope`；
+  - `mechanism_classes`；
+  - `source_evidence_classes`；
+  - `source_context_classes`；
+  - `source_split_status`；
+  - `unique_round_overflow_rows`；
+  - `session_capacity_source_semantics_rows`；
+  - `server_side_expansion_rows`；
+  - payload/public/full-action count summaries。
+- 当前 canonical CSE artifact 的真实 digest：
+  - `unique_round_overflow_rows=21`；
+  - `session_capacity_source_semantics_rows=18`；
+  - `server_side_expansion_rows=3`；
+  - `source_split_status=blocked_payload_only_source_split_unresolved`；
+  - `mechanism_classes=not_unique_round_cap_blocker:435,session_capacity_source_semantics:18,server_side_settlement_expansion:3`。
+- `capacity_source_expansion_shadow` 可以保持 `watch`，但不得当作 promotion support；
+- `shadow_sampler_contract` 必须把 CSE digest 作为 frozen/watch input 展示；
+- evidence-driven sampler 只能把 CSE/SCP 作为 risk flags，不能用它直接放大 capacity、count、cells 或 value posterior；
+- 不改变 live/UI、正式出价、v2 fallback 或 promotion gate。
+
+原因：
+
+- CSE source semantics 已证明 over-cap 不是 BidMap `col[16]`、DropEntry `n_max`、parser duplicate 或普通 Drop universe 缺 item 的单一问题；
+- 18 条 payload-only/session semantics 仍缺 base/drop/activity/source split，不能作为 formal sampler 的稳定机制；
+- 3 条 server-side settlement expansion 是强机制线索，但样本不足以支撑 promotion；
+- 后续应继续做 source parser/table acquisition 或 capacity-table semantic residual holdout，而不是用当前 CSE watch artifact 调 formal/value sampler 参数。
+
+## D-v3-198：prior-stress table drift readiness 必须携带 semantic residual focus
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_promotion_readiness.py` 支持 `--capacity-table-audit-json`；
+- 该 JSON 必须来自 `summarize_v3_capacity_table_audit.py --format json`；
+- readiness 只把它作为 `capacity_table_audit_contract` 诊断输入，不改变 archive/live/formal 出价；
+- `prior_stress_capacity_table_drift` gate focus 必须在原有 `detail_rows`、`capacity_flag_hits`、top cases 之外暴露：
+  - `semantic_status_counts`；
+  - `residual_mode_counts`；
+  - `top_blocked_maps`；
+  - `top_semantic_matrix_cells`。
+- workbench `shadow_sampler_contract` 必须透传同一 capacity-table semantic digest；
+- 当前真实 top-limited artifact 显示：
+  - `capacity_table_audit_contract=watch`；
+  - `semantic_status=blocked_round_cap_overflow_after_temp:14,blocked_drop_ref_overflow_after_temp:12,watch_activity_extras_explain_drop_ref_gap:2`；
+  - `residual_modes=round_cap_overflow:14,drop_ref_only_overflow:12,within_drop_ref:2`；
+  - `top_maps=2601,2501,2503,2506,2401`。
+- `prior_stress_capacity_table_drift` 仍保持 blocked；
+- 这些 semantic residuals 不得作为 sampler 参数调优依据，只能作为 source parser/table acquisition、table semantics 和 holdout 复核入口。
+
+原因：
+
+- 仅展示 `target_lower_bound_truth_above_prior`、`direct_prior_max_conflict`、`no_capacity_prior_max_case` 仍不足以指导下一步；
+- capacity table audit 已经能证明部分 blocker 不是 parser duplicate、BidMap `col[16]`、DropEntry `n_max` 或 non-zodiac Drop universe 缺口；
+- readiness/workbench 必须把下一步收口对象落到 residual mode 与 map 层级，避免继续泛泛“按 map/profile audit”或回到 formal/value sampler 调参；
+- 该决策不放宽 promotion/readiness，不改变 live/UI、正式出价或 v2 fallback。
+
+## D-v3-199：capacity table detail rows 是 source/table acquisition 入口，不是 sampler 调参依据
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_capacity_table_audit.py --details N` 输出 file-level residual detail；
+- 顶层 JSON `detail_rows` 必须携带：
+  - file/map/source；
+  - residual mode；
+  - semantic status；
+  - latest settlement message；
+  - temp-zodiac-adjusted drop-ref/round-cap excess；
+  - full action/public total signals。
+- 该 detail 输出用于复核：
+  - source parser；
+  - table acquisition；
+  - per-session table version；
+  - external overlay table；
+  - server-side settlement expansion 的最小可证伪假设。
+- 当前真实样本仍显示：
+  - `blocked_round_cap_overflow_after_temp:14`；
+  - `blocked_drop_ref_overflow_after_temp:12`；
+  - `watch_activity_extras_explain_drop_ref_gap:2`；
+  - `round_cap_overflow:14`；
+  - `drop_ref_only_overflow:12`；
+  - `within_drop_ref:2`。
+- 因此 capacity/table blocker 未解除；
+- 不得把这些 detail rows 当作 formal/value sampler 参数调优依据；
+- 不得据此放宽 readiness、promotion、formal/live 出价或 v2 fallback 归档。
+
+原因：
+
+- map-level semantic digest 已能指出 blocker，但不足以复核具体 capture/source；
+- file-level details 能把下轮检查落到具体 capture、message、source signal 与 excess mode；
+- 真实 smoke 证明 blocker 仍存在，detail rows 只是把问题变得可复核，不是 promotion support；
+- 该决策保持 v3 audit-only，不改变 live/UI、正式出价或当前 practical guarded path。
+
+## D-v3-200：capacity detail summary 可进入 readiness/workbench，但只作为 next-check 清单
+
+2026-06-08 起，当前决策：
+
+- `capacity_table_audit` JSON 的 `detail_summary` 是 readiness/workbench 可消费的 audit contract 字段；
+- `detail_summary` 必须按 `file_ref/map_id/residual_mode/semantic_status` 去重，避免同一 capture 的多条 prebid/detail row 重复放大信号；
+- readiness/workbench 可透传并展示：
+  - `detail_mechanism_candidate_counts`；
+  - `detail_next_check_counts`；
+  - `detail_source_signal_counts`；
+  - `detail_unique_file_map_residual_rows`；
+  - `top_detail_examples`。
+- 当前机制分类只用于安排复核路径：
+  - `round_cap_candidate_gap` -> `check_per_session_table_version_or_external_overlay`；
+  - `drop_ref_candidate_gap` -> `check_drop_ref_source_semantics_or_activity_overlay`；
+  - `activity_extras_candidate` -> `verify_activity_extras_table`；
+  - `drop_universe_gap` -> `check_source_parser_drop_universe`。
+- 当前真实样本 detail summary：
+  - `rows=29`；
+  - `unique_file_map_residual_rows=15`；
+  - `drop_ref_candidate_gap=8`；
+  - `round_cap_candidate_gap=6`；
+  - `activity_extras_candidate=1`。
+- 该 summary 不改变 gate 状态；
+- `prior_stress_capacity_table_drift` 仍 blocked；
+- `shadow_sampler_contract` 仍 `shadow_design_only`；
+- 不得把该 taxonomy 当作 sampler 参数、capacity uplift 或 formal/live 出价依据；
+- 不得据此放宽 readiness、promotion 或 v2 archive gate。
+
+原因：
+
+- 去重后的 file-level next-check 清单能把 blocker 收口到可执行的 source/table acquisition 任务；
+- 但当前机制分类仍是 audit routing，不是已验证的生成机制；
+- readiness/workbench 暴露它是为了避免下一轮人工重复分拣，不是为了开始调 formal/value sampler；
+- 该决策保持 v3 audit-only，live/UI/正式出价/v2 fallback 不变。
+
+## D-v3-201：capacity table acquisition audit 是 blocker 收口路径，不是 promotion support
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_capacity_table_acquisition_audit.py` 是 capacity/table blocker 的 acquisition routing artifact；
+- 它消费 `capacity_table_audit.detail_rows` 和 CSE `table_overlay_metadata`；
+- detail rows 必须按 `file_ref/map_id/residual_mode/semantic_status` 去重；
+- route taxonomy：
+  - `table_version_or_external_overlay_required`；
+  - `drop_ref_overlay_or_source_semantics_required`；
+  - `payload_only_drop_ref_source_semantics_required`；
+  - `missing_activity_table_overlay_required`；
+  - `source_parser_drop_universe_required`；
+  - `manual_acquisition_review_required`。
+- 当前真实 artifact 状态：
+  - `status=blocked_acquisition_required`；
+  - `unique_detail_rows=15`；
+  - `table_version_or_external_overlay_required=6`；
+  - `drop_ref_overlay_or_source_semantics_required=4`；
+  - `payload_only_drop_ref_source_semantics_required=4`；
+  - `missing_activity_table_overlay_required=1`；
+  - `local_overlay_status=v300_activity_listed_missing_locally`。
+- 该 artifact 只能用于安排 source parser/table acquisition/per-session table version/external overlay 检查；
+- 不得用作 sampler capacity uplift、formal/value sampler 参数、promotion support、v2 archive support 或 live/formal 出价依据。
+
+原因：
+
+- readiness/workbench 已能看到 detail next-check，但还不能直接说明需要获取哪类外部表或 parser 证据；
+- acquisition audit 把 file-level blockers 转成获取路径，减少重复人工分拣；
+- 当前结果明确说明 blocker 仍依赖缺失或未验证的 Activity/overlay/table-version/source-parser 证据；
+- 该决策不改变 live/UI、正式出价、当前 v3 practical guarded path 或 v2 fallback。
+
+## D-v3-202：readiness/workbench 必须暴露 capacity acquisition blocker，但不改变 gate
+
+2026-06-08 起，当前决策：
+
+- readiness 支持 `--capacity-table-acquisition-json`；
+- 该 JSON 必须来自 `summarize_v3_capacity_table_acquisition_audit.py --format json`；
+- readiness/workbench 可消费 `capacity_table_acquisition_contract`；
+- contract 字段包括：
+  - acquisition status；
+  - detail/unique row counts；
+  - acquisition route counts；
+  - source strength counts；
+  - table overlay metadata；
+  - top examples。
+- 当 artifact 状态为 `blocked_acquisition_required` 时，contract status 为 `blocked`；
+- 该 blocked status 只解释已 blocked 的 `prior_stress_capacity_table_drift`；
+- 不新增 promotion gate，也不放宽任何 gate；
+- `shadow_sampler_contract` 必须透传 acquisition digest，用于说明 sampler 仍处于 `shadow_design_only`。
+
+当前真实结果：
+
+- `capacity_table_acquisition_contract=blocked`；
+- `table_version_or_external_overlay_required=6`；
+- `drop_ref_overlay_or_source_semantics_required=4`；
+- `payload_only_drop_ref_source_semantics_required=4`；
+- `missing_activity_table_overlay_required=1`；
+- `capacity_table_overlay=v300_activity_listed_missing_locally`。
+
+原因：
+
+- capacity table semantic/detail audit 已经能定位 blocker，但 readiness/workbench 需要直接看到 acquisition 路径；
+- 该 contract 让 promotion review 不会误以为 blocker 只是 sampler 参数问题；
+- 当前结果仍依赖缺失 Activity/overlay/table-version/source-parser 证据；
+- 因此 v3 仍 audit-only，不改变 live/UI、正式出价、v2 fallback 或 promotion gate。
+
+## D-v3-203：capacity acquisition 必须用当前 raw table overlay 元数据纠偏旧 artifact
+
+2026-06-08 起，当前决策：
+
+- acquisition audit 不能只消费 CSE artifact 内的历史 `table_overlay_metadata`；
+- `summarize_v3_capacity_table_acquisition_audit.py` 必须同时输出：
+  - `current_table_overlay_metadata`；
+  - `artifact_table_overlay_metadata`；
+  - `table_overlay_metadata_stale`；
+  - `table_overlay_metadata_delta`。
+- `table_overlay_metadata` 字段表示当前 raw filesystem 事实，供 readiness/workbench 的当前 contract 使用；
+- route 判断 Activity 是否仍缺失时必须使用当前 raw table overlay metadata；
+- 历史 CSE artifact metadata 只作为 drift/staleness 证据保留；
+- 当前真实结果：
+  - current `raw_file_version=303`；
+  - current `raw_tables_file_version=303`；
+  - current `local_overlay_status=activity_table_available_locally`；
+  - current `Activity.txt` 可解码，`rows=6`、`cols=16`；
+  - artifact `local_overlay_status=v300_activity_listed_missing_locally`；
+  - `table_overlay_metadata_stale=True`。
+- `missing_activity_table_overlay_required` 不再是当前 blocker route；
+- 对应 row 改为 `activity_extras_table_verification_required`。
+
+原因：
+
+- 本地 raw tables 已从旧 v300 状态更新到 v303，旧 CSE artifact 的 overlay metadata 已过期；
+- 如果继续信旧 artifact，会把 current Activity 表已存在的事实误判成缺表 blocker；
+- `Activity.txt` 只有 6 行 / 16 列，仍更像活动入口/UI 配置，不足以解释 Drop overlay 或 settlement item-count over-cap；
+- 因此 current Activity 可用只能关闭“缺 Activity 表”假设，不能关闭 table-version/external-overlay/drop-ref semantics blocker；
+- 该决策不改变 live/UI、正式出价、v2 fallback 或 promotion gate。
+
+## D-v3-204：current Activity 表可用不等于 capacity/table blocker 已解除
+
+2026-06-08 起，当前决策：
+
+- 当前 capacity acquisition contract 仍为 `blocked`；
+- 当前真实 route counts：
+  - `table_version_or_external_overlay_required=6`；
+  - `drop_ref_overlay_or_source_semantics_required=4`；
+  - `payload_only_drop_ref_source_semantics_required=4`；
+  - `activity_extras_table_verification_required=1`。
+- readiness/workbench 必须展示：
+  - `capacity_table_overlay=activity_table_available_locally`；
+  - `capacity_table_artifact_overlay=v300_activity_listed_missing_locally`；
+  - `capacity_table_metadata_stale=True`。
+- `prior_stress_capacity_table_drift` 仍 blocked；
+- `shadow_sampler_contract` 仍 `shadow_design_only`；
+- 下一步必须继续查：
+  - per-session table version；
+  - external overlay table；
+  - drop-ref source semantics；
+  - payload-only source parser。
+- 不得把 current Activity 表可用解读为 sampler capacity uplift、formal/value sampler 参数、promotion support、v2 archive support 或 live/formal 出价依据。
+
+原因：
+
+- Activity 表可用只证伪了“当前本地缺 Activity.txt”；
+- 6 个 round-cap gap 与 8 个 drop-ref/source semantics gap 仍需要 table/source 证据；
+- 当前 readiness 仍 `overall_status=not_ready`、`blocked_gates=13`；
+- workbench lane `table_activity_capacity` 仍为 `stop_loss`；
+- 因此 v3 仍 audit-only，不得恢复 formal/value sampler 参数调优或进入 promotion 讨论。
+
+## D-v3-205：v3 practical archive-live guard metrics 必须包含 case-level 诊断
+
+2026-06-08 起，当前决策：
+
+- `summarize_live_windivert_brief.py` 的 group stats 必须输出 `v3_practical_guard_case_summary`；
+- 该 summary 必须基于 paired guarded/unguarded rows，而不是只用 aggregate delta；
+- readiness 的 `v3_practical_archive_live_guard_metrics` contract 必须验证 case summary rows 覆盖 paired comparison rows；
+- case summary 至少要展示：
+  - P50 abs-error improved/worsened/unchanged；
+  - P90 coverage gained/lost/unchanged；
+  - P90 extreme-over reduced/added/unchanged；
+  - 可复核 examples。
+- 当前真实 72h prebid archive 结果：
+  - `v3_practical_guard_comparison_rows=49`；
+  - `v3_practical_guard_case_rows=49`；
+  - `v3_practical_guard_p50_worsened_rows=0`；
+  - `v3_practical_guard_p90_coverage_lost_rows=17`；
+  - `v3_practical_guard_p90_extreme_over_added_rows=0`。
+- 该证据只能作为 watch-only archive-live guard 诊断；
+- 不得把 P50 未变差或 extreme-over 未新增解读为 promotion support，因为 P90 coverage lost 仍需要 slice 审计；
+- 不改变 live/UI、正式出价、v2 fallback 或 promotion gate。
+
+原因：
+
+- 只看平均 MAE/P90 delta 容易掩盖 guard 对单局覆盖的代价；
+- 当前 v3 practical guarded 路径需要同时保留 risk reduction 与 coverage loss 两侧证据；
+- case-level summary 能让 readiness/workbench 在不调参、不接 live/formal 的前提下复核 guard tradeoff；
+- 当前 readiness 仍 `overall_status=not_ready`、`blocked_gates=13`，workbench `archive_live_guard_metrics` 仍是 `watch_only`。
+
+## D-v3-206：guard coverage loss 必须按 map/family 保留 audit slice
+
+2026-06-08 起，当前决策：
+
+- `summarize_live_windivert_brief.py` 必须输出 `by_map_id` 与 `by_map_family`；
+- `summarize_v3_promotion_readiness.py` 必须透传这两个 slice 到 `v3_practical_archive_live_guard_metrics`；
+- map/family slice 只用于 review，不参与 guard contract pass/block；
+- 当前真实 72h prebid archive 结果：
+  - overall paired guard cases = 49；
+  - `p90_coverage_lost_rows=17`；
+  - `p50_worsened_rows=0`；
+  - `p90_extreme_over_added_rows=0`；
+  - map_id loss：2410=8/8、2524=4/4、2401=3/13、2406=1/7、2407=1/8；
+  - map_family loss：villa=13/45、shipwreck=4/4。
+- 不得把该 slice 用作自动调参或 map-specific live/formal guard 变更；
+- 下一步只能将其作为 source/context 审计入口，优先看 2410、2524、2401 的 q6>0/p90_under case。
+
+原因：
+
+- 当前 guard 的主要代价不是 P50 变差或新增 extreme-over，而是 P90 coverage loss；
+- loss 集中在少数 map/source 上，继续看 overall delta 会掩盖根因；
+- 2410 与 2524 的 paired loss 比例过高，必须先解释 source/context，再考虑 sampler 设计；
+- 该决策不改变 live/UI、正式出价、v2 fallback 或 promotion gate。
+
+## D-v3-207：SCP guarded bridge stability artifact 接入 readiness 后仍阻断 promotion
+
+2026-06-08 起，当前决策：
+
+- readiness smoke 必须尽量带上 canonical `data/processed/v3_scp_guarded_bridge_stability_shadow.json`；
+- 未带该 artifact 时，`settlement_count_guarded_bridge_stability` 只能说明 `not_supplied`；
+- 带上当前 artifact 后，真实状态为：
+  - `status=blocked_applied_hurt`；
+  - `posterior_trials=64`；
+  - `posterior_seeds=0,1,7`；
+  - `stable_selected_groups=2506`；
+  - `2501=blocked_train_holdout_instability`；
+  - `2506=blocked_support_depth_gap`。
+- 该证据明确要求 settlement bridge lane 继续 stop-loss；
+- SCP/CSE/bridge 输入只能作为 shadow sampler risk flags，不能作为 promotion support 或 formal/value sampler 参数调优依据；
+- v2 archive 与 formal replacement 仍不得推进。
+
+原因：
+
+- 2501 在 train guard watch 但 holdout hurt，说明 bridge signal 仍有跨 session 不稳定风险；
+- 2506 虽是 stable selected group，但 support depth 低于要求，不能证明 seed 稳定；
+- 当前 workbench `settlement_bridge_support` 仍为 `stop_loss`；
+- 因此这不是“补一个 artifact 就能通过”的问题，而是 stability/holdout 证据本身未达标。
+
+## D-v3-208：coverage loss 与 CSE/SCP risk flags 高度重叠，不能直接调 guard
+
+2026-06-08 起，当前决策：
+
+- `v3_practical_guard_case_summary` 必须保留 `p90_coverage_loss_context`；
+- context 至少包含：
+  - `by_guard_kind`；
+  - `by_guard_flag`；
+  - `by_evidence_profile`；
+  - `median_guarded_p90_shortfall`；
+  - `median_unguarded_p90_excess`；
+  - `median_p90_guard_cut`。
+- 当前真实 72h prebid archive 结果：
+  - `p90_coverage_loss_context.rows=17`；
+  - `live_prior_only_raise_guard=17`；
+  - `q6_prior_floor_watch=17`；
+  - `settlement_count_prior_candidate=16`；
+  - `capacity_source_candidate=12`；
+  - `q6_prior_tail_ceiling=3`；
+  - `median_guarded_p90_shortfall=158113`；
+  - `median_unguarded_p90_excess=185569`；
+  - `median_p90_guard_cut=214694`。
+- 对集中 map 的解释：
+  - 2410 loss 8/8，全部带 `capacity_source_candidate`、`q6_prior_floor_watch`、`settlement_count_prior_candidate`；
+  - 2524 loss 4/4，全部带 `capacity_source_candidate`、`q6_prior_floor_watch`、`settlement_count_prior_candidate`；
+  - 2401 loss 3/13，全部带 `q6_prior_floor_watch`、`q6_prior_tail_ceiling`、`settlement_count_prior_candidate`。
+- 不得把 coverage loss 直接当作“guard 过紧，所以调松 guard”的依据；
+- 这些 rows 必须进入 CSE source semantics、SCP truth/source split 与 capacity/table blocker 交叉审计；
+- v3 practical guard 仍只能作为 watch-only risk control evidence，不作为 promotion support。
+
+原因：
+
+- coverage loss 并非普通样本随机误差，而是与尚未稳定的 CSE/SCP risk flags 高度重叠；
+- 如果在 source semantics 和 bridge stability 未闭合时调松 guard，可能重新引入 P90 extreme-over 风险；
+- 当前 readiness 仍 `overall_status=not_ready`、`blocked_gates=13`；
+- 因此继续保持 live/UI、正式出价、v2 fallback 与 promotion gate 不变。
+
+## D-v3-209：guard loss source-context 必须进入 readiness/workbench，但只作为 audit contract
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_practical_guard_loss_source_context.py` 作为 guard coverage-loss 的 map-level 交叉审计入口；
+- readiness 支持可选 `--guard-loss-source-context-json`；
+- workbench 的 `shadow_sampler_contract` 必须透传 `guard_loss_source_context_contract`；
+- 该 contract 的 `status=watch` 只代表 artifact 可评估；
+- artifact 的 `audit_status=blocked_source_semantics_required` 代表当前交叉审计结论仍阻断 promotion；
+- 该 artifact 不新增 readiness gate，不改变 `blocked_gates`；
+- 当前真实结果：
+  - `maps=5`；
+  - `guard_loss_rows=17`；
+  - `blocked_cse_source_semantics_intersection=1`；
+  - `blocked_drop_universe_or_activity_overlay=1`；
+  - `watch_source_context_intersection=3`。
+- 当前 map-level 解释：
+  - 2410：`blocked_cse_source_semantics_intersection`，exact CSE entry 有 `session_capacity_source_semantics:1`，source semantics detail 有 unique round overflow 与 drop-ref-only overflow；
+  - 2524：`blocked_drop_universe_or_activity_overlay`，exact CSE entry 为 `blocked_drop_universe_gap_shadow_only`，`non_zodiac_missing_max=54`；
+  - 2401：`watch_source_context_intersection`，capacity table detail 指向 `watch_activity_extras_explain_drop_ref_gap`，acquisition route 为 `activity_extras_table_verification_required`；
+  - 2406：`watch_source_context_intersection`，capacity table detail 指向 `blocked_drop_ref_overflow_after_temp`，acquisition route 为 `payload_only_drop_ref_source_semantics_required`；
+  - 2407：`watch_source_context_intersection`，仅有 source semantics instance-level detail。
+- 不得用该 artifact 直接调整 guard、恢复 formal/value sampler 参数调优、接入 formal bid 或 archive v2。
+
+原因：
+
+- 交叉审计证明 guard coverage loss 与 capacity/source/settlement blockers 是同一风险面；
+- 2410 与 2524 的 blocker 类型不同，不能用一个 guard 参数或一个 source assumption 一次性处理；
+- 需要先补 source parser/table acquisition/overlay semantics，再恢复 sampler 原型设计；
+- 当前 workbench 仍 `shadow_sampler_contract status=shadow_design_only`。
+
+## D-v3-210：2524 activity mapping 为 mixed winner，不能直接映射到单一旧沉船表
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_practical_guard_loss_source_context.py` 必须可读取 activity mapping artifact；
+- 包含中文 RankMap label 的 JSON 输出必须固定 UTF-8；
+- 当前 2524 真实结果：
+  - `activity_mapping.status=watch_mixed_activity_mapping`；
+  - `files=3`；
+  - `candidate_status_counts=ok:6`；
+  - `candidate_map_ids=2504:3,2514:3`；
+  - `drop_pool_ids=2504:3,2514:3`；
+  - `winner_counts=minus10:2,minus20:1`；
+  - `item_winner_counts=minus10:2,minus20:1`；
+  - `missing_item_rate_max=0`；
+  - `rankmap_labels=白色DOWN红色UP:3`。
+- 2524 仍保持 `blocked_drop_universe_or_activity_overlay`；
+- `activity_mapping_mixed_winner` 必须作为 reason 进入 guard-loss source-context artifact；
+- 不得把 2524 直接 hard-map 到 2514 或 2504；
+- 不得用 mixed mapping 放宽 v3 practical guard、恢复 formal/value sampler 调参、接 live/formal 或 archive v2。
+
+原因：
+
+- 两个候选旧图都能解释 item universe 覆盖，但 winner 在 3 个 files 中分裂；
+- 单一旧图映射会把 activity overlay/source semantics 问题伪装成普通 table mapping；
+- 2524 的 guard loss 仍是 4/4，且同时有 CSE drop-universe gap；
+- 因此下一步需要 RankMap activity profile/source parser 证据，而不是直接选一个旧图表。
+
+## D-v3-211：guard-loss source-context examples/next_checks 是审计路由，不是 promotion 支持
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_practical_guard_loss_source_context.py` 必须在每个 focus map row 中输出：
+  - `next_checks`；
+  - `evidence_examples.source_semantics`；
+  - `evidence_examples.capacity_table`；
+  - `evidence_examples.capacity_acquisition`；
+  - `evidence_examples.activity_mapping`。
+- `next_checks` 只用于指出后续最小可证伪检查；
+- `evidence_examples` 只用于让 blocker 可复核；
+- readiness/workbench 可以透传该 artifact，但不得因为 examples/next_checks 存在而放宽任何 gate；
+- 当前真实路由：
+  - 2410：`build_source_parser_for_session_capacity_or_round_cap_semantics`、`inspect_drop_ref_payload_source_semantics`；
+  - 2524：`build_activity_drop_universe_overlay_or_activity_source_parser`、`treat_activity_mapping_as_reference_not_single_truth_table`；
+  - 2401：`inspect_instance_round_source_semantics_detail`、`verify_activity_extras_table_against_current_raw_version`、`verify_activity_extras_table`；
+  - 2406：`resolve_drop_ref_capacity_source_or_overlay`、`check_drop_ref_source_semantics_or_activity_overlay`；
+  - 2407：`inspect_instance_round_source_semantics_detail`。
+- 当前 readiness 仍为：
+  - `overall_status=not_ready`；
+  - `blocked_gates=13`；
+  - `guard_loss_source_context_audit=blocked_source_semantics_required`；
+  - `table_activity_capacity=stop_loss`；
+  - `settlement_bridge_support=stop_loss`。
+- 不得把该 artifact 用作 formal/value sampler 调参依据、formal bid 接入依据或 v2 archive 依据。
+
+原因：
+
+- examples/next_checks 提升的是可复核性和交接效率，不是样本支持强度；
+- 2410/2524 的 root blocker 类型仍不同，说明无法用统一参数调优替代 source/table 解释；
+- 该证据进一步支持当前策略：先收口 source parser/table acquisition/activity overlay，再恢复 shadow-only sampler 设计。
+
+## D-v3-212：activity drop-universe overlay 覆盖 item universe 仍不等于可 hard-map
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_activity_drop_universe_overlay_audit.py` 是 252x activity/drop-universe overlay 的 audit-only 入口；
+- readiness 支持可选 `--activity-drop-universe-overlay-json`；
+- workbench 的 `shadow_sampler_contract` 必须透传 `activity_drop_universe_overlay_contract`；
+- 该 artifact 必须固定：
+  - `shadow_only=True`；
+  - `affects_bid=False`；
+  - `hard_map_allowed=False`。
+- 当前真实 252x activity overlay 结果：
+  - `maps=6`；
+  - `files=15`；
+  - `candidate_item_universe_covered_maps=6`；
+  - `guard_loss_overlap_maps=1`；
+  - `hard_map_blocked_maps=6`；
+  - `status_counts=watch_overlay_reference_only:3,watch_mixed_overlay_reference_only:2,blocked_mixed_overlay_source_required:1`。
+- 当前 2524 结果：
+  - `status=blocked_mixed_overlay_source_required`；
+  - `guard_status=blocked_drop_universe_or_activity_overlay`；
+  - `loss=4/4`；
+  - `candidate_maps=2504:3,2514:3`；
+  - `drop_pools=2504:3,2514:3`；
+  - `missing_item_rate_max=0.0`；
+  - `winner_counts=minus10:2,minus20:1`；
+  - `item_winner_counts=minus10:2,minus20:1`。
+- 旧图/drop pool 覆盖观测 item universe 只能说明它们对 source parser/table acquisition 有参考价值；
+- 不得据此把 `252x -> 251x`、`252x -> 250x` 或任一 mixed winner 映射接入 live/formal/sampler；
+- readiness/workbench 仍不得放宽 promotion gate。
+
+原因：
+
+- `missing_item_rate_max=0.0` 只证明观测 settlement items 能被候选旧 drop pool 覆盖；
+- mixed winner 证明 activity overlay/source semantics 并非稳定单一 alias；
+- 2524 同时与 guard-loss blocker 重叠，因此错误 hard-map 会把 source/table 语义问题伪装成 sampler 参数问题；
+- 当前 readiness 仍为 `overall_status=not_ready`、`blocked_gates=13`、`table_activity_capacity=stop_loss`。
+
+## D-v3-213：2410 需要 source parser，不得用 guard/sampler 参数绕过
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_source_parser_requirements_audit.py` 是 2410/source-capacity blocker 的 audit-only 入口；
+- readiness 支持可选 `--source-parser-requirements-json`；
+- workbench 的 `shadow_sampler_contract` 必须透传 `source_parser_requirements_contract`；
+- 该 artifact 必须固定：
+  - `shadow_only=True`；
+  - `affects_bid=False`；
+  - `parser_required=True`。
+- 当前真实 2410 结果：
+  - `status=blocked_session_capacity_source_parser_required`；
+  - `guard_loss=8/8`；
+  - `source_rows=22`；
+  - `session_capacity_rows=1`；
+  - `drop_ref_unique=4`；
+  - `drop_ref_instance=1`；
+  - `activity_extras=9`；
+  - `payload_shapes=numeric_only_result:1`；
+  - `payload_numeric=1`。
+- 2410 parser requirements：
+  - `parse_numeric_action_result_for_session_capacity_semantics`；
+  - `decode_numeric_only_action_result_fields`；
+  - `inspect_drop_ref_source_semantics_or_overlay`；
+  - `inspect_instance_round_source_semantics_detail`；
+  - `separate_activity_extras_from_capacity_overflow`；
+  - `link_parser_result_back_to_guard_loss_cases`。
+- 不得把 2410 的 guard loss 解释为单纯 guard 过紧或 sampler 参数问题；
+- 不得在 source parser 回连到 guard-loss rows 前恢复 formal/value sampler 调参；
+- readiness/workbench 仍不得放宽 promotion gate。
+
+原因：
+
+- 2410 的唯一 unique-round overflow 是 payload-verified + numeric-only action result，缺 public-total/full-action confirmation；
+- 同一 map 同时存在 drop-ref residual、instance residual 与 activity-extras residual，说明单一 source assumption 不足；
+- 该 blocker 与 v3 practical guard coverage loss 完全重叠，因此错误调参会掩盖 source/table 语义问题；
+- 当前 readiness 仍为 `overall_status=not_ready`、`blocked_gates=13`、`table_activity_capacity=stop_loss`。
+
+## D-v3-214：2410 numeric action result 是 bucket cells，不是 session-capacity 证据
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_numeric_action_result_semantics_audit.py` 是 numeric action result 语义审计入口；
+- 该 artifact 固定：
+  - `shadow_only=True`；
+  - `affects_bid=False`；
+  - 只用于 source/parser blocker 解释，不改变 live/UI/正式出价。
+- 当前真实 2410 样本：
+  - file=`fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json`；
+  - direct action `0x0027` 与 state snapshot `0x002d` 均为 `action_id=100105`、`result_field=14`、`result=56`；
+  - parser 语义为 `bucket/3/total_cells`；
+  - latest settlement inventory 为 `total_item_count=57`、`warehouse_total_cells=176`、`q3 total_cells=56`；
+  - 因此两条 numeric action rows 均为 `not_session_capacity_signal`。
+- 当前 numeric audit 结果：
+  - `status=blocked_session_capacity_still_unexplained`；
+  - `numeric_action_rows=2`；
+  - `numeric_session_capacity_signal_rows=0`；
+  - `numeric_non_session_expected_rows=2`；
+  - `expected_semantic_counts=bucket_total_cells:2`。
+- `summarize_v3_source_parser_requirements_audit.py` 必须把该结果回连到 2410；
+- 2410 requirements 增加：
+  - `find_session_capacity_source_beyond_numeric_bucket_cells`。
+- readiness/workbench 可透传 numeric action summary，但不得新增或放宽 gate；
+- 在找到 session-capacity 的实际 source、table overlay、per-session table version、server-side expansion 或其他可证伪机制前，不得恢复 formal/value sampler 调参。
+
+原因：
+
+- `100105` 在现有 parser 中对应“良品扫描 / q3 total cells”，真实 payload 与 final inventory 完全对上；
+- 该数值不等于 session total item count，也不等于 warehouse total cells；
+- 因而 2410 的 unique round-cap overflow 不能用这条 numeric-only action result 解释；
+- 这把 blocker 从“decode numeric action result”推进为“继续寻找 numeric bucket cells 之外的 session-capacity/source 证据”；
+- 当前 readiness 仍为 `overall_status=not_ready`、`blocked_gates=13`，workbench 仍为 `shadow_sampler_contract=shadow_design_only`。
+
+## D-v3-215：2410 session-capacity blocker 缺 exact event source，下一步必须查 table/payload/source 机制
+
+2026-06-08 起，当前决策：
+
+- `summarize_v3_session_capacity_source_gap_audit.py` 是 session-capacity source gap 的 audit-only 入口；
+- 该 artifact 固定：
+  - `shadow_only=True`；
+  - `affects_bid=False`；
+  - 只重放 capture state events，不改变 live parser、UI 或正式出价。
+- 当前真实 2410 source-gap 结果：
+  - `rows=22`；
+  - `files=22`；
+  - `session_capacity_rows=1`；
+  - `exact_session_count_source_rows=2`；
+  - `warehouse_cells_only_rows=3`；
+  - `bucket_only_blocked_rows=1`；
+  - `unresolved_session_capacity_rows=1`。
+- 关键分流：
+  - 2 条 exact `session.total_item_count` public total rows 存在，但属于 `not_unique_round_cap_blocker`；
+  - 3 条 exact `session.warehouse_total_cells` rows 也不解释 item-count over-cap；
+  - 唯一 `session_capacity_source_semantics` row 是 `fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json`，状态为 `blocked_session_capacity_source_gap_bucket_only`。
+- 对该唯一 blocker：
+  - inventory 为 `total_item_count=57`、`warehouse_total_cells=176`；
+  - action ids 为 `100105:2`；
+  - public info ids 为 `200015:2`；
+  - skill ids 为 `1002081:2`；
+  - `session_count_source_count=0`；
+  - `warehouse_cells_source_count=0`；
+  - `bucket_source_count=2`。
+- `summarize_v3_source_parser_requirements_audit.py` 必须回连该 artifact；
+- 2410 requirements 增加：
+  - `resolve_session_capacity_without_exact_event_source`。
+- readiness/workbench 可透传 source-gap counts，但不得新增或放宽 gate；
+- 不得继续在 action/public/skill event fields 上组合过拟合；
+- 下一步应转向 per-session table version、external overlay table、settlement payload/source expansion 或 server-side settlement expansion 机制。
+
+原因：
+
+- 当前事件流已经证明唯一 session-capacity blocker 没有 exact session total-count source；
+- 其他同 map 的 public total rows 只能说明 parser 能识别 session count source，不能解释该 blocker；
+- 继续把 `100105` 或其他 bucket/action evidence 当成 session capacity 会把 table/source 问题伪装成 sampler 参数问题；
+- 当前 readiness 仍为 `overall_status=not_ready`、`blocked_gates=13`，workbench 仍为 `table_activity_capacity=stop_loss` 与 `shadow_sampler_contract=shadow_design_only`。
+
+## D-v3-216：2410 payload 验证库存但不解释 table cap，必须转向 table/overlay/server-side 机制
+
+2026-06-09 起，当前决策：
+
+- `summarize_v3_session_capacity_payload_table_gap_audit.py` 是 session-capacity payload/table gap 的 audit-only 入口；
+- 该 artifact 固定：
+  - `shadow_only=True`；
+  - `affects_bid=False`；
+  - 只用于解释 source/capacity blocker，不改变 live/UI/正式出价。
+- 当前真实 2410 payload/table gap 结果：
+  - `status=blocked_payload_table_gap_required`；
+  - `rows=1`；
+  - `payload_verified_rows=1`；
+  - `no_full_event_payload_rows=1`；
+  - blocker file=`fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json`。
+- 对该 blocker：
+  - payload raw candidates=`57`；
+  - occupied slots=`57`；
+  - parsed inventory=`57`；
+  - `raw_candidate_inventory_delta=0`；
+  - `occupied_slot_inventory_delta=0`；
+  - inventory slot envelope=`250`，不等于 item-count cap；
+  - `unique_non_temp_item_id_count=53`；
+  - `bidmap_raw_round_cap_max=50`；
+  - `unique_non_temp_minus_bidmap_raw_round_cap=3`；
+  - `bidmap_items_per_session_max=40`；
+  - `inventory_minus_bidmap_items_per_session=17`；
+  - full action/skill/public payload source count 均为 0；
+  - `1002081` skill 最大 observed items=`35`，不是 full inventory source。
+- `summarize_v3_source_parser_requirements_audit.py` 必须回连该 artifact；
+- 2410 requirements 增加：
+  - `resolve_payload_verified_table_cap_gap_without_full_source`。
+- readiness/workbench 可透传 payload/table gap counts，但不得新增或放宽 gate；
+- 下一步必须查：
+  - `check_per_session_table_version_or_external_overlay`；
+  - `inspect_server_side_settlement_expansion_or_source_transform`；
+  - `decode_payload_outer_fields_as_metadata_not_capacity`。
+- 不得把 0x002D payload 本身当成 capacity/source 解释；它当前只证明 settlement inventory list 真实存在。
+
+原因：
+
+- payload 已完整验证最终库存 57 件，排除了 parser duplicate、raw candidate mismatch、occupied slot mismatch；
+- 但 payload 没有 full event source，也没有解释为什么 table cap 可被突破；
+- slot envelope 250 只是 settlement/grid 容器容量，不是 item-count cap；
+- 因此剩余 blocker 已从 event field/source parser 进一步收窄到 table version、external overlay 或 server-side settlement expansion/source transform；
+- 当前 readiness 仍为 `overall_status=not_ready`、`blocked_gates=13`，workbench 仍为 `table_activity_capacity=stop_loss` 与 `shadow_sampler_contract=shadow_design_only`。
+
+## D-v3-217：2410 0x002D outer fields 是 metadata-only，不是隐藏 capacity source
+
+2026-06-09 起，当前决策：
+
+- `summarize_v3_payload_outer_field_semantics_audit.py` 是 0x002D outer/payload numeric field 语义审计入口；
+- 该 artifact 固定：
+  - `shadow_only=True`；
+  - `affects_bid=False`；
+  - 只用于收口 source/capacity blocker，不改变 live/UI/正式出价。
+- 当前真实 2410 outer field 结果：
+  - `status=watch_payload_outer_fields_metadata_only`；
+  - `rows=1`；
+  - `metadata_only_rows=1`；
+  - `capacity_candidate_rows=0`；
+  - `target_match_count=0`。
+- 对 blocker file=`fatbeans_valid_ethan_2410_1rounds_2410_1295019008815241_0283.json`：
+  - payload field2 匹配 `map_id=2410`；
+  - payload field20 匹配 settlement capture time，delta=`0s`；
+  - wrapper field5 等于 `settlement_loss_units=4107`；
+  - wrapper field3 等于 field4，是 opaque id；
+  - outer/payload numeric fields 未命中 `inventory_count=57`、`unique_non_temp=53`、BidMap session cap `40`、round cap `50`、slot envelope `250` 等 count/capacity targets。
+- `summarize_v3_source_parser_requirements_audit.py` 必须回连该 artifact；
+- 2410 requirements 增加：
+  - `check_table_overlay_or_server_side_after_outer_fields_metadata_only`。
+- readiness/workbench 可透传 outer field metadata/capacity candidate counts，但不得新增或放宽 gate；
+- `decode_payload_outer_fields_as_metadata_not_capacity` 这条 next-check 对当前 2410 blocker 可视为已解释；
+- 下一步应集中检查 per-session table version、external overlay table 或 server-side settlement expansion/source transform。
+
+原因：
+
+- 0x002D outer/payload numeric fields 没有作为 hidden count/capacity source 的直接证据；
+- 当前可解释字段均是 map id、timestamp、loss units 或 opaque id；
+- 因此继续从 payload outer fields 寻找 count cap 会转为过拟合；
+- blocker 已进一步收敛到 table/overlay/server-side 机制；
+- 当前 readiness 仍为 `overall_status=not_ready`、`blocked_gates=13`，workbench 仍为 `table_activity_capacity=stop_loss` 与 `shadow_sampler_contract=shadow_design_only`。

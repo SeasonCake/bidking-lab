@@ -288,6 +288,19 @@ def _counter_from_rows(rows: Iterable[Mapping[str, Any]], key: str) -> dict[str,
     )
 
 
+def _counter_text(value: Any, *, limit: int = 4) -> str:
+    if not isinstance(value, Mapping):
+        return "-"
+    text = ",".join(
+        f"{key}:{count}"
+        for key, count in sorted(
+            value.items(),
+            key=lambda item: (-int(item[1] or 0), str(item[0])),
+        )[:limit]
+    )
+    return text or "-"
+
+
 def _support_gate_status(row: Mapping[str, Any]) -> str:
     gate = row.get("support_gate")
     if not isinstance(gate, Mapping):
@@ -786,6 +799,291 @@ def _gate_summary(gate: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _capacity_source_expansion_contract(
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    contract = readiness.get("capacity_source_expansion_artifact_contract")
+    if not isinstance(contract, Mapping):
+        return {"status": "missing", "attached": False}
+    return {
+        "status": contract.get("status"),
+        "attached": True,
+        "source_split_status": contract.get("source_split_status"),
+        "digest_scope": contract.get("digest_scope"),
+        "unique_round_overflow_rows": contract.get("unique_round_overflow_rows"),
+        "session_capacity_source_semantics_rows": contract.get(
+            "session_capacity_source_semantics_rows"
+        ),
+        "server_side_expansion_rows": contract.get("server_side_expansion_rows"),
+        "payload_verified_only_rows": contract.get("payload_verified_only_rows"),
+        "mechanism_classes": dict(contract.get("mechanism_classes") or {}),
+        "source_evidence_classes": dict(
+            contract.get("source_evidence_classes") or {}
+        ),
+        "source_context_classes": dict(
+            contract.get("source_context_classes") or {}
+        ),
+    }
+
+
+def _capacity_table_audit_contract(readiness: Mapping[str, Any]) -> dict[str, Any]:
+    contract = readiness.get("capacity_table_audit_contract")
+    if not isinstance(contract, Mapping):
+        prior = readiness.get("prior_stress_detail_summary")
+        if isinstance(prior, Mapping):
+            contract = prior.get("capacity_table_audit_contract")
+    if not isinstance(contract, Mapping):
+        return {"status": "missing", "attached": False}
+    return {
+        "status": contract.get("status"),
+        "attached": True,
+        "map_rows": contract.get("map_rows"),
+        "semantic_matrix_cells": contract.get("semantic_matrix_cells"),
+        "semantic_status_counts": dict(
+            contract.get("semantic_status_counts") or {}
+        ),
+        "residual_mode_counts": dict(
+            contract.get("residual_mode_counts") or {}
+        ),
+        "detail_mechanism_candidate_counts": dict(
+            contract.get("detail_mechanism_candidate_counts") or {}
+        ),
+        "detail_next_check_counts": dict(
+            contract.get("detail_next_check_counts") or {}
+        ),
+        "detail_source_signal_counts": dict(
+            contract.get("detail_source_signal_counts") or {}
+        ),
+        "detail_unique_file_map_residual_rows": contract.get(
+            "detail_unique_file_map_residual_rows"
+        ),
+        "top_blocked_maps": list(contract.get("top_blocked_maps") or []),
+        "top_detail_examples": list(contract.get("top_detail_examples") or []),
+    }
+
+
+def _capacity_table_acquisition_contract(
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    contract = readiness.get("capacity_table_acquisition_contract")
+    if not isinstance(contract, Mapping):
+        prior = readiness.get("prior_stress_detail_summary")
+        if isinstance(prior, Mapping):
+            contract = prior.get("capacity_table_acquisition_contract")
+    if not isinstance(contract, Mapping):
+        return {"status": "missing", "attached": False}
+    overlay = contract.get("table_overlay_metadata")
+    overlay = overlay if isinstance(overlay, Mapping) else {}
+    current_overlay = contract.get("current_table_overlay_metadata")
+    current_overlay = (
+        current_overlay if isinstance(current_overlay, Mapping) else {}
+    )
+    artifact_overlay = contract.get("artifact_table_overlay_metadata")
+    artifact_overlay = (
+        artifact_overlay if isinstance(artifact_overlay, Mapping) else {}
+    )
+    overlay_delta = contract.get("table_overlay_metadata_delta")
+    overlay_delta = overlay_delta if isinstance(overlay_delta, list) else []
+    return {
+        "status": contract.get("status"),
+        "attached": True,
+        "acquisition_status": contract.get("acquisition_status"),
+        "detail_rows": contract.get("detail_rows"),
+        "unique_detail_rows": contract.get("unique_detail_rows"),
+        "unique_files": contract.get("unique_files"),
+        "route_counts": dict(contract.get("route_counts") or {}),
+        "source_strength_counts": dict(
+            contract.get("source_strength_counts") or {}
+        ),
+        "map_counts": dict(contract.get("map_counts") or {}),
+        "table_overlay_metadata": dict(overlay),
+        "current_table_overlay_metadata": dict(current_overlay),
+        "artifact_table_overlay_metadata": dict(artifact_overlay),
+        "table_overlay_metadata_stale": bool(
+            contract.get("table_overlay_metadata_stale")
+        ),
+        "table_overlay_metadata_delta": list(overlay_delta),
+        "top_examples": list(contract.get("top_examples") or []),
+    }
+
+
+def _guard_loss_source_context_contract(
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    contract = readiness.get("v3_practical_guard_loss_source_context_contract")
+    if not isinstance(contract, Mapping):
+        return {
+            "status": "not_supplied",
+            "audit_status": None,
+            "maps": None,
+            "guard_loss_rows": None,
+            "status_counts": {},
+        }
+    return {
+        "status": contract.get("status"),
+        "audit_status": contract.get("audit_status"),
+        "maps": contract.get("maps"),
+        "guard_loss_rows": contract.get("guard_loss_rows"),
+        "status_counts": dict(contract.get("status_counts") or {}),
+        "cse_exact_overlap_maps": contract.get("cse_exact_overlap_maps"),
+        "source_semantics_detail_maps": contract.get(
+            "source_semantics_detail_maps"
+        ),
+        "capacity_table_detail_maps": contract.get("capacity_table_detail_maps"),
+        "capacity_acquisition_example_maps": contract.get(
+            "capacity_acquisition_example_maps"
+        ),
+    }
+
+
+def _activity_drop_universe_overlay_contract(
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    contract = readiness.get("activity_drop_universe_overlay_contract")
+    if not isinstance(contract, Mapping):
+        return {
+            "status": "not_supplied",
+            "audit_status": None,
+            "maps": None,
+            "files": None,
+            "guard_loss_overlap_maps": None,
+            "candidate_item_universe_covered_maps": None,
+            "hard_map_blocked_maps": None,
+            "status_counts": {},
+        }
+    return {
+        "status": contract.get("status"),
+        "audit_status": contract.get("audit_status"),
+        "maps": contract.get("maps"),
+        "files": contract.get("files"),
+        "guard_loss_overlap_maps": contract.get("guard_loss_overlap_maps"),
+        "candidate_item_universe_covered_maps": contract.get(
+            "candidate_item_universe_covered_maps"
+        ),
+        "hard_map_allowed": contract.get("hard_map_allowed"),
+        "hard_map_blocked_maps": contract.get("hard_map_blocked_maps"),
+        "status_counts": dict(contract.get("status_counts") or {}),
+    }
+
+
+def _source_parser_requirements_contract(
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    contract = readiness.get("source_parser_requirements_contract")
+    if not isinstance(contract, Mapping):
+        return {
+            "status": "not_supplied",
+            "audit_status": None,
+            "maps": None,
+            "blocked_maps": None,
+            "guard_loss_overlap_maps": None,
+            "session_capacity_maps": None,
+            "drop_ref_residual_maps": None,
+            "activity_extras_maps": None,
+            "numeric_action_semantics_maps": None,
+            "numeric_action_rows": None,
+            "numeric_session_capacity_signal_rows": None,
+            "numeric_non_session_expected_rows": None,
+            "numeric_unknown_semantic_rows": None,
+            "session_capacity_source_gap_maps": None,
+            "session_capacity_source_gap_rows": None,
+            "session_gap_exact_session_count_source_rows": None,
+            "session_gap_bucket_only_blocked_rows": None,
+            "session_gap_unresolved_session_capacity_rows": None,
+            "payload_table_gap_maps": None,
+            "payload_table_gap_rows": None,
+            "payload_table_gap_blocked_rows": None,
+            "payload_table_gap_payload_verified_rows": None,
+            "payload_table_gap_no_full_event_payload_rows": None,
+            "payload_outer_field_maps": None,
+            "payload_outer_field_rows": None,
+            "payload_outer_field_metadata_only_rows": None,
+            "payload_outer_field_capacity_candidate_rows": None,
+            "table_overlay_residual_maps": None,
+            "table_overlay_residual_rows": None,
+            "table_overlay_residual_blocked_rows": None,
+            "table_overlay_residual_local_cap_gap_rows": None,
+            "table_overlay_residual_current_table_match_rows": None,
+            "table_overlay_residual_activity_direct_rows": None,
+            "table_overlay_residual_server_transform_open_rows": None,
+            "requirement_counts": {},
+            "status_counts": {},
+        }
+    return {
+        "status": contract.get("status"),
+        "audit_status": contract.get("audit_status"),
+        "parser_required": contract.get("parser_required"),
+        "maps": contract.get("maps"),
+        "blocked_maps": contract.get("blocked_maps"),
+        "guard_loss_overlap_maps": contract.get("guard_loss_overlap_maps"),
+        "session_capacity_maps": contract.get("session_capacity_maps"),
+        "drop_ref_residual_maps": contract.get("drop_ref_residual_maps"),
+        "activity_extras_maps": contract.get("activity_extras_maps"),
+        "numeric_action_semantics_maps": contract.get("numeric_action_semantics_maps"),
+        "numeric_action_rows": contract.get("numeric_action_rows"),
+        "numeric_session_capacity_signal_rows": contract.get(
+            "numeric_session_capacity_signal_rows"
+        ),
+        "numeric_non_session_expected_rows": contract.get(
+            "numeric_non_session_expected_rows"
+        ),
+        "numeric_unknown_semantic_rows": contract.get("numeric_unknown_semantic_rows"),
+        "session_capacity_source_gap_maps": contract.get(
+            "session_capacity_source_gap_maps"
+        ),
+        "session_capacity_source_gap_rows": contract.get(
+            "session_capacity_source_gap_rows"
+        ),
+        "session_gap_exact_session_count_source_rows": contract.get(
+            "session_gap_exact_session_count_source_rows"
+        ),
+        "session_gap_bucket_only_blocked_rows": contract.get(
+            "session_gap_bucket_only_blocked_rows"
+        ),
+        "session_gap_unresolved_session_capacity_rows": contract.get(
+            "session_gap_unresolved_session_capacity_rows"
+        ),
+        "payload_table_gap_maps": contract.get("payload_table_gap_maps"),
+        "payload_table_gap_rows": contract.get("payload_table_gap_rows"),
+        "payload_table_gap_blocked_rows": contract.get(
+            "payload_table_gap_blocked_rows"
+        ),
+        "payload_table_gap_payload_verified_rows": contract.get(
+            "payload_table_gap_payload_verified_rows"
+        ),
+        "payload_table_gap_no_full_event_payload_rows": contract.get(
+            "payload_table_gap_no_full_event_payload_rows"
+        ),
+        "payload_outer_field_maps": contract.get("payload_outer_field_maps"),
+        "payload_outer_field_rows": contract.get("payload_outer_field_rows"),
+        "payload_outer_field_metadata_only_rows": contract.get(
+            "payload_outer_field_metadata_only_rows"
+        ),
+        "payload_outer_field_capacity_candidate_rows": contract.get(
+            "payload_outer_field_capacity_candidate_rows"
+        ),
+        "table_overlay_residual_maps": contract.get("table_overlay_residual_maps"),
+        "table_overlay_residual_rows": contract.get("table_overlay_residual_rows"),
+        "table_overlay_residual_blocked_rows": contract.get(
+            "table_overlay_residual_blocked_rows"
+        ),
+        "table_overlay_residual_local_cap_gap_rows": contract.get(
+            "table_overlay_residual_local_cap_gap_rows"
+        ),
+        "table_overlay_residual_current_table_match_rows": contract.get(
+            "table_overlay_residual_current_table_match_rows"
+        ),
+        "table_overlay_residual_activity_direct_rows": contract.get(
+            "table_overlay_residual_activity_direct_rows"
+        ),
+        "table_overlay_residual_server_transform_open_rows": contract.get(
+            "table_overlay_residual_server_transform_open_rows"
+        ),
+        "requirement_counts": dict(contract.get("requirement_counts") or {}),
+        "status_counts": dict(contract.get("status_counts") or {}),
+    }
+
+
 def _sampler_contract_status(
     *,
     blocking_gates: Iterable[Mapping[str, Any]],
@@ -863,6 +1161,20 @@ def summarize_shadow_sampler_contract(
         and status == "ready_for_shadow_prototype"
     ):
         status = "shadow_value_profile_guardability_blocked"
+    cse_contract = _capacity_source_expansion_contract(readiness)
+    guard_loss_source_context_contract = _guard_loss_source_context_contract(
+        readiness
+    )
+    activity_drop_universe_overlay_contract = (
+        _activity_drop_universe_overlay_contract(readiness)
+    )
+    source_parser_requirements_contract = _source_parser_requirements_contract(
+        readiness
+    )
+    capacity_table_contract = _capacity_table_audit_contract(readiness)
+    capacity_table_acquisition_contract = _capacity_table_acquisition_contract(
+        readiness
+    )
     lane_verdicts = {
         str(row.get("lane")): str(row.get("verdict"))
         for row in lanes
@@ -895,6 +1207,14 @@ def summarize_shadow_sampler_contract(
         "required_component_gates": list(SHADOW_SAMPLER_REQUIRED_COMPONENT_GATES),
         "prototype_contract": prototype_contract,
         "guarded_trial_contract": guarded_trial_contract,
+        "capacity_table_audit_contract": capacity_table_contract,
+        "capacity_table_acquisition_contract": capacity_table_acquisition_contract,
+        "capacity_source_expansion_contract": cse_contract,
+        "guard_loss_source_context_contract": guard_loss_source_context_contract,
+        "activity_drop_universe_overlay_contract": (
+            activity_drop_universe_overlay_contract
+        ),
+        "source_parser_requirements_contract": source_parser_requirements_contract,
         "value_source_profile_contract": value_source_profile_contract,
         "value_map_profile_details_contract": value_map_profile_details_contract,
         "value_profile_guardability_contract": value_profile_guardability_contract,
@@ -1048,6 +1368,24 @@ def _print_summary(result: Mapping[str, Any]) -> None:
     if isinstance(contract, Mapping):
         prototype = contract.get("prototype_contract") or {}
         guarded_trial = contract.get("guarded_trial_contract") or {}
+        capacity_table = (
+            contract.get("capacity_table_audit_contract") or {}
+        )
+        capacity_table_acquisition = (
+            contract.get("capacity_table_acquisition_contract") or {}
+        )
+        cse_contract = (
+            contract.get("capacity_source_expansion_contract") or {}
+        )
+        guard_loss_source_context = (
+            contract.get("guard_loss_source_context_contract") or {}
+        )
+        activity_drop_overlay = (
+            contract.get("activity_drop_universe_overlay_contract") or {}
+        )
+        source_parser = (
+            contract.get("source_parser_requirements_contract") or {}
+        )
         value_source_profile = (
             contract.get("value_source_profile_contract") or {}
         )
@@ -1097,6 +1435,17 @@ def _print_summary(result: Mapping[str, Any]) -> None:
             for row in contract.get("blocking_gates") or ()
             if isinstance(row, Mapping)
         ) or "-"
+        capacity_table_top_maps = ",".join(
+            str(row.get("map_id"))
+            for row in capacity_table.get("top_blocked_maps") or ()
+            if isinstance(row, Mapping) and row.get("map_id") is not None
+        ) or "-"
+        capacity_table_overlay = (
+            capacity_table_acquisition.get("table_overlay_metadata") or {}
+        )
+        capacity_table_artifact_overlay = (
+            capacity_table_acquisition.get("artifact_table_overlay_metadata") or {}
+        )
         print(
             " ".join(
                 [
@@ -1117,6 +1466,107 @@ def _print_summary(result: Mapping[str, Any]) -> None:
                     f"guarded_trial_sampler={guarded_trial.get('sampler_status')}",
                     f"guarded_trial_components={guarded_trial_component_counts}",
                     f"guarded_trial_support_gates={guarded_trial_support_counts}",
+                    "capacity_table_status="
+                    f"{capacity_table.get('status')}",
+                    "capacity_table_semantic_status="
+                    f"{_counter_text(capacity_table.get('semantic_status_counts'))}",
+                    "capacity_table_residual_modes="
+                    f"{_counter_text(capacity_table.get('residual_mode_counts'))}",
+                    "capacity_table_detail_mechanisms="
+                    f"{_counter_text(capacity_table.get('detail_mechanism_candidate_counts'))}",
+                    "capacity_table_detail_next_checks="
+                    f"{_counter_text(capacity_table.get('detail_next_check_counts'))}",
+                    f"capacity_table_top_maps={capacity_table_top_maps}",
+                    "capacity_table_acquisition_status="
+                    f"{capacity_table_acquisition.get('status')}",
+                    "capacity_table_acquisition_routes="
+                    f"{_counter_text(capacity_table_acquisition.get('route_counts'))}",
+                    "capacity_table_acquisition_sources="
+                    f"{_counter_text(capacity_table_acquisition.get('source_strength_counts'))}",
+                    "capacity_table_overlay="
+                    f"{capacity_table_overlay.get('local_overlay_status')}",
+                    "capacity_table_artifact_overlay="
+                    f"{capacity_table_artifact_overlay.get('local_overlay_status')}",
+                    "capacity_table_metadata_stale="
+                    f"{capacity_table_acquisition.get('table_overlay_metadata_stale')}",
+                    "cse_source_split="
+                    f"{cse_contract.get('source_split_status')}",
+                    "cse_unique_round_overflow="
+                    f"{cse_contract.get('unique_round_overflow_rows')}",
+                    "cse_session_capacity_semantics="
+                    f"{cse_contract.get('session_capacity_source_semantics_rows')}",
+                    "cse_server_side_expansion="
+                    f"{cse_contract.get('server_side_expansion_rows')}",
+                    "cse_mechanisms="
+                    f"{_counter_text(cse_contract.get('mechanism_classes'))}",
+                    "guard_loss_source_context_status="
+                    f"{guard_loss_source_context.get('status')}",
+                    "guard_loss_source_context_audit="
+                    f"{guard_loss_source_context.get('audit_status')}",
+                    "guard_loss_source_context_maps="
+                    f"{guard_loss_source_context.get('maps')}",
+                    "guard_loss_source_context_rows="
+                    f"{guard_loss_source_context.get('guard_loss_rows')}",
+                    "guard_loss_source_context_statuses="
+                    f"{_counter_text(guard_loss_source_context.get('status_counts'))}",
+                    "activity_drop_overlay_status="
+                    f"{activity_drop_overlay.get('status')}",
+                    "activity_drop_overlay_audit="
+                    f"{activity_drop_overlay.get('audit_status')}",
+                    "activity_drop_overlay_maps="
+                    f"{activity_drop_overlay.get('maps')}",
+                    "activity_drop_overlay_guard_maps="
+                    f"{activity_drop_overlay.get('guard_loss_overlap_maps')}",
+                    "activity_drop_overlay_covered_maps="
+                    f"{activity_drop_overlay.get('candidate_item_universe_covered_maps')}",
+                    "activity_drop_overlay_hard_map_blocked="
+                    f"{activity_drop_overlay.get('hard_map_blocked_maps')}",
+                    "activity_drop_overlay_statuses="
+                    f"{_counter_text(activity_drop_overlay.get('status_counts'))}",
+                    "source_parser_status="
+                    f"{source_parser.get('status')}",
+                    "source_parser_audit="
+                    f"{source_parser.get('audit_status')}",
+                    "source_parser_maps="
+                    f"{source_parser.get('maps')}",
+                    "source_parser_blocked_maps="
+                    f"{source_parser.get('blocked_maps')}",
+                    "source_parser_session_maps="
+                    f"{source_parser.get('session_capacity_maps')}",
+                    "source_parser_drop_ref_maps="
+                    f"{source_parser.get('drop_ref_residual_maps')}",
+                    "source_parser_numeric_action_rows="
+                    f"{source_parser.get('numeric_action_rows')}",
+                    "source_parser_numeric_session_signals="
+                    f"{source_parser.get('numeric_session_capacity_signal_rows')}",
+                    "source_parser_numeric_non_session="
+                    f"{source_parser.get('numeric_non_session_expected_rows')}",
+                    "source_parser_session_gap_rows="
+                    f"{source_parser.get('session_capacity_source_gap_rows')}",
+                    "source_parser_session_gap_bucket_blocked="
+                    f"{source_parser.get('session_gap_bucket_only_blocked_rows')}",
+                    "source_parser_session_gap_unresolved="
+                    f"{source_parser.get('session_gap_unresolved_session_capacity_rows')}",
+                    "source_parser_payload_table_gap_rows="
+                    f"{source_parser.get('payload_table_gap_rows')}",
+                    "source_parser_payload_table_gap_blocked="
+                    f"{source_parser.get('payload_table_gap_blocked_rows')}",
+                    "source_parser_payload_table_gap_verified="
+                    f"{source_parser.get('payload_table_gap_payload_verified_rows')}",
+                    "source_parser_payload_outer_rows="
+                    f"{source_parser.get('payload_outer_field_rows')}",
+                    "source_parser_payload_outer_metadata="
+                    f"{source_parser.get('payload_outer_field_metadata_only_rows')}",
+                    "source_parser_payload_outer_capacity_candidates="
+                    f"{source_parser.get('payload_outer_field_capacity_candidate_rows')}",
+                    "source_parser_table_overlay_rows="
+                    f"{source_parser.get('table_overlay_residual_rows')}",
+                    "source_parser_table_overlay_blocked="
+                    f"{source_parser.get('table_overlay_residual_blocked_rows')}",
+                    "source_parser_table_overlay_server_open="
+                    f"{source_parser.get('table_overlay_residual_server_transform_open_rows')}",
+                    "source_parser_requirements="
+                    f"{_counter_text(source_parser.get('requirement_counts'))}",
                     "value_source_profile_status="
                     f"{value_source_profile.get('status')}",
                     "value_source_profile_audit="

@@ -1,7 +1,7 @@
 # Upstream Reference Notes
 
 This project keeps third-party BidKing-related repositories as **local-only references** under `external_references/`.
-They are intentionally ignored by git and are not vendored into this repository.
+They are intentionally ignored by git and are not vendored into this repository, except for the isolated Hero Ref lab described below.
 
 ## Why local-only references?
 
@@ -24,7 +24,9 @@ Current local reference bundles:
 | `external_references/AuctionAnalyzer4.13.3` | Local binary/decompiled reference, not vendored | OCR/parser/calculator reference and reverse-engineering notes |
 | `external_references/AuctionAnalyzer4.13.3.zip` | Local archive copy, not vendored | Original archive for the AuctionAnalyzer reference bundle |
 
-Do not commit `external_references/**`. Use it for inspection, comparison, and manually documented design notes.
+Do not commit raw upstream bundles under `external_references/**`. Use them for inspection, comparison, and manually documented design notes.
+
+Exception: `external_references/ahmad_live_reference_lab/` is local BidKing Lab code that wraps the Ahmad/Victor reference route. Its source, scripts, and docs are versioned; generated `build/`, `dist/`, `__pycache__`, and packaged binaries remain ignored.
 
 ---
 

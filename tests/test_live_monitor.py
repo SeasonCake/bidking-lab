@@ -17,6 +17,7 @@ from bidking_lab.live.fatbeans import (
     FatbeansObservedItem,
     FatbeansPlayerBid,
     FatbeansPublicInfo,
+    FatbeansSendEvent,
     FatbeansStateEvent,
 )
 from bidking_lab.live.monitor import (
@@ -31,7 +32,11 @@ from bidking_lab.live.monitor import (
     load_monitor_tables,
     write_monitor_logs,
 )
-from bidking_lab.live.types import GridItemObservation, LiveObservationBatch
+from bidking_lab.live.types import (
+    FieldUpdate,
+    GridItemObservation,
+    LiveObservationBatch,
+)
 from bidking_lab.inference.observation import QualityBucketObs, SessionObs
 from bidking_lab.inference.q6_residual import (
     aisha_q6_quality_only_deep_local_risk,
@@ -107,6 +112,118 @@ def test_action_round_advances_after_completed_state() -> None:
     assert monitor_module._latest_round(after_round_one) == 1
 
 
+def test_action_round_uses_sent_bid_count_when_settlement_round_lags() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(
+            FatbeansSendEvent(
+                sort_id=5,
+                capture_time="",
+                message_id=0x0022,
+                session_id="2409:1",
+                value=780_000,
+            ),
+            FatbeansSendEvent(
+                sort_id=12,
+                capture_time="",
+                message_id=0x0022,
+                session_id="2409:1",
+                value=780_000,
+            ),
+            FatbeansSendEvent(
+                sort_id=22,
+                capture_time="",
+                message_id=0x0022,
+                session_id="2409:1",
+                value=780_000,
+            ),
+        ),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=24,
+                capture_time="",
+                message_id=0x002D,
+                session_id="2409:1",
+                map_id=2409,
+                round_index=2,
+                inventory_items=(
+                    FatbeansInventoryItem(
+                        runtime_id=1,
+                        item_id=1001,
+                        quality=4,
+                        cells=4,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert monitor_module._action_round(events) == 3
+
+
+def test_action_round_infers_roundless_bidding_state_from_bid_count() -> None:
+    first_prebid = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=3,
+                capture_time="",
+                message_id=0x0027,
+                session_id="2401:1",
+                map_id=2401,
+                round_index=None,
+                action_results=(
+                    FatbeansActionResult(
+                        action_id=100129,
+                        result=4,
+                        result_field=14,
+                        observed_items=(),
+                    ),
+                ),
+            ),
+        ),
+    )
+    third_prebid = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(
+            FatbeansSendEvent(
+                sort_id=5,
+                capture_time="",
+                message_id=0x0022,
+                session_id="2401:1",
+                value=100_000,
+            ),
+            FatbeansSendEvent(
+                sort_id=10,
+                capture_time="",
+                message_id=0x0022,
+                session_id="2401:1",
+                value=120_000,
+            ),
+        ),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=12,
+                capture_time="",
+                message_id=0x0027,
+                session_id="2401:1",
+                map_id=2401,
+                round_index=None,
+            ),
+        ),
+    )
+
+    assert monitor_module._action_round(first_prebid) == 1
+    assert monitor_module._action_round(third_prebid) == 3
+
+
 def _item() -> Item:
     return Item(
         item_id=1001,
@@ -180,6 +297,238 @@ def test_action_result_rows_include_revealed_item_details() -> None:
     assert rows[0]["revealed_items_detail"][0]["quality"] == 2
     assert rows[0]["revealed_items_detail"][1]["local_index"] == 76
     assert rows[0]["revealed_items_detail"][1]["quality"] == 3
+
+
+def test_action_result_rows_ignore_settlement_replay_results() -> None:
+    rows = monitor_module._action_result_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=10,
+                    capture_time="2026-06-08 17:16:32.000",
+                    message_id=0x0027,
+                    session_id="2409:1",
+                    map_id=2409,
+                    round_index=1,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=100104,
+                            result=17,
+                            result_field=14,
+                            observed_items=(),
+                        ),
+                    ),
+                ),
+                FatbeansStateEvent(
+                    sort_id=18,
+                    capture_time="2026-06-08 17:17:01.000",
+                    message_id=0x0027,
+                    session_id="2409:1",
+                    map_id=2409,
+                    round_index=2,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=100110,
+                            result=1.8888888359069824,
+                            result_field=14,
+                            observed_items=(),
+                        ),
+                    ),
+                ),
+                FatbeansStateEvent(
+                    sort_id=24,
+                    capture_time="2026-06-08 17:18:39.000",
+                    message_id=0x002D,
+                    session_id="2409:1",
+                    map_id=2409,
+                    round_index=2,
+                    inventory_items=(
+                        FatbeansInventoryItem(
+                            runtime_id=1,
+                            item_id=1001,
+                            quality=4,
+                            cells=4,
+                        ),
+                    ),
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=100104,
+                            result=17,
+                            result_field=14,
+                            observed_items=(),
+                        ),
+                        FatbeansActionResult(
+                            action_id=100110,
+                            result=1.8888888359069824,
+                            result_field=14,
+                            observed_items=(),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        {
+            100104: SimpleNamespace(name="普品扫描"),
+            100110: SimpleNamespace(name="普品均格"),
+        },
+    )
+
+    assert [row["action_id"] for row in rows] == [100110, 100104]
+    assert rows[0]["sort"] == 18
+    assert rows[0]["tool"] == "普品均格"
+
+
+def test_action_result_rows_prefer_direct_result_over_state_replay() -> None:
+    rows = monitor_module._action_result_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=10,
+                    capture_time="2026-06-08 17:37:05.000",
+                    message_id=0x0027,
+                    session_id="2401:1",
+                    map_id=2401,
+                    round_index=1,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=100104,
+                            result=8,
+                            result_field=14,
+                            observed_items=(),
+                        ),
+                    ),
+                ),
+                FatbeansStateEvent(
+                    sort_id=19,
+                    capture_time="2026-06-08 17:37:34.000",
+                    message_id=0x0027,
+                    session_id="2401:1",
+                    map_id=2401,
+                    round_index=2,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=100106,
+                            result=41,
+                            result_field=14,
+                            observed_items=(),
+                        ),
+                    ),
+                ),
+                FatbeansStateEvent(
+                    sort_id=24,
+                    capture_time="2026-06-08 17:38:05.000",
+                    message_id=0x0025,
+                    session_id="2401:1",
+                    map_id=2401,
+                    round_index=3,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=100104,
+                            result=8,
+                            result_field=14,
+                            observed_items=(),
+                        ),
+                        FatbeansActionResult(
+                            action_id=100106,
+                            result=41,
+                            result_field=14,
+                            observed_items=(),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        {
+            100104: SimpleNamespace(name="普品扫描"),
+            100106: SimpleNamespace(name="优品扫描"),
+        },
+    )
+
+    assert [row["action_id"] for row in rows] == [100106, 100104]
+    assert rows[0]["sort"] == 19
+    assert rows[0]["tool"] == "优品扫描"
+
+
+def test_action_result_rows_infer_zero_after_action_without_result() -> None:
+    rows = monitor_module._action_result_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(
+                FatbeansSendEvent(
+                    sort_id=12,
+                    capture_time="2026-06-09 12:05:41.529",
+                    message_id=0x0026,
+                    session_id="2404:1",
+                    value=100113,
+                ),
+            ),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=17,
+                    capture_time="2026-06-09 12:06:01.000",
+                    message_id=0x0025,
+                    session_id="2404:1",
+                    map_id=2404,
+                    round_index=3,
+                    action_results=(),
+                ),
+            ),
+        ),
+        {
+            100113: SimpleNamespace(name="极品均格"),
+        },
+    )
+
+    assert rows == [
+        {
+            "sort": 12,
+            "time": "2026-06-09 12:05:41.529",
+            "action_id": 100113,
+            "tool": "极品均格",
+            "result": 0,
+            "result_field": None,
+            "inferred_zero": True,
+            "result_inference": "sent_action_without_result_after_later_state",
+            "revealed_items": 0,
+            "revealed_items_detail": [],
+            "revealed_summary": "",
+        }
+    ]
+
+
+def test_action_result_rows_do_not_infer_zero_before_later_state() -> None:
+    rows = monitor_module._action_result_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(
+                FatbeansSendEvent(
+                    sort_id=12,
+                    capture_time="2026-06-09 12:05:41.529",
+                    message_id=0x0026,
+                    session_id="2404:1",
+                    value=100113,
+                ),
+            ),
+            statuses=(),
+            states=(),
+        ),
+        {
+            100113: SimpleNamespace(name="极品均格"),
+        },
+    )
+
+    assert rows == []
 
 
 def test_public_info_rows_include_revealed_item_details() -> None:
@@ -405,6 +754,86 @@ def test_minimap_table_shape_requires_cell_count_match() -> None:
     assert rows[0]["shape_key"] is None
     assert rows[0]["row"] is None
     assert rows[0]["col"] is None
+
+
+def test_ahmad_ref_inputs_bridge_keeps_pre_settlement_fields_only() -> None:
+    bridge = monitor_module._ahmad_ref_inputs_from_batches(
+        (
+            LiveObservationBatch(
+                source="packet",
+                event_kind="tool_revealed",
+                phase="bidding",
+                sequence=8,
+                field_updates=(
+                    FieldUpdate(
+                        path=("session", "total_item_count"),
+                        value=24,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                    FieldUpdate(
+                        path=("bucket", "5", "avg_cells"),
+                        value=3.2,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                ),
+            ),
+            LiveObservationBatch(
+                source="packet",
+                event_kind="session_settled",
+                phase="settled",
+                sequence=30,
+                field_updates=(
+                    FieldUpdate(
+                        path=("bucket", "6", "count"),
+                        value=9,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                ),
+            ),
+        ),
+        hero="ahmed",
+    )
+
+    assert bridge["total_count"] == 24
+    assert bridge["avg_cells"] == {"q5": 3.2}
+    assert bridge["counts"] == {}
+    assert all(row["phase"] != "settled" for row in bridge["field_updates"])
+    assert (
+        monitor_module._ahmad_ref_inputs_from_batches((), hero="aisha")
+        == {}
+    )
+
+
+def test_structured_ref_inputs_bridge_supports_victor_count_sum() -> None:
+    bridge = monitor_module._ahmad_ref_inputs_from_batches(
+        (
+            LiveObservationBatch(
+                source="packet",
+                event_kind="tool_revealed",
+                phase="bidding",
+                sequence=4,
+                field_updates=(
+                    FieldUpdate(
+                        path=("bucket_group", "q4q5q6", "count"),
+                        value=8,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                ),
+            ),
+        ),
+        hero="victor",
+    )
+
+    assert bridge["count_sums"] == {"q4q5q6": 8}
+    assert bridge["field_updates"][0]["path"] == [
+        "bucket_group",
+        "q4q5q6",
+        "count",
+    ]
 
 
 def _two_item_tables() -> MonitorTables:

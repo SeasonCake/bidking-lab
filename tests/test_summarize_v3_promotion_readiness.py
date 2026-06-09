@@ -675,6 +675,30 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
             },
         },
     }
+    guard_case_summary = {
+        "rows": 23,
+        "p50_improved_rows": 4,
+        "p50_worsened_rows": 2,
+        "p50_unchanged_rows": 17,
+        "p90_coverage_gained_rows": 1,
+        "p90_coverage_lost_rows": 3,
+        "p90_coverage_unchanged_rows": 19,
+        "p90_extreme_over_reduced_rows": 8,
+        "p90_extreme_over_added_rows": 0,
+        "p90_extreme_over_unchanged_rows": 15,
+        "p90_coverage_loss_context": {
+            "rows": 3,
+            "by_guard_kind": {"live_prior_only_raise_guard": 3},
+            "by_guard_flag": {
+                "q6_prior_floor_watch": 3,
+                "settlement_count_prior_candidate": 2,
+            },
+            "by_evidence_profile": {"shape+layout": 3},
+            "median_guarded_p90_shortfall": 125_000,
+            "median_unguarded_p90_excess": 75_000,
+            "median_p90_guard_cut": 200_000,
+        },
+    }
     brief = {
         "total_rows": 49,
         "source_counts": {"windivert_archive": 49},
@@ -704,6 +728,7 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
             "v3_practical_guarded_p90_extreme_over_on_comparison": 0.09,
             "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.57,
             "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.48,
+            "v3_practical_guard_case_summary": guard_case_summary,
             "formal_policy_comparison": policy_matrix,
         },
         "prebid_overall": {
@@ -731,7 +756,30 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
             "v3_practical_guarded_p90_extreme_over_on_comparison": 0.09,
             "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.57,
             "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.48,
+            "v3_practical_guard_case_summary": guard_case_summary,
             "formal_policy_comparison": policy_matrix,
+        },
+        "by_map_id": {
+            "2410": {
+                "rows": 10,
+                "v3_practical_guard_case_summary": {
+                    "rows": 8,
+                    "p50_worsened_rows": 0,
+                    "p90_coverage_lost_rows": 8,
+                    "p90_extreme_over_added_rows": 0,
+                },
+            },
+        },
+        "by_map_family": {
+            "villa": {
+                "rows": 45,
+                "v3_practical_guard_case_summary": {
+                    "rows": 21,
+                    "p50_worsened_rows": 0,
+                    "p90_coverage_lost_rows": 9,
+                    "p90_extreme_over_added_rows": 0,
+                },
+            },
         },
     }
 
@@ -742,6 +790,113 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
         min_sessions=2,
         folds=2,
         live_practical_guard_brief=brief,
+        guard_loss_source_context={
+            "status": "blocked_source_semantics_required",
+            "summary": {
+                "maps": 2,
+                "guard_loss_rows": 7,
+                "status_counts": {
+                    "blocked_cse_source_semantics_intersection": 1,
+                    "watch_source_context_intersection": 1,
+                },
+                "cse_exact_overlap_maps": 2,
+                "source_semantics_detail_maps": 1,
+                "capacity_table_detail_maps": 1,
+                "capacity_acquisition_example_maps": 1,
+            },
+            "rows": [
+                {
+                    "map_id": "2410",
+                    "status": "blocked_cse_source_semantics_intersection",
+                },
+                {
+                    "map_id": "2401",
+                    "status": "watch_source_context_intersection",
+                },
+            ],
+        },
+        activity_drop_universe_overlay={
+            "status": "blocked_activity_overlay_source_required",
+            "shadow_only": True,
+            "affects_bid": False,
+            "hard_map_allowed": False,
+            "summary": {
+                "maps": 1,
+                "files": 3,
+                "guard_loss_overlap_maps": 1,
+                "candidate_item_universe_covered_maps": 1,
+                "hard_map_blocked_maps": 1,
+                "status_counts": {
+                    "blocked_mixed_overlay_source_required": 1,
+                },
+            },
+            "rows": [
+                {
+                    "map_id": "2524",
+                    "status": "blocked_mixed_overlay_source_required",
+                }
+            ],
+        },
+        source_parser_requirements={
+            "status": "blocked_source_parser_required",
+            "shadow_only": True,
+            "affects_bid": False,
+            "parser_required": True,
+            "summary": {
+                "maps": 1,
+                "blocked_maps": 1,
+                "guard_loss_overlap_maps": 1,
+                "session_capacity_maps": 1,
+                "drop_ref_residual_maps": 1,
+                "activity_extras_maps": 1,
+                "numeric_action_semantics_maps": 1,
+                "numeric_action_rows": 2,
+                "numeric_session_capacity_signal_rows": 0,
+                "numeric_non_session_expected_rows": 2,
+                "numeric_unknown_semantic_rows": 0,
+                "session_capacity_source_gap_maps": 1,
+                "session_capacity_source_gap_rows": 22,
+                "session_gap_exact_session_count_source_rows": 2,
+                "session_gap_bucket_only_blocked_rows": 1,
+                "session_gap_unresolved_session_capacity_rows": 1,
+                "payload_table_gap_maps": 1,
+                "payload_table_gap_rows": 1,
+                "payload_table_gap_blocked_rows": 1,
+                "payload_table_gap_payload_verified_rows": 1,
+                "payload_table_gap_no_full_event_payload_rows": 1,
+                "payload_outer_field_maps": 1,
+                "payload_outer_field_rows": 1,
+                "payload_outer_field_metadata_only_rows": 1,
+                "payload_outer_field_capacity_candidate_rows": 0,
+                "table_overlay_residual_maps": 1,
+                "table_overlay_residual_rows": 1,
+                "table_overlay_residual_blocked_rows": 1,
+                "table_overlay_residual_local_cap_gap_rows": 1,
+                "table_overlay_residual_current_table_match_rows": 1,
+                "table_overlay_residual_activity_direct_rows": 0,
+                "table_overlay_residual_server_transform_open_rows": 1,
+                "requirement_counts": {
+                    "parse_numeric_action_result_for_session_capacity_semantics": 1,
+                    "find_session_capacity_source_beyond_numeric_bucket_cells": 1,
+                    "resolve_session_capacity_without_exact_event_source": 1,
+                    "resolve_payload_verified_table_cap_gap_without_full_source": 1,
+                    "check_table_overlay_or_server_side_after_outer_fields_metadata_only": 1,
+                    "resolve_current_raw_table_overlay_or_server_transform_residual": 1,
+                    "inspect_drop_ref_source_semantics_or_overlay": 1,
+                },
+                "status_counts": {
+                    "blocked_session_capacity_source_parser_required": 1,
+                },
+            },
+            "rows": [
+                {
+                    "map_id": "2410",
+                    "status": (
+                        "blocked_session_capacity_source_parser_required"
+                    ),
+                }
+            ],
+        },
     )
 
     gates = {row["name"]: row for row in result["gates"]}
@@ -758,7 +913,85 @@ def test_readiness_attaches_live_practical_guard_brief() -> None:
     assert metrics["contract_checks"]["overall"]["status"] == "watch"
     assert metrics["contract_checks"]["prebid_overall"]["status"] == "watch"
     assert metrics["contract_checks"]["overall"]["formal_policy_comparison_rows"] == 23
+    assert metrics["contract_checks"]["overall"]["guard_case_summary_rows"] == 23
+    assert (
+        metrics["contract_checks"]["overall"][
+            "guard_case_summary_p90_coverage_lost_rows"
+        ]
+        == 3
+    )
+    assert metrics["overall"]["v3_practical_guard_case_summary"][
+        "p50_worsened_rows"
+    ] == 2
+    assert metrics["overall"]["v3_practical_guard_case_summary"][
+        "p90_coverage_loss_context"
+    ]["by_guard_flag"] == {
+        "q6_prior_floor_watch": 3,
+        "settlement_count_prior_candidate": 2,
+    }
+    assert (
+        metrics["by_map_id"]["2410"]["v3_practical_guard_case_summary"][
+            "p90_coverage_lost_rows"
+        ]
+        == 8
+    )
+    assert (
+        metrics["by_map_family"]["villa"]["v3_practical_guard_case_summary"][
+            "p90_coverage_lost_rows"
+        ]
+        == 9
+    )
     assert metrics["overall"]["formal_policy_comparison"]["comparison_rows"] == 23
+    guard_loss_context = result["v3_practical_guard_loss_source_context_contract"]
+    assert guard_loss_context["status"] == "watch"
+    assert guard_loss_context["audit_status"] == "blocked_source_semantics_required"
+    assert guard_loss_context["maps"] == 2
+    assert guard_loss_context["guard_loss_rows"] == 7
+    assert guard_loss_context["status_counts"] == {
+        "blocked_cse_source_semantics_intersection": 1,
+        "watch_source_context_intersection": 1,
+    }
+    overlay = result["activity_drop_universe_overlay_contract"]
+    assert overlay["status"] == "watch"
+    assert overlay["audit_status"] == "blocked_activity_overlay_source_required"
+    assert overlay["maps"] == 1
+    assert overlay["candidate_item_universe_covered_maps"] == 1
+    assert overlay["hard_map_blocked_maps"] == 1
+    assert overlay["status_counts"] == {
+        "blocked_mixed_overlay_source_required": 1
+    }
+    source_parser = result["source_parser_requirements_contract"]
+    assert source_parser["status"] == "watch"
+    assert source_parser["audit_status"] == "blocked_source_parser_required"
+    assert source_parser["session_capacity_maps"] == 1
+    assert source_parser["drop_ref_residual_maps"] == 1
+    assert source_parser["requirement_counts"] == {
+        "parse_numeric_action_result_for_session_capacity_semantics": 1,
+        "find_session_capacity_source_beyond_numeric_bucket_cells": 1,
+        "resolve_session_capacity_without_exact_event_source": 1,
+        "resolve_payload_verified_table_cap_gap_without_full_source": 1,
+        "check_table_overlay_or_server_side_after_outer_fields_metadata_only": 1,
+        "resolve_current_raw_table_overlay_or_server_transform_residual": 1,
+        "inspect_drop_ref_source_semantics_or_overlay": 1,
+    }
+    assert source_parser["numeric_action_rows"] == 2
+    assert source_parser["numeric_session_capacity_signal_rows"] == 0
+    assert source_parser["numeric_non_session_expected_rows"] == 2
+    assert source_parser["session_capacity_source_gap_rows"] == 22
+    assert source_parser["session_gap_bucket_only_blocked_rows"] == 1
+    assert source_parser["session_gap_unresolved_session_capacity_rows"] == 1
+    assert source_parser["payload_table_gap_rows"] == 1
+    assert source_parser["payload_table_gap_blocked_rows"] == 1
+    assert source_parser["payload_table_gap_payload_verified_rows"] == 1
+    assert source_parser["payload_outer_field_rows"] == 1
+    assert source_parser["payload_outer_field_metadata_only_rows"] == 1
+    assert source_parser["payload_outer_field_capacity_candidate_rows"] == 0
+    assert source_parser["table_overlay_residual_rows"] == 1
+    assert source_parser["table_overlay_residual_blocked_rows"] == 1
+    assert source_parser["table_overlay_residual_local_cap_gap_rows"] == 1
+    assert source_parser["table_overlay_residual_current_table_match_rows"] == 1
+    assert source_parser["table_overlay_residual_activity_direct_rows"] == 0
+    assert source_parser["table_overlay_residual_server_transform_open_rows"] == 1
     assert (
         "review v3 practical guard coverage/extreme-over tradeoff by slice before promotion"
         in result["next_actions"]
@@ -824,6 +1057,12 @@ def test_readiness_blocks_live_practical_guard_brief_without_policy_matrix() -> 
         "v3_practical_guarded_p90_extreme_over_on_comparison": 0.0,
         "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.5,
         "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.5,
+        "v3_practical_guard_case_summary": {
+            "rows": 2,
+            "p50_worsened_rows": 1,
+            "p90_coverage_lost_rows": 1,
+            "p90_extreme_over_added_rows": 0,
+        },
     }
 
     result = module.summarize_readiness(
@@ -874,6 +1113,12 @@ def test_readiness_blocks_live_practical_guard_brief_without_prebid_contract() -
             "v3_practical_guarded_p90_extreme_over_on_comparison": 0.0,
             "v3_practical_unguarded_p90_extreme_over_on_comparison": 0.5,
             "v3_practical_guarded_minus_unguarded_p90_extreme_over": -0.5,
+            "v3_practical_guard_case_summary": {
+                "rows": 4,
+                "p50_worsened_rows": 0,
+                "p90_coverage_lost_rows": 1,
+                "p90_extreme_over_added_rows": 0,
+            },
             "formal_policy_comparison": {
                 "status": "watch",
                 "comparison_rows": 4,
@@ -1086,6 +1331,20 @@ def test_readiness_attaches_capacity_source_expansion_artifact_contract() -> Non
     assert cse["artifact_contract"]["entries"] == 1
     assert cse["artifact_contract"]["candidate_entries"] == 1
     assert cse["artifact_contract"]["group_bys"] == ["map_id", "map_family"]
+    assert cse["artifact_contract"]["digest_scope"] == "map_id"
+    assert cse["artifact_contract"]["source_split_status"] == (
+        "blocked_payload_only_source_split_unresolved"
+    )
+    assert cse["artifact_contract"]["unique_round_overflow_rows"] == 1
+    assert cse["artifact_contract"]["session_capacity_source_semantics_rows"] == 1
+    assert cse["artifact_contract"]["server_side_expansion_rows"] == 0
+    dependency_gates = {
+        row["gate"]: row
+        for row in result["gate_dependencies"]["watch_gates"]
+    }
+    assert "source_split=blocked_payload_only_source_split_unresolved" in (
+        dependency_gates["capacity_source_expansion_shadow"]["focus"]
+    )
     assert result["capacity_source_expansion_artifact_contract"]["cohorts"] == 1
 
 
@@ -1257,6 +1516,218 @@ def test_readiness_surfaces_prior_stress_capacity_groups() -> None:
         "detail_rows=2;capacity_flag_hits=4;"
         "top_cases=direct_prior_max_conflict:2"
     )
+
+
+def test_readiness_attaches_capacity_table_audit_focus() -> None:
+    module = _load_module()
+    rows = [
+        {
+            **_row(
+                "ethan|2501",
+                session_id=f"s{idx}",
+                truth=1_000,
+                pred=700,
+                p90=900,
+            ),
+            "map_id": 2501,
+            "v3_robust_status": "prior_stressed",
+            "v3_robust_prior_trusted": False,
+            "v3_robust_prior_stress_score": 2,
+            "v3_robust_reasons": "total_count_above_prior;total_cells_above_prior",
+            "v3_prior_expected_count": 2,
+            "v3_prior_expected_cells": 20,
+            "v3_prior_q6_expected_cells": 4,
+            "v3_prior_items_per_session_max": 5,
+            "v3_summary_session_total_count_exact": 7,
+            "v3_summary_session_total_cells_exact": 48,
+            "v3_summary_q6_cells_floor": 8,
+            "v3_truth_item_count": 7,
+            "v3_truth_total_cells": 48,
+            "v3_post_total_cells_p50": 40,
+            "v3_post_total_cells_p90": 50,
+            "v3_truth_q6_cells": 8,
+            "v3_post_q6_cells_p50": 6,
+            "v3_post_q6_cells_p90": 10,
+        }
+        for idx in range(2)
+    ]
+    capacity_table_audit = {
+        "case": "all",
+        "bucket": "all",
+        "errors": [],
+        "rows": [
+            {
+                "map_id": "2501",
+                "map_name": "未知残骸",
+                "rows": 2,
+                "status": "table_possible_max_below_truth",
+                "capacity_cases": {"direct_prior_max_conflict": 2},
+                "capacity_semantic_summary": {
+                    "status": "blocked_round_cap_overflow_after_temp",
+                    "drop_ref_excess_after_temp_zodiac_max": 13,
+                    "round_cap_excess_after_temp_zodiac_max": 7,
+                    "non_zodiac_missing_from_drop_universe_max": 0,
+                },
+                "residual_mode_summary": {
+                    "mode_counts": {"round_cap_overflow": 2},
+                },
+                "source_split_summary": {
+                    "truth_prior_max_delta": {"max": 16},
+                },
+            }
+        ],
+        "semantic_matrix": [
+            {
+                "rows": 2,
+                "files": 1,
+                "map_ids": {"2501": 2},
+                "map_family": "shipwreck",
+                "residual_mode": "round_cap_overflow",
+                "semantic_status_counts": {
+                    "blocked_round_cap_overflow_after_temp": 2,
+                },
+                "capacity_cases": {"direct_prior_max_conflict": 2},
+                "total_count_source": "exact",
+                "full_action_signal": "no_full_action",
+                "public_total_signal": "has_public_total",
+            }
+        ],
+        "detail_summary": {
+            "rows": 3,
+            "unique_file_map_residual_rows": 1,
+            "unique_files": 1,
+            "mechanism_candidate_counts": {"round_cap_candidate_gap": 1},
+            "next_check_counts": {
+                "check_per_session_table_version_or_external_overlay": 1,
+            },
+            "source_signal_counts": {"no_full_action/has_public_total": 1},
+            "map_counts": {"2501": 1},
+            "top_examples": [
+                {
+                    "file": "fatbeans_valid_aisha_2501.json",
+                    "map_id": "2501",
+                    "residual_mode": "round_cap_overflow",
+                    "semantic_status": "blocked_round_cap_overflow_after_temp",
+                }
+            ],
+        },
+    }
+    capacity_table_acquisition = {
+        "status": "blocked_acquisition_required",
+        "detail_rows": 3,
+        "unique_detail_rows": 1,
+        "unique_files": 1,
+        "acquisition_route_counts": {
+            "table_version_or_external_overlay_required": 1,
+        },
+        "source_strength_counts": {
+            "public_total_confirmed": 1,
+        },
+        "map_counts": {"2501": 1},
+        "table_overlay_metadata": {
+            "local_overlay_status": "activity_table_available_locally",
+            "activity_table_present": True,
+            "activity_table_parse_status": "ok",
+            "activity_table_rows": 6,
+            "activity_table_columns": 16,
+        },
+        "current_table_overlay_metadata": {
+            "local_overlay_status": "activity_table_available_locally",
+            "activity_table_present": True,
+        },
+        "artifact_table_overlay_metadata": {
+            "local_overlay_status": "v300_activity_listed_missing_locally",
+            "activity_table_present": False,
+        },
+        "table_overlay_metadata_stale": True,
+        "table_overlay_metadata_delta": [
+            {
+                "key": "local_overlay_status",
+                "artifact": "v300_activity_listed_missing_locally",
+                "current": "activity_table_available_locally",
+            }
+        ],
+        "top_examples": [
+            {
+                "file": "fatbeans_valid_aisha_2501.json",
+                "map_id": "2501",
+                "acquisition_route": (
+                    "table_version_or_external_overlay_required"
+                ),
+            }
+        ],
+    }
+
+    result = module.summarize_readiness(
+        rows,
+        [],
+        min_windows=2,
+        min_sessions=2,
+        folds=2,
+        capacity_table_audit=capacity_table_audit,
+        capacity_table_acquisition_audit=capacity_table_acquisition,
+    )
+
+    gates = {row["name"]: row for row in result["gates"]}
+    drift = gates["prior_stress_capacity_table_drift"]
+    assert drift["status"] == "blocked"
+    assert drift["capacity_table_audit_contract"]["status"] == "watch"
+    assert drift["capacity_table_audit_contract"]["semantic_status_counts"] == {
+        "blocked_round_cap_overflow_after_temp": 2,
+    }
+    assert drift["capacity_table_audit_contract"]["residual_mode_counts"] == {
+        "round_cap_overflow": 2,
+    }
+    assert drift["capacity_table_audit_contract"][
+        "detail_mechanism_candidate_counts"
+    ] == {"round_cap_candidate_gap": 1}
+    assert drift["capacity_table_audit_contract"]["detail_next_check_counts"] == {
+        "check_per_session_table_version_or_external_overlay": 1,
+    }
+    assert drift["capacity_table_audit_contract"][
+        "detail_unique_file_map_residual_rows"
+    ] == 1
+    assert drift["capacity_table_audit_contract"]["top_detail_examples"][0][
+        "file"
+    ] == "fatbeans_valid_aisha_2501.json"
+    assert drift["capacity_table_audit_contract"]["top_blocked_maps"][0][
+        "map_id"
+    ] == "2501"
+    assert drift["capacity_table_acquisition_contract"]["status"] == "blocked"
+    assert drift["capacity_table_acquisition_contract"]["route_counts"] == {
+        "table_version_or_external_overlay_required": 1,
+    }
+    assert drift["capacity_table_acquisition_contract"][
+        "source_strength_counts"
+    ] == {"public_total_confirmed": 1}
+    assert drift["capacity_table_acquisition_contract"][
+        "table_overlay_metadata"
+    ]["local_overlay_status"] == "activity_table_available_locally"
+    assert drift["capacity_table_acquisition_contract"][
+        "artifact_table_overlay_metadata"
+    ]["local_overlay_status"] == "v300_activity_listed_missing_locally"
+    assert drift["capacity_table_acquisition_contract"][
+        "table_overlay_metadata_stale"
+    ] is True
+    assert result["capacity_table_acquisition_contract"]["unique_detail_rows"] == 1
+    dependency_gates = {
+        row["gate"]: row
+        for row in result["gate_dependencies"]["blocked_or_pending_gates"]
+    }
+    focus = dependency_gates["prior_stress_capacity_table_drift"]["focus"]
+    assert "semantic_status=blocked_round_cap_overflow_after_temp:2" in focus
+    assert "residual_modes=round_cap_overflow:2" in focus
+    assert "detail_mechanisms=round_cap_candidate_gap:1" in focus
+    assert (
+        "detail_next_checks="
+        "check_per_session_table_version_or_external_overlay:1"
+    ) in focus
+    assert (
+        "acquisition_routes=table_version_or_external_overlay_required:1"
+        in focus
+    )
+    assert "overlay=activity_table_available_locally" in focus
+    assert "top_maps=2501" in focus
 
 
 def test_prior_stress_detail_contract_blocks_malformed_summary() -> None:

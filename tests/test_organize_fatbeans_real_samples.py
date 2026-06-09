@@ -127,6 +127,92 @@ def test_plan_keeps_existing_archive_name_when_new_samples_shift_order(
     assert plan["summary"]["move"] == 1
 
 
+def test_plan_classifies_multi_session_capture_as_mixed(monkeypatch, tmp_path: Path) -> None:
+    module = _load_module()
+    archive = tmp_path / "archive"
+    inbox = tmp_path / "inbox"
+    live = tmp_path / "live"
+    invalid = tmp_path / "invalid"
+    archive.mkdir()
+    inbox.mkdir()
+    live.mkdir()
+    source = inbox / "multi.json"
+    source.write_text("multi", encoding="utf-8")
+    state_a = SimpleNamespace(
+        sort_id=5,
+        session_id="2401:a",
+        round_index=1,
+        map_id=2401,
+        bids=(),
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    state_b = SimpleNamespace(
+        sort_id=6,
+        session_id="2402:b",
+        round_index=1,
+        map_id=2402,
+        bids=(),
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(SimpleNamespace(sort_id=10, kind="bid", session_id="2401:a", value=1000),),
+        states=(state_a, state_b),
+        statuses=(),
+    )
+
+    monkeypatch.setattr(module, "parse_fatbeans_capture", lambda path: events)
+    monkeypatch.setattr(module, "_hero_from_events", lambda events: "aisha")
+
+    plan = module.build_plan(
+        [inbox],
+        archive_dir=archive,
+        inbox_dir=inbox,
+        live_dir=live,
+        invalid_dir=invalid,
+    )
+
+    action = plan["actions"][0]
+    assert action["sample_class"] == "mixed"
+    assert Path(action["destination"]).name.startswith("fatbeans_mixed_aisha_")
+
+
+def test_plan_keeps_prior_invalid_filename_quarantined(monkeypatch, tmp_path: Path) -> None:
+    module = _load_module()
+    archive = tmp_path / "archive"
+    inbox = tmp_path / "inbox"
+    live = tmp_path / "live"
+    invalid = tmp_path / "invalid"
+    archive.mkdir()
+    inbox.mkdir()
+    live.mkdir()
+    source = archive / "fatbeans_invalid_parse_error_recovered.json"
+    source.write_text("recovered", encoding="utf-8")
+
+    monkeypatch.setattr(module, "parse_fatbeans_capture", lambda path: _events("2401:a"))
+    monkeypatch.setattr(module, "_hero_from_events", lambda events: "aisha")
+
+    plan = module.build_plan(
+        [archive],
+        archive_dir=archive,
+        inbox_dir=inbox,
+        live_dir=live,
+        invalid_dir=invalid,
+    )
+
+    action = plan["actions"][0]
+    assert action["sample_class"] == "invalid_quarantined_sample"
+    assert action["action"] == "move"
+    assert Path(action["destination"]).parts[-2] == "quarantined_sample"
+
+
 def test_apply_moves_parse_errors_to_invalid_and_keeps_json(monkeypatch, tmp_path: Path) -> None:
     module = _load_module()
     archive = tmp_path / "archive"

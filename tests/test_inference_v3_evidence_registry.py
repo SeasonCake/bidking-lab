@@ -43,6 +43,9 @@ def test_action_and_skill_registry_cover_observed_live_ids() -> None:
     assert action_result_spec(100172).constraint == "soft"
     assert skill_reveal_spec(1001031).semantic == "aisha_q4_outline"
     assert skill_reveal_spec(1002085).semantic == "ethan_full_outline"
+    assert skill_reveal_spec(100204).semantic == "ahmed_total_item_count"
+    assert skill_reveal_spec(1002041).constraint == "soft"
+    assert skill_reveal_spec(1002044).targets == ("bucket.q1.count",)
 
 
 def test_fatbeans_events_extract_canonical_evidence_and_coverage_gaps() -> None:
@@ -214,6 +217,55 @@ def test_compile_hard_constraints_records_soft_numeric_latest_value() -> None:
     assert soft.targets == ("bucket.q5.cells", "bucket.q5.count")
     assert soft.value == 9.0
     assert soft.sort_id == 20
+
+
+def test_ahmed_numeric_skill_reveals_compile_to_constraints() -> None:
+    state = SimpleNamespace(
+        sort_id=30,
+        session_id="2401:ahmed",
+        round_index=2,
+        map_id=2401,
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(
+            SimpleNamespace(
+                skill_id=100204,
+                hero_id=204,
+                round_index=1,
+                result=42,
+                result_field=14,
+                observed_items=(),
+            ),
+            SimpleNamespace(
+                skill_id=1002041,
+                hero_id=204,
+                round_index=2,
+                result=8.5,
+                result_field=11,
+                observed_items=(),
+            ),
+            SimpleNamespace(
+                skill_id=1002044,
+                hero_id=204,
+                round_index=5,
+                result=7,
+                result_field=14,
+                observed_items=(),
+            ),
+        ),
+        inventory_items=(),
+    )
+
+    constraints = compile_hard_constraints(
+        events_from_fatbeans(SimpleNamespace(states=(state,)))
+    )
+
+    assert constraints.numeric["session.total_count"].value == 42
+    assert constraints.numeric["bucket.q1.count"].value == 7
+    soft = next(iter(constraints.soft_numeric.values()))
+    assert soft.semantic == "ahmed_q5_avg_cells"
+    assert soft.targets == ("bucket.q5.cells", "bucket.q5.count")
+    assert soft.value == 8.5
 
 
 def test_compile_hard_constraints_derives_outline_cells_from_items() -> None:

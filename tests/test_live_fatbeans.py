@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import struct
 from collections import Counter
 from pathlib import Path
 
@@ -23,7 +24,9 @@ from bidking_lab.live.fatbeans import (
     parse_fatbeans_packets,
     parse_fatbeans_capture,
     parse_fatbeans_capture_payload,
+    _parse_action_result,
     _parse_public_info,
+    _parse_skill_reveal,
     _parse_inventory_items,
 )
 from bidking_lab.live import (
@@ -69,6 +72,10 @@ def _field_varint(field_no: int, value: int) -> bytes:
 
 def _field_bytes(field_no: int, value: bytes) -> bytes:
     return _varint((field_no << 3) | 2) + _varint(len(value)) + value
+
+
+def _field_fixed32(field_no: int, value: float) -> bytes:
+    return _varint((field_no << 3) | 5) + struct.pack("<f", value)
 
 
 def _rev_status_frame(*, session: str, player_id: int) -> bytes:
@@ -248,6 +255,80 @@ def test_parse_public_numeric_exact_value_fields(
     assert info.map_id == 2403
     assert info.value == value
     assert info.value_field == value_field
+
+
+def test_parse_numeric_only_ahmad_skill_reveal() -> None:
+    block = (
+        _field_varint(1, 1002041)
+        + _field_varint(2, 204)
+        + _field_varint(6, 2)
+        + _field_fixed32(11, 8.5)
+    )
+
+    reveal = _parse_skill_reveal(block)
+
+    assert reveal is not None
+    assert reveal.skill_id == 1002041
+    assert reveal.hero_id == 204
+    assert reveal.round_index == 2
+    assert reveal.result == pytest.approx(8.5)
+    assert reveal.result_field == 11
+    assert reveal.observed_items == ()
+
+
+def test_parse_zero_avg_action_result_from_varint_field() -> None:
+    block = _field_varint(4, 100113) + _field_varint(11, 0)
+
+    result = _parse_action_result(block)
+
+    assert result is not None
+    assert result.action_id == 100113
+    assert result.result == 0.0
+    assert result.result_field == 11
+
+
+def test_parse_zero_avg_skill_reveal_from_varint_field() -> None:
+    block = (
+        _field_varint(1, 1002041)
+        + _field_varint(2, 204)
+        + _field_varint(6, 2)
+        + _field_varint(11, 0)
+    )
+
+    reveal = _parse_skill_reveal(block)
+
+    assert reveal is not None
+    assert reveal.skill_id == 1002041
+    assert reveal.hero_id == 204
+    assert reveal.result == 0.0
+    assert reveal.result_field == 11
+
+
+def test_parse_action_count_result_from_field7() -> None:
+    block = _field_varint(4, 100117) + _field_varint(7, 13)
+
+    result = _parse_action_result(block)
+
+    assert result is not None
+    assert result.action_id == 100117
+    assert result.result == 13
+    assert result.result_field == 7
+
+
+def test_parse_ahmad_total_count_skill_reveal_from_field7() -> None:
+    block = (
+        _field_varint(1, 100204)
+        + _field_varint(2, 204)
+        + _field_varint(7, 39)
+    )
+
+    reveal = _parse_skill_reveal(block)
+
+    assert reveal is not None
+    assert reveal.skill_id == 100204
+    assert reveal.hero_id == 204
+    assert reveal.result == 39
+    assert reveal.result_field == 7
 
 
 @pytest.mark.parametrize(
@@ -1283,6 +1364,111 @@ def test_local_bid_send_binds_hero_even_after_other_status_events() -> None:
     ] == "tatiana"
 
 
+def test_local_player_hint_sets_opening_hero_with_multiple_bid_heroes() -> None:
+    session = "2407:local_hint"
+    rows = [
+        _fatbeans_row(
+            "REV",
+            _rev_state_with_bids_frame(
+                session=session,
+                map_id=2407,
+                round_no=1,
+                bids=(
+                    _player_bid_block(
+                        player_id=2,
+                        name="local",
+                        hero_id=105,
+                        value=0,
+                    ),
+                    _player_bid_block(
+                        player_id=3,
+                        name="other",
+                        hero_id=208,
+                        value=0,
+                    ),
+                ),
+            ),
+            sort_id=1,
+        ),
+    ]
+
+    events = parse_fatbeans_packets(
+        load_fatbeans_packets_from_rows(rows),
+        local_player_id_hint=2,
+    )
+    batch = live_batches_from_fatbeans_events(events)[0]
+
+    assert events.states[0].player_id == 2
+    assert {update.path: update.value for update in batch.field_updates}[
+        ("session", "hero")
+    ] == "tatiana"
+
+
+def test_local_bid_send_backfills_opening_state_hero() -> None:
+    session = "2407:local_backfill"
+    rows = [
+        _fatbeans_row(
+            "REV",
+            _rev_state_with_bids_frame(
+                session=session,
+                map_id=2407,
+                round_no=1,
+                bids=(
+                    _player_bid_block(
+                        player_id=2,
+                        name="local",
+                        hero_id=105,
+                        value=0,
+                    ),
+                    _player_bid_block(
+                        player_id=3,
+                        name="other",
+                        hero_id=208,
+                        value=0,
+                    ),
+                ),
+            ),
+            sort_id=1,
+        ),
+        _fatbeans_row(
+            "SEND",
+            _send_bid_frame(session=session, value=688999),
+            sort_id=2,
+        ),
+        _fatbeans_row(
+            "REV",
+            _rev_state_with_bids_frame(
+                session=session,
+                map_id=2407,
+                round_no=1,
+                bids=(
+                    _player_bid_block(
+                        player_id=2,
+                        name="local",
+                        hero_id=105,
+                        value=688999,
+                    ),
+                    _player_bid_block(
+                        player_id=3,
+                        name="other",
+                        hero_id=208,
+                        value=566666,
+                    ),
+                ),
+            ),
+            sort_id=3,
+        ),
+    ]
+
+    events = parse_fatbeans_packets(load_fatbeans_packets_from_rows(rows))
+    batches = live_batches_from_fatbeans_events(events)
+
+    assert events.states[0].player_id == 2
+    assert {update.path: update.value for update in batches[0].field_updates}[
+        ("session", "hero")
+    ] == "tatiana"
+
+
 @pytest.mark.parametrize(
     ("hero_id", "hero"),
     [
@@ -1343,6 +1529,90 @@ def test_known_local_bid_hero_ids_set_session_hero(
     assert {update.path: update.value for update in batch.field_updates}[
         ("session", "hero")
     ] == hero
+
+
+def test_ahmad_numeric_skill_reveals_update_live_fields() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=11,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2401,
+                round_index=2,
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=100204,
+                        hero_id=204,
+                        round_index=1,
+                        result=42,
+                        result_field=14,
+                    ),
+                    FatbeansSkillReveal(
+                        skill_id=1002041,
+                        hero_id=204,
+                        round_index=2,
+                        result=8.5,
+                        result_field=11,
+                    ),
+                    FatbeansSkillReveal(
+                        skill_id=1002044,
+                        hero_id=204,
+                        round_index=5,
+                        result=7,
+                        result_field=14,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+    updates = {update.path: update.value for update in batch.field_updates}
+
+    assert updates[("session", "hero")] == "ahmed"
+    assert updates[("session", "total_item_count")] == 42
+    assert updates[("bucket", "5", "avg_cells")] == 8.5
+    assert updates[("bucket", "1", "count")] == 7
+
+
+def test_victor_numeric_skill_reveal_updates_q4_q5_q6_count_sum() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=11,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2401,
+                round_index=1,
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=100209,
+                        hero_id=209,
+                        round_index=1,
+                        result=8,
+                        result_field=14,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+    updates = {update.path: update.value for update in batch.field_updates}
+
+    assert updates[("session", "hero")] == "victor"
+    assert updates[("bucket_group", "q4q5q6", "count")] == 8
 
 
 def test_single_category_hero_skill_reveal_sets_category_evidence() -> None:

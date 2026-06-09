@@ -40,6 +40,9 @@ from bidking_lab.live.state import (  # noqa: E402
     live_state_to_session_obs,
 )
 from scripts.evaluate_fatbeans_v3_samples import _round_rows_for_events  # noqa: E402
+from scripts.summarize_fatbeans_sample_manifest import (  # noqa: E402
+    _observed_settlement_consistency,
+)
 
 DEFAULT_ARCHIVE = ROOT / "data" / "samples" / "fatbeans"
 DEFAULT_INBOX = ROOT / "data" / "samples" / "fatbeans_manual_inbox"
@@ -205,6 +208,20 @@ def _classify_rows(rows: list[dict[str, Any]]) -> tuple[str, int, int, int, int]
     return ("invalid_no_ready", bid_windows, ready_windows, no_state_windows, conflict_windows)
 
 
+def _session_count(events: FatbeansCaptureEvents) -> int:
+    session_ids: set[str] = set()
+    for state in events.states:
+        if state.session_id:
+            session_ids.add(str(state.session_id))
+    for send in events.sends:
+        if send.session_id:
+            session_ids.add(str(send.session_id))
+    for status_event in events.statuses:
+        if status_event.session_id:
+            session_ids.add(str(status_event.session_id))
+    return len(session_ids)
+
+
 def sample_meta(
     path: Path,
     *,
@@ -214,6 +231,9 @@ def sample_meta(
 ) -> SampleMeta:
     file_hash = _sha256(path)
     source_kind = _source_kind(path, archive_dir=archive_dir, inbox_dir=inbox_dir, live_dir=live_dir)
+    path_parts = {part.lower() for part in path.parts}
+    name = path.name.lower()
+    force_quarantine = "fatbeans_invalid" in path_parts or name.startswith("fatbeans_invalid_")
     try:
         events = parse_fatbeans_capture(path)
     except Exception as exc:  # noqa: BLE001 - operational archive audit reports bad files
@@ -235,6 +255,15 @@ def sample_meta(
         )
     rows = _round_rows_for_events(path, events, tables=None, posterior_trials=0)
     sample_class, bid_windows, ready_windows, no_state_windows, conflict_windows = _classify_rows(rows)
+    if force_quarantine:
+        sample_class = "invalid_quarantined_sample"
+    observed_consistency = _observed_settlement_consistency(events)
+    if not sample_class.startswith("invalid") and (
+        _session_count(events) > 1
+        or observed_consistency["observed_settlement_missing_items"] > 0
+        or observed_consistency["observed_settlement_quality_mismatch_items"] > 0
+    ):
+        sample_class = "mixed"
     return SampleMeta(
         source_path=_rel(path),
         source_kind=source_kind,

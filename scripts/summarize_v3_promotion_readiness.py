@@ -247,6 +247,60 @@ def _selected_group_instability_text(value: Any) -> str:
     return ",".join(parts)
 
 
+def _counter_from_count_text(value: Any) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    if isinstance(value, Mapping):
+        for key, count in value.items():
+            try:
+                counts[str(key)] += int(count or 0)
+            except (TypeError, ValueError):
+                continue
+        return counts
+    if not isinstance(value, str):
+        return counts
+    for part in value.split(","):
+        token = part.strip()
+        if not token or ":" not in token:
+            continue
+        key, raw_count = token.rsplit(":", 1)
+        try:
+            counts[key] += int(raw_count)
+        except ValueError:
+            continue
+    return counts
+
+
+def _counter_text(value: Mapping[str, Any] | None, *, limit: int = 4) -> str:
+    if not isinstance(value, Mapping):
+        return ""
+    return ",".join(
+        f"{key}:{count}"
+        for key, count in sorted(
+            value.items(),
+            key=lambda item: (-int(item[1] or 0), str(item[0])),
+        )[:limit]
+    )
+
+
+def _top_counter_text(value: Any, *, limit: int = 3) -> str:
+    return _counter_text(
+        value if isinstance(value, Mapping) else None,
+        limit=limit,
+    )
+
+
+def _numeric_max(value: Any) -> float | None:
+    if not isinstance(value, Mapping):
+        return None
+    raw = value.get("max")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _gate_focus(gate: Mapping[str, Any]) -> str:
     name = str(gate.get("name") or "")
     if name == "prior_robustness":
@@ -282,6 +336,52 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
                 )[:3]
             )
             parts.append(f"top_cases={top_cases}")
+        capacity_table = gate.get("capacity_table_audit_contract")
+        if isinstance(capacity_table, Mapping):
+            semantic_status = _counter_text(
+                capacity_table.get("semantic_status_counts"),
+                limit=3,
+            )
+            residual_modes = _counter_text(
+                capacity_table.get("residual_mode_counts"),
+                limit=3,
+            )
+            detail_mechanisms = _counter_text(
+                capacity_table.get("detail_mechanism_candidate_counts"),
+                limit=3,
+            )
+            detail_next_checks = _counter_text(
+                capacity_table.get("detail_next_check_counts"),
+                limit=3,
+            )
+            top_maps = [
+                str(row.get("map_id"))
+                for row in capacity_table.get("top_blocked_maps") or []
+                if isinstance(row, Mapping) and row.get("map_id") is not None
+            ][:3]
+            if semantic_status:
+                parts.append(f"semantic_status={semantic_status}")
+            if residual_modes:
+                parts.append(f"residual_modes={residual_modes}")
+            if detail_mechanisms:
+                parts.append(f"detail_mechanisms={detail_mechanisms}")
+            if detail_next_checks:
+                parts.append(f"detail_next_checks={detail_next_checks}")
+            if top_maps:
+                parts.append(f"top_maps={','.join(top_maps)}")
+        acquisition = gate.get("capacity_table_acquisition_contract")
+        if isinstance(acquisition, Mapping):
+            routes = _counter_text(acquisition.get("route_counts"), limit=3)
+            overlay = acquisition.get("table_overlay_metadata")
+            overlay_status = (
+                overlay.get("local_overlay_status")
+                if isinstance(overlay, Mapping)
+                else None
+            )
+            if routes:
+                parts.append(f"acquisition_routes={routes}")
+            if overlay_status:
+                parts.append(f"overlay={overlay_status}")
         return ";".join(parts)
     if name == "settlement_count_prior_shadow":
         missing = int(gate.get("missing_table_rows") or 0)
@@ -291,10 +391,37 @@ def _gate_focus(gate: Mapping[str, Any]) -> str:
         candidates = int(gate.get("candidate_rows") or 0)
         pressure = int(gate.get("pressure_candidate_rows") or 0)
         active = int(gate.get("active_rows") or 0)
-        return (
-            f"candidate_rows={candidates};"
-            f"pressure_candidate_rows={pressure};active_rows={active}"
-        )
+        parts = [
+            f"candidate_rows={candidates}",
+            f"pressure_candidate_rows={pressure}",
+            f"active_rows={active}",
+        ]
+        contract = gate.get("artifact_contract")
+        if isinstance(contract, Mapping):
+            overflow = int(contract.get("unique_round_overflow_rows") or 0)
+            session_semantics = int(
+                contract.get("session_capacity_source_semantics_rows") or 0
+            )
+            server_expansion = int(
+                contract.get("server_side_expansion_rows") or 0
+            )
+            if overflow:
+                parts.append(f"unique_round_overflow_rows={overflow}")
+            if session_semantics:
+                parts.append(
+                    "session_capacity_source_semantics_rows="
+                    f"{session_semantics}"
+                )
+            if server_expansion:
+                parts.append(
+                    f"server_side_expansion_rows={server_expansion}"
+                )
+            source_split_status = str(
+                contract.get("source_split_status") or ""
+            )
+            if source_split_status:
+                parts.append(f"source_split={source_split_status}")
+        return ";".join(parts)
     if name in {
         "settlement_count_cells_value_bridge_holdout",
         "settlement_count_guarded_bridge_holdout",
@@ -587,6 +714,316 @@ def summarize_prior_stress_detail_contract(
     }
 
 
+def summarize_capacity_table_audit_contract(
+    audit: Mapping[str, Any] | None,
+    *,
+    top: int = 5,
+) -> dict[str, Any]:
+    if audit is None:
+        return {
+            "status": "not_supplied",
+            "reason": "capacity table audit JSON was not supplied",
+            "missing_keys": ["rows", "semantic_matrix"],
+            "map_rows": 0,
+            "semantic_matrix_cells": 0,
+            "semantic_status_counts": {},
+            "residual_mode_counts": {},
+            "detail_mechanism_candidate_counts": {},
+            "detail_next_check_counts": {},
+            "detail_source_signal_counts": {},
+            "top_blocked_maps": [],
+            "top_semantic_matrix_cells": [],
+            "top_detail_examples": [],
+        }
+    if not isinstance(audit, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "capacity table audit JSON must be an object",
+            "missing_keys": ["rows", "semantic_matrix"],
+            "map_rows": 0,
+            "semantic_matrix_cells": 0,
+            "semantic_status_counts": {},
+            "residual_mode_counts": {},
+            "detail_mechanism_candidate_counts": {},
+            "detail_next_check_counts": {},
+            "detail_source_signal_counts": {},
+            "top_blocked_maps": [],
+            "top_semantic_matrix_cells": [],
+            "top_detail_examples": [],
+        }
+
+    rows_value = audit.get("rows")
+    matrix_value = audit.get("semantic_matrix")
+    detail_summary_value = audit.get("detail_summary")
+    errors_value = audit.get("errors")
+    rows = rows_value if isinstance(rows_value, list) else []
+    matrix = matrix_value if isinstance(matrix_value, list) else []
+    detail_summary = (
+        detail_summary_value if isinstance(detail_summary_value, Mapping) else {}
+    )
+    errors = errors_value if isinstance(errors_value, list) else []
+    missing_keys = [
+        key
+        for key, value in (
+            ("rows", rows_value),
+            ("semantic_matrix", matrix_value),
+        )
+        if not isinstance(value, list)
+    ]
+    semantic_status_counts: Counter[str] = Counter()
+    residual_mode_counts: Counter[str] = Counter()
+    for cell in matrix:
+        if not isinstance(cell, Mapping):
+            continue
+        row_count = int(cell.get("rows") or 0)
+        residual_mode = str(cell.get("residual_mode") or "unknown")
+        if row_count:
+            residual_mode_counts[residual_mode] += row_count
+        semantic_status_counts.update(
+            _counter_from_count_text(cell.get("semantic_status_counts"))
+        )
+    if not semantic_status_counts:
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            summary = row.get("capacity_semantic_summary")
+            if not isinstance(summary, Mapping):
+                continue
+            status = str(summary.get("status") or "unknown")
+            semantic_status_counts[status] += int(row.get("rows") or 0)
+    if not residual_mode_counts:
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            residual_summary = row.get("residual_mode_summary")
+            if not isinstance(residual_summary, Mapping):
+                continue
+            residual_mode_counts.update(
+                _counter_from_count_text(residual_summary.get("mode_counts"))
+            )
+
+    top_maps: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        summary = row.get("capacity_semantic_summary")
+        if not isinstance(summary, Mapping):
+            summary = {}
+        source_split = row.get("source_split_summary")
+        if not isinstance(source_split, Mapping):
+            source_split = {}
+        residual_summary = row.get("residual_mode_summary")
+        residual_modes = (
+            residual_summary.get("mode_counts")
+            if isinstance(residual_summary, Mapping)
+            else {}
+        )
+        top_maps.append(
+            {
+                "map_id": row.get("map_id"),
+                "map_name": row.get("map_name"),
+                "rows": row.get("rows"),
+                "status": row.get("status"),
+                "semantic_status": summary.get("status"),
+                "capacity_cases": dict(row.get("capacity_cases") or {}),
+                "residual_modes": dict(residual_modes or {}),
+                "drop_ref_excess_after_temp_zodiac_max": summary.get(
+                    "drop_ref_excess_after_temp_zodiac_max"
+                ),
+                "round_cap_excess_after_temp_zodiac_max": summary.get(
+                    "round_cap_excess_after_temp_zodiac_max"
+                ),
+                "non_zodiac_missing_from_drop_universe_max": summary.get(
+                    "non_zodiac_missing_from_drop_universe_max"
+                ),
+                "truth_prior_max_delta_max": _numeric_max(
+                    source_split.get("truth_prior_max_delta")
+                ),
+            }
+        )
+    top_maps.sort(
+        key=lambda row: (
+            -int(row.get("rows") or 0),
+            str(row.get("map_id") or ""),
+        )
+    )
+
+    top_cells: list[dict[str, Any]] = []
+    for cell in matrix:
+        if not isinstance(cell, Mapping):
+            continue
+        top_cells.append(
+            {
+                "rows": cell.get("rows"),
+                "files": cell.get("files"),
+                "map_ids": dict(cell.get("map_ids") or {}),
+                "map_family": cell.get("map_family"),
+                "residual_mode": cell.get("residual_mode"),
+                "semantic_status_counts": dict(
+                    cell.get("semantic_status_counts") or {}
+                ),
+                "capacity_cases": dict(cell.get("capacity_cases") or {}),
+                "total_count_source": cell.get("total_count_source"),
+                "full_action_signal": cell.get("full_action_signal"),
+                "public_total_signal": cell.get("public_total_signal"),
+            }
+        )
+    top_cells.sort(
+        key=lambda row: (
+            -int(row.get("rows") or 0),
+            str(row.get("residual_mode") or ""),
+            str(row.get("map_family") or ""),
+        )
+    )
+
+    blockers: list[str] = []
+    if missing_keys:
+        blockers.append("capacity table audit is missing contract fields")
+    if errors:
+        blockers.append("capacity table audit reported errors")
+    return {
+        "status": "blocked" if blockers else "watch",
+        "reason": (
+            "; ".join(blockers)
+            if blockers
+            else "capacity table semantic residual audit is attached"
+        ),
+        "missing_keys": missing_keys,
+        "errors": errors[:top],
+        "case": audit.get("case"),
+        "bucket": audit.get("bucket"),
+        "map_rows": len(rows),
+        "semantic_matrix_cells": len(matrix),
+        "semantic_status_counts": dict(sorted(semantic_status_counts.items())),
+        "residual_mode_counts": dict(sorted(residual_mode_counts.items())),
+        "detail_rows": detail_summary.get("rows"),
+        "detail_unique_file_map_residual_rows": detail_summary.get(
+            "unique_file_map_residual_rows"
+        ),
+        "detail_unique_files": detail_summary.get("unique_files"),
+        "detail_mechanism_candidate_counts": dict(
+            detail_summary.get("mechanism_candidate_counts") or {}
+        ),
+        "detail_next_check_counts": dict(
+            detail_summary.get("next_check_counts") or {}
+        ),
+        "detail_source_signal_counts": dict(
+            detail_summary.get("source_signal_counts") or {}
+        ),
+        "detail_map_counts": dict(detail_summary.get("map_counts") or {}),
+        "top_blocked_maps": top_maps[:top],
+        "top_semantic_matrix_cells": top_cells[:top],
+        "top_detail_examples": list(detail_summary.get("top_examples") or [])[:top],
+    }
+
+
+def summarize_capacity_table_acquisition_contract(
+    audit: Mapping[str, Any] | None,
+    *,
+    top: int = 5,
+) -> dict[str, Any]:
+    empty = {
+        "route_counts": {},
+        "source_strength_counts": {},
+        "map_counts": {},
+        "table_overlay_metadata": {},
+        "current_table_overlay_metadata": {},
+        "artifact_table_overlay_metadata": {},
+        "table_overlay_metadata_stale": False,
+        "table_overlay_metadata_delta": [],
+        "top_examples": [],
+    }
+    if audit is None:
+        return {
+            "status": "not_supplied",
+            "reason": "capacity table acquisition audit JSON was not supplied",
+            "missing_keys": ["status", "acquisition_route_counts"],
+            "acquisition_status": None,
+            "detail_rows": 0,
+            "unique_detail_rows": 0,
+            "unique_files": 0,
+            **empty,
+        }
+    if not isinstance(audit, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "capacity table acquisition audit JSON must be an object",
+            "missing_keys": ["status", "acquisition_route_counts"],
+            "acquisition_status": None,
+            "detail_rows": 0,
+            "unique_detail_rows": 0,
+            "unique_files": 0,
+            **empty,
+        }
+
+    route_counts = audit.get("acquisition_route_counts")
+    source_counts = audit.get("source_strength_counts")
+    map_counts = audit.get("map_counts")
+    overlay = audit.get("table_overlay_metadata")
+    missing_keys = [
+        key
+        for key, value, expected_type in (
+            ("status", audit.get("status"), str),
+            ("acquisition_route_counts", route_counts, Mapping),
+            ("source_strength_counts", source_counts, Mapping),
+            ("map_counts", map_counts, Mapping),
+            ("table_overlay_metadata", overlay, Mapping),
+        )
+        if not isinstance(value, expected_type)
+    ]
+    route_counts = route_counts if isinstance(route_counts, Mapping) else {}
+    source_counts = source_counts if isinstance(source_counts, Mapping) else {}
+    map_counts = map_counts if isinstance(map_counts, Mapping) else {}
+    overlay = overlay if isinstance(overlay, Mapping) else {}
+    current_overlay = audit.get("current_table_overlay_metadata")
+    current_overlay = (
+        current_overlay if isinstance(current_overlay, Mapping) else {}
+    )
+    artifact_overlay = audit.get("artifact_table_overlay_metadata")
+    artifact_overlay = (
+        artifact_overlay if isinstance(artifact_overlay, Mapping) else {}
+    )
+    overlay_delta = audit.get("table_overlay_metadata_delta")
+    overlay_delta = overlay_delta if isinstance(overlay_delta, list) else []
+    acquisition_status = str(audit.get("status") or "unknown")
+    blockers: list[str] = []
+    if missing_keys:
+        blockers.append("capacity table acquisition audit is missing contract fields")
+    if acquisition_status == "blocked_acquisition_required":
+        blockers.append("capacity table acquisition is still required")
+    if str(overlay.get("local_overlay_status") or "") in {
+        "activity_listed_missing_locally",
+        "v300_activity_listed_missing_locally",
+    }:
+        blockers.append("activity overlay table is listed but missing locally")
+    if audit.get("table_overlay_metadata_stale") is True:
+        blockers.append("capacity table overlay metadata drifted from source artifact")
+    return {
+        "status": "blocked" if blockers else "watch",
+        "reason": (
+            "; ".join(blockers)
+            if blockers
+            else "capacity table acquisition routes are attached"
+        ),
+        "missing_keys": missing_keys,
+        "acquisition_status": acquisition_status,
+        "detail_rows": audit.get("detail_rows"),
+        "unique_detail_rows": audit.get("unique_detail_rows"),
+        "unique_files": audit.get("unique_files"),
+        "route_counts": dict(route_counts),
+        "source_strength_counts": dict(source_counts),
+        "map_counts": dict(map_counts),
+        "table_overlay_metadata": dict(overlay),
+        "current_table_overlay_metadata": dict(current_overlay),
+        "artifact_table_overlay_metadata": dict(artifact_overlay),
+        "table_overlay_metadata_stale": bool(
+            audit.get("table_overlay_metadata_stale")
+        ),
+        "table_overlay_metadata_delta": list(overlay_delta)[:top],
+        "top_examples": list(audit.get("top_examples") or [])[:top],
+    }
+
+
 _LIVE_PRACTICAL_GUARD_KEYS = (
     "rows",
     "estimate_rows",
@@ -613,6 +1050,7 @@ _LIVE_PRACTICAL_GUARD_KEYS = (
     "v3_practical_guarded_p90_extreme_over_on_comparison",
     "v3_practical_unguarded_p90_extreme_over_on_comparison",
     "v3_practical_guarded_minus_unguarded_p90_extreme_over",
+    "v3_practical_guard_case_summary",
     "formal_policy_comparison",
 )
 _LIVE_PRACTICAL_GUARD_CONTRACT_KEYS = (
@@ -624,6 +1062,7 @@ _LIVE_PRACTICAL_GUARD_CONTRACT_KEYS = (
     "v3_practical_live_guard_reason_counts",
     "v3_practical_unguarded_rows",
     "v3_practical_guard_comparison_rows",
+    "v3_practical_guard_case_summary",
     "formal_policy_comparison",
 )
 _LIVE_PRACTICAL_GUARD_TRADEOFF_KEYS = (
@@ -686,6 +1125,16 @@ _CSE_ENTRY_CONTRACT_KEYS = (
     "payload_verified_only_rows",
     "payload_inventory_mismatch_rows",
     "non_zodiac_missing_max",
+)
+_CSE_DIGEST_NUMERIC_KEYS = (
+    "unique_round_overflow_rows",
+    "session_capacity_source_semantics_rows",
+    "server_side_expansion_rows",
+    "payload_verified_only_rows",
+    "public_total_match_rows",
+    "full_action_rows",
+    "direct_full_action_rows",
+    "payload_inventory_mismatch_rows",
 )
 _SHADOW_SAMPLER_PROTOTYPE_CONTRACT_KEYS = (
     "interface",
@@ -781,6 +1230,27 @@ _SHADOW_SAMPLER_VALUE_PROFILE_GUARDABILITY_BLOCKING_STATUSES = {
     "blocked_no_stable_profile_guard",
     "blocked_profile_guard_candidates_need_holdout",
 }
+_GUARD_LOSS_SOURCE_CONTEXT_CONTRACT_KEYS = (
+    "status",
+    "summary",
+    "rows",
+)
+_ACTIVITY_DROP_UNIVERSE_OVERLAY_CONTRACT_KEYS = (
+    "status",
+    "shadow_only",
+    "affects_bid",
+    "hard_map_allowed",
+    "summary",
+    "rows",
+)
+_SOURCE_PARSER_REQUIREMENTS_CONTRACT_KEYS = (
+    "status",
+    "shadow_only",
+    "affects_bid",
+    "parser_required",
+    "summary",
+    "rows",
+)
 
 
 def _live_practical_guard_slice(
@@ -789,6 +1259,18 @@ def _live_practical_guard_slice(
     if not isinstance(stats, Mapping):
         return {}
     return {key: stats.get(key) for key in _LIVE_PRACTICAL_GUARD_KEYS}
+
+
+def _live_practical_guard_group_slices(
+    groups: Mapping[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(groups, Mapping):
+        return {}
+    return {
+        str(label): _live_practical_guard_slice(stats)
+        for label, stats in sorted(groups.items())
+        if isinstance(stats, Mapping)
+    }
 
 
 def _live_practical_guard_contract_slice(
@@ -809,6 +1291,10 @@ def _live_practical_guard_contract_slice(
     ]
     formal_rows = int(stats.get("v3_practical_formal_rows") or 0)
     comparison_rows = int(stats.get("v3_practical_guard_comparison_rows") or 0)
+    guard_case_summary = stats.get("v3_practical_guard_case_summary")
+    if not isinstance(guard_case_summary, Mapping):
+        guard_case_summary = {}
+    guard_case_summary_rows = int(guard_case_summary.get("rows") or 0)
     policy_matrix = stats.get("formal_policy_comparison")
     if not isinstance(policy_matrix, Mapping):
         policy_matrix = {}
@@ -832,6 +1318,9 @@ def _live_practical_guard_contract_slice(
     elif comparison_rows <= 0:
         status = "blocked"
         reason = f"{name} has no paired guarded/unguarded comparison rows"
+    elif guard_case_summary_rows < comparison_rows:
+        status = "blocked"
+        reason = f"{name} guard case summary does not cover paired rows"
     elif policy_matrix_rows <= 0:
         status = "blocked"
         reason = f"{name} has no comparable v2/guarded/unguarded policy rows"
@@ -851,6 +1340,16 @@ def _live_practical_guard_contract_slice(
         "null_tradeoff_keys": null_tradeoff_keys,
         "formal_rows": formal_rows,
         "comparison_rows": comparison_rows,
+        "guard_case_summary_rows": guard_case_summary_rows,
+        "guard_case_summary_p50_worsened_rows": guard_case_summary.get(
+            "p50_worsened_rows"
+        ),
+        "guard_case_summary_p90_coverage_lost_rows": guard_case_summary.get(
+            "p90_coverage_lost_rows"
+        ),
+        "guard_case_summary_p90_extreme_over_added_rows": (
+            guard_case_summary.get("p90_extreme_over_added_rows")
+        ),
         "formal_policy_comparison_status": policy_matrix.get("status"),
         "formal_policy_comparison_rows": policy_matrix_rows,
         "formal_policy_comparison_missing_policies": missing_policy_keys,
@@ -880,6 +1379,8 @@ def summarize_live_practical_guard_brief(
         }
     overall = _live_practical_guard_slice(brief.get("overall"))
     prebid = _live_practical_guard_slice(brief.get("prebid_overall"))
+    by_map_id = _live_practical_guard_group_slices(brief.get("by_map_id"))
+    by_map_family = _live_practical_guard_group_slices(brief.get("by_map_family"))
     contract_checks = {
         "overall": _live_practical_guard_contract_slice(
             "overall",
@@ -906,7 +1407,314 @@ def summarize_live_practical_guard_brief(
         "source_counts": brief.get("source_counts"),
         "overall": overall,
         "prebid_overall": prebid,
+        "by_map_id": by_map_id,
+        "by_map_family": by_map_family,
         "contract_checks": contract_checks,
+    }
+
+
+def summarize_guard_loss_source_context_contract(
+    audit: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if audit is None:
+        return {
+            "status": "not_supplied",
+            "reason": "guard loss source-context audit JSON was not supplied",
+            "audit_status": None,
+            "maps": None,
+            "guard_loss_rows": None,
+            "status_counts": {},
+        }
+    if not isinstance(audit, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "guard loss source-context audit JSON must be an object",
+            "audit_status": None,
+            "maps": None,
+            "guard_loss_rows": None,
+            "status_counts": {},
+        }
+    missing = [
+        key for key in _GUARD_LOSS_SOURCE_CONTEXT_CONTRACT_KEYS if key not in audit
+    ]
+    summary = audit.get("summary")
+    if not isinstance(summary, Mapping):
+        summary = {}
+    rows = audit.get("rows")
+    row_count = len(rows) if isinstance(rows, list) else 0
+    if missing:
+        status = "blocked"
+        reason = "guard loss source-context audit is missing contract fields"
+    elif row_count <= 0:
+        status = "blocked"
+        reason = "guard loss source-context audit has no map rows"
+    else:
+        status = "watch"
+        reason = "guard loss source-context audit is evaluable"
+    return {
+        "status": status,
+        "reason": reason,
+        "missing_keys": missing,
+        "audit_status": audit.get("status"),
+        "maps": summary.get("maps"),
+        "guard_loss_rows": summary.get("guard_loss_rows"),
+        "status_counts": dict(summary.get("status_counts") or {}),
+        "cse_exact_overlap_maps": summary.get("cse_exact_overlap_maps"),
+        "source_semantics_detail_maps": summary.get(
+            "source_semantics_detail_maps"
+        ),
+        "capacity_table_detail_maps": summary.get("capacity_table_detail_maps"),
+        "capacity_acquisition_example_maps": summary.get(
+            "capacity_acquisition_example_maps"
+        ),
+    }
+
+
+def summarize_activity_drop_universe_overlay_contract(
+    audit: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if audit is None:
+        return {
+            "status": "not_supplied",
+            "reason": "activity drop-universe overlay audit JSON was not supplied",
+            "audit_status": None,
+            "maps": None,
+            "files": None,
+            "guard_loss_overlap_maps": None,
+            "candidate_item_universe_covered_maps": None,
+            "hard_map_blocked_maps": None,
+            "status_counts": {},
+        }
+    if not isinstance(audit, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "activity drop-universe overlay audit JSON must be an object",
+            "audit_status": None,
+            "maps": None,
+            "files": None,
+            "guard_loss_overlap_maps": None,
+            "candidate_item_universe_covered_maps": None,
+            "hard_map_blocked_maps": None,
+            "status_counts": {},
+        }
+    missing = [
+        key
+        for key in _ACTIVITY_DROP_UNIVERSE_OVERLAY_CONTRACT_KEYS
+        if key not in audit
+    ]
+    summary = audit.get("summary")
+    if not isinstance(summary, Mapping):
+        summary = {}
+    rows = audit.get("rows")
+    row_count = len(rows) if isinstance(rows, list) else 0
+    status = "watch"
+    reason = "activity drop-universe overlay audit is evaluable"
+    if missing:
+        status = "blocked"
+        reason = "activity drop-universe overlay audit is missing contract fields"
+    elif row_count <= 0:
+        status = "blocked"
+        reason = "activity drop-universe overlay audit has no map rows"
+    elif audit.get("shadow_only") is not True or audit.get("affects_bid") is not False:
+        status = "blocked"
+        reason = "activity drop-universe overlay audit must be shadow-only and inactive"
+    return {
+        "status": status,
+        "reason": reason,
+        "missing_keys": missing,
+        "audit_status": audit.get("status"),
+        "shadow_only": audit.get("shadow_only"),
+        "affects_bid": audit.get("affects_bid"),
+        "hard_map_allowed": audit.get("hard_map_allowed"),
+        "maps": summary.get("maps"),
+        "files": summary.get("files"),
+        "guard_loss_overlap_maps": summary.get("guard_loss_overlap_maps"),
+        "candidate_item_universe_covered_maps": summary.get(
+            "candidate_item_universe_covered_maps"
+        ),
+        "hard_map_blocked_maps": summary.get("hard_map_blocked_maps"),
+        "status_counts": dict(summary.get("status_counts") or {}),
+    }
+
+
+def summarize_source_parser_requirements_contract(
+    audit: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if audit is None:
+        return {
+            "status": "not_supplied",
+            "reason": "source parser requirements audit JSON was not supplied",
+            "audit_status": None,
+            "maps": None,
+            "blocked_maps": None,
+            "guard_loss_overlap_maps": None,
+            "session_capacity_maps": None,
+            "drop_ref_residual_maps": None,
+            "activity_extras_maps": None,
+            "numeric_action_semantics_maps": None,
+            "numeric_action_rows": None,
+            "numeric_session_capacity_signal_rows": None,
+            "numeric_non_session_expected_rows": None,
+            "numeric_unknown_semantic_rows": None,
+            "session_capacity_source_gap_maps": None,
+            "session_capacity_source_gap_rows": None,
+            "session_gap_exact_session_count_source_rows": None,
+            "session_gap_bucket_only_blocked_rows": None,
+            "session_gap_unresolved_session_capacity_rows": None,
+            "payload_table_gap_maps": None,
+            "payload_table_gap_rows": None,
+            "payload_table_gap_blocked_rows": None,
+            "payload_table_gap_payload_verified_rows": None,
+            "payload_table_gap_no_full_event_payload_rows": None,
+            "payload_outer_field_maps": None,
+            "payload_outer_field_rows": None,
+            "payload_outer_field_metadata_only_rows": None,
+            "payload_outer_field_capacity_candidate_rows": None,
+            "table_overlay_residual_maps": None,
+            "table_overlay_residual_rows": None,
+            "table_overlay_residual_blocked_rows": None,
+            "table_overlay_residual_local_cap_gap_rows": None,
+            "table_overlay_residual_current_table_match_rows": None,
+            "table_overlay_residual_activity_direct_rows": None,
+            "table_overlay_residual_server_transform_open_rows": None,
+            "requirement_counts": {},
+            "status_counts": {},
+        }
+    if not isinstance(audit, Mapping):
+        return {
+            "status": "blocked",
+            "reason": "source parser requirements audit JSON must be an object",
+            "audit_status": None,
+            "maps": None,
+            "blocked_maps": None,
+            "guard_loss_overlap_maps": None,
+            "session_capacity_maps": None,
+            "drop_ref_residual_maps": None,
+            "activity_extras_maps": None,
+            "numeric_action_semantics_maps": None,
+            "numeric_action_rows": None,
+            "numeric_session_capacity_signal_rows": None,
+            "numeric_non_session_expected_rows": None,
+            "numeric_unknown_semantic_rows": None,
+            "session_capacity_source_gap_maps": None,
+            "session_capacity_source_gap_rows": None,
+            "session_gap_exact_session_count_source_rows": None,
+            "session_gap_bucket_only_blocked_rows": None,
+            "session_gap_unresolved_session_capacity_rows": None,
+            "payload_table_gap_maps": None,
+            "payload_table_gap_rows": None,
+            "payload_table_gap_blocked_rows": None,
+            "payload_table_gap_payload_verified_rows": None,
+            "payload_table_gap_no_full_event_payload_rows": None,
+            "payload_outer_field_maps": None,
+            "payload_outer_field_rows": None,
+            "payload_outer_field_metadata_only_rows": None,
+            "payload_outer_field_capacity_candidate_rows": None,
+            "table_overlay_residual_maps": None,
+            "table_overlay_residual_rows": None,
+            "table_overlay_residual_blocked_rows": None,
+            "table_overlay_residual_local_cap_gap_rows": None,
+            "table_overlay_residual_current_table_match_rows": None,
+            "table_overlay_residual_activity_direct_rows": None,
+            "table_overlay_residual_server_transform_open_rows": None,
+            "requirement_counts": {},
+            "status_counts": {},
+        }
+    missing = [
+        key for key in _SOURCE_PARSER_REQUIREMENTS_CONTRACT_KEYS if key not in audit
+    ]
+    summary = audit.get("summary")
+    if not isinstance(summary, Mapping):
+        summary = {}
+    rows = audit.get("rows")
+    row_count = len(rows) if isinstance(rows, list) else 0
+    status = "watch"
+    reason = "source parser requirements audit is evaluable"
+    if missing:
+        status = "blocked"
+        reason = "source parser requirements audit is missing contract fields"
+    elif row_count <= 0:
+        status = "blocked"
+        reason = "source parser requirements audit has no map rows"
+    elif audit.get("shadow_only") is not True or audit.get("affects_bid") is not False:
+        status = "blocked"
+        reason = "source parser requirements audit must be shadow-only and inactive"
+    return {
+        "status": status,
+        "reason": reason,
+        "missing_keys": missing,
+        "audit_status": audit.get("status"),
+        "shadow_only": audit.get("shadow_only"),
+        "affects_bid": audit.get("affects_bid"),
+        "parser_required": audit.get("parser_required"),
+        "maps": summary.get("maps"),
+        "blocked_maps": summary.get("blocked_maps"),
+        "guard_loss_overlap_maps": summary.get("guard_loss_overlap_maps"),
+        "session_capacity_maps": summary.get("session_capacity_maps"),
+        "drop_ref_residual_maps": summary.get("drop_ref_residual_maps"),
+        "activity_extras_maps": summary.get("activity_extras_maps"),
+        "numeric_action_semantics_maps": summary.get("numeric_action_semantics_maps"),
+        "numeric_action_rows": summary.get("numeric_action_rows"),
+        "numeric_session_capacity_signal_rows": summary.get(
+            "numeric_session_capacity_signal_rows"
+        ),
+        "numeric_non_session_expected_rows": summary.get(
+            "numeric_non_session_expected_rows"
+        ),
+        "numeric_unknown_semantic_rows": summary.get("numeric_unknown_semantic_rows"),
+        "session_capacity_source_gap_maps": summary.get(
+            "session_capacity_source_gap_maps"
+        ),
+        "session_capacity_source_gap_rows": summary.get(
+            "session_capacity_source_gap_rows"
+        ),
+        "session_gap_exact_session_count_source_rows": summary.get(
+            "session_gap_exact_session_count_source_rows"
+        ),
+        "session_gap_bucket_only_blocked_rows": summary.get(
+            "session_gap_bucket_only_blocked_rows"
+        ),
+        "session_gap_unresolved_session_capacity_rows": summary.get(
+            "session_gap_unresolved_session_capacity_rows"
+        ),
+        "payload_table_gap_maps": summary.get("payload_table_gap_maps"),
+        "payload_table_gap_rows": summary.get("payload_table_gap_rows"),
+        "payload_table_gap_blocked_rows": summary.get(
+            "payload_table_gap_blocked_rows"
+        ),
+        "payload_table_gap_payload_verified_rows": summary.get(
+            "payload_table_gap_payload_verified_rows"
+        ),
+        "payload_table_gap_no_full_event_payload_rows": summary.get(
+            "payload_table_gap_no_full_event_payload_rows"
+        ),
+        "payload_outer_field_maps": summary.get("payload_outer_field_maps"),
+        "payload_outer_field_rows": summary.get("payload_outer_field_rows"),
+        "payload_outer_field_metadata_only_rows": summary.get(
+            "payload_outer_field_metadata_only_rows"
+        ),
+        "payload_outer_field_capacity_candidate_rows": summary.get(
+            "payload_outer_field_capacity_candidate_rows"
+        ),
+        "table_overlay_residual_maps": summary.get("table_overlay_residual_maps"),
+        "table_overlay_residual_rows": summary.get("table_overlay_residual_rows"),
+        "table_overlay_residual_blocked_rows": summary.get(
+            "table_overlay_residual_blocked_rows"
+        ),
+        "table_overlay_residual_local_cap_gap_rows": summary.get(
+            "table_overlay_residual_local_cap_gap_rows"
+        ),
+        "table_overlay_residual_current_table_match_rows": summary.get(
+            "table_overlay_residual_current_table_match_rows"
+        ),
+        "table_overlay_residual_activity_direct_rows": summary.get(
+            "table_overlay_residual_activity_direct_rows"
+        ),
+        "table_overlay_residual_server_transform_open_rows": summary.get(
+            "table_overlay_residual_server_transform_open_rows"
+        ),
+        "requirement_counts": dict(summary.get("requirement_counts") or {}),
+        "status_counts": dict(summary.get("status_counts") or {}),
     }
 
 
@@ -1018,6 +1826,14 @@ def summarize_scp_guarded_bridge_stability_contract(
 def summarize_capacity_source_expansion_artifact_contract(
     artifact: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
+    empty_digest = {
+        "digest_scope": None,
+        "mechanism_classes": {},
+        "source_evidence_classes": {},
+        "source_context_classes": {},
+        "source_split_status": "missing",
+        **{key: 0 for key in _CSE_DIGEST_NUMERIC_KEYS},
+    }
     if artifact is None:
         return {
             "status": "not_supplied",
@@ -1030,6 +1846,7 @@ def summarize_capacity_source_expansion_artifact_contract(
             "candidate_entries": 0,
             "active": None,
             "affects_bid": None,
+            **empty_digest,
         }
     if not isinstance(artifact, Mapping):
         return {
@@ -1043,6 +1860,7 @@ def summarize_capacity_source_expansion_artifact_contract(
             "candidate_entries": 0,
             "active": None,
             "affects_bid": None,
+            **empty_digest,
         }
     missing_keys = [
         key for key in _CSE_ARTIFACT_CONTRACT_KEYS if key not in artifact
@@ -1056,10 +1874,14 @@ def summarize_capacity_source_expansion_artifact_contract(
     entry_missing_key_counts: Counter[str] = Counter()
     candidate_entries = 0
     blocked_entries = 0
+    rows_by_scope: dict[str, list[Mapping[str, Any]]] = {}
     for row in entries:
         if not isinstance(row, Mapping):
             entry_missing_key_counts["non_object_entry"] += 1
             continue
+        scope = str(row.get("scope") or "")
+        if scope:
+            rows_by_scope.setdefault(scope, []).append(row)
         for key in _CSE_ENTRY_CONTRACT_KEYS:
             if key not in row:
                 entry_missing_key_counts[key] += 1
@@ -1083,6 +1905,37 @@ def summarize_capacity_source_expansion_artifact_contract(
         blockers.append("artifact cohorts are missing")
     if entry_missing_key_counts:
         blockers.append("artifact entries are missing CSE evidence fields")
+    digest_scope = next(
+        (scope for scope in group_bys if rows_by_scope.get(scope)),
+        None,
+    )
+    digest_rows = rows_by_scope.get(digest_scope or "", []) if digest_scope else []
+    if not digest_rows:
+        digest_rows = [row for row in entries if isinstance(row, Mapping)]
+        digest_scope = "all_entries" if digest_rows else None
+    mechanism_classes: Counter[str] = Counter()
+    source_evidence_classes: Counter[str] = Counter()
+    source_context_classes: Counter[str] = Counter()
+    numeric_totals = {key: 0 for key in _CSE_DIGEST_NUMERIC_KEYS}
+    for row in digest_rows:
+        mechanism_classes.update(_counter_from_count_text(row.get("mechanism_classes")))
+        source_evidence_classes.update(
+            _counter_from_count_text(row.get("source_evidence_classes"))
+        )
+        source_context_classes.update(
+            _counter_from_count_text(row.get("source_context_classes"))
+        )
+        for key in _CSE_DIGEST_NUMERIC_KEYS:
+            try:
+                numeric_totals[key] += int(row.get(key) or 0)
+            except (TypeError, ValueError):
+                continue
+    if numeric_totals["session_capacity_source_semantics_rows"] > 0:
+        source_split_status = "blocked_payload_only_source_split_unresolved"
+    elif numeric_totals["unique_round_overflow_rows"] > 0:
+        source_split_status = "watch_external_or_server_side_expansion_only"
+    else:
+        source_split_status = "watch_no_unique_round_overflow"
     return {
         "status": "blocked" if blockers else "watch",
         "reason": "; ".join(blockers) if blockers else "capacity/source expansion artifact contract is evaluable",
@@ -1097,6 +1950,12 @@ def summarize_capacity_source_expansion_artifact_contract(
         "affects_bid": artifact.get("affects_bid"),
         "generated_at": artifact.get("generated_at"),
         "source": artifact.get("source"),
+        "digest_scope": digest_scope,
+        "mechanism_classes": dict(sorted(mechanism_classes.items())),
+        "source_evidence_classes": dict(sorted(source_evidence_classes.items())),
+        "source_context_classes": dict(sorted(source_context_classes.items())),
+        "source_split_status": source_split_status,
+        **numeric_totals,
     }
 
 
@@ -1635,8 +2494,13 @@ def summarize_readiness(
     min_sessions: int = 8,
     folds: int = 5,
     scp_guarded_bridge_stability: Mapping[str, Any] | None = None,
+    capacity_table_audit: Mapping[str, Any] | None = None,
+    capacity_table_acquisition_audit: Mapping[str, Any] | None = None,
     capacity_source_expansion_artifact: Mapping[str, Any] | None = None,
     live_practical_guard_brief: Mapping[str, Any] | None = None,
+    guard_loss_source_context: Mapping[str, Any] | None = None,
+    activity_drop_universe_overlay: Mapping[str, Any] | None = None,
+    source_parser_requirements: Mapping[str, Any] | None = None,
     shadow_sampler_prototype: Mapping[str, Any] | None = None,
     shadow_sampler_guard_trial: Mapping[str, Any] | None = None,
     shadow_sampler_value_source_profile_audit: Mapping[str, Any] | None = None,
@@ -1647,8 +2511,27 @@ def summarize_readiness(
     live_guard_brief = summarize_live_practical_guard_brief(
         live_practical_guard_brief
     )
+    guard_loss_source_context_contract = (
+        summarize_guard_loss_source_context_contract(guard_loss_source_context)
+    )
+    activity_drop_universe_overlay_contract = (
+        summarize_activity_drop_universe_overlay_contract(
+            activity_drop_universe_overlay
+        )
+    )
+    source_parser_requirements_contract = (
+        summarize_source_parser_requirements_contract(source_parser_requirements)
+    )
     cse_artifact_contract = summarize_capacity_source_expansion_artifact_contract(
         capacity_source_expansion_artifact
+    )
+    capacity_table_audit_contract = summarize_capacity_table_audit_contract(
+        capacity_table_audit
+    )
+    capacity_table_acquisition_contract = (
+        summarize_capacity_table_acquisition_contract(
+            capacity_table_acquisition_audit
+        )
     )
     shadow_sampler_prototype_contract = summarize_shadow_sampler_prototype_contract(
         shadow_sampler_prototype
@@ -1943,6 +2826,10 @@ def summarize_readiness(
             source_counts=prior_stress_overall.get("source_counts"),
             ratio_summary=prior_stress_overall.get("ratio_summary"),
             detail_contract=prior_stress_detail_contract,
+            capacity_table_audit_contract=capacity_table_audit_contract,
+            capacity_table_acquisition_contract=(
+                capacity_table_acquisition_contract
+            ),
             top_map_groups=prior_stress_top_map_groups,
             top_profile_groups=prior_stress_top_profile_groups,
         )
@@ -3021,6 +3908,10 @@ def summarize_readiness(
             "rows": prior_stress_group_rows,
             "capacity_flag_hits": prior_stress_capacity_hits,
             "detail_contract": prior_stress_detail_contract,
+            "capacity_table_audit_contract": capacity_table_audit_contract,
+            "capacity_table_acquisition_contract": (
+                capacity_table_acquisition_contract
+            ),
             "capacity_flag_counts": prior_stress_capacity_flags,
             "capacity_count_summary": prior_stress_overall.get(
                 "capacity_count_summary"
@@ -3037,6 +3928,18 @@ def summarize_readiness(
             "top_profile_groups": prior_stress_top_profile_groups,
         },
         "v3_practical_archive_live_guard_metrics": live_guard_brief,
+        "v3_practical_guard_loss_source_context_contract": (
+            guard_loss_source_context_contract
+        ),
+        "v3_practical_guard_loss_source_context": guard_loss_source_context or {},
+        "activity_drop_universe_overlay_contract": (
+            activity_drop_universe_overlay_contract
+        ),
+        "activity_drop_universe_overlay": activity_drop_universe_overlay or {},
+        "source_parser_requirements_contract": source_parser_requirements_contract,
+        "source_parser_requirements": source_parser_requirements or {},
+        "capacity_table_audit_contract": capacity_table_audit_contract,
+        "capacity_table_acquisition_contract": capacity_table_acquisition_contract,
         "capacity_source_expansion_artifact_contract": cse_artifact_contract,
         "shadow_sampler_prototype_contract": shadow_sampler_prototype_contract,
         "shadow_sampler_prototype": shadow_sampler_prototype or {},
@@ -3283,7 +4186,23 @@ def _print_summary(result: dict[str, Any]) -> None:
     live_guard = result["v3_practical_archive_live_guard_metrics"]
     live_guard_overall = live_guard.get("overall") or {}
     live_guard_prebid = live_guard.get("prebid_overall") or {}
+    live_guard_cases = (
+        live_guard_overall.get("v3_practical_guard_case_summary") or {}
+    )
+    live_guard_prebid_cases = (
+        live_guard_prebid.get("v3_practical_guard_case_summary") or {}
+    )
     cse_artifact_contract = result["capacity_source_expansion_artifact_contract"]
+    cse_mechanisms = _counter_text(
+        cse_artifact_contract.get("mechanism_classes")
+        if isinstance(cse_artifact_contract, Mapping)
+        else None
+    )
+    cse_contexts = _counter_text(
+        cse_artifact_contract.get("source_context_classes")
+        if isinstance(cse_artifact_contract, Mapping)
+        else None
+    )
     shadow_sampler_prototype_contract = result["shadow_sampler_prototype_contract"]
     shadow_sampler_guard_trial_contract = result[
         "shadow_sampler_guard_trial_contract"
@@ -3297,6 +4216,30 @@ def _print_summary(result: dict[str, Any]) -> None:
     shadow_sampler_value_profile_guardability_contract = result[
         "shadow_sampler_value_profile_guardability_contract"
     ]
+    guard_loss_source_context_contract = result[
+        "v3_practical_guard_loss_source_context_contract"
+    ]
+    guard_loss_source_context_status_counts = _counter_text(
+        guard_loss_source_context_contract.get("status_counts")
+        if isinstance(guard_loss_source_context_contract, Mapping)
+        else None
+    )
+    activity_drop_universe_overlay_contract = result[
+        "activity_drop_universe_overlay_contract"
+    ]
+    activity_drop_universe_overlay_status_counts = _counter_text(
+        activity_drop_universe_overlay_contract.get("status_counts")
+        if isinstance(activity_drop_universe_overlay_contract, Mapping)
+        else None
+    )
+    source_parser_requirements_contract = result[
+        "source_parser_requirements_contract"
+    ]
+    source_parser_requirement_counts = _counter_text(
+        source_parser_requirements_contract.get("requirement_counts")
+        if isinstance(source_parser_requirements_contract, Mapping)
+        else None
+    )
     scp_stability = result["settlement_count_guarded_bridge_stability"]
     scp_stability_contract = scp_stability.get("contract_check") or {}
     scp_stability_trials = scp_stability_contract.get("posterior_trials") or []
@@ -3314,6 +4257,63 @@ def _print_summary(result: dict[str, Any]) -> None:
             prior_stress_case_counts.items(),
             key=lambda item: (-int(item[1] or 0), str(item[0])),
         )[:3]
+    )
+    capacity_table_contract = (
+        result["prior_stress_detail_summary"].get(
+            "capacity_table_audit_contract"
+        )
+        or {}
+    )
+    capacity_table_acquisition_contract = (
+        result["prior_stress_detail_summary"].get(
+            "capacity_table_acquisition_contract"
+        )
+        or {}
+    )
+    capacity_table_semantic_status = _counter_text(
+        capacity_table_contract.get("semantic_status_counts")
+        if isinstance(capacity_table_contract, Mapping)
+        else None
+    )
+    capacity_table_residual_modes = _counter_text(
+        capacity_table_contract.get("residual_mode_counts")
+        if isinstance(capacity_table_contract, Mapping)
+        else None
+    )
+    capacity_table_detail_mechanisms = _counter_text(
+        capacity_table_contract.get("detail_mechanism_candidate_counts")
+        if isinstance(capacity_table_contract, Mapping)
+        else None
+    )
+    capacity_table_detail_next_checks = _counter_text(
+        capacity_table_contract.get("detail_next_check_counts")
+        if isinstance(capacity_table_contract, Mapping)
+        else None
+    )
+    capacity_table_top_maps = ",".join(
+        str(row.get("map_id"))
+        for row in capacity_table_contract.get("top_blocked_maps") or []
+        if isinstance(row, Mapping) and row.get("map_id") is not None
+    )
+    capacity_table_acquisition_routes = _counter_text(
+        capacity_table_acquisition_contract.get("route_counts")
+        if isinstance(capacity_table_acquisition_contract, Mapping)
+        else None
+    )
+    capacity_table_acquisition_sources = _counter_text(
+        capacity_table_acquisition_contract.get("source_strength_counts")
+        if isinstance(capacity_table_acquisition_contract, Mapping)
+        else None
+    )
+    capacity_table_overlay = (
+        capacity_table_acquisition_contract.get("table_overlay_metadata")
+        if isinstance(capacity_table_acquisition_contract, Mapping)
+        else {}
+    )
+    capacity_table_overlay_status = (
+        capacity_table_overlay.get("local_overlay_status")
+        if isinstance(capacity_table_overlay, Mapping)
+        else None
     )
     print(
         " ".join(
@@ -3344,6 +4344,18 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"{live_guard_overall.get('v3_practical_guarded_minus_unguarded_p90_coverage')}",
                 "v3_practical_guard_delta_p90_extreme_over="
                 f"{live_guard_overall.get('v3_practical_guarded_minus_unguarded_p90_extreme_over')}",
+                "v3_practical_guard_case_rows="
+                f"{live_guard_cases.get('rows')}",
+                "v3_practical_guard_p50_worsened_rows="
+                f"{live_guard_cases.get('p50_worsened_rows')}",
+                "v3_practical_guard_p90_coverage_lost_rows="
+                f"{live_guard_cases.get('p90_coverage_lost_rows')}",
+                "v3_practical_guard_p90_extreme_over_added_rows="
+                f"{live_guard_cases.get('p90_extreme_over_added_rows')}",
+                "v3_practical_guard_prebid_case_rows="
+                f"{live_guard_prebid_cases.get('rows')}",
+                "v3_practical_guard_prebid_p90_coverage_lost_rows="
+                f"{live_guard_prebid_cases.get('p90_coverage_lost_rows')}",
                 f"under_delta={summary['v3_under_delta_formal_p50_mae']}",
                 f"ccv_cells_delta={summary['v3_ccv_delta_q6_cells_p50_mae']}",
                 f"ccv_holdout_rows={result['ccv_holdout']['candidate_rows']}",
@@ -3404,6 +4416,84 @@ def _print_summary(result: dict[str, Any]) -> None:
                 f"{cse_artifact_contract.get('candidate_entries')}",
                 "cse_artifact_group_bys="
                 f"{','.join(cse_artifact_contract.get('group_bys') or [])}",
+                "cse_source_split="
+                f"{cse_artifact_contract.get('source_split_status')}",
+                "cse_unique_round_overflow="
+                f"{cse_artifact_contract.get('unique_round_overflow_rows')}",
+                "cse_session_capacity_semantics="
+                f"{cse_artifact_contract.get('session_capacity_source_semantics_rows')}",
+                "cse_server_side_expansion="
+                f"{cse_artifact_contract.get('server_side_expansion_rows')}",
+                f"cse_mechanisms={cse_mechanisms}",
+                f"cse_source_contexts={cse_contexts}",
+                "guard_loss_source_context="
+                f"{guard_loss_source_context_contract.get('status')}",
+                "guard_loss_source_context_audit="
+                f"{guard_loss_source_context_contract.get('audit_status')}",
+                "guard_loss_source_context_maps="
+                f"{guard_loss_source_context_contract.get('maps')}",
+                "guard_loss_source_context_rows="
+                f"{guard_loss_source_context_contract.get('guard_loss_rows')}",
+                "guard_loss_source_context_statuses="
+                f"{guard_loss_source_context_status_counts}",
+                "activity_drop_overlay="
+                f"{activity_drop_universe_overlay_contract.get('status')}",
+                "activity_drop_overlay_audit="
+                f"{activity_drop_universe_overlay_contract.get('audit_status')}",
+                "activity_drop_overlay_maps="
+                f"{activity_drop_universe_overlay_contract.get('maps')}",
+                "activity_drop_overlay_guard_maps="
+                f"{activity_drop_universe_overlay_contract.get('guard_loss_overlap_maps')}",
+                "activity_drop_overlay_covered_maps="
+                f"{activity_drop_universe_overlay_contract.get('candidate_item_universe_covered_maps')}",
+                "activity_drop_overlay_hard_map_blocked="
+                f"{activity_drop_universe_overlay_contract.get('hard_map_blocked_maps')}",
+                "activity_drop_overlay_statuses="
+                f"{activity_drop_universe_overlay_status_counts}",
+                "source_parser_requirements="
+                f"{source_parser_requirements_contract.get('status')}",
+                "source_parser_requirements_audit="
+                f"{source_parser_requirements_contract.get('audit_status')}",
+                "source_parser_maps="
+                f"{source_parser_requirements_contract.get('maps')}",
+                "source_parser_blocked_maps="
+                f"{source_parser_requirements_contract.get('blocked_maps')}",
+                "source_parser_session_maps="
+                f"{source_parser_requirements_contract.get('session_capacity_maps')}",
+                "source_parser_drop_ref_maps="
+                f"{source_parser_requirements_contract.get('drop_ref_residual_maps')}",
+                "source_parser_numeric_action_rows="
+                f"{source_parser_requirements_contract.get('numeric_action_rows')}",
+                "source_parser_numeric_session_signals="
+                f"{source_parser_requirements_contract.get('numeric_session_capacity_signal_rows')}",
+                "source_parser_numeric_non_session="
+                f"{source_parser_requirements_contract.get('numeric_non_session_expected_rows')}",
+                "source_parser_session_gap_rows="
+                f"{source_parser_requirements_contract.get('session_capacity_source_gap_rows')}",
+                "source_parser_session_gap_bucket_blocked="
+                f"{source_parser_requirements_contract.get('session_gap_bucket_only_blocked_rows')}",
+                "source_parser_session_gap_unresolved="
+                f"{source_parser_requirements_contract.get('session_gap_unresolved_session_capacity_rows')}",
+                "source_parser_payload_table_gap_rows="
+                f"{source_parser_requirements_contract.get('payload_table_gap_rows')}",
+                "source_parser_payload_table_gap_blocked="
+                f"{source_parser_requirements_contract.get('payload_table_gap_blocked_rows')}",
+                "source_parser_payload_table_gap_verified="
+                f"{source_parser_requirements_contract.get('payload_table_gap_payload_verified_rows')}",
+                "source_parser_payload_outer_rows="
+                f"{source_parser_requirements_contract.get('payload_outer_field_rows')}",
+                "source_parser_payload_outer_metadata="
+                f"{source_parser_requirements_contract.get('payload_outer_field_metadata_only_rows')}",
+                "source_parser_payload_outer_capacity_candidates="
+                f"{source_parser_requirements_contract.get('payload_outer_field_capacity_candidate_rows')}",
+                "source_parser_table_overlay_rows="
+                f"{source_parser_requirements_contract.get('table_overlay_residual_rows')}",
+                "source_parser_table_overlay_blocked="
+                f"{source_parser_requirements_contract.get('table_overlay_residual_blocked_rows')}",
+                "source_parser_table_overlay_server_open="
+                f"{source_parser_requirements_contract.get('table_overlay_residual_server_transform_open_rows')}",
+                "source_parser_requirements_counts="
+                f"{source_parser_requirement_counts}",
                 "shadow_sampler_prototype_contract="
                 f"{shadow_sampler_prototype_contract.get('status')}",
                 "shadow_sampler_prototype_status="
@@ -3454,6 +4544,26 @@ def _print_summary(result: dict[str, Any]) -> None:
                 "prior_stress_contract="
                 f"{prior_stress_contract.get('status')}",
                 f"prior_stress_top_cases={prior_stress_top_cases}",
+                "capacity_table_audit_contract="
+                f"{capacity_table_contract.get('status')}",
+                "capacity_table_semantic_status="
+                f"{capacity_table_semantic_status}",
+                "capacity_table_residual_modes="
+                f"{capacity_table_residual_modes}",
+                "capacity_table_detail_mechanisms="
+                f"{capacity_table_detail_mechanisms}",
+                "capacity_table_detail_next_checks="
+                f"{capacity_table_detail_next_checks}",
+                "capacity_table_top_maps="
+                f"{capacity_table_top_maps}",
+                "capacity_table_acquisition_contract="
+                f"{capacity_table_acquisition_contract.get('status')}",
+                "capacity_table_acquisition_routes="
+                f"{capacity_table_acquisition_routes}",
+                "capacity_table_acquisition_sources="
+                f"{capacity_table_acquisition_sources}",
+                "capacity_table_overlay="
+                f"{capacity_table_overlay_status}",
                 f"resid_gate_active={summary['v3_resid_gate_active_rows']}",
             )
         )
@@ -3515,6 +4625,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--no-capacity-source-expansion", action="store_true")
     parser.add_argument(
+        "--capacity-table-audit-json",
+        type=Path,
+        help=(
+            "Optional JSON output from summarize_v3_capacity_table_audit.py "
+            "--format json. This attaches capacity semantic residual modes "
+            "to the prior-stress capacity/table drift gate."
+        ),
+    )
+    parser.add_argument(
+        "--capacity-table-acquisition-json",
+        type=Path,
+        help=(
+            "Optional JSON output from "
+            "summarize_v3_capacity_table_acquisition_audit.py --format json. "
+            "This attaches table/source acquisition routes to the "
+            "prior-stress capacity/table drift gate."
+        ),
+    )
+    parser.add_argument(
         "--guarded-bridge-stability-json",
         type=Path,
         help=(
@@ -3529,6 +4658,35 @@ def main(argv: list[str] | None = None) -> int:
             "Optional JSON output from summarize_live_windivert_brief.py "
             "--archive-formal-mode v3_practical --format json. This attaches "
             "paired guarded/unguarded live-practical guard evidence to readiness."
+        ),
+    )
+    parser.add_argument(
+        "--guard-loss-source-context-json",
+        type=Path,
+        help=(
+            "Optional JSON output from "
+            "summarize_v3_practical_guard_loss_source_context.py --format json. "
+            "This attaches map-level guard coverage-loss CSE/SCP/capacity "
+            "source-context evidence to readiness without changing gates."
+        ),
+    )
+    parser.add_argument(
+        "--activity-drop-universe-overlay-json",
+        type=Path,
+        help=(
+            "Optional JSON output from "
+            "summarize_v3_activity_drop_universe_overlay_audit.py --format json. "
+            "This attaches 252x activity/drop-universe overlay coverage and "
+            "hard-map blocker evidence to readiness without changing gates."
+        ),
+    )
+    parser.add_argument(
+        "--source-parser-requirements-json",
+        type=Path,
+        help=(
+            "Optional JSON output from "
+            "summarize_v3_source_parser_requirements_audit.py --format json. "
+            "This attaches source parser requirement evidence without changing gates."
         ),
     )
     parser.add_argument(
@@ -3588,6 +4746,17 @@ def main(argv: list[str] | None = None) -> int:
                 capacity_source_expansion_artifact = json.load(handle)
         else:
             capacity_source_expansion_artifact = {}
+    capacity_table_audit = None
+    if args.capacity_table_audit_json is not None:
+        with args.capacity_table_audit_json.open("r", encoding="utf-8") as handle:
+            capacity_table_audit = json.load(handle)
+    capacity_table_acquisition_audit = None
+    if args.capacity_table_acquisition_json is not None:
+        with args.capacity_table_acquisition_json.open(
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            capacity_table_acquisition_audit = json.load(handle)
     rows, errors = evaluate_paths(
         args.paths or _default_paths(),
         tables=load_monitor_tables(),
@@ -3623,6 +4792,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.live_practical_brief_json is not None:
         with args.live_practical_brief_json.open("r", encoding="utf-8") as handle:
             live_practical_guard_brief = json.load(handle)
+    guard_loss_source_context = None
+    if args.guard_loss_source_context_json is not None:
+        with args.guard_loss_source_context_json.open("r", encoding="utf-8") as handle:
+            guard_loss_source_context = json.load(handle)
+    activity_drop_universe_overlay = None
+    if args.activity_drop_universe_overlay_json is not None:
+        with args.activity_drop_universe_overlay_json.open(
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            activity_drop_universe_overlay = json.load(handle)
+    source_parser_requirements = None
+    if args.source_parser_requirements_json is not None:
+        with args.source_parser_requirements_json.open(
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            source_parser_requirements = json.load(handle)
     shadow_sampler_prototype = None
     if args.shadow_sampler_prototype_json is not None:
         with args.shadow_sampler_prototype_json.open("r", encoding="utf-8") as handle:
@@ -3661,8 +4848,13 @@ def main(argv: list[str] | None = None) -> int:
         min_sessions=args.min_sessions,
         folds=args.folds,
         scp_guarded_bridge_stability=guarded_bridge_stability,
+        capacity_table_audit=capacity_table_audit,
+        capacity_table_acquisition_audit=capacity_table_acquisition_audit,
         capacity_source_expansion_artifact=capacity_source_expansion_artifact,
         live_practical_guard_brief=live_practical_guard_brief,
+        guard_loss_source_context=guard_loss_source_context,
+        activity_drop_universe_overlay=activity_drop_universe_overlay,
+        source_parser_requirements=source_parser_requirements,
         shadow_sampler_prototype=shadow_sampler_prototype,
         shadow_sampler_guard_trial=shadow_sampler_guard_trial,
         shadow_sampler_value_source_profile_audit=(

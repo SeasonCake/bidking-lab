@@ -12,6 +12,7 @@ import csv
 import json
 import sys
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -70,6 +71,21 @@ from bidking_lab.live.fatbeans import (  # noqa: E402
 )
 from bidking_lab.live.monitor import load_monitor_tables  # noqa: E402
 
+HARD_OBSERVED_PUBLIC_INFO_IDS = {
+    200001,
+    200002,
+    200003,
+    200021,
+    200022,
+    200023,
+    200024,
+    200025,
+    200039,
+    200048,
+    200049,
+    200050,
+}
+
 
 def _default_paths() -> tuple[Path, ...]:
     root = ROOT / "data" / "samples" / "fatbeans"
@@ -106,6 +122,71 @@ def _iter_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
     return tuple(sorted(set(expanded)))
 
 
+def _session_count(events: FatbeansCaptureEvents) -> int:
+    session_ids: set[str] = set()
+    for state in events.states:
+        if state.session_id:
+            session_ids.add(str(state.session_id))
+    for send in events.sends:
+        if send.session_id:
+            session_ids.add(str(send.session_id))
+    for status in events.statuses:
+        if status.session_id:
+            session_ids.add(str(status.session_id))
+    return len(session_ids)
+
+
+def _observed_settlement_inconsistency(events: FatbeansCaptureEvents) -> bool:
+    inventory_states = [state for state in events.states if state.inventory_items]
+    if not inventory_states:
+        return False
+    final_state = inventory_states[-1]
+    final_by_runtime = {
+        item.runtime_id: item
+        for item in final_state.inventory_items
+        if item.runtime_id is not None
+    }
+
+    def mismatches(item: Any) -> bool:
+        final_item = final_by_runtime.get(getattr(item, "runtime_id", None))
+        if final_item is None:
+            return True
+        observed_quality = getattr(item, "quality", None)
+        return observed_quality is not None and final_item.quality != observed_quality
+
+    for state in events.states:
+        if state is final_state:
+            continue
+        for info in state.public_infos:
+            if int(info.info_id) not in HARD_OBSERVED_PUBLIC_INFO_IDS:
+                continue
+            if any(mismatches(item) for item in info.observed_items):
+                return True
+        for result in state.action_results:
+            if any(mismatches(item) for item in result.observed_items):
+                return True
+        for reveal in state.skill_reveals:
+            if any(mismatches(item) for item in reveal.observed_items):
+                return True
+    return False
+
+
+def _strict_sample_exclusion_reason(path: Path, events: FatbeansCaptureEvents) -> str:
+    name = path.name.lower()
+    parts = {part.lower() for part in path.parts}
+    if "fatbeans_invalid" in parts or name.startswith("fatbeans_invalid_"):
+        return "quarantined_sample"
+    if name.startswith("fatbeans_mixed_"):
+        return "mixed_sample"
+    if name.startswith("fatbeans_invalid_"):
+        return "invalid_sample"
+    if _session_count(events) > 1:
+        return "multi_session_capture"
+    if _observed_settlement_inconsistency(events):
+        return "observed_settlement_inconsistency"
+    return ""
+
+
 def _events_before_sort(events: FatbeansCaptureEvents, sort_id: int) -> FatbeansCaptureEvents:
     return FatbeansCaptureEvents(
         packets=tuple(row for row in events.packets if int(row.sort_id) < sort_id),
@@ -113,6 +194,86 @@ def _events_before_sort(events: FatbeansCaptureEvents, sort_id: int) -> Fatbeans
         sends=tuple(row for row in events.sends if int(row.sort_id) < sort_id),
         states=tuple(row for row in events.states if int(row.sort_id) < sort_id),
         statuses=tuple(row for row in events.statuses if int(row.sort_id) < sort_id),
+    )
+
+
+def _recoverable_first_ahmad_prebid_state(
+    events: FatbeansCaptureEvents,
+) -> tuple[Any | None, int | None]:
+    bid_sends = [send for send in events.sends if getattr(send, "kind", "") == "bid"]
+    if not bid_sends:
+        return None, None
+    first_bid = bid_sends[0]
+    first_bid_sort = int(first_bid.sort_id)
+    if any(int(state.sort_id) < first_bid_sort for state in events.states):
+        return None, None
+    session_id = getattr(first_bid, "session_id", None)
+    if not session_id:
+        return None, None
+    next_state = next(
+        (
+            state
+            for state in events.states
+            if int(state.sort_id) > first_bid_sort
+            and getattr(state, "session_id", None) == session_id
+            and getattr(state, "map_id", None) is not None
+        ),
+        None,
+    )
+    if next_state is None or hero_mode_from_state(next_state) != "ahmed":
+        return None, None
+    if getattr(next_state, "round_index", None) not in (2,):
+        return None, None
+
+    r1_skill_reveals = tuple(
+        reveal
+        for reveal in (getattr(next_state, "skill_reveals", ()) or ())
+        if getattr(reveal, "hero_id", None) in (None, 204)
+        and getattr(reveal, "round_index", None) in (None, 1)
+    )
+    numeric_public_infos = tuple(
+        info
+        for info in (getattr(next_state, "public_infos", ()) or ())
+        if not (getattr(info, "observed_items", ()) or ())
+    )
+    if not r1_skill_reveals and not numeric_public_infos:
+        return None, None
+
+    stripped_bids = tuple(
+        replace(bid, values=())
+        for bid in (getattr(next_state, "bids", ()) or ())
+    )
+    recovered = replace(
+        next_state,
+        sort_id=max(0, first_bid_sort - 1),
+        capture_time=getattr(first_bid, "capture_time", getattr(next_state, "capture_time", "")),
+        message_id=0x0025,
+        round_index=1,
+        bids=stripped_bids,
+        action_results=(),
+        skill_reveals=r1_skill_reveals,
+        public_infos=numeric_public_infos,
+        inventory_items=(),
+        settlement_loss_units=None,
+    )
+    return recovered, first_bid_sort
+
+
+def _with_recovered_first_ahmad_prebid(
+    events: FatbeansCaptureEvents,
+) -> tuple[FatbeansCaptureEvents, set[int]]:
+    recovered, bid_sort_id = _recoverable_first_ahmad_prebid_state(events)
+    if recovered is None or bid_sort_id is None:
+        return events, set()
+    return (
+        FatbeansCaptureEvents(
+            packets=events.packets,
+            frames=events.frames,
+            sends=events.sends,
+            states=tuple(sorted((*events.states, recovered), key=lambda state: int(state.sort_id))),
+            statuses=events.statuses,
+        ),
+        {bid_sort_id},
     )
 
 
@@ -405,6 +566,7 @@ def _round_rows_for_events(
     posterior_seed: int = 0,
     ccv_options: V3CcvOptions | None = None,
 ) -> list[dict[str, Any]]:
+    events, recovered_first_prebid_sort_ids = _with_recovered_first_ahmad_prebid(events)
     rows: list[dict[str, Any]] = []
     prior_cache: dict[int, dict[str, Any]] = {}
     replacement_cache: dict[int, dict[tuple[int, int, int], int]] = {}
@@ -480,6 +642,8 @@ def _round_rows_for_events(
                     "round": window_round,
                     "session_id": getattr(bid_send, "session_id", None),
                     "bid_sort_id": bid_sort_id,
+                    "recovered_first_prebid_state": False,
+                    "recovered_first_prebid_source": "",
                     "bid_value": getattr(bid_send, "value", None),
                     "map_id": map_id,
                     "map_family": map_family,
@@ -694,6 +858,12 @@ def _round_rows_for_events(
                 "round": window_round,
                 "session_id": getattr(bid_send, "session_id", None),
                 "bid_sort_id": bid_sort_id,
+                "recovered_first_prebid_state": bid_sort_id in recovered_first_prebid_sort_ids,
+                "recovered_first_prebid_source": (
+                    "ahmad_first_post_bid_state_stable_r1_projection"
+                    if bid_sort_id in recovered_first_prebid_sort_ids
+                    else ""
+                ),
                 "bid_value": getattr(bid_send, "value", None),
                 "map_id": map_id,
                 "map_family": map_family,
@@ -744,6 +914,7 @@ def evaluate_paths(
     posterior_trials: int = 512,
     posterior_seed: int = 0,
     ccv_options: V3CcvOptions | None = None,
+    include_mixed_samples: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     rows: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
@@ -752,6 +923,11 @@ def evaluate_paths(
             events = parse_fatbeans_capture(path)
         except Exception as exc:
             errors.append({"file": str(path), "error": type(exc).__name__})
+            continue
+        reason = _strict_sample_exclusion_reason(path, events)
+        if reason == "quarantined_sample":
+            continue
+        if reason and not include_mixed_samples:
             continue
         rows.extend(
             _round_rows_for_events(
@@ -2894,6 +3070,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--fail-on-conflicts", action="store_true")
     parser.add_argument("--fail-on-parse-errors", action="store_true")
+    parser.add_argument(
+        "--include-mixed-samples",
+        action="store_true",
+        help=(
+            "Include mixed or non-strict captures. By default evaluation skips "
+            "mixed filenames, multi-session captures, and captures whose hard "
+            "observed item evidence cannot be reconciled with settlement truth."
+        ),
+    )
     args = parser.parse_args(argv)
 
     tables = None if args.skip_table_report else load_monitor_tables()
@@ -2938,6 +3123,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
             component_move_cells=not args.ccv_component_freeze_cells,
         ),
+        include_mixed_samples=args.include_mixed_samples,
     )
     summary = summarize_rows(rows, errors)
     if args.format == "json":

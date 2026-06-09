@@ -7348,6 +7348,16 @@ rankmap_parse_error=null
 
 详见 `docs/auction_analyzer_ahmad_reference_2026-06-08.zh-CN.md`。
 
+## O-v3-183：红品数量需要作为 UI 一线字段，而不是只藏在 q6 概率/格数里
+
+2026-06-08 根据 Ahmad/Victor 类英雄输入通道与实战 UI 反馈补充：
+
+- compact overlay 将非结算态 q6 指标从 `红货 q6` 调整为 `红品数量`；
+- 有精确 `known_red_item_count` 时优先显示 `红品 N件`；
+- 没有精确红数时，显示后验 `q6件数 P10/P50/P90` 区间；
+- q6 样本率、q6 决策价值区间仍保留在指标详情和 hover/detail，不丢失概率/价值参考；
+- 这只改变用户可见信息排序，不改变 v3/v2 estimator、sampler 或正式出价口径。
+
 ## O-v3-184：archive-live practical guard brief 已可合同化复核，但仍是 watch
 
 2026-06-08 基于实际 archive/live brief 跑：
@@ -7478,6 +7488,25 @@ entry_missing_key_counts={}
 - artifact 级 `active=false` / `affects_bid=false` 与 row-level `v3_cse_active_rows=0` 一致；
 - CSE pressure 子集仍只有 61 rows，适合复盘 high-precision watch，不足以作为 prior/promotion；
 - CSE 仍留在 shadow-only readiness watch lane，不进入 formal/value sampler 或正式出价。
+
+## O-v3-186：开局英雄 `?` 来自本机 player_id 延迟，不应从多人英雄列表猜测
+
+2026-06-08 根据两局 Ahmad 实战 archive 复核：
+
+- `windivert_2026-06-08_145120_complete_ahmed_2407_2407_1388889350416994.json`
+  与 `windivert_2026-06-08_145320_complete_ahmed_2406_2406_1388889350539399.json`
+  的首条 `0x0021` 状态已经包含所有玩家英雄，但尚未携带本机 `player_id`；
+- 之后 `0x0025`/报价状态可通过本机报价或已知 player_id 识别本机 hero，因此 UI 开局显示 `?` 是 local-player binding timing 问题，不是 hero/map table 缺失；
+- 修复边界：monitor 只缓存已确认本机 `player_id`，parser 只在该 id 出现在当前 bids 列表时使用 hint 绑定；status 包本身仍不单独绑定本机，避免多人同局时误认英雄；
+- parser 会在同 session 后续报价确认本机 id 后回填前序状态，因此 archive replay 的首 batch 也能稳定输出 `session.hero=ahmed`；
+- 两局已归档为 `fatbeans_valid_ahmed_2407_2rounds_2407_1388889350416994_0002.json`
+  与 `fatbeans_valid_ahmed_2406_5rounds_2406_1388889350539399_0001.json`，均无 parse/no-state 缺口。
+
+质量结论：
+
+- 这两局是可用真实样本，不受 VPN 直接破坏；
+- 2407 样本较短，只能作开局/低轮次 smoke；
+- 2406 是有价值的估值 miss case：brief 显示 R2-R5 的 P90 miss 主因集中在 `q6_gate_inactive`、`q6_count/cells/value under truth`，说明当前 practical 对 Ahmad 2406 villa 的红品尾部分布仍偏保守，后续应进入 q6 gate/sampler 诊断，而不是当作坏样本排除。
 
 ## O-v3-187：prior-stress blocker 已有 case taxonomy，但仍 blocked
 

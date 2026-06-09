@@ -318,6 +318,44 @@ def _join_parts(parts: tuple[Any, ...] | list[Any], *, sep: str = " / ") -> str:
     return sep.join(str(part) for part in parts if str(part or "").strip())
 
 
+def _ui_contract_constraints_summary(contract: dict[str, Any]) -> dict[str, Any]:
+    constraints = _as_mapping(contract.get("constraints"))
+    return _as_mapping(constraints.get("summary"))
+
+
+def _known_red_item_count(contract: dict[str, Any]) -> int | None:
+    count = _int_or_none(
+        _ui_contract_constraints_summary(contract).get("known_red_item_count")
+    )
+    if count is not None and count > 0:
+        return count
+    return None
+
+
+def _q6_count_range(contract: dict[str, Any], v2: dict[str, Any] | None = None) -> str:
+    baseline = _as_mapping(contract.get("baseline"))
+    posterior = _as_mapping(baseline.get("posterior"))
+    text = str(posterior.get("q6_count_range") or "").strip()
+    if not text and v2:
+        text = str(v2.get("q6件数 P10/P50/P90") or "").strip()
+    return text
+
+
+def _q6_count_display(
+    contract: dict[str, Any],
+    v2: dict[str, Any] | None = None,
+    *,
+    known_prefix: str = "红品",
+) -> str:
+    red_count = _known_red_item_count(contract)
+    if red_count is not None:
+        return f"{known_prefix} {red_count}件"
+    count_range = _q6_count_range(contract, v2)
+    if count_range:
+        return f"件数 {count_range}"
+    return ""
+
+
 def _v3_confidence_label(value: Any) -> str:
     text = str(value or "").strip()
     return {
@@ -782,6 +820,7 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
         row = v2_rows[0]
         q6_rate = row.get("q6样本率") or ""
         q6_prior = row.get("q6掉落先验") or ""
+        q6_count = row.get("q6件数 P10/P50/P90") or ""
         q6_value = row.get("q6价值 P10/P50/P90") or ""
         q6_decision_value = row.get("q6决策价值 P10/P50/P90") or ""
         q6_prior_gap = str(row.get("q6先验缺口") or "")
@@ -796,6 +835,7 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
             if q6_prior_gap:
                 tag = "warn"
             prior_text = f" / 先验 {q6_prior}" if q6_prior else ""
+            count_text = f"  |  件数 {q6_count}" if q6_count else ""
             value_text = q6_decision_value or q6_value
             gap_text = (
                 f"  |  先验缺口 {q6_prior_gap}"
@@ -811,7 +851,7 @@ def _summary_entries(snapshot: dict) -> list[tuple[str, str]]:
             )
             entries.append(
                 (
-                    f"红货: q6样本率 {q6_rate or '?'}{prior_text}  |  {value_text}{gap_text}",
+                    f"红货: q6样本率 {q6_rate or '?'}{prior_text}{count_text}  |  {value_text}{gap_text}",
                     tag,
                 )
             )
@@ -1099,8 +1139,8 @@ def _ui_contract_constraints_section(
     constraints = contract.get("constraints") or {}
     if not isinstance(constraints, dict):
         return None
-    summary = constraints.get("summary") or {}
-    if not isinstance(summary, dict):
+    summary = _ui_contract_constraints_summary(contract)
+    if not summary:
         return None
     headline_parts: list[str] = []
     if summary.get("input_total_item_count") is not None:
@@ -1271,9 +1311,12 @@ def _ui_contract_posterior_section(
             f"q6价值 {posterior.get('q6_decision_value_range')}"
             if posterior.get("q6_decision_value_range")
             else "",
-            f"q6件数 {posterior.get('q6_count_range')}"
-            if posterior.get("q6_count_range")
-            else "",
+            _q6_count_display(contract, known_prefix="已知红品")
+            or (
+                f"q6件数 {posterior.get('q6_count_range')}"
+                if posterior.get("q6_count_range")
+                else ""
+            ),
             f"q6格数 {posterior.get('q6_cells_range')}"
             if posterior.get("q6_cells_range")
             else "",
@@ -2347,6 +2390,20 @@ def _overlay_model(
             or v2.get("q6样本率")
             or "?"
         )
+        q6_count_text = _q6_count_display(ui_contract, v2)
+        q6_value_text = str(
+            contract_posterior.get("q6_decision_value_range")
+            or v2.get("q6决策价值 P10/P50/P90")
+            or v2.get("q6价值 P10/P50/P90")
+            or ""
+        )
+        q6_detail = _join_parts(
+            (
+                f"样本 {q6_rate}" if q6_count_text else "",
+                q6_value_text,
+            ),
+            sep="  |  ",
+        )
         q6_tag = "normal"
         try:
             q6_tag = "bad" if float(q6_rate.strip("%")) < 10 else "normal"
@@ -2356,14 +2413,9 @@ def _overlay_model(
             q6_tag = "warn"
         metrics.append(
             (
-                "红货 q6",
-                q6_rate,
-                str(
-                    contract_posterior.get("q6_decision_value_range")
-                    or v2.get("q6决策价值 P10/P50/P90")
-                    or v2.get("q6价值 P10/P50/P90")
-                    or ""
-                ),
+                "红品数量",
+                q6_count_text or f"样本 {q6_rate}",
+                q6_detail,
                 q6_tag,
             )
         )

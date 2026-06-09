@@ -245,6 +245,7 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
         ],
         tables=_tables(items_per_session_max=1),
         selected_case="direct_prior_max_conflict",
+        detail_rows=2,
     )
 
     row = result[0]
@@ -310,6 +311,50 @@ def test_capacity_table_audit_adds_raw_inventory_diagnostics(
     }
     assert cell["latest_item_count"]["max"] == 2
     assert cell["drop_ref_excess_after_temp_zodiac_count"]["max"] == 1
+    raw_detail = row["raw_detail_rows"][0]
+    assert raw_detail["file"] == sample.name
+    assert raw_detail["file_ref"] == str(sample)
+    assert raw_detail["map_id"] == 2601
+    assert raw_detail["latest_message_id"] == "0x002D"
+    assert raw_detail["inventory_status"] == "ok"
+    assert raw_detail["residual_mode"] == "drop_ref_only_overflow"
+    assert raw_detail["semantic_status"] == "blocked_drop_ref_overflow_after_temp"
+    assert raw_detail["drop_ref_excess_after_temp_zodiac_count"] == 1
+    assert raw_detail["round_cap_excess_after_temp_zodiac_count"] is None
+    detail_rows = module._collect_capacity_detail_rows(result, limit=1)
+    assert detail_rows == [
+        {
+            "map_id": "2601",
+            "map_status": "table_possible_max_below_truth",
+            "map_semantic_status": "blocked_drop_ref_overflow_after_temp",
+            **raw_detail,
+        }
+    ]
+    assert "2601:" in module._format_capacity_detail_rows(detail_rows)
+    assert "/residual=drop_ref_only_overflow" in module._format_capacity_detail_rows(
+        detail_rows
+    )
+    detail_summary = module._capacity_detail_summary(detail_rows, top=8)
+    assert detail_summary["rows"] == 1
+    assert detail_summary["unique_file_map_residual_rows"] == 1
+    assert detail_summary["unique_files"] == 1
+    assert detail_summary["semantic_status_counts"] == {
+        "blocked_drop_ref_overflow_after_temp": 1
+    }
+    assert detail_summary["residual_mode_counts"] == {"drop_ref_only_overflow": 1}
+    assert detail_summary["mechanism_candidate_counts"] == {
+        "drop_ref_candidate_gap": 1
+    }
+    assert detail_summary["next_check_counts"] == {
+        "check_drop_ref_source_semantics_or_activity_overlay": 1
+    }
+    assert detail_summary["source_signal_counts"] == {
+        "has_full_action/has_public_total": 1
+    }
+    assert (
+        "next_checks=check_drop_ref_source_semantics_or_activity_overlay:1"
+        in module._format_capacity_detail_summary(detail_summary)
+    )
     merged = module._merge_capacity_semantic_matrix(result, top=8)
     assert merged[0]["rows"] == 1
     assert merged[0]["semantic_status_counts"] == {
@@ -371,6 +416,68 @@ def test_capacity_table_audit_filters_selected_case() -> None:
             selected_bucket="lower_bound_under_truth",
         )
     ) == 1
+
+
+def test_capacity_detail_summary_deduplicates_file_level_rows() -> None:
+    module = _load_module()
+    rows = [
+        {
+            "file": "a.json",
+            "file_ref": "a.json",
+            "map_id": "2601",
+            "map_family": "hidden",
+            "residual_mode": "round_cap_overflow",
+            "semantic_status": "blocked_round_cap_overflow_after_temp",
+            "truth_prior_max_delta": 21,
+            "drop_ref_excess_after_temp_zodiac_count": 20,
+            "round_cap_excess_after_temp_zodiac_count": 4,
+            "full_observed_action_ids": [100100],
+            "public_total_count_values": [],
+        },
+        {
+            "file": "a.json",
+            "file_ref": "a.json",
+            "map_id": "2601",
+            "map_family": "hidden",
+            "residual_mode": "round_cap_overflow",
+            "semantic_status": "blocked_round_cap_overflow_after_temp",
+            "truth_prior_max_delta": 21,
+            "drop_ref_excess_after_temp_zodiac_count": 20,
+            "round_cap_excess_after_temp_zodiac_count": 4,
+            "full_observed_action_ids": [100100],
+            "public_total_count_values": [],
+        },
+        {
+            "file": "b.json",
+            "file_ref": "b.json",
+            "map_id": "2401",
+            "map_family": "villa",
+            "residual_mode": "within_drop_ref",
+            "semantic_status": "watch_activity_extras_explain_drop_ref_gap",
+            "truth_prior_max_delta": 2,
+            "drop_ref_excess_after_temp_zodiac_count": 0,
+            "round_cap_excess_after_temp_zodiac_count": 0,
+            "full_observed_action_ids": [],
+            "public_total_count_values": [42],
+        },
+    ]
+
+    summary = module._capacity_detail_summary(rows, top=8)
+
+    assert summary["rows"] == 3
+    assert summary["unique_file_map_residual_rows"] == 2
+    assert summary["mechanism_candidate_counts"] == {
+        "activity_extras_candidate": 1,
+        "round_cap_candidate_gap": 1,
+    }
+    assert summary["next_check_counts"] == {
+        "check_per_session_table_version_or_external_overlay": 1,
+        "verify_activity_extras_table": 1,
+    }
+    assert summary["source_signal_counts"] == {
+        "has_full_action/no_public_total": 1,
+        "no_full_action/has_public_total": 1,
+    }
 
 
 def test_capacity_table_audit_classifies_residual_modes() -> None:

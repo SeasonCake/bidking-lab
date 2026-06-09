@@ -110,6 +110,20 @@ _ACTION_COUNT: dict[int, int] = {
     100119: 5,  # 极品存量
     100120: 6,  # 珍品存量
 }
+_AHMAD_SKILL_SESSION_FIELDS: dict[int, tuple[str, ...]] = {
+    100204: ("session", "total_item_count"),  # R1: total item count
+}
+_AHMAD_SKILL_AVG_CELLS: dict[int, int] = {
+    1002041: 5,  # R2: gold/orange avg cells
+    1002042: 4,  # R3: purple avg cells
+    1002043: 3,  # R4: blue avg cells
+}
+_AHMAD_SKILL_COUNT: dict[int, int] = {
+    1002044: 1,  # R5: green+white merged item count
+}
+_VICTOR_SKILL_COUNT_SUM: dict[int, tuple[str, ...]] = {
+    100209: ("bucket_group", "q4q5q6", "count"),  # R1: q4 + q5 + q6 item count
+}
 _ACTION_SIZE_AVG_VALUE: dict[int, int] = {
     100169: 1,  # 单格均价
     100170: 2,  # 两格均价
@@ -240,6 +254,8 @@ class FatbeansSkillReveal:
     skill_id: int
     hero_id: int | None
     round_index: int | None
+    result: int | float | None = None
+    result_field: int | None = None
     observed_items: tuple[FatbeansObservedItem, ...] = ()
 
 
@@ -563,7 +579,7 @@ def _parse_action_result(block: bytes) -> FatbeansActionResult | None:
         for item in (_parse_observed_item(raw),)
         if item is not None
     )
-    for result_field in (14, 12):
+    for result_field in (14, 12, 7):
         result = _int(_first(fields, result_field))
         if result is not None:
             return FatbeansActionResult(
@@ -578,6 +594,13 @@ def _parse_action_result(block: bytes) -> FatbeansActionResult | None:
             return FatbeansActionResult(
                 action_id=action_id,
                 result=_fixed32_float(raw_result),
+                result_field=result_field,
+                observed_items=observed_items,
+            )
+        if isinstance(raw_result, int):
+            return FatbeansActionResult(
+                action_id=action_id,
+                result=float(raw_result),
                 result_field=result_field,
                 observed_items=observed_items,
             )
@@ -657,12 +680,33 @@ def _parse_skill_reveal(block: bytes) -> FatbeansSkillReveal | None:
         for item in (_parse_observed_item(raw),)
         if item is not None
     )
-    if not observed_items:
+    result: int | float | None = None
+    result_field: int | None = None
+    for candidate_field in (14, 12, 7):
+        parsed = _int(_first(fields, candidate_field))
+        if parsed is not None:
+            result = parsed
+            result_field = candidate_field
+            break
+    if result is None:
+        for candidate_field in (11, 9, 10):
+            raw_result = _first(fields, candidate_field)
+            if isinstance(raw_result, bytes) and len(raw_result) == 4:
+                result = _fixed32_float(raw_result)
+                result_field = candidate_field
+                break
+            if isinstance(raw_result, int):
+                result = float(raw_result)
+                result_field = candidate_field
+                break
+    if not observed_items and result is None:
         return None
     return FatbeansSkillReveal(
         skill_id=skill_id,
         hero_id=_int(_first(fields, 2)),
         round_index=_int(_first(fields, 6)),
+        result=result,
+        result_field=result_field,
         observed_items=observed_items,
     )
 
@@ -864,19 +908,35 @@ def _parse_state_event(frame: FatbeansFrame) -> FatbeansStateEvent | None:
     )
 
 
-def parse_fatbeans_capture(path: str | Path) -> FatbeansCaptureEvents:
+def parse_fatbeans_capture(
+    path: str | Path,
+    *,
+    local_player_id_hint: int | None = None,
+) -> FatbeansCaptureEvents:
     packets = load_fatbeans_packets(path)
-    return parse_fatbeans_packets(packets)
+    return parse_fatbeans_packets(
+        packets,
+        local_player_id_hint=local_player_id_hint,
+    )
 
 
-def parse_fatbeans_capture_payload(raw: str | bytes) -> FatbeansCaptureEvents:
+def parse_fatbeans_capture_payload(
+    raw: str | bytes,
+    *,
+    local_player_id_hint: int | None = None,
+) -> FatbeansCaptureEvents:
     """Parse a Fatbeans JSON export already held in memory."""
     packets = load_fatbeans_packets_from_payload(raw)
-    return parse_fatbeans_packets(packets)
+    return parse_fatbeans_packets(
+        packets,
+        local_player_id_hint=local_player_id_hint,
+    )
 
 
 def parse_fatbeans_packets(
     packets: Sequence[FatbeansPacket],
+    *,
+    local_player_id_hint: int | None = None,
 ) -> FatbeansCaptureEvents:
     """Parse loaded Fatbeans packets into normalized capture events."""
     frames = [
@@ -901,6 +961,7 @@ def parse_fatbeans_packets(
     current_map_id: int | None = None
     current_round_index: int | None = None
     local_player_by_session: dict[str, int] = {}
+    hinted_local_player_id = _int(local_player_id_hint)
     pending_bid_values_by_session: dict[str, list[int]] = {}
     for frame in frames:
         status = _parse_status_event(frame)
@@ -924,6 +985,17 @@ def parse_fatbeans_packets(
                 ):
                     local_player_by_session.pop(state.session_id, None)
                     local_player_id = None
+                if (
+                    local_player_id is None
+                    and hinted_local_player_id is not None
+                    and state.bids
+                    and any(
+                        bid.player_id == hinted_local_player_id
+                        for bid in state.bids
+                    )
+                ):
+                    local_player_id = hinted_local_player_id
+                    local_player_by_session[state.session_id] = local_player_id
                 if local_player_id is None:
                     local_player_id = _infer_local_player_id_from_bid_values(
                         state.bids,
@@ -957,6 +1029,22 @@ def parse_fatbeans_packets(
                 action_results=(direct_action,),
             )
         )
+    if local_player_by_session:
+        states_list = [
+            replace(state, player_id=local_player_id)
+            if (
+                state.player_id is None
+                and state.session_id is not None
+                and (local_player_id := local_player_by_session.get(state.session_id))
+                is not None
+                and (
+                    not state.bids
+                    or any(bid.player_id == local_player_id for bid in state.bids)
+                )
+            )
+            else state
+            for state in states_list
+        ]
     return FatbeansCaptureEvents(
         packets=tuple(packets),
         frames=tuple(frames),
@@ -1081,6 +1169,68 @@ def _state_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
                 FieldUpdate(
                     path=("bucket", str(quality), "avg_cells"),
                     value=result.result,
+                    source="packet",
+                    confidence="exact",
+                    sequence=state.sort_id,
+                )
+            )
+    return updates
+
+
+def _ahmad_skill_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
+    updates: list[FieldUpdate] = []
+    for reveal in state.skill_reveals:
+        if reveal.result is None:
+            continue
+        if reveal.hero_id is not None and reveal.hero_id != 204:
+            continue
+        if reveal.skill_id in _AHMAD_SKILL_SESSION_FIELDS:
+            updates.append(
+                FieldUpdate(
+                    path=_AHMAD_SKILL_SESSION_FIELDS[reveal.skill_id],
+                    value=reveal.result,
+                    source="packet",
+                    confidence="exact",
+                    sequence=state.sort_id,
+                )
+            )
+        elif reveal.skill_id in _AHMAD_SKILL_AVG_CELLS:
+            quality = _AHMAD_SKILL_AVG_CELLS[reveal.skill_id]
+            updates.append(
+                FieldUpdate(
+                    path=("bucket", str(quality), "avg_cells"),
+                    value=reveal.result,
+                    source="packet",
+                    confidence="exact",
+                    sequence=state.sort_id,
+                )
+            )
+        elif reveal.skill_id in _AHMAD_SKILL_COUNT:
+            quality = _AHMAD_SKILL_COUNT[reveal.skill_id]
+            updates.append(
+                FieldUpdate(
+                    path=("bucket", str(quality), "count"),
+                    value=reveal.result,
+                    source="packet",
+                    confidence="exact",
+                    sequence=state.sort_id,
+                )
+            )
+    return updates
+
+
+def _victor_skill_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
+    updates: list[FieldUpdate] = []
+    for reveal in state.skill_reveals:
+        if reveal.result is None:
+            continue
+        if reveal.hero_id is not None and reveal.hero_id != 209:
+            continue
+        if reveal.skill_id in _VICTOR_SKILL_COUNT_SUM:
+            updates.append(
+                FieldUpdate(
+                    path=_VICTOR_SKILL_COUNT_SUM[reveal.skill_id],
+                    value=reveal.result,
                     source="packet",
                     confidence="exact",
                     sequence=state.sort_id,
@@ -1520,6 +1670,8 @@ def live_batches_from_fatbeans_events(
     for state in events.states:
         updates = [
             *_state_updates(state),
+            *_ahmad_skill_updates(state),
+            *_victor_skill_updates(state),
             *_public_numeric_updates(state),
             *_public_outline_updates(state),
             *_aisha_skill_updates(state),

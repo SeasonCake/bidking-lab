@@ -77,6 +77,143 @@ def test_manifest_records_parse_errors(tmp_path: Path) -> None:
     assert manifest["files"][0]["cleanup_action"] == "quarantine_parse_error"
 
 
+def test_manifest_marks_observed_settlement_inconsistency_mixed() -> None:
+    module = _load_module()
+    observed_item = SimpleNamespace(
+        runtime_id=101,
+        local_index=3,
+        quality=4,
+        item_id=None,
+    )
+    prebid_state = SimpleNamespace(
+        sort_id=10,
+        session_id="2401:abc",
+        round_index=1,
+        map_id=2401,
+        bids=(SimpleNamespace(hero_id=209),),
+        public_infos=(
+            SimpleNamespace(info_id=200001, observed_items=(observed_item,)),
+        ),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    settlement_state = SimpleNamespace(
+        sort_id=30,
+        session_id="2401:abc",
+        round_index=1,
+        map_id=2401,
+        bids=(SimpleNamespace(hero_id=209),),
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(
+            SimpleNamespace(runtime_id=202, local_index=9, quality=4),
+        ),
+    )
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(SimpleNamespace(sort_id=20, kind="bid", session_id="2401:abc", value=1000),),
+        states=(prebid_state, settlement_state),
+        statuses=(),
+    )
+
+    row = module._file_manifest_for_events(Path("sample.json"), events)
+
+    assert row["sample_class"] == "mixed"
+    assert row["status"] == "observed_settlement_inconsistency"
+    assert row["cleanup_action"] == "exclude_strict_hard_evidence_metrics"
+    assert row["usable_for_metrics"] is False
+    assert row["observed_settlement_hard_items"] == 1
+    assert row["observed_settlement_missing_items"] == 1
+    assert row["observed_settlement_missing_examples"][0]["runtime_id"] == 101
+
+
+def test_manifest_keeps_prior_invalid_path_quarantined() -> None:
+    module = _load_module()
+    state = SimpleNamespace(
+        sort_id=10,
+        session_id="2401:abc",
+        round_index=1,
+        map_id=2401,
+        bids=(SimpleNamespace(hero_id=209),),
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(SimpleNamespace(sort_id=20, kind="bid", session_id="2401:abc", value=1000),),
+        states=(state,),
+        statuses=(),
+    )
+
+    row = module._file_manifest_for_events(
+        Path("data/samples/fatbeans_invalid/parse_error/recovered.json"),
+        events,
+    )
+
+    assert row["sample_class"] == "invalid"
+    assert row["status"] == "quarantined_sample"
+    assert row["cleanup_action"] == "quarantine_prior_invalid_sample"
+    assert row["usable_for_metrics"] is False
+
+
+def test_manifest_marks_multi_session_capture_mixed() -> None:
+    module = _load_module()
+    state_a = SimpleNamespace(
+        sort_id=10,
+        session_id="2401:abc",
+        round_index=1,
+        map_id=2401,
+        bids=(SimpleNamespace(hero_id=209),),
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    state_b = SimpleNamespace(
+        sort_id=15,
+        session_id="2402:def",
+        round_index=1,
+        map_id=2402,
+        bids=(),
+        public_infos=(),
+        action_results=(SimpleNamespace(action_id=100129, observed_items=()),),
+        skill_reveals=(),
+        inventory_items=(),
+    )
+    settlement_state = SimpleNamespace(
+        sort_id=30,
+        session_id="2401:abc",
+        round_index=1,
+        map_id=2401,
+        bids=(SimpleNamespace(hero_id=209),),
+        public_infos=(),
+        action_results=(),
+        skill_reveals=(),
+        inventory_items=(SimpleNamespace(runtime_id=202, local_index=9, quality=4),),
+    )
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(SimpleNamespace(sort_id=20, kind="bid", session_id="2401:abc", value=1000),),
+        states=(state_a, state_b, settlement_state),
+        statuses=(),
+    )
+
+    row = module._file_manifest_for_events(Path("sample.json"), events)
+
+    assert row["sample_class"] == "mixed"
+    assert row["status"] == "multi_session_capture"
+    assert row["cleanup_action"] == "exclude_strict_session_metrics"
+    assert row["usable_for_metrics"] is False
+    assert row["session_count"] == 2
+
+
 def test_manifest_can_label_reference_cohort_metadata(tmp_path: Path) -> None:
     module = _load_module()
     bad = tmp_path / "bad.json"

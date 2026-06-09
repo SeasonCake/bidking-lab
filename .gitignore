@@ -39,6 +39,17 @@ data/processed/**
 # Local-only upstream reference clones (not vendored)
 external_references/**
 !external_references/.gitkeep
+!external_references/ahmad_live_reference_lab/
+!external_references/ahmad_live_reference_lab/*.md
+!external_references/ahmad_live_reference_lab/*.ps1
+!external_references/ahmad_live_reference_lab/src/
+!external_references/ahmad_live_reference_lab/src/*.py
+!external_references/ahmad_live_reference_lab/tools/
+!external_references/ahmad_live_reference_lab/tools/*.py
+external_references/ahmad_live_reference_lab/build/
+external_references/ahmad_live_reference_lab/dist/
+external_references/ahmad_live_reference_lab/**/__pycache__/
+external_references/ahmad_live_reference_lab/**/*.pyc
 
 # Jupyter
 .ipynb_checkpoints/
@@ -67,7 +78,7 @@ data/review/
 src/AuctionAnalyzer*.zip
 src/AuctionAnalyzer*/
 src/grid_view_v1.3.7/
-tools/
+/tools/
 
 # Local-only archive for ignored/generated artifacts moved out of the root.
 archive/local_ignored/

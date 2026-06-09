@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -200,6 +201,112 @@ def test_capture_row_monitor_uses_configured_source_name(
     assert artifact["windivert_frames"] == 1
     assert "webhook_packets" not in artifact
     assert calls["append_logs"] is True
+
+
+def test_monitor_passes_cached_local_player_id_hint(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _module()
+    log_dir = tmp_path / "logs"
+    raw_dir = tmp_path / "raw"
+    module._write_cached_local_player_id(
+        module._local_player_cache_path(log_dir),
+        600264629315280,
+    )
+    hints: list[int | None] = []
+
+    def fake_build(payload, *, file, local_player_id_hint=None, **_kwargs):
+        hints.append(local_player_id_hint)
+        return {"created_at": 1000.0, "file": file}
+
+    monkeypatch.setattr(module, "_semantic_signature_from_payload", lambda _payload: None)
+    monkeypatch.setattr(module, "build_monitor_artifact_from_payload", fake_build)
+    monkeypatch.setattr(
+        module,
+        "parse_fatbeans_capture_payload",
+        lambda _payload, **_kwargs: SimpleNamespace(
+            states=(SimpleNamespace(player_id=600264629315280),),
+        ),
+    )
+    monkeypatch.setattr(module, "write_monitor_logs", lambda *args, **kwargs: None)
+
+    monitor = module.FatbeansWebhookMonitor(
+        config=module.WebhookMonitorConfig(
+            log_dir=log_dir,
+            raw_dir=raw_dir,
+            process_name="BidKing.exe",
+            server_ports=(10000,),
+            n_trials=20,
+            roi_trials=0,
+            shadow_trials=20,
+            full_shadow_trials=20,
+            run_debug_shadows=False,
+            seed=1,
+            debounce_seconds=0.0,
+            min_inference_interval_seconds=0.0,
+        ),
+        tables=object(),
+    )
+
+    monitor.accept_row({"SortID": 1, "Direct": "REV"}, schedule_process=True)
+    monitor._process_snapshot(force=True)
+
+    assert hints == [600264629315280]
+
+
+def test_monitor_caches_inferred_local_player_id(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module = _module()
+    log_dir = tmp_path / "logs"
+    raw_dir = tmp_path / "raw"
+
+    monkeypatch.setattr(module, "_semantic_signature_from_payload", lambda _payload: None)
+    monkeypatch.setattr(
+        module,
+        "build_monitor_artifact_from_payload",
+        lambda _payload, *, file, local_player_id_hint=None, **_kwargs: {
+            "created_at": 1000.0,
+            "file": file,
+            "local_player_id_hint": local_player_id_hint,
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "parse_fatbeans_capture_payload",
+        lambda _payload, **_kwargs: SimpleNamespace(
+            states=(SimpleNamespace(player_id=600264629315280),),
+        ),
+    )
+    monkeypatch.setattr(module, "write_monitor_logs", lambda *args, **kwargs: None)
+
+    monitor = module.FatbeansWebhookMonitor(
+        config=module.WebhookMonitorConfig(
+            log_dir=log_dir,
+            raw_dir=raw_dir,
+            process_name="BidKing.exe",
+            server_ports=(10000,),
+            n_trials=20,
+            roi_trials=0,
+            shadow_trials=20,
+            full_shadow_trials=20,
+            run_debug_shadows=False,
+            seed=1,
+            debounce_seconds=0.0,
+            min_inference_interval_seconds=0.0,
+        ),
+        tables=object(),
+    )
+
+    monitor.accept_row({"SortID": 1, "Direct": "REV"}, schedule_process=True)
+    monitor._process_snapshot(force=True)
+
+    payload = json.loads(
+        module._local_player_cache_path(log_dir).read_text(encoding="utf-8-sig")
+    )
+    assert payload["local_player_id"] == 600264629315280
 
 
 def test_monitor_archives_raw_rows_before_reset(tmp_path: Path) -> None:

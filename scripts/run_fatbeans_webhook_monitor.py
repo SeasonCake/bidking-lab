@@ -187,6 +187,39 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
+def _local_player_cache_path(log_dir: Path) -> Path:
+    return log_dir / "local_player_cache.json"
+
+
+def _load_cached_local_player_id(path: Path) -> int | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return _safe_int(payload.get("local_player_id"))
+
+
+def _write_cached_local_player_id(path: Path, player_id: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(
+        path,
+        {
+            "local_player_id": int(player_id),
+            "updated_at": time.time(),
+        },
+    )
+
+
+def _latest_local_player_id_from_events(events: Any) -> int | None:
+    for state in reversed(getattr(events, "states", ()) or ()):
+        player_id = _safe_int(getattr(state, "player_id", None))
+        if player_id is not None:
+            return player_id
+    return None
+
+
 def _is_local_ip(value: Any) -> bool:
     if value in (None, ""):
         return False
@@ -449,9 +482,9 @@ class WebhookMonitorConfig:
     full_shadow_trials: int
     run_debug_shadows: bool
     seed: int
-    formal_mode: str | None
-    debounce_seconds: float
-    min_inference_interval_seconds: float
+    formal_mode: str | None = "v3_practical"
+    debounce_seconds: float = 1.0
+    min_inference_interval_seconds: float = 2.0
     fast_n_trials: int | None = 20
     file_name: str = "fatbeans_webhook_live.json"
     source_name: str = "fatbeans_webhook"
@@ -474,6 +507,9 @@ class FatbeansWebhookMonitor:
         self._last_semantic_signature: tuple[Any, ...] | None = None
         self._raw_persisted_count = 0
         self._last_partial_error = ""
+        self._known_local_player_id = _load_cached_local_player_id(
+            _local_player_cache_path(self.config.log_dir)
+        )
         self._received = 0
         self._accepted = 0
         self._filtered = 0
@@ -731,6 +767,7 @@ class FatbeansWebhookMonitor:
     def _process_snapshot(self, *, force: bool) -> None:
         with self._lock:
             rows = list(self._rows)
+            local_player_id_hint = self._known_local_player_id
         if not rows:
             return
         if not force and len(rows) <= self._last_processed_count:
@@ -782,7 +819,24 @@ class FatbeansWebhookMonitor:
                 run_debug_shadows=run_debug_shadows,
                 seed=self.config.seed,
                 formal_mode=self.config.formal_mode,
+                local_player_id_hint=local_player_id_hint,
             )
+            try:
+                events = parse_fatbeans_capture_payload(
+                    payload,
+                    local_player_id_hint=local_player_id_hint,
+                )
+                latest_local_player_id = _latest_local_player_id_from_events(events)
+            except Exception:  # noqa: BLE001 - artifact build already succeeded
+                latest_local_player_id = None
+            if latest_local_player_id is not None:
+                with self._lock:
+                    if self._known_local_player_id != latest_local_player_id:
+                        self._known_local_player_id = latest_local_player_id
+                        _write_cached_local_player_id(
+                            _local_player_cache_path(self.config.log_dir),
+                            latest_local_player_id,
+                        )
             artifact["snapshot_mode"] = snapshot_mode
             artifact["inference_profile"] = {
                 "mode": snapshot_mode,

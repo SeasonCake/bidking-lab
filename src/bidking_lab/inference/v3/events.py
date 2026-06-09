@@ -168,6 +168,8 @@ def events_from_fatbeans(events: Any) -> tuple[EvidenceEvent, ...]:
             spec = skill_reveal_spec(skill_id)
             payload = {
                 "reveal_round_index": getattr(reveal, "round_index", None),
+                "result": getattr(reveal, "result", None),
+                "result_field": getattr(reveal, "result_field", None),
                 **_item_payload(getattr(reveal, "observed_items", ())),
             }
             out.append(

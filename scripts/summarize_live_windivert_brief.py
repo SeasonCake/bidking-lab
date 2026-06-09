@@ -500,6 +500,13 @@ def _map_family_bucket(row: dict[str, Any]) -> str:
     return "unknown"
 
 
+def _map_id_bucket(row: dict[str, Any]) -> str:
+    map_id = _num(row, "map_id")
+    if map_id is None:
+        return "unknown"
+    return str(int(map_id))
+
+
 def _evidence_profile_bucket(row: dict[str, Any]) -> str:
     profile = str(row.get("evidence_profile_key") or "").strip()
     return profile or "unknown"
@@ -1255,7 +1262,257 @@ def _top_p90_miss_examples(
     return examples
 
 
-def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _v3_practical_guard_case(row: dict[str, Any]) -> dict[str, Any] | None:
+    truth = _practical_truth_value(row)
+    guarded_p50 = _num(row, "decision_value_p50")
+    guarded_p90 = _num(row, "decision_value_p90")
+    unguarded_p50 = _practical_unguarded_value(row, "p50")
+    unguarded_p90 = _practical_unguarded_value(row, "p90")
+    if None in (truth, guarded_p50, guarded_p90, unguarded_p50, unguarded_p90):
+        return None
+    assert truth is not None
+    assert guarded_p50 is not None
+    assert guarded_p90 is not None
+    assert unguarded_p50 is not None
+    assert unguarded_p90 is not None
+    denominator = _normalized_error_denominator(truth)
+    guarded_p50_abs_error = abs(guarded_p50 - truth)
+    unguarded_p50_abs_error = abs(unguarded_p50 - truth)
+    p50_abs_error_delta = guarded_p50_abs_error - unguarded_p50_abs_error
+    guarded_p90_error = guarded_p90 - truth
+    unguarded_p90_error = unguarded_p90 - truth
+    guarded_p90_covers = guarded_p90_error >= 0
+    unguarded_p90_covers = unguarded_p90_error >= 0
+    guarded_p90_extreme = guarded_p90_error > denominator
+    unguarded_p90_extreme = unguarded_p90_error > denominator
+    if p50_abs_error_delta < 0:
+        p50_case = "p50_improved"
+    elif p50_abs_error_delta > 0:
+        p50_case = "p50_worsened"
+    else:
+        p50_case = "p50_unchanged"
+    if guarded_p90_covers and not unguarded_p90_covers:
+        p90_coverage_case = "p90_coverage_gained"
+    elif not guarded_p90_covers and unguarded_p90_covers:
+        p90_coverage_case = "p90_coverage_lost"
+    else:
+        p90_coverage_case = "p90_coverage_unchanged"
+    if not guarded_p90_extreme and unguarded_p90_extreme:
+        p90_extreme_case = "p90_extreme_over_reduced"
+    elif guarded_p90_extreme and not unguarded_p90_extreme:
+        p90_extreme_case = "p90_extreme_over_added"
+    else:
+        p90_extreme_case = "p90_extreme_over_unchanged"
+    return {
+        "file": row.get("file"),
+        "session_id": row.get("session_id"),
+        "source": _source_label(row),
+        "eval_window": row.get("eval_window"),
+        "round": row.get("action_round") or row.get("round"),
+        "hero": _hero_bucket(row),
+        "map_id": row.get("map_id"),
+        "map_family": _map_family_bucket(row),
+        "truth": truth,
+        "guard_reason": _v3_practical_guard_reason_label(row),
+        "guarded_p50": guarded_p50,
+        "unguarded_p50": unguarded_p50,
+        "guarded_p50_abs_error": guarded_p50_abs_error,
+        "unguarded_p50_abs_error": unguarded_p50_abs_error,
+        "p50_abs_error_delta": p50_abs_error_delta,
+        "p50_case": p50_case,
+        "guarded_p90": guarded_p90,
+        "unguarded_p90": unguarded_p90,
+        "guarded_p90_error": guarded_p90_error,
+        "unguarded_p90_error": unguarded_p90_error,
+        "p90_coverage_case": p90_coverage_case,
+        "p90_extreme_over_case": p90_extreme_case,
+        "evidence_profile": _evidence_profile_bucket(row),
+    }
+
+
+def _rate(count: int, total: int) -> float | None:
+    return round(count / total, 3) if total else None
+
+
+def _guard_reason_kind(reason: Any) -> str:
+    text = str(reason or "").strip()
+    if not text:
+        return "unknown"
+    return text.split(":", 1)[0].strip() or "unknown"
+
+
+def _guard_reason_flags(reason: Any) -> list[str]:
+    text = str(reason or "").strip()
+    if not text:
+        return ["none"]
+    for chunk in text.split(";"):
+        token = chunk.strip()
+        if not token.startswith("flags="):
+            continue
+        flags = [
+            flag.strip()
+            for flag in token[len("flags=") :].split("+")
+            if flag.strip()
+        ]
+        return flags or ["none"]
+    return ["none"]
+
+
+def _counter_dict(counter: Counter[str]) -> dict[str, int]:
+    return {
+        label: count
+        for label, count in sorted(
+            counter.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    }
+
+
+def _v3_practical_p90_coverage_loss_context(
+    cases: list[dict[str, Any]],
+) -> dict[str, Any]:
+    losses = [
+        case for case in cases if case["p90_coverage_case"] == "p90_coverage_lost"
+    ]
+    shortfalls = [abs(float(case["guarded_p90_error"])) for case in losses]
+    unguarded_excess = [
+        float(case["unguarded_p90_error"])
+        for case in losses
+        if float(case["unguarded_p90_error"]) >= 0
+    ]
+    p90_cut = [
+        float(case["unguarded_p90"]) - float(case["guarded_p90"])
+        for case in losses
+    ]
+    flag_counts: Counter[str] = Counter()
+    for case in losses:
+        flag_counts.update(_guard_reason_flags(case.get("guard_reason")))
+    return {
+        "rows": len(losses),
+        "by_guard_kind": _counter_dict(
+            Counter(_guard_reason_kind(case.get("guard_reason")) for case in losses)
+        ),
+        "by_guard_flag": _counter_dict(flag_counts),
+        "by_evidence_profile": _counter_dict(
+            Counter(str(case.get("evidence_profile") or "unknown") for case in losses)
+        ),
+        "median_guarded_p90_shortfall": (
+            round(statistics.median(shortfalls), 1) if shortfalls else None
+        ),
+        "median_unguarded_p90_excess": (
+            round(statistics.median(unguarded_excess), 1)
+            if unguarded_excess
+            else None
+        ),
+        "median_p90_guard_cut": (
+            round(statistics.median(p90_cut), 1) if p90_cut else None
+        ),
+    }
+
+
+def _v3_practical_guard_case_summary(
+    rows: list[dict[str, Any]],
+    *,
+    example_limit: int = 0,
+) -> dict[str, Any]:
+    cases = [
+        case
+        for row in rows
+        if (case := _v3_practical_guard_case(row)) is not None
+    ]
+    total = len(cases)
+    p50_counts = Counter(str(case["p50_case"]) for case in cases)
+    coverage_counts = Counter(str(case["p90_coverage_case"]) for case in cases)
+    extreme_counts = Counter(str(case["p90_extreme_over_case"]) for case in cases)
+
+    def examples(key: str) -> list[dict[str, Any]]:
+        if example_limit <= 0:
+            return []
+        if key == "top_p50_hurts":
+            selected = sorted(
+                (
+                    case
+                    for case in cases
+                    if float(case["p50_abs_error_delta"]) > 0
+                ),
+                key=lambda case: float(case["p50_abs_error_delta"]),
+                reverse=True,
+            )
+        elif key == "top_p90_coverage_losses":
+            selected = sorted(
+                (
+                    case
+                    for case in cases
+                    if case["p90_coverage_case"] == "p90_coverage_lost"
+                ),
+                key=lambda case: abs(float(case["guarded_p90_error"])),
+                reverse=True,
+            )
+        elif key == "top_p90_extreme_over_added":
+            selected = sorted(
+                (
+                    case
+                    for case in cases
+                    if case["p90_extreme_over_case"] == "p90_extreme_over_added"
+                ),
+                key=lambda case: float(case["guarded_p90_error"]),
+                reverse=True,
+            )
+        else:
+            selected = []
+        return selected[:example_limit]
+
+    return {
+        "rows": total,
+        "p50_improved_rows": p50_counts.get("p50_improved", 0),
+        "p50_worsened_rows": p50_counts.get("p50_worsened", 0),
+        "p50_unchanged_rows": p50_counts.get("p50_unchanged", 0),
+        "p50_improved_rate": _rate(p50_counts.get("p50_improved", 0), total),
+        "p50_worsened_rate": _rate(p50_counts.get("p50_worsened", 0), total),
+        "p90_coverage_gained_rows": coverage_counts.get(
+            "p90_coverage_gained",
+            0,
+        ),
+        "p90_coverage_lost_rows": coverage_counts.get(
+            "p90_coverage_lost",
+            0,
+        ),
+        "p90_coverage_unchanged_rows": coverage_counts.get(
+            "p90_coverage_unchanged",
+            0,
+        ),
+        "p90_coverage_lost_rate": _rate(
+            coverage_counts.get("p90_coverage_lost", 0),
+            total,
+        ),
+        "p90_extreme_over_reduced_rows": extreme_counts.get(
+            "p90_extreme_over_reduced",
+            0,
+        ),
+        "p90_extreme_over_added_rows": extreme_counts.get(
+            "p90_extreme_over_added",
+            0,
+        ),
+        "p90_extreme_over_unchanged_rows": extreme_counts.get(
+            "p90_extreme_over_unchanged",
+            0,
+        ),
+        "p90_extreme_over_added_rate": _rate(
+            extreme_counts.get("p90_extreme_over_added", 0),
+            total,
+        ),
+        "p90_coverage_loss_context": _v3_practical_p90_coverage_loss_context(cases),
+        "top_p50_hurts": examples("top_p50_hurts"),
+        "top_p90_coverage_losses": examples("top_p90_coverage_losses"),
+        "top_p90_extreme_over_added": examples("top_p90_extreme_over_added"),
+    }
+
+
+def _group_stats(
+    rows: list[dict[str, Any]],
+    *,
+    guard_case_examples: int = 0,
+) -> dict[str, Any]:
     errors = [_decision_p50_error(row) for row in rows]
     signed = [v for v in errors if v is not None]
     clean = [abs(v) for v in signed]
@@ -1266,6 +1523,10 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
     practical_mae = statistics.mean(practical_clean) if practical_clean else None
     practical_watch_eval = _practical_raise_watch_eval(rows)
     formal_policy_comparison = _formal_policy_comparison(rows)
+    guard_case_summary = _v3_practical_guard_case_summary(
+        rows,
+        example_limit=guard_case_examples,
+    )
 
     def practical_watch_rate(key: str) -> float | None:
         if not practical_watch_eval:
@@ -1545,6 +1806,7 @@ def _group_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
             and guard_compare_unguarded_p90_extreme_over_values
             else None
         ),
+        "v3_practical_guard_case_summary": guard_case_summary,
         "formal_policy_comparison": formal_policy_comparison,
         "median_matched": int(statistics.median(matched_clean)) if matched_clean else None,
         "decision_value_mae": round(baseline_mae, 1) if baseline_mae is not None else None,
@@ -1831,6 +2093,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     by_diagnostic_tag: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_q6_component_tag: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_hero: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_map_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_map_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_evidence_profile: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_public_constraint: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_information_density: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -1852,6 +2116,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for tag in _q6_component_tags(row):
             by_q6_component_tag[tag].append(row)
         by_hero[_hero_bucket(row)].append(row)
+        by_map_id[_map_id_bucket(row)].append(row)
+        by_map_family[_map_family_bucket(row)].append(row)
         by_evidence_profile[_evidence_profile_bucket(row)].append(row)
         by_public_constraint[_public_constraint_bucket(row)].append(row)
         by_information_density[_information_density_bucket(row)].append(row)
@@ -1871,8 +2137,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "total_rows": len(rows),
         "source_counts": dict(Counter(_source_label(row) for row in rows)),
-        "overall": _group_stats(rows),
-        "prebid_overall": _group_stats(prebid_rows),
+        "overall": _group_stats(rows, guard_case_examples=5),
+        "prebid_overall": _group_stats(prebid_rows, guard_case_examples=5),
         "prebid_window_audit": _prebid_window_audit(prebid_rows),
         "prebid_session_progression": _prebid_session_progression(prebid_rows),
         "prebid_by_round": {
@@ -1934,6 +2200,14 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             label: _group_stats(group)
             for label, group in sorted(by_hero.items())
         },
+        "by_map_id": {
+            label: _group_stats(group)
+            for label, group in sorted(by_map_id.items())
+        },
+        "by_map_family": {
+            label: _group_stats(group)
+            for label, group in sorted(by_map_family.items())
+        },
         "by_evidence_profile": {
             label: _group_stats(group)
             for label, group in sorted(by_evidence_profile.items())
@@ -1986,6 +2260,7 @@ def _print_report(
     overall_policy_deltas = overall_policy.get("deltas_vs_v2") or {}
     overall_guarded_delta = overall_policy_deltas.get("v3_guarded") or {}
     overall_unguarded_delta = overall_policy_deltas.get("v3_unguarded") or {}
+    overall_guard_cases = overall.get("v3_practical_guard_case_summary") or {}
     print(
         "overall: "
         f"estimate_rows={overall.get('estimate_rows')} "
@@ -2010,6 +2285,12 @@ def _print_report(
         f"{overall.get('v3_practical_guarded_minus_unguarded_p90_coverage')} "
         "v3_practical_guarded_minus_unguarded_p90_extreme_over="
         f"{overall.get('v3_practical_guarded_minus_unguarded_p90_extreme_over')} "
+        "v3_practical_guard_p50_worsened_rows="
+        f"{overall_guard_cases.get('p50_worsened_rows')} "
+        "v3_practical_guard_p90_coverage_lost_rows="
+        f"{overall_guard_cases.get('p90_coverage_lost_rows')} "
+        "v3_practical_guard_p90_extreme_over_added_rows="
+        f"{overall_guard_cases.get('p90_extreme_over_added_rows')} "
         f"formal_policy_rows={overall_policy.get('comparison_rows')} "
         f"v3_guarded_vs_v2_mae_delta={overall_guarded_delta.get('p50_mae_delta')} "
         "v3_guarded_vs_v2_p90_coverage_delta="
@@ -2028,6 +2309,7 @@ def _print_report(
     prebid_policy_deltas = prebid_policy.get("deltas_vs_v2") or {}
     prebid_guarded_delta = prebid_policy_deltas.get("v3_guarded") or {}
     prebid_unguarded_delta = prebid_policy_deltas.get("v3_unguarded") or {}
+    prebid_guard_cases = prebid.get("v3_practical_guard_case_summary") or {}
     print(
         "prebid_overall: "
         f"rows={prebid.get('rows')} "
@@ -2050,6 +2332,12 @@ def _print_report(
         f"{prebid.get('v3_practical_guarded_minus_unguarded_p90_coverage')} "
         "v3_practical_guarded_minus_unguarded_p90_extreme_over="
         f"{prebid.get('v3_practical_guarded_minus_unguarded_p90_extreme_over')} "
+        "v3_practical_guard_p50_worsened_rows="
+        f"{prebid_guard_cases.get('p50_worsened_rows')} "
+        "v3_practical_guard_p90_coverage_lost_rows="
+        f"{prebid_guard_cases.get('p90_coverage_lost_rows')} "
+        "v3_practical_guard_p90_extreme_over_added_rows="
+        f"{prebid_guard_cases.get('p90_extreme_over_added_rows')} "
         f"formal_policy_rows={prebid_policy.get('comparison_rows')} "
         f"v3_guarded_vs_v2_mae_delta={prebid_guarded_delta.get('p50_mae_delta')} "
         "v3_guarded_vs_v2_p90_coverage_delta="
@@ -2093,6 +2381,10 @@ def _print_report(
         print()
         _print_round_groups("hero", summary["by_hero"])
         print()
+        _print_round_groups("map_id", summary["by_map_id"])
+        print()
+        _print_round_groups("map_family", summary["by_map_family"])
+        print()
         _print_round_groups("evidence_profile", summary["by_evidence_profile"])
         print()
         _print_round_groups("public_constraint", summary["by_public_constraint"])
@@ -2131,9 +2423,13 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
         "v3_practical_raise_watch_miss_rate,"
         "v3_practical_raise_watch_false_alarm_rate,"
         "v3_practical_raise_watch_extreme_over_rate,"
-        "v3_practical_raise_watch_misleading_rate"
+        "v3_practical_raise_watch_misleading_rate,"
+        "v3_practical_guard_p50_worsened_rows,"
+        "v3_practical_guard_p90_coverage_lost_rows,"
+        "v3_practical_guard_p90_extreme_over_added_rows"
     )
     for round_label, group in groups.items():
+        guard_cases = group.get("v3_practical_guard_case_summary") or {}
         print(
             f"{round_label},"
             f"{group['rows']},"
@@ -2171,7 +2467,10 @@ def _print_round_groups(label: str, groups: dict[str, Any]) -> None:
             f"{group.get('v3_practical_raise_watch_miss_rate')},"
             f"{group.get('v3_practical_raise_watch_false_alarm_rate')},"
             f"{group.get('v3_practical_raise_watch_extreme_over_rate')},"
-            f"{group.get('v3_practical_raise_watch_misleading_rate')}"
+            f"{group.get('v3_practical_raise_watch_misleading_rate')},"
+            f"{guard_cases.get('p50_worsened_rows')},"
+            f"{guard_cases.get('p90_coverage_lost_rows')},"
+            f"{guard_cases.get('p90_extreme_over_added_rows')}"
         )
 
 

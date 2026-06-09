@@ -132,6 +132,27 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
         summary["overall"]["v3_practical_guarded_minus_unguarded_p90_coverage"]
         == -1.0
     )
+    guard_cases = summary["overall"]["v3_practical_guard_case_summary"]
+    assert guard_cases["rows"] == 1
+    assert guard_cases["p50_worsened_rows"] == 1
+    assert guard_cases["p50_worsened_rate"] == 1.0
+    assert guard_cases["p90_coverage_lost_rows"] == 1
+    assert guard_cases["p90_coverage_lost_rate"] == 1.0
+    assert guard_cases["p90_extreme_over_added_rows"] == 0
+    loss_context = guard_cases["p90_coverage_loss_context"]
+    assert loss_context["rows"] == 1
+    assert loss_context["by_guard_kind"] == {"low_support_baseline": 1}
+    assert loss_context["by_guard_flag"] == {"none": 1}
+    assert loss_context["by_evidence_profile"] == {"public:random_avg+layout": 1}
+    assert loss_context["median_guarded_p90_shortfall"] == 50_000
+    assert loss_context["median_unguarded_p90_excess"] == 200_000
+    assert loss_context["median_p90_guard_cut"] == 250_000
+    assert guard_cases["top_p50_hurts"][0]["p50_abs_error_delta"] == 80_000
+    assert guard_cases["top_p90_coverage_losses"][0]["guarded_p90_error"] == -50_000
+    assert (
+        summary["by_action_round"]["R2"]["v3_practical_guard_case_summary"]["rows"]
+        == 1
+    )
     matrix = summary["overall"]["formal_policy_comparison"]
     assert matrix["status"] == "watch"
     assert matrix["comparison_rows"] == 1
@@ -183,6 +204,20 @@ def test_summarize_live_windivert_brief_groups_by_round() -> None:
     assert summary["by_q6_component_tag"]["q6_tail_estimate_under"]["rows"] == 1
     assert summary["by_q6_component_tag"]["no_q6_truth"]["rows"] == 1
     assert summary["by_hero"]["ethan"]["rows"] == 1
+    assert summary["by_map_id"]["2401"]["rows"] == 1
+    assert (
+        summary["by_map_id"]["2401"]["v3_practical_guard_case_summary"][
+            "p90_coverage_lost_rows"
+        ]
+        == 1
+    )
+    assert summary["by_map_family"]["villa"]["rows"] == 1
+    assert (
+        summary["by_map_family"]["villa"]["v3_practical_guard_case_summary"][
+            "p90_coverage_lost_rows"
+        ]
+        == 1
+    )
     assert summary["by_evidence_profile"]["public:random_avg+layout"]["rows"] == 1
     assert summary["by_public_constraint"]["max_quality"]["rows"] == 1
     assert summary["by_information_density"]["low"]["rows"] == 1

@@ -612,6 +612,84 @@ def _matrix_cell_status(
     return "pass_table_caps_cover_verified_inventory"
 
 
+def _capacity_detail_rows(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    resolved_by_ref: Mapping[str, Path | None],
+    diagnostics_by_path: Mapping[Path, Mapping[str, Any]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in sorted(rows, key=lambda item: str(item.get("file") or "")):
+        if len(out) >= limit:
+            break
+        capacity = row.get("item_count_capacity", {})
+        if not isinstance(capacity, Mapping):
+            capacity = {}
+        diag = _diag_for_row(
+            row,
+            resolved_by_ref=resolved_by_ref,
+            diagnostics_by_path=diagnostics_by_path,
+        )
+        diag_seq = [diag] if diag is not None else []
+        semantic_status = _matrix_cell_status(
+            capacity_rows=[capacity],
+            diagnostics=diag_seq,
+        )
+        out.append(
+            {
+                "file": _file_label(row),
+                "file_ref": _strip_row_file_ref(row.get("file")),
+                "map_id": row.get("map_id"),
+                "map_family": _map_family(row.get("map_id")),
+                "capture_day": _capture_day(row.get("file")) or "none",
+                "hero_map_evidence_profile": row.get("hero_map_evidence_profile"),
+                "consistency_bucket": row.get("consistency_bucket"),
+                "consistency_classes": list(row.get("consistency_classes") or []),
+                "capacity_cases": list(_capacity_cases(row)),
+                "total_count_source": capacity.get("total_count_source"),
+                "total_count_target": capacity.get("total_count_target"),
+                "truth_item_count": capacity.get("truth_item_count"),
+                "prior_items_per_session_max": capacity.get(
+                    "prior_items_per_session_max"
+                ),
+                "target_prior_max_delta": capacity.get("target_prior_max_delta"),
+                "truth_prior_max_delta": capacity.get("truth_prior_max_delta"),
+                "target_truth_delta": capacity.get("target_truth_delta"),
+                "inventory_status": (diag or {}).get("status"),
+                "residual_mode": (
+                    _residual_mode(diag) if diag is not None else "not_checked"
+                ),
+                "semantic_status": semantic_status,
+                "latest_item_count": (diag or {}).get("latest_item_count"),
+                "latest_message_id": (
+                    f"0x{int((diag or {}).get('latest_message_id')):04X}"
+                    if (diag or {}).get("latest_message_id") is not None
+                    else None
+                ),
+                "known_temp_zodiac_count": (diag or {}).get(
+                    "known_temp_zodiac_count"
+                ),
+                "drop_ref_excess_after_temp_zodiac_count": (diag or {}).get(
+                    "drop_ref_excess_after_temp_zodiac_count"
+                ),
+                "round_cap_excess_after_temp_zodiac_count": (diag or {}).get(
+                    "round_cap_excess_after_temp_zodiac_count"
+                ),
+                "non_zodiac_missing_from_drop_universe_count": (diag or {}).get(
+                    "non_zodiac_missing_from_drop_universe_count"
+                ),
+                "full_observed_action_ids": list(
+                    (diag or {}).get("full_observed_action_ids") or []
+                ),
+                "public_total_count_values": list(
+                    (diag or {}).get("public_total_count_values") or []
+                ),
+            }
+        )
+    return out
+
+
 def _capacity_semantic_matrix(
     rows: Iterable[Mapping[str, Any]],
     *,
@@ -910,6 +988,7 @@ def _inventory_diagnostics_for_rows(
     tables: Any,
     sample_root: Path,
     top: int,
+    detail_rows: int = 0,
 ) -> dict[str, Any]:
     seq = tuple(rows)
     resolved_by_ref: dict[str, Path | None] = {}
@@ -973,7 +1052,7 @@ def _inventory_diagnostics_for_rows(
     elif not diagnostics:
         status = "not_checked"
 
-    return {
+    out = {
         "raw_inventory_status": status,
         "raw_inventory_file_count": len(diagnostics),
         "raw_inventory_missing_file_count": len(missing_refs),
@@ -1106,6 +1185,14 @@ def _inventory_diagnostics_for_rows(
             top=top,
         ),
     }
+    if detail_rows > 0:
+        out["raw_detail_rows"] = _capacity_detail_rows(
+            seq,
+            resolved_by_ref=resolved_by_ref,
+            diagnostics_by_path=diagnostics_by_path,
+            limit=detail_rows,
+        )
+    return out
 
 
 def _capacity_cases(row: Mapping[str, Any]) -> tuple[str, ...]:
@@ -1246,6 +1333,7 @@ def summarize_capacity_table_audit(
     selected_case: str = DEFAULT_CASE,
     selected_bucket: str = DEFAULT_BUCKET,
     top: int = 8,
+    detail_rows: int = 0,
     sample_root: Path = DEFAULT_SAMPLE_ROOT,
 ) -> list[dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -1339,6 +1427,7 @@ def summarize_capacity_table_audit(
                 tables=tables,
                 sample_root=sample_root,
                 top=top,
+                detail_rows=detail_rows,
             ),
             **table,
         }
@@ -1481,6 +1570,194 @@ def _format_capacity_semantic_matrix(rows: Iterable[Mapping[str, Any]]) -> str:
     return "|".join(parts) or "-"
 
 
+def _collect_capacity_detail_rows(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        map_id = row.get("map_id")
+        map_status = row.get("status")
+        semantic = row.get("capacity_semantic_summary")
+        semantic_status = (
+            semantic.get("status") if isinstance(semantic, Mapping) else None
+        )
+        for item in row.get("raw_detail_rows") or ():
+            if not isinstance(item, Mapping):
+                continue
+            out.append(
+                {
+                    "map_id": map_id,
+                    "map_status": map_status,
+                    "map_semantic_status": semantic_status,
+                    **dict(item),
+                }
+            )
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def _format_capacity_detail_rows(rows: Iterable[Mapping[str, Any]]) -> str:
+    parts: list[str] = []
+    for row in rows:
+        parts.append(
+            (
+                f"{row.get('map_id')}:{row.get('file')}"
+                f"/residual={row.get('residual_mode')}"
+                f"/semantic={row.get('semantic_status')}"
+                f"/truth_delta={row.get('truth_prior_max_delta')}"
+                f"/drop_after_temp={row.get('drop_ref_excess_after_temp_zodiac_count')}"
+                f"/round_after_temp={row.get('round_cap_excess_after_temp_zodiac_count')}"
+            )
+        )
+    return "|".join(parts) or "-"
+
+
+def _dedupe_capacity_detail_rows(
+    rows: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for row in rows:
+        key = (
+            str(row.get("file_ref") or row.get("file") or ""),
+            str(row.get("map_id") or ""),
+            str(row.get("residual_mode") or ""),
+            str(row.get("semantic_status") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(dict(row))
+    return out
+
+
+def _capacity_detail_source_signal(row: Mapping[str, Any]) -> str:
+    has_full_action = bool(row.get("full_observed_action_ids") or ())
+    has_public_total = bool(row.get("public_total_count_values") or ())
+    return (
+        ("has_full_action" if has_full_action else "no_full_action")
+        + "/"
+        + ("has_public_total" if has_public_total else "no_public_total")
+    )
+
+
+def _capacity_detail_mechanism_candidate(row: Mapping[str, Any]) -> str:
+    semantic = str(row.get("semantic_status") or "")
+    residual = str(row.get("residual_mode") or "")
+    non_zodiac_missing = _float_or_none(
+        row.get("non_zodiac_missing_from_drop_universe_count")
+    )
+    if non_zodiac_missing is not None and non_zodiac_missing > 0:
+        return "drop_universe_gap"
+    if semantic == "watch_activity_extras_explain_drop_ref_gap":
+        return "activity_extras_candidate"
+    if residual == "round_cap_overflow" or semantic.startswith("blocked_round_cap"):
+        return "round_cap_candidate_gap"
+    if residual == "drop_ref_only_overflow" or semantic.startswith("blocked_drop_ref"):
+        return "drop_ref_candidate_gap"
+    if residual == "within_drop_ref":
+        return "activity_extras_candidate"
+    return "unclassified_capacity_detail"
+
+
+def _capacity_detail_next_check(row: Mapping[str, Any]) -> str:
+    candidate = _capacity_detail_mechanism_candidate(row)
+    if candidate == "round_cap_candidate_gap":
+        return "check_per_session_table_version_or_external_overlay"
+    if candidate == "drop_ref_candidate_gap":
+        return "check_drop_ref_source_semantics_or_activity_overlay"
+    if candidate == "activity_extras_candidate":
+        return "verify_activity_extras_table"
+    if candidate == "drop_universe_gap":
+        return "check_source_parser_drop_universe"
+    return "manual_review"
+
+
+def _capacity_detail_summary(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    top: int,
+) -> dict[str, Any]:
+    seq = tuple(row for row in rows if isinstance(row, Mapping))
+    unique = _dedupe_capacity_detail_rows(seq)
+    for row in unique:
+        row["mechanism_candidate"] = _capacity_detail_mechanism_candidate(row)
+        row["next_check"] = _capacity_detail_next_check(row)
+        row["source_signal"] = _capacity_detail_source_signal(row)
+    return {
+        "rows": len(seq),
+        "unique_file_map_residual_rows": len(unique),
+        "unique_files": len(
+            {str(row.get("file_ref") or row.get("file")) for row in unique}
+        ),
+        "semantic_status_counts": _counter_dict(
+            (row.get("semantic_status") for row in unique),
+            top=top,
+        ),
+        "residual_mode_counts": _counter_dict(
+            (row.get("residual_mode") for row in unique),
+            top=top,
+        ),
+        "mechanism_candidate_counts": _counter_dict(
+            (row.get("mechanism_candidate") for row in unique),
+            top=top,
+        ),
+        "next_check_counts": _counter_dict(
+            (row.get("next_check") for row in unique),
+            top=top,
+        ),
+        "source_signal_counts": _counter_dict(
+            (row.get("source_signal") for row in unique),
+            top=top,
+        ),
+        "map_counts": _counter_dict((row.get("map_id") for row in unique), top=top),
+        "map_family_counts": _counter_dict(
+            (row.get("map_family") for row in unique),
+            top=top,
+        ),
+        "truth_prior_delta": _numeric_summary(
+            (row.get("truth_prior_max_delta") for row in unique),
+            digits=3,
+        ),
+        "drop_ref_excess_after_temp": _numeric_summary(
+            (
+                row.get("drop_ref_excess_after_temp_zodiac_count")
+                for row in unique
+            ),
+            digits=3,
+        ),
+        "round_cap_excess_after_temp": _numeric_summary(
+            (
+                row.get("round_cap_excess_after_temp_zodiac_count")
+                for row in unique
+            ),
+            digits=3,
+        ),
+        "top_examples": unique[:top],
+    }
+
+
+def _format_capacity_detail_summary(summary: Mapping[str, Any]) -> str:
+    return ";".join(
+        (
+            f"rows={summary.get('rows')}",
+            f"unique={summary.get('unique_file_map_residual_rows')}",
+            "mechanisms="
+            + _format_counts(summary.get("mechanism_candidate_counts") or {}),
+            "next_checks="
+            + _format_counts(summary.get("next_check_counts") or {}),
+            "source_signals="
+            + _format_counts(summary.get("source_signal_counts") or {}),
+            "maps=" + _format_counts(summary.get("map_counts") or {}),
+        )
+    )
+
+
 def _print_summary(rows: Iterable[Mapping[str, Any]], *, top: int) -> None:
     for row in tuple(rows)[:top]:
         print(
@@ -1619,6 +1896,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Consistency bucket to audit, or all.",
     )
     parser.add_argument("--top", type=int, default=12)
+    parser.add_argument(
+        "--details",
+        type=int,
+        default=0,
+        help=(
+            "Include up to N file-level semantic residual detail rows "
+            "in JSON/summary output."
+        ),
+    )
     parser.add_argument("--posterior-trials", type=int, default=64)
     parser.add_argument("--posterior-seed", type=int, default=0)
     parser.add_argument("--format", choices=("summary", "json"), default="summary")
@@ -1647,12 +1933,17 @@ def main(argv: list[str] | None = None) -> int:
         selected_case=args.case,
         selected_bucket=args.bucket,
         top=args.top,
+        detail_rows=args.details,
     )
+    detail_rows = _collect_capacity_detail_rows(audit, limit=args.details)
+    detail_summary = _capacity_detail_summary(detail_rows, top=args.top)
     result = {
         "errors": errors,
         "case": args.case,
         "bucket": args.bucket,
         "semantic_matrix": _merge_capacity_semantic_matrix(audit, top=args.top),
+        "detail_summary": detail_summary,
+        "detail_rows": detail_rows,
         "rows": audit,
     }
     if args.format == "json":
@@ -1665,6 +1956,15 @@ def main(argv: list[str] | None = None) -> int:
             "semantic_matrix_all="
             + _format_capacity_semantic_matrix(result["semantic_matrix"])
         )
+        if args.details:
+            print(
+                "detail_summary="
+                + _format_capacity_detail_summary(result["detail_summary"])
+            )
+            print(
+                "detail_rows="
+                + _format_capacity_detail_rows(result["detail_rows"])
+            )
         _print_summary(audit, top=args.top)
     return 1 if errors else 0
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 import time
 
 
@@ -11,6 +12,16 @@ ROOT = Path(__file__).resolve().parents[1]
 def _overlay_module():
     path = ROOT / "scripts" / "run_live_overlay.py"
     spec = importlib.util.spec_from_file_location("run_live_overlay", path)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _ahmad_overlay_module():
+    path = ROOT / "external_references" / "ahmad_live_reference_lab" / "tools" / "ahmad_tk_overlay.py"
+    spec = importlib.util.spec_from_file_location("ahmad_tk_overlay", path)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -47,6 +58,7 @@ def test_overlay_summary_lines_include_q6_and_diagnostics() -> None:
             "v2_posterior_rows": (
                 {
                     "q6样本率": "12.0%",
+                    "q6件数 P10/P50/P90": "0 / 1 / 2",
                     "q6价值 P10/P50/P90": "0 / 120,000 / 360,000",
                     "q6先验缺口": "件数P90低1.00",
                     "q6先验风险参考": "486,510",
@@ -66,6 +78,7 @@ def test_overlay_summary_lines_include_q6_and_diagnostics() -> None:
     assert lines[0].startswith("ETHAN  |  map 2401")
     assert any(line.startswith("决策:") for line in lines)
     assert any(line.startswith("红货:") for line in lines)
+    assert any("件数 0 / 1 / 2" in line for line in lines)
     assert any("先验缺口" in line for line in lines)
     assert any("实战参考P90" in line for line in lines)
     assert any("q6 P90" in line for line in lines)
@@ -348,8 +361,9 @@ def test_demo_snapshot_has_compact_overlay_sections() -> None:
         "P50估值",
         "防守价",
         "当前最高",
-        "红货 q6",
+        "红品数量",
     ]
+    assert model["metrics"][3][1] == "件数 0 / 1 / 1"
     assert any(section[0] == "鉴影命中" for section in model["sections"])
     assert any(alert[0].startswith("q6 P90") for alert in model["alerts"])
     assert any(alert[0].startswith("q6 件数/格数低于先验") for alert in model["alerts"])
@@ -402,6 +416,7 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
                         "raw_value_range": "300,000 / 540,000 / 900,000",
                         "q6_sample_rate": "12.0%",
                         "q6_decision_value_range": "0 / 100,000 / 300,000",
+                        "q6_count_range": "0 / 1 / 2",
                     },
                     "layout": {
                         "known_cells": "108",
@@ -575,6 +590,7 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert "总件 42" in constraints_section[1]
     assert "总格 123" in constraints_section[1]
     assert "紫×10" in constraints_section[2]
+    assert "红×1" in constraints_section[2]
     assert "反排1" in constraints_section[2]
     assert "紫均格 2.90" in constraints_section[2]
     action_section = next(
@@ -605,6 +621,9 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert model["metrics"][1][0] == "防守价"
     assert model["metrics"][1][1] == "450,000"
     assert model["metrics"][2][0] == "当前最高"
+    assert model["metrics"][3][0] == "红品数量"
+    assert model["metrics"][3][1] == "红品 1件"
+    assert "样本 12.0%" in model["metrics"][3][2]
     assert any("UI契约 q6 风险参考" in alert[0] for alert in model["alerts"])
     assert any("aisha_deep_floor1 tail-risk shadow" in alert[0] for alert in model["alerts"])
     interaction = model["interaction"]
@@ -615,6 +634,12 @@ def test_overlay_model_uses_ui_contract_shadow_reference() -> None:
     assert any(section[0] == "MiniMap" for section in interaction["hover"]["sections"])
     assert any(section[0] == "输入约束" for section in interaction["hover"]["sections"])
     assert any(section[0] == "q6 风险参考" for section in interaction["hover"]["sections"])
+    posterior_section = next(
+        section
+        for section in interaction["hover"]["sections"]
+        if section[0] == "后验概览"
+    )
+    assert "已知红品 1件" in posterior_section[2]
     round_section = next(
         section for section in interaction["hover"]["sections"] if section[0] == "轮次仓位参考"
     )
@@ -1449,3 +1474,231 @@ def test_overlay_v3_practical_passthrough_stays_read_only() -> None:
     assert "正式P90 380,000 -> v3P90 380,000" in practical[1]
     assert "只读参考，不影响正式出价" in practical[2]
     assert overlay._ui_contract_alerts(contract) == []
+
+
+def test_ahmad_overlay_latest_result_text_falls_back_to_latest_sent() -> None:
+    module = _ahmad_overlay_module()
+
+    assert module.AhmadTkOverlay._latest_result_text(  # type: ignore[attr-defined]
+        SimpleNamespace(),
+        {"latest_result": {"tool": "宝光四鉴", "result": "12"}},
+    ) == "宝光四鉴=12"
+    assert module.AhmadTkOverlay._latest_result_text(  # type: ignore[attr-defined]
+        SimpleNamespace(),
+        {"latest_sent": {"tool": "普品扫描", "result": 9}},
+    ) == "普品扫描=9"
+
+
+def test_ahmad_manual_quality_cells_do_not_require_quality_count() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("ahmed"),
+        "map_id": Entry("2401"),
+        "total_count": Entry("39"),
+        "q1_cells": Entry("16"),
+    }
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert error == ""
+    assert snapshot is not None
+    ref_inputs = snapshot["structured_ref_inputs"]
+    assert ref_inputs["total_count"] == 39
+    assert ref_inputs["quality_cells"] == {"q1": 16}
+    assert ref_inputs["fixed_counts"] == {}
+    assert ref_inputs["avg_cells"] == {}
+
+
+def test_ahmad_manual_values_from_live_summary_keep_victor_zero_and_total_avg() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    data = {
+        "context": {"hero": "victor", "map_id": 2404},
+        "ahmed_ref": {
+            "evidence": {
+                "hero": "victor",
+                "map_id": 2404,
+                "total_count": 21,
+                "total_grid_target": 34,
+                "avg_cells": {
+                    "q1": 1.1428571428571428,
+                    "q3": 2.0,
+                    "q4": 1.8,
+                    "q5": 0,
+                    "q6": 1.0,
+                },
+                "fixed_counts": {"q1": 7, "q3": 8, "q4": 5, "q5": 0, "q6": 1},
+                "count_sums": {"q4q5q6": 6},
+            }
+        },
+    }
+
+    values = module.AhmadTkOverlay._manual_values_from_summary(overlay, data)
+
+    assert values["hero"] == "victor"
+    assert values["map_id"] == 2404
+    assert values["total_count"] == 21
+    assert values["total_cells"] == 34
+    assert values["total_avg"] == "1.619"
+    assert values["q1_avg"] == "1.1429"
+    assert values["q1_count"] == 7
+    assert values["q1_cells"] == "8"
+    assert values["q3_avg"] == "2"
+    assert values["q3_count"] == 8
+    assert values["q3_cells"] == "16"
+    assert values["q4_avg"] == "1.8"
+    assert values["q4_count"] == 5
+    assert values["q4_cells"] == "9"
+    assert values["q5_avg"] == "0"
+    assert values["q5_count"] == 0
+    assert values["q5_cells"] == "0"
+    assert values["q6_avg"] == "1"
+    assert values["q6_count"] == 1
+    assert values["q6_cells"] == "1"
+    assert values["q4q5_count"] == 6
+
+
+def test_ahmad_manual_snapshot_allows_total_avg_and_zero_gold() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("victor"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("21"),
+        "total_avg": Entry("1.619"),
+        "q4_avg": Entry("1.8"),
+        "q5_avg": Entry("0"),
+        "q4q5_count": Entry("6"),
+    }
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert error == ""
+    assert snapshot is not None
+    ref_inputs = snapshot["structured_ref_inputs"]
+    assert ref_inputs["total_count"] == 21
+    assert abs(ref_inputs["total_cells"] - 33.999) < 1e-9
+    assert ref_inputs["avg_cells"] == {"q4": 1.8, "q5": 0.0}
+    assert ref_inputs["count_sums"] == {"q4q5q6": 6}
+
+
+def test_ahmad_manual_snapshot_rejects_impossible_avg_count_pair() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("victor"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("21"),
+        "q4_count": Entry("3"),
+        "q4_avg": Entry("0"),
+    }
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert snapshot is None
+    assert "紫均格" in error
+    assert "整数格数" in error
+
+
+def test_ahmad_manual_overlay_keeps_live_context_and_merges_inputs() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    live_snapshot = {
+        "created_at": time.time(),
+        "hero": "ahmed",
+        "map_id": 2401,
+        "round": 1,
+        "phase": "bidding",
+        "session_id": "2401:live",
+        "structured_ref_inputs": {
+            "avg_cells": {"q5": 4.6667},
+            "fixed_counts": {"q5": 2},
+        },
+        "ui_contract": {
+            "context": {
+                "hero": "ahmed",
+                "map_id": 2401,
+                "round": 1,
+                "phase": "bidding",
+                "session_id": "2401:live",
+            },
+            "constraints": {},
+            "baseline": {"decision": {}, "posterior": {}},
+            "source": {"created_at": time.time()},
+        },
+    }
+    manual_snapshot = {
+        "structured_ref_inputs": {
+            "total_count": 39,
+            "quality_cells": {"q1": 16},
+            "avg_cells": {"q3": 1.55},
+            "fixed_counts": {},
+        }
+    }
+
+    overlaid = module.AhmadTkOverlay._snapshot_with_manual_overlay(
+        overlay,
+        live_snapshot,
+        manual_snapshot,
+    )
+
+    context = overlaid["ui_contract"]["context"]
+    ref_inputs = overlaid["structured_ref_inputs"]
+    assert context["session_id"] == "2401:live"
+    assert context["round"] == 1
+    assert ref_inputs["total_count"] == 39
+    assert ref_inputs["quality_cells"] == {"q1": 16}
+    assert ref_inputs["avg_cells"] == {"q5": 4.6667, "q3": 1.55}
+    assert ref_inputs["fixed_counts"] == {"q5": 2}
+    assert overlaid["ui_contract"]["constraints"]["structured_ref_inputs"] == ref_inputs
+
+
+def test_ahmad_overlay_user_close_runs_exit_cleanup_once(monkeypatch, tmp_path: Path) -> None:
+    module = _ahmad_overlay_module()
+    cleanup_calls: list[tuple[tuple[int, ...], tuple[Path, ...]]] = []
+    destroyed: list[bool] = []
+
+    monkeypatch.setattr(
+        module,
+        "_cleanup_exit_targets",
+        lambda pids, lock_paths: cleanup_calls.append((tuple(pids), tuple(lock_paths))),
+    )
+    overlay = object.__new__(module.AhmadTkOverlay)
+    lock_path = tmp_path / "monitor.lock"
+    overlay._stop_pids_on_exit = (123,)
+    overlay._cleanup_lock_paths = (lock_path,)
+    overlay._exit_cleanup_done = False
+    overlay._hide_minimap_popup = lambda: None
+    overlay._hide_pinned_minimap = lambda: None
+    overlay.root = SimpleNamespace(destroy=lambda: destroyed.append(True))
+
+    module.AhmadTkOverlay._on_user_close(overlay)
+    module.AhmadTkOverlay._run_exit_cleanup(overlay)
+
+    assert cleanup_calls == [((123,), (lock_path,))]
+    assert destroyed == [True]

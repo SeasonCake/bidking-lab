@@ -11,7 +11,15 @@ from bidking_lab.inference.v3.capacity_source_expansion import (
 )
 from bidking_lab.inference.v3.settlement_count_prior import SettlementCountPriorEntry
 from bidking_lab.inference.v3.underestimate_repair import UnderestimateRepairEntry
+from bidking_lab.live.fatbeans import FatbeansActionResult
 from bidking_lab.live.fatbeans import FatbeansCaptureEvents
+from bidking_lab.live.fatbeans import FatbeansInventoryItem
+from bidking_lab.live.fatbeans import FatbeansObservedItem
+from bidking_lab.live.fatbeans import FatbeansPlayerBid
+from bidking_lab.live.fatbeans import FatbeansPublicInfo
+from bidking_lab.live.fatbeans import FatbeansSendEvent
+from bidking_lab.live.fatbeans import FatbeansSkillReveal
+from bidking_lab.live.fatbeans import FatbeansStateEvent
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -105,6 +113,143 @@ def _tables() -> SimpleNamespace:
     )
 
 
+def test_strict_sample_filter_excludes_mixed_filename() -> None:
+    module = _load_module()
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        states=(),
+        statuses=(),
+    )
+
+    assert (
+        module._strict_sample_exclusion_reason(
+            Path("fatbeans_mixed_victor_2409_3rounds_2409_x_0001.json"),
+            events,
+        )
+        == "mixed_sample"
+    )
+
+
+def test_strict_sample_filter_excludes_quarantined_invalid_path() -> None:
+    module = _load_module()
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        states=(),
+        statuses=(),
+    )
+
+    assert (
+        module._strict_sample_exclusion_reason(
+            Path("data/samples/fatbeans_invalid/parse_error/recovered.json"),
+            events,
+        )
+        == "quarantined_sample"
+    )
+
+
+def test_include_mixed_samples_still_excludes_quarantined_invalid_path(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    invalid_dir = tmp_path / "fatbeans_invalid" / "parse_error"
+    invalid_dir.mkdir(parents=True)
+    sample = invalid_dir / "recovered.json"
+    sample.write_text("{}", encoding="utf-8")
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        states=(),
+        statuses=(),
+    )
+
+    monkeypatch.setattr(module, "parse_fatbeans_capture", lambda path: events)
+    monkeypatch.setattr(
+        module,
+        "_round_rows_for_events",
+        lambda *args, **kwargs: [{"status": "ready"}],
+    )
+
+    rows, errors = module.evaluate_paths([sample], include_mixed_samples=True)
+
+    assert rows == []
+    assert errors == []
+
+
+def test_strict_sample_filter_excludes_observed_settlement_inconsistency() -> None:
+    module = _load_module()
+    observed = FatbeansObservedItem(
+        local_index=3,
+        runtime_id=101,
+        item_id=1074003,
+        quality=4,
+        value=2400,
+        shape_code=11,
+        cells=1,
+    )
+    prebid_state = FatbeansStateEvent(
+        sort_id=10,
+        capture_time="",
+        message_id=0x0027,
+        session_id="2409:s",
+        map_id=2409,
+        round_index=1,
+        action_results=(
+            FatbeansActionResult(
+                action_id=100129,
+                result=2,
+                result_field=14,
+                observed_items=(observed,),
+            ),
+        ),
+    )
+    settlement_state = FatbeansStateEvent(
+        sort_id=30,
+        capture_time="",
+        message_id=0x002D,
+        session_id="2409:s",
+        map_id=2409,
+        round_index=1,
+        inventory_items=(
+            FatbeansInventoryItem(
+                runtime_id=202,
+                item_id=1085010,
+                quality=5,
+                cells=1,
+                local_index=8,
+            ),
+        ),
+    )
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(
+            FatbeansSendEvent(
+                sort_id=20,
+                capture_time="",
+                message_id=0x0022,
+                session_id="2409:s",
+                value=1000,
+            ),
+        ),
+        states=(prebid_state, settlement_state),
+        statuses=(),
+    )
+
+    assert (
+        module._strict_sample_exclusion_reason(
+            Path("fatbeans_valid_victor_2409_1rounds_2409_s_0001.json"),
+            events,
+        )
+        == "observed_settlement_inconsistency"
+    )
+
+
 def test_v3_prebid_rows_compile_ready_constraints() -> None:
     module = _load_module()
     state = SimpleNamespace(
@@ -147,6 +292,68 @@ def test_v3_prebid_rows_compile_ready_constraints() -> None:
     assert rows[0]["hero_map_evidence_profile"] == "ethan|2401|public:total"
     assert rows[0]["numeric_constraints"] == 1
     assert rows[0]["constraint_ok"] is True
+
+
+def test_v3_prebid_rows_recover_first_ahmad_window_from_next_state() -> None:
+    module = _load_module()
+    first_bid = FatbeansSendEvent(
+        sort_id=10,
+        capture_time="2026-06-08 21:39:31.440",
+        message_id=0x0022,
+        session_id="2410:abc",
+        value=389999,
+    )
+    round_two_state = FatbeansStateEvent(
+        sort_id=12,
+        capture_time="2026-06-08 21:39:34.778",
+        message_id=0x0025,
+        session_id="2410:abc",
+        map_id=2410,
+        round_index=2,
+        player_id=1,
+        bids=(
+            FatbeansPlayerBid(player_id=1, name="local", hero_id=204, values=(389999,)),
+            FatbeansPlayerBid(player_id=2, name="other", hero_id=107, values=(200000,)),
+        ),
+        skill_reveals=(
+            FatbeansSkillReveal(
+                skill_id=1002041,
+                hero_id=204,
+                round_index=1,
+                result=3.8,
+                result_field=11,
+            ),
+            FatbeansSkillReveal(
+                skill_id=1002042,
+                hero_id=204,
+                round_index=2,
+                result=2.6,
+                result_field=11,
+            ),
+        ),
+        public_infos=(
+            FatbeansPublicInfo(info_id=200009, map_id=2410, value=80, value_field=14),
+        ),
+    )
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(first_bid,),
+        states=(round_two_state,),
+        statuses=(),
+    )
+
+    rows = module._round_rows_for_events(Path("sample.json"), events)
+
+    assert len(rows) == 1
+    assert rows[0]["status"] == "ready"
+    assert rows[0]["map_id"] == 2410
+    assert rows[0]["hero"] == "ahmed"
+    assert rows[0]["recovered_first_prebid_state"] is True
+    assert (
+        rows[0]["recovered_first_prebid_source"]
+        == "ahmad_first_post_bid_state_stable_r1_projection"
+    )
 
 
 def test_v3_prebid_rows_include_prior_and_truth_shadow_fields() -> None:

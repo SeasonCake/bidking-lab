@@ -46,6 +46,21 @@ EXACT_PUBLIC_INFO_IDS = {
     200020,  # red count
 }
 
+HARD_OBSERVED_PUBLIC_INFO_IDS = {
+    200001,  # all purple outlines
+    200002,  # all gold outlines
+    200003,  # all red outlines
+    200021,
+    200022,
+    200023,
+    200024,
+    200025,
+    200039,
+    200048,
+    200049,
+    200050,
+}
+
 
 def _relative_path(path: Path) -> str:
     try:
@@ -95,6 +110,114 @@ def _file_status(
     return ("invalid", "no_ready_windows", "exclude_no_ready_windows", False)
 
 
+def _observed_settlement_consistency(events: FatbeansCaptureEvents) -> dict[str, Any]:
+    inventory_states = [
+        state for state in events.states if getattr(state, "inventory_items", ())
+    ]
+    if not inventory_states:
+        return {
+            "observed_settlement_hard_items": 0,
+            "observed_settlement_missing_items": 0,
+            "observed_settlement_quality_mismatch_items": 0,
+            "observed_settlement_missing_examples": [],
+            "observed_settlement_quality_mismatch_examples": [],
+        }
+    final_state = inventory_states[-1]
+    final_by_runtime = {
+        getattr(item, "runtime_id", None): item
+        for item in getattr(final_state, "inventory_items", ()) or ()
+        if getattr(item, "runtime_id", None) is not None
+    }
+    hard_count = 0
+    missing_count = 0
+    quality_mismatch_count = 0
+    missing_examples: list[dict[str, Any]] = []
+    quality_mismatch_examples: list[dict[str, Any]] = []
+
+    def record_item(
+        *,
+        source: str,
+        source_id: int,
+        sort_id: Any,
+        item: Any,
+    ) -> None:
+        nonlocal hard_count, missing_count, quality_mismatch_count
+        runtime_id = getattr(item, "runtime_id", None)
+        hard_count += 1
+        final_item = final_by_runtime.get(runtime_id)
+        if final_item is None:
+            missing_count += 1
+            if len(missing_examples) < 8:
+                missing_examples.append(
+                    {
+                        "source": source,
+                        "source_id": source_id,
+                        "sort": sort_id,
+                        "runtime_id": runtime_id,
+                        "local_index": getattr(item, "local_index", None),
+                        "quality": getattr(item, "quality", None),
+                        "item_id": getattr(item, "item_id", None),
+                    }
+                )
+            return
+        observed_quality = getattr(item, "quality", None)
+        final_quality = getattr(final_item, "quality", None)
+        if observed_quality is not None and final_quality != observed_quality:
+            quality_mismatch_count += 1
+            if len(quality_mismatch_examples) < 8:
+                quality_mismatch_examples.append(
+                    {
+                        "source": source,
+                        "source_id": source_id,
+                        "sort": sort_id,
+                        "runtime_id": runtime_id,
+                        "observed_quality": observed_quality,
+                        "final_quality": final_quality,
+                    }
+                )
+
+    for state in events.states:
+        if state is final_state:
+            continue
+        sort_id = getattr(state, "sort_id", None)
+        for info in getattr(state, "public_infos", ()) or ():
+            info_id = int(getattr(info, "info_id", 0) or 0)
+            if info_id not in HARD_OBSERVED_PUBLIC_INFO_IDS:
+                continue
+            for item in getattr(info, "observed_items", ()) or ():
+                record_item(
+                    source="public_info",
+                    source_id=info_id,
+                    sort_id=sort_id,
+                    item=item,
+                )
+        for result in getattr(state, "action_results", ()) or ():
+            action_id = int(getattr(result, "action_id", 0) or 0)
+            for item in getattr(result, "observed_items", ()) or ():
+                record_item(
+                    source="action_result",
+                    source_id=action_id,
+                    sort_id=sort_id,
+                    item=item,
+                )
+        for reveal in getattr(state, "skill_reveals", ()) or ():
+            skill_id = int(getattr(reveal, "skill_id", 0) or 0)
+            for item in getattr(reveal, "observed_items", ()) or ():
+                record_item(
+                    source="skill_reveal",
+                    source_id=skill_id,
+                    sort_id=sort_id,
+                    item=item,
+                )
+    return {
+        "observed_settlement_hard_items": hard_count,
+        "observed_settlement_missing_items": missing_count,
+        "observed_settlement_quality_mismatch_items": quality_mismatch_count,
+        "observed_settlement_missing_examples": missing_examples,
+        "observed_settlement_quality_mismatch_examples": quality_mismatch_examples,
+    }
+
+
 def _file_manifest_for_parse_error(path: Path, exc: Exception) -> dict[str, Any]:
     return {
         "file": _relative_path(path),
@@ -120,11 +243,17 @@ def _file_manifest_for_parse_error(path: Path, exc: Exception) -> dict[str, Any]
         "ready_rounds": [],
         "map_ids": [],
         "session_ids": [],
+        "session_count": 0,
         "hero_ids": [],
         "public_info_counts": {},
         "exact_public_info_counts": {},
         "action_result_counts": {},
         "skill_reveal_counts": {},
+        "observed_settlement_hard_items": 0,
+        "observed_settlement_missing_items": 0,
+        "observed_settlement_quality_mismatch_items": 0,
+        "observed_settlement_missing_examples": [],
+        "observed_settlement_quality_mismatch_examples": [],
     }
 
 
@@ -137,12 +266,36 @@ def _file_manifest_for_events(path: Path, events: FatbeansCaptureEvents) -> dict
     ready_windows = status_counts.get("ready", 0)
     no_state_windows = status_counts.get("no_state", 0)
     constraint_conflict_windows = status_counts.get("constraint_conflict", 0)
+    recovered_first_prebid_windows = sum(
+        1 for row in rows if row.get("recovered_first_prebid_state")
+    )
+    recovered_first_prebid_sources: Counter[str] = Counter(
+        str(row.get("recovered_first_prebid_source") or "unknown")
+        for row in rows
+        if row.get("recovered_first_prebid_state")
+    )
     sample_class, status, cleanup_action, usable_for_metrics = _file_status(
         bid_windows=bid_windows,
         ready_windows=ready_windows,
         no_state_windows=no_state_windows,
         constraint_conflict_windows=constraint_conflict_windows,
     )
+    path_parts = {part.lower() for part in path.parts}
+    name = path.name.lower()
+    if "fatbeans_invalid" in path_parts or name.startswith("fatbeans_invalid_"):
+        sample_class = "invalid"
+        status = "quarantined_sample"
+        cleanup_action = "quarantine_prior_invalid_sample"
+        usable_for_metrics = False
+    observed_consistency = _observed_settlement_consistency(events)
+    if sample_class != "invalid" and (
+        observed_consistency["observed_settlement_missing_items"] > 0
+        or observed_consistency["observed_settlement_quality_mismatch_items"] > 0
+    ):
+        sample_class = "mixed"
+        status = "observed_settlement_inconsistency"
+        cleanup_action = "exclude_strict_hard_evidence_metrics"
+        usable_for_metrics = False
 
     public_info_counts: Counter[int] = Counter()
     exact_public_info_counts: Counter[int] = Counter()
@@ -172,6 +325,11 @@ def _file_manifest_for_events(path: Path, events: FatbeansCaptureEvents) -> dict
     for status_event in events.statuses:
         if status_event.session_id:
             session_ids.add(str(status_event.session_id))
+    if len(session_ids) > 1 and sample_class != "invalid":
+        sample_class = "mixed"
+        status = "multi_session_capture"
+        cleanup_action = "exclude_strict_session_metrics"
+        usable_for_metrics = False
 
     return {
         "file": _relative_path(path),
@@ -192,6 +350,10 @@ def _file_manifest_for_events(path: Path, events: FatbeansCaptureEvents) -> dict
         "ready_windows": ready_windows,
         "no_state_windows": no_state_windows,
         "constraint_conflict_windows": constraint_conflict_windows,
+        "recovered_first_prebid_windows": recovered_first_prebid_windows,
+        "recovered_first_prebid_sources": _counter_dict(
+            recovered_first_prebid_sources
+        ),
         "window_status_counts": _counter_dict(status_counts),
         "observed_rounds": _sorted_ints(state.round_index for state in events.states),
         "ready_rounds": _sorted_ints(
@@ -199,11 +361,13 @@ def _file_manifest_for_events(path: Path, events: FatbeansCaptureEvents) -> dict
         ),
         "map_ids": _sorted_ints(state.map_id for state in events.states),
         "session_ids": sorted(session_ids),
+        "session_count": len(session_ids),
         "hero_ids": sorted(hero_ids),
         "public_info_counts": _counter_dict(public_info_counts),
         "exact_public_info_counts": _counter_dict(exact_public_info_counts),
         "action_result_counts": _counter_dict(action_result_counts),
         "skill_reveal_counts": _counter_dict(skill_reveal_counts),
+        **observed_consistency,
     }
 
 
@@ -251,10 +415,14 @@ def build_manifest(
     window_statuses: Counter[str] = Counter()
     public_info_counts: Counter[str] = Counter()
     exact_public_info_counts: Counter[str] = Counter()
+    recovered_first_prebid_sources: Counter[str] = Counter()
     for row in files:
         window_statuses.update(row["window_status_counts"])
         public_info_counts.update(row["public_info_counts"])
         exact_public_info_counts.update(row["exact_public_info_counts"])
+        recovered_first_prebid_sources.update(
+            row.get("recovered_first_prebid_sources") or {}
+        )
 
     summary = {
         "source": "fatbeans_archive_v3_manifest",
@@ -275,6 +443,15 @@ def build_manifest(
         "constraint_conflict_windows": sum(
             int(row["constraint_conflict_windows"]) for row in files
         ),
+        "multi_session_files": sum(
+            1 for row in files if int(row.get("session_count") or 0) > 1
+        ),
+        "recovered_first_prebid_windows": sum(
+            int(row.get("recovered_first_prebid_windows") or 0) for row in files
+        ),
+        "recovered_first_prebid_sources": _counter_dict(
+            recovered_first_prebid_sources
+        ),
         "sample_class_counts": _counter_dict(sample_classes),
         "file_status_counts": _counter_dict(file_statuses),
         "window_status_counts": _counter_dict(window_statuses),
@@ -285,6 +462,9 @@ def build_manifest(
         ],
         "capture_gap_files": [
             row["file"] for row in files if int(row["no_state_windows"]) > 0
+        ],
+        "multi_session_capture_files": [
+            row["file"] for row in files if int(row.get("session_count") or 0) > 1
         ],
     }
     summary.update(summary_cohort_metadata)
