@@ -123,6 +123,22 @@ foreach ($Name in $ScriptFiles) {
     Copy-FileChecked -Source (Join-Path $RepoRoot "scripts\$Name") -Destination (Join-Path $ScriptsOut $Name)
 }
 
+$ResolvePythonOut = Join-Path $ScriptsOut "resolve_python.ps1"
+if (Test-Path -LiteralPath $ResolvePythonOut) {
+    $ResolveText = Get-Content -LiteralPath $ResolvePythonOut -Raw
+    $ResolveText = $ResolveText -replace '# Default: C:\\Python313\\python\.exe \(override with -PythonPath or \$env:BIDKING_PYTHON\)\.', '# Default: no bundled Python fallback; override with -PythonPath or $env:BIDKING_PYTHON.'
+    $ResolveText = $ResolveText -replace '\$script:BidKingDefaultPython313 = "C:\\Python313\\python\.exe"', '$script:BidKingDefaultPython313 = ""'
+    Set-Content -Path $ResolvePythonOut -Value $ResolveText -Encoding utf8
+}
+
+$MonitorStartOut = Join-Path $ScriptsOut "start_live_windivert_overlay.ps1"
+if (Test-Path -LiteralPath $MonitorStartOut) {
+    $MonitorStartText = Get-Content -LiteralPath $MonitorStartOut -Raw
+    $MonitorStartText = $MonitorStartText -replace '\[string\]\$PythonPath = "C:\\Python313\\python\.exe"', '[string]$PythonPath = ""'
+    $MonitorStartText = $MonitorStartText -replace 'Pass -PythonPath C:\\Python313\\python\.exe', 'Pass -PythonPath <path-to-python.exe>'
+    Set-Content -Path $MonitorStartOut -Value $MonitorStartText -Encoding utf8
+}
+
 Copy-FileChecked -Source (Join-Path $RepoRoot "pyproject.toml") -Destination (Join-Path $OutputFull "pyproject.toml")
 
 $ProcessedOut = Join-Path $OutputFull "data\processed"
