@@ -415,6 +415,8 @@ def test_webhook_monitor_writes_fast_snapshot_without_appending_logs(
     assert fast["roi_trials"] == 0
     assert fast["shadow_trials"] == 20
     assert fast["run_debug_shadows"] is False
+    assert fast["raw_capture"] == str(monitor.raw_jsonl_path.resolve())
+    assert fast["raw_capture_jsonl"] == str(monitor.raw_jsonl_path.resolve())
     assert calls[0]["append_logs"] is False
     assert full["snapshot_mode"] == "full"
     assert full["n_trials"] == 500
@@ -422,6 +424,8 @@ def test_webhook_monitor_writes_fast_snapshot_without_appending_logs(
     assert full["shadow_trials"] == 20
     assert full["inference_profile"]["n_trials"] == 500
     assert full["run_debug_shadows"] is True
+    assert full["raw_capture"] == str(monitor.raw_path.resolve())
+    assert full["raw_capture_jsonl"] == str(monitor.raw_jsonl_path.resolve())
     assert calls[1]["append_logs"] is True
     assert monitor.status()["last_full_processed_count"] == 1
 

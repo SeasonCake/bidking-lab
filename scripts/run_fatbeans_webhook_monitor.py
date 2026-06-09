@@ -849,7 +849,13 @@ class FatbeansWebhookMonitor:
             artifact["roi_trials"] = roi_trials
             artifact["shadow_trials"] = shadow_trials
             artifact["source"] = self.config.source_name
-            artifact["raw_capture"] = str(raw_path.resolve())
+            artifact["raw_capture"] = str(
+                (
+                    raw_path
+                    if snapshot_mode == "full"
+                    else self.raw_jsonl_path
+                ).resolve()
+            )
             artifact["raw_capture_jsonl"] = str(self.raw_jsonl_path.resolve())
             artifact["capture_rows"] = len(rows)
             artifact[self.config.packet_count_key] = len(rows)
