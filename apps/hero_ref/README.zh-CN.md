@@ -24,6 +24,7 @@ C:\Python313\python.exe -m pip install pydivert psutil
 ```
 
 - 需要本包内存在 `data\raw\tables\BidMap.txt`、`Drop.txt`、`Item.txt`。这些是本地游戏表，不建议公开发布。
+- 已兼容快递/仓库、集装箱、别墅、沉船/活动沉船和 hidden 的基础地图族。快递/仓库/集装箱会读取外援 StaticData 的 tier 与 nest price；hidden 当前若本地表缺专属价格，会在诊断里显示 `fallback_default_price`，只作为保底参考。
 
 ## 目录说明
 

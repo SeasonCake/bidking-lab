@@ -580,6 +580,53 @@ def test_ref_engine_victor_decimal_q4_avg_keeps_reachable_counts() -> None:
     assert result["red_count_range"][1] is not None
 
 
+def test_ref_engine_sparse_map_family_prior_centers_cover_non_villa_maps() -> None:
+    cases = [
+        (2101, "nest_price:2001", "tier_prob:101", "total_count_prior_center:24"),
+        (2201, "nest_price:2011", "tier_prob:102", "total_count_prior_center:24"),
+        (2301, "nest_price:2021", "tier_prob:103", "total_count_prior_center:27"),
+        (2401, "nest_price:2031", "tier_prob:104", "total_count_prior_center:28"),
+        (2501, "nest_price:2041", "tier_prob:105", "total_count_prior_center:33"),
+        (2601, "fallback_default_price", "tier_prob:106", "total_count_prior_center:33"),
+    ]
+
+    for map_id, price_note, tier_note, count_center_note in cases:
+        result = run_reference_engine(
+            _snapshot(
+                hero="victor",
+                map_id=map_id,
+                structured_ref_inputs={"min_counts": {"q4": 1}},
+            ),
+            max_combos=500,
+        ).as_dict()
+
+        assert result["status"] == "count_prior"
+        assert result["combo_count"] > 0
+        assert price_note in result["notes"]
+        assert tier_note in result["notes"]
+        assert "total_count_from_ref_count_prior" in result["notes"]
+        assert count_center_note in result["notes"]
+
+
+def test_ref_engine_known_non_villa_maps_are_reachable_with_explicit_total() -> None:
+    for map_id, tier_note in ((2101, "tier_prob:101"), (2301, "tier_prob:103"), (2601, "tier_prob:106")):
+        result = run_reference_engine(
+            _snapshot(
+                hero="victor",
+                map_id=map_id,
+                structured_ref_inputs={
+                    "total_count": 24 if map_id == 2101 else 33,
+                    "count_sums": {"q4q5q6": 4},
+                },
+            ),
+            max_combos=500,
+        ).as_dict()
+
+        assert result["status"] == "ok"
+        assert result["combo_count"] > 0
+        assert tier_note in result["notes"]
+
+
 def test_ref_engine_avg_cells_map_to_integer_grid_options() -> None:
     assert _avg_grid_options(4, 1.8) == []
     assert _avg_grid_options(5, 1.8) == [9]

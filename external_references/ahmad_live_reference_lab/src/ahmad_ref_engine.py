@@ -1667,12 +1667,16 @@ def _default_total_count(map_id: int | None) -> int:
     if map_id is None:
         return 28
     family = int(map_id) // 100
+    if family in {21, 22}:
+        return 24
+    if family == 23:
+        return 27
     if family in {25, 45}:
         return 33
     if family == 24:
         return 28
     if family == 26:
-        return 30
+        return 33
     return 28
 
 
