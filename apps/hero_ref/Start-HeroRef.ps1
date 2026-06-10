@@ -7,6 +7,7 @@ param(
     [switch]$BroadSniff,
     [switch]$IncludeLoopback,
     [switch]$KeepMonitorOnClose,
+    [switch]$ShowTaskbar,
     [switch]$NoRestart,
     [switch]$NoAutoElevate
 )
@@ -164,6 +165,9 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
     if ($KeepMonitorOnClose) {
         $ElevatedArgs += "-KeepMonitorOnClose"
     }
+    if ($ShowTaskbar) {
+        $ElevatedArgs += "-ShowTaskbar"
+    }
     if ($NoRestart) {
         $ElevatedArgs += "-NoRestart"
     }
@@ -302,6 +306,9 @@ $HeroArgs = @(
     "--load-existing",
     "--diagnostic-profile", $DiagnosticProfile
 )
+if ($ShowTaskbar) {
+    $HeroArgs += "--show-taskbar"
+}
 if ($MonitorPid -and -not $KeepMonitorOnClose -and -not $MonitorLaunchFailed) {
     $HeroArgs += @(
         "--stop-pid-on-exit", "$MonitorPid",

@@ -13,6 +13,7 @@ param(
     [switch]$BroadSniff,
     [switch]$IncludeLoopback,
     [switch]$KeepMonitorOnClose,
+    [switch]$ShowTaskbar,
     [switch]$NoAutoElevate,
     [switch]$NoRestart
 )
@@ -74,6 +75,9 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
     if ($KeepMonitorOnClose) {
         $ElevatedArgs += "-KeepMonitorOnClose"
     }
+    if ($ShowTaskbar) {
+        $ElevatedArgs += "-ShowTaskbar"
+    }
     if ($NoRestart) {
         $ElevatedArgs += "-NoRestart"
     }
@@ -131,6 +135,9 @@ if ($RestartMonitor) {
 }
 if ($KeepMonitorOnClose) {
     $HeroParams["KeepMonitorOnClose"] = $true
+}
+if ($ShowTaskbar) {
+    $HeroParams["ShowTaskbar"] = $true
 }
 
 & $HeroStart @HeroParams

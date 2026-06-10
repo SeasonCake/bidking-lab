@@ -8,13 +8,14 @@
 
 - Hero Ref UI exe；
 - WinDivert live monitor exe；
-- 一键启动 / 停止脚本；
+- 悬浮窗启动、任务栏窗口启动 / 停止脚本；
 - public-safe 本机表导入脚本；
 - WinDivert live monitor 诊断/回退脚本；
 - `src/bidking_lab` 运行代码；
 - `data/processed/*.json`；
 - 本机运行需要的 `data/raw/tables` 表文件；
 - `使用说明.txt`、`火绒拦截说明.txt`、`VPN或UU备用启动.txt`；
+- `管理员运行说明.txt`；
 - 用户 README、安全说明、署名和边界说明。
 
 ## 默认排除
@@ -33,3 +34,7 @@
 ## 运行时依赖
 
 默认 portable 包不要求用户安装 Python、`pydivert` 或 `psutil`。WinDivert 抓包仍需要管理员权限，并可能需要在火绒、Windows Defender 等安全软件中信任整个应用文件夹。
+
+推荐启动入口：
+- `管理员启动HeroRef_悬浮窗.bat` / `Start-HeroRef.bat`：默认悬浮窗，不占任务栏，双击会自动申请管理员权限。
+- `管理员启动HeroRef_任务栏窗口.bat` / `Start-HeroRef-Taskbar.bat`：普通窗口模式，会出现在任务栏，支持 `Alt+Tab` / `Win+Tab`，双击会自动申请管理员权限。

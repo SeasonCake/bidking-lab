@@ -83,7 +83,8 @@ DIAGNOSTIC_PROFILE_ALIASES = {
 DEFAULT_DIAGNOSTIC_PROFILE = "engineering"
 TOPMOST_ON_TIP = "置顶中；点击切换为自由窗口"
 TOPMOST_OFF_TIP = "自由窗口；点击恢复置顶"
-EXPORT_DIAGNOSTIC_TIP_TEMPLATE = "导出诊断包到 {path}；包含 latest_snapshot、raw JSONL 和 UI 摘要，方便朋友发回排查"
+EXPORT_DIAGNOSTIC_TIP_TEMPLATE = "导出诊断包到 {path}；manifest 会记录启动方式、诊断档位和 raw tables 状态，方便朋友发回排查"
+REQUIRED_RAW_TABLES = ("BidMap.txt", "Drop.txt", "Item.txt")
 
 FONT_UI = "Microsoft YaHei UI"
 FONT_NUMERIC = "Segoe UI Semibold"
@@ -215,34 +216,34 @@ THEMES: dict[str, dict[str, Any]] = {
     },
     "dark": {
         "label": "暗色",
-        "BG": "#161a2b",
-        "PANEL": "#232a43",
-        "PANEL_SOFT": "#303a5e",
-        "PANEL_MUTED": "#2d2945",
-        "BORDER": "#596485",
-        "TEXT": "#f8fbff",
-        "MUTED": "#c8d2e4",
-        "DIM": "#8fa0bd",
-        "GOOD": "#61e6ad",
-        "WARN": "#ffd166",
-        "BAD": "#ff6f91",
-        "ACCENT": "#69c7ff",
-        "WARM": "#ffb86b",
-        "MINIMAP_BG": "#111827",
-        "MINIMAP_GRID": "#263244",
-        "MINIMAP_TEXT": "#aebbd2",
+        "BG": "#141923",
+        "PANEL": "#202838",
+        "PANEL_SOFT": "#2b3548",
+        "PANEL_MUTED": "#28283a",
+        "BORDER": "#46536a",
+        "TEXT": "#f4f7fb",
+        "MUTED": "#bbc6d5",
+        "DIM": "#8794aa",
+        "GOOD": "#5fd39d",
+        "WARN": "#f1c85f",
+        "BAD": "#ef718f",
+        "ACCENT": "#6bbde8",
+        "WARM": "#f4b66a",
+        "MINIMAP_BG": "#121927",
+        "MINIMAP_GRID": "#2b3446",
+        "MINIMAP_TEXT": "#aab6c9",
         "QUALITY_COLORS": {
             key: value["fill"] for key, value in MAINLINE_QUALITY_STYLE.items()
         },
-        "HERO_BUTTON_ACTIVE": "#3f4d79",
-        "SCROLL_LINE": "#465476",
-        "TOOLTIP_BG": "#151a2b",
-        "MANUAL_BG": "#2b2947",
-        "MANUAL_INPUT_BG": "#1b2136",
-        "MANUAL_STATUS_BG": "#4a372b",
-        "MANUAL_LABEL_FG": "#e0e6f3",
-        "MINIMAP_ITEM_SHADOW": "#101525",
-        "MINIMAP_ITEM_OUTLINE": "#101525",
+        "HERO_BUTTON_ACTIVE": "#36445d",
+        "SCROLL_LINE": "#3a465c",
+        "TOOLTIP_BG": "#171d2a",
+        "MANUAL_BG": "#28253d",
+        "MANUAL_INPUT_BG": "#192132",
+        "MANUAL_STATUS_BG": "#403326",
+        "MANUAL_LABEL_FG": "#dce5f1",
+        "MINIMAP_ITEM_SHADOW": "#0f1623",
+        "MINIMAP_ITEM_OUTLINE": "#0f1623",
         "BUTTON_DARK_FG": "#251f2b",
     },
     "light": {
@@ -397,6 +398,10 @@ def _parse_diagnostic_profile(value: str) -> str:
             "expected one of: engineering, portable, public-safe"
         )
     return _normalize_diagnostic_profile(profile)
+
+
+def _apply_taskbar_mode(root: tk.Tk, *, show_taskbar: bool) -> None:
+    root.overrideredirect(not show_taskbar)
 
 
 def _hex_to_rgb(color: str) -> tuple[int, int, int] | None:
@@ -618,6 +623,60 @@ def _diagnostic_export_tip(snapshot_path: Path) -> str:
     )
 
 
+def _candidate_package_roots(snapshot_path: Path) -> list[Path]:
+    resolved = snapshot_path.resolve()
+    roots = [resolved.parent]
+    for parent in resolved.parents:
+        if parent.name == "data":
+            roots.append(parent.parent)
+    out: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        try:
+            resolved_root = str(root.resolve())
+        except OSError:
+            resolved_root = str(root)
+        if resolved_root in seen:
+            continue
+        seen.add(resolved_root)
+        out.append(root)
+    return out
+
+
+def _raw_tables_summary(snapshot_path: Path) -> dict[str, Any]:
+    fallback: dict[str, Any] | None = None
+    for root in _candidate_package_roots(snapshot_path):
+        raw_dir = root / "data" / "raw" / "tables"
+        files: list[dict[str, Any]] = []
+        missing: list[str] = []
+        for name in REQUIRED_RAW_TABLES:
+            path = raw_dir / name
+            if path.is_file():
+                files.append(_diagnostic_file_summary(path))
+            else:
+                missing.append(name)
+        summary = {
+            "package_root": str(root.resolve()),
+            "path": str(raw_dir.resolve()) if raw_dir.exists() else str(raw_dir),
+            "present": raw_dir.is_dir(),
+            "required_present": not missing,
+            "files": files,
+            "missing_required": missing,
+        }
+        if summary["present"] or summary["required_present"]:
+            return summary
+        if fallback is None:
+            fallback = summary
+    return fallback or {
+        "package_root": str(snapshot_path.parent.resolve()),
+        "path": str((snapshot_path.parent / "data" / "raw" / "tables").resolve()),
+        "present": False,
+        "required_present": False,
+        "files": [],
+        "missing_required": list(REQUIRED_RAW_TABLES),
+    }
+
+
 def _safe_export_name(path: Path, *, base_dir: Path) -> str:
     try:
         rel = path.resolve().relative_to(base_dir.resolve())
@@ -697,6 +756,7 @@ def _write_diagnostic_export(
     snapshot_path: Path,
     current_summary: dict[str, Any] | None = None,
     diagnostic_profile: str = DEFAULT_DIAGNOSTIC_PROFILE,
+    show_taskbar: bool = False,
 ) -> Path:
     export_started = time.perf_counter()
     diagnostic_profile = _normalize_diagnostic_profile(diagnostic_profile)
@@ -711,6 +771,8 @@ def _write_diagnostic_export(
     current_reference = _mapping(current_summary.get("reference") if current_summary else {})
     current_evidence = _mapping(current_summary.get("evidence") if current_summary else {})
     current_diagnostics = _mapping(current_summary.get("diagnostics") if current_summary else {})
+    raw_tables = _raw_tables_summary(snapshot_path)
+    package_is_public_safe = not bool(raw_tables.get("required_present"))
     manifest = {
         "created_at": time.time(),
         "snapshot_path": str(snapshot_path),
@@ -736,6 +798,18 @@ def _write_diagnostic_export(
             "round": snapshot.get("round"),
             "phase": snapshot.get("phase"),
         },
+        "startup": {
+            "launch_mode": "taskbar" if show_taskbar else "floating",
+            "show_taskbar": bool(show_taskbar),
+            "diagnostic_profile": diagnostic_profile,
+        },
+        "package": {
+            "is_public_safe": package_is_public_safe,
+            "includes_raw_tables": bool(raw_tables.get("required_present")),
+            "raw_tables_dir": raw_tables.get("path"),
+            "raw_tables_root": raw_tables.get("package_root"),
+            "raw_tables_missing_required": raw_tables.get("missing_required"),
+        },
         "current_summary": {
             "status": current_summary.get("status") if current_summary else None,
             "reference_source": current_reference.get("source"),
@@ -760,6 +834,7 @@ def _write_diagnostic_export(
             "ui_health": _diagnostic_file_summary(base_dir / UI_HEALTH_LOG),
             "model_eval": _diagnostic_file_summary(base_dir / "model_eval.jsonl"),
             "monitor_errors": _diagnostic_file_summary(base_dir / "monitor_errors.jsonl"),
+            "raw_tables": raw_tables,
         },
         "included": [],
         "missing_optional": [],
@@ -1630,11 +1705,13 @@ class AhmadTkOverlay:
         cleanup_lock_paths: tuple[Path, ...] = (),
         load_existing_snapshot: bool = False,
         diagnostic_profile: str = DEFAULT_DIAGNOSTIC_PROFILE,
+        show_taskbar: bool = False,
     ) -> None:
         self.root = root
         self.snapshot_path = snapshot_path
         self.interval_ms = max(300, int(interval_ms))
         self.diagnostic_profile = _normalize_diagnostic_profile(diagnostic_profile)
+        self.show_taskbar = bool(show_taskbar)
         self.exit_when_pids = exit_when_pids
         self._stop_pids_on_exit = tuple(pid for pid in stop_pids_on_exit if pid > 0)
         self._cleanup_lock_paths = tuple(cleanup_lock_paths)
@@ -1692,7 +1769,7 @@ class AhmadTkOverlay:
         root.title("Hero Ref")
         root.configure(bg=BG)
         root.attributes("-topmost", True)
-        root.overrideredirect(True)
+        _apply_taskbar_mode(root, show_taskbar=self.show_taskbar)
         root.resizable(True, True)
         root.minsize(430, 320)
         root.geometry(f"{self._mini_geometry()}+20+0")
@@ -1710,20 +1787,22 @@ class AhmadTkOverlay:
             bordercolor=BORDER,
             lightcolor=PANEL_SOFT,
             darkcolor=PANEL_SOFT,
-            padding=(6, 3),
+            padding=(8, 4),
+            borderwidth=0,
+            relief="flat",
         )
         style.map("Hero.TButton", background=[("active", HERO_BUTTON_ACTIVE)])
 
         self.outer = tk.Frame(root, bg=BG)
         self.outer.pack(fill="both", expand=True)
 
-        tk.Frame(self.outer, bg=WARM, width=3).pack(side="left", fill="y")
-        self.shell = tk.Frame(self.outer, bg=BG, padx=7, pady=7)
+        tk.Frame(self.outer, bg=WARM, width=2).pack(side="left", fill="y")
+        self.shell = tk.Frame(self.outer, bg=BG, padx=9, pady=9)
         self.shell.pack(side="left", fill="both", expand=True)
         stripe = tk.Frame(self.shell, bg=BG)
-        stripe.pack(fill="x", pady=(0, 6))
-        tk.Frame(stripe, bg=ACCENT, height=2).pack(side="left", fill="x", expand=True)
-        tk.Frame(stripe, bg=WARM, height=2, width=82).pack(side="right", padx=(6, 0))
+        stripe.pack(fill="x", pady=(0, 7))
+        tk.Frame(stripe, bg=ACCENT, height=1).pack(side="left", fill="x", expand=True)
+        tk.Frame(stripe, bg=WARM, height=1, width=82).pack(side="right", padx=(6, 0))
 
         header = tk.Frame(self.shell, bg=BG)
         header.pack(fill="x")
@@ -1735,7 +1814,7 @@ class AhmadTkOverlay:
             text="Hero Ref",
             bg=BG,
             fg=TEXT,
-            font=(FONT_UI, 13, "bold"),
+            font=(FONT_UI, 12, "bold"),
             anchor="w",
         )
         self.title.pack(fill="x")
@@ -1744,7 +1823,7 @@ class AhmadTkOverlay:
             text="等待实时包",
             bg=BG,
             fg=MUTED,
-            font=(FONT_UI, 8),
+            font=(FONT_UI, 7),
             anchor="w",
         )
         self.subtitle.pack(fill="x")
@@ -1753,7 +1832,7 @@ class AhmadTkOverlay:
             text=CREDIT_TEXT,
             bg=BG,
             fg=DIM,
-            font=(FONT_UI, 7),
+            font=(FONT_UI, 6),
             anchor="w",
         )
         self.title_tip = HoverTip(self.title, CREDIT_TEXT)
@@ -1770,8 +1849,8 @@ class AhmadTkOverlay:
             activeforeground="#ffffff",
             relief="flat",
             borderwidth=0,
-            padx=6,
-            pady=1,
+            padx=7,
+            pady=2,
             font=(FONT_UI, 8, "bold"),
         )
         self.close_button.pack(side="right", padx=(5, 0))
@@ -1781,8 +1860,8 @@ class AhmadTkOverlay:
             text="T",
             bg=PANEL_SOFT,
             fg=WARM,
-            padx=5,
-            pady=1,
+            padx=6,
+            pady=2,
             font=(FONT_UI, 8, "bold"),
             highlightthickness=1,
             highlightbackground=WARM,
@@ -1796,7 +1875,7 @@ class AhmadTkOverlay:
             bg=BG,
             fg=DIM,
             padx=2,
-            pady=1,
+            pady=2,
             font=(FONT_UI, 9, "bold"),
             highlightthickness=0,
         )
@@ -1816,8 +1895,8 @@ class AhmadTkOverlay:
             text="--:--",
             bg=PANEL_SOFT,
             fg=MUTED,
-            padx=6,
-            pady=3,
+            padx=7,
+            pady=4,
             font=(FONT_UI, 8),
         )
         self.status.pack(side="left")
@@ -1837,8 +1916,8 @@ class AhmadTkOverlay:
             text="手填",
             bg=WARM,
             fg=BUTTON_DARK_FG,
-            padx=7,
-            pady=3,
+            padx=8,
+            pady=4,
             font=(FONT_UI, 8, "bold"),
             highlightthickness=1,
             highlightbackground=WARM,
@@ -1851,8 +1930,8 @@ class AhmadTkOverlay:
             text="配色",
             bg=PANEL_SOFT,
             fg=ACCENT,
-            padx=6,
-            pady=3,
+            padx=8,
+            pady=4,
             font=(FONT_UI, 8, "bold"),
             highlightthickness=1,
             highlightbackground=BORDER,
@@ -1865,8 +1944,8 @@ class AhmadTkOverlay:
             text="地图",
             bg=PANEL_SOFT,
             fg=ACCENT,
-            padx=6,
-            pady=3,
+            padx=8,
+            pady=4,
             font=(FONT_UI, 8, "bold"),
             highlightthickness=1,
             highlightbackground=BORDER,
@@ -1881,8 +1960,8 @@ class AhmadTkOverlay:
             text="藏价",
             bg=PANEL_SOFT,
             fg=DIM,
-            padx=6,
-            pady=3,
+            padx=8,
+            pady=4,
             font=(FONT_UI, 8, "bold"),
             highlightthickness=1,
             highlightbackground=BORDER,
@@ -1911,7 +1990,7 @@ class AhmadTkOverlay:
                 ("aggressive", "激进", BAD),
             )
         ):
-            card = self._card(prices, bg=PANEL, padx=6, pady=5)
+            card = self._card(prices, bg=PANEL, padx=7, pady=6)
             card.pack(side="left", fill="x", expand=True, padx=(0, 0 if idx == 2 else 4))
             tk.Frame(card, bg=color, height=2).pack(fill="x", pady=(0, 4))
             title_label = tk.Label(
@@ -2376,6 +2455,7 @@ class AhmadTkOverlay:
                     "diagnostic_profile",
                     DEFAULT_DIAGNOSTIC_PROFILE,
                 ),
+                show_taskbar=bool(getattr(self, "show_taskbar", False)),
             )
             if isinstance(current_summary, dict):
                 self._mark_summary_performance(
@@ -2608,10 +2688,10 @@ class AhmadTkOverlay:
     def _build_manual_panel(self, parent: tk.Widget) -> None:
         manual_bg = MANUAL_BG
         manual_input_bg = MANUAL_INPUT_BG
-        card = self._card(parent, bg=manual_bg, padx=6, pady=6)
+        card = self._card(parent, bg=manual_bg, padx=7, pady=7)
         self.manual_card = card
         card.pack(fill="x", pady=(5, 0))
-        tk.Frame(card, bg=WARM, height=3).pack(fill="x", pady=(0, 4))
+        tk.Frame(card, bg=WARM, height=2).pack(fill="x", pady=(0, 4))
         header = tk.Frame(card, bg=manual_bg)
         header.pack(fill="x", pady=(0, 4))
         title_box = tk.Frame(header, bg=manual_bg)
@@ -2621,7 +2701,7 @@ class AhmadTkOverlay:
             text="手动填写 / 断网备用",
             bg=manual_bg,
             fg=WARM,
-            font=(FONT_UI, 9, "bold"),
+            font=(FONT_UI, 8, "bold"),
             anchor="w",
         ).pack(fill="x")
         tk.Label(
@@ -2629,7 +2709,7 @@ class AhmadTkOverlay:
             text="可只填总件/总格；补均格/件数/均价/总价会进一步锁定",
             bg=manual_bg,
             fg=MUTED,
-            font=(FONT_UI, 7),
+            font=(FONT_UI, 6),
             anchor="w",
         ).pack(fill="x", pady=(1, 0))
         self.manual_status = tk.Label(
@@ -2637,8 +2717,8 @@ class AhmadTkOverlay:
             text="未启用",
             bg=MANUAL_STATUS_BG,
             fg=WARM,
-            padx=6,
-            pady=1,
+            padx=7,
+            pady=2,
             font=(FONT_UI, 7),
             anchor="e",
         )
@@ -2666,8 +2746,8 @@ class AhmadTkOverlay:
                 activeforeground=BUTTON_DARK_FG if is_primary else TEXT,
                 relief="flat",
                 borderwidth=0,
-                padx=8 if is_primary else 6,
-                pady=2 if is_primary else 1,
+                padx=9 if is_primary else 7,
+                pady=3 if is_primary else 2,
                 font=(FONT_UI, 8, "bold"),
                 highlightthickness=1,
                 highlightbackground=WARM if is_primary else BORDER,
@@ -3001,6 +3081,8 @@ class AhmadTkOverlay:
             bg=bg,
             padx=padx,
             pady=pady,
+            bd=0,
+            relief="flat",
             highlightthickness=1,
             highlightbackground=BORDER,
             highlightcolor=BORDER,
@@ -3012,7 +3094,7 @@ class AhmadTkOverlay:
         title: str,
         labels: tuple[str, ...],
     ) -> dict[str, tk.Label]:
-        card = self._card(parent, bg=PANEL, padx=6, pady=5)
+        card = self._card(parent, bg=PANEL, padx=7, pady=6)
         tk.Frame(card, bg=ACCENT if title in {"当前建议", "证据"} else BAD, height=1).pack(
             fill="x",
             pady=(0, 4),
@@ -5498,6 +5580,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Render the current latest_snapshot.json immediately instead of starting in standby.",
     )
     parser.add_argument(
+        "--show-taskbar",
+        action="store_true",
+        help="Use a normal taskbar/Alt-Tab window instead of the borderless floating overlay.",
+    )
+    parser.add_argument(
         "--diagnostic-profile",
         type=_parse_diagnostic_profile,
         metavar="{engineering,portable,public-safe}",
@@ -5546,6 +5633,7 @@ def main(argv: list[str] | None = None) -> int:
         cleanup_lock_paths=tuple(args.cleanup_lock_on_exit),
         load_existing_snapshot=bool(args.load_existing),
         diagnostic_profile=args.diagnostic_profile,
+        show_taskbar=bool(args.show_taskbar),
     )
     try:
         root.mainloop()

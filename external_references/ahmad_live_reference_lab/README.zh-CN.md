@@ -129,7 +129,7 @@ https://github.com/user-attachments/assets/b4ce74ee-69a5-422a-921b-c55deb82ae14
 .\external_references\ahmad_live_reference_lab\start_ahmad_overlay.ps1 -Restart
 ```
 
-说明：`-NoOverlay` 会只启动后台 monitor，不启动主线 overlay；随后本脚本启动独立 Hero Ref 小窗。这样只会看到一个 Hero Ref 前端窗口。默认关闭 Hero Ref 会停止 `monitor.lock` 记录的后台 monitor 并清理 lock；如果只是调试/回放，不想关闭 monitor，可给 Hero Ref 启动脚本加 `-KeepMonitorOnClose`。
+说明：`-NoOverlay` 会只启动后台 monitor，不启动主线 overlay；随后本脚本启动独立 Hero Ref 小窗。这样只会看到一个 Hero Ref 前端窗口。默认关闭 Hero Ref 会停止 `monitor.lock` 记录的后台 monitor 并清理 lock；如果只是调试/回放，不想关闭 monitor，可给 Hero Ref 启动脚本加 `-KeepMonitorOnClose`。如果希望 Hero Ref 出现在任务栏并支持 `Alt+Tab` / `Win+Tab` 切换，可加 `-ShowTaskbar`。
 
 一键实战启动：
 
@@ -137,7 +137,7 @@ https://github.com/user-attachments/assets/b4ce74ee-69a5-422a-921b-c55deb82ae14
 .\external_references\ahmad_live_reference_lab\start_ahmad_live.ps1
 ```
 
-该脚本等价于“后台 WinDivert monitor + 只打开 Hero Ref UI”，不会打开主线 v3 overlay。默认会自动请求管理员权限并重启旧 monitor/旧 Hero Ref；VPN/UU 场景可加 `-BroadSniff -IncludeLoopback`。
+该脚本等价于“后台 WinDivert monitor + 只打开 Hero Ref UI”，不会打开主线 v3 overlay。默认会自动请求管理员权限并重启旧 monitor/旧 Hero Ref；VPN/UU 场景可加 `-BroadSniff -IncludeLoopback`，需要任务栏窗口时可加 `-ShowTaskbar`。
 
 等价长命令：
 
@@ -159,7 +159,7 @@ Portable 应用包：
 .\external_references\ahmad_live_reference_lab\build_hero_ref_portable.ps1 -PythonPath C:\Python313\python.exe
 ```
 
-默认输出到 `external_references\ahmad_live_reference_lab\dist\BidKingHeroRefPortable`，其中包含 Hero Ref UI exe、WinDivert monitor exe、一键启动脚本、运行代码、processed JSON 和本机 raw tables。普通用户不需要安装 Python、`pydivert` 或 `psutil`。该目录用于本机测试；公开传输前请先阅读包内 `TRUST_AND_SECURITY.zh-CN.md`，并谨慎处理 `data\raw\tables`、`data\logs`、样本和截图。若要生成不含 raw tables 的公开安全包，可加 `-PublicSafe`；用户第一次运行前执行包内 `导入本机游戏表.bat`，选择自己的 BidKing 游戏目录即可导入所需表文件。
+默认输出到 `external_references\ahmad_live_reference_lab\dist\BidKingHeroRefPortable`，其中包含 Hero Ref UI exe、WinDivert monitor exe、悬浮窗启动入口 `管理员启动HeroRef_悬浮窗.bat`、任务栏窗口启动入口 `管理员启动HeroRef_任务栏窗口.bat`、运行代码、processed JSON 和本机 raw tables。普通用户不需要安装 Python、`pydivert` 或 `psutil`；双击启动入口会自动申请管理员权限。该目录用于本机测试；公开传输前请先阅读包内 `TRUST_AND_SECURITY.zh-CN.md`，并谨慎处理 `data\raw\tables`、`data\logs`、样本和截图。若要生成不含 raw tables 的公开安全包，可加 `-PublicSafe`；用户第一次运行前执行包内 `导入本机游戏表.bat`，选择自己的 BidKing 游戏目录即可导入所需表文件。
 
 真实样本 smoke：
 

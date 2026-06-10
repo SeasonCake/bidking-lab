@@ -7,8 +7,18 @@ BidKing Hero Ref 使用说明
    然后选择 BidKing 游戏目录、BidKing_Data\StreamingAssets 目录，或 Tables 目录。
    如果是私用完整包，里面已经带表，可以跳过这一步。
 
-3. 右键这个文件运行：
-   右键管理员运行_启动HeroRef.bat
+3. 启动 Hero Ref：
+   默认悬浮窗：
+   管理员启动HeroRef_悬浮窗.bat
+
+   需要任务栏窗口、Alt+Tab 或 Win+Tab 切换：
+   管理员启动HeroRef_任务栏窗口.bat
+
+   双击启动会自动申请管理员权限；如果 Windows 没有弹出管理员授权或启动失败，先看：
+   管理员运行说明.txt
+
+   然后再右键对应启动文件，选择以管理员身份运行。
+   Start-HeroRef.bat 和 Start-HeroRef-Taskbar.bat 是等价英文入口。
 
 4. 正常情况下会自动启动两个程序：
    - BidKingHeroMonitor：后台抓包和解析
@@ -23,6 +33,7 @@ BidKing Hero Ref 使用说明
 
 7. 仍然需要管理员权限。
    原因是实时监测使用 WinDivert 抓本机游戏网络包，WinDivert 需要加载驱动。
+   如果你不知道怎么右键管理员运行，请看同目录的 管理员运行说明.txt。
 
 8. 如果火绒、Windows Defender 或其他安全软件拦截：
    请确认包来源可信后，把整个 BidKingHeroRefPortable 文件夹加入信任区。
@@ -30,6 +41,8 @@ BidKing Hero Ref 使用说明
 
 9. 如果开了 VPN/UU 导致不刷新，可以用 PowerShell 运行：
    .\Start-HeroRef.ps1 -BroadSniff -IncludeLoopback
+   如果同时需要任务栏窗口，加上：
+   -ShowTaskbar
 
 10. 运行日志和最新状态在：
    data\logs\live

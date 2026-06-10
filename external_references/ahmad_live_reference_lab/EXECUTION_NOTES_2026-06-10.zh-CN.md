@@ -1198,3 +1198,27 @@
      - 候选值降序只改变 UI 展示顺序，不改变 ref_v0 枚举、候选集合、价格计算、排序语义或主线 v3 truth；
      - taskbar 显示做成可选开关 / 启动参数，不强制改变默认悬浮窗体验；
      - 这轮优先做 UI 层低风险改动，不推进主线 v3 promotion，不恢复 formal/value sampler 正式接入。
+
+20. 2026-06-11 低风险 UI 项回退与保留
+   - 候选值显示顺序：
+     - 朋友实测后认为高值优先显示与主界面低到高的报价口径存在视觉冲突；
+     - 已回退到原本低到高展示，继续保持 `ref_result.red_count_range`、`red_cells_range`、`quality_count_ranges.q4/q5`、白绿 / 蓝未锁摘要、估总件 / 估总格的原始顺序；
+     - 底层 `ref_result` 数组、`_range_mid()`、件数锁定、下界约束和估值计算都不变；
+     - 金额类主报价仍保持 `保守 / 参考 / 激进` 的原语义。
+   - taskbar 可选模式：
+     - `tools/ahmad_tk_overlay.py` 新增 `--show-taskbar`；
+     - `start_ahmad_overlay.ps1`、`start_ahmad_live.ps1`、portable `Start-HeroRef.ps1` 新增 `-ShowTaskbar` 并透传 UAC 重启；
+     - 默认仍是无边框悬浮 overlay，启用后使用普通 Tk 窗口进入任务栏并支持 `Alt+Tab` / `Win+Tab`。
+   - 验证：
+     - `C:\Python313\python.exe -m pytest tests\test_live_overlay.py -q` -> 138 passed；
+     - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py` -> passed；
+     - PowerShell parser 检查 `start_ahmad_overlay.ps1`、`start_ahmad_live.ps1`、`apps\hero_ref\Start-HeroRef.ps1` -> passed。
+
+21. 2026-06-11 portable 包启动入口说明修正
+   - 用户反馈旧文件名 `右键管理员运行_启动HeroRef.bat` 容易被当成“说明”或导致朋友点错入口。
+   - 包模板新增两类明确入口：
+     - `管理员启动HeroRef_悬浮窗.bat` / `Start-HeroRef.bat`：默认无任务栏悬浮 overlay，双击会自动申请管理员权限；
+     - `管理员启动HeroRef_任务栏窗口.bat` / `Start-HeroRef-Taskbar.bat`：普通窗口 taskbar 模式，支持 `Alt+Tab` / `Win+Tab`，双击会自动申请管理员权限。
+   - 新模板不再包含 `右键管理员运行_启动HeroRef.bat`；README / `使用说明.txt` / `VPN或UU备用启动.txt` / `PACKAGE_MANIFEST.zh-CN.md` 已改为只推荐两条管理员启动入口。
+   - `build_hero_ref_portable.ps1` 的 `BUILD_MANIFEST.txt` 和构建完成提示改为同时列出 floating 与 taskbar 两种启动方式。
+   - 本轮只更新模板和说明，未重新打包；历史 `dist\...` 目录里的旧包仍保留旧说明，下一次打包才会更新。

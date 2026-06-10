@@ -149,4 +149,5 @@ if ($StreamingAssetsRoot) {
 
 Write-Host ""
 Write-Host "导入完成，共复制 $Copied 个文件。" -ForegroundColor Green
-Write-Host "现在可以右键管理员运行：右键管理员运行_启动HeroRef.bat" -ForegroundColor Green
+Write-Host "现在可以运行：管理员启动HeroRef_悬浮窗.bat" -ForegroundColor Green
+Write-Host "需要任务栏窗口时运行：管理员启动HeroRef_任务栏窗口.bat" -ForegroundColor Green

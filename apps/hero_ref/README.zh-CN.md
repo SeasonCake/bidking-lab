@@ -6,8 +6,10 @@
 
 1. 优先阅读 `使用说明.txt`。
 2. 如果是 public-safe 包，先运行 `导入本机游戏表.bat`，选择 BidKing 游戏目录、`StreamingAssets` 目录或 `Tables` 目录，把本机表导入到包内。
-3. 右键 `右键管理员运行_启动HeroRef.bat`，选择以管理员身份运行。
-   `Start-HeroRef.bat` 是等价英文入口。
+3. 启动 Hero Ref：
+   - 默认悬浮窗：`管理员启动HeroRef_悬浮窗.bat`，等价英文入口是 `Start-HeroRef.bat`。
+   - 任务栏窗口：`管理员启动HeroRef_任务栏窗口.bat`，等价英文入口是 `Start-HeroRef-Taskbar.bat`。
+   - 双击启动会自动申请管理员权限；如果 Windows 没有弹出管理员授权或启动失败，请先看 `管理员运行说明.txt`，再右键对应启动文件，选择以管理员身份运行。
 4. 正常场景使用默认端口抓包，不开 VPN/UU 时优先保持默认。
 5. VPN/UU 场景可在 PowerShell 里运行：
 
@@ -16,6 +18,12 @@
 ```
 
 关闭 Hero Ref UI 默认会停止后台 monitor。如果只想调试 UI，不想停止 monitor，可加 `-KeepMonitorOnClose`。
+
+如果希望 Hero Ref 像普通窗口一样出现在任务栏，并支持 `Alt+Tab` / `Win+Tab` 切换，优先运行 `管理员启动HeroRef_任务栏窗口.bat`。等价 PowerShell 命令是：
+
+```powershell
+.\Start-HeroRef.ps1 -ShowTaskbar
+```
 
 ## 运行前检查
 
@@ -29,8 +37,10 @@
 
 - `BidKingHeroRef\BidKingHeroRef.exe`：Hero Ref Tk UI。
 - `BidKingHeroMonitor\BidKingHeroMonitor.exe`：包内 WinDivert live monitor。
-- `Start-HeroRef.ps1` / `Start-HeroRef.bat`：一键启动 monitor + Hero Ref UI。
-- `右键管理员运行_启动HeroRef.bat`：给普通用户看的中文启动入口。
+- `管理员启动HeroRef_悬浮窗.bat` / `Start-HeroRef.bat`：默认悬浮窗启动 monitor + Hero Ref UI。
+- `管理员启动HeroRef_任务栏窗口.bat` / `Start-HeroRef-Taskbar.bat`：任务栏窗口启动，支持 `Alt+Tab` / `Win+Tab` 切换。
+- `Start-HeroRef.ps1`：PowerShell 启动入口，可加 `-ShowTaskbar`、`-BroadSniff`、`-IncludeLoopback` 等参数。
+- `管理员运行说明.txt`：告诉用户为什么需要管理员权限，以及如何右键以管理员身份运行启动文件。
 - `Import-LocalTables.ps1` / `导入本机游戏表.bat`：public-safe 包导入本机游戏表的入口。
 - `Stop-HeroRef.ps1`：强制停止本包启动的 UI 和 monitor。
 - `停止HeroRef.bat`：给普通用户看的中文停止入口。

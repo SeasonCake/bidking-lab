@@ -227,9 +227,12 @@ IncludesRawTables: $(-not [bool]$PublicSafe)
 PackageProfile: $DefaultDiagnosticProfile
 UI: BidKingHeroRef\BidKingHeroRef.exe
 Monitor: BidKingHeroMonitor\BidKingHeroMonitor.exe
-Launcher: Start-HeroRef.bat / Start-HeroRef.ps1
+LauncherFloating: 管理员启动HeroRef_悬浮窗.bat / Start-HeroRef.bat
+LauncherTaskbar: 管理员启动HeroRef_任务栏窗口.bat / Start-HeroRef-Taskbar.bat
+LauncherPowerShell: Start-HeroRef.ps1
 RequiresExternalPython: False
 DefaultDiagnosticProfile: $DefaultDiagnosticProfile
+Docs: 使用说明.txt / 管理员运行说明.txt / 火绒拦截说明.txt / VPN或UU备用启动.txt
 
 Before public release, review README.zh-CN.md and TRUST_AND_SECURITY.zh-CN.md.
 "@ | Set-Content -Path $ManifestPath -Encoding utf8
@@ -264,8 +267,12 @@ Write-Host ""
 Write-Host "Built Hero Ref portable package:" -ForegroundColor Green
 Write-Host "  $OutputFull"
 Write-Host ""
-Write-Host "Start with:" -ForegroundColor Cyan
+Write-Host "Start with floating overlay:" -ForegroundColor Cyan
+Write-Host "  $OutputFull\管理员启动HeroRef_悬浮窗.bat"
 Write-Host "  $OutputFull\Start-HeroRef.bat"
+Write-Host "Start with taskbar window:" -ForegroundColor Cyan
+Write-Host "  $OutputFull\管理员启动HeroRef_任务栏窗口.bat"
+Write-Host "  $OutputFull\Start-HeroRef-Taskbar.bat"
 Write-Host ""
 if ($PublicSafe) {
     Write-Host "PublicSafe mode: raw tables are excluded; users can run 导入本机游戏表.bat after unzip." -ForegroundColor Yellow

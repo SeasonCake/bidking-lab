@@ -219,17 +219,39 @@ def test_ahmad_topmost_toggle_updates_root_and_popups() -> None:
     assert overlay.topmost_tip.text == module.TOPMOST_OFF_TIP
 
 
+def test_ahmad_taskbar_mode_switches_borderless_flag() -> None:
+    module = _ahmad_overlay_module()
+
+    class Root:
+        def __init__(self) -> None:
+            self.overrideredirect_values: list[bool] = []
+
+        def overrideredirect(self, value: bool) -> None:
+            self.overrideredirect_values.append(value)
+
+    root = Root()
+
+    module._apply_taskbar_mode(root, show_taskbar=False)  # type: ignore[attr-defined]
+    module._apply_taskbar_mode(root, show_taskbar=True)  # type: ignore[attr-defined]
+
+    assert root.overrideredirect_values == [True, False]
+
+
 def test_ahmad_export_diagnostic_package_collects_snapshot_raw_and_ui_log(tmp_path: Path) -> None:
     module = _ahmad_overlay_module()
     snapshot_path = tmp_path / "latest_snapshot.json"
     raw_json = tmp_path / "fatbeans_webhook_live.json"
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
+    raw_tables_dir = tmp_path / "data" / "raw" / "tables"
+    raw_tables_dir.mkdir(parents=True)
     raw_jsonl = raw_dir / "fatbeans_webhook_live.jsonl"
     ui_log = tmp_path / module.SUMMARY_DIAGNOSTIC_LOG
     raw_json.write_text('[{"SortID":1}]', encoding="utf-8")
     raw_jsonl.write_text('{"SortID":1}\n', encoding="utf-8")
     ui_log.write_text('{"render_mode":"live"}\n', encoding="utf-8")
+    for name in ("BidMap.txt", "Drop.txt", "Item.txt"):
+        (raw_tables_dir / name).write_text(name, encoding="utf-8")
     snapshot = {
         "schema_version": 1,
         "created_at": 123456.0,
@@ -277,6 +299,7 @@ def test_ahmad_export_diagnostic_package_collects_snapshot_raw_and_ui_log(tmp_pa
     overlay.status = Widget()
     overlay.manual_status = Widget()
     overlay.export_diag_tip = Tip()
+    overlay.show_taskbar = True
 
     assert module.AhmadTkOverlay.export_diagnostic_package(overlay) == "break"
 
@@ -299,6 +322,12 @@ def test_ahmad_export_diagnostic_package_collects_snapshot_raw_and_ui_log(tmp_pa
         assert manifest["parameters"]["n_trials"] == 500
         assert manifest["current_summary"]["candidate_summary"] == "总件 38 · 总格 83"
         assert manifest["current_summary"]["next_info_hint"] == "优先补白绿件数或均格"
+        assert manifest["startup"]["launch_mode"] == "taskbar"
+        assert manifest["startup"]["show_taskbar"] is True
+        assert manifest["package"]["is_public_safe"] is False
+        assert manifest["package"]["includes_raw_tables"] is True
+        assert manifest["log_summary"]["raw_tables"]["present"] is True
+        assert manifest["log_summary"]["raw_tables"]["required_present"] is True
         assert manifest["log_summary"]["diagnostic_profile"] == "engineering"
         assert manifest["log_summary"]["continuous_ui_summary"] is True
         assert manifest["log_summary"]["export_includes_raw"] is True
@@ -353,6 +382,11 @@ def test_ahmad_public_safe_diagnostic_export_omits_raw_and_ui_log(tmp_path: Path
         assert module.SUMMARY_DIAGNOSTIC_LOG not in names
         assert "raw/windivert_live.jsonl" not in names
         manifest = json.loads(archive.read("BUILD_EXPORT_MANIFEST.json").decode("utf-8"))
+        assert manifest["startup"]["launch_mode"] == "floating"
+        assert manifest["startup"]["show_taskbar"] is False
+        assert manifest["package"]["is_public_safe"] is True
+        assert manifest["package"]["includes_raw_tables"] is False
+        assert manifest["log_summary"]["raw_tables"]["present"] is False
         assert manifest["log_summary"]["diagnostic_profile"] == "public-safe"
         assert manifest["log_summary"]["continuous_ui_summary"] is False
         assert manifest["log_summary"]["export_includes_raw"] is False

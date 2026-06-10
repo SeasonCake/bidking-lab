@@ -6,6 +6,7 @@ param(
     [string]$DiagnosticProfile = "engineering",
     [switch]$KeepMonitorOnClose,
     [switch]$LoadExisting,
+    [switch]$ShowTaskbar,
     [switch]$NoAutoElevate,
     [switch]$Restart
 )
@@ -74,6 +75,9 @@ $OverlayArgs = @(
 if ($LoadExisting) {
     $OverlayArgs += "--load-existing"
 }
+if ($ShowTaskbar) {
+    $OverlayArgs += "--show-taskbar"
+}
 
 function Get-MonitorLockPayload {
     param([string]$Path)
@@ -109,6 +113,9 @@ if (-not $KeepMonitorOnClose) {
             )
             if ($LoadExisting) {
                 $ElevatedArgs += "-LoadExisting"
+            }
+            if ($ShowTaskbar) {
+                $ElevatedArgs += "-ShowTaskbar"
             }
             if ($Restart) {
                 $ElevatedArgs += "-Restart"

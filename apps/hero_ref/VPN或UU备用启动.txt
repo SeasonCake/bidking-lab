@@ -1,7 +1,10 @@
 VPN / UU 用户备用启动方式
 
-普通情况请直接右键管理员运行：
-右键管理员运行_启动HeroRef.bat
+普通情况请直接启动：
+管理员启动HeroRef_悬浮窗.bat
+
+如果需要任务栏窗口、Alt+Tab 或 Win+Tab 切换，请启动：
+管理员启动HeroRef_任务栏窗口.bat
 
 如果开 VPN、UU 或其他代理后，开局不刷新、跨局不刷新、一直等待外援输入，可以尝试：
 
@@ -9,6 +12,10 @@ VPN / UU 用户备用启动方式
 2. 运行：
 
 .\Start-HeroRef.ps1 -BroadSniff -IncludeLoopback
+
+如果同时需要任务栏窗口，运行：
+
+.\Start-HeroRef.ps1 -BroadSniff -IncludeLoopback -ShowTaskbar
 
 说明：
 
