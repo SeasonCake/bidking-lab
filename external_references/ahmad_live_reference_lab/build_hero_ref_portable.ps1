@@ -4,6 +4,8 @@ param(
     [switch]$InstallPyInstaller,
     [switch]$SkipExeBuild,
     [switch]$PublicSafe,
+    [ValidateSet("engineering", "portable", "public-safe")]
+    [string]$DiagnosticProfile = "",
     [switch]$NoClean,
     [switch]$Zip
 )
@@ -105,6 +107,22 @@ if (Test-Path -LiteralPath $OutputFull) {
 New-Item -ItemType Directory -Path $OutputFull -Force | Out-Null
 
 Copy-Tree -Source $TemplateRoot -Destination $OutputFull
+$DefaultDiagnosticProfile = if ($DiagnosticProfile) {
+    $DiagnosticProfile
+} elseif ($PublicSafe) {
+    "public-safe"
+} else {
+    "portable"
+}
+if ($PublicSafe -and $DefaultDiagnosticProfile -ne "public-safe") {
+    Write-Host "Warning: -PublicSafe is usually paired with -DiagnosticProfile public-safe; current profile is $DefaultDiagnosticProfile." -ForegroundColor Yellow
+}
+$StartHeroOut = Join-Path $OutputFull "Start-HeroRef.ps1"
+if (Test-Path -LiteralPath $StartHeroOut) {
+    $StartHeroText = Get-Content -LiteralPath $StartHeroOut -Raw
+    $StartHeroText = $StartHeroText -replace '\[string\]\$DiagnosticProfile = "[^"]+"', "[string]`$DiagnosticProfile = `"$DefaultDiagnosticProfile`""
+    Set-Content -Path $StartHeroOut -Value $StartHeroText -Encoding utf8
+}
 Copy-Tree -Source $UiDist -Destination (Join-Path $OutputFull "BidKingHeroRef")
 Copy-Tree -Source $MonitorDist -Destination (Join-Path $OutputFull "BidKingHeroMonitor")
 Copy-Tree -Source (Join-Path $RepoRoot "src") -Destination (Join-Path $OutputFull "src")
@@ -190,8 +208,11 @@ if (Test-Path -LiteralPath $ConfigPath) {
 }
 
 $Commit = ""
+$DirtyWorktree = "unknown"
 try {
     $Commit = (& git -C $RepoRoot rev-parse --short HEAD 2>$null).Trim()
+    $DirtyStatus = (& git -C $RepoRoot status --porcelain 2>$null)
+    $DirtyWorktree = if ($DirtyStatus) { "true" } else { "false" }
 } catch {
 }
 
@@ -200,12 +221,15 @@ $ManifestPath = Join-Path $OutputFull "BUILD_MANIFEST.txt"
 BidKing Hero Ref portable package
 BuiltAt: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 SourceCommit: $Commit
+DirtyWorktree: $DirtyWorktree
 PublicSafe: $([bool]$PublicSafe)
 IncludesRawTables: $(-not [bool]$PublicSafe)
+PackageProfile: $DefaultDiagnosticProfile
 UI: BidKingHeroRef\BidKingHeroRef.exe
 Monitor: BidKingHeroMonitor\BidKingHeroMonitor.exe
 Launcher: Start-HeroRef.bat / Start-HeroRef.ps1
 RequiresExternalPython: False
+DefaultDiagnosticProfile: $DefaultDiagnosticProfile
 
 Before public release, review README.zh-CN.md and TRUST_AND_SECURITY.zh-CN.md.
 "@ | Set-Content -Path $ManifestPath -Encoding utf8

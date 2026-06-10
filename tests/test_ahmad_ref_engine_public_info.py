@@ -66,6 +66,29 @@ def test_ref_engine_uses_public_quality_reveal_as_min_counts() -> None:
     assert "public_quality_reveal_min_counts" in evidence.source_notes
 
 
+def test_ref_engine_public_red_reveal_min_count_constrains_enumeration() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            public_rows=[
+                {
+                    "info_id": 200028,
+                    "revealed_items_detail": [
+                        {"runtime_id": 1, "quality": 6},
+                        {"runtime_id": 2, "quality": 6},
+                        {"runtime_id": 2, "quality": 6},
+                    ],
+                }
+            ],
+        ),
+        max_combos=60000,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert result["evidence"]["min_counts"]["q6"] == 2
+    assert result["quality_count_ranges"]["q6"][0] >= 2
+    assert "public_quality_reveal_min_counts" in result["notes"]
+
+
 def test_ref_engine_uses_public_bucket_outline_as_exact_count_and_cells() -> None:
     evidence = extract_evidence(
         _snapshot(
@@ -87,6 +110,30 @@ def test_ref_engine_uses_public_bucket_outline_as_exact_count_and_cells() -> Non
     assert evidence.avg_cells["q4"] == 3.5
     assert "public_bucket_outline_q4_count" in evidence.source_notes
     assert "public_bucket_outline_q4_cells" in evidence.source_notes
+    assert "public_quality_reveal_min_counts" not in evidence.source_notes
+
+
+def test_ref_engine_uses_public_red_bucket_outline_as_exact_count_and_cells() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            public_rows=[
+                {
+                    "info_id": 200003,
+                    "revealed_items_detail": [
+                        {"runtime_id": 1, "shape_code": 23},
+                        {"runtime_id": 2, "shape_key": 11},
+                    ],
+                }
+            ],
+        )
+    )
+
+    assert evidence.fixed_counts["q6"] == 2
+    assert evidence.min_counts["q6"] == 2
+    assert evidence.quality_cells["q6"] == 7.0
+    assert evidence.avg_cells["q6"] == 3.5
+    assert "public_bucket_outline_q6_count" in evidence.source_notes
+    assert "public_bucket_outline_q6_cells" in evidence.source_notes
     assert "public_quality_reveal_min_counts" not in evidence.source_notes
 
 
@@ -158,6 +205,61 @@ def test_ref_engine_uses_structured_hero_when_context_is_unknown() -> None:
     assert "structured_hero" in evidence.source_notes
 
 
+def test_ref_engine_duplicate_total_count_sources_do_not_add_counts() -> None:
+    evidence = extract_evidence(
+        {
+            "ui_contract": {
+                "context": {"hero": "ahmed", "map_id": 2401, "phase": "bidding"},
+                "actions": {"results": [{"action_id": 100204, "result": 38}]},
+                "constraints": {
+                    "public_info": {
+                        "public_numeric_facts": [
+                            {"semantic": "total_item_count", "kind": "count", "value": 38}
+                        ]
+                    }
+                },
+            },
+            "structured_ref_inputs": {
+                "field_updates": [
+                    {"path": ["session", "total_item_count"], "value": 38}
+                ]
+            },
+        }
+    )
+
+    assert evidence.total_count == 38
+    assert "field_update_total_count" in evidence.source_notes
+    assert "action_100204_total_count" in evidence.source_notes
+    assert "public_total_item_count" in evidence.source_notes
+    assert not any("conflicts_total_count" in note for note in evidence.source_notes)
+
+
+def test_ref_engine_duplicate_total_count_sources_log_conflicts() -> None:
+    evidence = extract_evidence(
+        {
+            "ui_contract": {
+                "context": {"hero": "ahmed", "map_id": 2401, "phase": "bidding"},
+                "actions": {"results": [{"action_id": 100204, "result": 38}]},
+                "constraints": {
+                    "public_info": {
+                        "public_numeric_facts": [
+                            {"semantic": "total_item_count", "kind": "count", "value": 39}
+                        ]
+                    }
+                },
+            },
+            "structured_ref_inputs": {
+                "field_updates": [
+                    {"path": ["session", "total_item_count"], "value": 38}
+                ]
+            },
+        }
+    )
+
+    assert evidence.total_count == 39
+    assert "public_total_item_count_conflicts_total_count:38->39" in evidence.source_notes
+
+
 def test_ref_engine_random_avg_value_soft_floor_raises_low_prior() -> None:
     base = {
         "ui_contract": {
@@ -191,6 +293,345 @@ def test_ref_engine_random_avg_value_soft_floor_raises_low_prior() -> None:
     assert floor_result["red_count_range"][1] >= base_result["red_count_range"][1]
     assert "public_random_avg_value_floor_3:360000" in floor_result["notes"]
     assert "random_value_floor_soft_weight:360000" in floor_result["notes"]
+
+
+def test_ref_engine_public_quality_avg_value_decimal_filters_count() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=4406,
+            structured_ref_inputs={
+                "total_count": 10,
+                "fixed_counts": {"q1": 0, "q3": 3, "q4": 0},
+                "count_sums": {"q4q5q6": 7},
+            },
+            public_info={
+                "public_avg_values": [
+                    {
+                        "semantic": "q5_avg_value",
+                        "kind": "avg_value",
+                        "quality": 5,
+                        "value": 34288.75,
+                    }
+                ]
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "ok"
+    assert result["evidence"]["avg_values"] == {"q5": 34288.75}
+    assert result["quality_count_ranges"]["q5"] == [4, 4, 4]
+    assert result["red_count_range"] == [3, 3, 3]
+    assert "public_q5_avg_value" in result["notes"]
+
+
+def test_ref_engine_public_numeric_fact_quality_avg_value_uses_same_route() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            public_info={
+                "public_numeric_facts": [
+                    {
+                        "info_id": 200037,
+                        "semantic": "q5_avg_value",
+                        "kind": "avg_value",
+                        "quality": 5,
+                        "value": 34288.75,
+                    }
+                ]
+            },
+        )
+    )
+
+    assert evidence.avg_values == {"q5": 34288.75}
+    assert "public_q5_avg_value" in evidence.source_notes
+
+
+def test_ref_engine_quality_avg_value_uses_three_decimal_fraction() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=4402,
+            structured_ref_inputs={
+                "total_count": 10,
+                "fixed_counts": {"q1": 0, "q3": 2, "q5": 0, "q6": 0},
+            },
+            public_info={
+                "public_avg_values": [
+                    {
+                        "semantic": "q4_avg_value",
+                        "kind": "avg_value",
+                        "quality": 4,
+                        "value": 5615.625,
+                    }
+                ]
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert result["quality_count_ranges"]["q4"] == [8, 8, 8]
+    assert "public_q4_avg_value" in result["notes"]
+
+
+def test_ref_engine_public_quality_avg_value_falls_back_when_table_conflicts() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="aisha",
+            map_id=2402,
+            structured_ref_inputs={
+                "counts": {"q3": 14},
+                "quality_cells": {"q3": 31},
+                "split_counts": {"white": 4, "green": 7},
+                "split_quality_cells": {"white": 8, "green": 10},
+            },
+            public_info={
+                "public_avg_values": [
+                    {
+                        "semantic": "q4_avg_value",
+                        "kind": "avg_value",
+                        "quality": 4,
+                        "value": 6659.21435546875,
+                    }
+                ]
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert result["combo_count"] > 0
+    assert result["evidence"]["avg_values"] == {}
+    assert result["quality_count_ranges"]["q4"] == [3, 4, 6]
+    assert "public_quality_avg_value_conflict_fallback" in result["notes"]
+    assert "public_q4_avg_value_downgraded" in result["notes"]
+
+
+def test_ref_engine_zero_quality_avg_value_fixes_count_zero() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            public_info={
+                "public_avg_values": [
+                    {
+                        "semantic": "q5_avg_value",
+                        "kind": "avg_value",
+                        "quality": 5,
+                        "value": 0,
+                    }
+                ]
+            },
+        )
+    )
+
+    assert evidence.avg_values["q5"] == 0
+    assert evidence.fixed_counts["q5"] == 0
+    assert evidence.min_counts["q5"] == 0
+    assert "zero_avg_value_q5_count_zero" in evidence.source_notes
+
+
+def test_ref_engine_marks_rare_actions_diagnostic_only_without_constraints() -> None:
+    snapshot = _snapshot()
+    snapshot["ui_contract"]["actions"] = {
+        "results": [
+            {
+                "action_id": 100121,
+                "tool": "终极审计",
+                "result": 728211,
+                "revealed_items": 0,
+            },
+            {
+                "action_id": 100127,
+                "tool": "全知全能",
+                "result": None,
+                "revealed_items": 42,
+                "revealed_items_detail": [{"local_index": 1, "quality": 6}],
+            },
+            {
+                "action_id": 100134,
+                "tool": "明镜之眼",
+                "result": None,
+                "revealed_items": 42,
+                "revealed_items_detail": [{"local_index": 1, "quality": 6}],
+            },
+        ],
+    }
+
+    evidence = extract_evidence(snapshot)
+
+    assert "action_100121_total_value_diagnostic_only" in evidence.source_notes
+    assert "action_100127_all_items_diagnostic_only" in evidence.source_notes
+    assert "action_100134_all_item_quality_diagnostic_only" in evidence.source_notes
+    assert "action_100127_revealed_items:42" in evidence.source_notes
+    assert "action_100134_revealed_items:42" in evidence.source_notes
+    assert evidence.quality_values == {}
+    assert evidence.fixed_counts == {}
+    assert evidence.min_counts == {}
+
+
+def test_ref_engine_marks_total_avg_value_public_info_diagnostic_only() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            public_info={
+                "public_numeric_facts": [
+                    {
+                        "info_id": 200035,
+                        "semantic": "total_avg_value",
+                        "kind": "avg_value",
+                        "quality": None,
+                        "value": 18502.75,
+                    }
+                ]
+            },
+        )
+    )
+
+    assert "public_total_avg_value_diagnostic_only" in evidence.source_notes
+    assert evidence.avg_values == {}
+    assert evidence.quality_values == {}
+
+
+def test_ref_engine_quality_value_sum_and_avg_value_derive_count() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=4406,
+            structured_ref_inputs={
+                "total_count": 10,
+                "avg_values": {"q5": 34288.75},
+                "quality_values": {"q5": 137155},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert result["evidence"]["fixed_counts"]["q5"] == 4
+    assert result["quality_count_ranges"]["q5"] == [4, 4, 4]
+    assert "quality_value_q5_count_derived" in result["notes"]
+
+
+def test_ref_engine_action_quality_value_sum_joins_public_avg_value() -> None:
+    result = run_reference_engine(
+        {
+            "ui_contract": {
+                "context": {"hero": "ahmed", "map_id": 4406, "phase": "bidding"},
+                "constraints": {
+                    "public_info": {
+                        "public_numeric_facts": [
+                            {
+                                "info_id": 200037,
+                                "semantic": "q5_avg_value",
+                                "kind": "avg_value",
+                                "quality": 5,
+                                "value": 34288.75,
+                            }
+                        ]
+                    }
+                },
+                "actions": {
+                    "results": [
+                        {
+                            "action_id": 100125,
+                            "tool": "金品总价",
+                            "result": 137155,
+                        }
+                    ]
+                },
+            },
+            "structured_ref_inputs": {"total_count": 10},
+        },
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["evidence"]["avg_values"] == {"q5": 34288.75}
+    assert result["evidence"]["quality_values"] == {"q5": 137155.0}
+    assert result["evidence"]["fixed_counts"]["q5"] == 4
+    assert "action_100125_q5_value_sum" in result["notes"]
+    assert "public_q5_avg_value" in result["notes"]
+
+
+def test_ref_engine_keeps_value_band_when_quality_counts_and_cells_are_fixed() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            map_id=2404,
+            structured_ref_inputs={
+                "total_count": 25,
+                "fixed_counts": {"q1": 5, "q3": 8, "q4": 6, "q5": 4, "q6": 2},
+                "quality_cells": {"q1": 8, "q3": 11, "q4": 12, "q5": 9, "q6": 10},
+            },
+        )
+    ).as_dict()
+
+    assert result["combo_count"] == 1
+    assert result["quality_count_ranges"]["q6"] == [2, 2, 2]
+    assert result["value_p25"] < result["value_p50"] < result["value_p75"]
+    assert result["conservative"] < result["balanced"] < result["aggressive"]
+    assert "intra_quality_value_band_v0" in result["notes"]
+
+
+def test_ref_engine_keeps_value_point_when_quality_values_are_exact() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            map_id=2404,
+            structured_ref_inputs={
+                "total_count": 25,
+                "fixed_counts": {"q1": 5, "q3": 8, "q4": 6, "q5": 4, "q6": 2},
+                "quality_cells": {"q1": 8, "q3": 11, "q4": 12, "q5": 9, "q6": 10},
+                "quality_values": {
+                    "q1": 2027,
+                    "q3": 11784,
+                    "q4": 32128,
+                    "q5": 101220,
+                    "q6": 336915,
+                },
+            },
+        )
+    ).as_dict()
+
+    assert result["combo_count"] == 1
+    assert result["value_p25"] == result["value_p50"] == result["value_p75"]
+    assert "intra_quality_value_band_v0" not in result["notes"]
+
+
+def test_ref_engine_settlement_truth_overrides_stale_bridge_totals() -> None:
+    result = run_reference_engine(
+        {
+            "ui_contract": {
+                "context": {"hero": "ahmed", "map_id": 4406, "phase": "settled"},
+                "truth": {
+                    "available": True,
+                    "total_items": 24,
+                    "total_cells": 62,
+                    "total_value": 477562,
+                },
+            },
+            "structured_ref_inputs": {
+                "total_count": 39,
+                "total_cells": 99,
+                "counts": {"q3": 12},
+                "avg_cells": {"q3": 2.0833332538604736, "q5": 2.799999952316284},
+            },
+            "final_quality_counts": "q1=1;q2=4;q3=9;q4=6;q5=2;q6=2",
+            "final_quality_cells": "q1=1;q2=9;q3=17;q4=18;q5=5;q6=12",
+        },
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "ok"
+    assert result["evidence"]["total_count"] == 24
+    assert result["evidence"]["total_grid_target"] == 62
+    assert result["evidence"]["fixed_counts"] == {
+        "q1": 5,
+        "q3": 9,
+        "q4": 6,
+        "q5": 2,
+        "q6": 2,
+    }
+    assert result["quality_count_ranges"]["q5"] == [2, 2, 2]
+    assert result["red_count_range"] == [2, 2, 2]
+    assert "settlement_review_total_count_overrode_bridge" in result["notes"]
+    assert "settlement_review_total_grid_overrode_bridge" in result["notes"]
 
 
 def test_ref_engine_sparse_exact_total_uses_probability_prior() -> None:

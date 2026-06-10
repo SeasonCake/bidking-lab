@@ -79,6 +79,7 @@ def _row(
     value_truth: int,
     value_baseline: int,
     value_candidate: int,
+    profile: str = "item+shape",
 ) -> dict[str, object]:
     return {
         "file": f"{session_id}#r1",
@@ -86,7 +87,7 @@ def _row(
         "session_id": session_id,
         "map_id": map_id,
         "map_family": "shipwreck",
-        "evidence_profile_key": "item+shape",
+        "evidence_profile_key": profile,
         "v3_truth_available": True,
         "v3_post_ready": True,
         "v3_ccvc_ready": True,
@@ -126,15 +127,27 @@ def test_guard_trial_options_mark_manual_excludes_as_audit_probe() -> None:
         _prototype(),
         extra_exclude_labels=("q6_value:2510",),
         extra_exclude_components=("q6_value",),
+        extra_exclude_q6_value_profiles=("tool:category+item+shape",),
     )
 
     assert options["audit_probe"] is True
     assert options["manual_exclude_labels"] == ["q6_value:2510"]
     assert options["manual_exclude_components"] == ["q6_value"]
+    assert options["manual_exclude_q6_value_profiles"] == [
+        "tool:category+item+shape"
+    ]
     assert "q6_value:2510" in options["candidate_exclude_labels"]
     assert "q6_value" in options["excluded_components"]
     assert "^q6_value:2510$" in options["candidate_exclude_pattern"]
     assert "^q6_value:.*" in options["candidate_exclude_pattern"]
+    assert (
+        "^q6_value:tool:category\\+item\\+shape$"
+        in options["candidate_exclude_pattern"]
+    )
+    assert (
+        "^q6_value:.*evidence_profile_key=tool:category\\+item\\+shape"
+        in options["candidate_exclude_pattern"]
+    )
 
 
 def test_guard_trial_rows_applies_freeze_and_exclude_contract() -> None:
@@ -233,3 +246,49 @@ def test_guard_trial_rows_keeps_manual_probe_out_of_watch_status() -> None:
     assert result["status"] == "audit_probe_guarded_shadow_trial"
     assert result["audit_probe"] is True
     assert result["trial_options"]["manual_exclude_labels"] == ["q6_value:2510"]
+
+
+def test_guard_trial_rows_applies_q6_value_profile_probe() -> None:
+    module = _load_module()
+    fold0 = [_session_for_fold(0, prefix=f"vp0_{idx}") for idx in range(4)]
+    fold1 = [_session_for_fold(1, prefix=f"vp1_{idx}") for idx in range(4)]
+    rows = [
+        _row(
+            session_id=session_id,
+            map_id="2503",
+            value_truth=400,
+            value_baseline=200,
+            value_candidate=300,
+            profile="tool:category+item+shape",
+        )
+        for session_id in (*fold0, *fold1)
+    ]
+
+    result = module.summarize_guard_trial_rows(
+        {0: rows},
+        prototype=_prototype(),
+        posterior_trials=64,
+        components=("q6_count", "q6_cells", "q6_value"),
+        group_fields=("evidence_profile_key", "map_id,evidence_profile_key"),
+        movement_policies=("all",),
+        features=(),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+        min_watch_support_rows=2,
+        min_watch_support_sessions=2,
+        extra_exclude_q6_value_profiles=("tool:category+item+shape",),
+    )
+
+    assert result["status"] == "audit_probe_guarded_shadow_trial"
+    assert result["sampler_status"] == "sample_limited"
+    assert result["audit_probe"] is True
+    assert result["trial_options"]["manual_exclude_q6_value_profiles"] == [
+        "tool:category+item+shape"
+    ]
+    components = {
+        row["component"]: row
+        for row in result["guarded_sampler_result"]["component_statuses"]
+    }
+    assert components["q6_value"]["status"] == "sample_limited"

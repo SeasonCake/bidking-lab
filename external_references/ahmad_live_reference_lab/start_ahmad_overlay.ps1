@@ -2,6 +2,8 @@ param(
     [string]$PythonPath = "C:\Python313\python.exe",
     [string]$Snapshot = "",
     [int]$WaitMonitorLockSeconds = 5,
+    [ValidateSet("engineering", "portable", "public-safe", "stable", "public_safe")]
+    [string]$DiagnosticProfile = "engineering",
     [switch]$KeepMonitorOnClose,
     [switch]$LoadExisting,
     [switch]$NoAutoElevate,
@@ -66,7 +68,8 @@ if ($Restart) {
 
 $OverlayArgs = @(
     (Join-Path $LabRoot "tools\ahmad_tk_overlay.py"),
-    "--snapshot", $Snapshot
+    "--snapshot", $Snapshot,
+    "--diagnostic-profile", $DiagnosticProfile
 )
 if ($LoadExisting) {
     $OverlayArgs += "--load-existing"
@@ -101,6 +104,7 @@ if (-not $KeepMonitorOnClose) {
                 "-PythonPath", $PythonPath,
                 "-Snapshot", $Snapshot,
                 "-WaitMonitorLockSeconds", "$WaitMonitorLockSeconds",
+                "-DiagnosticProfile", $DiagnosticProfile,
                 "-NoAutoElevate"
             )
             if ($LoadExisting) {

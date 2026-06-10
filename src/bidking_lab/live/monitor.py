@@ -3767,7 +3767,8 @@ def _action_result_rows(
                     "result_field": result.result_field,
                     "revealed_items": len(result.observed_items),
                     "revealed_items_detail": _observed_items_detail(
-                        result.observed_items
+                        result.observed_items,
+                        item_names,
                     ),
                     "revealed_summary": _observed_action_summary(
                         result.observed_items,
@@ -3817,19 +3818,30 @@ def _action_result_rows(
 
 def _observed_items_detail(
     observed_items: Sequence[Any],
+    item_names: Mapping[int, str] | None = None,
 ) -> list[dict[str, Any]]:
-    return [
-        {
+    names = item_names or {}
+    rows: list[dict[str, Any]] = []
+    for item in observed_items:
+        item_id = getattr(item, "item_id", None)
+        item_name = ""
+        if item_id is not None:
+            try:
+                item_name = names.get(int(item_id), "")
+            except (TypeError, ValueError):
+                item_name = ""
+        row = {
             "local_index": item.local_index,
             "runtime_id": item.runtime_id,
-            "item_id": item.item_id,
+            "item_id": item_id,
+            "item_name": item_name,
             "quality": item.quality,
             "value": item.value,
             "shape_code": item.shape_code,
             "cells": item.cells,
         }
-        for item in observed_items
-    ]
+        rows.append(row)
+    return rows
 
 
 def _public_info_rows(
@@ -3850,7 +3862,8 @@ def _public_info_rows(
                 "value_field": info.value_field,
                 "revealed_items": len(info.observed_items),
                 "revealed_items_detail": _observed_items_detail(
-                    info.observed_items
+                    info.observed_items,
+                    item_names,
                 ),
                 "revealed_summary": _observed_action_summary(
                     info.observed_items,
@@ -3916,7 +3929,17 @@ def _ahmad_ref_inputs_from_batches(
             elif path[0] == "bucket_group" and len(path) >= 3:
                 relevant = path[2] == "count"
             elif path[0] == "bucket" and len(path) >= 3:
-                relevant = path[2] in {"avg_cells", "count", "cells", "total_cells"}
+                relevant = path[2] in {
+                    "avg_cells",
+                    "count",
+                    "cells",
+                    "total_cells",
+                    "avg_value",
+                    "average_value",
+                    "value",
+                    "value_sum",
+                    "total_value",
+                }
             elif path[0] == "bucket_split" and len(path) >= 3:
                 relevant = path[2] in {"avg_cells", "count", "cells", "total_cells"}
             else:
@@ -3939,6 +3962,8 @@ def _ahmad_ref_inputs_from_batches(
     avg_cells: dict[str, Any] = {}
     counts: dict[str, Any] = {}
     quality_cells: dict[str, Any] = {}
+    avg_values: dict[str, Any] = {}
+    quality_values: dict[str, Any] = {}
     count_sums: dict[str, Any] = {}
     split_avg_cells: dict[str, Any] = {}
     split_counts: dict[str, Any] = {}
@@ -3971,6 +3996,10 @@ def _ahmad_ref_inputs_from_batches(
             counts[key] = value
         elif path[2] in {"cells", "total_cells"}:
             quality_cells[key] = value
+        elif path[2] in {"avg_value", "average_value"}:
+            avg_values[key] = value
+        elif path[2] in {"value", "value_sum", "total_value"}:
+            quality_values[key] = value
 
     total_count = latest_values.get(("session", "total_item_count"))
     if total_count is None:
@@ -3985,6 +4014,8 @@ def _ahmad_ref_inputs_from_batches(
         "avg_cells": avg_cells,
         "counts": counts,
         "quality_cells": quality_cells,
+        "avg_values": avg_values,
+        "quality_values": quality_values,
         "count_sums": count_sums,
         "split_avg_cells": split_avg_cells,
         "split_counts": split_counts,

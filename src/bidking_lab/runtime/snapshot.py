@@ -36,6 +36,24 @@ _PUBLIC_RANDOM_AVG_VALUE_INFO: dict[int, tuple[str, int, str]] = {
     200033: ("random_9_avg_value", 9, "随机9均价"),
     200034: ("random_12_avg_value", 12, "随机12均价"),
 }
+_RARE_ACTION_SIGNALS: dict[int, tuple[str, str, str]] = {
+    100114: ("珍品均格", "q6_avg_cells", "ref_v0_constraint"),
+    100121: ("终极审计", "total_value", "diagnostic_only"),
+    100126: ("珍品估价", "q6_total_value", "ref_v0_constraint"),
+    100127: ("全知全能", "all_items", "diagnostic_only"),
+    100134: ("明镜之眼", "all_item_quality", "diagnostic_only"),
+}
+_RARE_PUBLIC_INFO_SIGNALS: dict[int, tuple[str, str, str]] = {
+    200016: ("红均格", "q6_avg_cells", "ref_v0_constraint"),
+    200031: ("随机3均价", "random_3_avg_value", "soft_value_floor"),
+    200032: ("随机6均价", "random_6_avg_value", "soft_value_floor"),
+    200033: ("随机9均价", "random_9_avg_value", "soft_value_floor"),
+    200034: ("随机12均价", "random_12_avg_value", "soft_value_floor"),
+    200035: ("全均价", "total_avg_value", "diagnostic_only"),
+    200036: ("紫均价", "q4_avg_value", "ref_v0_constraint"),
+    200037: ("金均价", "q5_avg_value", "ref_v0_constraint"),
+    200038: ("红均价", "q6_avg_value", "ref_v0_constraint"),
+}
 
 
 @dataclass(frozen=True)
@@ -1141,6 +1159,89 @@ def _ui_size_bucket_contract(
     }
 
 
+def _ui_rare_signal_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
+    actions_by_id: dict[int, dict[str, Any]] = {}
+    for row in artifact.get("action_send_rows", ()) or ():
+        if not isinstance(row, Mapping):
+            continue
+        action_id = _int_or_none(row.get("action_id"))
+        if action_id not in _RARE_ACTION_SIGNALS:
+            continue
+        label, semantic, role = _RARE_ACTION_SIGNALS[action_id]
+        actions_by_id[action_id] = {
+            "source": "action_send",
+            "action_id": action_id,
+            "label": _text(row.get("tool")) or label,
+            "semantic": semantic,
+            "ref_v0_role": role,
+            "result": None,
+            "revealed_items": 0,
+            "has_revealed_detail": False,
+        }
+    for row in artifact.get("action_result_rows", ()) or ():
+        if not isinstance(row, Mapping):
+            continue
+        action_id = _int_or_none(row.get("action_id"))
+        if action_id not in _RARE_ACTION_SIGNALS:
+            continue
+        label, semantic, role = _RARE_ACTION_SIGNALS[action_id]
+        details = row.get("revealed_items_detail")
+        actions_by_id[action_id] = {
+            "source": "action_result",
+            "action_id": action_id,
+            "label": _text(row.get("tool")) or label,
+            "semantic": semantic,
+            "ref_v0_role": role,
+            "result": row.get("result"),
+            "result_field": row.get("result_field"),
+            "revealed_items": _int_or_none(row.get("revealed_items")) or 0,
+            "has_revealed_detail": bool(details),
+        }
+
+    public_rows: list[dict[str, Any]] = []
+    seen_public: set[int] = set()
+    for row in artifact.get("public_info_rows", ()) or ():
+        if not isinstance(row, Mapping):
+            continue
+        info_id = _int_or_none(row.get("info_id"))
+        if info_id not in _RARE_PUBLIC_INFO_SIGNALS or info_id in seen_public:
+            continue
+        seen_public.add(info_id)
+        label, semantic, role = _RARE_PUBLIC_INFO_SIGNALS[info_id]
+        details = row.get("revealed_items_detail")
+        public_rows.append(
+            {
+                "source": "public_info",
+                "info_id": info_id,
+                "label": label,
+                "semantic": semantic,
+                "ref_v0_role": role,
+                "value": row.get("value"),
+                "value_field": row.get("value_field"),
+                "revealed_items": _int_or_none(row.get("revealed_items")) or 0,
+                "has_revealed_detail": bool(details),
+            }
+        )
+
+    actions = [actions_by_id[action_id] for action_id in sorted(actions_by_id)]
+    public_rows.sort(key=lambda item: int(item.get("info_id") or 0))
+    all_rows = [*actions, *public_rows]
+    role_counts = Counter(_text(row.get("ref_v0_role")) for row in all_rows)
+    return {
+        "present": bool(all_rows),
+        "actions": actions,
+        "public_info": public_rows,
+        "role_counts": dict(sorted(role_counts.items())),
+        "summary": " / ".join(
+            _join_nonempty(
+                [_text(row.get("label")), _text(row.get("ref_v0_role"))],
+                sep=":",
+            )
+            for row in all_rows[:8]
+        ),
+    }
+
+
 def _ui_diagnostics_contract(
     v2: Mapping[str, Any],
     model_eval: Mapping[str, Any],
@@ -1155,6 +1256,7 @@ def _ui_diagnostics_contract(
     return {
         "posterior": posterior,
         "size_bucket": _ui_size_bucket_contract(artifact or {}, posterior),
+        "rare_signals": _ui_rare_signal_contract(artifact or {}),
         "layout": {
             "conflict": bool(model_eval.get("layout_conflict")),
             "conflict_root": _text(model_eval.get("layout_conflict_root")),
@@ -1337,9 +1439,10 @@ def _ui_minimap_quality_markers(
                     continue
                 quality = _int_or_none(item.get("quality"))
                 item_id = _int_or_none(item.get("item_id"))
+                item_name = _text(item.get("item_name") or item.get("name"))
                 local_index = _int_or_none(item.get("local_index"))
                 runtime_id = _int_or_none(item.get("runtime_id"))
-                if quality is None or item_id is not None or local_index is None:
+                if quality is None or local_index is None:
                     continue
                 if runtime_id is not None and runtime_id in known_runtime_ids:
                     continue
@@ -1351,6 +1454,9 @@ def _ui_minimap_quality_markers(
                 seen.add(marker_key)
                 row_no = local_index // _MINIMAP_COLUMNS + 1
                 col_no = local_index % _MINIMAP_COLUMNS + 1
+                shape_key = _text(item.get("shape_code") or item.get("shape_key"))
+                cells = _int_or_none(item.get("cells"))
+                tooltip_quality = f"Q{quality}"
                 markers.append(
                     {
                         "row": row_no,
@@ -1360,15 +1466,21 @@ def _ui_minimap_quality_markers(
                         "quality": quality,
                         "category": None,
                         "category_label": "",
-                        "item_id": None,
-                        "item_name": "",
-                        "display_label": f"Q{quality}",
+                        "item_id": item_id,
+                        "item_name": item_name,
+                        "display_label": item_name or tooltip_quality,
                         "tooltip": _join_nonempty(
-                            [source_label, f"Q{quality}", f"local {local_index}"],
+                            [
+                                source_label,
+                                item_name or f"{tooltip_quality}≥1",
+                                shape_key,
+                                f"{cells}格" if cells is not None else "",
+                                f"local {local_index}",
+                            ],
                             sep=" / ",
                         ),
-                        "shape_key": "",
-                        "cells": 1,
+                        "shape_key": shape_key,
+                        "cells": cells or 1,
                         "local_index": local_index,
                         "source": source,
                         "render_mode": "marker",

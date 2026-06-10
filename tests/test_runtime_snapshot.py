@@ -1119,6 +1119,62 @@ def test_ui_contract_exposes_public_numeric_soft_facts() -> None:
     )
 
 
+def test_ui_contract_records_rare_signals_as_diagnostics() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "action_send_rows": [
+                {"action_id": 100121, "tool": "终极审计"},
+            ],
+            "action_result_rows": [
+                {
+                    "action_id": 100121,
+                    "tool": "终极审计",
+                    "result": 728211,
+                    "revealed_items": 0,
+                },
+                {
+                    "action_id": 100127,
+                    "tool": "全知全能",
+                    "result": None,
+                    "revealed_items": 42,
+                    "revealed_items_detail": [{"local_index": 1, "quality": 6}],
+                },
+                {
+                    "action_id": 100114,
+                    "tool": "珍品均格",
+                    "result": 2.5,
+                    "revealed_items": 0,
+                },
+            ],
+            "public_info_rows": [
+                {"info_id": 200035, "value": 18502.75},
+                {"info_id": 200038, "value": 34288.75},
+                {"info_id": 200031, "value": 124892.0},
+            ],
+        }
+    )
+
+    rare = contract["diagnostics"]["rare_signals"]
+
+    assert rare["present"] is True
+    assert rare["role_counts"] == {
+        "diagnostic_only": 3,
+        "ref_v0_constraint": 2,
+        "soft_value_floor": 1,
+    }
+    assert rare["actions"][0]["action_id"] == 100114
+    assert rare["actions"][1]["action_id"] == 100121
+    assert rare["actions"][1]["ref_v0_role"] == "diagnostic_only"
+    assert rare["actions"][2]["revealed_items"] == 42
+    assert rare["actions"][2]["has_revealed_detail"] is True
+    assert rare["public_info"][0]["info_id"] == 200031
+    assert rare["public_info"][0]["ref_v0_role"] == "soft_value_floor"
+    assert rare["public_info"][1]["info_id"] == 200035
+    assert rare["public_info"][1]["ref_v0_role"] == "diagnostic_only"
+    assert rare["public_info"][2]["info_id"] == 200038
+    assert rare["public_info"][2]["ref_v0_role"] == "ref_v0_constraint"
+
+
 def test_ui_contract_minimap_includes_quality_only_markers() -> None:
     contract = ui_contract_from_artifact(
         {
@@ -1242,3 +1298,42 @@ def test_ui_contract_minimap_includes_quality_only_markers() -> None:
     assert minimap["quality_reveal_unplaced_counts"] == {"q6": 1}
     assert {marker["local_index"] for marker in markers} == {43, 44, 75, 76}
     assert all(marker["width"] == 1 and marker["height"] == 1 for marker in markers)
+
+
+def test_ui_contract_minimap_preserves_named_public_marker() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "public_info_rows": [
+                {
+                    "sort": 11,
+                    "time": "2026-06-04 03:44:38.710",
+                    "info_id": 200027,
+                    "map_id": 2401,
+                    "value": 6,
+                    "value_field": 6,
+                    "revealed_items": 1,
+                    "revealed_summary": "Q6x1 / test_item / pos 42",
+                    "revealed_items_detail": [
+                        {
+                            "local_index": 42,
+                            "runtime_id": 501,
+                            "item_id": 1001,
+                            "item_name": "test_item",
+                            "quality": 6,
+                            "value": 20000,
+                            "shape_code": 22,
+                            "cells": 4,
+                        },
+                    ],
+                },
+            ],
+        }
+    )
+
+    marker = contract["minimap"]["items"][0]
+    assert marker["render_mode"] == "marker"
+    assert marker["item_id"] == 1001
+    assert marker["item_name"] == "test_item"
+    assert marker["display_label"] == "test_item"
+    assert marker["shape_key"] == "22"
+    assert "test_item" in marker["tooltip"]

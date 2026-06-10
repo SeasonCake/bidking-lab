@@ -13088,3 +13088,206 @@ invalid quarantine:
 - 默认 baseline/evaluator 仍用 `data/samples/fatbeans`；
 - 0605 及后续 252x/452x 活动沉船 cohort 保留在 `data/samples/fatbeans_activity_20260605_shipwreck`，用于鲁棒性/source-table 活动参考，不混入默认 baseline；
 - `evaluate_fatbeans_v3_samples.py --posterior-trials 0 data/samples/fatbeans` 当前输出 `robust_activity_candidate=0`，说明 default baseline 已不含活动图。
+
+## 2026-06-09 archive-live guard 与 shadow sampler readiness 复核
+
+从 `76185fe Checkpoint Hero Ref and v3 sample audits` 起，本轮只做离线 audit/readiness/prototype 复核，不改 live/UI/正式出价路径。临时 JSON 统一写入 `.tmp/codex/v3_promotion_2026_06_09/`，该目录不进入 git diff。
+
+样本分层复核：
+
+```text
+C:\Python313\python.exe scripts\summarize_fatbeans_sample_manifest.py data\samples\fatbeans --cohort-role default_archive --metric-scope promotion_baseline --fail-on-invalid
+files=491 parsed_files=491 parse_errors=0 valid_files=461 mixed_files=30 invalid_files=0 usable_metric_files=479 bid_windows=1754 ready_windows=1734 no_state_windows=20 constraint_conflict_windows=0
+
+C:\Python313\python.exe scripts\summarize_fatbeans_sample_manifest.py data\samples\fatbeans_activity_20260605_shipwreck --cohort-role activity_tuning_reference --metric-scope tuning_reference --fail-on-invalid
+files=18 parsed_files=18 parse_errors=0 valid_files=18 mixed_files=0 invalid_files=0 usable_metric_files=18 bid_windows=69 ready_windows=69 no_state_windows=0 constraint_conflict_windows=0
+
+C:\Python313\python.exe scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 0 data\samples\fatbeans
+windows=1641 ready=1641 robust_activity_candidate=0 robust_prior_trusted=1539 robust_prior_stressed=102 constraint_ok=True
+
+C:\Python313\python.exe scripts\evaluate_fatbeans_v3_samples.py --posterior-trials 0 --include-mixed-samples data\samples\fatbeans_activity_20260605_shipwreck
+windows=69 ready=69 robust_activity_candidate=69 constraint_ok=True
+
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format json data\samples\fatbeans_activity_20260605_shipwreck
+artifact=.tmp/codex/v3_promotion_2026_06_09/shadow_sampler_prototype_activity_seeds0_1.json
+status=sample_limited
+seed_status_counts={sample_limited:2}
+component_likelihood_rows=69
+matrix_status_counts={sample_limited:27}
+guard_trial=sample_limited
+guard_actions={keep_inactive_sample_limited:3}
+```
+
+archive-live `v3_practical` guard brief 复核：
+
+```text
+C:\Python313\python.exe scripts\summarize_live_windivert_brief.py --since-hours 240 --archive-formal-mode v3_practical --archive-window prebid --archive-n-trials 10 --archive-shadow-trials 1 --format json
+artifact=.tmp/codex/v3_promotion_2026_06_09/live_practical_brief_v3_practical.json
+
+overall_rows=269
+prebid_rows=268
+formal_mode_counts={unknown:1,v2:75,v3_practical:193}
+v3_practical_live_guard_rows=140
+v3_practical_live_guard_rate=0.73
+formal_policy_comparison.comparison_rows=140
+v3_guarded_vs_v2_p90_coverage_delta=+0.13
+v3_guarded_vs_v2_p90_extreme_over_delta=+0.02
+v3_unguarded_vs_v2_p90_coverage_delta=+0.52
+v3_unguarded_vs_v2_p90_extreme_over_delta=+0.38
+v3_practical_guard_p90_coverage_lost_rows=54
+```
+
+将该 brief 接入 readiness 后，`v3_practical_archive_live_guard_metrics` 从 pending 变为 watch：guarded/unguarded/v2 同分母口径可用，但 guard 仍有 P90 coverage loss，需要 slice review，不能作为 promotion 放行。
+
+shadow-only evidence-driven sampler prototype 复核：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_prototype.py --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format json data\samples\fatbeans
+artifact=.tmp/codex/v3_promotion_2026_06_09/shadow_sampler_prototype_seeds0_1.json
+
+status=watch_with_hurt_alternatives
+shadow_only=True
+affects_bid=False
+active=False
+posterior_seeds=0,1
+stable_watch=q6_value|map_id,evidence_profile_key|down_only:q6_value:map_id=2501|evidence_profile_key=item+shape; q6_value|map_id,evidence_profile_key|down_only:q6_value:map_id=2504|evidence_profile_key=item+shape
+guard_trial=shadow_guard_trial_design
+guard_actions={freeze_component:1,guard_hurt_groups_keep_component_inactive:1,require_source_support_gate:1}
+requires_source_parser=True
+
+component q6_count: blocked_seed_instability, support_gate=watch_low_support
+component q6_cells: blocked_seed_instability, support_gate=watch_low_support
+component q6_value: watch_with_hurt_alternatives, support_gate=watch_low_support
+```
+
+guarded trial 复核：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_guard_trial.py --prototype-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_prototype_seeds0_1.json --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --format json data\samples\fatbeans
+artifact=.tmp/codex/v3_promotion_2026_06_09/shadow_sampler_guard_trial_seeds0_1.json
+
+status=blocked_guarded_shadow_trial
+sampler_status=watch_with_hurt_alternatives
+shadow_only=True
+affects_bid=False
+active=False
+can_promote=False
+component_move_cells=False
+excluded_components=q6_cells,q6_count
+component_status_counts={sample_limited:2,watch_with_hurt_alternatives:1}
+support_gate_status_counts={no_watch:2,watch_low_support:1}
+remaining component q6_value: watch_with_hurt_alternatives, stable_watch_count=2, unstable_watch_count=7, hurt_count=28
+```
+
+readiness 汇总复核：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 0 --live-practical-brief-json .tmp\codex\v3_promotion_2026_06_09\live_practical_brief_v3_practical.json --shadow-sampler-prototype-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_prototype_seeds0_1.json --shadow-sampler-guard-trial-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_guard_trial_seeds0_1.json --format summary data\samples\fatbeans
+overall_status=not_ready
+blocked_gates=20
+v3_practical_guard_status=watch
+shadow_sampler_prototype_contract=blocked
+shadow_sampler_prototype_status=watch_with_hurt_alternatives
+shadow_sampler_guarded_trial=blocked
+shadow_sampler_guarded_trial_status=blocked_guarded_shadow_trial
+```
+
+当前结论：
+
+- 评估口径已能并列报告 default valid/mixed baseline、activity reference、archive-live `v3_practical` guard、v2/guarded/unguarded 同分母矩阵；
+- `v3_ccvc_` 可作为 evidence-driven count/cell/value shadow sampler prototype 的审计入口；
+- q6_count 仍需要 source/support gate，不适合继续参数调优；
+- q6_cells 当前应冻结或加强 cells guard；
+- q6_value 可继续做 source/profile guardability 审计，但 guard trial 仍 blocked；
+- activity reference 当前只有 sample-limited 参考信号，不能作为 promotion baseline 或参数放行依据；
+- v3 仍 `audit-only`/shadow-only，readiness/promotion gate 不放宽，不能替换正式出价，也不能 archive v2。
+
+## 2026-06-09 q6_value source/profile guardability probe
+
+在上一个 `blocked_guarded_shadow_trial` 之后，本轮继续沿 q6_value residual blocker 做 source/profile guardability 审计，仍只生成 shadow-only/audit-only artifact。
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_value_source_profile_audit.py --guarded-trial-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_guard_trial_seeds0_1.json --format json
+artifact=.tmp/codex/v3_promotion_2026_06_09/shadow_sampler_value_source_profile_audit.json
+
+status=requires_source_profile_parser
+shadow_only=True
+affects_bid=False
+can_promote=False
+source_profile_parser_status=blocked_mixed_map_profile_risk
+latest_map_only_hurt_label_count=6
+latest_profile_hurt_label_count=6
+next_action=join map-only q6_value hurt labels back to row-level evidence profiles before designing a value guard
+
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_value_map_profile_details.py --audit-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_value_source_profile_audit.json --guarded-trial-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_guard_trial_seeds0_1.json --posterior-trials 64 --format json data\samples\fatbeans
+artifact=.tmp/codex/v3_promotion_2026_06_09/shadow_sampler_value_map_profile_details.json
+
+status=blocked_map_only_details_ready
+label_count=6
+candidate_rows=99
+candidate_sessions_sum=27
+row_count_mismatches=0
+
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_value_profile_guardability.py --details-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_value_map_profile_details.json --format json
+artifact=.tmp/codex/v3_promotion_2026_06_09/shadow_sampler_value_profile_guardability.json
+
+status=blocked_profile_guard_candidates_need_holdout
+detail_rows=99
+candidate_cluster_count=2
+mixed_cluster_count=0
+candidate_clusters:
+  evidence_profile_key=tool:category+item+shape rows=15 sessions=5 labels=5 maps=3 hurt_rate=0.67 helped_rate=0.07
+  profile_semantic_class=no_public|tool:category+item+shape rows=15 sessions=5 labels=5 maps=3 hurt_rate=0.67 helped_rate=0.07
+```
+
+为验证上述 profile guard candidate，本轮给 `summarize_v3_shadow_sampler_guard_trial.py` 增加 audit-only `--extra-exclude-q6-value-profile`。它只把 q6_value evidence_profile_key 转换成 candidate-label exclude regex，并强制把结果标为 audit probe，不会改变默认 guarded trial、live/UI 或正式出价路径。
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_shadow_sampler_guard_trial.py --prototype-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_prototype_seeds0_1.json --posterior-trials 64 --posterior-seed 0 --posterior-seed 1 --extra-exclude-q6-value-profile "tool:category+item+shape" --format json data\samples\fatbeans
+artifact=.tmp/codex/v3_promotion_2026_06_09/shadow_sampler_guard_trial_q6_value_profile_probe.json
+
+status=audit_probe_guarded_shadow_trial
+sampler_status=watch_with_hurt_alternatives
+audit_probe=True
+manual_exclude_q6_value_profiles=tool:category+item+shape
+q6_value_status=watch_with_hurt_alternatives
+q6_value_support_gate=watch_low_support
+q6_value_hurt_count=27
+baseline_q6_value_hurt_count=28
+```
+
+将 baseline guarded trial + profile probe 一并放入 source/profile audit：
+
+```text
+artifact=.tmp/codex/v3_promotion_2026_06_09/shadow_sampler_value_source_profile_profile_probe_audit.json
+status=requires_source_profile_parser
+run_count=2
+risk_migration_detected=False
+source_profile_parser_status=blocked_mixed_map_profile_risk
+latest_map_only_hurt_label_count=6
+latest_profile_hurt_label_count=6
+```
+
+将 value source/profile/details/guardability artifacts 附加到 readiness：
+
+```text
+C:\Python313\python.exe scripts\summarize_v3_promotion_readiness.py --posterior-trials 0 --live-practical-brief-json .tmp\codex\v3_promotion_2026_06_09\live_practical_brief_v3_practical.json --shadow-sampler-prototype-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_prototype_seeds0_1.json --shadow-sampler-guard-trial-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_guard_trial_seeds0_1.json --shadow-sampler-value-source-profile-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_value_source_profile_audit.json --shadow-sampler-value-map-profile-details-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_value_map_profile_details.json --shadow-sampler-value-profile-guardability-json .tmp\codex\v3_promotion_2026_06_09\shadow_sampler_value_profile_guardability.json --format summary data\samples\fatbeans
+
+overall_status=not_ready
+blocked_gates=23
+shadow_sampler_value_source_profile=blocked
+shadow_sampler_value_source_profile_status=requires_source_profile_parser
+shadow_sampler_value_source_profile_parser=blocked_mixed_map_profile_risk
+shadow_sampler_value_map_profile_details=blocked
+shadow_sampler_value_map_profile_details_rows=99
+shadow_sampler_value_profile_guardability=blocked
+shadow_sampler_value_profile_guardability_status=blocked_profile_guard_candidates_need_holdout
+shadow_sampler_value_profile_guardability_candidates=2
+```
+
+结论：
+
+- q6_value source/profile line 有实质进展：已从纯 map-only hurt 细化到 99 行 row-level details 和 2 个 profile guard candidates；
+- 单独排除 `tool:category+item+shape` 只能把 q6_value hurt count 从 28 降到 27，不能解除 `watch_with_hurt_alternatives`；
+- profile guard candidates 需要 holdout/guard design，不应直接进入正式 sampler；
+- 当前下一步优先级仍是 q6_value source/profile guard holdout 设计，q6_count source/support gate 次之；不要回到全局参数调权重。

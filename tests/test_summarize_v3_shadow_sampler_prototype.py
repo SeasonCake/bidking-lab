@@ -291,6 +291,38 @@ def test_shadow_sampler_prototype_requires_candidate_on_every_seed() -> None:
     ]
 
 
+def test_shadow_sampler_prototype_keeps_multi_seed_sample_limited() -> None:
+    module = _load_module()
+    rows = [
+        _row(session_id=str(row["session_id"]), truth=4, baseline=2, ccvc=2)
+        for row in _watch_rows()
+    ]
+    seed0 = module.summarize_seed_run(
+        rows,
+        posterior_seed=0,
+        components=("q6_count",),
+        group_fields=("map_id",),
+        movement_policies=("all",),
+        folds=2,
+        min_windows=2,
+        min_sessions=2,
+        min_changed=2,
+    )
+    seed1 = dict(seed0, posterior_seed=1)
+
+    result = module.summarize_prototype_runs(
+        (seed0, seed1),
+        posterior_trials=64,
+        component_move_cells=True,
+        min_watch_support_rows=2,
+        min_watch_support_sessions=2,
+    )
+
+    assert seed0["status"] == "sample_limited"
+    assert result["status"] == "sample_limited"
+    assert result["component_statuses"][0]["status"] == "sample_limited"
+
+
 def test_shadow_sampler_prototype_blocks_stable_low_support() -> None:
     module = _load_module()
     seed0 = module.summarize_seed_run(

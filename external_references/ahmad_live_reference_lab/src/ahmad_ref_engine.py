@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from fractions import Fraction
 from functools import lru_cache
+import copy
 import json
 import math
 import os
@@ -73,6 +75,20 @@ DEFAULT_ITEM_VALUES = {
     "q5": 40000.0,
     "q6": 160000.0,
 }
+VALUE_UNCERTAINTY_CV = {
+    "q1": 0.10,
+    "q3": 0.18,
+    "q4": 0.24,
+    "q5": 0.32,
+    "q6": 0.45,
+}
+VALUE_DISTRIBUTION_POINTS = (
+    (-1.0, 0.125),
+    (-0.5, 0.25),
+    (0.0, 0.25),
+    (0.5, 0.25),
+    (1.0, 0.125),
+)
 DEFAULT_GRID_MEANS = {
     "q1": 2.2,
     "q3": 2.2,
@@ -101,6 +117,13 @@ ACTION_TOTAL_CELLS = {
     "100107": "q5",
     "100108": "q6",
 }
+ACTION_VALUE_SUM = {
+    "100122": "q1",
+    "100123": "q3",
+    "100124": "q4",
+    "100125": "q5",
+    "100126": "q6",
+}
 ACTION_COUNTS = {
     "100116": "q1",
     "100117": "q3",
@@ -108,6 +131,11 @@ ACTION_COUNTS = {
     "100119": "q5",
     "100120": "q6",
     "1002044": "q1",
+}
+ACTION_DIAGNOSTIC_ONLY = {
+    "100121": "total_value",
+    "100127": "all_items",
+    "100134": "all_item_quality",
 }
 PUBLIC_AVG_CELLS = {
     "q4_avg_cells": "q4",
@@ -118,6 +146,11 @@ PUBLIC_COUNTS = {
     "q4_item_count": "q4",
     "q5_item_count": "q5",
     "q6_item_count": "q6",
+}
+PUBLIC_AVG_VALUES = {
+    "q4_avg_value": "q4",
+    "q5_avg_value": "q5",
+    "q6_avg_value": "q6",
 }
 PUBLIC_BUCKET_OUTLINE_QUALITY = {
     200001: "q4",
@@ -154,6 +187,8 @@ class RefEvidence:
     count_sums: dict[str, int]
     avg_cells: dict[str, float]
     quality_cells: dict[str, float]
+    avg_values: dict[str, float]
+    quality_values: dict[str, float]
     split_counts: dict[str, int]
     split_quality_cells: dict[str, float]
     split_avg_cells: dict[str, float]
@@ -226,6 +261,8 @@ class RefResult:
                 "count_sums": dict(self.evidence.count_sums),
                 "avg_cells": dict(self.evidence.avg_cells),
                 "quality_cells": dict(self.evidence.quality_cells),
+                "avg_values": dict(self.evidence.avg_values),
+                "quality_values": dict(self.evidence.quality_values),
                 "split_counts": dict(self.evidence.split_counts),
                 "split_quality_cells": dict(self.evidence.split_quality_cells),
                 "split_avg_cells": dict(self.evidence.split_avg_cells),
@@ -526,6 +563,32 @@ def _random_avg_sample_count(row: dict[str, Any]) -> int | None:
     return None
 
 
+def _quality_key_from_avg_value_row(row: dict[str, Any]) -> str | None:
+    quality = _quality_number_to_key(row.get("quality"))
+    if quality in {"q4", "q5", "q6"}:
+        return quality
+    semantic = str(row.get("semantic") or "")
+    return PUBLIC_AVG_VALUES.get(semantic)
+
+
+def _public_quality_avg_values(public_info: dict[str, Any]) -> dict[str, float]:
+    rows: list[dict[str, Any]] = []
+    rows.extend(_iter_dicts(public_info.get("public_avg_values")))
+    rows.extend(_iter_dicts(public_info.get("public_numeric_facts")))
+    values: dict[str, float] = {}
+    for row in rows:
+        kind = str(row.get("kind") or "")
+        semantic = str(row.get("semantic") or "")
+        if kind != "avg_value" and semantic not in PUBLIC_AVG_VALUES:
+            continue
+        key = _quality_key_from_avg_value_row(row)
+        value = _safe_float(row.get("value"))
+        if key is None or value is None:
+            continue
+        values[key] = value
+    return values
+
+
 def _public_random_value_floors(public_info: dict[str, Any]) -> tuple[tuple[int, float], ...]:
     rows: list[dict[str, Any]] = []
     rows.extend(_iter_dicts(public_info.get("public_random_avg_values")))
@@ -587,6 +650,8 @@ def _bridge_from_field_updates(
     count_sums: dict[str, int],
     avg_cells: dict[str, float],
     quality_cells: dict[str, float],
+    avg_values: dict[str, float],
+    quality_values: dict[str, float],
     split_counts: dict[str, int],
     split_quality_cells: dict[str, float],
     split_avg_cells: dict[str, float],
@@ -637,6 +702,12 @@ def _bridge_from_field_updates(
             elif path[2] in {"cells", "total_cells"}:
                 quality_cells[key] = parsed
                 source_notes.append(f"field_update_{key}_cells")
+            elif path[2] in {"avg_value", "average_value"}:
+                avg_values[key] = parsed
+                source_notes.append(f"field_update_{key}_avg_value")
+            elif path[2] in {"value", "value_sum", "total_value"}:
+                quality_values[key] = parsed
+                source_notes.append(f"field_update_{key}_value_sum")
         elif len(path) >= 3 and path[0] == "bucket_split":
             key = _low_split_key(path[1])
             if key is None:
@@ -666,6 +737,8 @@ def _extract_structured_bridge_inputs(
     count_sums: dict[str, int],
     avg_cells: dict[str, float],
     quality_cells: dict[str, float],
+    avg_values: dict[str, float],
+    quality_values: dict[str, float],
     split_counts: dict[str, int],
     split_quality_cells: dict[str, float],
     split_avg_cells: dict[str, float],
@@ -702,6 +775,20 @@ def _extract_structured_bridge_inputs(
             quality_cells,
             inputs.get("quality_cells") or inputs.get("cells"),
             note_prefix="structured_ref_bridge_cells",
+            source_notes=source_notes,
+        )
+        _merge_quality_values(
+            avg_values,
+            inputs.get("avg_values") or inputs.get("average_values"),
+            note_prefix="structured_ref_bridge_avg_value",
+            source_notes=source_notes,
+        )
+        _merge_quality_values(
+            quality_values,
+            inputs.get("quality_values")
+            or inputs.get("value_sums")
+            or inputs.get("values"),
+            note_prefix="structured_ref_bridge_value_sum",
             source_notes=source_notes,
         )
         _merge_split_values(
@@ -751,6 +838,8 @@ def _extract_structured_bridge_inputs(
             count_sums=count_sums,
             avg_cells=avg_cells,
             quality_cells=quality_cells,
+            avg_values=avg_values,
+            quality_values=quality_values,
             split_counts=split_counts,
             split_quality_cells=split_quality_cells,
             split_avg_cells=split_avg_cells,
@@ -1133,6 +1222,8 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
     count_sums: dict[str, int] = {}
     avg_cells: dict[str, float] = {}
     quality_cells: dict[str, float] = {}
+    avg_values: dict[str, float] = {}
+    quality_values: dict[str, float] = {}
     split_counts: dict[str, int] = {}
     split_quality_cells: dict[str, float] = {}
     split_avg_cells: dict[str, float] = {}
@@ -1147,6 +1238,8 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         count_sums=count_sums,
         avg_cells=avg_cells,
         quality_cells=quality_cells,
+        avg_values=avg_values,
+        quality_values=quality_values,
         split_counts=split_counts,
         split_quality_cells=split_quality_cells,
         split_avg_cells=split_avg_cells,
@@ -1158,9 +1251,23 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         total_count = _safe_int(summary.get("input_total_item_count"))
     if total_count is None:
         total_count = _safe_int(counts.get("input_total_item_count"))
-    if total_count is None and phase == "settled":
-        total_count = _safe_int(truth.get("total_items"))
-        if total_count is not None:
+
+    def set_total_count(value: Any, note: str) -> None:
+        nonlocal total_count
+        parsed = _safe_int(value)
+        if parsed is None:
+            return
+        if total_count is not None and int(total_count) != int(parsed):
+            source_notes.append(f"{note}_conflicts_total_count:{total_count}->{parsed}")
+        total_count = int(parsed)
+        source_notes.append(note)
+
+    settlement_total_count = _safe_int(truth.get("total_items"))
+    if phase == "settled" and settlement_total_count is not None:
+        if total_count is not None and int(total_count) != int(settlement_total_count):
+            source_notes.append("settlement_review_total_count_overrode_bridge")
+        total_count = settlement_total_count
+        if "settlement_review_total_count" not in source_notes:
             source_notes.append("settlement_review_total_count")
 
     total_grid_target = bridge_total_cells
@@ -1168,18 +1275,37 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         total_grid_target = _safe_float(summary.get("input_warehouse_total_cells"))
     if total_grid_target is None:
         total_grid_target = _safe_float(counts.get("input_warehouse_total_cells"))
+
+    def set_total_grid_target(value: Any, note: str) -> None:
+        nonlocal total_grid_target
+        parsed = _safe_float(value)
+        if parsed is None:
+            return
+        if (
+            total_grid_target is not None
+            and abs(float(total_grid_target) - float(parsed)) > 0.0001
+        ):
+            source_notes.append(f"{note}_conflicts_total_grid:{total_grid_target}->{parsed}")
+        total_grid_target = float(parsed)
+        source_notes.append(note)
+
     if total_grid_target is None:
         public_constraints = public_info.get("input_constraints")
         if isinstance(public_constraints, dict):
-            total_grid_target = _safe_float(
+            set_total_grid_target(
                 public_constraints.get("total_cells")
-                or public_constraints.get("warehouse_total_cells")
+                or public_constraints.get("warehouse_total_cells"),
+                "public_total_cells",
             )
-            if total_grid_target is not None:
-                source_notes.append("public_total_cells")
-    if total_grid_target is None and phase == "settled":
-        total_grid_target = _safe_float(truth.get("total_cells"))
-        if total_grid_target is not None:
+    settlement_total_cells = _safe_float(truth.get("total_cells"))
+    if phase == "settled" and settlement_total_cells is not None:
+        if (
+            total_grid_target is not None
+            and abs(float(total_grid_target) - float(settlement_total_cells)) > 0.0001
+        ):
+            source_notes.append("settlement_review_total_grid_overrode_bridge")
+        total_grid_target = settlement_total_cells
+        if "settlement_review_total_grid" not in source_notes:
             source_notes.append("settlement_review_total_grid")
 
     known_quality_counts: dict[str, int] = {}
@@ -1217,7 +1343,8 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
             "q6": _safe_int(known_quality_cells.get("q6")) or 0,
         }.items():
             if value > 0:
-                quality_cells.setdefault(key, float(value))
+                quality_cells[key] = float(value)
+                avg_cells.pop(key, None)
 
     if known_quality_source == "settlement":
         for key in QUALITY_KEYS:
@@ -1277,12 +1404,19 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         if not isinstance(row, dict):
             continue
         action_id = str(row.get("action_id") or "")
+        diagnostic_semantic = ACTION_DIAGNOSTIC_ONLY.get(action_id)
+        if diagnostic_semantic is not None:
+            source_notes.append(f"action_{action_id}_{diagnostic_semantic}_diagnostic_only")
+            revealed_count = _safe_int(row.get("revealed_items"))
+            if revealed_count is not None and revealed_count > 0:
+                source_notes.append(f"action_{action_id}_revealed_items:{revealed_count}")
         value = _safe_float(row.get("result"))
         if value is None:
             continue
         note_suffix = "_inferred_zero" if row.get("inferred_zero") else ""
         quality_for_avg = ACTION_AVG_CELLS.get(action_id)
         quality_for_cells = ACTION_TOTAL_CELLS.get(action_id)
+        quality_for_value = ACTION_VALUE_SUM.get(action_id)
         quality_for_count = ACTION_COUNTS.get(action_id)
         if quality_for_avg is not None:
             avg_cells[quality_for_avg] = value
@@ -1290,16 +1424,17 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         elif quality_for_cells is not None:
             quality_cells[quality_for_cells] = value
             source_notes.append(f"action_{action_id}_{quality_for_cells}_cells{note_suffix}")
+        elif quality_for_value is not None:
+            quality_values[quality_for_value] = value
+            source_notes.append(f"action_{action_id}_{quality_for_value}_value_sum{note_suffix}")
         elif quality_for_count is not None:
             fixed_counts[quality_for_count] = int(round(value))
             min_counts[quality_for_count] = int(round(value))
             source_notes.append(f"action_{action_id}_{quality_for_count}_count{note_suffix}")
         elif action_id in {"100115", "100204"}:
-            total_count = int(round(value))
-            source_notes.append(f"action_{action_id}_total_count")
+            set_total_count(value, f"action_{action_id}_total_count")
         elif action_id == "100103":
-            total_grid_target = value
-            source_notes.append("action_100103_total_cells")
+            set_total_grid_target(value, "action_100103_total_cells")
 
     for row in public_info.get("public_numeric_facts") or ():
         if not isinstance(row, dict):
@@ -1309,14 +1444,13 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         if value is None:
             continue
         if semantic == "total_item_count":
-            total_count = int(round(value))
-            source_notes.append("public_total_item_count")
+            set_total_count(value, "public_total_item_count")
         elif semantic == "total_cells":
-            total_grid_target = value
-            source_notes.append("public_total_cells")
+            set_total_grid_target(value, "public_total_cells")
         elif semantic == "total_avg_cells" and total_count is not None:
-            total_grid_target = value * total_count
-            source_notes.append("public_total_avg_cells_target")
+            set_total_grid_target(value * total_count, "public_total_avg_cells_target")
+        elif semantic == "total_avg_value":
+            source_notes.append("public_total_avg_value_diagnostic_only")
         elif semantic in PUBLIC_AVG_CELLS:
             avg_cells[PUBLIC_AVG_CELLS[semantic]] = value
             source_notes.append(f"public_{PUBLIC_AVG_CELLS[semantic]}_avg_cells")
@@ -1325,6 +1459,10 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
             fixed_counts[key] = int(round(value))
             min_counts[key] = int(round(value))
             source_notes.append(f"public_{key}_count")
+
+    for key, value in _public_quality_avg_values(public_info).items():
+        avg_values[key] = value
+        source_notes.append(f"public_{key}_avg_value")
 
     if phase != "settled":
         random_value_floors = _public_random_value_floors(public_info)
@@ -1349,6 +1487,49 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
             fixed_counts[key] = 0
             min_counts[key] = 0
             source_notes.append(f"zero_avg_cells_{key}_count_zero")
+
+    for key, avg in tuple(avg_values.items()):
+        avg_fraction = _avg_value_fraction(avg)
+        if avg_fraction == 0 and key not in fixed_counts:
+            fixed_counts[key] = 0
+            min_counts[key] = 0
+            source_notes.append(f"zero_avg_value_{key}_count_zero")
+
+    for key, value in tuple(quality_values.items()):
+        if key in avg_values:
+            continue
+        count = fixed_counts.get(key)
+        parsed_value = _safe_float(value)
+        if count is None or parsed_value is None or parsed_value < 0:
+            continue
+        count_int = int(count)
+        if count_int > 0:
+            avg_values[key] = float(parsed_value) / float(count_int)
+            source_notes.append(f"quality_value_{key}_avg_value_derived")
+        elif abs(parsed_value) <= 0.0001:
+            avg_values[key] = 0.0
+            source_notes.append(f"quality_value_{key}_avg_value_derived")
+
+    for key, avg in tuple(avg_values.items()):
+        quality_value = quality_values.get(key)
+        fixed_count = fixed_counts.get(key)
+        if fixed_count is not None:
+            if not _quality_count_matches_value_inputs(
+                int(fixed_count),
+                avg,
+                _safe_float(quality_value),
+            ):
+                source_notes.append(f"quality_value_{key}_avg_count_conflict")
+            continue
+        if quality_value is None:
+            continue
+        derived_count = _avg_value_count_from_total(avg, quality_value)
+        if derived_count is None:
+            source_notes.append(f"quality_value_{key}_avg_value_conflict")
+            continue
+        fixed_counts[key] = derived_count
+        min_counts[key] = derived_count
+        source_notes.append(f"quality_value_{key}_count_derived")
 
     for key, cells in quality_cells.items():
         if key in avg_cells:
@@ -1391,6 +1572,8 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         count_sums=count_sums,
         avg_cells=avg_cells,
         quality_cells=quality_cells,
+        avg_values=avg_values,
+        quality_values=quality_values,
         split_counts=split_counts,
         split_quality_cells=split_quality_cells,
         split_avg_cells=split_avg_cells,
@@ -1500,6 +1683,54 @@ def _avg_matches_exact_grid(count: int, avg: float | None, grid: int) -> bool:
     return abs(float(avg) * count - grid) <= 0.0001
 
 
+def _avg_value_fraction(avg: float | None) -> Fraction | None:
+    if avg is None:
+        return None
+    value = float(avg)
+    if not math.isfinite(value) or value < 0:
+        return None
+    return Fraction(value).limit_denominator(60)
+
+
+def _avg_value_has_positive_signal(avg: float | None) -> bool:
+    fraction = _avg_value_fraction(avg)
+    return fraction is not None and fraction > 0
+
+
+def _avg_value_count_matches(count: int, avg: float | None) -> bool:
+    fraction = _avg_value_fraction(avg)
+    if fraction is None:
+        return True
+    if fraction == 0:
+        return count == 0
+    if count <= 0:
+        return False
+    return (fraction.numerator * int(count)) % fraction.denominator == 0
+
+
+def _avg_value_total_from_count(avg: float, count: int) -> float | None:
+    fraction = _avg_value_fraction(avg)
+    if fraction is None:
+        return None
+    return float(fraction * int(count))
+
+
+def _avg_value_count_from_total(avg: float | None, total_value: Any) -> int | None:
+    fraction = _avg_value_fraction(avg)
+    value = _safe_float(total_value)
+    if fraction is None or value is None or value < 0:
+        return None
+    total_fraction = Fraction(float(value)).limit_denominator(100)
+    if fraction == 0:
+        return 0 if total_fraction == 0 else None
+    if total_fraction <= 0:
+        return None
+    count_fraction = total_fraction / fraction
+    if count_fraction.denominator != 1 or count_fraction < 0:
+        return None
+    return int(count_fraction)
+
+
 def _choose_avg_grid_option(
     count: int,
     avg: float | None,
@@ -1540,15 +1771,22 @@ def _count_values(
     key: str,
     evidence: RefEvidence,
     reserve: int,
-) -> range:
+) -> list[int]:
     fixed = evidence.fixed_counts.get(key)
     if fixed is not None:
-        return range(fixed, fixed + 1)
+        fixed_int = int(fixed)
+        if not _quality_count_matches_value_evidence(key, fixed_int, evidence):
+            return []
+        return [fixed_int]
     minimum = _effective_min_count(key, evidence)
     maximum = total_count - reserve
     if maximum < minimum:
-        return range(1, 0)
-    return range(minimum, maximum + 1)
+        return []
+    return [
+        value
+        for value in range(minimum, maximum + 1)
+        if _quality_count_matches_value_evidence(key, value, evidence)
+    ]
 
 
 def _effective_min_count(key: str, evidence: RefEvidence) -> int:
@@ -1558,11 +1796,21 @@ def _effective_min_count(key: str, evidence: RefEvidence) -> int:
     exact_cells = _quality_exact_cells(key, evidence)
     if exact_cells is not None and exact_cells > 0:
         minimum = max(minimum, int(math.ceil(exact_cells / 18.0)), 1)
+    exact_value = _quality_exact_value(key, evidence)
+    if exact_value is not None and exact_value > 0:
+        minimum = max(minimum, 1)
     if (
         evidence.phase != "settled"
         and evidence.fixed_counts.get(key) is None
         and evidence.avg_cells.get(key) is not None
         and (evidence.avg_cells.get(key) or 0.0) > 0
+    ):
+        minimum = max(minimum, 1)
+    if (
+        evidence.phase != "settled"
+        and evidence.fixed_counts.get(key) is None
+        and evidence.avg_values.get(key) is not None
+        and _avg_value_has_positive_signal(evidence.avg_values.get(key))
     ):
         minimum = max(minimum, 1)
     return minimum
@@ -1574,6 +1822,47 @@ def _quality_exact_cells(key: str, evidence: RefEvidence) -> int | None:
         return None
     parsed = int(round(float(value)))
     return max(0, parsed)
+
+
+def _quality_exact_value(key: str, evidence: RefEvidence) -> float | None:
+    value = evidence.quality_values.get(key)
+    if value is None:
+        return None
+    parsed = _safe_float(value)
+    if parsed is None or parsed < 0:
+        return None
+    return parsed
+
+
+def _quality_count_matches_value_inputs(
+    count: int,
+    avg: float | None,
+    exact_value: float | None,
+) -> bool:
+    if not _avg_value_count_matches(count, avg):
+        return False
+    if exact_value is None:
+        return True
+    if count <= 0:
+        return abs(float(exact_value)) <= 0.0001
+    if avg is None:
+        return exact_value > 0
+    derived_total = _avg_value_total_from_count(float(avg), count)
+    if derived_total is None:
+        return False
+    return abs(float(exact_value) - derived_total) <= 0.5
+
+
+def _quality_count_matches_value_evidence(
+    key: str,
+    count: int,
+    evidence: RefEvidence,
+) -> bool:
+    return _quality_count_matches_value_inputs(
+        count,
+        evidence.avg_values.get(key),
+        _quality_exact_value(key, evidence),
+    )
 
 
 def _hard_total_grid_target_int(evidence: RefEvidence) -> int | None:
@@ -1728,6 +2017,8 @@ def _total_count_candidates(evidence: RefEvidence, notes: list[str]) -> tuple[li
         or evidence.min_counts
         or evidence.count_sums
         or evidence.avg_cells
+        or evidence.avg_values
+        or evidence.quality_values
         or evidence.total_grid_target
     )
     if not has_live_input:
@@ -1754,6 +2045,8 @@ def _prior_count_values(
     if fixed is not None:
         fixed_int = max(0, int(fixed))
         if exact_cells is not None and not can_compose_grid_total(fixed_int, exact_cells):
+            return []
+        if not _quality_count_matches_value_evidence(key, fixed_int, evidence):
             return []
         return [fixed_int]
     minimum = _effective_min_count(key, evidence)
@@ -1786,11 +2079,21 @@ def _prior_count_values(
         ]
         if avg_valid:
             values.update(avg_valid)
+    avg_value = evidence.avg_values.get(key)
+    if avg_value is not None and _avg_value_has_positive_signal(avg_value):
+        avg_value_valid = [
+            value
+            for value in range(minimum, maximum + 1)
+            if _quality_count_matches_value_evidence(key, value, evidence)
+        ]
+        if avg_value_valid:
+            values.update(avg_value_valid)
     if exact_cells is not None:
         valid = [
             value
             for value in sorted(values)
             if can_compose_grid_total(value, exact_cells)
+            and _quality_count_matches_value_evidence(key, value, evidence)
         ]
         if valid:
             return valid
@@ -1798,8 +2101,13 @@ def _prior_count_values(
             value
             for value in range(minimum, maximum + 1)
             if can_compose_grid_total(value, exact_cells)
+            and _quality_count_matches_value_evidence(key, value, evidence)
         ]
-    return sorted(values)
+    return [
+        value
+        for value in sorted(values)
+        if _quality_count_matches_value_evidence(key, value, evidence)
+    ]
 
 
 def _prior_log_weight(
@@ -1984,6 +2292,13 @@ def _prior_counts_for_total(
             counts[key] += value
     elif used != total:
         return None
+    if any(counts[key] < _effective_min_count(key, evidence) for key in QUALITY_KEYS):
+        return None
+    if any(
+        not _quality_count_matches_value_evidence(key, counts[key], evidence)
+        for key in QUALITY_KEYS
+    ):
+        return None
     if not _count_sum_matches(counts, evidence):
         return None
     return counts
@@ -2048,19 +2363,104 @@ def _quality_value_for_grid(
     return max(float(count), base_total + adjustment)
 
 
+def _quality_value_for_evidence(
+    key: str,
+    *,
+    count: int,
+    grid: float,
+    item_values: dict[str, float],
+    evidence: RefEvidence,
+) -> float:
+    exact_value = _quality_exact_value(key, evidence)
+    if exact_value is not None:
+        return float(exact_value)
+    avg_value = evidence.avg_values.get(key)
+    if avg_value is not None:
+        total = _avg_value_total_from_count(float(avg_value), int(count))
+        if total is not None:
+            return total
+    return _quality_value_for_grid(
+        key,
+        count=count,
+        grid=grid,
+        item_values=item_values,
+    )
+
+
 def _combo_value(
     counts: dict[str, int],
     grids: dict[str, float],
     item_values: dict[str, float],
+    evidence: RefEvidence,
 ) -> float:
     return sum(
-        _quality_value_for_grid(
+        _quality_value_for_evidence(
             key,
             count=counts[key],
             grid=grids.get(key, counts[key] * DEFAULT_GRID_MEANS[key]),
             item_values=item_values,
+            evidence=evidence,
         )
         for key in QUALITY_KEYS
+    )
+
+
+def _quality_value_uncertainty(
+    key: str,
+    *,
+    count: int,
+    grid: float,
+    item_values: dict[str, float],
+    evidence: RefEvidence,
+) -> float:
+    if count <= 0:
+        return 0.0
+    if _quality_exact_value(key, evidence) is not None:
+        return 0.0
+    avg_value = evidence.avg_values.get(key)
+    if (
+        avg_value is not None
+        and _avg_value_total_from_count(float(avg_value), int(count)) is not None
+    ):
+        return 0.0
+    center = _quality_value_for_grid(
+        key,
+        count=count,
+        grid=grid,
+        item_values=item_values,
+    )
+    cv = VALUE_UNCERTAINTY_CV.get(key, 0.20)
+    return max(0.0, center * cv / math.sqrt(max(1, int(count))))
+
+
+def _combo_value_uncertainty(
+    counts: dict[str, int],
+    grids: dict[str, float],
+    item_values: dict[str, float],
+    evidence: RefEvidence,
+) -> float:
+    variance = 0.0
+    for key in QUALITY_KEYS:
+        spread = _quality_value_uncertainty(
+            key,
+            count=counts[key],
+            grid=grids.get(key, counts[key] * DEFAULT_GRID_MEANS[key]),
+            item_values=item_values,
+            evidence=evidence,
+        )
+        variance += spread * spread
+    return math.sqrt(variance)
+
+
+def _value_distribution_points(
+    center: float,
+    spread: float,
+) -> tuple[tuple[float, float], ...]:
+    if spread < 1.0:
+        return ((center, 1.0),)
+    return tuple(
+        (max(0.0, center + offset * spread), weight)
+        for offset, weight in VALUE_DISTRIBUTION_POINTS
     )
 
 
@@ -2172,12 +2572,85 @@ def _display_grid_options_for_quality(
     return _composable_grid_options(int(counts.get(key, 0)))[:1]
 
 
+def _public_quality_avg_value_notes(notes: Iterable[str]) -> list[str]:
+    return [
+        str(note)
+        for note in notes
+        if re.fullmatch(r"public_q[456]_avg_value", str(note))
+    ]
+
+
+def _without_public_quality_avg_values(snapshot: dict[str, Any]) -> dict[str, Any]:
+    cloned = copy.deepcopy(snapshot)
+    ui_contract = cloned.get("ui_contract")
+    if not isinstance(ui_contract, dict):
+        return cloned
+    constraints = ui_contract.get("constraints")
+    if not isinstance(constraints, dict):
+        return cloned
+    public_info = constraints.get("public_info")
+    if not isinstance(public_info, dict):
+        return cloned
+
+    def keep(row: Any) -> bool:
+        if not isinstance(row, dict):
+            return True
+        semantic = str(row.get("semantic") or "")
+        return semantic not in PUBLIC_AVG_VALUES
+
+    for key in ("public_numeric_facts", "public_avg_values"):
+        rows = public_info.get(key)
+        if isinstance(rows, list):
+            public_info[key] = [row for row in rows if keep(row)]
+    return cloned
+
+
+def _with_public_quality_avg_fallback_notes(
+    result: RefResult,
+    public_avg_notes: Iterable[str],
+) -> RefResult:
+    downgrade_notes = [
+        "public_quality_avg_value_conflict_fallback",
+        *[f"{note}_downgraded" for note in public_avg_notes],
+    ]
+    notes = tuple(dict.fromkeys([*result.notes, *downgrade_notes]))
+    evidence = replace(
+        result.evidence,
+        source_notes=tuple(dict.fromkeys([*result.evidence.source_notes, *downgrade_notes])),
+    )
+    return replace(result, notes=notes, evidence=evidence)
+
+
+def _retry_without_public_quality_avg_values(
+    snapshot: dict[str, Any],
+    *,
+    public_avg_notes: Iterable[str],
+    static_data: dict[str, Any],
+    safety_factor: float,
+    max_combos: int,
+) -> RefResult | None:
+    notes = list(public_avg_notes)
+    if not notes:
+        return None
+    result = run_reference_engine(
+        _without_public_quality_avg_values(snapshot),
+        static_data=static_data,
+        safety_factor=safety_factor,
+        max_combos=max_combos,
+        _allow_public_avg_fallback=False,
+    )
+    if result.status not in {"ok", "count_prior"}:
+        return None
+    return _with_public_quality_avg_fallback_notes(result, notes)
+
+
 def run_reference_engine(
     snapshot: dict[str, Any],
     *,
     static_data: dict[str, Any] | None = None,
     safety_factor: float = 0.85,
     max_combos: int = 50000,
+    _allow_public_avg_fallback: bool = True,
 ) -> RefResult:
     static_data = static_data or load_reference_static_data()
     evidence = extract_evidence(snapshot)
@@ -2277,7 +2750,7 @@ def run_reference_engine(
                 max_new=max_combos - len(combos),
             )
             for combo in prior_combos:
-                value = _combo_value(combo.counts, combo.grids, item_values)
+                value = _combo_value(combo.counts, combo.grids, item_values, evidence)
                 combos.append(
                     RefCombo(
                         counts=combo.counts,
@@ -2314,10 +2787,12 @@ def run_reference_engine(
                                 and q4 + q5 + q6 != evidence.count_sums["q4q5q6"]
                             ):
                                 continue
-                            if q6 < evidence.min_counts.get("q6", 0):
+                            if q6 < _effective_min_count("q6", evidence):
                                 continue
                             fixed_q6 = evidence.fixed_counts.get("q6")
                             if fixed_q6 is not None and q6 != fixed_q6:
+                                continue
+                            if not _quality_count_matches_value_evidence("q6", q6, evidence):
                                 continue
                             counts = {"q1": q1, "q3": q3, "q4": q4, "q5": q5, "q6": q6}
                             grids = _grids_for_counts(counts, evidence)
@@ -2333,7 +2808,7 @@ def run_reference_engine(
                             if evidence.total_grid_target is not None:
                                 diff = total_grid - evidence.total_grid_target
                                 logw -= min(30.0, (diff * diff) / (2 * 6.0 * 6.0))
-                            value = _combo_value(counts, grids, item_values)
+                            value = _combo_value(counts, grids, item_values, evidence)
                             combos.append(
                                 RefCombo(
                                     counts=counts,
@@ -2357,6 +2832,17 @@ def run_reference_engine(
                 break
 
     if not combos:
+        public_avg_notes = _public_quality_avg_value_notes(notes)
+        if _allow_public_avg_fallback and public_avg_notes:
+            fallback = _retry_without_public_quality_avg_values(
+                snapshot,
+                public_avg_notes=public_avg_notes,
+                static_data=static_data,
+                safety_factor=safety_factor,
+                max_combos=max_combos,
+            )
+            if fallback is not None:
+                return fallback
         return RefResult(
             status="no_reachable_combo",
             source="ref_v0",
@@ -2378,10 +2864,20 @@ def run_reference_engine(
         )
 
     max_logw = max(combo.weight for combo in combos)
-    weighted_values = [
-        (combo.value, math.exp(max(-745.0, combo.weight - max_logw)))
-        for combo in combos
-    ]
+    has_intra_quality_value_band = False
+    weighted_values: list[tuple[float, float]] = []
+    for combo in combos:
+        combo_weight = math.exp(max(-745.0, combo.weight - max_logw))
+        value_spread = _combo_value_uncertainty(
+            combo.counts,
+            combo.grids,
+            item_values,
+            evidence,
+        )
+        if value_spread >= 1.0:
+            has_intra_quality_value_band = True
+        for value, point_weight in _value_distribution_points(combo.value, value_spread):
+            weighted_values.append((value, combo_weight * point_weight))
     weighted_red = [
         (float(combo.counts["q6"]), math.exp(max(-745.0, combo.weight - max_logw)))
         for combo in combos
@@ -2394,17 +2890,24 @@ def run_reference_engine(
         option_weight = combo_weight / max(1, len(red_options))
         for red_grid in red_options:
             weighted_red_cells.append((float(red_grid), option_weight))
-            weighted_red_value.append(
-                (
-                    _quality_value_for_grid(
-                        "q6",
-                        count=combo.counts["q6"],
-                        grid=float(red_grid),
-                        item_values=item_values,
-                    ),
-                    option_weight,
-                )
+            red_value = _quality_value_for_evidence(
+                "q6",
+                count=combo.counts["q6"],
+                grid=float(red_grid),
+                item_values=item_values,
+                evidence=evidence,
             )
+            red_value_spread = _quality_value_uncertainty(
+                "q6",
+                count=combo.counts["q6"],
+                grid=float(red_grid),
+                item_values=item_values,
+                evidence=evidence,
+            )
+            for value, point_weight in _value_distribution_points(red_value, red_value_spread):
+                weighted_red_value.append((value, option_weight * point_weight))
+    if has_intra_quality_value_band:
+        notes.append("intra_quality_value_band_v0")
     weighted_grid = [
         (combo.total_grid, math.exp(max(-745.0, combo.weight - max_logw)))
         for combo in combos

@@ -13,6 +13,7 @@
 | `DECISIONS_V3.md` | v3 当前决策 |
 | `OBSERVATIONS.md` | 根观察索引 |
 | `OBSERVATIONS_V3.md` | v3 当前观察 |
+| `handoff_2026-06-10.zh-CN.md` | 2026-06-10 总交接，收口主线 v3 与 Hero Ref 支线的当前状态、关键结论和新窗口 prompt |
 | `handoff_2026-06-08.zh-CN.md` | v3 promotion hardening / sampler 重构最新交接入口、prompt 与推荐 goal |
 | `handoff_2026-06-06.zh-CN.md` | v3 重构早期交接入口，保留历史上下文 |
 | `docs/v3_inference_design_2026-06-04.zh-CN.md` | v3 设计文档 |
@@ -80,7 +81,7 @@
 | `scripts/summarize_v3_ccvc_count_policy_matrix.py` | v3 CCVC q6_count policy/group-field 矩阵审计，并输出 selected candidate 与 applied hurt group metrics |
 | `scripts/summarize_v3_ccvc_evidence_contribution.py` | v3 CCVC count/cells 证据贡献审计，支持 freeze-cells 口径 |
 | `scripts/summarize_v3_shadow_sampler_prototype.py` | v3 `v3_ccvc_` evidence-driven count/cell/value shadow sampler prototype 聚合审计，合并 row contract、shadow safety、policy/direction holdout、evidence contribution、component-level blocker、per-seed watch label/support metrics、applied hurt metrics、guard trial contract、support gate 与 multi-seed stability |
-| `scripts/summarize_v3_shadow_sampler_guard_trial.py` | 从 sampler prototype `guard_trial_contract` 生成 shadow-only guarded trial，自动应用 freeze-cells、component/source-support exclusion 与 hurt-group exclusion，并复用 archive/session/map-family/map-id/evidence-profile/seed holdout 验证；支持 audit-only `--extra-exclude-label`/`--extra-exclude-component` 二阶 probe，结果不得作为 promotion evidence |
+| `scripts/summarize_v3_shadow_sampler_guard_trial.py` | 从 sampler prototype `guard_trial_contract` 生成 shadow-only guarded trial，自动应用 freeze-cells、component/source-support exclusion 与 hurt-group exclusion，并复用 archive/session/map-family/map-id/evidence-profile/seed holdout 验证；支持 audit-only `--extra-exclude-label`/`--extra-exclude-component`/`--extra-exclude-q6-value-profile` 二阶 probe，结果不得作为 promotion evidence |
 | `scripts/summarize_v3_shadow_sampler_value_source_profile_audit.py` | 从 guarded trial JSON 汇总 q6_value 残余 blocker 的 map/profile/movement/source-profile 迁移，比较 baseline 与 audit-probe artifact，并输出 source/profile semantic parser artifact，用于识别 map-only/profile mixed risk 与 value guard 前置 blocker |
 | `scripts/summarize_v3_shadow_sampler_value_map_profile_details.py` | 从 q6_value source/profile audit 与 guarded trial JSON 重放 map-only hurt labels，输出 row/session/profile/source details、profile/source 聚合、row count match 与 readiness/workbench gate artifact |
 | `scripts/summarize_v3_shadow_sampler_value_profile_guardability.py` | 从 q6_value map/profile details artifact 聚类 source/profile/map 维度，输出 hurt/helped 分离度、候选 guard、overfit/mixed 风险与 readiness/workbench guardability gate artifact |
@@ -247,6 +248,8 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `external_references/bidking-booooot/` | 外部 repo 参考 |
 | `external_references/jrinky-bidking/` | 外部 repo 参考 |
 | `external_references/ahmad_live_reference_lab/` | 基于外援 Ahmad/Victor 路线的项目支线代码；源码/脚本/文档可提交，打包产物与 cache 不提交 |
+| `external_references/ahmad_live_reference_lab/HANDOFF_2026-06-10.zh-CN.md` | Hero Ref 支线 2026-06-10 交接入口，给新窗口继续 UI / release / smoke 收尾 |
+| `external_references/ahmad_live_reference_lab/EXECUTION_NOTES_2026-06-10.zh-CN.md` | Hero Ref 支线 2026-06-10 执行记录，保留原样反馈、回应和可复用检查 |
 
 除 `external_references/ahmad_live_reference_lab/` 外，这些外部参考路径仍在 `.gitignore` 下，不作为项目源码提交。
 

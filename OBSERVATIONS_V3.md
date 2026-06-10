@@ -7620,3 +7620,172 @@ q6_cells_top3_range=2/3/4
 - 这种场景更适合 `sparse_exact_prior`：保留总件硬约束，但用概率先验分裂剩余品质；
 - 不应把 `combo_cap_hit` 当成正常快路径，更不能把它的输出当成更保守或更真实的结果；
 - 实测基准显示：`total_count=33` 约 `0.66s`，`total_count=38 + q5_avg=9.0` 约 `1.12s`，`total_count=38 + q5_avg=9.0 + q3=13` 约 `0.03s`，`manual total_count=21 + total_cells=34 + q4_avg=1.8` 约 `0.08s`。
+
+## O-v3-190：archive-live guard 与 shadow sampler prototype 已可审计，但仍未 ready
+
+2026-06-09 从 `76185fe` 复跑验证：
+
+```text
+default archive manifest:
+  files=491
+  valid=461
+  mixed=30
+  invalid=0
+  ready_windows=1734
+
+strict default evaluator:
+  windows=1641
+  ready=1641
+  robust_activity_candidate=0
+  robust_prior_trusted=1539
+  robust_prior_stressed=102
+
+activity reference evaluator:
+  windows=69
+  ready=69
+  robust_activity_candidate=69
+
+activity reference prototype:
+  status=sample_limited
+  seed_status_counts={sample_limited:2}
+  component_likelihood_rows=69
+  guard_trial=sample_limited
+  guard_actions={keep_inactive_sample_limited:3}
+```
+
+这说明 252x/452x activity 样本已从默认 baseline 分离；activity cohort 可作为 source/table/shadow tuning reference，但当前 sampler 原型只给出 sample-limited 参考信号，不进入默认 promotion baseline，也不能作为参数放行依据。
+
+archive-live `v3_practical` guard brief 观测：
+
+```text
+overall_rows=269
+prebid_rows=268
+formal_mode_counts={unknown:1,v2:75,v3_practical:193}
+v3_practical_live_guard_rows=140
+v3_practical_live_guard_rate=0.73
+formal_policy_comparison_rows=140
+v3_guarded_vs_v2_p90_coverage_delta=+0.13
+v3_guarded_vs_v2_p90_extreme_over_delta=+0.02
+v3_unguarded_vs_v2_p90_coverage_delta=+0.52
+v3_unguarded_vs_v2_p90_extreme_over_delta=+0.38
+v3_practical_guard_p90_coverage_lost_rows=54
+```
+
+解读：
+
+- guarded v3 practical 比 v2 有一些 P90 coverage 增益；
+- unguarded coverage 更高，但 extreme-over 明显增加；
+- guard 不是可移除的噪声，它是当前实战防过估边界；
+- guard 同时造成 54 个 P90 coverage loss，需要 slice/source/context review。
+
+shadow sampler prototype 观测：
+
+```text
+prototype:
+  status=watch_with_hurt_alternatives
+  shadow_only=True
+  affects_bid=False
+  active=False
+  seeds=0,1
+  guard_trial=shadow_guard_trial_design
+  guard_actions={freeze_component:1,guard_hurt_groups_keep_component_inactive:1,require_source_support_gate:1}
+  requires_source_parser=True
+
+components:
+  q6_count=blocked_seed_instability, support_gate=watch_low_support
+  q6_cells=blocked_seed_instability, support_gate=watch_low_support
+  q6_value=watch_with_hurt_alternatives, support_gate=watch_low_support
+
+guarded trial:
+  status=blocked_guarded_shadow_trial
+  component_move_cells=False
+  excluded_components=q6_cells,q6_count
+  q6_value still watch_with_hurt_alternatives
+```
+
+readiness 附加 prototype/guard trial 后：
+
+```text
+overall_status=not_ready
+blocked_gates=20
+v3_practical_guard_status=watch
+shadow_sampler_prototype_contract=blocked
+shadow_sampler_guarded_trial=blocked
+```
+
+当前 blocker 形态：
+
+- q6_count：不是调参问题，优先需要 source/support gate 或 parser 语义；
+- q6_cells：当前应冻结或用更强 cells guard，不应随 value/count 一起移动；
+- q6_value：需要 source/profile guardability 审计，不能只靠 map-only exclude；
+- activity cohort：可用于活动图/table/source parser 参考，但当前仅 sample-limited；
+- v3 practical：guarded path 可作为当前实战观察口径，但 promotion/readiness 仍未通过。
+
+## O-v3-191：q6_value profile guard 有候选但单 profile probe 不能解除 blocker
+
+2026-06-09 对 q6_value guarded-trial residual blocker 做 source/profile 回连：
+
+```text
+source/profile audit:
+  status=requires_source_profile_parser
+  source_profile_parser_status=blocked_mixed_map_profile_risk
+  latest_map_only_hurt_label_count=6
+  latest_profile_hurt_label_count=6
+
+map/profile details:
+  status=blocked_map_only_details_ready
+  label_count=6
+  candidate_rows=99
+  candidate_sessions_sum=27
+  row_count_mismatches=0
+
+guardability:
+  status=blocked_profile_guard_candidates_need_holdout
+  detail_rows=99
+  candidate_cluster_count=2
+  mixed_cluster_count=0
+```
+
+当前两个 profile guard candidates：
+
+```text
+evidence_profile_key=tool:category+item+shape
+  rows=15 sessions=5 labels=5 maps=3 hurt_rate=0.67 helped_rate=0.07
+
+profile_semantic_class=no_public|tool:category+item+shape
+  rows=15 sessions=5 labels=5 maps=3 hurt_rate=0.67 helped_rate=0.07
+```
+
+audit-only profile probe：
+
+```text
+extra_exclude_q6_value_profile=tool:category+item+shape
+status=audit_probe_guarded_shadow_trial
+sampler_status=watch_with_hurt_alternatives
+q6_value_hurt_count=27
+baseline_q6_value_hurt_count=28
+risk_migration_detected=False
+```
+
+解读：
+
+- 这证明 source/profile 维度比纯 map-only exclude 更接近可解释 guard；
+- 但单 profile probe 只减少 1 个 q6_value hurt，不能解除 `watch_with_hurt_alternatives`；
+- q6_value 仍需要 source/profile guard holdout 或更细 parser feature；
+- 不能据此进入 formal/value sampler 参数调优，也不能放宽 readiness。
+## O-v3-192：4406 结算差价更像价格表 / 活动版本漂移，不像缺块
+
+2026-06-10 复核 Hero Ref 支线的 4406 实战样本后，当前更合理的解释不是“少了 settlement block”，而是本地表 / 活动版本 / 外部参考表与游戏侧口径存在漂移。
+
+已确认：
+
+- `0x002D` settlement payload 包含完整 inventory；
+- 该局 `grid_items` / minimap layout complete，没有缺失 settlement block 的直接证据；
+- `load_monitor_tables()` 和 `BidMap` family 识别都正常，4406 不是缺 map row；
+- `capture_source_status` 没有直接丢包证据；
+- 游戏侧显示的结算价格与本地计算值不一致，更像 price-table / activity / source-table 漂移。
+
+结论：
+
+- 这类样本后续应优先回连 price-table / activity drift，而不是继续把 missing-block 当主假设；
+- 这也支持 Hero Ref 支线继续保留 exact float / count-cell-value 分层，不要把 UI compact 格式误当语义缺口。

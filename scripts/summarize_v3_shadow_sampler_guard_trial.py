@@ -77,6 +77,14 @@ def _label_exclude_pattern(label: str) -> str:
     return f"^{re.escape(label)}$"
 
 
+def _q6_value_profile_exclude_patterns(profile: str) -> list[str]:
+    escaped = re.escape(profile)
+    return [
+        f"^q6_value:{escaped}$",
+        f"^q6_value:.*evidence_profile_key={escaped}(?:\\||$).*",
+    ]
+
+
 def _dedupe(seq: Iterable[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -93,6 +101,7 @@ def build_trial_options(
     *,
     extra_exclude_labels: Iterable[str] = (),
     extra_exclude_components: Iterable[str] = (),
+    extra_exclude_q6_value_profiles: Iterable[str] = (),
 ) -> dict[str, Any]:
     contract = _guard_trial_contract(prototype)
     actions = _component_actions(contract)
@@ -138,6 +147,9 @@ def build_trial_options(
     manual_exclude_components = [
         str(component) for component in extra_exclude_components if component
     ]
+    manual_exclude_q6_value_profiles = [
+        str(profile) for profile in extra_exclude_q6_value_profiles if profile
+    ]
     exclude_labels.extend(manual_exclude_labels)
     excluded_components.extend(manual_exclude_components)
     exclude_patterns.extend(
@@ -147,8 +159,14 @@ def build_trial_options(
         _component_exclude_pattern(component)
         for component in manual_exclude_components
     )
+    for profile in manual_exclude_q6_value_profiles:
+        exclude_patterns.extend(_q6_value_profile_exclude_patterns(profile))
     exclude_patterns = _dedupe(exclude_patterns)
-    audit_probe = bool(manual_exclude_labels or manual_exclude_components)
+    audit_probe = bool(
+        manual_exclude_labels
+        or manual_exclude_components
+        or manual_exclude_q6_value_profiles
+    )
     return {
         "source_guard_trial_status": contract.get("status"),
         "source_action_counts": dict(contract.get("action_counts") or {}),
@@ -158,6 +176,9 @@ def build_trial_options(
         "excluded_components": _dedupe(excluded_components),
         "manual_exclude_labels": _dedupe(manual_exclude_labels),
         "manual_exclude_components": _dedupe(manual_exclude_components),
+        "manual_exclude_q6_value_profiles": _dedupe(
+            manual_exclude_q6_value_profiles
+        ),
         "audit_probe": audit_probe,
         "audit_probe_reason": (
             "manual extra exclusions were applied; result is diagnostic only"
@@ -256,11 +277,13 @@ def summarize_guard_trial_rows(
     min_watch_support_sessions: int = DEFAULT_MIN_WATCH_SUPPORT_SESSIONS,
     extra_exclude_labels: Iterable[str] = (),
     extra_exclude_components: Iterable[str] = (),
+    extra_exclude_q6_value_profiles: Iterable[str] = (),
 ) -> dict[str, Any]:
     trial_options = build_trial_options(
         prototype,
         extra_exclude_labels=extra_exclude_labels,
         extra_exclude_components=extra_exclude_components,
+        extra_exclude_q6_value_profiles=extra_exclude_q6_value_profiles,
     )
     seed_results = [
         summarize_seed_run(
@@ -310,6 +333,10 @@ def _print_summary(result: Mapping[str, Any], *, top: int) -> None:
                 + ",".join(options.get("excluded_components") or ()),
                 "manual_exclude_components="
                 + ",".join(options.get("manual_exclude_components") or ()),
+                "manual_exclude_q6_value_profiles="
+                + ",".join(
+                    options.get("manual_exclude_q6_value_profiles") or ()
+                ),
                 "exclude_labels="
                 + ",".join((options.get("candidate_exclude_labels") or ())[:top]),
                 "manual_exclude_labels="
@@ -403,6 +430,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--extra-exclude-q6-value-profile",
+        action="append",
+        help=(
+            "Additional q6_value evidence_profile_key to exclude as an "
+            "audit-only profile guard probe. Can be passed more than once."
+        ),
+    )
+    parser.add_argument(
         "--min-watch-support-rows",
         type=int,
         default=DEFAULT_MIN_WATCH_SUPPORT_ROWS,
@@ -422,6 +457,7 @@ def main(argv: list[str] | None = None) -> int:
         prototype,
         extra_exclude_labels=args.extra_exclude_label or (),
         extra_exclude_components=args.extra_exclude_component or (),
+        extra_exclude_q6_value_profiles=args.extra_exclude_q6_value_profile or (),
     )
     tables = load_monitor_tables()
     calibration_entries = load_prior_calibration_entries(
@@ -464,6 +500,7 @@ def main(argv: list[str] | None = None) -> int:
             min_watch_support_sessions=args.min_watch_support_sessions,
             extra_exclude_labels=args.extra_exclude_label or (),
             extra_exclude_components=args.extra_exclude_component or (),
+            extra_exclude_q6_value_profiles=args.extra_exclude_q6_value_profile or (),
         ),
     }
     if args.format == "json":

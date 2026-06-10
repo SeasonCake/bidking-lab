@@ -27,6 +27,7 @@ QUALITY_LABELS = {
     "q6": "红",
 }
 QUALITY_DISPLAY_ORDER = ("q1", "q3", "q4", "q5", "q6")
+LOW_QUALITY_DISPLAY_ORDER = ("q1", "q3")
 SPLIT_QUALITY_LABELS = {
     "white": "白",
     "green": "绿",
@@ -103,6 +104,201 @@ def _money(value: Any, fallback: str = "-") -> str:
         return f"{int(round(float(value))):,}"
     except (TypeError, ValueError):
         return str(value)
+
+
+def _compact_float(value: Any, *, max_decimals: int = 4) -> str:
+    if value in (None, ""):
+        return "-"
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if parsed.is_integer():
+        return str(int(parsed))
+    return f"{parsed:.{max_decimals}f}".rstrip("0").rstrip(".")
+
+
+def _range_text(value: Any, *, money: bool = False, suffix: str = "") -> str:
+    if not isinstance(value, (list, tuple)) or not value:
+        return "-"
+    parts: list[str] = []
+    for item in value[:3]:
+        if item in (None, ""):
+            parts.append("-")
+        elif money:
+            parts.append(_money(item))
+        else:
+            parsed = _parse_int(item)
+            parts.append(str(parsed) if parsed is not None else str(item))
+    if not parts or all(part == "-" for part in parts):
+        return "-"
+    text = " / ".join(parts)
+    return f"{text}{suffix}" if suffix else text
+
+
+def _locked_range_value(value: Any) -> int | None:
+    if not isinstance(value, (list, tuple)) or len(value) < 3:
+        return None
+    parsed = [_parse_int(item) for item in value[:3]]
+    if any(item is None for item in parsed):
+        return None
+    first = parsed[0]
+    if all(item == first for item in parsed):
+        return first
+    return None
+
+
+def _floored_range_values(value: Any, floor: int | None) -> list[Any]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    if floor is None or floor <= 0:
+        return list(value[:3])
+    out: list[Any] = []
+    for item in value[:3]:
+        parsed = _parse_int(item)
+        out.append(max(parsed, floor) if parsed is not None else item)
+    return out
+
+
+def _quality_uncertainty_summary(
+    ref_result: dict[str, Any],
+    *,
+    count_floors: dict[str, int] | None = None,
+    display_order: tuple[str, ...] = LOW_QUALITY_DISPLAY_ORDER,
+) -> str:
+    ranges = ref_result.get("quality_count_ranges")
+    if not isinstance(ranges, dict):
+        return "-"
+    evidence = ref_result.get("evidence") if isinstance(ref_result.get("evidence"), dict) else {}
+    min_counts = evidence.get("min_counts") if isinstance(evidence.get("min_counts"), dict) else {}
+    unlocked: list[str] = []
+    locked: list[str] = []
+    for key in display_order:
+        floor = _parse_int(min_counts.get(key)) if isinstance(min_counts, dict) else None
+        if count_floors and key in count_floors:
+            explicit_floor = _parse_int(count_floors.get(key))
+            if explicit_floor is not None:
+                floor = max(floor or 0, explicit_floor)
+        range_values = _floored_range_values(ranges.get(key), floor)
+        text = _range_text(range_values).replace(" / ", "/")
+        if text == "-":
+            continue
+        label = QUALITY_LABELS.get(key, key)
+        locked_value = _locked_range_value(range_values)
+        if locked_value is None:
+            unlocked.append(f"{label}{text}")
+        else:
+            locked.append(f"{label}{locked_value}")
+    if unlocked:
+        suffix = f" 等{len(unlocked)}项" if len(unlocked) > 3 else ""
+        return "未锁 " + " ".join(unlocked[:3]) + suffix
+    if locked:
+        suffix = f" 等{len(locked)}项" if len(locked) > 4 else ""
+        return "已锁 " + " ".join(locked[:4]) + suffix
+    return "-"
+
+
+def _compact_range_text(values: Any, *, suffix: str = "") -> str:
+    text = _range_text(values, suffix=suffix)
+    return text.replace(" / ", "/") if text != "-" else text
+
+
+def _summed_quality_count_candidates(ref_result: dict[str, Any]) -> list[int]:
+    ranges = ref_result.get("quality_count_ranges")
+    if not isinstance(ranges, dict):
+        return []
+    candidates: list[int] = []
+    for index in range(3):
+        total = 0
+        for key in QUALITY_DISPLAY_ORDER:
+            values = ranges.get(key)
+            if not isinstance(values, (list, tuple)) or len(values) <= index:
+                return []
+            parsed = _parse_int(values[index])
+            if parsed is None:
+                return []
+            total += parsed
+        candidates.append(total)
+    return candidates
+
+
+def _candidate_summary(ref_result: dict[str, Any]) -> str:
+    evidence = ref_result.get("evidence")
+    if not isinstance(evidence, dict):
+        return "-"
+    parts: list[str] = []
+    total_count = evidence.get("total_count")
+    if total_count not in (None, ""):
+        parts.append(f"总件 {total_count}")
+    else:
+        count_candidates = _summed_quality_count_candidates(ref_result)
+        if count_candidates:
+            parts.append(f"估总件 {_compact_range_text(count_candidates)}")
+    total_grid = evidence.get("total_grid_target")
+    if total_grid not in (None, ""):
+        parts.append(f"总格 {_compact_float(total_grid)}")
+    else:
+        total_grid_candidates = _compact_range_text(
+            ref_result.get("total_grid_range"),
+            suffix="格",
+        )
+        if total_grid_candidates != "-":
+            parts.append(f"估总格 {total_grid_candidates}")
+    return " · ".join(parts) if parts else "-"
+
+
+def _range_is_unlocked(values: Any, floor: int | None = None) -> bool:
+    range_values = _floored_range_values(values, floor)
+    parsed = [_parse_int(value) for value in range_values]
+    known = [value for value in parsed if value is not None]
+    return len(known) >= 2 and len(set(known)) > 1
+
+
+def _q6_grid_needs_direct_info(ref_result: dict[str, Any], evidence: dict[str, Any]) -> bool:
+    if evidence.get("total_grid_target") not in (None, ""):
+        return False
+    quality_cells = evidence.get("quality_cells")
+    if isinstance(quality_cells, dict) and quality_cells.get("q6") not in (None, ""):
+        return False
+    avg_cells = evidence.get("avg_cells")
+    if isinstance(avg_cells, dict) and avg_cells.get("q6") not in (None, ""):
+        return False
+    ranges = ref_result.get("quality_count_ranges")
+    if not isinstance(ranges, dict):
+        return False
+    return _locked_range_value(ranges.get("q6")) is not None
+
+
+def _next_info_hint(ref_result: dict[str, Any]) -> str:
+    evidence = ref_result.get("evidence")
+    if not isinstance(evidence, dict):
+        return "-"
+    status = _text(ref_result.get("status"), "")
+    if status == "missing_total_count" or evidence.get("total_count") in (None, ""):
+        return "先补总件"
+    ranges = ref_result.get("quality_count_ranges")
+    min_counts = evidence.get("min_counts") if isinstance(evidence.get("min_counts"), dict) else {}
+    if isinstance(ranges, dict):
+        unlocked_low: list[str] = []
+        for key in LOW_QUALITY_DISPLAY_ORDER:
+            floor = _parse_int(min_counts.get(key))
+            if _range_is_unlocked(ranges.get(key), floor):
+                unlocked_low.append(QUALITY_LABELS.get(key, key))
+        if unlocked_low:
+            return f"优先补{'/'.join(unlocked_low[:2])}件数或均格"
+        unlocked_high: list[str] = []
+        for key in ("q5", "q6"):
+            if _range_is_unlocked(ranges.get(key)):
+                unlocked_high.append(QUALITY_LABELS.get(key, key))
+        if unlocked_high:
+            return f"补{'/'.join(unlocked_high[:2])}均价或总价"
+        if _q6_grid_needs_direct_info(ref_result, evidence):
+            return "补总格/全均格或红均格"
+    if evidence.get("total_grid_target") in (None, "") and _range_is_unlocked(
+        ref_result.get("total_grid_range")
+    ):
+        return "补总格或全均格"
+    return "补公开轮廓验证"
 
 
 def _parse_money(value: Any) -> int | None:
@@ -289,19 +485,24 @@ def _ref_input_summary(ref_result: dict[str, Any]) -> str:
     if not isinstance(evidence, dict):
         return "-"
     parts: list[str] = []
+    total_parts: list[str] = []
+    avg_parts: list[str] = []
     total_count = evidence.get("total_count")
     if total_count not in (None, ""):
-        parts.append(f"总件 {total_count}")
+        total_parts.append(f"总件 {total_count}")
     total_grid = evidence.get("total_grid_target")
     if total_grid not in (None, ""):
-        parts.append(f"总格 {total_grid}")
+        total_parts.append(f"总格 {_compact_float(total_grid)}")
         parsed_count = _parse_int(total_count)
         try:
             parsed_grid = float(total_grid)
         except (TypeError, ValueError):
             parsed_grid = None
         if parsed_count and parsed_grid is not None:
-            parts.append(f"全均格 {parsed_grid / parsed_count:.2f}")
+            avg_parts.append(f"全均格 {_compact_float(parsed_grid / parsed_count)}")
+    estimated_total_grid = _range_text(ref_result.get("total_grid_range"), suffix="格")
+    if estimated_total_grid != "-" and total_grid in (None, ""):
+        total_parts.append(f"估总格 {estimated_total_grid}")
     avg_cells = evidence.get("avg_cells")
     split_avg_cells = evidence.get("split_avg_cells")
     if isinstance(split_avg_cells, dict):
@@ -309,37 +510,13 @@ def _ref_input_summary(ref_result: dict[str, Any]) -> str:
             value = split_avg_cells.get(key)
             if value in (None, ""):
                 continue
-            try:
-                parts.append(f"{SPLIT_QUALITY_LABELS.get(key, key)}均格 {float(value):.2f}")
-            except (TypeError, ValueError):
-                parts.append(f"{SPLIT_QUALITY_LABELS.get(key, key)}均格 {value}")
+            avg_parts.append(f"{SPLIT_QUALITY_LABELS.get(key, key)}均格 {_compact_float(value)}")
     if isinstance(avg_cells, dict):
         for key in QUALITY_DISPLAY_ORDER:
             value = avg_cells.get(key)
             if value in (None, ""):
                 continue
-            try:
-                parts.append(f"{QUALITY_LABELS.get(key, key)}均格 {float(value):.2f}")
-            except (TypeError, ValueError):
-                parts.append(f"{QUALITY_LABELS.get(key, key)}均格 {value}")
-    quality_cells = evidence.get("quality_cells")
-    split_quality_cells = evidence.get("split_quality_cells")
-    if isinstance(split_quality_cells, dict):
-        split_cell_parts = [
-            f"{SPLIT_QUALITY_LABELS.get(key, key)}格 {split_quality_cells[key]}"
-            for key in SPLIT_QUALITY_DISPLAY_ORDER
-            if split_quality_cells.get(key) not in (None, "")
-        ]
-        if split_cell_parts:
-            parts.append("分格 " + "，".join(split_cell_parts))
-    if isinstance(quality_cells, dict):
-        cell_parts = [
-            f"{QUALITY_LABELS.get(key, key)}格 {quality_cells[key]}"
-            for key in QUALITY_DISPLAY_ORDER
-            if quality_cells.get(key) not in (None, "")
-        ]
-        if cell_parts:
-            parts.append("格数 " + "，".join(cell_parts))
+            avg_parts.append(f"{QUALITY_LABELS.get(key, key)}均格 {_compact_float(value)}")
     fixed_counts = evidence.get("fixed_counts")
     split_counts = evidence.get("split_counts")
     if isinstance(split_counts, dict):
@@ -358,6 +535,24 @@ def _ref_input_summary(ref_result: dict[str, Any]) -> str:
         ]
         if count_parts:
             parts.append("件数 " + "，".join(count_parts))
+    quality_cells = evidence.get("quality_cells")
+    split_quality_cells = evidence.get("split_quality_cells")
+    if isinstance(split_quality_cells, dict):
+        split_cell_parts = [
+            f"{SPLIT_QUALITY_LABELS.get(key, key)}格 {split_quality_cells[key]}"
+            for key in SPLIT_QUALITY_DISPLAY_ORDER
+            if split_quality_cells.get(key) not in (None, "")
+        ]
+        if split_cell_parts:
+            parts.append("分格 " + "，".join(split_cell_parts))
+    if isinstance(quality_cells, dict):
+        cell_parts = [
+            f"{QUALITY_LABELS.get(key, key)}格 {quality_cells[key]}"
+            for key in QUALITY_DISPLAY_ORDER
+            if quality_cells.get(key) not in (None, "")
+        ]
+        if cell_parts:
+            parts.append("格数 " + "，".join(cell_parts))
     min_counts = evidence.get("min_counts")
     if isinstance(min_counts, dict):
         floor_parts = []
@@ -375,7 +570,76 @@ def _ref_input_summary(ref_result: dict[str, Any]) -> str:
             parts.append(f"紫金红件 {count_sums['q4q5q6']}")
         elif count_sums.get("q4q5") not in (None, ""):
             parts.append(f"紫金件 {count_sums['q4q5']}")
-    return " · ".join(parts) if parts else "-"
+    ordered_parts = total_parts + parts + avg_parts
+    return " · ".join(ordered_parts) if ordered_parts else "-"
+
+
+def _quality_lower_bound_text(quality_key: str) -> str:
+    label = QUALITY_LABELS.get(quality_key)
+    if label:
+        return f"{label}品≥1"
+    if quality_key and quality_key != "unknown":
+        return f"{quality_key.upper()}≥1"
+    return "品质≥1"
+
+
+def _minimap_source_label(source_text: str, layout_source: str) -> str:
+    source = (source_text or layout_source or "").strip().lower()
+    if source == "public_info":
+        return "公共抽检"
+    if source in {"packet", "quality_reveal", "quality_only", "quality_marker"}:
+        return "抽检"
+    if source in {"settlement", "settlement_inventory"}:
+        return "结算"
+    return source_text or layout_source or ""
+
+
+def _shape_text(shape_code: Any, width: int, height: int, cells: Any) -> str:
+    parsed_cells = _parse_int(cells)
+    if _parse_int(shape_code) is not None and width > 0 and height > 0:
+        total = parsed_cells or width * height
+        return f"轮廓 {width}x{height}/{total}格"
+    if parsed_cells is not None and parsed_cells > 0:
+        return f"已知 {parsed_cells}格"
+    return ""
+
+
+def _minimap_item_display_text(
+    raw: dict[str, Any],
+    *,
+    quality_key: str,
+    shape_code: Any,
+    width: int,
+    height: int,
+    source_text: str,
+) -> tuple[str, str]:
+    item_name = _text(raw.get("item_name") or raw.get("name"), "").strip()
+    item_id = raw.get("item_id")
+    category = _text(raw.get("category_label"), "").strip()
+    fallback_label = _quality_lower_bound_text(quality_key)
+    label = _text(raw.get("display_label"), "").strip() or item_name or category or fallback_label
+    quality_label = QUALITY_LABELS.get(quality_key, quality_key.upper() if quality_key else "品质")
+    if item_name:
+        primary = item_name
+    elif item_id not in (None, "", 0, "0"):
+        primary = f"ID {item_id}"
+    else:
+        primary = fallback_label
+    quality_part = (
+        ""
+        if primary == fallback_label
+        else f"{quality_label}品"
+        if quality_label and "品" not in quality_label
+        else quality_label
+    )
+    tooltip = _join_notes(
+        primary,
+        quality_part,
+        _shape_text(shape_code, width, height, raw.get("cells")),
+        _minimap_source_label(source_text, _text(raw.get("layout_source"), "")),
+        f"local {raw.get('local_index')}" if raw.get("local_index") not in (None, "") else "",
+    )
+    return label, tooltip or _text(raw.get("tooltip"), "").strip()
 
 
 def _minimap_summary(snapshot: dict[str, Any], uc: dict[str, Any]) -> dict[str, Any]:
@@ -441,6 +705,14 @@ def _minimap_summary(snapshot: dict[str, Any], uc: dict[str, Any]) -> dict[str, 
             source_text = _text(raw.get("source") or raw.get("layout_source"), "")
             render_mode = _text(raw.get("render_mode") or "")
             quality_key = _quality_key(raw.get("quality"))
+            label, tooltip = _minimap_item_display_text(
+                raw,
+                quality_key=quality_key,
+                shape_code=shape_code,
+                width=width,
+                height=height,
+                source_text=source_text,
+            )
             observed_quality_counts[quality_key] = observed_quality_counts.get(quality_key, 0) + 1
             max_row = max(max_row, row + height - 1)
             max_col = max(max_col, col + width - 1)
@@ -454,13 +726,8 @@ def _minimap_summary(snapshot: dict[str, Any], uc: dict[str, Any]) -> dict[str, 
                     "local_index": local_index,
                     "item_id": raw.get("item_id"),
                     "shape_key": _text(shape_code or ""),
-                    "label": _text(
-                        raw.get("display_label")
-                        or raw.get("item_name")
-                        or raw.get("category_label"),
-                        "",
-                    ),
-                    "tooltip": _text(raw.get("tooltip") or raw.get("item_name"), ""),
+                    "label": label,
+                    "tooltip": tooltip,
                     "cells": width * height if dims is not None else _parse_int(raw.get("cells")),
                     "source": source_text,
                     "layout_source": _text(raw.get("layout_source") or ""),
@@ -750,6 +1017,7 @@ def _stale_snapshot_payload(
             "cells_range": "-",
             "value_range": "-",
             "quality_count_summary": "-",
+            "uncertainty_summary": "-",
             "prior_rate": "-",
             "sample_rate": "-",
             "risk_reference": "",
@@ -800,6 +1068,9 @@ def _stale_snapshot_payload(
 
 
 def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict[str, Any]:
+    summary_started = time.perf_counter()
+    ref_engine_ms: float | None = None
+    settlement_ref_engine_ms: float | None = None
     uc = snapshot.get("ui_contract") if isinstance(snapshot.get("ui_contract"), dict) else {}
     context = uc.get("context") if isinstance(uc.get("context"), dict) else {}
     baseline = uc.get("baseline") if isinstance(uc.get("baseline"), dict) else {}
@@ -853,6 +1124,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
             ),
         )
     if run_reference_engine is not None:
+        ref_started = time.perf_counter()
         try:
             ref_result = run_reference_engine(snapshot).as_dict()
         except Exception as exc:  # noqa: BLE001 - prototype diagnostics
@@ -861,6 +1133,8 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
                 "source": "ref_v0",
                 "notes": [str(exc)],
             }
+        finally:
+            ref_engine_ms = round((time.perf_counter() - ref_started) * 1000.0, 2)
     else:
         ref_result = {"status": "unavailable", "source": "ref_v0", "notes": []}
     ref_evidence = ref_result.get("evidence") if isinstance(ref_result.get("evidence"), dict) else {}
@@ -923,6 +1197,11 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         flags.append(_flag("证据低", "watch"))
     ref_ok = ref_result.get("status") in {"ok", "count_prior"}
     ref_notes = tuple(str(item) for item in ref_result.get("notes") or ())
+    rare_signals = (
+        diagnostics.get("rare_signals")
+        if isinstance(diagnostics.get("rare_signals"), dict)
+        else {}
+    )
     ref_sparse_exact_prior = "sparse_exact_total_prior_enumeration" in ref_notes
     ref_combo_cap_hit = "combo_cap_hit" in ref_notes
     ref_count_sums = ref_evidence.get("count_sums") if isinstance(ref_evidence.get("count_sums"), dict) else {}
@@ -1039,6 +1318,11 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         if ref_display_ready
         else "-"
     )
+    display_uncertainty_summary = (
+        _quality_uncertainty_summary(ref_result)
+        if ref_display_ready
+        else "等待总件/品质输入"
+    )
     if ref_display_ready and ref_readiness == "count_prior":
         display_red_risk_reference = "总件先验"
     elif ref_display_ready and ref_readiness == "sparse_exact_prior":
@@ -1065,6 +1349,10 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         )
         known_note = f"已见红{known_q6_count}件/{known_q6_cells}格"
         v3_assist_notes.append(known_note)
+        display_uncertainty_summary = _quality_uncertainty_summary(
+            ref_result,
+            count_floors={"q6": known_q6_count},
+        )
         flags.append(
             _flag(
                 "已见红",
@@ -1146,11 +1434,14 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     )
     truth_available = bool(truth.get("available"))
     settlement_total = _parse_money(truth.get("total_value"))
-    settlement_ref_result = (
-        _pre_settlement_ref_result(snapshot)
-        if phase == "settled" and truth_available
-        else {}
-    )
+    settlement_ref_result: dict[str, Any] = {}
+    if phase == "settled" and truth_available:
+        settlement_ref_started = time.perf_counter()
+        settlement_ref_result = _pre_settlement_ref_result(snapshot)
+        settlement_ref_engine_ms = round(
+            (time.perf_counter() - settlement_ref_started) * 1000.0,
+            2,
+        )
     settlement_ref_estimate = _parse_money(settlement_ref_result.get("balanced"))
     posterior_decision_values = _parse_range_numbers(posterior.get("decision_value_range"))
     posterior_decision_p90 = (
@@ -1189,6 +1480,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         if trimmed_tail:
             red_review_parts.append(f"裁尾{_money(decision_value)}")
             red_review_parts.append(f"替换{_money(replacement_value)}")
+        display_uncertainty_summary = "已结算"
         display_red_risk_reference = "；".join(red_review_parts)
         price_titles = {
             "conservative": "估价",
@@ -1227,6 +1519,12 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         if range_ref_ok
         else "-"
     )
+
+    performance = {
+        "summary_total_ms": round((time.perf_counter() - summary_started) * 1000.0, 2),
+        "ref_engine_ms": ref_engine_ms,
+        "settlement_ref_engine_ms": settlement_ref_engine_ms,
+    }
 
     return {
         "status": "ok",
@@ -1272,12 +1570,14 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
             "current_highest": main_current_highest,
             "decision_range": ref_decision_range,
             "total_value_range": ref_total_value_range,
+            "total_grid_range": _range_text(ref_result.get("total_grid_range"), suffix="格"),
         },
         "red": {
             "count_range": display_red_count_range,
             "cells_range": display_red_cells_range,
             "value_range": display_red_value_range,
             "quality_count_summary": display_quality_count_summary,
+            "uncertainty_summary": display_uncertainty_summary,
             "prior_rate": _text(posterior.get("q6_prior_rate"), "-"),
             "sample_rate": _text(posterior.get("q6_sample_rate"), "-"),
             "risk_reference": display_red_risk_reference,
@@ -1297,7 +1597,13 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
             "ref_readiness": ref_readiness,
             "ref_combo_count": _text(ref_result.get("combo_count"), ""),
             "ref_input_summary": _ref_input_summary(ref_result),
+            "candidate_summary": _candidate_summary(ref_result),
+            "next_info_hint": _next_info_hint(ref_result),
             "ref_notes": ";".join(ref_notes),
+        },
+        "diagnostics": {
+            "rare_signals": rare_signals,
+            "performance": performance,
         },
         "truth": {
             "available": bool(truth.get("available")),
@@ -1517,7 +1823,7 @@ INDEX_HTML = r"""<!doctype html>
         <div class="row"><span>动作</span><span id="action">-</span></div>
         <div class="row"><span>风险</span><span id="riskBand">-</span></div>
         <div class="row"><span>当前最高</span><span id="highest">-</span></div>
-        <div class="row"><span>q6 提醒</span><span id="q6Note">-</span></div>
+        <div class="row"><span>低品件</span><span id="q6Note">-</span></div>
       </div>
       <div class="box">
         <h2>结算对照</h2>
@@ -1590,7 +1896,7 @@ function render(data) {
   $('action').textContent = text(r.action);
   $('riskBand').textContent = text(r.risk_band);
   $('highest').textContent = text(r.current_highest);
-  $('q6Note').textContent = text(red.risk_reference);
+  $('q6Note').textContent = text(red.uncertainty_summary || red.risk_reference);
   $('truthState').textContent = truth.available ? 'available' : 'not settled';
   $('truthTotal').textContent = truth.available ? `${text(truth.total_value)} / ${text(truth.total_items)}件 / ${text(truth.total_cells)}格` : '-';
   const q6 = truth.q6 || {};

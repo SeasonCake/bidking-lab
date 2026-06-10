@@ -8,6 +8,8 @@ param(
     [int]$FastNTrials = 10,
     [ValidateSet("v3_practical", "v2")]
     [string]$FormalMode = "v3_practical",
+    [ValidateSet("engineering", "portable", "public-safe", "stable", "public_safe")]
+    [string]$DiagnosticProfile = "engineering",
     [switch]$BroadSniff,
     [switch]$IncludeLoopback,
     [switch]$KeepMonitorOnClose,
@@ -57,6 +59,7 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
         "-FullShadowTrials", "$FullShadowTrials",
         "-FastNTrials", "$FastNTrials",
         "-FormalMode", $FormalMode,
+        "-DiagnosticProfile", $DiagnosticProfile,
         "-NoAutoElevate"
     )
     foreach ($PortValue in $ServerPort) {
@@ -111,6 +114,7 @@ Write-Host "== Hero Ref live starter ==" -ForegroundColor Cyan
 Write-Host "Repo:       $RepoRoot"
 Write-Host "Python:     $PythonPath"
 Write-Host "UI:         Hero Ref only"
+Write-Host "Diagnostic: $DiagnosticProfile"
 Write-Host ""
 
 & $MonitorStart @MonitorParams
@@ -120,6 +124,7 @@ if ($LASTEXITCODE) {
 
 $HeroParams = @{
     PythonPath = $PythonPath
+    DiagnosticProfile = $DiagnosticProfile
 }
 if ($RestartMonitor) {
     $HeroParams["Restart"] = $true

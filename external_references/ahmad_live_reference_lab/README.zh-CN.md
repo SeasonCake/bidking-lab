@@ -58,7 +58,7 @@ https://github.com/user-attachments/assets/b4ce74ee-69a5-422a-921b-c55deb82ae14
 - 旧 `latest_snapshot.json` 会进入待机：普通快照或已结算快照超过 60 秒，均不再显示旧价格。
 - 本目录已从“纯 ignored 外部参考”调整为可版本化支线代码：源码、脚本、文档应提交；`build/`、`dist/`、`__pycache__` 和打包 exe 仍保持 ignored。
 - 手填 UI 内部字段名 `q4q5_count` 是历史控件 key；当前用户语义和输出标签均为 Victor `紫金红件 = q4+q5+q6`，写入 `count_sums.q4q5q6`。
-- 最新交接与待办以 `HANDOFF_2026-06-09.zh-CN.md` 为准；`HANDOFF_2026-06-08.zh-CN.md` 和 `PROGRESS_2026-06-08.zh-CN.md` 保留历史上下文。
+- 最新交接与待办以 `HANDOFF_2026-06-10.zh-CN.md` 为准；`HANDOFF_2026-06-09.zh-CN.md`、`HANDOFF_2026-06-08.zh-CN.md` 和 `PROGRESS_2026-06-08.zh-CN.md` 保留历史上下文。
 
 ## 边界
 
@@ -93,6 +93,8 @@ https://github.com/user-attachments/assets/b4ce74ee-69a5-422a-921b-c55deb82ae14
 - `EXECUTION_NOTES_2026-06-09.zh-CN.md`：最近实战、UI 调试、轮次语义、样本质量和 v3 promotion 铺垫归纳。
 - `HANDOFF_2026-06-09.zh-CN.md`：当前窗口收口交接、最新映射口径、验证结果和新窗口 prompt。
 - `CLOSEOUT_2026-06-09.zh-CN.md`：支线阶段收口，包含实战视频链接、截图、已修问题、边界和下一阶段打包事项。
+- `HANDOFF_2026-06-10.zh-CN.md`：Hero Ref 支线当前交接入口，面向 UI / release / smoke 收尾。
+- `EXECUTION_NOTES_2026-06-10.zh-CN.md`：当前窗口反馈、回应、表漂移判断和可复用检查记录。
 
 ## 当前 prototype
 

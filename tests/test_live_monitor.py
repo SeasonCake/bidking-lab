@@ -578,6 +578,53 @@ def test_public_info_rows_include_revealed_item_details() -> None:
     assert rows[0]["revealed_summary"] == "Q4x1 / pos 42"
 
 
+def test_public_info_rows_attach_item_names_to_revealed_details() -> None:
+    rows = monitor_module._public_info_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=11,
+                    capture_time="2026-06-04 03:44:38.710",
+                    message_id=0x0025,
+                    session_id="2401:1",
+                    map_id=2401,
+                    round_index=1,
+                    public_infos=(
+                        FatbeansPublicInfo(
+                            info_id=200027,
+                            map_id=2401,
+                            value=6,
+                            value_field=6,
+                            observed_items=(
+                                FatbeansObservedItem(
+                                    local_index=42,
+                                    runtime_id=501,
+                                    item_id=1001,
+                                    quality=4,
+                                    value=20000,
+                                    shape_code=22,
+                                    cells=4,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        _tables().items,
+    )
+
+    detail = rows[0]["revealed_items_detail"][0]
+    assert detail["item_id"] == 1001
+    assert detail["item_name"] == "test_item"
+    assert detail["shape_code"] == 22
+    assert "test_item" in rows[0]["revealed_summary"]
+
+
 def test_q6_quality_only_local_diagnostics_is_review_only() -> None:
     store = SimpleNamespace(
         items=lambda: (
@@ -802,6 +849,38 @@ def test_ahmad_ref_inputs_bridge_keeps_pre_settlement_fields_only() -> None:
     assert bridge["counts"] == {}
     assert all(row["phase"] != "settled" for row in bridge["field_updates"])
     assert monitor_module._ahmad_ref_inputs_from_batches((), hero="ethan") == {}
+
+
+def test_ahmad_ref_inputs_bridge_keeps_quality_value_fields() -> None:
+    bridge = monitor_module._ahmad_ref_inputs_from_batches(
+        (
+            LiveObservationBatch(
+                source="packet",
+                event_kind="tool_revealed",
+                phase="bidding",
+                sequence=11,
+                field_updates=(
+                    FieldUpdate(
+                        path=("bucket", "5", "avg_value"),
+                        value=34288.75,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                    FieldUpdate(
+                        path=("bucket", "5", "value_sum"),
+                        value=137155,
+                        source="packet",
+                        confidence="exact",
+                    ),
+                ),
+            ),
+        ),
+        hero="ahmed",
+    )
+
+    assert bridge["avg_values"] == {"q5": 34288.75}
+    assert bridge["quality_values"] == {"q5": 137155}
+    assert any(row["path"] == ["bucket", "5", "value_sum"] for row in bridge["field_updates"])
 
 
 def test_structured_ref_inputs_bridge_supports_aisha_split_low_quality() -> None:

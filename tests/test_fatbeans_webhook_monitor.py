@@ -40,6 +40,38 @@ def _payload(**overrides):
     return payload
 
 
+def test_live_starters_default_to_v3_practical_formal_mode() -> None:
+    module = _module()
+    config = module.WebhookMonitorConfig(
+        log_dir=ROOT / ".tmp" / "logs",
+        raw_dir=ROOT / ".tmp" / "raw",
+        process_name="BidKing.exe",
+        server_ports=(10000,),
+        n_trials=20,
+        roi_trials=0,
+        shadow_trials=20,
+        full_shadow_trials=20,
+        run_debug_shadows=False,
+        seed=1,
+    )
+
+    assert config.formal_mode == "v3_practical"
+    windivert_start = (ROOT / "scripts" / "start_live_windivert_overlay.ps1").read_text(
+        encoding="utf-8-sig"
+    )
+    hero_start = (ROOT / "apps" / "hero_ref" / "Start-HeroRef.ps1").read_text(
+        encoding="utf-8-sig"
+    )
+    ahmad_start = (
+        ROOT / "external_references" / "ahmad_live_reference_lab" / "start_ahmad_live.ps1"
+    ).read_text(encoding="utf-8-sig")
+
+    assert '[string]$FormalMode = "v3_practical"' in windivert_start
+    assert '"--formal-mode", "v3_practical"' in hero_start
+    assert 'FormalMode = "v3_practical"' in hero_start
+    assert '[string]$FormalMode = "v3_practical"' in ahmad_start
+
+
 def test_webhook_payload_to_row_infers_send_and_data_length() -> None:
     module = _module()
 

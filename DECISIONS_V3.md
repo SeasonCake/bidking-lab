@@ -5017,3 +5017,67 @@ C:\Python313\python.exe scripts\summarize_v3_settlement_source_semantics_audit.p
 - 该快路径仍保留总件硬约束，但把剩余品质拆分交给概率先验，而不是靠 `max_combos` 截断；
 - `combo_cap_hit` 只能作为风险标记，不得当作默认加速手段或更保守的真值结果；
 - 这条决策主要服务于 live/manual 响应性，不等于主线 v3 promotion，后续 sampler 仍需按 count/cell/value 分层建模。
+
+## D-v3-220：`v3_ccvc_` 可作为 shadow sampler audit contract，但不得 promotion
+
+2026-06-09 起，当前决策：
+
+- `scripts/summarize_v3_shadow_sampler_prototype.py` 以现有 `v3_ccvc_` component-likelihood 作为 evidence-driven count/cell/value shadow sampler 原型的审计合同；
+- 该合同必须保持：
+  - `shadow_only=True`；
+  - `affects_bid=False`；
+  - `active=False`；
+  - `can_promote=False`，除非后续 readiness/holdout 显式通过；
+  - count、cells/shape、value 组件分开报告 support、seed stability、holdout hurt 与 next action。
+- 当前 two-seed artifact 固定为 `watch_with_hurt_alternatives`，不是 ready：
+  - `q6_count` 为 `blocked_seed_instability`，需要 source/support gate；
+  - `q6_cells` 为 `blocked_seed_instability`，guard trial 应冻结 cells 或添加更强 cells guard；
+  - `q6_value` 有稳定 watch labels，但仍伴随 hurt alternatives 与低支持风险。
+- `scripts/summarize_v3_shadow_sampler_guard_trial.py` 可基于 prototype contract 生成 shadow-only guarded trial，但当前结果仍为 `blocked_guarded_shadow_trial`；
+- guarded trial 即使自动冻结 `q6_cells`、排除 `q6_count`，剩余 `q6_value` 仍有 hurt alternatives，因此不得接入 live/formal bid path；
+- readiness 可附加 prototype 与 guarded-trial JSON，但只能增加/解释 gate，不得减少 blocked gate 或放宽 promotion gate。
+
+原因：
+
+- 本轮 archive/session/map/profile/seed 复核显示 sampler 原型已经可审计，但还没有稳定、足够支持且无明显 hurt 的候选；
+- q6_count 的不稳定更像 source/support 语义缺口，不应继续靠参数调权重解决；
+- q6_cells 与 q6_value 的 hurt groups 说明 count/cells/value 分层是必要边界，不能回到单一 CCV 总体指标判断 promotion；
+- 当前 v3 practical guard archive-live evidence 只支持 watch/review，不支持移除 guard 或归档 v2。
+
+## D-v3-221：q6_value profile guard probe 只能作为 audit-only holdout 前置，不是参数放行
+
+2026-06-09 起，当前决策：
+
+- `summarize_v3_shadow_sampler_value_source_profile_audit.py`、`summarize_v3_shadow_sampler_value_map_profile_details.py`、`summarize_v3_shadow_sampler_value_profile_guardability.py` 构成 q6_value source/profile guardability 审计链；
+- 该链条输出的 profile guard candidate 必须先经过 audit-only guarded trial 与 readiness attachment；
+- `summarize_v3_shadow_sampler_guard_trial.py --extra-exclude-q6-value-profile` 只能用于 audit probe：
+  - 自动标记 `audit_probe=True`；
+  - `status=audit_probe_guarded_shadow_trial`；
+  - 不得作为 promotion evidence；
+  - 不得接 live/formal bid path；
+  - 不得 archive v2 或放宽 readiness gate。
+- 当前 `tool:category+item+shape` profile probe 只将 q6_value hurt count 从 28 降到 27，sampler 仍为 `watch_with_hurt_alternatives`；
+- 因此 q6_value blocker 不能用单个 profile exclude 收口，下一步应设计更完整的 source/profile guard holdout，或继续收集/解析能区分 hurt/helped 的 source features。
+
+原因：
+
+- guardability artifact 找到 2 个 profile candidate，但状态仍是 `blocked_profile_guard_candidates_need_holdout`；
+- row-level details 显示 6 个 map-only hurt labels、99 candidate rows、27 sessions，且 profile 分布混杂；
+- 单一 profile probe 没有造成明显风险迁移，但也没有消除 q6_value hurt alternatives；
+- 这支持“继续 source/profile guard 设计”，不支持“调高/调低 q6_value 全局参数”。
+## D-v3-222：4406 差价优先按表 / 活动漂移处理，不再优先怀疑缺块
+
+2026-06-10 起，当前决策：
+
+- Hero Ref 4406 实战样本里，`0x002D` settlement payload 已确认包含完整 inventory；
+- `grid_items` / minimap layout complete，没有缺 settlement block 的直接证据；
+- 因游戏侧结算价与本地值不一致，优先按 price-table / activity / source-table drift 处理；
+- 不再把这局作为 missing-block 优先假设继续审；
+- Hero Ref 里的 exact float / count-cell-value 分层继续保留，不得因为 compact UI 显示而回退成一位小数 alias 的 hard candidate；
+- `1.80` 只是 compact display 的可能形式，不是新的语义值。
+
+原因：
+
+- `load_monitor_tables()`、`BidMap` family 识别与 `capture_source_status` 都没有显示这一局存在缺块证据；
+- 这条样本更适合继续回连价格表、活动版本或外部表漂移；
+- 如果后续新样本证明真有 missing block，再单独开审计，不要把这次的 drift 误判成 parser 缺口。

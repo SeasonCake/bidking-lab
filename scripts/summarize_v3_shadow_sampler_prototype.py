@@ -967,7 +967,10 @@ def _overall_status(
         for row in component_statuses
     ):
         return "blocked_low_support"
-    if len(results) > 1 and not tuple(stable_labels):
+    if any(
+        str(row.get("status") or "") == "blocked_seed_instability"
+        for row in component_statuses
+    ):
         return "blocked_seed_instability"
     if any(status.startswith("watch") for status in statuses):
         if "watch_with_hurt_alternatives" in statuses:

@@ -310,6 +310,12 @@
   - 从 minimap summary 中统计 `quality=q6` 且 `render_mode=footprint` 的 item；
   - 红件数、红格显示只做下界 floor；
   - 例如 2527 R4 已见红 `1件/4格`，ref 红格 `3/6/13` 显示为 `4/6/13`，主报价不变。
+- 已知红品下界当前分层：
+  - 公开/抽检 `revealed_items_detail[].quality=6` 已进入 `min_counts.q6`，会作为红件数下界参与 ref_v0 枚举；
+  - `200003=全红轮廓` 会作为红件数和红格硬约束；
+  - 普通随机揭示的单个红品 `shape_code/cells` 暂不进入推理硬约束，避免把“单件轮廓”误当成“全红总格”；
+  - 单个已知红品的 item-specific 价值下界暂未进入 ref_v0，只保留地图/品质均价与随机均价软 floor。
+- 后续若要补齐“翡翠屏风/任意已知红品”的格子和价值下界，应新增 `min_quality_cells.q6` / `min_quality_value.q6` 一类显式下界字段，不得复用 `quality_cells.q6`，否则会把下界误解释成全红精确总格。
 - v3 红件/报价分歧：
   - 若 v3 posterior `q6_count_range` 中位数与 ref 红件中位数相差至少 1，只加 `v3红件对照` flag；
   - 若 ref/v3 balanced 价差超过 120,000，只加 `v3价差` flag；

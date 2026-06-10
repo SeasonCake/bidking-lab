@@ -3,18 +3,23 @@ from __future__ import annotations
 import argparse
 import copy
 import colorsys
+from functools import lru_cache
 import json
 import math
 import os
 from pathlib import Path
+import queue
 import random
+import re
 import signal
 import sys
+import threading
 import time
 import tkinter as tk
 from tkinter import ttk
 from typing import Any
 import webbrowser
+import zipfile
 
 
 TOOLS_DIR = Path(__file__).resolve().parent
@@ -25,12 +30,24 @@ LAB_SRC = LAB_ROOT / "src"
 if str(LAB_SRC) not in sys.path:
     sys.path.insert(0, str(LAB_SRC))
 
-from ahmad_live_panel_server import SETTLED_STALE_SECONDS, STALE_SNAPSHOT_SECONDS, summarize_snapshot  # noqa: E402
+from ahmad_live_panel_server import (  # noqa: E402
+    SETTLED_STALE_SECONDS,
+    STALE_SNAPSHOT_SECONDS,
+    _candidate_summary,
+    _next_info_hint,
+    _quality_uncertainty_summary,
+    summarize_snapshot,
+)
 
 try:
-    from ahmad_ref_engine import can_compose_grid_total, run_reference_engine  # noqa: E402
+    from ahmad_ref_engine import (  # noqa: E402
+        can_compose_grid_total,
+        load_reference_static_data,
+        run_reference_engine,
+    )
 except Exception:  # noqa: BLE001 - keep overlay usable if ref core is unavailable
     can_compose_grid_total = None  # type: ignore[assignment]
+    load_reference_static_data = None  # type: ignore[assignment]
     run_reference_engine = None  # type: ignore[assignment]
 
 
@@ -38,12 +55,68 @@ ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SNAPSHOT = ROOT / "data" / "logs" / "live" / "latest_snapshot.json"
 CREDIT_TEXT = "原作: 猫饭团子uu · UI/计算引擎优化: 加菲_barista"
 CREDIT_GITHUB_URL = "https://github.com/SeasonCake/bidking-lab"
+GITHUB_TIP_TEXT = "如果觉得不错，就给一个免费的 Star 吧！"
+DETAIL_TIP_TEXT = "展开 / 收起详情、小地图和手动填写区"
+MANUAL_TIP_TEXT = "手动填写；断网或识别缺项时补总件、均格、件数、均价/总价；编辑时自动抓取不会覆盖当前输入"
+MANUAL_RETURN_TIP_TEXT = "返回实时；手填内容保留，live 继续监测并可补齐空字段"
+MANUAL_CLEAR_SETTLEMENT_TIP = "结算页手填时清掉自动带入的结算数字，保留英雄/地图；不删除 live 日志"
+MANUAL_CLEAR_SETTLEMENT_INACTIVE_TIP = "只在当前停留结算页并进入手填时启用"
+MAP_TIP_TEXT = "悬停预览小地图；点击固定或取消固定"
+THEME_TIP_PREFIX = "切换配色"
+SETTLEMENT_HIDE_TIP = "预设隐藏结算金额，想自己看结算时用；结算出现后生效，只影响界面，不影响计算"
+SETTLEMENT_SHOW_TIP = "显示结算金额；关闭预设隐藏，只影响界面，不影响计算"
+SETTLEMENT_INACTIVE_TIP = SETTLEMENT_HIDE_TIP
+CLOSE_TIP_TEXT = "关闭 Hero Ref；若由启动脚本打开，会联动清理监控进程"
+RESIZE_TIP_TEXT = "拖动边角缩放窗口"
+SUMMARY_DIAGNOSTIC_LOG = "hero_ref_ui_summary.jsonl"
+UI_HEALTH_LOG = "hero_ref_ui_health.jsonl"
+UI_STALL_SECONDS = 5.0
+UI_STALL_LOG_INTERVAL_SECONDS = 5.0
+DIAGNOSTIC_PROFILES = ("engineering", "portable", "public-safe")
+DIAGNOSTIC_PROFILE_ALIASES = {
+    "engineering": "engineering",
+    "portable": "portable",
+    "stable": "portable",
+    "public-safe": "public-safe",
+    "public_safe": "public-safe",
+}
+DEFAULT_DIAGNOSTIC_PROFILE = "engineering"
+TOPMOST_ON_TIP = "置顶中；点击切换为自由窗口"
+TOPMOST_OFF_TIP = "自由窗口；点击恢复置顶"
+EXPORT_DIAGNOSTIC_TIP_TEMPLATE = "导出诊断包到 {path}；包含 latest_snapshot、raw JSONL 和 UI 摘要，方便朋友发回排查"
 
 FONT_UI = "Microsoft YaHei UI"
 FONT_NUMERIC = "Segoe UI Semibold"
 MINIMAP_DEFAULT_COLUMNS = 10
 MINIMAP_DEFAULT_ROWS = 13
-MANUAL_FORM_COLUMNS = 6
+MANUAL_BASE_FIELDS = (
+    ("hero", "英雄", ""),
+    ("map_id", "地图", ""),
+    ("total_count", "总件", ""),
+    ("total_cells", "总格", ""),
+    ("total_avg", "全均格", ""),
+)
+MANUAL_QUALITY_ROWS = (
+    ("白", "white_avg", "white_count", "white_cells"),
+    ("绿", "green_avg", "green_count", "green_cells"),
+    ("白绿", "q1_avg", "q1_count", "q1_cells"),
+    ("蓝", "q3_avg", "q3_count", "q3_cells"),
+    ("紫", "q4_avg", "q4_count", "q4_cells"),
+    ("金", "q5_avg", "q5_count", "q5_cells"),
+    ("红", "q6_avg", "q6_count", "q6_cells"),
+)
+MANUAL_VALUE_ROWS = (
+    ("白", "white_avg_value", "white_value_sum"),
+    ("绿", "green_avg_value", "green_value_sum"),
+    ("白绿", "q1_avg_value", "q1_value_sum"),
+    ("蓝", "q3_avg_value", "q3_value_sum"),
+    ("紫", "q4_avg_value", "q4_value_sum"),
+    ("金", "q5_avg_value", "q5_value_sum"),
+    ("红", "q6_avg_value", "q6_value_sum"),
+)
+MANUAL_EXTRA_FIELDS = (
+    ("q4q5_count", "紫金红件", ""),
+)
 QUALITY_LABELS = {
     "q1": "白绿",
     "q3": "蓝",
@@ -68,6 +141,19 @@ HERO_ALIASES = {
     "victor": "victor",
     "维克": "victor",
     "维克托": "victor",
+}
+MANUAL_GENERIC_MAP_ALIASES = {
+    "快递": 2101,
+    "仓库": 2201,
+    "集装箱": 2301,
+    "箱子": 2301,
+    "别墅": 2401,
+    "残骸": 2501,
+    "沉船": 2501,
+    "船": 2501,
+    "隐秘拍卖": 2601,
+    "隐秘拍卖会": 2601,
+    "拍卖会": 2601,
 }
 AUTO_REPLACE_MANUAL_FIELDS = {
     "hero",
@@ -296,6 +382,23 @@ def _text(value: Any, fallback: str = "-") -> str:
     return str(value)
 
 
+def _normalize_diagnostic_profile(value: Any) -> str:
+    profile = str(value or DEFAULT_DIAGNOSTIC_PROFILE).strip().lower()
+    normalized = DIAGNOSTIC_PROFILE_ALIASES.get(profile)
+    if normalized not in DIAGNOSTIC_PROFILES:
+        return DEFAULT_DIAGNOSTIC_PROFILE
+    return normalized
+
+
+def _parse_diagnostic_profile(value: str) -> str:
+    profile = str(value or "").strip().lower()
+    if profile not in DIAGNOSTIC_PROFILE_ALIASES:
+        raise argparse.ArgumentTypeError(
+            "expected one of: engineering, portable, public-safe"
+        )
+    return _normalize_diagnostic_profile(profile)
+
+
 def _hex_to_rgb(color: str) -> tuple[int, int, int] | None:
     text = str(color or "").strip()
     if not text.startswith("#") or len(text) != 7:
@@ -327,6 +430,365 @@ def _short(value: Any, limit: int = 36) -> str:
     if len(text) <= limit:
         return text or "-"
     return f"{text[: limit - 1]}..."
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _compact_flags(flags: Any) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    if not isinstance(flags, list):
+        return out
+    for flag in flags[:8]:
+        if not isinstance(flag, dict):
+            continue
+        out.append(
+            {
+                "label": _text(flag.get("label"), ""),
+                "level": _text(flag.get("level"), ""),
+                "detail": _text(flag.get("detail"), ""),
+            }
+        )
+    return out
+
+
+def _summary_diagnostic_row(
+    data: dict[str, Any],
+    *,
+    snapshot_path: Path,
+    render_mode: str,
+    manual_active: bool,
+    settlement_values_hidden: bool,
+) -> dict[str, Any]:
+    context = _mapping(data.get("context"))
+    reference = _mapping(data.get("reference"))
+    red = _mapping(data.get("red"))
+    evidence = _mapping(data.get("evidence"))
+    ahmed_ref = _mapping(data.get("ahmed_ref"))
+    ref_evidence = _mapping(ahmed_ref.get("evidence"))
+    diagnostics = _mapping(data.get("diagnostics"))
+    rare_signals = _mapping(diagnostics.get("rare_signals"))
+    performance = _mapping(diagnostics.get("performance"))
+    minimap = _mapping(data.get("minimap"))
+    truth = _mapping(data.get("truth"))
+    truth_q6 = _mapping(truth.get("q6"))
+    stale = _mapping(data.get("stale"))
+    latest_result = evidence.get("latest_result")
+    if not isinstance(latest_result, dict):
+        latest_result = evidence.get("latest_sent")
+    if not isinstance(latest_result, dict):
+        latest_result = {}
+    return {
+        "logged_at": time.time(),
+        "snapshot_path": str(snapshot_path),
+        "status": _text(data.get("status"), "ok"),
+        "render_mode": render_mode,
+        "manual_active": bool(manual_active),
+        "settlement_values_hidden": bool(settlement_values_hidden),
+        "updated_at_text": _text(data.get("updated_at_text"), ""),
+        "stale_reason": _text(stale.get("reason"), ""),
+        "snapshot_age_seconds": stale.get("age_seconds"),
+        "context": {
+            "hero": context.get("hero"),
+            "map_id": context.get("map_id"),
+            "round": context.get("round"),
+            "phase": context.get("phase"),
+            "session_id": context.get("session_id"),
+        },
+        "reference": {
+            "source": reference.get("source"),
+            "readiness": reference.get("readiness"),
+            "action": reference.get("action"),
+            "current_highest": reference.get("current_highest"),
+            "conservative": reference.get("conservative"),
+            "balanced": reference.get("balanced"),
+            "aggressive": reference.get("aggressive"),
+            "decision_range": reference.get("decision_range"),
+            "total_grid_range": reference.get("total_grid_range"),
+            "total_value_range": reference.get("total_value_range"),
+            "v3_balanced": reference.get("v3_balanced"),
+            "ref_minus_v3_balanced": reference.get("ref_minus_v3_balanced"),
+            "note": reference.get("note"),
+        },
+        "red": {
+            "count_range": red.get("count_range"),
+            "cells_range": red.get("cells_range"),
+            "value_range": red.get("value_range"),
+            "quality_count_summary": red.get("quality_count_summary"),
+            "uncertainty_summary": red.get("uncertainty_summary"),
+            "risk_reference": red.get("risk_reference"),
+        },
+        "evidence": {
+            "match_text": evidence.get("match_text"),
+            "information_density": evidence.get("information_density"),
+            "ref_input_summary": evidence.get("ref_input_summary"),
+            "candidate_summary": evidence.get("candidate_summary"),
+            "next_info_hint": evidence.get("next_info_hint"),
+            "public_numeric_summary": evidence.get("public_numeric_summary"),
+            "minimap_quality_summary": evidence.get("minimap_quality_summary"),
+            "ref_combo_count": evidence.get("ref_combo_count"),
+            "diagnostics": evidence.get("diagnostics"),
+            "ref_notes": evidence.get("ref_notes"),
+            "latest_result": latest_result,
+            "manual_overlay": bool(evidence.get("manual_overlay")),
+        },
+        "ref_v0": {
+            "status": ahmed_ref.get("status"),
+            "source": ahmed_ref.get("source"),
+            "notes": ahmed_ref.get("notes"),
+            "combo_count": ahmed_ref.get("combo_count"),
+            "quality_count_ranges": ahmed_ref.get("quality_count_ranges"),
+            "total_grid_range": ahmed_ref.get("total_grid_range"),
+            "value_range": {
+                "p25": ahmed_ref.get("value_p25"),
+                "p50": ahmed_ref.get("value_p50"),
+                "p75": ahmed_ref.get("value_p75"),
+            },
+            "evidence": {
+                "source_notes": ref_evidence.get("source_notes"),
+                "total_count": ref_evidence.get("total_count"),
+                "total_grid_target": ref_evidence.get("total_grid_target"),
+                "fixed_counts": ref_evidence.get("fixed_counts"),
+                "min_counts": ref_evidence.get("min_counts"),
+                "avg_cells": ref_evidence.get("avg_cells"),
+                "quality_cells": ref_evidence.get("quality_cells"),
+                "avg_values": ref_evidence.get("avg_values"),
+                "quality_values": ref_evidence.get("quality_values"),
+            },
+        },
+        "minimap": {
+            "summary_text": minimap.get("summary_text"),
+            "quality_counts": minimap.get("quality_counts"),
+            "items_count": len(minimap.get("items") or ()),
+            "source": minimap.get("source"),
+        },
+        "truth": {
+            "available": bool(truth.get("available")),
+            "total_value": truth.get("total_value"),
+            "total_items": truth.get("total_items"),
+            "total_cells": truth.get("total_cells"),
+            "q6": {
+                "count": truth_q6.get("count"),
+                "cells": truth_q6.get("cells"),
+                "value": truth_q6.get("value"),
+            },
+        },
+        "diagnostics": {
+            "rare_signals": {
+                "present": bool(rare_signals.get("present")),
+                "summary": rare_signals.get("summary"),
+                "role_counts": rare_signals.get("role_counts"),
+                "actions": rare_signals.get("actions"),
+                "public_info": rare_signals.get("public_info"),
+            },
+            "performance": {
+                "summary_total_ms": performance.get("summary_total_ms"),
+                "ref_engine_ms": performance.get("ref_engine_ms"),
+                "settlement_ref_engine_ms": performance.get("settlement_ref_engine_ms"),
+                "refresh_total_ms": performance.get("refresh_total_ms"),
+                "export_ms": performance.get("export_ms"),
+            },
+        },
+        "flags": _compact_flags(data.get("flags")),
+    }
+
+
+def _summary_diagnostic_signature(row: dict[str, Any]) -> str:
+    stable = {
+        key: value
+        for key, value in row.items()
+        if key not in {"logged_at", "snapshot_age_seconds", "updated_at_text"}
+    }
+    diagnostics = stable.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        diagnostics = dict(diagnostics)
+        diagnostics.pop("performance", None)
+        stable["diagnostics"] = diagnostics
+    return json.dumps(stable, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _diagnostic_export_dir(snapshot_path: Path) -> Path:
+    return snapshot_path.parent / "exports"
+
+
+def _diagnostic_export_tip(snapshot_path: Path) -> str:
+    return EXPORT_DIAGNOSTIC_TIP_TEMPLATE.format(
+        path=str(_diagnostic_export_dir(snapshot_path).resolve())
+    )
+
+
+def _safe_export_name(path: Path, *, base_dir: Path) -> str:
+    try:
+        rel = path.resolve().relative_to(base_dir.resolve())
+        return rel.as_posix()
+    except (OSError, ValueError):
+        return path.name
+
+
+def _candidate_diagnostic_paths(
+    snapshot: dict[str, Any],
+    snapshot_path: Path,
+    *,
+    diagnostic_profile: str = DEFAULT_DIAGNOSTIC_PROFILE,
+) -> list[Path]:
+    diagnostic_profile = _normalize_diagnostic_profile(diagnostic_profile)
+    base_dir = snapshot_path.parent
+    candidates: list[Path] = [
+        snapshot_path,
+        base_dir / "capture_source_status.json",
+        base_dir / UI_HEALTH_LOG,
+        base_dir / "local_player_cache.json",
+        base_dir / "monitor.lock",
+    ]
+    if diagnostic_profile == "engineering":
+        candidates.extend(
+            [
+                base_dir / SUMMARY_DIAGNOSTIC_LOG,
+                base_dir / "model_eval.jsonl",
+                base_dir / "monitor_errors.jsonl",
+            ]
+        )
+    if diagnostic_profile in {"engineering", "portable"}:
+        candidates.extend(
+            [
+                base_dir / "fatbeans_webhook_live.json",
+                base_dir / "raw" / "fatbeans_webhook_live.jsonl",
+            ]
+        )
+        for key in ("raw_capture", "raw_capture_jsonl"):
+            raw_value = snapshot.get(key)
+            if not raw_value:
+                continue
+            path = Path(str(raw_value))
+            if not path.is_absolute():
+                path = base_dir / path
+            candidates.append(path)
+    seen: set[Path] = set()
+    out: list[Path] = []
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved in seen or not path.is_file():
+            continue
+        seen.add(resolved)
+        out.append(path)
+    return out
+
+
+def _diagnostic_file_summary(path: Path) -> dict[str, Any]:
+    try:
+        stat = path.stat()
+    except OSError:
+        return {"path": str(path), "exists": False}
+    return {
+        "path": str(path),
+        "exists": True,
+        "size_bytes": stat.st_size,
+        "modified_at": stat.st_mtime,
+    }
+
+
+def _write_diagnostic_export(
+    *,
+    snapshot: dict[str, Any],
+    snapshot_path: Path,
+    current_summary: dict[str, Any] | None = None,
+    diagnostic_profile: str = DEFAULT_DIAGNOSTIC_PROFILE,
+) -> Path:
+    export_started = time.perf_counter()
+    diagnostic_profile = _normalize_diagnostic_profile(diagnostic_profile)
+    export_dir = _diagnostic_export_dir(snapshot_path)
+    export_dir.mkdir(parents=True, exist_ok=True)
+    context = _mapping(current_summary.get("context") if current_summary else {})
+    session_text = str(context.get("session_id") or snapshot.get("session_id") or "session")
+    safe_session = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in session_text)[:48]
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    export_path = export_dir / f"HeroRefDiag-{timestamp}-{safe_session}.zip"
+    base_dir = snapshot_path.parent
+    current_reference = _mapping(current_summary.get("reference") if current_summary else {})
+    current_evidence = _mapping(current_summary.get("evidence") if current_summary else {})
+    current_diagnostics = _mapping(current_summary.get("diagnostics") if current_summary else {})
+    manifest = {
+        "created_at": time.time(),
+        "snapshot_path": str(snapshot_path),
+        "session_id": session_text,
+        "context": context,
+        "version": {
+            "schema_version": snapshot.get("schema_version"),
+            "ui_contract_schema_version": _mapping(snapshot.get("ui_contract")).get("schema_version"),
+            "source_file": snapshot.get("file"),
+            "created_at": snapshot.get("created_at"),
+        },
+        "parameters": {
+            "n_trials": snapshot.get("n_trials"),
+            "roi_trials": snapshot.get("roi_trials"),
+            "shadow_trials": snapshot.get("shadow_trials"),
+            "formal_mode_requested": snapshot.get("formal_mode_requested"),
+            "formal_mode": snapshot.get("formal_mode"),
+            "formal_baseline_source": snapshot.get("formal_baseline_source"),
+            "map_id": snapshot.get("map_id"),
+            "model_map_id": snapshot.get("model_map_id"),
+            "map_alias_mode": snapshot.get("map_alias_mode"),
+            "hero": snapshot.get("hero"),
+            "round": snapshot.get("round"),
+            "phase": snapshot.get("phase"),
+        },
+        "current_summary": {
+            "status": current_summary.get("status") if current_summary else None,
+            "reference_source": current_reference.get("source"),
+            "readiness": current_reference.get("readiness"),
+            "candidate_summary": current_evidence.get("candidate_summary"),
+            "next_info_hint": current_evidence.get("next_info_hint"),
+            "rare_signal_summary": _mapping(current_diagnostics.get("rare_signals")).get("summary"),
+        },
+        "source_files": {
+            "file": snapshot.get("file"),
+            "raw_capture": snapshot.get("raw_capture"),
+            "raw_capture_jsonl": snapshot.get("raw_capture_jsonl"),
+        },
+        "log_summary": {
+            "log_dir": str(base_dir.resolve()),
+            "diagnostic_profile": diagnostic_profile,
+            "continuous_ui_summary": diagnostic_profile == "engineering",
+            "export_includes_raw": diagnostic_profile in {"engineering", "portable"},
+            "export_includes_ui_summary": diagnostic_profile == "engineering",
+            "latest_snapshot": _diagnostic_file_summary(snapshot_path),
+            "ui_summary": _diagnostic_file_summary(base_dir / SUMMARY_DIAGNOSTIC_LOG),
+            "ui_health": _diagnostic_file_summary(base_dir / UI_HEALTH_LOG),
+            "model_eval": _diagnostic_file_summary(base_dir / "model_eval.jsonl"),
+            "monitor_errors": _diagnostic_file_summary(base_dir / "monitor_errors.jsonl"),
+        },
+        "included": [],
+        "missing_optional": [],
+        "note": "Hero Ref diagnostic package; no screenshots are included.",
+    }
+    with zipfile.ZipFile(export_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in _candidate_diagnostic_paths(
+            snapshot,
+            snapshot_path,
+            diagnostic_profile=diagnostic_profile,
+        ):
+            arcname = _safe_export_name(path, base_dir=base_dir)
+            archive.write(path, arcname)
+            manifest["included"].append(arcname)
+        manifest["log_summary"]["included_count"] = len(manifest["included"])
+        if current_summary:
+            archive.writestr(
+                "hero_ref_current_summary.json",
+                json.dumps(current_summary, ensure_ascii=False, indent=2),
+            )
+            manifest["included"].append("hero_ref_current_summary.json")
+        manifest["performance"] = {
+            "export_ms": round((time.perf_counter() - export_started) * 1000.0, 2),
+        }
+        archive.writestr(
+            "BUILD_EXPORT_MANIFEST.json",
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+        )
+    return export_path
 
 
 def _status_int(payload: dict[str, Any], key: str) -> int:
@@ -458,6 +920,35 @@ def _to_manual_count(value: Any, label: str) -> tuple[int | None, str]:
     return int(parsed), ""
 
 
+def _to_manual_nonnegative_float(value: Any, label: str) -> tuple[float | None, str]:
+    if value in (None, ""):
+        return None, ""
+    text = str(value).replace(",", "").strip()
+    if not text:
+        return None, ""
+    parsed = _to_optional_float(text)
+    if parsed is None:
+        return None, f"{label}需要数字"
+    if parsed < 0:
+        return None, f"{label}不能为负数"
+    return parsed, ""
+
+
+def _to_manual_value_sum(value: Any, label: str) -> tuple[int | None, str]:
+    parsed, error = _to_manual_nonnegative_float(value, label)
+    if error or parsed is None:
+        return None, error
+    if not parsed.is_integer():
+        return None, f"{label}需要整数"
+    return int(parsed), ""
+
+
+def _manual_value_sum_matches_avg(avg: float, *, count: int, value_sum: float) -> bool:
+    if count <= 0:
+        return abs(float(value_sum)) <= 0.0001 and abs(float(avg)) <= 0.0001
+    return abs(float(avg) * count - float(value_sum)) <= 0.5
+
+
 def _normalize_manual_hero(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -471,6 +962,125 @@ def _supported_manual_hero_display(*values: Any) -> Any:
         if normalized in {"aisha", "ahmed", "victor"}:
             return value
     return None
+
+
+def _normalize_manual_map_text(value: Any) -> str:
+    text = str(value or "").replace("\u200b", "").strip().lower()
+    if not text:
+        return ""
+    text = re.sub(r"[\s_\-:：#()\[\]（）【】]+", "", text)
+    for prefix in ("地图", "mapid", "map"):
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+    return text
+
+
+def _processed_maps_candidates() -> tuple[Path, ...]:
+    candidates = [
+        ROOT / "data" / "processed" / "maps.json",
+        Path.cwd() / "data" / "processed" / "maps.json",
+    ]
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root:
+        candidates.append(Path(bundle_root) / "data" / "processed" / "maps.json")
+    return tuple(candidates)
+
+
+@lru_cache(maxsize=1)
+def _processed_map_name_rows() -> tuple[tuple[int, str], ...]:
+    for path in _processed_maps_candidates():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, list):
+            continue
+        rows: list[tuple[int, str]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            map_id = _to_optional_int(item.get("map_id"))
+            name = _text(item.get("name"), "").replace("\u200b", "").strip()
+            if map_id is None or not name:
+                continue
+            rows.append((map_id, name))
+        if rows:
+            return tuple(rows)
+    return ()
+
+
+def _add_manual_map_alias(
+    lookup: dict[str, tuple[int, str]],
+    alias: Any,
+    map_id: int,
+    name: str,
+) -> None:
+    key = _normalize_manual_map_text(alias)
+    if key:
+        lookup.setdefault(key, (map_id, name))
+
+
+def _manual_map_lookup() -> dict[str, tuple[int, str]]:
+    lookup: dict[str, tuple[int, str]] = {}
+    for map_id, name in _processed_map_name_rows():
+        for alias in {str(map_id), name, f"{map_id}{name}", f"{name}{map_id}"}:
+            _add_manual_map_alias(lookup, alias, map_id, name)
+
+    data: dict[str, Any] = {}
+    if callable(load_reference_static_data):
+        try:
+            loaded = load_reference_static_data()
+            if isinstance(loaded, dict):
+                data = loaded
+        except Exception:  # noqa: BLE001 - manual fallback should not depend on static parsing
+            data = {}
+    map_nests = data.get("map_nests") if isinstance(data.get("map_nests"), dict) else {}
+    for raw_map_id, raw_row in map_nests.items():
+        map_id = _to_optional_int(raw_map_id)
+        if map_id is None:
+            continue
+        name = ""
+        if isinstance(raw_row, (list, tuple)) and len(raw_row) >= 2:
+            name = _text(raw_row[1], "")
+        for alias in {str(map_id), name, f"{map_id}{name}", f"{name}{map_id}"}:
+            _add_manual_map_alias(lookup, alias, map_id, name)
+    for alias, map_id in MANUAL_GENERIC_MAP_ALIASES.items():
+        _add_manual_map_alias(lookup, alias, map_id, _manual_map_name(map_id, lookup=lookup))
+    return lookup
+
+
+def _manual_map_name(map_id: Any, *, lookup: dict[str, tuple[int, str]] | None = None) -> str:
+    parsed = _to_optional_int(map_id)
+    if parsed is None:
+        return ""
+    entries = lookup if lookup is not None else _manual_map_lookup()
+    row = entries.get(str(parsed))
+    return row[1] if row else ""
+
+
+def _manual_map_display_value(value: Any) -> str:
+    map_id = _to_optional_int(value)
+    if map_id is None:
+        return _text(value, "")
+    name = _manual_map_name(map_id)
+    return f"{map_id} {name}".strip() if name else str(map_id)
+
+
+def _manual_map_id_from_text(value: Any) -> tuple[int | None, str]:
+    text = str(value or "").strip()
+    if not text:
+        return None, ""
+    parsed = _to_optional_int(text)
+    if parsed is not None:
+        return parsed, ""
+    match = re.search(r"(?<!\d)(\d{4})(?!\d)", text.replace(",", ""))
+    if match:
+        return int(match.group(1)), ""
+    lookup = _manual_map_lookup()
+    row = lookup.get(_normalize_manual_map_text(text))
+    if row is not None:
+        return row[0], ""
+    return None, f"地图无法识别：{text}"
 
 
 def _minimap_quality_key(value: Any) -> str:
@@ -548,7 +1158,53 @@ def _decimal_places(text: str) -> int:
         return 6
     if "." not in value:
         return 0
-    return max(0, len(value.split(".", 1)[1].rstrip()))
+    return max(0, len(value.split(".", 1)[1]))
+
+
+def _manual_decimal_parts(text: str) -> tuple[str, str] | None:
+    value = str(text or "").strip().replace(",", "")
+    if not value or "e" in value.lower():
+        return None
+    if "." in value:
+        int_part, frac_part = value.split(".", 1)
+        if not frac_part:
+            return None
+    else:
+        int_part, frac_part = value, ""
+    if not int_part or not int_part.isdigit() or (frac_part and not frac_part.isdigit()):
+        return None
+    return str(int(int_part)), frac_part
+
+
+def _manual_avg_uses_display_rule(avg_text: str) -> bool:
+    parts = _manual_decimal_parts(avg_text)
+    if parts is None:
+        return False
+    _int_part, frac_part = parts
+    return len(frac_part) <= 3
+
+
+def _format_manual_game_avg(total_cells: int, count: int, *, max_decimals: int) -> str:
+    if count <= 0 or total_cells < 0:
+        return ""
+    decimals = max(2, max_decimals)
+    scale = 10**decimals
+    floored_scaled = (int(total_cells) * scale) // int(count)
+    int_part, frac_value = divmod(floored_scaled, scale)
+    digits = str(frac_value).zfill(decimals)
+    if int(total_cells) * scale == floored_scaled * int(count):
+        digits = digits.rstrip("0")
+    return f"{int_part}.{digits}" if digits else str(int_part)
+
+
+def _manual_avg_text_matches_grid(avg_text: str, *, count: int, cells: int) -> bool:
+    parts = _manual_decimal_parts(avg_text)
+    if parts is None or count <= 0:
+        return False
+    int_part, frac_part = parts
+    normalized = f"{int_part}.{frac_part}" if frac_part else int_part
+    max_decimals = max(2, len(frac_part))
+    return _format_manual_game_avg(cells, count, max_decimals=max_decimals) == normalized
 
 
 def _manual_avg_product_tolerance(avg_text: str, count: int) -> float:
@@ -567,6 +1223,8 @@ def _manual_avg_matches_cells(
 ) -> bool:
     if avg is None:
         return True
+    if _manual_avg_uses_display_rule(avg_text):
+        return _manual_avg_text_matches_grid(avg_text, count=count, cells=cells)
     return abs(float(avg) * int(count) - int(cells)) <= _manual_avg_product_tolerance(
         avg_text,
         count,
@@ -582,6 +1240,13 @@ def _manual_avg_grid_options_from_text(count: int, avg: float, avg_text: str) ->
         return [0] if avg == 0 else []
     low = count
     high = 18 * count
+    if _manual_avg_uses_display_rule(avg_text):
+        return [
+            grid
+            for grid in range(low, high + 1)
+            if _manual_avg_text_matches_grid(avg_text, count=count, cells=grid)
+            and can_compose_grid_total(count, grid)
+        ]
     target = avg * count
     tolerance = _manual_avg_product_tolerance(avg_text, count)
     candidates = {
@@ -644,6 +1309,14 @@ def _manual_avg_count_from_cells_text(avg: float | None, cells: Any, avg_text: s
         return None
     if avg == 0:
         return 0 if cells_int == 0 else None
+    if _manual_avg_uses_display_rule(avg_text):
+        candidates = [
+            count
+            for count in range(1, cells_int + 1)
+            if _manual_avg_text_matches_grid(avg_text, count=count, cells=cells_int)
+            and can_compose_grid_total(count, cells_int)
+        ]
+        return candidates[0] if len(candidates) == 1 else None
     count = int(round(cells_int / avg))
     if count <= 0:
         return None
@@ -956,26 +1629,44 @@ class AhmadTkOverlay:
         stop_pids_on_exit: tuple[int, ...] = (),
         cleanup_lock_paths: tuple[Path, ...] = (),
         load_existing_snapshot: bool = False,
+        diagnostic_profile: str = DEFAULT_DIAGNOSTIC_PROFILE,
     ) -> None:
         self.root = root
         self.snapshot_path = snapshot_path
         self.interval_ms = max(300, int(interval_ms))
+        self.diagnostic_profile = _normalize_diagnostic_profile(diagnostic_profile)
         self.exit_when_pids = exit_when_pids
         self._stop_pids_on_exit = tuple(pid for pid in stop_pids_on_exit if pid > 0)
         self._cleanup_lock_paths = tuple(cleanup_lock_paths)
         self._exit_cleanup_done = False
+        self._last_ui_heartbeat_at = time.monotonic()
+        self._last_ui_stall_bucket = 0
         self._last_signature: tuple[int, int] | None = None
         self._last_capture_status_signature: tuple[Any, ...] | None = None
         self._last_summary: dict[str, Any] = {}
         self._last_live_snapshot: dict[str, Any] = {}
         self._last_live_summary: dict[str, Any] = {}
+        self._last_summary_log_signature: str | None = None
+        self._summary_result_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._summary_worker_running = False
+        self._summary_worker_seq = 0
+        self._summary_worker_signature: tuple[int, int] | None = None
+        self._manual_result_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._manual_worker_running = False
+        self._manual_worker_seq = 0
+        self._manual_input_revision = 0
         self._manual_snapshot: dict[str, Any] = {}
         self._manual_summary: dict[str, Any] = {}
         self._manual_active = False
+        self._manual_edit_enabled = False
         self._manual_live_session_id = ""
         self._manual_programmatic_update = False
         self._manual_dirty_fields: set[str] = set()
         self._manual_autofill_values: dict[str, str] = {}
+        self._manual_settlement_edit_unlocked = False
+        self.settlement_values_hidden = False
+        self.topmost_enabled = True
+        self.last_diagnostic_export_path: Path | None = None
         self._minimap_data: dict[str, Any] = {}
         self._canvas_tip: HoverTip | None = None
         self._popup_canvas_tip: HoverTip | None = None
@@ -1084,6 +1775,21 @@ class AhmadTkOverlay:
             font=(FONT_UI, 8, "bold"),
         )
         self.close_button.pack(side="right", padx=(5, 0))
+        self.close_tip = HoverTip(self.close_button, CLOSE_TIP_TEXT)
+        self.topmost_button = tk.Label(
+            header_actions,
+            text="T",
+            bg=PANEL_SOFT,
+            fg=WARM,
+            padx=5,
+            pady=1,
+            font=(FONT_UI, 8, "bold"),
+            highlightthickness=1,
+            highlightbackground=WARM,
+        )
+        self.topmost_button.pack(side="right", padx=(4, 0))
+        self.topmost_button.bind("<Button-1>", self.toggle_topmost, add="+")
+        self.topmost_tip = HoverTip(self.topmost_button, TOPMOST_ON_TIP)
         self.top_resize_grip = tk.Label(
             header_actions,
             text="◢",
@@ -1102,7 +1808,7 @@ class AhmadTkOverlay:
         self.top_resize_grip.bind("<ButtonPress-1>", self._begin_resize, add="+")
         self.top_resize_grip.bind("<B1-Motion>", self._resize_window, add="+")
         self.top_resize_grip.bind("<ButtonRelease-1>", self._end_resize, add="+")
-        self.top_resize_tip = HoverTip(self.top_resize_grip, "拖动边角缩放窗口")
+        self.top_resize_tip = HoverTip(self.top_resize_grip, RESIZE_TIP_TEXT)
         control_row = tk.Frame(header, bg=BG)
         control_row.pack(fill="x", pady=(4, 0))
         self.status = tk.Label(
@@ -1125,6 +1831,7 @@ class AhmadTkOverlay:
             width=4,
         )
         self.mode_button.pack(side="right", padx=(0, 5))
+        self.mode_tip = HoverTip(self.mode_button, DETAIL_TIP_TEXT)
         self.manual_button = tk.Label(
             header_right,
             text="手填",
@@ -1137,8 +1844,8 @@ class AhmadTkOverlay:
             highlightbackground=WARM,
         )
         self.manual_button.pack(side="right", padx=(0, 5))
-        self.manual_button.bind("<Button-1>", self.open_manual_panel, add="+")
-        self.manual_tip = HoverTip(self.manual_button, "展开手动填写 / 断网备用")
+        self.manual_button.bind("<Button-1>", self.toggle_manual_mode, add="+")
+        self.manual_tip = HoverTip(self.manual_button, MANUAL_TIP_TEXT)
         self.theme_button = tk.Label(
             header_right,
             text="配色",
@@ -1152,7 +1859,7 @@ class AhmadTkOverlay:
         )
         self.theme_button.pack(side="right", padx=(0, 5))
         self.theme_button.bind("<Button-1>", self._show_theme_menu, add="+")
-        self.theme_tip = HoverTip(self.theme_button, "选择配色：暗色")
+        self.theme_tip = HoverTip(self.theme_button, f"{THEME_TIP_PREFIX}：暗色")
         self.map_button = tk.Label(
             header_right,
             text="地图",
@@ -1168,7 +1875,21 @@ class AhmadTkOverlay:
         self.map_button.bind("<Enter>", self._show_minimap_popup, add="+")
         self.map_button.bind("<Leave>", self._schedule_hide_minimap_popup, add="+")
         self.map_button.bind("<Button-1>", self.toggle_pinned_minimap, add="+")
-        self.map_tip = HoverTip(self.map_button, "悬停显示小地图，点击常驻")
+        self.map_tip = HoverTip(self.map_button, MAP_TIP_TEXT)
+        self.settlement_button = tk.Label(
+            header_right,
+            text="藏价",
+            bg=PANEL_SOFT,
+            fg=DIM,
+            padx=6,
+            pady=3,
+            font=(FONT_UI, 8, "bold"),
+            highlightthickness=1,
+            highlightbackground=BORDER,
+        )
+        self.settlement_button.pack(side="right", padx=(0, 5))
+        self.settlement_button.bind("<Button-1>", self.toggle_settlement_values, add="+")
+        self.settlement_tip = HoverTip(self.settlement_button, SETTLEMENT_HIDE_TIP)
         self._bind_drag(header, top_row, title_box, self.title, self.subtitle, control_row)
 
         self.flags = tk.Frame(self.shell, bg=BG)
@@ -1224,7 +1945,7 @@ class AhmadTkOverlay:
                 "红格",
                 "紫金件",
                 "红值",
-                "风险",
+                "低品件",
             ),
         )
         self.action_rows = self._row_card(
@@ -1234,8 +1955,8 @@ class AhmadTkOverlay:
                 "动作",
                 "最高",
                 "最近",
-                "来源",
-                "状态",
+                "候选",
+                "下一步",
             ),
         )
         self.red_rows["_card"].pack(side="left", fill="x", expand=True, padx=(0, 4))
@@ -1247,6 +1968,9 @@ class AhmadTkOverlay:
         self._build_manual_panel(details_grid)
         details_top = tk.Frame(details_grid, bg=PANEL_MUTED)
         details_top.pack(fill="x", pady=(8, 0))
+        details_top.columnconfigure(0, weight=1, uniform="detail_cards")
+        details_top.columnconfigure(1, weight=1, uniform="detail_cards")
+        details_top.rowconfigure(0, weight=1)
         self.evidence_rows = self._row_card(
             details_top,
             "证据",
@@ -1265,14 +1989,15 @@ class AhmadTkOverlay:
             (
                 "外援",
                 "决策",
+                "总格",
                 "总值",
                 "红值",
                 "结算",
                 "备注",
             ),
         )
-        self.evidence_rows["_card"].pack(side="left", fill="x", expand=True, padx=(0, 4))
-        self.detail_rows["_card"].pack(side="left", fill="x", expand=True)
+        self.evidence_rows["_card"].grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        self.detail_rows["_card"].grid(row=0, column=1, sticky="nsew")
 
         self.minimap_card = self._card(self.shell, bg=PANEL, padx=6, pady=6)
         minimap_header = tk.Frame(self.minimap_card, bg=PANEL)
@@ -1295,6 +2020,20 @@ class AhmadTkOverlay:
             anchor="e",
         )
         self.minimap_counts.pack(side="right")
+        self.export_diag_button = tk.Label(
+            minimap_header,
+            text="导出",
+            bg=PANEL_SOFT,
+            fg=ACCENT,
+            padx=6,
+            pady=2,
+            font=(FONT_UI, 7, "bold"),
+            highlightthickness=1,
+            highlightbackground=BORDER,
+        )
+        self.export_diag_button.pack(side="right", padx=(0, 6))
+        self.export_diag_button.bind("<Button-1>", self.export_diagnostic_package, add="+")
+        self.export_diag_tip = HoverTip(self.export_diag_button, _diagnostic_export_tip(self.snapshot_path))
         minimap_body = tk.Frame(self.minimap_card, bg=PANEL)
         minimap_body.pack(fill="x")
         minimap_canvas_frame = tk.Frame(minimap_body, bg=PANEL)
@@ -1356,7 +2095,7 @@ class AhmadTkOverlay:
             pass
         self.footer_github.pack(side="left", fill="x", expand=True)
         self.footer_github.bind("<Button-1>", self._open_credit_github, add="+")
-        self.footer_github_tip = HoverTip(self.footer_github, CREDIT_GITHUB_URL)
+        self.footer_github_tip = HoverTip(self.footer_github, GITHUB_TIP_TEXT)
         self.resize_grip = tk.Label(
             self.footer_row,
             text="◢",
@@ -1378,17 +2117,22 @@ class AhmadTkOverlay:
             self.outer,
             exclude={
                 self.close_button,
+                self.topmost_button,
                 self.mode_button,
                 self.manual_button,
                 self.theme_button,
                 self.map_button,
+                self.settlement_button,
+                self.export_diag_button,
                 self.top_resize_grip,
                 self.resize_grip,
                 self.footer_github,
             },
         )
+        self._set_topmost_button_state()
         self._set_details_mode(False)
         root.protocol("WM_DELETE_WINDOW", self._on_user_close)
+        self._start_ui_health_watchdog()
         if self._load_existing_snapshot:
             self.refresh()
         else:
@@ -1560,8 +2304,9 @@ class AhmadTkOverlay:
         if self._pinned_minimap_popup is not None:
             self._replace_theme_colors(self._pinned_minimap_popup, replacements)
         label = "随机" if name == "random" else str(new_theme.get("label") or name)
-        self.theme_tip.set_text(f"选择配色：{label}")
+        self.theme_tip.set_text(f"{THEME_TIP_PREFIX}：{label}")
         self._set_manual_button_state()
+        self._set_topmost_button_state()
         data = self._last_summary or self._last_live_summary
         if data:
             if data.get("status") == "stale_snapshot":
@@ -1579,8 +2324,79 @@ class AhmadTkOverlay:
         self._run_exit_cleanup()
         self.root.destroy()
 
+    def _apply_topmost_state_to_windows(self) -> None:
+        enabled = bool(getattr(self, "topmost_enabled", True))
+        for window in (self.root, self._minimap_popup, self._pinned_minimap_popup):
+            if window is None:
+                continue
+            try:
+                window.attributes("-topmost", enabled)
+            except tk.TclError:
+                pass
+
+    def _set_topmost_button_state(self) -> None:
+        if not hasattr(self, "topmost_button"):
+            return
+        enabled = bool(getattr(self, "topmost_enabled", True))
+        self.topmost_button.configure(
+            text="T",
+            fg=WARM if enabled else DIM,
+            bg=PANEL_MUTED if enabled else PANEL_SOFT,
+            highlightbackground=WARM if enabled else BORDER,
+        )
+        if hasattr(self, "topmost_tip"):
+            self.topmost_tip.set_text(TOPMOST_ON_TIP if enabled else TOPMOST_OFF_TIP)
+
+    def toggle_topmost(self, _event: tk.Event[Any] | None = None) -> str:
+        self.topmost_enabled = not bool(getattr(self, "topmost_enabled", True))
+        self._apply_topmost_state_to_windows()
+        self._set_topmost_button_state()
+        return "break"
+
     def _open_credit_github(self, _event: tk.Event[Any] | None = None) -> None:
         webbrowser.open(CREDIT_GITHUB_URL, new=2, autoraise=True)
+
+    def export_diagnostic_package(self, _event: tk.Event[Any] | None = None) -> str:
+        export_started = time.perf_counter()
+        snapshot = self._last_live_snapshot or _read_json(self.snapshot_path)
+        if not snapshot:
+            if hasattr(self, "export_diag_tip"):
+                self.export_diag_tip.set_text("暂无 latest_snapshot.json，无法导出诊断包")
+            if hasattr(self, "status"):
+                self.status.configure(text="无快照")
+            return "break"
+        current_summary = self._last_summary or self._last_live_summary or {}
+        try:
+            export_path = _write_diagnostic_export(
+                snapshot=snapshot,
+                snapshot_path=self.snapshot_path,
+                current_summary=current_summary,
+                diagnostic_profile=getattr(
+                    self,
+                    "diagnostic_profile",
+                    DEFAULT_DIAGNOSTIC_PROFILE,
+                ),
+            )
+            if isinstance(current_summary, dict):
+                self._mark_summary_performance(
+                    current_summary,
+                    "export_ms",
+                    export_started,
+                )
+        except Exception as exc:  # noqa: BLE001 - keep UI usable
+            if hasattr(self, "export_diag_tip"):
+                self.export_diag_tip.set_text(f"导出失败: {exc}")
+            if hasattr(self, "status"):
+                self.status.configure(text="导出失败")
+            return "break"
+        self.last_diagnostic_export_path = export_path
+        if hasattr(self, "export_diag_tip"):
+            self.export_diag_tip.set_text(f"已导出: {export_path.resolve()}")
+        if hasattr(self, "status"):
+            self.status.configure(text="已导出诊断")
+        if hasattr(self, "manual_status"):
+            self.manual_status.configure(text=f"诊断包: {export_path.name}", fg=ACCENT)
+        return "break"
 
     def _run_exit_cleanup(self) -> None:
         if self._exit_cleanup_done:
@@ -1603,16 +2419,161 @@ class AhmadTkOverlay:
     def _set_manual_button_state(self) -> None:
         if not hasattr(self, "manual_button"):
             return
-        if self._manual_active:
-            self.manual_button.configure(bg="#ffe1a8", fg=BUTTON_DARK_FG, highlightbackground="#fff0c4")
+        manual_mode = bool(self._manual_active or getattr(self, "_manual_edit_enabled", False))
+        if manual_mode:
+            self.manual_button.configure(
+                text="实时",
+                bg="#ffe1a8",
+                fg=BUTTON_DARK_FG,
+                highlightbackground="#fff0c4",
+            )
+            if hasattr(self, "manual_tip"):
+                self.manual_tip.set_text(MANUAL_RETURN_TIP_TEXT)
         else:
-            self.manual_button.configure(bg=WARM, fg=BUTTON_DARK_FG, highlightbackground=WARM)
+            self.manual_button.configure(
+                text="手填",
+                bg=WARM,
+                fg=BUTTON_DARK_FG,
+                highlightbackground=WARM,
+            )
+            if hasattr(self, "manual_tip"):
+                self.manual_tip.set_text(MANUAL_TIP_TEXT)
+
+    def _set_manual_edit_enabled(self, enabled: bool) -> None:
+        self._manual_edit_enabled = bool(enabled)
+        if hasattr(self, "manual_entries"):
+            state = "normal" if enabled else "disabled"
+            for entry in self.manual_entries.values():
+                try:
+                    entry.configure(
+                        state=state,
+                        disabledbackground=PANEL_SOFT,
+                        disabledforeground=DIM,
+                    )
+                except tk.TclError:
+                    pass
+                except AttributeError:
+                    pass
+        if hasattr(self, "manual_buttons"):
+            for label, button in self.manual_buttons.items():
+                target_state = "normal"
+                if label in {"应用并启用", "填入当前"} and not enabled:
+                    target_state = "disabled"
+                if label == "清结算":
+                    target_state = "disabled"
+                try:
+                    button.configure(state=target_state)
+                except tk.TclError:
+                    pass
+                except AttributeError:
+                    pass
+        self._set_manual_settlement_button_state()
+        self._set_manual_button_state()
+
+    def _set_manual_settlement_button_state(self) -> None:
+        if not hasattr(self, "manual_buttons"):
+            return
+        button = self.manual_buttons.get("清结算")
+        if button is None:
+            return
+        data = self._last_summary or self._last_live_summary or {}
+        active = self._is_settlement_summary(data)
+        enabled = bool(active and getattr(self, "_manual_edit_enabled", False))
+        try:
+            button.configure(
+                state="normal" if enabled else "disabled",
+                fg=ACCENT if enabled else DIM,
+                bg=MANUAL_BG,
+                highlightbackground=ACCENT if enabled else BORDER,
+            )
+        except tk.TclError:
+            pass
+        except AttributeError:
+            pass
+        if hasattr(self, "manual_clear_settlement_tip"):
+            self.manual_clear_settlement_tip.set_text(
+                MANUAL_CLEAR_SETTLEMENT_TIP
+                if active
+                else MANUAL_CLEAR_SETTLEMENT_INACTIVE_TIP
+            )
+
+    def _is_settlement_summary(self, data: dict[str, Any]) -> bool:
+        context = data.get("context") if isinstance(data.get("context"), dict) else {}
+        truth = data.get("truth") if isinstance(data.get("truth"), dict) else {}
+        return _text(context.get("phase"), "") == "settled" and bool(truth.get("available"))
+
+    def _settlement_values_are_hidden(self, data: dict[str, Any]) -> bool:
+        return bool(getattr(self, "settlement_values_hidden", False) and self._is_settlement_summary(data))
+
+    def _settlement_display_value(self, data: dict[str, Any], value: Any) -> str:
+        return "已隐藏" if self._settlement_values_are_hidden(data) else _text(value)
+
+    def _set_settlement_button_state(self, data: dict[str, Any] | None = None) -> None:
+        if not hasattr(self, "settlement_button"):
+            return
+        hidden = bool(getattr(self, "settlement_values_hidden", False))
+        self.settlement_button.configure(
+            text="显价" if hidden else "藏价",
+            fg=WARM if hidden else ACCENT,
+            bg=PANEL_MUTED if hidden else PANEL_SOFT,
+            highlightbackground=WARM if hidden else BORDER,
+        )
+        if hasattr(self, "settlement_tip"):
+            self.settlement_tip.set_text(SETTLEMENT_SHOW_TIP if hidden else SETTLEMENT_HIDE_TIP)
+
+    def toggle_settlement_values(self, _event: tk.Event[Any] | None = None) -> str:
+        data = self._last_summary or self._last_live_summary or {}
+        self.settlement_values_hidden = not bool(getattr(self, "settlement_values_hidden", False))
+        self._set_settlement_button_state(data)
+        if self._is_settlement_summary(data):
+            self.render(data)
+        return "break"
+
+    def toggle_manual_mode(self, _event: tk.Event[Any] | None = None) -> str:
+        if self._manual_active or getattr(self, "_manual_edit_enabled", False):
+            return self.return_to_live_mode()
+        return self.open_manual_panel()
 
     def open_manual_panel(self, _event: tk.Event[Any] | None = None) -> str:
         if not self.details_expanded:
             self.toggle_details()
+        data = self._last_summary or self._last_live_summary or {}
+        settlement_edit = self._is_settlement_summary(data)
+        if settlement_edit:
+            self._manual_settlement_edit_unlocked = True
+            if not _text(getattr(self, "_manual_live_session_id", ""), "").strip():
+                self._manual_live_session_id = self._summary_session_id(data)
+        self._set_manual_edit_enabled(True)
+        if hasattr(self, "manual_status"):
+            self.manual_status.configure(
+                text="结算页手填，待填写" if settlement_edit else "手动模式，待填写",
+                fg=WARM,
+            )
         if hasattr(self, "manual_card"):
             self.manual_card.configure(highlightbackground=WARM, highlightthickness=2)
+        self._set_manual_settlement_button_state()
+        return "break"
+
+    def return_to_live_mode(self, _event: tk.Event[Any] | None = None) -> str:
+        self._manual_active = False
+        self._manual_settlement_edit_unlocked = False
+        self._manual_snapshot = {}
+        self._manual_summary = {}
+        self._set_manual_edit_enabled(False)
+        if self._last_live_summary:
+            self._auto_sync_manual_inputs(self._last_live_summary)
+        if hasattr(self, "manual_status"):
+            self.manual_status.configure(text="实时模式，手填保留", fg=DIM)
+        self._restore_manual_card_border()
+        if self._last_live_summary:
+            self._last_summary = self._last_live_summary
+            if self._last_live_summary.get("status") == "stale_snapshot":
+                self.render_standby(self._last_live_summary)
+            else:
+                self.render(self._last_live_summary)
+        else:
+            self._last_summary = {}
+            self.render_missing("等待 latest_snapshot.json")
         return "break"
 
     def _restore_manual_card_border(self) -> None:
@@ -1665,7 +2626,7 @@ class AhmadTkOverlay:
         ).pack(fill="x")
         tk.Label(
             title_box,
-            text="填总件，并至少补一个品质均格/件数/格数",
+            text="可只填总件/总格；补均格/件数/均价/总价会进一步锁定",
             bg=manual_bg,
             fg=MUTED,
             font=(FONT_UI, 7),
@@ -1692,6 +2653,7 @@ class AhmadTkOverlay:
             ("应用并启用", self.apply_manual_inputs, WARM),
             ("填入当前", self.prefill_manual_inputs, ACCENT),
             ("清空手动", self.clear_manual_inputs, DIM),
+            ("清结算", self.clear_settlement_manual_values, DIM),
         ):
             is_primary = text == "应用并启用"
             button = tk.Button(
@@ -1712,55 +2674,19 @@ class AhmadTkOverlay:
             )
             button.pack(side="left", padx=(0, 6))
             self.manual_buttons[text] = button
+            if text == "清结算":
+                self.manual_clear_settlement_tip = HoverTip(
+                    button,
+                    MANUAL_CLEAR_SETTLEMENT_INACTIVE_TIP,
+                )
 
         form = tk.Frame(card, bg=manual_bg)
         form.pack(fill="x")
-        fields = (
-            ("hero", "英雄", ""),
-            ("map_id", "地图", ""),
-            ("total_count", "总件", ""),
-            ("total_cells", "总格", ""),
-            ("total_avg", "全均格", ""),
-            ("white_avg", "白均格", ""),
-            ("green_avg", "绿均格", ""),
-            ("q1_avg", "白绿均格", ""),
-            ("q3_avg", "蓝均格", ""),
-            ("q4_avg", "紫均格", ""),
-            ("q5_avg", "金均格", ""),
-            ("q6_avg", "红均格", ""),
-            ("white_count", "白件", ""),
-            ("green_count", "绿件", ""),
-            ("q1_count", "白绿件", ""),
-            ("q3_count", "蓝件", ""),
-            ("q4_count", "紫件", ""),
-            ("q5_count", "金件", ""),
-            ("q6_count", "红件", ""),
-            ("white_cells", "白格", ""),
-            ("green_cells", "绿格", ""),
-            ("q1_cells", "白绿格", ""),
-            ("q3_cells", "蓝格", ""),
-            ("q4_cells", "紫格", ""),
-            ("q5_cells", "金格", ""),
-            ("q6_cells", "红格", ""),
-            ("q4q5_count", "紫金红件", ""),
-        )
-        for idx, (key, label, default) in enumerate(fields):
-            row = idx // MANUAL_FORM_COLUMNS
-            col = idx % MANUAL_FORM_COLUMNS
-            cell = tk.Frame(form, bg=manual_bg)
-            cell.grid(row=row, column=col, sticky="ew", padx=(0, 5), pady=(0, 3))
-            form.columnconfigure(col, weight=1)
-            tk.Label(
-                cell,
-                text=label,
-                bg=manual_bg,
-                fg=MANUAL_LABEL_FG if idx < 4 else DIM,
-                font=(FONT_UI, 7),
-                anchor="w",
-            ).pack(side="left")
+
+        def add_manual_entry(parent: tk.Widget, key: str, default: str = "") -> tk.Entry:
             var = tk.StringVar(value=default)
             entry = tk.Entry(
-                cell,
+                parent,
                 width=6,
                 textvariable=var,
                 bg=manual_input_bg,
@@ -1769,11 +2695,17 @@ class AhmadTkOverlay:
                 relief="flat",
                 borderwidth=0,
                 font=(FONT_UI, 8),
+                justify="center",
             )
-            entry.pack(side="right", fill="x", expand=True, padx=(4, 0))
+            entry.pack(fill="x", expand=True)
             entry.bind(
                 "<KeyRelease>",
                 lambda event, field=key: self._mark_manual_pending(event, field=field),
+                add="+",
+            )
+            entry.bind(
+                "<FocusIn>",
+                lambda event, field=key: self._focus_manual_entry(event, field=field),
                 add="+",
             )
             entry.bind("<Return>", self._apply_manual_from_event, add="+")
@@ -1783,6 +2715,112 @@ class AhmadTkOverlay:
             )
             self.manual_vars[key] = var
             self.manual_entries[key] = entry
+            return entry
+
+        base_grid = tk.Frame(form, bg=manual_bg)
+        base_grid.pack(fill="x", pady=(0, 5))
+        for col in range(len(MANUAL_BASE_FIELDS)):
+            base_grid.columnconfigure(col, weight=1, uniform="manual_base")
+        for col, (key, label, default) in enumerate(MANUAL_BASE_FIELDS):
+            cell = tk.Frame(base_grid, bg=manual_bg)
+            cell.grid(
+                row=0,
+                column=col,
+                sticky="ew",
+                padx=(0, 5 if col < len(MANUAL_BASE_FIELDS) - 1 else 0),
+            )
+            tk.Label(
+                cell,
+                text=label,
+                bg=manual_bg,
+                fg=MANUAL_LABEL_FG,
+                font=(FONT_UI, 7, "bold" if key in {"total_count", "total_cells"} else "normal"),
+                anchor="w",
+            ).pack(fill="x", pady=(0, 1))
+            add_manual_entry(cell, key, default)
+
+        quality_table = tk.Frame(form, bg=manual_bg)
+        quality_table.pack(fill="x")
+        column_specs = (
+            ("品质", 0, 54),
+            ("均格", 1, 1),
+            ("件", 1, 1),
+            ("格", 1, 1),
+            ("均价", 1, 1),
+            ("总价", 1, 1),
+        )
+        for col, (_label, weight, minsize) in enumerate(column_specs):
+            quality_table.columnconfigure(col, weight=weight, minsize=minsize)
+        for col, (label, _weight, _minsize) in enumerate(column_specs):
+            tk.Label(
+                quality_table,
+                text=label,
+                bg=manual_bg,
+                fg=WARM if col == 0 else DIM,
+                font=(FONT_UI, 7, "bold"),
+                anchor="center" if col else "w",
+            ).grid(
+                row=0,
+                column=col,
+                sticky="ew",
+                padx=(0, 5 if col < len(column_specs) - 1 else 0),
+                pady=(0, 2),
+            )
+
+        value_keys_by_label = {
+            label: (avg_value_key, value_sum_key)
+            for label, avg_value_key, value_sum_key in MANUAL_VALUE_ROWS
+        }
+        for row, (label, avg_key, count_key, cells_key) in enumerate(MANUAL_QUALITY_ROWS, start=1):
+            tk.Label(
+                quality_table,
+                text=label,
+                bg=manual_bg,
+                fg=MANUAL_LABEL_FG,
+                font=(FONT_UI, 7, "bold"),
+                anchor="w",
+            ).grid(row=row, column=0, sticky="ew", padx=(0, 5), pady=(0, 3))
+            for col, key in enumerate((avg_key, count_key, cells_key), start=1):
+                cell = tk.Frame(quality_table, bg=manual_bg)
+                cell.grid(row=row, column=col, sticky="ew", padx=(0, 5), pady=(0, 3))
+                add_manual_entry(cell, key)
+            value_keys = value_keys_by_label.get(label)
+            for col, key in enumerate(value_keys or ("", ""), start=4):
+                cell = tk.Frame(quality_table, bg=manual_bg)
+                cell.grid(
+                    row=row,
+                    column=col,
+                    sticky="ew",
+                    padx=(0, 5 if col < len(column_specs) - 1 else 0),
+                    pady=(0, 3),
+                )
+                if key:
+                    add_manual_entry(cell, key)
+
+        extra_row = tk.Frame(form, bg=manual_bg)
+        extra_row.pack(fill="x", pady=(2, 0))
+        tk.Label(
+            extra_row,
+            text="合计",
+            bg=manual_bg,
+            fg=WARM,
+            font=(FONT_UI, 7, "bold"),
+            anchor="w",
+            width=6,
+        ).pack(side="left")
+        for key, label, default in MANUAL_EXTRA_FIELDS:
+            tk.Label(
+                extra_row,
+                text=label,
+                bg=manual_bg,
+                fg=MANUAL_LABEL_FG,
+                font=(FONT_UI, 7),
+                anchor="w",
+            ).pack(side="left", padx=(0, 4))
+            cell = tk.Frame(extra_row, bg=manual_bg)
+            cell.pack(side="left", fill="x", expand=True)
+            add_manual_entry(cell, key, default)
+        self._set_manual_edit_enabled(False)
 
     def _has_manual_inputs(self) -> bool:
         for key, entry in self.manual_entries.items():
@@ -1796,32 +2834,79 @@ class AhmadTkOverlay:
     def _on_manual_var_write(self, field: str) -> None:
         if self._manual_programmatic_update:
             return
+        self._manual_input_revision = int(getattr(self, "_manual_input_revision", 0)) + 1
         self._manual_dirty_fields.add(field)
-        self._sync_manual_derived_fields()
+        self._sync_manual_derived_fields(trigger_field=field)
         self._mark_manual_pending()
 
-    def _can_autofill_manual_field(self, key: str) -> bool:
+    def _can_autofill_manual_field(self, key: str, *, allow_dirty_empty: bool = False) -> bool:
         current = self._manual_entry_text(key)
         last_auto = self._manual_autofill_values.get(key)
         if not current:
-            return True
+            if allow_dirty_empty:
+                return True
+            return key not in self._manual_dirty_fields
         return last_auto is not None and current == last_auto
 
-    def _set_manual_derived_entry(self, key: str, value: Any) -> None:
-        if value in (None, "") or not self._can_autofill_manual_field(key):
+    def _focus_manual_entry(self, event: tk.Event[Any], *, field: str) -> str | None:
+        if self._manual_programmatic_update:
+            return None
+        widget = getattr(event, "widget", None)
+        if not isinstance(widget, tk.Entry):
+            return None
+        try:
+            if str(widget.cget("state")) != "normal":
+                return None
+        except (tk.TclError, AttributeError):
+            return None
+        if not widget.get():
+            return None
+        widget.after_idle(lambda w=widget: self._select_manual_entry_all(w))
+        return None
+
+    def _select_manual_entry_all(self, widget: tk.Entry) -> None:
+        try:
+            widget.selection_range(0, "end")
+            widget.icursor("end")
+        except (tk.TclError, AttributeError):
+            return
+
+    def _set_manual_derived_entry(
+        self,
+        key: str,
+        value: Any,
+        *,
+        allow_dirty_empty: bool = False,
+    ) -> None:
+        if value in (None, "") or not self._can_autofill_manual_field(
+            key,
+            allow_dirty_empty=allow_dirty_empty,
+        ):
             return
         self._set_manual_entry(key, _format_manual_number(value), track_auto=True)
 
-    def _sync_manual_derived_fields(self) -> None:
+    def _sync_manual_derived_fields(self, *, trigger_field: str | None = None) -> None:
         if not hasattr(self, "manual_entries") or self._manual_programmatic_update:
             return
         total_count = _to_optional_int(self._manual_entry_text("total_count"))
         total_cells = _to_optional_float(self._manual_entry_text("total_cells"))
-        total_avg = _to_optional_float(self._manual_entry_text("total_avg"))
+        total_avg_text = self._manual_entry_text("total_avg")
+        total_avg = _to_optional_float(total_avg_text)
         if total_count is not None and total_count > 0:
-            if total_cells is None and total_avg is not None:
-                self._set_manual_derived_entry("total_cells", total_count * total_avg)
-            elif total_avg is None and total_cells is not None:
+            if total_avg is not None:
+                grid_options = _manual_avg_grid_options_from_text(
+                    total_count,
+                    total_avg,
+                    total_avg_text,
+                )
+                if len(grid_options) == 1:
+                    self._set_manual_derived_entry(
+                        "total_cells",
+                        grid_options[0],
+                        allow_dirty_empty=trigger_field in {"total_count", "total_avg"},
+                    )
+                    total_cells = _to_optional_float(self._manual_entry_text("total_cells"))
+            if total_cells is not None:
                 self._set_manual_derived_entry("total_avg", total_cells / total_count)
 
         for key in (*SPLIT_QUALITY_INPUT_KEYS, *QUALITY_INPUT_KEYS):
@@ -1829,20 +2914,35 @@ class AhmadTkOverlay:
             cells = _to_optional_int(self._manual_entry_text(f"{key}_cells"))
             avg_text = self._manual_entry_text(f"{key}_avg")
             avg = _to_optional_float(avg_text)
-            if count is not None and cells is not None and avg is None:
+            if count is not None and cells is not None:
                 if count == 0:
                     if cells == 0:
                         self._set_manual_derived_entry(f"{key}_avg", 0)
                 else:
                     self._set_manual_derived_entry(f"{key}_avg", cells / count)
-            elif count is not None and avg is not None and cells is None:
+            if count is not None and avg is not None:
                 grid_options = _manual_avg_grid_options_from_text(count, avg, avg_text)
                 if len(grid_options) == 1:
                     self._set_manual_derived_entry(f"{key}_cells", grid_options[0])
-            elif count is None and avg is not None and cells is not None:
+            if count is None and avg is not None and cells is not None:
                 derived_count = _manual_avg_count_from_cells_text(avg, cells, avg_text)
                 if derived_count is not None:
                     self._set_manual_derived_entry(f"{key}_count", derived_count)
+        for key in (*SPLIT_QUALITY_INPUT_KEYS, *QUALITY_INPUT_KEYS):
+            count = _to_optional_int(self._manual_entry_text(f"{key}_count"))
+            avg_value = _to_optional_float(self._manual_entry_text(f"{key}_avg_value"))
+            value_sum = _to_optional_float(self._manual_entry_text(f"{key}_value_sum"))
+            if count is not None:
+                if count > 0:
+                    if value_sum is not None and avg_value is None:
+                        self._set_manual_derived_entry(f"{key}_avg_value", value_sum / count)
+                    if avg_value is not None and value_sum is None:
+                        self._set_manual_derived_entry(f"{key}_value_sum", avg_value * count)
+                elif count == 0:
+                    if value_sum == 0 and avg_value is None:
+                        self._set_manual_derived_entry(f"{key}_avg_value", 0)
+                    if avg_value == 0 and value_sum is None:
+                        self._set_manual_derived_entry(f"{key}_value_sum", 0)
         q1_has_user_value = False
         for field in ("q1_avg", "q1_count", "q1_cells"):
             value = self._manual_entry_text(field)
@@ -1978,7 +3078,47 @@ class AhmadTkOverlay:
 
     def _set_label(self, widget: tk.Label, value: Any, *, limit: int = 30) -> None:
         text = _text(value)
-        widget.configure(text=_short(text, limit))
+        widget.configure(text=_short(text, limit), height=1)
+
+    def _set_summary_label(
+        self,
+        widget: tk.Label,
+        value: Any,
+        *,
+        line_limit: int = 38,
+        max_lines: int = 2,
+    ) -> None:
+        text = _text(value)
+        if text in {"", "-"}:
+            widget.configure(text="-", height=1)
+            return
+        parts = text.split(" · ")
+        if len(parts) <= 1:
+            widget.configure(text=_short(text, line_limit * max_lines), height=1)
+            return
+        lines: list[str] = []
+        current = ""
+        index = 0
+        while index < len(parts):
+            part = parts[index]
+            candidate = part if not current else f"{current} · {part}"
+            if len(candidate) <= line_limit or not current:
+                current = candidate
+                index += 1
+                continue
+            lines.append(current)
+            current = ""
+            if len(lines) >= max_lines - 1:
+                rest = " · ".join(parts[index:])
+                lines.append(_short(rest, line_limit))
+                break
+        else:
+            if current:
+                lines.append(current)
+        if not lines:
+            lines = [_short(text, line_limit)]
+        lines = lines[:max_lines]
+        widget.configure(text="\n".join(lines), height=len(lines), justify="right")
 
     def _manual_entry_text(self, key: str) -> str:
         entry = self.manual_entries.get(key)
@@ -1999,7 +3139,14 @@ class AhmadTkOverlay:
         var = getattr(self, "manual_vars", {}).get(key)
         text = "" if value in (None, "") else str(value)
         self._manual_programmatic_update = True
+        previous_state: str | None = None
         try:
+            try:
+                previous_state = str(entry.cget("state"))
+                if previous_state == "disabled":
+                    entry.configure(state="normal")
+            except (tk.TclError, AttributeError):
+                previous_state = None
             if var is not None:
                 var.set(text)
             else:
@@ -2007,6 +3154,11 @@ class AhmadTkOverlay:
                 if text:
                     entry.insert(0, text)
         finally:
+            if previous_state == "disabled":
+                try:
+                    entry.configure(state=previous_state)
+                except (tk.TclError, AttributeError):
+                    pass
             self._manual_programmatic_update = False
         if track_auto:
             self._manual_autofill_values[key] = text
@@ -2025,6 +3177,7 @@ class AhmadTkOverlay:
             return False
         has_manual_state = (
             self._manual_active
+            or getattr(self, "_manual_edit_enabled", False)
             or self._has_manual_inputs()
             or bool(_text(getattr(self, "_manual_live_session_id", ""), "").strip())
             or bool(getattr(self, "_manual_snapshot", {}))
@@ -2033,9 +3186,18 @@ class AhmadTkOverlay:
             return False
         stale = data.get("stale") if isinstance(data.get("stale"), dict) else {}
         reason = _text(stale.get("reason"), "")
-        if reason in {"session_ahead", "settled_stale", "monitor_restarted"}:
+        if reason in {"session_ahead", "settled_stale"}:
             return True
-        if self._summary_phase(data) == "settled":
+        truth = data.get("truth") if isinstance(data.get("truth"), dict) else {}
+        if self._summary_phase(data) == "settled" and bool(truth.get("available")):
+            if bool(getattr(self, "_manual_settlement_edit_unlocked", False)):
+                current_session_id = self._summary_session_id(data)
+                previous_session_id = _text(
+                    getattr(self, "_manual_live_session_id", ""),
+                    "",
+                ).strip()
+                if not previous_session_id or current_session_id == previous_session_id:
+                    return False
             return True
         current_session_id = self._summary_session_id(data)
         previous_session_id = _text(getattr(self, "_manual_live_session_id", ""), "").strip()
@@ -2043,6 +3205,8 @@ class AhmadTkOverlay:
 
     def _reset_manual_state(self, status_text: str = "已清空，回到实时", *, status_fg: str = DIM) -> None:
         self._manual_active = False
+        self._manual_edit_enabled = False
+        self._manual_settlement_edit_unlocked = False
         self._manual_snapshot = {}
         self._manual_summary = {}
         for key in tuple(getattr(self, "manual_entries", {})):
@@ -2053,6 +3217,7 @@ class AhmadTkOverlay:
         if hasattr(self, "manual_status"):
             self.manual_status.configure(text=status_text, fg=status_fg)
         if hasattr(self, "manual_buttons"):
+            self._set_manual_edit_enabled(False)
             self._set_manual_button_state()
 
     def _manual_values_from_summary(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -2069,7 +3234,7 @@ class AhmadTkOverlay:
         if evidence.get("total_count") not in (None, ""):
             values["total_count"] = evidence.get("total_count")
         if evidence.get("total_grid_target") not in (None, ""):
-            values["total_cells"] = evidence.get("total_grid_target")
+            values["total_cells"] = _format_manual_number(evidence.get("total_grid_target"))
             total_count = _to_optional_float(evidence.get("total_count"))
             total_cells = _to_optional_float(evidence.get("total_grid_target"))
             if total_count is not None and total_count > 0 and total_cells is not None:
@@ -2085,6 +3250,12 @@ class AhmadTkOverlay:
             if isinstance(evidence.get("quality_cells"), dict)
             else {}
         )
+        avg_values = evidence.get("avg_values") if isinstance(evidence.get("avg_values"), dict) else {}
+        quality_values = (
+            evidence.get("quality_values")
+            if isinstance(evidence.get("quality_values"), dict)
+            else {}
+        )
         split_quality_cells = (
             evidence.get("split_quality_cells")
             if isinstance(evidence.get("split_quality_cells"), dict)
@@ -2093,6 +3264,11 @@ class AhmadTkOverlay:
         quality_cell_ranges = (
             ahmed_ref.get("quality_cells_ranges")
             if isinstance(ahmed_ref.get("quality_cells_ranges"), dict)
+            else {}
+        )
+        quality_count_ranges = (
+            ahmed_ref.get("quality_count_ranges")
+            if isinstance(ahmed_ref.get("quality_count_ranges"), dict)
             else {}
         )
         fixed_counts = evidence.get("fixed_counts") if isinstance(evidence.get("fixed_counts"), dict) else {}
@@ -2128,6 +3304,12 @@ class AhmadTkOverlay:
             count_value = _to_optional_int(fixed_counts.get(quality))
             if count_value is None and cell_value not in (None, "") and avg_value is not None:
                 count_value = _manual_avg_count_from_cells(avg_value, cell_value)
+            if count_value is None:
+                raw_count_range = quality_count_ranges.get(quality)
+                if isinstance(raw_count_range, (list, tuple)) and len(raw_count_range) >= 3:
+                    first, middle, last = raw_count_range[0], raw_count_range[1], raw_count_range[2]
+                    if first not in (None, "") and first == middle == last:
+                        count_value = _to_optional_int(middle)
             if count_value is not None:
                 values[f"{quality}_count"] = count_value
             if cell_value in (None, "") and count_value is not None and avg_value is not None:
@@ -2136,6 +3318,10 @@ class AhmadTkOverlay:
                     cell_value = grid_options[0]
             if cell_value not in (None, ""):
                 values[f"{quality}_cells"] = _format_manual_number(cell_value)
+            if avg_values.get(quality) not in (None, ""):
+                values[f"{quality}_avg_value"] = _format_manual_number(avg_values[quality])
+            if quality_values.get(quality) not in (None, ""):
+                values[f"{quality}_value_sum"] = _format_manual_number(quality_values[quality])
         count_sum_value = count_sums.get("q4q5q6")
         if count_sum_value in (None, ""):
             count_sum_value = count_sums.get("q4q5")
@@ -2143,10 +3329,40 @@ class AhmadTkOverlay:
             values["q4q5_count"] = count_sum_value
         return values
 
+    def _manual_context_fallback_values(self) -> dict[str, Any]:
+        for data in (
+            getattr(self, "_last_live_summary", {}),
+            getattr(self, "_last_summary", {}),
+        ):
+            if not isinstance(data, dict) or not data:
+                continue
+            if data.get("status") == "stale_snapshot":
+                continue
+            if self._summary_phase(data) == "manual":
+                continue
+            values = self._manual_values_from_summary(data)
+            fallback: dict[str, Any] = {}
+            hero = _normalize_manual_hero(values.get("hero"))
+            if hero in {"aisha", "ahmed", "victor"}:
+                fallback["hero"] = hero
+            map_id = _to_optional_int(values.get("map_id"))
+            if map_id is not None:
+                fallback["map_id"] = map_id
+            if fallback:
+                return fallback
+        return {}
+
     def _auto_sync_manual_inputs(self, data: dict[str, Any]) -> None:
-        if not hasattr(self, "manual_entries") or self._manual_active:
+        if not hasattr(self, "manual_entries") or self._manual_active or getattr(self, "_manual_edit_enabled", False):
             return
         if data.get("status") == "stale_snapshot" or self._summary_phase(data) == "settled":
+            return
+        has_existing_manual_state = (
+            bool(getattr(self, "_manual_dirty_fields", set()))
+            or bool(getattr(self, "_manual_autofill_values", {}))
+            or self._has_manual_inputs()
+        )
+        if not has_existing_manual_state:
             return
         values = self._manual_values_from_summary(data)
         for key, value in values.items():
@@ -2159,31 +3375,74 @@ class AhmadTkOverlay:
                 continue
             if current and last_auto is None and key not in AUTO_REPLACE_MANUAL_FIELDS:
                 continue
-            self._set_manual_entry(key, value, track_auto=True)
+            display_value = _manual_map_display_value(value) if key == "map_id" else value
+            self._set_manual_entry(key, display_value, track_auto=True)
         if self._has_manual_inputs() and not self._manual_active:
             self._manual_live_session_id = self._summary_session_id(data)
             self.manual_status.configure(text="实时已填入，可修改", fg=ACCENT)
 
     def _manual_inputs_snapshot(self) -> tuple[dict[str, Any] | None, str]:
-        hero = _normalize_manual_hero(self._manual_entry_text("hero"))
-        map_id = _to_optional_int(self._manual_entry_text("map_id"))
+        hero_text = self._manual_entry_text("hero")
+        map_text = self._manual_entry_text("map_id")
+        fallback_context = self._manual_context_fallback_values()
+        fallback_sources: dict[str, str] = {}
+        hero = _normalize_manual_hero(hero_text)
+        if not hero and fallback_context.get("hero"):
+            hero = _normalize_manual_hero(fallback_context.get("hero"))
+            fallback_sources["hero"] = "live_context"
+        if map_text:
+            map_id, map_error = _manual_map_id_from_text(map_text)
+        else:
+            map_id = _to_optional_int(fallback_context.get("map_id"))
+            map_error = ""
+            if map_id is not None:
+                fallback_sources["map_id"] = "live_context"
+        if map_error:
+            return None, map_error
+        map_name = _manual_map_name(map_id)
         total_count, error = _to_manual_count(self._manual_entry_text("total_count"), "总件")
         if error:
             return None, error
         total_cells = _to_optional_float(self._manual_entry_text("total_cells"))
-        total_avg = _to_optional_float(self._manual_entry_text("total_avg"))
+        total_avg_text = self._manual_entry_text("total_avg")
+        total_avg = _to_optional_float(total_avg_text)
         if total_count is None:
             return None, "需要填写总件"
         if not hero:
-            return None, "需要填写英雄"
+            return None, "需要填写英雄，或先点填入当前"
+        if map_id is None:
+            return None, "需要填写地图，或先点填入当前"
         if total_cells is None and total_avg is not None:
-            total_cells = total_avg * total_count
+            grid_options = _manual_avg_grid_options_from_text(
+                total_count,
+                total_avg,
+                total_avg_text,
+            )
+            if len(grid_options) != 1:
+                return None, "全均格与总件无法对应到整数总格"
+            total_cells = grid_options[0]
+        elif total_cells is not None:
+            total_cells_int = int(round(total_cells))
+            if abs(float(total_cells) - total_cells_int) > 0.0001:
+                return None, "总格需要整数"
+            if total_avg is not None and not _manual_avg_matches_cells(
+                total_avg,
+                avg_text=total_avg_text,
+                count=total_count,
+                cells=total_cells_int,
+            ):
+                return None, "全均格与总格/总件不一致"
+            total_cells = total_cells_int
         avg_cells: dict[str, float] = {}
         quality_cells: dict[str, int] = {}
+        avg_values: dict[str, float] = {}
+        quality_values: dict[str, int] = {}
         fixed_counts: dict[str, int] = {}
         split_avg_cells: dict[str, float] = {}
         split_quality_cells: dict[str, int] = {}
         split_counts: dict[str, int] = {}
+        split_avg_values: dict[str, float] = {}
+        split_quality_values: dict[str, int] = {}
         count_sums: dict[str, int] = {}
         for key in (*SPLIT_QUALITY_INPUT_KEYS, *QUALITY_INPUT_KEYS):
             label = _manual_quality_label(key)
@@ -2204,11 +3463,23 @@ class AhmadTkOverlay:
             if count is None and avg is not None and cells is not None:
                 derived_count = _manual_avg_count_from_cells_text(avg, cells, avg_text)
                 if derived_count is None:
+                    if avg == 0:
+                        return None, (
+                            f"{label}均格为0时，{label}件和{label}格都必须为0"
+                        )
                     return None, (
                         f"{label}均格与{label}格"
                         "无法对应到整数件数"
                     )
                 count = derived_count
+            if avg == 0:
+                zero_parts: list[str] = []
+                if count not in (None, 0):
+                    zero_parts.append(f"{label}件")
+                if cells not in (None, 0):
+                    zero_parts.append(f"{label}格")
+                if zero_parts:
+                    return None, f"{label}均格为0时，{'和'.join(zero_parts)}也必须为0"
             if count is not None:
                 if key in SPLIT_QUALITY_INPUT_KEYS:
                     split_counts[key] = count
@@ -2217,6 +3488,8 @@ class AhmadTkOverlay:
                 if avg is not None and cells is None:
                     grid_options = _manual_avg_grid_options_from_text(count, avg, avg_text)
                     if not grid_options:
+                        if avg == 0:
+                            return None, f"{label}均格为0时，{label}件也必须为0"
                         return None, (
                             f"{label}均格与{label}件"
                             "无法对应到整数格数"
@@ -2252,21 +3525,98 @@ class AhmadTkOverlay:
                     split_avg_cells[key] = avg
                 else:
                     avg_cells[key] = avg
+            avg_value, error = _to_manual_nonnegative_float(
+                self._manual_entry_text(f"{key}_avg_value"),
+                f"{label}均价",
+            )
+            if error:
+                return None, error
+            value_sum, error = _to_manual_value_sum(
+                self._manual_entry_text(f"{key}_value_sum"),
+                f"{label}总价",
+            )
+            if error:
+                return None, error
+            if count == 0:
+                if avg_value not in (None, 0):
+                    return None, f"{label}件为0时{label}均价也必须为0"
+                if value_sum not in (None, 0):
+                    return None, f"{label}件为0时{label}总价也必须为0"
+            elif count is not None and avg_value is not None and value_sum is not None:
+                if not _manual_value_sum_matches_avg(
+                    avg_value,
+                    count=count,
+                    value_sum=value_sum,
+                ):
+                    return None, (
+                        f"{label}均价与{label}总价/"
+                        f"{label}件不一致"
+                    )
+            if key in SPLIT_QUALITY_INPUT_KEYS:
+                if avg_value is not None:
+                    split_avg_values[key] = avg_value
+                if value_sum is not None:
+                    split_quality_values[key] = value_sum
+            else:
+                if avg_value is not None:
+                    avg_values[key] = avg_value
+                if value_sum is not None:
+                    quality_values[key] = value_sum
+        split_value_inputs = set(split_avg_values) | set(split_quality_values)
+        if split_value_inputs:
+            missing = [
+                SPLIT_QUALITY_LABELS[key]
+                for key in SPLIT_QUALITY_INPUT_KEYS
+                if key not in split_value_inputs
+            ]
+            if missing:
+                return None, f"白/绿价值需同时填写；缺少{'、'.join(missing)}，或改填白绿行"
+            split_value_sums: dict[str, int] = {}
+            for split_key in SPLIT_QUALITY_INPUT_KEYS:
+                value_sum = split_quality_values.get(split_key)
+                if value_sum is None:
+                    split_count = split_counts.get(split_key)
+                    split_avg_value = split_avg_values.get(split_key)
+                    if split_count is None or split_avg_value is None:
+                        return None, (
+                            f"{SPLIT_QUALITY_LABELS[split_key]}均价需要配合"
+                            f"{SPLIT_QUALITY_LABELS[split_key]}件或总价"
+                        )
+                    value_sum = int(round(split_avg_value * split_count))
+                split_value_sums[split_key] = value_sum
+            q1_value_sum = sum(split_value_sums.values())
+            existing_q1_value_sum = quality_values.get("q1")
+            if (
+                existing_q1_value_sum is not None
+                and abs(float(existing_q1_value_sum) - float(q1_value_sum)) > 0.5
+            ):
+                return None, "白/绿总价合计与白绿总价不一致"
+            quality_values["q1"] = q1_value_sum
+            q1_count_for_value = fixed_counts.get("q1")
+            if q1_count_for_value is None and all(key in split_counts for key in SPLIT_QUALITY_INPUT_KEYS):
+                q1_count_for_value = sum(split_counts[key] for key in SPLIT_QUALITY_INPUT_KEYS)
+            if q1_count_for_value is not None:
+                if q1_count_for_value <= 0:
+                    derived_q1_avg_value = 0.0 if q1_value_sum == 0 else None
+                else:
+                    derived_q1_avg_value = q1_value_sum / q1_count_for_value
+                if derived_q1_avg_value is not None:
+                    existing_q1_avg_value = avg_values.get("q1")
+                    if (
+                        existing_q1_avg_value is not None
+                        and not _manual_value_sum_matches_avg(
+                            existing_q1_avg_value,
+                            count=q1_count_for_value,
+                            value_sum=q1_value_sum,
+                        )
+                    ):
+                        return None, "白/绿价值合计与白绿均价不一致"
+                    avg_values["q1"] = derived_q1_avg_value
         q4q5_count, error = _to_manual_count(self._manual_entry_text("q4q5_count"), "紫金红件")
         if error:
             return None, error
         if q4q5_count is not None:
             count_sums["q4q5q6"] = q4q5_count
-        if (
-            not avg_cells
-            and not fixed_counts
-            and not count_sums
-            and not quality_cells
-            and not split_avg_cells
-            and not split_counts
-            and not split_quality_cells
-        ):
-            return None, "需补品质均格/件数/格数"
         ref_inputs: dict[str, Any] = {
             "total_count": total_count,
             "avg_cells": avg_cells,
@@ -2274,6 +3624,10 @@ class AhmadTkOverlay:
         }
         if quality_cells:
             ref_inputs["quality_cells"] = quality_cells
+        if avg_values:
+            ref_inputs["avg_values"] = avg_values
+        if quality_values:
+            ref_inputs["quality_values"] = quality_values
         if split_avg_cells:
             ref_inputs["split_avg_cells"] = split_avg_cells
         if split_quality_cells:
@@ -2289,12 +3643,14 @@ class AhmadTkOverlay:
             "created_at": now,
             "hero": hero,
             "map_id": map_id,
+            "map_name": map_name or None,
             "phase": "manual",
             "structured_ref_inputs": ref_inputs,
             "ui_contract": {
                 "context": {
                     "hero": hero,
                     "map_id": map_id,
+                    "map_name": map_name or None,
                     "round": "手动",
                     "phase": "manual",
                     "session_id": "manual",
@@ -2309,6 +3665,8 @@ class AhmadTkOverlay:
                 "source": {
                     "created_at": now,
                     "source_mode": "manual",
+                    "manual_map_input": map_text,
+                    "manual_context_fallback": fallback_sources,
                 },
                 "truth": {"available": False},
             },
@@ -2317,15 +3675,23 @@ class AhmadTkOverlay:
 
     def _manual_input_summary(self, evidence: dict[str, Any]) -> str:
         parts: list[str] = []
+        total_parts: list[str] = []
+        avg_parts: list[str] = []
         if evidence.get("total_count") not in (None, ""):
-            parts.append(f"总件 {evidence['total_count']}")
+            total_parts.append(f"总件 {evidence['total_count']}")
         if evidence.get("total_grid_target") not in (None, ""):
-            parts.append(f"总格 {evidence['total_grid_target']}")
+            total_parts.append(f"总格 {_format_manual_number(evidence['total_grid_target'])}")
             total_count = _to_optional_float(evidence.get("total_count"))
             total_cells = _to_optional_float(evidence.get("total_grid_target"))
             if total_count is not None and total_count > 0 and total_cells is not None:
-                parts.append(f"全均格 {_format_manual_number(total_cells / total_count)}")
+                avg_parts.append(f"全均格 {_format_manual_number(total_cells / total_count)}")
+        else:
+            estimated_total_grid = self._range_text(evidence.get("total_grid_range"), suffix="格")
+            if estimated_total_grid != "-":
+                total_parts.append(f"估总格 {estimated_total_grid}")
         avg_cells = evidence.get("avg_cells")
+        avg_values = evidence.get("avg_values")
+        quality_values = evidence.get("quality_values")
         quality_cells = evidence.get("quality_cells")
         split_avg_cells = evidence.get("split_avg_cells")
         split_quality_cells = evidence.get("split_quality_cells")
@@ -2333,30 +3699,14 @@ class AhmadTkOverlay:
         if isinstance(split_avg_cells, dict):
             for key in SPLIT_QUALITY_INPUT_KEYS:
                 if split_avg_cells.get(key) not in (None, ""):
-                    parts.append(
+                    avg_parts.append(
                         f"{SPLIT_QUALITY_LABELS[key]}均格 "
                         f"{_format_manual_number(split_avg_cells[key])}"
                     )
         if isinstance(avg_cells, dict):
             for key in QUALITY_INPUT_KEYS:
                 if avg_cells.get(key) not in (None, ""):
-                    parts.append(f"{QUALITY_LABELS[key]}均格 {_format_manual_number(avg_cells[key])}")
-        if isinstance(split_quality_cells, dict):
-            split_cell_parts = [
-                f"{SPLIT_QUALITY_LABELS[key]}格 {_format_manual_number(split_quality_cells[key])}"
-                for key in SPLIT_QUALITY_INPUT_KEYS
-                if split_quality_cells.get(key) not in (None, "")
-            ]
-            if split_cell_parts:
-                parts.append("分格 " + "，".join(split_cell_parts))
-        if isinstance(quality_cells, dict):
-            cell_parts = [
-                f"{QUALITY_LABELS[key]}格 {_format_manual_number(quality_cells[key])}"
-                for key in QUALITY_INPUT_KEYS
-                if quality_cells.get(key) not in (None, "")
-            ]
-            if cell_parts:
-                parts.append("格数 " + "，".join(cell_parts))
+                    avg_parts.append(f"{QUALITY_LABELS[key]}均格 {_format_manual_number(avg_cells[key])}")
         fixed_counts = evidence.get("fixed_counts")
         if isinstance(split_counts, dict):
             split_count_parts = [
@@ -2374,6 +3724,38 @@ class AhmadTkOverlay:
             ]
             if count_parts:
                 parts.append("件数 " + "，".join(count_parts))
+        if isinstance(split_quality_cells, dict):
+            split_cell_parts = [
+                f"{SPLIT_QUALITY_LABELS[key]}格 {_format_manual_number(split_quality_cells[key])}"
+                for key in SPLIT_QUALITY_INPUT_KEYS
+                if split_quality_cells.get(key) not in (None, "")
+            ]
+            if split_cell_parts:
+                parts.append("分格 " + "，".join(split_cell_parts))
+        if isinstance(quality_cells, dict):
+            cell_parts = [
+                f"{QUALITY_LABELS[key]}格 {_format_manual_number(quality_cells[key])}"
+                for key in QUALITY_INPUT_KEYS
+                if quality_cells.get(key) not in (None, "")
+            ]
+            if cell_parts:
+                parts.append("格数 " + "，".join(cell_parts))
+        if isinstance(avg_values, dict):
+            avg_value_parts = [
+                f"{QUALITY_LABELS[key]}均价 {_format_manual_number(avg_values[key])}"
+                for key in QUALITY_INPUT_KEYS
+                if avg_values.get(key) not in (None, "")
+            ]
+            if avg_value_parts:
+                parts.append("均价 " + "，".join(avg_value_parts))
+        if isinstance(quality_values, dict):
+            value_sum_parts = [
+                f"{QUALITY_LABELS[key]}总价 {_format_manual_number(quality_values[key])}"
+                for key in QUALITY_INPUT_KEYS
+                if quality_values.get(key) not in (None, "")
+            ]
+            if value_sum_parts:
+                parts.append("总价 " + "，".join(value_sum_parts))
         min_counts = evidence.get("min_counts")
         if isinstance(min_counts, dict):
             floor_parts = []
@@ -2395,20 +3777,29 @@ class AhmadTkOverlay:
                 parts.append(f"紫金红件 {count_sums['q4q5q6']}")
             elif count_sums.get("q4q5") not in (None, ""):
                 parts.append(f"紫金件 {count_sums['q4q5']}")
-        return " · ".join(parts) if parts else "-"
+        ordered_parts = total_parts + parts + avg_parts
+        return " · ".join(ordered_parts) if ordered_parts else "-"
 
-    def _range_text(self, values: Any, *, money: bool = False) -> str:
+    def _range_text(self, values: Any, *, money: bool = False, suffix: str = "") -> str:
         if not isinstance(values, (list, tuple)) or not values:
             return "-"
+        parts: list[str]
         if money:
-            return " / ".join(_money(value, "?") for value in values)
-        return " / ".join("?" if value is None else str(value) for value in values)
+            parts = [_money(value, "?") for value in values]
+        else:
+            parts = ["?" if value is None else str(value) for value in values]
+        text = " / ".join(parts)
+        return f"{text}{suffix}" if suffix and text != "-" else text
 
     def _manual_result_summary(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         if run_reference_engine is None:
             raise RuntimeError("ref engine unavailable")
         result = run_reference_engine(snapshot, max_combos=60000).as_dict()
         evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
+        display_evidence = dict(evidence)
+        display_evidence["total_grid_range"] = result.get("total_grid_range")
+        candidate_summary = _candidate_summary(result)
+        next_info_hint = _next_info_hint(result)
         notes = tuple(str(item) for item in (result.get("notes") or ()))
         fixed_counts = evidence.get("fixed_counts") if isinstance(evidence.get("fixed_counts"), dict) else {}
         avg_cells = evidence.get("avg_cells") if isinstance(evidence.get("avg_cells"), dict) else {}
@@ -2463,6 +3854,7 @@ class AhmadTkOverlay:
                     (result.get("conservative"), result.get("balanced"), result.get("aggressive")),
                     money=True,
                 ),
+                "total_grid_range": self._range_text(result.get("total_grid_range"), suffix="格"),
                 "total_value_range": self._range_text(
                     (result.get("value_p25"), result.get("value_p50"), result.get("value_p75")),
                     money=True,
@@ -2473,6 +3865,7 @@ class AhmadTkOverlay:
                 "cells_range": self._range_text(result.get("red_cells_range")),
                 "value_range": self._range_text(result.get("red_value_range"), money=True),
                 "quality_count_summary": self._quality_count_summary(result),
+                "uncertainty_summary": _quality_uncertainty_summary(result),
                 "prior_rate": "-",
                 "sample_rate": "-",
                 "risk_reference": "",
@@ -2487,7 +3880,9 @@ class AhmadTkOverlay:
                 "ref_status": status,
                 "ref_readiness": status,
                 "ref_combo_count": _text(result.get("combo_count"), ""),
-                "ref_input_summary": self._manual_input_summary(evidence),
+                "ref_input_summary": self._manual_input_summary(display_evidence),
+                "candidate_summary": candidate_summary,
+                "next_info_hint": next_info_hint,
                 "ref_notes": ";".join(result.get("notes") or ()),
             },
             "truth": {"available": False, "q6": {}, "top_item": {}},
@@ -2632,19 +4027,34 @@ class AhmadTkOverlay:
             self.manual_status.configure(text=error, fg=BAD)
             return
         try:
-            if self._last_live_snapshot and self._last_live_summary.get("status") != "stale_snapshot":
-                summary = self._manual_overlay_summary(self._last_live_snapshot, snapshot)
-            else:
-                summary = self._manual_result_summary(snapshot)
+            live_summary = self._last_live_summary if isinstance(self._last_live_summary, dict) else {}
+            settlement_manual = bool(
+                getattr(self, "_manual_settlement_edit_unlocked", False)
+                and self._is_settlement_summary(live_summary)
+            )
+            live_session_id = self._summary_session_id(live_summary)
+            revision = int(getattr(self, "_manual_input_revision", 0))
+            if self._start_manual_summary_worker(
+                snapshot=snapshot,
+                settlement_manual=settlement_manual,
+                live_session_id=live_session_id,
+                revision=revision,
+            ):
+                return
+            summary = self._manual_result_summary(snapshot)
         except Exception as exc:  # noqa: BLE001 - show calculation failure in UI
             self.manual_status.configure(text=f"计算失败: {exc}", fg=BAD)
             return
         self._manual_active = True
+        self._set_manual_edit_enabled(True)
         self._manual_snapshot = snapshot
         self._manual_summary = summary
         self._last_summary = summary
-        self._manual_live_session_id = self._summary_session_id(self._last_live_summary) or "manual"
-        self.manual_status.configure(text="手动叠加，实时继续", fg=WARM)
+        self._manual_live_session_id = live_session_id
+        self.manual_status.configure(
+            text="手动计算，结算页已脱离" if settlement_manual else "手动计算，实时后台",
+            fg=WARM,
+        )
         self._set_manual_button_state()
         if summary.get("status") == "stale_snapshot":
             self.render_standby(summary)
@@ -2664,23 +4074,170 @@ class AhmadTkOverlay:
             parts.append(f"金件 {q5}")
         return " · ".join(parts) if parts else "-"
 
-    def clear_manual_inputs(self) -> None:
-        self._reset_manual_state("已清空，回到实时", status_fg=DIM)
-        if self._last_live_summary:
-            self._last_summary = self._last_live_summary
-            if self._last_live_summary.get("status") == "stale_snapshot":
-                self.render_standby(self._last_live_summary)
-            else:
-                self.render(self._last_live_summary)
-        else:
-            self._last_summary = {}
-            self.render_missing("等待 latest_snapshot.json")
+    def _settlement_cleared_manual_summary(self, data: dict[str, Any]) -> dict[str, Any]:
+        context = data.get("context") if isinstance(data.get("context"), dict) else {}
+        values = self._manual_values_from_summary(data)
+        hero = _normalize_manual_hero(values.get("hero") or context.get("hero")) or "?"
+        map_id = _to_optional_int(values.get("map_id") or context.get("map_id"))
+        map_name = _manual_map_name(map_id)
+        session_id = self._summary_session_id(data) or "manual"
+        input_summary_parts = []
+        if hero != "?":
+            input_summary_parts.append(f"英雄 {hero}")
+        if map_id is not None:
+            input_summary_parts.append(f"地图 {_manual_map_display_value(map_id)}")
+        input_summary = " · ".join(input_summary_parts) if input_summary_parts else "结算已清，待填写"
+        return {
+            "status": "ok",
+            "snapshot_path": "manual",
+            "updated_at_text": time.strftime("%H:%M:%S"),
+            "context": {
+                "hero": hero,
+                "is_supported_ref_hero": hero in {"aisha", "ahmed", "victor"},
+                "map_id": map_id,
+                "map_name": map_name or None,
+                "round": "手动",
+                "phase": "manual",
+                "session_id": session_id,
+                "file": None,
+            },
+            "reference": {
+                "label": "Hero Ref",
+                "source": "manual_ref",
+                "readiness": "settlement_cleared",
+                "note": "settlement cleared; waiting for manual inputs",
+                "conservative": "-",
+                "balanced": "-",
+                "aggressive": "-",
+                "raw_value_range": "-",
+                "v3_conservative": "-",
+                "v3_balanced": "-",
+                "v3_aggressive": "-",
+                "ref_minus_v3_balanced": "-",
+                "ref_minus_v3_balanced_raw": None,
+                "action": "待手填",
+                "risk_band": "manual",
+                "current_highest": "-",
+                "decision_range": "-",
+                "total_grid_range": "-",
+                "total_value_range": "-",
+            },
+            "red": {
+                "count_range": "-",
+                "cells_range": "-",
+                "value_range": "-",
+                "quality_count_summary": "-",
+                "uncertainty_summary": "结算已清，待输入",
+                "prior_rate": "-",
+                "sample_rate": "-",
+                "risk_reference": "",
+            },
+            "evidence": {
+                "match_text": "manual",
+                "information_density": "结算已清",
+                "diagnostics": "settlement_cleared",
+                "latest_sent": {},
+                "latest_result": {},
+                "source_mode": "manual_ref",
+                "ref_status": "settlement_cleared",
+                "ref_readiness": "settlement_cleared",
+                "ref_combo_count": "",
+                "ref_input_summary": input_summary,
+                "candidate_summary": "-",
+                "next_info_hint": "补总件/总格或品质信息",
+                "ref_notes": "settlement_cleared",
+            },
+            "truth": {"available": False, "q6": {}, "top_item": {}},
+            "ahmed_ref": {
+                "status": "settlement_cleared",
+                "evidence": {},
+                "notes": ("settlement_cleared",),
+            },
+            "minimap": {
+                "status": "unavailable",
+                "summary_text": "手动模式无小地图",
+                "layout_source": "manual",
+                "columns": 10,
+                "viewport_rows": 13,
+                "known_items": 0,
+                "drawable_items": 0,
+                "final_total_items": None,
+                "quality_counts": {},
+                "items": [],
+            },
+            "flags": [
+                {
+                    "label": "结算已清",
+                    "level": "watch",
+                    "detail": "settlement truth detached from manual edit view",
+                }
+            ],
+        }
+
+    def clear_settlement_manual_values(self) -> str:
+        data = self._last_summary or self._last_live_summary or {}
+        if not self._is_settlement_summary(data):
+            self._set_manual_settlement_button_state()
+            return "break"
+        self._manual_settlement_edit_unlocked = True
+        self._set_manual_edit_enabled(True)
+        values = self._manual_values_from_summary(data)
+        keep = {
+            "hero": values.get("hero") or "",
+            "map_id": (
+                _manual_map_display_value(values.get("map_id"))
+                if values.get("map_id") not in (None, "")
+                else ""
+            ),
+        }
+        for key in tuple(getattr(self, "manual_entries", {})):
+            self._set_manual_entry(key, keep.get(key, ""), track_auto=key in keep)
+        summary = self._settlement_cleared_manual_summary(data)
+        self._manual_active = False
+        self._manual_snapshot = {}
+        self._manual_summary = summary
+        self._last_summary = summary
+        self._manual_dirty_fields.clear()
+        self._manual_autofill_values = {key: value for key, value in keep.items() if value}
+        self._manual_live_session_id = self._summary_session_id(data)
+        if hasattr(self, "manual_status"):
+            self.manual_status.configure(text="已清结算，可手动填写", fg=WARM)
+        if hasattr(self, "manual_card"):
+            self.manual_card.configure(highlightbackground=WARM, highlightthickness=2)
+        self.render(summary)
+        self._set_manual_settlement_button_state()
+        return "break"
+
+    def clear_manual_inputs(self) -> str:
+        if not hasattr(self, "manual_entries"):
+            return "break"
+        self._manual_active = False
+        self._manual_snapshot = {}
+        self._manual_summary = {}
+        self._manual_dirty_fields.clear()
+        self._manual_autofill_values.clear()
+        self._manual_live_session_id = ""
+        for key in tuple(getattr(self, "manual_entries", {})):
+            self._set_manual_entry(key, "", track_auto=False)
+        if hasattr(self, "manual_status"):
+            self.manual_status.configure(text="已清空，待填写", fg=DIM)
+        self._set_manual_button_state()
+        self._set_manual_settlement_button_state()
+        return "break"
 
     def prefill_manual_inputs(self) -> None:
         data = self._last_live_summary or self._last_summary or {}
         values = self._manual_values_from_summary(data)
         self._set_manual_entry("hero", values.get("hero") or "", track_auto=True)
-        self._set_manual_entry("map_id", values.get("map_id") if values.get("map_id") is not None else "", track_auto=True)
+        self._set_manual_entry(
+            "map_id",
+            (
+                _manual_map_display_value(values.get("map_id"))
+                if values.get("map_id") is not None
+                else ""
+            ),
+            track_auto=True,
+        )
         self._set_manual_entry("total_count", values.get("total_count") if values.get("total_count") is not None else "", track_auto=True)
         self._set_manual_entry("total_cells", values.get("total_cells") if values.get("total_cells") is not None else "", track_auto=True)
         self._set_manual_entry("total_avg", values.get("total_avg") if values.get("total_avg") is not None else "", track_auto=True)
@@ -2698,6 +4255,16 @@ class AhmadTkOverlay:
             self._set_manual_entry(
                 f"{key}_cells",
                 values.get(f"{key}_cells") if values.get(f"{key}_cells") is not None else "",
+                track_auto=True,
+            )
+            self._set_manual_entry(
+                f"{key}_avg_value",
+                values.get(f"{key}_avg_value") if values.get(f"{key}_avg_value") is not None else "",
+                track_auto=True,
+            )
+            self._set_manual_entry(
+                f"{key}_value_sum",
+                values.get(f"{key}_value_sum") if values.get(f"{key}_value_sum") is not None else "",
                 track_auto=True,
             )
         self._set_manual_entry(
@@ -3066,7 +4633,7 @@ class AhmadTkOverlay:
         if self._minimap_popup is None:
             popup = tk.Toplevel(self.root)
             popup.overrideredirect(True)
-            popup.attributes("-topmost", True)
+            popup.attributes("-topmost", bool(getattr(self, "topmost_enabled", True)))
             popup.configure(bg=BG)
             shell = self._card(popup, bg=PANEL, padx=7, pady=7)
             shell.pack(fill="both", expand=True)
@@ -3206,7 +4773,7 @@ class AhmadTkOverlay:
 
         popup = tk.Toplevel(self.root)
         popup.overrideredirect(True)
-        popup.attributes("-topmost", True)
+        popup.attributes("-topmost", bool(getattr(self, "topmost_enabled", True)))
         popup.configure(bg=BG)
         shell = self._card(popup, bg=PANEL, padx=7, pady=7)
         shell.pack(fill="both", expand=True)
@@ -3328,6 +4895,90 @@ class AhmadTkOverlay:
     def _capture_status(self) -> dict[str, Any]:
         return _read_json(self.snapshot_path.parent / "capture_source_status.json")
 
+    def _record_summary_diagnostic(
+        self,
+        data: dict[str, Any],
+        *,
+        render_mode: str,
+    ) -> None:
+        if (
+            _normalize_diagnostic_profile(
+                getattr(self, "diagnostic_profile", DEFAULT_DIAGNOSTIC_PROFILE)
+            )
+            != "engineering"
+        ):
+            return
+        try:
+            row = _summary_diagnostic_row(
+                data,
+                snapshot_path=self.snapshot_path,
+                render_mode=render_mode,
+                manual_active=bool(self._manual_active),
+                settlement_values_hidden=bool(self.settlement_values_hidden),
+            )
+            raw_source_snapshot = getattr(self, "_last_live_snapshot", {})
+            source_snapshot = raw_source_snapshot if isinstance(raw_source_snapshot, dict) else {}
+            row["source_files"] = {
+                "file": source_snapshot.get("file"),
+                "raw_capture": source_snapshot.get("raw_capture"),
+                "raw_capture_jsonl": source_snapshot.get("raw_capture_jsonl"),
+            }
+            signature = _summary_diagnostic_signature(row)
+            if signature == self._last_summary_log_signature:
+                return
+            self._last_summary_log_signature = signature
+            log_path = self.snapshot_path.parent / SUMMARY_DIAGNOSTIC_LOG
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
+                fh.write("\n")
+        except Exception:
+            return
+
+    def _record_ui_health(self, row: dict[str, Any]) -> None:
+        try:
+            log_path = self.snapshot_path.parent / UI_HEALTH_LOG
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
+                fh.write("\n")
+        except Exception:
+            return
+
+    def _start_ui_health_watchdog(self) -> None:
+        def _watch() -> None:
+            while not bool(getattr(self, "_exit_cleanup_done", True)):
+                time.sleep(1.0)
+                now = time.monotonic()
+                last = float(getattr(self, "_last_ui_heartbeat_at", now))
+                gap_seconds = max(0.0, now - last)
+                if gap_seconds < UI_STALL_SECONDS:
+                    continue
+                bucket = int(gap_seconds // UI_STALL_LOG_INTERVAL_SECONDS)
+                if bucket == int(getattr(self, "_last_ui_stall_bucket", 0)):
+                    continue
+                self._last_ui_stall_bucket = bucket
+                self._record_ui_health(
+                    {
+                        "logged_at": time.time(),
+                        "event": "ui_event_loop_stall_suspected",
+                        "gap_seconds": round(gap_seconds, 3),
+                        "snapshot_path": str(self.snapshot_path),
+                        "diagnostic_profile": getattr(
+                            self,
+                            "diagnostic_profile",
+                            DEFAULT_DIAGNOSTIC_PROFILE,
+                        ),
+                    }
+                )
+
+        self._ui_health_thread = threading.Thread(
+            target=_watch,
+            name="HeroRefUIHealthWatchdog",
+            daemon=True,
+        )
+        self._ui_health_thread.start()
+
     def _needs_stale_refresh(self) -> bool:
         summary = self._last_live_summary if self._manual_active else self._last_summary
         if not summary or summary.get("status") == "stale_snapshot":
@@ -3338,9 +4989,242 @@ class AhmadTkOverlay:
         age = self._snapshot_file_age_seconds()
         return age is not None and age >= threshold
 
+    def _mark_summary_performance(
+        self,
+        summary: dict[str, Any],
+        key: str,
+        started_at: float,
+    ) -> None:
+        diagnostics = summary.setdefault("diagnostics", {})
+        if not isinstance(diagnostics, dict):
+            diagnostics = {}
+            summary["diagnostics"] = diagnostics
+        performance = diagnostics.setdefault("performance", {})
+        if not isinstance(performance, dict):
+            performance = {}
+            diagnostics["performance"] = performance
+        performance[key] = round((time.perf_counter() - started_at) * 1000.0, 2)
+
+    def _apply_live_summary(self, snapshot: dict[str, Any], summary: dict[str, Any]) -> None:
+        self._last_live_snapshot = snapshot
+        self._last_live_summary = summary
+        if self._should_reset_manual_for_summary(summary):
+            self._reset_manual_state("已自动清空，等待新局", status_fg=DIM)
+        if self._manual_active:
+            if not self._manual_live_session_id:
+                self._manual_live_session_id = self._summary_session_id(summary)
+            self.manual_status.configure(text="手动结果，实时后台", fg=WARM)
+        elif getattr(self, "_manual_edit_enabled", False):
+            self._set_manual_settlement_button_state()
+        else:
+            self._auto_sync_manual_inputs(summary)
+            self._last_summary = summary
+            if summary.get("status") == "stale_snapshot":
+                self.render_standby(summary)
+            else:
+                self.render(summary)
+
+    def _start_live_summary_worker(
+        self,
+        *,
+        snapshot: dict[str, Any],
+        signature: tuple[int, int],
+        started_at: float,
+    ) -> bool:
+        if not hasattr(self, "_summary_result_queue"):
+            return False
+        if bool(getattr(self, "_summary_worker_running", False)):
+            return True
+        self._summary_worker_running = True
+        self._summary_worker_signature = signature
+        self._summary_worker_seq = int(getattr(self, "_summary_worker_seq", 0)) + 1
+        seq = self._summary_worker_seq
+        snapshot_path = self.snapshot_path
+        result_queue = self._summary_result_queue
+
+        def _worker() -> None:
+            worker_started = time.perf_counter()
+            try:
+                summary = summarize_snapshot(snapshot, snapshot_path=snapshot_path)
+                self._mark_summary_performance(summary, "refresh_worker_ms", worker_started)
+                self._mark_summary_performance(summary, "refresh_total_ms", started_at)
+                result_queue.put(
+                    {
+                        "seq": seq,
+                        "signature": signature,
+                        "snapshot": snapshot,
+                        "summary": summary,
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001 - surface worker error in UI health
+                result_queue.put(
+                    {
+                        "seq": seq,
+                        "signature": signature,
+                        "snapshot": snapshot,
+                        "error": repr(exc),
+                    }
+                )
+
+        threading.Thread(target=_worker, daemon=True, name="hero-ref-summary").start()
+        return True
+
+    def _drain_live_summary_results(self) -> None:
+        if not hasattr(self, "_summary_result_queue"):
+            return
+        latest: dict[str, Any] | None = None
+        while True:
+            try:
+                latest = self._summary_result_queue.get_nowait()
+            except queue.Empty:
+                break
+        if latest is None:
+            return
+        self._summary_worker_running = False
+        seq = latest.get("seq")
+        if seq != getattr(self, "_summary_worker_seq", None):
+            return
+        signature = latest.get("signature")
+        if signature != getattr(self, "_summary_worker_signature", None):
+            return
+        if latest.get("error"):
+            self._record_ui_health(
+                {
+                    "logged_at": time.time(),
+                    "event": "summary_worker_error",
+                    "error": latest.get("error"),
+                    "snapshot_path": str(self.snapshot_path),
+                }
+            )
+            self._summary_worker_signature = None
+            return
+        summary = latest.get("summary")
+        snapshot = latest.get("snapshot")
+        if not isinstance(summary, dict) or not isinstance(snapshot, dict):
+            self._summary_worker_signature = None
+            return
+        self._last_signature = signature
+        self._summary_worker_signature = None
+        self._apply_live_summary(snapshot, summary)
+
+    def _start_manual_summary_worker(
+        self,
+        *,
+        snapshot: dict[str, Any],
+        settlement_manual: bool,
+        live_session_id: str,
+        revision: int,
+    ) -> bool:
+        if not hasattr(self, "_manual_result_queue"):
+            return False
+        if bool(getattr(self, "_manual_worker_running", False)):
+            if hasattr(self, "manual_status"):
+                self.manual_status.configure(text="手动计算中，请稍候", fg=WARM)
+            return True
+        self._manual_worker_running = True
+        self._manual_worker_seq = int(getattr(self, "_manual_worker_seq", 0)) + 1
+        seq = self._manual_worker_seq
+        result_queue = self._manual_result_queue
+
+        def _worker() -> None:
+            try:
+                summary = self._manual_result_summary(snapshot)
+                result_queue.put(
+                    {
+                        "seq": seq,
+                        "snapshot": snapshot,
+                        "summary": summary,
+                        "settlement_manual": settlement_manual,
+                        "live_session_id": live_session_id,
+                        "revision": revision,
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001 - show calculation failure in UI
+                result_queue.put(
+                    {
+                        "seq": seq,
+                        "error": repr(exc),
+                        "revision": revision,
+                    }
+                )
+
+        threading.Thread(target=_worker, daemon=True, name="hero-ref-manual").start()
+        if hasattr(self, "manual_status"):
+            self.manual_status.configure(text="手动计算中...", fg=WARM)
+        return True
+
+    def _drain_manual_summary_results(self) -> None:
+        if not hasattr(self, "_manual_result_queue"):
+            return
+        latest: dict[str, Any] | None = None
+        while True:
+            try:
+                latest = self._manual_result_queue.get_nowait()
+            except queue.Empty:
+                break
+        if latest is None:
+            return
+        self._manual_worker_running = False
+        if latest.get("seq") != getattr(self, "_manual_worker_seq", None):
+            return
+        if latest.get("revision") != getattr(self, "_manual_input_revision", 0):
+            if hasattr(self, "manual_status"):
+                self.manual_status.configure(text="输入已改动，请重新应用", fg=WARM)
+            return
+        if latest.get("error"):
+            if hasattr(self, "manual_status"):
+                self.manual_status.configure(text=f"计算失败: {latest['error']}", fg=BAD)
+            return
+        summary = latest.get("summary")
+        snapshot = latest.get("snapshot")
+        if not isinstance(summary, dict) or not isinstance(snapshot, dict):
+            return
+        settlement_manual = bool(latest.get("settlement_manual"))
+        self._manual_active = True
+        self._set_manual_edit_enabled(True)
+        self._manual_snapshot = snapshot
+        self._manual_summary = summary
+        self._last_summary = summary
+        self._manual_live_session_id = _text(latest.get("live_session_id"), "")
+        if hasattr(self, "manual_status"):
+            self.manual_status.configure(
+                text="手动计算，结算页已脱离" if settlement_manual else "手动计算，实时后台",
+                fg=WARM,
+            )
+        self._set_manual_button_state()
+        if summary.get("status") == "stale_snapshot":
+            self.render_standby(summary)
+        else:
+            self.render(summary)
+
     def refresh(self) -> None:
+        refresh_started = time.perf_counter()
+        heartbeat_now = time.monotonic()
+        heartbeat_gap = heartbeat_now - float(
+            getattr(self, "_last_ui_heartbeat_at", heartbeat_now)
+        )
+        self._last_ui_heartbeat_at = heartbeat_now
+        self._last_ui_stall_bucket = 0
+        self._drain_live_summary_results()
+        self._drain_manual_summary_results()
+        if heartbeat_gap >= UI_STALL_SECONDS:
+            self._record_ui_health(
+                {
+                    "logged_at": time.time(),
+                    "event": "ui_event_loop_recovered",
+                    "gap_seconds": round(heartbeat_gap, 3),
+                    "snapshot_path": str(self.snapshot_path),
+                    "diagnostic_profile": getattr(
+                        self,
+                        "diagnostic_profile",
+                        DEFAULT_DIAGNOSTIC_PROFILE,
+                    ),
+                }
+            )
+        should_reschedule = True
         try:
             if self.exit_when_pids and _watched_pid_exited(self.exit_when_pids):
+                should_reschedule = False
                 self.root.destroy()
                 return
             signature = self._snapshot_signature()
@@ -3349,53 +5233,37 @@ class AhmadTkOverlay:
             if signature == (0, 0):
                 capture_status = self._capture_status()
                 capture_signature = _capture_status_signature(capture_status)
+            capture_changed = (
+                signature == (0, 0)
+                and capture_signature != self._last_capture_status_signature
+            )
             if (
                 signature != self._last_signature
-                or capture_signature != self._last_capture_status_signature
+                or capture_changed
                 or self._needs_stale_refresh()
             ):
-                self._last_signature = signature
                 snapshot = _read_json(self.snapshot_path)
                 if snapshot:
                     self._last_capture_status_signature = None
-                    summary = summarize_snapshot(snapshot, snapshot_path=self.snapshot_path)
-                    self._last_live_snapshot = snapshot
-                    self._last_live_summary = summary
-                    if self._should_reset_manual_for_summary(summary):
-                        self._reset_manual_state("已自动清空，等待新局", status_fg=DIM)
-                    if self._manual_active:
-                        self.manual_status.configure(text="手动叠加，实时继续", fg=WARM)
-                        if summary.get("status") == "stale_snapshot":
-                            self._last_summary = summary
-                            self.render_standby(summary)
-                        elif self._manual_snapshot:
-                            try:
-                                overlay_summary = self._manual_overlay_summary(snapshot, self._manual_snapshot)
-                            except Exception as exc:  # noqa: BLE001 - keep live usable
-                                self.manual_status.configure(text=f"叠加失败: {exc}", fg=BAD)
-                                overlay_summary = summary
-                            self._manual_summary = overlay_summary
-                            self._last_summary = overlay_summary
-                            if overlay_summary.get("status") == "stale_snapshot":
-                                self.render_standby(overlay_summary)
-                            else:
-                                self.render(overlay_summary)
-                        else:
-                            self._last_summary = summary
-                            self.render(summary)
+                    if self._start_live_summary_worker(
+                        snapshot=snapshot,
+                        signature=signature,
+                        started_at=refresh_started,
+                    ):
+                        pass
                     else:
-                        self._auto_sync_manual_inputs(summary)
-                        self._last_summary = summary
-                        if summary.get("status") == "stale_snapshot":
-                            self.render_standby(summary)
-                        else:
-                            self.render(summary)
+                        summary = summarize_snapshot(snapshot, snapshot_path=self.snapshot_path)
+                        self._mark_summary_performance(summary, "refresh_total_ms", refresh_started)
+                        self._last_signature = signature
+                        self._apply_live_summary(snapshot, summary)
                 else:
                     self._last_capture_status_signature = capture_signature
-                    if not self._manual_active:
+                    if not self._manual_active and not getattr(self, "_manual_edit_enabled", False):
                         self.render_missing("等待 latest_snapshot.json")
         finally:
-            self.root.after(self.interval_ms, self.refresh)
+            self._last_ui_heartbeat_at = time.monotonic()
+            if should_reschedule and not bool(getattr(self, "_exit_cleanup_done", False)):
+                self.root.after(self.interval_ms, self.refresh)
 
     def render_missing(self, message: str) -> None:
         capture_status = self._capture_status()
@@ -3404,17 +5272,30 @@ class AhmadTkOverlay:
         self.subtitle.configure(text=diagnostics.get("subtitle") or message)
         self.status.configure(text=time.strftime("%H:%M:%S"))
         self._render_flags(diagnostics.get("flags") or [{"label": "无实时数据", "level": "watch", "detail": ""}])
+        self._set_settlement_button_state({})
         self._clear_values()
         self._set_label(self.action_rows["动作"], diagnostics.get("action"), limit=18)
         self._set_label(self.action_rows["最近"], diagnostics.get("recent"), limit=20)
-        self._set_label(self.action_rows["来源"], diagnostics.get("source"), limit=18)
-        self._set_label(self.action_rows["状态"], diagnostics.get("state"), limit=18)
+        self._set_label(self.action_rows["候选"], "-", limit=18)
+        self._set_label(self.action_rows["下一步"], diagnostics.get("state") or diagnostics.get("source"), limit=18)
         self._set_label(self.evidence_rows["匹配"], diagnostics.get("state"), limit=28)
         self._set_label(self.evidence_rows["密度"], diagnostics.get("detail"), limit=34)
         self._set_label(self.evidence_rows["诊断"], diagnostics.get("recent"), limit=28)
         self._set_label(self.detail_rows["外援"], "waiting", limit=18)
         self._set_label(self.detail_rows["备注"], diagnostics.get("note"), limit=42)
         self._render_minimap({})
+        self._record_summary_diagnostic(
+            {
+                "status": "missing_snapshot",
+                "evidence": {
+                    "diagnostics": diagnostics.get("recent"),
+                    "ref_notes": diagnostics.get("note"),
+                },
+                "flags": diagnostics.get("flags") or [],
+                "stale": {"reason": "missing_snapshot"},
+            },
+            render_mode="missing",
+        )
 
     def render_standby(self, data: dict[str, Any]) -> None:
         stale = data.get("stale") if isinstance(data.get("stale"), dict) else {}
@@ -3426,12 +5307,15 @@ class AhmadTkOverlay:
         self.subtitle.configure(text=f"snapshot age={age_text}; 等待首个实时估价")
         self.status.configure(text=_text(data.get("updated_at_text"), "--:--"))
         self._render_flags(data.get("flags") or [{"label": "待机", "level": "neutral", "detail": ""}])
+        self._set_settlement_button_state(data)
         self._clear_values()
         self._set_label(self.action_rows["动作"], "等待新局", limit=18)
         self._set_label(self.action_rows["最近"], "-", limit=18)
-        self._set_label(self.action_rows["来源"], "standby", limit=18)
+        self._set_label(self.action_rows["候选"], "-", limit=18)
+        self._set_label(self.action_rows["下一步"], "standby", limit=18)
         self._update_detail_rows(data)
         self._render_minimap(data.get("minimap") or {})
+        self._record_summary_diagnostic(data, render_mode="standby")
 
     def render(self, data: dict[str, Any]) -> None:
         context = data.get("context") or {}
@@ -3449,29 +5333,42 @@ class AhmadTkOverlay:
         )
         self.status.configure(text=_text(data.get("updated_at_text"), "--:--"))
         self._render_flags(data.get("flags") or [])
+        self._set_settlement_button_state(data)
         price_titles = reference.get("price_titles") if isinstance(reference.get("price_titles"), dict) else {}
         self._set_price_titles(price_titles)
 
         for key in ("conservative", "balanced", "aggressive"):
-            text = _text(reference.get(key))
+            text = self._settlement_display_value(data, reference.get(key))
             self.price_labels[key].configure(text=text)
 
         self._set_label(self.red_rows["红件"], red.get("count_range"), limit=18)
         self._set_label(self.red_rows["红格"], red.get("cells_range"), limit=18)
         self._set_label(self.red_rows["紫金件"], red.get("quality_count_summary"), limit=30)
-        self._set_label(self.red_rows["红值"], red.get("value_range"), limit=24)
-        self._set_label(self.red_rows["风险"], red.get("risk_reference") or reference.get("risk_band"), limit=28)
-        self._set_label(self.action_rows["动作"], reference.get("action"), limit=18)
-        self._set_label(self.action_rows["最高"], reference.get("current_highest"), limit=20)
-        self._set_label(self.action_rows["最近"], self._latest_result_text(evidence), limit=20)
-        self._set_label(self.action_rows["来源"], source, limit=18)
+        self._set_label(self.red_rows["红值"], self._settlement_display_value(data, red.get("value_range")), limit=24)
         self._set_label(
-            self.action_rows["状态"],
-            evidence.get("ref_status") or reference.get("readiness"),
-            limit=18,
+            self.red_rows["低品件"],
+            red.get("uncertainty_summary") or red.get("risk_reference") or reference.get("risk_band"),
+            limit=32,
+        )
+        self._set_label(self.action_rows["动作"], reference.get("action"), limit=18)
+        self._set_label(self.action_rows["最高"], self._settlement_display_value(data, reference.get("current_highest")), limit=20)
+        self._set_label(self.action_rows["最近"], self._latest_result_text(evidence), limit=20)
+        self._set_label(
+            self.action_rows["候选"],
+            self._mini_candidate_text(data),
+            limit=30,
+        )
+        self._set_label(
+            self.action_rows["下一步"],
+            self._mini_next_info_text(data),
+            limit=30,
         )
         self._update_detail_rows(data)
         self._render_minimap(data.get("minimap") or {})
+        mode = "manual_overlay" if self._manual_active else "live"
+        if self._is_settlement_summary(data):
+            mode = f"{mode}_settled"
+        self._record_summary_diagnostic(data, render_mode=mode)
 
     def _latest_result_text(self, evidence: dict[str, Any]) -> str:
         latest = evidence.get("latest_result")
@@ -3483,7 +5380,39 @@ class AhmadTkOverlay:
         result = latest.get("result")
         if result in (None, ""):
             return _text(tool, "-")
-        return f"{tool}={result}" if tool else _text(result)
+        result_text = _format_manual_number(result)
+        return f"{tool}={result_text}" if tool else _text(result_text)
+
+    def _mini_input_text(self, evidence: dict[str, Any]) -> str:
+        summary = _text(evidence.get("ref_input_summary"), "")
+        compact_parts: list[str] = []
+        if summary and summary != "-":
+            for part in summary.split(" · "):
+                if part.startswith(("总件 ", "总格 ", "估总格 ")):
+                    compact_parts.append(part)
+                if len(compact_parts) >= 2:
+                    break
+        if compact_parts:
+            return " · ".join(compact_parts)
+        return _text(evidence.get("ref_readiness") or evidence.get("ref_status"), "-")
+
+    def _mini_candidate_text(self, data: dict[str, Any]) -> str:
+        evidence = data.get("evidence") if isinstance(data.get("evidence"), dict) else {}
+        candidate = _text(evidence.get("candidate_summary"), "").strip()
+        if candidate and candidate != "-":
+            return candidate
+        return self._mini_input_text(evidence)
+
+    def _mini_next_info_text(self, data: dict[str, Any]) -> str:
+        evidence = data.get("evidence") if isinstance(data.get("evidence"), dict) else {}
+        hint = _text(evidence.get("next_info_hint"), "").strip()
+        if hint and hint != "-":
+            return hint
+        ref_result = data.get("ahmed_ref") if isinstance(data.get("ahmed_ref"), dict) else {}
+        hint = _next_info_hint(ref_result)
+        if hint and hint != "-":
+            return hint
+        return _text(evidence.get("ref_readiness") or evidence.get("ref_status"), "-")
 
     def _input_evidence_text(self, evidence: dict[str, Any]) -> str:
         parts = []
@@ -3497,12 +5426,14 @@ class AhmadTkOverlay:
         truth = data.get("truth")
         if not isinstance(truth, dict) or not truth.get("available"):
             return "未结算"
-        total = _text(truth.get("total_value"), "?")
         total_items = _text(truth.get("total_items"), "?")
         total_cells = _text(truth.get("total_cells"), "?")
         q6 = truth.get("q6") if isinstance(truth.get("q6"), dict) else {}
         q6_count = _text(q6.get("count"), "?")
         q6_cells = _text(q6.get("cells"), "?")
+        if self._settlement_values_are_hidden(data):
+            return f"价值隐藏 · {total_items}件/{total_cells}格 · 红{q6_count}件/{q6_cells}格"
+        total = _text(truth.get("total_value"), "?")
         return f"{total} · {total_items}件/{total_cells}格 · 红{q6_count}件/{q6_cells}格"
 
     def _update_detail_rows(self, data: dict[str, Any]) -> None:
@@ -3513,7 +5444,7 @@ class AhmadTkOverlay:
 
         self._set_label(self.evidence_rows["匹配"], evidence.get("match_text"), limit=26)
         self._set_label(self.evidence_rows["密度"], evidence.get("information_density"), limit=22)
-        self._set_label(self.evidence_rows["输入"], self._input_evidence_text(evidence), limit=46)
+        self._set_summary_label(self.evidence_rows["输入"], self._input_evidence_text(evidence))
         self._set_label(self.evidence_rows["组合"], evidence.get("ref_combo_count"), limit=22)
         self._set_label(self.evidence_rows["最近"], self._latest_result_text(evidence), limit=28)
         self._set_label(
@@ -3524,12 +5455,13 @@ class AhmadTkOverlay:
 
         self._set_label(self.detail_rows["外援"], ahmed_ref.get("status") or reference.get("source"), limit=24)
         self._set_label(self.detail_rows["决策"], reference.get("decision_range"), limit=34)
+        self._set_label(self.detail_rows["总格"], reference.get("total_grid_range"), limit=28)
         self._set_label(
             self.detail_rows["总值"],
-            reference.get("total_value_range") or red.get("value_range"),
+            self._settlement_display_value(data, reference.get("total_value_range") or red.get("value_range")),
             limit=34,
         )
-        self._set_label(self.detail_rows["红值"], red.get("value_range"), limit=34)
+        self._set_label(self.detail_rows["红值"], self._settlement_display_value(data, red.get("value_range")), limit=34)
         self._set_label(self.detail_rows["结算"], self._truth_text(data), limit=38)
         self._set_label(self.detail_rows["备注"], reference.get("note") or evidence.get("ref_notes"), limit=38)
 
@@ -3566,6 +5498,22 @@ def main(argv: list[str] | None = None) -> int:
         help="Render the current latest_snapshot.json immediately instead of starting in standby.",
     )
     parser.add_argument(
+        "--diagnostic-profile",
+        type=_parse_diagnostic_profile,
+        metavar="{engineering,portable,public-safe}",
+        default=_normalize_diagnostic_profile(
+            os.environ.get(
+                "BIDKING_HERO_REF_DIAGNOSTIC_PROFILE",
+                DEFAULT_DIAGNOSTIC_PROFILE,
+            )
+        ),
+        help=(
+            "engineering writes full continuous UI diagnostics; portable skips "
+            "continuous UI summary but keeps raw in manual exports; public-safe "
+            "also omits raw from exports."
+        ),
+    )
+    parser.add_argument(
         "--stop-pid-on-exit",
         type=int,
         action="append",
@@ -3597,6 +5545,7 @@ def main(argv: list[str] | None = None) -> int:
         stop_pids_on_exit=tuple(args.stop_pid_on_exit),
         cleanup_lock_paths=tuple(args.cleanup_lock_on_exit),
         load_existing_snapshot=bool(args.load_existing),
+        diagnostic_profile=args.diagnostic_profile,
     )
     try:
         root.mainloop()

@@ -2,6 +2,8 @@ param(
     [string]$PythonPath = "",
     [string]$ProcessName = "BidKing.exe",
     [int[]]$ServerPort = @(10000),
+    [ValidateSet("engineering", "portable", "public-safe", "stable", "public_safe")]
+    [string]$DiagnosticProfile = "portable",
     [switch]$BroadSniff,
     [switch]$IncludeLoopback,
     [switch]$KeepMonitorOnClose,
@@ -144,6 +146,7 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
         "-ExecutionPolicy", "Bypass",
         "-File", $PSCommandPath,
         "-ProcessName", $ProcessName,
+        "-DiagnosticProfile", $DiagnosticProfile,
         "-NoAutoElevate"
     )
     if ($PythonPath) {
@@ -173,6 +176,7 @@ New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
 Write-Host "== BidKing Hero Ref ==" -ForegroundColor Cyan
 Write-Host "App:     $AppRoot"
+Write-Host "Diagnostic: $DiagnosticProfile"
 if ($HasPackagedMonitor) {
     Write-Host "Monitor: $MonitorExe"
     Write-Host "Mode:    packaged WinDivert monitor exe + Hero Ref UI"
@@ -293,7 +297,11 @@ if ($HasPackagedMonitor -and $StartedMonitor -and $MonitorPid) {
     }
 }
 
-$HeroArgs = @("--snapshot", $SnapshotPath, "--load-existing")
+$HeroArgs = @(
+    "--snapshot", $SnapshotPath,
+    "--load-existing",
+    "--diagnostic-profile", $DiagnosticProfile
+)
 if ($MonitorPid -and -not $KeepMonitorOnClose -and -not $MonitorLaunchFailed) {
     $HeroArgs += @(
         "--stop-pid-on-exit", "$MonitorPid",
