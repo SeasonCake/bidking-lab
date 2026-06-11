@@ -582,6 +582,41 @@ def test_ref_engine_quality_value_sum_soft_weights_count_without_avg_value() -> 
     assert "quality_value_q5_count_derived" not in result["notes"]
 
 
+def test_ref_engine_avg_value_and_avg_cells_unique_intersection_derives_count() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            structured_ref_inputs={
+                "total_count": 7,
+                "avg_values": {"q5": 34288.75},
+                "avg_cells": {"q5": 3.25},
+            },
+        )
+    )
+
+    assert evidence.fixed_counts["q5"] == 4
+    assert evidence.min_counts["q5"] == 4
+    assert "avg_value_cells_q5_count_derived" in evidence.source_notes
+
+
+def test_ref_engine_avg_value_and_avg_cells_multiple_intersections_do_not_lock() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            structured_ref_inputs={
+                "total_count": 12,
+                "avg_values": {"q5": 34288.75},
+                "avg_cells": {"q5": 3.25},
+            },
+        )
+    )
+
+    assert "q5" not in evidence.fixed_counts
+    assert "avg_value_cells_q5_count_derived" not in evidence.source_notes
+
+
 def test_ref_engine_keeps_value_band_when_quality_counts_and_cells_are_fixed() -> None:
     result = run_reference_engine(
         _snapshot(

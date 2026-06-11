@@ -575,6 +575,63 @@ def _apply_quality_cells_total_grid_residual(
     _append_source_note_once(source_notes, note)
 
 
+def _apply_avg_value_cells_exact_count_intersection(
+    *,
+    total_count: int | None,
+    fixed_counts: dict[str, int],
+    min_counts: dict[str, int],
+    avg_cells: dict[str, float],
+    avg_values: dict[str, float],
+    quality_cells: dict[str, float],
+    quality_values: dict[str, float],
+    split_counts: dict[str, int],
+    source_notes: list[str],
+) -> None:
+    if total_count is None or total_count <= 0:
+        return
+    for key in QUALITY_KEYS:
+        if (
+            fixed_counts.get(key) is not None
+            or key in quality_cells
+            or key in quality_values
+            or key not in avg_cells
+            or key not in avg_values
+        ):
+            continue
+        avg_cell = avg_cells.get(key)
+        avg_value = avg_values.get(key)
+        if (
+            avg_cell is None
+            or avg_cell <= 0
+            or not _avg_value_has_positive_signal(avg_value)
+        ):
+            continue
+        minimum = max(1, int(min_counts.get(key, 0)))
+        if key == "q1":
+            minimum = max(
+                minimum,
+                sum(
+                    int(split_counts[split_key])
+                    for split_key in LOW_SPLIT_KEYS
+                    if split_counts.get(split_key) is not None
+                ),
+            )
+        candidates = [
+            count
+            for count in range(minimum, int(total_count) + 1)
+            if _avg_value_count_matches(count, avg_value)
+            and _avg_grid_options(count, avg_cell)
+        ]
+        if len(candidates) != 1:
+            continue
+        fixed_counts[key] = candidates[0]
+        min_counts[key] = max(min_counts.get(key, 0), candidates[0])
+        _append_source_note_once(
+            source_notes,
+            f"avg_value_cells_{key}_count_derived",
+        )
+
+
 def _parse_ranges(text: Any) -> tuple[float | None, float | None, float | None]:
     parts = [p.strip() for p in str(text or "").split("/") if p.strip()]
     parsed = [_safe_float(part) for part in parts[:3]]
@@ -1792,6 +1849,17 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
             source_notes=source_notes,
         )
 
+    _apply_avg_value_cells_exact_count_intersection(
+        total_count=total_count,
+        fixed_counts=fixed_counts,
+        min_counts=min_counts,
+        avg_cells=avg_cells,
+        avg_values=avg_values,
+        quality_cells=quality_cells,
+        quality_values=quality_values,
+        split_counts=split_counts,
+        source_notes=source_notes,
+    )
     _apply_exact_count_residuals(
         total_count=total_count,
         fixed_counts=fixed_counts,

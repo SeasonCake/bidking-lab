@@ -1751,3 +1751,25 @@
      - `C:\Python313\python.exe -m pytest tests\test_ahmad_ref_engine_public_info.py -q` -> `54 passed`。
    - 状态：
      - 本次只修当前工作区代码与测试，未重新打包。
+
+40. 2026-06-11 均价 + 均格 exact-only 件数交集（未打包）
+   - 用户确认：
+     - `均价 + 均格` 可以做轻量联合推导，但不要把“最可能”硬写成 truth；复杂概率锁继续留给 v3 主线。
+   - 语义：
+     - `avg_values` 约束：某品质件数乘均价后必须能形成合法整数总价；
+     - `avg_cells` 约束：某品质件数乘均格后必须能形成合法整数格，并且该格数可由物品形状组合出来；
+     - 只有在 `total_count` 范围内的合法件数交集唯一时，才写入 `fixed_counts/min_counts`；
+     - 交集为空或多于一个候选时不 hard lock，不新增 hard conflict，让后续枚举/先验继续处理。
+   - 修复：
+     - `src\ahmad_ref_engine.py` 新增 `avg_value_cells_{quality}_count_derived` exact-only 推导；
+     - 该推导放在残差推导之前，若某品质因此 exact，后续 `total_count` / `count_sums` residual 仍能继续补齐其它品质；
+     - 若已有 `quality_values` 或 `quality_cells`，继续使用原有更强的 `均价+总价`、`均格+总格` exact 路径，不走该平均值交集捷径。
+   - 验证：
+     - 新增正例：`total_count=7`、`q5 avg_value=34288.75`、`q5 avg_cells=3.25`，合法交集唯一为 `q5=4`，写入 `fixed_counts.q5=4`；
+     - 新增负例：`total_count=12`、同样均价/均格，合法交集多于一个，不写入 `fixed_counts.q5`；
+     - 已跑：
+       - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py tests\test_ahmad_ref_engine_public_info.py` -> passed；
+       - `C:\Python313\python.exe -m pytest tests\test_ahmad_ref_engine_public_info.py::test_ref_engine_avg_value_and_avg_cells_unique_intersection_derives_count tests\test_ahmad_ref_engine_public_info.py::test_ref_engine_avg_value_and_avg_cells_multiple_intersections_do_not_lock tests\test_ahmad_ref_engine_public_info.py::test_ref_engine_quality_value_sum_soft_weights_count_without_avg_value tests\test_ahmad_ref_engine_public_info.py::test_ref_engine_quality_value_sum_and_avg_value_derive_count -q` -> `4 passed`；
+       - `C:\Python313\python.exe -m pytest tests\test_ahmad_ref_engine_public_info.py -q` -> `56 passed`。
+   - 状态：
+     - 本次只修当前工作区代码与测试，未重新打包。
