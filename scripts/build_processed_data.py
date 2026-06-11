@@ -13,11 +13,11 @@ because those are byte-for-byte copies of game files). If you do not
 own the game, the JSONs already in the repo are what you use.
 
 Outputs:
-  data/processed/items.json             all 1132 items, full Item schema
-  data/processed/items_droppable.json   subset: 883 items referenced by Drop pools
-  data/processed/battle_items.json      all 64 battle items
-  data/processed/heroes.json            all 20 heroes
-  data/processed/maps.json              all 105 maps (summary form only)
+  data/processed/items.json             all parsed items, full Item schema
+  data/processed/items_droppable.json   map-reachable physical loot subset
+  data/processed/battle_items.json      all parsed battle items
+  data/processed/heroes.json            all parsed heroes
+  data/processed/maps.json              all parsed maps (summary form only)
 """
 
 from __future__ import annotations
@@ -27,15 +27,21 @@ import json
 import sys
 from pathlib import Path
 
-if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
-
 from bidking_lab.extract.battle_item_table import load_battle_item_table
-from bidking_lab.extract.bid_map_table import load_bid_map_table
-from bidking_lab.extract.drop_table import load_drop_table
+from bidking_lab.extract.bid_map_table import BidMap, load_bid_map_table
+from bidking_lab.extract.drop_table import DropPool, load_drop_table
 from bidking_lab.extract.hero_table import load_hero_table
-from bidking_lab.extract.item_table import load_item_table
+from bidking_lab.extract.item_table import Item, load_item_table
+from bidking_lab.simulation.basic_mc import POOL_REFERENCE_CATEGORY, is_physical_loot_item
+
+
+def _ensure_utf8_stdio() -> None:
+    if sys.platform != "win32":
+        return
+    if hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    if hasattr(sys.stderr, "buffer"):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -44,7 +50,44 @@ def _write_json(path: Path, payload: object) -> None:
         json.dump(payload, f, ensure_ascii=False, indent=2, sort_keys=False)
 
 
+def _map_reachable_valid_droppable_ids(
+    *,
+    maps: dict[int, BidMap],
+    drops: dict[int, DropPool],
+    items: dict[int, Item],
+) -> tuple[set[int], set[int], set[int]]:
+    """Return physical item ids reachable from at least one map drop tree."""
+    droppable_ids: set[int] = set()
+    missing_item_ids: set[int] = set()
+    missing_pool_ids: set[int] = set()
+
+    def walk(pool_id: int, seen: set[int]) -> None:
+        if pool_id in seen:
+            return
+        seen.add(pool_id)
+        pool = drops.get(pool_id)
+        if pool is None:
+            missing_pool_ids.add(pool_id)
+            return
+        for entry in pool.entries:
+            if entry.category == POOL_REFERENCE_CATEGORY:
+                walk(entry.item_id, seen)
+                continue
+            item = items.get(entry.item_id)
+            if item is None:
+                missing_item_ids.add(entry.item_id)
+                continue
+            if is_physical_loot_item(item):
+                droppable_ids.add(entry.item_id)
+
+    for bid_map in maps.values():
+        walk(bid_map.drop_pool_id, set())
+    return droppable_ids, missing_item_ids, missing_pool_ids
+
+
 def main() -> int:
+    _ensure_utf8_stdio()
+
     repo_root = Path(__file__).resolve().parent.parent
     tables_in = repo_root / "data" / "raw" / "tables"
     processed_dir = repo_root / "data" / "processed"
@@ -62,10 +105,11 @@ def main() -> int:
     maps = load_bid_map_table(tables_in / "BidMap.txt")
     drops = load_drop_table(tables_in / "Drop.txt")
 
-    droppable_ids: set[int] = set()
-    for pool in drops.values():
-        for e in pool.entries:
-            droppable_ids.add(e.item_id)
+    droppable_ids, missing_item_ids, missing_pool_ids = _map_reachable_valid_droppable_ids(
+        maps=maps,
+        drops=drops,
+        items=items,
+    )
 
     # Exclude raw_row from JSON to keep the published dataset compact. Users who
     # want every original game-table column can regenerate the full TSV locally
@@ -84,8 +128,17 @@ def main() -> int:
     _write_json(processed_dir / "items_droppable.json", droppable_payload)
     print(
         f"  items_droppable.json    : {len(droppable_payload)} items "
-        f"(referenced by some Drop pool)"
+        f"(map-reachable physical loot)"
     )
+    if missing_item_ids:
+        preview = ", ".join(str(i) for i in sorted(missing_item_ids)[:20])
+        suffix = " ..." if len(missing_item_ids) > 20 else ""
+        print(f"    warning: missing Item rows referenced by map drops: {preview}{suffix}")
+    if missing_pool_ids:
+        preview = ", ".join(str(i) for i in sorted(missing_pool_ids)[:20])
+        suffix = " ..." if len(missing_pool_ids) > 20 else ""
+        print(f"    warning: missing Drop pools referenced by maps: {preview}{suffix}")
+
 
     battle_payload = [battle_items[k].model_dump() for k in sorted(battle_items)]
     _write_json(processed_dir / "battle_items.json", battle_payload)

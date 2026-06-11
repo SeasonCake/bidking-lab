@@ -22,6 +22,7 @@ def _snapshot(
     *,
     hero: str = "ahmed",
     map_id: int = 2402,
+    phase: str = "bidding",
     structured_ref_inputs: dict | None = None,
     public_info: dict | None = None,
     public_rows: list[dict] | None = None,
@@ -31,7 +32,7 @@ def _snapshot(
             "context": {
                 "hero": hero,
                 "map_id": map_id,
-                "phase": "bidding",
+                "phase": phase,
             },
             "constraints": {
                 "public_info": public_info or {},
@@ -370,9 +371,11 @@ def test_ref_engine_quality_avg_value_uses_three_decimal_fraction() -> None:
         max_combos=60_000,
     ).as_dict()
 
-    assert result["status"] == "count_prior"
+    assert result["status"] == "ok"
     assert result["quality_count_ranges"]["q4"] == [8, 8, 8]
+    assert result["evidence"]["fixed_counts"]["q4"] == 8
     assert "public_q4_avg_value" in result["notes"]
+    assert "quality_count_q4_from_total_count_residual" in result["notes"]
 
 
 def test_ref_engine_public_quality_avg_value_falls_back_when_table_conflicts() -> None:
@@ -549,6 +552,34 @@ def test_ref_engine_action_quality_value_sum_joins_public_avg_value() -> None:
     assert result["evidence"]["fixed_counts"]["q5"] == 4
     assert "action_100125_q5_value_sum" in result["notes"]
     assert "public_q5_avg_value" in result["notes"]
+
+
+def test_ref_engine_quality_value_sum_soft_weights_count_without_avg_value() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            structured_ref_inputs={
+                "total_count": 50,
+                "counts": {"q3": 16},
+                "avg_cells": {
+                    "q1": 1.2666666507720947,
+                    "q3": 2.5,
+                    "q4": 3.923076868057251,
+                    "q5": 3.6666667461395264,
+                },
+                "quality_values": {"q5": 208230},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] in {"ok", "count_prior"}
+    assert result["quality_count_ranges"]["q5"] == [6, 6, 6]
+    assert result["quality_count_ranges"]["q6"] == [0, 0, 0]
+    assert result["red_count_range"] == [0, 0, 0]
+    assert "quality_value_soft_weight_v0" in result["notes"]
+    assert "quality_value_q5_count_derived" not in result["notes"]
 
 
 def test_ref_engine_keeps_value_band_when_quality_counts_and_cells_are_fixed() -> None:
@@ -769,6 +800,117 @@ def test_ref_engine_aisha_split_white_green_fold_to_merged_q1() -> None:
     assert "split_low_quality_q1_cells_merged" in result["notes"]
 
 
+def test_ref_engine_aisha_split_complements_missing_green_from_merged_q1_exact() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="aisha",
+            map_id=2404,
+            structured_ref_inputs={
+                "total_count": 21,
+                "fixed_counts": {"q1": 7},
+                "quality_cells": {"q1": 13},
+                "split_counts": {"white": 3},
+                "split_quality_cells": {"white": 5},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    evidence = result["evidence"]
+
+    assert result["status"] == "ok"
+    assert evidence["split_counts"] == {"white": 3, "green": 4}
+    assert evidence["split_quality_cells"] == {"white": 5.0, "green": 8.0}
+    assert evidence["fixed_counts"]["q1"] == 7
+    assert evidence["quality_cells"]["q1"] == 13.0
+    assert evidence["split_avg_cells"]["green"] == 2.0
+    assert "split_low_quality_green_count_from_q1_exact" in result["notes"]
+    assert "split_low_quality_green_cells_from_q1_exact" in result["notes"]
+
+
+def test_ref_engine_aisha_split_derives_q1_from_total_residual_before_complement() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="aisha",
+            map_id=2404,
+            structured_ref_inputs={
+                "total_count": 21,
+                "fixed_counts": {"q3": 5, "q4": 4, "q5": 3, "q6": 2},
+                "split_counts": {"white": 3},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    evidence = result["evidence"]
+
+    assert result["status"] == "ok"
+    assert evidence["fixed_counts"]["q1"] == 7
+    assert evidence["split_counts"] == {"white": 3, "green": 4}
+    assert result["quality_count_ranges"]["q1"] == [7, 7, 7]
+    assert "quality_count_q1_from_total_count_residual" in result["notes"]
+    assert "split_low_quality_green_count_from_q1_exact" in result["notes"]
+
+
+def test_ref_engine_aisha_split_complement_rejects_count_overflow() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="aisha",
+            map_id=2404,
+            structured_ref_inputs={
+                "total_count": 21,
+                "fixed_counts": {"q1": 2},
+                "split_counts": {"white": 3},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "no_reachable_combo"
+    assert "hard_conflict:split_low_quality_q1_count_complement" in result["notes"]
+    assert "constraints_conflict_or_too_strict" in result["notes"]
+
+
+def test_ref_engine_settlement_truth_overrides_stale_live_action_counts() -> None:
+    snapshot = _snapshot(
+        hero="ahmed",
+        map_id=4521,
+        phase="settled",
+        structured_ref_inputs={
+            "total_count": 21,
+            "fixed_counts": {"q1": 3, "q3": 9, "q5": 2},
+            "quality_cells": {"q1": 25},
+            "avg_cells": {"q1": 1.6666666269302368},
+        },
+    )
+    snapshot["final_quality_counts"] = "q2=3;q3=2;q4=4;q5=2;q6=3"
+    snapshot["final_quality_cells"] = "q2=6;q3=10;q4=12;q5=8;q6=7"
+    snapshot["ui_contract"]["truth"] = {
+        "total_items": 14,
+        "total_cells": 43,
+    }
+    snapshot["ui_contract"]["actions"] = {
+        "results": [
+            {"action_id": 100117, "result": 9},
+            {"action_id": 100104, "result": 25},
+            {"action_id": 100110, "result": 1.6666666269302368},
+        ]
+    }
+
+    result = run_reference_engine(snapshot, max_combos=60_000).as_dict()
+    evidence = result["evidence"]
+
+    assert result["status"] == "ok"
+    assert evidence["total_count"] == 14
+    assert evidence["total_grid_target"] == 43.0
+    assert evidence["fixed_counts"] == {"q1": 3, "q3": 2, "q4": 4, "q5": 2, "q6": 3}
+    assert evidence["quality_cells"] == {"q1": 6.0, "q3": 10.0, "q4": 12.0, "q5": 8.0, "q6": 7.0}
+    assert evidence["avg_cells"]["q1"] == 2.0
+    assert "settlement_review_quality_counts_overrode_live" in result["notes"]
+    assert "settlement_review_quality_cells_overrode_live" in result["notes"]
+    assert "quality_cells_q1_avg_count_conflict" not in result["notes"]
+
+
 def test_ref_engine_aisha_white_only_is_q1_lower_bound_not_exact() -> None:
     evidence = extract_evidence(
         _snapshot(
@@ -938,6 +1080,126 @@ def test_ref_engine_total_grid_hard_when_gold_count_unknown() -> None:
     assert result["red_cells_range"][1] >= 1
     assert result["total_grid_range"] == [70, 70, 70]
     assert "structured_ref_bridge_total_cells" in result["notes"]
+
+
+def test_ref_engine_total_count_residual_derives_single_missing_quality_count() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2404,
+            structured_ref_inputs={
+                "total_count": 25,
+                "fixed_counts": {"q1": 5, "q3": 8, "q4": 6, "q5": 4},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "ok"
+    assert result["evidence"]["fixed_counts"]["q6"] == 2
+    assert result["quality_count_ranges"]["q6"] == [2, 2, 2]
+    assert "quality_count_q6_from_total_count_residual" in result["notes"]
+
+
+def test_ref_engine_count_sum_residual_derives_single_missing_group_count() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="victor",
+            map_id=2404,
+            structured_ref_inputs={
+                "total_count": 21,
+                "fixed_counts": {"q4": 3, "q5": 2},
+                "count_sums": {"q4q5q6": 8},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "ok"
+    assert result["evidence"]["fixed_counts"]["q6"] == 3
+    assert result["quality_count_ranges"]["q6"] == [3, 3, 3]
+    assert "count_sum_q4q5q6_q6_count_from_residual" in result["notes"]
+
+
+def test_ref_engine_total_grid_residual_derives_single_missing_quality_cells() -> None:
+    fixed_counts = {"q1": 5, "q3": 8, "q4": 6, "q5": 4, "q6": 2}
+    all_quality_cells = {"q1": 8, "q3": 11, "q4": 12, "q5": 9, "q6": 10}
+
+    for missing_key in ("q1", "q4", "q6"):
+        quality_cells = {
+            key: value for key, value in all_quality_cells.items() if key != missing_key
+        }
+        result = run_reference_engine(
+            _snapshot(
+                hero="ahmed",
+                map_id=2404,
+                structured_ref_inputs={
+                    "total_count": 25,
+                    "total_cells": 50,
+                    "fixed_counts": fixed_counts,
+                    "quality_cells": quality_cells,
+                },
+            ),
+            max_combos=60_000,
+        ).as_dict()
+
+        assert result["status"] == "ok"
+        assert result["total_grid_range"] == [50, 50, 50]
+        assert result["quality_cells_ranges"][missing_key] == [
+            all_quality_cells[missing_key],
+            all_quality_cells[missing_key],
+            all_quality_cells[missing_key],
+        ]
+        assert result["evidence"]["quality_cells"][missing_key] == float(
+            all_quality_cells[missing_key]
+        )
+        assert f"quality_cells_{missing_key}_from_total_grid_residual" in result["notes"]
+
+
+def test_ref_engine_aisha_split_uses_total_grid_residual_for_missing_green_cells() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="aisha",
+            map_id=2404,
+            structured_ref_inputs={
+                "total_count": 25,
+                "total_cells": 50,
+                "fixed_counts": {"q1": 5, "q3": 8, "q4": 6, "q5": 4, "q6": 2},
+                "quality_cells": {"q3": 11, "q4": 12, "q5": 9, "q6": 10},
+                "split_counts": {"white": 2},
+                "split_quality_cells": {"white": 3},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    evidence = result["evidence"]
+
+    assert result["status"] == "ok"
+    assert evidence["quality_cells"]["q1"] == 8.0
+    assert evidence["split_counts"] == {"white": 2, "green": 3}
+    assert evidence["split_quality_cells"] == {"white": 3.0, "green": 5.0}
+    assert "quality_cells_q1_from_total_grid_residual" in result["notes"]
+    assert "split_low_quality_green_cells_from_q1_exact" in result["notes"]
+
+
+def test_ref_engine_total_grid_residual_rejects_negative_missing_quality_cells() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2404,
+            structured_ref_inputs={
+                "total_count": 25,
+                "total_cells": 20,
+                "fixed_counts": {"q1": 5, "q3": 8, "q4": 6, "q5": 4, "q6": 2},
+                "quality_cells": {"q3": 11, "q4": 12, "q5": 9, "q6": 10},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "no_reachable_combo"
+    assert "hard_conflict:quality_cells_q1_total_grid_residual" in result["notes"]
 
 
 def test_ref_engine_victor_q4_q5_q6_count_sum_and_zero_gold_avg() -> None:

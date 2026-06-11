@@ -37,7 +37,7 @@ Hero Ref 支线源码和文档在 [`external_references/ahmad_live_reference_lab
 
 **bidking-lab 把这个决策过程数学化**：
 
-- **数据层**：解码游戏的 `Tables/*.txt`（base64 + TSV）→ 1132 件藏品 / 64 件道具 / 105 张地图 / 20 个英雄 全部入 schema
+- **数据层**：解码游戏的 `Tables/*.txt`（base64 + TSV）→ 1207 件藏品 / 64 件道具 / 165 张地图 / 20 个英雄 全部入 schema
 - **推断层**：玩家输入观测 → 联合后验推断每个品质 bucket 的 `(总格数, 件数)` top-3 候选；条件 MC 输出出价分布 P25/P50/P75/P90 + 秒仓 / 放仓推荐
 - **价值评估层**：Leave-one-out 量化每件道具的"每银币挽回价值"，给出指定地图 / 英雄下的道具性价比榜
 - **交付层**：Hero Ref 实时 Tk 小窗 + 历史 Streamlit 分析 UI + Jupyter notebook + 端到端 CLI 脚本
@@ -140,9 +140,9 @@ python scripts\build_processed_data.py       # 重新生成 data/processed/*.jso
 ┌──────────────────────────────────▼──────────────────────────────────┐
 │ Layer 1 · Data                                                      │
 │   extract/                                                          │
-│     ├── bid_map_table.py       — 105 张地图 schema (21 列)          │
+│     ├── bid_map_table.py       — 165 张地图 schema (21/23 列)       │
 │     ├── drop_table.py          — 掉落池 (item_id × weight)          │
-│     ├── item_table.py          — 1132 件藏品                        │
+│     ├── item_table.py          — 1207 件藏品                        │
 │     └── battle_item.py         — 64 件道具（已 verify 中文命名）    │
 │   data/raw/tables/*.txt         — 玩家本地游戏文件（gitignored）    │
 │   data/processed/*.json         — 我们生成的 schema 化 JSON         │
@@ -226,7 +226,7 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 | 维度 | 数字 |
 |---|---|
 | 解析的游戏表 | 6 张（BidMap / Drop / Item / BattleItem / Hero / Item_Type） |
-| schema 化的实体 | 1132 件藏品 · 64 件道具 · 105 张地图 · 20 个英雄 |
+| schema 化的实体 | 1207 件藏品 · 64 件道具 · 165 张地图 · 20 个英雄 |
 | 单测数 | **431**，全绿 |
 | Streamlit UI tabs | 4（读数输入 / 出价推荐 / 联合筛选 / 道具 ROI） |
 | Notebook | 5 册（map 价值分布 / 英雄排名 / 推断 demo / ROI snipe / 端到端 case） |
@@ -261,11 +261,11 @@ ROI tab 把 σ 暴露成滑块，灵敏度图玩家自己拉。
 
 | File (in repo) | What | Size |
 |---|---|---|
-| `data/processed/items.json` | 1132 items: id, name, quality (0–6), value, shape, tags … | ~520 KB |
-| `data/processed/items_droppable.json` | 883 actually drop-able items（去掉系统物品） | ~425 KB |
+| `data/processed/items.json` | 1207 items: id, name, quality (0–6), value, shape, tags … | ~595 KB |
+| `data/processed/items_droppable.json` | 587 map-reachable physical loot items（地图可达物理藏品） | ~331 KB |
 | `data/processed/battle_items.json` | 64 battle items with quality_color + effect | ~18 KB |
 | `data/processed/heroes.json` | 20 heroes with skill descriptions | ~4 KB |
-| `data/processed/maps.json` | 105 maps (summary form) | ~25 KB |
+| `data/processed/maps.json` | 165 maps (summary form) | ~122 KB |
 
 ---
 

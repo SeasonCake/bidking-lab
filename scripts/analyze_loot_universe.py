@@ -1,8 +1,9 @@
-"""Cross-reference Drop.txt entries with Item.txt to identify the loot universe.
+"""Cross-reference raw Drop.txt entries with Item.txt.
 
-Goal: split Item.txt rows into "droppable" (referenced by some Drop pool)
-and "non-droppable", then describe the droppable subset so we can sanity
-check our schema guesses (especially quality_? and value_?).
+This is a broad table-audit helper: it counts every item referenced by any
+Drop pool, including non-map-reachable pools and non-physical rows. It is not
+the formal map prior used by simulation; use ``items_droppable.json`` for the
+map-reachable physical loot universe.
 
 Writes nothing to disk — pure stdout summary.
 """
@@ -58,7 +59,7 @@ def main() -> int:
     missing = referenced_ids - known_in_item
 
     print("=" * 72)
-    print("LOOT UNIVERSE")
+    print("RAW DROP REFERENCE UNIVERSE")
     print("=" * 72)
     print(f"Item.txt rows                  : {len(item_rows)}")
     print(f"Drop.txt distinct item_ids     : {len(referenced_ids)}")
@@ -74,13 +75,13 @@ def main() -> int:
     drop_quality = Counter(
         int(items_by_id[iid][COL_QUALITY]) for iid in known_in_item
     )
-    print(f"{'quality':>8}  {'all items':>10}  {'droppable':>10}")
+    print(f"{'quality':>8}  {'all items':>10}  {'raw refs':>10}")
     for q in sorted(set(all_quality) | set(drop_quality)):
         print(f"{q:>8}  {all_quality.get(q, 0):>10}  {drop_quality.get(q, 0):>10}")
 
     print()
     print("=" * 72)
-    print("VALUE (col[9]) STATS PER QUALITY — among droppable items only")
+    print("VALUE (col[9]) STATS PER QUALITY - among raw Drop refs only")
     print("=" * 72)
     by_q_vals: dict[int, list[int]] = defaultdict(list)
     for iid in known_in_item:
@@ -102,7 +103,7 @@ def main() -> int:
 
     print()
     print("=" * 72)
-    print("SAMPLE DROPPABLE ITEMS PER QUALITY (sorted by value desc)")
+    print("SAMPLE RAW DROP REF ITEMS PER QUALITY (sorted by value desc)")
     print("=" * 72)
     for q in sorted(by_q_vals):
         rows_q = [

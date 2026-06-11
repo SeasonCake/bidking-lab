@@ -1733,6 +1733,347 @@
     ]
   },
   {
+    "map_id": 2521,
+    "name": "未知残骸",
+    "description": "白色DOWN红色UP",
+    "category": 105,
+    "auction_mode": "open",
+    "sub_pool_weights": [
+      [
+        2521,
+        100
+      ],
+      [
+        2522,
+        20
+      ],
+      [
+        2523,
+        20
+      ],
+      [
+        2524,
+        20
+      ],
+      [
+        2525,
+        20
+      ],
+      [
+        2526,
+        20
+      ],
+      [
+        2527,
+        20
+      ],
+      [
+        2528,
+        20
+      ],
+      [
+        2529,
+        20
+      ],
+      [
+        2530,
+        20
+      ]
+    ],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2521,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 2522,
+    "name": "​远洋客轮舱房​",
+    "description": "白色DOWN红色UP",
+    "category": 105,
+    "auction_mode": "open",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2522,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 2523,
+    "name": "​军用舰艇保险库​",
+    "description": "白色DOWN红色UP",
+    "category": 105,
+    "auction_mode": "open",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2523,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 2524,
+    "name": "​冷链货船隔离舱​",
+    "description": "白色DOWN红色UP",
+    "category": 105,
+    "auction_mode": "open",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2524,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 2525,
+    "name": "​殖民商船宝库​",
+    "description": "白色DOWN红色UP",
+    "category": 105,
+    "auction_mode": "open",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2525,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 2526,
+    "name": "​探险家座舰资料库​",
+    "description": "白色DOWN红色UP",
+    "category": 105,
+    "auction_mode": "open",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2526,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 2527,
+    "name": "​皇家御用货舱​",
+    "description": "白色DOWN红色UP",
+    "category": 105,
+    "auction_mode": "open",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2527,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 2528,
+    "name": "​生物实验室样本库​",
+    "description": "白色DOWN红色UP",
+    "category": 105,
+    "auction_mode": "open",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2528,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 2529,
+    "name": "​私掠船军火舱​",
+    "description": "白色DOWN红色UP",
+    "category": 105,
+    "auction_mode": "open",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2529,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 2530,
+    "name": "​现代货轮娱乐库​",
+    "description": "白色DOWN红色UP",
+    "category": 105,
+    "auction_mode": "open",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2530,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
     "map_id": 2601,
     "name": "隐秘拍卖会",
     "description": "这场高阶盛宴隐匿于神秘之所，唯有最顶尖的竞买人才能获得入场资格，非顶尖者连窥伺资格都没有。拍卖台铺着暗纹丝绒，鎏金托盘上的每件拍品都覆着暗纹密封罩，隐约透出奇异光泽，藏着跨越时代的隐秘、未被揭晓的真相与不可估量的价值。",
@@ -3984,6 +4325,1029 @@
     "name": "​现代货轮娱乐库​",
     "description": "红色UP",
     "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2520,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 4521,
+    "name": "未知残骸",
+    "description": "白色DOWN红色UP",
+    "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [
+      [
+        4521,
+        100
+      ],
+      [
+        4522,
+        20
+      ],
+      [
+        4523,
+        20
+      ],
+      [
+        4524,
+        20
+      ],
+      [
+        4525,
+        20
+      ],
+      [
+        4526,
+        20
+      ],
+      [
+        4527,
+        20
+      ],
+      [
+        4528,
+        20
+      ],
+      [
+        4529,
+        20
+      ],
+      [
+        4530,
+        20
+      ]
+    ],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2521,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 4522,
+    "name": "​远洋客轮舱房​",
+    "description": "白色DOWN红色UP",
+    "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2522,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 4523,
+    "name": "​军用舰艇保险库​",
+    "description": "白色DOWN红色UP",
+    "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2523,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 4524,
+    "name": "​冷链货船隔离舱​",
+    "description": "白色DOWN红色UP",
+    "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2524,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 4525,
+    "name": "​殖民商船宝库​",
+    "description": "白色DOWN红色UP",
+    "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2525,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 4526,
+    "name": "​探险家座舰资料库​",
+    "description": "白色DOWN红色UP",
+    "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2526,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 4527,
+    "name": "​皇家御用货舱​",
+    "description": "白色DOWN红色UP",
+    "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2527,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 4528,
+    "name": "​生物实验室样本库​",
+    "description": "白色DOWN红色UP",
+    "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2528,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 4529,
+    "name": "​私掠船军火舱​",
+    "description": "白色DOWN红色UP",
+    "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2529,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 4530,
+    "name": "​现代货轮娱乐库​",
+    "description": "白色DOWN红色UP",
+    "category": 305,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2530,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5501,
+    "name": "未知残骸",
+    "description": "这艘船的国籍与年代已不可考，残骸由多艘沉船堆积而成。打捞出的密封舱内容物极其混杂，是深海真正的盲盒。",
+    "category": 401,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [
+      [
+        5501,
+        100
+      ],
+      [
+        5502,
+        20
+      ],
+      [
+        5503,
+        20
+      ],
+      [
+        5504,
+        20
+      ],
+      [
+        5505,
+        20
+      ],
+      [
+        5506,
+        20
+      ],
+      [
+        5507,
+        20
+      ],
+      [
+        5508,
+        20
+      ],
+      [
+        5509,
+        20
+      ],
+      [
+        5510,
+        20
+      ]
+    ],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2501,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5502,
+    "name": "​远洋客轮舱房​",
+    "description": "来自一艘触礁沉没的豪华邮轮。此密封舱可能是头等舱套房或奢侈品商店的库房，里面封存着上一个时代的流行与奢华。",
+    "category": 401,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2502,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5503,
+    "name": "​军用舰艇保险库​",
+    "description": "来自一艘因冲突沉没的军用舰艇。舱体坚固异常，内部可能封存着舰载设备的备用零件、通讯器材或舰员的重要私人物品。",
+    "category": 401,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2503,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5504,
+    "name": "​冷链货船隔离舱​",
+    "description": "一艘专门运输特殊货物的货轮。此舱室具有保温与密封特性，里面或许保存着为特定目的地准备的给养或药剂，状态成谜。",
+    "category": 401,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2504,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5505,
+    "name": "​殖民商船宝库​",
+    "description": "来自大航海时代的失落商船。此舱门被贝类紧紧包裹，里面木箱的轮廓依稀可辨，可能装着改变贸易格局的“白色黄金”。",
+    "category": 401,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2505,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5506,
+    "name": "​探险家座舰资料库​",
+    "description": "属于一支传奇的极地探险队。此防水舱专门用于存放航行日志、珍贵海图与考古拓片，是知识探险家梦寐以求的宝藏。",
+    "category": 401,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2506,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5507,
+    "name": "​皇家御用货舱​",
+    "description": "沉船档案显示它与某位显赫人物密切相关。此舱室规格极高，里面特制的箱子内，或许是为进贡而准备的稀有矿物与瑰宝。",
+    "category": 401,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2507,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5508,
+    "name": "​生物实验室样本库​",
+    "description": "一艘具有科研背景的船只。此舱室标有生物危害标志，内部有严格的固定架，似乎用来保存某种特殊的有机样本。",
+    "category": 401,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2508,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5509,
+    "name": "​私掠船军火舱​",
+    "description": "一艘身份暧昧的武装船只的弹药库。舱内物品被妥善防水处理，主要是那个时代的标准制式装备，但或许有特例。",
+    "category": 401,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2509,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5510,
+    "name": "​现代货轮娱乐库​",
+    "description": "一艘近些年沉没的大型集装箱船。此密封舱内是运往电子市场的“新潮玩具”，包装完好，仿佛时间在此停滞。",
+    "category": 401,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2510,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5601,
+    "name": "未知残骸",
+    "description": "这艘船的国籍与年代已不可考，残骸由多艘沉船堆积而成。打捞出的密封舱内容物极其混杂，是深海真正的盲盒。",
+    "category": 402,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [
+      [
+        5601,
+        100
+      ],
+      [
+        5602,
+        20
+      ],
+      [
+        5603,
+        20
+      ],
+      [
+        5604,
+        20
+      ],
+      [
+        5605,
+        20
+      ],
+      [
+        5606,
+        20
+      ],
+      [
+        5607,
+        20
+      ],
+      [
+        5608,
+        20
+      ],
+      [
+        5609,
+        20
+      ],
+      [
+        5610,
+        20
+      ]
+    ],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2501,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5602,
+    "name": "​远洋客轮舱房​",
+    "description": "来自一艘触礁沉没的豪华邮轮。此密封舱可能是头等舱套房或奢侈品商店的库房，里面封存着上一个时代的流行与奢华。",
+    "category": 402,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2502,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5603,
+    "name": "​军用舰艇保险库​",
+    "description": "来自一艘因冲突沉没的军用舰艇。舱体坚固异常，内部可能封存着舰载设备的备用零件、通讯器材或舰员的重要私人物品。",
+    "category": 402,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2503,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5604,
+    "name": "​冷链货船隔离舱​",
+    "description": "一艘专门运输特殊货物的货轮。此舱室具有保温与密封特性，里面或许保存着为特定目的地准备的给养或药剂，状态成谜。",
+    "category": 402,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2504,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5605,
+    "name": "​殖民商船宝库​",
+    "description": "来自大航海时代的失落商船。此舱门被贝类紧紧包裹，里面木箱的轮廓依稀可辨，可能装着改变贸易格局的“白色黄金”。",
+    "category": 402,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2505,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5606,
+    "name": "​探险家座舰资料库​",
+    "description": "属于一支传奇的极地探险队。此防水舱专门用于存放航行日志、珍贵海图与考古拓片，是知识探险家梦寐以求的宝藏。",
+    "category": 402,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2506,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5607,
+    "name": "​皇家御用货舱​",
+    "description": "沉船档案显示它与某位显赫人物密切相关。此舱室规格极高，里面特制的箱子内，或许是为进贡而准备的稀有矿物与瑰宝。",
+    "category": 402,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2507,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5608,
+    "name": "​生物实验室样本库​",
+    "description": "一艘具有科研背景的船只。此舱室标有生物危害标志，内部有严格的固定架，似乎用来保存某种特殊的有机样本。",
+    "category": 402,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2508,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5609,
+    "name": "​私掠船军火舱​",
+    "description": "一艘身份暧昧的武装船只的弹药库。舱内物品被妥善防水处理，主要是那个时代的标准制式装备，但或许有特例。",
+    "category": 402,
+    "auction_mode": "sealed",
+    "sub_pool_weights": [],
+    "rounds_total": 30,
+    "entry_fee_silver": 25000,
+    "starting_budget_silver": 5000000,
+    "drop_pool_id": 2509,
+    "items_per_session_min": 22,
+    "items_per_session_max": 44,
+    "value_tier_ui": "ui_value_high",
+    "mode_flag": 4,
+    "bid_price_ladder": [
+      2000,
+      1600,
+      1300,
+      1100,
+      0
+    ],
+    "round_category_hints": [
+      103,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "map_id": 5610,
+    "name": "​现代货轮娱乐库​",
+    "description": "一艘近些年沉没的大型集装箱船。此密封舱内是运往电子市场的“新潮玩具”，包装完好，仿佛时间在此停滞。",
+    "category": 402,
     "auction_mode": "sealed",
     "sub_pool_weights": [],
     "rounds_total": 30,

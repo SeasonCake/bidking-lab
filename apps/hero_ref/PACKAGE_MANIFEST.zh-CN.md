@@ -29,12 +29,14 @@
 
 ## Public-safe 模式
 
-如果使用构建脚本的 `-PublicSafe`，会排除 `data/raw/tables`。这种包更适合公开传输；用户第一次运行前可以执行 `导入本机游戏表.bat`，从自己本机的 BidKing 游戏目录导入 `BidMap.txt`、`Drop.txt`、`Item.txt` 等表文件，否则 monitor 无法运行。
+如果使用构建脚本的 `-PublicSafe`，会排除 `data/raw/tables`。这种包更适合公开传输；用户第一次运行前可以执行 `Import-LocalTables.bat`，从自己本机的 BidKing 游戏目录导入 `BidMap.txt`、`Drop.txt`、`Item.txt` 等表文件，否则 monitor 无法运行。
 
 ## 运行时依赖
 
 默认 portable 包不要求用户安装 Python、`pydivert` 或 `psutil`。WinDivert 抓包仍需要管理员权限，并可能需要在火绒、Windows Defender 等安全软件中信任整个应用文件夹。
 
 推荐启动入口：
-- `管理员启动HeroRef_悬浮窗.bat` / `Start-HeroRef.bat`：默认悬浮窗，不占任务栏，双击会自动申请管理员权限。
-- `管理员启动HeroRef_任务栏窗口.bat` / `Start-HeroRef-Taskbar.bat`：普通窗口模式，会出现在任务栏，支持 `Alt+Tab` / `Win+Tab`，双击会自动申请管理员权限。
+- `Start-HeroRef.bat`：默认悬浮窗，不占任务栏，双击会自动申请管理员权限。
+- `Start-HeroRef-Taskbar.bat`：普通窗口模式，会出现在任务栏，支持 `Alt+Tab` / `Win+Tab`，双击会自动申请管理员权限。
+- `Import-LocalTables.bat`：public-safe 包导入本机游戏表。
+- `Stop-HeroRef.bat`：强制停止本包启动的 UI 和 monitor。

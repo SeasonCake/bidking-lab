@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from itertools import permutations
 import json
 from pathlib import Path
 import sys
@@ -203,6 +204,141 @@ def _compact_range_text(values: Any, *, suffix: str = "") -> str:
     return text.replace(" / ", "/") if text != "-" else text
 
 
+def _display_range_text(values: Any) -> str:
+    locked = _locked_range_value(values)
+    if locked is not None:
+        return _money(locked)
+    return _range_text(values)
+
+
+def _range_triplet_ints(values: Any) -> list[int] | None:
+    if not isinstance(values, (list, tuple)) or len(values) < 3:
+        return None
+    parsed = [_parse_int(value) for value in values[:3]]
+    if any(value is None for value in parsed):
+        return None
+    return [int(value) for value in parsed]
+
+
+def _paired_complement_range(
+    total: int | None,
+    base_range: Any,
+    existing_range: Any,
+) -> list[int] | None:
+    if total is None or total < 0:
+        return None
+    base_values = _range_triplet_ints(base_range)
+    if base_values is None:
+        return None
+    paired = [total - value for value in base_values]
+    if any(value < 0 for value in paired):
+        return None
+    existing_values = _range_triplet_ints(existing_range)
+    if existing_values is not None and sorted(existing_values) != sorted(paired):
+        return None
+    return paired
+
+
+def _permutation_to_match_values(source: list[int], target: list[int]) -> list[int] | None:
+    if len(source) != len(target):
+        return None
+    used: set[int] = set()
+    out: list[int] = []
+    for value in target:
+        match = None
+        for index, candidate in enumerate(source):
+            if index in used:
+                continue
+            if candidate == value:
+                match = index
+                break
+        if match is None:
+            return None
+        used.add(match)
+        out.append(match)
+    return out
+
+
+def _valid_count_cells_pairs(counts: list[int], cells: list[int]) -> bool:
+    if len(counts) != len(cells):
+        return False
+    for count, cell in zip(counts, cells):
+        if count < 0 or cell < 0:
+            return False
+        if count == 0 and cell != 0:
+            return False
+        if count > 0 and cell < count:
+            return False
+    return True
+
+
+def _align_cells_to_count_display(
+    display_counts: Any,
+    original_counts: Any,
+    original_cells: Any,
+) -> list[int] | None:
+    counts = _range_triplet_ints(display_counts)
+    cells = _range_triplet_ints(original_cells)
+    source_counts = _range_triplet_ints(original_counts)
+    if counts is None or cells is None:
+        return None
+    if source_counts is not None:
+        permutation = _permutation_to_match_values(source_counts, counts)
+        if permutation is not None:
+            reordered = [cells[index] for index in permutation]
+            if _valid_count_cells_pairs(counts, reordered):
+                return reordered
+    if _valid_count_cells_pairs(counts, cells):
+        return cells
+    for candidate in dict.fromkeys(permutations(cells, 3)):
+        reordered = list(candidate)
+        if _valid_count_cells_pairs(counts, reordered):
+            return reordered
+    return None
+
+
+def _infer_q5q6_count_total(ref_result: dict[str, Any]) -> int | None:
+    ranges = ref_result.get("quality_count_ranges")
+    if not isinstance(ranges, dict):
+        return None
+    evidence = ref_result.get("evidence") if isinstance(ref_result.get("evidence"), dict) else {}
+    count_sums = evidence.get("count_sums") if isinstance(evidence.get("count_sums"), dict) else {}
+    q456_total = _parse_int(count_sums.get("q4q5q6"))
+    q4_count = _locked_range_value(ranges.get("q4"))
+    if q456_total is not None and q4_count is not None:
+        total = q456_total - q4_count
+        return total if total >= 0 else None
+
+    total_count = _parse_int(evidence.get("total_count"))
+    locked_known = [_locked_range_value(ranges.get(key)) for key in ("q1", "q3", "q4")]
+    if total_count is not None and all(value is not None for value in locked_known):
+        total = total_count - sum(int(value) for value in locked_known if value is not None)
+        return total if total >= 0 else None
+    return None
+
+
+def _red_display_ranges(ref_result: dict[str, Any]) -> tuple[Any, Any]:
+    count_ranges = ref_result.get("quality_count_ranges")
+    red_count_range = ref_result.get("red_count_range")
+    red_cells_range = ref_result.get("red_cells_range")
+    if isinstance(count_ranges, dict):
+        paired_counts = _paired_complement_range(
+            _infer_q5q6_count_total(ref_result),
+            count_ranges.get("q5"),
+            red_count_range,
+        )
+        if paired_counts is not None:
+            aligned_cells = _align_cells_to_count_display(
+                paired_counts,
+                red_count_range,
+                red_cells_range,
+            )
+            if aligned_cells is not None:
+                red_count_range = paired_counts
+                red_cells_range = aligned_cells
+    return red_count_range, red_cells_range
+
+
 def _summed_quality_count_candidates(ref_result: dict[str, Any]) -> list[int]:
     ranges = ref_result.get("quality_count_ranges")
     if not isinstance(ranges, dict):
@@ -269,6 +405,23 @@ def _q6_grid_needs_direct_info(ref_result: dict[str, Any], evidence: dict[str, A
     return _locked_range_value(ranges.get("q6")) is not None
 
 
+def _unlocked_quality_labels(
+    ref_result: dict[str, Any],
+    evidence: dict[str, Any],
+    quality_order: tuple[str, ...],
+) -> list[str]:
+    ranges = ref_result.get("quality_count_ranges")
+    if not isinstance(ranges, dict):
+        return []
+    min_counts = evidence.get("min_counts") if isinstance(evidence.get("min_counts"), dict) else {}
+    labels: list[str] = []
+    for key in quality_order:
+        floor = _parse_int(min_counts.get(key))
+        if _range_is_unlocked(ranges.get(key), floor):
+            labels.append(QUALITY_LABELS.get(key, key))
+    return labels
+
+
 def _next_info_hint(ref_result: dict[str, Any]) -> str:
     evidence = ref_result.get("evidence")
     if not isinstance(evidence, dict):
@@ -276,29 +429,21 @@ def _next_info_hint(ref_result: dict[str, Any]) -> str:
     status = _text(ref_result.get("status"), "")
     if status == "missing_total_count" or evidence.get("total_count") in (None, ""):
         return "先补总件"
-    ranges = ref_result.get("quality_count_ranges")
-    min_counts = evidence.get("min_counts") if isinstance(evidence.get("min_counts"), dict) else {}
-    if isinstance(ranges, dict):
-        unlocked_low: list[str] = []
-        for key in LOW_QUALITY_DISPLAY_ORDER:
-            floor = _parse_int(min_counts.get(key))
-            if _range_is_unlocked(ranges.get(key), floor):
-                unlocked_low.append(QUALITY_LABELS.get(key, key))
-        if unlocked_low:
-            return f"优先补{'/'.join(unlocked_low[:2])}件数或均格"
-        unlocked_high: list[str] = []
-        for key in ("q5", "q6"):
-            if _range_is_unlocked(ranges.get(key)):
-                unlocked_high.append(QUALITY_LABELS.get(key, key))
-        if unlocked_high:
-            return f"补{'/'.join(unlocked_high[:2])}均价或总价"
-        if _q6_grid_needs_direct_info(ref_result, evidence):
-            return "补总格/全均格或红均格"
-    if evidence.get("total_grid_target") in (None, "") and _range_is_unlocked(
-        ref_result.get("total_grid_range")
+    total_grid_missing = evidence.get("total_grid_target") in (None, "")
+    unlocked_low = _unlocked_quality_labels(ref_result, evidence, LOW_QUALITY_DISPLAY_ORDER)
+    if unlocked_low:
+        return f"优先补{'/'.join(unlocked_low[:2])}件数或均格"
+    unlocked_high = _unlocked_quality_labels(ref_result, evidence, ("q4", "q5"))
+    if unlocked_high:
+        return f"补{'/'.join(unlocked_high[:2])}件数或均格"
+    if total_grid_missing and (
+        _range_is_unlocked(ref_result.get("total_grid_range"))
+        or _q6_grid_needs_direct_info(ref_result, evidence)
     ):
-        return "补总格或全均格"
-    return "补公开轮廓验证"
+        return "优先补总格/全均格"
+    if total_grid_missing and _compact_range_text(ref_result.get("total_grid_range"), suffix="格") != "-":
+        return "补总格/全均格"
+    return "信息已足够，观察出价"
 
 
 def _parse_money(value: Any) -> int | None:
@@ -1267,13 +1412,14 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
 
     latest_result = actions.get("latest_result") if isinstance(actions.get("latest_result"), dict) else {}
     latest_sent = actions.get("latest_sent") if isinstance(actions.get("latest_sent"), dict) else {}
+    red_count_display_range, red_cells_display_range = _red_display_ranges(ref_result)
     ref_red_count_range = (
-        " / ".join(_money(v, "?") for v in ref_result.get("red_count_range", ()))
+        _display_range_text(red_count_display_range)
         if ref_display_ready
         else ""
     )
     ref_red_cells_range = (
-        " / ".join(_money(v, "?") for v in ref_result.get("red_cells_range", ()))
+        _display_range_text(red_cells_display_range)
         if ref_display_ready
         else ""
     )
@@ -1288,12 +1434,12 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         else {}
     )
     q4_count_range = (
-        " / ".join(_money(v, "?") for v in quality_count_ranges.get("q4", ()))
+        _display_range_text(quality_count_ranges.get("q4"))
         if ref_display_ready
         else ""
     )
     q5_count_range = (
-        " / ".join(_money(v, "?") for v in quality_count_ranges.get("q5", ()))
+        _display_range_text(quality_count_ranges.get("q5"))
         if ref_display_ready
         else ""
     )

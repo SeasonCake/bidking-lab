@@ -4,13 +4,8 @@ Hero Ref 需要管理员权限，因为实时监测依赖 WinDivert 抓本机游
 
 双击启动文件会自动申请管理员权限。如果没有弹出管理员授权，或者启动失败，请：
 
-1. 右键 `管理员启动HeroRef_悬浮窗.bat`
-   或 `管理员启动HeroRef_任务栏窗口.bat`
+1. 右键 `Start-HeroRef.bat`
+   或 `Start-HeroRef-Taskbar.bat`
 2. 选择“以管理员身份运行”
-
-英文入口也一样：
-
-- `Start-HeroRef.bat`
-- `Start-HeroRef-Taskbar.bat`
 
 如果你不确定，先看这个文件，再启动 Hero Ref。

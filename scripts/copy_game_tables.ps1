@@ -32,6 +32,7 @@ $files = @(
   "filelist.txt", "fileVersion", "fileDiff.txt",
   "Tables\Activity.txt", "Tables\Map.txt", "Tables\RankMap.txt",
   "Tables\Drop.txt", "Tables\BidMap.txt", "Tables\Item.txt", "Tables\Hero.txt",
+  "Tables\Language.txt",
   "Tables\Item_Type.txt", "Tables\Constant.txt", "Tables\Cabinet.txt",
   "Tables\Condition.txt", "Tables\BattleItem.txt", "Tables\ItemRestock.txt",
   "Tables\LevelUp.txt"

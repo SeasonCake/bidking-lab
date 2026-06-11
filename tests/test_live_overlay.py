@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import queue
@@ -44,6 +45,16 @@ def _ahmad_server_module():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _class_method_ast(module, class_name: str, method_name: str) -> ast.FunctionDef:
+    tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            for child in node.body:
+                if isinstance(child, ast.FunctionDef) and child.name == method_name:
+                    return child
+    raise AssertionError(f"{class_name}.{method_name} not found")
 
 
 def test_ahmad_summary_diagnostic_log_records_display_ref_inputs(tmp_path: Path) -> None:
@@ -237,6 +248,84 @@ def test_ahmad_taskbar_mode_switches_borderless_flag() -> None:
     assert root.overrideredirect_values == [True, False]
 
 
+def test_ahmad_windows_toolwindow_enabled_for_floating_overlay(monkeypatch) -> None:
+    module = _ahmad_overlay_module()
+
+    class Widget:
+        def __init__(self) -> None:
+            self.attrs: list[tuple[str, bool]] = []
+
+        def attributes(self, key: str, value: bool) -> None:
+            self.attrs.append((key, value))
+
+    widget = Widget()
+    monkeypatch.setattr(module.os, "name", "nt", raising=False)
+
+    module._apply_windows_toolwindow(widget, enabled=True)  # type: ignore[attr-defined]
+    module._apply_windows_toolwindow(widget, enabled=False)  # type: ignore[attr-defined]
+
+    assert widget.attrs == [("-toolwindow", True)]
+
+
+def test_ahmad_export_button_is_mini_visible_and_map_button_keeps_preview_hover() -> None:
+    module = _ahmad_overlay_module()
+    init = _class_method_ast(module, "AhmadTkOverlay", "__init__")
+
+    export_parent = None
+    map_tip_assigned = False
+    map_button_binds: list[str] = []
+    for node in ast.walk(init):
+        if (
+            isinstance(node, ast.Assign)
+            and node.targets
+            and isinstance(node.targets[0], ast.Attribute)
+            and isinstance(node.targets[0].value, ast.Name)
+            and node.targets[0].value.id == "self"
+            and node.targets[0].attr == "export_diag_button"
+            and isinstance(node.value, ast.Call)
+            and node.value.args
+            and isinstance(node.value.args[0], ast.Name)
+        ):
+            export_parent = node.value.args[0].id
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "bind"
+            and isinstance(node.func.value, ast.Attribute)
+            and isinstance(node.func.value.value, ast.Name)
+            and node.func.value.value.id == "self"
+            and node.func.value.attr == "map_button"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+        ):
+            map_button_binds.append(str(node.args[0].value))
+        if (
+            isinstance(node, ast.Assign)
+            and node.targets
+            and isinstance(node.targets[0], ast.Attribute)
+            and isinstance(node.targets[0].value, ast.Name)
+            and node.targets[0].value.id == "self"
+            and node.targets[0].attr == "map_tip"
+        ):
+            map_tip_assigned = True
+
+    assert export_parent == "header_right"
+    assert "<Enter>" in map_button_binds
+    assert "<Leave>" in map_button_binds
+    assert "<Button-1>" in map_button_binds
+    assert map_tip_assigned is False
+
+
+def test_ahmad_export_diagnostic_tip_tells_users_to_send_zip_for_abnormal_cases(tmp_path: Path) -> None:
+    module = _ahmad_overlay_module()
+    text = module._diagnostic_export_tip(tmp_path / "latest_snapshot.json")  # type: ignore[attr-defined]
+
+    assert "异常" in text
+    assert "生成诊断 zip" in text
+    assert "发群里" in text
+    assert "log 排查" in text
+
+
 def test_ahmad_export_diagnostic_package_collects_snapshot_raw_and_ui_log(tmp_path: Path) -> None:
     module = _ahmad_overlay_module()
     snapshot_path = tmp_path / "latest_snapshot.json"
@@ -247,9 +336,13 @@ def test_ahmad_export_diagnostic_package_collects_snapshot_raw_and_ui_log(tmp_pa
     raw_tables_dir.mkdir(parents=True)
     raw_jsonl = raw_dir / "fatbeans_webhook_live.jsonl"
     ui_log = tmp_path / module.SUMMARY_DIAGNOSTIC_LOG
+    ui_runtime = tmp_path / module.UI_RUNTIME_STATUS
+    monitor_stderr = tmp_path / "monitor.stderr.log"
     raw_json.write_text('[{"SortID":1}]', encoding="utf-8")
     raw_jsonl.write_text('{"SortID":1}\n', encoding="utf-8")
     ui_log.write_text('{"render_mode":"live"}\n', encoding="utf-8")
+    ui_runtime.write_text('{"event":"idle_no_change"}', encoding="utf-8")
+    monitor_stderr.write_text("[listen] ok\n", encoding="utf-8")
     for name in ("BidMap.txt", "Drop.txt", "Item.txt"):
         (raw_tables_dir / name).write_text(name, encoding="utf-8")
     snapshot = {
@@ -314,6 +407,8 @@ def test_ahmad_export_diagnostic_package_collects_snapshot_raw_and_ui_log(tmp_pa
         assert "fatbeans_webhook_live.json" in names
         assert "raw/fatbeans_webhook_live.jsonl" in names
         assert module.SUMMARY_DIAGNOSTIC_LOG in names
+        assert module.UI_RUNTIME_STATUS in names
+        assert "monitor.stderr.log" in names
         assert "hero_ref_current_summary.json" in names
         assert "BUILD_EXPORT_MANIFEST.json" in names
         manifest = json.loads(archive.read("BUILD_EXPORT_MANIFEST.json").decode("utf-8"))
@@ -334,8 +429,67 @@ def test_ahmad_export_diagnostic_package_collects_snapshot_raw_and_ui_log(tmp_pa
         assert manifest["log_summary"]["export_includes_ui_summary"] is True
         assert manifest["log_summary"]["latest_snapshot"]["exists"] is True
         assert "ui_health" in manifest["log_summary"]
+        assert manifest["log_summary"]["ui_runtime_status"]["exists"] is True
+        assert manifest["log_summary"]["monitor_stderr"]["exists"] is True
         assert manifest["log_summary"]["ui_summary"]["exists"] is True
         assert manifest["log_summary"]["included_count"] >= 4
+
+
+def test_ahmad_diagnostic_export_works_without_latest_snapshot(tmp_path: Path) -> None:
+    module = _ahmad_overlay_module()
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    ui_runtime = tmp_path / module.UI_RUNTIME_STATUS
+    monitor_stderr = tmp_path / "monitor.stderr.log"
+    monitor_lock = tmp_path / "monitor.lock"
+    ui_runtime.write_text(
+        json.dumps({"event": "waiting_for_snapshot", "capture": {"wait_state": "no_capture_status"}}),
+        encoding="utf-8",
+    )
+    monitor_stderr.write_text("[error] pydivert is not installed\n", encoding="utf-8")
+    monitor_lock.write_text('{"pid":1234}', encoding="utf-8")
+
+    class Widget:
+        def __init__(self) -> None:
+            self.kwargs = {}
+
+        def configure(self, **kwargs) -> None:
+            self.kwargs.update(kwargs)
+
+    class Tip:
+        def __init__(self) -> None:
+            self.text = ""
+
+        def set_text(self, text: str) -> None:
+            self.text = text
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.snapshot_path = snapshot_path
+    overlay._last_live_snapshot = {}
+    overlay._last_summary = {}
+    overlay._last_live_summary = {}
+    overlay.status = Widget()
+    overlay.manual_status = Widget()
+    overlay.export_diag_tip = Tip()
+    overlay.show_taskbar = False
+    overlay.diagnostic_profile = "portable"
+
+    assert module.AhmadTkOverlay.export_diagnostic_package(overlay) == "break"
+
+    export_path = overlay.last_diagnostic_export_path
+    assert export_path is not None
+    with zipfile.ZipFile(export_path) as archive:
+        names = set(archive.namelist())
+        assert "latest_snapshot.json" not in names
+        assert module.UI_RUNTIME_STATUS in names
+        assert "monitor.stderr.log" in names
+        assert "monitor.lock" in names
+        manifest = json.loads(archive.read("BUILD_EXPORT_MANIFEST.json").decode("utf-8"))
+        assert manifest["session_id"] == "no_snapshot"
+        assert manifest["version"]["source_file"] is None
+        assert manifest["log_summary"]["latest_snapshot"]["exists"] is False
+        assert manifest["log_summary"]["ui_runtime_status"]["exists"] is True
+        assert manifest["log_summary"]["monitor_stderr"]["exists"] is True
+    assert overlay.status.kwargs["text"] == "已导出诊断"
 
 
 def test_ahmad_public_safe_diagnostic_export_omits_raw_and_ui_log(tmp_path: Path) -> None:
@@ -346,10 +500,12 @@ def test_ahmad_public_safe_diagnostic_export_omits_raw_and_ui_log(tmp_path: Path
     raw_jsonl = raw_dir / "windivert_live.jsonl"
     ui_log = tmp_path / module.SUMMARY_DIAGNOSTIC_LOG
     ui_health = tmp_path / module.UI_HEALTH_LOG
+    ui_runtime = tmp_path / module.UI_RUNTIME_STATUS
     capture_status = tmp_path / "capture_source_status.json"
     raw_jsonl.write_text('{"SortID":1}\n', encoding="utf-8")
     ui_log.write_text('{"render_mode":"live"}\n', encoding="utf-8")
     ui_health.write_text('{"event":"ui_event_loop_stall_suspected"}\n', encoding="utf-8")
+    ui_runtime.write_text('{"event":"waiting_for_snapshot"}', encoding="utf-8")
     capture_status.write_text('{"source":"windivert"}', encoding="utf-8")
     snapshot = {
         "schema_version": 1,
@@ -379,6 +535,7 @@ def test_ahmad_public_safe_diagnostic_export_omits_raw_and_ui_log(tmp_path: Path
         assert "hero_ref_current_summary.json" in names
         assert "BUILD_EXPORT_MANIFEST.json" in names
         assert module.UI_HEALTH_LOG in names
+        assert module.UI_RUNTIME_STATUS in names
         assert module.SUMMARY_DIAGNOSTIC_LOG not in names
         assert "raw/windivert_live.jsonl" not in names
         manifest = json.loads(archive.read("BUILD_EXPORT_MANIFEST.json").decode("utf-8"))
@@ -388,6 +545,7 @@ def test_ahmad_public_safe_diagnostic_export_omits_raw_and_ui_log(tmp_path: Path
         assert manifest["package"]["includes_raw_tables"] is False
         assert manifest["log_summary"]["raw_tables"]["present"] is False
         assert manifest["log_summary"]["diagnostic_profile"] == "public-safe"
+        assert manifest["log_summary"]["ui_runtime_status"]["exists"] is True
         assert manifest["log_summary"]["continuous_ui_summary"] is False
         assert manifest["log_summary"]["export_includes_raw"] is False
         assert manifest["log_summary"]["export_includes_ui_summary"] is False
@@ -2027,6 +2185,31 @@ def test_ahmad_server_candidate_summary_and_next_info_hint() -> None:
 
     result["evidence"]["total_grid_target"] = 120.00000476837158
     assert module._candidate_summary(result) == "总件 38 · 总格 120"  # type: ignore[attr-defined]
+    assert module._next_info_hint(result) == "优先补白绿/蓝件数或均格"  # type: ignore[attr-defined]
+
+
+def test_ahmad_server_next_info_hint_prefers_gold_before_total_grid() -> None:
+    module = _ahmad_server_module()
+    result = {
+        "status": "ok",
+        "total_grid_range": [80, 96, 112],
+        "quality_count_ranges": {
+            "q1": [14, 14, 14],
+            "q3": [9, 9, 9],
+            "q4": [6, 6, 6],
+            "q5": [3, 3, 6],
+            "q6": [1, 1, 1],
+        },
+        "evidence": {
+            "total_count": 33,
+        },
+    }
+
+    hint = module._next_info_hint(result)  # type: ignore[attr-defined]
+
+    assert hint == "补金件数或均格"
+    assert "总格" not in hint
+    assert "红" not in hint
 
 
 def test_ahmad_server_next_info_hint_targets_q6_grid_when_red_count_locked() -> None:
@@ -2048,7 +2231,57 @@ def test_ahmad_server_next_info_hint_targets_q6_grid_when_red_count_locked() -> 
         },
     }
 
-    assert module._next_info_hint(result) == "补总格/全均格或红均格"  # type: ignore[attr-defined]
+    assert module._next_info_hint(result) == "优先补总格/全均格"  # type: ignore[attr-defined]
+
+
+def test_ahmad_server_next_info_hint_never_recommends_red_or_known_gold_value() -> None:
+    module = _ahmad_server_module()
+    result = {
+        "status": "ok",
+        "total_grid_range": [100, 100, 100],
+        "quality_count_ranges": {
+            "q1": [12, 12, 12],
+            "q3": [10, 10, 10],
+            "q4": [8, 8, 8],
+            "q5": [1, 2, 3],
+            "q6": [0, 1, 2],
+        },
+        "evidence": {
+            "total_count": 35,
+            "total_grid_target": 100,
+            "avg_values": {"q5": 26730},
+        },
+    }
+
+    hint = module._next_info_hint(result)  # type: ignore[attr-defined]
+
+    assert hint == "补金件数或均格"
+    assert "红" not in hint
+    assert "均价" not in hint
+
+
+def test_ahmad_server_next_info_hint_does_not_use_red_as_only_remaining_input() -> None:
+    module = _ahmad_server_module()
+    result = {
+        "status": "ok",
+        "total_grid_range": [100, 100, 100],
+        "quality_count_ranges": {
+            "q1": [12, 12, 12],
+            "q3": [10, 10, 10],
+            "q4": [8, 8, 8],
+            "q5": [3, 3, 3],
+            "q6": [0, 1, 2],
+        },
+        "evidence": {
+            "total_count": 35,
+            "total_grid_target": 100,
+        },
+    }
+
+    hint = module._next_info_hint(result)  # type: ignore[attr-defined]
+
+    assert hint == "信息已足够，观察出价"
+    assert "红" not in hint
 
 
 def test_ahmad_settlement_hide_masks_values_but_keeps_counts() -> None:
@@ -2444,6 +2677,128 @@ def test_ahmad_server_summary_prefers_ref_evidence_hero_when_context_unknown(tmp
     assert result["context"]["is_supported_ref_hero"] is True
 
 
+def test_ahmad_server_summary_locks_zero_gold_avg_in_mini(tmp_path: Path) -> None:
+    module = _ahmad_server_module()
+    snapshot = {
+        "created_at": time.time(),
+        "ui_contract": {
+            "context": {
+                "hero": "victor",
+                "map_id": 2404,
+                "phase": "bidding",
+                "session_id": "2404:zero-gold",
+            },
+            "baseline": {"decision": {}, "posterior": {}},
+            "source": {"created_at": time.time()},
+        },
+        "structured_ref_inputs": {
+            "hero": "victor",
+            "total_count": 21,
+            "total_cells": 34,
+            "avg_cells": {"q4": 1.8, "q5": 0.0},
+            "count_sums": {"q4q5q6": 6},
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert result["status"] == "ok"
+    ref = result["ahmed_ref"]
+    assert ref["evidence"]["fixed_counts"]["q5"] == 0
+    assert ref["quality_count_ranges"]["q5"] == [0, 0, 0]
+    assert ref["quality_cells_ranges"]["q5"] == [0, 0, 0]
+    assert result["red"]["quality_count_summary"] == "紫件 5 · 金件 0"
+    assert "金件 0" in result["red"]["quality_count_summary"]
+
+
+def test_ahmad_server_summary_pairs_red_candidates_with_gold_candidates(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _ahmad_server_module()
+
+    class FakeRefResult:
+        def as_dict(self) -> dict[str, object]:
+            return {
+                "status": "ok",
+                "source": "ref_v0",
+                "notes": [],
+                "conservative": 100000,
+                "balanced": 120000,
+                "aggressive": 140000,
+                "red_count_range": [2, 3, 4],
+                "red_cells_range": [4, 6, 8],
+                "red_value_range": [30000, 40000, 50000],
+                "total_grid_range": [30, 30, 30],
+                "quality_count_ranges": {
+                    "q1": [7, 7, 7],
+                    "q3": [4, 4, 4],
+                    "q4": [5, 5, 5],
+                    "q5": [2, 3, 4],
+                    "q6": [2, 3, 4],
+                },
+                "quality_cells_ranges": {
+                    "q1": [5, 5, 5],
+                    "q3": [6, 6, 6],
+                    "q4": [7, 7, 7],
+                    "q5": [4, 6, 8],
+                    "q6": [4, 6, 8],
+                },
+                "evidence": {
+                    "hero": "victor",
+                    "total_count": 20,
+                    "count_sums": {"q4q5q6": 11},
+                    "total_grid_target": 30,
+                },
+            }
+
+    monkeypatch.setattr(module, "run_reference_engine", lambda snapshot: FakeRefResult())
+    snapshot = {
+        "created_at": time.time(),
+        "ui_contract": {
+            "context": {
+                "hero": "victor",
+                "map_id": 2404,
+                "phase": "bidding",
+                "session_id": "2404:red-pair",
+            },
+            "baseline": {"decision": {}, "posterior": {}},
+            "source": {"created_at": time.time()},
+        },
+        "structured_ref_inputs": {"hero": "victor", "total_count": 20},
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert result["red"]["quality_count_summary"] == "紫件 5 · 金件 2 / 3 / 4"
+    assert result["red"]["count_range"] == "4 / 3 / 2"
+    assert result["red"]["cells_range"] == "8 / 6 / 4"
+
+
+def test_ahmad_server_red_display_keeps_count_and_cells_physically_paired() -> None:
+    module = _ahmad_server_module()
+    result = {
+        "red_count_range": [0, 1, 3],
+        "red_cells_range": [0, 4, 9],
+        "quality_count_ranges": {
+            "q1": [10, 10, 10],
+            "q3": [9, 9, 9],
+            "q4": [12, 12, 12],
+            "q5": [1, 3, 4],
+            "q6": [0, 1, 3],
+        },
+        "evidence": {
+            "total_count": 35,
+            "count_sums": {"q4q5q6": 16},
+        },
+    }
+
+    red_count_range, red_cells_range = module._red_display_ranges(result)  # type: ignore[attr-defined]
+
+    assert red_count_range == [3, 1, 0]
+    assert red_cells_range == [9, 4, 0]
+
+
 def test_ahmad_server_summary_keeps_public_info_marker_soft(tmp_path: Path) -> None:
     module = _ahmad_server_module()
     snapshot = {
@@ -2576,6 +2931,66 @@ def test_ahmad_server_summary_keeps_old_settlement_review_until_next_session(tmp
     assert result["reference"]["aggressive"].startswith("+")
     assert "last Hero Ref estimate" in result["reference"]["note"]
     assert result["truth"]["available"] is True
+
+
+def test_ahmad_server_summary_settlement_truth_overrides_stale_live_actions(tmp_path: Path) -> None:
+    module = _ahmad_server_module()
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    snapshot = {
+        "created_at": time.time(),
+        "phase": "settled",
+        "final_quality_counts": "q2=3;q3=2;q4=4;q5=2;q6=3",
+        "final_quality_cells": "q2=6;q3=10;q4=12;q5=8;q6=7",
+        "structured_ref_inputs": {
+            "hero": "ahmed",
+            "total_count": 21,
+            "fixed_counts": {"q1": 3, "q3": 9, "q5": 2},
+            "quality_cells": {"q1": 25},
+            "avg_cells": {"q1": 1.6666666269302368},
+        },
+        "ui_contract": {
+            "context": {
+                "hero": "ahmed",
+                "map_id": 4521,
+                "phase": "settled",
+                "session_id": "4521:settled",
+            },
+            "baseline": {
+                "decision": {"attack_bid": "450000"},
+                "posterior": {},
+            },
+            "actions": {
+                "results": [
+                    {"action_id": 100117, "result": 9},
+                    {"action_id": 100104, "result": 25},
+                    {"action_id": 100110, "result": 1.6666666269302368},
+                ]
+            },
+            "truth": {
+                "available": True,
+                "total_value": 867739,
+                "total_items": 14,
+                "total_cells": 43,
+                "q6": {"count": 3, "cells": 7, "value": 420000},
+                "top_item": {"name": "test", "value": 250000},
+            },
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=snapshot_path)
+    ref_evidence = result["ahmed_ref"]["evidence"]
+
+    assert result["status"] == "ok"
+    assert result["reference"]["source"] == "settlement"
+    assert result["reference"]["balanced"] == "867,739"
+    assert result["truth"]["total_items"] == 14
+    assert result["truth"]["total_cells"] == 43
+    assert result["ahmed_ref"]["status"] == "ok"
+    assert result["ahmed_ref"]["combo_count"] == 1
+    assert ref_evidence["total_count"] == 14
+    assert ref_evidence["total_grid_target"] == 43.0
+    assert ref_evidence["fixed_counts"] == {"q1": 3, "q3": 2, "q4": 4, "q5": 2, "q6": 3}
+    assert ref_evidence["quality_cells"] == {"q1": 6.0, "q3": 10.0, "q4": 12.0, "q5": 8.0, "q6": 7.0}
 
 
 def test_ahmad_ref_input_summary_shows_quality_lower_bounds() -> None:
@@ -3565,6 +3980,120 @@ def test_ahmad_prefill_manual_inputs_uses_derived_quality_counts() -> None:
     assert overlay._manual_live_session_id == "2404:live"
 
 
+def test_ahmad_open_manual_panel_prefills_empty_live_context() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str = "") -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    class Widget:
+        def __init__(self) -> None:
+            self.kwargs = {}
+
+        def configure(self, **kwargs) -> None:
+            self.kwargs.update(kwargs)
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.details_expanded = True
+    overlay.manual_entries = {
+        "hero": Entry(),
+        "map_id": Entry(),
+        "total_count": Entry(),
+    }
+    overlay.manual_vars = {}
+    overlay.manual_status = Widget()
+    overlay.manual_card = Widget()
+    overlay._manual_active = False
+    overlay._manual_edit_enabled = False
+    overlay._manual_settlement_edit_unlocked = False
+    overlay._manual_dirty_fields = set()
+    overlay._manual_autofill_values = {}
+    overlay._manual_programmatic_update = False
+    overlay._manual_live_session_id = ""
+    overlay._last_summary = {}
+    overlay._last_live_summary = {
+        "status": "ok",
+        "context": {"hero": "aisha", "map_id": 2521, "phase": "bidding", "session_id": "2521:live"},
+        "ahmed_ref": {"evidence": {"total_count": 38}},
+    }
+    overlay._set_manual_edit_enabled = lambda enabled: setattr(overlay, "_manual_edit_enabled", enabled)  # type: ignore[method-assign]
+    overlay._set_manual_settlement_button_state = lambda: None  # type: ignore[method-assign]
+
+    assert module.AhmadTkOverlay.open_manual_panel(overlay) == "break"
+
+    assert overlay.manual_entries["hero"].get() == "aisha"
+    assert overlay.manual_entries["map_id"].get() == "2521 未知残骸"
+    assert overlay.manual_entries["total_count"].get() == "38"
+    assert overlay.manual_status.kwargs["text"] == "已填入当前，待应用"
+
+
+def test_ahmad_open_manual_panel_does_not_overwrite_existing_inputs() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str = "") -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    class Widget:
+        def __init__(self) -> None:
+            self.kwargs = {}
+
+        def configure(self, **kwargs) -> None:
+            self.kwargs.update(kwargs)
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.details_expanded = True
+    overlay.manual_entries = {
+        "hero": Entry("victor"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("21"),
+    }
+    overlay.manual_vars = {}
+    overlay.manual_status = Widget()
+    overlay.manual_card = Widget()
+    overlay._manual_active = False
+    overlay._manual_edit_enabled = False
+    overlay._manual_settlement_edit_unlocked = False
+    overlay._manual_dirty_fields = set()
+    overlay._manual_autofill_values = {}
+    overlay._manual_programmatic_update = False
+    overlay._manual_live_session_id = ""
+    overlay._last_summary = {}
+    overlay._last_live_summary = {
+        "status": "ok",
+        "context": {"hero": "aisha", "map_id": 2521, "phase": "bidding", "session_id": "2521:live"},
+        "ahmed_ref": {"evidence": {"total_count": 38}},
+    }
+    overlay._set_manual_edit_enabled = lambda enabled: setattr(overlay, "_manual_edit_enabled", enabled)  # type: ignore[method-assign]
+    overlay._set_manual_settlement_button_state = lambda: None  # type: ignore[method-assign]
+
+    assert module.AhmadTkOverlay.open_manual_panel(overlay) == "break"
+
+    assert overlay.manual_entries["hero"].get() == "victor"
+    assert overlay.manual_entries["map_id"].get() == "2404"
+    assert overlay.manual_entries["total_count"].get() == "21"
+    assert overlay.manual_status.kwargs["text"] == "手动模式，待填写"
+
+
 def test_ahmad_clear_settlement_manual_values_keeps_hero_map_and_unlocks_edit() -> None:
     module = _ahmad_overlay_module()
 
@@ -3753,8 +4282,9 @@ def test_ahmad_manual_toggle_returns_to_live_without_clearing_inputs() -> None:
 
     assert overlay.details_expanded is True
     assert overlay._manual_edit_enabled is True
-    assert overlay.manual_entries["hero"].get() == ""
-    assert overlay.manual_entries["map_id"].get() == ""
+    assert overlay.manual_entries["hero"].get() == "victor"
+    assert overlay.manual_entries["map_id"].get() == "2404 养生学家居所"
+    assert overlay.manual_entries["total_count"].get() == "21"
     assert overlay.manual_entries["hero"].kwargs["state"] == "normal"
     assert overlay.manual_button.kwargs["text"] == "实时"
     assert overlay.manual_tip.text == module.MANUAL_RETURN_TIP_TEXT
@@ -4119,7 +4649,240 @@ def test_ahmad_manual_snapshot_allows_total_avg_and_zero_gold() -> None:
     assert ref_inputs["total_count"] == 21
     assert ref_inputs["total_cells"] == 34
     assert ref_inputs["avg_cells"] == {"q4": 1.8, "q5": 0.0}
+    assert ref_inputs["fixed_counts"]["q5"] == 0
+    assert ref_inputs["quality_cells"]["q5"] == 0
     assert ref_inputs["count_sums"] == {"q4q5q6": 6}
+
+
+def test_ahmad_manual_zero_avg_autofills_empty_count_and_cells_on_edit() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "q5_avg": Entry("0"),
+        "q5_count": Entry(""),
+        "q5_cells": Entry(""),
+        "q5_avg_value": Entry(""),
+        "q5_value_sum": Entry(""),
+    }
+    overlay.manual_vars = {}
+    overlay._manual_programmatic_update = False
+    overlay._manual_dirty_fields = {"q5_avg", "q5_count", "q5_cells"}
+    overlay._manual_autofill_values = {}
+
+    module.AhmadTkOverlay._sync_manual_derived_fields(overlay, trigger_field="q5_avg")
+
+    assert overlay.manual_entries["q5_count"].get() == "0"
+    assert overlay.manual_entries["q5_cells"].get() == "0"
+    assert overlay.manual_entries["q5_avg_value"].get() == "0"
+    assert overlay.manual_entries["q5_value_sum"].get() == "0"
+    assert overlay._manual_autofill_values["q5_count"] == "0"
+    assert overlay._manual_autofill_values["q5_cells"] == "0"
+    assert overlay._manual_autofill_values["q5_avg_value"] == "0"
+    assert overlay._manual_autofill_values["q5_value_sum"] == "0"
+
+
+def test_ahmad_manual_zero_avg_does_not_autofill_over_conflict() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "q5_avg": Entry("0"),
+        "q5_count": Entry("4"),
+        "q5_cells": Entry(""),
+        "q5_avg_value": Entry(""),
+        "q5_value_sum": Entry(""),
+    }
+    overlay.manual_vars = {}
+    overlay._manual_programmatic_update = False
+    overlay._manual_dirty_fields = {"q5_avg", "q5_count"}
+    overlay._manual_autofill_values = {}
+
+    module.AhmadTkOverlay._sync_manual_derived_fields(overlay, trigger_field="q5_avg")
+
+    assert overlay.manual_entries["q5_count"].get() == "4"
+    assert overlay.manual_entries["q5_cells"].get() == ""
+    assert overlay.manual_entries["q5_avg_value"].get() == ""
+    assert overlay.manual_entries["q5_value_sum"].get() == ""
+
+
+def test_ahmad_manual_zero_avg_apply_fills_empty_count_and_cells() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("victor"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("21"),
+        "q5_avg": Entry("0"),
+        "q5_count": Entry(""),
+        "q5_cells": Entry(""),
+        "q5_avg_value": Entry(""),
+        "q5_value_sum": Entry(""),
+    }
+    overlay.manual_vars = {}
+    overlay._manual_autofill_values = {}
+    overlay._manual_dirty_fields = set()
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert error == ""
+    assert snapshot is not None
+    assert overlay.manual_entries["q5_count"].get() == "0"
+    assert overlay.manual_entries["q5_cells"].get() == "0"
+    assert overlay.manual_entries["q5_avg_value"].get() == "0"
+    assert overlay.manual_entries["q5_value_sum"].get() == "0"
+    ref_inputs = snapshot["structured_ref_inputs"]
+    assert ref_inputs["fixed_counts"]["q5"] == 0
+    assert ref_inputs["quality_cells"]["q5"] == 0
+    assert ref_inputs["avg_values"]["q5"] == 0
+    assert ref_inputs["quality_values"]["q5"] == 0
+
+
+def test_ahmad_manual_zero_avg_value_autofills_quality_absent() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "q5_avg": Entry(""),
+        "q5_count": Entry(""),
+        "q5_cells": Entry(""),
+        "q5_avg_value": Entry("0"),
+        "q5_value_sum": Entry(""),
+    }
+    overlay.manual_vars = {}
+    overlay._manual_programmatic_update = False
+    overlay._manual_dirty_fields = {"q5_avg_value"}
+    overlay._manual_autofill_values = {}
+
+    module.AhmadTkOverlay._sync_manual_derived_fields(overlay, trigger_field="q5_avg_value")
+
+    assert overlay.manual_entries["q5_avg"].get() == "0"
+    assert overlay.manual_entries["q5_count"].get() == "0"
+    assert overlay.manual_entries["q5_cells"].get() == "0"
+    assert overlay.manual_entries["q5_value_sum"].get() == "0"
+
+
+def test_ahmad_manual_zero_value_sum_apply_feeds_engine_exact_zero() -> None:
+    module = _ahmad_overlay_module()
+
+    class Entry:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def get(self) -> str:
+            return self.value
+
+        def delete(self, _start: int, _end: str) -> None:
+            self.value = ""
+
+        def insert(self, _index: int, value: str) -> None:
+            self.value = value
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.manual_entries = {
+        "hero": Entry("victor"),
+        "map_id": Entry("2404"),
+        "total_count": Entry("21"),
+        "q5_avg": Entry(""),
+        "q5_count": Entry(""),
+        "q5_cells": Entry(""),
+        "q5_avg_value": Entry(""),
+        "q5_value_sum": Entry("0"),
+    }
+    overlay.manual_vars = {}
+    overlay._manual_autofill_values = {}
+    overlay._manual_dirty_fields = set()
+
+    snapshot, error = module.AhmadTkOverlay._manual_inputs_snapshot(overlay)
+
+    assert error == ""
+    assert snapshot is not None
+    ref_inputs = snapshot["structured_ref_inputs"]
+    assert ref_inputs["avg_cells"]["q5"] == 0
+    assert ref_inputs["fixed_counts"]["q5"] == 0
+    assert ref_inputs["quality_cells"]["q5"] == 0
+    assert ref_inputs["avg_values"]["q5"] == 0
+    assert ref_inputs["quality_values"]["q5"] == 0
+
+    result = module.run_reference_engine(snapshot, max_combos=60000).as_dict()
+    assert result["evidence"]["fixed_counts"]["q5"] == 0
+    assert result["evidence"]["quality_cells"]["q5"] == 0
+
+
+def test_ahmad_manual_table_keeps_quality_and_value_field_order() -> None:
+    module = _ahmad_overlay_module()
+
+    assert module.MANUAL_QUALITY_ROWS == (
+        ("白", "white_avg", "white_count", "white_cells"),
+        ("绿", "green_avg", "green_count", "green_cells"),
+        ("白绿", "q1_avg", "q1_count", "q1_cells"),
+        ("蓝", "q3_avg", "q3_count", "q3_cells"),
+        ("紫", "q4_avg", "q4_count", "q4_cells"),
+        ("金", "q5_avg", "q5_count", "q5_cells"),
+        ("红", "q6_avg", "q6_count", "q6_cells"),
+    )
+    assert module.MANUAL_VALUE_ROWS == (
+        ("白", "white_avg_value", "white_value_sum"),
+        ("绿", "green_avg_value", "green_value_sum"),
+        ("白绿", "q1_avg_value", "q1_value_sum"),
+        ("蓝", "q3_avg_value", "q3_value_sum"),
+        ("紫", "q4_avg_value", "q4_value_sum"),
+        ("金", "q5_avg_value", "q5_value_sum"),
+        ("红", "q6_avg_value", "q6_value_sum"),
+    )
 
 
 def test_ahmad_manual_snapshot_keeps_quality_avg_value_and_value_sum() -> None:
@@ -5161,6 +5924,173 @@ def test_ahmad_refresh_does_not_reschedule_after_watched_pid_exit(monkeypatch, t
 
     assert overlay.root.destroyed is True
     assert overlay.root.after_calls == []
+
+
+def test_ahmad_render_missing_uses_action_text_for_next_step() -> None:
+    module = _ahmad_overlay_module()
+
+    class Widget:
+        def __init__(self) -> None:
+            self.kwargs = {}
+
+        def configure(self, **kwargs) -> None:
+            self.kwargs.update(kwargs)
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.title = Widget()
+    overlay.subtitle = Widget()
+    overlay.status = Widget()
+    overlay.action_rows = {
+        "动作": Widget(),
+        "最近": Widget(),
+        "候选": Widget(),
+        "下一步": Widget(),
+    }
+    overlay.evidence_rows = {
+        "匹配": Widget(),
+        "密度": Widget(),
+        "诊断": Widget(),
+    }
+    overlay.detail_rows = {
+        "外援": Widget(),
+        "备注": Widget(),
+    }
+    overlay._render_flags = lambda *args, **kwargs: None
+    overlay._set_settlement_button_state = lambda *args, **kwargs: None
+    overlay._clear_values = lambda *args, **kwargs: None
+    overlay._render_minimap = lambda *args, **kwargs: None
+    overlay._record_summary_diagnostic = lambda *args, **kwargs: None
+    overlay._capture_status = lambda: {
+        "source": "windivert",
+        "active_flows": 1,
+        "sniffed_packets": 0,
+        "raw_packets": 0,
+        "accepted_frames": 0,
+    }
+
+    module.AhmadTkOverlay.render_missing(overlay, "等待 latest_snapshot.json")
+
+    assert overlay.action_rows["下一步"].kwargs["text"] == "等待对局包"
+    assert overlay.evidence_rows["匹配"].kwargs["text"] == "no_raw_packets"
+
+
+def test_ahmad_render_missing_surfaces_windivert_open_error() -> None:
+    module = _ahmad_overlay_module()
+
+    class Widget:
+        def __init__(self) -> None:
+            self.kwargs = {}
+
+        def configure(self, **kwargs) -> None:
+            self.kwargs.update(kwargs)
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.title = Widget()
+    overlay.subtitle = Widget()
+    overlay.status = Widget()
+    overlay.action_rows = {
+        "动作": Widget(),
+        "最近": Widget(),
+        "候选": Widget(),
+        "下一步": Widget(),
+    }
+    overlay.evidence_rows = {
+        "匹配": Widget(),
+        "密度": Widget(),
+        "诊断": Widget(),
+    }
+    overlay.detail_rows = {
+        "外援": Widget(),
+        "备注": Widget(),
+    }
+    rendered_flags = []
+    overlay._render_flags = rendered_flags.extend
+    overlay._set_settlement_button_state = lambda *args, **kwargs: None
+    overlay._clear_values = lambda *args, **kwargs: None
+    overlay._render_minimap = lambda *args, **kwargs: None
+    overlay._record_summary_diagnostic = lambda *args, **kwargs: None
+    overlay._capture_status = lambda: {
+        "source": "windivert",
+        "active_flows": 2,
+        "sniffed_packets": 0,
+        "raw_packets": 0,
+        "accepted_frames": 0,
+        "error_code": "windivert_dependency_missing",
+        "error_message": "[WinError 2]",
+        "error_hint": "重新解压 full 包，信任整个文件夹后用管理员入口启动。",
+    }
+
+    module.AhmadTkOverlay.render_missing(overlay, "等待 latest_snapshot.json")
+
+    assert overlay.action_rows["下一步"].kwargs["text"] == "检查防火墙/安全软件"
+    assert overlay.evidence_rows["匹配"].kwargs["text"] == "windivert_dependency_missing"
+    assert rendered_flags[0]["level"] == "risk"
+    assert "WinError 2" in rendered_flags[0]["detail"]
+
+
+def test_ahmad_refresh_writes_runtime_status_while_waiting_for_packets(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _ahmad_overlay_module()
+
+    class Root:
+        def __init__(self) -> None:
+            self.after_calls: list[tuple[int, object]] = []
+
+        def after(self, interval: int, callback: object) -> None:
+            self.after_calls.append((interval, callback))
+
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    missing_calls: list[str] = []
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.root = Root()
+    overlay.interval_ms = 1000
+    overlay.exit_when_pids = ()
+    overlay._exit_cleanup_done = False
+    overlay._last_ui_heartbeat_at = time.monotonic()
+    overlay._last_ui_stall_bucket = 0
+    overlay.snapshot_path = snapshot_path
+    overlay.diagnostic_profile = "portable"
+    overlay._last_signature = None
+    overlay._last_capture_status_signature = None
+    overlay._last_summary = {}
+    overlay._last_live_summary = {}
+    overlay._last_live_snapshot = {}
+    overlay._summary_result_queue = queue.Queue()
+    overlay._summary_worker_running = False
+    overlay._summary_worker_seq = 0
+    overlay._summary_worker_signature = None
+    overlay._manual_result_queue = queue.Queue()
+    overlay._manual_worker_running = False
+    overlay._manual_worker_seq = 0
+    overlay._manual_active = False
+    overlay._manual_edit_enabled = False
+    overlay.render_missing = lambda message: missing_calls.append(message)
+    overlay._capture_status = lambda: {
+        "source": "windivert",
+        "process_name": "BidKing.exe",
+        "active_flows": 1,
+        "sniffed_packets": 12,
+        "raw_packets": 0,
+        "accepted_frames": 0,
+        "ignored_frames": 0,
+    }
+
+    monkeypatch.setattr(module, "_watched_pid_exited", lambda _pids: False)
+
+    module.AhmadTkOverlay.refresh(overlay)
+
+    runtime_path = tmp_path / module.UI_RUNTIME_STATUS
+    payload = json.loads(runtime_path.read_text(encoding="utf-8"))
+    assert missing_calls == ["等待 latest_snapshot.json"]
+    assert payload["event"] == "waiting_for_snapshot"
+    assert payload["snapshot_exists"] is False
+    assert payload["capture"]["wait_state"] == "no_raw_packets"
+    assert payload["capture"]["active_flows"] == 1
+    assert payload["capture"]["raw_packets"] == 0
+    assert overlay.root.after_calls == [(1000, overlay.refresh)]
 
 
 def test_ahmad_refresh_summarizes_snapshot_in_background_worker(monkeypatch, tmp_path: Path) -> None:

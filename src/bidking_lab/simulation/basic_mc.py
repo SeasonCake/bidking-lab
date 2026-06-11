@@ -55,6 +55,11 @@ rather than to a real Item.txt item."""
 _MAX_POOL_DEPTH = 16
 
 
+def is_physical_loot_item(item: Item) -> bool:
+    """Return True for auctionable collectibles that can affect inference."""
+    return item.quality > 0 and item.shape_w > 0 and item.shape_h > 0 and item.value > 0
+
+
 class FlattenedPool(BaseModel):
     """Flat (item_id, prob, count-range, value) view of a multi-level pool.
 
@@ -117,8 +122,9 @@ def flatten_pool(
             if entry.category == POOL_REFERENCE_CATEGORY:
                 walk(entry.item_id, edge_p, depth + 1)
                 continue
-            # Leaf entry: must resolve to a real Item.txt row to count.
-            if entry.item_id not in items:
+            # Leaf entry: must resolve to a real physical collectible to count.
+            item = items.get(entry.item_id)
+            if item is None or not is_physical_loot_item(item):
                 continue
             slot = bucket.get(entry.item_id)
             if slot is None:
@@ -246,4 +252,10 @@ def simulate_map(
     )
 
 
-__all__ = ("FlattenedPool", "SimulationResult", "flatten_pool", "simulate_map")
+__all__ = (
+    "FlattenedPool",
+    "SimulationResult",
+    "flatten_pool",
+    "is_physical_loot_item",
+    "simulate_map",
+)

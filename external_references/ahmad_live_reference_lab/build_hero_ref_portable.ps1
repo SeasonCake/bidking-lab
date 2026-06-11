@@ -1,5 +1,6 @@
-param(
+﻿param(
     [string]$PythonPath = "C:\Python313\python.exe",
+    [string]$Version = "0.1.4",
     [string]$OutputDir = "",
     [switch]$InstallPyInstaller,
     [switch]$SkipExeBuild,
@@ -15,13 +16,24 @@ $ErrorActionPreference = "Stop"
 $LabRoot = $PSScriptRoot
 $RepoRoot = Resolve-Path (Join-Path $LabRoot "..\..")
 $TemplateRoot = Join-Path $RepoRoot "apps\hero_ref"
-$DefaultOutput = Join-Path $LabRoot "dist\BidKingHeroRefPortable"
+if ($Version -notmatch '^[0-9A-Za-z][0-9A-Za-z._-]*$') {
+    throw "Version must be a simple label such as 0.1.4; do not include dates, paths, or dirty markers."
+}
+if ($Version -match '(?i)dirty' -or $Version -match '\d{8}') {
+    throw "Version must not include dirty markers or date chunks; use a plain version such as 0.1.4."
+}
+$PackageKind = if ($PublicSafe) { "public-safe" } else { "full" }
+$DefaultOutput = Join-Path $LabRoot "dist\BidKingHeroRef-v$Version-$PackageKind"
 if (-not $OutputDir) {
     $OutputDir = $DefaultOutput
 } elseif (-not [System.IO.Path]::IsPathRooted($OutputDir)) {
     $OutputDir = Join-Path $LabRoot $OutputDir
 }
 $OutputFull = [System.IO.Path]::GetFullPath($OutputDir)
+$OutputLeaf = Split-Path -Leaf $OutputFull
+if ($OutputLeaf -match '(?i)dirty' -or $OutputLeaf -match '\d{8}') {
+    throw "OutputDir package name must not include dirty markers or date chunks; use BidKingHeroRef-v$Version-$PackageKind."
+}
 $LabFull = [System.IO.Path]::GetFullPath($LabRoot)
 $DistFull = [System.IO.Path]::GetFullPath((Join-Path $LabRoot "dist"))
 
@@ -63,6 +75,25 @@ function Copy-FileChecked {
     }
     New-Item -ItemType Directory -Path (Split-Path -Parent $Destination) -Force | Out-Null
     Copy-Item -LiteralPath $Source -Destination $Destination -Force
+}
+
+function Write-Utf8BomFile {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+    $Text = Get-Content -LiteralPath $Path -Raw
+    [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($true))
+}
+
+function Write-Utf8NoBomCrLfFile {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+    $Text = [System.IO.File]::ReadAllText($Path, [System.Text.UTF8Encoding]::new($false, $true))
+    $Text = $Text -replace "`r?`n", "`r`n"
+    [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
 }
 
 if (-not (Test-Path -LiteralPath $TemplateRoot)) {
@@ -107,6 +138,22 @@ if (Test-Path -LiteralPath $OutputFull) {
 New-Item -ItemType Directory -Path $OutputFull -Force | Out-Null
 
 Copy-Tree -Source $TemplateRoot -Destination $OutputFull
+$ChineseBatchLaunchers = @(
+    "管理员启动HeroRef_悬浮窗.bat",
+    "管理员启动HeroRef_任务栏窗口.bat",
+    "导入本机游戏表.bat",
+    "停止HeroRef.bat"
+)
+foreach ($Name in $ChineseBatchLaunchers) {
+    $ChineseBatchPath = Join-Path $OutputFull $Name
+    if (Test-Path -LiteralPath $ChineseBatchPath) {
+        Remove-Item -LiteralPath $ChineseBatchPath -Force
+    }
+}
+Get-ChildItem -Path $OutputFull -Recurse -File -Filter "*.bat" |
+    ForEach-Object {
+        Write-Utf8NoBomCrLfFile -Path $_.FullName
+    }
 $DefaultDiagnosticProfile = if ($DiagnosticProfile) {
     $DiagnosticProfile
 } elseif ($PublicSafe) {
@@ -174,7 +221,7 @@ This public-safe package does not include raw game tables.
 
 Before running Hero Ref, use the package root script:
 
-  导入本机游戏表.bat
+  Import-LocalTables.bat
 
 Choose one of these local folders:
 
@@ -207,6 +254,11 @@ if (Test-Path -LiteralPath $ConfigPath) {
     Set-Content -Path $ConfigPath -Value $ConfigText -Encoding utf8
 }
 
+Get-ChildItem -Path $OutputFull -Recurse -File -Filter "*.ps1" |
+    ForEach-Object {
+        Write-Utf8BomFile -Path $_.FullName
+    }
+
 $Commit = ""
 $DirtyWorktree = "unknown"
 try {
@@ -222,13 +274,17 @@ BidKing Hero Ref portable package
 BuiltAt: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 SourceCommit: $Commit
 DirtyWorktree: $DirtyWorktree
+PackageVersion: v$Version
+PackageKind: $PackageKind
 PublicSafe: $([bool]$PublicSafe)
 IncludesRawTables: $(-not [bool]$PublicSafe)
 PackageProfile: $DefaultDiagnosticProfile
 UI: BidKingHeroRef\BidKingHeroRef.exe
 Monitor: BidKingHeroMonitor\BidKingHeroMonitor.exe
-LauncherFloating: 管理员启动HeroRef_悬浮窗.bat / Start-HeroRef.bat
-LauncherTaskbar: 管理员启动HeroRef_任务栏窗口.bat / Start-HeroRef-Taskbar.bat
+LauncherFloating: Start-HeroRef.bat
+LauncherTaskbar: Start-HeroRef-Taskbar.bat
+LauncherImportTables: Import-LocalTables.bat
+LauncherStop: Stop-HeroRef.bat
 LauncherPowerShell: Start-HeroRef.ps1
 RequiresExternalPython: False
 DefaultDiagnosticProfile: $DefaultDiagnosticProfile
@@ -264,18 +320,19 @@ if ($Findings.Count -gt 0) {
 }
 
 Write-Host ""
-Write-Host "Built Hero Ref portable package:" -ForegroundColor Green
+Write-Host "Built Hero Ref $PackageKind package:" -ForegroundColor Green
 Write-Host "  $OutputFull"
 Write-Host ""
 Write-Host "Start with floating overlay:" -ForegroundColor Cyan
-Write-Host "  $OutputFull\管理员启动HeroRef_悬浮窗.bat"
 Write-Host "  $OutputFull\Start-HeroRef.bat"
 Write-Host "Start with taskbar window:" -ForegroundColor Cyan
-Write-Host "  $OutputFull\管理员启动HeroRef_任务栏窗口.bat"
 Write-Host "  $OutputFull\Start-HeroRef-Taskbar.bat"
+Write-Host "Support tools:" -ForegroundColor Cyan
+Write-Host "  $OutputFull\Import-LocalTables.bat"
+Write-Host "  $OutputFull\Stop-HeroRef.bat"
 Write-Host ""
 if ($PublicSafe) {
-    Write-Host "PublicSafe mode: raw tables are excluded; users can run 导入本机游戏表.bat after unzip." -ForegroundColor Yellow
+    Write-Host "PublicSafe mode: raw tables are excluded; users can run Import-LocalTables.bat after unzip." -ForegroundColor Yellow
 } else {
     Write-Host "Local package includes data\raw\tables. Do not publish those files without permission." -ForegroundColor Yellow
 }

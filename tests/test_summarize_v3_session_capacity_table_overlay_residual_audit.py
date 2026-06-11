@@ -129,7 +129,7 @@ def test_2410_current_raw_table_leaves_overlay_or_server_residual() -> None:
     bidmap = table_context["bidmap"]
     drop = table_context["drop"]
     activity = table_context["activity_overlay"]
-    assert table_context["raw_tables_file_version"] == "303"
+    assert table_context["raw_tables_file_version"] == "308"
     assert bidmap["items_per_session_max"] == 40
     assert bidmap["round_cap_max"] == 50
     assert bidmap["raw_col16"] == "[[]]"

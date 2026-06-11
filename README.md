@@ -37,7 +37,7 @@ The Hero Ref branch is tracked under [`external_references/ahmad_live_reference_
 
 **bidking-lab turns this decision into math.**
 
-- **Data layer**: decodes the game's `Tables/*.txt` (base64 + TSV) into typed JSON — 1,132 collectibles, 64 tools, 105 maps, 20 heroes, all schema-validated
+- **Data layer**: decodes the game's `Tables/*.txt` (base64 + TSV) into typed JSON — 1,207 collectibles, 64 tools, 165 maps, 20 heroes, all schema-validated
 - **Inference layer**: takes the player's observations → joint posterior over each quality bucket's `(total_cells, count)` top-3 candidates; conditional Monte-Carlo for bid distribution P25/P50/P75/P90 + snipe / walk-away recommendations
 - **Tool valuation**: leave-one-out ROI quantifying how much value a tool recovers per silver spent, given the chosen map and hero
 - **Surface**: live Hero Ref Tk overlay + legacy Chinese Streamlit analysis UI + notebooks + end-to-end CLI scripts
@@ -143,9 +143,9 @@ python scripts\build_processed_data.py   # regenerate data/processed/*.json
 ┌──────────────────────────────────▼──────────────────────────────────┐
 │ Layer 1 · Data                                                      │
 │   extract/                                                          │
-│     ├── bid_map_table.py       — 105 maps, 21-column schema         │
+│     ├── bid_map_table.py       — 165 maps, 21/23-column schema      │
 │     ├── drop_table.py          — drop pools (item_id × weight)      │
-│     ├── item_table.py          — 1,132 collectibles                 │
+│     ├── item_table.py          — 1,207 collectibles                 │
 │     └── battle_item.py         — 64 scanner tools                   │
 │   data/raw/tables/*.txt         — player's local game files (gitignored) │
 │   data/processed/*.json         — our generated schema-validated JSON │
@@ -222,7 +222,7 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 | Dimension | Number |
 |---|---|
 | Game tables parsed | 6 (BidMap / Drop / Item / BattleItem / Hero / Item_Type) |
-| Schema-typed entities | 1,132 items · 64 tools · 105 maps · 20 heroes |
+| Schema-typed entities | 1,207 items · 64 tools · 165 maps · 20 heroes |
 | Unit tests | **438**, all green |
 | Streamlit UI tabs | 4 (input / bidding hint / joint filtering / tool ROI) |
 | Notebooks | 5 (map value · hero ranking · inference demo · ROI snipe · end-to-end case) |
@@ -256,11 +256,11 @@ Full details in [`PROGRESS.md`](PROGRESS.md) and [`OBSERVATIONS.md`](OBSERVATION
 
 | File (in repo) | What | Size |
 |---|---|---|
-| `data/processed/items.json` | 1,132 items: id, name, quality (0–6), value, shape, tags | ~520 KB |
-| `data/processed/items_droppable.json` | 883 items actually referenced by some drop pool | ~425 KB |
+| `data/processed/items.json` | 1,207 items: id, name, quality (0–6), value, shape, tags | ~595 KB |
+| `data/processed/items_droppable.json` | 587 map-reachable physical loot items | ~331 KB |
 | `data/processed/battle_items.json` | 64 battle items with quality_color + effect | ~18 KB |
 | `data/processed/heroes.json` | 20 heroes with skill descriptions | ~4 KB |
-| `data/processed/maps.json` | 105 maps (summary form) | ~25 KB |
+| `data/processed/maps.json` | 165 maps (summary form) | ~122 KB |
 
 ---
 

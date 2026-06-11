@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$PythonPath = "",
     [string]$ProcessName = "BidKing.exe",
     [int[]]$ServerPort = @(10000),
@@ -132,7 +132,7 @@ $MissingTables = @(
 if ($MissingTables.Count -gt 0) {
     Write-Host "Missing local game tables: $($MissingTables -join ', ')" -ForegroundColor Red
     Write-Host "This portable build needs data\raw\tables from the same local game/table version." -ForegroundColor Yellow
-    Write-Host "Run 导入本机游戏表.bat first, or copy BidMap.txt / Drop.txt / Item.txt into data\raw\tables." -ForegroundColor Yellow
+    Write-Host "Run Import-LocalTables.bat first, or copy BidMap.txt / Drop.txt / Item.txt into data\raw\tables." -ForegroundColor Yellow
     Write-Host "Do not publish raw game tables unless you have permission." -ForegroundColor Yellow
     exit 1
 }

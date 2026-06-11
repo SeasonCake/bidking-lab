@@ -1,6 +1,6 @@
 """Profile each column of Item.txt to help reverse-engineer its schema.
 
-Item.txt has 1132 rows and 38 columns with no header. This script
+Item.txt has 38 columns with no header. This script
 inspects each column independently and prints:
 
 - distinct value count

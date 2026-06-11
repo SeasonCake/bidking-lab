@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$PythonPath = "C:\Python313\python.exe",
     [string]$ProcessName = "BidKing.exe",
     [int[]]$ServerPort = @(10000),

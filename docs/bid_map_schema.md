@@ -113,7 +113,7 @@ the local table was absent, so an external overlay table remained a
 minimal undecidable alternative, but not an observed non-zodiac
 item-universe gap.
 
-## 2026-06-08 v303 activity-table note
+## 2026-06-08 v303 / 2026-06-11 v308 activity-table note
 
 After rerunning `scripts/copy_game_tables.ps1` against the local game
 install, raw local tables report `fileVersion=303`. `Activity.txt`,
@@ -121,6 +121,14 @@ install, raw local tables report `fileVersion=303`. `Activity.txt`,
 base64 table decoder. `Activity.txt` has 6 rows / 16 columns and appears
 to describe activity entry/UI metadata, not the shipwreck red-conversion
 drop odds.
+
+After the 2026-06-11 game update, the original local game install under
+`C:\xiangmuyunxing\steamapps\common\BidKing\BidKing_Data\StreamingAssets`
+reports `fileVersion=308`. `Item.txt`, `BidMap.txt`, `Activity.txt`,
+`Map.txt`, and `Condition.txt` differ from the previous repo raw snapshot.
+`Item.txt` includes the 0611 red/item additions such as `1016007`
+`决赛指定用球`, `1036006` `世界冠军奖杯`, `1036007` `“退钱”手举牌`,
+`1036008` `传奇球星签名球衣`, and `1076007` `土豆服务器`.
 
 The v303 `BidMap.txt` has 165 rows. It adds 40 rows, including
 `2521-2530` and `4521-4530`. Those activity maps are present in BidMap and
@@ -138,13 +146,49 @@ Until the corresponding `Drop` pools, remote overlay table, or server
 source rule is recovered, 252x/452x activity rows must stay separated from
 default prior calibration and formal promotion evidence.
 
-Additional parser note: v303 old shipwreck rows `2501-2520` and old sealed
-shipwreck rows `4501-4520` have blank `col[7]`, while corresponding new
-activity rows `2521-2530` / `4521-4530` carry `105` / `305`. The parser
-therefore applies a narrow family fallback for those old blank rows only.
-It does not treat activity `drop_ref=252x` as usable, because `Drop.txt`
-still lacks those pools; live replay keeps using the explicit old-shipwreck
-activity alias when BidMap is present but Drop is missing.
+The v308 audit keeps the same activity boundary: `BidMap.txt` and
+`RankMap.txt` contain `2521-2530` / `4521-4530`, but `Drop.txt` is
+unchanged and still lacks those activity pools. The parser therefore
+applies a narrow family fallback when shipwreck-family `col[7]` is blank:
+`2501-2530 -> 105` and `4501-4530 -> 305`. It does not treat activity
+`drop_ref=252x` as a usable Drop prior; live replay keeps using the
+explicit old-shipwreck activity alias when BidMap is present but Drop is
+missing.
+
+As of the 2026-06-11 v308 rebuild, `items_droppable.json` is generated
+from item ids reachable by walking `BidMap.drop_pool_id` through
+`DropEntry.category == 9999` pool references, then filtering to physical
+auction collectibles (`quality > 0`, `value > 0`, `shape_w > 0`,
+`shape_h > 0`). This keeps full `items.json` available for explicit
+item_id settlement/replay lookup while preventing non-map-reachable or
+non-physical table rows from entering MC priors. The audit example is
+`120006-120009` (`青龙` / `白虎` / `朱雀` / `玄武`): they are present in
+`Item.txt` and referenced by Drop pool `1001`, but have q0/cells0/value0
+and are not map-reachable, so they remain outside `items_droppable.json`.
+The five 0611 red/item additions are valid `Item.txt` rows but currently
+have no local `Drop.txt` weight references; their activity probabilities
+remain unresolved until a recovered overlay/server rule or later table
+snapshot supplies that source.
+
+`Activity.txt` row `10007` points to `activity_des_10007`; the decoded
+`Language.txt` description names the eligible activity map families and
+mentions the "Refund" placard, Official Final Match Ball, and "all four"
+limited collectibles for higher-tier scenes. It does not provide numeric
+drop weights and does not directly name `1076007` `土豆服务器`, so that row
+is item/settlement lookup evidence only until a drop source is recovered.
+
+The 2026-06-11 DLL audit found that `Scripts.dll.bytes` is a 4-byte XOR
+(`ryrs`) encoded .NET assembly. After decoding, `GameServerDemo.Utils.DoDrop`
+still resolves drops through `Table_Drop.getBygroup_id`, `weight_type`, and
+`items_list`; no hard-coded v308 item ids or activity weight overlay were
+found. `data/processed/activity_drop_shadow_prior.json` is therefore a
+separate **shadow-only** fitted prior: it estimates candidate leaf weights from
+current map-reachable q6 items using a log(value)->log(weight) fit plus
+similar-item median weights. It is useful for replay/audit experiments, but it
+is not formal Drop evidence and must not be merged into `items_droppable.json`.
+Its `impact_guard` also keeps formal use and drop-rate validation disabled;
+tests assert that the five fitted v308 targets remain absent from both
+`items_droppable.json` and every map-level `flatten_pool()` formal prior.
 
 ## Tier structure
 

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$PythonPath = "C:\Python313\python.exe",
     [string]$Name = "BidKingHeroMonitor",
     [switch]$InstallPyInstaller,

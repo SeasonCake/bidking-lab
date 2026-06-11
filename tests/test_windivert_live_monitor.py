@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import types
@@ -190,6 +191,34 @@ def test_packet_to_fatbeans_row_uses_process_flow_direction() -> None:
     assert base64.b64decode(row["Data"]) == b"\x00\x00\x00\x04"
     assert row["ProcessName"] == "BidKing.exe"
     assert row["Source"] == "WinDivert"
+
+
+def test_write_source_status_records_windivert_open_error(tmp_path: Path) -> None:
+    module = _module()
+
+    module._write_source_status(
+        tmp_path,
+        process_name="BidKing.exe",
+        filter_text="tcp",
+        active_flows=2,
+        accepted_packets=0,
+        sniffed_packets=0,
+        raw_packets=0,
+        ignored_frames=0,
+        dropped_bytes=0,
+        active_session_id=None,
+        error_code="windivert_dependency_missing",
+        error_message="[WinError 2]",
+        error_hint="重新解压 full 包",
+    )
+
+    payload = json.loads(
+        (tmp_path / "capture_source_status.json").read_text(encoding="utf-8")
+    )
+    assert payload["error_code"] == "windivert_dependency_missing"
+    assert payload["error_message"] == "[WinError 2]"
+    assert payload["error_hint"] == "重新解压 full 包"
+    assert payload["active_flows"] == 2
 
 
 def test_flow_direction_map_indexes_bidking_send_and_receive(

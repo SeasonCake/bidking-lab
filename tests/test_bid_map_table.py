@@ -115,6 +115,37 @@ def test_v303_sealed_shipwreck_blank_category_is_inferred() -> None:
     assert bm.auction_mode == "sealed"
 
 
+def test_v308_activity_shipwreck_blank_category_is_inferred() -> None:
+    bm = parse_bid_map_row(
+        _make_v2_row(
+            **{
+                "col0": "2521",
+                "col7": "",
+                "col17": "[9999,2521,22,44]",
+            }
+        )
+    )
+
+    assert bm.map_id == 2521
+    assert bm.category == 105
+
+
+def test_v308_sealed_activity_shipwreck_blank_category_is_inferred() -> None:
+    bm = parse_bid_map_row(
+        _make_v2_row(
+            **{
+                "col0": "4521",
+                "col7": "",
+                "col17": "[9999,2521,22,44]",
+            }
+        )
+    )
+
+    assert bm.map_id == 4521
+    assert bm.category == 305
+    assert bm.auction_mode == "sealed"
+
+
 def test_unknown_blank_category_still_rejected() -> None:
     with pytest.raises(ValueError, match="missing category"):
         parse_bid_map_row(_make_v2_row(**{"col0": "2401", "col7": ""}))

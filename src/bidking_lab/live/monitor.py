@@ -3717,6 +3717,8 @@ def _observed_action_summary(
 def _action_result_rows(
     events: FatbeansCaptureEvents,
     items: Mapping[int, Item],
+    *,
+    session_id: str | None = None,
 ) -> list[dict[str, Any]]:
     item_names = _item_names(items)
     latest_by_action: dict[int, tuple[int, dict[str, Any]]] = {}
@@ -3742,7 +3744,13 @@ def _action_result_rows(
         100125,
         100126,
     }
+
+    def session_matches(candidate: str | None) -> bool:
+        return session_id is None or candidate is None or candidate == session_id
+
     for state in events.states:
+        if not session_matches(state.session_id):
+            continue
         if state.message_id == 0x002D or state.inventory_items:
             continue
         priority = 2 if state.message_id == 0x0027 else 1
@@ -3779,11 +3787,21 @@ def _action_result_rows(
     for send in sorted(events.sends, key=lambda item: item.sort_id, reverse=True):
         if send.kind != "action" or send.value is None:
             continue
-        action_id = int(send.value)
-        if action_id not in zero_implied_action_ids or action_id in latest_by_action:
+        if not session_matches(send.session_id):
             continue
+        action_id = int(send.value)
+        if action_id not in zero_implied_action_ids:
+            continue
+        existing = latest_by_action.get(action_id)
+        if existing is not None:
+            _existing_priority, existing_row = existing
+            has_numeric_result = existing_row.get("result") is not None
+            has_revealed_items = int(existing_row.get("revealed_items") or 0) > 0
+            if has_numeric_result or has_revealed_items:
+                continue
         has_later_state = any(
             state.sort_id > send.sort_id
+            and session_matches(state.session_id)
             and (
                 send.session_id is None
                 or state.session_id is None
@@ -5086,7 +5104,11 @@ def build_monitor_artifact_from_events(
         "structured_ref_inputs": structured_ref_inputs,
         "ahmad_ref_inputs": structured_ref_inputs,
         "action_send_rows": _action_send_rows(events, tables.items),
-        "action_result_rows": _action_result_rows(events, tables.items),
+        "action_result_rows": _action_result_rows(
+            events,
+            tables.items,
+            session_id=_latest_session_id(events),
+        ),
         "public_info_rows": _public_info_rows(events, tables.items),
         "bid_rows": bid_rows,
         "layout_replay_rows": layout_replay_rows,

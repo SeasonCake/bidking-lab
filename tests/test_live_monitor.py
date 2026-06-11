@@ -506,6 +506,125 @@ def test_action_result_rows_infer_zero_after_action_without_result() -> None:
     ]
 
 
+def test_action_result_rows_infer_zero_for_latest_session_after_old_result() -> None:
+    rows = monitor_module._action_result_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(
+                FatbeansSendEvent(
+                    sort_id=12,
+                    capture_time="2026-06-09 12:05:41.529",
+                    message_id=0x0026,
+                    session_id="2404:2",
+                    value=100113,
+                ),
+            ),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=5,
+                    capture_time="2026-06-09 12:01:01.000",
+                    message_id=0x0027,
+                    session_id="2404:1",
+                    map_id=2404,
+                    round_index=2,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=100113,
+                            result=3.0,
+                            result_field=11,
+                            observed_items=(),
+                        ),
+                    ),
+                ),
+                FatbeansStateEvent(
+                    sort_id=17,
+                    capture_time="2026-06-09 12:06:01.000",
+                    message_id=0x0025,
+                    session_id="2404:2",
+                    map_id=2404,
+                    round_index=3,
+                    action_results=(),
+                ),
+            ),
+        ),
+        {
+            100113: SimpleNamespace(name="极品均格"),
+        },
+        session_id="2404:2",
+    )
+
+    assert rows == [
+        {
+            "sort": 12,
+            "time": "2026-06-09 12:05:41.529",
+            "action_id": 100113,
+            "tool": "极品均格",
+            "result": 0,
+            "result_field": None,
+            "inferred_zero": True,
+            "result_inference": "sent_action_without_result_after_later_state",
+            "revealed_items": 0,
+            "revealed_items_detail": [],
+            "revealed_summary": "",
+        }
+    ]
+
+
+def test_action_result_rows_infer_zero_over_empty_result_placeholder() -> None:
+    rows = monitor_module._action_result_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(
+                FatbeansSendEvent(
+                    sort_id=12,
+                    capture_time="2026-06-09 12:05:41.529",
+                    message_id=0x0026,
+                    session_id="2404:1",
+                    value=100113,
+                ),
+            ),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=13,
+                    capture_time="2026-06-09 12:05:42.000",
+                    message_id=0x0027,
+                    session_id="2404:1",
+                    map_id=2404,
+                    round_index=3,
+                    action_results=(
+                        FatbeansActionResult(
+                            action_id=100113,
+                            result=None,
+                            result_field=None,
+                            observed_items=(),
+                        ),
+                    ),
+                ),
+                FatbeansStateEvent(
+                    sort_id=17,
+                    capture_time="2026-06-09 12:06:01.000",
+                    message_id=0x0025,
+                    session_id="2404:1",
+                    map_id=2404,
+                    round_index=3,
+                    action_results=(),
+                ),
+            ),
+        ),
+        {
+            100113: SimpleNamespace(name="极品均格"),
+        },
+    )
+
+    assert rows[0]["action_id"] == 100113
+    assert rows[0]["result"] == 0
+    assert rows[0]["inferred_zero"] is True
+
+
 def test_action_result_rows_do_not_infer_zero_before_later_state() -> None:
     rows = monitor_module._action_result_rows(
         FatbeansCaptureEvents(

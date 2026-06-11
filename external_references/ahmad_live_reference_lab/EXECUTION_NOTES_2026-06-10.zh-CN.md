@@ -1222,3 +1222,532 @@
    - 新模板不再包含 `右键管理员运行_启动HeroRef.bat`；README / `使用说明.txt` / `VPN或UU备用启动.txt` / `PACKAGE_MANIFEST.zh-CN.md` 已改为只推荐两条管理员启动入口。
    - `build_hero_ref_portable.ps1` 的 `BUILD_MANIFEST.txt` 和构建完成提示改为同时列出 floating 与 taskbar 两种启动方式。
    - 本轮只更新模板和说明，未重新打包；历史 `dist\...` 目录里的旧包仍保留旧说明，下一次打包才会更新。
+
+22. 2026-06-11 结算异常样本索引补记
+   - 用户提醒：项目目录和朋友 recordings 目录中已经有大量 WinDivert raw 样本，不应只看手动导出的 zip。
+   - 已新增集中索引：
+     - `docs\hero_ref_settlement_sample_index_2026-06-11.zh-CN.md`
+   - 粗筛范围：
+     - `data\logs\live\raw\archive\reset`：8 个 WinDivert reset，8 个含 settlement frame；
+     - `data\logs\live_2026.06.10_ahmed\live\raw\archive\reset`：35 个 WinDivert reset，21 个含 settlement frame；
+     - `C:\Users\shenc\Desktop\recordings\data\logs\live\raw\archive\reset`：26 个 WinDivert reset，25 个含 settlement frame；
+     - `C:\Users\shenc\Desktop\recordings\data\logs\live\exports`：1 个手动导出 zip。
+   - 重点样本：
+     - 4406：`data\logs\live_2026.06.10_ahmed\live\raw\archive\reset\windivert_live_2026-06-10_060929_4406_1402770724242732_reset.json`
+       - settlement truth：24 件 / 62 格；
+       - 历史问题：pre-settlement bridge total 39 污染 settled 结果；
+       - 当前处理方向：settlement truth 覆盖 stale live/action 输入。
+     - 朋友导出：`C:\Users\shenc\Desktop\recordings\data\logs\live\exports\HeroRefDiag-20260611-021539-4521_1402770788450965.zip`
+       - session：`4521:1402770788450965`；
+       - 补丁后复放：`status=ok`、`combo_count=1`、14 件 / 43 格。
+     - 朋友 raw 活动图：`C:\Users\shenc\Desktop\recordings\data\logs\live\raw\archive\reset\windivert_live_2026-06-11_013131_4521_1402770786856860_reset.json`、`...\windivert_live_2026-06-11_020526_4521_1402770788280922_reset.json` 等 4521/4524/4527/4530 样本。
+   - 后续回查优先级：
+     - 先用索引里的 raw / zip 复放；
+     - 再按价格表 / 活动版本 / 外部表漂移 -> settlement truth 覆盖 -> UI 展示链路检查；
+     - 不再把“另一个异常局没有快照”作为默认判断，因为 raw archive 里已有可筛选样本。
+   - 当前批量复放结果：
+     - 对 54 个含 settlement frame 的 raw WinDivert 样本执行 `build_monitor_artifact_from_file(...)` -> `run_reference_engine(..., max_combos=60000)`；
+     - 结果为 `ok=54`、`problem_count=0`、`hard_conflict=0`；
+     - 4406 四个 settlement raw 样本均 `status=ok`、`combo_count=1`；
+     - 朋友 recordings 里两个 4521 raw 样本均 `status=ok`、`combo_count=1`；
+     - 这说明当前补丁已覆盖 raw artifact 到 ref_v0 的 settlement truth 链路。剩余风险转向 UI 时序显示、打包版本是否包含补丁、以及价格表 / 活动版本 / 外部表漂移。
+
+23. 2026-06-11 settlement summary 与 dirty 包 smoke
+   - UI summary 层批量复放：
+     - 对同一批 54 个含 settlement frame 的 raw WinDivert artifact 执行 `summarize_snapshot(...)`；
+     - 结果为 `status=ok=54`、`reference.source=settlement=54`、`ahmed_ref.status=ok=54`、`problem_count=0`；
+     - 4406 四个样本、朋友 recordings 两个 4521 raw 样本均在 summary 层对齐 settlement truth。
+   - 新增回归测试：
+     - `tests\test_live_overlay.py::test_ahmad_server_summary_settlement_truth_overrides_stale_live_actions`
+     - 目标：结算态 summary 不被 stale live action / structured bridge 覆盖。
+   - dirty worktree smoke 包：
+     - `dist\BidKingHeroRef-v0.1.3-20260611-dirty-portable.zip`
+       - SHA256：`CF8B98552025A2721BE4F3311D67A4630FAE05F1A37B09C6060A95E668C85D5A`
+       - full/portable，带 raw tables，`PublicSafe=False`，`IncludesRawTables=True`，`RequiresExternalPython=False`，`PackageProfile=portable`，`DirtyWorktree=true`。
+     - `dist\BidKingHeroRef-v0.1.3-20260611-dirty-public-safe.zip`
+       - SHA256：`530CD1C043F783C78FA2A640EDA518F66B5E2A5B4FBA44DCB63800B8DEBEA8FA`
+       - public-safe，不带 raw tables，包含 `PUT_TABLES_HERE.txt`，`PublicSafe=True`，`IncludesRawTables=False`，`RequiresExternalPython=False`，`PackageProfile=public-safe`，`DirtyWorktree=true`。
+   - clean unzip smoke：
+     - 两个包均包含 UI exe、monitor exe、四个明确启动入口、`Start-HeroRef.ps1`、`data\logs\live`；
+     - 旧入口 `右键管理员运行_启动HeroRef.bat` 数量为 0；
+     - UI exe `--help` exit 0；monitor exe `--help` exit 0；
+     - public-safe 解压后未发现 `BidMap.txt` / `Drop.txt` / `Item.txt`。
+   - 已跑：
+     - `C:\Python313\python.exe -m pytest -p no:cacheprovider tests\test_live_overlay.py tests\test_ahmad_ref_engine_public_info.py tests\test_runtime_snapshot.py tests\test_live_monitor.py tests\test_live_fatbeans.py -q` -> `329 passed, 25 skipped`
+     - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py`
+   - 残余风险：
+     - 这两个包来自 dirty worktree，不是 clean tag release；
+     - 没有在第二台无 Python 机器实机启动 WinDivert 抓包，只做 clean unzip + exe help smoke；
+     - 金额差价若仍出现，下一步优先查价格表 / 活动版本 / 外部表漂移，而不是 missing settlement block。
+
+24. 2026-06-11 金均格 0 / `0/1/1` 时序补丁
+   - 新反馈：朋友遇到游戏内金均格为 `0` 时，计算器金件仍显示类似 `0 / 1 / 1`，疑似“没检测完”。
+   - 样本粗查：
+     - 新导出包：`C:\Users\shenc\Downloads\HeroRefDiag-20260611-133716-4405_1425860427403590.zip`；
+     - 已解压到：`.tmp\diag_4405_1425860427403590`；
+     - 该包当前 `latest_snapshot.json` / `hero_ref_current_summary.json` 的 4405 settled 结果是干净的：q5/q6 结算为 exact 0/1 对应真实结算，没有复现“0 均格仍不归零”；
+     - `hero_ref_ui_summary.jsonl` 中历史 4401 / 4405 bidding 帧曾出现 `金件 0 / 1 / 1`，但对应证据没有抓到 `100113` 金均格 0 或 inferred_zero，只能判定为“金均格未进 evidence 时的先验残留”，不是已确认的 0 观测已进入但漏消费。
+   - 确认的源 -> transform -> output 链路：
+     - source：`events.sends` 中 `100110-100114` 均格动作，尤其 `100113` 金均格动作，和同 session 后续 `states`；
+     - transform：`src\bidking_lab\live\monitor.py::_action_result_rows(...)` 生成 `actions.results`，若动作已发出、同 session 后续 state 出现且无结果块，补 `result=0` + `inferred_zero=True`；
+     - output：`runtime.snapshot._ui_actions_contract(...)` 将 action rows 写入 `ui_contract.actions.results`，`ahmad_ref_engine.ACTION_AVG_CELLS` 消费 `100113 -> q5 avg_cells=0`，再由 `zero_avg_cells_q5_count_zero` 固定金件和金格为 `0/0/0`。
+   - 本次补丁：
+     - `src\bidking_lab\live\monitor.py::_action_result_rows(...)` 新增 `session_id` 参数，artifact 构建时传 `_latest_session_id(events)`，避免旧局同 action 结果挡住当前局 zero fallback；
+     - zero fallback 不再被“同 action 空结果占位且无揭示物”的 row 挡住；
+     - 若已有数值结果或已有揭示物，仍不覆盖为 0；
+     - 若没有后续 state、没有抓到对应 action send，仍不会静默猜 0。
+   - 新增回归测试：
+     - `tests\test_live_monitor.py::test_action_result_rows_infer_zero_for_latest_session_after_old_result`
+     - `tests\test_live_monitor.py::test_action_result_rows_infer_zero_over_empty_result_placeholder`
+   - 已跑：
+     - `python -m pytest tests/test_live_monitor.py tests/test_ahmad_ref_engine_public_info.py::test_ref_engine_victor_inferred_zero_action_constrains_gold_avg` -> `49 passed`
+     - `git diff --check` -> 无 whitespace error，仅现有 CRLF 提示。
+
+25. 2026-06-11 0611 官方更新与 minimap taskbar 闪烁修复
+   - 官方更新内容已抄录到项目笔记，后续跟进重点是：
+     - 世界杯主题活动、活动藏品掉落、红色藏品“土豆服务器”；
+     - 藏品订单功能和任务界面提交非绑定藏品换银币；
+     - 兑换商店新增礼盒 2 期；
+     - 竞拍中藏品百科提示修复、成就计数修复、十二生肖藏品系统回收清除。
+   - 当前 Hero Ref 代码侧先跟进的是桌面体验问题：
+     - 浮窗模式下 `root` 与 minimap popup 补了 Windows `-toolwindow` 样式；
+     - hover/click 打开 minimap popup 时先 `withdraw()`，再配置样式，最后 `deiconify()`；
+     - 目标是降低全屏游戏下鼠标滑到小地图时 taskbar 突然闪出的概率。
+   - 验证：
+     - `python -m pytest tests/test_live_overlay.py` -> `140 passed`
+     - `python -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py` -> passed
+   - 0611 表快照对照：
+     - `C:\Users\shenc\Downloads\data\raw\tables` 与仓库 `data\raw\tables` 逐文件 hash 一致；
+     - `fileVersion=303`，当前本机可见的 raw/processed 表快照还没有额外的 `Activity/Item/Drop` 差异可直接吸收；
+     - 也就是说，现阶段先把官方 0611 活动公告和 release 边界记清，后续如果拿到新的 `StreamingAssets` 再重新跑 `copy_game_tables.ps1` / `build_processed_data.py` 补齐差异。
+
+26. 2026-06-11 mini 导出入口、包名规则与“等待对局包”诊断
+   - 用户新增边界：
+     - 不再自行打包；只有用户明确要求打包时才执行 build/zip；
+     - 后续包名只保留版本号和包类型，不再默认拼日期、commit 或 dirty 标记。
+   - UI 调整：
+     - `导出` 从展开后的小地图 header 移到 mini 常驻控制行，迷你模式下也能直接点；
+     - `地图` 按钮保留 hover 右侧预览和点击固定/取消固定，只移除多余的按钮提示文案；
+     - 小地图画布本身、结算/物品 tooltip、固定小地图里的 hover 逻辑未改。
+   - 包名规则：
+     - `build_hero_ref_portable.ps1` 新增 `-Version`，默认 `0.1.4`；
+     - 默认 full 输出：`dist\BidKingHeroRef-v0.1.4-full`；
+     - 默认 public-safe 输出：`dist\BidKingHeroRef-v0.1.4-public-safe`；
+     - `-Version` / `-OutputDir` 若包含日期块或 dirty 标记会直接拒绝；
+     - 本次没有重新生成任何包。
+   - 0611 新内容状态：
+     - `C:\Users\shenc\Downloads\data\raw\tables` 与仓库 raw tables hash 一致，`fileVersion=303`；
+     - 当前本机表里还没有“土豆服务器”或世界杯活动掉落的新增 `Item/Drop` 差异可直接进入推理；
+     - 只能确认公告已记录，不能把新增掉落物当作本地推理表已吸收。拿到新 `StreamingAssets` 后再跑表同步和 processed rebuild。
+   - “打开后一直等待对局包”排查：
+     - 朋友 `C:\Users\shenc\Desktop\recordings\data\logs\live\capture_source_status.json` 里可见 `active_flows=3`、`raw_packets=9`、`accepted_frames=0`、`ignored_reasons.rev_not_game_frame=9`；
+     - 结论：不是单纯 UI-only，也不是 monitor 完全没启动；monitor 已看到 BidKing.exe 流量，但当前包都没有被解析成游戏状态帧；
+     - 可能方向：启动时机/抓包模式不匹配、只抓到反向非状态包、VPN/UU/路由导致默认 port-only 模式太窄，或当前还没触发可解析的竞拍状态帧；
+     - 优先建议：用管理员入口 `-Restart` 重启整条链；若仍然如此，用备用启动 `-BroadSniff -IncludeLoopback`，进新局或使用道具后再点 mini 常驻 `导出` 回传。
+   - 验证：
+     - `C:\Python313\python.exe -m pytest tests/test_live_overlay.py -q` -> `141 passed`
+     - `C:\Python313\python.exe -m pytest tests/test_live_monitor.py tests/test_ahmad_ref_engine_public_info.py -q` -> `101 passed`
+     - `C:\Python313\python.exe -m pytest tests/test_live_overlay.py tests/test_live_monitor.py tests/test_ahmad_ref_engine_public_info.py -q` -> `242 passed`
+     - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py` -> passed
+     - PowerShell parser 检查 `build_hero_ref_portable.ps1` -> passed
+     - Tk 实例化 introspection：mini `440x397`；`导出` parent 为常驻 header 控件区且 viewable；`details_card/minimap_card` 在 mini 下隐藏；`地图` `<Enter>/<Leave>` 预览绑定与 `<Button-1>` 固定绑定均存在；hover 右侧 popup 可显示并可隐藏；额外 `map_tip` 不存在。
+
+27. 2026-06-11 v308 原始游戏表同步与发布前 UI 文案回收
+   - 用户纠偏：
+     - 不只看 `C:\Users\shenc\Downloads\data\raw\tables`，必须到游戏原始 `StreamingAssets` 解码核对；
+     - `导出` hover 要明确告诉群友：异常/卡住/结算不对时点击，会生成诊断 zip，把 zip 发群里作为 log 排查；
+     - 中文 BAT 本体也要能提示“右键以管理员身份运行”；
+     - “下一步”推荐不要让 mini 文案看起来只是在提示红均格。
+   - 原始表核对：
+     - 游戏原始目录：`C:\xiangmuyunxing\steamapps\common\BidKing\BidKing_Data\StreamingAssets`；
+     - 原始 `fileVersion=308`，项目/Downloads 旧快照此前仍是 `303`；
+     - 已用项目 Base64/TSV 解码器核对，原始 `Item.txt` 包含 0611 新增/活动物品：
+       - `1016007` 决赛指定用球，q6，4 格，758000；
+       - `1036006` 世界冠军奖杯，q6，6 格，7202026；
+       - `1036007` “退钱”手举牌，q6，12 格，555555；
+       - `1036008` 传奇球星签名球衣，q6，6 格，1225000；
+       - `1076007` 土豆服务器，q6，6 格，990000。
+     - `scripts\copy_game_tables.ps1` 已同步当前工作区 raw tables；`data\raw\fileVersion` 现在是 `308`；
+     - `scripts\build_processed_data.py` 已重建：
+       - `items.json`: 1207 items；
+       - `items_droppable.json`: 587 items（map-reachable physical loot）；
+       - `maps.json`: 165 maps；
+       - 生成时显式 warning：地图掉落引用缺失 Item row `1106013`；活动地图引用缺失 Drop pools `2521-2530`。
+   - 活动掉落边界：
+     - `Drop.txt` 与旧快照 hash 一致，仍没有 `2521-2530` / `4521-4530` 的活动 Drop pool；
+     - `summarize_v3_archive_table_timing.py --format summary` 仍显示：
+       - `activity_range=2521-2530 bidmap_present=10 drop_present=0 drop_missing=10`
+       - `activity_range=4521-4530 bidmap_present=10 drop_present=0 drop_missing=10`
+     - 因此 0611 新物品已进入 item price/cells lookup，能用于结算/显式 item_id 价格表语义；但世界杯活动额外掉落权重/overlay 仍不能当作正式 prior，继续保持 shadow-only / audit-only。
+     - `items_droppable.json` 口径已从“任何 Drop 池引用过”收敛为“从 BidMap 可达且 quality/value/占格有效的物理藏品”，防止非地图可达或 q0/0格/0价值编码污染推理。
+     - 全量 `Drop.txt` 审计里仍能看到 `120006` 青龙、`120007` 白虎、`120008` 朱雀、`120009` 玄武：均来自 `Drop` pool `1001`、category `12`、weight `10000`、q0/cells0/value0、map_reachable=false；当前不进入 `items_droppable`，也不进入 MC 概率分布。
+     - `1012005` 足球在当前 `Drop.txt` 中有权重引用（如 `1012` weight 134、`1202` weight 135），并且 map_reachable=true；已保留在当前 `items_droppable` 中。
+     - `1016007` / `1036006` / `1036007` / `1036008` / `1076007` 当前 `drop_pool_count=0`，即本地 `Drop.txt` 没有它们的概率权重；若游戏实际掉落这些物品，概率/source 需要来自活动 overlay、服务端规则或后续新表。
+     - 原始 `Language.txt` 的 `activity_des_10007` 只说明活动期间不同地图可掉落“退钱”牌、决赛指定用球，以及高阶场景可掉落 4 件限时藏品；没有数值权重。该活动描述未直接提到 `1076007` 土豆服务器，因此土豆服务器目前只能算新红 Item/价格表条目，不能算已确认活动 Drop prior。
+   - 代码修复：
+     - `src\bidking_lab\extract\bid_map_table.py`：空 `col[7]` 的 shipwreck-family fallback 扩到 `2501-2530 -> 105`、`4501-4530 -> 305`，避免 v308 `2521/4521` 读表失败导致 monitor 看起来只剩 UI；
+     - `src\bidking_lab\simulation\basic_mc.py`：`flatten_pool` 只把 quality>0、value>0、占格>0 的物理藏品纳入概率分布；
+     - `scripts\build_processed_data.py`：`items_droppable.json` 从地图入口递归 Drop 树生成，非地图可达/非物理藏品只保留在 `items.json`，不参与推理 prior；
+     - `scripts\copy_game_tables.ps1`：同步列表补入 `Tables\Language.txt`，后续可直接在 `data\raw\tables\Language.txt` 复查活动描述；
+     - `tools\ahmad_tk_overlay.py`：`导出` hover 改为异常场景说明，明确生成诊断 zip 并发群里排查；
+     - `apps\hero_ref\管理员启动HeroRef_悬浮窗.bat` / `管理员启动HeroRef_任务栏窗口.bat`：启动前输出管理员权限提示，说明无 UAC 或一直等待对局包时右键以管理员身份运行；
+     - `tools\ahmad_live_panel_server.py`：红件锁定但红格未知时，`下一步` mini 文案从 `补总格/全均格或红均格` 收敛为 `优先补总格/全均格`，保留原判断条件，不改变引擎约束。
+   - 本次没有打包。
+   - 已跑：
+     - `C:\Python313\python.exe -m pytest tests\test_bid_map_table.py tests\test_live_overlay.py::test_ahmad_export_diagnostic_tip_tells_users_to_send_zip_for_abnormal_cases tests\test_live_overlay.py::test_ahmad_server_next_info_hint_targets_q6_grid_when_red_count_locked -q` -> `16 passed`
+     - `C:\Python313\python.exe -m pytest tests\test_bid_map_table.py tests\test_live_overlay.py tests\test_live_monitor.py tests\test_ahmad_ref_engine_public_info.py -q` -> `257 passed`
+     - `C:\Python313\python.exe -m py_compile src\bidking_lab\extract\bid_map_table.py src\bidking_lab\live\monitor.py external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py` -> passed
+     - `git diff --check` -> 无 whitespace error，仅 CRLF 提示
+     - Tk introspection：mini `440x397`；`导出` 在常驻 header 控件区且 viewable；tooltip 包含 `生成诊断 zip` / `发群里` / `log 排查`；`details_card/minimap_card` 在 mini 下隐藏；`地图` `<Enter>/<Leave>/<Button-1>` 绑定仍存在；`map_tip` 不存在。
+
+28. 2026-06-11 活动掉落权重二次逆向与 shadow-only 拟合
+   - 用户要求：正式 `Drop.txt` 找不到 0611 新物品概率时，继续从游戏源文件查找；若仍无正式来源，尝试用同品质/占格/价值区间做可用拟合。
+   - 源文件逆向结果：
+     - `dll\Scripts.dll.bytes` / `dll\Scripts.pdb.bytes` / `dll\NotHotUpdate.dll.bytes` 使用 4 字节 XOR key `ryrs` 可还原为 .NET assembly/metadata；
+     - 解码后的 `Scripts.decoded.dll` 中 `GameServerDemo.Utils.DoDrop` IL 证实正式 drop 流程是：
+       - `Table_Drop.getBygroup_id(group_id)`；
+       - 读取 `Table_Drop.weight_type` 与 `Table_Drop.items_list`；
+       - `items_list[*][0] == 9999` 时递归 `DoDrop(next_group_id, count)`；
+       - 否则 `AddItem(item_id, RandomCount(n_min, n_max))`；
+     - `Table_Drop` 元数据字段为 `group_id / weight_type / items_list`，没有发现活动 overlay 权重字段；
+     - 全量解码表精确检索：`1016007` / `1036006` / `1036007` / `1036008` / `1076007` 只在 `Item.txt` 作为 item row 出现，`Language.txt` 只提供名称/描述/活动文案，`Activity.txt` 只指向 `activity_des_10007`；
+     - `Item.txt` 的 `number_weight`/raw col[29] 不是 `Drop` 概率；已用已有 q6 物品负例对照：同列数值与正式 `Drop.txt` 权重不一致，不能直接当爆率。
+   - 结论：
+     - 仍未找到正式数值概率/权重来源；世界杯活动额外掉落继续不能进入 formal prior；
+     - `土豆服务器` 未出现在 `activity_des_10007` 的四件限时藏品描述中，只保留为新红 item/结算 lookup，不作为活动掉落边。
+   - 新增 shadow-only 拟合产物：
+     - 脚本：`scripts\build_activity_shadow_prior.py`；
+     - 输出：`data\processed\activity_drop_shadow_prior.json`；
+     - 注意：`data/processed/**` 当前在 `.gitignore` 中，新增 shadow JSON 是本地生成物；若后续要纳入 git，需要显式 `git add -f`；
+     - 明确标记：`status=shadow_only_not_formal_prior`、`do_not_merge_into_items_droppable=true`；
+     - 拟合方法：在当前 map-reachable q6 正式掉落物上拟合 `log(value) -> log(weight)`，再与同品质、同类/标签、相近占格/价值的邻居 median weight 做几何融合；
+     - 活动边界来自 `activity_des_10007`：
+       - 废弃仓库：`1036007` “退钱”手举牌；
+       - 航运集装箱：`1036007` + `1016007` 决赛指定用球；
+       - 高阶活动场景：`1036007` / `1016007` / `1036006` 世界冠军奖杯 / `1036008` 传奇球星签名球衣；
+       - `1076007` 土豆服务器：不在活动文案中，`activity_text_eligible=false`。
+     - 当前估计 leaf weight（仅 audit/replay 参考）：
+       - `1016007` 决赛指定用球：约 `2721`，`confidence=medium_low`；
+       - `1036006` 世界冠军奖杯：约 `175`，`confidence=low_value_extrapolation`；
+       - `1036007` “退钱”手举牌：约 `2640`，`confidence=very_low`；
+       - `1036008` 传奇球星签名球衣：约 `1426`，`confidence=low`；
+       - `1076007` 土豆服务器：约 `2423`，`confidence=medium_low`，但无活动掉落文案边。
+     - 新增 `impact_guard`：
+       - `formal_use_allowed=false`、`drop_rate_validation_allowed=false`；
+       - 废弃仓库 shadow 新物品加权均值约 `555555`；
+       - 航运集装箱 shadow 新物品加权均值约 `658307`；
+       - 高阶活动场景 shadow 新物品加权均值约 `938866`，最高价值的 `1036006` 世界冠军奖杯权重占比约 `2.51%`，没有被拟合成离谱高权重；
+       - 由于低置信项仍存在，recommendation 统一保持 `keep_read_only_until_official_or_sample_confirmed`。
+   - 本轮没有把 shadow prior 接入 Hero Ref 正式推荐或 `items_droppable.json`。
+   - 已跑：
+     - `C:\Python313\python.exe scripts\build_activity_shadow_prior.py` -> wrote `data\processed\activity_drop_shadow_prior.json`；
+     - `C:\Python313\python.exe -m pytest tests\test_activity_shadow_prior.py tests\test_build_processed_data.py tests\test_basic_mc.py -q` -> `10 passed`；
+     - `C:\Python313\python.exe -m py_compile scripts\build_activity_shadow_prior.py tests\test_activity_shadow_prior.py` -> passed。
+
+29. 2026-06-11 shadow prior 边界测试与 UI 不刷新自动状态记录
+   - 用户担心：拟合 leaf weight 可能在过渡期把某些地图报价抬偏；少数群友反馈 UI 不刷新，不能完全依赖用户手动点导出。
+   - shadow prior 边界：
+     - `tests\test_activity_shadow_prior.py` 新增正式 prior 边界测试；
+     - 直接读取 `data\processed\items_droppable.json`，并逐地图调用 `basic_mc.flatten_pool()`，确认 `1016007` / `1036006` / `1036007` / `1036008` / `1076007` 均不在正式 map prior；
+     - 同时保留正例 `1012005` 足球仍在正式 prior，避免测试只验证空路径；
+     - 结论：当前 fitted shadow prior 只读，不会影响 live 推荐、报价或正式爆率验证。
+   - UI 自动状态记录：
+     - `tools\ahmad_tk_overlay.py` 新增 `hero_ref_ui_runtime_status.json`；
+     - 文件写入位置为 `data\logs\live\`，采用覆盖写，记录最近一次 UI 刷新状态，不会像 jsonl 一样持续增大；
+     - 记录字段包括：`event`、snapshot 是否存在/mtime signature/age、last applied signature、summary/manual worker 状态、manual active/edit 状态、最近 summary 的 hero/map/round/phase/session/source，以及 compact capture 状态；
+     - capture compact 状态包含 `active_flows`、`raw_packets`、`accepted_frames`、`ignored_frames`、`active_session_id`、`top_ignored_reason`、`wait_state`、`wait_action`、`wait_note`；
+     - `waiting_for_snapshot` 可区分 `no_capture_status` / `no_active_flow` / `no_raw_packets` / `raw_no_game_frame` / `session_waiting_snapshot`，用于判断是权限/设备/抓包模式问题，还是 UI 自身卡住；
+     - 诊断导出包现在会包含 `hero_ref_ui_runtime_status.json`（若存在），manifest 的 `log_summary.ui_runtime_status` 会列出该文件摘要。
+     - `monitor.stdout.log` / `monitor.stderr.log` 也会进入诊断包；如果截图停在 `no_capture_status`，优先看 stderr 是否有 pydivert 缺失、权限被拒、驱动加载失败或进程秒退。
+     - 即使没有 `latest_snapshot.json`，mini 常驻 `导出` 现在也会生成 `no_snapshot` 诊断 zip，避免最需要排查 monitor 时反而导不出包。
+   - 已跑：
+     - `C:\Python313\python.exe -m pytest tests\test_live_overlay.py -q` -> `144 passed`；
+     - `C:\Python313\python.exe -m pytest tests\test_activity_shadow_prior.py tests\test_live_overlay.py -q` -> `145 passed`；
+     - `C:\Python313\python.exe scripts\build_activity_shadow_prior.py` -> wrote `data\processed\activity_drop_shadow_prior.json`；
+     - `C:\Python313\python.exe -m pytest tests\test_activity_shadow_prior.py tests\test_build_processed_data.py tests\test_basic_mc.py tests\test_bid_map_table.py tests\test_live_monitor.py tests\test_live_status.py tests\test_ahmad_ref_engine_public_info.py tests\test_live_overlay.py -q` -> `280 passed`；
+     - `C:\Python313\python.exe -m py_compile scripts\build_activity_shadow_prior.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py tests\test_activity_shadow_prior.py tests\test_live_overlay.py` -> passed；
+     - `git diff --check` -> 无 whitespace error，仅 CRLF 提示。
+
+30. 2026-06-11 v0.1.4 release package
+   - 用户明确要求：做最后 UI/hover/数据/推理/打包检查，确认后打包。
+   - 打包前新增一个小 UI 修复：
+     - 打开手填面板时，如果当前没有任何手填输入/dirty/autofill 状态，会自动填入当前 live context 中的英雄、地图、已知总件等；
+     - 若用户已有手填内容，则不覆盖；
+     - 覆盖测试：`test_ahmad_open_manual_panel_prefills_empty_live_context`、`test_ahmad_open_manual_panel_does_not_overwrite_existing_inputs`。
+   - UI 实窗 smoke：
+     - 截图路径：`.tmp\release_ui_smoke\mini_final.png`、`details_final.png`、`manual_final.png`；
+     - mini geometry `440x397`；
+     - 样例渲染确认：`aisha · 2521 · R4`、三档价 `1,980,000 / 2,330,000 / 2,720,000`、当前最高 `玩家A 2,100,000`、最近 `显影=金0`、候选 `总件 38 · 总格 126`、下一步 `优先补总格/全均格`；
+     - 详情确认：结算 `4,405,555 · 38件/126格 · 红3件/24格`，小地图来源 `settlement_inventory`；
+     - 手填确认：打开后自动填入 `aisha`、`2521 未知残骸`、`38`；
+     - 地图按钮确认：hover popup 可显示，点击固定 popup 可显示；按钮额外 tooltip 仍不存在。
+   - 本轮包内文案收口：
+     - “下一步”在有 `金均价` 时不再提示补金/红均价；
+     - 红件、红格、红均格仍保留给表格/手填/复盘，不进入推荐下一步；
+     - `公开轮廓` 兜底收敛为普通可见信息优先的文案。
+   - 打包产物：
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.4-full.zip`
+       - SHA256 `11b452ae6101476db8afd0b2898189dbf5a9d7c2e009421753b413da10c164bb`
+       - 常规群友使用版，含 raw tables，默认 diagnostic profile `portable`。
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.4-engineering.zip`
+       - SHA256 `bd1fa6e09fb6d96dad5bd4a6027947e961000288ba7a9fd4f2e8a1c3bef62584`
+       - 工程排查版，含 raw tables，默认 diagnostic profile `engineering`。
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.4-public-safe.zip`
+       - SHA256 `e46aeb59acef9ecd0afc36b98cee68219c4766153ca926b1be4c7529f9ef6d86`
+       - 公开转发版，不含 `BidMap.txt` / `Drop.txt` / `Item.txt` raw tables，需先运行 `导入本机游戏表.bat`。
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.4-SHA256.txt`
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.4-RELEASE_NOTES.zh-CN.txt`
+   - 包级 clean unzip 检查：
+     - 三个 zip 均解压到 `.tmp\release_unzip_checks_v014d` 干净目录；
+     - 均包含 `BidKingHeroRef\BidKingHeroRef.exe`、`BidKingHeroMonitor\BidKingHeroMonitor.exe`、`Start-HeroRef.ps1`、`Start-HeroRef.bat`、`Start-HeroRef-Taskbar.bat`、`data\logs\live`；
+     - `Start-HeroRef.ps1` 默认引用包内 UI/monitor exe，未默认依赖 `C:\Python313\python.exe`；
+     - 每个包内 `BidKingHeroMonitor.exe --help` 可直接运行；
+     - full/engineering 包含 `BidMap.txt` / `Drop.txt` / `Item.txt` / `Language.txt`；
+     - public-safe 仅有 `PUT_TABLES_HERE.txt`，未包含上述 raw tables；
+     - mini 下一步文本长度未撑坏布局。
+   - 已跑：
+     - `C:\Python313\python.exe -m pytest tests\test_live_overlay.py -q` -> `148 passed`；
+     - `C:\Python313\python.exe -m pytest tests\test_live_monitor.py tests\test_ahmad_ref_engine_public_info.py tests\test_activity_shadow_prior.py tests\test_basic_mc.py tests\test_build_processed_data.py -q` -> `112 passed`；
+     - `C:\Python313\python.exe -m py_compile ...` -> passed；
+     - `git diff --check` -> 无 whitespace error，仅 CRLF 提示。
+   - release 边界：
+     - 本次包来自 `SourceCommit=e872c3a` 加当前未提交 Hero Ref 工作区修改，`BUILD_MANIFEST.txt` 标记 `DirtyWorktree=true`；
+     - 包名未包含日期或 dirty 字样，符合用户要求；
+     - 主线 v3 仍未 promotion，活动 fitted prior 仍为 shadow-only / audit-only。
+
+31. 2026-06-11 v0.1.4 next-info 文案回收
+   - 用户反馈：
+     - 新版 `下一步` 文案在已经有 `金均价` 时仍会提示补金/红均价；
+     - calculator 不应要求普通用户补红色信息，红总格/红均格等字段可以保留给表格、手填和复盘，但不应作为推荐下一步；
+     - `公开轮廓` 对玩家不如 `总格/全均格` 清晰，且不同道具语义不完全等价。
+   - 日志对照：
+     - 新包桌面运行目录：`C:\Users\shenc\Desktop\BidKingHeroRef-v0.1.4-full`；
+     - 该局 `latest_snapshot.json` 已有 `public_numeric_summary=金均价 26,730`，说明解析链路拿到了金均价；
+     - 问题在 UI fallback 的 `_next_info_hint(ref_result)` 文案策略，不在 public info 解析；
+     - 旧包典型 R5 日志原文为 `补总格/全均格或红均格`，新逻辑复算为 `优先补总格/全均格`。
+   - 修复：
+     - `tools\ahmad_live_panel_server.py`：`下一步` 推荐顺序改为：
+       1. 缺总件 -> `先补总件`；
+       2. 缺总格且总格范围未锁，或红件已锁但红格只能靠总格收紧 -> `优先补总格/全均格`；
+       3. 白绿/蓝未锁 -> `优先补白绿/蓝件数或均格`；
+       4. 紫/金未锁 -> `补紫/金件数或均格`；
+       5. 无明确普通可补项 -> `信息已足够，观察出价`。
+     - `下一步` 不再生成红相关建议，也不再生成 `补金/红均价或总价` 这种价值口径建议；
+     - 表格/手填/复盘中的红件、红格、红均格、红值字段不变，引擎约束不变。
+   - 验证：
+     - 新增测试覆盖：
+       - `金均价` 已知但 q5/q6 仍有范围时，不推荐红，也不推荐均价；
+       - 只剩红范围未锁时，不把红作为推荐下一步；
+       - 红件已锁但红格未知时，仍推荐 `优先补总格/全均格`。
+     - 桌面 v0.1.4 full 日志复算后，结算态 `下一步=信息已足够，观察出价`，`public_numeric_summary=金均价 26,730` 保留显示。
+     - Tk introspection：mini `440x397`，`下一步` 文本请求宽度 `116px`，没有撑开布局；`details_card/minimap_card` 在 mini 下仍隐藏。
+   - 已跑：
+     - `C:\Python313\python.exe -m pytest tests\test_live_overlay.py -q` -> `148 passed`；
+     - `C:\Python313\python.exe -m pytest tests\test_live_monitor.py tests\test_ahmad_ref_engine_public_info.py tests\test_activity_shadow_prior.py tests\test_basic_mc.py tests\test_build_processed_data.py -q` -> `112 passed`；
+   - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py src\bidking_lab\live\monitor.py` -> passed。
+
+32. 2026-06-11 发布包 hotfix：PowerShell 解析与 next-step 文案收口
+   - 群友反馈的 `Import-LocalTables.ps1` ParserError 已在包级处理：
+     - `build_hero_ref_portable.ps1` 现在会把打包后的所有 `*.ps1` 重写为 UTF-8 BOM；
+     - 当前 `BidKingHeroRef-v0.1.4-full.zip` 在 Windows PowerShell 5.1 下跑 `Import-LocalTables.ps1` 已不再报 ParserError，而是正常走到 `AppRoot not found` 的业务校验；
+     - 这说明问题是包内脚本编码兼容，不是脚本逻辑本身炸掉。
+   - UI 的“下一步”口径已继续收口：
+     - `tools\ahmad_tk_overlay.py` 里显示给用户看的下一步改为动作文本，不再直接把 `no_raw_packets` 这类内部状态码露出来；
+     - 内部诊断仍保留 `no_raw_packets`，用于 monitor / runtime status 排查。
+   - public-safe 边界复核：
+     - 当前解压后的 public-safe 包里，`data\raw\tables` 只有 `PUT_TABLES_HERE.txt` 占位，没有实际的 `BidMap.txt` / `Drop.txt` / `Item.txt`；
+     - 包内也没有回退到系统 Python 的引用。
+   - 当前 v0.1.4 三包哈希：
+     - full: `0cf21a1fb812a5b97241c7d80eeb7aafac07d0bf90e2950a59f140db1a93e44f`
+     - engineering: `f6e0a83cf86e884f3d5a56b5f9445bbe35ac455656d892be8b45209955806b78`
+     - public-safe: `6f53cc0e4353e0c8d91060241c3a44accd35d24419d9c369a231a51254233039`
+   - 这次更新不改主线 v3 promotion，继续只把 Hero Ref 当支线发布收口。
+
+33. 2026-06-11 recordings data2/data3 排查，不打包
+   - 用户明确要求：先做排查，暂时不打包。
+   - `C:\Users\shenc\Desktop\recordings\data2`：
+     - 本地日志显示 `capture_source_status.json` 为 `active_flows=2`、`raw_packets=0`、`accepted_frames=0`；
+     - `monitor.stderr.log` 为 `FileNotFoundError: [WinError 2]`，发生在 `pydivert.WinDivert(...).open`；
+     - 用户随后补截图，确认是防火墙 / 安全软件杀底层抓包，不再继续当协议问题深挖。
+   - 为了后续少猜，补了诊断小修：
+     - `scripts\run_windivert_live_monitor.py`：WinDivert `PermissionError` / `FileNotFoundError` / `OSError` 时写入 `capture_source_status.json` 的 `error_code`、`error_message`、`error_hint`；
+     - `tools\ahmad_tk_overlay.py`：如果 capture status 有 `error_code`，mini 显示“检查防火墙/安全软件”，证据行显示具体错误码，不再只表现为普通 `no_raw_packets`。
+   - `C:\Users\shenc\Desktop\recordings\data3-logsdeficit`：
+     - 有效日志为 `monitor.stdout (1).log`，连续归档 7 个 reset；
+     - 当前 `latest_snapshot.json` 是 `4401:1425860450521121`，`phase=settled`，`ui_contract.truth.available=true`，33 件 / 73 格 / `507630`，小地图 `settlement_inventory` 且 `layout_complete=true`；
+     - `raw\windivert_live.jsonl` 同 session 有 `0x002D`，与 latest 对齐；
+     - `raw\archive\reset` 中 7 个样本有 6 个带 `0x002D`，均复放为 `truth.available=true`；
+     - 唯一 partial：`windivert_live_2026-06-11_185557_4401_1425860449894597_reset.json`，没有 `0x002D`，只到 R2/R3 bidding，因此不能当结算 truth 异常样本。
+   - 两个旧导出 zip：
+     - `HeroRefDiag-20260611-171256-4402_1425860441516292.zip` 有结算帧；旧 latest 总值 `666861`，当前 v308 复放同一 raw 为 `1222416`，差值 `555555` 来自新增物品 `1036007` “退钱”手举牌旧表缺价格；结论是价格表 / 新物品版本漂移，不是 missing settlement block；
+     - `HeroRefDiag-20260611-171943-4410_1425860442951286.zip` 复放与 latest 对齐，32 件 / 75 格 / `370645`；hero 为 Gabriela，ref readiness `not_structured_hero`，settlement truth 完整。
+   - 样本索引已更新：`docs\hero_ref_settlement_sample_index_2026-06-11.zh-CN.md` 第 7 节。
+   - 已跑：
+     - `C:\Python313\python.exe -m pytest tests\test_windivert_live_monitor.py::test_write_source_status_records_windivert_open_error tests\test_live_overlay.py::test_ahmad_render_missing_surfaces_windivert_open_error tests\test_live_overlay.py::test_ahmad_render_missing_uses_action_text_for_next_step -q` -> `3 passed`；
+   - `C:\Python313\python.exe -m py_compile scripts\run_windivert_live_monitor.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py tests\test_windivert_live_monitor.py tests\test_live_overlay.py` -> passed。
+
+34. 2026-06-11 admin launcher bat 的中文行在 cmd 下解析异常
+   - 复现结论：
+     - `apps\hero_ref\管理员启动HeroRef_悬浮窗.bat` 和 `apps\hero_ref\管理员启动HeroRef_任务栏窗口.bat` 之前是 LF-only；
+     - 在 `cmd.exe` 里跑含中文 `echo` 的 LF-only 版本，会把命令读歪，出现 `not recognized` 的碎片错误；
+     - 同内容改成 CRLF 后，中文提示可以正常打印。
+   - 修复：
+     - 已将这两份 admin launcher 归一化为 CRLF，保留原有中文提示和 `call Start-HeroRef*.bat` 链路；
+     - `build_hero_ref_portable.ps1` 打包时也会把输出包内所有 `*.bat` 归一化为 UTF-8 无 BOM + CRLF；
+     - 纯 ASCII 的 `Start-HeroRef.bat` / `Start-HeroRef-Taskbar.bat` 不受影响。
+   - 验证：
+     - 用 stub `Start-HeroRef.bat` 进行隔离测试后，两个 admin launcher 都能正常输出中文提示，不再吐出 `cmd.exe` 的命令未识别错误。
+     - `tests\test_hero_ref_scripts_encoding.py` 新增非 ASCII bat 的 no-BOM / CRLF 检查；
+     - 已跑：`C:\Python313\python.exe -m pytest tests\test_hero_ref_scripts_encoding.py -q` -> `2 passed`；
+     - 已跑：PowerShell `scriptblock` parse check for `build_hero_ref_portable.ps1` -> `parse-ok`。
+
+35. 2026-06-11 v0.1.5 简化包入口与 next-info 顺序
+   - 用户反馈：
+     - 包根目录里可执行入口太多，对不熟悉电脑的群友容易造成选择困难；
+     - 继续保留中文 txt/md 操作说明，但最终包根目录的 bat 入口改成英文；
+     - `下一步` 文案希望更接近玩家可补信息顺序：白绿、蓝、紫、金、总格/均格，红相关不主动催用户补。
+   - next-info 修复：
+     - `_next_info_hint(ref_result)` 的优先级改为：
+       1. 缺总件 -> `先补总件`；
+       2. 白绿 / 蓝 count range 未锁 -> `优先补白绿/蓝件数或均格`；
+       3. 紫 / 金 count range 未锁 -> `补紫/金件数或均格`；
+       4. 以上都没有普通可补项时，再推荐 `优先补总格/全均格` 或 `补总格/全均格`；
+       5. 红不作为常规 next-step 推荐，仍保留手填/复盘/表格字段。
+     - 新增测试覆盖：金 count range 未锁且总格也缺时，优先推荐 `补金件数或均格`，不抢到总格，也不出现红。
+   - 包结构修复：
+     - 新增英文 wrapper：`Import-LocalTables.bat`、`Stop-HeroRef.bat`；
+     - `build_hero_ref_portable.ps1` 复制模板后会移除中文 bat：
+       - `管理员启动HeroRef_悬浮窗.bat`
+       - `管理员启动HeroRef_任务栏窗口.bat`
+       - `导入本机游戏表.bat`
+       - `停止HeroRef.bat`
+     - 最终包根目录只保留 4 个英文 bat：
+       - `Start-HeroRef.bat`
+       - `Start-HeroRef-Taskbar.bat`
+       - `Import-LocalTables.bat`
+       - `Stop-HeroRef.bat`
+     - 中文 `使用说明.txt`、`管理员运行说明.txt`、`火绒拦截说明.txt`、`VPN或UU备用启动.txt` 仍保留。
+   - 已构建：
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.5-full.zip`
+       - SHA256 `EDBB761CF7E1E7B5F83F33CA7336621FECDDA664BF3140C211953E3C000F886A`
+       - 包含 raw tables，仅本机/可信私发。
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.5-public-safe.zip`
+       - SHA256 `B8C0D5BCE1ABD611D4ABB4AD63E2ED01462AC6CF56866F392A8E3E2734CF4135`
+       - 不包含 raw tables，需先运行 `Import-LocalTables.bat`。
+     - release note：`external_references\ahmad_live_reference_lab\dist\RELEASE_NOTES_v0.1.5.zh-CN.md`。
+   - 验证：
+     - `C:\Python313\python.exe -m pytest tests\test_live_overlay.py -q` -> `151 passed`；
+     - `C:\Python313\python.exe -m pytest tests\test_hero_ref_scripts_encoding.py -q` -> `2 passed`；
+     - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py` -> passed；
+     - PowerShell parse check for `build_hero_ref_portable.ps1` -> `parse-ok`；
+     - v0.1.5 full/public-safe zip 内容检查：
+       - 根目录 bat 均为英文；
+       - 中文 bat 数量为 0；
+       - 4 个 bat 均为 UTF-8 no BOM + CRLF；
+       - full 包含 `BidMap.txt` / `Drop.txt` / `Item.txt`；
+       - public-safe 不包含上述 raw tables。
+     - `git diff --check` -> 无 whitespace error，仅 CRLF 提示。
+
+36. 2026-06-11 红品与价值候选对应、金均格 0 exact 展示修复（未打包）
+   - 用户反馈：
+     - mini 的“红品与价值”里，红件 / 红格候选不能独立升序展示；当金候选是 `2 / 3 / 4` 且金红总量为 6 时，红候选应按同一列互补显示为 `4 / 3 / 2`；
+     - 金均格为 0 时，engine 已能推 q5=0，但 mini/手填叠加显示仍可能像未锁定；
+     - 本次不改底部手填表的 `均格 / 件 / 格 / 均价 / 总价` 排布。
+   - 修复：
+     - `tools\ahmad_live_panel_server.py` 新增红品显示层 helper：
+       - 只有在能推出 exact `金+红` 件数 / 格数总量，且互补候选集合与 engine 的红候选集合一致时，才把红候选按金候选同列互补展示；
+       - 无法证明对应关系时保持原引擎候选，不硬猜；
+       - 已锁定范围压缩为单值展示，例如 `金件 0`、`红件 1`，不再显示 `0 / 0 / 0`。
+     - `tools\ahmad_tk_overlay.py`：
+       - 手填 `某品质均格=0` 且件 / 格无矛盾时，直接写入 `fixed_counts=0` 和 `quality_cells=0`；
+       - `0 均格 / 0 件 / 0 格` 在通用均格一致性校验里显式合法；
+       - 手动本地计算路径复用同一套红候选互补展示 helper。
+   - 验证：
+     - 新增测试覆盖：
+       - live summary 中 `avg_cells.q5=0` -> engine evidence `fixed_counts.q5=0`、q5 件/格 range 为 `[0,0,0]`，mini summary 显示 `金件 0`；
+       - 金候选 `2 / 3 / 4`、金红总件 exact 6 -> 红件显示 `4 / 3 / 2`；格数同理；
+       - 底部手填表的品质行和值行字段顺序保持不变。
+     - 已跑：
+       - `C:\Python313\python.exe -m pytest tests\test_live_overlay.py -q` -> `154 passed`；
+       - `C:\Python313\python.exe -m pytest tests\test_ahmad_ref_engine_public_info.py::test_ref_engine_victor_q4_q5_q6_count_sum_and_zero_gold_avg -q` -> `1 passed`；
+       - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py` -> passed；
+       - `git diff --check -- external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py tests\test_live_overlay.py` -> 无 whitespace error，仅 CRLF 提示。
+   - 状态：
+     - 本次只修当前工作区代码与测试，未重新打包。
+
+37. 2026-06-11 手填均格 0 的输入框联动（未打包）
+   - 用户确认：手填某品质 `均格=0` 时，希望同品质 `件` / `格` 空框也肉眼显示为 `0`，而不是只在计算层 exact。
+   - 修复：
+     - `tools\ahmad_tk_overlay.py` 的手填派生刷新中，若某品质 `均格=0` 且 `件` / `格` 都没有非 0 冲突，则自动把空的 `件`、`格` 输入框补成 `0`；
+     - 点击“应用并启用”解析时也做兜底补写，防止即时刷新未触发；
+     - 如果用户已经填了非 0 件或格，不自动覆盖，仍按原有 hard conflict 报错。
+   - 验证：
+     - 新增测试覆盖：
+       - 编辑 `金均格=0` 时，空的 `金件` / `金格` 自动显示 `0`；
+       - 已有 `金件=4` 时，不自动把 `金格` 补成 `0` 来掩盖冲突；
+       - 点击应用路径也会补写空框并输出 `fixed_counts.q5=0`、`quality_cells.q5=0`。
+     - 已跑：
+       - `C:\Python313\python.exe -m pytest tests\test_live_overlay.py -q` -> `157 passed`；
+       - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py` -> passed；
+       - `git diff --check -- external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py tests\test_live_overlay.py` -> 无 whitespace error，仅 CRLF 提示。
+   - 状态：
+     - 本次只修当前工作区代码与测试，未重新打包。
+
+38. 2026-06-11 红格候选物理配对与手填任意 0 联动（未打包）
+   - 用户反馈：
+     - mini “红品与价值”出现 `红件 3 / 1 / 0`、`红格 0 / 4 / 9`，第一列等价于 3 件红 0 格，不可能；
+     - 手填希望不只是 `均格=0` 触发联动，而是同一品质 `均格 / 件 / 格 / 均价 / 总价` 任意一个为 0，其他空框也自动变为 0，并且进入推理输入。
+   - 红格修复：
+     - `tools\ahmad_live_panel_server.py` 中，红件仍可按金件互补列显示；
+     - 红格不再独立按金格互补列展示，而是按红件显示列重排，并校验：
+       - 红件为 0 时红格必须为 0；
+       - 红件大于 0 时红格至少不小于件数；
+       - 无法形成物理合法配对时，不使用该互补展示。
+     - 新增测试覆盖截图同形态：原始红件 `0 / 1 / 3`、红格 `0 / 4 / 9`，金件互补后显示为红件 `3 / 1 / 0`、红格 `9 / 4 / 0`。
+   - 手填 0 联动修复：
+     - `tools\ahmad_tk_overlay.py` 中，同一品质任意一个字段为 0，且没有非 0 冲突时，空的 `均格 / 件 / 格 / 均价 / 总价` 都会自动补 0；
+     - 点击“应用并启用”时也兜底补写；
+     - 如果同时存在非 0 字段，直接 hard conflict，例如 `均价=0` 但 `件=3`；
+     - 应用后的 `structured_ref_inputs` 会带入 `fixed_counts=0`、`quality_cells=0`、`avg_cells=0`、`avg_values=0`、`quality_values=0`，引擎实际使用该信息。
+   - 验证：
+     - 已跑：
+       - `C:\Python313\python.exe -m pytest tests\test_live_overlay.py -q` -> `160 passed`；
+       - `C:\Python313\python.exe -m pytest tests\test_ahmad_ref_engine_public_info.py::test_ref_engine_zero_quality_avg_value_fixes_count_zero tests\test_ahmad_ref_engine_public_info.py::test_ref_engine_victor_q4_q5_q6_count_sum_and_zero_gold_avg -q` -> `2 passed`；
+       - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py` -> passed；
+       - `git diff --check -- external_references\ahmad_live_reference_lab\tools\ahmad_live_panel_server.py external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py tests\test_live_overlay.py` -> 无 whitespace error，仅 CRLF 提示。
+   - 状态：
+     - 本次只修当前工作区代码与测试，未重新打包。
+
+39. 2026-06-11 data4 无红局中途偏红排查与金总价 soft weight（未打包）
+   - 用户反馈：
+     - `C:\Users\shenc\Desktop\recordings\data4` 中有一局第五轮附近“没红，但计算器算成有红且约 73w”。
+   - 样本定位：
+     - 匹配“无红 + 73w 附近中途估价”的样本是：
+       - `C:\Users\shenc\Desktop\recordings\data4\data\logs\live\raw\archive\reset\windivert_live_2026-06-11_212612_2410_1425860462549881_reset.json`
+       - session `2410:1425860462549881`，map `2410`。
+     - `C:\Users\shenc\Desktop\recordings\data4\logs\live` 根目录里的最新 `4401:1425860450521121` 结算实际有 `q6=1 / 4格 / 266050`，不是这次“没红”反馈对应局。
+   - 根因：
+     - 结算解析本身正确：完整回放最终 truth 为 `q6 count=0 / cells=0 / value=0`。
+     - 问题出在结算前：中途已有 `total_count=50`、`q3 count=16`、`q1/q3/q4/q5 avg_cells`、`q5 value_sum=208230`，但没有 `q5 avg_value`；
+     - 旧逻辑只把 `q5 value_sum` 用作金总价展示/价值点，不参与金件数候选加权，因此允许 `q5=3 + q6=3` 的组合占优，形成 72w 左右偏红估价。
+   - 修复：
+     - `src\ahmad_ref_engine.py` 新增 `quality_value_soft_weight_v0`：
+       - 当某品质有 exact `quality_values`，但没有对应 `avg_values` 时，按当前候选的件数/格数估计该品质总价中心；
+       - 与 exact 总价偏离越大的候选软降权；
+       - 不做 hard lock，避免把异常高价金件/低价金件误判成矛盾；
+       - `avg_values` 已存在时仍走原有 exact 件数推导，`0` 语义仍走 existing zero absent 逻辑。
+   - 映射验证：
+     - raw prefix `SortID<=18`：
+       - 输入含 `q5 avg_cells=3.6666667461395264`、`q5 value_sum=208230`；
+       - 修复后 `q5 count=[6,6,6]`，`q6 count/cells/value=[0,0,0]`，balanced 约 `293258`。
+     - raw prefix `SortID<=23`：
+       - 修复后 `q5 count=[6,6,6]`，`q6 count/cells/value=[0,0,0]`，balanced 约 `293959`；
+       - `summarize_snapshot(...).ahmed_ref` 同步输出 `red_count_range/red_cells_range/red_value_range=[0,0,0]`。
+     - full settlement：
+       - truth 仍为 `q6 count=0 / cells=0 / value=0`，没有破坏结算复盘。
+   - 验证命令：
+     - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py tests\test_ahmad_ref_engine_public_info.py` -> passed；
+     - `C:\Python313\python.exe -m pytest tests\test_ahmad_ref_engine_public_info.py::test_ref_engine_quality_value_sum_soft_weights_count_without_avg_value tests\test_ahmad_ref_engine_public_info.py::test_ref_engine_quality_value_sum_and_avg_value_derive_count tests\test_ahmad_ref_engine_public_info.py::test_ref_engine_zero_quality_avg_value_fixes_count_zero -q` -> `3 passed`；
+     - `C:\Python313\python.exe -m pytest tests\test_ahmad_ref_engine_public_info.py -q` -> `54 passed`。
+   - 状态：
+     - 本次只修当前工作区代码与测试，未重新打包。

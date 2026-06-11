@@ -68,9 +68,9 @@ def _parse_category(value: str, map_id: int) -> int:
     text = str(value or "").strip()
     if text:
         return int(text)
-    if 2501 <= map_id <= 2520:
+    if 2501 <= map_id <= 2530:
         return 105
-    if 4501 <= map_id <= 4520:
+    if 4501 <= map_id <= 4530:
         return 305
     raise ValueError(f"missing category for map_id={map_id}")
 

@@ -320,6 +320,26 @@
     "model_name": "Cube"
   },
   {
+    "item_id": 107,
+    "name": "指定竞拍票",
+    "description": "指定竞拍票",
+    "name_key": "itemName_107",
+    "desc_key": "itemDesc_107",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 1,
+    "shape_w": 1,
+    "shape_h": 1,
+    "tags": [
+      2
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "icon_106",
+    "model_name": "Cube"
+  },
+  {
     "item_id": 301,
     "name": "高级通行证",
     "description": "高级通行证",
@@ -1613,6 +1633,66 @@
     "model_name": "Cube"
   },
   {
+    "item_id": 7014,
+    "name": "时光礼盒2期",
+    "description": "随机获得1个物品（极低概率获得称号）",
+    "name_key": "itemName_7014",
+    "desc_key": "itemDesc_7014",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "icon_box_7014",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 7015,
+    "name": "纪念礼盒2期",
+    "description": "随机获得1个物品（极低概率获得头像）",
+    "name_key": "itemName_7015",
+    "desc_key": "itemDesc_7015",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "icon_box_7015",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 7016,
+    "name": "珍藏礼盒2期",
+    "description": "随机获得1个物品（极低概率获得头像框）",
+    "name_key": "itemName_7016",
+    "desc_key": "itemDesc_7016",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "icon_box_7016",
+    "model_name": "Cube"
+  },
+  {
     "item_id": 7101,
     "name": "角色自选礼盒基础款",
     "description": "初始17个角色自选礼盒",
@@ -1773,6 +1853,26 @@
     "model_name": "Cube"
   },
   {
+    "item_id": 7109,
+    "name": "S1藏品自选",
+    "description": "S1藏品自选",
+    "name_key": "itemName_7109",
+    "desc_key": "itemDesc_7109",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      5
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "icon_box_s1",
+    "model_name": "Cube"
+  },
+  {
     "item_id": 7201,
     "name": "通行证1期礼盒",
     "description": "通行证1期-双蟾纳宝礼盒",
@@ -1809,7 +1909,7 @@
     "allowed_shelves": [
       0
     ],
-    "icon_name": "icon_box_7201",
+    "icon_name": "icon_box_7202",
     "model_name": "Cube"
   },
   {
@@ -5393,6 +5493,86 @@
     "model_name": "Cube"
   },
   {
+    "item_id": 120006,
+    "name": "青龙",
+    "description": "实际头像",
+    "name_key": "itemName_120006",
+    "desc_key": "itemDesc_120006",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      12
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "tx_120006",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 120007,
+    "name": "白虎",
+    "description": "实际头像",
+    "name_key": "itemName_120007",
+    "desc_key": "itemDesc_120007",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      12
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "tx_120007",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 120008,
+    "name": "朱雀",
+    "description": "实际头像",
+    "name_key": "itemName_120008",
+    "desc_key": "itemDesc_120008",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      12
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "tx_120008",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 120009,
+    "name": "玄武",
+    "description": "实际头像",
+    "name_key": "itemName_120009",
+    "desc_key": "itemDesc_120009",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      12
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "tx_120009",
+    "model_name": "Cube"
+  },
+  {
     "item_id": 120101,
     "name": "法蒂玛基础头像",
     "description": "实际头像",
@@ -8633,6 +8813,86 @@
     "model_name": "Cube"
   },
   {
+    "item_id": 140012,
+    "name": "似水柔情",
+    "description": "似水柔情",
+    "name_key": "itemName_140012",
+    "desc_key": "itemDesc_140012",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      17
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_12",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 140013,
+    "name": "风之轻语",
+    "description": "风之轻语",
+    "name_key": "itemName_140013",
+    "desc_key": "itemDesc_140013",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      17
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_13",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 140014,
+    "name": "火焰之舞",
+    "description": "火焰之舞",
+    "name_key": "itemName_140014",
+    "desc_key": "itemDesc_140014",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      17
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_14",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 140015,
+    "name": "大地守望",
+    "description": "大地守望",
+    "name_key": "itemName_140015",
+    "desc_key": "itemDesc_140015",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      17
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_15",
+    "model_name": "Cube"
+  },
+  {
     "item_id": 140701,
     "name": "索菲头像框",
     "description": "实际头像框",
@@ -8670,6 +8930,126 @@
       0
     ],
     "icon_name": "ui_avatarframe_140702",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 141001,
+    "name": "白银",
+    "description": "白银",
+    "name_key": "itemName_141001",
+    "desc_key": "itemDesc_141001",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      17
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_141001",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 141002,
+    "name": "黄金",
+    "description": "黄金",
+    "name_key": "itemName_141002",
+    "desc_key": "itemDesc_141002",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      17
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_141002",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 141003,
+    "name": "白金",
+    "description": "白金",
+    "name_key": "itemName_141003",
+    "desc_key": "itemDesc_141003",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      17
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_141003",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 141004,
+    "name": "钻石",
+    "description": "钻石",
+    "name_key": "itemName_141004",
+    "desc_key": "itemDesc_141004",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      17
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_141004",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 141005,
+    "name": "大师",
+    "description": "大师",
+    "name_key": "itemName_141005",
+    "desc_key": "itemDesc_141005",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      17
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_141005",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 141006,
+    "name": "王者",
+    "description": "王者",
+    "name_key": "itemName_141006",
+    "desc_key": "itemDesc_141006",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      17
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_141006",
     "model_name": "Cube"
   },
   {
@@ -9133,6 +9513,86 @@
     "model_name": "Cube"
   },
   {
+    "item_id": 150027,
+    "name": "君临天下",
+    "description": "称号：君临天下",
+    "name_key": "itemName_150027",
+    "desc_key": "itemDesc_150027",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      18
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_27",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 150028,
+    "name": "星穹旅者",
+    "description": "称号：星穹旅者",
+    "name_key": "itemName_150028",
+    "desc_key": "itemDesc_150028",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      18
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_28",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 150029,
+    "name": "幸运之星",
+    "description": "称号：幸运之星",
+    "name_key": "itemName_150029",
+    "desc_key": "itemDesc_150029",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      18
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_29",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 150030,
+    "name": "破局大师",
+    "description": "称号：破局大师",
+    "name_key": "itemName_150030",
+    "desc_key": "itemDesc_150030",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      18
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_30",
+    "model_name": "Cube"
+  },
+  {
     "item_id": 150101,
     "name": "法蒂玛",
     "description": "法蒂玛",
@@ -9530,6 +9990,46 @@
       0
     ],
     "icon_name": "hero_xq_301",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 151001,
+    "name": "S1大师",
+    "description": "称号：S1大师",
+    "name_key": "itemName_151001",
+    "desc_key": "itemDesc_151001",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      18
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_1001",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 151002,
+    "name": "S1王者",
+    "description": "称号：S1王者",
+    "name_key": "itemName_151002",
+    "desc_key": "itemDesc_151002",
+    "quality": 0,
+    "quality_color": "none",
+    "value": 0,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      18
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_1002",
     "model_name": "Cube"
   },
   {
@@ -9973,6 +10473,86 @@
     "model_name": "Cube"
   },
   {
+    "item_id": 220006,
+    "name": "青龙",
+    "description": "实际道具-开启后获得对应头像",
+    "name_key": "itemName_220006",
+    "desc_key": "itemDesc_220006",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "tx_120006",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 220007,
+    "name": "白虎",
+    "description": "实际道具-开启后获得对应头像",
+    "name_key": "itemName_220007",
+    "desc_key": "itemDesc_220007",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "tx_120007",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 220008,
+    "name": "朱雀",
+    "description": "实际道具-开启后获得对应头像",
+    "name_key": "itemName_220008",
+    "desc_key": "itemDesc_220008",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "tx_120008",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 220009,
+    "name": "玄武",
+    "description": "实际道具-开启后获得对应头像",
+    "name_key": "itemName_220009",
+    "desc_key": "itemDesc_220009",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "tx_120009",
+    "model_name": "Cube"
+  },
+  {
     "item_id": 240001,
     "name": "加冕时刻",
     "description": "实际道具，开启获得头像框",
@@ -10118,6 +10698,206 @@
     "description": "实际道具，开启获得头像框",
     "name_key": "itemName_240008",
     "desc_key": "itemDesc_240008",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_08",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 240012,
+    "name": "似水柔情",
+    "description": "实际道具，开启获得头像框",
+    "name_key": "itemName_240012",
+    "desc_key": "itemDesc_240012",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_12",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 240013,
+    "name": "风之轻语",
+    "description": "实际道具，开启获得头像框",
+    "name_key": "itemName_240013",
+    "desc_key": "itemDesc_240013",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_13",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 240014,
+    "name": "火焰之舞",
+    "description": "实际道具，开启获得头像框",
+    "name_key": "itemName_240014",
+    "desc_key": "itemDesc_240014",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_14",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 240015,
+    "name": "大地守望",
+    "description": "实际道具，开启获得头像框",
+    "name_key": "itemName_240015",
+    "desc_key": "itemDesc_240015",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_15",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 241001,
+    "name": "S1白银头像框",
+    "description": "实际道具，开启获得头像框",
+    "name_key": "itemName_241001",
+    "desc_key": "itemDesc_241001",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_08",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 241002,
+    "name": "S1黄金头像框",
+    "description": "实际道具，开启获得头像框",
+    "name_key": "itemName_241002",
+    "desc_key": "itemDesc_241002",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_08",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 241003,
+    "name": "S1白金头像框",
+    "description": "实际道具，开启获得头像框",
+    "name_key": "itemName_241003",
+    "desc_key": "itemDesc_241003",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_08",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 241004,
+    "name": "S1钻石头像框",
+    "description": "实际道具，开启获得头像框",
+    "name_key": "itemName_241004",
+    "desc_key": "itemDesc_241004",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_08",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 241005,
+    "name": "S1竞拍大师头像框",
+    "description": "实际道具，开启获得头像框",
+    "name_key": "itemName_241005",
+    "desc_key": "itemDesc_241005",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_avatarframe_08",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 241006,
+    "name": "S1竞争之王头像框",
+    "description": "实际道具，开启获得头像框",
+    "name_key": "itemName_241006",
+    "desc_key": "itemDesc_241006",
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
@@ -10418,6 +11198,126 @@
     "description": "实际道具，开启获得称号",
     "name_key": "itemName_250015",
     "desc_key": "itemDesc_250015",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_15",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 250027,
+    "name": "君临天下",
+    "description": "实际道具，开启获得称号",
+    "name_key": "itemName_250027",
+    "desc_key": "itemDesc_250027",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_27",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 250028,
+    "name": "星穹旅者",
+    "description": "实际道具，开启获得称号",
+    "name_key": "itemName_250028",
+    "desc_key": "itemDesc_250028",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_28",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 250029,
+    "name": "幸运之星",
+    "description": "实际道具，开启获得称号",
+    "name_key": "itemName_250029",
+    "desc_key": "itemDesc_250029",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_29",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 250030,
+    "name": "破局大师",
+    "description": "实际道具，开启获得称号",
+    "name_key": "itemName_250030",
+    "desc_key": "itemDesc_250030",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_30",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 251001,
+    "name": "S1竞拍大师称号",
+    "description": "开启获得S1竞拍大师称号",
+    "name_key": "itemName_251001",
+    "desc_key": "itemDesc_251001",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 10000,
+    "shape_w": 0,
+    "shape_h": 0,
+    "tags": [
+      4
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "ui_title_15",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 251002,
+    "name": "S1竞拍之王称号",
+    "description": "开启获得S1竞拍之王称号",
+    "name_key": "itemName_251002",
+    "desc_key": "itemDesc_251002",
     "quality": 6,
     "quality_color": "red",
     "value": 10000,
@@ -11836,6 +12736,27 @@
       0
     ],
     "icon_name": "icon_1016006",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 1016007,
+    "name": "决赛指定用球",
+    "description": "决赛指定比赛用球，独特拼接面板设计，内置智能芯片",
+    "name_key": "itemName_1016007",
+    "desc_key": "itemDesc_1016007",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 758000,
+    "shape_w": 2,
+    "shape_h": 2,
+    "tags": [
+      101,
+      107
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "icon_1016007",
     "model_name": "Cube"
   },
   {
@@ -14102,6 +15023,68 @@
       0
     ],
     "icon_name": "icon_1036005",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 1036006,
+    "name": "世界冠军奖杯",
+    "description": "精致工艺复刻奖杯，灵感源自经典竞技赛事的荣耀时刻。高纯度金属表面经精湛打磨与多层抛光，在光线下呈现细腻的质感与流动的光影。此藏品致敬卓越与荣耀的意义。",
+    "name_key": "itemName_1046010",
+    "desc_key": "itemDesc_1046010",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 7202026,
+    "shape_w": 2,
+    "shape_h": 3,
+    "tags": [
+      103
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "icon_1036006",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 1036007,
+    "name": "“退钱”手举牌",
+    "description": "退钱！！！！！",
+    "name_key": "itemName_1046011",
+    "desc_key": "itemDesc_1046011",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 555555,
+    "shape_w": 3,
+    "shape_h": 4,
+    "tags": [
+      103,
+      107
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "icon_1036007",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 1036008,
+    "name": "传奇球星签名球衣",
+    "description": "冠军杯球星退役战袍，附带亲笔手写信与编号证书，代表一个时代的终结与传承",
+    "name_key": "itemName_1046012",
+    "desc_key": "itemDesc_1046012",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 1225000,
+    "shape_w": 2,
+    "shape_h": 3,
+    "tags": [
+      103,
+      101
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "icon_1036008",
     "model_name": "Cube"
   },
   {
@@ -18977,6 +19960,26 @@
       0
     ],
     "icon_name": "icon_1076006",
+    "model_name": "Cube"
+  },
+  {
+    "item_id": 1076007,
+    "name": "土豆服务器",
+    "description": "竞拍之王官方服务器，师承育碧由土豆组成，经常出现黑客攻击和各类网络问题",
+    "name_key": "itemName_1076007",
+    "desc_key": "itemDesc_1076007",
+    "quality": 6,
+    "quality_color": "red",
+    "value": 990000,
+    "shape_w": 3,
+    "shape_h": 2,
+    "tags": [
+      107
+    ],
+    "allowed_shelves": [
+      0
+    ],
+    "icon_name": "icon_1076007",
     "model_name": "Cube"
   },
   {

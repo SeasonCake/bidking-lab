@@ -3,22 +3,21 @@ BidKing Hero Ref 使用说明
 1. 先打开游戏并进入可以对局的状态。
 
 2. 如果你下载的是 public-safe 包，第一次运行前先双击：
-   导入本机游戏表.bat
+   Import-LocalTables.bat
    然后选择 BidKing 游戏目录、BidKing_Data\StreamingAssets 目录，或 Tables 目录。
    如果是私用完整包，里面已经带表，可以跳过这一步。
 
 3. 启动 Hero Ref：
    默认悬浮窗：
-   管理员启动HeroRef_悬浮窗.bat
+   Start-HeroRef.bat
 
    需要任务栏窗口、Alt+Tab 或 Win+Tab 切换：
-   管理员启动HeroRef_任务栏窗口.bat
+   Start-HeroRef-Taskbar.bat
 
    双击启动会自动申请管理员权限；如果 Windows 没有弹出管理员授权或启动失败，先看：
    管理员运行说明.txt
 
    然后再右键对应启动文件，选择以管理员身份运行。
-   Start-HeroRef.bat 和 Start-HeroRef-Taskbar.bat 是等价英文入口。
 
 4. 正常情况下会自动启动两个程序：
    - BidKingHeroMonitor：后台抓包和解析
@@ -26,7 +25,7 @@ BidKing Hero Ref 使用说明
 
 5. 关闭前台 Hero Ref 小窗时，后台 monitor 会自动停止。
    如果需要强制关闭，运行：
-   停止HeroRef.bat
+   Stop-HeroRef.bat
 
 6. 普通用户不需要安装 Python、pydivert、psutil。
    本包已经内置 UI exe 和 monitor exe。

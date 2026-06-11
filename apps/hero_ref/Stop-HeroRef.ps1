@@ -1,4 +1,4 @@
-$ErrorActionPreference = "SilentlyContinue"
+﻿$ErrorActionPreference = "SilentlyContinue"
 
 $AppRoot = $PSScriptRoot
 $LogDir = Join-Path $AppRoot "data\logs\live"

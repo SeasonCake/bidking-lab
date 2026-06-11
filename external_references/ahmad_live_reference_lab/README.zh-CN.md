@@ -138,6 +138,7 @@ https://github.com/user-attachments/assets/b4ce74ee-69a5-422a-921b-c55deb82ae14
 ```
 
 该脚本等价于“后台 WinDivert monitor + 只打开 Hero Ref UI”，不会打开主线 v3 overlay。默认会自动请求管理员权限并重启旧 monitor/旧 Hero Ref；VPN/UU 场景可加 `-BroadSniff -IncludeLoopback`，需要任务栏窗口时可加 `-ShowTaskbar`。
+运行状态会写入 `data\logs\live\`：`capture_source_status.json` 记录 monitor 抓包状态，`hero_ref_ui_health.jsonl` 记录 UI 卡顿/worker 异常，`hero_ref_ui_runtime_status.json` 覆盖写最近一次 UI 刷新和 capture wait_state。异常、卡住或结算不对时，优先点 mini 常驻 `导出` 生成诊断 zip 发群里；即使没有 `latest_snapshot.json` 也能导出 `no_snapshot` 诊断包，并带上 `monitor.stdout.log` / `monitor.stderr.log` 辅助定位“UI 开着但 monitor 没活起来”。
 
 等价长命令：
 
@@ -159,7 +160,7 @@ Portable 应用包：
 .\external_references\ahmad_live_reference_lab\build_hero_ref_portable.ps1 -PythonPath C:\Python313\python.exe
 ```
 
-默认输出到 `external_references\ahmad_live_reference_lab\dist\BidKingHeroRefPortable`，其中包含 Hero Ref UI exe、WinDivert monitor exe、悬浮窗启动入口 `管理员启动HeroRef_悬浮窗.bat`、任务栏窗口启动入口 `管理员启动HeroRef_任务栏窗口.bat`、运行代码、processed JSON 和本机 raw tables。普通用户不需要安装 Python、`pydivert` 或 `psutil`；双击启动入口会自动申请管理员权限。该目录用于本机测试；公开传输前请先阅读包内 `TRUST_AND_SECURITY.zh-CN.md`，并谨慎处理 `data\raw\tables`、`data\logs`、样本和截图。若要生成不含 raw tables 的公开安全包，可加 `-PublicSafe`；用户第一次运行前执行包内 `导入本机游戏表.bat`，选择自己的 BidKing 游戏目录即可导入所需表文件。
+默认输出到 `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.4-full`，可用 `-Version 0.1.x` 覆盖版本号；公开安全包输出为 `BidKingHeroRef-v0.1.4-public-safe`。包名只保留版本号和包类型，脚本会拒绝带日期块或 dirty 标记的 `-Version` / `-OutputDir`。其中 full 包包含 Hero Ref UI exe、WinDivert monitor exe、悬浮窗启动入口 `Start-HeroRef.bat`、任务栏窗口启动入口 `Start-HeroRef-Taskbar.bat`、运行代码、processed JSON 和本机 raw tables。普通用户不需要安装 Python、`pydivert` 或 `psutil`；双击启动入口会自动申请管理员权限。该目录用于本机测试；公开传输前请先阅读包内 `TRUST_AND_SECURITY.zh-CN.md`，并谨慎处理 `data\raw\tables`、`data\logs`、样本和截图。若要生成不含 raw tables 的公开安全包，可加 `-PublicSafe`；用户第一次运行前执行包内 `Import-LocalTables.bat`，选择自己的 BidKing 游戏目录即可导入所需表文件。
 
 真实样本 smoke：
 

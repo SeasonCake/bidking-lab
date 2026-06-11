@@ -11,7 +11,14 @@ from bidking_lab.extract.item_table import Item
 from bidking_lab.simulation.basic_mc import flatten_pool, simulate_map
 
 
-def _make_item(item_id: int, value: int, quality: int = 3) -> Item:
+def _make_item(
+    item_id: int,
+    value: int,
+    quality: int = 3,
+    *,
+    shape_w: int = 1,
+    shape_h: int = 1,
+) -> Item:
     return Item(
         item_id=item_id,
         name=f"item_{item_id}",
@@ -21,7 +28,8 @@ def _make_item(item_id: int, value: int, quality: int = 3) -> Item:
         quality=quality,
         quality_color="blue",
         value=value,
-        shape_w=1, shape_h=1,
+        shape_w=shape_w,
+        shape_h=shape_h,
         tags=[],
         allowed_shelves=[],
         icon_name="",
@@ -81,6 +89,26 @@ def test_flatten_leaf_pool_basic() -> None:
     assert fp.probabilities[0] == pytest.approx(0.25)
     assert fp.probabilities[1] == pytest.approx(0.75)
     assert fp.values == [100, 200]
+
+
+def test_flatten_skips_non_physical_loot_items() -> None:
+    items = {
+        1: _make_item(1, value=100, quality=3),
+        2: _make_item(2, value=0, quality=0),
+        3: _make_item(3, value=200, quality=3, shape_w=0),
+    }
+    pool = _make_pool(
+        900,
+        [
+            (101, 1, 1, 1, 1),
+            (12, 2, 1, 1, 10),
+            (101, 3, 1, 1, 10),
+        ],
+    )
+    fp = flatten_pool(900, {900: pool}, items)
+    assert fp.item_ids == [1]
+    assert fp.probabilities == [pytest.approx(1.0)]
+    assert fp.values == [100]
 
 
 def test_flatten_resolves_pool_references() -> None:

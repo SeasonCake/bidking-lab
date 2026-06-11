@@ -830,6 +830,9 @@ def _write_source_status(
     ignored_reasons: Mapping[str, int] | None = None,
     ignored_samples: Iterable[Mapping[str, Any]] | None = None,
     active_session_id: str | None = None,
+    error_code: str | None = None,
+    error_message: str | None = None,
+    error_hint: str | None = None,
 ) -> None:
     path = log_dir / "capture_source_status.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -851,6 +854,12 @@ def _write_source_status(
         ],
         "active_session_id": active_session_id,
     }
+    if error_code:
+        payload["error_code"] = error_code
+    if error_message:
+        payload["error_message"] = error_message
+    if error_hint:
+        payload["error_hint"] = error_hint
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
@@ -1103,6 +1112,23 @@ def main() -> int:
         print("[stop] interrupted", flush=True)
     except PermissionError:
         elevated = _process_is_elevated()
+        _write_source_status(
+            log_dir,
+            process_name=args.process_name,
+            filter_text=filter_text,
+            active_flows=flow_index.active_flow_count(),
+            accepted_packets=accepted,
+            sniffed_packets=sniffed_packets,
+            raw_packets=raw_packets,
+            ignored_frames=frame_gate.ignored_frames,
+            dropped_bytes=frame_gate.dropped_bytes,
+            ignored_reasons=frame_gate.ignored_reasons_dict(),
+            ignored_samples=frame_gate.ignored_samples_dict(),
+            active_session_id=frame_gate.active_session_id,
+            error_code="windivert_permission_denied",
+            error_message="WinDivert open failed: permission denied",
+            error_hint="用管理员权限启动 Hero Ref；若已管理员仍失败，检查安全软件/驱动冲突后重启。",
+        )
         print(
             "[error] WinDivert capture requires an elevated PowerShell/admin process. "
             f"process_elevated={elevated}",
@@ -1115,6 +1141,54 @@ def main() -> int:
                 "disable other packet capture tools.",
                 file=sys.stderr,
             )
+        return 2
+    except FileNotFoundError as exc:
+        _write_source_status(
+            log_dir,
+            process_name=args.process_name,
+            filter_text=filter_text,
+            active_flows=flow_index.active_flow_count(),
+            accepted_packets=accepted,
+            sniffed_packets=sniffed_packets,
+            raw_packets=raw_packets,
+            ignored_frames=frame_gate.ignored_frames,
+            dropped_bytes=frame_gate.dropped_bytes,
+            ignored_reasons=frame_gate.ignored_reasons_dict(),
+            ignored_samples=frame_gate.ignored_samples_dict(),
+            active_session_id=frame_gate.active_session_id,
+            error_code="windivert_dependency_missing",
+            error_message=str(exc),
+            error_hint=(
+                "WinDivert64.dll/sys 未找到或被安全软件隔离；重新解压 full 包，"
+                "信任整个文件夹后用管理员入口启动。"
+            ),
+        )
+        print(
+            "[error] WinDivert dependency missing. Re-extract the full package "
+            "and trust the whole folder in security software.",
+            file=sys.stderr,
+        )
+        print(f"[error] {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        _write_source_status(
+            log_dir,
+            process_name=args.process_name,
+            filter_text=filter_text,
+            active_flows=flow_index.active_flow_count(),
+            accepted_packets=accepted,
+            sniffed_packets=sniffed_packets,
+            raw_packets=raw_packets,
+            ignored_frames=frame_gate.ignored_frames,
+            dropped_bytes=frame_gate.dropped_bytes,
+            ignored_reasons=frame_gate.ignored_reasons_dict(),
+            ignored_samples=frame_gate.ignored_samples_dict(),
+            active_session_id=frame_gate.active_session_id,
+            error_code="windivert_open_failed",
+            error_message=str(exc),
+            error_hint="WinDivert 打开失败；检查管理员权限、安全软件、驱动占用或重启后再试。",
+        )
+        print(f"[error] WinDivert open failed: {exc}", file=sys.stderr)
         return 2
     finally:
         monitor.stop()
