@@ -1773,3 +1773,26 @@
        - `C:\Python313\python.exe -m pytest tests\test_ahmad_ref_engine_public_info.py -q` -> `56 passed`。
    - 状态：
      - 本次只修当前工作区代码与测试，未重新打包。
+
+41. 2026-06-11 预打包轻量化审查与 taskbar 入口收口（未打包）
+   - 用户目标：
+     - 打包前先审查是否还有影响运行质量的常驻审计代码；
+     - 另一个窗口试做了 `Start-HeroRef-Taskbar.ps1`，但不希望临时分支改动污染当前发布包；
+     - 本轮仍暂时不打包。
+   - 运行轻量化：
+     - `tools\ahmad_tk_overlay.py` 的 `hero_ref_ui_runtime_status.json` 不再对同一 UI/capture 状态反复写盘；
+     - 相同状态 10 秒内去重，状态变化、capture 计数变化、worker/manual 状态变化和错误仍会即时覆盖写；
+     - `capture_source_status.json`、diagnostic export、UI health stall log 继续保留，因为它们仍是排查“UI 开着但 monitor 没刷新”的必要证据。
+   - taskbar 包边界：
+     - 正式 taskbar 能力已经由 `Start-HeroRef.ps1 -ShowTaskbar` 和 `Start-HeroRef-Taskbar.bat` 提供；
+     - `build_hero_ref_portable.ps1` 在输出包内移除临时 `Start-HeroRef-Taskbar.ps1`，并把包内 `Start-HeroRef-Taskbar.bat` 固定为调用 `Start-HeroRef.ps1 -ShowTaskbar`；
+     - `BUILD_MANIFEST.txt` 不再列 `LauncherTaskbarPowerShell`，避免群友看到多一层启动入口。
+   - 验证：
+     - `C:\Python313\python.exe -m pytest tests\test_live_overlay.py -q` -> `161 passed`；
+     - `C:\Python313\python.exe -m pytest tests\test_hero_ref_scripts_encoding.py -q` -> `2 passed`；
+     - `C:\Python313\python.exe -m py_compile external_references\ahmad_live_reference_lab\tools\ahmad_tk_overlay.py` -> passed；
+     - PowerShell parse check：`build_hero_ref_portable.ps1`、`Start-HeroRef.ps1`、`Import-LocalTables.ps1`、`Stop-HeroRef.ps1` -> passed；
+     - `git diff --check` -> 无 whitespace error，仅 CRLF 提示。
+   - 状态：
+     - 临时 `apps\hero_ref\Start-HeroRef-Taskbar.ps1` 已移出源码树，`apps\hero_ref\Start-HeroRef-Taskbar.bat` 已恢复为直接调用 `Start-HeroRef.ps1 -ShowTaskbar`；
+     - 当前剩余改动是本轮轻量化、包脚本防污染、测试和记录，提交后即可形成 clean checkpoint；本轮仍未重新打包。

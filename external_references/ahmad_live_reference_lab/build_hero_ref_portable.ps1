@@ -150,6 +150,18 @@ foreach ($Name in $ChineseBatchLaunchers) {
         Remove-Item -LiteralPath $ChineseBatchPath -Force
     }
 }
+$TaskbarHelperOut = Join-Path $OutputFull "Start-HeroRef-Taskbar.ps1"
+if (Test-Path -LiteralPath $TaskbarHelperOut) {
+    Remove-Item -LiteralPath $TaskbarHelperOut -Force
+}
+$TaskbarBatchOut = Join-Path $OutputFull "Start-HeroRef-Taskbar.bat"
+if (Test-Path -LiteralPath $TaskbarBatchOut) {
+@"
+@echo off
+setlocal
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start-HeroRef.ps1" -ShowTaskbar %*
+"@ | Set-Content -Path $TaskbarBatchOut -Encoding utf8
+}
 Get-ChildItem -Path $OutputFull -Recurse -File -Filter "*.bat" |
     ForEach-Object {
         Write-Utf8NoBomCrLfFile -Path $_.FullName

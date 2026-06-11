@@ -74,6 +74,7 @@ UI_HEALTH_LOG = "hero_ref_ui_health.jsonl"
 UI_RUNTIME_STATUS = "hero_ref_ui_runtime_status.json"
 UI_STALL_SECONDS = 5.0
 UI_STALL_LOG_INTERVAL_SECONDS = 5.0
+UI_RUNTIME_STATUS_REPEAT_INTERVAL_SECONDS = 10.0
 DIAGNOSTIC_PROFILES = ("engineering", "portable", "public-safe")
 DIAGNOSTIC_PROFILE_ALIASES = {
     "engineering": "engineering",
@@ -5236,6 +5237,32 @@ class AhmadTkOverlay:
             context = summary.get("context") if isinstance(summary.get("context"), dict) else {}
             reference = summary.get("reference") if isinstance(summary.get("reference"), dict) else {}
             age = self._snapshot_file_age_seconds()
+            summary_worker_running = bool(getattr(self, "_summary_worker_running", False))
+            manual_worker_running = bool(getattr(self, "_manual_worker_running", False))
+            manual_active = bool(getattr(self, "_manual_active", False))
+            manual_edit_enabled = bool(getattr(self, "_manual_edit_enabled", False))
+            status_key = (
+                event,
+                signature,
+                _capture_status_signature(capture_status or {}),
+                summary.get("status"),
+                context.get("session_id"),
+                context.get("phase"),
+                reference.get("source"),
+                summary_worker_running,
+                manual_worker_running,
+                manual_active,
+                manual_edit_enabled,
+                _text(error, ""),
+            )
+            now_monotonic = time.monotonic()
+            last_status_key = getattr(self, "_last_ui_runtime_status_key", None)
+            last_status_at = float(getattr(self, "_last_ui_runtime_status_at", 0.0))
+            if (
+                status_key == last_status_key
+                and now_monotonic - last_status_at < UI_RUNTIME_STATUS_REPEAT_INTERVAL_SECONDS
+            ):
+                return
             payload: dict[str, Any] = {
                 "logged_at": time.time(),
                 "event": event,
@@ -5251,10 +5278,10 @@ class AhmadTkOverlay:
                     "diagnostic_profile",
                     DEFAULT_DIAGNOSTIC_PROFILE,
                 ),
-                "summary_worker_running": bool(getattr(self, "_summary_worker_running", False)),
-                "manual_worker_running": bool(getattr(self, "_manual_worker_running", False)),
-                "manual_active": bool(getattr(self, "_manual_active", False)),
-                "manual_edit_enabled": bool(getattr(self, "_manual_edit_enabled", False)),
+                "summary_worker_running": summary_worker_running,
+                "manual_worker_running": manual_worker_running,
+                "manual_active": manual_active,
+                "manual_edit_enabled": manual_edit_enabled,
                 "last_summary": {
                     "status": summary.get("status"),
                     "hero": context.get("hero"),
@@ -5277,6 +5304,8 @@ class AhmadTkOverlay:
                 encoding="utf-8",
             )
             tmp.replace(status_path)
+            self._last_ui_runtime_status_key = status_key
+            self._last_ui_runtime_status_at = now_monotonic
         except Exception:
             return
 

@@ -326,6 +326,41 @@ def test_ahmad_export_diagnostic_tip_tells_users_to_send_zip_for_abnormal_cases(
     assert "log 排查" in text
 
 
+def test_ahmad_ui_runtime_status_dedupes_repeated_state(tmp_path: Path) -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.snapshot_path = tmp_path / "latest_snapshot.json"
+    overlay._last_signature = (1, 2)
+    overlay._last_summary = {
+        "status": "ok",
+        "context": {"session_id": "2401:test", "phase": "bidding"},
+        "reference": {"source": "ref_v0"},
+    }
+
+    overlay._record_ui_runtime_status(
+        "idle_no_change",
+        snapshot_signature=(1, 2),
+        capture_status={"source": "windivert", "raw_packets": 1},
+    )
+    status_path = tmp_path / module.UI_RUNTIME_STATUS
+    first = status_path.read_text(encoding="utf-8")
+
+    overlay._record_ui_runtime_status(
+        "idle_no_change",
+        snapshot_signature=(1, 2),
+        capture_status={"source": "windivert", "raw_packets": 1},
+    )
+    assert status_path.read_text(encoding="utf-8") == first
+
+    overlay._record_ui_runtime_status(
+        "idle_no_change",
+        snapshot_signature=(1, 2),
+        capture_status={"source": "windivert", "raw_packets": 2},
+    )
+    updated = json.loads(status_path.read_text(encoding="utf-8"))
+    assert updated["capture"]["raw_packets"] == 2
+
+
 def test_ahmad_export_diagnostic_package_collects_snapshot_raw_and_ui_log(tmp_path: Path) -> None:
     module = _ahmad_overlay_module()
     snapshot_path = tmp_path / "latest_snapshot.json"
