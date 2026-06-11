@@ -1796,3 +1796,29 @@
    - 状态：
      - 临时 `apps\hero_ref\Start-HeroRef-Taskbar.ps1` 已移出源码树，`apps\hero_ref\Start-HeroRef-Taskbar.bat` 已恢复为直接调用 `Start-HeroRef.ps1 -ShowTaskbar`；
      - 当前剩余改动是本轮轻量化、包脚本防污染、测试和记录，提交后即可形成 clean checkpoint；本轮仍未重新打包。
+
+42. 2026-06-11 v0.1.6 full/public-safe 包发布记录
+   - 代码 checkpoint：
+     - source commit：`8503625 Reduce Hero Ref runtime diagnostics churn`；
+     - build manifest：`DirtyWorktree=false`；
+     - `main` 已 push 到 `origin/main`。
+   - 产物：
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.6-full.zip`
+       - SHA256：`C8CFBABC8FB1F86B22B291984EB2E4FD85F6DE2F35475E7FDA0B81517F5EE445`
+       - bytes：`44113285`
+       - 包含 raw tables，仅适合本机测试或可信私发。
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.6-public-safe.zip`
+       - SHA256：`BF8798197019F17CE75DB7FE6BB67C224E7DB6E6FA4BFC6C9CFB138A82567CEC`
+       - bytes：`40336693`
+       - 不包含 raw tables，用户需先用 `Import-LocalTables.bat` 导入本机游戏表。
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.6-SHA256.txt`
+     - `external_references\ahmad_live_reference_lab\dist\RELEASE_NOTES_v0.1.6.zh-CN.md`
+   - clean unzip smoke：
+     - full/public-safe manifest 均为 `PackageVersion=v0.1.6`、`DirtyWorktree=false`、`RequiresExternalPython=False`；
+     - 根目录 bat 仅保留 `Start-HeroRef.bat`、`Start-HeroRef-Taskbar.bat`、`Import-LocalTables.bat`、`Stop-HeroRef.bat`；
+     - 未发现临时 `Start-HeroRef-Taskbar.ps1` 或 `LauncherTaskbarPowerShell`；
+     - `Start-HeroRef-Taskbar.bat` 明确调用 `Start-HeroRef.ps1 -ShowTaskbar`；
+     - 包内 `Start-HeroRef.ps1`、`Import-LocalTables.ps1`、`Stop-HeroRef.ps1` PowerShell parse 通过；
+     - full 包含 `BidMap.txt` / `Drop.txt` / `Item.txt` / `Language.txt`，public-safe 只保留 `PUT_TABLES_HERE.txt`；
+     - `data\logs\live` 存在；
+     - UI exe `--help` 输出正常，monitor exe `--help` exit 0。
