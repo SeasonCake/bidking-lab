@@ -3826,6 +3826,45 @@ def test_ahmad_quality_uncertainty_summary_shows_locked_counts() -> None:
     assert "金4" not in summary
 
 
+def test_ahmad_quality_uncertainty_summary_shows_locked_count_and_cells() -> None:
+    module = _ahmad_server_module()
+    summary = module._quality_uncertainty_summary(  # type: ignore[attr-defined]
+        {
+            "quality_count_ranges": {
+                "q1": [10, 10, 10],
+                "q3": [13, 13, 13],
+            },
+            "quality_cells_ranges": {
+                "q1": [27, 27, 27],
+                "q3": [18, 18, 18],
+            },
+        }
+    )
+
+    assert summary == "已锁 白绿10/27 蓝13/18"
+
+
+def test_ahmad_quality_uncertainty_summary_uses_evidence_cells_when_range_open() -> None:
+    module = _ahmad_server_module()
+    summary = module._quality_uncertainty_summary(  # type: ignore[attr-defined]
+        {
+            "quality_count_ranges": {
+                "q1": [10, 10, 10],
+                "q3": [13, 13, 13],
+            },
+            "quality_cells_ranges": {
+                "q1": [20, 30, 30],
+            },
+            "evidence": {
+                "quality_cells": {"q1": 27, "q3": 18},
+            },
+        }
+    )
+
+    assert "白绿10/27" in summary
+    assert "蓝13/18" in summary
+
+
 def test_ahmad_manual_field_layout_preserves_input_contract() -> None:
     module = _ahmad_overlay_module()
     base_keys = [key for key, _label, _default in module.MANUAL_BASE_FIELDS]  # type: ignore[attr-defined]

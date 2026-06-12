@@ -8,9 +8,9 @@
 
 当前目标不是替换主线 v3，也不是改正式出价，而是先做一条可快速验证的外援计算器路线：
 
-- 主要参考 `external_references/AuctionAnalyzer4.13.3` 的组合枚举、均格可达性、价格区间与三档建议；
-- 原作者/参考来源：B站猫饭团子uu `https://space.bilibili.com/1981353429`；
-- 本支线 UI 修改与计算优化：B站加菲_barista `https://space.bilibili.com/88048665`；
+- 主要参考 bidking-lab 自研 Hero Ref 组合枚举、均格可达性、价格区间与三档建议；
+- 协作：lemyes；
+- Hero Ref 引擎与 UI：bidking-lab 自研（历史外援文档仅作对照，非运行时依赖）；
 - 可局部吸收 bidking-lab 已验证的实时 packet 输入通道和归档流程；
 - 默认放弃 OCR 作为主入口，实时输入优先来自现有 live/Fatbeans packet 输出；
 - OCR 只保留为第三级高级/人工补录入口，不参与默认实时推荐；

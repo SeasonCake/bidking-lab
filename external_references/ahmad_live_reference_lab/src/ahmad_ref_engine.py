@@ -99,8 +99,9 @@ DEFAULT_GRID_MEANS = {
 }
 TOTAL_GRID_FROM_HIGH_TIER_CELLS_NOTE = "total_grid_target_from_known_high_tier_cells"
 HIGH_TIER_CELL_KEYS = ("q3", "q4", "q5")
-# v0 estimate for items not yet assigned to q5/q6 when q3–q5 cells are already known.
+# v0 fallback when tier avg_cells does not cover residual items.
 RESIDUAL_ITEM_CELL_ESTIMATE = 4.0
+RESIDUAL_AVG_CELLS_NOTE = "total_grid_target_residual_avg_cells_estimate"
 HARD_TOTAL_GRID_SOURCE_NOTES = frozenset(
     {
         "structured_ref_bridge_total_cells",
@@ -578,6 +579,26 @@ def _estimated_tier_grid_cells(
     return int(count)
 
 
+def _residual_per_item_cell_estimate(
+    *,
+    fixed_counts: dict[str, int],
+    avg_cells: dict[str, float],
+    source_notes: list[str],
+) -> float:
+    """Prefer mean tier avg_cells on unfixed qualities; fall back to v0 constant."""
+    unfixed_keys = [key for key in QUALITY_KEYS if fixed_counts.get(key) is None]
+    signals = [
+        float(avg_cells[key])
+        for key in unfixed_keys
+        if key in avg_cells and float(avg_cells[key]) > 0
+    ]
+    if not signals:
+        return RESIDUAL_ITEM_CELL_ESTIMATE
+    estimate = sum(signals) / len(signals)
+    _append_source_note_once(source_notes, RESIDUAL_AVG_CELLS_NOTE)
+    return estimate
+
+
 def _apply_total_grid_target_from_known_high_tier_cells(
     *,
     total_count: int | None,
@@ -627,7 +648,12 @@ def _apply_total_grid_target_from_known_high_tier_cells(
                 return total_grid_target
             inferred += tier_cells
     else:
-        inferred = known_cells_total + int(round(residual_items * RESIDUAL_ITEM_CELL_ESTIMATE))
+        per_item = _residual_per_item_cell_estimate(
+            fixed_counts=fixed_counts,
+            avg_cells=avg_cells,
+            source_notes=source_notes,
+        )
+        inferred = known_cells_total + int(round(residual_items * per_item))
 
     max_plausible = int(total_count) * 18
     inferred = max(known_cells_total + max(0, residual_items), min(inferred, max_plausible))

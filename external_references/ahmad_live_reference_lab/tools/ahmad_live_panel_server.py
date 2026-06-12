@@ -196,6 +196,27 @@ def _floored_range_values(value: Any, floor: int | None) -> list[Any]:
     return out
 
 
+def _locked_low_quality_tier_text(
+    key: str,
+    count_locked: int,
+    *,
+    cells_ranges: dict[str, Any] | None,
+    evidence: dict[str, Any],
+) -> str:
+    """Compact locked tier readout: count, or count/cells when grid is also known."""
+    label = QUALITY_LABELS.get(key, key)
+    cells_locked = None
+    if isinstance(cells_ranges, dict):
+        cells_locked = _locked_range_value(cells_ranges.get(key))
+    if cells_locked is None:
+        quality_cells = evidence.get("quality_cells")
+        if isinstance(quality_cells, dict):
+            cells_locked = _parse_int(quality_cells.get(key))
+    if cells_locked is not None:
+        return f"{label}{count_locked}/{cells_locked}"
+    return f"{label}{count_locked}"
+
+
 def _quality_uncertainty_summary(
     ref_result: dict[str, Any],
     *,
@@ -207,6 +228,9 @@ def _quality_uncertainty_summary(
         return "-"
     evidence = ref_result.get("evidence") if isinstance(ref_result.get("evidence"), dict) else {}
     min_counts = evidence.get("min_counts") if isinstance(evidence.get("min_counts"), dict) else {}
+    cells_ranges = ref_result.get("quality_cells_ranges")
+    if not isinstance(cells_ranges, dict):
+        cells_ranges = {}
     unlocked: list[str] = []
     locked: list[str] = []
     for key in display_order:
@@ -224,7 +248,14 @@ def _quality_uncertainty_summary(
         if locked_value is None:
             unlocked.append(f"{label}{text}")
         else:
-            locked.append(f"{label}{locked_value}")
+            locked.append(
+                _locked_low_quality_tier_text(
+                    key,
+                    locked_value,
+                    cells_ranges=cells_ranges,
+                    evidence=evidence,
+                )
+            )
     if unlocked:
         suffix = f" 等{len(unlocked)}项" if len(unlocked) > 3 else ""
         return "未锁 " + " ".join(unlocked[:3]) + suffix
@@ -2176,7 +2207,7 @@ INDEX_HTML = r"""<!doctype html>
       </div>
     </div>
     <footer>
-      <span>原作：猫饭团子uu · UI/计算优化：加菲_barista · <a href="https://github.com/SeasonCake/bidking-lab" target="_blank" rel="noreferrer">GitHub</a> · 不接正式出价。</span>
+      <span>协作：lemyes · Hero Ref 自研引擎 · <a href="https://github.com/SeasonCake/bidking-lab" target="_blank" rel="noreferrer">GitHub</a> · 不接正式出价。</span>
       <span><code id="path"></code></span>
     </footer>
   </div>

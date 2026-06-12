@@ -53,6 +53,6 @@
 
 ## 边界
 
-Hero Ref 是实战参考工具，不保证收益，不直接接正式出价。UI 参考 B站猫饭团子uu 外援计算器思路，本支线 UI 修改与计算优化：B站加菲_barista。
+Hero Ref 是实战参考工具，不保证收益，不直接接正式出价。协作 lemyes；Hero Ref 引擎与 UI 为 bidking-lab 自研。
 
 项目链接：<https://github.com/SeasonCake/bidking-lab>

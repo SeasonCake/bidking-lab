@@ -14,6 +14,8 @@ if str(AHMAD_SRC) not in sys.path:
     sys.path.insert(0, str(AHMAD_SRC))
 
 from ahmad_ref_engine import (  # noqa: E402
+    RESIDUAL_AVG_CELLS_NOTE,
+    TOTAL_GRID_FROM_HIGH_TIER_CELLS_NOTE,
     _avg_count_from_cells,
     _avg_grid_options,
     _fit_grids_to_total_target,
@@ -2652,6 +2654,25 @@ def test_ref_engine_avg_value_only_q5_count_derivation_is_unique() -> None:
 
     assert result["evidence"]["fixed_counts"].get("q5") == 8
     assert "avg_value_only_q5_count_derived" in result["notes"]
+
+
+def test_ref_engine_total_grid_target_residual_uses_unfixed_avg_cells() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="aisha",
+            map_id=2501,
+            structured_ref_inputs={
+                "total_count": 20,
+                "fixed_counts": {"q3": 5, "q4": 4, "q5": 2},
+                "quality_cells": {"q3": 12, "q4": 10},
+                "avg_cells": {"q1": 2.0, "q6": 3.0},
+            },
+        )
+    )
+
+    assert evidence.total_grid_target == 44.0
+    assert RESIDUAL_AVG_CELLS_NOTE in evidence.source_notes
+    assert TOTAL_GRID_FROM_HIGH_TIER_CELLS_NOTE in evidence.source_notes
 
 
 AISHA_0052_SAMPLE = (

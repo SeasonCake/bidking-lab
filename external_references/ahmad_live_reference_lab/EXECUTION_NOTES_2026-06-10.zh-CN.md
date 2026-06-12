@@ -2475,6 +2475,10 @@
      - pytest 门禁 = **已 hit 不回归** + **单条代表路径**（0052 / 合成负例）；**不要求** 14/14 band
      - 禁止：在 14 条上扫 `RESIDUAL_ITEM_CELL_ESTIMATE`、high-tier 档数阈值等；下一引擎改动需 **语义规则 + synthetic**
 
+   - **批 B #2 残差均格（2026-06-13）**
+     - 已知 high-tier cells + 残差件：优先 unfixed tier `avg_cells` 均值估计残差格；无信号才 `RESIDUAL_ITEM_CELL_ESTIMATE=4.0`
+     - note：`total_grid_target_residual_avg_cells_estimate`；synthetic 单测 + 7 条 no-regress 仍绿
+
    - **验证**
      ```powershell
      python scripts/audit_aisha_gap.py

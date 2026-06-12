@@ -85,7 +85,7 @@ except Exception:  # noqa: BLE001 - keep overlay usable if ref core is unavailab
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SNAPSHOT = ROOT / "data" / "logs" / "live" / "latest_snapshot.json"
-CREDIT_TEXT = "原作: 猫饭团子uu · UI/计算引擎优化: 加菲_barista"
+CREDIT_TEXT = "协作: lemyes · Hero Ref 自研"
 CREDIT_GITHUB_URL = "https://github.com/SeasonCake/bidking-lab"
 GITHUB_TIP_TEXT = "如果觉得不错，就给一个免费的 Star 吧！"
 DETAIL_TIP_TEXT = "展开 / 收起详情、小地图和手动填写区"
@@ -3934,7 +3934,16 @@ class AhmadTkOverlay:
 
     def _set_label(self, widget: tk.Label, value: Any, *, limit: int = 30) -> None:
         text = _text(value)
-        widget.configure(text=_short(text, limit), height=1)
+        display = _short(text, limit)
+        widget.configure(text=display, height=1)
+        tip = getattr(widget, "_hover_tip", None)
+        if text and text != display:
+            if tip is None:
+                widget._hover_tip = HoverTip(widget, text)  # type: ignore[attr-defined]
+            else:
+                tip.set_text(text)
+        elif tip is not None:
+            tip.set_text("")
 
     def _set_summary_label(
         self,
@@ -6494,7 +6503,7 @@ class AhmadTkOverlay:
         self._set_label(
             self.red_rows["低品件"],
             red.get("uncertainty_summary") or red.get("risk_reference") or reference.get("risk_band"),
-            limit=32,
+            limit=38,
         )
         self._set_label(self.action_rows["动作"], reference.get("action"), limit=18)
         self._set_label(self.action_rows["最高"], self._settlement_display_value(data, reference.get("current_highest")), limit=20)
