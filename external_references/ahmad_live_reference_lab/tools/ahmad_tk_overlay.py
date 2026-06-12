@@ -1685,13 +1685,31 @@ def _slim_scrollbar(parent: tk.Widget, *, command: Any, hide_when_full: bool = T
     return SlimScrollbar(parent, command=command, hide_when_full=hide_when_full)
 
 
-def _cleanup_exit_targets(pids: tuple[int, ...], lock_paths: tuple[Path, ...]) -> None:
+def _monitor_lock_path(snapshot_path: Path) -> Path:
+    return snapshot_path.parent / "monitor.lock"
+
+
+def _pid_from_monitor_lock(lock_path: Path) -> int | None:
+    payload = _read_json(lock_path)
+    try:
+        pid = int(payload.get("pid"))
+    except (TypeError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _cleanup_exit_targets(
+    pids: tuple[int, ...] | list[int],
+    lock_paths: tuple[Path, ...] | list[Path],
+    *,
+    terminate_fn: Any = _terminate_pid,
+) -> None:
     seen: set[int] = set()
     for pid in pids:
         if pid in seen:
             continue
         seen.add(pid)
-        _terminate_pid(int(pid))
+        terminate_fn(int(pid))
     for lock_path in lock_paths:
         try:
             lock_path.unlink(missing_ok=True)
@@ -1763,6 +1781,7 @@ class AhmadTkOverlay:
         exit_when_pids: tuple[int, ...] = (),
         stop_pids_on_exit: tuple[int, ...] = (),
         cleanup_lock_paths: tuple[Path, ...] = (),
+        keep_monitor_on_close: bool = False,
         load_existing_snapshot: bool = False,
         diagnostic_profile: str = DEFAULT_DIAGNOSTIC_PROFILE,
         show_taskbar: bool = False,
@@ -1775,6 +1794,7 @@ class AhmadTkOverlay:
         self.exit_when_pids = exit_when_pids
         self._stop_pids_on_exit = tuple(pid for pid in stop_pids_on_exit if pid > 0)
         self._cleanup_lock_paths = tuple(cleanup_lock_paths)
+        self.keep_monitor_on_close = bool(keep_monitor_on_close)
         self._exit_cleanup_done = False
         self._last_ui_heartbeat_at = time.monotonic()
         self._last_ui_stall_bucket = 0
@@ -2550,7 +2570,17 @@ class AhmadTkOverlay:
         if self._exit_cleanup_done:
             return
         self._exit_cleanup_done = True
-        _cleanup_exit_targets(self._stop_pids_on_exit, self._cleanup_lock_paths)
+        if getattr(self, "keep_monitor_on_close", False):
+            return
+        pids = list(getattr(self, "_stop_pids_on_exit", ()))
+        lock_paths = list(getattr(self, "_cleanup_lock_paths", ()))
+        monitor_lock = _monitor_lock_path(self.snapshot_path)
+        fallback_pid = _pid_from_monitor_lock(monitor_lock)
+        if fallback_pid and fallback_pid not in pids:
+            pids.append(fallback_pid)
+        if monitor_lock not in lock_paths:
+            lock_paths.append(monitor_lock)
+        _cleanup_exit_targets(tuple(pids), tuple(lock_paths))
 
     def _scroll_detail_minimap(self, event: tk.Event[Any]) -> str:
         delta = -1 if event.delta > 0 else 1
@@ -5600,6 +5630,7 @@ class AhmadTkOverlay:
             if self.exit_when_pids and _watched_pid_exited(self.exit_when_pids):
                 should_reschedule = False
                 self._record_ui_runtime_status("watched_monitor_exit")
+                self._run_exit_cleanup()
                 self.root.destroy()
                 return
             signature = self._snapshot_signature()
@@ -5937,6 +5968,11 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="Close Hero Ref when this monitor PID exits.",
     )
+    parser.add_argument(
+        "--keep-monitor-on-close",
+        action="store_true",
+        help="Leave the live monitor running when Hero Ref exits.",
+    )
     args = parser.parse_args(argv)
 
     root = tk.Tk()
@@ -5947,6 +5983,7 @@ def main(argv: list[str] | None = None) -> int:
         exit_when_pids=tuple(args.exit_when_pid_exits),
         stop_pids_on_exit=tuple(args.stop_pid_on_exit),
         cleanup_lock_paths=tuple(args.cleanup_lock_on_exit),
+        keep_monitor_on_close=bool(args.keep_monitor_on_close),
         load_existing_snapshot=bool(args.load_existing),
         diagnostic_profile=args.diagnostic_profile,
         show_taskbar=bool(args.show_taskbar),

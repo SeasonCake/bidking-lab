@@ -6387,8 +6387,10 @@ def test_ahmad_overlay_user_close_runs_exit_cleanup_once(monkeypatch, tmp_path: 
     )
     overlay = object.__new__(module.AhmadTkOverlay)
     lock_path = tmp_path / "monitor.lock"
+    overlay.snapshot_path = tmp_path / "latest_snapshot.json"
     overlay._stop_pids_on_exit = (123,)
     overlay._cleanup_lock_paths = (lock_path,)
+    overlay.keep_monitor_on_close = False
     overlay._exit_cleanup_done = False
     overlay._hide_minimap_popup = lambda: None
     overlay._hide_pinned_minimap = lambda: None
@@ -6399,3 +6401,121 @@ def test_ahmad_overlay_user_close_runs_exit_cleanup_once(monkeypatch, tmp_path: 
 
     assert cleanup_calls == [((123,), (lock_path,))]
     assert destroyed == [True]
+
+
+def test_ahmad_cleanup_exit_targets_terminates_unique_pids_and_removes_locks(
+    tmp_path: Path,
+) -> None:
+    module = _ahmad_overlay_module()
+    lock_path = tmp_path / "monitor.lock"
+    lock_path.write_text('{"pid": 123}', encoding="utf-8")
+    terminated: list[int] = []
+
+    module._cleanup_exit_targets(
+        [123, 123, 456],
+        [lock_path],
+        terminate_fn=terminated.append,
+    )
+
+    assert terminated == [123, 456]
+    assert not lock_path.exists()
+
+
+def test_ahmad_run_exit_cleanup_falls_back_to_monitor_lock(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _ahmad_overlay_module()
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    snapshot_path.write_text("{}", encoding="utf-8")
+    lock_path = snapshot_path.parent / "monitor.lock"
+    lock_path.write_text('{"pid": 4321}', encoding="utf-8")
+    cleanup_calls: list[tuple[tuple[int, ...], tuple[Path, ...]]] = []
+    monkeypatch.setattr(
+        module,
+        "_cleanup_exit_targets",
+        lambda pids, lock_paths, **kwargs: cleanup_calls.append(
+            (tuple(pids), tuple(lock_paths))
+        ),
+    )
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.snapshot_path = snapshot_path
+    overlay._stop_pids_on_exit = ()
+    overlay._cleanup_lock_paths = ()
+    overlay.keep_monitor_on_close = False
+    overlay._exit_cleanup_done = False
+
+    module.AhmadTkOverlay._run_exit_cleanup(overlay)
+
+    assert cleanup_calls == [((4321,), (lock_path,))]
+
+
+def test_ahmad_run_exit_cleanup_skips_when_keep_monitor_on_close(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _ahmad_overlay_module()
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    snapshot_path.write_text("{}", encoding="utf-8")
+    lock_path = snapshot_path.parent / "monitor.lock"
+    lock_path.write_text('{"pid": 4321}', encoding="utf-8")
+    cleanup_calls: list[tuple[tuple[int, ...], tuple[Path, ...]]] = []
+    monkeypatch.setattr(
+        module,
+        "_cleanup_exit_targets",
+        lambda pids, lock_paths, **kwargs: cleanup_calls.append(
+            (tuple(pids), tuple(lock_paths))
+        ),
+    )
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.snapshot_path = snapshot_path
+    overlay._stop_pids_on_exit = ()
+    overlay._cleanup_lock_paths = ()
+    overlay.keep_monitor_on_close = True
+    overlay._exit_cleanup_done = False
+
+    module.AhmadTkOverlay._run_exit_cleanup(overlay)
+
+    assert cleanup_calls == []
+    assert lock_path.exists()
+
+
+def test_ahmad_refresh_runs_exit_cleanup_on_watched_pid_exit(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _ahmad_overlay_module()
+    cleanup_calls: list[bool] = []
+
+    class Root:
+        def __init__(self) -> None:
+            self.destroyed = False
+            self.after_calls: list[tuple[int, object]] = []
+
+        def destroy(self) -> None:
+            self.destroyed = True
+
+        def after(self, interval: int, callback: object) -> None:
+            self.after_calls.append((interval, callback))
+
+    monkeypatch.setattr(module, "_watched_pid_exited", lambda _pids: True)
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.root = Root()
+    overlay.interval_ms = 1000
+    overlay.exit_when_pids = (123,)
+    overlay._exit_cleanup_done = False
+    overlay.keep_monitor_on_close = False
+    overlay._stop_pids_on_exit = ()
+    overlay._cleanup_lock_paths = ()
+    overlay.snapshot_path = tmp_path / "latest_snapshot.json"
+    overlay.diagnostic_profile = "portable"
+    overlay._last_ui_heartbeat_at = time.monotonic()
+    overlay._last_ui_stall_bucket = 0
+    overlay._run_exit_cleanup = lambda: cleanup_calls.append(True)
+
+    module.AhmadTkOverlay.refresh(overlay)
+
+    assert cleanup_calls == [True]
+    assert overlay.root.destroyed is True

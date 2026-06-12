@@ -309,6 +309,9 @@ $HeroArgs = @(
 if ($ShowTaskbar) {
     $HeroArgs += "--show-taskbar"
 }
+if ($KeepMonitorOnClose) {
+    $HeroArgs += "--keep-monitor-on-close"
+}
 if ($MonitorPid -and -not $KeepMonitorOnClose -and -not $MonitorLaunchFailed) {
     $HeroArgs += @(
         "--stop-pid-on-exit", "$MonitorPid",

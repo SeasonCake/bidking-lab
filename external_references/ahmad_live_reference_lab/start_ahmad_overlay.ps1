@@ -78,6 +78,9 @@ if ($LoadExisting) {
 if ($ShowTaskbar) {
     $OverlayArgs += "--show-taskbar"
 }
+if ($KeepMonitorOnClose) {
+    $OverlayArgs += "--keep-monitor-on-close"
+}
 
 function Get-MonitorLockPayload {
     param([string]$Path)
