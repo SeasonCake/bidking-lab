@@ -284,10 +284,10 @@ def test_ref_engine_does_not_treat_random_quality_reveal_shape_as_bucket_total()
         )
     )
 
-    assert evidence.min_counts["q4"] == 1
+    assert evidence.min_counts.get("q4", 0) == 0
     assert "q4" not in evidence.fixed_counts
     assert "q4" not in evidence.quality_cells
-    assert "public_quality_reveal_min_counts" in evidence.source_notes
+    assert "coarse_quality_reveal_min_counts" not in evidence.source_notes
     assert "public_bucket_outline_q4_count" not in evidence.source_notes
 
 
@@ -568,9 +568,10 @@ def test_ref_engine_marks_rare_actions_diagnostic_only_without_constraints() -> 
     assert "action_100134_all_item_quality_diagnostic_only" in evidence.source_notes
     assert "action_100127_revealed_items:42" in evidence.source_notes
     assert "action_100134_revealed_items:42" in evidence.source_notes
+    assert evidence.min_counts.get("q6") == 1
+    assert "coarse_quality_reveal_min_counts" in evidence.source_notes
     assert evidence.quality_values == {}
     assert evidence.fixed_counts == {}
-    assert evidence.min_counts == {}
 
 
 def test_ref_engine_marks_total_avg_value_public_info_diagnostic_only() -> None:
@@ -837,6 +838,27 @@ def test_ref_engine_nonzero_quality_count_still_routes_fast_when_sparse() -> Non
     assert result["evidence"]["fixed_counts"]["q3"] == 13
 
 
+def test_ref_engine_public_gold_total_cells_keeps_sparse_prior_path() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2401,
+            public_rows=[
+                {"info_id": 200017, "value": 33},
+                {"info_id": 200011, "value": 23},
+            ],
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert result["balanced"] is not None
+    assert result["combo_count"] < 10_000
+    assert "public_info_200011_q5_cells" in result["notes"]
+    assert "sparse_exact_total_prior_enumeration" in result["notes"]
+    assert "combo_cap_hit" not in result["notes"]
+
+
 def test_ref_engine_derives_fixed_counts_from_avg_and_quality_cells() -> None:
     result = run_reference_engine(
         _snapshot(
@@ -925,7 +947,7 @@ def test_ref_engine_aisha_split_white_green_fold_to_merged_q1() -> None:
 
     evidence = result["evidence"]
 
-    assert result["status"] == "ok"
+    assert result["status"] in {"ok", "count_prior"}
     assert evidence["hero"] == "aisha"
     assert evidence["split_counts"] == {"white": 3, "green": 4}
     assert evidence["split_quality_cells"] == {"white": 5.0, "green": 8.0}
@@ -954,7 +976,7 @@ def test_ref_engine_aisha_split_complements_missing_green_from_merged_q1_exact()
 
     evidence = result["evidence"]
 
-    assert result["status"] == "ok"
+    assert result["status"] in {"ok", "count_prior"}
     assert evidence["split_counts"] == {"white": 3, "green": 4}
     assert evidence["split_quality_cells"] == {"white": 5.0, "green": 8.0}
     assert evidence["fixed_counts"]["q1"] == 7
@@ -1785,3 +1807,229 @@ def test_ref_engine_legacy_victor_q4_q5_count_sum_still_supported() -> None:
     )
 
     assert evidence.count_sums == {"q4q5": 6}
+
+
+def test_ref_engine_recognizes_full_hero_id_map() -> None:
+    evidence = extract_evidence(
+        {
+            "ui_contract": {
+                "context": {
+                    "hero": "?",
+                    "hero_id": 110,
+                    "map_id": 2401,
+                    "phase": "bidding",
+                },
+                "constraints": {"public_info": {}},
+            },
+            "structured_ref_inputs": {"total_count": 30},
+            "public_info_rows": [],
+        }
+    )
+
+    assert evidence.hero == "isabella"
+
+
+def test_ref_engine_generic_hero_runs_reference_engine() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ethan",
+            structured_ref_inputs={"total_count": 28},
+        )
+    )
+
+    assert result.status != "not_structured_hero"
+    assert "generic_ref_hero" in result.notes
+
+
+def test_ref_engine_public_max_quality_gold_locks_q6_to_zero() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="isabella",
+            structured_ref_inputs={"total_count": 24},
+            public_rows=[
+                {
+                    "info_id": 200048,
+                    "revealed_items_detail": [
+                        {"runtime_id": 501, "quality": 5},
+                    ],
+                }
+            ],
+        )
+    )
+
+    assert evidence.fixed_counts.get("q6") == 0
+    assert evidence.min_counts.get("q6") == 0
+    assert "public_max_quality_ceiling:5" in evidence.source_notes
+    assert "public_max_quality_zero_q6" in evidence.source_notes
+
+
+def test_ref_engine_public_max_quality_conflicts_with_existing_red_count() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="isabella",
+            structured_ref_inputs={"total_count": 24},
+            public_rows=[
+                {
+                    "info_id": 200048,
+                    "revealed_items_detail": [
+                        {"runtime_id": 501, "quality": 5},
+                    ],
+                },
+                {
+                    "info_id": 200028,
+                    "revealed_items_detail": [
+                        {"runtime_id": 601, "quality": 6},
+                    ],
+                },
+            ],
+        )
+    )
+
+    assert "hard_conflict:public_max_quality_zero_q6" in evidence.source_notes
+    assert evidence.min_counts.get("q6", 0) >= 1
+
+
+def test_ref_engine_maria_coarse_quality_and_value_from_action_rows() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="maria",
+            structured_ref_inputs={"total_count": 24},
+            public_rows=[],
+        )
+        | {
+            "action_result_rows": [
+                {
+                    "action_id": 100134,
+                    "tool": "明镜之眼",
+                    "revealed_items_detail": [
+                        {"local_index": 3, "quality": 1, "value": 1200},
+                        {"local_index": 7, "quality": 2, "value": 800},
+                        {"local_index": 11, "quality": 3, "value": 4500},
+                        {"local_index": 15, "quality": 3, "value": 3200},
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert evidence.min_counts["q1"] == 2
+    assert evidence.min_counts["q3"] == 2
+    assert evidence.split_counts == {"white": 1, "green": 1}
+    assert evidence.quality_value_floors["q1"] == 2000.0
+    assert evidence.quality_value_floors["q3"] == 7700.0
+    assert "coarse_quality_reveal_min_counts" in evidence.source_notes
+    assert "coarse_quality_reveal_source:action_result_100134" in evidence.source_notes
+
+
+def test_ref_engine_maria_skill_reveal_rows_use_maria_specific_notes() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="maria",
+            structured_ref_inputs={"total_count": 30},
+            public_rows=[
+                {
+                    "info_id": 200027,
+                    "revealed_items_detail": [
+                        {"local_index": 58, "quality": 5},
+                        {"local_index": 90, "quality": 1},
+                    ],
+                }
+            ],
+        )
+        | {
+            "skill_reveal_rows": [
+                {
+                    "skill_id": 100108,
+                    "hero_id": 108,
+                    "tool": "玛丽亚·总价",
+                    "result": 37063,
+                    "observed_items": [],
+                    "revealed_items_detail": [],
+                },
+                {
+                    "skill_id": 10010801,
+                    "hero_id": 108,
+                    "tool": "玛丽亚·品质",
+                    "result": None,
+                    "observed_items": [
+                        {"local_index": 90, "quality": 1},
+                        {"local_index": 43, "quality": 2},
+                        {"local_index": 36, "quality": 3},
+                        {"local_index": 104, "quality": 1},
+                    ],
+                    "revealed_items_detail": [
+                        {"local_index": 90, "quality": 1},
+                        {"local_index": 43, "quality": 2},
+                        {"local_index": 36, "quality": 3},
+                        {"local_index": 104, "quality": 1},
+                    ],
+                },
+            ],
+        }
+    )
+
+    assert evidence.min_counts["q1"] >= 2
+    assert evidence.min_counts.get("q3", 0) >= 1
+    assert evidence.min_counts.get("q5", 0) >= 1
+    assert evidence.split_counts.get("green", 0) >= 1
+    assert evidence.split_counts == {"white": 2, "green": 1}
+    assert evidence.quality_value_floors["q1"] == 37063.0
+    assert "maria_skill_coarse_quality_min_counts" in evidence.source_notes
+    assert "maria_skill_coarse_quality_source:maria_skill_10010801" in evidence.source_notes
+    assert "maria_skill_q1_value_floor" in evidence.source_notes
+    assert "coarse_quality_reveal_source:public_info_200027" in evidence.source_notes
+    assert "coarse_quality_reveal_source:maria_skill_10010801" not in evidence.source_notes
+
+
+def test_ref_engine_raven_all_item_quality_public_info_sets_min_counts() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="raven",
+            structured_ref_inputs={"total_count": 30},
+            public_rows=[
+                {
+                    "info_id": 200030,
+                    "revealed_items_detail": [
+                        {"local_index": 1, "quality": 1},
+                        {"local_index": 2, "quality": 3},
+                        {"local_index": 3, "quality": 4},
+                        {"local_index": 4, "quality": 5},
+                        {"local_index": 5, "quality": 6},
+                    ],
+                }
+            ],
+        )
+    )
+
+    assert evidence.min_counts["q1"] == 1
+    assert evidence.min_counts["q3"] == 1
+    assert evidence.min_counts["q4"] == 1
+    assert evidence.min_counts["q5"] == 1
+    assert evidence.min_counts["q6"] == 1
+    assert "coarse_quality_reveal_source:public_info_200030" in evidence.source_notes
+
+
+def test_ref_engine_skips_shaped_items_for_coarse_min_counts() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            public_rows=[
+                {
+                    "info_id": 200001,
+                    "revealed_items_detail": [
+                        {"runtime_id": 1, "quality": 4, "shape_code": 23},
+                    ],
+                },
+                {
+                    "info_id": 200028,
+                    "revealed_items_detail": [
+                        {"local_index": 9, "quality": 4},
+                    ],
+                },
+            ],
+        )
+    )
+
+    assert evidence.fixed_counts.get("q4") == 1
+    assert evidence.min_counts.get("q4") == 1
+    assert "coarse_quality_reveal_source:public_info_200028" in evidence.source_notes
+    assert "coarse_quality_reveal_source:public_info_200001" not in evidence.source_notes

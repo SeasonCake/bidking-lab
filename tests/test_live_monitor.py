@@ -18,6 +18,7 @@ from bidking_lab.live.fatbeans import (
     FatbeansPlayerBid,
     FatbeansPublicInfo,
     FatbeansSendEvent,
+    FatbeansSkillReveal,
     FatbeansStateEvent,
 )
 from bidking_lab.live.monitor import (
@@ -695,6 +696,60 @@ def test_public_info_rows_include_revealed_item_details() -> None:
     assert rows[0]["revealed_items_detail"][0]["local_index"] == 42
     assert rows[0]["revealed_items_detail"][0]["quality"] == 4
     assert rows[0]["revealed_summary"] == "Q4x1 / pos 42"
+
+
+def test_skill_reveal_rows_include_maria_skill_payload() -> None:
+    rows = monitor_module._skill_reveal_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=1,
+                    capture_time="2026-06-12 19:37:36.488",
+                    message_id=0x0021,
+                    session_id="2406:1",
+                    map_id=2406,
+                    round_index=1,
+                    skill_reveals=(
+                        FatbeansSkillReveal(
+                            skill_id=100108,
+                            hero_id=108,
+                            round_index=1,
+                            result=37063,
+                            result_field=12,
+                        ),
+                        FatbeansSkillReveal(
+                            skill_id=10010801,
+                            hero_id=108,
+                            round_index=1,
+                            observed_items=(
+                                FatbeansObservedItem(
+                                    local_index=36,
+                                    runtime_id=501,
+                                    item_id=None,
+                                    quality=3,
+                                    value=None,
+                                    shape_code=None,
+                                    cells=None,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        {},
+    )
+
+    assert len(rows) == 2
+    by_skill = {int(row["skill_id"]): row for row in rows}
+    assert by_skill[100108]["result"] == 37063
+    assert by_skill[100108]["tool"] == "玛丽亚·总价"
+    assert by_skill[10010801]["tool"] == "玛丽亚·品质"
+    assert by_skill[10010801]["revealed_items_detail"][0]["quality"] == 3
 
 
 def test_public_info_rows_attach_item_names_to_revealed_details() -> None:

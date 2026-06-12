@@ -166,3 +166,38 @@
   - session：`4410:1425860442951286`
   - raw 有 `0x002D`，latest 与当前复放均为 32 件 / 75 格 / `370645`；
   - hero 为 Gabriela，不是 Hero Ref structured hero，ref readiness 为 `not_structured_hero`，但 settlement truth 本身完整。
+
+## 8. 2026-06-12 Desktop recordings 金均格 / SEND-no-REV 审计
+
+### 8.1 扫描范围
+
+- 路径：`C:\Users\shenc\Desktop\recordings\data\logs\live\raw\archive\reset`
+- 方法：125 个 reset JSON 复放 monitor artifact 构建逻辑，统计 bidding、action sends、public numeric、inferred_zero。
+
+### 8.2 摘要
+
+| 项 | 数量 |
+|---|---|
+| reset 总数 | 125 |
+| 含 bidding phase | 4 |
+| `100113`（金均格）或 `100114`（红均格）SEND | 0 |
+| 仅见其他 avg skill（如 `100110` 白绿均格） | 是 |
+| 显式 gold-zero（`200011/200015=0`、`100113 result=0`、inferred_zero@100113） | 0 |
+
+### 8.3 机制（与 §6 互补）
+
+- 用户反馈：界面「金均格 = 0」常对应 **SEND `100113` 无 REV `0x0027`**，不是正常 result packet。
+- `monitor._action_result_rows` 的 inferred_zero 需要同 session **后续 state**（`sort_id > send`）；仅 SEND 或尚无 later state 时不写入 zero evidence。
+- 因此 recordings 批量结果与「金均格未进 evidence、count prior 仍允许 1 金 → UI 金件 0/1/1」一致，**不能**用该批数据直接验收「zero 已进 engine 仍显示错」。
+
+### 8.4 仍有效的时序样本
+
+- §6 中 `HeroRefDiag-20260611-133716` / `hero_ref_ui_summary.jsonl` 行：仅有 `100110` 等，无 `100113` / inferred_zero。
+- Settlement truth 例：`2309:1425860477317545` — `q5=[0,0,0]` 来自 `final_q5_count=0`，非金均格观测。
+
+### 8.5 仍缺样本
+
+- 同 session：`100113` SEND →（无 REV 或 REV=0）→ 有 later state → UI 仍非零。
+- 或：手动填金均格/金件 0 + 「应用并启用」后仍与 live 冲突。
+
+详细分批修复计划：`EXECUTION_NOTES_2026-06-10.zh-CN.md` §54；checkpoint handoff：`handoff_2026-06-12.zh-CN.md`。

@@ -44,11 +44,38 @@ from ahmad_live_panel_server import (  # noqa: E402
 
 try:
     from ahmad_ref_engine import (  # noqa: E402
+        HERO_ALIASES,
+        SUPPORTED_REF_HERO_KEYS,
         can_compose_grid_total,
+        is_supported_ref_hero,
         load_reference_static_data,
+        normalize_hero_key,
         run_reference_engine,
     )
 except Exception:  # noqa: BLE001 - keep overlay usable if ref core is unavailable
+    HERO_ALIASES = {
+        "aisha": "aisha",
+        "艾莎": "aisha",
+        "ahmad": "ahmed",
+        "ahmed": "ahmed",
+        "ahamed": "ahmed",
+        "艾哈": "ahmed",
+        "艾哈迈德": "ahmed",
+        "victor": "victor",
+        "维克": "victor",
+        "维克托": "victor",
+    }
+    SUPPORTED_REF_HERO_KEYS = frozenset({"aisha", "ahmed", "victor"})
+
+    def normalize_hero_key(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        return HERO_ALIASES.get(text.lower(), HERO_ALIASES.get(text, text.lower()))
+
+    def is_supported_ref_hero(value: Any) -> bool:
+        return normalize_hero_key(value) in SUPPORTED_REF_HERO_KEYS
+
     can_compose_grid_total = None  # type: ignore[assignment]
     load_reference_static_data = None  # type: ignore[assignment]
     run_reference_engine = None  # type: ignore[assignment]
@@ -135,18 +162,6 @@ SPLIT_QUALITY_LABELS = {
     "green": "绿",
 }
 SPLIT_QUALITY_INPUT_KEYS = ("white", "green")
-HERO_ALIASES = {
-    "aisha": "aisha",
-    "艾莎": "aisha",
-    "ahmad": "ahmed",
-    "ahmed": "ahmed",
-    "ahamed": "ahmed",
-    "艾哈": "ahmed",
-    "艾哈迈德": "ahmed",
-    "victor": "victor",
-    "维克": "victor",
-    "维克托": "victor",
-}
 MANUAL_GENERIC_MAP_ALIASES = {
     "快递": 2101,
     "仓库": 2201,
@@ -1083,16 +1098,12 @@ def _manual_value_sum_matches_avg(avg: float, *, count: int, value_sum: float) -
 
 
 def _normalize_manual_hero(value: Any) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    return HERO_ALIASES.get(text.lower(), HERO_ALIASES.get(text, text))
+    return normalize_hero_key(value)
 
 
 def _supported_manual_hero_display(*values: Any) -> Any:
     for value in values:
-        normalized = _normalize_manual_hero(value)
-        if normalized in {"aisha", "ahmed", "victor"}:
+        if is_supported_ref_hero(value):
             return value
     return None
 
@@ -3588,7 +3599,7 @@ class AhmadTkOverlay:
             values = self._manual_values_from_summary(data)
             fallback: dict[str, Any] = {}
             hero = _normalize_manual_hero(values.get("hero"))
-            if hero in {"aisha", "ahmed", "victor"}:
+            if is_supported_ref_hero(hero):
                 fallback["hero"] = hero
             map_id = _to_optional_int(values.get("map_id"))
             if map_id is not None:
@@ -4389,7 +4400,7 @@ class AhmadTkOverlay:
             "updated_at_text": time.strftime("%H:%M:%S"),
             "context": {
                 "hero": hero,
-                "is_supported_ref_hero": hero in {"aisha", "ahmed", "victor"},
+                "is_supported_ref_hero": is_supported_ref_hero(hero),
                 "map_id": map_id,
                 "map_name": map_name or None,
                 "round": "手动",

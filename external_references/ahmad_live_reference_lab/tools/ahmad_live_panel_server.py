@@ -36,9 +36,44 @@ SPLIT_QUALITY_LABELS = {
 SPLIT_QUALITY_DISPLAY_ORDER = ("white", "green")
 
 try:
-    from ahmad_ref_engine import run_reference_engine
+    from ahmad_ref_engine import (
+        HERO_ALIASES,
+        HERO_BY_ID,
+        STRUCTURED_REF_HERO_KEYS,
+        is_supported_ref_hero,
+        normalize_hero_key,
+        run_reference_engine,
+    )
 except Exception:  # noqa: BLE001 - keep debug server usable without ref core
-    run_reference_engine = None  # type: ignore[assignment]
+    HERO_ALIASES = {
+        "aisha": "aisha",
+        "艾莎": "aisha",
+        "ahmad": "ahmed",
+        "ahmed": "ahmed",
+        "ahamed": "ahmed",
+        "艾哈": "ahmed",
+        "艾哈迈德": "ahmed",
+        "victor": "victor",
+        "维克": "victor",
+        "维克托": "victor",
+    }
+    HERO_BY_ID = {
+        103: "aisha",
+        204: "ahmed",
+        209: "victor",
+    }
+    STRUCTURED_REF_HERO_KEYS = frozenset({"aisha", "ahmed", "victor"})
+
+    def normalize_hero_key(hero: Any) -> str:
+        text = _text(hero, "").strip()
+        if not text or text.lower() in {"?", "unknown", "none", "null"}:
+            return ""
+        return HERO_ALIASES.get(text.lower(), HERO_ALIASES.get(text, text.lower()))
+
+    def is_supported_ref_hero(hero: Any) -> bool:
+        return normalize_hero_key(hero) in set(HERO_BY_ID.values())
+
+    run_reference_engine = None  # type: ignore[assignment,misc]
 
 
 def _dig(value: Any, *path: str, default: Any = None) -> Any:
@@ -477,17 +512,11 @@ def _parse_int(value: Any) -> int | None:
         return None
 
 
-HERO_BY_ID = {
-    103: "aisha",
-    204: "ahmed",
-    209: "victor",
-}
-
-
 def _hero_from_context(hero: Any, *hero_id_candidates: Any) -> str:
     text = _text(hero, "").strip()
     if text and text.lower() not in {"?", "unknown", "none", "null"}:
-        return text
+        normalized = normalize_hero_key(text)
+        return normalized or text
     for candidate in hero_id_candidates:
         hero_id = _parse_int(candidate)
         if hero_id in HERO_BY_ID:
@@ -1302,16 +1331,8 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         evidence_hero = _hero_from_context(ref_evidence.get("hero"))
         if not _is_unknown_hero(evidence_hero):
             hero = evidence_hero
-    hero_key = hero.lower()
-    is_supported_ref_hero = hero_key in {
-        "aisha",
-        "艾莎",
-        "ahmed",
-        "ahmad",
-        "艾哈迈德",
-        "victor",
-        "维克托",
-    }
+    hero_key = normalize_hero_key(hero)
+    is_supported = is_supported_ref_hero(hero)
 
     info_band = _text(
         public_info.get("information_density_band")
@@ -1337,8 +1358,10 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
                 "; ".join(replay_detail_parts),
             )
         )
-    if not is_supported_ref_hero:
-        flags.append(_flag("等待结构英雄", "neutral", f"当前英雄 {hero}"))
+    if not is_supported:
+        flags.append(_flag("未识别英雄", "neutral", f"当前英雄 {hero}"))
+    elif hero_key not in STRUCTURED_REF_HERO_KEYS:
+        flags.append(_flag("通用 Ref", "neutral", f"当前英雄 {hero_key or hero}"))
     if phase == "settled":
         flags.append(_flag("已结算", "neutral"))
     if _text(context.get("map_alias_mode") or source.get("map_alias_mode")):
@@ -1356,7 +1379,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     ref_combo_cap_hit = "combo_cap_hit" in ref_notes
     ref_count_sums = ref_evidence.get("count_sums") if isinstance(ref_evidence.get("count_sums"), dict) else {}
     victor_missing_q456 = (
-        hero_key in {"victor", "维克托"}
+        hero_key == "victor"
         and phase != "settled"
         and "q4q5q6" not in ref_count_sums
         and "q4q5" not in ref_count_sums
@@ -1394,7 +1417,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         else None
     )
     ref_status = _text(ref_result.get("status"), "")
-    if is_supported_ref_hero and ref_status == "missing_total_count":
+    if is_supported and ref_status == "missing_total_count":
         flags.append(_flag("缺总件数", "watch"))
         flags.append(_flag("等待外援输入", "neutral"))
     if victor_missing_q456:
@@ -1409,7 +1432,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         flags.append(_flag("回放口径", "watch", "ref_v0 used settlement review fields"))
     if ref_ok:
         flags.append(_flag("外援 ref_v0", "neutral"))
-    elif is_supported_ref_hero:
+    elif is_supported:
         flags.append(_flag("外援未就绪", "watch", _text(ref_result.get("status"))))
     public_numeric_summary = _text(public_info.get("public_numeric_summary"), "").strip()
     if public_numeric_summary:
@@ -1687,8 +1710,8 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         ),
         "context": {
             "hero": hero,
-            "is_ahmed": hero_key in {"ahmed", "ahmad", "艾哈迈德"},
-            "is_supported_ref_hero": is_supported_ref_hero,
+            "is_ahmed": hero_key == "ahmed",
+            "is_supported_ref_hero": is_supported,
             "map_id": context.get("map_id") or snapshot.get("map_id"),
             "model_map_id": context.get("model_map_id") or source.get("model_map_id"),
             "round": context.get("round") or snapshot.get("round"),

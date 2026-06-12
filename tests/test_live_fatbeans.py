@@ -1615,6 +1615,67 @@ def test_victor_numeric_skill_reveal_updates_q4_q5_q6_count_sum() -> None:
     assert updates[("bucket_group", "q4q5q6", "count")] == 8
 
 
+def test_maria_skill_updates_value_sum_and_quality_markers() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=1,
+                capture_time="",
+                message_id=0x0021,
+                session_id="s1",
+                map_id=2406,
+                round_index=1,
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=100108,
+                        hero_id=108,
+                        round_index=1,
+                        result=37063,
+                        result_field=12,
+                    ),
+                    FatbeansSkillReveal(
+                        skill_id=10010801,
+                        hero_id=108,
+                        round_index=1,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=36,
+                                runtime_id=501,
+                                item_id=None,
+                                quality=3,
+                                value=None,
+                                shape_code=None,
+                                cells=None,
+                            ),
+                            FatbeansObservedItem(
+                                local_index=90,
+                                runtime_id=502,
+                                item_id=None,
+                                quality=1,
+                                value=None,
+                                shape_code=None,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+    updates = {update.path: update.value for update in batch.field_updates}
+
+    assert updates[("session", "hero")] == "maria"
+    assert updates[("bucket", "1", "value_sum")] == 37063
+    assert len(batch.grid_items) == 2
+    assert {item.quality for item in batch.grid_items} == {1, 3}
+
+
 def test_single_category_hero_skill_reveal_sets_category_evidence() -> None:
     events = FatbeansCaptureEvents(
         packets=(),

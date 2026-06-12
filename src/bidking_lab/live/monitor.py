@@ -3895,6 +3895,74 @@ def _public_info_rows(
     )
 
 
+def _skill_reveal_label(skill_id: int, hero_id: int | None) -> str:
+    if hero_id == 108:
+        if skill_id == 10010801:
+            return "玛丽亚·品质"
+        if skill_id in {100108, 10010802, 10010803}:
+            return "玛丽亚·总价"
+    return f"技能 {skill_id}"
+
+
+def _skill_reveal_rows(
+    events: FatbeansCaptureEvents,
+    items: Mapping[int, Item],
+    *,
+    session_id: str | None = None,
+) -> list[dict[str, Any]]:
+    item_names = _item_names(items)
+    latest_by_skill: dict[tuple[int, int | None], dict[str, Any]] = {}
+
+    def session_matches(candidate: str | None) -> bool:
+        return session_id is None or candidate is None or candidate == session_id
+
+    for state in events.states:
+        if not session_matches(state.session_id):
+            continue
+        if state.message_id == 0x002D or state.inventory_items:
+            continue
+        for reveal in state.skill_reveals:
+            skill_id = int(reveal.skill_id)
+            hero_id = reveal.hero_id
+            key = (skill_id, hero_id)
+            detail = _observed_items_detail(reveal.observed_items, item_names)
+            latest_by_skill[key] = {
+                "sort": state.sort_id,
+                "time": state.capture_time,
+                "skill_id": skill_id,
+                "hero_id": hero_id,
+                "tool": _skill_reveal_label(skill_id, hero_id),
+                "result": reveal.result,
+                "result_field": reveal.result_field,
+                "revealed_items": len(reveal.observed_items),
+                "revealed_items_detail": detail,
+                "observed_items": detail,
+                "revealed_summary": _observed_action_summary(
+                    reveal.observed_items,
+                    item_names,
+                ),
+            }
+    return sorted(
+        latest_by_skill.values(),
+        key=lambda row: int(row.get("sort") or 0),
+        reverse=True,
+    )
+
+
+def _skill_reveals_for_ref(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "skill_id": row.get("skill_id"),
+            "hero_id": row.get("hero_id"),
+            "result": row.get("result"),
+            "result_field": row.get("result_field"),
+            "observed_items": list(row.get("observed_items") or row.get("revealed_items_detail") or ()),
+        }
+        for row in rows
+        if isinstance(row, Mapping)
+    ]
+
+
 def _ahmad_ref_inputs_from_batches(
     batches: Sequence[LiveObservationBatch],
     *,
@@ -5041,6 +5109,12 @@ def build_monitor_artifact_from_events(
         batches,
         hero=base_session.hero if base_session is not None else None,
     )
+    latest_session_id = _latest_session_id(events)
+    skill_reveal_rows = _skill_reveal_rows(
+        events,
+        tables.items,
+        session_id=latest_session_id,
+    )
     artifact: dict[str, Any] = {
         "schema_version": 1,
         "created_at": time.time(),
@@ -5107,8 +5181,10 @@ def build_monitor_artifact_from_events(
         "action_result_rows": _action_result_rows(
             events,
             tables.items,
-            session_id=_latest_session_id(events),
+            session_id=latest_session_id,
         ),
+        "skill_reveal_rows": skill_reveal_rows,
+        "skill_reveals": _skill_reveals_for_ref(skill_reveal_rows),
         "public_info_rows": _public_info_rows(events, tables.items),
         "bid_rows": bid_rows,
         "layout_replay_rows": layout_replay_rows,

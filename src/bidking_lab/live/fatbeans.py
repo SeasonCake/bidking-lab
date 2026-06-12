@@ -124,6 +124,14 @@ _AHMAD_SKILL_COUNT: dict[int, int] = {
 _VICTOR_SKILL_COUNT_SUM: dict[int, tuple[str, ...]] = {
     100209: ("bucket_group", "q4q5q6", "count"),  # R1: q4 + q5 + q6 item count
 }
+MARIA_HERO_ID = 108
+_MARIA_SKILL_QUALITY_REVEAL_ID = 10010801
+# Live-verified 2026-06-12: 100108 carries white-tier total value; reserve q2/q3 ids.
+_MARIA_SKILL_VALUE_SUM: dict[int, int] = {
+    100108: 1,
+    10010802: 2,
+    10010803: 3,
+}
 _ACTION_SIZE_AVG_VALUE: dict[int, int] = {
     100169: 1,  # 单格均价
     100170: 2,  # 两格均价
@@ -1239,6 +1247,26 @@ def _victor_skill_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
     return updates
 
 
+def _maria_skill_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
+    updates: list[FieldUpdate] = []
+    for reveal in state.skill_reveals:
+        if reveal.hero_id != MARIA_HERO_ID:
+            continue
+        quality = _MARIA_SKILL_VALUE_SUM.get(reveal.skill_id)
+        if quality is None or reveal.result is None:
+            continue
+        updates.append(
+            FieldUpdate(
+                path=("bucket", str(quality), "value_sum"),
+                value=float(reveal.result),
+                source="packet",
+                confidence="exact",
+                sequence=state.sort_id,
+            )
+        )
+    return updates
+
+
 def _hero_mode_from_state(state: FatbeansStateEvent) -> str | None:
     player_id = getattr(state, "player_id", None)
     bids = tuple(getattr(state, "bids", ()) or ())
@@ -1611,10 +1639,16 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
         item: FatbeansObservedItem,
         *,
         category: int | None = None,
+        marker_cells: int | None = None,
     ) -> None:
         cells = _observed_item_cells(item)
         if cells is None:
-            return
+            if marker_cells is not None and marker_cells > 0:
+                cells = marker_cells
+            elif item.quality is not None and item.local_index is not None:
+                cells = 1
+            else:
+                return
         if item.runtime_id is not None:
             if item.runtime_id in seen_runtime_ids:
                 if category is not None:
@@ -1650,8 +1684,16 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
 
     for reveal in state.skill_reveals:
         category = _skill_reveal_category(reveal.skill_id)
+        marker_only = (
+            reveal.hero_id == MARIA_HERO_ID
+            and reveal.skill_id == _MARIA_SKILL_QUALITY_REVEAL_ID
+        )
         for item in reveal.observed_items:
-            append_observed_item(item, category=category)
+            append_observed_item(
+                item,
+                category=category,
+                marker_cells=1 if marker_only else None,
+            )
     for info in state.public_infos:
         for item in info.observed_items:
             append_observed_item(item)
@@ -1692,6 +1734,7 @@ def live_batches_from_fatbeans_events(
             *_state_updates(state),
             *_ahmad_skill_updates(state),
             *_victor_skill_updates(state),
+            *_maria_skill_updates(state),
             *_public_numeric_updates(state),
             *_public_outline_updates(state),
             *_aisha_skill_updates(state),

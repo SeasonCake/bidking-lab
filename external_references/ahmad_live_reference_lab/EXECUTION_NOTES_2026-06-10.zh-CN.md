@@ -1941,3 +1941,140 @@
    - 备注：
      - 若仍被占用，先 `Stop-HeroRef.bat` 或结束 `BidKingHeroMonitor.exe`；
      - 初版 hotfix2（仅 `3cebdc2`、无 monitor fix）如已私发，请换本包。
+
+48. 2026-06-12 规划：紫局（q4）均价+均格不唯一时用 ranking 软收窄（hotfix2 不做）
+   - 群友反馈：
+     - 「紫的难算」；高质量紫局误差偏大；金「估价+均格」cheap 组合误差小，希望紫也有类似泛用优化。
+   - 现状（`src\ahmad_ref_engine.py`）：
+     - 公开 `200036` 紫均价 → `avg_values.q4`；`200013` / action `100112` 紫均格 → `avg_cells.q4`；
+     - `_apply_avg_value_cells_exact_count_intersection` 仅在交集中**唯一**候选时硬锁；紫局常见 0 候选或多候选 → 不锁；
+     - 强行硬锁或缺少总件/紫金红件和时，可能出现 `no_reachable_combo`（样本：紫均价 `5615.625` + 紫均 `2.9` + 总件 10 → 交集为空）。
+     - 金（q5）同路径在总件/件和约束下常能硬锁或枚举收窄；公开 `200037` 单独也常能把 q5/q6 压到单点（fatbeans 回放已见）。
+   - 目标行为（后续版本）：
+     - 交集不唯一或为空时**不要**硬锁；改为用 **总格 / 紫金红件和 / 随机均价软约束** 对候选 combo 做 log-weight ranking；
+     - 输出仍保留宽范围 UI，但在 `notes` / `next_info_hint` 标明「紫件数偏好 N」而非 silent fail；
+     - 与现有 `quality_value_soft_weight_v0`、`public_random_avg_value_floor_*` 共用权重框架，避免单独一套紫逻辑。
+   - 非目标 / 风险：
+     - hotfix2 不改 ref 枚举权重，避免未测 regression；
+     - 需 fatbeans 紫局负例集（多候选 / 0 候选 / 高质量局）+ pytest 固定 ranking 行为，再考虑 promotion。
+   - 建议实现顺序：
+     1. 审计 `data\samples\fatbeans` 中 `200036`/`200013` 共现 batch，列出 intersection 候选数分布；
+     2. 在 `_apply_avg_value_cells_exact_count_intersection` 失败分支写 diagnostic note（已有宽范围时不再报 hard conflict）；
+     3. 新增 `purple_avg_value_cells_rank_v0` soft weight（仅 q4，仅 intersection 非唯一）；
+     4. 对照群友局 replay，确认不再 `no_reachable_combo` 且 top combo 方向正确。
+   - 状态：**仅规划，hotfix2 不包含。**
+
+49. 2026-06-12 hotfix2.1：前几轮计算性能修复 + 发包
+   - 群友 / 本机反馈：
+     - hotfix2 起前几轮 Hero Ref 明显变慢；`start_ahmad_live.ps1` 与打包版均有。
+   - 根因（已确认）：
+     - hotfix2 将公开精确字段 `200010/200011/200012`（紫/金/红**总格**）写入 `quality_cells`；
+     - `_should_use_sparse_exact_total_prior` 原逻辑为「`quality_cells` 非空即禁用快路径」→ 走完整嵌套枚举（可达 ~11s / 5 万组合量级）；
+     - 合成复现：`200017=33` + `200011=23` 约 11–18s；仅总件数约 0.5–1.2s。
+   - 修复（`src\ahmad_ref_engine.py`）：
+     - 新增 `_quality_cells_blocks_sparse_exact_prior`：**仅当 ≥2 个品质有正总格** 才禁用 sparse prior；
+     - 单个金总格（典型 R1–R2）仍走 `sparse_exact_total_prior_enumeration` + probability prior；
+     - 回归：`test_ref_engine_public_gold_total_cells_keeps_sparse_prior_path`；`test_ahmad_ref_engine_public_info.py` + `test_live_overlay.py` → **252 passed**。
+   - data7 群友包复核（`Desktop\recordings\data7\data`，`v0.1.6-hotfix-full`）：
+     - 53 局归档回放 138 个前几轮窗口；9 处 `200011`，修复后应恢复 `sparse=True`；
+     - **另一类慢**（本版未改）：R1 尚无总件数 `200017`、仅有仓储总格时 → `total_count_from_ref_count_prior`（center±4），艾哈迈德 R1 常见 4–6s，艾莎 2407 极端 ~100s（36260 组合）；与 hotfix2 bug 独立。
+   - 产物（`dist\`，PackageVersion=v0.1.6-hotfix2.1，`SourceCommit=f9fca54`，`DirtyWorktree=true`）：
+     - `BidKingHeroRef-v0.1.6-hotfix2.1-full.zip` — SHA256 `D58872FA9E7E8BCD135F85C9F068674EA9F681231C6C45AADDE449EF153A52E4`，44119810 bytes；
+     - `BidKingHeroRef-v0.1.6-hotfix2.1-public-safe.zip` — SHA256 `94EDE7CB695860197EE902F77F04376AA455568BF1C86F1CDC1240003DBA6AA1`，40343227 bytes；
+     - `RELEASE_NOTES_v0.1.6-hotfix2.1.zh-CN.md` / `BidKingHeroRef-v0.1.6-hotfix2.1-SHA256.txt`。
+   - 相对 hotfix2 变更摘要：
+     - 仅 ref 引擎 sparse prior 路由；继承 hotfix2 全部 engine/UI/monitor 修复。
+   - 备注：
+     - hotfix2（无本修复）如已群发，请换 hotfix2.1；Quark 链接待上传后补。
+
+50. 2026-06-12 后续规划汇总（版本号稳定后再细化实现）
+   - **性能（Hero Ref ref_v0）**
+     1. R1 无总件数、仅有总格（`total_count_from_ref_count_prior`）：用总格/地图/已知桶 tighter 估 center 或延迟计算至 `200017` 到达；data7 第二大慢源；**勿**简单降 `max_combos`（项目已证会价格偏置）。
+     2. 有总件数 + 金均格（`avg_cells.q5`）：快路径仍 ~3–4s；可优化 `_prior_count_values` 均格/均价过滤枚举范围。
+     3. 多档总格同时出现（紫+金）：评估 prior + 硬约束替代全嵌套枚举（需负例集）。
+     4. UI summary worker：忙时跳过新 snapshot → 改为 cancel/coalesce 只算最新帧；R1 证据不足时可显示「等待总件数」再跑 ref。
+   - **准确度 / 显示（已有条目，仍 deferred）**
+     - §46 mini UI 顶部倒三角缩放联动字体（`$product-ui-polish` + 430×320 visual QA）。
+     - §48 紫局（q4）均价+均格不唯一时 ranking 软收窄（`purple_avg_value_cells_rank_v0`）。
+   - **底层 / 运维**
+     - WinDivert 被安全软件删 exe：整包加信任 + 管理员启动（已有火绒说明）；底层更换仍待定。
+     - 开发脚本 `start_ahmad_live.ps1` 默认 `engineering` 连续 jsonl：打包版 `portable` 已够用；非主因。
+   - **诊断工具**
+     - `tools\_audit_data7_perf.py`：回放 `archive/reset` 前几轮窗口，对比 old/new sparse 路由与耗时（本地 audit，不进包）。
+   - **建议发版顺序**
+     1. **v0.1.6-hotfix2.1**（§49，性能 bugfix）；
+     2. 下一 minor：§50 性能项 (1) + UI worker；
+     3. 再后：§46 / §48 产品向优化；
+     4. **新道具 shadow prior 试点**（§51，活动地图 gated MC overlay）。
+
+51. 2026-06-12 规划：0611 五个新道具 + shadow 似然估计可行性（未应用）
+   - **五个新道具（v308 Item.txt 已有，Drop.txt 无 leaf 权重）**
+     - `1016007` 决赛指定用球，q6，4 格，758000；
+     - `1036006` 世界冠军奖杯，q6，6 格，7202026；
+     - `1036007` “退钱”手举牌，q6，12 格，555555；
+     - `1036008` 传奇球星签名球衣，q6，6 格，1225000；
+     - `1076007` 土豆服务器，q6，6 格，990000（**不在** `activity_des_10007` 文案边）。
+   - **已有工作（§28–29，未接入 live）**
+     - 脚本 `scripts\build_activity_shadow_prior.py` → `data\processed\activity_drop_shadow_prior.json`；
+     - 方法 `q6_log_value_weight_plus_similarity_v0`：正式 q6 物品上拟合 `log(value)→log(weight)`，再与**同品质/同 tag/相近占格与价值**邻居 median weight 几何融合；
+     - 活动边界来自 `activity_des_10007`（废弃仓库 / 航运集装箱 / 高阶活动场景）；
+     - 当前估计 leaf weight（audit only）：2721 / 175 / 2640 / 1426 / 2423；confidence 自 `very_low` 到 `medium_low`；
+     - `impact_guard.formal_use_allowed=false`；五个 target **不在** `items_droppable.json` 与任意地图 `flatten_pool()` 正式 prior；正例 `1012005` 足球仍在正式 prior。
+   - **分路径现状**
+     | 路径 | 新道具是否需要爆率 | 当前状态 |
+     |------|-------------------|----------|
+     | 结算 / 显式 item_id 查价 | 否，只需 Item.txt | ✅ v308 表已支持（如 `1036007` 结算差 555555 已证实） |
+     | Hero Ref ref_v0 预出价 |  mostly 否 | 用 nest 均价 + 品质 tier prob，**不按单道具 drop 采样**；揭示具体物品时走 Item 价/下界 |
+     | v3 MC / monitor layout posterior | 是 | ❌ 五个 item 不在 formal map prior；活动图 MC 低估含新红的布局概率 |
+   - **可行性结论**
+     - **可以做的（推荐分阶段）**
+       1. **Shadow overlay（MC only，活动地图 gated）**：仅在 `2521–2530` / 对应 activity 地图族，把 shadow weight 作为**额外 leaf** 注入 `flatten_pool` overlay；默认 `shadow_only` flag，snapshot 写 `activity_shadow_prior_applied` note；**禁止**写入全局 `items_droppable.json`。
+       2. **Audit / replay 对照**：用已有 fatbeans + 群友 settlement 样本，比较「无 overlay / 有 overlay」对 q6 尾部与总值的 P50 偏差；以 settlement 为 truth，不以 shadow 自证。
+       3. **Hero Ref 侧（低优先）**：若公开揭示已带 `item_id`，确认 `_public_quality_reveal_floors` 等路径已用 Item.txt 精确价值；一般**不需** shadow drop rate。
+     - **暂不建议直接 promotion 的**
+       - 把 shadow weight 合入正式 `items_droppable` 或默认 live bid（无官方 Drop 来源）；
+       - 对非活动地图启用（尤其 `1076007` 无活动文案边）；
+       - 用 shadow 通过 formal drop-rate validation（guard 已禁）。
+   - **主要风险 / 阻塞**
+     - 本地仍缺活动 Drop pools `2521–2530`（BidMap 有、Drop 无）；shadow 是**估计**不是表逆向实锤；
+     - `1036006` 价值极高且 confidence=`low_value_extrapolation`，即使 weight share ~2.5% 也会拉动高阶场景尾部；
+     - `1036007` confidence=`very_low`（同形邻居少）；
+     - `1076007` 不应按世界杯活动边发放。
+   - **建议实现顺序（下一专题，版本号待定）**
+     1. 跑 `build_activity_shadow_prior.py`，冻结一版 shadow JSON + basis 明细进 audit 报告；
+     2. 实现 `activity_map_shadow_overlay_v0`（monitor/basic_mc 读 overlay，feature flag）；
+     3. 选 3–5 个含 `1036007`/新红的 settlement 样本做 replay gate：\|ΔP50\| 与 red tail 可接受再开 shadow live；
+     4. 仍无官方表前，Hero Ref 打包继续依赖 Item.txt 结算价；MC overlay 与 ref_v0 解耦发布。
+   - **状态：可行性 ✅（活动地图 shadow overlay）；正式 prior ❌（缺官方 Drop）。**
+
+52. 2026-06-12 Maria skill pipeline（108 / maria）
+
+   - **目标**：Maria 从仅 `public_info_200027` 扩展到 skill reveal：粗品（白/绿/蓝）件数 + 白/绿/蓝 tier 总价下界。
+   - **代码**：
+     - `src\bidking_lab\live\fatbeans.py`：`MARIA_HERO_ID=108`；`10010801` 粗品 reveal；`100108`→q1 白 tier value_sum（live 已见）；`10010802`/`10010803` 预留 q2/q3；
+     - `src\bidking_lab\live\monitor.py`：artifact 含 `skill_reveal_rows` / `skill_reveals`；
+     - `src\bidking_lab\runtime\snapshot.py`：minimap 从 skill reveals 取 marker；
+     - `src\ahmad_ref_engine.py`：`_apply_maria_skill_evidence()` + `maria_skill_*` notes；
+     - Tests：`test_live_fatbeans.py`、`test_live_monitor.py`、`test_ahmad_ref_engine_public_info.py`。
+   - **边界**：`public_info_200027` 仍是公开摇号，与 `maria_skill_*` 分开；绿/蓝 skill id 待 R1 导出确认。
+   - **验证**：聚焦 pytest 98+ passed；`start_ahmad_live.ps1` replay Maria export。
+
+53. 2026-06-12 金均格 0 / UI 仍显示非零 — 机制与 recordings 审计（未修）
+
+   - **反馈**：均格/均价/件/格 = 0 时 UI 仍非零；手动填表有时无效。
+   - **SEND-only 无 REV**：金均格界面 0 常表示 SEND `100113` 无 REV `0x0027`；`monitor._action_result_rows` inferred_zero 需同 session 后续 state（§24）；仅 SEND 或无 later state → 不推断 0 → prior 残留（如金件 0/1/1）。
+   - **手动路径（调查）**：未「应用并启用」仍走 live；`q4q5_count` 与显式 q5/q6=0 可 `no_reachable_combo`；`_red_display_ranges` complement pairing。
+   - **recordings 审计**（`Desktop\recordings\...\reset`，125 局）：0 次 `100113`/`100114` SEND；0 显式 gold-zero evidence；4 局 bidding；不能验收「zero 已进 engine 仍错」。
+   - **样本索引**：`docs\hero_ref_settlement_sample_index_2026-06-11.zh-CN.md` §8；handoff：`handoff_2026-06-12.zh-CN.md`。
+   - **临时 audit 脚本**：已删，结论已归档。
+
+54. 待分批风险点（本 checkpoint 后，按批实施）
+
+   | 批 | 项 | 说明 |
+   |---|---|---|
+   | A | inferred_zero 时序 | SEND-only 无 REV 是否推断 0 或 UI「推断 0 待确认」 |
+   | B | 手动 UX | 已填未应用 banner；q4q5_count 与 zero 行 reconcile |
+   | C | public avg fallback | `200013–200016` 缺失时是否走 `public_info_rows` |
+   | D | 展示 pairing | q6 锁 `[0,0,0]` 时跳过 red complement |
+
+   - 每批需：样本 session + 期望 UI 行，再改 monitor/engine/UI 单层，避免三处漂移。

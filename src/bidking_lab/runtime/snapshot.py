@@ -1422,6 +1422,7 @@ def _ui_minimap_quality_markers(
     row_sources = (
         ("packet", artifact.get("action_result_rows", ()) or ()),
         ("public_info", artifact.get("public_info_rows", ()) or ()),
+        ("skill_reveal", artifact.get("skill_reveal_rows", ()) or ()),
     )
     for source, rows in row_sources:
         for row in rows:
@@ -1434,6 +1435,12 @@ def _ui_minimap_quality_markers(
             if not source_label and source == "public_info":
                 info_id = _int_or_none(row.get("info_id"))
                 source_label = f"公共信息 {info_id}" if info_id is not None else "公共信息"
+            if not source_label and source == "skill_reveal":
+                skill_id = _int_or_none(row.get("skill_id"))
+                source_label = (
+                    _text(row.get("tool"))
+                    or (f"技能 {skill_id}" if skill_id is not None else "英雄技能")
+                )
             for item in details:
                 if not isinstance(item, Mapping):
                     continue
@@ -1506,6 +1513,7 @@ def _ui_minimap_quality_reveal_summary(
     row_sources = (
         ("packet", artifact.get("action_result_rows", ()) or ()),
         ("public_info", artifact.get("public_info_rows", ()) or ()),
+        ("skill_reveal", artifact.get("skill_reveal_rows", ()) or ()),
     )
     for source, rows in row_sources:
         for row in rows:
@@ -1519,6 +1527,12 @@ def _ui_minimap_quality_reveal_summary(
                 info_id = _int_or_none(row.get("info_id"))
                 source_label = (
                     f"公共信息 {info_id}" if info_id is not None else "公共信息"
+                )
+            if not source_label and source == "skill_reveal":
+                skill_id = _int_or_none(row.get("skill_id"))
+                source_label = (
+                    _text(row.get("tool"))
+                    or (f"技能 {skill_id}" if skill_id is not None else "英雄技能")
                 )
             source_label = source_label or source
             for item in details:

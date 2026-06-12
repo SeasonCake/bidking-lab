@@ -58,6 +58,7 @@ STATIC_DATA = _resolve_static_data()
 
 QUALITY_KEYS = ("q1", "q3", "q4", "q5", "q6")
 LOW_SPLIT_KEYS = ("white", "green")
+LOW_QUALITY_NUMBER_TO_SPLIT = {"1": "white", "2": "green"}
 LOW_SPLIT_ALIASES = {
     "1": "white",
     "q1": "white",
@@ -137,6 +138,26 @@ ACTION_DIAGNOSTIC_ONLY = {
     "100127": "all_items",
     "100134": "all_item_quality",
 }
+QUALITY_REVEAL_ACTION_IDS = frozenset(
+    {
+        "100127",
+        "100134",
+        "100135",
+        "100136",
+        "100137",
+        "100138",
+        "100139",
+        "100140",
+    }
+)
+ALL_ITEM_QUALITY_PUBLIC_INFO_IDS = frozenset({200004, 200030})
+MARIA_HERO_ID = 108
+MARIA_SKILL_QUALITY_REVEAL_ID = 10010801
+MARIA_SKILL_VALUE_BY_ID = {
+    "100108": "q1",
+    "10010802": "q2",
+    "10010803": "q3",
+}
 PUBLIC_AVG_CELLS = {
     "q4_avg_cells": "q4",
     "q5_avg_cells": "q5",
@@ -168,22 +189,79 @@ PUBLIC_EXACT_QUALITY_COUNT_INFO = {
     200020: "q6",
 }
 HERO_BY_ID = {
+    101: "fatima",
+    102: "chenmei",
     103: "aisha",
+    104: "gabriela",
+    105: "tatiana",
+    106: "naomi",
+    107: "sophie",
+    108: "maria",
+    109: "helena",
+    110: "isabella",
+    201: "george",
+    202: "carlos",
+    203: "leonard",
     204: "ahmed",
+    205: "ivan",
+    206: "takeda",
+    207: "wuqilin",
+    208: "ethan",
     209: "victor",
+    301: "raven",
 }
 HERO_ALIASES = {
+    "fatima": "fatima",
+    "法蒂玛": "fatima",
+    "chenmei": "chenmei",
+    "陈美": "chenmei",
     "aisha": "aisha",
     "艾莎": "aisha",
+    "gabriela": "gabriela",
+    "加布里埃拉": "gabriela",
+    "tatiana": "tatiana",
+    "塔蒂安娜": "tatiana",
+    "naomi": "naomi",
+    "娜奥米": "naomi",
+    "sophie": "sophie",
+    "索菲": "sophie",
+    "maria": "maria",
+    "玛丽亚": "maria",
+    "helena": "helena",
+    "海琳娜": "helena",
+    "isabella": "isabella",
+    "伊莎贝拉": "isabella",
+    "伊萨贝拉": "isabella",
+    "george": "george",
+    "乔治": "george",
+    "carlos": "carlos",
+    "卡洛斯": "carlos",
+    "leonard": "leonard",
+    "莱昂纳德": "leonard",
     "ahmad": "ahmed",
     "ahmed": "ahmed",
     "ahamed": "ahmed",
     "艾哈": "ahmed",
     "艾哈迈德": "ahmed",
+    "ivan": "ivan",
+    "伊万": "ivan",
+    "takeda": "takeda",
+    "武田宏志": "takeda",
+    "wuqilin": "wuqilin",
+    "吴起灵": "wuqilin",
+    "ethan": "ethan",
+    "伊森": "ethan",
     "victor": "victor",
     "维克": "victor",
     "维克托": "victor",
+    "raven": "raven",
+    "拉文": "raven",
 }
+SUPPORTED_REF_HERO_KEYS = frozenset(HERO_BY_ID.values())
+STRUCTURED_REF_HERO_KEYS = frozenset({"aisha", "ahmed", "victor"})
+PUBLIC_MAX_QUALITY_INFO_ID = 200048
+PUBLIC_MAX_QUALITY_SKILL_IDS = frozenset({"100110"})
+QUALITY_TIER_NUMBER = {"q1": 2, "q3": 3, "q4": 4, "q5": 5, "q6": 6}
 
 
 @dataclass(frozen=True)
@@ -308,13 +386,24 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+def normalize_hero_key(hero: Any) -> str:
+    text = str(hero or "").strip()
+    if not text or text.lower() in {"?", "unknown", "none", "null"}:
+        return ""
+    return HERO_ALIASES.get(text.lower(), HERO_ALIASES.get(text, text.lower()))
+
+
+def is_supported_ref_hero(hero: Any) -> bool:
+    return normalize_hero_key(hero) in SUPPORTED_REF_HERO_KEYS
+
+
 def _hero_from_context(
     hero: Any,
     *hero_id_candidates: Any,
 ) -> str:
     text = str(hero or "").strip()
     if text and text.lower() not in {"?", "unknown", "none", "null"}:
-        return HERO_ALIASES.get(text.lower(), HERO_ALIASES.get(text, text))
+        return normalize_hero_key(text) or text
     for candidate in hero_id_candidates:
         hero_id = _safe_int(candidate)
         if hero_id in HERO_BY_ID:
@@ -788,69 +877,269 @@ def _merge_count_sums(
             source_notes.append(f"{note_prefix}_q4q5q6")
 
 
-def _public_quality_reveal_min_counts(snapshot: dict[str, Any]) -> dict[str, int]:
-    counts = {key: 0 for key in QUALITY_KEYS}
-    seen: set[tuple[str, str]] = set()
-    for row in _iter_dicts(snapshot.get("public_info_rows")):
-        if _safe_int(row.get("info_id")) in PUBLIC_BUCKET_OUTLINE_QUALITY:
-            continue
-        for item in _iter_dicts(row.get("revealed_items_detail")):
-            key = _quality_number_to_key(item.get("quality"))
-            if key is None:
+def _has_shape_reveal(item: dict[str, Any]) -> bool:
+    shape_code = item.get("shape_code")
+    if shape_code not in (None, "", 0):
+        return True
+    shape_key = str(item.get("shape_key") or "").strip()
+    return bool(shape_key)
+
+
+def _is_coarse_quality_reveal_item(item: dict[str, Any]) -> bool:
+    if _quality_number_to_key(item.get("quality")) is None:
+        return False
+    return not _has_shape_reveal(item)
+
+
+def _quality_reveal_item_identity(item: dict[str, Any], key: str, *, fallback: str) -> tuple[str, str]:
+    return (
+        str(
+            item.get("runtime_id")
+            or item.get("local_index")
+            or item.get("item_id")
+            or fallback
+        ),
+        key,
+    )
+
+
+def _iter_skill_reveal_dict_rows(
+    snapshot: dict[str, Any],
+) -> Iterable[dict[str, Any]]:
+    seen: set[int] = set()
+    for key in ("skill_reveal_rows", "skill_reveals"):
+        for row in _iter_dicts(snapshot.get(key)):
+            if not isinstance(row, dict):
                 continue
-            identity = (
-                str(item.get("runtime_id") or item.get("local_index") or id(item)),
+            row_id = id(row)
+            if row_id in seen:
+                continue
+            seen.add(row_id)
+            yield row
+
+
+def _is_maria_skill_quality_reveal_row(row: dict[str, Any]) -> bool:
+    return (
+        _safe_int(row.get("hero_id")) == MARIA_HERO_ID
+        and _safe_int(row.get("skill_id")) == MARIA_SKILL_QUALITY_REVEAL_ID
+    )
+
+
+def _apply_maria_skill_evidence(
+    snapshot: dict[str, Any],
+    *,
+    min_counts: dict[str, int],
+    split_counts: dict[str, int],
+    quality_value_floors: dict[str, float],
+    source_notes: list[str],
+) -> None:
+    counts = {key: 0 for key in QUALITY_KEYS}
+    split = {key: 0 for key in LOW_SPLIT_KEYS}
+    seen: set[tuple[str, str]] = set()
+    maria_sources: set[str] = set()
+
+    for row in _iter_skill_reveal_dict_rows(snapshot):
+        if not _is_maria_skill_quality_reveal_row(row):
+            continue
+        skill_id = _safe_int(row.get("skill_id"))
+        prefix = f"maria_skill_{skill_id or 'quality'}"
+        items = row.get("observed_items") or row.get("revealed_items_detail") or ()
+        for item_idx, item in enumerate(_iter_dicts(items)):
+            if not isinstance(item, dict):
+                continue
+            quality = _safe_int(item.get("quality"))
+            if quality is None or quality > 3:
+                continue
+            key = _quality_number_to_key(quality)
+            if key is None or not _is_coarse_quality_reveal_item(item):
+                continue
+            identity = _quality_reveal_item_identity(
+                item,
                 key,
+                fallback=f"{prefix}-{item_idx}",
             )
             if identity in seen:
                 continue
             seen.add(identity)
             counts[key] += 1
-    return {key: value for key, value in counts.items() if value > 0}
+            maria_sources.add(prefix)
+            split_key = LOW_QUALITY_NUMBER_TO_SPLIT.get(str(quality))
+            if split_key is not None:
+                split[split_key] += 1
+
+    for row in _iter_skill_reveal_dict_rows(snapshot):
+        if _safe_int(row.get("hero_id")) != MARIA_HERO_ID:
+            continue
+        if _is_maria_skill_quality_reveal_row(row):
+            continue
+        skill_key = str(row.get("skill_id") or "")
+        quality_key = MARIA_SKILL_VALUE_BY_ID.get(skill_key)
+        if quality_key is None:
+            continue
+        value = _safe_float(row.get("result"))
+        if value is None or value <= 0:
+            continue
+        quality_value_floors[quality_key] = max(
+            quality_value_floors.get(quality_key, 0.0),
+            float(value),
+        )
+        source_notes.append(f"maria_skill_{quality_key}_value_floor")
+
+    if any(counts.values()):
+        for key, value in counts.items():
+            min_counts[key] = max(min_counts.get(key, 0), value)
+        source_notes.append("maria_skill_coarse_quality_min_counts")
+        for prefix in sorted(maria_sources):
+            source_notes.append(f"maria_skill_coarse_quality_source:{prefix}")
+    if any(split.values()):
+        for key, value in split.items():
+            split_counts[key] = max(split_counts.get(key, 0), value)
+        source_notes.append("maria_skill_coarse_quality_split_counts")
+
+
+def _iter_quality_reveal_item_rows(
+    snapshot: dict[str, Any],
+) -> Iterable[tuple[str, dict[str, Any]]]:
+    for row in _iter_dicts(snapshot.get("public_info_rows")):
+        info_id = _safe_int(row.get("info_id"))
+        if info_id in PUBLIC_BUCKET_OUTLINE_QUALITY:
+            continue
+        prefix = f"public_info_{info_id}" if info_id is not None else "public_info"
+        for item in _iter_dicts(row.get("revealed_items_detail")):
+            if _quality_number_to_key(item.get("quality")) is not None:
+                yield prefix, item
+
+    row_groups = (
+        ("action_result", snapshot.get("action_result_rows")),
+        (
+            "action_result",
+            _dig(snapshot, "ui_contract", "actions", "results"),
+        ),
+    )
+    seen_rows: set[int] = set()
+    for prefix, rows in row_groups:
+        for row_idx, row in enumerate(_iter_dicts(rows)):
+            if not isinstance(row, dict):
+                continue
+            row_id = id(row)
+            if row_id in seen_rows:
+                continue
+            seen_rows.add(row_id)
+            action_id = str(row.get("action_id") or "")
+            source_prefix = (
+                f"{prefix}_{action_id}"
+                if action_id
+                else f"{prefix}_{row_idx}"
+            )
+            for item in _iter_dicts(row.get("revealed_items_detail")):
+                if _quality_number_to_key(item.get("quality")) is not None:
+                    yield source_prefix, item
+
+    for reveal_idx, reveal in enumerate(_iter_skill_reveal_dict_rows(snapshot)):
+        if _is_maria_skill_quality_reveal_row(reveal):
+            continue
+        skill_id = str(reveal.get("skill_id") or "")
+        prefix = f"skill_{skill_id or reveal_idx}"
+        for item in _iter_dicts(reveal.get("observed_items") or reveal.get("revealed_items_detail")):
+            if isinstance(item, dict) and _quality_number_to_key(item.get("quality")) is not None:
+                yield prefix, item
+
+
+def _iter_coarse_quality_reveal_items(
+    snapshot: dict[str, Any],
+) -> Iterable[tuple[str, dict[str, Any]]]:
+    for source_prefix, item in _iter_quality_reveal_item_rows(snapshot):
+        if _is_coarse_quality_reveal_item(item):
+            yield source_prefix, item
+
+
+def _coarse_quality_reveal_floors(
+    snapshot: dict[str, Any],
+    *,
+    source_notes: list[str],
+) -> tuple[dict[str, int], dict[str, float], dict[str, float], dict[str, int], dict[str, float]]:
+    counts = {key: 0 for key in QUALITY_KEYS}
+    cell_floors: dict[str, float] = {}
+    value_floors: dict[str, float] = {}
+    split_counts = {key: 0 for key in LOW_SPLIT_KEYS}
+    split_value_floors: dict[str, float] = {}
+    seen: set[tuple[str, str]] = set()
+    floor_seen: set[tuple[str, str]] = set()
+    count_source_prefixes: set[str] = set()
+
+    for source_prefix, item in _iter_quality_reveal_item_rows(snapshot):
+        quality = _safe_int(item.get("quality"))
+        if quality is None:
+            continue
+        key = _quality_number_to_key(quality)
+        if key is None:
+            continue
+
+        if _is_coarse_quality_reveal_item(item):
+            identity = _quality_reveal_item_identity(
+                item,
+                key,
+                fallback=f"{source_prefix}-{id(item)}",
+            )
+            if identity not in seen:
+                seen.add(identity)
+                counts[key] += 1
+                count_source_prefixes.add(source_prefix)
+                split_key = LOW_QUALITY_NUMBER_TO_SPLIT.get(str(quality))
+                if split_key is not None:
+                    split_counts[split_key] += 1
+
+        floor_identity = _quality_reveal_item_identity(
+            item,
+            key,
+            fallback=f"floor-{source_prefix}-{id(item)}",
+        )
+        if floor_identity in floor_seen:
+            continue
+        floor_seen.add(floor_identity)
+
+        item_cells = _safe_int(item.get("cells"))
+        if item_cells is None or item_cells <= 0:
+            item_cells = _shape_cells(item.get("shape_code") or item.get("shape_key"))
+        if item_cells is not None and item_cells > 0:
+            cell_floors[key] = cell_floors.get(key, 0.0) + float(item_cells)
+
+        item_value = _safe_float(item.get("value"))
+        if item_value is not None and item_value > 0:
+            value_floors[key] = value_floors.get(key, 0.0) + float(item_value)
+            split_key = LOW_QUALITY_NUMBER_TO_SPLIT.get(str(quality))
+            if split_key is not None and _is_coarse_quality_reveal_item(item):
+                split_value_floors[split_key] = (
+                    split_value_floors.get(split_key, 0.0) + float(item_value)
+                )
+
+    if any(counts.values()):
+        source_notes.append("coarse_quality_reveal_min_counts")
+        for prefix in sorted(count_source_prefixes):
+            source_notes.append(f"coarse_quality_reveal_source:{prefix}")
+
+    return (
+        {key: value for key, value in counts.items() if value > 0},
+        cell_floors,
+        value_floors,
+        {key: value for key, value in split_counts.items() if value > 0},
+        split_value_floors,
+    )
+
+
+def _public_quality_reveal_min_counts(snapshot: dict[str, Any]) -> dict[str, int]:
+    counts, _, _, _, _ = _coarse_quality_reveal_floors(snapshot, source_notes=[])
+    return counts
 
 
 def _public_quality_reveal_floors(
     snapshot: dict[str, Any],
 ) -> tuple[dict[str, int], dict[str, float], dict[str, float]]:
-    counts = {key: 0 for key in QUALITY_KEYS}
-    cell_floors: dict[str, float] = {}
-    value_floors: dict[str, float] = {}
-    seen: set[tuple[str, str]] = set()
-    for row in _iter_dicts(snapshot.get("public_info_rows")):
-        if _safe_int(row.get("info_id")) in PUBLIC_BUCKET_OUTLINE_QUALITY:
-            continue
-        for idx, item in enumerate(_iter_dicts(row.get("revealed_items_detail"))):
-            key = _quality_number_to_key(item.get("quality"))
-            if key is None:
-                continue
-            identity = (
-                str(
-                    item.get("runtime_id")
-                    or item.get("local_index")
-                    or item.get("item_id")
-                    or f"row-{id(row)}-{idx}"
-                ),
-                key,
-            )
-            if identity in seen:
-                continue
-            seen.add(identity)
-            counts[key] += 1
-
-            item_cells = _safe_int(item.get("cells"))
-            if item_cells is None or item_cells <= 0:
-                item_cells = _shape_cells(item.get("shape_code") or item.get("shape_key"))
-            if item_cells is not None and item_cells > 0:
-                cell_floors[key] = cell_floors.get(key, 0.0) + float(item_cells)
-
-            item_value = _safe_float(item.get("value"))
-            if item_value is not None and item_value > 0:
-                value_floors[key] = value_floors.get(key, 0.0) + float(item_value)
-    return (
-        {key: value for key, value in counts.items() if value > 0},
-        cell_floors,
-        value_floors,
+    counts, cell_floors, value_floors, _, _ = _coarse_quality_reveal_floors(
+        snapshot,
+        source_notes=[],
     )
+    return counts, cell_floors, value_floors
 
 
 def _shape_cells(value: Any) -> int | None:
@@ -905,6 +1194,67 @@ def _apply_public_info_exact_numeric_rows(
         fixed_counts[count_key] = count_int
         min_counts[count_key] = max(min_counts.get(count_key, 0), count_int)
         source_notes.append(f"public_info_{info_id}_{count_key}_count")
+
+
+def _extract_public_max_quality(snapshot: dict[str, Any]) -> int | None:
+    max_quality: int | None = None
+
+    def consider(quality: Any) -> None:
+        nonlocal max_quality
+        parsed = _safe_int(quality)
+        if parsed is None or parsed <= 0:
+            return
+        max_quality = parsed if max_quality is None else min(max_quality, parsed)
+
+    for row in _iter_dicts(snapshot.get("public_info_rows")):
+        if _safe_int(row.get("info_id")) != PUBLIC_MAX_QUALITY_INFO_ID:
+            continue
+        for item in _iter_dicts(row.get("revealed_items_detail")):
+            consider(item.get("quality"))
+
+    for reveal in _iter_dicts(snapshot.get("skill_reveals")):
+        if str(reveal.get("skill_id") or "") not in PUBLIC_MAX_QUALITY_SKILL_IDS:
+            continue
+        for item in _iter_dicts(reveal.get("observed_items")):
+            consider(item.get("quality"))
+
+    uc = snapshot.get("ui_contract") if isinstance(snapshot.get("ui_contract"), dict) else {}
+    actions = uc.get("actions") if isinstance(uc.get("actions"), dict) else {}
+    for row in actions.get("results") or ():
+        if not isinstance(row, dict):
+            continue
+        action_id = str(row.get("action_id") or "")
+        if action_id not in PUBLIC_MAX_QUALITY_SKILL_IDS:
+            continue
+        for item in _iter_dicts(
+            row.get("revealed_items_detail") or row.get("observed_items")
+        ):
+            consider(item.get("quality"))
+
+    return max_quality
+
+
+def _apply_public_max_quality_ceiling(
+    max_quality: int | None,
+    *,
+    fixed_counts: dict[str, int],
+    min_counts: dict[str, int],
+    source_notes: list[str],
+) -> None:
+    if max_quality is None or max_quality >= 6:
+        return
+    source_notes.append(f"public_max_quality_ceiling:{max_quality}")
+    for key, tier in QUALITY_TIER_NUMBER.items():
+        if tier <= max_quality:
+            continue
+        existing = fixed_counts.get(key)
+        existing_min = int(min_counts.get(key, 0))
+        if (existing is not None and int(existing) > 0) or existing_min > 0:
+            source_notes.append(f"hard_conflict:public_max_quality_zero_{key}")
+            continue
+        fixed_counts[key] = 0
+        min_counts[key] = 0
+        source_notes.append(f"public_max_quality_zero_{key}")
 
 
 def _public_bucket_outline_totals(snapshot: dict[str, Any]) -> dict[str, tuple[int, int | None]]:
@@ -1852,11 +2202,18 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
             public_quality_counts,
             public_quality_cell_floors,
             public_quality_value_floors,
-        ) = _public_quality_reveal_floors(snapshot)
+            coarse_split_counts,
+            _coarse_split_value_floors,
+        ) = _coarse_quality_reveal_floors(snapshot, source_notes=source_notes)
         if public_quality_counts:
             for key, value in public_quality_counts.items():
                 min_counts[key] = max(min_counts.get(key, 0), value)
-            source_notes.append("public_quality_reveal_min_counts")
+            if "public_quality_reveal_min_counts" not in source_notes:
+                source_notes.append("public_quality_reveal_min_counts")
+        if coarse_split_counts:
+            for key, value in coarse_split_counts.items():
+                split_counts[key] = max(split_counts.get(key, 0), value)
+            source_notes.append("coarse_quality_reveal_split_counts")
         if public_quality_cell_floors:
             for key, value in public_quality_cell_floors.items():
                 quality_cell_floors[key] = max(
@@ -1871,6 +2228,13 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
                     float(value),
                 )
                 source_notes.append(f"public_quality_reveal_{key}_value_floor")
+        _apply_maria_skill_evidence(
+            snapshot,
+            min_counts=min_counts,
+            split_counts=split_counts,
+            quality_value_floors=quality_value_floors,
+            source_notes=source_notes,
+        )
         public_outline_totals = _public_bucket_outline_totals(snapshot)
         for key, (count, cells) in public_outline_totals.items():
             existing_count = fixed_counts.get(key)
@@ -2114,6 +2478,13 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
                 source_notes.append(f"quality_cells_{key}_avg_count_conflict")
         elif _avg_count_from_cells(avg, cells) is None:
             source_notes.append(f"quality_cells_{key}_avg_cells_conflict")
+
+    _apply_public_max_quality_ceiling(
+        _extract_public_max_quality(snapshot),
+        fixed_counts=fixed_counts,
+        min_counts=min_counts,
+        source_notes=source_notes,
+    )
 
     return RefEvidence(
         hero=hero,
@@ -2631,10 +3002,24 @@ def _known_count_floor(evidence: RefEvidence) -> int:
     return max(fixed_total, min_total)
 
 
+def _quality_cells_blocks_sparse_exact_prior(evidence: RefEvidence) -> bool:
+    if not evidence.quality_cells:
+        return False
+    positive_keys = [
+        key
+        for key, value in evidence.quality_cells.items()
+        if (_safe_float(value) or 0.0) > 0.0001
+    ]
+    # One tier total-cells hint (e.g. public 200011 gold cells) still leaves the
+    # count split underdetermined; the prior sampler can honor it via
+    # _quality_exact_cells. Multiple tier totals need the full search path.
+    return len(positive_keys) >= 2
+
+
 def _should_use_sparse_exact_total_prior(evidence: RefEvidence) -> bool:
     if evidence.total_count is None or evidence.phase == "settled":
         return False
-    if evidence.count_sums or evidence.quality_cells:
+    if evidence.count_sums or _quality_cells_blocks_sparse_exact_prior(evidence):
         return False
     nonzero_fixed_count = sum(1 for value in evidence.fixed_counts.values() if int(value) > 0)
     if nonzero_fixed_count > 1:
@@ -3417,16 +3802,7 @@ def run_reference_engine(
     static_data = static_data or load_reference_static_data()
     evidence = extract_evidence(snapshot)
     notes = list(evidence.source_notes)
-    supported_heroes = {
-        "aisha",
-        "艾莎",
-        "ahmed",
-        "ahmad",
-        "艾哈迈德",
-        "victor",
-        "维克托",
-    }
-    if evidence.hero.lower() not in supported_heroes:
+    if not is_supported_ref_hero(evidence.hero):
         return RefResult(
             status="not_structured_hero",
             source="ref_v0",
@@ -3446,6 +3822,9 @@ def run_reference_engine(
             notes=("current_hero_not_supported",),
             evidence=evidence,
         )
+    hero_key = normalize_hero_key(evidence.hero)
+    if hero_key and hero_key not in STRUCTURED_REF_HERO_KEYS:
+        notes.append("generic_ref_hero")
 
     if any(note.startswith("hard_conflict:") for note in notes):
         return RefResult(
