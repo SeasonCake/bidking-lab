@@ -462,6 +462,71 @@ def _unlocked_quality_labels(
     return labels
 
 
+def _evidence_exact_quality_field(
+    evidence: dict[str, Any],
+    bucket: str,
+    quality_key: str,
+) -> bool:
+    payload = evidence.get(bucket)
+    if not isinstance(payload, dict):
+        return False
+    return payload.get(quality_key) not in (None, "")
+
+
+def _aisha_tier_needs_tool_info(
+    ref_result: dict[str, Any],
+    evidence: dict[str, Any],
+    quality_key: str,
+) -> bool:
+    has_count = _evidence_exact_quality_field(evidence, "fixed_counts", quality_key)
+    has_cells = _evidence_exact_quality_field(evidence, "quality_cells", quality_key)
+    has_avg = _evidence_exact_quality_field(evidence, "avg_cells", quality_key)
+    if quality_key == "q5" and has_count and (has_cells or has_avg):
+        return False
+    if quality_key in {"q3", "q4"} and has_count and (has_cells or has_avg):
+        return False
+    ranges = ref_result.get("quality_count_ranges")
+    min_counts = evidence.get("min_counts") if isinstance(evidence.get("min_counts"), dict) else {}
+    floor = _parse_int(min_counts.get(quality_key))
+    if isinstance(ranges, dict) and _range_is_unlocked(ranges.get(quality_key), floor):
+        return True
+    if has_count or (isinstance(ranges, dict) and not _range_is_unlocked(ranges.get(quality_key), floor)):
+        if quality_key == "q5":
+            return not (has_cells or has_avg)
+        return not (has_cells or has_avg)
+    return True
+
+
+def _aisha_missing_total_count(ref_result: dict[str, Any], evidence: dict[str, Any]) -> bool:
+    status = _text(ref_result.get("status"), "")
+    if status == "missing_total_count":
+        return True
+    return evidence.get("total_count") in (None, "")
+
+
+def _aisha_next_info_hint(
+    ref_result: dict[str, Any],
+    evidence: dict[str, Any],
+    *,
+    round_no: int | None = None,
+) -> str:
+    if _aisha_tier_needs_tool_info(ref_result, evidence, "q3"):
+        if round_no == 1:
+            return "R1先开良品扫描或良品存量"
+        return "开良品扫描或良品存量"
+    if _aisha_tier_needs_tool_info(ref_result, evidence, "q4"):
+        return "开优品均格/优品存量/优品扫描"
+    if _aisha_tier_needs_tool_info(ref_result, evidence, "q5"):
+        return "开极品均格或极品扫描"
+    if evidence.get("total_grid_target") in (None, ""):
+        total_grid_range = ref_result.get("total_grid_range")
+        if _range_is_unlocked(total_grid_range) or _compact_range_text(total_grid_range, suffix="格") != "-":
+            return "开总仓储看总格，必要时全库透视"
+    if _aisha_missing_total_count(ref_result, evidence):
+        return "最后补总件"
+    return "信息够了，看出价"
+
+
 def _ref_notes_list(ref_result: dict[str, Any]) -> list[str]:
     notes = ref_result.get("notes")
     if isinstance(notes, str):
@@ -475,7 +540,12 @@ def _ref_waiting_grid_only(ref_result: dict[str, Any]) -> bool:
     return any(note == "waiting_total_count:grid_only" for note in _ref_notes_list(ref_result))
 
 
-def _ref_waiting_display_text(hero_key: str, ref_result: dict[str, Any]) -> str:
+def _ref_waiting_display_text(
+    hero_key: str,
+    ref_result: dict[str, Any],
+    *,
+    round_no: int | None = None,
+) -> str:
     ref_status = _text(ref_result.get("status"), "")
     if ref_status != "missing_total_count":
         return "等待总件/品质输入"
@@ -484,7 +554,13 @@ def _ref_waiting_display_text(hero_key: str, ref_result: dict[str, Any]) -> str:
     if hero_key == "victor":
         return "等待总件/紫金红"
     if hero_key == "aisha":
-        return "等待总件/分件"
+        ref_evidence = ref_result.get("evidence")
+        if not isinstance(ref_evidence, dict):
+            ref_evidence = {}
+        hint = _aisha_next_info_hint(ref_result, ref_evidence, round_no=round_no)
+        if hint and hint not in {"-", "信息够了，看出价"}:
+            return hint
+        return "等待总件"
     if hero_key == "ethan":
         return "等待公开输入"
     hint = _next_info_hint(ref_result, hero_key=hero_key)
@@ -493,25 +569,35 @@ def _ref_waiting_display_text(hero_key: str, ref_result: dict[str, Any]) -> str:
     return "等待外援输入"
 
 
-def _ref_waiting_flag_label(hero_key: str, ref_result: dict[str, Any]) -> str:
+def _ref_waiting_flag_label(
+    hero_key: str,
+    ref_result: dict[str, Any],
+    *,
+    round_no: int | None = None,
+) -> str:
     ref_status = _text(ref_result.get("status"), "")
     if ref_status != "missing_total_count":
         return ""
-    return _ref_waiting_display_text(hero_key, ref_result)
+    return _ref_waiting_display_text(hero_key, ref_result, round_no=round_no)
 
 
-def _next_info_hint(ref_result: dict[str, Any], *, hero_key: str = "") -> str:
+def _next_info_hint(
+    ref_result: dict[str, Any],
+    *,
+    hero_key: str = "",
+    round_no: int | None = None,
+) -> str:
     evidence = ref_result.get("evidence")
     if not isinstance(evidence, dict):
         return "-"
     status = _text(ref_result.get("status"), "")
+    if hero_key == "aisha":
+        return _aisha_next_info_hint(ref_result, evidence, round_no=round_no)
     if status == "missing_total_count":
         if hero_key == "ahmed" and _ref_waiting_grid_only(ref_result):
             return "先补总件"
         if hero_key == "victor":
             return "先补总件/紫金红"
-        if hero_key == "aisha":
-            return "先补总件/分件"
         if hero_key == "ethan":
             return "先补公开总件"
     if status == "missing_total_count" or evidence.get("total_count") in (None, ""):
@@ -1409,6 +1495,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
             hero = evidence_hero
     hero_key = normalize_hero_key(hero)
     is_supported = is_supported_ref_hero(hero)
+    round_no = _parse_int(context.get("round") or snapshot.get("round"))
 
     info_band = _text(
         public_info.get("information_density_band")
@@ -1493,7 +1580,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         else None
     )
     ref_status = _text(ref_result.get("status"), "")
-    waiting_flag = _ref_waiting_flag_label(hero_key, ref_result)
+    waiting_flag = _ref_waiting_flag_label(hero_key, ref_result, round_no=round_no)
     if is_supported and waiting_flag:
         flags.append(_flag(waiting_flag, "watch"))
     if victor_missing_q456:
@@ -1568,7 +1655,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         if ref_display_ready
         else "-"
     )
-    waiting_display = _ref_waiting_display_text(hero_key, ref_result)
+    waiting_display = _ref_waiting_display_text(hero_key, ref_result, round_no=round_no)
     display_uncertainty_summary = (
         _quality_uncertainty_summary(ref_result)
         if ref_display_ready
@@ -1849,7 +1936,11 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
             "ref_combo_count": _text(ref_result.get("combo_count"), ""),
             "ref_input_summary": _ref_input_summary(ref_result),
             "candidate_summary": _candidate_summary(ref_result),
-            "next_info_hint": _next_info_hint(ref_result, hero_key=hero_key),
+            "next_info_hint": _next_info_hint(
+                ref_result,
+                hero_key=hero_key,
+                round_no=round_no,
+            ),
             "ref_notes": ";".join(ref_notes),
         },
         "diagnostics": {

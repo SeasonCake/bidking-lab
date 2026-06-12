@@ -37,6 +37,7 @@ from ahmad_live_panel_server import (  # noqa: E402
     _candidate_summary,
     _display_range_text,
     _next_info_hint,
+    _parse_int,
     _quality_uncertainty_summary,
     _red_display_ranges,
     _red_range_text,
@@ -4708,7 +4709,12 @@ class AhmadTkOverlay:
         display_evidence = dict(evidence)
         display_evidence["total_grid_range"] = result.get("total_grid_range")
         candidate_summary = _candidate_summary(result)
-        next_info_hint = _next_info_hint(result)
+        hero_key = normalize_hero_key(snapshot.get("hero") or "")
+        next_info_hint = _next_info_hint(
+            result,
+            hero_key=hero_key,
+            round_no=_parse_int(snapshot.get("round")),
+        )
         notes = tuple(str(item) for item in (result.get("notes") or ()))
         fixed_counts = evidence.get("fixed_counts") if isinstance(evidence.get("fixed_counts"), dict) else {}
         avg_cells = evidence.get("avg_cells") if isinstance(evidence.get("avg_cells"), dict) else {}
@@ -6549,7 +6555,13 @@ class AhmadTkOverlay:
         if hint and hint != "-":
             return hint
         ref_result = data.get("ahmed_ref") if isinstance(data.get("ahmed_ref"), dict) else {}
-        hint = _next_info_hint(ref_result)
+        context = data.get("context") if isinstance(data.get("context"), dict) else {}
+        hero_key = normalize_hero_key(context.get("hero") or "")
+        hint = _next_info_hint(
+            ref_result,
+            hero_key=hero_key,
+            round_no=_parse_int(context.get("round")),
+        )
         if hint and hint != "-":
             return hint
         return _text(evidence.get("ref_readiness") or evidence.get("ref_status"), "-")

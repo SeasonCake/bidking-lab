@@ -2973,11 +2973,18 @@ def _count_values(
     maximum = total_count - reserve
     if maximum < minimum:
         return []
-    return [
+    values = [
         value
         for value in range(minimum, maximum + 1)
         if _quality_count_matches_value_evidence(key, value, evidence)
     ]
+    if _should_use_exact_total_avg_cells_fast_path(evidence) and fixed is None:
+        avg = evidence.avg_cells.get(key)
+        if avg is not None and avg > 0:
+            avg_valid = [value for value in values if _avg_grid_options(value, avg)]
+            if avg_valid:
+                return avg_valid
+    return values
 
 
 def _effective_min_count(key: str, evidence: RefEvidence) -> int:
@@ -3303,6 +3310,26 @@ def _non_total_count_evidence_strength(evidence: RefEvidence) -> int:
     if evidence.avg_values or evidence.quality_values:
         score += 1
     return score
+
+
+def _should_use_exact_total_avg_cells_fast_path(evidence: RefEvidence) -> bool:
+    """Exact total + avg_cells live states eligible for §50-2 micro-optimizations."""
+    if evidence.total_count is None or evidence.phase in {"settled", "manual"}:
+        return False
+    if _quality_cells_blocks_sparse_exact_prior(evidence):
+        return False
+    if not evidence.avg_cells:
+        return False
+    return any((avg or 0) > 0 for avg in evidence.avg_cells.values())
+
+
+def _nearest_composable_default_grid(count: int, default: float, *, cell_floor: int) -> float | None:
+    candidate = int(round(default))
+    if candidate < cell_floor:
+        candidate = cell_floor
+    if can_compose_grid_total(count, candidate):
+        return float(candidate)
+    return None
 
 
 def _should_defer_total_count_prior(evidence: RefEvidence) -> bool:
@@ -3697,14 +3724,37 @@ def _grids_for_counts(
         else:
             default = count * DEFAULT_GRID_MEANS[key]
             if cell_floor > 0:
-                options = [
-                    option
-                    for option in _composable_grid_options(int(count))
-                    if option >= cell_floor
-                ]
-                if not options:
-                    return None
-                grids[key] = float(min(options, key=lambda option: (abs(option - default), option)))
+                if (
+                    _should_use_exact_total_avg_cells_fast_path(evidence)
+                    and evidence.total_grid_target is None
+                ):
+                    fast_grid = _nearest_composable_default_grid(
+                        int(count),
+                        default,
+                        cell_floor=cell_floor,
+                    )
+                    if fast_grid is not None:
+                        grids[key] = fast_grid
+                    else:
+                        options = [
+                            option
+                            for option in _composable_grid_options(int(count))
+                            if option >= cell_floor
+                        ]
+                        if not options:
+                            return None
+                        grids[key] = float(
+                            min(options, key=lambda option: (abs(option - default), option))
+                        )
+                else:
+                    options = [
+                        option
+                        for option in _composable_grid_options(int(count))
+                        if option >= cell_floor
+                    ]
+                    if not options:
+                        return None
+                    grids[key] = float(min(options, key=lambda option: (abs(option - default), option)))
             else:
                 grids[key] = default
     fitted = _fit_grids_to_total_target(
@@ -4223,6 +4273,7 @@ def run_reference_engine(
     if random_floor is not None:
         notes.append(f"random_value_floor_soft_weight:{int(round(random_floor))}")
     total_candidates, total_prior_center = _total_count_candidates(evidence, notes)
+    exact_total_avg_fast_path = _should_use_exact_total_avg_cells_fast_path(evidence)
     if not total_candidates:
         return RefResult(
             status="missing_total_count",
@@ -4361,6 +4412,8 @@ def run_reference_engine(
                     break
             if len(combos) >= max_combos:
                 break
+    if exact_total_avg_fast_path and combos:
+        notes.append("exact_total_avg_cells_fast_path")
     if quality_value_soft_weight_applied:
         notes.append("quality_value_soft_weight_v0")
 

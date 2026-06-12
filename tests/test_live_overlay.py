@@ -2580,6 +2580,161 @@ def test_ahmad_server_ref_waiting_text_is_hero_specific() -> None:
     assert module._next_info_hint(ethan_grid_only, hero_key="ethan") == "先补公开总件"  # type: ignore[attr-defined]
 
 
+def test_ahmad_server_aisha_next_info_hint_r1_prefers_blue_tools_not_white_green() -> None:
+    module = _ahmad_server_module()
+    result = {
+        "status": "ok",
+        "quality_count_ranges": {
+            "q1": [8, 12, 16],
+            "q3": [6, 10, 14],
+            "q4": [4, 6, 8],
+            "q5": [2, 3, 4],
+            "q6": [0, 1, 1],
+        },
+        "evidence": {"total_count": 32},
+    }
+
+    hint = module._next_info_hint(result, hero_key="aisha", round_no=1)  # type: ignore[attr-defined]
+
+    assert hint == "R1先开良品扫描或良品存量"
+    assert "白绿" not in hint
+    assert "总件" not in hint
+
+
+def test_ahmad_server_aisha_missing_total_count_r1_prefers_blue_before_total() -> None:
+    module = _ahmad_server_module()
+    result = {
+        "status": "missing_total_count",
+        "notes": ["waiting_total_count"],
+        "quality_count_ranges": {
+            "q1": [6, 12, 18],
+            "q3": [4, 10, 16],
+        },
+        "evidence": {"total_count": None, "total_grid_target": 140},
+    }
+
+    hint = module._next_info_hint(result, hero_key="aisha", round_no=1)  # type: ignore[attr-defined]
+
+    assert hint == "R1先开良品扫描或良品存量"
+    assert module._ref_waiting_display_text("aisha", result, round_no=1) == hint  # type: ignore[attr-defined]
+
+
+def test_ahmad_server_aisha_next_info_hint_puts_total_count_last() -> None:
+    module = _ahmad_server_module()
+    result = {
+        "status": "ok",
+        "total_grid_range": [120, 120, 120],
+        "quality_count_ranges": {
+            "q1": [10, 10, 10],
+            "q3": [9, 9, 9],
+            "q4": [6, 6, 6],
+            "q5": [3, 3, 3],
+            "q6": [0, 1, 1],
+        },
+        "evidence": {
+            "total_count": None,
+            "total_grid_target": 120,
+            "fixed_counts": {"q3": 9, "q4": 6, "q5": 3},
+            "quality_cells": {"q3": 14, "q4": 18},
+            "avg_cells": {"q5": 2.5},
+        },
+    }
+
+    hint = module._next_info_hint(result, hero_key="aisha")  # type: ignore[attr-defined]
+
+    assert hint == "最后补总件"
+
+
+def test_ahmad_server_aisha_next_info_hint_gold_value_alone_still_suggests_scan() -> None:
+    module = _ahmad_server_module()
+    result = {
+        "status": "ok",
+        "total_grid_range": [120, 120, 120],
+        "quality_count_ranges": {
+            "q1": [10, 10, 10],
+            "q3": [9, 9, 9],
+            "q4": [6, 6, 6],
+            "q5": [3, 3, 3],
+            "q6": [0, 1, 1],
+        },
+        "evidence": {
+            "total_count": 33,
+            "fixed_counts": {"q3": 9, "q4": 6, "q5": 3},
+            "quality_cells": {"q3": 14, "q4": 18},
+            "avg_values": {"q5": 26730},
+        },
+    }
+
+    hint = module._next_info_hint(result, hero_key="aisha")  # type: ignore[attr-defined]
+
+    assert hint == "开极品均格或极品扫描"
+    assert "估价" not in hint
+
+
+def test_ahmad_server_aisha_next_info_hint_moves_to_purple_after_blue_locked() -> None:
+    module = _ahmad_server_module()
+    result = {
+        "status": "ok",
+        "quality_count_ranges": {
+            "q1": [8, 12, 16],
+            "q3": [9, 9, 9],
+            "q4": [4, 8, 12],
+            "q5": [2, 3, 4],
+            "q6": [0, 1, 1],
+        },
+        "evidence": {
+            "total_count": 32,
+            "fixed_counts": {"q3": 9},
+            "quality_cells": {"q3": 14},
+        },
+    }
+
+    hint = module._next_info_hint(result, hero_key="aisha", round_no=3)  # type: ignore[attr-defined]
+
+    assert hint == "开优品均格/优品存量/优品扫描"
+
+
+def test_ahmad_server_aisha_next_info_hint_moves_to_gold_then_warehouse() -> None:
+    module = _ahmad_server_module()
+    purple_done = {
+        "status": "ok",
+        "total_grid_range": [90, 110, 130],
+        "quality_count_ranges": {
+            "q1": [10, 10, 10],
+            "q3": [9, 9, 9],
+            "q4": [6, 6, 6],
+            "q5": [2, 4, 6],
+            "q6": [0, 1, 1],
+        },
+        "evidence": {
+            "total_count": 33,
+            "fixed_counts": {"q3": 9, "q4": 6},
+            "quality_cells": {"q3": 14, "q4": 18},
+        },
+    }
+    gold_done = {
+        **purple_done,
+        "quality_count_ranges": {
+            **purple_done["quality_count_ranges"],
+            "q5": [3, 3, 3],
+        },
+        "evidence": {
+            **purple_done["evidence"],
+            "fixed_counts": {**purple_done["evidence"]["fixed_counts"], "q5": 3},
+            "avg_cells": {"q5": 2.5},
+        },
+    }
+
+    assert (
+        module._next_info_hint(purple_done, hero_key="aisha")  # type: ignore[attr-defined]
+        == "开极品均格或极品扫描"
+    )
+    assert (
+        module._next_info_hint(gold_done, hero_key="aisha")  # type: ignore[attr-defined]
+        == "开总仓储看总格，必要时全库透视"
+    )
+
+
 def test_ahmad_server_next_info_hint_prefers_gold_before_total_grid() -> None:
     module = _ahmad_server_module()
     result = {

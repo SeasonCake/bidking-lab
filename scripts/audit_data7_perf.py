@@ -69,6 +69,8 @@ def classify_route(notes: list[str], *, status: str) -> str:
         return "deferred_grid_only"
     if status == "missing_total_count":
         return "missing_total_count"
+    if "exact_total_avg_cells_fast_path" in notes:
+        return "exact_total_avg_cells_fast_path"
     if "sparse_exact_total_prior_enumeration" in notes:
         return "sparse_exact_prior"
     if "count_prior_enumerated" in notes:
@@ -94,12 +96,16 @@ def _build_snapshot(*, hero: str, events, structured_ref_inputs: dict | None) ->
     }
 
 
-def _iter_sample_files(roots: tuple[Path, ...]) -> list[Path]:
+def _iter_sample_files(roots: tuple[Path, ...], *, hero_filter: str = "") -> list[Path]:
     files: list[Path] = []
+    hero_token = hero_filter.lower()
     for root in roots:
         if not root.is_dir():
             continue
-        files.extend(sorted(root.glob("fatbeans*.json")))
+        for path in sorted(root.glob("fatbeans*.json")):
+            if hero_token and hero_token not in path.name.lower():
+                continue
+            files.append(path)
     return files
 
 
@@ -130,7 +136,7 @@ def audit_samples(
     hero_filter: str,
 ) -> list[PerfRow]:
     rows: list[PerfRow] = []
-    for path in _iter_sample_files(sample_roots):
+    for path in _iter_sample_files(sample_roots, hero_filter=hero_filter):
         events = parse_fatbeans_capture(path)
         hero = _hero_from_events(events)
         if hero_filter and hero != hero_filter:

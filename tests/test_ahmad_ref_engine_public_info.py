@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -2478,3 +2479,64 @@ def test_ref_engine_keeps_victor_min_count_prior_without_total_grid() -> None:
     assert result["status"] == "count_prior"
     assert "total_count_from_ref_count_prior" in result["notes"]
     assert "waiting_total_count" not in result["notes"]
+
+
+SECTION_50_2_FATBEANS_SAMPLES = (
+    FATBEANS_SAMPLE_DIR / "fatbeans_mixed_ahmed_2406_5rounds_2406_1388889389495497_0001.json",
+    FATBEANS_SAMPLE_DIR / "fatbeans_valid_ahmed_2403_2rounds_2403_1388889391900123_0022.json",
+)
+
+
+def _ahmed_fatbeans_snapshot(sample_path: Path, *, round_count: int = 2) -> dict:
+    from bidking_lab.live.fatbeans import live_batches_from_fatbeans_events, parse_fatbeans_capture
+    from bidking_lab.live.monitor import (
+        _ahmad_ref_inputs_from_batches,
+        _public_info_rows,
+        _skill_reveal_rows,
+    )
+
+    events = parse_fatbeans_capture(sample_path)
+    batches = [batch for batch in live_batches_from_fatbeans_events(events) if batch.phase != "settled"]
+    prefix = batches[:round_count]
+    return {
+        "ui_contract": {
+            "context": {"hero": "ahmed", "phase": "bidding"},
+            "constraints": {"public_info": {}},
+        },
+        "structured_ref_inputs": _ahmad_ref_inputs_from_batches(prefix, hero="ahmed") or {},
+        "public_info_rows": _public_info_rows(events, {}),
+        "skill_reveals": _skill_reveal_rows(events, {}),
+        "skill_reveal_rows": _skill_reveal_rows(events, {}),
+        "action_result_rows": [],
+    }
+
+
+@pytest.mark.parametrize("sample_path", SECTION_50_2_FATBEANS_SAMPLES, ids=lambda path: path.name[:40])
+def test_ref_engine_exact_total_q5_avg_cells_fast_path_preserves_outputs(
+    sample_path: Path,
+) -> None:
+    snapshot = _ahmed_fatbeans_snapshot(sample_path)
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+
+    assert result["status"] == "ok"
+    assert "exact_total_avg_cells_fast_path" in result["notes"]
+    if sample_path.name.startswith("fatbeans_mixed_ahmed_2406"):
+        assert result["combo_count"] == 253
+        assert result["balanced"] == 375_163
+    else:
+        assert result["combo_count"] == 196
+        assert result["balanced"] == 901_101
+
+
+@pytest.mark.parametrize("sample_path", SECTION_50_2_FATBEANS_SAMPLES, ids=lambda path: path.name[:40])
+def test_ref_engine_exact_total_q5_avg_cells_fast_path_warm_run_is_bounded(
+    sample_path: Path,
+) -> None:
+    snapshot = _ahmed_fatbeans_snapshot(sample_path)
+    run_reference_engine(snapshot, max_combos=50_000)
+    started = time.perf_counter()
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+
+    assert "exact_total_avg_cells_fast_path" in result["notes"]
+    assert elapsed_ms < 500.0
