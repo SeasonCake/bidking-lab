@@ -261,6 +261,8 @@ SUPPORTED_REF_HERO_KEYS = frozenset(HERO_BY_ID.values())
 STRUCTURED_REF_HERO_KEYS = frozenset({"aisha", "ahmed", "victor"})
 PUBLIC_MAX_QUALITY_INFO_ID = 200048
 PUBLIC_MAX_QUALITY_SKILL_IDS = frozenset({"100110"})
+# 至宝估价: reveals the value of one item from the session's highest quality tier.
+TREASURE_HIGHEST_ITEM_VALUE_ACTION_IDS = frozenset({"100163"})
 QUALITY_TIER_NUMBER = {"q1": 2, "q3": 3, "q4": 4, "q5": 5, "q6": 6}
 
 
@@ -1196,8 +1198,35 @@ def _apply_public_info_exact_numeric_rows(
         source_notes.append(f"public_info_{info_id}_{count_key}_count")
 
 
+def _runtime_quality_by_observed_id(snapshot: dict[str, Any]) -> dict[int, int]:
+    qualities: dict[int, int] = {}
+
+    def ingest(items: Any) -> None:
+        for item in _iter_dicts(items):
+            runtime_id = _safe_int(item.get("runtime_id"))
+            quality = _safe_int(item.get("quality"))
+            if runtime_id is None or quality is None or quality <= 0:
+                continue
+            qualities[runtime_id] = max(qualities.get(runtime_id, 0), quality)
+
+    for row in _iter_skill_reveal_dict_rows(snapshot):
+        ingest(row.get("observed_items") or row.get("revealed_items_detail"))
+    for row in _iter_dicts(snapshot.get("action_result_rows")):
+        ingest(row.get("revealed_items_detail") or row.get("observed_items"))
+    for row in _iter_dicts(snapshot.get("public_info_rows")):
+        ingest(row.get("revealed_items_detail"))
+    uc = snapshot.get("ui_contract") if isinstance(snapshot.get("ui_contract"), dict) else {}
+    actions = uc.get("actions") if isinstance(uc.get("actions"), dict) else {}
+    for row in actions.get("results") or ():
+        if not isinstance(row, dict):
+            continue
+        ingest(row.get("revealed_items_detail") or row.get("observed_items"))
+    return qualities
+
+
 def _extract_public_max_quality(snapshot: dict[str, Any]) -> int | None:
     max_quality: int | None = None
+    runtime_qualities = _runtime_quality_by_observed_id(snapshot)
 
     def consider(quality: Any) -> None:
         nonlocal max_quality
@@ -1230,6 +1259,19 @@ def _extract_public_max_quality(snapshot: dict[str, Any]) -> int | None:
             row.get("revealed_items_detail") or row.get("observed_items")
         ):
             consider(item.get("quality"))
+
+    for row in _iter_dicts(snapshot.get("action_result_rows")):
+        action_id = str(row.get("action_id") or "")
+        if action_id not in TREASURE_HIGHEST_ITEM_VALUE_ACTION_IDS:
+            continue
+        for item in _iter_dicts(
+            row.get("revealed_items_detail") or row.get("observed_items")
+        ):
+            quality = _safe_int(item.get("quality"))
+            runtime_id = _safe_int(item.get("runtime_id"))
+            if quality is None and runtime_id is not None:
+                quality = runtime_qualities.get(runtime_id)
+            consider(quality)
 
     return max_quality
 
@@ -1978,8 +2020,17 @@ def _apply_low_quality_split_evidence(
         merged_count = sum(int(split_counts[key]) for key in LOW_SPLIT_KEYS)
         existing_count = fixed_counts.get("q1")
         if existing_count is not None and int(existing_count) != merged_count:
-            source_notes.append("split_low_quality_q1_count_conflict")
-            source_notes.append("hard_conflict:split_low_quality_q1_count")
+            if (
+                int(existing_count) > merged_count
+                and "coarse_quality_reveal_split_counts" in source_notes
+            ):
+                # Public coarse split counts come from random sample floors, not an
+                # exact white/green warehouse breakdown. Exact q1 skill/count wins.
+                min_counts["q1"] = max(min_counts.get("q1", 0), int(existing_count))
+                source_notes.append("split_low_quality_q1_exact_overrides_coarse_split")
+            else:
+                source_notes.append("split_low_quality_q1_count_conflict")
+                source_notes.append("hard_conflict:split_low_quality_q1_count")
         else:
             fixed_counts["q1"] = merged_count
             min_counts["q1"] = max(min_counts.get("q1", 0), merged_count)

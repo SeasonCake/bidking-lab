@@ -8,4 +8,11 @@ Hero Ref 需要管理员权限，因为实时监测依赖 WinDivert 抓本机游
    或 `Start-HeroRef-Taskbar.bat`
 2. 选择“以管理员身份运行”
 
+补充说明：
+- 双击后 cmd 窗口可能先关闭，这是正常的；若弹出 UAC，请点击「是」。
+- full 完整包自带游戏表，请直接运行 Start-HeroRef.bat；不要先点「导入本机游戏表」。
+- 仅 public-safe 公开包才需要先 Import-LocalTables.bat / 导入本机游戏表.bat。
+- 若 Hero Ref 已打开但一直「等待 monitor 状态」，请查看 data\logs\live\monitor.stderr.log，
+  并把整个 Hero Ref 文件夹加入安全软件信任区（见 火绒拦截说明.txt）。
+
 如果你不确定，先看这个文件，再启动 Hero Ref。

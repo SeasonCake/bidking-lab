@@ -231,6 +231,111 @@ def test_parse_inventory_items_keeps_parent_local_index() -> None:
 
 
 @pytest.mark.parametrize(
+    "info_id",
+    [200013, 200014, 200015, 200016],
+)
+def test_parse_public_avg_cells_zero_without_value_field(info_id: int) -> None:
+    block = (
+        _field_varint(1, info_id)
+        + _field_varint(3, 2101)
+        + _field_varint(5, 1749735471)
+        + _field_varint(6, 1)
+        + _field_varint(13, 900001)
+    )
+
+    info = _parse_public_info(block)
+
+    assert info is not None
+    assert info.info_id == info_id
+    assert info.map_id == 2101
+    assert info.value == 0.0
+    assert info.value_field == 0
+
+
+@pytest.mark.parametrize(
+    "info_id",
+    [200035, 200036, 200037, 200038],
+)
+def test_parse_public_avg_value_zero_without_value_field(info_id: int) -> None:
+    block = (
+        _field_varint(1, info_id)
+        + _field_varint(3, 2102)
+        + _field_varint(5, 1781269813634)
+    )
+
+    info = _parse_public_info(block)
+
+    assert info is not None
+    assert info.info_id == info_id
+    assert info.map_id == 2102
+    assert info.value == 0.0
+    assert info.value_field == 0
+
+
+@pytest.mark.parametrize(
+    "info_id",
+    [200018, 200019, 200020],
+)
+def test_parse_public_exact_count_zero_without_value_field(info_id: int) -> None:
+    block = (
+        _field_varint(1, info_id)
+        + _field_varint(3, 2102)
+        + _field_varint(5, 1781269858721)
+        + _field_varint(6, 2)
+    )
+
+    info = _parse_public_info(block)
+
+    assert info is not None
+    assert info.info_id == info_id
+    assert info.map_id == 2102
+    assert info.value == 0
+    assert info.value_field == 7
+
+
+@pytest.mark.parametrize(
+    "info_id",
+    [200009, 200010, 200011, 200012],
+)
+def test_parse_public_total_cells_zero_without_value_field(info_id: int) -> None:
+    block = (
+        _field_varint(1, info_id)
+        + _field_varint(3, 2105)
+        + _field_varint(5, 1781272984074)
+        + _field_varint(6, 1)
+        + _field_varint(13, 1425654278796282)
+    )
+
+    info = _parse_public_info(block)
+
+    assert info is not None
+    assert info.info_id == info_id
+    assert info.map_id == 2105
+    assert info.value == 0
+    assert info.value_field == 14
+
+
+def test_parse_implied_zero_ahmad_gold_avg_skill_without_value_field() -> None:
+    block = (
+        _field_varint(1, 1002041)
+        + _field_varint(2, 204)
+        + _field_varint(5, 1781272984074)
+        + _field_varint(6, 1)
+        + _field_varint(13, 1425654278796282)
+    )
+
+    reveal = _parse_skill_reveal(block)
+
+    assert reveal is not None
+    assert reveal.skill_id == 1002041
+    assert reveal.hero_id == 204
+    assert reveal.round_index == 1
+    assert reveal.result == 0.0
+    assert reveal.result_field == 0
+    assert reveal.observed_items == ()
+
+
+@pytest.mark.parametrize(
     ("info_id", "value_field", "value"),
     [
         (200009, 14, 98),
@@ -2763,3 +2868,47 @@ def test_fatbeans_package17_layout_replay_scores_against_settlement() -> None:
     )
     assert locked.locked
     assert locked.p50_guess == 157
+
+
+def test_treasure_value_action_result_adds_value_only_grid_marker() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=3,
+                capture_time="",
+                message_id=0x0025,
+                session_id="s1",
+                map_id=2403,
+                round_index=4,
+                action_results=(
+                    FatbeansActionResult(
+                        action_id=100163,
+                        result=None,
+                        result_field=None,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=30,
+                                runtime_id=1425860544908193,
+                                item_id=None,
+                                quality=None,
+                                value=43650,
+                                shape_code=None,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+    assert len(batch.grid_items) == 1
+    assert batch.grid_items[0].local_index == 30
+    assert batch.grid_items[0].value == 43650
+    assert batch.grid_items[0].cells == 1
+    assert batch.grid_items[0].shape_key == "11"

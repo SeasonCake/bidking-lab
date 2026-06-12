@@ -815,10 +815,16 @@ def _minimap_item_display_text(
         primary,
         quality_part,
         _shape_text(shape_code, width, height, raw.get("cells")),
+        (
+            f"价值 {_parse_int(raw.get('value')):,}"
+            if _parse_int(raw.get("value")) not in (None, 0)
+            else ""
+        ),
         _minimap_source_label(source_text, _text(raw.get("layout_source"), "")),
         f"local {raw.get('local_index')}" if raw.get("local_index") not in (None, "") else "",
     )
-    return label, tooltip or _text(raw.get("tooltip"), "").strip()
+    explicit_tooltip = _text(raw.get("tooltip"), "").strip()
+    return label, explicit_tooltip or tooltip or _text(raw.get("tooltip"), "").strip()
 
 
 def _minimap_summary(snapshot: dict[str, Any], uc: dict[str, Any]) -> dict[str, Any]:
@@ -830,16 +836,21 @@ def _minimap_summary(snapshot: dict[str, Any], uc: dict[str, Any]) -> dict[str, 
         root_items = []
 
     status = _text(minimap.get("status"), "")
-    raw_items = minimap.get("items") if isinstance(minimap.get("items"), list) else []
+    contract_items = minimap.get("items") if isinstance(minimap.get("items"), list) else []
+    raw_items = contract_items
     layout_source = _text(minimap.get("layout_source"), "")
     if phase == "settled" and root_items:
         raw_items = root_items
         status = "available"
         layout_source = layout_source or "settlement_inventory"
-    if status != "available" and root_items:
+    elif contract_items:
         status = "available"
+    elif root_items:
         raw_items = root_items
+        status = "available"
         layout_source = layout_source or "minimap_grid_items"
+    else:
+        raw_items = []
 
     columns = _parse_int(minimap.get("columns")) or 10
     rows_hint = (
@@ -869,9 +880,12 @@ def _minimap_summary(snapshot: dict[str, Any], uc: dict[str, Any]) -> dict[str, 
                 continue
             row = _parse_int(raw.get("row"))
             col = _parse_int(raw.get("col"))
+            local_index = _parse_int(raw.get("local_index"))
+            if (row is None or col is None) and local_index is not None:
+                row = local_index // columns + 1
+                col = local_index % columns + 1
             if row is None or col is None:
                 continue
-            local_index = _parse_int(raw.get("local_index"))
             shape_code = _parse_int(raw.get("shape_key") or raw.get("shape_code"))
             if shape_code is None and local_index is not None:
                 shape_code = public_shapes.get(local_index)
@@ -883,6 +897,17 @@ def _minimap_summary(snapshot: dict[str, Any], uc: dict[str, Any]) -> dict[str, 
                 height = max(1, _parse_int(raw.get("height")) or 1)
             source_text = _text(raw.get("source") or raw.get("layout_source"), "")
             render_mode = _text(raw.get("render_mode") or "")
+            item_value = _parse_int(raw.get("value"))
+            if (
+                not render_mode
+                and item_value not in (None, 0)
+                and shape_code is None
+                and _parse_int(raw.get("item_id")) is None
+            ):
+                shape_code = 11
+                width = max(1, width or 1)
+                height = max(1, height or 1)
+                render_mode = "footprint"
             quality_key = _quality_key(raw.get("quality"))
             label, tooltip = _minimap_item_display_text(
                 raw,
@@ -906,7 +931,9 @@ def _minimap_summary(snapshot: dict[str, Any], uc: dict[str, Any]) -> dict[str, 
                     "item_id": raw.get("item_id"),
                     "shape_key": _text(shape_code or ""),
                     "label": label,
+                    "display_label": _text(raw.get("display_label"), "").strip() or label,
                     "tooltip": tooltip,
+                    "value": item_value,
                     "cells": width * height if dims is not None else _parse_int(raw.get("cells")),
                     "source": source_text,
                     "layout_source": _text(raw.get("layout_source") or ""),

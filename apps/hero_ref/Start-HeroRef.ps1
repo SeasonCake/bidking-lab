@@ -130,10 +130,11 @@ $MissingTables = @(
     }
 )
 if ($MissingTables.Count -gt 0) {
-    Write-Host "Missing local game tables: $($MissingTables -join ', ')" -ForegroundColor Red
-    Write-Host "This portable build needs data\raw\tables from the same local game/table version." -ForegroundColor Yellow
-    Write-Host "Run Import-LocalTables.bat first, or copy BidMap.txt / Drop.txt / Item.txt into data\raw\tables." -ForegroundColor Yellow
-    Write-Host "Do not publish raw game tables unless you have permission." -ForegroundColor Yellow
+    Write-Host "缺少本地游戏表: $($MissingTables -join ', ')" -ForegroundColor Red
+    Write-Host "full 完整包通常自带 data\raw\tables；群友发的 full 包请直接 Start-HeroRef.bat，不要先点「导入本机游戏表」。" -ForegroundColor Yellow
+    Write-Host "仅 public-safe 公开包需先运行 Import-LocalTables.bat（或 导入本机游戏表.bat）。" -ForegroundColor Yellow
+    Write-Host "若确认是 public-safe 包，从本机 BidKing 复制表到 data\raw\tables；Steam 示例: ...\steamapps\common\BidKing" -ForegroundColor Yellow
+    Write-Host "请勿公开传播本地游戏表。" -ForegroundColor Yellow
     exit 1
 }
 
@@ -171,8 +172,10 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
     if ($NoRestart) {
         $ElevatedArgs += "-NoRestart"
     }
-    Start-Process -FilePath (Get-CurrentPowerShellPath) -Verb RunAs -WindowStyle Hidden -WorkingDirectory $AppRoot -ArgumentList $ElevatedArgs
-    Write-Host "WinDivert needs Administrator. Relaunched hidden elevated starter." -ForegroundColor Yellow
+    Start-Process -FilePath (Get-CurrentPowerShellPath) -Verb RunAs -WorkingDirectory $AppRoot -ArgumentList $ElevatedArgs
+    Write-Host "WinDivert 需要管理员权限。即将弹出 UAC，请点击「是」。" -ForegroundColor Yellow
+    Write-Host "若本窗口关闭后没有看到 Hero Ref，请右键 Start-HeroRef.bat → 以管理员身份运行。" -ForegroundColor Yellow
+    Read-Host "按 Enter 关闭本窗口"
     return
 }
 
@@ -329,4 +332,17 @@ $Hero = Start-Process -FilePath $HeroExe -WorkingDirectory $AppRoot -ArgumentLis
 if ($Hero -and $Hero.Id) {
     Set-Content -Path $OverlayPidPath -Value "$($Hero.Id)" -Encoding ascii
     Write-Host "Hero Ref: started (PID $($Hero.Id))" -ForegroundColor Green
+}
+
+if ($MonitorLaunchFailed) {
+    Write-Host ""
+    Write-Host "后台 monitor 未成功启动，Hero Ref 会一直显示「等待 monitor 状态」。" -ForegroundColor Yellow
+    Write-Host "请查看: $MonitorErr" -ForegroundColor Yellow
+    Write-Host "常见原因：安全软件拦截 WinDivert；或未以管理员运行。详见 火绒拦截说明.txt" -ForegroundColor Yellow
+    Write-Host ""
+    Read-Host "按 Enter 关闭本窗口"
+} elseif ($Hero -and $Hero.Id) {
+    Write-Host ""
+    Write-Host "Hero Ref 已启动。本窗口可以关闭；关闭 Hero Ref 小窗会同时停止后台 monitor。" -ForegroundColor Green
+    Start-Sleep -Seconds 3
 }

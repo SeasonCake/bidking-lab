@@ -202,9 +202,58 @@
 
 详细分批修复计划：`EXECUTION_NOTES_2026-06-10.zh-CN.md` §54；checkpoint handoff：`handoff_2026-06-12.zh-CN.md`；文件/文档索引：`docs/HERO_REF_FILE_AND_DOC_INDEX.zh-CN.md`。
 
-## 9. 待补：金为零 live 样本（用户进行中）
+## 9. 金为零 live 样本（公开信息路径）
 
-- **状态**：用户 2026-06-12 将打几局带「金均格/金件为零」信息的对局后提供 export / reset。
-- **用途**：验收 §54 **A 批**（inferred_zero 时序、engine zero 链、UI 是否显示 0）。
-- **收到后填写**：session、是否有 `100113` SEND / REV / later state、artifact 路径、UI 期望 vs 实际；追加到本节表格。
-- **当前缺口**：§8 recordings 125 reset 无 `100113`；不能替代本样本。
+**状态（2026-06-12）**：用户已提供高质量样本；parser fix 覆盖 `200037` 金均价 0、`200019` 金件数 0、`200015` 金均格 0（field 缺失 → 0）。
+
+**统一归档**：`data/samples/hero_ref/`（见 §10、`manifest.json`）。
+
+| sample_id | session | hero | map | 主题 | raw 公开 id | 结算 q5 | 归档 export | 说明 |
+| --- | --- | --- | ---: | --- | --- | ---: | --- | --- |
+| **HR-20260612-4653** | `2102:1425860536614653` | maria | 2102 | gold_zero_public, maria_skill | `200037`, `200019`, `200050` | 0 | `data/samples/hero_ref/archive/exports/2026-06-12/HeroRefDiag-20260612-211125-2102_1425860536614653.zip` | **P0 首选**：R1 金均价 0 → R2 金件数 0；Maria 22099；结算金 0 与公开一致 |
+| HR-20260612-1819 | `2101:1425860534011819` | maria | 2101 | gold_zero_public, public_avg_cells, maria_skill | `200013–200016`（含 `200015`） | 0 | `.../HeroRefDiag-20260612-203918-2101_1425860534011819.zip` | 快递站 R2「金均格约 0 格」；zip 内 raw jsonl 可复放 |
+| HR-20260612-9045 | `2104:1425860535909045` | maria | 2104 | maria_skill, public_info_minimap | `200010/021/022/050` | 0 | `.../HeroRefDiag-20260612-210348-2104_1425860535909045.zip` | 命名公开物品 + Maria skill；小地图/公开 marker 回归 |
+| HR-20260612-0953 | `2410:1425860529000953` | maria | 2410 | maria_skill, public_info_minimap | `200001`, `200011` | 3 | `.../HeroRefDiag-20260612-193322-2410_1425860529000953.zip` | 紫轮廓 14 点 + 小地图 blocking 回归（`_maria2410` 同源） |
+| HR-20260612-5508 | `2406:1425860529455508` | maria | 2406 | maria_skill, public_info_minimap | `200027` | — | `.../HeroRefDiag-20260612-193827-2406_1425860529455508.zip` | R2 公开摇号 6 点；partial（export 时 bidding） |
+
+**验收命令（4653，parser fix 后）**：
+
+```powershell
+cd c:\xiangmuyunxing\biancheng\2026\bidking-lab
+python scripts/organize_hero_ref_samples.py --apply
+# 复放见 data/samples/hero_ref/README.zh-CN.md
+```
+
+**期望（4653，R2+ bidding）**：`public_info_rows` 含 `200037=0`、`200019=0`；ref `quality_count_ranges.q5=[0,0,0]`；notes 含 `public_q5_avg_value`、`public_info_200019_q5_count`。
+
+**与 §8 关系**：§8 recordings 125 reset 仍无 `100113` SEND；本批样本走 **公开信息 Batch C**，不替代 **Batch A**（道具 `100113` SEND-no-REV）。
+
+## 10. Hero Ref 样本统一归档（2026-06-12）
+
+| 路径 | 内容 |
+| --- | --- |
+| `data/samples/hero_ref/README.zh-CN.md` | 目录说明、复放命令 |
+| `data/samples/hero_ref/manifest.json` | 全量 export catalog（`python scripts/organize_hero_ref_samples.py --apply` 刷新） |
+| `data/samples/hero_ref/archive/exports/YYYY-MM-DD/` | HeroRefDiag zip **副本**（源仍保留在 `data/logs/live/exports/`） |
+| `data/samples/hero_ref/archive/reset/YYYY-MM-DD/` | 同 session 的 reset json（若 live reset 目录有） |
+
+**2026-06-10 export**（结算/regression，共 12 zip）：仍在 `data/logs/live/exports/HeroRefDiag-20260610-*.zip`；运行 organize 脚本后会一并写入 manifest，优先级 P2。
+
+**临时解压目录（可删）**：`data/logs/live/exports/_maria2410`、`exports/_r2_2406` — 与 HR-20260612-0953 / 5508 同源，不必长期保留；以 archive zip 为准。
+
+**维护**：新导出 zip 出现后执行 `organize_hero_ref_samples.py --apply`，再在本 index §9 表格补一行（仅 P0/P1）。
+
+## 11. Live 小地图 / 至宝估价回归样本（2026-06-12）
+
+用途：验收 **EXECUTION_NOTES §57** 小地图 footprint、未知品质斜条纹、`100163` 至宝估价（价格仅 tooltip）；**非** settlement ref 全量 audit。
+
+| sample_id | session | hero | map | 主题 | 关键证据 | 快照 / export | 期望 |
+| --- | --- | --- | ---: | --- | --- | --- | --- |
+| **HR-MINI-20260612-GAB** | `2402:1425860548836801` | gabriela | 2402 | treasure_100163 | R3 sort 20；local **25**；**71500** | `data/logs/live/latest_snapshot.json` | Q6 大溪地黑珍珠；用户 **live OK** |
+| HR-MINI-20260612-SOP | `2401:1425860545985228` | sophie | 2401 | treasure + ref_q6_lock | R3 **85623** @59 | 会话 replay | merged Q5 → **q6=0** |
+| HR-MINI-20260612-TAT | `2409:1425860547014998` | tatiana | 2409 | treasure runtime_merge | R4 **29700** @8 | sort≤27 replay | runtime_id 合并 footprint |
+| HR-MINI-20260612-WUQ | `2409:1425860547799228` | wuqilin | 2409 | skill_10002071 stripe | 9×古董 shape-only | skill row replay | 未知品质斜条纹 footprint |
+
+**仍缺（Hero pool P0）**：吴起灵 R1 **`100207`**；加布里/塔蒂安娜 ref item-anchor 多样本。
+
+**归档**：加布里 export zip 待 `organize_hero_ref_samples.py --apply` → manifest（P1）。

@@ -914,6 +914,69 @@ def test_overlay_draw_minimap_renders_quality_only_markers() -> None:
     assert overlay._section_style("正式出价", "停止追价")["tag"] == "bad"
 
 
+def test_ahmad_tk_minimap_unknown_footprint_uses_stripes_without_permanent_text() -> None:
+    module = _ahmad_overlay_module()
+    calls: list[tuple[str, tuple, dict]] = []
+
+    class DummyCanvas:
+        def delete(self, *args, **kwargs):
+            calls.append(("delete", args, kwargs))
+
+        def winfo_width(self):
+            return 300
+
+        def winfo_height(self):
+            return 140
+
+        def configure(self, **kwargs):
+            calls.append(("configure", (), kwargs))
+
+        def create_line(self, *args, **kwargs):
+            calls.append(("line", args, kwargs))
+
+        def create_rectangle(self, *args, **kwargs):
+            calls.append(("rectangle", args, kwargs))
+
+        def create_oval(self, *args, **kwargs):
+            calls.append(("oval", args, kwargs))
+
+        def create_text(self, *args, **kwargs):
+            calls.append(("text", args, kwargs))
+
+        def tag_bind(self, *args, **kwargs):
+            calls.append(("tag_bind", args, kwargs))
+
+    instance = module.AhmadTkOverlay.__new__(module.AhmadTkOverlay)
+    module.AhmadTkOverlay._draw_minimap(
+        instance,
+        DummyCanvas(),
+        {
+            "status": "available",
+            "columns": 10,
+            "viewport_rows": 13,
+            "items": [
+                {
+                    "row": 4,
+                    "col": 5,
+                    "width": 2,
+                    "height": 1,
+                    "quality": None,
+                    "category_label": "古董",
+                    "shape_key": "21",
+                    "render_mode": "footprint",
+                    "tooltip": "技能 10002071 / 品质? / 21 / 古董",
+                }
+            ],
+        },
+        None,
+    )
+
+    item_calls = [entry for entry in calls if entry[2].get("tags") == ("item_0",)]
+    assert any(kind == "rectangle" for kind, *_ in item_calls)
+    assert any(kind == "line" for kind, *_ in item_calls)
+    assert not any(kind == "text" for kind, *_ in calls)
+
+
 def test_ahmad_tk_minimap_draws_explicit_marker_as_oval_even_with_shape() -> None:
     module = _ahmad_overlay_module()
     calls: list[tuple[str, tuple, dict]] = []

@@ -190,7 +190,8 @@ MAINLINE_QUALITY_STYLE = {
     "q4": {"fill": "#c084fc", "outline": "#e9d5ff", "unknown": False},
     "q5": {"fill": "#fbbf24", "outline": "#d97706", "unknown": False},
     "q6": {"fill": "#fb7185", "outline": "#e11d48", "unknown": False},
-    "unknown": {"fill": "#172033", "outline": "#64748b", "unknown": False},
+    "treasure": {"fill": "#fbbf24", "outline": "#d97706", "unknown": False},
+    "unknown": {"fill": "#4a5d78", "outline": "#94a3b8", "unknown": True},
 }
 
 THEME_ORDER = ("blue", "dark", "light", "random")
@@ -4697,7 +4698,11 @@ class AhmadTkOverlay:
         return int(canvas.create_polygon(points, smooth=True, splinesteps=8, **kwargs))
 
     def _minimap_quality_style(self, quality: str) -> dict[str, Any]:
-        return dict(MAINLINE_QUALITY_STYLE.get(quality, MAINLINE_QUALITY_STYLE["unknown"]))
+        key = quality if quality in MAINLINE_QUALITY_STYLE else "unknown"
+        style = dict(MAINLINE_QUALITY_STYLE[key])
+        if key == "unknown":
+            style["unknown"] = True
+        return style
 
     def _draw_unknown_quality_fill(
         self,
@@ -4709,11 +4714,24 @@ class AhmadTkOverlay:
         *,
         color: str,
         tag: str,
+        base_fill: str | None = None,
     ) -> None:
         width = max(1, x1 - x0)
         height = max(1, y1 - y0)
-        step = max(4, min(width, height) // 3)
-        for start_x in range(x0 - height, x1, step):
+        if base_fill:
+            canvas.create_rectangle(
+                x0,
+                y0,
+                x1,
+                y1,
+                fill=base_fill,
+                outline="",
+                width=0,
+                tags=(tag,),
+            )
+        step = max(3, min(width, height) // 4)
+        line_width = 2 if min(width, height) >= 14 else 1
+        for start_x in range(x0 - height, x1 + height, step):
             clipped_start_x = max(x0, start_x)
             clipped_end_x = min(x1, start_x + height)
             start_y = y1 - (clipped_start_x - start_x)
@@ -4725,7 +4743,7 @@ class AhmadTkOverlay:
                     clipped_end_x,
                     end_y,
                     fill=color,
-                    width=1,
+                    width=line_width,
                     tags=(tag,),
                 )
 
@@ -4817,9 +4835,13 @@ class AhmadTkOverlay:
             if row < 1 or col < 1 or row > rows or col > columns:
                 continue
             quality = _minimap_quality_key(item.get("quality"))
+            item_value = _to_int(item.get("value"), 0)
             style = self._minimap_quality_style(quality)
             fill = str(style["fill"])
-            outline = _blend_hex(fill, MINIMAP_BG, 0.36)
+            if style.get("unknown"):
+                outline = str(style["outline"])
+            else:
+                outline = _blend_hex(fill, MINIMAP_BG, 0.36)
             gap = 1
             x1 = x0 + (col - 1) * cell + gap
             y1 = y0 + (row - 1) * cell + gap
@@ -4863,35 +4885,44 @@ class AhmadTkOverlay:
                 )
             )
             if marker_only:
-                marker_size = max(5, min(9, int(round(cell * 0.50))))
+                marker_size = max(6, min(11, int(round(cell * 0.55))))
+                if item_value > 0:
+                    marker_size = max(marker_size, 8)
                 dot_x = (x1 + x2) / 2
                 dot_y = (y1 + y2) / 2
                 marker_x1 = int(round(dot_x - marker_size / 2))
                 marker_y1 = int(round(dot_y - marker_size / 2))
                 marker_x2 = marker_x1 + marker_size
                 marker_y2 = marker_y1 + marker_size
+                marker_fill = (
+                    _blend_hex(MINIMAP_BG, outline, 0.42)
+                    if style.get("unknown")
+                    else fill
+                )
                 canvas.create_oval(
                     marker_x1,
                     marker_y1,
                     marker_x2,
                     marker_y2,
-                    fill=fill,
+                    fill=marker_fill,
                     outline=outline,
                     width=1,
                     tags=(tag,),
                 )
             else:
-                canvas.create_rectangle(
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    fill=fill,
-                    outline=outline,
-                    width=1,
-                    tags=(tag,),
-                )
-                if style.get("unknown"):
+                unknown_item = bool(style.get("unknown"))
+                if unknown_item:
+                    base_fill = _blend_hex(MINIMAP_BG, outline, 0.42)
+                    canvas.create_rectangle(
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        fill=base_fill,
+                        outline=outline,
+                        width=1,
+                        tags=(tag,),
+                    )
                     self._draw_unknown_quality_fill(
                         canvas,
                         x1,
@@ -4900,6 +4931,17 @@ class AhmadTkOverlay:
                         y2,
                         color=outline,
                         tag=tag,
+                    )
+                else:
+                    canvas.create_rectangle(
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        fill=fill,
+                        outline=outline,
+                        width=1,
+                        tags=(tag,),
                     )
             tooltip = _text(item.get("tooltip") or item.get("label") or quality, "")
             if tip is not None:

@@ -13,6 +13,7 @@ from bidking_lab.inference.size_avg_evidence import (
 )
 
 _MINIMAP_COLUMNS = 10
+_TREASURE_HIGHEST_VALUE_ACTION_ID = 100163
 _MINIMAP_DEFAULT_CELLS = 130
 _MINIMAP_MAX_CELLS = 250
 _MINIMAP_DEFAULT_ROWS = _MINIMAP_DEFAULT_CELLS // _MINIMAP_COLUMNS
@@ -1411,14 +1412,153 @@ def _ui_diagnostics_contract(
     }
 
 
+def _format_item_value(value: Any) -> str:
+    parsed = _int_or_none(value)
+    if parsed is None:
+        return ""
+    return f"{parsed:,}"
+
+
+def _apply_treasure_value_reveals(
+    artifact: Mapping[str, Any],
+    items: list[dict[str, Any]],
+) -> int:
+    """Show 至宝估价 like 抽检: upgrade the grid cell with the revealed value."""
+    runtime_qualities = _runtime_quality_by_observed_id(artifact)
+    added = 0
+    for row in artifact.get("action_result_rows") or ():
+        if not isinstance(row, Mapping):
+            continue
+        if _int_or_none(row.get("action_id")) != _TREASURE_HIGHEST_VALUE_ACTION_ID:
+            continue
+        tool_label = _text(row.get("tool")) or "至宝估价"
+        details = row.get("revealed_items_detail")
+        if not isinstance(details, Sequence) or isinstance(details, (str, bytes)):
+            continue
+        for item in details:
+            if not isinstance(item, Mapping):
+                continue
+            value = _int_or_none(item.get("value"))
+            local_index = _int_or_none(item.get("local_index"))
+            runtime_id = _int_or_none(item.get("runtime_id"))
+            if value is None or local_index is None:
+                continue
+            value_text = _format_item_value(value)
+            quality = _int_or_none(item.get("quality"))
+            if quality is None and runtime_id is not None:
+                quality = runtime_qualities.get(runtime_id)
+            item_name = _text(item.get("item_name") or item.get("name"))
+            shape_key = _text(item.get("shape_code") or item.get("shape_key"))
+            target: dict[str, Any] | None = None
+            if runtime_id is not None:
+                for existing in items:
+                    if _int_or_none(existing.get("runtime_id")) == runtime_id:
+                        target = existing
+                        break
+            if target is None:
+                for existing in items:
+                    if _int_or_none(existing.get("local_index")) == local_index:
+                        target = existing
+                        break
+            tooltip = _join_nonempty(
+                [
+                    tool_label,
+                    item_name or value_text,
+                    f"Q{quality}" if quality is not None else "",
+                    f"价值 {value_text}",
+                    shape_key,
+                    f"local {local_index}",
+                ],
+                sep=" / ",
+            )
+            patch: dict[str, Any] = {
+                "value": value,
+                "display_label": value_text,
+                "tooltip": tooltip,
+                "render_mode": "footprint",
+            }
+            if target is not None and _text(target.get("item_name")):
+                pass
+            else:
+                patch["item_name"] = item_name or value_text
+            if runtime_id is not None:
+                patch["runtime_id"] = runtime_id
+            if quality is not None:
+                patch["quality"] = quality
+            if target is not None:
+                if not shape_key:
+                    shape_key = _text(target.get("shape_key"))
+                if shape_key and not _text(target.get("shape_key")):
+                    patch["shape_key"] = shape_key
+                target.update(patch)
+                continue
+            patch["local_index"] = local_index
+            row_no = local_index // _MINIMAP_COLUMNS + 1
+            col_no = local_index % _MINIMAP_COLUMNS + 1
+            items.append(
+                {
+                    "row": row_no,
+                    "col": col_no,
+                    "width": 1,
+                    "height": 1,
+                    "quality": quality,
+                    "category": None,
+                    "category_label": "",
+                    "item_id": _int_or_none(item.get("item_id")),
+                    "item_name": item_name or value_text,
+                    "display_label": value_text,
+                    "tooltip": tooltip,
+                    "shape_key": shape_key or "11",
+                    "cells": _int_or_none(item.get("cells")) or 1,
+                    "value": value,
+                    "local_index": local_index,
+                    "runtime_id": runtime_id,
+                    "source": "packet",
+                    "layout_source": "live_grid",
+                    "render_mode": "footprint",
+                }
+            )
+            added += 1
+    return added
+
+
+def _runtime_quality_by_observed_id(artifact: Mapping[str, Any]) -> dict[int, int]:
+    qualities: dict[int, int] = {}
+
+    def ingest(items: Any) -> None:
+        if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
+            return
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            runtime_id = _int_or_none(item.get("runtime_id"))
+            quality = _int_or_none(item.get("quality"))
+            if runtime_id is None or quality is None or quality <= 0:
+                continue
+            qualities[runtime_id] = max(qualities.get(runtime_id, 0), quality)
+
+    for rows in (
+        artifact.get("action_result_rows"),
+        artifact.get("public_info_rows"),
+        artifact.get("skill_reveal_rows"),
+    ):
+        for row in rows or ():
+            if not isinstance(row, Mapping):
+                continue
+            ingest(row.get("revealed_items_detail"))
+            ingest(row.get("observed_items"))
+    return qualities
+
+
 def _ui_minimap_quality_markers(
     artifact: Mapping[str, Any],
     *,
-    known_runtime_ids: set[int],
-    known_local_indexes: set[int],
+    drawable_runtime_ids: set[int],
+    drawable_local_indexes: set[int],
 ) -> list[dict[str, Any]]:
     markers: list[dict[str, Any]] = []
-    seen: set[tuple[int | None, int, int]] = set()
+    seen: set[tuple[int | None, int, int | None, int | None]] = set()
+    runtime_qualities = _runtime_quality_by_observed_id(artifact)
     row_sources = (
         ("packet", artifact.get("action_result_rows", ()) or ()),
         ("public_info", artifact.get("public_info_rows", ()) or ()),
@@ -1427,6 +1567,8 @@ def _ui_minimap_quality_markers(
     for source, rows in row_sources:
         for row in rows:
             if not isinstance(row, Mapping):
+                continue
+            if _int_or_none(row.get("action_id")) == _TREASURE_HIGHEST_VALUE_ACTION_ID:
                 continue
             details = row.get("revealed_items_detail")
             if not isinstance(details, Sequence) or isinstance(details, (str, bytes)):
@@ -1449,37 +1591,55 @@ def _ui_minimap_quality_markers(
                 item_name = _text(item.get("item_name") or item.get("name"))
                 local_index = _int_or_none(item.get("local_index"))
                 runtime_id = _int_or_none(item.get("runtime_id"))
-                if quality is None or local_index is None:
+                value = _int_or_none(item.get("value"))
+                shape_key = _text(item.get("shape_code") or item.get("shape_key"))
+                if local_index is None:
                     continue
-                if runtime_id is not None and runtime_id in known_runtime_ids:
+                if quality is None and runtime_id is not None:
+                    quality = runtime_qualities.get(runtime_id)
+                if quality is None and value is None and not shape_key:
                     continue
-                if local_index in known_local_indexes:
+                if runtime_id is not None and runtime_id in drawable_runtime_ids:
                     continue
-                marker_key = (runtime_id, local_index, quality)
+                if local_index in drawable_local_indexes:
+                    continue
+                marker_key = (runtime_id, local_index, quality, value)
                 if marker_key in seen:
                     continue
                 seen.add(marker_key)
                 row_no = local_index // _MINIMAP_COLUMNS + 1
                 col_no = local_index % _MINIMAP_COLUMNS + 1
-                shape_key = _text(item.get("shape_code") or item.get("shape_key"))
                 cells = _int_or_none(item.get("cells"))
-                tooltip_quality = f"Q{quality}"
+                shape_code = _int_or_none(shape_key)
+                width = 1
+                height = 1
+                render_mode = "marker"
+                if shape_code is not None:
+                    shape_w = shape_code // 10
+                    shape_h = shape_code % 10
+                    if shape_w > 0 and shape_h > 0:
+                        width = shape_w
+                        height = shape_h
+                        render_mode = "footprint"
+                tooltip_quality = f"Q{quality}" if quality is not None else "品质?"
+                value_text = _format_item_value(value)
                 markers.append(
                     {
                         "row": row_no,
                         "col": col_no,
-                        "width": 1,
-                        "height": 1,
+                        "width": width,
+                        "height": height,
                         "quality": quality,
                         "category": None,
                         "category_label": "",
                         "item_id": item_id,
                         "item_name": item_name,
-                        "display_label": item_name or tooltip_quality,
+                        "display_label": "",
                         "tooltip": _join_nonempty(
                             [
                                 source_label,
-                                item_name or f"{tooltip_quality}≥1",
+                                item_name or tooltip_quality,
+                                f"价值 {value_text}" if value_text else "",
                                 shape_key,
                                 f"{cells}格" if cells is not None else "",
                                 f"local {local_index}",
@@ -1487,23 +1647,24 @@ def _ui_minimap_quality_markers(
                             sep=" / ",
                         ),
                         "shape_key": shape_key,
-                        "cells": cells or 1,
+                        "cells": cells or width * height,
+                        "value": value,
                         "local_index": local_index,
                         "source": source,
-                        "render_mode": "marker",
+                        "render_mode": render_mode,
                     }
                 )
-                known_local_indexes.add(local_index)
+                drawable_local_indexes.add(local_index)
                 if runtime_id is not None:
-                    known_runtime_ids.add(runtime_id)
+                    drawable_runtime_ids.add(runtime_id)
     return markers
 
 
 def _ui_minimap_quality_reveal_summary(
     artifact: Mapping[str, Any],
     *,
-    known_runtime_ids: set[int],
-    known_local_indexes: set[int],
+    drawable_runtime_ids: set[int],
+    drawable_local_indexes: set[int],
 ) -> dict[str, Any]:
     counts: Counter[str] = Counter()
     unplaced_counts: Counter[str] = Counter()
@@ -1548,9 +1709,11 @@ def _ui_minimap_quality_reveal_summary(
                 counts[label] += 1
                 source_counts[source_label] += 1
                 known_runtime = (
-                    runtime_id is not None and runtime_id in known_runtime_ids
+                    runtime_id is not None and runtime_id in drawable_runtime_ids
                 )
-                known_local = local_index is not None and local_index in known_local_indexes
+                known_local = (
+                    local_index is not None and local_index in drawable_local_indexes
+                )
                 if known_runtime or known_local:
                     covered_count += 1
                 elif local_index is None:
@@ -1584,8 +1747,8 @@ def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     quality_counts: Counter[str] = Counter()
     category_counts: Counter[str] = Counter()
-    known_runtime_ids: set[int] = set()
-    known_local_indexes: set[int] = set()
+    drawable_runtime_ids: set[int] = set()
+    drawable_local_indexes: set[int] = set()
     layout_source_counts: Counter[str] = Counter()
     drawable_items = 0
     settlement_items = 0
@@ -1622,14 +1785,16 @@ def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
             ],
             sep=" / ",
         )
+        if row is None or col is None:
+            continue
         if quality is not None:
             quality_counts[f"q{quality}"] += 1
         if category_label:
             category_counts[category_label] += 1
         if runtime_id is not None:
-            known_runtime_ids.add(runtime_id)
+            drawable_runtime_ids.add(runtime_id)
         if local_index is not None:
-            known_local_indexes.add(local_index)
+            drawable_local_indexes.add(local_index)
         items.append(
             {
                 "row": row,
@@ -1645,21 +1810,39 @@ def _ui_minimap_contract(artifact: Mapping[str, Any]) -> dict[str, Any]:
                 "tooltip": tooltip,
                 "shape_key": shape_key,
                 "cells": item.get("cells"),
+                "value": _int_or_none(item.get("value")),
+                "runtime_id": runtime_id,
                 "local_index": local_index,
                 "source": _text(item.get("source")),
                 "layout_source": layout_source,
                 "render_mode": "footprint",
             }
         )
+    treasure_added = _apply_treasure_value_reveals(artifact, items)
+    drawable_items += treasure_added
+    for item in items[-treasure_added:] if treasure_added else ():
+        row = _int_or_none(item.get("row"))
+        height = _int_or_none(item.get("height")) or 1
+        if row is not None:
+            max_row = max(max_row, row + height - 1)
+        runtime_id = _int_or_none(item.get("runtime_id"))
+        local_index = _int_or_none(item.get("local_index"))
+        if runtime_id is not None:
+            drawable_runtime_ids.add(runtime_id)
+        if local_index is not None:
+            drawable_local_indexes.add(local_index)
+        quality = item.get("quality")
+        if quality is not None:
+            quality_counts[f"q{quality}"] += 1
     quality_reveal_summary = _ui_minimap_quality_reveal_summary(
         artifact,
-        known_runtime_ids=set(known_runtime_ids),
-        known_local_indexes=set(known_local_indexes),
+        drawable_runtime_ids=set(drawable_runtime_ids),
+        drawable_local_indexes=set(drawable_local_indexes),
     )
     quality_markers = _ui_minimap_quality_markers(
         artifact,
-        known_runtime_ids=known_runtime_ids,
-        known_local_indexes=known_local_indexes,
+        drawable_runtime_ids=drawable_runtime_ids,
+        drawable_local_indexes=drawable_local_indexes,
     )
     for marker in quality_markers:
         row = _int_or_none(marker.get("row"))

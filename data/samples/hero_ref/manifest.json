@@ -1,0 +1,460 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-06-12",
+  "archive_root": "data/samples/hero_ref/archive",
+  "source_exports_dir": "data/logs/live/exports",
+  "source_reset_dir": "data/logs/live/raw/archive/reset",
+  "samples": [
+    {
+      "sample_id": "HR-20260610-6907",
+      "session_id": "2401:1402770751516907",
+      "hero": "ahmed",
+      "map_id": 2401,
+      "phase": "settled",
+      "themes": [
+        "gold_zero_public"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-164507-2401_1402770751516907.zip",
+      "raw_reset": "data/samples/hero_ref/archive/reset/2026-06-10/windivert_live_2026-06-10_164228_2401_1402770751516907_reset.json",
+      "public_info_ids": [
+        200011,
+        200031
+      ],
+      "public_info_rows": {
+        "200011": 11,
+        "200031": 7186.66650390625
+      },
+      "skill_ids": [],
+      "settlement_q5": 4,
+      "settlement_items": 20,
+      "priority": "P0",
+      "notes_zh": "公开信息金为零 raw 块：[200011]；parser fix 后应进入 public_info_rows。"
+    },
+    {
+      "sample_id": "HR-20260610-5196",
+      "session_id": "2401:1402770751685196",
+      "hero": "ahmed",
+      "map_id": 2401,
+      "phase": "settled",
+      "themes": [
+        "general"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-164816-2401_1402770751685196.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200033,
+        200036
+      ],
+      "public_info_rows": {
+        "200033": 3771.77783203125,
+        "200036": 8312.0
+      },
+      "skill_ids": [],
+      "settlement_q5": 1,
+      "settlement_items": 25,
+      "priority": "P2",
+      "notes_zh": "通用 Hero Ref 诊断包。"
+    },
+    {
+      "sample_id": "HR-20260610-6543",
+      "session_id": "2404:1402770752486543",
+      "hero": "ahmed",
+      "map_id": 2404,
+      "phase": "settled",
+      "themes": [
+        "public_info_minimap"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-170134-2404_1402770752486543.zip",
+      "raw_reset": "data/samples/hero_ref/archive/reset/2026-06-10/windivert_live_2026-06-10_165845_2404_1402770752486543_reset.json",
+      "public_info_ids": [
+        200001,
+        200009
+      ],
+      "public_info_rows": {
+        "200009": 50,
+        "200001": 6
+      },
+      "skill_ids": [],
+      "settlement_q5": 4,
+      "settlement_items": 25,
+      "priority": "P1",
+      "notes_zh": "公开摇号/轮廓/命名物品；可用于小地图 marker 回归。"
+    },
+    {
+      "sample_id": "HR-20260610-3131",
+      "session_id": "2401:1402770752813131",
+      "hero": "ahmed",
+      "map_id": 2401,
+      "phase": "settled",
+      "themes": [
+        "gold_zero_public"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-170509-2401_1402770752813131.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200011
+      ],
+      "public_info_rows": {
+        "200011": 10
+      },
+      "skill_ids": [],
+      "settlement_q5": 4,
+      "settlement_items": 36,
+      "priority": "P0",
+      "notes_zh": "公开信息金为零 raw 块：[200011]；parser fix 后应进入 public_info_rows。"
+    },
+    {
+      "sample_id": "HR-20260610-4377",
+      "session_id": "2401:1402770754854377",
+      "hero": "ahmed",
+      "map_id": 2401,
+      "phase": "settled",
+      "themes": [
+        "gold_zero_public",
+        "public_info_minimap"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-174249-2401_1402770754854377.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200001,
+        200037
+      ],
+      "public_info_rows": {
+        "200037": 27325.0,
+        "200001": 13
+      },
+      "skill_ids": [],
+      "settlement_q5": 3,
+      "settlement_items": 48,
+      "priority": "P0",
+      "notes_zh": "公开信息金为零 raw 块：[200037]；parser fix 后应进入 public_info_rows。"
+    },
+    {
+      "sample_id": "HR-20260610-0515",
+      "session_id": "2406:1402770755870515",
+      "hero": "ahmed",
+      "map_id": 2406,
+      "phase": "settled",
+      "themes": [
+        "gold_zero_public"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-175903-2406_1402770755870515.zip",
+      "raw_reset": "data/samples/hero_ref/archive/reset/2026-06-10/windivert_live_2026-06-10_175616_2406_1402770755870515_reset.json",
+      "public_info_ids": [
+        200019,
+        200026
+      ],
+      "public_info_rows": {
+        "200026": 3,
+        "200019": 5
+      },
+      "skill_ids": [],
+      "settlement_q5": 5,
+      "settlement_items": 31,
+      "priority": "P0",
+      "notes_zh": "公开信息金为零 raw 块：[200019]；parser fix 后应进入 public_info_rows。"
+    },
+    {
+      "sample_id": "HR-20260610-6006",
+      "session_id": "2403:1402770756046006",
+      "hero": "ahmed",
+      "map_id": 2403,
+      "phase": "settled",
+      "themes": [
+        "public_avg_cells",
+        "settlement_q5_zero"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-180113-2403_1402770756046006.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200014,
+        200028
+      ],
+      "public_info_rows": {
+        "200028": 9,
+        "200014": 2.933333396911621
+      },
+      "skill_ids": [],
+      "settlement_q5": 0,
+      "settlement_items": 30,
+      "priority": "P2",
+      "notes_zh": "通用 Hero Ref 诊断包。"
+    },
+    {
+      "sample_id": "HR-20260610-1719",
+      "session_id": "2401:1402770762631719",
+      "hero": "ahmed",
+      "map_id": 2401,
+      "phase": "settled",
+      "themes": [
+        "general"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-194339-2401_1402770762631719.zip",
+      "raw_reset": "data/samples/hero_ref/archive/reset/2026-06-10/windivert_live_2026-06-10_194021_2401_1402770762631719_reset.json",
+      "public_info_ids": [
+        200017,
+        200036
+      ],
+      "public_info_rows": {
+        "200017": 41,
+        "200036": 6429.33349609375
+      },
+      "skill_ids": [],
+      "settlement_q5": 4,
+      "settlement_items": 41,
+      "priority": "P2",
+      "notes_zh": "通用 Hero Ref 诊断包。"
+    },
+    {
+      "sample_id": "HR-20260610-8816",
+      "session_id": "2402:1402770762948816",
+      "hero": "ahmed",
+      "map_id": 2402,
+      "phase": "settled",
+      "themes": [
+        "gold_zero_public",
+        "public_avg_cells"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-194722-2402_1402770762948816.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200014,
+        200037
+      ],
+      "public_info_rows": {
+        "200014": 2.866666555404663,
+        "200037": 23628.572265625
+      },
+      "skill_ids": [],
+      "settlement_q5": 7,
+      "settlement_items": 45,
+      "priority": "P0",
+      "notes_zh": "公开信息金为零 raw 块：[200037]；parser fix 后应进入 public_info_rows。"
+    },
+    {
+      "sample_id": "HR-20260610-4070",
+      "session_id": "2406:1402770772344070",
+      "hero": "ahmed",
+      "map_id": 2406,
+      "phase": "settled",
+      "themes": [
+        "general"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-215047-2406_1402770772344070.zip",
+      "raw_reset": "data/samples/hero_ref/archive/reset/2026-06-10/windivert_live_2026-06-10_214830_2406_1402770772344070_reset.json",
+      "public_info_ids": [
+        200018,
+        200021
+      ],
+      "public_info_rows": {
+        "200021": 2.5,
+        "200018": 11
+      },
+      "skill_ids": [],
+      "settlement_q5": 4,
+      "settlement_items": 47,
+      "priority": "P2",
+      "notes_zh": "通用 Hero Ref 诊断包。"
+    },
+    {
+      "sample_id": "HR-20260610-9599",
+      "session_id": "2403:1402770772799599",
+      "hero": "ahmed",
+      "map_id": 2403,
+      "phase": "settled",
+      "themes": [
+        "gold_zero_public"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-215803-2403_1402770772799599.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200031,
+        200037
+      ],
+      "public_info_rows": {
+        "200031": 18089.0,
+        "200037": 33753.5
+      },
+      "skill_ids": [],
+      "settlement_q5": 6,
+      "settlement_items": 39,
+      "priority": "P0",
+      "notes_zh": "公开信息金为零 raw 块：[200037]；parser fix 后应进入 public_info_rows。"
+    },
+    {
+      "sample_id": "HR-20260610-7340",
+      "session_id": "2406:1402770774857340",
+      "hero": "ahmed",
+      "map_id": 2406,
+      "phase": "settled",
+      "themes": [
+        "general"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-10/HeroRefDiag-20260610-222410-manual.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200010,
+        200026
+      ],
+      "public_info_rows": {
+        "200026": 3,
+        "200010": 26
+      },
+      "skill_ids": [],
+      "settlement_q5": 1,
+      "settlement_items": 32,
+      "priority": "P2",
+      "notes_zh": "通用 Hero Ref 诊断包。"
+    },
+    {
+      "sample_id": "HR-20260612-0953",
+      "session_id": "2410:1425860529000953",
+      "hero": "maria",
+      "map_id": 2410,
+      "phase": "settled",
+      "themes": [
+        "maria_skill",
+        "gold_zero_public",
+        "public_info_minimap"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-12/HeroRefDiag-20260612-193322-2410_1425860529000953.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200001,
+        200011
+      ],
+      "public_info_rows": {
+        "200001": 14,
+        "200011": 15
+      },
+      "skill_ids": [],
+      "settlement_q5": 3,
+      "settlement_items": 36,
+      "priority": "P0",
+      "notes_zh": "公开信息金为零 raw 块：[200011]；parser fix 后应进入 public_info_rows。"
+    },
+    {
+      "sample_id": "HR-20260612-5508",
+      "session_id": "2406:1425860529455508",
+      "hero": "maria",
+      "map_id": 2406,
+      "phase": "bidding",
+      "themes": [
+        "maria_skill",
+        "public_info_minimap"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-12/HeroRefDiag-20260612-193827-2406_1425860529455508.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200027
+      ],
+      "public_info_rows": {
+        "200027": 6
+      },
+      "skill_ids": [],
+      "settlement_q5": null,
+      "settlement_items": null,
+      "priority": "P1",
+      "notes_zh": "Maria skill + 公开信息；可用于 minimap marker / maria_skill evidence 回归。"
+    },
+    {
+      "sample_id": "HR-20260612-1819",
+      "session_id": "2101:1425860534011819",
+      "hero": "maria",
+      "map_id": 2101,
+      "phase": "settled",
+      "themes": [
+        "maria_skill",
+        "gold_zero_public",
+        "public_avg_cells",
+        "settlement_q5_zero"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-12/HeroRefDiag-20260612-203918-2101_1425860534011819.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200013,
+        200014,
+        200015,
+        200036
+      ],
+      "public_info_rows": {
+        "200036": 4209.33349609375,
+        "200014": 2.1363637447357178,
+        "200013": 1.3333333730697632
+      },
+      "skill_ids": [
+        100108,
+        10010801
+      ],
+      "settlement_q5": 0,
+      "settlement_items": 22,
+      "priority": "P0",
+      "notes_zh": "公开信息金为零 raw 块：[200015]；parser fix 后应进入 public_info_rows。"
+    },
+    {
+      "sample_id": "HR-20260612-9045",
+      "session_id": "2104:1425860535909045",
+      "hero": "maria",
+      "map_id": 2104,
+      "phase": "settled",
+      "themes": [
+        "maria_skill",
+        "public_info_minimap",
+        "settlement_q5_zero"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-12/HeroRefDiag-20260612-210348-2104_1425860535909045.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200010,
+        200021,
+        200022,
+        200050
+      ],
+      "public_info_rows": {
+        "200021": 1.5,
+        "200010": 23,
+        "200022": 2.75,
+        "200050": 10.0
+      },
+      "skill_ids": [
+        100108,
+        10010801
+      ],
+      "settlement_q5": 0,
+      "settlement_items": 24,
+      "priority": "P1",
+      "notes_zh": "Maria skill + 公开信息；可用于 minimap marker / maria_skill evidence 回归。"
+    },
+    {
+      "sample_id": "HR-20260612-4653",
+      "session_id": "2102:1425860536614653",
+      "hero": "maria",
+      "map_id": 2102,
+      "phase": "settled",
+      "themes": [
+        "maria_skill",
+        "gold_zero_public",
+        "public_info_minimap",
+        "settlement_q5_zero"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-12/HeroRefDiag-20260612-211125-2102_1425860536614653.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200019,
+        200037,
+        200050
+      ],
+      "public_info_rows": {
+        "200050": 9.0
+      },
+      "skill_ids": [
+        100108,
+        10010801
+      ],
+      "settlement_q5": 0,
+      "settlement_items": 22,
+      "priority": "P0",
+      "notes_zh": "公开信息金为零 raw 块：[200019, 200037]；parser fix 后应进入 public_info_rows。"
+    }
+  ]
+}

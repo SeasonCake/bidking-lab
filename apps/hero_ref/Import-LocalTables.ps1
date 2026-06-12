@@ -77,22 +77,65 @@ function Find-StreamingAssetsRoot {
     return $null
 }
 
+function Get-DefaultBidKingBrowseRoot {
+    $Candidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} "Steam\steamapps\common\BidKing"),
+        (Join-Path $env:ProgramFiles "Steam\steamapps\common\BidKing"),
+        (Join-Path ${env:ProgramFiles(x86)} "Steam\steamapps\common"),
+        (Join-Path $env:ProgramFiles "Steam\steamapps\common")
+    )
+    foreach ($Candidate in $Candidates) {
+        if ($Candidate -and (Test-Path -LiteralPath $Candidate)) {
+            return $Candidate
+        }
+    }
+    return $null
+}
+
 function Select-GameRoot {
     try {
         Add-Type -AssemblyName System.Windows.Forms
         $Dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-        $Dialog.Description = "请选择 BidKing 游戏目录、StreamingAssets 目录，或 Tables 目录"
+        $Dialog.Description = @"
+仅 public-safe 公开包需要此步骤。
+full 完整包请直接运行 Start-HeroRef.bat，无需导入。
+请选择 BidKing 游戏目录、StreamingAssets 目录，或 Tables 目录。
+必须包含 BidMap.txt、Drop.txt、Item.txt。
+Steam 示例: ...\steamapps\common\BidKing
+"@
         $Dialog.ShowNewFolderButton = $false
+        $DefaultRoot = Get-DefaultBidKingBrowseRoot
+        if ($DefaultRoot) {
+            $Dialog.SelectedPath = $DefaultRoot
+        }
         if ($Dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             return $Dialog.SelectedPath
         }
     } catch {
     }
-    return Read-Host "请输入 BidKing 游戏目录、StreamingAssets 目录，或 Tables 目录"
+    return Read-Host "请输入 BidKing 游戏目录、StreamingAssets 目录，或 Tables 目录（Steam 示例: ...\steamapps\common\BidKing）"
 }
 
 if (-not (Test-Path -LiteralPath $AppRoot)) {
     throw "AppRoot not found: $AppRoot"
+}
+
+$TablesDest = Join-Path $AppRoot "data\raw\tables"
+$ExistingMissingTables = @(
+    foreach ($Name in $RequiredTables) {
+        if (-not (Test-Path -LiteralPath (Join-Path $TablesDest $Name))) {
+            $Name
+        }
+    }
+)
+if ($ExistingMissingTables.Count -eq 0 -and -not $NoPrompt -and -not $GameRoot) {
+    Write-Host "检测到包内已有游戏表（full 完整包）。" -ForegroundColor Green
+    Write-Host "无需导入，请直接运行 Start-HeroRef.bat。" -ForegroundColor Yellow
+    Write-Host "「导入本机游戏表」仅用于 public-safe 公开包。" -ForegroundColor Yellow
+    $Continue = Read-Host "仍要重新导入请输入 y，直接按 Enter 退出"
+    if ($Continue -ne "y") {
+        exit 0
+    }
 }
 
 if (-not $GameRoot) {
@@ -105,7 +148,8 @@ if (-not $GameRoot) {
 $TablesSource = Find-TableSource -Root $GameRoot
 if (-not $TablesSource) {
     Write-Host "没有找到必要表文件。" -ForegroundColor Red
-    Write-Host "请选择以下任一目录：" -ForegroundColor Yellow
+    Write-Host "请在 Steam 中：右键 BidKing → 管理 → 浏览本地文件，进入含 BidKing.exe 的目录后重试。" -ForegroundColor Yellow
+    Write-Host "也可直接选择以下任一目录：" -ForegroundColor Yellow
     Write-Host "  1. BidKing 游戏根目录，例如 ...\steamapps\common\BidKing"
     Write-Host "  2. BidKing_Data\StreamingAssets"
     Write-Host "  3. BidKing_Data\StreamingAssets\Tables"
@@ -114,7 +158,6 @@ if (-not $TablesSource) {
     exit 1
 }
 
-$TablesDest = Join-Path $AppRoot "data\raw\tables"
 $RawDest = Join-Path $AppRoot "data\raw"
 New-Item -ItemType Directory -Path $TablesDest -Force | Out-Null
 New-Item -ItemType Directory -Path $RawDest -Force | Out-Null

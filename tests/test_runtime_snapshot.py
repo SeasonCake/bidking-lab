@@ -1086,6 +1086,36 @@ def test_ui_contract_exposes_activity_map_alias() -> None:
     )
 
 
+def test_ui_contract_exposes_zero_public_avg_cells() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "public_info_rows": [
+                {
+                    "info_id": 200015,
+                    "value": 0.0,
+                    "value_field": 0,
+                },
+            ],
+        }
+    )
+
+    public_info = contract["constraints"]["public_info"]
+
+    assert public_info["public_avg_cells"] == [
+        {
+            "info_id": 200015,
+            "semantic": "q5_avg_cells",
+            "kind": "avg_cells",
+            "quality": 5,
+            "label": "金均格",
+            "value": 0.0,
+            "display_value": "0.00",
+            "text": "金均格 0.00",
+        }
+    ]
+    assert public_info["public_numeric_facts"][0]["semantic"] == "q5_avg_cells"
+
+
 def test_ui_contract_exposes_public_numeric_soft_facts() -> None:
     contract = ui_contract_from_artifact(
         {
@@ -1331,9 +1361,156 @@ def test_ui_contract_minimap_preserves_named_public_marker() -> None:
     )
 
     marker = contract["minimap"]["items"][0]
-    assert marker["render_mode"] == "marker"
+    assert marker["render_mode"] == "footprint"
+    assert marker["width"] == 2
+    assert marker["height"] == 2
     assert marker["item_id"] == 1001
     assert marker["item_name"] == "test_item"
-    assert marker["display_label"] == "test_item"
+    assert marker["display_label"] == ""
     assert marker["shape_key"] == "22"
     assert "test_item" in marker["tooltip"]
+
+
+def test_ui_contract_minimap_grid_without_footprint_does_not_block_public_markers() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "minimap_grid_items": [
+                {
+                    "quality": 4,
+                    "runtime_id": 501,
+                    "local_index": 45,
+                    "cells": 1,
+                    "source": "packet",
+                    "layout_source": "live_grid",
+                },
+                {
+                    "category": 106,
+                    "category_label": "古董",
+                    "quality": 5,
+                    "item_id": 1065001,
+                    "item_name": "青铜古镜",
+                    "local_index": 14,
+                    "cells": 4,
+                    "shape_key": "22",
+                    "row": 2,
+                    "col": 5,
+                    "width": 2,
+                    "height": 2,
+                    "source": "packet",
+                    "layout_source": "live_grid",
+                },
+            ],
+            "public_info_rows": [
+                {
+                    "info_id": 200001,
+                    "tool": "",
+                    "revealed_items_detail": [
+                        {"local_index": 45, "runtime_id": 501, "quality": 4},
+                        {"local_index": 65, "runtime_id": 502, "quality": 4},
+                    ],
+                }
+            ],
+            "skill_reveal_rows": [
+                {
+                    "skill_id": 10010801,
+                    "hero_id": 108,
+                    "tool": "玛丽亚·品质",
+                    "revealed_items_detail": [
+                        {"local_index": 36, "runtime_id": 601, "quality": 3},
+                        {"local_index": 90, "runtime_id": 602, "quality": 1},
+                    ],
+                }
+            ],
+        }
+    )
+
+    minimap = contract["minimap"]
+    markers = [item for item in minimap["items"] if item["render_mode"] == "marker"]
+    footprints = [item for item in minimap["items"] if item["render_mode"] == "footprint"]
+
+    assert len(footprints) == 1
+    assert {marker["local_index"] for marker in markers} == {36, 45, 65, 90}
+    assert minimap["quality_reveal_marker_count"] == 4
+
+
+def test_ui_contract_minimap_shows_treasure_value_action_without_quality() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "action_result_rows": [
+                {
+                    "action_id": 100163,
+                    "tool": "至宝估价",
+                    "revealed_items_detail": [
+                        {
+                            "local_index": 30,
+                            "runtime_id": 1425860544908193,
+                            "value": 43650,
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    treasure_items = [
+        item
+        for item in contract["minimap"]["items"]
+        if item.get("local_index") == 30 or item.get("value") == 43650
+    ]
+    assert len(treasure_items) == 1
+    item = treasure_items[0]
+    assert item["render_mode"] == "footprint"
+    assert item["value"] == 43650
+    assert item["display_label"] == "43,650"
+    assert "43,650" in item["tooltip"]
+    assert item["shape_key"] == "11"
+
+
+def test_ui_contract_treasure_value_merges_onto_existing_runtime_footprint() -> None:
+    contract = ui_contract_from_artifact(
+        {
+            "action_result_rows": [
+                {
+                    "action_id": 100163,
+                    "tool": "至宝估价",
+                    "revealed_items_detail": [
+                        {
+                            "local_index": 8,
+                            "runtime_id": 1425860547015628,
+                            "value": 29700,
+                        }
+                    ],
+                }
+            ],
+            "minimap_grid_items": [
+                {
+                    "row": 1,
+                    "col": 8,
+                    "width": 2,
+                    "height": 2,
+                    "quality": 5,
+                    "runtime_id": 1425860547015628,
+                    "item_id": 1105005,
+                    "item_name": "浪漫主义风景素描原作",
+                    "local_index": 7,
+                    "cells": 4,
+                    "shape_key": "22",
+                    "source": "packet",
+                    "layout_source": "live_grid",
+                }
+            ],
+        }
+    )
+
+    matched = [
+        item
+        for item in contract["minimap"]["items"]
+        if item.get("runtime_id") == 1425860547015628
+    ]
+    assert len(matched) == 1
+    item = matched[0]
+    assert item["value"] == 29700
+    assert item["display_label"] == "29,700"
+    assert item["render_mode"] == "footprint"
+    assert item["local_index"] == 7
+    assert item["width"] == 2

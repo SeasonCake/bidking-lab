@@ -2,10 +2,16 @@ BidKing Hero Ref 使用说明
 
 1. 先打开游戏并进入可以对局的状态。
 
-2. 如果你下载的是 public-safe 包，第一次运行前先双击：
+2. 群友常见的 full 完整包已自带游戏表，请直接看第 3 步启动，不要先点「导入本机游戏表」。
+
+   只有 public-safe 公开包（不含游戏表）才需要先双击：
    Import-LocalTables.bat
+   或 导入本机游戏表.bat
    然后选择 BidKing 游戏目录、BidKing_Data\StreamingAssets 目录，或 Tables 目录。
-   如果是私用完整包，里面已经带表，可以跳过这一步。
+   Steam 默认示例：
+   ...\steamapps\common\BidKing
+   或 ...\BidKing\BidKing_Data\StreamingAssets
+   不确定时：Steam 右键 BidKing → 管理 → 浏览本地文件。
 
 3. 启动 Hero Ref：
    默认悬浮窗：

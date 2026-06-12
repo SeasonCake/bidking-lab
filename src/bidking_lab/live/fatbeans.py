@@ -149,6 +149,9 @@ _PUBLIC_INFO_INT_VALUE_FIELDS: dict[int, int] = {
     200019: 7,  # 金色品质藏品件数
     200020: 7,  # 红色品质藏品件数
 }
+_PUBLIC_INFO_AVG_CELLS_IDS: frozenset[int] = frozenset({200013, 200014, 200015, 200016})
+_PUBLIC_INFO_AVG_VALUE_IDS: frozenset[int] = frozenset({200035, 200036, 200037, 200038})
+_PUBLIC_INFO_EXACT_COUNT_IDS: frozenset[int] = frozenset({200017, 200018, 200019, 200020})
 _PUBLIC_INFO_EXACT_UPDATE_PATHS: dict[int, tuple[str, ...]] = {
     200009: ("session", "warehouse_total_cells"),
     200010: ("bucket", "4", "total_cells"),
@@ -708,7 +711,11 @@ def _parse_skill_reveal(block: bytes) -> FatbeansSkillReveal | None:
                 result_field = candidate_field
                 break
     if not observed_items and result is None:
-        return None
+        if skill_id in _AHMAD_SKILL_AVG_CELLS or skill_id in _AHMAD_SKILL_COUNT:
+            result = 0.0
+            result_field = 0
+        else:
+            return None
     return FatbeansSkillReveal(
         skill_id=skill_id,
         hero_id=_int(_first(fields, 2)),
@@ -742,6 +749,14 @@ def _parse_public_info(block: bytes) -> FatbeansPublicInfo | None:
                 value_field=int_value_field,
                 observed_items=observed_items,
             )
+        # Zero exact int metrics are implied when the value field is absent.
+        return FatbeansPublicInfo(
+            info_id=info_id,
+            map_id=_int(_first(fields, 3)),
+            value=0,
+            value_field=int_value_field,
+            observed_items=observed_items,
+        )
     for value_field in (11, 9):
         raw = _first(fields, value_field)
         if isinstance(raw, bytes) and len(raw) == 4:
@@ -766,6 +781,24 @@ def _parse_public_info(block: bytes) -> FatbeansPublicInfo | None:
             map_id=_int(_first(fields, 3)),
             value=len(observed_items),
             value_field=8,
+            observed_items=observed_items,
+        )
+    if info_id in _PUBLIC_INFO_AVG_CELLS_IDS:
+        # Zero avg cells is implied when the float/int value field is absent.
+        return FatbeansPublicInfo(
+            info_id=info_id,
+            map_id=_int(_first(fields, 3)),
+            value=0.0,
+            value_field=0,
+            observed_items=observed_items,
+        )
+    if info_id in _PUBLIC_INFO_AVG_VALUE_IDS:
+        # Zero avg value is implied when the float/int value field is absent.
+        return FatbeansPublicInfo(
+            info_id=info_id,
+            map_id=_int(_first(fields, 3)),
+            value=0.0,
+            value_field=0,
             observed_items=observed_items,
         )
     return None
@@ -1645,19 +1678,37 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
         if cells is None:
             if marker_cells is not None and marker_cells > 0:
                 cells = marker_cells
-            elif item.quality is not None and item.local_index is not None:
-                cells = 1
+            elif item.local_index is not None and (
+                item.quality is not None
+                or item.value is not None
+                or item.shape_code is not None
+            ):
+                cells = _observed_item_cells(item) or 1
             else:
                 return
         if item.runtime_id is not None:
             if item.runtime_id in seen_runtime_ids:
-                if category is not None:
-                    index = index_by_runtime.get(item.runtime_id)
-                    if index is not None and revealed_items[index].category is None:
-                        revealed_items[index] = replace(
-                            revealed_items[index],
-                            category=category,
+                index = index_by_runtime.get(item.runtime_id)
+                if index is not None:
+                    current = revealed_items[index]
+                    updated = current
+                    if category is not None and current.category is None:
+                        updated = replace(updated, category=category)
+                    if item.value is not None:
+                        updated = replace(updated, value=item.value)
+                    if item.quality is not None and current.quality is None:
+                        updated = replace(updated, quality=item.quality)
+                    if item.item_id is not None and current.item_id is None:
+                        updated = replace(updated, item_id=item.item_id)
+                    if item.shape_code is not None and not current.shape_key:
+                        updated = replace(
+                            updated,
+                            shape_key=str(item.shape_code),
                         )
+                    if item.local_index is not None and current.local_index is None:
+                        updated = replace(updated, local_index=item.local_index)
+                    if updated != current:
+                        revealed_items[index] = updated
                 return
             seen_runtime_ids.add(item.runtime_id)
         metadata = (
@@ -1673,7 +1724,13 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
                 runtime_id=item.runtime_id,
                 item_id=item.item_id or (metadata.item_id if metadata else None),
                 quality=item.quality or (metadata.quality if metadata else None),
-                shape_key=str(item.shape_code) if item.shape_code else None,
+                shape_key=str(
+                    item.shape_code
+                    or (metadata.shape_code if metadata else None)
+                    or ("11" if item.value is not None and item.item_id is None else None)
+                    or ""
+                )
+                or None,
                 value=item.value or (metadata.value if metadata else None),
                 local_index=item.local_index,
                 category=category,

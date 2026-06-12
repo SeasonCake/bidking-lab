@@ -4160,6 +4160,24 @@ def _minimap_rows_from_batch(
             else replace(item, shape_key=shape_key, category=category)
         )
         footprint = display_item.footprint()
+        row = footprint.row if footprint is not None else None
+        col = footprint.col if footprint is not None else None
+        width = footprint.width if footprint is not None else None
+        height = footprint.height if footprint is not None else None
+        if (row is None or col is None) and item.local_index is not None:
+            row = item.local_index // 10 + 1
+            col = item.local_index % 10 + 1
+            width = width or 1
+            height = height or 1
+        if shape_key in (None, "") and item.value is not None and item.item_id is None:
+            shape_key = "11"
+            width = width or 1
+            height = height or 1
+        value_label = (
+            f"{item.value:,}"
+            if item.value is not None and item.quality is None and not item.item_id
+            else ""
+        )
         rows.append(
             {
                 "category": category,
@@ -4171,14 +4189,17 @@ def _minimap_rows_from_batch(
                 "quality": item.quality,
                 "runtime_id": item.runtime_id,
                 "item_id": item.item_id,
-                "item_name": _grid_item_name(item.item_id, items),
+                "item_name": _grid_item_name(item.item_id, items) or value_label,
                 "local_index": item.local_index,
                 "cells": item.cells,
                 "shape_key": shape_key,
-                "row": footprint.row if footprint is not None else None,
-                "col": footprint.col if footprint is not None else None,
-                "width": footprint.width if footprint is not None else None,
-                "height": footprint.height if footprint is not None else None,
+                "row": row,
+                "col": col,
+                "width": width,
+                "height": height,
+                "value": item.value,
+                "display_label": "",
+                "render_mode": "footprint",
                 "source": item.source,
                 "layout_source": layout_source,
             }

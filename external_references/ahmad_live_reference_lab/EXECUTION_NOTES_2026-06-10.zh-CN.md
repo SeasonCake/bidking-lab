@@ -2105,6 +2105,9 @@
    | 紫局均价+均格 ranking | ❌ | — | §48 | 规划 only |
    | 底层非 WinDivert 抓包 | ❌ | — | §56 | 规划 only；用户 06-12 明确要求列入计划 |
    | 桌面包 hotfix 副本（未重打包 exe） | 部分 | Desktop hotfix 目录 | §44–§45 | 源码已 push；exe 需重打包才生效 |
+   | **至宝估价 minimap + 未知品质条纹** | ✅ | 工作树 | **§57–§58** | 加布里 live 验收；**未 commit** |
+   | **吴起灵 10002071 轮廓 footprint** | ✅ | `snapshot.py` | §57 | 斜条纹未知品质 |
+   | **索菲 100163 → ref q6 锁 0** | ✅ | `ahmad_ref_engine.py` | §57 | merged Q5 skill quality |
 
    - **追踪约定**：后续每批合并前更新本表「文档」列与 commit；handoff 只写增量，本表作总索引。
    - **补录细节（16 英雄 + 200048）**
@@ -2137,4 +2140,83 @@
      3. **默认切换**：新包默认新 backend；WinDivert 降为 optional / dev-only。
      4. **文档**：替换 `火绒拦截说明` 为主流程说明；EXECUTION_NOTES 标记 WinDivert 为 legacy。
    - **与 §54 关系**：属 **E 批**，与金均格 0 / 手动 UX 等 ref 逻辑分批独立；优先在「用户无法启动 monitor」类反馈多时提前 E 的设计阶段。
+
+57. 2026-06-12 小地图 / 至宝估价 / 未知品质显示（live UI 批次，**工作树未 commit**）
+
+   - **用户反馈链**
+     - 索菲 / 塔蒂安娜 / 加布里：R3–R4 使用 **至宝估价 `100163`** 后，小地图看不见 marker；要求按 **抽检 footprint** 展示，价格只在 **悬浮 tooltip** 显示。
+     - 吴起灵：技能 **10002071** 古董轮廓「有显示但太黑」；要求 **未知品质** 用 **斜条纹方块**，不要一片 `#172033`。
+     - 2026-06-12 晚：**加布里 live 验收通过**（「显示也非常棒」）。
+
+   - **根因（已确认）**
+     1. **Panel 路径**：`_minimap_summary` 在 contract 未 `available` 时退回 `minimap_grid_items`；value-only 行无 row/col 被 skip。
+     2. **Contract 路径**：`_ui_minimap_quality_markers` 对 `100163` 单独 marker，且 `local_index`/`runtime_id` 已在 grid 占位时被 skip；local 与 anchor 不一致（塔蒂安娜 local 8 vs settlement anchor 7）。
+     3. **Tk 绘制**：未知品质 `MAINLINE_QUALITY_STYLE["unknown"]` 误设 `"unknown": False`，斜条纹逻辑从未触发；曾短暂在格子上画常驻 `display_label`，用户认为「脏」。
+     4. **Shape-only skill**：`shape_key` 存在时仍发 `render_mode=marker` + 1×1，吴起灵古董轮廓缩成小黑点。
+
+   - **落地（源码，见 git diff）**
+
+     | 层 | 文件 | 行为 |
+     | --- | --- | --- |
+     | Parse / grid | `fatbeans.py` | 重复 `runtime_id` 合并 **value**；value-only 默认 `shape_key=11` |
+     | Artifact | `monitor.py` | minimap 行统一 `render_mode=footprint`；`display_label` 留空（tooltip 用语义字段） |
+     | Contract | `snapshot.py` | `_apply_treasure_value_reveals()`：`100163` 按 **runtime_id 优先** 升级 footprint；带 `shape_key` 的 marker 按真实宽高 footprint；`100163` 不再走 quality_marker 重复路径 |
+     | Panel | `ahmad_live_panel_server.py` | value-only → shape 11 + footprint；contract items 优先；`local_index→row/col` 回退 |
+     | Tk | `ahmad_tk_overlay.py` | 去掉格子常驻文字；未知品质 **浅底 + 斜条纹**（`unknown: True`）；未知 marker 浅底 |
+     | Ref | `ahmad_ref_engine.py` | `TREASURE_HIGHEST_ITEM_VALUE_ACTION_IDS={100163}`；合并 skill/action 品质后 `public_max_quality_ceiling` → 索菲局 q6 锁 0 |
+
+   - **至宝估价 UI 契约（现行）**
+     - Action id：**`100163`**（不是 `100168`）。
+     - Live：在对应格画 **与抽检相同的 footprint 色块**（有 shape 则真实轮廓）；**不在格子上画价格字**。
+     - Hover：`tooltip` 含 `至宝估价 / {价值} / local {n}`；contract 可保留 `display_label` 供 panel 格式化，Tk 不渲染。
+     - 结算：settlement footprint 覆盖 transient value；同一 `runtime_id` 保留 Q6 色 + tooltip 价值（加布里验收样例）。
+
+   - **加布里验收样本（latest_snapshot / 用户刚导出）**
+
+     | 项 | 值 |
+     | --- | --- |
+     | session | `2402:1425860548836801` |
+     | hero / map | gabriela / 2402 设计师居所 |
+     | 至宝估价 | sort **19** send / **20** result；local **25**；value **71,500** |
+     | 结算对照 | Q6 **大溪地黑珍珠** @ local 25（`runtime_id=1425860548836826`） |
+     | settlement truth | 40 件 / 117 格；q6=**3**；ref `q6=[3,3,3]`、`red=[3,3,3]` |
+     | minimap | row 3 col 6；Q6 footprint；tooltip 含至宝估价与 71,500 |
+     | 说明 | 至宝揭示的是 **最高品质档内一件** 的价值（71,500），非 session 最高价（531,000 高斯振动匕首） |
+
+   - **其它 live 回归样本（同批修复，见 sample index §11）**
+     - 索菲 `2401:1425860545985228` — R3 85623 → Q6 黄金水龙头；q6 不锁 0
+     - 塔蒂安娜 `2409:1425860547014998` — R4 29700 → Q5 浪漫主义风景素描（runtime 合并）
+     - 吴起灵 `2409:1425860547799228` — 10002071 古董斜条纹 footprint
+
+   - **测试（本批新增/更新）**
+     - `test_ui_contract_minimap_shows_treasure_value_action_without_quality`
+     - `test_ui_contract_treasure_value_merges_onto_existing_runtime_footprint`
+     - `test_treasure_value_action_result_adds_value_only_grid_marker`
+     - `test_ref_engine_treasure_value_action_locks_q6_when_merged_quality_is_q5`
+     - `test_ahmad_tk_minimap_unknown_footprint_uses_stripes_without_permanent_text`
+
+   - **验证命令**
+
+     ```powershell
+     cd c:\xiangmuyunxing\biancheng\2026\bidking-lab
+     python -m pytest tests/test_runtime_snapshot.py tests/test_live_fatbeans.py tests/test_live_overlay.py -q -k "minimap or treasure"
+     ```
+
+   - **仍缺 / 未做**
+     - Hero Ref **zip 归档** 加布里 session（用户 export 在 `data/logs/live/exports/`，待 `organize_hero_ref_samples.py --apply`）
+     - 加布里 / 塔蒂安娜 **ref 特化**（仍 `generic_ref_hero`；仅 parse + minimap 完整）
+     - 吴起灵 R1 **`100207`** 数值 skill → category count（P0 样本缺口，见 §11）
+     - 桌面包 **重打包** 后上述 UI 才进 exe
+
+58. §55 增量（2026-06-12 晚，小地图批次 — 补 §57 一行对照）
+
+   | 主题 | 落地 | 文件 | 文档 | 备注 |
+   | --- | --- | --- | --- | --- |
+   | 至宝估价 minimap footprint | ✅ | snapshot/monitor/panel/tk | §57 | `100163`；tooltip-only 价格 |
+   | 未知品质斜条纹 | ✅ | `ahmad_tk_overlay.py` | §57 | 修复 `unknown: False` bug |
+   | 吴起灵 shape 轮廓 footprint | ✅ | `snapshot.py` | §57 | `10002071` 等 shape_key 宽高 |
+   | 至宝 ref q6 ceiling（索菲） | ✅ | `ahmad_ref_engine.py` | §57 | merged Q5 → q6=0 |
+   | 加布里 live 验收 | ✅ | latest_snapshot | §57、sample §11 | 用户确认 UI OK |
+   | Hero pool ref 特化（加布里等） | ❌ | — | §11 | 待样本 + bridge |
+   | Wuqilin `100207` count | ❌ | — | §11 | 待 R1 样本 |
    - **状态：规划 ✅；选型与实现 ❌（待专题）。**

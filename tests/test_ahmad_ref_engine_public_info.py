@@ -1194,6 +1194,38 @@ def test_ref_engine_aisha_split_conflict_with_merged_q1_is_hard_conflict() -> No
     assert "constraints_conflict_or_too_strict" in result["notes"]
 
 
+def test_ref_engine_ahmed_r5_exact_q1_overrides_coarse_public_split() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2107,
+            structured_ref_inputs={
+                "total_count": 37,
+                "counts": {"q1": 18},
+                "split_counts": {"white": 4, "green": 4},
+            },
+            public_rows=[
+                {
+                    "info_id": 200028,
+                    "revealed_items_detail": [
+                        {"quality": 1},
+                        {"quality": 1},
+                        {"quality": 1},
+                        {"quality": 2},
+                    ],
+                },
+            ],
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] in {"ok", "count_prior"}
+    assert result["combo_count"] > 0
+    assert "split_low_quality_q1_exact_overrides_coarse_split" in result["notes"]
+    assert "hard_conflict:split_low_quality_q1_count" not in result["notes"]
+    assert result["evidence"]["fixed_counts"]["q1"] == 18
+
+
 def test_ref_engine_total_grid_prior_does_not_collapse_to_known_count_floor() -> None:
     result = run_reference_engine(
         _snapshot(
@@ -1556,6 +1588,134 @@ def test_ref_engine_public_exact_quality_cells_conflict_preserves_bridge() -> No
     assert evidence.fixed_counts.get("q5") != 0
     assert "public_info_200011_q5_cells_conflict" in evidence.source_notes
     assert "zero_quality_cells_q5_count_zero" not in evidence.source_notes
+
+
+def test_ref_engine_public_q5_avg_value_and_count_zero_from_public_numeric_facts() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="maria",
+            map_id=2102,
+            structured_ref_inputs={"total_count": 20},
+            public_info={
+                "public_numeric_facts": [
+                    {
+                        "info_id": 200037,
+                        "semantic": "q5_avg_value",
+                        "kind": "avg_value",
+                        "quality": 5,
+                        "label": "金均价",
+                        "value": 0.0,
+                        "display_value": "0.00",
+                        "text": "金均价 0.00",
+                    },
+                    {
+                        "info_id": 200019,
+                        "semantic": "q5_count",
+                        "kind": "count",
+                        "quality": 5,
+                        "label": "金件",
+                        "value": 0,
+                        "display_value": "0",
+                        "text": "金件 0",
+                    },
+                ],
+                "public_avg_values": [
+                    {
+                        "info_id": 200037,
+                        "semantic": "q5_avg_value",
+                        "kind": "avg_value",
+                        "quality": 5,
+                        "label": "金均价",
+                        "value": 0.0,
+                        "display_value": "0.00",
+                        "text": "金均价 0.00",
+                    }
+                ],
+            },
+            public_rows=[
+                {"info_id": 200037, "value": 0.0},
+                {"info_id": 200019, "value": 0},
+            ],
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["evidence"]["avg_values"]["q5"] == 0.0
+    assert result["evidence"]["fixed_counts"]["q5"] == 0
+    assert result["quality_count_ranges"]["q5"] == [0, 0, 0]
+    assert "public_q5_avg_value" in result["notes"]
+    assert "public_info_200019_q5_count" in result["notes"]
+    assert "zero_avg_value_q5_count_zero" in result["notes"]
+
+
+def test_ref_engine_public_q5_avg_cells_zero_locks_count() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="maria",
+            map_id=2101,
+            structured_ref_inputs={"total_count": 20},
+            public_info={
+                "public_numeric_facts": [
+                    {
+                        "info_id": 200015,
+                        "semantic": "q5_avg_cells",
+                        "kind": "avg_cells",
+                        "quality": 5,
+                        "label": "金均格",
+                        "value": 0.0,
+                        "display_value": "0.00",
+                        "text": "金均格 0.00",
+                    }
+                ],
+                "public_avg_cells": [
+                    {
+                        "info_id": 200015,
+                        "semantic": "q5_avg_cells",
+                        "kind": "avg_cells",
+                        "quality": 5,
+                        "label": "金均格",
+                        "value": 0.0,
+                        "display_value": "0.00",
+                        "text": "金均格 0.00",
+                    }
+                ],
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["evidence"]["avg_cells"]["q5"] == 0.0
+    assert result["evidence"]["fixed_counts"]["q5"] == 0
+    assert result["quality_count_ranges"]["q5"] == [0, 0, 0]
+    assert result["quality_cells_ranges"]["q5"] == [0, 0, 0]
+    assert "public_q5_avg_cells" in result["notes"]
+    assert "zero_avg_cells_q5_count_zero" in result["notes"]
+
+
+def test_ref_engine_ahmed_express_zero_purple_cells_and_gold_avg_lock_counts() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2105,
+            structured_ref_inputs={
+                "total_count": 17,
+                "quality_cells": {"q4": 0},
+                "avg_cells": {"q5": 0.0},
+            },
+            public_rows=[
+                {"info_id": 200010, "value": 0, "value_field": 14},
+            ],
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["quality_count_ranges"]["q4"] == [0, 0, 0]
+    assert result["quality_count_ranges"]["q5"] == [0, 0, 0]
+    assert result["evidence"]["fixed_counts"]["q4"] == 0
+    assert result["evidence"]["fixed_counts"]["q5"] == 0
+    assert "public_info_200010_q4_cells" in result["notes"]
+    assert "zero_quality_cells_q4_count_zero" in result["notes"]
+    assert "zero_avg_cells_q5_count_zero" in result["notes"]
 
 
 def test_ref_engine_victor_q4_q5_q6_count_sum_and_zero_gold_avg() -> None:
@@ -2033,3 +2193,51 @@ def test_ref_engine_skips_shaped_items_for_coarse_min_counts() -> None:
     assert evidence.min_counts.get("q4") == 1
     assert "coarse_quality_reveal_source:public_info_200028" in evidence.source_notes
     assert "coarse_quality_reveal_source:public_info_200001" not in evidence.source_notes
+
+
+def test_ref_engine_treasure_value_action_locks_q6_when_merged_quality_is_q5() -> None:
+    snapshot = {
+        "ui_contract": {
+            "context": {
+                "hero": "sophie",
+                "map_id": 2403,
+                "phase": "bidding",
+            },
+            "constraints": {"public_info": {}},
+        },
+        "structured_ref_inputs": {"total_count": 34},
+        "public_info_rows": [],
+        "skill_reveals": [
+            {
+                "skill_id": 1001073,
+                "hero_id": 107,
+                "observed_items": [
+                    {
+                        "local_index": 31,
+                        "runtime_id": 1425860544908193,
+                        "quality": 5,
+                    }
+                ],
+            }
+        ],
+        "action_result_rows": [
+            {
+                "action_id": 100163,
+                "tool": "至宝估价",
+                "revealed_items_detail": [
+                    {
+                        "local_index": 30,
+                        "runtime_id": 1425860544908193,
+                        "value": 43650,
+                    }
+                ],
+            }
+        ],
+    }
+
+    evidence = extract_evidence(snapshot)
+
+    assert evidence.fixed_counts.get("q6") == 0
+    assert evidence.min_counts.get("q6") == 0
+    assert "public_max_quality_ceiling:5" in evidence.source_notes
+    assert "public_max_quality_zero_q6" in evidence.source_notes
