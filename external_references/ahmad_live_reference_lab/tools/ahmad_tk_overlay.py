@@ -85,7 +85,7 @@ except Exception:  # noqa: BLE001 - keep overlay usable if ref core is unavailab
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SNAPSHOT = ROOT / "data" / "logs" / "live" / "latest_snapshot.json"
-CREDIT_TEXT = "协作: lemyes · Hero Ref 自研"
+CREDIT_TEXT = "作者: 加菲_Barista · 协作: lemyes"
 CREDIT_GITHUB_URL = "https://github.com/SeasonCake/bidking-lab"
 GITHUB_TIP_TEXT = "如果觉得不错，就给一个免费的 Star 吧！"
 DETAIL_TIP_TEXT = "展开 / 收起详情、小地图和手动填写区"

@@ -8,9 +8,9 @@
 
 当前目标不是替换主线 v3，也不是改正式出价，而是先做一条可快速验证的外援计算器路线：
 
-- 主要参考 bidking-lab 自研 Hero Ref 组合枚举、均格可达性、价格区间与三档建议；
+- 作者：B站 [加菲_Barista](https://space.bilibili.com/88048665)；
 - 协作：lemyes；
-- Hero Ref 引擎与 UI：bidking-lab 自研（历史外援文档仅作对照，非运行时依赖）；
+- bidking-lab 自研引擎与 UI（历史 MapBidCalculator 文档仅作对照，非运行时依赖）；
 - 可局部吸收 bidking-lab 已验证的实时 packet 输入通道和归档流程；
 - 默认放弃 OCR 作为主入口，实时输入优先来自现有 live/Fatbeans packet 输出；
 - OCR 只保留为第三级高级/人工补录入口，不参与默认实时推荐；
@@ -207,4 +207,4 @@ C:\Python313\python.exe external_references\ahmad_live_reference_lab\tools\ahmad
 - 能显示红品数量或红品数量区间，而不是只显示 q6 概率；
 - 能给出保守/参考/激进三个估值档，并标明依据来自外援计算器路线；
 - 能暴露“低估风险、先验漂移、活动图 fallback、证据不足”等 guard 标签；
-- 不接正式出价，不写回主线 v3 状态。
+- 不写回主线 v3 状态。

@@ -2207,7 +2207,7 @@ INDEX_HTML = r"""<!doctype html>
       </div>
     </div>
     <footer>
-      <span>协作：lemyes · Hero Ref 自研引擎 · <a href="https://github.com/SeasonCake/bidking-lab" target="_blank" rel="noreferrer">GitHub</a> · 不接正式出价。</span>
+      <span>作者：加菲_Barista · 协作：lemyes · <a href="https://github.com/SeasonCake/bidking-lab" target="_blank" rel="noreferrer">GitHub</a></span>
       <span><code id="path"></code></span>
     </footer>
   </div>

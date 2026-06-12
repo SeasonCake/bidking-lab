@@ -24,10 +24,12 @@
 当前署名口径：
 
 ```text
-Ahmed reference calculator inspired by MapBidCalculator / AuctionAnalyzer 4.13.3.
-原作者/参考来源：B站猫饭团子uu（https://space.bilibili.com/1981353429）及本地外援文档。
-本支线 UI 修改与计算优化：B站加菲_barista（https://space.bilibili.com/88048665）
+作者：B站加菲_Barista（https://space.bilibili.com/88048665）
+协作：lemyes
+bidking-lab 自研引擎与 UI
 ```
+
+历史对照：`AuctionAnalyzer 4.13.3` / MapBidCalculator 本地文档曾作早期设计参考，**非当前运行时架构**。
 
 如果后续发布或迁移到主线，仍应再人工复核原程序的发布说明、许可和作者署名要求。
 
@@ -65,7 +67,7 @@ External references are used for comparison and design inspiration only.
 中文：
 
 ```text
-Ahmed 参考推理：参考 B站猫饭团子uu 与本地 MapBidCalculator/AuctionAnalyzer 4.13.3 外援计算器思路；
-本支线 UI 修改与计算优化：B站加菲_barista（https://space.bilibili.com/88048665）；
-并结合 BidKing Lab v3 的实时 packet 证据与风险标签。外援仅作设计参考。
+作者：B站加菲_Barista（https://space.bilibili.com/88048665）
+协作：lemyes
+bidking-lab 自研引擎与 UI；结合实时 packet 证据与风险标签。
 ```

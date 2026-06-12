@@ -2479,6 +2479,14 @@
      - 已知 high-tier cells + 残差件：优先 unfixed tier `avg_cells` 均值估计残差格；无信号才 `RESIDUAL_ITEM_CELL_ESTIMATE=4.0`
      - note：`total_grid_target_residual_avg_cells_estimate`；synthetic 单测 + 7 条 no-regress 仍绿
 
+   - **艾莎格/件多策略（规划，2026-06-13）**
+     - R1 仅白：**禁用**位置/地图似然点估计；R2 白绿 band 宜宽；R3–R4 再考虑地图似然与件数
+     - 金/红可能在已知最深格**下方** — 总格 target 需 footroom
+     - 与 B1/B2 叠加；v3 地图似然曾长期调参未 promotion → ref_v0 仅 shadow/soft，不在 curated 扫权重
+
+   - **UI 署名（2026-06-13）**
+     - 可见文案：`作者: 加菲_Barista · 协作: lemyes`（含 B 站账户名）；去掉「不接正式出价」
+
    - **验证**
      ```powershell
      python scripts/audit_aisha_gap.py
