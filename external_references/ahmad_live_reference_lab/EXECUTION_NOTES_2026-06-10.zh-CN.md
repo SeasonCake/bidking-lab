@@ -1822,3 +1822,99 @@
      - full 包含 `BidMap.txt` / `Drop.txt` / `Item.txt` / `Language.txt`，public-safe 只保留 `PUT_TABLES_HERE.txt`；
      - `data\logs\live` 存在；
      - UI exe `--help` 输出正常，monitor exe `--help` exit 0。
+
+43. 2026-06-12 data6 公开大红下界修复（未打包）
+   - 用户反馈：
+     - `C:\Users\shenc\Desktop\recordings\data6` 中，公开信息已见大红时，红件显示 `2/?/?`，红格被显示层抬到 `15/15/15`，但红值仍只有二三十万到四十多万，低于已公开的大红价值。
+   - 样本定位：
+     - 当前问题快照：`C:\Users\shenc\Desktop\recordings\data6\logs\live\latest_snapshot (1).json`
+     - session：`2309:1425860479021171`，hero：`ahmed`，map：`2309`，round：`5`。
+     - `public_info_rows` 中 `info_id=200023` 揭示 `民用垂直起降飞行器`：`quality=6`、`cells=15`、`value=452800`。
+     - 结算 truth：`q6 count=2 / cells=16 / value=520900`，总已知结算值 `858400`。
+   - 根因：
+     - 公开揭示物品原来只进入 `public_quality_reveal_min_counts`，即只约束“某品质至少几件”；
+     - 具体物品的格数和价值没有进入 ref 引擎，只由 UI 显示层用 minimap/已见红做红格 floor；
+     - 结果是红格显示被抬高，但红值仍按普通红先验估算，出现低于已公开大红价值的候选。
+   - 修复：
+     - `src\ahmad_ref_engine.py` 新增 `quality_cell_floors` / `quality_value_floors`；
+     - 非 bucket-outline 的 `public_info_rows[].revealed_items_detail[]` 会按品质累计已公开物品的格数下界和值下界；
+     - 枚举格数候选必须满足对应品质的格数下界；
+     - 品质价值和红值分布不再低于已公开物品价值下界；
+     - bucket outline 仍保持原有 exact bucket 语义，不把随机公开物品误当成完整红桶。
+   - data6 回放验证：
+     - 修复前前结算口径：红件 `2/2/2`，红格原始 `5/6/7`，红值 `237859/335240/423949`；
+     - 修复后前结算口径：红件 `2/2/2`，红格 `15/16/17`，红值 `452800/459933/603588`；
+     - 总报价从约 `551326/599022/646717` 抬到约 `635501/698640/761778`，仍低于最终 `858400` 属于隐藏第二红与全局价值不确定性残差，不再违反“已见大红价值下界”。
+   - 验证命令：
+     - `python -m py_compile external_references\ahmad_live_reference_lab\src\ahmad_ref_engine.py` -> passed；
+     - `pytest -q tests\test_ahmad_ref_engine_public_info.py` -> `57 passed`；
+     - `pytest -q tests\test_live_overlay.py::test_ahmad_server_summary_pairs_red_candidates_with_gold_candidates tests\test_live_overlay.py::test_ahmad_server_red_display_keeps_count_and_cells_physically_paired tests\test_live_overlay.py::test_ahmad_server_summary_keeps_public_info_marker_soft tests\test_live_overlay.py::test_ahmad_server_summary_keeps_public_info_item_name` -> `4 passed`；
+     - `git diff --check` -> 无 whitespace error，仅 CRLF 提示。
+   - 状态：
+     - 本次只修当前工作区代码与测试，未重新打包。
+
+44. 2026-06-12 v0.1.6-hotfix full/public-safe 包记录
+   - 用户目标：
+     - 基于 data6 公开大红下界修复，生成一个名字带 `hotfix` 后缀的新包，方便群里替换分享。
+   - 代码来源：
+     - `SourceCommit=a34539f`；
+     - 包内 `BUILD_MANIFEST.txt` 标记 `DirtyWorktree=true`；
+     - dirty 内容是本轮公开揭示物品格数/价值下界 hotfix、对应测试、执行记录。
+   - 产物：
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.6-hotfix-full.zip`
+       - SHA256：`137B597B550EA2ACFC905A8BECBA47E9BE92145058109EA8F3CB848BAFCC9458`
+       - bytes：`44115089`
+       - 包含 raw tables，适合本机测试或可信私发。
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.6-hotfix-public-safe.zip`
+       - SHA256：`D635E76CD0EED5D3E5E005F52FFF3A2D5F174CD663C8CB6BB0022668D9866169`
+       - bytes：`40338497`
+       - 不包含 raw tables，首次运行前用 `Import-LocalTables.bat` 导入本机游戏表。
+     - `external_references\ahmad_live_reference_lab\dist\BidKingHeroRef-v0.1.6-hotfix-SHA256.txt`
+     - `external_references\ahmad_live_reference_lab\dist\RELEASE_NOTES_v0.1.6-hotfix.zh-CN.md`
+   - clean unzip smoke：
+     - full/public-safe manifest 均为 `PackageVersion=v0.1.6-hotfix`、`DirtyWorktree=true`、`RequiresExternalPython=False`；
+     - 根目录 bat 仅有 `Start-HeroRef.bat`、`Start-HeroRef-Taskbar.bat`、`Import-LocalTables.bat`、`Stop-HeroRef.bat`；
+     - 未发现临时 `Start-HeroRef-Taskbar.ps1`；
+     - `Start-HeroRef-Taskbar.bat` 调用 `Start-HeroRef.ps1 -ShowTaskbar`；
+     - `Start-HeroRef.ps1`、`Import-LocalTables.ps1`、`Stop-HeroRef.ps1` PowerShell parse 通过；
+     - full 包含 `BidMap.txt` / `Drop.txt` / `Item.txt` / `Language.txt`，public-safe 只保留 `PUT_TABLES_HERE.txt`；
+     - `data\logs\live` 存在；
+     - UI exe `--help` 输出正常，monitor exe `--help` exit 0。
+
+45. 2026-06-12 hotfix2 候选：公开精确数值 + 显示均格 + 金格归零（待打包）
+   - 用户反馈 / 样本：
+     - 截图：`200011=0`（金品质总占用格数 0 格）时 UI 仍显示金件 `1/2/4`、红格 `0/4/9`（ahmed 2410 R1）。
+     - 均格：`2.09×11→23` 等显示截断导致精确乘法失败；recordings / fatbeans 有 `2.909…`、`2.428571…` 等浮点样本。
+     - 红格 mini 行：锁定红件后仍显示 `3/?/?` 而非 `3/3/3`。
+   - 修复（`src\ahmad_ref_engine.py`）：
+     - 消费 `public_info_rows` 精确字段：`200009/200017` 总会话、`200010–200012` 品质总格、`200018–200020` 品质件数。
+     - `quality_cells.q*=0` 同步 `fixed_counts.q*=0`（含 `200011=0` 截图路径）。
+     - 显示均格 fallback：仅对像屏幕读数的 ≤3 位小数启用（如 `2.09`），避免长比例浮点误扩候选。
+   - 修复（UI）：
+     - `ahmad_live_panel_server.py` / `ahmad_tk_overlay.py`：红件/红格 range 用 `_red_range_text`，锁定三元组不再折叠成 `3/?/?`。
+   - 测试：
+     - `tests\test_ahmad_ref_engine_public_info.py`：`200009–200020` 参数化 + 均格 capture fixtures；`85 passed`。
+     - `tests\test_live_overlay.py`：WinDivert error 诊断 + 红 range 显示；与 ref 合计 `247 passed`（overlay + public_info 子集）。
+   - 群友 WinDivert 被删：
+     - `capture_source_status.error_code` 路径已能提示「检查防火墙/安全软件」；环境侧暂不继续产品化兜底，长期可能换抓包底层。
+   - 状态：
+     - 本段随 git commit 入库；下一步打包 `v0.1.6-hotfix2`（需重编 `BidKingHeroRef.exe`）。
+
+46. 2026-06-12 规划：mini UI 顶部倒三角缩放应联动字体（hotfix2 不做）
+   - 群友反馈：
+     - 希望拖 mini UI 顶部 resize grip（倒三角）时，窗口变大后 **字体/控件整体放大**，而不只是露出更多折叠区域。
+   - 现状（`tools\ahmad_tk_overlay.py`）：
+     - `top_resize_grip` → `_resize_window` 只改 `root.geometry(width x height)`；
+     - `details_expanded` 时记录 `_custom_details_size`；字体仍为固定 tuple（如 `FONT_UI 7–12`、`FONT_NUMERIC 15`），不随窗口 scale。
+   - 目标行为（后续版本）：
+     - 引入 `ui_scale`（或按基准窗口宽高比计算 scale factor），拖动 grip 时同步更新 scale；
+     - 统一刷新已创建 widget 的 `font=` / padding / minimap cell size；持久化到本地 prefs（可选）；
+     - 与「详情展开」模式解耦：缩放 = 视觉放大，展开 = 显示更多 panel 行。
+   - 非目标 / 风险：
+     - hotfix2 不改布局树，避免打包前引入 Tk 全量 reconfigure 回归；
+     - 需单独 visual QA：430×320 最小尺寸、任务栏窗口模式、配色/置顶/手填模式下的可读性。
+   - 建议实现顺序：
+     1. 抽 `FONT_UI_BASE` / `FONT_NUMERIC_BASE` + `_scaled_font(base, scale)` helper；
+     2. resize 结束（`_end_resize`）或 motion 节流时 `_apply_ui_scale(scale)`；
+     3. pytest 只测 scale 计算；视觉用 `$product-ui-polish` + 截图对比。
+   - 状态：**仅规划，hotfix2 不包含。**

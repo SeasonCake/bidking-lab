@@ -2834,6 +2834,91 @@ def test_ahmad_server_red_display_keeps_count_and_cells_physically_paired() -> N
     assert red_cells_range == [9, 4, 0]
 
 
+def test_ahmad_server_summary_keeps_locked_red_triplet_with_minimap_floor(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    module = _ahmad_server_module()
+
+    class FakeRefResult:
+        def as_dict(self) -> dict[str, object]:
+            return {
+                "status": "ok",
+                "source": "ref_v0",
+                "notes": [],
+                "conservative": 648829,
+                "balanced": 703823,
+                "aggressive": 758817,
+                "red_count_range": [3, 3, 3],
+                "red_cells_range": [9, 10, 11],
+                "red_value_range": [368557, 485120, 595000],
+                "quality_count_ranges": {
+                    "q4": [12, 12, 12],
+                    "q5": [5, 5, 5],
+                    "q6": [3, 3, 3],
+                },
+                "evidence": {
+                    "hero": "victor",
+                    "total_count": 47,
+                    "count_sums": {"q4q5q6": 20},
+                },
+            }
+
+    monkeypatch.setattr(module, "run_reference_engine", lambda snapshot: FakeRefResult())
+    snapshot = {
+        "created_at": time.time(),
+        "ui_contract": {
+            "context": {
+                "hero": "victor",
+                "map_id": 2404,
+                "phase": "bidding",
+                "session_id": "2404:locked-red-floor",
+            },
+            "baseline": {"decision": {}, "posterior": {}},
+            "constraints": {"summary": {}, "counts": {}, "public_info": {}},
+            "minimap": {
+                "status": "available",
+                "columns": 10,
+                "items": [
+                    {
+                        "row": 0,
+                        "col": 0,
+                        "quality": 6,
+                        "render_mode": "footprint",
+                        "width": 3,
+                        "height": 3,
+                        "cells": 9,
+                    },
+                    {
+                        "row": 0,
+                        "col": 4,
+                        "quality": 6,
+                        "render_mode": "footprint",
+                        "width": 1,
+                        "height": 1,
+                        "cells": 1,
+                    },
+                    {
+                        "row": 1,
+                        "col": 4,
+                        "quality": 6,
+                        "render_mode": "footprint",
+                        "width": 1,
+                        "height": 1,
+                        "cells": 1,
+                    },
+                ],
+            },
+        },
+        "structured_ref_inputs": {"hero": "victor", "total_count": 47},
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert result["red"]["count_range"] == "3 / 3 / 3"
+    assert result["red"]["cells_range"] == "11 / 11 / 11"
+
+
 def test_ahmad_server_summary_keeps_public_info_marker_soft(tmp_path: Path) -> None:
     module = _ahmad_server_module()
     snapshot = {

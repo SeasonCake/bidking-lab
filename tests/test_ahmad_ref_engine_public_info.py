@@ -3,18 +3,78 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 AHMAD_SRC = ROOT / "external_references" / "ahmad_live_reference_lab" / "src"
+FATBEANS_SAMPLE_DIR = ROOT / "data" / "samples" / "fatbeans"
 if str(AHMAD_SRC) not in sys.path:
     sys.path.insert(0, str(AHMAD_SRC))
 
 from ahmad_ref_engine import (  # noqa: E402
+    _avg_count_from_cells,
     _avg_grid_options,
     _fit_grids_to_total_target,
     can_compose_grid_total,
     extract_evidence,
     run_reference_engine,
+)
+
+CAPTURE_AVG_CELL_FIXTURES = [
+    pytest.param(
+        2.909090995788574,
+        11,
+        32,
+        "2.90",
+        "fatbeans_valid_aisha_2401_1rounds_2401_1367517774693221_0001.json public_info 200013",
+        id="capture_q4_2p90_ratio_11x32",
+    ),
+    pytest.param(
+        2.4285714626312256,
+        7,
+        17,
+        "2.42",
+        "recordings/data6/data/logs/live/latest_snapshot.json bucket.q3.avg_cells",
+        id="capture_q3_2p42_ratio_7x17",
+    ),
+    pytest.param(
+        2.09,
+        11,
+        23,
+        "2.09",
+        "display reading when packet stores rounded 2.09 (2.09×11→23)",
+        id="display_q5_2p09_literal_11x23",
+    ),
+    pytest.param(
+        23 / 11,
+        11,
+        23,
+        "2.09",
+        "exact ratio float 23/11 from detailed packet capture",
+        id="capture_ratio_23_over_11",
+    ),
+    pytest.param(
+        3.43,
+        16,
+        55,
+        "3.43",
+        "display reading 3.43 (3.43×16→55, shipwreck screenshot scenario)",
+        id="display_q4_3p43_literal_16x55",
+    ),
+    pytest.param(
+        55 / 16,
+        16,
+        55,
+        "3.43",
+        "exact ratio float 55/16 from detailed packet capture",
+        id="capture_ratio_55_over_16",
+    ),
+]
+
+FATBEANS_Q4_290_SAMPLE = (
+    FATBEANS_SAMPLE_DIR
+    / "fatbeans_valid_aisha_2401_1rounds_2401_1367517774693221_0001.json"
 )
 
 
@@ -88,6 +148,47 @@ def test_ref_engine_public_red_reveal_min_count_constrains_enumeration() -> None
     assert result["evidence"]["min_counts"]["q6"] == 2
     assert result["quality_count_ranges"]["q6"][0] >= 2
     assert "public_quality_reveal_min_counts" in result["notes"]
+
+
+def test_ref_engine_public_red_reveal_value_and_cells_are_floors() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            structured_ref_inputs={
+                "total_count": 48,
+                "fixed_counts": {"q1": 9, "q3": 15, "q4": 17, "q5": 5},
+                "quality_cells": {"q1": 15, "q3": 49, "q4": 48, "q5": 24},
+                "avg_cells": {
+                    "q3": 49 / 15,
+                    "q4": 48 / 17,
+                    "q5": 24 / 5,
+                },
+            },
+            public_rows=[
+                {
+                    "info_id": 200023,
+                    "revealed_items_detail": [
+                        {
+                            "runtime_id": 1425860479021732,
+                            "quality": 6,
+                            "value": 452800,
+                            "shape_code": 53,
+                            "cells": 15,
+                        }
+                    ],
+                }
+            ],
+        ),
+        max_combos=60000,
+    ).as_dict()
+
+    assert result["status"] == "ok"
+    assert result["evidence"]["fixed_counts"]["q6"] == 2
+    assert result["evidence"]["quality_cell_floors"]["q6"] == 15.0
+    assert result["evidence"]["quality_value_floors"]["q6"] == 452800.0
+    assert min(result["red_cells_range"]) >= 15
+    assert min(result["red_value_range"]) >= 452800
+    assert "public_quality_reveal_q6_cell_floor" in result["notes"]
+    assert "public_quality_reveal_q6_value_floor" in result["notes"]
 
 
 def test_ref_engine_uses_public_bucket_outline_as_exact_count_and_cells() -> None:
@@ -1237,6 +1338,204 @@ def test_ref_engine_total_grid_residual_rejects_negative_missing_quality_cells()
     assert "hard_conflict:quality_cells_q1_total_grid_residual" in result["notes"]
 
 
+def test_ref_engine_public_gold_total_cells_zero_locks_q5_like_screenshot() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            structured_ref_inputs={
+                "total_count": 25,
+                "counts": {"q3": 8},
+            },
+            public_rows=[
+                {"info_id": 200011, "value": 0},
+                {"info_id": 200017, "value": 25},
+            ],
+        ),
+        max_combos=80_000,
+    ).as_dict()
+
+    evidence = result["evidence"]
+
+    assert evidence["quality_cells"]["q5"] == 0.0
+    assert evidence["fixed_counts"]["q5"] == 0
+    assert "public_info_200011_q5_cells" in result["notes"]
+    assert "zero_quality_cells_q5_count_zero" in result["notes"]
+    assert result["quality_count_ranges"]["q5"] == [0, 0, 0]
+    assert result["quality_cells_ranges"]["q5"] == [0, 0, 0]
+
+
+def test_ref_engine_structured_bridge_gold_total_cells_zero_locks_q5() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            structured_ref_inputs={
+                "total_count": 25,
+                "quality_cells": {"q5": 0},
+            },
+        ),
+        max_combos=80_000,
+    ).as_dict()
+
+    assert result["evidence"]["fixed_counts"]["q5"] == 0
+    assert result["quality_count_ranges"]["q5"] == [0, 0, 0]
+
+
+PUBLIC_EXACT_QUALITY_CELLS_ZERO_CASES = [
+    pytest.param(200010, "q4", id="public_q4_total_cells_zero"),
+    pytest.param(200011, "q5", id="public_q5_total_cells_zero"),
+    pytest.param(200012, "q6", id="public_q6_total_cells_zero"),
+]
+
+PUBLIC_EXACT_QUALITY_CELLS_NONZERO_CASES = [
+    pytest.param(200010, "q4", 17, id="public_q4_total_cells_17"),
+    pytest.param(200011, "q5", 24, id="public_q5_total_cells_24"),
+    pytest.param(200012, "q6", 9, id="public_q6_total_cells_9"),
+]
+
+PUBLIC_EXACT_QUALITY_COUNT_LOCK_CASES = [
+    pytest.param(200018, "q4", 6, id="public_q4_count_6"),
+    pytest.param(200019, "q5", 3, id="public_q5_count_3"),
+    pytest.param(200020, "q6", 2, id="public_q6_count_2"),
+]
+
+PUBLIC_EXACT_QUALITY_COUNT_ZERO_CASES = [
+    pytest.param(200018, "q4", id="public_q4_count_zero"),
+    pytest.param(200019, "q5", id="public_q5_count_zero"),
+    pytest.param(200020, "q6", id="public_q6_count_zero"),
+]
+
+
+@pytest.mark.parametrize("info_id,quality_key", PUBLIC_EXACT_QUALITY_CELLS_ZERO_CASES)
+def test_ref_engine_public_exact_quality_cells_zero_locks_count(
+    info_id: int,
+    quality_key: str,
+) -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            structured_ref_inputs={"total_count": 30},
+            public_rows=[{"info_id": info_id, "value": 0}],
+        )
+    )
+
+    assert evidence.quality_cells[quality_key] == 0.0
+    assert evidence.fixed_counts[quality_key] == 0
+    assert f"public_info_{info_id}_{quality_key}_cells" in evidence.source_notes
+    assert f"zero_quality_cells_{quality_key}_count_zero" in evidence.source_notes
+
+
+@pytest.mark.parametrize("info_id,quality_key,value", PUBLIC_EXACT_QUALITY_CELLS_NONZERO_CASES)
+def test_ref_engine_public_exact_quality_cells_nonzero_does_not_force_zero(
+    info_id: int,
+    quality_key: str,
+    value: int,
+) -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            structured_ref_inputs={"total_count": 30},
+            public_rows=[{"info_id": info_id, "value": value}],
+        )
+    )
+
+    assert evidence.quality_cells[quality_key] == float(value)
+    assert evidence.fixed_counts.get(quality_key) != 0
+    assert f"public_info_{info_id}_{quality_key}_cells" in evidence.source_notes
+    assert f"zero_quality_cells_{quality_key}_count_zero" not in evidence.source_notes
+
+
+@pytest.mark.parametrize("info_id,quality_key,value", PUBLIC_EXACT_QUALITY_COUNT_LOCK_CASES)
+def test_ref_engine_public_exact_quality_count_locks_ranges(
+    info_id: int,
+    quality_key: str,
+    value: int,
+) -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            structured_ref_inputs={"total_count": 30},
+            public_rows=[{"info_id": info_id, "value": value}],
+        ),
+        max_combos=80_000,
+    ).as_dict()
+
+    assert result["evidence"]["fixed_counts"][quality_key] == value
+    assert result["quality_count_ranges"][quality_key] == [value, value, value]
+    assert f"public_info_{info_id}_{quality_key}_count" in result["notes"]
+
+
+@pytest.mark.parametrize("info_id,quality_key", PUBLIC_EXACT_QUALITY_COUNT_ZERO_CASES)
+def test_ref_engine_public_exact_quality_count_zero_locks_ranges(
+    info_id: int,
+    quality_key: str,
+) -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            structured_ref_inputs={"total_count": 30},
+            public_rows=[{"info_id": info_id, "value": 0}],
+        ),
+        max_combos=80_000,
+    ).as_dict()
+
+    assert result["evidence"]["fixed_counts"][quality_key] == 0
+    assert result["quality_count_ranges"][quality_key] == [0, 0, 0]
+    assert f"public_info_{info_id}_{quality_key}_count" in result["notes"]
+
+
+PUBLIC_EXACT_SESSION_INFO_CASES = [
+    pytest.param(200017, "total_count", 25, "public_info_total_item_count", id="public_total_count_25"),
+    pytest.param(200009, "total_grid_target", 100, "public_info_total_cells", id="public_total_cells_100"),
+]
+
+
+@pytest.mark.parametrize(
+    "info_id,evidence_attr,expected_value,note_token",
+    PUBLIC_EXACT_SESSION_INFO_CASES,
+)
+def test_ref_engine_public_exact_session_info_rows(
+    info_id: int,
+    evidence_attr: str,
+    expected_value: int,
+    note_token: str,
+) -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            public_rows=[{"info_id": info_id, "value": expected_value}],
+        )
+    )
+
+    assert getattr(evidence, evidence_attr) == expected_value
+    assert note_token in evidence.source_notes
+
+
+def test_ref_engine_public_exact_quality_cells_conflict_preserves_bridge() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="ahmed",
+            map_id=2410,
+            structured_ref_inputs={
+                "total_count": 25,
+                "quality_cells": {"q5": 24},
+            },
+            public_rows=[{"info_id": 200011, "value": 0}],
+        )
+    )
+
+    assert evidence.quality_cells["q5"] == 24.0
+    assert evidence.fixed_counts.get("q5") != 0
+    assert "public_info_200011_q5_cells_conflict" in evidence.source_notes
+    assert "zero_quality_cells_q5_count_zero" not in evidence.source_notes
+
+
 def test_ref_engine_victor_q4_q5_q6_count_sum_and_zero_gold_avg() -> None:
     result = run_reference_engine(
         _snapshot(
@@ -1371,6 +1670,88 @@ def test_ref_engine_avg_cells_map_to_integer_grid_options() -> None:
     assert _avg_grid_options(6, 1.8) == []
     assert _avg_grid_options(0, 0) == [0]
     assert _avg_grid_options(1, 0) == []
+
+
+def test_ref_engine_avg_grid_options_use_game_display_for_truncated_ratios() -> None:
+    assert _avg_grid_options(11, 2.09) == [23]
+    assert _avg_grid_options(11, 23 / 11) == [23]
+    assert _avg_grid_options(11, 2.9) == [32]
+    assert _avg_grid_options(10, 2.9) == [29]
+    assert _avg_grid_options(7, 2.4285714285714284) == [17]
+    assert _avg_grid_options(16, 3.4375) == [55]
+
+
+@pytest.mark.parametrize(
+    ("avg", "count", "cells", "display", "source_note"),
+    CAPTURE_AVG_CELL_FIXTURES,
+)
+def test_ref_engine_avg_grid_options_match_capture_and_display_samples(
+    avg: float,
+    count: int,
+    cells: int,
+    display: str,
+    source_note: str,
+) -> None:
+    del source_note
+    assert _avg_grid_options(count, avg) == [cells]
+    assert _avg_count_from_cells(avg, cells) == count
+
+
+def test_ref_engine_avg_grid_options_reject_nearby_capture_mismatch() -> None:
+    # 24/7 packet float displays as 3.42, not 3.43 — must not lock 55 cells at count 16.
+    assert _avg_grid_options(16, 3.4285714626312256) == []
+    assert _avg_grid_options(7, 3.4285714626312256) == [24]
+
+
+@pytest.mark.skipif(
+    not FATBEANS_Q4_290_SAMPLE.exists(),
+    reason="fatbeans q4 2.90 capture sample is not available",
+)
+def test_ref_engine_avg_grid_options_load_q4_290_from_fatbeans_capture() -> None:
+    from bidking_lab.inference.display import format_value
+    from bidking_lab.live.fatbeans import parse_fatbeans_capture
+
+    events = parse_fatbeans_capture(FATBEANS_Q4_290_SAMPLE)
+    observed = [
+        float(info.value)
+        for state in events.states
+        for info in state.public_infos
+        if info.info_id == 200013 and info.value is not None
+    ]
+
+    assert observed
+    avg = observed[0]
+    assert avg == pytest.approx(2.909090995788574, abs=1e-6)
+    assert _avg_grid_options(11, avg) == [32]
+    assert format_value(32, 11) == "2.90"
+    assert _avg_grid_options(22, avg) == [64]
+
+
+def test_ref_engine_q5_avg_209_locks_count_from_group_report() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="victor",
+            map_id=2404,
+            structured_ref_inputs={
+                "total_count": 21,
+                "avg_cells": {"q5": 2.09},
+            },
+        ),
+        max_combos=80_000,
+    ).as_dict()
+
+    assert result["quality_count_ranges"]["q5"] == [11, 11, 11]
+
+
+def test_ref_engine_avg_count_from_cells_accepts_display_truncated_ratios() -> None:
+    assert _avg_count_from_cells(2.09, 23) == 11
+    assert _avg_count_from_cells(23 / 11, 23) == 11
+    assert _avg_count_from_cells(2.909090995788574, 32) == 11
+    assert _avg_count_from_cells(2.4285714626312256, 17) == 7
+    assert _avg_count_from_cells(3.43, 55) == 16
+    assert _avg_count_from_cells(55 / 16, 55) == 16
+    assert _avg_count_from_cells(2.9, 32) == 11
+    assert _avg_count_from_cells(1.8, 9) == 5
 
 
 def test_ref_engine_total_grid_fit_keeps_scalable_cells_integer_and_composable() -> None:

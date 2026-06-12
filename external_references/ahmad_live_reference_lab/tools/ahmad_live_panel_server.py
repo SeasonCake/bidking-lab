@@ -211,6 +211,11 @@ def _display_range_text(values: Any) -> str:
     return _range_text(values)
 
 
+def _red_range_text(values: Any) -> str:
+    """Keep red item/grid columns visible; do not collapse locked triplets."""
+    return _range_text(values)
+
+
 def _range_triplet_ints(values: Any) -> list[int] | None:
     if not isinstance(values, (list, tuple)) or len(values) < 3:
         return None
@@ -1414,12 +1419,12 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     latest_sent = actions.get("latest_sent") if isinstance(actions.get("latest_sent"), dict) else {}
     red_count_display_range, red_cells_display_range = _red_display_ranges(ref_result)
     ref_red_count_range = (
-        _display_range_text(red_count_display_range)
+        _red_range_text(red_count_display_range)
         if ref_display_ready
         else ""
     )
     ref_red_cells_range = (
-        _display_range_text(red_cells_display_range)
+        _red_range_text(red_cells_display_range)
         if ref_display_ready
         else ""
     )

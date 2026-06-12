@@ -38,6 +38,7 @@ from ahmad_live_panel_server import (  # noqa: E402
     _next_info_hint,
     _quality_uncertainty_summary,
     _red_display_ranges,
+    _red_range_text,
     summarize_snapshot,
 )
 
@@ -4126,8 +4127,8 @@ class AhmadTkOverlay:
                 ),
             },
             "red": {
-                "count_range": _display_range_text(red_count_range),
-                "cells_range": _display_range_text(red_cells_range),
+                "count_range": _red_range_text(red_count_range),
+                "cells_range": _red_range_text(red_cells_range),
                 "value_range": self._range_text(result.get("red_value_range"), money=True),
                 "quality_count_summary": self._quality_count_summary(result),
                 "uncertainty_summary": _quality_uncertainty_summary(result),

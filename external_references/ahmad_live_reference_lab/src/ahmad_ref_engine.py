@@ -157,6 +157,16 @@ PUBLIC_BUCKET_OUTLINE_QUALITY = {
     200002: "q5",
     200003: "q6",
 }
+PUBLIC_EXACT_QUALITY_CELLS_INFO = {
+    200010: "q4",
+    200011: "q5",
+    200012: "q6",
+}
+PUBLIC_EXACT_QUALITY_COUNT_INFO = {
+    200018: "q4",
+    200019: "q5",
+    200020: "q6",
+}
 HERO_BY_ID = {
     103: "aisha",
     204: "ahmed",
@@ -187,8 +197,10 @@ class RefEvidence:
     count_sums: dict[str, int]
     avg_cells: dict[str, float]
     quality_cells: dict[str, float]
+    quality_cell_floors: dict[str, float]
     avg_values: dict[str, float]
     quality_values: dict[str, float]
+    quality_value_floors: dict[str, float]
     split_counts: dict[str, int]
     split_quality_cells: dict[str, float]
     split_avg_cells: dict[str, float]
@@ -261,8 +273,10 @@ class RefResult:
                 "count_sums": dict(self.evidence.count_sums),
                 "avg_cells": dict(self.evidence.avg_cells),
                 "quality_cells": dict(self.evidence.quality_cells),
+                "quality_cell_floors": dict(self.evidence.quality_cell_floors),
                 "avg_values": dict(self.evidence.avg_values),
                 "quality_values": dict(self.evidence.quality_values),
+                "quality_value_floors": dict(self.evidence.quality_value_floors),
                 "split_counts": dict(self.evidence.split_counts),
                 "split_quality_cells": dict(self.evidence.split_quality_cells),
                 "split_avg_cells": dict(self.evidence.split_avg_cells),
@@ -795,6 +809,50 @@ def _public_quality_reveal_min_counts(snapshot: dict[str, Any]) -> dict[str, int
     return {key: value for key, value in counts.items() if value > 0}
 
 
+def _public_quality_reveal_floors(
+    snapshot: dict[str, Any],
+) -> tuple[dict[str, int], dict[str, float], dict[str, float]]:
+    counts = {key: 0 for key in QUALITY_KEYS}
+    cell_floors: dict[str, float] = {}
+    value_floors: dict[str, float] = {}
+    seen: set[tuple[str, str]] = set()
+    for row in _iter_dicts(snapshot.get("public_info_rows")):
+        if _safe_int(row.get("info_id")) in PUBLIC_BUCKET_OUTLINE_QUALITY:
+            continue
+        for idx, item in enumerate(_iter_dicts(row.get("revealed_items_detail"))):
+            key = _quality_number_to_key(item.get("quality"))
+            if key is None:
+                continue
+            identity = (
+                str(
+                    item.get("runtime_id")
+                    or item.get("local_index")
+                    or item.get("item_id")
+                    or f"row-{id(row)}-{idx}"
+                ),
+                key,
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            counts[key] += 1
+
+            item_cells = _safe_int(item.get("cells"))
+            if item_cells is None or item_cells <= 0:
+                item_cells = _shape_cells(item.get("shape_code") or item.get("shape_key"))
+            if item_cells is not None and item_cells > 0:
+                cell_floors[key] = cell_floors.get(key, 0.0) + float(item_cells)
+
+            item_value = _safe_float(item.get("value"))
+            if item_value is not None and item_value > 0:
+                value_floors[key] = value_floors.get(key, 0.0) + float(item_value)
+    return (
+        {key: value for key, value in counts.items() if value > 0},
+        cell_floors,
+        value_floors,
+    )
+
+
 def _shape_cells(value: Any) -> int | None:
     parsed = _safe_int(value)
     if parsed is None:
@@ -804,6 +862,49 @@ def _shape_cells(value: Any) -> int | None:
     if width <= 0 or height <= 0:
         return None
     return width * height
+
+
+def _apply_public_info_exact_numeric_rows(
+    snapshot: dict[str, Any],
+    *,
+    fixed_counts: dict[str, int],
+    min_counts: dict[str, int],
+    quality_cells: dict[str, float],
+    set_total_count,
+    set_total_grid_target,
+    source_notes: list[str],
+) -> None:
+    for row in _iter_dicts(snapshot.get("public_info_rows")):
+        info_id = _safe_int(row.get("info_id"))
+        value = _safe_float(row.get("value"))
+        if info_id is None or value is None:
+            continue
+        if info_id == 200017:
+            set_total_count(value, "public_info_total_item_count")
+            continue
+        if info_id == 200009:
+            set_total_grid_target(value, "public_info_total_cells")
+            continue
+        quality_key = PUBLIC_EXACT_QUALITY_CELLS_INFO.get(info_id)
+        if quality_key is not None:
+            existing = quality_cells.get(quality_key)
+            if existing is not None and abs(float(existing) - float(value)) > 0.0001:
+                source_notes.append(f"public_info_{info_id}_{quality_key}_cells_conflict")
+                continue
+            quality_cells[quality_key] = float(value)
+            source_notes.append(f"public_info_{info_id}_{quality_key}_cells")
+            continue
+        count_key = PUBLIC_EXACT_QUALITY_COUNT_INFO.get(info_id)
+        if count_key is None:
+            continue
+        count_int = int(round(value))
+        existing = fixed_counts.get(count_key)
+        if existing is not None and int(existing) != count_int:
+            source_notes.append(f"public_info_{info_id}_{count_key}_count_conflict")
+            continue
+        fixed_counts[count_key] = count_int
+        min_counts[count_key] = max(min_counts.get(count_key, 0), count_int)
+        source_notes.append(f"public_info_{info_id}_{count_key}_count")
 
 
 def _public_bucket_outline_totals(snapshot: dict[str, Any]) -> dict[str, tuple[int, int | None]]:
@@ -1590,8 +1691,10 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
     count_sums: dict[str, int] = {}
     avg_cells: dict[str, float] = {}
     quality_cells: dict[str, float] = {}
+    quality_cell_floors: dict[str, float] = {}
     avg_values: dict[str, float] = {}
     quality_values: dict[str, float] = {}
+    quality_value_floors: dict[str, float] = {}
     split_counts: dict[str, int] = {}
     split_quality_cells: dict[str, float] = {}
     split_avg_cells: dict[str, float] = {}
@@ -1745,11 +1848,29 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         source_notes.append("settlement_review_fixed_counts")
 
     if phase != "settled":
-        public_quality_counts = _public_quality_reveal_min_counts(snapshot)
+        (
+            public_quality_counts,
+            public_quality_cell_floors,
+            public_quality_value_floors,
+        ) = _public_quality_reveal_floors(snapshot)
         if public_quality_counts:
             for key, value in public_quality_counts.items():
                 min_counts[key] = max(min_counts.get(key, 0), value)
             source_notes.append("public_quality_reveal_min_counts")
+        if public_quality_cell_floors:
+            for key, value in public_quality_cell_floors.items():
+                quality_cell_floors[key] = max(
+                    quality_cell_floors.get(key, 0.0),
+                    float(value),
+                )
+                source_notes.append(f"public_quality_reveal_{key}_cell_floor")
+        if public_quality_value_floors:
+            for key, value in public_quality_value_floors.items():
+                quality_value_floors[key] = max(
+                    quality_value_floors.get(key, 0.0),
+                    float(value),
+                )
+                source_notes.append(f"public_quality_reveal_{key}_value_floor")
         public_outline_totals = _public_bucket_outline_totals(snapshot)
         for key, (count, cells) in public_outline_totals.items():
             existing_count = fixed_counts.get(key)
@@ -1891,6 +2012,16 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         source_notes=source_notes,
     )
 
+    _apply_public_info_exact_numeric_rows(
+        snapshot,
+        fixed_counts=fixed_counts,
+        min_counts=min_counts,
+        quality_cells=quality_cells,
+        set_total_count=set_total_count,
+        set_total_grid_target=set_total_grid_target,
+        source_notes=source_notes,
+    )
+
     for key, avg in tuple(avg_cells.items()):
         if avg == 0 and key not in fixed_counts:
             fixed_counts[key] = 0
@@ -1903,6 +2034,19 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
             fixed_counts[key] = 0
             min_counts[key] = 0
             source_notes.append(f"zero_avg_value_{key}_count_zero")
+
+    for key, cells in tuple(quality_cells.items()):
+        if key in fixed_counts:
+            continue
+        parsed_cells = _safe_float(cells)
+        if parsed_cells is not None and abs(parsed_cells) <= 0.0001:
+            fixed_counts[key] = 0
+            min_counts[key] = 0
+            source_notes.append(f"zero_quality_cells_{key}_count_zero")
+
+    for key, count in fixed_counts.items():
+        if int(count) == 0 and key not in quality_cells:
+            quality_cells[key] = 0.0
 
     for key, value in tuple(quality_values.items()):
         if key in avg_values:
@@ -1981,8 +2125,10 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         count_sums=count_sums,
         avg_cells=avg_cells,
         quality_cells=quality_cells,
+        quality_cell_floors=quality_cell_floors,
         avg_values=avg_values,
         quality_values=quality_values,
+        quality_value_floors=quality_value_floors,
         split_counts=split_counts,
         split_quality_cells=split_quality_cells,
         split_avg_cells=split_avg_cells,
@@ -2027,6 +2173,78 @@ def _composable_grid_options(count: int) -> tuple[int, ...]:
     )
 
 
+def _ref_format_game_avg(cells: int, count: int, *, max_decimals: int = 2) -> str:
+    if count <= 0 or cells < 0:
+        return ""
+    decimals = max(2, max_decimals)
+    scale = 10**decimals
+    floored_scaled = (int(cells) * scale) // int(count)
+    int_part, frac_value = divmod(floored_scaled, scale)
+    digits = str(frac_value).zfill(decimals)
+    if int(cells) * scale == floored_scaled * int(count):
+        digits = digits.rstrip("0")
+    return f"{int_part}.{digits}" if digits else str(int_part)
+
+
+def _ref_parse_display_avg(text: str) -> float | None:
+    value = str(text or "").strip().replace(",", "")
+    if not value or "e" in value.lower():
+        return None
+    if "." in value:
+        int_part, frac_part = value.split(".", 1)
+        if not int_part.isdigit() or not frac_part.isdigit():
+            return None
+    elif not value.isdigit():
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _ref_avg_display_decimals(display_text: str) -> int:
+    value = str(display_text or "").strip()
+    if "." not in value:
+        return 0
+    return len(value.split(".", 1)[1])
+
+
+def _ref_avg_display_product_tolerance(display_text: str, count: int) -> float:
+    decimals = _ref_avg_display_decimals(display_text)
+    if decimals < 2:
+        return 0.0001
+    return max(0.0001, (0.5 * (10**-decimals) * max(1, int(count))) + 1e-9)
+
+
+def _ref_avg_looks_like_display_reading(avg: float) -> bool:
+    if not math.isfinite(avg):
+        return False
+    for decimals in (3, 2, 1, 0):
+        rounded = round(avg, decimals)
+        if abs(avg - rounded) <= 1e-9:
+            return True
+    return False
+
+
+def _ref_avg_matches_game_display(count: int, avg: float | None, grid: int) -> bool:
+    if avg is None:
+        return True
+    if count <= 0:
+        return grid == 0 and abs(float(avg)) <= 0.0001
+    if abs(float(avg) * count - grid) <= 0.0001:
+        return True
+    if not _ref_avg_looks_like_display_reading(float(avg)):
+        return False
+    display_text = _ref_format_game_avg(grid, count)
+    display_value = _ref_parse_display_avg(display_text)
+    if display_value is None:
+        return False
+    product_tolerance = _ref_avg_display_product_tolerance(display_text, count)
+    if abs(float(avg) * count - grid) <= product_tolerance:
+        return True
+    return abs(display_value - float(avg)) <= 1e-9
+
+
 def _avg_grid_options(count: int, avg: float | None) -> list[int]:
     if count < 0:
         return []
@@ -2052,10 +2270,18 @@ def _avg_grid_options(count: int, avg: float | None) -> list[int]:
     ]
     if options:
         return options
-    return [
+    exact_options = [
         grid
         for grid in range(low, high + 1)
         if abs(grid - target) <= tolerance
+        and can_compose_grid_total(count, grid)
+    ]
+    if exact_options:
+        return exact_options
+    return [
+        grid
+        for grid in range(low, high + 1)
+        if _ref_avg_matches_game_display(count, avg, grid)
         and can_compose_grid_total(count, grid)
     ]
 
@@ -2075,21 +2301,22 @@ def _avg_count_from_cells(avg: float | None, cells: Any) -> int | None:
     if avg == 0:
         return 0 if cells_int == 0 else None
     count = int(round(cells_int / avg))
-    if count <= 0:
-        return None
-    if abs(avg * count - cells_int) > 0.0001:
-        return None
-    if not can_compose_grid_total(count, cells_int):
-        return None
-    return count
+    if count > 0 and abs(avg * count - cells_int) <= 0.0001:
+        if can_compose_grid_total(count, cells_int):
+            return count
+    display_candidates = [
+        candidate
+        for candidate in range(1, cells_int + 1)
+        if _ref_avg_matches_game_display(candidate, avg, cells_int)
+        and can_compose_grid_total(candidate, cells_int)
+    ]
+    if len(display_candidates) == 1:
+        return display_candidates[0]
+    return None
 
 
 def _avg_matches_exact_grid(count: int, avg: float | None, grid: int) -> bool:
-    if avg is None:
-        return True
-    if count <= 0:
-        return grid == 0 and abs(float(avg)) <= 0.0001
-    return abs(float(avg) * count - grid) <= 0.0001
+    return _ref_avg_matches_game_display(count, avg, grid)
 
 
 def _avg_value_fraction(avg: float | None) -> Fraction | None:
@@ -2205,8 +2432,13 @@ def _effective_min_count(key: str, evidence: RefEvidence) -> int:
     exact_cells = _quality_exact_cells(key, evidence)
     if exact_cells is not None and exact_cells > 0:
         minimum = max(minimum, int(math.ceil(exact_cells / 18.0)), 1)
+    cell_floor = _quality_cell_floor(key, evidence)
+    if cell_floor > 0:
+        minimum = max(minimum, int(math.ceil(cell_floor / 18.0)), 1)
     exact_value = _quality_exact_value(key, evidence)
     if exact_value is not None and exact_value > 0:
+        minimum = max(minimum, 1)
+    if _quality_value_floor(key, evidence) > 0:
         minimum = max(minimum, 1)
     if (
         evidence.phase != "settled"
@@ -2233,6 +2465,16 @@ def _quality_exact_cells(key: str, evidence: RefEvidence) -> int | None:
     return max(0, parsed)
 
 
+def _quality_cell_floor(key: str, evidence: RefEvidence) -> int:
+    value = evidence.quality_cell_floors.get(key)
+    if value is None:
+        return 0
+    parsed = _safe_float(value)
+    if parsed is None or parsed <= 0:
+        return 0
+    return max(0, int(math.ceil(parsed - 1e-6)))
+
+
 def _quality_exact_value(key: str, evidence: RefEvidence) -> float | None:
     value = evidence.quality_values.get(key)
     if value is None:
@@ -2241,6 +2483,14 @@ def _quality_exact_value(key: str, evidence: RefEvidence) -> float | None:
     if parsed is None or parsed < 0:
         return None
     return parsed
+
+
+def _quality_value_floor(key: str, evidence: RefEvidence) -> float:
+    value = evidence.quality_value_floors.get(key)
+    parsed = _safe_float(value)
+    if parsed is None or parsed <= 0:
+        return 0.0
+    return float(parsed)
 
 
 def _quality_count_matches_value_inputs(
@@ -2740,23 +2990,41 @@ def _grids_for_counts(
     for key in QUALITY_KEYS:
         count = counts[key]
         exact_cells = _quality_exact_cells(key, evidence)
+        cell_floor = _quality_cell_floor(key, evidence)
         avg = evidence.avg_cells.get(key)
         if exact_cells is not None:
+            if exact_cells < cell_floor:
+                return None
             if not can_compose_grid_total(count, exact_cells):
                 return None
             if not _avg_matches_exact_grid(count, avg, exact_cells):
                 return None
             grids[key] = float(exact_cells)
         elif count <= 0:
+            if cell_floor > 0:
+                return None
             grids[key] = 0.0
         elif avg is not None:
             options = _avg_grid_options(count, avg)
+            if cell_floor > 0:
+                options = [option for option in options if option >= cell_floor]
             selected = _choose_avg_grid_option(count, avg, options)
             if selected is None:
                 return None
             grids[key] = selected
         else:
-            grids[key] = count * DEFAULT_GRID_MEANS[key]
+            default = count * DEFAULT_GRID_MEANS[key]
+            if cell_floor > 0:
+                options = [
+                    option
+                    for option in _composable_grid_options(int(count))
+                    if option >= cell_floor
+                ]
+                if not options:
+                    return None
+                grids[key] = float(min(options, key=lambda option: (abs(option - default), option)))
+            else:
+                grids[key] = default
     fitted = _fit_grids_to_total_target(
         grids,
         counts,
@@ -2767,6 +3035,9 @@ def _grids_for_counts(
     hard_total = _hard_total_grid_target_int(evidence)
     if hard_total is not None and abs(sum(fitted.values()) - hard_total) > 0.0001:
         return None
+    for key in QUALITY_KEYS:
+        if fitted.get(key, 0.0) + 1e-6 < _quality_cell_floor(key, evidence):
+            return None
     if not _split_low_quality_q1_grid_matches(counts.get("q1", 0), fitted.get("q1", 0.0), evidence):
         return None
     return fitted
@@ -2802,16 +3073,61 @@ def _quality_value_for_evidence(
     exact_value = _quality_exact_value(key, evidence)
     if exact_value is not None:
         return float(exact_value)
+    value_floor = _quality_value_floor(key, evidence)
     avg_value = evidence.avg_values.get(key)
     if avg_value is not None:
         total = _avg_value_total_from_count(float(avg_value), int(count))
         if total is not None:
-            return total
-    return _quality_value_for_grid(
-        key,
-        count=count,
-        grid=grid,
-        item_values=item_values,
+            return max(value_floor, total)
+    return max(
+        value_floor,
+        _quality_value_for_grid(
+            key,
+            count=count,
+            grid=grid,
+            item_values=item_values,
+        ),
+    )
+
+
+def _value_distribution_points_with_floor(
+    center: float,
+    spread: float,
+    floor: float,
+) -> tuple[tuple[float, float], ...]:
+    return tuple(
+        (max(float(floor), value), weight)
+        for value, weight in _value_distribution_points(center, spread)
+    )
+
+
+def _quality_value_distribution_points(
+    key: str,
+    *,
+    center: float,
+    spread: float,
+    evidence: RefEvidence,
+) -> tuple[tuple[float, float], ...]:
+    return _value_distribution_points_with_floor(
+        center,
+        spread,
+        _quality_value_floor(key, evidence),
+    )
+
+
+def _total_value_floor(evidence: RefEvidence) -> float:
+    return sum(_quality_value_floor(key, evidence) for key in QUALITY_KEYS)
+
+
+def _combo_value_distribution_points(
+    center: float,
+    spread: float,
+    evidence: RefEvidence,
+) -> tuple[tuple[float, float], ...]:
+    return _value_distribution_points_with_floor(
+        center,
+        spread,
+        _total_value_floor(evidence),
     )
 
 
@@ -2979,8 +3295,24 @@ def _display_grid_options_for_quality(
         avg,
         target_int,
     )
+    count = int(counts.get(key, 0))
+    cell_floor = _quality_cell_floor(key, evidence)
+    if cell_floor > 0:
+        filtered = tuple(option for option in options if option >= cell_floor)
+        if filtered:
+            options = filtered
+        elif _quality_exact_cells(key, evidence) is not None or evidence.avg_cells.get(key) is not None:
+            return ()
+        else:
+            candidates = tuple(
+                option
+                for option in _composable_grid_options(count)
+                if option >= cell_floor
+            )
+            default = count * DEFAULT_GRID_MEANS[key]
+            ranked = sorted(candidates, key=lambda option: (abs(option - default), option))
+            options = tuple(ranked[:DISPLAY_GRID_TOPK])
     if key == "q1":
-        count = int(counts.get(key, 0))
         floor = _split_low_quality_q1_grid_floor(count, evidence)
         if floor > 0:
             filtered = tuple(option for option in options if option >= floor)
@@ -2994,6 +3326,8 @@ def _display_grid_options_for_quality(
             return tuple(ranked[:DISPLAY_GRID_TOPK])
     if options:
         return options
+    if cell_floor > 0:
+        return ()
     fallback = int(round(counts.get(key, 0) * DEFAULT_GRID_MEANS[key]))
     if can_compose_grid_total(int(counts.get(key, 0)), fallback):
         return (fallback,)
@@ -3327,7 +3661,11 @@ def run_reference_engine(
         )
         if value_spread >= 1.0:
             has_intra_quality_value_band = True
-        for value, point_weight in _value_distribution_points(combo.value, value_spread):
+        for value, point_weight in _combo_value_distribution_points(
+            combo.value,
+            value_spread,
+            evidence,
+        ):
             weighted_values.append((value, combo_weight * point_weight))
     weighted_red = [
         (float(combo.counts["q6"]), math.exp(max(-745.0, combo.weight - max_logw)))
@@ -3355,7 +3693,12 @@ def run_reference_engine(
                 item_values=item_values,
                 evidence=evidence,
             )
-            for value, point_weight in _value_distribution_points(red_value, red_value_spread):
+            for value, point_weight in _quality_value_distribution_points(
+                "q6",
+                center=red_value,
+                spread=red_value_spread,
+                evidence=evidence,
+            ):
                 weighted_red_value.append((value, option_weight * point_weight))
     if has_intra_quality_value_band:
         notes.append("intra_quality_value_band_v0")
