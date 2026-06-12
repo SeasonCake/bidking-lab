@@ -2422,3 +2422,46 @@
      2. 红值：`quality_value_floors` / partial 红已知件 + 公开 q6 value（已有 P1 partial，艾莎样本 partial≈0）；
      3. 金件：在 **总件+总格** 锁定后复测；均格 display fallback 已修，非主矛盾；
      4. 0052 / public avg downgrade 回归 + 白绿 live bridge（monitor → structured inputs）。
+
+62. 2026-06-13 艾莎 gap audit 扩展 + 代表样本表（commit 待 `188c628` 之后）
+
+   - **工具**：`scripts/audit_aisha_gap.py`（指标扩展、`--audit-round`、`--write-representative-doc`）
+   - **代表样本**：`docs/hero_ref_aisha_representative_samples_2026-06-13.zh-CN.md`（20 条分层 + **15 条 exact total 回归门禁**）
+   - **筛选不变**：244 扫 → 173 curated（penultimate）；不全库、去 tail / ≤2 轮 / 证据不足
+
+   - **件数估计（用户 2026-06-13）— 确认为独立误差点**
+     - 旧指标「仅 exact total band」→ 总件 miss **91.9%**（虚高）
+     - 新指标「各 tier count band 求和 band」→ 总件 miss **50.3%**，avg mid-gap **~6 件**
+     - `count_prior` 下 per-tier 求和仍常宽于 settlement；与 **总格 miss 69%** 同源（prior 未收束）
+     - **q4 件 30%**、**q5 件 51%**（prior 阶段）；exact total 子集 q5 **6.7%**
+
+   - **扩展指标（173 curated，penultimate）**
+     | 指标 | miss | 备注 |
+     | --- | ---: | --- |
+     | total_cells | 69% | 仍 #1；cells_ranges 已纳入 |
+     | q5_cells (band) | 49% | 金格 band 宽，不单列 locked cells |
+     | q4_cells | 38% | 紫格 |
+     | q6_value | 40% | 红值 tail |
+     | q6_count | 30% | exact total 后 → 0% |
+     | q3_count | 9% | 蓝件相对准 |
+     | q1_count | 100% | **白绿 split vs merged q1** 口径差 — 单独审计，勿当引擎 bug |
+     | balanced vs settlement | 86% | nest prior ≠ inventory 精确总价；**非 v0 首要修复** |
+
+   - **金价 only（用户 2026-06-13）**
+     - 子集定义：有 `avg_values.q5` / public 金均价，**无**金件数锁、无 `avg_cells.q5`、无 `quality_cells.q5`
+     - penultimate **n=0**；`--audit-round 3` 在 curated 内仍 **n=0** → fatbeans 里金均价常与均格/扫描同窗到达
+     - 现行引擎：`_apply_avg_value_cells_exact_count_intersection` **必须 avg_value + avg_cells 同时** 才派生金件数；**仅金价不会收窄**
+     - **v0 批 B 试验（待做）**：在 `total_count` 精确时，若 `_avg_value_count_matches` 对 q5 **唯一** → 允许 `avg_value_only_q5_count_derived`（对齐手算「金均价 × 件数」）；需 synthetic + 早期 public-only 负例
+     - 群友「扫描比金价贵」路径：**产品/UI 仍应提示先开金扫描**；引擎侧金价-only 是 **低成本补强**，不能替代 scan/cells
+
+   - **批 B 实施顺序（2026-06-13 确认）**
+     1. `count_prior` **总格 target ← 已知 q3–q5 cells 残差**（15 条 exact total 回归）
+     2. 试验 **金均价-only** unique count pin（有 total 时）
+     3. 0052 fallback + 白绿 bridge
+     4. q1 split 口径文档化 / 测试（不计入批 B 门禁）
+
+   - **验证**
+     ```powershell
+     python scripts/audit_aisha_gap.py
+     python scripts/audit_aisha_gap.py --audit-round 3  # 早期轮 / 金价路径
+     ```
