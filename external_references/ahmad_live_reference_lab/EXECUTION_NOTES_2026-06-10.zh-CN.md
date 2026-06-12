@@ -1934,9 +1934,10 @@
    - Git：
      - engine/UI hotfix2：`3cebdc2`；
      - monitor lifecycle：`dcb1bd1`（发包用此 commit）。
-   - 产物（`dist\`，PackageVersion=v0.1.6-hotfix2）：
-     - full / public-safe zip + `RELEASE_NOTES_v0.1.6-hotfix2.zh-CN.md` + SHA256 清单；
-     - 需重编 `BidKingHeroRef.exe`（含 monitor.lock fallback）；`Start-HeroRef.ps1` 同步 `--keep-monitor-on-close`。
+   - 产物（`dist\`，PackageVersion=v0.1.6-hotfix2，`SourceCommit=a2fa686`，`DirtyWorktree=false`）：
+     - `BidKingHeroRef-v0.1.6-hotfix2-full.zip` — SHA256 `190770CCFE562E5FF3BC0B1C1A024C698F2C2847D08C82B1D7ED0CF681CEDEB9`，43165883 bytes；
+     - `BidKingHeroRef-v0.1.6-hotfix2-public-safe.zip` — SHA256 `1B9DA0907011717C5CCC2B7EB8C60E4A75CD7AA783C78330BA22BCDAD7AF1D23`，39421739 bytes；
+     - `RELEASE_NOTES_v0.1.6-hotfix2.zh-CN.md` / `BidKingHeroRef-v0.1.6-hotfix2-SHA256.txt`（同步 Desktop）。
    - 备注：
      - 若仍被占用，先 `Stop-HeroRef.bat` 或结束 `BidKingHeroMonitor.exe`；
      - 初版 hotfix2（仅 `3cebdc2`、无 monitor fix）如已私发，请换本包。
