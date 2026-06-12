@@ -2294,3 +2294,131 @@
      - **UI 推理速率（§50-4，工作树）**：`ahmad_tk_overlay.py` summary worker **coalesce** — 忙时缓存最新 snapshot，当前 worker 结束后只算最新帧；丢弃过期 seq 结果、同 signature 不重复 pending（测：`test_ahmad_refresh_coalesces_summary_worker_to_latest_snapshot` 等）
      - **R1 总件数延迟重算（§50-1，工作树）**：`ahmad_ref_engine.py` 在 **仅总格、无总件** 且其它约束不足时返回 `missing_total_count` + `waiting_total_count:grid_only`，UI 显示 **「等待总件数」**；`200017` / skill 精确总件 / Aisha 多品质约束 / Victor min_count 等路径 **不延迟**
      - **伊森 R5 generic ref 抽检（3+3 样本）**：`ethan_skill_full_outline_*` → `grid_target` 与结算 **cells 100% 一致**；总报价暂无 Item 表 truth 对比
+
+60. 2026-06-12 §50 性能 checkpoint + **暂缓继续优化**（commit `a0135c7` @ `origin/main`）
+
+   - **本版已落地**
+     | 项 | 行为 | 验证 |
+     | --- | --- | --- |
+     | §50-1 | Ahmed **仅总格** → `missing_total_count` + `waiting_total_count:grid_only`；Aisha 多品质约束 **不延迟** | `test_ref_engine_*defers*` / `keeps_aisha_grid_prior*` |
+     | §50-2 | 精确总件 + `avg_cells` 微优化（均格剪枝 + 默认格快路径）；notes `exact_total_avg_cells_fast_path` | Ahmed r2 fatbeans：`combo_count`+`balanced` 锁定；warm **<500ms** |
+     | §50-4 | summary worker **coalesce** 只算最新 snapshot | `test_ahmad_refresh_coalesces_summary_worker*` |
+     | Aisha UI | `_aisha_next_info_hint`：蓝→紫→金→总格→最后补总件；R1 不催白绿 | `test_ahmad_server_aisha_*` |
+     | Audit | `scripts/audit_data7_perf.py` + `exact_total_avg_cells_fast_path` 路由 | `data/reports/audit_data7_perf.txt`（本地，不进 git） |
+
+   - **Ahmed audit（`--hero ahmed --max-round 2`，`a0135c7` 后复跑）**
+     | 路由 | n | avg | p95 | 备注 |
+     | --- | ---: | ---: | ---: | --- |
+     | `sparse_exact_prior` | 32 | ~601ms | ~1.48s | R1 仍跑 prior 的样本；最慢 ~2.6s |
+     | `exact_total_avg_cells_fast_path` | 17 | ~235ms | ~1.32ms | 含冷启动；同路径 **warm ~37–97ms** |
+     | §50-2 回归样本 r2 | 2 | 冷 ~1.3–1.4s | — | 热跑已 <500ms |
+
+   - **体验结论（用户 2026-06-12 确认）**
+     - **Ahmed 主 live 路径（R2+ 有总件 + 均格）**：速度 **可接受**，不必为发版继续抠 §50-2。
+     - **仍慢但非阻塞**：R1 `sparse_exact_prior`（avg ~0.6s，p95 ~1.5s）；Ethan generic ref **仍搁置**。
+     - **精度硬约束（后续任何 perf 仍遵守）**：不改 `max_combos` 换速度；每条优化至少绑 fatbeans `balanced` + `combo_count` 回归。
+
+   - **暂缓项（需要时再开）**
+     1. `sparse_exact_prior` 枚举范围收紧（Ahmed R1 p95 目标 ~800ms 量级）
+     2. Aisha 2407 类 `count_prior` 极端慢（~100s / 3.6 万 combo，见 §49）— 与 §61 艾莎批交叉
+     3. §50-3 多档 `quality_cells` 混合 prior
+     4. evidence/session 缓存
+     5. §48 紫品 ranking、Ethan perf
+
+   - **诊断命令**
+     ```powershell
+     cd bidking-lab
+     python scripts/audit_data7_perf.py --max-round 2 --hero ahmed
+     python -m pytest tests/test_ahmad_ref_engine_public_info.py -k "exact_total_q5_avg_cells_fast_path" -q
+     ```
+
+61. 2026-06-12 规划：**艾莎（Aisha）体验 + 准确度适配** — 逐步扩大 Hero Ref 适用范围
+
+   - **目标**：在 **不牺牲已验证精度** 的前提下，让艾莎局从「能跑 ref」升级到「群友日常可用」——覆盖更多地图/轮次/工具组合，UI 提示与引擎结论一致。
+   - **Git 基线**：`a0135c7`；艾莎 fatbeans 样本库 **~249** 份（含 `fatbeans_activity_20260605_shipwreck` 活动图）。
+   - **精度门禁（每批必做）**
+     - 新增/改动引擎逻辑：至少 **1 条真实 fatbeans 端到端** + 结算 truth（`final_quality_counts` / `final_quality_cells` / 总价若可得）对照；
+     - 白绿 split：保持现有 `split_*` 单元测试 + 不引入 silent 补数；
+     - public avg 冲突：仍走 `public_quality_avg_value_conflict_fallback`，notes 必须可见。
+
+   - **群友反馈 ↔ 状态（艾莎相关）**
+     | 反馈 | 状态 | 文档/测试 |
+     | --- | --- | --- |
+     | 下一步提示顺序（蓝→紫→金→总格→总件；R1 不催白绿） | ✅ `a0135c7` | `test_ahmad_server_aisha_*` |
+     | 金均格显示截断（2.09 / 1.80 / 2.90） | ✅ 引擎 display avg fallback | `CAPTURE_AVG_CELL_FIXTURES` |
+     | 金/品质总格 = 0 仍显示先验 | ✅ `200010–200020` + `quality_cells=0→fixed_counts=0` | hotfix2 回归 |
+     | public 紫均价过硬 → 无价/ no-combo | ✅ downgrade 重跑 | `0052` 样本路径；需 **批量 replay 确认** |
+     | R1 英雄显示 `?` 第二轮才识别 | ⏳ 待查 monitor hero detect | §61-B |
+     | 仅 SEND 无 REV → 0 值不进 engine | ⏳ 跨英雄 §54-A | 非艾莎独有 |
+     | 艾莎 R1 仅总格 + 多品质已锁 → 仍慢 count_prior | ⏳ §61-D | `keeps_aisha_grid_prior*` 有意不 defer |
+     | Hero Ref 格子/layout 特化 | ⏳ 低优先 | v3 主线有 layout；§59 backlog |
+
+   - **已有引擎能力（艾莎 structured ref）**
+     - `split_counts` / `split_quality_cells` 白绿拆分、互补、与 merged q1 折叠；
+     - 总件残差派生 q1、map grid floor、`split_low_quality_*` 硬冲突诊断；
+     - 与 Ahmed 共用 public 精确字段、display avg、sparse prior 路由；
+     - **不共用** Ahmed `100204` bridge；艾莎靠 structured inputs + public_info + split 管道。
+
+   - **分批计划（建议顺序）**
+
+     **批 A — 基线审计（只读，1–2 天）**
+     - 脚本：扩展 `audit_data7_perf.py` 或新增 `audit_aisha_fatbeans.py` — 对 **艾莎** 样本按轮次回放 ref，统计 `status` / route / `balanced` / 结算 Δ；
+     - 分层：常规图 240x / 活动 252x / mixed；标记 `no_reachable_combo`、`count_prior` 慢样本、`public_*_downgraded`；
+     - 产出：`data/reports/audit_aisha_baseline.txt` + 5–10 条 **代表样本** 写入 sample index（新 §12 艾莎）。
+
+     **批 B — 准确度（P1，样本驱动）**
+     1. **public 紫/金均价 + 均格不唯一**：§48 `purple_avg_value_cells_rank_v0` 软收窄（艾莎 21 份 q6 value audit 已示多样本形态）；
+     2. **0052 类 fallback 回归**：锁定 `fatbeans_valid_aisha_2402_*_0052.json` r3 `balanced` / ranges 不回归；
+     3. **白绿 live bridge**：核对 `monitor._ahmad_ref_inputs_from_batches(hero=aisha)` 是否漏掉 action/public 白绿字段；补 structured 映射 + fatbeans 复放；
+     4. **活动地图 2521–2530**：用 `fatbeans_activity_20260605_shipwreck` 子集做 settlement gate（件/格 truth）。
+
+     **批 C — 体验（P1，UI + 提示）**
+     1. R1 hero `?` → 尽早显示 `aisha`（monitor/snapshot context）；
+     2. mini UI：艾莎局「未锁 白绿/蓝」摘要与 `_aisha_next_info_hint` 不矛盾（白绿仅在手填/已锁时展示，不主动催）；
+     3. `missing_total_count` / `count_prior` 状态下候选行与「下一步」文案一致；
+     4. §46 字体缩放仍 **不做**，除非单独开 UI 专题。
+
+     **批 D — 性能（P2，仅当群友仍报卡）**
+     - 艾莎 **多品质已锁、无总件** 的 `count_prior`：tighter center（总格残差 + split + 已知 q3–q5），**禁止**降 `max_combos`；
+     - 与 §60 暂缓项 (2) 合并实施；样本：`2407_*` 极端局 + 常规 2410 多品质 R1。
+
+     **批 E — 扩大适用范围（P2–P3）**
+     - 地图：2401–2410 已有多样本；补 **250x 新图** 与活动图混局；
+     - 轮次：R1–R5 分轮验收（R1 提示 / R4–R5 高品+红）；
+     - 与 v3 layout 证据 **不合并** ref_v0，除非样本证明 split+public 不足。
+
+   - **明确不做（本专题）**
+     - Ethan / 加布里 structured bridge；
+     - WinDivert → 新抓包（§56，独立 E 批）；
+     - 为提速牺牲 combo 空间或 silent 改 balanced。
+
+   - **下一动作（用户 2026-06-12）**：**暂停 §50 后续 perf**；**启动 §61 批 A** — 艾莎 fatbeans 基线 audit + 代表样本表，再与群友对齐优先级（准确度 vs 提示 vs 新地图）。
+
+   - **样本筛选原则（用户 2026-06-12，批 A 必守）**
+     | 纳入 | 排除 |
+     | --- | --- |
+     | `rounds ≥ 3` 且文件名/ live 一致 | 仅 1–2 轮对局 |
+     | 有 settlement inventory | 无结算 / parse 失败 |
+     | audit 轮证据分 ≥ 4（总件/总格/多档品质） | `missing_total_count` / `no_reachable_combo` |
+     | 常规图 + 活动图 **分 cohort 报告** | 不混 tail 进主结论 |
+     | — | q6 结算 value > 1.2M 或 q6 件数 > 4（高长尾） |
+     - **不全库 audit**：244 扫描 → **173  curated**（脚本默认）；代表样本再人工缩至 15–25 条进 sample index §12。
+     - 工具：`scripts/audit_aisha_gap.py` → `data/reports/audit_aisha_gap.txt`（本地，不进 git）。
+
+   - **批 A 初跑结论（173 curated，penultimate bidding round vs settlement）**
+     | 维度 | 全 curated miss | 仅 `total_count` 已精确（n=15） | 解读 |
+     | --- | ---: | ---: | --- |
+     | 总件 | 91.9% | — | ** inflated**：大量仍 `count_prior`、尚无 `200017` |
+     | **总格** | **69.4%** | **66.7%** | **最大结构性缺口**；avg mid-gap ≈ 18 格 |
+     | 金件 q5 | 51.4% | 6.7% | 多数误差来自 **总件/总格 prior 未收束**，非金均格本身 |
+     | 红件 q6 | 29.5% | 0% | 总件锁定后件数 band 尚可 |
+     | 红值 q6 | 39.9% | 20.0% | 尾部与 partial 红值仍宽；绝对 gap 可达 ~1M |
+     | 金/红 **格** | n/a | n/a | ref 很少锁 `quality_cells.q5/q6`；格数误差体现在 **总格 residual** |
+     - **与用户直觉对齐**：**总格 > 红值 > 金件（prior 阶段）> 红件**；现行 v0 应优先 **总格收束 + 红值下界**，金件在总件/总格到位后误差下降。
+     - **留给 v3/完全体**：品质桶、形状/layout、MC posterior；Hero Ref v0 只做 nest-tier + 公开/ split 证据，不 silent 扩 combo。
+
+   - **批 B 优先修复方向（v0 范围内）**
+     1. `count_prior` 下 **总格 target** 与已知 q3–q5 cells 残差对齐（艾莎多品质已锁仍宽格的主因）；
+     2. 红值：`quality_value_floors` / partial 红已知件 + 公开 q6 value（已有 P1 partial，艾莎样本 partial≈0）；
+     3. 金件：在 **总件+总格** 锁定后复测；均格 display fallback 已修，非主矛盾；
+     4. 0052 / public avg downgrade 回归 + 白绿 live bridge（monitor → structured inputs）。
