@@ -2652,3 +2652,25 @@ def test_ref_engine_avg_value_only_q5_count_derivation_is_unique() -> None:
 
     assert result["evidence"]["fixed_counts"].get("q5") == 8
     assert "avg_value_only_q5_count_derived" in result["notes"]
+
+
+AISHA_0052_SAMPLE = (
+    FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2402_3rounds_2402_1367586310602652_0052.json"
+)
+
+
+def test_ref_engine_aisha_0052_fatbeans_r3_live_bridge_regression() -> None:
+    """Batch B #3: white/green split bridge + public q4 avg must stay reachable at r3."""
+    snapshot = _aisha_fatbeans_snapshot(AISHA_0052_SAMPLE, round_count=3)
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+    evidence = result["evidence"]
+
+    assert result["status"] == "count_prior"
+    assert result["combo_count"] == 2421
+    assert result["balanced"] == 292_763
+    assert evidence["split_counts"] == {"green": 7, "white": 4}
+    assert evidence["split_quality_cells"] == {"green": 10.0, "white": 8.0}
+    assert evidence["fixed_counts"].get("q1") == 11
+    assert "split_low_quality_q1_count_merged" in result["notes"]
+    assert result["quality_count_ranges"]["q3"] == [6, 8, 11]
+    assert result["quality_count_ranges"]["q4"] == [3, 6, 9]

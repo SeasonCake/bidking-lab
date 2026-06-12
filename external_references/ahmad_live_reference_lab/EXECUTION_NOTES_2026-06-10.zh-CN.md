@@ -2466,6 +2466,15 @@
      - 复审计 curated penultimate：`total_cells` miss **69%→68%**；`subset_exact_total_count` n=14 miss **50%**（原 ~67%）
      - 回归：`tests/test_ahmad_ref_engine_public_info.py` — **7 条**已命中 band 的 exact-total fatbeans 不回归 + synthetic 金价-only
 
+   - **批 B #3（2026-06-13）**
+     - fatbeans `2402_*_0052.json` r3：`combo_count=2421`、`balanced=292763`、白绿 split bridge → `split_low_quality_q1_*_merged`（**不回归门禁**）
+     - public avg downgrade：保留 synthetic `public_quality_avg_value_conflict_fallback`；不在单条 fatbeans 上迭代
+
+   - **小样本纪律（批 B 起）**
+     - curated n=173、exact-total n=14：**不够**做 MAE/miss 优化目标；audit miss% 仅作方向监控
+     - pytest 门禁 = **已 hit 不回归** + **单条代表路径**（0052 / 合成负例）；**不要求** 14/14 band
+     - 禁止：在 14 条上扫 `RESIDUAL_ITEM_CELL_ESTIMATE`、high-tier 档数阈值等；下一引擎改动需 **语义规则 + synthetic**
+
    - **验证**
      ```powershell
      python scripts/audit_aisha_gap.py
