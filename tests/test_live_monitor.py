@@ -752,6 +752,44 @@ def test_skill_reveal_rows_include_maria_skill_payload() -> None:
     assert by_skill[10010801]["revealed_items_detail"][0]["quality"] == 3
 
 
+def test_skill_reveal_rows_label_ethan_and_aisha_skills() -> None:
+    rows = monitor_module._skill_reveal_rows(
+        FatbeansCaptureEvents(
+            packets=(),
+            frames=(),
+            sends=(),
+            statuses=(),
+            states=(
+                FatbeansStateEvent(
+                    sort_id=1,
+                    capture_time="2026-06-12 20:00:00.000",
+                    message_id=0x0021,
+                    session_id="2401:1",
+                    map_id=2401,
+                    round_index=3,
+                    skill_reveals=(
+                        FatbeansSkillReveal(
+                            skill_id=1002082,
+                            hero_id=208,
+                            round_index=3,
+                        ),
+                        FatbeansSkillReveal(
+                            skill_id=1001032,
+                            hero_id=103,
+                            round_index=3,
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        {},
+    )
+
+    by_skill = {(int(row["hero_id"]), int(row["skill_id"])): row for row in rows}
+    assert by_skill[(208, 1002082)]["tool"] == "伊森·R2 已知品质轮廓"
+    assert by_skill[(103, 1001032)]["tool"] == "艾莎·R3 蓝品轮廓"
+
+
 def test_public_info_rows_attach_item_names_to_revealed_details() -> None:
     rows = monitor_module._public_info_rows(
         FatbeansCaptureEvents(

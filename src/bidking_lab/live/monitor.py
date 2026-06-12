@@ -3896,11 +3896,56 @@ def _public_info_rows(
 
 
 def _skill_reveal_label(skill_id: int, hero_id: int | None) -> str:
+    if hero_id == 103:
+        aisha_labels = {
+            1001034: "艾莎·R1 白品轮廓",
+            1001033: "艾莎·R2 绿品轮廓",
+            1001032: "艾莎·R3 蓝品轮廓",
+            1001031: "艾莎·R4 紫品轮廓",
+        }
+        if skill_id in aisha_labels:
+            return aisha_labels[skill_id]
+    if hero_id == 104:
+        gabriela_labels = {
+            1001041: "加布里·R1 揭示",
+            1001042: "加布里·R2 揭示",
+            1001043: "加布里·R3 揭示",
+            1001044: "加布里·R4 揭示",
+            1001045: "加布里·R5 揭示",
+        }
+        if skill_id in gabriela_labels:
+            return gabriela_labels[skill_id]
     if hero_id == 108:
         if skill_id == 10010801:
             return "玛丽亚·品质"
         if skill_id in {100108, 10010802, 10010803}:
             return "玛丽亚·总价"
+    if hero_id == 204:
+        ahmed_labels = {
+            100204: "艾哈迈德·R1 总件数",
+            1002041: "艾哈迈德·R2 金品均格",
+            1002042: "艾哈迈德·R3 紫品均格",
+            1002043: "艾哈迈德·R4 蓝品均格",
+            1002044: "艾哈迈德·R5 白绿件数",
+        }
+        if skill_id in ahmed_labels:
+            return ahmed_labels[skill_id]
+    if hero_id == 208:
+        ethan_labels = {
+            1002081: "伊森·R1 类别轮廓",
+            1002082: "伊森·R2 已知品质轮廓",
+            1002083: "伊森·R3 已知品质轮廓",
+            1002084: "伊森·R4 已知品质轮廓",
+            1002085: "伊森·R5 全仓轮廓",
+        }
+        if skill_id in ethan_labels:
+            return ethan_labels[skill_id]
+    if hero_id == 209:
+        if skill_id == 100209:
+            return "维克托·R1 紫金红件数"
+    if hero_id == 301:
+        if skill_id == 100301:
+            return "拉文·R5 全品质"
     return f"技能 {skill_id}"
 
 

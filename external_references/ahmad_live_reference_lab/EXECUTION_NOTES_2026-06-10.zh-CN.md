@@ -1917,7 +1917,7 @@
      1. 抽 `FONT_UI_BASE` / `FONT_NUMERIC_BASE` + `_scaled_font(base, scale)` helper；
      2. resize 结束（`_end_resize`）或 motion 节流时 `_apply_ui_scale(scale)`；
      3. pytest 只测 scale 计算；视觉用 `$product-ui-polish` + 截图对比。
-   - 状态：**仅规划，hotfix2 不包含。**
+   - 状态：**工作树已实现（2026-06-12）** — 迷你模式 **宽度驱动 scale**（`compute_mini_ui_scale`），**横/竖拖均放大**（取 max(Δx,Δy)），高度 **实时自动贴合**内容；详情模式仍自由改宽高。拖动 grip **实时**改字体/间距（不必等松手）。
 
 47. 2026-06-12 hotfix2 补充：关 UI 后停止 monitor + v0.1.6-hotfix2 发包
    - 群友反馈：
@@ -2099,9 +2099,9 @@
    | **公开最高品质 200048 → q6=0** | ✅ | `32f4bb3` | **本表补录** | 对齐 v2 `public_max_quality`；冲突 `hard_conflict` |
    | Maria skill 粗品 + 白 tier 价值 | ✅ | `32f4bb3` | §52 | `10010801` 粗 location 无轮廓；`100108`→q1；200027≠Maria skill |
    | Maria 绿/蓝 skill id | ❌ | — | §52 | `10010802/03` 待 R1 导出 |
-   | Raven 无轮廓全品质 | ❌ | 仅 hero alias | — | 待样本 + skill id；未接 ref pipeline |
+   | **拉文 R5 全品质** | ❌ 低优先级 | — | **§59** | 用户确认暂缓；待 `100301` + 样本 |
    | 金均格 0 / SEND-no-REV | 调查 | — | §53、sample §8 | 行为未改；§54 A–D 待批 |
-   | mini UI 缩放联动字体 | ❌ | — | §46 | 规划 only |
+   | mini UI 缩放联动字体 | ✅ | 工作树 | §46 | resize 松手后 scale 字体/间距/小地图 |
    | 紫局均价+均格 ranking | ❌ | — | §48 | 规划 only |
    | 底层非 WinDivert 抓包 | ❌ | — | §56 | 规划 only；用户 06-12 明确要求列入计划 |
    | 桌面包 hotfix 副本（未重打包 exe） | 部分 | Desktop hotfix 目录 | §44–§45 | 源码已 push；exe 需重打包才生效 |
@@ -2220,3 +2220,77 @@
    | Hero pool ref 特化（加布里等） | ❌ | — | §11 | 待样本 + bridge |
    | Wuqilin `100207` count | ❌ | — | §11 | 待 R1 样本 |
    - **状态：规划 ✅；选型与实现 ❌（待专题）。**
+
+59. 2026-06-12 伊森样本库审计 + 支线接入 +  backlog（工作树）
+
+   - **样本库规模（Fatbeans JSON，2026-06-12 扫库）**
+     - 路径：`data/samples/fatbeans/` + `data/samples/fatbeans_activity_20260605_shipwreck/`
+     - **166** 份 `*ethan*.json`；**166/166** `parse_fatbeans_capture` 通过
+     - 地图 Top：`2401×30`、`2501×28`、`2601×11`、`2502×9`、`2508×9` …
+     - 文件名轮次：`1r×10`、`2r×20`、`3r×48`、`4r×50`、`5r×38`
+   - **技能树事件统计（全库累计）**
+     - `1002081` R1 类别轮廓：**746** 次；观测 item `quality=None`，件数 **5–41**（中位 **22**）→ 符合「5 类抽样、非全库」
+     - `1002082/3/4` R2–R4 已知品质轮廓：**325 / 259 / 145**
+     - `1002085` R5 全仓轮廓：**76** 次（≈ 五轮局）
+   - **预结算 warehouse 精确 pin（`warehouse_total_cells` + `total_item_count`）**
+     - **123/166** 无 pin（R1–R4 局部轮廓，符合设计）
+     - **37/166** 由 **R5 `1002085`** pin
+     - **5/166** 由 **明镜 `100134` + R2–R4 join** pin（package13 类）
+     - **1/166** 其它路径（待单样本复核）
+   - **Hero Ref 支线本次接入（源码，见 diff）**
+     | 层 | 行为 |
+     | --- | --- |
+     | `monitor.py` | 伊森/艾莎/艾哈迈德/维克托/加布里/拉文 **技能标签**（不再 `技能 100208x`） |
+     | `fatbeans.py` | R2–R4 **仅合并已知品质 runtime** 的 Ethan 轮廓 |
+     | `ahmad_ref_engine.py` | `_apply_ethan_skill_evidence`：R5 / mirror join → **硬总格+总件**；R1 → **`ethan_skill_r1_outline:N:M` 软 note** |
+     | `ahmad_live_panel_server.py` | 技能 minimap 来源显示 **「英雄技能」** |
+     - 样本回放：`ref_r1_note` **166/166**；`ethan_skill_full_outline_*` **42/166**（R5 + mirror 子集）
+     - 仍 **generic_ref_hero**（无 structured bridge）；总件/总格靠 skill evidence + 公开信息，不靠 Aisha/Ahmed 式 bucket bridge
+   - **未知轮廓显示（样本侧观察）**
+     - R1 纯 shape：`quality=None` → 斜条纹 footprint + tooltip「品质? + 轮廓 NxM」✅
+     - 品质 join 后（宝光/明镜/公开）：末 batch unknown grid **中位 0**（median），max 1 ✅
+     - **未做**：R1 五类集合 → 类别 label（游戏 hover 也不给类名；需 item→category + R1 类集推断）
+   - **测试**
+     - `test_skill_reveal_rows_label_ethan_and_aisha_skills`
+     - `test_fatbeans_ethan_r2_outline_skips_items_without_known_quality`
+     - `test_ref_engine_ethan_full_outline_skill_sets_total_grid_target`
+     - `test_ref_engine_ethan_r1_outline_is_diagnostic_only`
+   - **Backlog / 计划（优先级）**
+     | 项 | 优先级 | 说明 |
+     | --- | --- | --- |
+     | **明红 partial 红值下界** | P1 | §43 延伸；已知 1 红 + 未知 1 红（武夷山类）|
+     | **艾莎格子估计** | P1 | 主线已有 layout 证据；Hero Ref 特化 **暂缓** |
+     | **伊森 R1 类别 soft 约束** | P2 | 166 样本可 replay；需 item 表 category + R1 类集 |
+     | **伊森 structured ref bridge** | P3 | 可选；当前 generic + skill evidence 已覆盖 R5 总格 |
+     | **拉文 R5 全品质 `100301`** | **低** | 用户确认 **暂缓**；仅 hero alias，待样本 + skill pipeline |
+     | 加布里/塔蒂安娜 ref 特化 | P3 | minimap 完整，ref generic |
+     | 底层抓包迁移 | E 批 | §56 |
+   - **代表样本（可复放）**
+     - R1 未知轮廓 + 公共紫桶：`fatbeans_valid_ethan_2401_*`（package10 同类）
+     - R5 全仓 pin：`fatbeans_valid_ethan_2401_5rounds_*` / `fatbeans_mixed_ethan_*_5rounds_*`
+     - 明镜 join：`bidking_package13_eye_of_clarity_ethan.json`（若本地有 package 副本）
+     - 沉船活动：`fatbeans_activity_20260605_shipwreck/fatbeans_valid_ethan_2529_5rounds_*`
+   - **状态**：样本审计 ✅；伊森支线基础接入 ✅（工作树）；zip/桌面包 **未重打**
+
+   - **明红 partial 红值下界（P1，工作树）— 验证状态 2026-06-12**
+     - **已实现**：`quality_value_floor_item_counts` + `_partial_known_quality_value_state()`；硬下界 = 已知 value + 未知件×默认单价；中心 = 已知 + 剩余格 grid 估计
+     - **单元测试**：`test_ref_engine_partial_known_red_value_includes_unknown_estimate`（390k/1格/q6=2）；`test_ref_engine_partial_known_red_data6_style_above_known_not_flat`（452800/15格）
+     - **合成回放**
+       | 场景 | 修复前（用户报） | 当前 `red_value_range` |
+       | --- | --- | --- |
+       | 390k 武夷山 / q6=2 | 390k / 390k / ~512k | **585k / 614k / 691k** |
+       | data6 452800/15格 / q6=2 | 452k / 460k / 604k（§43 前更低） | **623k / 623k / 686k**（结算 q6 truth≈521k，rv50 **+19.6%**，偏保守下界） |
+     - **真实 Fatbeans 样本**：全库 **0** 份 `info_id=200023` + 单件 q6 value + q6 件数>1 的 partial 局（用户 live 2408 R3 截图 **未入库**）；198 份 q6 value 多为 `200048/200050` 至宝/最高品质，语义不同
+     - **审计脚本**：`scripts/audit_partial_red_and_ethan_r5_ref.py`
+     - **跨英雄对照表（2026-06-12，audit 扩展）**
+       - 命令：`python scripts/audit_partial_red_and_ethan_r5_ref.py`（可选 `--skip-ethan` / `--no-report-file`）
+       - 报告：`data/reports/audit_cross_hero_q6_value.txt`
+       - 扫描 **43** 份公开 q6 value（Aisha 21 / Ethan 14 / Ahmed 3 / 其它 5）；形态 **single_no_lock 41**、**full_known 2**、**partial 0**
+       - rv10 > 已知最高价 **23/43**；`settle` 列仅 q6 件数/格数（fatbeans 结算 inventory 无 item value）
+       - **决策**：当前 partial 红估实现 **先保留**（合成 390k + data6 可接受作保守下界）；分层 floor / 未知残差分布 **留待统一大优化**
+     - **下一步**：收 live Ahmed partial 样本入库（2408 R3 武夷山类）；大优化前用对照表作 baseline
+     - **recordings 扫库（2026-06-12）**：`Desktop\recordings\data*` 共 **6** 份 reset/json 含公开 q6 value；**partial 仍 0**（引擎侧 q6_lock 未大于 known_count）。**不可用**：390k 武夷山 partial（库内无 ref 语义 partial 局）
+     - **data6 fatbeans 入库（2026-06-12）**：源 `Desktop\recordings\data6\logs\live\raw\windivert_live (1).jsonl`（38 行，单 session `2309:1425860479021171`）→ `data\samples\fatbeans\fatbeans_valid_ahmed_2309_5rounds_2309_1425860479021171_0001.json`（`organize_fatbeans_real_samples.py --apply`）。R5 bidding 复放：200023 民用垂直起降 452800/15 格 → `quality_value_floors.q6=452800`；红值 **623146 / 623146 / 686310**（结算 q6=2/16，truth value≈521k，rv50 +19.6% 保守下界）
+     - **UI 推理速率（§50-4，工作树）**：`ahmad_tk_overlay.py` summary worker **coalesce** — 忙时缓存最新 snapshot，当前 worker 结束后只算最新帧；丢弃过期 seq 结果、同 signature 不重复 pending（测：`test_ahmad_refresh_coalesces_summary_worker_to_latest_snapshot` 等）
+     - **R1 总件数延迟重算（§50-1，工作树）**：`ahmad_ref_engine.py` 在 **仅总格、无总件** 且其它约束不足时返回 `missing_total_count` + `waiting_total_count:grid_only`，UI 显示 **「等待总件数」**；`200017` / skill 精确总件 / Aisha 多品质约束 / Victor min_count 等路径 **不延迟**
+     - **伊森 R5 generic ref 抽检（3+3 样本）**：`ethan_skill_full_outline_*` → `grid_target` 与结算 **cells 100% 一致**；总报价暂无 Item 表 truth 对比

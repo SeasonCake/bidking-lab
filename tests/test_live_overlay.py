@@ -267,6 +267,285 @@ def test_ahmad_windows_toolwindow_enabled_for_floating_overlay(monkeypatch) -> N
     assert widget.attrs == [("-toolwindow", True)]
 
 
+def test_ahmad_compute_ui_scale_uses_min_ratio_and_clamps() -> None:
+    module = _ahmad_overlay_module()
+
+    assert module.compute_ui_scale(
+        440,
+        397,
+        base_width=module.MINI_BASE_WIDTH,
+        base_height=module.MINI_BASE_HEIGHT,
+    ) == 1.0
+    enlarged = module.compute_ui_scale(
+        880,
+        794,
+        base_width=module.MINI_BASE_WIDTH,
+        base_height=module.MINI_BASE_HEIGHT,
+    )
+    assert enlarged == module.UI_SCALE_MAX
+    mid = module.compute_ui_scale(
+        500,
+        450,
+        base_width=module.MINI_BASE_WIDTH,
+        base_height=module.MINI_BASE_HEIGHT,
+    )
+    assert mid == min(500 / module.MINI_BASE_WIDTH, 450 / module.MINI_BASE_HEIGHT)
+
+
+def test_ahmad_scaled_font_rounds_with_floor() -> None:
+    module = _ahmad_overlay_module()
+
+    assert module.scaled_font(module.FONT_UI, 12, "bold", scale=1.25) == (
+        module.FONT_UI,
+        15,
+        "bold",
+    )
+    assert module.scaled_font(module.FONT_NUMERIC, 15, scale=0.5) == (
+        module.FONT_NUMERIC,
+        8,
+    )
+
+
+def test_ahmad_compute_fitted_mini_height_clamps() -> None:
+    module = _ahmad_overlay_module()
+
+    assert module.compute_fitted_mini_height(300) == 320
+    assert module.compute_fitted_mini_height(10) == 320
+    assert module.compute_fitted_mini_height(2000) == 1500
+    assert module.compute_fitted_mini_height(302) == 320
+    assert module.compute_fitted_mini_height(303) == 321
+
+
+def test_ahmad_compute_mini_ui_scale_follows_width_only() -> None:
+    module = _ahmad_overlay_module()
+
+    assert module.compute_mini_ui_scale(440) == 1.0
+    assert module.compute_mini_ui_scale(550) == 550 / module.MINI_BASE_WIDTH
+    assert module.compute_mini_ui_scale(880) == module.UI_SCALE_MAX
+
+
+def test_ahmad_mini_resize_growth_shrinks_on_negative_deltas() -> None:
+    module = _ahmad_overlay_module()
+
+    assert module.mini_resize_growth(40, 10) == 40
+    assert module.mini_resize_growth(10, 40) == 40
+    assert module.mini_resize_growth(-40, -10) == -40
+    assert module.mini_resize_growth(-10, -40) == -40
+    assert module.mini_resize_growth(-30, 5) == -30
+
+
+def test_ahmad_end_resize_syncs_ui_scale() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.details_expanded = False
+    overlay._ui_scale = 1.0
+    overlay._minimap_data = {}
+    overlay._scaled_layout_specs = []
+    overlay.style = SimpleNamespace(configure=lambda **kwargs: None)
+    overlay.outer = SimpleNamespace(winfo_children=lambda: [])
+    applied: list[tuple[int, bool]] = []
+    overlay.root = SimpleNamespace(geometry=lambda: "520x360+0+0", update_idletasks=lambda: None, after_cancel=lambda _id: None)
+    overlay._apply_mini_resize_layout = lambda width, finalize=False: applied.append((width, finalize))  # type: ignore[method-assign]
+
+    assert module.AhmadTkOverlay._end_resize(overlay, SimpleNamespace()) == "break"
+    assert applied == [(520, True)]
+
+
+def test_ahmad_apply_mini_resize_layout_uses_estimate_during_drag() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.details_expanded = False
+    overlay._ui_scale = 1.0
+    overlay._minimap_data = {}
+    overlay._scaled_layout_specs = []
+    overlay.style = SimpleNamespace(configure=lambda **kwargs: None)
+    overlay.outer = SimpleNamespace(winfo_children=lambda: [])
+    overlay.shell = SimpleNamespace(winfo_reqheight=lambda: 330)
+    overlay.root = SimpleNamespace(
+        update_idletasks=lambda: None,
+        geometry=lambda: "520x348+0+0",
+    )
+    applied: list[str] = []
+    measured: list[int] = []
+
+    overlay._apply_ui_scale = lambda: None  # type: ignore[method-assign]
+    overlay._apply_window_geometry = lambda size, flush=True: applied.append(size)  # type: ignore[method-assign]
+    overlay._measure_window_height_for_width = lambda width, probe_height=None: measured.append(width) or 400  # type: ignore[method-assign]
+
+    module.AhmadTkOverlay._apply_mini_resize_layout(overlay, 520, finalize=False)
+    module.AhmadTkOverlay._apply_mini_resize_layout(overlay, 520, finalize=True)
+
+    assert applied == ["520x348", "520x400"]
+    assert measured == [520]
+
+
+def test_ahmad_ui_prefs_roundtrip(tmp_path) -> None:
+    module = _ahmad_overlay_module()
+    prefs_path = tmp_path / module.UI_PREFS_FILENAME
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    payload = {
+        "schema_version": module.UI_PREFS_SCHEMA_VERSION,
+        "theme_name": "dark",
+        "details_expanded": False,
+        "ui_scale": 1.12,
+        "window_position": [120, 40],
+        "custom_mini_size": [520, 360],
+        "custom_details_size": None,
+    }
+    module.write_ui_prefs(prefs_path, payload)
+    loaded = module.read_ui_prefs(prefs_path)
+    assert loaded == {
+        "schema_version": module.UI_PREFS_SCHEMA_VERSION,
+        "theme_name": "dark",
+        "details_expanded": False,
+        "ui_scale": 1.12,
+        "window_position": [120, 40],
+        "custom_mini_size": [520, 360],
+        "custom_details_size": None,
+    }
+    assert module.ui_prefs_path_for_snapshot(snapshot_path) == prefs_path
+
+
+def test_ahmad_ui_prefs_clamps_invalid_sizes() -> None:
+    module = _ahmad_overlay_module()
+
+    normalized = module.normalize_ui_prefs_payload(
+        {
+            "custom_mini_size": [200, 100],
+            "custom_details_size": [2000, 5000],
+        }
+    )
+    assert normalized is not None
+    assert normalized["custom_mini_size"] == [430, 320]
+    assert normalized["custom_details_size"] == [1200, 1500]
+
+
+def test_ahmad_canvas_draw_size_uses_layout_not_stale_default() -> None:
+    module = _ahmad_overlay_module()
+    canvas = SimpleNamespace(
+        update_idletasks=lambda: None,
+        winfo_width=lambda: 400,
+        winfo_height=lambda: 360,
+    )
+
+    assert module.canvas_draw_size(canvas, min_width=260, min_height=320) == (400, 360)
+
+
+def test_ahmad_draw_minimap_empty_state_centers_in_visible_canvas() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    rects: list[tuple[int, int, int, int]] = []
+    texts: list[tuple[float, float]] = []
+
+    class Canvas:
+        def update_idletasks(self) -> None:
+            return None
+
+        def winfo_width(self) -> int:
+            return 400
+
+        def winfo_height(self) -> int:
+            return 360
+
+        def delete(self, _tag: str) -> None:
+            return None
+
+        def configure(self, **_kwargs: Any) -> None:
+            return None
+
+        def create_rectangle(self, x0: int, y0: int, x1: int, y1: int, **_kwargs: Any) -> int:
+            rects.append((x0, y0, x1, y1))
+            return 1
+
+        def create_line(self, *_args: Any, **_kwargs: Any) -> int:
+            return 1
+
+        def create_text(self, x: float, y: float, **_kwargs: Any) -> int:
+            texts.append((x, y))
+            return 1
+
+    module.AhmadTkOverlay._draw_minimap(
+        overlay,
+        Canvas(),
+        {},
+        None,
+        min_width=260,
+        min_height=320,
+    )
+    x0, y0, x1, y1 = rects[0]
+    grid_w = x1 - x0
+    grid_h = y1 - y0
+    assert x0 == round((400 - grid_w) / 2)
+    assert y0 == round((360 - grid_h) / 2)
+    assert texts[0] == (200.0, 180.0)
+
+
+def test_ahmad_current_window_size_prefers_geometry_over_winfo() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.details_expanded = False
+    overlay.root = SimpleNamespace(
+        geometry=lambda: "440x360+20+0",
+        winfo_width=lambda: 920,
+        winfo_height=lambda: 880,
+        update_idletasks=lambda: None,
+    )
+    overlay.shell = SimpleNamespace(winfo_reqwidth=lambda: 420, winfo_reqheight=lambda: 342)
+
+    assert module.AhmadTkOverlay._current_window_size(overlay) == (440, 360)
+
+
+def test_ahmad_set_details_mode_mini_restores_saved_size_and_scale() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.details_expanded = True
+    overlay._mini_layout_snapshot = ((480, 360), (480, 360), 0.91)
+    overlay._custom_mini_size = (480, 360)
+    overlay._ui_scale = 1.6
+    overlay._minimap_data = {}
+    overlay._scaled_layout_specs = []
+    overlay.mode_button = SimpleNamespace(configure=lambda **kwargs: None)
+    overlay.details_card = SimpleNamespace(pack_forget=lambda: None)
+    overlay.minimap_card = SimpleNamespace(pack_forget=lambda: None)
+    overlay.outer = SimpleNamespace(winfo_children=lambda: [])
+    overlay.style = SimpleNamespace(configure=lambda **kwargs: None)
+    applied: list[str] = []
+    scales: list[float] = []
+    geometry_state = {"value": "920x880+20+0"}
+
+    def _geometry(value: str | None = None) -> str:
+        if value is not None:
+            geometry_state["value"] = value
+        return geometry_state["value"]
+
+    overlay.root = SimpleNamespace(
+        minsize=lambda *args: None,
+        update_idletasks=lambda: None,
+        geometry=_geometry,
+        winfo_reqheight=lambda: 348,
+        after_cancel=lambda _id: None,
+    )
+
+    def _apply(size: str, flush: bool = True) -> None:
+        applied.append(size)
+        geometry_state["value"] = f"{size}+20+0"
+
+    overlay._apply_window_geometry = _apply  # type: ignore[method-assign]
+    overlay._apply_layout_scale = lambda: None  # type: ignore[method-assign]
+    overlay._apply_button_style_scale = lambda: None  # type: ignore[method-assign]
+    overlay._apply_font_scale = lambda widget: None  # type: ignore[method-assign]
+    overlay.shell = SimpleNamespace(winfo_reqheight=lambda: 330)
+    overlay.details_expanded = False
+
+    module.AhmadTkOverlay._restore_mini_layout_after_details(overlay)
+    scales.append(float(overlay._ui_scale))
+
+    assert applied == ["480x348"]
+    assert overlay._custom_mini_size == (480, 348)
+    assert scales[-1] == module.compute_mini_ui_scale(480)
+    assert scales[-1] < 1.6
+
+
 def test_ahmad_export_button_is_mini_visible_and_map_button_keeps_preview_hover() -> None:
     module = _ahmad_overlay_module()
     init = _class_method_ast(module, "AhmadTkOverlay", "__init__")
@@ -2284,6 +2563,21 @@ def test_ahmad_server_candidate_summary_and_next_info_hint() -> None:
     result["evidence"]["total_grid_target"] = 120.00000476837158
     assert module._candidate_summary(result) == "总件 38 · 总格 120"  # type: ignore[attr-defined]
     assert module._next_info_hint(result) == "优先补白绿/蓝件数或均格"  # type: ignore[attr-defined]
+
+
+def test_ahmad_server_ref_waiting_text_is_hero_specific() -> None:
+    module = _ahmad_server_module()
+    ahmed_grid_only = {
+        "status": "missing_total_count",
+        "notes": ["waiting_total_count", "waiting_total_count:grid_only"],
+        "evidence": {"total_grid_target": 152, "total_count": None},
+    }
+    ethan_grid_only = dict(ahmed_grid_only)
+    assert module._ref_waiting_display_text("ahmed", ahmed_grid_only) == "等待总件数"  # type: ignore[attr-defined]
+    assert module._ref_waiting_display_text("ethan", ethan_grid_only) == "等待公开输入"  # type: ignore[attr-defined]
+    assert module._ref_waiting_flag_label("ethan", ethan_grid_only) == "等待公开输入"  # type: ignore[attr-defined]
+    assert module._next_info_hint(ahmed_grid_only, hero_key="ahmed") == "先补总件"  # type: ignore[attr-defined]
+    assert module._next_info_hint(ethan_grid_only, hero_key="ethan") == "先补公开总件"  # type: ignore[attr-defined]
 
 
 def test_ahmad_server_next_info_hint_prefers_gold_before_total_grid() -> None:
@@ -6355,6 +6649,229 @@ def test_ahmad_refresh_summarizes_snapshot_in_background_worker(monkeypatch, tmp
     assert overlay._summary_worker_running is False
     assert overlay._last_live_summary["context"]["session_id"] == "2404:new"
     assert rendered == [overlay._last_live_summary]
+
+
+def test_ahmad_refresh_coalesces_summary_worker_to_latest_snapshot(
+    monkeypatch, tmp_path: Path
+) -> None:
+    module = _ahmad_overlay_module()
+
+    class Root:
+        def __init__(self) -> None:
+            self.after_calls: list[tuple[int, object]] = []
+
+        def after(self, interval: int, callback: object) -> None:
+            self.after_calls.append((interval, callback))
+
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    snapshot_path.write_text('{"file": "snapshot"}', encoding="utf-8")
+    rendered: list[dict] = []
+    summarize_calls: list[str] = []
+
+    def _summarize(snapshot: dict, snapshot_path: Path) -> dict:
+        session_id = snapshot.get("session_id", "?")
+        summarize_calls.append(str(session_id))
+        if session_id == "2404:slow":
+            time.sleep(0.05)
+        return {
+            "status": "ok",
+            "updated_at_text": "12:34:56",
+            "context": {"phase": "bidding", "session_id": session_id},
+            "reference": {},
+            "evidence": {},
+            "red": {},
+            "ahmed_ref": {"evidence": {}},
+            "diagnostics": {"rare_signals": {}},
+            "minimap": {},
+            "truth": {"available": False},
+        }
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.root = Root()
+    overlay.interval_ms = 1000
+    overlay.exit_when_pids = ()
+    overlay._exit_cleanup_done = False
+    overlay._last_ui_heartbeat_at = time.monotonic()
+    overlay._last_ui_stall_bucket = 0
+    overlay.snapshot_path = snapshot_path
+    overlay.diagnostic_profile = "portable"
+    overlay._last_signature = None
+    overlay._last_capture_status_signature = None
+    overlay._last_summary = {}
+    overlay._last_live_summary = {}
+    overlay._last_live_snapshot = {}
+    overlay._summary_result_queue = queue.Queue()
+    overlay._summary_worker_running = False
+    overlay._summary_worker_seq = 0
+    overlay._summary_worker_signature = None
+    overlay._summary_worker_pending = None
+    overlay._manual_result_queue = queue.Queue()
+    overlay._manual_worker_running = False
+    overlay._manual_worker_seq = 0
+    overlay._manual_active = False
+    overlay._manual_edit_enabled = False
+    overlay._manual_settlement_edit_unlocked = False
+    overlay._manual_live_session_id = ""
+    overlay.render = lambda data: rendered.append(data)
+    overlay.render_standby = lambda data: rendered.append(data)
+    overlay.render_missing = lambda message: None
+    overlay._record_ui_health = lambda row: None
+    overlay._capture_status = lambda: {}
+    overlay._should_reset_manual_for_summary = lambda summary: False
+    overlay._auto_sync_manual_inputs = lambda summary: None
+
+    def _apply_live_summary(snapshot: dict, summary: dict) -> None:
+        overlay._last_live_snapshot = snapshot
+        overlay._last_live_summary = summary
+        overlay._last_summary = summary
+        overlay.render(summary)
+
+    overlay._apply_live_summary = _apply_live_summary
+    signature_state = {"value": 0}
+
+    def _signature() -> tuple[int, int]:
+        return (signature_state["value"], 0)
+
+    overlay._snapshot_signature = _signature
+
+    read_queue: list[dict] = [
+        {"session_id": "2404:slow"},
+        {"session_id": "2404:latest"},
+    ]
+
+    def _read_json(path: Path) -> dict:
+        if read_queue:
+            signature_state["value"] += 1
+            return read_queue.pop(0)
+        return {"session_id": "2404:latest"}
+
+    monkeypatch.setattr(module, "_watched_pid_exited", lambda _pids: False)
+    monkeypatch.setattr(module, "_read_json", _read_json)
+    monkeypatch.setattr(module, "summarize_snapshot", _summarize)
+
+    module.AhmadTkOverlay.refresh(overlay)
+    module.AhmadTkOverlay.refresh(overlay)
+
+    for _ in range(100):
+        module.AhmadTkOverlay.refresh(overlay)
+        if (
+            not overlay._summary_worker_running
+            and overlay._summary_worker_pending is None
+            and overlay._last_live_summary.get("context", {}).get("session_id")
+            == "2404:latest"
+        ):
+            break
+        time.sleep(0.01)
+
+    assert overlay._last_live_summary["context"]["session_id"] == "2404:latest"
+    assert summarize_calls[-1] == "2404:latest"
+    assert "2404:slow" in summarize_calls
+
+
+def test_ahmad_refresh_skips_stale_worker_result_when_pending_snapshot(
+    monkeypatch, tmp_path: Path
+) -> None:
+    module = _ahmad_overlay_module()
+
+    class Root:
+        def after(self, interval: int, callback: object) -> None:
+            return None
+
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    rendered_sessions: list[str] = []
+
+    def _summarize(snapshot: dict, snapshot_path: Path) -> dict:
+        session_id = str(snapshot.get("session_id", "?"))
+        if session_id == "2404:slow":
+            time.sleep(0.06)
+        return {
+            "status": "ok",
+            "updated_at_text": "12:34:56",
+            "context": {"phase": "bidding", "session_id": session_id},
+            "reference": {},
+            "evidence": {},
+            "red": {},
+            "ahmed_ref": {"evidence": {}},
+            "diagnostics": {"rare_signals": {}},
+            "minimap": {},
+            "truth": {"available": False},
+        }
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.root = Root()
+    overlay.interval_ms = 1000
+    overlay.exit_when_pids = ()
+    overlay._exit_cleanup_done = False
+    overlay._last_ui_heartbeat_at = time.monotonic()
+    overlay._last_ui_stall_bucket = 0
+    overlay.snapshot_path = snapshot_path
+    overlay.diagnostic_profile = "portable"
+    overlay._last_signature = None
+    overlay._last_capture_status_signature = None
+    overlay._last_summary = {}
+    overlay._last_live_summary = {}
+    overlay._last_live_snapshot = {}
+    overlay._summary_result_queue = queue.Queue()
+    overlay._summary_worker_running = False
+    overlay._summary_worker_seq = 0
+    overlay._summary_worker_signature = None
+    overlay._summary_worker_pending = None
+    overlay._manual_result_queue = queue.Queue()
+    overlay._manual_worker_running = False
+    overlay._manual_active = False
+    overlay._manual_edit_enabled = False
+    overlay.render = lambda data: rendered_sessions.append(
+        str(data.get("context", {}).get("session_id"))
+    )
+    overlay.render_standby = lambda data: None
+    overlay.render_missing = lambda message: None
+    overlay._record_ui_health = lambda row: None
+    overlay._capture_status = lambda: {}
+    overlay._should_reset_manual_for_summary = lambda summary: False
+    overlay._auto_sync_manual_inputs = lambda summary: None
+
+    def _apply_live_summary(snapshot: dict, summary: dict) -> None:
+        overlay._last_live_snapshot = snapshot
+        overlay._last_live_summary = summary
+        overlay._last_summary = summary
+        overlay.render(summary)
+
+    overlay._apply_live_summary = _apply_live_summary
+    signature_state = {"value": 0}
+
+    def _signature() -> tuple[int, int]:
+        return (signature_state["value"], 0)
+
+    overlay._snapshot_signature = _signature
+
+    read_queue = [{"session_id": "2404:slow"}, {"session_id": "2404:latest"}]
+
+    def _read_json(path: Path) -> dict:
+        if read_queue:
+            signature_state["value"] += 1
+            return read_queue.pop(0)
+        return {"session_id": "2404:latest"}
+
+    monkeypatch.setattr(module, "_watched_pid_exited", lambda _pids: False)
+    monkeypatch.setattr(module, "_read_json", _read_json)
+    monkeypatch.setattr(module, "summarize_snapshot", _summarize)
+
+    module.AhmadTkOverlay.refresh(overlay)
+    module.AhmadTkOverlay.refresh(overlay)
+
+    for _ in range(120):
+        module.AhmadTkOverlay.refresh(overlay)
+        if (
+            not overlay._summary_worker_running
+            and overlay._summary_worker_pending is None
+            and overlay._last_live_summary.get("context", {}).get("session_id")
+            == "2404:latest"
+        ):
+            break
+        time.sleep(0.01)
+
+    assert overlay._last_live_summary["context"]["session_id"] == "2404:latest"
+    assert "2404:slow" not in rendered_sessions
 
 
 def test_ahmad_refresh_freezes_view_while_manual_edit_is_open(monkeypatch, tmp_path: Path) -> None:

@@ -307,7 +307,8 @@ if ($HasPackagedMonitor -and $StartedMonitor -and $MonitorPid) {
 $HeroArgs = @(
     "--snapshot", $SnapshotPath,
     "--load-existing",
-    "--diagnostic-profile", $DiagnosticProfile
+    "--diagnostic-profile", $DiagnosticProfile,
+    "--ui-prefs"
 )
 if ($ShowTaskbar) {
     $HeroArgs += "--show-taskbar"

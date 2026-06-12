@@ -2912,3 +2912,73 @@ def test_treasure_value_action_result_adds_value_only_grid_marker() -> None:
     assert batch.grid_items[0].value == 43650
     assert batch.grid_items[0].cells == 1
     assert batch.grid_items[0].shape_key == "11"
+
+
+def test_fatbeans_ethan_r2_outline_skips_items_without_known_quality() -> None:
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=10,
+                capture_time="2026-06-12 21:00:00.000",
+                message_id=0x0021,
+                session_id="2401:1",
+                map_id=2401,
+                round_index=2,
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=1002082,
+                        hero_id=208,
+                        round_index=2,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=11,
+                                runtime_id=101,
+                                item_id=None,
+                                quality=None,
+                                value=None,
+                                shape_code=11,
+                                cells=1,
+                            ),
+                            FatbeansObservedItem(
+                                local_index=12,
+                                runtime_id=102,
+                                item_id=None,
+                                quality=None,
+                                value=None,
+                                shape_code=22,
+                                cells=4,
+                            ),
+                        ),
+                    ),
+                ),
+                action_results=(
+                    FatbeansActionResult(
+                        action_id=100134,
+                        result=None,
+                        result_field=None,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=12,
+                                runtime_id=102,
+                                item_id=None,
+                                quality=4,
+                                value=None,
+                                shape_code=22,
+                                cells=4,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+    assert len(batch.grid_items) == 1
+    assert batch.grid_items[0].runtime_id == 102
+    assert batch.grid_items[0].quality == 4
+    assert batch.grid_items[0].cells == 4

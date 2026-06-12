@@ -16,6 +16,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk
 from typing import Any
 import webbrowser
@@ -96,10 +97,15 @@ SETTLEMENT_HIDE_TIP = "预设隐藏结算金额，想自己看结算时用；结
 SETTLEMENT_SHOW_TIP = "显示结算金额；关闭预设隐藏，只影响界面，不影响计算"
 SETTLEMENT_INACTIVE_TIP = SETTLEMENT_HIDE_TIP
 CLOSE_TIP_TEXT = "关闭 Hero Ref；若由启动脚本打开，会联动清理监控进程"
-RESIZE_TIP_TEXT = "拖动边角缩放窗口"
+RESIZE_TIP_TEXT = "拖动缩放（实时）；横/竖拖都会放大，高度自动贴合内容"
 SUMMARY_DIAGNOSTIC_LOG = "hero_ref_ui_summary.jsonl"
 UI_HEALTH_LOG = "hero_ref_ui_health.jsonl"
 UI_RUNTIME_STATUS = "hero_ref_ui_runtime_status.json"
+UI_PREFS_FILENAME = "hero_ref_ui_prefs.json"
+UI_PREFS_SCHEMA_VERSION = 1
+UI_PREFS_SAVE_DEBOUNCE_MS = 400
+UI_SCALE_LIVE_INTERVAL_MS = 48
+UI_SCALE_LIVE_DELTA = 0.025
 UI_STALL_SECONDS = 5.0
 UI_STALL_LOG_INTERVAL_SECONDS = 5.0
 UI_RUNTIME_STATUS_REPEAT_INTERVAL_SECONDS = 10.0
@@ -119,8 +125,40 @@ REQUIRED_RAW_TABLES = ("BidMap.txt", "Drop.txt", "Item.txt")
 
 FONT_UI = "Microsoft YaHei UI"
 FONT_NUMERIC = "Segoe UI Semibold"
+UI_SCALE_MIN = 0.85
+UI_SCALE_MAX = 1.6
+MINI_BASE_WIDTH = 440
+MINI_BASE_HEIGHT = 397
+MINI_WINDOW_CHROME_HEIGHT = 18
+DETAILS_BASE_WIDTH = 700
+DETAILS_BASE_HEIGHT = 700
+HERO_BUTTON_PADDING_BASE = (8, 4)
+HERO_BUTTON_FONT_SIZE = 8
+MINIMAP_CELL_HINT_BASE = 13.0
+MINIMAP_POPUP_CELL_HINT_BASE = 24.0
 MINIMAP_DEFAULT_COLUMNS = 10
 MINIMAP_DEFAULT_ROWS = 13
+
+
+def canvas_draw_size(
+    canvas: tk.Canvas,
+    *,
+    min_width: int,
+    min_height: int,
+) -> tuple[int, int]:
+    """Use the canvas widget's laid-out size, not stale creation defaults."""
+    try:
+        canvas.update_idletasks()
+    except tk.TclError:
+        pass
+    width = int(canvas.winfo_width() or 0)
+    height = int(canvas.winfo_height() or 0)
+    if width <= 1:
+        width = int(min_width)
+    if height <= 1:
+        height = int(min_height)
+    return max(int(min_width), width), max(int(min_height), height)
+
 MANUAL_BASE_FIELDS = (
     ("hero", "英雄", ""),
     ("map_id", "地图", ""),
@@ -162,6 +200,147 @@ SPLIT_QUALITY_LABELS = {
     "green": "绿",
 }
 SPLIT_QUALITY_INPUT_KEYS = ("white", "green")
+def compute_ui_scale(
+    width: int,
+    height: int,
+    *,
+    base_width: int,
+    base_height: int,
+    min_scale: float = UI_SCALE_MIN,
+    max_scale: float = UI_SCALE_MAX,
+) -> float:
+    """Scale mini UI typography from window size relative to a mode baseline."""
+    safe_w = max(1, int(base_width))
+    safe_h = max(1, int(base_height))
+    ratio = min(int(width) / safe_w, int(height) / safe_h)
+    return max(float(min_scale), min(float(max_scale), float(ratio)))
+
+
+def scaled_font(
+    family: str,
+    size: int,
+    *styles: str,
+    scale: float = 1.0,
+) -> tuple[Any, ...]:
+    scaled_size = max(6, int(round(int(size) * float(scale))))
+    if styles:
+        return (family, scaled_size, *styles)
+    return (family, scaled_size)
+
+
+def font_spec_from_widget(widget: tk.Widget) -> tuple[Any, ...] | None:
+    try:
+        actual = tkfont.Font(font=widget.cget("font")).actual()
+    except tk.TclError:
+        return None
+    family = str(actual.get("family") or FONT_UI)
+    size = int(float(actual.get("size") or 0))
+    if size <= 0:
+        return None
+    styles: list[str] = []
+    if str(actual.get("weight") or "") == "bold":
+        styles.append("bold")
+    if str(actual.get("slant") or "") == "italic":
+        styles.append("italic")
+    if str(actual.get("underline") or "") == "1":
+        styles.append("underline")
+    return (family, size, *styles)
+
+
+def compute_fitted_mini_height(
+    shell_reqheight: int,
+    *,
+    chrome: int = MINI_WINDOW_CHROME_HEIGHT,
+    min_height: int = 320,
+    max_height: int = 1500,
+) -> int:
+    return max(min_height, min(max_height, int(shell_reqheight) + int(chrome)))
+
+
+def compute_mini_ui_scale(
+    width: int,
+    *,
+    base_width: int = MINI_BASE_WIDTH,
+    min_scale: float = UI_SCALE_MIN,
+    max_scale: float = UI_SCALE_MAX,
+) -> float:
+    """Mini overlay scale follows width; height is auto-fitted to content."""
+    ratio = int(width) / max(1, int(base_width))
+    return max(float(min_scale), min(float(max_scale), float(ratio)))
+
+
+def mini_resize_growth(dx: int, dy: int) -> int:
+    """Corner grip growth: enlarge on positive deltas, shrink on negative."""
+    if dx >= 0 and dy >= 0:
+        return max(dx, dy)
+    if dx <= 0 and dy <= 0:
+        return min(dx, dy)
+    return dx if abs(dx) >= abs(dy) else dy
+
+
+def ui_prefs_path_for_snapshot(snapshot_path: Path) -> Path:
+    return Path(snapshot_path).parent / UI_PREFS_FILENAME
+
+
+def _clamp_ui_pref_size(width: int, height: int) -> tuple[int, int]:
+    return (
+        max(430, min(1200, int(width))),
+        max(320, min(1500, int(height))),
+    )
+
+
+def normalize_ui_prefs_payload(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    theme_name = raw.get("theme_name")
+    if theme_name is not None and not isinstance(theme_name, str):
+        return None
+    normalized: dict[str, Any] = {
+        "schema_version": UI_PREFS_SCHEMA_VERSION,
+        "theme_name": str(theme_name or "dark"),
+        "details_expanded": bool(raw.get("details_expanded")),
+        "ui_scale": float(raw.get("ui_scale") or 1.0),
+    }
+    position = raw.get("window_position")
+    if isinstance(position, (list, tuple)) and len(position) == 2:
+        try:
+            normalized["window_position"] = [
+                int(position[0]),
+                int(position[1]),
+            ]
+        except (TypeError, ValueError):
+            pass
+    for key in ("custom_mini_size", "custom_details_size"):
+        value = raw.get(key)
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            try:
+                normalized[key] = list(_clamp_ui_pref_size(int(value[0]), int(value[1])))
+            except (TypeError, ValueError):
+                continue
+        elif value is None:
+            normalized[key] = None
+    return normalized
+
+
+def read_ui_prefs(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return normalize_ui_prefs_payload(payload)
+
+
+def write_ui_prefs(path: Path, payload: dict[str, Any]) -> None:
+    normalized = normalize_ui_prefs_payload(payload)
+    if normalized is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(normalized, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 MANUAL_GENERIC_MAP_ALIASES = {
     "快递": 2101,
     "仓库": 2201,
@@ -1797,6 +1976,7 @@ class AhmadTkOverlay:
         load_existing_snapshot: bool = False,
         diagnostic_profile: str = DEFAULT_DIAGNOSTIC_PROFILE,
         show_taskbar: bool = False,
+        ui_prefs_enabled: bool = False,
     ) -> None:
         self.root = root
         self.snapshot_path = snapshot_path
@@ -1820,6 +2000,7 @@ class AhmadTkOverlay:
         self._summary_worker_running = False
         self._summary_worker_seq = 0
         self._summary_worker_signature: tuple[int, int] | None = None
+        self._summary_worker_pending: dict[str, Any] | None = None
         self._manual_result_queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self._manual_worker_running = False
         self._manual_worker_seq = 0
@@ -1849,12 +2030,29 @@ class AhmadTkOverlay:
         self._pinned_counts: tk.Label | None = None
         self._pinned_canvas_tip: HoverTip | None = None
         self._pinned_offset: tuple[int, int] | None = None
+        self._pinned_configure_after_id: str | None = None
         self._hide_minimap_after_id: str | None = None
         self.details_expanded = False
         self._load_existing_snapshot = load_existing_snapshot
         self._drag_offset: tuple[int, int] | None = None
         self._resize_anchor: tuple[int, int, int, int] | None = None
         self._custom_details_size: tuple[int, int] | None = None
+        self._custom_mini_size: tuple[int, int] | None = None
+        self._mini_layout_snapshot: tuple[
+            tuple[int, int] | None,
+            tuple[int, int],
+            float,
+        ] | None = None
+        self._ui_prefs_enabled = bool(ui_prefs_enabled)
+        self._ui_prefs_path = ui_prefs_path_for_snapshot(snapshot_path)
+        self._ui_prefs_save_after_id: str | None = None
+        self._pending_window_position: tuple[int, int] | None = None
+        self._resize_active = False
+        self._live_scale_pending: float | None = None
+        self._live_scale_after_id: str | None = None
+        self._live_scale_last_at = 0.0
+        self._ui_scale = 1.0
+        self._scaled_layout_specs: list[tuple[tk.Widget, dict[str, int]]] = []
         self.theme_name = "dark"
         self.theme_values = _theme_by_name(self.theme_name)
 
@@ -2301,7 +2499,15 @@ class AhmadTkOverlay:
             },
         )
         self._set_topmost_button_state()
-        self._set_details_mode(False)
+        self._scaled_layout_specs = [
+            (self.shell, {"padx": 9, "pady": 9}),
+        ]
+        self._capture_ui_font_bases(self.outer)
+        if self._ui_prefs_enabled and self._load_ui_prefs():
+            pass
+        else:
+            self._set_details_mode(False)
+        self._apply_pending_window_position()
         root.protocol("WM_DELETE_WINDOW", self._on_user_close)
         self._start_ui_health_watchdog()
         if self._load_existing_snapshot:
@@ -2315,17 +2521,222 @@ class AhmadTkOverlay:
         if self._custom_details_size is not None:
             width, height = self._custom_details_size
             return f"{width}x{height}"
-        work_w, work_h = self._screen_size()
-        requested_w = self.shell.winfo_reqwidth() if hasattr(self, "shell") else 0
-        requested_h = self.shell.winfo_reqheight() if hasattr(self, "shell") else 0
-        width = min(760, max(700, requested_w + 28, int(work_w * 0.44)))
-        height = max(700, requested_h + 8)
-        width = min(width, max(430, work_w - 40))
-        height = min(height, max(320, work_h - 72))
+        width, height = self._details_content_size()
         return f"{width}x{height}"
 
+    def _details_content_size(self, *, width: int | None = None) -> tuple[int, int]:
+        work_w, work_h = self._screen_size()
+        self.root.update_idletasks()
+        if width is None:
+            width, _ = self._current_window_size()
+        requested_w = int(self.outer.winfo_reqwidth()) if hasattr(self, "outer") else int(width)
+        width = min(760, max(430, int(width), requested_w + 12, int(work_w * 0.44)))
+        width = min(width, max(430, work_w - 40))
+        height = self._measure_window_height_for_width(width)
+        height = min(height, max(320, work_h - 72))
+        return width, height
+
+    def _fit_details_window_to_content(self, *, width: int | None = None) -> None:
+        if not hasattr(self, "root"):
+            return
+        if width is None:
+            width, _ = self._current_window_size()
+        width = max(430, min(1200, int(width)))
+        # Apply details typography before measuring so height matches final scale.
+        self._ui_scale = compute_ui_scale(
+            width,
+            DETAILS_BASE_HEIGHT,
+            base_width=DETAILS_BASE_WIDTH,
+            base_height=DETAILS_BASE_HEIGHT,
+        )
+        self._apply_ui_scale()
+        self.root.update_idletasks()
+        self._custom_details_size = None
+        fitted_width, fitted_height = self._details_content_size(width=width)
+        self._apply_window_geometry(f"{fitted_width}x{fitted_height}", flush=False)
+        self._sync_ui_scale_from_window(force=True)
+        self.root.update_idletasks()
+        refined_width, refined_height = self._details_content_size(width=fitted_width)
+        if abs(refined_height - fitted_height) > 4:
+            self._apply_window_geometry(f"{refined_width}x{refined_height}")
+
+    def _load_ui_prefs(self) -> bool:
+        prefs = read_ui_prefs(self._ui_prefs_path)
+        if prefs is None:
+            return False
+        self._apply_ui_prefs_payload(prefs)
+        return True
+
+    def _apply_ui_prefs_payload(self, prefs: dict[str, Any]) -> None:
+        mini_size = prefs.get("custom_mini_size")
+        if isinstance(mini_size, (list, tuple)) and len(mini_size) == 2:
+            self._custom_mini_size = (int(mini_size[0]), int(mini_size[1]))
+        details_size = prefs.get("custom_details_size")
+        if isinstance(details_size, (list, tuple)) and len(details_size) == 2:
+            self._custom_details_size = (int(details_size[0]), int(details_size[1]))
+        position = prefs.get("window_position")
+        if isinstance(position, (list, tuple)) and len(position) == 2:
+            try:
+                self._pending_window_position = (int(position[0]), int(position[1]))
+            except (TypeError, ValueError):
+                self._pending_window_position = None
+        theme_name = str(prefs.get("theme_name") or "dark")
+        if theme_name and theme_name != self.theme_name:
+            self.apply_theme(theme_name)
+        expanded = bool(prefs.get("details_expanded"))
+        self._set_details_mode(expanded)
+
+    def _apply_pending_window_position(self) -> None:
+        pending = self._pending_window_position
+        if pending is None:
+            return
+        width, height = self._current_window_size()
+        self.root.geometry(f"{width}x{height}+{pending[0]}+{pending[1]}")
+        self.root.update_idletasks()
+        self._pending_window_position = None
+
+    def _collect_ui_prefs_payload(self) -> dict[str, Any]:
+        width, height = self._current_window_size()
+        geo = str(self.root.geometry() or "")
+        window_position: list[int] | None = None
+        if "+" in geo:
+            parts = geo.split("+")
+            if len(parts) >= 3:
+                try:
+                    window_position = [int(parts[1]), int(parts[2])]
+                except ValueError:
+                    window_position = None
+        return {
+            "schema_version": UI_PREFS_SCHEMA_VERSION,
+            "theme_name": str(getattr(self, "theme_name", "dark") or "dark"),
+            "details_expanded": bool(self.details_expanded),
+            "ui_scale": round(float(self._ui_scale), 4),
+            "window_position": window_position,
+            "custom_mini_size": list(self._custom_mini_size) if self._custom_mini_size else None,
+            "custom_details_size": list(self._custom_details_size) if self._custom_details_size else None,
+            "window_size": [width, height],
+        }
+
+    def _save_ui_prefs_if_enabled(self) -> None:
+        if not getattr(self, "_ui_prefs_enabled", False):
+            return
+        self._ui_prefs_save_after_id = None
+        try:
+            write_ui_prefs(self._ui_prefs_path, self._collect_ui_prefs_payload())
+        except OSError:
+            pass
+
+    def _schedule_ui_prefs_save(self) -> None:
+        if not getattr(self, "_ui_prefs_enabled", False) or not hasattr(self, "root"):
+            return
+        if self._ui_prefs_save_after_id is not None:
+            try:
+                self.root.after_cancel(self._ui_prefs_save_after_id)
+            except tk.TclError:
+                pass
+        self._ui_prefs_save_after_id = self.root.after(
+            UI_PREFS_SAVE_DEBOUNCE_MS,
+            self._save_ui_prefs_if_enabled,
+        )
+
+    def _estimate_mini_content_height(self) -> int:
+        self.root.update_idletasks()
+        return compute_fitted_mini_height(int(self.shell.winfo_reqheight()))
+
+    def _geometry_position_suffix(self) -> str:
+        geo = str(self.root.geometry() or "")
+        if "+" not in geo:
+            return ""
+        return "+" + geo.split("+", 1)[1]
+
+    def _apply_window_geometry(self, size: str, *, flush: bool = True) -> None:
+        self.root.geometry(f"{size}{self._geometry_position_suffix()}")
+        if flush:
+            self.root.update_idletasks()
+
+    def _measure_window_height_for_width(self, width: int, *, probe_height: int | None = None) -> int:
+        width = max(430, min(1200, int(width)))
+        suffix = self._geometry_position_suffix()
+        _, current_height = self._current_window_size()
+        if probe_height is None:
+            probe_height = max(320, current_height)
+        else:
+            probe_height = max(320, min(1500, int(probe_height)))
+        self.root.geometry(f"{width}x{probe_height}{suffix}")
+        self.root.update_idletasks()
+        measured = max(320, int(self.root.winfo_reqheight()))
+        return min(1500, measured)
+
+    def _default_mini_size(self) -> tuple[int, int]:
+        if hasattr(self, "outer"):
+            self.root.update_idletasks()
+            width = max(430, min(760, int(self.outer.winfo_reqwidth()) + 12))
+            height = self._measure_window_height_for_width(width)
+            return width, height
+        return MINI_BASE_WIDTH, MINI_BASE_HEIGHT
+
+    def _fit_mini_window_to_content(self) -> None:
+        if self.details_expanded or not hasattr(self, "shell"):
+            return
+        width, _ = self._current_window_size()
+        self._apply_mini_resize_layout(width)
+
+    def _apply_mini_resize_layout(self, width: int, *, finalize: bool = False) -> None:
+        if self.details_expanded or not hasattr(self, "shell"):
+            return
+        width = max(430, min(1200, int(width)))
+        next_scale = compute_mini_ui_scale(width)
+        self._queue_ui_scale(next_scale, force=finalize)
+        if finalize:
+            _, preserve_height = self._current_window_size()
+            fitted_height = self._measure_window_height_for_width(width, probe_height=preserve_height)
+        else:
+            fitted_height = self._estimate_mini_content_height()
+        self._custom_mini_size = (width, fitted_height)
+        self._apply_window_geometry(
+            f"{width}x{fitted_height}",
+            flush=finalize or not getattr(self, "_resize_active", False),
+        )
+
+    def _remember_mini_layout_snapshot(self) -> None:
+        width, height = self._current_window_size()
+        self._mini_layout_snapshot = (
+            self._custom_mini_size,
+            (width, height),
+            float(self._ui_scale),
+        )
+
+    def _reset_ui_scale_baseline(self) -> None:
+        self._ui_scale = 1.0
+        self._apply_ui_scale()
+
+    def _restore_mini_layout_after_details(self) -> None:
+        snapshot = self._mini_layout_snapshot
+        self._custom_details_size = None
+        if snapshot is not None:
+            custom_size, saved_size, _saved_scale = snapshot
+            self._custom_mini_size = custom_size
+        else:
+            custom_size = None
+            saved_size = (MINI_BASE_WIDTH, MINI_BASE_HEIGHT)
+
+        self.mode_button.configure(text="详情")
+        self.root.minsize(430, 395)
+        self.details_card.pack_forget()
+        self.minimap_card.pack_forget()
+
+        if custom_size is not None:
+            width = int(custom_size[0])
+        else:
+            width = int(saved_size[0])
+        self._apply_mini_resize_layout(width, finalize=True)
+
     def _mini_geometry(self) -> str:
-        return "440x397"
+        if self._custom_mini_size is not None:
+            width, height = self._custom_mini_size
+        else:
+            width, height = self._default_mini_size()
+        return f"{width}x{height}"
 
     def _screen_size(self) -> tuple[int, int]:
         if os.name == "nt":
@@ -2372,13 +2783,16 @@ class AhmadTkOverlay:
 
     def _end_drag(self, _event: tk.Event[Any]) -> None:
         self._drag_offset = None
+        self._schedule_ui_prefs_save()
 
     def _begin_resize(self, event: tk.Event[Any]) -> str:
+        self._resize_active = True
+        width0, height0 = self._current_window_size()
         self._resize_anchor = (
             event.x_root,
             event.y_root,
-            self.root.winfo_width(),
-            self.root.winfo_height(),
+            width0,
+            height0,
         )
         return "break"
 
@@ -2386,16 +2800,201 @@ class AhmadTkOverlay:
         if self._resize_anchor is None:
             return "break"
         x0, y0, width0, height0 = self._resize_anchor
-        width = max(430, min(1200, width0 + event.x_root - x0))
-        height = max(320, min(1500, height0 + event.y_root - y0))
+        dx = int(event.x_root - x0)
+        dy = int(event.y_root - y0)
         if self.details_expanded:
+            width = max(430, min(1200, width0 + dx))
+            height = max(320, min(1500, height0 + dy))
             self._custom_details_size = (width, height)
-        self.root.geometry(f"{width}x{height}")
+            self._apply_window_geometry(f"{width}x{height}", flush=False)
+            next_scale = compute_ui_scale(
+                width,
+                height,
+                base_width=DETAILS_BASE_WIDTH,
+                base_height=DETAILS_BASE_HEIGHT,
+            )
+            self._queue_ui_scale(next_scale, force=False)
+        else:
+            growth = mini_resize_growth(dx, dy)
+            width = max(430, min(1200, width0 + growth))
+            self._apply_mini_resize_layout(width)
         return "break"
+
+    def _cancel_live_ui_scale_timer(self) -> None:
+        after_id = getattr(self, "_live_scale_after_id", None)
+        if after_id is not None:
+            try:
+                self.root.after_cancel(after_id)
+            except tk.TclError:
+                pass
+            self._live_scale_after_id = None
+
+    def _apply_pending_ui_scale(self, *, force: bool = False) -> None:
+        self._live_scale_after_id = None
+        pending = getattr(self, "_live_scale_pending", None)
+        if pending is None and not force:
+            return
+        next_scale = float(pending if pending is not None else self._ui_scale)
+        self._live_scale_pending = None
+        if force or abs(next_scale - float(self._ui_scale)) >= UI_SCALE_LIVE_DELTA:
+            self._ui_scale = next_scale
+            self._apply_ui_scale()
+            self._live_scale_last_at = time.monotonic()
+
+    def _apply_pending_ui_scale_after(self) -> None:
+        self._apply_pending_ui_scale(force=False)
+        if getattr(self, "_live_scale_pending", None) is not None and getattr(self, "_resize_active", False):
+            self._live_scale_after_id = self.root.after(
+                UI_SCALE_LIVE_INTERVAL_MS,
+                self._apply_pending_ui_scale_after,
+            )
+
+    def _queue_ui_scale(self, next_scale: float, *, force: bool = False) -> None:
+        next_scale = float(next_scale)
+        if force or not getattr(self, "_resize_active", False):
+            self._live_scale_pending = None
+            self._cancel_live_ui_scale_timer()
+            if force or abs(next_scale - float(self._ui_scale)) >= UI_SCALE_LIVE_DELTA:
+                self._ui_scale = next_scale
+                self._apply_ui_scale()
+                self._live_scale_last_at = time.monotonic()
+            return
+        self._live_scale_pending = next_scale
+        elapsed_ms = (time.monotonic() - float(getattr(self, "_live_scale_last_at", 0.0))) * 1000.0
+        if elapsed_ms >= UI_SCALE_LIVE_INTERVAL_MS:
+            self._apply_pending_ui_scale(force=False)
+            return
+        if getattr(self, "_live_scale_after_id", None) is None:
+            delay = max(1, int(UI_SCALE_LIVE_INTERVAL_MS - elapsed_ms))
+            self._live_scale_after_id = self.root.after(
+                delay,
+                self._apply_pending_ui_scale_after,
+            )
 
     def _end_resize(self, _event: tk.Event[Any]) -> str:
         self._resize_anchor = None
+        self._resize_active = False
+        self._cancel_live_ui_scale_timer()
+        self._live_scale_pending = None
+        self.root.update_idletasks()
+        if self.details_expanded:
+            self._sync_ui_scale_from_window(force=True)
+        else:
+            width, _ = self._current_window_size()
+            self._apply_mini_resize_layout(width, finalize=True)
+        self._schedule_ui_prefs_save()
         return "break"
+
+    def _ui_scale_base_geometry(self) -> tuple[int, int]:
+        if self.details_expanded:
+            return DETAILS_BASE_WIDTH, DETAILS_BASE_HEIGHT
+        return MINI_BASE_WIDTH, MINI_BASE_HEIGHT
+
+    def _scaled_padding(self, value: int) -> int:
+        return max(1, int(round(int(value) * float(self._ui_scale))))
+
+    def _capture_ui_font_bases(self, widget: tk.Widget) -> None:
+        font_widgets = (
+            tk.Label,
+            tk.Button,
+            tk.Entry,
+            tk.Text,
+            tk.Checkbutton,
+            tk.Radiobutton,
+        )
+        if isinstance(widget, font_widgets):
+            if not hasattr(widget, "_ahmad_font_base"):
+                spec = font_spec_from_widget(widget)
+                if spec is not None:
+                    widget._ahmad_font_base = spec  # type: ignore[attr-defined]
+        for child in widget.winfo_children():
+            self._capture_ui_font_bases(child)
+
+    def _apply_font_scale(self, widget: tk.Widget) -> None:
+        font_widgets = (
+            tk.Label,
+            tk.Button,
+            tk.Entry,
+            tk.Text,
+            tk.Checkbutton,
+            tk.Radiobutton,
+        )
+        if isinstance(widget, font_widgets):
+            base = getattr(widget, "_ahmad_font_base", None)
+            if base is None and abs(float(self._ui_scale) - 1.0) < 0.05:
+                base = font_spec_from_widget(widget)
+                if base is not None:
+                    widget._ahmad_font_base = base  # type: ignore[attr-defined]
+            base = getattr(widget, "_ahmad_font_base", None)
+            if base is not None:
+                family, size, *styles = base
+                widget.configure(font=scaled_font(family, int(size), *styles, scale=self._ui_scale))
+        for child in widget.winfo_children():
+            if not self.details_expanded and hasattr(self, "details_card"):
+                if child in (self.details_card, self.minimap_card):
+                    continue
+            self._apply_font_scale(child)
+
+    def _apply_layout_scale(self) -> None:
+        for widget, options in self._scaled_layout_specs:
+            if not widget.winfo_exists():
+                continue
+            widget.configure(
+                **{
+                    key: self._scaled_padding(value)
+                    for key, value in options.items()
+                }
+            )
+
+    def _apply_button_style_scale(self) -> None:
+        pad_x, pad_y = HERO_BUTTON_PADDING_BASE
+        self.style.configure(
+            "Hero.TButton",
+            font=scaled_font(FONT_UI, HERO_BUTTON_FONT_SIZE, scale=self._ui_scale),
+            padding=(self._scaled_padding(pad_x), self._scaled_padding(pad_y)),
+        )
+
+    def _apply_ui_scale(self) -> None:
+        self._apply_layout_scale()
+        self._apply_button_style_scale()
+        self._apply_font_scale(self.outer)
+        if self.details_expanded and self._minimap_data:
+            self._render_minimap(self._minimap_data)
+
+    def _current_window_size(self) -> tuple[int, int]:
+        geo = str(self.root.geometry() or "")
+        size_part = geo.split("+", 1)[0]
+        if "x" in size_part:
+            try:
+                parsed_w, parsed_h = size_part.split("x", 1)
+                return max(1, int(parsed_w)), max(1, int(parsed_h))
+            except ValueError:
+                pass
+        width = max(1, int(self.root.winfo_width() or 0))
+        height = max(1, int(self.root.winfo_height() or 0))
+        if width >= 200 and height >= 200:
+            return width, height
+        if self.details_expanded:
+            return DETAILS_BASE_WIDTH, DETAILS_BASE_HEIGHT
+        return self._default_mini_size()
+
+    def _sync_ui_scale_from_window(self, *, force: bool = False) -> None:
+        if not hasattr(self, "root"):
+            return
+        width, height = self._current_window_size()
+        if self.details_expanded:
+            base_w, base_h = self._ui_scale_base_geometry()
+            next_scale = compute_ui_scale(
+                width,
+                height,
+                base_width=base_w,
+                base_height=base_h,
+            )
+        else:
+            next_scale = compute_mini_ui_scale(width)
+        scale_changed = abs(next_scale - self._ui_scale) >= 0.02
+        if force or scale_changed:
+            self._queue_ui_scale(next_scale, force=force)
 
     def _configure_theme_style(self) -> None:
         self.style.configure(
@@ -2405,9 +3004,9 @@ class AhmadTkOverlay:
             bordercolor=BORDER,
             lightcolor=PANEL_SOFT,
             darkcolor=PANEL_SOFT,
-            padding=(6, 3),
         )
         self.style.map("Hero.TButton", background=[("active", HERO_BUTTON_ACTIVE)])
+        self._apply_button_style_scale()
 
     def _replace_theme_colors(self, widget: tk.Widget, replacements: dict[str, str]) -> None:
         for option in (
@@ -2488,10 +3087,12 @@ class AhmadTkOverlay:
             self.render_missing("等待 latest_snapshot.json")
         self._redraw_minimap_popup()
         self._redraw_pinned_minimap()
+        self._schedule_ui_prefs_save()
 
     def _on_user_close(self) -> None:
         self._hide_minimap_popup()
         self._hide_pinned_minimap()
+        self._save_ui_prefs_if_enabled()
         self._run_exit_cleanup()
         self.root.destroy()
 
@@ -3328,6 +3929,7 @@ class AhmadTkOverlay:
             chip.pack(side="left", padx=(0, 4), pady=1)
             if detail:
                 HoverTip(chip, detail)
+        self._apply_font_scale(self.flags)
 
     def _set_label(self, widget: tk.Label, value: Any, *, limit: int = 30) -> None:
         text = _text(value)
@@ -4662,7 +5264,7 @@ class AhmadTkOverlay:
                 min_width=300,
                 min_height=160,
                 allow_scroll=True,
-                cell_hint=13.0,
+                cell_hint=self._minimap_cell_hint(MINIMAP_CELL_HINT_BASE),
             )
             self._set_minimap_meta(minimap)
         if self._minimap_popup is not None and self._popup_canvas is not None:
@@ -4759,8 +5361,11 @@ class AhmadTkOverlay:
         cell_hint: float = 20.0,
     ) -> None:
         canvas.delete("all")
-        visible_width = max(min_width, canvas.winfo_width() or min_width)
-        visible_height = max(min_height, canvas.winfo_height() or min_height)
+        visible_width, visible_height = canvas_draw_size(
+            canvas,
+            min_width=min_width,
+            min_height=min_height,
+        )
         width = visible_width
         height = visible_height
         status = str(minimap.get("status") or "")
@@ -5066,6 +5671,12 @@ class AhmadTkOverlay:
         )
 
     def _hide_pinned_minimap(self) -> None:
+        if self._pinned_configure_after_id is not None:
+            try:
+                self.root.after_cancel(self._pinned_configure_after_id)
+            except tk.TclError:
+                pass
+            self._pinned_configure_after_id = None
         if self._pinned_minimap_popup is not None:
             try:
                 self._pinned_minimap_popup.destroy()
@@ -5116,6 +5727,16 @@ class AhmadTkOverlay:
             root_y=root_y + offset_y,
         )
         self._pinned_minimap_popup.geometry(f"+{popup_x}+{popup_y}")
+
+    def _on_pinned_minimap_configure(self, event: tk.Event[Any]) -> None:
+        if self._pinned_canvas is None or event.widget is not self._pinned_canvas:
+            return
+        if self._pinned_configure_after_id is not None:
+            try:
+                self.root.after_cancel(self._pinned_configure_after_id)
+            except tk.TclError:
+                pass
+        self._pinned_configure_after_id = self.root.after(80, self._redraw_pinned_minimap)
 
     def toggle_pinned_minimap(self, event: tk.Event[Any] | None = None) -> str:
         self._hide_minimap_popup()
@@ -5185,6 +5806,7 @@ class AhmadTkOverlay:
         canvas_frame.rowconfigure(0, weight=1)
         self._pinned_canvas_tip = HoverTip(self._pinned_canvas)
         self._pinned_canvas.bind("<MouseWheel>", self._scroll_pinned_minimap, add="+")
+        self._pinned_canvas.bind("<Configure>", self._on_pinned_minimap_configure, add="+")
 
         popup_w = 292
         popup_h = 382
@@ -5207,11 +5829,13 @@ class AhmadTkOverlay:
         self._pinned_offset = (popup_x - root_x, popup_y - root_y)
         self._pinned_minimap_popup = popup
         self.map_button.configure(bg=PANEL_MUTED, fg=WARM)
-        self._redraw_pinned_minimap()
         popup.deiconify()
+        popup.update_idletasks()
+        self._redraw_pinned_minimap()
         return "break"
 
     def _redraw_pinned_minimap(self) -> None:
+        self._pinned_configure_after_id = None
         if (
             self._pinned_minimap_popup is None
             or self._pinned_canvas is None
@@ -5231,7 +5855,7 @@ class AhmadTkOverlay:
             min_width=260,
             min_height=320,
             allow_scroll=True,
-            cell_hint=24.0,
+            cell_hint=self._minimap_cell_hint(MINIMAP_POPUP_CELL_HINT_BASE),
         )
 
     def _snapshot_signature(self) -> tuple[int, int]:
@@ -5482,6 +6106,13 @@ class AhmadTkOverlay:
         if not hasattr(self, "_summary_result_queue"):
             return False
         if bool(getattr(self, "_summary_worker_running", False)):
+            if getattr(self, "_summary_worker_signature", None) == signature:
+                return True
+            self._summary_worker_pending = {
+                "snapshot": snapshot,
+                "signature": signature,
+                "started_at": started_at,
+            }
             return True
         self._summary_worker_running = True
         self._summary_worker_signature = signature
@@ -5517,21 +6148,41 @@ class AhmadTkOverlay:
         threading.Thread(target=_worker, daemon=True, name="hero-ref-summary").start()
         return True
 
+    def _maybe_start_pending_summary_worker(self) -> None:
+        pending = getattr(self, "_summary_worker_pending", None)
+        if not isinstance(pending, dict):
+            return
+        self._summary_worker_pending = None
+        snapshot = pending.get("snapshot")
+        signature = pending.get("signature")
+        started_at = pending.get("started_at")
+        if not isinstance(snapshot, dict) or not isinstance(signature, tuple):
+            return
+        if not isinstance(started_at, (int, float)):
+            started_at = time.perf_counter()
+        self._start_live_summary_worker(
+            snapshot=snapshot,
+            signature=signature,
+            started_at=float(started_at),
+        )
+
     def _drain_live_summary_results(self) -> None:
         if not hasattr(self, "_summary_result_queue"):
             return
         latest: dict[str, Any] | None = None
         while True:
             try:
-                latest = self._summary_result_queue.get_nowait()
+                item = self._summary_result_queue.get_nowait()
             except queue.Empty:
                 break
+            if latest is None or int(item.get("seq") or 0) >= int(latest.get("seq") or 0):
+                latest = item
         if latest is None:
             return
-        self._summary_worker_running = False
         seq = latest.get("seq")
         if seq != getattr(self, "_summary_worker_seq", None):
             return
+        self._summary_worker_running = False
         signature = latest.get("signature")
         if signature != getattr(self, "_summary_worker_signature", None):
             return
@@ -5550,11 +6201,17 @@ class AhmadTkOverlay:
                 error=latest.get("error"),
             )
             self._summary_worker_signature = None
+            self._maybe_start_pending_summary_worker()
             return
         summary = latest.get("summary")
         snapshot = latest.get("snapshot")
         if not isinstance(summary, dict) or not isinstance(snapshot, dict):
             self._summary_worker_signature = None
+            self._maybe_start_pending_summary_worker()
+            return
+        if getattr(self, "_summary_worker_pending", None) is not None:
+            self._summary_worker_signature = None
+            self._maybe_start_pending_summary_worker()
             return
         self._last_signature = signature
         self._summary_worker_signature = None
@@ -5563,6 +6220,7 @@ class AhmadTkOverlay:
             "summary_applied",
             snapshot_signature=signature if isinstance(signature, tuple) else None,
         )
+        self._maybe_start_pending_summary_worker()
 
     def _start_manual_summary_worker(
         self,
@@ -5948,6 +6606,10 @@ class AhmadTkOverlay:
         self._set_label(self.detail_rows["备注"], reference.get("note") or evidence.get("ref_notes"), limit=38)
 
     def _set_details_mode(self, expanded: bool) -> None:
+        was_expanded = self.details_expanded
+        if expanded and not was_expanded:
+            self._fit_mini_window_to_content()
+            self._remember_mini_layout_snapshot()
         self.details_expanded = expanded
         if expanded:
             self.mode_button.configure(text="迷你")
@@ -5957,18 +6619,38 @@ class AhmadTkOverlay:
             if not self.minimap_card.winfo_ismapped():
                 self.minimap_card.pack(fill="x", pady=(5, 0), before=self.footer_row)
             self.root.update_idletasks()
-            self.root.geometry(self._details_geometry())
+            if self._custom_details_size is not None:
+                self._apply_window_geometry(self._details_geometry(), flush=False)
+                self._sync_ui_scale_from_window(force=True)
+            else:
+                current_w, _ = self._current_window_size()
+                self._fit_details_window_to_content(width=current_w)
+            self.root.update_idletasks()
+        elif was_expanded:
+            self._restore_mini_layout_after_details()
         else:
             self.mode_button.configure(text="详情")
             self.root.minsize(430, 395)
             self.details_card.pack_forget()
             self.minimap_card.pack_forget()
-            self.root.geometry(self._mini_geometry())
+            self._reset_ui_scale_baseline()
+            self._apply_window_geometry(self._mini_geometry())
+            width, _ = self._current_window_size()
+            self._apply_mini_resize_layout(width, finalize=True)
+        self._schedule_ui_prefs_save()
 
     def toggle_details(self) -> None:
         self._set_details_mode(not self.details_expanded)
-        self._update_detail_rows(self._last_summary or {})
-        self._render_minimap(self._minimap_data)
+
+        def _refresh_details_panel() -> None:
+            self._update_detail_rows(self._last_summary or {})
+            if self.details_expanded:
+                self._render_minimap(self._minimap_data)
+
+        self.root.after_idle(_refresh_details_panel)
+
+    def _minimap_cell_hint(self, base: float) -> float:
+        return max(8.0, float(base) * float(self._ui_scale))
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Show isolated Ahmed reference Tk overlay.")
@@ -6026,6 +6708,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Leave the live monitor running when Hero Ref exits.",
     )
+    parser.add_argument(
+        "--ui-prefs",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Load/save hero_ref_ui_prefs.json beside the snapshot log dir. "
+            "Packaged Start-HeroRef enables this; dev scripts leave it off."
+        ),
+    )
     args = parser.parse_args(argv)
 
     root = tk.Tk()
@@ -6040,10 +6731,12 @@ def main(argv: list[str] | None = None) -> int:
         load_existing_snapshot=bool(args.load_existing),
         diagnostic_profile=args.diagnostic_profile,
         show_taskbar=bool(args.show_taskbar),
+        ui_prefs_enabled=bool(args.ui_prefs),
     )
     try:
         root.mainloop()
     finally:
+        overlay._save_ui_prefs_if_enabled()
         overlay._run_exit_cleanup()
     return 0
 

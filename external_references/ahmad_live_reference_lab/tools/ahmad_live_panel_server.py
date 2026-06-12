@@ -462,11 +462,58 @@ def _unlocked_quality_labels(
     return labels
 
 
-def _next_info_hint(ref_result: dict[str, Any]) -> str:
+def _ref_notes_list(ref_result: dict[str, Any]) -> list[str]:
+    notes = ref_result.get("notes")
+    if isinstance(notes, str):
+        return [part.strip() for part in notes.split(";") if part.strip()]
+    if isinstance(notes, (list, tuple)):
+        return [str(part) for part in notes if str(part).strip()]
+    return []
+
+
+def _ref_waiting_grid_only(ref_result: dict[str, Any]) -> bool:
+    return any(note == "waiting_total_count:grid_only" for note in _ref_notes_list(ref_result))
+
+
+def _ref_waiting_display_text(hero_key: str, ref_result: dict[str, Any]) -> str:
+    ref_status = _text(ref_result.get("status"), "")
+    if ref_status != "missing_total_count":
+        return "等待总件/品质输入"
+    if hero_key == "ahmed" and _ref_waiting_grid_only(ref_result):
+        return "等待总件数"
+    if hero_key == "victor":
+        return "等待总件/紫金红"
+    if hero_key == "aisha":
+        return "等待总件/分件"
+    if hero_key == "ethan":
+        return "等待公开输入"
+    hint = _next_info_hint(ref_result, hero_key=hero_key)
+    if hint and hint != "-":
+        return hint
+    return "等待外援输入"
+
+
+def _ref_waiting_flag_label(hero_key: str, ref_result: dict[str, Any]) -> str:
+    ref_status = _text(ref_result.get("status"), "")
+    if ref_status != "missing_total_count":
+        return ""
+    return _ref_waiting_display_text(hero_key, ref_result)
+
+
+def _next_info_hint(ref_result: dict[str, Any], *, hero_key: str = "") -> str:
     evidence = ref_result.get("evidence")
     if not isinstance(evidence, dict):
         return "-"
     status = _text(ref_result.get("status"), "")
+    if status == "missing_total_count":
+        if hero_key == "ahmed" and _ref_waiting_grid_only(ref_result):
+            return "先补总件"
+        if hero_key == "victor":
+            return "先补总件/紫金红"
+        if hero_key == "aisha":
+            return "先补总件/分件"
+        if hero_key == "ethan":
+            return "先补公开总件"
     if status == "missing_total_count" or evidence.get("total_count") in (None, ""):
         return "先补总件"
     total_grid_missing = evidence.get("total_grid_target") in (None, "")
@@ -768,6 +815,8 @@ def _minimap_source_label(source_text: str, layout_source: str) -> str:
         return "公共抽检"
     if source in {"packet", "quality_reveal", "quality_only", "quality_marker"}:
         return "抽检"
+    if source == "skill_reveal":
+        return "英雄技能"
     if source in {"settlement", "settlement_inventory"}:
         return "结算"
     return source_text or layout_source or ""
@@ -1444,9 +1493,9 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         else None
     )
     ref_status = _text(ref_result.get("status"), "")
-    if is_supported and ref_status == "missing_total_count":
-        flags.append(_flag("缺总件数", "watch"))
-        flags.append(_flag("等待外援输入", "neutral"))
+    waiting_flag = _ref_waiting_flag_label(hero_key, ref_result)
+    if is_supported and waiting_flag:
+        flags.append(_flag(waiting_flag, "watch"))
     if victor_missing_q456:
         flags.append(_flag("缺紫金红件数", "watch", "Victor 100209 not captured; using prior"))
     if ref_readiness == "sparse_exact_prior":
@@ -1519,10 +1568,11 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         if ref_display_ready
         else "-"
     )
+    waiting_display = _ref_waiting_display_text(hero_key, ref_result)
     display_uncertainty_summary = (
         _quality_uncertainty_summary(ref_result)
         if ref_display_ready
-        else "等待总件/品质输入"
+        else waiting_display
     )
     if ref_display_ready and ref_readiness == "count_prior":
         display_red_risk_reference = "总件先验"
@@ -1533,7 +1583,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     elif ref_display_ready:
         display_red_risk_reference = "ref_v0 估计"
     else:
-        display_red_risk_reference = "等待总件/品质输入"
+        display_red_risk_reference = waiting_display
     v3_assist_notes: list[str] = []
     known_q6_count, known_q6_cells = _known_quality_footprint(
         minimap_summary,
@@ -1799,7 +1849,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
             "ref_combo_count": _text(ref_result.get("combo_count"), ""),
             "ref_input_summary": _ref_input_summary(ref_result),
             "candidate_summary": _candidate_summary(ref_result),
-            "next_info_hint": _next_info_hint(ref_result),
+            "next_info_hint": _next_info_hint(ref_result, hero_key=hero_key),
             "ref_notes": ";".join(ref_notes),
         },
         "diagnostics": {

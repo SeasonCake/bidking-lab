@@ -125,6 +125,10 @@ _VICTOR_SKILL_COUNT_SUM: dict[int, tuple[str, ...]] = {
     100209: ("bucket_group", "q4q5q6", "count"),  # R1: q4 + q5 + q6 item count
 }
 MARIA_HERO_ID = 108
+ETHAN_HERO_ID = 208
+ETHAN_SKILL_R1_OUTLINE = 1002081
+ETHAN_QUALITY_OUTLINE_SKILLS = frozenset({1002082, 1002083, 1002084})
+ETHAN_SKILL_FULL_OUTLINE = 1002085
 _MARIA_SKILL_QUALITY_REVEAL_ID = 10010801
 # Live-verified 2026-06-12: 100108 carries white-tier total value; reserve q2/q3 ids.
 _MARIA_SKILL_VALUE_SUM: dict[int, int] = {
@@ -1573,7 +1577,7 @@ def _full_mirror_join_outline_items(
 
     full_items: Sequence[FatbeansObservedItem] = ()
     for reveal in state.skill_reveals:
-        if reveal.hero_id != 208 or reveal.skill_id not in (1002082, 1002083, 1002084):
+        if reveal.hero_id != ETHAN_HERO_ID or reveal.skill_id not in ETHAN_QUALITY_OUTLINE_SKILLS:
             continue
         outline_runtime_ids = {
             item.runtime_id
@@ -1591,7 +1595,7 @@ def _full_outline_updates(state: FatbeansStateEvent) -> list[FieldUpdate]:
 
     full_items: Sequence[FatbeansObservedItem] = ()
     for reveal in state.skill_reveals:
-        if reveal.hero_id == 208 and reveal.skill_id == 1002085:
+        if reveal.hero_id == ETHAN_HERO_ID and reveal.skill_id == ETHAN_SKILL_FULL_OUTLINE:
             full_items = reveal.observed_items
     for result in state.action_results:
         if result.action_id == 100100:
@@ -1739,12 +1743,32 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
         if item.runtime_id is not None:
             index_by_runtime[item.runtime_id] = len(revealed_items) - 1
 
+    def ethan_item_quality_known(item: FatbeansObservedItem) -> bool:
+        if item.quality is not None:
+            return True
+        if item.runtime_id is None:
+            return False
+        metadata = metadata_by_runtime.get(item.runtime_id)
+        return metadata is not None and metadata.quality is not None
+
     for reveal in state.skill_reveals:
         category = _skill_reveal_category(reveal.skill_id)
         marker_only = (
             reveal.hero_id == MARIA_HERO_ID
             and reveal.skill_id == _MARIA_SKILL_QUALITY_REVEAL_ID
         )
+        if (
+            reveal.hero_id == ETHAN_HERO_ID
+            and reveal.skill_id in ETHAN_QUALITY_OUTLINE_SKILLS
+        ):
+            for item in reveal.observed_items:
+                if ethan_item_quality_known(item):
+                    append_observed_item(
+                        item,
+                        category=category,
+                        marker_cells=1 if marker_only else None,
+                    )
+            continue
         for item in reveal.observed_items:
             append_observed_item(
                 item,

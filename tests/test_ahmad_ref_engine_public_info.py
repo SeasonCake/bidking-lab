@@ -98,7 +98,9 @@ def _snapshot(
                 "public_info": public_info or {},
             },
         },
-        "structured_ref_inputs": structured_ref_inputs or {"total_count": 34},
+        "structured_ref_inputs": (
+            {"total_count": 34} if structured_ref_inputs is None else structured_ref_inputs
+        ),
         "public_info_rows": public_rows or [],
     }
 
@@ -189,6 +191,91 @@ def test_ref_engine_public_red_reveal_value_and_cells_are_floors() -> None:
     assert min(result["red_value_range"]) >= 452800
     assert "public_quality_reveal_q6_cell_floor" in result["notes"]
     assert "public_quality_reveal_q6_value_floor" in result["notes"]
+
+
+def test_ref_engine_partial_known_red_value_includes_unknown_estimate() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            structured_ref_inputs={
+                "total_count": 50,
+                "fixed_counts": {"q1": 10, "q3": 24, "q4": 10, "q5": 4, "q6": 2},
+                "quality_cells": {"q1": 15, "q3": 49, "q4": 48, "q5": 24},
+                "avg_cells": {
+                    "q3": 49 / 24,
+                    "q4": 48 / 10,
+                    "q5": 24 / 4,
+                },
+            },
+            public_rows=[
+                {
+                    "info_id": 200023,
+                    "revealed_items_detail": [
+                        {
+                            "runtime_id": 1425860479021733,
+                            "quality": 6,
+                            "value": 390000,
+                            "shape_code": 11,
+                            "cells": 1,
+                        }
+                    ],
+                }
+            ],
+        ),
+        max_combos=60000,
+    ).as_dict()
+
+    assert result["status"] == "ok"
+    assert result["evidence"]["quality_value_floors"]["q6"] == 390000.0
+    assert result["evidence"]["quality_value_floor_item_counts"]["q6"] == 1
+    rv10, rv50, rv90 = result["red_value_range"]
+    assert rv10 is not None and rv50 is not None and rv90 is not None
+    assert rv10 > 390000
+    assert rv50 > 390000
+    assert rv10 >= 550000  # 390k known + at least one default red item floor
+    assert rv10 <= rv50 <= rv90
+    assert min(result["red_value_range"]) >= 390000
+
+
+def test_ref_engine_partial_known_red_data6_style_above_known_not_flat() -> None:
+    """EXECUTION_NOTES §43 data6: one 452800/15-cell red, q6=2; settlement q6≈520900."""
+    result = run_reference_engine(
+        _snapshot(
+            map_id=2309,
+            structured_ref_inputs={
+                "total_count": 48,
+                "fixed_counts": {"q1": 9, "q3": 15, "q4": 17, "q5": 5},
+                "quality_cells": {"q1": 15, "q3": 49, "q4": 48, "q5": 24},
+                "avg_cells": {
+                    "q3": 49 / 15,
+                    "q4": 48 / 17,
+                    "q5": 24 / 5,
+                },
+            },
+            public_rows=[
+                {
+                    "info_id": 200023,
+                    "revealed_items_detail": [
+                        {
+                            "runtime_id": 1425860479021732,
+                            "quality": 6,
+                            "value": 452800,
+                            "shape_code": 53,
+                            "cells": 15,
+                        }
+                    ],
+                }
+            ],
+        ),
+        max_combos=60000,
+    ).as_dict()
+
+    rv10, rv50, rv90 = result["red_value_range"]
+    assert rv10 is not None and rv50 is not None and rv90 is not None
+    assert rv10 > 452800
+    assert rv50 > 452800
+    assert rv10 >= 612800  # 452800 + one default red (~160k)
+    assert rv10 <= rv50 <= rv90
+    assert min(result["red_value_range"]) >= 452800
 
 
 def test_ref_engine_uses_public_bucket_outline_as_exact_count_and_cells() -> None:
@@ -2001,6 +2088,69 @@ def test_ref_engine_generic_hero_runs_reference_engine() -> None:
     assert "generic_ref_hero" in result.notes
 
 
+def test_ref_engine_ethan_full_outline_skill_sets_total_grid_target() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="ethan",
+            structured_ref_inputs={"total_count": 34},
+        )
+        | {
+            "skill_reveals": [
+                {
+                    "skill_id": 1002085,
+                    "hero_id": 208,
+                    "observed_items": [
+                        {
+                            "runtime_id": 1,
+                            "shape_code": 11,
+                            "cells": 1,
+                        },
+                        {
+                            "runtime_id": 2,
+                            "shape_code": 22,
+                            "cells": 4,
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert evidence.total_count == 2
+    assert evidence.total_grid_target == 5.0
+    assert "ethan_skill_full_outline_count" in evidence.source_notes
+    assert "ethan_skill_full_outline_cells" in evidence.source_notes
+    assert any(
+        note.startswith("ethan_skill_full_outline_count_conflicts_total_count:")
+        for note in evidence.source_notes
+    )
+
+
+def test_ref_engine_ethan_r1_outline_is_diagnostic_only() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="ethan",
+            structured_ref_inputs={"total_count": 28},
+        )
+        | {
+            "skill_reveals": [
+                {
+                    "skill_id": 1002081,
+                    "hero_id": 208,
+                    "observed_items": [
+                        {"runtime_id": 1, "shape_code": 23, "cells": 4},
+                        {"runtime_id": 2, "shape_code": 11, "cells": 1},
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert evidence.total_grid_target is None
+    assert "ethan_skill_r1_outline:2:5" in evidence.source_notes
+    assert "ethan_skill_full_outline_cells" not in evidence.source_notes
+
+
 def test_ref_engine_public_max_quality_gold_locks_q6_to_zero() -> None:
     evidence = extract_evidence(
         _snapshot(
@@ -2241,3 +2391,90 @@ def test_ref_engine_treasure_value_action_locks_q6_when_merged_quality_is_q5() -
     assert evidence.min_counts.get("q6") == 0
     assert "public_max_quality_ceiling:5" in evidence.source_notes
     assert "public_max_quality_zero_q6" in evidence.source_notes
+
+
+def test_ref_engine_defers_grid_only_total_count_prior_for_ahmed() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2309,
+            structured_ref_inputs={},
+            public_rows=[{"info_id": 200009, "value": 152}],
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "missing_total_count"
+    assert "waiting_total_count" in result["notes"]
+    assert "total_count_from_ref_count_prior" not in result["notes"]
+    assert result["combo_count"] == 0
+
+
+def test_ref_engine_runs_after_public_total_count_for_ahmed() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2309,
+            structured_ref_inputs={},
+            public_rows=[
+                {"info_id": 200009, "value": 152},
+                {"info_id": 200017, "value": 48},
+            ],
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] in {"ok", "count_prior"}
+    assert result["combo_count"] > 0
+    assert "waiting_total_count" not in result["notes"]
+
+
+def test_ref_engine_defers_grid_only_total_count_prior_for_generic_ethan() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="ethan",
+            map_id=2401,
+            structured_ref_inputs={},
+            public_rows=[{"info_id": 200009, "value": 95}],
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "missing_total_count"
+    assert "waiting_total_count:grid_only" in result["notes"]
+
+
+def test_ref_engine_keeps_aisha_grid_prior_when_quality_constraints_present() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="aisha",
+            map_id=2410,
+            structured_ref_inputs={
+                "total_cells": 70,
+                "fixed_counts": {"q3": 13, "q4": 9, "q5": 3},
+                "quality_cells": {"q3": 19, "q4": 29, "q5": 3},
+                "split_counts": {"white": 2, "green": 6},
+                "split_quality_cells": {"white": 3, "green": 8},
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert "total_count_from_ref_count_prior" in result["notes"]
+    assert "waiting_total_count" not in result["notes"]
+
+
+def test_ref_engine_keeps_victor_min_count_prior_without_total_grid() -> None:
+    result = run_reference_engine(
+        _snapshot(
+            hero="victor",
+            map_id=2101,
+            structured_ref_inputs={"min_counts": {"q4": 1}},
+        ),
+        max_combos=500,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert "total_count_from_ref_count_prior" in result["notes"]
+    assert "waiting_total_count" not in result["notes"]

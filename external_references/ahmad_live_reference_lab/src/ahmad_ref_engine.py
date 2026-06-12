@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import re
 import sys
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 
 def _project_root() -> Path:
@@ -153,6 +153,11 @@ QUALITY_REVEAL_ACTION_IDS = frozenset(
 ALL_ITEM_QUALITY_PUBLIC_INFO_IDS = frozenset({200004, 200030})
 MARIA_HERO_ID = 108
 MARIA_SKILL_QUALITY_REVEAL_ID = 10010801
+ETHAN_HERO_ID = 208
+ETHAN_SKILL_R1_OUTLINE = 1002081
+ETHAN_QUALITY_OUTLINE_SKILL_IDS = frozenset({1002082, 1002083, 1002084})
+ETHAN_SKILL_FULL_OUTLINE = 1002085
+MIRROR_EYE_ACTION_ID = 100134
 MARIA_SKILL_VALUE_BY_ID = {
     "100108": "q1",
     "10010802": "q2",
@@ -281,6 +286,7 @@ class RefEvidence:
     avg_values: dict[str, float]
     quality_values: dict[str, float]
     quality_value_floors: dict[str, float]
+    quality_value_floor_item_counts: dict[str, int]
     split_counts: dict[str, int]
     split_quality_cells: dict[str, float]
     split_avg_cells: dict[str, float]
@@ -357,6 +363,9 @@ class RefResult:
                 "avg_values": dict(self.evidence.avg_values),
                 "quality_values": dict(self.evidence.quality_values),
                 "quality_value_floors": dict(self.evidence.quality_value_floors),
+                "quality_value_floor_item_counts": dict(
+                    self.evidence.quality_value_floor_item_counts
+                ),
                 "split_counts": dict(self.evidence.split_counts),
                 "split_quality_cells": dict(self.evidence.split_quality_cells),
                 "split_avg_cells": dict(self.evidence.split_avg_cells),
@@ -999,6 +1008,105 @@ def _apply_maria_skill_evidence(
         source_notes.append("maria_skill_coarse_quality_split_counts")
 
 
+def _outline_item_cells(item: Mapping[str, Any]) -> int | None:
+    cells = _safe_int(item.get("cells"))
+    if cells is not None and cells > 0:
+        return cells
+    return _shape_cells(item.get("shape_code") or item.get("shape_key"))
+
+
+def _outline_totals_from_items(items: Any) -> tuple[int, int] | None:
+    cells_by_key: dict[int, int] = {}
+    anonymous_index = 0
+    for item in _iter_dicts(items):
+        cells = _outline_item_cells(item)
+        if cells is None:
+            continue
+        runtime_id = _safe_int(item.get("runtime_id"))
+        key = runtime_id if runtime_id is not None else -anonymous_index - 1
+        if runtime_id is None:
+            anonymous_index += 1
+        cells_by_key[key] = cells
+    if not cells_by_key:
+        return None
+    return len(cells_by_key), sum(cells_by_key.values())
+
+
+def _mirror_quality_runtime_ids(snapshot: dict[str, Any]) -> set[int]:
+    runtime_ids: set[int] = set()
+    row_groups = (
+        snapshot.get("action_result_rows"),
+        _dig(snapshot, "ui_contract", "actions", "results"),
+    )
+    seen_rows: set[int] = set()
+    for rows in row_groups:
+        for row in _iter_dicts(rows):
+            if not isinstance(row, dict):
+                continue
+            row_id = id(row)
+            if row_id in seen_rows:
+                continue
+            seen_rows.add(row_id)
+            if str(row.get("action_id") or "") != str(MIRROR_EYE_ACTION_ID):
+                continue
+            for item in _iter_dicts(
+                row.get("revealed_items_detail") or row.get("observed_items")
+            ):
+                runtime_id = _safe_int(item.get("runtime_id"))
+                quality = _safe_int(item.get("quality"))
+                if runtime_id is not None and quality is not None:
+                    runtime_ids.add(runtime_id)
+    return runtime_ids
+
+
+def _apply_ethan_skill_evidence(
+    snapshot: dict[str, Any],
+    *,
+    set_total_count: Callable[[Any, str], None],
+    set_total_grid_target: Callable[[Any, str], None],
+    source_notes: list[str],
+) -> None:
+    mirror_runtime_ids = _mirror_quality_runtime_ids(snapshot)
+    full_outline_totals: tuple[int, int] | None = None
+
+    for row in _iter_skill_reveal_dict_rows(snapshot):
+        if _safe_int(row.get("hero_id")) != ETHAN_HERO_ID:
+            continue
+        skill_id = _safe_int(row.get("skill_id"))
+        items = row.get("observed_items") or row.get("revealed_items_detail") or ()
+        if skill_id == ETHAN_SKILL_R1_OUTLINE:
+            totals = _outline_totals_from_items(items)
+            if totals is not None:
+                source_notes.append(
+                    f"ethan_skill_r1_outline:{totals[0]}:{totals[1]}"
+                )
+            continue
+        if skill_id == ETHAN_SKILL_FULL_OUTLINE:
+            totals = _outline_totals_from_items(items)
+            if totals is not None:
+                full_outline_totals = totals
+            continue
+        if skill_id not in ETHAN_QUALITY_OUTLINE_SKILL_IDS or not mirror_runtime_ids:
+            continue
+        outline_runtime_ids = {
+            runtime_id
+            for item in _iter_dicts(items)
+            if (runtime_id := _safe_int(item.get("runtime_id"))) is not None
+            and _outline_item_cells(item) is not None
+        }
+        if outline_runtime_ids != mirror_runtime_ids:
+            continue
+        totals = _outline_totals_from_items(items)
+        if totals is not None:
+            full_outline_totals = totals
+
+    if full_outline_totals is None:
+        return
+    count, cells = full_outline_totals
+    set_total_count(count, "ethan_skill_full_outline_count")
+    set_total_grid_target(cells, "ethan_skill_full_outline_cells")
+
+
 def _iter_quality_reveal_item_rows(
     snapshot: dict[str, Any],
 ) -> Iterable[tuple[str, dict[str, Any]]]:
@@ -1059,10 +1167,18 @@ def _coarse_quality_reveal_floors(
     snapshot: dict[str, Any],
     *,
     source_notes: list[str],
-) -> tuple[dict[str, int], dict[str, float], dict[str, float], dict[str, int], dict[str, float]]:
+) -> tuple[
+    dict[str, int],
+    dict[str, float],
+    dict[str, float],
+    dict[str, int],
+    dict[str, int],
+    dict[str, float],
+]:
     counts = {key: 0 for key in QUALITY_KEYS}
     cell_floors: dict[str, float] = {}
     value_floors: dict[str, float] = {}
+    value_floor_item_counts: dict[str, int] = {}
     split_counts = {key: 0 for key in LOW_SPLIT_KEYS}
     split_value_floors: dict[str, float] = {}
     seen: set[tuple[str, str]] = set()
@@ -1109,6 +1225,7 @@ def _coarse_quality_reveal_floors(
         item_value = _safe_float(item.get("value"))
         if item_value is not None and item_value > 0:
             value_floors[key] = value_floors.get(key, 0.0) + float(item_value)
+            value_floor_item_counts[key] = value_floor_item_counts.get(key, 0) + 1
             split_key = LOW_QUALITY_NUMBER_TO_SPLIT.get(str(quality))
             if split_key is not None and _is_coarse_quality_reveal_item(item):
                 split_value_floors[split_key] = (
@@ -1124,20 +1241,21 @@ def _coarse_quality_reveal_floors(
         {key: value for key, value in counts.items() if value > 0},
         cell_floors,
         value_floors,
+        {key: value for key, value in value_floor_item_counts.items() if value > 0},
         {key: value for key, value in split_counts.items() if value > 0},
         split_value_floors,
     )
 
 
 def _public_quality_reveal_min_counts(snapshot: dict[str, Any]) -> dict[str, int]:
-    counts, _, _, _, _ = _coarse_quality_reveal_floors(snapshot, source_notes=[])
+    counts, _, _, _, _, _ = _coarse_quality_reveal_floors(snapshot, source_notes=[])
     return counts
 
 
 def _public_quality_reveal_floors(
     snapshot: dict[str, Any],
 ) -> tuple[dict[str, int], dict[str, float], dict[str, float]]:
-    counts, cell_floors, value_floors, _, _ = _coarse_quality_reveal_floors(
+    counts, cell_floors, value_floors, _, _, _ = _coarse_quality_reveal_floors(
         snapshot,
         source_notes=[],
     )
@@ -2096,6 +2214,7 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
     avg_values: dict[str, float] = {}
     quality_values: dict[str, float] = {}
     quality_value_floors: dict[str, float] = {}
+    quality_value_floor_item_counts: dict[str, int] = {}
     split_counts: dict[str, int] = {}
     split_quality_cells: dict[str, float] = {}
     split_avg_cells: dict[str, float] = {}
@@ -2253,6 +2372,7 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
             public_quality_counts,
             public_quality_cell_floors,
             public_quality_value_floors,
+            public_quality_value_floor_item_counts,
             coarse_split_counts,
             _coarse_split_value_floors,
         ) = _coarse_quality_reveal_floors(snapshot, source_notes=source_notes)
@@ -2279,11 +2399,23 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
                     float(value),
                 )
                 source_notes.append(f"public_quality_reveal_{key}_value_floor")
+        if public_quality_value_floor_item_counts:
+            for key, value in public_quality_value_floor_item_counts.items():
+                quality_value_floor_item_counts[key] = max(
+                    quality_value_floor_item_counts.get(key, 0),
+                    int(value),
+                )
         _apply_maria_skill_evidence(
             snapshot,
             min_counts=min_counts,
             split_counts=split_counts,
             quality_value_floors=quality_value_floors,
+            source_notes=source_notes,
+        )
+        _apply_ethan_skill_evidence(
+            snapshot,
+            set_total_count=set_total_count,
+            set_total_grid_target=set_total_grid_target,
             source_notes=source_notes,
         )
         public_outline_totals = _public_bucket_outline_totals(snapshot)
@@ -2551,6 +2683,7 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         avg_values=avg_values,
         quality_values=quality_values,
         quality_value_floors=quality_value_floors,
+        quality_value_floor_item_counts=quality_value_floor_item_counts,
         split_counts=split_counts,
         split_quality_cells=split_quality_cells,
         split_avg_cells=split_avg_cells,
@@ -2915,6 +3048,62 @@ def _quality_value_floor(key: str, evidence: RefEvidence) -> float:
     return float(parsed)
 
 
+def _partial_known_quality_value_state(
+    key: str,
+    *,
+    count: int,
+    grid: float,
+    item_values: dict[str, float],
+    evidence: RefEvidence,
+) -> tuple[float, int, float, float] | None:
+    """Decompose partially revealed quality value into known sum + unknown parts.
+
+    Unknown reds use per-item default value as the hard floor and remaining grid
+    cells (total grid minus known cells) for the grid-conditioned center estimate.
+    """
+    known_sum = _quality_value_floor(key, evidence)
+    if known_sum <= 0 or count <= 0:
+        return None
+    known_count = evidence.quality_value_floor_item_counts.get(key, 0)
+    if known_count <= 0 or count <= known_count:
+        return None
+    known_cells = float(evidence.quality_cell_floors.get(key, 0.0))
+    remaining_count = count - known_count
+    remaining_grid = max(float(remaining_count), grid - known_cells)
+    unknown_default = remaining_count * item_values[key]
+    unknown_grid_value = _quality_value_for_grid(
+        key,
+        count=remaining_count,
+        grid=remaining_grid,
+        item_values=item_values,
+    )
+    return known_sum, remaining_count, unknown_default, unknown_grid_value
+
+
+def _quality_value_floor_for_count(
+    key: str,
+    *,
+    count: int,
+    grid: float,
+    item_values: dict[str, float],
+    evidence: RefEvidence,
+) -> float:
+    partial = _partial_known_quality_value_state(
+        key,
+        count=count,
+        grid=grid,
+        item_values=item_values,
+        evidence=evidence,
+    )
+    if partial is not None:
+        known_sum, _remaining_count, unknown_default, _unknown_grid_value = partial
+        return known_sum + unknown_default
+    known_sum = _quality_value_floor(key, evidence)
+    if count <= 0:
+        return max(0.0, known_sum)
+    return known_sum
+
+
 def _quality_count_matches_value_inputs(
     count: int,
     avg: float | None,
@@ -3083,6 +3272,59 @@ def _should_use_sparse_exact_total_prior(evidence: RefEvidence) -> bool:
     return True
 
 
+EXACT_TOTAL_COUNT_SOURCE_NOTES = (
+    "public_info_total_item_count",
+    "structured_ref_bridge_total_count",
+    "field_update_total_count",
+    "ethan_skill_full_outline_count",
+    "settlement_review_total_count",
+)
+
+
+def _has_explicit_total_count_source(source_notes: tuple[str, ...]) -> bool:
+    for note in source_notes:
+        if note in EXACT_TOTAL_COUNT_SOURCE_NOTES:
+            return True
+        if any(note.startswith(f"{prefix}:") for prefix in EXACT_TOTAL_COUNT_SOURCE_NOTES):
+            return True
+    return False
+
+
+def _non_total_count_evidence_strength(evidence: RefEvidence) -> int:
+    score = 0
+    if evidence.split_counts:
+        score += 2
+    if evidence.count_sums:
+        score += 2
+    score += sum(1 for value in evidence.fixed_counts.values() if int(value) > 0)
+    score += sum(1 for value in evidence.min_counts.values() if int(value) > 0)
+    if evidence.avg_cells:
+        score += 1
+    if evidence.avg_values or evidence.quality_values:
+        score += 1
+    return score
+
+
+def _should_defer_total_count_prior(evidence: RefEvidence) -> bool:
+    """Skip heavy grid-only count prior until explicit total count arrives.
+
+    Applies across the hero pool: defer only when warehouse/public total grid is
+    the main live signal and total item count is still unknown. Heroes with
+    split/count-sum/quality constraints can still run lighter priors immediately.
+    """
+    if evidence.phase in {"settled", "manual"}:
+        return False
+    if evidence.total_count is not None:
+        return False
+    if _has_explicit_total_count_source(evidence.source_notes):
+        return False
+    if evidence.total_grid_target is None or float(evidence.total_grid_target) <= 0:
+        return False
+    if _non_total_count_evidence_strength(evidence) >= 2:
+        return False
+    return True
+
+
 def _total_count_candidates(evidence: RefEvidence, notes: list[str]) -> tuple[list[int], int | None]:
     if evidence.total_count is not None:
         total_count = int(evidence.total_count)
@@ -3105,6 +3347,10 @@ def _total_count_candidates(evidence: RefEvidence, notes: list[str]) -> tuple[li
         or evidence.total_grid_target
     )
     if not has_live_input:
+        return [], None
+    if _should_defer_total_count_prior(evidence):
+        notes.append("waiting_total_count")
+        notes.append("waiting_total_count:grid_only")
         return [], None
     center = max(_default_total_count(evidence.map_id), _known_count_floor(evidence))
     if evidence.total_grid_target is not None and evidence.total_grid_target > 0:
@@ -3509,7 +3755,30 @@ def _quality_value_for_evidence(
     exact_value = _quality_exact_value(key, evidence)
     if exact_value is not None:
         return float(exact_value)
-    value_floor = _quality_value_floor(key, evidence)
+    partial = _partial_known_quality_value_state(
+        key,
+        count=count,
+        grid=grid,
+        item_values=item_values,
+        evidence=evidence,
+    )
+    if partial is not None:
+        known_sum, _remaining_count, unknown_default, unknown_grid_value = partial
+        grid_center = known_sum + unknown_grid_value
+        default_floor = known_sum + unknown_default
+        avg_value = evidence.avg_values.get(key)
+        if avg_value is not None:
+            total = _avg_value_total_from_count(float(avg_value), int(count))
+            if total is not None:
+                return max(default_floor, grid_center, total)
+        return max(default_floor, grid_center)
+    value_floor = _quality_value_floor_for_count(
+        key,
+        count=count,
+        grid=grid,
+        item_values=item_values,
+        evidence=evidence,
+    )
     avg_value = evidence.avg_values.get(key)
     if avg_value is not None:
         total = _avg_value_total_from_count(float(avg_value), int(count))
@@ -3542,28 +3811,63 @@ def _quality_value_distribution_points(
     *,
     center: float,
     spread: float,
+    count: int,
+    grid: float,
+    item_values: dict[str, float],
     evidence: RefEvidence,
 ) -> tuple[tuple[float, float], ...]:
     return _value_distribution_points_with_floor(
         center,
         spread,
-        _quality_value_floor(key, evidence),
+        _quality_value_floor_for_count(
+            key,
+            count=count,
+            grid=grid,
+            item_values=item_values,
+            evidence=evidence,
+        ),
     )
 
 
-def _total_value_floor(evidence: RefEvidence) -> float:
-    return sum(_quality_value_floor(key, evidence) for key in QUALITY_KEYS)
+def _total_value_floor(
+    evidence: RefEvidence,
+    *,
+    counts: dict[str, int] | None = None,
+    grids: dict[str, float] | None = None,
+    item_values: dict[str, float] | None = None,
+) -> float:
+    if counts is None or grids is None or item_values is None:
+        return sum(_quality_value_floor(key, evidence) for key in QUALITY_KEYS)
+    return sum(
+        _quality_value_floor_for_count(
+            key,
+            count=counts[key],
+            grid=grids.get(key, counts[key] * DEFAULT_GRID_MEANS[key]),
+            item_values=item_values,
+            evidence=evidence,
+        )
+        for key in QUALITY_KEYS
+    )
 
 
 def _combo_value_distribution_points(
     center: float,
     spread: float,
     evidence: RefEvidence,
+    *,
+    counts: dict[str, int],
+    grids: dict[str, float],
+    item_values: dict[str, float],
 ) -> tuple[tuple[float, float], ...]:
     return _value_distribution_points_with_floor(
         center,
         spread,
-        _total_value_floor(evidence),
+        _total_value_floor(
+            evidence,
+            counts=counts,
+            grids=grids,
+            item_values=item_values,
+        ),
     )
 
 
@@ -3597,6 +3901,20 @@ def _quality_value_uncertainty(
         return 0.0
     if _quality_exact_value(key, evidence) is not None:
         return 0.0
+    known_count = evidence.quality_value_floor_item_counts.get(key, 0)
+    known_sum = _quality_value_floor(key, evidence)
+    if known_count > 0 and known_sum > 0 and count > known_count:
+        known_cells = float(evidence.quality_cell_floors.get(key, 0.0))
+        remaining_count = count - known_count
+        remaining_grid = max(float(remaining_count), grid - known_cells)
+        center = _quality_value_for_grid(
+            key,
+            count=remaining_count,
+            grid=remaining_grid,
+            item_values=item_values,
+        )
+        cv = VALUE_UNCERTAINTY_CV.get(key, 0.20)
+        return max(0.0, center * cv / math.sqrt(max(1, remaining_count)))
     avg_value = evidence.avg_values.get(key)
     if (
         avg_value is not None
@@ -3922,7 +4240,7 @@ def run_reference_engine(
             quality_count_ranges={},
             quality_cells_ranges={},
             total_grid_range=(None, None, None),
-            notes=tuple(notes + ["need_ahmed_r1_or_total_count"]),
+            notes=tuple(notes + ["waiting_total_count"]),
             evidence=evidence,
         )
 
@@ -4095,6 +4413,9 @@ def run_reference_engine(
             combo.value,
             value_spread,
             evidence,
+            counts=combo.counts,
+            grids=combo.grids,
+            item_values=item_values,
         ):
             weighted_values.append((value, combo_weight * point_weight))
     weighted_red = [
@@ -4127,6 +4448,9 @@ def run_reference_engine(
                 "q6",
                 center=red_value,
                 spread=red_value_spread,
+                count=combo.counts["q6"],
+                grid=float(red_grid),
+                item_values=item_values,
                 evidence=evidence,
             ):
                 weighted_red_value.append((value, option_weight * point_weight))
