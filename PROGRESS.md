@@ -9,7 +9,14 @@
 - v3 观察主记录：[`OBSERVATIONS_V3.md`](OBSERVATIONS_V3.md)
 - v3 设计文档：[`docs/v3_inference_design_2026-06-04.zh-CN.md`](docs/v3_inference_design_2026-06-04.zh-CN.md)
 - v3 结构索引：[`docs/PROJECT_STRUCTURE_V3.zh-CN.md`](docs/PROJECT_STRUCTURE_V3.zh-CN.md)
-- 最新 handoff：[`handoff_2026-06-06.zh-CN.md`](handoff_2026-06-06.zh-CN.md)
+- 最新 handoff：[`handoff_2026-06-12.zh-CN.md`](handoff_2026-06-12.zh-CN.md)
+
+## Hero Ref 支线（与 v3 并行，不替代 promotion）
+
+- 文件与文档总索引：[`docs/HERO_REF_FILE_AND_DOC_INDEX.zh-CN.md`](docs/HERO_REF_FILE_AND_DOC_INDEX.zh-CN.md)
+- 最新 handoff：[`handoff_2026-06-12.zh-CN.md`](handoff_2026-06-12.zh-CN.md)（基线 `32f4bb3`）
+- 执行主记录：[`external_references/ahmad_live_reference_lab/EXECUTION_NOTES_2026-06-10.zh-CN.md`](external_references/ahmad_live_reference_lab/EXECUTION_NOTES_2026-06-10.zh-CN.md)（§55 落地表、§56 抓包迁移）
+- 样本索引：[`docs/hero_ref_settlement_sample_index_2026-06-11.zh-CN.md`](docs/hero_ref_settlement_sample_index_2026-06-11.zh-CN.md)
 
 ## 历史记录
 

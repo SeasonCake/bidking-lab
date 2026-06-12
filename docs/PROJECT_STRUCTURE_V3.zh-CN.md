@@ -13,6 +13,7 @@
 | `DECISIONS_V3.md` | v3 当前决策 |
 | `OBSERVATIONS.md` | 根观察索引 |
 | `OBSERVATIONS_V3.md` | v3 当前观察 |
+| `handoff_2026-06-12.zh-CN.md` | 2026-06-12 Hero Ref checkpoint：Maria、金均格 0 调查、§55 落地表、分批 A–E |
 | `handoff_2026-06-10.zh-CN.md` | 2026-06-10 总交接，收口主线 v3 与 Hero Ref 支线的当前状态、关键结论和新窗口 prompt |
 | `handoff_2026-06-08.zh-CN.md` | v3 promotion hardening / sampler 重构最新交接入口、prompt 与推荐 goal |
 | `handoff_2026-06-06.zh-CN.md` | v3 重构早期交接入口，保留历史上下文 |
@@ -175,7 +176,9 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `scripts/run_live_overlay.py` | 当前 UI overlay | UI 设计冻结，不做视觉重做；当前 baseline/正式建议可来自 guarded `v3_practical`，同时保留 v2 reference、guard 原因、activity alias、公开/道具 numeric facts 与 v3 diagnostic detail |
 | `scripts/run_windivert_live_monitor.py` | WinDivert live monitor | 保持当前路径；live runner 默认 `formal_mode=v3_practical`，但底层 artifact builder 默认仍是 v2；v3 shadow artifact/model_eval 输出 `v3_robust_*`、`v3_capacity_*`/cases、`v3_fv_*`、`v3_scp_*`、含 source context/pressure tier 的 `v3_cse_*` 与 `v3_practical_*`；live bid row 对低置信 prior-only raise 与低支持 baseline passthrough 有 guard，并在 `model_eval` 保留结构化 `v3_practical_unguarded_decision_value_p10/p50/p90`；252x/452x activity map 即使 BidMap present，只要 Drop missing 仍显式 alias 到旧沉船 model map |
 | `scripts/start_live_windivert_overlay.ps1` | live monitor/overlay 启动 | 保持当前路径 |
-| `external_references/ahmad_live_reference_lab/` | Ahmad/Victor Hero Ref 支线小工具 | 现在作为隔离支线代码纳入版本；只读 `latest_snapshot.json`，复用 live packet/归档输入，提供 compact Tk UI、manual fallback、Ahmad/Victor ref_v0；不改主线 v3 promotion gate，不接正式出价。`build/`、`dist/`、cache 仍 ignored |
+| `external_references/ahmad_live_reference_lab/` | Ahmad/Victor Hero Ref 支线小工具 | 现在作为隔离支线代码纳入版本；只读 `latest_snapshot.json`，复用 live packet/归档输入，提供 compact Tk UI、manual fallback、Hero Ref ref_v0；不改主线 v3 promotion gate，不接正式出价。`build/`、`dist/`、cache 仍 ignored |
+| `docs/HERO_REF_FILE_AND_DOC_INDEX.zh-CN.md` | Hero Ref 代码+文档总索引：数据流、各文件职责、更新边界、与 PROGRESS/OBS/DEC 对照 | 结构或维护规则变化时更新 |
+| `docs/hero_ref_settlement_sample_index_2026-06-11.zh-CN.md` | Hero Ref 样本 catalog（settlement / 金均格 / recordings audit） | 新样本或批量 audit 时更新 |
 | `scripts/post_game_live.ps1` | 局后归档 | 保持当前路径 |
 | `scripts/summarize_live_windivert_brief.py` | live/archive brief | 输出 practical candidate/raise-watch rate、practical MAE/delta/under-rate、practical P90 coverage/extreme-over，以及 raise-watch hit/miss/false-alarm/extreme-over/misleading rate；archive replay 支持 `--archive-formal-mode v2|v3_practical`，默认保持 builder v2 对照口径；summary/group stats 输出 formal-mode counts、v3 practical live guard rows/rate、paired guarded-vs-unguarded MAE/P50/P90/P90-coverage/P90-extreme-over deltas、case-level guard summary、coverage-loss source-context、map_id/map_family guard-loss slice，以及 v2/guarded/unguarded 同分母 `formal_policy_comparison`；v303 BidMap parser fallback 与 activity missing-drop alias 后，72h archive `v3_practical` replay 可跑通 |
 | `data/logs/live/` | 本地 live 日志 | ignored，本地运行态 |
@@ -249,7 +252,7 @@ v2 历史记录归档在 `archive/v2_legacy_2026-06-04/`。
 | `external_references/jrinky-bidking/` | 外部 repo 参考 |
 | `external_references/ahmad_live_reference_lab/` | 基于外援 Ahmad/Victor 路线的项目支线代码；源码/脚本/文档可提交，打包产物与 cache 不提交 |
 | `external_references/ahmad_live_reference_lab/HANDOFF_2026-06-10.zh-CN.md` | Hero Ref 支线 2026-06-10 交接入口，给新窗口继续 UI / release / smoke 收尾 |
-| `external_references/ahmad_live_reference_lab/EXECUTION_NOTES_2026-06-10.zh-CN.md` | Hero Ref 支线 2026-06-10 执行记录，保留原样反馈、回应和可复用检查 |
+| `external_references/ahmad_live_reference_lab/EXECUTION_NOTES_2026-06-10.zh-CN.md` | Hero Ref 支线执行主记录（§55 落地表、§56 抓包迁移、发版 hash） |
 
 除 `external_references/ahmad_live_reference_lab/` 外，这些外部参考路径仍在 `.gitignore` 下，不作为项目源码提交。
 

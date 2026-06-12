@@ -7,7 +7,13 @@
 - v3 主线决策：[`DECISIONS_V3.md`](DECISIONS_V3.md)
 - v3 设计文档：[`docs/v3_inference_design_2026-06-04.zh-CN.md`](docs/v3_inference_design_2026-06-04.zh-CN.md)
 - 项目结构与归档索引：[`docs/PROJECT_STRUCTURE_V3.zh-CN.md`](docs/PROJECT_STRUCTURE_V3.zh-CN.md)
-- 最新 handoff：[`handoff_2026-06-06.zh-CN.md`](handoff_2026-06-06.zh-CN.md)
+- 最新 handoff：[`handoff_2026-06-12.zh-CN.md`](handoff_2026-06-12.zh-CN.md)
+
+## Hero Ref 决策入口
+
+- 执行与规划：EXECUTION_NOTES §46–§51（deferred 产品/性能/shadow）、§54（分批 A–E）、**§56（WinDivert 退场，后续默认换抓包架构）**
+- 边界：[`docs/hero_ref_branch_2026-06-09.zh-CN.md`](docs/hero_ref_branch_2026-06-09.zh-CN.md) — ref_v0 不写主线 formal / promotion
+- 索引：[`docs/HERO_REF_FILE_AND_DOC_INDEX.zh-CN.md`](docs/HERO_REF_FILE_AND_DOC_INDEX.zh-CN.md)
 
 ## 当前重点决策
 

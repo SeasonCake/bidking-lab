@@ -1997,7 +1997,7 @@
      - §46 mini UI 顶部倒三角缩放联动字体（`$product-ui-polish` + 430×320 visual QA）。
      - §48 紫局（q4）均价+均格不唯一时 ranking 软收窄（`purple_avg_value_cells_rank_v0`）。
    - **底层 / 运维**
-     - WinDivert 被安全软件删 exe：整包加信任 + 管理员启动（已有火绒说明）；底层更换仍待定。
+     - WinDivert 被火绒 / 360 / Defender 删驱动或 exe、误报内核钩子：**当前最大 UX 阻塞**（§33 data2、§45 群友反馈、§56 迁移规划）。短期仅有信任区 + 管理员 + `capture_source_status.error_code` 诊断文案；**中长期必须换底层抓包架构，不再以 WinDivert 为默认 live 路径**。
      - 开发脚本 `start_ahmad_live.ps1` 默认 `engineering` 连续 jsonl：打包版 `portable` 已够用；非主因。
    - **诊断工具**
      - `tools\_audit_data7_perf.py`：回放 `archive/reset` 前几轮窗口，对比 old/new sparse 路由与耗时（本地 audit，不进包）。
@@ -2005,7 +2005,8 @@
      1. **v0.1.6-hotfix2.1**（§49，性能 bugfix）；
      2. 下一 minor：§50 性能项 (1) + UI worker；
      3. 再后：§46 / §48 产品向优化；
-     4. **新道具 shadow prior 试点**（§51，活动地图 gated MC overlay）。
+     4. **新道具 shadow prior 试点**（§51，活动地图 gated MC overlay）；
+     5. **capture 后端迁移**（§56，与 ref 功能批解耦；优先级随火绒/360 反馈上调）。
 
 51. 2026-06-12 规划：0611 五个新道具 + shadow 似然估计可行性（未应用）
    - **五个新道具（v308 Item.txt 已有，Drop.txt 无 leaf 权重）**
@@ -2076,5 +2077,64 @@
    | B | 手动 UX | 已填未应用 banner；q4q5_count 与 zero 行 reconcile |
    | C | public avg fallback | `200013–200016` 缺失时是否走 `public_info_rows` |
    | D | 展示 pairing | q6 锁 `[0,0,0]` 时跳过 red complement |
+   | E | 底层抓包架构 | WinDivert → 新 capture 后端（§56）；与 A–D 解耦，单独里程碑 |
 
    - 每批需：样本 session + 期望 UI 行，再改 monitor/engine/UI 单层，避免三处漂移。
+   - **E 批**需：新后端能复用现有 `parse_fatbeans_capture` / jsonl artifact 契约，且保留 raw 回放能力。
+
+55. 2026-06-12 聊天记录落地核实表（checkpoint `32f4bb3` 基线）
+
+   对照近期会话与 git，便于 diff / 成果追踪。**已记录** = EXECUTION_NOTES 或 handoff 已有正文；**本表补录** = 此前代码已入库但笔记缺条。
+
+   | 主题 | 落地 | Git / 文件 | 文档 | 备注 |
+   |------|------|------------|------|------|
+   | data6 公开大红价值下界 | ✅ | §43 → hotfix 包 | §43–§44 | `quality_value_floors` / `quality_cell_floors` |
+   | 红件 `3/?/?` 显示 | ✅ | `3cebdc2` → `32f4bb3` | §45 | `_red_range_text`，锁定三元组不折叠 |
+   | 公开精确 `200009–200020` + 金总格 0 | ✅ | `3cebdc2` | §45 | `200011=0` → q5 件格归零链 |
+   | live ref 显示均格 `2.09×11→23` | ✅ | `3cebdc2` → `32f4bb3` | §45 | `_avg_grid_options` display 截断兜底 |
+   | WinDivert 被删诊断文案 | ✅ | §33 前后 | §33、§45 | `error_code` + mini 提示 |
+   | monitor 随 UI 退出 | ✅ | `dcb1bd1` | §47 | `monitor.lock` fallback |
+   | hotfix2.1 金总格 sparse 性能 | ✅ | `f9fca54` 链 | §49 | 单档金总格仍走 sparse prior |
+   | **16 英雄识别 + generic ref** | ✅ | `32f4bb3` `ahmad_ref_engine.py` | **本表补录** | 非 Aisha/Ahmed/Victor 走 nest-tier + `generic_ref_hero` |
+   | **公开最高品质 200048 → q6=0** | ✅ | `32f4bb3` | **本表补录** | 对齐 v2 `public_max_quality`；冲突 `hard_conflict` |
+   | Maria skill 粗品 + 白 tier 价值 | ✅ | `32f4bb3` | §52 | `10010801` 粗 location 无轮廓；`100108`→q1；200027≠Maria skill |
+   | Maria 绿/蓝 skill id | ❌ | — | §52 | `10010802/03` 待 R1 导出 |
+   | Raven 无轮廓全品质 | ❌ | 仅 hero alias | — | 待样本 + skill id；未接 ref pipeline |
+   | 金均格 0 / SEND-no-REV | 调查 | — | §53、sample §8 | 行为未改；§54 A–D 待批 |
+   | mini UI 缩放联动字体 | ❌ | — | §46 | 规划 only |
+   | 紫局均价+均格 ranking | ❌ | — | §48 | 规划 only |
+   | 底层非 WinDivert 抓包 | ❌ | — | §56 | 规划 only；用户 06-12 明确要求列入计划 |
+   | 桌面包 hotfix 副本（未重打包 exe） | 部分 | Desktop hotfix 目录 | §44–§45 | 源码已 push；exe 需重打包才生效 |
+
+   - **追踪约定**：后续每批合并前更新本表「文档」列与 commit；handoff 只写增量，本表作总索引。
+   - **补录细节（16 英雄 + 200048）**
+     - `HERO_BY_ID` / `HERO_ALIASES` 对齐 `fatbeans._HERO_MODE_BY_ID`（101–110、201–209、301）；
+     - `SUPPORTED_REF_HERO_KEYS`：structured 三英雄逻辑保留，其余 `generic_ref_hero` + 通用 nest-tier；
+     - `_extract_public_max_quality` + `_apply_public_max_quality_ceiling`：`200048` 或 Isabella `100110` 揭示最高品质 ≤5 → `fixed_counts.q6=0`；
+     - 测试：`test_ref_engine_generic_hero_runs_reference_engine`、`test_ref_engine_public_max_quality_gold_locks_q6_to_zero`、`test_ref_engine_public_max_quality_conflicts_with_existing_red_count`。
+
+56. 2026-06-12 规划：底层抓包架构迁移（WinDivert 退场）
+
+   - **问题（已确认，非偶发）**
+     - 当前 live 默认：`scripts\run_windivert_live_monitor.py` + pydivert + 包内 WinDivert 驱动/exe。
+     - 火绒、360、Windows Defender 等常**直接删除** WinDivert 组件或拦截内核驱动加载；用户侧表现为 `FileNotFoundError` / `PermissionError` on open、`raw_packets=0`、monitor 秒退。
+     - 已有短期缓解（§33、§45）：`capture_source_status.json` 写 `error_code` / `error_hint`；mini UI 提示「检查防火墙/安全软件」；包内 `火绒拦截说明.txt`。**不能**从根上消除误杀与信任成本。
+   - **方向（用户确认）**
+     - **后续版本不再以 WinDivert 为默认 live 抓包方案**；WinDivert 路径保留为 replay / 工程调试 / 兼容旧样本，直至迁移完成。
+   - **约束（迁移时必须满足）**
+     1. **下游契约不变**：仍产出 Fatbeans JSONL / reset artifact → `parse_fatbeans_capture` → `build_monitor_artifact_from_events` → snapshot / ref / UI；避免 ref 引擎与 UI 再改一遍。
+     2. **回放兼容**：现有 `windivert_live_*.jsonl` / reset 样本继续可复放（§28–29、sample index）。
+     3. **权限与部署**：新方案需明确 UAC/驱动/用户态代理取舍；文档与安装步骤比 WinDivert 更简单或同等可教。
+     4. **双轨期**：feature flag `capture_backend=windivert|…`，便于 A/B 与回归；默认逐步切到新后端。
+   - **候选方向（待选型，本笔记不定案）**
+     - 游戏/平台官方或半官方 API、已有进程内 hook（若合规且稳定）；
+     - 用户态代理 / 本地 relay（避免内核驱动签名问题）；
+     - 其他 OS 级 capture 框架（需评估与现有 port-only / flow 过滤等价能力）。
+     - **非目标**：继续堆「加白名单教程」当作长期方案。
+   - **建议里程碑**
+     1. **设计稿**：新 backend 接口 + 与 `run_windivert_live_monitor` 等价的状态字段（`capture_source_status` 语义对齐）。
+     2. **Shadow 并行**：engineering 模式双写 jsonl，对比 frame 覆盖率与 parse 成功率（不要求用户换包）。
+     3. **默认切换**：新包默认新 backend；WinDivert 降为 optional / dev-only。
+     4. **文档**：替换 `火绒拦截说明` 为主流程说明；EXECUTION_NOTES 标记 WinDivert 为 legacy。
+   - **与 §54 关系**：属 **E 批**，与金均格 0 / 手动 UX 等 ref 逻辑分批独立；优先在「用户无法启动 monitor」类反馈多时提前 E 的设计阶段。
+   - **状态：规划 ✅；选型与实现 ❌（待专题）。**

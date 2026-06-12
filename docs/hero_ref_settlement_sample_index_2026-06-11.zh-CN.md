@@ -200,4 +200,11 @@
 - 同 session：`100113` SEND →（无 REV 或 REV=0）→ 有 later state → UI 仍非零。
 - 或：手动填金均格/金件 0 + 「应用并启用」后仍与 live 冲突。
 
-详细分批修复计划：`EXECUTION_NOTES_2026-06-10.zh-CN.md` §54；checkpoint handoff：`handoff_2026-06-12.zh-CN.md`。
+详细分批修复计划：`EXECUTION_NOTES_2026-06-10.zh-CN.md` §54；checkpoint handoff：`handoff_2026-06-12.zh-CN.md`；文件/文档索引：`docs/HERO_REF_FILE_AND_DOC_INDEX.zh-CN.md`。
+
+## 9. 待补：金为零 live 样本（用户进行中）
+
+- **状态**：用户 2026-06-12 将打几局带「金均格/金件为零」信息的对局后提供 export / reset。
+- **用途**：验收 §54 **A 批**（inferred_zero 时序、engine zero 链、UI 是否显示 0）。
+- **收到后填写**：session、是否有 `100113` SEND / REV / later state、artifact 路径、UI 期望 vs 实际；追加到本节表格。
+- **当前缺口**：§8 recordings 125 reset 无 `100113`；不能替代本样本。
