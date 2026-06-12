@@ -1898,7 +1898,7 @@
    - 群友 WinDivert 被删：
      - `capture_source_status.error_code` 路径已能提示「检查防火墙/安全软件」；环境侧暂不继续产品化兜底，长期可能换抓包底层。
    - 状态：
-     - 本段随 git commit 入库；下一步打包 `v0.1.6-hotfix2`（需重编 `BidKingHeroRef.exe`）。
+     - 已随 commit `3cebdc2` 入库；最终 hotfix2 发包含 §47 monitor 修复（`dcb1bd1`）。
 
 46. 2026-06-12 规划：mini UI 顶部倒三角缩放应联动字体（hotfix2 不做）
    - 群友反馈：
@@ -1918,3 +1918,25 @@
      2. resize 结束（`_end_resize`）或 motion 节流时 `_apply_ui_scale(scale)`；
      3. pytest 只测 scale 计算；视觉用 `$product-ui-polish` + 截图对比。
    - 状态：**仅规划，hotfix2 不包含。**
+
+47. 2026-06-12 hotfix2 补充：关 UI 后停止 monitor + v0.1.6-hotfix2 发包
+   - 群友反馈：
+     - 关闭 Hero Ref UI 后，解压目录仍显示「文件夹正在使用」，无法删除/移动/重打包；疑 monitor 仍在后台占目录。
+   - 根因：
+     - `Start-HeroRef.ps1` 仅在启动 5 秒内读到 `monitor.lock` 时才传 `--stop-pid-on-exit`；race / 直接双击 UI exe 时关窗不会杀 monitor。
+   - 修复（`tools\ahmad_tk_overlay.py` + 启动脚本）：
+     - 退出 cleanup 兜底读 `snapshot 同目录/monitor.lock`，终止 PID 并删 lock；
+     - 新增 `--keep-monitor-on-close`（`-KeepMonitorOnClose` 调试保留 monitor）；
+     - monitor 先退出导致 UI 关闭的路径也走 cleanup。
+   - 测试：
+     - `tests\test_live_overlay.py` 新增 exit cleanup fallback / keep-monitor 用例；全文件 `166 passed`；
+     - 与 `test_ahmad_ref_engine_public_info.py` 合计 `251 passed`。
+   - Git：
+     - engine/UI hotfix2：`3cebdc2`；
+     - monitor lifecycle：`dcb1bd1`（发包用此 commit）。
+   - 产物（`dist\`，PackageVersion=v0.1.6-hotfix2）：
+     - full / public-safe zip + `RELEASE_NOTES_v0.1.6-hotfix2.zh-CN.md` + SHA256 清单；
+     - 需重编 `BidKingHeroRef.exe`（含 monitor.lock fallback）；`Start-HeroRef.ps1` 同步 `--keep-monitor-on-close`。
+   - 备注：
+     - 若仍被占用，先 `Stop-HeroRef.bat` 或结束 `BidKingHeroMonitor.exe`；
+     - 初版 hotfix2（仅 `3cebdc2`、无 monitor fix）如已私发，请换本包。
