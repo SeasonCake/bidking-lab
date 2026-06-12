@@ -97,6 +97,20 @@ DEFAULT_GRID_MEANS = {
     "q5": 2.8,
     "q6": 3.2,
 }
+TOTAL_GRID_FROM_HIGH_TIER_CELLS_NOTE = "total_grid_target_from_known_high_tier_cells"
+HIGH_TIER_CELL_KEYS = ("q3", "q4", "q5")
+# v0 estimate for items not yet assigned to q5/q6 when q3–q5 cells are already known.
+RESIDUAL_ITEM_CELL_ESTIMATE = 4.0
+HARD_TOTAL_GRID_SOURCE_NOTES = frozenset(
+    {
+        "structured_ref_bridge_total_cells",
+        "field_update_total_cells",
+        "public_total_cells",
+        "action_100103_total_cells",
+        "settlement_review_total_grid",
+        TOTAL_GRID_FROM_HIGH_TIER_CELLS_NOTE,
+    }
+)
 DISPLAY_GRID_TOPK = 3
 QUALITY_TO_INDEX = {"q1": (0, 1), "q3": (2,), "q4": (3,), "q5": (4,), "q6": (5,)}
 QUALITY_TO_TIER_INDEX = {"q1": (0, 1), "q3": (2,), "q4": (3,), "q5": (4,), "q6": (5,)}
@@ -513,20 +527,157 @@ def _hard_total_grid_target_from_notes(
     if total_grid_target is None:
         return None
     notes = set(source_notes)
+    if TOTAL_GRID_FROM_HIGH_TIER_CELLS_NOTE in notes:
+        rounded = int(round(float(total_grid_target)))
+        if abs(float(total_grid_target) - rounded) > 0.25:
+            return None
+        return max(0, rounded)
     if "public_total_avg_cells_target" in notes:
-        exact_notes = {
-            "structured_ref_bridge_total_cells",
-            "field_update_total_cells",
-            "public_total_cells",
-            "action_100103_total_cells",
-            "settlement_review_total_grid",
-        }
-        if not any(note in exact_notes for note in notes):
+        if not any(note in HARD_TOTAL_GRID_SOURCE_NOTES for note in notes):
             return None
     rounded = int(round(float(total_grid_target)))
     if abs(float(total_grid_target) - rounded) > 0.25:
         return None
     return max(0, rounded)
+
+
+def _exact_integer_quality_cell(raw: Any) -> int | None:
+    parsed = _safe_float(raw)
+    if parsed is None:
+        return None
+    rounded = int(round(float(parsed)))
+    if abs(float(parsed) - rounded) > 0.0001:
+        return None
+    return rounded
+
+
+def _estimated_tier_grid_cells(
+    key: str,
+    count: int,
+    *,
+    avg_cells: dict[str, float],
+    quality_cells: dict[str, float],
+) -> int | None:
+    if count <= 0:
+        return 0
+    exact = _exact_integer_quality_cell(quality_cells.get(key))
+    if exact is not None:
+        return exact
+    avg = avg_cells.get(key)
+    if avg is not None and avg > 0:
+        options = _avg_grid_options(int(count), float(avg))
+        if len(options) == 1:
+            return int(options[0])
+        if options:
+            default = count * DEFAULT_GRID_MEANS[key]
+            return int(min(options, key=lambda option: (abs(option - default), option)))
+    options = _composable_grid_options(int(count))
+    if options:
+        default = count * DEFAULT_GRID_MEANS[key]
+        return int(min(options, key=lambda option: (abs(option - default), option)))
+    return int(count)
+
+
+def _apply_total_grid_target_from_known_high_tier_cells(
+    *,
+    total_count: int | None,
+    total_grid_target: float | None,
+    fixed_counts: dict[str, int],
+    quality_cells: dict[str, float],
+    avg_cells: dict[str, float],
+    source_notes: list[str],
+) -> float | None:
+    """Raise soft/missing total grid target using known q3–q5 cells + residual items."""
+    if total_count is None or int(total_count) <= 0:
+        return total_grid_target
+    if any(note in HARD_TOTAL_GRID_SOURCE_NOTES for note in source_notes):
+        return total_grid_target
+
+    known_high = 0
+    for key in HIGH_TIER_CELL_KEYS:
+        if _exact_integer_quality_cell(quality_cells.get(key)) is not None:
+            known_high += 1
+    if known_high < 2:
+        return total_grid_target
+
+    known_cells_total = 0
+    for key in QUALITY_KEYS:
+        exact = _exact_integer_quality_cell(quality_cells.get(key))
+        if exact is not None:
+            known_cells_total += exact
+
+    fixed_sum = sum(max(0, int(value)) for value in fixed_counts.values())
+    residual_items = int(total_count) - fixed_sum
+    if residual_items < 0:
+        return total_grid_target
+
+    if residual_items == 0:
+        inferred = 0
+        for key in QUALITY_KEYS:
+            count = fixed_counts.get(key)
+            if count is None:
+                return total_grid_target
+            tier_cells = _estimated_tier_grid_cells(
+                key,
+                int(count),
+                avg_cells=avg_cells,
+                quality_cells=quality_cells,
+            )
+            if tier_cells is None:
+                return total_grid_target
+            inferred += tier_cells
+    else:
+        inferred = known_cells_total + int(round(residual_items * RESIDUAL_ITEM_CELL_ESTIMATE))
+
+    max_plausible = int(total_count) * 18
+    inferred = max(known_cells_total + max(0, residual_items), min(inferred, max_plausible))
+
+    if total_grid_target is not None and inferred <= float(total_grid_target) + 0.5:
+        return total_grid_target
+
+    if total_grid_target is not None:
+        _append_source_note_once(
+            source_notes,
+            f"total_grid_target_raised:{int(round(float(total_grid_target)))}->{inferred}",
+        )
+    total_grid_target = float(inferred)
+    _append_source_note_once(source_notes, TOTAL_GRID_FROM_HIGH_TIER_CELLS_NOTE)
+    return total_grid_target
+
+
+def _apply_avg_value_only_q5_count_derivation(
+    *,
+    total_count: int | None,
+    fixed_counts: dict[str, int],
+    min_counts: dict[str, int],
+    avg_values: dict[str, float],
+    avg_cells: dict[str, float],
+    quality_cells: dict[str, float],
+    source_notes: list[str],
+) -> None:
+    """Derive q5 count from public gold avg price alone when it uniquely matches."""
+    if total_count is None or int(total_count) <= 0:
+        return
+    if fixed_counts.get("q5") is not None:
+        return
+    if quality_cells.get("q5") not in (None, ""):
+        return
+    if avg_cells.get("q5") not in (None, ""):
+        return
+    avg = avg_values.get("q5")
+    if not _avg_value_has_positive_signal(avg):
+        return
+    minimum = max(0, int(min_counts.get("q5", 0) or 0))
+    candidates = [
+        count
+        for count in range(max(1, minimum), int(total_count) + 1)
+        if _avg_value_count_matches(count, avg)
+    ]
+    if len(candidates) != 1:
+        return
+    fixed_counts["q5"] = candidates[0]
+    min_counts["q5"] = max(min_counts.get("q5", 0), candidates[0])
+    _append_source_note_once(source_notes, "avg_value_only_q5_count_derived")
 
 
 def _apply_exact_count_residuals(
@@ -2528,6 +2679,15 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         split_counts=split_counts,
         source_notes=source_notes,
     )
+    _apply_avg_value_only_q5_count_derivation(
+        total_count=total_count,
+        fixed_counts=fixed_counts,
+        min_counts=min_counts,
+        avg_values=avg_values,
+        avg_cells=avg_cells,
+        quality_cells=quality_cells,
+        source_notes=source_notes,
+    )
     _apply_exact_count_residuals(
         total_count=total_count,
         fixed_counts=fixed_counts,
@@ -2666,6 +2826,15 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         _extract_public_max_quality(snapshot),
         fixed_counts=fixed_counts,
         min_counts=min_counts,
+        source_notes=source_notes,
+    )
+
+    total_grid_target = _apply_total_grid_target_from_known_high_tier_cells(
+        total_count=total_count,
+        total_grid_target=total_grid_target,
+        fixed_counts=fixed_counts,
+        quality_cells=quality_cells,
+        avg_cells=avg_cells,
         source_notes=source_notes,
     )
 

@@ -2460,6 +2460,12 @@
      3. 0052 fallback + 白绿 bridge
      4. q1 split 口径文档化 / 测试（不计入批 B 门禁）
 
+   - **批 B #1 完成（2026-06-13）**
+     - 引擎：`total_grid_target_from_known_high_tier_cells`（`total_count` 精确 + ≥2 档 q3/q4/q5 整数 `quality_cells` + 无 hard grid）
+     - 顺带：`avg_value_only_q5_count_derived`（仅 public 金均价 + 精确总件 + `_avg_value_count_matches` 唯一；整数均价不触发）
+     - 复审计 curated penultimate：`total_cells` miss **69%→68%**；`subset_exact_total_count` n=14 miss **50%**（原 ~67%）
+     - 回归：`tests/test_ahmad_ref_engine_public_info.py` — **7 条**已命中 band 的 exact-total fatbeans 不回归 + synthetic 金价-only
+
    - **验证**
      ```powershell
      python scripts/audit_aisha_gap.py

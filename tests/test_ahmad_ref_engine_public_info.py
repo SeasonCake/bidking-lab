@@ -2540,3 +2540,115 @@ def test_ref_engine_exact_total_q5_avg_cells_fast_path_warm_run_is_bounded(
 
     assert "exact_total_avg_cells_fast_path" in result["notes"]
     assert elapsed_ms < 500.0
+
+
+AISHA_BATCH_B_BAND_SAMPLES = (
+    (
+        FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2501_5rounds_2501_1295018669960456_0139.json",
+        140,
+    ),
+    (
+        FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2401_5rounds_2401_1295018668661353_0045.json",
+        113,
+    ),
+    (
+        FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2401_3rounds_2401_1295019017806948_0032.json",
+        121,
+    ),
+    (
+        FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2403_3rounds_2403_1295019017648392_0051.json",
+        111,
+    ),
+    (
+        FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2510_3rounds_2510_1274128128479934_0209.json",
+        100,
+    ),
+    (
+        FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2401_3rounds_2401_1295018668515929_0030.json",
+        99,
+    ),
+    (
+        FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2504_5rounds_2504_1295018708289152_0166.json",
+        96,
+    ),
+)
+
+
+def _aisha_fatbeans_snapshot(sample_path: Path, *, round_count: int | None = None) -> dict:
+    from bidking_lab.live.fatbeans import live_batches_from_fatbeans_events, parse_fatbeans_capture
+    from bidking_lab.live.monitor import (
+        _ahmad_ref_inputs_from_batches,
+        _public_info_rows,
+        _skill_reveal_rows,
+    )
+
+    events = parse_fatbeans_capture(sample_path)
+    batches = [batch for batch in live_batches_from_fatbeans_events(events) if batch.phase != "settled"]
+    if round_count is None:
+        round_count = max(3, len(batches) - 1)
+    prefix = batches[:round_count]
+    sort_id = max(int(batch.sequence or 0) for batch in prefix if batch.sequence is not None)
+    prefix_events = events
+    if sort_id:
+        prefix_events = type(events)(
+            packets=tuple(row for row in events.packets if int(row.sort_id) <= sort_id),
+            frames=tuple(row for row in events.frames if int(row.sort_id) <= sort_id),
+            sends=tuple(row for row in events.sends if int(row.sort_id) <= sort_id),
+            states=tuple(row for row in events.states if int(row.sort_id) <= sort_id),
+            statuses=tuple(row for row in events.statuses if int(row.sort_id) <= sort_id),
+        )
+    return {
+        "ui_contract": {
+            "context": {"hero": "aisha", "phase": "bidding"},
+            "constraints": {"public_info": {}},
+        },
+        "structured_ref_inputs": _ahmad_ref_inputs_from_batches(prefix, hero="aisha") or {},
+        "public_info_rows": _public_info_rows(prefix_events, {}),
+        "skill_reveals": _skill_reveal_rows(prefix_events, {}),
+        "skill_reveal_rows": _skill_reveal_rows(prefix_events, {}),
+        "action_result_rows": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("sample_path", "settlement_cells"),
+    AISHA_BATCH_B_BAND_SAMPLES,
+    ids=[sample[0].name[:36] for sample in AISHA_BATCH_B_BAND_SAMPLES],
+)
+def test_ref_engine_aisha_batch_b_exact_total_grid_band_no_regress(
+    sample_path: Path,
+    settlement_cells: int,
+) -> None:
+    snapshot = _aisha_fatbeans_snapshot(sample_path)
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+    low, mid, high = result["total_grid_range"]
+
+    assert low <= settlement_cells <= high
+    if settlement_cells == 140:
+        assert "total_grid_target_from_known_high_tier_cells" in result["notes"]
+        assert result["evidence"]["total_grid_target"] == settlement_cells
+
+
+def test_ref_engine_avg_value_only_q5_count_derivation_is_unique() -> None:
+    # Integer avg prices match every count; use a fractional public avg instead.
+    result = run_reference_engine(
+        _snapshot(
+            hero="aisha",
+            map_id=2404,
+            structured_ref_inputs={"total_count": 15},
+            public_info={
+                "public_avg_values": [
+                    {
+                        "semantic": "q5_avg_value",
+                        "kind": "avg_value",
+                        "quality": 5,
+                        "value": 1560.125,
+                    }
+                ]
+            },
+        ),
+        max_combos=20_000,
+    ).as_dict()
+
+    assert result["evidence"]["fixed_counts"].get("q5") == 8
+    assert "avg_value_only_q5_count_derived" in result["notes"]
