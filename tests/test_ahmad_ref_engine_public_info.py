@@ -2612,6 +2612,69 @@ def _aisha_fatbeans_snapshot(sample_path: Path, *, round_count: int | None = Non
     }
 
 
+def _aisha_fatbeans_settlement_total_value(sample_path: Path) -> int:
+    from bidking_lab.live.fatbeans import parse_fatbeans_capture
+
+    events = parse_fatbeans_capture(sample_path)
+    items_path = ROOT / "data" / "processed" / "items.json"
+    values_by_id: dict[int, int] = {}
+    if items_path.exists():
+        import json
+
+        for row in json.loads(items_path.read_text(encoding="utf-8-sig")):
+            values_by_id[int(row["item_id"])] = int(row.get("value") or 0)
+    for state in reversed(events.states):
+        if not state.inventory_items:
+            continue
+        return sum(
+            int(values_by_id.get(int(item.item_id), 0))
+            for item in state.inventory_items
+        )
+    raise AssertionError(f"no settlement inventory in {sample_path.name}")
+
+
+# Penultimate replay baselines (2026-06-13). Truth is outside ±15% of balanced today;
+# gate locks quote path and forbids >15% worsening of |truth - balanced|.
+AISHA_GOOD_REGRESSION_SAMPLES = (
+    (
+        FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2501_4rounds_2501_1295018669612326_0123.json",
+        290_810,
+        233,
+        63_702,
+    ),
+    (
+        FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2505_5rounds_2505_1295018595274342_0173.json",
+        250_172,
+        15,
+        83_626,
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("sample_path", "baseline_balanced", "baseline_combo_count", "baseline_abs_gap"),
+    AISHA_GOOD_REGRESSION_SAMPLES,
+    ids=[sample[0].name[:36] for sample in AISHA_GOOD_REGRESSION_SAMPLES],
+)
+def test_ref_engine_aisha_good_regression_balanced_bid_does_not_worsen(
+    sample_path: Path,
+    baseline_balanced: int,
+    baseline_combo_count: int,
+    baseline_abs_gap: int,
+) -> None:
+    result = run_reference_engine(
+        _aisha_fatbeans_snapshot(sample_path),
+        max_combos=50_000,
+    ).as_dict()
+    truth = _aisha_fatbeans_settlement_total_value(sample_path)
+    balanced = int(result["balanced"])
+
+    assert result["status"] == "count_prior"
+    assert result["combo_count"] == baseline_combo_count
+    assert balanced == baseline_balanced
+    assert abs(truth - balanced) <= int(baseline_abs_gap * 1.15)
+
+
 @pytest.mark.parametrize(
     ("sample_path", "settlement_cells"),
     AISHA_BATCH_B_BAND_SAMPLES,

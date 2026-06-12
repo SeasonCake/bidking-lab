@@ -54,7 +54,7 @@
 | **B3** | 0052 r3 + 白绿 bridge | ✅ `c2bac60` | fatbeans 单测 |
 | **B4** | 0052 downgrade | ✅ synthetic 已有 | 不绑 n=1 fatbeans 调参 |
 | **B5** | UI 低品件/格 + 署名 | ✅ `de2b438` | overlay pytest |
-| **C1** | `good_regression` 3 条 balanced ±15% | ⏳ 下一刀 | pytest 不劣化 |
+| **C1** | `good_regression` 2 条 balanced 报价锁定 + gap 不劣化 >15% | ✅ | pytest |
 | **C2** | R3+ 地图似然 shadow hook（设计+最小 prototype） | ⏳ | synthetic + 1 fatbeans；**不扫 173 权重** |
 | **C3** | 金/红 deepest-row footroom（与 C2 同 PR 或紧随） | ⏳ | 同上 |
 | **D** | UX：R1 hero 识别、mini/next-info | 📋 P2 | overlay 测试 |
@@ -66,11 +66,11 @@
 
 ## 4. 下一迭代（C1 → C2，按此顺序）
 
-### C1 · good_regression balanced 门禁（低成本）
+### C1 · good_regression balanced 门禁（✅ 2026-06-13）
 
-- 代表表 `good_regression` 三条 fatbeans
-- pytest：`balanced` 相对 settlement 总值在 ±15% 内 **不劣化**
-- 不改引擎逻辑也可先做（纯回归）
+- 代表表 **2 条**（非 3 条）：2501_0123、2505_0173
+- 现状：settlement 不在 balanced ±15% 内（nest 估价偏差 ~25–28%）
+- pytest：**锁定** `combo_count` + `balanced`；`|truth−balanced|` 不得比基线 gap 恶化 **>15%**
 
 ### C2 · R3+ shadow 总格 hint（中成本，防过拟合）
 

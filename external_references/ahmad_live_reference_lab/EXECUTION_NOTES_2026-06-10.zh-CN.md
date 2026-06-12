@@ -2487,6 +2487,9 @@
    - **UI 署名（2026-06-13）**
      - 可见文案：`作者: 加菲_Barista · 协作: lemyes`（含 B 站账户名）；去掉「不接正式出价」
 
+   - **C1 good_regression balanced 门禁（2026-06-13）**
+     - 2 条 fatbeans（2501_0123、2505_0173）：锁定 `combo_count`+`balanced`；`|truth−balanced|` 不得比基线 gap 恶化 >15%（现状不在 ±15% band 内，属 nest 偏差）
+
    - **验证**
      ```powershell
      python scripts/audit_aisha_gap.py
