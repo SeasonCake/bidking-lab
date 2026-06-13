@@ -929,6 +929,30 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--no-full-upgrade",
+        action="store_true",
+        help=(
+            "Disable upgrading a settled fast snapshot to full (n-trials) "
+            "inference once packets stop arriving."
+        ),
+    )
+    parser.add_argument(
+        "--full-upgrade-idle-seconds",
+        type=float,
+        default=1.5,
+        help="Seconds with no new packets before a full-inference upgrade runs.",
+    )
+    parser.add_argument(
+        "--full-upgrade-max-seconds",
+        type=float,
+        default=6.0,
+        help=(
+            "Skip the full-inference upgrade when the estimated full runtime "
+            "(from the last fast run) exceeds this, to stay responsive on heavy "
+            "late-round enumeration."
+        ),
+    )
+    parser.add_argument(
         "--enable-debug-shadows",
         action="store_true",
         help="Run profile_b5 debug shadow during live inference (off by default).",
@@ -996,6 +1020,9 @@ def main() -> int:
             source_name="windivert",
             packet_count_key="windivert_frames",
             archive_round_snapshots=not args.no_round_snapshots,
+            full_upgrade_when_idle=not args.no_full_upgrade,
+            full_upgrade_idle_seconds=args.full_upgrade_idle_seconds,
+            full_upgrade_max_seconds=args.full_upgrade_max_seconds,
         ),
         tables=tables,
     )

@@ -490,6 +490,9 @@ class WebhookMonitorConfig:
     source_name: str = "fatbeans_webhook"
     packet_count_key: str = "webhook_packets"
     archive_round_snapshots: bool = True
+    full_upgrade_when_idle: bool = True
+    full_upgrade_idle_seconds: float = 1.5
+    full_upgrade_max_seconds: float = 6.0
 
 
 class FatbeansWebhookMonitor:
@@ -509,6 +512,7 @@ class FatbeansWebhookMonitor:
         self._raw_persisted_count = 0
         self._last_partial_error = ""
         self._round_archive_session: str | None = None
+        self._last_fast_seconds: float | None = None
         self._known_local_player_id = _load_cached_local_player_id(
             _local_player_cache_path(self.config.log_dir)
         )
@@ -665,6 +669,7 @@ class FatbeansWebhookMonitor:
             self._last_semantic_signature = None
             self._raw_persisted_count = 0
             self._last_partial_error = ""
+            self._last_fast_seconds = None
             _remove_if_exists(self.raw_path)
             _remove_if_exists(self.raw_jsonl_path)
 
@@ -690,6 +695,52 @@ class FatbeansWebhookMonitor:
             if self._stop.is_set():
                 break
             self._process_if_due()
+            self._maybe_run_idle_full_upgrade()
+        self._process_snapshot(force=True)
+
+    def _maybe_run_idle_full_upgrade(self) -> None:
+        """Upgrade a settled fast snapshot to full (high-trial) inference.
+
+        Live updates run on the cheap ``fast`` path for responsiveness, so the
+        full ``n_trials`` accuracy never reached the UI during play (full only
+        ran at shutdown). Once packets stop arriving for a short window and the
+        current state has only been fast-processed, re-run it at full trials
+        inline. This runs only while idle (so it never competes with packet
+        processing) and is skipped when the last fast run was expensive enough
+        that full inference would block too long (e.g. late-round total-storage
+        enumeration), keeping the heavy case responsive.
+        """
+        if not self.config.full_upgrade_when_idle:
+            return
+        if self.config.fast_n_trials is None or self.config.fast_n_trials <= 0:
+            return  # already running full inference on every update
+        with self._lock:
+            rows_count = len(self._rows)
+            last_processed = self._last_processed_count
+            last_full = self._last_full_processed_count
+            last_packet_at = self._last_packet_at
+            last_fast_seconds = self._last_fast_seconds
+        if rows_count == 0 or rows_count != last_processed:
+            return  # state still changing or not fast-processed yet
+        if last_full >= last_processed:
+            return  # this state already upgraded (or marked too heavy)
+        if time.monotonic() - last_packet_at < self.config.full_upgrade_idle_seconds:
+            return  # packets still arriving; stay on the fast path
+        if last_fast_seconds is not None:
+            ratio = max(
+                1.0,
+                float(self.config.n_trials) / float(max(1, self.config.fast_n_trials)),
+            )
+            if last_fast_seconds * ratio > self.config.full_upgrade_max_seconds:
+                with self._lock:
+                    if self._last_processed_count == last_processed:
+                        self._last_full_processed_count = last_processed
+                print(
+                    f"[skip] {self.config.source_name} full upgrade too heavy "
+                    f"(fast={last_fast_seconds:.2f}s x{ratio:.0f}); keeping fast",
+                    flush=True,
+                )
+                return
         self._process_snapshot(force=True)
 
     def _process_if_due(self) -> None:
@@ -847,6 +898,7 @@ class FatbeansWebhookMonitor:
                     flush=True,
                 )
                 return
+            _build_started = time.monotonic()
             artifact = build_monitor_artifact_from_payload(
                 payload,
                 file=raw_path.name,
@@ -859,6 +911,8 @@ class FatbeansWebhookMonitor:
                 formal_mode=self.config.formal_mode,
                 local_player_id_hint=local_player_id_hint,
             )
+            if snapshot_mode == "fast":
+                self._last_fast_seconds = time.monotonic() - _build_started
             try:
                 events = parse_fatbeans_capture_payload(
                     payload,

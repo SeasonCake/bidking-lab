@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -443,6 +444,94 @@ def test_round_snapshot_archive_can_be_disabled(tmp_path: Path) -> None:
         {"session_id": "2402:1", "round": 3, "phase": "bidding"}
     )
     assert not (tmp_path / "logs" / "round_snapshots").exists()
+
+
+def _idle_upgrade_monitor(module, tmp_path: Path, **cfg):
+    base = dict(
+        log_dir=tmp_path / "logs",
+        raw_dir=tmp_path / "raw",
+        process_name="BidKing.exe",
+        server_ports=(10000,),
+        n_trials=500,
+        roi_trials=0,
+        shadow_trials=20,
+        full_shadow_trials=20,
+        run_debug_shadows=False,
+        seed=1,
+        fast_n_trials=10,
+        file_name="windivert_live.json",
+        source_name="windivert",
+    )
+    base.update(cfg)
+    monitor = module.FatbeansWebhookMonitor(
+        config=module.WebhookMonitorConfig(**base), tables=object()
+    )
+    monitor._rows = [{"SortID": 1}, {"SortID": 2}]
+    monitor._last_processed_count = 2
+    monitor._last_full_processed_count = 0
+    monitor._last_packet_at = time.monotonic() - 60.0
+    monitor._last_fast_seconds = 0.05
+    return monitor
+
+
+def test_idle_full_upgrade_runs_full_when_settled(tmp_path: Path) -> None:
+    module = _module()
+    monitor = _idle_upgrade_monitor(module, tmp_path)
+    calls: list[bool] = []
+    monitor._process_snapshot = lambda *, force: calls.append(force)
+
+    monitor._maybe_run_idle_full_upgrade()
+
+    assert calls == [True]
+
+
+def test_idle_full_upgrade_waits_while_packets_recent(tmp_path: Path) -> None:
+    module = _module()
+    monitor = _idle_upgrade_monitor(module, tmp_path)
+    monitor._last_packet_at = time.monotonic()  # a packet just arrived
+    calls: list[bool] = []
+    monitor._process_snapshot = lambda *, force: calls.append(force)
+
+    monitor._maybe_run_idle_full_upgrade()
+
+    assert calls == []
+
+
+def test_idle_full_upgrade_skips_when_already_full(tmp_path: Path) -> None:
+    module = _module()
+    monitor = _idle_upgrade_monitor(module, tmp_path)
+    monitor._last_full_processed_count = 2  # already upgraded this state
+    calls: list[bool] = []
+    monitor._process_snapshot = lambda *, force: calls.append(force)
+
+    monitor._maybe_run_idle_full_upgrade()
+
+    assert calls == []
+
+
+def test_idle_full_upgrade_skips_heavy_and_marks_handled(tmp_path: Path) -> None:
+    module = _module()
+    # ratio = 500 / 10 = 50; 0.2s fast => ~10s full > 6s budget => skip.
+    monitor = _idle_upgrade_monitor(module, tmp_path, full_upgrade_max_seconds=6.0)
+    monitor._last_fast_seconds = 0.2
+    calls: list[bool] = []
+    monitor._process_snapshot = lambda *, force: calls.append(force)
+
+    monitor._maybe_run_idle_full_upgrade()
+
+    assert calls == []
+    assert monitor._last_full_processed_count == 2  # marked so it is not retried
+
+
+def test_idle_full_upgrade_disabled_by_config(tmp_path: Path) -> None:
+    module = _module()
+    monitor = _idle_upgrade_monitor(module, tmp_path, full_upgrade_when_idle=False)
+    calls: list[bool] = []
+    monitor._process_snapshot = lambda *, force: calls.append(force)
+
+    monitor._maybe_run_idle_full_upgrade()
+
+    assert calls == []
 
 
 def test_webhook_monitor_writes_fast_snapshot_without_appending_logs(
