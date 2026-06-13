@@ -172,10 +172,8 @@ if (-not $IsAdmin -and -not $NoAutoElevate) {
     if ($NoRestart) {
         $ElevatedArgs += "-NoRestart"
     }
-    Start-Process -FilePath (Get-CurrentPowerShellPath) -Verb RunAs -WorkingDirectory $AppRoot -ArgumentList $ElevatedArgs
-    Write-Host "WinDivert 需要管理员权限。即将弹出 UAC，请点击「是」。" -ForegroundColor Yellow
-    Write-Host "若本窗口关闭后没有看到 Hero Ref，请右键 Start-HeroRef.bat → 以管理员身份运行。" -ForegroundColor Yellow
-    Read-Host "按 Enter 关闭本窗口"
+    Start-Process -FilePath (Get-CurrentPowerShellPath) -Verb RunAs -WindowStyle Hidden -WorkingDirectory $AppRoot -ArgumentList $ElevatedArgs
+    Write-Host "WinDivert 需要管理员权限。已弹出 UAC，请点击「是」，随后会静默启动 Hero Ref。" -ForegroundColor Yellow
     return
 }
 
@@ -341,9 +339,13 @@ if ($MonitorLaunchFailed) {
     Write-Host "请查看: $MonitorErr" -ForegroundColor Yellow
     Write-Host "常见原因：安全软件拦截 WinDivert；或未以管理员运行。详见 火绒拦截说明.txt" -ForegroundColor Yellow
     Write-Host ""
-    Read-Host "按 Enter 关闭本窗口"
+    # 提权窗口为隐藏静默启动，失败时用弹窗提示，避免错误信息被吞掉。
+    $FailMsg = "后台 monitor 未成功启动，Hero Ref 会一直显示「等待 monitor 状态」。`n`n请查看:`n$MonitorErr`n`n常见原因：安全软件拦截 WinDivert；或未以管理员运行。`n详见 火绒拦截说明.txt"
+    try {
+        (New-Object -ComObject WScript.Shell).Popup($FailMsg, 0, "BidKing Hero Ref 启动提示", 48) | Out-Null
+    } catch {
+    }
 } elseif ($Hero -and $Hero.Id) {
     Write-Host ""
-    Write-Host "Hero Ref 已启动。本窗口可以关闭；关闭 Hero Ref 小窗会同时停止后台 monitor。" -ForegroundColor Green
-    Start-Sleep -Seconds 3
+    Write-Host "Hero Ref 已启动。关闭 Hero Ref 小窗会同时停止后台 monitor。" -ForegroundColor Green
 }

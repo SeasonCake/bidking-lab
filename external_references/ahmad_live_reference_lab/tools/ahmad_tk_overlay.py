@@ -2634,9 +2634,17 @@ class AhmadTkOverlay:
         if not getattr(self, "_ui_prefs_enabled", False):
             return
         self._ui_prefs_save_after_id = None
+        root = getattr(self, "root", None)
+        if root is None:
+            return
+        try:
+            if not root.winfo_exists():
+                return
+        except tk.TclError:
+            return
         try:
             write_ui_prefs(self._ui_prefs_path, self._collect_ui_prefs_payload())
-        except OSError:
+        except (OSError, tk.TclError):
             pass
 
     def _schedule_ui_prefs_save(self) -> None:

@@ -519,6 +519,43 @@ def test_ahmad_ui_prefs_roundtrip(tmp_path) -> None:
     assert module.ui_prefs_path_for_snapshot(snapshot_path) == prefs_path
 
 
+def test_ahmad_save_ui_prefs_skips_when_window_destroyed(monkeypatch) -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay._ui_prefs_enabled = True
+    overlay._ui_prefs_save_after_id = "pending"
+    overlay._ui_prefs_path = "ignored.json"
+    overlay.root = SimpleNamespace(winfo_exists=lambda: False)
+
+    writes: list[object] = []
+    monkeypatch.setattr(module, "write_ui_prefs", lambda *a, **k: writes.append(a))
+
+    module.AhmadTkOverlay._save_ui_prefs_if_enabled(overlay)
+
+    assert writes == []
+    assert overlay._ui_prefs_save_after_id is None
+
+
+def test_ahmad_save_ui_prefs_swallows_tclerror_after_destroy(monkeypatch) -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay._ui_prefs_enabled = True
+    overlay._ui_prefs_save_after_id = None
+    overlay._ui_prefs_path = "ignored.json"
+
+    def _raise() -> bool:
+        raise module.tk.TclError("application has been destroyed")
+
+    overlay.root = SimpleNamespace(winfo_exists=_raise)
+
+    writes: list[object] = []
+    monkeypatch.setattr(module, "write_ui_prefs", lambda *a, **k: writes.append(a))
+
+    module.AhmadTkOverlay._save_ui_prefs_if_enabled(overlay)
+
+    assert writes == []
+
+
 def test_ahmad_ui_prefs_clamps_invalid_sizes() -> None:
     module = _ahmad_overlay_module()
 
