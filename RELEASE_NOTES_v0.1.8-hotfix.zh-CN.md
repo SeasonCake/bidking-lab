@@ -1,5 +1,8 @@
 # BidKing Hero Ref v0.1.8-hotfix
 
+> **说明**：代码已在 `main`（`b9b4ab0`），变更亦记入 [`CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md`](CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md)。  
+> 本地曾打 full zip；**默认不对外发补丁**，除非重大线上问题；否则并入计划中的 **v0.2.0** release。
+
 发布日期：2026-06-14
 相对 **v0.1.8**（commit `a706bd5`）的补丁。
 
