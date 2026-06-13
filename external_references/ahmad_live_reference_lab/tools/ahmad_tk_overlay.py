@@ -6475,6 +6475,7 @@ class AhmadTkOverlay:
             if self.exit_when_pids and _watched_pid_exited(self.exit_when_pids):
                 should_reschedule = False
                 self._record_ui_runtime_status("watched_monitor_exit")
+                self._save_ui_prefs_if_enabled()
                 self._run_exit_cleanup()
                 self.root.destroy()
                 return
