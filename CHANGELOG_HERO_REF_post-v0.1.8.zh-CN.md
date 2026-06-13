@@ -23,7 +23,7 @@
 
 | 日期 | Commit | 类型 | 摘要 | 验证 | 已打包 |
 |---|---|---|---|---|---|
-| 2026-06-14 | `b9b4ab0` | **fix** | **拉文 R5 全品质缺档锁 0**：技能 `100301` / 公开 `200030`/`200004` 扫全后，未出现档（如无红）→ `fixed_counts=0`，红件 `0/0/0`，不再 0/1/2 抬价。partial 随机揭示仍只 floor。引擎 `_apply_all_item_quality_exact_counts`。 | `test_ahmad_ref_engine_public_info.py` 新增 3 条；全文件 140 passed | 可选 `v0.1.8-hotfix-full` @ `2d51012`（**未计划对外发补丁**） |
+| 2026-06-14 | `b9b4ab0` | **fix** | **拉文 R5 全品质缺档锁 0**：技能 `100301` / 公开 `200030`/`200004` 扫全后，未出现档（如无红）→ `fixed_counts=0`，红件 `0/0/0`，不再 0/1/2 抬价。partial 随机揭示仍只 floor。引擎 `_apply_all_item_quality_exact_counts`。 | 群导出 replay + UI 目视；`test_ahmad_ref_engine_public_info.py` 140 passed | **`v0.1.8-hotfix-full` 已发群** @ `0ad6a97`，SHA256 `C463B7FB…100C5` |
 | 2026-06-13 | `66a2da2` | docs | v0.1.8 release note + `SHA256SUMS-v0.1.8.txt` | — | — |
 | 2026-06-13 | `b93c890` | docs | handoff / PROGRESS 索引更新为 v0.1.8 已发布 | — | — |
 
@@ -53,5 +53,5 @@
 | 版本标签 | Commit | 说明 |
 |---|---|---|
 | v0.1.8 | `a706bd5` | 对外已发 |
-| v0.1.8-hotfix | `2d51012` | 本地 full zip 已打；**默认不对外** |
+| v0.1.8-hotfix | `0ad6a97` | **已发群** full zip，SHA256 `C463B7FB…100C5` |
 | v0.2.0 | — | 未开始 |
