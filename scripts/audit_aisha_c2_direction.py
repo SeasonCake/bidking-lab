@@ -260,7 +260,7 @@ def _avg_abs_gap(rows: list[C2CompareRow], *, use_c2: bool) -> float | None:
 
 def format_report(rows: list[C2CompareRow]) -> str:
     lines = [
-        "Aisha C2 direction audit: B-only vs B+C2 on layout-hint-active curated rows",
+        "Aisha C2′ direction audit: B-only vs B+C2 layout shadow on curated rows",
         f"rows={len(rows)}",
         "",
     ]

@@ -14,8 +14,11 @@ if str(AHMAD_SRC) not in sys.path:
     sys.path.insert(0, str(AHMAD_SRC))
 
 from ahmad_ref_engine import (  # noqa: E402
+    AISHA_LAYOUT_FOOTROOM_CAP_NOTE,
     AISHA_LAYOUT_FOOTROOM_MULT_NOTE,
     AISHA_LAYOUT_FOOTROOM_NOTE,
+    AISHA_LAYOUT_FOOTROOM_SKIP_NOTE,
+    AISHA_LAYOUT_FOOTROOM_SPARSE_NOTE,
     AISHA_LAYOUT_GRID_HINT_NOTE,
     PINNED_QUALITY_CELLS_SPARSE_PRIOR_NOTE,
     RESIDUAL_AVG_CELLS_NOTE,
@@ -2755,12 +2758,50 @@ def test_ref_engine_aisha_layout_grid_hint_raises_target_from_deep_minimap() -> 
     ]
     evidence = extract_evidence(snapshot)
 
-    assert evidence.total_grid_target == 63.0
+    assert evidence.total_grid_target == 38.0
     assert AISHA_LAYOUT_GRID_HINT_NOTE in evidence.source_notes
     assert AISHA_LAYOUT_FOOTROOM_NOTE in evidence.source_notes
+    assert AISHA_LAYOUT_FOOTROOM_CAP_NOTE in evidence.source_notes
+    assert AISHA_LAYOUT_FOOTROOM_SPARSE_NOTE in evidence.source_notes
     assert any(
         note.startswith(f"{AISHA_LAYOUT_FOOTROOM_MULT_NOTE}:")
         for note in evidence.source_notes
+    )
+
+
+def test_ref_engine_aisha_layout_grid_hint_skips_when_hard_total_cells_present() -> None:
+    snapshot = _snapshot(
+        hero="aisha",
+        map_id=2501,
+        structured_ref_inputs={"total_count": 25, "total_cells": 120},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 5
+    snapshot["minimap_grid_items"] = [
+        {"quality": 5, "row": 16, "width": 3, "height": 2, "cells": 40},
+        {"quality": 4, "row": 15, "width": 2, "height": 2, "cells": 30},
+    ]
+    evidence = extract_evidence(snapshot)
+
+    assert evidence.total_grid_target == 120.0
+    assert AISHA_LAYOUT_GRID_HINT_NOTE not in evidence.source_notes
+
+
+def test_aisha_layout_target_looks_undershot_rejects_high_soft_target() -> None:
+    from ahmad_ref_engine import _aisha_layout_target_looks_undershot
+
+    assert not _aisha_layout_target_looks_undershot(
+        total_grid_target=120.0,
+        known_cells=70,
+        rows_below=1,
+        columns=10,
+        round_no=5,
+    )
+    assert _aisha_layout_target_looks_undershot(
+        total_grid_target=70.0,
+        known_cells=70,
+        rows_below=8,
+        columns=10,
+        round_no=3,
     )
 
 

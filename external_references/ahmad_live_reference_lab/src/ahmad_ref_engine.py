@@ -105,6 +105,9 @@ RESIDUAL_AVG_CELLS_NOTE = "total_grid_target_residual_avg_cells_estimate"
 AISHA_LAYOUT_GRID_HINT_NOTE = "aisha_layout_grid_hint_shadow"
 AISHA_LAYOUT_FOOTROOM_NOTE = "aisha_layout_grid_footroom_below_deepest"
 AISHA_LAYOUT_FOOTROOM_MULT_NOTE = "aisha_layout_footroom_mult"
+AISHA_LAYOUT_FOOTROOM_CAP_NOTE = "aisha_layout_footroom_capped"
+AISHA_LAYOUT_FOOTROOM_SKIP_NOTE = "aisha_layout_footroom_skipped_not_undershoot"
+AISHA_LAYOUT_FOOTROOM_SPARSE_NOTE = "aisha_layout_footroom_sparse_viewport"
 PINNED_QUALITY_CELLS_SPARSE_PRIOR_NOTE = "pinned_quality_cells_sparse_prior"
 AISHA_WAREHOUSE_ROWS = 18
 AISHA_GRID_COLUMNS = 10
@@ -746,10 +749,47 @@ def _max_minimap_quality(items: list[dict[str, Any]]) -> int | None:
 def _aisha_layout_footroom_multipliers(round_no: int) -> tuple[float, float, float]:
     """Conservative / balanced(P50) / aggressive multipliers on rows_below*cols base."""
     if int(round_no) <= 3:
-        return (0.75, 1.0, 1.35)
+        return (0.5, 0.75, 1.0)
     if int(round_no) == 4:
-        return (1.0, 1.5, 2.0)
-    return (1.25, 2.0, 2.5)
+        return (0.75, 1.0, 1.35)
+    return (1.0, 1.25, 1.5)
+
+
+def _aisha_layout_footroom_raise_cap(round_no: int) -> int:
+    if int(round_no) <= 3:
+        return 15
+    if int(round_no) == 4:
+        return 22
+    return 28
+
+
+def _aisha_layout_viewport_fill_ratio(*, known_cells: int, deepest: int, columns: int) -> float:
+    viewport_cells = max(1, int(deepest) * int(columns))
+    return min(1.0, max(0.0, float(known_cells) / float(viewport_cells)))
+
+
+def _aisha_layout_sparse_footroom_boost(fill_ratio: float) -> float:
+    # Sparse early viewport (top-heavy scans) may leave more rows below; dense deep fill needs less.
+    return max(0.2, min(0.85, 1.0 - float(fill_ratio)))
+
+
+def _aisha_layout_target_looks_undershot(
+    *,
+    total_grid_target: float | None,
+    known_cells: int,
+    rows_below: int,
+    columns: int,
+    round_no: int,
+) -> bool:
+    if total_grid_target is None:
+        return True
+    baseline = float(total_grid_target)
+    if baseline <= float(known_cells) + 0.5:
+        return True
+    # Early rounds: shallow visible depth with low target vs occupied viewport is a common undershoot.
+    round_scale = 0.45 if int(round_no) <= 3 else (0.35 if int(round_no) == 4 else 0.28)
+    implied_ceiling = float(known_cells) + float(rows_below) * float(columns) * round_scale
+    return baseline + 0.5 < implied_ceiling
 
 
 def _aisha_layout_effective_deepest_row(
@@ -812,15 +852,39 @@ def _apply_aisha_layout_grid_hint(
 
     known_cells = _known_minimap_cells(items)
     rows_below = max(0, AISHA_WAREHOUSE_ROWS - int(deepest))
+    if not _aisha_layout_target_looks_undershot(
+        total_grid_target=total_grid_target,
+        known_cells=known_cells,
+        rows_below=rows_below,
+        columns=AISHA_GRID_COLUMNS,
+        round_no=int(round_no),
+    ):
+        _append_source_note_once(source_notes, AISHA_LAYOUT_FOOTROOM_SKIP_NOTE)
+        return total_grid_target
+
+    fill_ratio = _aisha_layout_viewport_fill_ratio(
+        known_cells=known_cells,
+        deepest=int(deepest),
+        columns=AISHA_GRID_COLUMNS,
+    )
+    sparsity_boost = _aisha_layout_sparse_footroom_boost(fill_ratio)
     base_footroom = rows_below * AISHA_GRID_COLUMNS
     conservative_mult, balanced_mult, aggressive_mult = _aisha_layout_footroom_multipliers(
         int(round_no)
     )
-    footroom = base_footroom * balanced_mult
-    hinted = float(known_cells + footroom)
-    if total_grid_target is not None and hinted <= float(total_grid_target) + 0.5:
+    footroom = base_footroom * balanced_mult * sparsity_boost
+    raw_hinted = float(known_cells + footroom)
+    baseline = float(total_grid_target if total_grid_target is not None else known_cells)
+    raise_cap = _aisha_layout_footroom_raise_cap(int(round_no))
+    capped_hinted = min(raw_hinted, baseline + float(raise_cap))
+    hinted = capped_hinted
+    if hinted <= baseline + 0.5:
         return total_grid_target
 
+    if raw_hinted > capped_hinted + 0.5:
+        _append_source_note_once(source_notes, AISHA_LAYOUT_FOOTROOM_CAP_NOTE)
+    if sparsity_boost >= 0.55:
+        _append_source_note_once(source_notes, AISHA_LAYOUT_FOOTROOM_SPARSE_NOTE)
     if total_grid_target is not None:
         _append_source_note_once(
             source_notes,
