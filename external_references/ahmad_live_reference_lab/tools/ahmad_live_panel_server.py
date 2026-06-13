@@ -110,8 +110,28 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _clone_as_pre_settlement_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     cloned = json.loads(json.dumps(snapshot, ensure_ascii=False))
     cloned["phase"] = "bidding"
+    # The settled-view "估价" card must reproduce the last live (pre-settlement)
+    # estimate, not re-estimate with settlement truth. Flipping phase alone is not
+    # enough: settlement-grade evidence stays in the snapshot body and ui_contract
+    # (notably ui_contract.constraints, which carries exact settlement counts), so
+    # the engine would read it back and inflate the estimate. Strip those so the
+    # engine falls back to the pre-settlement live evidence stream
+    # (structured_ref_inputs / monitor field updates).
+    for key in list(cloned.keys()):
+        if key.startswith("final_"):
+            cloned.pop(key, None)
+    for key in (
+        "inventory_count",
+        "inventory_cells",
+        "known_value_sum",
+        "minimap_grid_items",
+        "model_eval",
+    ):
+        cloned.pop(key, None)
     uc = cloned.get("ui_contract") if isinstance(cloned.get("ui_contract"), dict) else {}
     cloned["ui_contract"] = uc
+    for key in ("constraints", "minimap"):
+        uc.pop(key, None)
     context = uc.get("context") if isinstance(uc.get("context"), dict) else {}
     uc["context"] = context
     context["phase"] = "bidding"

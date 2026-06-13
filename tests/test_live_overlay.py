@@ -7839,3 +7839,48 @@ def test_ahmad_refresh_runs_exit_cleanup_on_watched_pid_exit(
 
     assert cleanup_calls == [True]
     assert overlay.root.destroyed is True
+
+
+def test_pre_settlement_clone_strips_settlement_grade_evidence() -> None:
+    # Regression: the settled-view "估价" card must reproduce the last live
+    # (pre-settlement) estimate, not re-estimate using settlement truth. The
+    # clone used for that reconstruction must drop settlement-grade evidence
+    # (notably ui_contract.constraints, which carries exact settlement counts),
+    # otherwise the engine reads it back and inflates the displayed estimate.
+    server = _ahmad_server_module()
+    snapshot = {
+        "phase": "settled",
+        "inventory_count": 28,
+        "inventory_cells": 75,
+        "known_value_sum": 576647,
+        "final_quality_counts": "q1=6;q3=12;q4=4;q5=3;q6=3",
+        "final_q6_count": 3,
+        "final_decision_value": 576647,
+        "model_eval": {"leak": "shadow"},
+        "minimap_grid_items": [{"quality": 6}],
+        "structured_ref_inputs": {"counts": {"q5": 3}, "field_updates": []},
+        "ui_contract": {
+            "phase": "settled",
+            "context": {"phase": "settled"},
+            "truth": {"available": True, "total_value": 576647},
+            "constraints": {"counts": {"q6": 3, "q5": 3}},
+            "minimap": {"items": [{"quality": 6}]},
+            "posterior": {"q6": 3},
+        },
+    }
+
+    cloned = server._clone_as_pre_settlement_snapshot(snapshot)
+
+    assert cloned["phase"] == "bidding"
+    assert cloned["ui_contract"]["context"]["phase"] == "bidding"
+    assert cloned["ui_contract"]["truth"]["available"] is False
+    assert "constraints" not in cloned["ui_contract"]
+    assert "minimap" not in cloned["ui_contract"]
+    assert not any(key.startswith("final_") for key in cloned)
+    for key in ("inventory_count", "inventory_cells", "known_value_sum", "minimap_grid_items", "model_eval"):
+        assert key not in cloned
+    # Pre-settlement live evidence stream must be preserved.
+    assert cloned["structured_ref_inputs"] == snapshot["structured_ref_inputs"]
+    # Source snapshot is untouched (clone is deep).
+    assert snapshot["ui_contract"]["constraints"] == {"counts": {"q6": 3, "q5": 3}}
+    assert snapshot["final_q6_count"] == 3
