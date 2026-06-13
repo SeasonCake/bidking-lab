@@ -53,5 +53,5 @@
 | 版本标签 | Commit | 说明 |
 |---|---|---|
 | v0.1.8 | `a706bd5` | 对外已发 |
-| v0.1.8-hotfix | `0ad6a97` | **已发群** full zip，SHA256 `C463B7FB…100C5` |
+| v0.1.8-hotfix | `3fc9271` | **GitHub release** full + public-safe @ `dist/` |
 | v0.2.0 | — | 未开始 |
