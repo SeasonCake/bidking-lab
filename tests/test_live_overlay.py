@@ -556,6 +556,63 @@ def test_ahmad_save_ui_prefs_swallows_tclerror_after_destroy(monkeypatch) -> Non
     assert writes == []
 
 
+def test_unload_windivert_driver_removes_service_inside_package(tmp_path, monkeypatch) -> None:
+    module = _ahmad_overlay_module()
+    monkeypatch.setattr(module.os, "name", "nt")
+    root = tmp_path
+    binary = f"\\??\\{root}\\BidKingHeroMonitor\\_internal\\pydivert\\windivert_dll\\WinDivert64.sys"
+
+    calls: list[list[str]] = []
+
+    def runner(cmd: list[str]) -> SimpleNamespace:
+        calls.append(cmd)
+        if cmd[:2] == ["sc", "qc"]:
+            return SimpleNamespace(returncode=0, stdout=f"        BINARY_PATH_NAME   : {binary}\n")
+        return SimpleNamespace(returncode=0, stdout="")
+
+    result = module._unload_windivert_driver_under(root, runner=runner)
+
+    assert result is True
+    assert ["sc", "stop", "WinDivert"] in calls
+    assert ["sc", "delete", "WinDivert"] in calls
+
+
+def test_unload_windivert_driver_skips_service_outside_package(tmp_path, monkeypatch) -> None:
+    module = _ahmad_overlay_module()
+    monkeypatch.setattr(module.os, "name", "nt")
+    binary = "\\??\\C:\\Windows\\System32\\drivers\\WinDivert64.sys"
+
+    calls: list[list[str]] = []
+
+    def runner(cmd: list[str]) -> SimpleNamespace:
+        calls.append(cmd)
+        if cmd[:2] == ["sc", "qc"]:
+            return SimpleNamespace(returncode=0, stdout=f"BINARY_PATH_NAME : {binary}\n")
+        return SimpleNamespace(returncode=0, stdout="")
+
+    result = module._unload_windivert_driver_under(tmp_path, runner=runner)
+
+    assert result is False
+    assert ["sc", "stop", "WinDivert"] not in calls
+    assert ["sc", "delete", "WinDivert"] not in calls
+
+
+def test_unload_windivert_driver_handles_missing_service(tmp_path, monkeypatch) -> None:
+    module = _ahmad_overlay_module()
+    monkeypatch.setattr(module.os, "name", "nt")
+
+    calls: list[list[str]] = []
+
+    def runner(cmd: list[str]) -> SimpleNamespace:
+        calls.append(cmd)
+        return SimpleNamespace(returncode=1060, stdout="The specified service does not exist")
+
+    result = module._unload_windivert_driver_under(tmp_path, runner=runner)
+
+    assert result is False
+    assert calls == [["sc", "qc", "WinDivert"]]
+
+
 def test_ahmad_ui_prefs_clamps_invalid_sizes() -> None:
     module = _ahmad_overlay_module()
 

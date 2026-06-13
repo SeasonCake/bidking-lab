@@ -12,6 +12,7 @@ import queue
 import random
 import re
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -1917,6 +1918,75 @@ def _cleanup_exit_targets(
             pass
 
 
+def _package_root_with_monitor(snapshot_path: Any) -> Path | None:
+    try:
+        resolved = Path(snapshot_path).resolve()
+    except (OSError, TypeError, ValueError):
+        return None
+    for parent in resolved.parents:
+        try:
+            if (parent / "BidKingHeroMonitor").exists():
+                return parent
+        except OSError:
+            continue
+    return None
+
+
+def _unload_windivert_driver_under(
+    root: Path | None,
+    *,
+    runner: Any = None,
+) -> bool:
+    """Stop and delete the WinDivert kernel driver when it was loaded from
+    inside ``root``.
+
+    pydivert registers ``WinDivert64.sys`` as a demand-start kernel service the
+    first time the monitor opens a handle. When the monitor is force-terminated
+    on exit, pydivert never closes the handle, so the driver stays loaded and
+    keeps the ``.sys`` file inside the package locked. That blocks deleting the
+    whole package folder. Removing the service unloads the driver and releases
+    the file. Scoped to our package path so an unrelated WinDivert install is
+    never touched.
+    """
+    if os.name != "nt" or root is None:
+        return False
+    try:
+        root_prefix = str(root.resolve()).lower()
+    except OSError:
+        return False
+    run = runner if runner is not None else _run_sc_command
+    try:
+        query = run(["sc", "qc", "WinDivert"])
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if query is None or query.returncode != 0:
+        return False
+    binary_path = ""
+    for line in str(query.stdout or "").splitlines():
+        if "BINARY_PATH_NAME" in line and ":" in line:
+            binary_path = line.split(":", 1)[1].strip().lower()
+            break
+    if not binary_path or root_prefix not in binary_path:
+        return False
+    for command in (["sc", "stop", "WinDivert"], ["sc", "delete", "WinDivert"]):
+        try:
+            run(command)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return True
+
+
+def _run_sc_command(command: list[str]) -> Any:
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        creationflags=no_window,
+    )
+
+
 class HoverTip:
     def __init__(self, widget: tk.Widget, text: str = "") -> None:
         self.widget = widget
@@ -3215,6 +3285,7 @@ class AhmadTkOverlay:
         if monitor_lock not in lock_paths:
             lock_paths.append(monitor_lock)
         _cleanup_exit_targets(tuple(pids), tuple(lock_paths))
+        _unload_windivert_driver_under(_package_root_with_monitor(self.snapshot_path))
 
     def _scroll_detail_minimap(self, event: tk.Event[Any]) -> str:
         delta = -1 if event.delta > 0 else 1
