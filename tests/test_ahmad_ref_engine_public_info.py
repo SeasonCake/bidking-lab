@@ -2994,3 +2994,18 @@ def test_ref_engine_aisha_0052_fatbeans_r3_live_bridge_regression() -> None:
     assert "split_low_quality_q1_count_merged" in result["notes"]
     assert result["quality_count_ranges"]["q3"] == [6, 8, 11]
     assert result["quality_count_ranges"]["q4"] == [3, 6, 9]
+
+
+def test_ref_engine_aisha_layout_modes_no_effect_on_ahmed() -> None:
+    snapshot = _snapshot(
+        hero="ahmed",
+        map_id=2401,
+        structured_ref_inputs={"total_count": 18, "fixed_counts": {"q3": 4, "q4": 3}},
+    )
+    off = run_reference_engine({**snapshot, "audit_aisha_layout_mode": "off"}, max_combos=20_000).as_dict()
+    band = run_reference_engine({**snapshot, "audit_aisha_layout_mode": "band"}, max_combos=20_000).as_dict()
+    target = run_reference_engine({**snapshot, "audit_aisha_layout_mode": "target"}, max_combos=20_000).as_dict()
+
+    for key in ("status", "balanced", "conservative", "aggressive", "total_grid_range", "combo_count"):
+        assert off[key] == band[key] == target[key]
+    assert not any("aisha_layout" in str(note) for note in off.get("notes", ()))

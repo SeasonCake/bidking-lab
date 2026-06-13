@@ -1,0 +1,79 @@
+Aisha round-cohort audit — SYNTHESIZED from completed reports (2026-06-13)
+================================================================================
+Method: reuse fixed penultimate-round slices where they match fixed eval rounds;
+        full-library fixed-round scan aborted (>60min — hidden-map samples).
+
+Phase 1 active gate: total_cells at R4 (5-round games) + R4-R5 band
+Phase 2 deferred: balanced / D1 red-weight (do after cells gate stable)
+
+Defense multipliers (product, not yet in engine): R1 2.0× | R2 1.6× | R3 1.3× | R4 1.1× | R5 competitive
+
+Sources:
+  audit_aisha_c2_by_round.txt      — cells hit off vs band by penultimate round
+  audit_aisha_c2_batch_full.txt      — 148 curated penultimate aggregate
+  audit_aisha_gap_by_round.txt       — cells/items/balanced miss (layout=off)
+  audit_aisha_gap.txt                — full miss breakdown
+
+--------------------------------------------------------------------------------
+## R1 — eval at round 1 (defense, high error OK)
+rows= NOT YET MEASURED (fast pass pending; full scan too slow)
+
+Expectation: cells/items miss very high — only defensive bid reference (2.0× round-high).
+Engine: layout band inactive (min round 3). Do not gate on accuracy.
+
+--------------------------------------------------------------------------------
+## R2 — eval at round 2 (defense tapering)
+rows= NOT YET MEasured (fast pass pending)
+
+Expectation: still high miss; defensive 1.6×. Layout band inactive.
+
+--------------------------------------------------------------------------------
+## R3 — eval at round 3 (pre-warehouse; band may help)
+Proxy: penultimate R3 slice, curated n=20 (mostly 3-round captures at last bid round)
+Source: audit_aisha_c2_by_round.txt + audit_aisha_gap_by_round.txt
+
+  cells hit:  off=10.0%  band=30.0%  (+4 / -0)
+  cells miss: 90.0% (off) | avg|gap|=34.9
+  items/balanced: not re-tabulated here; balanced miss ~75% (off, same slice)
+
+Band +20pp on cells — largest relative gain early; still low absolute hit (expected).
+
+--------------------------------------------------------------------------------
+## R4-R5 — primary Phase 1 gate
+### R4 slice — fixed eval round 4 (5-round games, 拿仓前关键轮)
+Proxy: penultimate R4 slice n=6 (curated, off vs band)
+  cells hit:  off=33.3%  band=33.3%  (+0 / -0)
+  cells miss: 66.7% | avg|gap|=13.7 | balanced miss ~67%
+
+Note: n=6 is small; these are 5-round-game captures at R4. Need dedicated
+      --audit-round 4 batch (queued; use scripts/audit_aisha_c2_batch.py).
+
+### R5 slice — fixed eval round 5 (6+ round games; no new Aisha skills)
+Proxy: penultimate R5 slice n=36
+  cells hit:  off=33.3%  band=38.9%  (+2 / -0)
+  cells miss: 66.7% | avg|gap|=15.9 | balanced miss ~89%
+
+### R4-R5 combined proxy (penultimate R4+R5 rows, n=42)
+  cells hit:  off~33%  band~36%  (band +6 improved / 0 worsened across R4+R5 slices)
+
+### Penultimate aggregate (148 curated, all round lengths) — best band evidence so far
+  cells hit:  off=34.5%  band=43.9%  (+14 / -0)  avg|gap|=16.2 unchanged
+  Conclusion: C2 band direction CONFIRMED; safe to enable for Aisha (hero-gated).
+
+--------------------------------------------------------------------------------
+## Cross-hero safety
+Layout modes are Aisha-only in engine (_apply_aisha_layout_grid_hint early return).
+pytest: test_ref_engine_aisha_layout_modes_no_effect_on_ahmed
+Script: scripts/audit_hero_layout_isolation.py (12 Ahmed fatbeans samples)
+
+--------------------------------------------------------------------------------
+## Recommended next steps (narrow scope)
+1. Enable layout=band for Aisha live/overlay only (default stays off globally).
+2. Fast fixed-round refresh: python scripts/audit_aisha_c2_batch.py --audit-round 4 --min-rounds 4
+   (~2–3 min, curated pool only) — do NOT scan full library ×5 rounds.
+3. Phase 1 gate target: R4 cells hit band ≥45% on n≥30 samples (expand pool before tuning).
+4. Phase 2 after cells: D1 shadow bid-weight by round + band width (separate audit).
+
+Fast scripts added (use instead of audit_aisha_round_cohorts.py full scan):
+  scripts/audit_aisha_round_cohorts_curated.py  — 5× curated batch (moderate)
+  scripts/audit_aisha_c2_batch.py --audit-round N — single round (~2 min each)
