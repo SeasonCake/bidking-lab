@@ -189,6 +189,8 @@ QUALITY_REVEAL_ACTION_IDS = frozenset(
     }
 )
 ALL_ITEM_QUALITY_PUBLIC_INFO_IDS = frozenset({200004, 200030})
+RAVEN_ALL_ITEM_QUALITY_SKILL_ID = 100301
+RAVEN_HERO_ID = 301
 MARIA_HERO_ID = 108
 MARIA_SKILL_QUALITY_REVEAL_ID = 10010801
 ETHAN_HERO_ID = 208
@@ -1856,6 +1858,137 @@ def _coarse_quality_reveal_floors(
     )
 
 
+def _iter_all_item_quality_scan_items(
+    snapshot: dict[str, Any],
+) -> Iterable[tuple[str, dict[str, Any]]]:
+    for row in _iter_dicts(snapshot.get("public_info_rows")):
+        info_id = _safe_int(row.get("info_id"))
+        if info_id not in ALL_ITEM_QUALITY_PUBLIC_INFO_IDS:
+            continue
+        prefix = f"public_info_{info_id}" if info_id is not None else "public_info"
+        for item in _iter_dicts(row.get("revealed_items_detail")):
+            if isinstance(item, dict) and _quality_number_to_key(item.get("quality")) is not None:
+                yield prefix, item
+
+    for reveal in _iter_skill_reveal_dict_rows(snapshot):
+        skill_id = _safe_int(reveal.get("skill_id"))
+        if skill_id != RAVEN_ALL_ITEM_QUALITY_SKILL_ID:
+            continue
+        prefix = f"skill_{skill_id}"
+        for item in _iter_dicts(reveal.get("observed_items") or reveal.get("revealed_items_detail")):
+            if isinstance(item, dict) and _quality_number_to_key(item.get("quality")) is not None:
+                yield prefix, item
+
+
+def _count_all_item_quality_scan(snapshot: dict[str, Any]) -> tuple[dict[str, int], int, bool]:
+    """Count coarse per-tier items from a full-warehouse quality scan only."""
+    counts = {key: 0 for key in QUALITY_KEYS}
+    seen: set[tuple[str, str]] = set()
+    has_raven_r5_skill = False
+    for source_prefix, item in _iter_all_item_quality_scan_items(snapshot):
+        if source_prefix.startswith("skill_"):
+            has_raven_r5_skill = True
+        if not _is_coarse_quality_reveal_item(item):
+            continue
+        key = _quality_number_to_key(item.get("quality"))
+        if key is None:
+            continue
+        identity = _quality_reveal_item_identity(
+            item,
+            key,
+            fallback=f"{source_prefix}-{id(item)}",
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        counts[key] += 1
+    return counts, len(seen), has_raven_r5_skill
+
+
+def _all_item_quality_scan_is_complete(
+    snapshot: dict[str, Any],
+    *,
+    hero: str,
+    total_count: int | None,
+    scan_count: int,
+    has_raven_r5_skill: bool,
+) -> bool:
+    if scan_count <= 0:
+        return False
+    if total_count is not None and int(total_count) == int(scan_count):
+        return True
+    if (
+        normalize_hero_key(hero) == "raven"
+        and has_raven_r5_skill
+        and (_snapshot_round_no(snapshot) or 0) >= 5
+    ):
+        return True
+    return False
+
+
+def _apply_all_item_quality_exact_counts(
+    snapshot: dict[str, Any],
+    *,
+    hero: str,
+    total_count: int | None,
+    fixed_counts: dict[str, int],
+    min_counts: dict[str, int],
+    quality_cells: dict[str, float],
+    set_total_count,
+    source_notes: list[str],
+) -> int | None:
+    """Lock exact per-tier counts when a full-warehouse quality scan is complete.
+
+    Raven R5 (skill 100301) and matching public all-item-quality rows reveal every
+    item's quality. Missing tiers (e.g. no red) must lock to zero, not stay on
+    count_prior ranges.
+    """
+    scanned_counts, scan_count, has_raven_r5_skill = _count_all_item_quality_scan(snapshot)
+    if not _all_item_quality_scan_is_complete(
+        snapshot,
+        hero=hero,
+        total_count=total_count,
+        scan_count=scan_count,
+        has_raven_r5_skill=has_raven_r5_skill,
+    ):
+        return total_count
+
+    if total_count is None and has_raven_r5_skill and normalize_hero_key(hero) == "raven":
+        set_total_count(scan_count, "raven_skill_100301_all_item_quality_count")
+        total_count = scan_count
+
+    conflict = False
+    for key in QUALITY_KEYS:
+        exact = int(scanned_counts.get(key, 0))
+        existing = fixed_counts.get(key)
+        existing_min = int(min_counts.get(key, 0))
+        if existing is not None and int(existing) != exact:
+            source_notes.append(f"all_item_quality_{key}_count_conflict")
+            source_notes.append(f"hard_conflict:all_item_quality_{key}_count")
+            conflict = True
+            break
+        if existing is None and existing_min > exact:
+            source_notes.append(f"all_item_quality_{key}_min_conflict")
+            source_notes.append(f"hard_conflict:all_item_quality_{key}_min")
+            conflict = True
+            break
+    if conflict:
+        return total_count
+
+    for key in QUALITY_KEYS:
+        exact = int(scanned_counts.get(key, 0))
+        fixed_counts[key] = exact
+        min_counts[key] = exact
+        if exact == 0:
+            source_notes.append(f"all_item_quality_zero_{key}")
+            if key not in quality_cells:
+                quality_cells[key] = 0.0
+        else:
+            source_notes.append(f"all_item_quality_exact_{key}:{exact}")
+    source_notes.append("all_item_quality_exact_counts")
+    return total_count
+
+
 def _public_quality_reveal_min_counts(snapshot: dict[str, Any]) -> dict[str, int]:
     counts, _, _, _, _, _ = _coarse_quality_reveal_floors(snapshot, source_notes=[])
     return counts
@@ -3045,6 +3178,16 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
             snapshot,
             set_total_count=set_total_count,
             set_total_grid_target=set_total_grid_target,
+            source_notes=source_notes,
+        )
+        total_count = _apply_all_item_quality_exact_counts(
+            snapshot,
+            hero=hero,
+            total_count=total_count,
+            fixed_counts=fixed_counts,
+            min_counts=min_counts,
+            quality_cells=quality_cells,
+            set_total_count=set_total_count,
             source_notes=source_notes,
         )
         public_outline_totals = _public_bucket_outline_totals(snapshot)

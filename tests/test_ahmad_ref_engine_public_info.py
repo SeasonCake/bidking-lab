@@ -2376,6 +2376,115 @@ def test_ref_engine_raven_all_item_quality_public_info_sets_min_counts() -> None
     assert "coarse_quality_reveal_source:public_info_200030" in evidence.source_notes
 
 
+def test_ref_engine_raven_all_item_quality_public_info_locks_missing_tiers_to_zero() -> None:
+    """Full scan with total_count match must lock absent tiers (e.g. no red) to 0."""
+    evidence = extract_evidence(
+        _snapshot(
+            hero="raven",
+            structured_ref_inputs={"total_count": 4},
+            public_rows=[
+                {
+                    "info_id": 200030,
+                    "revealed_items_detail": [
+                        {"local_index": 1, "quality": 1},
+                        {"local_index": 2, "quality": 3},
+                        {"local_index": 3, "quality": 4},
+                        {"local_index": 4, "quality": 5},
+                    ],
+                }
+            ],
+        )
+    )
+
+    assert "all_item_quality_exact_counts" in evidence.source_notes
+    assert "all_item_quality_zero_q6" in evidence.source_notes
+    assert evidence.fixed_counts["q6"] == 0
+    assert evidence.fixed_counts["q5"] == 1
+    assert evidence.min_counts["q6"] == 0
+
+    result = run_reference_engine(
+        _snapshot(
+            hero="raven",
+            structured_ref_inputs={"total_count": 4},
+            public_rows=[
+                {
+                    "info_id": 200030,
+                    "revealed_items_detail": [
+                        {"local_index": 1, "quality": 1},
+                        {"local_index": 2, "quality": 3},
+                        {"local_index": 3, "quality": 4},
+                        {"local_index": 4, "quality": 5},
+                    ],
+                }
+            ],
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "ok"
+    assert tuple(result["red_count_range"]) == (0, 0, 0)
+    assert tuple(result["red_value_range"]) == (0, 0, 0)
+
+
+def test_ref_engine_raven_r5_skill_all_item_quality_locks_missing_red_to_zero() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="raven",
+            structured_ref_inputs={},
+        )
+        | {
+            "ui_contract": {
+                "context": {
+                    "hero": "raven",
+                    "map_id": 2410,
+                    "phase": "bidding",
+                    "round": 5,
+                },
+                "constraints": {"public_info": {}},
+            },
+            "skill_reveals": [
+                {
+                    "skill_id": 100301,
+                    "hero_id": 301,
+                    "observed_items": [
+                        {"local_index": 1, "quality": 1},
+                        {"local_index": 2, "quality": 3},
+                        {"local_index": 3, "quality": 4},
+                        {"local_index": 4, "quality": 5},
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert evidence.total_count == 4
+    assert "raven_skill_100301_all_item_quality_count" in evidence.source_notes
+    assert evidence.fixed_counts["q6"] == 0
+    assert "all_item_quality_zero_q6" in evidence.source_notes
+
+
+def test_ref_engine_partial_coarse_reveal_does_not_zero_missing_tiers() -> None:
+    """Random partial reveals must stay floor-only; do not lock absent tiers to zero."""
+    evidence = extract_evidence(
+        _snapshot(
+            hero="raven",
+            structured_ref_inputs={"total_count": 40},
+            public_rows=[
+                {
+                    "info_id": 200028,
+                    "revealed_items_detail": [
+                        {"local_index": 1, "quality": 1},
+                        {"local_index": 2, "quality": 3},
+                    ],
+                }
+            ],
+        )
+    )
+
+    assert "all_item_quality_exact_counts" not in evidence.source_notes
+    assert evidence.fixed_counts.get("q6") is None
+
+
 def test_ref_engine_skips_shaped_items_for_coarse_min_counts() -> None:
     evidence = extract_evidence(
         _snapshot(
