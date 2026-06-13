@@ -23,6 +23,7 @@
 
 | 日期 | Commit | 类型 | 摘要 | 验证 | 已打包 |
 |---|---|---|---|---|---|
+| 2026-06-14 | `b94c474` | **fix** | **结算页「估价」不再泄露结算证据**（艾莎/通用）：结算页三档卡的「估价」由 `_pre_settlement_ref_result` 重建以复现末轮 live 估价，但 `_clone_as_pre_settlement_snapshot` 仅翻 `phase/truth`，未清结算级证据（元凶 `ui_contract.constraints` 携带精确结算件数），引擎回读抬高估价（样本 639k vs 真实 live 402k；群友截图 91 万 vs 末轮 40/50/60 万）。现剥离 `final_*`/`inventory`/`known_value_sum`/`minimap_grid_items`/`model_eval` 与 `ui_contract.constraints/minimap`。**仅影响结算页显示，不影响 live 竞价。** | 样本 `2404:…906376` 估价 639,131→402,958，q6 `[3,3,4]`→`[1,2,3]`；`test_live_overlay.py` 209 passed（新增 `test_pre_settlement_clone_strips_settlement_grade_evidence`） | **并入 `v0.1.8-hotfix`**（替换旧包）@ `b94c474`，full SHA256 `45D46FC1…E77FD`、public-safe `7AD3AE9D…6CFD8`；`bidking-lab/dist/` |
 | 2026-06-14 | `b9b4ab0` | **fix** | **拉文 R5 全品质缺档锁 0**：技能 `100301` / 公开 `200030`/`200004` 扫全后，未出现档（如无红）→ `fixed_counts=0`，红件 `0/0/0`，不再 0/1/2 抬价。partial 随机揭示仍只 floor。引擎 `_apply_all_item_quality_exact_counts`。 | 群导出 replay + UI 目视；`data 10` 3 红 → 3/3/3（旧版仅下限会 3/3/4）；`test_ahmad_ref_engine_public_info.py` 141 passed | **`v0.1.8-hotfix-full` 已发群** @ `0ad6a97`，SHA256 `C463B7FB…100C5`；发布物统一在 `bidking-lab/dist/` |
 | 2026-06-13 | `66a2da2` | docs | v0.1.8 release note + `SHA256SUMS-v0.1.8.txt` | — | — |
 | 2026-06-13 | `b93c890` | docs | handoff / PROGRESS 索引更新为 v0.1.8 已发布 | — | — |
@@ -34,7 +35,8 @@
 | 日期 | 来源 | 摘要 | 状态 |
 |---|---|---|---|
 | 2026-06-14 | 群友导出 `Desktop\data (2)` | 拉文 map 2410 session `…4986842`，**R5 UI 闪退**；导出仅到 R4，无 `r05` snapshot / 无 `summary_worker_error` | **待复现**：需 R5 当下导出包 |
-| — | 已知 v0.2 项 | 艾莎等无总件揭示英雄的 **count_prior 中心标定**（偏大局早轮偏保守） | 计划 v0.2.0，勿轻改 |
+| 2026-06-14 | 群友反馈 + 截图（艾莎 2404 R4） | **R1≈30W→R2≈11W 跳水**（疑白绿合并）；手头样本 `2404:…906376` 引擎为 R1 390k→R2 403k，**无跳水**，复现不了 | **待样本**：需截图那局 `2404:…559959` 的 r01/r02 导出 |
+| — | 已知 v0.2 项 | 艾莎等无总件揭示英雄的 **count_prior 中心标定**（偏大局早轮偏保守；白蓝阶段数值低/抖属此） | 计划 v0.2.0，勿轻改 |
 
 ---
 
@@ -53,5 +55,5 @@
 | 版本标签 | Commit | 说明 |
 |---|---|---|
 | v0.1.8 | `a706bd5` | 对外已发 |
-| v0.1.8-hotfix | `3fc9271` | **GitHub release** full + public-safe @ `dist/` |
+| v0.1.8-hotfix | `b94c474` | **GitHub release** full + public-safe @ `dist/`；含拉文 R5 + 艾莎结算页估价修复（替换原 `3fc9271` 包，标签不变） |
 | v0.2.0 | — | 未开始 |
