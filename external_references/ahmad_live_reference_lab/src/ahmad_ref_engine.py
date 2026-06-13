@@ -108,6 +108,11 @@ AISHA_LAYOUT_FOOTROOM_MULT_NOTE = "aisha_layout_footroom_mult"
 AISHA_LAYOUT_FOOTROOM_CAP_NOTE = "aisha_layout_footroom_capped"
 AISHA_LAYOUT_FOOTROOM_SKIP_NOTE = "aisha_layout_footroom_skipped_not_undershoot"
 AISHA_LAYOUT_FOOTROOM_SPARSE_NOTE = "aisha_layout_footroom_sparse_viewport"
+AISHA_LAYOUT_BAND_WIDEN_DELTA_NOTE = "aisha_layout_band_widen_delta"
+AISHA_LAYOUT_BAND_WIDEN_APPLIED_NOTE = "aisha_layout_band_widen_applied"
+AISHA_LAYOUT_APPLICATION_MODE_NOTE = "aisha_layout_application_mode"
+VALID_AISHA_LAYOUT_MODES = frozenset({"off", "target", "shadow", "band"})
+DEFAULT_AISHA_LAYOUT_MODE = "off"
 PINNED_QUALITY_CELLS_SPARSE_PRIOR_NOTE = "pinned_quality_cells_sparse_prior"
 AISHA_WAREHOUSE_ROWS = 18
 AISHA_GRID_COLUMNS = 10
@@ -792,6 +797,69 @@ def _aisha_layout_target_looks_undershot(
     return baseline + 0.5 < implied_ceiling
 
 
+def _aisha_layout_mode_from_snapshot(snapshot: dict[str, Any]) -> str:
+    raw = snapshot.get("audit_aisha_layout_mode")
+    if isinstance(raw, str):
+        mode = raw.strip().lower()
+        if mode in VALID_AISHA_LAYOUT_MODES:
+            return mode
+    return DEFAULT_AISHA_LAYOUT_MODE
+
+
+def _append_aisha_layout_footroom_notes(
+    *,
+    source_notes: list[str],
+    round_no: int,
+    raw_hinted: float,
+    capped_hinted: float,
+    conservative_mult: float,
+    balanced_mult: float,
+    aggressive_mult: float,
+    sparsity_boost: float,
+) -> None:
+    if raw_hinted > capped_hinted + 0.5:
+        _append_source_note_once(source_notes, AISHA_LAYOUT_FOOTROOM_CAP_NOTE)
+    if sparsity_boost >= 0.55:
+        _append_source_note_once(source_notes, AISHA_LAYOUT_FOOTROOM_SPARSE_NOTE)
+    _append_source_note_once(source_notes, AISHA_LAYOUT_GRID_HINT_NOTE)
+    _append_source_note_once(source_notes, AISHA_LAYOUT_FOOTROOM_NOTE)
+    _append_source_note_once(
+        source_notes,
+        f"{AISHA_LAYOUT_FOOTROOM_MULT_NOTE}:"
+        f"{conservative_mult:g}/{balanced_mult:g}/{aggressive_mult:g}@r{int(round_no)}",
+    )
+
+
+def _aisha_layout_band_widen_delta(source_notes: Iterable[str]) -> int | None:
+    for note in source_notes:
+        text = str(note)
+        if not text.startswith(f"{AISHA_LAYOUT_BAND_WIDEN_DELTA_NOTE}:"):
+            continue
+        try:
+            return max(0, int(text.split(":", 1)[1]))
+        except ValueError:
+            return None
+    return None
+
+
+def _apply_aisha_layout_band_widen_to_range(
+    grid_range: tuple[int | None, int | None, int | None],
+    source_notes: list[str],
+) -> tuple[int | None, int | None, int | None]:
+    delta = _aisha_layout_band_widen_delta(source_notes)
+    if delta is None or delta <= 0:
+        return grid_range
+    low, mid, high = grid_range
+    if mid is None and high is None:
+        return grid_range
+    anchor = int(mid if mid is not None else high or 0)
+    new_high = max(int(high or 0), anchor + int(delta))
+    if low is not None:
+        new_high = max(int(low), new_high)
+    _append_source_note_once(source_notes, AISHA_LAYOUT_BAND_WIDEN_APPLIED_NOTE)
+    return (low, mid, new_high)
+
+
 def _aisha_layout_effective_deepest_row(
     items: list[dict[str, Any]],
     *,
@@ -830,8 +898,11 @@ def _apply_aisha_layout_grid_hint(
     total_grid_target: float | None,
     source_notes: list[str],
 ) -> float | None:
-    """R3+ shadow: widen total grid target when minimap shows deep occupied rows."""
+    """R3+ shadow: layout footroom hint with target / shadow / band application modes."""
     if normalize_hero_key(hero) != "aisha":
+        return total_grid_target
+    mode = _aisha_layout_mode_from_snapshot(snapshot)
+    if mode == "off":
         return total_grid_target
     if round_no is None or int(round_no) < AISHA_LAYOUT_MIN_ROUND:
         return total_grid_target
@@ -881,24 +952,35 @@ def _apply_aisha_layout_grid_hint(
     if hinted <= baseline + 0.5:
         return total_grid_target
 
-    if raw_hinted > capped_hinted + 0.5:
-        _append_source_note_once(source_notes, AISHA_LAYOUT_FOOTROOM_CAP_NOTE)
-    if sparsity_boost >= 0.55:
-        _append_source_note_once(source_notes, AISHA_LAYOUT_FOOTROOM_SPARSE_NOTE)
+    _append_aisha_layout_footroom_notes(
+        source_notes=source_notes,
+        round_no=int(round_no),
+        raw_hinted=raw_hinted,
+        capped_hinted=capped_hinted,
+        conservative_mult=conservative_mult,
+        balanced_mult=balanced_mult,
+        aggressive_mult=aggressive_mult,
+        sparsity_boost=sparsity_boost,
+    )
+    _append_source_note_once(
+        source_notes,
+        f"{AISHA_LAYOUT_APPLICATION_MODE_NOTE}:{mode}",
+    )
+    delta = int(round(hinted - baseline))
+    if mode == "shadow":
+        return total_grid_target
+    if mode == "band":
+        _append_source_note_once(
+            source_notes,
+            f"{AISHA_LAYOUT_BAND_WIDEN_DELTA_NOTE}:{delta}",
+        )
+        return total_grid_target
     if total_grid_target is not None:
         _append_source_note_once(
             source_notes,
             f"total_grid_target_raised:{int(round(float(total_grid_target)))}->{int(round(hinted))}",
         )
-    total_grid_target = hinted
-    _append_source_note_once(source_notes, AISHA_LAYOUT_GRID_HINT_NOTE)
-    _append_source_note_once(source_notes, AISHA_LAYOUT_FOOTROOM_NOTE)
-    _append_source_note_once(
-        source_notes,
-        f"{AISHA_LAYOUT_FOOTROOM_MULT_NOTE}:"
-        f"{conservative_mult:g}/{balanced_mult:g}/{aggressive_mult:g}@r{int(round_no)}",
-    )
-    return total_grid_target
+    return hinted
 
 
 def _apply_avg_value_only_q5_count_derivation(
@@ -5031,6 +5113,14 @@ def run_reference_engine(
     g10 = _weighted_quantile(weighted_grid, 0.10)
     g50 = _weighted_quantile(weighted_grid, 0.50)
     g90 = _weighted_quantile(weighted_grid, 0.90)
+    total_grid_range = _apply_aisha_layout_band_widen_to_range(
+        (
+            int(round(g10)) if g10 is not None else None,
+            int(round(g50)) if g50 is not None else None,
+            int(round(g90)) if g90 is not None else None,
+        ),
+        notes,
+    )
 
     return RefResult(
         status="count_prior" if total_prior_center is not None else "ok",
@@ -5059,11 +5149,7 @@ def run_reference_engine(
         ),
         quality_count_ranges=quality_count_ranges,
         quality_cells_ranges=quality_cells_ranges,
-        total_grid_range=(
-            int(round(g10)) if g10 is not None else None,
-            int(round(g50)) if g50 is not None else None,
-            int(round(g90)) if g90 is not None else None,
-        ),
+        total_grid_range=total_grid_range,
         notes=tuple(dict.fromkeys(notes)),
         evidence=evidence,
     )

@@ -2752,6 +2752,7 @@ def test_ref_engine_aisha_layout_grid_hint_raises_target_from_deep_minimap() -> 
         structured_ref_inputs={"total_count": 25},
     )
     snapshot["ui_contract"]["context"]["round"] = 3
+    snapshot["audit_aisha_layout_mode"] = "target"
     snapshot["minimap_grid_items"] = [
         {"quality": 3, "row": 14, "width": 2, "height": 1, "cells": 8},
         {"quality": 4, "row": 12, "width": 3, "height": 2, "cells": 15},
@@ -2803,6 +2804,49 @@ def test_aisha_layout_target_looks_undershot_rejects_high_soft_target() -> None:
         columns=10,
         round_no=3,
     )
+
+
+def test_ref_engine_aisha_layout_band_mode_widens_high_bound_only() -> None:
+    snapshot = _snapshot(
+        hero="aisha",
+        map_id=2501,
+        structured_ref_inputs={"total_count": 25},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 3
+    snapshot["audit_aisha_layout_mode"] = "band"
+    snapshot["minimap_grid_items"] = [
+        {"quality": 3, "row": 14, "width": 2, "height": 1, "cells": 8},
+        {"quality": 4, "row": 12, "width": 3, "height": 2, "cells": 15},
+    ]
+    off = run_reference_engine({**snapshot, "audit_aisha_layout_mode": "off"}, max_combos=20_000).as_dict()
+    band = run_reference_engine(snapshot, max_combos=20_000).as_dict()
+    off_evidence = off.get("evidence") if isinstance(off.get("evidence"), dict) else {}
+    band_evidence = band.get("evidence") if isinstance(band.get("evidence"), dict) else {}
+
+    assert off_evidence.get("total_grid_target") == band_evidence.get("total_grid_target")
+    assert band["total_grid_range"][2] >= off["total_grid_range"][2]
+    assert "aisha_layout_band_widen_applied" in band["notes"]
+
+
+def test_ref_engine_aisha_layout_shadow_mode_keeps_target() -> None:
+    snapshot = _snapshot(
+        hero="aisha",
+        map_id=2501,
+        structured_ref_inputs={"total_count": 25},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 3
+    snapshot["audit_aisha_layout_mode"] = "shadow"
+    snapshot["minimap_grid_items"] = [
+        {"quality": 3, "row": 14, "width": 2, "height": 1, "cells": 8},
+        {"quality": 4, "row": 12, "width": 3, "height": 2, "cells": 15},
+    ]
+    off = run_reference_engine({**snapshot, "audit_aisha_layout_mode": "off"}, max_combos=20_000).as_dict()
+    shadow = run_reference_engine(snapshot, max_combos=20_000).as_dict()
+
+    assert shadow["evidence"]["total_grid_target"] == off["evidence"]["total_grid_target"]
+    assert AISHA_LAYOUT_GRID_HINT_NOTE in shadow["notes"]
+    assert "aisha_layout_application_mode:shadow" in shadow["notes"]
+    assert off["total_grid_range"] == shadow["total_grid_range"]
 
 
 def test_ref_engine_aisha_layout_grid_hint_skips_round_two_white_only() -> None:

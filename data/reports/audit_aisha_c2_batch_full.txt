@@ -1,0 +1,30 @@
+Aisha layout strategy batch audit (all curated gap rows (same filters as audit_aisha_gap))
+rows=148
+
+aggregate vs settlement total_cells:
+variant        | hit_rate | avg|mid_gap| | improved | narrowed | widened | worsened | u_hit
+-----------------------------------------------------------------------------------------------
+b_only         |   34.5% |      16.2 |        0 |        0 |       0 |        0 |     0
+c2_target      |   30.4% |      16.9 |        0 |       26 |      20 |        6 |    45
+c2_shadow      |   34.5% |      16.2 |        0 |        0 |       0 |        0 |    51
+c2_band        |   43.9% |      16.2 |       14 |        0 |       0 |        0 |    51
+
+recommendation heuristics:
+  - prefer hit_rate >= b_only with narrowed >= widened
+  - shadow is diagnostic-only baseline for UI hints
+  - band avoids target collapse; compare vs target on worsened_miss
+
+sample rows (first 12): file | truth | B band | target | shadow | band
+--------------------------------------------------------------------------------------------------------------
+fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json | R5 | T=84 | B=[93,93,93] | c2_target=[93,93,93]N | c2_shadow=[93,93,93]N | c2_band=[93,93,93]N
+fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json | R4 | T=65 | B=[52,58,67] | c2_target=[52,58,67]Y | c2_shadow=[52,58,67]Y | c2_band=[52,58,67]Y
+fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json | R3 | T=99 | B=[85,86,87] | c2_target=[74,74,74]N | c2_shadow=[85,86,87]N | c2_band=[85,86,101]Y
+fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json | R4 | T=75 | B=[77,82,85] | c2_target=[77,82,85]N | c2_shadow=[77,82,85]N | c2_band=[77,82,85]N
+fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json | R7 | T=107 | B=[123,123,123] | c2_target=[123,123,123]N | c2_shadow=[123,123,123]N | c2_band=[123,123,123]N
+fatbeans_mixed_aisha_2408_3rounds_2408_1295018570868100_0004.json | R3 | T=56 | B=[57,63,70] | c2_target=[None,None,None]N | c2_shadow=[57,63,70]N | c2_band=[57,63,78]N
+fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json | R3 | T=88 | B=[65,73,80] | c2_target=[67,67,67]N | c2_shadow=[65,73,80]N | c2_band=[65,73,88]Y
+fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json | R6 | T=126 | B=[89,92,92] | c2_target=[108,108,108]N | c2_shadow=[89,92,92]N | c2_band=[89,92,113]N
+fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json | R5 | T=122 | B=[80,88,93] | c2_target=[80,88,93]N | c2_shadow=[80,88,93]N | c2_band=[80,88,93]N
+fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json | R7 | T=120 | B=[108,111,114] | c2_target=[113,113,113]N | c2_shadow=[108,111,114]N | c2_band=[108,111,127]Y
+fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json | R4 | T=87 | B=[66,74,82] | c2_target=[66,74,82]N | c2_shadow=[66,74,82]N | c2_band=[66,74,82]N
+fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json | R3 | T=141 | B=[61,69,76] | c2_target=[81,81,81]N | c2_shadow=[61,69,76]N | c2_band=[61,69,84]N
