@@ -1,6 +1,6 @@
 # Hero Ref · 艾莎 v0 策略与推进方案（2026-06-13）
 
-**Git 基线**：`de2b438` · `origin/main`  
+**Git 基线**：`348615c+` · live Aisha `layout=band` via `prepare_reference_engine_snapshot`  
 **角色**：后续工作按本文顺序推进；handoff 只保留当日 checkpoint。
 
 ---
@@ -55,8 +55,10 @@
 | **B4** | 0052 downgrade | ✅ synthetic 已有 | 不绑 n=1 fatbeans 调参 |
 | **B5** | UI 低品件/格 + 署名 | ✅ `de2b438` | overlay pytest |
 | **C1** | `good_regression` 2 条 balanced 报价锁定 + gap 不劣化 >15% | ✅ | pytest |
-| **C2** | R3+ 地图似然 shadow hook（设计+最小 prototype） | ⏳ | synthetic + 1 fatbeans；**不扫 173 权重** |
-| **C3** | 金/红 deepest-row footroom（与 C2 同 PR 或紧随） | ⏳ | 同上 |
+| **C2** | R3+ layout **band** live（Aisha only）+ shadow notes UI | ✅ 2026-06-13 | 7-band / 0052 / Ahmed 隔离 |
+| **C2−** | layout **target** 抬格 | ❌ 批测否决 | — |
+| **C3** | 位置 hint / footroom 与 C2 同 family | 📋 | 同 C2 批测框架 |
+| **D1** | 按轮次降红品权重（balanced 稳定性） | 📋 Phase 2 | balanced ±15% 不恶化 |
 | **D** | UX：R1 hero 识别、mini/next-info | 📋 P2 | overlay 测试 |
 | **E** | 新抓包 / 地图扩池 | 📋 P2 | 扩大 n 优先于调参 |
 | **—** | q1 split 口径 | 📋 单独 | 不进 B 门禁 |

@@ -113,6 +113,7 @@ AISHA_LAYOUT_BAND_WIDEN_APPLIED_NOTE = "aisha_layout_band_widen_applied"
 AISHA_LAYOUT_APPLICATION_MODE_NOTE = "aisha_layout_application_mode"
 VALID_AISHA_LAYOUT_MODES = frozenset({"off", "target", "shadow", "band"})
 DEFAULT_AISHA_LAYOUT_MODE = "off"
+AISHA_LIVE_LAYOUT_MODE = "band"
 PINNED_QUALITY_CELLS_SPARSE_PRIOR_NOTE = "pinned_quality_cells_sparse_prior"
 AISHA_WAREHOUSE_ROWS = 18
 AISHA_GRID_COLUMNS = 10
@@ -804,6 +805,22 @@ def _aisha_layout_mode_from_snapshot(snapshot: dict[str, Any]) -> str:
         if mode in VALID_AISHA_LAYOUT_MODES:
             return mode
     return DEFAULT_AISHA_LAYOUT_MODE
+
+
+def prepare_reference_engine_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Apply hero-specific live defaults without overriding explicit audit modes."""
+    payload = dict(snapshot)
+    if payload.get("audit_aisha_layout_mode") not in (None, ""):
+        return payload
+    hero = payload.get("hero")
+    ui_contract = payload.get("ui_contract")
+    if isinstance(ui_contract, dict):
+        context = ui_contract.get("context")
+        if isinstance(context, dict) and context.get("hero") not in (None, ""):
+            hero = context.get("hero")
+    if normalize_hero_key(str(hero or "")) == "aisha":
+        payload["audit_aisha_layout_mode"] = AISHA_LIVE_LAYOUT_MODE
+    return payload
 
 
 def _append_aisha_layout_footroom_notes(

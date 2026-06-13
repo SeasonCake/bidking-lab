@@ -42,6 +42,7 @@ try:
         STRUCTURED_REF_HERO_KEYS,
         is_supported_ref_hero,
         normalize_hero_key,
+        prepare_reference_engine_snapshot,
         run_reference_engine,
     )
 except Exception:  # noqa: BLE001 - keep debug server usable without ref core
@@ -74,6 +75,9 @@ except Exception:  # noqa: BLE001 - keep debug server usable without ref core
         return normalize_hero_key(hero) in set(HERO_BY_ID.values())
 
     run_reference_engine = None  # type: ignore[assignment,misc]
+
+    def prepare_reference_engine_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+        return dict(snapshot)
 
 
 def _dig(value: Any, *path: str, default: Any = None) -> Any:
@@ -121,7 +125,9 @@ def _pre_settlement_ref_result(snapshot: dict[str, Any]) -> dict[str, Any]:
     if run_reference_engine is None:
         return {}
     try:
-        result = run_reference_engine(_clone_as_pre_settlement_snapshot(snapshot)).as_dict()
+        result = run_reference_engine(
+            prepare_reference_engine_snapshot(_clone_as_pre_settlement_snapshot(snapshot))
+        ).as_dict()
     except Exception:
         return {}
     if result.get("status") not in {"ok", "count_prior"}:
@@ -1498,7 +1504,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     if run_reference_engine is not None:
         ref_started = time.perf_counter()
         try:
-            ref_result = run_reference_engine(snapshot).as_dict()
+            ref_result = run_reference_engine(prepare_reference_engine_snapshot(snapshot)).as_dict()
         except Exception as exc:  # noqa: BLE001 - prototype diagnostics
             ref_result = {
                 "status": "error",
@@ -1631,6 +1637,9 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     public_numeric_summary = _text(public_info.get("public_numeric_summary"), "").strip()
     if public_numeric_summary:
         flags.append(_flag("公开信息", "neutral", public_numeric_summary))
+    layout_notes = [note for note in ref_notes if "aisha_layout" in note]
+    if hero_key == "aisha" and layout_notes:
+        flags.append(_flag("布局余量", "neutral", "; ".join(layout_notes[:4])))
 
     latest_result = actions.get("latest_result") if isinstance(actions.get("latest_result"), dict) else {}
     latest_sent = actions.get("latest_sent") if isinstance(actions.get("latest_sent"), dict) else {}

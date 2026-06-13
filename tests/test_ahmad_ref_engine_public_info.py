@@ -2996,6 +2996,19 @@ def test_ref_engine_aisha_0052_fatbeans_r3_live_bridge_regression() -> None:
     assert result["quality_count_ranges"]["q4"] == [3, 6, 9]
 
 
+def test_prepare_reference_engine_snapshot_sets_aisha_live_band() -> None:
+    from ahmad_ref_engine import AISHA_LIVE_LAYOUT_MODE, prepare_reference_engine_snapshot
+
+    aisha = prepare_reference_engine_snapshot(_snapshot(hero="aisha", map_id=2501))
+    assert aisha["audit_aisha_layout_mode"] == AISHA_LIVE_LAYOUT_MODE
+    ahmed = prepare_reference_engine_snapshot(_snapshot(hero="ahmed", map_id=2401))
+    assert "audit_aisha_layout_mode" not in ahmed
+    explicit = prepare_reference_engine_snapshot(
+        {**_snapshot(hero="aisha", map_id=2501), "audit_aisha_layout_mode": "off"}
+    )
+    assert explicit["audit_aisha_layout_mode"] == "off"
+
+
 def test_ref_engine_aisha_layout_modes_no_effect_on_ahmed() -> None:
     snapshot = _snapshot(
         hero="ahmed",

@@ -52,6 +52,7 @@ try:
         is_supported_ref_hero,
         load_reference_static_data,
         normalize_hero_key,
+        prepare_reference_engine_snapshot,
         run_reference_engine,
     )
 except Exception:  # noqa: BLE001 - keep overlay usable if ref core is unavailable
@@ -81,6 +82,9 @@ except Exception:  # noqa: BLE001 - keep overlay usable if ref core is unavailab
     can_compose_grid_total = None  # type: ignore[assignment]
     load_reference_static_data = None  # type: ignore[assignment]
     run_reference_engine = None  # type: ignore[assignment]
+
+    def prepare_reference_engine_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+        return dict(snapshot)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -4717,7 +4721,7 @@ class AhmadTkOverlay:
     def _manual_result_summary(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         if run_reference_engine is None:
             raise RuntimeError("ref engine unavailable")
-        result = run_reference_engine(snapshot, max_combos=60000).as_dict()
+        result = run_reference_engine(prepare_reference_engine_snapshot(snapshot), max_combos=60000).as_dict()
         evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
         display_evidence = dict(evidence)
         display_evidence["total_grid_range"] = result.get("total_grid_range")
@@ -4745,6 +4749,9 @@ class AhmadTkOverlay:
             flags.append({"label": "约束较宽", "level": "watch", "detail": ";".join(notes)})
         elif not ok:
             flags.append({"label": "约束不足", "level": "risk", "detail": ";".join(notes)})
+        layout_notes = [note for note in notes if "aisha_layout" in note]
+        if hero_key == "aisha" and layout_notes:
+            flags.append({"label": "布局余量", "level": "neutral", "detail": "; ".join(layout_notes[:4])})
         red_count_range, red_cells_range = _red_display_ranges(result)
         return {
             "status": "ok",

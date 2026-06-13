@@ -1,0 +1,49 @@
+Aisha round-cohort SPOT audit (20-sample curated, fixed eval rounds)
+sample_files=20 spot_rows=99 runtime=231s
+
+baseline = layout off (no C2 band) | candidate = layout band (Phase 1 live default for Aisha)
+
+## R1
+rows=20
+  ALL | cells off=15.0% → band=15.0% (+0/-0) | items off=55.0% | balanced miss=95.0% (Phase 2)
+
+## R2
+rows=20
+  ALL | cells off=15.0% → band=15.0% (+0/-0) | items off=55.0% | balanced miss=95.0% (Phase 2)
+
+## R3
+rows=20
+  ALL | cells off=20.0% → band=30.0% (+2/-0) | items off=60.0% | balanced miss=100.0% (Phase 2)
+
+## R4-R5
+rows=39
+  R4 n=20 | cells off=15.0% band=20.0% | items off=60.0% | band +1/-0
+  R5 n=19 | cells off=15.8% band=21.1% | items off=52.6% | band +1/-0
+  ALL | cells off=15.4% → band=20.5% (+2/-0) | items off=56.4% | balanced miss=100.0% (Phase 2)
+
+## vs baseline (all spot rows)
+cells hit: off=16.2% band=20.2% (+4/-0)
+
+148 curated penultimate (prior full batch): off=34.5% band=43.9% (+14/0)
+
+sample list:
+  - fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json
+  - fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json
+  - fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json
+  - fatbeans_valid_aisha_2401_5rounds_2401_1274128029099855_0041.json
+  - fatbeans_valid_aisha_2401_5rounds_2401_1274128130915092_0042.json
+  - fatbeans_valid_aisha_2401_5rounds_2401_1295018570575146_0043.json
+  - fatbeans_valid_aisha_2401_5rounds_2401_1295018572441545_0044.json
+  - fatbeans_valid_aisha_2401_5rounds_2401_1295018668661353_0045.json
+  - fatbeans_valid_aisha_2401_5rounds_2401_1367517612292604_0001.json
+  - fatbeans_valid_aisha_2401_5rounds_2401_1367517779389841_0050.json
+  - fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json
+  - fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json
+  - fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json
+  - fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json
+  - fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json
+  - fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json
+  - fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json
+  - fatbeans_valid_aisha_2401_4rounds_2401_1274128131162495_0033.json
+  - fatbeans_valid_aisha_2401_4rounds_2401_1295018542976640_0034.json
+  - fatbeans_valid_aisha_2401_4rounds_2401_1295018568326535_0035.json
