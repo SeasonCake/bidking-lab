@@ -356,7 +356,13 @@ if ($Zip) {
         Remove-Item -LiteralPath $ZipPath -Force
     }
     Compress-Archive -Path (Join-Path $OutputFull "*") -DestinationPath $ZipPath -Force
+    $RepoDist = Join-Path $RepoRoot "dist"
+    New-Item -ItemType Directory -Path $RepoDist -Force | Out-Null
+    $RepoZipPath = Join-Path $RepoDist (Split-Path -Leaf $ZipPath)
+    Copy-Item -LiteralPath $ZipPath -Destination $RepoZipPath -Force
     Write-Host ""
     Write-Host "Built zip:" -ForegroundColor Green
     Write-Host "  $ZipPath"
+    Write-Host "Repo dist copy:" -ForegroundColor Green
+    Write-Host "  $RepoZipPath"
 }

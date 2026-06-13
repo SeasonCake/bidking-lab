@@ -23,7 +23,7 @@
 
 | 日期 | Commit | 类型 | 摘要 | 验证 | 已打包 |
 |---|---|---|---|---|---|
-| 2026-06-14 | `b9b4ab0` | **fix** | **拉文 R5 全品质缺档锁 0**：技能 `100301` / 公开 `200030`/`200004` 扫全后，未出现档（如无红）→ `fixed_counts=0`，红件 `0/0/0`，不再 0/1/2 抬价。partial 随机揭示仍只 floor。引擎 `_apply_all_item_quality_exact_counts`。 | 群导出 replay + UI 目视；`test_ahmad_ref_engine_public_info.py` 140 passed | **`v0.1.8-hotfix-full` 已发群** @ `0ad6a97`，SHA256 `C463B7FB…100C5` |
+| 2026-06-14 | `b9b4ab0` | **fix** | **拉文 R5 全品质缺档锁 0**：技能 `100301` / 公开 `200030`/`200004` 扫全后，未出现档（如无红）→ `fixed_counts=0`，红件 `0/0/0`，不再 0/1/2 抬价。partial 随机揭示仍只 floor。引擎 `_apply_all_item_quality_exact_counts`。 | 群导出 replay + UI 目视；`data 10` 3 红 → 3/3/3（旧版仅下限会 3/3/4）；`test_ahmad_ref_engine_public_info.py` 141 passed | **`v0.1.8-hotfix-full` 已发群** @ `0ad6a97`，SHA256 `C463B7FB…100C5`；发布物统一在 `bidking-lab/dist/` |
 | 2026-06-13 | `66a2da2` | docs | v0.1.8 release note + `SHA256SUMS-v0.1.8.txt` | — | — |
 | 2026-06-13 | `b93c890` | docs | handoff / PROGRESS 索引更新为 v0.1.8 已发布 | — | — |
 

@@ -2463,6 +2463,79 @@ def test_ref_engine_raven_r5_skill_all_item_quality_locks_missing_red_to_zero() 
     assert "all_item_quality_zero_q6" in evidence.source_notes
 
 
+def test_ref_engine_raven_r5_skill_all_item_quality_locks_present_red_to_exact() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            hero="raven",
+            structured_ref_inputs={},
+        )
+        | {
+            "ui_contract": {
+                "context": {
+                    "hero": "raven",
+                    "map_id": 2404,
+                    "phase": "bidding",
+                    "round": 5,
+                },
+                "constraints": {"public_info": {}},
+            },
+            "skill_reveals": [
+                {
+                    "skill_id": 100301,
+                    "hero_id": 301,
+                    "observed_items": [
+                        {"local_index": 1, "quality": 1},
+                        {"local_index": 2, "quality": 3},
+                        {"local_index": 3, "quality": 4},
+                        {"local_index": 4, "quality": 5},
+                        {"local_index": 5, "quality": 6},
+                        {"local_index": 6, "quality": 6},
+                        {"local_index": 7, "quality": 6},
+                    ],
+                }
+            ],
+        }
+    )
+    result = run_reference_engine(
+        _snapshot(
+            hero="raven",
+            structured_ref_inputs={},
+        )
+        | {
+            "ui_contract": {
+                "context": {
+                    "hero": "raven",
+                    "map_id": 2404,
+                    "phase": "bidding",
+                    "round": 5,
+                },
+                "constraints": {"public_info": {}},
+            },
+            "skill_reveals": [
+                {
+                    "skill_id": 100301,
+                    "hero_id": 301,
+                    "observed_items": [
+                        {"local_index": 1, "quality": 1},
+                        {"local_index": 2, "quality": 3},
+                        {"local_index": 3, "quality": 4},
+                        {"local_index": 4, "quality": 5},
+                        {"local_index": 5, "quality": 6},
+                        {"local_index": 6, "quality": 6},
+                        {"local_index": 7, "quality": 6},
+                    ],
+                }
+            ],
+        },
+        max_combos=60_000,
+    ).as_dict()
+
+    assert evidence.fixed_counts["q6"] == 3
+    assert "all_item_quality_exact_q6:3" in evidence.source_notes
+    assert tuple(result["red_count_range"]) == (3, 3, 3)
+    assert tuple(result["quality_count_ranges"]["q6"]) == (3, 3, 3)
+
+
 def test_ref_engine_partial_coarse_reveal_does_not_zero_missing_tiers() -> None:
     """Random partial reveals must stay floor-only; do not lock absent tiers to zero."""
     evidence = extract_evidence(
