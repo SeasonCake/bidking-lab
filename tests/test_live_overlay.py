@@ -230,6 +230,119 @@ def test_ahmad_topmost_toggle_updates_root_and_popups() -> None:
     assert overlay.topmost_tip.text == module.TOPMOST_OFF_TIP
 
 
+def test_pinned_minimap_sync_skips_when_user_detached() -> None:
+    module = _ahmad_overlay_module()
+
+    class Popup:
+        def __init__(self) -> None:
+            self.x = 120
+            self.y = 80
+            self.geometry_calls: list[str] = []
+
+        def winfo_x(self) -> int:
+            return self.x
+
+        def winfo_y(self) -> int:
+            return self.y
+
+        def winfo_width(self) -> int:
+            return 292
+
+        def winfo_height(self) -> int:
+            return 382
+
+        def geometry(self, value: str) -> None:
+            self.geometry_calls.append(value)
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.root = type(
+        "Root",
+        (),
+        {
+            "winfo_screenwidth": lambda self: 1920,
+            "winfo_screenheight": lambda self: 1080,
+        },
+    )()
+    popup = Popup()
+    overlay._pinned_minimap_popup = popup
+    overlay._pinned_offset = (40, 12)
+    overlay._pinned_minimap_follow = False
+
+    module.AhmadTkOverlay._sync_pinned_minimap_position(overlay, root_x=0, root_y=0)
+
+    assert popup.geometry_calls == []
+
+
+def test_pinned_minimap_drag_detaches_from_main_window() -> None:
+    module = _ahmad_overlay_module()
+
+    class Popup:
+        def __init__(self) -> None:
+            self.x = 100
+            self.y = 200
+            self.geometry_calls: list[str] = []
+
+        def winfo_x(self) -> int:
+            return self.x
+
+        def winfo_y(self) -> int:
+            return self.y
+
+        def winfo_width(self) -> int:
+            return 292
+
+        def winfo_height(self) -> int:
+            return 382
+
+        def geometry(self, value: str) -> None:
+            self.geometry_calls.append(value)
+            if value.startswith("+"):
+                parts = value.split("+")
+                self.x = int(parts[1])
+                self.y = int(parts[2])
+
+    class Title:
+        def __init__(self) -> None:
+            self.text = "常驻地图"
+            self.updates: list[str] = []
+
+        def cget(self, key: str) -> str:
+            if key == "text":
+                return self.text
+            raise KeyError(key)
+
+        def configure(self, **kwargs: str) -> None:
+            if "text" in kwargs:
+                self.text = str(kwargs["text"])
+                self.updates.append(self.text)
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.root = type(
+        "Root",
+        (),
+        {
+            "winfo_screenwidth": lambda self: 1920,
+            "winfo_screenheight": lambda self: 1080,
+        },
+    )()
+    popup = Popup()
+    overlay._pinned_minimap_popup = popup
+    overlay._pinned_offset = (50, 10)
+    overlay._pinned_minimap_follow = True
+    overlay._pinned_minimap_drag_offset = (5, 5)
+    overlay._pinned_title = Title()
+
+    class Event:
+        x_root = 150
+        y_root = 250
+
+    assert module.AhmadTkOverlay._drag_pinned_minimap(overlay, Event()) == "break"
+    assert overlay._pinned_minimap_follow is False
+    assert overlay._pinned_offset is None
+    assert popup.geometry_calls == ["+145+245"]
+    assert overlay._pinned_title.text.endswith(module.MINIMAP_PINNED_FREE_SUFFIX)
+
+
 def test_ahmad_taskbar_mode_switches_borderless_flag() -> None:
     module = _ahmad_overlay_module()
 

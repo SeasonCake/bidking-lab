@@ -121,6 +121,8 @@ DIAGNOSTIC_PROFILE_ALIASES = {
 DEFAULT_DIAGNOSTIC_PROFILE = "engineering"
 TOPMOST_ON_TIP = "置顶中；点击切换为自由窗口"
 TOPMOST_OFF_TIP = "自由窗口；点击恢复置顶"
+MINIMAP_PINNED_FREE_SUFFIX = " · 自由"
+MINIMAP_PINNED_DRAG_TIP = "拖动标题栏可自由移动；默认跟随主面板"
 EXPORT_DIAGNOSTIC_TIP_TEMPLATE = "异常/卡住/结算不对时点这里；生成诊断 zip 到 {path}，把 zip 发群里作为 log 排查，避免反复发生"
 REQUIRED_RAW_TABLES = ("BidMap.txt", "Drop.txt", "Item.txt")
 
@@ -2031,6 +2033,8 @@ class AhmadTkOverlay:
         self._pinned_counts: tk.Label | None = None
         self._pinned_canvas_tip: HoverTip | None = None
         self._pinned_offset: tuple[int, int] | None = None
+        self._pinned_minimap_follow = True
+        self._pinned_minimap_drag_offset: tuple[int, int] | None = None
         self._pinned_configure_after_id: str | None = None
         self._hide_minimap_after_id: str | None = None
         self.details_expanded = False
@@ -5703,6 +5707,8 @@ class AhmadTkOverlay:
         self._pinned_counts = None
         self._pinned_canvas_tip = None
         self._pinned_offset = None
+        self._pinned_minimap_follow = True
+        self._pinned_minimap_drag_offset = None
         if hasattr(self, "map_button"):
             self.map_button.configure(bg=PANEL_SOFT, fg=ACCENT)
 
@@ -5726,7 +5732,11 @@ class AhmadTkOverlay:
         root_x: int | None = None,
         root_y: int | None = None,
     ) -> None:
-        if self._pinned_minimap_popup is None or self._pinned_offset is None:
+        if (
+            self._pinned_minimap_popup is None
+            or self._pinned_offset is None
+            or not getattr(self, "_pinned_minimap_follow", True)
+        ):
             return
         if root_x is None:
             root_x = self.root.winfo_x()
@@ -5742,6 +5752,50 @@ class AhmadTkOverlay:
             root_y=root_y + offset_y,
         )
         self._pinned_minimap_popup.geometry(f"+{popup_x}+{popup_y}")
+
+    def _bind_pinned_minimap_drag(self, *widgets: tk.Widget) -> None:
+        for widget in widgets:
+            widget.bind("<ButtonPress-1>", self._begin_pinned_minimap_drag, add="+")
+            widget.bind("<B1-Motion>", self._drag_pinned_minimap, add="+")
+            widget.bind("<ButtonRelease-1>", self._end_pinned_minimap_drag, add="+")
+
+    def _begin_pinned_minimap_drag(self, event: tk.Event[Any]) -> str:
+        if self._pinned_minimap_popup is None:
+            return ""
+        self._pinned_minimap_drag_offset = (
+            event.x_root - self._pinned_minimap_popup.winfo_x(),
+            event.y_root - self._pinned_minimap_popup.winfo_y(),
+        )
+        return "break"
+
+    def _drag_pinned_minimap(self, event: tk.Event[Any]) -> str:
+        if self._pinned_minimap_popup is None or self._pinned_minimap_drag_offset is None:
+            return ""
+        dx, dy = self._pinned_minimap_drag_offset
+        popup_w = max(1, self._pinned_minimap_popup.winfo_width() or 292)
+        popup_h = max(1, self._pinned_minimap_popup.winfo_height() or 382)
+        popup_x, popup_y = self._popup_geometry_bounds(
+            popup_w=popup_w,
+            popup_h=popup_h,
+            root_x=event.x_root - dx,
+            root_y=event.y_root - dy,
+        )
+        self._pinned_minimap_popup.geometry(f"+{popup_x}+{popup_y}")
+        if getattr(self, "_pinned_minimap_follow", True):
+            self._pinned_minimap_follow = False
+            self._pinned_offset = None
+            self._mark_pinned_minimap_detached()
+        return "break"
+
+    def _end_pinned_minimap_drag(self, _event: tk.Event[Any]) -> None:
+        self._pinned_minimap_drag_offset = None
+
+    def _mark_pinned_minimap_detached(self) -> None:
+        if self._pinned_title is None:
+            return
+        current = str(self._pinned_title.cget("text") or "")
+        if not current.endswith(MINIMAP_PINNED_FREE_SUFFIX):
+            self._pinned_title.configure(text=f"{current}{MINIMAP_PINNED_FREE_SUFFIX}")
 
     def _on_pinned_minimap_configure(self, event: tk.Event[Any]) -> None:
         if self._pinned_canvas is None or event.widget is not self._pinned_canvas:
@@ -5802,6 +5856,8 @@ class AhmadTkOverlay:
             font=(FONT_UI, 8, "bold"),
         )
         close.pack(side="right")
+        self._bind_pinned_minimap_drag(header, shell, self._pinned_title, self._pinned_counts)
+        HoverTip(header, MINIMAP_PINNED_DRAG_TIP)
 
         canvas_frame = tk.Frame(shell, bg=PANEL)
         canvas_frame.pack(fill="both", expand=True)
@@ -5842,6 +5898,8 @@ class AhmadTkOverlay:
         popup_y = max(0, min(popup_y, max(0, screen_h - popup_h)))
         popup.geometry(f"{popup_w}x{popup_h}+{popup_x}+{popup_y}")
         self._pinned_offset = (popup_x - root_x, popup_y - root_y)
+        self._pinned_minimap_follow = True
+        self._pinned_minimap_drag_offset = None
         self._pinned_minimap_popup = popup
         self.map_button.configure(bg=PANEL_MUTED, fg=WARM)
         popup.deiconify()
@@ -5863,6 +5921,8 @@ class AhmadTkOverlay:
             counts=self._pinned_counts,
             minimap=self._minimap_data,
         )
+        if not getattr(self, "_pinned_minimap_follow", True):
+            self._mark_pinned_minimap_detached()
         self._draw_minimap(
             self._pinned_canvas,
             self._minimap_data,
