@@ -114,6 +114,11 @@ AISHA_LAYOUT_APPLICATION_MODE_NOTE = "aisha_layout_application_mode"
 VALID_AISHA_LAYOUT_MODES = frozenset({"off", "target", "shadow", "band"})
 DEFAULT_AISHA_LAYOUT_MODE = "off"
 AISHA_LIVE_LAYOUT_MODE = "band"
+AISHA_D1_SHADOW_Q6_DISCOUNT_NOTE = "aisha_d1_shadow_q6_discount"
+AISHA_D1_APPLY_Q6_DISCOUNT_NOTE = "aisha_d1_apply_q6_discount"
+VALID_AISHA_D1_MODES = frozenset({"off", "shadow", "apply"})
+DEFAULT_AISHA_D1_MODE = "off"
+AISHA_LIVE_D1_MODE = "shadow"
 PINNED_QUALITY_CELLS_SPARSE_PRIOR_NOTE = "pinned_quality_cells_sparse_prior"
 AISHA_WAREHOUSE_ROWS = 18
 AISHA_GRID_COLUMNS = 10
@@ -807,11 +812,106 @@ def _aisha_layout_mode_from_snapshot(snapshot: dict[str, Any]) -> str:
     return DEFAULT_AISHA_LAYOUT_MODE
 
 
+def _aisha_d1_mode_from_snapshot(snapshot: dict[str, Any]) -> str:
+    raw = snapshot.get("audit_aisha_d1_mode")
+    if isinstance(raw, str):
+        mode = raw.strip().lower()
+        if mode in VALID_AISHA_D1_MODES:
+            return mode
+    return DEFAULT_AISHA_D1_MODE
+
+
+def _snapshot_round_no(snapshot: dict[str, Any]) -> int | None:
+    ui_contract = snapshot.get("ui_contract")
+    if isinstance(ui_contract, dict):
+        context = ui_contract.get("context")
+        if isinstance(context, dict):
+            round_no = _safe_int(context.get("round"))
+            if round_no is not None:
+                return round_no
+    return _safe_int(snapshot.get("round"))
+
+
+def _aisha_d1_shadow_q6_discount(
+    *,
+    round_no: int,
+    q6_count_range: tuple[int | None, int | None, int | None],
+    total_grid_range: tuple[int | None, int | None, int | None],
+    q6_count_locked: bool,
+) -> float | None:
+    """Shadow-only suggested down-weight on red value tail; live apply deferred to Phase 2."""
+    if q6_count_locked:
+        return None
+    low, _mid, high = q6_count_range
+    if low is None or high is None:
+        return None
+    span = max(0, int(high) - int(low))
+    round_caps = {1: 0.55, 2: 0.65, 3: 0.75, 4: 0.85, 5: 0.90}
+    discount = float(round_caps.get(min(max(int(round_no), 1), 5), 0.90))
+    if span >= 2:
+        discount *= max(0.45, 1.0 - 0.08 * min(span, 5))
+    grid_low, _grid_mid, grid_high = total_grid_range
+    if grid_low is not None and grid_high is not None and int(grid_high) - int(grid_low) >= 25:
+        discount *= 0.92
+    discount = round(max(0.35, min(1.0, discount)), 2)
+    if discount >= 0.98:
+        return None
+    return discount
+
+
+def _apply_aisha_d1_bid_adjustment(
+    notes: list[str],
+    *,
+    snapshot: dict[str, Any],
+    hero_key: str,
+    quality_count_ranges: dict[str, tuple[int | None, int | None, int | None]],
+    total_grid_range: tuple[int | None, int | None, int | None],
+    evidence: RefEvidence,
+    p50: float | None,
+    rv50: float | None,
+) -> float | None:
+    """Shadow notes or audit-only apply-mode p50 adjustment for uncertain q6 tail."""
+    if hero_key != "aisha":
+        return None
+    round_no = _snapshot_round_no(snapshot)
+    if round_no is None:
+        return None
+    d1_mode = _aisha_d1_mode_from_snapshot(snapshot)
+    if d1_mode == "off":
+        return None
+    if evidence.fixed_counts.get("q6") not in (None, ""):
+        return None
+    q6_range = quality_count_ranges.get("q6")
+    if not q6_range:
+        return None
+    discount = _aisha_d1_shadow_q6_discount(
+        round_no=int(round_no),
+        q6_count_range=q6_range,
+        total_grid_range=total_grid_range,
+        q6_count_locked=False,
+    )
+    if discount is None:
+        return None
+    if d1_mode == "shadow":
+        _append_source_note_once(
+            notes,
+            f"{AISHA_D1_SHADOW_Q6_DISCOUNT_NOTE}={discount:g}@r{int(round_no)}",
+        )
+        return None
+    if d1_mode != "apply" or p50 is None or rv50 is None or rv50 <= 0:
+        return None
+    non_red = max(0.0, float(p50) - float(rv50))
+    adjusted_p50 = non_red + float(rv50) * float(discount)
+    _append_source_note_once(
+        notes,
+        f"{AISHA_D1_APPLY_Q6_DISCOUNT_NOTE}={discount:g}@r{int(round_no)}",
+    )
+    return adjusted_p50
+
+
 def prepare_reference_engine_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Apply hero-specific live defaults without overriding explicit audit modes."""
     payload = dict(snapshot)
-    if payload.get("audit_aisha_layout_mode") not in (None, ""):
-        return payload
     hero = payload.get("hero")
     ui_contract = payload.get("ui_contract")
     if isinstance(ui_contract, dict):
@@ -819,7 +919,10 @@ def prepare_reference_engine_snapshot(snapshot: dict[str, Any]) -> dict[str, Any
         if isinstance(context, dict) and context.get("hero") not in (None, ""):
             hero = context.get("hero")
     if normalize_hero_key(str(hero or "")) == "aisha":
-        payload["audit_aisha_layout_mode"] = AISHA_LIVE_LAYOUT_MODE
+        if payload.get("audit_aisha_layout_mode") in (None, ""):
+            payload["audit_aisha_layout_mode"] = AISHA_LIVE_LAYOUT_MODE
+        if payload.get("audit_aisha_d1_mode") in (None, ""):
+            payload["audit_aisha_d1_mode"] = AISHA_LIVE_D1_MODE
     return payload
 
 
@@ -5138,6 +5241,18 @@ def run_reference_engine(
         ),
         notes,
     )
+    adjusted_p50 = _apply_aisha_d1_bid_adjustment(
+        notes,
+        snapshot=snapshot,
+        hero_key=hero_key,
+        quality_count_ranges=quality_count_ranges,
+        total_grid_range=total_grid_range,
+        evidence=evidence,
+        p50=p50,
+        rv50=rv50,
+    )
+    if adjusted_p50 is not None:
+        p50 = adjusted_p50
 
     return RefResult(
         status="count_prior" if total_prior_center is not None else "ok",

@@ -1,0 +1,33 @@
+audit_aisha_bid_by_round (curated penultimate, ±15% balanced vs settlement total value)
+rows=148 elapsed_s=69.1
+
+modes:
+  off     layout=off d1=off (audit baseline)
+  shadow  prepare_reference_engine_snapshot (band + d1 notes; balanced same as off)
+  apply   d1 apply simulation (Phase 2; NOT live)
+
+ALL curated:
+  off     hit=18.9% under=56.1% over=25.0% avg|gap|=271298
+  shadow  hit=18.9% (balanced unchanged vs off)
+  apply   hit=8.8% under=69.6% over=21.6% avg|gap|=291225 Δhit=-10.1pp
+
+round | n  | off_hit | apply_hit | apply_Δ | off_under% | apply_under%
+------------------------------------------------------------------------------
+R 3  |  20 |   25.0% |      5.0% |  -20.0pp |      55.0% |        80.0%
+R 4  |   6 |   33.3% |      0.0% |  -33.3pp |      33.3% |        66.7%
+R 5  |  36 |   11.1% |      8.3% |   -2.8pp |      61.1% |        66.7%
+R 6  |  33 |   18.2% |      6.1% |  -12.1pp |      57.6% |        72.7%
+R 7  |  29 |   24.1% |     13.8% |  -10.3pp |      51.7% |        65.5%
+R 8  |  18 |   16.7% |     11.1% |   -5.6pp |      61.1% |        66.7%
+R 9  |   6 |   16.7% |     16.7% |   +0.0pp |      50.0% |        66.7%
+
+apply vs off: improved_hit=5 worsened_hit=20
+shadow d1 notes present: 148/148 rows
+
+interpretation:
+  - balanced miss ~83% is structural (nest prior vs inventory truth); cells fix comes first
+  - shadow mode is live-safe diagnostics only; apply mode is Phase 2 gate input
+  - do not promote apply until good_regression + per-round cohort review
+
+filter_scanned=244
+

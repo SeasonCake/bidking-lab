@@ -2693,6 +2693,17 @@ def test_ahmad_server_ref_waiting_text_is_hero_specific() -> None:
     assert module._next_info_hint(ethan_grid_only, hero_key="ethan") == "先补公开总件"  # type: ignore[attr-defined]
 
 
+def test_ahmad_server_aisha_defense_multiplier_hint_by_round() -> None:
+    module = _ahmad_server_module()
+
+    assert module._aisha_defense_multiplier_hint(1) == "R1防守×2.0"  # type: ignore[attr-defined]
+    assert module._aisha_defense_multiplier_hint(2) == "R2防守×1.6"  # type: ignore[attr-defined]
+    assert module._aisha_defense_multiplier_hint(3) == "R3防守×1.3"  # type: ignore[attr-defined]
+    assert module._aisha_defense_multiplier_hint(4) == "R4防守×1.1"  # type: ignore[attr-defined]
+    assert module._aisha_defense_multiplier_hint(5) == "R5防守×1.1"  # type: ignore[attr-defined]
+    assert module._aisha_defense_multiplier_hint(None) == ""  # type: ignore[attr-defined]
+
+
 def test_ahmad_server_aisha_next_info_hint_r1_prefers_blue_tools_not_white_green() -> None:
     module = _ahmad_server_module()
     result = {

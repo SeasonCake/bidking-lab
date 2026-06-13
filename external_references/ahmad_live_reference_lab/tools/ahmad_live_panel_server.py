@@ -541,6 +541,24 @@ def _aisha_missing_total_count(ref_result: dict[str, Any], evidence: dict[str, A
     return evidence.get("total_count") in (None, "")
 
 
+AISHA_DEFENSE_MULTIPLIERS: dict[int, str] = {
+    1: "2.0",
+    2: "1.6",
+    3: "1.3",
+    4: "1.1",
+    5: "1.1",
+}
+
+
+def _aisha_defense_multiplier_hint(round_no: int | None) -> str:
+    """Product-only round defense reference; not applied inside ref_v0."""
+    if round_no is None or round_no < 1:
+        return ""
+    clamped = min(int(round_no), 5)
+    multiplier = AISHA_DEFENSE_MULTIPLIERS.get(clamped, "1.1")
+    return f"R{clamped}防守×{multiplier}"
+
+
 def _aisha_next_info_hint(
     ref_result: dict[str, Any],
     evidence: dict[str, Any],
@@ -1640,6 +1658,12 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     layout_notes = [note for note in ref_notes if "aisha_layout" in note]
     if hero_key == "aisha" and layout_notes:
         flags.append(_flag("布局余量", "neutral", "; ".join(layout_notes[:4])))
+    defense_hint = _aisha_defense_multiplier_hint(round_no)
+    if hero_key == "aisha" and defense_hint:
+        flags.append(_flag(defense_hint, "neutral", "产品参考倍数，不进引擎"))
+    d1_notes = [note for note in ref_notes if "aisha_d1_shadow" in note or "aisha_d1_apply" in note]
+    if hero_key == "aisha" and d1_notes:
+        flags.append(_flag("红品权重参考", "watch", "; ".join(d1_notes[:2])))
 
     latest_result = actions.get("latest_result") if isinstance(actions.get("latest_result"), dict) else {}
     latest_sent = actions.get("latest_sent") if isinstance(actions.get("latest_sent"), dict) else {}

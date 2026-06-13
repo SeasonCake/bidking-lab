@@ -34,6 +34,7 @@ if str(LAB_SRC) not in sys.path:
 from ahmad_live_panel_server import (  # noqa: E402
     SETTLED_STALE_SECONDS,
     STALE_SNAPSHOT_SECONDS,
+    _aisha_defense_multiplier_hint,
     _candidate_summary,
     _display_range_text,
     _next_info_hint,
@@ -4752,6 +4753,20 @@ class AhmadTkOverlay:
         layout_notes = [note for note in notes if "aisha_layout" in note]
         if hero_key == "aisha" and layout_notes:
             flags.append({"label": "布局余量", "level": "neutral", "detail": "; ".join(layout_notes[:4])})
+        defense_hint = _aisha_defense_multiplier_hint(_parse_int(snapshot.get("round")))
+        if hero_key == "aisha" and defense_hint:
+            flags.append(
+                {"label": defense_hint, "level": "neutral", "detail": "产品参考倍数，不进引擎"},
+            )
+        d1_notes = [
+            note
+            for note in notes
+            if "aisha_d1_shadow" in note or "aisha_d1_apply" in note
+        ]
+        if hero_key == "aisha" and d1_notes:
+            flags.append(
+                {"label": "红品权重参考", "level": "watch", "detail": "; ".join(d1_notes[:2])},
+            )
         red_count_range, red_cells_range = _red_display_ranges(result)
         return {
             "status": "ok",

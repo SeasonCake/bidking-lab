@@ -1,0 +1,31 @@
+audit_aisha_perf (spot check — not full library)
+spots=112 sample_limit=25 elapsed_s=19.2
+gates: hidden_2601<2000ms  warm_exact_avg<500ms
+
+round | mode | n | avg_ms | p95_ms | max_ms | slow>=2s | with_total_cells_bridge
+----------------------------------------------------------------------------------------
+R 3  | off  | 21 |    289 |    563 |   1079 |        0 | 2/21
+R 3  | live | 21 |    146 |    356 |    460 |        0 | 2/21
+R 4  | off  | 20 |    135 |    350 |    426 |        0 | 2/20
+R 4  | live | 20 |    129 |    338 |    345 |        0 | 2/20
+R 5  | off  | 15 |     84 |    200 |    830 |        0 | 3/15
+R 5  | live | 15 |     50 |    198 |    406 |        0 | 3/15
+
+live vs off delta_ms: avg=-64 max=+8 (band+d1 shadow should be ~0)
+
+R4 rows with total_cells bridge (群友「第四轮总仓储」路径):
+  ok     128ms live r4 route=count_prior combos=253 fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984
+  ok     126ms off  r4 route=count_prior combos=253 fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984
+  ok       7ms off  r4 route=exact_total_avg_cells_fast_path combos=1 fatbeans_valid_aisha_2601_3rounds_2601_1295018740835
+  ok       7ms live r4 route=exact_total_avg_cells_fast_path combos=1 fatbeans_valid_aisha_2601_3rounds_2601_1295018740835
+
+route_mix:
+  count_prior: 92
+  exact_total_avg_cells_fast_path: 8
+  ok: 6
+  sparse_exact_prior: 6
+
+interpretation:
+  - count_prior + wide combo space remains main latency risk (not band/D1 shadow)
+  - R4 total_cells bridge alone does not imply slow if sparse/tight prior routes
+  - full-library audit_data7 --hero aisha --max-round 5 still deferred (>5min)

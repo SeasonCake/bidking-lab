@@ -2997,16 +2997,51 @@ def test_ref_engine_aisha_0052_fatbeans_r3_live_bridge_regression() -> None:
 
 
 def test_prepare_reference_engine_snapshot_sets_aisha_live_band() -> None:
-    from ahmad_ref_engine import AISHA_LIVE_LAYOUT_MODE, prepare_reference_engine_snapshot
+    from ahmad_ref_engine import (
+        AISHA_LIVE_D1_MODE,
+        AISHA_LIVE_LAYOUT_MODE,
+        prepare_reference_engine_snapshot,
+    )
 
     aisha = prepare_reference_engine_snapshot(_snapshot(hero="aisha", map_id=2501))
     assert aisha["audit_aisha_layout_mode"] == AISHA_LIVE_LAYOUT_MODE
+    assert aisha["audit_aisha_d1_mode"] == AISHA_LIVE_D1_MODE
     ahmed = prepare_reference_engine_snapshot(_snapshot(hero="ahmed", map_id=2401))
     assert "audit_aisha_layout_mode" not in ahmed
+    assert "audit_aisha_d1_mode" not in ahmed
     explicit = prepare_reference_engine_snapshot(
         {**_snapshot(hero="aisha", map_id=2501), "audit_aisha_layout_mode": "off"}
     )
     assert explicit["audit_aisha_layout_mode"] == "off"
+    assert explicit["audit_aisha_d1_mode"] == AISHA_LIVE_D1_MODE
+
+
+def test_ref_engine_aisha_d1_shadow_note_does_not_change_balanced() -> None:
+    snapshot = _snapshot(
+        hero="aisha",
+        map_id=2501,
+        structured_ref_inputs={"total_count": 28},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 3
+    off = run_reference_engine({**snapshot, "audit_aisha_d1_mode": "off"}, max_combos=20_000).as_dict()
+    shadow = run_reference_engine({**snapshot, "audit_aisha_d1_mode": "shadow"}, max_combos=20_000).as_dict()
+    assert off["balanced"] == shadow["balanced"]
+    assert any(str(note).startswith("aisha_d1_shadow_q6_discount") for note in shadow["notes"])
+
+
+def test_ref_engine_aisha_d1_apply_can_lower_balanced_when_red_tail_wide() -> None:
+    snapshot = _snapshot(
+        hero="aisha",
+        map_id=2501,
+        structured_ref_inputs={"total_count": 32, "min_counts": {"q6": 0}},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 2
+    off = run_reference_engine({**snapshot, "audit_aisha_d1_mode": "off"}, max_combos=30_000).as_dict()
+    apply = run_reference_engine({**snapshot, "audit_aisha_d1_mode": "apply"}, max_combos=30_000).as_dict()
+    if off["balanced"] is None or apply["balanced"] is None:
+        pytest.skip("no reachable combo for synthetic D1 apply probe")
+    assert apply["balanced"] <= off["balanced"]
+    assert any(str(note).startswith("aisha_d1_apply_q6_discount") for note in apply["notes"])
 
 
 def test_ref_engine_aisha_layout_modes_no_effect_on_ahmed() -> None:
