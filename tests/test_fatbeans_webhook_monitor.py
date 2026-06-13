@@ -378,6 +378,73 @@ def test_monitor_archives_raw_rows_before_reset(tmp_path: Path) -> None:
     assert archived_rows[0]["SessionID"] == "2407:1295018931873899"
 
 
+def _round_archive_monitor(module, tmp_path: Path, *, enabled: bool = True):
+    return module.FatbeansWebhookMonitor(
+        config=module.WebhookMonitorConfig(
+            log_dir=tmp_path / "logs",
+            raw_dir=tmp_path / "raw",
+            process_name="BidKing.exe",
+            server_ports=(10000,),
+            n_trials=20,
+            roi_trials=0,
+            shadow_trials=20,
+            full_shadow_trials=20,
+            run_debug_shadows=False,
+            seed=1,
+            file_name="windivert_live.json",
+            source_name="windivert",
+            archive_round_snapshots=enabled,
+        ),
+        tables=object(),
+    )
+
+
+def test_round_snapshot_archive_keeps_latest_per_round_phase(tmp_path: Path) -> None:
+    module = _module()
+    monitor = _round_archive_monitor(module, tmp_path)
+    archive_dir = tmp_path / "logs" / "round_snapshots"
+
+    monitor._archive_round_snapshot(
+        {"session_id": "2402:1", "round": 3, "phase": "bidding", "n_trials": 10}
+    )
+    monitor._archive_round_snapshot(
+        {"session_id": "2402:1", "round": 3, "phase": "bidding", "n_trials": 10, "v": 2}
+    )
+    monitor._archive_round_snapshot(
+        {"session_id": "2402:1", "round": 3, "phase": "settled", "n_trials": 500}
+    )
+
+    files = sorted(p.name for p in archive_dir.glob("*.json"))
+    assert files == ["r03_bidding.json", "r03_settled.json"]
+    bidding = json.loads((archive_dir / "r03_bidding.json").read_text(encoding="utf-8"))
+    assert bidding["v"] == 2  # latest write for the round/phase wins
+
+
+def test_round_snapshot_archive_clears_on_new_session(tmp_path: Path) -> None:
+    module = _module()
+    monitor = _round_archive_monitor(module, tmp_path)
+    archive_dir = tmp_path / "logs" / "round_snapshots"
+
+    monitor._archive_round_snapshot(
+        {"session_id": "2402:1", "round": 2, "phase": "bidding"}
+    )
+    monitor._archive_round_snapshot(
+        {"session_id": "2402:2", "round": 1, "phase": "bidding"}
+    )
+
+    files = sorted(p.name for p in archive_dir.glob("*.json"))
+    assert files == ["r01_bidding.json"]  # previous game's files were cleared
+
+
+def test_round_snapshot_archive_can_be_disabled(tmp_path: Path) -> None:
+    module = _module()
+    monitor = _round_archive_monitor(module, tmp_path, enabled=False)
+    monitor._archive_round_snapshot(
+        {"session_id": "2402:1", "round": 3, "phase": "bidding"}
+    )
+    assert not (tmp_path / "logs" / "round_snapshots").exists()
+
+
 def test_webhook_monitor_writes_fast_snapshot_without_appending_logs(
     tmp_path: Path,
     monkeypatch,

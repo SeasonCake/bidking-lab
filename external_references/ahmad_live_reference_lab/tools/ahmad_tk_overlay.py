@@ -936,6 +936,9 @@ def _candidate_diagnostic_paths(
                 base_dir / "raw" / "fatbeans_webhook_live.jsonl",
             ]
         )
+        round_dir = base_dir / "round_snapshots"
+        if round_dir.is_dir():
+            candidates.extend(sorted(round_dir.glob("*.json")))
         for key in ("raw_capture", "raw_capture_jsonl"):
             raw_value = snapshot.get(key)
             if not raw_value:
@@ -2599,6 +2602,7 @@ class AhmadTkOverlay:
             self._last_signature = self._snapshot_signature()
             self.render_missing("等待新局实时包")
             self.root.after(self.interval_ms, self.refresh)
+        self.root.after_idle(self._settle_initial_layout)
 
     def _details_geometry(self) -> str:
         if self._custom_details_size is not None:
@@ -2677,6 +2681,40 @@ class AhmadTkOverlay:
         self.root.geometry(f"{width}x{height}+{pending[0]}+{pending[1]}")
         self.root.update_idletasks()
         self._pending_window_position = None
+
+    def _settle_initial_layout(self) -> None:
+        """Re-fit the window after the first content render.
+
+        UI prefs restore details/mini geometry during __init__ before refresh()
+        has populated the cards, so the layout is measured while empty. Once the
+        real content is rendered the stored size no longer matches and the bottom
+        cards can overlap the panel above until the user manually resizes. This
+        one-shot pass runs after the first render and once the window is mapped,
+        re-fitting (growing height to fit content when needed) and reflowing the
+        layout without moving the window.
+        """
+        if not hasattr(self, "root"):
+            return
+        try:
+            if not self.root.winfo_exists():
+                return
+            self.root.update_idletasks()
+        except tk.TclError:
+            return
+        if self.details_expanded:
+            self._sync_ui_scale_from_window(force=True)
+            self.root.update_idletasks()
+            width, height = self._current_window_size()
+            needed_h = self._measure_window_height_for_width(width, probe_height=height)
+            _, work_h = self._screen_size()
+            final_h = min(max(height, needed_h), max(360, work_h - 72))
+            self._apply_window_geometry(f"{width}x{final_h}")
+            if self._custom_details_size is not None:
+                self._custom_details_size = (width, final_h)
+            self.root.update_idletasks()
+        else:
+            width, _ = self._current_window_size()
+            self._apply_mini_resize_layout(width, finalize=True)
 
     def _collect_ui_prefs_payload(self) -> dict[str, Any]:
         width, height = self._current_window_size()

@@ -489,6 +489,7 @@ class WebhookMonitorConfig:
     file_name: str = "fatbeans_webhook_live.json"
     source_name: str = "fatbeans_webhook"
     packet_count_key: str = "webhook_packets"
+    archive_round_snapshots: bool = True
 
 
 class FatbeansWebhookMonitor:
@@ -507,6 +508,7 @@ class FatbeansWebhookMonitor:
         self._last_semantic_signature: tuple[Any, ...] | None = None
         self._raw_persisted_count = 0
         self._last_partial_error = ""
+        self._round_archive_session: str | None = None
         self._known_local_player_id = _load_cached_local_player_id(
             _local_player_cache_path(self.config.log_dir)
         )
@@ -764,6 +766,42 @@ class FatbeansWebhookMonitor:
             self._last_inference_at = time.monotonic()
             self._last_partial_error = ""
 
+    def _archive_round_snapshot(self, artifact: Mapping[str, Any]) -> None:
+        """Mirror each written snapshot into a per-round diagnostic archive.
+
+        ``latest_snapshot.json`` only holds the most recent state, so a transient
+        bidding-phase issue (e.g. a round that briefly stops quoting) is gone by
+        the time the user exports. This keeps the latest snapshot per
+        ``(round, phase)`` for the current game under ``round_snapshots/`` so the
+        exact moment can be recovered from a diagnostic export. The archive is
+        cleared whenever a new game session starts and never raises into the
+        monitor loop.
+        """
+        if not self.config.archive_round_snapshots:
+            return
+        try:
+            round_no = artifact.get("round")
+            phase = artifact.get("phase")
+            if round_no is None or not phase:
+                return
+            session_id = str(artifact.get("session_id") or "")
+            archive_dir = self.config.log_dir / "round_snapshots"
+            if session_id != self._round_archive_session:
+                if archive_dir.exists():
+                    for old in archive_dir.glob("*.json"):
+                        try:
+                            old.unlink()
+                        except OSError:
+                            pass
+                self._round_archive_session = session_id
+            safe_phase = "".join(
+                ch if ch.isalnum() else "_" for ch in str(phase)
+            )[:16]
+            name = f"r{int(round_no):02d}_{safe_phase}.json"
+            _atomic_write_json(archive_dir / name, artifact)
+        except Exception:  # noqa: BLE001 - diagnostics must never break the monitor
+            pass
+
     def _process_snapshot(self, *, force: bool) -> None:
         with self._lock:
             rows = list(self._rows)
@@ -881,6 +919,7 @@ class FatbeansWebhookMonitor:
                 log_dir=self.config.log_dir,
                 append_logs=snapshot_mode == "full",
             )
+            self._archive_round_snapshot(artifact)
         except Exception as exc:  # noqa: BLE001 - long-running monitor boundary
             if _looks_like_partial_stream_error(exc):
                 message = str(exc)

@@ -613,6 +613,56 @@ def test_unload_windivert_driver_handles_missing_service(tmp_path, monkeypatch) 
     assert calls == [["sc", "qc", "WinDivert"]]
 
 
+def test_settle_initial_layout_grows_details_height_to_fit_content() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.details_expanded = True
+    overlay._custom_details_size = (520, 300)
+    overlay.root = SimpleNamespace(winfo_exists=lambda: True, update_idletasks=lambda: None)
+    overlay._sync_ui_scale_from_window = lambda **k: None  # type: ignore[method-assign]
+    overlay._current_window_size = lambda: (520, 300)  # type: ignore[method-assign]
+    overlay._measure_window_height_for_width = (  # type: ignore[method-assign]
+        lambda width, probe_height=None: 460
+    )
+    overlay._screen_size = lambda: (1920, 1080)  # type: ignore[method-assign]
+    applied: list[str] = []
+    overlay._apply_window_geometry = lambda size, flush=True: applied.append(size)  # type: ignore[method-assign]
+
+    module.AhmadTkOverlay._settle_initial_layout(overlay)
+
+    assert applied == ["520x460"]
+    assert overlay._custom_details_size == (520, 460)
+
+
+def test_settle_initial_layout_refits_mini_to_content() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.details_expanded = False
+    overlay.root = SimpleNamespace(winfo_exists=lambda: True, update_idletasks=lambda: None)
+    overlay._current_window_size = lambda: (480, 360)  # type: ignore[method-assign]
+    calls: list[tuple[int, bool]] = []
+    overlay._apply_mini_resize_layout = (  # type: ignore[method-assign]
+        lambda width, finalize=False: calls.append((width, finalize))
+    )
+
+    module.AhmadTkOverlay._settle_initial_layout(overlay)
+
+    assert calls == [(480, True)]
+
+
+def test_settle_initial_layout_noop_when_window_destroyed() -> None:
+    module = _ahmad_overlay_module()
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.details_expanded = True
+    overlay.root = SimpleNamespace(winfo_exists=lambda: False)
+    applied: list[str] = []
+    overlay._apply_window_geometry = lambda size, flush=True: applied.append(size)  # type: ignore[method-assign]
+
+    module.AhmadTkOverlay._settle_initial_layout(overlay)
+
+    assert applied == []
+
+
 def test_ahmad_ui_prefs_clamps_invalid_sizes() -> None:
     module = _ahmad_overlay_module()
 
@@ -1076,6 +1126,49 @@ def test_ahmad_public_safe_diagnostic_export_omits_raw_and_ui_log(tmp_path: Path
         assert manifest["log_summary"]["continuous_ui_summary"] is False
         assert manifest["log_summary"]["export_includes_raw"] is False
         assert manifest["log_summary"]["export_includes_ui_summary"] is False
+
+
+def test_portable_diagnostic_export_includes_round_snapshots(tmp_path: Path) -> None:
+    module = _ahmad_overlay_module()
+    snapshot_path = tmp_path / "latest_snapshot.json"
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "windivert_live.jsonl").write_text('{"SortID":1}\n', encoding="utf-8")
+    round_dir = tmp_path / "round_snapshots"
+    round_dir.mkdir()
+    (round_dir / "r02_bidding.json").write_text('{"round":2}', encoding="utf-8")
+    (round_dir / "r03_bidding.json").write_text('{"round":3}', encoding="utf-8")
+    snapshot = {
+        "schema_version": 1,
+        "session_id": "2402:test",
+        "hero": "ahmed",
+        "map_id": 2402,
+        "round": 3,
+        "phase": "bidding",
+        "raw_capture_jsonl": str(raw_dir / "windivert_live.jsonl"),
+    }
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+    portable = module._write_diagnostic_export(
+        snapshot=snapshot,
+        snapshot_path=snapshot_path,
+        current_summary={"status": "ok", "context": {"session_id": "2402:test"}},
+        diagnostic_profile="portable",
+    )
+    with zipfile.ZipFile(portable) as archive:
+        names = set(archive.namelist())
+    assert "round_snapshots/r02_bidding.json" in names
+    assert "round_snapshots/r03_bidding.json" in names
+
+    safe = module._write_diagnostic_export(
+        snapshot=snapshot,
+        snapshot_path=snapshot_path,
+        current_summary={"status": "ok", "context": {"session_id": "2402:test"}},
+        diagnostic_profile="public-safe",
+    )
+    with zipfile.ZipFile(safe) as archive:
+        safe_names = set(archive.namelist())
+    assert not any(name.startswith("round_snapshots/") for name in safe_names)
 
 
 def test_overlay_summary_lines_include_q6_and_diagnostics() -> None:

@@ -921,6 +921,14 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--no-round-snapshots",
+        action="store_true",
+        help=(
+            "Disable the per-round snapshot archive (round_snapshots/) that "
+            "preserves each round's bidding/settled state for diagnostics."
+        ),
+    )
+    parser.add_argument(
         "--enable-debug-shadows",
         action="store_true",
         help="Run profile_b5 debug shadow during live inference (off by default).",
@@ -987,6 +995,7 @@ def main() -> int:
             file_name="windivert_live.json",
             source_name="windivert",
             packet_count_key="windivert_frames",
+            archive_round_snapshots=not args.no_round_snapshots,
         ),
         tables=tables,
     )
