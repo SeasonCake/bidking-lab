@@ -1323,6 +1323,51 @@ def test_ref_engine_ahmed_r5_exact_q1_overrides_coarse_public_split() -> None:
     assert result["evidence"]["fixed_counts"]["q1"] == 18
 
 
+def test_ref_engine_coarse_public_split_without_exact_q1_stays_a_floor() -> None:
+    """Without an exact q1, a random public reveal of white/green stays a floor.
+
+    Mirrors the live R1 case: "未知别墅" randomly shows 9 items (4 white/green here)
+    while total=35 and blue=7 are exact. q1 must remain ranged with a min floor of 4,
+    not get locked to 4 (which over-allocates the remaining items to higher tiers).
+    """
+    result = run_reference_engine(
+        _snapshot(
+            hero="ahmed",
+            map_id=2401,
+            structured_ref_inputs={
+                "total_count": 35,
+                "counts": {"q3": 7},
+            },
+            public_rows=[
+                {
+                    "info_id": 200028,
+                    "value": 9,
+                    "revealed_items": 9,
+                    "revealed_items_detail": [
+                        {"quality": 1},
+                        {"quality": 1},
+                        {"quality": 2},
+                        {"quality": 2},
+                        {"quality": 3},
+                        {"quality": 4},
+                        {"quality": 4},
+                        {"quality": 5},
+                        {"quality": 6},
+                    ],
+                },
+            ],
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert "split_low_quality_q1_coarse_floor_only" in result["notes"]
+    assert "split_low_quality_q1_count_merged" not in result["notes"]
+    assert result["evidence"]["fixed_counts"].get("q1") is None
+    assert int(result["evidence"]["min_counts"].get("q1") or 0) >= 4
+    q1_range = result["quality_count_ranges"].get("q1")
+    assert q1_range is not None and q1_range[0] != q1_range[2]
+
+
 def test_ref_engine_total_grid_prior_does_not_collapse_to_known_count_floor() -> None:
     result = run_reference_engine(
         _snapshot(
@@ -2494,7 +2539,14 @@ def test_ref_engine_keeps_victor_min_count_prior_without_total_grid() -> None:
 
 SECTION_50_2_FATBEANS_SAMPLES = (
     FATBEANS_SAMPLE_DIR / "fatbeans_mixed_ahmed_2406_5rounds_2406_1388889389495497_0001.json",
-    FATBEANS_SAMPLE_DIR / "fatbeans_valid_ahmed_2403_2rounds_2403_1388889391900123_0022.json",
+)
+
+# The 2403 sample only exposes white/green via a 3-of-42-item random public reveal
+# (info_id 200026). Those coarse counts are floors, not an exact warehouse breakdown,
+# so the engine must NOT lock q1 to the sampled sum (which previously forced a wrong
+# exact total and inflated the bid). See _apply_low_quality_split_evidence.
+SECTION_50_2_COARSE_SPLIT_FLOOR_SAMPLE = (
+    FATBEANS_SAMPLE_DIR / "fatbeans_valid_ahmed_2403_2rounds_2403_1388889391900123_0022.json"
 )
 
 
@@ -2531,12 +2583,24 @@ def test_ref_engine_exact_total_q5_avg_cells_fast_path_preserves_outputs(
 
     assert result["status"] == "ok"
     assert "exact_total_avg_cells_fast_path" in result["notes"]
-    if sample_path.name.startswith("fatbeans_mixed_ahmed_2406"):
-        assert result["combo_count"] == 253
-        assert result["balanced"] == 375_163
-    else:
-        assert result["combo_count"] == 196
-        assert result["balanced"] == 901_101
+    assert result["combo_count"] == 253
+    assert result["balanced"] == 375_163
+
+
+def test_ref_engine_coarse_public_split_reveal_does_not_lock_q1() -> None:
+    """A 3-of-42-item random public reveal must not lock white/green (q1).
+
+    Regression for the live bug where "未知别墅: 随机显示N件" sample counts were treated
+    as the exact white/green total, badly under-counting low items and inflating bids.
+    """
+    snapshot = _ahmed_fatbeans_snapshot(SECTION_50_2_COARSE_SPLIT_FLOOR_SAMPLE)
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+
+    assert "split_low_quality_q1_coarse_floor_only" in result["notes"]
+    assert "split_low_quality_q1_count_merged" not in result["notes"]
+    assert result["evidence"]["fixed_counts"].get("q1") is None
+    # Sampled white+green sum is kept only as a floor, never an exact lock.
+    assert result["evidence"]["min_counts"].get("q1") is not None
 
 
 @pytest.mark.parametrize("sample_path", SECTION_50_2_FATBEANS_SAMPLES, ids=lambda path: path.name[:40])

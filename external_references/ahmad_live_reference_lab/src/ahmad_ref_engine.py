@@ -2743,10 +2743,30 @@ def _apply_low_quality_split_evidence(
 
     have_all_counts = all(split_counts.get(key) is not None for key in LOW_SPLIT_KEYS)
     have_all_cells = all(split_quality_cells.get(key) is not None for key in LOW_SPLIT_KEYS)
+    coarse_split_floor = (
+        "coarse_quality_reveal_split_counts" in source_notes
+        or "maria_skill_coarse_quality_split_counts" in source_notes
+    )
+    split_counts_exact = (not coarse_split_floor) or all(
+        f"structured_ref_bridge_split_count_{key}" in source_notes
+        or f"split_low_quality_{key}_count_derived" in source_notes
+        or f"split_low_quality_{key}_count_from_q1_exact" in source_notes
+        or f"split_low_quality_{key}_zero_avg_count_zero" in source_notes
+        for key in LOW_SPLIT_KEYS
+    )
     if have_all_counts:
         merged_count = sum(int(split_counts[key]) for key in LOW_SPLIT_KEYS)
         existing_count = fixed_counts.get("q1")
-        if existing_count is not None and int(existing_count) != merged_count:
+        if existing_count is None and not split_counts_exact:
+            # White/green split counts seen so far came from random public/skill sample
+            # reveals (e.g. "未知别墅" shows a random subset). Those are floors: there may
+            # be more white/green items that were never sampled. Without an exact q1 to
+            # anchor against, treat the sampled sum as a minimum for q1 instead of
+            # locking q1 to the sampled count, which would badly under-count low items
+            # and over-allocate the total to higher tiers.
+            min_counts["q1"] = max(min_counts.get("q1", 0), merged_count)
+            source_notes.append("split_low_quality_q1_coarse_floor_only")
+        elif existing_count is not None and int(existing_count) != merged_count:
             if (
                 int(existing_count) > merged_count
                 and "coarse_quality_reveal_split_counts" in source_notes
