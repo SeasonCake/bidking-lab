@@ -3287,14 +3287,20 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         source_notes=source_notes,
     )
 
-    total_grid_target = _apply_total_grid_target_from_known_high_tier_cells(
-        total_count=total_count,
-        total_grid_target=total_grid_target,
-        fixed_counts=fixed_counts,
-        quality_cells=quality_cells,
-        avg_cells=avg_cells,
-        source_notes=source_notes,
-    )
+    # Scope the high-tier-cell grid target to Aisha. The estimate ignores
+    # public-reveal cell floors (e.g. a single q6 with 15 cells), so for other
+    # heroes it can land below the minimum reachable grid and break red-reveal
+    # combos (no_reachable_combo / count_prior fallback). Generalizing it with
+    # floor-awareness is a v0.2 follow-up.
+    if normalize_hero_key(hero) == "aisha":
+        total_grid_target = _apply_total_grid_target_from_known_high_tier_cells(
+            total_count=total_count,
+            total_grid_target=total_grid_target,
+            fixed_counts=fixed_counts,
+            quality_cells=quality_cells,
+            avg_cells=avg_cells,
+            source_notes=source_notes,
+        )
 
     round_no = _safe_int(context.get("round") or snapshot.get("round"))
     total_grid_target = _apply_aisha_layout_grid_hint(
@@ -3933,6 +3939,12 @@ def _should_use_sparse_exact_total_prior(evidence: RefEvidence) -> bool:
     nonzero_fixed_count = sum(1 for value in evidence.fixed_counts.values() if int(value) > 0)
     if nonzero_fixed_count > 1:
         if not pinned_quality_cells:
+            return False
+        # The pinned-cells + many-fixed sparse-prior route is an Aisha hidden-sample
+        # perf path (avoids high-total enumeration blowup). Other heroes keep exact
+        # enumeration so pinned red-reveal states resolve to status "ok" rather than
+        # falling back to count_prior.
+        if normalize_hero_key(evidence.hero) != "aisha":
             return False
         if evidence.total_count is None or int(evidence.total_count) < 40:
             return False

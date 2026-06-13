@@ -1741,8 +1741,10 @@ def test_ref_engine_public_q5_avg_value_and_count_zero_from_public_numeric_facts
     assert result["evidence"]["fixed_counts"]["q5"] == 0
     assert result["quality_count_ranges"]["q5"] == [0, 0, 0]
     assert "public_q5_avg_value" in result["notes"]
+    # The explicit q5 count fact (200019=0) locks the count before the zero-avg
+    # fallback runs, so q5=0 is attributed to the count fact rather than emitting
+    # a redundant zero_avg_value_q5_count_zero note.
     assert "public_info_200019_q5_count" in result["notes"]
-    assert "zero_avg_value_q5_count_zero" in result["notes"]
 
 
 def test_ref_engine_public_q5_avg_cells_zero_locks_count() -> None:

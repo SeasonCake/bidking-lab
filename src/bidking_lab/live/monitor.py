@@ -4209,13 +4209,21 @@ def _minimap_rows_from_batch(
         col = footprint.col if footprint is not None else None
         width = footprint.width if footprint is not None else None
         height = footprint.height if footprint is not None else None
-        if (row is None or col is None) and item.local_index is not None:
-            row = item.local_index // 10 + 1
-            col = item.local_index % 10 + 1
-            width = width or 1
-            height = height or 1
         if shape_key in (None, "") and item.value is not None and item.item_id is None:
             shape_key = "11"
+            width = width or 1
+            height = height or 1
+        # Only anchor an item to its local_index cell when we have a usable shape.
+        # When the cell count does not match any known shape (shape_key stays None),
+        # the item is not drawable, so leave row/col unset rather than guessing a
+        # position from local_index alone.
+        if (
+            (row is None or col is None)
+            and item.local_index is not None
+            and shape_key not in (None, "")
+        ):
+            row = item.local_index // 10 + 1
+            col = item.local_index % 10 + 1
             width = width or 1
             height = height or 1
         value_label = (

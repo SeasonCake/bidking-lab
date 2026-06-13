@@ -15,7 +15,7 @@
 - **balanced 报价**：live 持平，~83% miss 是结构性问题，留 Phase 2。
 - Git：`main` 本地 HEAD `7ea7ea6`，**ahead origin 1，未 push**；远程 `15fd2e2`。dist 仍是旧包 `v0.1.6-hotfix2.1`。
 - 艾莎相关子集门禁绿（pytest -k aisha/layout/d1 等、layout isolation、band smoke、sample20 +4/0、hidden 2601 <2s）。
-- ⚠️ **全量 pytest 有 8 个预存失败**（324 passed / 8 failed），已 stash 验证在 `15fd2e2` 即失败，**非艾莎工作引入**：4 个引擎红显期望漂移（hero=ahmed），4 个 tk 测试桩 fixture 滞后（DummyCanvas 缺 update_idletasks / Widget 缺 bind）。**v0.1.7 发版前需 triage；release notes 不得宣称全量绿。**
+- ✅ **全量 pytest 已全绿**（`tests/` → 1542 passed / 25 skipped / 0 failed）。原 8 个 + 全量额外 2 个失败已全部修复：B1 高阶格 target 与 pinned sparse-prior 路径误泄漏到 ahmed → **gate 到 aisha**；minimap local_index 回退加 shape 条件；q5 note 测试欠债删不可达断言；tk 桩补 `update_idletasks`/`bind`；.bat 是本地 LF 漂移（`git checkout` 落地 CRLF，非代码）。详见 handoff §3。
 
 ## 已被批测否决、不要再 live
 - C2 **target** 抬点估计（各 cohort 更差）。
@@ -35,6 +35,6 @@ B) **继续 v0.2 艾莎**：优先 D1 按 over/under 重做 + cells 收束；其
 - D1 shadow UI 噪音 → 已修（`_aisha_d1_flag_detail` 阈值 0.7 过滤；引擎保留完整 note 供 audit）。
 
 ## 发版前必须先做（A 路径的前置）
-- triage 全量 pytest 的 8 个预存失败：4 个 tk fixture（低风险修绿）+ 4 个引擎红显断言（确认有意变更 vs 真回归）。
+- v0.2：把 B1 `_apply_total_grid_target_from_known_high_tier_cells` 改成 floor-aware 后再考虑放开到全英雄（当前仅 aisha）。
 
 先确认你已读上述两个文件，并告诉我你接手时打算先做 A 还是 B，再开始。

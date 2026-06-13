@@ -796,6 +796,9 @@ def test_ahmad_export_diagnostic_package_collects_snapshot_raw_and_ui_log(tmp_pa
         def configure(self, **kwargs) -> None:
             self.kwargs.update(kwargs)
 
+        def bind(self, *args, **kwargs) -> None:
+            pass
+
     class Tip:
         def __init__(self) -> None:
             self.text = ""
@@ -881,6 +884,9 @@ def test_ahmad_diagnostic_export_works_without_latest_snapshot(tmp_path: Path) -
 
         def configure(self, **kwargs) -> None:
             self.kwargs.update(kwargs)
+
+        def bind(self, *args, **kwargs) -> None:
+            pass
 
     class Tip:
         def __init__(self) -> None:
@@ -1314,6 +1320,9 @@ def test_ahmad_tk_minimap_unknown_footprint_uses_stripes_without_permanent_text(
         def delete(self, *args, **kwargs):
             calls.append(("delete", args, kwargs))
 
+        def update_idletasks(self):
+            calls.append(("update_idletasks", (), {}))
+
         def winfo_width(self):
             return 300
 
@@ -1376,6 +1385,9 @@ def test_ahmad_tk_minimap_draws_explicit_marker_as_oval_even_with_shape() -> Non
     class DummyCanvas:
         def delete(self, *args, **kwargs):
             calls.append(("delete", args, kwargs))
+
+        def update_idletasks(self):
+            calls.append(("update_idletasks", (), {}))
 
         def winfo_width(self):
             return 300
@@ -4817,6 +4829,9 @@ def test_ahmad_open_manual_panel_prefills_empty_live_context() -> None:
         def configure(self, **kwargs) -> None:
             self.kwargs.update(kwargs)
 
+        def bind(self, *args, **kwargs) -> None:
+            pass
+
     overlay = object.__new__(module.AhmadTkOverlay)
     overlay.details_expanded = True
     overlay.manual_entries = {
@@ -4873,6 +4888,9 @@ def test_ahmad_open_manual_panel_does_not_overwrite_existing_inputs() -> None:
 
         def configure(self, **kwargs) -> None:
             self.kwargs.update(kwargs)
+
+        def bind(self, *args, **kwargs) -> None:
+            pass
 
     overlay = object.__new__(module.AhmadTkOverlay)
     overlay.details_expanded = True
@@ -4937,6 +4955,9 @@ def test_ahmad_clear_settlement_manual_values_keeps_hero_map_and_unlocks_edit() 
 
         def configure(self, **kwargs) -> None:
             self.kwargs.update(kwargs)
+
+        def bind(self, *args, **kwargs) -> None:
+            pass
 
     class Tip:
         def __init__(self) -> None:
@@ -5031,6 +5052,9 @@ def test_ahmad_manual_toggle_returns_to_live_without_clearing_inputs() -> None:
 
         def configure(self, **kwargs) -> None:
             self.kwargs.update(kwargs)
+
+        def bind(self, *args, **kwargs) -> None:
+            pass
 
     class Tip:
         def __init__(self) -> None:
@@ -5154,6 +5178,9 @@ def test_ahmad_clear_manual_inputs_keeps_manual_edit_mode() -> None:
         def configure(self, **kwargs) -> None:
             self.kwargs.update(kwargs)
 
+        def bind(self, *args, **kwargs) -> None:
+            pass
+
     render_calls: list[dict] = []
     standby_calls: list[dict] = []
     missing_calls: list[str] = []
@@ -5238,6 +5265,9 @@ def test_ahmad_manual_return_to_live_autofills_missing_fields_from_cached_live()
 
         def configure(self, **kwargs) -> None:
             self.kwargs.update(kwargs)
+
+        def bind(self, *args, **kwargs) -> None:
+            pass
 
     render_calls: list[dict] = []
 
@@ -6750,6 +6780,9 @@ def test_ahmad_render_missing_uses_action_text_for_next_step() -> None:
         def configure(self, **kwargs) -> None:
             self.kwargs.update(kwargs)
 
+        def bind(self, *args, **kwargs) -> None:
+            pass
+
     overlay = object.__new__(module.AhmadTkOverlay)
     overlay.title = Widget()
     overlay.subtitle = Widget()
@@ -6797,6 +6830,9 @@ def test_ahmad_render_missing_surfaces_windivert_open_error() -> None:
 
         def configure(self, **kwargs) -> None:
             self.kwargs.update(kwargs)
+
+        def bind(self, *args, **kwargs) -> None:
+            pass
 
     overlay = object.__new__(module.AhmadTkOverlay)
     overlay.title = Widget()
