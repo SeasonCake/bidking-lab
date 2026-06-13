@@ -1709,7 +1709,13 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
                             updated,
                             shape_key=str(item.shape_code),
                         )
-                    if item.local_index is not None and current.local_index is None:
+                    if item.local_index is not None and (
+                        current.local_index is None
+                        or (item.shape_code is not None and not current.shape_key)
+                    ):
+                        # Adopt the shaped observation's anchor when the current
+                        # position came from a bare reveal (no footprint shape),
+                        # since reveal local_index can point at a non-anchor cell.
                         updated = replace(updated, local_index=item.local_index)
                     if updated != current:
                         revealed_items[index] = updated
@@ -1720,6 +1726,19 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
             if item.runtime_id is not None
             else None
         )
+        anchor_local_index = item.local_index
+        if (
+            item.shape_code is None
+            and metadata is not None
+            and metadata.shape_code is not None
+            and metadata.local_index is not None
+        ):
+            # A bare quality/skill reveal (e.g. raven full-quality scan) reports a
+            # scanned cell, not the footprint's top-left anchor, so for multi-cell
+            # items its local_index lands on an interior/edge cell. A shaped
+            # observation (action result / public info) carries the true anchor;
+            # use it to position the footprint instead of the reveal's scan cell.
+            anchor_local_index = metadata.local_index
         revealed_items.append(
             GridItemObservation(
                 cells=cells,
@@ -1736,7 +1755,7 @@ def _state_grid_items(state: FatbeansStateEvent) -> tuple[GridItemObservation, .
                 )
                 or None,
                 value=item.value or (metadata.value if metadata else None),
-                local_index=item.local_index,
+                local_index=anchor_local_index,
                 category=category,
             )
         )

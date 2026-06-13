@@ -1,0 +1,58 @@
+=== Cross-hero public q6 value audit ===
+scanned roots: data\samples\fatbeans, data\samples\fatbeans_activity_20260605_shipwreck
+samples with public q6 value: 44
+by hero: {'ahmed': 4, 'aisha': 21, 'ethan': 14, 'gabriela': 2, 'sophie': 1, 'victor': 1, 'wuqilin': 1}
+by pattern: {'full_known': 2, 'single_no_lock': 42}
+pattern legend: partial=known value + q6 lock>known; full_known=all q6 values known; single_no_lock=one value, no q6 count lock
+
+file                                                 hero     pattern          known          q6       rv10     rv50     rv90 settle     rv50_vs_known ok
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+fatbeans_mixed_ahmed_2406_5rounds_2406_1388889389495497_0001.json ahmed    single_no_lock   1@88888        0      408888   442168   537708 2c/8g      +397.4%      Y
+fatbeans_valid_ahmed_2309_5rounds_2309_1425860479021171_0001.json ahmed    single_no_lock   1@452800       0      612800   612800   672128 2c/16g     +35.3%       Y
+fatbeans_valid_ahmed_2407_5rounds_2407_1388889384785418_0001.json ahmed    single_no_lock   1@54675        0      534675   565395   681958 4c/24g     +934.1%      Y
+fatbeans_valid_ahmed_2527_5rounds_2527_1388889386641609_0016.json ahmed    single_no_lock   1@266050       0      586050   586050   682171 3c/6g      +120.3%      Y
+fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json aisha    single_no_lock   1@56000        0      112096   208544   339968 3c/4g      +272.4%      Y
+fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json aisha    single_no_lock   1@255115       0      255115   415115   575115 1c/6g      +62.7%       N
+fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json aisha    single_no_lock   1@71500        0       93632   157440   209728 1c/1g      +120.2%      Y
+fatbeans_valid_aisha_2401_3rounds_2401_1295018569910488_0026.json aisha    single_no_lock   1@452800       0      452800   612800   856702 3c/17g     +35.3%       N
+fatbeans_valid_aisha_2401_4rounds_2401_1367517779777127_0043.json aisha    single_no_lock   1@68800        0      112096   228800   409280 2c/5g      +232.6%      Y
+fatbeans_valid_aisha_2401_5rounds_2401_1274128029099855_0041.json aisha    single_no_lock   1@452800       0      612800   847450  1157888 6c/23g     +87.2%       Y
+fatbeans_valid_aisha_2403_3rounds_2403_1295018571273402_0049.json aisha    single_no_lock   1@92880        0      112096   246848   420560 1c/2g      +165.8%      Y
+fatbeans_valid_aisha_2404_5rounds_2404_1295018571463996_0061.json aisha    single_no_lock   1@52500        0      122016   212500   405780 2c/2g      +304.8%      Y
+fatbeans_valid_aisha_2405_3rounds_2405_1295018666710140_0065.json aisha    single_no_lock   1@199080       0      199080   216000   313200 2c/15g     +8.5%        N
+fatbeans_valid_aisha_2407_2rounds_2407_1295018574871560_0074.json aisha    single_no_lock   1@85623        0      112096   245623   451703 2c/2g      +186.9%      Y
+fatbeans_valid_aisha_2408_3rounds_2408_1295018841215488_0123.json aisha    single_no_lock   1@143100       0      143100   303100   483580 ?          +111.8%      N
+fatbeans_valid_aisha_2409_3rounds_2409_1367517778616652_0132.json aisha    single_no_lock   1@128000       0      128000   208544   374848 2c/4g      +62.9%       N
+fatbeans_valid_aisha_2409_4rounds_2409_1295018668923505_0089.json aisha    single_no_lock   1@170362       0      170362   330362   490362 2c/6g      +93.9%       N
+fatbeans_valid_aisha_2409_5rounds_2409_1295018543633263_0090.json aisha    single_no_lock   1@444000       0      444000   604000   805951 1c/16g     +36.0%       N
+fatbeans_valid_aisha_2410_5rounds_2410_1367517613200016_0005.json aisha    single_no_lock   1@56000        0      122016   216000   465487 3c/8g      +285.7%      Y
+fatbeans_valid_aisha_2501_4rounds_2501_1295018651167725_0121.json aisha    single_no_lock   1@68100        0      122016   228100   434180 4c/13g     +234.9%      Y
+fatbeans_valid_aisha_2501_5rounds_2501_1295018595889093_0134.json aisha    single_no_lock   1@170362       0      332058   650362   970362 4c/11g     +281.8%      Y
+fatbeans_valid_aisha_2502_3rounds_2502_1295018575359563_0145.json aisha    single_no_lock   1@293400       0      293400   342000   453400 3c/20g     +16.6%       N
+fatbeans_valid_aisha_2507_4rounds_2507_1295018709061070_0194.json aisha    single_no_lock   1@175500       0      175500   252108   495500 6c/16g     +43.7%       N
+fatbeans_valid_aisha_2507_5rounds_2507_1295018705169256_0197.json aisha    single_no_lock   1@130296       0      130296   290296   539783 6c/15g     +122.8%      N
+fatbeans_valid_aisha_2510_5rounds_2510_1295018594459884_0212.json aisha    single_no_lock   1@68800        0      251840   715584  1022400 5c/29g     +940.1%      Y
+fatbeans_valid_ethan_2401_3rounds_2401_1274128122503929_0230.json ethan    single_no_lock   2@422002       0      797002   865733  1022090 3c/35g     +8.6%        Y
+fatbeans_valid_ethan_2401_3rounds_2401_1295018658653170_0232.json ethan    single_no_lock   1@226800       0      226800   386800   546800 2c/10g     +70.5%       N
+fatbeans_valid_ethan_2401_5rounds_2401_1274127880525303_0247.json ethan    single_no_lock   1@56000        0      122016   226240   480323 2c/10g     +304.0%      Y
+fatbeans_valid_ethan_2406_5rounds_2406_1274128123480049_0272.json ethan    single_no_lock   1@452800       0      452800   672128  1035559 2c/17g     +48.4%       N
+fatbeans_valid_ethan_2406_5rounds_2406_1295018659798610_0274.json ethan    single_no_lock   1@1553900      0     1553900  1630508  1873900 2c/8g      +4.9%        N
+fatbeans_valid_ethan_2501_1rounds_2501_1295018654009164_0288.json ethan    single_no_lock   1@54600        0      122016   214600   449250 3c/23g     +293.0%      Y
+fatbeans_valid_ethan_2501_4rounds_2501_1295019012260164_0309.json ethan    single_no_lock   1@444000       0      444000   604000   805951 3c/31g     +36.0%       N
+fatbeans_valid_ethan_2502_4rounds_2502_1295018652571976_0318.json ethan    single_no_lock   1@68800        0      122016   228800   463450 6c/12g     +232.6%      Y
+fatbeans_valid_ethan_2502_5rounds_2502_1295018620979090_0321.json ethan    single_no_lock   1@85623        0      157440   405623   725623 6c/29g     +373.7%      Y
+fatbeans_valid_ethan_2502_5rounds_2502_1295019011312895_0323.json ethan    single_no_lock   1@170362       0      170362   365786   718501 4c/10g     +114.7%      N
+fatbeans_valid_ethan_2503_5rounds_2503_1295018710720202_0326.json ethan    single_no_lock   1@293400       0      293400   483064   824780 5c/22g     +64.6%       N
+fatbeans_valid_ethan_2504_1rounds_2504_1295018711216646_0327.json ethan    single_no_lock   1@94500        0      122016   254500   489150 3c/3g      +169.3%      Y
+fatbeans_valid_ethan_2506_4rounds_2506_1295018652330851_0340.json ethan    single_no_lock   1@160200       0      160200   320200   528261 2c/8g      +99.9%       N
+fatbeans_valid_ethan_2601_1rounds_2601_1295018657059240_0367.json ethan    single_no_lock   1@160200       0      160200   320200   528261 6c/31g     +99.9%       N
+fatbeans_valid_gabriela_2405_5rounds_2405_1295018937410087_0435.json gabriela single_no_lock   3@390000       0      666840   666840   779253 4c/9g      +0.0%        Y
+fatbeans_valid_gabriela_2501_5rounds_2501_1274128146682902_0388.json gabriela single_no_lock   1@104400       0      122016   264400   474497 4c/12g     +153.3%      Y
+fatbeans_valid_sophie_2501_5rounds_2501_1295019022422187_0410.json sophie   full_known       1@170362       1      170362   330362   540459 4c/16g     +93.9%       N
+fatbeans_valid_victor_2410_3rounds_2410_1388889388969363_0474.json victor   single_no_lock   1@54300        0      214300   237340   301148 2c/3g      +337.1%      Y
+fatbeans_valid_wuqilin_2408_3rounds_2408_1295019023298787_0420.json wuqilin  full_known       1@199080       1      199080   359080   565104 2c/7g      +80.4%       N
+
+summary: rv10 above max known value 24/44; rv10 pinned at known value 20/44; partial cases 0
+partial samples: none in library (need live Ahmed 2408 R3-style capture)
+note: settlement column is q6 count/cells only; item values are not in fatbeans inventory.
+

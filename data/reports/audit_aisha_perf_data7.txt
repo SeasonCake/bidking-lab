@@ -1,0 +1,37 @@
+audit_data7_perf
+rows=1141
+
+route_counts:
+  count_prior: n=1040 avg_ms=10701.2 p95_ms=29968.8
+  sparse_exact_prior: n=45 avg_ms=3157.0 p95_ms=8458.3
+  exact_total_avg_cells_fast_path: n=39 avg_ms=357.9 p95_ms=902.0
+  ok: n=8 avg_ms=114.2 p95_ms=194.0
+  deferred_grid_only: n=7 avg_ms=0.9 p95_ms=1.5
+  missing_total_count: n=2 avg_ms=0.1 p95_ms=0.1
+
+slowest_20:
+  1053442.0ms r4 aisha  count_prior            combos= 50000 total=None q5_avg=False fatbeans_valid_aisha_2601_4rounds_2601_1295018738370485_0218.json
+  939799.5ms r3 aisha  count_prior            combos= 50000 total=None q5_avg=False fatbeans_valid_aisha_2601_4rounds_2601_1295018738370485_0218.json
+  917625.2ms r1 aisha  count_prior            combos=  9291 total=None q5_avg=False fatbeans_valid_aisha_2507_4rounds_2507_1295018707089744_0192.json
+  886481.4ms r2 aisha  count_prior            combos=  9291 total=None q5_avg=False fatbeans_valid_aisha_2507_4rounds_2507_1295018707089744_0192.json
+  812127.0ms r4 aisha  count_prior            combos= 50000 total=None q5_avg=False fatbeans_valid_aisha_2601_4rounds_2601_1295018737787029_0216.json
+  774106.2ms r3 aisha  count_prior            combos= 50000 total=None q5_avg=False fatbeans_valid_aisha_2601_4rounds_2601_1295018737787029_0216.json
+  275637.1ms r1 aisha  count_prior            combos= 50000 total=None q5_avg=False fatbeans_valid_aisha_2502_4rounds_2502_1295018709694048_0149.json
+  275474.7ms r2 aisha  count_prior            combos= 50000 total=None q5_avg=False fatbeans_valid_aisha_2502_4rounds_2502_1295018709694048_0149.json
+  211051.8ms r1 aisha  count_prior            combos=  9215 total=None q5_avg=False fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json
+  206736.8ms r2 aisha  count_prior            combos=  9215 total=None q5_avg=False fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json
+  172802.6ms r1 aisha  count_prior            combos= 32191 total=None q5_avg=False fatbeans_valid_aisha_2401_5rounds_2401_1274128029099855_0041.json
+  169083.7ms r2 aisha  count_prior            combos= 32191 total=None q5_avg=False fatbeans_valid_aisha_2401_5rounds_2401_1274128029099855_0041.json
+   79287.0ms r1 aisha  count_prior            combos= 14440 total=None q5_avg=False fatbeans_valid_aisha_2403_4rounds_2403_1295018989226069_0052.json
+   76291.3ms r2 aisha  count_prior            combos= 14440 total=None q5_avg=False fatbeans_valid_aisha_2403_4rounds_2403_1295018989226069_0052.json
+   73991.4ms r4 aisha  count_prior            combos=  4552 total=None q5_avg=False fatbeans_valid_aisha_2406_4rounds_2406_1367517778806595_0113.json
+   72882.8ms r1 aisha  count_prior            combos= 14818 total=None q5_avg=False fatbeans_valid_aisha_2504_5rounds_2504_1295019019430814_0167.json
+   72460.0ms r2 aisha  count_prior            combos= 14818 total=None q5_avg=False fatbeans_valid_aisha_2504_5rounds_2504_1295019019430814_0167.json
+   72423.6ms r5 aisha  count_prior            combos=  5929 total=None q5_avg=False fatbeans_valid_aisha_2601_4rounds_2601_1295018738370485_0218.json
+   71035.1ms r5 aisha  count_prior            combos=  4552 total=None q5_avg=False fatbeans_valid_aisha_2406_4rounds_2406_1367517778806595_0113.json
+   70037.8ms r1 aisha  count_prior            combos= 28403 total=None q5_avg=False fatbeans_valid_aisha_2505_3rounds_2505_1295018623902778_0169.json
+
+§50-2 candidates (total_count + q5 avg_cells, not sparse/deferred):
+  (none >= 500ms in scanned samples)
+
+ethan_rows=0 (generic ref hero — §50-2 Ahmed structured path does not apply)

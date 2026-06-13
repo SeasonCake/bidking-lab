@@ -2023,10 +2023,12 @@ class AhmadTkOverlay:
         self._manual_dirty_fields: set[str] = set()
         self._manual_autofill_values: dict[str, str] = {}
         self._manual_settlement_edit_unlocked = False
+        self._manual_auto_expanded_details = False
         self.settlement_values_hidden = False
         self.topmost_enabled = True
         self.last_diagnostic_export_path: Path | None = None
         self._minimap_data: dict[str, Any] = {}
+        self._minimap_canvas_signatures: dict[int, tuple[Any, ...]] = {}
         self._canvas_tip: HoverTip | None = None
         self._popup_canvas_tip: HoverTip | None = None
         self._minimap_popup: tk.Toplevel | None = None
@@ -3337,8 +3339,13 @@ class AhmadTkOverlay:
         return self.open_manual_panel()
 
     def open_manual_panel(self, _event: tk.Event[Any] | None = None) -> str:
-        if not self.details_expanded:
+        # Remember whether entering manual auto-expanded the panel so that
+        # returning to live can symmetrically collapse back to mini. If the user
+        # had already expanded details on their own, leave that state untouched.
+        auto_expanded = not self.details_expanded
+        if auto_expanded:
             self.toggle_details()
+        self._manual_auto_expanded_details = auto_expanded
         data = self._last_summary or self._last_live_summary or {}
         should_prefill_empty = (
             hasattr(self, "manual_entries")
@@ -3381,6 +3388,12 @@ class AhmadTkOverlay:
         if hasattr(self, "manual_status"):
             self.manual_status.configure(text="实时模式，手填保留", fg=DIM)
         self._restore_manual_card_border()
+        # Collapse back to mini only if entering manual auto-expanded the panel
+        # (mirrors open_manual_panel, which expands via toggle_details).
+        if getattr(self, "_manual_auto_expanded_details", False):
+            self._manual_auto_expanded_details = False
+            if self.details_expanded:
+                self.toggle_details()
         if self._last_live_summary:
             self._last_summary = self._last_live_summary
             if self._last_live_summary.get("status") == "stale_snapshot":
@@ -5398,12 +5411,27 @@ class AhmadTkOverlay:
         allow_scroll: bool = False,
         cell_hint: float = 20.0,
     ) -> None:
-        canvas.delete("all")
         visible_width, visible_height = canvas_draw_size(
             canvas,
             min_width=min_width,
             min_height=min_height,
         )
+        # Skip the clear+redraw when nothing that affects this canvas changed.
+        # Live snapshots refresh ~1/s but the minimap content is usually identical;
+        # redrawing unconditionally made the canvas flicker every cycle.
+        cache = getattr(self, "_minimap_canvas_signatures", None)
+        if cache is not None:
+            signature = (
+                int(visible_width),
+                int(visible_height),
+                round(float(cell_hint), 2),
+                bool(allow_scroll),
+                json.dumps(minimap, sort_keys=True, default=str),
+            )
+            if cache.get(id(canvas)) == signature:
+                return
+            cache[id(canvas)] = signature
+        canvas.delete("all")
         width = visible_width
         height = visible_height
         status = str(minimap.get("status") or "")
@@ -5607,6 +5635,8 @@ class AhmadTkOverlay:
 
     def _hide_minimap_popup(self) -> None:
         self._hide_minimap_after_id = None
+        if self._popup_canvas is not None:
+            self._minimap_canvas_signatures.pop(id(self._popup_canvas), None)
         if self._minimap_popup is not None:
             try:
                 self._minimap_popup.destroy()
@@ -5715,6 +5745,8 @@ class AhmadTkOverlay:
             except tk.TclError:
                 pass
             self._pinned_configure_after_id = None
+        if self._pinned_canvas is not None:
+            self._minimap_canvas_signatures.pop(id(self._pinned_canvas), None)
         if self._pinned_minimap_popup is not None:
             try:
                 self._pinned_minimap_popup.destroy()

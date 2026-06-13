@@ -534,6 +534,22 @@ def _aisha_tier_needs_tool_info(
     return True
 
 
+def _aisha_green_needs_info(ref_result: dict[str, Any], evidence: dict[str, Any]) -> bool:
+    """Green (q1/白绿) is low value, so treat it as known once its count is locked.
+
+    Unlike blue/purple/gold, we do not also require cells/avg for green: waiting on
+    green cells would otherwise keep it pinned in the hint for the whole match.
+    """
+    if _evidence_exact_quality_field(evidence, "fixed_counts", "q1"):
+        return False
+    ranges = ref_result.get("quality_count_ranges")
+    if not isinstance(ranges, dict) or ranges.get("q1") in (None, ""):
+        return False
+    min_counts = evidence.get("min_counts") if isinstance(evidence.get("min_counts"), dict) else {}
+    floor = _parse_int(min_counts.get("q1"))
+    return _range_is_unlocked(ranges.get("q1"), floor)
+
+
 def _aisha_missing_total_count(ref_result: dict[str, Any], evidence: dict[str, Any]) -> bool:
     status = _text(ref_result.get("status"), "")
     if status == "missing_total_count":
@@ -602,21 +618,48 @@ def _aisha_next_info_hint(
     *,
     round_no: int | None = None,
 ) -> str:
-    if _aisha_tier_needs_tool_info(ref_result, evidence, "q3"):
-        if round_no == 1:
-            return "R1先开良品扫描或良品存量"
-        return "开良品扫描或良品存量"
-    if _aisha_tier_needs_tool_info(ref_result, evidence, "q4"):
-        return "开优品均格/优品存量/优品扫描"
-    if _aisha_tier_needs_tool_info(ref_result, evidence, "q5"):
-        return "开极品均格或极品扫描"
-    if evidence.get("total_grid_target") in (None, ""):
-        total_grid_range = ref_result.get("total_grid_range")
-        if _range_is_unlocked(total_grid_range) or _compact_range_text(total_grid_range, suffix="格") != "-":
-            return "开总仓储看总格，必要时全库透视"
+    # Frame Aisha's next step as the info still worth waiting for, instead of a
+    # generic "open this tool" prompt. Show the two lowest quality tiers that are
+    # still unknown (green < blue < purple < gold); once <=1 quality tier remains
+    # open, fold in the outstanding total-cells / total-count needs. Red (q6) is
+    # not a waited tier here because it arrives via public / villa reveals.
+    quality_tiers = (("q3", "蓝"), ("q4", "紫"), ("q5", "金"))
+    unknown: list[str] = []
+    if _aisha_green_needs_info(ref_result, evidence):
+        unknown.append("绿")
+    unknown.extend(
+        label
+        for key, label in quality_tiers
+        if _aisha_tier_needs_tool_info(ref_result, evidence, key)
+    )
+    total_grid_range = ref_result.get("total_grid_range")
+    # Only wait on total cells when the grid count is genuinely uncertain. A range
+    # locked to a single value means the grid is effectively known even if no
+    # explicit target was chosen yet.
+    grid_missing = evidence.get("total_grid_target") in (None, "") and _range_is_unlocked(
+        total_grid_range
+    )
+    total_bits: list[str] = []
+    if grid_missing:
+        total_bits.append("总格")
     if _aisha_missing_total_count(ref_result, evidence):
-        return "最后补总件"
-    return "信息够了，看出价"
+        total_bits.append("总件")
+    total_text = "、".join(total_bits)
+
+    if len(unknown) >= 2:
+        return f"等待{unknown[0]}品和{unknown[1]}品信息"
+    if len(unknown) == 1:
+        if total_text:
+            # Gold (q5) is the top scannable tier and cannot be back-solved from
+            # totals, so it is needed together with them ("和"). A lower tier can
+            # be derived once the totals + higher tiers are known, so either path
+            # helps ("或").
+            connector = "和" if unknown[0] == "金" else "信息或"
+            return f"等待{unknown[0]}品{connector}{total_text}信息"
+        return f"等待{unknown[0]}品信息"
+    if total_text:
+        return f"等待{total_text}信息"
+    return "信息已足够，观察出价"
 
 
 def _ref_notes_list(ref_result: dict[str, Any]) -> list[str]:
@@ -650,7 +693,7 @@ def _ref_waiting_display_text(
         if not isinstance(ref_evidence, dict):
             ref_evidence = {}
         hint = _aisha_next_info_hint(ref_result, ref_evidence, round_no=round_no)
-        if hint and hint not in {"-", "信息够了，看出价"}:
+        if hint and hint not in {"-", "信息已足够，观察出价"}:
             return hint
         return "等待总件"
     if hero_key == "ethan":

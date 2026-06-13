@@ -1,0 +1,35 @@
+audit_data7_perf
+rows=50
+
+route_counts:
+  sparse_exact_prior: n=32 avg_ms=601.4 p95_ms=1477.6
+  exact_total_avg_cells_fast_path: n=17 avg_ms=235.2 p95_ms=1316.3
+  ok: n=1 avg_ms=2.2 p95_ms=2.2
+
+slowest_20:
+    2577.6ms r1 ahmed  sparse_exact_prior     combos=  6226 total=56 q5_avg=False fatbeans_valid_ahmed_2401_3rounds_2401_1388889421785618_0032.json
+    1493.2ms r1 ahmed  sparse_exact_prior     combos=  4989 total=48 q5_avg=False fatbeans_valid_ahmed_2309_5rounds_2309_1425860479021171_0001.json
+    1477.6ms r2 ahmed  sparse_exact_prior     combos=  4989 total=48 q5_avg=False fatbeans_valid_ahmed_2309_5rounds_2309_1425860479021171_0001.json
+    1436.5ms r1 ahmed  sparse_exact_prior     combos=  7141 total=44 q5_avg=False fatbeans_valid_ahmed_2401_3rounds_2401_1388889385856243_0001.json
+    1405.3ms r2 ahmed  exact_total_avg_cells_fast_path combos=   253 total=32 q5_avg=True fatbeans_mixed_ahmed_2406_5rounds_2406_1388889389495497_0001.json
+    1316.3ms r2 ahmed  exact_total_avg_cells_fast_path combos=   196 total=42 q5_avg=True fatbeans_valid_ahmed_2403_2rounds_2403_1388889391900123_0022.json
+    1250.4ms r1 ahmed  sparse_exact_prior     combos=  7397 total=53 q5_avg=False fatbeans_valid_ahmed_2403_5rounds_2403_1402770683094022_0040.json
+    1239.5ms r1 ahmed  sparse_exact_prior     combos=  7429 total=50 q5_avg=False fatbeans_valid_ahmed_2401_5rounds_2401_1388889417487600_0035.json
+    1160.3ms r1 ahmed  sparse_exact_prior     combos=  7006 total=48 q5_avg=False fatbeans_valid_ahmed_2403_4rounds_2403_1388889434708260_0039.json
+    1001.6ms r1 ahmed  sparse_exact_prior     combos=  4904 total=44 q5_avg=False fatbeans_valid_ahmed_2407_5rounds_2407_1388889384785418_0001.json
+     952.9ms r1 ahmed  sparse_exact_prior     combos=   520 total=51 q5_avg=False fatbeans_valid_ahmed_2403_3rounds_2403_1388889380189667_0038.json
+     948.7ms r1 ahmed  sparse_exact_prior     combos=  5409 total=43 q5_avg=False fatbeans_valid_ahmed_2401_4rounds_2401_1388889378674485_0001.json
+     854.7ms r1 ahmed  sparse_exact_prior     combos=  5118 total=37 q5_avg=False fatbeans_valid_ahmed_2406_5rounds_2406_1388889350539399_0001.json
+     744.2ms r1 ahmed  sparse_exact_prior     combos=  1389 total=32 q5_avg=False fatbeans_mixed_ahmed_2406_5rounds_2406_1388889389495497_0001.json
+     743.0ms r1 ahmed  sparse_exact_prior     combos=  3195 total=29 q5_avg=False fatbeans_mixed_ahmed_2407_4rounds_2407_1388889355407574_0026.json
+     710.3ms r1 ahmed  sparse_exact_prior     combos=  4618 total=34 q5_avg=False fatbeans_valid_ahmed_2404_5rounds_2404_1388889432974563_0042.json
+     522.8ms r1 ahmed  sparse_exact_prior     combos=  3569 total=33 q5_avg=False fatbeans_valid_ahmed_2527_5rounds_2527_1388889386641609_0016.json
+     448.1ms r1 ahmed  sparse_exact_prior     combos=  3314 total=34 q5_avg=False fatbeans_valid_ahmed_2402_4rounds_2402_1388889422203131_0036.json
+     338.0ms r1 ahmed  sparse_exact_prior     combos=  2840 total=24 q5_avg=False fatbeans_valid_ahmed_2404_4rounds_2404_1388889349937960_0001.json
+     238.8ms r2 ahmed  exact_total_avg_cells_fast_path combos=   685 total=43 q5_avg=True fatbeans_valid_ahmed_2401_4rounds_2401_1388889378674485_0001.json
+
+§50-2 candidates (total_count + q5 avg_cells, not sparse/deferred):
+    1405.3ms r2 ahmed combos=253 fatbeans_mixed_ahmed_2406_5rounds_2406_1388889389495497_0001.json
+    1316.3ms r2 ahmed combos=196 fatbeans_valid_ahmed_2403_2rounds_2403_1388889391900123_0022.json
+
+ethan_rows=0 (generic ref hero — §50-2 Ahmed structured path does not apply)

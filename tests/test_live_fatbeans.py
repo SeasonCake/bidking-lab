@@ -2914,6 +2914,74 @@ def test_treasure_value_action_result_adds_value_only_grid_marker() -> None:
     assert batch.grid_items[0].shape_key == "11"
 
 
+def test_bare_quality_reveal_uses_shaped_anchor_not_scan_cell() -> None:
+    # Raven's full-quality skill scan reports a multi-cell item's quality at a
+    # scanned cell (local 103 = top-right of a 4x4), not the footprint anchor.
+    # The public-info reveal of the same runtime carries the true top-left
+    # anchor (local 100) plus the shape, so the footprint must anchor at col 1.
+    events = FatbeansCaptureEvents(
+        packets=(),
+        frames=(),
+        sends=(),
+        statuses=(),
+        states=(
+            FatbeansStateEvent(
+                sort_id=33,
+                capture_time="",
+                message_id=0x0021,
+                session_id="s1",
+                map_id=2407,
+                round_index=5,
+                skill_reveals=(
+                    FatbeansSkillReveal(
+                        skill_id=100301,
+                        hero_id=301,
+                        round_index=5,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=103,
+                                runtime_id=999,
+                                item_id=None,
+                                quality=6,
+                                value=None,
+                                shape_code=None,
+                                cells=None,
+                            ),
+                        ),
+                    ),
+                ),
+                public_infos=(
+                    FatbeansPublicInfo(
+                        info_id=200050,
+                        map_id=2407,
+                        value=None,
+                        value_field=None,
+                        observed_items=(
+                            FatbeansObservedItem(
+                                local_index=100,
+                                runtime_id=999,
+                                item_id=1086001,
+                                quality=6,
+                                value=None,
+                                shape_code=44,
+                                cells=16,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    batch = live_batches_from_fatbeans_events(events)[0]
+    q6 = next(it for it in batch.grid_items if it.runtime_id == 999)
+    assert q6.local_index == 100
+    assert q6.shape_key == "44"
+    footprint = q6.footprint()
+    assert footprint is not None
+    assert footprint.col == 1
+
+
 def test_fatbeans_ethan_r2_outline_skips_items_without_known_quality() -> None:
     events = FatbeansCaptureEvents(
         packets=(),

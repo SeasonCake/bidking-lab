@@ -1449,6 +1449,132 @@ def test_ahmad_tk_minimap_draws_explicit_marker_as_oval_even_with_shape() -> Non
     )
 
 
+def test_ahmad_tk_minimap_skips_redraw_when_unchanged() -> None:
+    module = _ahmad_overlay_module()
+    calls: list[str] = []
+
+    class DummyCanvas:
+        def delete(self, *args, **kwargs):
+            calls.append("delete")
+
+        def update_idletasks(self):
+            pass
+
+        def winfo_width(self):
+            return 300
+
+        def winfo_height(self):
+            return 160
+
+        def configure(self, **kwargs):
+            pass
+
+        def create_line(self, *args, **kwargs):
+            pass
+
+        def create_rectangle(self, *args, **kwargs):
+            pass
+
+        def create_oval(self, *args, **kwargs):
+            pass
+
+        def create_text(self, *args, **kwargs):
+            pass
+
+        def tag_bind(self, *args, **kwargs):
+            pass
+
+    instance = module.AhmadTkOverlay.__new__(module.AhmadTkOverlay)
+    instance._minimap_canvas_signatures = {}
+    canvas = DummyCanvas()
+
+    def minimap_payload() -> dict:
+        return {
+            "status": "available",
+            "columns": 10,
+            "viewport_rows": 13,
+            "items": [
+                {
+                    "row": 2,
+                    "col": 5,
+                    "width": 2,
+                    "height": 2,
+                    "quality": "q6",
+                    "render_mode": "marker",
+                    "shape_key": "22",
+                    "cells": 4,
+                }
+            ],
+        }
+
+    module.AhmadTkOverlay._draw_minimap(instance, canvas, minimap_payload(), None)
+    first_deletes = calls.count("delete")
+    assert first_deletes >= 1
+
+    # Identical data + same canvas size: redraw is skipped (no flicker).
+    module.AhmadTkOverlay._draw_minimap(instance, canvas, minimap_payload(), None)
+    assert calls.count("delete") == first_deletes
+
+    # Changed data forces a redraw again.
+    changed = minimap_payload()
+    changed["items"][0]["row"] = 4
+    module.AhmadTkOverlay._draw_minimap(instance, canvas, changed, None)
+    assert calls.count("delete") == first_deletes + 1
+
+
+def test_ahmad_return_to_live_collapses_auto_expanded_details() -> None:
+    module = _ahmad_overlay_module()
+
+    class Widget:
+        def __init__(self) -> None:
+            self.kwargs = {}
+
+        def configure(self, **kwargs) -> None:
+            self.kwargs.update(kwargs)
+
+    toggle_calls: list[bool] = []
+
+    overlay = object.__new__(module.AhmadTkOverlay)
+    overlay.details_expanded = False
+    overlay._manual_active = False
+    overlay._manual_edit_enabled = False
+    overlay._manual_dirty_fields = set()
+    overlay._manual_autofill_values = {}
+    overlay._manual_settlement_edit_unlocked = False
+    overlay._manual_snapshot = {}
+    overlay._manual_summary = {}
+    overlay._manual_live_session_id = ""
+    overlay.manual_entries = {}
+    overlay.manual_status = Widget()
+    overlay.manual_card = Widget()
+    overlay._last_live_summary = {}
+    overlay._last_summary = {}
+    overlay.render = lambda data: None
+    overlay.render_standby = lambda data: None
+    overlay.render_missing = lambda message: None
+    overlay._set_manual_edit_enabled = lambda enabled: None
+    overlay._auto_sync_manual_inputs = lambda data: None
+    overlay._has_manual_inputs = lambda: False
+    overlay._manual_values_from_summary = lambda data: {}
+    overlay._is_settlement_summary = lambda data: False
+    overlay._set_manual_settlement_button_state = lambda: None
+
+    def fake_toggle() -> None:
+        overlay.details_expanded = not overlay.details_expanded
+        toggle_calls.append(overlay.details_expanded)
+
+    overlay.toggle_details = fake_toggle
+
+    module.AhmadTkOverlay.open_manual_panel(overlay)
+    assert overlay.details_expanded is True
+    assert overlay._manual_auto_expanded_details is True
+
+    module.AhmadTkOverlay.return_to_live_mode(overlay)
+    assert overlay.details_expanded is False
+    assert overlay._manual_auto_expanded_details is False
+    assert toggle_calls == [True, False]
+
+
 def test_ahmad_footer_github_opens_project_link(monkeypatch) -> None:
     module = _ahmad_overlay_module()
     opened: list[tuple[str, int, bool]] = []
@@ -2735,7 +2861,7 @@ def test_ahmad_server_aisha_defense_multiplier_hint_by_round() -> None:
     assert module._aisha_defense_multiplier_hint(None) == ""  # type: ignore[attr-defined]
 
 
-def test_ahmad_server_aisha_next_info_hint_r1_prefers_blue_tools_not_white_green() -> None:
+def test_ahmad_server_aisha_next_info_hint_r1_waits_green_and_blue() -> None:
     module = _ahmad_server_module()
     result = {
         "status": "ok",
@@ -2751,12 +2877,12 @@ def test_ahmad_server_aisha_next_info_hint_r1_prefers_blue_tools_not_white_green
 
     hint = module._next_info_hint(result, hero_key="aisha", round_no=1)  # type: ignore[attr-defined]
 
-    assert hint == "R1先开良品扫描或良品存量"
+    assert hint == "等待绿品和蓝品信息"
     assert "白绿" not in hint
     assert "总件" not in hint
 
 
-def test_ahmad_server_aisha_missing_total_count_r1_prefers_blue_before_total() -> None:
+def test_ahmad_server_aisha_missing_total_count_r1_waits_green_and_blue() -> None:
     module = _ahmad_server_module()
     result = {
         "status": "missing_total_count",
@@ -2770,7 +2896,7 @@ def test_ahmad_server_aisha_missing_total_count_r1_prefers_blue_before_total() -
 
     hint = module._next_info_hint(result, hero_key="aisha", round_no=1)  # type: ignore[attr-defined]
 
-    assert hint == "R1先开良品扫描或良品存量"
+    assert hint == "等待绿品和蓝品信息"
     assert module._ref_waiting_display_text("aisha", result, round_no=1) == hint  # type: ignore[attr-defined]
 
 
@@ -2797,10 +2923,10 @@ def test_ahmad_server_aisha_next_info_hint_puts_total_count_last() -> None:
 
     hint = module._next_info_hint(result, hero_key="aisha")  # type: ignore[attr-defined]
 
-    assert hint == "最后补总件"
+    assert hint == "等待总件信息"
 
 
-def test_ahmad_server_aisha_next_info_hint_gold_value_alone_still_suggests_scan() -> None:
+def test_ahmad_server_aisha_next_info_hint_gold_value_alone_still_waits_gold() -> None:
     module = _ahmad_server_module()
     result = {
         "status": "ok",
@@ -2822,11 +2948,11 @@ def test_ahmad_server_aisha_next_info_hint_gold_value_alone_still_suggests_scan(
 
     hint = module._next_info_hint(result, hero_key="aisha")  # type: ignore[attr-defined]
 
-    assert hint == "开极品均格或极品扫描"
+    assert hint == "等待金品信息"
     assert "估价" not in hint
 
 
-def test_ahmad_server_aisha_next_info_hint_moves_to_purple_after_blue_locked() -> None:
+def test_ahmad_server_aisha_next_info_hint_waits_green_and_purple_after_blue_locked() -> None:
     module = _ahmad_server_module()
     result = {
         "status": "ok",
@@ -2846,10 +2972,10 @@ def test_ahmad_server_aisha_next_info_hint_moves_to_purple_after_blue_locked() -
 
     hint = module._next_info_hint(result, hero_key="aisha", round_no=3)  # type: ignore[attr-defined]
 
-    assert hint == "开优品均格/优品存量/优品扫描"
+    assert hint == "等待绿品和紫品信息"
 
 
-def test_ahmad_server_aisha_next_info_hint_moves_to_gold_then_warehouse() -> None:
+def test_ahmad_server_aisha_next_info_hint_waits_gold_then_total_grid() -> None:
     module = _ahmad_server_module()
     purple_done = {
         "status": "ok",
@@ -2882,11 +3008,65 @@ def test_ahmad_server_aisha_next_info_hint_moves_to_gold_then_warehouse() -> Non
 
     assert (
         module._next_info_hint(purple_done, hero_key="aisha")  # type: ignore[attr-defined]
-        == "开极品均格或极品扫描"
+        == "等待金品和总格信息"
     )
     assert (
         module._next_info_hint(gold_done, hero_key="aisha")  # type: ignore[attr-defined]
-        == "开总仓储看总格，必要时全库透视"
+        == "等待总格信息"
+    )
+
+
+def test_ahmad_server_aisha_next_info_hint_purple_known_gold_unknown_uses_and() -> None:
+    module = _ahmad_server_module()
+    # Purple locked, gold still open, totals missing: gold cannot be back-solved
+    # from totals, so it joins them with "和".
+    result = {
+        "status": "ok",
+        "total_grid_range": [90, 110, 130],
+        "quality_count_ranges": {
+            "q1": [10, 10, 10],
+            "q3": [9, 9, 9],
+            "q4": [6, 6, 6],
+            "q5": [2, 4, 6],
+            "q6": [0, 1, 1],
+        },
+        "evidence": {
+            "total_count": None,
+            "fixed_counts": {"q3": 9, "q4": 6},
+            "quality_cells": {"q3": 14, "q4": 18},
+        },
+    }
+
+    assert (
+        module._next_info_hint(result, hero_key="aisha")  # type: ignore[attr-defined]
+        == "等待金品和总格、总件信息"
+    )
+
+
+def test_ahmad_server_aisha_next_info_hint_all_known_matches_complete_phrase() -> None:
+    module = _ahmad_server_module()
+    result = {
+        "status": "ok",
+        "total_grid_range": [120, 120, 120],
+        "quality_count_ranges": {
+            "q1": [10, 10, 10],
+            "q3": [9, 9, 9],
+            "q4": [6, 6, 6],
+            "q5": [3, 3, 3],
+            "q6": [1, 1, 1],
+        },
+        "evidence": {
+            "total_count": 33,
+            "total_grid_target": 120,
+            "fixed_counts": {"q3": 9, "q4": 6, "q5": 3},
+            "quality_cells": {"q3": 14, "q4": 18},
+            "avg_cells": {"q5": 2.5},
+        },
+    }
+
+    assert (
+        module._next_info_hint(result, hero_key="aisha")  # type: ignore[attr-defined]
+        == "信息已足够，观察出价"
     )
 
 

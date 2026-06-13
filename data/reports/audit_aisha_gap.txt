@@ -1,0 +1,44 @@
+audit_aisha_gap (2026-06-13)
+curated_rows=146 scanned=244
+audit_round_mode=penultimate
+filters: min_rounds=3 min_evidence_score=4 exclude_tail_q6 exclude_status_missing/no_combo
+
+filter_funnel:
+  tail_q6_value: 30
+  tail_q6_count: 21
+  rounds<3: 18
+  status:missing_total_count: 17
+  status:no_reachable_combo: 10
+  insufficient_evidence: 1
+  no_settlement: 1
+
+miss_rate (settlement outside ref band):
+  total_items   32.9% avg_abs_mid_gap=4.6
+  total_cells   66.4% avg_abs_mid_gap=18.6
+  q1           100.0% avg_abs_mid_gap=7.9
+  q3             8.2% avg_abs_mid_gap=0.8
+  q4            26.0% avg_abs_mid_gap=2.0
+  q5            33.6% avg_abs_mid_gap=2.2
+  q6            20.5% avg_abs_mid_gap=1.3
+  q3_cells      11.6% avg_abs_mid_gap=2.3
+  q4_cells      35.6% avg_abs_mid_gap=6.9
+  q5_cells      40.8% avg_abs_mid_gap=6.9
+  q6_cells      38.7% avg_abs_mid_gap=5.7
+  q6_value      24.7% avg_abs_mid_gap=278889
+  balanced_bid  82.9% (±15% vs settlement total value)
+ranked: q1=100%, balanced_bid=83%, total_cells=66%, q5_cells=41%, q6_cells=39%, q4_cells=36%
+
+subset_exact_total_count: n=14
+  exact.total_cells  57.1%
+  exact.q1         100.0%
+  exact.q3           0.0%
+  exact.q4           7.1%
+  exact.q5           7.1%
+  exact.q6           7.1%
+
+subset_gold_price_only: n=0 (public/structured 金均价，无金扫描/均格/件数)
+
+interpretation:
+  - total_items miss reflects count_prior / per-tier sum band, not only 200017
+  - total_cells + tier counts are primary v0 gaps; balanced_bid is secondary
+  - gold avg price alone rarely unique without avg_cells — see subset above
