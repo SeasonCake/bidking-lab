@@ -29,8 +29,10 @@ from bidking_lab.live.fatbeans import (  # noqa: E402
 )
 from bidking_lab.live.monitor import (  # noqa: E402
     _ahmad_ref_inputs_from_batches,
+    _minimap_grid_items,
     _public_info_rows,
     _skill_reveal_rows,
+    load_monitor_tables,
 )
 from ahmad_ref_engine import (  # noqa: E402
     _avg_value_count_matches,
@@ -257,11 +259,24 @@ def _total_items_range(
     return low, mid, high
 
 
-def _build_snapshot(*, hero: str, events, prefix_batches) -> dict:
+def _build_snapshot(
+    *,
+    hero: str,
+    events,
+    prefix_batches,
+    map_id: int | None = None,
+) -> dict:
     bridge = _ahmad_ref_inputs_from_batches(prefix_batches, hero=hero) or {}
-    return {
+    context: dict[str, Any] = {
+        "hero": hero,
+        "phase": "bidding",
+        "round": len(prefix_batches),
+    }
+    if map_id is not None:
+        context["map_id"] = int(map_id)
+    snapshot: dict[str, Any] = {
         "ui_contract": {
-            "context": {"hero": hero, "phase": "bidding"},
+            "context": context,
             "constraints": {"public_info": {}},
         },
         "structured_ref_inputs": bridge,
@@ -270,11 +285,26 @@ def _build_snapshot(*, hero: str, events, prefix_batches) -> dict:
         "skill_reveal_rows": _skill_reveal_rows(events, {}),
         "action_result_rows": [],
     }
+    if map_id is not None:
+        snapshot["map_id"] = int(map_id)
+    try:
+        tables = load_monitor_tables()
+        snapshot["minimap_grid_items"] = _minimap_grid_items(prefix_batches, tables.items)
+    except OSError:
+        pass
+    return snapshot
 
 
 def _prefix_sort_id(prefix_batches) -> int:
     sort_ids = [int(batch.sequence or 0) for batch in prefix_batches if batch.sequence is not None]
     return max(sort_ids) if sort_ids else 0
+
+
+def _map_id_from_events(events) -> int | None:
+    for state in events.states:
+        if state.map_id:
+            return int(state.map_id)
+    return None
 
 
 def _evidence_strength(result: dict[str, Any]) -> int:
@@ -356,7 +386,12 @@ def _evaluate_at_round(
     prefix_batches = pre_batches[:audit_round]
     sort_id = _prefix_sort_id(prefix_batches)
     prefix_events = _events_through_sort(events, sort_id) if sort_id else events
-    snapshot = _build_snapshot(hero="aisha", events=prefix_events, prefix_batches=prefix_batches)
+    snapshot = _build_snapshot(
+        hero="aisha",
+        events=prefix_events,
+        prefix_batches=prefix_batches,
+        map_id=_map_id_from_events(events),
+    )
     result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
     q_ranges = result.get("quality_count_ranges")
     if not isinstance(q_ranges, dict):
@@ -444,11 +479,7 @@ def _evaluate_at_round(
         truth_q5=truth_by_q["q5"],
     )
 
-    map_id = None
-    for state in events.states:
-        if state.map_id:
-            map_id = int(state.map_id)
-            break
+    map_id = _map_id_from_events(events)
 
     notes = result.get("notes")
     if isinstance(notes, str):
@@ -525,7 +556,12 @@ def _passes_filters(
     prefix_batches = pre_batches[:audit_round]
     sort_id = _prefix_sort_id(prefix_batches)
     prefix_events = _events_through_sort(events, sort_id) if sort_id else events
-    snapshot = _build_snapshot(hero="aisha", events=prefix_events, prefix_batches=prefix_batches)
+    snapshot = _build_snapshot(
+        hero="aisha",
+        events=prefix_events,
+        prefix_batches=prefix_batches,
+        map_id=_map_id_from_events(events),
+    )
     result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
     status = str(result.get("status") or "")
     if status in {"missing_total_count", "no_reachable_combo"}:

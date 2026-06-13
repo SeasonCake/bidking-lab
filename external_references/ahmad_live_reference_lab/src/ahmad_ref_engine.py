@@ -102,6 +102,15 @@ HIGH_TIER_CELL_KEYS = ("q3", "q4", "q5")
 # v0 fallback when tier avg_cells does not cover residual items.
 RESIDUAL_ITEM_CELL_ESTIMATE = 4.0
 RESIDUAL_AVG_CELLS_NOTE = "total_grid_target_residual_avg_cells_estimate"
+AISHA_LAYOUT_GRID_HINT_NOTE = "aisha_layout_grid_hint_shadow"
+AISHA_LAYOUT_FOOTROOM_NOTE = "aisha_layout_grid_footroom_below_deepest"
+AISHA_LAYOUT_FOOTROOM_MULT_NOTE = "aisha_layout_footroom_mult"
+PINNED_QUALITY_CELLS_SPARSE_PRIOR_NOTE = "pinned_quality_cells_sparse_prior"
+AISHA_WAREHOUSE_ROWS = 18
+AISHA_GRID_COLUMNS = 10
+AISHA_LAYOUT_MIN_ROUND = 3
+AISHA_LAYOUT_WHITE_ONLY_MAX_ROUND = 3
+AISHA_LAYOUT_DEEPEST_ROW_THRESHOLD = 12
 HARD_TOTAL_GRID_SOURCE_NOTES = frozenset(
     {
         "structured_ref_bridge_total_cells",
@@ -668,6 +677,163 @@ def _apply_total_grid_target_from_known_high_tier_cells(
         )
     total_grid_target = float(inferred)
     _append_source_note_once(source_notes, TOTAL_GRID_FROM_HIGH_TIER_CELLS_NOTE)
+    return total_grid_target
+
+
+def _minimap_items_from_snapshot(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    root_items = snapshot.get("minimap_grid_items")
+    if isinstance(root_items, list):
+        items.extend(row for row in root_items if isinstance(row, dict))
+    ui_contract = snapshot.get("ui_contract")
+    if isinstance(ui_contract, dict):
+        minimap = ui_contract.get("minimap")
+        if isinstance(minimap, dict):
+            contract_items = minimap.get("items")
+            if isinstance(contract_items, list):
+                items.extend(row for row in contract_items if isinstance(row, dict))
+    return items
+
+
+def _item_bottom_row(item: dict[str, Any], *, columns: int) -> int | None:
+    row = _safe_int(item.get("row"))
+    height = _safe_int(item.get("height")) or 1
+    if row is None:
+        local_index = _safe_int(item.get("local_index"))
+        if local_index is not None and columns > 0:
+            row = local_index // columns + 1
+    if row is None:
+        return None
+    return int(row) + max(1, int(height)) - 1
+
+
+def _deepest_minimap_bottom_row(
+    items: list[dict[str, Any]],
+    *,
+    columns: int = AISHA_GRID_COLUMNS,
+) -> int | None:
+    deepest: int | None = None
+    for item in items:
+        bottom = _item_bottom_row(item, columns=columns)
+        if bottom is None:
+            continue
+        deepest = bottom if deepest is None else max(deepest, bottom)
+    return deepest
+
+
+def _known_minimap_cells(items: list[dict[str, Any]]) -> int:
+    total = 0
+    for item in items:
+        cells = _safe_int(item.get("cells"))
+        if cells is not None and cells > 0:
+            total += int(cells)
+            continue
+        width = _safe_int(item.get("width")) or 1
+        height = _safe_int(item.get("height")) or 1
+        total += max(1, int(width) * int(height))
+    return total
+
+
+def _max_minimap_quality(items: list[dict[str, Any]]) -> int | None:
+    qualities = [
+        int(value)
+        for item in items
+        if (value := _safe_int(item.get("quality"))) is not None and int(value) > 0
+    ]
+    return max(qualities) if qualities else None
+
+
+def _aisha_layout_footroom_multipliers(round_no: int) -> tuple[float, float, float]:
+    """Conservative / balanced(P50) / aggressive multipliers on rows_below*cols base."""
+    if int(round_no) <= 3:
+        return (0.75, 1.0, 1.35)
+    if int(round_no) == 4:
+        return (1.0, 1.5, 2.0)
+    return (1.25, 2.0, 2.5)
+
+
+def _aisha_layout_effective_deepest_row(
+    items: list[dict[str, Any]],
+    *,
+    round_no: int,
+    columns: int = AISHA_GRID_COLUMNS,
+) -> int | None:
+    deepest = _deepest_minimap_bottom_row(items, columns=columns)
+    if deepest is None:
+        return None
+    if int(round_no) >= 4:
+        return deepest
+    low_bottoms: list[int] = []
+    high_bottoms: list[int] = []
+    for item in items:
+        quality = _safe_int(item.get("quality"))
+        bottom = _item_bottom_row(item, columns=columns)
+        if bottom is None or quality is None:
+            continue
+        if int(quality) <= 1:
+            low_bottoms.append(int(bottom))
+        elif int(quality) >= 3:
+            high_bottoms.append(int(bottom))
+    if not low_bottoms or not high_bottoms:
+        return deepest
+    low_ref = max(low_bottoms)
+    high_ref = max(high_bottoms)
+    blended = int(round(0.35 * low_ref + 0.65 * high_ref))
+    return max(AISHA_LAYOUT_DEEPEST_ROW_THRESHOLD, min(deepest, blended))
+
+
+def _apply_aisha_layout_grid_hint(
+    *,
+    snapshot: dict[str, Any],
+    hero: str,
+    round_no: int | None,
+    total_grid_target: float | None,
+    source_notes: list[str],
+) -> float | None:
+    """R3+ shadow: widen total grid target when minimap shows deep occupied rows."""
+    if normalize_hero_key(hero) != "aisha":
+        return total_grid_target
+    if round_no is None or int(round_no) < AISHA_LAYOUT_MIN_ROUND:
+        return total_grid_target
+    if any(note in HARD_TOTAL_GRID_SOURCE_NOTES for note in source_notes):
+        return total_grid_target
+
+    items = _minimap_items_from_snapshot(snapshot)
+    if not items:
+        return total_grid_target
+
+    max_quality = _max_minimap_quality(items)
+    if max_quality is not None and max_quality <= 1 and int(round_no) <= AISHA_LAYOUT_WHITE_ONLY_MAX_ROUND:
+        return total_grid_target
+
+    deepest = _aisha_layout_effective_deepest_row(items, round_no=int(round_no))
+    if deepest is None or deepest < AISHA_LAYOUT_DEEPEST_ROW_THRESHOLD:
+        return total_grid_target
+
+    known_cells = _known_minimap_cells(items)
+    rows_below = max(0, AISHA_WAREHOUSE_ROWS - int(deepest))
+    base_footroom = rows_below * AISHA_GRID_COLUMNS
+    conservative_mult, balanced_mult, aggressive_mult = _aisha_layout_footroom_multipliers(
+        int(round_no)
+    )
+    footroom = base_footroom * balanced_mult
+    hinted = float(known_cells + footroom)
+    if total_grid_target is not None and hinted <= float(total_grid_target) + 0.5:
+        return total_grid_target
+
+    if total_grid_target is not None:
+        _append_source_note_once(
+            source_notes,
+            f"total_grid_target_raised:{int(round(float(total_grid_target)))}->{int(round(hinted))}",
+        )
+    total_grid_target = hinted
+    _append_source_note_once(source_notes, AISHA_LAYOUT_GRID_HINT_NOTE)
+    _append_source_note_once(source_notes, AISHA_LAYOUT_FOOTROOM_NOTE)
+    _append_source_note_once(
+        source_notes,
+        f"{AISHA_LAYOUT_FOOTROOM_MULT_NOTE}:"
+        f"{conservative_mult:g}/{balanced_mult:g}/{aggressive_mult:g}@r{int(round_no)}",
+    )
     return total_grid_target
 
 
@@ -2864,6 +3030,15 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         source_notes=source_notes,
     )
 
+    round_no = _safe_int(context.get("round") or snapshot.get("round"))
+    total_grid_target = _apply_aisha_layout_grid_hint(
+        snapshot=snapshot,
+        hero=hero,
+        round_no=round_no,
+        total_grid_target=total_grid_target,
+        source_notes=source_notes,
+    )
+
     return RefEvidence(
         hero=hero,
         map_id=map_id,
@@ -3444,6 +3619,29 @@ def _known_count_floor(evidence: RefEvidence) -> int:
     return max(fixed_total, min_total)
 
 
+def _positive_quality_cell_keys(evidence: RefEvidence) -> list[str]:
+    return [
+        key
+        for key, value in evidence.quality_cells.items()
+        if (_safe_float(value) or 0.0) > 0.0001
+    ]
+
+
+def _quality_cells_fully_pinned(evidence: RefEvidence) -> bool:
+    """True when every positive quality_cells tier also has a matching fixed count."""
+    keys = _positive_quality_cell_keys(evidence)
+    if len(keys) < 2:
+        return False
+    for key in keys:
+        fixed = evidence.fixed_counts.get(key)
+        cells = _quality_exact_cells(key, evidence)
+        if fixed is None or cells is None:
+            return False
+        if not can_compose_grid_total(int(fixed), int(cells)):
+            return False
+    return True
+
+
 def _quality_cells_blocks_sparse_exact_prior(evidence: RefEvidence) -> bool:
     if not evidence.quality_cells:
         return False
@@ -3461,17 +3659,32 @@ def _quality_cells_blocks_sparse_exact_prior(evidence: RefEvidence) -> bool:
 def _should_use_sparse_exact_total_prior(evidence: RefEvidence) -> bool:
     if evidence.total_count is None or evidence.phase == "settled":
         return False
-    if evidence.count_sums or _quality_cells_blocks_sparse_exact_prior(evidence):
+    pinned_quality_cells = _quality_cells_fully_pinned(evidence)
+    if evidence.count_sums:
+        return False
+    if _quality_cells_blocks_sparse_exact_prior(evidence) and not pinned_quality_cells:
         return False
     nonzero_fixed_count = sum(1 for value in evidence.fixed_counts.values() if int(value) > 0)
     if nonzero_fixed_count > 1:
-        return False
-    if nonzero_fixed_count == 1 and len(evidence.avg_cells) > 2:
+        if not pinned_quality_cells:
+            return False
+        if evidence.total_count is None or int(evidence.total_count) < 40:
+            return False
+    if nonzero_fixed_count == 1 and len(evidence.avg_cells) > 2 and not pinned_quality_cells:
         return False
     # Exact total count alone still leaves the count split underdetermined. Use the
     # probability prior sampler instead of full nested enumeration so live/manual
     # sparse states stay responsive without relying on max_combos truncation order.
     return True
+
+
+def _sparse_exact_high_total_tight_prior(evidence: RefEvidence) -> bool:
+    if evidence.total_count is None or int(evidence.total_count) < 50:
+        return False
+    if not _should_use_sparse_exact_total_prior(evidence):
+        return False
+    fixed_nonzero = sum(1 for value in evidence.fixed_counts.values() if int(value) > 0)
+    return fixed_nonzero <= 2
 
 
 EXACT_TOTAL_COUNT_SOURCE_NOTES = (
@@ -3555,6 +3768,12 @@ def _total_count_candidates(evidence: RefEvidence, notes: list[str]) -> tuple[li
             notes.append("manual_total_count_prior_enumeration")
             return [total_count], total_count
         if _should_use_sparse_exact_total_prior(evidence):
+            if (
+                _quality_cells_fully_pinned(evidence)
+                and _quality_cells_blocks_sparse_exact_prior(evidence)
+                and int(total_count) >= 40
+            ):
+                notes.append("pinned_quality_cells_sparse_prior")
             notes.append("sparse_exact_total_prior_enumeration")
             return [total_count], total_count
         return [total_count], None
@@ -3611,6 +3830,8 @@ def _prior_count_values(
     expected = total * p
     sigma = math.sqrt(max(0.75, total * p * max(0.0, 1.0 - p)))
     radius = max(1, min(5, int(math.ceil(1.6 * sigma))))
+    if _sparse_exact_high_total_tight_prior(evidence):
+        radius = max(1, min(radius, 2))
     lower = max(minimum, int(math.floor(expected - radius)))
     upper = min(maximum, int(math.ceil(expected + radius)))
     anchors = {
@@ -4498,6 +4719,8 @@ def run_reference_engine(
     q6_min = evidence.fixed_counts.get("q6", evidence.min_counts.get("q6", 0))
 
     if total_prior_center is not None:
+        if _sparse_exact_high_total_tight_prior(evidence):
+            notes.append("sparse_exact_high_total_tight_prior")
         for total in total_candidates:
             prior_combos = _enumerate_prior_count_combos(
                 total,

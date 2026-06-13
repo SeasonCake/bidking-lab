@@ -14,6 +14,10 @@ if str(AHMAD_SRC) not in sys.path:
     sys.path.insert(0, str(AHMAD_SRC))
 
 from ahmad_ref_engine import (  # noqa: E402
+    AISHA_LAYOUT_FOOTROOM_MULT_NOTE,
+    AISHA_LAYOUT_FOOTROOM_NOTE,
+    AISHA_LAYOUT_GRID_HINT_NOTE,
+    PINNED_QUALITY_CELLS_SPARSE_PRIOR_NOTE,
     RESIDUAL_AVG_CELLS_NOTE,
     TOTAL_GRID_FROM_HIGH_TIER_CELLS_NOTE,
     _avg_count_from_cells,
@@ -2736,6 +2740,153 @@ def test_ref_engine_total_grid_target_residual_uses_unfixed_avg_cells() -> None:
     assert evidence.total_grid_target == 44.0
     assert RESIDUAL_AVG_CELLS_NOTE in evidence.source_notes
     assert TOTAL_GRID_FROM_HIGH_TIER_CELLS_NOTE in evidence.source_notes
+
+
+def test_ref_engine_aisha_layout_grid_hint_raises_target_from_deep_minimap() -> None:
+    snapshot = _snapshot(
+        hero="aisha",
+        map_id=2501,
+        structured_ref_inputs={"total_count": 25},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 3
+    snapshot["minimap_grid_items"] = [
+        {"quality": 3, "row": 14, "width": 2, "height": 1, "cells": 8},
+        {"quality": 4, "row": 12, "width": 3, "height": 2, "cells": 15},
+    ]
+    evidence = extract_evidence(snapshot)
+
+    assert evidence.total_grid_target == 63.0
+    assert AISHA_LAYOUT_GRID_HINT_NOTE in evidence.source_notes
+    assert AISHA_LAYOUT_FOOTROOM_NOTE in evidence.source_notes
+    assert any(
+        note.startswith(f"{AISHA_LAYOUT_FOOTROOM_MULT_NOTE}:")
+        for note in evidence.source_notes
+    )
+
+
+def test_ref_engine_aisha_layout_grid_hint_skips_round_two_white_only() -> None:
+    snapshot = _snapshot(
+        hero="aisha",
+        map_id=2501,
+        structured_ref_inputs={"total_count": 25},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 2
+    snapshot["minimap_grid_items"] = [
+        {"quality": 1, "row": 15, "width": 2, "height": 1, "cells": 6},
+    ]
+    evidence = extract_evidence(snapshot)
+
+    assert evidence.total_grid_target is None
+    assert AISHA_LAYOUT_GRID_HINT_NOTE not in evidence.source_notes
+
+
+def test_ref_engine_aisha_layout_grid_hint_skips_white_only_through_round_three() -> None:
+    snapshot = _snapshot(
+        hero="aisha",
+        map_id=2501,
+        structured_ref_inputs={"total_count": 25},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 3
+    snapshot["minimap_grid_items"] = [
+        {"quality": 1, "row": 15, "width": 2, "height": 1, "cells": 6},
+    ]
+    evidence = extract_evidence(snapshot)
+
+    assert evidence.total_grid_target is None
+    assert AISHA_LAYOUT_GRID_HINT_NOTE not in evidence.source_notes
+
+
+HIDDEN_2601_SLOW_SAMPLE = (
+    FATBEANS_SAMPLE_DIR / "fatbeans_valid_aisha_2601_3rounds_2601_1295018740835056_0215.json"
+)
+
+
+def _aisha_fatbeans_snapshot_at_round(
+    sample_path: Path,
+    *,
+    round_count: int | None = None,
+    include_minimap: bool = False,
+) -> dict:
+    from bidking_lab.live.fatbeans import live_batches_from_fatbeans_events, parse_fatbeans_capture
+    from bidking_lab.live.monitor import (
+        _ahmad_ref_inputs_from_batches,
+        _minimap_grid_items,
+        _public_info_rows,
+        _skill_reveal_rows,
+        load_monitor_tables,
+    )
+
+    events = parse_fatbeans_capture(sample_path)
+    batches = [batch for batch in live_batches_from_fatbeans_events(events) if batch.phase != "settled"]
+    if round_count is None:
+        round_count = max(3, len(batches) - 1)
+    prefix = batches[:round_count]
+    sort_id = max(int(batch.sequence or 0) for batch in prefix if batch.sequence is not None)
+    prefix_events = events
+    if sort_id:
+        prefix_events = type(events)(
+            packets=tuple(row for row in events.packets if int(row.sort_id) <= sort_id),
+            frames=tuple(row for row in events.frames if int(row.sort_id) <= sort_id),
+            sends=tuple(row for row in events.sends if int(row.sort_id) <= sort_id),
+            states=tuple(row for row in events.states if int(row.sort_id) <= sort_id),
+            statuses=tuple(row for row in events.statuses if int(row.sort_id) <= sort_id),
+        )
+    map_id = None
+    marker = sample_path.name.split("_")
+    for part in marker:
+        if part.isdigit() and len(part) == 4 and part.startswith(("21", "22", "23", "24", "25", "26", "45")):
+            map_id = int(part)
+            break
+    snapshot = {
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "phase": "bidding",
+                "round": int(round_count),
+                "map_id": map_id,
+            },
+            "constraints": {"public_info": {}},
+        },
+        "structured_ref_inputs": _ahmad_ref_inputs_from_batches(prefix, hero="aisha") or {},
+        "public_info_rows": _public_info_rows(prefix_events, {}),
+        "skill_reveals": _skill_reveal_rows(prefix_events, {}),
+        "skill_reveal_rows": _skill_reveal_rows(prefix_events, {}),
+        "action_result_rows": [],
+        "map_id": map_id,
+    }
+    if include_minimap:
+        tables = load_monitor_tables()
+        snapshot["minimap_grid_items"] = _minimap_grid_items(prefix, tables.items)
+    return snapshot
+
+
+def test_ref_engine_pinned_quality_cells_sparse_prior_routes_fast_on_hidden_sample() -> None:
+    if not HIDDEN_2601_SLOW_SAMPLE.exists():
+        pytest.skip("hidden fatbeans sample missing")
+    snapshot = _aisha_fatbeans_snapshot_at_round(HIDDEN_2601_SLOW_SAMPLE)
+    started = time.perf_counter()
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+
+    assert elapsed_ms < 2000.0
+    assert result["status"] == "count_prior"
+    assert PINNED_QUALITY_CELLS_SPARSE_PRIOR_NOTE in result["notes"]
+    assert "sparse_exact_total_prior_enumeration" in result["notes"]
+    assert result["combo_count"] < 500
+
+
+def test_ref_engine_hidden_high_total_early_round_stays_under_perf_gate() -> None:
+    if not HIDDEN_2601_SLOW_SAMPLE.exists():
+        pytest.skip("hidden fatbeans sample missing")
+    snapshot = _aisha_fatbeans_snapshot_at_round(HIDDEN_2601_SLOW_SAMPLE, round_count=3)
+    started = time.perf_counter()
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+
+    assert elapsed_ms < 2000.0
+    assert result["status"] == "count_prior"
+    assert "sparse_exact_high_total_tight_prior" in result["notes"]
+    assert result["combo_count"] < 500
 
 
 AISHA_0052_SAMPLE = (
