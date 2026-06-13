@@ -1,5 +1,5 @@
 Aisha round-cohort SPOT audit (20-sample curated, fixed eval rounds)
-sample_files=20 spot_rows=99 runtime=231s
+sample_files=20 spot_rows=99 runtime=234s
 
 baseline = layout off (no C2 band) | candidate = layout band (Phase 1 live default for Aisha)
 

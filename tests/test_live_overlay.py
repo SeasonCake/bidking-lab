@@ -2693,6 +2693,25 @@ def test_ahmad_server_ref_waiting_text_is_hero_specific() -> None:
     assert module._next_info_hint(ethan_grid_only, hero_key="ethan") == "先补公开总件"  # type: ignore[attr-defined]
 
 
+def test_ahmad_server_aisha_d1_flag_detail_filters_weak_shadow_discounts() -> None:
+    module = _ahmad_server_module()
+
+    # Near-1.0 shadow discount is noise — do not surface a flag.
+    assert module._aisha_d1_flag_detail(["aisha_d1_shadow_q6_discount=0.9@r5"]) == ""  # type: ignore[attr-defined]
+    # Meaningful shadow discount surfaces.
+    assert (
+        module._aisha_d1_flag_detail(["aisha_d1_shadow_q6_discount=0.55@r2"])  # type: ignore[attr-defined]
+        == "aisha_d1_shadow_q6_discount=0.55@r2"
+    )
+    # apply notes always surface (they change the bid).
+    assert (
+        module._aisha_d1_flag_detail(["aisha_d1_apply_q6_discount=0.85@r4"])  # type: ignore[attr-defined]
+        == "aisha_d1_apply_q6_discount=0.85@r4"
+    )
+    # Non-d1 notes ignored.
+    assert module._aisha_d1_flag_detail(["aisha_layout_band_widen_applied"]) == ""  # type: ignore[attr-defined]
+
+
 def test_ahmad_server_aisha_defense_multiplier_hint_by_round() -> None:
     module = _ahmad_server_module()
 

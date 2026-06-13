@@ -559,6 +559,43 @@ def _aisha_defense_multiplier_hint(round_no: int | None) -> str:
     return f"R{clamped}防守×{multiplier}"
 
 
+AISHA_D1_FLAG_DISCOUNT_THRESHOLD = 0.7
+
+
+def _parse_aisha_d1_discount(note: str) -> float | None:
+    """Parse the suggested discount from notes like aisha_d1_shadow_q6_discount=0.62@r3."""
+    if "=" not in note:
+        return None
+    tail = note.split("=", 1)[1]
+    value = tail.split("@", 1)[0].strip()
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _aisha_d1_flag_detail(ref_notes: list[str]) -> str:
+    """Surface red-weight reference only when meaningful, to avoid per-round flag spam.
+
+    apply notes always surface (they change the bid); shadow notes only when the
+    suggested discount is below the threshold (most rows emit a near-1.0 shadow note).
+    """
+    relevant: list[str] = []
+    for note in ref_notes:
+        text = str(note)
+        is_apply = "aisha_d1_apply" in text
+        is_shadow = "aisha_d1_shadow" in text
+        if not (is_apply or is_shadow):
+            continue
+        if is_apply:
+            relevant.append(text)
+            continue
+        discount = _parse_aisha_d1_discount(text)
+        if discount is not None and discount < AISHA_D1_FLAG_DISCOUNT_THRESHOLD:
+            relevant.append(text)
+    return "; ".join(relevant[:2])
+
+
 def _aisha_next_info_hint(
     ref_result: dict[str, Any],
     evidence: dict[str, Any],
@@ -1661,9 +1698,9 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     defense_hint = _aisha_defense_multiplier_hint(round_no)
     if hero_key == "aisha" and defense_hint:
         flags.append(_flag(defense_hint, "neutral", "产品参考倍数，不进引擎"))
-    d1_notes = [note for note in ref_notes if "aisha_d1_shadow" in note or "aisha_d1_apply" in note]
-    if hero_key == "aisha" and d1_notes:
-        flags.append(_flag("红品权重参考", "watch", "; ".join(d1_notes[:2])))
+    d1_detail = _aisha_d1_flag_detail(ref_notes) if hero_key == "aisha" else ""
+    if d1_detail:
+        flags.append(_flag("红品权重参考", "watch", d1_detail))
 
     latest_result = actions.get("latest_result") if isinstance(actions.get("latest_result"), dict) else {}
     latest_sent = actions.get("latest_sent") if isinstance(actions.get("latest_sent"), dict) else {}
