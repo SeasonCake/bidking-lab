@@ -12,6 +12,14 @@ import re
 import sys
 from typing import Any, Callable, Iterable, Mapping
 
+from layout_depth_policy import (
+    REF_QUOTE_SAFETY_TIER_NOTE,
+    apply_layout_band_widen_to_range,
+    apply_layout_depth_hints,
+    layout_depth_spec_for_hero,
+    quote_safety_multipliers,
+)
+
 
 def _project_root() -> Path:
     env_root = os.environ.get("BIDKING_LAB_ROOT")
@@ -119,11 +127,19 @@ AISHA_D1_APPLY_Q6_DISCOUNT_NOTE = "aisha_d1_apply_q6_discount"
 VALID_AISHA_D1_MODES = frozenset({"off", "shadow", "apply"})
 DEFAULT_AISHA_D1_MODE = "off"
 AISHA_LIVE_D1_MODE = "shadow"
+SPARSE_LAYOUT_HERO_KEYS = frozenset({"raven", "sophie", "gabriela"})
+LAYOUT_DEPTH_HERO_KEYS = frozenset({"aisha", *SPARSE_LAYOUT_HERO_KEYS})
 PINNED_QUALITY_CELLS_SPARSE_PRIOR_NOTE = "pinned_quality_cells_sparse_prior"
 AISHA_WAREHOUSE_ROWS = 18
 AISHA_GRID_COLUMNS = 10
 AISHA_LAYOUT_MIN_ROUND = 3
 AISHA_LAYOUT_WHITE_ONLY_MAX_ROUND = 3
+AISHA_EARLY_ROUND_MAX_COMBOS = 2500
+AISHA_EARLY_VIEWPORT_GRID_HINT_NOTE = "aisha_early_viewport_grid_hint"
+AISHA_EARLY_ROUND_LIGHTWEIGHT_NOTE = "aisha_early_round_lightweight"
+AISHA_EARLY_ROUND_COUNT_PRIOR_WINDOW_NOTE = "aisha_early_round_count_prior_window"
+AISHA_ENGINE_PASS_SKILL = "skill"
+AISHA_ENGINE_PASS_ITEM = "item"
 AISHA_LAYOUT_DEEPEST_ROW_THRESHOLD = 12
 HARD_TOTAL_GRID_SOURCE_NOTES = frozenset(
     {
@@ -332,6 +348,10 @@ class RefEvidence:
     split_avg_cells: dict[str, float]
     random_value_floors: tuple[tuple[int, float], ...]
     total_grid_target: float | None
+    # Public q4/q5/q6 avg_cells before that tier's count is locked: soft prior only.
+    soft_avg_cell_keys: frozenset[str]
+    # Public q4/q5/q6 avg_value before that tier's count is locked: soft prior only.
+    soft_avg_value_keys: frozenset[str]
     v3_conservative: str
     v3_balanced: str
     v3_aggressive: str
@@ -414,6 +434,8 @@ class RefResult:
                     for sample_count, value_floor in self.evidence.random_value_floors
                 ],
                 "total_grid_target": self.evidence.total_grid_target,
+                "soft_avg_cell_keys": sorted(self.evidence.soft_avg_cell_keys),
+                "soft_avg_value_keys": sorted(self.evidence.soft_avg_value_keys),
                 "source_notes": list(self.evidence.source_notes),
             },
         }
@@ -920,12 +942,38 @@ def prepare_reference_engine_snapshot(snapshot: dict[str, Any]) -> dict[str, Any
         context = ui_contract.get("context")
         if isinstance(context, dict) and context.get("hero") not in (None, ""):
             hero = context.get("hero")
-    if normalize_hero_key(str(hero or "")) == "aisha":
+    hero_key = normalize_hero_key(str(hero or ""))
+    if hero_key in LAYOUT_DEPTH_HERO_KEYS:
         if payload.get("audit_aisha_layout_mode") in (None, ""):
             payload["audit_aisha_layout_mode"] = AISHA_LIVE_LAYOUT_MODE
+    if hero_key == "aisha":
         if payload.get("audit_aisha_d1_mode") in (None, ""):
             payload["audit_aisha_d1_mode"] = AISHA_LIVE_D1_MODE
     return payload
+
+
+def _apply_layout_depth_hints_from_snapshot(
+    *,
+    snapshot: dict[str, Any],
+    hero: str,
+    round_no: int | None,
+    total_grid_target: float | None,
+    source_notes: list[str],
+) -> float | None:
+    hero_key = normalize_hero_key(hero)
+    if layout_depth_spec_for_hero(hero_key) is None:
+        return total_grid_target
+    items = _minimap_items_from_snapshot(snapshot)
+    hard_total_locked = any(note in HARD_TOTAL_GRID_SOURCE_NOTES for note in source_notes)
+    return apply_layout_depth_hints(
+        hero_key=hero_key,
+        round_no=round_no,
+        total_grid_target=total_grid_target,
+        source_notes=source_notes,
+        items=items,
+        layout_mode=_aisha_layout_mode_from_snapshot(snapshot),
+        hard_total_locked=hard_total_locked,
+    )
 
 
 def _append_aisha_layout_footroom_notes(
@@ -968,18 +1016,7 @@ def _apply_aisha_layout_band_widen_to_range(
     grid_range: tuple[int | None, int | None, int | None],
     source_notes: list[str],
 ) -> tuple[int | None, int | None, int | None]:
-    delta = _aisha_layout_band_widen_delta(source_notes)
-    if delta is None or delta <= 0:
-        return grid_range
-    low, mid, high = grid_range
-    if mid is None and high is None:
-        return grid_range
-    anchor = int(mid if mid is not None else high or 0)
-    new_high = max(int(high or 0), anchor + int(delta))
-    if low is not None:
-        new_high = max(int(low), new_high)
-    _append_source_note_once(source_notes, AISHA_LAYOUT_BAND_WIDEN_APPLIED_NOTE)
-    return (low, mid, new_high)
+    return apply_layout_band_widen_to_range(grid_range, source_notes)
 
 
 def _aisha_layout_effective_deepest_row(
@@ -1010,6 +1047,67 @@ def _aisha_layout_effective_deepest_row(
     high_ref = max(high_bottoms)
     blended = int(round(0.35 * low_ref + 0.65 * high_ref))
     return max(AISHA_LAYOUT_DEEPEST_ROW_THRESHOLD, min(deepest, blended))
+
+
+def _apply_aisha_early_round_viewport_hint(
+    *,
+    snapshot: dict[str, Any],
+    hero: str,
+    round_no: int | None,
+    total_grid_target: float | None,
+    source_notes: list[str],
+) -> float | None:
+    """R1–R2 viewport cue from white/green minimap; soft floor only, no R3+ point target."""
+    if normalize_hero_key(hero) != "aisha":
+        return total_grid_target
+    if round_no is None or int(round_no) >= AISHA_LAYOUT_MIN_ROUND:
+        return total_grid_target
+    if any(note in HARD_TOTAL_GRID_SOURCE_NOTES for note in source_notes):
+        return total_grid_target
+
+    items = _minimap_items_from_snapshot(snapshot)
+    if not items:
+        return total_grid_target
+    known_cells = _known_minimap_cells(items)
+    if known_cells <= 0:
+        return total_grid_target
+    deepest = _aisha_layout_effective_deepest_row(items, round_no=int(round_no))
+    if deepest is None or deepest < AISHA_LAYOUT_DEEPEST_ROW_THRESHOLD:
+        return total_grid_target
+
+    rows_below = max(0, AISHA_WAREHOUSE_ROWS - int(deepest))
+    fill_ratio = _aisha_layout_viewport_fill_ratio(
+        known_cells=known_cells,
+        deepest=int(deepest),
+        columns=AISHA_GRID_COLUMNS,
+    )
+    sparsity_boost = _aisha_layout_sparse_footroom_boost(fill_ratio)
+    # R1 white-only scans leave more unknown below; R2 green skill tightens slightly.
+    footroom_mult = 1.45 if int(round_no) <= 1 else 1.20
+    footroom = rows_below * AISHA_GRID_COLUMNS * footroom_mult * sparsity_boost
+    hinted = float(known_cells + footroom)
+    max_quality = _max_minimap_quality(items)
+    _append_source_note_once(source_notes, AISHA_EARLY_VIEWPORT_GRID_HINT_NOTE)
+
+    # Product: R1 avoids pinning a point estimate when only white is visible.
+    if int(round_no) <= 1 and max_quality is not None and max_quality <= 1:
+        _append_source_note_once(
+            source_notes,
+            f"aisha_early_viewport_band_low:{int(round(hinted))}",
+        )
+        return total_grid_target
+
+    if total_grid_target is not None and hinted <= float(total_grid_target) + 0.5:
+        return total_grid_target
+    if total_grid_target is None:
+        capped = min(hinted, float(known_cells) + 52.0)
+        rounded = float(int(round(capped)))
+        _append_source_note_once(
+            source_notes,
+            f"aisha_early_viewport_soft_target:{int(round(rounded))}",
+        )
+        return rounded
+    return total_grid_target
 
 
 def _apply_aisha_layout_grid_hint(
@@ -1105,11 +1203,56 @@ def _apply_aisha_layout_grid_hint(
     return hinted
 
 
+def _filter_avg_value_candidates_by_session(
+    key: str,
+    candidates: list[int],
+    *,
+    total_count: int,
+    fixed_counts: dict[str, int],
+    min_counts: dict[str, int],
+    count_sums: dict[str, int],
+) -> list[int]:
+    if not candidates:
+        return []
+    feasible: list[int] = []
+    for count in candidates:
+        trial = {quality: int(fixed_counts.get(quality, 0) or 0) for quality in QUALITY_KEYS}
+        trial[key] = int(count)
+        q4q5 = count_sums.get("q4q5")
+        if q4q5 is not None and trial["q4"] + trial["q5"] != int(q4q5):
+            continue
+        q4q5q6 = count_sums.get("q4q5q6")
+        if q4q5q6 is not None:
+            if key == "q5" and "q6" not in fixed_counts:
+                trial["q6"] = int(q4q5q6) - trial["q4"] - trial["q5"]
+            if trial["q4"] + trial["q5"] + trial["q6"] != int(q4q5q6):
+                continue
+            if trial["q6"] < max(0, int(min_counts.get("q6", 0) or 0)):
+                continue
+        other_fixed = sum(
+            int(fixed_counts.get(quality, 0) or 0)
+            for quality in QUALITY_KEYS
+            if quality != key
+        )
+        other_min = sum(
+            max(0, int(min_counts.get(quality, 0) or 0))
+            for quality in QUALITY_KEYS
+            if quality != key and quality not in fixed_counts
+        )
+        if int(count) + other_fixed > int(total_count):
+            continue
+        if int(count) + other_fixed + other_min > int(total_count):
+            continue
+        feasible.append(int(count))
+    return feasible
+
+
 def _apply_avg_value_only_q5_count_derivation(
     *,
     total_count: int | None,
     fixed_counts: dict[str, int],
     min_counts: dict[str, int],
+    count_sums: dict[str, int],
     avg_values: dict[str, float],
     avg_cells: dict[str, float],
     quality_cells: dict[str, float],
@@ -1133,6 +1276,14 @@ def _apply_avg_value_only_q5_count_derivation(
         for count in range(max(1, minimum), int(total_count) + 1)
         if _avg_value_count_matches(count, avg)
     ]
+    candidates = _filter_avg_value_candidates_by_session(
+        "q5",
+        candidates,
+        total_count=int(total_count),
+        fixed_counts=fixed_counts,
+        min_counts=min_counts,
+        count_sums=count_sums,
+    )
     if len(candidates) != 1:
         return
     fixed_counts["q5"] = candidates[0]
@@ -1176,7 +1327,15 @@ def _apply_exact_count_residuals(
             residual < minimum
             or not _quality_count_matches_value_inputs(
                 int(residual),
-                avg_values.get(key),
+                None
+                if _public_avg_value_soft_pending(
+                    key,
+                    source_notes=source_notes,
+                    fixed_counts=fixed_counts,
+                    quality_values=quality_values,
+                    avg_values=avg_values,
+                )
+                else avg_values.get(key),
                 _safe_float(quality_values.get(key)),
             )
             or (
@@ -2656,25 +2815,56 @@ def _quality_probabilities(
     return {key: max(1e-9, value / total) for key, value in collapsed.items()}, f"tier_prob:{tier}"
 
 
+def _grid_fixed_for_total_target(
+    key: str,
+    *,
+    counts: dict[str, int],
+    avg_cells: dict[str, float],
+    fixed_grid_keys: set[str],
+    soft_avg_cell_keys: frozenset[str],
+) -> bool:
+    if counts.get(key, 0) == 0:
+        return True
+    if key in fixed_grid_keys:
+        return True
+    if key in avg_cells and key not in soft_avg_cell_keys:
+        return True
+    return False
+
+
 def _fit_grids_to_total_target(
     grids: dict[str, float],
     counts: dict[str, int],
     avg_cells: dict[str, float],
     target: float | None,
     fixed_grid_keys: set[str] | None = None,
+    soft_avg_cell_keys: frozenset[str] | None = None,
 ) -> dict[str, float]:
     if target is None or target <= 0:
         return grids
     fixed_grid_keys = fixed_grid_keys or set()
+    soft_avg_cell_keys = soft_avg_cell_keys or frozenset()
     fixed_values = [
         grids[key]
         for key in QUALITY_KEYS
-        if key in avg_cells or key in fixed_grid_keys or counts.get(key, 0) == 0
+        if _grid_fixed_for_total_target(
+            key,
+            counts=counts,
+            avg_cells=avg_cells,
+            fixed_grid_keys=fixed_grid_keys,
+            soft_avg_cell_keys=soft_avg_cell_keys,
+        )
     ]
     scalable_keys = [
         key
         for key in QUALITY_KEYS
-        if key not in avg_cells and key not in fixed_grid_keys and counts.get(key, 0) > 0
+        if not _grid_fixed_for_total_target(
+            key,
+            counts=counts,
+            avg_cells=avg_cells,
+            fixed_grid_keys=fixed_grid_keys,
+            soft_avg_cell_keys=soft_avg_cell_keys,
+        )
     ]
     target_int = int(round(target))
     if (
@@ -3269,8 +3459,13 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
             source_notes.append(f"public_{key}_count")
 
     for key, value in _public_quality_avg_values(public_info).items():
-        avg_values[key] = value
+        normalized = _ref_normalize_avg_value_wire(value)
+        if normalized is None:
+            continue
+        avg_values[key] = float(normalized)
         source_notes.append(f"public_{key}_avg_value")
+        if abs(float(normalized) - float(value)) > 1e-9:
+            source_notes.append(f"public_{key}_avg_value_wire_normalized")
 
     if phase != "settled":
         random_value_floors = _public_random_value_floors(public_info)
@@ -3304,6 +3499,7 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         total_count=total_count,
         fixed_counts=fixed_counts,
         min_counts=min_counts,
+        count_sums=count_sums,
         avg_values=avg_values,
         avg_cells=avg_cells,
         quality_cells=quality_cells,
@@ -3466,13 +3662,30 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         )
 
     round_no = _safe_int(context.get("round") or snapshot.get("round"))
-    total_grid_target = _apply_aisha_layout_grid_hint(
+    total_grid_target = _apply_layout_depth_hints_from_snapshot(
         snapshot=snapshot,
         hero=hero,
         round_no=round_no,
         total_grid_target=total_grid_target,
         source_notes=source_notes,
     )
+
+    soft_avg_cell_keys = _derive_soft_public_avg_cell_keys(
+        source_notes=source_notes,
+        fixed_counts=fixed_counts,
+        quality_cells=quality_cells,
+    )
+    for key in sorted(soft_avg_cell_keys):
+        _append_source_note_once(source_notes, f"public_{key}_avg_cells_soft_pending_count")
+
+    soft_avg_value_keys = _derive_soft_public_avg_value_keys(
+        source_notes=source_notes,
+        fixed_counts=fixed_counts,
+        quality_values=quality_values,
+        avg_values=avg_values,
+    )
+    for key in sorted(soft_avg_value_keys):
+        _append_source_note_once(source_notes, f"public_{key}_avg_value_soft_pending_count")
 
     return RefEvidence(
         hero=hero,
@@ -3494,6 +3707,8 @@ def extract_evidence(snapshot: dict[str, Any]) -> RefEvidence:
         split_avg_cells=split_avg_cells,
         random_value_floors=random_value_floors,
         total_grid_target=total_grid_target,
+        soft_avg_cell_keys=soft_avg_cell_keys,
+        soft_avg_value_keys=soft_avg_value_keys,
         v3_conservative=str(decision.get("defend_bid") or ""),
         v3_balanced=str(decision.get("attack_bid") or ""),
         v3_aggressive=str(decision.get("stop_price") or ""),
@@ -3584,6 +3799,68 @@ def _ref_avg_looks_like_display_reading(avg: float) -> bool:
         if abs(avg - rounded) <= 1e-9:
             return True
     return False
+
+
+def _ref_normalize_avg_value_wire(avg: float | None) -> float | None:
+    """Snap protocol float averages to UI decimals before fraction/count parsing.
+
+    Client avg prices often arrive as binary floats (total/count). Feeding those
+    directly into Fraction.limit_denominator(60) can pick a wrong rational on the
+    full magnitude (e.g. 6659.21435546875 -> 93229/14).
+    """
+    if avg is None:
+        return None
+    value = float(avg)
+    if not math.isfinite(value) or value < 0:
+        return None
+    if _ref_avg_looks_like_display_reading(value):
+        for decimals in (3, 2, 1, 0):
+            rounded = round(value, decimals)
+            if abs(value - rounded) <= 1e-9:
+                return rounded
+    wire = Fraction(value).limit_denominator(65536)
+    if abs(float(wire) - value) <= 1e-9:
+        wired = float(wire)
+        for decimals in (3, 2, 1, 0):
+            rounded = round(wired, decimals)
+            if abs(wired - rounded) <= (0.5 * 10**-decimals) + 1e-9:
+                return rounded
+    return value
+
+
+def _ref_avg_value_decimal_text(avg: float) -> str:
+    return format(float(avg), ".10f").rstrip("0").rstrip(".")
+
+
+def _ref_avg_value_product_tolerance(count: int, avg: float) -> float:
+    text = _ref_avg_value_decimal_text(avg)
+    decimals = len(text.split(".", 1)[1]) if "." in text else 0
+    return max(0.0001, (0.5 * 10**-decimals) * max(1, int(count)) + 1e-6)
+
+
+def _ref_public_avg_value_wire_normalized(evidence: RefEvidence, key: str) -> bool:
+    return f"public_{key}_avg_value_wire_normalized" in evidence.source_notes
+
+
+def _filter_quality_counts_for_avg_value(
+    key: str,
+    candidates: Iterable[int],
+    evidence: RefEvidence,
+) -> list[int]:
+    ordered = sorted({int(value) for value in candidates})
+    if key in evidence.soft_avg_value_keys:
+        return ordered
+    if (
+        ordered
+        and evidence.avg_values.get(key) is not None
+        and _ref_public_avg_value_wire_normalized(evidence, key)
+    ):
+        return ordered
+    return [
+        value
+        for value in ordered
+        if _quality_count_matches_value_evidence(key, value, evidence)
+    ]
 
 
 def _ref_avg_matches_game_display(count: int, avg: float | None, grid: int) -> bool:
@@ -3682,10 +3959,21 @@ def _avg_matches_exact_grid(count: int, avg: float | None, grid: int) -> bool:
 def _avg_value_fraction(avg: float | None) -> Fraction | None:
     if avg is None:
         return None
-    value = float(avg)
+    normalized = _ref_normalize_avg_value_wire(avg)
+    if normalized is None:
+        return None
+    value = float(normalized)
     if not math.isfinite(value) or value < 0:
         return None
-    return Fraction(value).limit_denominator(60)
+    if value == 0:
+        return Fraction(0, 1)
+    text = _ref_avg_value_decimal_text(value)
+    if "." not in text:
+        return Fraction(int(text), 1)
+    whole, frac = text.split(".", 1)
+    digits = len(frac)
+    exact = Fraction(int(whole) * 10**digits + int(frac), 10**digits)
+    return exact.limit_denominator(10_000)
 
 
 def _avg_value_has_positive_signal(avg: float | None) -> bool:
@@ -3694,14 +3982,20 @@ def _avg_value_has_positive_signal(avg: float | None) -> bool:
 
 
 def _avg_value_count_matches(count: int, avg: float | None) -> bool:
-    fraction = _avg_value_fraction(avg)
-    if fraction is None:
+    normalized = _ref_normalize_avg_value_wire(avg)
+    if normalized is None:
         return True
-    if fraction == 0:
+    if normalized == 0:
         return count == 0
     if count <= 0:
         return False
-    return (fraction.numerator * int(count)) % fraction.denominator == 0
+    fraction = _avg_value_fraction(normalized)
+    if fraction is not None and fraction > 0:
+        if (fraction.numerator * int(count)) % fraction.denominator == 0:
+            return True
+    product = float(normalized) * int(count)
+    tolerance = _ref_avg_value_product_tolerance(int(count), float(normalized))
+    return abs(product - round(product)) <= tolerance
 
 
 def _avg_value_total_from_count(avg: float, count: int) -> float | None:
@@ -3778,12 +4072,16 @@ def _count_values(
     maximum = total_count - reserve
     if maximum < minimum:
         return []
-    values = [
-        value
-        for value in range(minimum, maximum + 1)
-        if _quality_count_matches_value_evidence(key, value, evidence)
-    ]
-    if _should_use_exact_total_avg_cells_fast_path(evidence) and fixed is None:
+    values = _filter_quality_counts_for_avg_value(
+        key,
+        range(minimum, maximum + 1),
+        evidence,
+    )
+    if (
+        _should_use_exact_total_avg_cells_fast_path(evidence)
+        and fixed is None
+        and key not in evidence.soft_avg_cell_keys
+    ):
         avg = evidence.avg_cells.get(key)
         if avg is not None and avg > 0:
             avg_valid = [value for value in values if _avg_grid_options(value, avg)]
@@ -3940,6 +4238,12 @@ def _quality_count_matches_value_evidence(
     count: int,
     evidence: RefEvidence,
 ) -> bool:
+    if (
+        key in evidence.soft_avg_value_keys
+        and evidence.fixed_counts.get(key) is None
+        and _quality_exact_value(key, evidence) is None
+    ):
+        return True
     return _quality_count_matches_value_inputs(
         count,
         evidence.avg_values.get(key),
@@ -4201,7 +4505,12 @@ def _should_defer_total_count_prior(evidence: RefEvidence) -> bool:
     return True
 
 
-def _total_count_candidates(evidence: RefEvidence, notes: list[str]) -> tuple[list[int], int | None]:
+def _total_count_candidates(
+    evidence: RefEvidence,
+    notes: list[str],
+    *,
+    early_round_lightweight: bool = False,
+) -> tuple[list[int], int | None]:
     if evidence.total_count is not None:
         total_count = int(evidence.total_count)
         fixed_total = sum(max(0, int(value)) for value in evidence.fixed_counts.values())
@@ -4237,9 +4546,14 @@ def _total_count_candidates(evidence: RefEvidence, notes: list[str]) -> tuple[li
     center = max(_default_total_count(evidence.map_id), _known_count_floor(evidence))
     if evidence.total_grid_target is not None and evidence.total_grid_target > 0:
         center = max(center, int(round(evidence.total_grid_target / 3.0)), 1)
-    lower = max(_known_count_floor(evidence), center - 4, 1)
-    upper = max(lower, center + 4)
-    upper = min(60, upper)
+    if early_round_lightweight:
+        lower = max(_known_count_floor(evidence), center - 2, 1)
+        upper = min(50, max(lower, center + 2))
+        notes.append(AISHA_EARLY_ROUND_COUNT_PRIOR_WINDOW_NOTE)
+    else:
+        lower = max(_known_count_floor(evidence), center - 4, 1)
+        upper = max(lower, center + 4)
+        upper = min(60, upper)
     notes.append("total_count_from_ref_count_prior")
     notes.append(f"total_count_prior_center:{center}")
     return list(range(lower, upper + 1)), center
@@ -4293,7 +4607,11 @@ def _prior_count_values(
         if avg_valid:
             values.update(avg_valid)
     avg_value = evidence.avg_values.get(key)
-    if avg_value is not None and _avg_value_has_positive_signal(avg_value):
+    if (
+        avg_value is not None
+        and _avg_value_has_positive_signal(avg_value)
+        and key not in evidence.soft_avg_value_keys
+    ):
         avg_value_valid = [
             value
             for value in range(minimum, maximum + 1)
@@ -4302,45 +4620,40 @@ def _prior_count_values(
         if avg_value_valid:
             values.update(avg_value_valid)
     if exact_cells is not None:
-        valid = [
-            value
-            for value in sorted(values)
-            if can_compose_grid_total(value, exact_cells)
-            and _quality_count_matches_value_evidence(key, value, evidence)
-        ]
+        valid = _filter_quality_counts_for_avg_value(
+            key,
+            (
+                value
+                for value in sorted(values)
+                if can_compose_grid_total(value, exact_cells)
+            ),
+            evidence,
+        )
         if valid:
             return valid
-        return [
-            value
-            for value in range(minimum, maximum + 1)
-            if can_compose_grid_total(value, exact_cells)
-            and _quality_count_matches_value_evidence(key, value, evidence)
-        ]
-    return [
-        value
-        for value in sorted(values)
-        if _quality_count_matches_value_evidence(key, value, evidence)
-    ]
+        return _filter_quality_counts_for_avg_value(
+            key,
+            (
+                value
+                for value in range(minimum, maximum + 1)
+                if can_compose_grid_total(value, exact_cells)
+            ),
+            evidence,
+        )
+    return _filter_quality_counts_for_avg_value(key, sorted(values), evidence)
 
 
-def _prior_log_weight(
+def _evidence_grid_avg_cells_log_penalties(
     counts: dict[str, int],
     grids: dict[str, float],
-    *,
-    total: int,
-    total_prior_center: int,
     evidence: RefEvidence,
-    probs: dict[str, float],
+    *,
+    include_grid_target: bool = True,
 ) -> float:
-    logw = _log_fact(total)
-    for key in QUALITY_KEYS:
-        count = counts[key]
-        logw -= _log_fact(count)
-        if count:
-            logw += count * math.log(max(1e-9, probs[key]))
-    logw -= ((total - total_prior_center) ** 2) / (2 * 4.0 * 4.0)
-    if evidence.total_grid_target is not None:
-        diff = sum(grids.values()) - evidence.total_grid_target
+    logw = 0.0
+    if include_grid_target and evidence.total_grid_target is not None:
+        total_grid = sum(grids.values())
+        diff = total_grid - evidence.total_grid_target
         logw -= min(30.0, (diff * diff) / (2 * 6.0 * 6.0))
     for key, avg in evidence.avg_cells.items():
         count = counts.get(key, 0)
@@ -4356,6 +4669,66 @@ def _prior_log_weight(
         diff = grids.get(key, 0.0) / count - avg
         logw -= min(30.0, 0.5 * (diff * diff) / (sigma * sigma))
     return logw
+
+
+def _prior_log_weight(
+    counts: dict[str, int],
+    grids: dict[str, float],
+    *,
+    total: int,
+    total_prior_center: int,
+    evidence: RefEvidence,
+    probs: dict[str, float],
+    item_values: dict[str, float] | None = None,
+) -> float:
+    logw = _log_fact(total)
+    for key in QUALITY_KEYS:
+        count = counts[key]
+        logw -= _log_fact(count)
+        if count:
+            logw += count * math.log(max(1e-9, probs[key]))
+    logw -= ((total - total_prior_center) ** 2) / (2 * 4.0 * 4.0)
+    logw += _evidence_grid_avg_cells_log_penalties(counts, grids, evidence)
+    avg_value_penalty, _ = _soft_public_avg_value_log_weight(
+        counts,
+        grids,
+        evidence,
+        item_values=item_values,
+    )
+    logw += avg_value_penalty
+    return logw
+
+
+def _soft_public_avg_value_log_weight(
+    counts: dict[str, int],
+    grids: dict[str, float],
+    evidence: RefEvidence,
+    *,
+    item_values: dict[str, float] | None = None,
+) -> tuple[float, bool]:
+    item_values = item_values or {}
+    penalty = 0.0
+    applied = False
+    for key in evidence.soft_avg_value_keys:
+        avg = evidence.avg_values.get(key)
+        count = int(counts.get(key, 0))
+        if avg is None or not _avg_value_has_positive_signal(avg) or count <= 0:
+            continue
+        grid = float(grids.get(key, count * DEFAULT_GRID_MEANS[key]))
+        tier_total = _quality_value_for_evidence(
+            key,
+            count=count,
+            grid=grid,
+            item_values=item_values,
+            evidence=evidence,
+        )
+        combo_avg = tier_total / count
+        cv = VALUE_UNCERTAINTY_CV.get(key, 0.20)
+        sigma = max(8_000.0, float(avg) * cv / math.sqrt(max(1, count)))
+        diff = combo_avg - float(avg)
+        penalty -= min(25.0, 0.5 * (diff / sigma) ** 2)
+        applied = True
+    return penalty, applied
 
 
 def _count_sum_matches(counts: dict[str, int], evidence: RefEvidence) -> bool:
@@ -4430,6 +4803,7 @@ def _enumerate_prior_count_combos(
     probs: dict[str, float],
     total_prior_center: int,
     max_new: int,
+    item_values: dict[str, float] | None = None,
 ) -> list[RefCombo]:
     if max_new <= 0:
         return []
@@ -4468,6 +4842,7 @@ def _enumerate_prior_count_combos(
                                 total_prior_center=total_prior_center,
                                 evidence=evidence,
                                 probs=probs,
+                                item_values=item_values,
                             ),
                             total_grid=sum(grids.values()),
                         )
@@ -4571,13 +4946,26 @@ def _grids_for_counts(
                 return None
             grids[key] = 0.0
         elif avg is not None:
-            options = _avg_grid_options(count, avg)
-            if cell_floor > 0:
-                options = [option for option in options if option >= cell_floor]
-            selected = _choose_avg_grid_option(count, avg, options)
-            if selected is None:
-                return None
-            grids[key] = selected
+            if key in evidence.soft_avg_cell_keys:
+                default = count * float(avg)
+                options = [
+                    option
+                    for option in _composable_grid_options(int(count))
+                    if option >= cell_floor
+                ]
+                if not options:
+                    return None
+                grids[key] = float(
+                    min(options, key=lambda option: (abs(option - default), option))
+                )
+            else:
+                options = _avg_grid_options(count, avg)
+                if cell_floor > 0:
+                    options = [option for option in options if option >= cell_floor]
+                selected = _choose_avg_grid_option(count, avg, options)
+                if selected is None:
+                    return None
+                grids[key] = selected
         else:
             default = count * DEFAULT_GRID_MEANS[key]
             if cell_floor > 0:
@@ -4620,6 +5008,7 @@ def _grids_for_counts(
         evidence.avg_cells,
         evidence.total_grid_target,
         fixed_grid_keys=set(evidence.quality_cells),
+        soft_avg_cell_keys=evidence.soft_avg_cell_keys,
     )
     hard_total = _hard_total_grid_target_int(evidence)
     if hard_total is not None and abs(sum(fitted.values()) - hard_total) > 0.0001:
@@ -5028,14 +5417,126 @@ def _without_public_quality_avg_values(snapshot: dict[str, Any]) -> dict[str, An
     return cloned
 
 
+def _derive_soft_public_avg_cell_keys(
+    *,
+    source_notes: Iterable[str],
+    fixed_counts: dict[str, int],
+    quality_cells: dict[str, float],
+) -> frozenset[str]:
+    soft: set[str] = set()
+    for note in source_notes:
+        match = re.fullmatch(r"public_(q[456])_avg_cells", str(note))
+        if not match:
+            continue
+        key = match.group(1)
+        if fixed_counts.get(key) is not None:
+            continue
+        if key in quality_cells:
+            continue
+        soft.add(key)
+    return frozenset(soft)
+
+
+def _derive_soft_public_avg_value_keys(
+    *,
+    source_notes: Iterable[str],
+    fixed_counts: dict[str, int],
+    quality_values: dict[str, float],
+    avg_values: dict[str, float],
+) -> frozenset[str]:
+    soft: set[str] = set()
+    for note in source_notes:
+        match = re.fullmatch(r"public_(q[456])_avg_value", str(note))
+        if not match:
+            continue
+        key = match.group(1)
+        if fixed_counts.get(key) is not None:
+            continue
+        if key in quality_values:
+            continue
+        if key not in avg_values:
+            continue
+        soft.add(key)
+    return frozenset(soft)
+
+
+def _public_avg_value_soft_pending(
+    key: str,
+    *,
+    source_notes: Iterable[str],
+    fixed_counts: dict[str, int],
+    quality_values: dict[str, float],
+    avg_values: dict[str, float],
+) -> bool:
+    if not any(str(note) == f"public_{key}_avg_value" for note in source_notes):
+        return False
+    if fixed_counts.get(key) is not None:
+        return False
+    if key in quality_values:
+        return False
+    return key in avg_values
+
+
+def _public_quality_avg_cells_notes(notes: Iterable[str]) -> list[str]:
+    return [
+        str(note)
+        for note in notes
+        if re.fullmatch(r"public_q[456]_avg_cells", str(note))
+    ]
+
+
+def _without_public_avg_cell_constraints(
+    snapshot: dict[str, Any],
+    avg_cell_notes: Iterable[str],
+) -> dict[str, Any]:
+    qualities: set[str] = set()
+    for note in avg_cell_notes:
+        match = re.fullmatch(r"public_(q[456])_avg_cells", str(note))
+        if match:
+            qualities.add(match.group(1))
+    if not qualities:
+        return snapshot
+    cloned = copy.deepcopy(snapshot)
+    for container_key in ("structured_ref_inputs",):
+        container = cloned.get(container_key)
+        if not isinstance(container, dict):
+            continue
+        avg_cells = container.get("avg_cells")
+        if isinstance(avg_cells, dict):
+            container["avg_cells"] = {
+                key: value for key, value in avg_cells.items() if key not in qualities
+            }
+    ui_contract = cloned.get("ui_contract")
+    if isinstance(ui_contract, dict):
+        constraints = ui_contract.get("constraints")
+        if isinstance(constraints, dict):
+            public_info = constraints.get("public_info")
+            if isinstance(public_info, dict):
+                blocked = {f"{quality}_avg_cells" for quality in ("q4", "q5", "q6")}
+
+                def keep(row: Any) -> bool:
+                    if not isinstance(row, dict):
+                        return True
+                    return str(row.get("semantic") or "") not in blocked
+
+                for key in ("public_numeric_facts", "public_avg_values"):
+                    rows = public_info.get(key)
+                    if isinstance(rows, list):
+                        public_info[key] = [row for row in rows if keep(row)]
+    return cloned
+
+
 def _with_public_quality_avg_fallback_notes(
     result: RefResult,
-    public_avg_notes: Iterable[str],
+    *,
+    public_avg_value_notes: Iterable[str],
+    public_avg_cell_notes: Iterable[str],
 ) -> RefResult:
-    downgrade_notes = [
-        "public_quality_avg_value_conflict_fallback",
-        *[f"{note}_downgraded" for note in public_avg_notes],
-    ]
+    downgrade_notes = ["public_quality_avg_value_conflict_fallback"]
+    downgrade_notes.extend(f"{note}_downgraded" for note in public_avg_value_notes)
+    if public_avg_cell_notes:
+        downgrade_notes.append("public_quality_avg_cells_conflict_fallback")
+        downgrade_notes.extend(f"{note}_downgraded" for note in public_avg_cell_notes)
     notes = tuple(dict.fromkeys([*result.notes, *downgrade_notes]))
     evidence = replace(
         result.evidence,
@@ -5064,7 +5565,45 @@ def _retry_without_public_quality_avg_values(
     )
     if result.status not in {"ok", "count_prior"}:
         return None
-    return _with_public_quality_avg_fallback_notes(result, notes)
+    return _with_public_quality_avg_fallback_notes(
+        result,
+        public_avg_value_notes=notes,
+        public_avg_cell_notes=(),
+    )
+
+
+def _retry_without_public_avg_constraints(
+    snapshot: dict[str, Any],
+    *,
+    public_avg_value_notes: Iterable[str],
+    public_avg_cell_notes: Iterable[str],
+    static_data: dict[str, Any],
+    safety_factor: float,
+    max_combos: int,
+) -> RefResult | None:
+    value_notes = list(public_avg_value_notes)
+    cell_notes = list(public_avg_cell_notes)
+    if not value_notes and not cell_notes:
+        return None
+    working = snapshot
+    if value_notes:
+        working = _without_public_quality_avg_values(working)
+    if cell_notes:
+        working = _without_public_avg_cell_constraints(working, cell_notes)
+    result = run_reference_engine(
+        working,
+        static_data=static_data,
+        safety_factor=safety_factor,
+        max_combos=max_combos,
+        _allow_public_avg_fallback=False,
+    )
+    if result.status not in {"ok", "count_prior"}:
+        return None
+    return _with_public_quality_avg_fallback_notes(
+        result,
+        public_avg_value_notes=value_notes,
+        public_avg_cell_notes=cell_notes,
+    )
 
 
 def run_reference_engine(
@@ -5078,6 +5617,13 @@ def run_reference_engine(
     static_data = static_data or load_reference_static_data()
     evidence = extract_evidence(snapshot)
     notes = list(evidence.source_notes)
+    early_round_lightweight = bool(snapshot.get("audit_aisha_early_round"))
+    engine_pass = str(snapshot.get("audit_aisha_engine_pass") or "").strip()
+    if early_round_lightweight:
+        max_combos = min(max_combos, AISHA_EARLY_ROUND_MAX_COMBOS)
+        _append_source_note_once(notes, AISHA_EARLY_ROUND_LIGHTWEIGHT_NOTE)
+    if engine_pass in {AISHA_ENGINE_PASS_SKILL, AISHA_ENGINE_PASS_ITEM}:
+        _append_source_note_once(notes, f"aisha_engine_pass:{engine_pass}")
     if not is_supported_ref_hero(evidence.hero):
         return RefResult(
             status="not_structured_hero",
@@ -5129,7 +5675,11 @@ def run_reference_engine(
     random_floor = _random_value_floor(evidence)
     if random_floor is not None:
         notes.append(f"random_value_floor_soft_weight:{int(round(random_floor))}")
-    total_candidates, total_prior_center = _total_count_candidates(evidence, notes)
+    total_candidates, total_prior_center = _total_count_candidates(
+        evidence,
+        notes,
+        early_round_lightweight=early_round_lightweight,
+    )
     exact_total_avg_fast_path = _should_use_exact_total_avg_cells_fast_path(evidence)
     if not total_candidates:
         return RefResult(
@@ -5154,6 +5704,7 @@ def run_reference_engine(
 
     combos: list[RefCombo] = []
     quality_value_soft_weight_applied = False
+    public_avg_value_soft_weight_applied = False
     q3_min = evidence.fixed_counts.get("q3", evidence.min_counts.get("q3", 0))
     q4_min = evidence.fixed_counts.get("q4", evidence.min_counts.get("q4", 0))
     q5_min = evidence.fixed_counts.get("q5", evidence.min_counts.get("q5", 0))
@@ -5169,6 +5720,7 @@ def run_reference_engine(
                 probs=probs,
                 total_prior_center=total_prior_center,
                 max_new=max_combos - len(combos),
+                item_values=item_values,
             )
             for combo in prior_combos:
                 value = _combo_value(combo.counts, combo.grids, item_values, evidence)
@@ -5178,8 +5730,17 @@ def run_reference_engine(
                     item_values,
                     evidence,
                 )
+                public_avg_value_weight, public_avg_value_weight_applied = _soft_public_avg_value_log_weight(
+                    combo.counts,
+                    combo.grids,
+                    evidence,
+                    item_values=item_values,
+                )
                 quality_value_soft_weight_applied = (
                     quality_value_soft_weight_applied or quality_value_weight_applied
+                )
+                public_avg_value_soft_weight_applied = (
+                    public_avg_value_soft_weight_applied or public_avg_value_weight_applied
                 )
                 combos.append(
                     RefCombo(
@@ -5188,6 +5749,7 @@ def run_reference_engine(
                         value=value,
                         weight=combo.weight
                         + quality_value_weight
+                        + public_avg_value_weight
                         + _random_value_floor_log_weight(value, evidence),
                         total_grid=combo.total_grid,
                     )
@@ -5236,9 +5798,11 @@ def run_reference_engine(
                                 logw -= _log_fact(count)
                                 if count:
                                     logw += count * math.log(probs[key])
-                            if evidence.total_grid_target is not None:
-                                diff = total_grid - evidence.total_grid_target
-                                logw -= min(30.0, (diff * diff) / (2 * 6.0 * 6.0))
+                            logw += _evidence_grid_avg_cells_log_penalties(
+                                counts,
+                                grids,
+                                evidence,
+                            )
                             value = _combo_value(counts, grids, item_values, evidence)
                             quality_value_weight, quality_value_weight_applied = _quality_exact_value_log_weight(
                                 counts,
@@ -5246,8 +5810,20 @@ def run_reference_engine(
                                 item_values,
                                 evidence,
                             )
+                            public_avg_value_weight, public_avg_value_weight_applied = (
+                                _soft_public_avg_value_log_weight(
+                                    counts,
+                                    grids,
+                                    evidence,
+                                    item_values=item_values,
+                                )
+                            )
                             quality_value_soft_weight_applied = (
                                 quality_value_soft_weight_applied or quality_value_weight_applied
+                            )
+                            public_avg_value_soft_weight_applied = (
+                                public_avg_value_soft_weight_applied
+                                or public_avg_value_weight_applied
                             )
                             combos.append(
                                 RefCombo(
@@ -5256,6 +5832,7 @@ def run_reference_engine(
                                     value=value,
                                     weight=logw
                                     + quality_value_weight
+                                    + public_avg_value_weight
                                     + _random_value_floor_log_weight(value, evidence),
                                     total_grid=total_grid,
                                 )
@@ -5275,13 +5852,17 @@ def run_reference_engine(
         notes.append("exact_total_avg_cells_fast_path")
     if quality_value_soft_weight_applied:
         notes.append("quality_value_soft_weight_v0")
+    if public_avg_value_soft_weight_applied:
+        notes.append("public_avg_value_soft_weight_v0")
 
     if not combos:
-        public_avg_notes = _public_quality_avg_value_notes(notes)
-        if _allow_public_avg_fallback and public_avg_notes:
-            fallback = _retry_without_public_quality_avg_values(
+        public_avg_value_notes = _public_quality_avg_value_notes(notes)
+        public_avg_cell_notes = _public_quality_avg_cells_notes(notes)
+        if _allow_public_avg_fallback and (public_avg_value_notes or public_avg_cell_notes):
+            fallback = _retry_without_public_avg_constraints(
                 snapshot,
-                public_avg_notes=public_avg_notes,
+                public_avg_value_notes=public_avg_value_notes,
+                public_avg_cell_notes=public_avg_cell_notes,
                 static_data=static_data,
                 safety_factor=safety_factor,
                 max_combos=max_combos,
@@ -5429,12 +6010,15 @@ def run_reference_engine(
     if adjusted_p50 is not None:
         p50 = adjusted_p50
 
+    conservative_mul, balanced_mul, aggressive_mul = quote_safety_multipliers(safety_factor)
+    _append_source_note_once(notes, REF_QUOTE_SAFETY_TIER_NOTE)
+
     return RefResult(
         status="count_prior" if total_prior_center is not None else "ok",
         source="ref_v0",
-        conservative=int(round((p25 or 0) * safety_factor)),
-        balanced=int(round((p50 or 0) * safety_factor)),
-        aggressive=int(round((p75 or 0) * safety_factor)),
+        conservative=int(round((p25 or 0) * conservative_mul)),
+        balanced=int(round((p50 or 0) * balanced_mul)),
+        aggressive=int(round((p75 or 0) * aggressive_mul)),
         value_p25=int(round(p25 or 0)),
         value_p50=int(round(p50 or 0)),
         value_p75=int(round(p75 or 0)),

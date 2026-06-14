@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "note": "UI preview sample 2: 4-char Chinese name + bid (v0.1.9 masked highest)",
+  "ui_contract": {
+    "context": {
+      "hero": "ahmed",
+      "map_id": 2408,
+      "phase": "bidding",
+      "round": 4,
+      "session_id": "2408:masked-highest-sample-2"
+    },
+    "baseline": {
+      "decision": {
+        "current_highest": "欧阳娜娜 1,280,000",
+        "action": "停止追价",
+        "risk_band": "过热区"
+      },
+      "posterior": {}
+    },
+    "source": {
+      "created_at": 1781415547.2120504
+    }
+  },
+  "created_at": 1781415547.2120504
+}

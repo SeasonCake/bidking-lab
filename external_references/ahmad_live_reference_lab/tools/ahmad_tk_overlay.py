@@ -48,6 +48,12 @@ from ahmad_live_panel_server import (  # noqa: E402
 )
 
 try:
+    from hero_ref_version import resolve_hero_ref_version
+except Exception:  # noqa: BLE001 - keep overlay usable if version helper is missing
+    def resolve_hero_ref_version() -> str:
+        return "dev"
+
+try:
     from ahmad_ref_engine import (  # noqa: E402
         HERO_ALIASES,
         SUPPORTED_REF_HERO_KEYS,
@@ -92,6 +98,7 @@ except Exception:  # noqa: BLE001 - keep overlay usable if ref core is unavailab
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SNAPSHOT = ROOT / "data" / "logs" / "live" / "latest_snapshot.json"
+HERO_REF_DISPLAY_VERSION = resolve_hero_ref_version()
 CREDIT_TEXT = "作者: 加菲_Barista · 协作: lemyes"
 CREDIT_GITHUB_URL = "https://github.com/SeasonCake/bidking-lab"
 GITHUB_TIP_TEXT = "如果觉得不错，就给一个免费的 Star 吧！"
@@ -995,6 +1002,10 @@ def _write_diagnostic_export(
     current_reference = _mapping(current_summary.get("reference") if current_summary else {})
     current_evidence = _mapping(current_summary.get("evidence") if current_summary else {})
     current_diagnostics = _mapping(current_summary.get("diagnostics") if current_summary else {})
+    snapshot_ready = bool(
+        _text(context.get("session_id") or snapshot.get("session_id"), "").strip()
+        and _text(context.get("hero") or snapshot.get("hero"), "").strip() not in {"", "?", "unknown"}
+    )
     raw_tables = _raw_tables_summary(snapshot_path)
     package_is_public_safe = not bool(raw_tables.get("required_present"))
     manifest = {
@@ -1041,6 +1052,12 @@ def _write_diagnostic_export(
             "candidate_summary": current_evidence.get("candidate_summary"),
             "next_info_hint": current_evidence.get("next_info_hint"),
             "rare_signal_summary": _mapping(current_diagnostics.get("rare_signals")).get("summary"),
+            "snapshot_ready": snapshot_ready,
+            "snapshot_ready_warning": (
+                None
+                if snapshot_ready
+                else "导出时 session/hero 尚未就绪；请等标题出现英雄名与轮次后再导出"
+            ),
         },
         "source_files": {
             "file": snapshot.get("file"),
@@ -2186,15 +2203,30 @@ class AhmadTkOverlay:
         top_row = tk.Frame(header, bg=BG)
         top_row.pack(fill="x")
         title_box = tk.Frame(top_row, bg=BG)
+        title_header = tk.Frame(title_box, bg=BG)
+        title_header.pack(fill="x")
         self.title = tk.Label(
-            title_box,
+            title_header,
             text="Hero Ref",
             bg=BG,
             fg=TEXT,
             font=(FONT_UI, 12, "bold"),
             anchor="w",
         )
-        self.title.pack(fill="x")
+        self.title.pack(side="left", fill="x", expand=True)
+        self.version_label = tk.Label(
+            title_header,
+            text=f"v{HERO_REF_DISPLAY_VERSION}",
+            bg=BG,
+            fg=DIM,
+            font=(FONT_UI, 7),
+            anchor="e",
+        )
+        self.version_label.pack(side="right", padx=(6, 0))
+        self.version_tip = HoverTip(
+            self.version_label,
+            f"Hero Ref v{HERO_REF_DISPLAY_VERSION}",
+        )
         self.subtitle = tk.Label(
             title_box,
             text="等待实时包",
@@ -2281,7 +2313,7 @@ class AhmadTkOverlay:
         header_right.pack(side="right")
         self.mode_button = ttk.Button(
             header_right,
-            text="迷你",
+            text="迷你", 
             style="Hero.TButton",
             command=self.toggle_details,
             width=4,

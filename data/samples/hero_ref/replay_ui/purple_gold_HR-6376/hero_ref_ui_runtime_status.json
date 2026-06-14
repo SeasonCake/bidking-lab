@@ -1,0 +1,49 @@
+{
+  "logged_at": 1781415739.437981,
+  "event": "idle_no_change",
+  "snapshot_path": "c:\\xiangmuyunxing\\biancheng\\2026\\bidking-lab\\data\\samples\\hero_ref\\replay_ui\\purple_gold_HR-6376\\r02_bidding.json",
+  "snapshot_exists": true,
+  "snapshot_signature": [
+    1781415721716490300,
+    119675
+  ],
+  "snapshot_age_seconds": 17.721,
+  "last_applied_signature": [
+    1781415721716490300,
+    119675
+  ],
+  "diagnostic_profile": "engineering",
+  "summary_worker_running": false,
+  "manual_worker_running": false,
+  "manual_active": false,
+  "manual_edit_enabled": false,
+  "last_summary": {
+    "status": "ok",
+    "hero": "aisha",
+    "map_id": 2404,
+    "round": 2,
+    "phase": "bidding",
+    "session_id": "2404:1425860640906376",
+    "reference_source": "ref_prior"
+  },
+  "capture": {
+    "present": false,
+    "source": "",
+    "process_name": "",
+    "filter": "",
+    "active_flows": 0,
+    "sniffed_packets": 0,
+    "raw_packets": 0,
+    "accepted_frames": 0,
+    "ignored_frames": 0,
+    "dropped_bytes": 0,
+    "active_session_id": "",
+    "top_ignored_reason": "-",
+    "wait_state": "no_capture_status",
+    "wait_action": "等待启动",
+    "wait_note": "确认已用管理员权限启动 Hero Ref",
+    "error_code": "",
+    "error_message": "",
+    "error_hint": ""
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "created_at": 1781400002.0,
+  "note": "Hero Ref UI preview: settlement purple/gold from final_quality_* (v0.1.9 dev)",
+  "ui_contract": {
+    "schema_version": 1,
+    "context": {
+      "hero": "ahmed",
+      "map_id": 2408,
+      "phase": "settled",
+      "round": 5,
+      "session_id": "2408:purple-gold-cells-preview-settled"
+    },
+    "baseline": {
+      "decision": {},
+      "posterior": {}
+    },
+    "truth": {
+      "available": true,
+      "total_items": 38,
+      "total_cells": 93,
+      "total_value": 1887823,
+      "q6": {
+        "count": 1,
+        "cells": 4,
+        "value": 1688400
+      }
+    }
+  },
+  "final_quality_counts": "q4=8;q5=5",
+  "final_quality_cells": "q4=27;q5=13",
+  "structured_ref_inputs": {
+    "hero": "ahmed",
+    "total_count": 38
+  }
+}

@@ -1,0 +1,575 @@
+{
+  "status": "experimental_deferred",
+  "tables_dir": "C:\\xiangmuyunxing\\biancheng\\2026\\bidking-lab\\data\\raw\\tables",
+  "cases_fixture": "C:\\xiangmuyunxing\\biancheng\\2026\\bidking-lab\\data\\fixtures\\tier_value_subset_audit_cases.json",
+  "cases": [
+    {
+      "label": "HR-6376 settled q5 exact",
+      "source": "data/samples/hero_ref/replay_ui/purple_gold_HR-6376/r02_settled.json final_quality_values",
+      "map_id": 2404,
+      "quality": 5,
+      "mode": "exact",
+      "input_value": 119684.0,
+      "pool_source": "map_drop_pool:2404:q5",
+      "pool_size": 99,
+      "max_count": 12,
+      "elapsed_ms": 42.563,
+      "nodes_visited": 100258,
+      "candidate_count": 15,
+      "unique_count_cells": [
+        [
+          5,
+          10
+        ],
+        [
+          5,
+          11
+        ],
+        [
+          5,
+          14
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          6,
+          10
+        ],
+        [
+          6,
+          11
+        ],
+        [
+          6,
+          12
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          7,
+          9
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          7,
+          11
+        ],
+        [
+          7,
+          12
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          9
+        ]
+      ],
+      "unique_counts": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "filtered_unique_count_cells": [
+        [
+          5,
+          10
+        ],
+        [
+          5,
+          11
+        ],
+        [
+          5,
+          14
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          6,
+          10
+        ],
+        [
+          6,
+          11
+        ],
+        [
+          6,
+          12
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          7,
+          9
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          7,
+          11
+        ],
+        [
+          7,
+          12
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          8,
+          9
+        ]
+      ],
+      "truth_count_cells": [
+        3,
+        11
+      ],
+      "truth_count": 3,
+      "truth_in_candidates": false,
+      "truth_count_in_unique_counts": false,
+      "truth_reachable_after_presolve": true
+    },
+    {
+      "label": "HR-6376 settled q4 exact",
+      "source": "data/samples/hero_ref/replay_ui/purple_gold_HR-6376/r02_settled.json final_quality_values",
+      "map_id": 2404,
+      "quality": 4,
+      "mode": "exact",
+      "input_value": 21476.0,
+      "pool_source": "map_drop_pool:2404:q4",
+      "pool_size": 103,
+      "max_count": 12,
+      "elapsed_ms": 25.378,
+      "nodes_visited": 76992,
+      "candidate_count": 17,
+      "unique_count_cells": [
+        [
+          5,
+          6
+        ],
+        [
+          5,
+          7
+        ],
+        [
+          5,
+          8
+        ],
+        [
+          5,
+          9
+        ],
+        [
+          5,
+          10
+        ],
+        [
+          5,
+          11
+        ],
+        [
+          5,
+          12
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          6,
+          8
+        ],
+        [
+          6,
+          9
+        ],
+        [
+          6,
+          10
+        ],
+        [
+          6,
+          11
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          7,
+          9
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          7,
+          11
+        ],
+        [
+          7,
+          12
+        ]
+      ],
+      "unique_counts": [
+        5,
+        6,
+        7
+      ],
+      "filtered_unique_count_cells": [
+        [
+          5,
+          6
+        ],
+        [
+          5,
+          7
+        ],
+        [
+          5,
+          8
+        ],
+        [
+          5,
+          9
+        ],
+        [
+          5,
+          10
+        ],
+        [
+          5,
+          11
+        ],
+        [
+          5,
+          12
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          6,
+          8
+        ],
+        [
+          6,
+          9
+        ],
+        [
+          6,
+          10
+        ],
+        [
+          6,
+          11
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          7,
+          9
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          7,
+          11
+        ],
+        [
+          7,
+          12
+        ]
+      ],
+      "truth_count_cells": [
+        4,
+        11
+      ],
+      "truth_count": 4,
+      "truth_in_candidates": false,
+      "truth_count_in_unique_counts": false,
+      "truth_reachable_after_presolve": true
+    },
+    {
+      "label": "O-v3-171 Aisha 2406 q5 skill exact",
+      "source": "OBSERVATIONS_V3.md O-v3-171 action 100125",
+      "map_id": 2406,
+      "quality": 5,
+      "mode": "exact",
+      "input_value": 152397.0,
+      "pool_source": "map_drop_pool:2406:q5",
+      "pool_size": 99,
+      "max_count": 12,
+      "elapsed_ms": 51.894,
+      "nodes_visited": 110786,
+      "candidate_count": 22,
+      "unique_count_cells": [
+        [
+          6,
+          10
+        ],
+        [
+          6,
+          12
+        ],
+        [
+          6,
+          13
+        ],
+        [
+          6,
+          15
+        ],
+        [
+          6,
+          16
+        ],
+        [
+          6,
+          17
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          7,
+          11
+        ],
+        [
+          7,
+          12
+        ],
+        [
+          7,
+          13
+        ],
+        [
+          7,
+          14
+        ],
+        [
+          7,
+          15
+        ],
+        [
+          7,
+          16
+        ],
+        [
+          7,
+          17
+        ],
+        [
+          8,
+          10
+        ],
+        [
+          8,
+          11
+        ],
+        [
+          8,
+          12
+        ],
+        [
+          8,
+          13
+        ],
+        [
+          8,
+          14
+        ],
+        [
+          8,
+          15
+        ],
+        [
+          8,
+          16
+        ]
+      ],
+      "unique_counts": [
+        6,
+        7,
+        8
+      ],
+      "filtered_unique_count_cells": [
+        [
+          6,
+          10
+        ],
+        [
+          6,
+          12
+        ],
+        [
+          6,
+          13
+        ],
+        [
+          6,
+          15
+        ],
+        [
+          6,
+          16
+        ],
+        [
+          6,
+          17
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          7,
+          11
+        ],
+        [
+          7,
+          12
+        ],
+        [
+          7,
+          13
+        ],
+        [
+          7,
+          14
+        ],
+        [
+          7,
+          15
+        ],
+        [
+          7,
+          16
+        ],
+        [
+          7,
+          17
+        ],
+        [
+          8,
+          10
+        ],
+        [
+          8,
+          11
+        ],
+        [
+          8,
+          12
+        ],
+        [
+          8,
+          13
+        ],
+        [
+          8,
+          14
+        ],
+        [
+          8,
+          15
+        ],
+        [
+          8,
+          16
+        ]
+      ],
+      "truth_count_cells": null,
+      "truth_count": null,
+      "truth_in_candidates": null,
+      "truth_count_in_unique_counts": null,
+      "truth_reachable_after_presolve": null
+    },
+    {
+      "label": "wire q5 avg 34288.75",
+      "source": "tests/test_live_overlay.py wire ingest",
+      "map_id": 2501,
+      "quality": 5,
+      "mode": "avg",
+      "input_value": 34288.75,
+      "pool_source": "map_drop_pool:2501:q5",
+      "pool_size": 99,
+      "max_count": 12,
+      "elapsed_ms": 506.597,
+      "nodes_visited": 987084,
+      "candidate_count": 0,
+      "unique_count_cells": [],
+      "unique_counts": [],
+      "filtered_unique_count_cells": [],
+      "truth_count_cells": null,
+      "truth_count": 4,
+      "truth_in_candidates": null,
+      "truth_count_in_unique_counts": false,
+      "truth_reachable_after_presolve": null
+    },
+    {
+      "label": "wire q4 avg 6328.75",
+      "source": "tests/test_live_overlay.py manual autofill",
+      "map_id": 2501,
+      "quality": 4,
+      "mode": "avg",
+      "input_value": 6328.75,
+      "pool_source": "map_drop_pool:2501:q4",
+      "pool_size": 103,
+      "max_count": 12,
+      "elapsed_ms": 408.636,
+      "nodes_visited": 890614,
+      "candidate_count": 0,
+      "unique_count_cells": [],
+      "unique_counts": [],
+      "filtered_unique_count_cells": [],
+      "truth_count_cells": null,
+      "truth_count": null,
+      "truth_in_candidates": null,
+      "truth_count_in_unique_counts": null,
+      "truth_reachable_after_presolve": null
+    }
+  ],
+  "scaling_q5_catalog": []
+}

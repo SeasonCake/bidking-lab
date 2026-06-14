@@ -9,6 +9,7 @@ import sys
 from types import SimpleNamespace
 import time
 import zipfile
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -3048,6 +3049,581 @@ def test_ahmad_server_aisha_defense_multiplier_hint_by_round() -> None:
     assert module._aisha_defense_multiplier_hint(None) == ""  # type: ignore[attr-defined]
 
 
+def test_ahmad_server_infer_hero_from_skill_reveals() -> None:
+    module = _ahmad_server_module()
+    snapshot = {
+        "skill_reveal_rows": [
+            {"skill_id": 1001034, "hero_id": 103, "revealed_items": 2},
+        ],
+    }
+    assert module._infer_hero_from_skill_reveals(snapshot) == "aisha"  # type: ignore[attr-defined]
+    assert module._snapshot_hero_key(snapshot, {}) == "aisha"  # type: ignore[attr-defined]
+
+
+def test_ahmad_server_compact_grid_cells() -> None:
+    module = _ahmad_server_module()
+    assert module._compact_grid_cells(112.4) == "112"  # type: ignore[attr-defined]
+    assert module._compact_grid_cells(86.0) == "86"  # type: ignore[attr-defined]
+    module = _ahmad_server_module()
+
+    assert module._aisha_should_dual_pass("aisha", 1, "bidding") is True  # type: ignore[attr-defined]
+    assert module._aisha_should_dual_pass("aisha", 5, "bidding") is True  # type: ignore[attr-defined]
+    assert module._aisha_should_dual_pass("aisha", 6, "bidding") is False  # type: ignore[attr-defined]
+    assert module._aisha_should_dual_pass("aisha", 1, "settled") is False  # type: ignore[attr-defined]
+    assert module._aisha_should_dual_pass("ahmed", 1, "bidding") is False  # type: ignore[attr-defined]
+
+
+def test_hero_ref_live_schedule_classification_and_combos() -> None:
+    tools_dir = ROOT / "external_references" / "ahmad_live_reference_lab" / "tools"
+    path = tools_dir / "hero_ref_live_schedule.py"
+    spec = importlib.util.spec_from_file_location("hero_ref_live_schedule_test", path)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    assert module.hero_inference_category("aisha") == module.HeroInferenceCategory.MULTI_ROUND_SKILL
+    assert module.hero_inference_category("ahmed") == module.HeroInferenceCategory.PROGRESSIVE_COUNT
+    assert module.hero_inference_category("victor") == module.HeroInferenceCategory.EARLY_SINGLE_SKILL
+    assert module.hero_inference_category("tatiana") == module.HeroInferenceCategory.EARLY_SINGLE_SKILL
+    assert module.hero_inference_category("chenmei") == module.HeroInferenceCategory.EARLY_SINGLE_SKILL
+    assert module.hero_inference_category("george") == module.HeroInferenceCategory.EARLY_SINGLE_SKILL
+    assert module.hero_inference_category("raven") == module.HeroInferenceCategory.LATE_SINGLE_SKILL
+    wuqilin = module.get_hero_schedule("wuqilin")
+    assert wuqilin is not None
+    assert wuqilin.skill_round_labels[4] == "R4古董1/3完整信息"
+    assert module.PRIORITY_MANAGED_HERO_KEYS == frozenset(
+        {"aisha", "ahmed", "raven", "wuqilin", "sophie", "gabriela"}
+    )
+    assert module.hero_max_combos_for_round("aisha", 1) == 2500
+    assert module.hero_max_combos_for_round("aisha", 3) == 8000
+    assert module.hero_max_combos_for_round("raven", 2) == 1500
+    assert module.hero_max_combos_for_round("raven", 5) == 12000
+    assert len(module.hero_classification_table()) == 20
+
+
+def test_ahmad_server_ahmed_waits_without_skill_or_public(tmp_path: Path, monkeypatch) -> None:
+    module = _ahmad_server_module()
+    calls: list[int] = []
+
+    def _track(_snapshot, **kwargs):
+        calls.append(int(kwargs.get("max_combos", 0)))
+        class _Result:
+            def as_dict(self):
+                return {"status": "ok", "source": "ref_v0", "notes": [], "evidence": {"hero": "ahmed"}}
+
+        return _Result()
+
+    monkeypatch.setattr(module, "run_reference_engine", _track)
+    snapshot = {
+        "created_at": time.time(),
+        "ui_contract": {
+            "context": {
+                "hero": "ahmed",
+                "phase": "bidding",
+                "round": 1,
+                "session_id": "2406:ahmed-wait",
+            },
+        },
+    }
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+    assert calls == []
+    assert "hero_ref_waiting" in result["ahmed_ref"].get("notes", [])
+
+
+def test_ahmad_server_ahmed_runs_after_total_skill(tmp_path: Path, monkeypatch) -> None:
+    module = _ahmad_server_module()
+    calls: list[int] = []
+
+    def _track(_snapshot, **kwargs):
+        calls.append(int(kwargs.get("max_combos", 0)))
+        class _Result:
+            def as_dict(self):
+                return {"status": "ok", "source": "ref_v0", "notes": [], "evidence": {"hero": "ahmed"}}
+
+        return _Result()
+
+    monkeypatch.setattr(module, "run_reference_engine", _track)
+    snapshot = {
+        "created_at": time.time(),
+        "skill_reveal_rows": [
+            {"hero_id": 204, "skill_id": 100204, "result": 39, "revealed_items": 0},
+        ],
+        "ui_contract": {
+            "context": {
+                "hero": "ahmed",
+                "phase": "bidding",
+                "round": 1,
+                "session_id": "2406:ahmed-skill",
+            },
+        },
+    }
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+    assert calls == [2500]
+    assert result["ahmed_ref"].get("status") == "ok"
+
+
+def test_ahmad_server_aisha_item_frame_ready() -> None:
+    module = _ahmad_server_module()
+
+    assert module._aisha_item_frame_ready({"action_result_rows": []}, 1) is False  # type: ignore[attr-defined]
+    r1_skill = {
+        "skill_id": 1001034,
+        "hero_id": 103,
+        "sort": 10,
+        "revealed_items": 3,
+    }
+    r1_prop = {
+        "sort": 12,
+        "action_id": 100163,
+        "result": 120000,
+        "revealed_items_detail": [{"quality": 5}],
+    }
+    assert module._aisha_item_frame_ready(  # type: ignore[attr-defined]
+        {
+            "skill_reveal_rows": [r1_skill],
+            "action_result_rows": [r1_prop],
+        },
+        1,
+    ) is True
+    assert module._aisha_item_frame_ready(  # type: ignore[attr-defined]
+        {
+            "skill_reveal_rows": [r1_skill],
+            "action_result_rows": [
+                {**r1_prop, "sort": 8},
+            ],
+        },
+        1,
+    ) is False
+
+
+def test_ahmad_server_aisha_r2_ignores_r1_prop_without_r2_prop() -> None:
+    module = _ahmad_server_module()
+
+    snapshot = {
+        "skill_reveal_rows": [
+            {
+                "skill_id": 1001034,
+                "hero_id": 103,
+                "sort": 10,
+                "revealed_items": 3,
+            },
+            {
+                "skill_id": 1001033,
+                "hero_id": 103,
+                "sort": 20,
+                "revealed_items": 2,
+            },
+        ],
+        "action_result_rows": [
+            {
+                "sort": 12,
+                "action_id": 100163,
+                "result": 120000,
+                "revealed_items_detail": [{"quality": 5}],
+            }
+        ],
+    }
+    assert module._aisha_item_frame_ready(snapshot, 2) is False  # type: ignore[attr-defined]
+
+
+def test_ahmad_server_aisha_early_round_quote_ready() -> None:
+    module = _ahmad_server_module()
+    public_info = {"public_numeric_summary": "公开3件"}
+    skill_row = {
+        "skill_id": 1001034,
+        "hero_id": 103,
+        "revealed_items": 4,
+        "observed_items": [{"quality": 1, "cells": 4}],
+    }
+    public_row = {"info_id": 200004, "revealed_items": 3}
+
+    ready, hint = module._aisha_early_round_quote_ready(  # type: ignore[attr-defined]
+        {"skill_reveal_rows": [skill_row], "public_info_rows": [public_row]},
+        1,
+        public_info,
+    )
+    assert ready is True
+    assert hint == ""
+
+    ready, hint = module._aisha_early_round_quote_ready(  # type: ignore[attr-defined]
+        {"public_info_rows": [public_row]},
+        1,
+        public_info,
+    )
+    assert ready is False
+    assert hint == "等待白品技能帧"
+
+    ready, hint = module._aisha_early_round_quote_ready(  # type: ignore[attr-defined]
+        {"skill_reveal_rows": [skill_row]},
+        1,
+        {},
+    )
+    assert ready is True
+    assert hint == ""
+
+
+def test_ahmad_server_aisha_round_public_info_ready() -> None:
+    module = _ahmad_server_module()
+    r1_public = {"info_id": 200004, "sort": 8, "revealed_items": 3}
+    r2_skill = {
+        "skill_id": 1001033,
+        "hero_id": 103,
+        "sort": 20,
+        "revealed_items": 2,
+    }
+    r2_public = {"info_id": 200013, "sort": 22, "value": 12}
+
+    assert module._aisha_round_public_info_ready(  # type: ignore[attr-defined]
+        {"skill_reveal_rows": [r2_skill], "public_info_rows": [r1_public, r2_public]},
+        2,
+    ) is True
+    assert module._aisha_round_public_info_ready(  # type: ignore[attr-defined]
+        {"skill_reveal_rows": [r2_skill], "public_info_rows": [r1_public]},
+        2,
+    ) is False
+
+
+def test_ahmad_server_aisha_r1_quotes_with_skill_only_no_public(tmp_path: Path, monkeypatch) -> None:
+    module = _ahmad_server_module()
+    captured: list[dict[str, Any]] = []
+    original = module.run_reference_engine
+
+    def _track(snapshot, **kwargs):
+        captured.append(snapshot.get("audit_aisha_engine_pass"))
+        return original(snapshot, **kwargs)
+
+    monkeypatch.setattr(module, "run_reference_engine", _track)
+    snapshot = {
+        "created_at": time.time(),
+        "round": 1,
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "map_id": 2404,
+                "phase": "bidding",
+                "round": 1,
+                "session_id": "2404:aisha-skill-only",
+            },
+            "baseline": {"decision": {}, "posterior": {}},
+            "constraints": {"public_info": {}},
+            "source": {"created_at": time.time()},
+        },
+        "skill_reveal_rows": [
+            {
+                "skill_id": 1001034,
+                "hero_id": 103,
+                "sort": 10,
+                "revealed_items": 4,
+                "observed_items": [{"quality": 1, "cells": 4}],
+            }
+        ],
+        "structured_ref_inputs": {
+            "total_count": 28,
+            "fixed_counts": {"q1": 8},
+            "quality_cells": {"q1": 16},
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert len(captured) == 1
+    assert captured[0] == module.AISHA_ENGINE_PASS_SKILL  # type: ignore[attr-defined]
+    assert "aisha_quote_pass:skill_no_public_this_round" in result["ahmed_ref"].get("notes", [])
+    assert result["reference"]["balanced"] not in (None, "-", "")
+
+
+def test_ahmad_server_aisha_r1_waits_without_skill_and_public(tmp_path: Path, monkeypatch) -> None:
+    module = _ahmad_server_module()
+    captured: list[dict[str, Any]] = []
+    original = module.run_reference_engine
+
+    def _track(snapshot, **kwargs):
+        captured.append(True)
+        return original(snapshot, **kwargs)
+
+    monkeypatch.setattr(module, "run_reference_engine", _track)
+    snapshot = {
+        "created_at": time.time(),
+        "round": 1,
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "map_id": 2404,
+                "phase": "bidding",
+                "round": 1,
+                "session_id": "2404:aisha-wait-r1",
+            },
+            "baseline": {"decision": {}, "posterior": {}},
+            "constraints": {"public_info": {}},
+            "source": {"created_at": time.time()},
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert captured == []
+    assert "aisha_early_round_waiting" in result["ahmed_ref"].get("notes", [])
+    assert any(flag["label"] == "等待白品技能帧" for flag in result["flags"])
+    assert result["reference"]["balanced"] == "-"
+
+
+def test_ahmad_server_aisha_r1_uses_lightweight_engine(tmp_path: Path, monkeypatch) -> None:
+    module = _ahmad_server_module()
+    captured: list[dict[str, Any]] = []
+    original = module.run_reference_engine
+
+    def _track(snapshot, **kwargs):
+        captured.append(
+            {
+                "audit": snapshot.get("audit_aisha_early_round"),
+                "pass": snapshot.get("audit_aisha_engine_pass"),
+                **kwargs,
+            }
+        )
+        return original(snapshot, **kwargs)
+
+    monkeypatch.setattr(module, "run_reference_engine", _track)
+    snapshot = {
+        "created_at": time.time(),
+        "round": 1,
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "map_id": 2404,
+                "phase": "bidding",
+                "round": 1,
+                "session_id": "2404:aisha-light-r1",
+            },
+            "baseline": {"decision": {}, "posterior": {}},
+            "constraints": {
+                "public_info": {"public_numeric_summary": "公开3件"},
+            },
+            "source": {"created_at": time.time()},
+        },
+        "skill_reveal_rows": [
+            {
+                "skill_id": 1001034,
+                "hero_id": 103,
+                "sort": 10,
+                "revealed_items": 4,
+                "observed_items": [{"quality": 1, "cells": 4}],
+            }
+        ],
+        "public_info_rows": [{"info_id": 200004, "revealed_items": 3}],
+        "structured_ref_inputs": {
+            "total_count": 28,
+            "fixed_counts": {"q1": 8},
+            "quality_cells": {"q1": 16},
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert len(captured) == 1
+    assert captured[0]["audit"] is True
+    assert captured[0]["max_combos"] == module.AISHA_EARLY_ROUND_MAX_COMBOS
+    assert captured[0]["pass"] == module.AISHA_ENGINE_PASS_SKILL  # type: ignore[attr-defined]
+    assert "aisha_quote_pass:skill" in result["ahmed_ref"].get("notes", [])
+    assert any(flag["label"] == "技能帧估计" for flag in result["flags"])
+    assert any(flag["label"] == "R1–R2轻量" for flag in result["flags"])
+    assert any(flag["label"] == "R1防守×2.0" for flag in result["flags"])
+    assert result["reference"]["balanced"] not in (None, "-", "")
+
+
+def test_ahmad_server_aisha_r1_runs_skill_and_item_dual_pass(tmp_path: Path, monkeypatch) -> None:
+    module = _ahmad_server_module()
+    captured: list[dict[str, Any]] = []
+    original = module.run_reference_engine
+
+    def _track(snapshot, **kwargs):
+        captured.append(
+            {
+                "pass": snapshot.get("audit_aisha_engine_pass"),
+                "actions": len(snapshot.get("action_result_rows") or []),
+                **kwargs,
+            }
+        )
+        return original(snapshot, **kwargs)
+
+    monkeypatch.setattr(module, "run_reference_engine", _track)
+    snapshot = {
+        "created_at": time.time(),
+        "round": 1,
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "map_id": 2404,
+                "phase": "bidding",
+                "round": 1,
+                "session_id": "2404:aisha-dual-r1",
+            },
+            "baseline": {"decision": {}, "posterior": {}},
+            "constraints": {
+                "public_info": {"public_numeric_summary": "公开3件"},
+            },
+            "source": {"created_at": time.time()},
+        },
+        "skill_reveal_rows": [
+            {
+                "skill_id": 1001034,
+                "hero_id": 103,
+                "sort": 10,
+                "revealed_items": 4,
+                "observed_items": [{"quality": 1, "cells": 4}],
+            }
+        ],
+        "public_info_rows": [{"info_id": 200004, "revealed_items": 3}],
+        "action_result_rows": [
+            {
+                "sort": 12,
+                "action_id": 100163,
+                "result": 120000,
+                "revealed_items_detail": [{"quality": 5, "cells": 3, "row": 16}],
+            }
+        ],
+        "structured_ref_inputs": {
+            "total_count": 28,
+            "fixed_counts": {"q1": 8},
+            "quality_cells": {"q1": 16},
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert len(captured) == 2
+    assert captured[0]["pass"] == module.AISHA_ENGINE_PASS_SKILL  # type: ignore[attr-defined]
+    assert captured[0]["actions"] == 0
+    assert captured[1]["pass"] == module.AISHA_ENGINE_PASS_ITEM  # type: ignore[attr-defined]
+    assert captured[1]["actions"] == 1
+    assert "aisha_quote_pass:item" in result["ahmed_ref"].get("notes", [])
+    assert any(flag["label"] == "道具帧估计" for flag in result["flags"])
+    assert result["diagnostics"]["performance"]["ref_engine_skill_pass_ms"] is not None
+    assert result["diagnostics"]["performance"]["ref_engine_item_pass_ms"] is not None
+
+
+def test_ahmad_server_aisha_r3_runs_dual_pass_skill_only(tmp_path: Path, monkeypatch) -> None:
+    module = _ahmad_server_module()
+    captured: list[dict[str, Any]] = []
+    original = module.run_reference_engine
+
+    def _track(snapshot, **kwargs):
+        captured.append(
+            {
+                "audit": snapshot.get("audit_aisha_early_round"),
+                "pass": snapshot.get("audit_aisha_engine_pass"),
+                **kwargs,
+            }
+        )
+        return original(snapshot, **kwargs)
+
+    monkeypatch.setattr(module, "run_reference_engine", _track)
+    snapshot = {
+        "created_at": time.time(),
+        "round": 3,
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "map_id": 2404,
+                "phase": "bidding",
+                "round": 3,
+                "session_id": "2404:aisha-run-r3",
+            },
+            "baseline": {"decision": {}, "posterior": {}},
+            "constraints": {
+                "public_info": {"public_numeric_summary": "公开蓝均格"},
+            },
+            "source": {"created_at": time.time()},
+        },
+        "skill_reveal_rows": [
+            {
+                "skill_id": 1001032,
+                "hero_id": 103,
+                "sort": 30,
+                "revealed_items": 2,
+                "observed_items": [{"quality": 3, "cells": 4}],
+            }
+        ],
+        "public_info_rows": [{"info_id": 200004, "revealed_items": 2}],
+    }
+
+    module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert len(captured) == 1
+    assert captured[0].get("audit") is None
+    assert captured[0]["pass"] == module.AISHA_ENGINE_PASS_SKILL  # type: ignore[attr-defined]
+    assert captured[0]["max_combos"] == 8_000
+
+
+def test_ahmad_server_aisha_r2_runs_skill_only_when_no_r2_prop(tmp_path: Path, monkeypatch) -> None:
+    module = _ahmad_server_module()
+    captured: list[dict[str, Any]] = []
+    original = module.run_reference_engine
+
+    def _track(snapshot, **kwargs):
+        captured.append(snapshot.get("audit_aisha_engine_pass"))
+        return original(snapshot, **kwargs)
+
+    monkeypatch.setattr(module, "run_reference_engine", _track)
+    snapshot = {
+        "created_at": time.time(),
+        "round": 2,
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "map_id": 2404,
+                "phase": "bidding",
+                "round": 2,
+                "session_id": "2404:aisha-r2-no-prop",
+            },
+            "baseline": {"decision": {}, "posterior": {}},
+            "constraints": {
+                "public_info": {"public_numeric_summary": "公开3件"},
+            },
+            "source": {"created_at": time.time()},
+        },
+        "skill_reveal_rows": [
+            {
+                "skill_id": 1001034,
+                "hero_id": 103,
+                "sort": 10,
+                "revealed_items": 3,
+                "observed_items": [{"quality": 1, "cells": 4}],
+            },
+            {
+                "skill_id": 1001033,
+                "hero_id": 103,
+                "sort": 20,
+                "revealed_items": 2,
+                "observed_items": [{"quality": 2, "cells": 3}],
+            },
+        ],
+        "public_info_rows": [{"info_id": 200004, "revealed_items": 3}],
+        "action_result_rows": [
+            {
+                "sort": 12,
+                "action_id": 100163,
+                "result": 120000,
+                "revealed_items_detail": [{"quality": 5, "cells": 3}],
+            }
+        ],
+        "structured_ref_inputs": {
+            "total_count": 28,
+            "fixed_counts": {"q1": 8},
+            "quality_cells": {"q1": 16},
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert len(captured) == 1
+    assert captured[0] == module.AISHA_ENGINE_PASS_SKILL  # type: ignore[attr-defined]
+    assert "aisha_quote_pass:skill_no_items_this_round" in result["ahmed_ref"].get("notes", [])
+    assert any(flag["label"] == "技能帧估计" for flag in result["flags"])
+    assert result["reference"]["balanced"] not in (None, "-", "")
+
+
 def test_ahmad_server_aisha_next_info_hint_r1_waits_green_and_blue() -> None:
     module = _ahmad_server_module()
     result = {
@@ -3776,8 +4352,8 @@ def test_ahmad_server_summary_locks_zero_gold_avg_in_mini(tmp_path: Path) -> Non
     assert ref["evidence"]["fixed_counts"]["q5"] == 0
     assert ref["quality_count_ranges"]["q5"] == [0, 0, 0]
     assert ref["quality_cells_ranges"]["q5"] == [0, 0, 0]
-    assert result["red"]["quality_count_summary"] == "紫件 5 · 金件 0"
-    assert "金件 0" in result["red"]["quality_count_summary"]
+    assert result["red"]["quality_count_summary"] == "紫5/9 · 金0/0"
+    assert "金0" in result["red"]["quality_count_summary"]
 
 
 def test_ahmad_server_summary_pairs_red_candidates_with_gold_candidates(
@@ -3821,7 +4397,8 @@ def test_ahmad_server_summary_pairs_red_candidates_with_gold_candidates(
                 },
             }
 
-    monkeypatch.setattr(module, "run_reference_engine", lambda snapshot: FakeRefResult())
+    monkeypatch.setattr(module, "run_reference_engine", lambda snapshot, **kwargs: FakeRefResult())
+    monkeypatch.setattr(module, "hero_should_run_scheduled_inference", lambda *args, **kwargs: False)
     snapshot = {
         "created_at": time.time(),
         "ui_contract": {
@@ -3839,7 +4416,7 @@ def test_ahmad_server_summary_pairs_red_candidates_with_gold_candidates(
 
     result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
 
-    assert result["red"]["quality_count_summary"] == "紫件 5 · 金件 2 / 3 / 4"
+    assert result["red"]["quality_count_summary"] == "紫5/7 · 金件 2/3/4"
     assert result["red"]["count_range"] == "4 / 3 / 2"
     assert result["red"]["cells_range"] == "8 / 6 / 4"
 
@@ -3898,7 +4475,8 @@ def test_ahmad_server_summary_keeps_locked_red_triplet_with_minimap_floor(
                 },
             }
 
-    monkeypatch.setattr(module, "run_reference_engine", lambda snapshot: FakeRefResult())
+    monkeypatch.setattr(module, "run_reference_engine", lambda snapshot, **kwargs: FakeRefResult())
+    monkeypatch.setattr(module, "hero_should_run_scheduled_inference", lambda *args, **kwargs: False)
     snapshot = {
         "created_at": time.time(),
         "ui_contract": {
@@ -4385,6 +4963,85 @@ def test_ahmad_quality_uncertainty_summary_uses_evidence_cells_when_range_open()
 
     assert "白绿10/27" in summary
     assert "蓝13/18" in summary
+
+
+def test_ahmad_mask_player_display_name() -> None:
+    module = _ahmad_server_module()
+    mask = module._mask_player_display_name  # type: ignore[attr-defined]
+    assert mask("张") == "张"
+    assert mask("张三") == "张*三"
+    assert mask("玩家A") == "玩*A"
+    assert mask("欧阳娜娜") == "欧**娜"
+
+
+def test_ahmad_mask_bidder_display_text() -> None:
+    module = _ahmad_server_module()
+    mask = module._mask_bidder_display_text  # type: ignore[attr-defined]
+    assert mask("玩家A 500,000") == "玩*A 500,000"
+    assert mask("总值 1,887,823") == "总值 1,887,823"
+    assert mask("-") == "-"
+
+
+def test_ahmad_server_summary_masks_current_highest_name(tmp_path: Path) -> None:
+    module = _ahmad_server_module()
+    snapshot = {
+        "created_at": time.time(),
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "map_id": 2404,
+                "phase": "bidding",
+                "round": 3,
+                "session_id": "2404:mask-highest",
+            },
+            "baseline": {
+                "decision": {
+                    "current_highest": "张三丰 320,000",
+                    "action": "可守不抢",
+                },
+                "posterior": {},
+            },
+            "source": {"created_at": time.time()},
+        },
+    }
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+    assert result["reference"]["current_highest"] == "张*丰 320,000"
+
+
+def test_ahmad_purple_gold_quality_summary_shows_locked_count_and_cells() -> None:
+    module = _ahmad_server_module()
+    summary = module._purple_gold_quality_summary(  # type: ignore[attr-defined]
+        {
+            "quality_count_ranges": {
+                "q4": [9, 9, 9],
+                "q5": [4, 4, 4],
+            },
+            "quality_cells_ranges": {
+                "q4": [28, 28, 28],
+                "q5": [7, 7, 7],
+            },
+        }
+    )
+
+    assert summary == "紫9/28 · 金4/7"
+
+
+def test_ahmad_purple_gold_quality_summary_keeps_unlocked_range() -> None:
+    module = _ahmad_server_module()
+    summary = module._purple_gold_quality_summary(  # type: ignore[attr-defined]
+        {
+            "quality_count_ranges": {
+                "q4": [5, 5, 5],
+                "q5": [2, 3, 4],
+            },
+            "quality_cells_ranges": {
+                "q4": [7, 7, 7],
+                "q5": [4, 6, 8],
+            },
+        }
+    )
+
+    assert summary == "紫5/7 · 金件 2/3/4"
 
 
 def test_ahmad_manual_field_layout_preserves_input_contract() -> None:

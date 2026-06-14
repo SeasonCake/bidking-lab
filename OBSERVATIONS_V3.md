@@ -7789,3 +7789,81 @@ risk_migration_detected=False
 
 - 这类样本后续应优先回连 price-table / activity drift，而不是继续把 missing-block 当主假设；
 - 这也支持 Hero Ref 支线继续保留 exact float / count-cell-value 分层，不要把 UI compact 格式误当语义缺口。
+
+## O-v3-193：Hero Ref live 均格/均价约束分层（2026-06-14，**2026-06-14 晚刷新**）
+
+**原「四项」总表（勿再合并成一句「P0 已做」）**
+
+| # | 项 | 状态 |
+|---|-----|------|
+| **1** | 公开 q4/q5/q6 **均价 soft**（件数未锁 → 候选加权，不硬剪；唯一解仍 derive） | ✅ P0 dev |
+| **2** | **combo 级均价软权重**（tier 均价偏差 σ，对齐均格 `_prior_log_weight`） | ✅ P0 dev |
+| **3** | 均价 **wire float 规范化**（6659.214… 类脏 float） | ✅ P0 前已有 |
+| **4** | **soft 均格 → 唯一件数 promote 为 derive**（宽候选 + `soft_pending_count`） | ⏸ **暂缓** |
+
+**promote 家族（#4 扩展，均暂缓）**
+
+- **#4 均格**：soft pending 且「均格 + 总格/格约束」只剩 1 个件数 → `fixed_counts` + derive note（对照现有 **硬路径** derive，见下）。
+- **soft 均价 promote**：#4 镜像；未单独立项；是否与 tier subset 合并 → 等实验线 #1 价表对齐后再定。
+
+**均格（avg_cells）— 已落地 / 已验证**
+
+| 来源 | 路径 | 件数未锁 | 状态 |
+|------|------|----------|------|
+| public `200013/200015` q4/q5 均格 | `public_q*_avg_cells` | 软约束 + `_prior_log_weight` / exact `_evidence_grid_avg_cells_log_penalties` | q4 R3、q5 R4 单测通过；note `public_q*_avg_cells_soft_pending_count` |
+| public `200016` q6 均格 | 同上 | — | 游戏公开面**通常不出现**；registry 有定义但 live 样本极少 |
+| prop `100114` 珍品均格 | `action_100114_q6_avg_cells` | **仍硬约束** | 不进 `soft_avg_cell_keys`；与 registry `modeled_avg_cells`/soft 不一致，待观察是否需对称软约束 |
+| 技能均格 `100110–100113` | `action_*_avg_cells` | 硬 | 通常伴随件数/总格，合理 |
+
+**均价（avg_value）— 已落地 P0（2026-06-14 dev）**
+
+| 机制 | 状态 |
+|------|------|
+| 件数未锁 → `soft_avg_value_keys` | ✅ derive + residual 路径 respect soft |
+| combo 级 `_soft_public_avg_value_log_weight` | ✅ prior + exact 枚举 |
+| wire float ingest | ✅ `public_*_avg_value_wire_normalized` + session count_sum 过滤（如 34288.75→q5=4） |
+| 0 combo fallback | 保留 `_retry_without_public_avg_constraints`（真冲突时） |
+
+registry `modeled_soft_avg_value` 与引擎 P0 路径已对齐（不再「registry soft / 引擎硬剪」脱节）。
+
+**Quote Top3 — 已落地（2026-06-14 dev）**
+
+- 分档 safety：P25×0.90 / P50×0.85 / P75×0.80（替代统一 0.85）；note `ref_quote_safety_tier_v1`。
+- `intra_quality_value_band_v0` 仍独立（counts locked 时防三档塌缩）。
+- **观察中**：safety 是否按 hero/轮次再分档；layout footroom mult 与报价 Top3 仍为两套乘数，勿混读。
+
+**registry 对齐 — 部分**
+
+- 公开 q4/q5/q6 均价：`modeled_soft_avg_value` ↔ 引擎 P0 已对齐。
+- prop `100114` 红均格：registry 标 soft / 引擎仍硬 — **待 live 样本**（`100113` 金均格同理）。
+
+**Layout / 格数 hint — 已抽层（2026-06-14 dev）**
+
+- 模块：`layout_depth_policy.py`；引擎 `_apply_layout_depth_hints_from_snapshot()`。
+- **Aisha**：full — R1–2 early viewport + R3+ footroom band（C2 行为不变）。
+- **Raven / Sophie / Gabriela**：sparse_early — R1–4 early band 扩上界 only；更低 cap。
+- **Ahmed**：不接入。
+
+**derive 路径（干净时有效，保留）**
+
+- `avg_value_cells_*_count_derived`：同 tier 均价+均格唯一交集
+- `avg_value_only_q5_count_derived`：仅 q5 公开均价唯一
+- 残差分配 / count_sum 推导均带 `_quality_count_matches_value_inputs` 硬检查
+
+**待评估 / 暂缓（勿与 P0 / 四项 #1–#3 混做）**
+
+1. **tier 总价 → 格子数 / subset 枚举**（**experimental_deferred**）：Item.txt 原价 subset 在 HR-6376 / wire 34288.75 上 **未命中 settlement**；须 nest/活动有效价对齐后再评估。Audit：`scripts/audit_tier_value_subset_enumeration.py` + `data/fixtures/tier_value_subset_audit_cases.json`。**现行 ref_v0（soft avg_value / avg_cells、derive、count_prior）为主路径。**
+2. **#4 均格 soft promote unique count → derive**：**暂缓**，等 #1 价表对齐后再决定是否与 subset / soft 均价 promote 合并。
+3. **soft 均价 promote**（#4 镜像）：**暂缓 / 未立项**。
+4. prop `100113` 金均格 / `100114` 红均格在件数未锁时是否纳入 soft 均格族 — 仍待 live 样本。
+
+**已关闭（对应原四项 #1–#3 + P0 连带）**
+
+- ~~#1 公开 q4/q5/q6 均价 soft~~ → 已做
+- ~~#2 combo 级均价软权重~~ → 已做
+- ~~#3 public ingest 均价 float 规范化~~ → wire normalized 已有
+- ~~exact 路径缺 avg_cells 高斯~~ → `_evidence_grid_avg_cells_log_penalties` 已做
+
+**连带**：Hero 推理调度（`hero_ref_live_schedule`）与 sparse combo cap 见 handoff §2.4 / CHANGELOG dev 条目。
+
+---

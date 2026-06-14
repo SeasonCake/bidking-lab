@@ -1,6 +1,7 @@
 # Hero Ref · 艾莎 v0 策略与推进方案（2026-06-13）
 
 **Git 基线**：`348615c+` · live Aisha `layout=band` via `prepare_reference_engine_snapshot`  
+**dev（2026-06-14 晚，未 commit）**：`layout_depth_policy.py` · sparse 英雄（Raven/Sophie/Gabriela）early band · 约束 P0 · Quote safety tier  
 **角色**：后续工作按本文顺序推进；handoff 只保留当日 checkpoint。
 
 ---
@@ -31,11 +32,8 @@
     │
     ├─ [已落地] avg_value_only 金件 pin（unique fraction 均价 + synthetic）
     │
-    ├─ [按轮次 · 待 shadow] 地图/位置似然
-    │       R1：禁用点估计（仅白，误差大）
-    │       R2：仅宽 band / soft floor（白绿 skill，仓位误差仍大）
-    │       R3–R4：地图似然 + 格子位置 → 件数/格范围（较可信）
-    │       金/红：可能在已知最深格 **下方** → 总格 target 留 footroom
+    ├─ [已落地 C2] R3+ layout **band** live（Aisha full profile）+ shadow notes UI
+    │       → 2026-06-14 抽至 `layout_depth_policy.py`；sparse 英雄仅 early band
     │
     └─ ref_v0 枚举 + count_prior（主路径，不动 v3 promotion gate）
 ```
@@ -55,9 +53,11 @@
 | **B4** | 0052 downgrade | ✅ synthetic 已有 | 不绑 n=1 fatbeans 调参 |
 | **B5** | UI 低品件/格 + 署名 | ✅ `de2b438` | overlay pytest |
 | **C1** | `good_regression` 2 条 balanced 报价锁定 + gap 不劣化 >15% | ✅ | pytest |
-| **C2** | R3+ layout **band** live（Aisha only）+ shadow notes UI | ✅ 2026-06-13 | 7-band / 0052 / Ahmed 隔离 |
+| **C2** | R3+ layout **band** live（Aisha full）+ shadow notes UI | ✅ 2026-06-13；**抽层** 2026-06-14 | 7-band / 0052 / Ahmed 隔离 |
+| **C2+** | sparse 英雄 early band（Raven/Sophie/Gabriela） | ✅ dev 2026-06-14 | raven layout pytest |
 | **C2−** | layout **target** 抬格 | ❌ 批测否决 | — |
 | **C3** | 位置 hint / footroom 与 C2 同 family | 📋 | 同 C2 批测框架 |
+| **—** | **tier 总价 → 格子数** | 📋 **待评估** | 评估后再定均格 soft promote；见 O-v3-193 |
 | **D1** | 按轮次降红品权重（balanced 稳定性） | 📋 Phase 2 | balanced ±15% 不恶化 |
 | **D** | UX：R1 hero 识别、mini/next-info | 📋 P2 | overlay 测试 |
 | **E** | 新抓包 / 地图扩池 | 📋 P2 | 扩大 n 优先于调参 |
@@ -114,4 +114,6 @@ python scripts/audit_aisha_gap.py
 
 - 代表样本 / 门禁简表：`docs/hero_ref_aisha_representative_samples_2026-06-13.zh-CN.md`
 - 执行细节 §61–§63：`external_references/ahmad_live_reference_lab/EXECUTION_NOTES_2026-06-10.zh-CN.md`
-- 当日 checkpoint：`handoff_2026-06-13.zh-CN.md`
+- 当日 checkpoint：`handoff_2026-06-14.zh-CN.md`
+- 约束分层观察：`OBSERVATIONS_V3.md` O-v3-193
+- Layout 模块：`external_references/ahmad_live_reference_lab/src/layout_depth_policy.py`

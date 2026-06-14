@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "note": "UI preview sample 1: 3-char name + bid (v0.1.9 masked highest)",
+  "ui_contract": {
+    "context": {
+      "hero": "aisha",
+      "map_id": 2404,
+      "phase": "bidding",
+      "round": 3,
+      "session_id": "2404:masked-highest-sample-1"
+    },
+    "baseline": {
+      "decision": {
+        "current_highest": "玩家A 500,000",
+        "action": "可守不抢",
+        "risk_band": "防守区"
+      },
+      "posterior": {}
+    },
+    "source": {
+      "created_at": 1781415547.2098327
+    }
+  },
+  "created_at": 1781415547.2098327
+}

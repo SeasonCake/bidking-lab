@@ -1,0 +1,23 @@
+Hero Ref 紫金件数+格子 显示预览（v0.1.9 dev）
+UI 看「红品与价值」卡片里的「紫金件」行。
+
+file: locked_both_snapshot.json
+status: ok
+context: victor · map 2404 · R3 · bidding
+【红品与价值 → 紫金件】: 紫9/28 · 金4/7
+【红品与价值 → 红件 / 红格】: 1 / 1 / 1 | 4 / 4 / 4
+【红品与价值 → 低品件】: 未锁 白绿6/9/12 蓝9/12/15
+
+file: zero_gold_snapshot.json
+status: ok
+context: victor · map 2404 · R3 · bidding
+【红品与价值 → 紫金件】: 紫5/9 · 金0/0
+【红品与价值 → 红件 / 红格】: 1 / 1 / 1 | 2 / 3 / 4
+【红品与价值 → 低品件】: 未锁 白绿4/6/9 蓝6/9/11
+
+file: settled_snapshot.json
+status: ok
+context: ahmed · map 2408 · R5 · settled
+【红品与价值 → 紫金件】: 紫8/27 · 金5/13
+【红品与价值 → 红件 / 红格】: 1 件 | 4 格
+【红品与价值 → 低品件】: 已结算

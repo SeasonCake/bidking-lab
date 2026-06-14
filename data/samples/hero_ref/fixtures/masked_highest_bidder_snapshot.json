@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "note": "UI preview: masked highest bidder name (v0.1.9 dev)",
+  "ui_contract": {
+    "context": {
+      "hero": "aisha",
+      "map_id": 2404,
+      "phase": "bidding",
+      "round": 3,
+      "session_id": "2404:masked-highest-preview"
+    },
+    "baseline": {
+      "decision": {
+        "current_highest": "张三丰 320,000",
+        "action": "可守不抢",
+        "risk_band": "防守区"
+      },
+      "posterior": {}
+    },
+    "source": {}
+  }
+}

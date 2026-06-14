@@ -501,7 +501,7 @@ def test_ref_engine_public_quality_avg_value_decimal_filters_count() -> None:
             map_id=4406,
             structured_ref_inputs={
                 "total_count": 10,
-                "fixed_counts": {"q1": 0, "q3": 3, "q4": 0},
+                "fixed_counts": {"q1": 0, "q3": 3, "q4": 0, "q5": 4},
                 "count_sums": {"q4q5q6": 7},
             },
             public_info={
@@ -576,7 +576,28 @@ def test_ref_engine_quality_avg_value_uses_three_decimal_fraction() -> None:
     assert "quality_count_q4_from_total_count_residual" in result["notes"]
 
 
-def test_ref_engine_public_quality_avg_value_falls_back_when_table_conflicts() -> None:
+def test_ref_engine_public_quality_avg_value_wire_float_normalizes() -> None:
+    evidence = extract_evidence(
+        _snapshot(
+            public_info={
+                "public_avg_values": [
+                    {
+                        "semantic": "q4_avg_value",
+                        "kind": "avg_value",
+                        "quality": 4,
+                        "value": 6659.21435546875,
+                    }
+                ]
+            },
+        )
+    )
+
+    assert evidence.avg_values == {"q4": 6659.214}
+    assert "public_q4_avg_value_wire_normalized" in evidence.source_notes
+
+
+def test_ref_engine_public_quality_avg_value_wire_float_stays_reachable_when_split_locked() -> None:
+    """Real 2402/0052 wire float must not collapse to the bogus 93229/14 count lock."""
     result = run_reference_engine(
         _snapshot(
             hero="aisha",
@@ -603,10 +624,44 @@ def test_ref_engine_public_quality_avg_value_falls_back_when_table_conflicts() -
 
     assert result["status"] == "count_prior"
     assert result["combo_count"] > 0
-    assert result["evidence"]["avg_values"] == {}
+    assert result["evidence"]["avg_values"] == {"q4": 6659.214}
+    assert "public_q4_avg_value_wire_normalized" in result["notes"]
+    assert "public_quality_avg_value_conflict_fallback" not in result["notes"]
     assert result["quality_count_ranges"]["q4"] == [3, 4, 6]
-    assert "public_quality_avg_value_conflict_fallback" in result["notes"]
-    assert "public_q4_avg_value_downgraded" in result["notes"]
+
+
+def test_ref_engine_public_quality_avg_value_falls_back_on_hard_residual_conflict() -> None:
+    """Clean public avg with split lock now stays soft-reachable instead of zero-combo fallback."""
+    result = run_reference_engine(
+        _snapshot(
+            hero="aisha",
+            map_id=2402,
+            structured_ref_inputs={
+                "counts": {"q3": 14},
+                "quality_cells": {"q3": 31},
+                "split_counts": {"white": 4, "green": 7},
+                "split_quality_cells": {"white": 8, "green": 10},
+            },
+            public_info={
+                "public_avg_values": [
+                    {
+                        "semantic": "q4_avg_value",
+                        "kind": "avg_value",
+                        "quality": 4,
+                        "value": 5615.625,
+                    }
+                ]
+            },
+        ),
+        max_combos=60_000,
+    ).as_dict()
+
+    assert result["status"] == "count_prior"
+    assert result["combo_count"] > 0
+    assert result["evidence"]["avg_values"] == {"q4": 5615.625}
+    assert result["evidence"]["soft_avg_value_keys"] == ["q4"]
+    assert "public_q4_avg_value_soft_pending_count" in result["notes"]
+    assert "public_quality_avg_value_conflict_fallback" not in result["notes"]
 
 
 def test_ref_engine_zero_quality_avg_value_fixes_count_zero() -> None:
@@ -3097,7 +3152,37 @@ def test_ref_engine_aisha_layout_shadow_mode_keeps_target() -> None:
     assert off["total_grid_range"] == shadow["total_grid_range"]
 
 
+def test_ref_engine_aisha_early_round_lightweight_caps_combos() -> None:
+    from ahmad_ref_engine import (
+        AISHA_EARLY_ROUND_LIGHTWEIGHT_NOTE,
+        AISHA_EARLY_ROUND_MAX_COMBOS,
+    )
+
+    snapshot = _snapshot(
+        hero="aisha",
+        map_id=2501,
+        structured_ref_inputs={
+            "total_count": 28,
+            "fixed_counts": {"q1": 8},
+            "quality_cells": {"q1": 16},
+        },
+    )
+    snapshot["ui_contract"]["context"]["round"] = 1
+    snapshot["audit_aisha_early_round"] = True
+
+    started = time.perf_counter()
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+
+    assert elapsed_ms < 2000.0
+    assert AISHA_EARLY_ROUND_LIGHTWEIGHT_NOTE in result["notes"]
+    assert result["combo_count"] <= AISHA_EARLY_ROUND_MAX_COMBOS
+    assert result["balanced"] not in (None, 0)
+
+
 def test_ref_engine_aisha_layout_grid_hint_skips_round_two_white_only() -> None:
+    from ahmad_ref_engine import AISHA_EARLY_VIEWPORT_GRID_HINT_NOTE
+
     snapshot = _snapshot(
         hero="aisha",
         map_id=2501,
@@ -3109,7 +3194,8 @@ def test_ref_engine_aisha_layout_grid_hint_skips_round_two_white_only() -> None:
     ]
     evidence = extract_evidence(snapshot)
 
-    assert evidence.total_grid_target is None
+    assert evidence.total_grid_target is not None
+    assert AISHA_EARLY_VIEWPORT_GRID_HINT_NOTE in evidence.source_notes
     assert AISHA_LAYOUT_GRID_HINT_NOTE not in evidence.source_notes
 
 
@@ -3262,6 +3348,9 @@ def test_prepare_reference_engine_snapshot_sets_aisha_live_band() -> None:
     )
     assert explicit["audit_aisha_layout_mode"] == "off"
     assert explicit["audit_aisha_d1_mode"] == AISHA_LIVE_D1_MODE
+    raven = prepare_reference_engine_snapshot(_snapshot(hero="raven", map_id=2309))
+    assert raven["audit_aisha_layout_mode"] == AISHA_LIVE_LAYOUT_MODE
+    assert "audit_aisha_d1_mode" not in raven
 
 
 def test_ref_engine_aisha_d1_shadow_note_does_not_change_balanced() -> None:
@@ -3305,3 +3394,234 @@ def test_ref_engine_aisha_layout_modes_no_effect_on_ahmed() -> None:
     for key in ("status", "balanced", "conservative", "aggressive", "total_grid_range", "combo_count"):
         assert off[key] == band[key] == target[key]
     assert not any("aisha_layout" in str(note) for note in off.get("notes", ()))
+
+
+def test_ref_engine_raven_sparse_layout_early_band_notes() -> None:
+    snapshot = _snapshot(
+        hero="raven",
+        map_id=2309,
+        structured_ref_inputs={"total_count": 25},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 3
+    snapshot["audit_aisha_layout_mode"] = "band"
+    snapshot["minimap_grid_items"] = [
+        {"quality": 3, "row": 14, "width": 2, "height": 1, "cells": 8},
+        {"quality": 4, "row": 12, "width": 3, "height": 2, "cells": 15},
+    ]
+    evidence = extract_evidence(snapshot)
+
+    assert "layout_sparse_profile" in evidence.source_notes
+    assert "layout_sparse_early_viewport_hint" in evidence.source_notes
+    assert any(
+        str(note).startswith("layout_sparse_band_widen_delta:")
+        for note in evidence.source_notes
+    )
+    assert AISHA_LAYOUT_GRID_HINT_NOTE not in evidence.source_notes
+
+
+def test_ref_engine_raven_sparse_layout_band_widens_high_bound_only() -> None:
+    snapshot = _snapshot(
+        hero="raven",
+        map_id=2309,
+        structured_ref_inputs={"total_count": 25},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 3
+    snapshot["minimap_grid_items"] = [
+        {"quality": 3, "row": 14, "width": 2, "height": 1, "cells": 8},
+        {"quality": 4, "row": 12, "width": 3, "height": 2, "cells": 15},
+    ]
+    off = run_reference_engine({**snapshot, "audit_aisha_layout_mode": "off"}, max_combos=20_000).as_dict()
+    band = run_reference_engine({**snapshot, "audit_aisha_layout_mode": "band"}, max_combos=20_000).as_dict()
+
+    assert off["total_grid_range"][2] is not None
+    assert band["total_grid_range"][2] >= off["total_grid_range"][2]
+    assert "aisha_layout_band_widen_applied" in band["notes"]
+    assert "layout_sparse_profile" in band["notes"]
+
+
+def test_ref_engine_tiered_quote_safety_factors() -> None:
+    from layout_depth_policy import REF_QUOTE_SAFETY_TIER_NOTE, quote_safety_multipliers
+
+    snapshot = _snapshot(
+        hero="aisha",
+        map_id=2501,
+        structured_ref_inputs={"total_count": 28},
+    )
+    snapshot["ui_contract"]["context"]["round"] = 3
+    result = run_reference_engine(snapshot, max_combos=20_000, safety_factor=0.85).as_dict()
+    assert result["status"] in {"ok", "count_prior"}
+    conservative_mul, balanced_mul, aggressive_mul = quote_safety_multipliers(0.85)
+    assert result["conservative"] == int(round((result["value_p25"] or 0) * conservative_mul))
+    assert result["balanced"] == int(round((result["value_p50"] or 0) * balanced_mul))
+    assert result["aggressive"] == int(round((result["value_p75"] or 0) * aggressive_mul))
+    assert REF_QUOTE_SAFETY_TIER_NOTE in result["notes"]
+    p25, p50, p75 = result["value_p25"], result["value_p50"], result["value_p75"]
+    if p25 is not None and p50 is not None and p75 is not None and p25 < p50 < p75:
+        assert (result["conservative"] or 0) <= (result["balanced"] or 0) <= (result["aggressive"] or 0)
+
+
+
+def test_ref_engine_public_q4_avg_cells_soft_until_count_locked() -> None:
+    """Live 2401 R3: public q4 avg cells stay useful as soft prior before purple count lock."""
+    snapshot = {
+        "ui_contract": {
+            "context": {"hero": "aisha", "map_id": 2401, "phase": "bidding", "round": 3},
+            "constraints": {
+                "public_info": {
+                    "public_numeric_facts": [
+                        {"semantic": "total_cells", "value": 93},
+                        {"semantic": "q4_avg_cells", "value": 2.642857074737549},
+                    ]
+                }
+            },
+        },
+        "structured_ref_inputs": {
+            "fixed_counts": {"q3": 16, "q1": 12},
+            "min_counts": {"q3": 16, "q1": 12, "q4": 1, "q6": 1},
+            "quality_cells": {"q3": 20.0, "q1": 25.0},
+            "avg_cells": {
+                "q4": 2.642857074737549,
+                "q1": 2.0833333333333335,
+                "q3": 1.25,
+            },
+        },
+    }
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+
+    assert result["status"] in {"ok", "count_prior"}
+    assert result["combo_count"] > 0
+    assert "public_q4_avg_cells_soft_pending_count" in result["notes"]
+    assert "public_quality_avg_cells_conflict_fallback" not in result["notes"]
+    assert result["balanced"] not in (None, 0)
+
+
+def test_ref_engine_public_q5_avg_cells_soft_until_count_locked() -> None:
+    """Public gold avg cells stay soft prior before q5 count is locked (same as q4)."""
+    snapshot = {
+        "ui_contract": {
+            "context": {"hero": "aisha", "map_id": 2401, "phase": "bidding", "round": 4},
+            "constraints": {
+                "public_info": {
+                    "public_numeric_facts": [
+                        {"semantic": "total_cells", "value": 93},
+                        {"semantic": "q5_avg_cells", "value": 3.25},
+                    ]
+                }
+            },
+        },
+        "structured_ref_inputs": {
+            "fixed_counts": {"q3": 16, "q1": 12, "q4": 14},
+            "min_counts": {"q3": 16, "q1": 12, "q4": 14, "q6": 1},
+            "quality_cells": {"q3": 20.0, "q1": 25.0, "q4": 37.0},
+            "avg_cells": {
+                "q5": 3.25,
+                "q1": 2.0833333333333335,
+                "q3": 1.25,
+                "q4": 2.642857,
+            },
+        },
+    }
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+
+    assert result["status"] in {"ok", "count_prior"}
+    assert result["combo_count"] > 0
+    assert result["evidence"]["soft_avg_cell_keys"] == ["q5"]
+    assert "public_q5_avg_cells_soft_pending_count" in result["notes"]
+    assert "public_quality_avg_cells_conflict_fallback" not in result["notes"]
+    assert result["balanced"] not in (None, 0)
+
+
+def test_ref_engine_public_q4_avg_value_soft_until_count_locked() -> None:
+    """Public purple avg value stays soft prior before q4 count lock (symmetric to avg_cells)."""
+    snapshot = {
+        "ui_contract": {
+            "context": {"hero": "aisha", "map_id": 2402, "phase": "bidding", "round": 3},
+            "constraints": {
+                "public_info": {
+                    "public_numeric_facts": [
+                        {"semantic": "total_cells", "value": 93},
+                        {"semantic": "q4_avg_value", "value": 6659.21435546875},
+                    ]
+                }
+            },
+        },
+        "structured_ref_inputs": {
+            "total_count": 28,
+            "fixed_counts": {"q3": 16, "q1": 8},
+            "min_counts": {"q3": 16, "q1": 8, "q4": 1, "q6": 1},
+            "quality_cells": {"q3": 20.0, "q1": 16.0},
+            "avg_values": {"q4": 6659.214},
+        },
+    }
+    result = run_reference_engine(snapshot, max_combos=50_000).as_dict()
+
+    assert result["status"] in {"ok", "count_prior"}
+    assert result["combo_count"] > 0
+    assert result["evidence"]["soft_avg_value_keys"] == ["q4"]
+    assert "public_q4_avg_value_soft_pending_count" in result["notes"]
+    assert "public_quality_avg_value_conflict_fallback" not in result["notes"]
+    assert "public_avg_value_soft_weight_v0" in result["notes"]
+    assert result["balanced"] not in (None, 0)
+    q4_range = result["quality_count_ranges"]["q4"]
+    assert q4_range[0] != q4_range[2] or q4_range[1] != q4_range[0]
+
+
+def test_ref_engine_public_q5_avg_value_soft_prefers_matching_count() -> None:
+    snapshot = {
+        "ui_contract": {
+            "context": {"hero": "ahmed", "map_id": 4406, "phase": "bidding", "round": 4},
+            "constraints": {
+                "public_info": {
+                    "public_avg_values": [
+                        {
+                            "semantic": "q5_avg_value",
+                            "kind": "avg_value",
+                            "quality": 5,
+                            "value": 34288.75,
+                        }
+                    ]
+                }
+            },
+        },
+        "structured_ref_inputs": {
+            "total_count": 30,
+            "fixed_counts": {"q1": 10, "q3": 8},
+            "min_counts": {"q1": 10, "q3": 8, "q5": 1},
+        },
+    }
+    result = run_reference_engine(snapshot, max_combos=60_000).as_dict()
+
+    assert result["status"] == "ok"
+    assert result["combo_count"] > 0
+    assert "public_q5_avg_value_soft_pending_count" in result["notes"]
+    assert "public_avg_value_soft_weight_v0" in result["notes"]
+    assert result["evidence"]["soft_avg_value_keys"] == ["q5"]
+
+
+def test_ref_engine_prop_100114_q6_avg_cells_stays_hard_without_public_soft() -> None:
+    """Red avg cells arrive via prop 100114 (珍品均格), not public_info q6_avg_cells."""
+    snapshot = {
+        "ui_contract": {
+            "context": {"hero": "aisha", "map_id": 2401, "phase": "bidding", "round": 4},
+            "actions": {
+                "results": [{"action_id": 100114, "result": 4.5, "tool": "珍品均格"}],
+            },
+            "constraints": {
+                "public_info": {
+                    "public_numeric_facts": [{"semantic": "total_cells", "value": 93}],
+                }
+            },
+        },
+        "structured_ref_inputs": {
+            "fixed_counts": {"q3": 16, "q1": 12, "q4": 14, "q5": 2},
+            "min_counts": {"q3": 16, "q1": 12, "q4": 14, "q5": 2},
+            "quality_cells": {"q3": 20.0, "q1": 25.0, "q4": 37.0, "q5": 8.0},
+            "avg_cells": {"q6": 4.5},
+        },
+    }
+    evidence = extract_evidence(snapshot)
+
+    assert evidence.avg_cells.get("q6") == 4.5
+    assert evidence.soft_avg_cell_keys == frozenset()
+    assert "action_100114_q6_avg_cells" in evidence.source_notes
+    assert "public_q6_avg_cells" not in evidence.source_notes

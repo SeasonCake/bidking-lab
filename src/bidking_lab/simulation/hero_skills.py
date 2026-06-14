@@ -206,6 +206,7 @@ HERO_SKILLS: dict[int, HeroSkillProfile] = {
         _e(InfoType.COUNT_HINT, frozenset({CAT_ANTIQUE}), at_round=1),
         _e(InfoType.OUTLINE, frozenset({CAT_ANTIQUE}), at_round=2),
         _e(InfoType.QUALITY, frozenset({CAT_ANTIQUE}), at_round=3),
+        # R4 reveals full info for ~1/3 of antique items (not the whole warehouse).
         _e(InfoType.FULL, frozenset({CAT_ANTIQUE}), max_items=0, at_round=4),
     )),
     208: HeroSkillProfile(208, "伊森", 2, (

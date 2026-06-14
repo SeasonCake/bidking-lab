@@ -1,0 +1,16 @@
+Hero Ref 最高出价者名字掩码预览（v0.1.9 dev）
+看「当前建议 → 最高」行。
+
+样本1 · 玩家A
+  源文件: sample1_playera_snapshot.json
+  UI加载: sample1_playera_ui.json
+  原始最高: 玩家A 500,000
+  UI显示最高: 玩*A 500,000
+  场景: aisha · map 2404 · R3
+
+样本2 · 欧阳娜娜
+  源文件: sample2_four_char_snapshot.json
+  UI加载: sample2_four_char_ui.json
+  原始最高: 欧阳娜娜 1,280,000
+  UI显示最高: 欧**娜 1,280,000
+  场景: ahmed · map 2408 · R4

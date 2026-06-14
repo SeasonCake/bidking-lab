@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "created_at": 1781400000.0,
+  "note": "Hero Ref UI preview: purple/gold count+cells when top3 locked (v0.1.9 dev)",
+  "ui_contract": {
+    "schema_version": 1,
+    "context": {
+      "hero": "victor",
+      "map_id": 2404,
+      "map_name": "2404",
+      "phase": "bidding",
+      "round": 3,
+      "session_id": "2404:purple-gold-cells-preview-locked"
+    },
+    "baseline": {
+      "decision": {},
+      "posterior": {}
+    },
+    "source": {
+      "created_at": 1781400000.0
+    }
+  },
+  "structured_ref_inputs": {
+    "hero": "victor",
+    "total_count": 35,
+    "count_sums": {
+      "q4q5q6": 14
+    },
+    "fixed_counts": {
+      "q4": 9,
+      "q5": 4,
+      "q6": 1
+    },
+    "quality_cells": {
+      "q4": 28,
+      "q5": 7,
+      "q6": 4
+    }
+  }
+}

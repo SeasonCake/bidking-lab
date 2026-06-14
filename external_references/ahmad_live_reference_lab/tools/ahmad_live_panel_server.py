@@ -18,8 +18,11 @@ STALE_SNAPSHOT_SECONDS = 60.0
 SETTLED_STALE_SECONDS = 60.0
 LAB_ROOT = Path(__file__).resolve().parents[1]
 LAB_SRC = LAB_ROOT / "src"
+LAB_TOOLS = Path(__file__).resolve().parent
 if str(LAB_SRC) not in sys.path:
     sys.path.insert(0, str(LAB_SRC))
+if str(LAB_TOOLS) not in sys.path:
+    sys.path.insert(0, str(LAB_TOOLS))
 QUALITY_LABELS = {
     "q1": "白绿",
     "q3": "蓝",
@@ -37,6 +40,7 @@ SPLIT_QUALITY_DISPLAY_ORDER = ("white", "green")
 
 try:
     from ahmad_ref_engine import (
+        AISHA_EARLY_ROUND_MAX_COMBOS,
         HERO_ALIASES,
         HERO_BY_ID,
         STRUCTURED_REF_HERO_KEYS,
@@ -75,9 +79,54 @@ except Exception:  # noqa: BLE001 - keep debug server usable without ref core
         return normalize_hero_key(hero) in set(HERO_BY_ID.values())
 
     run_reference_engine = None  # type: ignore[assignment,misc]
+    AISHA_EARLY_ROUND_MAX_COMBOS = 2500  # type: ignore[misc]
 
     def prepare_reference_engine_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         return dict(snapshot)
+
+try:
+    from hero_ref_live_schedule import (
+        EARLY_ROUND_ENGINE_FLAG,
+        hero_max_combos_for_round,
+        hero_quote_ready,
+        hero_ref_wait_hint,
+        hero_ref_waiting_result,
+        hero_should_run_scheduled_inference,
+        hero_uses_dual_pass,
+    )
+except Exception:  # noqa: BLE001 - schedule optional when panel runs standalone
+    EARLY_ROUND_ENGINE_FLAG = "audit_aisha_early_round"
+
+    def hero_should_run_scheduled_inference(hero_key: str, round_no: int | None, phase: str) -> bool:
+        return False
+
+    def hero_uses_dual_pass(hero_key: str, round_no: int | None, phase: str) -> bool:
+        return hero_key == "aisha" and phase not in ("settled", "manual") and round_no is not None and 1 <= int(round_no) <= 5
+
+    def hero_max_combos_for_round(hero_key: str, round_no: int | None) -> int:
+        if hero_key == "aisha" and round_no is not None and int(round_no) < 3:
+            return AISHA_EARLY_ROUND_MAX_COMBOS
+        return 20_000
+
+    def hero_quote_ready(
+        snapshot: dict[str, Any],
+        hero_key: str,
+        round_no: int,
+        public_info: dict[str, Any] | None = None,
+    ) -> tuple[bool, str]:
+        del snapshot, hero_key, round_no, public_info
+        return True, ""
+
+    def hero_ref_waiting_result(*, hero_key: str, wait_hint: str, category: Any = None) -> dict[str, Any]:
+        del hero_key, category
+        return {"status": "missing_total_count", "source": "ref_v0", "notes": [f"hero_ref_wait:{wait_hint}"]}
+
+    def hero_ref_wait_hint(ref_notes: list[str]) -> str:
+        for note in ref_notes:
+            text = str(note)
+            if text.startswith("hero_ref_wait:"):
+                return text.split(":", 1)[1]
+        return ""
 
 
 def _dig(value: Any, *path: str, default: Any = None) -> Any:
@@ -93,6 +142,29 @@ def _text(value: Any, default: str = "") -> str:
     if value is None:
         return default
     return str(value)
+
+
+def _mask_player_display_name(name: str) -> str:
+    """UI privacy: keep first/last character, mask the rest."""
+    text = str(name or "").strip()
+    if len(text) <= 1:
+        return text
+    if len(text) == 2:
+        return f"{text[0]}*{text[1]}"
+    return f"{text[0]}{'*' * (len(text) - 2)}{text[-1]}"
+
+
+def _mask_bidder_display_text(value: Any) -> str:
+    """Mask player name in 'name bid' readouts; leave settlement totals untouched."""
+    text = _text(value, "-").strip()
+    if text in ("", "-"):
+        return text
+    if text.startswith("总值"):
+        return text
+    name_part, separator, tail = text.rpartition(" ")
+    if separator and any(ch.isdigit() for ch in tail):
+        return f"{_mask_player_display_name(name_part)} {tail}"
+    return _mask_player_display_name(text)
 
 
 def _bool(value: Any) -> bool:
@@ -178,6 +250,17 @@ def _compact_float(value: Any, *, max_decimals: int = 4) -> str:
     if parsed.is_integer():
         return str(int(parsed))
     return f"{parsed:.{max_decimals}f}".rstrip("0").rstrip(".")
+
+
+def _compact_grid_cells(value: Any) -> str:
+    """Warehouse grid counts are whole cells; layout hints may carry float noise."""
+    if value in (None, ""):
+        return "-"
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return str(int(round(parsed)))
 
 
 def _range_text(value: Any, *, money: bool = False, suffix: str = "") -> str:
@@ -469,7 +552,7 @@ def _candidate_summary(ref_result: dict[str, Any]) -> str:
             parts.append(f"估总件 {_compact_range_text(count_candidates)}")
     total_grid = evidence.get("total_grid_target")
     if total_grid not in (None, ""):
-        parts.append(f"总格 {_compact_float(total_grid)}")
+        parts.append(f"总格 {_compact_grid_cells(total_grid)}")
     else:
         total_grid_candidates = _compact_range_text(
             ref_result.get("total_grid_range"),
@@ -577,6 +660,75 @@ def _aisha_missing_total_count(ref_result: dict[str, Any], evidence: dict[str, A
     return evidence.get("total_count") in (None, "")
 
 
+AISHA_LIVE_ENGINE_MIN_ROUND = 3
+AISHA_DUAL_PASS_MAX_ROUND = 5
+AISHA_HERO_ID = 103
+AISHA_ENGINE_PASS_SKILL = "skill"
+AISHA_ENGINE_PASS_ITEM = "item"
+# Live monitor: R1–R4 outline skills; R5 has no dedicated skill frame.
+AISHA_ROUND_SKILL_IDS: dict[int, int] = {
+    1: 1001034,
+    2: 1001033,
+    3: 1001032,
+    4: 1001031,
+}
+AISHA_ROUND_SKILL_LABELS: dict[int, str] = {
+    1: "白品技能帧",
+    2: "绿品技能帧",
+    3: "蓝品技能帧",
+    4: "紫品技能帧",
+}
+# Player prop frames for item-pass detection (engine mapping optional).
+# Keep in sync with monitor zero_implied_action_ids + ahmad_ref_engine ACTION_* tables.
+AISHA_PROP_ACTION_IDS: frozenset[str] = frozenset(
+    {
+        str(action_id)
+        for action_id in (
+            100103,
+            100104,
+            100105,
+            100106,
+            100107,
+            100108,
+            100109,
+            100110,
+            100111,
+            100112,
+            100113,
+            100114,
+            100115,
+            100116,
+            100117,
+            100118,
+            100119,
+            100120,
+            100121,
+            100122,
+            100123,
+            100124,
+            100125,
+            100126,
+            100127,
+            100134,
+            100135,
+            100136,
+            100137,
+            100138,
+            100139,
+            100140,
+            100163,
+            100204,
+            1002041,
+            1002042,
+            1002043,
+            1002044,
+        )
+    }
+)
+AISHA_SKILL_ACTION_IDS: frozenset[str] = frozenset(
+    str(skill_id) for skill_id in AISHA_ROUND_SKILL_IDS.values()
+)
+
 AISHA_DEFENSE_MULTIPLIERS: dict[int, str] = {
     1: "2.0",
     2: "1.6",
@@ -593,6 +745,435 @@ def _aisha_defense_multiplier_hint(round_no: int | None) -> str:
     clamped = min(int(round_no), 5)
     multiplier = AISHA_DEFENSE_MULTIPLIERS.get(clamped, "1.1")
     return f"R{clamped}防守×{multiplier}"
+
+
+def _infer_hero_from_skill_reveals(snapshot: dict[str, Any]) -> str:
+    """Backfill hero when monitor session binding lags but skill frames already landed."""
+    for row in _iter_snapshot_skill_reveal_rows(snapshot):
+        hero_id = _parse_int(row.get("hero_id"))
+        if hero_id in HERO_BY_ID:
+            return HERO_BY_ID[hero_id]
+    return ""
+
+
+def _snapshot_hero_key(snapshot: dict[str, Any], context: dict[str, Any]) -> str:
+    hero = _hero_from_context(
+        context.get("hero") or snapshot.get("hero"),
+        context.get("hero_id"),
+        context.get("player_hero_id"),
+        context.get("current_player_hero_id"),
+        snapshot.get("hero_id"),
+        snapshot.get("player_hero_id"),
+        snapshot.get("current_player_hero_id"),
+    )
+    if _is_unknown_hero(hero):
+        structured = snapshot.get("structured_ref_inputs")
+        if isinstance(structured, dict):
+            structured_hero = _hero_from_context(structured.get("hero"))
+            if not _is_unknown_hero(structured_hero):
+                hero = structured_hero
+    if _is_unknown_hero(hero):
+        inferred = _infer_hero_from_skill_reveals(snapshot)
+        if inferred:
+            hero = inferred
+    return normalize_hero_key(hero)
+
+
+def _aisha_should_dual_pass(
+    hero_key: str,
+    round_no: int | None,
+    phase: str,
+) -> bool:
+    """Aisha R1–R5: skill-frame pass then optional item-frame pass."""
+    return hero_uses_dual_pass(hero_key, round_no, phase)
+
+
+def _aisha_pass_max_combos(round_no: int) -> int:
+    return hero_max_combos_for_round("aisha", round_no)
+
+
+def _iter_snapshot_skill_reveal_rows(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for key in ("skill_reveal_rows", "skill_reveals"):
+        payload = snapshot.get(key)
+        if not isinstance(payload, list):
+            continue
+        for row in payload:
+            if not isinstance(row, dict):
+                continue
+            row_id = id(row)
+            if row_id in seen:
+                continue
+            seen.add(row_id)
+            rows.append(row)
+    return rows
+
+
+def _skill_reveal_row_has_signal(row: dict[str, Any]) -> bool:
+    revealed = _parse_int(row.get("revealed_items"))
+    if revealed is not None and revealed > 0:
+        return True
+    result_val = row.get("result")
+    if result_val not in (None, ""):
+        try:
+            if float(result_val) != 0.0:
+                return True
+        except (TypeError, ValueError):
+            pass
+    items = row.get("observed_items") or row.get("revealed_items_detail") or ()
+    if isinstance(items, list) and items:
+        return True
+    return False
+
+
+def _aisha_round_skill_frame_ready(snapshot: dict[str, Any], round_no: int) -> bool:
+    expected_skill = AISHA_ROUND_SKILL_IDS.get(int(round_no))
+    if expected_skill is None:
+        return True
+    for row in _iter_snapshot_skill_reveal_rows(snapshot):
+        if _parse_int(row.get("hero_id")) != AISHA_HERO_ID:
+            continue
+        if _parse_int(row.get("skill_id")) != expected_skill:
+            continue
+        if _skill_reveal_row_has_signal(row):
+            return True
+    return False
+
+
+def _public_info_row_has_signal(row: dict[str, Any]) -> bool:
+    if _parse_int(row.get("info_id")) not in (None, 0):
+        return True
+    if _skill_reveal_row_has_signal(row):
+        return True
+    summary = _text(row.get("revealed_summary") or row.get("summary"), "").strip()
+    return bool(summary)
+
+
+def _aisha_round_public_info_ready(
+    snapshot: dict[str, Any],
+    round_no: int,
+) -> bool:
+    """Public info landing at or after the current round skill anchor."""
+    floor = _aisha_round_skill_sort(snapshot, round_no)
+    rows = snapshot.get("public_info_rows")
+    if not isinstance(rows, list):
+        return False
+    for row in rows:
+        if not isinstance(row, dict) or not _public_info_row_has_signal(row):
+            continue
+        row_sort = _action_row_sort(row)
+        if floor is not None:
+            if row_sort is None or row_sort < floor:
+                continue
+        return True
+    return False
+
+
+def _aisha_public_info_ready(
+    snapshot: dict[str, Any],
+    public_info: dict[str, Any],
+) -> bool:
+    """Any public info in snapshot (cumulative); used for diagnostics only."""
+    rows = snapshot.get("public_info_rows")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and _public_info_row_has_signal(row):
+                return True
+    if isinstance(public_info.get("public_numeric_facts"), list) and public_info["public_numeric_facts"]:
+        return True
+    if _text(public_info.get("public_numeric_summary"), "").strip():
+        return True
+    input_constraints = public_info.get("input_constraints")
+    if isinstance(input_constraints, dict) and input_constraints:
+        return True
+    return False
+
+
+def _aisha_early_round_quote_ready(
+    snapshot: dict[str, Any],
+    round_no: int,
+    public_info: dict[str, Any],
+) -> tuple[bool, str]:
+    """Skill frame is required; public info is optional and may be absent some rounds."""
+    del public_info
+    skill_ready = _aisha_round_skill_frame_ready(snapshot, round_no)
+    skill_label = AISHA_ROUND_SKILL_LABELS.get(int(round_no), "技能帧")
+    if skill_ready:
+        return True, ""
+    return False, f"等待{skill_label}"
+
+
+def _snapshot_action_result_rows(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    top = snapshot.get("action_result_rows")
+    if isinstance(top, list):
+        rows.extend(row for row in top if isinstance(row, dict))
+    uc = snapshot.get("ui_contract") if isinstance(snapshot.get("ui_contract"), dict) else {}
+    actions = uc.get("actions") if isinstance(uc.get("actions"), dict) else {}
+    for row in actions.get("results") or ():
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _action_row_sort(row: dict[str, Any]) -> int | None:
+    return _parse_int(row.get("sort"))
+
+
+def _aisha_round_skill_sort(snapshot: dict[str, Any], round_no: int) -> int | None:
+    """Sort anchor for the current round; props at or after this sort belong to this round."""
+    expected_skill = AISHA_ROUND_SKILL_IDS.get(int(round_no))
+    if expected_skill is None and int(round_no) >= 5:
+        expected_skill = AISHA_ROUND_SKILL_IDS.get(4)
+    if expected_skill is None:
+        return None
+    anchor: int | None = None
+    for row in _iter_snapshot_skill_reveal_rows(snapshot):
+        if _parse_int(row.get("hero_id")) != AISHA_HERO_ID:
+            continue
+        if _parse_int(row.get("skill_id")) != expected_skill:
+            continue
+        row_sort = _action_row_sort(row)
+        if row_sort is None:
+            continue
+        if anchor is None or row_sort > anchor:
+            anchor = row_sort
+    return anchor
+
+
+def _aisha_is_prop_action_row(row: dict[str, Any]) -> bool:
+    action_id = _text(row.get("action_id"), "").strip()
+    if not action_id or action_id in AISHA_SKILL_ACTION_IDS:
+        return False
+    if action_id in AISHA_PROP_ACTION_IDS:
+        return True
+    if row.get("inferred_zero"):
+        return True
+    detail = row.get("revealed_items_detail") or row.get("observed_items") or ()
+    return isinstance(detail, list) and bool(detail)
+
+
+def _prop_action_row_has_signal(row: dict[str, Any]) -> bool:
+    action_id = _text(row.get("action_id"), "").strip()
+    if not action_id:
+        return False
+    if row.get("inferred_zero"):
+        return True
+    if action_id in AISHA_PROP_ACTION_IDS and (
+        row.get("result") is not None or row.get("result_field") is not None
+    ):
+        return True
+    if _skill_reveal_row_has_signal(row):
+        return True
+    items = row.get("revealed_items_detail") or row.get("observed_items") or ()
+    return isinstance(items, list) and bool(items)
+
+
+def _aisha_item_frame_ready(snapshot: dict[str, Any], round_no: int) -> bool:
+    """Prop/item frame for the current round only; public info is handled by the skill pass."""
+    floor = _aisha_round_skill_sort(snapshot, round_no)
+    if floor is None:
+        return False
+    for row in _snapshot_action_result_rows(snapshot):
+        if not _aisha_is_prop_action_row(row):
+            continue
+        row_sort = _action_row_sort(row)
+        if row_sort is not None and row_sort < floor:
+            continue
+        if _prop_action_row_has_signal(row):
+            return True
+    return False
+
+
+def _aisha_clone_for_engine_pass(snapshot: dict[str, Any], pass_kind: str) -> dict[str, Any]:
+    """Skill pass omits prop action rows only; full snapshot still feeds minimap UI."""
+    if pass_kind != AISHA_ENGINE_PASS_SKILL:
+        return snapshot
+    cloned = json.loads(json.dumps(snapshot, ensure_ascii=False))
+    cloned["action_result_rows"] = []
+    uc = cloned.get("ui_contract") if isinstance(cloned.get("ui_contract"), dict) else {}
+    cloned["ui_contract"] = uc
+    actions = uc.get("actions") if isinstance(uc.get("actions"), dict) else {}
+    uc["actions"] = actions
+    actions["results"] = []
+    return cloned
+
+
+def _aisha_prepare_pass_snapshot(snapshot: dict[str, Any], *, pass_kind: str, round_no: int) -> dict[str, Any]:
+    base = _aisha_clone_for_engine_pass(snapshot, pass_kind)
+    prepared = prepare_reference_engine_snapshot(base)
+    prepared["audit_aisha_engine_pass"] = pass_kind
+    if int(round_no) < AISHA_LIVE_ENGINE_MIN_ROUND:
+        prepared["audit_aisha_early_round"] = True
+    return prepared
+
+
+def _aisha_run_engine_pass(snapshot: dict[str, Any], *, pass_kind: str, round_no: int) -> dict[str, Any]:
+    if run_reference_engine is None:
+        return {"status": "unavailable", "source": "ref_v0", "notes": ["ref_engine_unavailable"]}
+    prepared = _aisha_prepare_pass_snapshot(snapshot, pass_kind=pass_kind, round_no=round_no)
+    try:
+        return run_reference_engine(
+            prepared,
+            max_combos=_aisha_pass_max_combos(round_no),
+        ).as_dict()
+    except Exception as exc:  # noqa: BLE001 - prototype diagnostics
+        return {
+            "status": "error",
+            "source": "ref_v0",
+            "notes": [f"aisha_engine_pass:{pass_kind}", str(exc)],
+        }
+
+
+def _aisha_append_quote_pass_note(result: dict[str, Any], pass_kind: str) -> dict[str, Any]:
+    notes = list(result.get("notes") or [])
+    marker = f"aisha_quote_pass:{pass_kind}"
+    if marker not in notes:
+        notes.append(marker)
+    result["notes"] = notes
+    return result
+
+
+def _aisha_append_skill_only_pass_notes(
+    result: dict[str, Any],
+    *,
+    snapshot: dict[str, Any],
+    round_no: int,
+) -> dict[str, Any]:
+    result = _aisha_append_quote_pass_note(result, AISHA_ENGINE_PASS_SKILL)
+    notes = list(result.get("notes") or [])
+    if not _aisha_round_public_info_ready(snapshot, round_no):
+        marker = "aisha_quote_pass:skill_no_public_this_round"
+        if marker not in notes:
+            notes.append(marker)
+    if not _aisha_item_frame_ready(snapshot, round_no):
+        marker = "aisha_quote_pass:skill_no_items_this_round"
+        if marker not in notes:
+            notes.append(marker)
+    result["notes"] = notes
+    return result
+
+
+def _aisha_skill_only_flag_detail(ref_notes: list[str]) -> str:
+    no_items = "aisha_quote_pass:skill_no_items_this_round" in ref_notes
+    no_public = "aisha_quote_pass:skill_no_public_this_round" in ref_notes
+    if no_items and no_public:
+        return "本轮无新公开信息、未用道具；仍按技能帧估价"
+    if no_public:
+        return "本轮无新公开信息；仍按技能帧估价"
+    if no_items:
+        return "本轮未用道具；下轮仍按技能帧估价"
+    return "道具帧未到；小地图仍显示全部道具"
+
+
+def _aisha_dual_pass_ref_result(
+    snapshot: dict[str, Any],
+    *,
+    round_no: int,
+    public_info: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, float | None]]:
+    """Run skill+public pass, then full item pass when prop frame lands."""
+    timing: dict[str, float | None] = {"skill": None, "item": None}
+    ready, wait_hint = _aisha_early_round_quote_ready(snapshot, round_no, public_info)
+    if not ready:
+        return _aisha_early_round_waiting_result(wait_hint=wait_hint), timing
+
+    skill_started = time.perf_counter()
+    skill_result = _aisha_run_engine_pass(
+        snapshot,
+        pass_kind=AISHA_ENGINE_PASS_SKILL,
+        round_no=round_no,
+    )
+    timing["skill"] = round((time.perf_counter() - skill_started) * 1000.0, 2)
+
+    if not _aisha_item_frame_ready(snapshot, round_no):
+        return _aisha_append_skill_only_pass_notes(
+            skill_result,
+            snapshot=snapshot,
+            round_no=round_no,
+        ), timing
+
+    item_started = time.perf_counter()
+    item_result = _aisha_run_engine_pass(
+        snapshot,
+        pass_kind=AISHA_ENGINE_PASS_ITEM,
+        round_no=round_no,
+    )
+    timing["item"] = round((time.perf_counter() - item_started) * 1000.0, 2)
+    return _aisha_append_quote_pass_note(item_result, AISHA_ENGINE_PASS_ITEM), timing
+
+
+def _hero_single_pass_ref_result(
+    snapshot: dict[str, Any],
+    *,
+    hero_key: str,
+    round_no: int,
+    public_info: dict[str, Any],
+) -> dict[str, Any]:
+    """Scheduled single-pass ref for Ahmed/Victor/sparse heroes."""
+    if run_reference_engine is None:
+        return {"status": "unavailable", "source": "ref_v0", "notes": ["ref_engine_unavailable"]}
+    ready, wait_hint = hero_quote_ready(snapshot, hero_key, round_no, public_info)
+    if not ready:
+        return hero_ref_waiting_result(hero_key=hero_key, wait_hint=wait_hint)
+    prepared = prepare_reference_engine_snapshot(snapshot)
+    spec_boundary = 3
+    try:
+        from hero_ref_live_schedule import get_hero_schedule
+
+        spec = get_hero_schedule(hero_key)
+        if spec is not None:
+            spec_boundary = spec.early_round_boundary
+    except Exception:  # noqa: BLE001
+        pass
+    if int(round_no) < spec_boundary:
+        prepared[EARLY_ROUND_ENGINE_FLAG] = True
+    try:
+        return run_reference_engine(
+            prepared,
+            max_combos=hero_max_combos_for_round(hero_key, round_no),
+        ).as_dict()
+    except Exception as exc:  # noqa: BLE001 - prototype diagnostics
+        return {
+            "status": "error",
+            "source": "ref_v0",
+            "notes": [f"hero_ref_pass:{hero_key}", str(exc)],
+        }
+
+
+def _aisha_quote_pass_kind(ref_notes: list[str]) -> str:
+    for note in ref_notes:
+        text = str(note)
+        if text.startswith("aisha_quote_pass:"):
+            return text.split(":", 1)[1]
+    return ""
+
+
+def _aisha_early_round_waiting_result(*, wait_hint: str) -> dict[str, Any]:
+    return {
+        "status": "missing_total_count",
+        "source": "ref_v0",
+        "conservative": None,
+        "balanced": None,
+        "aggressive": None,
+        "value_p25": None,
+        "value_p50": None,
+        "value_p75": None,
+        "combo_count": 0,
+        "red_count_range": [None, None, None],
+        "red_cells_range": [None, None, None],
+        "red_value_range": [None, None, None],
+        "quality_count_ranges": {},
+        "quality_cells_ranges": {},
+        "total_grid_range": [None, None, None],
+        "notes": ["aisha_early_round_waiting", f"aisha_early_wait:{wait_hint}"],
+        "evidence": {"hero": "aisha"},
+    }
+
+
+def _aisha_early_wait_hint(ref_notes: list[str]) -> str:
+    return hero_ref_wait_hint(ref_notes)
 
 
 AISHA_D1_FLAG_DISCOUNT_THRESHOLD = 0.7
@@ -691,6 +1272,21 @@ def _ref_notes_list(ref_result: dict[str, Any]) -> list[str]:
     return []
 
 
+def _ref_not_ready_flag_detail(ref_result: dict[str, Any]) -> str:
+    status = _text(ref_result.get("status"), "")
+    notes = _ref_notes_list(ref_result)
+    if status == "no_reachable_combo":
+        if "public_quality_avg_cells_conflict_fallback" in notes:
+            return "公开均格与锁定冲突，已降级后重算"
+        if any("public_q4_avg_cells_soft_pending_count" in note for note in notes):
+            return "紫均格作软约束，待紫件数锁定后收紧"
+        if "constraints_conflict_or_too_strict" in notes:
+            if any("public_q" in note and "avg_cells" in note for note in notes):
+                return "公开均格与当前锁定冲突，暂无可行组合"
+            return "约束冲突，暂无可行组合"
+    return status
+
+
 def _ref_waiting_grid_only(ref_result: dict[str, Any]) -> bool:
     return any(note == "waiting_total_count:grid_only" for note in _ref_notes_list(ref_result))
 
@@ -702,6 +1298,9 @@ def _ref_waiting_display_text(
     round_no: int | None = None,
 ) -> str:
     ref_status = _text(ref_result.get("status"), "")
+    schedule_wait = hero_ref_wait_hint(_ref_notes_list(ref_result))
+    if schedule_wait:
+        return schedule_wait
     if ref_status != "missing_total_count":
         return "等待总件/品质输入"
     if hero_key == "ahmed" and _ref_waiting_grid_only(ref_result):
@@ -709,6 +1308,9 @@ def _ref_waiting_display_text(
     if hero_key == "victor":
         return "等待总件/紫金红"
     if hero_key == "aisha":
+        early_wait = _aisha_early_wait_hint(_ref_notes_list(ref_result))
+        if early_wait:
+            return early_wait
         ref_evidence = ref_result.get("evidence")
         if not isinstance(ref_evidence, dict):
             ref_evidence = {}
@@ -959,7 +1561,7 @@ def _ref_input_summary(ref_result: dict[str, Any]) -> str:
         total_parts.append(f"总件 {total_count}")
     total_grid = evidence.get("total_grid_target")
     if total_grid not in (None, ""):
-        total_parts.append(f"总格 {_compact_float(total_grid)}")
+        total_parts.append(f"总格 {_compact_grid_cells(total_grid)}")
         parsed_count = _parse_int(total_count)
         try:
             parsed_grid = float(total_grid)
@@ -1349,16 +1951,71 @@ def _known_quality_footprint(
     return (count, cells)
 
 
-def _purple_gold_count_summary(counts: dict[str, Any]) -> str:
+def _purple_gold_tier_display_text(
+    key: str,
+    *,
+    count_range: Any,
+    cells_ranges: dict[str, Any] | None,
+    evidence: dict[str, Any],
+) -> str | None:
+    """Purple/gold readout: locked top3 → count/cells when grid known; else count or range."""
+    label = QUALITY_LABELS.get(key, key)
+    locked_count = _locked_range_value(count_range)
+    if locked_count is not None:
+        cells_locked = None
+        if isinstance(cells_ranges, dict):
+            cells_locked = _locked_range_value(cells_ranges.get(key))
+        if cells_locked is None:
+            quality_cells = evidence.get("quality_cells")
+            if isinstance(quality_cells, dict):
+                cells_locked = _parse_int(quality_cells.get(key))
+        if cells_locked is not None:
+            return f"{label}{locked_count}/{cells_locked}"
+        return f"{label}{locked_count}"
+    text = _range_text(count_range).replace(" / ", "/")
+    if text == "-":
+        return None
+    return f"{label}件 {text}"
+
+
+def _purple_gold_quality_summary(ref_result: dict[str, Any]) -> str:
+    ranges = ref_result.get("quality_count_ranges")
+    if not isinstance(ranges, dict):
+        return "-"
+    evidence = ref_result.get("evidence") if isinstance(ref_result.get("evidence"), dict) else {}
+    cells_ranges = ref_result.get("quality_cells_ranges")
+    if not isinstance(cells_ranges, dict):
+        cells_ranges = {}
+    parts: list[str] = []
+    for key in ("q4", "q5"):
+        tier_text = _purple_gold_tier_display_text(
+            key,
+            count_range=ranges.get(key),
+            cells_ranges=cells_ranges,
+            evidence=evidence,
+        )
+        if tier_text:
+            parts.append(tier_text)
+    return " · ".join(parts) if parts else "-"
+
+
+def _purple_gold_count_summary(
+    counts: dict[str, Any],
+    cells: dict[str, Any] | None = None,
+) -> str:
     if not isinstance(counts, dict) or not counts:
         return "-"
+    cell_map = cells if isinstance(cells, dict) else {}
     parts: list[str] = []
-    q4 = _parse_int(counts.get("q4"))
-    q5 = _parse_int(counts.get("q5"))
-    if q4 is not None:
-        parts.append(f"紫件 {q4}")
-    if q5 is not None:
-        parts.append(f"金件 {q5}")
+    for key, label in (("q4", "紫"), ("q5", "金")):
+        count = _parse_int(counts.get(key))
+        if count is None:
+            continue
+        cell_count = _parse_int(cell_map.get(key))
+        if cell_count is not None:
+            parts.append(f"{label}{count}/{cell_count}")
+        else:
+            parts.append(f"{label}{count}")
     return " · ".join(parts) if parts else "-"
 
 
@@ -1566,6 +2223,8 @@ def _stale_snapshot_payload(
 def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict[str, Any]:
     summary_started = time.perf_counter()
     ref_engine_ms: float | None = None
+    ref_engine_skill_pass_ms: float | None = None
+    ref_engine_item_pass_ms: float | None = None
     settlement_ref_engine_ms: float | None = None
     uc = snapshot.get("ui_contract") if isinstance(snapshot.get("ui_contract"), dict) else {}
     context = uc.get("context") if isinstance(uc.get("context"), dict) else {}
@@ -1619,10 +2278,43 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
                 else "stale_snapshot"
             ),
         )
-    if run_reference_engine is not None:
+    hero_key_early = _snapshot_hero_key(snapshot, context)
+    round_no_early = _parse_int(context.get("round") or snapshot.get("round"))
+    aisha_dual_pass = _aisha_should_dual_pass(
+        hero_key_early,
+        round_no_early,
+        phase,
+    )
+    hero_scheduled_pass = (
+        not aisha_dual_pass
+        and hero_should_run_scheduled_inference(hero_key_early, round_no_early, phase)
+    )
+    if aisha_dual_pass:
+        ref_started = time.perf_counter()
+        ref_result, pass_timing = _aisha_dual_pass_ref_result(
+            snapshot,
+            round_no=int(round_no_early),
+            public_info=public_info,
+        )
+        ref_engine_skill_pass_ms = pass_timing.get("skill")
+        ref_engine_item_pass_ms = pass_timing.get("item")
+        ref_engine_ms = round((time.perf_counter() - ref_started) * 1000.0, 2)
+    elif hero_scheduled_pass and round_no_early is not None:
+        ref_started = time.perf_counter()
+        ref_result = _hero_single_pass_ref_result(
+            snapshot,
+            hero_key=hero_key_early,
+            round_no=int(round_no_early),
+            public_info=public_info,
+        )
+        ref_engine_ms = round((time.perf_counter() - ref_started) * 1000.0, 2)
+    elif run_reference_engine is not None:
         ref_started = time.perf_counter()
         try:
-            ref_result = run_reference_engine(prepare_reference_engine_snapshot(snapshot)).as_dict()
+            ref_result = run_reference_engine(
+                prepare_reference_engine_snapshot(snapshot),
+                max_combos=hero_max_combos_for_round(hero_key_early, round_no_early),
+            ).as_dict()
         except Exception as exc:  # noqa: BLE001 - prototype diagnostics
             ref_result = {
                 "status": "error",
@@ -1635,20 +2327,13 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         ref_result = {"status": "unavailable", "source": "ref_v0", "notes": []}
     ref_evidence = ref_result.get("evidence") if isinstance(ref_result.get("evidence"), dict) else {}
 
-    hero = _hero_from_context(
-        context.get("hero") or snapshot.get("hero"),
-        context.get("hero_id"),
-        context.get("player_hero_id"),
-        context.get("current_player_hero_id"),
-        snapshot.get("hero_id"),
-        snapshot.get("player_hero_id"),
-        snapshot.get("current_player_hero_id"),
-    )
+    hero_key = _snapshot_hero_key(snapshot, context)
+    hero = hero_key or _hero_from_context(context.get("hero") or snapshot.get("hero"))
     if _is_unknown_hero(hero):
         evidence_hero = _hero_from_context(ref_evidence.get("hero"))
         if not _is_unknown_hero(evidence_hero):
             hero = evidence_hero
-    hero_key = normalize_hero_key(hero)
+            hero_key = normalize_hero_key(hero)
     is_supported = is_supported_ref_hero(hero)
     round_no = _parse_int(context.get("round") or snapshot.get("round"))
 
@@ -1688,6 +2373,17 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         flags.append(_flag("证据低", "watch"))
     ref_ok = ref_result.get("status") in {"ok", "count_prior"}
     ref_notes = tuple(str(item) for item in ref_result.get("notes") or ())
+    aisha_early_round_waiting = "aisha_early_round_waiting" in ref_notes
+    hero_ref_waiting = "hero_ref_waiting" in ref_notes
+    ref_trigger_waiting = aisha_early_round_waiting or hero_ref_waiting
+    aisha_quote_pass = _aisha_quote_pass_kind(ref_notes)
+    aisha_early_round_lightweight = (
+        hero_key == "aisha"
+        and not ref_trigger_waiting
+        and aisha_quote_pass in {AISHA_ENGINE_PASS_SKILL, AISHA_ENGINE_PASS_ITEM}
+        and round_no is not None
+        and int(round_no) < AISHA_LIVE_ENGINE_MIN_ROUND
+    )
     rare_signals = (
         diagnostics.get("rare_signals")
         if isinstance(diagnostics.get("rare_signals"), dict)
@@ -1751,7 +2447,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     if ref_ok:
         flags.append(_flag("外援 ref_v0", "neutral"))
     elif is_supported:
-        flags.append(_flag("外援未就绪", "watch", _text(ref_result.get("status"))))
+        flags.append(_flag("外援未就绪", "watch", _ref_not_ready_flag_detail(ref_result)))
     public_numeric_summary = _text(public_info.get("public_numeric_summary"), "").strip()
     if public_numeric_summary:
         flags.append(_flag("公开信息", "neutral", public_numeric_summary))
@@ -1761,6 +2457,38 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     defense_hint = _aisha_defense_multiplier_hint(round_no)
     if hero_key == "aisha" and defense_hint:
         flags.append(_flag(defense_hint, "neutral", "产品参考倍数，不进引擎"))
+    if hero_key == "aisha" and ref_trigger_waiting:
+        wait_hint = _aisha_early_wait_hint(ref_notes)
+        flags.append(
+            _flag(
+                wait_hint or "等待技能帧",
+                "watch",
+                "技能帧就绪后再估价",
+            )
+        )
+    elif hero_key == "aisha" and aisha_quote_pass == AISHA_ENGINE_PASS_ITEM:
+        detail = "技能帧+道具帧双 pass"
+        if ref_engine_skill_pass_ms is not None and ref_engine_item_pass_ms is not None:
+            detail = (
+                f"技能 {ref_engine_skill_pass_ms:g}ms + 道具 {ref_engine_item_pass_ms:g}ms"
+            )
+        flags.append(_flag("道具帧估计", "watch", detail))
+    elif hero_key == "aisha" and aisha_quote_pass == AISHA_ENGINE_PASS_SKILL:
+        flags.append(
+            _flag(
+                "技能帧估计",
+                "watch",
+                _aisha_skill_only_flag_detail(ref_notes),
+            )
+        )
+    if hero_key == "aisha" and aisha_early_round_lightweight:
+        flags.append(
+            _flag(
+                "R1–R2轻量",
+                "watch",
+                "早轮 capped combos；R3+ 全量",
+            )
+        )
     d1_detail = _aisha_d1_flag_detail(ref_notes) if hero_key == "aisha" else ""
     if d1_detail:
         flags.append(_flag("红品权重参考", "watch", d1_detail))
@@ -1788,17 +2516,6 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         if isinstance(ref_result.get("quality_count_ranges"), dict)
         else {}
     )
-    q4_count_range = (
-        _display_range_text(quality_count_ranges.get("q4"))
-        if ref_display_ready
-        else ""
-    )
-    q5_count_range = (
-        _display_range_text(quality_count_ranges.get("q5"))
-        if ref_display_ready
-        else ""
-    )
-
     minimap_summary = _minimap_summary(snapshot, uc)
     minimap_quality_summary = ""
     quality_counts = minimap_summary.get("quality_counts")
@@ -1815,7 +2532,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     display_red_cells_range = ref_red_cells_range or "-"
     display_red_value_range = ref_red_value_range or "-"
     display_quality_count_summary = (
-        f"紫件 {q4_count_range or '?'} · 金件 {q5_count_range or '?'}"
+        _purple_gold_quality_summary(ref_result)
         if ref_display_ready
         else "-"
     )
@@ -1913,7 +2630,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         if ref_display_ready
         else "等待外援输入"
     )
-    main_current_highest = _text(decision.get("current_highest"), "-")
+    main_current_highest = _mask_bidder_display_text(decision.get("current_highest"))
     price_titles = {
         "conservative": "保守",
         "balanced": "参考",
@@ -1963,13 +2680,20 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         display_red_cells_range = f"{_text(truth_q6.get('cells'), '?')} 格"
         display_red_value_range = _money(truth_q6.get("value"))
         settlement_quality_counts = _quality_counts_from_text(snapshot.get("final_quality_counts"))
+        settlement_quality_cells = _quality_counts_from_text(snapshot.get("final_quality_cells"))
         if settlement_quality_counts:
             settlement_quality_counts.setdefault("q4", 0)
             settlement_quality_counts.setdefault("q5", 0)
-        settlement_quality_summary = _purple_gold_count_summary(settlement_quality_counts)
+        settlement_quality_summary = _purple_gold_count_summary(
+            settlement_quality_counts,
+            settlement_quality_cells,
+        )
         minimap_settlement_summary = _purple_gold_count_summary(quality_counts)
         known_purple_gold_summary = _known_purple_gold_summary(constraints)
-        if known_purple_gold_summary != "-":
+        # Settlement truth carries count+cells; constraints summary is count-only.
+        if settlement_quality_summary != "-" and settlement_quality_cells:
+            display_quality_count_summary = settlement_quality_summary
+        elif known_purple_gold_summary != "-":
             display_quality_count_summary = known_purple_gold_summary
         elif settlement_quality_summary != "-":
             display_quality_count_summary = settlement_quality_summary
@@ -2025,6 +2749,8 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     performance = {
         "summary_total_ms": round((time.perf_counter() - summary_started) * 1000.0, 2),
         "ref_engine_ms": ref_engine_ms,
+        "ref_engine_skill_pass_ms": ref_engine_skill_pass_ms,
+        "ref_engine_item_pass_ms": ref_engine_item_pass_ms,
         "settlement_ref_engine_ms": settlement_ref_engine_ms,
     }
 
