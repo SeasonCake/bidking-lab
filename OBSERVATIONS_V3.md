@@ -7865,6 +7865,7 @@ registry `modeled_soft_avg_value` 与引擎 P0 路径已对齐（不再「regist
 
 1. **tier 总价 → 格子数 / subset 枚举**（**experimental_deferred**）：Item.txt 原价 subset 在 HR-6376 / wire 34288.75 上 **未命中 settlement**；须 nest/活动有效价对齐后再评估。Audit：`scripts/audit_tier_value_subset_enumeration.py` + `data/fixtures/tier_value_subset_audit_cases.json`。**现行 ref_v0（soft avg_value / avg_cells、derive、count_prior）为主路径。**
 2. **#4 均格 soft promote** + **soft 均价 promote（镜像）**：**planning_deferred** — 见 `data/fixtures/soft_promote_count_planning.json`；与 tier subset 同 blocker（有效价表）。
+3. prop `100113` 金均格 / `100114` 红均格在件数未锁时是否纳入 soft 均格族 — 仍待 live 样本。
 
 **已关闭（对应原四项 #1–#3 + P0 连带）**
 
