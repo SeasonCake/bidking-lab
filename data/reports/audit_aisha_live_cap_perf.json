@@ -1,0 +1,2452 @@
+{
+  "sample_limit": 25,
+  "rounds": [
+    3,
+    4,
+    5
+  ],
+  "files_scanned": 25,
+  "schedule_cap_rows": [
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 4914.24,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 4914.24,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 69.64,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 69.64,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 56.74,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 56.74,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 41.69,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 41.69,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 12.43,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 12.43,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 29.5,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 29.5,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 262.27,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 262.27,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 14.52,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 14.52,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 10.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 10.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 11864.96,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 11864.96,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 11780.38,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 11780.38,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 457.72,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 457.72,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2408_3rounds_2408_1295018570868100_0004.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 75.69,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2408_3rounds_2408_1295018570868100_0004.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 75.69,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 84.87,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 84.87,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 552.32,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 552.32,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 400.45,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 400.45,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 20.55,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 20.55,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 5.15,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 5.15,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 3.94,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 3.94,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 2.4,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 2.4,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 1241.2,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 1241.2,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 108.29,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 108.29,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 1358.8,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 1358.8,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 889.93,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 889.93,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 858.66,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 858.66,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 10.97,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 10.97,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 7.42,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 7.42,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 7.21,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 7.21,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 360.68,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 360.68,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 158.46,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 158.46,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 16.82,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 16.82,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 137.83,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 137.83,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 84.94,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 84.94,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 14.23,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 14.23,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 121.44,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 121.44,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 13.64,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 13.64,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 14.61,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 14.61,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 139.6,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 139.6,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 83.43,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 83.43,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018568004009_0021.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018568004009_0021.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018568004009_0021.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018568004009_0021.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 30.53,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 30.53,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 5.61,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 5.61,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 115.25,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+          "round": 3,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 115.25,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "dual_pass_total_ms": 0.0,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+          "round": 4,
+          "schedule_cap": 8000,
+          "cap_used": 8000,
+          "pass_kind": "skill",
+          "elapsed_ms": 0.0,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "dual_pass_total_ms": 21.35,
+      "item_pass_ran": false,
+      "passes": [
+        {
+          "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+          "round": 5,
+          "schedule_cap": 12000,
+          "cap_used": 12000,
+          "pass_kind": "skill",
+          "elapsed_ms": 21.35,
+          "status": "",
+          "combo_count": 0,
+          "route": ""
+        }
+      ]
+    }
+  ],
+  "cap_sweep_rows": [
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 3124.77,
+      "delta_vs_schedule_ms": -1789.47
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 3090.2,
+      "delta_vs_schedule_ms": -1824.04
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 3201.92,
+      "delta_vs_schedule_ms": -1712.32
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 3077.56,
+      "delta_vs_schedule_ms": 3077.56
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 3122.95,
+      "delta_vs_schedule_ms": 3122.95
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 3154.41,
+      "delta_vs_schedule_ms": 3154.41
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 34.4,
+      "delta_vs_schedule_ms": -35.24
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 33.97,
+      "delta_vs_schedule_ms": -35.67
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_0035.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 34.62,
+      "delta_vs_schedule_ms": -35.02
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 40.35,
+      "delta_vs_schedule_ms": -16.39
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 38.96,
+      "delta_vs_schedule_ms": -17.78
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 39.13,
+      "delta_vs_schedule_ms": -17.61
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 41.01,
+      "delta_vs_schedule_ms": -0.68
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 41.15,
+      "delta_vs_schedule_ms": -0.54
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 41.6,
+      "delta_vs_schedule_ms": -0.09
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 8.1,
+      "delta_vs_schedule_ms": -4.33
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 7.31,
+      "delta_vs_schedule_ms": -5.12
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2401_4rounds_2401_1295018992993210_0001.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 7.68,
+      "delta_vs_schedule_ms": -4.75
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 16.7,
+      "delta_vs_schedule_ms": -12.8
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 16.59,
+      "delta_vs_schedule_ms": -12.91
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 17.82,
+      "delta_vs_schedule_ms": -11.68
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 16.41,
+      "delta_vs_schedule_ms": 16.41
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 16.39,
+      "delta_vs_schedule_ms": 16.39
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2403_3rounds_2403_1295018990047075_0002.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 16.64,
+      "delta_vs_schedule_ms": 16.64
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 176.36,
+      "delta_vs_schedule_ms": -85.91
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 175.2,
+      "delta_vs_schedule_ms": -87.07
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 185.27,
+      "delta_vs_schedule_ms": -77.0
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 9.24,
+      "delta_vs_schedule_ms": -5.28
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 9.12,
+      "delta_vs_schedule_ms": -5.4
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 8.98,
+      "delta_vs_schedule_ms": -5.54
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 6.48,
+      "delta_vs_schedule_ms": -3.52
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 6.53,
+      "delta_vs_schedule_ms": -3.47
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1295018985347835_0003.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 6.74,
+      "delta_vs_schedule_ms": -3.26
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 10618.59,
+      "delta_vs_schedule_ms": -1246.37
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 10768.1,
+      "delta_vs_schedule_ms": -1096.86
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 12139.73,
+      "delta_vs_schedule_ms": 274.77
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 12389.26,
+      "delta_vs_schedule_ms": 608.88
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 11517.54,
+      "delta_vs_schedule_ms": -262.84
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 11370.87,
+      "delta_vs_schedule_ms": -409.51
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 395.37,
+      "delta_vs_schedule_ms": -62.35
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 367.91,
+      "delta_vs_schedule_ms": -89.81
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_0002.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 371.12,
+      "delta_vs_schedule_ms": -86.6
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2408_3rounds_2408_1295018570868100_0004.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 51.18,
+      "delta_vs_schedule_ms": -24.51
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2408_3rounds_2408_1295018570868100_0004.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 49.73,
+      "delta_vs_schedule_ms": -25.96
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2408_3rounds_2408_1295018570868100_0004.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 53.03,
+      "delta_vs_schedule_ms": -22.66
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 47.3,
+      "delta_vs_schedule_ms": -37.57
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 47.86,
+      "delta_vs_schedule_ms": -37.01
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 50.81,
+      "delta_vs_schedule_ms": -34.06
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 46.41,
+      "delta_vs_schedule_ms": 46.41
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 46.35,
+      "delta_vs_schedule_ms": 46.35
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_3rounds_2409_1274128130681516_0005.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 47.63,
+      "delta_vs_schedule_ms": 47.63
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 417.46,
+      "delta_vs_schedule_ms": -134.86
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 415.34,
+      "delta_vs_schedule_ms": -136.98
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 404.76,
+      "delta_vs_schedule_ms": -147.56
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 383.03,
+      "delta_vs_schedule_ms": -17.42
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 388.22,
+      "delta_vs_schedule_ms": -12.23
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 386.19,
+      "delta_vs_schedule_ms": -14.26
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 12.38,
+      "delta_vs_schedule_ms": -8.17
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 13.41,
+      "delta_vs_schedule_ms": -7.14
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_0087.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 11.42,
+      "delta_vs_schedule_ms": -9.13
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 2.97,
+      "delta_vs_schedule_ms": -2.18
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 3.11,
+      "delta_vs_schedule_ms": -2.04
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 3.1,
+      "delta_vs_schedule_ms": -2.05
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 3.23,
+      "delta_vs_schedule_ms": -0.71
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 3.16,
+      "delta_vs_schedule_ms": -0.78
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 3.01,
+      "delta_vs_schedule_ms": -0.93
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 1.6,
+      "delta_vs_schedule_ms": -0.8
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 1.59,
+      "delta_vs_schedule_ms": -0.81
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2410_4rounds_2410_1295018987511073_0006.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 1.56,
+      "delta_vs_schedule_ms": -0.84
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 780.49,
+      "delta_vs_schedule_ms": -460.71
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 799.13,
+      "delta_vs_schedule_ms": -442.07
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 887.52,
+      "delta_vs_schedule_ms": -353.68
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 833.5,
+      "delta_vs_schedule_ms": 833.5
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 765.63,
+      "delta_vs_schedule_ms": 765.63
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 791.91,
+      "delta_vs_schedule_ms": 791.91
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 94.82,
+      "delta_vs_schedule_ms": -13.47
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 69.82,
+      "delta_vs_schedule_ms": -38.47
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_0107.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 63.93,
+      "delta_vs_schedule_ms": -44.36
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 866.8,
+      "delta_vs_schedule_ms": -492.0
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 835.49,
+      "delta_vs_schedule_ms": -523.31
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 852.44,
+      "delta_vs_schedule_ms": -506.36
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 842.2,
+      "delta_vs_schedule_ms": -47.73
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 849.65,
+      "delta_vs_schedule_ms": -40.28
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 861.41,
+      "delta_vs_schedule_ms": -28.52
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 840.36,
+      "delta_vs_schedule_ms": -18.3
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 884.69,
+      "delta_vs_schedule_ms": 26.03
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_0129.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 888.53,
+      "delta_vs_schedule_ms": 29.87
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 7.09,
+      "delta_vs_schedule_ms": -3.88
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 7.27,
+      "delta_vs_schedule_ms": -3.7
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 8.2,
+      "delta_vs_schedule_ms": -2.77
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 6.71,
+      "delta_vs_schedule_ms": -0.71
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 6.92,
+      "delta_vs_schedule_ms": -0.5
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 7.02,
+      "delta_vs_schedule_ms": -0.4
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 4.1,
+      "delta_vs_schedule_ms": -3.11
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 4.34,
+      "delta_vs_schedule_ms": -2.87
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2501_5rounds_2501_1295018596677735_0135.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 4.02,
+      "delta_vs_schedule_ms": -3.19
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 163.35,
+      "delta_vs_schedule_ms": -197.33
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 157.91,
+      "delta_vs_schedule_ms": -202.77
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 186.02,
+      "delta_vs_schedule_ms": -174.66
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 165.33,
+      "delta_vs_schedule_ms": 6.87
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 162.71,
+      "delta_vs_schedule_ms": 4.25
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 161.01,
+      "delta_vs_schedule_ms": 2.55
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 7.5,
+      "delta_vs_schedule_ms": -9.32
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 7.22,
+      "delta_vs_schedule_ms": -9.6
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2504_4rounds_2504_1274128128984391_0007.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 7.6,
+      "delta_vs_schedule_ms": -9.22
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 96.33,
+      "delta_vs_schedule_ms": -41.5
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 96.11,
+      "delta_vs_schedule_ms": -41.72
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 92.77,
+      "delta_vs_schedule_ms": -45.06
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 95.96,
+      "delta_vs_schedule_ms": 11.02
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 91.98,
+      "delta_vs_schedule_ms": 7.04
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 97.11,
+      "delta_vs_schedule_ms": 12.17
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 12.65,
+      "delta_vs_schedule_ms": -1.58
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 9.32,
+      "delta_vs_schedule_ms": -4.91
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1274128128192117_0008.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 9.07,
+      "delta_vs_schedule_ms": -5.16
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 74.05,
+      "delta_vs_schedule_ms": -47.39
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 72.81,
+      "delta_vs_schedule_ms": -48.63
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 77.49,
+      "delta_vs_schedule_ms": -43.95
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 7.83,
+      "delta_vs_schedule_ms": -5.81
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 8.31,
+      "delta_vs_schedule_ms": -5.33
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 8.39,
+      "delta_vs_schedule_ms": -5.25
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 9.48,
+      "delta_vs_schedule_ms": -5.13
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 10.65,
+      "delta_vs_schedule_ms": -3.96
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2506_5rounds_2506_1295018937738841_0009.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 10.79,
+      "delta_vs_schedule_ms": -3.82
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 83.14,
+      "delta_vs_schedule_ms": -56.46
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 82.38,
+      "delta_vs_schedule_ms": -57.22
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 84.47,
+      "delta_vs_schedule_ms": -55.13
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 85.74,
+      "delta_vs_schedule_ms": 85.74
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 89.4,
+      "delta_vs_schedule_ms": 89.4
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 83.58,
+      "delta_vs_schedule_ms": 83.58
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 81.22,
+      "delta_vs_schedule_ms": -2.21
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 87.65,
+      "delta_vs_schedule_ms": 4.22
+    },
+    {
+      "file": "fatbeans_mixed_aisha_2508_3rounds_2508_1295018989891683_0010.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 98.58,
+      "delta_vs_schedule_ms": 15.15
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018568004009_0021.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 664.91,
+      "delta_vs_schedule_ms": 664.91
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018568004009_0021.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 388.43,
+      "delta_vs_schedule_ms": 388.43
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018568004009_0021.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 409.86,
+      "delta_vs_schedule_ms": 409.86
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018568004009_0021.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 384.88,
+      "delta_vs_schedule_ms": 384.88
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018568004009_0021.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 461.44,
+      "delta_vs_schedule_ms": 461.44
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018568004009_0021.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 358.03,
+      "delta_vs_schedule_ms": 358.03
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 551.01,
+      "delta_vs_schedule_ms": 551.01
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 369.16,
+      "delta_vs_schedule_ms": 369.16
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 360.65,
+      "delta_vs_schedule_ms": 360.65
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 372.22,
+      "delta_vs_schedule_ms": 372.22
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 370.15,
+      "delta_vs_schedule_ms": 370.15
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_2rounds_2401_1295018668035643_0022.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 356.48,
+      "delta_vs_schedule_ms": 356.48
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 18.86,
+      "delta_vs_schedule_ms": -11.67
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 19.17,
+      "delta_vs_schedule_ms": -11.36
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 19.76,
+      "delta_vs_schedule_ms": -10.77
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 19.49,
+      "delta_vs_schedule_ms": 19.49
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 19.19,
+      "delta_vs_schedule_ms": 19.19
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 23.24,
+      "delta_vs_schedule_ms": 23.24
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 3.47,
+      "delta_vs_schedule_ms": -2.14
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 3.17,
+      "delta_vs_schedule_ms": -2.44
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274127947804663_0023.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 3.7,
+      "delta_vs_schedule_ms": -1.91
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 76.92,
+      "delta_vs_schedule_ms": -38.33
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 81.6,
+      "delta_vs_schedule_ms": -33.65
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 3,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 83.68,
+      "delta_vs_schedule_ms": -31.57
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 12000,
+      "dual_pass_total_ms": 115.69,
+      "delta_vs_schedule_ms": 115.69
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 81.91,
+      "delta_vs_schedule_ms": 81.91
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 4,
+      "schedule_cap": 8000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 80.72,
+      "delta_vs_schedule_ms": 80.72
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 8000,
+      "dual_pass_total_ms": 12.67,
+      "delta_vs_schedule_ms": -8.68
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 20000,
+      "dual_pass_total_ms": 11.78,
+      "delta_vs_schedule_ms": -9.57
+    },
+    {
+      "file": "fatbeans_valid_aisha_2401_3rounds_2401_1274128131753142_0024.json",
+      "round": 5,
+      "schedule_cap": 12000,
+      "cap_used": 50000,
+      "dual_pass_total_ms": 11.31,
+      "delta_vs_schedule_ms": -10.04
+    }
+  ],
+  "summary": {
+    "ui_budget_ms": 500.0,
+    "schedule_over_budget": 8,
+    "by_round": {
+      "R3": {
+        "n": 20,
+        "schedule_cap": 8000,
+        "avg_ms": 1068.1,
+        "p50_ms": 121.4,
+        "p95_ms": 4914.2,
+        "max_ms": 11865.0,
+        "over_500ms": 5,
+        "dual_pass_n": 0
+      },
+      "R4": {
+        "n": 19,
+        "schedule_cap": 8000,
+        "avg_ms": 705.0,
+        "p50_ms": 3.9,
+        "p95_ms": 889.9,
+        "max_ms": 11780.4,
+        "over_500ms": 2,
+        "dual_pass_n": 0
+      },
+      "R5": {
+        "n": 15,
+        "schedule_cap": 12000,
+        "avg_ms": 113.5,
+        "p50_ms": 16.8,
+        "p95_ms": 457.7,
+        "max_ms": 858.7,
+        "over_500ms": 1,
+        "dual_pass_n": 0
+      }
+    },
+    "cap_sweep": {
+      "8000": {
+        "n": 15,
+        "avg_total_ms": 101.6,
+        "avg_delta_vs_schedule_ms": -11.9,
+        "max_delta_ms": -0.8
+      },
+      "12000": {
+        "n": 39,
+        "avg_total_ms": 942.9,
+        "avg_delta_vs_schedule_ms": 51.7,
+        "max_delta_ms": 3077.6
+      },
+      "20000": {
+        "n": 54,
+        "avg_total_ms": 686.8,
+        "avg_delta_vs_schedule_ms": 11.6,
+        "max_delta_ms": 3122.9
+      },
+      "50000": {
+        "n": 54,
+        "avg_total_ms": 713.8,
+        "avg_delta_vs_schedule_ms": 38.6,
+        "max_delta_ms": 3154.4
+      }
+    }
+  },
+  "elapsed_s": 153.3
+}

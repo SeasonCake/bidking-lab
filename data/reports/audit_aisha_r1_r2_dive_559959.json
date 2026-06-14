@@ -1,0 +1,1045 @@
+{
+  "session_id": "2404:1425860640559959",
+  "capture_path": "C:\\Users\\shenc\\Desktop\\recordings\\data10\\logs\\live\\raw\\archive\\reset\\windivert_live_2026-06-14_014209_2404_1425860640559959_reset.json",
+  "map_id": 2404,
+  "round_rows": [
+    {
+      "round": 1,
+      "schedule_cap": 2500,
+      "structured_ref_inputs": {
+        "source": "monitor_pre_settlement_field_updates",
+        "total_count": null,
+        "total_cells": null,
+        "avg_cells": {},
+        "counts": {},
+        "quality_cells": {},
+        "avg_values": {},
+        "quality_values": {},
+        "count_sums": {},
+        "split_avg_cells": {},
+        "split_counts": {
+          "green": 5,
+          "white": 2
+        },
+        "split_quality_cells": {
+          "green": 7,
+          "white": 4
+        },
+        "field_updates": [
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "total_cells"
+            ],
+            "value": 4,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 1,
+            "event_kind": "session_started",
+            "phase": "reading"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "count"
+            ],
+            "value": 2,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 1,
+            "event_kind": "session_started",
+            "phase": "reading"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "total_cells"
+            ],
+            "value": 4,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "count"
+            ],
+            "value": 2,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "total_cells"
+            ],
+            "value": 7,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "count"
+            ],
+            "value": 5,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          }
+        ]
+      },
+      "runs": [
+        {
+          "max_combos": 1500,
+          "elapsed_ms": 1523.09,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 77.0,
+          "fixed_counts": {
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count",
+            "field_update_split_green_cells",
+            "field_update_split_green_count"
+          ]
+        },
+        {
+          "max_combos": 2500,
+          "elapsed_ms": 916.78,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 77.0,
+          "fixed_counts": {
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count",
+            "field_update_split_green_cells",
+            "field_update_split_green_count"
+          ]
+        },
+        {
+          "max_combos": 8000,
+          "elapsed_ms": 920.54,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 77.0,
+          "fixed_counts": {
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count",
+            "field_update_split_green_cells",
+            "field_update_split_green_count"
+          ]
+        },
+        {
+          "max_combos": 12000,
+          "elapsed_ms": 1030.33,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 77.0,
+          "fixed_counts": {
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count",
+            "field_update_split_green_cells",
+            "field_update_split_green_count"
+          ]
+        },
+        {
+          "max_combos": 20000,
+          "elapsed_ms": 882.04,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 77.0,
+          "fixed_counts": {
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count",
+            "field_update_split_green_cells",
+            "field_update_split_green_count"
+          ]
+        },
+        {
+          "max_combos": 50000,
+          "elapsed_ms": 877.71,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 77.0,
+          "fixed_counts": {
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count",
+            "field_update_split_green_cells",
+            "field_update_split_green_count"
+          ]
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "schedule_cap": 2500,
+      "structured_ref_inputs": {
+        "source": "monitor_pre_settlement_field_updates",
+        "total_count": null,
+        "total_cells": null,
+        "avg_cells": {},
+        "counts": {
+          "q3": 18
+        },
+        "quality_cells": {
+          "q3": 40
+        },
+        "avg_values": {},
+        "quality_values": {},
+        "count_sums": {},
+        "split_avg_cells": {},
+        "split_counts": {
+          "green": 5,
+          "white": 2
+        },
+        "split_quality_cells": {
+          "green": 7,
+          "white": 4
+        },
+        "field_updates": [
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "total_cells"
+            ],
+            "value": 4,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 1,
+            "event_kind": "session_started",
+            "phase": "reading"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "count"
+            ],
+            "value": 2,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 1,
+            "event_kind": "session_started",
+            "phase": "reading"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "total_cells"
+            ],
+            "value": 4,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "count"
+            ],
+            "value": 2,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "total_cells"
+            ],
+            "value": 7,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "count"
+            ],
+            "value": 5,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "total_cells"
+            ],
+            "value": 4,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "count"
+            ],
+            "value": 2,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "total_cells"
+            ],
+            "value": 7,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "count"
+            ],
+            "value": 5,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket",
+              "3",
+              "total_cells"
+            ],
+            "value": 40,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket",
+              "3",
+              "count"
+            ],
+            "value": 18,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          }
+        ]
+      },
+      "runs": [
+        {
+          "max_combos": 1500,
+          "elapsed_ms": 31.13,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 98.0,
+          "fixed_counts": {
+            "q3": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count"
+          ]
+        },
+        {
+          "max_combos": 2500,
+          "elapsed_ms": 31.54,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 98.0,
+          "fixed_counts": {
+            "q3": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count"
+          ]
+        },
+        {
+          "max_combos": 8000,
+          "elapsed_ms": 31.94,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 98.0,
+          "fixed_counts": {
+            "q3": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count"
+          ]
+        },
+        {
+          "max_combos": 12000,
+          "elapsed_ms": 31.73,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 98.0,
+          "fixed_counts": {
+            "q3": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count"
+          ]
+        },
+        {
+          "max_combos": 20000,
+          "elapsed_ms": 30.82,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 98.0,
+          "fixed_counts": {
+            "q3": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count"
+          ]
+        },
+        {
+          "max_combos": 50000,
+          "elapsed_ms": 32.69,
+          "status": "no_reachable_combo",
+          "combo_count": 0,
+          "conservative": null,
+          "balanced": null,
+          "aggressive": null,
+          "total_count": null,
+          "total_grid_target": 98.0,
+          "fixed_counts": {
+            "q3": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white",
+            "field_update_split_white_cells",
+            "field_update_split_white_count"
+          ]
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "schedule_cap": 8000,
+      "structured_ref_inputs": {
+        "source": "monitor_pre_settlement_field_updates",
+        "total_count": null,
+        "total_cells": null,
+        "avg_cells": {},
+        "counts": {
+          "q3": 18,
+          "q4": 18
+        },
+        "quality_cells": {
+          "q3": 40,
+          "q4": 44
+        },
+        "avg_values": {},
+        "quality_values": {},
+        "count_sums": {},
+        "split_avg_cells": {},
+        "split_counts": {
+          "green": 5,
+          "white": 2
+        },
+        "split_quality_cells": {
+          "green": 7,
+          "white": 4
+        },
+        "field_updates": [
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "total_cells"
+            ],
+            "value": 4,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 1,
+            "event_kind": "session_started",
+            "phase": "reading"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "count"
+            ],
+            "value": 2,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 1,
+            "event_kind": "session_started",
+            "phase": "reading"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "total_cells"
+            ],
+            "value": 4,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "count"
+            ],
+            "value": 2,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "total_cells"
+            ],
+            "value": 7,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "count"
+            ],
+            "value": 5,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 9,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "total_cells"
+            ],
+            "value": 4,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "count"
+            ],
+            "value": 2,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "total_cells"
+            ],
+            "value": 7,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "count"
+            ],
+            "value": 5,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket",
+              "3",
+              "total_cells"
+            ],
+            "value": 40,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket",
+              "3",
+              "count"
+            ],
+            "value": 18,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 17,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "total_cells"
+            ],
+            "value": 4,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 25,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "white",
+              "count"
+            ],
+            "value": 2,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 25,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "total_cells"
+            ],
+            "value": 7,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 25,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket_split",
+              "green",
+              "count"
+            ],
+            "value": 5,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 25,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket",
+              "3",
+              "total_cells"
+            ],
+            "value": 40,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 25,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket",
+              "3",
+              "count"
+            ],
+            "value": 18,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 25,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket",
+              "4",
+              "total_cells"
+            ],
+            "value": 44,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 25,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          },
+          {
+            "path": [
+              "bucket",
+              "4",
+              "count"
+            ],
+            "value": 18,
+            "source": "packet",
+            "confidence": "exact",
+            "sequence": 25,
+            "event_kind": "tool_revealed",
+            "phase": "bidding"
+          }
+        ]
+      },
+      "runs": [
+        {
+          "max_combos": 1500,
+          "elapsed_ms": 16.09,
+          "status": "count_prior",
+          "combo_count": 15,
+          "conservative": 415635,
+          "balanced": 486231,
+          "aggressive": 576879,
+          "total_count": null,
+          "total_grid_target": null,
+          "fixed_counts": {
+            "q3": 18,
+            "q4": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_cells_q4",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_count_q4",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white"
+          ]
+        },
+        {
+          "max_combos": 2500,
+          "elapsed_ms": 9.8,
+          "status": "count_prior",
+          "combo_count": 15,
+          "conservative": 415635,
+          "balanced": 486231,
+          "aggressive": 576879,
+          "total_count": null,
+          "total_grid_target": null,
+          "fixed_counts": {
+            "q3": 18,
+            "q4": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_cells_q4",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_count_q4",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white"
+          ]
+        },
+        {
+          "max_combos": 8000,
+          "elapsed_ms": 9.43,
+          "status": "count_prior",
+          "combo_count": 15,
+          "conservative": 415635,
+          "balanced": 486231,
+          "aggressive": 576879,
+          "total_count": null,
+          "total_grid_target": null,
+          "fixed_counts": {
+            "q3": 18,
+            "q4": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_cells_q4",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_count_q4",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white"
+          ]
+        },
+        {
+          "max_combos": 12000,
+          "elapsed_ms": 9.54,
+          "status": "count_prior",
+          "combo_count": 15,
+          "conservative": 415635,
+          "balanced": 486231,
+          "aggressive": 576879,
+          "total_count": null,
+          "total_grid_target": null,
+          "fixed_counts": {
+            "q3": 18,
+            "q4": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_cells_q4",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_count_q4",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white"
+          ]
+        },
+        {
+          "max_combos": 20000,
+          "elapsed_ms": 10.23,
+          "status": "count_prior",
+          "combo_count": 15,
+          "conservative": 415635,
+          "balanced": 486231,
+          "aggressive": 576879,
+          "total_count": null,
+          "total_grid_target": null,
+          "fixed_counts": {
+            "q3": 18,
+            "q4": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_cells_q4",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_count_q4",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white"
+          ]
+        },
+        {
+          "max_combos": 50000,
+          "elapsed_ms": 9.8,
+          "status": "count_prior",
+          "combo_count": 15,
+          "conservative": 415635,
+          "balanced": 486231,
+          "aggressive": 576879,
+          "total_count": null,
+          "total_grid_target": null,
+          "fixed_counts": {
+            "q3": 18,
+            "q4": 18,
+            "q1": 7
+          },
+          "notes_head": [
+            "structured_ref_bridge_cells_q3",
+            "structured_ref_bridge_cells_q4",
+            "structured_ref_bridge_split_cells_green",
+            "structured_ref_bridge_split_cells_white",
+            "structured_ref_bridge_count_q3",
+            "structured_ref_bridge_count_q4",
+            "structured_ref_bridge_split_count_green",
+            "structured_ref_bridge_split_count_white"
+          ]
+        }
+      ]
+    }
+  ]
+}

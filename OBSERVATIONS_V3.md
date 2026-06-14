@@ -7876,4 +7876,58 @@ registry `modeled_soft_avg_value` 与引擎 P0 路径已对齐（不再「regist
 
 **连带**：Hero 推理调度（`hero_ref_live_schedule`）与 sparse combo cap 见 handoff §2.4 / CHANGELOG dev 条目。
 
+## O-v3-194：艾莎 R1→R2「跳水」样本 + live 推理 combo 上限（2026-06-14）
+
+**样本**：session `2404:1425860640559959`（地图 2404，WinDivert reset）  
+**归档**：`data/samples/hero_ref/investigations/aisha_r1_r2_dive_559959/`  
+**审计**：`scripts/audit_aisha_r1_r2_dive_session.py` → `data/reports/audit_aisha_r1_r2_dive_559959.json`
+
+### 跳水调查结论
+
+| 轮次 | ref 状态 | balanced | combo | 耗时（schedule cap） |
+|------|----------|----------|-------|----------------------|
+| R1 | `no_reachable_combo` | — | 0 | ~900–1500 ms |
+| R2 | `count_prior` | **486,231** | 15 | ~10 ms |
+| R3 | `count_prior` | **486,231** | 15 | ~16 ms |
+
+- **未复现**群友描述的 Hero Ref **30W→11W 三档跳水**（现行 dev 引擎 + 本 capture）。
+- R1：仅白绿 split（q1=7 件），`total_grid_target=77` 与 split 冲突 → 0 combo、无三档。
+- R2：q3/q4 各 18 件/格锁定 → count_prior ~48.6W（相对 R1 是「从无到有」，非 30→11）。
+- **v3 正式模型**（同 session sessions.jsonl）：R1 bidding P50 ≈ 604k，R2 ≈ 649k — **v3 也无跳水**。
+- **待核对**：截图是否旧版 v0.1.8 UI（防守倍数 / v3 字段混读）、或不同 session。
+
+**产品含义**：`ceb6300` **R3+ 才算 / R1–R2 不跑 live 引擎** 可避免 R1 ~1s 白算与无报价时的误导；若仍见跳水，优先查 bridge 锁与 count_prior，而非 combo cap。
+
+### live「slow 推理量」到底是 2w 还是 5w？
+
+**结论：live schedule 路径最高 12k，不是 5w；5w/6w 仅 manual / 无 schedule fallback。**
+
+| 常量 / 路径 | `max_combos` | 用途 |
+|-------------|--------------|------|
+| `REF_SPARSE_MAX_COMBOS` | **1500** | Raven/Sophie/Gabriela 等 sparse 早轮 |
+| `REF_EARLY_MAX_COMBOS` | **2500** | 艾莎 R1–R2（schedule 定义；**live 已 R3 门控跳过**） |
+| `REF_MID_MAX_COMBOS` | **8000** | 艾莎 R3–R4 |
+| `REF_LATE_MAX_COMBOS` | **12000** | 艾莎 R5+、sparse 英雄晚轮 |
+| `REF_FULL_MAX_COMBOS` | **20000** | 定义存在；**艾莎 schedule 未引用** |
+| `run_reference_engine` 默认 | **50000** | 脚本 / 无 schedule 传入时的 fallback |
+| overlay manual（R3+） | **60000** | 手动输入面板，非 live tick |
+
+艾莎 live dual-pass（skill + item）在 R5+ 名义 cap 12k × 2 pass；实际 count_prior 常仅十～数十 combo（本样本 R2/R3 仅 15）。
+
+**UI 不卡优先**：不必把 live 拉回 5w；若 R3–R4 仍偶发卡顿，优先 **summary worker 防抖 / 8000→6000 试验**，而非抬 cap。R1 0-combo ~1s 来自 **layout/约束路径**（枚举前），与 cap 无关 — pre-R3 skip 已切断 live 侧。
+
+### live cap 量化（2026-06-14，`audit_aisha_live_cap_perf.py`，25 样本 R3–R5）
+
+| 轮次 | schedule cap | n | p50 | p95 | max | >500ms |
+|------|--------------|---|-----|-----|-----|--------|
+| R3 | 8000 | 20 | **121 ms** | 4914 ms | 11865 ms | 5 |
+| R4 | 8000 | 19 | **4 ms** | 890 ms | 11780 ms | 2 |
+| R5 | 12000 | 15 | **17 ms** | 458 ms | 859 ms | 1 |
+
+- **典型路径快**：p50 个位数～百 ms；dual-pass 样本本批 fatbeans **0 条**（无 prop 帧），实为 skill-only 上界。
+- **长尾**：同一 outlier（`2405` mixed 4-round）R3/R4 各 ~11s — count_prior/宽 combo 空间，非 cap 档位问题；cap sweep 显示 **50k vs 8k 平均仅 +39ms**，抬 cap **无收益**。
+- **结论**：维持 **8k/12k**；优化方向是 **outlier 路由早退** + UI worker coalesce，不是 2w/5w。
+
+报告：`data/reports/audit_aisha_live_cap_perf.json` / `.txt`
+
 ---

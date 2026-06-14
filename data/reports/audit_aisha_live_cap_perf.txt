@@ -1,0 +1,32 @@
+audit_aisha_live_cap_perf (schedule caps + dual-pass)
+files=25 rounds=[3, 4, 5] rows=54
+ui_budget=500ms
+
+round | cap | n | avg | p50 | p95 | max | >500ms | dual_pass_samples
+------------------------------------------------------------------------------
+R3   |  8000 | 20 |  1068 |  121 | 4914 | 11865 |       5 | 0
+R4   |  8000 | 19 |   705 |    4 |  890 | 11780 |       2 | 0
+R5   | 12000 | 15 |   114 |   17 |  458 |   859 |       1 | 0
+
+cap sweep vs schedule (dual-pass total_ms):
+  cap= 8000 n=15 avg_total=   102ms avg_delta=-12ms max_delta=-1ms
+  cap=12000 n=39 avg_total=   943ms avg_delta=+52ms max_delta=+3078ms
+  cap=20000 n=54 avg_total=   687ms avg_delta=+12ms max_delta=+3123ms
+  cap=50000 n=54 avg_total=   714ms avg_delta=+39ms max_delta=+3154ms
+
+slowest schedule-cap dual-pass:
+  SLOW   11865ms R3 cap=8000 item=False fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_
+  SLOW   11780ms R4 cap=8000 item=False fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_
+  SLOW    4914ms R3 cap=8000 item=False fatbeans_mixed_aisha_2401_3rounds_2401_1367586310770395_
+  SLOW    1359ms R3 cap=8000 item=False fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_
+  SLOW    1241ms R3 cap=8000 item=False fatbeans_mixed_aisha_2501_3rounds_2501_1295018577077814_
+  SLOW     890ms R4 cap=8000 item=False fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_
+  SLOW     859ms R5 cap=12000 item=False fatbeans_mixed_aisha_2501_4rounds_2501_1295018937861136_
+  SLOW     552ms R3 cap=8000 item=False fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_
+  ok     458ms R5 cap=12000 item=False fatbeans_mixed_aisha_2405_4rounds_2405_1367517775504199_
+  ok     400ms R4 cap=8000 item=False fatbeans_mixed_aisha_2409_4rounds_2409_1274128044629340_
+
+interpretation:
+  - live Aisha R3–R4 cap=8000, R5+ cap=12000 (not 50k)
+  - dual-pass = skill + item when prop frame present
+  - target: dual-pass p95 < 500ms for UI responsiveness
