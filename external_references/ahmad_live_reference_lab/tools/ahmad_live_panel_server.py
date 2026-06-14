@@ -665,6 +665,163 @@ AISHA_DUAL_PASS_MAX_ROUND = 5
 AISHA_HERO_ID = 103
 AISHA_ENGINE_PASS_SKILL = "skill"
 AISHA_ENGINE_PASS_ITEM = "item"
+
+
+def _aisha_formal_calculator_ready(
+    hero_key: str,
+    round_no: int | None,
+    phase: str,
+) -> bool:
+    """Aisha live formal ref quotes start at R3; other heroes unchanged."""
+    if hero_key != "aisha":
+        return True
+    if phase in ("settled", "manual"):
+        return True
+    if round_no is None:
+        return False
+    return int(round_no) >= AISHA_LIVE_ENGINE_MIN_ROUND
+
+
+def _aisha_pre_r3_calculator_active(
+    hero_key: str,
+    round_no: int | None,
+    phase: str,
+) -> bool:
+    return (
+        hero_key == "aisha"
+        and phase not in ("settled", "manual")
+        and round_no is not None
+        and int(round_no) < AISHA_LIVE_ENGINE_MIN_ROUND
+    )
+
+
+def _snapshot_live_evidence_stub(
+    snapshot: dict[str, Any],
+    *,
+    constraints: dict[str, Any],
+) -> dict[str, Any]:
+    ref_inputs: dict[str, Any] = {}
+    for candidate in (
+        snapshot.get("structured_ref_inputs"),
+        constraints.get("structured_ref_inputs"),
+    ):
+        if isinstance(candidate, dict):
+            ref_inputs.update(candidate)
+    fixed_counts = {
+        key: int(value)
+        for key, value in (ref_inputs.get("fixed_counts") or {}).items()
+        if _parse_int(value) is not None
+    }
+    quality_cells = {}
+    for key, value in (ref_inputs.get("quality_cells") or {}).items():
+        try:
+            if value not in (None, ""):
+                quality_cells[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    avg_cells = {}
+    for key, value in (ref_inputs.get("avg_cells") or {}).items():
+        try:
+            if value not in (None, ""):
+                avg_cells[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    for key, value in _quality_counts_from_text(snapshot.get("final_quality_counts")).items():
+        fixed_counts.setdefault(key, int(value))
+    for key, value in _quality_counts_from_text(snapshot.get("final_quality_cells")).items():
+        quality_cells.setdefault(key, float(value))
+    total_count = _parse_int(
+        ref_inputs.get("total_count")
+        or constraints.get("total_count")
+        or snapshot.get("inventory_count")
+    )
+    total_grid = _parse_int(
+        ref_inputs.get("total_cells")
+        or constraints.get("total_cells")
+        or snapshot.get("inventory_cells")
+    )
+    return {
+        "hero": "aisha",
+        "total_count": total_count,
+        "total_grid_target": total_grid,
+        "fixed_counts": fixed_counts,
+        "quality_cells": quality_cells,
+        "avg_cells": avg_cells,
+        "min_counts": {},
+    }
+
+
+def _aisha_pre_r3_deferred_ref_result(
+    snapshot: dict[str, Any],
+    *,
+    round_no: int,
+    public_info: dict[str, Any],
+) -> dict[str, Any]:
+    """Skip combo enumeration before R3; keep next-step hints from snapshot evidence."""
+    ready, wait_hint = _aisha_early_round_quote_ready(snapshot, round_no, public_info)
+    if not ready:
+        return _aisha_early_round_waiting_result(wait_hint=wait_hint)
+    uc = snapshot.get("ui_contract") if isinstance(snapshot.get("ui_contract"), dict) else {}
+    constraints = uc.get("constraints") if isinstance(uc.get("constraints"), dict) else {}
+    evidence = _snapshot_live_evidence_stub(snapshot, constraints=constraints)
+    total_grid = _parse_int(evidence.get("total_grid_target"))
+    grid_range = (
+        [total_grid, total_grid, total_grid]
+        if total_grid is not None
+        else [None, None, None]
+    )
+    return {
+        "status": "missing_total_count",
+        "source": "ref_v0",
+        "conservative": None,
+        "balanced": None,
+        "aggressive": None,
+        "value_p25": None,
+        "value_p50": None,
+        "value_p75": None,
+        "combo_count": 0,
+        "red_count_range": [None, None, None],
+        "red_cells_range": [None, None, None],
+        "red_value_range": [None, None, None],
+        "quality_count_ranges": {},
+        "quality_cells_ranges": {},
+        "total_grid_range": grid_range,
+        "notes": ["aisha_pre_r3_calculator_deferred"],
+        "evidence": evidence,
+    }
+
+
+def _aisha_pre_r3_structural_summary(
+    snapshot: dict[str, Any],
+    *,
+    constraints: dict[str, Any],
+    minimap_summary: dict[str, Any],
+) -> str:
+    """Compact 格/件/红/金 line for R1–R2 (no value quotes)."""
+    evidence = _snapshot_live_evidence_stub(snapshot, constraints=constraints)
+    parts: list[str] = []
+    total_grid = _parse_int(evidence.get("total_grid_target"))
+    total_count = _parse_int(evidence.get("total_count"))
+    if total_grid is not None:
+        parts.append(f"总格 {total_grid}")
+    if total_count is not None:
+        parts.append(f"总件 {total_count}")
+    known_q6_count, known_q6_cells = _known_quality_footprint(minimap_summary, "q6")
+    if known_q6_count > 0:
+        parts.append(f"红{known_q6_count}/{known_q6_cells}")
+    qc = dict(evidence.get("fixed_counts") or {})
+    minimap_qc = minimap_summary.get("quality_counts")
+    if isinstance(minimap_qc, dict):
+        for key in ("q4", "q5"):
+            if key not in qc and _parse_int(minimap_qc.get(key)) is not None:
+                qc[key] = int(minimap_qc[key])
+    qc_cells = _quality_counts_from_text(snapshot.get("final_quality_cells"))
+    pg = _purple_gold_count_summary(qc, qc_cells)
+    if pg != "-":
+        parts.append(pg.replace(" · ", " "))
+    return " · ".join(parts) if parts else "-"
+
+
 # Live monitor: R1–R4 outline skills; R5 has no dedicated skill frame.
 AISHA_ROUND_SKILL_IDS: dict[int, int] = {
     1: 1001034,
@@ -2280,6 +2437,11 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         )
     hero_key_early = _snapshot_hero_key(snapshot, context)
     round_no_early = _parse_int(context.get("round") or snapshot.get("round"))
+    aisha_pre_r3_calculator = _aisha_pre_r3_calculator_active(
+        hero_key_early,
+        round_no_early,
+        phase,
+    )
     aisha_dual_pass = _aisha_should_dual_pass(
         hero_key_early,
         round_no_early,
@@ -2287,9 +2449,18 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     )
     hero_scheduled_pass = (
         not aisha_dual_pass
+        and not aisha_pre_r3_calculator
         and hero_should_run_scheduled_inference(hero_key_early, round_no_early, phase)
     )
-    if aisha_dual_pass:
+    if aisha_pre_r3_calculator and round_no_early is not None:
+        ref_started = time.perf_counter()
+        ref_result = _aisha_pre_r3_deferred_ref_result(
+            snapshot,
+            round_no=int(round_no_early),
+            public_info=public_info,
+        )
+        ref_engine_ms = round((time.perf_counter() - ref_started) * 1000.0, 2)
+    elif aisha_dual_pass:
         ref_started = time.perf_counter()
         ref_result, pass_timing = _aisha_dual_pass_ref_result(
             snapshot,
@@ -2416,13 +2587,19 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         and not ref_review_only
         and phase != "settled"
     )
+    aisha_formal_quote = _aisha_formal_calculator_ready(hero_key, round_no, phase)
+    ref_quote_display_ready = (
+        ref_display_ready and aisha_formal_quote
+        if hero_key == "aisha"
+        else ref_display_ready
+    )
     ref_balanced = _parse_money(ref_result.get("balanced")) if ref_ok else None
     v3_balanced = _parse_money(decision.get("attack_bid"))
     display_source = (
         "ref_prior"
         if ref_readiness in {"count_prior", "sparse_exact_prior", "victor_q456_prior"}
         else "ref_v0"
-        if ref_display_ready
+        if ref_quote_display_ready
         else "ref_waiting"
     )
     ref_minus_v3 = (
@@ -2430,6 +2607,8 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         if ref_balanced is not None and v3_balanced is not None
         else None
     )
+    if hero_key == "aisha" and phase != "settled":
+        ref_minus_v3 = None
     ref_status = _text(ref_result.get("status"), "")
     waiting_flag = _ref_waiting_flag_label(hero_key, ref_result, round_no=round_no)
     if is_supported and waiting_flag:
@@ -2481,7 +2660,15 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
                 _aisha_skill_only_flag_detail(ref_notes),
             )
         )
-    if hero_key == "aisha" and aisha_early_round_lightweight:
+    if hero_key == "aisha" and aisha_pre_r3_calculator and not ref_trigger_waiting:
+        flags.append(
+            _flag(
+                "R1–R2防守",
+                "watch",
+                "R3+ 正式估价；当前仅格/件/红/金",
+            )
+        )
+    elif hero_key == "aisha" and aisha_early_round_lightweight:
         flags.append(
             _flag(
                 "R1–R2轻量",
@@ -2498,17 +2685,17 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     red_count_display_range, red_cells_display_range = _red_display_ranges(ref_result)
     ref_red_count_range = (
         _red_range_text(red_count_display_range)
-        if ref_display_ready
+        if ref_quote_display_ready
         else ""
     )
     ref_red_cells_range = (
         _red_range_text(red_cells_display_range)
-        if ref_display_ready
+        if ref_quote_display_ready
         else ""
     )
     ref_red_value_range = (
         " / ".join(_money(v, "?") for v in ref_result.get("red_value_range", ()))
-        if ref_display_ready
+        if ref_quote_display_ready
         else ""
     )
     quality_count_ranges = (
@@ -2533,15 +2720,35 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     display_red_value_range = ref_red_value_range or "-"
     display_quality_count_summary = (
         _purple_gold_quality_summary(ref_result)
-        if ref_display_ready
+        if ref_quote_display_ready
         else "-"
     )
     waiting_display = _ref_waiting_display_text(hero_key, ref_result, round_no=round_no)
     display_uncertainty_summary = (
         _quality_uncertainty_summary(ref_result)
-        if ref_display_ready
+        if ref_quote_display_ready
         else waiting_display
     )
+    if aisha_pre_r3_calculator and not ref_trigger_waiting:
+        structural = _aisha_pre_r3_structural_summary(
+            snapshot,
+            constraints=constraints,
+            minimap_summary=minimap_summary,
+        )
+        if structural != "-":
+            display_uncertainty_summary = structural
+        display_red_value_range = "-"
+        known_q6_count, known_q6_cells = _known_quality_footprint(minimap_summary, "q6")
+        if known_q6_count > 0:
+            display_red_count_range = f"{known_q6_count} 件"
+            display_red_cells_range = f"{known_q6_cells} 格"
+        evidence_stub = _snapshot_live_evidence_stub(snapshot, constraints=constraints)
+        pg = _purple_gold_count_summary(
+            evidence_stub.get("fixed_counts") if isinstance(evidence_stub.get("fixed_counts"), dict) else {},
+            _quality_counts_from_text(snapshot.get("final_quality_cells")),
+        )
+        if pg != "-":
+            display_quality_count_summary = pg
     if ref_display_ready and ref_readiness == "count_prior":
         display_red_risk_reference = "总件先验"
     elif ref_display_ready and ref_readiness == "sparse_exact_prior":
@@ -2596,7 +2803,7 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
             )
         )
         v3_assist_notes.append(f"v3红中位{v3_q6_mid}仅对照")
-    if ref_display_ready and ref_minus_v3 is not None and abs(ref_minus_v3) >= 120_000:
+    if ref_quote_display_ready and ref_minus_v3 is not None and abs(ref_minus_v3) >= 120_000:
         flags.append(
             _flag(
                 "v3价差",
@@ -2610,24 +2817,26 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
     )
     main_conservative = (
         _money(ref_result.get("conservative"))
-        if ref_display_ready
+        if ref_quote_display_ready
         else "-"
     )
     main_balanced = (
         _money(ref_result.get("balanced"))
-        if ref_display_ready
+        if ref_quote_display_ready
         else "-"
     )
     main_aggressive = (
         _money(ref_result.get("aggressive"))
-        if ref_display_ready
+        if ref_quote_display_ready
         else "-"
     )
     main_action = (
-        "估计参考"
-        if ref_readiness in {"count_prior", "sparse_exact_prior", "victor_q456_prior"} and ref_display_ready
+        "防守参考"
+        if aisha_pre_r3_calculator and not ref_trigger_waiting
+        else "估计参考"
+        if ref_readiness in {"count_prior", "sparse_exact_prior", "victor_q456_prior"} and ref_quote_display_ready
         else "参考可用"
-        if ref_display_ready
+        if ref_quote_display_ready
         else "等待外援输入"
     )
     main_current_highest = _mask_bidder_display_text(decision.get("current_highest"))
@@ -2644,9 +2853,11 @@ def summarize_snapshot(snapshot: dict[str, Any], *, snapshot_path: Path) -> dict
         else "External ref_v0 count/cells/value engine; Victor q4+q5+q6 count missing, using prior."
         if ref_readiness == "victor_q456_prior"
         else "External ref_v0 count/cells/value engine; not promoted."
-        if ref_display_ready
+        if ref_quote_display_ready
         else (
-            "ref_v0 needs exact total count; main quote is held."
+            "Aisha R1–R2: structural metrics only; formal quotes from R3."
+            if aisha_pre_r3_calculator and not ref_trigger_waiting
+            else "ref_v0 needs exact total count; main quote is held."
             if ref_status == "missing_total_count"
             else "External ref_v0 is not live-ready; main quote is held."
         )

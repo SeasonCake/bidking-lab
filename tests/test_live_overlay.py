@@ -3328,10 +3328,12 @@ def test_ahmad_server_aisha_r1_quotes_with_skill_only_no_public(tmp_path: Path, 
 
     result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
 
-    assert len(captured) == 1
-    assert captured[0] == module.AISHA_ENGINE_PASS_SKILL  # type: ignore[attr-defined]
-    assert "aisha_quote_pass:skill_no_public_this_round" in result["ahmed_ref"].get("notes", [])
-    assert result["reference"]["balanced"] not in (None, "-", "")
+    assert captured == []
+    assert "aisha_pre_r3_calculator_deferred" in result["ahmed_ref"].get("notes", [])
+    assert result["reference"]["balanced"] == "-"
+    assert result["reference"]["action"] == "防守参考"
+    assert result["evidence"]["next_info_hint"] not in ("", "-")
+    assert any(flag["label"] == "R1–R2防守" for flag in result["flags"])
 
 
 def test_ahmad_server_aisha_r1_waits_without_skill_and_public(tmp_path: Path, monkeypatch) -> None:
@@ -3421,15 +3423,12 @@ def test_ahmad_server_aisha_r1_uses_lightweight_engine(tmp_path: Path, monkeypat
 
     result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
 
-    assert len(captured) == 1
-    assert captured[0]["audit"] is True
-    assert captured[0]["max_combos"] == module.AISHA_EARLY_ROUND_MAX_COMBOS
-    assert captured[0]["pass"] == module.AISHA_ENGINE_PASS_SKILL  # type: ignore[attr-defined]
-    assert "aisha_quote_pass:skill" in result["ahmed_ref"].get("notes", [])
-    assert any(flag["label"] == "技能帧估计" for flag in result["flags"])
-    assert any(flag["label"] == "R1–R2轻量" for flag in result["flags"])
+    assert captured == []
+    assert "aisha_pre_r3_calculator_deferred" in result["ahmed_ref"].get("notes", [])
+    assert any(flag["label"] == "R1–R2防守" for flag in result["flags"])
     assert any(flag["label"] == "R1防守×2.0" for flag in result["flags"])
-    assert result["reference"]["balanced"] not in (None, "-", "")
+    assert result["reference"]["balanced"] == "-"
+    assert "总件 28" in result["red"]["uncertainty_summary"]
 
 
 def test_ahmad_server_aisha_r1_runs_skill_and_item_dual_pass(tmp_path: Path, monkeypatch) -> None:
@@ -3492,15 +3491,9 @@ def test_ahmad_server_aisha_r1_runs_skill_and_item_dual_pass(tmp_path: Path, mon
 
     result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
 
-    assert len(captured) == 2
-    assert captured[0]["pass"] == module.AISHA_ENGINE_PASS_SKILL  # type: ignore[attr-defined]
-    assert captured[0]["actions"] == 0
-    assert captured[1]["pass"] == module.AISHA_ENGINE_PASS_ITEM  # type: ignore[attr-defined]
-    assert captured[1]["actions"] == 1
-    assert "aisha_quote_pass:item" in result["ahmed_ref"].get("notes", [])
-    assert any(flag["label"] == "道具帧估计" for flag in result["flags"])
-    assert result["diagnostics"]["performance"]["ref_engine_skill_pass_ms"] is not None
-    assert result["diagnostics"]["performance"]["ref_engine_item_pass_ms"] is not None
+    assert captured == []
+    assert "aisha_pre_r3_calculator_deferred" in result["ahmed_ref"].get("notes", [])
+    assert result["reference"]["balanced"] == "-"
 
 
 def test_ahmad_server_aisha_r3_runs_dual_pass_skill_only(tmp_path: Path, monkeypatch) -> None:
@@ -3617,11 +3610,70 @@ def test_ahmad_server_aisha_r2_runs_skill_only_when_no_r2_prop(tmp_path: Path, m
 
     result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
 
-    assert len(captured) == 1
-    assert captured[0] == module.AISHA_ENGINE_PASS_SKILL  # type: ignore[attr-defined]
-    assert "aisha_quote_pass:skill_no_items_this_round" in result["ahmed_ref"].get("notes", [])
-    assert any(flag["label"] == "技能帧估计" for flag in result["flags"])
-    assert result["reference"]["balanced"] not in (None, "-", "")
+    assert captured == []
+    assert "aisha_pre_r3_calculator_deferred" in result["ahmed_ref"].get("notes", [])
+    assert any(flag["label"] == "R1–R2防守" for flag in result["flags"])
+    assert result["reference"]["balanced"] == "-"
+
+
+def test_ahmad_server_aisha_live_hides_ref_minus_v3(tmp_path: Path, monkeypatch) -> None:
+    module = _ahmad_server_module()
+    original = module.run_reference_engine
+
+    def _fake(_snapshot, **kwargs):
+        return original(
+            {
+                **_snapshot,
+                "structured_ref_inputs": {
+                    "total_count": 28,
+                    "fixed_counts": {"q1": 8, "q3": 6, "q4": 4, "q5": 3},
+                    "quality_cells": {"q1": 16, "q3": 12, "q4": 11, "q5": 9},
+                },
+            },
+            **kwargs,
+        )
+
+    monkeypatch.setattr(module, "run_reference_engine", _fake)
+    snapshot = {
+        "created_at": time.time(),
+        "round": 3,
+        "ui_contract": {
+            "context": {
+                "hero": "aisha",
+                "map_id": 2404,
+                "phase": "bidding",
+                "round": 3,
+                "session_id": "2404:aisha-ref-minus",
+            },
+            "baseline": {
+                "decision": {"attack_bid": 500_000},
+                "posterior": {},
+            },
+            "constraints": {"public_info": {}},
+            "source": {"created_at": time.time()},
+        },
+        "skill_reveal_rows": [
+            {
+                "skill_id": 1001032,
+                "hero_id": 103,
+                "sort": 30,
+                "revealed_items": 2,
+                "observed_items": [{"quality": 3, "cells": 4}],
+            }
+        ],
+        "public_info_rows": [{"info_id": 200004, "revealed_items": 2}],
+        "structured_ref_inputs": {
+            "total_count": 28,
+            "fixed_counts": {"q1": 8, "q3": 6, "q4": 4, "q5": 3},
+            "quality_cells": {"q1": 16, "q3": 12, "q4": 11, "q5": 9},
+        },
+    }
+
+    result = module.summarize_snapshot(snapshot, snapshot_path=tmp_path / "latest_snapshot.json")
+
+    assert result["reference"]["ref_minus_v3_balanced"] == "-"
+    assert result["reference"]["ref_minus_v3_balanced_raw"] is None
+    assert not any(flag["label"] == "v3价差" for flag in result["flags"])
 
 
 def test_ahmad_server_aisha_next_info_hint_r1_waits_green_and_blue() -> None:

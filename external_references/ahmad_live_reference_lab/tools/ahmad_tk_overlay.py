@@ -33,10 +33,14 @@ if str(LAB_SRC) not in sys.path:
     sys.path.insert(0, str(LAB_SRC))
 
 from ahmad_live_panel_server import (  # noqa: E402
+    AISHA_LIVE_ENGINE_MIN_ROUND,
     SETTLED_STALE_SECONDS,
     STALE_SNAPSHOT_SECONDS,
     _aisha_d1_flag_detail,
     _aisha_defense_multiplier_hint,
+    _aisha_formal_calculator_ready,
+    _aisha_pre_r3_deferred_ref_result,
+    _aisha_pre_r3_structural_summary,
     _candidate_summary,
     _display_range_text,
     _next_info_hint,
@@ -2315,7 +2319,7 @@ class AhmadTkOverlay:
             header_right,
             text="迷你", 
             style="Hero.TButton",
-            command=self.toggle_details,
+            command=self.toggle_details, 
             width=4,
         )
         self.mode_button.pack(side="right", padx=(0, 5))
@@ -4882,7 +4886,150 @@ class AhmadTkOverlay:
         text = " / ".join(parts)
         return f"{text}{suffix}" if suffix and text != "-" else text
 
+    def _manual_live_round_no(self, snapshot: dict[str, Any]) -> int | None:
+        round_no = _parse_int(snapshot.get("round"))
+        if round_no is not None:
+            return round_no
+        uc = snapshot.get("ui_contract") if isinstance(snapshot.get("ui_contract"), dict) else {}
+        context = uc.get("context") if isinstance(uc.get("context"), dict) else {}
+        round_no = _parse_int(context.get("round"))
+        if round_no is not None:
+            return round_no
+        live = getattr(self, "_last_live_summary", None)
+        if isinstance(live, dict):
+            live_context = live.get("context") if isinstance(live.get("context"), dict) else {}
+            return _parse_int(live_context.get("round"))
+        return None
+
+    def _aisha_pre_r3_live_mode(self, data: dict[str, Any]) -> bool:
+        context = data.get("context") if isinstance(data.get("context"), dict) else {}
+        phase = _text(context.get("phase"), "")
+        if phase in ("manual", "settled"):
+            return False
+        hero_key = normalize_hero_key(context.get("hero") or "")
+        round_no = _parse_int(context.get("round"))
+        return not _aisha_formal_calculator_ready(hero_key, round_no, phase)
+
+    def _build_aisha_pre_r3_manual_summary(
+        self,
+        snapshot: dict[str, Any],
+        *,
+        round_no: int,
+    ) -> dict[str, Any]:
+        uc = snapshot.get("ui_contract") if isinstance(snapshot.get("ui_contract"), dict) else {}
+        constraints = uc.get("constraints") if isinstance(uc.get("constraints"), dict) else {}
+        public_info = constraints.get("public_info") if isinstance(constraints.get("public_info"), dict) else {}
+        ref_result = _aisha_pre_r3_deferred_ref_result(
+            snapshot,
+            round_no=round_no,
+            public_info=public_info,
+        )
+        evidence = ref_result.get("evidence") if isinstance(ref_result.get("evidence"), dict) else {}
+        hero_key = normalize_hero_key(snapshot.get("hero") or "")
+        next_info_hint = _next_info_hint(
+            ref_result,
+            hero_key=hero_key,
+            round_no=round_no,
+        )
+        structural = _aisha_pre_r3_structural_summary(
+            snapshot,
+            constraints=constraints,
+            minimap_summary={"quality_counts": {}},
+        )
+        defense_hint = _aisha_defense_multiplier_hint(round_no)
+        flags = [{"label": "手动输入", "level": "neutral", "detail": "manual reference mode"}]
+        if defense_hint:
+            flags.append(
+                {"label": defense_hint, "level": "neutral", "detail": "产品参考倍数，不进引擎"},
+            )
+        flags.append(
+            {"label": "R1–R2防守", "level": "watch", "detail": "R3+ 正式估价；当前仅格/件/红/金"},
+        )
+        return {
+            "status": "ok",
+            "snapshot_path": "manual",
+            "updated_at_text": time.strftime("%H:%M:%S"),
+            "context": {
+                "hero": snapshot.get("hero") or "?",
+                "is_supported_ref_hero": True,
+                "map_id": snapshot.get("map_id"),
+                "round": round_no,
+                "phase": "manual",
+                "session_id": "manual",
+                "file": None,
+            },
+            "reference": {
+                "label": "Hero Ref",
+                "source": "ref_waiting",
+                "readiness": _text(ref_result.get("status"), "missing_total_count"),
+                "note": "Aisha R1–R2 manual: structural only until R3",
+                "conservative": "-",
+                "balanced": "-",
+                "aggressive": "-",
+                "raw_value_range": "-",
+                "v3_conservative": "-",
+                "v3_balanced": "-",
+                "v3_aggressive": "-",
+                "ref_minus_v3_balanced": "-",
+                "ref_minus_v3_balanced_raw": None,
+                "action": "防守参考",
+                "risk_band": "manual",
+                "current_highest": "-",
+                "decision_range": "-",
+                "total_grid_range": self._range_text(ref_result.get("total_grid_range"), suffix="格"),
+                "total_value_range": "-",
+            },
+            "red": {
+                "count_range": "-",
+                "cells_range": "-",
+                "value_range": "-",
+                "quality_count_summary": structural if structural != "-" else "-",
+                "uncertainty_summary": structural if structural != "-" else next_info_hint,
+                "prior_rate": "-",
+                "sample_rate": "-",
+                "risk_reference": defense_hint or "",
+            },
+            "evidence": {
+                "match_text": "manual_pre_r3",
+                "information_density": "手动",
+                "diagnostics": ";".join(ref_result.get("notes") or ()),
+                "latest_sent": {},
+                "latest_result": {},
+                "source_mode": "manual_ref",
+                "ref_status": _text(ref_result.get("status"), ""),
+                "ref_readiness": _text(ref_result.get("status"), ""),
+                "ref_combo_count": "0",
+                "ref_input_summary": self._manual_input_summary(evidence),
+                "candidate_summary": "-",
+                "next_info_hint": next_info_hint,
+                "ref_notes": ";".join(ref_result.get("notes") or ()),
+            },
+            "truth": {"available": False, "q6": {}, "top_item": {}},
+            "ahmed_ref": ref_result,
+            "minimap": {
+                "status": "unavailable",
+                "summary_text": "手动模式无小地图",
+                "layout_source": "manual",
+                "columns": 10,
+                "viewport_rows": 13,
+                "known_items": 0,
+                "drawable_items": 0,
+                "final_total_items": None,
+                "quality_counts": {},
+                "items": [],
+            },
+            "flags": flags,
+        }
+
     def _manual_result_summary(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        hero_key = normalize_hero_key(snapshot.get("hero") or "")
+        round_no = self._manual_live_round_no(snapshot)
+        if (
+            hero_key == "aisha"
+            and round_no is not None
+            and int(round_no) < AISHA_LIVE_ENGINE_MIN_ROUND
+        ):
+            return self._build_aisha_pre_r3_manual_summary(snapshot, round_no=int(round_no))
         if run_reference_engine is None:
             raise RuntimeError("ref engine unavailable")
         result = run_reference_engine(prepare_reference_engine_snapshot(snapshot), max_combos=60000).as_dict()
@@ -6755,12 +6902,17 @@ class AhmadTkOverlay:
 
         for key in ("conservative", "balanced", "aggressive"):
             text = self._settlement_display_value(data, reference.get(key))
+            if self._aisha_pre_r3_live_mode(data):
+                text = "-"
             self.price_labels[key].configure(text=text)
 
         self._set_label(self.red_rows["红件"], red.get("count_range"), limit=18)
         self._set_label(self.red_rows["红格"], red.get("cells_range"), limit=18)
         self._set_label(self.red_rows["紫金件"], red.get("quality_count_summary"), limit=30)
-        self._set_label(self.red_rows["红值"], self._settlement_display_value(data, red.get("value_range")), limit=24)
+        red_value = self._settlement_display_value(data, red.get("value_range"))
+        if self._aisha_pre_r3_live_mode(data):
+            red_value = "-"
+        self._set_label(self.red_rows["红值"], red_value, limit=24)
         self._set_label(
             self.red_rows["低品件"],
             red.get("uncertainty_summary") or red.get("risk_reference") or reference.get("risk_band"),
@@ -6876,11 +7028,16 @@ class AhmadTkOverlay:
         )
 
         self._set_label(self.detail_rows["外援"], ahmed_ref.get("status") or reference.get("source"), limit=24)
-        self._set_label(self.detail_rows["决策"], reference.get("decision_range"), limit=34)
+        decision_range = reference.get("decision_range")
+        total_value = reference.get("total_value_range") or red.get("value_range")
+        if self._aisha_pre_r3_live_mode(data):
+            decision_range = "-"
+            total_value = "-"
+        self._set_label(self.detail_rows["决策"], decision_range, limit=34)
         self._set_label(self.detail_rows["总格"], reference.get("total_grid_range"), limit=28)
         self._set_label(
             self.detail_rows["总值"],
-            self._settlement_display_value(data, reference.get("total_value_range") or red.get("value_range")),
+            self._settlement_display_value(data, total_value),
             limit=34,
         )
         self._set_label(self.detail_rows["红值"], self._settlement_display_value(data, red.get("value_range")), limit=34)
