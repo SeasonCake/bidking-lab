@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "status": "planning_deferred",
+  "note": "O-v3-193 #4 + soft avg_value mirror. Do not wire into live engine until price-table alignment and positive audit cases exist.",
+  "items": [
+    {
+      "id": "soft_avg_cells_count_promote",
+      "label": "O-v3-193 #4 — soft 均格 → 唯一件数 promote",
+      "status": "planning_deferred",
+      "trigger": "public_q*_avg_cells_soft_pending_count + fixed_counts[key] unset + quality_cells unset",
+      "gate": "len(count_candidates)==1 after avg_cells + total_grid/session filters",
+      "output": "fixed_counts[key]; note e.g. public_{key}_avg_cells_count_promoted",
+      "existing_hard_analog": "avg_value_cells_{key}_count_derived (requires non-soft avg_cells path)"
+    },
+    {
+      "id": "soft_avg_value_count_promote",
+      "label": "#4 mirror — soft 均价 → 唯一件数 promote",
+      "status": "planning_deferred",
+      "trigger": "public_q*_avg_value_soft_pending_count + fixed_counts[key] unset + quality_values unset",
+      "gate": "len(count_candidates)==1 after _avg_value_count_matches + wire normalization + session filters",
+      "output": "fixed_counts[key]; note e.g. public_{key}_avg_value_count_promoted",
+      "existing_hard_analog": "avg_value_only_q5_count_derived; avg_value_cells_{key}_count_derived",
+      "conservative_variant": "q5 only + clean decimal + total_count known + count_sum consistent"
+    }
+  ],
+  "implementation_flow": [
+    "extract_evidence marks soft_avg_*_keys + soft_pending notes",
+    "NEW _apply_soft_*_count_promotion() before hard derive chain",
+    "if unique count: write fixed_counts; remove key from soft_*_keys for enum",
+    "continue existing derive / residual / combo enum with soft weights",
+    "tests: positive unique (34288.75→q5=4), negative multi-solution (6659.214…), early-round no-promote optional gate"
+  ],
+  "risks": [
+    {
+      "id": "false_unique",
+      "severity": "high",
+      "summary": "wire float / display precision yields mathematical uniqueness that is not settlement truth"
+    },
+    {
+      "id": "early_lock",
+      "severity": "high",
+      "summary": "temporary uniqueness in R1–R2; locking collapses posterior before later evidence (Aisha especially)"
+    },
+    {
+      "id": "soft_philosophy",
+      "severity": "medium",
+      "summary": "soft prefers weighting over pruning; promote is hard lock at narrow boundary"
+    },
+    {
+      "id": "tier_subset_overlap",
+      "severity": "medium",
+      "summary": "subset enumeration is stronger price→(count,cells); promote is lightweight duplicate logic"
+    },
+    {
+      "id": "residual_order",
+      "severity": "medium",
+      "summary": "_apply_exact_count_residuals already treats soft pending specially; promote changes allocation order"
+    },
+    {
+      "id": "limited_gain",
+      "severity": "low_medium",
+      "summary": "when truly unique, soft σ already concentrates mass; main win is combo count reduction"
+    }
+  ],
+  "prerequisites": [
+    "nest/activity effective session price alignment (same blocker as tier_value_subset)",
+    "positive audit fixtures on held-out sessions",
+    "explicit decision: merge with subset vs conservative q5-only promote vs defer permanently"
+  ],
+  "related_artifacts": {
+    "tier_subset_fixture": "data/fixtures/tier_value_subset_audit_cases.json",
+    "tier_subset_audit": "scripts/audit_tier_value_subset_enumeration.py",
+    "observation": "OBSERVATIONS_V3.md O-v3-193"
+  }
+}

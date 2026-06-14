@@ -7801,10 +7801,21 @@ risk_migration_detected=False
 | **3** | 均价 **wire float 规范化**（6659.214… 类脏 float） | ✅ P0 前已有 |
 | **4** | **soft 均格 → 唯一件数 promote 为 derive**（宽候选 + `soft_pending_count`） | ⏸ **暂缓** |
 
-**promote 家族（#4 扩展，均暂缓）**
+**promote 家族（#4 + 镜像，planning_deferred — 与 tier subset 同级记录）**
 
-- **#4 均格**：soft pending 且「均格 + 总格/格约束」只剩 1 个件数 → `fixed_counts` + derive note（对照现有 **硬路径** derive，见下）。
-- **soft 均价 promote**：#4 镜像；未单独立项；是否与 tier subset 合并 → 等实验线 #1 价表对齐后再定。
+- 规划 fixture：`data/fixtures/soft_promote_count_planning.json`（风险表、实现流、保守版 gate、前置条件）。
+- **#4 均格**：soft pending 且「均格 + 总格/格约束」只剩 1 个件数 → `fixed_counts` + derive note。
+- **soft 均价 promote**：#4 镜像；保守版建议 q5 + 干净小数 + total_count + count_sum 一致。
+- **不开 live** 直至：有效价表对齐 + 正例 audit；与 `tier_value_subset` 实验线一并再定是否合并。
+
+| 风险 | 严重度 |
+|------|--------|
+| 假唯一（wire float / 显示精度） | 高 |
+| 早轮过早锁件数（艾莎 R1–R2） | 高 |
+| 与 soft「加权不剪枝」哲学冲突 | 中 |
+| 与 tier subset 逻辑重复 | 中 |
+| 残差路径顺序交互 | 中 |
+| 收益有限（σ 已集中 mass） | 低～中 |
 
 **均格（avg_cells）— 已落地 / 已验证**
 
@@ -7853,9 +7864,7 @@ registry `modeled_soft_avg_value` 与引擎 P0 路径已对齐（不再「regist
 **待评估 / 暂缓（勿与 P0 / 四项 #1–#3 混做）**
 
 1. **tier 总价 → 格子数 / subset 枚举**（**experimental_deferred**）：Item.txt 原价 subset 在 HR-6376 / wire 34288.75 上 **未命中 settlement**；须 nest/活动有效价对齐后再评估。Audit：`scripts/audit_tier_value_subset_enumeration.py` + `data/fixtures/tier_value_subset_audit_cases.json`。**现行 ref_v0（soft avg_value / avg_cells、derive、count_prior）为主路径。**
-2. **#4 均格 soft promote unique count → derive**：**暂缓**，等 #1 价表对齐后再决定是否与 subset / soft 均价 promote 合并。
-3. **soft 均价 promote**（#4 镜像）：**暂缓 / 未立项**。
-4. prop `100113` 金均格 / `100114` 红均格在件数未锁时是否纳入 soft 均格族 — 仍待 live 样本。
+2. **#4 均格 soft promote** + **soft 均价 promote（镜像）**：**planning_deferred** — 见 `data/fixtures/soft_promote_count_planning.json`；与 tier subset 同 blocker（有效价表）。
 
 **已关闭（对应原四项 #1–#3 + P0 连带）**
 

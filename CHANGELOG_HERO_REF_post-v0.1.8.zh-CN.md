@@ -49,7 +49,7 @@
 | 2026-06-14 | 产品口径 | **开发目标定为 v0.1.9**（艾莎 / 效率 / UI）；`hero_ref_version.py` → `0.1.9` | dev |
 | 2026-06-14 | 产品口径 | **WinDivert 底层更换** | **下次计划**，不进 0.1.9 |
 | 2026-06-14 | 引擎 / 实验 | **tier 价 subset 枚举 audit** | **experimental_deferred**：算力可行、价表未对齐；不接入 live。`tier_value_subset.py` + `data/fixtures/tier_value_subset_audit_cases.json` |
-| 2026-06-14 | 引擎 / 约束 | **均格 soft promote** | **暂缓**（O-v3-193 #4） |
+| 2026-06-14 | 引擎 / 规划 | **#4 + soft 均价 promote** | **planning_deferred** — `data/fixtures/soft_promote_count_planning.json` |
 
 ---
 
@@ -76,8 +76,8 @@
 
 | 项 | 状态 |
 |----|------|
-| **#4** 均格 soft promote | **暂缓** |
-| soft 均价 promote（#4 镜像） | 未立项 |
+| **#4** 均格 soft promote | **planning_deferred** |
+| soft 均价 promote（#4 镜像） | **planning_deferred** |
 | tier 价 subset 枚举 | **experimental_deferred** — 见下表 |
 | prop 100113/100114 均格 soft 族 | 观察中 |
 | Top3 safety 按 hero/轮次再调；registry 全表 | 观察中 |
@@ -86,8 +86,8 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| tier 价 → (count,cells) subset 枚举 | **experimental_deferred** | 原型 `src/bidking_lab/inference/tier_value_subset.py`；numeric fixture audit 未命中 settlement（Item.txt ≠ 有效 session 价）。**不替换现行 soft/derive/count_prior。** 后续再议：有效价表、map 池 trim/MITM、unique hard lock 或更轻 derive。 |
-| 均格 soft promote unique count | **暂缓** | O-v3-193 #4；随上项一并再定 |
+| tier 价 → (count,cells) subset 枚举 | **experimental_deferred** | 原型 + audit；Item.txt ≠ session 价 |
+| #4 均格 soft promote + soft 均价 promote | **planning_deferred** | `data/fixtures/soft_promote_count_planning.json` |
 | prop 100113/100114 均格是否 soft 族 | 观察中 | 待 live 样本 |
 
 Audit（仅抽数值，~2.5s）：`python scripts/audit_tier_value_subset_enumeration.py`
