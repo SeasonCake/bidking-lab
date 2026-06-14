@@ -7,7 +7,7 @@
 - v3 主线决策：[`DECISIONS_V3.md`](DECISIONS_V3.md)
 - v3 设计文档：[`docs/v3_inference_design_2026-06-04.zh-CN.md`](docs/v3_inference_design_2026-06-04.zh-CN.md)
 - 项目结构与归档索引：[`docs/PROJECT_STRUCTURE_V3.zh-CN.md`](docs/PROJECT_STRUCTURE_V3.zh-CN.md)
-- 最新 handoff：[`handoff_2026-06-13.zh-CN.md`](handoff_2026-06-13.zh-CN.md)
+- 最新 handoff：[`handoff_2026-06-14.zh-CN.md`](handoff_2026-06-14.zh-CN.md)
 
 ## Hero Ref 决策入口
 

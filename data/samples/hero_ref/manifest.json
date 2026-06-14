@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-06-12",
+  "updated_at": "2026-06-14",
   "archive_root": "data/samples/hero_ref/archive",
   "source_exports_dir": "data/logs/live/exports",
   "source_reset_dir": "data/logs/live/raw/archive/reset",
@@ -455,6 +455,32 @@
       "settlement_items": 22,
       "priority": "P0",
       "notes_zh": "公开信息金为零 raw 块：[200019, 200037]；parser fix 后应进入 public_info_rows。"
+    },
+    {
+      "sample_id": "HR-20260614-6376",
+      "session_id": "2404:1425860640906376",
+      "hero": "aisha",
+      "map_id": 2404,
+      "phase": "settled",
+      "themes": [
+        "aisha_settled_estimate_leak"
+      ],
+      "export_zip": "data/samples/hero_ref/archive/exports/2026-06-14/HeroRefDiag-20260614-015004-2404_1425860640906376.zip",
+      "raw_reset": null,
+      "public_info_ids": [
+        200019
+      ],
+      "public_info_rows": {
+        "200019": 3
+      },
+      "skill_ids": [
+        1001033,
+        1001034
+      ],
+      "settlement_q5": 3,
+      "settlement_items": 28,
+      "priority": "P1",
+      "notes_zh": "艾莎 2404；结算页「估价」泄露 ui_contract.constraints 结算证据的样本（fix b94c474：结算复核估价 639k→402k，q6 [3,3,4]→[1,2,3]）。r02_settled 可用于结算页估价回归。"
     }
   ]
 }

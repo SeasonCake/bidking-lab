@@ -9,16 +9,18 @@
 - v3 观察主记录：[`OBSERVATIONS_V3.md`](OBSERVATIONS_V3.md)
 - v3 设计文档：[`docs/v3_inference_design_2026-06-04.zh-CN.md`](docs/v3_inference_design_2026-06-04.zh-CN.md)
 - v3 结构索引：[`docs/PROJECT_STRUCTURE_V3.zh-CN.md`](docs/PROJECT_STRUCTURE_V3.zh-CN.md)
-- 最新 handoff：[`handoff_2026-06-13.zh-CN.md`](handoff_2026-06-13.zh-CN.md)
+- 最新 handoff：[`handoff_2026-06-14.zh-CN.md`](handoff_2026-06-14.zh-CN.md)（Hero Ref / 全项目入口）
 
 ## Hero Ref 支线（与 v3 并行，不替代 promotion）
 
 - 文件与文档总索引：[`docs/HERO_REF_FILE_AND_DOC_INDEX.zh-CN.md`](docs/HERO_REF_FILE_AND_DOC_INDEX.zh-CN.md)
 - 执行主记录：[`external_references/ahmad_live_reference_lab/EXECUTION_NOTES_2026-06-10.zh-CN.md`](external_references/ahmad_live_reference_lab/EXECUTION_NOTES_2026-06-10.zh-CN.md)（§60–§62 艾莎 / §50）
 - 样本索引：[`docs/hero_ref_settlement_sample_index_2026-06-11.zh-CN.md`](docs/hero_ref_settlement_sample_index_2026-06-11.zh-CN.md)（**§11 小地图 live 样本**）
-- 最新 handoff：[`handoff_2026-06-13.zh-CN.md`](handoff_2026-06-13.zh-CN.md)（v0.1.8 已发布；v0.2 待办）
-- **v0.1.8 之后变更流水**：[`CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md`](CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md)（默认不打包，下一对外 v0.2.0）
+- 最新 handoff：[`handoff_2026-06-14.zh-CN.md`](handoff_2026-06-14.zh-CN.md)（v0.1.8-hotfix；06-13 仍保留 Phase 1 细节）
+- **v0.1.8 之后变更流水**：[`CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md`](CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md)（含 hotfix；下一对外 v0.2.0）
+- **hotfix 发布说明**：[`RELEASE_NOTES_v0.1.8-hotfix.zh-CN.md`](RELEASE_NOTES_v0.1.8-hotfix.zh-CN.md)
 - 艾莎代表样本：[`docs/hero_ref_aisha_representative_samples_2026-06-13.zh-CN.md`](docs/hero_ref_aisha_representative_samples_2026-06-13.zh-CN.md)
+- 诊断样本 catalog：[`data/samples/hero_ref/manifest.json`](data/samples/hero_ref/manifest.json)（含 `HR-20260614-6376` 结算页估价泄露样本）
 
 ## 历史记录
 

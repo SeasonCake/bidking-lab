@@ -4,41 +4,34 @@
 
 ---
 
-我在继续 `c:\xiangmuyunxing\biancheng\2026\bidking-lab` 里 **Hero Ref 艾莎（Aisha）专项优化** 的工作。上个窗口太长卡顿，换新窗口。请先读这两个文件再动手：
+我在继续 `c:\xiangmuyunxing\biancheng\2026\bidking-lab` 里 **Hero Ref** 的工作（艾莎专项 + 拉文 hotfix）。请先读：
 
-1. `handoff_2026-06-13.zh-CN.md`（当前唯一权威 checkpoint：已完成/未完成/待办/批测结论/红线）
-2. `docs/hero_ref_aisha_strategy_2026-06-13.zh-CN.md`（主策略与批次路线图）
+1. **`handoff_2026-06-14.zh-CN.md`**（**当前唯一权威 checkpoint**：Git/发布/本窗口 delta/待办）
+2. **`CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md`**（v0.1.8 之后逐条流水）
+3. **`handoff_2026-06-13.zh-CN.md`** + **`docs/hero_ref_aisha_strategy_2026-06-13.zh-CN.md`**（艾莎 Phase 1 技术细节与路线图）
 
-## 当前状态（简版，2026-06-13 晚）
-- **Hero Ref v0.1.8 已发布并 push**：full + public-safe @ `a706bd5`（干净树）。公告/说明/release note 已交付。
-- 本轮（Phase 1 之后）修复：**白绿件数随机揭示不再误锁 q1（floor-only）**、空闲 fast→full 升级、每轮滚动快照诊断、UI 重开覆盖、小地图锚点/闪烁、静默启动/关闭崩溃/WinDivert 卸载、艾莎下一步动态文案、全 20 英雄识别。详见 handoff §1.5。
-- 艾莎 **Phase 1 仍 live**：B1/B2 总格 + C1 报价门禁 + C2 **band** + **D1 shadow**（不改 balanced）+ R1–R5 防守倍数 UI。装配入口 `prepare_reference_engine_snapshot()`（仅 hero=aisha 注入；Ahmed/Victor 不变）。格/件区间有提升、零门禁退化；balanced ~83% miss 留 v0.2。
-- Git：`main` @ `2d51012`，**已与 origin 同步**。对外最后发布 **v0.1.8** @ `a706bd5`。
-- **发布策略**：v0.1.8 之后改动写入 [`CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md`](CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md)；**默认不打包**，除非重大线上问题；下一对外版计划 **v0.2.0**。
-- ✅ **全量 pytest 全绿**，含本轮新增白绿 floor 回归测试。
-- 🔴 **v0.2 头号遗留**：无「总件揭示」英雄（艾莎）偏大局早轮估价系统性偏低（count_prior 中心标定，V3 架构级，风险高）。已定位、未改，详见 handoff §6。
+## 当前状态（简版，2026-06-14）
 
-## 已被批测否决、不要再 live
-- C2 **target** 抬点估计（各 cohort 更差）。
-- D1 **apply** 当前公式：模拟 balanced hit 18.9%→8.8%（恶化）；主因误差是 under 56%，压低 q6 方向反了。重做需按 over/under 分 cohort，并同时调 conservative/aggressive（apply 现只调 p50）。
+- **对外群公告**：v0.1.8 @ `a706bd5`（夸克已发）。
+- **本地 hotfix 包**：**v0.1.8-hotfix** 已重建并**替换**旧包（同一标签名，非 hotfix2）@ **`69bc9fd`**，含：
+  - 拉文 R5 全品质：缺档 0/0/0、已出现档精确锁（`b9b4ab0`）
+  - 结算页「估价」不再泄露 `ui_contract.constraints`（`b94c474`，**仅显示，不影响 live 竞价**）
+- **Git**：`main` HEAD **`69bc9fd`**，**领先 origin 2 commit**；**本地 tag `v0.1.8-hotfix` @ `69bc9fd`，远程 tag 仍为旧 `4a51598`**（push/force-push 待用户决定）。
+- **未 commit**：样本归档 `HR-20260614-6376`（manifest + zip）；工作区根 **AGENTS.md / .cursor rules** 已改（备份在 `2026_design/backup_2026-06-14_AGENTS_and_rules/`）。
+- **艾莎 Phase 1 仍 live**（B1/B2/C1/C2 band/D1 shadow + UI）；本窗口**未改** count_prior 主路径。
+- **发布策略**：默认不打包；下一对外 **v0.2.0**；hotfix 为用户要求的一次性替换。
+
+## 待办（按优先级）
+
+1. 用户确认后：**push main**；是否 **force-push tag** + 替换 GitHub release zip。
+2. **commit 样本归档**（`data/samples/hero_ref/...`）。
+3. 艾莎 **R1→R2 跳水**：需 session `2404:…559959` 的 r01/r02 导出（手头 `…906376` 无跳水）。
+4. **v0.2.0**：count_prior 中心标定（架构级，勿轻改）；开局给总格「卡结尾」；拉文 R5 闪退待复现。
 
 ## 红线
-- 不在 14 exact-total / 173 curated 上扫权重；引擎改动 = 语义规则 + synthetic + 已 hit 不回归。
-- 只动 Aisha，不碰 Ahmed/Victor 等。
-- v0 不追求 80–90% 格准；追求区间可用 + 报价有参考 + 门禁不退化。
-- 不全库扫描（`audit_aisha_round_cohorts.py`/`audit_data7_perf --hero aisha` >5min），用 `audit_aisha_round_cohorts_sample20.py`、`audit_aisha_perf.py --sample-limit 25`、`audit_aisha_c2_batch.py --audit-round N`。
 
-## 下一步（v0.2.0 线，默认不打包）
-- 读 [`CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md`](CHANGELOG_HERO_REF_post-v0.1.8.zh-CN.md) 再动手；**每完成一项 meaningful 改动就追加一行**。
-- **未经用户明确要求不要打包**（除非算错钱/闪退/完全不可用级 hotfix）。
-- **P0/P1 count_prior 中心标定**：艾莎等无总件揭示英雄偏大局早轮低估。根因 = map 家族默认 total（如 24xx=28）+ 窄枚举窗，被已知低品占满后高价品无空间。**V3 架构级、影响全英雄/全图、风险高**，需大量验证，不要轻改；先设计 + 分片审计。
-- 其次：D1 按 over/under 重做 + cells 收束；B1 改 floor-aware 后再放开全英雄；C3a 位置 hint；count_prior 宽 combo 推理效率；扩样本（已 637）。
-- **红线照旧**：未经用户同意不要打包/不要 push；只动 Aisha，不碰 Ahmed/Victor。
+- 不在 14 exact-total / 173 curated 上扫权重；C2 target / D1 apply 已否决。
+- 未经用户明确要求不要 commit/push/打包。
+- 改引擎后跑：`pytest tests/test_live_overlay.py -k pre_settlement_clone` + 艾莎/aisha 子集。
 
-## 已处理的小优化
-- D1 shadow UI 噪音 → 已修（`_aisha_d1_flag_detail` 阈值 0.7 过滤；引擎保留完整 note 供 audit）。
-
-## 发版前必须先做（A 路径的前置）
-- v0.2：把 B1 `_apply_total_grid_target_from_known_high_tier_cells` 改成 floor-aware 后再考虑放开到全英雄（当前仅 aisha）。
-
-先确认你已读上述两个文件，并告诉我你接手时打算先做 A 还是 B，再开始。
+先确认你已读 **handoff_2026-06-14**，再动手。

@@ -60,6 +60,7 @@ print('notes', [n for n in res.get('notes',[]) if 'q5' in n or '200019' in n or 
 | `public_info_minimap` | 公开摇号/轮廓/命名物品 → 小地图 marker |
 | `public_avg_cells` | 公开均格 `200013–200016` |
 | `settlement_q5_zero` | 结算 truth 金件为 0 |
+| `aisha_settled_estimate_leak` | 结算页「估价」泄露 `ui_contract.constraints` 结算证据（fix `b94c474`）；用于结算复核估价回归 |
 
 ## 文档索引
 
